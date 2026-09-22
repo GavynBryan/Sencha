@@ -1,7 +1,10 @@
 #include "ui/AnimationRequestSchemaPanel.h"
 
-#include "AnimationPreviewWorkspace.h"
+#include "authoring/AnimationPreviewWorkspace.h"
 #include "ui/ScopedPanel.h"
+
+#include <anim/AnimRequestSchema.h>
+#include <anim/AnimSelectorData.h>
 
 #include <imgui.h>
 
@@ -126,10 +129,20 @@ void AnimationRequestSchemaPanel::OnDraw()
         ImGui::EndCombo();
     }
     auto& document = *documents[Workspace.ActiveDocument];
+    if (document.Subtype() != kAnimRequestSchemaType)
+    {
+        if (document.Subtype() == kAnimSelectorType)
+            ImGui::TextWrapped("The active document is a selector; the Rules pane edits it.");
+        else
+            ImGui::TextWrapped("The active document is a %s. This editor has no pane for it yet: edit it in "
+                               "Data Editor, then reopen the rig.",
+                               document.Subtype().c_str());
+        return;
+    }
     ImGui::PushID(&document);
-    if (ImGui::Button("Undo")) { document.Undo(); Workspace.ValidateDocument(document); }
+    if (ImGui::Button("Undo")) { document.Undo(); Workspace.DocumentChanged(document); }
     ImGui::SameLine();
-    if (ImGui::Button("Redo")) { document.Redo(); Workspace.ValidateDocument(document); }
+    if (ImGui::Button("Redo")) { document.Redo(); Workspace.DocumentChanged(document); }
     ImGui::SameLine();
     if (ImGui::Button("Save")) Workspace.SaveDocument(document);
     ImGui::SameLine();
@@ -149,7 +162,7 @@ void AnimationRequestSchemaPanel::OnDraw()
         document.PreviewRoot(std::move(root));
         Workspace.ValidateDocument(document);
     }
-    if (edit.Commit) document.CommitEdit();
+    if (edit.Commit) Workspace.CommitDocumentEdit(document);
     for (const auto& error : document.ValidationErrors())
         ImGui::TextWrapped("%s: %s", error.Path.c_str(), error.Message.c_str());
     ImGui::PopID();

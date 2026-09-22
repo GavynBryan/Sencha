@@ -5,19 +5,74 @@
     "rig": "asset://animation/hero.rig.sdata",
     "tick_rate": 60,
     "seed": 0,
-    "participants": [ "player", "enemy" ],
-    "declared_tags": [ "Anim.Reload", "Anim.Melee", "Anim.Charge" ],
-    "inputs": { "Grounded": true },
+    "participants": [
+        "player",
+        "enemy"
+    ],
+    "declared_tags": [
+        "Anim.Reload",
+        "Anim.Melee",
+        "Anim.Charge",
+        "Anim.Locomotion.Idle",
+        "Anim.Locomotion.Walk",
+        "Anim.Locomotion.Sprint",
+        "Anim.Action.Land",
+        "Anim.Action.Reload"
+    ],
+    "inputs": {
+        "Grounded": true
+    },
     "actions": [
-        { "tick": 30, "set": "Speed", "value": 4 },
-        { "tick": 60, "set": "Grounded", "value": false },
-        { "tick": 60, "set": "VerticalSpeed", "value": 3 },
-        { "tick": 90, "set": "Grounded", "value": true },
-        { "tick": 90, "set": "VerticalSpeed", "value": 0 },
-        { "tick": 100, "issue": "Anim.Reload", "source": "player", "lifetime": "held", "layers": 2 },
-        { "tick": 130, "issue": "Anim.Melee", "source": "enemy", "lifetime": "impulse",
-          "params": { "combo": 1 } },
-        { "tick": 140, "cancel": "Anim.Reload", "source": "player", "reason": "interrupted" },
-        { "tick": 160, "set": "Speed", "value": 0 }
+        {
+            "tick": 30,
+            "set": "Speed",
+            "value": 4
+        },
+        {
+            "tick": 60,
+            "set": "Grounded",
+            "value": false
+        },
+        {
+            "tick": 60,
+            "set": "VerticalSpeed",
+            "value": 3
+        },
+        {
+            "tick": 90,
+            "set": "Grounded",
+            "value": true
+        },
+        {
+            "tick": 90,
+            "set": "VerticalSpeed",
+            "value": 0
+        },
+        {
+            "tick": 100,
+            "issue": "Anim.Reload",
+            "source": "player",
+            "lifetime": "held"
+        },
+        {
+            "tick": 130,
+            "issue": "Anim.Melee",
+            "source": "enemy",
+            "lifetime": "impulse",
+            "params": {
+                "combo": 1
+            }
+        },
+        {
+            "tick": 140,
+            "cancel": "Anim.Reload",
+            "source": "player",
+            "reason": "interrupted"
+        },
+        {
+            "tick": 160,
+            "set": "Speed",
+            "value": 0
+        }
     ]
 }

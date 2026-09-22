@@ -1,0 +1,47 @@
+#pragma once
+
+#include <anim/AnimTypes.h>
+#include <ecs/ComponentAnnotations.h>
+#include <gameplay_tags/GameplayTagId.h>
+
+#include <cstdint>
+
+//=============================================================================
+// AnimContentState
+//
+// What each layer is playing: the behavior, the slot row that resolved it, the
+// content, and where in it. Content is an index into the bound rig's content
+// table, never an asset handle -- the rig's slot maps hold the clips -- and a
+// row is named by index and stable key so a reload can tell whether pinned
+// content still exists.
+//
+// ContentComplete is the one value the next tick's selection reads back: it is
+// published here after resolution and read one tick late, which is the only
+// read against the dependency order and never a fact.
+//=============================================================================
+
+struct AnimLayerContent
+{
+    AnimTick StartTick = 0;
+    GameplayTagId Behavior;
+    std::uint32_t RowKey = 0;
+    // Seconds into the content at StartTick: a row change carries normalized
+    // time across by starting the new content here.
+    float StartOffsetSeconds = 0.0f;
+    float TimeSeconds = 0.0f;
+    std::uint16_t Row = kAnimNoContent;
+    std::uint16_t Content = kAnimNoContent;
+    // One-shot and flow content is fixed at behavior entry.
+    bool Pinned = false;
+    bool ContentComplete = false;
+};
+
+struct SENCHA_COMPONENT("sencha.anim_content_state") AnimContentState
+{
+    AnimLayerContent Layers[kAnimMaxLayers] = {};
+    std::uint64_t BindingGeneration = 0;
+};
+
+#if !defined(SENCHA_CODEGEN)
+#  include <anim/AnimContentState.sencha.h>
+#endif

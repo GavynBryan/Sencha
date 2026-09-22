@@ -33,7 +33,9 @@ namespace
     {
         return a.Tick == b.Tick && a.Cause == b.Cause && a.Layer == b.Layer
             && a.Request == b.Request && a.Intent == b.Intent && a.CancelReason == b.CancelReason
-            && a.RejectReason == b.RejectReason;
+            && a.RejectReason == b.RejectReason && a.Reason == b.Reason && a.Rule == b.Rule
+            && a.PreviousRule == b.PreviousRule && a.Behavior == b.Behavior && a.Row == b.Row
+            && a.Content == b.Content;
     }
 
     template <typename T, typename F>
@@ -104,14 +106,23 @@ namespace
 
 bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a, const AnimationPreviewTickRecord& b)
 {
+    const auto sameLayer = [](const AnimationPreviewLayerRecord& x, const AnimationPreviewLayerRecord& y) {
+        return x.Winner == y.Winner && x.Behavior == y.Behavior && x.Latch == y.Latch && x.Row == y.Row
+            && x.Content == y.Content && x.TimeSeconds == y.TimeSeconds && x.ContentComplete == y.ContentComplete
+            && SameRange(x.Verdicts, y.Verdicts, [](const AnimRuleVerdict& p, const AnimRuleVerdict& q) {
+                   return p.Kind == q.Kind && p.Stayed == q.Stayed && p.Evaluation.FailedRow == q.Evaluation.FailedRow;
+               });
+    };
     return a.Tick == b.Tick && a.Facts == b.Facts && a.FactsExact == b.FactsExact
         && SameRange(a.Requests, b.Requests, SameRequest)
-        && SameRange(a.Decisions, b.Decisions, SameDecision) && a.Actions == b.Actions;
+        && SameRange(a.Decisions, b.Decisions, SameDecision) && a.Actions == b.Actions
+        && SameRange(a.Layers, b.Layers, sameLayer);
 }
 
-AnimationPreviewSession::AnimationPreviewSession(const DataAssetCache& data,
+AnimationPreviewSession::AnimationPreviewSession(const DataAssetCache& data, const AnimationClipCache* clips,
                                                  std::function<void(World&)> vocabulary)
     : Data(data)
+    , Clips(clips)
     , Vocabulary(std::move(vocabulary))
 {
 }
@@ -214,7 +225,7 @@ void AnimationPreviewSession::BuildWorld()
         if (!tags.RegisterTag(Working.DeclaredTags[i], &error))
             Problem("anim.scenario.declared_tag", std::format("$.declared_tags[{}]", i), error.Message);
     }
-    Preview->SetResource(AnimRigBindings{ &Data });
+    Preview->SetResource(AnimRigBindings{ &Data, Clips });
 
     // Participants first, in scenario order, so their local entities are the
     // same on every run of the same scenario.
@@ -528,6 +539,43 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
     const DataAssetHandle rig = Preview->TryGet<AnimRig>(SubjectEntity)->Rig;
     Bound = Preview->GetResource<AnimRigBindings>().Resolve(rig, *Preview);
 
+    // Selection and resolution through the same functions the systems run,
+    // keeping the verdicts the systems throw away.
+    std::vector<std::vector<AnimRuleVerdict>> verdicts;
+    if (Bound != nullptr && Bound->Valid)
+    {
+        AnimSelectorState* selection = Preview->TryGet<AnimSelectorState>(SubjectEntity);
+        AnimContentState* content = Preview->TryGet<AnimContentState>(SubjectEntity);
+        AnimDecisionLog* log = Preview->TryGet<AnimDecisionLog>(SubjectEntity);
+        if (selection != nullptr && !Bound->Selectors.empty())
+            SelectAnimEntity(*Preview, SubjectEntity, *Bound, Facts(), *selection, tick, TickSeconds(), log,
+                             &verdicts);
+        if (content != nullptr)
+            ResolveAnimEntity(*Preview, SubjectEntity, *Bound, Facts(), selection, *content, tick, TickSeconds(),
+                              log);
+        for (std::size_t l = 0; l < Bound->Layers.size() && l < kAnimMaxLayers; ++l)
+        {
+            AnimationPreviewLayerRecord layer;
+            if (selection != nullptr)
+            {
+                layer.Winner = selection->Layers[l].Winner;
+                layer.Latch = selection->Layers[l].Latch;
+            }
+            if (content != nullptr)
+            {
+                const AnimLayerContent& playing = content->Layers[l];
+                layer.Behavior = playing.Behavior;
+                layer.Row = playing.Row;
+                layer.Content = playing.Content;
+                layer.TimeSeconds = playing.TimeSeconds;
+                layer.ContentComplete = playing.ContentComplete;
+            }
+            if (l < verdicts.size())
+                layer.Verdicts = std::move(verdicts[l]);
+            record.Layers.push_back(std::move(layer));
+        }
+    }
+
     const std::span<const std::uint32_t> facts = Facts();
     record.Facts.assign(facts.begin(), facts.end());
     record.FactsExact = FactsExact();
@@ -579,6 +627,27 @@ std::vector<std::uint32_t> AnimationPreviewSession::PreviewNextTick()
     return values;
 }
 
+std::vector<std::vector<AnimRuleVerdict>> AnimationPreviewSession::ExplainNextTick()
+{
+    std::vector<std::vector<AnimRuleVerdict>> verdicts;
+    const AnimSelectorState* selection = Selection();
+    if (Preview == nullptr || Bound == nullptr || !Bound->Valid || selection == nullptr)
+        return verdicts;
+    const std::vector<std::uint32_t> facts = PreviewNextTick();
+    AnimSelectorState copy = *selection;
+    SelectAnimEntity(*Preview, SubjectEntity, *Bound, facts, copy, NextTick(), TickSeconds(), nullptr, &verdicts);
+    return verdicts;
+}
+
+void AnimationPreviewSession::Rebind()
+{
+    if (Preview == nullptr || !SubjectEntity.IsValid())
+        return;
+    const AnimRig* rig = Preview->TryGet<AnimRig>(SubjectEntity);
+    if (rig != nullptr)
+        Bound = Preview->GetResource<AnimRigBindings>().Resolve(rig->Rig, *Preview);
+}
+
 std::span<const std::uint32_t> AnimationPreviewSession::Facts() const
 {
     if (Preview == nullptr || Bound == nullptr || !SubjectEntity.IsValid())
@@ -602,6 +671,18 @@ bool AnimationPreviewSession::FactsExact() const
 const AnimRequestSet* AnimationPreviewSession::Requests() const
 {
     return Preview != nullptr && SubjectEntity.IsValid() ? Preview->TryGet<AnimRequestSet>(SubjectEntity)
+                                                         : nullptr;
+}
+
+const AnimSelectorState* AnimationPreviewSession::Selection() const
+{
+    return Preview != nullptr && SubjectEntity.IsValid() ? Preview->TryGet<AnimSelectorState>(SubjectEntity)
+                                                         : nullptr;
+}
+
+const AnimContentState* AnimationPreviewSession::Content() const
+{
+    return Preview != nullptr && SubjectEntity.IsValid() ? Preview->TryGet<AnimContentState>(SubjectEntity)
                                                          : nullptr;
 }
 

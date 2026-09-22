@@ -182,7 +182,7 @@ TEST(AnimationScenario, ProblemsAreLocated)
 TEST(AnimationPreviewSession, LiveEditsApplyOnTheNextTick)
 {
     PreviewFixture fx;
-    AnimationPreviewSession session(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession session(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(session.Open(PreviewFixture::Scenario()));
     ASSERT_NE(session.Rig(), nullptr);
     EXPECT_TRUE(FactBool(session, "Grounded"));
@@ -209,7 +209,7 @@ TEST(AnimationPreviewSession, LiveEditsApplyOnTheNextTick)
 TEST(AnimationPreviewSession, DerivedHistoryShowsTheLanding)
 {
     PreviewFixture fx;
-    AnimationPreviewSession session(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession session(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(session.Open(PreviewFixture::Scenario()));
 
     session.SetFact("Grounded", AnimationScenarioValue::FromBool(false));
@@ -236,7 +236,7 @@ TEST(AnimationPreviewSession, RequestConsoleShowsCapacityPrimaryAndRetention)
     AnimationScenario scenario = PreviewFixture::Scenario();
     for (int i = 0; i < 8; ++i)
         scenario.Participants.push_back("p" + std::to_string(i));
-    AnimationPreviewSession session(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession session(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(session.Open(scenario));
 
     // Ten held requests from ten sources: eight fit, and the rest are refused
@@ -274,7 +274,7 @@ TEST(AnimationPreviewSession, RequestConsoleShowsCapacityPrimaryAndRetention)
 TEST(AnimationPreviewSession, ASavedScenarioReproducesTheTake)
 {
     PreviewFixture fx;
-    AnimationPreviewSession live(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession live(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(live.Open(PreviewFixture::Scenario()));
 
     live.SetFact("Speed", AnimationScenarioValue::FromNumber(3.0));
@@ -308,7 +308,7 @@ TEST(AnimationPreviewSession, ASavedScenarioReproducesTheTake)
     ASSERT_TRUE(loaded.has_value());
     ASSERT_TRUE(diagnostics.empty());
 
-    AnimationPreviewSession replay(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession replay(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(replay.Open(std::move(*loaded)));
     replay.RunTo(live.Tick());
 
@@ -335,7 +335,7 @@ TEST(AnimationPreviewSession, ActingInsideAScriptedRunBranchesIt)
     late.Value = AnimationScenarioValue::FromNumber(9.0);
     scenario.Append(late);
 
-    AnimationPreviewSession session(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession session(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(session.Open(scenario));
     session.RunTo(3);
     session.SetFact("Speed", AnimationScenarioValue::FromNumber(1.0));
@@ -353,7 +353,7 @@ TEST(AnimationPreviewSession, ActingInsideAScriptedRunBranchesIt)
 TEST(AnimationPreviewSession, UnknownNamesAreProblemsNotRegistrations)
 {
     PreviewFixture fx;
-    AnimationPreviewSession session(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession session(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(session.Open(PreviewFixture::Scenario()));
 
     session.SetFact("Sped", AnimationScenarioValue::FromNumber(3.0));
@@ -383,7 +383,7 @@ TEST(AnimationPreviewSession, PreviewNeverTouchesTheAssetsItRuns)
     const std::uint64_t version = fx.Data.GetReloadVersion(rig);
     const void* value = fx.Data.GetRaw(rig);
 
-    AnimationPreviewSession session(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession session(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(session.Open(PreviewFixture::Scenario()));
     session.SetFact("Speed", AnimationScenarioValue::FromNumber(3.0));
     session.IssueRequest(Issue("player", "anim.intent.reload"));
@@ -396,7 +396,7 @@ TEST(AnimationPreviewSession, PreviewNeverTouchesTheAssetsItRuns)
 TEST(AnimationPreviewSession, SpeedSchedulesTicksWithoutChangingThem)
 {
     PreviewFixture fx;
-    AnimationPreviewSession session(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession session(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(session.Open(PreviewFixture::Scenario()));
     session.Play();
     session.Advance(0.05); // three ticks at 60 Hz
@@ -413,7 +413,7 @@ TEST(AnimationPreviewSession, AnUnloadedRigIsAProblem)
     PreviewFixture fx;
     AnimationScenario scenario = PreviewFixture::Scenario();
     scenario.RigPath = "asset://animation/missing.rig.sdata";
-    AnimationPreviewSession session(fx.Data, &PreviewFixture::Vocabulary);
+    AnimationPreviewSession session(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     EXPECT_FALSE(session.Open(scenario));
     EXPECT_TRUE(HasProblem(session, "anim.scenario.rig_unavailable", "$.rig"));
     session.Step(); // harmless
@@ -500,17 +500,24 @@ TEST(AnimationPreviewSession, TheFixtureScenarioRunsCleanThroughTheAssetPipeline
     ASSERT_TRUE(scenario.has_value());
     ASSERT_TRUE(diagnostics.empty()) << FormatAnimDiagnostic(diagnostics.front());
 
-    AnimationPreviewSession session(assets.DataAssets);
+    AnimationPreviewSession session(assets.DataAssets, &assets.AnimationClips);
     ASSERT_TRUE(session.Open(*scenario));
     ASSERT_TRUE(session.Rig()->Valid) << FormatAnimDiagnostic(session.Rig()->Diagnostics.front());
     EXPECT_EQ(session.Rig()->Slots.front().DeclaredIn, "asset://animation/engine.facts.sdata");
+    const auto behavior = [&] {
+        return std::string(session.Tags()->GetName(session.Content()->Layers[0].Behavior));
+    };
+    session.RunTo(40);
+    EXPECT_EQ(behavior(), "Anim.Locomotion.Sprint");
+    session.RunTo(90);
+    EXPECT_EQ(behavior(), "Anim.Action.Land");
     session.RunTo(180);
     EXPECT_TRUE(session.ScenarioProblems().empty())
         << FormatAnimDiagnostic(session.ScenarioProblems().front());
     EXPECT_TRUE(session.FactsExact());
 
     const AnimationPreviewTickRecord last = session.History().back();
-    AnimationPreviewSession replay(assets.DataAssets);
+    AnimationPreviewSession replay(assets.DataAssets, &assets.AnimationClips);
     ASSERT_TRUE(replay.Open(std::move(*scenario)));
     replay.RunTo(180);
     EXPECT_TRUE(SameAnimationPreviewTick(replay.History().back(), last));

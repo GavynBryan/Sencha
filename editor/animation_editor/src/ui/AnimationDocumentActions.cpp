@@ -1,6 +1,6 @@
 #include "ui/AnimationDocumentActions.h"
 
-#include "AnimationPreviewWorkspace.h"
+#include "authoring/AnimationPreviewWorkspace.h"
 #include "ui/EditorUiFeature.h"
 
 #include <app/Engine.h>
@@ -28,8 +28,8 @@ void ConfigureAnimationDocumentActions(EditorUiFeature& ui, Engine& engine,
                                        AnimationPreviewWorkspace& workspace)
 {
     ui.SetUndoActions(
-        [&workspace] { if (auto* doc = Active(workspace)) { doc->Undo(); workspace.ValidateDocument(*doc); } },
-        [&workspace] { if (auto* doc = Active(workspace)) { doc->Redo(); workspace.ValidateDocument(*doc); } },
+        [&workspace] { if (auto* doc = Active(workspace)) { doc->Undo(); workspace.DocumentChanged(*doc); } },
+        [&workspace] { if (auto* doc = Active(workspace)) { doc->Redo(); workspace.DocumentChanged(*doc); } },
         [&workspace] { const auto* doc = Active(workspace); return doc && doc->CanUndo(); },
         [&workspace] { const auto* doc = Active(workspace); return doc && doc->CanRedo(); });
     ui.SetFileActions({}, {}, [&workspace] {

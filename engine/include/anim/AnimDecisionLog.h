@@ -28,7 +28,32 @@ enum class AnimDecisionCause : std::uint8_t
     RequestCancelled,
     RequestExpired,
     RequestRejected,
+    // A layer's winning rule changed; Reason says why.
+    WinnerChanged,
+    LatchArmed,
+    LatchReleased,
+    LatchInterrupted,
+    // A layer's content changed; Reason says why.
+    ContentChanged,
+    // A rebind could not keep an index a layer held, and reset it.
+    Anchored,
 };
+
+// Why a winner or content changed. Every change has one.
+enum class AnimChangeReason : std::uint8_t
+{
+    None,
+    FactsChanged,
+    RequestsChanged,
+    HoldExpired,
+    LatchComplete,
+    LatchInterrupted,
+    Rebound,
+    BehaviorChanged,
+    RowChanged,
+};
+
+[[nodiscard]] std::string_view AnimChangeReasonName(AnimChangeReason reason);
 
 [[nodiscard]] std::string_view AnimDecisionCauseName(AnimDecisionCause cause);
 
@@ -57,6 +82,14 @@ struct AnimDecisionRecord
     GameplayTagId Intent;
     AnimCancelReason CancelReason = AnimCancelReason::None;
     AnimRejectReason RejectReason = AnimRejectReason::None;
+    AnimChangeReason Reason = AnimChangeReason::None;
+    // Winner and latch records: the flattened rules before and after.
+    std::uint16_t Rule = kAnimNoRule;
+    std::uint16_t PreviousRule = kAnimNoRule;
+    GameplayTagId Behavior;
+    // Content records: the row and content resolved.
+    std::uint16_t Row = kAnimNoContent;
+    std::uint16_t Content = kAnimNoContent;
 };
 
 inline constexpr std::size_t kAnimDecisionLogCapacity = 64;

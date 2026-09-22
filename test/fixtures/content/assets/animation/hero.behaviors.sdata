@@ -1,0 +1,15 @@
+{
+    "type": "animation.behavior_set",
+    "version": 1,
+    "data": {
+        "behaviors": [
+            { "tag": "Anim.Locomotion.Idle", "kind": "cyclic" },
+            { "tag": "Anim.Locomotion.Walk", "kind": "cyclic" },
+            { "tag": "Anim.Locomotion.Sprint", "kind": "cyclic" },
+            { "tag": "Anim.Action.Land", "kind": "one_shot",
+              "latch": { "mode": "until_complete", "interruptible_by": "priority_at_least", "priority": 100 } },
+            { "tag": "Anim.Action.Reload", "kind": "one_shot",
+              "latch": { "mode": "until_request_ends", "interruptible_by": "never", "on_request_cancel": "finish" } }
+        ]
+    }
+}

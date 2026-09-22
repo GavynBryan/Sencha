@@ -4,6 +4,7 @@
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <optional>
@@ -124,9 +125,30 @@ AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource
 bool DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
                                        std::vector<AssetLease>& out)
 {
+    // A dependency still being committed further up this stack is a cycle.
+    // The asynchronous preloader refuses one before it stages anything; the
+    // synchronous path would otherwise recurse until the stack ran out.
+    if (std::find(Committing.begin(), Committing.end(), staged.Record.Path) != Committing.end())
+    {
+        Log.Error("DataAssetLoader: dependency cycle through '{}'", staged.Record.Path);
+        return false;
+    }
+    Committing.push_back(staged.Record.Path);
+    struct Unwind
+    {
+        std::vector<std::string>& Stack;
+        ~Unwind() { Stack.pop_back(); }
+    } unwind{ Committing };
+
     out.reserve(staged.Dependencies.size());
     for (const AssetRef& dependency : staged.Dependencies)
     {
+        if (std::find(Committing.begin(), Committing.end(), dependency.Path) != Committing.end())
+        {
+            Log.Error("DataAssetLoader: dependency cycle between '{}' and '{}'",
+                      staged.Record.Path, dependency.Path);
+            return false;
+        }
         AssetLease lease = assets.LoadLease(dependency.Path, dependency.Type);
         if (!lease)
         {

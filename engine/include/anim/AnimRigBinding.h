@@ -1,9 +1,12 @@
 #pragma once
 
+#include <anim/AnimBehaviorSet.h>
 #include <anim/AnimDiagnostic.h>
 #include <anim/AnimFactSchema.h>
+#include <anim/AnimPredicate.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
+#include <anim/AnimationClipHandle.h>
 #include <assets/data/DataAssetCache.h>
 #include <gameplay_tags/GameplayTagId.h>
 
@@ -14,6 +17,7 @@
 #include <unordered_map>
 #include <vector>
 
+class AnimationClipCache;
 class World;
 
 //=============================================================================
@@ -22,7 +26,9 @@ class World;
 // A rig asset, bound into one World: the fact schema chain merged into one
 // fixed layout, derivations compiled to slot indices, layer and intent names
 // resolved to this World's tag ids, gathered slots matched to this World's
-// providers. The shared assets name things; this is where names become the
+// providers, each layer's selector flattened and compiled, behaviors resolved
+// to their policies, and the slot map stack merged into rows over a content
+// table. The shared assets name things; this is where names become the
 // indices per-entity state is addressed by.
 //
 // Everything wrong with the content is a located AnimDiagnostic, and a rig with
@@ -92,6 +98,100 @@ struct AnimBoundLayer
     std::string NameText;
     AnimLayerMode Mode = AnimLayerMode::Override;
     float Weight = 1.0f;
+    // Index into AnimBoundRig::Selectors, or -1 for a request-keyed layer.
+    int Selector = -1;
+    GameplayTagId Idle;
+};
+
+struct AnimBoundBehavior
+{
+    GameplayTagId Tag;
+    std::string Name;
+    AnimBehaviorDecl Policy;
+    std::vector<GameplayTagId> InterruptTags;
+    GameplayTagId SyncGroup;
+    // The behavior set whose declaration won, for navigation.
+    std::string DeclaredIn;
+};
+
+// Where a flattened rule came from: one entry per selector it nests through,
+// outermost first.
+struct AnimRuleSource
+{
+    std::string Selector;
+    std::uint32_t Rule = 0;
+    std::string Name;
+};
+
+// Where one row of a flattened predicate was authored: which selector, which
+// rule in it, which of its predicates, which row. A failing row index names a
+// row the author can find, however deeply the rule was delegated.
+struct AnimRowSource
+{
+    std::string Selector;
+    std::uint32_t Rule = 0;
+    bool Stay = false;
+    std::uint32_t Row = 0;
+};
+
+struct AnimBoundRule
+{
+    // The priority of the outermost rule it descends from: what holds and
+    // latches compare, since a delegated rule inherits its parent's standing.
+    std::int32_t Band = 0;
+    AnimProgram Enter;
+    // Empty when the rule stays on its enter.
+    AnimProgram Stay;
+    bool HasStay = false;
+    GameplayTagId Behavior;
+    int BehaviorIndex = -1;
+    float HoldMinMs = 0.0f;
+    float CooldownMs = 0.0f;
+    // Which cooldown slot of the selector state it uses, or -1.
+    int CooldownSlot = -1;
+    // The one intent its enter reads, which is the request an
+    // until-request-ends latch follows. Invalid when it reads none or several.
+    GameplayTagId LatchIntent;
+    // Stable across rebinds: the selector path and the rule's name (or its
+    // position when unnamed) through every level it nests. Selector state
+    // names its winner by this, so a reload that reorders named rules remaps
+    // rather than resets.
+    std::uint32_t Key = 0;
+    std::vector<AnimRuleSource> Source;
+    // One per row of Enter and of Stay, in program order.
+    std::vector<AnimRowSource> EnterRows;
+    std::vector<AnimRowSource> StayRows;
+    std::string Label;
+};
+
+struct AnimBoundSelector
+{
+    std::string Path;
+    // Flattened, in evaluation order.
+    std::vector<AnimBoundRule> Rules;
+    // Some rule reads time or tags: the selector re-evaluates every tick
+    // rather than only when facts or requests change.
+    bool ReadsTime = false;
+    bool ReadsTags = false;
+};
+
+struct AnimBoundContent
+{
+    std::string Path;
+    AnimationClipHandle Clip;
+    float DurationSeconds = 0.0f;
+};
+
+struct AnimBoundSlotRow
+{
+    GameplayTagId Behavior;
+    std::string BehaviorName;
+    std::int32_t Priority = 0;
+    AnimProgram When;
+    int Content = -1;
+    std::string DeclaredIn;
+    std::uint32_t Index = 0;
+    std::uint32_t Key = 0;
 };
 
 struct AnimBoundRig
@@ -114,17 +214,27 @@ struct AnimBoundRig
 
     std::vector<AnimBoundLayer> Layers;
 
+    std::vector<AnimBoundBehavior> Behaviors;
+    std::vector<AnimBoundSelector> Selectors;
+    // Merged across the slot map stack: priority first, then stack order,
+    // then row order.
+    std::vector<AnimBoundSlotRow> SlotRows;
+    std::vector<AnimBoundContent> Contents;
+
     // Moves on every rebuild, so an inspector holding a copy can tell it is
     // looking at an older generation.
     std::uint64_t Generation = 0;
 
     [[nodiscard]] int FindSlot(std::string_view name) const;
     [[nodiscard]] const AnimBoundIntent* FindIntent(GameplayTagId intent) const;
+    [[nodiscard]] const AnimBoundBehavior* FindBehavior(GameplayTagId behavior) const;
+    [[nodiscard]] int FindBehaviorIndex(GameplayTagId behavior) const;
 };
 
 // Binds one rig without caching. The pure half of AnimRigBindings, and what a
 // tool validating content against a World calls directly.
 [[nodiscard]] AnimBoundRig BindAnimRig(const DataAssetCache& data,
+                                       const AnimationClipCache* clips,
                                        DataAssetHandle rig,
                                        const World& world);
 
@@ -136,7 +246,11 @@ class AnimRigBindings
 {
 public:
     AnimRigBindings() = default;
-    explicit AnimRigBindings(const DataAssetCache* data) : Data(data) {}
+    AnimRigBindings(const DataAssetCache* data, const AnimationClipCache* clips)
+        : Data(data)
+        , Clips(clips)
+    {
+    }
 
     // The rig bound into `world`, rebuilt first if anything it was bound from
     // has changed. Null for an invalid handle or a value that is not a rig.
@@ -161,6 +275,7 @@ private:
     [[nodiscard]] bool IsCurrent(const Entry& entry, const World& world) const;
 
     const DataAssetCache* Data = nullptr;
+    const AnimationClipCache* Clips = nullptr;
     std::unordered_map<std::uint64_t, Entry> Entries;
     std::uint64_t Rebuilds = 0;
 };

@@ -136,7 +136,7 @@ void RuntimeContent::Publish(World& world)
     world.SetResource(AudioSourceRuntime{
         &assets.AudioClips, &Host.Audio(), &Host.Captions() });
     world.SetResource(AnimationClipPlaybackRuntime{ &assets.AnimationClips });
-    world.SetResource(AnimRigBindings{ &assets.DataAssets });
+    world.SetResource(AnimRigBindings{ &assets.DataAssets, &assets.AnimationClips });
 
     // The spawn services are engine-owned; the asset stack they resolve scenes
     // through is this one. The second is for the spawns a peer names rather

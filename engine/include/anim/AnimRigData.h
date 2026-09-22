@@ -13,7 +13,8 @@
 //
 // What one kind of animated entity is: its skeleton, the fact schema its rules
 // read, the request schema its requests are checked against, how much fact
-// storage it carries, and its ordered layers. The one file a new entity type
+// storage it carries, its ordered layers and the selector on each, the
+// behaviors it plays, and the slot maps that give those behaviors content. The one file a new entity type
 // starts from.
 //
 // Tier is not declared here. It follows from which components an entity ends
@@ -38,6 +39,20 @@ struct AnimRigLayer
     // Constant weight. A layer whose weight is a rule output takes it from its
     // selector instead.
     float Weight = 1.0f;
+    // The selector choosing this layer's behavior ("asset://..."). Empty makes
+    // the layer request-keyed: the newest request claiming it names the
+    // behavior, which is the whole of the Prop tier.
+    std::string SelectorPath;
+    // The behavior played when nothing is selected or requested.
+    std::string Idle;
+};
+
+// A selector bound to a name selectors expose, so a game or mod adds rules
+// (a new weapon's) without editing the selector that declares the point.
+struct AnimRigExtension
+{
+    std::string Name;
+    std::string SelectorPath;
 };
 
 struct AnimRigData
@@ -47,6 +62,12 @@ struct AnimRigData
     std::string RequestSchemaPath;
     AnimFactCapacity FactCapacity = AnimFactCapacity::Small;
     std::vector<AnimRigLayer> Layers;
+    // In order: a later set adds behaviors or overrides an earlier set's
+    // policy by tag.
+    std::vector<std::string> BehaviorSetPaths;
+    // The base map first, then overlays.
+    std::vector<std::string> SlotMapPaths;
+    std::vector<AnimRigExtension> Extensions;
 
     [[nodiscard]] bool HasFacts() const { return !FactSchemaPath.empty(); }
 };

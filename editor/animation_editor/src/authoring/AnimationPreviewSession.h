@@ -2,8 +2,10 @@
 
 #include "authoring/AnimationScenario.h"
 
+#include <anim/AnimContentSystem.h>
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimFactGatherSystem.h>
+#include <anim/AnimSelectSystem.h>
 #include <anim/AnimRequests.h>
 #include <anim/AnimRigBinding.h>
 #include <assets/data/DataAssetCache.h>
@@ -25,7 +27,8 @@ class World;
 // AnimationPreviewSession
 //
 // A rig under a scenario, simulated in an isolated World on a fixed clock with
-// the production binding, gather, derivation and request code. The editor
+// the production binding, gather, derivation, request, selection and content
+// resolution code. The editor
 // substitutes only gameplay: the preview's fact providers read scenario-owned
 // inputs, and scenario participants issue requests through the normal request
 // API.
@@ -54,6 +57,21 @@ struct AnimationPreviewActionOutcome
     friend bool operator==(const AnimationPreviewActionOutcome&, const AnimationPreviewActionOutcome&) = default;
 };
 
+// One layer's outcome on one tick: what won and why every rule did or did not,
+// and what that resolved to. The recorded half of the decision debugger.
+struct AnimationPreviewLayerRecord
+{
+    std::uint16_t Winner = kAnimNoRule;
+    GameplayTagId Behavior;
+    AnimLatchState Latch = AnimLatchState::None;
+    std::uint16_t Row = kAnimNoContent;
+    std::uint16_t Content = kAnimNoContent;
+    float TimeSeconds = 0.0f;
+    bool ContentComplete = false;
+    // One per flattened rule; empty on a request-keyed layer.
+    std::vector<AnimRuleVerdict> Verdicts;
+};
+
 // Everything observable about one tick, kept for history and compared whole
 // when a replay is checked against the take it came from.
 struct AnimationPreviewTickRecord
@@ -64,6 +82,7 @@ struct AnimationPreviewTickRecord
     std::vector<AnimRequest> Requests;
     std::vector<AnimDecisionRecord> Decisions;
     std::vector<AnimationPreviewActionOutcome> Actions;
+    std::vector<AnimationPreviewLayerRecord> Layers;
 };
 
 [[nodiscard]] bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a,
@@ -75,7 +94,10 @@ public:
     // `vocabulary` installs the project's gameplay vocabulary into each
     // preview World -- the names content and scenarios may resolve against.
     // Nothing a scenario names is ever registered on its behalf.
+    // `clips` gives slot rows their content; without it rigs bind but resolve
+    // nothing.
     explicit AnimationPreviewSession(const DataAssetCache& data,
+                                     const AnimationClipCache* clips = nullptr,
                                      std::function<void(World&)> vocabulary = {});
     ~AnimationPreviewSession();
 
@@ -112,6 +134,13 @@ public:
     // The facts the next tick would produce, from a disposable copy of this
     // tick's state and the edits scheduled for it. Commits nothing.
     [[nodiscard]] std::vector<std::uint32_t> PreviewNextTick();
+    // Per layer, how every rule would fare next tick, from the same
+    // disposable copies. What a changed fact or an edited rule does, shown
+    // before time moves.
+    [[nodiscard]] std::vector<std::vector<AnimRuleVerdict>> ExplainNextTick();
+    // Re-resolves the rig after one of its assets changed in the cache, so
+    // panels read the new binding before the next tick runs.
+    void Rebind();
 
     [[nodiscard]] bool IsOpen() const { return Preview != nullptr; }
     [[nodiscard]] bool IsPlaying() const { return Playing; }
@@ -129,6 +158,8 @@ public:
     [[nodiscard]] bool FactsExact() const;
     [[nodiscard]] const AnimRequestSet* Requests() const;
     [[nodiscard]] const AnimDecisionLog* DecisionLog() const;
+    [[nodiscard]] const AnimSelectorState* Selection() const;
+    [[nodiscard]] const AnimContentState* Content() const;
     [[nodiscard]] const std::deque<AnimationPreviewTickRecord>& History() const { return Records; }
     // The rig's diagnostics, then the scenario's, deduplicated.
     [[nodiscard]] std::vector<AnimDiagnostic> Problems() const;
@@ -176,6 +207,7 @@ private:
     [[nodiscard]] std::string ScenarioField(std::size_t actionIndex, std::string_view key) const;
 
     const DataAssetCache& Data;
+    const AnimationClipCache* Clips = nullptr;
     std::function<void(World&)> Vocabulary;
 
     AnimationScenario Working;

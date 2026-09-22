@@ -1,7 +1,12 @@
 #include <anim/AnimRigData.h>
 
+#include "AnimSchemaFields.h"
+
+#include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
 #include <anim/AnimRequestSchema.h>
+#include <anim/AnimSelectorData.h>
+#include <anim/AnimSlotMapData.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
@@ -11,26 +16,8 @@
 
 namespace
 {
-    DataFieldSchema Field(std::string key, DataFieldKind kind, std::string display,
-                          std::string summary, bool required)
-    {
-        DataFieldSchema field;
-        field.Key = std::move(key);
-        field.Kind = kind;
-        field.DisplayName = std::move(display);
-        field.Summary = std::move(summary);
-        field.Required = required;
-        return field;
-    }
-
-    DataFieldSchema DataRef(std::string key, std::string display, std::string summary,
-                            std::string_view subtype)
-    {
-        DataFieldSchema field = Field(std::move(key), DataFieldKind::DataAssetRef,
-                                      std::move(display), std::move(summary), false);
-        field.Reference.DataSubtype = std::string(subtype);
-        return field;
-    }
+    using AnimSchema::DataRef;
+    using AnimSchema::Field;
 
     DataSchema MakeSchema()
     {
@@ -59,6 +46,11 @@ namespace
         weight.Numeric.Minimum = 0.0;
         weight.Numeric.Maximum = 1.0;
         layer.Children.push_back(std::move(weight));
+        layer.Children.push_back(DataRef("selector", "Selector",
+                                         "Chooses the layer's behavior. None makes it request-keyed.",
+                                         kAnimSelectorType));
+        layer.Children.push_back(Field("idle", DataFieldKind::GameplayTag, "Idle behavior",
+                                       "Played when nothing is selected or requested.", false));
         DataFieldSchema layers = Field("layers", DataFieldKind::Array, "Layers",
                                        "Composed in order, at most eight.", true);
         layers.Editor.Widget = "cards";
@@ -78,6 +70,20 @@ namespace
                     kAnimRequestSchemaType),
             std::move(capacity),
             std::move(layers),
+            AnimSchema::ArrayOf("behaviors", "Behavior sets",
+                                "In order; a later set overrides an earlier one by tag.",
+                                DataRef({}, "Behavior set", {}, kAnimBehaviorSetType, true)),
+            AnimSchema::ArrayOf("slot_maps", "Slot maps", "The base map first, then overlays.",
+                                DataRef({}, "Slot map", {}, kAnimSlotMapType, true)),
+            AnimSchema::ArrayOf("extensions", "Extension bindings",
+                                "Selectors bound to the extension points rules expose.",
+                                AnimSchema::Record({}, "Extension", {},
+                                    {
+                                        Field("name", DataFieldKind::String, "Name",
+                                              "The extension point's name.", true),
+                                        DataRef("selector", "Selector", "The rules it contributes.",
+                                                kAnimSelectorType, true),
+                                    })),
         };
         return schema;
     }
@@ -139,7 +145,54 @@ namespace
                                                             : AnimLayerMode::Override;
             if (const JsonValue* weight = layers[i].Find("weight"))
                 layer.Weight = static_cast<float>(weight->AsNumber());
+            if (const JsonValue* selector = layers[i].Find("selector");
+                selector != nullptr && selector->IsString() && !selector->AsString().empty())
+            {
+                layer.SelectorPath = selector->AsString();
+                result.Dependencies.push_back(AssetRef{ AssetType::Data, layer.SelectorPath });
+            }
+            if (const JsonValue* idle = layers[i].Find("idle"); idle != nullptr && idle->IsString())
+            {
+                layer.Idle = idle->AsString();
+                if (!layer.Idle.empty() && !tagSyntax.RegisterTag(layer.Idle, &error))
+                {
+                    result.Error = path + ".idle " + error.Message;
+                    return result;
+                }
+            }
             rig->Layers.push_back(std::move(layer));
+        }
+
+        const auto paths = [&](std::string_view key, std::vector<std::string>& out) {
+            if (const JsonValue* list = data.Find(key); list != nullptr && list->IsArray())
+            {
+                for (const JsonValue& path : list->AsArray())
+                {
+                    out.push_back(path.AsString());
+                    result.Dependencies.push_back(AssetRef{ AssetType::Data, out.back() });
+                }
+            }
+        };
+        paths("behaviors", rig->BehaviorSetPaths);
+        paths("slot_maps", rig->SlotMapPaths);
+
+        if (const JsonValue* extensions = data.Find("extensions"); extensions != nullptr && extensions->IsArray())
+        {
+            for (std::size_t i = 0; i < extensions->AsArray().size(); ++i)
+            {
+                const JsonValue& entry = extensions->AsArray()[i];
+                AnimRigExtension extension{ entry.Find("name")->AsString(),
+                                            entry.Find("selector")->AsString() };
+                if (std::any_of(rig->Extensions.begin(), rig->Extensions.end(),
+                                [&](const AnimRigExtension& other) { return other.Name == extension.Name; }))
+                {
+                    result.Error = std::format("$.data.extensions[{}].name '{}' is bound twice.", i,
+                                               extension.Name);
+                    return result;
+                }
+                result.Dependencies.push_back(AssetRef{ AssetType::Data, extension.SelectorPath });
+                rig->Extensions.push_back(std::move(extension));
+            }
         }
 
         result.Value = std::move(rig);

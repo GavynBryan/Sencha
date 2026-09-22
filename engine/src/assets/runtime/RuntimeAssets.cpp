@@ -1,9 +1,12 @@
 #include <assets/runtime/RuntimeAssets.h>
 
 #include <assets/runtime/RegisterAssetKind.h>
+#include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
+#include <anim/AnimSelectorData.h>
+#include <anim/AnimSlotMapData.h>
 #include <authored/VerbBindingData.h>
 #include <core/logging/LoggingProvider.h>
 #include <input/InputProfileData.h>
@@ -90,6 +93,9 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterAnimRequestSchema(DataTypes, DataSchemas);
     RegisterAnimFactSchema(DataTypes, DataSchemas);
     RegisterAnimRigData(DataTypes, DataSchemas);
+    RegisterAnimBehaviorSet(DataTypes, DataSchemas);
+    RegisterAnimSelectorData(DataTypes, DataSchemas);
+    RegisterAnimSlotMapData(DataTypes, DataSchemas);
 
     // A reference store is its own stager and store, so it takes the mesh
     // kind whole; the real loader stages against a cache this composition

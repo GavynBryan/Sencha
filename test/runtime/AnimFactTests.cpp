@@ -56,7 +56,7 @@ namespace
             Entities.RegisterComponent<SupportState>();
             Entities.RegisterComponent<KinematicState>();
             InstallAnimationVocabulary(Entities);
-            Entities.SetResource(AnimRigBindings{ &Data });
+            Entities.SetResource(AnimRigBindings{ &Data, nullptr });
 
             (void)Load("asset://animation/engine.facts.sdata", kAnimFactSchemaType, kCore);
         }

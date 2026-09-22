@@ -1,6 +1,6 @@
 #include "ui/AnimationSimulationPanels.h"
 
-#include "AnimationPreviewWorkspace.h"
+#include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigOutline.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"

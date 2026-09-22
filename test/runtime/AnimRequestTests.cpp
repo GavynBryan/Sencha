@@ -218,7 +218,7 @@ TEST(AnimRequests, TheWorldFormRefusesIntentsTheRigDoesNotDeclare)
     DataAssetCache data;
     RegisterAnimRequestSchema(types, schemas);
     RegisterAnimRigData(types, schemas);
-    fx.Entities.SetResource(AnimRigBindings{ &data });
+    fx.Entities.SetResource(AnimRigBindings{ &data, nullptr });
     (void)fx.Tag("anim.intent.reload");
     (void)fx.Tag("anim.intent.undeclared");
 

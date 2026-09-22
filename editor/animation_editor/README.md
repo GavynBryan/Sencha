@@ -105,6 +105,44 @@ landing-and-reload scenario beside it:
 animation_editor --project test/fixtures/content/animation_preview.senchaproj
 ```
 
+## Selection: rules, behaviors, slot maps, decisions
+
+With a rig open, each simulated tick runs the runtime's selection and content
+resolution and records why every rule did or did not win.
+
+- **Rules** lists the layer's flattened selector in evaluation order: band,
+  enter and stay (read from where each row was authored, however deeply it was
+  delegated), behavior, and this tick's verdict -- winner (entered or stayed),
+  a failed row with the value it read, cooldown, blocked by latch, blocked by
+  hold, or not reached. While paused, *Show next tick* explains the next tick
+  from disposable copies, so an edited fact or rule shows its effect before
+  time moves. With a selector document active, the same panel edits it: rules,
+  priority, behavior, hold and cooldown, and a typed predicate builder whose
+  rows pick facts, requests and parameters from the bound rig.
+- **Behavior** shows the selected behavior's policy (kind, blend, latch and
+  what may interrupt it, late join), the rules that select it and the rows that
+  resolve it.
+- **Slot map** shows the rig's merged rows -- priority, then stack order -- with
+  each row's source and which layer is playing it now. *Audition this clip*
+  switches the viewport to the clip without touching the simulation; the
+  viewport's Simulation/Audition switch goes back.
+- **Decisions** shows the live tick or, with Live unchecked, any recorded tick:
+  each layer's winner, latch, content and time, every rule's verdict, and the
+  decision records written on that tick. Inspecting history never changes the
+  live session.
+
+Picking a rule, behavior, row or clip in any of these moves one shared
+navigation state and nothing else. Valid edits to any open animation document
+reach the running preview as soon as they are committed (and on undo or redo);
+an invalid working edit leaves the preview on the last valid version and says
+so. Only Save writes the file.
+
+The fixture rig now carries a locomotion selector with a stay-hysteresis sprint,
+a latched landing and a request-latched reload. Its content is the fixture's one
+cooked clip on every row, so the rules and decisions change visibly while the
+pose does not; `AnimationSelectionEditingTests.cpp` covers content switching
+headlessly.
+
 Not yet: tag-set (tag container) inputs, selectors and content resolution,
 recorded-tick inspection without replay, and loading a project's module
 vocabulary. `AnimationPreviewSessionTests.cpp` covers the session headlessly:
@@ -139,9 +177,10 @@ These are required implementation work, not capabilities of the current editor:
    project's module vocabulary in the preview World, skeletal joint identity,
    and clip event/root metadata formats (landing with their consumers in
    stages 3, 4 and 7).
-2. Flat selectors, behaviors and slot overlays, with live winner/failure views,
-   typed predicates, cross-asset navigation and decision history. Preserve the
-   selector-free Prop and one-layer Simple paths.
+2. Remaining from the selection stage: a behavior-set and slot-map pane (they
+   edit in Data Editor today, and valid edits there still need a reload here),
+   the predicate text form, and request-anchored content time for combos that
+   supersede without a winner change (arrives with anchors in stage 4).
 3. Timeline marks using authored binding keys and typed inputs, with the bounded
    owner-thread invocation drain, explicit preview authority, recorder bindings,
    suppression/skipping diagnostics, and binding revision refresh.

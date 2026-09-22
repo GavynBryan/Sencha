@@ -1,6 +1,6 @@
 #include "AnimationEditorApp.h"
 
-#include "AnimationPreviewWorkspace.h"
+#include "authoring/AnimationPreviewWorkspace.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "ui/AnimationPreviewPanels.h"
 #include "ui/AnimationDocumentActions.h"

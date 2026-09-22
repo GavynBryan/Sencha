@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimSelectorState.h>
 #include <anim/AnimTypes.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
@@ -79,18 +80,18 @@ struct SENCHA_COMPONENT("sencha.anim_fact_history") AnimFactHistory
     std::uint64_t BindingGeneration = 0;
 };
 
-// Every fact slot needs a place to keep derivation memory, so storage brings
-// its history with it.
+// Facts make an entity Simple or more: storage brings the history its
+// derivations keep and the selector state its rules decide into.
 template <>
 struct ComponentTraits<AnimFacts>
 {
-    using DerivedComponents = std::tuple<AnimFactHistory>;
+    using DerivedComponents = std::tuple<AnimFactHistory, AnimSelectorState>;
 };
 
 template <>
 struct ComponentTraits<AnimFactsLarge>
 {
-    using DerivedComponents = std::tuple<AnimFactHistory>;
+    using DerivedComponents = std::tuple<AnimFactHistory, AnimSelectorState>;
 };
 
 #if !defined(SENCHA_CODEGEN)

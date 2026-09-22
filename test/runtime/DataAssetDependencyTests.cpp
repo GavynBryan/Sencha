@@ -93,3 +93,16 @@ TEST(DataAssetDependencies, AReloadSwapsTheHeldSet)
     EXPECT_TRUE(chain.Resident("asset://animation/other.facts.sdata"));
     EXPECT_FALSE(chain.Resident("asset://animation/base.facts.sdata"));
 }
+
+TEST(DataAssetDependencies, ACycleFailsInsteadOfRecursing)
+{
+    SchemaChain chain;
+    chain.Write("left.facts.sdata", R"({ "type": "animation.fact_schema", "version": 1,
+        "data": { "extends": "asset://animation/right.facts.sdata", "slots": [] } })");
+    chain.Write("right.facts.sdata", R"({ "type": "animation.fact_schema", "version": 1,
+        "data": { "extends": "asset://animation/left.facts.sdata", "slots": [] } })");
+    (void)ScanAssetsDirectory(chain.Root.generic_string(), chain.Assets.Registry,
+                              chain.Assets.Assets.Kinds());
+    EXPECT_FALSE(chain.Assets.Assets.LoadLease("asset://animation/left.facts.sdata", AssetType::Data));
+    EXPECT_FALSE(chain.Resident("asset://animation/right.facts.sdata"));
+}

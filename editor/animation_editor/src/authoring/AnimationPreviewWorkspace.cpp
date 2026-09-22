@@ -1,15 +1,21 @@
-#include "AnimationPreviewWorkspace.h"
+#include "authoring/AnimationPreviewWorkspace.h"
 
-#include <assets/runtime/RuntimeAssets.h>
-#include <assets/data/DataAssetSubtype.h>
+#include <anim/AnimBehaviorSet.h>
+#include <anim/AnimFactSchema.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
+#include <anim/AnimSelectorData.h>
+#include <anim/AnimSlotMapData.h>
+#include <anim/AnimationClipSampling.h>
+#include <anim/SkinningPalette.h>
+#include <assets/data/DataAssetSubtype.h>
+#include <assets/runtime/RuntimeAssets.h>
 
 #include <algorithm>
 #include <filesystem>
 
 AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets)
-    : Simulation(assets.DataAssets)
+    : Simulation(assets.DataAssets, &assets.AnimationClips)
     , Assets(assets)
 {
     Material material;
@@ -28,6 +34,10 @@ void AnimationPreviewWorkspace::RefreshBrowser()
     MaterialPaths.clear();
     RequestSchemaPaths.clear();
     RigPaths.clear();
+    SelectorPaths.clear();
+    BehaviorSetPaths.clear();
+    SlotMapPaths.clear();
+    FactSchemaPaths.clear();
     for (const auto& [path, record] : Assets.Registry.Records())
     {
         if (record.Type == AssetType::SkinnedMesh)
@@ -38,39 +48,133 @@ void AnimationPreviewWorkspace::RefreshBrowser()
             ClipPaths.push_back(path);
         else if (record.Type == AssetType::Material)
             MaterialPaths.push_back(path);
-        else if (record.Type == AssetType::Data
-            && PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record) == kAnimRequestSchemaType)
-            RequestSchemaPaths.push_back(path);
-        else if (record.Type == AssetType::Data
-            && PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record) == kAnimRigType)
-            RigPaths.push_back(path);
+        else if (record.Type == AssetType::Data)
+        {
+            const std::string subtype = PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record);
+            if (subtype == kAnimRequestSchemaType)
+                RequestSchemaPaths.push_back(path);
+            else if (subtype == kAnimRigType)
+                RigPaths.push_back(path);
+            else if (subtype == kAnimSelectorType)
+                SelectorPaths.push_back(path);
+            else if (subtype == kAnimBehaviorSetType)
+                BehaviorSetPaths.push_back(path);
+            else if (subtype == kAnimSlotMapType)
+                SlotMapPaths.push_back(path);
+            else if (subtype == kAnimFactSchemaType)
+                FactSchemaPaths.push_back(path);
+        }
     }
     for (auto* paths : { &MeshPaths, &SkeletonPaths, &ClipPaths, &MaterialPaths, &RequestSchemaPaths,
-                         &RigPaths })
+                         &RigPaths, &SelectorPaths, &BehaviorSetPaths, &SlotMapPaths, &FactSchemaPaths })
         std::sort(paths->begin(), paths->end());
 }
 
-bool AnimationPreviewWorkspace::OpenRequestSchema(const std::string& path)
+bool AnimationPreviewWorkspace::OpenAnimationDocument(const std::string& path)
 {
-    for (std::size_t i = 0; i < Documents.size(); ++i)
-        if (Documents[i]->VirtualPath() == path) { SelectDocument(i); return true; }
+    if (DataDocument* open = FindDocument(path))
+    {
+        for (std::size_t i = 0; i < Documents.size(); ++i)
+            if (Documents[i].get() == open)
+                SelectDocument(i);
+        return true;
+    }
     const auto* record = Assets.Registry.FindByPath(path);
     if (!record || record->Type != AssetType::Data)
     {
-        DocumentError = "The request schema is not registered in this project.";
+        DocumentError = "The asset is not registered in this project.";
         return false;
     }
     auto document = DataDocument::Open(record->FilePath, path, Assets.DataTypes,
                                       Assets.DataSchemas, &DocumentError);
     if (!document) return false;
-    if (document->Subtype() != kAnimRequestSchemaType)
+    static constexpr std::string_view kEditable[] = { kAnimRequestSchemaType, kAnimRigType, kAnimSelectorType,
+                                                      kAnimBehaviorSetType, kAnimSlotMapType, kAnimFactSchemaType };
+    if (std::find(std::begin(kEditable), std::end(kEditable), document->Subtype()) == std::end(kEditable))
     {
-        DocumentError = "Select an animation.request_schema asset.";
+        DocumentError = "Select an animation asset: a rig, schema, behavior set, selector or slot map.";
         return false;
     }
     Documents.push_back(std::move(document));
     SelectDocument(Documents.size() - 1);
     DocumentError.clear();
+    return true;
+}
+
+DataDocument* AnimationPreviewWorkspace::FindDocument(std::string_view path)
+{
+    for (const auto& document : Documents)
+        if (document->VirtualPath() == path)
+            return document.get();
+    return nullptr;
+}
+
+DataDocument* AnimationPreviewWorkspace::ActiveDocumentOf(std::string_view subtype)
+{
+    if (ActiveDocument >= Documents.size() || Documents[ActiveDocument]->Subtype() != subtype)
+        return nullptr;
+    return Documents[ActiveDocument].get();
+}
+
+void AnimationPreviewWorkspace::CommitDocumentEdit(DataDocument& document)
+{
+    document.CommitEdit();
+    DocumentChanged(document);
+}
+
+void AnimationPreviewWorkspace::DocumentChanged(DataDocument& document)
+{
+    ValidateDocument(document);
+    std::string status;
+    if (!document.IsSemanticallyValid())
+        status = "The working version has errors; the preview keeps the last valid version.";
+    else if (ApplyDocumentToPreview(document, status))
+        Simulation.Rebind();
+    PreviewStatus[document.VirtualPath()] = std::move(status);
+}
+
+bool AnimationPreviewWorkspace::ApplyDocumentToPreview(DataDocument& document, std::string& status)
+{
+    // The preview's cache is this editor's own: replacing a value here is how
+    // an edit reaches the simulation, and it never touches the file.
+    const DataAssetHandle handle = Assets.DataAssets.Find(document.VirtualPath());
+    if (!handle.IsValid())
+    {
+        status = "Not loaded by the open rig; nothing in the preview uses it yet.";
+        return false;
+    }
+    const DataAssetTypeRegistration* type = Assets.DataTypes.Find(document.Subtype());
+    const JsonValue* data = document.Data();
+    if (type == nullptr || data == nullptr)
+    {
+        status = "Not an animation asset the preview understands.";
+        return false;
+    }
+    DataAssetCompileResult compiled = type->Compile(*data);
+    if (!compiled.IsValid())
+    {
+        status = "The working version does not compile (" + compiled.Error
+            + "); the preview keeps the last valid version.";
+        return false;
+    }
+    std::vector<AssetLease> dependencies;
+    for (const AssetRef& dependency : compiled.Dependencies)
+    {
+        AssetLease lease = Assets.Assets.LoadLease(dependency.Path, dependency.Type);
+        if (!lease)
+        {
+            status = "'" + dependency.Path + "' does not load; the preview keeps the last valid version.";
+            return false;
+        }
+        dependencies.push_back(std::move(lease));
+    }
+    if (!Assets.DataAssets.ReloadInPlace(document.VirtualPath(), document.Subtype(), compiled.Value,
+                                         std::move(dependencies)))
+    {
+        status = "The preview could not take the new version.";
+        return false;
+    }
+    status = "The preview runs the working version.";
     return true;
 }
 
@@ -119,6 +223,8 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
     ScenarioFile = sidecar.string();
     ScenarioError.clear();
     (void)Simulation.Open(std::move(scenario));
+    ViewportSource = AnimationViewportSource::Simulation;
+    Navigation = AnimationNavigation{};
     if (!rig->SkeletonPath.empty() && Session.SkeletonPath() != rig->SkeletonPath && MeshPath.empty())
         (void)SelectSkeleton(rig->SkeletonPath);
     return true;
@@ -253,6 +359,9 @@ bool AnimationPreviewWorkspace::SelectSkeleton(const std::string& path)
 
 bool AnimationPreviewWorkspace::SelectClip(const std::string& path)
 {
+    // Picking a clip by hand is auditioning it; the simulation keeps running
+    // underneath, untouched, and the viewport switches back when asked.
+    ViewportSource = AnimationViewportSource::Audition;
     if (path.empty())
     {
         if (Session.Skeleton().Joints.empty())
@@ -330,7 +439,7 @@ void AnimationPreviewWorkspace::Frame(double wallSeconds)
     if (!geometry)
         return;
     Scene.Bounds = geometry->LocalBounds;
-    const auto& palette = Session.Palette();
+    const auto& palette = ViewportPalette();
     // This viewport owns its pose cache and one instance. Scope is nonzero to
     // keep this editor identity distinct from runtime entity namespaces.
     const auto slot = Scene.Poses->AppendInstance(mesh, RenderEntityKey{ .Scope = 1, .Entity = {} },
@@ -358,4 +467,47 @@ void AnimationPreviewWorkspace::Frame(double wallSeconds)
             Scene.Queue.AddOpaque(item);
     }
     Scene.Queue.SortOpaque();
+}
+
+const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
+{
+    if (ViewportSource != AnimationViewportSource::Simulation || !Simulation.IsOpen())
+    {
+        ViewportNote.clear();
+        return Session.Palette();
+    }
+    // The first layer's resolved content at its content time, sampled into
+    // scratch: the audition's clip and clock are left as they were.
+    const SkeletonData& skeleton = Session.Skeleton();
+    const AnimBoundRig* rig = Simulation.Rig();
+    const AnimContentState* content = Simulation.Content();
+    const AnimationClipData* clip = nullptr;
+    float time = 0.0f;
+    if (rig != nullptr && content != nullptr && !rig->Layers.empty())
+    {
+        const AnimLayerContent& layer = content->Layers[0];
+        if (layer.Content < rig->Contents.size())
+        {
+            const AnimBoundContent& bound = rig->Contents[layer.Content];
+            clip = Assets.AnimationClips.Get(bound.Clip);
+            time = layer.TimeSeconds;
+            ViewportNote = bound.Path;
+        }
+    }
+    if (clip != nullptr && clip->SkeletonPath != Session.SkeletonPath())
+    {
+        ViewportNote = "The resolved clip poses a different skeleton than the one on screen; showing the bind pose.";
+        clip = nullptr;
+    }
+    if (clip != nullptr)
+    {
+        SampleAnimationClip(*clip, skeleton, time, SimulationLocal);
+        BuildPosedModelTransforms(skeleton, SimulationLocal, SimulationModel);
+    }
+    else
+    {
+        BuildBindModelTransforms(skeleton, SimulationModel);
+    }
+    BuildSkinningPalette(skeleton, SimulationModel, SimulationPalette);
+    return SimulationPalette;
 }

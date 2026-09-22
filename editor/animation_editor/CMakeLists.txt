@@ -1,8 +1,11 @@
 add_library(animation_authoring STATIC
     src/authoring/AnimationClipPreviewSession.cpp
+    src/authoring/AnimationPredicateText.cpp
     src/authoring/AnimationPreviewSession.cpp
+    src/authoring/AnimationPreviewWorkspace.cpp
     src/authoring/AnimationRigOutline.cpp
-    src/authoring/AnimationScenario.cpp)
+    src/authoring/AnimationScenario.cpp
+    src/authoring/AnimationSelectorEdits.cpp)
 target_link_libraries(animation_authoring PUBLIC editor_common)
 target_include_directories(animation_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 sencha_warnings(animation_authoring)
@@ -10,11 +13,11 @@ sencha_warnings(animation_authoring)
 add_executable(animation_editor
     src/main.cpp
     src/AnimationEditorApp.cpp
-    src/AnimationPreviewWorkspace.cpp
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
     src/ui/AnimationDocumentActions.cpp
     src/ui/AnimationRequestSchemaPanel.cpp
+    src/ui/AnimationSelectionPanels.cpp
     src/ui/AnimationSimulationPanels.cpp)
 target_link_libraries(animation_editor PRIVATE animation_authoring editor_common)
 sencha_warnings(animation_editor)

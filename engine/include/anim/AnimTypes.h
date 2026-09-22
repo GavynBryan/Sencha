@@ -26,6 +26,14 @@ inline constexpr std::size_t kAnimRequestParams = 4;
 inline constexpr std::size_t kAnimFactsSmall = 16;
 inline constexpr std::size_t kAnimFactsLarge = 64;
 
+// Most rules with a cooldown one layer's flattened selector may hold. Cooldown
+// expiry is per-entity state, and fixed state needs a fixed count.
+inline constexpr std::size_t kAnimCooldownSlots = 4;
+
+// No rule is winning; no row or content resolved.
+inline constexpr std::uint16_t kAnimNoRule = 0xFFFF;
+inline constexpr std::uint16_t kAnimNoContent = 0xFFFF;
+
 // Every temporal derivation's window is bounded by this, enforced when the
 // schema compiles. It is the horizon after which every derived fact is exact
 // for an entity observed from scratch, which is what late join relies on.

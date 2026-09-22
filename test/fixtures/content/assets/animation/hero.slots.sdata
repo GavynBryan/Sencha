@@ -1,0 +1,32 @@
+{
+    "type": "animation.slot_map",
+    "version": 1,
+    "data": {
+        "rows": [
+            {
+                "behavior": "Anim.Locomotion.Idle",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "behavior": "Anim.Locomotion.Walk",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "behavior": "Anim.Locomotion.Sprint",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "behavior": "Anim.Action.Land",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "behavior": "Anim.Action.Reload",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "behavior": "Anim.Reload",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            }
+        ]
+    }
+}

@@ -57,4 +57,6 @@ private:
     DataAssetTypeRegistry* Types = nullptr;
     DataSchemaRegistry* Schemas = nullptr;
     DataAssetCache* Cache = nullptr;
+    // Paths whose commit is loading its dependencies, outermost first.
+    std::vector<std::string> Committing;
 };

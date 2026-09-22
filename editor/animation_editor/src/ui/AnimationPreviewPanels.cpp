@@ -1,7 +1,8 @@
 #include "AnimationPreviewPanels.h"
 
-#include "AnimationPreviewWorkspace.h"
+#include "authoring/AnimationPreviewWorkspace.h"
 #include "ui/AnimationRequestSchemaPanel.h"
+#include "ui/AnimationSelectionPanels.h"
 #include "ui/AnimationSimulationPanels.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "ui/EditorUiFeature.h"
@@ -27,11 +28,27 @@ public:
         if (!IsVisible()) return;
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
-        ImGui::TextWrapped("Preview selections are transient. Request schemas open as editable documents.");
+        ImGui::TextWrapped("Preview selections are transient. Animation documents open for editing; valid edits reach the running preview at once and the file only when saved.");
         if (ImGui::Button("Refresh asset list")) Workspace.RefreshBrowser();
-        if (ImGui::CollapsingHeader("Request schemas", ImGuiTreeNodeFlags_DefaultOpen))
-            for (const auto& path : Workspace.RequestSchemaPaths)
-                if (ImGui::Selectable(path.c_str())) Workspace.OpenRequestSchema(path);
+        if (ImGui::CollapsingHeader("Animation documents", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            const std::pair<const char*, const std::vector<std::string>*> kinds[] = {
+                { "Selectors", &Workspace.SelectorPaths },
+                { "Behavior sets", &Workspace.BehaviorSetPaths },
+                { "Slot maps", &Workspace.SlotMapPaths },
+                { "Fact schemas", &Workspace.FactSchemaPaths },
+                { "Request schemas", &Workspace.RequestSchemaPaths },
+                { "Rigs (as documents)", &Workspace.RigPaths },
+            };
+            for (const auto& [title, paths] : kinds)
+            {
+                if (paths->empty() || !ImGui::TreeNode(title))
+                    continue;
+                for (const auto& path : *paths)
+                    if (ImGui::Selectable(path.c_str())) Workspace.OpenAnimationDocument(path);
+                ImGui::TreePop();
+            }
+        }
         DrawAssets("Skinned meshes", Workspace.MeshPaths, Workspace.MeshPath,
                    &AnimationPreviewWorkspace::SelectMesh);
         DrawAssets("Skeletons (without mesh)", Workspace.SkeletonPaths, Workspace.Session.SkeletonPath(),
@@ -63,7 +80,11 @@ private:
 class PreviewViewportPanel final : public IEditorPanel
 {
 public:
-    explicit PreviewViewportPanel(AnimationPreviewRenderFeature*& viewport) : Viewport(viewport) {}
+    PreviewViewportPanel(AnimationPreviewRenderFeature*& viewport, AnimationPreviewWorkspace& workspace)
+        : Viewport(viewport)
+        , Workspace(workspace)
+    {
+    }
     std::string_view GetTitle() const override { return "Animated rig preview"; }
     PanelPersistence GetPersistence() const override { return { "animation.viewport" }; }
     DockSlot GetDockSlot() const override { return DockSlot::Center; }
@@ -79,7 +100,18 @@ public:
         }
         if (ImGui::Button("Frame mesh")) Viewport->FrameSubject();
         ImGui::SameLine();
+        if (Workspace.Simulation.IsOpen())
+        {
+            int source = static_cast<int>(Workspace.ViewportSource);
+            ImGui::RadioButton("Audition", &source, 0);
+            ImGui::SameLine();
+            ImGui::RadioButton("Simulation", &source, 1);
+            Workspace.ViewportSource = static_cast<AnimationViewportSource>(source);
+            ImGui::SameLine();
+        }
         ImGui::TextDisabled("Drag to orbit; wheel to zoom");
+        if (Workspace.ViewportSource == AnimationViewportSource::Simulation && !Workspace.ViewportNote.empty())
+            ImGui::TextWrapped("%s", Workspace.ViewportNote.c_str());
         const auto size = ImGui::GetContentRegionAvail();
         if (size.x < 8.0f || size.y < 8.0f) return;
         const auto texture = Viewport->Display({ static_cast<std::uint32_t>(size.x),
@@ -100,6 +132,7 @@ private:
     // Setup may refuse the staged feature. The host clears this slot before
     // any panel draws, while the panel remains available to explain failure.
     AnimationPreviewRenderFeature*& Viewport;
+    AnimationPreviewWorkspace& Workspace;
 };
 
 class PreviewTransportPanel final : public IEditorPanel
@@ -188,10 +221,11 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
                                AnimationPreviewRenderFeature*& viewport)
 {
     ui.AddPanel(std::make_unique<PreviewAssetsPanel>(workspace));
-    ui.AddPanel(std::make_unique<PreviewViewportPanel>(viewport));
+    ui.AddPanel(std::make_unique<PreviewViewportPanel>(viewport, workspace));
     ui.AddPanel(std::make_unique<PreviewTransportPanel>(workspace.Session));
     ui.AddPanel(std::make_unique<PreviewDetailsPanel>(workspace));
     AddAnimationSimulationPanels(ui, workspace);
+    AddAnimationSelectionPanels(ui, workspace);
     auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace);
     auto* requestSchemaPanel = requestSchema.get();
     ui.AddPanel(std::move(requestSchema));

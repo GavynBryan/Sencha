@@ -1,0 +1,16 @@
+{
+    "type": "animation.selector",
+    "version": 1,
+    "data": {
+        "rules": [
+            { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Locomotion.Idle" },
+            { "name": "walk", "priority": 10, "enter": [ { "fact": "Speed", "compare": "gt", "value": 0.1 } ],
+              "behavior": "Anim.Locomotion.Walk" },
+            { "name": "sprint", "priority": 20, "enter": [ { "fact": "Speed", "compare": "gt", "value": 2.2 } ],
+              "stay": [ { "fact": "Speed", "compare": "gt", "value": 1.8 } ], "behavior": "Anim.Locomotion.Sprint" },
+            { "name": "land", "priority": 40, "enter": [ { "fact": "JustLanded" } ], "behavior": "Anim.Action.Land" },
+            { "name": "reload", "priority": 50, "enter": [ { "request": "Anim.Reload" } ],
+              "behavior": "Anim.Action.Reload" }
+        ]
+    }
+}
