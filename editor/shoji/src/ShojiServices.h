@@ -1,7 +1,7 @@
 #pragma once
 
 #include "authoring/DocumentLibrary.h"
-#include "authoring/VocabularyCatalog.h"
+#include "vocabulary/VocabularyCatalog.h"
 #include "authoring/UiPreviewSession.h"
 #include "ui/PreviewViewState.h"
 

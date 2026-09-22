@@ -1,4 +1,4 @@
-#include "authoring/VocabularyCatalog.h"
+#include "vocabulary/VocabularyCatalog.h"
 
 #include <app/EngineVerbs.h>
 #include <app/Game.h>

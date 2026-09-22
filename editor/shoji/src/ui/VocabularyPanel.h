@@ -1,6 +1,6 @@
 #pragma once
 
-#include "authoring/VocabularyCatalog.h"
+#include "vocabulary/VocabularyCatalog.h"
 
 #include "ui/IEditorPanel.h"
 

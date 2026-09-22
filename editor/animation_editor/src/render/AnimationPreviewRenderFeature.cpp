@@ -58,22 +58,20 @@ ImTextureID AnimationPreviewRenderFeature::Display(VkExtent2D extent)
 
 void AnimationPreviewRenderFeature::Orbit(float yaw, float pitch)
 {
-    Yaw += yaw;
-    Pitch = std::clamp(Pitch + pitch, -1.5f, 1.5f);
+    Camera.Orbit(yaw, pitch);
 }
 
 void AnimationPreviewRenderFeature::Zoom(float delta)
 {
-    Distance = std::clamp(Distance * std::exp(-delta * 0.1f), Radius * 0.1f, Radius * 100.0f);
+    Camera.Zoom(delta);
 }
 
 void AnimationPreviewRenderFeature::FrameSubject()
 {
     if (!Scene.Bounds.IsValid())
         return;
-    Center = Scene.Bounds.Center();
     Radius = std::max(0.01f, Scene.Bounds.HalfExtent().Magnitude());
-    Distance = Radius * 3.0f;
+    Camera.Frame(Scene.Bounds.Center(), Radius);
 }
 
 void AnimationPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
@@ -101,17 +99,10 @@ void AnimationPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
     desc.Phase = RenderPhase::Offscreen;
     const RenderScope rendering(frame, desc);
 
-    const Vec3d eye = Center + Vec3d(Distance * std::cos(Pitch) * std::sin(Yaw),
-                                    Distance * std::sin(Pitch),
-                                    Distance * std::cos(Pitch) * std::cos(Yaw));
-    CameraRenderData camera;
-    camera.Position = eye;
-    camera.View = Mat4::MakeLookAt(eye, Center, Vec3d(0.0f, 1.0f, 0.0f));
     const float aspect = static_cast<float>(target->Extent.width)
                        / static_cast<float>(target->Extent.height);
-    camera.Projection = MakeVulkanPerspective(0.9f, aspect, Radius * 0.01f, Radius * 200.0f);
-    camera.ViewProjection = camera.Projection * camera.View;
-    camera.ViewFrustum = Frustum::FromViewProjection(camera.ViewProjection);
+    const CameraRenderData camera = Camera.BuildRenderData(aspect);
+    const Vec3d eye = camera.Position;
     Lights.Reset();
     PointLightComponent light;
     light.Intensity = 8.0f * Radius * Radius;

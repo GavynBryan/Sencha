@@ -78,13 +78,12 @@ void MaterialPreviewRenderFeature::Teardown()
 
 void MaterialPreviewRenderFeature::Orbit(float yawDelta, float pitchDelta)
 {
-    Yaw += yawDelta;
-    Pitch = std::clamp(Pitch + pitchDelta, -1.5f, 1.5f);
+    Camera.Orbit(yawDelta, pitchDelta);
 }
 
 void MaterialPreviewRenderFeature::Zoom(float wheelDelta)
 {
-    Distance = std::clamp(Distance * (1.0f - wheelDelta * 0.1f), 0.6f, 8.0f);
+    Camera.Zoom(wheelDelta);
 }
 
 ImTextureID MaterialPreviewRenderFeature::Display(VkExtent2D extent)
@@ -133,16 +132,8 @@ void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
                 ? static_cast<float>(target->Extent.width) / static_cast<float>(target->Extent.height)
                 : 1.0f;
 
-            const Vec3d eye(Distance * std::cos(Pitch) * std::sin(Yaw),
-                            Distance * std::sin(Pitch),
-                            Distance * std::cos(Pitch) * std::cos(Yaw));
-
-            CameraRenderData camera;
-            camera.Position = eye;
-            camera.View = Mat4::MakeLookAt(eye, Vec3d(0.0f, 0.0f, 0.0f), Vec3d(0.0f, 1.0f, 0.0f));
-            camera.Projection = MakeVulkanPerspective(0.9f, aspect, 0.05f, 50.0f);
-            camera.ViewProjection = camera.Projection * camera.View;
-            camera.ViewFrustum = Frustum::FromViewProjection(camera.ViewProjection);
+            const CameraRenderData camera = Camera.BuildRenderData(aspect);
+            const Vec3d eye = camera.Position;
 
             // Key light rides above the camera's shoulder so orbiting keeps the lit
             // side facing the viewer.

@@ -2,6 +2,7 @@
 
 #include "AnimationPreviewScene.h"
 #include "render/ImGuiTargetPresenter.h"
+#include "viewport/OrbitCamera.h"
 
 #include <graphics/vulkan/RenderTargetStore.h>
 #include <render/feature/SkinnedPoseRenderFeature.h>
@@ -33,9 +34,6 @@ private:
     MeshForwardPass Forward;
     RenderLightSet Lights;
     RendererServices Services{};
-    Vec3d Center{};
+    OrbitCamera Camera;
     float Radius = 1.0f;
-    float Distance = 3.0f;
-    float Yaw = 0.6f;
-    float Pitch = 0.2f;
 };

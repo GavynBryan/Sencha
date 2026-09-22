@@ -27,7 +27,9 @@ class Game;
 // checks a vocabulary without acquiring the ability to quit the application
 // because a module declared the name.
 //
-// GUI-free, so a test drives it the way the panel does. The World must be
+// Shared by every tool that offers a vocabulary -- the UI previewer and the
+// animation workspace inspect the same verbs and bindings the same way. GUI-
+// free, so a test drives it the way a panel does. The World must be
 // destroyed before the module whose hook filled it is unmapped; the owner
 // orders its members accordingly.
 //=============================================================================

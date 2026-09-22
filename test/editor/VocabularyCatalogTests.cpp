@@ -1,8 +1,9 @@
-// The previewer's view of the authored vocabulary: what a document can name,
-// with a game module's names beside the engine's, and whether each record of a
-// binding asset resolves -- all without a dispatcher, so nothing here can run.
+// The shared vocabulary catalog, as the UI previewer and the animation
+// workspace use it: what a document can name, with a game module's names
+// beside the engine's, and whether each record of a binding asset resolves --
+// all without a dispatcher, so nothing here can run.
 
-#include "authoring/VocabularyCatalog.h"
+#include "vocabulary/VocabularyCatalog.h"
 
 #include <app/EngineVerbs.h>
 #include <app/Game.h>
@@ -58,7 +59,7 @@ public:
 }
 }
 
-TEST(ShojiVocabulary, TheEngineVerbsAreThereBeforeAnyModuleIs)
+TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
 {
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
@@ -69,7 +70,7 @@ TEST(ShojiVocabulary, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
 }
 
-TEST(ShojiVocabulary, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRuntime)
+TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRuntime)
 {
     VocabularyCatalog catalog;
     SpikeGame game;
@@ -84,7 +85,7 @@ TEST(ShojiVocabulary, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRuntime
     EXPECT_EQ(verbs[2].ArgumentCount, 1u);
 }
 
-TEST(ShojiVocabulary, ARecordIsReportedResolvedOrNotAndNeverLost)
+TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
 {
     VocabularyCatalog catalog;
     SpikeGame game;
@@ -112,7 +113,7 @@ TEST(ShojiVocabulary, ARecordIsReportedResolvedOrNotAndNeverLost)
     EXPECT_EQ(library.Bindings.size(), 3u);
 }
 
-TEST(ShojiVocabulary, AModulesRefusedDeclarationIsReportedNotHidden)
+TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
 {
     VocabularyCatalog catalog;
     SpikeGame game;
@@ -124,7 +125,7 @@ TEST(ShojiVocabulary, AModulesRefusedDeclarationIsReportedNotHidden)
     EXPECT_EQ(catalog.ListVerbs().size(), 2u);
 }
 
-TEST(ShojiVocabulary, TwoCatalogsAreTwoWorlds)
+TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)
 {
     VocabularyCatalog first;
     VocabularyCatalog second;
