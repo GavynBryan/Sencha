@@ -8,7 +8,9 @@ add_executable(animation_editor
     src/AnimationEditorApp.cpp
     src/AnimationPreviewWorkspace.cpp
     src/render/AnimationPreviewRenderFeature.cpp
-    src/ui/AnimationPreviewPanels.cpp)
+    src/ui/AnimationPreviewPanels.cpp
+    src/ui/AnimationDocumentActions.cpp
+    src/ui/AnimationRequestSchemaPanel.cpp)
 target_link_libraries(animation_editor PRIVATE animation_authoring editor_common)
 sencha_warnings(animation_editor)
 set_target_properties(animation_editor PROPERTIES

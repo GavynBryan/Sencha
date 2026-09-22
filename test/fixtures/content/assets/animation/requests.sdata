@@ -1,0 +1,11 @@
+{
+  "type": "animation.request_schema",
+  "version": 1,
+  "data": {
+    "intents": [
+      { "intent": "Anim.Reload", "params": [] },
+      { "intent": "Anim.Melee", "params": [{ "name": "combo", "kind": "int" }] },
+      { "intent": "Anim.Charge", "params": [{ "name": "charge", "kind": "float" }] }
+    ]
+  }
+}

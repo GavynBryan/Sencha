@@ -1,6 +1,6 @@
 #include "movement/MovementProfileEditor.h"
 
-#include "DataDocument.h"
+#include "data/DataDocument.h"
 #include "DataEditorWorkspace.h"
 #include "movement/MovementProfileForm.h"
 #include "movement/MovementResolvePanel.h"

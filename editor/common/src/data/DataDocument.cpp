@@ -1,4 +1,4 @@
-#include "DataDocument.h"
+#include "data/DataDocument.h"
 
 #include "commands/ICommand.h"
 
@@ -236,6 +236,9 @@ bool DataDocument::Save(std::string* error)
         return false;
     }
     output << formatted;
+    // Closing publishes buffered bytes and the final write timestamp. Sampling
+    // it while the stream is open mistakes our own save for an external edit.
+    output.close();
     if (!output.good())
     {
         if (error)

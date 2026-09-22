@@ -5,7 +5,7 @@
 #include "MovementResolvePreview.h"
 #include "MovementResponseSim.h"
 
-#include "../DataDocument.h"
+#include "data/DataDocument.h"
 #include "../DataEditorWorkspace.h"
 
 #include "ui/EditorUiStyle.h"

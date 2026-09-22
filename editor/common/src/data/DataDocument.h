@@ -28,6 +28,8 @@
 [[nodiscard]] const DataValidationError* FindValidationErrorAt(
     std::span<const DataValidationError> errors, std::string_view path);
 
+// Shared structured-asset document. Specialized workspaces own presentation;
+// this object owns persisted values, validation, and edit transactions.
 class DataDocument
 {
 public:

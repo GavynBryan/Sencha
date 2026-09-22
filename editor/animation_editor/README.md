@@ -1,8 +1,8 @@
 # Animation Editor
 
 The animation workspace is being built alongside the data-driven runtime. Its
-current surface auditions cooked skinned meshes and clips; it is not yet the
-selector, flow, or event-track authoring environment.
+current surface auditions cooked skinned meshes and clips and edits request
+schemas; it is not yet the selector, flow, or event-track authoring environment.
 
 ## Content audition
 
@@ -36,6 +36,30 @@ errors. Material selection applies one preview override across mesh sections.
 Asset values are captured on selection; skeletal-content hot reload is not yet
 implemented. Refresh asset list enumerates the mounted registry, not the disk.
 
+## Request schema authoring
+
+Open a request schema from the content browser to edit it alongside the animated
+preview. The fixture project includes `asset://animation/requests.sdata`.
+`animation.request_schema` is registered with the existing structured-data asset
+pipeline, so new schemas can also be created in Data Editor. Both editors use the
+same document transactions and validation implementation in editor-common.
+
+The request pane edits intent tags and up to four named parameters of kind float,
+int, bool, or tag. Duplicates, invalid value kinds, and capacity violations report
+their precise field paths. Names remain text in the asset; no runtime tag IDs are
+persisted. Unknown fields are retained and diagnosed, not silently discarded.
+
+Text edits coalesce into one undo operation. Escape, focus loss, and document
+switching cancel an unfinished edit. Undo/redo and Save are available through the
+shell and pane. Open documents retain independent history; selecting one does not
+change the preview subject or time. Reload is explicit and refuses dirty documents;
+Save refuses externally modified files. Closing with unsaved changes offers Save
+all, Discard, or Keep editing.
+
+This edits the request contract only. Issuing/cancelling live preview requests,
+request lifetimes, selectors, anchors, and gameplay invocation are not implemented
+by this pane. Preview clip selections remain transient and do not dirty documents.
+
 ## Ownership
 
 `animation_authoring` is a GUI-independent library. `AnimationClipPreviewSession`
@@ -45,8 +69,10 @@ consumes that scene, never a simulation World. The application removes its rende
 features before destroying the asset stack. No game module is activated during
 content audition.
 
-The playback tests live in `test/editor/AnimationClipPreviewSessionTests.cpp`.
-They exercise the production clip sampler without a window or graphics device.
+Playback tests in `test/editor/AnimationClipPreviewSessionTests.cpp` exercise the
+production sampler without graphics. `AnimRequestSchemaTests.cpp` covers the
+schema compiler, diagnostics and document transactions; `AnimRequestSchemaAssetTests.cpp`
+covers loading through the headless runtime asset composition.
 
 ## Remaining paired runtime/editor stages
 

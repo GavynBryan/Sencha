@@ -1,6 +1,7 @@
 #include "AnimationPreviewPanels.h"
 
 #include "AnimationPreviewWorkspace.h"
+#include "ui/AnimationRequestSchemaPanel.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"
@@ -9,6 +10,7 @@
 #include <imgui.h>
 
 #include <memory>
+#include <utility>
 
 namespace
 {
@@ -24,8 +26,11 @@ public:
         if (!IsVisible()) return;
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
-        ImGui::TextWrapped("Content audition only. Selections do not modify authored assets.");
+        ImGui::TextWrapped("Preview selections are transient. Request schemas open as editable documents.");
         if (ImGui::Button("Refresh asset list")) Workspace.RefreshBrowser();
+        if (ImGui::CollapsingHeader("Request schemas", ImGuiTreeNodeFlags_DefaultOpen))
+            for (const auto& path : Workspace.RequestSchemaPaths)
+                if (ImGui::Selectable(path.c_str())) Workspace.OpenRequestSchema(path);
         DrawAssets("Skinned meshes", Workspace.MeshPaths, Workspace.MeshPath,
                    &AnimationPreviewWorkspace::SelectMesh);
         DrawAssets("Skeletons (without mesh)", Workspace.SkeletonPaths, Workspace.Session.SkeletonPath(),
@@ -185,4 +190,11 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     ui.AddPanel(std::make_unique<PreviewViewportPanel>(viewport));
     ui.AddPanel(std::make_unique<PreviewTransportPanel>(workspace.Session));
     ui.AddPanel(std::make_unique<PreviewDetailsPanel>(workspace));
+    auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace);
+    auto* requestSchemaPanel = requestSchema.get();
+    ui.AddPanel(std::move(requestSchema));
+    // Hidden panels do not receive OnDraw, including when hidden via View.
+    ui.AddOverlay([&workspace, requestSchemaPanel] {
+        if (!requestSchemaPanel->IsVisible()) workspace.CancelAuthoringEdit();
+    });
 }

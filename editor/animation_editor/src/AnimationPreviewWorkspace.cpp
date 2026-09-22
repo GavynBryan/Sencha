@@ -1,6 +1,8 @@
 #include "AnimationPreviewWorkspace.h"
 
 #include <assets/runtime/RuntimeAssets.h>
+#include <assets/data/DataAssetSubtype.h>
+#include <anim/AnimRequestSchema.h>
 
 #include <algorithm>
 
@@ -21,6 +23,7 @@ void AnimationPreviewWorkspace::RefreshBrowser()
     SkeletonPaths.clear();
     ClipPaths.clear();
     MaterialPaths.clear();
+    RequestSchemaPaths.clear();
     for (const auto& [path, record] : Assets.Registry.Records())
     {
         if (record.Type == AssetType::SkinnedMesh)
@@ -31,9 +34,82 @@ void AnimationPreviewWorkspace::RefreshBrowser()
             ClipPaths.push_back(path);
         else if (record.Type == AssetType::Material)
             MaterialPaths.push_back(path);
+        else if (record.Type == AssetType::Data
+            && PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record) == kAnimRequestSchemaType)
+            RequestSchemaPaths.push_back(path);
     }
-    for (auto* paths : { &MeshPaths, &SkeletonPaths, &ClipPaths, &MaterialPaths })
+    for (auto* paths : { &MeshPaths, &SkeletonPaths, &ClipPaths, &MaterialPaths, &RequestSchemaPaths })
         std::sort(paths->begin(), paths->end());
+}
+
+bool AnimationPreviewWorkspace::OpenRequestSchema(const std::string& path)
+{
+    for (std::size_t i = 0; i < Documents.size(); ++i)
+        if (Documents[i]->VirtualPath() == path) { SelectDocument(i); return true; }
+    const auto* record = Assets.Registry.FindByPath(path);
+    if (!record || record->Type != AssetType::Data)
+    {
+        DocumentError = "The request schema is not registered in this project.";
+        return false;
+    }
+    auto document = DataDocument::Open(record->FilePath, path, Assets.DataTypes,
+                                      Assets.DataSchemas, &DocumentError);
+    if (!document) return false;
+    if (document->Subtype() != kAnimRequestSchemaType)
+    {
+        DocumentError = "Select an animation.request_schema asset.";
+        return false;
+    }
+    Documents.push_back(std::move(document));
+    SelectDocument(Documents.size() - 1);
+    DocumentError.clear();
+    return true;
+}
+
+void AnimationPreviewWorkspace::SelectDocument(std::size_t index)
+{
+    if (index >= Documents.size() || index == ActiveDocument) return;
+    CancelAuthoringEdit();
+    ActiveDocument = index;
+}
+
+void AnimationPreviewWorkspace::CancelAuthoringEdit()
+{
+    if (ActiveDocument < Documents.size() && Documents[ActiveDocument]->IsEditing())
+    {
+        Documents[ActiveDocument]->CancelEdit();
+        ValidateDocument(*Documents[ActiveDocument]);
+    }
+}
+
+void AnimationPreviewWorkspace::ValidateDocument(DataDocument& document)
+{
+    document.Validate(Assets.DataTypes, Assets.DataSchemas);
+}
+
+bool AnimationPreviewWorkspace::SaveDocument(DataDocument& document)
+{
+    document.CommitEdit();
+    ValidateDocument(document);
+    if (document.IsExternallyModified())
+    {
+        DocumentError = "File changed on disk. Resolve or reload it before saving; external edits were not overwritten.";
+        return false;
+    }
+    DocumentError.clear();
+    return document.Save(&DocumentError);
+}
+
+bool AnimationPreviewWorkspace::ReloadDocument(DataDocument& document)
+{
+    document.CancelEdit();
+    if (document.IsDirty())
+    {
+        DocumentError = "Reload refused: undo or save local edits first.";
+        return false;
+    }
+    DocumentError.clear();
+    return document.Reload(Assets.DataTypes, Assets.DataSchemas, &DocumentError);
 }
 
 bool AnimationPreviewWorkspace::SetSkeletonContent(SkeletonHandle skeleton)

@@ -3,6 +3,7 @@
 #include "AnimationPreviewWorkspace.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "ui/AnimationPreviewPanels.h"
+#include "ui/AnimationDocumentActions.h"
 
 #include "project/Project.h"
 #include "project/ProjectContentMount.h"
@@ -87,10 +88,13 @@ public:
         }
         if (std::find(failed.begin(), failed.end(), "animation_editor_ui") != failed.end()) Ui = nullptr;
         if (std::find(failed.begin(), failed.end(), "animation_editor_preview") != failed.end()) Viewport = nullptr;
+        if (Ui) ConfigureAnimationDocumentActions(*Ui, engine, *Workspace);
     }
 
     ~AnimationEditorHost()
     {
+        Workspace->CancelAuthoringEdit();
+        EngineRef.OnExitRequested = {};
         // A refused removal means a feature still borrows our state. Fail
         // closed rather than let teardown continue with dangling references.
         auto& renderer = EngineRef.Graphics().MainRenderer;
@@ -116,7 +120,12 @@ public:
     void Event(PlatformEventContext& context)
     {
         if (context.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+        {
             Workspace->Session.Pause();
+            Workspace->CancelAuthoringEdit();
+        }
+        if (context.Event.type == SDL_EVENT_KEY_DOWN && context.Event.key.key == SDLK_ESCAPE)
+            Workspace->CancelAuthoringEdit();
         if (Ui) Ui->ProcessSdlEvent(context.Event);
     }
 

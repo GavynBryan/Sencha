@@ -100,7 +100,7 @@ namespace
 
         // An override first, so a packaging layout this does not anticipate can
         // be pointed at without a rebuild.
-        if (const char* override = std::getenv("SENCHA_ENGINE_CONTENT");
+        if (const char* override = SDL_getenv_unsafe("SENCHA_ENGINE_CONTENT");
             override != nullptr && override[0] != '\0')
         {
             const std::filesystem::path path(override);

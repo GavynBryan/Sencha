@@ -1,6 +1,6 @@
 #include "DataFormEdit.h"
 
-#include "DataDocument.h"
+#include "data/DataDocument.h"
 #include "DataEditorWorkspace.h"
 
 #include <utility>
