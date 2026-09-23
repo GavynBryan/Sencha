@@ -48,6 +48,10 @@ void RegisterAnimationComponents(ComponentRegistrar& registrar);
 // layer tags and bindings land in the same registries.
 void InstallAnimationVocabulary(World& world);
 
+// The animation cvars over `world`'s installed limits: `anim.blend.override_cap`.
+// Registered once by the process that owns `world`.
+void RegisterAnimationCVars(ConsoleRegistry& console, World& world);
+
 // What the clip event pass is composed with. Handed over rather than found:
 // the pass invokes verbs, so the host names the dispatcher it may use.
 struct AnimEventHost

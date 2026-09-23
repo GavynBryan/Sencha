@@ -85,6 +85,9 @@ struct AnimRigData
     // lifecycle events name their bindings from. Two that declare one key are
     // an authoring conflict, not an override.
     std::vector<std::string> BindingSetPaths;
+    // `animation.blend_overrides` assets, in order: a later one replaces an
+    // earlier one's policy for the same pair.
+    std::vector<std::string> BlendOverridePaths;
     std::vector<AnimRigExtension> Extensions;
 
     [[nodiscard]] bool HasFacts() const { return !FactSchemaPath.empty(); }

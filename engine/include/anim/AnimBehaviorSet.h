@@ -142,3 +142,10 @@ struct AnimBehaviorSet
 };
 
 void RegisterAnimBehaviorSet(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas);
+
+// The blend record, as a behavior declares it and a blend override replaces
+// it: `in`, `in_ms`, `out_ms`, `phase`. Reading fills only what is present.
+[[nodiscard]] DataFieldSchema AnimBlendPolicySchema(std::string key, std::string label, std::string summary);
+[[nodiscard]] bool ReadAnimBlendPolicy(const JsonValue* blend, const std::string& at, AnimBlendPolicy& out,
+                                       std::string& error);
+[[nodiscard]] std::string_view AnimBlendModeName(AnimBlendMode mode);

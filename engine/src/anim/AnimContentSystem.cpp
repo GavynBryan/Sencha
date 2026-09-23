@@ -209,7 +209,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             const AnimBoundBehavior* to = rig.FindBehavior(behavior);
             const float fromDuration = DurationOf(rig, layer.Content);
             const bool carry = !lostPin && from != nullptr && to != nullptr
-                && to->Policy.Blend.Phase == AnimPhasePolicy::Carry && to->SyncGroup.IsValid()
+                && rig.ResolveBlend(from->Tag, to->Tag).Phase == AnimPhasePolicy::Carry && to->SyncGroup.IsValid()
                 && to->SyncGroup == from->SyncGroup && fromDuration > 0.0f
                 && (from->Policy.Kind == AnimBehaviorKind::Cyclic || from->Policy.Kind == AnimBehaviorKind::Hold)
                 && (to->Policy.Kind == AnimBehaviorKind::Cyclic || to->Policy.Kind == AnimBehaviorKind::Hold);

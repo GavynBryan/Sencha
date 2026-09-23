@@ -352,6 +352,22 @@ int AnimBoundRig::FindBehaviorIndex(GameplayTagId behavior) const
     return -1;
 }
 
+AnimBlendPolicy AnimBoundRig::ResolveBlend(GameplayTagId from, GameplayTagId to,
+                                           const AnimBoundBlendOverride** overridden) const
+{
+    if (overridden != nullptr)
+        *overridden = nullptr;
+    for (const AnimBoundBlendOverride& entry : BlendOverrides)
+        if (entry.From == from && entry.To == to)
+        {
+            if (overridden != nullptr)
+                *overridden = &entry;
+            return entry.Policy;
+        }
+    const AnimBoundBehavior* destination = FindBehavior(to);
+    return destination != nullptr ? destination->Policy.Blend : AnimBlendPolicy{};
+}
+
 const AnimBoundBehavior* AnimBoundRig::FindBehavior(GameplayTagId behavior) const
 {
     const int index = FindBehaviorIndex(behavior);
@@ -390,6 +406,7 @@ namespace
         binder.BindMasks(*rig);
         // Behaviors before selectors and slot maps, which name them.
         binder.BindBehaviors(*rig);
+        binder.BindBlendOverrides(*rig);
         binder.BindSelectors(*rig);
         binder.BindSlotMaps(*rig);
         binder.ValidateFlows();
@@ -425,6 +442,9 @@ bool AnimRigBindings::IsCurrent(const Entry& entry, const World& world) const
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     const AnimFactProviders* providers = world.TryGetResource<AnimFactProviders>();
     const VerbRegistry* verbs = FindVerbRegistry(world);
+    const AnimRigLimits* limits = world.TryGetResource<AnimRigLimits>();
+    if (entry.BlendOverrideCap != (limits != nullptr ? limits->BlendOverrideCap : AnimRigLimits{}.BlendOverrideCap))
+        return false;
     return entry.TagCount == (tags != nullptr ? tags->Size() : 0)
         && entry.ProviderRevision == (providers != nullptr ? providers->Revision() : 0)
         && entry.Catalog == (verbs != nullptr ? verbs->Catalog() : VerbCatalogId{})
@@ -457,6 +477,8 @@ const AnimBoundRig* AnimRigBindings::Resolve(DataAssetHandle rig, const World& w
     entry.ProviderRevision = providers != nullptr ? providers->Revision() : 0;
     entry.Catalog = verbs != nullptr ? verbs->Catalog() : VerbCatalogId{};
     entry.CatalogGeneration = verbs != nullptr ? verbs->Generation() : 0;
+    const AnimRigLimits* limits = world.TryGetResource<AnimRigLimits>();
+    entry.BlendOverrideCap = limits != nullptr ? limits->BlendOverrideCap : AnimRigLimits{}.BlendOverrideCap;
     ++Rebuilds;
     return &entry.Bound;
 }

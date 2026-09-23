@@ -296,6 +296,25 @@ struct AnimBoundSlotRow
     std::uint32_t Key = 0;
 };
 
+// A pairwise blend policy, bound: the change from one behavior to another
+// blends by Policy instead of the destination's own.
+struct AnimBoundBlendOverride
+{
+    GameplayTagId From;
+    GameplayTagId To;
+    AnimBlendPolicy Policy;
+    // The asset and entry that won, for navigation.
+    std::string DeclaredIn;
+    std::uint32_t Index = 0;
+};
+
+// Limits content binds against: a World resource the animation vocabulary
+// installs and the `anim.blend.override_cap` cvar sets.
+struct AnimRigLimits
+{
+    std::uint32_t BlendOverrideCap = 16;
+};
+
 struct AnimBoundRig
 {
     std::string RigPath;
@@ -329,6 +348,7 @@ struct AnimBoundRig
     std::vector<AnimBoundSlotRow> SlotRows;
     std::vector<AnimBoundContent> Contents;
     std::vector<AnimBoundFlow> Flows;
+    std::vector<AnimBoundBlendOverride> BlendOverrides;
 
     // The rig's authored bindings, compiled against this World's catalog.
     // Rebuilt with the rest of the binding, never refreshed in place.
@@ -342,6 +362,10 @@ struct AnimBoundRig
     [[nodiscard]] const AnimBoundIntent* FindIntent(GameplayTagId intent) const;
     [[nodiscard]] const AnimBoundBehavior* FindBehavior(GameplayTagId behavior) const;
     [[nodiscard]] int FindBehaviorIndex(GameplayTagId behavior) const;
+    // How a layer changing from `from` to `to` blends: the pair's override,
+    // or `to`'s own policy. Null `overridden` when the caller does not ask.
+    [[nodiscard]] AnimBlendPolicy ResolveBlend(GameplayTagId from, GameplayTagId to,
+                                               const AnimBoundBlendOverride** overridden = nullptr) const;
 };
 
 // Binds one rig without caching. The pure half of AnimRigBindings, and what a
@@ -393,6 +417,7 @@ private:
         // or grown since means an event that failed to resolve may now.
         VerbCatalogId Catalog;
         std::uint64_t CatalogGeneration = 0;
+        std::uint32_t BlendOverrideCap = 0;
     };
 
     [[nodiscard]] bool IsCurrent(const Entry& entry, const World& world) const;

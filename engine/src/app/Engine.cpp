@@ -1097,6 +1097,7 @@ int Engine::Run(Game& game)
         // locomotion mode is declared once the game has, as the templates do.
         InstallAbilityKitVocabulary(entities);
         InstallAnimationVocabulary(entities);
+        RegisterAnimationCVars(ConsoleState->Registry(), entities);
         InstallAuthoredVocabulary(entities);
         VerbRegistry& verbs = *FindVerbRegistry(entities);
         (void)DeclareEngineVerbs(verbs);

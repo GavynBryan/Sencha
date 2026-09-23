@@ -1,5 +1,7 @@
 #include <anim/AnimRigData.h>
 
+#include <anim/AnimBlendOverrides.h>
+
 #include "AnimSchemaFields.h"
 
 #include <anim/AnimBehaviorSet.h>
@@ -90,6 +92,9 @@ namespace
                                 DataRef({}, "Behavior set", {}, kAnimBehaviorSetType, true)),
             AnimSchema::ArrayOf("slot_maps", "Slot maps", "The base map first, then overlays.",
                                 DataRef({}, "Slot map", {}, kAnimSlotMapType, true)),
+            AnimSchema::ArrayOf("blend_overrides", "Blend overrides",
+                                "Pairwise blend policies, in order; a later asset replaces an earlier pair.",
+                                DataRef({}, "Blend overrides", {}, kAnimBlendOverridesType, true)),
             AnimSchema::ArrayOf("bindings", "Event bindings",
                                 "The authored bindings this rig's events name, in order.",
                                 DataRef({}, "Bindings", {}, kVerbBindingsTypeName, true)),
@@ -214,6 +219,7 @@ namespace
         paths("behaviors", rig->BehaviorSetPaths);
         paths("slot_maps", rig->SlotMapPaths);
         paths("bindings", rig->BindingSetPaths);
+        paths("blend_overrides", rig->BlendOverridePaths);
 
         if (const JsonValue* extensions = data.Find("extensions"); extensions != nullptr && extensions->IsArray())
         {

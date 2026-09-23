@@ -6,6 +6,7 @@
 // compilers, so every test goes through the same parse and validation.
 
 #include <anim/AnimBehaviorSet.h>
+#include <anim/AnimBlendOverrides.h>
 #include <anim/AnimContentSystem.h>
 #include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimFactSchema.h>
@@ -73,6 +74,7 @@ struct AnimRigFixture
         RegisterAnimSelectorData(Types, Schemas);
         RegisterAnimSlotMapData(Types, Schemas);
         RegisterAnimFlowData(Types, Schemas);
+        RegisterAnimBlendOverrides(Types, Schemas);
         RegisterVerbBindingData(Types, Schemas);
 
         Entities.AddResource<GameplayTagRegistry>();

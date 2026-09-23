@@ -1,5 +1,8 @@
 #include "AnimRigBinder.h"
 
+#include <anim/AnimBlendOverrides.h>
+#include <ecs/World.h>
+
 #include <format>
 
 void AnimRigBinder::BindBehaviors(const AnimRigData& rig)
@@ -46,4 +49,73 @@ void AnimRigBinder::BindBehaviors(const AnimRigData& rig)
                 Out.Behaviors.push_back(std::move(bound));
         }
     }
+}
+
+void AnimRigBinder::BindBlendOverrides(const AnimRigData& rig)
+{
+    for (const AnimBoundBehavior& behavior : Out.Behaviors)
+        if (behavior.Policy.Blend.Phase == AnimPhasePolicy::Carry && !behavior.SyncGroup.IsValid())
+            Warning("anim.blend.carry_without_group", behavior.DeclaredIn, "$.data.behaviors",
+                    std::format("'{}' carries phase but names no sync group, so it always starts over.",
+                                behavior.Name));
+
+    for (std::size_t a = 0; a < rig.BlendOverridePaths.size(); ++a)
+    {
+        const std::string& path = rig.BlendOverridePaths[a];
+        const AnimBlendOverrides* overrides = Load<AnimBlendOverrides>(
+            path, kAnimBlendOverridesType, Out.RigPath, std::format("$.data.blend_overrides[{}]", a));
+        if (overrides == nullptr)
+            continue;
+        for (std::size_t i = 0; i < overrides->Overrides.size(); ++i)
+        {
+            const AnimBlendOverrideDecl& decl = overrides->Overrides[i];
+            const std::string at = std::format("$.data.overrides[{}]", i);
+            AnimBoundBlendOverride bound;
+            bool ok = true;
+            for (const auto& [name, key, out] : { std::tuple{ &decl.From, "from", &bound.From },
+                                                  std::tuple{ &decl.To, "to", &bound.To } })
+            {
+                const std::optional<GameplayTagId> tag =
+                    ResolveTag(*name, path, std::format("{}.{}", at, key), "anim.blend.unresolved");
+                if (tag && Out.FindBehaviorIndex(*tag) < 0)
+                {
+                    Error("anim.blend.undeclared_behavior", path, std::format("{}.{}", at, key),
+                          std::format("'{}' is not declared by any of the rig's behavior sets.", *name));
+                    ok = false;
+                }
+                if (!tag)
+                    ok = false;
+                else
+                    *out = *tag;
+            }
+            if (!ok)
+                continue;
+            bound.Policy = decl.Blend;
+            bound.DeclaredIn = path;
+            bound.Index = static_cast<std::uint32_t>(i);
+            const auto existing = std::ranges::find_if(Out.BlendOverrides, [&](const AnimBoundBlendOverride& other) {
+                return other.From == bound.From && other.To == bound.To;
+            });
+            if (existing != Out.BlendOverrides.end())
+                *existing = std::move(bound);
+            else
+                Out.BlendOverrides.push_back(std::move(bound));
+        }
+    }
+
+    // Rare by construction: past half the cap is a warning, past the cap an
+    // error the cvar can raise.
+    const AnimRigLimits* limits = WorldRef.TryGetResource<AnimRigLimits>();
+    const std::uint32_t cap = limits != nullptr ? limits->BlendOverrideCap : AnimRigLimits{}.BlendOverrideCap;
+    const std::size_t count = Out.BlendOverrides.size();
+    if (count > cap)
+        Error("anim.blend.override_cap", Out.RigPath, "$.data.blend_overrides",
+              std::format("{} blend overrides bind here and the cap is {} (anim.blend.override_cap). A rig "
+                          "that needs this many wants another behavior or a fact.",
+                          count, cap));
+    else if (count > cap / 2)
+        Warning("anim.blend.override_count", Out.RigPath, "$.data.blend_overrides",
+                std::format("{} of at most {} blend overrides: each is a pairwise exception to the "
+                            "destination's policy.",
+                            count, cap));
 }

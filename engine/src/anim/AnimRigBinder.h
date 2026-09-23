@@ -76,6 +76,8 @@ struct AnimRigBinder
     // After slot maps: every clip the rig plays is keyed to its skeleton.
     void ValidateClipSkeletons();
     void BindBehaviors(const AnimRigData& rig);
+    // After behaviors, which overrides name.
+    void BindBlendOverrides(const AnimRigData& rig);
     void BindSelectors(const AnimRigData& rig);
     void BindSlotMaps(const AnimRigData& rig);
     // A flow's content entry, bound on first use: its sections' clips added as

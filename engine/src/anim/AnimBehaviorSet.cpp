@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <memory>
 #include <optional>
@@ -63,16 +64,7 @@ namespace
                 false);
         };
 
-        DataFieldSchema blend = Record("blend", "Blend", "How a change to this behavior is absorbed.",
-            {
-                optional(Enum("in", "In", "Inertialize by default; crossfade keeps phase.",
-                              Choices(kBlendNames, { "Inertialize", "Crossfade", "Snap" }))),
-                optional(Field("in_ms", DataFieldKind::Float, "In (ms)", "Blend-in duration.")),
-                optional(Field("out_ms", DataFieldKind::Float, "Out (ms)", "Crossfade only.")),
-                optional(Enum("phase", "Phase", "Carry aligns normalized time within a sync group.",
-                              Choices(kPhaseNames, { "Reset", "Carry" }))),
-            },
-            false);
+        DataFieldSchema blend = AnimBlendPolicySchema("blend", "Blend", "How a change to this behavior is absorbed.");
 
         DataFieldSchema latchTags = ArrayOf("tags", "Interrupting behaviors",
                                             "Behaviors that may pre-empt the latch.",
@@ -160,13 +152,8 @@ namespace
             }
             behavior.Kind = static_cast<AnimBehaviorKind>(IndexOf(kKindNames, entry.Find("kind")->AsString()));
 
-            const JsonValue* blend = entry.Find("blend");
-            if (std::optional<std::string> in = text(blend, "in"))
-                behavior.Blend.In = static_cast<AnimBlendMode>(IndexOf(kBlendNames, *in));
-            behavior.Blend.InMs = static_cast<float>(number(blend, "in_ms", behavior.Blend.InMs));
-            behavior.Blend.OutMs = static_cast<float>(number(blend, "out_ms", behavior.Blend.OutMs));
-            if (std::optional<std::string> phase = text(blend, "phase"))
-                behavior.Blend.Phase = static_cast<AnimPhasePolicy>(IndexOf(kPhaseNames, *phase));
+            if (!ReadAnimBlendPolicy(entry.Find("blend"), at + ".blend", behavior.Blend, result.Error))
+                return result;
 
             const JsonValue* latch = entry.Find("latch");
             if (std::optional<std::string> mode = text(latch, "mode"))
@@ -243,6 +230,65 @@ namespace
         result.Value = std::move(set);
         return result;
     }
+}
+
+DataFieldSchema AnimBlendPolicySchema(std::string key, std::string label, std::string summary)
+{
+    using AnimSchema::Enum;
+    using AnimSchema::Field;
+    using AnimSchema::Record;
+    const auto optional = [](DataFieldSchema field) {
+        field.Required = false;
+        return field;
+    };
+    DataFieldSchema inMs = Field("in_ms", DataFieldKind::Float, "In (ms)", "How long the change takes to absorb.");
+    inMs.Numeric.Minimum = 0.0;
+    inMs.Units = "ms";
+    DataFieldSchema outMs = Field("out_ms", DataFieldKind::Float, "Out (ms)",
+                                  "Crossfade only: how long the outgoing content stays alive. None uses In.");
+    outMs.Numeric.Minimum = 0.0;
+    outMs.Units = "ms";
+    return Record(std::move(key), std::move(label), std::move(summary),
+        {
+            optional(Enum("in", "In", "Inertialize by default; crossfade keeps both poses alive.",
+                          Choices(kBlendNames, { "Inertialize", "Crossfade", "Snap" }))),
+            optional(std::move(inMs)),
+            optional(std::move(outMs)),
+            optional(Enum("phase", "Phase", "Carry aligns normalized time within a sync group.",
+                          Choices(kPhaseNames, { "Reset", "Carry" }))),
+        },
+        false);
+}
+
+bool ReadAnimBlendPolicy(const JsonValue* blend, const std::string& at, AnimBlendPolicy& out, std::string& error)
+{
+    if (blend == nullptr || !blend->IsObject())
+        return true;
+    const auto text = [&](std::string_view key) -> const std::string* {
+        const JsonValue* value = blend->Find(key);
+        return value != nullptr && value->IsString() ? &value->AsString() : nullptr;
+    };
+    const auto number = [&](std::string_view key, float fallback) {
+        const JsonValue* value = blend->Find(key);
+        return value != nullptr && value->IsNumber() ? static_cast<float>(value->AsNumber()) : fallback;
+    };
+    if (const std::string* in = text("in"))
+        out.In = static_cast<AnimBlendMode>(IndexOf(kBlendNames, *in));
+    out.InMs = number("in_ms", out.InMs);
+    out.OutMs = number("out_ms", out.OutMs);
+    if (const std::string* phase = text("phase"))
+        out.Phase = static_cast<AnimPhasePolicy>(IndexOf(kPhaseNames, *phase));
+    if (out.InMs < 0.0f || out.OutMs < 0.0f || !std::isfinite(out.InMs) || !std::isfinite(out.OutMs))
+    {
+        error = at + " Blend durations are finite and not negative.";
+        return false;
+    }
+    return true;
+}
+
+std::string_view AnimBlendModeName(AnimBlendMode mode)
+{
+    return kBlendNames[static_cast<std::size_t>(mode)];
 }
 
 std::string_view AnimBehaviorKindName(AnimBehaviorKind kind)

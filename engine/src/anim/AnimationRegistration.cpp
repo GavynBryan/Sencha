@@ -4,6 +4,7 @@
 #include <anim/AnimEventSystem.h>
 #include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimFactProviders.h>
+#include <anim/AnimRigBinding.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimationClipPlaybackSystem.h>
 #include <app/EngineSchedule.h>
@@ -26,6 +27,31 @@ void InstallAnimationVocabulary(World& world)
     }
     if (!world.HasResource<AnimFactProviders>())
         world.AddResource<AnimFactProviders>();
+    if (!world.HasResource<AnimRigLimits>())
+        world.AddResource<AnimRigLimits>();
+}
+
+void RegisterAnimationCVars(ConsoleRegistry& console, World& world)
+{
+    const AnimRigLimits* limits = world.TryGetResource<AnimRigLimits>();
+    const std::int64_t cap = limits != nullptr ? limits->BlendOverrideCap : AnimRigLimits{}.BlendOverrideCap;
+    (void)console.RegisterCVar({
+        .Name = "anim.blend.override_cap",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = cap,
+        .CurrentValue = cap,
+        .Flags = CVarFlags::None,
+        .Help = "How many pairwise blend overrides one rig may bind. Rigs past half of it warn; past it "
+                "they fail to bind. Changing it rebinds every rig.",
+        .Source = { "engine" },
+        .Min = 0.0,
+        .Max = 4096.0,
+        .OnChange = [&world](const CVarChangeContext& ctx) {
+            if (AnimRigLimits* live = world.TryGetResource<AnimRigLimits>())
+                live->BlendOverrideCap = static_cast<std::uint32_t>(std::get<std::int64_t>(ctx.NewValue));
+        },
+    });
 }
 
 void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging, const AnimEventHost& events)
