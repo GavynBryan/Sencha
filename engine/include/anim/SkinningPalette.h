@@ -26,6 +26,11 @@
 // validated, so one forward walk is complete.
 void BuildBindModelTransforms(const SkeletonData& skeleton, std::vector<Mat4>& out);
 
+// The palette of a skeleton nothing poses: the identity for every joint, since
+// cooked skinned vertices already sit at bind pose. The runtime starts every
+// pose slot here, and a preview without a clip must show the same thing.
+void BuildRestSkinningPalette(const SkeletonData& skeleton, std::vector<Mat4>& out);
+
 // out[j] = modelTransforms[j] * InverseBind[j]. Sizes must match the skeleton.
 void BuildSkinningPalette(const SkeletonData& skeleton,
                           std::span<const Mat4> modelTransforms,

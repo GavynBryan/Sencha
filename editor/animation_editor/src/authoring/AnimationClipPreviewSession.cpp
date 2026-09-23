@@ -183,9 +183,9 @@ void AnimationClipPreviewSession::Sample()
     {
         SampleAnimationClip(*Clip, SkeletonValue, static_cast<float>(SampleSeconds()), LocalPose);
         BuildPosedModelTransforms(SkeletonValue, LocalPose, ModelPose);
+        BuildSkinningPalette(SkeletonValue, ModelPose, SkinPalette);
     }
     else
-        BuildBindModelTransforms(SkeletonValue, ModelPose);
-    BuildSkinningPalette(SkeletonValue, ModelPose, SkinPalette);
+        BuildRestSkinningPalette(SkeletonValue, SkinPalette);
     PoseDirty = false;
 }

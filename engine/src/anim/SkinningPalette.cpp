@@ -28,6 +28,11 @@ void BuildBindModelTransforms(const SkeletonData& skeleton, std::vector<Mat4>& o
     }
 }
 
+void BuildRestSkinningPalette(const SkeletonData& skeleton, std::vector<Mat4>& out)
+{
+    out.assign(skeleton.Joints.size(), Mat4::Identity());
+}
+
 void BuildSkinningPalette(const SkeletonData& skeleton,
                           std::span<const Mat4> modelTransforms,
                           std::vector<Mat4>& out)

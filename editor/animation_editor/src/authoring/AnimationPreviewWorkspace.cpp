@@ -503,11 +503,11 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
     {
         SampleAnimationClip(*clip, skeleton, time, SimulationLocal);
         BuildPosedModelTransforms(skeleton, SimulationLocal, SimulationModel);
+        BuildSkinningPalette(skeleton, SimulationModel, SimulationPalette);
     }
     else
     {
-        BuildBindModelTransforms(skeleton, SimulationModel);
+        BuildRestSkinningPalette(skeleton, SimulationPalette);
     }
-    BuildSkinningPalette(skeleton, SimulationModel, SimulationPalette);
     return SimulationPalette;
 }

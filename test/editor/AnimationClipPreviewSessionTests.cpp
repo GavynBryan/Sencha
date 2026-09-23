@@ -226,3 +226,19 @@ TEST_F(AnimationClipPreviewTest, PauseRestartAndStepClearFractionalWallTime)
     Session.Advance(1.0 / 120.0);
     EXPECT_EQ(Session.Tick(), 0u);
 }
+
+// Without a clip nothing poses the skeleton, so the palette is the identity:
+// cooked skinned vertices already sit at bind pose, and the runtime draws an
+// unposed instance the same way. Recomposing the bind TRS instead would show
+// any disagreement with the inverse binds as a deformation.
+TEST(AnimationClipPreviewNoClip, PaletteIsTheIdentity)
+{
+    SkeletonData skeleton = Skeleton();
+    skeleton.Joints[0].BindTranslation = Vec3d(3.0f, 0.0f, 0.0f);
+
+    AnimationClipPreviewSession session;
+    std::string error;
+    ASSERT_TRUE(session.SetContent("asset://preview.sskel", skeleton, std::nullopt, error)) << error;
+    ASSERT_EQ(session.Palette().size(), 1u);
+    EXPECT_EQ(session.Palette()[0], Mat4::Identity());
+}
