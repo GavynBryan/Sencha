@@ -52,6 +52,9 @@ enum class AnimDecisionCause : std::uint8_t
     // lifecycle event; EventOutcome and Admission as for a crossing.
     SectionEntered,
     SectionExited,
+    // Another weight rule now weights the layer; Rule is its index among the
+    // selector's weight rules, or none for the rig's constant.
+    WeightChanged,
 };
 
 // What a crossed clip event led to.

@@ -196,11 +196,26 @@ struct AnimBoundRule
     std::string Label;
 };
 
+// A rule that weights its layer: the first in evaluation order whose enter
+// passes decides the weight this tick.
+struct AnimBoundWeightRule
+{
+    AnimProgram Enter;
+    float Value = 1.0f;
+    // A float fact slot read instead of Value, or -1.
+    int FactSlot = -1;
+    std::uint32_t Key = 0;
+    std::vector<AnimRuleSource> Source;
+    std::vector<AnimRowSource> EnterRows;
+    std::string Label;
+};
+
 struct AnimBoundSelector
 {
     std::string Path;
     // Flattened, in evaluation order.
     std::vector<AnimBoundRule> Rules;
+    std::vector<AnimBoundWeightRule> WeightRules;
     // Some rule reads time or tags: the selector re-evaluates every tick
     // rather than only when facts or requests change.
     bool ReadsTime = false;

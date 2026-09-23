@@ -105,6 +105,9 @@ namespace
                 case AnimRuleResultKind::Behavior:
                     AddRule(rule, context, path, at);
                     break;
+                case AnimRuleResultKind::Weight:
+                    AddWeightRule(rule, context, path, at);
+                    break;
                 case AnimRuleResultKind::Delegate:
                     Flatten(rule.Delegate, path, at + ".delegate", context, depth + 1);
                     break;
@@ -161,6 +164,33 @@ namespace
             Out.Rules.push_back(std::move(bound));
         }
 
+        void AddWeightRule(const AnimSelectorRuleDecl& rule, ParentContext& context, const std::string& path,
+                           const std::string& at)
+        {
+            AnimBoundWeightRule bound;
+            bound.Enter = std::move(context.Enter);
+            bound.Value = rule.Weight;
+            bound.Source = std::move(context.Source);
+            bound.EnterRows = std::move(context.EnterRows);
+            bound.Key = AnimStableKey(context.KeyPrefix);
+            bound.Label = rule.Name.empty() ? std::format("weight {}", rule.Weight) : rule.Name;
+            if (!rule.WeightFact.empty())
+            {
+                bound.FactSlot = Binder.Out.FindSlot(rule.WeightFact);
+                if (bound.FactSlot < 0
+                    || Binder.Out.Slots[static_cast<std::size_t>(bound.FactSlot)].Kind != AnimFactKind::Float)
+                {
+                    Binder.Error("anim.selector.weight_fact", path, at + ".weight_fact",
+                                 std::format("'{}' is not a float fact of this rig, so it cannot weight a layer.",
+                                             rule.WeightFact));
+                    return;
+                }
+                if (rule.Name.empty())
+                    bound.Label = rule.WeightFact;
+            }
+            Out.WeightRules.push_back(std::move(bound));
+        }
+
         // The pairings the architecture requires of a behavior as this rule
         // reaches it.
         void Validate(const AnimBoundRule& rule, const std::string& path, const std::string& at)
@@ -212,6 +242,11 @@ void AnimRigBinder::BindSelectors(const AnimRigData& rig)
                 rule.CooldownSlot = cooldowns++;
             selector.ReadsTime = selector.ReadsTime || rule.Enter.ReadsTime || rule.Stay.ReadsTime;
             selector.ReadsTags = selector.ReadsTags || !rule.Enter.Queries.empty() || !rule.Stay.Queries.empty();
+        }
+        for (const AnimBoundWeightRule& rule : selector.WeightRules)
+        {
+            selector.ReadsTime = selector.ReadsTime || rule.Enter.ReadsTime;
+            selector.ReadsTags = selector.ReadsTags || !rule.Enter.Queries.empty();
         }
         if (static_cast<std::size_t>(cooldowns) > kAnimCooldownSlots)
             Error("anim.selector.cooldowns", path, "$.data.rules",

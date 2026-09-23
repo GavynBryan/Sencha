@@ -42,6 +42,13 @@ namespace
     }
 }
 
+float AnimLayerWeight(const AnimBoundRig& rig, std::size_t layer, const AnimSelectorState* selection)
+{
+    if (rig.Layers[layer].Selector >= 0 && selection != nullptr && selection->Evaluated)
+        return selection->Layers[layer].Weight;
+    return rig.Layers[layer].Weight;
+}
+
 GameplayTagId AnimLayerBehavior(const AnimBoundRig& rig, std::size_t layer, const AnimSelectorState* selection,
                                 const AnimRequestSet* requests, AnimTick now, const AnimLayerContent* playing)
 {

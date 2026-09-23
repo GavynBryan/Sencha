@@ -44,7 +44,12 @@ struct AnimLayerSelection
     GameplayTagId Behavior;
     std::uint16_t Winner = kAnimNoRule;
     std::uint16_t Previous = kAnimNoRule;
+    // The weight rule weighting the layer, by index into the selector's
+    // weight rules; kAnimNoRule when the rig's constant does.
+    std::uint16_t WeightRule = kAnimNoRule;
     AnimLatchState Latch = AnimLatchState::None;
+    // The layer's weight this tick, in [0, 1].
+    float Weight = 1.0f;
 };
 
 struct SENCHA_COMPONENT("sencha.anim_selector_state") AnimSelectorState

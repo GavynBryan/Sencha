@@ -53,6 +53,10 @@ struct FixedLogicContext;
                                                          const AnimLayerContent* playing);
 
 // The behavior a layer plays this tick.
+// The layer's weight this tick: what its selector's weight rules chose, or
+// the rig's constant for a layer without a selector or before one runs.
+[[nodiscard]] float AnimLayerWeight(const AnimBoundRig& rig, std::size_t layer, const AnimSelectorState* selection);
+
 [[nodiscard]] GameplayTagId AnimLayerBehavior(const AnimBoundRig& rig, std::size_t layer,
                                               const AnimSelectorState* selection,
                                               const AnimRequestSet* requests, AnimTick now,

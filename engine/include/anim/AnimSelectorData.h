@@ -17,7 +17,11 @@
 // a rule's own stay predicate, which is the only place hysteresis is authored.
 //
 // A rule's result is a behavior, a nested selector (delegation, flattened when
-// the rig binds), or a named extension point a rig binds a selector to by data.
+// the rig binds), a named extension point a rig binds a selector to by data,
+// or the layer's weight. Weight rules are a second first-match list over the
+// same facts and requests: the first whose enter passes weights the layer, and
+// none passing leaves the rig's constant. They carry no stay, hold or
+// cooldown, so a weight is a function of this tick's inputs alone.
 // There is no result that names content and no predicate operand that names a
 // rule or behavior; both are absent from the format rather than rejected.
 //=============================================================================
@@ -32,6 +36,7 @@ enum class AnimRuleResultKind : std::uint8_t
     Behavior,
     Delegate,
     Extension,
+    Weight,
 };
 
 struct AnimSelectorRuleDecl
@@ -49,6 +54,10 @@ struct AnimSelectorRuleDecl
     std::string Behavior;
     std::string Delegate;
     std::string Extension;
+    // A weight rule's weight: a constant in [0, 1], or a float fact read each
+    // tick and clamped to it, which is how gameplay fades a layer.
+    float Weight = 1.0f;
+    std::string WeightFact;
 
     float HoldMinMs = 0.0f;
     float CooldownMs = 0.0f;

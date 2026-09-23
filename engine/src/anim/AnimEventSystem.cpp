@@ -122,7 +122,7 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
         layer.EventSection = section;
         layer.EventContentStartTick = layer.StartTick;
 
-        const float weight = rig.Layers[l].Weight;
+        const float weight = AnimLayerWeight(rig, l, selection);
         const AnimRequest* driving = AnimLayerDrivingRequest(rig, l, selection, requests, now, &layer);
         const EntityId instigator = driving != nullptr ? driving->Id.Source : EntityId{};
         // False when the tick's queue is full; the caller records the refusal.

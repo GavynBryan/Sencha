@@ -73,6 +73,8 @@ struct AnimSelectionOutcome
     bool LatchArmed = false;
     bool LatchReleased = false;
     bool LatchInterrupted = false;
+    // Another weight rule, or the constant, now weights the layer.
+    bool WeightRuleChanged = false;
 };
 
 struct AnimLayerSelectInputs
@@ -83,6 +85,8 @@ struct AnimLayerSelectInputs
     // Whether the request set differs from the last evaluation, for the
     // reason a winner changed.
     bool RequestsChanged = false;
+    // The rig's constant weight for the layer, when no weight rule passes.
+    float ConstantWeight = 1.0f;
 };
 
 // `verdicts`, when not empty, receives one verdict per flattened rule.

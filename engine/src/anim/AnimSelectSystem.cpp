@@ -339,6 +339,26 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig, const AnimBoundSel
         }
     }
 
+    // Weight: the first weight rule that enters, else the constant.
+    std::uint16_t weightRule = kAnimNoRule;
+    float weight = inputs.ConstantWeight;
+    for (std::size_t i = 0; i < selector.WeightRules.size(); ++i)
+    {
+        const AnimBoundWeightRule& rule = selector.WeightRules[i];
+        if (!EvaluateAnimProgram(rule.Enter, inputs.Predicate).Passed)
+            continue;
+        weightRule = static_cast<std::uint16_t>(i);
+        const std::span<const std::uint32_t> facts = inputs.Predicate.Facts;
+        weight = rule.FactSlot < 0 ? rule.Value
+            : static_cast<std::size_t>(rule.FactSlot) < facts.size()
+            ? std::clamp(AnimFactToFloat(facts[static_cast<std::size_t>(rule.FactSlot)]), 0.0f, 1.0f)
+            : 0.0f;
+        break;
+    }
+    outcome.WeightRuleChanged = weightRule != state.WeightRule;
+    state.WeightRule = weightRule;
+    state.Weight = std::isfinite(weight) ? weight : 0.0f;
+
     // The earliest tick a timer alone could change this layer's outcome.
     state.WakeTick = kAnimNoTick;
     if (state.HoldUntilTick > now)
@@ -385,6 +405,16 @@ void LogAnimSelection(AnimDecisionLog& log, AnimTick now, std::uint8_t layer, co
         record.Reason = outcome.Reason;
         record.Request = state.LatchRequest;
         log.Append(record);
+    }
+    if (outcome.WeightRuleChanged)
+    {
+        AnimDecisionRecord weighted;
+        weighted.Tick = now;
+        weighted.Layer = layer;
+        weighted.Cause = AnimDecisionCause::WeightChanged;
+        weighted.Rule = state.WeightRule;
+        weighted.Behavior = state.Behavior;
+        log.Append(weighted);
     }
 }
 
@@ -464,6 +494,7 @@ void SelectAnimEntity(const World& world, EntityId entity, const AnimBoundRig& r
         inputs.Predicate.LayerBit = static_cast<std::uint8_t>(1u << l);
         inputs.ContentComplete = content != nullptr && content->Layers[l].ContentComplete;
         inputs.RequestsChanged = requestsChanged;
+        inputs.ConstantWeight = rig.Layers[l].Weight;
 
         const AnimBoundSelector& selector = rig.Selectors[static_cast<std::size_t>(selectorIndex)];
         std::span<AnimRuleVerdict> layerVerdicts;

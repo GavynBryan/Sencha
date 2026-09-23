@@ -32,6 +32,11 @@ namespace
         cooldown.Numeric.Minimum = 0.0;
         cooldown.Units = "ms";
 
+        DataFieldSchema weight = Field("weight", DataFieldKind::Float, "Layer weight",
+                                       "Weights the layer while this rule is the first weight rule to pass.", false);
+        weight.Numeric.Minimum = 0.0;
+        weight.Numeric.Maximum = 1.0;
+
         DataFieldSchema rule = Record({}, "Rule", {},
             {
                 optional(Field("name", DataFieldKind::String, "Name", "A label for the debugger.")),
@@ -45,6 +50,9 @@ namespace
                         kAnimSelectorType),
                 optional(Field("extension", DataFieldKind::String, "Extension point",
                                "A name a rig binds a selector to.")),
+                std::move(weight),
+                optional(Field("weight_fact", DataFieldKind::String, "Weight fact",
+                               "A float fact whose value, clamped to [0, 1], weights the layer.")),
                 std::move(holdMin),
                 std::move(cooldown),
             });
@@ -96,13 +104,37 @@ namespace
             const std::string* behavior = text("behavior");
             const std::string* delegate = text("delegate");
             const std::string* extension = text("extension");
-            if ((behavior != nullptr) + (delegate != nullptr) + (extension != nullptr) != 1)
+            const std::string* weightFact = text("weight_fact");
+            const JsonValue* weight = entry.Find("weight");
+            const bool weighs = weightFact != nullptr || (weight != nullptr && weight->IsNumber());
+            if ((behavior != nullptr) + (delegate != nullptr) + (extension != nullptr) + (weightFact != nullptr)
+                    + (weight != nullptr && weight->IsNumber())
+                != 1)
             {
                 result.Error = at + " A rule results in exactly one of a behavior, a delegate "
-                                    "selector, or an extension point.";
+                                    "selector, an extension point, a weight, or a weight fact.";
                 return result;
             }
-            if (behavior != nullptr)
+            if (weighs)
+            {
+                rule.Result = AnimRuleResultKind::Weight;
+                if (weightFact != nullptr)
+                    rule.WeightFact = *weightFact;
+                else
+                    rule.Weight = static_cast<float>(weight->AsNumber());
+                if (rule.Weight < 0.0f || rule.Weight > 1.0f)
+                {
+                    result.Error = at + ".weight A layer weight is between 0 and 1.";
+                    return result;
+                }
+                if (rule.HasStay || entry.Find("hold_min_ms") != nullptr || entry.Find("cooldown_ms") != nullptr)
+                {
+                    result.Error = at + " A weight rule is chosen by its enter alone each tick; it has no "
+                                        "stay, hold or cooldown.";
+                    return result;
+                }
+            }
+            else if (behavior != nullptr)
             {
                 GameplayTagError error;
                 if (!tagSyntax.RegisterTag(*behavior, &error))
