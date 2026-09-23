@@ -7,6 +7,8 @@
 
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimBlendOverrides.h>
+#include <anim/AnimBlendspace.h>
+#include <anim/AnimBlendspaceData.h>
 #include <anim/AnimContentSystem.h>
 #include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimFactSchema.h>
@@ -75,6 +77,7 @@ struct AnimRigFixture
         RegisterAnimSlotMapData(Types, Schemas);
         RegisterAnimFlowData(Types, Schemas);
         RegisterAnimBlendOverrides(Types, Schemas);
+        RegisterAnimBlendspaceData(Types, Schemas);
         RegisterVerbBindingData(Types, Schemas);
 
         Entities.AddResource<GameplayTagRegistry>();

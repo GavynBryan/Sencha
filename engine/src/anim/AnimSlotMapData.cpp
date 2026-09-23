@@ -2,6 +2,7 @@
 
 #include "AnimSchemaFields.h"
 
+#include <anim/AnimBlendspaceData.h>
 #include <anim/AnimFlowData.h>
 
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -30,6 +31,8 @@ namespace
                 std::move(clip),
                 DataRef("flow", "Flow", "The flow this row plays, for a behavior whose content is a sequence.",
                         kAnimFlowType),
+                DataRef("blendspace", "Blendspace",
+                        "The blendspace this row plays: clips mixed by where facts place them.", kAnimBlendspaceType),
             });
         DataFieldSchema rows = ArrayOf("rows", "Rows", "First match per behavior.", std::move(row), true);
         rows.Editor.Widget = "cards";
@@ -71,15 +74,17 @@ namespace
                 row.Clip = clip->AsString();
             if (const JsonValue* flow = entry.Find("flow"); flow != nullptr && flow->IsString())
                 row.Flow = flow->AsString();
-            if (row.Clip.empty() == row.Flow.empty())
+            if (const JsonValue* space = entry.Find("blendspace"); space != nullptr && space->IsString())
+                row.Blendspace = space->AsString();
+            if (!row.Clip.empty() + !row.Flow.empty() + !row.Blendspace.empty() != 1)
             {
-                result.Error = at + " A row plays exactly one of a clip or a flow.";
+                result.Error = at + " A row plays exactly one of a clip, a flow or a blendspace.";
                 return result;
             }
             if (!row.Clip.empty())
                 result.Dependencies.push_back(AssetRef{ AssetType::AnimationClip, row.Clip });
             else
-                result.Dependencies.push_back(AssetRef{ AssetType::Data, row.Flow });
+                result.Dependencies.push_back(AssetRef{ AssetType::Data, row.Flow.empty() ? row.Blendspace : row.Flow });
             map->Rows.push_back(std::move(row));
         }
         result.Value = std::move(map);

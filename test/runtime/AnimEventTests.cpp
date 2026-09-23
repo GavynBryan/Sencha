@@ -649,3 +649,45 @@ TEST(AnimEventBinding, AClipReplacedInPlaceRebindsItsRigs)
     otherSkeleton.SkeletonPath = "asset://anim/other.sskel";
     EXPECT_FALSE(fx.Clips.ReloadInPlace(clip, std::move(otherSkeleton)));
 }
+
+// A blendspace plays its heaviest sample's marks, crossed in the phase every
+// sample shares: once per loop of the mix, however long the mix now is.
+TEST(AnimEvents, ABlendspaceCrossesItsHeaviestSamplesMarksOncePerLoop)
+{
+    EventHarness h;
+    h.BindFootstep();
+    for (const char* tag : { "Anim.Move" })
+        (void)h.Fx.Tags().RegisterTag(tag);
+    h.Fx.Clip("asset://anim/walk.sanim", 1.0f, { Event(1, 0.5f, "anim.footstep", GrassInputs()) });
+    h.Fx.Clip("asset://anim/run.sanim", 0.5f, { Event(1, 0.5f, "anim.footstep", GrassInputs()) });
+    (void)h.Fx.Load("asset://anim/ev.bindings.sdata", kVerbBindingsTypeName, kBindings);
+    (void)h.Fx.Load("asset://anim/bs.facts.sdata", kAnimFactSchemaType,
+                    R"({ "slots": [ { "name": "Speed", "kind": "float" } ] })");
+    (void)h.Fx.Load("asset://anim/bs.space.sdata", kAnimBlendspaceType, R"({
+        "axes": [ { "fact": "Speed", "min": 0, "max": 4 } ],
+        "samples": [ { "clip": "asset://anim/walk.sanim", "at": [ 1 ] },
+                     { "clip": "asset://anim/run.sanim", "at": [ 3 ] } ] })");
+    (void)h.Fx.Load("asset://anim/bs.behaviors.sdata", kAnimBehaviorSetType,
+                    R"({ "behaviors": [ { "tag": "Anim.Move", "kind": "cyclic" } ] })");
+    (void)h.Fx.Load("asset://anim/bs.slots.sdata", kAnimSlotMapType,
+                    R"({ "rows": [ { "behavior": "Anim.Move", "blendspace": "asset://anim/bs.space.sdata" } ] })");
+    const DataAssetHandle rig = h.Fx.Load("asset://anim/bs.rig.sdata", kAnimRigType, R"({
+        "facts": "asset://anim/bs.facts.sdata", "behaviors": [ "asset://anim/bs.behaviors.sdata" ],
+        "slot_maps": [ "asset://anim/bs.slots.sdata" ], "bindings": [ "asset://anim/ev.bindings.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "idle": "Anim.Move" } ] })");
+    ASSERT_TRUE(h.Fx.Bound(rig).Valid) << AnimRigFixture::Describe(h.Fx.Bound(rig));
+    const EntityId mover = h.Fx.Character(rig, AnimTestMotion{ .Speed = 1.0f });
+
+    // At walk alone the mix is 1 s: a footstep half way, once a loop.
+    h.Step(120);
+    ASSERT_EQ(h.Footsteps.Calls.size(), 2u);
+    EXPECT_EQ(h.Footsteps.Calls[0].Tick, 30u);
+    EXPECT_EQ(h.Footsteps.Calls[1].Tick, 90u);
+
+    // At run alone it is 0.5 s: twice as often, from where the phase was.
+    h.Footsteps.Calls.clear();
+    h.Fx.Motion(mover).Speed = 3.0f;
+    h.Step(60);
+    ASSERT_EQ(h.Footsteps.Calls.size(), 2u);
+    EXPECT_EQ(h.Footsteps.Calls[1].Tick - h.Footsteps.Calls[0].Tick, 30u);
+}

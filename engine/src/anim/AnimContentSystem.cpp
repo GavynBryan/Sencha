@@ -1,5 +1,7 @@
 #include <anim/AnimContentSystem.h>
 
+#include <anim/AnimBlendspace.h>
+#include <anim/AnimBlendspaceData.h>
 #include <anim/AnimFacts.h>
 #include <anim/AnimFlowRunner.h>
 #include <anim/AnimRequests.h>
@@ -10,7 +12,9 @@
 #include <world/SimulationAuthority.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <optional>
 
 namespace
 {
@@ -186,6 +190,22 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         // Content time runs from the driving request's start, which a late
         // joiner can also see, and otherwise from the tick content changed.
         const AnimTick instanceStart = driving != nullptr ? std::min(driving->StartTick, now) : now;
+        // Where the outgoing content is now, in normalized time: a
+        // blendspace's phase, or a clip's time over its length.
+        const auto outgoingNormalized = [&](AnimBehaviorKind outgoingKind) {
+            if (layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0)
+                return layer.Phase;
+            const float length = DurationOf(rig, layer.Content);
+            if (length <= 0.0f)
+                return 0.0f;
+            const double elapsed = static_cast<double>(layer.StartOffsetSeconds)
+                + static_cast<double>(now >= layer.StartTick ? now - layer.StartTick : 0) * tickSeconds;
+            const double at = outgoingKind == AnimBehaviorKind::Cyclic ? std::fmod(elapsed, static_cast<double>(length))
+                                                                       : std::min(elapsed, static_cast<double>(length));
+            return static_cast<float>(at / length);
+        };
+        // Set when content starts this tick: the normalized time it starts at.
+        std::optional<float> startNormalized;
         const auto startInstance = [&](AnimChangeReason reason) {
             layer.Behavior = behavior;
             layer.Row = resolvedRow;
@@ -195,6 +215,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             layer.StartTick = instanceStart;
             layer.StartOffsetSeconds = 0.0f;
             layer.Pinned = kind == AnimBehaviorKind::OneShot || kind == AnimBehaviorKind::Flow;
+            startNormalized = 0.0f;
             Log(log, now, l, AnimDecisionCause::ContentChanged, reason, layer);
         };
 
@@ -207,23 +228,12 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             // becomes a run keeps its footfalls.
             const AnimBoundBehavior* from = rig.FindBehavior(layer.Behavior);
             const AnimBoundBehavior* to = rig.FindBehavior(behavior);
-            const float fromDuration = DurationOf(rig, layer.Content);
             const bool carry = !lostPin && from != nullptr && to != nullptr
                 && rig.ResolveBlend(from->Tag, to->Tag).Phase == AnimPhasePolicy::Carry && to->SyncGroup.IsValid()
-                && to->SyncGroup == from->SyncGroup && fromDuration > 0.0f
+                && to->SyncGroup == from->SyncGroup
                 && (from->Policy.Kind == AnimBehaviorKind::Cyclic || from->Policy.Kind == AnimBehaviorKind::Hold)
                 && (to->Policy.Kind == AnimBehaviorKind::Cyclic || to->Policy.Kind == AnimBehaviorKind::Hold);
-            float normalized = 0.0f;
-            if (carry)
-            {
-                // Where the outgoing content is now, not where it was drawn last.
-                const double elapsed = static_cast<double>(layer.StartOffsetSeconds)
-                    + static_cast<double>(now >= layer.StartTick ? now - layer.StartTick : 0) * tickSeconds;
-                const double at = from->Policy.Kind == AnimBehaviorKind::Cyclic
-                    ? std::fmod(elapsed, static_cast<double>(fromDuration))
-                    : std::min(elapsed, static_cast<double>(fromDuration));
-                normalized = static_cast<float>(at / fromDuration);
-            }
+            const float normalized = carry ? outgoingNormalized(from->Policy.Kind) : 0.0f;
             startInstance(lostPin ? AnimChangeReason::Rebound : AnimChangeReason::BehaviorChanged);
             if (carry)
             {
@@ -231,6 +241,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
                 // carried, and it was reached now.
                 layer.StartTick = now;
                 layer.StartOffsetSeconds = normalized * DurationOf(rig, resolvedContent);
+                startNormalized = normalized;
             }
             entered = true;
         }
@@ -253,13 +264,13 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         {
             // Same behavior, a different row: cyclic and hold content takes
             // it now, starting at the same normalized time.
-            const float oldDuration = DurationOf(rig, layer.Clip);
-            const float normalized = oldDuration > 0.0f ? layer.TimeSeconds / oldDuration : 0.0f;
+            const float normalized = outgoingNormalized(kind);
             layer.Row = resolvedRow;
             layer.RowKey = row >= 0 ? rig.SlotRows[static_cast<std::size_t>(row)].Key : 0;
             layer.Content = resolvedContent;
             layer.StartTick = now;
             layer.StartOffsetSeconds = normalized * DurationOf(rig, resolvedContent);
+            startNormalized = normalized;
             Log(log, now, l, AnimDecisionCause::ContentChanged, AnimChangeReason::RowChanged, layer);
         }
 
@@ -318,6 +329,44 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
 
         if (flows != nullptr)
             flows->Layers[l] = AnimLayerFlow{};
+
+        const int spaceIndex = layer.Content < rig.Contents.size() ? rig.Contents[layer.Content].Blendspace : -1;
+        if (spaceIndex >= 0)
+        {
+            // A mix advances its phase by the tick over the mix's length where
+            // the facts put it now, so its samples keep one phase however the
+            // weights move.
+            const AnimBoundBlendspace& space = rig.Blendspaces[static_cast<std::size_t>(spaceIndex)];
+            const AnimBlendspacePoint at = AnimBlendspaceCoordinates(space, facts, rig);
+            std::array<float, kAnimBlendspaceMaxSamples> weights{};
+            AnimBlendspaceWeights(space, at, weights);
+            const float duration = AnimBlendspaceDuration(rig, space, weights);
+            if (startNormalized)
+                layer.Phase = *startNormalized;
+            else if (duration > 0.0f)
+                layer.Phase += static_cast<float>(tickSeconds / duration);
+            // The phase is a sum of per-tick steps, so the tick that reaches
+            // the end may land a rounding short of it; it counts as there.
+            constexpr float kEndSlack = 1e-5f;
+            if (kind == AnimBehaviorKind::Cyclic)
+            {
+                layer.Phase = std::max(layer.Phase - std::floor(layer.Phase + kEndSlack), 0.0f);
+                layer.ContentComplete = false;
+            }
+            else
+            {
+                layer.ContentComplete = layer.Phase >= 1.0f - kEndSlack;
+                layer.Phase = layer.ContentComplete ? 1.0f : layer.Phase;
+            }
+            layer.Coordinates[0] = at[0];
+            layer.Coordinates[1] = at[1];
+            const int dominant = space.Samples[AnimBlendspaceDominant(space, weights)].Content;
+            layer.Clip = dominant >= 0 ? static_cast<std::uint16_t>(dominant) : kAnimNoContent;
+            layer.ClipStartTick = layer.StartTick;
+            layer.ClipOffsetSeconds = 0.0f;
+            layer.TimeSeconds = layer.Phase * duration;
+            continue;
+        }
         layer.Clip = layer.Content;
         layer.ClipStartTick = layer.StartTick;
         layer.ClipOffsetSeconds = layer.StartOffsetSeconds;

@@ -86,6 +86,9 @@ struct AnimRigBinder
     // After selectors and slot maps: the pairings a flow requires of the
     // behavior playing it.
     void ValidateFlows();
+    // A blendspace's content entry, bound on first use with its samples' clips
+    // as content of their own. -1 when it cannot be bound.
+    int BindBlendspaceContent(const std::string& path, const std::string& referrer, const std::string& field);
     // A flow `row` plays checked against every flow on another layer that
     // one request can drive with it: they share that request's anchor.
     void ValidateSharedAnchor(const AnimBoundSlotRow& row);

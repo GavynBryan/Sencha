@@ -105,6 +105,23 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
                 if (content < 0)
                     continue;
             }
+            else if (!decl.Blendspace.empty())
+            {
+                content = BindBlendspaceContent(decl.Blendspace, path, at + ".blendspace");
+                if (content < 0)
+                    continue;
+                // A mix's time is the path its coordinates took, which no
+                // request records.
+                if (const AnimBoundBehavior* policy = Out.FindBehavior(*behavior);
+                    policy != nullptr
+                    && (policy->Policy.Kind == AnimBehaviorKind::Flow || policy->Policy.RootMotion
+                        || policy->Policy.LateJoin == AnimLateJoin::Reconstruct))
+                    Error("anim.blendspace.behavior", path, at + ".blendspace",
+                          std::format("'{}' is a flow, moves the character or reconstructs on late join; a "
+                                      "blendspace's time depends on the path its facts took, so it plays only "
+                                      "cyclic, one-shot or hold behaviors that do none of that.",
+                                      decl.Behavior));
+            }
             else
             {
                 content = FindOrAddClipContent(decl.Clip);
@@ -151,8 +168,20 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
             if (other.Behavior != row.Behavior)
                 continue;
             const AnimBoundContent& otherContent = Out.Contents[static_cast<std::size_t>(other.Content)];
-            if (content.Flow >= 0 || otherContent.Flow >= 0)
+            if (!content.IsClip() || !otherContent.IsClip())
             {
+                if (content.Blendspace >= 0 || otherContent.Blendspace >= 0)
+                {
+                    if (row.Content != other.Content)
+                    {
+                        Error("anim.slot.local_timing", row.DeclaredIn, std::format("$.data.rows[{}].when", row.Index),
+                              std::format("This row reads a local fact, so every row for '{}' must keep the same "
+                                          "time; '{}' and '{}' do not, since a blendspace's time is its own.",
+                                          row.BehaviorName, path, otherContent.Path));
+                        break;
+                    }
+                    continue;
+                }
                 // Flows time by their sections: the same ones, running as long
                 // and leaving the same way.
                 const std::string difference = content.Flow < 0 || otherContent.Flow < 0

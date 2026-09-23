@@ -45,7 +45,7 @@ namespace
             if (row < 0)
                 return kAnimNoContent;
             const int content = Tick.Rig->SlotRows[static_cast<std::size_t>(row)].Content;
-            return content >= 0 && Tick.Rig->Contents[static_cast<std::size_t>(content)].Flow < 0
+            return content >= 0 && Tick.Rig->Contents[static_cast<std::size_t>(content)].IsClip()
                 ? static_cast<std::uint16_t>(content)
                 : kAnimNoContent;
         }

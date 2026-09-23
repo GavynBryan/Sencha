@@ -45,6 +45,11 @@ struct AnimLayerContent
     std::uint16_t Clip = kAnimNoContent;
     AnimTick ClipStartTick = 0;
     float ClipOffsetSeconds = 0.0f;
+    // A blendspace's place: normalized phase, shared by every sample, and the
+    // point the facts put it at this tick. Its clip is the heaviest sample,
+    // whose events it plays.
+    float Phase = 0.0f;
+    float Coordinates[2] = {};
     // How far the event pass has taken this content: the content instance it
     // was reading (named by its StartTick) and the last tick it covered. A
     // new instance, or a gap in the ticks covered, is how the pass tells an
@@ -59,6 +64,8 @@ struct AnimLayerContent
     AnimTick EventContentStartTick = kAnimNoTick;
     std::uint16_t EventContent = kAnimNoContent;
     std::uint8_t EventSection = 0xFF;
+    // The blendspace phase the event pass last covered.
+    float EventPhase = 0.0f;
 };
 
 struct SENCHA_COMPONENT("sencha.anim_content_state") AnimContentState

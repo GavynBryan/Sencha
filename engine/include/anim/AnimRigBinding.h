@@ -240,6 +240,34 @@ struct AnimBoundContent
     std::vector<AnimBoundEvent> Events;
     // Index into AnimBoundRig::Flows, or -1 for a clip.
     int Flow = -1;
+    // Index into AnimBoundRig::Blendspaces, or -1. A blendspace's content is
+    // its samples', each a content entry of its own.
+    int Blendspace = -1;
+
+    [[nodiscard]] bool IsClip() const { return Flow < 0 && Blendspace < 0; }
+};
+
+struct AnimBoundBlendspaceAxis
+{
+    std::string Fact;
+    int FactSlot = -1;
+    float Min = 0.0f;
+    float Max = 1.0f;
+};
+
+struct AnimBoundBlendspaceSample
+{
+    // The sample's clip, as a content entry.
+    int Content = -1;
+    float At[2] = {};
+};
+
+struct AnimBoundBlendspace
+{
+    std::string Path;
+    std::uint8_t AxisCount = 1;
+    AnimBoundBlendspaceAxis Axes[2];
+    std::vector<AnimBoundBlendspaceSample> Samples;
 };
 
 struct AnimBoundFlowBranch
@@ -348,6 +376,7 @@ struct AnimBoundRig
     std::vector<AnimBoundSlotRow> SlotRows;
     std::vector<AnimBoundContent> Contents;
     std::vector<AnimBoundFlow> Flows;
+    std::vector<AnimBoundBlendspace> Blendspaces;
     std::vector<AnimBoundBlendOverride> BlendOverrides;
 
     // The rig's authored bindings, compiled against this World's catalog.

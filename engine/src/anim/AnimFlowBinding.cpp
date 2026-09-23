@@ -209,10 +209,10 @@ void AnimRigBinder::ValidateFlows()
             if (!section.Slot.IsValid())
                 continue;
             for (const AnimBoundSlotRow& slotRow : Out.SlotRows)
-                if (slotRow.Behavior == section.Slot && Out.Contents[static_cast<std::size_t>(slotRow.Content)].Flow >= 0)
+                if (slotRow.Behavior == section.Slot && !Out.Contents[static_cast<std::size_t>(slotRow.Content)].IsClip())
                     Error("anim.flow.nested", flow.Path, "$.data.sections",
-                          std::format("Section '{}' resolves '{}' to a flow; a section plays a clip.", section.TagName,
-                                      slotRow.BehaviorName));
+                          std::format("Section '{}' resolves '{}' to a flow or blendspace; a section plays a clip.",
+                                      section.TagName, slotRow.BehaviorName));
         }
 
         ValidateSharedAnchor(row);

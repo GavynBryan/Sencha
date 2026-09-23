@@ -109,6 +109,8 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
         const std::uint16_t previousContent = layer.EventContent;
         const std::uint8_t previousSection = layer.EventSection;
         const AnimTick previousContentStart = layer.EventContentStartTick;
+        const float previousPhase = layer.EventPhase;
+        layer.EventPhase = layer.Phase;
 
         const AnimLayerFlow* flow = flows != nullptr ? &flows->Layers[l] : nullptr;
         const bool playingFlow = flow != nullptr && flow->Phase != AnimFlowPhase::None
@@ -238,6 +240,26 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
             if (!admit(record))
                 Record(log, now, l, layer, event, AnimEventOutcome::Fired, VerbAdmission::QueueFull);
         };
+
+        // A blendspace's marks are its heaviest sample's, crossed in its shared
+        // phase: the stretch since the last pass, unwrapped across a loop.
+        if (layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0)
+        {
+            const double length = static_cast<double>(played.DurationSeconds);
+            const double at = static_cast<double>(layer.Phase) * length;
+            if (!sameClip)
+            {
+                ForEachMark(played, cyclic, at, at, layer.Phase <= 0.0f, [&](std::size_t e) { produce(e, false); });
+                continue;
+            }
+            const double from = static_cast<double>(previousPhase) * length;
+            const double until = cyclic && layer.Phase < previousPhase ? at + length : at;
+            // Where the phase stood on ticks the pass did not see is not
+            // recorded, so a gap skips the whole stretch.
+            const bool skipped = coveredThrough + 1 < now;
+            ForEachMark(played, cyclic, from, until, false, [&](std::size_t e) { produce(e, skipped); });
+            continue;
+        }
 
         const double to = Elapsed(layer, now, tickSeconds);
         if (!sameClip)

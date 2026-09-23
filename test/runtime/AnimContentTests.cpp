@@ -38,8 +38,9 @@ TEST(AnimContent, ARowChangeUnderACyclicBehaviorCarriesNormalizedTime)
     fx.Tick();
     EXPECT_EQ(fx.Clip(), "asset://anim/walk_crouch.sanim");
     EXPECT_EQ(fx.BehaviorName(fx.Entity), "Anim.Locomotion.Walk");
-    // Half-way through the 1.2 s crouch walk, where the walk was.
-    EXPECT_NEAR(fx.Playing(fx.Entity).TimeSeconds, 0.6f, 1e-4f);
+    // On this tick the walk is 31 of its 60 ticks in; the 1.2 s crouch walk
+    // takes over at that same fraction, so neither loses a tick.
+    EXPECT_NEAR(fx.Playing(fx.Entity).TimeSeconds, 31.0f / 60.0f * 1.2f, 1e-4f);
     const AnimDecisionRecord* changed = fx.LastRecord(fx.Entity, AnimDecisionCause::ContentChanged);
     ASSERT_NE(changed, nullptr);
     EXPECT_EQ(changed->Reason, AnimChangeReason::RowChanged);
