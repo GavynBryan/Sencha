@@ -82,6 +82,15 @@ struct AnimationScenarioAction
     JsonValue::Object Unknown;
 };
 
+// Which side of a session the preview World plays. An authority produces
+// gameplay events; a client never does. Part of the scenario because it
+// changes what a run does.
+enum class AnimationPreviewRole : std::uint8_t
+{
+    Authority,
+    Client,
+};
+
 struct AnimationScenario
 {
     std::string Name;
@@ -96,6 +105,11 @@ struct AnimationScenario
     std::vector<std::pair<std::string, AnimationScenarioValue>> Inputs;
     // Ordered by tick; actions on one tick apply in list order.
     std::vector<AnimationScenarioAction> Actions;
+    AnimationPreviewRole Role = AnimationPreviewRole::Authority;
+    // Verbs a preview recorder stands behind, by name. The preview has no
+    // game running, so a declared verb is otherwise Unavailable; a recorder
+    // accepts and keeps what it was handed, and is always shown as one.
+    std::vector<std::string> Recorders;
 
     JsonValue::Object Unknown;
 

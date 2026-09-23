@@ -12,6 +12,7 @@
 
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
+#include <app/GameModuleLoader.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <platform/PlatformServices.h>
@@ -40,7 +41,8 @@ private:
 }
 
 // The host owns the asset stack longer than the session and render features
-// borrowing it. No game module is activated in this content audition process.
+// borrowing it. The project's game module is loaded for its vocabulary hook
+// only; it is never started in this process.
 class AnimationEditorHost
 {
 public:
@@ -58,11 +60,20 @@ public:
         {
             ProjectDescriptor project;
             if (ProjectDescriptor::Load(*projectPath, project, &error))
+            {
                 MountProjectContent(project, *Assets, engine.Logging(), &engine.Jobs());
+                LoadModuleVocabulary(project);
+            }
         }
         else
             error = "Pass --project <path.senchaproj> to mount preview content.";
-        Workspace = std::make_unique<AnimationPreviewWorkspace>(*Assets);
+        // The project's names reach each preview World through the module's
+        // vocabulary hook alone: the module is never started, so a verb it
+        // declares has no implementation here.
+        std::function<void(World&)> vocabulary;
+        if (GameModule.IsValid())
+            vocabulary = [game = GameModule.Instance](World& world) { game->OnRegisterVocabulary(world); };
+        Workspace = std::make_unique<AnimationPreviewWorkspace>(*Assets, std::move(vocabulary));
         Workspace->Error = std::move(error);
         if (Workspace->Error.empty())
         {
@@ -105,6 +116,9 @@ public:
         }
         Workspace.reset();
         Assets.reset();
+        // The preview Worlds that hold the module's declarations are gone.
+        if (GameModule.IsValid())
+            ModuleLoader.Unload(GameModule);
     }
 
     void Frame(double seconds)
@@ -130,7 +144,20 @@ public:
     }
 
 private:
+    void LoadModuleVocabulary(const ProjectDescriptor& project)
+    {
+        if (project.GameModulePath.empty())
+            return;
+        std::string error;
+        GameModule = ModuleLoader.Load(project.GameModulePath, &error);
+        if (!GameModule.IsValid())
+            std::fprintf(stderr, "[animation_editor] failed to load game module '%s': %s\n",
+                         project.GameModulePath.c_str(), error.c_str());
+    }
+
     Engine& EngineRef;
+    GameModuleLoader ModuleLoader;
+    LoadedModule GameModule;
     std::unique_ptr<RuntimeAssets> Assets;
     std::unique_ptr<AnimationPreviewWorkspace> Workspace;
     EditorUiFeature* Ui = nullptr;

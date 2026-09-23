@@ -10,6 +10,7 @@
 #include <core/assets/AssetLease.h>
 #include <math/Mat.h>
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -45,7 +46,9 @@ struct AnimationNavigation
 class AnimationPreviewWorkspace
 {
 public:
-    explicit AnimationPreviewWorkspace(RuntimeAssets& assets);
+    // `vocabulary` installs the project's names -- tags, verbs -- into each
+    // preview World; the application passes its loaded module's hook.
+    explicit AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary = {});
     void RefreshBrowser();
     bool SelectMesh(const std::string& path);
     bool SelectSkeleton(const std::string& path);

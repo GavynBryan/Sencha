@@ -14,8 +14,8 @@
 #include <algorithm>
 #include <filesystem>
 
-AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets)
-    : Simulation(assets.DataAssets, &assets.AnimationClips)
+AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary)
+    : Simulation(assets.DataAssets, &assets.AnimationClips, std::move(vocabulary))
     , Assets(assets)
 {
     Material material;

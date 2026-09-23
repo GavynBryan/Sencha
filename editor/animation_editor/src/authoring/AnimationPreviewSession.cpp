@@ -4,10 +4,13 @@
 #include <anim/AnimFactEvaluation.h>
 #include <anim/AnimFactProviders.h>
 #include <anim/AnimationRegistration.h>
+#include <app/EngineVerbs.h>
+#include <authored/WorldVocabulary.h>
 #include <core/json/JsonStringify.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <world/ComponentRegistrar.h>
+#include <world/SimulationAuthority.h>
 
 #include <algorithm>
 #include <cmath>
@@ -17,6 +20,60 @@
 namespace
 {
     constexpr int kMaxTicksPerAdvance = 8;
+    // One entity crossing more marks than this on one tick is refused on the
+    // record, as the runtime refuses past its queue capacity.
+    constexpr std::size_t kPreviewEventCapacity = 256;
+
+    // A verb argument as a reader would write it.
+    std::string ValueText(const VerbValue& value, const GameplayTagRegistry* tags)
+    {
+        const auto list = [&](std::string_view open, std::string_view close) {
+            std::string text(open);
+            for (std::size_t i = 0; i < value.Children().size(); ++i)
+                text += (i == 0 ? "" : ", ") + ValueText(value.Children()[i], tags);
+            return text + std::string(close);
+        };
+        bool flag = false;
+        std::int64_t whole = 0;
+        double number = 0.0;
+        std::string_view text;
+        VerbVectorValue vector;
+        const AssetRef* asset = nullptr;
+        GameplayTagId tag;
+        EntityId entity;
+        switch (value.Kind())
+        {
+        case VerbValueKind::None: return "(none)";
+        case VerbValueKind::Bool: return value.TryGetBool(flag) && flag ? "true" : "false";
+        case VerbValueKind::Int: return value.TryGetInt(whole) ? std::format("{}", whole) : "?";
+        case VerbValueKind::Float: return value.TryGetFloat(number) ? std::format("{}", number) : "?";
+        case VerbValueKind::String: return value.TryGetString(text) ? std::format("\"{}\"", text) : "?";
+        case VerbValueKind::Enum: return value.TryGetEnum(text) ? std::string(text) : "?";
+        case VerbValueKind::Vector:
+        {
+            if (!value.TryGetVector(vector))
+                return "?";
+            std::string out = "(";
+            for (std::size_t i = 0; i < vector.Length; ++i)
+                out += std::format("{}{}", i == 0 ? "" : ", ", vector.Components[i]);
+            return out + ")";
+        }
+        case VerbValueKind::Record: return list("{", "}");
+        case VerbValueKind::Array: return list("[", "]");
+        case VerbValueKind::AssetRef:
+            return value.TryGetAsset(asset) ? asset->Path : "?";
+        case VerbValueKind::DataAssetRef:
+            return value.TryGetDataAsset(asset) ? asset->Path : "?";
+        case VerbValueKind::GameplayTag:
+            if (value.TryGetTag(tag) && tags != nullptr)
+                return std::string(tags->GetName(tag));
+            return "?";
+        case VerbValueKind::Entity:
+            return value.TryGetEntity(entity) ? std::format("entity {}", entity.Index) : "?";
+        case VerbValueKind::PersistentEntity: return "(persistent entity)";
+        }
+        return "?";
+    }
 
     bool SameRequest(const AnimRequest& a, const AnimRequest& b)
     {
@@ -35,7 +92,8 @@ namespace
             && a.Request == b.Request && a.Intent == b.Intent && a.CancelReason == b.CancelReason
             && a.RejectReason == b.RejectReason && a.Reason == b.Reason && a.Rule == b.Rule
             && a.PreviousRule == b.PreviousRule && a.Behavior == b.Behavior && a.Row == b.Row
-            && a.Content == b.Content;
+            && a.Content == b.Content && a.EventKey == b.EventKey && a.EventOutcome == b.EventOutcome
+            && a.Admission == b.Admission;
     }
 
     template <typename T, typename F>
@@ -116,7 +174,7 @@ bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a, const Animati
     return a.Tick == b.Tick && a.Facts == b.Facts && a.FactsExact == b.FactsExact
         && SameRange(a.Requests, b.Requests, SameRequest)
         && SameRange(a.Decisions, b.Decisions, SameDecision) && a.Actions == b.Actions
-        && SameRange(a.Layers, b.Layers, sameLayer);
+        && SameRange(a.Layers, b.Layers, sameLayer) && a.Invocations == b.Invocations;
 }
 
 AnimationPreviewSession::AnimationPreviewSession(const DataAssetCache& data, const AnimationClipCache* clips,
@@ -137,9 +195,19 @@ bool AnimationPreviewSession::Open(AnimationScenario scenario)
     return Bound != nullptr;
 }
 
+void AnimationPreviewSession::DropWorld()
+{
+    // Unbound, then undispatched, then gone: the tokens reach back into the
+    // dispatcher, and the dispatcher into the World's catalog.
+    RecorderTokens.clear();
+    Recorders.clear();
+    Dispatcher.reset();
+    Preview.reset();
+}
+
 void AnimationPreviewSession::Close()
 {
-    Preview.reset();
+    DropWorld();
     Bound = nullptr;
     Records.clear();
     ScenarioIssues.clear();
@@ -200,6 +268,7 @@ bool AnimationPreviewSession::ReadInput(const World& world, EntityId, const void
 
 void AnimationPreviewSession::BuildWorld()
 {
+    DropWorld();
     Preview = std::make_unique<World>();
     Bound = nullptr;
     Slots.clear();
@@ -216,8 +285,31 @@ void AnimationPreviewSession::BuildWorld()
         RegisterAnimationComponents(registrar);
     }
     InstallAnimationVocabulary(*Preview);
+    // The verbs content may name: the engine's, then the project's, declared
+    // in the order a runtime World declares them.
+    VerbRegistry& verbs = InstallVerbRegistry(*Preview);
+    (void)DeclareEngineVerbs(verbs);
     if (Vocabulary)
         Vocabulary(*Preview);
+    for (const std::string& error : verbs.InstallationErrors())
+        Problem("anim.preview.vocabulary", {}, error);
+    verbs.ClearInstallationErrors();
+    Preview->SetResource(SimulationAuthority{ Working.Role == AnimationPreviewRole::Authority });
+
+    // Recorders are the only implementations the preview has.
+    Dispatcher = std::make_unique<VerbDispatcher>(verbs);
+    for (std::size_t i = 0; i < Working.Recorders.size(); ++i)
+    {
+        const VerbId verb = verbs.Find(Working.Recorders[i]);
+        if (!verb.IsValid())
+        {
+            Problem("anim.scenario.recorder_unknown", std::format("$.recorders[{}]", i),
+                    std::format("'{}' is not a verb this preview declares.", Working.Recorders[i]));
+            continue;
+        }
+        Recorders.push_back(Recorder{ this, Working.Recorders[i] });
+        RecorderTokens.push_back(Dispatcher->Bind(verb, Recorders.back()));
+    }
     GameplayTagRegistry& tags = Preview->GetResource<GameplayTagRegistry>();
     for (std::size_t i = 0; i < Working.DeclaredTags.size(); ++i)
     {
@@ -378,6 +470,69 @@ void AnimationPreviewSession::CancelRequest(const std::string& participant, cons
     action.Intent = intent;
     action.Reason = reason;
     Schedule(std::move(action));
+}
+
+void AnimationPreviewSession::Replay()
+{
+    const AnimTick at = CurrentTick;
+    Restart();
+    RunTo(at);
+}
+
+void AnimationPreviewSession::SetRole(AnimationPreviewRole role)
+{
+    if (Working.Role == role)
+        return;
+    Working.Role = role;
+    if (Preview != nullptr)
+        Replay();
+}
+
+void AnimationPreviewSession::SetRecorder(std::string_view verb, bool attached)
+{
+    const auto it = std::find(Working.Recorders.begin(), Working.Recorders.end(), verb);
+    if (attached == (it != Working.Recorders.end()))
+        return;
+    if (attached)
+        Working.Recorders.emplace_back(verb);
+    else
+        Working.Recorders.erase(it);
+    if (Preview != nullptr)
+        Replay();
+}
+
+bool AnimationPreviewSession::HasRecorder(std::string_view verb) const
+{
+    return std::find(Working.Recorders.begin(), Working.Recorders.end(), verb) != Working.Recorders.end();
+}
+
+VerbAdmission AnimationPreviewSession::Recorder::Invoke(const VerbInvocation& invocation)
+{
+    if (Session->InvocationSink == nullptr)
+        return VerbAdmission::Refused;
+    AnimationPreviewInvocation recorded;
+    recorded.Tick = invocation.Tick;
+    recorded.Verb = Verb;
+    if (Session->Bound != nullptr)
+        if (const CompiledVerbBinding* binding = Session->Bound->Bindings.Find(invocation.Binding))
+            recorded.Binding = binding->KeyText;
+    const auto name = [&](EntityId entity) -> std::string {
+        if (!entity.IsValid())
+            return {};
+        if (entity == Session->SubjectEntity)
+            return "subject";
+        return std::string(Session->ParticipantName(entity));
+    };
+    recorded.Producer = name(invocation.Producer);
+    recorded.Instigator = name(invocation.Instigator);
+    const VerbRegistry* verbs = Session->Verbs();
+    const VerbDefinition* definition = verbs != nullptr ? verbs->Get(invocation.Verb) : nullptr;
+    if (definition != nullptr && invocation.Arguments != nullptr)
+        for (std::size_t slot = 0; slot < definition->Arguments.Children.size(); ++slot)
+            recorded.Arguments.emplace_back(definition->Arguments.Children[slot].Key,
+                                            ValueText(invocation.Arguments->At(slot), Session->Tags()));
+    Session->InvocationSink->push_back(std::move(recorded));
+    return VerbAdmission::Accepted;
 }
 
 bool AnimationPreviewSession::AddParticipant(const std::string& name)
@@ -551,8 +706,21 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
             SelectAnimEntity(*Preview, SubjectEntity, *Bound, Facts(), *selection, tick, TickSeconds(), log,
                              &verdicts);
         if (content != nullptr)
+        {
             ResolveAnimEntity(*Preview, SubjectEntity, *Bound, Facts(), selection, *content, tick, TickSeconds(),
                               log);
+            // The production event pass: crossings collected, then offered
+            // through the preview's dispatcher, whose only implementations
+            // are recorders.
+            PendingEvents.clear();
+            CollectAnimEvents(SubjectEntity, rig, *Bound, selection, Requests(), *content, tick, TickSeconds(),
+                              AnimEventGates{ .Authority = Working.Role == AnimationPreviewRole::Authority,
+                                              .Presents = true },
+                              PendingEvents, kPreviewEventCapacity, log);
+            InvocationSink = &record.Invocations;
+            DrainAnimEvents(*Preview, PendingEvents, Dispatcher.get());
+            InvocationSink = nullptr;
+        }
         for (std::size_t l = 0; l < Bound->Layers.size() && l < kAnimMaxLayers; ++l)
         {
             AnimationPreviewLayerRecord layer;
@@ -730,4 +898,9 @@ std::string_view AnimationPreviewSession::ParticipantName(EntityId entity) const
 const GameplayTagRegistry* AnimationPreviewSession::Tags() const
 {
     return Preview != nullptr ? Preview->TryGetResource<GameplayTagRegistry>() : nullptr;
+}
+
+const VerbRegistry* AnimationPreviewSession::Verbs() const
+{
+    return Preview != nullptr ? FindVerbRegistry(*Preview) : nullptr;
 }

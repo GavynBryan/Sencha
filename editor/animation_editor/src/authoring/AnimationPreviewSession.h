@@ -4,11 +4,13 @@
 
 #include <anim/AnimContentSystem.h>
 #include <anim/AnimDecisionLog.h>
+#include <anim/AnimEventSystem.h>
 #include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimRequests.h>
 #include <anim/AnimRigBinding.h>
 #include <assets/data/DataAssetCache.h>
+#include <authored/VerbDispatcher.h>
 
 #include <cstdint>
 #include <deque>
@@ -27,11 +29,13 @@ class World;
 // AnimationPreviewSession
 //
 // A rig under a scenario, simulated in an isolated World on a fixed clock with
-// the production binding, gather, derivation, request, selection and content
-// resolution code. The editor
-// substitutes only gameplay: the preview's fact providers read scenario-owned
-// inputs, and scenario participants issue requests through the normal request
-// API.
+// the production binding, gather, derivation, request, selection, content
+// resolution and event code. The editor substitutes only gameplay: the
+// preview's fact providers read scenario-owned inputs, scenario participants
+// issue requests through the normal request API, and the preview's dispatcher
+// has no implementation behind a verb except the recorders the scenario names.
+// A verb without one answers Unavailable, as it would in a World nothing
+// implements it in.
 //
 // The live session is a scenario run. Every live edit is appended to the
 // working scenario at the next tick and applied when that tick runs, so what
@@ -55,6 +59,23 @@ struct AnimationPreviewActionOutcome
     std::string Problem;
 
     friend bool operator==(const AnimationPreviewActionOutcome&, const AnimationPreviewActionOutcome&) = default;
+};
+
+// What a preview recorder was handed: one invocation, as text. Never proof
+// that a game did anything -- only that the authored path reached the verb
+// with these values.
+struct AnimationPreviewInvocation
+{
+    AnimTick Tick = 0;
+    std::string Verb;
+    std::string Binding;
+    // The animated entity and the participant behind the request, by name.
+    std::string Producer;
+    std::string Instigator;
+    // Each argument the verb declares, in its order, and its value.
+    std::vector<std::pair<std::string, std::string>> Arguments;
+
+    friend bool operator==(const AnimationPreviewInvocation&, const AnimationPreviewInvocation&) = default;
 };
 
 // One layer's outcome on one tick: what won and why every rule did or did not,
@@ -83,6 +104,8 @@ struct AnimationPreviewTickRecord
     std::vector<AnimDecisionRecord> Decisions;
     std::vector<AnimationPreviewActionOutcome> Actions;
     std::vector<AnimationPreviewLayerRecord> Layers;
+    // What preview recorders were handed this tick, in dispatch order.
+    std::vector<AnimationPreviewInvocation> Invocations;
 };
 
 [[nodiscard]] bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a,
@@ -130,6 +153,12 @@ public:
                        AnimCancelReason reason);
     // Adds a participant to the scenario, for the next restart.
     bool AddParticipant(const std::string& name);
+    // The preview World's role, and whether a recorder stands behind a verb.
+    // Both change what a run does, so both are scenario state: changing one
+    // replays the scenario to the current tick under the new setting.
+    void SetRole(AnimationPreviewRole role);
+    void SetRecorder(std::string_view verb, bool attached);
+    [[nodiscard]] bool HasRecorder(std::string_view verb) const;
 
     // The facts the next tick would produce, from a disposable copy of this
     // tick's state and the edits scheduled for it. Commits nothing.
@@ -173,11 +202,22 @@ public:
     [[nodiscard]] std::string_view ParticipantName(EntityId entity) const;
     // The preview World's vocabulary, for showing tag values by name.
     [[nodiscard]] const GameplayTagRegistry* Tags() const;
+    // The verbs the preview World declares: the engine's and the project's.
+    [[nodiscard]] const VerbRegistry* Verbs() const;
 
     // How many ticks of history are kept.
     static constexpr std::size_t kHistoryCapacity = 3600;
 
 private:
+    // Stands behind one declared verb: accepts, and records the invocation
+    // as text into the tick being run.
+    struct Recorder
+    {
+        AnimationPreviewSession* Session = nullptr;
+        std::string Verb;
+        VerbAdmission Invoke(const VerbInvocation& invocation);
+    };
+
     struct InputSlot
     {
         const AnimationPreviewSession* Session = nullptr;
@@ -189,6 +229,9 @@ private:
     static bool ReadInput(const World& world, EntityId entity, const void* context, std::uint32_t& out);
 
     void BuildWorld();
+    void DropWorld();
+    // Restarts and runs back to the tick the session was on.
+    void Replay();
     void RunTick(AnimTick tick);
     AnimationPreviewActionOutcome Apply(const AnimationScenarioAction& action, std::size_t index,
                                         AnimTick tick);
@@ -217,6 +260,16 @@ private:
     std::optional<AnimTick> BranchedAt;
 
     std::unique_ptr<World> Preview;
+    // Over the preview World's catalog, with recorders the only
+    // implementations: nothing here can run the game. Declared after the
+    // World and before the tokens, so teardown unbinds, then drops the
+    // dispatcher, then the World.
+    std::unique_ptr<VerbDispatcher> Dispatcher;
+    std::deque<Recorder> Recorders;
+    std::vector<VerbBindingToken> RecorderTokens;
+    std::vector<AnimPendingEvent> PendingEvents;
+    // Where recorders write during a tick's drain.
+    std::vector<AnimationPreviewInvocation>* InvocationSink = nullptr;
     AnimFactGatherSystem Gather;
     const AnimBoundRig* Bound = nullptr;
     EntityId SubjectEntity;

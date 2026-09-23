@@ -301,6 +301,15 @@ JsonValue WriteAnimationScenario(const AnimationScenario& scenario)
     root.emplace_back("participants", JsonValue(std::move(participants)));
     if (!scenario.DeclaredTags.empty())
         root.emplace_back("declared_tags", JsonValue(std::move(declared)));
+    if (scenario.Role == AnimationPreviewRole::Client)
+        root.emplace_back("role", JsonValue("client"));
+    if (!scenario.Recorders.empty())
+    {
+        JsonValue::Array recorders;
+        for (const std::string& verb : scenario.Recorders)
+            recorders.emplace_back(verb);
+        root.emplace_back("recorders", JsonValue(std::move(recorders)));
+    }
     root.emplace_back("inputs", WriteNamedValues(scenario.Inputs));
     root.emplace_back("actions", JsonValue(std::move(actions)));
     for (const auto& unknown : scenario.Unknown)
@@ -374,6 +383,24 @@ std::optional<AnimationScenario> ReadAnimationScenario(const JsonValue& document
                 scenario.DeclaredTags.push_back(tag.AsString());
         }
     }
+    if (const JsonValue* role = document.Find("role"); role != nullptr)
+    {
+        if (role->IsString() && role->AsString() == "client")
+            scenario.Role = AnimationPreviewRole::Client;
+        else if (!role->IsString() || role->AsString() != "authority")
+            reader.Error("$.role", "A role is \"authority\" or \"client\".");
+    }
+    if (const JsonValue* recorders = document.Find("recorders"); recorders != nullptr && recorders->IsArray())
+    {
+        for (std::size_t i = 0; i < recorders->AsArray().size(); ++i)
+        {
+            const JsonValue& verb = recorders->AsArray()[i];
+            if (!verb.IsString() || verb.AsString().empty())
+                reader.Error(std::format("$.recorders[{}]", i), "A recorder names a verb.");
+            else
+                scenario.Recorders.push_back(verb.AsString());
+        }
+    }
     reader.Named(document.Find("inputs"), "$.inputs", scenario.Inputs);
 
     if (const JsonValue* actions = document.Find("actions"); actions != nullptr && actions->IsArray())
@@ -399,7 +426,7 @@ std::optional<AnimationScenario> ReadAnimationScenario(const JsonValue& document
     for (const auto& [key, value] : document.AsObject())
     {
         if (!IsKnown(key, { "type", "version", "name", "rig", "tick_rate", "seed", "participants",
-                            "declared_tags", "inputs", "actions" }))
+                            "declared_tags", "role", "recorders", "inputs", "actions" }))
             scenario.Unknown.emplace_back(key, value);
     }
     return scenario;
