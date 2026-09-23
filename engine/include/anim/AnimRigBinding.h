@@ -3,6 +3,7 @@
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimDiagnostic.h>
 #include <anim/AnimFactSchema.h>
+#include <anim/AnimFlowData.h>
 #include <anim/AnimPredicate.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
@@ -179,6 +180,10 @@ struct AnimBoundRule
     // The one intent its enter reads, which is the request an
     // until-request-ends latch follows. Invalid when it reads none or several.
     GameplayTagId LatchIntent;
+    // No entity passes its enter, or any delegating rule's, without a request:
+    // what a behavior needs of every rule reaching it before it may be
+    // reconstructed, move the character, or play a flow that loops.
+    bool RequiresRequest = false;
     // Stable across rebinds: the selector path and the rule's name (or its
     // position when unnamed) through every level it nests. Selector state
     // names its winner by this, so a reload that reorders named rules remaps
@@ -205,10 +210,56 @@ struct AnimBoundSelector
 struct AnimBoundContent
 {
     std::string Path;
+    // A clip, or -- when Flow is set -- no clip: a flow's content is its
+    // sections', each of which is a content entry of its own.
     AnimationClipHandle Clip;
     float DurationSeconds = 0.0f;
     // In clip order: by time, then key.
     std::vector<AnimBoundEvent> Events;
+    // Index into AnimBoundRig::Flows, or -1 for a clip.
+    int Flow = -1;
+};
+
+struct AnimBoundFlowBranch
+{
+    AnimProgram When;
+    std::uint8_t To = 0;
+};
+
+struct AnimBoundFlowSection
+{
+    GameplayTagId Tag;
+    std::string TagName;
+    // The clip's content index; -1 for a slot section, resolved on entry.
+    int Content = -1;
+    GameplayTagId Slot;
+    AnimFlowLoop Loop = AnimFlowLoop::Once;
+    AnimProgram While;
+    // Count loops: the request and the parameter slot giving the count.
+    GameplayTagId CountIntent;
+    int CountParam = -1;
+    std::vector<AnimBoundFlowBranch> Branches;
+    bool Ends = false;
+    AnimCancelTiming CancelTiming = AnimCancelTiming::AtSectionEnd;
+    // The flow's section lifecycle events, bound with this section's tag.
+    std::optional<AnimBoundEvent> Entered;
+    std::optional<AnimBoundEvent> Exited;
+};
+
+struct AnimBoundFlow
+{
+    std::string Path;
+    std::vector<AnimBoundFlowSection> Sections;
+    // The cancel section, or -1 when cancelling ends the flow.
+    int Cancel = -1;
+    // As declared; bound per section, with the section's tag, into Entered
+    // and Exited once the rig's bindings are compiled.
+    std::optional<AnimLifecycleDecl> SectionEnteredDecl;
+    std::optional<AnimLifecycleDecl> SectionExitedDecl;
+    // A loop or an immediate cancel: only a behavior every path to which runs
+    // through a request may play it, because only a request carries the anchor
+    // a late joiner needs to find its section.
+    bool NeedsRequest = false;
 };
 
 struct AnimBoundSlotRow
@@ -249,6 +300,7 @@ struct AnimBoundRig
     // then row order.
     std::vector<AnimBoundSlotRow> SlotRows;
     std::vector<AnimBoundContent> Contents;
+    std::vector<AnimBoundFlow> Flows;
 
     // The rig's authored bindings, compiled against this World's catalog.
     // Rebuilt with the rest of the binding, never refreshed in place.

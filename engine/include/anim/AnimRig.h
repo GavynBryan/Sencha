@@ -1,6 +1,7 @@
 #pragma once
 
 #include <anim/AnimContentState.h>
+#include <anim/AnimFlowState.h>
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimRigData.h>
 #include <assets/data/DataAssetHandle.h>
@@ -35,10 +36,11 @@ AnimRig
 #endif
 
 // The component owns one reference to its rig for as long as it carries it.
-// Every tier takes requests and plays content, so a rig brings its request set
-// and content state; facts are what an entity adds to become more than a Prop.
+// Every tier takes requests and plays content -- a door's content may be a
+// two-section flow -- so a rig brings its request set, content state and flow
+// state; facts are what an entity adds to become more than a Prop.
 template <>
 struct ComponentTraits<AnimRig> : SchemaAssetOwnership<AnimRig>
 {
-    using DerivedComponents = std::tuple<AnimRequestSet, AnimContentState>;
+    using DerivedComponents = std::tuple<AnimRequestSet, AnimContentState, AnimFlowState>;
 };

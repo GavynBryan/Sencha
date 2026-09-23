@@ -38,6 +38,9 @@ enum class AnimDecisionCause : std::uint8_t
     ContentChanged,
     // A rebind could not keep an index a layer held, and reset it.
     Anchored,
+    // A layer's flow entered a section; Reason says how, Section and
+    // PreviousSection which.
+    SectionChanged,
     // A clip event's mark was crossed; EventOutcome says what came of it and
     // Admission what its binding answered.
     EventCrossed,
@@ -45,6 +48,10 @@ enum class AnimDecisionCause : std::uint8_t
     // lifecycle event; EventOutcome and Admission as for a crossing.
     BehaviorEntered,
     BehaviorExited,
+    // A flow entered or left Section, and the flow declares a section
+    // lifecycle event; EventOutcome and Admission as for a crossing.
+    SectionEntered,
+    SectionExited,
 };
 
 // What a crossed clip event led to.
@@ -72,6 +79,17 @@ enum class AnimChangeReason : std::uint8_t
     Rebound,
     BehaviorChanged,
     RowChanged,
+    // Flow sections: entering the flow, following on, repeating, taking a
+    // branch, going to the cancel section, starting from a request's anchor.
+    FlowStarted,
+    SectionFollowed,
+    SectionLooped,
+    SectionBranched,
+    SectionCancelled,
+    FlowAnchored,
+    // The request driving a layer's content changed without its behavior
+    // changing: a superseding request, a combo advancing.
+    RequestSuperseded,
 };
 
 [[nodiscard]] std::string_view AnimChangeReasonName(AnimChangeReason reason);
@@ -116,6 +134,9 @@ struct AnimDecisionRecord
     std::uint32_t EventKey = 0;
     AnimEventOutcome EventOutcome = AnimEventOutcome::Fired;
     VerbAdmission Admission = VerbAdmission::Accepted;
+    // Section records, and section lifecycle events: the flow's sections.
+    std::uint8_t Section = 0xFF;
+    std::uint8_t PreviousSection = 0xFF;
 };
 
 inline constexpr std::size_t kAnimDecisionLogCapacity = 64;

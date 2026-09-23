@@ -2,6 +2,7 @@
 
 #include <anim/AnimContentState.h>
 #include <anim/AnimDecisionLog.h>
+#include <anim/AnimFlowState.h>
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimRig.h>
 #include <anim/AnimRigBinding.h>
@@ -27,7 +28,8 @@ struct FixedLogicContext;
 // content), measured on the tick clock rather than the frame clock, so every
 // machine that plays the same content crosses the same marks on the same
 // ticks. A layer whose behavior changed first leaves the old behavior and
-// enters the new one, firing whichever of their lifecycle events is declared.
+// enters the new one, firing whichever of their lifecycle events is declared,
+// and a flow that changed section does the same for its sections.
 //
 // Collection and dispatch are separate passes. Collection reads content state
 // and appends fixed-size pending records that name an event by rig, content
@@ -51,6 +53,9 @@ enum class AnimPendingKind : std::uint8_t
     // The lifecycle event of the behavior at index Behavior.
     BehaviorEntered,
     BehaviorExited,
+    // The section lifecycle event of section Event of the flow at Content.
+    SectionEntered,
+    SectionExited,
 };
 
 // One crossing, waiting for the drain. Value-only: it names the event rather
@@ -86,8 +91,9 @@ struct AnimEventGates
 // with the preview.
 void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBoundRig& rig,
                        const AnimSelectorState* selection, const AnimRequestSet* requests,
-                       AnimContentState& content, AnimTick now, double tickSeconds, AnimEventGates gates,
-                       std::vector<AnimPendingEvent>& pending, std::size_t capacity, AnimDecisionLog* log);
+                       const AnimFlowState* flows, AnimContentState& content, AnimTick now, double tickSeconds,
+                       AnimEventGates gates, std::vector<AnimPendingEvent>& pending, std::size_t capacity,
+                       AnimDecisionLog* log);
 
 // Offers each pending event to its binding, in order, on the owner thread,
 // and records the admission. A null dispatcher answers Unavailable: the

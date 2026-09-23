@@ -9,6 +9,8 @@
 #include <anim/AnimContentSystem.h>
 #include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimFactSchema.h>
+#include <anim/AnimFlowData.h>
+#include <anim/AnimFlowState.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRequests.h>
 #include <anim/AnimRigBinding.h>
@@ -67,6 +69,7 @@ struct AnimRigFixture
         RegisterAnimBehaviorSet(Types, Schemas);
         RegisterAnimSelectorData(Types, Schemas);
         RegisterAnimSlotMapData(Types, Schemas);
+        RegisterAnimFlowData(Types, Schemas);
         RegisterVerbBindingData(Types, Schemas);
 
         Entities.AddResource<GameplayTagRegistry>();

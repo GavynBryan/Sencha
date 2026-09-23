@@ -73,6 +73,13 @@ struct AnimRigBinder
     void BindBehaviors(const AnimRigData& rig);
     void BindSelectors(const AnimRigData& rig);
     void BindSlotMaps(const AnimRigData& rig);
+    // A flow's content entry, bound on first use: its sections' clips added as
+    // content of their own. -1 when it cannot be bound.
+    int BindFlowContent(const std::string& path, const std::string& referrer, const std::string& field);
+    // After selectors and slot maps: the pairings a flow requires of the
+    // behavior playing it.
+    void ValidateFlows();
+    [[nodiscard]] int FindOrAddClipContent(const std::string& path);
     // After slot maps, which decide the content whose events are bound.
     void BindEvents(const AnimRigData& rig);
 };

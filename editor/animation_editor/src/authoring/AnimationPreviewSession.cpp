@@ -93,7 +93,7 @@ namespace
             && a.RejectReason == b.RejectReason && a.Reason == b.Reason && a.Rule == b.Rule
             && a.PreviousRule == b.PreviousRule && a.Behavior == b.Behavior && a.Row == b.Row
             && a.Content == b.Content && a.EventKey == b.EventKey && a.EventOutcome == b.EventOutcome
-            && a.Admission == b.Admission;
+            && a.Admission == b.Admission && a.Section == b.Section && a.PreviousSection == b.PreviousSection;
     }
 
     template <typename T, typename F>
@@ -166,7 +166,10 @@ bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a, const Animati
 {
     const auto sameLayer = [](const AnimationPreviewLayerRecord& x, const AnimationPreviewLayerRecord& y) {
         return x.Winner == y.Winner && x.Behavior == y.Behavior && x.Latch == y.Latch && x.Row == y.Row
-            && x.Content == y.Content && x.TimeSeconds == y.TimeSeconds && x.ContentComplete == y.ContentComplete
+            && x.Content == y.Content && x.Clip == y.Clip && x.TimeSeconds == y.TimeSeconds
+            && x.ContentComplete == y.ContentComplete && x.Flow.Section == y.Flow.Section
+            && x.Flow.SectionStartTick == y.Flow.SectionStartTick && x.Flow.LoopCount == y.Flow.LoopCount
+            && x.Flow.Phase == y.Flow.Phase
             && SameRange(x.Verdicts, y.Verdicts, [](const AnimRuleVerdict& p, const AnimRuleVerdict& q) {
                    return p.Kind == q.Kind && p.Stayed == q.Stayed && p.Evaluation.FailedRow == q.Evaluation.FailedRow;
                });
@@ -713,7 +716,8 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
             // through the preview's dispatcher, whose only implementations
             // are recorders.
             PendingEvents.clear();
-            CollectAnimEvents(SubjectEntity, rig, *Bound, selection, Requests(), *content, tick, TickSeconds(),
+            const AnimFlowState* flows = static_cast<const World&>(*Preview).TryGet<AnimFlowState>(SubjectEntity);
+            CollectAnimEvents(SubjectEntity, rig, *Bound, selection, Requests(), flows, *content, tick, TickSeconds(),
                               AnimEventGates{ .Authority = Working.Role == AnimationPreviewRole::Authority,
                                               .Presents = true },
                               PendingEvents, kPreviewEventCapacity, log);
@@ -735,9 +739,12 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
                 layer.Behavior = playing.Behavior;
                 layer.Row = playing.Row;
                 layer.Content = playing.Content;
+                layer.Clip = playing.Clip;
                 layer.TimeSeconds = playing.TimeSeconds;
                 layer.ContentComplete = playing.ContentComplete;
             }
+            if (const AnimFlowState* flows = static_cast<const World&>(*Preview).TryGet<AnimFlowState>(SubjectEntity))
+                layer.Flow = flows->Layers[l];
             if (l < verdicts.size())
                 layer.Verdicts = std::move(verdicts[l]);
             record.Layers.push_back(std::move(layer));

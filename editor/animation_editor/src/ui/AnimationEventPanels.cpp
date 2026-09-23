@@ -224,9 +224,9 @@ private:
             for (std::size_t l = 0; l < rig->Layers.size() && l < kAnimMaxLayers; ++l)
             {
                 const AnimLayerContent& layer = content->Layers[l];
-                if (layer.Content < rig->Contents.size() && rig->Contents[layer.Content].Path == document.ClipPath()
-                    && rig->Contents[layer.Content].DurationSeconds > 0.0f)
-                    return layer.TimeSeconds / rig->Contents[layer.Content].DurationSeconds;
+                if (layer.Clip < rig->Contents.size() && rig->Contents[layer.Clip].Path == document.ClipPath()
+                    && rig->Contents[layer.Clip].DurationSeconds > 0.0f)
+                    return layer.TimeSeconds / rig->Contents[layer.Clip].DurationSeconds;
             }
         if (Workspace.ClipPath == document.ClipPath())
             return static_cast<float>(Workspace.Session.NormalizedTime());

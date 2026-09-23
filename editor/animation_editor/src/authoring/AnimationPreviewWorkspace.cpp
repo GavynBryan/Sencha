@@ -613,9 +613,9 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
     if (rig != nullptr && content != nullptr && !rig->Layers.empty())
     {
         const AnimLayerContent& layer = content->Layers[0];
-        if (layer.Content < rig->Contents.size())
+        if (layer.Clip < rig->Contents.size())
         {
-            const AnimBoundContent& bound = rig->Contents[layer.Content];
+            const AnimBoundContent& bound = rig->Contents[layer.Clip];
             clip = Assets.AnimationClips.Get(bound.Clip);
             time = layer.TimeSeconds;
             ViewportNote = bound.Path;

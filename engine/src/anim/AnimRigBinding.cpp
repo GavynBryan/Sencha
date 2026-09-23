@@ -390,6 +390,7 @@ namespace
         binder.BindBehaviors(*rig);
         binder.BindSelectors(*rig);
         binder.BindSlotMaps(*rig);
+        binder.ValidateFlows();
         binder.BindEvents(*rig);
         bound.Valid = !HasAnimErrors(bound.Diagnostics);
         return bound;

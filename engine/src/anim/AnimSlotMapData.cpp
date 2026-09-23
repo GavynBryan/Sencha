@@ -2,6 +2,8 @@
 
 #include "AnimSchemaFields.h"
 
+#include <anim/AnimFlowData.h>
+
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <format>
@@ -16,7 +18,7 @@ namespace
         using AnimSchema::Enum;
         using AnimSchema::Field;
         using AnimSchema::Record;
-        DataFieldSchema clip = Field("clip", DataFieldKind::AssetRef, "Clip", "The content this row plays.");
+        DataFieldSchema clip = Field("clip", DataFieldKind::AssetRef, "Clip", "The clip this row plays.", false);
         clip.Reference.AssetTypeFilter = AssetType::AnimationClip;
 
         DataFieldSchema row = Record({}, "Row", {},
@@ -26,6 +28,8 @@ namespace
                       "Higher rows are tried first; overlays insert rows by priority.", false),
                 AnimPredicateSchema("when", "When", "Facts that must hold for this row; empty always matches."),
                 std::move(clip),
+                DataRef("flow", "Flow", "The flow this row plays, for a behavior whose content is a sequence.",
+                        kAnimFlowType),
             });
         DataFieldSchema rows = ArrayOf("rows", "Rows", "First match per behavior.", std::move(row), true);
         rows.Editor.Widget = "cards";
@@ -63,8 +67,19 @@ namespace
                 row.Priority = static_cast<std::int32_t>(priority->AsNumber());
             if (!ReadAnimPredicate(entry.Find("when"), at + ".when", row.When, result.Error))
                 return result;
-            row.Clip = entry.Find("clip")->AsString();
-            result.Dependencies.push_back(AssetRef{ AssetType::AnimationClip, row.Clip });
+            if (const JsonValue* clip = entry.Find("clip"); clip != nullptr && clip->IsString())
+                row.Clip = clip->AsString();
+            if (const JsonValue* flow = entry.Find("flow"); flow != nullptr && flow->IsString())
+                row.Flow = flow->AsString();
+            if (row.Clip.empty() == row.Flow.empty())
+            {
+                result.Error = at + " A row plays exactly one of a clip or a flow.";
+                return result;
+            }
+            if (!row.Clip.empty())
+                result.Dependencies.push_back(AssetRef{ AssetType::AnimationClip, row.Clip });
+            else
+                result.Dependencies.push_back(AssetRef{ AssetType::Data, row.Flow });
             map->Rows.push_back(std::move(row));
         }
         result.Value = std::move(map);

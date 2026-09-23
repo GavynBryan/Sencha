@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimRequestSet.h>
 #include <anim/AnimTypes.h>
 #include <ecs/ComponentAnnotations.h>
 #include <gameplay_tags/GameplayTagId.h>
@@ -22,6 +23,9 @@
 
 struct AnimLayerContent
 {
+    // The request driving this content instance, when one does. A request
+    // that supersedes it and resolves other content starts a new instance.
+    AnimRequestId Request;
     AnimTick StartTick = 0;
     GameplayTagId Behavior;
     std::uint32_t RowKey = 0;
@@ -34,6 +38,13 @@ struct AnimLayerContent
     // One-shot and flow content is fixed at behavior entry.
     bool Pinned = false;
     bool ContentComplete = false;
+    // What is actually playing: the content's clip, or for a flow the current
+    // section's clip, the tick that clip began and how far into it it began.
+    // TimeSeconds is time in this clip. Events, sampling and the editor read
+    // these, never Content, for what to play.
+    std::uint16_t Clip = kAnimNoContent;
+    AnimTick ClipStartTick = 0;
+    float ClipOffsetSeconds = 0.0f;
     // How far the event pass has taken this content: the content instance it
     // was reading (named by its StartTick) and the last tick it covered. A
     // new instance, or a gap in the ticks covered, is how the pass tells an
@@ -43,6 +54,11 @@ struct AnimLayerContent
     // The behavior the event pass last saw on this layer: a change is a
     // lifecycle exit and entry.
     GameplayTagId EventBehavior;
+    // The flow section it last saw, and the content instance (by content and
+    // start) it belonged to: a change is a section exit and entry.
+    AnimTick EventContentStartTick = kAnimNoTick;
+    std::uint16_t EventContent = kAnimNoContent;
+    std::uint8_t EventSection = 0xFF;
 };
 
 struct SENCHA_COMPONENT("sencha.anim_content_state") AnimContentState

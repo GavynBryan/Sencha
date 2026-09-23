@@ -16,9 +16,12 @@ std::string_view AnimDecisionCauseName(AnimDecisionCause cause)
     case AnimDecisionCause::LatchInterrupted: return "LatchInterrupted";
     case AnimDecisionCause::ContentChanged: return "ContentChanged";
     case AnimDecisionCause::Anchored: return "Anchored";
+    case AnimDecisionCause::SectionChanged: return "SectionChanged";
     case AnimDecisionCause::EventCrossed: return "EventCrossed";
     case AnimDecisionCause::BehaviorEntered: return "BehaviorEntered";
     case AnimDecisionCause::BehaviorExited: return "BehaviorExited";
+    case AnimDecisionCause::SectionEntered: return "SectionEntered";
+    case AnimDecisionCause::SectionExited: return "SectionExited";
     }
     return "Unknown";
 }
@@ -59,6 +62,13 @@ std::string_view AnimChangeReasonName(AnimChangeReason reason)
     case AnimChangeReason::Rebound: return "Rebound";
     case AnimChangeReason::BehaviorChanged: return "BehaviorChanged";
     case AnimChangeReason::RowChanged: return "RowChanged";
+    case AnimChangeReason::FlowStarted: return "FlowStarted";
+    case AnimChangeReason::SectionFollowed: return "SectionFollowed";
+    case AnimChangeReason::SectionLooped: return "SectionLooped";
+    case AnimChangeReason::SectionBranched: return "SectionBranched";
+    case AnimChangeReason::SectionCancelled: return "SectionCancelled";
+    case AnimChangeReason::FlowAnchored: return "FlowAnchored";
+    case AnimChangeReason::RequestSuperseded: return "RequestSuperseded";
     }
     return "Unknown";
 }

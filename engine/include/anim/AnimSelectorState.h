@@ -26,6 +26,9 @@ enum class AnimLatchState : std::uint8_t
     Held,
     // The latching request ended and the latch plays its content out.
     Finishing,
+    // The latch was cancelled with a cancel-section policy: its flow goes to
+    // the cancel section, and the latch holds until that section completes.
+    Cancelling,
 };
 
 struct AnimLayerSelection

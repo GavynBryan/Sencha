@@ -29,8 +29,10 @@ struct AnimSlotRowDecl
     std::string Behavior;
     std::int32_t Priority = 0;
     AnimPredicateDecl When;
-    // An animation clip ("asset://...sanim").
+    // Exactly one: an animation clip ("asset://...sanim"), or a flow
+    // ("asset://...sdata") for a behavior whose content is a sequence.
     std::string Clip;
+    std::string Flow;
 };
 
 struct AnimSlotMapData

@@ -29,25 +29,25 @@ namespace
                 marks.push_back({ event.Time, event.Binding });
         return marks;
     }
+}
 
-    int FindOrAddContent(AnimBoundRig& rig, const AnimationClipCache* clips, const std::string& path)
+int AnimRigBinder::FindOrAddClipContent(const std::string& path)
+{
+    for (std::size_t i = 0; i < Out.Contents.size(); ++i)
     {
-        for (std::size_t i = 0; i < rig.Contents.size(); ++i)
-        {
-            if (rig.Contents[i].Path == path)
-                return static_cast<int>(i);
-        }
-        const AnimationClipHandle clip = clips != nullptr ? clips->Find(path) : AnimationClipHandle{};
-        const AnimationClipData* data = clips != nullptr ? clips->Get(clip) : nullptr;
-        if (data == nullptr)
-            return -1;
-        AnimBoundContent content;
-        content.Path = path;
-        content.Clip = clip;
-        content.DurationSeconds = data->DurationSeconds;
-        rig.Contents.push_back(std::move(content));
-        return static_cast<int>(rig.Contents.size() - 1);
+        if (Out.Contents[i].Path == path)
+            return static_cast<int>(i);
     }
+    const AnimationClipHandle clip = Clips != nullptr ? Clips->Find(path) : AnimationClipHandle{};
+    const AnimationClipData* data = Clips != nullptr ? Clips->Get(clip) : nullptr;
+    if (data == nullptr)
+        return -1;
+    AnimBoundContent content;
+    content.Path = path;
+    content.Clip = clip;
+    content.DurationSeconds = data->DurationSeconds;
+    Out.Contents.push_back(std::move(content));
+    return static_cast<int>(Out.Contents.size() - 1);
 }
 
 void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
@@ -79,12 +79,22 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
                 Report(problem.Severity, std::move(problem.Code), std::move(problem.AssetPath),
                        std::move(problem.FieldPath), std::move(problem.Message));
 
-            const int content = FindOrAddContent(Out, Clips, decl.Clip);
-            if (content < 0)
+            int content = -1;
+            if (!decl.Flow.empty())
             {
-                Error("anim.slot.clip_unavailable", path, at + ".clip",
-                      std::format("'{}' is not a loaded animation clip.", decl.Clip));
-                continue;
+                content = BindFlowContent(decl.Flow, path, at + ".flow");
+                if (content < 0)
+                    continue;
+            }
+            else
+            {
+                content = FindOrAddClipContent(decl.Clip);
+                if (content < 0)
+                {
+                    Error("anim.slot.clip_unavailable", path, at + ".clip",
+                          std::format("'{}' is not a loaded animation clip.", decl.Clip));
+                    continue;
+                }
             }
 
             AnimBoundSlotRow row;

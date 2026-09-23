@@ -909,7 +909,7 @@ public:
             const std::string winner = selector >= 0 && layer.Winner != kAnimNoRule
                 ? rig->Selectors[static_cast<std::size_t>(selector)].Rules[layer.Winner].Label
                 : std::string(selector >= 0 ? "(none)" : "request-keyed");
-            constexpr const char* latches[] = { "", ", latched", ", latch finishing" };
+            constexpr const char* latches[] = { "", ", latched", ", latch finishing", ", latch cancelling" };
             if (ImGui::TreeNodeEx("layer", ImGuiTreeNodeFlags_DefaultOpen, "%s: %s -> %s%s, %s at %.2fs%s",
                                   rig->Layers[l].NameText.c_str(), winner.c_str(),
                                   TagName(Workspace, layer.Behavior).c_str(), latches[static_cast<int>(layer.Latch)],

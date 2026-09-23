@@ -178,11 +178,13 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig, const AnimBoundSel
                                    return request.Id == state.LatchRequest && IsAnimRequestLive(request, now);
                                });
             if (!live)
-                state.Latch = latch.OnRequestCancel == AnimRequestCancelAction::Abort ? AnimLatchState::None
+                state.Latch = latch.OnRequestCancel == AnimRequestCancelAction::Abort   ? AnimLatchState::None
+                    : latch.OnRequestCancel == AnimRequestCancelAction::CancelSection ? AnimLatchState::Cancelling
                                                                                       : AnimLatchState::Finishing;
         }
         if (state.Latch != AnimLatchState::None
-            && (state.Latch == AnimLatchState::Finishing || latch.Mode == AnimLatchMode::UntilComplete)
+            && (state.Latch == AnimLatchState::Finishing || state.Latch == AnimLatchState::Cancelling
+                || latch.Mode == AnimLatchMode::UntilComplete)
             && inputs.ContentComplete)
             state.Latch = AnimLatchState::None;
         if (state.Latch == AnimLatchState::None)
@@ -198,11 +200,14 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig, const AnimBoundSel
         // Only rules above the winner are tried, and only those the latch
         // lets through may take over; the rest are recorded as blocked.
         next = current;
+        // A latch already cancelling has committed to its cancel section: it
+        // is not interrupted again until that section completes.
+        const bool cancelling = state.Latch == AnimLatchState::Cancelling;
         for (std::size_t i = 0; i < current; ++i)
         {
             if (!enters(i))
                 continue;
-            if (Interrupts(rules[i], *latched, inputs.Predicate.Registry))
+            if (!cancelling && Interrupts(rules[i], *latched, inputs.Predicate.Registry))
             {
                 next = i;
                 break;
@@ -211,7 +216,17 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig, const AnimBoundSel
                 v->Kind = AnimRuleVerdictKind::BlockedByLatch;
         }
         if (next != current)
+        {
             outcome.LatchInterrupted = true;
+            // Interrupted with a cancel-section policy, the latch keeps the
+            // layer while its flow plays the cancel section, and the rule that
+            // interrupted takes over when that completes.
+            if (latched->Policy.Latch.OnInterrupt == AnimInterruptAction::CancelSection)
+            {
+                state.Latch = AnimLatchState::Cancelling;
+                next = current;
+            }
+        }
         else if (AnimRuleVerdict* v = verdict(current))
             *v = AnimRuleVerdict{ .Kind = AnimRuleVerdictKind::Winner, .Stayed = true, .EvaluatedStay = false, .Evaluation = {} };
     }
@@ -521,8 +536,9 @@ void AnimSelectSystem::SelectImpl(World& world, const StoragePartitionSet* parti
             }
             if (state.Evaluated && !timeDriven && now < wake && state.BindingGeneration == rig->Generation)
             {
-                const AnimContentState* content = hasContent ? world.TryGet<AnimContentState>(entity) : nullptr;
-                const AnimRequestSet* requests = world.TryGet<AnimRequestSet>(entity);
+                const World& reader = world;
+                const AnimContentState* content = hasContent ? reader.TryGet<AnimContentState>(entity) : nullptr;
+                const AnimRequestSet* requests = reader.TryGet<AnimRequestSet>(entity);
                 if (FactDigest(values, content) == state.FactDigest && RequestDigest(requests, now) == state.RequestDigest)
                 {
                     ++SkippedCount;

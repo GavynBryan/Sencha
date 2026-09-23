@@ -673,3 +673,12 @@ AnimPredicateResult EvaluateAnimProgram(const AnimProgram& program, const AnimPr
     }
     return result;
 }
+
+bool AnimPredicateRequiresRequest(const AnimPredicateDecl& decl)
+{
+    return std::any_of(decl.Rows.begin(), decl.Rows.end(), [](const AnimPredicateRow& row) {
+        return !row.AnyOf.empty() && std::all_of(row.AnyOf.begin(), row.AnyOf.end(), [](const AnimPredicateTest& test) {
+                   return test.Kind == AnimTestKind::Request && !test.Negate;
+               });
+    });
+}

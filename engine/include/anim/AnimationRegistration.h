@@ -3,6 +3,7 @@
 #include <anim/AnimContentState.h>
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimFacts.h>
+#include <anim/AnimFlowState.h>
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimRig.h>
 #include <anim/AnimSelectorState.h>
@@ -36,6 +37,7 @@ using AnimationComponents = ComponentSet<
     AnimFactHistory,
     AnimSelectorState,
     AnimContentState,
+    AnimFlowState,
     AnimDecisionLog>;
 
 void RegisterAnimationComponents(ComponentRegistrar& registrar);

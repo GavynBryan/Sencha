@@ -6,6 +6,7 @@
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
 #include <anim/AnimSelectorData.h>
+#include <anim/AnimFlowData.h>
 #include <anim/AnimSlotMapData.h>
 #include <authored/VerbBindingData.h>
 #include <core/logging/LoggingProvider.h>
@@ -96,6 +97,7 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterAnimBehaviorSet(DataTypes, DataSchemas);
     RegisterAnimSelectorData(DataTypes, DataSchemas);
     RegisterAnimSlotMapData(DataTypes, DataSchemas);
+    RegisterAnimFlowData(DataTypes, DataSchemas);
 
     // A reference store is its own stager and store, so it takes the mesh
     // kind whole; the real loader stages against a cache this composition

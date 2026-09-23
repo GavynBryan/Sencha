@@ -105,6 +105,11 @@ struct AnimPredicateDecl
 [[nodiscard]] bool ReadAnimPredicate(const JsonValue* rows, const std::string& path,
                                      AnimPredicateDecl& out, std::string& error);
 
+// Whether no entity can pass `decl` without a request: some row consists only
+// of tests that read a request and are not negated. What "reached only through
+// a request" means for the pairings a late joiner depends on.
+[[nodiscard]] bool AnimPredicateRequiresRequest(const AnimPredicateDecl& decl);
+
 enum class AnimOp : std::uint8_t
 {
     PushSlot,

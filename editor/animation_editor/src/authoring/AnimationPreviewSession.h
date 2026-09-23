@@ -87,8 +87,11 @@ struct AnimationPreviewLayerRecord
     AnimLatchState Latch = AnimLatchState::None;
     std::uint16_t Row = kAnimNoContent;
     std::uint16_t Content = kAnimNoContent;
+    // The clip playing: the content's, or its flow's current section's.
+    std::uint16_t Clip = kAnimNoContent;
     float TimeSeconds = 0.0f;
     bool ContentComplete = false;
+    AnimLayerFlow Flow;
     // One per flattened rule; empty on a request-keyed layer.
     std::vector<AnimRuleVerdict> Verdicts;
 };

@@ -20,6 +20,7 @@ namespace
         std::vector<AnimRowSource> EnterRows;
         std::vector<AnimRowSource> StayRows;
         std::string KeyPrefix;
+        bool RequiresRequest = false;
     };
 
     struct SelectorFlattener
@@ -81,6 +82,7 @@ namespace
                 // was authored -- so a nested rule's is its parent's then its own.
                 context.Stay = ConcatAnimPrograms(parent.Stay, stay);
                 context.HasStay = parent.HasStay || rule.HasStay;
+                context.RequiresRequest = parent.RequiresRequest || AnimPredicateRequiresRequest(rule.Enter);
                 context.Band = depth == 0 ? rule.Priority : parent.Band;
                 context.EnterRows = parent.EnterRows;
                 context.StayRows = parent.StayRows;
@@ -146,6 +148,7 @@ namespace
             bound.Label = rule.Name.empty() ? rule.Behavior : rule.Name;
             if (bound.Enter.Intents.size() == 1)
                 bound.LatchIntent = bound.Enter.Intents.front();
+            bound.RequiresRequest = context.RequiresRequest;
 
             if (bound.BehaviorIndex < 0)
             {
@@ -167,7 +170,7 @@ namespace
             // Reached without a request: nothing replicates a start tick for
             // it, so a late joiner cannot rebuild it and it cannot move the
             // character.
-            if (rule.Enter.Intents.empty())
+            if (!rule.RequiresRequest)
             {
                 if (policy.LateJoin == AnimLateJoin::Reconstruct)
                     Binder.Error("anim.selector.cosmetic_reconstruct", path, at + ".enter",
