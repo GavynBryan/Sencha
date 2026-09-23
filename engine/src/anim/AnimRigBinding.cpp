@@ -4,6 +4,7 @@
 
 #include <anim/AnimFactProviders.h>
 #include <anim/AnimationClipCache.h>
+#include <anim/SkeletonCache.h>
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -359,7 +360,7 @@ const AnimBoundBehavior* AnimBoundRig::FindBehavior(GameplayTagId behavior) cons
 
 namespace
 {
-    AnimBoundRig Bind(const DataAssetCache& data, const AnimationClipCache* clips,
+    AnimBoundRig Bind(const DataAssetCache& data, const AnimationClipCache* clips, const SkeletonCache* skeletons,
                       DataAssetHandle handle, const World& world,
                       std::vector<std::pair<DataAssetHandle, std::uint64_t>>* versions)
     {
@@ -376,7 +377,7 @@ namespace
         if (versions != nullptr)
             versions->push_back({ handle, data.GetReloadVersion(handle) });
 
-        AnimRigBinder binder{ data, clips, world, bound, versions };
+        AnimRigBinder binder{ data, clips, skeletons, world, bound, versions };
         bound.Capacity = rig->FactCapacity;
         bound.HasFacts = rig->HasFacts();
         if (bound.HasFacts)
@@ -386,11 +387,13 @@ namespace
         }
         binder.BindRequests(*rig);
         binder.BindLayers(*rig);
+        binder.BindMasks(*rig);
         // Behaviors before selectors and slot maps, which name them.
         binder.BindBehaviors(*rig);
         binder.BindSelectors(*rig);
         binder.BindSlotMaps(*rig);
         binder.ValidateFlows();
+        binder.ValidateClipSkeletons();
         binder.BindEvents(*rig);
         bound.Valid = !HasAnimErrors(bound.Diagnostics);
         return bound;
@@ -398,9 +401,9 @@ namespace
 }
 
 AnimBoundRig BindAnimRig(const DataAssetCache& data, const AnimationClipCache* clips,
-                         DataAssetHandle rig, const World& world)
+                         const SkeletonCache* skeletons, DataAssetHandle rig, const World& world)
 {
-    return Bind(data, clips, rig, world, nullptr);
+    return Bind(data, clips, skeletons, rig, world, nullptr);
 }
 
 bool AnimRigBindings::IsCurrent(const Entry& entry, const World& world) const
@@ -415,6 +418,10 @@ bool AnimRigBindings::IsCurrent(const Entry& entry, const World& world) const
         if (Clips == nullptr || Clips->GetReloadVersion(clip) != version)
             return false;
     }
+    // A skeleton registered, or registered again, under the rig's path.
+    if (Skeletons != nullptr && !entry.Bound.SkeletonPath.empty()
+        && Skeletons->Find(entry.Bound.SkeletonPath) != entry.Bound.Skeleton)
+        return false;
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     const AnimFactProviders* providers = world.TryGetResource<AnimFactProviders>();
     const VerbRegistry* verbs = FindVerbRegistry(world);
@@ -434,7 +441,7 @@ const AnimBoundRig* AnimRigBindings::Resolve(DataAssetHandle rig, const World& w
         return &entry.Bound;
 
     entry.Versions.clear();
-    entry.Bound = Bind(*Data, Clips, rig, world, &entry.Versions);
+    entry.Bound = Bind(*Data, Clips, Skeletons, rig, world, &entry.Versions);
     entry.ClipVersions.clear();
     for (const AnimBoundContent& content : entry.Bound.Contents)
         entry.ClipVersions.emplace_back(content.Clip, Clips != nullptr ? Clips->GetReloadVersion(content.Clip) : 0);

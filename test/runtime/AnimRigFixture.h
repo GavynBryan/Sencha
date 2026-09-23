@@ -20,6 +20,7 @@
 #include <anim/AnimSlotMapData.h>
 #include <anim/AnimationClipCache.h>
 #include <anim/AnimationRegistration.h>
+#include <anim/SkeletonCache.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <authored/VerbBindingData.h>
 #include <authored/WorldVocabulary.h>
@@ -54,6 +55,8 @@ struct AnimRigFixture
     DataAssetTypeRegistry Types;
     DataSchemaRegistry Schemas;
     DataAssetCache Data;
+    // Before the clips, which hold references into it.
+    SkeletonCache Skeletons;
     AnimationClipCache Clips;
     World Entities;
     AnimFactGatherSystem Gather;
@@ -86,7 +89,7 @@ struct AnimRigFixture
         (void)providers.BindField<&AnimTestMotion::Dead>("Dead");
         for (const char* tag : tags)
             (void)Tags().RegisterTag(tag);
-        Entities.SetResource(AnimRigBindings{ &Data, &Clips });
+        Entities.SetResource(AnimRigBindings{ &Data, &Clips, &Skeletons });
     }
 
     GameplayTagRegistry& Tags() { return Entities.GetResource<GameplayTagRegistry>(); }
@@ -115,12 +118,15 @@ struct AnimRigFixture
         ASSERT_TRUE(Data.ReloadInPlace(path, type, compiled.Value));
     }
 
-    void Clip(std::string_view path, float seconds, std::vector<AnimationClipEvent> events = {})
+    // A clip with no tracks. Keyed to `skeleton` when one is named, as a
+    // cooked clip is to the skeleton it animates.
+    void Clip(std::string_view path, float seconds, std::vector<AnimationClipEvent> events = {},
+              std::string_view skeleton = {})
     {
         AnimationClipData clip;
         clip.DurationSeconds = seconds;
         clip.Events = std::move(events);
-        (void)Clips.Register(path, std::move(clip), {});
+        (void)Clips.Register(path, std::move(clip), skeleton.empty() ? SkeletonCacheHandle{} : Skeletons.AcquireOwned(skeleton));
     }
 
     VerbRegistry& Verbs() { return *FindVerbRegistry(Entities); }

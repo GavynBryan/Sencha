@@ -19,7 +19,7 @@
 #include <filesystem>
 
 AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary)
-    : Simulation(assets.DataAssets, &assets.AnimationClips, std::move(vocabulary))
+    : Simulation(assets.DataAssets, &assets.AnimationClips, std::move(vocabulary), &assets.Skeletons)
     , Assets(assets)
 {
     Material material;

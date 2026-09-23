@@ -52,6 +52,20 @@ namespace
                                          kAnimSelectorType));
         layer.Children.push_back(Field("idle", DataFieldKind::GameplayTag, "Idle behavior",
                                        "Played when nothing is selected or requested.", false));
+        DataFieldSchema maskOp = Field({}, DataFieldKind::Record, "Mask step", {}, true);
+        maskOp.Children.push_back(Field("joint", DataFieldKind::String, "Joint",
+                                        "A joint of the rig's skeleton, by name.", true));
+        maskOp.Children.push_back(Field("exclude", DataFieldKind::Bool, "Exclude",
+                                        "Takes the joints out of the mask instead of adding them.", false));
+        DataFieldSchema subtree = Field("subtree", DataFieldKind::Bool, "With subtree",
+                                        "Applies to every joint below this one too.", false);
+        subtree.Default = true;
+        maskOp.Children.push_back(std::move(subtree));
+        DataFieldSchema mask = Field("mask", DataFieldKind::Array, "Bone mask",
+                                     "Steps applied in order to an empty set. None leaves the layer unmasked.",
+                                     false);
+        mask.Children.push_back(std::move(maskOp));
+        layer.Children.push_back(std::move(mask));
         DataFieldSchema layers = Field("layers", DataFieldKind::Array, "Layers",
                                        "Composed in order, at most eight.", true);
         layers.Editor.Widget = "cards";
@@ -162,6 +176,26 @@ namespace
                 {
                     result.Error = path + ".idle " + error.Message;
                     return result;
+                }
+            }
+            if (const JsonValue* mask = layers[i].Find("mask"); mask != nullptr && mask->IsArray())
+            {
+                for (std::size_t m = 0; m < mask->AsArray().size(); ++m)
+                {
+                    const JsonValue& step = mask->AsArray()[m];
+                    AnimMaskOp op;
+                    if (const JsonValue* joint = step.Find("joint"); joint != nullptr && joint->IsString())
+                        op.Joint = joint->AsString();
+                    if (op.Joint.empty())
+                    {
+                        result.Error = std::format("{}.mask[{}].joint A mask step names a joint.", path, m);
+                        return result;
+                    }
+                    if (const JsonValue* exclude = step.Find("exclude"); exclude != nullptr && exclude->IsBool())
+                        op.Exclude = exclude->AsBool();
+                    if (const JsonValue* subtree = step.Find("subtree"); subtree != nullptr && subtree->IsBool())
+                        op.Subtree = subtree->AsBool();
+                    layer.Mask.push_back(std::move(op));
                 }
             }
             rig->Layers.push_back(std::move(layer));

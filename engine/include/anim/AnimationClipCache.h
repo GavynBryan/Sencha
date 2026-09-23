@@ -63,6 +63,8 @@ public:
     [[nodiscard]] uint64_t GetReloadVersion(AnimationClipHandle handle) const;
 
     [[nodiscard]] const AnimationClipData* Get(AnimationClipHandle handle) const;
+    // The skeleton the clip's joint indices are into.
+    [[nodiscard]] SkeletonHandle GetSkeleton(AnimationClipHandle handle) const;
     [[nodiscard]] std::string_view GetName(AnimationClipHandle handle) const;
 
 private:

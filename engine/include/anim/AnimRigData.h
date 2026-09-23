@@ -32,6 +32,16 @@ enum class AnimLayerMode : std::uint8_t
     Additive,
 };
 
+// One step of a layer's bone mask, applied in order to a set that starts
+// empty: a joint, named as the skeleton names it, with or without everything
+// below it, taken into the mask or out of it.
+struct AnimMaskOp
+{
+    std::string Joint;
+    bool Exclude = false;
+    bool Subtree = true;
+};
+
 struct AnimRigLayer
 {
     // A gameplay tag naming the layer: Anim.Layer.Base, Anim.Layer.Upper.
@@ -46,6 +56,9 @@ struct AnimRigLayer
     std::string SelectorPath;
     // The behavior played when nothing is selected or requested.
     std::string Idle;
+    // Empty leaves the layer unmasked. Only a layer above the first may be
+    // masked: the first is the pose the others compose onto.
+    std::vector<AnimMaskOp> Mask;
 };
 
 // A selector bound to a name selectors expose, so a game or mod adds rules

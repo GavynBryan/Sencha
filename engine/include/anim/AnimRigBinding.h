@@ -9,6 +9,7 @@
 #include <anim/AnimRigData.h>
 #include <anim/AnimationClip.h>
 #include <anim/AnimationClipHandle.h>
+#include <anim/SkeletonHandle.h>
 #include <assets/data/DataAssetCache.h>
 #include <authored/VerbBindingSet.h>
 #include <gameplay_tags/GameplayTagId.h>
@@ -22,6 +23,7 @@
 #include <vector>
 
 class AnimationClipCache;
+class SkeletonCache;
 class World;
 
 //=============================================================================
@@ -106,6 +108,11 @@ struct AnimBoundLayer
     // Index into AnimBoundRig::Selectors, or -1 for a request-keyed layer.
     int Selector = -1;
     GameplayTagId Idle;
+    // One entry per joint of the rig's skeleton, 1 where the layer applies;
+    // empty for an unmasked layer.
+    std::vector<std::uint8_t> Mask;
+    [[nodiscard]] bool Masked() const { return !Mask.empty(); }
+    [[nodiscard]] bool Covers(std::size_t joint) const { return Mask.empty() || (joint < Mask.size() && Mask[joint] != 0); }
 };
 
 // One clip or lifecycle event, bound: its binding named by key and its inputs
@@ -295,6 +302,12 @@ struct AnimBoundRig
     bool Valid = false;
     std::vector<AnimDiagnostic> Diagnostics;
 
+    // The skeleton the rig poses, when it declares one: what masks name
+    // joints of and every clip it plays must be keyed to.
+    std::string SkeletonPath;
+    SkeletonHandle Skeleton;
+    std::uint32_t JointCount = 0;
+
     bool HasFacts = false;
     AnimFactCapacity Capacity = AnimFactCapacity::Small;
     std::vector<AnimBoundFactSlot> Slots;
@@ -335,6 +348,7 @@ struct AnimBoundRig
 // tool validating content against a World calls directly.
 [[nodiscard]] AnimBoundRig BindAnimRig(const DataAssetCache& data,
                                        const AnimationClipCache* clips,
+                                       const SkeletonCache* skeletons,
                                        DataAssetHandle rig,
                                        const World& world);
 
@@ -346,9 +360,11 @@ class AnimRigBindings
 {
 public:
     AnimRigBindings() = default;
-    AnimRigBindings(const DataAssetCache* data, const AnimationClipCache* clips)
+    AnimRigBindings(const DataAssetCache* data, const AnimationClipCache* clips,
+                    const SkeletonCache* skeletons = nullptr)
         : Data(data)
         , Clips(clips)
+        , Skeletons(skeletons)
     {
     }
 
@@ -383,6 +399,7 @@ private:
 
     const DataAssetCache* Data = nullptr;
     const AnimationClipCache* Clips = nullptr;
+    const SkeletonCache* Skeletons = nullptr;
     std::unordered_map<std::uint64_t, Entry> Entries;
     std::uint64_t Rebuilds = 0;
 };

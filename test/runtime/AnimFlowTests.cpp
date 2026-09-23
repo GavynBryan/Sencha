@@ -742,3 +742,82 @@ TEST(AnimFlowEvents, SectionsAreAnnouncedInsideTheirBehavior)
     EXPECT_EQ(entered->Section, 2u);
     (void)token;
 }
+
+namespace
+{
+    // A request-keyed base layer and a selector upper layer both driven by
+    // the reload request, playing `baseFlow` and `upperFlow`.
+    const AnimBoundRig& BindTwoLayerReload(AnimRigFixture& fx, std::string_view baseFlow, std::string_view upperFlow)
+    {
+        LoadCommon(fx);
+        (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, PumpFlow());
+        (void)fx.Tags().RegisterTag("anim.layer.upper");
+        (void)fx.Load("asset://anim/t.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+            { "tag": "Anim.Idle", "kind": "cyclic" }, { "tag": "anim.intent.reload", "kind": "flow" },
+            { "tag": "Anim.Reload", "kind": "flow", "latch": { "mode": "until_request_ends" } } ] })");
+        (void)fx.Load("asset://anim/t.slots.sdata", kAnimSlotMapType,
+                      std::format(R"({{ "rows": [
+            {{ "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" }},
+            {{ "behavior": "anim.intent.reload", "flow": "{}" }},
+            {{ "behavior": "Anim.Reload", "flow": "{}" }} ] }})",
+                                  baseFlow, upperFlow));
+        (void)fx.Load("asset://anim/t.upper.sdata", kAnimSelectorType, R"({ "rules": [
+            { "name": "reload", "priority": 50, "enter": [ { "request": "anim.intent.reload" } ],
+              "behavior": "Anim.Reload" },
+            { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Idle" } ] })");
+        return fx.Bound(fx.Load("asset://anim/t.rig.sdata", kAnimRigType, R"({
+            "facts": "asset://anim/f.facts.sdata", "requests": "asset://anim/f.requests.sdata",
+            "behaviors": [ "asset://anim/t.behaviors.sdata" ], "slot_maps": [ "asset://anim/t.slots.sdata" ],
+            "layers": [ { "name": "anim.layer.base", "idle": "Anim.Idle" },
+                        { "name": "anim.layer.upper", "selector": "asset://anim/t.upper.sdata",
+                          "idle": "Anim.Idle" } ] })"));
+    }
+}
+
+// One request carries one anchor, so the flows it drives on several layers
+// must agree on what a section index and its start tick mean.
+TEST(AnimFlowBinding, FlowsSharingARequestShareTheirSectionTiming)
+{
+    {
+        AnimRigFixture fx;
+        const AnimBoundRig& rig =
+            BindTwoLayerReload(fx, "asset://anim/f.quick.flow.sdata", "asset://anim/f.flow.sdata");
+        const AnimDiagnostic* timing = AnimRigFixture::FindCode(rig, "anim.flow.anchor_timing");
+        ASSERT_NE(timing, nullptr) << AnimRigFixture::Describe(rig);
+        EXPECT_NE(timing->Message.find("one anchor"), std::string::npos) << timing->Message;
+        EXPECT_NE(timing->Message.find("1 and 3 sections"), std::string::npos) << timing->Message;
+        EXPECT_FALSE(rig.Valid);
+    }
+    {
+        AnimRigFixture fx;
+        const AnimBoundRig& rig = BindTwoLayerReload(fx, "asset://anim/f.flow.sdata", "asset://anim/f.flow.sdata");
+        EXPECT_EQ(AnimRigFixture::FindCode(rig, "anim.flow.anchor_timing"), nullptr) << AnimRigFixture::Describe(rig);
+        EXPECT_TRUE(rig.Valid) << AnimRigFixture::Describe(rig);
+    }
+}
+
+// A row choosing its flow by a local fact picks per machine, so the flows it
+// chooses between must keep the same time.
+TEST(AnimFlowBinding, RowsReadingLocalFactsChooseBetweenFlowsThatKeepTheSameTime)
+{
+    AnimRigFixture fx;
+    LoadCommon(fx);
+    (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, PumpFlow());
+    (void)fx.Load("asset://anim/lf.facts.sdata", kAnimFactSchemaType, R"({
+        "slots": [ { "name": "Variant", "kind": "int", "local": true } ] })");
+    (void)fx.Load("asset://anim/lf.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+        { "tag": "Anim.Idle", "kind": "cyclic" }, { "tag": "anim.intent.reload", "kind": "flow" } ] })");
+    (void)fx.Load("asset://anim/lf.slots.sdata", kAnimSlotMapType, R"({ "rows": [
+        { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+        { "behavior": "anim.intent.reload", "when": [ { "fact": "Variant", "compare": "eq", "value": 1 } ],
+          "flow": "asset://anim/f.quick.flow.sdata" },
+        { "behavior": "anim.intent.reload", "flow": "asset://anim/f.flow.sdata" } ] })");
+    const AnimBoundRig& rig = fx.Bound(fx.Load("asset://anim/lf.rig.sdata", kAnimRigType, R"({
+        "facts": "asset://anim/lf.facts.sdata", "requests": "asset://anim/f.requests.sdata",
+        "behaviors": [ "asset://anim/lf.behaviors.sdata" ], "slot_maps": [ "asset://anim/lf.slots.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "idle": "Anim.Idle" } ] })"));
+    const AnimDiagnostic* timing = AnimRigFixture::FindCode(rig, "anim.slot.local_timing");
+    ASSERT_NE(timing, nullptr) << AnimRigFixture::Describe(rig);
+    EXPECT_EQ(timing->FieldPath, "$.data.rows[1].when");
+    EXPECT_NE(timing->Message.find("sections"), std::string::npos) << timing->Message;
+}

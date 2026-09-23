@@ -19,6 +19,7 @@ struct AnimRigBinder
 {
     const DataAssetCache& Data;
     const AnimationClipCache* Clips = nullptr;
+    const SkeletonCache* Skeletons = nullptr;
     const World& WorldRef;
     AnimBoundRig& Out;
     // Every asset the binding read and the reload version it read.
@@ -70,6 +71,10 @@ struct AnimRigBinder
     void BindProviders();
     void BindRequests(const AnimRigData& rig);
     void BindLayers(const AnimRigData& rig);
+    // After layers: the rig's skeleton and each layer's bone mask over it.
+    void BindMasks(const AnimRigData& rig);
+    // After slot maps: every clip the rig plays is keyed to its skeleton.
+    void ValidateClipSkeletons();
     void BindBehaviors(const AnimRigData& rig);
     void BindSelectors(const AnimRigData& rig);
     void BindSlotMaps(const AnimRigData& rig);
@@ -79,10 +84,19 @@ struct AnimRigBinder
     // After selectors and slot maps: the pairings a flow requires of the
     // behavior playing it.
     void ValidateFlows();
+    // A flow `row` plays checked against every flow on another layer that
+    // one request can drive with it: they share that request's anchor.
+    void ValidateSharedAnchor(const AnimBoundSlotRow& row);
     [[nodiscard]] int FindOrAddClipContent(const std::string& path);
     // After slot maps, which decide the content whose events are bound.
     void BindEvents(const AnimRigData& rig);
 };
+
+// Where two flows would read one request anchor differently -- section count,
+// a section's length, its loop, how it is left, the cancel section -- or
+// empty when they agree.
+[[nodiscard]] std::string AnimFlowAnchorDifference(const AnimBoundRig& rig, const AnimBoundFlow& a,
+                                                   const AnimBoundFlow& b);
 
 // FNV-1a over text, for the stable keys of flattened rules and merged rows.
 [[nodiscard]] std::uint32_t AnimStableKey(std::string_view text);

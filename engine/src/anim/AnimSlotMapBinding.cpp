@@ -13,20 +13,39 @@ namespace
     // which binding. Inputs may differ; timing may not.
     struct GameplayEventMark
     {
+        // The flow section the mark plays in; 0 for a clip.
+        std::size_t Section = 0;
         float Time = 0.0f;
         std::string Binding;
         bool operator==(const GameplayEventMark&) const = default;
     };
 
-    std::vector<GameplayEventMark> GameplayEventMarks(const AnimationClipCache* clips, const AnimBoundContent& content)
+    void AppendMarks(const AnimationClipCache* clips, const AnimBoundContent& content, std::size_t section,
+                     std::vector<GameplayEventMark>& marks)
     {
-        std::vector<GameplayEventMark> marks;
         const AnimationClipData* clip = clips != nullptr ? clips->Get(content.Clip) : nullptr;
         if (clip == nullptr)
-            return marks;
+            return;
         for (const AnimationClipEvent& event : clip->Events)
             if (event.Scope == AnimEventScope::Gameplay)
-                marks.push_back({ event.Time, event.Binding });
+                marks.push_back({ section, event.Time, event.Binding });
+    }
+
+    // A flow's marks are its clip sections' in order. A slot section's are
+    // its slot's own rows', which this check reaches through that behavior.
+    std::vector<GameplayEventMark> GameplayEventMarks(const AnimationClipCache* clips, const AnimBoundRig& rig,
+                                                      const AnimBoundContent& content)
+    {
+        std::vector<GameplayEventMark> marks;
+        if (content.Flow < 0)
+        {
+            AppendMarks(clips, content, 0, marks);
+            return marks;
+        }
+        const AnimBoundFlow& flow = rig.Flows[static_cast<std::size_t>(content.Flow)];
+        for (std::size_t s = 0; s < flow.Sections.size(); ++s)
+            if (flow.Sections[s].Content >= 0)
+                AppendMarks(clips, rig.Contents[static_cast<std::size_t>(flow.Sections[s].Content)], s, marks);
         return marks;
     }
 }
@@ -125,13 +144,31 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
             continue;
         const std::string& path = Out.Contents[static_cast<std::size_t>(row.Content)].Path;
         const float duration = Out.Contents[static_cast<std::size_t>(row.Content)].DurationSeconds;
-        const std::vector<GameplayEventMark> events = GameplayEventMarks(Clips, Out.Contents[static_cast<std::size_t>(row.Content)]);
+        const AnimBoundContent& content = Out.Contents[static_cast<std::size_t>(row.Content)];
+        const std::vector<GameplayEventMark> events = GameplayEventMarks(Clips, Out, content);
         for (const AnimBoundSlotRow& other : Out.SlotRows)
         {
             if (other.Behavior != row.Behavior)
                 continue;
             const AnimBoundContent& otherContent = Out.Contents[static_cast<std::size_t>(other.Content)];
-            if (std::abs(otherContent.DurationSeconds - duration) > 1e-4f)
+            if (content.Flow >= 0 || otherContent.Flow >= 0)
+            {
+                // Flows time by their sections: the same ones, running as long
+                // and leaving the same way.
+                const std::string difference = content.Flow < 0 || otherContent.Flow < 0
+                    ? std::string("one plays a flow and the other a clip")
+                    : AnimFlowAnchorDifference(Out, Out.Flows[static_cast<std::size_t>(content.Flow)],
+                                               Out.Flows[static_cast<std::size_t>(otherContent.Flow)]);
+                if (!difference.empty())
+                {
+                    Error("anim.slot.local_timing", row.DeclaredIn, std::format("$.data.rows[{}].when", row.Index),
+                          std::format("This row reads a local fact, so every row for '{}' must keep the same time; "
+                                      "'{}' and '{}' do not: {}.",
+                                      row.BehaviorName, path, otherContent.Path, difference));
+                    break;
+                }
+            }
+            else if (std::abs(otherContent.DurationSeconds - duration) > 1e-4f)
             {
                 Error("anim.slot.local_timing", row.DeclaredIn, std::format("$.data.rows[{}].when", row.Index),
                       std::format("This row reads a local fact, so every row for '{}' must last as long; "
@@ -140,7 +177,7 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
                                   otherContent.DurationSeconds));
                 break;
             }
-            if (GameplayEventMarks(Clips, otherContent) != events)
+            if (GameplayEventMarks(Clips, Out, otherContent) != events)
             {
                 Error("anim.slot.local_events", row.DeclaredIn, std::format("$.data.rows[{}].when", row.Index),
                       std::format("This row reads a local fact, so every row for '{}' must produce the same "

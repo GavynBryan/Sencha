@@ -121,10 +121,11 @@ public:
     // preview World -- the names content and scenarios may resolve against.
     // Nothing a scenario names is ever registered on its behalf.
     // `clips` gives slot rows their content; without it rigs bind but resolve
-    // nothing.
+    // nothing. `skeletons` gives masks their joints.
     explicit AnimationPreviewSession(const DataAssetCache& data,
                                      const AnimationClipCache* clips = nullptr,
-                                     std::function<void(World&)> vocabulary = {});
+                                     std::function<void(World&)> vocabulary = {},
+                                     const SkeletonCache* skeletons = nullptr);
     ~AnimationPreviewSession();
 
     AnimationPreviewSession(const AnimationPreviewSession&) = delete;
@@ -254,6 +255,7 @@ private:
 
     const DataAssetCache& Data;
     const AnimationClipCache* Clips = nullptr;
+    const SkeletonCache* Skeletons = nullptr;
     std::function<void(World&)> Vocabulary;
 
     AnimationScenario Working;

@@ -63,6 +63,12 @@ bool AnimationClipCache::ReloadInPlace(AnimationClipHandle handle, AnimationClip
     return true;
 }
 
+SkeletonHandle AnimationClipCache::GetSkeleton(AnimationClipHandle handle) const
+{
+    const AnimationClipEntry* entry = Resolve(handle);
+    return entry != nullptr ? entry->OwnedSkeleton.GetToken() : SkeletonHandle{};
+}
+
 uint64_t AnimationClipCache::GetReloadVersion(AnimationClipHandle handle) const
 {
     const AnimationClipEntry* entry = Resolve(handle);

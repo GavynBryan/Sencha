@@ -181,9 +181,11 @@ bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a, const Animati
 }
 
 AnimationPreviewSession::AnimationPreviewSession(const DataAssetCache& data, const AnimationClipCache* clips,
-                                                 std::function<void(World&)> vocabulary)
+                                                 std::function<void(World&)> vocabulary,
+                                                 const SkeletonCache* skeletons)
     : Data(data)
     , Clips(clips)
+    , Skeletons(skeletons)
     , Vocabulary(std::move(vocabulary))
 {
 }
@@ -320,7 +322,7 @@ void AnimationPreviewSession::BuildWorld()
         if (!tags.RegisterTag(Working.DeclaredTags[i], &error))
             Problem("anim.scenario.declared_tag", std::format("$.declared_tags[{}]", i), error.Message);
     }
-    Preview->SetResource(AnimRigBindings{ &Data, Clips });
+    Preview->SetResource(AnimRigBindings{ &Data, Clips, Skeletons });
 
     // Participants first, in scenario order, so their local entities are the
     // same on every run of the same scenario.
