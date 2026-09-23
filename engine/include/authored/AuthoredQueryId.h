@@ -1,5 +1,6 @@
 #pragma once
 
+#include <authored/AuthoredHandle.h>
 #include <core/identity/StrongId.h>
 
 #include <cstdint>
@@ -26,3 +27,8 @@ using AuthoredQueryRevision = StrongId<struct AuthoredQueryRevisionTag, std::uin
 // Which implementation answers a query right now.
 using AuthoredQueryBindingGeneration =
     StrongId<struct AuthoredQueryBindingGenerationTag, std::uint32_t>;
+
+// A query name resolved against one catalog, which is what a compiled consumer
+// stores and what the dispatcher evaluates.
+using AuthoredQueryHandle =
+    AuthoredHandle<AuthoredQueryCatalogId, AuthoredQueryId, AuthoredQueryRevision>;

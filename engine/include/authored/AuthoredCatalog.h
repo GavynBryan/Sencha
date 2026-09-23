@@ -1,5 +1,6 @@
 #pragma once
 
+#include <authored/AuthoredHandle.h>
 #include <authored/AuthoredSchema.h>
 
 #include <concepts>
@@ -189,6 +190,7 @@ public:
     using Id = typename Traits::Id;
     using ContractRevision = typename Traits::Revision;
     using CatalogId = typename Traits::CatalogId;
+    using Handle = AuthoredHandle<CatalogId, Id, ContractRevision>;
 
     AuthoredCatalog()
         : Catalog_{ NextAuthoredCatalogNumber() }
@@ -213,8 +215,27 @@ public:
         return Slots[IndexOf(it->second)].State == SlotState::Live ? it->second : Id{};
     }
 
-    // Null for a retired id, an id from another catalog, or one this catalog
-    // never minted.
+    // The name resolved against this catalog as it is now, for a consumer to
+    // store in place of the name. Invalid when nothing live carries it.
+    [[nodiscard]] Handle Resolve(std::string_view name) const
+    {
+        const Id id = Find(name);
+        if (!id.IsValid())
+            return {};
+        return Handle{ .Catalog = Catalog_, .Slot = id, .Contract = Revision(id) };
+    }
+
+    // Whether a handle still means what it meant when it was resolved: minted
+    // by this catalog, still live, and still the same contract.
+    [[nodiscard]] bool IsCurrent(const Handle& handle) const
+    {
+        return handle.Catalog == Catalog_ && IsLive(handle.Slot)
+            && Revision(handle.Slot) == handle.Contract;
+    }
+
+    // Null for a retired id or one this catalog never minted. A bare id
+    // carries no catalog, so an id minted by another catalog is not
+    // distinguishable here; a consumer that stores one stores a Handle.
     [[nodiscard]] const Definition* Get(Id id) const
     {
         if (!IsLive(id))

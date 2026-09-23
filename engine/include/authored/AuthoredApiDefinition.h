@@ -90,14 +90,23 @@ concept HasAuthoredEventDefinition = requires {
     AuthoredApiDefinition<E>::DescribeEvent();
 };
 
-// The persisted identity a target or event source names, for a component
-// declared either by annotation or by hand. Resolved from the type the author
-// wrote, so a misspelled component is a compile error in the companion rather
-// than a string nobody checks.
+// A type with a component identity of its own: one declared by
+// SENCHA_COMPONENT or SENCHA_DECLARE_COMPONENT_TYPE. A type that merely has a
+// TypeSchema -- a vector, a transform -- is not one, however it serializes.
+template<typename C>
+concept AuthoredComponentType = HasComponentTypeKey<C>;
+
+// The persisted identity a target or event source names. Resolved from the
+// type the author wrote, and only for a component: naming a type that exists
+// but is not one fails the build here, rather than compiling to an empty
+// identity that constrains nothing.
 template<typename C>
 [[nodiscard]] std::string AuthoredComponentIdentity()
 {
-    return std::string(ResolveComponentName<C>());
+    static_assert(AuthoredComponentType<C>,
+                  "SENCHA_TARGET and SENCHA_EVENT_SOURCE name a component: this type has no "
+                  "SENCHA_COMPONENT or SENCHA_DECLARE_COMPONENT_TYPE identity");
+    return std::string(ComponentTypeKey<C>::Name);
 }
 
 //-----------------------------------------------------------------------------

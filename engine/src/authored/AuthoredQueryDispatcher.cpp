@@ -1,6 +1,7 @@
 #include <authored/AuthoredQueryDispatcher.h>
 
 #include <cassert>
+#include <utility>
 
 const char* AuthoredQueryStatusName(AuthoredQueryStatus status)
 {
@@ -11,6 +12,7 @@ const char* AuthoredQueryStatusName(AuthoredQueryStatus status)
     case AuthoredQueryStatus::InvalidArguments: return "invalid arguments";
     case AuthoredQueryStatus::Unbound: return "no implementation";
     case AuthoredQueryStatus::Stale: return "stale";
+    case AuthoredQueryStatus::InvalidResult: return "invalid result";
     }
     return "unknown";
 }
@@ -76,26 +78,41 @@ bool AuthoredQueryDispatcher::HasImplementation(AuthoredQueryId query) const
     return Find(query) != nullptr;
 }
 
-AuthoredQueryStatus AuthoredQueryDispatcher::Evaluate(AuthoredQueryId query,
-                                                      std::span<const AuthoredValue> arguments,
-                                                      AuthoredValue& result,
-                                                      AuthoredQueryRevision expected) const
+namespace
 {
-    const AuthoredQueryDefinition* definition = Queries.Get(query);
-    if (definition == nullptr)
-        return AuthoredQueryStatus::Stale;
-    const AuthoredQueryRevision current = Queries.Revision(query);
-    if (expected.IsValid() && expected != current)
-        return AuthoredQueryStatus::Stale;
+    // Holds the evaluation depth for exactly the duration of an answer, however
+    // the answer ends: an implementation that throws must not leave the
+    // dispatcher believing it is still answering, which would refuse every
+    // later bind and release.
+    class EvaluationScope
+    {
+    public:
+        explicit EvaluationScope(std::uint32_t& depth) : Depth(depth) { ++Depth; }
+        ~EvaluationScope() { --Depth; }
+        EvaluationScope(const EvaluationScope&) = delete;
+        EvaluationScope& operator=(const EvaluationScope&) = delete;
 
-    const Implementation* implementation = Find(query);
-    if (implementation == nullptr || implementation->Revision != current)
+    private:
+        std::uint32_t& Depth;
+    };
+}
+
+AuthoredQueryStatus AuthoredQueryDispatcher::Evaluate(const AuthoredQueryHandle& query,
+                                                      std::span<const AuthoredValue> arguments,
+                                                      AuthoredValue& result) const
+{
+    if (!Queries.IsCurrent(query))
+        return AuthoredQueryStatus::Stale;
+    const AuthoredQueryDefinition& definition = *Queries.Get(query.Slot);
+
+    const Implementation* implementation = Find(query.Slot);
+    if (implementation == nullptr || implementation->Revision != query.Contract)
         return AuthoredQueryStatus::Unbound;
 
     // Checked here, once, for every implementation: the adapter decodes what
     // it is handed, but a range or a choice is the declaration's promise, and
     // the declaration lives here.
-    const std::vector<DataFieldSchema>& declared = definition->Arguments.Children;
+    const std::vector<DataFieldSchema>& declared = definition.Arguments.Children;
     if (arguments.size() != declared.size())
         return AuthoredQueryStatus::InvalidArguments;
     for (std::size_t index = 0; index < declared.size(); ++index)
@@ -104,11 +121,21 @@ AuthoredQueryStatus AuthoredQueryDispatcher::Evaluate(AuthoredQueryId query,
             return AuthoredQueryStatus::InvalidArguments;
     }
 
-    ++Evaluating;
-    const AuthoredQueryStatus status =
-        implementation->Evaluate(implementation->Target, arguments, result);
-    --Evaluating;
-    return status;
+    // Answered into a local, so a refused answer never reaches the caller.
+    AuthoredValue answer;
+    AuthoredQueryStatus status;
+    {
+        const EvaluationScope scope(Evaluating);
+        status = implementation->Evaluate(implementation->Target, arguments, answer);
+    }
+    if (status != AuthoredQueryStatus::Value)
+        return status;
+    // The same promise in the other direction: whatever the implementation
+    // is, what leaves here is what the declaration says it is.
+    if (!AuthoredValueSatisfiesField(answer, definition.Result))
+        return AuthoredQueryStatus::InvalidResult;
+    result = std::move(answer);
+    return AuthoredQueryStatus::Value;
 }
 
 std::vector<AuthoredQueryId> AuthoredQueryDispatcher::Unanswered() const

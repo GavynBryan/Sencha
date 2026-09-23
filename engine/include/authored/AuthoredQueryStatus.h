@@ -23,9 +23,13 @@ enum class AuthoredQueryStatus : std::uint8_t
     // Nothing answers this query, or what does was bound against a contract
     // that has since changed.
     Unbound,
-    // The query is not live in this catalog, or the caller was compiled
-    // against an older revision of it.
+    // The handle was resolved against another catalog, the query is no longer
+    // live, or its contract has changed since the handle was resolved.
     Stale,
+    // The implementation answered with a value its own declaration does not
+    // allow: the wrong kind, an unlisted choice, a number that is not finite.
+    // A provider defect, never the caller's; the value is not handed on.
+    InvalidResult,
 };
 
 [[nodiscard]] const char* AuthoredQueryStatusName(AuthoredQueryStatus status);

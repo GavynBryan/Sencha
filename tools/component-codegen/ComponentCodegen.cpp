@@ -1066,6 +1066,15 @@ void EmitParamAsserts(std::ostream& out,
                            + "(\"" + method.Identity + "\")";
     const std::string where = Where(logical, param.Line);
     EmitValueAsserts(out, param.Type, where, what + ": parameter '" + param.Name + "'");
+    if (!param.TargetComponent.empty())
+    {
+        out << "    static_assert(AuthoredComponentType<" << param.TargetComponent << ">,\n"
+            << "                  "
+            << Literal(where + ": " + what + ": SENCHA_TARGET(" + param.TargetComponent
+                       + ") on parameter '" + param.Name + "' names a type that is not a "
+                       "component")
+            << ");\n";
+    }
     if (!param.Default.empty())
     {
         out << "    static_assert(CanRepresentSchemaDefault<" << param.Type << ">,\n"
@@ -1313,7 +1322,16 @@ void EmitEvent(std::ostream& out, const EventFacts& event, const std::string& lo
                          "SENCHA_EVENT(\"" + event.Identity + "\"): payload member '"
                              + field.Member + "'");
     }
-    if (!event.Fields.empty())
+    if (!event.Source.empty())
+    {
+        out << "    static_assert(AuthoredComponentType<" << event.Source << ">,\n"
+            << "                  "
+            << Literal(Where(logical, event.Line) + ": SENCHA_EVENT(\"" + event.Identity
+                       + "\"): SENCHA_EVENT_SOURCE(" + event.Source
+                       + ") names a type that is not a component")
+            << ");\n";
+    }
+    if (!event.Fields.empty() || !event.Source.empty())
         out << "\n";
     out << "    static constexpr std::string_view EventName = " << Literal(event.Identity) << ";\n";
 

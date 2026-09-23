@@ -547,6 +547,7 @@ if(NOT WIN32)
                 $<TARGET_FILE:sencha::component-codegen>
                 ${CMAKE_SOURCE_DIR}
                 ${CMAKE_BINARY_DIR}/engine/generated-public
+                ${CMAKE_CXX_COMPILER}
     )
     add_test(
         NAME component_index_validation

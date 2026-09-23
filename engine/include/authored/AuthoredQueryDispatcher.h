@@ -67,15 +67,20 @@ public:
 
     [[nodiscard]] bool HasImplementation(AuthoredQueryId query) const;
 
-    // Asks one question. `arguments` are in the order the query declares them
-    // and are checked against that declaration before anything is called;
-    // `result` is written only when the answer is Value. A caller that
-    // resolved the query against a particular revision passes it, and is told
-    // Stale if the contract has moved since.
-    [[nodiscard]] AuthoredQueryStatus Evaluate(AuthoredQueryId query,
+    // Asks one question, by a handle resolved against this dispatcher's
+    // catalog. A handle from another catalog, or for a contract that has moved
+    // since it was resolved, is Stale.
+    //
+    // `arguments` are every argument the query declares, in declaration order:
+    // a declared default is for whatever compiles the call to fill in, so
+    // evaluating stays a check and a call, and an omitted argument is
+    // InvalidArguments. They are checked against the declaration before the
+    // implementation runs, and its answer is checked against the declared
+    // result before it is handed on: Value means a value that satisfies the
+    // contract. `result` is written only then.
+    [[nodiscard]] AuthoredQueryStatus Evaluate(const AuthoredQueryHandle& query,
                                                std::span<const AuthoredValue> arguments,
-                                               AuthoredValue& result,
-                                               AuthoredQueryRevision expected = {}) const;
+                                               AuthoredValue& result) const;
 
     // Live queries nothing answers, in id order. What a host reports once
     // everything that binds has had its chance.

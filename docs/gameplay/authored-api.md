@@ -76,7 +76,11 @@ the same about the entity an event is published from. Both are **authoring
 metadata**: they decide what an editor offers, not what the runtime accepts.
 An implementation still checks the entity it was handed, and publishing an
 event does not check its source — a development build warns once per event
-when a source lacks the declared component, and nothing more.
+when a source lacks the declared component, and nothing more. The named type
+itself must be a component — declared by `SENCHA_COMPONENT` or
+`SENCHA_DECLARE_COMPONENT_TYPE`. A type that exists but is not one fails the
+build at the declaration rather than compiling to a constraint that
+constrains nothing.
 
 Identity is always written out. The generator infers only what the compiler
 already knows:
@@ -154,15 +158,45 @@ bound. A component's member queries are bound against a World; their readers
 use the World's const access and answer `Unavailable` when the entity has no
 such component.
 
+## Handles, not slot numbers
+
+A consumer that stores a reference to a query or an event stores a handle,
+never a bare id: `Registry().Resolve(name)` returns `{Catalog, Slot, Contract}`.
+Slot numbers are dense and local to one catalog — slot 1 in one World is an
+unrelated entry in another — so every dispatcher that takes a handle checks
+that it was resolved against its own catalog and that the contract has not
+moved since. A handle that fails either check is stale and is refused, never
+applied to whatever occupies the slot now. Verbs carry the same three facts in
+a `CompiledVerbBinding`.
+
+Vocabulary is not assumed to be immutable after startup. A module that is
+reloaded can retire and revive names or change a contract, and handles are
+what make that safe: anything resolved against the old contract stops
+matching instead of reading the new layout as the old one.
+
 ## Queries
 
-`AuthoredQueryDispatcher::Evaluate` is synchronous and observational. Arguments
-are checked against the declaration before the implementation runs; the
-implementation receives a `const` target. The status distinguishes `Value`,
-`Unavailable` (the question does not apply), `InvalidArguments`, `Unbound`
-(nothing answers, or what does was bound against an older contract) and
-`Stale` (the caller resolved an older revision). A condition never has to read
-`false` as "this entity has no torch".
+`AuthoredQueryDispatcher::Evaluate(handle, arguments, result)` is synchronous
+and observational. The implementation receives a `const` target.
+
+- **Arguments.** The caller supplies every argument the query declares, in
+  order. A declared default is for whatever compiles the call to fill in — the
+  graph compiler materializes it once — so evaluating stays a check and a call;
+  an omitted argument is `InvalidArguments`. Arguments are checked against the
+  declaration before the implementation runs.
+- **Result.** The implementation's answer is checked against the declared
+  result before it is handed on. `Value` always means a value the declaration
+  allows. An answer of the wrong kind, an enumerator the schema does not list,
+  or a number that is not finite is `InvalidResult`: a defect in the provider,
+  never blamed on the caller, and never passed through.
+- **Other outcomes.** `Unavailable` (the question does not apply here),
+  `Unbound` (nothing answers, or what does was bound against an older
+  contract) and `Stale` (the handle belongs to another catalog or an older
+  contract). A condition never has to read `false` as "this entity has no
+  torch".
+
+An implementation that throws propagates the exception to the caller and
+leaves the dispatcher usable.
 
 ## Events
 
@@ -180,11 +214,16 @@ VerbAdmission TorchSystem::Ignite(const VerbInvocation& invocation, EntityId ent
 }
 ```
 
-`Publish` only queues. The engine drains the queue once per fixed tick, right
+`Publish` only queues, and only an occurrence whose payload its declaration
+allows: an unlisted enum choice or a non-finite number is refused at publish,
+with one error per event. The engine drains the queue once per fixed tick, right
 after fixed logic and before physics:
 
 - occurrences are delivered first in first out, each to its subscribers in the
-  order they subscribed, optionally filtered to one source entity;
+  order they subscribed, optionally filtered to one source entity. A
+  subscription is made with a handle and hears only the contract it resolved:
+  if the payload's declaration changes, it stops hearing the event until it
+  subscribes again;
 - anything published during the drain joins the tail and is delivered by the
   same drain, until the queue is empty. A chain — rotate A, A rotated, rotate
   B, B rotated, rotate C — completes in one tick, with no call nested inside
@@ -211,12 +250,22 @@ the other.
 A drain has a budget of subscriber calls (`authored.events.drain_budget`, 4096
 by default). A drain that spends it stops, keeps the rest queued in order for
 the next tick, logs the recent deliveries, and marks the chains still queued as
-suspect. A suspect chain that exhausts the next drain too is quarantined: its
-queued occurrences are discarded, the report — root, tick, discarded count and
-trace — is kept on `AuthoredEventDispatcher::LastQuarantine()`, and a debug
-build stops there (`authored.events.trap_on_quarantine`). Other chains carry
-on. `authored.events.queue_capacity` bounds how many occurrences may wait;
-publishing into a full queue is refused and counted, never dropped silently.
+suspect. A chain still running after `authored.events.quarantine_after`
+consecutive exhausted drains (2 by default) is quarantined: its queued
+occurrences are discarded, the report — root, tick, discarded count and trace
+— is kept on `AuthoredEventDispatcher::LastQuarantine()`, and a debug build
+stops there (`authored.events.trap_on_quarantine`). Other chains carry on.
+
+This is a cutoff for sustained work, not cycle detection. A reaction that
+announces the event it reacts to is the usual cause, but a finite chain long
+enough to outlast the threshold is cut off too; raise the threshold, or the
+budget, for content that legitimately does that much in one burst.
+
+`authored.events.queue_capacity` bounds how many occurrences may wait. The
+occurrence being delivered does not count against it, so a subscriber can
+always queue its reaction while one waiting place is free, even when the queue
+was full as the drain began. Publishing into a full queue is refused and
+counted, never dropped silently.
 
 ## Reading the generated code
 

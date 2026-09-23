@@ -73,6 +73,8 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
 
     static_assert(IsAuthoredValueType<EntityId>,
                   "test/component_codegen/GoldenAuthoredApi.h:66: SENCHA_VERB(\"test.torch.ignite\"): parameter 'torch' has type 'EntityId', which is not an authored value type");
+    static_assert(AuthoredComponentType<GoldenTorch>,
+                  "test/component_codegen/GoldenAuthoredApi.h:66: SENCHA_VERB(\"test.torch.ignite\"): SENCHA_TARGET(GoldenTorch) on parameter 'torch' names a type that is not a component");
     static_assert(IsAuthoredValueType<GoldenLamp>,
                   "test/component_codegen/GoldenAuthoredApi.h:67: SENCHA_VERB(\"test.torch.ignite\"): parameter 'brightness' has type 'GoldenLamp', which is not an authored value type");
     static_assert(CanRepresentSchemaDefault<GoldenLamp>,
@@ -93,6 +95,8 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
                   "test/component_codegen/GoldenAuthoredApi.h:76: SENCHA_VERB(\"test.torch.rename\"): parameter 'name' of type 'std::string' cannot declare a schema default");
     static_assert(IsAuthoredValueType<EntityId>,
                   "test/component_codegen/GoldenAuthoredApi.h:80: SENCHA_QUERY(\"test.torch.can_ignite\"): parameter 'torch' has type 'EntityId', which is not an authored value type");
+    static_assert(AuthoredComponentType<GoldenTorch>,
+                  "test/component_codegen/GoldenAuthoredApi.h:80: SENCHA_QUERY(\"test.torch.can_ignite\"): SENCHA_TARGET(GoldenTorch) on parameter 'torch' names a type that is not a component");
     static_assert(IsAuthoredValueType<int32_t>,
                   "test/component_codegen/GoldenAuthoredApi.h:81: SENCHA_QUERY(\"test.torch.can_ignite\"): parameter 'level' has type 'int32_t', which is not an authored value type");
     static_assert(AuthoredRangeFits<int32_t>(0, 10),
@@ -101,6 +105,8 @@ struct AuthoredApiDefinition<GoldenTorchSystem>
                   "test/component_codegen/GoldenAuthoredApi.h:80: SENCHA_QUERY(\"test.torch.can_ignite\"): the result of 'CanIgnite' has type 'bool', which is not an authored value type");
     static_assert(IsAuthoredValueType<EntityId>,
                   "test/component_codegen/GoldenAuthoredApi.h:84: SENCHA_QUERY(\"test.torch.burn_time\"): parameter 'torch' has type 'EntityId', which is not an authored value type");
+    static_assert(AuthoredComponentType<GoldenTorch>,
+                  "test/component_codegen/GoldenAuthoredApi.h:84: SENCHA_QUERY(\"test.torch.burn_time\"): SENCHA_TARGET(GoldenTorch) on parameter 'torch' names a type that is not a component");
     static_assert(IsAuthoredValueType<AuthoredQueryValueType<std::optional<double>>>,
                   "test/component_codegen/GoldenAuthoredApi.h:84: SENCHA_QUERY(\"test.torch.burn_time\"): the result of 'BurnTime' has type 'std::optional<double>', which is not an authored value type");
 
@@ -284,6 +290,8 @@ struct AuthoredApiDefinition<GoldenTorchLitEvent>
                   "test/component_codegen/GoldenAuthoredApi.h:96: SENCHA_EVENT(\"test.torch.lit\"): payload member 'Instigator' has type 'EntityId', which is not an authored value type");
     static_assert(IsAuthoredValueType<GoldenLamp>,
                   "test/component_codegen/GoldenAuthoredApi.h:100: SENCHA_EVENT(\"test.torch.lit\"): payload member 'Brightness' has type 'GoldenLamp', which is not an authored value type");
+    static_assert(AuthoredComponentType<GoldenTorch>,
+                  "test/component_codegen/GoldenAuthoredApi.h:93: SENCHA_EVENT(\"test.torch.lit\"): SENCHA_EVENT_SOURCE(GoldenTorch) names a type that is not a component");
 
     static constexpr std::string_view EventName = "test.torch.lit";
 

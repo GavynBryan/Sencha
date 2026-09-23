@@ -138,7 +138,7 @@ public:
         if (events == nullptr)
             return;
         Heard = events->Subscribe<&PulseGame::Deliver>(
-            events->Registry().Find("test.frame.pulse"), EntityId{}, *this);
+            events->Registry().Resolve("test.frame.pulse"), EntityId{}, *this);
     }
 
     void OnRegisterSystems(SystemRegisterContext& ctx) override

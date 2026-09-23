@@ -5,12 +5,18 @@
 # leaving output behind -- an empty companion would read as a component that no
 # longer exists -- and that the format it reports is the one the headers read.
 #
-#   check_component_codegen.sh <tool> <source-root> <generated-public-dir>
+# Some rules are the companion's to enforce rather than the generator's --
+# whether a type named as a target is a component is known to the compiler,
+# not to a header parse -- so one fixture's companion is compiled, and must
+# fail to, naming the declaration.
+#
+#   check_component_codegen.sh <tool> <source-root> <generated-public-dir> [<c++ compiler>]
 set -uo pipefail
 
 TOOL="${1:?tool path required}"
 ROOT="${2:?source root required}"
 GENERATED="${3:?generated-public dir required}"
+CXX="${4:-}"
 
 FIXTURES="${ROOT}/test/component_codegen"
 WORK="$(mktemp -d)"
@@ -88,6 +94,31 @@ expect_rejected BadComponentEvent.h component_event "both a component and an eve
 expect_rejected BadComponentMethod.h component_method "components and events are data"
 expect_rejected BadNoIdentity.h no_identity "no SENCHA_COMPONENT identity"
 expect_rejected BadShortChunk.h short_chunk "exactly four characters"
+
+# Generated, then refused by the compiler: a target and an event source that
+# name a type which exists but is not a component.
+if [[ -n "${CXX}" ]]; then
+    if ! run BadNonComponentTarget.h non_component; then
+        echo "FAIL: non_component: the generator refused what the compiler should refuse:"
+        sed 's/^/    /' "${WORK}/non_component.log"
+        status=1
+    else
+        printf '#include "%s/BadNonComponentTarget.h"\n#include "%s/non_component.h"\n' \
+            "${FIXTURES}" "${WORK}" > "${WORK}/non_component.cpp"
+        if "${CXX}" -std=c++20 -fsyntax-only -I"${ROOT}/engine/include" -I"${GENERATED}" \
+               "${WORK}/non_component.cpp" >"${WORK}/non_component.compile.log" 2>&1; then
+            echo "FAIL: non_component: a target naming a non-component compiled"
+            status=1
+        elif ! grep -q "SENCHA_TARGET(BadNotAComponent) on parameter 'thing' names a type that is not a component" \
+                 "${WORK}/non_component.compile.log" \
+             || ! grep -q "SENCHA_EVENT_SOURCE(BadNotAComponent) names a type that is not a component" \
+                 "${WORK}/non_component.compile.log"; then
+            echo "FAIL: non_component: refused without naming the declaration"
+            sed 's/^/    /' "${WORK}/non_component.compile.log" | head -40
+            status=1
+        fi
+    fi
+fi
 
 reported="$("${TOOL}" --format-version)"
 declared="$(sed -n 's/.*kComponentCodegenFormatVersion = \([0-9]*\);.*/\1/p' \

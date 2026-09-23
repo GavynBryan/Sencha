@@ -542,8 +542,8 @@ void Engine::RegisterAuthoredEventCVars()
         .DefaultValue = static_cast<std::int64_t>(AuthoredEventDispatcher::kDefaultBudget),
         .CurrentValue = static_cast<std::int64_t>(EventDispatcherState->BudgetPerDrain()),
         .Flags = CVarFlags::None,
-        .Help = "Subscriber calls one tick's event drain may make before it stops. A chain that "
-                "exhausts two drains in a row is quarantined.",
+        .Help = "Subscriber calls one tick's event drain may make before it stops. A chain still "
+                "running after authored.events.quarantine_after exhausted drains is quarantined.",
         .Source = { "engine" },
         .Min = 1.0,
         .Max = 1048576.0,
@@ -568,6 +568,25 @@ void Engine::RegisterAuthoredEventCVars()
         .OnChange = [this](const CVarChangeContext& ctx) {
             if (EventDispatcherState != nullptr)
                 EventDispatcherState->SetCapacity(
+                    static_cast<std::size_t>(std::get<std::int64_t>(ctx.NewValue)));
+        },
+    });
+    (void)registry.RegisterCVar({
+        .Name = "authored.events.quarantine_after",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(EventDispatcherState->QuarantineAfterDrains()),
+        .CurrentValue = static_cast<std::int64_t>(EventDispatcherState->QuarantineAfterDrains()),
+        .Flags = CVarFlags::None,
+        .Help = "How many consecutive drains a chain of events may exhaust the budget in before "
+                "it is quarantined as runaway work. Sustained work, not a proven cycle: a finite "
+                "chain longer than this many budgets is cut off too.",
+        .Source = { "engine" },
+        .Min = 1.0,
+        .Max = 1024.0,
+        .OnChange = [this](const CVarChangeContext& ctx) {
+            if (EventDispatcherState != nullptr)
+                EventDispatcherState->SetQuarantineAfter(
                     static_cast<std::size_t>(std::get<std::int64_t>(ctx.NewValue)));
         },
     });

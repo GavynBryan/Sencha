@@ -219,13 +219,13 @@ namespace
             {
                 const AuthoredValue board = AuthoredValue::Entity(delivery.Source);
                 AuthoredValue answer;
-                if (queries->Evaluate(queries->Registry().Find("arena_scoreboard.red"),
+                if (queries->Evaluate(queries->Registry().Resolve("arena_scoreboard.red"),
                                       { &board, 1 }, answer)
                     == AuthoredQueryStatus::Value)
                 {
                     (void)answer.TryGetInt(change.Red);
                 }
-                if (queries->Evaluate(queries->Registry().Find("arena_scoreboard.blue"),
+                if (queries->Evaluate(queries->Registry().Resolve("arena_scoreboard.blue"),
                                       { &board, 1 }, answer)
                     == AuthoredQueryStatus::Value)
                 {
@@ -244,7 +244,7 @@ namespace
                 if (AuthoredEventDispatcher* events = Host->TryAuthoredEvents())
                 {
                     ScoreChanged = events->Subscribe<&ScoreProbe::OnScoreChanged>(
-                        events->Registry().Find("arena.score_changed"), EntityId{}, *this);
+                        events->Registry().Resolve("arena.score_changed"), EntityId{}, *this);
                 }
             }
             if (Frames == kAwardAtFrame)

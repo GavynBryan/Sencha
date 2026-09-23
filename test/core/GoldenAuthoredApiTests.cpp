@@ -185,6 +185,15 @@ protected:
 };
 } // namespace
 
+TEST_F(GoldenAuthoredApiTest, OnlyAComponentCanBeATargetOrASource)
+{
+    static_assert(AuthoredComponentType<GoldenTorch>);
+    // A real type, but neither an annotated nor a hand-declared component.
+    static_assert(!AuthoredComponentType<GoldenTorchSystem>);
+    static_assert(!AuthoredComponentType<GoldenLamp>);
+    SUCCEED();
+}
+
 TEST_F(GoldenAuthoredApiTest, DeclaresTheContractTheSignatureStates)
 {
     const VerbRegistry& verbs = *FindVerbRegistry(Entities);
@@ -280,7 +289,7 @@ TEST_F(GoldenAuthoredApiTest, ResettingTheBindingsTakesTheObjectAwayFromEveryEnt
     AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
     bindings.Reset();
     EXPECT_EQ(Invoke(Binding("test.torch.extinguish_all", {})).Status, VerbAdmission::Unavailable);
-    const AuthoredQueryId query = Queries->Registry().Find("test.torch.can_ignite");
+    const AuthoredQueryHandle query = Queries->Registry().Resolve("test.torch.can_ignite");
     AuthoredValue result;
     const std::vector<AuthoredValue> arguments{ AuthoredValue::Entity(Entities.CreateEntity()),
                                                 AuthoredValue::Int(5) };
@@ -290,7 +299,7 @@ TEST_F(GoldenAuthoredApiTest, ResettingTheBindingsTakesTheObjectAwayFromEveryEnt
 TEST_F(GoldenAuthoredApiTest, AComputedQueryAnswersThroughTheConstMethod)
 {
     AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
-    const AuthoredQueryId query = Queries->Registry().Find("test.torch.can_ignite");
+    const AuthoredQueryHandle query = Queries->Registry().Resolve("test.torch.can_ignite");
     const EntityId torch = Entities.CreateEntity();
 
     AuthoredValue result;
@@ -308,8 +317,8 @@ TEST_F(GoldenAuthoredApiTest, AComputedQueryAnswersThroughTheConstMethod)
 TEST_F(GoldenAuthoredApiTest, AnEmptyOptionalAnswerIsUnavailableNotAValue)
 {
     AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
-    const AuthoredQueryId query = Queries->Registry().Find("test.torch.burn_time");
-    const AuthoredQueryDefinition& definition = *Queries->Registry().Get(query);
+    const AuthoredQueryHandle query = Queries->Registry().Resolve("test.torch.burn_time");
+    const AuthoredQueryDefinition& definition = *Queries->Registry().Get(query.Slot);
     // The declared result is what a Value holds, never an optional.
     EXPECT_EQ(definition.Result.Kind, DataFieldKind::Float);
 
@@ -333,12 +342,12 @@ TEST_F(GoldenAuthoredApiTest, AMemberQueryReadsTheRowAndIsUnavailableWithoutOne)
     AuthoredApiBindings bindings = BindAuthoredApi<GoldenTorch>(*Queries, std::as_const(Entities));
     EXPECT_TRUE(bindings.Unbound().empty());
 
-    const AuthoredQueryId lit = Queries->Registry().Find("test.codegen.golden_torch.lit");
-    const AuthoredQueryId hot = Queries->Registry().Find("test.codegen.golden_torch.hot");
+    const AuthoredQueryHandle lit = Queries->Registry().Resolve("test.codegen.golden_torch.lit");
+    const AuthoredQueryHandle hot = Queries->Registry().Resolve("test.codegen.golden_torch.hot");
     ASSERT_TRUE(lit.IsValid());
     ASSERT_TRUE(hot.IsValid());
     // The implicit argument names the component it reads.
-    EXPECT_EQ(Queries->Registry().Get(lit)->Arguments.Children.front().Reference.ComponentIdentity,
+    EXPECT_EQ(Queries->Registry().Get(lit.Slot)->Arguments.Children.front().Reference.ComponentIdentity,
               "test.codegen.golden_torch");
 
     const EntityId torch = Entities.CreateEntity();
@@ -373,7 +382,7 @@ TEST_F(GoldenAuthoredApiTest, AnEventDeclaresItsPayloadAndPublishesItEncoded)
     AuthoredEventDispatcher dispatcher(events, logging.GetLogger<GoldenAuthoredApiTest>());
     HeardBrightness heard;
     AuthoredEventSubscription subscription =
-        dispatcher.Subscribe<&HeardBrightness::Deliver>(lit, EntityId{}, heard);
+        dispatcher.Subscribe<&HeardBrightness::Deliver>(events.Resolve("test.torch.lit"), EntityId{}, heard);
 
     const EntityId torch = Entities.CreateEntity();
     EXPECT_TRUE(dispatcher.Publish(torch, GoldenTorchLitEvent{ .Brightness = GoldenLamp::Dim }));

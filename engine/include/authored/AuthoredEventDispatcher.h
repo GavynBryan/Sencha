@@ -52,8 +52,10 @@ struct AuthoredEventTraceRecord
     AuthoredEventCause Cause;
 };
 
-// A chain that exhausted two drains in a row and was stopped: which one, when,
-// how much was thrown away, and what was being delivered when it ran away.
+// A chain that kept exhausting the drain budget and was cut off: which one,
+// when, how much was thrown away, and what was being delivered when it was
+// stopped. Sustained work, not a proven cycle -- a finite chain long enough to
+// outlast the threshold is cut off too.
 struct AuthoredEventQuarantine
 {
     AuthoredEventSequence Root;
@@ -75,7 +77,7 @@ struct AuthoredEventDrainResult
 class AuthoredEventDispatcher;
 
 using AuthoredEventSubscription =
-    AuthoredBindingToken<AuthoredEventDispatcher, AuthoredEventSubscriptionId,
+    AuthoredBindingToken<AuthoredEventDispatcher, AuthoredEventSubscriptionKey,
                          AuthoredEventSubscriptionGeneration>;
 
 template<typename E>
@@ -101,9 +103,19 @@ concept HasAuthoredEvent = requires(const E& event, AuthoredArguments& payload) 
 //
 // A drain has a budget of subscriber calls. A drain that runs out stops, keeps
 // what is left in order for the next one, and marks the chains still queued as
-// suspect; a suspect chain that runs out the next drain too is a cycle, and is
-// quarantined -- its queued occurrences discarded, with the trace that shows
-// how it went round kept for whoever investigates. Other chains carry on.
+// suspect. A chain that is still running when the budget runs out on several
+// consecutive drains is a runaway -- a reaction feeding the event it reacts
+// to, or simply more work than a tick should hold -- and is quarantined: its
+// queued occurrences are discarded, and the trace of what it was doing is kept
+// for whoever investigates. This is a cutoff for sustained work, not cycle
+// detection, and the number of drains it waits is configurable. Other chains
+// carry on.
+//
+// Every occurrence is checked against its declaration when it is published,
+// and one whose payload the declaration does not allow is refused. A
+// subscriber is bound to the contract revision it resolved: if the event's
+// payload changes shape, it stops hearing the event until it resubscribes
+// against the new one, rather than reading a layout it was not written for.
 //
 // A provider that changes state publishes when the state actually changed. A
 // request to light a lit torch lights nothing and announces nothing; that
@@ -130,8 +142,8 @@ public:
     [[nodiscard]] const AuthoredEventRegistry& Registry() const { return Events; }
 
     // Announces that `event` happened to `source`. False when it was not
-    // queued: the event is not declared in this catalog, the queue is full,
-    // admission is closed, or its chain has been quarantined.
+    // queued: the event is not declared in this catalog, its payload is not one
+    // the declaration allows, the queue is full, or admission is closed.
     template<HasAuthoredEvent E>
     bool Publish(EntityId source, const E& event, InvocationId cause = {})
     {
@@ -142,13 +154,16 @@ public:
                        });
     }
 
-    // Delivers `event` to `target` through `Deliver`. With a valid source, only
-    // occurrences announced by that entity; with none, every occurrence.
-    // Subscribing during a drain applies from the next occurrence whose
-    // delivery has not begun.
+    // Delivers the event `handle` names to `target` through `Deliver`, for as
+    // long as the event's contract is the one the handle was resolved
+    // against. With a valid source, only occurrences announced by that entity;
+    // with none, every occurrence. A handle from another catalog, or for a
+    // contract that has since moved, subscribes nothing. Subscribing during a
+    // drain applies from the next occurrence whose delivery has not begun.
     template<auto Deliver, typename T>
         requires std::is_invocable_v<decltype(Deliver), T&, const AuthoredEventDelivery&>
-    [[nodiscard]] AuthoredEventSubscription Subscribe(AuthoredEventId event, EntityId source,
+    [[nodiscard]] AuthoredEventSubscription Subscribe(const AuthoredEventHandle& event,
+                                                      EntityId source,
                                                       T& target)
     {
         return SubscribeErased(event, source, &target,
@@ -168,11 +183,19 @@ public:
     void SetBudget(std::size_t budget) { Budget = budget == 0 ? 1 : budget; }
     [[nodiscard]] std::size_t BudgetPerDrain() const { return Budget; }
 
-    // How many occurrences may wait. Takes effect at once when nothing is
+    // How many occurrences may wait. The occurrence being delivered is not
+    // one of them: a subscriber reacting to it can always queue its reaction
+    // while there is room for one waiting occurrence, even if the queue was
+    // full when the delivery began. Takes effect at once when nothing is
     // queued, otherwise at the end of the next drain that empties the queue:
     // the queue is never reallocated while a payload is being read.
     void SetCapacity(std::size_t capacity);
-    [[nodiscard]] std::size_t Capacity() const { return Ring.size(); }
+    [[nodiscard]] std::size_t Capacity() const { return Ring.size() - 1; }
+
+    // How many consecutive drains a chain may exhaust the budget in before it
+    // is quarantined. One cuts off anything that outlasts a single drain.
+    void SetQuarantineAfter(std::size_t drains) { QuarantineAfter = drains == 0 ? 1 : drains; }
+    [[nodiscard]] std::size_t QuarantineAfterDrains() const { return QuarantineAfter; }
 
     // Whether a quarantine also stops a debug build at the point it happens.
     void SetTrapOnQuarantine(bool trap) { TrapOnQuarantine = trap; }
@@ -188,6 +211,7 @@ public:
 
     [[nodiscard]] bool IsDraining() const { return Draining; }
     [[nodiscard]] std::size_t Queued() const { return Count; }
+    [[nodiscard]] std::size_t SubscriptionCount() const;
 
     // Publications refused since construction, for any reason.
     [[nodiscard]] std::uint64_t RefusedCount() const { return Refused; }
@@ -207,6 +231,9 @@ private:
     struct Occurrence
     {
         AuthoredEventId Event;
+        // The contract the payload was encoded against; only subscribers
+        // resolved against the same one hear it.
+        AuthoredEventRevision Contract;
         AuthoredEventSequence Sequence;
         AuthoredEventSequence Root;
         EntityId Source;
@@ -218,12 +245,30 @@ private:
 
     struct Subscriber
     {
-        AuthoredEventSubscriptionId Id;
+        std::uint64_t Serial = 0;
         AuthoredEventSubscriptionGeneration Generation;
+        AuthoredEventRevision Contract;
         EntityId Source;
         void* Target = nullptr;
         DeliverFn Deliver = nullptr;
         bool Live = true;
+    };
+
+    // One event's subscribers, in subscription order and therefore in serial
+    // order. A removed subscriber is left as a tombstone while a delivery may
+    // be walking the list, and the list is compacted once tombstones are the
+    // larger part of it, so removing many costs amortized constant time each.
+    struct SubscriberList
+    {
+        std::vector<Subscriber> List;
+        std::size_t Tombstones = 0;
+    };
+
+    // A chain the budget ran out on, and on how many consecutive drains.
+    struct Suspect
+    {
+        AuthoredEventSequence Root;
+        std::size_t Exhaustions = 0;
     };
 
     // Resolved once per event type per catalog and remembered, so publishing
@@ -247,14 +292,17 @@ private:
 
     bool Enqueue(AuthoredEventId event, EntityId source, InvocationId cause,
                  const void* published, EncodeFn encode);
+    [[nodiscard]] bool PayloadSatisfies(const AuthoredEventDefinition& definition,
+                                        const AuthoredArguments& payload) const;
 
-    [[nodiscard]] AuthoredEventSubscription SubscribeErased(AuthoredEventId event,
+    [[nodiscard]] AuthoredEventSubscription SubscribeErased(const AuthoredEventHandle& event,
                                                             EntityId source, void* target,
                                                             DeliverFn deliver);
-    void Release(AuthoredEventSubscriptionId id, AuthoredEventSubscriptionGeneration generation);
+    void Release(AuthoredEventSubscriptionKey key, AuthoredEventSubscriptionGeneration generation);
 
     void Deliver(const Occurrence& occurrence, std::uint64_t tick);
     [[nodiscard]] std::size_t MatchingSubscribers(const Occurrence& occurrence) const;
+    void CompactIfSparse(SubscriberList& subscribers);
     void CompactSubscribers();
     void ApplyPendingCapacity();
     void HandleExhaustion(std::uint64_t tick, AuthoredEventDrainResult& result);
@@ -262,20 +310,22 @@ private:
     [[nodiscard]] std::vector<AuthoredEventTraceRecord> TraceSnapshot() const;
     void ReportTrace(const char* heading) const;
     void CheckSource(AuthoredEventId event, EntityId source);
+    void WarnOnce(std::vector<bool>& warned, AuthoredEventId event);
 
     const AuthoredEventRegistry& Events;
     Logger& Log;
     std::shared_ptr<AuthoredEventSubscription::Link> Link;
 
-    // Fixed-size ring: head is the next occurrence to deliver. Never resized
-    // while anything is queued.
+    // Fixed-size ring, one slot larger than the capacity so the occurrence
+    // being delivered never takes a waiting place: head is the next
+    // occurrence to deliver. Never resized while anything is queued.
     std::vector<Occurrence> Ring;
     std::size_t Head = 0;
     std::size_t Count = 0;
     std::size_t PendingCapacity = 0;
 
-    // Indexed by the event's dense slot; each list in subscription order.
-    std::vector<std::vector<Subscriber>> Subscribers;
+    // Indexed by the event's dense slot.
+    std::vector<SubscriberList> Subscribers;
     std::uint64_t NextSubscription = 0;
     std::uint32_t NextSubscriptionGeneration = 0;
     bool SubscribersDirty = false;
@@ -285,6 +335,7 @@ private:
     bool Admitting = true;
     bool Draining = false;
     bool TrapOnQuarantine = false;
+    std::size_t QuarantineAfter = 2;
     std::uint64_t Refused = 0;
     // Refused as of the last drain, so a full queue is reported once per
     // drain period rather than once per refusal.
@@ -296,7 +347,7 @@ private:
     AuthoredEventSequence DeliveringSequence;
 
     // Chains still queued when the previous drain ran out of budget.
-    std::vector<AuthoredEventSequence> Suspects;
+    std::vector<Suspect> Suspects;
 
     std::array<AuthoredEventTraceRecord, kTraceDepth> TraceRing{};
     std::size_t TraceNext = 0;
@@ -306,7 +357,9 @@ private:
     bool HasQuarantine = false;
 
     const World* SourceWorld = nullptr;
-    // Events already reported for a source missing its component, so the
-    // diagnostic fires once per event rather than once per publish.
+    // Events already reported for a source missing its component, or for a
+    // payload their declaration does not allow, so each diagnostic fires once
+    // per event rather than once per publish.
     std::vector<bool> SourceWarned;
+    std::vector<bool> PayloadWarned;
 };
