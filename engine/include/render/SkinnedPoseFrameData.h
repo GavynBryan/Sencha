@@ -5,7 +5,9 @@
 #include <render/RenderEntityKey.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 //=============================================================================
@@ -32,6 +34,24 @@
 // instance whose predecessors' joints do not sum to a multiple of four on an
 // illegal offset.
 inline constexpr std::uint32_t kPaletteJointAlignment = 4;
+
+// Floats per palette matrix as the pose shader reads it.
+inline constexpr std::size_t kPaletteMatrixFloats = 16;
+
+// Writes palettes in the layout the pose shader declares: GLSL `mat4` in a
+// std430 buffer is column-major, and Mat4 is row-major, so each matrix is
+// transposed on the way out -- the same conversion every other pass makes at
+// its upload. `out` holds kPaletteMatrixFloats per palette matrix.
+inline void CopyPalettesColumnMajor(std::span<const Mat4> palettes, std::span<float> out)
+{
+    for (std::size_t m = 0; m < palettes.size() && (m + 1) * kPaletteMatrixFloats <= out.size(); ++m)
+    {
+        float* column = out.data() + m * kPaletteMatrixFloats;
+        for (int col = 0; col < 4; ++col)
+            for (int row = 0; row < 4; ++row)
+                column[col * 4 + row] = palettes[m].Data[row][col];
+    }
+}
 
 struct SkinnedPoseInstance
 {

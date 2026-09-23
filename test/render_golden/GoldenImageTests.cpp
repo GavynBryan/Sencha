@@ -250,7 +250,8 @@ TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
 // happened to allow -- a playing clip cannot be captured deterministically
 // under the tick accumulator. Everything from the clip asset through
 // sampling, the palette, the compute dispatch, and the posed draw has to
-// hold for the upper box to sit rotated a quarter turn.
+// hold for the upper box to sit tilted an eighth turn about its own joint,
+// centred where the rest pose has it with a gap above the lower box.
 TEST(GoldenImage, AClipPosesASkinnedMesh)
 {
     CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_skinned_pose",
