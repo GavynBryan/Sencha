@@ -53,6 +53,22 @@ const AnimationClipData* AnimationClipCache::Get(AnimationClipHandle handle) con
     return entry ? &entry->Value : nullptr;
 }
 
+bool AnimationClipCache::ReloadInPlace(AnimationClipHandle handle, AnimationClipData clip)
+{
+    AnimationClipEntry* entry = Resolve(handle);
+    if (entry == nullptr || entry->Value.SkeletonPath != clip.SkeletonPath)
+        return false;
+    entry->Value = std::move(clip);
+    ++entry->ReloadVersion;
+    return true;
+}
+
+uint64_t AnimationClipCache::GetReloadVersion(AnimationClipHandle handle) const
+{
+    const AnimationClipEntry* entry = Resolve(handle);
+    return entry != nullptr ? entry->ReloadVersion : 0;
+}
+
 std::string_view AnimationClipCache::GetName(AnimationClipHandle handle) const
 {
     return GetRegisteredPath(handle);

@@ -624,3 +624,28 @@ TEST(AnimEventBinding, ALifecycleEventNamesItsBinding)
         { "tag": "Anim.Walk", "kind": "cyclic", "on_entered": { "scope": "gameplay" } } ] })");
     EXPECT_NE(error.find("on_entered.binding"), std::string::npos) << error;
 }
+
+// A clip replaced where it stands -- an editor's unsaved events, a reimport --
+// rebinds every rig that plays it, and its new events are what cross.
+TEST(AnimEventBinding, AClipReplacedInPlaceRebindsItsRigs)
+{
+    AnimRigFixture fx({ "Anim.Walk", "Surface.Grass" });
+    DeclareVerbs(fx);
+    fx.Clip("asset://anim/walk.sanim", 1.0f);
+    const DataAssetHandle rig = LoadRig(fx);
+    EXPECT_TRUE(fx.Bound(rig).Contents.at(0).Events.empty());
+
+    const AnimationClipHandle clip = fx.Clips.Find("asset://anim/walk.sanim");
+    AnimationClipData edited = *fx.Clips.Get(clip);
+    edited.Events = { Event(3, 0.5f, "anim.footstep", { Tag("surface", "Surface.Grass"), Const("volume", JsonValue(1.0)) }) };
+    ASSERT_TRUE(fx.Clips.ReloadInPlace(clip, std::move(edited)));
+
+    const AnimBoundRig& rebound = fx.Bound(rig);
+    ASSERT_EQ(rebound.Contents.at(0).Events.size(), 1u);
+    EXPECT_EQ(rebound.Contents[0].Events[0].Key, 3u);
+    EXPECT_TRUE(rebound.Contents[0].Events[0].Resolved) << AnimRigFixture::Describe(rebound);
+
+    AnimationClipData otherSkeleton = *fx.Clips.Get(clip);
+    otherSkeleton.SkeletonPath = "asset://anim/other.sskel";
+    EXPECT_FALSE(fx.Clips.ReloadInPlace(clip, std::move(otherSkeleton)));
+}

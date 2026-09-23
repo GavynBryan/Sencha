@@ -3,6 +3,7 @@
 #include "AnimRigBinder.h"
 
 #include <anim/AnimFactProviders.h>
+#include <anim/AnimationClipCache.h>
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -408,6 +409,11 @@ bool AnimRigBindings::IsCurrent(const Entry& entry, const World& world) const
         if (Data->GetReloadVersion(handle) != version)
             return false;
     }
+    for (const auto& [clip, version] : entry.ClipVersions)
+    {
+        if (Clips == nullptr || Clips->GetReloadVersion(clip) != version)
+            return false;
+    }
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     const AnimFactProviders* providers = world.TryGetResource<AnimFactProviders>();
     const VerbRegistry* verbs = FindVerbRegistry(world);
@@ -428,6 +434,9 @@ const AnimBoundRig* AnimRigBindings::Resolve(DataAssetHandle rig, const World& w
 
     entry.Versions.clear();
     entry.Bound = Bind(*Data, Clips, rig, world, &entry.Versions);
+    entry.ClipVersions.clear();
+    for (const AnimBoundContent& content : entry.Bound.Contents)
+        entry.ClipVersions.emplace_back(content.Clip, Clips != nullptr ? Clips->GetReloadVersion(content.Clip) : 0);
     // Unique across every bindings instance: a republished resource starts
     // empty, and per-entity history must not mistake its first generation for
     // one it kept memory against.

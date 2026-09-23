@@ -301,6 +301,9 @@ private:
         AnimBoundRig Bound;
         // Every asset the binding read, and the reload version it read.
         std::vector<std::pair<DataAssetHandle, std::uint64_t>> Versions;
+        // Every clip its content plays, likewise: a clip's events are bound
+        // here, so a clip replaced in place rebinds the rig.
+        std::vector<std::pair<AnimationClipHandle, std::uint64_t>> ClipVersions;
         std::size_t TagCount = 0;
         std::uint64_t ProviderRevision = 0;
         // The verb catalog the bindings compiled against: a catalog replaced
