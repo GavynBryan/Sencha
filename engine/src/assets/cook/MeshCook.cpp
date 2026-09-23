@@ -1,5 +1,6 @@
 #include <assets/cook/MeshCook.h>
 
+#include <assets/cook/CookFingerprint.h>
 #include <assets/animation/AnimationClipSerializer.h>
 #include <assets/skeleton/SkeletonSerializer.h>
 #include <assets/static_mesh/MeshSerializer.h>
@@ -22,6 +23,10 @@
 
 namespace
 {
+    // The glTF importer's cook version: part of its CookIdentity, so every
+    // artifact it produced recooks when this moves.
+    constexpr std::uint32_t kGltfMeshCookVersion = 1;
+
     struct CgltfFree
     {
         void operator()(cgltf_data* data) const { cgltf_free(data); }
@@ -1006,6 +1011,13 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
 std::vector<std::string_view> GltfMeshImporter::SourceExtensions() const
 {
     return { ".glb", ".gltf" };
+}
+
+// Bump whenever this importer's output changes for the same source bytes.
+// Every artifact it cooked is then stale and recooks on the next pass.
+std::uint64_t GltfMeshImporter::CookIdentity() const
+{
+    return CookFingerprint("gltf_mesh", kGltfMeshCookVersion).Value();
 }
 
 ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWriter& output)

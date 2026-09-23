@@ -3,6 +3,7 @@
 #include <assets/cook/CookedCache.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -127,6 +128,13 @@ public:
 
     [[nodiscard]] virtual ImportResult Import(const ImportInput& input,
                                               ICookOutputWriter& output) = 0;
+
+    // What, besides the source bytes, decides this importer's output: its cook
+    // logic, and any external tool it runs. A cooked entry is fresh only while
+    // this matches the identity it was cooked with, so changing how an importer
+    // cooks -- or the tool it drives -- recooks everything it produced. Build
+    // it with CookFingerprint and bump the version whenever output changes.
+    [[nodiscard]] virtual std::uint64_t CookIdentity() const = 0;
 };
 
 //=============================================================================

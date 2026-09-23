@@ -146,6 +146,7 @@ JsonValue CookedCacheIndex::ToJson() const
         JsonValue::Object source;
         source.emplace_back("source", JsonValue(entry->SourceRelPath));
         source.emplace_back("input_fingerprint", JsonValue(HashToHex(entry->InputFingerprint)));
+        source.emplace_back("cook_identity", JsonValue(HashToHex(entry->CookIdentity)));
         source.emplace_back("size", JsonValue(DecimalToString(entry->SourceSize)));
         source.emplace_back("mtime", JsonValue(DecimalToString(entry->SourceMTime)));
         source.emplace_back("meta_size", JsonValue(DecimalToString(entry->MetaSize)));
@@ -193,6 +194,10 @@ bool CookedCacheIndex::FromJson(const JsonValue& root, CookedCacheIndex& out, st
         if (hash == nullptr || !hash->IsString()
             || !HashFromHex(hash->AsString(), entry.InputFingerprint))
             return Fail(error, "source 'input_fingerprint' must be a 16-digit hex string");
+        const JsonValue* identity = item.Find("cook_identity");
+        if (identity == nullptr || !identity->IsString()
+            || !HashFromHex(identity->AsString(), entry.CookIdentity))
+            return Fail(error, "source 'cook_identity' must be a 16-digit hex string");
 
         const JsonValue* artifacts = item.Find("artifacts");
         if (artifacts == nullptr || !artifacts->IsArray())

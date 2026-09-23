@@ -16,6 +16,7 @@
 
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/cook/AssetImporter.h>
+#include <assets/cook/BlendCook.h>
 #include <assets/cook/CookedCache.h>
 #include <assets/cook/ImportOnDemand.h>
 
@@ -130,10 +131,13 @@ namespace
             return result;
         }
 
+        std::uint64_t CookIdentity() const override { return Identity; }
+
         int ImportCount = 0;
         std::string LastMeta;
         std::optional<std::string> FailWith;
         bool EscapeCookedDir = false;
+        std::uint64_t Identity = 1;
     };
 } // namespace
 
@@ -144,6 +148,7 @@ TEST(CookedCacheIndex, JsonRoundTripPreservesEntries)
     CookedSourceEntry entry;
     entry.SourceRelPath = "textures/dev/checker.png";
     entry.InputFingerprint = 0xDEADBEEFCAFEF00DULL; // high bits must survive JSON
+    entry.CookIdentity = 0xFEEDFACE01234567ULL;
     entry.SourceSize = 0xFFFFFFFF12345678ULL; // > 2^53: doubles would mangle it
     entry.SourceMTime = -1234567890123456789LL;
     entry.MetaSize = 42;
@@ -166,6 +171,7 @@ TEST(CookedCacheIndex, JsonRoundTripPreservesEntries)
     const CookedSourceEntry* found = parsed.Find("textures/dev/checker.png");
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->InputFingerprint, 0xDEADBEEFCAFEF00DULL);
+    EXPECT_EQ(found->CookIdentity, 0xFEEDFACE01234567ULL);
     EXPECT_EQ(found->SourceSize, 0xFFFFFFFF12345678ULL);
     EXPECT_EQ(found->SourceMTime, -1234567890123456789LL);
     EXPECT_EQ(found->MetaSize, 42u);
@@ -276,6 +282,61 @@ TEST(ImportOnDemand, WarmCacheSkipsImporter)
     EXPECT_EQ(stats.CookedFresh, 1u);
     EXPECT_EQ(stats.Imported, 0u);
     EXPECT_TRUE(registry.Contains("asset://meshes/rock.smesh"));
+}
+
+// Importer logic that changes what it cooks must recook what it cooked before,
+// even though no source byte moved -- through the stat fast path, which never
+// reads the source, as much as through the content hash.
+TEST(ImportOnDemand, ChangedImporterCookIdentityRecooks)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+    {
+        AssetRegistry registry(logging);
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging));
+    }
+    ASSERT_EQ(importer.ImportCount, 1);
+
+    importer.Identity = 2;
+    AssetRegistry registry(logging);
+    ImportOnDemandStats stats;
+    ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging, &stats));
+    EXPECT_EQ(importer.ImportCount, 2) << "a new cook identity must recook an untouched source";
+    EXPECT_EQ(stats.Imported, 1u);
+    EXPECT_EQ(stats.CookedFresh, 0u);
+
+    // And the new identity is what was recorded: the next pass is fresh again.
+    AssetRegistry again(logging);
+    ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, again, logging));
+    EXPECT_EQ(importer.ImportCount, 2);
+}
+
+// A .blend cooks through an external Blender, so which Blender is part of what
+// the cook produced.
+TEST(BlendImportIdentity, TheToolchainIsPartOfTheCookIdentity)
+{
+    int probes = 0;
+    const auto probe = [&probes](std::string version) {
+        return [&probes, version] {
+            ++probes;
+            return version;
+        };
+    };
+    BlendMeshImporter older(probe("blender 5.1.1 gltf 5.1.0"));
+    BlendMeshImporter newer(probe("blender 5.2.0 gltf 5.2.3"));
+    BlendMeshImporter same(probe("blender 5.1.1 gltf 5.1.0"));
+    EXPECT_NE(older.CookIdentity(), newer.CookIdentity());
+    EXPECT_EQ(older.CookIdentity(), same.CookIdentity());
+    // Probed once per importer, however often the driver asks.
+    EXPECT_EQ(probes, 3);
+    // A cook made without Blender is never fresh against one made with it.
+    BlendMeshImporter missing(probe("unavailable"));
+    EXPECT_NE(missing.CookIdentity(), older.CookIdentity());
 }
 
 TEST(ImportOnDemand, TouchedUnchangedSourceStaysFresh)

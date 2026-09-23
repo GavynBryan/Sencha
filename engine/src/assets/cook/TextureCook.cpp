@@ -1,4 +1,6 @@
 #include <assets/cook/TextureCook.h>
+
+#include <assets/cook/CookFingerprint.h>
 #include <assets/cook/TextureImportSettings.h>
 
 #include <assets/texture/TextureSerializer.h>
@@ -412,6 +414,11 @@ bool CookImageToTexture(const Image& image,
 std::vector<std::string_view> PngTextureImporter::SourceExtensions() const
 {
     return { ".png" };
+}
+
+std::uint64_t PngTextureImporter::CookIdentity() const
+{
+    return CookFingerprint("png_texture", 1).Value();
 }
 
 ImportResult PngTextureImporter::Import(const ImportInput& input, ICookOutputWriter& output)

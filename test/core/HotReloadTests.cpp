@@ -73,6 +73,7 @@ namespace
         {
             return { ".fake" };
         }
+        [[nodiscard]] std::uint64_t CookIdentity() const override { return 1; }
         [[nodiscard]] ImportResult Import(const ImportInput& input,
                                           ICookOutputWriter& output) override
         {

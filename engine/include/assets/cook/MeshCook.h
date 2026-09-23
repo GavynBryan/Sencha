@@ -111,4 +111,5 @@ public:
     [[nodiscard]] std::vector<std::string_view> SourceExtensions() const override;
     [[nodiscard]] ImportResult Import(const ImportInput& input,
                                       ICookOutputWriter& output) override;
+    [[nodiscard]] std::uint64_t CookIdentity() const override;
 };

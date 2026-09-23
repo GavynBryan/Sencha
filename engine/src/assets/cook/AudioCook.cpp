@@ -1,5 +1,6 @@
 #include <assets/cook/AudioCook.h>
 
+#include <assets/cook/CookFingerprint.h>
 #include <assets/audio_clip/AudioClipSerializer.h>
 #include <audio/AudioClip.h>
 #include <audio/AudioClipLoader.h>
@@ -65,6 +66,11 @@ namespace
 std::vector<std::string_view> AudioClipImporter::SourceExtensions() const
 {
     return { ".wav", ".ogg" };
+}
+
+std::uint64_t AudioClipImporter::CookIdentity() const
+{
+    return CookFingerprint("audio_clip", 1).Value();
 }
 
 ImportResult AudioClipImporter::Import(const ImportInput& input, ICookOutputWriter& output)

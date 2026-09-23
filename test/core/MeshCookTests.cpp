@@ -449,6 +449,17 @@ namespace
     };
 } // namespace
 
+// The real probe names the Blender that would cook, so the cook identity
+// moves when that Blender does.
+TEST(MeshCook, TheBlendToolchainProbeNamesTheInstalledBlender)
+{
+    if (!BlenderAvailable())
+        GTEST_SKIP() << "Blender not installed; .blend cook is a dev-machine-optional path";
+    const std::string toolchain = ProbeBlendToolchain();
+    EXPECT_EQ(toolchain.rfind("blender ", 0), 0u) << toolchain;
+    EXPECT_NE(toolchain.find(" gltf "), std::string::npos) << toolchain;
+}
+
 TEST(MeshCook, BlendImportsThroughHeadlessBlender)
 {
     if (!BlenderAvailable())

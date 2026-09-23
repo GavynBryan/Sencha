@@ -73,6 +73,12 @@ struct CookedSourceEntry
     // include resolved assets, cook settings, and dependency fingerprints.
     uint64_t InputFingerprint = 0;
 
+    // The producing importer's CookIdentity when these artifacts were made. A
+    // matching fingerprint with a different identity is stale: the importer
+    // (or the tool it runs) would now produce something else. 0 for entries a
+    // document cook writes, which never compare it.
+    uint64_t CookIdentity = 0;
+
     // Size and last-write time (filesystem clock ticks) of the source file
     // when it was cooked. A freshness accelerator only: when both match the
     // file on disk, the driver skips reading the source bytes; on any
@@ -104,10 +110,11 @@ struct CookedSourceEntry
 // multiplier, so older atlases would render wrong). Version 8: entries record
 // the additional sources a cook read (CookedAdditionalSource), so a multi-file
 // source like a UI document recooks when one of its stylesheets changes; a
-// version-7 entry has no such list and would go on ignoring them. A
-// per-importer cook version is the finer-grained eventual replacement if bumps
-// become frequent.
-inline constexpr uint32_t kCookedCacheIndexVersion = 8;
+// version-7 entry has no such list and would go on ignoring them. Version 9:
+// entries record the importer's cook identity, the per-importer replacement
+// for bumping this knob; a version-8 entry has none and would stay fresh
+// across importer changes.
+inline constexpr uint32_t kCookedCacheIndexVersion = 9;
 
 // The index's name inside <assets-root>/.cooked/. Part of the cache's contract
 // rather than a detail of whoever writes it: the hot reloader reads the same
