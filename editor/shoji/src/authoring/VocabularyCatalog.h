@@ -62,19 +62,16 @@ public:
         std::string Provider;
         std::size_t ArgumentCount = 0;
     };
-    // Every live query, in catalog order.
     [[nodiscard]] std::vector<QueryRow> ListQueries() const;
 
     struct EventRow
     {
         std::string Name;
         std::string DisplayName;
-        // The component a source is expected to carry, when the event says.
         std::string SourceComponent;
         std::string Provider;
         std::size_t PayloadCount = 0;
     };
-    // Every live event, in catalog order.
     [[nodiscard]] std::vector<EventRow> ListEvents() const;
 
     struct BindingRow
@@ -98,8 +95,7 @@ public:
                                                   const DataAssetCache* dataAssets = nullptr) const;
 
 private:
-    // Moves every catalog's refused declarations into Diagnostics, so a second
-    // module's errors are not reported with the first's.
+    // Moves refused declarations into Diagnostics and clears the catalogs.
     void TakeInstallationErrors();
 
     World Metadata;

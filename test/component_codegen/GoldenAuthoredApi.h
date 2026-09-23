@@ -10,11 +10,7 @@
 #include <optional>
 #include <string>
 
-// The generator's golden input for authored APIs: a component whose members
-// are queried, a provider with verbs and computed queries exercising every
-// parameter shape, and an event. Its expected output is
-// GoldenAuthoredApi.sencha.h.expected, compiled by GoldenAuthoredApiTests.cpp
-// and byte-compared by scripts/check_component_codegen.sh.
+// Golden input; expected output is GoldenAuthoredApi.sencha.h.expected.
 
 enum class GoldenLamp : std::uint8_t
 {
@@ -37,7 +33,6 @@ struct SENCHA_COMPONENT("test.codegen.golden_torch")
        SENCHA_SCHEMA("GoldenTorch")
 GoldenTorch
 {
-    // Serialized and queryable: two independent facts about one member.
     SENCHA_FIELD("lit")
     SENCHA_QUERY("lit")
     SENCHA_LABEL("Lit")
@@ -46,12 +41,12 @@ GoldenTorch
     SENCHA_FIELD("fuel")
     float Fuel = 1.0f;
 
-    // Queryable runtime state, never serialized.
+    // Queryable, not serialized.
     SENCHA_QUERY("hot")
     SENCHA_DESCRIPTION("Whether the flame is hot enough to burn.")
     bool Hot = false;
 
-    // Neither: private implementation state.
+    // Neither.
     float Timer = 0.0f;
 };
 
@@ -83,7 +78,6 @@ public:
     SENCHA_QUERY("test.torch.burn_time")
     std::optional<double> BurnTime(SENCHA_TARGET("torch", GoldenTorch) EntityId torch) const;
 
-    // Not annotated: an ordinary member the generator leaves alone.
     void Tick();
 };
 
@@ -99,7 +93,6 @@ GoldenTorchLitEvent
     SENCHA_LABEL("Brightness")
     GoldenLamp Brightness = GoldenLamp::Bright;
 
-    // Not payload.
     int Scratch = 0;
 };
 

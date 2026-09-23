@@ -34,28 +34,5 @@ bool AuthoredVocabularyScope::Commit()
 {
     if (!Verbs || !Queries || !Events)
         return false;
-
-    // Every step on every scope, not short-circuited: each batch that has
-    // problems reports all of them, whichever catalog failed first.
-    const bool begun = static_cast<int>(Verbs->BeginCommit()) & static_cast<int>(Queries->BeginCommit())
-                     & static_cast<int>(Events->BeginCommit());
-    if (!begun)
-        return false;
-
-    const bool ready = static_cast<int>(Verbs->Prepare()) & static_cast<int>(Queries->Prepare())
-                     & static_cast<int>(Events->Prepare());
-    if (!ready)
-    {
-        Verbs->Refuse();
-        Queries->Refuse();
-        Events->Refuse();
-        return false;
-    }
-
-    // Nothing below can fail: every batch has been checked against the
-    // catalog it goes into, and no catalog has changed since.
-    Verbs->Publish();
-    Queries->Publish();
-    Events->Publish();
-    return true;
+    return CommitTogether(*Verbs, *Queries, *Events);
 }

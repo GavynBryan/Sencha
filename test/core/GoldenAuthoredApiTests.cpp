@@ -1,10 +1,5 @@
-// The generator's expected authored-API output, compiled and run.
-//
-// GoldenAuthoredApi.sencha.h.expected is what sencha-component-codegen must
-// emit for GoldenAuthoredApi.h; scripts/check_component_codegen.sh compares a
-// real run against it byte for byte. Here the same text is compiled as C++ and
-// driven through the explicit Declare and Bind calls, the real dispatchers, and
-// a real World: a contract that reads right but decodes wrong fails here.
+// Compiles and runs the golden generated companion; check_component_codegen.sh
+// byte-compares it against a real generator run.
 
 #include "component_codegen/GoldenAuthoredApi.h"
 #include "component_codegen/GoldenAuthoredApi.sencha.h.expected"
@@ -21,8 +16,6 @@
 #include <string>
 #include <vector>
 
-// The provider's behaviour: ordinary member functions recording what they were
-// handed, which is all an adapter test needs to see.
 namespace
 {
 struct IgniteCall
@@ -125,7 +118,6 @@ namespace
     return argument;
 }
 
-// A subscriber reading the payload the event declared, by slot.
 struct HeardBrightness
 {
     std::vector<std::string> Brightness{};
@@ -188,7 +180,6 @@ protected:
 TEST_F(GoldenAuthoredApiTest, OnlyAComponentCanBeATargetOrASource)
 {
     static_assert(AuthoredComponentType<GoldenTorch>);
-    // A real type, but neither an annotated nor a hand-declared component.
     static_assert(!AuthoredComponentType<GoldenTorchSystem>);
     static_assert(!AuthoredComponentType<GoldenLamp>);
     SUCCEED();
@@ -202,7 +193,6 @@ TEST_F(GoldenAuthoredApiTest, DeclaresTheContractTheSignatureStates)
     EXPECT_EQ(ignite->DisplayName, "Ignite");
     EXPECT_EQ(ignite->Category, "Test");
 
-    // The leading invocation is provenance, not an argument.
     const std::vector<DataFieldSchema>& arguments = ignite->Arguments.Children;
     ASSERT_EQ(arguments.size(), 4u);
 
@@ -214,8 +204,7 @@ TEST_F(GoldenAuthoredApiTest, DeclaresTheContractTheSignatureStates)
     EXPECT_EQ(arguments[1].Kind, DataFieldKind::Enum);
     ASSERT_EQ(arguments[1].EnumChoices.size(), 3u);
     EXPECT_EQ(arguments[1].EnumChoices[2].Value, "bright");
-    // A C++ default is the schema's default, and the argument stays required:
-    // a binding may omit it, content may not make it absent.
+    // A default leaves the argument required.
     EXPECT_EQ(arguments[1].Default, DataDefaultValue(std::string("bright")));
     EXPECT_TRUE(arguments[1].Required);
 
@@ -224,7 +213,6 @@ TEST_F(GoldenAuthoredApiTest, DeclaresTheContractTheSignatureStates)
     EXPECT_EQ(arguments[2].Numeric.Maximum, 60.0);
     EXPECT_EQ(arguments[2].Default, DataDefaultValue(5.0));
 
-    // Only std::optional is optional.
     EXPECT_EQ(arguments[3].Kind, DataFieldKind::Optional);
     EXPECT_FALSE(arguments[3].Required);
     ASSERT_EQ(arguments[3].Children.size(), 1u);
@@ -250,10 +238,8 @@ TEST_F(GoldenAuthoredApiTest, AVerbReachesTheMethodWithEveryArgumentDecoded)
     const IgniteCall& call = Log().Ignites.front();
     EXPECT_EQ(call.Torch, torch);
     EXPECT_EQ(call.Brightness, GoldenLamp::Dim);
-    // Unfilled, so the declared default.
     EXPECT_FLOAT_EQ(call.Seconds, 5.0f);
     EXPECT_FALSE(call.Named.has_value());
-    // The provenance the leading parameter asked for.
     EXPECT_EQ(call.Id, result.Id);
     EXPECT_EQ(call.Instigator, player);
 }
@@ -309,7 +295,6 @@ TEST_F(GoldenAuthoredApiTest, AComputedQueryAnswersThroughTheConstMethod)
     ASSERT_TRUE(result.TryGetBool(answer));
     EXPECT_TRUE(answer);
 
-    // Outside the declared range: refused by the declaration, not answered.
     arguments[1] = AuthoredValue::Int(11);
     EXPECT_EQ(Queries->Evaluate(query, arguments, result), AuthoredQueryStatus::InvalidArguments);
 }
@@ -319,7 +304,6 @@ TEST_F(GoldenAuthoredApiTest, AnEmptyOptionalAnswerIsUnavailableNotAValue)
     AuthoredApiBindings bindings = BindAuthoredApi(&*Verbs, &*Queries, Torches);
     const AuthoredQueryHandle query = Queries->Registry().Resolve("test.torch.burn_time");
     const AuthoredQueryDefinition& definition = *Queries->Registry().Get(query.Slot);
-    // The declared result is what a Value holds, never an optional.
     EXPECT_EQ(definition.Result.Kind, DataFieldKind::Float);
 
     AuthoredValue result;
@@ -346,7 +330,6 @@ TEST_F(GoldenAuthoredApiTest, AMemberQueryReadsTheRowAndIsUnavailableWithoutOne)
     const AuthoredQueryHandle hot = Queries->Registry().Resolve("test.codegen.golden_torch.hot");
     ASSERT_TRUE(lit.IsValid());
     ASSERT_TRUE(hot.IsValid());
-    // The implicit argument names the component it reads.
     EXPECT_EQ(Queries->Registry().Get(lit.Slot)->Arguments.Children.front().Reference.ComponentIdentity,
               "test.codegen.golden_torch");
 
@@ -362,7 +345,6 @@ TEST_F(GoldenAuthoredApiTest, AMemberQueryReadsTheRowAndIsUnavailableWithoutOne)
     EXPECT_TRUE(value);
     ASSERT_EQ(Queries->Evaluate(hot, onTorch, result), AuthoredQueryStatus::Value);
 
-    // No torch here: the question does not apply, which is not "false".
     const std::vector<AuthoredValue> onBare{ AuthoredValue::Entity(bare) };
     EXPECT_EQ(Queries->Evaluate(lit, onBare, result), AuthoredQueryStatus::Unavailable);
 }

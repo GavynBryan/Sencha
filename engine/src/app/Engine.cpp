@@ -354,8 +354,7 @@ void Engine::Shutdown()
     // the unified world and backend services are still alive, then join task
     // lanes before destroying the entity world they may have targeted.
     EngineSystems.Shutdown();
-    // After the systems that hold them, before the World whose catalogs they
-    // read.
+    // After the systems that hold them, before the World they read.
     EventDispatcherState.reset();
     QueryDispatcherState.reset();
     VerbDispatcherState.reset();
@@ -533,8 +532,7 @@ bool Engine::InstantiateShellBindings()
 void Engine::RegisterAuthoredEventCVars()
 {
     ConsoleRegistry& registry = Console().Registry();
-    // Looked up on each change rather than captured: the console outlives the
-    // dispatcher, which is rebuilt with the runtime World.
+    // The console outlives the dispatcher, so it is looked up on each change.
     (void)registry.RegisterCVar({
         .Name = "authored.events.drain_budget",
         .Owner = "engine",
@@ -1122,7 +1120,6 @@ int Engine::Run(Game& game)
         // game reaches it through Engine::TryVerbs to bind what it declared.
         VerbDispatcherState = std::make_unique<VerbDispatcher>(verbs);
         VerbDispatcherState->SetEntityIndex(entities.TryGetResource<PersistentEntityIndex>());
-        // Its siblings for questions and announcements, composed the same way.
         QueryDispatcherState =
             std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(entities));
         EventDispatcherState = std::make_unique<AuthoredEventDispatcher>(
@@ -1344,9 +1341,7 @@ int Engine::Run(Game& game)
     }
 
     game.OnRegisterSystems(registerSystems);
-    // Every place a game binds has run. A declared query nothing answers is
-    // content that will read Unbound, which is worth one line now rather than
-    // a condition that silently never passes.
+    // Every place a game binds has run.
     for (const AuthoredQueryId query : QueryDispatcherState->Unanswered())
     {
         LoggingState.GetLogger<Engine>().Warn(

@@ -8,9 +8,7 @@
 //
 // A component rather than a resource because the score is state other peers
 // see: a late joiner gets it from the snapshot like any other replicated
-// value, not by replaying every award that ever happened. The verb that awards
-// points is a request; this is what the request changed. Both sides are
-// readable by authored content as arena_scoreboard.red and .blue.
+// value, not by replaying every award that ever happened.
 struct SENCHA_COMPONENT("arena_scoreboard")
        SENCHA_SCHEMA("arena_scoreboard")
        SENCHA_REPLICATED

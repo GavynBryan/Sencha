@@ -28,9 +28,7 @@ class World;
 // Idempotent: a host that installs twice has installed once.
 VerbRegistry& InstallVerbRegistry(World& world);
 
-// Adds every authored catalog this World lacks -- verbs, queries, events -- so
-// a vocabulary hook can declare any of them. What every host that runs a
-// hook installs, runtime and editor alike. Idempotent.
+// Installs the verb, query and event catalogs this World lacks. Idempotent.
 void InstallAuthoredVocabulary(World& world);
 
 [[nodiscard]] AuthoredQueryRegistry* FindAuthoredQueryRegistry(World& world);
@@ -38,8 +36,7 @@ void InstallAuthoredVocabulary(World& world);
 [[nodiscard]] AuthoredEventRegistry* FindAuthoredEventRegistry(World& world);
 [[nodiscard]] const AuthoredEventRegistry* FindAuthoredEventRegistry(const World& world);
 
-// Every refused declaration across this World's authored catalogs, verbs
-// first, then queries, then events. Empty when installation succeeded.
+// Verbs, then queries, then events.
 [[nodiscard]] std::vector<std::string> AuthoredInstallationErrors(const World& world);
 
 [[nodiscard]] VerbRegistry* FindVerbRegistry(World& world);

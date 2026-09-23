@@ -3,30 +3,14 @@
 #include <memory>
 #include <utility>
 
-//=============================================================================
-// AuthoredBindingToken
-//
-// What an implementation's owner holds, and gives back before the
-// implementation is destroyed -- for a verb, a query, or an event
-// subscription alike.
-//
-// The dispatcher publishes a control block the tokens watch, so a token that
-// outlives its dispatcher is inert rather than a dangling pointer. That is the
-// ownership contract, chosen rather than inherited from declaration order: a
-// host that composes the dispatcher and the implementations in the same scope
-// is correct, and so is one whose token member happens to be declared first.
-//
-// A token also carries the generation its binding had, so an owner that unbinds
-// late cannot remove the replacement someone else bound in the meantime.
-//
-// `Owner` provides Release(Key, Generation), reachable by the token.
-//=============================================================================
+// Owns one binding in a dispatcher. Inert once the dispatcher is gone, and
+// carries its generation so a late Reset cannot remove a replacement.
+// `Owner` provides Release(Key, Generation).
 template<typename Owner, typename Key, typename Generation>
 class AuthoredBindingToken
 {
 public:
-    // What the owner publishes and the tokens watch. The owner nulls it when it
-    // is destroyed.
+    // Published by the owner, which nulls Target when destroyed.
     struct Link
     {
         Owner* Target = nullptr;
@@ -55,8 +39,7 @@ public:
         return *this;
     }
 
-    // Removes the binding this token minted, if it is still the one in place and
-    // the owner is still alive. Idempotent.
+    // Idempotent.
     void Reset()
     {
         const std::shared_ptr<Link> link = Link_.lock();

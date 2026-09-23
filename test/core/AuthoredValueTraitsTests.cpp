@@ -1,7 +1,3 @@
-// How an ordinary C++ type crosses the authored boundary: the kind it
-// declares, what decodes into it, what it refuses, and which of its values can
-// be stated as a schema default.
-
 #include <authored/AuthoredValueTraits.h>
 
 #include <gtest/gtest.h>
@@ -18,7 +14,7 @@ enum class TraitsMood : std::uint8_t
 {
     Calm,
     Angry,
-    // Deliberately missing from the schema.
+    // Not in the schema.
     Unlisted,
 };
 } // namespace
@@ -81,14 +77,10 @@ TEST(AuthoredValueTraits, TheIntegerContractIsSixtyFourBitSigned)
     static_assert(IsAuthoredValueType<std::int8_t>);
     static_assert(IsAuthoredValueType<std::int64_t>);
     static_assert(IsAuthoredValueType<std::uint32_t>);
-    // Values the authored integer cannot hold exactly are not authored values.
     static_assert(!IsAuthoredValueType<std::uint64_t>);
     static_assert(!IsAuthoredValueType<std::size_t>);
-    // Text, not numbers.
     static_assert(!IsAuthoredValueType<char>);
 
-    // A narrow type states its range, so content cannot author what it would
-    // refuse.
     const DataFieldSchema narrow = Describe<std::int8_t>();
     EXPECT_EQ(narrow.Numeric.Minimum, -128.0);
     EXPECT_EQ(narrow.Numeric.Maximum, 127.0);
@@ -130,7 +122,6 @@ TEST(AuthoredValueTraits, NarrowingIsRefusedNotWrapped)
     EXPECT_FALSE(AuthoredValueTraits<float>::Decode(AuthoredValue::Float(1e300), single));
     EXPECT_FALSE(AuthoredValueTraits<float>::Decode(
         AuthoredValue::Float(std::numeric_limits<double>::infinity()), single));
-    // Precision only is rounded.
     EXPECT_TRUE(AuthoredValueTraits<float>::Decode(AuthoredValue::Float(0.1), single));
 }
 
@@ -143,10 +134,8 @@ TEST(AuthoredValueTraits, AWrongKindOrAnUnlistedChoiceIsRefused)
 
     TraitsMood mood = TraitsMood::Calm;
     EXPECT_FALSE(AuthoredValueTraits<TraitsMood>::Decode(AuthoredValue::Enum("sulky"), mood));
-    // An enumerator the schema does not list has no authored name.
     EXPECT_TRUE(AuthoredValueTraits<TraitsMood>::Encode(TraitsMood::Unlisted).IsNone());
 
-    // Absent decodes into an optional, and into nothing else.
     std::optional<EntityId> maybe = EntityId{ .Index = 1 };
     EXPECT_TRUE(AuthoredValueTraits<std::optional<EntityId>>::Decode(AuthoredValue{}, maybe));
     EXPECT_FALSE(maybe.has_value());

@@ -23,9 +23,6 @@
 // installs this to offer and validate a vocabulary without acquiring the power
 // to run any of it.
 //
-// Ids follow the identity contract every authored catalog shares: a name keeps
-// its slot for the catalog's lifetime, a retired name keeps its slot, and a
-// name that comes back revives it. See AuthoredCatalog.
 //=============================================================================
 
 // An argument root with no arguments in it. Most verbs take none, and a
@@ -56,8 +53,6 @@ struct VerbDefinition
     DataFieldSchema Arguments = EmptyVerbArguments();
 };
 
-// What makes a catalog a verb catalog: a verb's contract is its argument
-// record, and nothing else about it moves a revision.
 struct VerbCatalogTraits
 {
     using Definition = VerbDefinition;
@@ -74,8 +69,5 @@ struct VerbCatalogTraits
     }
 };
 
-// One World's verbs, and one provider's batch of them. The slot, revision and
-// provider rules are the ones every authored catalog shares; see
-// AuthoredCatalog.
 using VerbRegistry = AuthoredCatalog<VerbCatalogTraits>;
 using VerbRegistrationScope = AuthoredRegistrationScope<VerbCatalogTraits>;

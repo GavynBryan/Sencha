@@ -15,27 +15,10 @@
 #include <type_traits>
 #include <utility>
 
-//=============================================================================
-// AuthoredValueTraits
-//
-// How an ordinary C++ type crosses the authored boundary: what DataFieldSchema
-// describes it, how an AuthoredValue becomes one, and how one becomes an
-// AuthoredValue. Generated adapters are written in terms of this and nothing
-// else, so the rule for a type lives here once rather than in the generator,
-// the dispatcher and every hand-written operation.
-//
-// The numeric contract is deliberately narrow. An authored integer is a signed
-// 64-bit value, so a type is supported only when every value it can hold fits
-// exactly -- signed types up to 64 bits, unsigned types up to 32 -- and decoding
-// into a narrower type refuses a value that does not fit rather than wrapping
-// it. An authored float is a double; decoding into float refuses what float
-// cannot hold and rounds only precision. An enum crosses as its EnumSchema
-// name, never as its underlying number, so reordering enumerators cannot
-// repoint authored content.
-//
-// A failed decode is a refusal, not a default: the generated adapter answers
-// InvalidArguments and the operation never runs on a value nobody sent.
-//=============================================================================
+// How a C++ type crosses the authored boundary: its schema, and decode/encode
+// to AuthoredValue. A failed decode is a refusal, never a default. The numeric
+// contract (int64 integers, double floats, enums by name) is described in
+// docs/gameplay/authored-api.md.
 
 template<typename T>
 struct AuthoredValueTraits;
@@ -48,8 +31,7 @@ concept IsAuthoredValueType = requires(const AuthoredValue& value, T& out, const
     { AuthoredValueTraits<T>::Encode(in) } -> std::same_as<AuthoredValue>;
 };
 
-// The integral types whose every value an int64 holds exactly. Character types
-// are text, not numbers, and bool is its own kind.
+// Integers an int64 holds exactly. Character types and bool are excluded.
 template<typename T>
 concept AuthoredInteger =
     std::integral<T> && !std::same_as<T, bool> && !std::same_as<T, char>
@@ -73,9 +55,8 @@ struct AuthoredValueTraits<bool>
 template<AuthoredInteger T>
 struct AuthoredValueTraits<T>
 {
-    // A type narrower than the authored integer states its own range, so a
-    // constant that could never be delivered is refused where it is authored
-    // rather than at the first invocation.
+    // A narrower type declares its range, so content cannot author a value it
+    // would refuse.
     static void Describe(DataFieldSchema& field)
     {
         field.Kind = DataFieldKind::Int;
@@ -172,9 +153,7 @@ struct AuthoredValueTraits<E>
         return false;
     }
 
-    // An enumerator the schema does not list has no authored name. It encodes
-    // as the absent value, which no enum field accepts, so the mistake is
-    // refused at the boundary instead of being sent as some other choice.
+    // An unlisted enumerator encodes as None, which no enum field accepts.
     static AuthoredValue Encode(E value)
     {
         for (const auto& declared : EnumSchema<E>::Values)
@@ -219,8 +198,7 @@ struct AuthoredValueTraits<AssetRef>
     static AuthoredValue Encode(const AssetRef& value) { return AuthoredValue::Asset(value); }
 };
 
-// Floating-point vectors only. An integer vector would have to narrow the
-// authored double components, which is exactly what this contract refuses.
+// Floating-point only: an integer vector would narrow the double components.
 template<int N, typename T>
     requires(N >= 2 && N <= 4 && (std::same_as<T, float> || std::same_as<T, double>))
 struct AuthoredValueTraits<Vec<N, T>>
@@ -261,9 +239,7 @@ struct AuthoredValueTraits<Vec<N, T>>
     }
 };
 
-// Absent is a value here, and the only type that can say so. A parameter or
-// member that must be present is simply not an optional. One level only: an
-// absent absent value is not a distinction authored content can make.
+// The only way to declare an absent value. One level only.
 template<IsAuthoredValueType T>
     requires(!IsStdOptional<T>)
 struct AuthoredValueTraits<std::optional<T>>
@@ -298,9 +274,8 @@ struct AuthoredValueTraits<std::optional<T>>
     }
 };
 
-// The field that holds a present value: the field itself, or the element an
-// optional wraps. A range and a target's expected component belong there,
-// because that is what a supplied value is checked against.
+// The field a present value is checked against: the optional's element, or
+// the field itself. Ranges and target components go here.
 [[nodiscard]] inline DataFieldSchema& AuthoredValueField(DataFieldSchema& field)
 {
     if (field.Kind == DataFieldKind::Optional && field.Children.size() == 1)
@@ -308,9 +283,7 @@ struct AuthoredValueTraits<std::optional<T>>
     return field;
 }
 
-// Whether a declared range can be delivered to T at all: ordered, and inside
-// what T holds. Evaluated by the generated static_asserts, so a range an
-// argument could never satisfy fails the build at the declaration.
+// Ordered, and inside what T holds. Checked by generated static_asserts.
 template<typename T>
 consteval bool AuthoredRangeFits(long double minimum, long double maximum)
 {
@@ -328,15 +301,9 @@ consteval bool AuthoredRangeFits(long double minimum, long double maximum)
         return false;
 }
 
-//=============================================================================
-// AuthoredSchemaDefault
-//
-// Which C++ values can be stated as a schema default. Separate from the value
-// traits because DataDefaultValue holds only what a JSON document can spell:
-// nothing, a bool, an integer, a double or a string. An entity, a tag, an
-// asset or a vector has no such spelling, so a C++ default argument of one of
-// those types is refused by the generator rather than quietly dropped.
-//=============================================================================
+// C++ values a schema default can hold: DataDefaultValue spells only a bool,
+// integer, double or string, so entity, tag, asset and vector defaults are
+// refused rather than dropped.
 
 template<typename T>
 struct AuthoredSchemaDefault;
@@ -375,8 +342,7 @@ template<typename E>
     requires(std::is_enum_v<E> && HasEnumSchema<E>)
 struct AuthoredSchemaDefault<E>
 {
-    // An unlisted enumerator yields an empty name, which schema validation
-    // rejects as a default that is not one of the choices.
+    // An unlisted enumerator yields "", which validation rejects.
     static DataDefaultValue ToDefault(E value)
     {
         for (const auto& declared : EnumSchema<E>::Values)
@@ -388,8 +354,7 @@ struct AuthoredSchemaDefault<E>
     }
 };
 
-// An optional's default is a value for what it wraps; an empty one is no
-// default at all.
+// An empty optional is no default.
 template<CanRepresentSchemaDefault T>
 struct AuthoredSchemaDefault<std::optional<T>>
 {

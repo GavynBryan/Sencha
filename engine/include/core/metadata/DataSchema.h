@@ -59,10 +59,7 @@ struct DataReferenceConstraints
     AssetType AssetTypeFilter = AssetType::Unknown;
     std::string DataSubtype;
 
-    // On an Entity field: the persisted identity of a component the entity is
-    // expected to carry, so an authoring surface can offer the entities that
-    // have one. Authoring metadata only -- what receives the entity still
-    // checks it, and a changed expectation does not change the contract.
+    // Entity fields only. Authoring metadata, not part of the contract.
     std::string ComponentIdentity;
 };
 

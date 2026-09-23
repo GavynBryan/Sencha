@@ -61,6 +61,23 @@ A header of components goes in the game's `COMPONENT_HEADERS`. A header that
 declares behaviour — a system's verbs, an event — goes in `API_HEADERS`, which
 is generated the same way but is not held to the components-are-data check.
 
+### Annotation reference
+
+| Annotation | On | Meaning |
+|---|---|---|
+| `SENCHA_VERB(id)` | method | An operation content may request. Returns `VerbAdmission`. |
+| `SENCHA_QUERY(id)` | const method | A question content may ask. |
+| `SENCHA_QUERY(name)` | component member | Readable as `<component identity>.<name>`. |
+| `SENCHA_EVENT(id)` | struct | A typed announcement; its `SENCHA_FIELD` members are the payload. |
+| `SENCHA_EVENT_SOURCE(C)` | event | The component a source entity is expected to carry. |
+| `SENCHA_ARG(key)` | parameter | An argument, by its persisted key. |
+| `SENCHA_TARGET(key[, C])` | parameter | An entity argument, optionally expected to carry `C`. |
+| `SENCHA_RANGE(min, max)` | parameter | The numeric range the argument accepts. |
+| `SENCHA_LABEL`, `SENCHA_DESCRIPTION`, `SENCHA_CATEGORY` | any | Presentation only. |
+
+Every parameter except a leading `const VerbInvocation&` needs `SENCHA_ARG` or
+`SENCHA_TARGET`. The annotations expand to nothing outside the generator.
+
 ### What the annotations mean
 
 `SENCHA_FIELD` puts a member in the reflected data schema of the record that
@@ -157,6 +174,34 @@ takes the object away. `Unbound()` lists anything declared that could not be
 bound. A component's member queries are bound against a World; their readers
 use the World's const access and answer `Unavailable` when the entity has no
 such component.
+
+## Catalogs
+
+Each World holds three catalogs — `VerbRegistry`, `AuthoredQueryRegistry`,
+`AuthoredEventRegistry` — all instances of `AuthoredCatalog`. They hold
+metadata only; an editor installs them to offer and validate names without
+being able to run anything.
+
+- **Slots.** A name keeps its slot for the catalog's lifetime. A provider that
+  stops declaring a name retires its slot rather than freeing it, and a name
+  that comes back revives the same slot. A cached id therefore resolves to
+  nothing rather than to whatever was declared next.
+- **Revisions.** A slot's contract revision moves when its contract changes —
+  arguments, result or payload, not presentation — and when a retired name is
+  revived.
+- **Generation.** Moves on every publish and retirement, so a compiled set can
+  tell whether a name that failed to resolve might resolve now.
+- **Registration.** A provider declares into a registration scope and commits.
+  `CommitTogether` validates every scope's batch against its catalog before
+  any catalog changes, so a conflict in one publishes nothing in any.
+  `AuthoredVocabularyScope` does this across all three. Refused batches land in
+  each catalog's `InstallationErrors`, which the host reads after the vocabulary
+  hook; the runtime refuses to start on any, and editors report them.
+
+Bindings and subscriptions are owned by tokens. A token outliving its
+dispatcher is inert, and a token cannot remove a replacement bound after it.
+Binding or unbinding while a query is being answered, or a verb dispatched, is
+refused.
 
 ## Handles, not slot numbers
 

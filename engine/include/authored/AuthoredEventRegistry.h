@@ -8,42 +8,24 @@
 #include <string_view>
 #include <vector>
 
-//=============================================================================
-// AuthoredEventRegistry
-//
-// One World's authored events: which occurrences gameplay code announces, what
-// each carries, and which entities are expected to announce it. Metadata only
-// -- an editor installs this to offer "West Torch: Lit" as a trigger without
-// constructing anything that could publish or deliver one.
-//
-// An event is something that happened, stated by the code that made it
-// happen. It is never derived from a query or from watching component
-// memory; this catalog lists the announcements gameplay code makes, and
-// nothing more.
-//=============================================================================
+// One World's authored events. Metadata only.
 
 struct AuthoredEventDefinition
 {
-    // Exact, case-sensitive, dot-separated: "torch.lit".
+    // e.g. "torch.lit"
     std::string Name;
 
     std::string DisplayName;
     std::string Description;
     std::string Category;
 
-    // The component a source entity is expected to carry, by its persisted
-    // identity; empty when any entity may be a source. Authoring metadata:
-    // it lets a graph offer the event on the entities that have one, and
-    // publishing does not enforce it.
+    // Authoring metadata; publishing does not enforce it. Empty for any source.
     std::string SourceComponent;
 
-    // A record root, one child per payload member, in the order the payload
-    // arguments hold them. The source entity travels beside the payload, not
-    // inside it.
+    // The source entity travels beside the payload, not in it.
     DataFieldSchema Payload = AuthoredRecordRoot();
 };
 
-// What makes a catalog an event catalog.
 struct AuthoredEventCatalogTraits
 {
     using Definition = AuthoredEventDefinition;
@@ -55,8 +37,6 @@ struct AuthoredEventCatalogTraits
     static void Validate(const AuthoredEventDefinition& definition,
                          std::vector<std::string>& errors);
 
-    // The payload is the contract; the expected source is metadata a provider
-    // may refine without invalidating a subscriber.
     static bool ContractsMatch(const AuthoredEventDefinition& left,
                                const AuthoredEventDefinition& right)
     {

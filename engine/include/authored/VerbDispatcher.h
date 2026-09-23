@@ -23,10 +23,6 @@ class DataAssetCache;
 class PersistentEntityIndex;
 class VerbDispatcher;
 
-// What an implementation's owner holds, and gives back before the
-// implementation is destroyed. The lifetime contract is AuthoredBindingToken's:
-// inert once the dispatcher is gone, and unable to remove a replacement bound
-// since.
 using VerbBindingToken = AuthoredBindingToken<VerbDispatcher, VerbId, VerbBindingGeneration>;
 
 //=============================================================================
@@ -76,9 +72,7 @@ public:
         });
     }
 
-    // The same, for an adapter that is not the target's own Invoke: `Invoke` is
-    // called with the target it was bound with. What a generated authored API
-    // binds through, so one object can serve several verbs.
+    // Binds a free adapter, so one object can serve several verbs.
     template<auto Invoke, typename T>
         requires std::is_invocable_r_v<VerbAdmission, decltype(Invoke), T&, const VerbInvocation&>
     [[nodiscard]] VerbBindingToken Bind(VerbId verb, T& target)

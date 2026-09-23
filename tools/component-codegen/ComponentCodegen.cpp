@@ -1,23 +1,15 @@
 //=============================================================================
 // sencha-component-codegen
 //
-// Reads the annotations on a header's declarations and writes its companion:
-//
-//   - ComponentDefinition<T> for each annotated component, which the engine
-//     projects its storage, serialization and replication metadata from;
-//   - AuthoredApiDefinition<T> for each type exposing authored verbs, queries
-//     or events: the contract each one declares and the adapter that decodes
-//     authored values into an ordinary C++ call.
-//
-// plus a small index sidecar the aggregate validation stage reads to find
-// component collisions across headers.
+// Reads the annotations in a header and writes its companion --
+// ComponentDefinition<T> for components, AuthoredApiDefinition<T> for authored
+// verbs, queries and events -- plus an index sidecar for cross-header
+// component collision checks.
 //
 // It links no engine code and knows nothing about behavior: ComponentTraits,
 // ComponentStorageTraits and SceneFieldCodec are handwritten and this tool
-// neither reads nor emits them. What it emits for an authored contract is only
-// what a person would otherwise type -- the schema a signature already implies
-// and the conversions in and out of it -- and never a registration: declaring
-// and binding stay explicit calls in the game's own code.
+// neither reads nor emits them. It never emits a registration: declaring and
+// binding stay explicit calls in game code.
 //
 //   sencha-component-codegen <header> --output=<companion.h> --index=<f.index>
 //                            --logical=<world/transform/X.h> --flags=<flags.rsp>
@@ -107,8 +99,7 @@ struct FieldFacts
     bool HasDefault = false; // member initializer present
 };
 
-// A component member authored content may read, by its own name. Independent
-// of the member's serialized field, which it may or may not also be.
+// Independent of whether the member is also a SENCHA_FIELD.
 struct FieldQueryFacts
 {
     std::string Member;
@@ -203,7 +194,6 @@ bool Split(llvm::StringRef text, llvm::StringRef prefix, std::string& value)
     return true;
 }
 
-// A C++ string literal holding `text` exactly.
 std::string Literal(const std::string& text)
 {
     std::string out = "\"";
@@ -222,8 +212,7 @@ std::string Literal(const std::string& text)
     return out;
 }
 
-// Names the generated adapters use themselves, which a parameter's local must
-// not shadow.
+// Names generated adapters use, which parameter locals must not shadow.
 bool IsReservedLocal(const std::string& name)
 {
     static const std::set<std::string> reserved{ "self", "invocation", "arguments",
@@ -359,9 +348,7 @@ public:
             return true;
         }
 
-        // Neither a component nor an event: a member query has no component to
-        // be read from, and the only authored thing such a type can declare is
-        // a verb or a query on a method.
+        // Neither a component nor an event: only methods may be authored here.
         for (const clang::FieldDecl* field : record->fields())
         {
             for (const auto* attr : field->specific_attrs<clang::AnnotateAttr>())
@@ -464,7 +451,7 @@ private:
         {
             // An annotation on an untagged member is a mistake worth reporting:
             // the member is not in the schema, so the annotation does nothing. A
-            // label is the one exception, because a query presents it too.
+            // label also serves a query.
             if (!out.AssetRef.empty() || out.OwnerOnly || out.LocalOnly
                 || (!out.Label.empty() && !queried))
             {
@@ -493,7 +480,6 @@ private:
         out.AssetRef = std::move(call);
     }
 
-    // An event's payload is its SENCHA_FIELD members, in declaration order.
     void CollectEvent(const clang::CXXRecordDecl* record, EventFacts& event)
     {
         if (event.Identity.empty())
@@ -801,10 +787,7 @@ private:
         method.Params.push_back(std::move(out));
     }
 
-    // A default argument becomes the schema's default, written back out as a
-    // typed constant so the companion converts it the same way the
-    // implementation receives it. Anything the compiler cannot evaluate to a
-    // constant is refused rather than guessed at.
+    // Emits the default as a typed constant; non-constant defaults are refused.
     void DescribeDefault(const clang::ParmVarDecl* param,
                          clang::QualType type,
                          const std::string& what,
@@ -821,8 +804,7 @@ private:
 
         if (IsOptionalOf(type, ""))
         {
-            // The C++ default exists because a later parameter might have one;
-            // an optional's only default is absent.
+            // Present only for C++ parameter ordering; it declares no default.
             const std::string text = SourceText(expression);
             if (text != "std::nullopt" && text != "nullopt" && text != "{}")
             {
@@ -870,8 +852,7 @@ private:
         }
         else
         {
-            // Left to the companion's CanRepresentSchemaDefault assertion, which
-            // names the type the schema cannot hold a default for.
+            // Rejected by the companion's CanRepresentSchemaDefault assertion.
             out.Default = "static_cast<" + out.Type + ">(" + SourceText(expression) + ")";
         }
     }
@@ -883,7 +864,6 @@ private:
             && IsNamed(type.getNonReferenceType(), "VerbInvocation");
     }
 
-    // Whether a type is, after sugar, the named record or enum.
     static bool IsNamed(clang::QualType type, llvm::StringRef qualified)
     {
         const clang::QualType canonical = type.getCanonicalType().getUnqualifiedType();
@@ -898,7 +878,7 @@ private:
         return false;
     }
 
-    // Whether a type is std::optional<T>; with a name, of that T.
+    // An empty `element` matches any std::optional.
     static bool IsOptionalOf(clang::QualType type, llvm::StringRef element)
     {
         const clang::QualType canonical = type.getCanonicalType().getUnqualifiedType();
@@ -938,9 +918,7 @@ private:
         return clang::Lexer::getSourceText(range, sources, Context.getLangOpts()).trim().str();
     }
 
-    // The type as a person would write it in the companion, which is included
-    // at namespace scope: every name qualified, typedef sugar kept so
-    // std::int64_t reads as itself.
+    // Fully qualified, typedef sugar kept.
     std::string TypeName(clang::QualType type) const
     {
         return clang::TypeName::getFullyQualifiedName(type, Context, Policy);
@@ -1023,16 +1001,13 @@ void EmitFields(std::ostream& out, const ComponentFacts& component)
     out << "        };\n    }\n";
 }
 
-// Where a declaration is, in the words a build error should use.
 std::string Where(const std::string& logical, unsigned line)
 {
     return logical + ":" + std::to_string(line);
 }
 
-// The compile-time checks for one value crossing the boundary. Emitted beside
-// the adapter so a type the authored vocabulary cannot carry fails the build
-// with a sentence naming the declaration, before the template error it would
-// otherwise produce.
+// Emitted so an unsupported type fails with the declaration's location
+// before any template error.
 void EmitValueAsserts(std::ostream& out,
                       const std::string& type,
                       const std::string& where,
@@ -1044,8 +1019,6 @@ void EmitValueAsserts(std::ostream& out,
         << ");\n";
 }
 
-// The same for a query's answer, which may be std::optional<T> and is checked
-// as the T it carries -- but named, in the message, as the author wrote it.
 void EmitResultAsserts(std::ostream& out,
                        const std::string& type,
                        const std::string& where,
@@ -1095,8 +1068,6 @@ void EmitParamAsserts(std::ostream& out,
     }
 }
 
-// One argument's schema, in the order the method takes it: the slot index an
-// adapter reads is the child's position.
 void EmitArgumentSchema(std::ostream& out, const ParamFacts& param, const std::string& root)
 {
     out << "        {\n"
@@ -1137,20 +1108,18 @@ void EmitPresentation(std::ostream& out, const std::string& label,
         out << "        definition.Category = " << Literal(category) << ";\n";
 }
 
-// Decodes each argument slot into a local of the parameter's own type, and
-// refuses the call on the first one that does not decode. `slot` is the
-// expression up to the slot index, which closes it.
+template<typename SlotExpression>
 void EmitDecodes(std::ostream& out,
                  const MethodFacts& method,
-                 const std::string& slot,
+                 SlotExpression slot,
                  const std::string& refusal)
 {
     for (size_t index = 0; index < method.Params.size(); ++index)
     {
         const ParamFacts& param = method.Params[index];
         out << "        " << param.Type << " " << param.Local << "{};\n"
-            << "        if (!AuthoredValueTraits<" << param.Type << ">::Decode(" << slot
-            << index << "), " << param.Local << "))\n"
+            << "        if (!AuthoredValueTraits<" << param.Type << ">::Decode(" << slot(index)
+            << ", " << param.Local << "))\n"
             << "            return " << refusal << ";\n";
     }
 }
@@ -1183,7 +1152,9 @@ void EmitVerb(std::ostream& out, const ProviderFacts& provider, const MethodFact
     out << "\n    static VerbAdmission Invoke_" << method.Method << "(" << provider.Type
         << "& self, const VerbInvocation&" << (readsInvocation ? " invocation" : "")
         << ")\n    {\n";
-    EmitDecodes(out, method, "invocation.Arguments->At(", "VerbAdmission::InvalidArguments");
+    EmitDecodes(out, method,
+                [](size_t index) { return "invocation.Arguments->At(" + std::to_string(index) + ")"; },
+                "VerbAdmission::InvalidArguments");
     out << "        return self." << method.Method << "(" << CallArguments(method) << ");\n"
         << "    }\n";
 }
@@ -1207,7 +1178,8 @@ void EmitQuery(std::ostream& out, const ProviderFacts& provider, const MethodFac
     out << "\n    static AuthoredQueryStatus Evaluate_" << method.Method << "(const " << provider.Type
         << "& self, std::span<const AuthoredValue>" << (method.Params.empty() ? "" : " arguments")
         << ", AuthoredValue& result)\n    {\n";
-    EmitDecodes(out, method, "AuthoredArgumentAt(arguments, ",
+    EmitDecodes(out, method,
+                [](size_t index) { return "AuthoredArgumentAt(arguments, " + std::to_string(index) + ")"; },
                 "AuthoredQueryStatus::InvalidArguments");
     out << "        return AnswerAuthoredQuery(self." << method.Method << "("
         << CallArguments(method) << "), result);\n"
@@ -1278,10 +1250,8 @@ void EmitProvider(std::ostream& out, const ProviderFacts& provider, const std::s
     out << "};\n";
 }
 
-// A component's queries read one member of one entity's row. The companion
-// states which member and what the question is; the reader itself is
-// instantiated where the queries are bound against a World, so a component
-// header never depends on the World.
+// Data only; the reader is instantiated where the queries are bound, keeping
+// component headers independent of the World.
 void EmitComponentQueries(std::ostream& out, const ComponentFacts& component,
                           const std::string& logical)
 {
@@ -1446,8 +1416,7 @@ bool WriteIndex(const std::string& path,
     }
     // Deterministic, line-oriented, never included by C++: the aggregate
     // validation stage reads these to find collisions across headers.
-    // Authored verbs, queries and events are not listed: their catalogs refuse
-    // a duplicate name at registration, naming both providers.
+    // Authored names are not listed: their catalogs refuse duplicates.
     for (const ComponentFacts& component : components)
     {
         out << component.Type << '\t' << component.Identity << '\t'

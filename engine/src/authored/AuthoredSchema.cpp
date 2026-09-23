@@ -31,8 +31,6 @@ namespace
                 || std::holds_alternative<int64_t>(field.Default);
         case DataFieldKind::Enum:
         {
-            // A default has to be one of the choices, or the declaration
-            // promises a value the field itself would refuse.
             const std::string* choice = std::get_if<std::string>(&field.Default);
             return choice
                 && std::ranges::any_of(field.EnumChoices, [&](const DataEnumChoice& declared) {
@@ -46,9 +44,7 @@ namespace
         case DataFieldKind::Entity:
             return std::holds_alternative<std::string>(field.Default);
         case DataFieldKind::Optional:
-            // An optional's default is a value for the thing it wraps: "absent
-            // unless nobody said otherwise" is a real and common contract, and
-            // the compiler unwraps it the same way.
+            // Checked as a default for the wrapped element.
             if (field.Children.size() != 1)
                 return false;
             {
@@ -59,9 +55,7 @@ namespace
         case DataFieldKind::Vector:
         case DataFieldKind::Record:
         case DataFieldKind::Array:
-            // A default for these would be a literal DataDefaultValue has no
-            // alternative for, so a declaration carrying one is a mistake worth
-            // reporting rather than a value to ignore.
+            // DataDefaultValue cannot spell these.
             return false;
         }
         return false;
@@ -191,9 +185,7 @@ bool AuthoredContractsMatch(const DataFieldSchema& left, const DataFieldSchema& 
     {
         return false;
     }
-    // Step is presentation: a widget offering coarser increments does not change
-    // what the operation accepts, and bumping a revision for it would recompile
-    // every binding in the project for a slider tweak.
+    // Step is presentation.
     if (left.Numeric.Minimum != right.Numeric.Minimum
         || left.Numeric.Maximum != right.Numeric.Maximum)
     {
@@ -208,7 +200,6 @@ bool AuthoredContractsMatch(const DataFieldSchema& left, const DataFieldSchema& 
         return false;
     for (std::size_t index = 0; index < left.EnumChoices.size(); ++index)
     {
-        // The value is the contract; its label and blurb are not.
         if (left.EnumChoices[index].Value != right.EnumChoices[index].Value)
             return false;
     }

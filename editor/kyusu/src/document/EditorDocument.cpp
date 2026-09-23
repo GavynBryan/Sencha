@@ -166,10 +166,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     // back what it wrote. This installs the engine's own vocabulary; a loaded
     // game module adds its names to the same registries.
     RegisterMovement(world);
-    // The authored vocabulary -- verbs, queries, events -- declarations only.
-    // A document offers and validates these names without a dispatcher behind
-    // them: nothing here can resume or quit anything, whatever a loaded module
-    // declares.
+    // Declarations only: no dispatcher, so nothing a module declares can run.
     InstallAuthoredVocabulary(world);
     (void)DeclareEngineVerbs(*FindVerbRegistry(world));
     InstallEditorModuleVocabulary(world);

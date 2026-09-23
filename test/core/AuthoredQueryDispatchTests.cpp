@@ -1,7 +1,3 @@
-// Asking an authored question: what the dispatcher checks before an
-// implementation answers, what each refusal means, and what happens to a
-// token or an answer that has outlived the contract it was written for.
-
 #include "AllocationCounter.h"
 
 #include <authored/AuthoredQueryDispatcher.h>
@@ -38,11 +34,8 @@ bool Declare(AuthoredQueryRegistry& registry, AuthoredQueryDefinition definition
     return scope.Commit();
 }
 
-// Doubles the level it is asked about; says nothing for a negative one.
 struct Doubler
 {
-    // Counting is not simulation state; the answerer is still const to the
-    // dispatcher.
     mutable std::int64_t Calls = 0;
 
     static AuthoredQueryStatus Evaluate(const Doubler& self,
@@ -107,19 +100,13 @@ TEST_F(AuthoredQueryDispatchTest, ABoundQueryAnswersWithAValue)
 TEST_F(AuthoredQueryDispatchTest, EachRefusalHasItsOwnStatusAndWritesNothing)
 {
     AuthoredValue result = AuthoredValue::Bool(true);
-    // Nothing bound.
     EXPECT_EQ(Ask(1, result), AuthoredQueryStatus::Unbound);
 
     AuthoredQueryBindingToken token = Dispatcher->Bind<&Doubler::Evaluate>(Id, Answerer);
-    // Outside the declared range: the declaration refuses it, the answerer is
-    // never asked.
     EXPECT_EQ(Ask(101, result), AuthoredQueryStatus::InvalidArguments);
     EXPECT_EQ(Answerer.Calls, 0);
-    // The wrong count.
     EXPECT_EQ(Dispatcher->Evaluate(Handle, {}, result), AuthoredQueryStatus::InvalidArguments);
-    // An answer that does not apply is not a value.
     EXPECT_EQ(Ask(-1, result), AuthoredQueryStatus::Unavailable);
-    // Not a query this catalog has.
     EXPECT_EQ(Dispatcher->Evaluate(AuthoredQueryHandle{}, {}, result), AuthoredQueryStatus::Stale);
 
     bool untouched = false;
@@ -132,18 +119,15 @@ TEST_F(AuthoredQueryDispatchTest, AChangedContractIsStaleForOldHandlesAndUnbound
     AuthoredQueryBindingToken token = Dispatcher->Bind<&Doubler::Evaluate>(Id, Answerer);
     const AuthoredQueryHandle compiledAgainst = Handle;
 
-    // The provider narrows its range: a different contract.
     ASSERT_TRUE(Declare(Registry, Question("test.double", 10)));
     ASSERT_FALSE(Registry.IsCurrent(compiledAgainst));
 
     AuthoredValue result;
     EXPECT_EQ(AskWith(compiledAgainst, 2, result), AuthoredQueryStatus::Stale);
-    // Resolved again, the implementation is the one out of date.
     const AuthoredQueryHandle current = Registry.Resolve("test.double");
     EXPECT_EQ(AskWith(current, 2, result), AuthoredQueryStatus::Unbound);
     EXPECT_EQ(Dispatcher->Unanswered().size(), 1u);
 
-    // Rebinding is the statement that it was updated.
     token = Dispatcher->Bind<&Doubler::Evaluate>(Id, Answerer);
     EXPECT_EQ(AskWith(current, 2, result), AuthoredQueryStatus::Value);
     EXPECT_TRUE(Dispatcher->Unanswered().empty());
@@ -153,7 +137,6 @@ TEST_F(AuthoredQueryDispatchTest, AHandleFromAnotherCatalogIsStaleThoughItsSlotM
 {
     AuthoredQueryBindingToken token = Dispatcher->Bind<&Doubler::Evaluate>(Id, Answerer);
 
-    // Another World's catalog, whose slot 1 is a different question.
     AuthoredQueryRegistry elsewhere;
     ASSERT_TRUE(Declare(elsewhere, Question("test.other")));
     const AuthoredQueryHandle foreign = elsewhere.Resolve("test.other");
@@ -210,7 +193,6 @@ TEST_F(AuthoredQueryDispatchTest, AWarmedScalarQueryAllocatesNothing)
 
 namespace
 {
-// Answerers that break their own declaration in each of the ways a result can.
 enum class Breach
 {
     WrongKind,
@@ -293,7 +275,6 @@ TEST(AuthoredQueryResultContract, AnAnswererThatThrowsLeavesTheDispatcherUsable)
                  std::runtime_error);
     EXPECT_FALSE(dispatcher.IsEvaluating());
 
-    // Binding and releasing are allowed again, which they are not mid-answer.
     const Breaker other{ .Kind = Breach::WrongKind };
     AuthoredQueryBindingToken replacement =
         dispatcher.Bind<&Breaker::Evaluate>(registry.Find("test.count"), other);
@@ -314,12 +295,10 @@ TEST(AuthoredQueryDefaults, TheCallerSuppliesEveryArgumentADefaultIsForTheCompil
         dispatcher.Bind<&Doubler::Evaluate>(registry.Find("test.double"), answerer);
     const AuthoredQueryHandle handle = registry.Resolve("test.double");
 
-    // Omitted, even though the declaration advertises a default: evaluating is
-    // a check and a call, never a second compiler.
     AuthoredValue result;
     EXPECT_EQ(dispatcher.Evaluate(handle, {}, result), AuthoredQueryStatus::InvalidArguments);
 
-    // Materialized from the declaration, the way a compiled call supplies it.
+    // Filled from the declaration, as a compiled call would.
     const DataDefaultValue& declared = registry.Get(handle.Slot)->Arguments.Children.front().Default;
     const AuthoredValue filled = AuthoredValue::Int(std::get<std::int64_t>(declared));
     ASSERT_EQ(dispatcher.Evaluate(handle, { &filled, 1 }, result), AuthoredQueryStatus::Value);

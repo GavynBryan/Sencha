@@ -6,11 +6,8 @@
 
 #include <gtest/gtest.h>
 
-// The arena's verb was declared by hand before it was declared by annotation.
-// Content -- the game's binding asset, the placed relay -- was authored against
-// that contract, so the generated one must mean the same thing: same keys, same
-// kinds, same range, same default, same optionality. Held here against the old
-// declaration, written out as it was.
+// The contract content was authored against, from before the verb was
+// generated.
 namespace
 {
 [[nodiscard]] DataFieldSchema HandWrittenAwardScoreArguments()

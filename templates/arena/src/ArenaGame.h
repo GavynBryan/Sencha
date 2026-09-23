@@ -45,9 +45,7 @@ private:
     // kept, closed, until the next OnStart replaces it.
     std::optional<BodySpawns> Bodies;
 
-    // The game's one authored operation, the scoreboard's readable members, and
-    // the shell's bindings into them. The bindings go back in OnShutdown, while
-    // the dispatchers still exist.
+    // Reset in OnShutdown, while the dispatchers still exist.
     ArenaScoreOperation Score;
     AuthoredApiBindings ScoreBindings;
     AuthoredApiBindings ScoreboardQueries;

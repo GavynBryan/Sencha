@@ -427,17 +427,14 @@ public:
     [[nodiscard]] VerbDispatcher* TryVerbs() { return VerbDispatcherState.get(); }
     [[nodiscard]] const VerbDispatcher* TryVerbs() const { return VerbDispatcherState.get(); }
 
-    // Where a game binds the objects that answer the queries it declared, and
-    // where authored consumers ask them. Same lifetime as TryVerbs.
+    // Same lifetime as TryVerbs.
     [[nodiscard]] AuthoredQueryDispatcher* TryAuthoredQueries() { return QueryDispatcherState.get(); }
     [[nodiscard]] const AuthoredQueryDispatcher* TryAuthoredQueries() const
     {
         return QueryDispatcherState.get();
     }
 
-    // Where gameplay code announces the events it declared, and where authored
-    // consumers subscribe to them. Drained once per fixed tick, after fixed
-    // logic. Same lifetime as TryVerbs.
+    // Drained once per fixed tick, after fixed logic. Same lifetime as TryVerbs.
     [[nodiscard]] AuthoredEventDispatcher* TryAuthoredEvents() { return EventDispatcherState.get(); }
     [[nodiscard]] const AuthoredEventDispatcher* TryAuthoredEvents() const
     {
@@ -635,8 +632,6 @@ private:
     // role. One writer, here, so an operation never asks the session itself.
     void PublishSimulationAuthority();
 
-    // The event drain's budget, queue capacity and quarantine trap, as cvars
-    // that reach the dispatcher while it exists.
     void RegisterAuthoredEventCVars();
 
     std::unique_ptr<VerbDispatcher> VerbDispatcherState;

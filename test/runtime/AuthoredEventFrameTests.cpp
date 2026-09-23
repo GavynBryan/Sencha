@@ -16,12 +16,7 @@
 #include <string>
 #include <vector>
 
-// Where in a real frame an announced event is delivered: after the fixed
-// logic that announced it, in the same tick, before physics steps. And what a
-// refused event declaration does to startup: the same as a refused verb.
-
-// One pulse per fixed tick, carrying the tick that announced it. Written the
-// way the generator writes an event's companion, which is what Publish reads.
+// Hand-written companion, shaped like a generated one.
 struct FramePulse
 {
     std::int64_t Tick = 0;
@@ -72,8 +67,7 @@ private:
     std::filesystem::path Path;
 };
 
-// Announces a pulse in fixed logic, and asks to stop once enough frames have
-// passed for several fixed ticks to have run.
+// Stops after enough frames for several fixed ticks.
 struct PulseSystem
 {
     Engine* Host = nullptr;
@@ -118,7 +112,6 @@ public:
     {
         if (DeclareBadly)
         {
-            // Hand-declared, and malformed: the host must refuse to start.
             AuthoredEventDefinition bad;
             bad.Name = "test..pulse";
             AuthoredEventRegistrationScope scope(*FindAuthoredEventRegistry(world), "test");

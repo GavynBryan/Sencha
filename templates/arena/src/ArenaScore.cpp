@@ -19,8 +19,7 @@ void DeclareArenaVocabulary(World& world)
     vocabulary.Declare<ArenaScoreOperation>();
     vocabulary.Declare<ArenaScoreboard>();
     vocabulary.Declare<ArenaScoreChangedEvent>();
-    // Unchecked here on purpose: the host reads the catalogs' installation
-    // errors after the hook returns and refuses to start on any of them.
+    // The host reads the catalogs' installation errors.
     (void)vocabulary.Commit();
 }
 
@@ -112,9 +111,7 @@ void ArenaScoreSystem::FixedLogic(FixedLogicContext& ctx)
                  award.Side == ArenaSide::Blue ? "blue" : "red", award.Amount, board.Red,
                  board.Blue);
 
-        // After the score has changed, so a subscriber reading the scoreboard
-        // sees the value this announces. Every applied award changes it: the
-        // contract admits no amount below one.
+        // Amount is at least one, so every applied award is a change.
         if (Events != nullptr)
         {
             (void)Events->Publish(match,

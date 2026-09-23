@@ -5,7 +5,6 @@
 
 namespace
 {
-// Every other test simply pays a counter increment it never reads.
 std::size_t gAllocations = 0;
 }
 

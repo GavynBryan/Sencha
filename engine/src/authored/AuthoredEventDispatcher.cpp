@@ -11,8 +11,7 @@
 
 namespace
 {
-    // A subscriber call, or the occurrence itself when nobody listens: every
-    // step of a drain costs something, so no chain is free.
+    // An occurrence nobody hears still costs one, so no chain is free.
     [[nodiscard]] std::size_t CostOf(std::size_t subscribers)
     {
         return subscribers == 0 ? 1 : subscribers;
@@ -30,7 +29,6 @@ AuthoredEventDispatcher::AuthoredEventDispatcher(const AuthoredEventRegistry& re
 
 AuthoredEventDispatcher::~AuthoredEventDispatcher()
 {
-    // Subscriptions outliving this become inert rather than dangling.
     Link->Target = nullptr;
 }
 
@@ -55,12 +53,15 @@ void AuthoredEventDispatcher::ApplyPendingCapacity()
         SetCapacity(PendingCapacity);
 }
 
-void AuthoredEventDispatcher::WarnOnce(std::vector<bool>& warned, AuthoredEventId event)
+bool AuthoredEventDispatcher::ReportOnce(std::vector<bool>& reported, AuthoredEventId event)
 {
     const std::size_t index = AuthoredEventRegistry::IndexOf(event);
-    if (warned.size() <= index)
-        warned.resize(index + 1, false);
-    warned[index] = true;
+    if (reported.size() <= index)
+        reported.resize(index + 1, false);
+    if (reported[index])
+        return false;
+    reported[index] = true;
+    return true;
 }
 
 bool AuthoredEventDispatcher::PayloadSatisfies(const AuthoredEventDefinition& definition,
@@ -87,16 +88,12 @@ bool AuthoredEventDispatcher::Enqueue(AuthoredEventId event, EntityId source, In
         return false;
     }
 
-    // The occurrence being delivered holds a slot of its own, so it never
-    // stands between a subscriber and the reaction it queues.
-    const bool duringDelivery = DeliveringSequence.IsValid();
-    const std::size_t waiting = duringDelivery ? Count - 1 : Count;
+    const std::size_t waiting = Delivering ? Count - 1 : Count;
     if (waiting >= Capacity())
     {
-        // Reported once per drain period rather than per refusal, which would
-        // bury the one line that says what happened.
-        if (Refused == RefusedAtLastDrain)
+        if (!QueueFullReported)
         {
+            QueueFullReported = true;
             Log.Warn("authored events: the queue is full ({} waiting); '{}' was refused",
                      waiting, definition->Name);
         }
@@ -104,20 +101,16 @@ bool AuthoredEventDispatcher::Enqueue(AuthoredEventId event, EntityId source, In
         return false;
     }
 
+    // Encoded in place and claimed only once it satisfies the declaration.
     Occurrence& slot = Ring[(Head + Count) % Ring.size()];
     encode(published, slot.Payload);
-    // Checked where it is announced, so no subscriber is ever handed a payload
-    // its declaration does not allow -- an enumerator the schema does not list,
-    // a number that is not finite. The slot is simply not claimed.
     if (!PayloadSatisfies(*definition, slot.Payload))
     {
-        const std::size_t index = AuthoredEventRegistry::IndexOf(event);
-        if (index >= PayloadWarned.size() || !PayloadWarned[index])
+        if (ReportOnce(InvalidPayloadReported, event))
         {
-            WarnOnce(PayloadWarned, event);
             Log.Error("authored events: '{}' was published with a payload its declaration does "
-                      "not allow, and was refused. The encoder produced a value of the wrong "
-                      "kind, an unlisted enum choice, or a number that is not finite.",
+                      "not allow, and was refused (wrong kind, unlisted enum choice, or a "
+                      "non-finite number).",
                       definition->Name);
         }
         ++Refused;
@@ -128,9 +121,9 @@ bool AuthoredEventDispatcher::Enqueue(AuthoredEventId event, EntityId source, In
     slot.Event = event;
     slot.Contract = Events.Revision(event);
     slot.Sequence = sequence;
-    slot.Root = duringDelivery ? DeliveringRoot : sequence;
+    slot.Root = Delivering ? Delivering->Root : sequence;
     slot.Source = source;
-    slot.Cause = AuthoredEventCause{ cause, duringDelivery ? DeliveringSequence : AuthoredEventSequence{} };
+    slot.Cause = AuthoredEventCause{ cause, Delivering ? Delivering->Sequence : AuthoredEventSequence{} };
     ++Count;
 
     CheckSource(event, source);
@@ -145,21 +138,16 @@ void AuthoredEventDispatcher::CheckSource(AuthoredEventId event, EntityId source
     const AuthoredEventDefinition* definition = Events.Get(event);
     if (definition == nullptr || definition->SourceComponent.empty())
         return;
-    const std::size_t index = AuthoredEventRegistry::IndexOf(event);
-    if (index < SourceWarned.size() && SourceWarned[index])
-        return;
 
     const ComponentId component =
         SourceWorld->GetComponentIdByType(MakeComponentTypeId(definition->SourceComponent));
-    if (component != InvalidComponentId && SourceWorld->IsAlive(source)
-        && SourceWorld->HasComponent(source, component))
-    {
+    const bool carries = component != InvalidComponentId && SourceWorld->IsAlive(source)
+                      && SourceWorld->HasComponent(source, component);
+    if (carries || !ReportOnce(MissingSourceReported, event))
         return;
-    }
-    WarnOnce(SourceWarned, event);
     Log.Warn("authored events: '{}' was published by entity {}:{}, which does not carry its "
-             "declared source component '{}'. The source is authoring metadata, so the event "
-             "was still queued; a graph offering it on that component will not see this one.",
+             "declared source component '{}'. It was still queued; the source is authoring "
+             "metadata.",
              definition->Name, source.Index, source.Generation, definition->SourceComponent);
 #else
     (void)event;
@@ -200,8 +188,6 @@ void AuthoredEventDispatcher::Release(AuthoredEventSubscriptionKey key,
         return;
     SubscriberList& subscribers = Subscribers[index];
 
-    // The list is in serial order, compaction included, so the subscription is
-    // found by search rather than by walking the dispatcher.
     const auto found = std::ranges::lower_bound(subscribers.List, key.Serial, {},
                                                 &Subscriber::Serial);
     if (found == subscribers.List.end() || found->Serial != key.Serial
@@ -211,7 +197,6 @@ void AuthoredEventDispatcher::Release(AuthoredEventSubscriptionKey key,
     }
     found->Live = false;
     ++subscribers.Tombstones;
-    // Left as a tombstone while a delivery may be walking the list.
     if (Draining)
         SubscribersDirty = true;
     else
@@ -260,8 +245,7 @@ std::size_t AuthoredEventDispatcher::MatchingSubscribers(const Occurrence& occur
 
 void AuthoredEventDispatcher::Deliver(const Occurrence& occurrence, std::uint64_t tick)
 {
-    DeliveringRoot = occurrence.Root;
-    DeliveringSequence = occurrence.Sequence;
+    Delivering = InFlight{ .Root = occurrence.Root, .Sequence = occurrence.Sequence };
 
     TraceRing[TraceNext] = AuthoredEventTraceRecord{
         .Event = occurrence.Event,
@@ -287,10 +271,8 @@ void AuthoredEventDispatcher::Deliver(const Occurrence& occurrence, std::uint64_
         .Tick = tick,
     };
 
-    // The count is taken now: a subscription made during this delivery hears
-    // the next occurrence, not this one. Each entry is re-read by index
-    // because a subscriber may subscribe, which can move the list; nothing is
-    // removed from it while a drain runs.
+    // Subscriptions made during this delivery hear the next occurrence. Read
+    // by index: a subscriber may subscribe and grow the list.
     const std::size_t count = Subscribers[index].List.size();
     for (std::size_t position = 0; position < count; ++position)
     {
@@ -305,24 +287,21 @@ void AuthoredEventDispatcher::Deliver(const Occurrence& occurrence, std::uint64_
 
 namespace
 {
-    // Ends a drain however it ends. A subscriber that throws leaves the
-    // occurrence it was being delivered at the head of the queue, to be
-    // delivered again by the next drain, and leaves the dispatcher usable:
-    // not still draining, and not still delivering.
+    // A subscriber that throws leaves its occurrence at the head for the next
+    // drain and the dispatcher neither draining nor delivering.
+    template<typename InFlightState>
     class DrainScope
     {
     public:
-        DrainScope(bool& draining, AuthoredEventSequence& root, AuthoredEventSequence& sequence)
+        DrainScope(bool& draining, InFlightState& delivering)
             : Draining(draining)
-            , Root(root)
-            , Sequence(sequence)
+            , Delivering(delivering)
         {
             Draining = true;
         }
         ~DrainScope()
         {
-            Root = {};
-            Sequence = {};
+            Delivering.reset();
             Draining = false;
         }
         DrainScope(const DrainScope&) = delete;
@@ -330,8 +309,7 @@ namespace
 
     private:
         bool& Draining;
-        AuthoredEventSequence& Root;
-        AuthoredEventSequence& Sequence;
+        InFlightState& Delivering;
     };
 }
 
@@ -340,28 +318,25 @@ AuthoredEventDrainResult AuthoredEventDispatcher::Drain(std::uint64_t tick)
     AuthoredEventDrainResult result;
     if (Draining)
     {
-        Log.Error("authored events: a drain was requested from inside a delivery and refused; "
-                  "what a subscriber publishes is delivered by the drain already running");
+        Log.Error("authored events: a drain was requested from inside a delivery and refused");
         return result;
     }
 
     std::size_t spent = 0;
     bool exhausted = false;
     {
-        const DrainScope scope(Draining, DeliveringRoot, DeliveringSequence);
+        const DrainScope scope(Draining, Delivering);
         while (Count != 0)
         {
             const Occurrence& occurrence = Ring[Head];
             const std::size_t cost = CostOf(MatchingSubscribers(occurrence));
-            // Whole occurrences only, so no subscriber hears one twice. The
-            // first is always delivered, so a drain always makes progress.
             if (spent != 0 && spent + cost > Budget)
             {
                 exhausted = true;
                 break;
             }
-            // The slot stays counted while it is delivered, so nothing
-            // published during the delivery can be written over it.
+            // Popped only after delivery, so nothing published meanwhile
+            // overwrites the payload being read.
             Deliver(occurrence, tick);
             spent += cost;
             Head = (Head + 1) % Ring.size();
@@ -379,7 +354,7 @@ AuthoredEventDrainResult AuthoredEventDispatcher::Drain(std::uint64_t tick)
         Suspects.clear();
 
     result.Remaining = Count;
-    RefusedAtLastDrain = Refused;
+    QueueFullReported = false;
     ApplyPendingCapacity();
     return result;
 }
@@ -388,23 +363,21 @@ void AuthoredEventDispatcher::HandleExhaustion(std::uint64_t tick, AuthoredEvent
 {
     result.BudgetExceeded = true;
 
-    // The chains still waiting, in queue order.
-    std::vector<AuthoredEventSequence> waiting;
+    std::vector<AuthoredEventSequence> waitingRoots;
     for (std::size_t offset = 0; offset < Count; ++offset)
     {
         const AuthoredEventSequence root = Ring[(Head + offset) % Ring.size()].Root;
-        if (std::ranges::find(waiting, root) == waiting.end())
-            waiting.push_back(root);
+        if (std::ranges::find(waitingRoots, root) == waitingRoots.end())
+            waitingRoots.push_back(root);
     }
 
     Log.Error("authored events: the drain at tick {} spent its budget of {} subscriber calls "
-              "with {} occurrences still queued; they wait for the next drain, and a chain "
-              "still running after {} consecutive exhausted drains is quarantined",
-              tick, Budget, Count, QuarantineAfter);
+              "with {} occurrences still queued for the next drain",
+              tick, Budget, Count);
     ReportTrace("most recent deliveries");
 
     std::vector<Suspect> suspects;
-    for (const AuthoredEventSequence root : waiting)
+    for (const AuthoredEventSequence root : waitingRoots)
     {
         const auto previous = std::ranges::find(Suspects, root, &Suspect::Root);
         const std::size_t exhaustions = previous != Suspects.end() ? previous->Exhaustions + 1 : 1;
@@ -425,10 +398,7 @@ void AuthoredEventDispatcher::HandleExhaustion(std::uint64_t tick, AuthoredEvent
         HasQuarantine = true;
         ++result.QuarantinedRoots;
         Log.Error("authored events: the chain started by occurrence #{} was still running after "
-                  "{} consecutive exhausted drains and is quarantined; {} queued occurrences "
-                  "were discarded. A reaction may be publishing the event that triggers it, a "
-                  "provider may be announcing a change it did not make, or the chain is simply "
-                  "more work than the budget allows.",
+                  "{} exhausted drains and is quarantined; {} queued occurrences were discarded",
                   root.Value, exhaustions, discarded);
         assert(!TrapOnQuarantine && "authored event chain quarantined; see the log for its trace");
     }
@@ -437,8 +407,7 @@ void AuthoredEventDispatcher::HandleExhaustion(std::uint64_t tick, AuthoredEvent
 
 void AuthoredEventDispatcher::Discard(AuthoredEventSequence root, std::size_t& discarded)
 {
-    // Stable: what remains keeps its order. Swapped rather than assigned so
-    // every slot keeps payload storage it has already grown.
+    // Stable, and swapped so each slot keeps its grown payload storage.
     std::size_t kept = 0;
     for (std::size_t offset = 0; offset < Count; ++offset)
     {

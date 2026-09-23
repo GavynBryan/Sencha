@@ -15,60 +15,32 @@
 #include <variant>
 #include <vector>
 
-//=============================================================================
-// AuthoredValue and AuthoredArguments
-//
-// What crosses the authored boundary at runtime: a verb's arguments, a query's
-// arguments and answer, an event's payload. Typed values in the order their
-// schema declares them, already checked, already resolved, with nothing left to
-// parse. One vocabulary for all three, so a bool is carried the same way
-// whichever contract it belongs to.
-//
-// This is a runtime representation, not a second schema language. The shapes
-// exist because neither JSON nor UiValue can carry the full contract a
-// DataFieldSchema describes -- JSON has one number type and no way to say
-// "gameplay tag", and UiValue deliberately presents rather than describes. The
-// schema remains the only place a shape is *declared*; this is the place one is
-// *held*.
-//
-// A value owns its storage. An implementation that defers work copies what it
-// needs or keeps the whole pack, and never retains a view into a UiAction, a
-// schema vector, or an editor document.
-//=============================================================================
+// The runtime values that cross the authored boundary: verb arguments, query
+// arguments and answers, event payloads. DataFieldSchema declares shapes; this
+// holds them. Values own their storage.
 
 enum class AuthoredValueKind : std::uint8_t
 {
-    // An absent optional, and what a checked read of an empty slot returns.
+    // Absent.
     None,
     Bool,
     Int,
     Float,
     String,
-    // The canonical choice value, not its label.
     Enum,
     Vector,
     Record,
     Array,
-    // An asset the content named. Held as a reference rather than a loaded
-    // handle: acquiring and releasing stays with the asset owners, and an
-    // operation that needs the bytes leases them through its own dependency.
+    // A reference, not a loaded handle; loading stays with the asset owners.
     AssetRef,
     DataAssetRef,
-    // Already resolved against the bound World's tag registry.
     GameplayTag,
-    // A live generational handle. What a producer supplies for an entity
-    // input, and what an operation reads for an entity argument.
     Entity,
-    // An authored persistent identity, not yet a handle. What an entity
-    // constant compiles to: it is resolved against the World's persistent
-    // entity index at every invocation, so a binding compiled while its target
-    // was absent, or before the target streamed out and back with a new
-    // generation, still reaches the entity the author named. An operation
-    // never sees this kind -- the dispatcher resolves it or refuses.
+    // An entity constant, resolved to an Entity by the dispatcher at every
+    // invocation. Operations never see this kind.
     PersistentEntity,
 };
 
-// A 2-, 3- or 4-wide numeric tuple, as DataFieldKind::Vector describes.
 struct AuthoredVectorValue
 {
     std::array<double, 4> Components{};
@@ -99,9 +71,7 @@ public:
     [[nodiscard]] AuthoredValueKind Kind() const { return Kind_; }
     [[nodiscard]] bool IsNone() const { return Kind_ == AuthoredValueKind::None; }
 
-    // Checked reads. False on a kind mismatch, leaving `out` untouched: an
-    // implementation reading the wrong slot must find out, not silently act on
-    // a zero.
+    // False on a kind mismatch, leaving `out` untouched.
     [[nodiscard]] bool TryGetBool(bool& out) const;
     [[nodiscard]] bool TryGetInt(std::int64_t& out) const;
     [[nodiscard]] bool TryGetFloat(double& out) const;
@@ -114,7 +84,6 @@ public:
     [[nodiscard]] bool TryGetEntity(EntityId& out) const;
     [[nodiscard]] bool TryGetPersistentEntity(PersistentEntityId& out) const;
 
-    // Members of a record, elements of an array. Empty for every other kind.
     [[nodiscard]] std::span<const AuthoredValue> Children() const { return Children_; }
 
 private:
@@ -131,31 +100,15 @@ private:
 
     AuthoredValueKind Kind_ = AuthoredValueKind::None;
     Scalar Value_;
-    // Outside the variant on purpose: a variant alternative has to be complete
-    // where the variant is instantiated, and this one is the type being
-    // defined. std::vector may name an incomplete element type; std::variant
-    // may not.
+    // Not a variant alternative: std::variant cannot hold the incomplete type
+    // being defined; std::vector can.
     std::vector<AuthoredValue> Children_;
 };
 
-// Whether a value is one the field would accept: the right kind, inside the
-// declared range, and naming a declared choice. The single place the two
-// vocabularies are related, so a new field kind has one edit rather than one
-// per consumer.
-//
-// This is the check a dynamic value gets at invocation. A constant gets more
-// than this at compile time, where a diagnostic can still say which argument of
-// which binding was wrong.
+// Kind, range and enum choice. The one place values and schemas are related.
 [[nodiscard]] bool AuthoredValueSatisfiesField(const AuthoredValue& value, const DataFieldSchema& field);
 
-//-----------------------------------------------------------------------------
-// AuthoredArguments
-//
-// One invocation's arguments, or one event's payload, indexed by the position
-// of the field in the record root that declared them. The binding compiler
-// decides the order once; dispatch indexes it. Generated adapters read slots by
-// that position, which is the order of the annotated parameters or members.
-//-----------------------------------------------------------------------------
+// Values indexed by their field's position in the declaring record.
 class AuthoredArguments
 {
 public:
@@ -164,18 +117,14 @@ public:
 
     [[nodiscard]] std::size_t Size() const { return Slots.size(); }
 
-    // Keeps the storage it already has, so a pack reused across invocations
-    // stops allocating once it has seen its widest verb.
+    // Keeps existing storage, so a reused pack stops allocating once warmed.
     void Resize(std::size_t slots);
 
     void Set(std::size_t slot, AuthoredValue value);
 
-    // The empty value for an out-of-range slot, so a caller that got its
-    // indexing wrong reads None rather than reading past the end.
+    // None for an out-of-range slot.
     [[nodiscard]] const AuthoredValue& At(std::size_t slot) const;
 
-    // Checked reads, forwarding to the value's own. False when the slot does
-    // not exist or does not hold that kind.
     [[nodiscard]] bool TryGetBool(std::size_t slot, bool& out) const;
     [[nodiscard]] bool TryGetInt(std::size_t slot, std::int64_t& out) const;
     [[nodiscard]] bool TryGetFloat(std::size_t slot, double& out) const;

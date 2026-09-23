@@ -1,7 +1,3 @@
-// What every authored catalog shares -- validating a batch without changing
-// anything -- and what a provider declaring into all three at once is
-// promised: every batch publishes, or none does.
-
 #include <authored/AuthoredApi.h>
 #include <authored/WorldVocabulary.h>
 
@@ -36,7 +32,7 @@ namespace
 }
 } // namespace
 
-TEST(AuthoredCatalog, ValidatingAPublishChangesNothing)
+TEST(AuthoredCatalog, ARefusedCommitChangesNothing)
 {
     AuthoredQueryRegistry queries;
     {
@@ -47,19 +43,16 @@ TEST(AuthoredCatalog, ValidatingAPublishChangesNothing)
     const std::uint64_t generation = queries.Generation();
     const std::size_t slots = queries.SlotCount();
 
-    std::vector<std::string> errors;
-    const std::vector<AuthoredQueryDefinition> fresh{ QueryNamed("thing.hot") };
-    EXPECT_TRUE(queries.ValidatePublish("second", fresh, errors));
-    const std::vector<AuthoredQueryDefinition> conflicting{ QueryNamed("thing.lit") };
-    EXPECT_FALSE(queries.ValidatePublish("second", conflicting, errors));
-    ASSERT_EQ(errors.size(), 1u);
-    EXPECT_NE(errors.front().find("first"), std::string::npos);
+    AuthoredQueryRegistrationScope second(queries, "second");
+    ASSERT_TRUE(second.Declare(QueryNamed("thing.hot")));
+    ASSERT_TRUE(second.Declare(QueryNamed("thing.lit")));
+    EXPECT_FALSE(second.Commit());
 
-    // Asked twice, answered twice, and nothing moved.
     EXPECT_EQ(queries.Generation(), generation);
     EXPECT_EQ(queries.SlotCount(), slots);
     EXPECT_FALSE(queries.Find("thing.hot").IsValid());
-    EXPECT_TRUE(queries.InstallationErrors().empty());
+    ASSERT_EQ(queries.InstallationErrors().size(), 1u);
+    EXPECT_NE(queries.InstallationErrors().front().find("first"), std::string::npos);
 }
 
 TEST(AuthoredCatalog, EachKindValidatesItsOwnShape)
@@ -77,7 +70,6 @@ TEST(AuthoredCatalog, EachKindValidatesItsOwnShape)
     flat.Payload.Kind = DataFieldKind::Int;
     EXPECT_FALSE(eventScope.Declare(std::move(flat)));
 
-    // A target's expected component belongs on an entity and nowhere else.
     VerbRegistry verbs;
     VerbRegistrationScope verbScope(verbs, "test");
     VerbDefinition misplaced = Verb("thing.poke");
@@ -106,8 +98,6 @@ TEST(AuthoredCatalog, AnExpectedComponentIsMetadataNotContract)
     ASSERT_TRUE(declare("game.door"));
     const VerbContractRevision before = verbs.Revision(verbs.Find("door.open"));
     ASSERT_TRUE(declare("game.gate"));
-    // Refining which entities an author is offered does not invalidate a
-    // binding compiled against the old expectation.
     EXPECT_EQ(verbs.Revision(verbs.Find("door.open")), before);
 }
 
@@ -119,7 +109,6 @@ protected:
     void SetUp() override
     {
         InstallAuthoredVocabulary(Entities);
-        // Another provider already owns a query name.
         AuthoredQueryRegistrationScope queries(*FindAuthoredQueryRegistry(Entities), "other");
         (void)queries.Declare(QueryNamed("taken.query"));
         ASSERT_TRUE(queries.Commit());
@@ -138,8 +127,7 @@ protected:
 };
 } // namespace
 
-// A tiny hand-written API, shaped the way the generator writes one, so the
-// scope's Declare has something to route.
+// Hand-written companions, shaped like generated ones.
 struct CatalogProbeVerbs
 {
 };
@@ -226,13 +214,10 @@ TEST_F(VocabularyScopeTest, AConflictInOneCatalogPublishesNothingInAny)
     vocabulary.Declare<CatalogProbeEvent>();
     EXPECT_FALSE(vocabulary.Commit());
 
-    // Not half a module: the verb and the event are absent too, and no
-    // catalog so much as moved its generation.
     EXPECT_FALSE(FindVerbRegistry(Entities)->Find("probe.go").IsValid());
     EXPECT_FALSE(FindAuthoredEventRegistry(Entities)->Find("probe.went").IsValid());
     EXPECT_EQ(CurrentGenerations(), Generations);
 
-    // The reason is where the host reads it, in the catalog it concerns.
     const std::vector<std::string> errors = AuthoredInstallationErrors(Entities);
     ASSERT_EQ(errors.size(), 1u);
     EXPECT_NE(errors.front().find("taken.query"), std::string::npos);
@@ -244,7 +229,6 @@ TEST_F(VocabularyScopeTest, ASchemaErrorInOneBatchBlocksTheOthers)
     AuthoredVocabularyScope vocabulary(Entities, "probe");
     vocabulary.Declare<CatalogProbeVerbs>();
     vocabulary.Declare<CatalogProbeQueries>();
-    // Declared twice: the event batch is malformed on its own.
     vocabulary.Declare<CatalogProbeEvent>();
     vocabulary.Declare<CatalogProbeEvent>();
     EXPECT_FALSE(vocabulary.Commit());

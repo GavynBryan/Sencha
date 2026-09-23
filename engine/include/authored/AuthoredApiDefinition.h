@@ -20,27 +20,14 @@
 
 class World;
 
-//=============================================================================
-// AuthoredApiDefinition
-//
-// What sencha-component-codegen writes for a type that exposes authored verbs,
-// queries or events, and what the explicit Declare and Bind helpers read. A
-// generated specialization is plain C++ a person could have typed: one
-// Describe function per entry that builds the contract the way a hand-written
-// declaration would, one adapter per entry that decodes each argument slot and
-// calls the annotated method, and a table listing them.
-//
-// This header is what a companion includes, so it stays free of the World and
-// the dispatchers: a component header that exposes a query pulls in value
-// traits and schema types, never the machinery that runs anything.
-//=============================================================================
+// The shapes sencha-component-codegen emits into companions, and the helpers
+// generated code calls. Kept free of the World and the dispatchers, since
+// component headers include their companions.
 
 // Primary left undefined: only generated specializations exist.
 template<typename T>
 struct AuthoredApiDefinition;
 
-// One annotated verb method on T: its persisted name, the declaration it
-// makes, and the adapter a dispatcher calls.
 template<typename T>
 struct AuthoredVerbEntry
 {
@@ -49,7 +36,6 @@ struct AuthoredVerbEntry
     VerbAdmission (*Invoke)(T&, const VerbInvocation&);
 };
 
-// One annotated query method on T.
 template<typename T>
 struct AuthoredQueryEntry
 {
@@ -58,9 +44,7 @@ struct AuthoredQueryEntry
     AuthoredQueryStatus (*Evaluate)(const T&, std::span<const AuthoredValue>, AuthoredValue&);
 };
 
-// One queryable component member. The member pointer is the whole of what
-// reading it needs; the reader is instantiated where the component's queries
-// are bound against a World.
+// Data only: the reader is instantiated where the queries are bound.
 template<auto Member>
 struct AuthoredFieldQuery
 {
@@ -90,16 +74,11 @@ concept HasAuthoredEventDefinition = requires {
     AuthoredApiDefinition<E>::DescribeEvent();
 };
 
-// A type with a component identity of its own: one declared by
-// SENCHA_COMPONENT or SENCHA_DECLARE_COMPONENT_TYPE. A type that merely has a
-// TypeSchema -- a vector, a transform -- is not one, however it serializes.
+// Declared by SENCHA_COMPONENT or SENCHA_DECLARE_COMPONENT_TYPE. A TypeSchema
+// alone does not make a type a component.
 template<typename C>
 concept AuthoredComponentType = HasComponentTypeKey<C>;
 
-// The persisted identity a target or event source names. Resolved from the
-// type the author wrote, and only for a component: naming a type that exists
-// but is not one fails the build here, rather than compiling to an empty
-// identity that constrains nothing.
 template<typename C>
 [[nodiscard]] std::string AuthoredComponentIdentity()
 {
@@ -109,14 +88,8 @@ template<typename C>
     return std::string(ComponentTypeKey<C>::Name);
 }
 
-//-----------------------------------------------------------------------------
-// Query results
-//
-// A query may return T, or std::optional<T> when it can have nothing to say.
-// Either way the declared result is T: an empty optional is answered as
-// Unavailable, never as a value called "absent".
-//-----------------------------------------------------------------------------
-
+// A query returning std::optional<T> declares a T result; an empty optional
+// answers Unavailable.
 template<typename R>
 struct AuthoredQueryValue
 {
@@ -157,8 +130,7 @@ template<typename R>
     return AuthoredQueryStatus::Value;
 }
 
-// The argument in `slot`, or the absent value past the end: a caller that
-// supplied too few is refused by decoding, not by reading past its span.
+// The absent value past the end, which then fails to decode.
 [[nodiscard]] inline const AuthoredValue& AuthoredArgumentAt(std::span<const AuthoredValue> arguments,
                                                              std::size_t slot)
 {
@@ -166,8 +138,6 @@ template<typename R>
     return slot < arguments.size() ? arguments[slot] : absent;
 }
 
-// The single argument a component query takes: the entity whose row it reads,
-// expected to carry the component.
 template<typename C>
 void DescribeAuthoredComponentTarget(DataFieldSchema& arguments)
 {

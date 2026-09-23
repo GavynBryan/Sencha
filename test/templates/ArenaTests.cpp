@@ -194,10 +194,7 @@ namespace
         VerbAdmission MenuAdmission = VerbAdmission::Unavailable;
         std::string Scoreboard;
 
-        // What an authored consumer hears: each announced change, and the
-        // scoreboard as the game's own queries report it at that moment. Asked
-        // by name through the engine's dispatchers, because this binary cannot
-        // name the game's types -- which is exactly the position a graph is in.
+        // By name only: this binary cannot see the game's types, like a graph.
         struct Change
         {
             std::string Side;
@@ -312,9 +309,7 @@ TEST(ArenaTemplate, EachAppliedAwardIsAnnouncedAndTheQueriesSeeItsEffect)
     ASSERT_TRUE(run.Loaded());
     ASSERT_EQ(run.Exit(), 0);
 
-    // Relay first, then the menu; each announced once, from the match entity,
-    // after the scoreboard changed -- which the game's own queries confirm from
-    // inside the delivery.
+    // Relay first, then the menu.
     const std::vector<ScoreProbe::Change>& changes = run.Seen().Changes;
     ASSERT_EQ(changes.size(), 2u);
     EXPECT_EQ(changes[0].Side, "blue");

@@ -1,8 +1,3 @@
-// Announcing and delivering authored events: publishing only queues, one drain
-// delivers first in first out and keeps going until nothing is left, a chain
-// of reactions finishes inside one drain without nesting calls, and a chain
-// that feeds itself is stopped with its trace kept.
-
 #include "AllocationCounter.h"
 
 #include <authored/AuthoredApiDefinition.h>
@@ -22,7 +17,7 @@
 #include <string>
 #include <vector>
 
-// Events as the generator writes them: a name and a payload encoder.
+// Hand-written companions, shaped like generated ones.
 struct TestRotated
 {
 };
@@ -58,7 +53,7 @@ struct AuthoredApiDefinition<TestOther>
     static void Encode(const TestOther&, AuthoredArguments& payload) { payload.Resize(0); }
 };
 
-// Has a companion, but nothing declared it into the catalog under test.
+// Never declared into the catalog under test.
 struct TestUndeclared
 {
 };
@@ -85,7 +80,6 @@ namespace
     return definition;
 }
 
-// Records every delivery it hears, in the order it heard them.
 struct Listener
 {
     int Tag = 0;
@@ -182,8 +176,7 @@ TEST_F(AuthoredEventDispatchTest, ASourceFilterHearsOnlyItsEntity)
 
 namespace
 {
-// A verb whose operation acts at once and announces what it did: rotating an
-// entity is an immediate change, and the announcement follows the change.
+// Acts immediately, then publishes.
 class Rotator
 {
 public:
@@ -207,8 +200,7 @@ public:
     std::vector<Rotation> Rotations;
 };
 
-// Reacts to one entity's rotation by rotating the next, through the verb and
-// never by calling the rotator: what a compiled graph does.
+// Reacts through the verb dispatcher, as a compiled graph would.
 struct Reaction
 {
     VerbDispatcher* Verbs = nullptr;
@@ -273,7 +265,6 @@ TEST_F(AuthoredEventDispatchTest, AChainOfReactionsCompletesInOneDrainWithoutNes
     AuthoredEventSubscription subscription =
         Events->Subscribe<&Reaction::Deliver>(RotatedEvent, EntityId{}, reaction);
 
-    // Rotate A from outside any drain, the way a system or a UI would.
     const AuthoredValue start = AuthoredValue::Entity(a);
     ASSERT_EQ(dispatcher.Invoke(rotate, { &start, 1 }).Status, VerbAdmission::Accepted);
     ASSERT_EQ(rotator.Rotations.size(), 1u);
@@ -282,15 +273,12 @@ TEST_F(AuthoredEventDispatchTest, AChainOfReactionsCompletesInOneDrainWithoutNes
     EXPECT_FALSE(result.BudgetExceeded);
     EXPECT_EQ(result.Remaining, 0u);
 
-    // A, B and C, all in the one drain, and no request refused as reentrant.
     ASSERT_EQ(rotator.Rotations.size(), 3u);
     EXPECT_EQ(rotator.Rotations[1].Target, b);
     EXPECT_EQ(rotator.Rotations[2].Target, c);
     for (const VerbAdmission admission : reaction.Admissions)
         EXPECT_EQ(admission, VerbAdmission::Accepted);
 
-    // The chain is traceable end to end: each rotation names the one whose
-    // announcement caused it, and every announcement shares the first's root.
     EXPECT_EQ(rotator.Rotations[1].Parent, rotator.Rotations[0].Id);
     EXPECT_EQ(rotator.Rotations[2].Parent, rotator.Rotations[1].Id);
     ASSERT_EQ(reaction.Heard.size(), 3u);
@@ -302,7 +290,7 @@ TEST_F(AuthoredEventDispatchTest, AChainOfReactionsCompletesInOneDrainWithoutNes
 
 namespace
 {
-// A reaction that announces the event it reacts to: work that never ends.
+// Publishes the event it reacts to, forever.
 struct Echo
 {
     AuthoredEventDispatcher* Events = nullptr;
@@ -331,7 +319,6 @@ TEST_F(AuthoredEventDispatchTest, ARunawayChainIsQuarantinedOnTheSecondExhausted
     EXPECT_EQ(first.QuarantinedRoots, 0u) << "one exhausted drain is a burst, not yet a runaway";
     EXPECT_EQ(Events->LastQuarantine(), nullptr);
 
-    // Unrelated work queued behind the runaway chain.
     (void)Events->Publish(EntityId{}, TestOther{});
     const AuthoredEventDrainResult second = Events->Drain(2);
     EXPECT_TRUE(second.BudgetExceeded);
@@ -347,7 +334,6 @@ TEST_F(AuthoredEventDispatchTest, ARunawayChainIsQuarantinedOnTheSecondExhausted
     EXPECT_EQ(quarantine->Trace.back().Event, Ping);
     EXPECT_EQ(quarantine->Trace.back().Root, quarantine->Root);
 
-    // The chain is stopped: nothing of it is left to run.
     const int callsBefore = echo.Calls;
     const AuthoredEventDrainResult third = Events->Drain(3);
     EXPECT_EQ(third.Delivered, 0u);
@@ -415,7 +401,6 @@ TEST_F(AuthoredEventDispatchTest, ADrainFromInsideADeliveryIsRefused)
 
 namespace
 {
-// Subscribes a late listener, and removes another, while being delivered to.
 struct Rearranger
 {
     AuthoredEventDispatcher* Events = nullptr;
@@ -452,16 +437,14 @@ TEST_F(AuthoredEventDispatchTest, SubscriptionsChangedDuringADeliveryApplyFromTh
     (void)Events->Publish(EntityId{}, TestOther{});
     (void)Events->Drain(1);
 
-    // Removed before its turn in the first occurrence: never heard anything.
     EXPECT_TRUE(doomed.Heard.empty());
-    // Added during the first occurrence: heard only the second.
     ASSERT_EQ(late.Heard.size(), 1u);
     EXPECT_EQ(late.Heard.front().Sequence.Value, 2u);
 }
 
 namespace
 {
-// Announces more while it reads the payload it was handed, which must not move.
+// Publishes while reading its own payload.
 struct Crowder
 {
     AuthoredEventDispatcher* Events = nullptr;
@@ -519,7 +502,6 @@ TEST_F(AuthoredEventDispatchTest, AWarmedPublishAndDrainAllocateNothing)
     AuthoredEventSubscription subscription =
         Events->Subscribe<&Listener::Deliver>(PingEvent, EntityId{}, listener);
     listener.Heard.reserve(20000);
-    // Warm every slot's payload storage once.
     for (std::size_t round = 0; round < 2; ++round)
     {
         for (std::size_t index = 0; index < Events->Capacity(); ++index)
@@ -547,7 +529,6 @@ TEST_F(AuthoredEventDispatchTest, AWarmedPublishAndDrainAllocateNothing)
 
 namespace
 {
-// A finite chain: each occurrence announces the next until its count runs out.
 struct Countdown
 {
     AuthoredEventDispatcher* Events = nullptr;
@@ -571,14 +552,12 @@ TEST_F(AuthoredEventDispatchTest, TheCutoffIsForSustainedWorkAndItsThresholdIsCo
     AuthoredEventSubscription subscription =
         Events->Subscribe<&Countdown::Deliver>(PingEvent, EntityId{}, chain);
 
-    // Twenty-six occurrences: finite, but more than two budgets' worth. The
-    // default cuts it off -- it is not a cycle, and nothing claims it is.
+    // 26 occurrences: finite, but more than two budgets' worth.
     (void)Events->Publish(EntityId{}, TestPing{ .Count = 25 });
     (void)Events->Drain(1);
     EXPECT_EQ(Events->Drain(2).QuarantinedRoots, 1u);
     EXPECT_EQ(chain.Heard, 20);
 
-    // Allowed a third exhausted drain, the same chain finishes.
     Events->SetQuarantineAfter(3);
     chain.Heard = 0;
     (void)Events->Publish(EntityId{}, TestPing{ .Count = 25 });
@@ -592,7 +571,6 @@ TEST_F(AuthoredEventDispatchTest, TheCutoffIsForSustainedWorkAndItsThresholdIsCo
 
 namespace
 {
-// Reacts to every ping with one announcement of its own.
 struct Echoer
 {
     AuthoredEventDispatcher* Events = nullptr;
@@ -621,17 +599,13 @@ TEST_F(AuthoredEventDispatchTest, AReactionIsQueuedEvenWhenTheQueueStartedFull)
     ASSERT_FALSE(Events->Publish(EntityId{}, TestPing{})) << "the queue holds two waiting";
     const std::uint64_t refusedBefore = Events->RefusedCount();
 
-    // The occurrence being delivered does not hold a waiting place, so each
-    // reaction finds room although the queue was full when the drain began.
     EXPECT_EQ(Events->Drain(1).Delivered, 4u);
     EXPECT_EQ(echoer.Accepted, 2);
     EXPECT_EQ(after.Heard.size(), 2u);
     EXPECT_EQ(Events->RefusedCount(), refusedBefore);
 }
 
-// Payloads a declaration refuses: a choice it does not list, a number that is
-// not finite. Encoders written by hand here, because the generated ones only
-// ever encode what their C++ type holds.
+// Hand-written encoders that can produce payloads a declaration refuses.
 struct TestMood
 {
     std::string Choice;
@@ -700,7 +674,6 @@ TEST_F(AuthoredEventDispatchTest, ASubscriberHearsOnlyTheContractItResolved)
     AuthoredEventSubscription oldSubscription =
         Events->Subscribe<&Listener::Deliver>(PingEvent, EntityId{}, old);
 
-    // The payload's contract changes: the count gains a range.
     {
         AuthoredEventDefinition ping;
         ping.Name = "test.ping";
@@ -715,7 +688,6 @@ TEST_F(AuthoredEventDispatchTest, ASubscriberHearsOnlyTheContractItResolved)
     }
     ASSERT_FALSE(Registry.IsCurrent(PingEvent));
 
-    // The stale handle subscribes nothing; one resolved again does.
     Listener stale;
     EXPECT_FALSE(Events->Subscribe<&Listener::Deliver>(PingEvent, EntityId{}, stale).IsValid());
     Listener current;
@@ -791,8 +763,6 @@ TEST_F(AuthoredEventDispatchTest, ASubscriberThatThrowsLeavesTheDispatcherUsable
     EXPECT_THROW((void)Events->Drain(1), std::runtime_error);
     EXPECT_FALSE(Events->IsDraining());
 
-    // The occurrence it was delivering is still at the head, and the next
-    // drain delivers it.
     thrower.Throw = false;
     EXPECT_EQ(Events->Drain(2).Delivered, 1u);
     EXPECT_EQ(thrower.Heard, 2);

@@ -14,31 +14,9 @@
 #include <utility>
 #include <vector>
 
-//=============================================================================
-// AuthoredCatalog
-//
-// One World's vocabulary of one kind of authored contract -- verbs, queries or
-// events: which names content may persist, and what each one's shape is.
-//
-// A World resource, because the names content resolves against are a property
-// of the entity universe it was loaded into -- two editor documents are two
-// catalogs, and the same number means a different entry in each. Metadata
-// only: what an entry does is held by that kind's dispatcher, a separate
-// object with a separate lifetime, so an editor can install a catalog to offer
-// and validate a vocabulary without acquiring the power to run any of it.
-//
-// Ids follow InputActionRegistry's identity contract for the same reason it
-// has one: a name keeps its slot for the catalog's lifetime, a name the
-// vocabulary stops declaring retires its slot rather than freeing it for
-// reuse, and a name that comes back revives the slot it had. A cached id that
-// resolved to nothing is the truth; a cached id that silently resolved to
-// whichever entry was declared next is the failure that reads as the wrong
-// thing happening.
-//
-// The kinds differ only in what a definition holds, how one is validated, and
-// what counts as a changed contract. A traits type supplies those three things;
-// everything about slots, providers, revisions and installation is here once.
-//=============================================================================
+// One World's catalog of one kind of authored contract -- verbs, queries or
+// events. Metadata only; slot, revision and registration rules are described
+// in docs/gameplay/authored-api.md.
 
 template<typename T>
 concept AuthoredCatalogTraits = requires(const typename T::Definition& definition,
@@ -52,27 +30,23 @@ concept AuthoredCatalogTraits = requires(const typename T::Definition& definitio
     { T::ContractsMatch(definition, definition) } -> std::same_as<bool>;
 };
 
-// Every catalog ever made in this process gets its own number, whatever it
-// catalogs, so a compiled binding checked against a registry that reused a
-// destroyed one's address fails the check rather than passing it.
+// Process-unique, so a catalog that reuses a destroyed one's address is still a
+// different catalog.
 [[nodiscard]] std::uint64_t NextAuthoredCatalogNumber();
 
 template<AuthoredCatalogTraits Traits>
 class AuthoredCatalog;
 
-//-----------------------------------------------------------------------------
-// AuthoredRegistrationScope
-//
-// One provider's batch, validated before any of it is published.
-//
-// The game hook that declares a module's vocabulary returns void, so a module
-// that ignores a failed Declare cannot be relied on to stop. The scope carries
-// the errors instead and the host reads them after the hook returns, which is
-// what makes installation checked without adding a virtual method or changing
-// a signature a shipped module compiled against.
-//
-// A scope that is destroyed without Commit publishes nothing.
-//-----------------------------------------------------------------------------
+template<AuthoredCatalogTraits Traits>
+class AuthoredRegistrationScope;
+
+// Publishes every scope's batch into its catalog, or none of them. Each scope
+// commits once; refused batches leave their errors on their own catalog's
+// InstallationErrors.
+template<AuthoredCatalogTraits... Traits>
+[[nodiscard]] bool CommitTogether(AuthoredRegistrationScope<Traits>&... scopes);
+
+// One provider's batch. Destroyed without a commit, it publishes nothing.
 template<AuthoredCatalogTraits Traits>
 class AuthoredRegistrationScope
 {
@@ -92,9 +66,8 @@ public:
     AuthoredRegistrationScope(AuthoredRegistrationScope&&) = delete;
     AuthoredRegistrationScope& operator=(AuthoredRegistrationScope&&) = delete;
 
-    // Records one declaration. False means this batch will fail; the caller may
-    // keep declaring so an author sees every problem at once rather than one
-    // per run.
+    // False means the batch will fail. Declaring continues, so every problem is
+    // reported in one run.
     bool Declare(Definition definition)
     {
         const std::size_t before = Errors_.size();
@@ -123,31 +96,16 @@ public:
         return true;
     }
 
-    // Publishes the whole batch, or none of it. False leaves the catalog
-    // exactly as it was.
-    [[nodiscard]] bool Commit()
-    {
-        if (!BeginCommit())
-            return false;
-        if (!Prepare())
-        {
-            Refuse();
-            return false;
-        }
-        Publish();
-        return true;
-    }
+    [[nodiscard]] bool Commit() { return CommitTogether(*this); }
 
     [[nodiscard]] bool HasErrors() const { return !Errors_.empty(); }
     [[nodiscard]] std::span<const std::string> Errors() const { return Errors_; }
     [[nodiscard]] std::string_view Provider() const { return Provider_; }
 
-    // The three steps Commit takes, public so a caller committing to several
-    // catalogs at once can check every batch before publishing any of them.
-    // BeginCommit is false for a scope that has already committed; Prepare
-    // checks the batch against the live catalog without changing it; Publish
-    // applies a prepared batch and cannot fail; Refuse leaves the batch's
-    // errors where the host reads them.
+private:
+    template<AuthoredCatalogTraits... Others>
+    friend bool CommitTogether(AuthoredRegistrationScope<Others>&... scopes);
+
     [[nodiscard]] bool BeginCommit()
     {
         if (Committed)
@@ -165,22 +123,31 @@ public:
     }
 
     void Publish() { Catalog_.ApplyPublish(Provider_, Pending); }
+    void Refuse() { Catalog_.RecordInstallationErrors(Errors_); }
 
-    void Refuse()
-    {
-        // Left where the host will find them. A scope commits once, so this
-        // cannot double-report, and a provider that ignores Commit's return
-        // value has still made the failure visible to whoever owns startup.
-        Catalog_.RecordInstallationErrors(Errors_);
-    }
-
-private:
     AuthoredCatalog<Traits>& Catalog_;
     std::string Provider_;
     std::vector<Definition> Pending;
     std::vector<std::string> Errors_;
     bool Committed = false;
 };
+
+template<AuthoredCatalogTraits... Traits>
+bool CommitTogether(AuthoredRegistrationScope<Traits>&... scopes)
+{
+    // Not short-circuited: every scope reports all of its problems.
+    const bool begun = (static_cast<int>(scopes.BeginCommit()) & ...) != 0;
+    if (!begun)
+        return false;
+    const bool ready = (static_cast<int>(scopes.Prepare()) & ...) != 0;
+    if (!ready)
+    {
+        (scopes.Refuse(), ...);
+        return false;
+    }
+    (scopes.Publish(), ...);
+    return true;
+}
 
 template<AuthoredCatalogTraits Traits>
 class AuthoredCatalog
@@ -202,9 +169,6 @@ public:
     AuthoredCatalog(AuthoredCatalog&&) = delete;
     AuthoredCatalog& operator=(AuthoredCatalog&&) = delete;
 
-    // This catalog's identity, minted once and never reused. A compiled binding
-    // records it so a binding resolved against a destroyed World cannot be
-    // invoked against whichever registry took its address.
     [[nodiscard]] CatalogId Catalog() const { return Catalog_; }
 
     [[nodiscard]] Id Find(std::string_view name) const
@@ -215,8 +179,7 @@ public:
         return Slots[IndexOf(it->second)].State == SlotState::Live ? it->second : Id{};
     }
 
-    // The name resolved against this catalog as it is now, for a consumer to
-    // store in place of the name. Invalid when nothing live carries it.
+    // Invalid when nothing live carries the name.
     [[nodiscard]] Handle Resolve(std::string_view name) const
     {
         const Id id = Find(name);
@@ -225,17 +188,14 @@ public:
         return Handle{ .Catalog = Catalog_, .Slot = id, .Contract = Revision(id) };
     }
 
-    // Whether a handle still means what it meant when it was resolved: minted
-    // by this catalog, still live, and still the same contract.
     [[nodiscard]] bool IsCurrent(const Handle& handle) const
     {
         return handle.Catalog == Catalog_ && IsLive(handle.Slot)
             && Revision(handle.Slot) == handle.Contract;
     }
 
-    // Null for a retired id or one this catalog never minted. A bare id
-    // carries no catalog, so an id minted by another catalog is not
-    // distinguishable here; a consumer that stores one stores a Handle.
+    // A bare id carries no catalog: one minted elsewhere is indistinguishable
+    // here. Anything stored across frames is a Handle.
     [[nodiscard]] const Definition* Get(Id id) const
     {
         if (!IsLive(id))
@@ -250,9 +210,7 @@ public:
         return Slots[IndexOf(id)].State == SlotState::Live;
     }
 
-    // Zero for anything Get would return null for. Moves when a live name's
-    // contract changes, and again when a retired name comes back -- a revived
-    // slot is never assumed to mean what it meant before.
+    // Moves when the contract changes and when a retired name is revived.
     [[nodiscard]] ContractRevision Revision(Id id) const
     {
         if (!IsLive(id))
@@ -260,8 +218,6 @@ public:
         return Slots[IndexOf(id)].Revision;
     }
 
-    // Which provider declared the entry currently in the slot. Empty for a
-    // retired one. Diagnostics and conflict reporting; never dispatch input.
     [[nodiscard]] std::string_view Provider(Id id) const
     {
         if (!IsLive(id))
@@ -269,9 +225,8 @@ public:
         return Slots[IndexOf(id)].Provider;
     }
 
-    // Retires every name the named provider currently owns. Slots stay, so an
-    // id cached against an unloaded module resolves to nothing rather than to
-    // whatever is declared next.
+    // Slots are kept, so an id cached against an unloaded provider resolves to
+    // nothing rather than to whatever is declared next.
     void RetireProvider(std::string_view provider)
     {
         bool retired = false;
@@ -287,16 +242,12 @@ public:
             ++Generation_;
     }
 
-    // Slots ever minted, retired ones included.
     [[nodiscard]] std::size_t SlotCount() const { return Slots.size(); }
 
-    // Moves on every published batch and every retirement. What a compiled
-    // set compares to know whether a name that failed to resolve might resolve
-    // now, or one that did might have moved.
+    // Moves on every publish and every retirement.
     [[nodiscard]] std::uint64_t Generation() const { return Generation_; }
 
-    // Every live entry, ordered by id. Deterministic by construction: no tool,
-    // diagnostic, fixture or test ever sees hash order.
+    // In id order.
     [[nodiscard]] std::vector<Id> Live() const
     {
         std::vector<Id> live;
@@ -309,45 +260,13 @@ public:
         return live;
     }
 
-    // Why a batch was refused, from every scope that has failed against this
-    // catalog since the last clear.
-    //
-    // This is what makes installation checked through a hook that returns void.
-    // A provider is free to ignore what Commit told it; the host reads this
-    // afterwards and declines to start, and the diagnostics say which entry and
-    // which provider rather than "vocabulary installation failed".
+    // Every refused batch since the last clear. The vocabulary hook returns
+    // void, so this is where its host learns what failed.
     [[nodiscard]] std::span<const std::string> InstallationErrors() const
     {
         return InstallationErrors_;
     }
     void ClearInstallationErrors() { InstallationErrors_.clear(); }
-
-    // Whether `provider` may publish `definitions` against the catalog as it is
-    // now. Appends one message per conflict and changes nothing, so several
-    // catalogs can all be asked before any of them is written.
-    [[nodiscard]] bool ValidatePublish(std::string_view provider,
-                                       std::span<const Definition> definitions,
-                                       std::vector<std::string>& errors) const
-    {
-        const std::size_t before = errors.size();
-        for (const Definition& definition : definitions)
-        {
-            const auto it = IdsByName.find(definition.Name);
-            if (it == IdsByName.end())
-                continue;
-
-            const Slot& slot = Slots[IndexOf(it->second)];
-            if (slot.State == SlotState::Retired)
-                continue;
-            if (slot.Provider != provider)
-            {
-                errors.push_back(std::format(
-                    "'{}' is already declared by provider '{}'; provider '{}' cannot redeclare it",
-                    definition.Name, slot.Provider, provider));
-            }
-        }
-        return errors.size() == before;
-    }
 
     [[nodiscard]] static std::size_t IndexOf(Id id) { return id.Value - 1; }
 
@@ -370,10 +289,30 @@ private:
 
     using IdValue = decltype(Id{}.Value);
 
-    // Applies a batch ValidatePublish accepted. Reached only through a scope,
-    // which is what guarantees the batch was validated as a whole first; it
-    // cannot fail, which is what lets a caller publish into several catalogs
-    // once every one of them has agreed.
+    [[nodiscard]] bool ValidatePublish(std::string_view provider,
+                                       std::span<const Definition> definitions,
+                                       std::vector<std::string>& errors) const
+    {
+        const std::size_t before = errors.size();
+        for (const Definition& definition : definitions)
+        {
+            const auto it = IdsByName.find(definition.Name);
+            if (it == IdsByName.end())
+                continue;
+
+            const Slot& slot = Slots[IndexOf(it->second)];
+            if (slot.State == SlotState::Live && slot.Provider != provider)
+            {
+                errors.push_back(std::format(
+                    "'{}' is already declared by provider '{}'; provider '{}' cannot redeclare it",
+                    definition.Name, slot.Provider, provider));
+            }
+        }
+        return errors.size() == before;
+    }
+
+    // Cannot fail once ValidatePublish accepted the batch, which is what lets
+    // CommitTogether publish into several catalogs after all of them agreed.
     void ApplyPublish(std::string_view provider, std::vector<Definition>& definitions)
     {
         for (Definition& definition : definitions)
@@ -391,12 +330,8 @@ private:
             }
 
             Slot& slot = Slots[IndexOf(it->second)];
-            // A revived name is never assumed to mean what it meant before, and
-            // a changed contract invalidates the bindings compiled against the
-            // old one. Both move the revision; rewording a label does not.
             const bool revived = slot.State == SlotState::Retired;
-            const bool contractChanged = !Traits::ContractsMatch(slot.Declared, definition);
-            if (revived || contractChanged)
+            if (revived || !Traits::ContractsMatch(slot.Declared, definition))
                 slot.Revision = ContractRevision{ slot.Revision.Value + 1 };
 
             slot.Declared = std::move(definition);
@@ -415,7 +350,6 @@ private:
     std::vector<Slot> Slots;
     std::vector<std::string> InstallationErrors_;
     std::uint64_t Generation_ = 0;
-    // Every name ever declared, retired ones included, so a name that comes
-    // back gets the id it had before rather than a second slot.
+    // Retired names included, so a revived name gets its old slot back.
     std::unordered_map<std::string, Id> IdsByName;
 };

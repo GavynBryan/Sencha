@@ -26,7 +26,6 @@ AuthoredQueryDispatcher::AuthoredQueryDispatcher(const AuthoredQueryRegistry& re
 
 AuthoredQueryDispatcher::~AuthoredQueryDispatcher()
 {
-    // Tokens outliving this become inert rather than dangling.
     Link->Target = nullptr;
 }
 
@@ -66,8 +65,6 @@ void AuthoredQueryDispatcher::Release(AuthoredQueryId query,
     if (!query.IsValid() || AuthoredQueryRegistry::IndexOf(query) >= Implementations.size())
         return;
     Implementation& entry = Implementations[AuthoredQueryRegistry::IndexOf(query)];
-    // Only the binding this token minted. A replacement bound since belongs to
-    // someone else.
     if (entry.Generation != generation)
         return;
     entry = Implementation{};
@@ -80,10 +77,7 @@ bool AuthoredQueryDispatcher::HasImplementation(AuthoredQueryId query) const
 
 namespace
 {
-    // Holds the evaluation depth for exactly the duration of an answer, however
-    // the answer ends: an implementation that throws must not leave the
-    // dispatcher believing it is still answering, which would refuse every
-    // later bind and release.
+    // Restores the depth even when an implementation throws.
     class EvaluationScope
     {
     public:
@@ -109,9 +103,6 @@ AuthoredQueryStatus AuthoredQueryDispatcher::Evaluate(const AuthoredQueryHandle&
     if (implementation == nullptr || implementation->Revision != query.Contract)
         return AuthoredQueryStatus::Unbound;
 
-    // Checked here, once, for every implementation: the adapter decodes what
-    // it is handed, but a range or a choice is the declaration's promise, and
-    // the declaration lives here.
     const std::vector<DataFieldSchema>& declared = definition.Arguments.Children;
     if (arguments.size() != declared.size())
         return AuthoredQueryStatus::InvalidArguments;
@@ -121,7 +112,7 @@ AuthoredQueryStatus AuthoredQueryDispatcher::Evaluate(const AuthoredQueryHandle&
             return AuthoredQueryStatus::InvalidArguments;
     }
 
-    // Answered into a local, so a refused answer never reaches the caller.
+    // A local, so an answer that fails the check never reaches the caller.
     AuthoredValue answer;
     AuthoredQueryStatus status;
     {
@@ -130,8 +121,6 @@ AuthoredQueryStatus AuthoredQueryDispatcher::Evaluate(const AuthoredQueryHandle&
     }
     if (status != AuthoredQueryStatus::Value)
         return status;
-    // The same promise in the other direction: whatever the implementation
-    // is, what leaves here is what the declaration says it is.
     if (!AuthoredValueSatisfiesField(answer, definition.Result))
         return AuthoredQueryStatus::InvalidResult;
     result = std::move(answer);
