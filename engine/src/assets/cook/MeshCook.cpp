@@ -1694,7 +1694,7 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
             return ImportResult{ .Error = "gltf import: .sanim serialization failed: " + error };
 
         const std::optional<std::string> unique =
-            claimName("anim:" + SanitizeMeshName(animation.Name), animation.Origin, error);
+            claimName(std::string(kMeshClipFragmentPrefix) + SanitizeMeshName(animation.Name), animation.Origin, error);
         if (!unique)
             return ImportResult{ .Error = error };
         CookedArtifact artifact;

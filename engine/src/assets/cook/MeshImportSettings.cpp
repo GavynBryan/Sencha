@@ -146,6 +146,21 @@ namespace
     }
 }
 
+std::optional<MeshClipSource> MeshClipSourceOf(std::string_view clipPath)
+{
+    constexpr std::string_view kScheme = "asset://";
+    if (!clipPath.starts_with(kScheme))
+        return std::nullopt;
+    const std::size_t hash = clipPath.find('#');
+    if (hash == std::string_view::npos)
+        return std::nullopt;
+    const std::string_view fragment = clipPath.substr(hash + 1);
+    if (!fragment.starts_with(kMeshClipFragmentPrefix) || fragment.size() == kMeshClipFragmentPrefix.size())
+        return std::nullopt;
+    return MeshClipSource{ std::string(clipPath.substr(kScheme.size(), hash - kScheme.size())),
+                           std::string(fragment.substr(kMeshClipFragmentPrefix.size())) };
+}
+
 bool ParseMeshImportSettings(std::span<const std::byte> bytes, MeshImportSettings& out, std::string* error)
 {
     out = MeshImportSettings{};

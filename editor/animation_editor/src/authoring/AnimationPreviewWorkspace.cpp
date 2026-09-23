@@ -1,5 +1,7 @@
 #include "authoring/AnimationPreviewWorkspace.h"
 
+#include "authoring/AnimationEventBindings.h"
+
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
 #include <anim/AnimRequestSchema.h>
@@ -10,8 +12,10 @@
 #include <anim/SkinningPalette.h>
 #include <assets/data/DataAssetSubtype.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <authored/VerbBindingData.h>
 
 #include <algorithm>
+#include <format>
 #include <filesystem>
 
 AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary)
@@ -89,10 +93,11 @@ bool AnimationPreviewWorkspace::OpenAnimationDocument(const std::string& path)
                                       Assets.DataSchemas, &DocumentError);
     if (!document) return false;
     static constexpr std::string_view kEditable[] = { kAnimRequestSchemaType, kAnimRigType, kAnimSelectorType,
-                                                      kAnimBehaviorSetType, kAnimSlotMapType, kAnimFactSchemaType };
+                                                      kAnimBehaviorSetType, kAnimSlotMapType, kAnimFactSchemaType,
+                                                      kVerbBindingsTypeName };
     if (std::find(std::begin(kEditable), std::end(kEditable), document->Subtype()) == std::end(kEditable))
     {
-        DocumentError = "Select an animation asset: a rig, schema, behavior set, selector or slot map.";
+        DocumentError = "Select an animation asset: a rig, schema, behavior set, selector, slot map or bindings.";
         return false;
     }
     Documents.push_back(std::move(document));
@@ -265,6 +270,123 @@ void AnimationPreviewWorkspace::CancelAuthoringEdit()
         Documents[ActiveDocument]->CancelEdit();
         ValidateDocument(*Documents[ActiveDocument]);
     }
+    // A marker mid-drag goes back where it was, and the preview with it.
+    for (const auto& document : ClipEventDocuments)
+    {
+        if (!document->IsEditing())
+            continue;
+        document->CancelEdit();
+        ClipEventsChanged(*document);
+    }
+}
+
+bool AnimationPreviewWorkspace::OpenClipEvents(const std::string& clipPath)
+{
+    if (FindClipEvents(clipPath) != nullptr)
+    {
+        ActiveClipEvents = clipPath;
+        return true;
+    }
+    const std::optional<MeshClipSource> source = MeshClipSourceOf(clipPath);
+    const AssetRecord* record = Assets.Registry.FindByPath(clipPath);
+    if (!source || record == nullptr)
+    {
+        DocumentError = "Events are authored on a clip cooked from a mesh source in this project.";
+        return false;
+    }
+    // The cooked file sits under its content root's cooked directory; the
+    // sidecar sits beside the source in that root.
+    std::filesystem::path root;
+    for (std::filesystem::path at(record->FilePath); at.has_parent_path() && at != at.parent_path();
+         at = at.parent_path())
+    {
+        if (at.filename() == kCookedCacheDirName)
+        {
+            root = at.parent_path();
+            break;
+        }
+    }
+    if (root.empty())
+    {
+        DocumentError = std::format("'{}' was not cooked into a content root, so its source cannot be found.", clipPath);
+        return false;
+    }
+    std::unique_ptr<AnimationClipEventsDocument> document = AnimationClipEventsDocument::Open(
+        clipPath, root / (source->SourceRelPath + std::string(kImportSettingsSuffix)), &DocumentError);
+    if (document == nullptr)
+        return false;
+    ClipEventDocuments.push_back(std::move(document));
+    ActiveClipEvents = clipPath;
+    DocumentError.clear();
+    return true;
+}
+
+AnimationClipEventsDocument* AnimationPreviewWorkspace::FindClipEvents(std::string_view clipPath)
+{
+    for (const auto& document : ClipEventDocuments)
+        if (document->ClipPath() == clipPath)
+            return document.get();
+    return nullptr;
+}
+
+void AnimationPreviewWorkspace::ClipEventsChanged(AnimationClipEventsDocument& document)
+{
+    std::string& status = PreviewStatus[document.ClipPath()];
+    const AnimationClipHandle clip = Assets.AnimationClips.Find(document.ClipPath());
+    const AnimationClipData* current = Assets.AnimationClips.Get(clip);
+    if (current == nullptr)
+    {
+        status = "The clip is not loaded, so the preview cannot play these events.";
+        return;
+    }
+    if (const std::vector<std::string> problems = document.Problems(); !problems.empty())
+    {
+        status = "The preview keeps the last valid events: " + problems.front();
+        return;
+    }
+    // The preview's clip cache is this editor's own: replacing the clip here
+    // is how the working events reach the rig binding, and nothing is written.
+    AnimationClipData working = *current;
+    working.Events = document.CookedOrder();
+    if (!Assets.AnimationClips.ReloadInPlace(clip, std::move(working)))
+    {
+        status = "The preview's copy of the clip could not be replaced.";
+        return;
+    }
+    Simulation.Rebind();
+    status.clear();
+}
+
+bool AnimationPreviewWorkspace::SaveClipEvents(AnimationClipEventsDocument& document)
+{
+    if (!document.Save(&DocumentError))
+        return false;
+    DocumentError.clear();
+    return true;
+}
+
+bool AnimationPreviewWorkspace::CreateBinding(const std::string& bindingsPath, const std::string& key,
+                                              const std::string& verb)
+{
+    const VerbRegistry* verbs = Simulation.Verbs();
+    const VerbDefinition* definition = verbs != nullptr ? verbs->Get(verbs->Find(verb)) : nullptr;
+    if (definition == nullptr)
+    {
+        DocumentError = std::format("'{}' is not a verb the preview declares.", verb);
+        return false;
+    }
+    if (!OpenAnimationDocument(bindingsPath))
+        return false;
+    DataDocument* document = FindDocument(bindingsPath);
+    JsonValue root = document->CopyRoot();
+    if (!AddAnimationBindingRecord(root, MakeAnimationBindingRecord(key, *definition)))
+    {
+        DocumentError = std::format("'{}' already declares a binding '{}'.", bindingsPath, key);
+        return false;
+    }
+    document->ReplaceRoot(std::move(root));
+    DocumentChanged(*document);
+    return true;
 }
 
 void AnimationPreviewWorkspace::ValidateDocument(DataDocument& document)

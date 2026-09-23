@@ -1,5 +1,6 @@
 #pragma once
 
+#include "authoring/AnimationClipEventsDocument.h"
 #include "authoring/AnimationClipPreviewSession.h"
 #include "authoring/AnimationPreviewSession.h"
 #include "render/AnimationPreviewScene.h"
@@ -67,6 +68,21 @@ public:
     [[nodiscard]] DataDocument* ActiveDocumentOf(std::string_view subtype);
     [[nodiscard]] DataDocument* FindDocument(std::string_view path);
 
+    // Opens the events of a clip cooked from a mesh source, from that source's
+    // import sidecar. Already open: selects it.
+    bool OpenClipEvents(const std::string& clipPath);
+    [[nodiscard]] AnimationClipEventsDocument* FindClipEvents(std::string_view clipPath);
+    // After any change to an events document -- an edit, a preview, an undo.
+    // Valid working events replace the preview's copy of the clip, and every
+    // rig playing it rebinds; invalid ones leave the preview on the last
+    // valid events, and PreviewStatus says why.
+    void ClipEventsChanged(AnimationClipEventsDocument& document);
+    bool SaveClipEvents(AnimationClipEventsDocument& document);
+    // Adds a binding for `verb` under `key` to an authored.bindings document,
+    // every argument fed by an input of its own name, as one undo step. The
+    // document opens if it is not open.
+    bool CreateBinding(const std::string& bindingsPath, const std::string& key, const std::string& verb);
+
     // Opens a rig under the scenario saved beside it, or a new one-participant
     // scenario when there is none. Keeps the rig and its dependencies resident
     // while it is open.
@@ -96,6 +112,9 @@ public:
     std::string ViewportNote;
     std::vector<std::unique_ptr<DataDocument>> Documents;
     std::size_t ActiveDocument = 0;
+    std::vector<std::unique_ptr<AnimationClipEventsDocument>> ClipEventDocuments;
+    // The events document the event panels act on; its path.
+    std::string ActiveClipEvents;
     std::string DocumentError;
 
     AnimationClipPreviewSession Session;

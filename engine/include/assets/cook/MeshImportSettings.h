@@ -5,8 +5,10 @@
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 //=============================================================================
@@ -44,6 +46,19 @@ struct MeshImportSettings
     // By clip name, each clip's events in authored order.
     std::map<std::string, std::vector<AnimationClipEvent>> ClipEvents;
 };
+
+// The fragment a mesh source's clip artifact is named by: "asset://<source>#anim:<clip>".
+inline constexpr std::string_view kMeshClipFragmentPrefix = "anim:";
+
+// Where a cooked clip's events are authored: the source it was cooked from,
+// relative to its content root, and the name its events are keyed by in that
+// source's sidecar. Empty for a path that is not a mesh source's clip.
+struct MeshClipSource
+{
+    std::string SourceRelPath;
+    std::string ClipName;
+};
+[[nodiscard]] std::optional<MeshClipSource> MeshClipSourceOf(std::string_view clipPath);
 
 // Parses sidecar JSON bytes. Empty input yields the defaults; malformed JSON,
 // unknown fields and invalid events fail with *error, so a typo cannot cook a

@@ -106,4 +106,15 @@ TEST(MeshImportSettings, MistakesAreRejectedWithTheirPlace)
             "only a cosmetic event");
 }
 
+TEST(MeshImportSettings, AClipPathNamesItsSourceAndItsKey)
+{
+    const std::optional<MeshClipSource> source = MeshClipSourceOf("asset://chars/hero.blend#anim:Walk");
+    ASSERT_TRUE(source.has_value());
+    EXPECT_EQ(source->SourceRelPath, "chars/hero.blend");
+    EXPECT_EQ(source->ClipName, "Walk");
+    EXPECT_FALSE(MeshClipSourceOf("asset://chars/hero.blend#model:Rig").has_value());
+    EXPECT_FALSE(MeshClipSourceOf("asset://chars/hero.blend").has_value());
+    EXPECT_FALSE(MeshClipSourceOf("asset://chars/hero.blend#anim:").has_value());
+}
+
 #endif // SENCHA_ENABLE_COOK
