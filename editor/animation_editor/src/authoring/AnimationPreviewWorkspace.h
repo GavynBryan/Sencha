@@ -6,6 +6,7 @@
 #include "render/AnimationPreviewScene.h"
 #include "data/DataDocument.h"
 
+#include <anim/AnimPoseComposition.h>
 #include <anim/Skeleton.h>
 #include <anim/SkeletonHandle.h>
 #include <core/assets/AssetLease.h>
@@ -19,12 +20,39 @@
 struct RuntimeAssets;
 
 // Which of the two previews the viewport shows: content picked by hand, or
-// what the simulated rig resolved on its first layer.
+// the simulated rig's layers composed.
 enum class AnimationViewportSource : std::uint8_t
 {
     Audition,
     Simulation,
 };
+
+// Which of the simulated rig's layers the viewport composes. Preview-only: it
+// never reaches the rig, the simulation or its events. With any layer soloed
+// only soloed layers show; a muted layer never does.
+struct AnimationLayerDisplay
+{
+    std::uint8_t Muted = 0;
+    std::uint8_t Soloed = 0;
+
+    [[nodiscard]] bool Shows(std::size_t layer) const
+    {
+        const auto bit = static_cast<std::uint8_t>(1u << layer);
+        return (Muted & bit) == 0 && (Soloed == 0 || (Soloed & bit) != 0);
+    }
+};
+
+// The simulated layers as the viewport composes them: each layer's playing
+// clip at its content time and current weight, over its mask, in rig order.
+// A layer the display hides, or whose clip animates another skeleton than
+// `skeletonPath`, contributes nothing; `note` names what plays, or why a
+// layer was left out.
+[[nodiscard]] std::vector<AnimPoseLayer> AnimationPreviewPoseLayers(const AnimBoundRig& rig,
+                                                                    const AnimContentState& content,
+                                                                    const AnimSelectorState* selection,
+                                                                    const AnimationClipCache& clips,
+                                                                    const AnimationLayerDisplay& display,
+                                                                    std::string_view skeletonPath, std::string& note);
 
 // What the author is looking at across panels: a rule, the behavior it
 // selects, the slot row that resolves it, the content that row plays, and
@@ -111,6 +139,7 @@ public:
     std::map<std::string, std::string> PreviewStatus;
     AnimationNavigation Navigation;
     AnimationViewportSource ViewportSource = AnimationViewportSource::Audition;
+    AnimationLayerDisplay LayerDisplay;
     std::string ViewportNote;
     std::vector<std::unique_ptr<DataDocument>> Documents;
     std::size_t ActiveDocument = 0;
@@ -140,8 +169,9 @@ public:
 private:
     bool SetSkeletonContent(SkeletonHandle skeleton);
     [[nodiscard]] bool ApplyDocumentToPreview(DataDocument& document, std::string& status);
-    // The simulation's first-layer pose, or the audition's.
+    // The simulation's composed pose, or the audition's.
     [[nodiscard]] const std::vector<Mat4>& ViewportPalette();
+    AnimPoseScratch PoseScratch;
     std::vector<Transform3f> SimulationLocal;
     std::vector<Mat4> SimulationModel;
     std::vector<Mat4> SimulationPalette;

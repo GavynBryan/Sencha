@@ -195,6 +195,8 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
         ScenarioError = "Select an animation.rig asset that loads.";
         return false;
     }
+    // Another rig's layers are other layers.
+    LayerDisplay = {};
 
     // The scenario lives beside the rig's source as an editor-only sidecar the
     // asset scanner does not register.
@@ -603,38 +605,64 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
         ViewportNote.clear();
         return Session.Palette();
     }
-    // The first layer's resolved content at its content time, sampled into
+    // Every layer's resolved content at its content time, composed into
     // scratch: the audition's clip and clock are left as they were.
     const SkeletonData& skeleton = Session.Skeleton();
     const AnimBoundRig* rig = Simulation.Rig();
     const AnimContentState* content = Simulation.Content();
-    const AnimationClipData* clip = nullptr;
-    float time = 0.0f;
-    if (rig != nullptr && content != nullptr && !rig->Layers.empty())
-    {
-        const AnimLayerContent& layer = content->Layers[0];
-        if (layer.Clip < rig->Contents.size())
-        {
-            const AnimBoundContent& bound = rig->Contents[layer.Clip];
-            clip = Assets.AnimationClips.Get(bound.Clip);
-            time = layer.TimeSeconds;
-            ViewportNote = bound.Path;
-        }
-    }
-    if (clip != nullptr && clip->SkeletonPath != Session.SkeletonPath())
-    {
-        ViewportNote = "The resolved clip poses a different skeleton than the one on screen; showing the bind pose.";
-        clip = nullptr;
-    }
-    if (clip != nullptr)
-    {
-        SampleAnimationClip(*clip, skeleton, time, SimulationLocal);
-        BuildPosedModelTransforms(skeleton, SimulationLocal, SimulationModel);
-        BuildSkinningPalette(skeleton, SimulationModel, SimulationPalette);
-    }
-    else
+    ViewportNote.clear();
+    if (rig == nullptr || content == nullptr || skeleton.Joints.empty())
     {
         BuildRestSkinningPalette(skeleton, SimulationPalette);
+        return SimulationPalette;
     }
+    const std::vector<AnimPoseLayer> layers = AnimationPreviewPoseLayers(
+        *rig, *content, Simulation.Selection(), Assets.AnimationClips, LayerDisplay, Session.SkeletonPath(),
+        ViewportNote);
+    ComposeAnimPose(skeleton, layers, PoseScratch, SimulationLocal);
+    BuildPosedModelTransforms(skeleton, SimulationLocal, SimulationModel);
+    BuildSkinningPalette(skeleton, SimulationModel, SimulationPalette);
     return SimulationPalette;
+}
+
+std::vector<AnimPoseLayer> AnimationPreviewPoseLayers(const AnimBoundRig& rig, const AnimContentState& content,
+                                                      const AnimSelectorState* selection,
+                                                      const AnimationClipCache& clips,
+                                                      const AnimationLayerDisplay& display,
+                                                      std::string_view skeletonPath, std::string& note)
+{
+    std::vector<AnimPoseLayer> layers;
+    note.clear();
+    const auto say = [&](std::string text) {
+        if (!note.empty())
+            note += "; ";
+        note += std::move(text);
+    };
+    for (std::size_t l = 0; l < rig.Layers.size() && l < kAnimMaxLayers; ++l)
+    {
+        const AnimBoundLayer& bound = rig.Layers[l];
+        const AnimLayerContent& layer = content.Layers[l];
+        if (!display.Shows(l) || layer.Clip >= rig.Contents.size())
+            continue;
+        const AnimBoundContent& played = rig.Contents[layer.Clip];
+        const AnimationClipData* clip = clips.Get(played.Clip);
+        if (clip == nullptr)
+            continue;
+        if (clip->SkeletonPath != skeletonPath)
+        {
+            say(std::format("{}: {} animates another skeleton than the one on screen", bound.NameText, played.Path));
+            continue;
+        }
+        AnimPoseLayer pose;
+        pose.Clip = clip;
+        pose.TimeSeconds = layer.TimeSeconds;
+        pose.Weight = AnimLayerWeight(rig, l, selection);
+        pose.Mode = bound.Mode;
+        // A mask is over the rig's skeleton; on screen is the same one or the
+        // clip would have been left out above.
+        pose.Mask = bound.Mask;
+        layers.push_back(pose);
+        say(std::format("{}: {}", bound.NameText, played.Path));
+    }
+    return layers;
 }
