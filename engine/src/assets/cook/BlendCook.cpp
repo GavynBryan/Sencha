@@ -166,7 +166,8 @@ ImportResult BlendMeshImporter::Import(const ImportInput& input, ICookOutputWrit
     // Everything funnels through the one glTF import path (Decision B); the
     // .blend source's rel-path keeps artifact naming on the authored file.
     GltfMeshImporter gltfImporter;
-    ImportResult result = gltfImporter.Import(ImportInput{ input.SourceRelPath, glbBytes }, output);
+    ImportResult result = gltfImporter.Import(
+        ImportInput{ .SourceRelPath = input.SourceRelPath, .Bytes = glbBytes, .MetaBytes = input.MetaBytes }, output);
     if (!result.IsValid())
         result.Error = "blend import: " + result.Error;
     return result;

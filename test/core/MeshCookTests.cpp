@@ -1034,10 +1034,15 @@ TEST(MeshCook, RiggedBlendCooksToWhatBlenderEvaluates)
     const JsonValue& rest = JsonAt(*oracle, "rest");
     const JsonValue& end = JsonAt(*oracle, "end");
 
+    // The sidecar's events reach the clip through the Blender front end.
+    const std::string meta = R"({"clips": {"Reach": {"events": [{ "key": 1, "time": 0.5, "binding": "x" }]}}})";
     BlendMeshImporter importer;
     MemoryCookOutputWriter output;
-    const ImportResult result =
-        importer.Import(ImportInput{ "chars/character.blend", blendBytes }, output);
+    const ImportResult result = importer.Import(
+        ImportInput{ .SourceRelPath = "chars/character.blend",
+                     .Bytes = blendBytes,
+                     .MetaBytes = { reinterpret_cast<const std::byte*>(meta.data()), meta.size() } },
+        output);
     ASSERT_TRUE(result.IsValid()) << result.Error;
 
     // The whole character is one model on one skeleton, with one clip.
@@ -1061,6 +1066,8 @@ TEST(MeshCook, RiggedBlendCooksToWhatBlenderEvaluates)
     ASSERT_TRUE(LoadSskelFromBytes(output.Files.at(skeletonArtifact->FileRelPath), skeleton, &error)) << error;
     AnimationClipData clip;
     ASSERT_TRUE(LoadSanimFromBytes(output.Files.at(clipArtifact->FileRelPath), clip, &error)) << error;
+    ASSERT_EQ(clip.Events.size(), 1u);
+    EXPECT_EQ(clip.Events[0].Binding, "x");
     LoggingProvider logging;
     MeshLoader loader(logging);
     SkinnedMeshData model;

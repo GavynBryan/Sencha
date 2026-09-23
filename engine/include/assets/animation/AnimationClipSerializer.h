@@ -15,15 +15,24 @@
 // extracted them; sampled storage and compression are the animation runtime
 // plan's decisions, and this version field is the room they move in.
 //
-// Layout (version 1, little-endian):
+// Layout (version 2, little-endian):
 //   magic 'SANM', u32 version, u32 trackCount, f32 durationSeconds,
 //   u32 skeletonPathLength, u32 reserved(0), skeleton path bytes
 //   per track: u32 jointIndex, u32 channelPath, u32 interpolation,
 //              u32 keyCount, f32 times[keyCount],
 //              f32 values[keyCount * components]
+//   u32 eventCount, then per event:
+//              u32 key, f32 time, u8 scope, u8 hasMinWeight, u16 inputCount,
+//              f32 minWeight, string name, string binding,
+//              per input: string name, u8 source (0 constant, 1 tag),
+//                         string value (a constant as JSON text, a tag's name)
+//   where a string is u32 length + bytes.
+//
+// Version 1 is version 2 without the event block, and still loads with no
+// events: a clip cooked before events existed has none to lose.
 //=============================================================================
 
-inline constexpr uint32_t kSanimFormatVersion = 1;
+inline constexpr uint32_t kSanimFormatVersion = 2;
 
 // Writes `clip` as a .sanim container. Returns false (and reports via
 // `error`) when the clip fails ValidateAnimationClipData.

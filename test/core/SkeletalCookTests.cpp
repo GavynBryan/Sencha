@@ -1073,4 +1073,46 @@ TEST(SkeletalCook, UnnamedSkinIsNamedByItsIndex)
     EXPECT_EQ(result.Artifacts[1].Path, "asset://chars/solo.glb#model:skin0");
 }
 
+// -- Clip events from the source's sidecar ---------------------------------------
+
+TEST(SkeletalCook, SidecarEventsCookIntoTheirClipInOrder)
+{
+    const std::string gltf = BuildSkinnedAnimatedGltf();
+    const std::string meta = R"({"clips": {"wave": {"events": [
+        { "key": 9, "time": 0.8, "binding": "anim.wave_end" },
+        { "key": 2, "time": 0.1, "binding": "anim.wave_start", "inputs": { "hand": { "tag": "Hand.Left" } } }
+    ]}}})";
+
+    GltfMeshImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(
+        ImportInput{ .SourceRelPath = "chars/hero.glb", .Bytes = AsBytes(gltf), .MetaBytes = AsBytes(meta) }, output);
+    ASSERT_TRUE(result.IsValid()) << result.Error;
+
+    AnimationClipData clip;
+    std::string error;
+    ASSERT_TRUE(LoadSanimFromBytes(output.Files.at(".cooked/chars/hero.glb.anim:wave.sanim"), clip, &error)) << error;
+    ASSERT_EQ(clip.Events.size(), 2u);
+    EXPECT_EQ(clip.Events[0].Key, 2u);
+    EXPECT_EQ(clip.Events[0].Binding, "anim.wave_start");
+    EXPECT_EQ(clip.Events[0].Inputs.at(0).Text, "Hand.Left");
+    EXPECT_EQ(clip.Events[1].Key, 9u);
+}
+
+// A clip renamed in the source leaves its events naming nothing; the cook says
+// so rather than cooking the clip without them.
+TEST(SkeletalCook, SidecarEventsForAMissingClipFailTheImport)
+{
+    const std::string gltf = BuildSkinnedAnimatedGltf();
+    const std::string meta = R"({"clips": {"wav": {"events": [{ "key": 1, "time": 0.5, "binding": "x" }]}}})";
+
+    GltfMeshImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(
+        ImportInput{ .SourceRelPath = "chars/hero.glb", .Bytes = AsBytes(gltf), .MetaBytes = AsBytes(meta) }, output);
+    EXPECT_FALSE(result.IsValid());
+    EXPECT_NE(result.Error.find("clip 'wav'"), std::string::npos) << result.Error;
+    EXPECT_NE(result.Error.find("it exports: wave"), std::string::npos) << result.Error;
+}
+
 #endif // SENCHA_ENABLE_COOK

@@ -4,6 +4,7 @@
 #include <anim/SkinningPalette.h>
 #include <assets/cook/CookFingerprint.h>
 #include <assets/cook/GltfFrame.h>
+#include <assets/cook/MeshImportSettings.h>
 #include <assets/animation/AnimationClipSerializer.h>
 #include <assets/skeleton/SkeletonSerializer.h>
 #include <assets/static_mesh/MeshSerializer.h>
@@ -29,7 +30,7 @@ namespace
 {
     // The glTF importer's cook version: part of its CookIdentity, so every
     // artifact it produced recooks when this moves.
-    constexpr std::uint32_t kGltfMeshCookVersion = 4;
+    constexpr std::uint32_t kGltfMeshCookVersion = 5;
 
     struct CgltfFree
     {
@@ -1540,6 +1541,32 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
     std::string error;
     if (!ImportGltfScene(input.Bytes, scene, &error))
         return ImportResult{ .Error = "gltf import: " + error };
+
+    // Clip events come from the sidecar, by the name the clip's artifact
+    // takes. One naming a clip the source does not export is an error: the
+    // clip was renamed or removed, and its events would otherwise vanish.
+    MeshImportSettings settings;
+    if (!ParseMeshImportSettings(input.MetaBytes, settings, &error))
+        return ImportResult{ .Error = "gltf import: " + std::string(input.SourceRelPath) + ".meta: " + error };
+    for (auto& [clip, events] : settings.ClipEvents)
+    {
+        const auto animation = std::ranges::find_if(scene.Animations, [&clip](const ImportedAnimation& candidate) {
+            return SanitizeMeshName(candidate.Name) == clip;
+        });
+        if (animation == scene.Animations.end())
+        {
+            std::string exported;
+            for (const ImportedAnimation& candidate : scene.Animations)
+                exported += (exported.empty() ? "" : ", ") + SanitizeMeshName(candidate.Name);
+            return ImportResult{ .Error = std::format(
+                "gltf import: {}.meta gives events to clip '{}', which the source does not export (it exports: {})",
+                input.SourceRelPath, clip, exported.empty() ? "no clips" : exported) };
+        }
+        std::ranges::sort(events, [](const AnimationClipEvent& a, const AnimationClipEvent& b) {
+            return a.Time != b.Time ? a.Time < b.Time : a.Key < b.Key;
+        });
+        animation->Data.Events = std::move(events);
+    }
 
     const std::string source(input.SourceRelPath);
     const std::string virtualPrefix = "asset://" + source;

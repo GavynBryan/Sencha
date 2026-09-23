@@ -224,6 +224,14 @@ disagree, this is the contract.
 
   Two elements landing on one name fail the import with both named. A name
   never depends on discovery order.
+- **Clip events.** A source's clips take their events from its import
+  sidecar (`<source>.meta`, `assets/cook/MeshImportSettings.h`), keyed by the
+  name after `#anim:`, because the cooked clip is rebuilt on every import.
+  The cook sorts them by time and writes them into `.sanim` version 2;
+  version 1 clips load with no events. A sidecar naming a clip the source no
+  longer exports fails the import rather than dropping its events. An event
+  names an authored binding key and supplies only constants and tags as
+  inputs; references belong on the binding.
 - **Freshness.** The importer's cook identity (its version, and for
   `.blend` the Blender and glTF exporter versions) is part of every cooked
   entry, so changing the importer or the toolchain recooks its artifacts.
