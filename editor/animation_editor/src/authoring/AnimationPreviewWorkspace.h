@@ -85,7 +85,7 @@ public:
     bool SelectMaterial(const std::string& path);
     void Frame(double wallSeconds);
     // Opens any animation data asset for editing: rig, fact or request schema,
-    // behavior set, selector, slot map.
+    // behavior set, selector, slot map, flow.
     bool OpenAnimationDocument(const std::string& path);
     // After any change to a document -- an edit committed, an undo -- revalidate
     // it and, when it is valid, apply it to the preview's copy of the asset.
@@ -135,6 +135,7 @@ public:
     std::vector<std::string> SelectorPaths;
     std::vector<std::string> BehaviorSetPaths;
     std::vector<std::string> SlotMapPaths;
+    std::vector<std::string> FlowPaths;
     std::vector<std::string> FactSchemaPaths;
     // Per document path: whether the preview runs its working version, or its
     // last valid one and why.

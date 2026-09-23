@@ -2,6 +2,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationClipEventsDocument.cpp
     src/authoring/AnimationClipPreviewSession.cpp
     src/authoring/AnimationEventBindings.cpp
+    src/authoring/AnimationFlowEdits.cpp
     src/authoring/AnimationPredicateText.cpp
     src/authoring/AnimationPreviewSession.cpp
     src/authoring/AnimationPreviewWorkspace.cpp

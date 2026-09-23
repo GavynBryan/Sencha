@@ -1,5 +1,6 @@
 #include "ui/AnimationLayerPanels.h"
 
+#include "authoring/AnimationFlowEdits.h"
 #include "authoring/AnimationPredicateText.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigEdits.h"
@@ -317,27 +318,40 @@ public:
         const AnimBoundRig* rig = session.Rig();
         const AnimationPreviewTickRecord* tick = ShownTick(Workspace);
         const std::size_t l = Workspace.Navigation.Layer;
-        if (rig == nullptr || tick == nullptr || l >= tick->Layers.size())
+        const AnimationPreviewLayerRecord* layer =
+            rig != nullptr && tick != nullptr && l < tick->Layers.size() ? &tick->Layers[l] : nullptr;
+        const AnimBoundFlow* playing = layer != nullptr && layer->Content < rig->Contents.size()
+                && rig->Contents[layer->Content].Flow >= 0
+            ? &rig->Flows[static_cast<std::size_t>(rig->Contents[layer->Content].Flow)]
+            : nullptr;
+
+        // An open flow document is edited here; otherwise the playing flow is
+        // shown, and can be opened.
+        DataDocument* document = Workspace.ActiveDocumentOf(kAnimFlowType);
+        if (document == nullptr && playing != nullptr)
+            document = Workspace.FindDocument(playing->Path);
+        if (playing != nullptr)
         {
-            ImGui::TextDisabled("Run a rig to see the flow its selected layer plays.");
-            return;
+            const DataAssetCache& data = Workspace.DataCache();
+            const AnimFlowData* authored = data.TryGet<AnimFlowData>(data.Find(playing->Path), kAnimFlowType);
+            ImGui::Text("%s on %s", playing->Path.c_str(), rig->Layers[l].NameText.c_str());
+            if (document == nullptr)
+            {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Edit"))
+                    (void)Workspace.OpenAnimationDocument(playing->Path);
+            }
+            const double tickSeconds = 1.0 / std::max(1u, session.Scenario().TickRate);
+            DrawStrip(*rig, *playing, *layer, tick->Tick, tickSeconds);
+            DrawControl(*playing, authored);
         }
-        const AnimationPreviewLayerRecord& layer = tick->Layers[l];
-        if (layer.Content >= rig->Contents.size() || rig->Contents[layer.Content].Flow < 0)
-        {
+        else if (rig != nullptr && l < rig->Layers.size())
             ImGui::TextDisabled("%s is not playing a flow.", rig->Layers[l].NameText.c_str());
-            return;
-        }
-        const AnimBoundFlow& flow = rig->Flows[static_cast<std::size_t>(rig->Contents[layer.Content].Flow)];
-        const DataAssetCache& data = Workspace.DataCache();
-        const AnimFlowData* authored = data.TryGet<AnimFlowData>(data.Find(flow.Path), kAnimFlowType);
-        ImGui::Text("%s on %s", flow.Path.c_str(), rig->Layers[l].NameText.c_str());
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Open"))
-            (void)Workspace.OpenAnimationDocument(flow.Path);
-        const double tickSeconds = 1.0 / std::max(1u, session.Scenario().TickRate);
-        DrawStrip(*rig, flow, layer, tick->Tick, tickSeconds);
-        DrawControl(flow, authored);
+        else
+            ImGui::TextDisabled("Run a rig to see the flow its selected layer plays.");
+
+        if (document != nullptr)
+            DrawEditor(*document);
     }
 
 private:
@@ -451,6 +465,133 @@ private:
                            "is a decision for gameplay, answered with a new request.",
                            flow.Cancel >= 0 ? authored->Sections[static_cast<std::size_t>(flow.Cancel)].Tag.c_str()
                                             : "none, a cancel ends the flow");
+    }
+
+    // Structure only: sections, loops, exits, branches and the cancel section.
+    // Conditions are predicates, shown as text and edited in Data Editor.
+    void DrawEditor(DataDocument& document)
+    {
+        ImGui::SeparatorText(std::format("Editing {}", document.VirtualPath()).c_str());
+        ImGui::PushID(&document);
+        if (ImGui::SmallButton("Undo")) { document.Undo(); Workspace.DocumentChanged(document); }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Redo")) { document.Redo(); Workspace.DocumentChanged(document); }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Save")) Workspace.SaveDocument(document);
+        if (document.IsDirty())
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("unsaved");
+        }
+
+        JsonValue root = document.CopyRoot();
+        JsonValue::Array* sections = AnimFlowSections(root);
+        if (sections == nullptr)
+        {
+            ImGui::PopID();
+            return;
+        }
+        bool changed = false;
+        const auto tagOf = [&](std::size_t s) {
+            const JsonValue* tag = (*sections)[s].Find("tag");
+            return tag != nullptr && tag->IsString() ? tag->AsString() : std::string();
+        };
+        for (std::size_t s = 0; s < sections->size() && !changed; ++s)
+        {
+            JsonValue& section = (*sections)[s];
+            ImGui::PushID(static_cast<int>(s));
+            const std::string tag = tagOf(s);
+            const JsonValue* loopValue = section.Find("loop");
+            const std::string loop = loopValue != nullptr && loopValue->IsString() ? loopValue->AsString() : "once";
+            if (ImGui::TreeNodeEx("section", ImGuiTreeNodeFlags_DefaultOpen, "%zu  %s", s, tag.c_str()))
+            {
+                if (ImGui::BeginCombo("Loop", loop.c_str()))
+                {
+                    for (const char* kind : { "once", "while", "count" })
+                        if (ImGui::Selectable(kind, loop == kind))
+                            changed = SetAnimFlowLoop(root, s, kind);
+                    ImGui::EndCombo();
+                }
+                if (loop == "while")
+                    ImGui::TextWrapped("While %s", DescribeAnimPredicate(section.Find("while")).c_str());
+                const JsonValue* endsValue = section.Find("ends");
+                bool ends = endsValue != nullptr && endsValue->IsBool() && endsValue->AsBool();
+                if (ImGui::Checkbox("Ends the flow when no branch is taken", &ends))
+                    changed = SetAnimFlowEnds(root, s, ends);
+                const JsonValue* timing = section.Find("cancel_timing");
+                bool immediate = timing != nullptr && timing->IsString() && timing->AsString() == "immediate";
+                if (ImGui::Checkbox("A cancel leaves this section at once", &immediate))
+                    changed = SetAnimFlowCancelImmediately(root, s, immediate);
+
+                const JsonValue* branches = section.Find("branches");
+                if (branches != nullptr && branches->IsArray())
+                    for (std::size_t b = 0; b < branches->AsArray().size() && !changed; ++b)
+                    {
+                        const JsonValue& branch = branches->AsArray()[b];
+                        const JsonValue* to = branch.Find("to");
+                        ImGui::PushID(static_cast<int>(b));
+                        ImGui::BulletText("to %s when %s", to != nullptr && to->IsString() ? to->AsString().c_str() : "?",
+                                          DescribeAnimPredicate(branch.Find("when")).c_str());
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Remove"))
+                            changed = RemoveAnimFlowBranch(root, s, b);
+                        ImGui::PopID();
+                    }
+                // Only later sections are offered: control goes forward.
+                if (!changed && s + 1 < sections->size() && ImGui::BeginCombo("Add branch to", "later section..."))
+                {
+                    for (std::size_t to = s + 1; to < sections->size(); ++to)
+                        if (ImGui::Selectable(tagOf(to).c_str()))
+                            changed = AddAnimFlowBranch(root, s, to);
+                    ImGui::EndCombo();
+                }
+                if (!changed && ImGui::SmallButton("Move up") && s > 0)
+                    changed = MoveAnimFlowSection(root, s, s - 1);
+                ImGui::SameLine();
+                if (!changed && ImGui::SmallButton("Move down"))
+                    changed = MoveAnimFlowSection(root, s, s + 1);
+                ImGui::SameLine();
+                if (!changed && ImGui::SmallButton("Remove section"))
+                    changed = RemoveAnimFlowSection(root, s);
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+
+        if (!changed)
+        {
+            JsonValue* data = root.Find("data");
+            const JsonValue* cancelValue = data->Find("cancel");
+            const std::string cancel = cancelValue != nullptr && cancelValue->IsString() ? cancelValue->AsString() : "";
+            if (ImGui::BeginCombo("Cancel section", cancel.empty() ? "none: a cancel ends the flow" : cancel.c_str()))
+            {
+                if (ImGui::Selectable("none", cancel.empty()))
+                    changed = SetAnimFlowCancel(root, {});
+                for (std::size_t s = 0; s < sections->size(); ++s)
+                    if (ImGui::Selectable(tagOf(s).c_str(), tagOf(s) == cancel))
+                        changed = SetAnimFlowCancel(root, tagOf(s));
+                ImGui::EndCombo();
+            }
+        }
+        if (!changed && !Workspace.ClipPaths.empty() && ImGui::BeginCombo("Add section playing", "clip..."))
+        {
+            for (const std::string& clip : Workspace.ClipPaths)
+                if (ImGui::Selectable(clip.c_str()))
+                {
+                    AddAnimFlowSection(root, std::format("Anim.Section.S{}", sections->size()), clip);
+                    changed = true;
+                }
+            ImGui::EndCombo();
+        }
+        if (changed)
+        {
+            document.BeginEdit();
+            document.PreviewRoot(std::move(root));
+            Workspace.CommitDocumentEdit(document);
+        }
+        for (const DataValidationError& error : document.ValidationErrors())
+            ImGui::TextWrapped("%s: %s", error.Path.c_str(), error.Message.c_str());
+        ImGui::PopID();
     }
 
     AnimationPreviewWorkspace& Workspace;

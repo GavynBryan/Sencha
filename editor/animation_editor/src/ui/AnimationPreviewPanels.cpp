@@ -38,6 +38,7 @@ public:
                 { "Selectors", &Workspace.SelectorPaths },
                 { "Behavior sets", &Workspace.BehaviorSetPaths },
                 { "Slot maps", &Workspace.SlotMapPaths },
+                { "Flows", &Workspace.FlowPaths },
                 { "Fact schemas", &Workspace.FactSchemaPaths },
                 { "Request schemas", &Workspace.RequestSchemaPaths },
                 { "Rigs (as documents)", &Workspace.RigPaths },

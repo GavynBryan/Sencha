@@ -2,8 +2,9 @@
 
 The animation workspace is being built alongside the data-driven runtime. Its
 current surface auditions cooked skinned meshes and clips, simulates rigs under
-scenarios, edits request schemas and selectors, and authors clip events; it is
-not yet the flow, layer or blend authoring environment.
+scenarios, edits request schemas and selectors, authors clip events, edits flow
+structure and bone masks, and composes layers in the viewport; it is not yet the
+blend authoring environment.
 
 ## Content audition
 
@@ -199,6 +200,53 @@ and without recorders, role, replay, audition isolation, binding removal and
 restore, marker placement through admission, drag cancel, binding creation, and
 per-destination input checks.
 
+## Flows, layers and masks
+
+A slot row may play a flow (`animation.flow`) instead of a clip: forward-only
+sections, each a clip or a slot resolved when the section is entered, that loop
+while a predicate holds or as many times as a request parameter says, branch to
+a later section, and go to one cancel section at once or at the section's end.
+
+- **Flow** draws the flow the selected layer plays as a strip of sections sized
+  by length, with the playing section lit, its progress, the loop pass, and the
+  cancel section in a lane beneath, and states how each section is left. With
+  the flow's document open (Edit, or Flows in the content browser) it edits the
+  structure: loop kind, whether a section ends the flow, whether a cancel
+  leaves it at once, branches, the cancel section, and sections added, moved
+  and removed. A branch can only be added to a later section, and a move that
+  would turn one backward is refused, so control never goes back. Loop and
+  branch conditions show as text and are edited in Data Editor.
+- **Layers** lists the rig's layers with mode, current weight (hover for the
+  weight rule that set it, or the rig's constant), mask size and what each
+  plays. Mute and solo change only what the viewport shows; the simulation, its
+  events and the rig are untouched. The viewport composes every shown layer:
+  override layers blend toward their pose over their mask, additive layers add
+  what their clip changed from its first frame, each at its weight.
+- **Skeleton and masks** shows the rig's skeleton as a tree with each layer's
+  coverage beside every joint (`#` covers, `.` does not), dimming joints the
+  selected layer leaves out. Right-click a joint to add it, or remove it, with
+  or without everything below; each is one undo step on the rig document. The
+  mask's steps are listed in order with their own remove buttons. The first
+  layer is always unmasked. Joints are named as the skeleton names them, so an
+  unknown or ambiguous joint is a located problem.
+
+A selector rule can result in a layer weight, a constant or a float fact,
+instead of a behavior; the first weight rule to pass weights its layer.
+
+The fixture project carries the six flow shapes the architecture was checked
+against, under `asset://animation/examples/`, each a rig with a runnable
+scenario: pump reload (inserts until fire cancels at once), melee combo
+(advanced by a superseding request), charge attack (hold while held, release
+variant by parameter), draw and fire (masked upper layer over walking), ledge
+climb (a failed climb drops through the cancel section) and door (a fixed
+request swings it; a fact rests it). `AnimationFlowExamplesTests.cpp` runs each
+through the asset pipeline and checks its sections and ticks;
+`AnimationLayerEditingTests.cpp` and `AnimationLayerDisplayTests.cpp` cover the
+mask and flow edits and the composed layers headlessly.
+
+Not yet: picking joints in the viewport, editing conditions in the Flow pane,
+and section events on the event timeline.
+
 ## Ownership
 
 `animation_authoring` is a GUI-independent library. `AnimationClipPreviewSession`
@@ -229,13 +277,13 @@ These are required implementation work, not capabilities of the current editor:
    stages 3, 4 and 7).
 2. Remaining from the selection stage: a behavior-set and slot-map pane (they
    edit in Data Editor today, and valid edits there still need a reload here),
-   the predicate text form, and request-anchored content time for combos that
-   supersede without a winner change (arrives with anchors in stage 4).
+   and the predicate text form.
 3. Remaining from the events stage: lifecycle bindings edited in their own
    inspector rather than Data Editor, and event marks drawn on the shared
    timeline beside sections and requests.
-4. Forward-only flows, latches and layers, with section/cancel timelines,
-   practical bone masks, pinning diagnostics and shared request anchors.
+4. Remaining from the flows and layers stage: joint picking in the viewport,
+   condition editing in the Flow pane, and the runtime render path composing
+   layers (the preview composes them; render extraction migrates in stage 5).
 5. Blendspaces, inertialization, crossfade and phase carry, with repeatable
    transition A/B scenarios and override budgets.
 6. Request replication and gameplay-owned request reconciliation, with remote

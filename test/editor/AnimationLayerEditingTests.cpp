@@ -1,13 +1,17 @@
-// Bone mask editing without a GUI: the steps the skeleton tree applies, in
-// the rig document's transaction, rebinding the running preview's layers --
-// and nothing written to disk until saved.
+// Layer and flow editing without a GUI: the mask steps the skeleton tree
+// applies, in the rig document's transaction, rebinding the running preview's
+// layers -- nothing written to disk until saved -- and the flow structure
+// edits, which cannot make control go backward.
 
+#include "authoring/AnimationFlowEdits.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigEdits.h"
 
+#include <anim/AnimFlowData.h>
 #include <anim/AnimRigData.h>
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
+#include <assets/data/DataAssetTypeRegistry.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
@@ -169,4 +173,55 @@ TEST(AnimationLayerEditing, RemovingTheLastStepRemovesTheMask)
     ASSERT_TRUE(RemoveAnimMaskStep(*root, 1, 0));
     EXPECT_EQ((*AnimRigLayers(*root))[1].Find("mask"), nullptr);
     EXPECT_FALSE(AddAnimMaskStep(*root, 5, "spine", false, true));
+}
+
+// Flow structure edits as the Flow panel applies them: every edit leaves a
+// flow that compiles, and none can make control go backward.
+TEST(AnimationFlowEdits, NoEditMakesControlGoBackward)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    RegisterAnimFlowData(types, schemas);
+    std::optional<JsonValue> root = JsonParse(R"({ "type": "animation.flow", "version": 1, "data": { "sections": [
+        { "tag": "Anim.A", "clip": "asset://anim/a.sanim" } ] } })");
+    ASSERT_TRUE(root.has_value());
+    const auto compiles = [&] {
+        const DataAssetCompileResult result = types.Find(kAnimFlowType)->Compile(*root->Find("data"));
+        EXPECT_TRUE(result.IsValid()) << result.Error;
+        return result.IsValid() ? std::static_pointer_cast<const AnimFlowData>(result.Value) : nullptr;
+    };
+
+    AddAnimFlowSection(*root, "Anim.B", "asset://anim/b.sanim");
+    AddAnimFlowSection(*root, "Anim.C", "asset://anim/c.sanim");
+    ASSERT_TRUE(AddAnimFlowBranch(*root, 0, 2));
+    EXPECT_FALSE(AddAnimFlowBranch(*root, 2, 0)) << "a branch goes only to a later section";
+    EXPECT_FALSE(AddAnimFlowBranch(*root, 1, 1));
+    ASSERT_TRUE(SetAnimFlowCancel(*root, "Anim.C"));
+    ASSERT_TRUE(SetAnimFlowEnds(*root, 1, true));
+    ASSERT_TRUE(SetAnimFlowCancelImmediately(*root, 1, true));
+    ASSERT_TRUE(SetAnimFlowLoop(*root, 1, "count"));
+    (*AnimFlowSections(*root))[1].AsObject().emplace_back("count_intent", JsonValue("anim.intent.reload"));
+    (*AnimFlowSections(*root))[1].AsObject().emplace_back("count_param", JsonValue("shells"));
+    std::shared_ptr<const AnimFlowData> flow = compiles();
+    ASSERT_NE(flow, nullptr);
+    EXPECT_EQ(flow->Sections[0].Branches[0].To, "Anim.C");
+    EXPECT_EQ(flow->Cancel, "Anim.C");
+    EXPECT_TRUE(flow->Sections[1].Ends);
+    EXPECT_EQ(flow->Sections[1].CancelTiming, AnimCancelTiming::Immediate);
+    EXPECT_EQ(flow->Sections[1].Loop, AnimFlowLoop::Count);
+
+    // Moving C above A would turn A's branch backward.
+    EXPECT_FALSE(MoveAnimFlowSection(*root, 2, 0));
+    EXPECT_TRUE(MoveAnimFlowSection(*root, 1, 2));
+    ASSERT_NE(compiles(), nullptr);
+
+    // Back to once drops the count's fields; a removed section takes its
+    // branches and the cancel with it.
+    ASSERT_TRUE(SetAnimFlowLoop(*root, 2, "once"));
+    EXPECT_EQ((*AnimFlowSections(*root))[2].Find("count_param"), nullptr);
+    ASSERT_TRUE(RemoveAnimFlowSection(*root, 1));
+    flow = compiles();
+    ASSERT_NE(flow, nullptr);
+    EXPECT_TRUE(flow->Sections[0].Branches.empty());
+    EXPECT_TRUE(flow->Cancel.empty());
 }

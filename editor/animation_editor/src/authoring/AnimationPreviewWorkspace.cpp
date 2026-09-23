@@ -4,6 +4,7 @@
 
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
+#include <anim/AnimFlowData.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
 #include <anim/AnimSelectorData.h>
@@ -41,6 +42,7 @@ void AnimationPreviewWorkspace::RefreshBrowser()
     SelectorPaths.clear();
     BehaviorSetPaths.clear();
     SlotMapPaths.clear();
+    FlowPaths.clear();
     FactSchemaPaths.clear();
     for (const auto& [path, record] : Assets.Registry.Records())
     {
@@ -65,12 +67,14 @@ void AnimationPreviewWorkspace::RefreshBrowser()
                 BehaviorSetPaths.push_back(path);
             else if (subtype == kAnimSlotMapType)
                 SlotMapPaths.push_back(path);
+            else if (subtype == kAnimFlowType)
+                FlowPaths.push_back(path);
             else if (subtype == kAnimFactSchemaType)
                 FactSchemaPaths.push_back(path);
         }
     }
     for (auto* paths : { &MeshPaths, &SkeletonPaths, &ClipPaths, &MaterialPaths, &RequestSchemaPaths,
-                         &RigPaths, &SelectorPaths, &BehaviorSetPaths, &SlotMapPaths, &FactSchemaPaths })
+                         &RigPaths, &SelectorPaths, &BehaviorSetPaths, &SlotMapPaths, &FlowPaths, &FactSchemaPaths })
         std::sort(paths->begin(), paths->end());
 }
 
@@ -93,11 +97,12 @@ bool AnimationPreviewWorkspace::OpenAnimationDocument(const std::string& path)
                                       Assets.DataSchemas, &DocumentError);
     if (!document) return false;
     static constexpr std::string_view kEditable[] = { kAnimRequestSchemaType, kAnimRigType, kAnimSelectorType,
-                                                      kAnimBehaviorSetType, kAnimSlotMapType, kAnimFactSchemaType,
-                                                      kVerbBindingsTypeName };
+                                                      kAnimBehaviorSetType, kAnimSlotMapType, kAnimFlowType,
+                                                      kAnimFactSchemaType, kVerbBindingsTypeName };
     if (std::find(std::begin(kEditable), std::end(kEditable), document->Subtype()) == std::end(kEditable))
     {
-        DocumentError = "Select an animation asset: a rig, schema, behavior set, selector, slot map or bindings.";
+        DocumentError = "Select an animation asset: a rig, schema, behavior set, selector, slot map, flow or "
+                        "bindings.";
         return false;
     }
     Documents.push_back(std::move(document));

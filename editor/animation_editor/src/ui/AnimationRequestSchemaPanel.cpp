@@ -3,7 +3,9 @@
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "ui/ScopedPanel.h"
 
+#include <anim/AnimFlowData.h>
 #include <anim/AnimRequestSchema.h>
+#include <anim/AnimRigData.h>
 #include <anim/AnimSelectorData.h>
 
 #include <imgui.h>
@@ -133,6 +135,9 @@ void AnimationRequestSchemaPanel::OnDraw()
     {
         if (document.Subtype() == kAnimSelectorType)
             ImGui::TextWrapped("The active document is a selector; the Rules pane edits it.");
+        else if (document.Subtype() == kAnimFlowType || document.Subtype() == kAnimRigType)
+            ImGui::TextWrapped("The active document is a %s; the %s pane edits it.", document.Subtype().c_str(),
+                               document.Subtype() == kAnimFlowType ? "Flow" : "Skeleton and masks");
         else
             ImGui::TextWrapped("The active document is a %s. This editor has no pane for it yet: edit it in "
                                "Data Editor, then reopen the rig.",
