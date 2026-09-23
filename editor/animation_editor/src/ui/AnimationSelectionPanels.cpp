@@ -709,6 +709,21 @@ public:
             constexpr const char* lateJoins[] = { "skip", "snap to end", "reconstruct" };
             ImGui::Text("Late join: %s%s", lateJoins[static_cast<int>(policy.LateJoin)],
                         policy.RootMotion ? ", root motion" : "");
+            ImGui::Text("Cosmetic events below layer weight %.2f are suppressed", policy.EventWeight);
+            // Lifecycle bindings: what gameplay is told when a layer enters or
+            // leaves this behavior, and whether the binding resolved here.
+            for (const auto& [label, bound] : { std::pair{ "On entered", &behavior->Entered },
+                                                std::pair{ "On exited", &behavior->Exited } })
+            {
+                if (!bound->has_value())
+                {
+                    ImGui::TextDisabled("%s: nothing", label);
+                    continue;
+                }
+                ImGui::Text("%s: %s (%s)%s", label, (*bound)->BindingText.c_str(),
+                            std::string(AnimEventScopeName((*bound)->Scope)).c_str(),
+                            (*bound)->Resolved ? "" : " -- unresolved, see Problems");
+            }
             ImGui::TextDisabled("Declared in %s", behavior->DeclaredIn.c_str());
             if (ImGui::SmallButton("Edit behavior set"))
                 Workspace.OpenAnimationDocument(behavior->DeclaredIn);

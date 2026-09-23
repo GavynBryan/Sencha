@@ -280,6 +280,11 @@ void AnimationPreviewWorkspace::CancelAuthoringEdit()
     }
 }
 
+const AnimationClipCache& AnimationPreviewWorkspace::Clips() const
+{
+    return Assets.AnimationClips;
+}
+
 bool AnimationPreviewWorkspace::OpenClipEvents(const std::string& clipPath)
 {
     if (FindClipEvents(clipPath) != nullptr)

@@ -92,6 +92,8 @@ public:
     // Discards the working scenario for the saved one.
     bool ReloadScenario();
     [[nodiscard]] const DataAssetCache& DataCache() const;
+    // The editor's own clips, including working events not yet saved.
+    [[nodiscard]] const AnimationClipCache& Clips() const;
     void SelectDocument(std::size_t index);
     void CancelAuthoringEdit();
     void ValidateDocument(DataDocument& document);

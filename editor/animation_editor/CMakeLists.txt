@@ -18,6 +18,7 @@ add_executable(animation_editor
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
     src/ui/AnimationDocumentActions.cpp
+    src/ui/AnimationEventPanels.cpp
     src/ui/AnimationRequestSchemaPanel.cpp
     src/ui/AnimationSelectionPanels.cpp
     src/ui/AnimationSimulationPanels.cpp)

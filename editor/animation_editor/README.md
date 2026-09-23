@@ -1,8 +1,9 @@
 # Animation Editor
 
 The animation workspace is being built alongside the data-driven runtime. Its
-current surface auditions cooked skinned meshes and clips and edits request
-schemas; it is not yet the selector, flow, or event-track authoring environment.
+current surface auditions cooked skinned meshes and clips, simulates rigs under
+scenarios, edits request schemas and selectors, and authors clip events; it is
+not yet the flow, layer or blend authoring environment.
 
 ## Content audition
 
@@ -149,6 +150,55 @@ vocabulary. `AnimationPreviewSessionTests.cpp` covers the session headlessly:
 next-tick application, derived history, capacity/primary/retention, exact
 replay of a saved take, branching, unknown names, and asset immutability.
 
+## Clip events
+
+A clip cooked from a mesh source (`asset://<source>#anim:<clip>`) carries
+events: timeline marks that invoke authored bindings. They are authored in the
+source's import sidecar, `<source>.meta`, because the cooked clip is rebuilt
+from the source on every import; the cook copies them into `.sanim`.
+
+- **Clip events** picks a clip the open rig plays (or the auditioned one) and
+  shows its track: circles are cosmetic events, diamonds gameplay events, and
+  the playhead follows whichever preview is playing the clip. Double-click to
+  add, drag to move, right-click to delete. A drag is one undo step; Escape,
+  focus loss or hiding the panel cancel it and put the marker back.
+- The inspector edits name, normalized time, scope and a cosmetic event's own
+  weight threshold, then the binding: search the rig's bindings, open the
+  file that declares one, or create one from any declared verb (each argument
+  becomes an input of its name, for you to narrow). Each input the binding
+  takes gets a field typed by the argument it fills, lists every argument it
+  fills, and is checked against all of them with the rig binding's own
+  conversion. The verb's contract is shown beside it.
+- Valid working events reach the preview at once through the production rig
+  binding; invalid ones leave it on the last valid events, and say why. Only
+  Save writes the sidecar, and it refuses a sidecar changed on disk.
+- **Event admissions** shows every crossing and lifecycle event the simulation
+  produced, with what its binding answered: accepted, unavailable, unresolved,
+  invalid arguments, stale, or refused past capacity, and suppressed or
+  skipped crossings that were never offered. The preview runs no game: a verb
+  answers Unavailable unless a recorder stands behind it, and a recorder's
+  accepted invocations are listed as a recorder's, with their argument values.
+  The preview's role (authority or client) decides whether gameplay events
+  are produced at all. Role and recorders are scenario state, saved with it;
+  changing either replays to the current tick.
+- A rig names the `authored.bindings` files its events draw from in its
+  `bindings` list. Bindings resolve by key when the rig binds; nothing holds a
+  verb id or a compiled binding across a reload, so an edited, reordered or
+  removed binding takes effect on the next tick.
+- Behaviors may declare `on_entered` and `on_exited` bindings, handed the
+  behavior's tag as their `behavior` input. The Behavior panel shows them and
+  whether they resolved; they are edited in the behavior set (Data Editor).
+
+When the project has a game module, the editor loads it for its vocabulary hook
+only -- the verbs and tags the project declares reach each preview World -- and
+never starts it.
+
+`AnimationEventPreviewTests.cpp`, `AnimationEventEditingTests.cpp` and
+`AnimationClipEventsDocumentTests.cpp` cover these headlessly: admissions with
+and without recorders, role, replay, audition isolation, binding removal and
+restore, marker placement through admission, drag cancel, binding creation, and
+per-destination input checks.
+
 ## Ownership
 
 `animation_authoring` is a GUI-independent library. `AnimationClipPreviewSession`
@@ -181,9 +231,9 @@ These are required implementation work, not capabilities of the current editor:
    edit in Data Editor today, and valid edits there still need a reload here),
    the predicate text form, and request-anchored content time for combos that
    supersede without a winner change (arrives with anchors in stage 4).
-3. Timeline marks using authored binding keys and typed inputs, with the bounded
-   owner-thread invocation drain, explicit preview authority, recorder bindings,
-   suppression/skipping diagnostics, and binding revision refresh.
+3. Remaining from the events stage: lifecycle bindings edited in their own
+   inspector rather than Data Editor, and event marks drawn on the shared
+   timeline beside sections and requests.
 4. Forward-only flows, latches and layers, with section/cancel timelines,
    practical bone masks, pinning diagnostics and shared request anchors.
 5. Blendspaces, inertialization, crossfade and phase carry, with repeatable
