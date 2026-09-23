@@ -7,7 +7,6 @@
 #include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,26 +31,33 @@
 // folds it into skeletons, and nothing downstream knows about it.
 //=============================================================================
 
+// A static mesh: one per node that places a mesh without a skin or a joint
+// above it, baked through the node's world transform.
 struct ImportedGltfMesh
 {
-    // The artifact identity before sanitizing: a static mesh is named by the
-    // node that places it, a skinned mesh by its glTF mesh, and an unnamed one
-    // by its glTF index ("node12", "mesh3"). `Origin` describes the source
-    // element for diagnostics.
+    // The artifact identity before sanitizing: the placing node's name, or
+    // "node<index>" when unnamed. `Origin` describes the node for diagnostics.
     std::string Name;
     std::string Origin;
+    MeshGeometry Geometry;
+};
 
-    // Model space: a static mesh is baked through its node's world transform,
-    // a skinned mesh sits in its skeleton's model space.
+// Everything one skeleton draws, as one mesh in the skeleton's model space:
+// every skinned mesh placed with its skin, and every mesh parented beneath one
+// of its joints as a rigid part bound wholly to that joint. Each piece is baked
+// into model space before it joins, and the pieces are grouped into one
+// section per material, in first-appearance order.
+struct ImportedSkinnedModel
+{
+    // The skeleton's name; the model and its skeleton are one identity.
+    std::string Name;
+    std::string Origin;
+    int SkinIndex = -1;
     MeshGeometry Geometry;
 
-    // Index of the glTF skin this mesh is skinned to, or -1 if static. When
-    // set, Skinning is populated with skeleton-local joints and normalized
-    // weights, but Skinning->SkeletonPath is left empty — the importer
-    // assigns it once skeleton artifact paths are decided, then emits the
-    // mesh as a SkinnedMeshData (`.skmesh`) rather than a `.smesh`.
-    int SkinIndex = -1;
-    std::optional<MeshSkinning> Skinning;
+    // Skeleton-local joints and normalized weights. SkeletonPath is left
+    // empty for the importer to assign from artifact naming.
+    MeshSkinning Skinning;
 };
 
 struct ImportedSkeleton
@@ -74,15 +80,17 @@ struct ImportedAnimation
     int SkinIndex = -1;
 };
 
-// Everything one glTF source yields (Decisions B, J, M): meshes, skeletons
-// (one per skin), and animation clips. Skeleton-local joint resolution,
-// weight normalization, and node→joint remapping all happen here so the
-// runtime never fixes data (Decision N). SkeletonPath fields are left empty
-// for the importer to fill from artifact naming.
+// Everything one glTF source yields (Decisions B, J, M): skeletons (one per
+// skin, indexed by skin), a model for each skeleton that draws anything, static
+// meshes, and animation clips. Skeleton-local joint resolution, weight
+// normalization, and node→joint remapping all happen here so the runtime never
+// fixes data (Decision N). SkeletonPath fields are left empty for the importer
+// to fill from artifact naming.
 struct ImportedGltfScene
 {
     std::vector<ImportedSkeleton> Skeletons;
-    std::vector<ImportedGltfMesh> Meshes;
+    std::vector<ImportedSkinnedModel> SkinnedModels;
+    std::vector<ImportedGltfMesh> StaticMeshes;
     std::vector<ImportedAnimation> Animations;
 };
 
@@ -103,11 +111,12 @@ struct ImportedGltfScene
 //
 // A source that places a single static mesh and has no skins keeps the
 // source's virtual path (the texture-cook precedent: "asset://meshes/chair.glb"
-// serves .smesh bytes). Otherwise every mesh is "asset://<source>#<name>" —
-// '#' cannot appear in scanned file paths, so cooked names can never collide
-// with real files. Skeletons and animations always take the '#'-suffixed form
-// ("asset://<source>#skel:<name>", "asset://<source>#anim:<name>"), and the
-// skinned mesh / clip artifacts reference the skeleton artifact by that path.
+// serves .smesh bytes). Otherwise every static mesh is
+// "asset://<source>#<node-name>" — '#' cannot appear in scanned file paths, so
+// cooked names can never collide with real files. A skin yields
+// "asset://<source>#skel:<skin>" and, when it draws anything, the model
+// "asset://<source>#model:<skin>"; clips are "asset://<source>#anim:<name>".
+// The model and the clips reference the skeleton artifact by its path.
 //
 // Names are the source's own, sanitized to [A-Za-z0-9_-], with an index for
 // an unnamed element. Two elements that land on one name fail the import with

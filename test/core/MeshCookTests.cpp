@@ -170,10 +170,10 @@ TEST(MeshCook, QuadWithUvsGetsMikkTSpaceTangents)
     ImportedGltfScene scene;
     std::string error;
     ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
-    ASSERT_EQ(scene.Meshes.size(), 1u);
-    EXPECT_EQ(scene.Meshes[0].Name, "Quad");
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u);
+    EXPECT_EQ(scene.StaticMeshes[0].Name, "Quad");
 
-    const MeshGeometry& mesh = scene.Meshes[0].Geometry;
+    const MeshGeometry& mesh = scene.StaticMeshes[0].Geometry;
     // The de-index/weld round trip must not duplicate the flat quad.
     ASSERT_EQ(mesh.Vertices.size(), 4u);
     ASSERT_EQ(mesh.Indices.size(), 6u);
@@ -203,11 +203,11 @@ TEST(MeshCook, AuthoredTangentsPassThrough)
     ImportedGltfScene scene;
     std::string error;
     ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
-    ASSERT_EQ(scene.Meshes.size(), 1u);
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u);
 
     // The authored stream is kept, turned into the engine frame with the
     // rest of the mesh; (0,1,0) lies on the turn's axis.
-    for (const StaticMeshVertex& vertex : scene.Meshes[0].Geometry.Vertices)
+    for (const StaticMeshVertex& vertex : scene.StaticMeshes[0].Geometry.Vertices)
     {
         EXPECT_NEAR(vertex.Tangent.X, 0.0f, 1e-6f);
         EXPECT_EQ(vertex.Tangent.Y, 1.0f);
@@ -224,11 +224,11 @@ TEST(MeshCook, UvLessQuadGetsSynthesizedTangents)
     ImportedGltfScene scene;
     std::string error;
     ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
-    ASSERT_EQ(scene.Meshes.size(), 1u);
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u);
 
     // No texture space exists; the format invariant (finite tangent,
     // w == ±1, perpendicular to the normal) must still hold.
-    for (const StaticMeshVertex& vertex : scene.Meshes[0].Geometry.Vertices)
+    for (const StaticMeshVertex& vertex : scene.StaticMeshes[0].Geometry.Vertices)
     {
         EXPECT_TRUE(vertex.Tangent.W == 1.0f || vertex.Tangent.W == -1.0f);
         const float dot = vertex.Tangent.X * vertex.Normal.X
@@ -248,9 +248,9 @@ TEST(MeshCook, MultiplePrimitivesBecomeSections)
     ImportedGltfScene scene;
     std::string error;
     ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
-    ASSERT_EQ(scene.Meshes.size(), 1u);
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u);
 
-    const MeshGeometry& mesh = scene.Meshes[0].Geometry;
+    const MeshGeometry& mesh = scene.StaticMeshes[0].Geometry;
     ASSERT_EQ(mesh.Sections.size(), 2u);
     EXPECT_EQ(mesh.Sections[0].MaterialSlot, 0u);
     EXPECT_EQ(mesh.Sections[1].MaterialSlot, 1u);
@@ -268,8 +268,8 @@ TEST(MeshCook, GlbContainerParses)
     ImportedGltfScene scene;
     std::string error;
     ASSERT_TRUE(ImportGltfScene(glb, scene, &error)) << error;
-    ASSERT_EQ(scene.Meshes.size(), 1u);
-    EXPECT_EQ(scene.Meshes[0].Geometry.Vertices.size(), 4u);
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u);
+    EXPECT_EQ(scene.StaticMeshes[0].Geometry.Vertices.size(), 4u);
 }
 
 TEST(MeshCook, ExternalBufferUriIsRejected)
@@ -365,8 +365,8 @@ TEST(MeshCook, GltfFrontFacesEngineForward)
     ImportedGltfScene scene;
     std::string error;
     ASSERT_TRUE(ImportGltfScene(AsBytes(QuadGltf(kQuadMeshWithTangents)), scene, &error)) << error;
-    ASSERT_EQ(scene.Meshes.size(), 1u);
-    const MeshGeometry& mesh = scene.Meshes[0].Geometry;
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u);
+    const MeshGeometry& mesh = scene.StaticMeshes[0].Geometry;
 
     const std::vector<Vec3d> corners = Corners(mesh);
     ASSERT_EQ(corners.size(), kQuadCorners.size());
@@ -399,8 +399,8 @@ TEST(MeshCook, StaticNodeWorldTransformIsBakedIntoTheMesh)
     ImportedGltfScene scene;
     std::string error;
     ASSERT_TRUE(ImportGltfScene(AsBytes(QuadGltf(kQuadMeshWithTangents, nodes)), scene, &error)) << error;
-    ASSERT_EQ(scene.Meshes.size(), 1u);
-    const MeshGeometry& mesh = scene.Meshes[0].Geometry;
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u);
+    const MeshGeometry& mesh = scene.StaticMeshes[0].Geometry;
 
     const Mat4 world = Mat4::MakeTranslation(0, 0, 3)
         * Transform3f{ Vec3d(5, 0, 0), turn, Vec3d(2, 2, 2) }.ToMat4();
@@ -439,11 +439,11 @@ TEST(MeshCook, MirroredNodeKeepsFrontFacesAndBitangents)
                                                  R"([{"name":"Quad","mesh":0,"scale":[-1,1,1]}])")),
                                 mirrored, &error)) << error;
 
-    const MeshGeometry& mesh = mirrored.Meshes.at(0).Geometry;
+    const MeshGeometry& mesh = mirrored.StaticMeshes.at(0).Geometry;
     ExpectFrontFacesAgreeWithNormals(mesh);
     for (const StaticMeshVertex& vertex : mesh.Vertices)
     {
-        EXPECT_EQ(vertex.Tangent.W, -plain.Meshes.at(0).Geometry.Vertices.at(0).Tangent.W);
+        EXPECT_EQ(vertex.Tangent.W, -plain.StaticMeshes.at(0).Geometry.Vertices.at(0).Tangent.W);
         const Vec3d tangent(vertex.Tangent.X, vertex.Tangent.Y, vertex.Tangent.Z);
         const Vec3d bitangent = vertex.Normal.Cross(tangent) * vertex.Tangent.W;
         EXPECT_NEAR(bitangent.Y, 1.0f, 1e-4f);
@@ -464,7 +464,7 @@ TEST(MeshCook, ZeroLengthAuthoredTangentSurvivesTheBake)
     std::string error;
     ASSERT_TRUE(ImportGltfScene(AsBytes(QuadGltfSkeleton(kQuadMeshWithTangents, buffer)), scene, &error))
         << error;
-    const MeshGeometry& mesh = scene.Meshes.at(0).Geometry;
+    const MeshGeometry& mesh = scene.StaticMeshes.at(0).Geometry;
     EXPECT_EQ(mesh.Vertices.at(0).Tangent.X, 0.0f);
     EXPECT_EQ(mesh.Vertices.at(0).Tangent.Y, 0.0f);
     EXPECT_EQ(mesh.Vertices.at(0).Tangent.Z, 0.0f);

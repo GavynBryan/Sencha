@@ -52,14 +52,20 @@ const ComponentVisualRenderer::MeshEdges& ComponentVisualRenderer::EdgesFor(std:
         ImportedGltfScene scene;
         if (ImportGltfScene(bytes, scene))
         {
+            std::vector<const MeshGeometry*> geometries;
+            for (const ImportedSkinnedModel& model : scene.SkinnedModels)
+                geometries.push_back(&model.Geometry);
+            for (const ImportedGltfMesh& mesh : scene.StaticMeshes)
+                geometries.push_back(&mesh.Geometry);
+
             std::set<std::pair<std::uint32_t, std::uint32_t>> unique;
-            for (const ImportedGltfMesh& mesh : scene.Meshes)
+            for (const MeshGeometry* geometry : geometries)
             {
                 const auto base = static_cast<std::uint32_t>(edges.Positions.size());
-                for (const StaticMeshVertex& vertex : mesh.Geometry.Vertices)
+                for (const StaticMeshVertex& vertex : geometry->Vertices)
                     edges.Positions.push_back(vertex.Position);
 
-                const std::vector<std::uint32_t>& indices = mesh.Geometry.Indices;
+                const std::vector<std::uint32_t>& indices = geometry->Indices;
                 for (std::size_t i = 0; i + 2 < indices.size(); i += 3)
                 {
                     const std::uint32_t tri[3] = {

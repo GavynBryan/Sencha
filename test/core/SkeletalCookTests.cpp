@@ -255,6 +255,15 @@ namespace
         return gltf;
     }
 
+    // The builder's triangle as a skinned mesh (mesh 0) and, for rigid parts,
+    // the same triangle with no skin attributes.
+    constexpr std::string_view kSkinnedTrianglePrimitive =
+        R"({"attributes":{"POSITION":0,"NORMAL":1,"TANGENT":2,"JOINTS_0":3,"WEIGHTS_0":4},"indices":5)";
+    constexpr std::string_view kRigidTrianglePrimitive =
+        R"({"attributes":{"POSITION":0,"NORMAL":1,"TANGENT":2},"indices":5)";
+    constexpr std::string_view kSkinnedTriangleMeshes =
+        R"([{"name":"body","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TANGENT":2,"JOINTS_0":3,"WEIGHTS_0":4},"indices":5}]}])";
+
     // A glTF around one skinned triangle bound rigidly to joint 0. Callers
     // write the nodes, skins and animations as JSON and add the float
     // accessors those reference (inverse binds, key times, key values);
@@ -307,19 +316,22 @@ namespace
             return AddAccessor(Blob.Add<float>(flat), 5126, matrices.size(), "MAT4");
         }
 
-        // `nodes`, `skins` and `animations` are JSON arrays; the mesh is mesh 0.
+        // `nodes`, `skins`, `animations`, `meshes` and `materials` are JSON
+        // arrays. The default meshes are the skinned triangle alone.
         std::string Build(std::string_view sceneNodes,
                           std::string_view nodes,
                           std::string_view skins,
-                          std::string_view animations = {}) const
+                          std::string_view animations = {},
+                          std::string_view meshes = kSkinnedTriangleMeshes,
+                          std::string_view materials = {}) const
         {
             std::string gltf = R"({"asset":{"version":"2.0"},"scene":0,)";
-            gltf += std::format(R"("scenes":[{{"nodes":{}}}],"nodes":{},"skins":{},)",
-                                sceneNodes, nodes, skins);
-            gltf += R"("meshes":[{"name":"body","primitives":[{"attributes":{)"
-                    R"("POSITION":0,"NORMAL":1,"TANGENT":2,"JOINTS_0":3,"WEIGHTS_0":4},"indices":5}]}],)";
+            gltf += std::format(R"("scenes":[{{"nodes":{}}}],"nodes":{},"skins":{},"meshes":{},)",
+                                sceneNodes, nodes, skins, meshes);
             if (!animations.empty())
                 gltf += std::format(R"("animations":{},)", animations);
+            if (!materials.empty())
+                gltf += std::format(R"("materials":{},)", materials);
             gltf += R"("buffers":[{"byteLength":)" + std::to_string(Blob.Data.size())
                     + R"(,"uri":"data:application/octet-stream;base64,)" + Base64Encode(Blob.Data)
                     + R"("}],"bufferViews":[)";
@@ -427,15 +439,18 @@ TEST(SkeletalCook, RejectsAnimationTargetingMultipleSkins)
     EXPECT_NE(error.find("different skins"), std::string::npos) << error;
 }
 
-TEST(SkeletalCook, RejectsMeshInstancedWithMultipleSkins)
+TEST(SkeletalCook, MeshInstancedWithTwoSkinsJoinsBothModels)
 {
-    // One mesh referenced by two nodes with different skins is ambiguous —
-    // the cook cannot pick a single skeleton for one artifact, so it refuses
-    // rather than honoring whichever node it scanned first.
+    // Each skin's model holds what that skin draws, so a mesh placed with two
+    // skins is part of both.
     ImportedGltfScene scene;
     std::string error;
-    EXPECT_FALSE(ImportGltfScene(AsBytes(BuildMeshInstancedWithTwoSkinsGltf()), scene, &error));
-    EXPECT_NE(error.find("different skins"), std::string::npos) << error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(BuildMeshInstancedWithTwoSkinsGltf()), scene, &error)) << error;
+    ASSERT_EQ(scene.SkinnedModels.size(), 2u);
+    EXPECT_EQ(scene.SkinnedModels[0].SkinIndex, 0);
+    EXPECT_EQ(scene.SkinnedModels[1].SkinIndex, 1);
+    EXPECT_EQ(scene.SkinnedModels[0].Geometry.Vertices.size(), 3u);
+    EXPECT_EQ(scene.SkinnedModels[1].Geometry.Vertices.size(), 3u);
 }
 
 TEST(SkeletalCook, ExtractsSkeletonMeshAndAnimation)
@@ -456,14 +471,15 @@ TEST(SkeletalCook, ExtractsSkeletonMeshAndAnimation)
     EXPECT_EQ(skeleton.Joints[1].ParentIndex, 0);
     EXPECT_FLOAT_EQ(skeleton.Joints[1].BindTranslation.Y, 1.0f);
 
-    // Skinned mesh: skeleton-local joints, weights normalized to 255.
-    ASSERT_EQ(scene.Meshes.size(), 1u);
-    const ImportedGltfMesh& mesh = scene.Meshes[0];
-    EXPECT_EQ(mesh.SkinIndex, 0);
-    ASSERT_TRUE(mesh.Skinning.has_value());
-    EXPECT_EQ(mesh.Skinning->JointCount, 2u);
-    ASSERT_EQ(mesh.Skinning->Influences.size(), 3u);
-    for (const MeshSkinInfluence& influence : mesh.Skinning->Influences)
+    // The skeleton's model: skeleton-local joints, weights normalized to 255.
+    ASSERT_EQ(scene.SkinnedModels.size(), 1u);
+    EXPECT_TRUE(scene.StaticMeshes.empty());
+    const ImportedSkinnedModel& model = scene.SkinnedModels[0];
+    EXPECT_EQ(model.SkinIndex, 0);
+    EXPECT_EQ(model.Name, "rig");
+    EXPECT_EQ(model.Skinning.JointCount, 2u);
+    ASSERT_EQ(model.Skinning.Influences.size(), 3u);
+    for (const MeshSkinInfluence& influence : model.Skinning.Influences)
     {
         uint32_t sum = 0;
         for (int slot = 0; slot < 4; ++slot)
@@ -474,8 +490,8 @@ TEST(SkeletalCook, ExtractsSkeletonMeshAndAnimation)
         EXPECT_EQ(sum, 255u);
     }
     // The third vertex is split 0.5/0.5 between joints 0 and 1.
-    EXPECT_EQ(mesh.Skinning->Influences[2].Joints[0], 0u);
-    EXPECT_EQ(mesh.Skinning->Influences[2].Joints[1], 1u);
+    EXPECT_EQ(model.Skinning.Influences[2].Joints[0], 0u);
+    EXPECT_EQ(model.Skinning.Influences[2].Joints[1], 1u);
 
     // Animation: one rotation track on the child joint, two keys.
     ASSERT_EQ(scene.Animations.size(), 1u);
@@ -510,9 +526,11 @@ TEST(SkeletalCook, ImporterEmitsThreeArtifactKindsThatRoundTrip)
     ASSERT_NE(skinnedMesh, nullptr);
     ASSERT_NE(animation, nullptr);
 
-    EXPECT_TRUE(skeleton->Path.starts_with("asset://chars/hero.glb#"));
-    EXPECT_TRUE(skinnedMesh->Path.starts_with("asset://chars/hero.glb#"));
-    EXPECT_TRUE(skinnedMesh->FileRelPath.ends_with(".skmesh"));
+    EXPECT_EQ(skeleton->Path, "asset://chars/hero.glb#skel:rig");
+    EXPECT_EQ(skinnedMesh->Path, "asset://chars/hero.glb#model:rig");
+    EXPECT_EQ(skinnedMesh->FileRelPath, ".cooked/chars/hero.glb.model:rig.skmesh");
+    EXPECT_EQ(animation->Path, "asset://chars/hero.glb#anim:wave");
+    EXPECT_EQ(result.Artifacts.size(), 3u);
 
     // The skeleton artifact round-trips.
     SkeletonData loadedSkeleton;
@@ -830,6 +848,229 @@ TEST(SkeletalCook, RejectsANonJointNodeBetweenJoints)
     EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
     EXPECT_NE(error.find("'Spacer'"), std::string::npos) << error;
     EXPECT_NE(error.find("'Upper'"), std::string::npos) << error;
+}
+
+// -- One model per skeleton -----------------------------------------------------
+
+namespace
+{
+    // Armature(0) -> Root(1) -> Upper(2) -> ..., Body(3) skinned to [Root,
+    // Upper]. `underUpper` is Upper's child list, `extraNodes` are appended
+    // from index 4, and mesh 1 is the rigid triangle.
+    std::string BuildRigWithParts(SkinnedGltfBuilder& builder,
+                                  std::string_view underUpper,
+                                  std::string_view extraNodes,
+                                  std::string_view materials = {},
+                                  std::string_view bodyMaterial = {},
+                                  std::string_view partMaterial = {},
+                                  std::string_view animations = {})
+    {
+        const Mat4 root = ArmatureMatrix() * Mat4::MakeTranslation(0, 1, 0);
+        const Mat4 upper = root * Mat4::MakeTranslation(0, 1, 0);
+        const int ibm = builder.AddMatrices({ root.Inverse(), upper.Inverse() });
+        const std::string meshes = std::format(
+            R"([{{"name":"body","primitives":[{}{}}}]}},{{"name":"part","primitives":[{}{}}}]}}])",
+            kSkinnedTrianglePrimitive, bodyMaterial, kRigidTrianglePrimitive, partMaterial);
+        return builder.Build(
+            "[0,3]",
+            "[" + ArmatureNodeJson("[1]")
+                + R"(,{"name":"Root","children":[2],"translation":[0,1,0]},)"
+                + std::format(R"({{"name":"Upper","children":{},"translation":[0,1,0]}},)", underUpper)
+                + R"({"name":"Body","mesh":0,"skin":0},)" + std::string(extraNodes) + "]",
+            std::format(R"([{{"name":"rig","joints":[1,2],"inverseBindMatrices":{}}}])", ibm),
+            animations, meshes, materials);
+    }
+
+    const Mat4 kUpperWorld = ArmatureMatrix() * Mat4::MakeTranslation(0, 2, 0);
+
+    // Positions of vertices [first, first + 3) against the builder's triangle
+    // carried by `toModel`.
+    void ExpectTriangleAt(const MeshGeometry& geometry, std::size_t first, const Mat4& toModel)
+    {
+        const Vec3d triangle[3]{ Vec3d(0, 0, 0), Vec3d(1, 0, 0), Vec3d(0, 1, 0) };
+        for (std::size_t i = 0; i < 3; ++i)
+        {
+            const Vec4 expected = toModel * Vec4(triangle[i].X, triangle[i].Y, triangle[i].Z, 1.0f);
+            const Vec3d& actual = geometry.Vertices.at(first + i).Position;
+            EXPECT_NEAR(actual.X, expected.X, 1e-4f) << "vertex " << first + i;
+            EXPECT_NEAR(actual.Y, expected.Y, 1e-4f) << "vertex " << first + i;
+            EXPECT_NEAR(actual.Z, expected.Z, 1e-4f) << "vertex " << first + i;
+        }
+    }
+}
+
+// A mesh parented to a bone is part of that skeleton's model, bound wholly to
+// the bone, in the model's space at rest.
+TEST(SkeletalCook, BoneChildJoinsTheModelAsARigidPart)
+{
+    SkinnedGltfBuilder builder;
+    const std::string gltf = BuildRigWithParts(
+        builder, "[4]", R"({"name":"Nose","mesh":1,"translation":[0,0.5,0.25]})",
+        R"([{"name":"skin"},{"name":"horn"}])", R"(,"material":0)", R"(,"material":1)");
+
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
+    EXPECT_TRUE(scene.StaticMeshes.empty());
+    ASSERT_EQ(scene.SkinnedModels.size(), 1u);
+    const ImportedSkinnedModel& model = scene.SkinnedModels[0];
+
+    ASSERT_EQ(model.Geometry.Sections.size(), 2u);
+    const StaticMeshSection& part = model.Geometry.Sections[1];
+    EXPECT_EQ(part.MaterialSlot, 1u);
+    ASSERT_EQ(part.VertexCount, 3u);
+    for (uint32_t v = part.VertexOffset; v < part.VertexOffset + part.VertexCount; ++v)
+    {
+        const MeshSkinInfluence& influence = model.Skinning.Influences.at(v);
+        EXPECT_EQ(influence.Joints[0], 1u); // Upper
+        EXPECT_EQ(influence.Weights[0], 255u);
+        for (int slot = 1; slot < 4; ++slot)
+        {
+            EXPECT_EQ(influence.Joints[slot], 0u);
+            EXPECT_EQ(influence.Weights[slot], 0u);
+        }
+    }
+    ExpectTriangleAt(model.Geometry, part.VertexOffset,
+                     InEngineFrame(kUpperWorld * Mat4::MakeTranslation(0, 0.5f, 0.25f)));
+}
+
+// Nodes between the joint and the mesh carry it too: the part is baked
+// through every transform from beneath the joint down to the mesh.
+TEST(SkeletalCook, RigidPartBakesThroughNonJointNodes)
+{
+    const Quat<float> tilt = Quat<float>::FromAxisAngle(Vec3d(0, 0, 1), std::numbers::pi_v<float> / 2.0f);
+    SkinnedGltfBuilder builder;
+    const std::string gltf = BuildRigWithParts(
+        builder, "[4]",
+        std::format(R"({{"name":"Mount","children":[5],"translation":[1,0,0],"rotation":[{},{},{},{}]}},)"
+                    R"({{"name":"Nose","mesh":1,"translation":[0,0.5,0],"scale":[2,2,2]}})",
+                    tilt.X, tilt.Y, tilt.Z, tilt.W));
+
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
+    ASSERT_EQ(scene.SkinnedModels.size(), 1u);
+    const MeshGeometry& geometry = scene.SkinnedModels[0].Geometry;
+    ASSERT_EQ(geometry.Sections.size(), 1u); // one material (none) for body and part
+    ASSERT_EQ(geometry.Vertices.size(), 6u);
+
+    const Mat4 mount = Trs(Vec3d(1, 0, 0), tilt, Vec3d(1, 1, 1));
+    const Mat4 nose = Trs(Vec3d(0, 0.5f, 0), Quat<float>::Identity(), Vec3d(2, 2, 2));
+    ExpectTriangleAt(geometry, 3, InEngineFrame(kUpperWorld * mount * nose));
+    for (std::size_t v = 3; v < 6; ++v)
+        EXPECT_EQ(scene.SkinnedModels[0].Skinning.Influences[v].Joints[0], 1u);
+}
+
+TEST(SkeletalCook, AnimatedNodeCarryingARigidPartIsRejected)
+{
+    SkinnedGltfBuilder builder;
+    const int times = builder.AddTimes({ 0.0f, 1.0f });
+    const int values = builder.AddVec3s({ Vec3d(1, 0, 0), Vec3d(2, 0, 0) });
+    const std::string animations = std::format(
+        R"([{{"name":"wiggle","channels":[{{"sampler":0,"target":{{"node":4,"path":"translation"}}}}],)"
+        R"("samplers":[{{"input":{},"output":{}}}]}}])",
+        times, values);
+    const std::string gltf = BuildRigWithParts(
+        builder, "[4]",
+        R"({"name":"Mount","children":[5],"translation":[1,0,0]},{"name":"Nose","mesh":1})",
+        {}, {}, {}, animations);
+
+    ImportedGltfScene scene;
+    std::string error;
+    EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
+    EXPECT_NE(error.find("'wiggle'"), std::string::npos) << error;
+    EXPECT_NE(error.find("'Mount'"), std::string::npos) << error;
+}
+
+// A skinned mesh placed twice with one skin is the same geometry twice: the
+// placing node does not move skinned vertices. That is the one duplicate the
+// cook folds.
+TEST(SkeletalCook, MeshPlacedTwiceWithOneSkinIsOneCopy)
+{
+    SkinnedGltfBuilder builder;
+    const std::string gltf = BuildRigWithParts(
+        builder, "[]", R"({"name":"BodyAgain","mesh":0,"skin":0,"translation":[5,0,0]},{"name":"Spare","mesh":1})");
+
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
+    ASSERT_EQ(scene.SkinnedModels.size(), 1u);
+    EXPECT_EQ(scene.SkinnedModels[0].Geometry.Vertices.size(), 3u);
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u); // the unparented triangle stays static
+    EXPECT_EQ(scene.StaticMeshes[0].Name, "Spare");
+}
+
+TEST(SkeletalCook, ModelSectionsAreOnePerMaterialInFirstAppearanceOrder)
+{
+    SkinnedGltfBuilder builder;
+    const std::string gltf = BuildRigWithParts(
+        builder, "[4,5]",
+        R"({"name":"Horn","mesh":1},{"name":"Spike","mesh":1,"translation":[0,1,0]})",
+        R"([{"name":"skin"}])", R"(,"material":0)", R"(,"material":0)");
+
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
+    const MeshGeometry& geometry = scene.SkinnedModels.at(0).Geometry;
+    ASSERT_EQ(geometry.Sections.size(), 1u);
+    EXPECT_EQ(geometry.Sections[0].VertexCount, 9u);
+    EXPECT_EQ(geometry.Sections[0].IndexCount, 9u);
+}
+
+TEST(SkeletalCook, ModelWithTooManyMaterialsIsRejected)
+{
+    std::string primitives;
+    std::string materials;
+    for (int i = 0; i < 33; ++i)
+    {
+        primitives += std::format("{}{},\"material\":{}}}", i == 0 ? "" : ",", kSkinnedTrianglePrimitive, i);
+        materials += std::format(R"({}{{"name":"m{}"}})", i == 0 ? "" : ",", i);
+    }
+    SkinnedGltfBuilder builder;
+    const int ibm = builder.AddMatrices({ Mat4::Identity() });
+    const std::string gltf = builder.Build(
+        "[0,1]", R"([{"name":"Root"},{"name":"Body","mesh":0,"skin":0}])",
+        std::format(R"([{{"name":"rig","joints":[0],"inverseBindMatrices":{}}}])", ibm), {},
+        std::format(R"([{{"name":"body","primitives":[{}]}}])", primitives), "[" + materials + "]");
+
+    ImportedGltfScene scene;
+    std::string error;
+    EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
+    EXPECT_NE(error.find("33 materials"), std::string::npos) << error;
+}
+
+TEST(SkeletalCook, DuplicateSkinNamesAreRejected)
+{
+    SkinnedGltfBuilder builder;
+    const int ibm = builder.AddMatrices({ Mat4::Identity() });
+    const std::string gltf = builder.Build(
+        "[0,1,2]", R"([{"name":"A"},{"name":"B"},{"name":"Body","mesh":0,"skin":0}])",
+        std::format(R"([{{"name":"rig","joints":[0],"inverseBindMatrices":{0}}},)"
+                    R"({{"name":"rig","joints":[1],"inverseBindMatrices":{0}}}])", ibm));
+
+    GltfMeshImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(ImportInput{ "chars/pair.glb", AsBytes(gltf) }, output);
+    EXPECT_FALSE(result.IsValid());
+    EXPECT_NE(result.Error.find("skin 0 'rig'"), std::string::npos) << result.Error;
+    EXPECT_NE(result.Error.find("skin 1 'rig'"), std::string::npos) << result.Error;
+}
+
+TEST(SkeletalCook, UnnamedSkinIsNamedByItsIndex)
+{
+    SkinnedGltfBuilder builder;
+    const int ibm = builder.AddMatrices({ Mat4::Identity() });
+    const std::string gltf = builder.Build(
+        "[0,1]", R"([{"name":"Root"},{"name":"Body","mesh":0,"skin":0}])",
+        std::format(R"([{{"joints":[0],"inverseBindMatrices":{}}}])", ibm));
+
+    GltfMeshImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(ImportInput{ "chars/solo.glb", AsBytes(gltf) }, output);
+    ASSERT_TRUE(result.IsValid()) << result.Error;
+    ASSERT_EQ(result.Artifacts.size(), 2u);
+    EXPECT_EQ(result.Artifacts[0].Path, "asset://chars/solo.glb#skel:skin0");
+    EXPECT_EQ(result.Artifacts[1].Path, "asset://chars/solo.glb#model:skin0");
 }
 
 #endif // SENCHA_ENABLE_COOK

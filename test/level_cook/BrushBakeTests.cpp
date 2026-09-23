@@ -134,12 +134,12 @@ TEST(GltfMeshExport, GlbRoundTripsThroughTheImporter)
 
     ImportedGltfScene scene;
     ASSERT_TRUE(ImportGltfScene(bytes, scene, &error)) << error;
-    ASSERT_EQ(scene.Meshes.size(), 1u);
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u);
 
     // The exporter writes the inverse of the importer's engine-frame turn, so
     // the round trip lands every vertex back where the brush put it, facing
     // the same way.
-    const MeshGeometry& in = scene.Meshes[0].Geometry;
+    const MeshGeometry& in = scene.StaticMeshes[0].Geometry;
     EXPECT_EQ(in.Sections.size(), baked.Sections.size());
     ASSERT_EQ(in.Indices.size(), baked.Indices.size());
     EXPECT_NEAR(in.LocalBounds.Min.X, baked.LocalBounds.Min.X, 1e-4f);

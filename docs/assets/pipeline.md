@@ -174,6 +174,60 @@ One consequence worth stating now: a single glTF/.blend source can yield
 Decision J). The cooked-cache keying is therefore source-hash → *set of
 outputs*, not one-to-one, from day one.
 
+#### The glTF import contract (current)
+
+What `ImportGltfScene` and `GltfMeshImporter` (`assets/cook/MeshCook.h`)
+guarantee today. The stage notes below record how it got here; where they
+disagree, this is the contract.
+
+- **Engine frame.** glTF faces +Z and the engine faces -Z. The importer
+  turns everything by one half turn about +Y (`assets/cook/GltfFrame.h`),
+  through its geometry bake and its skeleton fold and nowhere else. Cooked
+  data is in the engine frame, and nothing downstream knows a source was
+  glTF. Kyusu's `.glb` exporter writes the inverse turn on its node, so a
+  round trip is exact.
+- **Placement.** The cook imports what the scene places, node by node in
+  glTF order. A static mesh is baked through its node's world transform
+  (parents included; a mirroring transform flips winding and tangent
+  handedness with it). Two nodes placing one mesh are two artifacts. A mesh
+  no node places is an error.
+- **Skeleton model space.** A skin's inverse binds and skinned vertices are
+  in scene space, which includes every non-joint node above the root joints
+  (an exported armature object, for one). The cook folds those nodes into
+  the root joints' bind transforms, so at rest every palette entry is the
+  identity (`anim/Skeleton.h`). In clips, a static chain composes key by
+  key; an animated one is resampled at the union of every contributing key
+  time, and a root the source never keyed gets tracks of its own, so
+  object-level motion arrives as root-joint motion. Located errors: a
+  non-uniform, sheared or mirrored chain; a non-joint node between joints;
+  inverse binds that disagree with the rest pose ("Apply Pose as Rest Pose").
+- **One model per skeleton.** Everything a skeleton draws is one
+  `.skmesh`: every mesh placed with its skin, and every mesh parented beneath
+  one of its joints as a rigid part bound wholly to that joint (joints
+  `{J,0,0,0}`, weights `{255,0,0,0}`), baked through the transforms from
+  beneath the joint down to the mesh. Every piece is baked into the
+  skeleton's model space before it joins. Sections are one per material in
+  first-appearance order, at most `kMaxMeshSections`. The one duplicate the
+  cook folds is a mesh placed twice with the same skin, which is the same
+  geometry twice. A mesh placed with two skins is part of both models. A
+  node between a rigid part and its joint may not be animated.
+- **Names.** Artifacts are named by the source's names, sanitized to
+  `[A-Za-z0-9_-]`, with the glTF index for an unnamed element (`node12`,
+  `skin0`, `animation3`):
+
+  | Artifact | Path |
+  |---|---|
+  | skeleton | `asset://<source>#skel:<skin>` |
+  | its model | `asset://<source>#model:<skin>` |
+  | static mesh | `asset://<source>#<node>`, or `asset://<source>` when the source is one static mesh with no skins |
+  | clip | `asset://<source>#anim:<animation>` |
+
+  Two elements landing on one name fail the import with both named. A name
+  never depends on discovery order.
+- **Freshness.** The importer's cook identity (its version, and for
+  `.blend` the Blender and glTF exporter versions) is part of every cooked
+  entry, so changing the importer or the toolchain recooks its artifacts.
+
 ### C. The staged-load contract — `IAssetStager` work/commit split
 
 **Proposed.** This is the centerpiece; everything else feeds it.
@@ -950,7 +1004,8 @@ skips where it isn't installed). Decisions B and M made real:
   triple its vertex count), and UV-less sources get a deterministic
   normal-derived basis. The MikkTSpace handedness is pinned by test: a +Z
   quad with U along +X must yield T = +X, w = +1.
-- **Artifact naming:** a single-mesh source keeps the source's virtual
+- **Artifact naming** (superseded by the import contract under Decision B:
+  names now come from nodes and skins): a single-mesh source keeps the source's virtual
   path (`asset://meshes/torus.glb` serves `.smesh` bytes — the texture-
   cook precedent; the loader already sniffs bytes, not extensions). A
   multi-mesh source emits `asset://<source>#<mesh-name>` per mesh — `#`
@@ -973,8 +1028,9 @@ skips where it isn't installed). Decisions B and M made real:
   glb and streams all six manifest assets through the async lane with
   zero errors and zero fallback warnings; warm run serves both from the
   cooked cache without invoking an importer.
-- Deliberately not done, with reasons: no node-transform baking (the
-  scene places instances; the cook emits geometry as authored), no
+- Deliberately not done, with reasons: no node-transform baking (since
+  reversed: the cook now bakes node placement, see the import contract under
+  Decision B), no
   material/skin/animation extraction from glTF (materials are authored
   `.smat`; skins/clips are Stage 5, where the multi-artifact keying
   built in 4a starts paying), and glTF primitives without NORMAL are
@@ -1144,9 +1200,10 @@ mesh type split (the Decision J revision above) was taken here.
 - **No silent partial cooking.** Where one glTF asset is ambiguous about
   which single skeleton an artifact should bind to, the cook rejects with a
   pointed error rather than honoring the first match and dropping the rest:
-  a mesh instanced with more than one skin, and an animation whose channels
-  target joints across more than one skin, are both refused (split per
-  skeleton or re-export). Skinned primitives must likewise carry authored
+  an animation whose channels target joints across more than one skin is
+  refused (split per skeleton or re-export). A mesh instanced with more than
+  one skin was refused too; each skin now has its own model, so such a mesh
+  joins both. Skinned primitives must likewise carry authored
   tangents (or be UV-less): MikkTSpace's de-index/reweld would desync the
   influence stream, so the cook asks for a tangent re-export rather than
   corrupt it. All three are in the spirit of the existing "reject missing
