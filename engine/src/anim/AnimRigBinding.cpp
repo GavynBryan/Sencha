@@ -3,6 +3,7 @@
 #include "AnimRigBinder.h"
 
 #include <anim/AnimFactProviders.h>
+#include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
@@ -388,6 +389,7 @@ namespace
         binder.BindBehaviors(*rig);
         binder.BindSelectors(*rig);
         binder.BindSlotMaps(*rig);
+        binder.BindEvents(*rig);
         bound.Valid = !HasAnimErrors(bound.Diagnostics);
         return bound;
     }
@@ -408,8 +410,11 @@ bool AnimRigBindings::IsCurrent(const Entry& entry, const World& world) const
     }
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     const AnimFactProviders* providers = world.TryGetResource<AnimFactProviders>();
+    const VerbRegistry* verbs = FindVerbRegistry(world);
     return entry.TagCount == (tags != nullptr ? tags->Size() : 0)
-        && entry.ProviderRevision == (providers != nullptr ? providers->Revision() : 0);
+        && entry.ProviderRevision == (providers != nullptr ? providers->Revision() : 0)
+        && entry.Catalog == (verbs != nullptr ? verbs->Catalog() : VerbCatalogId{})
+        && entry.CatalogGeneration == (verbs != nullptr ? verbs->Generation() : 0);
 }
 
 const AnimBoundRig* AnimRigBindings::Resolve(DataAssetHandle rig, const World& world)
@@ -430,8 +435,11 @@ const AnimBoundRig* AnimRigBindings::Resolve(DataAssetHandle rig, const World& w
     entry.Bound.Generation = ++generations;
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     const AnimFactProviders* providers = world.TryGetResource<AnimFactProviders>();
+    const VerbRegistry* verbs = FindVerbRegistry(world);
     entry.TagCount = tags != nullptr ? tags->Size() : 0;
     entry.ProviderRevision = providers != nullptr ? providers->Revision() : 0;
+    entry.Catalog = verbs != nullptr ? verbs->Catalog() : VerbCatalogId{};
+    entry.CatalogGeneration = verbs != nullptr ? verbs->Generation() : 0;
     ++Rebuilds;
     return &entry.Bound;
 }

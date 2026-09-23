@@ -73,6 +73,8 @@ struct AnimRigBinder
     void BindBehaviors(const AnimRigData& rig);
     void BindSelectors(const AnimRigData& rig);
     void BindSlotMaps(const AnimRigData& rig);
+    // After slot maps, which decide the content whose events are bound.
+    void BindEvents(const AnimRigData& rig);
 };
 
 // FNV-1a over text, for the stable keys of flattened rules and merged rows.

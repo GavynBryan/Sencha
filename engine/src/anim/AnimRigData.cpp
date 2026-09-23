@@ -7,6 +7,7 @@
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimSelectorData.h>
 #include <anim/AnimSlotMapData.h>
+#include <authored/VerbBindingData.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
@@ -75,6 +76,9 @@ namespace
                                 DataRef({}, "Behavior set", {}, kAnimBehaviorSetType, true)),
             AnimSchema::ArrayOf("slot_maps", "Slot maps", "The base map first, then overlays.",
                                 DataRef({}, "Slot map", {}, kAnimSlotMapType, true)),
+            AnimSchema::ArrayOf("bindings", "Event bindings",
+                                "The authored bindings this rig's events name, in order.",
+                                DataRef({}, "Bindings", {}, kVerbBindingsTypeName, true)),
             AnimSchema::ArrayOf("extensions", "Extension bindings",
                                 "Selectors bound to the extension points rules expose.",
                                 AnimSchema::Record({}, "Extension", {},
@@ -175,6 +179,7 @@ namespace
         };
         paths("behaviors", rig->BehaviorSetPaths);
         paths("slot_maps", rig->SlotMapPaths);
+        paths("bindings", rig->BindingSetPaths);
 
         if (const JsonValue* extensions = data.Find("extensions"); extensions != nullptr && extensions->IsArray())
         {

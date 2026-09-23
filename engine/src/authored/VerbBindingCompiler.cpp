@@ -635,6 +635,48 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
     return true;
 }
 
+bool CompileVerbInputValue(const VerbBindingArgument& authored,
+                           const VerbCompiledInput& input,
+                           const VerbBindingEnvironment& environment,
+                           std::string_view bindingKey,
+                           VerbValue& out,
+                           std::vector<std::string>& errors)
+{
+    if (input.Destinations.empty())
+    {
+        Fail(errors, bindingKey, authored.Key, "the input fills no argument");
+        return false;
+    }
+    if (authored.Source != VerbArgumentSource::Literal && authored.Source != VerbArgumentSource::Tag)
+    {
+        Fail(errors, bindingKey, authored.Key,
+             "a producer supplies a constant or a tag; references are the binding's own constants");
+        return false;
+    }
+
+    // Compiled against the first destination, then held to every one the way
+    // the dispatcher will hold it: one value, however many arguments read it.
+    const DataFieldSchema& first = input.Destinations.front().Expected;
+    VerbValue value;
+    bool referencesChecked = true;
+    const bool compiled = authored.Source == VerbArgumentSource::Literal
+        ? CompileLiteral(authored.Literal, first, bindingKey, authored.Key, value, errors)
+        : CompileReference(authored, first, environment, bindingKey, value, referencesChecked, errors);
+    if (!compiled)
+        return false;
+    for (const VerbInputDestination& destination : input.Destinations)
+    {
+        if (!VerbValueSatisfiesField(value, destination.Expected))
+        {
+            Fail(errors, bindingKey, authored.Key,
+                 "this input fills several arguments, and the value does not suit all of them");
+            return false;
+        }
+    }
+    out = std::move(value);
+    return true;
+}
+
 bool IsVerbBindingCurrent(const CompiledVerbBinding& binding, const VerbRegistry& registry)
 {
     return binding.IsValid() && binding.Catalog == registry.Catalog()

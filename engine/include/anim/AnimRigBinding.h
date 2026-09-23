@@ -6,12 +6,15 @@
 #include <anim/AnimPredicate.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
+#include <anim/AnimationClip.h>
 #include <anim/AnimationClipHandle.h>
 #include <assets/data/DataAssetCache.h>
+#include <authored/VerbBindingSet.h>
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -27,8 +30,9 @@ class World;
 // fixed layout, derivations compiled to slot indices, layer and intent names
 // resolved to this World's tag ids, gathered slots matched to this World's
 // providers, each layer's selector flattened and compiled, behaviors resolved
-// to their policies, and the slot map stack merged into rows over a content
-// table. The shared assets name things; this is where names become the
+// to their policies, the slot map stack merged into rows over a content
+// table, and every clip event on that content bound to the rig's authored
+// bindings. The shared assets name things; this is where names become the
 // indices per-entity state is addressed by.
 //
 // Everything wrong with the content is a located AnimDiagnostic, and a rig with
@@ -175,11 +179,32 @@ struct AnimBoundSelector
     bool ReadsTags = false;
 };
 
+// One clip event, bound: its binding named by key and its inputs already
+// converted to values, in the binding's input order, against this World's
+// catalog. Holds no pointer to the compiled binding; the event pass looks it
+// up by key in the rig's binding set at each dispatch.
+struct AnimBoundEvent
+{
+    std::uint32_t Key = 0;
+    // Normalized clip time.
+    float Time = 0.0f;
+    AnimEventScope Scope = AnimEventScope::Cosmetic;
+    std::optional<float> MinWeight;
+    VerbBindingKey Binding;
+    std::string BindingText;
+    std::vector<VerbValue> Inputs;
+    // The binding resolved and every input converted. An unresolved event is
+    // kept, so a crossing still reports why nothing was invoked.
+    bool Resolved = false;
+};
+
 struct AnimBoundContent
 {
     std::string Path;
     AnimationClipHandle Clip;
     float DurationSeconds = 0.0f;
+    // In clip order: by time, then key.
+    std::vector<AnimBoundEvent> Events;
 };
 
 struct AnimBoundSlotRow
@@ -220,6 +245,10 @@ struct AnimBoundRig
     // then row order.
     std::vector<AnimBoundSlotRow> SlotRows;
     std::vector<AnimBoundContent> Contents;
+
+    // The rig's authored bindings, compiled against this World's catalog.
+    // Rebuilt with the rest of the binding, never refreshed in place.
+    VerbBindingSet Bindings;
 
     // Moves on every rebuild, so an inspector holding a copy can tell it is
     // looking at an older generation.
@@ -270,6 +299,10 @@ private:
         std::vector<std::pair<DataAssetHandle, std::uint64_t>> Versions;
         std::size_t TagCount = 0;
         std::uint64_t ProviderRevision = 0;
+        // The verb catalog the bindings compiled against: a catalog replaced
+        // or grown since means an event that failed to resolve may now.
+        VerbCatalogId Catalog;
+        std::uint64_t CatalogGeneration = 0;
     };
 
     [[nodiscard]] bool IsCurrent(const Entry& entry, const World& world) const;

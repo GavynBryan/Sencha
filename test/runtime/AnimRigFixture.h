@@ -19,6 +19,8 @@
 #include <anim/AnimationClipCache.h>
 #include <anim/AnimationRegistration.h>
 #include <assets/data/DataAssetTypeRegistry.h>
+#include <authored/VerbBindingData.h>
+#include <authored/WorldVocabulary.h>
 #include <core/json/JsonParser.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -65,8 +67,10 @@ struct AnimRigFixture
         RegisterAnimBehaviorSet(Types, Schemas);
         RegisterAnimSelectorData(Types, Schemas);
         RegisterAnimSlotMapData(Types, Schemas);
+        RegisterVerbBindingData(Types, Schemas);
 
         Entities.AddResource<GameplayTagRegistry>();
+        (void)InstallVerbRegistry(Entities);
         ComponentRegistrar registrar(Entities);
         RegisterAnimationComponents(registrar);
         Entities.RegisterComponent<GameplayTagContainer>();
@@ -108,12 +112,15 @@ struct AnimRigFixture
         ASSERT_TRUE(Data.ReloadInPlace(path, type, compiled.Value));
     }
 
-    void Clip(std::string_view path, float seconds)
+    void Clip(std::string_view path, float seconds, std::vector<AnimationClipEvent> events = {})
     {
         AnimationClipData clip;
         clip.DurationSeconds = seconds;
+        clip.Events = std::move(events);
         (void)Clips.Register(path, std::move(clip), {});
     }
+
+    VerbRegistry& Verbs() { return *FindVerbRegistry(Entities); }
 
     const AnimBoundRig& Bound(DataAssetHandle rig)
     {

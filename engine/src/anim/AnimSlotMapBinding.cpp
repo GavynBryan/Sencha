@@ -9,6 +9,27 @@
 
 namespace
 {
+    // What a clip's gameplay events commit an authority to: when, and through
+    // which binding. Inputs may differ; timing may not.
+    struct GameplayEventMark
+    {
+        float Time = 0.0f;
+        std::string Binding;
+        bool operator==(const GameplayEventMark&) const = default;
+    };
+
+    std::vector<GameplayEventMark> GameplayEventMarks(const AnimationClipCache* clips, const AnimBoundContent& content)
+    {
+        std::vector<GameplayEventMark> marks;
+        const AnimationClipData* clip = clips != nullptr ? clips->Get(content.Clip) : nullptr;
+        if (clip == nullptr)
+            return marks;
+        for (const AnimationClipEvent& event : clip->Events)
+            if (event.Scope == AnimEventScope::Gameplay)
+                marks.push_back({ event.Time, event.Binding });
+        return marks;
+    }
+
     int FindOrAddContent(AnimBoundRig& rig, const AnimationClipCache* clips, const std::string& path)
     {
         for (std::size_t i = 0; i < rig.Contents.size(); ++i)
@@ -20,7 +41,11 @@ namespace
         const AnimationClipData* data = clips != nullptr ? clips->Get(clip) : nullptr;
         if (data == nullptr)
             return -1;
-        rig.Contents.push_back({ path, clip, data->DurationSeconds });
+        AnimBoundContent content;
+        content.Path = path;
+        content.Clip = clip;
+        content.DurationSeconds = data->DurationSeconds;
+        rig.Contents.push_back(std::move(content));
         return static_cast<int>(rig.Contents.size() - 1);
     }
 }
@@ -81,26 +106,36 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
                      [](const AnimBoundSlotRow& a, const AnimBoundSlotRow& b) { return a.Priority > b.Priority; });
 
     // A row that reads a local fact picks content per machine, so every
-    // candidate for its behavior must take the same time: otherwise what one
-    // machine chose would drift from what the others are timing against.
+    // candidate for its behavior must take the same time and produce the same
+    // gameplay events: otherwise what one machine chose would drift from what
+    // the others, and the authority, are timing against.
     for (const AnimBoundSlotRow& row : Out.SlotRows)
     {
         if (!row.When.ReadsLocalFacts)
             continue;
+        const std::string& path = Out.Contents[static_cast<std::size_t>(row.Content)].Path;
         const float duration = Out.Contents[static_cast<std::size_t>(row.Content)].DurationSeconds;
+        const std::vector<GameplayEventMark> events = GameplayEventMarks(Clips, Out.Contents[static_cast<std::size_t>(row.Content)]);
         for (const AnimBoundSlotRow& other : Out.SlotRows)
         {
             if (other.Behavior != row.Behavior)
                 continue;
-            const float otherDuration = Out.Contents[static_cast<std::size_t>(other.Content)].DurationSeconds;
-            if (std::abs(otherDuration - duration) > 1e-4f)
+            const AnimBoundContent& otherContent = Out.Contents[static_cast<std::size_t>(other.Content)];
+            if (std::abs(otherContent.DurationSeconds - duration) > 1e-4f)
             {
                 Error("anim.slot.local_timing", row.DeclaredIn, std::format("$.data.rows[{}].when", row.Index),
                       std::format("This row reads a local fact, so every row for '{}' must last as long; "
                                   "'{}' takes {:.3f}s and '{}' {:.3f}s.",
-                                  row.BehaviorName, Out.Contents[static_cast<std::size_t>(row.Content)].Path,
-                                  duration, Out.Contents[static_cast<std::size_t>(other.Content)].Path,
-                                  otherDuration));
+                                  row.BehaviorName, path, duration, otherContent.Path,
+                                  otherContent.DurationSeconds));
+                break;
+            }
+            if (GameplayEventMarks(Clips, otherContent) != events)
+            {
+                Error("anim.slot.local_events", row.DeclaredIn, std::format("$.data.rows[{}].when", row.Index),
+                      std::format("This row reads a local fact, so every row for '{}' must produce the same "
+                                  "gameplay events; '{}' and '{}' differ.",
+                                  row.BehaviorName, path, otherContent.Path));
                 break;
             }
         }

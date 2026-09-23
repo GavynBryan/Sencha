@@ -14,7 +14,8 @@
 // What one kind of animated entity is: its skeleton, the fact schema its rules
 // read, the request schema its requests are checked against, how much fact
 // storage it carries, its ordered layers and the selector on each, the
-// behaviors it plays, and the slot maps that give those behaviors content. The one file a new entity type
+// behaviors it plays, the slot maps that give those behaviors content, and the
+// authored bindings its events invoke through. The one file a new entity type
 // starts from.
 //
 // Tier is not declared here. It follows from which components an entity ends
@@ -67,6 +68,10 @@ struct AnimRigData
     std::vector<std::string> BehaviorSetPaths;
     // The base map first, then overlays.
     std::vector<std::string> SlotMapPaths;
+    // `authored.bindings` assets, in order, that the rig's clip events and
+    // lifecycle events name their bindings from. Two that declare one key are
+    // an authoring conflict, not an override.
+    std::vector<std::string> BindingSetPaths;
     std::vector<AnimRigExtension> Extensions;
 
     [[nodiscard]] bool HasFacts() const { return !FactSchemaPath.empty(); }
