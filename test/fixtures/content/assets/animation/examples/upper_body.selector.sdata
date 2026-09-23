@@ -1,0 +1,57 @@
+{
+    "type": "animation.selector",
+    "version": 1,
+    "data": {
+        "rules": [
+            {
+                "name": "lowered",
+                "priority": 0,
+                "enter": [],
+                "behavior": "Anim.Weapon.Lowered"
+            },
+            {
+                "name": "draw",
+                "priority": 50,
+                "enter": [
+                    {
+                        "request": "Anim.Weapon.Draw"
+                    }
+                ],
+                "behavior": "Anim.Weapon.Draw"
+            },
+            {
+                "name": "fire",
+                "priority": 60,
+                "enter": [
+                    {
+                        "request": "Anim.Weapon.Fire"
+                    }
+                ],
+                "behavior": "Anim.Weapon.Fire"
+            },
+            {
+                "name": "shown",
+                "priority": 10,
+                "weight": 1,
+                "enter": [
+                    {
+                        "any": [
+                            {
+                                "request": "Anim.Weapon.Draw"
+                            },
+                            {
+                                "request": "Anim.Weapon.Fire"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "hidden",
+                "priority": 0,
+                "weight": 0,
+                "enter": []
+            }
+        ]
+    }
+}

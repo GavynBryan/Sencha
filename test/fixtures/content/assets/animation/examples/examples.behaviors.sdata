@@ -1,0 +1,89 @@
+{
+    "type": "animation.behavior_set",
+    "version": 1,
+    "data": {
+        "behaviors": [
+            {
+                "tag": "Anim.Locomotion.Idle",
+                "kind": "cyclic"
+            },
+            {
+                "tag": "Anim.Locomotion.Walk",
+                "kind": "cyclic"
+            },
+            {
+                "tag": "Anim.Weapon.Reload",
+                "kind": "flow",
+                "latch": {
+                    "mode": "until_request_ends",
+                    "interruptible_by": "tags",
+                    "tags": [
+                        "Anim.Weapon.Fire"
+                    ],
+                    "on_interrupt": "cancel_section",
+                    "on_request_cancel": "cancel_section"
+                }
+            },
+            {
+                "tag": "Anim.Weapon.Fire",
+                "kind": "one_shot",
+                "latch": {
+                    "mode": "until_complete"
+                }
+            },
+            {
+                "tag": "Anim.Weapon.Draw",
+                "kind": "flow",
+                "latch": {
+                    "mode": "until_request_ends",
+                    "interruptible_by": "never",
+                    "on_request_cancel": "finish"
+                }
+            },
+            {
+                "tag": "Anim.Weapon.Lowered",
+                "kind": "cyclic"
+            },
+            {
+                "tag": "Anim.Melee",
+                "kind": "flow",
+                "latch": {
+                    "mode": "until_request_ends",
+                    "on_request_cancel": "finish"
+                }
+            },
+            {
+                "tag": "Anim.Charge",
+                "kind": "flow",
+                "latch": {
+                    "mode": "until_request_ends",
+                    "on_request_cancel": "finish"
+                }
+            },
+            {
+                "tag": "Anim.Charge.ReleaseVariant",
+                "kind": "one_shot"
+            },
+            {
+                "tag": "Anim.Ledge.Climb",
+                "kind": "flow",
+                "latch": {
+                    "mode": "until_request_ends",
+                    "on_request_cancel": "cancel_section"
+                }
+            },
+            {
+                "tag": "Anim.Door.Opening",
+                "kind": "flow"
+            },
+            {
+                "tag": "Anim.Door.Opened",
+                "kind": "hold"
+            },
+            {
+                "tag": "Anim.Door.Closed",
+                "kind": "hold"
+            }
+        ]
+    }
+}

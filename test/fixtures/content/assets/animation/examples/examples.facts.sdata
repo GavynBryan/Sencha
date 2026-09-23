@@ -1,0 +1,17 @@
+{
+    "type": "animation.fact_schema",
+    "version": 1,
+    "data": {
+        "extends": "asset://animation/engine.facts.sdata",
+        "slots": [
+            {
+                "name": "AmmoFull",
+                "kind": "bool"
+            },
+            {
+                "name": "DoorOpen",
+                "kind": "bool"
+            }
+        ]
+    }
+}

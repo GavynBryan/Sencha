@@ -1,0 +1,12 @@
+{
+    "type": "animation.flow",
+    "version": 1,
+    "data": {
+        "sections": [
+            {
+                "tag": "Anim.Door.Swing",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            }
+        ]
+    }
+}
