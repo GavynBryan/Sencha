@@ -176,3 +176,37 @@ TEST(AnimContent, PinnedContentWhoseRowIsRemovedReanchors)
     ASSERT_NE(anchored, nullptr);
     EXPECT_EQ(anchored->Reason, AnimChangeReason::Rebound);
 }
+
+// A behavior that carries phase within its sync group starts where the one it
+// replaces had reached, in normalized time; without carry it starts over.
+TEST(AnimContent, PhaseCarriesWithinASyncGroup)
+{
+    Hero fx;
+    (void)fx.Tags().RegisterTag("Anim.Sync.Locomotion");
+    fx.Reload("asset://anim/hero.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+        { "tag": "Anim.Locomotion.Idle", "kind": "cyclic" },
+        { "tag": "Anim.Locomotion.Walk", "kind": "cyclic", "sync_group": "Anim.Sync.Locomotion" },
+        { "tag": "Anim.Locomotion.Sprint", "kind": "cyclic", "sync_group": "Anim.Sync.Locomotion",
+          "blend": { "in": "crossfade", "in_ms": 200, "phase": "carry" } },
+        { "tag": "Anim.Action.Land", "kind": "one_shot" },
+        { "tag": "Anim.Action.Reload", "kind": "one_shot",
+          "latch": { "mode": "until_request_ends", "interruptible_by": "tags", "tags": [ "Anim.Death" ] } },
+        { "tag": "Anim.Death", "kind": "hold" } ] })");
+    ASSERT_TRUE(fx.Bound(fx.Rig).Valid) << AnimRigFixture::Describe(fx.Bound(fx.Rig));
+
+    fx.Motion(fx.Entity).Speed = 1.0f;
+    fx.Tick(30);
+    ASSERT_EQ(fx.Clip(), "asset://anim/walk.sanim");
+    fx.Motion(fx.Entity).Speed = 3.0f;
+    fx.Tick();
+    ASSERT_EQ(fx.Clip(), "asset://anim/sprint.sanim");
+    // Walk (1 s) was 30 ticks in on this tick: half way. Sprint (0.8 s)
+    // continues from its own half way.
+    EXPECT_NEAR(fx.Playing(fx.Entity).TimeSeconds, 0.4f, 1e-4f);
+
+    // Back to walk, which does not carry: it starts over.
+    fx.Motion(fx.Entity).Speed = 1.0f;
+    fx.Tick();
+    ASSERT_EQ(fx.Clip(), "asset://anim/walk.sanim");
+    EXPECT_FLOAT_EQ(fx.Playing(fx.Entity).TimeSeconds, 0.0f);
+}

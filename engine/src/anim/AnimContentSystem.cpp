@@ -202,7 +202,36 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         bool adopted = false;
         if (behavior != layer.Behavior || lostPin)
         {
+            // Carried phase: cyclic content in one sync group continues at the
+            // normalized time the outgoing content had reached, so a walk that
+            // becomes a run keeps its footfalls.
+            const AnimBoundBehavior* from = rig.FindBehavior(layer.Behavior);
+            const AnimBoundBehavior* to = rig.FindBehavior(behavior);
+            const float fromDuration = DurationOf(rig, layer.Content);
+            const bool carry = !lostPin && from != nullptr && to != nullptr
+                && to->Policy.Blend.Phase == AnimPhasePolicy::Carry && to->SyncGroup.IsValid()
+                && to->SyncGroup == from->SyncGroup && fromDuration > 0.0f
+                && (from->Policy.Kind == AnimBehaviorKind::Cyclic || from->Policy.Kind == AnimBehaviorKind::Hold)
+                && (to->Policy.Kind == AnimBehaviorKind::Cyclic || to->Policy.Kind == AnimBehaviorKind::Hold);
+            float normalized = 0.0f;
+            if (carry)
+            {
+                // Where the outgoing content is now, not where it was drawn last.
+                const double elapsed = static_cast<double>(layer.StartOffsetSeconds)
+                    + static_cast<double>(now >= layer.StartTick ? now - layer.StartTick : 0) * tickSeconds;
+                const double at = from->Policy.Kind == AnimBehaviorKind::Cyclic
+                    ? std::fmod(elapsed, static_cast<double>(fromDuration))
+                    : std::min(elapsed, static_cast<double>(fromDuration));
+                normalized = static_cast<float>(at / fromDuration);
+            }
             startInstance(lostPin ? AnimChangeReason::Rebound : AnimChangeReason::BehaviorChanged);
+            if (carry)
+            {
+                // From this tick, not the request's start: the phase is what is
+                // carried, and it was reached now.
+                layer.StartTick = now;
+                layer.StartOffsetSeconds = normalized * DurationOf(rig, resolvedContent);
+            }
             entered = true;
         }
         else if (layer.Pinned && driving != nullptr && driving->Id != layer.Request)
