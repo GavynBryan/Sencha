@@ -1,6 +1,6 @@
 #pragma once
 
-#include <authored/VerbArguments.h>
+#include <authored/AuthoredValue.h>
 #include <authored/VerbId.h>
 #include <ecs/EntityId.h>
 
@@ -90,7 +90,7 @@ struct VerbInvocation
     // Borrowed for exactly the duration of this call. An implementation that
     // defers copies what it needs, or keeps its own owning copy; it never
     // stores this pointer.
-    const VerbArguments* Arguments = nullptr;
+    const AuthoredArguments* Arguments = nullptr;
 };
 
 struct VerbInvocationResult
@@ -104,7 +104,7 @@ struct VerbInvocationResult
 // Optional attribution a producer supplies. Separate from the invocation so a
 // producer with nothing to say passes nothing.
 //
-// On the wire, none of this and none of VerbArguments travels. The stable form
+// On the wire, none of this and none of AuthoredArguments travels. The stable form
 // of a request is the binding's authored key plus its producer inputs in their
 // authored kinds -- persistent identities, names, paths -- and a producer that
 // receives one over a session resolves wire identities to handles at its own

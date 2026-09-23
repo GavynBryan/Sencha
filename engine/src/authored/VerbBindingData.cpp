@@ -266,7 +266,7 @@ namespace
             // Checked here rather than at instantiation because it is a fact
             // about the file: a World that has never heard of the verb should
             // still report a malformed name as a malformed name.
-            if (!IsValidVerbName(desc.VerbName))
+            if (!IsValidAuthoredName(desc.VerbName))
             {
                 result.Error = std::format("binding '{}': '{}' is not a verb name", desc.Key,
                                            desc.VerbName);

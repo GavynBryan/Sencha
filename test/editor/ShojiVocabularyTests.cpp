@@ -130,3 +130,56 @@ TEST(ShojiVocabulary, TwoCatalogsAreTwoWorlds)
     VocabularyCatalog second;
     EXPECT_NE(first.Verbs().Catalog(), second.Verbs().Catalog());
 }
+
+namespace
+{
+// A module whose hook declares a question and an announcement beside a verb,
+// through one scope, the way generated companions are declared.
+class LampGame final : public Game
+{
+public:
+    void OnRegisterVocabulary(World& world) override
+    {
+        AuthoredQueryDefinition lit;
+        lit.Name = "lamp.lit";
+        lit.DisplayName = "Lit";
+        DataFieldSchema lamp;
+        lamp.Key = "entity";
+        lamp.Kind = DataFieldKind::Entity;
+        lamp.Reference.ComponentIdentity = "game.lamp";
+        lit.Arguments.Children.push_back(std::move(lamp));
+        lit.Result.Kind = DataFieldKind::Bool;
+        AuthoredQueryRegistrationScope queries(*FindAuthoredQueryRegistry(world), "lamp");
+        (void)queries.Declare(std::move(lit));
+        (void)queries.Commit();
+
+        AuthoredEventDefinition switched;
+        switched.Name = "lamp.switched";
+        switched.SourceComponent = "game.lamp";
+        AuthoredEventRegistrationScope events(*FindAuthoredEventRegistry(world), "lamp");
+        (void)events.Declare(std::move(switched));
+        (void)events.Commit();
+    }
+};
+}
+
+TEST(ShojiVocabulary, AModulesQueriesAndEventsAreListedBesideItsVerbs)
+{
+    VocabularyCatalog catalog;
+    LampGame game;
+    catalog.InstallModuleVocabulary(game);
+    EXPECT_TRUE(catalog.Errors().empty());
+
+    const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
+    ASSERT_EQ(queries.size(), 1u);
+    EXPECT_EQ(queries[0].Name, "lamp.lit");
+    EXPECT_EQ(queries[0].DisplayName, "Lit");
+    EXPECT_EQ(queries[0].Provider, "lamp");
+    EXPECT_EQ(queries[0].ArgumentCount, 1u);
+
+    const std::vector<VocabularyCatalog::EventRow> events = catalog.ListEvents();
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events[0].Name, "lamp.switched");
+    EXPECT_EQ(events[0].SourceComponent, "game.lamp");
+    EXPECT_EQ(events[0].PayloadCount, 0u);
+}

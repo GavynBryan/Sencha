@@ -24,6 +24,12 @@ set(SENCHA_GAME_COMPONENT_HEADERS
     src/ArenaScoreboard.h
     src/ArenaStart.h)
 
+# Headers that expose authored verbs, queries or events on types that are not
+# components. Generated the same way; listed apart because a component header
+# holds data only and these declare behaviour.
+set(SENCHA_GAME_API_HEADERS
+    src/ArenaScore.h)
+
 # The one sample. Remove this line and the directory to drop it.
 include(samples/turret/TurretSample.cmake)
 
@@ -39,14 +45,16 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     sencha_game_module(game
         SOURCES ${SENCHA_GAME_MODULE_SOURCES}
         INCLUDE_ROOT .
-        COMPONENT_HEADERS ${SENCHA_GAME_COMPONENT_HEADERS})
+        COMPONENT_HEADERS ${SENCHA_GAME_COMPONENT_HEADERS}
+        API_HEADERS ${SENCHA_GAME_API_HEADERS})
     target_include_directories(game PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 else()
     include("${CMAKE_SOURCE_DIR}/templates/InTreeTemplate.cmake")
     sencha_game_module(arena_game
         SOURCES ${SENCHA_GAME_MODULE_SOURCES}
         INCLUDE_ROOT .
-        COMPONENT_HEADERS ${SENCHA_GAME_COMPONENT_HEADERS})
+        COMPONENT_HEADERS ${SENCHA_GAME_COMPONENT_HEADERS}
+        API_HEADERS ${SENCHA_GAME_API_HEADERS})
     target_include_directories(arena_game PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     sencha_in_tree_template(arena_game)
 endif()

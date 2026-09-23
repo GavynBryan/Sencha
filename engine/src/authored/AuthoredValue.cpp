@@ -1,4 +1,4 @@
-#include <authored/VerbArguments.h>
+#include <authored/AuthoredValue.h>
 
 #include <cmath>
 #include <utility>
@@ -7,192 +7,192 @@ namespace
 {
     // What an out-of-range read sees. One object rather than a per-call
     // temporary, so At can return a reference.
-    const VerbValue& EmptyValue()
+    const AuthoredValue& EmptyValue()
     {
-        static const VerbValue empty;
+        static const AuthoredValue empty;
         return empty;
     }
 }
 
-VerbValue VerbValue::Bool(bool value)
+AuthoredValue AuthoredValue::Bool(bool value)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::Bool;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::Bool;
     result.Value_ = value;
     return result;
 }
 
-VerbValue VerbValue::Int(std::int64_t value)
+AuthoredValue AuthoredValue::Int(std::int64_t value)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::Int;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::Int;
     result.Value_ = value;
     return result;
 }
 
-VerbValue VerbValue::Float(double value)
+AuthoredValue AuthoredValue::Float(double value)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::Float;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::Float;
     result.Value_ = value;
     return result;
 }
 
-VerbValue VerbValue::String(std::string value)
+AuthoredValue AuthoredValue::String(std::string value)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::String;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::String;
     result.Value_ = std::move(value);
     return result;
 }
 
-VerbValue VerbValue::Enum(std::string choice)
+AuthoredValue AuthoredValue::Enum(std::string choice)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::Enum;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::Enum;
     result.Value_ = std::move(choice);
     return result;
 }
 
-VerbValue VerbValue::Vector(VerbVectorValue value)
+AuthoredValue AuthoredValue::Vector(AuthoredVectorValue value)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::Vector;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::Vector;
     result.Value_ = value;
     return result;
 }
 
-VerbValue VerbValue::Record(std::vector<VerbValue> members)
+AuthoredValue AuthoredValue::Record(std::vector<AuthoredValue> members)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::Record;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::Record;
     result.Children_ = std::move(members);
     return result;
 }
 
-VerbValue VerbValue::Array(std::vector<VerbValue> elements)
+AuthoredValue AuthoredValue::Array(std::vector<AuthoredValue> elements)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::Array;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::Array;
     result.Children_ = std::move(elements);
     return result;
 }
 
-VerbValue VerbValue::Asset(AssetRef reference)
+AuthoredValue AuthoredValue::Asset(AssetRef reference)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::AssetRef;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::AssetRef;
     result.Value_ = std::move(reference);
     return result;
 }
 
-VerbValue VerbValue::DataAsset(AssetRef reference)
+AuthoredValue AuthoredValue::DataAsset(AssetRef reference)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::DataAssetRef;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::DataAssetRef;
     result.Value_ = std::move(reference);
     return result;
 }
 
-VerbValue VerbValue::Tag(GameplayTagId tag)
+AuthoredValue AuthoredValue::Tag(GameplayTagId tag)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::GameplayTag;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::GameplayTag;
     result.Value_ = tag;
     return result;
 }
 
-VerbValue VerbValue::Entity(EntityId entity)
+AuthoredValue AuthoredValue::Entity(EntityId entity)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::Entity;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::Entity;
     result.Value_ = entity;
     return result;
 }
 
-VerbValue VerbValue::PersistentEntity(PersistentEntityId identity)
+AuthoredValue AuthoredValue::PersistentEntity(PersistentEntityId identity)
 {
-    VerbValue result;
-    result.Kind_ = VerbValueKind::PersistentEntity;
+    AuthoredValue result;
+    result.Kind_ = AuthoredValueKind::PersistentEntity;
     result.Value_ = identity;
     return result;
 }
 
-bool VerbValue::TryGetBool(bool& out) const
+bool AuthoredValue::TryGetBool(bool& out) const
 {
-    if (Kind_ != VerbValueKind::Bool)
+    if (Kind_ != AuthoredValueKind::Bool)
         return false;
     out = std::get<bool>(Value_);
     return true;
 }
 
-bool VerbValue::TryGetInt(std::int64_t& out) const
+bool AuthoredValue::TryGetInt(std::int64_t& out) const
 {
-    if (Kind_ != VerbValueKind::Int)
+    if (Kind_ != AuthoredValueKind::Int)
         return false;
     out = std::get<std::int64_t>(Value_);
     return true;
 }
 
-bool VerbValue::TryGetFloat(double& out) const
+bool AuthoredValue::TryGetFloat(double& out) const
 {
-    if (Kind_ != VerbValueKind::Float)
+    if (Kind_ != AuthoredValueKind::Float)
         return false;
     out = std::get<double>(Value_);
     return true;
 }
 
-bool VerbValue::TryGetString(std::string_view& out) const
+bool AuthoredValue::TryGetString(std::string_view& out) const
 {
-    if (Kind_ != VerbValueKind::String)
+    if (Kind_ != AuthoredValueKind::String)
         return false;
     out = std::get<std::string>(Value_);
     return true;
 }
 
-bool VerbValue::TryGetEnum(std::string_view& out) const
+bool AuthoredValue::TryGetEnum(std::string_view& out) const
 {
-    if (Kind_ != VerbValueKind::Enum)
+    if (Kind_ != AuthoredValueKind::Enum)
         return false;
     out = std::get<std::string>(Value_);
     return true;
 }
 
-bool VerbValue::TryGetVector(VerbVectorValue& out) const
+bool AuthoredValue::TryGetVector(AuthoredVectorValue& out) const
 {
-    if (Kind_ != VerbValueKind::Vector)
+    if (Kind_ != AuthoredValueKind::Vector)
         return false;
-    out = std::get<VerbVectorValue>(Value_);
+    out = std::get<AuthoredVectorValue>(Value_);
     return true;
 }
 
-bool VerbValue::TryGetAsset(const AssetRef*& out) const
+bool AuthoredValue::TryGetAsset(const AssetRef*& out) const
 {
-    if (Kind_ != VerbValueKind::AssetRef)
-        return false;
-    out = &std::get<AssetRef>(Value_);
-    return true;
-}
-
-bool VerbValue::TryGetDataAsset(const AssetRef*& out) const
-{
-    if (Kind_ != VerbValueKind::DataAssetRef)
+    if (Kind_ != AuthoredValueKind::AssetRef)
         return false;
     out = &std::get<AssetRef>(Value_);
     return true;
 }
 
-bool VerbValue::TryGetTag(GameplayTagId& out) const
+bool AuthoredValue::TryGetDataAsset(const AssetRef*& out) const
 {
-    if (Kind_ != VerbValueKind::GameplayTag)
+    if (Kind_ != AuthoredValueKind::DataAssetRef)
+        return false;
+    out = &std::get<AssetRef>(Value_);
+    return true;
+}
+
+bool AuthoredValue::TryGetTag(GameplayTagId& out) const
+{
+    if (Kind_ != AuthoredValueKind::GameplayTag)
         return false;
     out = std::get<GameplayTagId>(Value_);
     return true;
 }
 
-bool VerbValue::TryGetEntity(EntityId& out) const
+bool AuthoredValue::TryGetEntity(EntityId& out) const
 {
-    if (Kind_ != VerbValueKind::Entity)
+    if (Kind_ != AuthoredValueKind::Entity)
         return false;
     out = std::get<EntityId>(Value_);
     return true;
@@ -210,20 +210,20 @@ namespace
     }
 }
 
-bool VerbValue::TryGetPersistentEntity(PersistentEntityId& out) const
+bool AuthoredValue::TryGetPersistentEntity(PersistentEntityId& out) const
 {
-    if (Kind_ != VerbValueKind::PersistentEntity)
+    if (Kind_ != AuthoredValueKind::PersistentEntity)
         return false;
     out = std::get<PersistentEntityId>(Value_);
     return true;
 }
 
-bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& field)
+bool AuthoredValueSatisfiesField(const AuthoredValue& value, const DataFieldSchema& field)
 {
     switch (field.Kind)
     {
     case DataFieldKind::Bool:
-        return value.Kind() == VerbValueKind::Bool;
+        return value.Kind() == AuthoredValueKind::Bool;
     case DataFieldKind::Int:
     {
         std::int64_t whole = 0;
@@ -235,7 +235,7 @@ bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& fiel
         return value.TryGetFloat(number) && std::isfinite(number) && WithinRange(number, field);
     }
     case DataFieldKind::String:
-        return value.Kind() == VerbValueKind::String;
+        return value.Kind() == AuthoredValueKind::String;
     case DataFieldKind::Enum:
     {
         std::string_view choice;
@@ -250,7 +250,7 @@ bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& fiel
     }
     case DataFieldKind::Vector:
     {
-        VerbVectorValue vector;
+        AuthoredVectorValue vector;
         if (!value.TryGetVector(vector) || vector.Length != field.VectorLength)
             return false;
         for (std::uint8_t index = 0; index < vector.Length; ++index)
@@ -265,25 +265,25 @@ bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& fiel
     }
     case DataFieldKind::Record:
     {
-        if (value.Kind() != VerbValueKind::Record
+        if (value.Kind() != AuthoredValueKind::Record
             || value.Children().size() != field.Children.size())
         {
             return false;
         }
         for (std::size_t index = 0; index < field.Children.size(); ++index)
         {
-            if (!VerbValueSatisfiesField(value.Children()[index], field.Children[index]))
+            if (!AuthoredValueSatisfiesField(value.Children()[index], field.Children[index]))
                 return false;
         }
         return true;
     }
     case DataFieldKind::Array:
     {
-        if (value.Kind() != VerbValueKind::Array || field.Children.size() != 1)
+        if (value.Kind() != AuthoredValueKind::Array || field.Children.size() != 1)
             return false;
-        for (const VerbValue& element : value.Children())
+        for (const AuthoredValue& element : value.Children())
         {
-            if (!VerbValueSatisfiesField(element, field.Children.front()))
+            if (!AuthoredValueSatisfiesField(element, field.Children.front()))
                 return false;
         }
         return true;
@@ -294,7 +294,7 @@ bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& fiel
         if (value.IsNone())
             return true;
         return field.Children.size() == 1
-            && VerbValueSatisfiesField(value, field.Children.front());
+            && AuthoredValueSatisfiesField(value, field.Children.front());
     case DataFieldKind::AssetRef:
     {
         const AssetRef* reference = nullptr;
@@ -309,85 +309,85 @@ bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& fiel
         return value.TryGetDataAsset(reference) && reference->Type == AssetType::Data;
     }
     case DataFieldKind::GameplayTag:
-        return value.Kind() == VerbValueKind::GameplayTag;
+        return value.Kind() == AuthoredValueKind::GameplayTag;
     case DataFieldKind::Entity:
         // A handle, and only a handle. A persistent identity is the authored
         // form of a constant, which the dispatcher resolves before anything is
         // validated; a producer supplying one dynamically has not done the
         // resolving it owes, and an operation must never be handed one.
-        return value.Kind() == VerbValueKind::Entity;
+        return value.Kind() == AuthoredValueKind::Entity;
     }
     return false;
 }
 
-void VerbArguments::Resize(std::size_t slots)
+void AuthoredArguments::Resize(std::size_t slots)
 {
     Slots.resize(slots);
 }
 
-void VerbArguments::Set(std::size_t slot, VerbValue value)
+void AuthoredArguments::Set(std::size_t slot, AuthoredValue value)
 {
     if (slot >= Slots.size())
         return;
     Slots[slot] = std::move(value);
 }
 
-const VerbValue& VerbArguments::At(std::size_t slot) const
+const AuthoredValue& AuthoredArguments::At(std::size_t slot) const
 {
     return slot < Slots.size() ? Slots[slot] : EmptyValue();
 }
 
-bool VerbArguments::TryGetBool(std::size_t slot, bool& out) const
+bool AuthoredArguments::TryGetBool(std::size_t slot, bool& out) const
 {
     return At(slot).TryGetBool(out);
 }
 
-bool VerbArguments::TryGetInt(std::size_t slot, std::int64_t& out) const
+bool AuthoredArguments::TryGetInt(std::size_t slot, std::int64_t& out) const
 {
     return At(slot).TryGetInt(out);
 }
 
-bool VerbArguments::TryGetFloat(std::size_t slot, double& out) const
+bool AuthoredArguments::TryGetFloat(std::size_t slot, double& out) const
 {
     return At(slot).TryGetFloat(out);
 }
 
-bool VerbArguments::TryGetString(std::size_t slot, std::string_view& out) const
+bool AuthoredArguments::TryGetString(std::size_t slot, std::string_view& out) const
 {
     return At(slot).TryGetString(out);
 }
 
-bool VerbArguments::TryGetEnum(std::size_t slot, std::string_view& out) const
+bool AuthoredArguments::TryGetEnum(std::size_t slot, std::string_view& out) const
 {
     return At(slot).TryGetEnum(out);
 }
 
-bool VerbArguments::TryGetVector(std::size_t slot, VerbVectorValue& out) const
+bool AuthoredArguments::TryGetVector(std::size_t slot, AuthoredVectorValue& out) const
 {
     return At(slot).TryGetVector(out);
 }
 
-bool VerbArguments::TryGetAsset(std::size_t slot, const AssetRef*& out) const
+bool AuthoredArguments::TryGetAsset(std::size_t slot, const AssetRef*& out) const
 {
     return At(slot).TryGetAsset(out);
 }
 
-bool VerbArguments::TryGetDataAsset(std::size_t slot, const AssetRef*& out) const
+bool AuthoredArguments::TryGetDataAsset(std::size_t slot, const AssetRef*& out) const
 {
     return At(slot).TryGetDataAsset(out);
 }
 
-bool VerbArguments::TryGetTag(std::size_t slot, GameplayTagId& out) const
+bool AuthoredArguments::TryGetTag(std::size_t slot, GameplayTagId& out) const
 {
     return At(slot).TryGetTag(out);
 }
 
-bool VerbArguments::TryGetEntity(std::size_t slot, EntityId& out) const
+bool AuthoredArguments::TryGetEntity(std::size_t slot, EntityId& out) const
 {
     return At(slot).TryGetEntity(out);
 }
 
-bool VerbArguments::TryGetPersistentEntity(std::size_t slot, PersistentEntityId& out) const
+bool AuthoredArguments::TryGetPersistentEntity(std::size_t slot, PersistentEntityId& out) const
 {
     return At(slot).TryGetPersistentEntity(out);
 }

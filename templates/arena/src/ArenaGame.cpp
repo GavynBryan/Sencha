@@ -140,7 +140,7 @@ void ArenaGame::OnRegisterSystems(SystemRegisterContext& ctx)
     RegisterTurretSampleSystems(GetEngine(), ctx.Schedule);
     if (VerbDispatcher* verbs = GetEngine().TryVerbs())
     {
-        RegisterArenaScoreSystem(ctx.Schedule, Score, *verbs,
+        RegisterArenaScoreSystem(ctx.Schedule, Score, *verbs, GetEngine().TryAuthoredEvents(),
                                  GetEngine().Logging().GetLogger<ArenaGame>());
     }
 
@@ -172,7 +172,8 @@ void ArenaGame::OnShutdown(GameShutdownContext&)
     GetEngine().SetPointerCaptured(false);
     // The authored half first: the token while the dispatcher exists, the
     // lease while the cache does.
-    ScoreBinding.Reset();
+    ScoreBindings.Reset();
+    ScoreboardQueries.Reset();
     ShellBindingsAsset.Reset();
     // The lifecycle's answers go first, so nothing asks a closed book. The
     // closed book itself stays put: the level's final detaches still reach the
@@ -191,7 +192,7 @@ void ArenaGame::OnShutdown(GameShutdownContext&)
 // it for every document, and neither gets an implementation from it.
 void ArenaGame::OnRegisterVocabulary(World& world)
 {
-    DeclareArenaVerbs(world);
+    DeclareArenaVocabulary(world);
 }
 
 namespace
@@ -224,7 +225,13 @@ void ArenaGame::InstallScore(Engine& engine)
     if (verbs == nullptr)
         return;
     Logger& log = engine.Logging().GetLogger<ArenaGame>();
-    ScoreBinding = BindArenaScore(*verbs, Score);
+    ScoreBindings = BindAuthoredApi(verbs, engine.TryAuthoredQueries(), Score);
+    if (AuthoredQueryDispatcher* queries = engine.TryAuthoredQueries())
+        ScoreboardQueries = BindAuthoredApi<ArenaScoreboard>(*queries, engine.World().Entities());
+    for (const std::string& name : ScoreBindings.Unbound())
+        log.Error("ArenaGame: '{}' was declared but could not be bound", name);
+    for (const std::string& name : ScoreboardQueries.Unbound())
+        log.Error("ArenaGame: '{}' was declared but could not be bound", name);
 
     // The game's bindings beside the engine's, in the set the shell's entries
     // address. Resolved now, against the runtime catalog: every argument here
@@ -272,7 +279,7 @@ void ArenaGame::InstallScore(Engine& engine)
             }
             // The relay names itself as the source, which is the typed entity
             // input the binding maps; the player at this machine is who asked.
-            const VerbValue self = VerbValue::Entity(entity);
+            const AuthoredValue self = AuthoredValue::Entity(entity);
             const VerbAdmission admission = relay->Activate(
                 entity, { &self, 1 }, LocalParticipantOf(engine.World().Entities()));
             if (admission != VerbAdmission::Accepted)

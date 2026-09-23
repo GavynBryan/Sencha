@@ -46,14 +46,18 @@ and the arena count as one consumer: the arena is the FPS with a session).
    feature the game opts into, so a game declaring a locomotion mode calls
    `InstallMovementVocabulary` in this same hook first, and the declaration
    then lands identically in the runtime World and in every editor's) and the
-   runtime World's authored vocabulary (`VerbRegistry`, with its own `runtime.resume` and
-   `application.quit`), then calls `OnRegisterVocabulary` once. A game declares
-   its verbs there through a `VerbRegistrationScope` on that catalog, beside
-   its tags, attributes and modes; the engine reads the catalog's installation
-   errors afterwards and refuses to start on any. Declaration only: the
-   implementation is bound from `OnStart` through `Engine::TryVerbs()`, and an
-   editor calling the same hook on a document's World gets the names with
-   nothing behind them. See `docs/plans/common-authored-api.md`.
+   runtime World's authored vocabulary (`InstallAuthoredVocabulary`: the verb
+   catalog, with its own `runtime.resume` and `application.quit`, and the query
+   and event catalogs), then calls `OnRegisterVocabulary` once. A game declares
+   its annotated verbs, queries and events there through one
+   `AuthoredVocabularyScope`, beside its tags, attributes and modes; the scope
+   commits to all three catalogs or none, and the engine reads their
+   installation errors afterwards and refuses to start on any. Declaration
+   only: the implementations are bound from `OnStart` with `BindAuthoredApi`
+   against `Engine::TryVerbs()` and `Engine::TryAuthoredQueries()`, events are
+   published through `Engine::TryAuthoredEvents()`, and an editor calling the
+   same hook on a document's World gets the names with nothing behind them.
+   See `docs/gameplay/authored-api.md`.
 4. The engine composes `RuntimeContent` (the asset stack), mounts the content
    roots, publishes the world's asset resources, connects the spawn services and
    the render pipeline, and constructs `LoadedLevel`. Under a cook-enabled
@@ -71,8 +75,9 @@ and the arena count as one consumer: the arena is the FPS with a session).
    already exist.
 8. Frames.
 9. `OnShutdown` -- every lease a game took into `Content().Assets()` is
-   released here, every `VerbBindingToken` it holds is reset here, and every
-   active camera the game chose is cleared here.
+   released here, every binding and subscription token it holds
+   (`AuthoredApiBindings`, `VerbBindingToken`, `AuthoredEventSubscription`) is
+   reset here, and every active camera the game chose is cleared here.
 10. The engine unloads the level, disconnects the stack's consumers, withdraws
     the game's data subtypes while the module is still mapped, and drops the
     stack.

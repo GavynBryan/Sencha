@@ -42,4 +42,4 @@ concept DefinitionHasVisualMesh = HasComponentDefinition<T>
 
 // Stamped into every companion and checked against it, so a generator older
 // than the headers reading its output fails at compile rather than silently.
-inline constexpr std::uint32_t kComponentCodegenFormatVersion = 1;
+inline constexpr std::uint32_t kComponentCodegenFormatVersion = 2;

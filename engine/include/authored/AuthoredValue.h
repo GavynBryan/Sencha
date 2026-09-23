@@ -16,11 +16,13 @@
 #include <vector>
 
 //=============================================================================
-// VerbValue and VerbArguments
+// AuthoredValue and AuthoredArguments
 //
-// What an operation is actually handed: typed values in the order its argument
+// What crosses the authored boundary at runtime: a verb's arguments, a query's
+// arguments and answer, an event's payload. Typed values in the order their
 // schema declares them, already checked, already resolved, with nothing left to
-// parse.
+// parse. One vocabulary for all three, so a bool is carried the same way
+// whichever contract it belongs to.
 //
 // This is a runtime representation, not a second schema language. The shapes
 // exist because neither JSON nor UiValue can carry the full contract a
@@ -34,7 +36,7 @@
 // schema vector, or an editor document.
 //=============================================================================
 
-enum class VerbValueKind : std::uint8_t
+enum class AuthoredValueKind : std::uint8_t
 {
     // An absent optional, and what a checked read of an empty slot returns.
     None,
@@ -67,35 +69,35 @@ enum class VerbValueKind : std::uint8_t
 };
 
 // A 2-, 3- or 4-wide numeric tuple, as DataFieldKind::Vector describes.
-struct VerbVectorValue
+struct AuthoredVectorValue
 {
     std::array<double, 4> Components{};
     std::uint8_t Length = 3;
 
-    friend bool operator==(const VerbVectorValue&, const VerbVectorValue&) = default;
+    friend bool operator==(const AuthoredVectorValue&, const AuthoredVectorValue&) = default;
 };
 
-class VerbValue
+class AuthoredValue
 {
 public:
-    VerbValue() = default;
+    AuthoredValue() = default;
 
-    [[nodiscard]] static VerbValue Bool(bool value);
-    [[nodiscard]] static VerbValue Int(std::int64_t value);
-    [[nodiscard]] static VerbValue Float(double value);
-    [[nodiscard]] static VerbValue String(std::string value);
-    [[nodiscard]] static VerbValue Enum(std::string choice);
-    [[nodiscard]] static VerbValue Vector(VerbVectorValue value);
-    [[nodiscard]] static VerbValue Record(std::vector<VerbValue> members);
-    [[nodiscard]] static VerbValue Array(std::vector<VerbValue> elements);
-    [[nodiscard]] static VerbValue Asset(AssetRef reference);
-    [[nodiscard]] static VerbValue DataAsset(AssetRef reference);
-    [[nodiscard]] static VerbValue Tag(GameplayTagId tag);
-    [[nodiscard]] static VerbValue Entity(EntityId entity);
-    [[nodiscard]] static VerbValue PersistentEntity(PersistentEntityId identity);
+    [[nodiscard]] static AuthoredValue Bool(bool value);
+    [[nodiscard]] static AuthoredValue Int(std::int64_t value);
+    [[nodiscard]] static AuthoredValue Float(double value);
+    [[nodiscard]] static AuthoredValue String(std::string value);
+    [[nodiscard]] static AuthoredValue Enum(std::string choice);
+    [[nodiscard]] static AuthoredValue Vector(AuthoredVectorValue value);
+    [[nodiscard]] static AuthoredValue Record(std::vector<AuthoredValue> members);
+    [[nodiscard]] static AuthoredValue Array(std::vector<AuthoredValue> elements);
+    [[nodiscard]] static AuthoredValue Asset(AssetRef reference);
+    [[nodiscard]] static AuthoredValue DataAsset(AssetRef reference);
+    [[nodiscard]] static AuthoredValue Tag(GameplayTagId tag);
+    [[nodiscard]] static AuthoredValue Entity(EntityId entity);
+    [[nodiscard]] static AuthoredValue PersistentEntity(PersistentEntityId identity);
 
-    [[nodiscard]] VerbValueKind Kind() const { return Kind_; }
-    [[nodiscard]] bool IsNone() const { return Kind_ == VerbValueKind::None; }
+    [[nodiscard]] AuthoredValueKind Kind() const { return Kind_; }
+    [[nodiscard]] bool IsNone() const { return Kind_ == AuthoredValueKind::None; }
 
     // Checked reads. False on a kind mismatch, leaving `out` untouched: an
     // implementation reading the wrong slot must find out, not silently act on
@@ -105,7 +107,7 @@ public:
     [[nodiscard]] bool TryGetFloat(double& out) const;
     [[nodiscard]] bool TryGetString(std::string_view& out) const;
     [[nodiscard]] bool TryGetEnum(std::string_view& out) const;
-    [[nodiscard]] bool TryGetVector(VerbVectorValue& out) const;
+    [[nodiscard]] bool TryGetVector(AuthoredVectorValue& out) const;
     [[nodiscard]] bool TryGetAsset(const AssetRef*& out) const;
     [[nodiscard]] bool TryGetDataAsset(const AssetRef*& out) const;
     [[nodiscard]] bool TryGetTag(GameplayTagId& out) const;
@@ -113,7 +115,7 @@ public:
     [[nodiscard]] bool TryGetPersistentEntity(PersistentEntityId& out) const;
 
     // Members of a record, elements of an array. Empty for every other kind.
-    [[nodiscard]] std::span<const VerbValue> Children() const { return Children_; }
+    [[nodiscard]] std::span<const AuthoredValue> Children() const { return Children_; }
 
 private:
     using Scalar = std::variant<std::monostate,
@@ -121,19 +123,19 @@ private:
                                 std::int64_t,
                                 double,
                                 std::string,
-                                VerbVectorValue,
+                                AuthoredVectorValue,
                                 AssetRef,
                                 GameplayTagId,
                                 EntityId,
                                 PersistentEntityId>;
 
-    VerbValueKind Kind_ = VerbValueKind::None;
+    AuthoredValueKind Kind_ = AuthoredValueKind::None;
     Scalar Value_;
     // Outside the variant on purpose: a variant alternative has to be complete
     // where the variant is instantiated, and this one is the type being
     // defined. std::vector may name an incomplete element type; std::variant
     // may not.
-    std::vector<VerbValue> Children_;
+    std::vector<AuthoredValue> Children_;
 };
 
 // Whether a value is one the field would accept: the right kind, inside the
@@ -144,21 +146,21 @@ private:
 // This is the check a dynamic value gets at invocation. A constant gets more
 // than this at compile time, where a diagnostic can still say which argument of
 // which binding was wrong.
-[[nodiscard]] bool VerbValueSatisfiesField(const VerbValue& value, const DataFieldSchema& field);
+[[nodiscard]] bool AuthoredValueSatisfiesField(const AuthoredValue& value, const DataFieldSchema& field);
 
 //-----------------------------------------------------------------------------
-// VerbArguments
+// AuthoredArguments
 //
-// One invocation's arguments, indexed by the position of the field in the
-// verb's record root. The binding compiler decides the order once; dispatch
-// indexes it. An implementation names its own slots as constants beside the
-// schema it declared them in.
+// One invocation's arguments, or one event's payload, indexed by the position
+// of the field in the record root that declared them. The binding compiler
+// decides the order once; dispatch indexes it. Generated adapters read slots by
+// that position, which is the order of the annotated parameters or members.
 //-----------------------------------------------------------------------------
-class VerbArguments
+class AuthoredArguments
 {
 public:
-    VerbArguments() = default;
-    explicit VerbArguments(std::size_t slots) : Slots(slots) {}
+    AuthoredArguments() = default;
+    explicit AuthoredArguments(std::size_t slots) : Slots(slots) {}
 
     [[nodiscard]] std::size_t Size() const { return Slots.size(); }
 
@@ -166,11 +168,11 @@ public:
     // stops allocating once it has seen its widest verb.
     void Resize(std::size_t slots);
 
-    void Set(std::size_t slot, VerbValue value);
+    void Set(std::size_t slot, AuthoredValue value);
 
     // The empty value for an out-of-range slot, so a caller that got its
     // indexing wrong reads None rather than reading past the end.
-    [[nodiscard]] const VerbValue& At(std::size_t slot) const;
+    [[nodiscard]] const AuthoredValue& At(std::size_t slot) const;
 
     // Checked reads, forwarding to the value's own. False when the slot does
     // not exist or does not hold that kind.
@@ -179,15 +181,15 @@ public:
     [[nodiscard]] bool TryGetFloat(std::size_t slot, double& out) const;
     [[nodiscard]] bool TryGetString(std::size_t slot, std::string_view& out) const;
     [[nodiscard]] bool TryGetEnum(std::size_t slot, std::string_view& out) const;
-    [[nodiscard]] bool TryGetVector(std::size_t slot, VerbVectorValue& out) const;
+    [[nodiscard]] bool TryGetVector(std::size_t slot, AuthoredVectorValue& out) const;
     [[nodiscard]] bool TryGetAsset(std::size_t slot, const AssetRef*& out) const;
     [[nodiscard]] bool TryGetDataAsset(std::size_t slot, const AssetRef*& out) const;
     [[nodiscard]] bool TryGetTag(std::size_t slot, GameplayTagId& out) const;
     [[nodiscard]] bool TryGetEntity(std::size_t slot, EntityId& out) const;
     [[nodiscard]] bool TryGetPersistentEntity(std::size_t slot, PersistentEntityId& out) const;
 
-    [[nodiscard]] std::span<const VerbValue> Values() const { return Slots; }
+    [[nodiscard]] std::span<const AuthoredValue> Values() const { return Slots; }
 
 private:
-    std::vector<VerbValue> Slots;
+    std::vector<AuthoredValue> Slots;
 };

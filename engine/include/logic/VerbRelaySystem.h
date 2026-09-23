@@ -1,6 +1,6 @@
 #pragma once
 
-#include <authored/VerbArguments.h>
+#include <authored/AuthoredValue.h>
 #include <authored/VerbDispatcher.h>
 #include <ecs/EntityId.h>
 
@@ -64,7 +64,7 @@ public:
     // request the authority answered -- and is carried to the operation as
     // provenance, never as a target. The tick is stamped at the drain.
     [[nodiscard]] VerbAdmission Activate(EntityId relay,
-                                         std::span<const VerbValue> inputs,
+                                         std::span<const AuthoredValue> inputs,
                                          EntityId instigator = {},
                                          InvocationId parent = {});
 
@@ -90,7 +90,7 @@ private:
         EntityId Relay;
         EntityId Instigator;
         InvocationId Parent;
-        std::vector<VerbValue> Inputs;
+        std::vector<AuthoredValue> Inputs;
     };
 
     void Abandon(const Request& request, VerbAdmission why);

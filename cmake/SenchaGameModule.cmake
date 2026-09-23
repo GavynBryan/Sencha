@@ -1,5 +1,6 @@
 # sencha_game_module(<target> [OUTPUT_NAME <name>] SOURCES <src>...
-#                    [INCLUDE_ROOT <dir>] [COMPONENT_HEADERS <header>...])
+#                    [INCLUDE_ROOT <dir>] [COMPONENT_HEADERS <header>...]
+#                    [API_HEADERS <header>...])
 #
 # Builds a game module the Sencha host (app) and editor load at runtime: a
 # MODULE library with hidden visibility (only SenchaCreateGameModule and the ABI
@@ -19,8 +20,12 @@
 # module's components are validated against the engine's, so one that claims
 # an engine identity, schema name or scene chunk fails this build naming the
 # engine declaration.
+#
+# API_HEADERS lists headers that expose authored verbs, queries or events on
+# types that are not components -- a system's SENCHA_VERB methods, a
+# SENCHA_EVENT struct. Their companions are generated the same way.
 function(sencha_game_module target)
-    cmake_parse_arguments(ARG "" "OUTPUT_NAME;INCLUDE_ROOT" "SOURCES;COMPONENT_HEADERS" ${ARGN})
+    cmake_parse_arguments(ARG "" "OUTPUT_NAME;INCLUDE_ROOT" "SOURCES;COMPONENT_HEADERS;API_HEADERS" ${ARGN})
     if(NOT ARG_SOURCES)
         message(FATAL_ERROR "sencha_game_module(${target}): SOURCES is required")
     endif()
@@ -39,10 +44,11 @@ function(sencha_game_module target)
         PREFIX ""
         OUTPUT_NAME "${ARG_OUTPUT_NAME}")
 
-    if(ARG_COMPONENT_HEADERS)
+    if(ARG_COMPONENT_HEADERS OR ARG_API_HEADERS)
         sencha_generate_component_metadata(${target}
             INCLUDE_ROOT "${ARG_INCLUDE_ROOT}"
             BASE sencha::engine
-            HEADERS ${ARG_COMPONENT_HEADERS})
+            HEADERS ${ARG_COMPONENT_HEADERS}
+            API_HEADERS ${ARG_API_HEADERS})
     endif()
 endfunction()

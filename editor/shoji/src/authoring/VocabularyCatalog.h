@@ -1,5 +1,7 @@
 #pragma once
 
+#include <authored/AuthoredEventRegistry.h>
+#include <authored/AuthoredQueryRegistry.h>
 #include <authored/VerbBinding.h>
 #include <authored/VerbRegistry.h>
 #include <ecs/World.h>
@@ -16,8 +18,8 @@ class Game;
 // VocabularyCatalog
 //
 // What an author can name, and whether what they named resolves: the engine's
-// verbs, a loaded game module's verbs, and each record of a binding asset held
-// against them.
+// and a loaded game module's verbs, queries and events, and each record of a
+// binding asset held against the verbs.
 //
 // A metadata World and nothing else. It carries the catalog and the vocabulary
 // registries a module's hook is entitled to fill, and no dispatcher -- there is
@@ -53,6 +55,28 @@ public:
     // Every live verb, in catalog order.
     [[nodiscard]] std::vector<VerbRow> ListVerbs() const;
 
+    struct QueryRow
+    {
+        std::string Name;
+        std::string DisplayName;
+        std::string Provider;
+        std::size_t ArgumentCount = 0;
+    };
+    // Every live query, in catalog order.
+    [[nodiscard]] std::vector<QueryRow> ListQueries() const;
+
+    struct EventRow
+    {
+        std::string Name;
+        std::string DisplayName;
+        // The component a source is expected to carry, when the event says.
+        std::string SourceComponent;
+        std::string Provider;
+        std::size_t PayloadCount = 0;
+    };
+    // Every live event, in catalog order.
+    [[nodiscard]] std::vector<EventRow> ListEvents() const;
+
     struct BindingRow
     {
         std::string Key;
@@ -74,6 +98,10 @@ public:
                                                   const DataAssetCache* dataAssets = nullptr) const;
 
 private:
+    // Moves every catalog's refused declarations into Diagnostics, so a second
+    // module's errors are not reported with the first's.
+    void TakeInstallationErrors();
+
     World Metadata;
     std::vector<std::string> Diagnostics;
 };

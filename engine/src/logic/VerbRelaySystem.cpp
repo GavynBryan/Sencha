@@ -21,7 +21,7 @@ VerbRelaySystem::VerbRelaySystem(VerbDispatcher& dispatcher, DataAssetCache& dat
 }
 
 VerbAdmission VerbRelaySystem::Activate(EntityId relay,
-                                        std::span<const VerbValue> inputs,
+                                        std::span<const AuthoredValue> inputs,
                                         EntityId instigator,
                                         InvocationId parent)
 {

@@ -1,6 +1,8 @@
 #include "TemplateModuleRun.h"
 
 #include <anim/AnimationClipPlaybackSystem.h>
+#include <authored/AuthoredEventDispatcher.h>
+#include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbBindingSet.h>
 #include <authored/VerbDispatcher.h>
 #include <logic/VerbRelay.h>
@@ -15,6 +17,7 @@
 #include <world/scene/SceneInstanceIndex.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 //=============================================================================
@@ -191,10 +194,59 @@ namespace
         VerbAdmission MenuAdmission = VerbAdmission::Unavailable;
         std::string Scoreboard;
 
+        // What an authored consumer hears: each announced change, and the
+        // scoreboard as the game's own queries report it at that moment. Asked
+        // by name through the engine's dispatchers, because this binary cannot
+        // name the game's types -- which is exactly the position a graph is in.
+        struct Change
+        {
+            std::string Side;
+            std::int64_t Amount = 0;
+            std::int64_t Red = -1;
+            std::int64_t Blue = -1;
+        };
+        std::vector<Change> Changes;
+        AuthoredEventSubscription ScoreChanged;
+
+        static void OnScoreChanged(ScoreProbe& self, const AuthoredEventDelivery& delivery)
+        {
+            Change change;
+            std::string_view side;
+            if (delivery.Payload->TryGetEnum(0, side))
+                change.Side = std::string(side);
+            (void)delivery.Payload->TryGetInt(1, change.Amount);
+            if (const AuthoredQueryDispatcher* queries = self.Host->TryAuthoredQueries())
+            {
+                const AuthoredValue board = AuthoredValue::Entity(delivery.Source);
+                AuthoredValue answer;
+                if (queries->Evaluate(queries->Registry().Find("arena_scoreboard.red"),
+                                      { &board, 1 }, answer)
+                    == AuthoredQueryStatus::Value)
+                {
+                    (void)answer.TryGetInt(change.Red);
+                }
+                if (queries->Evaluate(queries->Registry().Find("arena_scoreboard.blue"),
+                                      { &board, 1 }, answer)
+                    == AuthoredQueryStatus::Value)
+                {
+                    (void)answer.TryGetInt(change.Blue);
+                }
+            }
+            self.Changes.push_back(std::move(change));
+        }
+
         void FrameUpdate(FrameUpdateContext& ctx)
         {
             World& world = ctx.Entities;
             ++Frames;
+            if (!ScoreChanged.IsValid())
+            {
+                if (AuthoredEventDispatcher* events = Host->TryAuthoredEvents())
+                {
+                    ScoreChanged = events->Subscribe<&ScoreProbe::OnScoreChanged>(
+                        events->Registry().Find("arena.score_changed"), EntityId{}, *this);
+                }
+            }
             if (Frames == kAwardAtFrame)
             {
                 if (world.IsRegistered<VerbRelay>())
@@ -250,5 +302,28 @@ TEST(ArenaTemplate, OneAuthoredVerbIsReachedFromTheRelayAndFromTheShellsBinding)
     // menu's awards red one, with none. Both landed on the replicated match
     // entity, which is where a late joiner would read them from.
     EXPECT_EQ(seen.Scoreboard, "red 1, blue 5");
+}
+
+TEST(ArenaTemplate, EachAppliedAwardIsAnnouncedAndTheQueriesSeeItsEffect)
+{
+    TemplateModuleRun<ScoreProbe> run(
+        TEST_ARENA_MODULE_PATH, SENCHA_REPO_ROOT "/templates/arena/assets",
+        "levels/arena_room", 200);
+    ASSERT_TRUE(run.Loaded());
+    ASSERT_EQ(run.Exit(), 0);
+
+    // Relay first, then the menu; each announced once, from the match entity,
+    // after the scoreboard changed -- which the game's own queries confirm from
+    // inside the delivery.
+    const std::vector<ScoreProbe::Change>& changes = run.Seen().Changes;
+    ASSERT_EQ(changes.size(), 2u);
+    EXPECT_EQ(changes[0].Side, "blue");
+    EXPECT_EQ(changes[0].Amount, 5);
+    EXPECT_EQ(changes[0].Red, 0);
+    EXPECT_EQ(changes[0].Blue, 5);
+    EXPECT_EQ(changes[1].Side, "red");
+    EXPECT_EQ(changes[1].Amount, 1);
+    EXPECT_EQ(changes[1].Red, 1);
+    EXPECT_EQ(changes[1].Blue, 5);
 }
 #endif

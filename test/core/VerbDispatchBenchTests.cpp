@@ -7,6 +7,8 @@
 // and an entity-argument invocation pays for copying the argument pack and
 // nothing else.
 
+#include "AllocationCounter.h"
+
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>
 
@@ -14,35 +16,6 @@
 
 #include <chrono>
 #include <cstdio>
-#include <cstdlib>
-#include <new>
-
-namespace
-{
-// Counts every allocation in this process. Replacing the global operators is
-// allowed once per program, and this translation unit is the one place in the
-// core test binary that does it; every other test simply pays a counter
-// increment it never reads.
-std::size_t gAllocations = 0;
-}
-
-void* operator new(std::size_t size)
-{
-    ++gAllocations;
-    if (void* memory = std::malloc(size == 0 ? 1 : size))
-        return memory;
-    throw std::bad_alloc();
-}
-
-void operator delete(void* memory) noexcept
-{
-    std::free(memory);
-}
-
-void operator delete(void* memory, std::size_t) noexcept
-{
-    std::free(memory);
-}
 
 namespace
 {
@@ -116,7 +89,7 @@ TEST(VerbDispatchBench, WarmedInvocationsAllocateNothingForNoArgumentsAndNothing
     NullOperation operation;
     const VerbBindingToken noneToken = dispatcher.Bind(none.Verb, operation);
     const VerbBindingToken entityToken = dispatcher.Bind(entity.Verb, operation);
-    const VerbValue value = VerbValue::Entity(EntityId{ .Index = 3, .Generation = 1 });
+    const AuthoredValue value = AuthoredValue::Entity(EntityId{ .Index = 3, .Generation = 1 });
 
     // Warm: the first call of each shape sizes the dispatcher's scratch pack.
     ASSERT_TRUE(dispatcher.Invoke(none, {}).Accepted());
@@ -124,16 +97,16 @@ TEST(VerbDispatchBench, WarmedInvocationsAllocateNothingForNoArgumentsAndNothing
 
     constexpr int kIterations = 200000;
 
-    const std::size_t beforeNone = gAllocations;
+    const std::size_t beforeNone = AllocationCount();
     const double noneNanos =
         NanosPerCall([&] { (void)dispatcher.Invoke(none, {}); }, kIterations);
-    EXPECT_EQ(gAllocations, beforeNone) << "a no-argument invocation allocated after warm-up";
+    EXPECT_EQ(AllocationCount(), beforeNone) << "a no-argument invocation allocated after warm-up";
 
-    const std::size_t beforeEntity = gAllocations;
+    const std::size_t beforeEntity = AllocationCount();
     const double entityNanos = NanosPerCall(
         [&] { (void)dispatcher.Invoke(entity, { &value, 1 }); }, kIterations);
     // An entity is a scalar in the pack; copying it allocates nothing either.
-    EXPECT_EQ(gAllocations, beforeEntity) << "an entity-argument invocation allocated after warm-up";
+    EXPECT_EQ(AllocationCount(), beforeEntity) << "an entity-argument invocation allocated after warm-up";
 
     std::printf("[bench] warmed dispatch: no-argument %.0f ns/call, entity-argument %.0f ns/call "
                 "(%d iterations each, %s)\n",

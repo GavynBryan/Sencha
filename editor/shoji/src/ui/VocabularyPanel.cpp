@@ -56,6 +56,52 @@ void VocabularyPanel::OnDraw()
         ImGui::EndTable();
     }
 
+    if (ImGui::CollapsingHeader("Queries", ImGuiTreeNodeFlags_DefaultOpen)
+        && ImGui::BeginTable("queries", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg))
+    {
+        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 2.0f);
+        ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 1.5f);
+        ImGui::TableSetupColumn("provider", ImGuiTableColumnFlags_WidthFixed, EditorUi::Px(80.0f));
+        ImGui::TableSetupColumn("args", ImGuiTableColumnFlags_WidthFixed, EditorUi::Px(40.0f));
+        ImGui::TableHeadersRow();
+        for (const VocabularyCatalog::QueryRow& query : Catalog.ListQueries())
+        {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(query.Name.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(query.DisplayName.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", query.Provider.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%zu", query.ArgumentCount);
+        }
+        ImGui::EndTable();
+    }
+
+    if (ImGui::CollapsingHeader("Events", ImGuiTreeNodeFlags_DefaultOpen)
+        && ImGui::BeginTable("events", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg))
+    {
+        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 2.0f);
+        ImGui::TableSetupColumn("source", ImGuiTableColumnFlags_WidthStretch, 1.5f);
+        ImGui::TableSetupColumn("provider", ImGuiTableColumnFlags_WidthFixed, EditorUi::Px(80.0f));
+        ImGui::TableSetupColumn("payload", ImGuiTableColumnFlags_WidthFixed, EditorUi::Px(56.0f));
+        ImGui::TableHeadersRow();
+        for (const VocabularyCatalog::EventRow& event : Catalog.ListEvents())
+        {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(event.Name.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(event.SourceComponent.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", event.Provider.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%zu", event.PayloadCount);
+        }
+        ImGui::EndTable();
+    }
+
     if (!ImGui::CollapsingHeader("Bindings", ImGuiTreeNodeFlags_DefaultOpen))
         return;
     if (Assets.empty())

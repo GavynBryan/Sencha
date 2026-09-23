@@ -58,7 +58,7 @@ struct UiVerbArgumentMapping
     // What it becomes. The conversion is compiled when the screen opens and
     // checked against what the binding's input declared, so a mismatch is a
     // diagnostic at open rather than a refusal on every click.
-    VerbValueKind Produces = VerbValueKind::None;
+    AuthoredValueKind Produces = AuthoredValueKind::None;
 };
 
 // One of a screen's declared actions, and what it invokes.
@@ -142,6 +142,6 @@ private:
 
     // Reused across batches so a click costs no allocation once the widest
     // mapping has been seen.
-    std::vector<VerbValue> Inputs;
+    std::vector<AuthoredValue> Inputs;
     std::vector<Outcome> Outcomes;
 };

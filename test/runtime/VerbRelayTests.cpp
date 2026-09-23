@@ -92,7 +92,7 @@ public:
         Calls.push_back(call);
         if (Relay != nullptr && ReactivateDuringCall.IsValid())
         {
-            const VerbValue self = VerbValue::Entity(ReactivateDuringCall);
+            const AuthoredValue self = AuthoredValue::Entity(ReactivateDuringCall);
             Nested = Relay->Activate(ReactivateDuringCall, { &self, 1 }, {}, invocation.Id);
             ReactivateDuringCall = {};
         }
@@ -166,7 +166,7 @@ protected:
 
     [[nodiscard]] VerbAdmission Activate(EntityId relay, EntityId target, EntityId instigator = {})
     {
-        const VerbValue value = VerbValue::Entity(target);
+        const AuthoredValue value = AuthoredValue::Entity(target);
         return Relay->Activate(relay, { &value, 1 }, instigator);
     }
 

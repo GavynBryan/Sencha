@@ -48,21 +48,21 @@ namespace
 
 TEST(VerbNameTest, AcceptsDottedIdentifierSegmentsAndNothingElse)
 {
-    EXPECT_TRUE(IsValidVerbName("runtime.resume"));
-    EXPECT_TRUE(IsValidVerbName("quit"));
-    EXPECT_TRUE(IsValidVerbName("_private.step_2"));
-    EXPECT_TRUE(IsValidVerbName("a.b.c.d"));
+    EXPECT_TRUE(IsValidAuthoredName("runtime.resume"));
+    EXPECT_TRUE(IsValidAuthoredName("quit"));
+    EXPECT_TRUE(IsValidAuthoredName("_private.step_2"));
+    EXPECT_TRUE(IsValidAuthoredName("a.b.c.d"));
 
-    EXPECT_FALSE(IsValidVerbName(""));
-    EXPECT_FALSE(IsValidVerbName("."));
-    EXPECT_FALSE(IsValidVerbName("runtime."));
-    EXPECT_FALSE(IsValidVerbName(".resume"));
-    EXPECT_FALSE(IsValidVerbName("runtime..resume"));
-    EXPECT_FALSE(IsValidVerbName("2fast"));
-    EXPECT_FALSE(IsValidVerbName("runtime resume"));
-    EXPECT_FALSE(IsValidVerbName(" runtime.resume"));
-    EXPECT_FALSE(IsValidVerbName("runtime.resume "));
-    EXPECT_FALSE(IsValidVerbName("runtime-resume"));
+    EXPECT_FALSE(IsValidAuthoredName(""));
+    EXPECT_FALSE(IsValidAuthoredName("."));
+    EXPECT_FALSE(IsValidAuthoredName("runtime."));
+    EXPECT_FALSE(IsValidAuthoredName(".resume"));
+    EXPECT_FALSE(IsValidAuthoredName("runtime..resume"));
+    EXPECT_FALSE(IsValidAuthoredName("2fast"));
+    EXPECT_FALSE(IsValidAuthoredName("runtime resume"));
+    EXPECT_FALSE(IsValidAuthoredName(" runtime.resume"));
+    EXPECT_FALSE(IsValidAuthoredName("runtime.resume "));
+    EXPECT_FALSE(IsValidAuthoredName("runtime-resume"));
 }
 
 TEST(VerbRegistryTest, EachCatalogMintsItsOwnIdentity)
@@ -210,7 +210,7 @@ TEST(VerbRegistryTest, ARetiredNameKeepsItsSlotAndResolvesToNothing)
     EXPECT_FALSE(registry.IsLive(first));
     EXPECT_EQ(registry.Get(first), nullptr);
     EXPECT_FALSE(registry.Revision(first).IsValid());
-    EXPECT_TRUE(registry.LiveVerbs().empty());
+    EXPECT_TRUE(registry.Live().empty());
     // The slots stay: a cached id must not come to mean whatever is declared
     // next.
     EXPECT_EQ(registry.SlotCount(), 2u);
@@ -248,7 +248,7 @@ TEST(VerbRegistryTest, EnumerationIsByIdAndNeverHashOrder)
     EXPECT_TRUE(scope.Declare(Verb("mike.op", NoArguments())));
     ASSERT_TRUE(scope.Commit());
 
-    const std::vector<VerbId> live = registry.LiveVerbs();
+    const std::vector<VerbId> live = registry.Live();
     ASSERT_EQ(live.size(), 3u);
     EXPECT_EQ(registry.Get(live[0])->Name, "zulu.op");
     EXPECT_EQ(registry.Get(live[1])->Name, "alpha.op");
@@ -256,7 +256,7 @@ TEST(VerbRegistryTest, EnumerationIsByIdAndNeverHashOrder)
 
     // Adding a name later does not move the ones already minted.
     ASSERT_TRUE(DeclareOne(registry, "engine", Verb("bravo.op", NoArguments())));
-    const std::vector<VerbId> after = registry.LiveVerbs();
+    const std::vector<VerbId> after = registry.Live();
     ASSERT_EQ(after.size(), 4u);
     EXPECT_EQ(after[0], live[0]);
     EXPECT_EQ(after[1], live[1]);
@@ -303,7 +303,7 @@ TEST(VerbContractTest, PresentationDiffersFromContract)
 {
     DataFieldSchema left = OneInt("Amount");
     DataFieldSchema right = OneInt("Amount");
-    EXPECT_TRUE(VerbContractsMatch(left, right));
+    EXPECT_TRUE(AuthoredContractsMatch(left, right));
 
     right.Children.front().DisplayName = "Points";
     right.Children.front().Summary = "How many";
@@ -311,8 +311,8 @@ TEST(VerbContractTest, PresentationDiffersFromContract)
     right.Children.front().Units = "points";
     right.Children.front().Advanced = true;
     right.Children.front().Numeric.Step = 10.0;
-    EXPECT_TRUE(VerbContractsMatch(left, right));
+    EXPECT_TRUE(AuthoredContractsMatch(left, right));
 
     right.Children.front().Numeric.Maximum = 100.0;
-    EXPECT_FALSE(VerbContractsMatch(left, right));
+    EXPECT_FALSE(AuthoredContractsMatch(left, right));
 }

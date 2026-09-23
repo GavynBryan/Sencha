@@ -354,7 +354,10 @@ void Engine::Shutdown()
     // the unified world and backend services are still alive, then join task
     // lanes before destroying the entity world they may have targeted.
     EngineSystems.Shutdown();
-    // After the systems that hold it, before the World whose catalog it reads.
+    // After the systems that hold them, before the World whose catalogs they
+    // read.
+    EventDispatcherState.reset();
+    QueryDispatcherState.reset();
     VerbDispatcherState.reset();
     // Before the frame driver: the net phases hold a pointer to this, and a
     // session outliving the loop that pumps it is a session nothing drains.
@@ -525,6 +528,70 @@ bool Engine::InstantiateShellBindings()
     // silently does nothing.
     return ShellBindingSet.Find(kShellResumeBinding) != nullptr
         && ShellBindingSet.Find(kShellQuitBinding) != nullptr;
+}
+
+void Engine::RegisterAuthoredEventCVars()
+{
+    ConsoleRegistry& registry = Console().Registry();
+    // Looked up on each change rather than captured: the console outlives the
+    // dispatcher, which is rebuilt with the runtime World.
+    (void)registry.RegisterCVar({
+        .Name = "authored.events.drain_budget",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(AuthoredEventDispatcher::kDefaultBudget),
+        .CurrentValue = static_cast<std::int64_t>(EventDispatcherState->BudgetPerDrain()),
+        .Flags = CVarFlags::None,
+        .Help = "Subscriber calls one tick's event drain may make before it stops. A chain that "
+                "exhausts two drains in a row is quarantined.",
+        .Source = { "engine" },
+        .Min = 1.0,
+        .Max = 1048576.0,
+        .OnChange = [this](const CVarChangeContext& ctx) {
+            if (EventDispatcherState != nullptr)
+                EventDispatcherState->SetBudget(
+                    static_cast<std::size_t>(std::get<std::int64_t>(ctx.NewValue)));
+        },
+    });
+    (void)registry.RegisterCVar({
+        .Name = "authored.events.queue_capacity",
+        .Owner = "engine",
+        .Type = CVarType::Int,
+        .DefaultValue = static_cast<std::int64_t>(AuthoredEventDispatcher::kDefaultCapacity),
+        .CurrentValue = static_cast<std::int64_t>(EventDispatcherState->Capacity()),
+        .Flags = CVarFlags::None,
+        .Help = "How many announced events may wait for the next drain. Overflow refuses the "
+                "announcement rather than dropping one already queued.",
+        .Source = { "engine" },
+        .Min = 1.0,
+        .Max = 1048576.0,
+        .OnChange = [this](const CVarChangeContext& ctx) {
+            if (EventDispatcherState != nullptr)
+                EventDispatcherState->SetCapacity(
+                    static_cast<std::size_t>(std::get<std::int64_t>(ctx.NewValue)));
+        },
+    });
+#ifdef NDEBUG
+    constexpr bool trapByDefault = false;
+#else
+    constexpr bool trapByDefault = true;
+#endif
+    EventDispatcherState->SetTrapOnQuarantine(trapByDefault);
+    (void)registry.RegisterCVar({
+        .Name = "authored.events.trap_on_quarantine",
+        .Owner = "engine",
+        .Type = CVarType::Bool,
+        .DefaultValue = trapByDefault,
+        .CurrentValue = trapByDefault,
+        .Flags = CVarFlags::None,
+        .Help = "Whether quarantining a runaway event chain also stops a debug build where it "
+                "happens.",
+        .Source = { "engine" },
+        .OnChange = [this](const CVarChangeContext& ctx) {
+            if (EventDispatcherState != nullptr)
+                EventDispatcherState->SetTrapOnQuarantine(std::get<bool>(ctx.NewValue));
+        },
+    });
 }
 
 VerbBindingEnvironment Engine::ShellBindingEnvironment() const
@@ -1009,7 +1076,8 @@ int Engine::Run(Game& game)
         // Movement is not among them: it is a feature a game opts into, and a
         // locomotion mode is declared once the game has, as the templates do.
         InstallAbilityKitVocabulary(entities);
-        VerbRegistry& verbs = InstallVerbRegistry(entities);
+        InstallAuthoredVocabulary(entities);
+        VerbRegistry& verbs = *FindVerbRegistry(entities);
         (void)DeclareEngineVerbs(verbs);
 
         // Registration only: no entities, no engine state, nothing that starts
@@ -1018,9 +1086,10 @@ int Engine::Run(Game& game)
         // whose content names a verb that was refused must not reach a frame.
         game.OnRegisterVocabulary(entities);
 
-        if (!verbs.InstallationErrors().empty())
+        if (const std::vector<std::string> errors = AuthoredInstallationErrors(entities);
+            !errors.empty())
         {
-            for (const std::string& error : verbs.InstallationErrors())
+            for (const std::string& error : errors)
                 std::fprintf(stderr, "Vocabulary installation failed: %s\n", error.c_str());
             NetPrefabState.reset();
             SpawnServiceState.reset();
@@ -1034,6 +1103,13 @@ int Engine::Run(Game& game)
         // game reaches it through Engine::TryVerbs to bind what it declared.
         VerbDispatcherState = std::make_unique<VerbDispatcher>(verbs);
         VerbDispatcherState->SetEntityIndex(entities.TryGetResource<PersistentEntityIndex>());
+        // Its siblings for questions and announcements, composed the same way.
+        QueryDispatcherState =
+            std::make_unique<AuthoredQueryDispatcher>(*FindAuthoredQueryRegistry(entities));
+        EventDispatcherState = std::make_unique<AuthoredEventDispatcher>(
+            *FindAuthoredEventRegistry(entities), LoggingState.GetLogger<AuthoredEventDispatcher>());
+        EventDispatcherState->SetWorld(&entities);
+        RegisterAuthoredEventCVars();
         // Authoritative until a session says otherwise, which is the answer
         // for every process a session never touches.
         if (!entities.HasResource<SimulationAuthority>())
@@ -1249,6 +1325,15 @@ int Engine::Run(Game& game)
     }
 
     game.OnRegisterSystems(registerSystems);
+    // Every place a game binds has run. A declared query nothing answers is
+    // content that will read Unbound, which is worth one line now rather than
+    // a condition that silently never passes.
+    for (const AuthoredQueryId query : QueryDispatcherState->Unanswered())
+    {
+        LoggingState.GetLogger<Engine>().Warn(
+            "Authored query '{}' is declared but nothing answers it",
+            QueryDispatcherState->Registry().Get(query)->Name);
+    }
     // After the game's, so whatever ordering constraints it declared already
     // exist when these are added.
     ContentState->RegisterSystems(EngineSystems);
@@ -1320,6 +1405,8 @@ int Engine::Run(Game& game)
     // work there still has the dependency it reports through.
     if (VerbDispatcherState != nullptr)
         VerbDispatcherState->CloseAdmission();
+    if (EventDispatcherState != nullptr)
+        EventDispatcherState->CloseAdmission();
 
     GameShutdownContext shutdown{
         .Config = Configuration,

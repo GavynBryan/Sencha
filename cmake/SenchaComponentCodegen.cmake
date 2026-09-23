@@ -57,18 +57,27 @@ function(sencha_require_component_codegen_format include_dir)
     endif()
 endfunction()
 
+# HEADERS are component headers; API_HEADERS declare authored verbs, queries or
+# events on types that are not components. Both are generated the same way,
+# into the same tree, by one call -- the lists are separate because component
+# headers carry the data-only discipline check_component_headers.sh enforces,
+# and an API header declares behaviour.
 function(sencha_generate_component_metadata target)
-    cmake_parse_arguments(ARG "" "INCLUDE_ROOT;BASE" "HEADERS" ${ARGN})
+    cmake_parse_arguments(ARG "" "INCLUDE_ROOT;BASE" "HEADERS;API_HEADERS" ${ARGN})
     if(NOT ARG_INCLUDE_ROOT)
         set(ARG_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
     endif()
     get_filename_component(ARG_INCLUDE_ROOT "${ARG_INCLUDE_ROOT}" ABSOLUTE)
+    list(APPEND ARG_HEADERS ${ARG_API_HEADERS})
     if(NOT ARG_HEADERS)
         return()
     endif()
 
-    set(_generated "${CMAKE_CURRENT_BINARY_DIR}/generated-components")
-    set(_flags "${CMAKE_CURRENT_BINARY_DIR}/component-codegen.rsp")
+    # Per target, so two targets in one directory -- a test binary compiling a
+    # template's headers beside another that does too -- neither write the
+    # same companion nor sweep away each other's.
+    set(_generated "${CMAKE_CURRENT_BINARY_DIR}/generated-components/${target}")
+    set(_flags "${CMAKE_CURRENT_BINARY_DIR}/${target}.component-codegen.rsp")
 
     # Every configuration compiles the same companion, so the flags come from
     # one reference configuration; a definition such as NDEBUG that varies with
@@ -168,4 +177,5 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
     endif()
     add_dependencies(${target} ${target}_component_index)
     set_property(TARGET ${target} PROPERTY SENCHA_COMPONENT_INDEX "${_index}")
+    set_property(TARGET ${target} PROPERTY SENCHA_COMPONENT_GENERATED_DIR "${_generated}")
 endfunction()

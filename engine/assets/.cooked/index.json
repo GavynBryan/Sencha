@@ -5,7 +5,7 @@
       "source": "ui/fonts/Inter-Regular.ttf",
       "input_fingerprint": "c694bb143377f2be",
       "size": "411640",
-      "mtime": "-4648143666981174355",
+      "mtime": "-4647491503858201216",
       "meta_size": "0",
       "meta_mtime": "0",
       "artifacts": [
@@ -21,14 +21,14 @@
       "source": "ui/options.rml",
       "input_fingerprint": "0d2a3b3e37af3303",
       "size": "2089",
-      "mtime": "-4648105946171776433",
+      "mtime": "-4647491503858201216",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "ui/pause.rcss",
           "size": "5181",
-          "mtime": "-4648106656254630815"
+          "mtime": "-4647491503858201216"
         }
       ],
       "artifacts": [
@@ -44,14 +44,14 @@
       "source": "ui/pause.rml",
       "input_fingerprint": "8b194a6c8321dfe4",
       "size": "1252",
-      "mtime": "-4648141353710657390",
+      "mtime": "-4647491503858201216",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "ui/pause.rcss",
           "size": "5181",
-          "mtime": "-4648106656254630815"
+          "mtime": "-4647491503858201216"
         }
       ],
       "artifacts": [

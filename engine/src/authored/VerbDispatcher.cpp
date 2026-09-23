@@ -23,22 +23,11 @@ const char* VerbAdmissionName(VerbAdmission admission)
     return "unknown";
 }
 
-void VerbBindingToken::Reset()
-{
-    const std::shared_ptr<DispatcherLink> link = Link.lock();
-    if (link != nullptr && link->Owner != nullptr && Verb.IsValid())
-        link->Owner->Unbind(Verb, Generation);
-
-    Link.reset();
-    Verb = {};
-    Generation = {};
-}
-
 VerbDispatcher::VerbDispatcher(const VerbRegistry& registry)
     : Verbs(registry)
-    , Link(std::make_shared<VerbBindingToken::DispatcherLink>())
+    , Link(std::make_shared<VerbBindingToken::Link>())
 {
-    Link->Owner = this;
+    Link->Target = this;
 }
 
 VerbDispatcher::~VerbDispatcher()
@@ -46,7 +35,7 @@ VerbDispatcher::~VerbDispatcher()
     // Tokens outliving this become inert rather than dangling. Whichever way a
     // host declared its members, unbinding late is safe and unbinding early is
     // correct.
-    Link->Owner = nullptr;
+    Link->Target = nullptr;
 }
 
 VerbDispatcher::Implementation* VerbDispatcher::Find(VerbId verb)
@@ -88,14 +77,10 @@ VerbBindingToken VerbDispatcher::BindErased(VerbId verb, void* target, InvokeFn 
     entry.Generation = VerbBindingGeneration{ ++NextGeneration };
     entry.Revision = Verbs.Revision(verb);
 
-    VerbBindingToken token;
-    token.Link = Link;
-    token.Verb = verb;
-    token.Generation = entry.Generation;
-    return token;
+    return VerbBindingToken(Link, verb, entry.Generation);
 }
 
-void VerbDispatcher::Unbind(VerbId verb, VerbBindingGeneration generation)
+void VerbDispatcher::Release(VerbId verb, VerbBindingGeneration generation)
 {
     assert(!Dispatching && "an implementation cannot be unbound from inside a dispatch");
     if (Dispatching)
@@ -129,7 +114,7 @@ void VerbDispatcher::RecordTrace(VerbTraceEvent event,
 }
 
 VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
-                                            std::span<const VerbValue> inputs,
+                                            std::span<const AuthoredValue> inputs,
                                             const VerbInvocationSource& source)
 {
     // Every attempt takes its own id, accepted or not, so a refusal in the
@@ -172,7 +157,7 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
     Scratch.Resize(binding.Constants.Size());
     for (std::size_t slot = 0; slot < binding.Constants.Size(); ++slot)
     {
-        const VerbValue& constant = binding.Constants.At(slot);
+        const AuthoredValue& constant = binding.Constants.At(slot);
         PersistentEntityId identity;
         if (!constant.TryGetPersistentEntity(identity))
         {
@@ -186,14 +171,14 @@ VerbInvocationResult VerbDispatcher::Invoke(const CompiledVerbBinding& binding,
             Entities != nullptr ? Entities->TryResolve(identity) : EntityId{};
         if (!entity.IsValid())
             return reject(VerbAdmission::UnresolvedReference);
-        Scratch.Set(slot, VerbValue::Entity(entity));
+        Scratch.Set(slot, AuthoredValue::Entity(entity));
     }
 
     for (std::size_t index = 0; index < binding.Inputs.size(); ++index)
     {
         for (const VerbInputDestination& destination : binding.Inputs[index].Destinations)
         {
-            if (!VerbValueSatisfiesField(inputs[index], destination.Expected))
+            if (!AuthoredValueSatisfiesField(inputs[index], destination.Expected))
                 return reject(VerbAdmission::InvalidArguments);
             // A subtype the field declares is checked against the resident
             // value, which is the one thing the kind check above cannot see.

@@ -288,7 +288,7 @@ public:
     argument.ArgumentIndex = index;
     argument.InputSlot = slot;
     argument.Expected = UiValueKind::Int;
-    argument.Produces = VerbValueKind::Int;
+    argument.Produces = AuthoredValueKind::Int;
     return argument;
 }
 
@@ -384,7 +384,7 @@ TEST(UiVerbBindings, AMappingIsCheckedWhenTheScreenOpens)
     fromId.ArgumentIndex = 0;
     fromId.InputSlot = 0;
     fromId.Expected = UiValueKind::Id;
-    fromId.Produces = VerbValueKind::Entity;
+    fromId.Produces = AuthoredValueKind::Entity;
     identity.Arguments.push_back(fromId);
     refuses({ std::move(identity) }, "conversion");
 
@@ -394,7 +394,7 @@ TEST(UiVerbBindings, AMappingIsCheckedWhenTheScreenOpens)
     asText.ArgumentIndex = 0;
     asText.InputSlot = 0;
     asText.Expected = UiValueKind::String;
-    asText.Produces = VerbValueKind::String;
+    asText.Produces = AuthoredValueKind::String;
     mistyped.Arguments.push_back(asText);
     refuses({ std::move(mistyped) }, "wrong kind");
 }

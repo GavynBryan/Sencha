@@ -157,7 +157,7 @@ TEST_F(VerbBindingCompileTest, EveryAdvertisedShapeCompiles)
     ASSERT_TRUE(CompileVerbBinding(desc, Environment(), Compiled, Errors))
         << (Errors.empty() ? std::string{} : Errors.front());
 
-    const VerbArguments& arguments = Compiled.Constants;
+    const AuthoredArguments& arguments = Compiled.Constants;
     ASSERT_EQ(arguments.Size(), 13u);
 
     bool flag = false;
@@ -165,7 +165,7 @@ TEST_F(VerbBindingCompileTest, EveryAdvertisedShapeCompiles)
     double scale = 0.0;
     std::string_view label;
     std::string_view mode;
-    VerbVectorValue where;
+    AuthoredVectorValue where;
     const AssetRef* look = nullptr;
     const AssetRef* tuning = nullptr;
     GameplayTagId kind;
@@ -191,7 +191,7 @@ TEST_F(VerbBindingCompileTest, EveryAdvertisedShapeCompiles)
     EXPECT_DOUBLE_EQ(where.Components[2], 3.0);
     EXPECT_EQ(arguments.At(6).Children().size(), 2u);
     EXPECT_EQ(arguments.At(7).Children().size(), 2u);
-    EXPECT_EQ(arguments.At(8).Kind(), VerbValueKind::String);
+    EXPECT_EQ(arguments.At(8).Kind(), AuthoredValueKind::String);
     // The kind comes from the contract, never from the authored string.
     EXPECT_EQ(look->Type, AssetType::Material);
     EXPECT_EQ(look->Path, "asset://materials/hit.smat");

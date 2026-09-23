@@ -1,6 +1,6 @@
 #pragma once
 
-#include <authored/VerbArguments.h>
+#include <authored/AuthoredValue.h>
 #include <authored/VerbId.h>
 #include <core/json/JsonValue.h>
 #include <core/metadata/DataSchema.h>
@@ -134,7 +134,7 @@ struct CompiledVerbBinding
 
     // Every argument slot, with constants and defaults already filled. Input
     // slots are left empty for the producer's values.
-    VerbArguments Constants;
+    AuthoredArguments Constants;
 
     // In the order the binding declared them, which is the order a producer
     // supplies values.

@@ -11,6 +11,8 @@
 #include <app/EngineSchedule.h>
 #include <app/LoadedLevel.h>
 #include <app/RuntimeContent.h>
+#include <authored/AuthoredEventDispatcher.h>
+#include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbBindingSet.h>
 #include <authored/VerbDispatcher.h>
 #ifdef SENCHA_ENABLE_UI
@@ -425,6 +427,23 @@ public:
     [[nodiscard]] VerbDispatcher* TryVerbs() { return VerbDispatcherState.get(); }
     [[nodiscard]] const VerbDispatcher* TryVerbs() const { return VerbDispatcherState.get(); }
 
+    // Where a game binds the objects that answer the queries it declared, and
+    // where authored consumers ask them. Same lifetime as TryVerbs.
+    [[nodiscard]] AuthoredQueryDispatcher* TryAuthoredQueries() { return QueryDispatcherState.get(); }
+    [[nodiscard]] const AuthoredQueryDispatcher* TryAuthoredQueries() const
+    {
+        return QueryDispatcherState.get();
+    }
+
+    // Where gameplay code announces the events it declared, and where authored
+    // consumers subscribe to them. Drained once per fixed tick, after fixed
+    // logic. Same lifetime as TryVerbs.
+    [[nodiscard]] AuthoredEventDispatcher* TryAuthoredEvents() { return EventDispatcherState.get(); }
+    [[nodiscard]] const AuthoredEventDispatcher* TryAuthoredEvents() const
+    {
+        return EventDispatcherState.get();
+    }
+
     // The bindings the application shell's entries address, compiled against
     // the runtime catalog. The engine's own records are instantiated here at
     // startup; a game appends its own from OnStart and gives a menu entry one
@@ -616,7 +635,13 @@ private:
     // role. One writer, here, so an operation never asks the session itself.
     void PublishSimulationAuthority();
 
+    // The event drain's budget, queue capacity and quarantine trap, as cvars
+    // that reach the dispatcher while it exists.
+    void RegisterAuthoredEventCVars();
+
     std::unique_ptr<VerbDispatcher> VerbDispatcherState;
+    std::unique_ptr<AuthoredQueryDispatcher> QueryDispatcherState;
+    std::unique_ptr<AuthoredEventDispatcher> EventDispatcherState;
     // The stock shell's bindings, compiled against the runtime catalog. Derived
     // state: the authored records stay in the asset the lease holds.
     VerbBindingSet ShellBindingSet;

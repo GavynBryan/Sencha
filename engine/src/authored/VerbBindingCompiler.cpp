@@ -64,13 +64,13 @@ namespace
                         const DataFieldSchema& field,
                         std::string_view bindingKey,
                         const std::string& path,
-                        VerbValue& out,
+                        AuthoredValue& out,
                         std::vector<std::string>& errors);
 
     bool CompileDefault(const DataFieldSchema& field,
                         std::string_view bindingKey,
                         const std::string& path,
-                        VerbValue& out,
+                        AuthoredValue& out,
                         std::vector<std::string>& errors)
     {
         // One definition of what an unsupplied argument means, here rather than
@@ -96,7 +96,7 @@ namespace
                                            "supplies neither a value nor an input");
             return false;
         }
-        out = VerbValue{};
+        out = AuthoredValue{};
         return true;
     }
 
@@ -104,7 +104,7 @@ namespace
                         const DataFieldSchema& field,
                         std::string_view bindingKey,
                         const std::string& path,
-                        VerbValue& out,
+                        AuthoredValue& out,
                         std::vector<std::string>& errors)
     {
         switch (field.Kind)
@@ -115,7 +115,7 @@ namespace
                 Fail(errors, bindingKey, path, "expected a boolean");
                 return false;
             }
-            out = VerbValue::Bool(value.AsBool());
+            out = AuthoredValue::Bool(value.AsBool());
             return true;
 
         case DataFieldKind::Int:
@@ -132,7 +132,7 @@ namespace
                 Fail(errors, bindingKey, path, "value is outside the declared range");
                 return false;
             }
-            out = VerbValue::Int(whole);
+            out = AuthoredValue::Int(whole);
             return true;
         }
 
@@ -147,7 +147,7 @@ namespace
                 Fail(errors, bindingKey, path, "value is outside the declared range");
                 return false;
             }
-            out = VerbValue::Float(value.AsNumber());
+            out = AuthoredValue::Float(value.AsNumber());
             return true;
 
         case DataFieldKind::String:
@@ -156,7 +156,7 @@ namespace
                 Fail(errors, bindingKey, path, "expected a string");
                 return false;
             }
-            out = VerbValue::String(value.AsString());
+            out = AuthoredValue::String(value.AsString());
             return true;
 
         case DataFieldKind::Enum:
@@ -175,7 +175,7 @@ namespace
                      std::format("'{}' is not one of the declared choices", value.AsString()));
                 return false;
             }
-            out = VerbValue::Enum(value.AsString());
+            out = AuthoredValue::Enum(value.AsString());
             return true;
         }
 
@@ -187,7 +187,7 @@ namespace
                      std::format("expected {} numbers", field.VectorLength));
                 return false;
             }
-            VerbVectorValue vector;
+            AuthoredVectorValue vector;
             vector.Length = static_cast<std::uint8_t>(field.VectorLength);
             for (std::size_t index = 0; index < field.VectorLength; ++index)
             {
@@ -201,7 +201,7 @@ namespace
                 }
                 vector.Components[index] = element.AsNumber();
             }
-            out = VerbValue::Vector(vector);
+            out = AuthoredValue::Vector(vector);
             return true;
         }
 
@@ -212,14 +212,14 @@ namespace
                 Fail(errors, bindingKey, path, "expected an object");
                 return false;
             }
-            std::vector<VerbValue> members;
+            std::vector<AuthoredValue> members;
             members.reserve(field.Children.size());
             bool ok = true;
             for (const DataFieldSchema& child : field.Children)
             {
                 const std::string childPath = MemberPath(path, child.Key);
                 const JsonValue* member = value.Find(child.Key);
-                VerbValue compiled;
+                AuthoredValue compiled;
                 if (member == nullptr)
                     ok = CompileDefault(child, bindingKey, childPath, compiled, errors) && ok;
                 else
@@ -239,7 +239,7 @@ namespace
             }
             if (!ok)
                 return false;
-            out = VerbValue::Record(std::move(members));
+            out = AuthoredValue::Record(std::move(members));
             return true;
         }
 
@@ -255,12 +255,12 @@ namespace
                 Fail(errors, bindingKey, path, "the verb's array argument names no element shape");
                 return false;
             }
-            std::vector<VerbValue> elements;
+            std::vector<AuthoredValue> elements;
             elements.reserve(value.AsArray().size());
             bool ok = true;
             for (std::size_t index = 0; index < value.AsArray().size(); ++index)
             {
-                VerbValue element;
+                AuthoredValue element;
                 ok = CompileLiteral(value.AsArray()[index], field.Children.front(), bindingKey,
                                     ElementPath(path, index), element, errors)
                     && ok;
@@ -268,7 +268,7 @@ namespace
             }
             if (!ok)
                 return false;
-            out = VerbValue::Array(std::move(elements));
+            out = AuthoredValue::Array(std::move(elements));
             return true;
         }
 
@@ -277,7 +277,7 @@ namespace
             // not the same as leaving the argument out, which takes the default.
             if (value.IsNull())
             {
-                out = VerbValue{};
+                out = AuthoredValue{};
                 return true;
             }
             if (field.Children.size() != 1)
@@ -324,7 +324,7 @@ namespace
                           const DataFieldSchema& field,
                           const VerbBindingEnvironment& environment,
                           std::string_view bindingKey,
-                          VerbValue& out,
+                          AuthoredValue& out,
                           bool& referencesChecked,
                           std::vector<std::string>& errors)
     {
@@ -408,8 +408,8 @@ namespace
                     return false;
                 }
             }
-            out = wantsData ? VerbValue::DataAsset(std::move(reference))
-                            : VerbValue::Asset(std::move(reference));
+            out = wantsData ? AuthoredValue::DataAsset(std::move(reference))
+                            : AuthoredValue::Asset(std::move(reference));
             return true;
         }
 
@@ -434,7 +434,7 @@ namespace
                      std::format("'{}' is not a tag this World declares", argument.Text));
                 return false;
             }
-            out = VerbValue::Tag(tag);
+            out = AuthoredValue::Tag(tag);
             return true;
         }
 
@@ -457,7 +457,7 @@ namespace
             // Not resolved here. The identity is the authored relationship;
             // the handle is whatever entity carries it at the moment of each
             // invocation, which is the dispatcher's to look up.
-            out = VerbValue::PersistentEntity(*identity);
+            out = AuthoredValue::PersistentEntity(*identity);
             return true;
         }
 
@@ -514,7 +514,7 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
     compiled.Revision = registry.Revision(verb);
     compiled.Key = desc.KeyId.IsValid() ? desc.KeyId : MakeVerbBindingKey(desc.Key);
     compiled.KeyText = desc.Key;
-    compiled.Constants = VerbArguments(root.Children.size());
+    compiled.Constants = AuthoredArguments(root.Children.size());
 
     bool ok = true;
 
@@ -574,7 +574,7 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
             continue;
         }
 
-        VerbValue value;
+        AuthoredValue value;
         const bool compiledArgument =
             argument.Source == VerbArgumentSource::Literal
                 ? CompileLiteral(argument.Literal, *field, desc.Key, argument.Key, value, errors)
@@ -592,7 +592,7 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
     {
         if (filled[slot])
             continue;
-        VerbValue value;
+        AuthoredValue value;
         if (!CompileDefault(root.Children[slot], desc.Key, root.Children[slot].Key, value, errors))
         {
             ok = false;

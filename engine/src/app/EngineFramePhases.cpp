@@ -752,6 +752,12 @@ void Engine::RegisterSimulationFramePhases()
         };
         engine.Schedule().RunFixedLogic(logic);
 
+        // What fixed logic announced this tick, and everything that caused in
+        // turn, delivered before physics steps. One point per tick, so a chain
+        // of reactions completes here rather than one hop per tick.
+        if (AuthoredEventDispatcher* events = engine.TryAuthoredEvents())
+            (void)events->Drain(ctx.CurrentTick.TickIndex);
+
         PhysicsContext physics{
             .Config = config,
             .Runtime = *ctx.Runtime,

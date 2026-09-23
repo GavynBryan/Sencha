@@ -801,7 +801,8 @@ install(DIRECTORY "${SENCHA_ENGINE_INCLUDE_DIR}/"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated-public/"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated-components/"
+get_target_property(_engine_companions sencha_engine SENCHA_COMPONENT_GENERATED_DIR)
+install(DIRECTORY "${_engine_companions}/"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
     FILES_MATCHING PATTERN "*.sencha.h")
 

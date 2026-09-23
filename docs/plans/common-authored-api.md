@@ -1,8 +1,17 @@
 # Common authored API: verbs
 
-Status: implemented, 2026-09-20. Every stage below has landed: the catalog and
+Status: implemented, 2026-09-20. Queries and events were delivered on
+2026-09-23 as siblings of the verb catalog and dispatcher
+(`AuthoredQueryRegistry`/`AuthoredQueryDispatcher`,
+`AuthoredEventRegistry`/`AuthoredEventDispatcher`), sharing one catalog core
+(`AuthoredCatalog.h`), one value vocabulary (`AuthoredValue.h`, renamed from
+`VerbArguments.h`) and one schema language, and declared by annotation through
+`sencha-component-codegen`; see `docs/gameplay/authored-api.md`. LevelFlow is
+their declared consumer and the next delivery: it subscribes to events by
+compiled id and source entity, evaluates queries, and invokes verbs through the
+bindings this document describes. Every stage below has landed: the catalog and
 identity (`engine/include/authored/VerbId.h`, `VerbRegistry.h`), typed values
-and bindings (`VerbArguments.h`, `VerbBinding.h`, `VerbBindingCompiler.h`,
+and bindings (`AuthoredValue.h`, `VerbBinding.h`, `VerbBindingCompiler.h`,
 `VerbBindingSet.h`, the `authored.bindings` subtype in `VerbBindingData.h`),
 dispatch and tracing (`VerbDispatcher.h`, `VerbInvocation.h`, `VerbTrace.h`),
 the runtime and editor lifecycle (`app/EngineVerbs.h`, `WorldVocabulary.h`,
@@ -44,7 +53,7 @@ predicted-replay dedupe) -- and one World fact, `SimulationAuthority`
 standalone and host authoritative, client not), so an operation that mutates
 replicated state asks `IsSimulationAuthority` once and is correct in both. The
 stable form of a request is the binding key plus producer inputs in authored
-kinds, never `VerbArguments`; a networked producer resolves wire identities at
+kinds, never `AuthoredArguments`; a networked producer resolves wire identities at
 its own ingress. The arena proof now writes a replicated `ArenaScoreboard`
 component on a match entity, gated on that fact. Verb classification for
 replication policy, a network ingress producer, prediction semantics,
@@ -152,7 +161,7 @@ Proposed shared files belong under `engine/include/authored/` and
 | `VerbId.h` | Strong runtime IDs and contract revision values; never persisted as authored identity |
 | `VerbRegistry.h/.cpp` | Names, IDs, copied definitions, schemas, retirement, revision checks, deterministic enumeration |
 | `VerbInvocation.h` | Invocation identity, optional parent identity, admission status, borrowed argument view |
-| `VerbArguments.h/.cpp` | Owned typed values and indexed views for supported argument shapes |
+| `AuthoredValue.h/.cpp` | Owned typed values and indexed views for supported argument shapes |
 | `VerbBinding.h` | World-independent binding description and World-bound compiled binding |
 | `VerbBindingCompiler.h/.cpp` | Schema validation, argument-source mapping, constant compilation, contextual reference resolution |
 | `VerbDispatcher.h/.cpp` | Implementation table, checked invocation, binding lifetime, optional trace sink |
@@ -635,7 +644,10 @@ markers first requires `.sanim` representation and loop/reverse/seek semantics.
 Flowcharts will orchestrate events/queries and compile invoke nodes to the common
 binding representation. They must not register an independent copy of each verb.
 Queries need their own consistency/read-scope design when a real consumer arrives.
-No global string event bus is introduced for any of these consumers.
+No global string event bus is introduced for any of these consumers. (Queries
+and events have since landed with that design: a query is synchronous and
+reads through a const target; an event is published into a queue drained once
+per fixed tick. See `docs/gameplay/authored-api.md`.)
 
 AbilityKit is redesigned after UI and relay prove the substrate. Its current
 activation queue, registries, serialization, and system boundaries are not
@@ -651,7 +663,7 @@ start visual Shoji behavior authoring before the shared consumer gates pass.
 | Stage | Material files and work | Exit criteria |
 | --- | --- | --- |
 | 1. Catalog and identity | Proposed `authored/VerbId` and `VerbRegistry`; shared schema validation additions; tests under `test/core/` | Atomic registration, deterministic enumeration, duplicate conflict, retirement/revival, revision and catalog-lifetime tests pass without Engine startup |
-| 2. Typed binding and assets | Proposed `VerbArguments`, `VerbBinding`, `VerbBindingCompiler`; new data subtype composition; `assets/data/` integration | All advertised shapes compile or reject explicitly; dependencies and reference diagnostics work; shared asset loaded into two Worlds resolves independently; reload/version fixtures pass |
+| 2. Typed binding and assets | Proposed `AuthoredArguments`, `VerbBinding`, `VerbBindingCompiler`; new data subtype composition; `assets/data/` integration | All advertised shapes compile or reject explicitly; dependencies and reference diagnostics work; shared asset loaded into two Worlds resolves independently; reload/version fixtures pass |
 | 3. Dispatch and lifetime | Proposed `VerbDispatcher`, invocation values, optional trace sink; explicit runtime ownership | One checked entry point, narrow concrete targets, admission errors, no recursive dispatch, safe unbinding, owned queued payloads, causality and disabled-trace tests pass |
 | 4. Vocabulary lifecycle | `app/Engine.cpp`, `app/Game.h`, runtime teardown; Kyusu document/module composition; module test fixture | Hook runs exactly once at the correct point, before content resolution; failure blocks startup; editor metadata installation starts no gameplay; teardown runs before module unload |
 | 5. UI and shell proof | Proposed `ui/UiVerbBindings`; `app/PauseMenu*`; stock assets under `engine/assets/ui/`; host operation implementations in `app/` | Real headless UI event reaches authored binding and registered operation; zero-tick resume, exit request, row reorder, native overrides, and network pause semantics remain correct |

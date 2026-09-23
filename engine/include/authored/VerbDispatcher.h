@@ -1,5 +1,6 @@
 #pragma once
 
+#include <authored/AuthoredBindingToken.h>
 #include <authored/VerbBinding.h>
 #include <authored/VerbInvocation.h>
 #include <authored/VerbRegistry.h>
@@ -9,6 +10,7 @@
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -21,70 +23,11 @@ class DataAssetCache;
 class PersistentEntityIndex;
 class VerbDispatcher;
 
-//-----------------------------------------------------------------------------
-// VerbBindingToken
-//
 // What an implementation's owner holds, and gives back before the
-// implementation is destroyed.
-//
-// The dispatcher publishes a control block the tokens watch, so a token that
-// outlives its dispatcher is inert rather than a dangling pointer. That is the
-// ownership contract, chosen rather than inherited from declaration order: a
-// host that composes the dispatcher and the implementations in the same scope
-// is correct, and so is one whose token member happens to be declared first.
-//
-// A token also carries the generation its binding had, so an owner that unbinds
-// late cannot remove the replacement someone else bound in the meantime.
-//-----------------------------------------------------------------------------
-class VerbBindingToken
-{
-public:
-    VerbBindingToken() = default;
-    ~VerbBindingToken() { Reset(); }
-
-    VerbBindingToken(const VerbBindingToken&) = delete;
-    VerbBindingToken& operator=(const VerbBindingToken&) = delete;
-
-    VerbBindingToken(VerbBindingToken&& other) noexcept { MoveFrom(std::move(other)); }
-    VerbBindingToken& operator=(VerbBindingToken&& other) noexcept
-    {
-        if (this != &other)
-        {
-            Reset();
-            MoveFrom(std::move(other));
-        }
-        return *this;
-    }
-
-    // Removes the binding this token minted, if it is still the one in place and
-    // the dispatcher is still alive. Idempotent.
-    void Reset();
-
-    [[nodiscard]] bool IsValid() const { return Verb.IsValid() && !Link.expired(); }
-    [[nodiscard]] VerbId BoundVerb() const { return Verb; }
-
-private:
-    friend class VerbDispatcher;
-
-    struct DispatcherLink
-    {
-        VerbDispatcher* Owner = nullptr;
-    };
-
-    void MoveFrom(VerbBindingToken&& other) noexcept
-    {
-        Link = std::move(other.Link);
-        Verb = other.Verb;
-        Generation = other.Generation;
-        other.Link.reset();
-        other.Verb = {};
-        other.Generation = {};
-    }
-
-    std::weak_ptr<DispatcherLink> Link;
-    VerbId Verb;
-    VerbBindingGeneration Generation;
-};
+// implementation is destroyed. The lifetime contract is AuthoredBindingToken's:
+// inert once the dispatcher is gone, and unable to remove a replacement bound
+// since.
+using VerbBindingToken = AuthoredBindingToken<VerbDispatcher, VerbId, VerbBindingGeneration>;
 
 //=============================================================================
 // VerbDispatcher
@@ -133,6 +76,18 @@ public:
         });
     }
 
+    // The same, for an adapter that is not the target's own Invoke: `Invoke` is
+    // called with the target it was bound with. What a generated authored API
+    // binds through, so one object can serve several verbs.
+    template<auto Invoke, typename T>
+        requires std::is_invocable_r_v<VerbAdmission, decltype(Invoke), T&, const VerbInvocation&>
+    [[nodiscard]] VerbBindingToken Bind(VerbId verb, T& target)
+    {
+        return BindErased(verb, &target, [](void* self, const VerbInvocation& invocation) {
+            return Invoke(*static_cast<T*>(self), invocation);
+        });
+    }
+
     [[nodiscard]] bool HasImplementation(VerbId verb) const;
 
     // Offers one request to the operation behind a compiled binding.
@@ -141,7 +96,7 @@ public:
     // input slots. The constants are already in place; this fills the dynamic
     // slots, checks them against what the binding recorded, and calls.
     [[nodiscard]] VerbInvocationResult Invoke(const CompiledVerbBinding& binding,
-                                              std::span<const VerbValue> inputs,
+                                              std::span<const AuthoredValue> inputs,
                                               const VerbInvocationSource& source = {});
 
     // Where an entity constant resolves at each invocation. Borrowed and
@@ -172,7 +127,7 @@ public:
     [[nodiscard]] bool IsDispatching() const { return Dispatching; }
 
 private:
-    friend class VerbBindingToken;
+    friend VerbBindingToken;
 
     using InvokeFn = VerbAdmission (*)(void*, const VerbInvocation&);
 
@@ -188,7 +143,7 @@ private:
     };
 
     [[nodiscard]] VerbBindingToken BindErased(VerbId verb, void* target, InvokeFn invoke);
-    void Unbind(VerbId verb, VerbBindingGeneration generation);
+    void Release(VerbId verb, VerbBindingGeneration generation);
 
     [[nodiscard]] Implementation* Find(VerbId verb);
     [[nodiscard]] const Implementation* Find(VerbId verb) const;
@@ -198,14 +153,14 @@ private:
                      const VerbInvocation& invocation);
 
     const VerbRegistry& Verbs;
-    std::shared_ptr<VerbBindingToken::DispatcherLink> Link;
+    std::shared_ptr<VerbBindingToken::Link> Link;
 
     // Indexed by the verb's dense slot, grown as verbs acquire implementations.
     // A registry id is dense and one-based by contract, so this needs no map.
     std::vector<Implementation> Implementations;
 
     // Reused across calls so a warmed no-argument invocation allocates nothing.
-    VerbArguments Scratch;
+    AuthoredArguments Scratch;
 
     VerbTraceRing* Trace_ = nullptr;
     const PersistentEntityIndex* Entities = nullptr;

@@ -150,7 +150,7 @@ TEST_F(VerbDispatchTest, ABoundOperationReceivesTheCompiledConstantsAndTheProduc
     EXPECT_TRUE(dispatcher.HasImplementation(Verbs.Find("test.score")));
 
     EXPECT_TRUE(dispatcher.Invoke(constant, {}).Accepted());
-    const VerbValue amount = VerbValue::Int(3);
+    const AuthoredValue amount = AuthoredValue::Int(3);
     EXPECT_TRUE(dispatcher.Invoke(dynamic, { &amount, 1 }).Accepted());
 
     ASSERT_EQ(operation.Queue.size(), 2u);
@@ -168,7 +168,7 @@ TEST_F(VerbDispatchTest, EachRefusalIsItsOwnAnswer)
                         binding));
 
     VerbDispatcher dispatcher(Verbs);
-    const VerbValue amount = VerbValue::Int(1);
+    const AuthoredValue amount = AuthoredValue::Int(1);
 
     // Declared, and nothing behind it. Discovery and execution are separate
     // facts, which is what an editor relies on.
@@ -179,7 +179,7 @@ TEST_F(VerbDispatchTest, EachRefusalIsItsOwnAnswer)
 
     // The producer supplied the wrong number of values, then the wrong kind.
     EXPECT_EQ(dispatcher.Invoke(binding, {}).Status, VerbAdmission::InvalidArguments);
-    const VerbValue text = VerbValue::String("three");
+    const AuthoredValue text = AuthoredValue::String("three");
     EXPECT_EQ(dispatcher.Invoke(binding, { &text, 1 }).Status, VerbAdmission::InvalidArguments);
 
     operation.Refuse = true;
@@ -311,7 +311,7 @@ TEST_F(VerbDispatchTest, AQueuedRequestOwnsItsPayload)
 
     for (std::int64_t value : { 1, 2, 3 })
     {
-        const VerbValue amount = VerbValue::Int(value);
+        const AuthoredValue amount = AuthoredValue::Int(value);
         EXPECT_TRUE(dispatcher.Invoke(binding, { &amount, 1 }).Accepted());
     }
 
@@ -558,7 +558,7 @@ TEST_F(VerbDispatchTest, OneProducerValueFillsEveryArgumentThatNamesItsInput)
     VerbDispatcher dispatcher(Verbs);
     PairOperation operation;
     const VerbBindingToken token = dispatcher.Bind(binding.Verb, operation);
-    const VerbValue self = VerbValue::Entity(EntityId{ .Index = 9, .Generation = 1 });
+    const AuthoredValue self = AuthoredValue::Entity(EntityId{ .Index = 9, .Generation = 1 });
     ASSERT_TRUE(dispatcher.Invoke(binding, { &self, 1 }).Accepted());
     EXPECT_EQ(operation.Source, operation.Target);
     EXPECT_EQ(operation.Source.Index, 9u);

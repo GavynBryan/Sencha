@@ -304,9 +304,21 @@ file(GLOB TEMPLATE_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/templates/*.cpp
 )
 if(TEMPLATE_TEST_SOURCES AND TARGET level_cook_tests)
-    add_executable(template_tests ${TEMPLATE_TEST_SOURCES})
+    # The arena's authored score API is compiled here as well as into its
+    # module, so a case can hold the generated contract against the one
+    # content was authored for -- something a hidden-visibility module cannot
+    # be asked.
+    add_executable(template_tests ${TEMPLATE_TEST_SOURCES}
+        ${CMAKE_SOURCE_DIR}/templates/arena/src/ArenaScore.cpp)
     target_link_libraries(template_tests PRIVATE sencha_engine GTest::gtest_main)
     target_compile_definitions(template_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+    target_include_directories(template_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/templates/arena/src
+        ${CMAKE_SOURCE_DIR}/templates/arena)
+    sencha_generate_component_metadata(template_tests
+        INCLUDE_ROOT ${CMAKE_SOURCE_DIR}/templates/arena
+        HEADERS ${CMAKE_SOURCE_DIR}/templates/arena/src/ArenaScoreboard.h
+        API_HEADERS ${CMAKE_SOURCE_DIR}/templates/arena/src/ArenaScore.h)
     foreach(_template IN LISTS SENCHA_BUILD_TEMPLATES)
         if(TARGET ${_template}_game)
             string(TOUPPER "${_template}" _upper)

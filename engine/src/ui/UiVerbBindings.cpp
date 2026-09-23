@@ -12,18 +12,18 @@ namespace
     // integer to a float is a lossless restatement of the same number; turning
     // an identity into an entity, or a string into a number, is a claim about
     // what the value meant, and nothing here is in a position to make one.
-    [[nodiscard]] bool ConversionIsDeclarable(UiValueKind from, VerbValueKind to)
+    [[nodiscard]] bool ConversionIsDeclarable(UiValueKind from, AuthoredValueKind to)
     {
         switch (from)
         {
         case UiValueKind::Bool:
-            return to == VerbValueKind::Bool;
+            return to == AuthoredValueKind::Bool;
         case UiValueKind::Int:
-            return to == VerbValueKind::Int || to == VerbValueKind::Float;
+            return to == AuthoredValueKind::Int || to == AuthoredValueKind::Float;
         case UiValueKind::Float:
-            return to == VerbValueKind::Float;
+            return to == AuthoredValueKind::Float;
         case UiValueKind::String:
-            return to == VerbValueKind::String || to == VerbValueKind::Enum;
+            return to == AuthoredValueKind::String || to == AuthoredValueKind::Enum;
         case UiValueKind::Id:
         case UiValueKind::None:
             // An identity is opaque by construction: the document was handed a
@@ -35,28 +35,28 @@ namespace
         return false;
     }
 
-    [[nodiscard]] VerbValue Convert(const UiValue& value, VerbValueKind to)
+    [[nodiscard]] AuthoredValue Convert(const UiValue& value, AuthoredValueKind to)
     {
         switch (to)
         {
-        case VerbValueKind::Bool:
-            return VerbValue::Bool(value.AsBool());
-        case VerbValueKind::Int:
-            return VerbValue::Int(value.AsInt());
-        case VerbValueKind::Float:
+        case AuthoredValueKind::Bool:
+            return AuthoredValue::Bool(value.AsBool());
+        case AuthoredValueKind::Int:
+            return AuthoredValue::Int(value.AsInt());
+        case AuthoredValueKind::Float:
             return value.Kind() == UiValueKind::Int
-                ? VerbValue::Float(static_cast<double>(value.AsInt()))
-                : VerbValue::Float(value.AsFloat());
-        case VerbValueKind::String:
-            return VerbValue::String(std::string(value.AsString()));
-        case VerbValueKind::Enum:
-            return VerbValue::Enum(std::string(value.AsString()));
+                ? AuthoredValue::Float(static_cast<double>(value.AsInt()))
+                : AuthoredValue::Float(value.AsFloat());
+        case AuthoredValueKind::String:
+            return AuthoredValue::String(std::string(value.AsString()));
+        case AuthoredValueKind::Enum:
+            return AuthoredValue::Enum(std::string(value.AsString()));
         default:
             return {};
         }
     }
 
-    [[nodiscard]] VerbValueKind KindOfField(const DataFieldSchema& field)
+    [[nodiscard]] AuthoredValueKind KindOfField(const DataFieldSchema& field)
     {
         // An optional's input is a value for the thing it wraps; a document
         // cannot send "absent", it simply does not raise the action.
@@ -67,21 +67,21 @@ namespace
 
         switch (expected.Kind)
         {
-        case DataFieldKind::Bool: return VerbValueKind::Bool;
-        case DataFieldKind::Int: return VerbValueKind::Int;
-        case DataFieldKind::Float: return VerbValueKind::Float;
-        case DataFieldKind::String: return VerbValueKind::String;
-        case DataFieldKind::Enum: return VerbValueKind::Enum;
-        case DataFieldKind::Vector: return VerbValueKind::Vector;
-        case DataFieldKind::Record: return VerbValueKind::Record;
-        case DataFieldKind::Array: return VerbValueKind::Array;
-        case DataFieldKind::AssetRef: return VerbValueKind::AssetRef;
-        case DataFieldKind::DataAssetRef: return VerbValueKind::DataAssetRef;
-        case DataFieldKind::GameplayTag: return VerbValueKind::GameplayTag;
-        case DataFieldKind::Entity: return VerbValueKind::Entity;
+        case DataFieldKind::Bool: return AuthoredValueKind::Bool;
+        case DataFieldKind::Int: return AuthoredValueKind::Int;
+        case DataFieldKind::Float: return AuthoredValueKind::Float;
+        case DataFieldKind::String: return AuthoredValueKind::String;
+        case DataFieldKind::Enum: return AuthoredValueKind::Enum;
+        case DataFieldKind::Vector: return AuthoredValueKind::Vector;
+        case DataFieldKind::Record: return AuthoredValueKind::Record;
+        case DataFieldKind::Array: return AuthoredValueKind::Array;
+        case DataFieldKind::AssetRef: return AuthoredValueKind::AssetRef;
+        case DataFieldKind::DataAssetRef: return AuthoredValueKind::DataAssetRef;
+        case DataFieldKind::GameplayTag: return AuthoredValueKind::GameplayTag;
+        case DataFieldKind::Entity: return AuthoredValueKind::Entity;
         case DataFieldKind::Optional: break;
         }
-        return VerbValueKind::None;
+        return AuthoredValueKind::None;
     }
 }
 
@@ -281,7 +281,7 @@ void UiVerbBindings::Dispatch(std::span<const UiAction> actions)
             continue;
         }
 
-        Inputs.assign(compiled->InputCount, VerbValue{});
+        Inputs.assign(compiled->InputCount, AuthoredValue{});
         bool payloadIsRight = true;
         for (const UiVerbArgumentMapping& argument : compiled->Arguments)
         {

@@ -8,6 +8,7 @@
 
 #include <app/BodySpawns.h>
 #include <assets/data/DataAssetHandle.h>
+#include <authored/AuthoredApi.h>
 
 #include <optional>
 
@@ -44,9 +45,11 @@ private:
     // kept, closed, until the next OnStart replaces it.
     std::optional<BodySpawns> Bodies;
 
-    // The game's one authored operation and the shell's bindings into it. The
-    // token goes back in OnShutdown, while the dispatcher still exists.
+    // The game's one authored operation, the scoreboard's readable members, and
+    // the shell's bindings into them. The bindings go back in OnShutdown, while
+    // the dispatchers still exist.
     ArenaScoreOperation Score;
-    VerbBindingToken ScoreBinding;
+    AuthoredApiBindings ScoreBindings;
+    AuthoredApiBindings ScoreboardQueries;
     DataAssetCacheHandle ShellBindingsAsset;
 };
