@@ -20,6 +20,14 @@
 // them), so a single forward pass can compose model-space transforms.
 // Inverse-bind matrices are cooked in (Decision N): joint indices in a
 // skinned mesh's influence stream are skeleton-local, resolved at cook.
+//
+// Model space is the space the inverse bind matrices and every skinned vertex
+// are written in. Root joints' bind transforms are expressed in it directly:
+// anything a source placed above the roots is already folded in, so
+// composing the bind TRS down the hierarchy reproduces each joint's bind, and
+// at bind pose every model transform times its InverseBind is the identity.
+// The cook establishes this and refuses sources where it does not hold; the
+// runtime never corrects it.
 //=============================================================================
 
 // Per-skin joint cap (Decision N): recorded in the skinned .smesh header so
@@ -35,7 +43,7 @@ struct SkeletonJoint
     // joint's own index (topological order is a format invariant).
     int32_t ParentIndex = -1;
 
-    // Bind pose, local to the parent joint.
+    // Bind pose, local to the parent joint (a root's is in model space).
     Vec3d BindTranslation{};
     Quat<float> BindRotation{};
     Vec3d BindScale = Vec3d(1.0f, 1.0f, 1.0f);

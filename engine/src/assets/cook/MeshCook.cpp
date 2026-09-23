@@ -1,5 +1,7 @@
 #include <assets/cook/MeshCook.h>
 
+#include <anim/AnimationClipSampling.h>
+#include <anim/SkinningPalette.h>
 #include <assets/cook/CookFingerprint.h>
 #include <assets/animation/AnimationClipSerializer.h>
 #include <assets/skeleton/SkeletonSerializer.h>
@@ -7,6 +9,7 @@
 #include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
 #include <math/Quat.h>
+#include <math/geometry/3d/Transform3d.h>
 #include <assets/static_mesh/MeshValidation.h>
 
 #define CGLTF_IMPLEMENTATION
@@ -25,7 +28,7 @@ namespace
 {
     // The glTF importer's cook version: part of its CookIdentity, so every
     // artifact it produced recooks when this moves.
-    constexpr std::uint32_t kGltfMeshCookVersion = 1;
+    constexpr std::uint32_t kGltfMeshCookVersion = 2;
 
     struct CgltfFree
     {
@@ -382,98 +385,175 @@ namespace
         return out;
     }
 
-    Quat<float> QuatFromRotationColumns(const Vec3d& c0, const Vec3d& c1, const Vec3d& c2)
+    std::string NodeLabel(const cgltf_data& data, const cgltf_node& node)
     {
-        // c0/c1/c2 are the normalized basis columns. r[row][col] = c{col}[row].
-        const float r00 = c0.X, r10 = c0.Y, r20 = c0.Z;
-        const float r01 = c1.X, r11 = c1.Y, r21 = c1.Z;
-        const float r02 = c2.X, r12 = c2.Y, r22 = c2.Z;
-
-        const float trace = r00 + r11 + r22;
-        Quat<float> q;
-        if (trace > 0.0f)
-        {
-            float s = std::sqrt(trace + 1.0f) * 2.0f;
-            q.W = 0.25f * s;
-            q.X = (r21 - r12) / s;
-            q.Y = (r02 - r20) / s;
-            q.Z = (r10 - r01) / s;
-        }
-        else if (r00 > r11 && r00 > r22)
-        {
-            float s = std::sqrt(1.0f + r00 - r11 - r22) * 2.0f;
-            q.W = (r21 - r12) / s;
-            q.X = 0.25f * s;
-            q.Y = (r01 + r10) / s;
-            q.Z = (r02 + r20) / s;
-        }
-        else if (r11 > r22)
-        {
-            float s = std::sqrt(1.0f + r11 - r00 - r22) * 2.0f;
-            q.W = (r02 - r20) / s;
-            q.X = (r01 + r10) / s;
-            q.Y = 0.25f * s;
-            q.Z = (r12 + r21) / s;
-        }
-        else
-        {
-            float s = std::sqrt(1.0f + r22 - r00 - r11) * 2.0f;
-            q.W = (r10 - r01) / s;
-            q.X = (r02 + r20) / s;
-            q.Y = (r12 + r21) / s;
-            q.Z = 0.25f * s;
-        }
-        return q.Normalized();
+        if (node.name != nullptr && node.name[0] != '\0')
+            return std::format("'{}'", node.name);
+        return std::format("node {}", cgltf_node_index(&data, &node));
     }
 
-    void NodeLocalTrs(const cgltf_node& node, Vec3d& translation, Quat<float>& rotation, Vec3d& scale)
+    std::string SkinLabel(const cgltf_data& data, const cgltf_skin& skin)
     {
-        if (node.has_matrix)
+        if (skin.name != nullptr && skin.name[0] != '\0')
+            return std::format("skin '{}'", skin.name);
+        return std::format("skin {}", cgltf_skin_index(&data, &skin));
+    }
+
+    // Splits an affine matrix into translation, rotation and scale. Fails when
+    // the linear part is degenerate, sheared or mirrored: a TRS cannot hold
+    // those, and decomposing them anyway is how a skeleton ends up twisted.
+    bool DecomposeAffine(const Mat4& m, Transform3f& out)
+    {
+        const Vec3d c0(m.Data[0][0], m.Data[1][0], m.Data[2][0]);
+        const Vec3d c1(m.Data[0][1], m.Data[1][1], m.Data[2][1]);
+        const Vec3d c2(m.Data[0][2], m.Data[1][2], m.Data[2][2]);
+        const Vec3d scale(c0.Magnitude(), c1.Magnitude(), c2.Magnitude());
+        if (scale.X < 1e-8f || scale.Y < 1e-8f || scale.Z < 1e-8f)
+            return false;
+
+        const Vec3d n0 = c0 / scale.X;
+        const Vec3d n1 = c1 / scale.Y;
+        const Vec3d n2 = c2 / scale.Z;
+        constexpr float kOrthogonality = 1e-4f;
+        if (std::abs(n0.Dot(n1)) > kOrthogonality || std::abs(n0.Dot(n2)) > kOrthogonality
+            || std::abs(n1.Dot(n2)) > kOrthogonality || n0.Cross(n1).Dot(n2) < 0.0f)
         {
-            const float* m = node.matrix; // column-major
-            translation = Vec3d(m[12], m[13], m[14]);
-            Vec3d c0(m[0], m[1], m[2]);
-            Vec3d c1(m[4], m[5], m[6]);
-            Vec3d c2(m[8], m[9], m[10]);
-            const float sx = static_cast<float>(c0.Magnitude());
-            const float sy = static_cast<float>(c1.Magnitude());
-            const float sz = static_cast<float>(c2.Magnitude());
-            scale = Vec3d(sx, sy, sz);
-            const Vec3d n0 = sx > 1e-8f ? c0 / sx : Vec3d(1, 0, 0);
-            const Vec3d n1 = sy > 1e-8f ? c1 / sy : Vec3d(0, 1, 0);
-            const Vec3d n2 = sz > 1e-8f ? c2 / sz : Vec3d(0, 0, 1);
-            rotation = QuatFromRotationColumns(n0, n1, n2);
-            return;
+            return false;
         }
 
-        translation = node.has_translation
+        out.Position = Vec3d(m.Data[0][3], m.Data[1][3], m.Data[2][3]);
+        out.Rotation = Quat<float>::FromBasis(n0, n1, n2).Normalized();
+        out.Scale = scale;
+        return true;
+    }
+
+    bool IsUniformScale(const Vec3d& scale)
+    {
+        const float largest = std::max({ std::abs(scale.X), std::abs(scale.Y), std::abs(scale.Z) });
+        const float smallest = std::min({ scale.X, scale.Y, scale.Z });
+        return smallest > 0.0f && largest - smallest <= 1e-4f * largest;
+    }
+
+    // A node's local transform as TRS. Only a matrix-form node can fail.
+    bool NodeLocalTransform(const cgltf_node& node, Transform3f& out)
+    {
+        if (node.has_matrix)
+            return DecomposeAffine(GltfMat4ToRowMajor(node.matrix), out);
+
+        out.Position = node.has_translation
             ? Vec3d(node.translation[0], node.translation[1], node.translation[2])
             : Vec3d(0, 0, 0);
-        rotation = node.has_rotation
+        out.Rotation = node.has_rotation
             ? Quat<float>(node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3])
                   .Normalized()
             : Quat<float>();
-        scale = node.has_scale
+        out.Scale = node.has_scale
             ? Vec3d(node.scale[0], node.scale[1], node.scale[2])
             : Vec3d(1, 1, 1);
+        return true;
+    }
+
+    // Composes a root joint's ancestors, outermost first, into the one
+    // transform they place the root in. The result is folded into the root's
+    // TRS, which is exact only for a uniform scale without mirroring.
+    bool ComposeAncestors(std::span<const Transform3f> ancestors, Transform3f& out)
+    {
+        Mat4 composed = Mat4::Identity();
+        for (const Transform3f& ancestor : ancestors)
+            composed = composed * ancestor.ToMat4();
+        return DecomposeAffine(composed, out) && IsUniformScale(out.Scale);
+    }
+
+    // The ancestor to name when a chain will not compose: the first one that
+    // cannot itself be folded, or the innermost.
+    size_t IrregularAncestor(std::span<const Transform3f> ancestors)
+    {
+        for (size_t i = 0; i < ancestors.size(); ++i)
+            if (!IsUniformScale(ancestors[i].Scale))
+                return i;
+        return ancestors.size() - 1;
+    }
+
+    // A root joint and the non-joint nodes above it. A skeleton's model space
+    // is the space its inverse bind matrices and skinned vertices are written
+    // in, which for glTF is scene space: it includes every node above the
+    // roots (an exported armature object, for one). The cook folds those
+    // nodes into the root joints, at rest and in every clip.
+    struct RootChain
+    {
+        uint32_t Joint = 0;
+        const cgltf_node* Node = nullptr;
+        Transform3f RootRest;
+
+        // Outermost first, and their composition at rest.
+        std::vector<const cgltf_node*> Ancestors;
+        std::vector<Transform3f> AncestorRest;
+        Transform3f Frame;
+    };
+
+    // Every joint's rest palette entry must be the identity: the inverse bind
+    // matrices describe the same pose the nodes do. A source bound in some
+    // other pose would draw deformed at rest, so it is refused.
+    bool CheckRestPalette(const cgltf_data& data,
+                          const cgltf_skin& skin,
+                          const SkeletonData& skeleton,
+                          std::string* error)
+    {
+        std::vector<Mat4> model;
+        std::vector<Mat4> palette;
+        BuildBindModelTransforms(skeleton, model);
+        BuildSkinningPalette(skeleton, model, palette);
+
+        float extent = 1.0f;
+        for (const Mat4& transform : model)
+            for (int row = 0; row < 3; ++row)
+                extent = std::max(extent, std::abs(transform.Data[row][3]));
+
+        for (size_t joint = 0; joint < palette.size(); ++joint)
+        {
+            const Mat4& entry = palette[joint];
+            bool identity = true;
+            for (int row = 0; row < 3; ++row)
+            {
+                for (int col = 0; col < 3; ++col)
+                    identity = identity
+                        && std::abs(entry.Data[row][col] - (row == col ? 1.0f : 0.0f)) <= 1e-3f;
+                identity = identity && std::abs(entry.Data[row][3]) <= 1e-3f * extent;
+            }
+            if (!identity)
+            {
+                const std::string& name = skeleton.Joints[joint].Name;
+                SetError(error, std::format(
+                    "{}: joint '{}' is not at its bind pose at rest (its inverse bind matrix "
+                    "disagrees with its rest transform). The source was bound in a pose other than "
+                    "its rest pose: apply the pose as the rest pose (Blender: Pose > Apply > "
+                    "Apply Pose as Rest Pose) and re-export",
+                    SkinLabel(data, skin), name.empty() ? std::format("{}", joint) : name));
+                return false;
+            }
+        }
+        return true;
     }
 
     // Builds one skeleton from a glTF skin: joints topologically ordered
     // (parents before children, the format invariant), bind TRS from each
-    // joint node, inverse-bind from the skin's IBM accessor (identity when
-    // absent). `skinLocalToSkeleton[i]` maps skin.joints[i] to its skeleton
-    // index — the remap meshes and animations resolve their joint refs through.
+    // joint node with the root joints' ancestors folded in, inverse-bind from
+    // the skin's IBM accessor (identity when absent). `skinLocalToSkeleton[i]`
+    // maps skin.joints[i] to its skeleton index — the remap meshes and
+    // animations resolve their joint refs through. `roots` receives each root
+    // joint's ancestor chain, which animation import folds into root tracks.
     bool BuildSkeletonFromSkin(const cgltf_data& data,
                                const cgltf_skin& skin,
                                SkeletonData& out,
                                std::vector<uint32_t>& skinLocalToSkeleton,
+                               std::vector<RootChain>& roots,
                                std::string* error)
     {
         const size_t jointCount = skin.joints_count;
         if (jointCount == 0)
-            return SetError(error, "skin has no joints"), false;
+            return SetError(error, std::format("{} has no joints", SkinLabel(data, skin))), false;
         if (jointCount > kMaxSkeletonJoints)
-            return SetError(error, std::format("skin has {} joints (cap is {})",
+            return SetError(error, std::format("{} has {} joints (cap is {})", SkinLabel(data, skin),
                                                jointCount, kMaxSkeletonJoints)),
                    false;
 
@@ -512,9 +592,11 @@ namespace
             }
         }
         if (skeletonToLocal.size() != jointCount)
-            return SetError(error, "skin joint hierarchy has a cycle"), false;
+            return SetError(error, std::format("{} joint hierarchy has a cycle",
+                                               SkinLabel(data, skin))), false;
 
         out.Joints.resize(jointCount);
+        roots.clear();
         for (size_t skelIndex = 0; skelIndex < jointCount; ++skelIndex)
         {
             const int localIndex = skeletonToLocal[skelIndex];
@@ -524,7 +606,15 @@ namespace
             joint.Name = jointNode.name != nullptr ? jointNode.name : "";
             joint.ParentIndex = parentLocal[localIndex] == -1
                 ? -1 : localToSkeleton[parentLocal[localIndex]];
-            NodeLocalTrs(jointNode, joint.BindTranslation, joint.BindRotation, joint.BindScale);
+
+            Transform3f local;
+            if (!NodeLocalTransform(jointNode, local))
+                return SetError(error, std::format(
+                           "{}: joint {} has a sheared, mirrored or degenerate matrix",
+                           SkinLabel(data, skin), NodeLabel(data, jointNode))), false;
+            joint.BindTranslation = local.Position;
+            joint.BindRotation = local.Rotation;
+            joint.BindScale = local.Scale;
 
             if (skin.inverse_bind_matrices != nullptr)
             {
@@ -536,14 +626,66 @@ namespace
             }
             else
             {
-                for (int d = 0; d < 4; ++d)
-                    joint.InverseBind.Data[d][d] = 1.0f;
+                joint.InverseBind = Mat4::Identity();
             }
+
+            if (joint.ParentIndex != -1)
+                continue;
+
+            RootChain chain;
+            chain.Joint = static_cast<uint32_t>(skelIndex);
+            chain.Node = &jointNode;
+            chain.RootRest = local;
+            for (const cgltf_node* ancestor = jointNode.parent; ancestor != nullptr;
+                 ancestor = ancestor->parent)
+            {
+                // A joint above a non-joint node would put an unposable
+                // transform inside the hierarchy.
+                if (localOf.contains(ancestor))
+                    return SetError(error, std::format(
+                               "{}: joint {} hangs from joint {} through non-joint node {}; "
+                               "make {} a joint or remove it",
+                               SkinLabel(data, skin), NodeLabel(data, jointNode),
+                               NodeLabel(data, *ancestor), NodeLabel(data, *jointNode.parent),
+                               NodeLabel(data, *jointNode.parent))), false;
+                chain.Ancestors.push_back(ancestor);
+            }
+            std::reverse(chain.Ancestors.begin(), chain.Ancestors.end());
+
+            for (const cgltf_node* ancestor : chain.Ancestors)
+            {
+                Transform3f ancestorLocal;
+                if (!NodeLocalTransform(*ancestor, ancestorLocal))
+                    return SetError(error, std::format(
+                               "{}: node {} above root joint {} has a sheared, mirrored or "
+                               "degenerate matrix",
+                               SkinLabel(data, skin), NodeLabel(data, *ancestor),
+                               NodeLabel(data, jointNode))), false;
+                chain.AncestorRest.push_back(ancestorLocal);
+            }
+            if (!ComposeAncestors(chain.AncestorRest, chain.Frame))
+            {
+                const std::string culprit =
+                    NodeLabel(data, *chain.Ancestors[IrregularAncestor(chain.AncestorRest)]);
+                return SetError(error, std::format(
+                           "{}: the nodes above root joint {} (at {}) are not a uniform scale, "
+                           "rotation and translation, so the skeleton's space cannot be folded "
+                           "into its root; apply the scale on {} or make it uniform",
+                           SkinLabel(data, skin), NodeLabel(data, jointNode), culprit, culprit)),
+                       false;
+            }
+
+            const Transform3f folded = chain.Frame * local;
+            joint.BindTranslation = folded.Position;
+            joint.BindRotation = folded.Rotation.Normalized();
+            joint.BindScale = folded.Scale;
+            roots.push_back(std::move(chain));
         }
 
-        (void)data;
         skinLocalToSkeleton.assign(localToSkeleton.begin(), localToSkeleton.end());
-        return ValidateSkeletonData(out, error);
+        if (!ValidateSkeletonData(out, error))
+            return false;
+        return CheckRestPalette(data, skin, out, error);
     }
 
     int SkinIndexOf(const cgltf_data& data, const cgltf_skin* skin)
@@ -586,6 +728,193 @@ namespace
         case cgltf_animation_path_type_scale:       return AnimationChannelPath::Scale;
         default: supported = false; return AnimationChannelPath::Translation; // weights, etc.
         }
+    }
+
+    // Reads one channel's keys into a track posing `jointIndex`. Rotation keys
+    // are renormalized so the unit-quaternion invariant holds exactly.
+    bool ReadChannelTrack(const cgltf_animation_channel& channel,
+                          AnimationChannelPath path,
+                          uint32_t jointIndex,
+                          std::string_view animName,
+                          AnimationJointTrack& track,
+                          std::string* error)
+    {
+        const cgltf_animation_sampler* sampler = channel.sampler;
+        if (sampler == nullptr || sampler->input == nullptr || sampler->output == nullptr)
+            return SetError(error, std::format("animation '{}' has a channel without a sampler",
+                                               animName)), false;
+        if (sampler->interpolation == cgltf_interpolation_type_cubic_spline)
+            return SetError(error, "cubic spline animation interpolation is not supported "
+                                   "(re-export with linear or step keys)"), false;
+
+        track.JointIndex = jointIndex;
+        track.Path = path;
+        track.Interpolation = sampler->interpolation == cgltf_interpolation_type_step
+            ? AnimationInterpolation::Step : AnimationInterpolation::Linear;
+
+        const cgltf_size keyCount = sampler->input->count;
+        const uint32_t components = AnimationChannelComponentCount(path);
+        if (sampler->output->count != keyCount)
+            return SetError(error, "animation sampler input/output counts disagree"), false;
+
+        track.TimesSeconds.resize(keyCount);
+        track.Values.resize(static_cast<size_t>(keyCount) * components);
+        for (cgltf_size k = 0; k < keyCount; ++k)
+        {
+            if (!cgltf_accessor_read_float(sampler->input, k, &track.TimesSeconds[k], 1))
+                return SetError(error, "could not read animation key time"), false;
+            float value[4]{};
+            if (!cgltf_accessor_read_float(sampler->output, k, value, components))
+                return SetError(error, "could not read animation key value"), false;
+            if (path == AnimationChannelPath::Rotation)
+            {
+                const float len = std::sqrt(value[0] * value[0] + value[1] * value[1]
+                                            + value[2] * value[2] + value[3] * value[3]);
+                if (len > 1e-8f)
+                    for (float& component : value)
+                        component /= len;
+            }
+            for (uint32_t component = 0; component < components; ++component)
+                track.Values[static_cast<size_t>(k) * components + component] = value[component];
+        }
+        return true;
+    }
+
+    void AppendKey(AnimationJointTrack& track, std::initializer_list<float> values)
+    {
+        track.Values.insert(track.Values.end(), values);
+    }
+
+    // Folds a root joint's ancestors into its tracks for one clip. With the
+    // ancestors at rest their composition is one similarity, which composes
+    // with each channel on its own, so the source keys stay as they are. An
+    // animated ancestor makes the root's model transform a composition of
+    // several interpolated channels, which no single channel reproduces; the
+    // root is then resampled at every key time any of those channels has,
+    // and a root the source never keyed gets tracks of its own.
+    bool ComposeRootTracks(const cgltf_data& data,
+                           const RootChain& chain,
+                           std::span<const cgltf_animation_channel* const> channels,
+                           std::string_view animName,
+                           AnimationClipData& clip,
+                           std::string* error)
+    {
+        const uint32_t rootSlot = static_cast<uint32_t>(chain.Ancestors.size());
+        std::vector<AnimationJointTrack> sources;
+        bool ancestorAnimated = false;
+        bool allStep = true;
+        for (const cgltf_animation_channel* channel : channels)
+        {
+            const auto at = std::find(chain.Ancestors.begin(), chain.Ancestors.end(),
+                                      channel->target_node);
+            const uint32_t slot = at == chain.Ancestors.end()
+                ? rootSlot : static_cast<uint32_t>(at - chain.Ancestors.begin());
+            bool supported = false;
+            const AnimationChannelPath path = MapChannelPath(channel->target_path, supported);
+
+            AnimationJointTrack track;
+            if (!ReadChannelTrack(*channel, path, slot, animName, track, error))
+                return false;
+            ancestorAnimated = ancestorAnimated || slot != rootSlot;
+            allStep = allStep && track.Interpolation == AnimationInterpolation::Step;
+            sources.push_back(std::move(track));
+        }
+
+        if (!ancestorAnimated)
+        {
+            const Transform3f& frame = chain.Frame;
+            for (AnimationJointTrack& track : sources)
+            {
+                const uint32_t components = AnimationChannelComponentCount(track.Path);
+                for (size_t key = 0; key < track.TimesSeconds.size(); ++key)
+                {
+                    float* v = &track.Values[key * components];
+                    switch (track.Path)
+                    {
+                    case AnimationChannelPath::Translation:
+                    {
+                        const Vec3d p = frame.TransformPoint(Vec3d(v[0], v[1], v[2]));
+                        v[0] = p.X; v[1] = p.Y; v[2] = p.Z;
+                        break;
+                    }
+                    case AnimationChannelPath::Rotation:
+                    {
+                        const Quat<float> q =
+                            (frame.Rotation * Quat<float>(v[0], v[1], v[2], v[3])).Normalized();
+                        v[0] = q.X; v[1] = q.Y; v[2] = q.Z; v[3] = q.W;
+                        break;
+                    }
+                    case AnimationChannelPath::Scale:
+                        v[0] *= frame.Scale.X; v[1] *= frame.Scale.Y; v[2] *= frame.Scale.Z;
+                        break;
+                    }
+                }
+                track.JointIndex = chain.Joint;
+                clip.Tracks.push_back(std::move(track));
+            }
+            return true;
+        }
+
+        std::vector<float> times;
+        for (const AnimationJointTrack& track : sources)
+            times.insert(times.end(), track.TimesSeconds.begin(), track.TimesSeconds.end());
+        std::sort(times.begin(), times.end());
+        times.erase(std::unique(times.begin(), times.end()), times.end());
+
+        // The chain posed as a skeleton of its own, so each node is sampled by
+        // exactly the rules the runtime samples a clip by.
+        SkeletonData chainRest;
+        chainRest.Joints.resize(rootSlot + 1);
+        for (uint32_t slot = 0; slot <= rootSlot; ++slot)
+        {
+            const Transform3f& rest = slot == rootSlot ? chain.RootRest : chain.AncestorRest[slot];
+            chainRest.Joints[slot].BindTranslation = rest.Position;
+            chainRest.Joints[slot].BindRotation = rest.Rotation;
+            chainRest.Joints[slot].BindScale = rest.Scale;
+        }
+        AnimationClipData chainClip;
+        chainClip.Tracks = std::move(sources);
+
+        const AnimationInterpolation interpolation =
+            allStep ? AnimationInterpolation::Step : AnimationInterpolation::Linear;
+        const auto makeTrack = [&](AnimationChannelPath path) {
+            AnimationJointTrack track;
+            track.JointIndex = chain.Joint;
+            track.Path = path;
+            track.Interpolation = interpolation;
+            track.TimesSeconds = times;
+            return track;
+        };
+        AnimationJointTrack translation = makeTrack(AnimationChannelPath::Translation);
+        AnimationJointTrack rotation = makeTrack(AnimationChannelPath::Rotation);
+        AnimationJointTrack scale = makeTrack(AnimationChannelPath::Scale);
+
+        std::vector<Transform3f> pose;
+        for (const float time : times)
+        {
+            SampleAnimationClip(chainClip, chainRest, time, pose);
+            const std::span<const Transform3f> ancestors(pose.data(), rootSlot);
+            Transform3f frame;
+            if (!ComposeAncestors(ancestors, frame))
+            {
+                return SetError(error, std::format(
+                           "animation '{}' at {}s: the nodes above root joint {} (at {}) are not a "
+                           "uniform scale, rotation and translation",
+                           animName, time, NodeLabel(data, *chain.Node),
+                           NodeLabel(data, *chain.Ancestors[IrregularAncestor(ancestors)]))),
+                       false;
+            }
+            const Transform3f model = frame * pose[rootSlot];
+            const Quat<float> q = model.Rotation.Normalized();
+            AppendKey(translation, { model.Position.X, model.Position.Y, model.Position.Z });
+            AppendKey(rotation, { q.X, q.Y, q.Z, q.W });
+            AppendKey(scale, { model.Scale.X, model.Scale.Y, model.Scale.Z });
+        }
+
+        clip.Tracks.push_back(std::move(translation));
+        clip.Tracks.push_back(std::move(rotation));
+        clip.Tracks.push_back(std::move(scale));
+        return true;
     }
 
     // Parse a self-contained glTF and load its buffers. No base path is passed:
@@ -809,14 +1138,19 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
 
     // Skeletons, one per skin. Keep each skin's skin-local → skeleton remap,
     // and a node → (skin, skeleton-joint) lookup for animation channels.
+    // The nodes above each skin's root joints are recorded too: their
+    // animation is the skeleton's, folded into its root tracks.
     std::vector<std::vector<uint32_t>> skinRemaps(data->skins_count);
+    std::vector<std::vector<RootChain>> skinRoots(data->skins_count);
     std::unordered_map<const cgltf_node*, std::pair<int, uint32_t>> jointLookup;
+    std::unordered_map<const cgltf_node*, std::vector<int>> ancestorSkins;
     for (cgltf_size skinIndex = 0; skinIndex < data->skins_count; ++skinIndex)
     {
         const cgltf_skin& skin = data->skins[skinIndex];
         ImportedSkeleton skeleton;
         skeleton.Name = skin.name != nullptr ? skin.name : "";
-        if (!BuildSkeletonFromSkin(*data, skin, skeleton.Data, skinRemaps[skinIndex], error))
+        if (!BuildSkeletonFromSkin(*data, skin, skeleton.Data, skinRemaps[skinIndex],
+                                   skinRoots[skinIndex], error))
             return false;
 
         for (cgltf_size j = 0; j < skin.joints_count; ++j)
@@ -825,6 +1159,13 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
             jointLookup.try_emplace(skin.joints[j],
                                     std::pair<int, uint32_t>{ static_cast<int>(skinIndex), skeletonJoint });
         }
+        for (const RootChain& chain : skinRoots[skinIndex])
+            for (const cgltf_node* ancestor : chain.Ancestors)
+            {
+                std::vector<int>& owners = ancestorSkins[ancestor];
+                if (std::find(owners.begin(), owners.end(), static_cast<int>(skinIndex)) == owners.end())
+                    owners.push_back(static_cast<int>(skinIndex));
+            }
         out.Skeletons.push_back(std::move(skeleton));
     }
 
@@ -892,9 +1233,10 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
     }
 
     // Animations — each becomes one clip on the single skeleton its channels
-    // pose. A clip whose channels span more than one skin (a multi-character
-    // export) is ambiguous and rejected rather than silently truncated;
-    // channels targeting non-joint nodes are node animation, out of scope here.
+    // pose, through its joints or through the nodes above its root joints. A
+    // clip whose channels span more than one skin (a multi-character export)
+    // is ambiguous and rejected rather than silently truncated; channels on
+    // any other node are node animation, out of scope here.
     for (cgltf_size animIndex = 0; animIndex < data->animations_count; ++animIndex)
     {
         const cgltf_animation& animation = data->animations[animIndex];
@@ -902,14 +1244,22 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
             animation.name != nullptr ? std::string_view(animation.name) : std::string_view("<unnamed>");
 
         std::vector<int> animSkins;
+        const auto noteSkin = [&animSkins](int skin) {
+            if (std::find(animSkins.begin(), animSkins.end(), skin) == animSkins.end())
+                animSkins.push_back(skin);
+        };
         for (cgltf_size c = 0; c < animation.channels_count; ++c)
         {
-            const cgltf_node* target = animation.channels[c].target_node;
-            if (target == nullptr)
+            const cgltf_animation_channel& channel = animation.channels[c];
+            bool supportedPath = false;
+            MapChannelPath(channel.target_path, supportedPath);
+            if (channel.target_node == nullptr || !supportedPath)
                 continue;
-            if (auto it = jointLookup.find(target); it != jointLookup.end())
-                if (std::find(animSkins.begin(), animSkins.end(), it->second.first) == animSkins.end())
-                    animSkins.push_back(it->second.first);
+            if (auto it = jointLookup.find(channel.target_node); it != jointLookup.end())
+                noteSkin(it->second.first);
+            if (auto it = ancestorSkins.find(channel.target_node); it != ancestorSkins.end())
+                for (const int skin : it->second)
+                    noteSkin(skin);
         }
         if (animSkins.empty())
             continue; // not a skeletal animation (node/morph animation); out of scope
@@ -922,86 +1272,57 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
             return false;
         }
         const int animSkin = animSkins.front();
+        const std::vector<RootChain>& roots = skinRoots[animSkin];
 
         ImportedAnimation imported;
         imported.Name = animation.name != nullptr ? animation.name : "";
         imported.SkinIndex = animSkin;
         AnimationClipData& clip = imported.Data;
 
+        // Tracks on non-root joints are the source's own; a root joint's
+        // channels and its ancestors' are gathered and composed together.
+        std::vector<std::vector<const cgltf_animation_channel*>> rootChannels(roots.size());
         for (cgltf_size c = 0; c < animation.channels_count; ++c)
         {
             const cgltf_animation_channel& channel = animation.channels[c];
-            const cgltf_node* target = channel.target_node;
-            if (target == nullptr)
-                continue;
-            auto it = jointLookup.find(target);
-            if (it == jointLookup.end() || it->second.first != animSkin)
-                continue; // targets another skin or a non-joint node
-
             bool supportedPath = false;
             const AnimationChannelPath path = MapChannelPath(channel.target_path, supportedPath);
-            if (!supportedPath)
+            if (channel.target_node == nullptr || !supportedPath)
                 continue; // morph-target weights, etc.
 
-            const cgltf_animation_sampler* sampler = channel.sampler;
-            if (sampler == nullptr || sampler->input == nullptr || sampler->output == nullptr)
+            if (auto it = jointLookup.find(channel.target_node);
+                it != jointLookup.end() && it->second.first == animSkin)
+            {
+                const uint32_t joint = it->second.second;
+                const auto root = std::find_if(roots.begin(), roots.end(),
+                                               [joint](const RootChain& chain) { return chain.Joint == joint; });
+                if (root != roots.end())
+                {
+                    rootChannels[static_cast<size_t>(root - roots.begin())].push_back(&channel);
+                    continue;
+                }
+                AnimationJointTrack track;
+                if (!ReadChannelTrack(channel, path, joint, animName, track, error))
+                    return false;
+                clip.Tracks.push_back(std::move(track));
                 continue;
-            if (sampler->interpolation == cgltf_interpolation_type_cubic_spline)
-            {
-                SetError(error, "cubic spline animation interpolation is not supported "
-                                "(re-export with linear or step keys)");
-                return false;
             }
 
-            AnimationJointTrack track;
-            track.JointIndex = it->second.second;
-            track.Path = path;
-            track.Interpolation = sampler->interpolation == cgltf_interpolation_type_step
-                ? AnimationInterpolation::Step : AnimationInterpolation::Linear;
-
-            const cgltf_size keyCount = sampler->input->count;
-            const uint32_t components = AnimationChannelComponentCount(path);
-            if (sampler->output->count != keyCount)
-            {
-                SetError(error, "animation sampler input/output counts disagree");
-                return false;
-            }
-
-            track.TimesSeconds.resize(keyCount);
-            track.Values.resize(static_cast<size_t>(keyCount) * components);
-            for (cgltf_size k = 0; k < keyCount; ++k)
-            {
-                if (!cgltf_accessor_read_float(sampler->input, k, &track.TimesSeconds[k], 1))
-                {
-                    SetError(error, "could not read animation key time");
-                    return false;
-                }
-                float value[4]{};
-                if (!cgltf_accessor_read_float(sampler->output, k, value, components))
-                {
-                    SetError(error, "could not read animation key value");
-                    return false;
-                }
-                if (path == AnimationChannelPath::Rotation)
-                {
-                    // Normalize so the unit-quaternion invariant holds exactly.
-                    const float len = std::sqrt(value[0] * value[0] + value[1] * value[1]
-                                                + value[2] * value[2] + value[3] * value[3]);
-                    if (len > 1e-8f)
-                        for (float& component : value)
-                            component /= len;
-                }
-                for (uint32_t component = 0; component < components; ++component)
-                    track.Values[static_cast<size_t>(k) * components + component] = value[component];
-
-                clip.DurationSeconds = std::max(clip.DurationSeconds, track.TimesSeconds[k]);
-            }
-
-            clip.Tracks.push_back(std::move(track));
+            for (size_t r = 0; r < roots.size(); ++r)
+                if (std::find(roots[r].Ancestors.begin(), roots[r].Ancestors.end(),
+                              channel.target_node) != roots[r].Ancestors.end())
+                    rootChannels[r].push_back(&channel);
         }
+        for (size_t r = 0; r < roots.size(); ++r)
+            if (!rootChannels[r].empty()
+                && !ComposeRootTracks(*data, roots[r], rootChannels[r], animName, clip, error))
+                return false;
 
         if (clip.Tracks.empty())
             continue;
+        for (const AnimationJointTrack& track : clip.Tracks)
+            if (!track.TimesSeconds.empty())
+                clip.DurationSeconds = std::max(clip.DurationSeconds, track.TimesSeconds.back());
         out.Animations.push_back(std::move(imported));
     }
 

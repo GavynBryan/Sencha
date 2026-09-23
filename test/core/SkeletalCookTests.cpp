@@ -8,13 +8,20 @@
 
 #ifdef SENCHA_ENABLE_COOK
 
+#include <anim/AnimationClipSampling.h>
+#include <anim/SkinningPalette.h>
 #include <assets/animation/AnimationClipSerializer.h>
 #include <assets/cook/MeshCook.h>
 #include <assets/skeleton/SkeletonSerializer.h>
 #include <assets/static_mesh/MeshLoader.h>
 #include <core/logging/LoggingProvider.h>
+#include <math/geometry/3d/Transform3d.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <format>
+#include <numbers>
 #include <map>
 #include <span>
 #include <string>
@@ -96,10 +103,11 @@ namespace
         const auto joints = blob.Add<uint16_t>({ 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0 });
         const auto weights = blob.Add<float>({ 1, 0, 0, 0, 1, 0, 0, 0, 0.5f, 0.5f, 0, 0 });
         const auto idx = blob.Add<uint16_t>({ 0, 1, 2 });
-        // Inverse-bind matrices, column-major: identity for both joints.
+        // Inverse-bind matrices, column-major: identity for the root, and the
+        // inverse of the child's +Y rest offset for the child.
         const auto ibm = blob.Add<float>({
             1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 });
+            1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1, 0, 1 });
         const auto animIn = blob.Add<float>({ 0.0f, 1.0f });
         const auto animOut = blob.Add<float>({
             0, 0, 0, 1,               // identity
@@ -244,6 +252,159 @@ namespace
                 R"({"bufferView":5,"componentType":5123,"count":3,"type":"SCALAR"},)"
                 R"({"bufferView":6,"componentType":5126,"count":1,"type":"MAT4"}]})";
         return gltf;
+    }
+
+    // A glTF around one skinned triangle bound rigidly to joint 0. Callers
+    // write the nodes, skins and animations as JSON and add the float
+    // accessors those reference (inverse binds, key times, key values);
+    // accessors 0-5 are the triangle's own.
+    class SkinnedGltfBuilder
+    {
+    public:
+        SkinnedGltfBuilder()
+        {
+            AddAccessor(Blob.Add<float>({ 0, 0, 0, 1, 0, 0, 0, 1, 0 }), 5126, 3, "VEC3",
+                        R"(,"min":[0,0,0],"max":[1,1,0])");
+            AddAccessor(Blob.Add<float>({ 0, 0, 1, 0, 0, 1, 0, 0, 1 }), 5126, 3, "VEC3");
+            AddAccessor(Blob.Add<float>({ 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1 }), 5126, 3, "VEC4");
+            AddAccessor(Blob.Add<uint16_t>({ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }), 5123, 3, "VEC4");
+            AddAccessor(Blob.Add<float>({ 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 }), 5126, 3, "VEC4");
+            AddAccessor(Blob.Add<uint16_t>({ 0, 1, 2 }), 5123, 3, "SCALAR");
+        }
+
+        int AddTimes(const std::vector<float>& times)
+        {
+            const auto [lo, hi] = std::minmax_element(times.begin(), times.end());
+            return AddAccessor(Blob.Add<float>(times), 5126, times.size(), "SCALAR",
+                               std::format(R"(,"min":[{}],"max":[{}])", *lo, *hi));
+        }
+
+        int AddVec3s(const std::vector<Vec3d>& values)
+        {
+            std::vector<float> flat;
+            for (const Vec3d& v : values)
+                flat.insert(flat.end(), { v.X, v.Y, v.Z });
+            return AddAccessor(Blob.Add<float>(flat), 5126, values.size(), "VEC3");
+        }
+
+        int AddQuats(const std::vector<Quat<float>>& values)
+        {
+            std::vector<float> flat;
+            for (const Quat<float>& q : values)
+                flat.insert(flat.end(), { q.X, q.Y, q.Z, q.W });
+            return AddAccessor(Blob.Add<float>(flat), 5126, values.size(), "VEC4");
+        }
+
+        // Row-major engine matrices, written column-major as glTF stores them.
+        int AddMatrices(const std::vector<Mat4>& matrices)
+        {
+            std::vector<float> flat;
+            for (const Mat4& m : matrices)
+                for (int col = 0; col < 4; ++col)
+                    for (int row = 0; row < 4; ++row)
+                        flat.push_back(m.Data[row][col]);
+            return AddAccessor(Blob.Add<float>(flat), 5126, matrices.size(), "MAT4");
+        }
+
+        // `nodes`, `skins` and `animations` are JSON arrays; the mesh is mesh 0.
+        std::string Build(std::string_view sceneNodes,
+                          std::string_view nodes,
+                          std::string_view skins,
+                          std::string_view animations = {}) const
+        {
+            std::string gltf = R"({"asset":{"version":"2.0"},"scene":0,)";
+            gltf += std::format(R"("scenes":[{{"nodes":{}}}],"nodes":{},"skins":{},)",
+                                sceneNodes, nodes, skins);
+            gltf += R"("meshes":[{"name":"body","primitives":[{"attributes":{)"
+                    R"("POSITION":0,"NORMAL":1,"TANGENT":2,"JOINTS_0":3,"WEIGHTS_0":4},"indices":5}]}],)";
+            if (!animations.empty())
+                gltf += std::format(R"("animations":{},)", animations);
+            gltf += R"("buffers":[{"byteLength":)" + std::to_string(Blob.Data.size())
+                    + R"(,"uri":"data:application/octet-stream;base64,)" + Base64Encode(Blob.Data)
+                    + R"("}],"bufferViews":[)";
+            for (std::size_t i = 0; i < Views.size(); ++i)
+                gltf += (i == 0 ? "" : ",") + Views[i];
+            gltf += R"(],"accessors":[)";
+            for (std::size_t i = 0; i < Accessors.size(); ++i)
+                gltf += (i == 0 ? "" : ",") + Accessors[i];
+            gltf += "]}";
+            return gltf;
+        }
+
+    private:
+        int AddAccessor(const BlobBuilder::View& view, int componentType, std::size_t count,
+                        std::string_view type, std::string_view extra = {})
+        {
+            const int viewIndex = static_cast<int>(Views.size());
+            Views.push_back(std::format(R"({{"buffer":0,"byteOffset":{},"byteLength":{}}})",
+                                        view.Offset, view.Length));
+            Accessors.push_back(std::format(
+                R"({{"bufferView":{},"componentType":{},"count":{},"type":"{}"{}}})",
+                viewIndex, componentType, count, type, extra));
+            return static_cast<int>(Accessors.size()) - 1;
+        }
+
+        BlobBuilder Blob;
+        std::vector<std::string> Views;
+        std::vector<std::string> Accessors;
+    };
+
+    Mat4 Trs(const Vec3d& translation, const Quat<float>& rotation, const Vec3d& scale)
+    {
+        return Transform3f{ translation, rotation, scale }.ToMat4();
+    }
+
+    // The armature every model-space fixture hangs its joints from: offset,
+    // turned a quarter about X and uniformly scaled, as an exported rig object
+    // usually is.
+    const Vec3d kArmatureTranslation{ 0.0f, 2.0f, 3.0f };
+    const Quat<float> kArmatureRotation =
+        Quat<float>::FromAxisAngle(Vec3d(1, 0, 0), std::numbers::pi_v<float> / 2.0f);
+    constexpr float kArmatureScale = 2.5f;
+
+    Mat4 ArmatureMatrix()
+    {
+        return Trs(kArmatureTranslation, kArmatureRotation,
+                   Vec3d(kArmatureScale, kArmatureScale, kArmatureScale));
+    }
+
+    std::string ArmatureNodeJson(std::string_view children)
+    {
+        return std::format(
+            R"({{"name":"Armature","children":{},"translation":[{},{},{}],)"
+            R"("rotation":[{},{},{},{}],"scale":[{},{},{}]}})",
+            children, kArmatureTranslation.X, kArmatureTranslation.Y, kArmatureTranslation.Z,
+            kArmatureRotation.X, kArmatureRotation.Y, kArmatureRotation.Z, kArmatureRotation.W,
+            kArmatureScale, kArmatureScale, kArmatureScale);
+    }
+
+    void ExpectMatrixNear(const Mat4& actual, const Mat4& expected, float tolerance,
+                          std::string_view label)
+    {
+        for (int row = 0; row < 4; ++row)
+            for (int col = 0; col < 4; ++col)
+                EXPECT_NEAR(actual.Data[row][col], expected.Data[row][col], tolerance)
+                    << label << " [" << row << "][" << col << "]";
+    }
+
+    // The model transforms a clip poses at `time`, the way the runtime
+    // composes them.
+    std::vector<Mat4> PosedModel(const ImportedGltfScene& scene, float time)
+    {
+        std::vector<Transform3f> local;
+        SampleAnimationClip(scene.Animations.at(0).Data, scene.Skeletons.at(0).Data, time, local);
+        std::vector<Mat4> model;
+        BuildPosedModelTransforms(scene.Skeletons.at(0).Data, local, model);
+        return model;
+    }
+
+    const AnimationJointTrack* FindTrack(const AnimationClipData& clip, uint32_t joint,
+                                         AnimationChannelPath path)
+    {
+        for (const AnimationJointTrack& track : clip.Tracks)
+            if (track.JointIndex == joint && track.Path == path)
+                return &track;
+        return nullptr;
     }
 }
 
@@ -407,6 +568,259 @@ TEST(SkeletalCook, RejectsSkinnedMeshWithoutTangents)
     std::string error;
     EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
     EXPECT_NE(error.find("TANGENT"), std::string::npos) << error;
+}
+
+// -- Skeleton model space ------------------------------------------------------
+//
+// A skeleton's model space is the space its inverse bind matrices were written
+// in: glTF scene space, which includes every non-joint node above the root
+// joints (an exported armature object, for one). The cook folds those nodes
+// into the roots, and their animation into the roots' tracks.
+
+namespace
+{
+    // Armature(0) -> Root(1) -> Upper(2), plus Body(3) skinned to [Root, Upper],
+    // with inverse binds that agree with the rest pose.
+    std::string BuildArmatureRig(SkinnedGltfBuilder& builder, std::string_view animations = {})
+    {
+        const Mat4 root = ArmatureMatrix() * Mat4::MakeTranslation(0, 1, 0);
+        const Mat4 upper = root * Mat4::MakeTranslation(0, 1, 0);
+        const int ibm = builder.AddMatrices({ root.Inverse(), upper.Inverse() });
+        return builder.Build(
+            "[0,3]",
+            "[" + ArmatureNodeJson("[1]")
+                + R"(,{"name":"Root","children":[2],"translation":[0,1,0]},)"
+                  R"({"name":"Upper","translation":[0,1,0]},{"name":"Body","mesh":0,"skin":0}])",
+            std::format(R"([{{"name":"rig","joints":[1,2],"inverseBindMatrices":{}}}])", ibm),
+            animations);
+    }
+
+    // Mover(0) -> Armature(1) -> {Root(2) -> Upper(3), Target(4)}, Body(5).
+    // Two root joints share the armature, the way a rig's IK targets do.
+    std::string BuildMovedRig(SkinnedGltfBuilder& builder, std::string_view animations)
+    {
+        const Mat4 root = ArmatureMatrix() * Mat4::MakeTranslation(0, 1, 0);
+        const Mat4 upper = root * Mat4::MakeTranslation(0, 1, 0);
+        const Mat4 target = ArmatureMatrix() * Mat4::MakeTranslation(1, 0, 0);
+        const int ibm = builder.AddMatrices({ root.Inverse(), upper.Inverse(), target.Inverse() });
+        return builder.Build(
+            "[0,5]",
+            R"([{"name":"Mover","children":[1]},)" + ArmatureNodeJson("[2,4]")
+                + R"(,{"name":"Root","children":[3],"translation":[0,1,0]},)"
+                  R"({"name":"Upper","translation":[0,1,0]},)"
+                  R"({"name":"Target","translation":[1,0,0]},)"
+                  R"({"name":"Body","mesh":0,"skin":0}])",
+            std::format(R"([{{"name":"rig","joints":[2,3,4],"inverseBindMatrices":{}}}])", ibm),
+            animations);
+    }
+
+    Vec3d Lerp(const Vec3d& a, const Vec3d& b, float t)
+    {
+        return a + (b - a) * t;
+    }
+
+    const Quat<float> kQuarterTurnZ =
+        Quat<float>::FromAxisAngle(Vec3d(0, 0, 1), std::numbers::pi_v<float> / 2.0f);
+}
+
+TEST(SkeletalCook, RestPaletteIsIdentityUnderATransformedArmature)
+{
+    SkinnedGltfBuilder builder;
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(BuildArmatureRig(builder)), scene, &error)) << error;
+
+    const SkeletonData& skeleton = scene.Skeletons.at(0).Data;
+    std::vector<Mat4> model;
+    std::vector<Mat4> palette;
+    BuildBindModelTransforms(skeleton, model);
+    BuildSkinningPalette(skeleton, model, palette);
+
+    const Mat4 root = ArmatureMatrix() * Mat4::MakeTranslation(0, 1, 0);
+    ExpectMatrixNear(model.at(0), root, 1e-4f, "Root model");
+    ExpectMatrixNear(model.at(1), root * Mat4::MakeTranslation(0, 1, 0), 1e-4f, "Upper model");
+    for (std::size_t joint = 0; joint < palette.size(); ++joint)
+        ExpectMatrixNear(palette[joint], Mat4::Identity(), 1e-4f, std::format("palette {}", joint));
+}
+
+TEST(SkeletalCook, RootTracksComposeAStaticArmature)
+{
+    SkinnedGltfBuilder builder;
+    const int times = builder.AddTimes({ 0.0f, 1.0f });
+    const int translations = builder.AddVec3s({ Vec3d(0, 1, 0), Vec3d(1, 1, 0) });
+    const int rotations = builder.AddQuats({ Quat<float>::Identity(), kQuarterTurnZ });
+    const std::string animations = std::format(
+        R"([{{"name":"sway","channels":[)"
+        R"({{"sampler":0,"target":{{"node":1,"path":"translation"}}}},)"
+        R"({{"sampler":1,"target":{{"node":1,"path":"rotation"}}}}],)"
+        R"("samplers":[{{"input":{0},"output":{1}}},{{"input":{0},"output":{2}}}]}}])",
+        times, translations, rotations);
+
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(BuildArmatureRig(builder, animations)), scene, &error))
+        << error;
+    ASSERT_EQ(scene.Animations.size(), 1u);
+
+    // A static armature composes key by key: the key times are the source's.
+    const AnimationClipData& clip = scene.Animations[0].Data;
+    for (const AnimationJointTrack& track : clip.Tracks)
+        EXPECT_EQ(track.TimesSeconds, (std::vector<float>{ 0.0f, 1.0f }));
+
+    for (const float time : { 0.0f, 0.5f, 1.0f })
+    {
+        const Mat4 local = Trs(Lerp(Vec3d(0, 1, 0), Vec3d(1, 1, 0), time),
+                               Quat<float>::Slerp(Quat<float>::Identity(), kQuarterTurnZ, time),
+                               Vec3d(1, 1, 1));
+        const std::vector<Mat4> model = PosedModel(scene, time);
+        ExpectMatrixNear(model.at(0), ArmatureMatrix() * local, 1e-4f,
+                         std::format("Root at {}s", time));
+    }
+}
+
+TEST(SkeletalCook, AnimatedAncestorSynthesizesRootTracks)
+{
+    // Only the object above the armature moves; the joints carry no keys.
+    SkinnedGltfBuilder builder;
+    const std::vector<Vec3d> mover{ Vec3d(0, 0, 0), Vec3d(4, 0, 0), Vec3d(4, 0, -3) };
+    const int times = builder.AddTimes({ 0.0f, 1.0f, 2.0f });
+    const int translations = builder.AddVec3s(mover);
+    const std::string animations = std::format(
+        R"([{{"name":"travel","channels":[{{"sampler":0,"target":{{"node":0,"path":"translation"}}}}],)"
+        R"("samplers":[{{"input":{},"output":{}}}]}}])",
+        times, translations);
+
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(BuildMovedRig(builder, animations)), scene, &error))
+        << error;
+    ASSERT_EQ(scene.Animations.size(), 1u);
+
+    // Both root joints get the motion; the child joint needs none of its own.
+    const AnimationClipData& clip = scene.Animations[0].Data;
+    for (const uint32_t root : { 0u, 2u })
+        for (const AnimationChannelPath path : { AnimationChannelPath::Translation,
+                                                 AnimationChannelPath::Rotation,
+                                                 AnimationChannelPath::Scale })
+        {
+            const AnimationJointTrack* track = FindTrack(clip, root, path);
+            ASSERT_NE(track, nullptr) << "joint " << root;
+            EXPECT_EQ(track->TimesSeconds, (std::vector<float>{ 0.0f, 1.0f, 2.0f }));
+        }
+    EXPECT_EQ(FindTrack(clip, 1, AnimationChannelPath::Translation), nullptr);
+
+    for (const float time : { 0.0f, 0.5f, 1.0f, 1.5f, 2.0f })
+    {
+        const Vec3d offset = time <= 1.0f ? Lerp(mover[0], mover[1], time)
+                                          : Lerp(mover[1], mover[2], time - 1.0f);
+        const Mat4 frame = Mat4::MakeTranslation(offset) * ArmatureMatrix();
+        const std::vector<Mat4> model = PosedModel(scene, time);
+        ExpectMatrixNear(model.at(0), frame * Mat4::MakeTranslation(0, 1, 0), 1e-4f,
+                         std::format("Root at {}s", time));
+        ExpectMatrixNear(model.at(1), frame * Mat4::MakeTranslation(0, 2, 0), 1e-4f,
+                         std::format("Upper at {}s", time));
+        ExpectMatrixNear(model.at(2), frame * Mat4::MakeTranslation(1, 0, 0), 1e-4f,
+                         std::format("Target at {}s", time));
+    }
+}
+
+TEST(SkeletalCook, RootTracksResampleAtTheUnionOfAncestorAndRootKeys)
+{
+    SkinnedGltfBuilder builder;
+    const int moverTimes = builder.AddTimes({ 0.0f, 1.0f });
+    const int moverValues = builder.AddVec3s({ Vec3d(0, 0, 0), Vec3d(4, 0, 0) });
+    const int rootTimes = builder.AddTimes({ 0.5f, 2.0f });
+    const int rootValues = builder.AddQuats({ Quat<float>::Identity(), kQuarterTurnZ });
+    const std::string animations = std::format(
+        R"([{{"name":"mixed","channels":[)"
+        R"({{"sampler":0,"target":{{"node":0,"path":"translation"}}}},)"
+        R"({{"sampler":1,"target":{{"node":2,"path":"rotation"}}}}],)"
+        R"("samplers":[{{"input":{},"output":{}}},{{"input":{},"output":{}}}]}}])",
+        moverTimes, moverValues, rootTimes, rootValues);
+
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(BuildMovedRig(builder, animations)), scene, &error))
+        << error;
+    ASSERT_EQ(scene.Animations.size(), 1u);
+
+    const std::vector<float> unionTimes{ 0.0f, 0.5f, 1.0f, 2.0f };
+    const AnimationClipData& clip = scene.Animations[0].Data;
+    for (const AnimationChannelPath path : { AnimationChannelPath::Translation,
+                                             AnimationChannelPath::Rotation,
+                                             AnimationChannelPath::Scale })
+    {
+        const AnimationJointTrack* track = FindTrack(clip, 0, path);
+        ASSERT_NE(track, nullptr);
+        EXPECT_EQ(track->TimesSeconds, unionTimes);
+    }
+
+    for (const float time : unionTimes)
+    {
+        // Each source clamps outside its own keys.
+        const Vec3d offset = Lerp(Vec3d(0, 0, 0), Vec3d(4, 0, 0), std::min(time, 1.0f));
+        const float rootAlpha = std::clamp((time - 0.5f) / 1.5f, 0.0f, 1.0f);
+        const Mat4 rootLocal = Trs(Vec3d(0, 1, 0),
+                                   Quat<float>::Slerp(Quat<float>::Identity(), kQuarterTurnZ, rootAlpha),
+                                   Vec3d(1, 1, 1));
+        const std::vector<Mat4> model = PosedModel(scene, time);
+        ExpectMatrixNear(model.at(0), Mat4::MakeTranslation(offset) * ArmatureMatrix() * rootLocal,
+                         1e-4f, std::format("Root at {}s", time));
+    }
+}
+
+TEST(SkeletalCook, RejectsANonUniformlyScaledAncestor)
+{
+    SkinnedGltfBuilder builder;
+    const int ibm = builder.AddMatrices({ Mat4::Identity() });
+    const std::string gltf = builder.Build(
+        "[0,2]",
+        R"([{"name":"Armature","children":[1],"scale":[1,2,1]},{"name":"Root"},)"
+        R"({"name":"Body","mesh":0,"skin":0}])",
+        std::format(R"([{{"name":"rig","joints":[1],"inverseBindMatrices":{}}}])", ibm));
+
+    ImportedGltfScene scene;
+    std::string error;
+    EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
+    EXPECT_NE(error.find("'Armature'"), std::string::npos) << error;
+    EXPECT_NE(error.find("uniform"), std::string::npos) << error;
+}
+
+TEST(SkeletalCook, RejectsABindPoseThatIsNotTheRestPose)
+{
+    // Identity inverse binds against a rest pose that is offset and turned:
+    // the source was bound in a pose other than the one its nodes describe.
+    SkinnedGltfBuilder builder;
+    const int ibm = builder.AddMatrices({ Mat4::Identity(), Mat4::Identity() });
+    const std::string gltf = builder.Build(
+        "[0,3]",
+        "[" + ArmatureNodeJson("[1]")
+            + R"(,{"name":"Root","children":[2],"translation":[0,1,0]},)"
+              R"({"name":"Upper","translation":[0,1,0]},{"name":"Body","mesh":0,"skin":0}])",
+        std::format(R"([{{"name":"rig","joints":[1,2],"inverseBindMatrices":{}}}])", ibm));
+
+    ImportedGltfScene scene;
+    std::string error;
+    EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
+    EXPECT_NE(error.find("'Root'"), std::string::npos) << error;
+    EXPECT_NE(error.find("rest pose"), std::string::npos) << error;
+}
+
+TEST(SkeletalCook, RejectsANonJointNodeBetweenJoints)
+{
+    SkinnedGltfBuilder builder;
+    const int ibm = builder.AddMatrices({ Mat4::Identity(), Mat4::MakeTranslation(0, -2, 0) });
+    const std::string gltf = builder.Build(
+        "[0,3]",
+        R"([{"name":"Root","children":[1]},{"name":"Spacer","children":[2],"translation":[0,1,0]},)"
+        R"({"name":"Upper","translation":[0,1,0]},{"name":"Body","mesh":0,"skin":0}])",
+        std::format(R"([{{"name":"rig","joints":[0,2],"inverseBindMatrices":{}}}])", ibm));
+
+    ImportedGltfScene scene;
+    std::string error;
+    EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
+    EXPECT_NE(error.find("'Spacer'"), std::string::npos) << error;
+    EXPECT_NE(error.find("'Upper'"), std::string::npos) << error;
 }
 
 #endif // SENCHA_ENABLE_COOK
