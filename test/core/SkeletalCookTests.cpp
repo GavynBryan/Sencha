@@ -11,6 +11,7 @@
 #include <anim/AnimationClipSampling.h>
 #include <anim/SkinningPalette.h>
 #include <assets/animation/AnimationClipSerializer.h>
+#include <assets/cook/GltfFrame.h>
 #include <assets/cook/MeshCook.h>
 #include <assets/skeleton/SkeletonSerializer.h>
 #include <assets/static_mesh/MeshLoader.h>
@@ -378,6 +379,13 @@ namespace
             kArmatureScale, kArmatureScale, kArmatureScale);
     }
 
+    // A scene-space transform as the cooked skeleton holds it: model space is
+    // the engine frame.
+    Mat4 InEngineFrame(const Mat4& sceneTransform)
+    {
+        return GltfToEngineMatrix() * sceneTransform;
+    }
+
     void ExpectMatrixNear(const Mat4& actual, const Mat4& expected, float tolerance,
                           std::string_view label)
     {
@@ -572,10 +580,10 @@ TEST(SkeletalCook, RejectsSkinnedMeshWithoutTangents)
 
 // -- Skeleton model space ------------------------------------------------------
 //
-// A skeleton's model space is the space its inverse bind matrices were written
-// in: glTF scene space, which includes every non-joint node above the root
-// joints (an exported armature object, for one). The cook folds those nodes
-// into the roots, and their animation into the roots' tracks.
+// A glTF skin's inverse bind matrices are written in scene space, which
+// includes every non-joint node above the root joints (an exported armature
+// object, for one). The cook folds those nodes and the engine-frame turn into
+// the roots, and the nodes' animation into the roots' tracks.
 
 namespace
 {
@@ -637,8 +645,9 @@ TEST(SkeletalCook, RestPaletteIsIdentityUnderATransformedArmature)
     BuildSkinningPalette(skeleton, model, palette);
 
     const Mat4 root = ArmatureMatrix() * Mat4::MakeTranslation(0, 1, 0);
-    ExpectMatrixNear(model.at(0), root, 1e-4f, "Root model");
-    ExpectMatrixNear(model.at(1), root * Mat4::MakeTranslation(0, 1, 0), 1e-4f, "Upper model");
+    ExpectMatrixNear(model.at(0), InEngineFrame(root), 1e-4f, "Root model");
+    ExpectMatrixNear(model.at(1), InEngineFrame(root * Mat4::MakeTranslation(0, 1, 0)), 1e-4f,
+                     "Upper model");
     for (std::size_t joint = 0; joint < palette.size(); ++joint)
         ExpectMatrixNear(palette[joint], Mat4::Identity(), 1e-4f, std::format("palette {}", joint));
 }
@@ -673,7 +682,7 @@ TEST(SkeletalCook, RootTracksComposeAStaticArmature)
                                Quat<float>::Slerp(Quat<float>::Identity(), kQuarterTurnZ, time),
                                Vec3d(1, 1, 1));
         const std::vector<Mat4> model = PosedModel(scene, time);
-        ExpectMatrixNear(model.at(0), ArmatureMatrix() * local, 1e-4f,
+        ExpectMatrixNear(model.at(0), InEngineFrame(ArmatureMatrix() * local), 1e-4f,
                          std::format("Root at {}s", time));
     }
 }
@@ -713,7 +722,7 @@ TEST(SkeletalCook, AnimatedAncestorSynthesizesRootTracks)
     {
         const Vec3d offset = time <= 1.0f ? Lerp(mover[0], mover[1], time)
                                           : Lerp(mover[1], mover[2], time - 1.0f);
-        const Mat4 frame = Mat4::MakeTranslation(offset) * ArmatureMatrix();
+        const Mat4 frame = InEngineFrame(Mat4::MakeTranslation(offset) * ArmatureMatrix());
         const std::vector<Mat4> model = PosedModel(scene, time);
         ExpectMatrixNear(model.at(0), frame * Mat4::MakeTranslation(0, 1, 0), 1e-4f,
                          std::format("Root at {}s", time));
@@ -764,7 +773,7 @@ TEST(SkeletalCook, RootTracksResampleAtTheUnionOfAncestorAndRootKeys)
                                    Quat<float>::Slerp(Quat<float>::Identity(), kQuarterTurnZ, rootAlpha),
                                    Vec3d(1, 1, 1));
         const std::vector<Mat4> model = PosedModel(scene, time);
-        ExpectMatrixNear(model.at(0), Mat4::MakeTranslation(offset) * ArmatureMatrix() * rootLocal,
+        ExpectMatrixNear(model.at(0), InEngineFrame(Mat4::MakeTranslation(offset) * ArmatureMatrix() * rootLocal),
                          1e-4f, std::format("Root at {}s", time));
     }
 }

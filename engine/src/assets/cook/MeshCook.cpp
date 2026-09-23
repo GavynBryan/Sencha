@@ -3,6 +3,7 @@
 #include <anim/AnimationClipSampling.h>
 #include <anim/SkinningPalette.h>
 #include <assets/cook/CookFingerprint.h>
+#include <assets/cook/GltfFrame.h>
 #include <assets/animation/AnimationClipSerializer.h>
 #include <assets/skeleton/SkeletonSerializer.h>
 #include <assets/static_mesh/MeshSerializer.h>
@@ -22,13 +23,12 @@
 #include <format>
 #include <memory>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace
 {
     // The glTF importer's cook version: part of its CookIdentity, so every
     // artifact it produced recooks when this moves.
-    constexpr std::uint32_t kGltfMeshCookVersion = 2;
+    constexpr std::uint32_t kGltfMeshCookVersion = 3;
 
     struct CgltfFree
     {
@@ -454,11 +454,12 @@ namespace
     }
 
     // Composes a root joint's ancestors, outermost first, into the one
-    // transform they place the root in. The result is folded into the root's
-    // TRS, which is exact only for a uniform scale without mirroring.
+    // transform they place the root in, starting from the engine frame. The
+    // result is folded into the root's TRS, which is exact only for a uniform
+    // scale without mirroring.
     bool ComposeAncestors(std::span<const Transform3f> ancestors, Transform3f& out)
     {
-        Mat4 composed = Mat4::Identity();
+        Mat4 composed = GltfToEngineMatrix();
         for (const Transform3f& ancestor : ancestors)
             composed = composed * ancestor.ToMat4();
         return DecomposeAffine(composed, out) && IsUniformScale(out.Scale);
@@ -474,11 +475,13 @@ namespace
         return ancestors.size() - 1;
     }
 
-    // A root joint and the non-joint nodes above it. A skeleton's model space
-    // is the space its inverse bind matrices and skinned vertices are written
-    // in, which for glTF is scene space: it includes every node above the
-    // roots (an exported armature object, for one). The cook folds those
-    // nodes into the root joints, at rest and in every clip.
+    // A root joint and the non-joint nodes above it. A glTF skin's inverse
+    // bind matrices and skinned vertices are written in scene space, which
+    // includes every node above the roots (an exported armature object, for
+    // one). The cook folds those nodes, and the turn into the engine frame,
+    // into the root joints, at rest and in every clip, so the skeleton's
+    // model space is the engine-frame scene space its skinned meshes are
+    // baked into.
     struct RootChain
     {
         uint32_t Joint = 0;
@@ -622,11 +625,14 @@ namespace
                 if (!cgltf_accessor_read_float(skin.inverse_bind_matrices,
                                                static_cast<cgltf_size>(localIndex), m, 16))
                     return SetError(error, "could not read inverse bind matrix"), false;
-                joint.InverseBind = GltfMat4ToRowMajor(m);
+                // Turn engine space back into scene space before the source's
+                // inverse bind (the turn is its own inverse), so the rest
+                // palette stays the identity.
+                joint.InverseBind = GltfMat4ToRowMajor(m) * GltfToEngineMatrix();
             }
             else
             {
-                joint.InverseBind = Mat4::Identity();
+                joint.InverseBind = GltfToEngineMatrix();
             }
 
             if (joint.ParentIndex != -1)
@@ -952,11 +958,46 @@ namespace
         return true;
     }
 
+    // Bakes an affine transform into geometry: positions by the matrix,
+    // normals by its inverse transpose, tangent directions by its linear part.
+    // A mirroring transform also flips tangent handedness and reverses
+    // triangle winding, so the bitangent and the front face both survive it.
+    void BakeTransform(MeshGeometry& geometry, const Mat4& transform)
+    {
+        Mat<3, 3> linear;
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 3; ++col)
+                linear.Data[row][col] = transform.Data[row][col];
+        const Mat<3, 3> normalTransform = linear.Inverse().Transposed();
+        const bool mirrors = linear.Determinant() < 0.0f;
+
+        // A zero-length direction (exporters emit them for degenerate UVs)
+        // stays zero rather than being invented.
+        const auto unit = [](const Vec3d& v) {
+            return v.Magnitude() > 0.0f ? v.Normalized() : v;
+        };
+        for (StaticMeshVertex& vertex : geometry.Vertices)
+        {
+            const Vec4 p = transform * Vec4(vertex.Position.X, vertex.Position.Y, vertex.Position.Z, 1.0f);
+            vertex.Position = Vec3d(p.X, p.Y, p.Z);
+            vertex.Normal = unit(normalTransform * vertex.Normal);
+            const Vec3d tangent =
+                unit(linear * Vec3d(vertex.Tangent.X, vertex.Tangent.Y, vertex.Tangent.Z));
+            vertex.Tangent = Vec4(tangent.X, tangent.Y, tangent.Z,
+                                  mirrors ? -vertex.Tangent.W : vertex.Tangent.W);
+        }
+        if (mirrors)
+            for (size_t i = 0; i + 2 < geometry.Indices.size(); i += 3)
+                std::swap(geometry.Indices[i + 1], geometry.Indices[i + 2]);
+    }
+
     // Accumulate one glTF mesh's primitives into a single geometry, one section
-    // per primitive, and validate the result. `influences` opts the caller into
-    // the skinning stream; when null, skin attributes are not read.
+    // per primitive, baked into model space by `toModel`, and validate the
+    // result. `influences` opts the caller into the skinning stream; when null,
+    // skin attributes are not read.
     bool ReadMeshGeometry(const cgltf_mesh& gltfMesh,
                           std::string_view nameForErrors,
+                          const Mat4& toModel,
                           ImportedGltfMesh& imported,
                           std::vector<MeshSkinInfluence>* influences,
                           std::string* error)
@@ -1001,6 +1042,9 @@ namespace
                                    primitiveInfluences.end());
         }
 
+        // After tangent generation, so MikkTSpace sees the source's own
+        // texture-space orientation.
+        BakeTransform(imported.Geometry, toModel);
         RecomputeMeshBounds(imported.Geometry);
 
         // Geometry only. The skinning invariants need the skeleton's assigned
@@ -1099,35 +1143,6 @@ bool GenerateSectionTangents(std::vector<StaticMeshVertex>& vertices,
     return true;
 }
 
-bool ImportGltfMeshes(std::span<const std::byte> bytes,
-                      std::vector<ImportedGltfMesh>& out,
-                      std::string* error)
-{
-    out.clear();
-
-    CgltfDataPtr data;
-    if (!ParseGltf(bytes, data, error))
-        return false;
-
-    for (cgltf_size meshIndex = 0; meshIndex < data->meshes_count; ++meshIndex)
-    {
-        const cgltf_mesh& gltfMesh = data->meshes[meshIndex];
-        const std::string meshName = gltfMesh.name != nullptr ? gltfMesh.name : "";
-        const std::string_view nameForErrors =
-            meshName.empty() ? std::string_view("<unnamed>") : std::string_view(meshName);
-
-        ImportedGltfMesh imported;
-        imported.Name = meshName;
-
-        if (!ReadMeshGeometry(gltfMesh, nameForErrors, imported, nullptr, error))
-            return false;
-
-        out.push_back(std::move(imported));
-    }
-
-    return true;
-}
-
 bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, std::string* error)
 {
     out = {};
@@ -1148,7 +1163,9 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
     {
         const cgltf_skin& skin = data->skins[skinIndex];
         ImportedSkeleton skeleton;
-        skeleton.Name = skin.name != nullptr ? skin.name : "";
+        skeleton.Name = skin.name != nullptr && skin.name[0] != '\0'
+            ? std::string(skin.name) : std::format("skin{}", skinIndex);
+        skeleton.Origin = std::format("skin {} '{}'", skinIndex, skin.name != nullptr ? skin.name : "");
         if (!BuildSkeletonFromSkin(*data, skin, skeleton.Data, skinRemaps[skinIndex],
                                    skinRoots[skinIndex], error))
             return false;
@@ -1169,16 +1186,21 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
         out.Skeletons.push_back(std::move(skeleton));
     }
 
-    // Meshes — skinned ones carry an influence stream with skeleton-local
-    // joints; SkeletonPath is left for the importer to assign.
+    // Skinned meshes, one per glTF mesh a skinned node uses: the vertices are
+    // already in the skin's scene space, whatever node places them, so only
+    // the engine-frame turn is baked. They carry an influence stream with
+    // skeleton-local joints; SkeletonPath is left for the importer to assign.
+    const Mat4 engineFrame = GltfToEngineMatrix();
     for (cgltf_size meshIndex = 0; meshIndex < data->meshes_count; ++meshIndex)
     {
         const cgltf_mesh& gltfMesh = data->meshes[meshIndex];
+        const std::vector<int> meshSkins = MeshSkinIndices(*data, gltfMesh);
+        if (meshSkins.empty())
+            continue;
+
         const std::string meshName = gltfMesh.name != nullptr ? gltfMesh.name : "";
         const std::string_view nameForErrors =
             meshName.empty() ? std::string_view("<unnamed>") : std::string_view(meshName);
-
-        const std::vector<int> meshSkins = MeshSkinIndices(*data, gltfMesh);
         if (meshSkins.size() > 1)
         {
             SetError(error, std::format(
@@ -1187,49 +1209,84 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
                 nameForErrors, meshSkins.size()));
             return false;
         }
-        const int skinIndex = meshSkins.empty() ? -1 : meshSkins.front();
-        const bool skinned = skinIndex >= 0;
+        const int skinIndex = meshSkins.front();
 
         ImportedGltfMesh imported;
-        imported.Name = meshName;
+        imported.Name = meshName.empty() ? std::format("mesh{}", meshIndex) : meshName;
+        imported.Origin = std::format("mesh {} '{}'", meshIndex, meshName);
         imported.SkinIndex = skinIndex;
 
         std::vector<MeshSkinInfluence> meshInfluences;
-        if (!ReadMeshGeometry(gltfMesh, nameForErrors, imported,
-                              skinned ? &meshInfluences : nullptr, error))
-        {
+        if (!ReadMeshGeometry(gltfMesh, nameForErrors, engineFrame, imported, &meshInfluences, error))
             return false;
-        }
 
-        if (skinned)
+        const std::vector<uint32_t>& remap = skinRemaps[skinIndex];
+        for (MeshSkinInfluence& influence : meshInfluences)
         {
-            const std::vector<uint32_t>& remap = skinRemaps[skinIndex];
-            for (MeshSkinInfluence& influence : meshInfluences)
+            for (int slot = 0; slot < 4; ++slot)
             {
-                for (int slot = 0; slot < 4; ++slot)
+                if (influence.Weights[slot] == 0)
                 {
-                    if (influence.Weights[slot] == 0)
-                    {
-                        influence.Joints[slot] = 0;
-                        continue;
-                    }
-                    if (influence.Joints[slot] >= remap.size())
-                    {
-                        SetError(error, std::format("mesh '{}' references joint {} outside skin",
-                                                    nameForErrors, influence.Joints[slot]));
-                        return false;
-                    }
-                    influence.Joints[slot] = static_cast<uint16_t>(remap[influence.Joints[slot]]);
+                    influence.Joints[slot] = 0;
+                    continue;
                 }
+                if (influence.Joints[slot] >= remap.size())
+                {
+                    SetError(error, std::format("mesh '{}' references joint {} outside skin",
+                                                nameForErrors, influence.Joints[slot]));
+                    return false;
+                }
+                influence.Joints[slot] = static_cast<uint16_t>(remap[influence.Joints[slot]]);
             }
-
-            MeshSkinning skinning;
-            skinning.JointCount = static_cast<uint32_t>(out.Skeletons[skinIndex].Data.Joints.size());
-            skinning.Influences = std::move(meshInfluences);
-            imported.Skinning = std::move(skinning);
         }
 
+        MeshSkinning skinning;
+        skinning.JointCount = static_cast<uint32_t>(out.Skeletons[skinIndex].Data.Joints.size());
+        skinning.Influences = std::move(meshInfluences);
+        imported.Skinning = std::move(skinning);
         out.Meshes.push_back(std::move(imported));
+    }
+
+    // Static meshes, one per node that places a mesh without a skin, baked
+    // into the engine frame through the node's world transform: a source is
+    // imported as its scene lays it out, and two placements of one mesh are
+    // two artifacts.
+    std::vector<bool> meshPlaced(data->meshes_count, false);
+    for (cgltf_size nodeIndex = 0; nodeIndex < data->nodes_count; ++nodeIndex)
+    {
+        const cgltf_node& node = data->nodes[nodeIndex];
+        if (node.mesh == nullptr)
+            continue;
+        meshPlaced[cgltf_mesh_index(data.get(), node.mesh)] = true;
+        if (node.skin != nullptr)
+            continue;
+
+        const std::string nodeName = node.name != nullptr ? node.name : "";
+        ImportedGltfMesh imported;
+        imported.Name = nodeName.empty() ? std::format("node{}", nodeIndex) : nodeName;
+        imported.Origin = std::format("node {} '{}'", nodeIndex, nodeName);
+
+        const std::string_view meshName = node.mesh->name != nullptr
+            ? std::string_view(node.mesh->name) : std::string_view("<unnamed>");
+        float world[16]{};
+        cgltf_node_transform_world(&node, world);
+        if (!ReadMeshGeometry(*node.mesh, meshName, engineFrame * GltfMat4ToRowMajor(world),
+                              imported, nullptr, error))
+            return false;
+        out.Meshes.push_back(std::move(imported));
+    }
+
+    // A mesh no node places is not part of the scene; importing it anyway
+    // would mean guessing where it goes.
+    for (cgltf_size meshIndex = 0; meshIndex < data->meshes_count; ++meshIndex)
+    {
+        if (meshPlaced[meshIndex])
+            continue;
+        const char* name = data->meshes[meshIndex].name;
+        SetError(error, std::format(
+            "mesh {} '{}' is not placed by any node; the cook imports what the scene places",
+            meshIndex, name != nullptr ? name : ""));
+        return false;
     }
 
     // Animations — each becomes one clip on the single skeleton its channels
@@ -1275,7 +1332,10 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
         const std::vector<RootChain>& roots = skinRoots[animSkin];
 
         ImportedAnimation imported;
-        imported.Name = animation.name != nullptr ? animation.name : "";
+        imported.Name = animation.name != nullptr && animation.name[0] != '\0'
+            ? std::string(animation.name) : std::format("animation{}", animIndex);
+        imported.Origin = std::format("animation {} '{}'", animIndex,
+                                      animation.name != nullptr ? animation.name : "");
         imported.SkinIndex = animSkin;
         AnimationClipData& clip = imported.Data;
 
@@ -1358,14 +1418,20 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
     const bool singleStaticMesh = scene.Meshes.size() == 1
         && scene.Meshes[0].SkinIndex < 0 && scene.Skeletons.empty();
 
-    std::unordered_set<std::string> usedNames;
-    const auto uniqueName = [&usedNames](std::string base, size_t ordinal) {
-        if (base.empty())
-            base = std::format("{}", ordinal);
-        std::string name = base;
-        while (!usedNames.insert(name).second)
-            name += std::format("_{}", ordinal);
-        return name;
+    // Artifact names are the author's names, sanitized, with an index for an
+    // unnamed element. Two elements landing on one name is an error rather
+    // than a suffix by discovery order, so an artifact's name never depends
+    // on what else the source contains.
+    std::unordered_map<std::string, std::string> claimedNames;
+    const auto claimName = [&claimedNames](std::string name, const std::string& origin,
+                                           std::string& outError) -> std::optional<std::string> {
+        const auto [it, inserted] = claimedNames.try_emplace(name, origin);
+        if (inserted)
+            return name;
+        outError = std::format(
+            "gltf import: {} and {} both name the artifact '{}'; rename one of them",
+            it->second, origin, name);
+        return std::nullopt;
     };
 
     // Skeleton artifact paths, indexed by skin, so meshes and clips can
@@ -1378,16 +1444,18 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
     // -- Skeletons --
     for (size_t i = 0; i < scene.Skeletons.size(); ++i)
     {
-        const std::string name = "skel:" + SanitizeMeshName(scene.Skeletons[i].Name);
-        const std::string unique = uniqueName(name, i);
+        const std::optional<std::string> unique = claimName(
+            "skel:" + SanitizeMeshName(scene.Skeletons[i].Name), scene.Skeletons[i].Origin, error);
+        if (!unique)
+            return ImportResult{ .Error = error };
 
         std::vector<std::byte> bytes;
         if (!WriteSskelToBytes(scene.Skeletons[i].Data, bytes, &error))
             return ImportResult{ .Error = "gltf import: .sskel serialization failed: " + error };
 
         CookedArtifact artifact;
-        artifact.Path = virtualPrefix + "#" + unique;
-        artifact.FileRelPath = fileBase + "." + unique + ".sskel";
+        artifact.Path = virtualPrefix + "#" + *unique;
+        artifact.FileRelPath = fileBase + "." + *unique + ".sskel";
         artifact.Type = AssetType::Skeleton;
         skeletonPaths[i] = artifact.Path;
 
@@ -1431,9 +1499,12 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
         }
         else
         {
-            const std::string unique = uniqueName(SanitizeMeshName(mesh.Name), meshIndex);
-            artifact.Path = virtualPrefix + "#" + unique;
-            artifact.FileRelPath = fileBase + "." + unique + std::string(extension);
+            const std::optional<std::string> unique =
+                claimName(SanitizeMeshName(mesh.Name), mesh.Origin, error);
+            if (!unique)
+                return ImportResult{ .Error = error };
+            artifact.Path = virtualPrefix + "#" + *unique;
+            artifact.FileRelPath = fileBase + "." + *unique + std::string(extension);
         }
         artifact.Type = skinned ? AssetType::SkinnedMesh : AssetType::StaticMesh;
 
@@ -1452,10 +1523,13 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
         if (!WriteSanimToBytes(animation.Data, bytes, &error))
             return ImportResult{ .Error = "gltf import: .sanim serialization failed: " + error };
 
-        const std::string unique = uniqueName("anim:" + SanitizeMeshName(animation.Name), animIndex);
+        const std::optional<std::string> unique =
+            claimName("anim:" + SanitizeMeshName(animation.Name), animation.Origin, error);
+        if (!unique)
+            return ImportResult{ .Error = error };
         CookedArtifact artifact;
-        artifact.Path = virtualPrefix + "#" + unique;
-        artifact.FileRelPath = fileBase + "." + unique + ".sanim";
+        artifact.Path = virtualPrefix + "#" + *unique;
+        artifact.FileRelPath = fileBase + "." + *unique + ".sanim";
         artifact.Type = AssetType::AnimationClip;
 
         if (!output.WriteBytes(artifact.FileRelPath, bytes))

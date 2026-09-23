@@ -14,13 +14,16 @@
 #include <assets/static_mesh/MeshLoader.h>
 #include <core/logging/LoggingProvider.h>
 #include <assets/skinned_mesh/SkinnedMeshData.h>
+#include <math/geometry/3d/Transform3d.h>
 
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <map>
+#include <numbers>
 #include <random>
 #include <span>
 #include <string>
@@ -91,10 +94,15 @@ namespace
         return blob;
     }
 
+    // One node placing mesh 0 at the origin, named like the quad mesh.
+    constexpr std::string_view kQuadNode = R"([{"name":"Quad","mesh":0}])";
+
     // Accessor indices into the fixture: 0=pos, 1=nrm, 2=uv, 3=tan, 4=idx.
-    std::string QuadGltfSkeleton(std::string_view meshesJson, std::string_view bufferJson)
+    std::string QuadGltfSkeleton(std::string_view meshesJson, std::string_view bufferJson,
+                                 std::string_view nodesJson = kQuadNode)
     {
         return std::string(R"({"asset":{"version":"2.0"},)")
+            + R"("nodes":)" + std::string(nodesJson) + ","
             + R"("buffers":[)" + std::string(bufferJson) + R"(],)"
             + R"("bufferViews":[)"
               R"({"buffer":0,"byteOffset":0,"byteLength":48},)"
@@ -111,13 +119,13 @@ namespace
             + R"("meshes":[)" + std::string(meshesJson) + "]}";
     }
 
-    std::string QuadGltf(std::string_view meshesJson)
+    std::string QuadGltf(std::string_view meshesJson, std::string_view nodesJson = kQuadNode)
     {
         const std::vector<std::byte> blob = BuildQuadBlob();
         const std::string buffer =
             R"({"byteLength":204,"uri":"data:application/octet-stream;base64,)"
             + Base64Encode(blob) + R"("})";
-        return QuadGltfSkeleton(meshesJson, buffer);
+        return QuadGltfSkeleton(meshesJson, buffer, nodesJson);
     }
 
     std::span<const std::byte> AsBytes(const std::string& text)
@@ -153,32 +161,37 @@ namespace
         R"({"name":"Quad","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":4}]})";
 } // namespace
 
-// -- ImportGltfMeshes: the pure stage half ------------------------------------
+// -- ImportGltfScene: the pure stage half -------------------------------------
 
 TEST(MeshCook, QuadWithUvsGetsMikkTSpaceTangents)
 {
     const std::string gltf = QuadGltf(kQuadMeshNoTangents);
 
-    std::vector<ImportedGltfMesh> meshes;
+    ImportedGltfScene scene;
     std::string error;
-    ASSERT_TRUE(ImportGltfMeshes(AsBytes(gltf), meshes, &error)) << error;
-    ASSERT_EQ(meshes.size(), 1u);
-    EXPECT_EQ(meshes[0].Name, "Quad");
+    ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
+    ASSERT_EQ(scene.Meshes.size(), 1u);
+    EXPECT_EQ(scene.Meshes[0].Name, "Quad");
 
-    const MeshGeometry& mesh = meshes[0].Geometry;
+    const MeshGeometry& mesh = scene.Meshes[0].Geometry;
     // The de-index/weld round trip must not duplicate the flat quad.
     ASSERT_EQ(mesh.Vertices.size(), 4u);
     ASSERT_EQ(mesh.Indices.size(), 6u);
     ASSERT_EQ(mesh.Sections.size(), 1u);
 
-    // U runs along +X with N = +Z, so MikkTSpace must produce T = +X with
-    // w = +1 (bitangent = cross(N,T)*w = +Y = the V direction).
+    // MikkTSpace runs on the source, then the half turn into the engine frame
+    // carries its result: U runs along -X and V along +Y with N = -Z. The
+    // tangent follows U and the bitangent w * cross(N, T) follows V.
     for (const StaticMeshVertex& vertex : mesh.Vertices)
     {
-        EXPECT_NEAR(vertex.Tangent.X, 1.0f, 1e-4f);
+        EXPECT_NEAR(vertex.Tangent.X, -1.0f, 1e-4f);
         EXPECT_NEAR(vertex.Tangent.Y, 0.0f, 1e-4f);
         EXPECT_NEAR(vertex.Tangent.Z, 0.0f, 1e-4f);
-        EXPECT_EQ(vertex.Tangent.W, 1.0f);
+        const Vec3d tangent(vertex.Tangent.X, vertex.Tangent.Y, vertex.Tangent.Z);
+        const Vec3d bitangent = vertex.Normal.Cross(tangent) * vertex.Tangent.W;
+        EXPECT_NEAR(bitangent.X, 0.0f, 1e-4f);
+        EXPECT_NEAR(bitangent.Y, 1.0f, 1e-4f);
+        EXPECT_NEAR(bitangent.Z, 0.0f, 1e-4f);
     }
 }
 
@@ -187,16 +200,18 @@ TEST(MeshCook, AuthoredTangentsPassThrough)
     const std::string gltf = QuadGltf(
         R"({"name":"Quad","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2,"TANGENT":3},"indices":4}]})");
 
-    std::vector<ImportedGltfMesh> meshes;
+    ImportedGltfScene scene;
     std::string error;
-    ASSERT_TRUE(ImportGltfMeshes(AsBytes(gltf), meshes, &error)) << error;
-    ASSERT_EQ(meshes.size(), 1u);
+    ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
+    ASSERT_EQ(scene.Meshes.size(), 1u);
 
-    for (const StaticMeshVertex& vertex : meshes[0].Geometry.Vertices)
+    // The authored stream is kept, turned into the engine frame with the
+    // rest of the mesh; (0,1,0) lies on the turn's axis.
+    for (const StaticMeshVertex& vertex : scene.Meshes[0].Geometry.Vertices)
     {
-        EXPECT_EQ(vertex.Tangent.X, 0.0f);
+        EXPECT_NEAR(vertex.Tangent.X, 0.0f, 1e-6f);
         EXPECT_EQ(vertex.Tangent.Y, 1.0f);
-        EXPECT_EQ(vertex.Tangent.Z, 0.0f);
+        EXPECT_NEAR(vertex.Tangent.Z, 0.0f, 1e-6f);
         EXPECT_EQ(vertex.Tangent.W, -1.0f);
     }
 }
@@ -206,14 +221,14 @@ TEST(MeshCook, UvLessQuadGetsSynthesizedTangents)
     const std::string gltf = QuadGltf(
         R"({"name":"Quad","primitives":[{"attributes":{"POSITION":0,"NORMAL":1},"indices":4}]})");
 
-    std::vector<ImportedGltfMesh> meshes;
+    ImportedGltfScene scene;
     std::string error;
-    ASSERT_TRUE(ImportGltfMeshes(AsBytes(gltf), meshes, &error)) << error;
-    ASSERT_EQ(meshes.size(), 1u);
+    ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
+    ASSERT_EQ(scene.Meshes.size(), 1u);
 
     // No texture space exists; the format invariant (finite tangent,
     // w == ±1, perpendicular to the normal) must still hold.
-    for (const StaticMeshVertex& vertex : meshes[0].Geometry.Vertices)
+    for (const StaticMeshVertex& vertex : scene.Meshes[0].Geometry.Vertices)
     {
         EXPECT_TRUE(vertex.Tangent.W == 1.0f || vertex.Tangent.W == -1.0f);
         const float dot = vertex.Tangent.X * vertex.Normal.X
@@ -230,12 +245,12 @@ TEST(MeshCook, MultiplePrimitivesBecomeSections)
         R"({"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":4},)"
         R"({"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":4}]})");
 
-    std::vector<ImportedGltfMesh> meshes;
+    ImportedGltfScene scene;
     std::string error;
-    ASSERT_TRUE(ImportGltfMeshes(AsBytes(gltf), meshes, &error)) << error;
-    ASSERT_EQ(meshes.size(), 1u);
+    ASSERT_TRUE(ImportGltfScene(AsBytes(gltf), scene, &error)) << error;
+    ASSERT_EQ(scene.Meshes.size(), 1u);
 
-    const MeshGeometry& mesh = meshes[0].Geometry;
+    const MeshGeometry& mesh = scene.Meshes[0].Geometry;
     ASSERT_EQ(mesh.Sections.size(), 2u);
     EXPECT_EQ(mesh.Sections[0].MaterialSlot, 0u);
     EXPECT_EQ(mesh.Sections[1].MaterialSlot, 1u);
@@ -250,11 +265,11 @@ TEST(MeshCook, GlbContainerParses)
     const std::string json = QuadGltfSkeleton(kQuadMeshNoTangents, R"({"byteLength":204})");
     const std::vector<std::byte> glb = BuildGlb(json, BuildQuadBlob());
 
-    std::vector<ImportedGltfMesh> meshes;
+    ImportedGltfScene scene;
     std::string error;
-    ASSERT_TRUE(ImportGltfMeshes(glb, meshes, &error)) << error;
-    ASSERT_EQ(meshes.size(), 1u);
-    EXPECT_EQ(meshes[0].Geometry.Vertices.size(), 4u);
+    ASSERT_TRUE(ImportGltfScene(glb, scene, &error)) << error;
+    ASSERT_EQ(scene.Meshes.size(), 1u);
+    EXPECT_EQ(scene.Meshes[0].Geometry.Vertices.size(), 4u);
 }
 
 TEST(MeshCook, ExternalBufferUriIsRejected)
@@ -262,18 +277,18 @@ TEST(MeshCook, ExternalBufferUriIsRejected)
     const std::string gltf = QuadGltfSkeleton(
         kQuadMeshNoTangents, R"({"byteLength":204,"uri":"external.bin"})");
 
-    std::vector<ImportedGltfMesh> meshes;
+    ImportedGltfScene scene;
     std::string error;
-    EXPECT_FALSE(ImportGltfMeshes(AsBytes(gltf), meshes, &error));
+    EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
     EXPECT_NE(error.find("external buffer"), std::string::npos) << error;
 }
 
 TEST(MeshCook, MalformedBytesAreRejected)
 {
     const std::string garbage = "this is not gltf at all";
-    std::vector<ImportedGltfMesh> meshes;
+    ImportedGltfScene scene;
     std::string error;
-    EXPECT_FALSE(ImportGltfMeshes(AsBytes(garbage), meshes, &error));
+    EXPECT_FALSE(ImportGltfScene(AsBytes(garbage), scene, &error));
     EXPECT_FALSE(error.empty());
 }
 
@@ -282,9 +297,9 @@ TEST(MeshCook, NonTrianglePrimitiveIsRejected)
     const std::string gltf = QuadGltf(
         R"({"name":"Lines","primitives":[{"attributes":{"POSITION":0,"NORMAL":1},"indices":4,"mode":1}]})");
 
-    std::vector<ImportedGltfMesh> meshes;
+    ImportedGltfScene scene;
     std::string error;
-    EXPECT_FALSE(ImportGltfMeshes(AsBytes(gltf), meshes, &error));
+    EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
     EXPECT_NE(error.find("triangle"), std::string::npos) << error;
 }
 
@@ -293,10 +308,176 @@ TEST(MeshCook, MissingNormalsAreRejected)
     const std::string gltf = QuadGltf(
         R"({"name":"NoNormals","primitives":[{"attributes":{"POSITION":0},"indices":4}]})");
 
-    std::vector<ImportedGltfMesh> meshes;
+    ImportedGltfScene scene;
     std::string error;
-    EXPECT_FALSE(ImportGltfMeshes(AsBytes(gltf), meshes, &error));
+    EXPECT_FALSE(ImportGltfScene(AsBytes(gltf), scene, &error));
     EXPECT_NE(error.find("NORMAL"), std::string::npos) << error;
+}
+
+// -- Engine frame and node placement ---------------------------------------------
+
+namespace
+{
+    // Every corner of every triangle, in index order: what a mesh draws,
+    // independent of how vertices happen to be shared.
+    std::vector<Vec3d> Corners(const MeshGeometry& mesh)
+    {
+        std::vector<Vec3d> corners;
+        for (const uint32_t index : mesh.Indices)
+            corners.push_back(mesh.Vertices[index].Position);
+        return corners;
+    }
+
+    // The face normal the winding implies (counter-clockwise front faces).
+    Vec3d WindingNormal(const MeshGeometry& mesh, std::size_t triangle)
+    {
+        const Vec3d& a = mesh.Vertices[mesh.Indices[triangle * 3 + 0]].Position;
+        const Vec3d& b = mesh.Vertices[mesh.Indices[triangle * 3 + 1]].Position;
+        const Vec3d& c = mesh.Vertices[mesh.Indices[triangle * 3 + 2]].Position;
+        return (b - a).Cross(c - a).Normalized();
+    }
+
+    void ExpectFrontFacesAgreeWithNormals(const MeshGeometry& mesh)
+    {
+        for (std::size_t triangle = 0; triangle * 3 < mesh.Indices.size(); ++triangle)
+        {
+            const Vec3d winding = WindingNormal(mesh, triangle);
+            for (int corner = 0; corner < 3; ++corner)
+                EXPECT_GT(winding.Dot(mesh.Vertices[mesh.Indices[triangle * 3 + corner]].Normal), 0.99f)
+                    << "triangle " << triangle;
+        }
+    }
+
+    // The quad's corners in glTF order: 0 1 2 0 2 3.
+    const std::vector<Vec3d> kQuadCorners{
+        Vec3d(0, 0, 0), Vec3d(1, 0, 0), Vec3d(1, 1, 0),
+        Vec3d(0, 0, 0), Vec3d(1, 1, 0), Vec3d(0, 1, 0) };
+
+    constexpr std::string_view kQuadMeshWithTangents =
+        R"({"name":"Quad","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2,"TANGENT":3},"indices":4}]})";
+}
+
+// The quad faces glTF's front (+Z). Imported, it faces the engine's forward
+// (-Z), which is the same half turn about +Y for positions, normals and
+// tangents, with the winding still agreeing with the normals.
+TEST(MeshCook, GltfFrontFacesEngineForward)
+{
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(QuadGltf(kQuadMeshWithTangents)), scene, &error)) << error;
+    ASSERT_EQ(scene.Meshes.size(), 1u);
+    const MeshGeometry& mesh = scene.Meshes[0].Geometry;
+
+    const std::vector<Vec3d> corners = Corners(mesh);
+    ASSERT_EQ(corners.size(), kQuadCorners.size());
+    for (std::size_t i = 0; i < corners.size(); ++i)
+    {
+        EXPECT_NEAR(corners[i].X, -kQuadCorners[i].X, 1e-6f) << "corner " << i;
+        EXPECT_NEAR(corners[i].Y, kQuadCorners[i].Y, 1e-6f) << "corner " << i;
+        EXPECT_NEAR(corners[i].Z, -kQuadCorners[i].Z, 1e-6f) << "corner " << i;
+    }
+    for (const StaticMeshVertex& vertex : mesh.Vertices)
+    {
+        EXPECT_NEAR(vertex.Normal.X, 0.0f, 1e-6f);
+        EXPECT_NEAR(vertex.Normal.Y, 0.0f, 1e-6f);
+        EXPECT_NEAR(vertex.Normal.Z, -1.0f, 1e-6f);
+        EXPECT_EQ(vertex.Tangent.W, -1.0f);
+    }
+    ExpectFrontFacesAgreeWithNormals(mesh);
+}
+
+// A static mesh is baked through its node's world transform, parents
+// included, then turned into the engine frame.
+TEST(MeshCook, StaticNodeWorldTransformIsBakedIntoTheMesh)
+{
+    const Quat<float> turn = Quat<float>::FromAxisAngle(Vec3d(0, 1, 0), std::numbers::pi_v<float> / 2.0f);
+    const std::string nodes = std::format(
+        R"([{{"name":"Group","children":[1],"translation":[0,0,3]}},)"
+        R"({{"name":"Quad","mesh":0,"translation":[5,0,0],"rotation":[{},{},{},{}],"scale":[2,2,2]}}])",
+        turn.X, turn.Y, turn.Z, turn.W);
+
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(QuadGltf(kQuadMeshWithTangents, nodes)), scene, &error)) << error;
+    ASSERT_EQ(scene.Meshes.size(), 1u);
+    const MeshGeometry& mesh = scene.Meshes[0].Geometry;
+
+    const Mat4 world = Mat4::MakeTranslation(0, 0, 3)
+        * Transform3f{ Vec3d(5, 0, 0), turn, Vec3d(2, 2, 2) }.ToMat4();
+    Mat4 engineFrame = Mat4::Identity();
+    engineFrame.Data[0][0] = -1.0f;
+    engineFrame.Data[2][2] = -1.0f;
+    const Mat4 toModel = engineFrame * world;
+
+    const std::vector<Vec3d> corners = Corners(mesh);
+    ASSERT_EQ(corners.size(), kQuadCorners.size());
+    for (std::size_t i = 0; i < corners.size(); ++i)
+    {
+        const Vec4 expected = toModel * Vec4(kQuadCorners[i].X, kQuadCorners[i].Y, kQuadCorners[i].Z, 1.0f);
+        EXPECT_NEAR(corners[i].X, expected.X, 1e-5f) << "corner " << i;
+        EXPECT_NEAR(corners[i].Y, expected.Y, 1e-5f) << "corner " << i;
+        EXPECT_NEAR(corners[i].Z, expected.Z, 1e-5f) << "corner " << i;
+    }
+    // +Z turned a quarter about Y is +X; the engine frame's half turn makes it -X.
+    for (const StaticMeshVertex& vertex : mesh.Vertices)
+    {
+        EXPECT_NEAR(vertex.Normal.X, -1.0f, 1e-5f);
+        EXPECT_NEAR(vertex.Normal.Z, 0.0f, 1e-5f);
+    }
+    ExpectFrontFacesAgreeWithNormals(mesh);
+}
+
+// A mirroring node flips winding and tangent handedness together, so front
+// faces stay front faces and the bitangent still follows V.
+TEST(MeshCook, MirroredNodeKeepsFrontFacesAndBitangents)
+{
+    ImportedGltfScene plain;
+    ImportedGltfScene mirrored;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(QuadGltf(kQuadMeshNoTangents)), plain, &error)) << error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(QuadGltf(kQuadMeshNoTangents,
+                                                 R"([{"name":"Quad","mesh":0,"scale":[-1,1,1]}])")),
+                                mirrored, &error)) << error;
+
+    const MeshGeometry& mesh = mirrored.Meshes.at(0).Geometry;
+    ExpectFrontFacesAgreeWithNormals(mesh);
+    for (const StaticMeshVertex& vertex : mesh.Vertices)
+    {
+        EXPECT_EQ(vertex.Tangent.W, -plain.Meshes.at(0).Geometry.Vertices.at(0).Tangent.W);
+        const Vec3d tangent(vertex.Tangent.X, vertex.Tangent.Y, vertex.Tangent.Z);
+        const Vec3d bitangent = vertex.Normal.Cross(tangent) * vertex.Tangent.W;
+        EXPECT_NEAR(bitangent.Y, 1.0f, 1e-4f);
+    }
+}
+
+// Exporters write zero tangents for degenerate UVs. The bake turns them with
+// the mesh and leaves them zero rather than failing or inventing a direction.
+TEST(MeshCook, ZeroLengthAuthoredTangentSurvivesTheBake)
+{
+    std::vector<std::byte> blob = BuildQuadBlob();
+    const float zeroTangent[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    std::memcpy(blob.data() + 128, zeroTangent, sizeof(zeroTangent)); // vertex 0's tangent
+    const std::string buffer = R"({"byteLength":204,"uri":"data:application/octet-stream;base64,)"
+        + Base64Encode(blob) + R"("})";
+
+    ImportedGltfScene scene;
+    std::string error;
+    ASSERT_TRUE(ImportGltfScene(AsBytes(QuadGltfSkeleton(kQuadMeshWithTangents, buffer)), scene, &error))
+        << error;
+    const MeshGeometry& mesh = scene.Meshes.at(0).Geometry;
+    EXPECT_EQ(mesh.Vertices.at(0).Tangent.X, 0.0f);
+    EXPECT_EQ(mesh.Vertices.at(0).Tangent.Y, 0.0f);
+    EXPECT_EQ(mesh.Vertices.at(0).Tangent.Z, 0.0f);
+    EXPECT_NEAR(mesh.Vertices.at(1).Tangent.Y, 1.0f, 1e-6f);
+}
+
+TEST(MeshCook, MeshNoNodePlacesIsRejected)
+{
+    ImportedGltfScene scene;
+    std::string error;
+    EXPECT_FALSE(ImportGltfScene(AsBytes(QuadGltf(kQuadMeshNoTangents, "[]")), scene, &error));
+    EXPECT_NE(error.find("'Quad'"), std::string::npos) << error;
+    EXPECT_NE(error.find("not placed"), std::string::npos) << error;
 }
 
 // -- GltfMeshImporter: artifacts -----------------------------------------------
@@ -329,8 +510,9 @@ TEST(MeshCook, SingleMeshArtifactKeepsSourceVirtualPath)
 TEST(MeshCook, MultiMeshSourceEmitsFragmentNamedArtifacts)
 {
     const std::string gltf = QuadGltf(
-        R"({"name":"A","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":4}]},)"
-        R"({"name":"B","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":4}]})");
+        R"({"name":"MeshA","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":4}]},)"
+        R"({"name":"MeshB","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2},"indices":4}]})",
+        R"([{"name":"A","mesh":0},{"name":"B","mesh":1}])");
 
     GltfMeshImporter importer;
     MemoryCookOutputWriter output;
@@ -345,6 +527,38 @@ TEST(MeshCook, MultiMeshSourceEmitsFragmentNamedArtifacts)
     EXPECT_EQ(result.Artifacts[1].FileRelPath, ".cooked/meshes/props.gltf.B.smesh");
     EXPECT_TRUE(output.Files.contains(".cooked/meshes/props.gltf.A.smesh"));
     EXPECT_TRUE(output.Files.contains(".cooked/meshes/props.gltf.B.smesh"));
+}
+
+// Two placements of one mesh are two artifacts, named by their nodes; an
+// unnamed node takes its index.
+TEST(MeshCook, StaticArtifactsAreNamedByTheirNodes)
+{
+    const std::string gltf = QuadGltf(kQuadMeshNoTangents,
+                                      R"([{"name":"Chair.L","mesh":0},{"mesh":0,"translation":[4,0,0]}])");
+
+    GltfMeshImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(ImportInput{ "meshes/set.gltf", AsBytes(gltf) }, output);
+    ASSERT_TRUE(result.IsValid()) << result.Error;
+
+    ASSERT_EQ(result.Artifacts.size(), 2u);
+    EXPECT_EQ(result.Artifacts[0].Path, "asset://meshes/set.gltf#Chair_L");
+    EXPECT_EQ(result.Artifacts[1].Path, "asset://meshes/set.gltf#node1");
+}
+
+// Names that sanitize alike would otherwise be told apart by discovery
+// order, which moves when the source changes.
+TEST(MeshCook, NodeNamesThatSanitizeAlikeAreRejected)
+{
+    const std::string gltf = QuadGltf(kQuadMeshNoTangents,
+                                      R"([{"name":"Arm.L","mesh":0},{"name":"Arm_L","mesh":0}])");
+
+    GltfMeshImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(ImportInput{ "meshes/set.gltf", AsBytes(gltf) }, output);
+    EXPECT_FALSE(result.IsValid());
+    EXPECT_NE(result.Error.find("node 0 'Arm.L'"), std::string::npos) << result.Error;
+    EXPECT_NE(result.Error.find("node 1 'Arm_L'"), std::string::npos) << result.Error;
 }
 
 TEST(MeshCook, ImportIsDeterministic)

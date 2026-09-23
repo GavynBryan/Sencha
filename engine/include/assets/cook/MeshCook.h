@@ -26,12 +26,23 @@
 // runtime never fixes data), sources with UVs get MikkTSpace tangents, and
 // UV-less sources get a deterministic normal-derived basis so the format
 // invariant (tangent w is ±1) holds for every vertex.
+//
+// Every artifact is in the engine frame (GltfFrame.h): the importer bakes the
+// half turn from glTF's +Z front to the engine's -Z forward into geometry and
+// folds it into skeletons, and nothing downstream knows about it.
 //=============================================================================
 
 struct ImportedGltfMesh
 {
-    // glTF mesh name; may be empty (artifact naming falls back to ordinals).
+    // The artifact identity before sanitizing: a static mesh is named by the
+    // node that places it, a skinned mesh by its glTF mesh, and an unnamed one
+    // by its glTF index ("node12", "mesh3"). `Origin` describes the source
+    // element for diagnostics.
     std::string Name;
+    std::string Origin;
+
+    // Model space: a static mesh is baked through its node's world transform,
+    // a skinned mesh sits in its skeleton's model space.
     MeshGeometry Geometry;
 
     // Index of the glTF skin this mesh is skinned to, or -1 if static. When
@@ -45,15 +56,17 @@ struct ImportedGltfMesh
 
 struct ImportedSkeleton
 {
-    // glTF skin name; may be empty (artifact naming falls back to ordinals).
+    // The glTF skin name, or "skin<index>" when unnamed.
     std::string Name;
+    std::string Origin;
     SkeletonData Data;
 };
 
 struct ImportedAnimation
 {
-    // glTF animation name; may be empty.
+    // The glTF animation name, or "animation<index>" when unnamed.
     std::string Name;
+    std::string Origin;
     AnimationClipData Data; // SkeletonPath left empty; the importer assigns it.
 
     // The glTF skin this animation poses (its channels target that skin's
@@ -78,17 +91,8 @@ struct ImportedGltfScene
                                    ImportedGltfScene& out,
                                    std::string* error = nullptr);
 
-// Pure stage half: glTF bytes → one validated MeshGeometry per glTF mesh,
-// primitives as sections (MaterialSlot = primitive ordinal), geometry in
-// mesh-local space (node transforms are the scene's business, not the
-// cook's). Skinning is ignored — this is the static-geometry path. Errors
-// travel in `error`.
-[[nodiscard]] bool ImportGltfMeshes(std::span<const std::byte> bytes,
-                                    std::vector<ImportedGltfMesh>& out,
-                                    std::string* error = nullptr);
-
 // MikkTSpace over one section's triangles: de-index, generate, re-weld
-// exact-duplicate vertices. Exposed for tests; ImportGltfMeshes calls it for
+// exact-duplicate vertices. Exposed for tests; the import calls it for
 // primitives that have UVs but no authored tangents.
 [[nodiscard]] bool GenerateSectionTangents(std::vector<StaticMeshVertex>& vertices,
                                            std::vector<uint32_t>& indices,
@@ -97,13 +101,17 @@ struct ImportedGltfScene
 //=============================================================================
 // GltfMeshImporter — .glb/.gltf → cooked .smesh + .sskel + .sanim artifacts.
 //
-// A single-mesh source keeps the source's virtual path (the texture-cook
-// precedent: "asset://meshes/chair.glb" serves .smesh bytes). A multi-mesh
-// source emits "asset://<source>#<mesh-name>" per mesh — '#' cannot appear
-// in scanned file paths, so cooked names can never collide with real files.
-// Skeletons and animations always take the '#'-suffixed form
+// A source that places a single static mesh and has no skins keeps the
+// source's virtual path (the texture-cook precedent: "asset://meshes/chair.glb"
+// serves .smesh bytes). Otherwise every mesh is "asset://<source>#<name>" —
+// '#' cannot appear in scanned file paths, so cooked names can never collide
+// with real files. Skeletons and animations always take the '#'-suffixed form
 // ("asset://<source>#skel:<name>", "asset://<source>#anim:<name>"), and the
 // skinned mesh / clip artifacts reference the skeleton artifact by that path.
+//
+// Names are the source's own, sanitized to [A-Za-z0-9_-], with an index for
+// an unnamed element. Two elements that land on one name fail the import with
+// both named; a name never depends on discovery order.
 //=============================================================================
 class GltfMeshImporter final : public IAssetImporter
 {

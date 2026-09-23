@@ -49,11 +49,11 @@ const ComponentVisualRenderer::MeshEdges& ComponentVisualRenderer::EdgesFor(std:
     const std::vector<std::byte> bytes = ReadFileBytes(std::string(SENCHA_EDITOR_ASSET_DIR) + "/" + key);
     if (!bytes.empty())
     {
-        std::vector<ImportedGltfMesh> meshes;
-        if (ImportGltfMeshes(bytes, meshes))
+        ImportedGltfScene scene;
+        if (ImportGltfScene(bytes, scene))
         {
             std::set<std::pair<std::uint32_t, std::uint32_t>> unique;
-            for (const ImportedGltfMesh& mesh : meshes)
+            for (const ImportedGltfMesh& mesh : scene.Meshes)
             {
                 const auto base = static_cast<std::uint32_t>(edges.Positions.size());
                 for (const StaticMeshVertex& vertex : mesh.Geometry.Vertices)
