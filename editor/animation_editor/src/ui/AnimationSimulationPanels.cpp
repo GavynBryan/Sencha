@@ -161,14 +161,6 @@ public:
             }
         }
 
-        if (const AnimBoundRig* rig = session.Rig(); rig != nullptr
-            && ImGui::CollapsingHeader("Layers", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            for (const AnimBoundLayer& layer : rig->Layers)
-                ImGui::BulletText("%s  %s  weight %.2f", layer.NameText.c_str(),
-                                  layer.Mode == AnimLayerMode::Additive ? "additive" : "override",
-                                  layer.Weight);
-        }
     }
 private:
     AnimationPreviewWorkspace& Workspace;

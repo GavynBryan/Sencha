@@ -625,6 +625,12 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
     return SimulationPalette;
 }
 
+const SkeletonData* AnimationPreviewWorkspace::RigSkeleton() const
+{
+    const AnimBoundRig* rig = Simulation.Rig();
+    return rig != nullptr && rig->Skeleton.IsValid() ? Assets.Skeletons.Get(rig->Skeleton) : nullptr;
+}
+
 std::vector<AnimPoseLayer> AnimationPreviewPoseLayers(const AnimBoundRig& rig, const AnimContentState& content,
                                                       const AnimSelectorState* selection,
                                                       const AnimationClipCache& clips,

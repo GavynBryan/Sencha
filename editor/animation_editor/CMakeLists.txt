@@ -5,6 +5,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationPredicateText.cpp
     src/authoring/AnimationPreviewSession.cpp
     src/authoring/AnimationPreviewWorkspace.cpp
+    src/authoring/AnimationRigEdits.cpp
     src/authoring/AnimationRigOutline.cpp
     src/authoring/AnimationScenario.cpp
     src/authoring/AnimationSelectorEdits.cpp)
@@ -19,6 +20,7 @@ add_executable(animation_editor
     src/ui/AnimationPreviewPanels.cpp
     src/ui/AnimationDocumentActions.cpp
     src/ui/AnimationEventPanels.cpp
+    src/ui/AnimationLayerPanels.cpp
     src/ui/AnimationRequestSchemaPanel.cpp
     src/ui/AnimationSelectionPanels.cpp
     src/ui/AnimationSimulationPanels.cpp)

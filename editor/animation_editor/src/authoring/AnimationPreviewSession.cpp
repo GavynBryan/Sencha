@@ -169,7 +169,7 @@ bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a, const Animati
             && x.Content == y.Content && x.Clip == y.Clip && x.TimeSeconds == y.TimeSeconds
             && x.ContentComplete == y.ContentComplete && x.Flow.Section == y.Flow.Section
             && x.Flow.SectionStartTick == y.Flow.SectionStartTick && x.Flow.LoopCount == y.Flow.LoopCount
-            && x.Flow.Phase == y.Flow.Phase
+            && x.Flow.Phase == y.Flow.Phase && x.Weight == y.Weight && x.WeightRule == y.WeightRule
             && SameRange(x.Verdicts, y.Verdicts, [](const AnimRuleVerdict& p, const AnimRuleVerdict& q) {
                    return p.Kind == q.Kind && p.Stayed == q.Stayed && p.Evaluation.FailedRow == q.Evaluation.FailedRow;
                });
@@ -734,7 +734,9 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
             {
                 layer.Winner = selection->Layers[l].Winner;
                 layer.Latch = selection->Layers[l].Latch;
+                layer.WeightRule = selection->Layers[l].WeightRule;
             }
+            layer.Weight = AnimLayerWeight(*Bound, l, selection);
             if (content != nullptr)
             {
                 const AnimLayerContent& playing = content->Layers[l];

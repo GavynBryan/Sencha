@@ -92,6 +92,10 @@ struct AnimationPreviewLayerRecord
     float TimeSeconds = 0.0f;
     bool ContentComplete = false;
     AnimLayerFlow Flow;
+    // The layer's weight, and the weight rule that set it or none for the
+    // rig's constant.
+    float Weight = 1.0f;
+    std::uint16_t WeightRule = kAnimNoRule;
     // One per flattened rule; empty on a request-keyed layer.
     std::vector<AnimRuleVerdict> Verdicts;
 };
