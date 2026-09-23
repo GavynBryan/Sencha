@@ -1,9 +1,10 @@
 {
-  "version": 8,
+  "version": 9,
   "sources": [
     {
       "source": "cook_profiles.rml",
       "input_fingerprint": "59d964a56d646cac",
+      "cook_identity": "62c86b07d68abd42",
       "size": "1730",
       "mtime": "-4647491503921184389",
       "meta_size": "0",
@@ -32,6 +33,7 @@
     {
       "source": "fonts/ChakraPetch-SemiBold.ttf",
       "input_fingerprint": "5f92830505c1f46b",
+      "cook_identity": "9ef2365382486487",
       "size": "78604",
       "mtime": "-4647491503918219698",
       "meta_size": "0",
@@ -48,6 +50,7 @@
     {
       "source": "fonts/Inter-Medium.ttf",
       "input_fingerprint": "76da859b2e3396b4",
+      "cook_identity": "9ef2365382486487",
       "size": "417300",
       "mtime": "-4647491503901017783",
       "meta_size": "0",
@@ -64,6 +67,7 @@
     {
       "source": "fonts/Inter-Regular.ttf",
       "input_fingerprint": "c694bb143377f2be",
+      "cook_identity": "9ef2365382486487",
       "size": "411640",
       "mtime": "-4647491503898905339",
       "meta_size": "0",
@@ -80,6 +84,7 @@
     {
       "source": "fonts/JetBrainsMono-Regular.ttf",
       "input_fingerprint": "f4b7077dab274e6b",
+      "cook_identity": "9ef2365382486487",
       "size": "270224",
       "mtime": "-4647491503898905339",
       "meta_size": "0",
@@ -96,6 +101,7 @@
     {
       "source": "fonts/fa-solid-900.ttf",
       "input_fingerprint": "dfd5f17967c05612",
+      "cook_identity": "9ef2365382486487",
       "size": "426112",
       "mtime": "-4647491503887501512",
       "meta_size": "0",
@@ -112,6 +118,7 @@
     {
       "source": "inspector.rml",
       "input_fingerprint": "2d65ced8d4fa7d5d",
+      "cook_identity": "62c86b07d68abd42",
       "size": "2242",
       "mtime": "-4647491503887298833",
       "meta_size": "0",
