@@ -821,3 +821,53 @@ TEST(AnimFlowBinding, RowsReadingLocalFactsChooseBetweenFlowsThatKeepTheSameTime
     EXPECT_EQ(timing->FieldPath, "$.data.rows[1].when");
     EXPECT_NE(timing->Message.find("sections"), std::string::npos) << timing->Message;
 }
+
+// A combo advances by superseding its request. On a selector layer the latch
+// follows the request that replaced its own in place, so the new request
+// drives the flow and its row -- the next swing -- starts over.
+TEST(AnimFlow, ALatchFollowsTheRequestThatSupersedesItsOwn)
+{
+    AnimRigFixture fx;
+    LoadCommon(fx);
+    (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, PumpFlow());
+    (void)fx.Load("asset://anim/s.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+        { "tag": "Anim.Idle", "kind": "cyclic" },
+        { "tag": "Anim.Reload", "kind": "flow",
+          "latch": { "mode": "until_request_ends", "on_request_cancel": "finish" } } ] })");
+    (void)fx.Load("asset://anim/s.slots.sdata", kAnimSlotMapType, R"({ "rows": [
+        { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+        { "behavior": "Anim.Reload",
+          "when": [ { "request": "anim.intent.reload", "test": "param", "param": "shells", "compare": "eq", "value": 2 } ],
+          "flow": "asset://anim/f.quick.flow.sdata" },
+        { "behavior": "Anim.Reload", "flow": "asset://anim/f.flow.sdata" } ] })");
+    (void)fx.Load("asset://anim/s.selector.sdata", kAnimSelectorType, R"({ "rules": [
+        { "name": "reload", "priority": 50, "enter": [ { "request": "anim.intent.reload" } ], "behavior": "Anim.Reload" },
+        { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Idle" } ] })");
+    const DataAssetHandle rig = fx.Load("asset://anim/s.rig.sdata", kAnimRigType, R"({
+        "facts": "asset://anim/f.facts.sdata", "requests": "asset://anim/f.requests.sdata",
+        "behaviors": [ "asset://anim/s.behaviors.sdata" ], "slot_maps": [ "asset://anim/s.slots.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "selector": "asset://anim/s.selector.sdata", "idle": "Anim.Idle" } ] })");
+    ASSERT_TRUE(fx.Bound(rig).Valid) << AnimRigFixture::Describe(fx.Bound(rig));
+    const EntityId entity = fx.Character(rig);
+
+    const auto reload = [&](int shells) {
+        AnimRequestDesc desc;
+        desc.Source = entity;
+        desc.Intent = fx.Tag("anim.intent.reload");
+        desc.Params[0] = AnimFactFromInt(shells);
+        return IssueAnimRequest(fx.Entities, entity, desc, fx.Now);
+    };
+    fx.Tick();
+    ASSERT_TRUE(reload(1).Accepted());
+    fx.Tick(20);
+    EXPECT_EQ(fx.ClipName(entity, fx.Bound(rig)), "asset://anim/f.flow.sdata");
+
+    const AnimRequestResult next = reload(2);
+    ASSERT_EQ(next.Status, AnimRequestStatus::Superseded);
+    fx.Tick();
+    EXPECT_EQ(fx.Selection(entity).Latch, AnimLatchState::Held);
+    EXPECT_EQ(fx.Selection(entity).LatchRequest, next.Id);
+    EXPECT_EQ(fx.ClipName(entity, fx.Bound(rig)), "asset://anim/f.quick.flow.sdata");
+    EXPECT_EQ(fx.Playing(entity).Request, next.Id);
+    EXPECT_EQ(fx.Playing(entity).StartTick, fx.Last());
+}

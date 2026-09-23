@@ -172,11 +172,31 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig, const AnimBoundSel
         const AnimLatchPolicy& latch = latched->Policy.Latch;
         if (state.Latch == AnimLatchState::Held && latch.Mode == AnimLatchMode::UntilRequestEnds)
         {
-            const bool live = inputs.Predicate.Requests != nullptr
-                && std::any_of(std::begin(inputs.Predicate.Requests->Records),
-                               std::end(inputs.Predicate.Requests->Records), [&](const AnimRequest& request) {
-                                   return request.Id == state.LatchRequest && IsAnimRequestLive(request, now);
-                               });
+            bool live = false;
+            if (inputs.Predicate.Requests != nullptr)
+            {
+                for (const AnimRequest& request : inputs.Predicate.Requests->Records)
+                {
+                    if (!IsAnimRequestLive(request, now))
+                        continue;
+                    if (request.Id == state.LatchRequest)
+                    {
+                        live = true;
+                        break;
+                    }
+                    // Superseded in place: the source's newer request for the
+                    // same intent carries the latch on, which is how a combo
+                    // advances without the latch letting go.
+                    if (request.Id.Source == state.LatchRequest.Source
+                        && request.Id.Sequence > state.LatchRequest.Sequence
+                        && request.Intent == rules[current].LatchIntent)
+                    {
+                        state.LatchRequest = request.Id;
+                        live = true;
+                        break;
+                    }
+                }
+            }
             if (!live)
                 state.Latch = latch.OnRequestCancel == AnimRequestCancelAction::Abort   ? AnimLatchState::None
                     : latch.OnRequestCancel == AnimRequestCancelAction::CancelSection ? AnimLatchState::Cancelling
