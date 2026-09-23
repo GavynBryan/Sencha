@@ -75,14 +75,26 @@ namespace
                     visit(e);
     }
 
+    AnimDecisionCause CauseOf(AnimPendingKind kind)
+    {
+        switch (kind)
+        {
+        case AnimPendingKind::Clip: return AnimDecisionCause::EventCrossed;
+        case AnimPendingKind::BehaviorEntered: return AnimDecisionCause::BehaviorEntered;
+        case AnimPendingKind::BehaviorExited: return AnimDecisionCause::BehaviorExited;
+        }
+        return AnimDecisionCause::EventCrossed;
+    }
+
     void Record(AnimDecisionLog* log, AnimTick now, std::size_t layer, const AnimLayerContent& state,
-                const AnimBoundEvent& event, AnimEventOutcome outcome, VerbAdmission admission)
+                const AnimBoundEvent& event, AnimEventOutcome outcome, VerbAdmission admission,
+                AnimPendingKind kind = AnimPendingKind::Clip)
     {
         if (log == nullptr)
             return;
         AnimDecisionRecord record;
         record.Tick = now;
-        record.Cause = AnimDecisionCause::EventCrossed;
+        record.Cause = CauseOf(kind);
         record.Layer = static_cast<std::uint8_t>(layer);
         record.Behavior = state.Behavior;
         record.Row = state.Row;
@@ -105,8 +117,57 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
         const bool sameInstance = layer.EventStartTick == layer.StartTick && layer.EventTick != kAnimNoTick
             && layer.EventTick < now;
         const AnimTick coveredThrough = layer.EventTick;
+        const GameplayTagId previousBehavior = layer.EventBehavior;
         layer.EventStartTick = layer.StartTick;
         layer.EventTick = now;
+        layer.EventBehavior = layer.Behavior;
+
+        const float weight = rig.Layers[l].Weight;
+        const EntityId instigator = LayerInstigator(rig, l, selection, requests, now);
+        // False when the tick's queue is full; the caller records the refusal.
+        const auto admit = [&](AnimPendingEvent record) {
+            if (pending.size() >= capacity)
+                return false;
+            record.Producer = entity;
+            record.Instigator = instigator;
+            record.Rig = rigHandle;
+            record.RigGeneration = rig.Generation;
+            record.Tick = now;
+            record.Layer = static_cast<std::uint8_t>(l);
+            pending.push_back(record);
+            return true;
+        };
+
+        // Leaving one behavior, then entering the next, before any mark of
+        // the new content: exits precede entries, which precede what plays.
+        if (previousBehavior != layer.Behavior)
+        {
+            for (const auto& [tag, kind] : { std::pair{ previousBehavior, AnimPendingKind::BehaviorExited },
+                                             std::pair{ layer.Behavior, AnimPendingKind::BehaviorEntered } })
+            {
+                const int index = tag.IsValid() ? rig.FindBehaviorIndex(tag) : -1;
+                if (index < 0)
+                    continue;
+                const AnimBoundBehavior& behavior = rig.Behaviors[static_cast<std::size_t>(index)];
+                const std::optional<AnimBoundEvent>& event =
+                    kind == AnimPendingKind::BehaviorExited ? behavior.Exited : behavior.Entered;
+                if (!event.has_value() || (event->Scope == AnimEventScope::Gameplay ? !gates.Authority : !gates.Presents))
+                    continue;
+                AnimLayerContent logged = layer;
+                logged.Behavior = tag;
+                if (event->Scope == AnimEventScope::Cosmetic && weight < behavior.Policy.EventWeight)
+                {
+                    Record(log, now, l, logged, *event, AnimEventOutcome::BelowWeight, VerbAdmission::Accepted, kind);
+                    continue;
+                }
+                AnimPendingEvent record;
+                record.Kind = kind;
+                record.Behavior = static_cast<std::uint16_t>(index);
+                if (!admit(record))
+                    Record(log, now, l, logged, *event, AnimEventOutcome::Fired, VerbAdmission::QueueFull, kind);
+            }
+        }
+
         if (layer.Content >= rig.Contents.size())
             continue;
 
@@ -116,8 +177,6 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
         const AnimBoundBehavior* behavior = rig.FindBehavior(layer.Behavior);
         const bool cyclic = behavior == nullptr || behavior->Policy.Kind == AnimBehaviorKind::Cyclic;
         const float threshold = behavior != nullptr ? behavior->Policy.EventWeight : 0.5f;
-        const float weight = rig.Layers[l].Weight;
-        const EntityId instigator = LayerInstigator(rig, l, selection, requests, now);
 
         const auto produce = [&](std::size_t index, bool skipped) {
             const AnimBoundEvent& event = played.Events[index];
@@ -135,21 +194,11 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
                 Record(log, now, l, layer, event, AnimEventOutcome::BelowWeight, VerbAdmission::Accepted);
                 return;
             }
-            if (pending.size() >= capacity)
-            {
-                Record(log, now, l, layer, event, AnimEventOutcome::Fired, VerbAdmission::QueueFull);
-                return;
-            }
             AnimPendingEvent record;
-            record.Producer = entity;
-            record.Instigator = instigator;
-            record.Rig = rigHandle;
-            record.RigGeneration = rig.Generation;
-            record.Tick = now;
             record.Content = layer.Content;
             record.Event = static_cast<std::uint16_t>(index);
-            record.Layer = static_cast<std::uint8_t>(l);
-            pending.push_back(record);
+            if (!admit(record))
+                Record(log, now, l, layer, event, AnimEventOutcome::Fired, VerbAdmission::QueueFull);
         };
 
         const double to = Elapsed(layer, now, tickSeconds);
@@ -188,16 +237,32 @@ void DrainAnimEvents(World& world, std::span<const AnimPendingEvent> pending, Ve
         layer.Content = record.Content;
 
         const AnimBoundRig* rig = bindings != nullptr ? bindings->Resolve(record.Rig, world) : nullptr;
-        const bool current = rig != nullptr && rig->Generation == record.RigGeneration
-            && record.Content < rig->Contents.size() && record.Event < rig->Contents[record.Content].Events.size();
-        if (!current)
+        const AnimBoundEvent* found = nullptr;
+        if (rig != nullptr && rig->Generation == record.RigGeneration)
+        {
+            if (record.Kind == AnimPendingKind::Clip)
+            {
+                if (record.Content < rig->Contents.size() && record.Event < rig->Contents[record.Content].Events.size())
+                    found = &rig->Contents[record.Content].Events[record.Event];
+            }
+            else if (record.Behavior < rig->Behaviors.size())
+            {
+                const AnimBoundBehavior& behavior = rig->Behaviors[record.Behavior];
+                layer.Behavior = behavior.Tag;
+                const std::optional<AnimBoundEvent>& lifecycle =
+                    record.Kind == AnimPendingKind::BehaviorEntered ? behavior.Entered : behavior.Exited;
+                found = lifecycle.has_value() ? &*lifecycle : nullptr;
+            }
+        }
+        if (found == nullptr)
         {
             AnimBoundEvent unknown;
-            Record(log, record.Tick, record.Layer, layer, unknown, AnimEventOutcome::Fired, VerbAdmission::StaleBinding);
+            Record(log, record.Tick, record.Layer, layer, unknown, AnimEventOutcome::Fired, VerbAdmission::StaleBinding,
+                   record.Kind);
             continue;
         }
 
-        const AnimBoundEvent& event = rig->Contents[record.Content].Events[record.Event];
+        const AnimBoundEvent& event = *found;
         const CompiledVerbBinding* binding = rig->Bindings.Find(event.Binding);
         VerbAdmission admission = VerbAdmission::Accepted;
         if (binding == nullptr)
@@ -214,7 +279,7 @@ void DrainAnimEvents(World& world, std::span<const AnimPendingEvent> pending, Ve
             source.Tick = record.Tick;
             admission = dispatcher->Invoke(*binding, event.Inputs, source).Status;
         }
-        Record(log, record.Tick, record.Layer, layer, event, AnimEventOutcome::Fired, admission);
+        Record(log, record.Tick, record.Layer, layer, event, AnimEventOutcome::Fired, admission, record.Kind);
     }
 }
 

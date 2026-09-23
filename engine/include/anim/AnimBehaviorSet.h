@@ -1,9 +1,11 @@
 #pragma once
 
+#include <anim/AnimationClip.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/metadata/DataSchema.h>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -105,6 +107,18 @@ enum class AnimLateJoin : std::uint8_t
 [[nodiscard]] std::string_view AnimBehaviorKindName(AnimBehaviorKind kind);
 [[nodiscard]] std::string_view AnimLatchModeName(AnimLatchMode mode);
 
+// A binding invoked when a layer enters or leaves a behavior. The event
+// supplies one input, `behavior`, carrying the behavior's tag, to a binding
+// that declares it; everything else is the binding's.
+struct AnimLifecycleDecl
+{
+    std::string Binding;
+    AnimEventScope Scope = AnimEventScope::Cosmetic;
+};
+
+// The one input a lifecycle event supplies.
+inline constexpr std::string_view kAnimLifecycleBehaviorInput = "behavior";
+
 struct AnimBehaviorDecl
 {
     std::string Tag;
@@ -118,6 +132,8 @@ struct AnimBehaviorDecl
     // The layer weight below which cosmetic events on this behavior's content
     // do not fire.
     float EventWeight = 0.5f;
+    std::optional<AnimLifecycleDecl> OnEntered;
+    std::optional<AnimLifecycleDecl> OnExited;
 };
 
 struct AnimBehaviorSet

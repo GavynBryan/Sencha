@@ -41,6 +41,10 @@ enum class AnimDecisionCause : std::uint8_t
     // A clip event's mark was crossed; EventOutcome says what came of it and
     // Admission what its binding answered.
     EventCrossed,
+    // A layer entered or left Behavior, and the behavior declares a
+    // lifecycle event; EventOutcome and Admission as for a crossing.
+    BehaviorEntered,
+    BehaviorExited,
 };
 
 // What a crossed clip event led to.

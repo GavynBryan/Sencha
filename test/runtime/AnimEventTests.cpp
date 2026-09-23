@@ -15,7 +15,7 @@
 
 namespace
 {
-    DataFieldSchema Field(std::string key, DataFieldKind kind)
+    DataFieldSchema VerbField(std::string key, DataFieldKind kind)
     {
         DataFieldSchema field;
         field.Key = std::move(key);
@@ -87,10 +87,10 @@ namespace
     void DeclareVerbs(AnimRigFixture& fx)
     {
         ASSERT_TRUE(Declare(fx.Verbs(), "test.footstep",
-                            { Field("Surface", DataFieldKind::GameplayTag), Field("Volume", DataFieldKind::Float),
-                              Field("Gain", DataFieldKind::Float) }));
+                            { VerbField("Surface", DataFieldKind::GameplayTag), VerbField("Volume", DataFieldKind::Float),
+                              VerbField("Gain", DataFieldKind::Float) }));
         ASSERT_TRUE(Declare(fx.Verbs(), "test.count",
-                            { Field("Amount", DataFieldKind::Int), Field("Scale", DataFieldKind::Float) }));
+                            { VerbField("Amount", DataFieldKind::Int), VerbField("Scale", DataFieldKind::Float) }));
     }
 
     DataAssetHandle LoadRig(AnimRigFixture& fx)
@@ -514,4 +514,113 @@ TEST(AnimEvents, APendingEventFromAnOlderBindingIsStale)
     const std::vector<const AnimDecisionRecord*> records = h.EventRecords(walker);
     ASSERT_FALSE(records.empty());
     EXPECT_EQ(records.back()->Admission, VerbAdmission::StaleBinding);
+}
+
+// -- Behavior lifecycle -------------------------------------------------------------
+
+namespace
+{
+    // Records which binding was invoked and the behavior tag it was handed.
+    struct LifecycleRecorder
+    {
+        std::vector<std::pair<VerbBindingKey, GameplayTagId>> Calls;
+
+        VerbAdmission Invoke(const VerbInvocation& invocation)
+        {
+            GameplayTagId behavior;
+            (void)invocation.Arguments->TryGetTag(0, behavior);
+            Calls.emplace_back(invocation.Binding, behavior);
+            return VerbAdmission::Accepted;
+        }
+    };
+
+    constexpr std::string_view kLifecycleBindings = R"({ "bindings": [
+        { "key": "anim.entered", "verb": "test.lifecycle", "inputs": [ "behavior" ],
+          "arguments": { "Behavior": { "input": "behavior" } } },
+        { "key": "anim.exited", "verb": "test.lifecycle", "inputs": [ "behavior" ],
+          "arguments": { "Behavior": { "input": "behavior" } } },
+        { "key": "anim.wrong_input", "verb": "test.lifecycle", "inputs": [ "which" ],
+          "arguments": { "Behavior": { "input": "which" } } } ] })";
+
+    // A request-keyed layer idling in Anim.Walk, which announces leaving, and
+    // opening a door on request, which announces entering.
+    DataAssetHandle LoadLifecycleRig(AnimRigFixture& fx, std::string_view enteredBinding = "anim.entered")
+    {
+        fx.Clip("asset://anim/walk.sanim", 1.0f);
+        fx.Clip("asset://anim/door.sanim", 1.0f);
+        (void)fx.Load("asset://anim/lc.bindings.sdata", kVerbBindingsTypeName, kLifecycleBindings);
+        (void)fx.Load("asset://anim/lc.requests.sdata", kAnimRequestSchemaType,
+                      R"({ "intents": [ { "intent": "Anim.Door.Open", "params": [] } ] })");
+        (void)fx.Load("asset://anim/lc.behaviors.sdata", kAnimBehaviorSetType,
+                      std::string(R"({ "behaviors": [
+                          { "tag": "Anim.Walk", "kind": "cyclic", "on_exited": { "binding": "anim.exited" } },
+                          { "tag": "Anim.Door.Open", "kind": "one_shot",
+                            "on_entered": { "binding": ")") + std::string(enteredBinding) + R"(" } } ] })");
+        (void)fx.Load("asset://anim/lc.slots.sdata", kAnimSlotMapType, R"({ "rows": [
+            { "behavior": "Anim.Walk", "clip": "asset://anim/walk.sanim" },
+            { "behavior": "Anim.Door.Open", "clip": "asset://anim/door.sanim" } ] })");
+        return fx.Load("asset://anim/lc.rig.sdata", kAnimRigType, R"({
+            "requests": "asset://anim/lc.requests.sdata", "behaviors": [ "asset://anim/lc.behaviors.sdata" ],
+            "slot_maps": [ "asset://anim/lc.slots.sdata" ], "bindings": [ "asset://anim/lc.bindings.sdata" ],
+            "layers": [ { "name": "anim.layer.base", "idle": "Anim.Walk" } ] })");
+    }
+}
+
+// Leaving a behavior and entering the next are two invocations, exit first,
+// each handed its own behavior's tag.
+TEST(AnimEvents, ABehaviorChangeAnnouncesTheExitThenTheEntry)
+{
+    EventHarness h;
+    ASSERT_TRUE(Declare(h.Fx.Verbs(), "test.lifecycle", { VerbField("Behavior", DataFieldKind::GameplayTag) }));
+    LifecycleRecorder lifecycle;
+    const VerbBindingToken token = h.Dispatcher.Bind(h.Fx.Verbs().Find("test.lifecycle"), lifecycle);
+    const EntityId door = h.Prop(LoadLifecycleRig(h.Fx));
+
+    h.Step(5);
+    EXPECT_TRUE(lifecycle.Calls.empty()) << "Anim.Walk declares no entry event";
+
+    AnimRequestDesc desc;
+    desc.Source = door;
+    desc.Intent = h.Fx.Tag("Anim.Door.Open");
+    ASSERT_TRUE(IssueAnimRequest(h.Fx.Entities, door, desc, h.Fx.Now).Accepted());
+    h.Step();
+
+    ASSERT_EQ(lifecycle.Calls.size(), 2u);
+    EXPECT_EQ(lifecycle.Calls[0].first, MakeVerbBindingKey("anim.exited"));
+    EXPECT_EQ(lifecycle.Calls[0].second, h.Fx.Tag("Anim.Walk"));
+    EXPECT_EQ(lifecycle.Calls[1].first, MakeVerbBindingKey("anim.entered"));
+    EXPECT_EQ(lifecycle.Calls[1].second, h.Fx.Tag("Anim.Door.Open"));
+
+    const AnimDecisionRecord* exited = h.Fx.LastRecord(door, AnimDecisionCause::BehaviorExited);
+    const AnimDecisionRecord* entered = h.Fx.LastRecord(door, AnimDecisionCause::BehaviorEntered);
+    ASSERT_NE(exited, nullptr);
+    ASSERT_NE(entered, nullptr);
+    EXPECT_EQ(exited->Behavior, h.Fx.Tag("Anim.Walk"));
+    EXPECT_EQ(entered->Behavior, h.Fx.Tag("Anim.Door.Open"));
+    EXPECT_EQ(entered->Admission, VerbAdmission::Accepted);
+}
+
+// A lifecycle event supplies the behavior's tag and nothing else, so a
+// binding that wants another input cannot be satisfied, and says so.
+TEST(AnimEventBinding, ALifecycleBindingTakesOnlyTheBehavior)
+{
+    AnimRigFixture fx({ "Anim.Walk", "Anim.Door.Open" });
+    ASSERT_TRUE(Declare(fx.Verbs(), "test.lifecycle", { VerbField("Behavior", DataFieldKind::GameplayTag) }));
+    const AnimBoundRig& bound = fx.Bound(LoadLifecycleRig(fx, "anim.wrong_input"));
+    const AnimDiagnostic* invalid = AnimRigFixture::FindCode(bound, "anim.event.input_invalid");
+    ASSERT_NE(invalid, nullptr) << AnimRigFixture::Describe(bound);
+    EXPECT_EQ(invalid->AssetPath, "asset://anim/lc.behaviors.sdata");
+    EXPECT_EQ(invalid->FieldPath, "on_entered");
+    const AnimBoundBehavior* door = bound.FindBehavior(fx.Tag("Anim.Door.Open"));
+    ASSERT_NE(door, nullptr);
+    ASSERT_TRUE(door->Entered.has_value());
+    EXPECT_FALSE(door->Entered->Resolved);
+}
+
+TEST(AnimEventBinding, ALifecycleEventNamesItsBinding)
+{
+    AnimRigFixture fx;
+    const std::string error = fx.CompileError(kAnimBehaviorSetType, R"({ "behaviors": [
+        { "tag": "Anim.Walk", "kind": "cyclic", "on_entered": { "scope": "gameplay" } } ] })");
+    EXPECT_NE(error.find("on_entered.binding"), std::string::npos) << error;
 }

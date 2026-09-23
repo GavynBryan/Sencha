@@ -20,6 +20,7 @@ namespace
     constexpr std::array<std::string_view, 2> kOnInterruptNames{ "abort", "cancel_section" };
     constexpr std::array<std::string_view, 3> kOnCancelNames{ "finish", "abort", "cancel_section" };
     constexpr std::array<std::string_view, 3> kLateJoinNames{ "skip", "snap_to_end", "reconstruct" };
+    constexpr std::array<std::string_view, 2> kScopeNames{ "cosmetic", "gameplay" };
 
     template <std::size_t N>
     std::size_t IndexOf(const std::array<std::string_view, N>& names, std::string_view value)
@@ -49,6 +50,17 @@ namespace
         const auto optional = [](DataFieldSchema field) {
             field.Required = false;
             return field;
+        };
+
+        const auto lifecycle = [&](std::string key, std::string label, std::string description) {
+            return Record(std::move(key), std::move(label), std::move(description),
+                {
+                    Field("binding", DataFieldKind::String, "Binding",
+                          "The authored binding key; it receives the behavior's tag as its 'behavior' input."),
+                    optional(Enum("scope", "Scope", "Cosmetic where a pose is presented, gameplay on the authority.",
+                                  Choices(kScopeNames, { "Cosmetic", "Gameplay" }))),
+                },
+                false);
         };
 
         DataFieldSchema blend = Record("blend", "Blend", "How a change to this behavior is absorbed.",
@@ -96,6 +108,8 @@ namespace
                                "Contributes a motion source; requires request anchoring.")),
                 optional(Field("event_weight", DataFieldKind::Float, "Event weight",
                                "Layer weight below which cosmetic events do not fire.")),
+                lifecycle("on_entered", "On entered", "Invoked when a layer enters this behavior."),
+                lifecycle("on_exited", "On exited", "Invoked when a layer leaves this behavior."),
             });
         DataFieldSchema behaviors = ArrayOf("behaviors", "Behaviors", "Declared by tag.", std::move(behavior), true);
         behaviors.Editor.Widget = "cards";
@@ -179,6 +193,27 @@ namespace
             if (const JsonValue* root = entry.Find("root_motion"); root != nullptr && root->IsBool())
                 behavior.RootMotion = root->AsBool();
             behavior.EventWeight = static_cast<float>(number(&entry, "event_weight", behavior.EventWeight));
+            const auto lifecycle = [&](std::string_view key) -> std::optional<AnimLifecycleDecl> {
+                const JsonValue* record = entry.Find(key);
+                if (record == nullptr || !record->IsObject())
+                    return std::nullopt;
+                AnimLifecycleDecl decl;
+                decl.Binding = text(record, "binding").value_or(std::string{});
+                if (std::optional<std::string> scope = text(record, "scope"))
+                    decl.Scope = static_cast<AnimEventScope>(IndexOf(kScopeNames, *scope));
+                return decl;
+            };
+            behavior.OnEntered = lifecycle("on_entered");
+            behavior.OnExited = lifecycle("on_exited");
+            for (const auto& [key, decl] : { std::pair{ "on_entered", &behavior.OnEntered },
+                                             std::pair{ "on_exited", &behavior.OnExited } })
+            {
+                if (decl->has_value() && (*decl)->Binding.empty())
+                {
+                    result.Error = std::format("{}.{}.binding A lifecycle event names its binding.", at, key);
+                    return result;
+                }
+            }
 
             const bool flow = behavior.Kind == AnimBehaviorKind::Flow;
             if (!flow && (behavior.Latch.OnInterrupt == AnimInterruptAction::CancelSection

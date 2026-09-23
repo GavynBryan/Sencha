@@ -26,7 +26,8 @@ struct FixedLogicContext;
 // Crossing is once per content instance per mark (per loop, for cyclic
 // content), measured on the tick clock rather than the frame clock, so every
 // machine that plays the same content crosses the same marks on the same
-// ticks.
+// ticks. A layer whose behavior changed first leaves the old behavior and
+// enters the new one, firing whichever of their lifecycle events is declared.
 //
 // Collection and dispatch are separate passes. Collection reads content state
 // and appends fixed-size pending records that name an event by rig, content
@@ -42,10 +43,21 @@ struct FixedLogicContext;
 // presented. Neither makes the invocation authoritative: the verb decides.
 //=============================================================================
 
+// Which kind of event a pending record names.
+enum class AnimPendingKind : std::uint8_t
+{
+    // Content's clip event at index Event.
+    Clip,
+    // The lifecycle event of the behavior at index Behavior.
+    BehaviorEntered,
+    BehaviorExited,
+};
+
 // One crossing, waiting for the drain. Value-only: it names the event rather
 // than pointing at a binding a reload could replace before the drain runs.
 struct AnimPendingEvent
 {
+    AnimPendingKind Kind = AnimPendingKind::Clip;
     EntityId Producer;
     EntityId Instigator;
     DataAssetHandle Rig;
@@ -55,6 +67,7 @@ struct AnimPendingEvent
     AnimTick Tick = 0;
     std::uint16_t Content = kAnimNoContent;
     std::uint16_t Event = 0;
+    std::uint16_t Behavior = 0;
     std::uint8_t Layer = 0;
 };
 

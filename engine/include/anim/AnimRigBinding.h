@@ -107,6 +107,26 @@ struct AnimBoundLayer
     GameplayTagId Idle;
 };
 
+// One clip or lifecycle event, bound: its binding named by key and its inputs
+// already converted to values, in the binding's input order, against this
+// World's catalog. Holds no pointer to the compiled binding; the event pass
+// looks it up by key in the rig's binding set at each dispatch. A lifecycle
+// event has no key or time.
+struct AnimBoundEvent
+{
+    std::uint32_t Key = 0;
+    // Normalized clip time.
+    float Time = 0.0f;
+    AnimEventScope Scope = AnimEventScope::Cosmetic;
+    std::optional<float> MinWeight;
+    VerbBindingKey Binding;
+    std::string BindingText;
+    std::vector<VerbValue> Inputs;
+    // The binding resolved and every input converted. An unresolved event is
+    // kept, so a crossing still reports why nothing was invoked.
+    bool Resolved = false;
+};
+
 struct AnimBoundBehavior
 {
     GameplayTagId Tag;
@@ -116,6 +136,9 @@ struct AnimBoundBehavior
     GameplayTagId SyncGroup;
     // The behavior set whose declaration won, for navigation.
     std::string DeclaredIn;
+    // Its lifecycle events, bound like clip events; absent when not declared.
+    std::optional<AnimBoundEvent> Entered;
+    std::optional<AnimBoundEvent> Exited;
 };
 
 // Where a flattened rule came from: one entry per selector it nests through,
@@ -177,25 +200,6 @@ struct AnimBoundSelector
     // rather than only when facts or requests change.
     bool ReadsTime = false;
     bool ReadsTags = false;
-};
-
-// One clip event, bound: its binding named by key and its inputs already
-// converted to values, in the binding's input order, against this World's
-// catalog. Holds no pointer to the compiled binding; the event pass looks it
-// up by key in the rig's binding set at each dispatch.
-struct AnimBoundEvent
-{
-    std::uint32_t Key = 0;
-    // Normalized clip time.
-    float Time = 0.0f;
-    AnimEventScope Scope = AnimEventScope::Cosmetic;
-    std::optional<float> MinWeight;
-    VerbBindingKey Binding;
-    std::string BindingText;
-    std::vector<VerbValue> Inputs;
-    // The binding resolved and every input converted. An unresolved event is
-    // kept, so a crossing still reports why nothing was invoked.
-    bool Resolved = false;
 };
 
 struct AnimBoundContent

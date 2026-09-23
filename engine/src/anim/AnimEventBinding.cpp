@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <format>
+#include <tuple>
 
 void AnimRigBinder::BindEvents(const AnimRigData& rig)
 {
@@ -36,6 +37,52 @@ void AnimRigBinder::BindEvents(const AnimRigData& rig)
             Out.Bindings.AppendFrom(Data, handle, environment, errors);
         for (std::string& error : errors)
             Warning("anim.event.binding_invalid", path, {}, std::move(error));
+    }
+
+    // Lifecycle events: the one input they supply is the behavior's tag.
+    for (AnimBoundBehavior& behavior : Out.Behaviors)
+    {
+        for (auto [decl, bound, field] :
+             { std::tuple{ &behavior.Policy.OnEntered, &behavior.Entered, "on_entered" },
+               std::tuple{ &behavior.Policy.OnExited, &behavior.Exited, "on_exited" } })
+        {
+            if (!decl->has_value())
+                continue;
+            AnimBoundEvent event;
+            event.Scope = (*decl)->Scope;
+            event.Binding = MakeVerbBindingKey((*decl)->Binding);
+            event.BindingText = (*decl)->Binding;
+            const CompiledVerbBinding* binding = Out.Bindings.Find(event.Binding);
+            if (binding == nullptr)
+            {
+                Warning("anim.event.binding_unknown", behavior.DeclaredIn, field,
+                        std::format("'{}' {} names binding '{}', which none of the rig's bindings declares.",
+                                    behavior.Name, field, (*decl)->Binding));
+                *bound = std::move(event);
+                continue;
+            }
+            bool resolved = true;
+            for (const VerbCompiledInput& input : binding->Inputs)
+            {
+                const VerbValue tag = VerbValue::Tag(behavior.Tag);
+                const bool suits = input.Name == kAnimLifecycleBehaviorInput
+                    && std::ranges::all_of(input.Destinations, [&tag](const VerbInputDestination& destination) {
+                           return VerbValueSatisfiesField(tag, destination.Expected);
+                       });
+                if (!suits)
+                {
+                    Warning("anim.event.input_invalid", behavior.DeclaredIn, field,
+                            std::format("Binding '{}' takes '{}', but a lifecycle event supplies only '{}', the "
+                                        "behavior's tag, to a gameplay tag argument.",
+                                        (*decl)->Binding, input.Name, kAnimLifecycleBehaviorInput));
+                    resolved = false;
+                    continue;
+                }
+                event.Inputs.push_back(tag);
+            }
+            event.Resolved = resolved;
+            *bound = std::move(event);
+        }
     }
 
     for (AnimBoundContent& content : Out.Contents)

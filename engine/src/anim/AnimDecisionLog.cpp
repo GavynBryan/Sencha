@@ -17,6 +17,8 @@ std::string_view AnimDecisionCauseName(AnimDecisionCause cause)
     case AnimDecisionCause::ContentChanged: return "ContentChanged";
     case AnimDecisionCause::Anchored: return "Anchored";
     case AnimDecisionCause::EventCrossed: return "EventCrossed";
+    case AnimDecisionCause::BehaviorEntered: return "BehaviorEntered";
+    case AnimDecisionCause::BehaviorExited: return "BehaviorExited";
     }
     return "Unknown";
 }

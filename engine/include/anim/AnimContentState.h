@@ -40,6 +40,9 @@ struct AnimLayerContent
     // entry from a continuation and a continuation from a skip.
     AnimTick EventStartTick = kAnimNoTick;
     AnimTick EventTick = kAnimNoTick;
+    // The behavior the event pass last saw on this layer: a change is a
+    // lifecycle exit and entry.
+    GameplayTagId EventBehavior;
 };
 
 struct SENCHA_COMPONENT("sencha.anim_content_state") AnimContentState
