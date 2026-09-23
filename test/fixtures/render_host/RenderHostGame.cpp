@@ -216,7 +216,12 @@ public:
         ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
         // Clip playback: a posed skinned mesh is one of the things the goldens
         // watch, and nothing else in this host would advance it.
-        RegisterAnimationSystems(ctx.Schedule, &GetEngine().Logging());
+        RegisterAnimationSystems(ctx.Schedule, &GetEngine().Logging(),
+                                 AnimEventHost{
+                                     .Verbs = GetEngine().TryVerbs(),
+                                     .Console = &GetEngine().Console().Registry(),
+                                     .PresentsPose = ctx.Config.Window.GraphicsApi != WindowGraphicsApi::None,
+                                 });
     }
 
     void OnShutdown(GameShutdownContext&) override

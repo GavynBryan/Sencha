@@ -2,6 +2,7 @@
 
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimTypes.h>
+#include <authored/VerbInvocation.h>
 #include <ecs/ComponentAnnotations.h>
 
 #include <cstdint>
@@ -37,7 +38,23 @@ enum class AnimDecisionCause : std::uint8_t
     ContentChanged,
     // A rebind could not keep an index a layer held, and reset it.
     Anchored,
+    // A clip event's mark was crossed; EventOutcome says what came of it and
+    // Admission what its binding answered.
+    EventCrossed,
 };
+
+// What a crossed clip event led to.
+enum class AnimEventOutcome : std::uint8_t
+{
+    // Offered to its binding; the record's Admission is the answer.
+    Fired,
+    // The mark was passed over by a skip in time rather than played through.
+    Skipped,
+    // The layer weight was under the event's threshold.
+    BelowWeight,
+};
+
+[[nodiscard]] std::string_view AnimEventOutcomeName(AnimEventOutcome outcome);
 
 // Why a winner or content changed. Every change has one.
 enum class AnimChangeReason : std::uint8_t
@@ -90,6 +107,11 @@ struct AnimDecisionRecord
     // Content records: the row and content resolved.
     std::uint16_t Row = kAnimNoContent;
     std::uint16_t Content = kAnimNoContent;
+    // Event records: which event of the content, what came of it, and its
+    // binding's answer when it fired.
+    std::uint32_t EventKey = 0;
+    AnimEventOutcome EventOutcome = AnimEventOutcome::Fired;
+    VerbAdmission Admission = VerbAdmission::Accepted;
 };
 
 inline constexpr std::size_t kAnimDecisionLogCapacity = 64;

@@ -50,22 +50,25 @@ GameplayTagId AnimLayerBehavior(const AnimBoundRig& rig, std::size_t layer, cons
             return selection->Layers[layer].Behavior;
         return bound.Idle;
     }
-    // Request-keyed: the newest live request that claims the layer, ties to
-    // the later sequence so every machine plays the same one.
-    const AnimRequest* newest = nullptr;
-    if (requests != nullptr)
-    {
-        const std::uint8_t bit = static_cast<std::uint8_t>(1u << layer);
-        for (const AnimRequest& request : requests->Records)
-        {
-            if ((request.Layers & bit) == 0 || !IsAnimRequestLive(request, now))
-                continue;
-            if (newest == nullptr || request.StartTick > newest->StartTick
-                || (request.StartTick == newest->StartTick && request.Id.Sequence > newest->Id.Sequence))
-                newest = &request;
-        }
-    }
+    const AnimRequest* newest = NewestAnimLayerRequest(requests, layer, now);
     return newest != nullptr ? newest->Intent : bound.Idle;
+}
+
+const AnimRequest* NewestAnimLayerRequest(const AnimRequestSet* requests, std::size_t layer, AnimTick now)
+{
+    if (requests == nullptr)
+        return nullptr;
+    const AnimRequest* newest = nullptr;
+    const std::uint8_t bit = static_cast<std::uint8_t>(1u << layer);
+    for (const AnimRequest& request : requests->Records)
+    {
+        if ((request.Layers & bit) == 0 || !IsAnimRequestLive(request, now))
+            continue;
+        if (newest == nullptr || request.StartTick > newest->StartTick
+            || (request.StartTick == newest->StartTick && request.Id.Sequence > newest->Id.Sequence))
+            newest = &request;
+    }
+    return newest;
 }
 
 int ResolveAnimSlotRow(const AnimBoundRig& rig, GameplayTagId behavior, const AnimPredicateInputs& inputs)

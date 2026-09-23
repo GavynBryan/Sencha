@@ -16,6 +16,18 @@ std::string_view AnimDecisionCauseName(AnimDecisionCause cause)
     case AnimDecisionCause::LatchInterrupted: return "LatchInterrupted";
     case AnimDecisionCause::ContentChanged: return "ContentChanged";
     case AnimDecisionCause::Anchored: return "Anchored";
+    case AnimDecisionCause::EventCrossed: return "EventCrossed";
+    }
+    return "Unknown";
+}
+
+std::string_view AnimEventOutcomeName(AnimEventOutcome outcome)
+{
+    switch (outcome)
+    {
+    case AnimEventOutcome::Fired: return "Fired";
+    case AnimEventOutcome::Skipped: return "Skipped";
+    case AnimEventOutcome::BelowWeight: return "BelowWeight";
     }
     return "Unknown";
 }

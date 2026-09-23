@@ -34,6 +34,12 @@ struct AnimLayerContent
     // One-shot and flow content is fixed at behavior entry.
     bool Pinned = false;
     bool ContentComplete = false;
+    // How far the event pass has taken this content: the content instance it
+    // was reading (named by its StartTick) and the last tick it covered. A
+    // new instance, or a gap in the ticks covered, is how the pass tells an
+    // entry from a continuation and a continuation from a skip.
+    AnimTick EventStartTick = kAnimNoTick;
+    AnimTick EventTick = kAnimNoTick;
 };
 
 struct SENCHA_COMPONENT("sencha.anim_content_state") AnimContentState

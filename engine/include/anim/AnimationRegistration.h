@@ -9,8 +9,10 @@
 #include <world/ComponentSet.h>
 
 class ComponentRegistrar;
+class ConsoleRegistry;
 class EngineSchedule;
 class LoggingProvider;
+class VerbDispatcher;
 class World;
 
 //=============================================================================
@@ -44,8 +46,24 @@ void RegisterAnimationComponents(ComponentRegistrar& registrar);
 // layer tags and bindings land in the same registries.
 void InstallAnimationVocabulary(World& world);
 
-// Clip playback, then fact gathering, selection and content resolution, in
-// that order. Rigs resolve through the World's
-// AnimRigBindings, which RuntimeContent publishes; `logging` is where a rig
-// that fails to bind is reported.
-void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging = nullptr);
+// What the clip event pass is composed with. Handed over rather than found:
+// the pass invokes verbs, so the host names the dispatcher it may use.
+struct AnimEventHost
+{
+    // Where crossed events are offered. Null still produces and records them,
+    // each answered Unavailable.
+    VerbDispatcher* Verbs = nullptr;
+    // Where `anim.events.queue_capacity` is registered. Null keeps the
+    // default capacity.
+    ConsoleRegistry* Console = nullptr;
+    // Whether this process presents a pose. Cosmetic events are produced only
+    // where one is; a headless authority produces gameplay events alone.
+    bool PresentsPose = true;
+};
+
+// Clip playback, then fact gathering, selection, content resolution and clip
+// events, in that order. Rigs resolve through the World's AnimRigBindings,
+// which RuntimeContent publishes; `logging` is where a rig that fails to bind
+// is reported.
+void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging = nullptr,
+                              const AnimEventHost& events = {});

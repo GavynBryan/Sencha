@@ -32,6 +32,12 @@ struct FixedLogicContext;
 // plays its idle behavior.
 //=============================================================================
 
+// The request a request-keyed layer plays this tick: the newest live record
+// claiming it, ties to the later sequence so every machine picks the same
+// one. Null when none claims it.
+[[nodiscard]] const AnimRequest* NewestAnimLayerRequest(const AnimRequestSet* requests, std::size_t layer,
+                                                        AnimTick now);
+
 // The behavior a layer plays this tick.
 [[nodiscard]] GameplayTagId AnimLayerBehavior(const AnimBoundRig& rig, std::size_t layer,
                                               const AnimSelectorState* selection,
