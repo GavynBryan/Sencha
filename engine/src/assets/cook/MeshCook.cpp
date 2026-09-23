@@ -30,7 +30,7 @@ namespace
 {
     // The glTF importer's cook version: part of its CookIdentity, so every
     // artifact it produced recooks when this moves.
-    constexpr std::uint32_t kGltfMeshCookVersion = 5;
+    constexpr std::uint32_t kGltfMeshCookVersion = 6;
 
     struct CgltfFree
     {
@@ -608,7 +608,19 @@ namespace
             const cgltf_node& jointNode = *skin.joints[localIndex];
             SkeletonJoint& joint = out.Joints[skelIndex];
 
+            // A joint's name is its stable key: what a bone mask and anything
+            // else persisted against the skeleton names it by. So it must be
+            // there, and be one joint's alone.
             joint.Name = jointNode.name != nullptr ? jointNode.name : "";
+            if (joint.Name.empty())
+                return SetError(error, std::format("{}: joint {} has no name; a joint is named so masks and "
+                                                   "other content can refer to it across re-exports",
+                                                   SkinLabel(data, skin), NodeLabel(data, jointNode))), false;
+            for (std::size_t earlier = 0; earlier < skelIndex; ++earlier)
+                if (out.Joints[earlier].Name == joint.Name)
+                    return SetError(error, std::format("{}: two joints are named '{}'; rename one, because a "
+                                                       "joint's name is how content refers to it",
+                                                       SkinLabel(data, skin), joint.Name)), false;
             joint.ParentIndex = parentLocal[localIndex] == -1
                 ? -1 : localToSkeleton[parentLocal[localIndex]];
 

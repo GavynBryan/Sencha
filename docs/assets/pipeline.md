@@ -201,6 +201,9 @@ disagree, this is the contract.
   object-level motion arrives as root-joint motion. Located errors: a
   non-uniform, sheared or mirrored chain; a non-joint node between joints;
   inverse binds that disagree with the rest pose ("Apply Pose as Rest Pose").
+  Every joint has a name and no two share one: a joint's name is its stable
+  key, what a bone mask names it by, so the skeleton format needs no second
+  identity; an unnamed or shared name is a located error.
 - **One model per skeleton.** Everything a skeleton draws is one
   `.skmesh`: every mesh placed with its skin, and every mesh parented beneath
   one of its joints as a rigid part bound wholly to that joint (joints

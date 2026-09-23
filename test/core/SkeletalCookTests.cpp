@@ -1115,4 +1115,32 @@ TEST(SkeletalCook, SidecarEventsForAMissingClipFailTheImport)
     EXPECT_NE(result.Error.find("it exports: wave"), std::string::npos) << result.Error;
 }
 
+// A joint's name is its stable key, so the import refuses joints that have
+// none or share one.
+TEST(SkeletalCook, JointNamesAreRequiredAndDistinct)
+{
+    const auto importWith = [](std::string_view rootName, std::string_view childName) {
+        SkinnedGltfBuilder builder;
+        const int ibm = builder.AddMatrices({ Mat4::Identity(), Mat4::MakeTranslation(0, -1, 0) });
+        const std::string gltf = builder.Build(
+            "[0,2]",
+            std::format(R"([{{{}"children":[1]}},{{{}"translation":[0,1,0]}},{{"name":"Body","mesh":0,"skin":0}}])",
+                        rootName.empty() ? "" : std::format(R"("name":"{}",)", rootName),
+                        childName.empty() ? "" : std::format(R"("name":"{}",)", childName)),
+            std::format(R"([{{"name":"rig","joints":[0,1],"inverseBindMatrices":{}}}])", ibm));
+        ImportedGltfScene scene;
+        std::string error;
+        const bool ok = ImportGltfScene(AsBytes(gltf), scene, &error);
+        return std::pair{ ok, error };
+    };
+
+    EXPECT_TRUE(importWith("Root", "Arm").first);
+    const auto [unnamedOk, unnamed] = importWith("Root", "");
+    EXPECT_FALSE(unnamedOk);
+    EXPECT_NE(unnamed.find("has no name"), std::string::npos) << unnamed;
+    const auto [sharedOk, shared] = importWith("Bone", "Bone");
+    EXPECT_FALSE(sharedOk);
+    EXPECT_NE(shared.find("two joints are named 'Bone'"), std::string::npos) << shared;
+}
+
 #endif // SENCHA_ENABLE_COOK
