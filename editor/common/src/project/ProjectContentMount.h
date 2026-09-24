@@ -17,6 +17,12 @@ void MountProjectContent(const ProjectDescriptor& project,
                          LoggingProvider& logging,
                          JobSystem* jobs = nullptr);
 
+// Mounts the engine's own content root after whatever is already mounted, as
+// the runtime does: the engine fact schema and the shell's defaults resolve,
+// and a project's content that claims the same path wins. A no-op when the
+// engine has no content root to mount.
+void MountEngineContent(RuntimeAssets& assets, LoggingProvider& logging, JobSystem* jobs = nullptr);
+
 // Mounts the editor's own authored UI as a content root: its documents,
 // stylesheets and fonts, cooked and registered the same way a project's content
 // is. Separate from the project's roots because it ships with the editor and is

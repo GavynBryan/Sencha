@@ -129,6 +129,7 @@ void DataEditorServices::InitAssets()
     }
 
     MountProjectContent(*Project, *Assets, engine.Logging(), &engine.Jobs());
+    MountEngineContent(*Assets, engine.Logging(), &engine.Jobs());
     Workspace = std::make_unique<DataEditorWorkspace>(*Assets, *Project);
     RegisterBuiltInSubtypeEditors(SubtypeEditors);
 }

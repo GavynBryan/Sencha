@@ -18,6 +18,8 @@
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
+
+#include <app/EngineContentRoot.h>
 #include <app/SessionParticipantDiagnostics.h>
 #include <app/EngineConsoleBuiltins.h>
 #include <app/PauseInputSystem.h>
@@ -82,51 +84,38 @@
 #include <string>
 #include <utility>
 
-namespace
+std::filesystem::path EngineContentRoot()
 {
-    // The engine's own content root: the application shell's default documents
-    // and the face they draw with.
-    //
-    // Appended to the configured roots rather than prepended, so it is a
-    // fallback and not an override -- RuntimeContent::Mount gives the first
-    // root that claims a virtual path ownership of it, so a game shipping its
-    // own ui/pause.rml shadows this one by path alone.
-    //
-    // Empty when there is nothing to mount, which is the ordinary case for a
-    // build that installed no content and for a test binary.
-    std::filesystem::path EngineContentRoot()
+    const auto usable = [](const std::filesystem::path& candidate) {
+        std::error_code ec;
+        return !candidate.empty() && std::filesystem::is_directory(candidate, ec) && !ec;
+    };
+
+    // An override first, so a packaging layout this does not anticipate can
+    // be pointed at without a rebuild.
+    if (const char* override = SDL_getenv_unsafe("SENCHA_ENGINE_CONTENT");
+        override != nullptr && override[0] != '\0')
     {
-        const auto usable = [](const std::filesystem::path& candidate) {
-            std::error_code ec;
-            return !candidate.empty() && std::filesystem::is_directory(candidate, ec) && !ec;
-        };
+        const std::filesystem::path path(override);
+        if (usable(path))
+            return path;
+    }
 
-        // An override first, so a packaging layout this does not anticipate can
-        // be pointed at without a rebuild.
-        if (const char* override = SDL_getenv_unsafe("SENCHA_ENGINE_CONTENT");
-            override != nullptr && override[0] != '\0')
-        {
-            const std::filesystem::path path(override);
-            if (usable(path))
-                return path;
-        }
-
-        // Installed, beside the executable, next to where the templates land.
-        if (const char* base = SDL_GetBasePath(); base != nullptr)
-        {
-            const std::filesystem::path installed =
-                std::filesystem::path(base) / ".." / "share" / "sencha" / "content";
-            if (usable(installed))
-                return installed.lexically_normal();
-        }
+    // Installed, beside the executable, next to where the templates land.
+    if (const char* base = SDL_GetBasePath(); base != nullptr)
+    {
+        const std::filesystem::path installed =
+            std::filesystem::path(base) / ".." / "share" / "sencha" / "content";
+        if (usable(installed))
+            return installed.lexically_normal();
+    }
 
 #ifdef SENCHA_ENGINE_CONTENT_DIR
-        // In-tree. Defined only for a build from this source tree.
-        if (const std::filesystem::path source(SENCHA_ENGINE_CONTENT_DIR); usable(source))
-            return source;
+    // In-tree. Defined only for a build from this source tree.
+    if (const std::filesystem::path source(SENCHA_ENGINE_CONTENT_DIR); usable(source))
+        return source;
 #endif
-        return {};
-    }
+    return {};
 }
 
 Engine::Engine(EngineConfig engineConfig)
@@ -1141,7 +1130,10 @@ int Engine::Run(Game& game)
     // OnStart sees a mounted, published stack rather than assembling one. The
     // game's data-asset subtypes register first, because the scan classifies
     // .sdata by the subtypes that exist when it runs.
-    // Last, so it is the fallback every root above it may shadow.
+    // The engine's root last, so it is the fallback every root above it may
+    // shadow: RuntimeContent::Mount gives the first root that claims a
+    // virtual path ownership of it, so a game shipping its own ui/pause.rml
+    // shadows the engine's by path alone.
     if (const std::filesystem::path engineContent = EngineContentRoot(); !engineContent.empty())
         Configuration.Runtime.ContentRoots.push_back(engineContent.string());
 

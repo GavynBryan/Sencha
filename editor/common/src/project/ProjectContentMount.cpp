@@ -2,6 +2,7 @@
 
 #include "project/Project.h"
 
+#include <app/EngineContentRoot.h>
 #include <assets/cook/ContentImporters.h>
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/runtime/ContentMount.h>
@@ -41,6 +42,22 @@ void MountProjectContent(const ProjectDescriptor& project,
         RegisterCookedContent(paths, assets, log);
     }
     log.Info("assets: mounted {} content root(s)", project.ContentRoots.size());
+}
+
+void MountEngineContent(RuntimeAssets& assets, LoggingProvider& logging, JobSystem* jobs)
+{
+    Logger& log = logging.GetLogger<ProjectDescriptor>();
+    const std::filesystem::path root = EngineContentRoot();
+    if (root.empty())
+        return;
+    const ContentRootPaths paths = ResolveContentRoot(root.string());
+    ScanContentRoot(paths, assets);
+    {
+        ContentImporterSet importers(jobs);
+        (void)ImportAssetsOnDemand(root.string(), importers.Registry(), assets.Registry, logging);
+    }
+    RegisterCookedContent(paths, assets, log);
+    log.Info("assets: mounted engine content at '{}'", root.string());
 }
 
 void MountEditorContent(std::string_view root,

@@ -62,6 +62,7 @@ public:
             if (ProjectDescriptor::Load(*projectPath, project, &error))
             {
                 MountProjectContent(project, *Assets, engine.Logging(), &engine.Jobs());
+                MountEngineContent(*Assets, engine.Logging(), &engine.Jobs());
                 LoadModuleVocabulary(project);
             }
         }
