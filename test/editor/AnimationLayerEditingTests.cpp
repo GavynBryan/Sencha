@@ -4,6 +4,7 @@
 // edits, which cannot make control go backward.
 
 #include "authoring/AnimationFlowEdits.h"
+#include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigEdits.h"
 
@@ -224,4 +225,40 @@ TEST(AnimationFlowEdits, NoEditMakesControlGoBackward)
     ASSERT_NE(flow, nullptr);
     EXPECT_TRUE(flow->Sections[0].Branches.empty());
     EXPECT_TRUE(flow->Cancel.empty());
+}
+
+// Conditions edit with the same predicate edits the rule table uses, over the
+// rows a while loop or a branch holds.
+TEST(AnimationFlowEdits, LoopAndBranchConditionsEditAsPredicates)
+{
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    RegisterAnimFlowData(types, schemas);
+    std::optional<JsonValue> root = JsonParse(R"({ "type": "animation.flow", "version": 1, "data": { "sections": [
+        { "tag": "Anim.A", "clip": "asset://anim/a.sanim" }, { "tag": "Anim.B", "clip": "asset://anim/b.sanim" } ] } })");
+    ASSERT_TRUE(root.has_value());
+
+    EXPECT_EQ(AnimFlowLoopCondition(*root, 0), nullptr) << "a section that plays once has no loop condition";
+    ASSERT_TRUE(SetAnimFlowLoop(*root, 0, "while"));
+    JsonValue::Array* loop = AnimFlowLoopCondition(*root, 0);
+    ASSERT_NE(loop, nullptr);
+    AddAnimPredicateRow(*loop, MakeAnimRequestTest("anim.intent.charge"));
+    AddAnimPredicateRow(*loop, MakeAnimFactTest("Speed", AnimFactKind::Float));
+    ASSERT_TRUE(AddAnimPredicateAlternative(*loop, 1, MakeAnimFactTest("Crouched", AnimFactKind::Bool)));
+
+    ASSERT_TRUE(AddAnimFlowBranch(*root, 0, 1));
+    JsonValue::Array* when = AnimFlowBranchCondition(*root, 0, 0);
+    ASSERT_NE(when, nullptr);
+    JsonValue released = MakeAnimRequestTest("anim.intent.charge");
+    released.AsObject().emplace_back("not", JsonValue(true));
+    AddAnimPredicateRow(*when, std::move(released));
+    EXPECT_EQ(AnimFlowBranchCondition(*root, 0, 3), nullptr);
+
+    const DataAssetCompileResult result = types.Find(kAnimFlowType)->Compile(*root->Find("data"));
+    ASSERT_TRUE(result.IsValid()) << result.Error;
+    const auto flow = std::static_pointer_cast<const AnimFlowData>(result.Value);
+    ASSERT_EQ(flow->Sections[0].While.Rows.size(), 2u);
+    EXPECT_EQ(flow->Sections[0].While.Rows[1].AnyOf.size(), 2u);
+    ASSERT_EQ(flow->Sections[0].Branches[0].When.Rows.size(), 1u);
+    EXPECT_TRUE(flow->Sections[0].Branches[0].When.Rows[0].AnyOf.front().Negate);
 }

@@ -187,3 +187,29 @@ bool RemoveAnimFlowBranch(JsonValue& root, std::size_t section, std::size_t bran
         Erase(*entry, "branches");
     return true;
 }
+
+JsonValue::Array* AnimFlowLoopCondition(JsonValue& root, std::size_t section)
+{
+    JsonValue* entry = Section(root, section);
+    if (entry == nullptr || Text(*entry, "loop") != "while")
+        return nullptr;
+    if (entry->Find("while") == nullptr)
+        Set(*entry, "while", JsonValue(JsonValue::Array{}));
+    JsonValue* rows = entry->Find("while");
+    return rows->IsArray() ? &rows->AsArray() : nullptr;
+}
+
+JsonValue::Array* AnimFlowBranchCondition(JsonValue& root, std::size_t section, std::size_t branch)
+{
+    JsonValue* entry = Section(root, section);
+    JsonValue* branches = entry != nullptr ? entry->Find("branches") : nullptr;
+    if (branches == nullptr || !branches->IsArray() || branch >= branches->AsArray().size())
+        return nullptr;
+    JsonValue& chosen = branches->AsArray()[branch];
+    if (!chosen.IsObject())
+        return nullptr;
+    if (chosen.Find("when") == nullptr)
+        Set(chosen, "when", JsonValue(JsonValue::Array{}));
+    JsonValue* rows = chosen.Find("when");
+    return rows->IsArray() ? &rows->AsArray() : nullptr;
+}

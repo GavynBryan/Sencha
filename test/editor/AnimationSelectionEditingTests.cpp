@@ -3,6 +3,7 @@
 // editing a rule changes the running preview's winner and clip -- no game, and
 // nothing written to disk until saved.
 
+#include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationPredicateText.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationSelectorEdits.h"
@@ -75,9 +76,11 @@ TEST(AnimationSelectorEdits, EachEditLeavesAValidSelector)
 
     AddAnimSelectorRule(root, "walk", "Anim.Walk", 10);
     AddAnimSelectorRule(root, "idle", "Anim.Idle", 0);
-    ASSERT_TRUE(AddAnimPredicateRow(root, 0, "enter", MakeAnimFactTest("Speed", AnimFactKind::Float)));
-    ASSERT_TRUE(AddAnimPredicateRow(root, 0, "enter", MakeAnimFactTest("Grounded", AnimFactKind::Bool)));
-    ASSERT_TRUE(AddAnimPredicateAlternative(root, 0, "enter", 1, MakeAnimRequestTest("anim.intent.fly")));
+    const auto enter = [&](std::size_t rule) { return AnimSelectorPredicate(root, rule, "enter"); };
+    ASSERT_NE(enter(0), nullptr);
+    AddAnimPredicateRow(*enter(0), MakeAnimFactTest("Speed", AnimFactKind::Float));
+    AddAnimPredicateRow(*enter(0), MakeAnimFactTest("Grounded", AnimFactKind::Bool));
+    ASSERT_TRUE(AddAnimPredicateAlternative(*enter(0), 1, MakeAnimRequestTest("anim.intent.fly")));
     ASSERT_TRUE(SetAnimSelectorStay(root, 0, true));
     std::shared_ptr<const AnimSelectorData> selector = compiles();
     ASSERT_NE(selector, nullptr);
@@ -88,7 +91,7 @@ TEST(AnimationSelectorEdits, EachEditLeavesAValidSelector)
               "Speed > 0 and (Grounded or request anim.intent.fly)");
 
     // Back out of the group: the remaining test stands alone again.
-    ASSERT_TRUE(RemoveAnimPredicateAlternative(root, 0, "enter", 1, 1));
+    ASSERT_TRUE(RemoveAnimPredicateAlternative(*enter(0), 1, 1));
     ASSERT_TRUE(SetAnimSelectorStay(root, 0, false));
     ASSERT_TRUE(MoveAnimSelectorRule(root, 1, 0));
     selector = compiles();
@@ -98,7 +101,8 @@ TEST(AnimationSelectorEdits, EachEditLeavesAValidSelector)
     EXPECT_FALSE(selector->Rules[1].HasStay);
     ASSERT_TRUE(RemoveAnimSelectorRule(root, 0));
     EXPECT_EQ(compiles()->Rules.size(), 1u);
-    EXPECT_FALSE(RemoveAnimPredicateRow(root, 5, "enter", 0));
+    EXPECT_EQ(AnimSelectorPredicate(root, 5, "enter"), nullptr);
+    EXPECT_FALSE(RemoveAnimPredicateRow(*enter(0), 7));
 }
 
 namespace

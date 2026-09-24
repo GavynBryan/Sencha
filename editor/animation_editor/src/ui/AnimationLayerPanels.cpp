@@ -4,6 +4,8 @@
 #include "authoring/AnimationPredicateText.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigEdits.h"
+#include "authoring/AnimationPredicateEdits.h"
+#include "ui/AnimationDocumentWidgets.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
@@ -467,8 +469,9 @@ private:
                                             : "none, a cancel ends the flow");
     }
 
-    // Structure only: sections, loops, exits, branches and the cancel section.
-    // Conditions are predicates, shown as text and edited in Data Editor.
+    // Sections, loops and their conditions, exits, branches and their
+    // conditions, and the cancel section. Structural changes are one undo step
+    // each; conditions edit like the rule table's, committing on release.
     void DrawEditor(DataDocument& document)
     {
         ImGui::SeparatorText(std::format("Editing {}", document.VirtualPath()).c_str());
@@ -492,6 +495,8 @@ private:
             return;
         }
         bool changed = false;
+        AnimationWidgets::Edit edit;
+        const AnimationWidgets::PredicateVocabulary vocabulary{ Workspace.Simulation.Rig() };
         const auto tagOf = [&](std::size_t s) {
             const JsonValue* tag = (*sections)[s].Find("tag");
             return tag != nullptr && tag->IsString() ? tag->AsString() : std::string();
@@ -513,7 +518,20 @@ private:
                     ImGui::EndCombo();
                 }
                 if (loop == "while")
-                    ImGui::TextWrapped("While %s", DescribeAnimPredicate(section.Find("while")).c_str());
+                {
+                    ImGui::TextDisabled("Repeats while, at its end:");
+                    ImGui::PushID("while");
+                    if (JsonValue::Array* rows = AnimFlowLoopCondition(root, s))
+                        AnimationWidgets::DrawPredicate(*rows, vocabulary, edit);
+                    ImGui::PopID();
+                }
+                else if (loop == "count")
+                {
+                    AnimationWidgets::NameMember("Count intent", section, "count_intent", vocabulary.Intents(), edit);
+                    AnimationWidgets::NameMember("Count parameter", section, "count_param",
+                                                 vocabulary.Params(AnimationWidgets::Text(section, "count_intent")),
+                                                 edit);
+                }
                 const JsonValue* endsValue = section.Find("ends");
                 bool ends = endsValue != nullptr && endsValue->IsBool() && endsValue->AsBool();
                 if (ImGui::Checkbox("Ends the flow when no branch is taken", &ends))
@@ -527,14 +545,18 @@ private:
                 if (branches != nullptr && branches->IsArray())
                     for (std::size_t b = 0; b < branches->AsArray().size() && !changed; ++b)
                     {
-                        const JsonValue& branch = branches->AsArray()[b];
-                        const JsonValue* to = branch.Find("to");
+                        const std::string to = AnimationWidgets::Text(branches->AsArray()[b], "to");
                         ImGui::PushID(static_cast<int>(b));
-                        ImGui::BulletText("to %s when %s", to != nullptr && to->IsString() ? to->AsString().c_str() : "?",
-                                          DescribeAnimPredicate(branch.Find("when")).c_str());
+                        ImGui::BulletText("to %s, taken at the end when:", to.c_str());
                         ImGui::SameLine();
-                        if (ImGui::SmallButton("Remove"))
+                        if (ImGui::SmallButton("Remove branch"))
                             changed = RemoveAnimFlowBranch(root, s, b);
+                        else if (JsonValue::Array* rows = AnimFlowBranchCondition(root, s, b))
+                        {
+                            ImGui::Indent();
+                            AnimationWidgets::DrawPredicate(*rows, vocabulary, edit);
+                            ImGui::Unindent();
+                        }
                         ImGui::PopID();
                     }
                 // Only later sections are offered: control goes forward.
@@ -584,11 +606,15 @@ private:
             ImGui::EndCombo();
         }
         if (changed)
+            edit.Instant();
+        if (edit.Changed)
         {
             document.BeginEdit();
             document.PreviewRoot(std::move(root));
-            Workspace.CommitDocumentEdit(document);
+            Workspace.ValidateDocument(document);
         }
+        if (edit.Commit)
+            Workspace.CommitDocumentEdit(document);
         for (const DataValidationError& error : document.ValidationErrors())
             ImGui::TextWrapped("%s: %s", error.Path.c_str(), error.Message.c_str());
         ImGui::PopID();

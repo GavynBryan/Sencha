@@ -16,9 +16,10 @@
 // before its section is refused. Removing a section removes the branches to
 // it and, when it was the cancel section, the cancel.
 //
-// Loop and branch conditions are predicates; these edits leave them as
-// authored, and a new while loop or branch starts with an empty condition for
-// the author to fill in, which the document reports until they do.
+// Loop and branch conditions are predicates, edited with the predicate edits
+// over the rows the accessors below return. A new while loop or branch starts
+// with an empty condition for the author to fill in, which the document
+// reports until they do.
 //=============================================================================
 
 [[nodiscard]] JsonValue::Array* AnimFlowSections(JsonValue& root);
@@ -37,3 +38,9 @@ bool SetAnimFlowCancel(JsonValue& root, std::string_view tag);
 // False, and nothing changes, when `to` is not a later section.
 bool AddAnimFlowBranch(JsonValue& root, std::size_t section, std::size_t to);
 bool RemoveAnimFlowBranch(JsonValue& root, std::size_t section, std::size_t branch);
+
+// A while loop's condition rows, created empty; null unless the section loops
+// while something holds.
+[[nodiscard]] JsonValue::Array* AnimFlowLoopCondition(JsonValue& root, std::size_t section);
+// A branch's condition rows, created empty; null for a branch that is not there.
+[[nodiscard]] JsonValue::Array* AnimFlowBranchCondition(JsonValue& root, std::size_t section, std::size_t branch);
