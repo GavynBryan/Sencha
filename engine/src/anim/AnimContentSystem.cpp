@@ -86,18 +86,37 @@ const AnimRequest* AnimLayerDrivingRequest(const AnimBoundRig& rig, std::size_t 
         for (const AnimRequest& request : requests->Records)
             if ((request.Layers & bit) != 0 && IsAnimRequestLive(request, now) && newer(request, live))
                 live = &request;
-        if (live != nullptr || playing == nullptr || !playing->Request.IsValid() || playing->ContentComplete
-            || playing->Content >= rig.Contents.size() || rig.Contents[playing->Content].Flow < 0)
+        if (live != nullptr)
             return live;
-        // A flow still playing its cancelled request out keeps it.
-        const AnimBoundBehavior* behavior = rig.FindBehavior(playing->Behavior);
-        if (behavior != nullptr && behavior->Policy.Latch.OnRequestCancel == AnimRequestCancelAction::Abort)
+        const bool playingFlow = playing != nullptr && playing->Request.IsValid() && !playing->ContentComplete
+                              && playing->Content < rig.Contents.size() && rig.Contents[playing->Content].Flow >= 0;
+        if (playingFlow)
+        {
+            // A flow still playing its cancelled request out keeps it.
+            const AnimBoundBehavior* behavior = rig.FindBehavior(playing->Behavior);
+            if (behavior != nullptr && behavior->Policy.Latch.OnRequestCancel == AnimRequestCancelAction::Abort)
+                return nullptr;
+            for (const AnimRequest& request : requests->Records)
+                if (request.Occupied && request.Id == playing->Request && request.IsCancelled()
+                    && IsAnimRequestRetained(request, now))
+                    return &request;
             return nullptr;
+        }
+        // A tail kept past the cancel tick says a flow is still playing the
+        // request out, which a machine that joined during it has to adopt to
+        // see what everyone else sees.
+        const AnimRequest* tail = nullptr;
         for (const AnimRequest& request : requests->Records)
-            if (request.Occupied && request.Id == playing->Request && request.IsCancelled()
-                && IsAnimRequestRetained(request, now))
-                return &request;
-        return nullptr;
+            if ((request.Layers & bit) != 0 && request.Occupied && request.IsCancelled()
+                && request.TailUntilTick > request.CancelTick && IsAnimRequestRetained(request, now)
+                && newer(request, tail))
+                tail = &request;
+        if (tail == nullptr)
+            return nullptr;
+        const AnimBoundBehavior* behavior = rig.FindBehavior(tail->Intent);
+        return behavior != nullptr && behavior->Policy.Latch.OnRequestCancel != AnimRequestCancelAction::Abort
+                 ? tail
+                 : nullptr;
     }
 
     if (selection == nullptr)
@@ -149,6 +168,32 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
 
     const bool rebound = content.BindingGeneration != rig.Generation;
     content.BindingGeneration = rig.Generation;
+
+    // The authority says which timing its requests were made under; a machine
+    // binding the rig differently cannot reconstruct them, and says so.
+    if (requests != nullptr)
+    {
+        if (authority)
+        {
+            if (requests->RigTiming != rig.TimingIdentity)
+                world.TryGet<AnimRequestSet>(entity)->RigTiming = rig.TimingIdentity;
+        }
+        else
+        {
+            const bool disagrees = requests->RigTiming != 0 && requests->RigTiming != rig.TimingIdentity;
+            if (disagrees != content.TimingDisagrees)
+            {
+                content.TimingDisagrees = disagrees;
+                if (log != nullptr)
+                {
+                    AnimDecisionRecord record;
+                    record.Tick = now;
+                    record.Cause = disagrees ? AnimDecisionCause::TimingDisagreed : AnimDecisionCause::TimingAgreed;
+                    log->Append(record);
+                }
+            }
+        }
+    }
 
     for (std::size_t l = 0; l < rig.Layers.size() && l < kAnimMaxLayers; ++l)
     {
@@ -212,6 +257,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             layer.RowKey = row >= 0 ? rig.SlotRows[static_cast<std::size_t>(row)].Key : 0;
             layer.Content = resolvedContent;
             layer.Request = driving != nullptr ? driving->Id : AnimRequestId{};
+            layer.RequestStartTick = driving != nullptr ? driving->StartTick : 0;
             layer.StartTick = instanceStart;
             layer.StartOffsetSeconds = 0.0f;
             layer.Pinned = kind == AnimBehaviorKind::OneShot || kind == AnimBehaviorKind::Flow;
@@ -257,8 +303,18 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             else
             {
                 layer.Request = driving->Id;
+                layer.RequestStartTick = driving->StartTick;
                 adopted = true;
             }
+        }
+        else if (layer.Pinned && driving != nullptr && driving->Id == layer.Request
+                 && driving->StartTick != layer.RequestStartTick)
+        {
+            // Nothing is rewound: what was shown stays shown, the instance
+            // starts again where the corrected request puts it, and the pose
+            // absorbs the jump like any other change.
+            startInstance(AnimChangeReason::RequestCorrected);
+            entered = true;
         }
         else if (resolvedRow != layer.Row && !layer.Pinned)
         {
@@ -393,7 +449,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
 
 void AnimContentSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    ResolveImpl(ctx.Entities, &ctx.Partitions, ctx.Time.TickIndex, ctx.Time.DeltaSeconds);
+    ResolveImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimContentSystem::Resolve(World& world, AnimTick now, double tickSeconds)

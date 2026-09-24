@@ -67,7 +67,15 @@ struct AnimRequest
     AnimRequestLifetime Lifetime = AnimRequestLifetime::Held;
     AnimCancelReason CancelReason = AnimCancelReason::None;
     std::uint8_t AnchorSection = kAnimNoAnchorSection;
+    // Bit i set when Params[i] holds a gameplay tag id rather than a number:
+    // what the rig's request schema declared when the request was issued. A
+    // tag id is this process's registration order, so it has to be renamed
+    // on its way to another machine, and this is how the record says so.
+    std::uint8_t TagParams = 0;
     bool Occupied = false;
+    // Issued by this machine ahead of the authority (AnimRequestJournal).
+    // Local: it never travels, so the authority's set arriving clears it.
+    bool Predicted = false;
 
     [[nodiscard]] bool IsCancelled() const { return CancelReason != AnimCancelReason::None; }
 };
@@ -76,8 +84,13 @@ struct SENCHA_COMPONENT("sencha.anim_request_set") AnimRequestSet
 {
     AnimRequest Records[kAnimRequestCapacity] = {};
     std::uint32_t NextSequence = 1;
+    // The authority's AnimRigTimingIdentity for the entity's rig, stamped by
+    // its content pass: the timing these records were made under. Zero until
+    // an authority has stamped it.
+    std::uint64_t RigTiming = 0;
 };
 
 #if !defined(SENCHA_CODEGEN)
 #  include <anim/AnimRequestSet.sencha.h>
+#  include <anim/AnimRequestWire.h>
 #endif

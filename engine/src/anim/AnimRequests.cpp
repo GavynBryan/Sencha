@@ -92,6 +92,7 @@ AnimRequestResult IssueAnimRequest(AnimRequestSet& set,
     request.StartTick = now;
     request.FixedTicks = desc.FixedTicks;
     std::copy(desc.Params.begin(), desc.Params.end(), request.Params);
+    request.TagParams = desc.TagParams;
     request.Layers = desc.Layers;
     request.Lifetime = desc.Lifetime;
     request.Occupied = true;
@@ -231,12 +232,23 @@ AnimRequestResult IssueAnimRequest(World& world,
     // An intent the rig's request schema does not declare has no params to
     // read and no rule written against it; refusing it here is what keeps a
     // misspelt intent from being silently unclaimed forever.
+    AnimRequestDesc declared = desc;
     if (const AnimRig* rig = Find<AnimRig>(world, animated))
     {
         if (AnimRigBindings* bindings = world.TryGetResource<AnimRigBindings>())
         {
             const AnimBoundRig* bound = bindings->Resolve(rig->Rig, world);
-            if (bound != nullptr && bound->HasRequestSchema && bound->FindIntent(desc.Intent) == nullptr)
+            const AnimBoundIntent* intent = bound != nullptr ? bound->FindIntent(desc.Intent) : nullptr;
+            if (intent != nullptr)
+            {
+                declared.TagParams = 0;
+                for (std::size_t p = 0; p < intent->Params.size() && p < kAnimRequestParams; ++p)
+                {
+                    if (intent->Params[p].Kind == AnimRequestParamKind::Tag)
+                        declared.TagParams |= static_cast<std::uint8_t>(1u << p);
+                }
+            }
+            if (bound != nullptr && bound->HasRequestSchema && intent == nullptr)
             {
                 AnimRequest rejected;
                 rejected.Intent = desc.Intent;
@@ -255,7 +267,7 @@ AnimRequestResult IssueAnimRequest(World& world,
             }
         }
     }
-    return IssueAnimRequest(*set, desc, now, log);
+    return IssueAnimRequest(*set, declared, now, log);
 }
 
 bool CancelAnimRequest(World& world,

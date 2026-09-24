@@ -5,6 +5,7 @@
 #include <ecs/StoragePartitionSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <world/SimulationAuthority.h>
 
 #include <algorithm>
 #include <cmath>
@@ -532,7 +533,7 @@ void SelectAnimEntity(const World& world, EntityId entity, const AnimBoundRig& r
 
 void AnimSelectSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    SelectImpl(ctx.Entities, &ctx.Partitions, ctx.Time.TickIndex, ctx.Time.DeltaSeconds);
+    SelectImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimSelectSystem::Select(World& world, AnimTick now, double tickSeconds)

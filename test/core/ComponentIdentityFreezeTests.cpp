@@ -171,8 +171,8 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
 
 // The wire contract: two builds refuse each other unless these agree. Moving
 // it is a deliberate act with a reason, never a side effect: the last move put
-// SupportState's fields on the wire in declaration order.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0xD2F75DBD53AAFBE9ull;
+// the animation request set on the wire, as its translated image.
+constexpr std::uint64_t kFrozenReplicationTableHash = 0xE2B1DE79DA00C085ull;
 
 struct EngineVocabulary
 {

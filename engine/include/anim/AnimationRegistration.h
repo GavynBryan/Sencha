@@ -46,8 +46,8 @@ using AnimationComponents = ComponentSet<
 void RegisterAnimationComponents(ComponentRegistrar& registrar);
 
 // The layer tags every rig may name (anim.layer.base, anim.layer.upper,
-// anim.layer.aim) and an empty AnimFactProviders table for gameplay to bind
-// into. Idempotent. Installed before a game's vocabulary hook, so a game's own
+// anim.layer.aim), an empty AnimFactProviders table for gameplay to bind
+// into, and the AnimRequestJournal gameplay issues predicted requests through. Idempotent. Installed before a game's vocabulary hook, so a game's own
 // layer tags and bindings land in the same registries.
 void InstallAnimationVocabulary(World& world);
 

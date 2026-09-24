@@ -60,6 +60,12 @@ enum class AnimDecisionCause : std::uint8_t
     // BlendOverridden whether a pairwise override chose it. BlendMagnitude is
     // the largest joint offset an inertialization began from.
     BlendApplied,
+    // This machine's binding of the rig started or stopped disagreeing with
+    // the timing the authority's requests were made under
+    // (AnimRigTimingIdentity). Reconstruction is not trustworthy while it
+    // does: the session has to reload the rig or rejoin.
+    TimingDisagreed,
+    TimingAgreed,
 };
 
 // What a crossed clip event led to.
@@ -98,6 +104,9 @@ enum class AnimChangeReason : std::uint8_t
     // The request driving a layer's content changed without its behavior
     // changing: a superseding request, a combo advancing.
     RequestSuperseded,
+    // The authority's word moved the start of the request a layer was
+    // playing: a client's guess replaced by what actually happened.
+    RequestCorrected,
 };
 
 [[nodiscard]] std::string_view AnimChangeReasonName(AnimChangeReason reason);

@@ -367,7 +367,7 @@ AnimEventSystem::AnimEventSystem(VerbDispatcher* dispatcher, bool presents)
 
 void AnimEventSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    RunImpl(ctx.Entities, &ctx.Partitions, ctx.Time.TickIndex, ctx.Time.DeltaSeconds);
+    RunImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimEventSystem::Run(World& world, AnimTick now, double tickSeconds)

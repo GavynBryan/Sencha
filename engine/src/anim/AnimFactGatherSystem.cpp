@@ -5,6 +5,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <ecs/StoragePartitionSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <world/SimulationAuthority.h>
 
 void GatherAnimFacts(const World& world,
                      EntityId entity,
@@ -39,7 +40,7 @@ void GatherAnimFacts(const World& world,
 
 void AnimFactGatherSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    GatherImpl(ctx.Entities, &ctx.Partitions, ctx.Time.TickIndex, ctx.Time.DeltaSeconds);
+    GatherImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimFactGatherSystem::Gather(World& world, AnimTick now, double tickSeconds)

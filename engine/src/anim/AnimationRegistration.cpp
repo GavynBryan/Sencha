@@ -5,6 +5,7 @@
 #include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimFactProviders.h>
 #include <anim/AnimPoseSystem.h>
+#include <anim/AnimRequestJournal.h>
 #include <anim/AnimRigBinding.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimationClipPlaybackSystem.h>
@@ -30,6 +31,8 @@ void InstallAnimationVocabulary(World& world)
         world.AddResource<AnimFactProviders>();
     if (!world.HasResource<AnimRigLimits>())
         world.AddResource<AnimRigLimits>();
+    if (!world.HasResource<AnimRequestJournal>())
+        world.AddResource<AnimRequestJournal>();
 }
 
 void RegisterAnimationCVars(ConsoleRegistry& console, World& world)

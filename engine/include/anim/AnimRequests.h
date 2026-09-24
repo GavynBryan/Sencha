@@ -37,6 +37,9 @@ struct AnimRequestDesc
     AnimRequestLifetime Lifetime = AnimRequestLifetime::Held;
     std::uint32_t FixedTicks = 0;
     std::array<std::uint32_t, kAnimRequestParams> Params{};
+    // Which params are gameplay tag ids; see AnimRequest::TagParams. The World
+    // form sets it from the rig's request schema.
+    std::uint8_t TagParams = 0;
 };
 
 enum class AnimRequestStatus : std::uint8_t

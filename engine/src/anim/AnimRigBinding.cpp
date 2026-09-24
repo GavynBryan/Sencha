@@ -3,6 +3,7 @@
 #include "AnimRigBinder.h"
 
 #include <anim/AnimFactProviders.h>
+#include <anim/AnimRigTimingIdentity.h>
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
 #include <authored/WorldVocabulary.h>
@@ -413,6 +414,7 @@ namespace
         binder.ValidateClipSkeletons();
         binder.BindEvents(*rig);
         bound.Valid = !HasAnimErrors(bound.Diagnostics);
+        bound.TimingIdentity = AnimRigTimingIdentity(bound, world.TryGetResource<GameplayTagRegistry>());
         return bound;
     }
 }

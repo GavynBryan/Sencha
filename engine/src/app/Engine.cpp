@@ -626,6 +626,7 @@ void Engine::PublishSimulationAuthority()
         ? entities.GetResource<SimulationAuthority>()
         : entities.AddResource<SimulationAuthority>();
     fact.Authoritative = NetState == nullptr || NetState->Role() != NetSessionRole::Client;
+    fact.TickOffset = !fact.Authoritative && NetClockState.HasEstimate() ? NetClockState.Offset() : 0;
 }
 
 void Engine::RefreshShellBindings()

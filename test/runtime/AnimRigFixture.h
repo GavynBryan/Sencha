@@ -31,6 +31,7 @@
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <net/NetReplicationComponents.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/ComponentRegistrar.h>
 
@@ -86,6 +87,8 @@ struct AnimRigFixture
         RegisterAnimationComponents(registrar);
         Entities.RegisterComponent<GameplayTagContainer>();
         Entities.RegisterComponent<AnimTestMotion>();
+        // So a fixture can stand for either end of a session.
+        Entities.RegisterComponent<NetReplicated>();
         InstallAnimationVocabulary(Entities);
         AnimFactProviders& providers = Entities.GetResource<AnimFactProviders>();
         (void)providers.BindField<&AnimTestMotion::Speed>("Speed");

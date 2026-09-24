@@ -24,6 +24,8 @@ std::string_view AnimDecisionCauseName(AnimDecisionCause cause)
     case AnimDecisionCause::SectionExited: return "SectionExited";
     case AnimDecisionCause::WeightChanged: return "WeightChanged";
     case AnimDecisionCause::BlendApplied: return "BlendApplied";
+    case AnimDecisionCause::TimingDisagreed: return "TimingDisagreed";
+    case AnimDecisionCause::TimingAgreed: return "TimingAgreed";
     }
     return "Unknown";
 }
@@ -71,6 +73,7 @@ std::string_view AnimChangeReasonName(AnimChangeReason reason)
     case AnimChangeReason::SectionCancelled: return "SectionCancelled";
     case AnimChangeReason::FlowAnchored: return "FlowAnchored";
     case AnimChangeReason::RequestSuperseded: return "RequestSuperseded";
+    case AnimChangeReason::RequestCorrected: return "RequestCorrected";
     }
     return "Unknown";
 }

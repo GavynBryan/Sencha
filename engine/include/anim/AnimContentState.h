@@ -26,6 +26,10 @@ struct AnimLayerContent
     // The request driving this content instance, when one does. A request
     // that supersedes it and resolves other content starts a new instance.
     AnimRequestId Request;
+    // That request's start as this layer last saw it. The same request
+    // arriving with another start is a correction -- on a client, the
+    // authority's word replacing a guess -- and restarts the instance there.
+    AnimTick RequestStartTick = 0;
     AnimTick StartTick = 0;
     GameplayTagId Behavior;
     std::uint32_t RowKey = 0;
@@ -72,6 +76,9 @@ struct SENCHA_COMPONENT("sencha.anim_content_state") AnimContentState
 {
     AnimLayerContent Layers[kAnimMaxLayers] = {};
     std::uint64_t BindingGeneration = 0;
+    // Set on a machine whose binding of the rig does not match the timing the
+    // authority stamped on its requests.
+    bool TimingDisagrees = false;
 };
 
 #if !defined(SENCHA_CODEGEN)

@@ -386,6 +386,8 @@ struct AnimBoundRig
     // Moves on every rebuild, so an inspector holding a copy can tell it is
     // looking at an older generation.
     std::uint64_t Generation = 0;
+    // What a session has to agree on about this rig; see AnimRigTimingIdentity.
+    std::uint64_t TimingIdentity = 0;
 
     [[nodiscard]] int FindSlot(std::string_view name) const;
     [[nodiscard]] const AnimBoundIntent* FindIntent(GameplayTagId intent) const;

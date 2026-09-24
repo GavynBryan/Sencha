@@ -10,6 +10,7 @@
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <jobs/JobSystem.h>
+#include <world/SimulationAuthority.h>
 
 #include <algorithm>
 
@@ -29,7 +30,7 @@ AnimPoseSystem::~AnimPoseSystem() = default;
 
 void AnimPoseSystem::PostFixed(PostFixedContext& ctx)
 {
-    PoseImpl(ctx.Entities, &ctx.Partitions, ctx.Time.TickIndex, ctx.Time.DeltaSeconds);
+    PoseImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimPoseSystem::Pose(World& world, AnimTick now, double tickSeconds)
