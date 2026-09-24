@@ -1,6 +1,7 @@
-// What the animation viewport composes from a simulated rig: every layer's
-// playing clip at its time and weight over its mask, less the layers the
-// author muted or soloed away -- a display choice that never reaches the rig.
+// What the animation viewport shows of a posed entity: the pose pass's own
+// composed pose, or the layers it posed composed again without the ones the
+// author muted or soloed away -- a display choice that never reaches the rig
+// or what the pass keeps.
 
 #include "authoring/AnimationPreviewWorkspace.h"
 
@@ -8,94 +9,94 @@
 
 #include <gtest/gtest.h>
 
-#include <string>
+#include <vector>
 
 namespace
 {
-    constexpr std::string_view kSkeleton = "asset://meshes/biped.sskel";
-
+    // Two joints; a base layer that moved joint 0 to x = 2 and an upper
+    // override, masked to joint 1, that moved it to x = 5.
     struct DisplayFixture
     {
+        SkeletonData Skeleton;
         AnimationClipCache Clips;
         AnimBoundRig Rig;
-        AnimContentState Content;
+        AnimPoseState State;
+        AnimPosePool Pool;
+        AnimPosePool::Slot* Slot = nullptr;
+        AnimPoseScratch Scratch;
 
         DisplayFixture()
         {
-            const auto clip = [&](std::string path, std::string_view skeleton) {
-                AnimationClipData data;
-                data.DurationSeconds = 1.0f;
-                data.SkeletonPath = std::string(skeleton);
-                AnimBoundContent content;
-                content.Path = path;
-                content.Clip = Clips.Register(path, std::move(data), {});
-                Rig.Contents.push_back(std::move(content));
-            };
-            clip("asset://anim/walk.sanim", kSkeleton);
-            clip("asset://anim/aim.sanim", kSkeleton);
-            clip("asset://anim/other.sanim", "asset://meshes/quadruped.sskel");
-
-            for (const char* name : { "anim.layer.base", "anim.layer.upper", "anim.layer.face" })
+            for (int parent : { -1, 0 })
+            {
+                SkeletonJoint joint;
+                joint.ParentIndex = parent;
+                Skeleton.Joints.push_back(joint);
+            }
+            for (const char* name : { "anim.layer.base", "anim.layer.upper" })
             {
                 AnimBoundLayer layer;
                 layer.NameText = name;
                 Rig.Layers.push_back(std::move(layer));
             }
-            Rig.Layers[1].Mode = AnimLayerMode::Additive;
-            Rig.Layers[1].Weight = 0.5f;
-            Rig.Layers[1].Mask = { 0, 1, 1 };
-            Content.Layers[0].Clip = 0;
-            Content.Layers[0].TimeSeconds = 0.25f;
-            Content.Layers[1].Clip = 1;
-            Content.Layers[1].TimeSeconds = 0.5f;
-            Content.Layers[2].Clip = 2;
+            Rig.Layers[1].Mask = { 0, 1 };
+            AnimBoundContent content;
+            content.Path = "asset://anim/any.sanim";
+            Rig.Contents.push_back(content);
+
+            State.Slot = Pool.Allocate(EntityId{});
+            Pool.Shape(State.Slot, 2, 2);
+            Slot = Pool.Find(State.Slot);
+            Slot->LayerPose(0)[0].Position = Vec3d(2.0f, 0.0f, 0.0f);
+            Slot->LayerPose(1)[1].Position = Vec3d(5.0f, 0.0f, 0.0f);
+            Slot->Current[0].Position = Vec3d(2.0f, 0.0f, 0.0f);
+            Slot->Current[1].Position = Vec3d(5.0f, 0.0f, 0.0f);
+            Slot->HasCurrent = true;
+            for (AnimLayerPose& layer : State.Layers)
+                layer.Playing.Content = 0;
         }
 
-        std::vector<AnimPoseLayer> Layers(const AnimationLayerDisplay& display, std::string& note)
+        std::vector<Transform3f> Shown(const AnimationLayerDisplay& display)
         {
-            return AnimationPreviewPoseLayers(Rig, Content, nullptr, Clips, display, kSkeleton, note);
+            std::vector<Transform3f> pose;
+            AnimationPreviewDisplayPose(AnimPoseSources{ &Rig, &Clips, &Skeleton }, *Slot, State, nullptr, display, 0,
+                                        1.0 / 60.0, Scratch, pose);
+            return pose;
         }
     };
 }
 
-TEST(AnimationLayerDisplay, EveryShownLayerComposesAtItsTimeWeightAndMask)
+TEST(AnimationLayerDisplay, WithEveryLayerShownItIsThePosePassesOwnPose)
 {
     DisplayFixture fx;
-    std::string note;
-    const std::vector<AnimPoseLayer> layers = fx.Layers({}, note);
-    ASSERT_EQ(layers.size(), 2u) << note;
-    EXPECT_EQ(layers[0].Clip, fx.Clips.Get(fx.Rig.Contents[0].Clip));
-    EXPECT_FLOAT_EQ(layers[0].TimeSeconds, 0.25f);
-    EXPECT_TRUE(layers[0].Mask.empty());
-    EXPECT_EQ(layers[1].Mode, AnimLayerMode::Additive);
-    EXPECT_FLOAT_EQ(layers[1].Weight, 0.5f);
-    EXPECT_EQ(layers[1].Mask.size(), 3u);
-    // The face layer's clip animates another skeleton, and the note says so.
-    EXPECT_NE(note.find("anim.layer.face: asset://anim/other.sanim animates another skeleton"), std::string::npos)
-        << note;
+    // Mark the composed pose so it can be told apart from a recomposition.
+    fx.Slot->Current[0].Position.Y = 7.0f;
+    const std::vector<Transform3f> pose = fx.Shown({});
+    ASSERT_EQ(pose.size(), 2u);
+    EXPECT_FLOAT_EQ(pose[0].Position.Y, 7.0f);
 }
 
-TEST(AnimationLayerDisplay, MuteAndSoloChooseWhatShowsWithoutTouchingTheRig)
+TEST(AnimationLayerDisplay, MuteAndSoloRecomposeWithoutTouchingThePass)
 {
     DisplayFixture fx;
-    std::string note;
-
     AnimationLayerDisplay muted;
-    muted.Muted = 0b001;
-    std::vector<AnimPoseLayer> layers = fx.Layers(muted, note);
-    ASSERT_EQ(layers.size(), 1u);
-    EXPECT_EQ(layers[0].Mode, AnimLayerMode::Additive);
+    muted.Muted = 0b10;
+    std::vector<Transform3f> pose = fx.Shown(muted);
+    EXPECT_FLOAT_EQ(pose[0].Position.X, 2.0f);
+    EXPECT_FLOAT_EQ(pose[1].Position.X, 0.0f) << "the upper layer is muted: joint 1 at bind";
 
     AnimationLayerDisplay soloed;
-    soloed.Soloed = 0b001;
-    layers = fx.Layers(soloed, note);
-    ASSERT_EQ(layers.size(), 1u);
-    EXPECT_EQ(layers[0].Mode, AnimLayerMode::Override);
+    soloed.Soloed = 0b10;
+    pose = fx.Shown(soloed);
+    EXPECT_FLOAT_EQ(pose[0].Position.X, 0.0f) << "only the upper layer: joint 0 at bind";
+    EXPECT_FLOAT_EQ(pose[1].Position.X, 5.0f);
 
     // Muting wins over a solo on the same layer.
-    soloed.Muted = 0b001;
-    EXPECT_TRUE(fx.Layers(soloed, note).empty());
+    soloed.Muted = 0b10;
+    pose = fx.Shown(soloed);
+    EXPECT_FLOAT_EQ(pose[1].Position.X, 0.0f);
 
-    EXPECT_FLOAT_EQ(fx.Rig.Layers[1].Weight, 0.5f);
-    EXPECT_EQ(fx.Content.Layers[1].Clip, 1u);
+    // What the pass keeps is unchanged.
+    EXPECT_FLOAT_EQ(fx.Slot->Current[1].Position.X, 5.0f);
+    EXPECT_FLOAT_EQ(fx.Slot->LayerPose(1)[1].Position.X, 5.0f);
 }

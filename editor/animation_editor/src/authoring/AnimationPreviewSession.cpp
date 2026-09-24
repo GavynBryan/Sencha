@@ -177,7 +177,8 @@ bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a, const Animati
     return a.Tick == b.Tick && a.Facts == b.Facts && a.FactsExact == b.FactsExact
         && SameRange(a.Requests, b.Requests, SameRequest)
         && SameRange(a.Decisions, b.Decisions, SameDecision) && a.Actions == b.Actions
-        && SameRange(a.Layers, b.Layers, sameLayer) && a.Invocations == b.Invocations;
+        && SameRange(a.Layers, b.Layers, sameLayer) && a.Invocations == b.Invocations
+        && SameRange(a.Pose, b.Pose, [](const Transform3f& x, const Transform3f& y) { return x == y; });
 }
 
 AnimationPreviewSession::AnimationPreviewSession(const DataAssetCache& data, const AnimationClipCache* clips,
@@ -727,6 +728,10 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
             DrainAnimEvents(*Preview, PendingEvents, Dispatcher.get());
             InvocationSink = nullptr;
         }
+        // The production pose pass, after everything that decides what plays.
+        Poser.Pose(*Preview, tick, TickSeconds());
+        if (const AnimPosePool::Slot* pose = SubjectPose(); pose != nullptr && pose->HasCurrent)
+            record.Pose = pose->Current;
         for (std::size_t l = 0; l < Bound->Layers.size() && l < kAnimMaxLayers; ++l)
         {
             AnimationPreviewLayerRecord layer;
@@ -851,6 +856,20 @@ const AnimRequestSet* AnimationPreviewSession::Requests() const
 {
     return Preview != nullptr && SubjectEntity.IsValid() ? Preview->TryGet<AnimRequestSet>(SubjectEntity)
                                                          : nullptr;
+}
+
+const AnimPosePool::Slot* AnimationPreviewSession::SubjectPose() const
+{
+    const AnimPoseState* state = SubjectPoseState();
+    const AnimPosePool* pool = Preview != nullptr ? Preview->TryGetResource<AnimPosePool>() : nullptr;
+    return state != nullptr && pool != nullptr ? pool->Find(state->Slot) : nullptr;
+}
+
+const AnimPoseState* AnimationPreviewSession::SubjectPoseState() const
+{
+    if (Preview == nullptr || !Preview->IsRegistered<AnimPoseState>() || !Preview->IsAlive(SubjectEntity))
+        return nullptr;
+    return static_cast<const World&>(*Preview).TryGet<AnimPoseState>(SubjectEntity);
 }
 
 const AnimSelectorState* AnimationPreviewSession::Selection() const

@@ -17,36 +17,40 @@ namespace
     }
 }
 
-void ComposeAnimPose(const SkeletonData& skeleton, std::span<const AnimPoseLayer> layers, AnimPoseScratch& scratch,
-                     std::vector<Transform3f>& out)
+void AnimBindPose(const SkeletonData& skeleton, std::vector<Transform3f>& out)
 {
     // An empty clip samples to bind.
     static const AnimationClipData kBind;
     SampleAnimationClip(kBind, skeleton, 0.0f, out);
+}
 
+void ComposeAnimPose(const SkeletonData& skeleton, std::span<const AnimPoseLayer> layers,
+                     std::vector<Transform3f>& out)
+{
+    AnimBindPose(skeleton, out);
     const std::size_t joints = skeleton.Joints.size();
     for (const AnimPoseLayer& layer : layers)
     {
         const float weight = std::clamp(layer.Weight, 0.0f, 1.0f);
-        if (layer.Clip == nullptr || weight <= 0.0f)
+        if (layer.Pose.size() < joints || weight <= 0.0f)
             continue;
-        SampleAnimationClip(*layer.Clip, skeleton, layer.TimeSeconds, scratch.Sample);
 
         if (layer.Mode == AnimLayerMode::Override)
         {
             for (std::size_t j = 0; j < joints; ++j)
                 if (Covers(layer.Mask, j))
-                    out[j] = weight >= 1.0f ? scratch.Sample[j] : Transform3f::Interpolate(out[j], scratch.Sample[j], weight);
+                    out[j] = weight >= 1.0f ? layer.Pose[j] : Transform3f::Interpolate(out[j], layer.Pose[j], weight);
             continue;
         }
 
-        SampleAnimationClip(*layer.Clip, skeleton, 0.0f, scratch.Reference);
+        if (layer.Reference.size() < joints)
+            continue;
         for (std::size_t j = 0; j < joints; ++j)
         {
             if (!Covers(layer.Mask, j))
                 continue;
-            const Transform3f& sample = scratch.Sample[j];
-            const Transform3f& reference = scratch.Reference[j];
+            const Transform3f& sample = layer.Pose[j];
+            const Transform3f& reference = layer.Reference[j];
             Transform3f& pose = out[j];
             pose.Position += (sample.Position - reference.Position) * weight;
             const Quat<float> delta = reference.Rotation.Inverse() * sample.Rotation;

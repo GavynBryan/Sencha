@@ -55,6 +55,11 @@ enum class AnimDecisionCause : std::uint8_t
     // Another weight rule now weights the layer; Rule is its index among the
     // selector's weight rules, or none for the rig's constant.
     WeightChanged,
+    // A change to what a layer plays was absorbed into its pose: Blend says
+    // how and for how long, PreviousBehavior and Behavior the change, and
+    // BlendOverridden whether a pairwise override chose it. BlendMagnitude is
+    // the largest joint offset an inertialization began from.
+    BlendApplied,
 };
 
 // What a crossed clip event led to.
@@ -140,6 +145,12 @@ struct AnimDecisionRecord
     // Section records, and section lifecycle events: the flow's sections.
     std::uint8_t Section = 0xFF;
     std::uint8_t PreviousSection = 0xFF;
+    // Blend records.
+    GameplayTagId PreviousBehavior;
+    float BlendSeconds = 0.0f;
+    float BlendMagnitude = 0.0f;
+    AnimBlendMode Blend = AnimBlendMode::Snap;
+    bool BlendOverridden = false;
 };
 
 inline constexpr std::size_t kAnimDecisionLogCapacity = 64;

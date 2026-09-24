@@ -20,6 +20,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimDecisionLog.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimFacts.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimFlowState.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimPoseState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRequestSet.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRig.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimSelectorState.h"

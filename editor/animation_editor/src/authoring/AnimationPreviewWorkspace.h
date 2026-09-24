@@ -6,7 +6,7 @@
 #include "render/AnimationPreviewScene.h"
 #include "data/DataDocument.h"
 
-#include <anim/AnimPoseComposition.h>
+#include <anim/AnimPoseEvaluation.h>
 #include <anim/Skeleton.h>
 #include <anim/SkeletonHandle.h>
 #include <core/assets/AssetLease.h>
@@ -42,17 +42,13 @@ struct AnimationLayerDisplay
     }
 };
 
-// The simulated layers as the viewport composes them: each layer's playing
-// clip at its content time and current weight, over its mask, in rig order.
-// A layer the display hides, or whose clip animates another skeleton than
-// `skeletonPath`, contributes nothing; `note` names what plays, or why a
-// layer was left out.
-[[nodiscard]] std::vector<AnimPoseLayer> AnimationPreviewPoseLayers(const AnimBoundRig& rig,
-                                                                    const AnimContentState& content,
-                                                                    const AnimSelectorState* selection,
-                                                                    const AnimationClipCache& clips,
-                                                                    const AnimationLayerDisplay& display,
-                                                                    std::string_view skeletonPath, std::string& note);
+// The pose the viewport shows of a posed entity: the pose pass's composed
+// pose, or -- with a layer muted or soloed -- the layers it posed composed
+// again without the hidden ones. Neither touches what the pass keeps.
+void AnimationPreviewDisplayPose(const AnimPoseSources& sources, const AnimPosePool::Slot& slot,
+                                 const AnimPoseState& state, const AnimSelectorState* selection,
+                                 const AnimationLayerDisplay& display, AnimTick tick, double tickSeconds,
+                                 AnimPoseScratch& scratch, std::vector<Transform3f>& out);
 
 // What the author is looking at across panels: a rule, the behavior it
 // selects, the slot row that resolves it, the content that row plays, and
@@ -174,7 +170,7 @@ private:
     [[nodiscard]] bool ApplyDocumentToPreview(DataDocument& document, std::string& status);
     // The simulation's composed pose, or the audition's.
     [[nodiscard]] const std::vector<Mat4>& ViewportPalette();
-    AnimPoseScratch PoseScratch;
+    AnimPoseScratch DisplayScratch;
     std::vector<Transform3f> SimulationLocal;
     std::vector<Mat4> SimulationModel;
     std::vector<Mat4> SimulationPalette;

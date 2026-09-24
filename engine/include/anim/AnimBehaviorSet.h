@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimTypes.h>
 #include <anim/AnimationClip.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/metadata/DataSchema.h>
@@ -34,13 +35,6 @@ enum class AnimBehaviorKind : std::uint8_t
     Flow,
     // A cyclic pose that rests at its last frame: an open door, a body.
     Hold,
-};
-
-enum class AnimBlendMode : std::uint8_t
-{
-    Inertialize,
-    Crossfade,
-    Snap,
 };
 
 enum class AnimPhasePolicy : std::uint8_t

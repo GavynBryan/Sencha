@@ -1,0 +1,12 @@
+{
+    "type": "animation.slot_map",
+    "version": 1,
+    "data": {
+        "rows": [
+            {
+                "behavior": "Anim.Golden.Hold",
+                "clip": "asset://meshes/dev/golden_rig_hold.sanim"
+            }
+        ]
+    }
+}

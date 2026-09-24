@@ -1,0 +1,12 @@
+{
+    "type": "animation.behavior_set",
+    "version": 1,
+    "data": {
+        "behaviors": [
+            {
+                "tag": "Anim.Golden.Hold",
+                "kind": "hold"
+            }
+        ]
+    }
+}

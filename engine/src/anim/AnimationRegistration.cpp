@@ -4,6 +4,7 @@
 #include <anim/AnimEventSystem.h>
 #include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimFactProviders.h>
+#include <anim/AnimPoseSystem.h>
 #include <anim/AnimRigBinding.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimationClipPlaybackSystem.h>
@@ -54,22 +55,27 @@ void RegisterAnimationCVars(ConsoleRegistry& console, World& world)
     });
 }
 
-void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging, const AnimEventHost& events)
+void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging, const AnimationHost& host)
 {
     schedule.Register<AnimationClipPlaybackSystem>();
     schedule.Register<AnimFactGatherSystem>(logging);
     schedule.Register<AnimSelectSystem>();
     schedule.Register<AnimContentSystem>();
-    AnimEventSystem& eventSystem = schedule.Register<AnimEventSystem>(events.Verbs, events.PresentsPose);
+    AnimEventSystem& eventSystem = schedule.Register<AnimEventSystem>(host.Verbs, host.PresentsPose);
     // Selection reads this tick's facts; resolution reads this tick's winners;
     // events cross the content time resolution just advanced.
     schedule.After<AnimSelectSystem, AnimFactGatherSystem>();
     schedule.After<AnimContentSystem, AnimSelectSystem>();
     schedule.After<AnimEventSystem, AnimContentSystem>();
 
-    if (events.Console != nullptr)
+    // Posing runs in the post-fixed phase, after movement has moved what it
+    // poses; nothing in the fixed phase reads it.
+    if (host.PresentsPose)
+        schedule.Register<AnimPoseSystem>(host.Jobs);
+
+    if (host.Console != nullptr)
     {
-        (void)events.Console->RegisterCVar({
+        (void)host.Console->RegisterCVar({
             .Name = "anim.events.queue_capacity",
             .Owner = "engine",
             .Type = CVarType::Int,

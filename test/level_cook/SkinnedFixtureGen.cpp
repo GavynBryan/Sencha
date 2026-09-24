@@ -150,6 +150,23 @@ TEST(SkinnedFixture, Generate)
     ASSERT_TRUE(WriteSanimToBytes(clip, clipBytes, &error)) << error;
     ASSERT_TRUE(WriteBytes(directory / "golden_rig.sanim", clipBytes));
 
+    // The same bend held: one key at exactly what the sampler makes of the
+    // clip above at 0.5s, so a rig playing it poses the upper box as a
+    // paused player does, however many ticks have run.
+    AnimationClipData hold;
+    hold.SkeletonPath = clip.SkeletonPath;
+    hold.DurationSeconds = 1.0f;
+    AnimationJointTrack held = bend;
+    held.TimesSeconds = { 0.0f };
+    const Quatf halfway = Quatf::Slerp(Quatf::FromAxisAngle(Vec3d::Right(), 0.0f),
+                                       Quatf::FromAxisAngle(Vec3d::Right(), 1.5707963f), 0.5f);
+    held.Values = { halfway.X, halfway.Y, halfway.Z, halfway.W };
+    hold.Tracks.push_back(held);
+    ASSERT_TRUE(ValidateAnimationClipData(hold, &error)) << error;
+    std::vector<std::byte> holdBytes;
+    ASSERT_TRUE(WriteSanimToBytes(hold, holdBytes, &error)) << error;
+    ASSERT_TRUE(WriteBytes(directory / "golden_rig_hold.sanim", holdBytes));
+
     std::printf("skinned fixture: %zu vertices, %u joints -> %s\n",
                 mesh.Geometry.Vertices.size(), mesh.Skinning.JointCount,
                 directory.generic_string().c_str());

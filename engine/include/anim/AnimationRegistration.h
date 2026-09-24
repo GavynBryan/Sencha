@@ -4,6 +4,7 @@
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimFacts.h>
 #include <anim/AnimFlowState.h>
+#include <anim/AnimPoseState.h>
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimRig.h>
 #include <anim/AnimSelectorState.h>
@@ -12,6 +13,7 @@
 class ComponentRegistrar;
 class ConsoleRegistry;
 class EngineSchedule;
+class JobSystem;
 class LoggingProvider;
 class VerbDispatcher;
 class World;
@@ -38,6 +40,7 @@ using AnimationComponents = ComponentSet<
     AnimSelectorState,
     AnimContentState,
     AnimFlowState,
+    AnimPoseState,
     AnimDecisionLog>;
 
 void RegisterAnimationComponents(ComponentRegistrar& registrar);
@@ -52,9 +55,10 @@ void InstallAnimationVocabulary(World& world);
 // Registered once by the process that owns `world`.
 void RegisterAnimationCVars(ConsoleRegistry& console, World& world);
 
-// What the clip event pass is composed with. Handed over rather than found:
-// the pass invokes verbs, so the host names the dispatcher it may use.
-struct AnimEventHost
+// What the animation systems are composed with. Handed over rather than
+// found: the event pass invokes verbs, so the host names the dispatcher it may
+// use, and the pose pass forks onto the host's workers.
+struct AnimationHost
 {
     // Where crossed events are offered. Null still produces and records them,
     // each answered Unavailable.
@@ -63,13 +67,17 @@ struct AnimEventHost
     // default capacity.
     ConsoleRegistry* Console = nullptr;
     // Whether this process presents a pose. Cosmetic events are produced only
-    // where one is; a headless authority produces gameplay events alone.
+    // where one is, and only there are rigs posed; a headless authority
+    // produces gameplay events alone.
     bool PresentsPose = true;
+    // Where the pose pass forks. Null poses every entity inline.
+    JobSystem* Jobs = nullptr;
 };
 
 // Clip playback, then fact gathering, selection, content resolution and clip
-// events, in that order. Rigs resolve through the World's AnimRigBindings,
+// events, in that order, and -- where a pose is presented -- posing after
+// movement. Rigs resolve through the World's AnimRigBindings,
 // which RuntimeContent publishes; `logging` is where a rig that fails to bind
 // is reported.
 void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging = nullptr,
-                              const AnimEventHost& events = {});
+                              const AnimationHost& host = {});

@@ -429,6 +429,9 @@ public:
     [[nodiscard]] const AnimBoundRig* Resolve(DataAssetHandle rig, const World& world);
 
     void Clear() { Entries.clear(); }
+    // The caches content is bound from, for what poses it.
+    [[nodiscard]] const AnimationClipCache* ClipSource() const { return Clips; }
+    [[nodiscard]] const SkeletonCache* SkeletonSource() const { return Skeletons; }
     [[nodiscard]] std::uint64_t RebuildCount() const { return Rebuilds; }
 
 private:

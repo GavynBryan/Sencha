@@ -23,6 +23,7 @@ std::string_view AnimDecisionCauseName(AnimDecisionCause cause)
     case AnimDecisionCause::SectionEntered: return "SectionEntered";
     case AnimDecisionCause::SectionExited: return "SectionExited";
     case AnimDecisionCause::WeightChanged: return "WeightChanged";
+    case AnimDecisionCause::BlendApplied: return "BlendApplied";
     }
     return "Unknown";
 }

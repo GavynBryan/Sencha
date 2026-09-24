@@ -87,3 +87,11 @@ enum class AnimCancelReason : std::uint8_t
 
 [[nodiscard]] std::string_view AnimCancelReasonName(AnimCancelReason reason);
 [[nodiscard]] std::string_view AnimRequestLifetimeName(AnimRequestLifetime lifetime);
+
+// How a change to what a layer plays is absorbed into its pose.
+enum class AnimBlendMode : std::uint8_t
+{
+    Inertialize,
+    Crossfade,
+    Snap,
+};

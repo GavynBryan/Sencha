@@ -10,12 +10,14 @@
 #include <anim/AnimSelectorData.h>
 #include <anim/AnimSlotMapData.h>
 #include <anim/AnimationClipSampling.h>
+#include <anim/AnimPoseComposition.h>
 #include <anim/SkinningPalette.h>
 #include <assets/data/DataAssetSubtype.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <authored/VerbBindingData.h>
 
 #include <algorithm>
+#include <array>
 #include <format>
 #include <filesystem>
 
@@ -610,21 +612,38 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
         ViewportNote.clear();
         return Session.Palette();
     }
-    // Every layer's resolved content at its content time, composed into
-    // scratch: the audition's clip and clock are left as they were.
+    // The pose the simulation's pose pass made, shown on the audition's
+    // skeleton when the rig poses that one; the audition's clip and clock are
+    // left as they were.
     const SkeletonData& skeleton = Session.Skeleton();
     const AnimBoundRig* rig = Simulation.Rig();
-    const AnimContentState* content = Simulation.Content();
+    const AnimPosePool::Slot* slot = Simulation.SubjectPose();
+    const AnimPoseState* state = Simulation.SubjectPoseState();
     ViewportNote.clear();
-    if (rig == nullptr || content == nullptr || skeleton.Joints.empty())
+    if (rig == nullptr || slot == nullptr || state == nullptr || !slot->HasCurrent)
     {
+        ViewportNote = rig != nullptr && rig->SkeletonPath.empty()
+            ? "The rig names no skeleton, so nothing poses it."
+            : "Nothing posed yet.";
         BuildRestSkinningPalette(skeleton, SimulationPalette);
         return SimulationPalette;
     }
-    const std::vector<AnimPoseLayer> layers = AnimationPreviewPoseLayers(
-        *rig, *content, Simulation.Selection(), Assets.AnimationClips, LayerDisplay, Session.SkeletonPath(),
-        ViewportNote);
-    ComposeAnimPose(skeleton, layers, PoseScratch, SimulationLocal);
+    if (rig->SkeletonPath != Session.SkeletonPath() || skeleton.Joints.size() != slot->Joints)
+    {
+        ViewportNote = "The rig poses " + rig->SkeletonPath + ", not the skeleton on screen; showing the bind pose.";
+        BuildRestSkinningPalette(skeleton, SimulationPalette);
+        return SimulationPalette;
+    }
+    const AnimPoseSources sources{ rig, &Assets.AnimationClips, &skeleton };
+    AnimationPreviewDisplayPose(sources, *slot, *state, Simulation.Selection(), LayerDisplay, slot->Tick,
+                                Simulation.TickSeconds(), DisplayScratch, SimulationLocal);
+    for (std::size_t l = 0; l < rig->Layers.size() && l < kAnimMaxLayers; ++l)
+    {
+        const std::uint16_t content = state->Layers[l].Playing.Content;
+        if (content < rig->Contents.size())
+            ViewportNote += std::format("{}{}: {}{}", ViewportNote.empty() ? "" : "; ", rig->Layers[l].NameText,
+                                        rig->Contents[content].Path, LayerDisplay.Shows(l) ? "" : " (hidden)");
+    }
     BuildPosedModelTransforms(skeleton, SimulationLocal, SimulationModel);
     BuildSkinningPalette(skeleton, SimulationModel, SimulationPalette);
     return SimulationPalette;
@@ -636,44 +655,38 @@ const SkeletonData* AnimationPreviewWorkspace::RigSkeleton() const
     return rig != nullptr && rig->Skeleton.IsValid() ? Assets.Skeletons.Get(rig->Skeleton) : nullptr;
 }
 
-std::vector<AnimPoseLayer> AnimationPreviewPoseLayers(const AnimBoundRig& rig, const AnimContentState& content,
-                                                      const AnimSelectorState* selection,
-                                                      const AnimationClipCache& clips,
-                                                      const AnimationLayerDisplay& display,
-                                                      std::string_view skeletonPath, std::string& note)
+void AnimationPreviewDisplayPose(const AnimPoseSources& sources, const AnimPosePool::Slot& slot,
+                                 const AnimPoseState& state, const AnimSelectorState* selection,
+                                 const AnimationLayerDisplay& display, AnimTick tick, double tickSeconds,
+                                 AnimPoseScratch& scratch, std::vector<Transform3f>& out)
 {
-    std::vector<AnimPoseLayer> layers;
-    note.clear();
-    const auto say = [&](std::string text) {
-        if (!note.empty())
-            note += "; ";
-        note += std::move(text);
-    };
-    for (std::size_t l = 0; l < rig.Layers.size() && l < kAnimMaxLayers; ++l)
+    const AnimBoundRig& rig = *sources.Rig;
+    const std::size_t layers = std::min<std::size_t>(rig.Layers.size(), slot.Layers);
+    bool everyLayer = true;
+    for (std::size_t l = 0; l < layers; ++l)
+        everyLayer = everyLayer && display.Shows(l);
+    if (everyLayer)
     {
-        const AnimBoundLayer& bound = rig.Layers[l];
-        const AnimLayerContent& layer = content.Layers[l];
-        if (!display.Shows(l) || layer.Clip >= rig.Contents.size())
-            continue;
-        const AnimBoundContent& played = rig.Contents[layer.Clip];
-        const AnimationClipData* clip = clips.Get(played.Clip);
-        if (clip == nullptr)
-            continue;
-        if (clip->SkeletonPath != skeletonPath)
-        {
-            say(std::format("{}: {} animates another skeleton than the one on screen", bound.NameText, played.Path));
-            continue;
-        }
-        AnimPoseLayer pose;
-        pose.Clip = clip;
-        pose.TimeSeconds = layer.TimeSeconds;
-        pose.Weight = AnimLayerWeight(rig, l, selection);
-        pose.Mode = bound.Mode;
-        // A mask is over the rig's skeleton; on screen is the same one or the
-        // clip would have been left out above.
-        pose.Mask = bound.Mask;
-        layers.push_back(pose);
-        say(std::format("{}: {}", bound.NameText, played.Path));
+        out = slot.Current;
+        return;
     }
-    return layers;
+    std::array<AnimPoseLayer, kAnimMaxLayers> compose{};
+    for (std::size_t l = 0; l < layers; ++l)
+    {
+        const AnimLayerPose& layer = state.Layers[l];
+        const bool plays = layer.Playing.Content != kAnimNoContent || layer.Fading;
+        if (!display.Shows(l) || !plays)
+            continue;
+        const AnimBoundLayer& bound = rig.Layers[l];
+        compose[l].Pose = slot.LayerPose(l);
+        compose[l].Weight = AnimLayerWeight(rig, l, selection);
+        compose[l].Mode = bound.Mode;
+        compose[l].Mask = bound.Mask;
+        if (bound.Mode == AnimLayerMode::Additive)
+        {
+            SampleAnimPlayback(sources, layer.Playing, tick, tickSeconds, true, scratch, scratch.References[l]);
+            compose[l].Reference = scratch.References[l];
+        }
+    }
+    ComposeAnimPose(*sources.Skeleton, std::span(compose.data(), layers), out);
 }

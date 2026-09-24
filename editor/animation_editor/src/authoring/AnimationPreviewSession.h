@@ -5,6 +5,7 @@
 #include <anim/AnimContentSystem.h>
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimEventSystem.h>
+#include <anim/AnimPoseSystem.h>
 #include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimRequests.h>
@@ -113,6 +114,9 @@ struct AnimationPreviewTickRecord
     std::vector<AnimationPreviewLayerRecord> Layers;
     // What preview recorders were handed this tick, in dispatch order.
     std::vector<AnimationPreviewInvocation> Invocations;
+    // The subject's composed local pose, empty when its rig names no loaded
+    // skeleton.
+    std::vector<Transform3f> Pose;
 };
 
 [[nodiscard]] bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a,
@@ -205,6 +209,9 @@ public:
     // The current input for a gathered fact, if the scenario sets one.
     [[nodiscard]] const AnimationScenarioValue* Input(std::string_view fact) const;
     [[nodiscard]] EntityId Subject() const { return SubjectEntity; }
+    // The subject's pose storage and pose state, once a pass has posed it.
+    [[nodiscard]] const AnimPosePool::Slot* SubjectPose() const;
+    [[nodiscard]] const AnimPoseState* SubjectPoseState() const;
     [[nodiscard]] EntityId ParticipantEntity(std::string_view name) const;
     // The participant a request source is, or empty.
     [[nodiscard]] std::string_view ParticipantName(EntityId entity) const;
@@ -280,6 +287,8 @@ private:
     // Where recorders write during a tick's drain.
     std::vector<AnimationPreviewInvocation>* InvocationSink = nullptr;
     AnimFactGatherSystem Gather;
+    // Inline: the preview is the serial reference.
+    AnimPoseSystem Poser;
     const AnimBoundRig* Bound = nullptr;
     EntityId SubjectEntity;
     std::vector<std::pair<std::string, EntityId>> Participants;

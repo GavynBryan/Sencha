@@ -258,6 +258,15 @@ TEST(GoldenImage, AClipPosesASkinnedMesh)
                  .EditorCook = true });
 }
 
+// The same pose made by a rig instead of a clip player: the rig holds the bend
+// the paused player shows, and the pose pass, the pool and extraction have to
+// carry it to the same pixels -- the reference is the clip player's own.
+TEST(GoldenImage, ARigPosesASkinnedMeshAsTheClipPlayerDoes)
+{
+    CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_rig_pose",
+                 .EditorCook = true });
+}
+
 // Authored UI over a rendered scene: the first-pixels gate.
 //
 // Four panels chosen for what they can each break on their own. An opaque one

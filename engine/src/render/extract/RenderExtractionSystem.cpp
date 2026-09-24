@@ -1,6 +1,8 @@
 #include <render/extract/RenderExtractionSystem.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 
+#include <anim/AnimPosePool.h>
+#include <anim/AnimPoseState.h>
 #include <anim/AnimationClipPlayerComponent.h>
 #include <anim/AnimationClipSampling.h>
 #include <anim/SkinningPalette.h>
@@ -251,7 +253,7 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
 {
     const SkinnedMeshCache& skinnedMeshes = *caches.SkinnedMeshes;
 
-    const auto emitSkinnedChunk = [&](auto& view, auto&& poseAt)
+    const auto emitSkinnedChunk = [&](auto& view, auto&& poseAt, double poseAlpha)
     {
         const auto renderers = view.template Read<SkinnedMeshComponent>();
 
@@ -289,7 +291,7 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
             if (skinnedPoses != nullptr)
             {
                 poseSlot = RegisterSkinnedPose(world, caches, renderer,
-                                               view.Entity(i), *skinnedPoses);
+                                               view.Entity(i), poseAlpha, *skinnedPoses);
             }
 
             MeshDrawInstance instance;
@@ -307,7 +309,8 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
     CachedSkinnedQuery->ForEachChunkIn(partitions, [&](auto& view)
     {
         const auto transforms = view.template Read<WorldTransform>();
-        emitSkinnedChunk(view, [&](uint32_t i) -> const Transform3f& { return transforms[i].Value; });
+        // Drawn where the last tick left it, so posed as the last tick left it.
+        emitSkinnedChunk(view, [&](uint32_t i) -> const Transform3f& { return transforms[i].Value; }, 1.0);
     });
 
     CachedSkinnedInterpolatedQuery->ForEachChunkIn(partitions, [&](auto& view)
@@ -315,13 +318,13 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
         const auto histories = view.template Read<WorldTransformHistory>();
         emitSkinnedChunk(view, [&](uint32_t i) {
             return ResolvePresentationPose(histories[i], interpolationAlpha);
-        });
+        }, interpolationAlpha);
     });
 }
 
 std::uint32_t RenderExtractionSystem::RegisterSkinnedPose(
     const World& world, const RenderExtractCaches& caches,
-    const SkinnedMeshComponent& renderer, EntityId entity,
+    const SkinnedMeshComponent& renderer, EntityId entity, double poseAlpha,
     SkinnedPoseFrameData& skinnedPoses)
 {
     const SkinnedMeshCache& skinnedMeshes = *caches.SkinnedMeshes;
@@ -338,21 +341,43 @@ std::uint32_t RenderExtractionSystem::RegisterSkinnedPose(
     const std::uint32_t paletteOffset =
         skinnedPoses.Instances[poseSlot].PaletteOffset;
 
-    // Pose evaluation is per rendered frame, not per tick: the player
-    // advanced its time on the fixed tick and this samples whatever it
-    // currently holds.
+    const SkeletonHandle skeletonHandle = skinnedMeshes.GetSkeletonHandle(renderer.Mesh);
     const SkeletonData* skeleton =
-        caches.Skeletons != nullptr
-            ? caches.Skeletons->Get(skinnedMeshes.GetSkeletonHandle(renderer.Mesh))
-            : nullptr;
+        caches.Skeletons != nullptr ? caches.Skeletons->Get(skeletonHandle) : nullptr;
+    if (skeleton == nullptr || skeleton->Joints.size() != skinning->JointCount)
+        return poseSlot;
+
+    // A rig's pose was made on the fixed tick by the pose pass; this copies
+    // it, between the last two ticks by the same share the entity's transform
+    // is drawn at, and never evaluates animation.
+    const AnimPosePool* pool = world.TryGetResource<AnimPosePool>();
+    const AnimPoseState* posed =
+        pool != nullptr && world.IsRegistered<AnimPoseState>() ? world.TryGet<AnimPoseState>(entity) : nullptr;
+    if (const AnimPosePool::Slot* slot = posed != nullptr ? pool->Find(posed->Slot) : nullptr;
+        slot != nullptr && slot->HasCurrent && slot->Skeleton == skeletonHandle
+        && slot->Current.size() == skeleton->Joints.size())
+    {
+        PoseScratch.resize(slot->Current.size());
+        const float share = static_cast<float>(std::clamp(poseAlpha, 0.0, 1.0));
+        for (std::size_t j = 0; j < slot->Current.size(); ++j)
+            PoseScratch[j] = slot->HasPrevious && share < 1.0f
+                ? Transform3f::Interpolate(slot->Previous[j], slot->Current[j], share)
+                : slot->Current[j];
+        BuildPosedModelTransforms(*skeleton, PoseScratch, ModelScratch);
+        BuildSkinningPalette(*skeleton, ModelScratch, PaletteScratch);
+        std::copy(PaletteScratch.begin(), PaletteScratch.end(), skinnedPoses.Palettes.begin() + paletteOffset);
+        return poseSlot;
+    }
+
+    // Scenes that name a clip directly: the player advanced its time on the
+    // fixed tick and this samples whatever it currently holds.
     const AnimationClipPlayerComponent* player =
         world.TryGet<AnimationClipPlayerComponent>(entity);
     const AnimationClipData* clip =
         (player != nullptr && caches.AnimationClips != nullptr)
             ? caches.AnimationClips->Get(player->Clip)
             : nullptr;
-    if (clip != nullptr && skeleton != nullptr
-        && skeleton->Joints.size() == skinning->JointCount)
+    if (clip != nullptr)
     {
         SampleAnimationClip(*clip, *skeleton, player->TimeSeconds, PoseScratch);
         BuildPosedModelTransforms(*skeleton, PoseScratch, ModelScratch);
