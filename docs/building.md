@@ -17,8 +17,9 @@ blocked by the root `CMakeLists.txt`.
   from the annotated headers. Only building the engine needs them; a game
   module built against an installed SDK runs the shipped binary.
 
-FetchContent pulls the rest (stb, GoogleTest, VMA, ImGui, glslang, and the cook
-encoders) automatically at configure time, gated on the relevant feature flag.
+FetchContent pulls the rest (stb, GoogleTest, VMA, ImGui, glslang, Recast/Detour,
+and the cook encoders) automatically at configure time, gated on the relevant
+feature flag.
 
 ## Quick start
 

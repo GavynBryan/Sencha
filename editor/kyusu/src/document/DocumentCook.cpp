@@ -17,6 +17,7 @@
 #include "DocumentCookReuse.h"
 #include "DocumentImportPublisher.h"
 #include "DocumentLightmapBake.h"
+#include "DocumentNavigationCook.h"
 #include "DocumentProbeBake.h"
 #include "DocumentPublication.h"
 #include "DocumentPublicationPlan.h"
@@ -62,6 +63,8 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
         return result;
     const bool runCollisionTarget = request.Selects(CookStepIds::Collision);
     const bool runReferencedAssets = request.Selects(CookStepIds::ReferencedAssets);
+    const bool runNavigation = request.Selects(CookStepIds::Navigation)
+        && request.Disposition(CookOutputFamilies::Navigation) != CookOutputDisposition::Withdraw;
     const LightingCookParams& lightmapParams = snapshot.Lighting;
     const double cellSize = request.CellSize;
     std::vector<BakeDirectLight>& bakeLights = snapshot.BakeLights;
@@ -144,6 +147,7 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     std::optional<CookedArtifact> directLightmapArtifact;
     std::optional<CookedArtifact> ambientOcclusionArtifact;
     std::optional<CookedArtifact> probeArtifact;
+    std::optional<CookedArtifact> navigationArtifact;
     std::vector<PendingCellMesh> pendingMeshes;
 
     const DocumentCookContext ctx{
@@ -158,6 +162,12 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
 
     if (!EmitCellArtifacts(ctx, cells, runCollision, pendingMeshes, cellEntities,
                            collisionEntries))
+        return result;
+
+    // Navigation reads the same cells the collision bake just consumed, so the
+    // two products agree on what is solid.
+    if (runNavigation
+        && !CookDocumentNavigation(ctx, snapshot, cells, navigationArtifact))
         return result;
 
     // One occlusion BVH over every cell's world triangles serves both bakes:
@@ -180,11 +190,20 @@ DocumentCookResult ExecuteDocumentCook(DocumentCookInput input,
     // output stays referenced instead of orphaned on disk.
     CookedCacheIndex priorIndex;
     (void)CookedCacheIndex::LoadFromFile(paths.Index.generic_string(), priorIndex);
-    const DocumentPublicationPlan plan = ResolveDocumentPublicationPlan(
+    DocumentPublicationPlan plan = ResolveDocumentPublicationPlan(
         request, /*directProduced*/ !bakeLights.empty(),
         /*aoProduced*/ !bakeLights.empty() && lightmapParams.Ao.Enabled,
         /*probesProduced*/ !probeVolumes.empty(), runCollision,
+        /*navigationProduced*/ navigationArtifact.has_value(),
         priorIndex.Find(sourceRel));
+    // A navigation step that ran and produced nothing (no settings, no
+    // geometry) supersedes the prior file rather than preserving a stale one.
+    if (runNavigation && !navigationArtifact.has_value())
+    {
+        plan.Navigation = FamilyPublication::Absent;
+        plan.PreservedNavigation.reset();
+        plan.WithdrawNavigation = true;
+    }
     std::string preserveError;
     if (!plan.ValidatePreserved(assetsRoot, &preserveError))
     {

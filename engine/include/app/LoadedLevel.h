@@ -19,6 +19,7 @@ class Logger;
 class RuntimeContent;
 class RuntimeWorld;
 struct ProbeVolumeFile;
+struct StagedSceneContent;
 struct RuntimeZoneRecord;
 
 //=============================================================================
@@ -79,9 +80,9 @@ private:
     void AttachSceneContent(RuntimeWorld& runtime,
                             RuntimeZoneRecord& zone,
                             const SmapContents& contents,
-                            const ProbeVolumeFile& probes);
-    [[nodiscard]] static AsyncZoneLoader::SceneStageFn MakeProbeStage(
-        std::string sceneFilePath, std::shared_ptr<ProbeVolumeFile> probes);
+                            StagedSceneContent& staged);
+    [[nodiscard]] static AsyncZoneLoader::SceneStageFn MakeContentStage(
+        std::string sceneFilePath, std::shared_ptr<StagedSceneContent> staged);
     // The cooked directory collision cells resolve against: the first mounted
     // root's. Levels come from one root today; when they can come from several,
     // the scene has to say which one it was loaded from.

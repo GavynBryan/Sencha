@@ -47,6 +47,7 @@ namespace
                 std::string(CookStepIds::DirectLightmap),
                 std::string(CookStepIds::AmbientOcclusion),
                 std::string(CookStepIds::IrradianceProbes),
+                std::string(CookStepIds::Navigation),
             },
             .OutputPolicies = {
                 Policy(CookOutputFamilies::Structure, CookOutputDisposition::Publish),
@@ -55,6 +56,7 @@ namespace
                 Policy(CookOutputFamilies::DirectLightmap, CookOutputDisposition::Publish),
                 Policy(CookOutputFamilies::AmbientOcclusion, CookOutputDisposition::Publish),
                 Policy(CookOutputFamilies::IrradianceProbes, CookOutputDisposition::Publish),
+                Policy(CookOutputFamilies::Navigation, CookOutputDisposition::Publish),
             },
             .BuiltIn = true,
         };
@@ -77,6 +79,7 @@ namespace
                 Policy(CookOutputFamilies::DirectLightmap, CookOutputDisposition::Publish),
                 Policy(CookOutputFamilies::AmbientOcclusion, CookOutputDisposition::Publish),
                 Policy(CookOutputFamilies::IrradianceProbes, CookOutputDisposition::Publish),
+                Policy(CookOutputFamilies::Navigation, CookOutputDisposition::Preserve),
             },
             .BuiltIn = true,
         };
@@ -91,6 +94,7 @@ namespace
                 std::string(CookStepIds::RenderMeshes),
                 std::string(CookStepIds::Collision),
                 std::string(CookStepIds::ReferencedAssets),
+                std::string(CookStepIds::Navigation),
             },
             .OutputPolicies = {
                 Policy(CookOutputFamilies::Structure, CookOutputDisposition::Publish),
@@ -99,6 +103,7 @@ namespace
                 Policy(CookOutputFamilies::DirectLightmap, CookOutputDisposition::Withdraw),
                 Policy(CookOutputFamilies::AmbientOcclusion, CookOutputDisposition::Withdraw),
                 Policy(CookOutputFamilies::IrradianceProbes, CookOutputDisposition::Withdraw),
+                Policy(CookOutputFamilies::Navigation, CookOutputDisposition::Publish),
             },
             .BuiltIn = true,
         };

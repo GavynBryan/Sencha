@@ -45,7 +45,7 @@ All movement systems run in the `FixedLogic` phase; the motor runs in the
 | # | System | Does |
 |---|--------|------|
 | 1 | `SupportTagProjectionSystem` | Mirrors last step's `SupportState` onto the `movement.grounded` tag. |
-| 2 | `AbilityActivationSystem` (AbilityKit) | Activates abilities; e.g. jump's effect grants the one-tick `movement.jump.requested` tag. |
+| 2 | `AbilityActivationSystem` (AbilityKit) | Activates abilities: actions that ask the authority for something (fire, cast, interact). Jump is not one of them; see below. |
 | 3 | `ModeRequestCollectionSystem` | Consumes granted `movement.request.*` tags into the arbitrated transition mailbox. |
 | 4 | `LocomotionModeTransitionSystem` | Applies at most one mode transition per entity: exit old session, enter new, move the active tag. |
 | 5 | `AttributeResolveSystem`, then `MovementTuningResolutionSystem` | Resolves this tick's `ResolvedMovementTuning` from the profile layers against the current facts, mode, and tags. |
@@ -68,7 +68,7 @@ Components (all POD, `engine/include/movement/MovementComponents.h`):
 | `SupportState` | `CharacterMoverPool::Drive` | locomotion, tuning resolution, gameplay | `Stable` / `Steep` / `None`, contact normal, surface entity, surface velocity. **`Steep` covers any touched-but-unsupported contact, including vertical walls** (Jolt `NotSupported` maps to it), so a wall graze surfaces the wall normal here. |
 | `Immersion` | volume systems | tuning resolution | Fraction of the capsule inside a volume. A fact, not a "swimming mode". |
 | `KinematicState` | `CharacterMoverPool::Drive` | locomotion | Full achieved world velocity, vertical channel included. A character that hit a wall does not keep the velocity it asked for. |
-| `MovementIntent` | the game's steering system, or AI | locomotion | World-space planar wish direction, magnitude = input strength. Discrete actions are *not* intent flags; they are ability activations. The engine has no producer: turning actions into intent is game code (`templates/*/src/*SteeringSystem.cpp`), ordered by `OrderMovementAfterInput<T>`. |
+| `MovementIntent` | the game's steering system, or AI | locomotion | World-space planar wish direction, magnitude = input strength, plus `Jump` (held, not edge-triggered). Jump is the one discrete action carried here, because a client must be able to replay it from a tick's input alone; actions that wait on the authority are ability activations. The engine has no producer: turning actions into intent is game code (`templates/*/src/*SteeringSystem.cpp`), ordered by `OrderMovementAfterInput<T>`. |
 | `CharacterMovement` | transition system (Mode), spawn (Profile) | everything | The authored profile handle plus the current `LocomotionModeId`. |
 | `ResolvedMovementTuning` | `MovementTuningResolutionSystem` only | locomotion, action producers | This tick's coefficients. Nothing else writes it. |
 | `LocomotionOutput` | the active mode's locomotion system | composition | Velocity plus up axis plus gravity scale. Exactly one writer per entity per tick. |
@@ -245,15 +245,15 @@ from a rising platform inherits the platform. The mailboxes are cleared by
 composition is a bug, and its value deliberately survives into the next tick
 rather than being silently dropped.
 
-Jump is the canonical action and the pattern to copy
-(`MovementRegistration.cpp`): an AbilityKit ability gated on
-`movement.grounded` and blocked by its cooldown tag; activation applies a
-0.05 s effect granting the one-tick `movement.jump.requested` tag;
-`JumpExecutionSystem` consumes the tag and writes `JumpSpeed` to the up channel
-with a `Try` write (a jump loses to an action that already claimed the
-channel). Even the jump's feel is partly authored — the template profile has a
-"Jump startup" layer conditioned on the request tag. No system hardcodes "is
-the player jumping".
+Jump is carried by `MovementIntent.Jump` rather than an ability
+(`JumpExecutionSystem.h`): a predicting client replays its own movement from
+each tick's state and input, and the ability path spawned timed effect
+entities that reconciliation cannot recreate. `StepJump` gates on support and
+the jump cooldown, and `JumpExecutionSystem` writes `JumpSpeed` to the up
+channel with a `Try` write (a jump loses to an action that already claimed the
+channel). The feel is still authored -- the template profile has a "Jump
+startup" layer conditioned on the jump request. An AI or a navigation bridge
+jumps the same way a player does: by setting the intent.
 
 ## The character motor
 

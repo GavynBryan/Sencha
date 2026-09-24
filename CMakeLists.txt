@@ -68,6 +68,12 @@ add_test(NAME net_isolation
 add_test(NAME render_isolation
     COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckRenderIsolation.cmake")
 
+# Navigation backend firewall: Recast and Detour stay behind
+# engine/src/navigation/, so every public header and the cook reach them only
+# through Sencha's own navigation types.
+add_test(NAME navigation_isolation
+    COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/cmake/CheckNavigationIsolation.cmake")
+
 # RmlUi firewall, on the same terms as the physics one: the retained authored UI
 # runtime owns RmlUi behind engine/src/ui/rml/, so every other first-party file --
 # the installed public headers above all -- stays free of it.

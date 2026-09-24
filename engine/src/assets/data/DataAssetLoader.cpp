@@ -8,24 +8,6 @@
 #include <optional>
 #include <utility>
 
-namespace
-{
-    std::string FormatValidationErrors(const std::vector<DataValidationError>& errors)
-    {
-        std::string result;
-        const size_t count = std::min<size_t>(errors.size(), 8);
-        for (size_t index = 0; index < count; ++index)
-        {
-            if (!result.empty())
-                result += "; ";
-            result += std::format("{}: {}", errors[index].Path, errors[index].Message);
-        }
-        if (errors.size() > count)
-            result += std::format("; {} more errors", errors.size() - count);
-        return result;
-    }
-}
-
 DataAssetLoader::DataAssetLoader(LoggingProvider& logging,
                                  DataAssetTypeRegistry* types,
                                  DataSchemaRegistry* schemas,
@@ -114,7 +96,7 @@ AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource
             if (!ValidateDataAgainstSchema(*dataValue, *schema, errors))
             {
                 staging.Error = std::format("data schema validation failed: {}",
-                                            FormatValidationErrors(errors));
+                                            FormatDataValidationErrors(errors));
                 return staging;
             }
         }

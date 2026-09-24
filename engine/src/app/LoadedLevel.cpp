@@ -12,6 +12,8 @@
 #include <core/config/EngineConfig.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/Logger.h>
+#include <navigation/NavigationFile.h>
+#include <navigation/ZoneNavigation.h>
 #include <ecs/World.h>
 #include <physics/ZoneCollisionLoader.h>
 #include <render/ProbeVolumeSet.h>
@@ -100,13 +102,23 @@ void LoadedLevel::ConnectCollision(CollisionShapeCache& shapes)
     PendingCollision.clear();
 }
 
+// A streamed scene's cooked siblings, read on the task thread beside the scene
+// parse and attached on the owner thread while the zone is still hidden.
+struct StagedSceneContent
+{
+    ProbeVolumeFile Probes;
+    std::optional<NavigationFile> Navigation;
+    std::string NavigationError;
+};
+
 // A streamed scene's cooked content, attached while the zone is still hidden:
-// collision from the cells the .smap carries, probes from the sibling cooked
-// file. The one body both a scene load and every world-zone recipe share.
+// collision from the cells the .smap carries, probes and navigation from the
+// sibling cooked files. The one body both a scene load and every world-zone
+// recipe share.
 void LoadedLevel::AttachSceneContent(RuntimeWorld& runtime,
                                      RuntimeZoneRecord& zone,
                                      const SmapContents& contents,
-                                     const ProbeVolumeFile& probes)
+                                     StagedSceneContent& staged)
 {
     if (PhysicsShapes != nullptr)
     {
@@ -118,18 +130,34 @@ void LoadedLevel::AttachSceneContent(RuntimeWorld& runtime,
             zone.Partition);
     }
     if (DefaultRenderPipeline* pipeline = Host.GetRenderPipeline())
-        AttachZoneProbes(pipeline->GetProbeVolumes(), zone, probes);
+        AttachZoneProbes(pipeline->GetProbeVolumes(), zone, staged.Probes);
+    if (!staged.NavigationError.empty())
+        Log.Warn("level: navigation not loaded: {}", staged.NavigationError);
+    if (staged.Navigation.has_value())
+    {
+        const ZoneNavigation* navigation =
+            AttachZoneNavigation(runtime, zone, std::move(*staged.Navigation));
+        staged.Navigation.reset();
+        if (navigation == nullptr)
+            Log.Warn("level: zone {:016x} navigation has no loadable profile", zone.Id.Value);
+        else
+            for (const std::string& diagnostic : navigation->Diagnostics())
+                Log.Warn("level: zone {:016x}: {}", zone.Id.Value, diagnostic);
+    }
 }
 
-// The task-thread half beside the scene parse: probe file IO against the
-// cooked-scene path convention.
-AsyncZoneLoader::SceneStageFn LoadedLevel::MakeProbeStage(
-    std::string sceneFilePath, std::shared_ptr<ProbeVolumeFile> probes)
+// The task-thread half beside the scene parse: file IO for the scene's cooked
+// siblings against the cooked-scene path convention.
+AsyncZoneLoader::SceneStageFn LoadedLevel::MakeContentStage(
+    std::string sceneFilePath, std::shared_ptr<StagedSceneContent> staged)
 {
-    return [probes = std::move(probes),
+    return [staged = std::move(staged),
             sceneFilePath = std::move(sceneFilePath)](const SmapContents&)
     {
-        (void)ReadZoneProbeFile(sceneFilePath, *probes);
+        (void)ReadZoneProbeFile(sceneFilePath, staged->Probes);
+        NavigationFile navigation;
+        if (ReadZoneNavigationFile(sceneFilePath, navigation, &staged->NavigationError))
+            staged->Navigation = std::move(navigation);
     };
 }
 
@@ -174,19 +202,19 @@ ConsoleResult LoadedLevel::LoadScene(std::string_view mapName)
                  preloadError);
     }
 
-    auto probes = std::make_shared<ProbeVolumeFile>();
+    auto staged = std::make_shared<StagedSceneContent>();
     const AsyncTaskHandle load = ZoneLoader->BeginLoadScene(
         kPlayZone,
         sceneAssetPath,
         assets.Assets,
         assets.Scenes,
-        MakeProbeStage(sceneFilePath, probes),
-        [this, probes](
+        MakeContentStage(sceneFilePath, staged),
+        [this, staged](
             RuntimeWorld& runtime,
             RuntimeZoneRecord& zone,
             const SmapContents& contents)
         {
-            AttachSceneContent(runtime, zone, contents, *probes);
+            AttachSceneContent(runtime, zone, contents, *staged);
             return true;
         },
         ZoneParticipation{
@@ -253,7 +281,7 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
         [this, assets = &assets, authoredRoot](const ZoneHeader& header)
         {
             const std::string scenePath = authoredRoot + "/" + header.CookedSceneRef;
-            auto probes = std::make_shared<ProbeVolumeFile>();
+            auto staged = std::make_shared<StagedSceneContent>();
 
             ZoneLoadRecipe recipe;
             // Warm the zone's assets (meshes, materials, the lightmap atlas)
@@ -266,14 +294,14 @@ ConsoleResult LoadedLevel::LoadWorld(std::string_view worldName,
             scene.AssetPath = CookedRefToAssetPath(header.CookedSceneRef);
             scene.Assets = &assets->Assets;
             scene.Scenes = &assets->Scenes;
-            scene.StageExtra = MakeProbeStage(scenePath, probes);
+            scene.StageExtra = MakeContentStage(scenePath, staged);
             scene.Finalize =
-                [this, probes](
+                [this, staged](
                     RuntimeWorld& runtime,
                     RuntimeZoneRecord& zone,
                     const SmapContents& contents)
                 {
-                    AttachSceneContent(runtime, zone, contents, *probes);
+                    AttachSceneContent(runtime, zone, contents, *staged);
                     return true;
                 };
             recipe.Scene = std::move(scene);

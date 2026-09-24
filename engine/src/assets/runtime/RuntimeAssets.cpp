@@ -5,6 +5,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <input/InputProfileData.h>
 #include <movement/MovementProfileData.h>
+#include <navigation/NavigationPolicyData.h>
 
 #include <string_view>
 #include <utility>
@@ -80,6 +81,7 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     // the same registry via Game::OnRegisterDataAssetTypes, which is what
     // makes them appear in the prebuilt Data Editor.
     RegisterMovementProfileData(DataTypes, DataSchemas);
+    RegisterNavigationPolicyData(DataTypes, DataSchemas);
     RegisterInputProfileData(DataTypes, DataSchemas);
     RegisterVerbBindingData(DataTypes, DataSchemas);
 

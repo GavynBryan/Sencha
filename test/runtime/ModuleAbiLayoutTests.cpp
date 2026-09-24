@@ -7,6 +7,7 @@
 
 #include <app/GameModuleAbi.h>  // GameModuleAbi
 #include <graphics/RenderFeature.h>  // RenderFeatureServices, RenderFrame
+#include <navigation/NavigationTypes.h>  // NavLocation, NavRegion
 
 #include <gtest/gtest.h>
 
@@ -25,6 +26,18 @@ static_assert(offsetof(GameModuleAbi, PointerBits) == 32, "GameModuleAbi layout 
 static_assert(offsetof(GameModuleAbi, BuildConfig) == 36, "GameModuleAbi layout changed");
 static_assert(sizeof(GameModuleAbi) == 40, "GameModuleAbi size changed — bump SENCHA_GAME_ABI_VERSION");
 static_assert(std::is_standard_layout_v<GameModuleAbi>, "GameModuleAbi must stay standard-layout (C-ABI readable)");
+
+// Navigation references a game holds by value between queries. Their layout is
+// compiled into the module; moving a field is an ABI change.
+static_assert(offsetof(NavLocation, Zone) == 0, "NavLocation layout changed");
+static_assert(offsetof(NavLocation, Generation) == 8, "NavLocation layout changed");
+static_assert(offsetof(NavLocation, Profile) == 12, "NavLocation layout changed");
+static_assert(offsetof(NavLocation, Ref) == 16, "NavLocation layout changed");
+static_assert(offsetof(NavLocation, Position) == 24, "NavLocation layout changed");
+static_assert(sizeof(NavLocation) == 40, "NavLocation size changed");
+static_assert(offsetof(NavRegion, Ref) == 16, "NavRegion layout changed");
+static_assert(sizeof(NavRegion) == 24, "NavRegion size changed");
+static_assert(std::is_trivially_copyable_v<NavLocation>, "NavLocation must stay a plain value");
 
 TEST(ModuleAbi, DescriptorLayoutIsFrozen)
 {

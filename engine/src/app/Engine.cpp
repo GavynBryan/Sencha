@@ -29,6 +29,7 @@
 #include <app/LevelCommands.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
+#include <navigation/NavigationSystem.h>
 #include <audio/CaptionRuntime.h>
 #include <audio/CaptionSystem.h>
 #include <core/console/ConsoleService.h>
@@ -58,6 +59,7 @@
 #ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/ConsolePanel.h>
 #include <debug/ImGuiDebugOverlay.h>
+#include <debug/NavigationPanel.h>
 #include <debug/NetStatsPanel.h>
 #include <debug/TimingPanel.h>
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
@@ -1340,6 +1342,11 @@ int Engine::Run(Game& game)
         EngineSystems.After<PauseInputSystem, InputActionResolveSystem>();
     }
 
+    // Every host gets navigation: zones that cooked none cost it an empty
+    // index, and a game reaches the queries through Schedule().Get<>().
+    EngineSystems.Register<NavigationSystem>(*RuntimeWorldState, &Jobs(),
+                                             &ConsoleState->Registry());
+
     game.OnRegisterSystems(registerSystems);
     // Every place a game binds has run.
     for (const AuthoredQueryId query : QueryDispatcherState->Unanswered())
@@ -1590,6 +1597,9 @@ void Engine::CreateDebugOverlay()
                                      PredictionState, InterpolationState,
                                      ReplicationState, PeerCommandState,
                                      ConsoleState->Registry());
+    if (const NavigationSystem* navigation = EngineSystems.Get<NavigationSystem>();
+        navigation != nullptr && RuntimeWorldState != nullptr)
+        overlay->AddPanel<NavigationPanel>(*RuntimeWorldState, *navigation);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     overlay->AddPanel<RenderStatsPanel>(
         ActiveProfileMode, RenderStatsRing, ConsoleState->Registry());

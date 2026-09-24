@@ -64,6 +64,15 @@ public:
         return Artifacts_.back();
     }
 
+    // A zone's cooked navigation: staged, located by path convention like probe
+    // volumes. Returns the recorded artifact.
+    [[nodiscard]] CookedArtifact AddNavigation(std::string assetPath, std::string relPath)
+    {
+        Artifacts_.push_back(CookedArtifact{
+            std::move(assetPath), std::move(relPath), AssetType::Navigation });
+        return Artifacts_.back();
+    }
+
     // A generated texture the scene references, preserved from a prior cook (a
     // Preserve disposition on a cook that does not rebake lighting): scene
     // referenced and path-located under .cooked like a produced atlas, but its

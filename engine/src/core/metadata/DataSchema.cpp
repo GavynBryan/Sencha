@@ -282,6 +282,17 @@ namespace
     }
 }
 
+DataFieldSchema MakeDataField(DataFieldKind kind, std::string key, std::string displayName,
+                              std::string summary)
+{
+    DataFieldSchema field;
+    field.Key = std::move(key);
+    field.DisplayName = std::move(displayName);
+    field.Summary = std::move(summary);
+    field.Kind = kind;
+    return field;
+}
+
 const DataFieldSchema* FindChild(const DataFieldSchema& parent, std::string_view key)
 {
     for (const DataFieldSchema& child : parent.Children)
@@ -300,6 +311,21 @@ bool ValidateDataAgainstSchema(const JsonValue& value,
     const bool valid = ValidateField(value, schema.Root, "$", schema.AllowUnknownFields,
                                      errors);
     return valid && errors.size() == errorCount;
+}
+
+std::string FormatDataValidationErrors(std::span<const DataValidationError> errors)
+{
+    std::string result;
+    const size_t count = std::min<size_t>(errors.size(), 8);
+    for (size_t index = 0; index < count; ++index)
+    {
+        if (!result.empty())
+            result += "; ";
+        result += std::format("{}: {}", errors[index].Path, errors[index].Message);
+    }
+    if (errors.size() > count)
+        result += std::format("; {} more errors", errors.size() - count);
+    return result;
 }
 
 bool DataSchemaRegistry::Register(DataSchema schema)

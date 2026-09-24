@@ -15,6 +15,7 @@ namespace CookStepIds
     inline constexpr std::string_view DirectLightmap = "direct_lightmap";
     inline constexpr std::string_view AmbientOcclusion = "ambient_occlusion";
     inline constexpr std::string_view IrradianceProbes = "irradiance_probes";
+    inline constexpr std::string_view Navigation = "navigation";
 }
 
 namespace CookOutputFamilies
@@ -25,6 +26,7 @@ namespace CookOutputFamilies
     inline constexpr std::string_view DirectLightmap = "direct_lightmap";
     inline constexpr std::string_view AmbientOcclusion = "ambient_occlusion";
     inline constexpr std::string_view IrradianceProbes = "irradiance_probes";
+    inline constexpr std::string_view Navigation = "navigation";
 }
 
 enum class CookOutputDisposition

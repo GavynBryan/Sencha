@@ -35,7 +35,8 @@ bool DocumentPublicationPlan::ValidatePreserved(
             *error = "preserved cook artifact is missing '" + artifact->FileRelPath + "'";
         return false;
     };
-    if (!check(PreservedDirect) || !check(PreservedAo) || !check(PreservedProbe))
+    if (!check(PreservedDirect) || !check(PreservedAo) || !check(PreservedProbe)
+        || !check(PreservedNavigation))
         return false;
     for (const CookedArtifact& blob : PreservedCollision)
     {
@@ -52,11 +53,13 @@ bool DocumentPublicationPlan::ValidatePreserved(
 
 DocumentPublicationPlan ResolveDocumentPublicationPlan(
     const DocumentCookRequest& request, bool directProduced, bool aoProduced,
-    bool probesProduced, bool collisionProduced, const CookedSourceEntry* priorEntry)
+    bool probesProduced, bool collisionProduced, bool navigationProduced,
+    const CookedSourceEntry* priorEntry)
 {
     const CookedArtifact* priorDirect = nullptr;
     const CookedArtifact* priorAo = nullptr;
     const CookedArtifact* priorProbe = nullptr;
+    const CookedArtifact* priorNavigation = nullptr;
     std::vector<const CookedArtifact*> priorCollision;
     if (priorEntry != nullptr)
         for (const CookedArtifact& artifact : priorEntry->Artifacts)
@@ -70,6 +73,8 @@ DocumentPublicationPlan ResolveDocumentPublicationPlan(
             }
             else if (artifact.Type == AssetType::ProbeVolume)
                 priorProbe = &artifact;
+            else if (artifact.Type == AssetType::Navigation)
+                priorNavigation = &artifact;
             else if (artifact.Type == AssetType::Collision)
                 priorCollision.push_back(&artifact);
         }
@@ -79,6 +84,8 @@ DocumentPublicationPlan ResolveDocumentPublicationPlan(
                                         directProduced, priorDirect);
     plan.IrradianceProbes = ResolveFamily(request, CookOutputFamilies::IrradianceProbes,
                                           probesProduced, priorProbe);
+    plan.Navigation = ResolveFamily(request, CookOutputFamilies::Navigation,
+                                    navigationProduced, priorNavigation);
     plan.Collision = ResolveFamily(request, CookOutputFamilies::Collision,
                                    collisionProduced,
                                    priorCollision.empty() ? nullptr : priorCollision.front());
@@ -104,6 +111,8 @@ DocumentPublicationPlan ResolveDocumentPublicationPlan(
         == CookOutputDisposition::Withdraw;
     plan.WithdrawProbe = request.Disposition(CookOutputFamilies::IrradianceProbes)
         == CookOutputDisposition::Withdraw;
+    plan.WithdrawNavigation = request.Disposition(CookOutputFamilies::Navigation)
+        == CookOutputDisposition::Withdraw;
 
     if (plan.DirectLightmap == FamilyPublication::Preserved)
         plan.PreservedDirect = *priorDirect;
@@ -111,6 +120,8 @@ DocumentPublicationPlan ResolveDocumentPublicationPlan(
         plan.PreservedAo = *priorAo;
     if (plan.IrradianceProbes == FamilyPublication::Preserved)
         plan.PreservedProbe = *priorProbe;
+    if (plan.Navigation == FamilyPublication::Preserved)
+        plan.PreservedNavigation = *priorNavigation;
     if (plan.Collision == FamilyPublication::Preserved)
         for (const CookedArtifact* blob : priorCollision)
             plan.PreservedCollision.push_back(*blob);
@@ -144,6 +155,8 @@ void ApplyPreservedPublication(const DocumentPublicationPlan& plan,
 
     if (plan.IrradianceProbes == FamilyPublication::Preserved)
         catalog.AddPreserved(*plan.PreservedProbe);
+    if (plan.Navigation == FamilyPublication::Preserved)
+        catalog.AddPreserved(*plan.PreservedNavigation);
     for (const CookedArtifact& blob : plan.PreservedCollision)
         catalog.AddPreserved(blob);
 }

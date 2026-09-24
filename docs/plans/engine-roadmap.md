@@ -111,7 +111,8 @@ Absent. This list is the roadmap's backlog:
   Skinned meshes cannot be drawn at all (no `SkinnedMeshComponent`, no GPU skinning).
 - Game-facing UI/HUD: the authored UI substrate is in progress (Track A item 9); until it
   lands, ImGui is debug and editor only.
-- Navigation: none. AI: none. Save games: none. Localization: none.
+- Navigation: core in progress (`docs/plans/navigation-core.md`); no Kyusu tooling yet.
+  AI: none. Save games: none. Localization: none.
 - Rendering: no transparency (opaque fallback with a warning), no post-processing
   (phase reserved, empty), no particles, no decals, no skybox, no probe GI. (Spot and
   point shadows and baked static direct lighting shipped 2026-07; hemispheric ambient
@@ -144,7 +145,7 @@ implementation exists. When a term lands as code, delete its row.
 | --- | --- | --- | --- |
 | `IZonePopulationStrategy` | CLAUDE.md | Stance only. No interface, no strategy. Not to be built until a second population policy exists (directive 4). | Deferred, Section 11 |
 | `IPoseModifier` | CLAUDE.md, superseded roadmap | Stance only. No animation runtime exists to modify poses. The superseded roadmap's "skinned mesh exists" claim was about asset data; nothing renders skinned meshes. | Track A, v1.0; seam added only with the second modifier |
-| Navigation (area classification, cost biasing, hierarchical cross-zone planner) | CLAUDE.md directive 4 | A design decision on the record, zero code. | Track A, v1.0 core; planner v2.0 |
+| Navigation (area classification, cost biasing, hierarchical cross-zone planner) | `docs/plans/navigation-core.md` | Core in progress: cook product, runtime queries and links, runtime tile rebuild. Area authoring (`BrushRole`), Kyusu tooling, and the planner are not started. | Track A, v1.0 core; planner v2.0 |
 | Binary cooked scenes | core-systems-map.md | Codec seam exists (`SceneFieldCodec::IsText()`); the asset-handle binary path asserts unimplemented. | Track F, v1.0 |
 | Transparency and post-processing phases | render pipeline | Reserved phase slots; transparency falls back to opaque with a warning, post is empty. | Track B, v1.0 |
 
@@ -279,12 +280,15 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    Gate: the Dash and Fireball fixtures from `docs/gameplay/abilitykit.md` Stage 6 run
    against real physics and animation.
 
-5. **Navigation core (v1.0).** A navmesh cooked as a sibling artifact of the level cook,
-   from the same cooked collision geometry `ZoneCollisionLoader` consumes. Area
-   classification sourced from volume brushes and surface tags; cost biasing as data; a
-   runtime path and nav-raycast query service. No authored NavPath primitive (the
-   decision already on the record in CLAUDE.md). Gate: an agent paths around cooked
-   level geometry, and an area cost change re-routes it with a data change only.
+5. **Navigation core (v1.0).** A navmesh cooked per zone as a sibling artifact of the
+   level cook, from the shared static-collision triangle source that also feeds the
+   collision bake (the cooked `.scol` is a Jolt blob and is not read). Area
+   classification enters as area volumes, sourced from `BrushRole` volumes once they
+   exist; cost biasing is policy data; a runtime query service answers projection,
+   nav-raycast, reachability, travel cost, routes with explicit link traversals, and
+   reachable-region enumeration. No authored waypoint-path primitive. Execution spec:
+   `docs/plans/navigation-core.md`. Gate: an agent paths around cooked level geometry,
+   and an area cost change re-routes it with a data change only.
 
 6. **Hierarchical cross-zone planner (v2.0).** The one greenlit irreducible abstraction:
    zone-graph planning over partition adjacency (Track C metadata), refined per zone by
@@ -814,6 +818,7 @@ the specialist doc wins.
 | `docs/assets/pipeline.md` | Execution record and deferral register for the asset pipeline items in Track F. |
 | `docs/ui/architecture.md` | Execution spec for Track A item 9: the authored UI boundary, capability profile, colour contract, and render/input placement. |
 | `docs/core-systems-map.md` | Reader's map of the current tree; not a plan. |
+| `docs/plans/navigation-core.md` | Execution spec for Track A items 5 and 6: the navigation cook product, runtime queries and links, runtime tile rebuild, and the cross-zone seam. |
 | `docs/plans/world-partition/11-zone-runtime-model.md`, `12-spatial-compilation.md` | The world graph contracts: runtime residency, crossing, authoring, cook, and validation. Canonical for Track C item 3. |
 | `docs/plans/runtime-stable-identity.md` | The persistent entity identity scheme and in-session zone state memory. The identity substrate Track A item 8, Track C item 5, Track D item 1, and Track G all join on. |
 | `docs/plans/networking.md` | Ratified execution spec for Track G: session model, module layout, protocol, replication, interest, and security posture. |

@@ -37,6 +37,7 @@ struct DocumentPublicationPlan
     FamilyPublication DirectLightmap = FamilyPublication::Absent;
     FamilyPublication AmbientOcclusion = FamilyPublication::Absent;
     FamilyPublication IrradianceProbes = FamilyPublication::Absent;
+    FamilyPublication Navigation = FamilyPublication::Absent;
 
     // Prior baked artifacts to remove because the profile withdraws the family.
     // Independent of the publication state above: withdrawal deletes a stale
@@ -44,10 +45,12 @@ struct DocumentPublicationPlan
     bool WithdrawDirect = false;
     bool WithdrawAo = false;
     bool WithdrawProbe = false;
+    bool WithdrawNavigation = false;
 
     std::optional<CookedArtifact> PreservedDirect;   // .../lightmap.stex
     std::optional<CookedArtifact> PreservedAo;        // .../ao.stex
     std::optional<CookedArtifact> PreservedProbe;     // .../probes.sprobe
+    std::optional<CookedArtifact> PreservedNavigation; // .../navigation.snav
     std::vector<CookedArtifact>   PreservedCollision; // per-cell .scol blobs
 
     [[nodiscard]] bool PreservesLighting() const
@@ -68,7 +71,7 @@ struct DocumentPublicationPlan
 [[nodiscard]] DocumentPublicationPlan ResolveDocumentPublicationPlan(
     const DocumentCookRequest& request,
     bool directProduced, bool aoProduced, bool probesProduced, bool collisionProduced,
-    const CookedSourceEntry* priorEntry);
+    bool navigationProduced, const CookedSourceEntry* priorEntry);
 
 // Applies the plan's preserved outputs into the assembling cook: re-emits the
 // ZoneLightmap entity referencing the preserved atlas (and AO plane) and records

@@ -598,8 +598,10 @@ is bounded:
 - **Collision shapes.** Cooked from the same glTF/`.blend` sources as render
   meshes — a second output of one source, which is exactly why Decision B
   keys the cooked cache source-hash → *set of outputs* from day one.
-- **Navmesh.** Baked per zone by the cook step, listed in the zone's
-  manifest (Decision D), streamed with the zone like everything else.
+- **Navmesh.** Baked per zone by the document cook's `navigation` step as
+  `<scene stem>/navigation.snav`, located beside the cooked scene by path
+  convention like probe volumes, and streamed with the zone
+  (`docs/plans/navigation-core.md`).
 - **String tables (localization).** Wanted before any game UI ships,
   because retrofitting localization is the canonical expensive mistake.
 - **VFX emitter descriptors.** Data-authored particle definitions.

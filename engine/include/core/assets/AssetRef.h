@@ -34,6 +34,9 @@ enum class AssetType : uint16_t
     // referencing it share. See docs/ui/architecture.md.
     UiPackage = 14,
     Font = 15,
+    // A zone's cooked navigation (.snav), located by the cooked-scene path
+    // convention like probe volumes.
+    Navigation = 16,
     // One past the last real kind, so a range check over the enum cannot go
     // stale the next time one is added. Never serialized, never a valid tag.
     Count,
@@ -79,6 +82,7 @@ inline std::string_view AssetTypeToString(AssetType type)
     case AssetType::Data: return "Data";
     case AssetType::UiPackage: return "UiPackage";
     case AssetType::Font: return "Font";
+    case AssetType::Navigation: return "Navigation";
     case AssetType::Unknown:
     case AssetType::Count:    break;
     }
@@ -102,6 +106,7 @@ inline bool AssetTypeFromString(std::string_view name, AssetType& out)
     if (name == "Data") { out = AssetType::Data; return true; }
     if (name == "UiPackage") { out = AssetType::UiPackage; return true; }
     if (name == "Font") { out = AssetType::Font; return true; }
+    if (name == "Navigation") { out = AssetType::Navigation; return true; }
     return false;
 }
 

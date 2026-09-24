@@ -7,6 +7,7 @@
 
 #include <assets/cook/BrushGeometryCook.h>
 #include <assets/cook/CollisionShapeCook.h>
+#include <assets/cook/StaticCollisionGeometry.h>
 #include <core/assets/AssetRef.h>
 #include <project/CookProfile.h>
 
@@ -64,20 +65,6 @@ namespace
             }) },
         });
     }
-
-    // Flatten a cell's already-triangulated faces into a position/index soup for
-    // the collision bake (cell-local, the same triangles the render mesh uses).
-    void CollectCellTriangles(const std::vector<CookFace>& faces,
-                              std::vector<Vec3d>& positions,
-                              std::vector<std::uint32_t>& indices)
-    {
-        for (const CookFace& face : faces)
-            for (const StaticMeshVertex& vertex : face.Triangles)
-            {
-                indices.push_back(static_cast<std::uint32_t>(positions.size()));
-                positions.push_back(vertex.Position);
-            }
-    }
 } // namespace
 
 bool EmitCellArtifacts(const DocumentCookContext& ctx,
@@ -131,7 +118,8 @@ bool EmitCellArtifacts(const DocumentCookContext& ctx,
         {
             std::vector<Vec3d> collisionPositions;
             std::vector<std::uint32_t> collisionIndices;
-            CollectCellTriangles(cell.Faces, collisionPositions, collisionIndices);
+            AppendCellCollisionTriangles(cell, CollisionTriangleSpace::CellLocal,
+                                         collisionPositions, collisionIndices);
             const std::vector<std::byte> collisionBlob =
                 BakeCollisionBlob(collisionPositions, collisionIndices);
             if (!collisionBlob.empty())

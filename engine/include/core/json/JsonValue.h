@@ -82,6 +82,13 @@ public:
 		return nullptr;
 	}
 
+	// The number at `key`, or `fallback` when the key is absent or not a number.
+	[[nodiscard]] double NumberOr(std::string_view key, double fallback) const
+	{
+		const JsonValue* value = Find(key);
+		return value != nullptr && value->IsNumber() ? value->AsNumber() : fallback;
+	}
+
 	// -- Size (array or object) -----------------------------------------------
 
 	[[nodiscard]] std::size_t Size() const

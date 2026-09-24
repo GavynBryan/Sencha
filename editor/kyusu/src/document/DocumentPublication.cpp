@@ -143,6 +143,9 @@ bool StageDocumentReceipt(const DocumentCookContext& ctx, std::string_view sourc
     if (published(plan.IrradianceProbes))
         receipt.PublishedOutputFamilies.push_back(
             std::string(CookOutputFamilies::IrradianceProbes));
+    if (published(plan.Navigation))
+        receipt.PublishedOutputFamilies.push_back(
+            std::string(CookOutputFamilies::Navigation));
 
     if (plan.WithdrawDirect)
         transaction.Withdraw(assetsRoot / ".cooked" / LightmapAtlasRel(stemStr));
@@ -150,6 +153,8 @@ bool StageDocumentReceipt(const DocumentCookContext& ctx, std::string_view sourc
         transaction.Withdraw(assetsRoot / ".cooked" / AoAtlasRel(stemStr));
     if (plan.WithdrawProbe)
         transaction.Withdraw(assetsRoot / ".cooked" / ProbeVolumeRel(stemStr));
+    if (plan.WithdrawNavigation)
+        transaction.Withdraw(assetsRoot / ".cooked" / NavigationRel(stemStr));
 
     PutCookStepReceipt(receipt, CookStepReceipt{
         .StepId = std::string(DocumentCookStepIds::BrushCells),
