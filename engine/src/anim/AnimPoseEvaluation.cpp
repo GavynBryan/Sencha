@@ -266,6 +266,14 @@ void AnimApplyJointOffset(const AnimJointOffset& offset, float elapsed, Transfor
     }
 }
 
+float AnimOffsetRemaining(std::span<const AnimJointOffset> offsets, float elapsed)
+{
+    float remaining = 0.0f;
+    for (const AnimJointOffset& offset : offsets)
+        remaining = std::max(remaining, std::abs(Quintic(offset.Distance, offset.Speed, offset.Seconds, elapsed)));
+    return remaining;
+}
+
 void EvaluateAnimPose(const AnimPoseInput& input, AnimPoseScratch& scratch)
 {
     const AnimBoundRig& rig = *input.Sources.Rig;

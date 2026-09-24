@@ -4,6 +4,8 @@
 
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
+#include <anim/AnimBlendOverrides.h>
+#include <anim/AnimBlendspaceData.h>
 #include <anim/AnimFlowData.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
@@ -30,6 +32,11 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std:
     DefaultMaterial = Assets.Materials.Create(material);
     DefaultMaterialLease = AssetLease::Adopt(
         AssetType::Material, Assets.Materials, DefaultMaterial.ToToken());
+    Material ghost;
+    ghost.BaseColor = Vec4(1.0f, 0.55f, 0.15f, 0.35f);
+    ghost.AlphaMode = MaterialAlphaMode::Blend;
+    GhostMaterial = Assets.Materials.Create(ghost);
+    GhostMaterialLease = AssetLease::Adopt(AssetType::Material, Assets.Materials, GhostMaterial.ToToken());
     RefreshBrowser();
 }
 
@@ -45,6 +52,8 @@ void AnimationPreviewWorkspace::RefreshBrowser()
     BehaviorSetPaths.clear();
     SlotMapPaths.clear();
     FlowPaths.clear();
+    BlendspacePaths.clear();
+    BlendOverridePaths.clear();
     FactSchemaPaths.clear();
     for (const auto& [path, record] : Assets.Registry.Records())
     {
@@ -71,12 +80,17 @@ void AnimationPreviewWorkspace::RefreshBrowser()
                 SlotMapPaths.push_back(path);
             else if (subtype == kAnimFlowType)
                 FlowPaths.push_back(path);
+            else if (subtype == kAnimBlendspaceType)
+                BlendspacePaths.push_back(path);
+            else if (subtype == kAnimBlendOverridesType)
+                BlendOverridePaths.push_back(path);
             else if (subtype == kAnimFactSchemaType)
                 FactSchemaPaths.push_back(path);
         }
     }
     for (auto* paths : { &MeshPaths, &SkeletonPaths, &ClipPaths, &MaterialPaths, &RequestSchemaPaths,
-                         &RigPaths, &SelectorPaths, &BehaviorSetPaths, &SlotMapPaths, &FlowPaths, &FactSchemaPaths })
+                         &RigPaths, &SelectorPaths, &BehaviorSetPaths, &SlotMapPaths, &FlowPaths, &BlendspacePaths,
+                         &BlendOverridePaths, &FactSchemaPaths })
         std::sort(paths->begin(), paths->end());
 }
 
@@ -100,11 +114,12 @@ bool AnimationPreviewWorkspace::OpenAnimationDocument(const std::string& path)
     if (!document) return false;
     static constexpr std::string_view kEditable[] = { kAnimRequestSchemaType, kAnimRigType, kAnimSelectorType,
                                                       kAnimBehaviorSetType, kAnimSlotMapType, kAnimFlowType,
+                                                      kAnimBlendspaceType, kAnimBlendOverridesType,
                                                       kAnimFactSchemaType, kVerbBindingsTypeName };
     if (std::find(std::begin(kEditable), std::end(kEditable), document->Subtype()) == std::end(kEditable))
     {
-        DocumentError = "Select an animation asset: a rig, schema, behavior set, selector, slot map, flow or "
-                        "bindings.";
+        DocumentError = "Select an animation asset: a rig, schema, behavior set, selector, slot map, flow, "
+                        "blendspace, blend overrides or bindings.";
         return false;
     }
     Documents.push_back(std::move(document));
@@ -602,7 +617,78 @@ void AnimationPreviewWorkspace::Frame(double wallSeconds)
         else
             Scene.Queue.AddOpaque(item);
     }
+    // Take A drawn translucent where the simulation stands.
+    if (const std::vector<Mat4>* ghost = GhostPalette(); ghost != nullptr && ghost->size() == palette.size())
+    {
+        const auto ghostSlot = Scene.Poses->AppendInstance(mesh, RenderEntityKey{ .Scope = 2, .Entity = {} },
+                                                          static_cast<std::uint32_t>(ghost->size()));
+        std::copy(ghost->begin(), ghost->end(),
+                  Scene.Poses->Palettes.begin() + Scene.Poses->Instances[ghostSlot].PaletteOffset);
+        if (const auto* ghostMaterial = Assets.Materials.Get(GhostMaterial))
+            for (std::size_t section = 0; section < geometry->Sections.size(); ++section)
+            {
+                RenderQueueItem item;
+                item.SkinnedMesh = mesh;
+                item.Material = GhostMaterial;
+                item.SectionIndex = static_cast<std::uint32_t>(section);
+                item.WorldBounds = geometry->LocalBounds;
+                item.PoseSlot = ghostSlot;
+                item.Pipeline = SelectOpaquePipeline(*ghostMaterial);
+                item.Pass = ResolveMaterialPass(*ghostMaterial);
+                Scene.Queue.AddTransparent(item);
+            }
+    }
     Scene.Queue.SortOpaque();
+}
+
+std::optional<AnimTick> AnimationPreviewWorkspace::ShownTick() const
+{
+    const auto& history = Simulation.History();
+    if (history.empty())
+        return std::nullopt;
+    if (Navigation.InspectRecord && *Navigation.InspectRecord < history.size())
+        return history[*Navigation.InspectRecord].Tick;
+    return history.back().Tick;
+}
+
+bool AnimationPreviewWorkspace::RecordTakeA()
+{
+    if (!Simulation.IsOpen() || Simulation.History().empty())
+        return false;
+    TakeA = RecordAnimationPoseTake(Simulation, "A");
+    Comparison = {};
+    return !TakeA->Ticks.empty();
+}
+
+bool AnimationPreviewWorkspace::ReplayAgainstTakeA()
+{
+    if (!TakeA || TakeA->Ticks.empty() || !Simulation.IsOpen())
+        return false;
+    Simulation.Pause();
+    Simulation.Restart();
+    Simulation.RunTo(TakeA->Ticks.back());
+    Comparison = CompareAnimationPoseTakes(*TakeA, RecordAnimationPoseTake(Simulation, "B"));
+    return Comparison.Refusal.empty();
+}
+
+void AnimationPreviewWorkspace::ClearTakeA()
+{
+    TakeA.reset();
+    Comparison = {};
+}
+
+const std::vector<Mat4>* AnimationPreviewWorkspace::GhostPalette()
+{
+    if (!TakeA || !ShowGhost || ViewportSource != AnimationViewportSource::Simulation)
+        return nullptr;
+    const std::optional<AnimTick> tick = ShownTick();
+    const std::vector<Transform3f>* pose = tick ? TakeA->At(*tick) : nullptr;
+    const SkeletonData& skeleton = Session.Skeleton();
+    if (pose == nullptr || pose->size() != skeleton.Joints.size())
+        return nullptr;
+    BuildPosedModelTransforms(skeleton, *pose, GhostModel);
+    BuildSkinningPalette(skeleton, GhostModel, GhostPaletteScratch);
+    return &GhostPaletteScratch;
 }
 
 const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
@@ -635,8 +721,14 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
         return SimulationPalette;
     }
     const AnimPoseSources sources{ rig, &Assets.AnimationClips, &skeleton };
-    AnimationPreviewDisplayPose(sources, *slot, *state, Simulation.Selection(), LayerDisplay, slot->Tick,
-                                Simulation.TickSeconds(), DisplayScratch, SimulationLocal);
+    const auto& history = Simulation.History();
+    if (Navigation.InspectRecord && *Navigation.InspectRecord < history.size()
+        && history[*Navigation.InspectRecord].Pose.size() == skeleton.Joints.size())
+        // A recorded tick shows the pose the pass made then, composed.
+        SimulationLocal = history[*Navigation.InspectRecord].Pose;
+    else
+        AnimationPreviewDisplayPose(sources, *slot, *state, Simulation.Selection(), LayerDisplay, slot->Tick,
+                                    Simulation.TickSeconds(), DisplayScratch, SimulationLocal);
     for (std::size_t l = 0; l < rig->Layers.size() && l < kAnimMaxLayers; ++l)
     {
         const std::uint16_t content = state->Layers[l].Playing.Content;

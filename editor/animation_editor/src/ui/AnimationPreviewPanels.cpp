@@ -1,6 +1,7 @@
 #include "AnimationPreviewPanels.h"
 
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "ui/AnimationBlendPanels.h"
 #include "ui/AnimationEventPanels.h"
 #include "ui/AnimationLayerPanels.h"
 #include "ui/AnimationRequestSchemaPanel.h"
@@ -39,6 +40,8 @@ public:
                 { "Behavior sets", &Workspace.BehaviorSetPaths },
                 { "Slot maps", &Workspace.SlotMapPaths },
                 { "Flows", &Workspace.FlowPaths },
+                { "Blendspaces", &Workspace.BlendspacePaths },
+                { "Blend overrides", &Workspace.BlendOverridePaths },
                 { "Fact schemas", &Workspace.FactSchemaPaths },
                 { "Request schemas", &Workspace.RequestSchemaPaths },
                 { "Rigs (as documents)", &Workspace.RigPaths },
@@ -231,6 +234,7 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     AddAnimationSelectionPanels(ui, workspace);
     AddAnimationEventPanels(ui, workspace);
     AddAnimationLayerPanels(ui, workspace);
+    AddAnimationBlendPanels(ui, workspace);
     auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace);
     auto* requestSchemaPanel = requestSchema.get();
     ui.AddPanel(std::move(requestSchema));

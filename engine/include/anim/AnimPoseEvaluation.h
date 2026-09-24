@@ -74,6 +74,9 @@ void SampleAnimPlayback(const AnimPoseSources& sources, const AnimLayerPlayback&
 // Applies what remains of `offset` after `elapsed` seconds to `pose`.
 void AnimApplyJointOffset(const AnimJointOffset& offset, float elapsed, Transform3f& pose);
 
+// The largest translation any of `offsets` still carries `elapsed` seconds in.
+[[nodiscard]] float AnimOffsetRemaining(std::span<const AnimJointOffset> offsets, float elapsed);
+
 struct AnimPoseInput
 {
     AnimPoseSources Sources;

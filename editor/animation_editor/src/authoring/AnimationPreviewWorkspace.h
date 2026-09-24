@@ -1,5 +1,6 @@
 #pragma once
 
+#include "authoring/AnimationBlendComparison.h"
 #include "authoring/AnimationClipEventsDocument.h"
 #include "authoring/AnimationClipPreviewSession.h"
 #include "authoring/AnimationPreviewSession.h"
@@ -113,6 +114,16 @@ public:
     bool OpenRig(const std::string& path);
     // Writes the working scenario to its sidecar. Explicit: nothing else does.
     bool SaveScenario();
+
+    // A/B of blends: take A is the simulation's pose on every kept tick under
+    // the working scenario. Replaying runs the scenario again from tick 0 to
+    // A's last tick -- the same inputs, clock, seed and start pose, with
+    // whatever has been edited since -- and compares it to A.
+    bool RecordTakeA();
+    bool ReplayAgainstTakeA();
+    void ClearTakeA();
+    // The tick the viewport shows: the inspected record's, else the latest.
+    [[nodiscard]] std::optional<AnimTick> ShownTick() const;
     // Discards the working scenario for the saved one.
     bool ReloadScenario();
     [[nodiscard]] const DataAssetCache& DataCache() const;
@@ -132,6 +143,8 @@ public:
     std::vector<std::string> BehaviorSetPaths;
     std::vector<std::string> SlotMapPaths;
     std::vector<std::string> FlowPaths;
+    std::vector<std::string> BlendspacePaths;
+    std::vector<std::string> BlendOverridePaths;
     std::vector<std::string> FactSchemaPaths;
     // Per document path: whether the preview runs its working version, or its
     // last valid one and why.
@@ -139,6 +152,10 @@ public:
     AnimationNavigation Navigation;
     AnimationViewportSource ViewportSource = AnimationViewportSource::Audition;
     AnimationLayerDisplay LayerDisplay;
+    std::optional<AnimationPoseTake> TakeA;
+    AnimationPoseComparison Comparison;
+    // Draws take A's pose on the shown tick over the simulation's.
+    bool ShowGhost = true;
     std::string ViewportNote;
     std::vector<std::unique_ptr<DataDocument>> Documents;
     std::size_t ActiveDocument = 0;
@@ -171,6 +188,12 @@ private:
     // The simulation's composed pose, or the audition's.
     [[nodiscard]] const std::vector<Mat4>& ViewportPalette();
     AnimPoseScratch DisplayScratch;
+    // Take A's pose on the shown tick, when the ghost is drawn.
+    [[nodiscard]] const std::vector<Mat4>* GhostPalette();
+    std::vector<Mat4> GhostModel;
+    std::vector<Mat4> GhostPaletteScratch;
+    MaterialHandle GhostMaterial;
+    AssetLease GhostMaterialLease;
     std::vector<Transform3f> SimulationLocal;
     std::vector<Mat4> SimulationModel;
     std::vector<Mat4> SimulationPalette;

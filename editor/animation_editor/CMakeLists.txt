@@ -1,5 +1,6 @@
 add_library(animation_authoring STATIC
     src/authoring/AnimationClipEventsDocument.cpp
+    src/authoring/AnimationBlendComparison.cpp
     src/authoring/AnimationClipPreviewSession.cpp
     src/authoring/AnimationEventBindings.cpp
     src/authoring/AnimationFlowEdits.cpp
@@ -19,6 +20,7 @@ add_executable(animation_editor
     src/AnimationEditorApp.cpp
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
+    src/ui/AnimationBlendPanels.cpp
     src/ui/AnimationDocumentActions.cpp
     src/ui/AnimationEventPanels.cpp
     src/ui/AnimationLayerPanels.cpp
