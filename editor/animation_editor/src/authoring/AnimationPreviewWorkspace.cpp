@@ -16,16 +16,21 @@
 #include <anim/SkinningPalette.h>
 #include <assets/data/DataAssetSubtype.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <core/assets/AssetRegistry.h>
+#include <core/json/JsonFormat.h>
 #include <authored/VerbBindingData.h>
 
 #include <algorithm>
 #include <array>
 #include <format>
 #include <filesystem>
+#include <fstream>
 
-AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary)
+AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary,
+                                                     std::filesystem::path authoringRoot)
     : Simulation(assets.DataAssets, &assets.AnimationClips, std::move(vocabulary), &assets.Skeletons)
     , Assets(assets)
+    , AuthoringRoot(std::move(authoringRoot))
 {
     Material material;
     material.BaseColor = Vec4(0.65f, 0.7f, 0.8f, 1.0f);
@@ -655,6 +660,65 @@ std::optional<AnimTick> AnimationPreviewWorkspace::ShownTick() const
     if (Navigation.InspectRecord && *Navigation.InspectRecord < history.size())
         return history[*Navigation.InspectRecord].Tick;
     return history.back().Tick;
+}
+
+bool AnimationPreviewWorkspace::CreateRig(const AnimationRigRecipe& recipe, std::string& error)
+{
+    if (AuthoringRoot.empty())
+    {
+        error = "No project content root is open to write the rig into.";
+        return false;
+    }
+    const AnimationRigPlan plan = PlanAnimationRig(recipe, Assets.AnimationClips);
+    if (!plan.Error.empty())
+    {
+        error = plan.Error;
+        return false;
+    }
+    for (const AnimationNewDocument& document : plan.Documents)
+        if (std::filesystem::exists(AuthoringRoot / document.RelativePath)
+            || Assets.Registry.Contains("asset://" + document.RelativePath))
+        {
+            error = std::format("'{}' already exists; choose another name.", document.RelativePath);
+            return false;
+        }
+
+    std::error_code ec;
+    std::filesystem::create_directories((AuthoringRoot / plan.RigPath.substr(8)).parent_path(), ec);
+    const auto write = [&](const AnimationNewDocument& document) {
+        const std::filesystem::path file = AuthoringRoot / document.RelativePath;
+        std::ofstream out(file, std::ios::binary);
+        out << JsonFormat(document.Root, 4) << "\n";
+        return out.good() ? file : std::filesystem::path();
+    };
+    for (const AnimationNewDocument& document : plan.Documents)
+    {
+        const std::filesystem::path file = write(document);
+        if (file.empty())
+        {
+            error = std::format("Could not write '{}'.", document.RelativePath);
+            return false;
+        }
+        AssetRecord record;
+        record.Type = AssetType::Data;
+        record.SourceKind = AssetSourceKind::File;
+        record.Path = "asset://" + document.RelativePath;
+        record.FilePath = file.generic_string();
+        (void)Assets.Registry.RegisterOrVerify(record);
+    }
+    if (write(plan.Scenario).empty())
+    {
+        error = std::format("Could not write '{}'.", plan.Scenario.RelativePath);
+        return false;
+    }
+    RefreshBrowser();
+    if (!OpenRig(plan.RigPath))
+    {
+        error = ScenarioError;
+        return false;
+    }
+    error.clear();
+    return true;
 }
 
 bool AnimationPreviewWorkspace::RecordTakeA()

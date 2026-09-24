@@ -56,6 +56,7 @@ public:
         Assets = std::make_unique<RuntimeAssets>(engine.Logging(), graphics.Buffers,
             graphics.Images, graphics.Descriptors, graphics.Samplers, engine.SceneSerializers());
         std::string error;
+        std::filesystem::path authoringRoot;
         if (projectPath)
         {
             ProjectDescriptor project;
@@ -64,6 +65,8 @@ public:
                 MountProjectContent(project, *Assets, engine.Logging(), &engine.Jobs());
                 MountEngineContent(*Assets, engine.Logging(), &engine.Jobs());
                 LoadModuleVocabulary(project);
+                if (!project.ContentRoots.empty())
+                    authoringRoot = project.ContentRoots.front();
             }
         }
         else
@@ -74,7 +77,7 @@ public:
         std::function<void(World&)> vocabulary;
         if (GameModule.IsValid())
             vocabulary = [game = GameModule.Instance](World& world) { game->OnRegisterVocabulary(world); };
-        Workspace = std::make_unique<AnimationPreviewWorkspace>(*Assets, std::move(vocabulary));
+        Workspace = std::make_unique<AnimationPreviewWorkspace>(*Assets, std::move(vocabulary), authoringRoot);
         Workspace->Error = std::move(error);
         if (Workspace->Error.empty())
         {

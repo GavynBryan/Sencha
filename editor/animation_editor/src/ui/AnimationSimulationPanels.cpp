@@ -7,6 +7,7 @@
 #include "ui/ScopedPanel.h"
 
 #include <anim/AnimFactEvaluation.h>
+#include <anim/AnimationClipCache.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <imgui.h>
@@ -106,6 +107,8 @@ public:
                 if (ImGui::Selectable(path.c_str(), path == Workspace.RigPath)) Workspace.OpenRig(path);
             if (Workspace.RigPaths.empty()) ImGui::TextDisabled("No animation.rig assets in the mounted project.");
         }
+        if (ImGui::CollapsingHeader("New rig"))
+            DrawNewRig();
         if (!Workspace.ScenarioError.empty())
             ImGui::TextWrapped("%s", Workspace.ScenarioError.c_str());
 
@@ -180,10 +183,61 @@ public:
 
     }
 private:
+    // A name and the clips to play, in the order ticked: the first idles, the
+    // rest play while a request of their name is held.
+    void DrawNewRig()
+    {
+        ImGui::TextWrapped("Writes a behavior set, slot map, request schema, rig and scenario into the "
+                           "project, then opens the rig ready to play.");
+        (void)SubmitText("Name", NewRigName);
+        const AnimationClipCache& clips = Workspace.Clips();
+        const auto skeletonOf = [&](const std::string& path) {
+            const AnimationClipData* clip = clips.Get(clips.Find(path));
+            return clip != nullptr ? clip->SkeletonPath : std::string();
+        };
+        const std::string skeleton = NewRigClips.empty() ? std::string() : skeletonOf(NewRigClips.front());
+        if (ImGui::BeginChild("clips", ImVec2(0.0f, 140.0f), ImGuiChildFlags_Borders))
+        {
+            for (const std::string& path : Workspace.ClipPaths)
+            {
+                const auto chosen = std::find(NewRigClips.begin(), NewRigClips.end(), path);
+                bool ticked = chosen != NewRigClips.end();
+                // One rig poses one skeleton: once a clip is chosen, clips of
+                // another cannot join it.
+                ImGui::BeginDisabled(!ticked && !skeleton.empty() && skeletonOf(path) != skeleton);
+                const std::string label = ticked && chosen == NewRigClips.begin() ? path + "  (idle)" : path;
+                if (ImGui::Checkbox(label.c_str(), &ticked))
+                {
+                    if (ticked)
+                        NewRigClips.push_back(path);
+                    else
+                        NewRigClips.erase(chosen);
+                }
+                ImGui::EndDisabled();
+            }
+        }
+        ImGui::EndChild();
+        ImGui::BeginDisabled(NewRigName.empty() || NewRigClips.empty());
+        if (ImGui::Button("Create rig"))
+        {
+            if (Workspace.CreateRig({ NewRigName, NewRigClips }, NewRigError))
+            {
+                NewRigName.clear();
+                NewRigClips.clear();
+            }
+        }
+        ImGui::EndDisabled();
+        if (!NewRigError.empty())
+            ImGui::TextWrapped("%s", NewRigError.c_str());
+    }
+
     AnimationPreviewWorkspace& Workspace;
     std::string NewParticipant;
     std::string NewTag;
     std::string TagError;
+    std::string NewRigName;
+    std::vector<std::string> NewRigClips;
+    std::string NewRigError;
 };
 
 class FactsPanel final : public IEditorPanel

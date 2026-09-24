@@ -10,6 +10,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationPreviewSession.cpp
     src/authoring/AnimationPreviewWorkspace.cpp
     src/authoring/AnimationRigEdits.cpp
+    src/authoring/AnimationRigRecipe.cpp
     src/authoring/AnimationRigOutline.cpp
     src/authoring/AnimationScenario.cpp
     src/authoring/AnimationSelectorEdits.cpp)

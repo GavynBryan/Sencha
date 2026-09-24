@@ -96,9 +96,21 @@ its sidecar when one exists.
 
 The editor runs without a game module, so names a module would declare are not
 known here. A scenario may list `declared_tags` as preview fixtures; they are
-registered only in the preview World and shown as fixtures. Nothing a scenario
-names is registered on its behalf: an unknown fact, intent, parameter or tag is
-a located problem.
+registered only in the preview World, and **Rig and scenario** adds and removes
+them (the session replays to the current tick under the new names). Nothing a
+scenario names is registered on its behalf: an unknown fact, intent, parameter
+or tag is a located problem.
+
+**New rig** in the same panel starts a rig from a name and the clips it plays,
+ticked in order. It writes `animation/<name>/` into the project's first
+content root -- a behavior set, a slot map, a request schema, the rig and its
+scenario -- and opens it ready to play: the first clip idles, each other clip
+plays while a request of its name (`Anim.<Clip>`) is held, and the scenario
+declares those names. The skeleton is the clips' own; clips of different
+skeletons cannot share a rig. It never overwrites.
+
+The engine's own content root is mounted after the project's, as at runtime,
+so a rig may extend `asset://animation/engine.facts.sdata`.
 
 The fixture project ships `asset://animation/hero.rig.sdata` with a
 landing-and-reload scenario beside it:
@@ -312,10 +324,7 @@ the staging by [docs/plans/animation-authoring.md](../../docs/plans/animation-au
 These are required implementation work, not capabilities of the current editor:
 
 1. Remaining from the facts/requests stage: rig and fact-schema panes in this
-   editor (they are authored in Data Editor today), a command that creates a
-   rig with its behavior set, slot map and scenario, adding and removing a
-   scenario's fixture tags here, tag-set inputs, and mounting the engine's own
-   content so a rig can extend the engine fact schema in this editor. Root
+   editor (they are authored in Data Editor today) and tag-set inputs. Root
    metadata lands with its consumer in the root-motion stage.
 2. Remaining from the selection stage: a behavior-set and slot-map pane (they
    edit in Data Editor today, and valid edits there still need a reload here),

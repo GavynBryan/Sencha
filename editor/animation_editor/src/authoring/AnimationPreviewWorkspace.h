@@ -3,6 +3,7 @@
 #include "authoring/AnimationBlendComparison.h"
 #include "authoring/AnimationClipEventsDocument.h"
 #include "authoring/AnimationClipPreviewSession.h"
+#include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationPreviewSession.h"
 #include "render/AnimationPreviewScene.h"
 #include "data/DataDocument.h"
@@ -13,6 +14,7 @@
 #include <core/assets/AssetLease.h>
 #include <math/Mat.h>
 
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <string>
@@ -77,7 +79,10 @@ class AnimationPreviewWorkspace
 public:
     // `vocabulary` installs the project's names -- tags, verbs -- into each
     // preview World; the application passes its loaded module's hook.
-    explicit AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary = {});
+    // `authoringRoot` is the content root new assets are written into; empty
+    // makes this a workspace that creates nothing.
+    explicit AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary = {},
+                                       std::filesystem::path authoringRoot = {});
     void RefreshBrowser();
     bool SelectMesh(const std::string& path);
     bool SelectSkeleton(const std::string& path);
@@ -117,6 +122,10 @@ public:
     bool OpenRig(const std::string& path);
     // Writes the working scenario to its sidecar. Explicit: nothing else does.
     bool SaveScenario();
+    // Writes a new rig from `recipe` into the authoring root -- its behavior
+    // set, slot map, request schema, the rig and a scenario -- registers it
+    // and opens it. Refuses to overwrite; `error` says why it did not.
+    bool CreateRig(const AnimationRigRecipe& recipe, std::string& error);
 
     // A/B of blends: take A is the simulation's pose on every kept tick under
     // the working scenario. Replaying runs the scenario again from tick 0 to
@@ -208,6 +217,7 @@ private:
     std::vector<Mat4> SimulationPalette;
     std::vector<Mat4> ViewportModelTransforms;
     RuntimeAssets& Assets;
+    std::filesystem::path AuthoringRoot;
     AssetLease RigLease;
     AssetLease MeshLease;
     AssetLease SkeletonLease;
