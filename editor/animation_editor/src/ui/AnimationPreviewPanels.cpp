@@ -1,5 +1,6 @@
 #include "AnimationPreviewPanels.h"
 
+#include "authoring/AnimationJointPicking.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "ui/AnimationBlendPanels.h"
 #include "ui/AnimationEventPanels.h"
@@ -115,7 +116,10 @@ public:
             Workspace.ViewportSource = static_cast<AnimationViewportSource>(source);
             ImGui::SameLine();
         }
-        ImGui::TextDisabled("Drag to orbit; wheel to zoom");
+        ImGui::Checkbox("Joints", &ShowJoints);
+        ImGui::SameLine();
+        ImGui::TextDisabled(ShowJoints ? "Drag to orbit; click a joint to select it, right-click to mask"
+                                       : "Drag to orbit; wheel to zoom");
         if (Workspace.ViewportSource == AnimationViewportSource::Simulation && !Workspace.ViewportNote.empty())
             ImGui::TextWrapped("%s", Workspace.ViewportNote.c_str());
         const auto size = ImGui::GetContentRegionAvail();
@@ -126,19 +130,90 @@ public:
         const auto position = ImGui::GetCursorScreenPos();
         ImGui::Image(texture, size);
         ImGui::SetCursorScreenPos(position);
-        ImGui::InvisibleButton("orbit", size, ImGuiButtonFlags_MouseButtonLeft);
-        if (ImGui::IsItemHovered()) Viewport->Zoom(ImGui::GetIO().MouseWheel);
+        ImGui::InvisibleButton("orbit", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+        const bool hovered = ImGui::IsItemHovered();
+        if (hovered) Viewport->Zoom(ImGui::GetIO().MouseWheel);
         if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f))
         {
             const auto delta = ImGui::GetIO().MouseDelta;
             Viewport->Orbit(delta.x * 0.01f, -delta.y * 0.01f);
         }
+        if (ShowJoints)
+            DrawJoints(position, size, hovered);
     }
+
+private:
+    // Joint markers over the image, bones to their parents, the selected
+    // joint named. A click that did not orbit picks; a right-click picks and
+    // offers the mask steps.
+    void DrawJoints(ImVec2 origin, ImVec2 size, bool hovered)
+    {
+        const SkeletonData& skeleton = Workspace.Session.Skeleton();
+        const std::vector<AnimationJointMarker> markers = ProjectAnimationJoints(
+            Workspace.ViewportModel(), Viewport->ViewCamera(size.x / size.y).ViewProjection, size.x, size.y);
+        std::vector<const AnimationJointMarker*> byJoint(skeleton.Joints.size(), nullptr);
+        for (const AnimationJointMarker& marker : markers)
+            if (marker.Joint < byJoint.size())
+                byJoint[marker.Joint] = &marker;
+
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        draw->PushClipRect(origin, ImVec2(origin.x + size.x, origin.y + size.y), true);
+        const ImU32 bone = IM_COL32(120, 200, 255, 160);
+        const ImU32 joint = IM_COL32(120, 200, 255, 255);
+        const ImU32 picked = IM_COL32(255, 170, 60, 255);
+        for (const AnimationJointMarker& marker : markers)
+        {
+            const std::int32_t parent = skeleton.Joints[marker.Joint].ParentIndex;
+            if (parent >= 0 && byJoint[static_cast<std::size_t>(parent)] != nullptr)
+            {
+                const AnimationJointMarker& from = *byJoint[static_cast<std::size_t>(parent)];
+                draw->AddLine(ImVec2(origin.x + from.X, origin.y + from.Y),
+                              ImVec2(origin.x + marker.X, origin.y + marker.Y), bone, 1.5f);
+            }
+        }
+        for (const AnimationJointMarker& marker : markers)
+        {
+            const bool selected = Workspace.Navigation.Joint == static_cast<int>(marker.Joint);
+            draw->AddCircleFilled(ImVec2(origin.x + marker.X, origin.y + marker.Y), selected ? 5.0f : 3.0f,
+                                  selected ? picked : joint);
+            if (selected)
+                draw->AddText(ImVec2(origin.x + marker.X + 7.0f, origin.y + marker.Y - 7.0f), picked,
+                              skeleton.Joints[marker.Joint].Name.c_str());
+        }
+        draw->PopClipRect();
+
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        const auto pick = [&] {
+            return PickAnimationJoint(markers, mouse.x - origin.x, mouse.y - origin.y, 8.0f);
+        };
+        if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)
+            && ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] < 9.0f)
+        {
+            const std::optional<std::uint32_t> hit = pick();
+            Workspace.Navigation.Joint = hit ? static_cast<int>(*hit) : -1;
+        }
+        if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+            if (const std::optional<std::uint32_t> hit = pick())
+            {
+                Workspace.Navigation.Joint = static_cast<int>(*hit);
+                ImGui::OpenPopup("joint");
+            }
+        if (ImGui::BeginPopup("joint"))
+        {
+            const int selected = Workspace.Navigation.Joint;
+            if (selected >= 0 && static_cast<std::size_t>(selected) < skeleton.Joints.size())
+                DrawAnimationMaskMenu(Workspace, skeleton.Joints[static_cast<std::size_t>(selected)].Name);
+            ImGui::EndPopup();
+        }
+    }
+
+public:
 private:
     // Setup may refuse the staged feature. The host clears this slot before
     // any panel draws, while the panel remains available to explain failure.
     AnimationPreviewRenderFeature*& Viewport;
     AnimationPreviewWorkspace& Workspace;
+    bool ShowJoints = false;
 };
 
 class PreviewTransportPanel final : public IEditorPanel

@@ -62,6 +62,9 @@ struct AnimationNavigation
     GameplayTagId Behavior;
     int Row = -1;
     int Content = -1;
+    // A joint of the viewport's skeleton, picked in the viewport or the
+    // skeleton tree.
+    int Joint = -1;
     // Index into the simulation's history, or none for the live tick.
     std::optional<std::size_t> InspectRecord;
 };
@@ -131,6 +134,12 @@ public:
     [[nodiscard]] const AnimationClipCache& Clips() const;
     // The skeleton the simulated rig names, when it names one that is loaded.
     [[nodiscard]] const SkeletonData* RigSkeleton() const;
+    // One undo step on the open rig's document, opening it first: `edit`
+    // changes a copy of the root and returns whether it changed anything.
+    bool EditRig(const std::function<bool(JsonValue&)>& edit);
+    // Model-space transforms of the joints as the viewport drew them last
+    // frame, one per joint of the skeleton on screen.
+    [[nodiscard]] const std::vector<Mat4>& ViewportModel() const { return ViewportModelTransforms; }
     void SelectDocument(std::size_t index);
     void CancelAuthoringEdit();
     void ValidateDocument(DataDocument& document);
@@ -197,6 +206,7 @@ private:
     std::vector<Transform3f> SimulationLocal;
     std::vector<Mat4> SimulationModel;
     std::vector<Mat4> SimulationPalette;
+    std::vector<Mat4> ViewportModelTransforms;
     RuntimeAssets& Assets;
     AssetLease RigLease;
     AssetLease MeshLease;

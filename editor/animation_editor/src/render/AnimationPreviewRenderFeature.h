@@ -22,6 +22,8 @@ public:
     void Orbit(float yaw, float pitch);
     void Zoom(float delta);
     void FrameSubject();
+    // What the viewport's camera sees at this aspect, for picking.
+    [[nodiscard]] CameraRenderData ViewCamera(float aspect) const { return Camera.BuildRenderData(aspect); }
 
 private:
     RuntimeAssets& Assets;

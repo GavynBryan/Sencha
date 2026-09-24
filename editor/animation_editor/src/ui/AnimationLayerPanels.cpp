@@ -43,22 +43,6 @@ std::string TagText(const AnimationPreviewSession& session, GameplayTagId tag)
     return std::string(tags->GetName(tag));
 }
 
-// One undo step on the rig document, opening it first when it is not open.
-void EditRig(AnimationPreviewWorkspace& workspace, const std::function<bool(JsonValue&)>& edit)
-{
-    DataDocument* rig = workspace.FindDocument(workspace.RigPath);
-    if (rig == nullptr && workspace.OpenAnimationDocument(workspace.RigPath))
-        rig = workspace.FindDocument(workspace.RigPath);
-    if (rig == nullptr)
-        return;
-    JsonValue root = rig->CopyRoot();
-    if (!edit(root))
-        return;
-    rig->BeginEdit();
-    rig->PreviewRoot(std::move(root));
-    workspace.CommitDocumentEdit(*rig);
-}
-
 // The authored mask steps of `layer`, from the open rig document when there is
 // one -- it may be ahead of the bound rig -- else from the loaded asset.
 std::vector<AnimMaskOp> MaskSteps(AnimationPreviewWorkspace& workspace, std::size_t layer)
@@ -233,6 +217,11 @@ public:
                 Children[static_cast<std::size_t>(parent)].push_back(j);
 
         ImGui::SeparatorText("Joints");
+        if (Workspace.Navigation.Joint != LastJoint)
+        {
+            ScrollToSelection = true;
+            LastJoint = Workspace.Navigation.Joint;
+        }
         ImGui::TextDisabled("Right-click a joint to add it to the mask or take it out, with or without "
                             "what is below it. A filled mark is a layer covering the joint.");
         for (std::size_t j = 0; j < skeleton->Joints.size(); ++j)
@@ -254,11 +243,11 @@ private:
                               steps[s].Subtree ? " and below" : " only");
             ImGui::SameLine();
             if (ImGui::SmallButton("Remove step"))
-                EditRig(Workspace, [&](JsonValue& root) { return RemoveAnimMaskStep(root, layer, s); });
+                Workspace.EditRig([&](JsonValue& root) { return RemoveAnimMaskStep(root, layer, s); });
             ImGui::PopID();
         }
         if (!steps.empty() && ImGui::SmallButton("Clear mask"))
-            EditRig(Workspace, [&](JsonValue& root) { return ClearAnimMask(root, layer); });
+            Workspace.EditRig([&](JsonValue& root) { return ClearAnimMask(root, layer); });
     }
 
     void DrawJoint(const SkeletonData& skeleton, const AnimBoundRig& rig, std::size_t joint, std::size_t layer)
@@ -268,27 +257,31 @@ private:
         for (std::size_t l = 0; l < rig.Layers.size(); ++l)
             marks += joint < Coverage.size() && (Coverage[joint] & (1u << l)) != 0 ? "#" : ".";
         const bool covered = rig.Layers[layer].Covers(joint);
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth;
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth
+            | ImGuiTreeNodeFlags_OpenOnArrow;
         if (Children[joint].empty())
             flags |= ImGuiTreeNodeFlags_Leaf;
+        const bool selected = Workspace.Navigation.Joint == static_cast<int>(joint);
+        if (selected)
+            flags |= ImGuiTreeNodeFlags_Selected;
         if (!covered)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         const bool open = ImGui::TreeNodeEx(reinterpret_cast<void*>(joint), flags, "%s  [%s]",
                                             name.empty() ? "(unnamed)" : name.c_str(), marks.c_str());
         if (!covered)
             ImGui::PopStyleColor();
-        if (layer > 0 && !name.empty() && ImGui::BeginPopupContextItem())
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+            Workspace.Navigation.Joint = static_cast<int>(joint);
+        // A joint picked in the viewport is brought into view here.
+        if (selected && ScrollToSelection)
         {
-            const auto step = [&](const char* label, bool exclude, bool subtree) {
-                if (ImGui::MenuItem(label))
-                    EditRig(Workspace, [&](JsonValue& root) {
-                        return AddAnimMaskStep(root, layer, name, exclude, subtree);
-                    });
-            };
-            step("Add with everything below", false, true);
-            step("Add this joint only", false, false);
-            step("Remove with everything below", true, true);
-            step("Remove this joint only", true, false);
+            ImGui::SetScrollHereY();
+            ScrollToSelection = false;
+        }
+        if (ImGui::BeginPopupContextItem())
+        {
+            Workspace.Navigation.Joint = static_cast<int>(joint);
+            DrawAnimationMaskMenu(Workspace, name);
             ImGui::EndPopup();
         }
         if (!open)
@@ -301,6 +294,8 @@ private:
     AnimationPreviewWorkspace& Workspace;
     std::vector<std::uint8_t> Coverage;
     std::vector<std::vector<std::size_t>> Children;
+    int LastJoint = -1;
+    bool ScrollToSelection = false;
 };
 
 class FlowPanel final : public IEditorPanel
@@ -622,6 +617,28 @@ private:
 
     AnimationPreviewWorkspace& Workspace;
 };
+}
+
+void DrawAnimationMaskMenu(AnimationPreviewWorkspace& workspace, const std::string& joint)
+{
+    const AnimBoundRig* rig = workspace.Simulation.Rig();
+    const std::size_t layer = workspace.Navigation.Layer;
+    ImGui::TextDisabled("%s", joint.empty() ? "(unnamed joint)" : joint.c_str());
+    if (rig == nullptr || layer == 0 || layer >= rig->Layers.size() || joint.empty())
+    {
+        ImGui::TextDisabled(rig == nullptr ? "Open a rig to mask its layers."
+                                           : "Select a layer above the first in Layers to mask it.");
+        return;
+    }
+    ImGui::TextDisabled("Mask of %s:", rig->Layers[layer].NameText.c_str());
+    const auto step = [&](const char* label, bool exclude, bool subtree) {
+        if (ImGui::MenuItem(label))
+            (void)workspace.EditRig([&](JsonValue& root) { return AddAnimMaskStep(root, layer, joint, exclude, subtree); });
+    };
+    step("Add with everything below", false, true);
+    step("Add this joint only", false, false);
+    step("Remove with everything below", true, true);
+    step("Remove this joint only", true, false);
 }
 
 void AddAnimationLayerPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)

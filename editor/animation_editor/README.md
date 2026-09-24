@@ -230,6 +230,12 @@ a later section, and go to one cancel section at once or at the section's end.
   layer is always unmasked. Joints are named as the skeleton names them, so an
   unknown or ambiguous joint is a located problem.
 
+Loop and branch conditions edit in the Flow pane with the same predicate
+builder the rule table uses, and a count loop's intent and parameter are chosen
+from the rig's request schema. In the viewport, **Joints** draws the skeleton on
+screen: click a joint to select it (the skeleton tree follows), and right-click
+one for the same mask steps the tree offers.
+
 A selector rule can result in a layer weight, a constant or a float fact,
 instead of a behavior; the first weight rule to pass weights its layer.
 
@@ -244,8 +250,7 @@ through the asset pipeline and checks its sections and ticks;
 `AnimationLayerEditingTests.cpp` and `AnimationLayerDisplayTests.cpp` cover the
 mask and flow edits and the composed layers headlessly.
 
-Not yet: picking joints in the viewport, editing conditions in the Flow pane,
-and section events on the event timeline.
+Not yet: section events on the event timeline.
 
 ## Blends and blendspaces
 
@@ -307,26 +312,25 @@ the staging by [docs/plans/animation-authoring.md](../../docs/plans/animation-au
 These are required implementation work, not capabilities of the current editor:
 
 1. Remaining from the facts/requests stage: rig and fact-schema panes in this
-   editor (they are authored in Data Editor today), tag-set inputs, the
-   project's module vocabulary in the preview World, skeletal joint identity,
-   and clip event/root metadata formats (landing with their consumers in
-   stages 3, 4 and 7).
+   editor (they are authored in Data Editor today), a command that creates a
+   rig with its behavior set, slot map and scenario, adding and removing a
+   scenario's fixture tags here, tag-set inputs, and mounting the engine's own
+   content so a rig can extend the engine fact schema in this editor. Root
+   metadata lands with its consumer in the root-motion stage.
 2. Remaining from the selection stage: a behavior-set and slot-map pane (they
    edit in Data Editor today, and valid edits there still need a reload here),
    and the predicate text form.
 3. Remaining from the events stage: lifecycle bindings edited in their own
    inspector rather than Data Editor, and event marks drawn on the shared
    timeline beside sections and requests.
-4. Remaining from the flows and layers stage: joint picking in the viewport
-   and condition editing in the Flow pane.
-5. Remaining from the blending stage: blendspace and blend override panes, and
+4. Remaining from the blending stage: blendspace and blend override panes, and
    fading a layer's weight over time rather than stepping it.
-6. Request replication and gameplay-owned request reconciliation, with remote
+5. Request replication and gameplay-owned request reconciliation, with remote
    fact snapshots and paired late-join/correction previews. Do not rewind
    presentation animation with movement replay.
-7. Extracted root curves and replayable movement-owned motion sources, with
+6. Extracted root curves and replayable movement-owned motion sources, with
    translation/yaw plots and requested/composed/achieved displacement inspection.
-8. Compatible single-clip migration, presets, hot-reload remapping, complete
+7. Compatible single-clip migration, presets, hot-reload remapping, complete
    decision-history capture/import, full cross-asset undo/redo, and workflow tests.
 
 Selection remains facts + requests -> selectors -> behaviors -> slot maps ->

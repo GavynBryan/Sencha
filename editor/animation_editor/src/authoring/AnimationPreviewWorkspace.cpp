@@ -591,6 +591,12 @@ void AnimationPreviewWorkspace::Frame(double wallSeconds)
         return;
     Scene.Bounds = geometry->LocalBounds;
     const auto& palette = ViewportPalette();
+    // What picking reads: a palette entry is model times inverse bind, so
+    // the joint's model transform is the entry times its bind.
+    const SkeletonData& shown = Session.Skeleton();
+    ViewportModelTransforms.resize(std::min(palette.size(), shown.Joints.size()));
+    for (std::size_t j = 0; j < ViewportModelTransforms.size(); ++j)
+        ViewportModelTransforms[j] = palette[j] * shown.Joints[j].InverseBind.Inverse();
     // This viewport owns its pose cache and one instance. Scope is nonzero to
     // keep this editor identity distinct from runtime entity namespaces.
     const auto slot = Scene.Poses->AppendInstance(mesh, RenderEntityKey{ .Scope = 1, .Entity = {} },
@@ -739,6 +745,22 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
     BuildPosedModelTransforms(skeleton, SimulationLocal, SimulationModel);
     BuildSkinningPalette(skeleton, SimulationModel, SimulationPalette);
     return SimulationPalette;
+}
+
+bool AnimationPreviewWorkspace::EditRig(const std::function<bool(JsonValue&)>& edit)
+{
+    DataDocument* rig = FindDocument(RigPath);
+    if (rig == nullptr && OpenAnimationDocument(RigPath))
+        rig = FindDocument(RigPath);
+    if (rig == nullptr)
+        return false;
+    JsonValue root = rig->CopyRoot();
+    if (!edit(root))
+        return false;
+    rig->BeginEdit();
+    rig->PreviewRoot(std::move(root));
+    CommitDocumentEdit(*rig);
+    return true;
 }
 
 const SkeletonData* AnimationPreviewWorkspace::RigSkeleton() const
