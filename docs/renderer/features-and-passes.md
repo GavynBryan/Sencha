@@ -428,15 +428,25 @@ rather than a dropped draw. `PoseSlot` joins the run-merge identity: two
 entities sharing one skinned mesh pose independently and must not collapse
 into one instanced draw.
 
-An instance with no clip player poses at the bind identity, so the dispatch
+An instance with no pose source poses at the bind identity, so the dispatch
 reproduces its rest vertices bit-for-bit -- which is why `skinned_rest`
 stays byte-identical through the compute path and is the gate for it.
-`AnimationClipPlayerComponent` supplies the pose for the rest: extraction
-samples the clip at the player's current time
-(`anim/AnimationClipSampling.h`), composes model-space transforms, and
-builds the palette through the existing `BuildSkinningPalette`. Pose
-evaluation happens once per rendered frame, not once per fixed tick; the
-player's time is the only thing the tick advances.
+
+A rigged entity's pose comes from the animation runtime's pose pass
+(`anim/AnimPoseSystem.h`), which runs once per fixed tick after movement and
+keeps the composed local pose of that tick and the one before in the World's
+`AnimPosePool`. Extraction evaluates no animation for it: it interpolates the
+two poses by the same share the entity's transform is drawn at (the latest
+pose for an entity without transform history), composes model-space
+transforms and builds the palette through `BuildSkinningPalette`. A slot is
+used only when it was posed for the skeleton the mesh skins. The
+`skinned_pose` reference is also the gate for this path: a rig holding the
+paused player's bend must draw the same pixels.
+
+`AnimationClipPlayerComponent` remains for scenes that name a clip directly:
+extraction samples the clip at the player's current time
+(`anim/AnimationClipSampling.h`) once per rendered frame; the player's time is
+the only thing the tick advances.
 
 ## `SkyGradientPass`
 

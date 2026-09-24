@@ -3,8 +3,8 @@
 The animation workspace is being built alongside the data-driven runtime. Its
 current surface auditions cooked skinned meshes and clips, simulates rigs under
 scenarios, edits request schemas and selectors, authors clip events, edits flow
-structure and bone masks, and composes layers in the viewport; it is not yet the
-blend authoring environment.
+structure and bone masks, and previews blends: the viewport shows the runtime's
+own pose pass, with blend inspection, blendspaces and a blend A/B recorder.
 
 ## Content audition
 
@@ -247,6 +247,42 @@ mask and flow edits and the composed layers headlessly.
 Not yet: picking joints in the viewport, editing conditions in the Flow pane,
 and section events on the event timeline.
 
+## Blends and blendspaces
+
+The viewport shows the pose the runtime's pose pass made for the simulated
+subject, not a preview composition: the same pass a game runs after movement.
+A change to what a layer plays blends by the destination behavior's policy, or
+by a pairwise override in an `animation.blend_overrides` asset the rig lists:
+snap, crossfade (the outgoing playback stays alive beside the incoming one), or
+inertialize (the default: each joint's offset and velocity from what was shown
+decays to rest along a quintic, and a change mid-decay folds into it). A
+behavior whose blend carries phase starts where the one it replaces had got to
+in its sync group.
+
+- **Blends** shows each layer's blend in progress -- a crossfade's source and
+  progress, an inertialization's progress and remaining offset -- the recent
+  blend records (mode, duration, the offset it began from, whether an override
+  chose it) and the bound overrides against `anim.blend.override_cap`.
+- **A/B** in the same panel: *Record A* takes the simulation's pose on every
+  kept tick with the scenario as written. Edit a blend, then *Replay B against
+  A*: the scenario runs again from tick 0 with the same inputs, clock, seed and
+  start pose, and the two compare tick by tick -- the largest joint residual
+  plotted, and where the worst fell. A is drawn as an orange ghost. Takes of
+  different scenarios are refused rather than compared.
+- **Blendspace** draws the mix the selected layer plays: samples on their axes
+  sized by weight, the point the facts put it at, its phase, and which sample's
+  events play. Drag the point to set the axis facts for the next tick, as a
+  recorded live edit.
+- Inspecting a recorded tick (Decisions, Live unchecked) shows the pose the
+  pass made then.
+
+The fixture examples include `moving`: a blendspace on Speed entered with
+carried phase and an inertialized change, and an override that crossfades back
+to idle.
+
+Not yet: a blendspace or blend override pane (they edit in Data Editor), and
+per-layer ghosts.
+
 ## Ownership
 
 `animation_authoring` is a GUI-independent library. `AnimationClipPreviewSession`
@@ -281,11 +317,10 @@ These are required implementation work, not capabilities of the current editor:
 3. Remaining from the events stage: lifecycle bindings edited in their own
    inspector rather than Data Editor, and event marks drawn on the shared
    timeline beside sections and requests.
-4. Remaining from the flows and layers stage: joint picking in the viewport,
-   condition editing in the Flow pane, and the runtime render path composing
-   layers (the preview composes them; render extraction migrates in stage 5).
-5. Blendspaces, inertialization, crossfade and phase carry, with repeatable
-   transition A/B scenarios and override budgets.
+4. Remaining from the flows and layers stage: joint picking in the viewport
+   and condition editing in the Flow pane.
+5. Remaining from the blending stage: blendspace and blend override panes, and
+   fading a layer's weight over time rather than stepping it.
 6. Request replication and gameplay-owned request reconciliation, with remote
    fact snapshots and paired late-join/correction previews. Do not rewind
    presentation animation with movement replay.
