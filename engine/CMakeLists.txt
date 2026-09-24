@@ -34,6 +34,9 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MotionChannels.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementSessions.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementTuning.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavLinkComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavLinkState.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavigationGeometry.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetParticipantIdentity.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetReplicationComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/NetSpawnPrefab.h"
@@ -326,6 +329,9 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # invocation values by value.
     "${SENCHA_ENGINE_INCLUDE_DIR}/authored/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/logic/*.h"
+    # Navigation queries: a game holds locations, regions, requests, and route
+    # buffers by value and reaches the system through Schedule().Get<>().
+    "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/*.h"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)
@@ -552,6 +558,42 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JoltPhysics)
 target_link_libraries(sencha_engine PRIVATE Jolt)
+
+# Recast/Detour: the navigation backend (docs/plans/navigation-core.md). Recast
+# builds navmesh tiles in the cook and, for localized rebuilds, at runtime;
+# Detour stores tiles and answers projection, nav-raycast, and corner queries.
+# zlib-licensed. Firewalled like Jolt: linked PRIVATE, confined to
+# engine/src/navigation/ (cmake/CheckNavigationIsolation.cmake), and kept out of
+# the SDK export. Only the Recast and Detour sources are compiled; the demo,
+# crowd, and tile-cache modules are not used.
+#
+# DT_POLYREF64 and DT_VIRTUAL_QUERYFILTER are PUBLIC on the object library so
+# every translation unit that includes Detour -- the library's and the engine's
+# navigation module -- agrees on dtPolyRef's width and dtQueryFilter's layout
+# (the navigation module derives a filter that applies query policy). Neither
+# reaches an installed header.
+FetchContent_Declare(
+    recastnavigation
+    GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
+    GIT_TAG        6dc1667f580357e8a2154c28b7867bea7e8ad3a7 # v1.6.0
+    SOURCE_SUBDIR  sencha-does-not-build-this
+)
+FetchContent_MakeAvailable(recastnavigation)
+file(GLOB SENCHA_RECAST_SOURCES CONFIGURE_DEPENDS
+    "${recastnavigation_SOURCE_DIR}/Recast/Source/*.cpp"
+    "${recastnavigation_SOURCE_DIR}/Detour/Source/*.cpp")
+# OBJECT for the sencha_cook_thirdparty reason: the objects land in the engine
+# binary itself.
+add_library(sencha_navigation_thirdparty OBJECT ${SENCHA_RECAST_SOURCES})
+set_target_properties(sencha_navigation_thirdparty PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON)
+target_include_directories(sencha_navigation_thirdparty SYSTEM PUBLIC
+    "${recastnavigation_SOURCE_DIR}/Recast/Include"
+    "${recastnavigation_SOURCE_DIR}/Detour/Include")
+target_compile_definitions(sencha_navigation_thirdparty PUBLIC DT_POLYREF64=1 DT_VIRTUAL_QUERYFILTER=1)
+target_link_libraries(sencha_engine PRIVATE sencha_navigation_thirdparty)
 
 # RmlUi: the layout and document engine behind the retained authored UI runtime
 # (docs/ui/architecture.md). Deliberately NOT inside the Vulkan block -- cooking a

@@ -128,6 +128,11 @@ struct DataValidationError
     std::string Message;
 };
 
+// A field with its identity and kind set. Callers adjust constraints,
+// defaults and children on the returned value.
+[[nodiscard]] DataFieldSchema MakeDataField(DataFieldKind kind, std::string key,
+                                            std::string displayName, std::string summary = {});
+
 // The named member of a record schema, or null. Record members are a short
 // ordered list, so this is a linear scan by design.
 [[nodiscard]] const DataFieldSchema* FindChild(const DataFieldSchema& parent,
@@ -136,6 +141,9 @@ struct DataValidationError
 [[nodiscard]] bool ValidateDataAgainstSchema(const JsonValue& value,
                                              const DataSchema& schema,
                                              std::vector<DataValidationError>& errors);
+
+// One line naming the first few errors, for load and compile messages.
+[[nodiscard]] std::string FormatDataValidationErrors(std::span<const DataValidationError> errors);
 
 class DataSchemaRegistry
 {

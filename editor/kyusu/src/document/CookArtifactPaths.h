@@ -10,6 +10,7 @@
 inline constexpr std::string_view kLightmapAtlasFile = "lightmap.stex";
 inline constexpr std::string_view kAoAtlasFile = "ao.stex";
 inline constexpr std::string_view kProbeVolumeFile = "probes.sprobe";
+inline constexpr std::string_view kNavigationFile = "navigation.snav";
 
 // Path relative to the cooked root (".cooked/") for a document's baked
 // artifact. The stem is directory-qualified (levels/room_2, prefabs/turret),
@@ -36,6 +37,11 @@ inline constexpr std::string_view kProbeVolumeFile = "probes.sprobe";
 [[nodiscard]] inline std::string ProbeVolumeRel(std::string_view stem)
 {
     return DocumentArtifactRel(stem, kProbeVolumeFile);
+}
+
+[[nodiscard]] inline std::string NavigationRel(std::string_view stem)
+{
+    return DocumentArtifactRel(stem, kNavigationFile);
 }
 
 // Whether a stored reference or artifact path ends in "/<file>": the match the

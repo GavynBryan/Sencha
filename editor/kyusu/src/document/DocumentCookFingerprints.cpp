@@ -107,6 +107,36 @@ namespace
         }
         return fingerprint.Value();
     }
+    std::uint64_t HashNavigationInputs(const DocumentCookSnapshot& snapshot)
+    {
+        CookFingerprint fingerprint("navigation_inputs", 1);
+        fingerprint.AddBool("has_settings", snapshot.Navigation.has_value())
+            .AddU64("collection_diagnostics", snapshot.NavigationDiagnostics.size());
+        if (!snapshot.Navigation.has_value())
+            return fingerprint.Value();
+        for (const NavigationProfileSetting& profile : snapshot.Navigation->Profiles)
+            fingerprint.AddString("profile", profile.Name)
+                .AddFloat("radius", profile.Build.Radius)
+                .AddFloat("height", profile.Build.Height)
+                .AddFloat("max_slope_degrees", profile.Build.MaxSlopeDegrees)
+                .AddFloat("max_climb", profile.Build.MaxClimb)
+                .AddFloat("cell_size", profile.Build.CellSize)
+                .AddFloat("cell_height", profile.Build.CellHeight)
+                .AddU32("tile_cells", profile.Build.TileCells);
+        for (const std::string& area : snapshot.Navigation->Areas)
+            fingerprint.AddString("area", area);
+        for (const NavLinkRecord& link : snapshot.NavLinks)
+        {
+            fingerprint.AddU64("link", link.Id.Value)
+                .AddString("traversal", link.Traversal)
+                .AddU32("directions", link.Directions)
+                .AddFloat("base_cost", link.BaseCost)
+                .AddFloat("entry_radius", link.EntryRadius);
+            AddVec3(fingerprint, "entry", link.Entry);
+            AddVec3(fingerprint, "exit", link.Exit);
+        }
+        return fingerprint.Value();
+    }
 } // namespace
 
 DocumentCookFingerprints ComputeDocumentCookFingerprints(
@@ -190,7 +220,7 @@ DocumentCookFingerprints ComputeDocumentCookFingerprints(
     AddVec3(probeIdentity, "ground", lightmapParams.Probe.GroundColor);
     fp.Probe = probeIdentity.Value();
 
-    CookFingerprint documentFingerprint("document_cook", 8);
+    CookFingerprint documentFingerprint("document_cook", 9);
     documentFingerprint.AddDependency("brush_cells", fp.Brush)
         .AddDependency("placements", fp.Placements)
         .AddDependency("direct_lights", HashDirectLights(bakeLights))
@@ -228,6 +258,9 @@ DocumentCookFingerprints ComputeDocumentCookFingerprints(
             .AddFloat("probe_normal_offset", lightmapParams.Shading.NormalOffset)
             .AddU32("probe_ray_count", lightmapParams.ProbeRayCount);
     }
+    // Navigation links are stripped from the passthrough scene, so they and the
+    // settings they cook against fold in separately.
+    documentFingerprint.AddDependency("navigation", HashNavigationInputs(snapshot));
     fp.Document = documentFingerprint.Value();
 
     return fp;

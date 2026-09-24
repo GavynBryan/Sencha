@@ -26,7 +26,7 @@ namespace
         DocumentCookStepIds::CookedScene,
     };
 
-    const std::array<CookStepDefinition, 11> kSteps{
+    const std::array<CookStepDefinition, 12> kSteps{
         CookStepDefinition{
             DocumentCookStepIds::BrushCells, kNoDependencies, {}, 1, false },
         CookStepDefinition{
@@ -51,6 +51,9 @@ namespace
             CookStepIds::IrradianceProbes,
             std::span<const std::string_view>(kOcclusionDependencies),
             CookOutputFamilies::IrradianceProbes, 1, true },
+        CookStepDefinition{
+            CookStepIds::Navigation, kBrushCellsDependencies,
+            CookOutputFamilies::Navigation, 1, true },
         CookStepDefinition{
             CookStepIds::ReferencedAssets, kNoDependencies,
             CookOutputFamilies::ReferencedAssets, 1, true },

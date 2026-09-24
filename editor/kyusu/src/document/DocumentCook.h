@@ -1,5 +1,6 @@
 #pragma once
 
+#include <assets/cook/CookDiagnostic.h>
 #include <assets/cook/LightingCookParams.h>
 #include <assets/cook/CookControl.h>
 #include <core/assets/AssetRef.h>
@@ -40,6 +41,11 @@ struct DocumentCookResult
     // The luxel size the atlas actually packed at; differs from the requested
     // size only when MaxAtlasSize forced a density clamp (worth a log line).
     float                    EffectiveLuxelSize = 0.0f;
+    std::size_t              NavigationTileCount = 0;    // across every profile
+    std::size_t              NavigationPolygonCount = 0;
+    // Structured problems from cook steps, naming the authored record at fault.
+    // Any Error also fails the cook and sets Error.
+    std::vector<CookDiagnostic> Diagnostics;
 };
 
 struct DocumentCookOptions

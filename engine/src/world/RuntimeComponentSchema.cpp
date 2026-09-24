@@ -8,6 +8,7 @@
 #include <input/InputComponentRegistration.h>
 #include <logic/VerbRelayRegistration.h>
 #include <movement/MovementRegistration.h>
+#include <navigation/NavigationComponentRegistration.h>
 #include <net/NetComponentRegistration.h>
 #include <net/ReplicationLayout.h>
 #include <participant/ParticipantComponentRegistration.h>
@@ -30,6 +31,7 @@ namespace
         RenderComponents,
         AudioComponents,
         ZoneComponents,
+        NavigationComponents,
         CameraComponents,
         PhysicsComponents,
         AbilityKitComponents,
@@ -73,6 +75,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterRenderComponents(registrar);
     RegisterAudioComponents(registrar);
     RegisterZoneComponents(registrar);
+    RegisterNavigationComponents(registrar);
     RegisterCameraComponents(registrar);
 
     RegisterPhysicsComponents(registrar);
