@@ -549,6 +549,39 @@ bool AnimationPreviewSession::AddParticipant(const std::string& name)
     return true;
 }
 
+bool AnimationPreviewSession::DeclareTag(const std::string& name, std::string* error)
+{
+    GameplayTagRegistry syntax;
+    GameplayTagError problem;
+    if (!syntax.RegisterTag(name, &problem))
+    {
+        if (error != nullptr)
+            *error = problem.Message;
+        return false;
+    }
+    if (std::ranges::find(Working.DeclaredTags, name) != Working.DeclaredTags.end())
+    {
+        if (error != nullptr)
+            *error = std::format("'{}' is already declared.", name);
+        return false;
+    }
+    Working.DeclaredTags.push_back(name);
+    if (Preview != nullptr)
+        Replay();
+    return true;
+}
+
+bool AnimationPreviewSession::UndeclareTag(const std::string& name)
+{
+    const auto it = std::ranges::find(Working.DeclaredTags, name);
+    if (it == Working.DeclaredTags.end())
+        return false;
+    Working.DeclaredTags.erase(it);
+    if (Preview != nullptr)
+        Replay();
+    return true;
+}
+
 std::optional<AnimationPreviewSession::Refusal> AnimationPreviewSession::ApplyFact(
     AnimationScenarioActionKind kind, const std::string& fact, const AnimationScenarioValue& value,
     InputTable& inputs) const

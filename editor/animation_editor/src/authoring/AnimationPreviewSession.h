@@ -165,6 +165,13 @@ public:
                        AnimCancelReason reason);
     // Adds a participant to the scenario, for the next restart.
     bool AddParticipant(const std::string& name);
+    // Declares a gameplay tag as a preview fixture -- a name a game module
+    // would declare, registered only in the preview World -- or stops
+    // declaring one. Tags register when the World is built, so either replays
+    // the scenario to the current tick. False, with `error` saying why, for a
+    // malformed name, one already declared, or one that was not.
+    bool DeclareTag(const std::string& name, std::string* error = nullptr);
+    bool UndeclareTag(const std::string& name);
     // The preview World's role, and whether a recorder stands behind a verb.
     // Both change what a run does, so both are scenario state: changing one
     // replays the scenario to the current tick under the new setting.

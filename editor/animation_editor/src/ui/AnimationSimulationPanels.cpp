@@ -132,14 +132,31 @@ public:
                 NewParticipant.clear();
                 session.Restart();
             }
-            if (!scenario.DeclaredTags.empty())
+            ImGui::SeparatorText("Fixture tags");
+            ImGui::TextWrapped("Names a game module would declare, declared by this scenario instead; they exist "
+                               "only in the preview World. Changing them replays to the current tick.");
+            std::string removed;
+            for (const std::string& tag : scenario.DeclaredTags)
             {
-                ImGui::SeparatorText("Fixture tags");
-                ImGui::TextWrapped("Declared by this scenario in place of a game module; they exist only "
-                                   "in the preview World.");
-                for (const std::string& tag : scenario.DeclaredTags)
-                    ImGui::BulletText("%s", tag.c_str());
+                ImGui::PushID(tag.c_str());
+                ImGui::BulletText("%s", tag.c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton("remove"))
+                    removed = tag;
+                ImGui::PopID();
             }
+            if (!removed.empty())
+                (void)session.UndeclareTag(removed);
+            if (SubmitText("Declare tag", NewTag))
+            {
+                if (session.DeclareTag(NewTag, &TagError))
+                {
+                    NewTag.clear();
+                    TagError.clear();
+                }
+            }
+            if (!TagError.empty())
+                ImGui::TextWrapped("%s", TagError.c_str());
         }
 
         if (ImGui::CollapsingHeader("Dependencies", ImGuiTreeNodeFlags_DefaultOpen))
@@ -165,6 +182,8 @@ public:
 private:
     AnimationPreviewWorkspace& Workspace;
     std::string NewParticipant;
+    std::string NewTag;
+    std::string TagError;
 };
 
 class FactsPanel final : public IEditorPanel

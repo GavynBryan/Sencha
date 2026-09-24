@@ -453,6 +453,43 @@ TEST(AnimationPreviewSession, DeclaredFixtureTagsStandInForAGameModule)
     EXPECT_EQ(reread->DeclaredTags, scenario.DeclaredTags);
 }
 
+// Declaring a fixture tag while the session runs replays it to the same tick
+// under the new vocabulary; so does taking one away.
+TEST(AnimationPreviewSession, FixtureTagsAreDeclaredAndRemovedLive)
+{
+    PreviewFixture fx;
+    fx.Load("asset://animation/dash.requests.sdata", kAnimRequestSchemaType, R"({
+        "intents": [ { "intent": "game.intent.dash", "params": [] } ] })");
+    fx.Load("asset://animation/dash.rig.sdata", kAnimRigType, R"({
+        "requests": "asset://animation/dash.requests.sdata",
+        "layers": [ { "name": "anim.layer.base" } ] })");
+    AnimationScenario scenario;
+    scenario.RigPath = "asset://animation/dash.rig.sdata";
+    scenario.Participants = { "player" };
+
+    AnimationPreviewSession session(fx.Data);
+    ASSERT_TRUE(session.Open(scenario));
+    session.RunTo(12);
+    EXPECT_FALSE(session.Rig()->Valid);
+
+    std::string error;
+    ASSERT_TRUE(session.DeclareTag("game.intent.dash", &error)) << error;
+    EXPECT_EQ(session.Tick(), 12u);
+    EXPECT_TRUE(session.Rig()->Valid);
+    EXPECT_EQ(session.Scenario().DeclaredTags, std::vector<std::string>{ "game.intent.dash" });
+    EXPECT_TRUE(session.ScenarioModified());
+
+    EXPECT_FALSE(session.DeclareTag("game.intent.dash", &error));
+    EXPECT_NE(error.find("already declared"), std::string::npos);
+    EXPECT_FALSE(session.DeclareTag("not a tag!", &error));
+    EXPECT_FALSE(error.empty());
+
+    ASSERT_TRUE(session.UndeclareTag("game.intent.dash"));
+    EXPECT_EQ(session.Tick(), 12u);
+    EXPECT_FALSE(session.Rig()->Valid);
+    EXPECT_FALSE(session.UndeclareTag("game.intent.dash"));
+}
+
 TEST(AnimationRigOutline, ListsTheChainAndWhatIsMissing)
 {
     PreviewFixture fx;
