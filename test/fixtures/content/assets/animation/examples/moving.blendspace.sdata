@@ -1,0 +1,27 @@
+{
+    "type": "animation.blendspace",
+    "version": 1,
+    "data": {
+        "axes": [
+            {
+                "fact": "Speed",
+                "min": 0,
+                "max": 4
+            }
+        ],
+        "samples": [
+            {
+                "clip": "asset://meshes/dev/golden_rig.sanim",
+                "at": [
+                    1
+                ]
+            },
+            {
+                "clip": "asset://meshes/dev/golden_rig_hold.sanim",
+                "at": [
+                    3
+                ]
+            }
+        ]
+    }
+}

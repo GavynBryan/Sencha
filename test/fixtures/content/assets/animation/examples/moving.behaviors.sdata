@@ -1,0 +1,23 @@
+{
+    "type": "animation.behavior_set",
+    "version": 1,
+    "data": {
+        "behaviors": [
+            {
+                "tag": "Anim.Locomotion.Idle",
+                "kind": "cyclic",
+                "sync_group": "Anim.Sync.Feet"
+            },
+            {
+                "tag": "Anim.Locomotion.Move",
+                "kind": "cyclic",
+                "sync_group": "Anim.Sync.Feet",
+                "blend": {
+                    "in": "inertialize",
+                    "in_ms": 250,
+                    "phase": "carry"
+                }
+            }
+        ]
+    }
+}

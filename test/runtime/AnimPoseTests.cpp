@@ -331,3 +331,17 @@ TEST(AnimPose, TheParallelPassMatchesTheSerialOne)
         for (std::size_t j = 0; j < serial[i].size(); ++j)
             ASSERT_TRUE(serial[i][j] == parallel[i][j]) << "record " << i << " joint " << j;
 }
+
+// A rotation a rounding off unit length, with no vector part, is no rotation:
+// it must not produce an axis of zero length.
+TEST(AnimInertialization, ANearUnitRotationWithoutAnAxisIsAtRest)
+{
+    Transform3f shown;
+    shown.Rotation = Quatf(0.0f, 0.0f, 0.0f, 0.9995f);
+    const Transform3f target;
+    const AnimJointOffset offset = AnimInertializeJoint(shown, shown, target, 0.2f, 1.0 / 60.0);
+    EXPECT_FLOAT_EQ(offset.Angle, 0.0f);
+    Transform3f pose = target;
+    AnimApplyJointOffset(offset, 0.0f, pose);
+    EXPECT_TRUE(pose.Rotation.NearlyEquals(target.Rotation));
+}

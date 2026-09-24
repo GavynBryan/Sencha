@@ -179,3 +179,37 @@ TEST(AnimationFlowExamples, TheDoorSwingsOnARequestAndRestsOnAFact)
     EXPECT_EQ(outcome.Sections, (Lines{ "10 Anim.Door.Swing FlowStarted" }));
     EXPECT_EQ(outcome.Behaviors, (Lines{ "Anim.Door.Opened" }));
 }
+
+// Blending in content: a mix on Speed entered with carried phase and an
+// inertialized change, and a pairwise override that crossfades back to idle.
+TEST(AnimationFlowExamples, MovingBlendsIntoAMixAndCrossfadesBack)
+{
+    Examples examples;
+    const std::string rig = "asset://animation/examples/moving.rig.sdata";
+    examples.Leases.push_back(examples.Assets.Assets.LoadLease(rig, AssetType::Data));
+    std::vector<AnimDiagnostic> diagnostics;
+    std::optional<AnimationScenario> scenario = LoadAnimationScenario(
+        (examples.Repo / "test/fixtures/content/assets/animation/examples/moving.rig.sanimscenario").string(),
+        diagnostics);
+    ASSERT_TRUE(scenario.has_value());
+    AnimationPreviewSession session(examples.Assets.DataAssets, &examples.Assets.AnimationClips, {},
+                                    &examples.Assets.Skeletons);
+    ASSERT_TRUE(session.Open(std::move(*scenario)));
+    ASSERT_TRUE(session.Rig()->Valid) << FormatAnimDiagnostic(session.Rig()->Diagnostics.front());
+    session.RunTo(200);
+
+    std::vector<const AnimDecisionRecord*> blends;
+    for (const AnimationPreviewTickRecord& tick : session.History())
+        for (const AnimDecisionRecord& record : tick.Decisions)
+            if (record.Cause == AnimDecisionCause::BlendApplied)
+                blends.push_back(&record);
+    ASSERT_EQ(blends.size(), 2u);
+    EXPECT_EQ(blends[0]->Tick, 30u);
+    EXPECT_EQ(blends[0]->Blend, AnimBlendMode::Inertialize);
+    EXPECT_FALSE(blends[0]->BlendOverridden);
+    EXPECT_EQ(blends[1]->Tick, 150u);
+    EXPECT_EQ(blends[1]->Blend, AnimBlendMode::Crossfade);
+    EXPECT_TRUE(blends[1]->BlendOverridden);
+    EXPECT_FALSE(session.History().back().Pose.empty());
+    session.Close();
+}

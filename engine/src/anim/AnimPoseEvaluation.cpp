@@ -16,20 +16,22 @@ namespace
     constexpr float kRestAngle = 1e-6f;
 
     // The shortest rotation's axis and angle in [0, pi]; a zero angle for none.
+    // Read from the vector part, so a quaternion a rounding off unit length
+    // still gives a unit axis.
     void AxisAngle(Quatf q, Vec3d& axis, float& angle)
     {
         if (q.W < 0.0f)
             q = -q;
-        const float w = std::clamp(q.W, -1.0f, 1.0f);
-        angle = 2.0f * std::acos(w);
-        const float s = std::sqrt(std::max(0.0f, 1.0f - w * w));
-        if (s < 1e-7f || angle < kRestAngle)
+        const Vec3d vector(q.X, q.Y, q.Z);
+        const float sine = vector.Magnitude();
+        angle = 2.0f * std::atan2(sine, q.W);
+        if (sine < 1e-9f || angle < kRestAngle)
         {
             axis = Vec3d(1.0f, 0.0f, 0.0f);
             angle = 0.0f;
             return;
         }
-        axis = Vec3d(q.X / s, q.Y / s, q.Z / s);
+        axis = vector / sine;
     }
 
     // The quintic from x0 with speed v0 to rest at T, with no velocity or

@@ -1,0 +1,16 @@
+{
+    "type": "animation.slot_map",
+    "version": 1,
+    "data": {
+        "rows": [
+            {
+                "behavior": "Anim.Locomotion.Idle",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "behavior": "Anim.Locomotion.Move",
+                "blendspace": "asset://animation/examples/moving.blendspace.sdata"
+            }
+        ]
+    }
+}
