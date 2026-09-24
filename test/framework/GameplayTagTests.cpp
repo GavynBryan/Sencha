@@ -209,3 +209,36 @@ TEST(GameplayTagQuery, MatchesCountedTagSet)
     EXPECT_TRUE(tags.Revoke(canAttackGrant));
     EXPECT_FALSE(query.Matches(tags, registry));
 }
+
+// Ids are registration order, so two processes number the same tags
+// differently; the wire key is the name's, and names the same tag in both.
+TEST(GameplayTagWireKey, NamesTheSameTagWhateverOrderItRegisteredIn)
+{
+    GameplayTagRegistry first;
+    GameplayTagRegistry second;
+    const GameplayTagId walkFirst = *first.RegisterTag("Anim.Walk");
+    (void)first.RegisterTag("Anim.Run");
+    (void)second.RegisterTag("Anim.Run");
+    (void)second.RegisterTag("Anim.Idle");
+    const GameplayTagId walkSecond = *second.RegisterTag("Anim.Walk");
+    ASSERT_NE(walkFirst, walkSecond);
+
+    const std::uint32_t key = first.WireKey(walkFirst);
+    EXPECT_EQ(key, GameplayTagRegistry::WireKeyOf("Anim.Walk"));
+    EXPECT_EQ(second.FindByWireKey(key), walkSecond);
+    // Parents registered on the way have keys too.
+    EXPECT_EQ(second.FindByWireKey(GameplayTagRegistry::WireKeyOf("Anim")), second.FindTag("Anim"));
+    EXPECT_FALSE(second.FindByWireKey(GameplayTagRegistry::WireKeyOf("Anim.Swim")).IsValid());
+    EXPECT_EQ(first.WireKey(GameplayTagId{}), 0u);
+}
+
+// Two names that hash alike make their key say nothing rather than guess.
+TEST(GameplayTagWireKey, ACollidingKeyResolvesToNoTag)
+{
+    ASSERT_EQ(GameplayTagRegistry::WireKeyOf("Tag.c90229"), GameplayTagRegistry::WireKeyOf("Tag.c129204"));
+    GameplayTagRegistry registry;
+    (void)registry.RegisterTag("Tag.c90229");
+    EXPECT_TRUE(registry.FindByWireKey(GameplayTagRegistry::WireKeyOf("Tag.c90229")).IsValid());
+    (void)registry.RegisterTag("Tag.c129204");
+    EXPECT_FALSE(registry.FindByWireKey(GameplayTagRegistry::WireKeyOf("Tag.c90229")).IsValid());
+}
