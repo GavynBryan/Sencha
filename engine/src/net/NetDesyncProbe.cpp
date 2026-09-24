@@ -9,6 +9,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <cstring>
+#include <vector>
 
 namespace
 {
@@ -167,6 +168,7 @@ bool NetFoldLocalEntity(const World& world, const ReplicationLayout& layout,
     }
 
     hash = kSeed;
+    std::vector<std::byte> image;
     // Walked in layout order rather than in storage order, because the two sides
     // have to fold the same fields in the same sequence and only the layout is
     // the same on both.
@@ -198,6 +200,16 @@ bool NetFoldLocalEntity(const World& world, const ReplicationLayout& layout,
         const auto* bytes = authoritative != nullptr
                                 ? reinterpret_cast<const std::byte*>(authoritative)
                                 : static_cast<const std::byte*>(raw);
+        // The authority folds what it sent, so a translated component is
+        // folded as its wire image here too.
+        if (component->ToWire != nullptr)
+        {
+            image.assign(component->Size, std::byte{});
+            const ReplicationWireContext context{ .Entities = &world, .Entity = entity,
+                                                  .Client = &identity };
+            component->ToWire(context, std::span(bytes, component->LocalSize), image);
+            bytes = image.data();
+        }
         hash = ReplicationFoldFields(
             hash, *component, std::span(bytes, component->Size),
             ReplicationVisibleFields(*component, isOwner));

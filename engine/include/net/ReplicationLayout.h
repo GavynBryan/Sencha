@@ -2,11 +2,13 @@
 
 #include <core/metadata/RuntimeSchema.h>
 #include <net/ReplicationSchemas.h>
+#include <net/ReplicationWireContext.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <string>
 #include <string_view>
@@ -69,6 +71,40 @@ struct ReplicatedField
     bool OwnerLocal = false;
 };
 
+// A component's wire image from its bytes, and its bytes back from an image.
+// FromWire writes into the receiver's own value, so what the image does not
+// carry is left as this machine had it.
+using ReplicationToWire = void (*)(const ReplicationWireContext& context, std::span<const std::byte> component,
+                                   std::span<std::byte> wire);
+using ReplicationFromWire = void (*)(const ReplicationWireContext& context, std::span<const std::byte> wire,
+                                     std::span<std::byte> component);
+
+//-----------------------------------------------------------------------------
+// ReplicationCodec<T>
+//
+// Specialized by a component whose wire form is not its bytes: it holds
+// process-local values -- an entity, a gameplay tag id -- that have to travel
+// as what every machine agrees on. The specialization names a plain Wire
+// struct with its own TypeSchema, which is all the rest of replication sees:
+// change detection, field masks, encoding, baselines and the desync probe
+// work on the image, so they stay the generic path.
+//
+//   template <> struct ReplicationCodec<Pointer>
+//   {
+//       using Wire = PointerWire;
+//       static void ToWire(const ReplicationWireContext&, const Pointer&, PointerWire&);
+//       static void FromWire(const ReplicationWireContext&, const PointerWire&, Pointer&);
+//   };
+//
+// Declaring one makes the component replicated; its own schema does not also
+// say Replicated. A translated component is never predicted.
+//-----------------------------------------------------------------------------
+template <typename T>
+struct ReplicationCodec;
+
+template <typename T>
+concept ComponentHasReplicationCodec = requires { typename ReplicationCodec<T>::Wire; };
+
 //-----------------------------------------------------------------------------
 // A replicated component type and the fields of it that travel.
 //-----------------------------------------------------------------------------
@@ -76,9 +112,19 @@ struct ReplicatedComponent
 {
     ComponentTypeId Type;
     std::string_view Name;
-    // Size of the whole component, so an applier can size the staging buffer it
-    // decodes into before writing it back through the world schema.
+    // Size of what travels: the component itself, or its wire image when a
+    // codec translates it. An applier sizes the staging it decodes into by it.
     std::size_t Size = 0;
+    // Size of the component as the World stores it.
+    std::size_t LocalSize = 0;
+    // Set for a component that travels as a wire image rather than its bytes.
+    ReplicationToWire ToWire = nullptr;
+    ReplicationFromWire FromWire = nullptr;
+    // The image of the type's defaults. A receiver stages a translated
+    // component from it and writes the component whole from the result, so a
+    // run still at its default when the component is first seen is already
+    // what every receiver will hold, and is not sent.
+    std::vector<std::byte> WireDefault;
     // The owner's machine simulates this one for itself, so an applier holds
     // what arrives apart from the world's copy instead of overwriting it.
     //
@@ -161,6 +207,51 @@ public:
                          sizeof(T),
                          ComponentIsPredicted<T>,
                          RuntimeFieldsOf<T, SchemaPurpose::Replication>());
+    }
+
+    // Registers T as travelling through its ReplicationCodec: what is sent is
+    // the codec's wire image, not T's bytes.
+    template <ComponentHasReplicationCodec T>
+    bool AddCodec()
+    {
+        using Wire = typename ReplicationCodec<T>::Wire;
+        static_assert(std::is_trivially_copyable_v<T> && std::is_trivially_copyable_v<Wire>,
+                      "A replicated component and its wire image must be trivially copyable.");
+        static_assert(HasTypeSchema<Wire>, "A wire image needs a TypeSchema: it says what of the image travels.");
+        static_assert(!ComponentHasOnAdd<T> && !ComponentHasOnRemove<T>,
+                      "A replicated component must not declare ComponentTraits lifecycle hooks: snapshot "
+                      "apply overwrites bytes in place and cannot run them.");
+        if (!AddErased(ResolveComponentTypeId<T>(), ResolveComponentName<T>(), sizeof(Wire), false,
+                       RuntimeFieldsOf<Wire, SchemaPurpose::Replication>()))
+            return false;
+        ReplicatedComponent& added = Components_.back();
+        added.LocalSize = sizeof(T);
+        {
+            const T local{};
+            Wire image{};
+            ReplicationCodec<T>::ToWire(ReplicationWireContext{}, local, image);
+            added.WireDefault.resize(sizeof(Wire));
+            std::memcpy(added.WireDefault.data(), &image, sizeof(Wire));
+        }
+        added.ToWire = [](const ReplicationWireContext& context, std::span<const std::byte> component,
+                          std::span<std::byte> wire) {
+            T local;
+            Wire image;
+            std::memcpy(&local, component.data(), sizeof(T));
+            std::memcpy(&image, wire.data(), sizeof(Wire));
+            ReplicationCodec<T>::ToWire(context, local, image);
+            std::memcpy(wire.data(), &image, sizeof(Wire));
+        };
+        added.FromWire = [](const ReplicationWireContext& context, std::span<const std::byte> wire,
+                            std::span<std::byte> component) {
+            T local;
+            Wire image;
+            std::memcpy(&local, component.data(), sizeof(T));
+            std::memcpy(&image, wire.data(), sizeof(Wire));
+            ReplicationCodec<T>::FromWire(context, image, local);
+            std::memcpy(component.data(), &local, sizeof(T));
+        };
+        return true;
     }
 
     void Seal();

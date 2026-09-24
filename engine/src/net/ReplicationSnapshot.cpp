@@ -351,6 +351,35 @@ void ReplicationAuthorityIdentity::ForgetDead(const World& world)
     });
 }
 
+std::uint64_t ReplicationWireContext::WireEntity(EntityId entity) const
+{
+    if (!entity.IsValid())
+        return 0;
+    if (Client != nullptr)
+        return Client->TryFind(entity).Value;
+    if (Authority == nullptr)
+        return 0;
+    if (const NetEntityId known = Authority->TryFind(entity); known.IsValid())
+        return known.Value;
+    // Minted only for what replication would mint anyway: a live entity
+    // marked for it. Anything else means nothing on another machine.
+    if (Entities == nullptr || !Entities->IsAlive(entity) || !Entities->IsRegistered<NetReplicated>()
+        || !Entities->HasComponent<NetReplicated>(entity))
+        return 0;
+    return Authority->IdFor(entity).Value;
+}
+
+EntityId ReplicationWireContext::LocalEntity(std::uint64_t wire) const
+{
+    if (wire == 0)
+        return {};
+    const NetEntityId id{ wire };
+    const EntityId entity = Client != nullptr      ? Client->TryResolve(id)
+                          : Authority != nullptr ? Authority->TryResolve(id)
+                                                 : EntityId{};
+    return entity.IsValid() && Entities != nullptr && Entities->IsAlive(entity) ? entity : EntityId{};
+}
+
 EntityId ReplicationClientIdentity::TryResolve(NetEntityId id) const
 {
     const auto it = Entries.find(id);
@@ -909,6 +938,8 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     // One arena for every component's decoded bytes, so the write half reads
     // from a single allocation rather than one per component.
     std::vector<std::byte> decoded;
+    // A codec component's local value, staged to translate to or from its image.
+    std::vector<std::byte> codecLocal;
     planned.reserve(updatedCount);
 
     for (std::uint32_t i = 0; i < updatedCount; ++i)
@@ -1147,6 +1178,28 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 std::memcpy(target.data(), decoded.data() + earlier->Offset,
                             component->Size);
             }
+            else if (component->ToWire != nullptr)
+            {
+                // A delta lands on the wire image of what this machine holds,
+                // so the receiver's own value is translated before decoding.
+                codecLocal.assign(component->LocalSize, std::byte{});
+                const void* current = !spawned && world.HasComponent(entity, column)
+                                          ? world.GetComponentRaw(entity, column)
+                                          : nullptr;
+                if (current != nullptr)
+                {
+                    std::memcpy(codecLocal.data(), current, component->LocalSize);
+                }
+                else if (!schema.WriteDefaultBytes(component->Type, codecLocal))
+                {
+                    result.Error = SnapshotApplyError::UnknownComponentStorage;
+                    return result;
+                }
+                std::fill(target.begin(), target.end(), std::byte{});
+                const ReplicationWireContext context{ .Entities = &world, .Entity = entity,
+                                                      .Client = &identity };
+                component->ToWire(context, codecLocal, target);
+            }
             else if (!spawned && world.HasComponent(entity, column))
             {
                 const void* current = world.GetComponentRaw(entity, column);
@@ -1254,6 +1307,15 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
     // shares with the wire, and an allocation per component per spawn is a cost
     // a join should not pay.
     std::vector<std::byte> merged;
+    // Components that travel as a wire image, translated back once every
+    // entity this snapshot spawns exists, so one can name another that comes
+    // later in the same message.
+    struct CodecWrite
+    {
+        EntityId Entity;
+        std::size_t Slot;
+    };
+    std::vector<CodecWrite> codecWrites;
     for (NetEntityId id : destroyed)
     {
         const EntityId entity = identity.TryResolve(id);
@@ -1387,6 +1449,13 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
                 // erase everything the prefab set that the wire does not carry
                 // -- an aim limit, a tuning handle, anything local-only. Merge
                 // instead: the prefab underneath, the wire's own fields on top.
+                if (component.FromWire != nullptr)
+                {
+                    codecWrites.push_back(
+                        CodecWrite{ .Entity = entity, .Slot = update.FirstComponent + c });
+                    break;
+                }
+
                 std::span<const std::byte> writing = value;
                 if (present && update.Spawned && update.Prefab.IsValid())
                 {
@@ -1444,6 +1513,30 @@ SnapshotApplyResult ReplicationApplySnapshot(const SnapshotApplyRequest& request
         // the world transform, and nothing else would ever create it here.
         SeedDerivedWorldTransform(world, entity);
 
+    }
+
+    // Translated onto the receiver's own value rather than defaults, so what
+    // the codec does not carry -- and a prefab's settings on a spawn -- stays.
+    for (const CodecWrite& pending : codecWrites)
+    {
+        const PlannedComponent& slot = plannedComponents[pending.Slot];
+        const ReplicatedComponent& component = *slot.Layout;
+        const ComponentId column = world.GetComponentIdByType(component.Type);
+        const bool present = world.HasComponent(pending.Entity, column);
+        codecLocal.assign(component.LocalSize, std::byte{});
+        const void* held = present ? world.GetComponentRaw(pending.Entity, column) : nullptr;
+        if (held != nullptr)
+            std::memcpy(codecLocal.data(), held, component.LocalSize);
+        else
+            (void)schema.WriteDefaultBytes(component.Type, codecLocal);
+        const ReplicationWireContext context{ .Entities = &world, .Entity = pending.Entity,
+                                              .Client = &identity };
+        component.FromWire(context, std::span(decoded.data() + slot.Offset, component.Size), codecLocal);
+        const bool wrote =
+            present ? schema.SetComponentBytes(world, pending.Entity, component.Type, codecLocal)
+                    : schema.ImportComponent(world, pending.Entity, component.Type, codecLocal);
+        assert(wrote && "a component the read half accepted would not write");
+        (void)wrote;
     }
 
     // Every snapshot a predicting client applies is a chance to reconcile,

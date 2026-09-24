@@ -147,7 +147,17 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                 // is exactly what a peer will hold. Comparing raw values would
                 // call movement finer than the wire can express a change.
                 const auto* rawBytes = static_cast<const std::byte*>(raw);
-                scratch.assign(rawBytes, rawBytes + size);
+                if (column.Layout->ToWire != nullptr)
+                {
+                    scratch.assign(size, std::byte{ 0 });
+                    const ReplicationWireContext context{ .Entities = &world, .Entity = entity,
+                                                          .Authority = &identity };
+                    column.Layout->ToWire(context, std::span(rawBytes, column.Layout->LocalSize), scratch);
+                }
+                else
+                {
+                    scratch.assign(rawBytes, rawBytes + size);
+                }
                 ReplicationSnapToWire(*column.Layout, scratch);
 
                 const auto existing = std::find_if(
@@ -161,14 +171,30 @@ void ReplicationChangeStore::Update(World& world, const ReplicationLayout& layou
                     // First sight: everything about it is new. If the entity
                     // had this component before and lost it, the news that it
                     // went is superseded by it being back.
+                    const std::size_t removals = state.Removed.size();
                     std::erase_if(state.Removed,
                                   [&](const RemovedComponent& gone) {
                                       return gone.WireIndex == column.WireIndex;
                                   });
+                    const bool returning = state.Removed.size() != removals;
                     ComponentState added;
                     added.WireIndex = column.WireIndex;
                     added.Bytes.assign(scratch.begin(), scratch.end());
                     added.ChangedAt.assign(runs, generation);
+                    // A translated component's runs still at their default
+                    // are what a receiver stages anyway. Not for one coming
+                    // back: a peer never told it went still holds what it had.
+                    const std::vector<std::byte>& defaults = column.Layout->WireDefault;
+                    if (!returning && defaults.size() == size)
+                    {
+                        for (std::size_t run = 0; run < runs; ++run)
+                        {
+                            const ReplicatedField& field = column.Layout->Fields[run];
+                            const std::size_t width = field.Size * field.Count;
+                            if (std::memcmp(scratch.data() + field.Offset, defaults.data() + field.Offset, width) == 0)
+                                added.ChangedAt[run] = 0;
+                        }
+                    }
                     added.SeenAt = generation;
                     state.Components.push_back(std::move(added));
                     continue;

@@ -17,7 +17,8 @@
 
 namespace
 {
-    constexpr std::size_t kScratchBytes = 512;
+    // Room for the largest engine component with every field owed.
+    constexpr std::size_t kScratchBytes = 1024;
 
     std::span<const std::byte> BytesOf(const auto& value)
     {
