@@ -146,6 +146,7 @@ public:
     [[nodiscard]] const DataAssetCache& DataCache() const;
     // The editor's own clips, including working events not yet saved.
     [[nodiscard]] const AnimationClipCache& Clips() const;
+    [[nodiscard]] const SkeletonCache& Skeletons() const;
     // The skeleton the simulated rig names, when it names one that is loaded.
     [[nodiscard]] const SkeletonData* RigSkeleton() const;
     // One undo step on the open rig's document, opening it first: `edit`

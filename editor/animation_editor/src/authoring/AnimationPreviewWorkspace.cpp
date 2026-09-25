@@ -315,6 +315,11 @@ const AnimationClipCache& AnimationPreviewWorkspace::Clips() const
     return Assets.AnimationClips;
 }
 
+const SkeletonCache& AnimationPreviewWorkspace::Skeletons() const
+{
+    return Assets.Skeletons;
+}
+
 bool AnimationPreviewWorkspace::OpenClipEvents(const std::string& clipPath)
 {
     if (FindClipEvents(clipPath) != nullptr)
@@ -688,7 +693,7 @@ bool AnimationPreviewWorkspace::CreateRig(const AnimationRigRecipe& recipe, std:
         error = "No project content root is open to write the rig into.";
         return false;
     }
-    const AnimationRigPlan plan = PlanAnimationRig(recipe, Assets.AnimationClips);
+    const AnimationRigPlan plan = PlanAnimationRig(recipe, Assets.AnimationClips, &Assets.Skeletons);
     if (!plan.Error.empty())
     {
         error = plan.Error;

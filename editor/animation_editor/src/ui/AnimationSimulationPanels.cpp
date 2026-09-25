@@ -8,6 +8,7 @@
 
 #include <anim/AnimFactEvaluation.h>
 #include <anim/AnimationClipCache.h>
+#include <anim/SkeletonCache.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <imgui.h>
@@ -183,13 +184,26 @@ public:
 
     }
 private:
-    // A name and the clips to play, in the order ticked: the first idles, the
-    // rest play while a request of their name is held.
+    // A name, the tier it starts as, and the clips to play in the order
+    // ticked: the first idles; what the rest do depends on the tier.
     void DrawNewRig()
     {
-        ImGui::TextWrapped("Writes a behavior set, slot map, request schema, rig and scenario into the "
-                           "project, then opens the rig ready to play.");
+        ImGui::TextWrapped("Writes a behavior set, slot map, request schema, selectors, rig and scenario into "
+                           "the project, then opens the rig ready to play.");
         (void)SubmitText("Name", NewRigName);
+        static constexpr const char* kPresetHelp[] = {
+            "Prop: one layer, no selector. The first clip idles; every other clip plays while a request of its "
+            "name is held. Doors, machinery, pickups.",
+            "Simple: one layer chosen by rules over the engine's facts. The first clip idles, the second plays "
+            "while moving, and the rest are actions a request plays once through. Most enemies.",
+            "Character: Simple's idle and locomotion, and an upper-body layer from a chosen joint that plays the "
+            "actions over them. Players and anything that acts while it moves.",
+        };
+        int preset = static_cast<int>(NewRigPreset);
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::Combo("Tier", &preset, "Prop\0Simple\0Character\0"))
+            NewRigPreset = static_cast<AnimationRigPreset>(preset);
+        ImGui::TextDisabled("%s", kPresetHelp[preset]);
         const AnimationClipCache& clips = Workspace.Clips();
         const auto skeletonOf = [&](const std::string& path) {
             const AnimationClipData* clip = clips.Get(clips.Find(path));
@@ -217,13 +231,37 @@ private:
             }
         }
         ImGui::EndChild();
+        if (NewRigPreset == AnimationRigPreset::Character)
+        {
+            // The joints of the chosen clips' skeleton, by name.
+            const SkeletonData* data = skeleton.empty()
+                ? nullptr
+                : Workspace.Skeletons().Get(Workspace.Skeletons().Find(skeleton));
+            ImGui::SetNextItemWidth(220.0f);
+            if (ImGui::BeginCombo("Upper body from", NewRigUpperJoint.empty() ? "(choose a joint)"
+                                                                               : NewRigUpperJoint.c_str()))
+            {
+                if (data != nullptr)
+                    for (const SkeletonJoint& joint : data->Joints)
+                        if (ImGui::Selectable(joint.Name.c_str(), joint.Name == NewRigUpperJoint))
+                            NewRigUpperJoint = joint.Name;
+                ImGui::EndCombo();
+            }
+            if (data == nullptr)
+                ImGui::TextDisabled("Choose clips first; the joints are their skeleton's.");
+        }
         ImGui::BeginDisabled(NewRigName.empty() || NewRigClips.empty());
         if (ImGui::Button("Create rig"))
         {
-            if (Workspace.CreateRig({ NewRigName, NewRigClips }, NewRigError))
+            if (Workspace.CreateRig({ .Name = NewRigName,
+                                      .Clips = NewRigClips,
+                                      .Preset = NewRigPreset,
+                                      .UpperBodyJoint = NewRigUpperJoint },
+                                    NewRigError))
             {
                 NewRigName.clear();
                 NewRigClips.clear();
+                NewRigUpperJoint.clear();
             }
         }
         ImGui::EndDisabled();
@@ -237,6 +275,8 @@ private:
     std::string TagError;
     std::string NewRigName;
     std::vector<std::string> NewRigClips;
+    AnimationRigPreset NewRigPreset = AnimationRigPreset::Prop;
+    std::string NewRigUpperJoint;
     std::string NewRigError;
 };
 
