@@ -21,6 +21,7 @@ namespace
         const AnimationClipData* Clip = nullptr;
         AnimTick StartTick = 0;
         float OffsetSeconds = 0.0f;
+        float Rate = 1.0f;
         bool Cyclic = false;
     };
 
@@ -64,7 +65,8 @@ namespace
         const AnimBoundBehavior* behavior = rig.FindBehavior(carrying->Intent);
         out = Carrier{ .Clip = clip,
                        .StartTick = carrying->StartTick,
-                       .OffsetSeconds = 0.0f,
+                       .OffsetSeconds = behavior->Policy.StartSeconds,
+                       .Rate = behavior->Policy.Rate,
                        .Cyclic = behavior->Policy.Kind == AnimBehaviorKind::Cyclic };
         return true;
     }
@@ -84,6 +86,7 @@ namespace
         out = Carrier{ .Clip = clip,
                        .StartTick = base.ClipStartTick,
                        .OffsetSeconds = base.ClipOffsetSeconds,
+                       .Rate = base.ClipRate,
                        .Cyclic = behavior->Policy.Kind == AnimBehaviorKind::Cyclic };
         return true;
     }
@@ -116,12 +119,14 @@ bool SampleAnimRootMotion(World& world, EntityId entity, std::uint64_t tick, dou
         return false;
 
     const auto elapsed = [&](double at) {
-        return static_cast<double>(carrier.OffsetSeconds) + (at - static_cast<double>(carrier.StartTick)) * tickSeconds;
+        return static_cast<double>(carrier.OffsetSeconds)
+            + std::max(at - static_cast<double>(carrier.StartTick), 0.0) * tickSeconds * static_cast<double>(carrier.Rate);
     };
     // The tick covers the step from the one before; nothing before the clip
-    // began carries anyone.
+    // began carries anyone. Played backwards the clip carries nothing: a
+    // root curve says where it goes forwards.
     const double to = elapsed(static_cast<double>(tick));
-    const double from = std::max(elapsed(static_cast<double>(tick) - 1.0), static_cast<double>(carrier.OffsetSeconds));
+    const double from = elapsed(static_cast<double>(tick) - 1.0);
     const AnimRootDelta delta =
         AnimRootMotionBetween(*carrier.Clip->Root, carrier.Clip->DurationSeconds, from, to, carrier.Cyclic);
 

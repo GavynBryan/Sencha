@@ -24,11 +24,8 @@ class World;
 // The animated-entity vocabulary. Which of these an entity carries is its tier:
 // a rig brings its request set and content state, and is a Prop; fact storage
 // brings its history and selector state, and makes it Simple or more. The
-// decision log is opt-in on any tier.
-//
-// The clip player is not here. It is a render-facing component the renderer's
-// vocabulary already names, and the animation runtime will replace what it
-// does rather than extend it.
+// decision log is opt-in on any tier. A clip played on its own is a one-layer
+// rig whose behavior sets its speed, start and loop.
 //=============================================================================
 
 using AnimationComponents = ComponentSet<

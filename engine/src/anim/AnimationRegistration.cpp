@@ -9,7 +9,6 @@
 #include <anim/AnimRootMotionSource.h>
 #include <anim/AnimRigBinding.h>
 #include <anim/AnimSelectSystem.h>
-#include <anim/AnimationClipPlaybackSystem.h>
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleRegistry.h>
 #include <ecs/World.h>
@@ -66,7 +65,6 @@ void RegisterAnimationCVars(ConsoleRegistry& console, World& world)
 
 void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging, const AnimationHost& host)
 {
-    schedule.Register<AnimationClipPlaybackSystem>();
     schedule.Register<AnimFactGatherSystem>(logging);
     schedule.Register<AnimSelectSystem>();
     schedule.Register<AnimContentSystem>();

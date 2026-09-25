@@ -5,7 +5,9 @@
         "behaviors": [
             {
                 "tag": "Anim.Golden.Hold",
-                "kind": "hold"
+                "kind": "cyclic",
+                "rate": 0.0,
+                "start_seconds": 0.5
             }
         ]
     }

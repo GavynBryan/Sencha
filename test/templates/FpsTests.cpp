@@ -1,6 +1,6 @@
 #include "TemplateModuleRun.h"
 
-#include <anim/AnimationClipPlaybackSystem.h>
+#include <anim/AnimContentSystem.h>
 #include <camera/CameraExclusion.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
@@ -28,7 +28,7 @@ namespace
     struct FpsProbe
     {
         Engine* Host = nullptr;
-        // No starter content plays clips; the template must not pay for playback.
+        // No starter content animates; the template must not pay for animation.
         bool AnimationRegistered = true;
         int Frames = 0;
         int Participants = 0;
@@ -43,7 +43,7 @@ namespace
 
         void FrameUpdate(FrameUpdateContext& ctx)
         {
-            AnimationRegistered = Host->Schedule().Has<AnimationClipPlaybackSystem>();
+            AnimationRegistered = Host->Schedule().Has<AnimContentSystem>();
             const World& world = ctx.Entities;
             ++Frames;
             Participants = 0;

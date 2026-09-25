@@ -33,6 +33,7 @@ struct AnimLayerPlayback
     // The tick Phase was read at.
     AnimTick PhaseTick = 0;
     float ClipOffsetSeconds = 0.0f;
+    float ClipRate = 1.0f;
     float Phase = 0.0f;
     // Normalized phase per second.
     float PhaseRate = 0.0f;

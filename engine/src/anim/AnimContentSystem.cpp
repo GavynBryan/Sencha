@@ -29,6 +29,25 @@ namespace
         return content < rig.Contents.size() ? rig.Contents[content].DurationSeconds : 0.0f;
     }
 
+    // The behavior's speed and start; a behavior the rig does not know plays
+    // as authored.
+    const AnimBehaviorDecl& PlaybackOf(const AnimBoundRig& rig, GameplayTagId behavior)
+    {
+        static const AnimBehaviorDecl asAuthored;
+        const AnimBoundBehavior* bound = rig.FindBehavior(behavior);
+        return bound != nullptr ? bound->Policy : asAuthored;
+    }
+
+    // Time `elapsed` into content `duration` long: wrapped for cyclic content,
+    // either way round, and held at its ends otherwise.
+    double PlacedTime(double elapsed, double duration, bool cyclic)
+    {
+        if (!cyclic)
+            return std::clamp(elapsed, 0.0, duration);
+        const double wrapped = std::fmod(elapsed, duration);
+        return wrapped < 0.0 ? wrapped + duration : wrapped;
+    }
+
     void Log(AnimDecisionLog* log, AnimTick now, std::size_t layer, AnimDecisionCause cause,
              AnimChangeReason reason, const AnimLayerContent& state)
     {
@@ -244,9 +263,9 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             if (length <= 0.0f)
                 return 0.0f;
             const double elapsed = static_cast<double>(layer.StartOffsetSeconds)
-                + static_cast<double>(now >= layer.StartTick ? now - layer.StartTick : 0) * tickSeconds;
-            const double at = outgoingKind == AnimBehaviorKind::Cyclic ? std::fmod(elapsed, static_cast<double>(length))
-                                                                       : std::min(elapsed, static_cast<double>(length));
+                + static_cast<double>(now >= layer.StartTick ? now - layer.StartTick : 0) * tickSeconds
+                    * static_cast<double>(layer.ClipRate);
+            const double at = PlacedTime(elapsed, length, outgoingKind == AnimBehaviorKind::Cyclic);
             return static_cast<float>(at / length);
         };
         // Set when content starts this tick: the normalized time it starts at.
@@ -259,7 +278,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             layer.Request = driving != nullptr ? driving->Id : AnimRequestId{};
             layer.RequestStartTick = driving != nullptr ? driving->StartTick : 0;
             layer.StartTick = instanceStart;
-            layer.StartOffsetSeconds = 0.0f;
+            layer.StartOffsetSeconds = PlaybackOf(rig, behavior).StartSeconds;
             layer.Pinned = kind == AnimBehaviorKind::OneShot || kind == AnimBehaviorKind::Flow;
             startNormalized = 0.0f;
             Log(log, now, l, AnimDecisionCause::ContentChanged, reason, layer);
@@ -403,10 +422,11 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             std::array<float, kAnimBlendspaceMaxSamples> weights{};
             AnimBlendspaceWeights(space, at, weights);
             const float duration = AnimBlendspaceDuration(rig, space, weights);
+            const float rate = PlaybackOf(rig, layer.Behavior).Rate;
             if (startNormalized)
                 layer.Phase = *startNormalized;
             else if (duration > 0.0f)
-                layer.Phase += static_cast<float>(tickSeconds / duration);
+                layer.Phase += static_cast<float>(tickSeconds * rate / duration);
             // The phase is a sum of per-tick steps, so the tick that reaches
             // the end may land a rounding short of it; it counts as there.
             constexpr float kEndSlack = 1e-5f;
@@ -417,8 +437,10 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             }
             else
             {
-                layer.ContentComplete = layer.Phase >= 1.0f - kEndSlack;
-                layer.Phase = layer.ContentComplete ? 1.0f : layer.Phase;
+                layer.ContentComplete = rate > 0.0f ? layer.Phase >= 1.0f - kEndSlack
+                                      : rate < 0.0f ? layer.Phase <= kEndSlack
+                                                    : false;
+                layer.Phase = layer.ContentComplete ? (rate > 0.0f ? 1.0f : 0.0f) : std::clamp(layer.Phase, 0.0f, 1.0f);
             }
             layer.Coordinates[0] = at[0];
             layer.Coordinates[1] = at[1];
@@ -426,29 +448,32 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             layer.Clip = dominant >= 0 ? static_cast<std::uint16_t>(dominant) : kAnimNoContent;
             layer.ClipStartTick = layer.StartTick;
             layer.ClipOffsetSeconds = 0.0f;
+            layer.ClipRate = rate;
             layer.TimeSeconds = layer.Phase * duration;
             continue;
         }
+        const float rate = PlaybackOf(rig, layer.Behavior).Rate;
         layer.Clip = layer.Content;
         layer.ClipStartTick = layer.StartTick;
         layer.ClipOffsetSeconds = layer.StartOffsetSeconds;
+        layer.ClipRate = rate;
         const float duration = DurationOf(rig, layer.Content);
         const double elapsed = static_cast<double>(layer.StartOffsetSeconds)
-            + static_cast<double>(now >= layer.StartTick ? now - layer.StartTick : 0) * tickSeconds;
+            + static_cast<double>(now >= layer.StartTick ? now - layer.StartTick : 0) * tickSeconds
+                * static_cast<double>(rate);
         if (layer.Content == kAnimNoContent || duration <= 0.0f)
         {
             layer.TimeSeconds = 0.0f;
             layer.ContentComplete = layer.Content != kAnimNoContent && kind != AnimBehaviorKind::Cyclic;
         }
-        else if (kind == AnimBehaviorKind::Cyclic)
-        {
-            layer.TimeSeconds = static_cast<float>(std::fmod(elapsed, static_cast<double>(duration)));
-            layer.ContentComplete = false;
-        }
         else
         {
-            layer.TimeSeconds = static_cast<float>(std::min(elapsed, static_cast<double>(duration)));
-            layer.ContentComplete = elapsed >= static_cast<double>(duration);
+            const bool cyclic = kind == AnimBehaviorKind::Cyclic;
+            layer.TimeSeconds = static_cast<float>(PlacedTime(elapsed, duration, cyclic));
+            // Played forward it ends at its length, backward at its start;
+            // held, it does not end.
+            layer.ContentComplete = !cyclic
+                && (rate > 0.0f ? elapsed >= static_cast<double>(duration) : rate < 0.0f && elapsed <= 0.0);
         }
     }
     content.Reconstruct = false;

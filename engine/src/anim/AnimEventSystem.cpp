@@ -21,7 +21,8 @@ namespace
     double Elapsed(const AnimLayerContent& layer, AnimTick tick, double tickSeconds)
     {
         return static_cast<double>(layer.ClipOffsetSeconds)
-            + static_cast<double>(tick >= layer.ClipStartTick ? tick - layer.ClipStartTick : 0) * tickSeconds;
+            + static_cast<double>(tick >= layer.ClipStartTick ? tick - layer.ClipStartTick : 0) * tickSeconds
+                * static_cast<double>(layer.ClipRate);
     }
 
     // Calls `visit(index)` for every mark of `content` inside the stretch from

@@ -1,6 +1,6 @@
 #include "TemplateModuleRun.h"
 
-#include <anim/AnimationClipPlaybackSystem.h>
+#include <anim/AnimContentSystem.h>
 #include <authored/AuthoredEventDispatcher.h>
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbBindingSet.h>
@@ -37,7 +37,7 @@ namespace
     struct ArenaProbe
     {
         Engine* Host = nullptr;
-        // No starter content plays clips; the template must not pay for playback.
+        // No starter content animates; the template must not pay for animation.
         bool AnimationRegistered = true;
         int Frames = 0;
         static constexpr int kHostAtFrame = 150;
@@ -55,7 +55,7 @@ namespace
 
         void FrameUpdate(FrameUpdateContext& ctx)
         {
-            AnimationRegistered = Host->Schedule().Has<AnimationClipPlaybackSystem>();
+            AnimationRegistered = Host->Schedule().Has<AnimContentSystem>();
             const World& world = ctx.Entities;
             ++Frames;
             EntityId participant;

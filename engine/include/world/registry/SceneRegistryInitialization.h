@@ -1,6 +1,5 @@
 #pragma once
 
-#include <anim/AnimationClipPlaybackRuntime.h>
 #include <audio/AudioSourceRuntime.h>
 #include <core/assets/AssetStoreTable.h>
 
@@ -18,5 +17,4 @@ struct Registry;
 // absent keeps an unowned handle.
 void InitializeSceneRegistry(Registry& registry,
                              AssetStoreTable stores = {},
-                             AudioSourceRuntime audio = {},
-                             AnimationClipPlaybackRuntime animation = {});
+                             AudioSourceRuntime audio = {});

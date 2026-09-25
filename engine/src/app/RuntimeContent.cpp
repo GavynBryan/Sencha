@@ -1,7 +1,6 @@
 #include <app/RuntimeContent.h>
 
 #include <anim/AnimRigBinding.h>
-#include <anim/AnimationClipPlaybackRuntime.h>
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
@@ -135,7 +134,6 @@ void RuntimeContent::Publish(World& world)
     world.SetResource(assets.Assets.Stores());
     world.SetResource(AudioSourceRuntime{
         &assets.AudioClips, &Host.Audio(), &Host.Captions() });
-    world.SetResource(AnimationClipPlaybackRuntime{ &assets.AnimationClips });
     world.SetResource(AnimRigBindings{ &assets.DataAssets, &assets.AnimationClips, &assets.Skeletons });
 
     // The spawn services are engine-owned; the asset stack they resolve scenes
@@ -203,7 +201,6 @@ void RuntimeContent::Disconnect(World& world)
 
     world.SetResource(AssetStoreTable{});
     world.SetResource(AudioSourceRuntime{});
-    world.SetResource(AnimationClipPlaybackRuntime{});
     world.SetResource(AnimRigBindings{});
 
 #ifdef SENCHA_ENABLE_COOK

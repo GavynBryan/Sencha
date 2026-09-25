@@ -62,6 +62,7 @@ namespace
             Layer.Clip = SectionClip(index);
             Layer.ClipStartTick = start;
             Layer.ClipOffsetSeconds = 0.0f;
+            Layer.ClipRate = 1.0f;
             if (reason != AnimChangeReason::SectionLooped)
                 Outcome.SectionChanged = true;
             if (Log == nullptr)

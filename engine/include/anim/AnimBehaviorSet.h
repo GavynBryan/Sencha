@@ -123,6 +123,12 @@ struct AnimBehaviorDecl
     // Behaviors in one sync group keep phase across a change; empty for none.
     std::string SyncGroup;
     bool RootMotion = false;
+    // How its clip content plays: speed (negative plays it backwards, zero
+    // holds it) and where in the clip it starts, in seconds. Together with
+    // the kind's loop or clamp, what a clip played on its own could do.
+    // Flows play on the tick clock and take neither.
+    float Rate = 1.0f;
+    float StartSeconds = 0.0f;
     // The layer weight below which cosmetic events on this behavior's content
     // do not fire.
     float EventWeight = 0.5f;

@@ -49,6 +49,9 @@ struct AnimLayerContent
     std::uint16_t Clip = kAnimNoContent;
     AnimTick ClipStartTick = 0;
     float ClipOffsetSeconds = 0.0f;
+    // Seconds of clip per second of ticks: the behavior's speed, 1 for a
+    // flow's section. Negative plays backwards and zero holds.
+    float ClipRate = 1.0f;
     // A blendspace's place: normalized phase, shared by every sample, and the
     // point the facts put it at this tick. Its clip is the heaviest sample,
     // whose events it plays.

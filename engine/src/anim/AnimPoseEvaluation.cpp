@@ -130,6 +130,7 @@ AnimLayerPlayback AnimPlaybackOf(const AnimBoundRig& rig, const AnimLayerContent
     playback.Clip = layer.Clip;
     playback.ClipStartTick = layer.ClipStartTick;
     playback.ClipOffsetSeconds = layer.ClipOffsetSeconds;
+    playback.ClipRate = layer.ClipRate;
     playback.Phase = layer.Phase;
     playback.PhaseTick = now;
     playback.Coordinates[0] = layer.Coordinates[0];
@@ -141,7 +142,7 @@ AnimLayerPlayback AnimPlaybackOf(const AnimBoundRig& rig, const AnimLayerContent
     if (layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0)
         playback.PhaseRate = BlendspaceRate(
             rig, rig.Blendspaces[static_cast<std::size_t>(rig.Contents[layer.Content].Blendspace)],
-            layer.Coordinates);
+            layer.Coordinates) * layer.ClipRate;
     return playback;
 }
 
@@ -212,10 +213,20 @@ void SampleAnimPlayback(const AnimPoseSources& sources, const AnimLayerPlayback&
     }
     double time = reference ? 0.0
                             : static_cast<double>(playback.ClipOffsetSeconds)
-            + std::max(0.0, Elapsed(playback.ClipStartTick, at, tickSeconds));
+            + std::max(0.0, Elapsed(playback.ClipStartTick, at, tickSeconds)) * static_cast<double>(playback.ClipRate);
     const double duration = static_cast<double>(clip->DurationSeconds);
     if (duration > 0.0)
-        time = playback.Cyclic ? std::fmod(time, duration) : std::min(time, duration);
+    {
+        if (playback.Cyclic)
+        {
+            time = std::fmod(time, duration);
+            time = time < 0.0 ? time + duration : time;
+        }
+        else
+        {
+            time = std::clamp(time, 0.0, duration);
+        }
+    }
     SampleAnimationClip(*clip, skeleton, static_cast<float>(time), out);
 }
 

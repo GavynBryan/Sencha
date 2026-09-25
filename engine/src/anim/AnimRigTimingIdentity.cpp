@@ -146,6 +146,8 @@ std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const GameplayTagRe
         h.Plain(behavior.Policy.Latch.OnInterrupt);
         h.Plain(behavior.Policy.Latch.OnRequestCancel);
         h.Plain(behavior.Policy.LateJoin);
+        h.Plain(behavior.Policy.Rate);
+        h.Plain(behavior.Policy.StartSeconds);
         h.Event(behavior.Entered);
         h.Event(behavior.Exited);
     }

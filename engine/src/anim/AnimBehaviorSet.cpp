@@ -98,6 +98,10 @@ namespace
                                "Behaviors that keep phase with each other.")),
                 optional(Field("root_motion", DataFieldKind::Bool, "Root motion",
                                "Contributes a motion source; requires request anchoring.")),
+                optional(Field("rate", DataFieldKind::Float, "Speed",
+                               "How fast its clip plays: 1 as authored, negative backwards, 0 holds.")),
+                optional(Field("start_seconds", DataFieldKind::Float, "Start at",
+                               "Seconds into its clip where it starts.")),
                 optional(Field("event_weight", DataFieldKind::Float, "Event weight",
                                "Layer weight below which cosmetic events do not fire.")),
                 lifecycle("on_entered", "On entered", "Invoked when a layer enters this behavior."),
@@ -180,6 +184,22 @@ namespace
             if (const JsonValue* root = entry.Find("root_motion"); root != nullptr && root->IsBool())
                 behavior.RootMotion = root->AsBool();
             behavior.EventWeight = static_cast<float>(number(&entry, "event_weight", behavior.EventWeight));
+            behavior.Rate = static_cast<float>(number(&entry, "rate", behavior.Rate));
+            behavior.StartSeconds = static_cast<float>(number(&entry, "start_seconds", behavior.StartSeconds));
+            if (!std::isfinite(behavior.Rate) || !std::isfinite(behavior.StartSeconds) || behavior.StartSeconds < 0.0f)
+            {
+                result.Error = std::format("{}.rate A behavior's speed is a finite number and its start a "
+                                           "non-negative one.",
+                                           at);
+                return result;
+            }
+            if (behavior.Kind == AnimBehaviorKind::Flow && (behavior.Rate != 1.0f || behavior.StartSeconds != 0.0f))
+            {
+                result.Error = std::format("{}.rate A flow plays its sections on the tick clock; it takes no speed "
+                                           "or start.",
+                                           at);
+                return result;
+            }
             const auto lifecycle = [&](std::string_view key) -> std::optional<AnimLifecycleDecl> {
                 const JsonValue* record = entry.Find(key);
                 if (record == nullptr || !record->IsObject())

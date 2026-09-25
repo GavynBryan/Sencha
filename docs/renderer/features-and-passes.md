@@ -439,14 +439,11 @@ keeps the composed local pose of that tick and the one before in the World's
 two poses by the same share the entity's transform is drawn at (the latest
 pose for an entity without transform history), composes model-space
 transforms and builds the palette through `BuildSkinningPalette`. A slot is
-used only when it was posed for the skeleton the mesh skins. The
-`skinned_pose` reference is also the gate for this path: a rig holding the
-paused player's bend must draw the same pixels.
-
-`AnimationClipPlayerComponent` remains for scenes that name a clip directly:
-extraction samples the clip at the player's current time
-(`anim/AnimationClipSampling.h`) once per rendered frame; the player's time is
-the only thing the tick advances.
+used only when it was posed for the skeleton the mesh skins, and it is the
+only pose source: a scene that plays one clip gives the entity a one-layer rig
+whose behavior sets the clip's speed, start and loop. The `skinned_pose`
+reference is the gate for this path: a rig holding a bend at 0.5s must draw the
+pixels the clip player it replaced drew.
 
 ## `SkyGradientPass`
 

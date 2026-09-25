@@ -186,11 +186,8 @@
           "visible": true,
           "section_mask": 4294967295
         },
-        "AnimationClipPlayer": {
-          "clip": "asset://meshes/dev/golden_rig.sanim",
-          "time_seconds": 0.5,
-          "rate": 0.0,
-          "loop": true
+        "anim_rig": {
+          "rig": "asset://animation/golden/golden_hold.rig.sdata"
         }
       }
     }

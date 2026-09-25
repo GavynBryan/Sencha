@@ -150,9 +150,9 @@ TEST(SkinnedFixture, Generate)
     ASSERT_TRUE(WriteSanimToBytes(clip, clipBytes, &error)) << error;
     ASSERT_TRUE(WriteBytes(directory / "golden_rig.sanim", clipBytes));
 
-    // The same bend held: one key at exactly what the sampler makes of the
-    // clip above at 0.5s, so a rig playing it poses the upper box as a
-    // paused player does, however many ticks have run.
+    // The same bend held: one key at what the sampler makes of the clip
+    // above at 0.5s. A second clip on the same skeleton, for content that
+    // mixes two (the blendspace example).
     AnimationClipData hold;
     hold.SkeletonPath = clip.SkeletonPath;
     hold.DurationSeconds = 1.0f;

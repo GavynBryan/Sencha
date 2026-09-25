@@ -24,7 +24,6 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRequestSet.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRig.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimSelectorState.h"
-    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimationClipPlayerComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/attributes/AttributeSet.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioCaptionComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioSourceComponent.h"

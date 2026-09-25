@@ -3,7 +3,6 @@
 
 #include <anim/AnimPosePool.h>
 #include <anim/AnimPoseState.h>
-#include <anim/AnimationClipPlayerComponent.h>
 #include <anim/AnimationClipSampling.h>
 #include <anim/SkinningPalette.h>
 
@@ -366,24 +365,6 @@ std::uint32_t RenderExtractionSystem::RegisterSkinnedPose(
         BuildPosedModelTransforms(*skeleton, PoseScratch, ModelScratch);
         BuildSkinningPalette(*skeleton, ModelScratch, PaletteScratch);
         std::copy(PaletteScratch.begin(), PaletteScratch.end(), skinnedPoses.Palettes.begin() + paletteOffset);
-        return poseSlot;
-    }
-
-    // Scenes that name a clip directly: the player advanced its time on the
-    // fixed tick and this samples whatever it currently holds.
-    const AnimationClipPlayerComponent* player =
-        world.TryGet<AnimationClipPlayerComponent>(entity);
-    const AnimationClipData* clip =
-        (player != nullptr && caches.AnimationClips != nullptr)
-            ? caches.AnimationClips->Get(player->Clip)
-            : nullptr;
-    if (clip != nullptr)
-    {
-        SampleAnimationClip(*clip, *skeleton, player->TimeSeconds, PoseScratch);
-        BuildPosedModelTransforms(*skeleton, PoseScratch, ModelScratch);
-        BuildSkinningPalette(*skeleton, ModelScratch, PaletteScratch);
-        std::copy(PaletteScratch.begin(), PaletteScratch.end(),
-                  skinnedPoses.Palettes.begin() + paletteOffset);
     }
     return poseSlot;
 }

@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <anim/AnimationClipPlaybackRuntime.h>
 #include <audio/AudioSourceRuntime.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
@@ -33,5 +32,4 @@ TEST(SceneRegistryInitialization, InstallsServiceResourcesWithoutCaches)
 
     EXPECT_TRUE(registry.Components.HasResource<AssetStoreTable>());
     EXPECT_TRUE(registry.Components.HasResource<AudioSourceRuntime>());
-    EXPECT_TRUE(registry.Components.HasResource<AnimationClipPlaybackRuntime>());
 }

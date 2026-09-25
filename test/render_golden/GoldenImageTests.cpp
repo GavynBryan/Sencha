@@ -244,26 +244,18 @@ TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
                  .EditorCook = true });
 }
 
-// The same rig posed by a clip: the pose gate. The player is paused
-// (rate 0) at 0.5s of a one-second bend, so the pose is a fixed authored
-// value rather than a function of how many fixed ticks the wall clock
-// happened to allow -- a playing clip cannot be captured deterministically
-// under the tick accumulator. Everything from the clip asset through
-// sampling, the palette, the compute dispatch, and the posed draw has to
-// hold for the upper box to sit tilted an eighth turn about its own joint,
-// centred where the rest pose has it with a gap above the lower box.
+// The same rig posed by a clip: the pose gate. A one-layer rig holds a
+// one-second bend at 0.5s (its behavior plays at speed 0 from there), so the
+// pose is a fixed authored value rather than a function of how many fixed
+// ticks the wall clock happened to allow. Everything from the clip asset
+// through the pose pass, the pool, the palette, the compute dispatch, and the
+// posed draw has to hold for the upper box to sit tilted an eighth turn about
+// its own joint, centred where the rest pose has it with a gap above the
+// lower box. The reference was recorded by the clip player this replaced, so
+// the rig is held to the pixels the player made.
 TEST(GoldenImage, AClipPosesASkinnedMesh)
 {
     CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_skinned_pose",
-                 .EditorCook = true });
-}
-
-// The same pose made by a rig instead of a clip player: the rig holds the bend
-// the paused player shows, and the pose pass, the pool and extraction have to
-// carry it to the same pixels -- the reference is the clip player's own.
-TEST(GoldenImage, ARigPosesASkinnedMeshAsTheClipPlayerDoes)
-{
-    CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_rig_pose",
                  .EditorCook = true });
 }
 
