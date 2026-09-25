@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/DataDocument.h"
+#include "ui/DataForm.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 
@@ -24,7 +25,7 @@ struct DataSaveReport
     bool Saved = false;
 };
 
-class DataEditorWorkspace
+class DataEditorWorkspace final : public DataFormHost
 {
 public:
     DataEditorWorkspace(RuntimeAssets& assets, const ProjectDescriptor& project);
@@ -67,6 +68,12 @@ public:
     [[nodiscard]] const std::string& SelectedPath() const { return SelectedJsonPath; }
 
     [[nodiscard]] std::vector<const AssetRecord*> DataAssets() const;
+
+    [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype) override;
+    void OpenDataAsset(std::string_view path) override;
+    void SelectField(const DataFieldSchema& field, std::string_view path) override;
+    void EditPreviewed(DataDocument& document) override;
+    void EditCommitted(DataDocument& document) override;
 
     // The declared subtype of a data asset, for reference fields that only
     // accept one kind. Reads an open tab's working envelope when there is one,

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DataFormEdit.h"
+#include "ui/DataForm.h"
 #include "ui/IEditorPanel.h"
 
 #include <memory>

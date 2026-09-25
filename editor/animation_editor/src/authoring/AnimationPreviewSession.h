@@ -225,6 +225,9 @@ public:
     // Re-resolves the rig after one of its assets changed in the cache, so
     // panels read the new binding before the next tick runs.
     void Rebind();
+    // The vocabulary the World is built with changed: rebuilds it and runs
+    // back to the current tick.
+    void VocabularyChanged();
 
     [[nodiscard]] bool IsOpen() const { return Preview != nullptr; }
     [[nodiscard]] bool IsPlaying() const { return Playing; }

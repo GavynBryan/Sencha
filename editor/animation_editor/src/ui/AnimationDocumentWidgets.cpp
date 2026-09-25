@@ -46,7 +46,7 @@ void EraseMember(JsonValue& object, std::string_view key)
     std::erase_if(object.AsObject(), [&](const auto& member) { return member.first == key; });
 }
 
-void TextMember(const char* label, JsonValue& object, std::string_view key, Edit& edit, float width)
+void TextMember(const char* label, JsonValue& object, std::string_view key, FieldEdit& edit, float width)
 {
     std::array<char, 256> buffer{};
     const std::string current = Text(object, key);
@@ -57,10 +57,10 @@ void TextMember(const char* label, JsonValue& object, std::string_view key, Edit
         SetMember(object, key, JsonValue(std::string(buffer.data())));
         edit.Changed = true;
     }
-    edit.Commit |= ImGui::IsItemDeactivatedAfterEdit();
+    edit.Committed |= ImGui::IsItemDeactivatedAfterEdit();
 }
 
-void NumberMember(const char* label, JsonValue& object, std::string_view key, Edit& edit, float speed, float width)
+void NumberMember(const char* label, JsonValue& object, std::string_view key, FieldEdit& edit, float speed, float width)
 {
     float value = static_cast<float>(Number(object, key));
     ImGui::SetNextItemWidth(width);
@@ -69,11 +69,11 @@ void NumberMember(const char* label, JsonValue& object, std::string_view key, Ed
         SetMember(object, key, JsonValue(static_cast<double>(value)));
         edit.Changed = true;
     }
-    edit.Commit |= ImGui::IsItemDeactivatedAfterEdit();
+    edit.Committed |= ImGui::IsItemDeactivatedAfterEdit();
 }
 
 void NameMember(const char* label, JsonValue& object, std::string_view key, const std::vector<std::string>& names,
-                Edit& edit)
+                FieldEdit& edit)
 {
     if (names.empty())
     {
@@ -88,13 +88,13 @@ void NameMember(const char* label, JsonValue& object, std::string_view key, cons
             if (ImGui::Selectable(name.c_str(), name == current))
             {
                 SetMember(object, key, JsonValue(name));
-                edit.Instant();
+                edit |= FieldEdit::Instant();
             }
         ImGui::EndCombo();
     }
 }
 
-void CompareAndValue(JsonValue& test, bool tagValued, Edit& edit)
+void CompareAndValue(JsonValue& test, bool tagValued, FieldEdit& edit)
 {
     ImGui::SameLine();
     ChoiceMember("##compare", test, "compare", kCompares, kCompareSymbols, edit, 50.0f);
@@ -106,7 +106,7 @@ void CompareAndValue(JsonValue& test, bool tagValued, Edit& edit)
 }
 
 // One test, with controls for what it reads.
-void DrawTest(JsonValue& test, const PredicateVocabulary& vocabulary, Edit& edit)
+void DrawTest(JsonValue& test, const PredicateVocabulary& vocabulary, FieldEdit& edit)
 {
     if (!test.IsObject())
     {
@@ -120,7 +120,7 @@ void DrawTest(JsonValue& test, const PredicateVocabulary& vocabulary, Edit& edit
             SetMember(test, "not", JsonValue(true));
         else
             EraseMember(test, "not");
-        edit.Instant();
+        edit |= FieldEdit::Instant();
     }
     ImGui::SameLine();
     if (test.Find("request") != nullptr)
@@ -186,7 +186,7 @@ void DrawTest(JsonValue& test, const PredicateVocabulary& vocabulary, Edit& edit
             SetMember(test, "query", JsonValue(std::move(tags)));
             edit.Changed = true;
         }
-        edit.Commit |= ImGui::IsItemDeactivatedAfterEdit();
+        edit.Committed |= ImGui::IsItemDeactivatedAfterEdit();
         return;
     }
     if (kind == AnimFactKind::Bool && test.Find("compare") == nullptr)
@@ -194,7 +194,7 @@ void DrawTest(JsonValue& test, const PredicateVocabulary& vocabulary, Edit& edit
     CompareAndValue(test, kind == AnimFactKind::Tag, edit);
 }
 
-void DrawPredicate(JsonValue::Array& rows, const PredicateVocabulary& vocabulary, Edit& edit)
+void DrawPredicate(JsonValue::Array& rows, const PredicateVocabulary& vocabulary, FieldEdit& edit)
 {
     const std::size_t count = rows.size();
     if (count == 0)
@@ -219,7 +219,7 @@ void DrawPredicate(JsonValue::Array& rows, const PredicateVocabulary& vocabulary
                 if (ImGui::SmallButton("x"))
                 {
                     (void)RemoveAnimPredicateAlternative(rows, r, a);
-                    edit.Instant();
+                    edit |= FieldEdit::Instant();
                     ImGui::PopID();
                     ImGui::PopID();
                     return;
@@ -237,13 +237,13 @@ void DrawPredicate(JsonValue::Array& rows, const PredicateVocabulary& vocabulary
             // The new alternative starts as a copy of the row's first test.
             JsonValue first = row.Find("any") != nullptr ? row.Find("any")->AsArray().front() : row;
             (void)AddAnimPredicateAlternative(rows, r, std::move(first));
-            edit.Instant();
+            edit |= FieldEdit::Instant();
         }
         ImGui::SameLine();
         if (ImGui::SmallButton("remove"))
         {
             (void)RemoveAnimPredicateRow(rows, r);
-            edit.Instant();
+            edit |= FieldEdit::Instant();
             ImGui::PopID();
             return;
         }
@@ -260,7 +260,7 @@ void DrawPredicate(JsonValue::Array& rows, const PredicateVocabulary& vocabulary
                 if (ImGui::MenuItem(slot.Name.c_str()))
                 {
                     AddAnimPredicateRow(rows, MakeAnimFactTest(slot.Name, slot.Kind));
-                    edit.Instant();
+                    edit |= FieldEdit::Instant();
                 }
             ImGui::EndMenu();
         }
@@ -270,24 +270,24 @@ void DrawPredicate(JsonValue::Array& rows, const PredicateVocabulary& vocabulary
                 if (ImGui::MenuItem(intent.c_str()))
                 {
                     AddAnimPredicateRow(rows, MakeAnimRequestTest(intent));
-                    edit.Instant();
+                    edit |= FieldEdit::Instant();
                 }
             if (vocabulary.Intents().empty() && ImGui::MenuItem("(type an intent)"))
             {
                 AddAnimPredicateRow(rows, MakeAnimRequestTest(""));
-                edit.Instant();
+                edit |= FieldEdit::Instant();
             }
             ImGui::EndMenu();
         }
         if (ImGui::MenuItem("Time in behavior"))
         {
             AddAnimPredicateRow(rows, MakeAnimElapsedTest(1.0));
-            edit.Instant();
+            edit |= FieldEdit::Instant();
         }
         if (vocabulary.Rig == nullptr && ImGui::MenuItem("Fact (type a name)"))
         {
             AddAnimPredicateRow(rows, MakeAnimFactTest("", AnimFactKind::Bool));
-            edit.Instant();
+            edit |= FieldEdit::Instant();
         }
         ImGui::EndPopup();
     }

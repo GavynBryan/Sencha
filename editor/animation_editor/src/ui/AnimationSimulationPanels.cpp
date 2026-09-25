@@ -746,6 +746,7 @@ public:
             problems.insert(problems.end(), Workspace.ScenarioLoadProblems.begin(),
                             Workspace.ScenarioLoadProblems.end());
             if (problems.empty()) ImGui::TextDisabled("No problems with the open rig or scenario.");
+            DrawDeclareNames(problems);
             for (const AnimDiagnostic& problem : problems)
                 ImGui::TextWrapped("%s %s", problem.Severity == AnimDiagnosticSeverity::Error ? "Error" : "Warning",
                                    FormatAnimDiagnostic(problem).c_str());
@@ -774,6 +775,35 @@ public:
         ImGui::EndTabBar();
     }
 private:
+    // Names are read from the documents the problems point at, so only when
+    // the problems change.
+    void DrawDeclareNames(const std::vector<AnimDiagnostic>& problems)
+    {
+        std::string signature;
+        for (const AnimDiagnostic& problem : problems)
+            signature += problem.AssetPath + problem.FieldPath + problem.Code + "\n";
+        if (signature != ProblemSignature)
+        {
+            ProblemSignature = std::move(signature);
+            Undeclared = Workspace.UndeclaredNames();
+        }
+        if (Undeclared.empty())
+            return;
+        std::string names;
+        for (const std::string& name : Undeclared)
+            names += (names.empty() ? "" : ", ") + name;
+        ImGui::TextWrapped("Not declared anywhere: %s.", names.c_str());
+        if (ImGui::Button("Declare them beside the rig"))
+        {
+            DeclareError.clear();
+            (void)Workspace.DeclareUndeclaredNames(DeclareError);
+            ProblemSignature.clear();
+        }
+        if (!DeclareError.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s", DeclareError.c_str());
+        ImGui::Separator();
+    }
+
     // The same measure `anim.risk` reports in the game, over the rig as bound
     // here.
     void DrawRisk()
@@ -912,6 +942,9 @@ private:
     std::array<char, 128> TraceFilter{};
     std::optional<AnimationTrace> Trace;
     std::string TraceError;
+    std::string ProblemSignature;
+    std::vector<std::string> Undeclared;
+    std::string DeclareError;
 };
 }
 

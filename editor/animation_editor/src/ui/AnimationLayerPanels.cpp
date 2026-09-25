@@ -490,7 +490,7 @@ private:
             return;
         }
         bool changed = false;
-        AnimationWidgets::Edit edit;
+        FieldEdit edit;
         const AnimationWidgets::PredicateVocabulary vocabulary{ Workspace.Simulation.Rig() };
         const auto tagOf = [&](std::size_t s) {
             const JsonValue* tag = (*sections)[s].Find("tag");
@@ -601,15 +601,8 @@ private:
             ImGui::EndCombo();
         }
         if (changed)
-            edit.Instant();
-        if (edit.Changed)
-        {
-            document.BeginEdit();
-            document.PreviewRoot(std::move(root));
-            Workspace.ValidateDocument(document);
-        }
-        if (edit.Commit)
-            Workspace.CommitDocumentEdit(document);
+            edit |= FieldEdit::Instant();
+        ApplyFieldEdit(document, Workspace, edit, std::move(root));
         for (const DataValidationError& error : document.ValidationErrors())
             ImGui::TextWrapped("%s: %s", error.Path.c_str(), error.Message.c_str());
         ImGui::PopID();

@@ -17,13 +17,7 @@
 
 namespace
 {
-struct Edit
-{
-    bool Changed = false;
-    bool Commit = false;
-};
-
-void TextField(const char* label, JsonValue& value, Edit& edit)
+void TextField(const char* label, JsonValue& value, FieldEdit& edit)
 {
     if (!value.IsString())
     {
@@ -39,7 +33,7 @@ void TextField(const char* label, JsonValue& value, Edit& edit)
         value = JsonValue(buffer.data());
         edit.Changed = true;
     }
-    edit.Commit |= ImGui::IsItemDeactivatedAfterEdit();
+    edit.Committed |= ImGui::IsItemDeactivatedAfterEdit();
 }
 
 JsonValue NewParam()
@@ -47,7 +41,7 @@ JsonValue NewParam()
     return JsonValue(JsonValue::Object{{"name", JsonValue("parameter")}, {"kind", JsonValue("float")}});
 }
 
-void DrawIntents(JsonValue::Array& intents, Edit& edit)
+void DrawIntents(JsonValue::Array& intents, FieldEdit& edit)
 {
     for (std::size_t i = 0; i < intents.size(); ++i)
     {
@@ -120,7 +114,7 @@ void AnimationRequestSchemaPanel::OnDraw()
     if (!IsVisible()) { Workspace.CancelAuthoringEdit(); return; }
     ScopedPanel panel(GetTitle(), &Visible);
     if (!panel.IsOpen()) { Workspace.CancelAuthoringEdit(); return; }
-    ImGui::TextWrapped("Author intent contracts here; preview requests and gameplay state are separate. Create new schemas in Data Editor, then open them from the content browser.");
+    ImGui::TextWrapped("Author intent contracts here; preview requests and gameplay state are separate. Create new schemas from the Document panel's New asset, then open them from the content browser.");
     if (Workspace.Documents.empty()) return;
     auto& documents = Workspace.Documents;
     if (ImGui::BeginCombo("Document", documents[Workspace.ActiveDocument]->VirtualPath().c_str()))
@@ -139,8 +133,7 @@ void AnimationRequestSchemaPanel::OnDraw()
             ImGui::TextWrapped("The active document is a %s; the %s pane edits it.", document.Subtype().c_str(),
                                document.Subtype() == kAnimFlowType ? "Flow" : "Skeleton and masks");
         else
-            ImGui::TextWrapped("The active document is a %s. This editor has no pane for it yet: edit it in "
-                               "Data Editor, then reopen the rig.",
+            ImGui::TextWrapped("The active document is a %s: edit it in the Document panel.",
                                document.Subtype().c_str());
         return;
     }
@@ -159,15 +152,9 @@ void AnimationRequestSchemaPanel::OnDraw()
     auto root = document.CopyRoot();
     auto* data = root.Find("data");
     auto* intents = data ? data->Find("intents") : nullptr;
-    Edit edit;
+    FieldEdit edit;
     if (intents && intents->IsArray()) DrawIntents(intents->AsArray(), edit);
-    if (edit.Changed)
-    {
-        document.BeginEdit();
-        document.PreviewRoot(std::move(root));
-        Workspace.ValidateDocument(document);
-    }
-    if (edit.Commit) Workspace.CommitDocumentEdit(document);
+    ApplyFieldEdit(document, Workspace, edit, std::move(root));
     for (const auto& error : document.ValidationErrors())
         ImGui::TextWrapped("%s: %s", error.Path.c_str(), error.Message.c_str());
     ImGui::PopID();

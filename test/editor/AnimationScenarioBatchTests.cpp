@@ -5,11 +5,7 @@
 #include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationScenarioBatch.h"
 
-#include <anim/AnimationClipCache.h>
-#include <anim/SkeletonCache.h>
-#include <assets/runtime/RuntimeAssets.h>
-#include <core/assets/AssetRegistry.h>
-#include <world/serialization/ComponentSerializerRegistry.h>
+#include "AnimationTestProject.h"
 
 #include <gtest/gtest.h>
 
@@ -20,44 +16,14 @@ namespace
 {
     constexpr const char* kSkeleton = "asset://meshes/man.blend#skel:Man";
 
-    struct Project
+    struct Project : AnimationTestProject
     {
-        std::filesystem::path Root = std::filesystem::temp_directory_path() / "sencha_scenario_batch";
-        LoggingProvider Logging;
-        ComponentSerializerRegistry Serializers;
-        std::unique_ptr<RuntimeAssets> Assets;
-        std::vector<AssetLease> Leases;
-
-        Project()
+        Project() : AnimationTestProject("sencha_scenario_batch")
         {
-            std::filesystem::remove_all(Root);
-            std::filesystem::create_directories(Root);
-            Assets = std::make_unique<RuntimeAssets>(Logging, Serializers);
-            SkeletonData data;
-            SkeletonJoint root;
-            root.Name = "root";
-            data.Joints.push_back(root);
-            EXPECT_TRUE(Assets->Registry.RegisterOrVerify(AssetRecord{
-                .Type = AssetType::Skeleton, .SourceKind = AssetSourceKind::Procedural, .Path = kSkeleton }));
-            (void)Assets->Skeletons.Register(kSkeleton, std::move(data));
-            Leases.push_back(Assets->Assets.TryAcquireLease(kSkeleton, AssetType::Skeleton));
+            Skeleton(kSkeleton);
             for (const char* clip : { "asset://meshes/man.blend#anim:Idle", "asset://meshes/man.blend#anim:Wave",
                                       "asset://meshes/man.blend#anim:Bow" })
-            {
-                EXPECT_TRUE(Assets->Registry.RegisterOrVerify(AssetRecord{
-                    .Type = AssetType::AnimationClip, .SourceKind = AssetSourceKind::Procedural, .Path = clip }));
-                AnimationClipData clipData;
-                clipData.DurationSeconds = 1.0f;
-                clipData.SkeletonPath = kSkeleton;
-                (void)Assets->AnimationClips.Register(clip, std::move(clipData), Assets->Skeletons.AcquireOwned(kSkeleton));
-                Leases.push_back(Assets->Assets.TryAcquireLease(clip, AssetType::AnimationClip));
-            }
-        }
-
-        ~Project()
-        {
-            Leases.clear();
-            std::filesystem::remove_all(Root);
+                Clip(clip, kSkeleton);
         }
     };
 

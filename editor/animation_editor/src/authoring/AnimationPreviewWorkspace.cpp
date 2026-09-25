@@ -1,6 +1,7 @@
 #include "authoring/AnimationPreviewWorkspace.h"
 
 #include "authoring/AnimationEventBindings.h"
+#include "authoring/AnimationNameDeclarations.h"
 
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
@@ -9,6 +10,8 @@
 #include <anim/AnimFlowData.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRigData.h>
+#include <core/json/JsonParser.h>
+#include <gameplay_tags/GameplayTagDeclarations.h>
 #include <anim/AnimSelectorData.h>
 #include <anim/AnimSlotMapData.h>
 #include <anim/AnimationClipSampling.h>
@@ -24,6 +27,9 @@
 #include <authored/VerbBindingData.h>
 
 #include <algorithm>
+#include <sstream>
+#include <deque>
+#include <span>
 #include <array>
 #include <format>
 #include <filesystem>
@@ -68,9 +74,7 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std:
 
 void AnimationPreviewWorkspace::RefreshBrowser()
 {
-    ContentTags.clear();
-    ContentTagErrors.clear();
-    CollectContentTags(Assets, ContentTags, ContentTagErrors);
+    RefreshContentTags();
     MeshPaths.clear();
     SkeletonPaths.clear();
     ClipPaths.clear();
@@ -123,6 +127,16 @@ void AnimationPreviewWorkspace::RefreshBrowser()
         std::sort(paths->begin(), paths->end());
 }
 
+std::span<const std::string_view> AnimationDocumentSubtypes()
+{
+    static constexpr std::string_view kSubtypes[] = { kAnimRigType, kAnimBehaviorSetType, kAnimSlotMapType,
+                                                      kAnimSelectorType, kAnimFlowType, kAnimBlendspaceType,
+                                                      kAnimBlendOverridesType, kAnimRequestSchemaType,
+                                                      kAnimFactSchemaType, kVerbBindingsTypeName,
+                                                      kGameplayTagDeclarationsType };
+    return kSubtypes;
+}
+
 bool AnimationPreviewWorkspace::OpenAnimationDocument(const std::string& path)
 {
     if (DataDocument* open = FindDocument(path))
@@ -141,20 +155,63 @@ bool AnimationPreviewWorkspace::OpenAnimationDocument(const std::string& path)
     auto document = DataDocument::Open(record->FilePath, path, Assets.DataTypes,
                                       Assets.DataSchemas, &DocumentError);
     if (!document) return false;
-    static constexpr std::string_view kEditable[] = { kAnimRequestSchemaType, kAnimRigType, kAnimSelectorType,
-                                                      kAnimBehaviorSetType, kAnimSlotMapType, kAnimFlowType,
-                                                      kAnimBlendspaceType, kAnimBlendOverridesType,
-                                                      kAnimFactSchemaType, kVerbBindingsTypeName };
-    if (std::find(std::begin(kEditable), std::end(kEditable), document->Subtype()) == std::end(kEditable))
+    if (std::ranges::find(AnimationDocumentSubtypes(), document->Subtype()) == AnimationDocumentSubtypes().end())
     {
         DocumentError = "Select an animation asset: a rig, schema, behavior set, selector, slot map, flow, "
-                        "blendspace, blend overrides or bindings.";
+                        "blendspace, blend overrides, bindings or tag declarations.";
         return false;
     }
     Documents.push_back(std::move(document));
     SelectDocument(Documents.size() - 1);
     DocumentError.clear();
     return true;
+}
+
+DataDocument* AnimationPreviewWorkspace::ActiveDocumentAny()
+{
+    return ActiveDocument < Documents.size() ? Documents[ActiveDocument].get() : nullptr;
+}
+
+const DataSchema* AnimationPreviewWorkspace::SchemaOf(const DataDocument& document) const
+{
+    return Assets.DataSchemas.Find(document.Subtype());
+}
+
+std::vector<std::string> AnimationPreviewWorkspace::DataAssetPaths(std::string_view subtype)
+{
+    std::vector<std::string> paths;
+    for (const auto& [path, record] : Assets.Registry.Records())
+    {
+        if (record.Type != AssetType::Data)
+            continue;
+        // A working document's subtype wins over the file's.
+        const DataDocument* open = FindDocument(path);
+        const std::string actual =
+            open != nullptr ? open->Subtype() : PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record);
+        if (subtype.empty() || actual == subtype)
+            paths.push_back(path);
+    }
+    std::ranges::sort(paths);
+    return paths;
+}
+
+void AnimationPreviewWorkspace::OpenDataAsset(std::string_view path)
+{
+    (void)OpenAnimationDocument(std::string(path));
+}
+
+void AnimationPreviewWorkspace::SelectField(const DataFieldSchema&, std::string_view)
+{
+}
+
+void AnimationPreviewWorkspace::EditPreviewed(DataDocument& document)
+{
+    ValidateDocument(document);
+}
+
+void AnimationPreviewWorkspace::EditCommitted(DataDocument& document)
+{
+    DocumentChanged(document);
 }
 
 DataDocument* AnimationPreviewWorkspace::FindDocument(std::string_view path)
@@ -178,15 +235,117 @@ void AnimationPreviewWorkspace::CommitDocumentEdit(DataDocument& document)
     DocumentChanged(document);
 }
 
+void AnimationPreviewWorkspace::RefreshContentTags()
+{
+    ContentTags.clear();
+    ContentTagErrors.clear();
+    CollectContentTags(Assets, ContentTags, ContentTagErrors);
+    // Working declarations count before they are saved; a name taken out of
+    // one stays declared until the file is saved.
+    for (const auto& document : Documents)
+    {
+        const JsonValue* data = document->Subtype() == kGameplayTagDeclarationsType ? document->Data() : nullptr;
+        const JsonValue* tags = data != nullptr ? data->Find("tags") : nullptr;
+        if (tags == nullptr || !tags->IsArray())
+            continue;
+        for (const JsonValue& tag : tags->AsArray())
+            if (tag.IsString() && std::ranges::find(ContentTags, tag.AsString()) == ContentTags.end())
+                ContentTags.push_back(tag.AsString());
+    }
+}
+
+std::vector<std::string> AnimationPreviewWorkspace::UndeclaredNames()
+{
+    const GameplayTagRegistry* tags = Simulation.Tags();
+    if (tags == nullptr)
+        return {};
+    std::deque<JsonValue> read;
+    return UndeclaredAnimationNames(Simulation.Problems(), *tags, [&](std::string_view path) -> AnimationDocumentView {
+        const JsonValue* root = nullptr;
+        if (const DataDocument* open = FindDocument(path))
+            root = &open->Root();
+        else if (const AssetRecord* record = Assets.Registry.FindByPath(path))
+        {
+            std::ifstream in(record->FilePath);
+            std::stringstream text;
+            text << in.rdbuf();
+            if (std::optional<JsonValue> parsed = JsonParse(text.str()))
+                root = &read.emplace_back(std::move(*parsed));
+        }
+        const JsonValue* type = root != nullptr ? root->Find("type") : nullptr;
+        const DataSchema* schema =
+            type != nullptr && type->IsString() ? Assets.DataSchemas.Find(type->AsString()) : nullptr;
+        return { root, schema != nullptr ? &schema->Root : nullptr };
+    });
+}
+
+bool AnimationPreviewWorkspace::DeclareUndeclaredNames(std::string& error)
+{
+    const std::vector<std::string> names = UndeclaredNames();
+    if (names.empty() || RigPath.empty())
+        return true;
+    std::string relative = RigPath.substr(std::string_view("asset://").size());
+    const std::size_t suffix = relative.ends_with(".rig.sdata") ? relative.size() - std::string_view(".rig.sdata").size()
+                                                                : relative.size() - std::string_view(".sdata").size();
+    relative = relative.substr(0, suffix) + ".tags.sdata";
+    const std::string path = "asset://" + relative;
+
+    // Declaring is an edit in the declarations; the author stays where they were.
+    const std::size_t active = ActiveDocument;
+    DataDocument* document = FindDocument(path);
+    if (document == nullptr)
+    {
+        const bool ready = Assets.Registry.Contains(path) ? OpenAnimationDocument(path)
+                                                          : CreateDocument(kGameplayTagDeclarationsType, relative, error);
+        if (!ready)
+        {
+            error = error.empty() ? DocumentError : error;
+            return false;
+        }
+        document = FindDocument(path);
+    }
+    JsonValue root = document->CopyRoot();
+    if (AddAnimationTagDeclarations(root, names))
+        ApplyFieldEdit(*document, *this, FieldEdit::Instant(), std::move(root));
+    if (active < Documents.size())
+        SelectDocument(active);
+    return true;
+}
+
 void AnimationPreviewWorkspace::DocumentChanged(DataDocument& document)
 {
     ValidateDocument(document);
+    if (document.Subtype() == kGameplayTagDeclarationsType)
+    {
+        RefreshContentTags();
+        Simulation.VocabularyChanged();
+    }
     std::string status;
+    const std::string path = document.VirtualPath();
+    std::erase(NotYetPreviewed, path);
+    bool applied = false;
     if (!document.IsSemanticallyValid())
         status = "The working version has errors; the preview keeps the last valid version.";
     else if (ApplyDocumentToPreview(document, status))
+    {
         Simulation.Rebind();
-    PreviewStatus[document.VirtualPath()] = std::move(status);
+        applied = true;
+    }
+    else if (!Assets.DataAssets.Find(path).IsValid())
+        NotYetPreviewed.push_back(path);
+    PreviewStatus[path] = std::move(status);
+    if (applied)
+        PreviewNotYetPreviewed();
+}
+
+void AnimationPreviewWorkspace::PreviewNotYetPreviewed()
+{
+    // An edit that just reached the preview may be what first loads one of
+    // these: a rig now naming a selector edited before it was referenced.
+    const std::vector<std::string> waiting = NotYetPreviewed;
+    for (const std::string& path : waiting)
+        if (DataDocument* document = FindDocument(path); document != nullptr && Assets.DataAssets.Find(path).IsValid())
+            DocumentChanged(*document);
 }
 
 bool AnimationPreviewWorkspace::ApplyDocumentToPreview(DataDocument& document, std::string& status)
@@ -285,6 +444,7 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
     Navigation = AnimationNavigation{};
     if (!rig->SkeletonPath.empty() && Session.SkeletonPath() != rig->SkeletonPath && MeshPath.empty())
         (void)SelectSkeleton(rig->SkeletonPath);
+    PreviewNotYetPreviewed();
     return true;
 }
 
@@ -762,13 +922,53 @@ bool AnimationPreviewWorkspace::WriteNewDocuments(const std::vector<AnimationNew
     {
         if (!WriteFile(document, 4, error))
             return false;
-        AssetRecord record;
-        record.Type = AssetType::Data;
-        record.SourceKind = AssetSourceKind::File;
-        record.Path = "asset://" + document.RelativePath;
-        record.FilePath = (AuthoringRoot / document.RelativePath).generic_string();
-        (void)Assets.Registry.RegisterOrVerify(record);
+        RegisterDataFile(document.RelativePath);
     }
+    return true;
+}
+
+void AnimationPreviewWorkspace::RegisterDataFile(const std::string& relativePath)
+{
+    AssetRecord record;
+    record.Type = AssetType::Data;
+    record.SourceKind = AssetSourceKind::File;
+    record.Path = "asset://" + relativePath;
+    record.FilePath = (AuthoringRoot / relativePath).generic_string();
+    (void)Assets.Registry.RegisterOrVerify(record);
+}
+
+bool AnimationPreviewWorkspace::CreateDocument(std::string_view subtype, std::string relativePath, std::string& error)
+{
+    const DataAssetTypeRegistration* type = Assets.DataTypes.Find(subtype);
+    const DataSchema* schema = Assets.DataSchemas.Find(subtype);
+    if (type == nullptr || schema == nullptr)
+    {
+        error = std::format("'{}' has no registered schema.", subtype);
+        return false;
+    }
+    if (AuthoringRoot.empty() || relativePath.empty())
+    {
+        error = "Name the new asset's path under the project's content root.";
+        return false;
+    }
+    if (!relativePath.ends_with(".sdata"))
+        relativePath += ".sdata";
+    const std::filesystem::path file = AuthoringRoot / relativePath;
+    const std::string path = "asset://" + relativePath;
+    if (std::filesystem::exists(file) || Assets.Registry.Contains(path))
+    {
+        error = std::format("'{}' already exists; choose another name.", relativePath);
+        return false;
+    }
+    std::filesystem::create_directories(file.parent_path());
+    std::unique_ptr<DataDocument> document = DataDocument::Create(file, path, *type, *schema);
+    ValidateDocument(*document);
+    if (!document->Save(&error))
+        return false;
+    RegisterDataFile(relativePath);
+    Documents.push_back(std::move(document));
+    SelectDocument(Documents.size() - 1);
+    DocumentError.clear();
     return true;
 }
 

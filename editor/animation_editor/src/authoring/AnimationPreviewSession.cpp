@@ -981,6 +981,12 @@ std::vector<std::vector<AnimRuleVerdict>> AnimationPreviewSession::ExplainNextTi
     return verdicts;
 }
 
+void AnimationPreviewSession::VocabularyChanged()
+{
+    if (Preview != nullptr)
+        Replay();
+}
+
 void AnimationPreviewSession::Rebind()
 {
     if (Preview == nullptr || !SubjectEntity.IsValid())

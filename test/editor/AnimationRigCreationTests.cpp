@@ -5,11 +5,7 @@
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigRecipe.h"
 
-#include <anim/AnimationClipCache.h>
-#include <anim/SkeletonCache.h>
-#include <assets/runtime/RuntimeAssets.h>
-#include <core/assets/AssetRegistry.h>
-#include <world/serialization/ComponentSerializerRegistry.h>
+#include "AnimationTestProject.h"
 
 #include <gtest/gtest.h>
 
@@ -17,54 +13,17 @@
 
 namespace
 {
-    struct Project
+    struct Project : AnimationTestProject
     {
-        std::filesystem::path Root = std::filesystem::temp_directory_path() / "sencha_rig_creation";
-        LoggingProvider Logging;
-        ComponentSerializerRegistry Serializers;
-        std::unique_ptr<RuntimeAssets> Assets;
-        std::vector<AssetLease> Leases;
-
-        Project()
+        Project() : AnimationTestProject("sencha_rig_creation")
         {
-            std::filesystem::remove_all(Root);
-            std::filesystem::create_directories(Root);
-            Assets = std::make_unique<RuntimeAssets>(Logging, Serializers);
-            for (const char* skeleton : { "asset://meshes/man.blend#skel:Man", "asset://meshes/dog.blend#skel:Dog" })
-            {
-                SkeletonData data;
-                SkeletonJoint root;
-                root.Name = "root";
-                data.Joints.push_back(root);
-                EXPECT_TRUE(Assets->Registry.RegisterOrVerify(AssetRecord{
-                    .Type = AssetType::Skeleton, .SourceKind = AssetSourceKind::Procedural, .Path = skeleton }));
-                (void)Assets->Skeletons.Register(skeleton, std::move(data));
-                Leases.push_back(Assets->Assets.TryAcquireLease(skeleton, AssetType::Skeleton));
-            }
+            Skeleton("asset://meshes/man.blend#skel:Man");
+            Skeleton("asset://meshes/dog.blend#skel:Dog");
             Clip("asset://meshes/man.blend#anim:Idle", "asset://meshes/man.blend#skel:Man");
             Clip("asset://meshes/man.blend#anim:Walk", "asset://meshes/man.blend#skel:Man");
             Clip("asset://meshes/man.blend#anim:Left_claw", "asset://meshes/man.blend#skel:Man");
-            // The engine's fact schema, which the selector tiers read.
-            (void)ScanAssetsDirectory((std::filesystem::path(SENCHA_REPO_ROOT) / "engine/assets").generic_string(),
-                                      Assets->Registry, Assets->Assets.Kinds());
+            ScanEngineAssets();
             Clip("asset://meshes/dog.blend#anim:Sit", "asset://meshes/dog.blend#skel:Dog");
-        }
-
-        ~Project()
-        {
-            Leases.clear();
-            std::filesystem::remove_all(Root);
-        }
-
-        void Clip(const char* path, const char* skeleton)
-        {
-            EXPECT_TRUE(Assets->Registry.RegisterOrVerify(
-                AssetRecord{ .Type = AssetType::AnimationClip, .SourceKind = AssetSourceKind::Procedural, .Path = path }));
-            AnimationClipData clip;
-            clip.DurationSeconds = 1.0f;
-            clip.SkeletonPath = skeleton;
-            (void)Assets->AnimationClips.Register(path, std::move(clip), Assets->Skeletons.AcquireOwned(skeleton));
-            Leases.push_back(Assets->Assets.TryAcquireLease(path, AssetType::AnimationClip));
         }
     };
 }

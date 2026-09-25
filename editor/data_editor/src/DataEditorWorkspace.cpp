@@ -338,6 +338,36 @@ std::vector<const AssetRecord*> DataEditorWorkspace::DataAssets() const
     return records;
 }
 
+std::vector<std::string> DataEditorWorkspace::DataAssetPaths(std::string_view subtype)
+{
+    // Subtypes are read only while a picker asks: for an asset not already in a
+    // tab, learning one costs a file read.
+    std::vector<std::string> paths;
+    for (const AssetRecord* record : DataAssets())
+        if (subtype.empty() || DataSubtypeOf(record->Path) == subtype)
+            paths.push_back(record->Path);
+    return paths;
+}
+
+void DataEditorWorkspace::OpenDataAsset(std::string_view path)
+{
+    (void)Open(path);
+}
+
+void DataEditorWorkspace::SelectField(const DataFieldSchema& field, std::string_view path)
+{
+    SelectField(&field, std::string(path));
+}
+
+void DataEditorWorkspace::EditPreviewed(DataDocument&)
+{
+    ValidateActive();
+}
+
+void DataEditorWorkspace::EditCommitted(DataDocument&)
+{
+}
+
 std::string DataEditorWorkspace::DataSubtypeOf(std::string_view virtualPath) const
 {
     // An open tab's live envelope wins over the file: a subtype-filtered picker

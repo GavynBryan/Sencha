@@ -10,6 +10,7 @@
 #include "authoring/AnimationPreviewSession.h"
 #include "render/AnimationPreviewScene.h"
 #include "data/DataDocument.h"
+#include "ui/DataForm.h"
 
 #include <anim/AnimPoseEvaluation.h>
 #include <anim/Skeleton.h>
@@ -20,6 +21,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -77,7 +79,10 @@ struct AnimationNavigation
 // Owns preview selections and their leases, the open animation documents, the
 // rig under simulation, and navigation. Browsing and selecting preview content
 // is transient and never edits the asset being inspected.
-class AnimationPreviewWorkspace
+// The data subtypes this editor opens and creates.
+[[nodiscard]] std::span<const std::string_view> AnimationDocumentSubtypes();
+
+class AnimationPreviewWorkspace final : public DataFormHost
 {
 public:
     // `vocabulary` installs the project's names -- tags, verbs -- into each
@@ -95,6 +100,14 @@ public:
     // Opens any animation data asset for editing: rig, fact or request schema,
     // behavior set, selector, slot map, flow.
     bool OpenAnimationDocument(const std::string& path);
+    // A new asset of `subtype` at `relativePath` under the authoring root, with
+    // its schema's required members, saved, registered and opened.
+    bool CreateDocument(std::string_view subtype, std::string relativePath, std::string& error);
+    // Names the open rig's content uses as gameplay tags that nothing
+    // declares; and adding them to the tag declarations beside the rig as one
+    // undo step there, creating the file when the rig has none.
+    [[nodiscard]] std::vector<std::string> UndeclaredNames();
+    bool DeclareUndeclaredNames(std::string& error);
     // After any change to a document -- an edit committed, an undo -- revalidate
     // it and, when it is valid, apply it to the preview's copy of the asset.
     // The preview keeps its last valid version while the document is invalid.
@@ -102,6 +115,16 @@ public:
     // Commits the document's open edit, then treats it as changed.
     void CommitDocumentEdit(DataDocument& document);
     [[nodiscard]] DataDocument* ActiveDocumentOf(std::string_view subtype);
+    [[nodiscard]] DataDocument* ActiveDocumentAny();
+    [[nodiscard]] const DataSchema* SchemaOf(const DataDocument& document) const;
+
+    // The schema form's host: references pick from the project's data assets,
+    // open here, and every edit previews and rebinds as a panel's does.
+    [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype) override;
+    void OpenDataAsset(std::string_view path) override;
+    void SelectField(const DataFieldSchema& field, std::string_view path) override;
+    void EditPreviewed(DataDocument& document) override;
+    void EditCommitted(DataDocument& document) override;
     [[nodiscard]] DataDocument* FindDocument(std::string_view path);
 
     // Opens the events of a clip cooked from a mesh source, from that source's
@@ -222,6 +245,8 @@ public:
     std::string ScenarioError;
     std::vector<AnimDiagnostic> ScenarioLoadProblems;
     std::vector<AnimationScenarioRun> ScenarioRuns;
+    // Open documents with working edits the preview has not loaded yet.
+    std::vector<std::string> NotYetPreviewed;
     AnimationPreviewScene Scene;
     std::vector<std::string> MeshPaths;
     std::vector<std::string> SkeletonPaths;
@@ -233,6 +258,9 @@ public:
     std::string Error;
 
 private:
+    void RegisterDataFile(const std::string& relativePath);
+    void RefreshContentTags();
+    void PreviewNotYetPreviewed();
     bool SetSkeletonContent(SkeletonHandle skeleton);
     // Writes into the authoring root, refusing before anything is written if
     // any document already exists, and registers each.

@@ -4,12 +4,7 @@
 #include "authoring/AnimationClipPlayerMigration.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 
-#include <anim/AnimationClipCache.h>
-#include <anim/SkeletonCache.h>
-#include <assets/runtime/RuntimeAssets.h>
-#include <core/assets/AssetRegistry.h>
-#include <core/json/JsonParser.h>
-#include <world/serialization/ComponentSerializerRegistry.h>
+#include "AnimationTestProject.h"
 
 #include <gtest/gtest.h>
 
@@ -36,49 +31,13 @@ namespace
   ]
 })";
 
-    struct Project
+    struct Project : AnimationTestProject
     {
-        std::filesystem::path Root = std::filesystem::temp_directory_path() / "sencha_clip_player_migration";
-        LoggingProvider Logging;
-        ComponentSerializerRegistry Serializers;
-        std::unique_ptr<RuntimeAssets> Assets;
-        std::vector<AssetLease> Leases;
-
-        Project()
+        Project() : AnimationTestProject("sencha_clip_player_migration")
         {
-            std::filesystem::remove_all(Root);
-            std::filesystem::create_directories(Root / "levels");
-            std::ofstream(Root / "levels/old.sscene") << kScene;
-            Assets = std::make_unique<RuntimeAssets>(Logging, Serializers);
-            SkeletonData skeleton;
-            SkeletonJoint root;
-            root.Name = "root";
-            skeleton.Joints.push_back(root);
-            EXPECT_TRUE(Assets->Registry.RegisterOrVerify(AssetRecord{
-                .Type = AssetType::Skeleton, .SourceKind = AssetSourceKind::Procedural, .Path = kSkeleton }));
-            (void)Assets->Skeletons.Register(kSkeleton, std::move(skeleton));
-            Leases.push_back(Assets->Assets.TryAcquireLease(kSkeleton, AssetType::Skeleton));
-            EXPECT_TRUE(Assets->Registry.RegisterOrVerify(AssetRecord{
-                .Type = AssetType::AnimationClip, .SourceKind = AssetSourceKind::Procedural, .Path = kClip }));
-            AnimationClipData clip;
-            clip.DurationSeconds = 1.0f;
-            clip.SkeletonPath = kSkeleton;
-            (void)Assets->AnimationClips.Register(kClip, std::move(clip), Assets->Skeletons.AcquireOwned(kSkeleton));
-            Leases.push_back(Assets->Assets.TryAcquireLease(kClip, AssetType::AnimationClip));
-        }
-
-        ~Project()
-        {
-            Leases.clear();
-            std::filesystem::remove_all(Root);
-        }
-
-        JsonValue Read(const std::string& relative) const
-        {
-            std::ifstream in(Root / relative);
-            std::stringstream text;
-            text << in.rdbuf();
-            return *JsonParse(text.str());
+            Write("levels/old.sscene", kScene);
+            Skeleton(kSkeleton);
+            Clip(kClip, kSkeleton);
         }
     };
 }

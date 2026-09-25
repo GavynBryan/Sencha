@@ -4,6 +4,8 @@
 #include <anim/AnimRigBinding.h>
 #include <core/json/JsonValue.h>
 
+#include "ui/DataForm.h"
+
 #include <imgui.h>
 
 #include <array>
@@ -24,15 +26,6 @@
 
 namespace AnimationWidgets
 {
-// What a widget did to the working document this frame: continuous widgets
-// change while held and commit on release, instant ones do both at once.
-struct Edit
-{
-    bool Changed = false;
-    bool Commit = false;
-    void Instant() { Changed = Commit = true; }
-};
-
 [[nodiscard]] std::string Text(const JsonValue& object, std::string_view key);
 [[nodiscard]] double Number(const JsonValue& object, std::string_view key, double fallback = 0.0);
 void SetMember(JsonValue& object, std::string_view key, JsonValue value);
@@ -40,12 +33,12 @@ void EraseMember(JsonValue& object, std::string_view key);
 
 // A text member, committed when the field loses focus so one edit is one
 // undo step.
-void TextMember(const char* label, JsonValue& object, std::string_view key, Edit& edit, float width = 160.0f);
-void NumberMember(const char* label, JsonValue& object, std::string_view key, Edit& edit, float speed = 0.05f,
+void TextMember(const char* label, JsonValue& object, std::string_view key, FieldEdit& edit, float width = 160.0f);
+void NumberMember(const char* label, JsonValue& object, std::string_view key, FieldEdit& edit, float speed = 0.05f,
                   float width = 90.0f);
 template <std::size_t N>
 void ChoiceMember(const char* label, JsonValue& object, std::string_view key, const std::array<const char*, N>& values,
-                  const std::array<const char*, N>& shown, Edit& edit, float width = 70.0f)
+                  const std::array<const char*, N>& shown, FieldEdit& edit, float width = 70.0f)
 {
     const std::string current = Text(object, key);
     std::size_t index = 0;
@@ -58,7 +51,7 @@ void ChoiceMember(const char* label, JsonValue& object, std::string_view key, co
             if (ImGui::Selectable(shown[i], i == index))
             {
                 SetMember(object, key, JsonValue(values[i]));
-                edit.Instant();
+                edit |= FieldEdit::Instant();
             }
         ImGui::EndCombo();
     }
@@ -67,7 +60,7 @@ void ChoiceMember(const char* label, JsonValue& object, std::string_view key, co
 // A combo over names (fact slots, intents, params); free text when there is
 // nothing bound to pick from.
 void NameMember(const char* label, JsonValue& object, std::string_view key, const std::vector<std::string>& names,
-                Edit& edit);
+                FieldEdit& edit);
 
 // What the bound rig offers a predicate builder to pick from.
 struct PredicateVocabulary
@@ -109,5 +102,5 @@ struct PredicateVocabulary
 
 // One predicate's rows -- tests and any-of groups -- with add, group and
 // remove, choosing facts, intents and parameters from the bound rig.
-void DrawPredicate(JsonValue::Array& rows, const PredicateVocabulary& vocabulary, Edit& edit);
+void DrawPredicate(JsonValue::Array& rows, const PredicateVocabulary& vocabulary, FieldEdit& edit);
 }

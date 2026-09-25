@@ -205,7 +205,7 @@ private:
 
         JsonValue root = document.CopyRoot();
         JsonValue::Array* rules = AnimSelectorRules(root);
-        Edit edit;
+        FieldEdit edit;
         if (rules != nullptr)
         {
             for (std::size_t i = 0; i < rules->size(); ++i)
@@ -225,7 +225,7 @@ private:
                         SetMember(rule, "priority", JsonValue(priority));
                         edit.Changed = true;
                     }
-                    edit.Commit |= ImGui::IsItemDeactivatedAfterEdit();
+                    edit.Committed |= ImGui::IsItemDeactivatedAfterEdit();
                     if (rule.Find("behavior") != nullptr)
                         TextMember("Behavior", rule, "behavior", edit, 220.0f);
                     else if (rule.Find("delegate") != nullptr)
@@ -244,7 +244,7 @@ private:
                     if (ImGui::Checkbox("Own stay condition", &ownStay))
                     {
                         (void)SetAnimSelectorStay(root, i, ownStay);
-                        edit.Instant();
+                        edit |= FieldEdit::Instant();
                     }
                     if (ownStay && (*AnimSelectorRules(root))[i].Find("stay") != nullptr)
                     {
@@ -255,13 +255,13 @@ private:
                     if (ImGui::SmallButton("Move up") && i > 0)
                     {
                         (void)MoveAnimSelectorRule(root, i, i - 1);
-                        edit.Instant();
+                        edit |= FieldEdit::Instant();
                     }
                     ImGui::SameLine();
                     if (ImGui::SmallButton("Move down"))
                     {
                         (void)MoveAnimSelectorRule(root, i, i + 1);
-                        edit.Instant();
+                        edit |= FieldEdit::Instant();
                     }
                     ImGui::SameLine();
                     const bool remove = ImGui::SmallButton("Remove rule");
@@ -269,7 +269,7 @@ private:
                     if (remove)
                     {
                         (void)RemoveAnimSelectorRule(root, i);
-                        edit.Instant();
+                        edit |= FieldEdit::Instant();
                         ImGui::PopID();
                         break;
                     }
@@ -282,18 +282,11 @@ private:
             if (ImGui::Button("Add rule"))
             {
                 AddAnimSelectorRule(root, "new rule", "Anim.NewBehavior", 0);
-                edit.Instant();
+                edit |= FieldEdit::Instant();
             }
         }
 
-        if (edit.Changed)
-        {
-            document.BeginEdit();
-            document.PreviewRoot(std::move(root));
-            Workspace.ValidateDocument(document);
-        }
-        if (edit.Commit)
-            Workspace.CommitDocumentEdit(document);
+        ApplyFieldEdit(document, Workspace, edit, std::move(root));
         for (const DataValidationError& error : document.ValidationErrors())
             ImGui::TextWrapped("%s: %s", error.Path.c_str(), error.Message.c_str());
         ImGui::PopID();

@@ -10,12 +10,6 @@
 
 namespace
 {
-DataDocument* Active(AnimationPreviewWorkspace& workspace)
-{
-    return workspace.ActiveDocument < workspace.Documents.size()
-        ? workspace.Documents[workspace.ActiveDocument].get() : nullptr;
-}
-
 bool SaveAll(AnimationPreviewWorkspace& workspace)
 {
     for (const auto& document : workspace.Documents)
@@ -28,16 +22,16 @@ void ConfigureAnimationDocumentActions(EditorUiFeature& ui, Engine& engine,
                                        AnimationPreviewWorkspace& workspace)
 {
     ui.SetUndoActions(
-        [&workspace] { if (auto* doc = Active(workspace)) { doc->Undo(); workspace.DocumentChanged(*doc); } },
-        [&workspace] { if (auto* doc = Active(workspace)) { doc->Redo(); workspace.DocumentChanged(*doc); } },
-        [&workspace] { const auto* doc = Active(workspace); return doc && doc->CanUndo(); },
-        [&workspace] { const auto* doc = Active(workspace); return doc && doc->CanRedo(); });
+        [&workspace] { if (auto* doc = workspace.ActiveDocumentAny()) { doc->Undo(); workspace.DocumentChanged(*doc); } },
+        [&workspace] { if (auto* doc = workspace.ActiveDocumentAny()) { doc->Redo(); workspace.DocumentChanged(*doc); } },
+        [&workspace] { const auto* doc = workspace.ActiveDocumentAny(); return doc && doc->CanUndo(); },
+        [&workspace] { const auto* doc = workspace.ActiveDocumentAny(); return doc && doc->CanRedo(); });
     ui.SetFileActions({}, {}, [&workspace] {
-        if (auto* doc = Active(workspace)) workspace.SaveDocument(*doc);
+        if (auto* doc = workspace.ActiveDocumentAny()) workspace.SaveDocument(*doc);
     }, {});
     ui.SetSaveAllAction([&workspace] { (void)SaveAll(workspace); });
     engine.OnExitRequested = [&workspace](Engine::ExitSource) {
-        if (auto* doc = Active(workspace)) doc->CommitEdit();
+        if (auto* doc = workspace.ActiveDocumentAny()) doc->CommitEdit();
         return std::any_of(workspace.Documents.begin(), workspace.Documents.end(),
             [](const auto& document) { return document->IsDirty(); })
             ? Engine::ExitDecision::Defer : Engine::ExitDecision::Allow;
