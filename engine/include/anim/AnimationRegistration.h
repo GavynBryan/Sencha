@@ -48,9 +48,12 @@ void RegisterAnimationComponents(ComponentRegistrar& registrar);
 // layer tags and bindings land in the same registries.
 void InstallAnimationVocabulary(World& world);
 
-// The animation cvars over `world`'s installed limits: `anim.blend.override_cap`.
-// Registered once by the process that owns `world`.
-void RegisterAnimationCVars(ConsoleRegistry& console, World& world);
+// The animation console over `world`: the `anim.blend.override_cap` cvar over
+// its installed limits; `anim.trace` to list animated entities and start
+// recording one's decisions, and `anim.trace.export` to write them out
+// (AnimTrace.h); and `anim.risk` for every bound rig's content risk
+// (AnimRigRisk.h). Registered once by the process that owns `world`.
+void RegisterAnimationConsole(ConsoleRegistry& console, World& world);
 
 // What the animation systems are composed with. Handed over rather than
 // found: the event pass invokes verbs, so the host names the dispatcher it may

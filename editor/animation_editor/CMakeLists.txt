@@ -1,6 +1,7 @@
 add_library(animation_authoring STATIC
     src/authoring/AnimationClipEventsDocument.cpp
     src/authoring/AnimationClipPlayerMigration.cpp
+    src/authoring/AnimationTraceImport.cpp
     src/authoring/AnimationBlendComparison.cpp
     src/authoring/AnimationClipPreviewSession.cpp
     src/authoring/AnimationEventBindings.cpp

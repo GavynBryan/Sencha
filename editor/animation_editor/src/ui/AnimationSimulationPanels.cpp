@@ -2,11 +2,13 @@
 
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigOutline.h"
+#include "authoring/AnimationTraceImport.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
 #include <anim/AnimFactEvaluation.h>
+#include <anim/AnimRigRisk.h>
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -18,6 +20,7 @@
 #include <cstring>
 #include <format>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -752,6 +755,16 @@ public:
             DrawDecisions();
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Content risk"))
+        {
+            DrawRisk();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Imported trace"))
+        {
+            DrawTrace();
+            ImGui::EndTabItem();
+        }
         if (ImGui::BeginTabItem("Changes"))
         {
             DrawChanges();
@@ -760,6 +773,91 @@ public:
         ImGui::EndTabBar();
     }
 private:
+    // The same measure `anim.risk` reports in the game, over the rig as bound
+    // here.
+    void DrawRisk()
+    {
+        const AnimBoundRig* rig = Workspace.Simulation.Rig();
+        if (rig == nullptr)
+        {
+            ImGui::TextDisabled("Open a rig to measure it.");
+            return;
+        }
+        const AnimRigRisk risk = MeasureAnimRigRisk(*rig, Workspace.Simulation.Tags());
+        ImGui::TextWrapped("%u blend overrides, %u selector rules (the largest selector weighs %u), %u flows "
+                           "longer than %u sections.",
+                           risk.BlendOverrides, risk.SelectorRules, risk.DeepestSelector, risk.LongFlows,
+                           kAnimRiskFlowSections);
+        ImGui::TextDisabled("Each count is a sign a rig is growing toward a graph; none of them is an error.");
+        if (risk.Findings.empty())
+            ImGui::TextDisabled("Nothing to look at.");
+        for (const AnimRigRiskFinding& finding : risk.Findings)
+            ImGui::BulletText("%s", finding.Message.c_str());
+    }
+
+    // A trace exported from a running game with `anim.trace.export`.
+    void DrawTrace()
+    {
+        ImGui::SetNextItemWidth(-160.0f);
+        ImGui::InputTextWithHint("##trace", "Trace file exported with anim.trace.export", TracePath.data(),
+                                 TracePath.size());
+        ImGui::SameLine();
+        if (ImGui::Button("Open trace"))
+        {
+            TraceError.clear();
+            Trace = ReadAnimationTraceFile(std::string(TracePath.data()), TraceError);
+        }
+        if (!TraceError.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s", TraceError.c_str());
+        if (!Trace)
+            return;
+
+        ImGui::Text("Entity %s, rig %s", Trace->Entity.c_str(), Trace->Rig.empty() ? "(unbound)" : Trace->Rig.c_str());
+        if (!Trace->Rig.empty())
+        {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Open its rig") && !Workspace.OpenRig(Trace->Rig))
+                TraceError = Workspace.ScenarioError;
+        }
+        // A trace is never replayed: what it did not capture is said, not
+        // reconstructed.
+        ImGui::TextWrapped("Captured: %s. There is no pose history to scrub; these are the game's decisions as "
+                           "it logged them.",
+                           Trace->Captured.empty() ? "unknown" : Trace->Captured.c_str());
+        if (Trace->Overwritten() > 0)
+            ImGui::TextWrapped("The %llu earliest records were overwritten before export.",
+                               static_cast<unsigned long long>(Trace->Overwritten()));
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputTextWithHint("##filter", "Filter by cause, layer or detail", TraceFilter.data(),
+                                 TraceFilter.size());
+        const std::string_view filter(TraceFilter.data());
+        if (!ImGui::BeginTable("records", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV
+                                                 | ImGuiTableFlags_ScrollY))
+            return;
+        ImGui::TableSetupColumn("Tick", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Cause", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Layer", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("Detail");
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableHeadersRow();
+        for (const AnimationTraceRow& row : Trace->Rows)
+        {
+            if (!filter.empty() && row.Cause.find(filter) == std::string::npos
+                && row.Layer.find(filter) == std::string::npos && row.Detail.find(filter) == std::string::npos)
+                continue;
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%llu", static_cast<unsigned long long>(row.Tick));
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(row.Cause.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(row.Layer.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextWrapped("%s", row.Detail.c_str());
+        }
+        ImGui::EndTable();
+    }
+
     void DrawDecisions()
     {
         const AnimationPreviewSession& session = Workspace.Simulation;
@@ -800,6 +898,10 @@ private:
     }
 
     AnimationPreviewWorkspace& Workspace;
+    std::array<char, 512> TracePath{};
+    std::array<char, 128> TraceFilter{};
+    std::optional<AnimationTrace> Trace;
+    std::string TraceError;
 };
 }
 

@@ -435,6 +435,13 @@ public:
     [[nodiscard]] const AnimationClipCache* ClipSource() const { return Clips; }
     [[nodiscard]] const SkeletonCache* SkeletonSource() const { return Skeletons; }
     [[nodiscard]] std::uint64_t RebuildCount() const { return Rebuilds; }
+    // Every rig bound so far, as last bound; for reports, in no fixed order.
+    template <typename Visit>
+    void ForEachBound(Visit&& visit) const
+    {
+        for (const auto& [key, entry] : Entries)
+            visit(entry.Bound);
+    }
 
 private:
     struct Entry
