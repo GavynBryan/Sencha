@@ -596,7 +596,25 @@ void AnimationPreviewWorkspace::Frame(double wallSeconds)
     if (!geometry)
         return;
     Scene.Bounds = geometry->LocalBounds;
-    const auto& palette = ViewportPalette();
+    const std::vector<Mat4>* shownPalette = &ViewportPalette();
+    Aabb3d drawBounds = geometry->LocalBounds;
+    // A scenario that moves the character draws it where it stands: the
+    // skeleton's model space is the character's own, its feet half the
+    // capsule below the capsule's centre.
+    if (ViewportSource == AnimationViewportSource::Simulation)
+        if (const Transform3f* stands = Simulation.SubjectTransform())
+        {
+            const Vec3d feet = stands->Position - Vec3d(0.0f, Simulation.SubjectHeight() * 0.5f, 0.0f);
+            const Mat4 placed = Mat4::MakeTRS(feet, Vec3d::Zero(), Vec3d::One()) * stands->Rotation.ToMat4();
+            PlacedPalette.resize(shownPalette->size());
+            for (std::size_t j = 0; j < PlacedPalette.size(); ++j)
+                PlacedPalette[j] = placed * (*shownPalette)[j];
+            shownPalette = &PlacedPalette;
+            // Generous rather than exact: a turned box, moved.
+            const float reach = geometry->LocalBounds.HalfExtent().Magnitude();
+            drawBounds = Aabb3d::FromCenterHalfExtent(feet + geometry->LocalBounds.Center(), Vec3d(reach, reach, reach));
+        }
+    const auto& palette = *shownPalette;
     // What picking reads: a palette entry is model times inverse bind, so
     // the joint's model transform is the entry times its bind.
     const SkeletonData& shown = Session.Skeleton();
@@ -620,7 +638,7 @@ void AnimationPreviewWorkspace::Frame(double wallSeconds)
         item.SkinnedMesh = mesh;
         item.Material = material;
         item.SectionIndex = static_cast<std::uint32_t>(section);
-        item.WorldBounds = geometry->LocalBounds;
+        item.WorldBounds = drawBounds;
         item.PoseSlot = slot;
         item.Pipeline = SelectOpaquePipeline(*value);
         item.Pass = ResolveMaterialPass(*value);

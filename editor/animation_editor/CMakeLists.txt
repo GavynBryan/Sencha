@@ -31,6 +31,7 @@ add_executable(animation_editor
     src/ui/AnimationLabPanels.cpp
     src/ui/AnimationLayerPanels.cpp
     src/ui/AnimationRequestSchemaPanel.cpp
+    src/ui/AnimationRootMotionPanels.cpp
     src/ui/AnimationSelectionPanels.cpp
     src/ui/AnimationSimulationPanels.cpp)
 target_link_libraries(animation_editor PRIVATE animation_authoring editor_common)

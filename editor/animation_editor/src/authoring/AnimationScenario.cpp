@@ -310,6 +310,17 @@ JsonValue WriteAnimationScenario(const AnimationScenario& scenario)
             recorders.emplace_back(verb);
         root.emplace_back("recorders", JsonValue(std::move(recorders)));
     }
+    if (scenario.Movement.has_value())
+    {
+        const auto vector = [](const Vec3d& v) {
+            return JsonValue(JsonValue::Array{ JsonValue(static_cast<double>(v.X)), JsonValue(static_cast<double>(v.Y)),
+                                               JsonValue(static_cast<double>(v.Z)) });
+        };
+        JsonValue::Array walls;
+        for (const AnimationScenarioWall& wall : scenario.Movement->Walls)
+            walls.emplace_back(JsonValue::Object{ { "center", vector(wall.Center) }, { "half", vector(wall.HalfExtents) } });
+        root.emplace_back("movement", JsonValue(JsonValue::Object{ { "walls", JsonValue(std::move(walls)) } }));
+    }
     root.emplace_back("inputs", WriteNamedValues(scenario.Inputs));
     root.emplace_back("actions", JsonValue(std::move(actions)));
     for (const auto& unknown : scenario.Unknown)
@@ -401,6 +412,34 @@ std::optional<AnimationScenario> ReadAnimationScenario(const JsonValue& document
                 scenario.Recorders.push_back(verb.AsString());
         }
     }
+    if (const JsonValue* movement = document.Find("movement"); movement != nullptr)
+    {
+        scenario.Movement.emplace();
+        const JsonValue* walls = movement->IsObject() ? movement->Find("walls") : nullptr;
+        if (!movement->IsObject())
+            reader.Error("$.movement", "Movement is an object with its walls.");
+        for (std::size_t i = 0; walls != nullptr && walls->IsArray() && i < walls->AsArray().size(); ++i)
+        {
+            const JsonValue& entry = walls->AsArray()[i];
+            const auto vector = [&](std::string_view key, Vec3d& out) {
+                const JsonValue* value = entry.IsObject() ? entry.Find(key) : nullptr;
+                if (value == nullptr || !value->IsArray() || value->AsArray().size() != 3
+                    || !std::ranges::all_of(value->AsArray(), [](const JsonValue& n) { return n.IsNumber(); }))
+                    return false;
+                out = Vec3d(static_cast<float>(value->AsArray()[0].AsNumber()),
+                            static_cast<float>(value->AsArray()[1].AsNumber()),
+                            static_cast<float>(value->AsArray()[2].AsNumber()));
+                return true;
+            };
+            AnimationScenarioWall wall;
+            if (!vector("center", wall.Center) || !vector("half", wall.HalfExtents) || wall.HalfExtents.X <= 0.0f
+                || wall.HalfExtents.Y <= 0.0f || wall.HalfExtents.Z <= 0.0f)
+                reader.Error(std::format("$.movement.walls[{}]", i),
+                             "A wall is { \"center\": [x, y, z], \"half\": [x, y, z] } with positive half extents.");
+            else
+                scenario.Movement->Walls.push_back(wall);
+        }
+    }
     reader.Named(document.Find("inputs"), "$.inputs", scenario.Inputs);
 
     if (const JsonValue* actions = document.Find("actions"); actions != nullptr && actions->IsArray())
@@ -426,7 +465,7 @@ std::optional<AnimationScenario> ReadAnimationScenario(const JsonValue& document
     for (const auto& [key, value] : document.AsObject())
     {
         if (!IsKnown(key, { "type", "version", "name", "rig", "tick_rate", "seed", "participants",
-                            "declared_tags", "role", "recorders", "inputs", "actions" }))
+                            "declared_tags", "role", "recorders", "movement", "inputs", "actions" }))
             scenario.Unknown.emplace_back(key, value);
     }
     return scenario;

@@ -694,6 +694,23 @@ re-evaluates FreeLocomotion and Jump. That is why rootMotion behaviors must be
 request-driven (cook enforced) and why the server can run them at the Timing
 tier without posing. Fact-triggered behaviors cannot carry root motion.
 
+**As built (2026-09-24).** The curve is extracted at cook into the clip itself
+(`.sanim` v3), not a separate `RootCurve` asset: nothing needs a curve without
+its clip, and a second asset kind would add a loader and cache with no
+consumer. Extraction is opt-in per clip in the source's sidecar. Movement has
+no motion-source objects, so the seam is a World resource,
+`RootMotionSource`, whose sampler animation installs. `RootMotionSystem`
+(between the action producers and composition) and `StepCharacterTick` (the
+replay kernel) ask it for the same tick, so a replay is carried as the live
+tick was. The sample replaces the planar channel and adds a turn channel;
+gravity and jumping keep the up channel, and the mover turns the transform. A
+body whose facing `AimFacing` owns keeps its look yaw. On a request-keyed base
+layer the carrier is derived from the request records' own start and cancel
+ticks, so a replay after a cancel or a corrected start re-evaluates. A
+selector's base layer is carried by what it plays now. Replay maps each
+command tick to the animation clock with the offset between the clock
+estimate and the command lead.
+
 For predicted pawns the recommended split remains: ordinary locomotion is
 capsule-driven with animation following, and root motion is reserved for
 authored moves (mantles, finishers, scripted interactions) where the movement

@@ -91,6 +91,26 @@ enum class AnimationPreviewRole : std::uint8_t
     Client,
 };
 
+// A box the previewed character can run into: its centre and half extents,
+// in metres, in the preview's world.
+struct AnimationScenarioWall
+{
+    Vec3d Center = Vec3d::Zero();
+    Vec3d HalfExtents = Vec3d(0.5f, 1.0f, 0.5f);
+
+    friend bool operator==(const AnimationScenarioWall&, const AnimationScenarioWall&) = default;
+};
+
+// The previewed character stands on a floor at y = 0 and moves: through the
+// production movement pipeline and mover, with whatever root motion its
+// clips carry, against these walls.
+struct AnimationScenarioMovement
+{
+    std::vector<AnimationScenarioWall> Walls;
+
+    friend bool operator==(const AnimationScenarioMovement&, const AnimationScenarioMovement&) = default;
+};
+
 struct AnimationScenario
 {
     std::string Name;
@@ -110,6 +130,8 @@ struct AnimationScenario
     // game running, so a declared verb is otherwise Unavailable; a recorder
     // accepts and keeps what it was handed, and is always shown as one.
     std::vector<std::string> Recorders;
+    // Absent: the character stays where it stands, as a pose on its own.
+    std::optional<AnimationScenarioMovement> Movement;
 
     JsonValue::Object Unknown;
 

@@ -9,7 +9,15 @@
 #include <core/json/JsonStringify.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <movement/LocomotionMode.h>
+#include <movement/MovementRegistration.h>
+#include <movement/components/CharacterMovement.h>
 #include <net/NetReplicationComponents.h>
+#include <physics/CharacterMoverPool.h>
+#include <physics/PhysicsWorld.h>
+#include <physics/components/CharacterController.h>
+#include <world/RuntimeComponentSchema.h>
+#include <world/transform/TransformComponents.h>
 #include <world/ComponentRegistrar.h>
 #include <world/SimulationAuthority.h>
 
@@ -179,7 +187,8 @@ bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a, const Animati
         && SameRange(a.Requests, b.Requests, SameRequest)
         && SameRange(a.Decisions, b.Decisions, SameDecision) && a.Actions == b.Actions
         && SameRange(a.Layers, b.Layers, sameLayer) && a.Invocations == b.Invocations
-        && SameRange(a.Pose, b.Pose, [](const Transform3f& x, const Transform3f& y) { return x == y; });
+        && SameRange(a.Pose, b.Pose, [](const Transform3f& x, const Transform3f& y) { return x == y; })
+        && a.Movement == b.Movement;
 }
 
 AnimationPreviewSession::AnimationPreviewSession(const DataAssetCache& data, const AnimationClipCache* clips,
@@ -190,6 +199,7 @@ AnimationPreviewSession::AnimationPreviewSession(const DataAssetCache& data, con
     , Skeletons(skeletons)
     , Vocabulary(std::move(vocabulary))
 {
+    AllPartitions.Add(StoragePartitionId::Default());
 }
 
 AnimationPreviewSession::~AnimationPreviewSession() = default;
@@ -209,6 +219,10 @@ void AnimationPreviewSession::DropWorld()
     RecorderTokens.clear();
     Recorders.clear();
     Dispatcher.reset();
+    if (Movers != nullptr && Preview != nullptr)
+        Movers->EvictAll(*Preview);
+    Movers.reset();
+    Physics.reset();
     Preview.reset();
 }
 
@@ -293,6 +307,31 @@ void AnimationPreviewSession::BuildWorld()
     }
     // So a preview can stand for either end of a session.
     Preview->RegisterComponent<NetReplicated>();
+    if (Working.Movement.has_value())
+    {
+        // What a moving character is made of: the engine's components and the
+        // movement vocabulary, before any entity exists.
+        ComponentRegistrar registrar(*Preview);
+        RegisterEngineComponents(registrar);
+        RegisterMovement(*Preview);
+        Physics = std::make_unique<PhysicsWorld>();
+        BodyDesc floor;
+        floor.Shape = CollisionShape::MakeBox(Vec3d(100.0f, 0.5f, 100.0f));
+        floor.Position = Vec3d(0.0f, -0.5f, 0.0f);
+        floor.Motion = BodyMotion::Static;
+        floor.Layer = CollisionLayer::Static;
+        (void)Physics->AddBody(floor);
+        for (const AnimationScenarioWall& wall : Working.Movement->Walls)
+        {
+            BodyDesc box;
+            box.Shape = CollisionShape::MakeBox(wall.HalfExtents);
+            box.Position = wall.Center;
+            box.Motion = BodyMotion::Static;
+            box.Layer = CollisionLayer::Static;
+            (void)Physics->AddBody(box);
+        }
+        Movers = std::make_unique<CharacterMoverPool>(*Physics);
+    }
     InstallAnimationVocabulary(*Preview);
     // The verbs content may name: the engine's, then the project's, declared
     // in the order a runtime World declares them.
@@ -365,6 +404,17 @@ void AnimationPreviewSession::BuildWorld()
             Preview->AddComponent(SubjectEntity, AnimFacts{});
     }
     Preview->AddComponent(SubjectEntity, AnimDecisionLog{});
+    if (Movers != nullptr)
+    {
+        const CharacterController capsule;
+        Preview->AddComponent<LocalTransform>(
+            SubjectEntity, LocalTransform{ Transform3f{ Vec3d(0.0f, capsule.Height * 0.5f, 0.0f), Quatf::Identity(),
+                                                        Vec3d::One() } });
+        Preview->AddComponent<CharacterController>(SubjectEntity, capsule);
+        Preview->AddComponent<CharacterMovement>(
+            SubjectEntity, CharacterMovement{ .Mode = Preview->GetResource<LocomotionModeRegistry>().FreeMode() });
+        Movers->Reconcile(*Preview, AllPartitions);
+    }
     Bound = bound;
 }
 
@@ -504,6 +554,59 @@ void AnimationPreviewSession::SetRequestsFromWire(bool fromWire)
     FromWire = fromWire;
     if (Preview != nullptr)
         Replay();
+}
+
+void AnimationPreviewSession::SetMovement(std::optional<AnimationScenarioMovement> movement)
+{
+    if (Working.Movement == movement)
+        return;
+    Working.Movement = std::move(movement);
+    if (Preview != nullptr)
+        Replay();
+}
+
+AnimationPreviewMovementRecord AnimationPreviewSession::StepMovement(AnimTick tick)
+{
+    World& world = *Preview;
+    const float dt = static_cast<float>(TickSeconds());
+    AnimationPreviewMovementRecord record;
+    const Vec3d before = world.TryGet<LocalTransform>(SubjectEntity)->Value.Position;
+    RootMotionSample carried;
+    record.Carried = SampleRootMotion(world, SubjectEntity, tick, TickSeconds(), carried);
+    if (record.Carried)
+        record.Requested = carried.PlanarVelocity * dt;
+
+    Locomotion.Step(world, dt);
+    Jump.Step(world, dt);
+    Root.Step(world, tick, TickSeconds());
+    Composition.Step(world);
+    Movers->Reconcile(world, AllPartitions);
+    Movers->Drive(world, AllPartitions, dt, Vec3d(0.0f, -9.81f, 0.0f));
+
+    const Transform3f& after = world.TryGet<LocalTransform>(SubjectEntity)->Value;
+    record.Position = after.Position;
+    const Vec3d forward = after.Rotation.RotateVector(Vec3d(0.0f, 0.0f, -1.0f));
+    record.Yaw = std::atan2(-forward.X, -forward.Z);
+    record.Achieved = Vec3d(after.Position.X - before.X, 0.0f, after.Position.Z - before.Z);
+    // A millimetre of slack: the mover's skin and float noise are not walls.
+    record.Blocked = record.Carried && (record.Requested - record.Achieved).Magnitude() > 0.001f;
+    return record;
+}
+
+const Transform3f* AnimationPreviewSession::SubjectTransform() const
+{
+    if (Movers == nullptr || Preview == nullptr)
+        return nullptr;
+    const LocalTransform* transform = static_cast<const World&>(*Preview).TryGet<LocalTransform>(SubjectEntity);
+    return transform != nullptr ? &transform->Value : nullptr;
+}
+
+float AnimationPreviewSession::SubjectHeight() const
+{
+    if (Movers == nullptr || Preview == nullptr)
+        return 0.0f;
+    const CharacterController* capsule = static_cast<const World&>(*Preview).TryGet<CharacterController>(SubjectEntity);
+    return capsule != nullptr ? capsule->Height : 0.0f;
 }
 
 void AnimationPreviewSession::SetRecorder(std::string_view verb, bool attached)
@@ -778,6 +881,11 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
             DrainAnimEvents(*Preview, PendingEvents, Dispatcher.get());
             InvocationSink = nullptr;
         }
+        // Movement, where the scenario moves the character: after what plays
+        // is decided, so root motion reads this tick's content, and before
+        // posing, so the pose is of where the character ended up.
+        if (Movers != nullptr)
+            record.Movement = StepMovement(tick);
         // The production pose pass, after everything that decides what plays.
         Poser.Pose(*Preview, tick, TickSeconds());
         if (const AnimPosePool::Slot* pose = SubjectPose(); pose != nullptr && pose->HasCurrent)

@@ -7,6 +7,7 @@
 #include "ui/AnimationEventPanels.h"
 #include "ui/AnimationLayerPanels.h"
 #include "ui/AnimationRequestSchemaPanel.h"
+#include "ui/AnimationRootMotionPanels.h"
 #include "ui/AnimationSelectionPanels.h"
 #include "ui/AnimationSimulationPanels.h"
 #include "render/AnimationPreviewRenderFeature.h"
@@ -17,6 +18,7 @@
 #include <imgui.h>
 
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace
@@ -119,6 +121,14 @@ public:
         }
         ImGui::Checkbox("Joints", &ShowJoints);
         ImGui::SameLine();
+        if (Workspace.Simulation.SubjectTransform() != nullptr)
+        {
+            ImGui::Checkbox("Path", &ShowPath);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Where the character went (green), where root motion carried it past what it "
+                                  "achieved (red, with a marker), and the scenario's walls.");
+            ImGui::SameLine();
+        }
         ImGui::TextDisabled(ShowJoints ? "Drag to orbit; click a joint to select it, right-click to mask"
                                        : "Drag to orbit; wheel to zoom");
         if (Workspace.ViewportSource == AnimationViewportSource::Simulation && !Workspace.ViewportNote.empty())
@@ -141,9 +151,72 @@ public:
         }
         if (ShowJoints)
             DrawJoints(position, size, hovered);
+        if (ShowPath && Workspace.ViewportSource == AnimationViewportSource::Simulation)
+            DrawPath(position, size);
     }
 
 private:
+    // The character's path on the floor, the moves a collision cut short, and
+    // the walls, drawn over the image in the preview's world.
+    void DrawPath(ImVec2 origin, ImVec2 size)
+    {
+        const AnimationPreviewSession& session = Workspace.Simulation;
+        const Mat4 viewProjection = Viewport->ViewCamera(size.x / size.y).ViewProjection;
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const float feet = session.SubjectHeight() * 0.5f;
+        const auto project = [&](const Vec3d& point) -> std::optional<ImVec2> {
+            const std::optional<AnimationViewportPoint> at =
+                ProjectAnimationViewportPoint(point, viewProjection, size.x, size.y);
+            if (!at.has_value())
+                return std::nullopt;
+            return ImVec2(origin.x + at->X, origin.y + at->Y);
+        };
+        const auto line = [&](const Vec3d& a, const Vec3d& b, ImU32 colour, float width) {
+            const std::optional<ImVec2> from = project(a);
+            const std::optional<ImVec2> to = project(b);
+            if (from && to)
+                draw->AddLine(*from, *to, colour, width);
+        };
+
+        if (const AnimationScenarioMovement* movement = session.Scenario().Movement ? &*session.Scenario().Movement
+                                                                                    : nullptr)
+            for (const AnimationScenarioWall& wall : movement->Walls)
+            {
+                const Vec3d c = wall.Center;
+                const Vec3d h = wall.HalfExtents;
+                Vec3d corners[8];
+                for (int i = 0; i < 8; ++i)
+                    corners[i] = Vec3d(c.X + ((i & 1) ? h.X : -h.X), c.Y + ((i & 2) ? h.Y : -h.Y),
+                                       c.Z + ((i & 4) ? h.Z : -h.Z));
+                for (int i = 0; i < 8; ++i)
+                    for (const int bit : { 1, 2, 4 })
+                        if ((i & bit) == 0)
+                            line(corners[i], corners[i | bit], IM_COL32(170, 180, 200, 200), 1.0f);
+            }
+
+        const std::optional<AnimTick> shown = Workspace.ShownTick();
+        Vec3d previous;
+        bool first = true;
+        for (const AnimationPreviewTickRecord& record : session.History())
+        {
+            if (!record.Movement || (shown && record.Tick > *shown))
+                continue;
+            const Vec3d at = record.Movement->Position - Vec3d(0.0f, feet, 0.0f);
+            if (!first)
+                line(previous, at, IM_COL32(90, 210, 130, 255), 2.0f);
+            if (record.Movement->Blocked)
+            {
+                // Where it was carried from, and where it would have gone.
+                const Vec3d from = at - record.Movement->Achieved;
+                line(from, from + record.Movement->Requested, IM_COL32(230, 80, 70, 255), 2.0f);
+                if (const std::optional<ImVec2> mark = project(at))
+                    draw->AddCircle(*mark, 4.0f, IM_COL32(230, 80, 70, 255), 0, 2.0f);
+            }
+            previous = at;
+            first = false;
+        }
+    }
+
     // Joint markers over the image, bones to their parents, the selected
     // joint named. A click that did not orbit picks; a right-click picks and
     // offers the mask steps.
@@ -215,6 +288,7 @@ private:
     AnimationPreviewRenderFeature*& Viewport;
     AnimationPreviewWorkspace& Workspace;
     bool ShowJoints = false;
+    bool ShowPath = true;
 };
 
 class PreviewTransportPanel final : public IEditorPanel
@@ -312,6 +386,7 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     AddAnimationLayerPanels(ui, workspace);
     AddAnimationBlendPanels(ui, workspace);
     AddAnimationLabPanels(ui, workspace);
+    AddAnimationRootMotionPanels(ui, workspace);
     auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace);
     auto* requestSchemaPanel = requestSchema.get();
     ui.AddPanel(std::move(requestSchema));

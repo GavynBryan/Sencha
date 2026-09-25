@@ -12,6 +12,11 @@
 #include <anim/AnimRigBinding.h>
 #include <assets/data/DataAssetCache.h>
 #include <authored/VerbDispatcher.h>
+#include <ecs/StoragePartitionSet.h>
+#include <movement/FreeLocomotionSystem.h>
+#include <movement/JumpExecutionSystem.h>
+#include <movement/MotionComposition.h>
+#include <movement/RootMotionSource.h>
 
 #include <cstdint>
 #include <deque>
@@ -23,7 +28,9 @@
 #include <unordered_map>
 #include <vector>
 
+class CharacterMoverPool;
 class GameplayTagRegistry;
+class PhysicsWorld;
 class World;
 
 //=============================================================================
@@ -104,6 +111,23 @@ struct AnimationPreviewLayerRecord
     std::vector<AnimRuleVerdict> Verdicts;
 };
 
+// Where the character went on one tick, when the scenario moves it.
+struct AnimationPreviewMovementRecord
+{
+    // The capsule's centre after the tick, and its facing about +Y.
+    Vec3d Position = Vec3d::Zero();
+    float Yaw = 0.0f;
+    // What root motion asked for across the ground this tick, and what the
+    // mover achieved: the same when nothing was in the way.
+    Vec3d Requested = Vec3d::Zero();
+    Vec3d Achieved = Vec3d::Zero();
+    bool Carried = false;
+    // Carried, and stopped short of where it was carried to.
+    bool Blocked = false;
+
+    friend bool operator==(const AnimationPreviewMovementRecord&, const AnimationPreviewMovementRecord&) = default;
+};
+
 // Everything observable about one tick, kept for history and compared whole
 // when a replay is checked against the take it came from.
 struct AnimationPreviewTickRecord
@@ -120,6 +144,7 @@ struct AnimationPreviewTickRecord
     // The subject's composed local pose, empty when its rig names no loaded
     // skeleton.
     std::vector<Transform3f> Pose;
+    std::optional<AnimationPreviewMovementRecord> Movement;
 };
 
 [[nodiscard]] bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a,
@@ -183,6 +208,9 @@ public:
     // authority another session simulates. For a session standing in for a
     // client; restarts like a role change.
     void SetRequestsFromWire(bool fromWire);
+    // Puts the character on a floor with these walls and moves it, or stands
+    // it still. Scenario state, so the scenario replays to the current tick.
+    void SetMovement(std::optional<AnimationScenarioMovement> movement);
     [[nodiscard]] bool RequestsFromWire() const { return FromWire; }
     void SetRecorder(std::string_view verb, bool attached);
     [[nodiscard]] bool HasRecorder(std::string_view verb) const;
@@ -224,6 +252,11 @@ public:
     // The current input for a gathered fact, if the scenario sets one.
     [[nodiscard]] const AnimationScenarioValue* Input(std::string_view fact) const;
     [[nodiscard]] EntityId Subject() const { return SubjectEntity; }
+    // Where the subject stands in the preview's world when the scenario moves
+    // it; null otherwise.
+    [[nodiscard]] const Transform3f* SubjectTransform() const;
+    // The capsule's height, which puts the feet below its centre.
+    [[nodiscard]] float SubjectHeight() const;
     // The subject's pose storage and pose state, once a pass has posed it.
     [[nodiscard]] const AnimPosePool::Slot* SubjectPose() const;
     [[nodiscard]] const AnimPoseState* SubjectPoseState() const;
@@ -265,6 +298,7 @@ private:
 
     void BuildWorld();
     void DropWorld();
+    AnimationPreviewMovementRecord StepMovement(AnimTick tick);
     // Restarts and runs back to the tick the session was on.
     void Replay();
     void RunTick(AnimTick tick);
@@ -328,4 +362,15 @@ private:
     double PlaybackSpeed = 1.0;
     double PendingTicks = 0.0;
     bool FromWire = false;
+
+    // The movement pipeline, when the scenario moves the character: the same
+    // systems a game schedules, run in schedule order after content resolves
+    // and before posing. Torn down before the World, whose movers they hold.
+    std::unique_ptr<PhysicsWorld> Physics;
+    std::unique_ptr<CharacterMoverPool> Movers;
+    StoragePartitionSet AllPartitions;
+    FreeLocomotionSystem Locomotion{ Vec3d(0.0f, -9.81f, 0.0f), Vec3d(0.0f, 1.0f, 0.0f) };
+    JumpExecutionSystem Jump;
+    RootMotionSystem Root;
+    MotionCompositionSystem Composition;
 };

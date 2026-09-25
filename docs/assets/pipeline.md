@@ -235,6 +235,13 @@ disagree, this is the contract.
   longer exports fails the import rather than dropping its events. An event
   names an authored binding key and supplies only constants and tags as
   inputs; references belong on the binding.
+- **Root motion.** A clip whose sidecar entry says `"root_motion": true` has
+  its skeleton root's planar travel and yaw, measured from its first frame,
+  moved out of the pose tracks and into a root curve
+  (`assets/cook/AnimationRootExtraction.h`). The cook writes the curve as
+  `.sanim` version 3's root block; versions 1 and 2 load with none. Opt-in,
+  because extraction changes how the clip poses when played without root
+  motion. A skeleton with more than one root joint is refused.
 - **Freshness.** The importer's cook identity (its version, and for
   `.blend` the Blender and glTF exporter versions) is part of every cooked
   entry, so changing the importer or the toolchain recooks its artifacts.

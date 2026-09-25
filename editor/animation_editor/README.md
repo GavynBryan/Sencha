@@ -326,6 +326,27 @@ guess, and repeatability.
 
 Not yet: the client's pose drawn as a ghost in the viewport.
 
+## Root motion
+
+A clip carries the character when its source's sidecar asks for root motion
+and a behavior flagged `root_motion` plays it on the base layer. A scenario
+with a `movement` block puts the character on a floor and runs the game's
+movement pipeline and mover after content resolves, so the clip carries it
+and a wall can stop it.
+
+- **Root motion** toggles *Move the character*, and edits the walls: add one
+  ahead, set its centre and half size, or remove it. Each change replays the
+  scenario to the current tick. It plots the playing clip's root curves --
+  right, back and turn over the clip -- with where the base layer is, and
+  totals the distance carried against the distance achieved, naming the ticks
+  a wall cut short.
+- **Path** in the viewport draws the character's path on the floor, each move
+  a collision cut short (red, where it would have gone), and the walls. The
+  character is drawn where it stands.
+
+`test/editor/AnimationRootMotionPreviewTests.cpp` covers a carried character, a
+wall stopping it, and movement as scenario state.
+
 ## Ownership
 
 `animation_authoring` is a GUI-independent library. `AnimationClipPreviewSession`
@@ -360,8 +381,8 @@ These are required implementation work, not capabilities of the current editor:
    timeline beside sections and requests.
 4. Remaining from the blending stage: blendspace and blend override panes, and
    fading a layer's weight over time rather than stepping it.
-5. Extracted root curves and replayable movement-owned motion sources, with
-   translation/yaw plots and requested/composed/achieved displacement inspection.
+5. Remaining from the root motion stage: the take-A ghost drawn where the
+   character stood, and a composed-motion view beside requested and achieved.
 6. Compatible single-clip migration, presets, hot-reload remapping, complete
    decision-history capture/import, full cross-asset undo/redo, and workflow tests.
 

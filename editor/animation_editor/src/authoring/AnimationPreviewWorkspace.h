@@ -221,6 +221,8 @@ private:
     [[nodiscard]] const std::vector<Mat4>* GhostPalette();
     std::vector<Mat4> GhostModel;
     std::vector<Mat4> GhostPaletteScratch;
+    // The shown palette moved to where a moving character stands.
+    std::vector<Mat4> PlacedPalette;
     MaterialHandle GhostMaterial;
     AssetLease GhostMaterialLease;
     std::vector<Transform3f> SimulationLocal;
