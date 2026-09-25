@@ -34,7 +34,7 @@ namespace
     constexpr std::size_t kPreviewEventCapacity = 256;
 
     // A verb argument as a reader would write it.
-    std::string ValueText(const VerbValue& value, const GameplayTagRegistry* tags)
+    std::string ValueText(const AuthoredValue& value, const GameplayTagRegistry* tags)
     {
         const auto list = [&](std::string_view open, std::string_view close) {
             std::string text(open);
@@ -46,19 +46,19 @@ namespace
         std::int64_t whole = 0;
         double number = 0.0;
         std::string_view text;
-        VerbVectorValue vector;
+        AuthoredVectorValue vector;
         const AssetRef* asset = nullptr;
         GameplayTagId tag;
         EntityId entity;
         switch (value.Kind())
         {
-        case VerbValueKind::None: return "(none)";
-        case VerbValueKind::Bool: return value.TryGetBool(flag) && flag ? "true" : "false";
-        case VerbValueKind::Int: return value.TryGetInt(whole) ? std::format("{}", whole) : "?";
-        case VerbValueKind::Float: return value.TryGetFloat(number) ? std::format("{}", number) : "?";
-        case VerbValueKind::String: return value.TryGetString(text) ? std::format("\"{}\"", text) : "?";
-        case VerbValueKind::Enum: return value.TryGetEnum(text) ? std::string(text) : "?";
-        case VerbValueKind::Vector:
+        case AuthoredValueKind::None: return "(none)";
+        case AuthoredValueKind::Bool: return value.TryGetBool(flag) && flag ? "true" : "false";
+        case AuthoredValueKind::Int: return value.TryGetInt(whole) ? std::format("{}", whole) : "?";
+        case AuthoredValueKind::Float: return value.TryGetFloat(number) ? std::format("{}", number) : "?";
+        case AuthoredValueKind::String: return value.TryGetString(text) ? std::format("\"{}\"", text) : "?";
+        case AuthoredValueKind::Enum: return value.TryGetEnum(text) ? std::string(text) : "?";
+        case AuthoredValueKind::Vector:
         {
             if (!value.TryGetVector(vector))
                 return "?";
@@ -67,19 +67,19 @@ namespace
                 out += std::format("{}{}", i == 0 ? "" : ", ", vector.Components[i]);
             return out + ")";
         }
-        case VerbValueKind::Record: return list("{", "}");
-        case VerbValueKind::Array: return list("[", "]");
-        case VerbValueKind::AssetRef:
+        case AuthoredValueKind::Record: return list("{", "}");
+        case AuthoredValueKind::Array: return list("[", "]");
+        case AuthoredValueKind::AssetRef:
             return value.TryGetAsset(asset) ? asset->Path : "?";
-        case VerbValueKind::DataAssetRef:
+        case AuthoredValueKind::DataAssetRef:
             return value.TryGetDataAsset(asset) ? asset->Path : "?";
-        case VerbValueKind::GameplayTag:
+        case AuthoredValueKind::GameplayTag:
             if (value.TryGetTag(tag) && tags != nullptr)
                 return std::string(tags->GetName(tag));
             return "?";
-        case VerbValueKind::Entity:
+        case AuthoredValueKind::Entity:
             return value.TryGetEntity(entity) ? std::format("entity {}", entity.Index) : "?";
-        case VerbValueKind::PersistentEntity: return "(persistent entity)";
+        case AuthoredValueKind::PersistentEntity: return "(persistent entity)";
         }
         return "?";
     }

@@ -639,7 +639,7 @@ bool CompileVerbInputValue(const VerbBindingArgument& authored,
                            const VerbCompiledInput& input,
                            const VerbBindingEnvironment& environment,
                            std::string_view bindingKey,
-                           VerbValue& out,
+                           AuthoredValue& out,
                            std::vector<std::string>& errors)
 {
     if (input.Destinations.empty())
@@ -657,7 +657,7 @@ bool CompileVerbInputValue(const VerbBindingArgument& authored,
     // Compiled against the first destination, then held to every one the way
     // the dispatcher will hold it: one value, however many arguments read it.
     const DataFieldSchema& first = input.Destinations.front().Expected;
-    VerbValue value;
+    AuthoredValue value;
     bool referencesChecked = true;
     const bool compiled = authored.Source == VerbArgumentSource::Literal
         ? CompileLiteral(authored.Literal, first, bindingKey, authored.Key, value, errors)
@@ -666,7 +666,7 @@ bool CompileVerbInputValue(const VerbBindingArgument& authored,
         return false;
     for (const VerbInputDestination& destination : input.Destinations)
     {
-        if (!VerbValueSatisfiesField(value, destination.Expected))
+        if (!AuthoredValueSatisfiesField(value, destination.Expected))
         {
             Fail(errors, bindingKey, authored.Key,
                  "this input fills several arguments, and the value does not suit all of them");

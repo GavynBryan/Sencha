@@ -477,7 +477,7 @@ private:
             }
             if (ImGui::BeginCombo("Verb", NewBindingVerb.c_str()) && verbs != nullptr)
             {
-                for (const VerbId id : verbs->LiveVerbs())
+                for (const VerbId id : verbs->Live())
                     if (const VerbDefinition* definition = verbs->Get(id))
                         if (ImGui::Selectable(definition->Name.c_str(), definition->Name == NewBindingVerb))
                             NewBindingVerb = definition->Name;
@@ -705,7 +705,7 @@ private:
                                "recorder accepts and keeps what it was handed. Its results are labelled as a "
                                "recorder's, never as the game's.");
             if (const VerbRegistry* verbs = session.Verbs())
-                for (const VerbId id : verbs->LiveVerbs())
+                for (const VerbId id : verbs->Live())
                     if (const VerbDefinition* definition = verbs->Get(id))
                     {
                         bool attached = session.HasRecorder(definition->Name);

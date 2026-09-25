@@ -56,12 +56,12 @@ void AnimRigBinder::BindEvents(const AnimRigData& rig)
             return event;
         }
         bool resolved = true;
-        const VerbValue value = VerbValue::Tag(tag);
+        const AuthoredValue value = AuthoredValue::Tag(tag);
         for (const VerbCompiledInput& input : binding->Inputs)
         {
             const bool suits = input.Name == inputName
                 && std::ranges::all_of(input.Destinations, [&value](const VerbInputDestination& destination) {
-                       return VerbValueSatisfiesField(value, destination.Expected);
+                       return AuthoredValueSatisfiesField(value, destination.Expected);
                    });
             if (!suits)
             {

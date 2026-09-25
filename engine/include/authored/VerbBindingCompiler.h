@@ -72,7 +72,7 @@ struct VerbBindingEnvironment
                                          const VerbCompiledInput& input,
                                          const VerbBindingEnvironment& environment,
                                          std::string_view bindingKey,
-                                         VerbValue& out,
+                                         AuthoredValue& out,
                                          std::vector<std::string>& errors);
 
 // Whether a compiled binding still describes the catalog it was compiled

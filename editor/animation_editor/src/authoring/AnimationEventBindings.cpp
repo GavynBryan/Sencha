@@ -48,7 +48,7 @@ std::vector<AnimationEventInputCheck> CheckAnimationEventInputs(const AnimationC
             checks.push_back(std::move(check));
             continue;
         }
-        VerbValue value;
+        AuthoredValue value;
         std::vector<std::string> errors;
         check.Valid = CompileVerbInputValue(*supplied, input, environment, binding.KeyText, value, errors);
         if (!check.Valid && !errors.empty())

@@ -129,7 +129,7 @@ struct AnimBoundEvent
     std::optional<float> MinWeight;
     VerbBindingKey Binding;
     std::string BindingText;
-    std::vector<VerbValue> Inputs;
+    std::vector<AuthoredValue> Inputs;
     // The binding resolved and every input converted. An unresolved event is
     // kept, so a crossing still reports why nothing was invoked.
     bool Resolved = false;
