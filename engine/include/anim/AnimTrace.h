@@ -8,15 +8,8 @@
 struct AnimBoundRig;
 class World;
 
-//=============================================================================
-// Animation traces
-//
-// What one entity's decision log holds, as a document a bug report can carry
-// to another machine: every record with its tick, cause and reason, and names
-// resolved against this World -- behaviors, intents, layers, content,
-// sections -- since ids mean nothing elsewhere. A trace carries decisions
-// only; it has no pose history and says so.
-//=============================================================================
+// One entity's decision log as a document another machine can read: names,
+// not ids. See docs/gameplay/animation.md.
 
 inline constexpr std::string_view kAnimTraceType = "animation.trace";
 

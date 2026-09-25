@@ -77,9 +77,6 @@ struct AnimationNavigation
     std::optional<std::size_t> InspectRecord;
 };
 
-// Owns preview selections and their leases, the open animation documents, the
-// rig under simulation, and navigation. Browsing and selecting preview content
-// is transient and never edits the asset being inspected.
 // What saving every changed document did. Paths are asset paths, or clip
 // paths for a clip's events.
 struct AnimationSaveReport
@@ -95,6 +92,9 @@ struct AnimationSaveReport
 // The data subtypes this editor opens and creates.
 [[nodiscard]] std::span<const std::string_view> AnimationDocumentSubtypes();
 
+// Owns preview selections and their leases, the open animation documents, the
+// rig under simulation, and navigation. Browsing and selecting preview content
+// is transient and never edits the asset being inspected.
 class AnimationPreviewWorkspace final : public DataFormHost
 {
 public:

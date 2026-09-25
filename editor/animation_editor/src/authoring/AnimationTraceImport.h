@@ -8,16 +8,8 @@
 #include <string>
 #include <vector>
 
-//=============================================================================
-// Imported animation traces
-//
-// An animation.trace document (anim/AnimTrace.h) read back for display: one
-// row per decision record, in the order the game logged them. A row keeps the
-// record's tick, cause and layer, and describes every other field it carried
-// -- including fields this editor does not know -- so a trace from a newer
-// build still reads. A trace holds decisions only; it cannot be played back,
-// and the reader says what it captured rather than filling a pose history in.
-//=============================================================================
+// An animation.trace read back for display, one row per record. Fields this
+// editor does not know are shown, so a newer build's trace still reads.
 
 struct AnimationTraceRow
 {

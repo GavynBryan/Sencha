@@ -360,6 +360,52 @@ and a wall can stop it.
 `test/editor/AnimationRootMotionPreviewTests.cpp` covers a carried character, a
 wall stopping it, and movement as scenario state.
 
+## Documents, undo and saving
+
+The **Document** panel draws the active document through the same
+schema-generated form Data Editor uses (`editor/common/src/ui/DataForm.h`), so
+every field of a rig, behavior set, slot map, selector, flow, blendspace, blend
+overrides, fact or request schema, bindings file and tag declaration is
+editable here; the purpose-built panels above are the richer views of the same
+documents. **New asset** creates any of those types, and a reference field's
+Pick names it.
+
+A name content introduces as a gameplay tag -- a new behavior, intent or
+layer -- fails the rig's binding until something declares it. The Problems tab
+lists those names and **Declare them beside the rig** adds them to the rig's
+tag declarations as one undo step there; working declarations reach the
+preview before they are saved.
+
+Undo and redo take the newest step across every open document and clip's
+events, whichever the author is looking at, and bring its document forward.
+Any interaction still open is cancelled first. An edit to an asset the
+preview has not loaded yet -- a selector edited before the rig names it --
+reaches the preview once something loads it.
+
+**Save all** (Changes tab, the File menu and the exit prompt) saves every
+changed document it can and holds back each whose file changed on disk since
+it was read. Each held-back file is settled with **Keep mine**, which writes
+the working version over it, or **Take the file's**, which adopts the file's
+version as an undo step. Keeping a clip's events re-reads the sidecar first,
+so another clip's change there survives.
+
+## Qualification
+
+- **Scenario batch** runs every saved scenario in the project -- each under its
+  own rig, or all under the open rig -- twice from tick 0, in a session of its
+  own. A scenario fails on an error or a second run that differs from the
+  first, and warns on a warning or a request no layer played.
+- **Migration** finds scenes that still name the retired clip player and turns
+  each into a one-layer rig that plays the clip as the player did.
+- **Content risk** (Problems and changes) shows the open rig's risk measures,
+  the previewed entity's footprint and its unplayed requests -- what `anim.risk`
+  reports in a game.
+- **Imported trace** reads a trace written by `anim.trace.export` in a running
+  game: every decision record as logged, and what the trace did not capture.
+
+The runtime side of these is described in
+[docs/gameplay/animation.md](../../docs/gameplay/animation.md).
+
 ## Ownership
 
 `animation_authoring` is a GUI-independent library. `AnimationClipPreviewSession`
@@ -383,21 +429,16 @@ The runtime these build is specified by
 the staging by [docs/plans/animation-authoring.md](../../docs/plans/animation-authoring.md).
 These are required implementation work, not capabilities of the current editor:
 
-1. Remaining from the facts/requests stage: rig and fact-schema panes in this
-   editor (they are authored in Data Editor today) and tag-set inputs. Root
-   metadata lands with its consumer in the root-motion stage.
-2. Remaining from the selection stage: a behavior-set and slot-map pane (they
-   edit in Data Editor today, and valid edits there still need a reload here),
-   and the predicate text form.
-3. Remaining from the events stage: lifecycle bindings edited in their own
-   inspector rather than Data Editor, and event marks drawn on the shared
-   timeline beside sections and requests.
-4. Remaining from the blending stage: blendspace and blend override panes, and
-   fading a layer's weight over time rather than stepping it.
-5. Remaining from the root motion stage: the take-A ghost drawn where the
-   character stood, and a composed-motion view beside requested and achieved.
-6. Compatible single-clip migration, presets, hot-reload remapping, complete
-   decision-history capture/import, full cross-asset undo/redo, and workflow tests.
+1. Tag-set scenario inputs and the predicate text form.
+2. Purpose-built panes beyond the Document panel's form: a behavior policy
+   inspector linked to every rule and row that reaches it, a slot map view of
+   overlay precedence, a blendspace layout editor, and fact derivations with
+   their dependencies. Lifecycle bindings edited in their owning inspector.
+3. Event marks drawn on the shared timeline beside sections and requests.
+4. Fading a layer's weight over time rather than stepping it.
+5. The take-A ghost drawn where the character stood, and a composed-motion
+   view beside requested and achieved.
+6. Picking up edits made to open documents by another editor, before save.
 
 Selection remains facts + requests -> selectors -> behaviors -> slot maps ->
 content. There is no animation transition graph. Shipping gameplay receives

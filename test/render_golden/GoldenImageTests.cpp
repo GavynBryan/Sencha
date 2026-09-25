@@ -244,15 +244,9 @@ TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
                  .EditorCook = true });
 }
 
-// The same rig posed by a clip: the pose gate. A one-layer rig holds a
-// one-second bend at 0.5s (its behavior plays at speed 0 from there), so the
-// pose is a fixed authored value rather than a function of how many fixed
-// ticks the wall clock happened to allow. Everything from the clip asset
-// through the pose pass, the pool, the palette, the compute dispatch, and the
-// posed draw has to hold for the upper box to sit tilted an eighth turn about
-// its own joint, centred where the rest pose has it with a gap above the
-// lower box. The reference was recorded by the clip player this replaced, so
-// the rig is held to the pixels the player made.
+// The pose gate: a one-layer rig holds a one-second bend at 0.5s, so every stage
+// from clip to posed draw must tilt the upper box an eighth turn about its
+// joint. The reference is the retired clip player's image, pixel for pixel.
 TEST(GoldenImage, AClipPosesASkinnedMesh)
 {
     CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_skinned_pose",

@@ -109,10 +109,8 @@ namespace
         return edit;
     }
 
-    // A reference to another data asset: the path stays typable, but the assets
-    // that would satisfy it are a click away, filtered to the subtype the schema
-    // says this field accepts. Open jumps to the referenced document, which is
-    // most of what an author wants after seeing the name.
+    // A data asset reference: typable, with Pick offering assets of the subtype
+    // the schema accepts, and Open jumping to the one named.
     FieldEdit DrawDataAssetRef(JsonValue& value,
                                const DataFieldSchema& field,
                                const std::string& path,
@@ -279,10 +277,8 @@ namespace
             {
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", elementPath.c_str());
-                // A record element draws its members straight into the card:
-                // going back through DrawField would open a second node named
-                // after the element schema, so a named card read
-                // "Contexts > gameplay > Context".
+                // Straight into the card: DrawField would nest a second node named
+                // after the element ("Contexts > gameplay > Context").
                 if (element.Kind == DataFieldKind::Record)
                     edit |= DrawRecord(array[index], element, elementPath, host);
                 else

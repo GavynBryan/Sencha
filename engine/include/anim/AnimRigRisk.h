@@ -7,16 +7,8 @@
 struct AnimBoundRig;
 class GameplayTagRegistry;
 
-//=============================================================================
-// Animation content risk
-//
-// Leading indicators of a rig drifting from stateless selection toward a
-// graph: pairwise blend overrides, how many rules selection weighs, flows long
-// enough to be a state machine, intents nothing plays, and behaviors that
-// both a fact and a request can select. None is an error; each is a reason to
-// look. Measured from the bound rig, so it is the same in the editor and the
-// game.
-//=============================================================================
+// Signs a rig is drifting toward a graph, measured from the bound rig so the
+// editor and the game agree. See docs/gameplay/animation.md.
 
 struct AnimRigRiskFinding
 {

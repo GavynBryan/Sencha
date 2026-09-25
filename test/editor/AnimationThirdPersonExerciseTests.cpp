@@ -1,7 +1,6 @@
-// The third-person exercise: one layered character rig under one scenario,
-// covering locomotion, an upper-body reload under a mask, cancellation, a
-// lifecycle binding, clip events, a blend override, and -- in the session
-// lab -- a late join and a correction.
+// One layered character under one scenario: locomotion, a masked upper-body
+// reload, cancellation, a lifecycle binding, clip events, a blend override,
+// and in the session lab a late join and a correction.
 
 #include "authoring/AnimationPreviewSession.h"
 #include "authoring/AnimationScenario.h"
@@ -284,12 +283,9 @@ TEST(AnimationThirdPersonExercise, TheCharacterPlaysEveryMechanismOnItsTick)
     EXPECT_FLOAT_EQ(blend->BlendSeconds, 0.2f);
 }
 
-// Joining partway through the first reload, the client picks the reload up
-// where the authority has it and stays in step through the second reload's
-// cancel, which reaches it late. Its own guess at a reload the authority
-// refuses is taken back when the refusal arrives: from then it plays what the
-// authority plays. The rest loop's phase is its own after that -- only
-// requests carry a start tick to reconstruct from.
+// A joiner stays in step through a late-arriving cancel; a refused guess is
+// taken back when the refusal arrives. The rest loop's phase is then its own,
+// as docs/gameplay/animation.md explains.
 TEST(AnimationThirdPersonExercise, ALateJoinerAndACorrectionEndWhereTheAuthorityIs)
 {
     Exercise exercise;

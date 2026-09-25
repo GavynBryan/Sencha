@@ -1,7 +1,6 @@
-// A layered character authored in the animation editor alone: a Simple rig
-// gains an upper-body reload layer through the edits its panels and document
-// form make, the names it introduces are declared by the Problems fix, and
-// what was saved opens again in a fresh editor. No file is written by hand.
+// A Simple rig given an upper-body reload layer through the editor's own edits,
+// its new names declared by the Problems fix, and the result opened clean in a
+// fresh editor. No file is written by hand.
 
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationPreviewWorkspace.h"

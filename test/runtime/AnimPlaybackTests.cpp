@@ -1,7 +1,5 @@
-// What a clip played on its own could do, done by a one-layer rig: its
-// behavior's speed (backwards, or held), where it starts, and whether it
-// loops or clamps. Content time is a function of the tick, so the same ticks
-// give the same time however frames grouped them.
+// A clip on its own, as a one-layer rig: speed (backwards, or held), start,
+// loop or clamp. Content time is a function of the tick alone.
 
 #include "AnimRigFixture.h"
 

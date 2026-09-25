@@ -10,19 +10,8 @@
 
 class AnimationClipCache;
 
-//=============================================================================
-// Clip player migration
-//
-// Scenes written before the animation runtime could name a clip directly, on
-// an `AnimationClipPlayer` component that no longer exists; a scene loads
-// past a component nothing registers, so such an entity now stands unposed.
-// This finds them and turns each into a one-layer rig that plays the clip as
-// the player did -- same clip, time, speed, loop or clamp -- and rewrites the
-// entity to carry the rig instead.
-//
-// One rig per distinct clip and settings, under animation/migrated/, and one
-// tag declaration listing every name those rigs use. Nothing is overwritten.
-//=============================================================================
+// Scenes naming the retired AnimationClipPlayer, and one-layer rigs that play
+// each clip as its player did, under animation/migrated/.
 
 struct AnimationClipPlayerUse
 {

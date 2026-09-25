@@ -9,18 +9,8 @@
 
 class GameplayTagRegistry;
 
-//=============================================================================
-// Gameplay tag declarations
-//
-// A project's gameplay tags written down as content rather than code: a
-// `gameplay.tag_declarations` data asset lists names, and the runtime
-// registers every name every such asset lists when content is published --
-// before any content binds, in asset path order, once. A game module still
-// declares its own through its vocabulary hook; content that needs names no
-// module knows (an animation rig made in the editor, say) ships them here.
-//
-// Declaring is all it does: a name is registered, not given meaning.
-//=============================================================================
+// Gameplay tag names written down as content. RuntimeContent registers every
+// declared name when content is published; declaring gives a name no meaning.
 
 inline constexpr std::string_view kGameplayTagDeclarationsType = "gameplay.tag_declarations";
 

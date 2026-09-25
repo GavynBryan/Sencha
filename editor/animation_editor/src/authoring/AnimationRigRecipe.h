@@ -10,29 +10,8 @@
 class AnimationClipCache;
 class SkeletonCache;
 
-//=============================================================================
-// Rig recipe
-//
-// What a new rig starts from: a name, the clips it plays and the tier it is.
-// The plan is the documents a rig is -- a behavior set, a slot map, a request
-// schema, selectors where the tier has them, the rig, and a tag declaration
-// listing every name it uses so a game registers them when it loads the rig --
-// plus the scenario saved beside it, so a new rig opens ready to play. The
-// skeleton is the clips' own; clips of different skeletons do not make one
-// rig.
-//
-// The tiers are the plan of record's, as starting points, not kinds:
-//
-//   Prop       one layer, no selector. The first clip idles; every other
-//              clip plays while a request of its name is held.
-//   Simple     one layer and a selector over the engine's facts. The first
-//              clip idles, the second (if any) plays while Speed is above
-//              0.1, and every other clip is an action a request plays once
-//              through.
-//   Character  Simple's layer for idle and locomotion, and an upper-body
-//              layer masked from a chosen joint that plays the actions and is
-//              shown only while one is requested.
-//=============================================================================
+// A new rig from a name, its clips and a tier: the documents it is made of and
+// the scenario saved beside it. The tiers are in this editor's README.
 
 enum class AnimationRigPreset : std::uint8_t
 {

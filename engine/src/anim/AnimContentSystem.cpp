@@ -309,10 +309,9 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             row >= 0 ? static_cast<std::uint16_t>(rig.SlotRows[static_cast<std::size_t>(row)].Content) : kAnimNoContent;
         const AnimBehaviorKind kind = KindOf(rig, behavior);
 
-        // Content time runs from the driving request's start, which a late
-        // joiner can also see; after content a cancel cut short, from the
-        // cancel, which a machine hearing of it late can also see; and
-        // otherwise from the tick content changed.
+        // Content time starts where every machine can place it: the driving
+        // request's start, or the cancel that cut the last content short;
+        // otherwise this tick. See docs/gameplay/animation.md.
         const AnimRequest* cutShort =
             driving == nullptr && !layer.ContentComplete ? CancelledAnimRequest(requests, layer.Request) : nullptr;
         const AnimTick instanceStart = driving != nullptr   ? std::min(driving->StartTick, now)

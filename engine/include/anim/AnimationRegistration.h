@@ -18,15 +18,8 @@ class LoggingProvider;
 class VerbDispatcher;
 class World;
 
-//=============================================================================
-// Animation registration
-//
-// The animated-entity vocabulary. Which of these an entity carries is its tier:
-// a rig brings its request set and content state, and is a Prop; fact storage
-// brings its history and selector state, and makes it Simple or more. The
-// decision log is opt-in on any tier. A clip played on its own is a one-layer
-// rig whose behavior sets its speed, start and loop.
-//=============================================================================
+// The animated-entity components. Which ones an entity carries is its tier;
+// see docs/gameplay/animation.md.
 
 using AnimationComponents = ComponentSet<
     AnimRig,
@@ -48,11 +41,8 @@ void RegisterAnimationComponents(ComponentRegistrar& registrar);
 // layer tags and bindings land in the same registries.
 void InstallAnimationVocabulary(World& world);
 
-// The animation console over `world`: the `anim.blend.override_cap` cvar over
-// its installed limits; `anim.trace` to list animated entities and start
-// recording one's decisions, and `anim.trace.export` to write them out
-// (AnimTrace.h); and `anim.risk` for every bound rig's content risk
-// (AnimRigRisk.h). Registered once by the process that owns `world`.
+// anim.blend.override_cap, anim.trace, anim.trace.export and anim.risk over
+// `world`; see docs/gameplay/animation.md. Registered once by its owner.
 void RegisterAnimationConsole(ConsoleRegistry& console, World& world);
 
 // What the animation systems are composed with. Handed over rather than
