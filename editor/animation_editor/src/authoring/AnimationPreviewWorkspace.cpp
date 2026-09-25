@@ -827,6 +827,34 @@ bool AnimationPreviewWorkspace::ReplayAgainstTakeA()
     return Comparison.Refusal.empty();
 }
 
+void AnimationPreviewWorkspace::RunScenarioBatch(bool againstOpenRig)
+{
+    ScenarioRuns.clear();
+    if (againstOpenRig && RigPath.empty())
+        return;
+    AnimationPreviewSession batch(Assets.DataAssets, &Assets.AnimationClips, Vocabulary, &Assets.Skeletons);
+    for (const std::filesystem::path& file : FindAnimationScenarios(AuthoringRoot))
+    {
+        std::vector<AnimDiagnostic> problems;
+        std::optional<AnimationScenario> scenario = LoadAnimationScenario(file.string(), problems);
+        AnimationScenarioRun run;
+        if (scenario)
+        {
+            if (againstOpenRig)
+                scenario->RigPath = RigPath;
+            // Resident for the run, as an open rig is.
+            const AssetLease rig = Assets.Assets.LoadLease(scenario->RigPath, AssetType::Data);
+            run = RunAnimationScenario(batch, std::move(*scenario), std::move(problems));
+        }
+        else
+        {
+            run.Problems = std::move(problems);
+        }
+        run.File = std::filesystem::relative(file, AuthoringRoot).generic_string();
+        ScenarioRuns.push_back(std::move(run));
+    }
+}
+
 bool AnimationPreviewWorkspace::RunLab()
 {
     if (!Simulation.IsOpen())

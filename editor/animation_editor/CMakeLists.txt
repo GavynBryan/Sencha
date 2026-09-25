@@ -15,6 +15,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationRigRecipe.cpp
     src/authoring/AnimationRigOutline.cpp
     src/authoring/AnimationScenario.cpp
+    src/authoring/AnimationScenarioBatch.cpp
     src/authoring/AnimationSelectorEdits.cpp
     src/authoring/AnimationSessionLab.cpp)
 target_link_libraries(animation_authoring PUBLIC editor_common)
@@ -33,6 +34,7 @@ add_executable(animation_editor
     src/ui/AnimationLabPanels.cpp
     src/ui/AnimationLayerPanels.cpp
     src/ui/AnimationMigrationPanels.cpp
+    src/ui/AnimationScenarioBatchPanels.cpp
     src/ui/AnimationRequestSchemaPanel.cpp
     src/ui/AnimationRootMotionPanels.cpp
     src/ui/AnimationSelectionPanels.cpp

@@ -6,6 +6,7 @@
 #include "authoring/AnimationClipEventsDocument.h"
 #include "authoring/AnimationClipPreviewSession.h"
 #include "authoring/AnimationRigRecipe.h"
+#include "authoring/AnimationScenarioBatch.h"
 #include "authoring/AnimationPreviewSession.h"
 #include "render/AnimationPreviewScene.h"
 #include "data/DataDocument.h"
@@ -149,6 +150,10 @@ public:
     [[nodiscard]] std::optional<AnimTick> ShownTick() const;
     // Discards the working scenario for the saved one.
     bool ReloadScenario();
+    // Every scenario in the authoring root, each under its own rig or, when
+    // `againstOpenRig`, the open one, into ScenarioRuns. Runs in a session of
+    // its own: the working simulation is untouched.
+    void RunScenarioBatch(bool againstOpenRig);
     [[nodiscard]] const DataAssetCache& DataCache() const;
     // The editor's own clips, including working events not yet saved.
     [[nodiscard]] const AnimationClipCache& Clips() const;
@@ -216,6 +221,7 @@ public:
     std::string ScenarioFile;
     std::string ScenarioError;
     std::vector<AnimDiagnostic> ScenarioLoadProblems;
+    std::vector<AnimationScenarioRun> ScenarioRuns;
     AnimationPreviewScene Scene;
     std::vector<std::string> MeshPaths;
     std::vector<std::string> SkeletonPaths;
