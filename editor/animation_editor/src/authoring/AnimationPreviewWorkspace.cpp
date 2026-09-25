@@ -28,7 +28,8 @@
 
 AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary,
                                                      std::filesystem::path authoringRoot)
-    : Simulation(assets.DataAssets, &assets.AnimationClips, std::move(vocabulary), &assets.Skeletons)
+    : Simulation(assets.DataAssets, &assets.AnimationClips, vocabulary, &assets.Skeletons)
+    , Vocabulary(std::move(vocabulary))
     , Assets(assets)
     , AuthoringRoot(std::move(authoringRoot))
 {
@@ -739,6 +740,19 @@ bool AnimationPreviewWorkspace::ReplayAgainstTakeA()
     Simulation.RunTo(TakeA->Ticks.back());
     Comparison = CompareAnimationPoseTakes(*TakeA, RecordAnimationPoseTake(Simulation, "B"));
     return Comparison.Refusal.empty();
+}
+
+bool AnimationPreviewWorkspace::RunLab()
+{
+    if (!Simulation.IsOpen())
+        return false;
+    if (Lab == nullptr)
+        Lab = std::make_unique<AnimationSessionLab>(Assets.DataAssets, &Assets.AnimationClips, Vocabulary,
+                                                    &Assets.Skeletons);
+    if (!Lab->Open(Simulation.Scenario(), LabSettings, LabInjections))
+        return false;
+    Lab->RunTo(LabTick);
+    return true;
 }
 
 void AnimationPreviewWorkspace::ClearTakeA()

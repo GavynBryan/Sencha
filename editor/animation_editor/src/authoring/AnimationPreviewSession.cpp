@@ -9,6 +9,7 @@
 #include <core/json/JsonStringify.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <net/NetReplicationComponents.h>
 #include <world/ComponentRegistrar.h>
 #include <world/SimulationAuthority.h>
 
@@ -290,6 +291,8 @@ void AnimationPreviewSession::BuildWorld()
         RegisterAbilityKitComponents(registrar);
         RegisterAnimationComponents(registrar);
     }
+    // So a preview can stand for either end of a session.
+    Preview->RegisterComponent<NetReplicated>();
     InstallAnimationVocabulary(*Preview);
     // The verbs content may name: the engine's, then the project's, declared
     // in the order a runtime World declares them.
@@ -494,6 +497,15 @@ void AnimationPreviewSession::SetRole(AnimationPreviewRole role)
         Replay();
 }
 
+void AnimationPreviewSession::SetRequestsFromWire(bool fromWire)
+{
+    if (FromWire == fromWire)
+        return;
+    FromWire = fromWire;
+    if (Preview != nullptr)
+        Replay();
+}
+
 void AnimationPreviewSession::SetRecorder(std::string_view verb, bool attached)
 {
     const auto it = std::find(Working.Recorders.begin(), Working.Recorders.end(), verb);
@@ -638,6 +650,11 @@ AnimationPreviewActionOutcome AnimationPreviewSession::Apply(const AnimationScen
     }
 
     outcome.Subject = action.Intent;
+    if (FromWire)
+    {
+        outcome.Remote = true;
+        return outcome;
+    }
     const EntityId source = ParticipantEntity(action.Participant);
     if (!source.IsValid())
     {

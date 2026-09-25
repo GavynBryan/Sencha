@@ -637,6 +637,37 @@ ammo-insert counts, combo indices, and interruption ticks as bespoke gameplay
 state purely so animation can recover them, which contorts gameplay replication
 to preserve a slogan. The anchor is the explicit mechanism instead.
 
+**As built (2026-09-24).** The request set travels as a translated image:
+sources as `NetEntityId`, intents, source tags and tag params as tag wire keys.
+Records mark their tag-kind params (`TagParams`) from the rig's request schema.
+A client counts content time on the authority's ticks through
+`SimulationAuthority::TickOffset`, which the engine publishes from its clock
+estimate. What the paired tests and the editor's session lab showed had to be
+added:
+
+- A machine that joins during a cancelled request's tail adopts the request
+  when its tail runs past the cancel tick. Without that it idles through
+  the tail.
+- A machine that follows the authority moves a playing flow to the anchor when
+  the anchor names the current section with another entry tick, or names
+  another section entered no earlier. A cancel heard a flight late otherwise
+  plays its whole section late.
+- The same request arriving with another start restarts pinned content there
+  (`RequestCorrected`).
+- A prediction the authority decides otherwise marks the entity for
+  reconstruction. The next pass starts selection over and rebuilds its
+  request-driven layers from the authority's requests and anchors, as a joiner
+  would (`Reconstructed`). Latches resting on the guess would otherwise outlive
+  it.
+- `AnimRequestJournal` is the narrow gameplay-owned prediction path. Its
+  predictions are marked local-only, re-issued on top of every arriving set
+  until the authority processes their command, then taken down if refused.
+- `AnimRigTimingIdentity` names, by portable names, everything reconstruction
+  depends on and nothing cosmetic. The authority stamps it on the set, and a
+  client that binds the rig differently records `TimingDisagreed`.
+
+Nothing is rewound.
+
 **Invariant made concrete.** A behavior may declare `lateJoin: Reconstruct` only
 if every path that can select it passes through a request, and a flow may use
 While or Count loops or Immediate cancels only under a request-driven behavior.

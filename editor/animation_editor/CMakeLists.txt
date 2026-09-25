@@ -13,7 +13,8 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationRigRecipe.cpp
     src/authoring/AnimationRigOutline.cpp
     src/authoring/AnimationScenario.cpp
-    src/authoring/AnimationSelectorEdits.cpp)
+    src/authoring/AnimationSelectorEdits.cpp
+    src/authoring/AnimationSessionLab.cpp)
 target_link_libraries(animation_authoring PUBLIC editor_common)
 target_include_directories(animation_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 sencha_warnings(animation_authoring)
@@ -27,6 +28,7 @@ add_executable(animation_editor
     src/ui/AnimationDocumentActions.cpp
     src/ui/AnimationDocumentWidgets.cpp
     src/ui/AnimationEventPanels.cpp
+    src/ui/AnimationLabPanels.cpp
     src/ui/AnimationLayerPanels.cpp
     src/ui/AnimationRequestSchemaPanel.cpp
     src/ui/AnimationSelectionPanels.cpp

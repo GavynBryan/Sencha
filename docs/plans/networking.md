@@ -693,6 +693,19 @@ scene serialization (`SceneChunkId`) and asset fields (`.AsAsset(...)`):
   the Section 5 remap, entity references encode as `NetEntityId` through the map
   (unmapped references refuse at the writer with a validation error, not silently).
 
+  *As built (2026-09-24):* translation is per component, not per field. A
+  component that names entities or gameplay tags specializes
+  `ReplicationCodec<T>` (`net/ReplicationLayout.h`) with a plain `Wire` struct
+  that has its own schema, plus `ToWire`/`FromWire`. Only the image reaches the
+  change store, masks, encoder and desync fold. `ReplicationWireContext` maps
+  entities through the authority's mint (minting a replicated target the publish
+  has not reached yet) or the client's map. Tags travel as
+  `GameplayTagRegistry::WireKey`, a hash of the name, not as authority ids. An
+  entity the other machine was never sent travels as zero and arrives as no
+  entity; it is not refused. Apply translates back after every entity in the
+  snapshot exists, so a reference to an entity spawned later in the same message
+  resolves. The first user is `AnimRequestSet` (`anim/AnimRequestWire.h`).
+
 There is no separate replication registry to drift: `ComponentRegistrar::Add<T>`
 puts one component into storage, the scene serializers, and the replicated table at
 once, deciding each from what that component's own `TypeSchema` declares. The engine

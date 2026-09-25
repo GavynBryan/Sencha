@@ -56,6 +56,9 @@ struct AnimationPreviewActionOutcome
     // Requests: what the request API decided.
     AnimRequestResult Request;
     bool Cancelled = false;
+    // A request action on a session whose requests arrive from an authority:
+    // not issued here, because the authority's copy is what this machine gets.
+    bool Remote = false;
     // Empty when the action applied; otherwise why not.
     std::string Problem;
 
@@ -176,6 +179,11 @@ public:
     // Both change what a run does, so both are scenario state: changing one
     // replays the scenario to the current tick under the new setting.
     void SetRole(AnimationPreviewRole role);
+    // Whether the scenario's requests are issued here or arrive from an
+    // authority another session simulates. For a session standing in for a
+    // client; restarts like a role change.
+    void SetRequestsFromWire(bool fromWire);
+    [[nodiscard]] bool RequestsFromWire() const { return FromWire; }
     void SetRecorder(std::string_view verb, bool attached);
     [[nodiscard]] bool HasRecorder(std::string_view verb) const;
 
@@ -224,6 +232,11 @@ public:
     [[nodiscard]] std::string_view ParticipantName(EntityId entity) const;
     // The preview World's vocabulary, for showing tag values by name.
     [[nodiscard]] const GameplayTagRegistry* Tags() const;
+    // The preview World itself, for a collaborator that carries state between
+    // two sessions' Worlds -- the session laboratory's replication. Rebuilt
+    // on every restart; null while closed.
+    [[nodiscard]] World* SimulationWorld() { return Preview.get(); }
+    [[nodiscard]] const World* SimulationWorld() const { return Preview.get(); }
     // The verbs the preview World declares: the engine's and the project's.
     [[nodiscard]] const VerbRegistry* Verbs() const;
 
@@ -314,4 +327,5 @@ private:
     bool Playing = false;
     double PlaybackSpeed = 1.0;
     double PendingTicks = 0.0;
+    bool FromWire = false;
 };

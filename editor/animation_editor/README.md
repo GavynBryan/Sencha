@@ -300,6 +300,32 @@ to idle.
 Not yet: a blendspace or blend override pane (they edit in Data Editor), and
 per-layer ghosts.
 
+## Two machines: the session lab
+
+**Session lab** runs the working scenario on an authority, and on a client
+that gets the authority's requests only as snapshot bytes. Those bytes go
+through the production change store, snapshot writer and applier, request codec
+and prediction journal, across a link with a join tick, a latency in ticks and a
+loss rate. The loss rate drops a fixed pattern of snapshots, so a run repeats.
+The status line at the top always says which machine is which, and that facts
+are synthetic scenario inputs on both.
+
+- **Client guesses** inject a request the client predicts on a tick, plus the
+  tick the authority decides the command behind it, confirming or refusing it.
+- The strip marks each tick green where the client plays what the authority
+  does (behavior, content, time, flow section), red where it does not, and grey
+  before the client joined. A notch marks each lost snapshot. Below it is the
+  client's pose residual against the authority's.
+- **What the joiner received** lists the requests of the client's first
+  snapshot with their anchors and tails. Clicking a tick sets the two machines'
+  layers, sections, requests (guesses marked) and decisions side by side.
+
+`AnimationSessionLab` is the headless model; `test/editor/AnimationSessionLabTests.cpp`
+covers a late join over a lossy link on the `pump_reload` example, a refused
+guess, and repeatability.
+
+Not yet: the client's pose drawn as a ghost in the viewport.
+
 ## Ownership
 
 `animation_authoring` is a GUI-independent library. `AnimationClipPreviewSession`
@@ -334,12 +360,9 @@ These are required implementation work, not capabilities of the current editor:
    timeline beside sections and requests.
 4. Remaining from the blending stage: blendspace and blend override panes, and
    fading a layer's weight over time rather than stepping it.
-5. Request replication and gameplay-owned request reconciliation, with remote
-   fact snapshots and paired late-join/correction previews. Do not rewind
-   presentation animation with movement replay.
-6. Extracted root curves and replayable movement-owned motion sources, with
+5. Extracted root curves and replayable movement-owned motion sources, with
    translation/yaw plots and requested/composed/achieved displacement inspection.
-7. Compatible single-clip migration, presets, hot-reload remapping, complete
+6. Compatible single-clip migration, presets, hot-reload remapping, complete
    decision-history capture/import, full cross-asset undo/redo, and workflow tests.
 
 Selection remains facts + requests -> selectors -> behaviors -> slot maps ->

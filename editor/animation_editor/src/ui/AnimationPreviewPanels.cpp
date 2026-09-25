@@ -3,6 +3,7 @@
 #include "authoring/AnimationJointPicking.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "ui/AnimationBlendPanels.h"
+#include "ui/AnimationLabPanels.h"
 #include "ui/AnimationEventPanels.h"
 #include "ui/AnimationLayerPanels.h"
 #include "ui/AnimationRequestSchemaPanel.h"
@@ -310,6 +311,7 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     AddAnimationEventPanels(ui, workspace);
     AddAnimationLayerPanels(ui, workspace);
     AddAnimationBlendPanels(ui, workspace);
+    AddAnimationLabPanels(ui, workspace);
     auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace);
     auto* requestSchemaPanel = requestSchema.get();
     ui.AddPanel(std::move(requestSchema));

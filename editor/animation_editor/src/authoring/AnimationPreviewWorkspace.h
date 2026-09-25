@@ -1,6 +1,7 @@
 #pragma once
 
 #include "authoring/AnimationBlendComparison.h"
+#include "authoring/AnimationSessionLab.h"
 #include "authoring/AnimationClipEventsDocument.h"
 #include "authoring/AnimationClipPreviewSession.h"
 #include "authoring/AnimationRigRecipe.h"
@@ -134,6 +135,10 @@ public:
     bool RecordTakeA();
     bool ReplayAgainstTakeA();
     void ClearTakeA();
+    // The working scenario on an authority and a client over LabSettings'
+    // link, with LabInjections' guesses, run to LabTick. From tick 0 each
+    // time, so it always reflects the current edits.
+    bool RunLab();
     // The tick the viewport shows: the inspected record's, else the latest.
     [[nodiscard]] std::optional<AnimTick> ShownTick() const;
     // Discards the working scenario for the saved one.
@@ -186,6 +191,12 @@ public:
     // The rig under its scenario. Separate from content audition: sampling a
     // clip never advances or alters the simulation.
     AnimationPreviewSession Simulation;
+    // The project's vocabulary, for the laboratory's two preview Worlds.
+    std::function<void(World&)> Vocabulary;
+    std::unique_ptr<AnimationSessionLab> Lab;
+    AnimationLabSettings LabSettings;
+    std::vector<AnimationLabInjection> LabInjections;
+    AnimTick LabTick = 300;
     std::string RigPath;
     std::string ScenarioFile;
     std::string ScenarioError;
