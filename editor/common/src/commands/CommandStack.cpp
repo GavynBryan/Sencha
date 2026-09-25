@@ -13,6 +13,8 @@ void CommandStack::Execute(std::unique_ptr<ICommand> command)
     command->Execute();
     Commands.push_back(std::move(command));
     Cursor = Commands.size();
+    if (ExecuteObserver)
+        ExecuteObserver();
 }
 
 void CommandStack::Undo()

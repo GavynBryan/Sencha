@@ -9,6 +9,7 @@
 #include "authoring/AnimationScenarioBatch.h"
 #include "authoring/AnimationPreviewSession.h"
 #include "render/AnimationPreviewScene.h"
+#include "commands/CommandStack.h"
 #include "data/DataDocument.h"
 #include "ui/DataForm.h"
 
@@ -173,6 +174,13 @@ public:
     [[nodiscard]] std::optional<AnimTick> ShownTick() const;
     // Discards the working scenario for the saved one.
     bool ReloadScenario();
+    // Undo and redo across every open document and clip's events, newest step
+    // first, showing the document each step belongs to. Any interaction still
+    // open anywhere is cancelled first.
+    void Undo();
+    void Redo();
+    [[nodiscard]] bool CanUndo() const { return Journal.CanUndo(); }
+    [[nodiscard]] bool CanRedo() const { return Journal.CanRedo(); }
     // Every scenario in the authoring root, each under its own rig or, when
     // `againstOpenRig`, the open one, into ScenarioRuns. Runs in a session of
     // its own: the working simulation is untouched.
@@ -218,6 +226,8 @@ public:
     std::vector<std::unique_ptr<DataDocument>> Documents;
     std::size_t ActiveDocument = 0;
     std::vector<std::unique_ptr<AnimationClipEventsDocument>> ClipEventDocuments;
+    // One entry per step any document took, in the order they were taken.
+    CommandStack Journal;
     // The events document the event panels act on; its path.
     std::string ActiveClipEvents;
     std::string DocumentError;
@@ -259,6 +269,11 @@ public:
 
 private:
     void RegisterDataFile(const std::string& relativePath);
+    class JournalStep;
+    void Journalled(DataDocument& document);
+    void Journalled(AnimationClipEventsDocument& document);
+    void CancelOpenEdits();
+    void StepDocument(std::string_view path, bool clipEvents, bool undo);
     void RefreshContentTags();
     void PreviewNotYetPreviewed();
     bool SetSkeletonContent(SkeletonHandle skeleton);

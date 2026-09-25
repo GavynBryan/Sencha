@@ -7,6 +7,7 @@
 #include <core/metadata/DataSchema.h>
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -61,6 +62,8 @@ public:
     void Redo();
     [[nodiscard]] bool CanUndo() const { return History.CanUndo(); }
     [[nodiscard]] bool CanRedo() const { return History.CanRedo(); }
+    // Called each time an edit lands as a new undo step.
+    void ObserveSteps(std::function<void()> observer) { History.SetExecuteObserver(std::move(observer)); }
 
     // Live edit transaction. A drag reports a change every frame; without a
     // scope around it each frame would land its own full-document command. The

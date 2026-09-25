@@ -471,9 +471,9 @@ private:
     {
         ImGui::SeparatorText(std::format("Editing {}", document.VirtualPath()).c_str());
         ImGui::PushID(&document);
-        if (ImGui::SmallButton("Undo")) { document.Undo(); Workspace.DocumentChanged(document); }
+        if (ImGui::SmallButton("Undo")) Workspace.Undo();
         ImGui::SameLine();
-        if (ImGui::SmallButton("Redo")) { document.Redo(); Workspace.DocumentChanged(document); }
+        if (ImGui::SmallButton("Redo")) Workspace.Redo();
         ImGui::SameLine();
         if (ImGui::SmallButton("Save")) Workspace.SaveDocument(document);
         if (document.IsDirty())

@@ -138,9 +138,9 @@ void AnimationRequestSchemaPanel::OnDraw()
         return;
     }
     ImGui::PushID(&document);
-    if (ImGui::Button("Undo")) { document.Undo(); Workspace.DocumentChanged(document); }
+    if (ImGui::Button("Undo")) Workspace.Undo();
     ImGui::SameLine();
-    if (ImGui::Button("Redo")) { document.Redo(); Workspace.DocumentChanged(document); }
+    if (ImGui::Button("Redo")) Workspace.Redo();
     ImGui::SameLine();
     if (ImGui::Button("Save")) Workspace.SaveDocument(document);
     ImGui::SameLine();

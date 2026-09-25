@@ -9,6 +9,7 @@
 #include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationSelectorEdits.h"
 
+#include "AnimationAuthoringSteps.h"
 #include "AnimationTestProject.h"
 
 #include <anim/AnimRequestSchema.h>
@@ -17,7 +18,6 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <functional>
 #include <string>
 
 namespace
@@ -32,32 +32,6 @@ namespace
         project.Clip("asset://meshes/man.blend#anim:Walk", kSkeleton);
         project.Clip("asset://meshes/man.blend#anim:Reload", kSkeleton);
         project.ScanEngineAssets();
-    }
-
-    // One undo step on a document, as a form or panel commits it.
-    void Author(AnimationPreviewWorkspace& workspace, const std::string& path,
-                const std::function<void(JsonValue& data)>& edit)
-    {
-        ASSERT_TRUE(workspace.OpenAnimationDocument(path)) << path << ": " << workspace.DocumentError;
-        DataDocument& document = *workspace.FindDocument(path);
-        JsonValue root = document.CopyRoot();
-        edit(*root.Find("data"));
-        ApplyFieldEdit(document, workspace, FieldEdit::Instant(), std::move(root));
-    }
-
-    JsonValue Object(std::initializer_list<std::pair<const char*, JsonValue>> members)
-    {
-        JsonValue::Object object;
-        for (const auto& [key, value] : members)
-            object.emplace_back(key, value);
-        return JsonValue(std::move(object));
-    }
-
-    JsonValue::Array& Array(JsonValue& data, const char* key)
-    {
-        if (data.Find(key) == nullptr)
-            data.AsObject().emplace_back(key, JsonValue(JsonValue::Array{}));
-        return data.Find(key)->AsArray();
     }
 
     std::string Playing(AnimationPreviewWorkspace& workspace, std::size_t layer)
@@ -100,29 +74,29 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
         ApplyFieldEdit(selector, workspace, FieldEdit::Instant(), std::move(root));
     }
     ASSERT_TRUE(workspace.CreateDocument(kAnimRequestSchemaType, "animation/brute/brute.requests", error)) << error;
-    Author(workspace, "asset://animation/brute/brute.requests.sdata", [](JsonValue& data) {
-        Array(data, "intents").push_back(Object({ { "intent", JsonValue("Anim.Weapon.Reload") },
+    AuthorDocument(workspace, "asset://animation/brute/brute.requests.sdata", [](JsonValue& data) {
+        JsonArrayOf(data, "intents").push_back(JsonObjectOf({ { "intent", JsonValue("Anim.Weapon.Reload") },
                                                   { "params", JsonValue(JsonValue::Array{}) } }));
     });
 
     // The behaviors and their content, through the form.
-    Author(workspace, "asset://animation/brute/brute.behaviors.sdata", [](JsonValue& data) {
-        Array(data, "behaviors").push_back(Object({ { "tag", JsonValue("Anim.Upper.Rest") },
+    AuthorDocument(workspace, "asset://animation/brute/brute.behaviors.sdata", [](JsonValue& data) {
+        JsonArrayOf(data, "behaviors").push_back(JsonObjectOf({ { "tag", JsonValue("Anim.Upper.Rest") },
                                                     { "kind", JsonValue("cyclic") } }));
-        Array(data, "behaviors").push_back(Object({ { "tag", JsonValue("Anim.Weapon.Reload") },
+        JsonArrayOf(data, "behaviors").push_back(JsonObjectOf({ { "tag", JsonValue("Anim.Weapon.Reload") },
                                                     { "kind", JsonValue("one_shot") } }));
     });
-    Author(workspace, "asset://animation/brute/brute.slots.sdata", [](JsonValue& data) {
-        Array(data, "rows").push_back(Object({ { "behavior", JsonValue("Anim.Upper.Rest") },
+    AuthorDocument(workspace, "asset://animation/brute/brute.slots.sdata", [](JsonValue& data) {
+        JsonArrayOf(data, "rows").push_back(JsonObjectOf({ { "behavior", JsonValue("Anim.Upper.Rest") },
                                                { "clip", JsonValue("asset://meshes/man.blend#anim:Idle") } }));
-        Array(data, "rows").push_back(Object({ { "behavior", JsonValue("Anim.Weapon.Reload") },
+        JsonArrayOf(data, "rows").push_back(JsonObjectOf({ { "behavior", JsonValue("Anim.Weapon.Reload") },
                                                { "clip", JsonValue("asset://meshes/man.blend#anim:Reload") } }));
     });
 
     // The rig: a second layer over the base, masked from the spine.
-    Author(workspace, kRig, [](JsonValue& data) {
+    AuthorDocument(workspace, kRig, [](JsonValue& data) {
         data.AsObject().emplace_back("requests", JsonValue("asset://animation/brute/brute.requests.sdata"));
-        Array(data, "layers").push_back(Object({ { "name", JsonValue("anim.layer.upper") },
+        JsonArrayOf(data, "layers").push_back(JsonObjectOf({ { "name", JsonValue("anim.layer.upper") },
                                                  { "selector", JsonValue("asset://animation/brute/upper.selector.sdata") },
                                                  { "idle", JsonValue("Anim.Upper.Rest") } }));
     });

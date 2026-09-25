@@ -26,6 +26,9 @@ public:
     [[nodiscard]] bool CanUndo() const;
     [[nodiscard]] bool CanRedo() const;
 
+    // Called after each command Execute lands; never for Undo or Redo.
+    void SetExecuteObserver(std::function<void()> observer) { ExecuteObserver = std::move(observer); }
+
     // The single transient pending-edit scope: work that lives in the scene but
     // not on the stack yet (an uncommitted brush, a face-carve preview). The
     // owning mechanism opens it when that state comes alive, passing the
@@ -52,4 +55,5 @@ private:
     std::vector<std::unique_ptr<ICommand>> Commands;
     std::size_t Cursor = 0;
     std::function<void()> PendingEditCancel; // empty == no scope open
+    std::function<void()> ExecuteObserver;
 };

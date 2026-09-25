@@ -161,10 +161,98 @@ bool AnimationPreviewWorkspace::OpenAnimationDocument(const std::string& path)
                         "blendspace, blend overrides, bindings or tag declarations.";
         return false;
     }
+    Journalled(*document);
     Documents.push_back(std::move(document));
     SelectDocument(Documents.size() - 1);
     DocumentError.clear();
     return true;
+}
+
+class AnimationPreviewWorkspace::JournalStep final : public ICommand
+{
+public:
+    JournalStep(AnimationPreviewWorkspace& workspace, std::string path, bool clipEvents)
+        : Workspace(workspace), Path(std::move(path)), ClipEvents(clipEvents)
+    {
+    }
+
+    // The document took the step already; only a redo retakes it.
+    void Execute() override
+    {
+        if (std::exchange(Recorded, false))
+            return;
+        Workspace.StepDocument(Path, ClipEvents, false);
+    }
+    void Undo() override { Workspace.StepDocument(Path, ClipEvents, true); }
+
+private:
+    AnimationPreviewWorkspace& Workspace;
+    std::string Path;
+    bool ClipEvents = false;
+    bool Recorded = true;
+};
+
+void AnimationPreviewWorkspace::Journalled(DataDocument& document)
+{
+    document.ObserveSteps([this, path = document.VirtualPath()] {
+        Journal.Execute(std::make_unique<JournalStep>(*this, path, false));
+    });
+}
+
+void AnimationPreviewWorkspace::Journalled(AnimationClipEventsDocument& document)
+{
+    document.ObserveSteps([this, path = document.ClipPath()] {
+        Journal.Execute(std::make_unique<JournalStep>(*this, path, true));
+    });
+}
+
+void AnimationPreviewWorkspace::CancelOpenEdits()
+{
+    for (const auto& document : Documents)
+        if (document->IsEditing())
+        {
+            document->CancelEdit();
+            DocumentChanged(*document);
+        }
+    for (const auto& document : ClipEventDocuments)
+        if (document->IsEditing())
+        {
+            document->CancelEdit();
+            ClipEventsChanged(*document);
+        }
+}
+
+void AnimationPreviewWorkspace::StepDocument(std::string_view path, bool clipEvents, bool undo)
+{
+    if (clipEvents)
+    {
+        if (AnimationClipEventsDocument* document = FindClipEvents(path))
+        {
+            undo ? document->Undo() : document->Redo();
+            ClipEventsChanged(*document);
+            ActiveClipEvents = std::string(path);
+        }
+        return;
+    }
+    for (std::size_t i = 0; i < Documents.size(); ++i)
+        if (Documents[i]->VirtualPath() == path)
+        {
+            undo ? Documents[i]->Undo() : Documents[i]->Redo();
+            DocumentChanged(*Documents[i]);
+            SelectDocument(i);
+        }
+}
+
+void AnimationPreviewWorkspace::Undo()
+{
+    CancelOpenEdits();
+    Journal.Undo();
+}
+
+void AnimationPreviewWorkspace::Redo()
+{
+    CancelOpenEdits();
+    Journal.Redo();
 }
 
 DataDocument* AnimationPreviewWorkspace::ActiveDocumentAny()
@@ -538,6 +626,7 @@ bool AnimationPreviewWorkspace::OpenClipEvents(const std::string& clipPath)
         clipPath, root / (source->SourceRelPath + std::string(kImportSettingsSuffix)), &DocumentError);
     if (document == nullptr)
         return false;
+    Journalled(*document);
     ClipEventDocuments.push_back(std::move(document));
     ActiveClipEvents = clipPath;
     DocumentError.clear();
@@ -966,6 +1055,7 @@ bool AnimationPreviewWorkspace::CreateDocument(std::string_view subtype, std::st
     if (!document->Save(&error))
         return false;
     RegisterDataFile(relativePath);
+    Journalled(*document);
     Documents.push_back(std::move(document));
     SelectDocument(Documents.size() - 1);
     DocumentError.clear();

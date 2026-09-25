@@ -184,20 +184,14 @@ private:
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::BeginDisabled(!document.CanUndo());
+        ImGui::BeginDisabled(!Workspace.CanUndo());
         if (ImGui::Button("Undo"))
-        {
-            document.Undo();
-            Changed(document);
-        }
+            Workspace.Undo();
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::BeginDisabled(!document.CanRedo());
+        ImGui::BeginDisabled(!Workspace.CanRedo());
         if (ImGui::Button("Redo"))
-        {
-            document.Redo();
-            Changed(document);
-        }
+            Workspace.Redo();
         ImGui::EndDisabled();
         ImGui::SameLine();
         ImGui::BeginDisabled(!document.IsDirty());

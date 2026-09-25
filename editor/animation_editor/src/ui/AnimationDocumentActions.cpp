@@ -21,11 +21,8 @@ bool SaveAll(AnimationPreviewWorkspace& workspace)
 void ConfigureAnimationDocumentActions(EditorUiFeature& ui, Engine& engine,
                                        AnimationPreviewWorkspace& workspace)
 {
-    ui.SetUndoActions(
-        [&workspace] { if (auto* doc = workspace.ActiveDocumentAny()) { doc->Undo(); workspace.DocumentChanged(*doc); } },
-        [&workspace] { if (auto* doc = workspace.ActiveDocumentAny()) { doc->Redo(); workspace.DocumentChanged(*doc); } },
-        [&workspace] { const auto* doc = workspace.ActiveDocumentAny(); return doc && doc->CanUndo(); },
-        [&workspace] { const auto* doc = workspace.ActiveDocumentAny(); return doc && doc->CanRedo(); });
+    ui.SetUndoActions([&workspace] { workspace.Undo(); }, [&workspace] { workspace.Redo(); },
+                      [&workspace] { return workspace.CanUndo(); }, [&workspace] { return workspace.CanRedo(); });
     ui.SetFileActions({}, {}, [&workspace] {
         if (auto* doc = workspace.ActiveDocumentAny()) workspace.SaveDocument(*doc);
     }, {});

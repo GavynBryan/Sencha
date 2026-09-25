@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -67,6 +68,8 @@ public:
     void Redo();
     [[nodiscard]] bool CanUndo() const { return History.CanUndo(); }
     [[nodiscard]] bool CanRedo() const { return History.CanRedo(); }
+    // Called each time an edit lands as a new undo step.
+    void ObserveSteps(std::function<void()> observer) { History.SetExecuteObserver(std::move(observer)); }
 
     // Moves on every change, previews included.
     [[nodiscard]] std::uint64_t Revision() const { return ContentRevision; }
