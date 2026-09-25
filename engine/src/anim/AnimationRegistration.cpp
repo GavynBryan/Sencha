@@ -6,6 +6,7 @@
 #include <anim/AnimFactProviders.h>
 #include <anim/AnimPoseSystem.h>
 #include <anim/AnimRequestJournal.h>
+#include <anim/AnimRootMotionSource.h>
 #include <anim/AnimRigBinding.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimationClipPlaybackSystem.h>
@@ -13,6 +14,7 @@
 #include <core/console/ConsoleRegistry.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <movement/RootMotionSource.h>
 #include <world/ComponentRegistrar.h>
 
 void RegisterAnimationComponents(ComponentRegistrar& registrar)
@@ -33,6 +35,10 @@ void InstallAnimationVocabulary(World& world)
         world.AddResource<AnimRigLimits>();
     if (!world.HasResource<AnimRequestJournal>())
         world.AddResource<AnimRequestJournal>();
+    // Movement asks this what carries a character; animation answers from the
+    // clip its base layer plays.
+    if (!world.HasResource<RootMotionSource>())
+        world.AddResource<RootMotionSource>(RootMotionSource{ &SampleAnimRootMotion });
 }
 
 void RegisterAnimationCVars(ConsoleRegistry& console, World& world)
@@ -70,6 +76,11 @@ void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging
     schedule.After<AnimSelectSystem, AnimFactGatherSystem>();
     schedule.After<AnimContentSystem, AnimSelectSystem>();
     schedule.After<AnimEventSystem, AnimContentSystem>();
+    // Root motion reads what content resolution just decided. Declared only
+    // when movement is already registered: a schedule with no characters has
+    // nothing to carry.
+    if (schedule.Get<RootMotionSystem>() != nullptr)
+        schedule.After<RootMotionSystem, AnimContentSystem>();
 
     // Posing runs in the post-fixed phase, after movement has moved what it
     // poses; nothing in the fixed phase reads it.

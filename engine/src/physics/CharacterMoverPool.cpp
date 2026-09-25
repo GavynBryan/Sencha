@@ -235,6 +235,11 @@ void CharacterMoverPool::Sweep(
     support.SurfaceVelocity = result.Support.Velocity;
 
     transform.Value.Position = result.Position;
+    // The mover's shape is upright and turns with nothing, so a turn is the
+    // transform's alone.
+    if (request.TurnRadians != 0.0f)
+        transform.Value.Rotation =
+            (Quat<float>::FromAxisAngle(request.UpAxis, request.TurnRadians) * transform.Value.Rotation).Normalized();
 }
 
 void CharacterMoverPool::Drive(

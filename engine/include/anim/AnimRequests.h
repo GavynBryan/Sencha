@@ -67,6 +67,11 @@ struct AnimRequestResult
 // Fixed or Impulse lifetime.
 [[nodiscard]] bool IsAnimRequestLive(const AnimRequest& request, AnimTick now);
 
+// Whether the record was live at `at` by its own ticks: started, within its
+// lifetime, and not yet cancelled then. What a replay of a past tick asks; a
+// record cancelled since still answers for the ticks before its cancel.
+[[nodiscard]] bool WasAnimRequestLive(const AnimRequest& request, AnimTick at);
+
 // Whether the record still belongs in the set at `now`: live, or cancelled with
 // a tail that has not ended.
 [[nodiscard]] bool IsAnimRequestRetained(const AnimRequest& request, AnimTick now);

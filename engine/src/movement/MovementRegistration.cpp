@@ -15,6 +15,7 @@
 #include <movement/CharacterMovementSerializer.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/JumpExecutionSystem.h>
+#include <movement/RootMotionSource.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
 #include <movement/MovementDefs.h>
@@ -103,6 +104,7 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     schedule.Register<MovementTuningResolutionSystem>(dataAssets, logging);
     schedule.Register<FreeLocomotionSystem>();
     schedule.Register<JumpExecutionSystem>();
+    schedule.Register<RootMotionSystem>();
     schedule.Register<MotionCompositionSystem>();
 
     // The tick reads as one sentence: project last step's physical facts onto
@@ -125,7 +127,10 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     // Jump contributes over locomotion's base output, before composition folds
     // the channels together.
     schedule.After<JumpExecutionSystem, FreeLocomotionSystem>();
-    schedule.After<MotionCompositionSystem, JumpExecutionSystem>();
+    // A source carrying the character replaces what locomotion and actions
+    // asked for across the ground, so it writes after them.
+    schedule.After<RootMotionSystem, JumpExecutionSystem>();
+    schedule.After<MotionCompositionSystem, RootMotionSystem>();
 
     schedule.After<EffectLifetimeSystem, MotionCompositionSystem>();
 }

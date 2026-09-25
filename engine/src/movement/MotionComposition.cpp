@@ -120,6 +120,7 @@ MotionRequest ComposeMotion(const LocomotionOutput& locomotion,
         + request.UpAxis * relativeUp
         + supportVelocity
         + impulses.DeltaVelocity;
+    request.TurnRadians = overrides.HasTurn && std::isfinite(overrides.TurnRadians) ? overrides.TurnRadians : 0.0f;
     return request;
 }
 

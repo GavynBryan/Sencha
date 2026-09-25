@@ -60,6 +60,12 @@ bool IsAnimRequestLive(const AnimRequest& request, AnimTick now)
         && now < EndTick(request);
 }
 
+bool WasAnimRequestLive(const AnimRequest& request, AnimTick at)
+{
+    return request.Occupied && at >= request.StartTick && at < EndTick(request)
+        && (!request.IsCancelled() || at < request.CancelTick);
+}
+
 bool IsAnimRequestRetained(const AnimRequest& request, AnimTick now)
 {
     if (!request.Occupied)

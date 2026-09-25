@@ -32,6 +32,10 @@ struct SENCHA_COMPONENT("sencha.motion_axis_override") MotionAxisOverride
     bool HasUp = false;
     bool ForcedPlanar = false;
     bool ForcedUp = false;
+    // Radians to turn the character about the up axis this tick: a root
+    // motion source carrying the character round a corner.
+    float TurnRadians = 0.0f;
+    bool HasTurn = false;
 };
 
 // Additive velocity from this tick's impulses (knockback, explosions). Applied
@@ -48,6 +52,8 @@ struct SENCHA_COMPONENT("sencha.motion_request") MotionRequest
     Vec3d Velocity = Vec3d::Zero();
     Vec3d UpAxis = Vec3d(0.0f, 1.0f, 0.0f);
     float GravityScale = 1.0f;
+    // Turned about UpAxis as the character moves.
+    float TurnRadians = 0.0f;
 };
 
 static_assert(std::is_trivially_copyable_v<MotionRequest>);

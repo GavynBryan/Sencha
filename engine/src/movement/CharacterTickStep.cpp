@@ -5,6 +5,7 @@
 #include <movement/JumpExecutionSystem.h>
 #include <movement/JumpState.h>
 #include <movement/LocomotionMode.h>
+#include <movement/RootMotionSource.h>
 #include <movement/MotionComposition.h>
 #include <movement/components/CharacterFacts.h>
 #include <movement/components/CharacterMovement.h>
@@ -55,6 +56,7 @@ void StepCharacterTick(World& world,
                        CharacterMoverPool* movers,
                        EntityId entity,
                        const MovementIntent& intent,
+                       std::uint64_t tick,
                        float fixedDeltaSeconds,
                        Vec3d gravity,
                        Vec3d upAxis)
@@ -85,6 +87,11 @@ void StepCharacterTick(World& world,
             overrides.HasUp = true;
         }
     }
+    // Asked again rather than remembered, so a replayed tick is carried by
+    // what the source says now -- after a correction, not before it.
+    RootMotionSample carried;
+    if (SampleRootMotion(world, entity, tick, fixedDeltaSeconds, carried))
+        ApplyRootMotion(overrides, carried);
 
     const MotionRequest motionRequest =
         ComposeMotion(locomotion, support, overrides, MotionImpulse{});
@@ -102,5 +109,9 @@ void StepCharacterTick(World& world,
     {
         pose->Value.Position =
             pose->Value.Position + motionRequest.Velocity * fixedDeltaSeconds;
+        if (motionRequest.TurnRadians != 0.0f)
+            pose->Value.Rotation = (Quat<float>::FromAxisAngle(motionRequest.UpAxis, motionRequest.TurnRadians)
+                                    * pose->Value.Rotation)
+                                       .Normalized();
     }
 }

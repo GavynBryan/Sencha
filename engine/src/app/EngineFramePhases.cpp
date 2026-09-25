@@ -537,6 +537,8 @@ void Engine::RegisterNetFramePhases()
                     replay.UpAxis = locomotion->GetUpAxis();
                 }
                 replay.AckTick = applied.CommandAck;
+                replay.AnimationTickOffset =
+                    engine.NetClock().Offset() - engine.NetClock().CommandOffset();
                 replay.FixedDeltaSeconds =
                     static_cast<float>(simulation.GetFixedDt());
                 replay.Replay = engine.Prediction().IsEnabled();
