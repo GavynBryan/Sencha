@@ -180,6 +180,20 @@ bool WriteSanimToBytes(const AnimationClipData& clip,
         }
     }
 
+    Append(out, static_cast<uint8_t>(clip.Root.has_value() ? 1 : 0));
+    if (clip.Root.has_value())
+    {
+        if (clip.Root->TimesSeconds.size() > kMaxKeyCount)
+        {
+            SetError(error, "sanim: root curve key count exceeds the maximum");
+            out.clear();
+            return false;
+        }
+        Append(out, static_cast<uint32_t>(clip.Root->TimesSeconds.size()));
+        AppendBytes(out, clip.Root->TimesSeconds.data(), clip.Root->TimesSeconds.size() * sizeof(float));
+        AppendBytes(out, clip.Root->Values.data(), clip.Root->Values.size() * sizeof(float));
+    }
+
     return true;
 }
 
@@ -298,6 +312,27 @@ bool LoadSanimFromBytes(std::span<const std::byte> bytes,
                 return failEvents();
             input.Source = VerbArgumentSource::Literal;
             input.Literal = std::move(*literal);
+        }
+    }
+
+    if (version >= 3)
+    {
+        uint8_t hasRoot = 0;
+        if (!cursor.Read(hasRoot) || hasRoot > 1)
+            return failEvents();
+        if (hasRoot != 0)
+        {
+            uint32_t keyCount = 0;
+            AnimationRootCurve root;
+            if (!cursor.Read(keyCount) || keyCount == 0 || keyCount > kMaxKeyCount
+                || !cursor.ReadFloats(keyCount, root.TimesSeconds)
+                || !cursor.ReadFloats(size_t{ keyCount } * 3, root.Values))
+            {
+                SetError(error, "sanim: truncated or malformed root curve");
+                out = {};
+                return false;
+            }
+            out.Root = std::move(root);
         }
     }
 

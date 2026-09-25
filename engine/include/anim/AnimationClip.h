@@ -90,6 +90,19 @@ struct AnimationClipEvent
     std::vector<VerbBindingArgument> Inputs;
 };
 
+// How far a clip's root carries the character across the ground, extracted
+// at cook from the root joint so the movement pipeline can apply it and the
+// pose does not: planar translation (x, z) and yaw about +Y, in the
+// skeleton's model space and relative to the clip's start. Yaw is unwrapped,
+// so a clip that turns past half a revolution keeps counting. Keys share
+// their times; values between keys are linear.
+struct AnimationRootCurve
+{
+    std::vector<float> TimesSeconds;
+    // x, z, yaw per key.
+    std::vector<float> Values;
+};
+
 struct AnimationClipData
 {
     // The skeleton this clip poses ("asset://..."). Resolved at commit;
@@ -103,6 +116,10 @@ struct AnimationClipData
 
     // Ordered by time, then key.
     std::vector<AnimationClipEvent> Events;
+
+    // Present when the clip was cooked with its root motion extracted; the
+    // root joint's tracks then carry no planar travel and no yaw.
+    std::optional<AnimationRootCurve> Root;
 };
 
 // The invariants one event must meet, shared by the clip validator and the
@@ -110,6 +127,8 @@ struct AnimationClipData
 [[nodiscard]] bool ValidateAnimationClipEvent(const AnimationClipEvent& event, std::string* error = nullptr);
 
 // Format invariants (the runtime never fixes data): at least one track,
+// a root curve (when present) with at least one key, strictly ascending
+// times within the duration and finite values,
 // strictly ascending finite times, value counts matching key counts, unit
 // rotation keys, duration covering the last key, and events that each meet
 // ValidateAnimationClipEvent, carry distinct keys and are in order. Joint

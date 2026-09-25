@@ -28,11 +28,15 @@
 //                         string value (a constant as JSON text, a tag's name)
 //   where a string is u32 length + bytes.
 //
+//   u8 hasRoot, then when set: u32 keyCount, f32 times[keyCount],
+//              f32 values[keyCount * 3] (x, z, yaw)
+//
 // Version 1 is version 2 without the event block, and still loads with no
-// events: a clip cooked before events existed has none to lose.
+// events: a clip cooked before events existed has none to lose. Version 2 is
+// version 3 without the root block, and loads with no root curve.
 //=============================================================================
 
-inline constexpr uint32_t kSanimFormatVersion = 2;
+inline constexpr uint32_t kSanimFormatVersion = 3;
 
 // Writes `clip` as a .sanim container. Returns false (and reports via
 // `error`) when the clip fails ValidateAnimationClipData.

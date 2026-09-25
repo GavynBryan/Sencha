@@ -28,6 +28,7 @@
 //     "version": 1,
 //     "clips": {
 //       "<clip>": {           // the name after "#anim:" in the clip's path
+//         "root_motion": true, // extract the root's travel into a root curve
 //         "events": [
 //           { "key": 3, "name": "Left foot", "time": 0.25,
 //             "binding": "anim.footstep",
@@ -41,10 +42,21 @@
 //   }
 //=============================================================================
 
+struct MeshClipSettings
+{
+    // In authored order.
+    std::vector<AnimationClipEvent> Events;
+    // Move the root joint's planar travel and yaw out of the pose and into
+    // the clip's root curve (ExtractAnimationRootMotion).
+    bool ExtractRootMotion = false;
+
+    [[nodiscard]] bool IsDefault() const { return Events.empty() && !ExtractRootMotion; }
+};
+
 struct MeshImportSettings
 {
-    // By clip name, each clip's events in authored order.
-    std::map<std::string, std::vector<AnimationClipEvent>> ClipEvents;
+    // By clip name.
+    std::map<std::string, MeshClipSettings> Clips;
 };
 
 // The fragment a mesh source's clip artifact is named by: "asset://<source>#anim:<clip>".

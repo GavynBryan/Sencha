@@ -193,9 +193,17 @@ bool ParseMeshImportSettings(std::span<const std::byte> bytes, MeshImportSetting
         {
             if (!settings.IsObject())
                 return Fail(error, std::format("clip '{}' must be an object", clip));
-            std::vector<AnimationClipEvent>& events = out.ClipEvents[clip];
+            MeshClipSettings& clipSettings = out.Clips[clip];
+            std::vector<AnimationClipEvent>& events = clipSettings.Events;
             for (const auto& [field, fieldValue] : settings.AsObject())
             {
+                if (field == "root_motion")
+                {
+                    if (!fieldValue.IsBool())
+                        return Fail(error, std::format("clip '{}': root_motion must be true or false", clip));
+                    clipSettings.ExtractRootMotion = fieldValue.AsBool();
+                    continue;
+                }
                 if (field != "events")
                     return Fail(error, std::format("clip '{}': '{}' is not a clip setting", clip, field));
                 if (!fieldValue.IsArray())
@@ -220,19 +228,24 @@ std::string WriteMeshImportSettings(const MeshImportSettings& settings)
 {
     JsonValue::Object root;
     root.emplace_back("version", JsonValue(1.0));
-    if (!settings.ClipEvents.empty())
+    JsonValue::Object clips;
+    for (const auto& [clip, clipSettings] : settings.Clips)
     {
-        JsonValue::Object clips;
-        for (const auto& [clip, events] : settings.ClipEvents)
+        if (clipSettings.IsDefault())
+            continue;
+        JsonValue::Object clipObject;
+        if (clipSettings.ExtractRootMotion)
+            clipObject.emplace_back("root_motion", JsonValue(true));
+        if (!clipSettings.Events.empty())
         {
             JsonValue::Array eventArray;
-            for (const AnimationClipEvent& event : events)
+            for (const AnimationClipEvent& event : clipSettings.Events)
                 eventArray.push_back(EventJson(event));
-            JsonValue::Object clipObject;
             clipObject.emplace_back("events", JsonValue(std::move(eventArray)));
-            clips.emplace_back(clip, JsonValue(std::move(clipObject)));
         }
-        root.emplace_back("clips", JsonValue(std::move(clips)));
+        clips.emplace_back(clip, JsonValue(std::move(clipObject)));
     }
+    if (!clips.empty())
+        root.emplace_back("clips", JsonValue(std::move(clips)));
     return JsonStringify(JsonValue(std::move(root)), true) + "\n";
 }

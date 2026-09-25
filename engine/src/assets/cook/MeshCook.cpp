@@ -1,5 +1,7 @@
 #include <assets/cook/MeshCook.h>
 
+#include <assets/cook/AnimationRootExtraction.h>
+
 #include <anim/AnimationClipSampling.h>
 #include <anim/SkinningPalette.h>
 #include <assets/cook/CookFingerprint.h>
@@ -1560,7 +1562,7 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
     MeshImportSettings settings;
     if (!ParseMeshImportSettings(input.MetaBytes, settings, &error))
         return ImportResult{ .Error = "gltf import: " + std::string(input.SourceRelPath) + ".meta: " + error };
-    for (auto& [clip, events] : settings.ClipEvents)
+    for (auto& [clip, clipSettings] : settings.Clips)
     {
         const auto animation = std::ranges::find_if(scene.Animations, [&clip](const ImportedAnimation& candidate) {
             return SanitizeMeshName(candidate.Name) == clip;
@@ -1574,10 +1576,22 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
                 "gltf import: {}.meta gives events to clip '{}', which the source does not export (it exports: {})",
                 input.SourceRelPath, clip, exported.empty() ? "no clips" : exported) };
         }
+        std::vector<AnimationClipEvent>& events = clipSettings.Events;
         std::ranges::sort(events, [](const AnimationClipEvent& a, const AnimationClipEvent& b) {
             return a.Time != b.Time ? a.Time < b.Time : a.Key < b.Key;
         });
         animation->Data.Events = std::move(events);
+        if (clipSettings.ExtractRootMotion)
+        {
+            if (animation->SkinIndex < 0 || static_cast<std::size_t>(animation->SkinIndex) >= scene.Skeletons.size())
+                return ImportResult{ .Error = std::format("gltf import: {}.meta asks clip '{}' for root motion, but it "
+                                                          "poses no skeleton",
+                                                          input.SourceRelPath, clip) };
+            if (!ExtractAnimationRootMotion(animation->Data,
+                                            scene.Skeletons[static_cast<std::size_t>(animation->SkinIndex)].Data,
+                                            &error))
+                return ImportResult{ .Error = std::format("gltf import: clip '{}' root motion: {}", clip, error) };
+        }
     }
 
     const std::string source(input.SourceRelPath);

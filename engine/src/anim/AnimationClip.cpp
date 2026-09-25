@@ -3,6 +3,7 @@
 #include <anim/Skeleton.h>
 #include <core/assets/AssetPath.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 
@@ -132,6 +133,26 @@ bool ValidateAnimationClipData(const AnimationClipData& clip, std::string* error
                     return fail("rotation keys must be unit quaternions");
             }
         }
+    }
+
+    if (clip.Root.has_value())
+    {
+        const AnimationRootCurve& root = *clip.Root;
+        if (root.TimesSeconds.empty())
+            return Fail(error, "root curve has no keys");
+        if (root.Values.size() != root.TimesSeconds.size() * 3)
+            return Fail(error, "root curve value count does not match its key count");
+        float previous = -1.0f;
+        for (const float time : root.TimesSeconds)
+        {
+            if (!std::isfinite(time) || time < 0.0f || time <= previous)
+                return Fail(error, "root curve key times must be finite, non-negative and strictly ascending");
+            previous = time;
+        }
+        if (previous > clip.DurationSeconds)
+            return Fail(error, "root curve's last key exceeds the clip duration");
+        if (!std::ranges::all_of(root.Values, [](float value) { return std::isfinite(value); }))
+            return Fail(error, "root curve values must be finite");
     }
 
     if (clip.Events.size() > kAnimClipMaxEvents)

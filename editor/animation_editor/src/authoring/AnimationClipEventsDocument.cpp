@@ -32,7 +32,7 @@ namespace
     std::string Text(const std::string& clip, const std::vector<AnimationClipEvent>& events)
     {
         MeshImportSettings settings;
-        settings.ClipEvents[clip] = events;
+        settings.Clips[clip].Events = events;
         return WriteMeshImportSettings(settings);
     }
 
@@ -76,8 +76,8 @@ std::unique_ptr<AnimationClipEventsDocument> AnimationClipEventsDocument::Open(s
         }
         document->SavedTime = WriteTime(document->Sidecar);
     }
-    if (const auto it = document->Settings.ClipEvents.find(document->Name); it != document->Settings.ClipEvents.end())
-        document->Working = it->second;
+    if (const auto it = document->Settings.Clips.find(document->Name); it != document->Settings.Clips.end())
+        document->Working = it->second.Events;
     document->Saved = document->Working;
     return document;
 }
@@ -244,10 +244,9 @@ bool AnimationClipEventsDocument::Save(std::string* error)
         return fail(problems.front());
 
     MeshImportSettings settings = Settings;
-    if (Working.empty())
-        settings.ClipEvents.erase(Name);
-    else
-        settings.ClipEvents[Name] = Working;
+    settings.Clips[Name].Events = Working;
+    if (settings.Clips[Name].IsDefault())
+        settings.Clips.erase(Name);
     const std::string text = WriteMeshImportSettings(settings);
     {
         std::ofstream file(Sidecar, std::ios::binary | std::ios::trunc);

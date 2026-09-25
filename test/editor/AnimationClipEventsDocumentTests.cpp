@@ -148,7 +148,7 @@ TEST(AnimationClipEventsDocument, SavingKeepsOtherClipsEvents)
     const std::filesystem::path sidecar = dir.Path / "hero.blend.meta";
     Write(sidecar, R"({ "version": 1, "clips": {
         "Swing": { "events": [ { "key": 1, "time": 0.5, "binding": "melee.hit", "scope": "gameplay" } ] },
-        "Walk": { "events": [ { "key": 4, "time": 0.2, "binding": "anim.footstep" } ] } } })");
+        "Walk": { "root_motion": true, "events": [ { "key": 4, "time": 0.2, "binding": "anim.footstep" } ] } } })");
 
     std::string error;
     auto document = AnimationClipEventsDocument::Open(std::string(kClip), sidecar, &error);
@@ -163,9 +163,10 @@ TEST(AnimationClipEventsDocument, SavingKeepsOtherClipsEvents)
     ASSERT_TRUE(ParseMeshImportSettings({ reinterpret_cast<const std::byte*>(text.data()), text.size() }, saved,
                                         &error))
         << error;
-    ASSERT_EQ(saved.ClipEvents.at("Swing").size(), 1u);
-    EXPECT_EQ(saved.ClipEvents.at("Swing")[0].Binding, "melee.hit");
-    ASSERT_EQ(saved.ClipEvents.at("Walk").size(), 2u);
+    ASSERT_EQ(saved.Clips.at("Swing").Events.size(), 1u);
+    EXPECT_EQ(saved.Clips.at("Swing").Events[0].Binding, "melee.hit");
+    ASSERT_EQ(saved.Clips.at("Walk").Events.size(), 2u);
+    EXPECT_TRUE(saved.Clips.at("Walk").ExtractRootMotion) << "saving events keeps the clip's other settings";
 
     auto reopened = AnimationClipEventsDocument::Open(std::string(kClip), sidecar, &error);
     ASSERT_NE(reopened, nullptr) << error;

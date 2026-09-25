@@ -39,7 +39,7 @@ TEST(MeshImportSettings, AnEmptySidecarIsTheDefaults)
     MeshImportSettings settings;
     std::string error;
     ASSERT_TRUE(ParseMeshImportSettings({}, settings, &error)) << error;
-    EXPECT_TRUE(settings.ClipEvents.empty());
+    EXPECT_TRUE(settings.Clips.empty());
 }
 
 TEST(MeshImportSettings, ClipEventsParseInAuthoredOrder)
@@ -47,9 +47,9 @@ TEST(MeshImportSettings, ClipEventsParseInAuthoredOrder)
     MeshImportSettings settings;
     std::string error;
     ASSERT_TRUE(ParseMeshImportSettings(AsBytes(std::string(kSidecar)), settings, &error)) << error;
-    ASSERT_EQ(settings.ClipEvents.size(), 2u);
+    ASSERT_EQ(settings.Clips.size(), 2u);
 
-    const std::vector<AnimationClipEvent>& walk = settings.ClipEvents.at("Walk");
+    const std::vector<AnimationClipEvent>& walk = settings.Clips.at("Walk").Events;
     ASSERT_EQ(walk.size(), 2u);
     EXPECT_EQ(walk[0].Key, 4u);
     EXPECT_EQ(walk[1].Key, 3u);
@@ -64,7 +64,7 @@ TEST(MeshImportSettings, ClipEventsParseInAuthoredOrder)
     EXPECT_EQ(walk[1].Inputs[1].Source, VerbArgumentSource::Literal);
     EXPECT_DOUBLE_EQ(walk[1].Inputs[1].Literal.AsNumber(), 0.8);
 
-    EXPECT_EQ(settings.ClipEvents.at("Swing").at(0).Scope, AnimEventScope::Gameplay);
+    EXPECT_EQ(settings.Clips.at("Swing").Events.at(0).Scope, AnimEventScope::Gameplay);
 }
 
 TEST(MeshImportSettings, WhatIsWrittenParsesBackUnchanged)
@@ -77,8 +77,35 @@ TEST(MeshImportSettings, WhatIsWrittenParsesBackUnchanged)
     MeshImportSettings reread;
     ASSERT_TRUE(ParseMeshImportSettings(AsBytes(written), reread, &error)) << error << "\n" << written;
     EXPECT_EQ(WriteMeshImportSettings(reread), written);
-    ASSERT_EQ(reread.ClipEvents.at("Walk").size(), 2u);
-    EXPECT_EQ(reread.ClipEvents.at("Walk")[1].Inputs[1].Literal.AsNumber(), 0.8);
+    ASSERT_EQ(reread.Clips.at("Walk").Events.size(), 2u);
+    EXPECT_EQ(reread.Clips.at("Walk").Events[1].Inputs[1].Literal.AsNumber(), 0.8);
+}
+
+// Root motion is a per-clip choice, and survives beside a clip's events and
+// on a clip with none.
+TEST(MeshImportSettings, RootMotionIsAClipSetting)
+{
+    const std::string text = R"({ "version": 1, "clips": {
+        "Mantle": { "root_motion": true },
+        "Swing": { "root_motion": true, "events": [ { "key": 1, "time": 0.5, "binding": "melee.hit" } ] },
+        "Idle": { "root_motion": false } } })";
+    MeshImportSettings settings;
+    std::string error;
+    ASSERT_TRUE(ParseMeshImportSettings(AsBytes(text), settings, &error)) << error;
+    EXPECT_TRUE(settings.Clips.at("Mantle").ExtractRootMotion);
+    EXPECT_TRUE(settings.Clips.at("Swing").ExtractRootMotion);
+    EXPECT_EQ(settings.Clips.at("Swing").Events.size(), 1u);
+    EXPECT_FALSE(settings.Clips.at("Idle").ExtractRootMotion);
+
+    const std::string written = WriteMeshImportSettings(settings);
+    MeshImportSettings reread;
+    ASSERT_TRUE(ParseMeshImportSettings(AsBytes(written), reread, &error)) << error;
+    EXPECT_TRUE(reread.Clips.at("Mantle").ExtractRootMotion);
+    EXPECT_EQ(reread.Clips.count("Idle"), 0u) << "a clip left at its defaults is not written";
+
+    EXPECT_FALSE(ParseMeshImportSettings(AsBytes(R"({ "clips": { "Mantle": { "root_motion": 1 } } })"), reread,
+                                         &error));
+    EXPECT_NE(error.find("root_motion"), std::string::npos) << error;
 }
 
 TEST(MeshImportSettings, MistakesAreRejectedWithTheirPlace)

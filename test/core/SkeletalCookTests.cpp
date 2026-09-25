@@ -1099,6 +1099,31 @@ TEST(SkeletalCook, SidecarEventsCookIntoTheirClipInOrder)
     EXPECT_EQ(clip.Events[1].Key, 9u);
 }
 
+// A clip the sidecar asks for root motion cooks with a root curve, and one it
+// does not ask for cooks as before.
+TEST(SkeletalCook, SidecarRootMotionCooksARootCurve)
+{
+    const std::string gltf = BuildSkinnedAnimatedGltf();
+    const auto cook = [&](std::string_view meta) {
+        GltfMeshImporter importer;
+        MemoryCookOutputWriter output;
+        const ImportResult result = importer.Import(ImportInput{ .SourceRelPath = "chars/hero.glb",
+                                                                 .Bytes = AsBytes(gltf),
+                                                                 .MetaBytes = AsBytes(std::string(meta)) },
+                                                    output);
+        EXPECT_TRUE(result.IsValid()) << result.Error;
+        AnimationClipData clip;
+        std::string error;
+        EXPECT_TRUE(LoadSanimFromBytes(output.Files.at(".cooked/chars/hero.glb.anim:wave.sanim"), clip, &error))
+            << error;
+        return clip;
+    };
+    EXPECT_FALSE(cook("").Root.has_value());
+    const AnimationClipData extracted = cook(R"({"clips": {"wave": {"root_motion": true}}})");
+    ASSERT_TRUE(extracted.Root.has_value());
+    EXPECT_FALSE(extracted.Root->TimesSeconds.empty());
+}
+
 // A clip renamed in the source leaves its events naming nothing; the cook says
 // so rather than cooking the clip without them.
 TEST(SkeletalCook, SidecarEventsForAMissingClipFailTheImport)
