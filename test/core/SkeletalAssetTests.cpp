@@ -278,14 +278,31 @@ TEST(AnimationClipSerializer, VersionOneLoadsWithNoEvents)
     std::vector<std::byte> bytes;
     std::string error;
     ASSERT_TRUE(WriteSanimToBytes(TwoKeyRotationClip(), bytes, &error)) << error;
-    // Version 1 is version 2 without the trailing event count.
+    // Version 1 is version 3 without the trailing event count and root flag.
     const uint32_t versionOne = 1;
     std::memcpy(bytes.data() + 4, &versionOne, sizeof(versionOne));
-    bytes.resize(bytes.size() - sizeof(uint32_t));
+    bytes.resize(bytes.size() - sizeof(uint32_t) - sizeof(uint8_t));
 
     AnimationClipData loaded;
     ASSERT_TRUE(LoadSanimFromBytes(bytes, loaded, &error)) << error;
     EXPECT_TRUE(loaded.Events.empty());
+    EXPECT_EQ(loaded.Tracks.size(), 1u);
+}
+
+// A clip cooked before root motion existed still loads, with no root curve.
+TEST(AnimationClipSerializer, VersionTwoLoadsWithNoRootCurve)
+{
+    std::vector<std::byte> bytes;
+    std::string error;
+    ASSERT_TRUE(WriteSanimToBytes(TwoKeyRotationClip(), bytes, &error)) << error;
+    // Version 2 is version 3 without the trailing root flag.
+    const uint32_t versionTwo = 2;
+    std::memcpy(bytes.data() + 4, &versionTwo, sizeof(versionTwo));
+    bytes.resize(bytes.size() - sizeof(uint8_t));
+
+    AnimationClipData loaded;
+    ASSERT_TRUE(LoadSanimFromBytes(bytes, loaded, &error)) << error;
+    EXPECT_FALSE(loaded.Root.has_value());
     EXPECT_EQ(loaded.Tracks.size(), 1u);
 }
 
