@@ -1,5 +1,6 @@
 #include <anim/AnimRequestJournal.h>
 
+#include <anim/AnimContentState.h>
 #include <ecs/World.h>
 #include <world/SimulationAuthority.h>
 
@@ -21,6 +22,17 @@ namespace
                 && request.Intent == desc.Intent && request.StartTick == tick)
                 return &request;
         return nullptr;
+    }
+
+    // Whether the authority's own set holds the guess as it was made: the
+    // same source and intent, from the same tick.
+    bool Guessed(const AnimRequestSet& set, const AnimRequestDesc& desc, AnimTick tick)
+    {
+        for (const AnimRequest& request : set.Records)
+            if (request.Occupied && !request.Predicted && request.Id.Source == desc.Source
+                && request.Intent == desc.Intent && request.StartTick == tick)
+                return true;
+        return false;
     }
 
     void MarkPredicted(World& world, EntityId animated, const AnimRequestResult& result)
@@ -59,6 +71,11 @@ void AnimRequestJournal::Reconcile(World& world, std::uint64_t acknowledgedComma
         // ever take it down.
         if (AnimRequest* guess = FindPrediction(*set, entry.Desc, entry.IssuedTick))
             *guess = AnimRequest{};
+        // Unless the authority issued exactly what was guessed, what played
+        // since the guess rested on something that did not happen.
+        if (!Guessed(*set, entry.Desc, entry.IssuedTick) && world.IsRegistered<AnimContentState>())
+            if (AnimContentState* content = world.TryGet<AnimContentState>(entry.Animated))
+                content->Reconstruct = true;
         return true;
     });
 

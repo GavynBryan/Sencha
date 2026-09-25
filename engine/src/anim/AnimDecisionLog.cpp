@@ -74,6 +74,7 @@ std::string_view AnimChangeReasonName(AnimChangeReason reason)
     case AnimChangeReason::FlowAnchored: return "FlowAnchored";
     case AnimChangeReason::RequestSuperseded: return "RequestSuperseded";
     case AnimChangeReason::RequestCorrected: return "RequestCorrected";
+    case AnimChangeReason::Reconstructed: return "Reconstructed";
     }
     return "Unknown";
 }

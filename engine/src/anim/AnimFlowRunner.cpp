@@ -56,6 +56,8 @@ namespace
             Flow.LoopCount = reason == AnimChangeReason::SectionLooped ? static_cast<std::uint16_t>(Flow.LoopCount + 1) : 0;
             Flow.Section = static_cast<std::uint8_t>(index);
             Flow.SectionStartTick = start;
+            if (reason != AnimChangeReason::SectionLooped)
+                Flow.SectionEnteredTick = start;
             Flow.Phase = AnimFlowPhase::Playing;
             Layer.Clip = SectionClip(index);
             Layer.ClipStartTick = start;
@@ -117,6 +119,22 @@ namespace
                     Enter(request->AnchorSection, request->AnchorSectionStartTick, AnimChangeReason::FlowAnchored);
                 else
                     Enter(0, Layer.StartTick, AnimChangeReason::FlowStarted);
+            }
+            else if (Tick.FollowsAnchor && Flow.Phase == AnimFlowPhase::Playing && Tick.Request != nullptr
+                     && Tick.Request->AnchorSection < flow.Sections.size()
+                     && Tick.Request->AnchorSectionStartTick <= Tick.Now)
+            {
+                // The authority's word on where the flow is arrives a flight
+                // late. It corrects this machine when it names the section
+                // being played with another entry, or another section entered
+                // no earlier than this one was; an older stamp for another
+                // section is news this machine has already moved past.
+                const AnimRequest& anchor = *Tick.Request;
+                const bool sameSection = anchor.AnchorSection == Flow.Section;
+                const bool moved = sameSection ? anchor.AnchorSectionStartTick != Flow.SectionEnteredTick
+                                               : anchor.AnchorSectionStartTick >= Flow.SectionEnteredTick;
+                if (moved)
+                    Enter(anchor.AnchorSection, anchor.AnchorSectionStartTick, AnimChangeReason::FlowAnchored);
             }
 
             for (int step = 0; step < kMaxSectionsPerTick && Flow.Phase == AnimFlowPhase::Playing; ++step)

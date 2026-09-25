@@ -30,6 +30,9 @@ enum class AnimFlowPhase : std::uint8_t
 struct AnimLayerFlow
 {
     AnimTick SectionStartTick = 0;
+    // When the current section was entered, not counting its loops: what the
+    // authority stamps as the anchor's start.
+    AnimTick SectionEnteredTick = 0;
     std::uint16_t LoopCount = 0;
     std::uint8_t Section = kAnimNoSection;
     AnimFlowPhase Phase = AnimFlowPhase::None;

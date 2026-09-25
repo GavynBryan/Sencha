@@ -267,7 +267,12 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
 
         bool entered = false;
         bool adopted = false;
-        if (behavior != layer.Behavior || lostPin)
+        if (content.Reconstruct && (driving != nullptr || layer.Request.IsValid()))
+        {
+            startInstance(AnimChangeReason::Reconstructed);
+            entered = true;
+        }
+        else if (behavior != layer.Behavior || lostPin)
         {
             // Carried phase: cyclic content in one sync group continues at the
             // normalized time the outgoing content had reached, so a walk that
@@ -355,6 +360,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             tick.TickSeconds = tickSeconds;
             tick.Entered = entered;
             tick.Cancelling = cancelling;
+            tick.FollowsAnchor = !authority;
             const AnimFlowOutcome outcome =
                 AdvanceAnimFlow(tick, layer, flows->Layers[l], static_cast<std::uint8_t>(l), log);
             layer.ContentComplete = outcome.Complete;
@@ -445,6 +451,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             layer.ContentComplete = elapsed >= static_cast<double>(duration);
         }
     }
+    content.Reconstruct = false;
 }
 
 void AnimContentSystem::FixedLogic(FixedLogicContext& ctx)

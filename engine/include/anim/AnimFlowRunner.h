@@ -45,6 +45,9 @@ struct AnimFlowTick
     bool Entered = false;
     // The flow is to go to its cancel section.
     bool Cancelling = false;
+    // This machine plays the authority's flow rather than deciding it: an
+    // anchor that says the flow is elsewhere moves it there.
+    bool FollowsAnchor = false;
 };
 
 struct AnimFlowOutcome

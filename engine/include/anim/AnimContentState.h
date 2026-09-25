@@ -79,6 +79,11 @@ struct SENCHA_COMPONENT("sencha.anim_content_state") AnimContentState
     // Set on a machine whose binding of the rig does not match the timing the
     // authority stamped on its requests.
     bool TimingDisagrees = false;
+    // Set when what this machine played rested on a prediction the authority
+    // has now decided otherwise: the next pass starts selection over and
+    // rebuilds every request-driven layer from the authority's requests and
+    // anchors, as a joiner would.
+    bool Reconstruct = false;
 };
 
 #if !defined(SENCHA_CODEGEN)

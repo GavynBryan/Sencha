@@ -415,6 +415,35 @@ TEST(AnimReplication, ACorrectionIsAbsorbedWithoutRewindingHistory)
     EXPECT_TRUE(guessed) << "the change the client showed on tick 10 is still in its history";
 }
 
+// The news of a cancel arrives a flight late. The client enters the cancel
+// section when it hears, and then moves to where the authority's anchor says
+// that section began, rather than playing it late to the end.
+TEST(AnimReplication, AClientHearingOfACancelLateFollowsTheAuthoritysAnchor)
+{
+    AnimSession session([](AnimRigFixture& fx) { return LoadPumpReload(fx, PumpFlow("immediate")); });
+    session.Authority.Tick();
+    const AnimRequestResult reload = session.Reload(3);
+    ASSERT_TRUE(reload.Accepted());
+    session.Authority.Tick();
+    session.Join();
+    session.StepTo(29);
+    session.ExpectAgree("inserting");
+
+    ASSERT_TRUE(CancelAnimRequest(session.Authority.Entities, session.Prop, reload.Id, AnimCancelReason::Released,
+                                  session.Authority.Now));
+    // Three ticks with nothing arriving.
+    for (int i = 0; i < 3; ++i)
+    {
+        session.Authority.Tick();
+        session.ClientTick();
+    }
+    session.StepTo(33);
+    session.ExpectAgree("the tick the cancel arrived");
+    EXPECT_EQ(AnimSession::Flow(session.Client, session.Mirror).SectionStartTick, 30u);
+    session.StepTo(50);
+    session.ExpectAgree("through the cancel section");
+}
+
 // A prediction the authority confirms: its request replaces the guess, the
 // journal forgets it, and the client plays what the authority plays.
 TEST(AnimReplication, AConfirmedPredictionGivesWayToTheAuthoritysRequest)
@@ -458,6 +487,10 @@ TEST(AnimReplication, ARefusedPredictionIsTakenDown)
     session.StepTo(12);
     EXPECT_EQ(session.Journal().Size(), 0u);
     EXPECT_FALSE(session.ClientRequests().Records[0].Occupied);
+    const AnimDecisionRecord* rebuilt = session.Client.LastRecord(session.Mirror, AnimDecisionCause::ContentChanged);
+    ASSERT_NE(rebuilt, nullptr);
+    EXPECT_EQ(rebuilt->Tick, 12u);
+    EXPECT_EQ(rebuilt->Reason, AnimChangeReason::Reconstructed);
     // Idle is not request-driven, so its clock is this machine's own; what
     // has to agree is what plays.
     EXPECT_EQ(session.Client.BehaviorName(session.Mirror), "Anim.Idle");

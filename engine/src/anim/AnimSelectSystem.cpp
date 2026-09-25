@@ -451,6 +451,16 @@ void SelectAnimEntity(const World& world, EntityId entity, const AnimBoundRig& r
     const GameplayTagContainer* tags =
         world.IsRegistered<GameplayTagContainer>() ? world.TryGet<GameplayTagContainer>(entity) : nullptr;
 
+    // A prediction the authority decided otherwise leaves latches resting on
+    // it. Selection starts again from the authority's word, as a joiner's
+    // does, and the content pass rebuilds from what it picks.
+    if (content != nullptr && content->Reconstruct)
+    {
+        const std::uint64_t generation = state.BindingGeneration;
+        state = AnimSelectorState{};
+        state.BindingGeneration = generation;
+    }
+
     // A rebind can reorder or remove rules. The winner follows its stable
     // key; one that no longer exists resets, and says so.
     if (state.BindingGeneration != rig.Generation)

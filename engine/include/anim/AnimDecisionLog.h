@@ -107,6 +107,9 @@ enum class AnimChangeReason : std::uint8_t
     // The authority's word moved the start of the request a layer was
     // playing: a client's guess replaced by what actually happened.
     RequestCorrected,
+    // What a layer played rested on a prediction the authority decided
+    // otherwise, and it was rebuilt from the authority's requests.
+    Reconstructed,
 };
 
 [[nodiscard]] std::string_view AnimChangeReasonName(AnimChangeReason reason);
