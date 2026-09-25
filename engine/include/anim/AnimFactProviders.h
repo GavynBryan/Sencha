@@ -12,22 +12,6 @@
 #include <type_traits>
 #include <vector>
 
-//=============================================================================
-// AnimFactProviders
-//
-// The binding table from a fact slot's name to the gameplay value that fills
-// it. A World resource: adding an animation-relevant value is one Bind line in
-// game code, and no engine edit.
-//
-// A provider must produce the same value on a server with animation compiled
-// out. It reads gameplay components and nothing about what is playing -- a
-// provider that needed to know would be selector or flow state, and is not a
-// provider.
-//
-// Providers are plain function pointers over a const World, so gathering is a
-// call per slot per entity with no allocation and no virtual dispatch.
-//=============================================================================
-
 // Reads one entity's value. False when the entity does not have what the
 // provider reads; the slot then keeps its previous value.
 using AnimFactReadFn = bool (*)(const World& world, EntityId entity, const void* context,
@@ -96,12 +80,12 @@ namespace AnimFactProviderDetail
     }
 }
 
+// A World resource binding fact slot names to gameplay values. A provider reads
+// gameplay components only, never animation state, so it works with animation compiled out.
 class AnimFactProviders
 {
 public:
-    // False when the slot already has a provider: one slot, one source of
-    // truth, and a second binding is a conflict to fix rather than a winner to
-    // pick.
+    // False when the slot already has a provider: a second binding is a conflict.
     bool Bind(std::string slot, AnimFactKind kind, AnimFactReadFn read,
               const void* context = nullptr);
 

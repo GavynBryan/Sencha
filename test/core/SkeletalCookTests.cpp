@@ -264,10 +264,9 @@ namespace
     constexpr std::string_view kSkinnedTriangleMeshes =
         R"([{"name":"body","primitives":[{"attributes":{"POSITION":0,"NORMAL":1,"TANGENT":2,"JOINTS_0":3,"WEIGHTS_0":4},"indices":5}]}])";
 
-    // A glTF around one skinned triangle bound rigidly to joint 0. Callers
-    // write the nodes, skins and animations as JSON and add the float
-    // accessors those reference (inverse binds, key times, key values);
-    // accessors 0-5 are the triangle's own.
+    // A glTF around one skinned triangle bound rigidly to joint 0. Callers write
+    // nodes, skins and animations as JSON and add the float accessors those
+    // reference; accessors 0-5 are the triangle's own.
     class SkinnedGltfBuilder
     {
     public:
@@ -597,11 +596,8 @@ TEST(SkeletalCook, RejectsSkinnedMeshWithoutTangents)
 }
 
 // -- Skeleton model space ------------------------------------------------------
-//
-// A glTF skin's inverse bind matrices are written in scene space, which
-// includes every non-joint node above the root joints (an exported armature
-// object, for one). The cook folds those nodes and the engine-frame turn into
-// the roots, and the nodes' animation into the roots' tracks.
+// Inverse binds include the non-joint nodes above the roots; the cook folds
+// those nodes, their animation and the engine-frame turn into the root joints.
 
 namespace
 {
@@ -1099,8 +1095,8 @@ TEST(SkeletalCook, SidecarEventsCookIntoTheirClipInOrder)
     EXPECT_EQ(clip.Events[1].Key, 9u);
 }
 
-// A clip the sidecar asks for root motion cooks with a root curve, and one it
-// does not ask for cooks as before.
+// A clip the sidecar asks for root motion cooks with a root curve; one it does
+// not ask for cooks without one.
 TEST(SkeletalCook, SidecarRootMotionCooksARootCurve)
 {
     const std::string gltf = BuildSkinnedAnimatedGltf();

@@ -244,9 +244,9 @@ TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
                  .EditorCook = true });
 }
 
-// The pose gate: a one-layer rig holds a one-second bend at 0.5s, so every stage
-// from clip to posed draw must tilt the upper box an eighth turn about its
-// joint. The reference is the retired clip player's image, pixel for pixel.
+// The pose gate: a one-layer rig holds a one-second bend at 0.5s, a fixed pose
+// the tick accumulator cannot vary, so every stage from clip to posed draw must
+// tilt the upper box an eighth turn about its joint.
 TEST(GoldenImage, AClipPosesASkinnedMesh)
 {
     CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_skinned_pose",

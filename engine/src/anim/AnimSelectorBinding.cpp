@@ -15,7 +15,7 @@ namespace
         AnimProgram Enter;
         AnimProgram Stay;
         bool HasStay = false;
-        std::int32_t Band = 0;
+        std::int32_t PriorityBand = 0;
         std::vector<AnimRuleSource> Source;
         std::vector<AnimRowSource> EnterRows;
         std::vector<AnimRowSource> StayRows;
@@ -83,7 +83,7 @@ namespace
                 context.Stay = ConcatAnimPrograms(parent.Stay, stay);
                 context.HasStay = parent.HasStay || rule.HasStay;
                 context.RequiresRequest = parent.RequiresRequest || AnimPredicateRequiresRequest(rule.Enter);
-                context.Band = depth == 0 ? rule.Priority : parent.Band;
+                context.PriorityBand = depth == 0 ? rule.Priority : parent.PriorityBand;
                 context.EnterRows = parent.EnterRows;
                 context.StayRows = parent.StayRows;
                 const auto rowIndex = static_cast<std::uint32_t>(index);
@@ -136,7 +136,7 @@ namespace
             if (!behavior)
                 return;
             AnimBoundRule bound;
-            bound.Band = context.Band;
+            bound.PriorityBand = context.PriorityBand;
             bound.Enter = std::move(context.Enter);
             bound.Stay = std::move(context.Stay);
             bound.HasStay = context.HasStay;
@@ -191,8 +191,7 @@ namespace
             Out.WeightRules.push_back(std::move(bound));
         }
 
-        // The pairings the architecture requires of a behavior as this rule
-        // reaches it.
+        // The pairings a behavior requires of each rule reaching it.
         void Validate(const AnimBoundRule& rule, const std::string& path, const std::string& at)
         {
             const AnimBoundBehavior& behavior = Binder.Out.Behaviors[static_cast<std::size_t>(rule.BehaviorIndex)];

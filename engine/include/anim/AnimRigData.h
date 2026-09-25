@@ -8,22 +8,6 @@
 #include <string_view>
 #include <vector>
 
-//=============================================================================
-// Rig (`animation.rig`)
-//
-// What one kind of animated entity is: its skeleton, the fact schema its rules
-// read, the request schema its requests are checked against, how much fact
-// storage it carries, its ordered layers and the selector on each, the
-// behaviors it plays, the slot maps that give those behaviors content, and the
-// authored bindings its events invoke through. The one file a new entity type
-// starts from.
-//
-// Tier is not declared here. It follows from which components an entity ends
-// up carrying, and a rig without facts is a Prop rig: requests and content,
-// nothing else. The compiled value names everything and binds nothing; the
-// World-local view is AnimRigBinding.
-//=============================================================================
-
 inline constexpr std::string_view kAnimRigType = "animation.rig";
 
 enum class AnimLayerMode : std::uint8_t
@@ -32,9 +16,8 @@ enum class AnimLayerMode : std::uint8_t
     Additive,
 };
 
-// One step of a layer's bone mask, applied in order to a set that starts
-// empty: a joint, named as the skeleton names it, with or without everything
-// below it, taken into the mask or out of it.
+// Applied in order to a mask that starts empty: a joint by skeleton name, with or
+// without its subtree, added or excluded.
 struct AnimMaskOp
 {
     std::string Joint;
@@ -47,22 +30,19 @@ struct AnimRigLayer
     // A gameplay tag naming the layer: Anim.Layer.Base, Anim.Layer.Upper.
     std::string Name;
     AnimLayerMode Mode = AnimLayerMode::Override;
-    // Constant weight. A layer whose weight is a rule output takes it from its
-    // selector instead.
+    // Constant weight; a weight rule in the selector replaces it.
     float Weight = 1.0f;
-    // The selector choosing this layer's behavior ("asset://..."). Empty makes
-    // the layer request-keyed: the newest request claiming it names the
-    // behavior, which is the whole of the Prop tier.
+    // Empty makes the layer request-keyed: the newest request claiming it names the behavior.
     std::string SelectorPath;
     // The behavior played when nothing is selected or requested.
     std::string Idle;
-    // Empty leaves the layer unmasked. Only a layer above the first may be
-    // masked: the first is the pose the others compose onto.
+    // Empty leaves the layer unmasked. The first layer may not be masked, since the
+    // others compose onto it.
     std::vector<AnimMaskOp> Mask;
 };
 
-// A selector bound to a name selectors expose, so a game or mod adds rules
-// (a new weapon's) without editing the selector that declares the point.
+// A selector bound to an extension point selectors expose, so a game or mod adds
+// rules without editing the selector that declares the point.
 struct AnimRigExtension
 {
     std::string Name;
@@ -76,17 +56,13 @@ struct AnimRigData
     std::string RequestSchemaPath;
     AnimFactCapacity FactCapacity = AnimFactCapacity::Small;
     std::vector<AnimRigLayer> Layers;
-    // In order: a later set adds behaviors or overrides an earlier set's
-    // policy by tag.
+    // A later set adds behaviors or overrides an earlier set's policy by tag.
     std::vector<std::string> BehaviorSetPaths;
     // The base map first, then overlays.
     std::vector<std::string> SlotMapPaths;
-    // `authored.bindings` assets, in order, that the rig's clip events and
-    // lifecycle events name their bindings from. Two that declare one key are
-    // an authoring conflict, not an override.
+    // Bindings the rig's events name. Two declaring one key conflict; neither overrides.
     std::vector<std::string> BindingSetPaths;
-    // `animation.blend_overrides` assets, in order: a later one replaces an
-    // earlier one's policy for the same pair.
+    // A later asset replaces an earlier one's policy for the same pair.
     std::vector<std::string> BlendOverridePaths;
     std::vector<AnimRigExtension> Extensions;
 

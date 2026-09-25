@@ -11,14 +11,6 @@
 
 #include <tuple>
 
-//=============================================================================
-// AnimRig
-//
-// Which rig an animated entity is. Every animated entity carries one; what
-// else it carries -- facts, history, selector state, flows, pose -- is its
-// tier. The rig asset is shared and immutable; everything World-local about it
-// (slot indices, tag ids) lives in AnimRigBindings, keyed by this handle.
-//=============================================================================
 struct SENCHA_COMPONENT("sencha.anim_rig")
        SENCHA_SCHEMA("anim_rig")
        SENCHA_SCENE_CHUNK("ANRG")
@@ -35,10 +27,8 @@ AnimRig
 #  include <anim/AnimRig.sencha.h>
 #endif
 
-// The component owns one reference to its rig for as long as it carries it.
-// Every tier takes requests and plays content -- a door's content may be a
-// two-section flow -- so a rig brings its request set, content state and flow
-// state; facts are what an entity adds to become more than a Prop.
+// Owns one reference to its rig. Every tier takes requests and plays content, so a
+// rig brings its request set, content state and flow state.
 template <>
 struct ComponentTraits<AnimRig> : SchemaAssetOwnership<AnimRig>
 {

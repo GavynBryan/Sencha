@@ -34,13 +34,11 @@ public:
     [[nodiscard]] std::vector<GameplayTagId> GetChildren(GameplayTagId id) const;
     [[nodiscard]] std::size_t Size() const;
 
-    // A tag's identity between machines. Ids are registration order and mean
-    // nothing to another process; the key is a hash of the name, the same
-    // wherever the name is known. Zero is no tag.
+    // A hash of the name: a tag's identity between machines, where ids (which
+    // are registration order) mean nothing. Zero is no tag.
     [[nodiscard]] static std::uint32_t WireKeyOf(std::string_view name);
     [[nodiscard]] std::uint32_t WireKey(GameplayTagId id) const;
-    // The tag a wire key names here: invalid when no tag has it, or when two
-    // registered names hash alike and the key cannot say which was meant.
+    // Invalid when no tag has the key, or when two registered names share it.
     [[nodiscard]] GameplayTagId FindByWireKey(std::uint32_t key) const;
 
 private:

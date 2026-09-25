@@ -1,8 +1,6 @@
-// Root motion as a motion source: a request-driven clip carries a character
-// through the movement pipeline and the real mover, which a wall can stop;
-// the pose keeps nothing of the travel it gave up; a machine that never poses
-// is carried exactly as one that does; and a replayed tick is carried as the
-// authority carried it, through a cancel and a corrected start.
+// A request-driven clip carries a character through the movement pipeline and
+// mover, which a wall can stop. A machine that never poses is carried the same,
+// and a replayed tick is carried as the authority carried it.
 
 #include "AnimRigFixture.h"
 
@@ -53,7 +51,7 @@ namespace
     // A character on a floor, whose dash request plays a one-second clip that
     // carries it 3 m forward (-Z) while its root joint stays where it stood.
     // With a wall, the wall's face is 1.5 m ahead.
-    struct Carried : AnimRigFixture
+    struct RootMotionFixture : AnimRigFixture
     {
         PhysicsWorld Physics;
         CharacterMoverPool Movers{ Physics };
@@ -72,7 +70,7 @@ namespace
                                        .Values = { 0.0f, 0.0f, 0.0f, 0.0f, -3.0f, 0.0f } };
         }
 
-        explicit Carried(bool wall, bool presentsPose = false, AnimationRootCurve dash = Straight())
+        explicit RootMotionFixture(bool wall, bool presentsPose = false, AnimationRootCurve dash = Straight())
             : AnimRigFixture({ "Anim.Idle", "anim.intent.dash" })
         {
             ComponentRegistrar registrar(Entities);
@@ -214,9 +212,9 @@ namespace
 // something is: root motion goes through the mover, not around it.
 TEST(AnimRootMotion, ARequestDrivenMoveCollidesAgainstAWall)
 {
-    Carried open(false);
-    Carried walled(true);
-    for (Carried* carried : { &open, &walled })
+    RootMotionFixture open(false);
+    RootMotionFixture walled(true);
+    for (RootMotionFixture* carried : { &open, &walled })
     {
         carried->StepTo(30);
         ASSERT_TRUE(carried->Dash().Accepted());
@@ -234,9 +232,9 @@ TEST(AnimRootMotion, ARequestDrivenMoveCollidesAgainstAWall)
 TEST(AnimRootMotion, ATurnTurnsTheCharacterAndWhatFollowsGoesTheNewWay)
 {
     constexpr float quarter = 1.5707964f;
-    Carried carried(false, false,
-                    AnimationRootCurve{ .TimesSeconds = { 0.0f, 0.5f, 1.0f },
-                                        .Values = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, quarter, -1.0f, 0.0f, quarter } });
+    RootMotionFixture carried(false, false,
+                              AnimationRootCurve{ .TimesSeconds = { 0.0f, 0.5f, 1.0f },
+                                                  .Values = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, quarter, -1.0f, 0.0f, quarter } });
     carried.StepTo(30);
     ASSERT_TRUE(carried.Dash().Accepted());
     carried.StepTo(120);
@@ -252,7 +250,7 @@ TEST(AnimRootMotion, ATurnTurnsTheCharacterAndWhatFollowsGoesTheNewWay)
 // mover does.
 TEST(AnimRootMotion, SamplingNeverMovesACapsule)
 {
-    Carried carried(false);
+    RootMotionFixture carried(false);
     carried.StepTo(30);
     ASSERT_TRUE(carried.Dash().Accepted());
     carried.StepTo(40);
@@ -269,7 +267,7 @@ TEST(AnimRootMotion, SamplingNeverMovesACapsule)
 // once, not twice.
 TEST(AnimRootMotion, AStrippedPoseDoesNotDoubleApply)
 {
-    Carried carried(false, true);
+    RootMotionFixture carried(false, true);
     carried.StepTo(30);
     ASSERT_TRUE(carried.Dash().Accepted());
     for (AnimTick tick : { 45u, 60u, 90u })
@@ -288,9 +286,9 @@ TEST(AnimRootMotion, AStrippedPoseDoesNotDoubleApply)
 // carried tick for tick as one that does.
 TEST(AnimRootMotion, TimingAndFullAgreeOnDisplacement)
 {
-    Carried timing(true, false);
-    Carried full(true, true);
-    for (Carried* carried : { &timing, &full })
+    RootMotionFixture timing(true, false);
+    RootMotionFixture full(true, true);
+    for (RootMotionFixture* carried : { &timing, &full })
     {
         carried->StepTo(30);
         ASSERT_TRUE(carried->Dash().Accepted());
@@ -308,7 +306,7 @@ TEST(AnimRootMotion, TimingAndFullAgreeOnDisplacement)
 TEST(AnimRootMotion, AReplayIsCarriedThroughACancel)
 {
     // The authority's run: dash on 30, cancelled on 50.
-    Carried authority(false);
+    RootMotionFixture authority(false);
     authority.StepTo(29);
     const AnimRequestResult dash = authority.Dash();
     ASSERT_TRUE(dash.Accepted());
@@ -318,11 +316,11 @@ TEST(AnimRootMotion, AReplayIsCarriedThroughACancel)
     authority.StepTo(80);
 
     // A client that did not hear of the cancel in time: carried to 80.
-    Carried client(false);
+    RootMotionFixture client(false);
     client.StepTo(29);
     ASSERT_TRUE(client.Dash().Accepted());
     client.StepTo(39);
-    const Carried::Saved at39 = client.Save();
+    const RootMotionFixture::Saved at39 = client.Save();
     client.StepTo(80);
     ASSERT_LT(client.Position().Z, authority.Position().Z - 0.5f) << "the client went further";
 
@@ -338,15 +336,15 @@ TEST(AnimRootMotion, AReplayIsCarriedThroughACancel)
 // corrected start.
 TEST(AnimRootMotion, AReplayIsCarriedFromACorrectedStart)
 {
-    Carried authority(false);
+    RootMotionFixture authority(false);
     authority.StepTo(34);
     ASSERT_TRUE(authority.Dash().Accepted());
     authority.StepTo(60);
 
-    Carried client(false);
+    RootMotionFixture client(false);
     client.StepTo(29);
     ASSERT_TRUE(client.Dash().Accepted()) << "guessed five ticks early";
-    const Carried::Saved at29 = client.Save();
+    const RootMotionFixture::Saved at29 = client.Save();
     client.StepTo(60);
 
     AnimRequestSet& requests = *client.Entities.TryGet<AnimRequestSet>(client.Character);
@@ -360,7 +358,7 @@ TEST(AnimRootMotion, AReplayIsCarriedFromACorrectedStart)
 // animation -- a dash reaches the motion request the mover reads.
 TEST(AnimRootMotion, TheScheduledPipelineCarriesTheCharacter)
 {
-    Carried carried(false);
+    RootMotionFixture carried(false);
     EngineConfig config;
     RuntimeFrameLoop runtime;
     DataAssetCache assets;

@@ -18,9 +18,7 @@ class LoggingProvider;
 class VerbDispatcher;
 class World;
 
-// The animated-entity components. Which ones an entity carries is its tier;
-// see docs/gameplay/animation.md.
-
+// Which of these an entity carries is its tier; see docs/gameplay/animation.md.
 using AnimationComponents = ComponentSet<
     AnimRig,
     AnimRequestSet,
@@ -35,39 +33,32 @@ using AnimationComponents = ComponentSet<
 
 void RegisterAnimationComponents(ComponentRegistrar& registrar);
 
-// The layer tags every rig may name (anim.layer.base, anim.layer.upper,
-// anim.layer.aim), an empty AnimFactProviders table for gameplay to bind
-// into, and the AnimRequestJournal gameplay issues predicted requests through. Idempotent. Installed before a game's vocabulary hook, so a game's own
-// layer tags and bindings land in the same registries.
+// Layer tags every rig may name, an empty AnimFactProviders table and the
+// AnimRequestJournal. Idempotent; installed before a game's vocabulary hook so a
+// game's own layer tags and bindings land in the same registries.
 void InstallAnimationVocabulary(World& world);
 
 // anim.blend.override_cap, anim.trace, anim.trace.export and anim.risk over
 // `world`; see docs/gameplay/animation.md. Registered once by its owner.
 void RegisterAnimationConsole(ConsoleRegistry& console, World& world);
 
-// What the animation systems are composed with. Handed over rather than
-// found: the event pass invokes verbs, so the host names the dispatcher it may
-// use, and the pose pass forks onto the host's workers.
+// Handed over rather than found: the host names the dispatcher events may use and
+// the workers the pose pass forks onto.
 struct AnimationHost
 {
-    // Where crossed events are offered. Null still produces and records them,
-    // each answered Unavailable.
+    // Null still produces and records events, each answered Unavailable.
     VerbDispatcher* Verbs = nullptr;
-    // Where `anim.events.queue_capacity` is registered. Null keeps the
-    // default capacity.
+    // Registers `anim.events.queue_capacity`; null keeps the default capacity.
     ConsoleRegistry* Console = nullptr;
-    // Whether this process presents a pose. Cosmetic events are produced only
-    // where one is, and only there are rigs posed; a headless authority
-    // produces gameplay events alone.
+    // Cosmetic events and posing happen only where a pose is presented; a headless
+    // authority produces gameplay events alone.
     bool PresentsPose = true;
-    // Where the pose pass forks. Null poses every entity inline.
+    // Null poses every entity inline.
     JobSystem* Jobs = nullptr;
 };
 
-// Clip playback, then fact gathering, selection, content resolution and clip
-// events, in that order, and -- where a pose is presented -- posing after
-// movement. Rigs resolve through the World's AnimRigBindings,
-// which RuntimeContent publishes; `logging` is where a rig that fails to bind
-// is reported.
+// Fact gathering, selection, content resolution and events, in that order, then
+// posing after movement where a pose is presented. Rigs resolve through the World's
+// AnimRigBindings; `logging` reports a rig that fails to bind.
 void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging = nullptr,
                               const AnimationHost& host = {});

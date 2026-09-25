@@ -1,7 +1,6 @@
-// The shared vocabulary catalog, as the UI previewer and the animation
-// workspace use it: what a document can name, with a game module's names
-// beside the engine's, and whether each record of a binding asset resolves --
-// all without a dispatcher, so nothing here can run.
+// The vocabulary catalog lists what a document can name, a game module's names
+// beside the engine's, and whether each binding-asset record resolves, all
+// without a dispatcher.
 
 #include "vocabulary/VocabularyCatalog.h"
 

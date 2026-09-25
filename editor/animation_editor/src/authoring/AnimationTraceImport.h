@@ -15,21 +15,18 @@ struct AnimationTraceRow
 {
     std::uint64_t Tick = 0;
     std::string Cause;
-    // The layer's name, or its index when the trace could not name it; empty
-    // for a record about no one layer.
+    // Name, else index; empty for a record not about one layer.
     std::string Layer;
-    // Every other field, in the order the record carried them.
+    // Every other field, in record order.
     std::string Detail;
 };
 
 struct AnimationTrace
 {
     std::string Entity;
-    // Empty when the game had no rig bound to name.
     std::string Rig;
     std::string Captured;
-    // Every record the game ever logged for the entity; more than Rows when
-    // its ring had overwritten the oldest before export.
+    // Exceeds Rows.size() when the ring overwrote records before export.
     std::uint64_t RecordsWritten = 0;
     std::vector<AnimationTraceRow> Rows;
 

@@ -41,7 +41,7 @@ TEST(AnimFlowData, AFlowOnlyGoesForward)
 // the request says.
 TEST(AnimFlow, SectionsFollowOnTheTickClockAndACountLoopPlaysTheRequestsCount)
 {
-    FlowProp fx(PumpFlow());
+    ReloadFlowFixture fx(CountedLoopFlow());
     (void)fx.Start(3);
     EXPECT_EQ(fx.SectionName(), "Anim.Reload.Open");
     EXPECT_EQ(fx.Flow().SectionStartTick, 1u);
@@ -103,7 +103,7 @@ namespace
 
 TEST(AnimFlow, AWhileLoopRepeatsWhileItHoldsAndAnEndingSectionEndsTheFlow)
 {
-    FlowProp fx{ std::string(kBranchFlow) };
+    ReloadFlowFixture fx{ std::string(kBranchFlow) };
     fx.Motion(fx.Entity).Dead = true;
     (void)fx.Start(1);
     fx.TickTo(46);
@@ -122,7 +122,7 @@ TEST(AnimFlow, AWhileLoopRepeatsWhileItHoldsAndAnEndingSectionEndsTheFlow)
 
 TEST(AnimFlow, ABranchTakenAtTheSectionsEndSkipsForward)
 {
-    FlowProp fx{ std::string(kBranchFlow) };
+    ReloadFlowFixture fx{ std::string(kBranchFlow) };
     fx.Motion(fx.Entity).Crouched = true;
     (void)fx.Start(1);
     fx.TickTo(16);
@@ -140,7 +140,7 @@ TEST(AnimFlow, ABranchTakenAtTheSectionsEndSkipsForward)
 // late joiner still sees what is playing.
 TEST(AnimFlow, ACancelAtSectionEndPlaysTheCancelSectionOnTheRequestsTail)
 {
-    FlowProp fx(PumpFlow());
+    ReloadFlowFixture fx(CountedLoopFlow());
     const AnimRequestId reload = fx.Start(3);
     fx.TickTo(50);
     ASSERT_TRUE(CancelAnimRequest(fx.Entities, fx.Entity, reload, AnimCancelReason::Released, fx.Now));
@@ -168,7 +168,7 @@ TEST(AnimFlow, ACancelAtSectionEndPlaysTheCancelSectionOnTheRequestsTail)
 
 TEST(AnimFlow, AnImmediateCancelGoesToTheCancelSectionAtOnce)
 {
-    FlowProp fx(PumpFlow("immediate"));
+    ReloadFlowFixture fx(CountedLoopFlow("immediate"));
     const AnimRequestId reload = fx.Start(3);
     fx.TickTo(50);
     ASSERT_TRUE(CancelAnimRequest(fx.Entities, fx.Entity, reload, AnimCancelReason::Released, fx.Now));
@@ -183,7 +183,7 @@ TEST(AnimFlow, AnImmediateCancelGoesToTheCancelSectionAtOnce)
 
 TEST(AnimFlow, AFinishPolicyPlaysTheFlowOutAndAnAbortDropsIt)
 {
-    FlowProp finish(PumpFlow(), "finish");
+    ReloadFlowFixture finish(CountedLoopFlow(), "finish");
     const AnimRequestId finishing = finish.Start(2);
     finish.TickTo(20);
     ASSERT_TRUE(CancelAnimRequest(finish.Entities, finish.Entity, finishing, AnimCancelReason::Released, finish.Now));
@@ -199,7 +199,7 @@ TEST(AnimFlow, AFinishPolicyPlaysTheFlowOutAndAnAbortDropsIt)
     finish.TickTo(92);
     EXPECT_EQ(finish.BehaviorName(finish.Entity), "Anim.Idle");
 
-    FlowProp abort(PumpFlow(), "abort");
+    ReloadFlowFixture abort(CountedLoopFlow(), "abort");
     const AnimRequestId aborted = abort.Start(2);
     abort.TickTo(20);
     ASSERT_TRUE(CancelAnimRequest(abort.Entities, abort.Entity, aborted, AnimCancelReason::Released, abort.Now));
@@ -212,7 +212,7 @@ TEST(AnimFlow, AFinishPolicyPlaysTheFlowOutAndAnAbortDropsIt)
 // authority is.
 TEST(AnimFlow, ALateJoinerStartsAtTheRequestsAnchor)
 {
-    FlowProp fx(PumpFlow());
+    ReloadFlowFixture fx(CountedLoopFlow());
     const AnimRequestId reload = fx.Start(3);
     fx.TickTo(50);
     const AnimRequest* request = fx.Request(fx.Entity, reload);
@@ -235,7 +235,7 @@ TEST(AnimFlow, ALateJoinerStartsAtTheRequestsAnchor)
 
 TEST(AnimFlow, OnlyTheAuthorityWritesTheAnchor)
 {
-    FlowProp fx(PumpFlow());
+    ReloadFlowFixture fx(CountedLoopFlow());
     fx.Entities.SetResource(SimulationAuthority{ false });
     const AnimRequestId reload = fx.Start(3);
     fx.TickTo(20);
@@ -248,7 +248,7 @@ TEST(AnimFlow, OnlyTheAuthorityWritesTheAnchor)
 // that row's flow over from the new request.
 TEST(AnimFlow, ASupersedingRequestContinuesTheSameRowAndRestartsAnother)
 {
-    FlowProp fx(PumpFlow(), "cancel_section", R"(
+    ReloadFlowFixture fx(CountedLoopFlow(), "cancel_section", R"(
         { "behavior": "anim.intent.reload", "when": [ { "fact": "Crouched" } ],
           "flow": "asset://anim/f.quick.flow.sdata" },)");
     (void)fx.Start(3);
@@ -285,7 +285,7 @@ TEST(AnimFlow, ASupersedingRequestContinuesTheSameRowAndRestartsAnother)
 // the section; the next pass through it resolves again.
 TEST(AnimFlow, ASlotSectionResolvesOnEntry)
 {
-    FlowProp fx(R"({ "sections": [
+    ReloadFlowFixture fx(R"({ "sections": [
         { "tag": "Anim.Reload.Open", "clip": "asset://anim/open.sanim" },
         { "tag": "Anim.Reload.Insert", "slot": "Anim.Reload.Shell", "loop": "count",
           "count_intent": "anim.intent.reload", "count_param": "shells" } ] })",
@@ -307,10 +307,10 @@ namespace
 {
     // The same reload on a selector layer: latched until its request ends,
     // interruptible by a hit, and playing the close for either.
-    struct FlowCharacter : FlowProp
+    struct FlowCharacter : ReloadFlowFixture
     {
         FlowCharacter()
-            : FlowProp(PumpFlow())
+            : ReloadFlowFixture(CountedLoopFlow())
         {
             (void)Load("asset://anim/c.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
                 { "tag": "Anim.Idle", "kind": "cyclic" },
@@ -526,7 +526,7 @@ TEST(AnimFlowEvents, SectionsAreAnnouncedInsideTheirBehavior)
           "arguments": { "Tag": { "input": "section" } } },
         { "key": "anim.section.exited", "verb": "test.mark", "inputs": [ "section" ],
           "arguments": { "Tag": { "input": "section" } } } ] })");
-    std::string flow = PumpFlow();
+    std::string flow = CountedLoopFlow();
     flow.insert(flow.rfind('}'), R"(, "on_section_entered": { "binding": "anim.section.entered" },
         "on_section_exited": { "binding": "anim.section.exited" })");
     (void)fx.Load("asset://anim/e.flow.sdata", kAnimFlowType, flow);
@@ -602,7 +602,7 @@ namespace
     const AnimBoundRig& BindTwoLayerReload(AnimRigFixture& fx, std::string_view baseFlow, std::string_view upperFlow)
     {
         LoadFlowCommon(fx);
-        (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, PumpFlow());
+        (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, CountedLoopFlow());
         (void)fx.Tags().RegisterTag("anim.layer.upper");
         (void)fx.Load("asset://anim/t.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
             { "tag": "Anim.Idle", "kind": "cyclic" }, { "tag": "anim.intent.reload", "kind": "flow" },
@@ -654,7 +654,7 @@ TEST(AnimFlowBinding, RowsReadingLocalFactsChooseBetweenFlowsThatKeepTheSameTime
 {
     AnimRigFixture fx;
     LoadFlowCommon(fx);
-    (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, PumpFlow());
+    (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, CountedLoopFlow());
     (void)fx.Load("asset://anim/lf.facts.sdata", kAnimFactSchemaType, R"({
         "slots": [ { "name": "Variant", "kind": "int", "local": true } ] })");
     (void)fx.Load("asset://anim/lf.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
@@ -681,7 +681,7 @@ TEST(AnimFlow, ALatchFollowsTheRequestThatSupersedesItsOwn)
 {
     AnimRigFixture fx;
     LoadFlowCommon(fx);
-    (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, PumpFlow());
+    (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, CountedLoopFlow());
     (void)fx.Load("asset://anim/s.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
         { "tag": "Anim.Idle", "kind": "cyclic" },
         { "tag": "Anim.Reload", "kind": "flow",

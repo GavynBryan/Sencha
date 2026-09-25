@@ -15,9 +15,8 @@ namespace
     constexpr float kRestDistance = 1e-6f;
     constexpr float kRestAngle = 1e-6f;
 
-    // The shortest rotation's axis and angle in [0, pi]; a zero angle for none.
-    // Read from the vector part, so a quaternion a rounding off unit length
-    // still gives a unit axis.
+    // The shortest rotation's axis and angle in [0, pi]. Read from the vector part, so
+    // a quaternion slightly off unit length still gives a unit axis.
     void AxisAngle(Quatf q, Vec3d& axis, float& angle)
     {
         if (q.W < 0.0f)
@@ -53,7 +52,7 @@ namespace
 
     // A decay that heads the wrong way does not start that way, and one that
     // would overshoot within its time finishes sooner.
-    void Settle(float x0, float& v0, float& seconds)
+    void LimitOffsetDecay(float x0, float& v0, float& seconds)
     {
         if (v0 > 0.0f)
             v0 = 0.0f;
@@ -88,11 +87,11 @@ namespace
         return duration > 0.0f ? 1.0f / duration : 0.0f;
     }
 
-    // What a layer showed at tick `at` under its state before this tick's
-    // change: its playback, faded against an outgoing one, with any offset
-    // still decaying.
-    void Shown(const AnimPoseSources& sources, const AnimLayerPose& layer, std::span<const AnimJointOffset> offsets,
-               AnimTick at, double tickSeconds, AnimPoseScratch& scratch, std::vector<Transform3f>& out)
+    // What a layer showed at tick `at` before this tick's change: its playback, faded
+    // against an outgoing one, with any offset still decaying.
+    void SampleShownPose(const AnimPoseSources& sources, const AnimLayerPose& layer,
+                         std::span<const AnimJointOffset> offsets, AnimTick at, double tickSeconds,
+                         AnimPoseScratch& scratch, std::vector<Transform3f>& out)
     {
         SampleAnimPlayback(sources, layer.Playing, at, tickSeconds, false, scratch, out);
         if (layer.Fading)
@@ -243,7 +242,7 @@ AnimJointOffset AnimInertializeJoint(const Transform3f& shown, const Transform3f
         offset.Direction = difference / offset.Distance;
         offset.Speed = dt > 0.0f ? (shown.Position - shownBefore.Position).Dot(offset.Direction) / dt : 0.0f;
         offset.Seconds = seconds;
-        Settle(offset.Distance, offset.Speed, offset.Seconds);
+        LimitOffsetDecay(offset.Distance, offset.Speed, offset.Seconds);
     }
     else
     {
@@ -258,7 +257,7 @@ AnimJointOffset AnimInertializeJoint(const Transform3f& shown, const Transform3f
         AxisAngle(shown.Rotation * shownBefore.Rotation.Inverse(), spinAxis, spin);
         offset.AngularSpeed = dt > 0.0f ? spin / dt * spinAxis.Dot(offset.Axis) : 0.0f;
         offset.AngleSeconds = seconds;
-        Settle(offset.Angle, offset.AngularSpeed, offset.AngleSeconds);
+        LimitOffsetDecay(offset.Angle, offset.AngularSpeed, offset.AngleSeconds);
     }
     else
     {
@@ -322,8 +321,8 @@ void EvaluateAnimPose(const AnimPoseInput& input, AnimPoseScratch& scratch)
             if (mode == AnimBlendMode::Inertialize)
             {
                 // What was shown, now and a tick ago, against what now plays.
-                Shown(input.Sources, layer, offsets, now, dt, scratch, scratch.Shown);
-                Shown(input.Sources, layer, offsets, now - 1, dt, scratch, scratch.ShownBefore);
+                SampleShownPose(input.Sources, layer, offsets, now, dt, scratch, scratch.Shown);
+                SampleShownPose(input.Sources, layer, offsets, now - 1, dt, scratch, scratch.ShownBefore);
                 SampleAnimPlayback(input.Sources, incoming, now, dt, false, scratch, scratch.Incoming);
                 float longest = 0.0f;
                 for (std::size_t j = 0; j < offsets.size(); ++j)
@@ -379,7 +378,7 @@ void EvaluateAnimPose(const AnimPoseInput& input, AnimPoseScratch& scratch)
             layer.Offsetting = false;
 
         std::vector<Transform3f>& shown = scratch.Shown;
-        Shown(input.Sources, layer, offsets, now, dt, scratch, shown);
+        SampleShownPose(input.Sources, layer, offsets, now, dt, scratch, shown);
         const std::span<Transform3f> pose = slot.LayerPose(l);
         std::copy_n(shown.begin(), std::min(shown.size(), pose.size()), pose.begin());
 

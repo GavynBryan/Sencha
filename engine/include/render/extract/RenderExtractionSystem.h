@@ -150,12 +150,9 @@ private:
                            const CameraRenderData& camera, RenderQueue& queue,
                            double interpolationAlpha,
                            SkinnedPoseFrameData* skinnedPoses);
-    // Registers one visible skinned entity's pose: appends its instance and
-    // palette to `skinnedPoses` and fills the palette from the pose pass's
-    // pose for a rig -- `poseAlpha` of the way from the last tick's pose to
-    // this one's -- or from the entity's clip player (bind identity with
-    // neither). Returns the instance's pose slot, or UINT32_MAX when the mesh
-    // carries no skinning data.
+    // Poses the palette from the pose pass's rig pose (`poseAlpha` of the way
+    // from last tick's to this one's), else the clip player, else bind
+    // identity. Returns UINT32_MAX when the mesh carries no skinning data.
     [[nodiscard]] std::uint32_t RegisterSkinnedPose(
         const World& world, const RenderExtractCaches& caches,
         const SkinnedMeshComponent& renderer, EntityId entity, double poseAlpha,

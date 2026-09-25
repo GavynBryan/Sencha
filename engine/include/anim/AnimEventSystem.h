@@ -19,33 +19,6 @@ class StoragePartitionSet;
 class VerbDispatcher;
 struct FixedLogicContext;
 
-//=============================================================================
-// Clip events
-//
-// After content resolution, each layer's content time has advanced by one
-// tick, and every event mark inside the stretch it advanced over is crossed.
-// Crossing is once per content instance per mark (per loop, for cyclic
-// content), measured on the tick clock rather than the frame clock, so every
-// machine that plays the same content crosses the same marks on the same
-// ticks. A layer whose behavior changed first leaves the old behavior and
-// enters the new one, firing whichever of their lifecycle events is declared,
-// and a flow that changed section does the same for its sections.
-//
-// Collection and dispatch are separate passes. Collection reads content state
-// and appends fixed-size pending records that name an event by rig, content
-// and index; it never calls a verb, which is what lets it move to a job
-// later. The drain runs on the owner thread, resolves each record's binding
-// by key in the rig's current binding set, and offers it through the
-// dispatcher. Every crossing is recorded in the entity's decision log --
-// fired with its admission, skipped, or below weight -- so an event that did
-// nothing says why.
-//
-// Scope gates production, not authority. A gameplay event is produced only in
-// a World with simulation authority; a cosmetic one only where a pose is
-// presented. Neither makes the invocation authoritative: the verb decides.
-//=============================================================================
-
-// Which kind of event a pending record names.
 enum class AnimPendingKind : std::uint8_t
 {
     // Content's clip event at index Event.
@@ -58,16 +31,14 @@ enum class AnimPendingKind : std::uint8_t
     SectionExited,
 };
 
-// One crossing, waiting for the drain. Value-only: it names the event rather
-// than pointing at a binding a reload could replace before the drain runs.
+// Names its event by value rather than pointing at a binding a reload could replace.
 struct AnimPendingEvent
 {
     AnimPendingKind Kind = AnimPendingKind::Clip;
     EntityId Producer;
     EntityId Instigator;
     DataAssetHandle Rig;
-    // The binding generation the event was read from. A record whose rig has
-    // rebound since is stale and is refused rather than re-resolved.
+    // A record whose rig has rebound since is refused rather than re-resolved.
     std::uint64_t RigGeneration = 0;
     AnimTick Tick = 0;
     std::uint16_t Content = kAnimNoContent;
@@ -76,7 +47,6 @@ struct AnimPendingEvent
     std::uint8_t Layer = 0;
 };
 
-// What this World may produce.
 struct AnimEventGates
 {
     // Gameplay events: only a World with simulation authority.
@@ -85,19 +55,15 @@ struct AnimEventGates
     bool Presents = true;
 };
 
-// Crosses one entity's events for tick `now` and appends what fired to
-// `pending`, up to `capacity`. A crossing past capacity is recorded as
-// QueueFull rather than dropped unseen. The pure half of the system, shared
-// with the preview.
+// Appends what crossed at tick `now` to `pending`, up to `capacity`; a crossing
+// past capacity is recorded as QueueFull. Shared with the preview.
 void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBoundRig& rig,
                        const AnimSelectorState* selection, const AnimRequestSet* requests,
                        const AnimFlowState* flows, AnimContentState& content, AnimTick now, double tickSeconds,
                        AnimEventGates gates, std::vector<AnimPendingEvent>& pending, std::size_t capacity,
                        AnimDecisionLog* log);
 
-// Offers each pending event to its binding, in order, on the owner thread,
-// and records the admission. A null dispatcher answers Unavailable: the
-// events were produced, and nothing here can run them.
+// Runs on the owner thread. A null dispatcher answers Unavailable.
 void DrainAnimEvents(World& world, std::span<const AnimPendingEvent> pending, VerbDispatcher* dispatcher);
 
 class AnimEventSystem

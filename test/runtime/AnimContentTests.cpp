@@ -1,23 +1,22 @@
-// Content resolution turns a behavior into content every tick and applies the
-// result by kind: cyclic content switches rows with normalized time carried
-// across, one-shot content is pinned at entry. A request-keyed layer needs no
-// facts and no selector at all, which is the whole Prop tier.
+// Content resolution applies a behavior by kind every tick: cyclic content keeps
+// normalized time across row changes, one-shot content is pinned at entry, and a
+// request-keyed layer needs no facts or selector.
 
 #include "AnimRigFixture.h"
 
 namespace
 {
-    struct Hero : AnimRigFixture
+    struct CharacterRigFixture : AnimRigFixture
     {
         using AnimRigFixture::Clip;
 
         DataAssetHandle Rig;
         EntityId Entity;
 
-        Hero()
+        CharacterRigFixture()
         {
-            AnimHero::RegisterTags(*this);
-            Rig = AnimHero::Load(*this);
+            AnimCharacterRig::RegisterTags(*this);
+            Rig = AnimCharacterRig::Load(*this);
             EXPECT_TRUE(Bound(Rig).Valid) << Describe(Bound(Rig));
             Entity = Character(Rig);
         }
@@ -27,7 +26,7 @@ namespace
 
 TEST(AnimContent, ARowChangeUnderACyclicBehaviorCarriesNormalizedTime)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Motion(fx.Entity).Speed = 1.0f;
     fx.Tick(31);
     ASSERT_EQ(fx.Clip(), "asset://anim/walk.sanim");
@@ -50,7 +49,7 @@ TEST(AnimContent, ARowChangeUnderACyclicBehaviorCarriesNormalizedTime)
 
 TEST(AnimContent, OneShotContentIsPinnedAtEntry)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Motion(fx.Entity).Grounded = false;
     fx.Tick(5);
     fx.Motion(fx.Entity).Grounded = true;
@@ -111,18 +110,18 @@ TEST(AnimContent, APropPlaysRequestsWithNoFactsOrSelector)
 
 TEST(AnimContent, OverlaysInsertRowsByPriority)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Clip("asset://anim/walk_mod.sanim", 1.0f);
     fx.Clip("asset://anim/walk_tie.sanim", 1.0f);
     (void)fx.Load("asset://anim/mod.slots.sdata", kAnimSlotMapType, R"({ "rows": [
         { "behavior": "Anim.Locomotion.Walk", "priority": 0, "clip": "asset://anim/walk_tie.sanim" },
         { "behavior": "Anim.Locomotion.Walk", "priority": 5, "when": [ { "fact": "Crouched", "not": true } ],
           "clip": "asset://anim/walk_mod.sanim" } ] })");
-    fx.Reload("asset://anim/hero.rig.sdata", kAnimRigType, R"({
-        "facts": "asset://anim/hero.facts.sdata", "requests": "asset://anim/hero.requests.sdata",
-        "behaviors": [ "asset://anim/hero.behaviors.sdata" ],
-        "slot_maps": [ "asset://anim/hero.slots.sdata", "asset://anim/mod.slots.sdata" ],
-        "layers": [ { "name": "anim.layer.base", "selector": "asset://anim/hero.selector.sdata",
+    fx.Reload("asset://anim/character.rig.sdata", kAnimRigType, R"({
+        "facts": "asset://anim/character.facts.sdata", "requests": "asset://anim/character.requests.sdata",
+        "behaviors": [ "asset://anim/character.behaviors.sdata" ],
+        "slot_maps": [ "asset://anim/character.slots.sdata", "asset://anim/mod.slots.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "selector": "asset://anim/character.selector.sdata",
                       "idle": "Anim.Locomotion.Idle" } ] })");
 
     fx.Motion(fx.Entity).Speed = 1.0f;
@@ -161,30 +160,30 @@ TEST(AnimContent, RowsReadingLocalFactsMustShareTiming)
 
 TEST(AnimContent, PinnedContentWhoseRowIsRemovedReanchors)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Motion(fx.Entity).Grounded = false;
     fx.Tick(5);
     fx.Motion(fx.Entity).Grounded = true;
     fx.Tick();
     ASSERT_EQ(fx.Clip(), "asset://anim/land.sanim");
 
-    fx.Reload("asset://anim/hero.slots.sdata", kAnimSlotMapType, R"({ "rows": [
+    fx.Reload("asset://anim/character.slots.sdata", kAnimSlotMapType, R"({ "rows": [
         { "behavior": "Anim.Locomotion.Idle", "clip": "asset://anim/idle.sanim" },
         { "behavior": "Anim.Action.Land", "clip": "asset://anim/land_crouch.sanim" } ] })");
     fx.Tick();
     EXPECT_EQ(fx.Clip(), "asset://anim/land_crouch.sanim");
-    const AnimDecisionRecord* anchored = fx.LastRecord(fx.Entity, AnimDecisionCause::Anchored);
-    ASSERT_NE(anchored, nullptr);
-    EXPECT_EQ(anchored->Reason, AnimChangeReason::Rebound);
+    const AnimDecisionRecord* reset = fx.LastRecord(fx.Entity, AnimDecisionCause::IndexReset);
+    ASSERT_NE(reset, nullptr);
+    EXPECT_EQ(reset->Reason, AnimChangeReason::Rebound);
 }
 
 // A behavior that carries phase within its sync group starts where the one it
 // replaces had reached, in normalized time; without carry it starts over.
 TEST(AnimContent, PhaseCarriesWithinASyncGroup)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     (void)fx.Tags().RegisterTag("Anim.Sync.Locomotion");
-    fx.Reload("asset://anim/hero.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+    fx.Reload("asset://anim/character.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
         { "tag": "Anim.Locomotion.Idle", "kind": "cyclic" },
         { "tag": "Anim.Locomotion.Walk", "kind": "cyclic", "sync_group": "Anim.Sync.Locomotion" },
         { "tag": "Anim.Locomotion.Sprint", "kind": "cyclic", "sync_group": "Anim.Sync.Locomotion",
@@ -217,8 +216,8 @@ TEST(AnimContent, PhaseCarriesWithinASyncGroup)
 // plays next starts there, so it runs in step with the authority's.
 TEST(AnimContent, ContentAfterALateCancelStartsAtTheCancel)
 {
-    Hero fx;
-    fx.Reload("asset://anim/hero.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+    CharacterRigFixture fx;
+    fx.Reload("asset://anim/character.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
         { "tag": "Anim.Locomotion.Idle", "kind": "cyclic" },
         { "tag": "Anim.Locomotion.Walk", "kind": "cyclic" },
         { "tag": "Anim.Locomotion.Sprint", "kind": "cyclic" },
@@ -244,7 +243,7 @@ TEST(AnimContent, ContentAfterALateCancelStartsAtTheCancel)
 // ends, which every machine works out from the request's start alike.
 TEST(AnimContent, ContentAfterAFinishedReloadStartsWhenItFinished)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Tick();
     const AnimRequestResult reload = fx.Issue(fx.Entity, "anim.intent.reload");
     fx.Tick(10);

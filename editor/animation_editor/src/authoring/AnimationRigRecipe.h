@@ -10,9 +10,7 @@
 class AnimationClipCache;
 class SkeletonCache;
 
-// A new rig from a name, its clips and a tier: the documents it is made of and
-// the scenario saved beside it. The tiers are in this editor's README.
-
+// The presets are described in this editor's README.
 enum class AnimationRigPreset : std::uint8_t
 {
     Prop,
@@ -22,12 +20,12 @@ enum class AnimationRigPreset : std::uint8_t
 
 struct AnimationRigRecipe
 {
-    // Letters, digits and underscores: the folder and file stem.
+    // Letters, digits and underscores; used as the folder and file stem.
     std::string Name;
-    // Clip asset paths; the first is the idle.
+    // The first clip is the idle.
     std::vector<std::string> Clips;
     AnimationRigPreset Preset = AnimationRigPreset::Prop;
-    // Character: the joint the upper body starts at, by name.
+    // Character preset only.
     std::string UpperBodyJoint;
 };
 
@@ -35,26 +33,22 @@ struct AnimationRigRecipe
 
 struct AnimationNewDocument
 {
-    // Relative to the content root the rig is written into.
+    // Relative to the authoring content root.
     std::string RelativePath;
     JsonValue Root;
 };
 
 struct AnimationRigPlan
 {
-    // Empty when the plan stands; otherwise why it does not.
     std::string Error;
     std::vector<AnimationNewDocument> Documents;
     AnimationNewDocument Scenario;
-    // The rig's asset path.
     std::string RigPath;
 };
 
-// `skeletons`, when given, checks the upper-body joint against the clips'
-// skeleton.
+// Without `skeletons` the upper-body joint is not checked.
 [[nodiscard]] AnimationRigPlan PlanAnimationRig(const AnimationRigRecipe& recipe, const AnimationClipCache& clips,
                                                 const SkeletonCache* skeletons = nullptr);
 
-// The behavior a clip plays as in a new rig: Anim. and the clip's name,
-// letters, digits and underscores only.
+// "Anim." plus the clip's name reduced to letters, digits and underscores.
 [[nodiscard]] std::string AnimationRigBehaviorFor(const std::string& clipPath);

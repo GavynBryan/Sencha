@@ -1,7 +1,6 @@
 // Selectors flatten when a rig binds: delegation and extension points become
-// rules of the layer's selector, nested conditions concatenate, and the
-// pairings the architecture forbids are located errors rather than surprises
-// at runtime.
+// rules of the layer's selector, nested conditions concatenate, and forbidden
+// pairings are located errors.
 
 #include "AnimRigFixture.h"
 
@@ -71,8 +70,8 @@ TEST(AnimSelectorBinding, DelegationFlattensUnderTheDelegatingRule)
     EXPECT_EQ(rules[0].Enter.RowEnds.size(), 3u);
     EXPECT_EQ(rules[1].Enter.RowEnds.size(), 2u);
     // A delegated rule stands where its parent stood.
-    EXPECT_EQ(rules[0].Band, 20);
-    EXPECT_EQ(rules[1].Band, 20);
+    EXPECT_EQ(rules[0].PriorityBand, 20);
+    EXPECT_EQ(rules[1].PriorityBand, 20);
     ASSERT_EQ(rules[0].Source.size(), 2u);
     EXPECT_EQ(rules[0].Source[0].Name, "firing");
     EXPECT_EQ(rules[0].Source[1].Selector, "asset://anim/weapon.selector.sdata");

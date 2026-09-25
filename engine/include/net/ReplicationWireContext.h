@@ -8,19 +8,8 @@ class ReplicationAuthorityIdentity;
 class ReplicationClientIdentity;
 class World;
 
-//=============================================================================
-// ReplicationWireContext
-//
-// What a component codec needs to turn process-local values into what every
-// machine agrees on and back: the World the component lives in, the entity it
-// belongs to, and how this machine names replicated entities -- by the
-// authority's mint, or by a client's map of what it was sent. Exactly one of
-// the two identities is set.
-//
-// The authority's is writable because a component can name a replicated
-// entity the publish has not reached yet; it is minted then rather than sent
-// as nothing for a tick.
-//=============================================================================
+// Exactly one identity is set. The authority's is writable so an entity the
+// publish has not reached yet is minted now rather than sent as nothing.
 struct ReplicationWireContext
 {
     const World* Entities = nullptr;
@@ -28,10 +17,8 @@ struct ReplicationWireContext
     ReplicationAuthorityIdentity* Authority = nullptr;
     const ReplicationClientIdentity* Client = nullptr;
 
-    // A local entity as the wire names it: its NetEntityId, or zero for one
-    // that is not replicated and so means nothing to another machine.
+    // Its NetEntityId, or zero for an entity that is not replicated.
     [[nodiscard]] std::uint64_t WireEntity(EntityId entity) const;
-    // The entity a wire name stands for here, or invalid when this machine
-    // has not been sent it (yet).
+    // Invalid when this machine has not been sent the entity (yet).
     [[nodiscard]] EntityId LocalEntity(std::uint64_t wire) const;
 };

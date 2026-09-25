@@ -1,7 +1,6 @@
-// Clip events in the animation preview: the production event pass, offered
-// through a dispatcher whose only implementations are the recorders the
-// scenario names. What the preview shows is the normal admission; a recorder's
-// result is always labelled as one.
+// Clip events in the animation preview run the production event pass through a
+// dispatcher whose only implementations are the scenario's recorders. A
+// recorder's result is always labelled as one.
 
 #include "authoring/AnimationClipPreviewSession.h"
 #include "authoring/AnimationPreviewSession.h"

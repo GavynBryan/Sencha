@@ -8,19 +8,6 @@
 #include <cstdint>
 #include <string_view>
 
-//=============================================================================
-// AnimDecisionLog
-//
-// A ring of what changed on an animated entity and why. Every state change the
-// runtime makes writes one record with a cause, and a record with no cause is
-// a bug: the invariants in docs/plans/animation-runtime.md are only
-// enforceable because every change is attributable.
-//
-// Optional by construction: an entity carries a log only in dev builds or when
-// opted in, and every writer takes a nullable log. What it holds is compact
-// ids; an inspector resolves names against what is still loaded.
-//=============================================================================
-
 enum class AnimDecisionCause : std::uint8_t
 {
     RequestAdded,
@@ -29,59 +16,40 @@ enum class AnimDecisionCause : std::uint8_t
     RequestCancelled,
     RequestExpired,
     RequestRejected,
-    // A layer's winning rule changed; Reason says why.
     WinnerChanged,
     LatchArmed,
     LatchReleased,
     LatchInterrupted,
-    // A layer's content changed; Reason says why.
     ContentChanged,
-    // A rebind could not keep an index a layer held, and reset it.
-    Anchored,
-    // A layer's flow entered a section; Reason says how, Section and
-    // PreviousSection which.
+    // A rebind could not keep an index a layer held and reset it.
+    IndexReset,
     SectionChanged,
-    // A clip event's mark was crossed; EventOutcome says what came of it and
-    // Admission what its binding answered.
+    // EventOutcome and Admission say what came of it.
     EventCrossed,
-    // A layer entered or left Behavior, and the behavior declares a
-    // lifecycle event; EventOutcome and Admission as for a crossing.
     BehaviorEntered,
     BehaviorExited,
-    // A flow entered or left Section, and the flow declares a section
-    // lifecycle event; EventOutcome and Admission as for a crossing.
     SectionEntered,
     SectionExited,
-    // Another weight rule now weights the layer; Rule is its index among the
-    // selector's weight rules, or none for the rig's constant.
+    // Rule indexes the selector's weight rules, or is none for the rig's constant.
     WeightChanged,
-    // A change to what a layer plays was absorbed into its pose: Blend says
-    // how and for how long, PreviousBehavior and Behavior the change, and
-    // BlendOverridden whether a pairwise override chose it. BlendMagnitude is
-    // the largest joint offset an inertialization began from.
     BlendApplied,
-    // This machine's binding of the rig started or stopped disagreeing with
-    // the timing the authority's requests were made under
-    // (AnimRigTimingIdentity). Reconstruction is not trustworthy while it
-    // does: the session has to reload the rig or rejoin.
+    // This machine's AnimRigTimingIdentity started or stopped matching the one the
+    // authority's requests were made under; reconstruction is untrustworthy meanwhile.
     TimingDisagreed,
     TimingAgreed,
 };
 
-// What a crossed clip event led to.
 enum class AnimEventOutcome : std::uint8_t
 {
-    // Offered to its binding; the record's Admission is the answer.
+    // Offered to its binding; Admission is the answer.
     Fired,
-    // The mark was passed over by a skip in time rather than played through.
+    // Passed over by a skip in time rather than played through.
     Skipped,
-    // The layer weight was under the event's threshold.
     BelowWeight,
 };
 
 [[nodiscard]] std::string_view AnimEventOutcomeName(AnimEventOutcome outcome);
 
-// Why a winner or content changed. Every change has one.
 enum class AnimChangeReason : std::uint8_t
 {
     None,
@@ -93,22 +61,17 @@ enum class AnimChangeReason : std::uint8_t
     Rebound,
     BehaviorChanged,
     RowChanged,
-    // Flow sections: entering the flow, following on, repeating, taking a
-    // branch, going to the cancel section, starting from a request's anchor.
     FlowStarted,
     SectionFollowed,
     SectionLooped,
     SectionBranched,
     SectionCancelled,
     FlowAnchored,
-    // The request driving a layer's content changed without its behavior
-    // changing: a superseding request, a combo advancing.
+    // The request driving the content changed but its behavior did not.
     RequestSuperseded,
-    // The authority's word moved the start of the request a layer was
-    // playing: a client's guess replaced by what actually happened.
+    // The authority moved the start of the request a layer was playing.
     RequestCorrected,
-    // What a layer played rested on a prediction the authority decided
-    // otherwise, and it was rebuilt from the authority's requests.
+    // Rebuilt from the authority's requests after a refused prediction.
     Reconstructed,
 };
 
@@ -116,13 +79,11 @@ enum class AnimChangeReason : std::uint8_t
 
 [[nodiscard]] std::string_view AnimDecisionCauseName(AnimDecisionCause cause);
 
-// Why a request was not accepted. Capacity is the one the architecture names:
-// nothing is evicted, so server and client decide identically.
+// Capacity rejects rather than evicts, so server and client decide identically.
 enum class AnimRejectReason : std::uint8_t
 {
     None,
     Capacity,
-    // The intent is not one the rig's request schema declares.
     UndeclaredIntent,
     // The request names no source, no intent, or no layer.
     Malformed,
@@ -149,15 +110,15 @@ struct AnimDecisionRecord
     // Content records: the row and content resolved.
     std::uint16_t Row = kAnimNoContent;
     std::uint16_t Content = kAnimNoContent;
-    // Event records: which event of the content, what came of it, and its
-    // binding's answer when it fired.
+    // Event records, including lifecycle events.
     std::uint32_t EventKey = 0;
     AnimEventOutcome EventOutcome = AnimEventOutcome::Fired;
     VerbAdmission Admission = VerbAdmission::Accepted;
-    // Section records, and section lifecycle events: the flow's sections.
+    // Section records, including section lifecycle events.
     std::uint8_t Section = 0xFF;
     std::uint8_t PreviousSection = 0xFF;
-    // Blend records.
+    // Blend records. BlendMagnitude is the largest joint offset an inertialization
+    // began from.
     GameplayTagId PreviousBehavior;
     float BlendSeconds = 0.0f;
     float BlendMagnitude = 0.0f;
@@ -170,8 +131,7 @@ inline constexpr std::size_t kAnimDecisionLogCapacity = 64;
 struct SENCHA_COMPONENT("sencha.anim_decision_log") AnimDecisionLog
 {
     AnimDecisionRecord Records[kAnimDecisionLogCapacity] = {};
-    // Records ever written. The newest is at (Written - 1) % capacity, and the
-    // ring holds min(Written, capacity) of them.
+    // Records ever written; the ring holds the newest min(Written, capacity).
     std::uint64_t Written = 0;
 
     void Append(const AnimDecisionRecord& record)

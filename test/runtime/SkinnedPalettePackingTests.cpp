@@ -1,8 +1,6 @@
-// The pose shader reads each palette entry as a GLSL mat4 in a std430 buffer,
-// which is column-major; the CPU builds row-major Mat4. The upload converts.
-// These pin the whole layout -- every element and what the rebuilt matrix does
-// to a point and a direction -- so a memcpy, or a transpose that gets only
-// the translation right, cannot pass.
+// The pose shader reads palette entries as column-major std430 mat4s while the
+// CPU builds row-major Mat4. These pin every element and the rebuilt matrix's
+// effect on a point and a direction, so a plain memcpy cannot pass.
 
 #include <gtest/gtest.h>
 

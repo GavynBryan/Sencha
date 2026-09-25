@@ -50,7 +50,6 @@ std::string ContentPath(const AnimBoundRig& rig, std::uint16_t content)
     return content < rig.Contents.size() ? rig.Contents[content].Path : std::string("(no content)");
 }
 
-// Which of the rig's layers panels look at, kept in navigation.
 bool LayerPicker(AnimationPreviewWorkspace& workspace, const AnimBoundRig& rig)
 {
     AnimationNavigation& nav = workspace.Navigation;
@@ -112,8 +111,6 @@ private:
         }
         const AnimBoundSelector& selector = rig.Selectors[static_cast<std::size_t>(selectorIndex)];
 
-        // The verdicts shown: the tick being inspected, or while paused, what
-        // the next tick would decide with the edits scheduled for it.
         ImGui::Checkbox("Show next tick", &ShowNext);
         std::vector<AnimRuleVerdict> verdicts;
         if (ShowNext && !session.IsPlaying())
@@ -144,7 +141,7 @@ private:
             ImGui::PushID(static_cast<int>(i));
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            ImGui::Text("%d", rule.Band);
+            ImGui::Text("%d", rule.PriorityBand);
             ImGui::TableNextColumn();
             if (ImGui::Selectable(rule.Label.c_str(), nav.Rule == static_cast<int>(i),
                                   ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
@@ -353,8 +350,6 @@ public:
             ImGui::Text("Late join: %s%s", lateJoins[static_cast<int>(policy.LateJoin)],
                         policy.RootMotion ? ", root motion" : "");
             ImGui::Text("Cosmetic events below layer weight %.2f are suppressed", policy.EventWeight);
-            // Lifecycle bindings: what gameplay is told when a layer enters or
-            // leaves this behavior, and whether the binding resolved here.
             for (const auto& [label, bound] : { std::pair{ "On entered", &behavior->Entered },
                                                 std::pair{ "On exited", &behavior->Exited } })
             {

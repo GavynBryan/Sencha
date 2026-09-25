@@ -24,11 +24,9 @@
 struct SimulationAuthority
 {
     bool Authoritative = true;
-    // The authority's tick minus this process's own, as a client estimates it;
-    // zero on the authority. Ticks written into replicated state are the
-    // authority's, so a reader comparing one against its own tick converts
-    // first. Moves by a tick at a time while the estimate settles, so a
-    // converted tick can repeat or skip one.
+    // The authority's tick minus this process's, as a client estimates it;
+    // zero on the authority. It settles a tick at a time, so a converted tick
+    // can repeat or skip one.
     std::int64_t TickOffset = 0;
 };
 

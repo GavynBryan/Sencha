@@ -14,6 +14,12 @@ namespace
 {
     constexpr std::size_t kSnapshotBytes = 64 * 1024;
 
+    // A fixed scatter over each hundred sends, so a run drops the same snapshots every time.
+    bool IsSendLost(std::uint32_t sendIndex, std::uint32_t lossPercent)
+    {
+        return (sendIndex * 37u + 11u) % 100u < lossPercent;
+    }
+
     std::string_view NameOf(const AnimationPreviewSession& session, GameplayTagId tag)
     {
         const GameplayTagRegistry* tags = session.Tags();
@@ -27,8 +33,7 @@ AnimationSessionLab::AnimationSessionLab(const DataAssetCache& data, const Anima
     , ClientSession(data, clips, vocabulary, skeletons)
     , Scratch(kSnapshotBytes)
 {
-    // Only what crosses the link: the marker and the animation vocabulary,
-    // whose request set is the one component that travels.
+    // Only replication needs this schema; the request set is the one component that travels.
     ComponentRegistrar components(&Schema, nullptr, &Layout);
     components.Add<NetReplicated>();
     RegisterAnimationComponents(components);
@@ -42,8 +47,7 @@ bool AnimationSessionLab::Open(AnimationScenario scenario, AnimationLabSettings 
     Scenario = std::move(scenario);
     Link = settings;
     Injected = std::move(injections);
-    // Commands are processed in the order the authority reaches them, and a
-    // command's number is its place in that order.
+    // A command's number is its place in the authority's processing order.
     std::ranges::stable_sort(Injected, {}, &AnimationLabInjection::AuthorityTick);
     Restart();
     return Opened;
@@ -87,10 +91,8 @@ void AnimationSessionLab::Connect()
     Joined.clear();
     JoinedTick.reset();
 
-    // The subject and the participants are the same entities on both
-    // machines, as a level's authored entities are: each client entity is
-    // bound to the identity its authority counterpart is minted, so snapshots
-    // land on it rather than spawning a copy.
+    // Bind each client entity to its authority counterpart's identity, as a
+    // level's authored entities are, so snapshots land on it instead of spawning a copy.
     World& authority = *AuthoritySession.SimulationWorld();
     const auto pair = [&](EntityId here, EntityId there) {
         if (!here.IsValid() || !there.IsValid())
@@ -184,9 +186,7 @@ void AnimationSessionLab::Publish(AnimTick tick)
     const SnapshotWriteResult written = ReplicationWriteSnapshot(write, Scratch);
     if (!written.Ok)
         return;
-    // A fixed scatter over each hundred sends, so a loss rate drops the same
-    // snapshots on every run.
-    const bool lost = (SnapshotsSent * 37u + 11u) % 100u < Link.LossPercent;
+    const bool lost = IsSendLost(SnapshotsSent, Link.LossPercent);
     ++SnapshotsSent;
     if (lost)
     {

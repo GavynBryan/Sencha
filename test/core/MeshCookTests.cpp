@@ -815,13 +815,9 @@ TEST(MeshCook, RiggedBlendImportsAsASkinnedMesh)
 
 namespace
 {
-    // Authors a character in Blender and records, in the engine frame
-    // ((x, y, z) -> (-x, z, y)), what Blender itself evaluates at rest and at
-    // the clip's last frame: per-object world bounds, named sentinel vertices
-    // (by the index the construction gave them), and one face normal. The
-    // armature is offset, turned a quarter about X and scaled; an IK
-    // constraint drives Upper toward a keyed non-deform Target bone; the
-    // armature object itself travels; and the Nose hangs from the Upper bone.
+    // Authors a rigged character and records what Blender evaluates at rest and
+    // at the clip's last frame, in the engine frame ((x, y, z) -> (-x, z, y)):
+    // per-object world bounds, sentinel vertices by index, and one face normal.
     constexpr std::string_view kCharacterScript = R"PY(import bpy, bmesh, json, math, sys, os
 from mathutils import Matrix, Vector
 
@@ -1107,10 +1103,8 @@ TEST(MeshCook, RiggedBlendCooksToWhatBlenderEvaluates)
         ExpectVec3Near(lo, JsonVec3(JsonAt(expected, "min")), tolerance, std::format("{} min", label));
         ExpectVec3Near(hi, JsonVec3(JsonAt(expected, "max")), tolerance, std::format("{} max", label));
     };
-    // Sentinels are matched to cooked vertices once, at rest, by position: the
-    // exporter splits vertices along hard edges, so indices do not survive,
-    // but every split copy of a vertex carries the same weights and moves the
-    // same way.
+    // Sentinels are matched by rest position because the exporter splits
+    // vertices along hard edges; every split copy carries the same weights.
     const auto nearest = [&](const Pose& posed, const StaticMeshSection& section, const Vec3d& target) {
         uint32_t best = section.VertexOffset;
         float bestDistance = 1e9f;

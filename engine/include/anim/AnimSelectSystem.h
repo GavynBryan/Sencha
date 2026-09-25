@@ -17,32 +17,13 @@
 class StoragePartitionSet;
 struct FixedLogicContext;
 
-//=============================================================================
-// Selection
-//
-// One layer, one tick: if the winner is latched its latch is its stay and only
-// a rule the latch lets interrupt may replace it; otherwise the winner's stay
-// is evaluated, and while it passes only higher rules are tried; when it fails
-// every rule is tried top to bottom. A minimum hold keeps equal or lower bands
-// out until it expires; a cooldown keeps a rule out for a while after it
-// loses. First pass wins.
-//
-// SelectAnimLayer is the whole of it, pure over its arguments. The system runs
-// it per entity; the editor runs it on a copy of the state to explain a tick,
-// so what the debugger shows is what ran.
-//=============================================================================
-
 enum class AnimRuleVerdictKind : std::uint8_t
 {
-    // Not reached: a winner higher in the list was chosen first, or the
-    // winner stayed and this rule ranks below it.
+    // Not reached: a higher winner was chosen, or the winner stayed above it.
     NotEvaluated,
     Winner,
-    // Evaluated and passed, but did not win.
     Passed,
-    // Evaluated and failed at FailedRow.
     Failed,
-    // In cooldown after losing.
     Cooldown,
     // Passed, but the winner's latch does not let this rule interrupt it.
     BlockedByLatch,
@@ -55,11 +36,9 @@ enum class AnimRuleVerdictKind : std::uint8_t
 struct AnimRuleVerdict
 {
     AnimRuleVerdictKind Kind = AnimRuleVerdictKind::NotEvaluated;
-    // For the winner: whether it stayed (its stay passed or its latch held)
-    // rather than entering this tick.
+    // Winner only: it stayed (stay passed or latch held) rather than entering.
     bool Stayed = false;
-    // The evaluation is of the rule's stay, not its enter: the winner of the
-    // previous tick, which failed to stay.
+    // The previous winner's stay was evaluated, and failed, rather than an enter.
     bool EvaluatedStay = false;
     // Failed: the first row that failed and what it compared.
     AnimPredicateResult Evaluation;
@@ -73,7 +52,6 @@ struct AnimSelectionOutcome
     bool LatchArmed = false;
     bool LatchReleased = false;
     bool LatchInterrupted = false;
-    // Another weight rule, or the constant, now weights the layer.
     bool WeightRuleChanged = false;
 };
 
@@ -82,8 +60,7 @@ struct AnimLayerSelectInputs
     AnimPredicateInputs Predicate;
     // The previous tick's feedback for this layer.
     bool ContentComplete = false;
-    // Whether the request set differs from the last evaluation, for the
-    // reason a winner changed.
+    // The request set differs from the last evaluation.
     bool RequestsChanged = false;
     // The rig's constant weight for the layer, when no weight rule passes.
     float ConstantWeight = 1.0f;
@@ -96,7 +73,6 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig,
                                      AnimLayerSelectInputs inputs,
                                      std::span<AnimRuleVerdict> verdicts = {});
 
-// Writes the records an outcome produces into `log`.
 void LogAnimSelection(AnimDecisionLog& log, AnimTick now, std::uint8_t layer,
                       const AnimSelectionOutcome& outcome, const AnimLayerSelection& state);
 
@@ -106,8 +82,7 @@ public:
     void FixedLogic(FixedLogicContext& ctx);
     void Select(World& world, AnimTick now, double tickSeconds);
 
-    // Entities whose selectors ran last pass, and the ones skipped because
-    // nothing they read changed; for the wakeup tests and the profiler.
+    // Entities evaluated last pass, and those skipped because nothing they read changed.
     [[nodiscard]] std::size_t Evaluated() const { return EvaluatedCount; }
     [[nodiscard]] std::size_t Skipped() const { return SkippedCount; }
 
@@ -121,8 +96,7 @@ private:
     std::size_t SkippedCount = 0;
 };
 
-// Selects every layer of one entity. The pure half of the system, shared with
-// the preview; `verdicts`, when given, receives per-layer rule verdicts.
+// Shared with the preview; `verdicts` receives per-layer rule verdicts when given.
 void SelectAnimEntity(const World& world, EntityId entity, const AnimBoundRig& rig,
                       std::span<const std::uint32_t> facts, AnimSelectorState& state, AnimTick now,
                       double tickSeconds, AnimDecisionLog* log,

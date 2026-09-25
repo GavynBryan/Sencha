@@ -1,7 +1,6 @@
-// The animation preview runs a rig under a scenario with the production
-// binding, gather, derivation and request code. What the author does live and
-// what a replay of the saved scenario does must be the same run, and nothing a
-// scenario names is ever registered or written back into content.
+// The preview runs a rig under a scenario with the production binding, gather,
+// derivation and request code. A live run and a replay of the saved scenario
+// must match, and nothing a scenario names is registered or written to content.
 
 #include "authoring/AnimationPreviewSession.h"
 #include "authoring/AnimationRigOutline.h"

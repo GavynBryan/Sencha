@@ -75,11 +75,9 @@ struct PawnReplayRequest
     // client kept above it is what this owes.
     std::uint64_t AckTick = 0;
 
-    // Added to a command's tick to get the tick this machine's animation kept
-    // its time on when that command ran: the authority's present as estimated
-    // here, behind the command's own tick by the lead it was sent with. What a
-    // root motion source is asked about, so a replayed tick is carried as the
-    // live one was.
+    // Added to a command's tick to get the authority tick animation kept its
+    // time on when the command ran, so a replayed tick samples root motion as
+    // the live one did.
     std::int64_t AnimationTickOffset = 0;
 
     float FixedDeltaSeconds = 1.0f / 60.0f;

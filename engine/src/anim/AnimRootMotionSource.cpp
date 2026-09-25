@@ -14,9 +14,8 @@
 
 namespace
 {
-    // What carried the character on a tick: a clip, where it started, and
-    // whether it loops.
-    struct Carrier
+    // What carried the character on a tick.
+    struct RootMotionPlayback
     {
         const AnimationClipData* Clip = nullptr;
         AnimTick StartTick = 0;
@@ -32,12 +31,10 @@ namespace
         return clips.Get(rig.Contents[content].Clip);
     }
 
-    // A request-keyed base layer plays whatever request was live, so what
-    // carried the character on any tick -- a past one included -- follows from
-    // the request records alone: each says when it started and when it was
-    // cancelled.
-    bool CarrierFromRequests(const AnimBoundRig& rig, const AnimationClipCache& clips, const AnimRequestSet& requests,
-                             const AnimLayerContent& base, AnimTick tick, Carrier& out)
+    // A request-keyed base layer plays whatever request was live, so what carried the
+    // character on any tick, past ones included, follows from the request records alone.
+    bool PlaybackFromRequests(const AnimBoundRig& rig, const AnimationClipCache& clips, const AnimRequestSet& requests,
+                              const AnimLayerContent& base, AnimTick tick, RootMotionPlayback& out)
     {
         const AnimRequest* carrying = nullptr;
         for (const AnimRequest& request : requests.Records)
@@ -63,18 +60,18 @@ namespace
         if (clip == nullptr)
             return false;
         const AnimBoundBehavior* behavior = rig.FindBehavior(carrying->Intent);
-        out = Carrier{ .Clip = clip,
-                       .StartTick = carrying->StartTick,
-                       .OffsetSeconds = behavior->Policy.StartSeconds,
-                       .Rate = behavior->Policy.Rate,
-                       .Cyclic = behavior->Policy.Kind == AnimBehaviorKind::Cyclic };
+        out = RootMotionPlayback{ .Clip = clip,
+                                  .StartTick = carrying->StartTick,
+                                  .OffsetSeconds = behavior->Policy.StartSeconds,
+                                  .Rate = behavior->Policy.Rate,
+                                  .Cyclic = behavior->Policy.Kind == AnimBehaviorKind::Cyclic };
         return true;
     }
 
     // A selector's base layer carries what it plays now: selection is state,
     // not a function of the tick.
-    bool CarrierFromLayer(const AnimBoundRig& rig, const AnimationClipCache& clips, const AnimLayerContent& base,
-                          AnimTick tick, Carrier& out)
+    bool PlaybackFromLayer(const AnimBoundRig& rig, const AnimationClipCache& clips, const AnimLayerContent& base,
+                           AnimTick tick, RootMotionPlayback& out)
     {
         const AnimBoundBehavior* behavior = rig.FindBehavior(base.Behavior);
         if (behavior == nullptr || !behavior->Policy.RootMotion || tick < base.ClipStartTick
@@ -83,11 +80,11 @@ namespace
         const AnimationClipData* clip = clips.Get(rig.Contents[base.Clip].Clip);
         if (clip == nullptr)
             return false;
-        out = Carrier{ .Clip = clip,
-                       .StartTick = base.ClipStartTick,
-                       .OffsetSeconds = base.ClipOffsetSeconds,
-                       .Rate = base.ClipRate,
-                       .Cyclic = behavior->Policy.Kind == AnimBehaviorKind::Cyclic };
+        out = RootMotionPlayback{ .Clip = clip,
+                                  .StartTick = base.ClipStartTick,
+                                  .OffsetSeconds = base.ClipOffsetSeconds,
+                                  .Rate = base.ClipRate,
+                                  .Cyclic = behavior->Policy.Kind == AnimBehaviorKind::Cyclic };
         return true;
     }
 }
@@ -111,16 +108,16 @@ bool SampleAnimRootMotion(World& world, EntityId entity, std::uint64_t tick, dou
     const AnimLayerContent& base = content->Layers[0];
     const AnimRequestSet* requests =
         reader.IsRegistered<AnimRequestSet>() ? reader.TryGet<AnimRequestSet>(entity) : nullptr;
-    Carrier carrier;
+    RootMotionPlayback playback;
     const bool carried = bound->Layers[0].Selector < 0
-        ? requests != nullptr && CarrierFromRequests(*bound, *bindings->ClipSource(), *requests, base, tick, carrier)
-        : CarrierFromLayer(*bound, *bindings->ClipSource(), base, tick, carrier);
-    if (!carried || !carrier.Clip->Root.has_value())
+        ? requests != nullptr && PlaybackFromRequests(*bound, *bindings->ClipSource(), *requests, base, tick, playback)
+        : PlaybackFromLayer(*bound, *bindings->ClipSource(), base, tick, playback);
+    if (!carried || !playback.Clip->Root.has_value())
         return false;
 
     const auto elapsed = [&](double at) {
-        return static_cast<double>(carrier.OffsetSeconds)
-            + std::max(at - static_cast<double>(carrier.StartTick), 0.0) * tickSeconds * static_cast<double>(carrier.Rate);
+        return static_cast<double>(playback.OffsetSeconds)
+            + std::max(at - static_cast<double>(playback.StartTick), 0.0) * tickSeconds * static_cast<double>(playback.Rate);
     };
     // The tick covers the step from the one before; nothing before the clip
     // began carries anyone. Played backwards the clip carries nothing: a
@@ -128,7 +125,7 @@ bool SampleAnimRootMotion(World& world, EntityId entity, std::uint64_t tick, dou
     const double to = elapsed(static_cast<double>(tick));
     const double from = elapsed(static_cast<double>(tick) - 1.0);
     const AnimRootDelta delta =
-        AnimRootMotionBetween(*carrier.Clip->Root, carrier.Clip->DurationSeconds, from, to, carrier.Cyclic);
+        AnimRootMotionBetween(*playback.Clip->Root, playback.Clip->DurationSeconds, from, to, playback.Cyclic);
 
     // The skeleton's model space is the character's own: turned by its facing.
     const LocalTransform* transform =

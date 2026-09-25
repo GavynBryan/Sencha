@@ -89,9 +89,9 @@ void StepCharacterTick(World& world,
     }
     // Asked again rather than remembered, so a replayed tick is carried by
     // what the source says now -- after a correction, not before it.
-    RootMotionSample carried;
-    if (SampleRootMotion(world, entity, tick, fixedDeltaSeconds, carried))
-        ApplyRootMotion(overrides, carried);
+    RootMotionSample rootMotion;
+    if (SampleRootMotion(world, entity, tick, fixedDeltaSeconds, rootMotion))
+        ApplyRootMotion(overrides, rootMotion);
 
     const MotionRequest motionRequest =
         ComposeMotion(locomotion, support, overrides, MotionImpulse{});

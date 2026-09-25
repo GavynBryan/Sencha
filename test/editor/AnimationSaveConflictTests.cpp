@@ -83,7 +83,7 @@ TEST(AnimationSaveConflict, KeepingMineWritesOverTheFile)
     AnimationPreviewWorkspace& workspace = *conflict.Workspace;
     (void)workspace.SaveAll();
     std::string error;
-    ASSERT_TRUE(workspace.KeepMine(kSlots, error)) << error;
+    ASSERT_TRUE(workspace.SaveOverFile(kSlots, error)) << error;
     EXPECT_EQ(conflict.SlotPriorityOnDisk(), 3.0);
     EXPECT_FALSE(workspace.FindDocument(kSlots)->IsDirty());
     EXPECT_TRUE(workspace.LastSave.Conflicts.empty());
@@ -97,7 +97,7 @@ TEST(AnimationSaveConflict, TakingTheFilesIsAnUndoableStep)
     AnimationPreviewWorkspace& workspace = *conflict.Workspace;
     (void)workspace.SaveAll();
     std::string error;
-    ASSERT_TRUE(workspace.TakeTheirs(kSlots, error)) << error;
+    ASSERT_TRUE(workspace.AdoptFileVersion(kSlots, error)) << error;
     const auto priority = [&] {
         return workspace.FindDocument(kSlots)->Data()->Find("rows")->AsArray().front().Find("priority")->AsNumber();
     };

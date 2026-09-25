@@ -28,8 +28,7 @@
 
 namespace
 {
-// A single-line text field over a string. True on the frame the author
-// finished editing it.
+// True on the frame editing finished.
 bool EditText(const char* label, std::string& text)
 {
     std::array<char, 256> buffer{};
@@ -61,7 +60,6 @@ const char* KindName(DataFieldKind kind)
     return "?";
 }
 
-// The value an input starts from when a binding first asks for it.
 VerbBindingArgument DefaultInput(const std::string& name, DataFieldKind kind)
 {
     VerbBindingArgument input;
@@ -79,8 +77,6 @@ VerbBindingArgument DefaultInput(const std::string& name, DataFieldKind kind)
     return input;
 }
 
-// Which rig binding file declares `key`, so following a binding opens the
-// record rather than guessing among the rig's files.
 std::string BindingFileOf(const AnimationPreviewWorkspace& workspace, const std::string& key)
 {
     const DataAssetCache& data = workspace.DataCache();
@@ -101,9 +97,6 @@ std::vector<std::string> RigBindingFiles(const AnimationPreviewWorkspace& worksp
     return rig != nullptr ? rig->BindingSetPaths : std::vector<std::string>{};
 }
 
-//=============================================================================
-// Clip events: the track, and the selected event's inspector.
-//=============================================================================
 class ClipEventsPanel final : public IEditorPanel
 {
 public:
@@ -135,8 +128,7 @@ public:
     }
 
 private:
-    // The clips a rig plays, then the auditioned one: what an author means by
-    // "this clip" in either preview.
+    // The rig's clips, then the auditioned one.
     std::vector<std::string> CandidateClips() const
     {
         std::vector<std::string> clips;
@@ -208,8 +200,7 @@ private:
             ImGui::TextDisabled("The preview plays the working events. Only Save writes the sidecar.");
     }
 
-    // Where the clip is playing, normalized: in the simulation when a layer
-    // plays it, otherwise in the audition.
+    // Normalized; the simulation's playhead when a layer plays the clip, else the audition's.
     std::optional<float> Playhead(const AnimationClipEventsDocument& document) const
     {
         const AnimBoundRig* rig = Workspace.Simulation.Rig();
@@ -269,8 +260,7 @@ private:
             draw->AddLine(ImVec2(x, origin.y), ImVec2(x, origin.y + height), IM_COL32(230, 200, 90, 255), 2.0f);
         }
 
-        // Markers: a cosmetic event is a circle, a gameplay event a diamond,
-        // so scope reads without relying on color.
+        // Scope is shown by shape (circle cosmetic, diamond gameplay), not color.
         const ImVec2 mouse = ImGui::GetIO().MousePos;
         std::optional<std::uint32_t> under;
         for (const AnimationClipEvent& event : document.Events())
@@ -291,9 +281,7 @@ private:
                 under = event.Key;
         }
 
-        // Dragging a marker is one transaction: previews every frame, one
-        // undo step on release, and Escape or focus loss cancel it through
-        // the workspace.
+        // Escape and focus loss cancel the drag through the workspace.
         if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && under)
         {
             Selected = under;
@@ -335,9 +323,8 @@ private:
             Draft.reset();
             return;
         }
-        // The fields edit a draft that outlives the frame, because a text
-        // field hands back its text only on frames it changed; it follows the
-        // document again once nothing is being typed.
+        // ImGui returns text only on frames it changed, so the fields edit a
+        // persistent draft that resyncs with the document when nothing is active.
         if (!Draft || Draft->Key != current->Key
             || (DraftRevision != document.Revision() && !ImGui::IsAnyItemActive()))
         {
@@ -411,8 +398,7 @@ private:
             ImGui::TextColored(ImVec4(0.9f, 0.5f, 0.4f, 1.0f), "%s", problem.c_str());
     }
 
-    // The binding picker: search the rig's bindings, follow one to its file,
-    // or create one from a declared verb. True when the draft changed.
+    // True when the draft changed.
     bool DrawBinding(AnimationClipEventsDocument& document, AnimationClipEvent& draft)
     {
         (void)document;
@@ -496,7 +482,6 @@ private:
             ImGui::EndPopup();
         }
 
-        // The contract the binding reaches, from the declared verb.
         const CompiledVerbBinding* binding = rig != nullptr ? rig->Bindings.Find(draft.Binding) : nullptr;
         const VerbDefinition* definition = binding != nullptr && verbs != nullptr ? verbs->Get(binding->Verb) : nullptr;
         if (definition != nullptr && ImGui::TreeNode("contract", "Contract: %s", definition->Name.c_str()))
@@ -511,8 +496,6 @@ private:
         return changed;
     }
 
-    // One row per binding input: its value, typed by what it fills, and
-    // whether every argument it fills accepts it.
     void DrawInputs(AnimationClipEvent& draft, bool& commit)
     {
         const AnimBoundRig* rig = Workspace.Simulation.Rig();
@@ -575,7 +558,7 @@ private:
             }
     }
 
-    // A typed editor for one input. True when the value changed for good.
+    // True when the value was committed.
     bool DrawValue(const std::string& name, DataFieldKind kind, VerbBindingArgument& value)
     {
         if (kind == DataFieldKind::GameplayTag)
@@ -629,7 +612,7 @@ private:
         }
         default:
         {
-            // Vectors, records and arrays as the JSON a binding constant is.
+            // Vectors, records and arrays edit as their JSON text.
             std::string text = JsonStringify(value.Literal);
             const bool done = EditText(name.c_str(), text);
             if (done)
@@ -650,9 +633,6 @@ private:
     std::string NewBindingKey;
 };
 
-//=============================================================================
-// Event admissions: what each crossing's binding answered.
-//=============================================================================
 class EventAdmissionsPanel final : public IEditorPanel
 {
 public:
@@ -680,8 +660,6 @@ public:
     }
 
 private:
-    // The preview's side of a session and the recorders behind its verbs:
-    // scenario state, so changing either replays to the current tick.
     void DrawDispatch(AnimationPreviewSession& session)
     {
         int role = session.Scenario().Role == AnimationPreviewRole::Client ? 1 : 0;

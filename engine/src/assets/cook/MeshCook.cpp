@@ -30,8 +30,8 @@
 
 namespace
 {
-    // The glTF importer's cook version: part of its CookIdentity, so every
-    // artifact it produced recooks when this moves.
+    // Bump when the output changes for the same source bytes; every artifact
+    // this importer cooked then recooks.
     constexpr std::uint32_t kGltfMeshCookVersion = 6;
 
     struct CgltfFree
@@ -403,9 +403,8 @@ namespace
         return std::format("skin {}", cgltf_skin_index(&data, &skin));
     }
 
-    // Splits an affine matrix into translation, rotation and scale. Fails when
-    // the linear part is degenerate, sheared or mirrored: a TRS cannot hold
-    // those, and decomposing them anyway is how a skeleton ends up twisted.
+    // Fails on a degenerate, sheared or mirrored linear part, which a TRS cannot
+    // hold without twisting a skeleton.
     bool DecomposeAffine(const Mat4& m, Transform3f& out)
     {
         const Vec3d c0(m.Data[0][0], m.Data[1][0], m.Data[2][0]);
@@ -438,7 +437,7 @@ namespace
         return smallest > 0.0f && largest - smallest <= 1e-4f * largest;
     }
 
-    // A node's local transform as TRS. Only a matrix-form node can fail.
+    // Only a matrix-form node can fail.
     bool NodeLocalTransform(const cgltf_node& node, Transform3f& out)
     {
         if (node.has_matrix)
@@ -457,10 +456,8 @@ namespace
         return true;
     }
 
-    // Composes a root joint's ancestors, outermost first, into the one
-    // transform they place the root in, starting from the engine frame. The
-    // result is folded into the root's TRS, which is exact only for a uniform
-    // scale without mirroring.
+    // Fails unless the chain composes to a uniform-scale similarity, the only
+    // transform a root joint's TRS can absorb exactly.
     bool ComposeAncestors(std::span<const Transform3f> ancestors, Transform3f& out)
     {
         Mat4 composed = GltfToEngineMatrix();
@@ -469,8 +466,7 @@ namespace
         return DecomposeAffine(composed, out) && IsUniformScale(out.Scale);
     }
 
-    // The ancestor to name when a chain will not compose: the first one that
-    // cannot itself be folded, or the innermost.
+    // The ancestor an error names: the first non-uniform one, else the innermost.
     size_t IrregularAncestor(std::span<const Transform3f> ancestors)
     {
         for (size_t i = 0; i < ancestors.size(); ++i)
@@ -479,13 +475,8 @@ namespace
         return ancestors.size() - 1;
     }
 
-    // A root joint and the non-joint nodes above it. A glTF skin's inverse
-    // bind matrices and skinned vertices are written in scene space, which
-    // includes every node above the roots (an exported armature object, for
-    // one). The cook folds those nodes, and the turn into the engine frame,
-    // into the root joints, at rest and in every clip, so the skeleton's
-    // model space is the engine-frame scene space its skinned meshes are
-    // baked into.
+    // A root joint and the non-joint nodes above it, which the cook folds into
+    // the root at rest and in every clip (docs/assets/pipeline.md, glTF import).
     struct RootChain
     {
         uint32_t Joint = 0;
@@ -498,13 +489,10 @@ namespace
         Transform3f Frame;
     };
 
-    // Every joint's rest palette entry must be the identity: the inverse bind
-    // matrices describe the same pose the nodes do. A source bound in some
-    // other pose would draw deformed at rest, so it is refused.
-    bool CheckRestPalette(const cgltf_data& data,
-                          const cgltf_skin& skin,
-                          const SkeletonData& skeleton,
-                          std::string* error)
+    bool CheckRestPaletteIsIdentity(const cgltf_data& data,
+                                    const cgltf_skin& skin,
+                                    const SkeletonData& skeleton,
+                                    std::string* error)
     {
         std::vector<Mat4> model;
         std::vector<Mat4> palette;
@@ -542,13 +530,9 @@ namespace
         return true;
     }
 
-    // Builds one skeleton from a glTF skin: joints topologically ordered
-    // (parents before children, the format invariant), bind TRS from each
-    // joint node with the root joints' ancestors folded in, inverse-bind from
-    // the skin's IBM accessor (identity when absent). `skinLocalToSkeleton[i]`
-    // maps skin.joints[i] to its skeleton index — the remap meshes and
-    // animations resolve their joint refs through. `roots` receives each root
-    // joint's ancestor chain, which animation import folds into root tracks.
+    // Joints come out topologically ordered (the format invariant).
+    // `skinLocalToSkeleton[i]` maps skin.joints[i] to its skeleton index, the
+    // remap meshes and animations resolve their joint refs through.
     bool BuildSkeletonFromSkin(const cgltf_data& data,
                                const cgltf_skin& skin,
                                SkeletonData& out,
@@ -610,9 +594,6 @@ namespace
             const cgltf_node& jointNode = *skin.joints[localIndex];
             SkeletonJoint& joint = out.Joints[skelIndex];
 
-            // A joint's name is its stable key: what a bone mask and anything
-            // else persisted against the skeleton names it by. So it must be
-            // there, and be one joint's alone.
             joint.Name = jointNode.name != nullptr ? jointNode.name : "";
             if (joint.Name.empty())
                 return SetError(error, std::format("{}: joint {} has no name; a joint is named so masks and "
@@ -642,8 +623,7 @@ namespace
                                                static_cast<cgltf_size>(localIndex), m, 16))
                     return SetError(error, "could not read inverse bind matrix"), false;
                 // Turn engine space back into scene space before the source's
-                // inverse bind (the turn is its own inverse), so the rest
-                // palette stays the identity.
+                // inverse bind; the half turn is its own inverse.
                 joint.InverseBind = GltfMat4ToRowMajor(m) * GltfToEngineMatrix();
             }
             else
@@ -661,8 +641,6 @@ namespace
             for (const cgltf_node* ancestor = jointNode.parent; ancestor != nullptr;
                  ancestor = ancestor->parent)
             {
-                // A joint above a non-joint node would put an unposable
-                // transform inside the hierarchy.
                 if (localOf.contains(ancestor))
                     return SetError(error, std::format(
                                "{}: joint {} hangs from joint {} through non-joint node {}; "
@@ -687,13 +665,13 @@ namespace
             }
             if (!ComposeAncestors(chain.AncestorRest, chain.Frame))
             {
-                const std::string culprit =
+                const std::string irregular =
                     NodeLabel(data, *chain.Ancestors[IrregularAncestor(chain.AncestorRest)]);
                 return SetError(error, std::format(
                            "{}: the nodes above root joint {} (at {}) are not a uniform scale, "
                            "rotation and translation, so the skeleton's space cannot be folded "
                            "into its root; apply the scale on {} or make it uniform",
-                           SkinLabel(data, skin), NodeLabel(data, jointNode), culprit, culprit)),
+                           SkinLabel(data, skin), NodeLabel(data, jointNode), irregular, irregular)),
                        false;
             }
 
@@ -707,7 +685,7 @@ namespace
         skinLocalToSkeleton.assign(localToSkeleton.begin(), localToSkeleton.end());
         if (!ValidateSkeletonData(out, error))
             return false;
-        return CheckRestPalette(data, skin, out, error);
+        return CheckRestPaletteIsIdentity(data, skin, out, error);
     }
 
     AnimationChannelPath MapChannelPath(cgltf_animation_path_type path, bool& supported)
@@ -722,8 +700,6 @@ namespace
         }
     }
 
-    // Reads one channel's keys into a track posing `jointIndex`. Rotation keys
-    // are renormalized so the unit-quaternion invariant holds exactly.
     bool ReadChannelTrack(const cgltf_animation_channel& channel,
                           AnimationChannelPath path,
                           uint32_t jointIndex,
@@ -777,13 +753,9 @@ namespace
         track.Values.insert(track.Values.end(), values);
     }
 
-    // Folds a root joint's ancestors into its tracks for one clip. With the
-    // ancestors at rest their composition is one similarity, which composes
-    // with each channel on its own, so the source keys stay as they are. An
-    // animated ancestor makes the root's model transform a composition of
-    // several interpolated channels, which no single channel reproduces; the
-    // root is then resampled at every key time any of those channels has,
-    // and a root the source never keyed gets tracks of its own.
+    // A resting chain composes with each source key as it stands. An animated
+    // one is a composition no single channel reproduces, so the root is
+    // resampled at the union of every contributing key time.
     bool ComposeRootTracks(const cgltf_data& data,
                            const RootChain& chain,
                            std::span<const cgltf_animation_channel* const> channels,
@@ -944,10 +916,8 @@ namespace
         return true;
     }
 
-    // Bakes an affine transform into geometry: positions by the matrix,
-    // normals by its inverse transpose, tangent directions by its linear part.
-    // A mirroring transform also flips tangent handedness and reverses
-    // triangle winding, so the bitangent and the front face both survive it.
+    // A mirroring transform also flips tangent handedness and triangle
+    // winding, so the bitangent and the front face both survive it.
     void BakeTransform(std::span<StaticMeshVertex> vertices,
                        std::span<uint32_t> indices,
                        const Mat4& transform)
@@ -981,9 +951,8 @@ namespace
 
     bool ValidateGeometry(const MeshGeometry& geometry, std::string_view nameForErrors, std::string* error)
     {
-        // Geometry only. The skinning invariants need the skeleton's assigned
-        // artifact path, so the serializer validates those once the importer
-        // fills SkeletonPath.
+        // Geometry only: skinning is validated by the serializer once the
+        // importer has assigned SkeletonPath.
         const MeshValidationResult validation = ValidateMeshGeometry(geometry);
         if (validation.IsValid())
             return true;
@@ -998,9 +967,7 @@ namespace
         return false;
     }
 
-    // Accumulate one glTF mesh's primitives into a single static geometry, one
-    // section per primitive, baked into model space by `toModel`, and validate
-    // the result.
+    // One section per primitive.
     bool ReadMeshGeometry(const cgltf_mesh& gltfMesh,
                           std::string_view nameForErrors,
                           const Mat4& toModel,
@@ -1048,15 +1015,13 @@ namespace
         return ValidateGeometry(imported.Geometry, nameForErrors, error);
     }
 
-    // One skeleton's model: every piece it draws, each baked into the
-    // skeleton's model space before it joins, grouped into one section per
-    // material in first-appearance order so a material is one draw.
+    // Groups a skeleton's pieces into one section per material, in
+    // first-appearance order.
     class SkinnedModelBuilder
     {
     public:
-        // Skinned geometry: already in the skin's scene space, so only
-        // `toModel` (the engine-frame turn) applies; its influences are
-        // skin-local and remapped through `remap`.
+        // Skinned vertices are already in the skin's scene space; `remap` maps
+        // their skin-local joints to skeleton joints.
         bool AddSkinned(const cgltf_mesh& mesh,
                         std::string_view nameForErrors,
                         const Mat4& toModel,
@@ -1066,8 +1031,6 @@ namespace
             return AddMesh(mesh, nameForErrors, toModel, remap, 0, error);
         }
 
-        // Geometry parented under a joint: bound entirely to `joint`, which is
-        // joints {joint,0,0,0} with weights {255,0,0,0}.
         bool AddRigid(const cgltf_mesh& mesh,
                       std::string_view nameForErrors,
                       const Mat4& toModel,
@@ -1278,12 +1241,9 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
 
     // Skeletons, one per skin. Keep each skin's skin-local → skeleton remap,
     // and a node → (skin, skeleton-joint) lookup for animation channels.
-    // The nodes above each skin's root joints are recorded too: their
-    // animation is the skeleton's, folded into its root tracks.
     std::vector<std::vector<uint32_t>> skinRemaps(data->skins_count);
     std::vector<std::vector<RootChain>> skinRoots(data->skins_count);
-    // (skin, skeleton joint) for every joint node; a node may be a joint of
-    // several skins.
+    // A node may be a joint of several skins.
     std::unordered_map<const cgltf_node*, std::vector<std::pair<int, uint32_t>>> jointLookup;
     std::unordered_map<const cgltf_node*, std::vector<int>> ancestorSkins;
     for (cgltf_size skinIndex = 0; skinIndex < data->skins_count; ++skinIndex)
@@ -1312,10 +1272,9 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
         out.Skeletons.push_back(std::move(skeleton));
     }
 
-    // Every placed mesh, by node in glTF order. A skinned node's geometry
-    // joins its skin's model; a node beneath a joint joins that joint's
-    // model as a rigid part; anything else is a static mesh. Every piece is
-    // baked into its destination's model space before it joins.
+    // Every placed mesh, by node in glTF order: skinned geometry joins its
+    // skin's model, a node beneath a joint joins that joint's model as a rigid
+    // part, and anything else is a static mesh.
     const Mat4 engineFrame = GltfToEngineMatrix();
     std::vector<SkinnedModelBuilder> models(data->skins_count);
     std::vector<std::vector<Mat4>> bindModel(data->skins_count);
@@ -1334,9 +1293,8 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
                                           animation.name != nullptr ? animation.name : "<unnamed>");
     }
 
-    // A mesh placed twice with one skin is the same geometry twice: skinned
-    // vertices are in the skin's space whatever node places them. That is
-    // the one occurrence the cook folds.
+    // Skinned vertices are in the skin's space whatever node places them, so a
+    // mesh placed twice with one skin is folded into one occurrence.
     std::vector<std::pair<const cgltf_mesh*, const cgltf_skin*>> skinnedOccurrences;
     std::vector<bool> meshPlaced(data->meshes_count, false);
     for (cgltf_size nodeIndex = 0; nodeIndex < data->nodes_count; ++nodeIndex)
@@ -1361,8 +1319,7 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
             continue;
         }
 
-        // The nearest joint at or above the node: a mesh on a joint node is
-        // a part of that joint.
+        // A mesh on a joint node is a part of that joint.
         const cgltf_node* joint = &node;
         while (joint != nullptr && !jointLookup.contains(joint))
             joint = joint->parent;
@@ -1376,7 +1333,6 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
                            NodeLabel(*data, node), NodeLabel(*data, *joint), owners.size())), false;
             const auto [skinIndex, skeletonJoint] = owners.front();
 
-            // R: the rest transforms from beneath the joint down to the mesh.
             Mat4 fromJoint = Mat4::Identity();
             for (const cgltf_node* link = &node; link != joint; link = link->parent)
             {
@@ -1409,8 +1365,6 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
         out.StaticMeshes.push_back(std::move(imported));
     }
 
-    // A mesh no node places is not part of the scene; importing it anyway
-    // would mean guessing where it goes.
     for (cgltf_size meshIndex = 0; meshIndex < data->meshes_count; ++meshIndex)
     {
         if (meshPlaced[meshIndex])
@@ -1437,11 +1391,9 @@ bool ImportGltfScene(std::span<const std::byte> bytes, ImportedGltfScene& out, s
         out.SkinnedModels.push_back(std::move(model));
     }
 
-    // Animations — each becomes one clip on the single skeleton its channels
-    // pose, through its joints or through the nodes above its root joints. A
-    // clip whose channels span more than one skin (a multi-character export)
-    // is ambiguous and rejected rather than silently truncated; channels on
-    // any other node are node animation, out of scope here.
+    // Each animation becomes one clip on the single skeleton its channels pose,
+    // through its joints or the nodes above its roots. A clip spanning several
+    // skins is rejected rather than truncated; other node animation is skipped.
     for (cgltf_size animIndex = 0; animIndex < data->animations_count; ++animIndex)
     {
         const cgltf_animation& animation = data->animations[animIndex];
@@ -1542,8 +1494,6 @@ std::vector<std::string_view> GltfMeshImporter::SourceExtensions() const
     return { ".glb", ".gltf" };
 }
 
-// Bump whenever this importer's output changes for the same source bytes.
-// Every artifact it cooked is then stale and recooks on the next pass.
 std::uint64_t GltfMeshImporter::CookIdentity() const
 {
     return CookFingerprint("gltf_mesh", kGltfMeshCookVersion).Value();
@@ -1556,9 +1506,6 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
     if (!ImportGltfScene(input.Bytes, scene, &error))
         return ImportResult{ .Error = "gltf import: " + error };
 
-    // Clip events come from the sidecar, by the name the clip's artifact
-    // takes. One naming a clip the source does not export is an error: the
-    // clip was renamed or removed, and its events would otherwise vanish.
     MeshImportSettings settings;
     if (!ParseMeshImportSettings(input.MetaBytes, settings, &error))
         return ImportResult{ .Error = "gltf import: " + std::string(input.SourceRelPath) + ".meta: " + error };
@@ -1598,15 +1545,12 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
     const std::string virtualPrefix = "asset://" + source;
     const std::string fileBase = ".cooked/" + source;
 
-    // A source that is one static mesh keeps the source's virtual path;
-    // everything else takes a '#'-suffixed artifact name ('#' can't appear in
-    // scanned paths, so cooked names never collide with real files).
+    // '#' cannot appear in scanned paths, so a fragment-named artifact never
+    // collides with a real file.
     const bool singleStaticMesh = scene.StaticMeshes.size() == 1 && scene.Skeletons.empty();
 
-    // Artifact names are the author's names, sanitized, with an index for an
-    // unnamed element. Two elements landing on one name is an error rather
-    // than a suffix by discovery order, so an artifact's name never depends
-    // on what else the source contains.
+    // A name claimed twice fails the import rather than taking a suffix, so a
+    // name never depends on discovery order.
     std::unordered_map<std::string, std::string> claimedNames;
     const auto claimName = [&claimedNames](std::string name, const std::string& origin,
                                            std::string& outError) -> std::optional<std::string> {
@@ -1650,10 +1594,8 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
     }
 
     // -- Meshes --
-    // A skeleton's model emits a `.skmesh` (AssetType::SkinnedMesh)
-    // referencing the skeleton; a static mesh emits a `.smesh`
-    // (AssetType::StaticMesh). The kind is path-level: the extension and
-    // asset type distinguish them without reading the payload.
+    // Skinned models become .skmesh and static meshes .smesh: the extension tells
+    // them apart without reading the payload.
     const auto emit = [&](std::string_view fragment, std::string_view extension, AssetType type,
                           std::span<const std::byte> bytes) -> bool {
         CookedArtifact artifact;

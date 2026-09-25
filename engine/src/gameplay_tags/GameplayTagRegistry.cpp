@@ -168,8 +168,8 @@ std::optional<GameplayTagId> GameplayTagRegistry::EnsureSegmentPath(std::string_
             .Children = {},
         });
         IdsByName.emplace(Tags.back().Name, current);
-        const auto [key, fresh] = IdsByWireKey.emplace(WireKeyOf(Tags.back().Name), current);
-        if (!fresh)
+        const auto [key, inserted] = IdsByWireKey.emplace(WireKeyOf(Tags.back().Name), current);
+        if (!inserted)
             key->second = GameplayTagId{};
 
         if (parent.IsValid())

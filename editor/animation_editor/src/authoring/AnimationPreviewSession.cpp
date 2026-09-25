@@ -29,11 +29,9 @@
 namespace
 {
     constexpr int kMaxTicksPerAdvance = 8;
-    // One entity crossing more marks than this on one tick is refused on the
-    // record, as the runtime refuses past its queue capacity.
+    // Per entity per tick; crossings past it are refused, as at runtime.
     constexpr std::size_t kPreviewEventCapacity = 256;
 
-    // A verb argument as a reader would write it.
     std::string ValueText(const AuthoredValue& value, const GameplayTagRegistry* tags)
     {
         const auto list = [&](std::string_view open, std::string_view close) {
@@ -128,8 +126,7 @@ namespace
                                                                : value.Number;
     }
 
-    // Encodes a scenario value as a slot or parameter of `kind` holds it. Null
-    // when the value cannot be one: a name for a number, a tag nobody declared.
+    // Null when the value cannot be one of `kind`, such as an undeclared tag.
     std::optional<std::uint32_t> Encode(const AnimationScenarioValue& value, AnimFactKind kind,
                                         const GameplayTagRegistry* tags)
     {
@@ -207,15 +204,14 @@ AnimationPreviewSession::~AnimationPreviewSession() = default;
 bool AnimationPreviewSession::Open(AnimationScenario scenario)
 {
     Working = std::move(scenario);
-    SavedForm = JsonStringify(WriteAnimationScenario(Working));
+    SavedScenarioText = JsonStringify(WriteAnimationScenario(Working));
     Restart();
     return Bound != nullptr;
 }
 
 void AnimationPreviewSession::DropWorld()
 {
-    // Unbound, then undispatched, then gone: the tokens reach back into the
-    // dispatcher, and the dispatcher into the World's catalog.
+    // Tokens reference the dispatcher, and the dispatcher the World's catalog.
     RecorderTokens.clear();
     Recorders.clear();
     Dispatcher.reset();
@@ -236,7 +232,7 @@ void AnimationPreviewSession::Close()
     Slots.clear();
     Participants.clear();
     Working = AnimationScenario{};
-    SavedForm.clear();
+    SavedScenarioText.clear();
     Playing = false;
 }
 
@@ -247,12 +243,12 @@ double AnimationPreviewSession::TickSeconds() const
 
 bool AnimationPreviewSession::ScenarioModified() const
 {
-    return JsonStringify(WriteAnimationScenario(Working)) != SavedForm;
+    return JsonStringify(WriteAnimationScenario(Working)) != SavedScenarioText;
 }
 
 void AnimationPreviewSession::MarkScenarioSaved()
 {
-    SavedForm = JsonStringify(WriteAnimationScenario(Working));
+    SavedScenarioText = JsonStringify(WriteAnimationScenario(Working));
 }
 
 void AnimationPreviewSession::Problem(std::string code, std::string field, std::string message)
@@ -297,20 +293,15 @@ void AnimationPreviewSession::BuildWorld()
     SubjectEntity = EntityId{};
     LogWritten = 0;
 
-    // The same vocabulary and components a runtime World has for animation,
-    // then the project's names on top.
     InstallAbilityKitVocabulary(*Preview);
     {
         ComponentRegistrar registrar(*Preview);
         RegisterAbilityKitComponents(registrar);
         RegisterAnimationComponents(registrar);
     }
-    // So a preview can stand for either end of a session.
     Preview->RegisterComponent<NetReplicated>();
     if (Working.Movement.has_value())
     {
-        // What a moving character is made of: the engine's components and the
-        // movement vocabulary, before any entity exists.
         ComponentRegistrar registrar(*Preview);
         RegisterEngineComponents(registrar);
         RegisterMovement(*Preview);
@@ -333,8 +324,7 @@ void AnimationPreviewSession::BuildWorld()
         Movers = std::make_unique<CharacterMoverPool>(*Physics);
     }
     InstallAnimationVocabulary(*Preview);
-    // The verbs content may name: the engine's, then the project's, declared
-    // in the order a runtime World declares them.
+    // Engine verbs before the project's, as a runtime World declares them.
     VerbRegistry& verbs = InstallVerbRegistry(*Preview);
     (void)DeclareEngineVerbs(verbs);
     if (Vocabulary)
@@ -344,7 +334,7 @@ void AnimationPreviewSession::BuildWorld()
     verbs.ClearInstallationErrors();
     Preview->SetResource(SimulationAuthority{ Working.Role == AnimationPreviewRole::Authority });
 
-    // Recorders are the only implementations the preview has.
+    // Recorders are the only verb implementations the preview has.
     Dispatcher = std::make_unique<VerbDispatcher>(verbs);
     for (std::size_t i = 0; i < Working.Recorders.size(); ++i)
     {
@@ -367,8 +357,7 @@ void AnimationPreviewSession::BuildWorld()
     }
     Preview->SetResource(AnimRigBindings{ &Data, Clips, Skeletons });
 
-    // Participants first, in scenario order, so their local entities are the
-    // same on every run of the same scenario.
+    // Created first, in scenario order, so their entities match on every run.
     for (const std::string& name : Working.Participants)
         Participants.emplace_back(name, Preview->CreateEntity());
 
@@ -382,8 +371,6 @@ void AnimationPreviewSession::BuildWorld()
         return;
     }
 
-    // Every gathered slot reads the scenario's input for it; derived facts
-    // come from the production derivations.
     AnimFactProviders& providers = Preview->GetResource<AnimFactProviders>();
     for (const AnimBoundFactSlot& slot : bound->Slots)
     {
@@ -462,8 +449,7 @@ void AnimationPreviewSession::Advance(double wallSeconds)
     if (!Playing || Bound == nullptr)
         return;
     PendingTicks += wallSeconds * PlaybackSpeed * static_cast<double>(Working.TickRate);
-    // A long frame schedules a bounded number of ticks and drops the rest,
-    // rather than spiralling to catch up with a stall.
+    // Drop ticks past the cap rather than spiral to catch up with a stall.
     PendingTicks = std::min(PendingTicks, static_cast<double>(kMaxTicksPerAdvance));
     while (PendingTicks >= 1.0)
     {
@@ -588,8 +574,9 @@ AnimationPreviewMovementRecord AnimationPreviewSession::StepMovement(AnimTick ti
     const Vec3d forward = after.Rotation.RotateVector(Vec3d(0.0f, 0.0f, -1.0f));
     record.Yaw = std::atan2(-forward.X, -forward.Z);
     record.Achieved = Vec3d(after.Position.X - before.X, 0.0f, after.Position.Z - before.Z);
-    // A millimetre of slack: the mover's skin and float noise are not walls.
-    record.Blocked = record.Carried && (record.Requested - record.Achieved).Magnitude() > 0.001f;
+    // Metres; absorbs the mover's skin width and float noise.
+    constexpr float kBlockedTolerance = 0.001f;
+    record.Blocked = record.Carried && (record.Requested - record.Achieved).Magnitude() > kBlockedTolerance;
     return record;
 }
 
@@ -778,8 +765,7 @@ AnimationPreviewActionOutcome AnimationPreviewSession::Apply(const AnimationScen
 
     if (action.Kind == AnimationScenarioActionKind::CancelRequest)
     {
-        // The source's live request for the intent: a stable reference that
-        // survives edits which renumber requests.
+        // Found by source and intent, which survive edits that renumber requests.
         const AnimRequestSet* set = Requests();
         const AnimRequest* target = nullptr;
         for (const AnimRequest& request : set->Records)
@@ -853,8 +839,7 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
     const DataAssetHandle rig = Preview->TryGet<AnimRig>(SubjectEntity)->Rig;
     Bound = Preview->GetResource<AnimRigBindings>().Resolve(rig, *Preview);
 
-    // Selection and resolution through the same functions the systems run,
-    // keeping the verdicts the systems throw away.
+    // Calls the systems' own functions so the rule verdicts can be kept.
     std::vector<std::vector<AnimRuleVerdict>> verdicts;
     if (Bound != nullptr && Bound->Valid)
     {
@@ -868,9 +853,6 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
         {
             ResolveAnimEntity(*Preview, SubjectEntity, *Bound, Facts(), selection, *content, tick, TickSeconds(),
                               log);
-            // The production event pass: crossings collected, then offered
-            // through the preview's dispatcher, whose only implementations
-            // are recorders.
             PendingEvents.clear();
             const AnimFlowState* flows = static_cast<const World&>(*Preview).TryGet<AnimFlowState>(SubjectEntity);
             CollectAnimEvents(SubjectEntity, rig, *Bound, selection, Requests(), flows, *content, tick, TickSeconds(),
@@ -881,13 +863,11 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
             DrainAnimEvents(*Preview, PendingEvents, Dispatcher.get());
             InvocationSink = nullptr;
         }
-        // Movement, where the scenario moves the character: after what plays
-        // is decided, so root motion reads this tick's content, and before
-        // posing, so the pose is of where the character ended up.
+        // After resolution so root motion reads this tick's content, and
+        // before posing so the pose is where the character ended up.
         if (Movers != nullptr)
             record.Movement = StepMovement(tick);
-        // The production pose pass, after everything that decides what plays.
-        Poser.Pose(*Preview, tick, TickSeconds());
+        PosePass.Pose(*Preview, tick, TickSeconds());
         if (const AnimPosePool::Slot* pose = SubjectPose(); pose != nullptr && pose->HasCurrent)
             record.Pose = pose->Current;
         for (std::size_t l = 0; l < Bound->Layers.size() && l < kAnimMaxLayers; ++l)

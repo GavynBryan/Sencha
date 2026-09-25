@@ -48,8 +48,8 @@ struct AnimationJointTrack
     std::vector<float> Values;
 };
 
-// Where an event may be produced. Neither is an authority claim: a mutating
-// verb still checks IsSimulationAuthority and validates its instigator.
+// Where an event may be produced. Neither scope is an authority claim: a
+// mutating verb still checks IsSimulationAuthority and its instigator.
 enum class AnimEventScope : uint8_t
 {
     // On whichever machine presents the pose.
@@ -60,42 +60,32 @@ enum class AnimEventScope : uint8_t
 
 [[nodiscard]] std::string_view AnimEventScopeName(AnimEventScope scope);
 
-// The content budget for one event's inputs. Anything larger belongs in
-// gameplay state, a fact, or a constant on the binding.
+// Anything larger belongs in gameplay state, a fact, or a binding constant.
 inline constexpr std::size_t kAnimEventMaxInputs = 4;
 inline constexpr std::size_t kAnimClipMaxEvents = 256;
 
-// A timeline mark that produces an invocation through an authored binding.
-// The clip names the binding by its key and supplies only the binding's
-// declared inputs; the verb, its constants and its target are the binding's.
-// Nothing here is a verb id, a tag id or a callback, so one clip means the
-// same thing in every World that binds it.
+// A timeline mark invoking an authored binding by key. It holds no verb id, tag
+// id or callback, so one clip means the same thing in every World that binds it.
 struct AnimationClipEvent
 {
-    // Stable per clip and never reused: what selection, undo and the decision
-    // log name an event by, whatever its time or position.
+    // Stable per clip and never reused, whatever the event's time or position.
     uint32_t Key = 0;
     // Diagnostics and display only.
     std::string Name;
     // Normalized clip time, 0..1.
     float Time = 0.0f;
-    // The authored binding key, resolved per World through the rig's bindings.
+    // Resolved per World through the rig's bindings.
     std::string Binding;
     AnimEventScope Scope = AnimEventScope::Cosmetic;
-    // Cosmetic only: the layer weight below which the event is not produced.
-    // Absent means the playing behavior's threshold applies.
+    // Cosmetic only; absent uses the playing behavior's threshold.
     std::optional<float> MinWeight;
-    // One value per binding input, by the input's name. Only constants and
-    // tags: asset and entity references are properties of the binding.
+    // By input name. Constants and tags only: asset and entity references belong
+    // to the binding.
     std::vector<VerbBindingArgument> Inputs;
 };
 
-// How far a clip's root carries the character across the ground, extracted
-// at cook from the root joint so the movement pipeline can apply it and the
-// pose does not: planar translation (x, z) and yaw about +Y, in the
-// skeleton's model space and relative to the clip's start. Yaw is unwrapped,
-// so a clip that turns past half a revolution keeps counting. Keys share
-// their times; values between keys are linear.
+// Root travel extracted at cook: planar x, z and unwrapped yaw about +Y, in the
+// skeleton's model space relative to the clip's start. Linear between keys.
 struct AnimationRootCurve
 {
     std::vector<float> TimesSeconds;
@@ -122,17 +112,11 @@ struct AnimationClipData
     std::optional<AnimationRootCurve> Root;
 };
 
-// The invariants one event must meet, shared by the clip validator and the
-// cook that parses authored events. Errors travel in `error`.
+// Shared by the clip validator and the cook that parses authored events.
 [[nodiscard]] bool ValidateAnimationClipEvent(const AnimationClipEvent& event, std::string* error = nullptr);
 
-// Format invariants (the runtime never fixes data): at least one track,
-// a root curve (when present) with at least one key, strictly ascending
-// times within the duration and finite values,
-// strictly ascending finite times, value counts matching key counts, unit
-// rotation keys, duration covering the last key, and events that each meet
-// ValidateAnimationClipEvent, carry distinct keys and are in order. Joint
-// indices are bounded by kMaxSkeletonJoints here and by the actual skeleton at
-// commit.
+// Format invariants the runtime never repairs: ascending finite key times, matching
+// value counts, unit rotations, a duration covering every key (root curve too) and
+// valid events with distinct keys. The real skeleton bounds joints at commit.
 [[nodiscard]] bool ValidateAnimationClipData(const AnimationClipData& clip,
                                              std::string* error = nullptr);

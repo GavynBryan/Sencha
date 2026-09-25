@@ -1,7 +1,6 @@
-// The pose pass: a change to what a layer plays is absorbed by its policy --
-// snapped, crossfaded, or inertialized from what was shown -- inside the
-// layer, and the layers compose into the entity's pose, the same with any
-// number of workers.
+// A layer absorbs a change in what it plays by its blend policy (snap, crossfade
+// or inertialization from what was shown), and layers compose into the entity's
+// pose identically for any worker count.
 
 #include "AnimRigFixture.h"
 
@@ -68,14 +67,14 @@ namespace
 {
     // Two joints; idle holds both at x = 0, walk holds joint 0 at x = 4, and
     // wave holds joint 1 at z = 3. The upper layer is masked to joint 1.
-    struct Posed : AnimRigFixture
+    struct PoseFixture : AnimRigFixture
     {
         DataAssetHandle Rig;
         EntityId Entity;
         std::unique_ptr<JobSystem> Workers;
         std::unique_ptr<AnimPoseSystem> Poser;
 
-        explicit Posed(std::string_view walkBlend, std::uint32_t workers = 0, std::string_view overrides = {})
+        explicit PoseFixture(std::string_view walkBlend, std::uint32_t workers = 0, std::string_view overrides = {})
         {
             for (const char* tag : { "Anim.Idle", "Anim.Walk", "Anim.Wave", "Anim.Rest", "anim.intent.wave",
                                      "anim.layer.upper" })
@@ -175,7 +174,7 @@ namespace
 
 TEST(AnimPose, ARiggedEntityIsPosedIntoItsSlotAndReleasesItOnDestroy)
 {
-    Posed fx(R"({ "in": "snap" })");
+    PoseFixture fx(R"({ "in": "snap" })");
     fx.Step();
     EXPECT_EQ(fx.Poser->Posed(), 1u);
     EXPECT_EQ(fx.Pose(fx.Entity).Joints, 2u);
@@ -193,7 +192,7 @@ TEST(AnimPose, ARiggedEntityIsPosedIntoItsSlotAndReleasesItOnDestroy)
 
 TEST(AnimPose, ASnapTakesTheNewPoseAtOnce)
 {
-    Posed fx(R"({ "in": "snap" })");
+    PoseFixture fx(R"({ "in": "snap" })");
     fx.Step(5);
     fx.Motion(fx.Entity).Speed = 1.0f;
     fx.Step();
@@ -204,7 +203,7 @@ TEST(AnimPose, ASnapTakesTheNewPoseAtOnce)
 // decays into the new pose over the blend.
 TEST(AnimPose, AnInertializedChangeDecaysFromWhatWasShown)
 {
-    Posed fx(R"({ "in": "inertialize", "in_ms": 100 })");
+    PoseFixture fx(R"({ "in": "inertialize", "in_ms": 100 })");
     fx.Step(5);
     fx.Motion(fx.Entity).Speed = 1.0f;
     fx.Step();
@@ -234,7 +233,7 @@ TEST(AnimPose, AnInertializedChangeDecaysFromWhatWasShown)
 // the pose never jumps.
 TEST(AnimPose, StackedChangesFoldIntoOneOffset)
 {
-    Posed fx(R"({ "in": "inertialize", "in_ms": 200 })");
+    PoseFixture fx(R"({ "in": "inertialize", "in_ms": 200 })");
     fx.Step(5);
     fx.Motion(fx.Entity).Speed = 1.0f;
     fx.Step(4);
@@ -254,7 +253,7 @@ TEST(AnimPose, StackedChangesFoldIntoOneOffset)
 // Crossfaded, both poses are alive: the incoming share rises over the blend.
 TEST(AnimPose, ACrossfadeBlendsBothPlaybacks)
 {
-    Posed fx(R"({ "in": "crossfade", "in_ms": 100 })");
+    PoseFixture fx(R"({ "in": "crossfade", "in_ms": 100 })");
     fx.Step(5);
     fx.Motion(fx.Entity).Speed = 1.0f;
     fx.Step();
@@ -271,7 +270,7 @@ TEST(AnimPose, ACrossfadeBlendsBothPlaybacks)
 
 TEST(AnimPose, APairwiseOverrideChoosesTheBlendAndSaysSo)
 {
-    Posed fx(R"({ "in": "inertialize", "in_ms": 500 })", 0, R"({ "overrides": [
+    PoseFixture fx(R"({ "in": "inertialize", "in_ms": 500 })", 0, R"({ "overrides": [
         { "from": "Anim.Idle", "to": "Anim.Walk", "blend": { "in": "snap" } } ] })");
     fx.Step(5);
     fx.Motion(fx.Entity).Speed = 1.0f;
@@ -287,7 +286,7 @@ TEST(AnimPose, APairwiseOverrideChoosesTheBlendAndSaysSo)
 // joint, which the upper layer covers, never moves.
 TEST(AnimPose, EachLayerBlendsInsideItself)
 {
-    Posed fx(R"({ "in": "inertialize", "in_ms": 100 })");
+    PoseFixture fx(R"({ "in": "inertialize", "in_ms": 100 })");
     ASSERT_TRUE(fx.Issue(fx.Entity, "anim.intent.wave").Accepted());
     fx.Step(5);
     EXPECT_FLOAT_EQ(fx.Pose(fx.Entity).Current[1].Position.Z, 3.0f);
@@ -306,7 +305,7 @@ TEST(AnimPose, TheParallelPassMatchesTheSerialOne)
 {
     constexpr std::string_view kBlend = R"({ "in": "inertialize", "in_ms": 150 })";
     const auto run = [&](std::uint32_t workers) {
-        Posed fx(kBlend, workers);
+        PoseFixture fx(kBlend, workers);
         std::vector<EntityId> crowd{ fx.Entity };
         for (int i = 0; i < 47; ++i)
             crowd.push_back(fx.Character(fx.Rig));

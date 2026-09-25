@@ -7,7 +7,6 @@
 #include <fstream>
 #include <utility>
 
-// One undo step: the clip's events before and after.
 struct AnimationClipEventsSnapshot final : ICommand
 {
     AnimationClipEventsDocument& Document;
@@ -28,8 +27,8 @@ struct AnimationClipEventsSnapshot final : ICommand
 
 namespace
 {
-    // The events as the sidecar writes them: what "unchanged" means.
-    std::string Text(const std::string& clip, const std::vector<AnimationClipEvent>& events)
+    // Two event lists are equal exactly when they serialize to the same sidecar text.
+    std::string SidecarText(const std::string& clip, const std::vector<AnimationClipEvent>& events)
     {
         MeshImportSettings settings;
         settings.Clips[clip].Events = events;
@@ -99,7 +98,7 @@ std::vector<std::string> AnimationClipEventsDocument::Problems() const
 
 bool AnimationClipEventsDocument::IsDirty() const
 {
-    return Text(Name, Working) != Text(Name, Saved);
+    return SidecarText(Name, Working) != SidecarText(Name, Saved);
 }
 
 void AnimationClipEventsDocument::Set(std::vector<AnimationClipEvent> events)
@@ -142,7 +141,7 @@ void AnimationClipEventsDocument::Replace(AnimationClipEvent event)
     if (it == after.end())
         return;
     *it = std::move(event);
-    if (Text(Name, after) != Text(Name, Working))
+    if (SidecarText(Name, after) != SidecarText(Name, Working))
         History.Execute(std::make_unique<AnimationClipEventsSnapshot>(*this, Working, std::move(after)));
 }
 
@@ -154,8 +153,7 @@ void AnimationClipEventsDocument::BeginEdit(std::uint32_t key)
     if (Find(key) == nullptr)
         return;
     Editing = OpenEdit{ key, Working };
-    // Undo while the edit is open cancels it before reaching anything
-    // committed, and a newer pending edit elsewhere cancels this one.
+    // Undo, or a newer pending edit elsewhere, cancels this edit first.
     History.OpenPendingEdit([this] { CancelEdit(); });
 }
 
@@ -177,7 +175,7 @@ void AnimationClipEventsDocument::CommitEdit()
     std::vector<AnimationClipEvent> baseline = std::move(Editing->Baseline);
     Editing.reset();
     History.ClosePendingEdit();
-    if (Text(Name, baseline) != Text(Name, Working))
+    if (SidecarText(Name, baseline) != SidecarText(Name, Working))
         History.Execute(std::make_unique<AnimationClipEventsSnapshot>(*this, std::move(baseline), Working));
 }
 
@@ -253,7 +251,7 @@ bool AnimationClipEventsDocument::AdoptFileVersion(std::string* error)
     Settings = std::move(current);
     Saved = events;
     SavedTime = WriteTime(Sidecar);
-    if (Text(Name, Working) != Text(Name, events))
+    if (SidecarText(Name, Working) != SidecarText(Name, events))
         History.Execute(std::make_unique<AnimationClipEventsSnapshot>(*this, Working, std::move(events)));
     return true;
 }

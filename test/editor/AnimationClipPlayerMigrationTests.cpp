@@ -1,4 +1,4 @@
-// Scenes that still name the retired clip player become one-layer rigs that
+// Scenes naming the AnimationClipPlayer component become one-layer rigs that
 // play the clip as the player did, and the scenes carry the rigs instead.
 
 #include "authoring/AnimationClipPlayerMigration.h"

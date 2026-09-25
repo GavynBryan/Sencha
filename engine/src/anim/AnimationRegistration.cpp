@@ -228,9 +228,8 @@ void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging
     schedule.After<AnimSelectSystem, AnimFactGatherSystem>();
     schedule.After<AnimContentSystem, AnimSelectSystem>();
     schedule.After<AnimEventSystem, AnimContentSystem>();
-    // Root motion reads what content resolution just decided. Declared only
-    // when movement is already registered: a schedule with no characters has
-    // nothing to carry.
+    // Root motion reads what content resolution decided. Declared only when movement
+    // is registered, since a schedule with no characters has nothing to carry.
     if (schedule.Get<RootMotionSystem>() != nullptr)
         schedule.After<RootMotionSystem, AnimContentSystem>();
 

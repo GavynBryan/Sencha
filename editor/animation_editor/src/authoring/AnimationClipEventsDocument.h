@@ -12,26 +12,13 @@
 #include <string>
 #include <vector>
 
-//=============================================================================
-// AnimationClipEventsDocument
-//
-// One clip's events, edited where they are authored: the import sidecar of the
-// mesh source the clip is cooked from. A clip is rebuilt from its source on
-// every import, so the sidecar is the only place an event survives; the
-// document reads the whole sidecar, edits this clip's entry, and writes every
-// other clip's events back as it found them.
-//
-// Every committed change is one undo step. A live interaction -- dragging a
-// marker, typing into a field -- opens one transaction whose previews apply at
-// once and whose cancel restores the event exactly as it was, and the undo
-// stack's pending-edit scope makes undo during it cancel it first.
-//=============================================================================
+// One clip's events in its mesh source's import sidecar. Other clips' entries
+// in the sidecar are written back as read.
 class AnimationClipEventsDocument
 {
 public:
-    // The events of `clipPath` ("asset://<source>#anim:<clip>") from the
-    // sidecar at `sidecarFile`. A missing sidecar opens empty; one that does
-    // not parse opens nothing, because saving over it would lose what it held.
+    // `clipPath` is "asset://<source>#anim:<clip>". A missing sidecar opens
+    // empty; an unparsable one opens nothing, since saving would destroy it.
     static std::unique_ptr<AnimationClipEventsDocument> Open(std::string clipPath, std::filesystem::path sidecarFile,
                                                              std::string* error = nullptr);
 
@@ -42,21 +29,17 @@ public:
     // In authored order.
     [[nodiscard]] const std::vector<AnimationClipEvent>& Events() const { return Working; }
     [[nodiscard]] const AnimationClipEvent* Find(std::uint32_t key) const;
-    // In the order the cook writes them: by time, then key.
+    // By time, then key, as the cook writes them.
     [[nodiscard]] std::vector<AnimationClipEvent> CookedOrder() const;
-    // One message per invalid event, naming it.
     [[nodiscard]] std::vector<std::string> Problems() const;
     [[nodiscard]] bool IsValid() const { return Problems().empty(); }
 
-    // Adds an event, giving it the next unused key when it has none, and
-    // returns its key.
+    // Assigns the next unused key when the event has none.
     std::uint32_t Add(AnimationClipEvent event);
     void Remove(std::uint32_t key);
-    // Replaces the event with the same key.
     void Replace(AnimationClipEvent event);
 
-    // A live edit of one event: previews apply immediately and commit or
-    // cancel as one step.
+    // Previews apply immediately; commit or cancel is one undo step.
     void BeginEdit(std::uint32_t key);
     void PreviewEdit(AnimationClipEvent event);
     void CommitEdit();
@@ -68,21 +51,17 @@ public:
     void Redo();
     [[nodiscard]] bool CanUndo() const { return History.CanUndo(); }
     [[nodiscard]] bool CanRedo() const { return History.CanRedo(); }
-    // Called each time an edit lands as a new undo step.
     void ObserveSteps(std::function<void()> observer) { History.SetExecuteObserver(std::move(observer)); }
 
-    // Moves on every change, previews included.
+    // Changes on every edit, previews included.
     [[nodiscard]] std::uint64_t Revision() const { return ContentRevision; }
     [[nodiscard]] bool IsDirty() const;
-    // The sidecar changed on disk since it was read or saved.
     [[nodiscard]] bool IsExternallyModified() const;
 
-    // Writes the sidecar: this clip's events and every other clip's as read.
-    // Refuses a file changed on disk since it was read, and an invalid event.
+    // Refuses an invalid event or a sidecar changed on disk since it was read.
     [[nodiscard]] bool Save(std::string* error = nullptr);
-    // A conflict with the file settled either way: this clip's events written
-    // over the sidecar as it is now, keeping what changed there for other
-    // clips; or this clip's events as the file has them, as one undo step.
+    // SaveOverFile re-reads the sidecar so other clips' changes there survive;
+    // AdoptFileVersion takes this clip's events from the file as one undo step.
     [[nodiscard]] bool SaveOverFile(std::string* error = nullptr);
     [[nodiscard]] bool AdoptFileVersion(std::string* error = nullptr);
 
@@ -97,7 +76,6 @@ private:
     std::string Clip;
     std::string Name;
     std::filesystem::path Sidecar;
-    // The whole sidecar as read, for the clips this document does not edit.
     MeshImportSettings Settings;
     std::vector<AnimationClipEvent> Working;
     std::vector<AnimationClipEvent> Saved;

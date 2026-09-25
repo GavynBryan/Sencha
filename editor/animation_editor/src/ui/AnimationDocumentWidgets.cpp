@@ -105,7 +105,6 @@ void CompareAndValue(JsonValue& test, bool tagValued, FieldEdit& edit)
         NumberMember("##value", test, "value", edit);
 }
 
-// One test, with controls for what it reads.
 void DrawTest(JsonValue& test, const PredicateVocabulary& vocabulary, FieldEdit& edit)
 {
     if (!test.IsObject())
@@ -158,7 +157,6 @@ void DrawTest(JsonValue& test, const PredicateVocabulary& vocabulary, FieldEdit&
     {
         ImGui::SameLine();
         ChoiceMember("##has", test, "has", kMatches, kMatches, edit, 60.0f);
-        // The query as comma-separated tags.
         std::string joined;
         if (const JsonValue* query = test.Find("query"); query != nullptr && query->IsArray())
             for (const JsonValue& tag : query->AsArray())

@@ -6,9 +6,7 @@
 #include <string_view>
 #include <vector>
 
-// One asset a rig depends on, as the dependency outline lists it. Data assets
-// report whether they are resident in the cache the preview binds against;
-// the skeleton is another asset kind, and its row names it without a status.
+// Non-data assets such as the skeleton report OtherKind, without a residency status.
 struct AnimationRigDependency
 {
     enum class State : unsigned char
@@ -25,7 +23,6 @@ struct AnimationRigDependency
     State Status = State::Resident;
 };
 
-// The rig, its skeleton, its fact schema chain in extends order, and its
-// request schema. A chain that loops is listed up to the repeat.
+// Fact schemas are listed in extends order; a looping chain stops at the repeat.
 [[nodiscard]] std::vector<AnimationRigDependency> DescribeAnimationRigDependencies(
     const DataAssetCache& data, std::string_view rigPath);

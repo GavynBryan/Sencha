@@ -51,8 +51,9 @@ All movement systems run in the `FixedLogic` phase; the motor runs in the
 | 5 | `AttributeResolveSystem`, then `MovementTuningResolutionSystem` | Resolves this tick's `ResolvedMovementTuning` from the profile layers against the current facts, mode, and tags. |
 | 6 | `FreeLocomotionSystem` (and any mode-owned locomotion system) | Writes `LocomotionOutput` for characters in its mode. |
 | 7 | `JumpExecutionSystem` (and any action producer) | Contributes to the override/impulse channels. |
-| 8 | `MotionCompositionSystem` | Composes the single `MotionRequest`; clears the channel mailboxes. |
-| 9 | `CharacterControllerSystem` → `CharacterMoverPool::Drive` (Physics phase) | Collide-and-slide against the request; writes back `LocalTransform`, achieved `KinematicState`, and the new `SupportState`. |
+| 8 | `RootMotionSystem` | Asks the World's `RootMotionSource` how each character is carried this tick; force-writes the planar channel and the turn. |
+| 9 | `MotionCompositionSystem` | Composes the single `MotionRequest`; clears the channel mailboxes. |
+| 10 | `CharacterControllerSystem` → `CharacterMoverPool::Drive` (Physics phase) | Collide-and-slide against the request; writes back `LocalTransform`, achieved `KinematicState`, and the new `SupportState`. |
 
 Facts therefore describe the *previous* step: locomotion at tick N reads the
 support and velocity the motor produced at tick N-1. That one-tick latency is
@@ -254,6 +255,26 @@ channel with a `Try` write (a jump loses to an action that already claimed the
 channel). The feel is still authored -- the template profile has a "Jump
 startup" layer conditioned on the jump request. An AI or a navigation bridge
 jumps the same way a player does: by setting the intent.
+
+### Root motion
+
+A `RootMotionSource` (`engine/include/movement/RootMotionSource.h`) is a
+World resource that another layer installs; animation installs its clip
+sampler. For one character and one tick it answers how that character is
+carried: a planar velocity, in world space and relative to the support, and a
+turn about the up axis. Movement asks and never knows what answered, and a
+World without a source has no root motion.
+
+The answer is a pure function of the tick, in the authority's numbering, so a
+replayed tick gets exactly the answer the live tick did. `StepCharacterTick`
+asks again rather than remembering, so a replay after a correction is carried
+by what the source says now.
+
+`RootMotionSystem` runs after the action producers and before composition. A
+sample force-writes the planar channel, because the character goes where it is
+carried whatever it was asked to walk, and sets the turn. The up channel stays
+the mode's, so gravity and jumping still hold. The motor applies the turn to
+the transform alone, since the mover's upright capsule has no heading.
 
 ## The character motor
 

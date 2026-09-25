@@ -13,9 +13,8 @@ void AnimRigBinder::BindEvents(const AnimRigData& rig)
     VerbBindingEnvironment environment = MakeVerbBindingEnvironment(WorldRef);
     environment.DataAssets = &Data;
 
-    // The rig's binding files, compiled into one set. A record that fails to
-    // compile is the binding file's problem: its events stay unresolved and
-    // the rig still animates.
+    // A record that fails to compile is the binding file's problem: its events stay
+    // unresolved and the rig still animates.
     for (std::size_t b = 0; b < rig.BindingSetPaths.size(); ++b)
     {
         const std::string& path = rig.BindingSetPaths[b];

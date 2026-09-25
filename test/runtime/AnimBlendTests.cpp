@@ -11,16 +11,16 @@
 
 namespace
 {
-    // The hero rig with blend override assets appended to it.
-    struct Blended : AnimRigFixture
+    // The character rig with blend override assets appended to it.
+    struct BlendFixture : AnimRigFixture
     {
         DataAssetHandle Rig;
         EntityId Entity;
 
-        Blended()
+        BlendFixture()
         {
-            AnimHero::RegisterTags(*this);
-            Rig = AnimHero::Load(*this);
+            AnimCharacterRig::RegisterTags(*this);
+            Rig = AnimCharacterRig::Load(*this);
             Entity = Character(Rig);
         }
 
@@ -29,11 +29,11 @@ namespace
             std::string list;
             for (std::string_view path : paths)
                 list += std::format("{}\"{}\"", list.empty() ? "" : ", ", path);
-            Reload("asset://anim/hero.rig.sdata", kAnimRigType, std::format(R"({{
-                "facts": "asset://anim/hero.facts.sdata", "requests": "asset://anim/hero.requests.sdata",
-                "behaviors": [ "asset://anim/hero.behaviors.sdata" ], "slot_maps": [ "asset://anim/hero.slots.sdata" ],
+            Reload("asset://anim/character.rig.sdata", kAnimRigType, std::format(R"({{
+                "facts": "asset://anim/character.facts.sdata", "requests": "asset://anim/character.requests.sdata",
+                "behaviors": [ "asset://anim/character.behaviors.sdata" ], "slot_maps": [ "asset://anim/character.slots.sdata" ],
                 "blend_overrides": [ {} ],
-                "layers": [ {{ "name": "anim.layer.base", "selector": "asset://anim/hero.selector.sdata",
+                "layers": [ {{ "name": "anim.layer.base", "selector": "asset://anim/character.selector.sdata",
                               "idle": "Anim.Locomotion.Idle" }} ] }})",
                                                                             list));
         }
@@ -47,7 +47,7 @@ namespace
 
 TEST(AnimBlendOverrides, AnOverrideReplacesTheDestinationsPolicyForItsPairOnly)
 {
-    Blended fx;
+    BlendFixture fx;
     (void)fx.Load("asset://anim/a.blend.sdata", kAnimBlendOverridesType, kSprintSnaps);
     fx.WithOverrides({ "asset://anim/a.blend.sdata" });
     const AnimBoundRig& rig = fx.Bound();
@@ -70,7 +70,7 @@ TEST(AnimBlendOverrides, AnOverrideReplacesTheDestinationsPolicyForItsPairOnly)
 
 TEST(AnimBlendOverrides, ALaterAssetReplacesAnEarlierOnesPair)
 {
-    Blended fx;
+    BlendFixture fx;
     (void)fx.Load("asset://anim/a.blend.sdata", kAnimBlendOverridesType, kSprintSnaps);
     (void)fx.Load("asset://anim/b.blend.sdata", kAnimBlendOverridesType, R"({ "overrides": [
         { "from": "Anim.Locomotion.Walk", "to": "Anim.Locomotion.Sprint",
@@ -87,7 +87,7 @@ TEST(AnimBlendOverrides, ALaterAssetReplacesAnEarlierOnesPair)
 // fails to bind, and raising the cap rebinds.
 TEST(AnimBlendOverrides, TheCapWarnsAtHalfAndFailsPastIt)
 {
-    Blended fx;
+    BlendFixture fx;
     fx.Entities.GetResource<AnimRigLimits>().BlendOverrideCap = 2;
     (void)fx.Load("asset://anim/c.blend.sdata", kAnimBlendOverridesType, R"({ "overrides": [
         { "from": "Anim.Locomotion.Walk", "to": "Anim.Locomotion.Sprint", "blend": { "in": "snap" } },
@@ -122,7 +122,7 @@ TEST(AnimBlendOverrides, AnOverrideNamesTwoDeclaredBehaviorsOnce)
                   .find("$.data.overrides[0].blend"),
               std::string::npos);
 
-    Blended bound;
+    BlendFixture bound;
     (void)bound.Tags().RegisterTag("Anim.Undeclared");
     (void)bound.Load("asset://anim/u.blend.sdata", kAnimBlendOverridesType, R"({ "overrides": [
         { "from": "Anim.Locomotion.Walk", "to": "Anim.Undeclared" } ] })");
@@ -136,9 +136,9 @@ TEST(AnimBlendOverrides, AnOverrideNamesTwoDeclaredBehaviorsOnce)
 // Phase is part of the policy, so an override can carry phase for its pair.
 TEST(AnimBlendOverrides, AnOverrideCanCarryPhaseForItsPair)
 {
-    Blended fx;
+    BlendFixture fx;
     (void)fx.Tags().RegisterTag("Anim.Sync.Locomotion");
-    fx.Reload("asset://anim/hero.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+    fx.Reload("asset://anim/character.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
         { "tag": "Anim.Locomotion.Idle", "kind": "cyclic" },
         { "tag": "Anim.Locomotion.Walk", "kind": "cyclic", "sync_group": "Anim.Sync.Locomotion" },
         { "tag": "Anim.Locomotion.Sprint", "kind": "cyclic", "sync_group": "Anim.Sync.Locomotion" },

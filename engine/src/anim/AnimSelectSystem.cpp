@@ -71,7 +71,7 @@ namespace
         switch (latched.Policy.Latch.InterruptibleBy)
         {
         case AnimInterruptKind::PriorityAtLeast:
-            return rule.Band >= latched.Policy.Latch.Priority;
+            return rule.PriorityBand >= latched.Policy.Latch.Priority;
         case AnimInterruptKind::Tags:
             return std::any_of(latched.InterruptTags.begin(), latched.InterruptTags.end(), [&](GameplayTagId tag) {
                 return rule.Behavior == tag || (registry != nullptr && registry->IsDescendantOf(rule.Behavior, tag));
@@ -185,9 +185,8 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig, const AnimBoundSel
                         live = true;
                         break;
                     }
-                    // Superseded in place: the source's newer request for the
-                    // same intent carries the latch on, which is how a combo
-                    // advances without the latch letting go.
+                    // The source's newer request for the same intent carries the latch on, which is
+                    // how a combo advances without the latch letting go.
                     if (request.Id.Source == state.LatchRequest.Source
                         && request.Id.Sequence > state.LatchRequest.Sequence
                         && request.Intent == rules[current].LatchIntent)
@@ -239,9 +238,8 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig, const AnimBoundSel
         if (next != current)
         {
             outcome.LatchInterrupted = true;
-            // Interrupted with a cancel-section policy, the latch keeps the
-            // layer while its flow plays the cancel section, and the rule that
-            // interrupted takes over when that completes.
+            // With a cancel-section policy the latch keeps the layer while its flow plays the
+            // cancel section; the interrupting rule takes over when that completes.
             if (latched->Policy.Latch.OnInterrupt == AnimInterruptAction::CancelSection)
             {
                 state.Latch = AnimLatchState::Cancelling;
@@ -256,7 +254,7 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig, const AnimBoundSel
         const AnimPredicateResult stay = EvaluateAnimProgram(rules[current].Stay, inputs.Predicate);
         const bool holding = now < state.HoldUntilTick;
         const auto heldOut = [&](std::size_t i) -> std::optional<AnimRuleVerdictKind> {
-            if (holding && rules[i].Band <= rules[current].Band)
+            if (holding && rules[i].PriorityBand <= rules[current].PriorityBand)
                 return AnimRuleVerdictKind::BlockedByHold;
             return std::nullopt;
         };
@@ -451,9 +449,8 @@ void SelectAnimEntity(const World& world, EntityId entity, const AnimBoundRig& r
     const GameplayTagContainer* tags =
         world.IsRegistered<GameplayTagContainer>() ? world.TryGet<GameplayTagContainer>(entity) : nullptr;
 
-    // A prediction the authority decided otherwise leaves latches resting on
-    // it. Selection starts again from the authority's word, as a joiner's
-    // does, and the content pass rebuilds from what it picks.
+    // Latches may rest on a prediction the authority refused, so selection starts
+    // again from the authority's word, as a joiner's does.
     if (content != nullptr && content->Reconstruct)
     {
         const std::uint64_t generation = state.BindingGeneration;
@@ -483,7 +480,7 @@ void SelectAnimEntity(const World& world, EntityId entity, const AnimBoundRig& r
                 {
                     AnimDecisionRecord record;
                     record.Tick = now;
-                    record.Cause = AnimDecisionCause::Anchored;
+                    record.Cause = AnimDecisionCause::IndexReset;
                     record.Reason = AnimChangeReason::Rebound;
                     record.Layer = static_cast<std::uint8_t>(l);
                     record.PreviousRule = layer.Winner;

@@ -159,8 +159,6 @@ public:
     }
 
 private:
-    // The character's path on the floor, the moves a collision cut short, and
-    // the walls, drawn over the image in the preview's world.
     void DrawPath(ImVec2 origin, ImVec2 size)
     {
         const AnimationPreviewSession& session = Workspace.Simulation;
@@ -209,7 +207,6 @@ private:
                 line(previous, at, IM_COL32(90, 210, 130, 255), 2.0f);
             if (record.Movement->Blocked)
             {
-                // Where it was carried from, and where it would have gone.
                 const Vec3d from = at - record.Movement->Achieved;
                 line(from, from + record.Movement->Requested, IM_COL32(230, 80, 70, 255), 2.0f);
                 if (const std::optional<ImVec2> mark = project(at))
@@ -220,9 +217,7 @@ private:
         }
     }
 
-    // Joint markers over the image, bones to their parents, the selected
-    // joint named. A click that did not orbit picks; a right-click picks and
-    // offers the mask steps.
+    // A click that did not orbit picks a joint; a right-click also offers mask steps.
     void DrawJoints(ImVec2 origin, ImVec2 size, bool hovered)
     {
         const SkeletonData& skeleton = Workspace.Session.Skeleton();

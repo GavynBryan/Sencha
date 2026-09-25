@@ -18,25 +18,6 @@ struct GameplayTagContainer;
 class GameplayTagRegistry;
 struct AnimBoundRig;
 
-//=============================================================================
-// AnimPredicate
-//
-// The one condition language of animation rules: selector enter and stay
-// predicates and slot-map row predicates. Authored as rows that must all pass;
-// a row is one test, optionally negated, or an any-of group of tests. That is
-// the whole grammar -- conjunctive normal form, complete for boolean
-// conditions -- and it is what the schema validates, what the editor builds,
-// and what "the first row that failed" explains.
-//
-// A test reads a fact, the entity's tag container, a request, or how long the
-// layer's behavior has been winning. Nothing else is nameable: there is no
-// operand for a rule, a behavior, a previous winner or content, so no rule can
-// become an edge to another.
-//
-// Rows compile per World into a closed stack program over slot indices and tag
-// ids, and evaluate over one entity's facts with no allocation.
-//=============================================================================
-
 enum class AnimTestKind : std::uint8_t
 {
     Fact,
@@ -71,7 +52,7 @@ struct AnimPredicateTest
     bool HasCompare = false;
     AnimCompareOp Compare = AnimCompareOp::Gt;
     double Value = 0.0;
-    // A tag operand, by name: a tag fact's comparand, a tag param's comparand.
+    // A tag fact's or tag param's comparand, by name.
     std::string Tag;
 
     AnimTagMatch Match = AnimTagMatch::Any;
@@ -96,7 +77,6 @@ struct AnimPredicateDecl
     std::vector<AnimPredicateRow> Rows;
 };
 
-// The schema of one predicate field, for the data subtypes that carry one.
 [[nodiscard]] DataFieldSchema AnimPredicateSchema(std::string key, std::string display,
                                                   std::string summary);
 
@@ -105,9 +85,8 @@ struct AnimPredicateDecl
 [[nodiscard]] bool ReadAnimPredicate(const JsonValue* rows, const std::string& path,
                                      AnimPredicateDecl& out, std::string& error);
 
-// Whether no entity can pass `decl` without a request: some row consists only
-// of tests that read a request and are not negated. What "reached only through
-// a request" means for the pairings a late joiner depends on.
+// True when some row has only non-negated request tests, so no entity passes
+// without a request.
 [[nodiscard]] bool AnimPredicateRequiresRequest(const AnimPredicateDecl& decl);
 
 enum class AnimOp : std::uint8_t
@@ -147,9 +126,8 @@ struct AnimProgram
     std::vector<std::vector<GameplayTagId>> Queries;
     // Intents the program reads, so a latch can tell which request armed it.
     std::vector<GameplayTagId> Intents;
-    // True when the result can change with time alone: a request age, how
-    // long the behavior has been winning. Such a program is evaluated every
-    // tick rather than only when its inputs change.
+    // The result can change with time alone (a request's age, time in behavior),
+    // so the program is evaluated every tick.
     bool ReadsTime = false;
     bool ReadsLocalFacts = false;
 
@@ -159,9 +137,8 @@ struct AnimProgram
 // The most tests one any-of row may group, which bounds a row's stack depth.
 inline constexpr std::size_t kAnimMaxAnyOf = 8;
 
-// Compiles against a bound rig's fact layout and request schema and the
-// World's vocabulary. Problems are appended to `diagnostics`, located at
-// `asset` and `path`; nothing is registered on the content's behalf.
+// Problems are appended to `diagnostics`, located at `asset` and `path`; nothing
+// is registered on the content's behalf.
 [[nodiscard]] AnimProgram CompileAnimPredicate(const AnimPredicateDecl& decl,
                                                const AnimBoundRig& rig,
                                                const GameplayTagRegistry* tags,
@@ -169,8 +146,7 @@ inline constexpr std::size_t kAnimMaxAnyOf = 8;
                                                const std::string& path,
                                                std::vector<AnimDiagnostic>& diagnostics);
 
-// `first`'s rows followed by `second`'s: both must pass. How a delegated rule
-// inherits its parent's condition.
+// Both must pass; this is how a delegated rule inherits its parent's condition.
 [[nodiscard]] AnimProgram ConcatAnimPrograms(const AnimProgram& first, const AnimProgram& second);
 
 struct AnimPredicateInputs
@@ -191,9 +167,7 @@ struct AnimPredicateResult
     bool Passed = true;
     // The first row that failed, or -1.
     int FailedRow = -1;
-    // The last comparison evaluated in the failed row: what was read and what
-    // it was compared against. NaN when the row had no comparison, or read
-    // something absent (a request that is not live).
+    // The failed row's last comparison. NaN when it had none or read something absent.
     double Observed = 0.0;
     double Expected = 0.0;
 };

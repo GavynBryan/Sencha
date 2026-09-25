@@ -45,7 +45,7 @@ namespace
         return clip;
     }
 
-    SkeletonData Walker(const Quat<float>& restTurn = {})
+    SkeletonData RootAndSpineSkeleton(const Quat<float>& restTurn = {})
     {
         SkeletonData skeleton;
         SkeletonJoint root;
@@ -143,7 +143,7 @@ TEST(AnimRootMotionExtraction, TravelAndTurnMoveFromThePoseToTheCurve)
 {
     AnimationClipData clip = TravellingClip();
     std::string error;
-    ASSERT_TRUE(ExtractAnimationRootMotion(clip, Walker(), &error)) << error;
+    ASSERT_TRUE(ExtractAnimationRootMotion(clip, RootAndSpineSkeleton(), &error)) << error;
     ASSERT_TRUE(clip.Root.has_value());
 
     const AnimRootPose end = SampleAnimRootCurve(*clip.Root, 1.0f);
@@ -177,7 +177,7 @@ TEST(AnimRootMotionExtraction, AFoldedRestPoseIsNotMistakenForYaw)
     const Quat<float> fold = Quat<float>::FromAxisAngle(Vec3d{ 1.0f, 0.0f, 0.0f }, kPi / 2.0f);
     AnimationClipData clip = TravellingClip(fold);
     std::string error;
-    ASSERT_TRUE(ExtractAnimationRootMotion(clip, Walker(fold), &error)) << error;
+    ASSERT_TRUE(ExtractAnimationRootMotion(clip, RootAndSpineSkeleton(fold), &error)) << error;
     EXPECT_NEAR(SampleAnimRootCurve(*clip.Root, 1.0f).Yaw, kPi / 2.0f, 1e-4f);
     const float* last = clip.Tracks[1].Values.data() + 4;
     EXPECT_NEAR(last[0], fold.X, 1e-4f) << "the fold stays in the pose";
@@ -187,7 +187,7 @@ TEST(AnimRootMotionExtraction, AFoldedRestPoseIsNotMistakenForYaw)
 TEST(AnimRootMotionExtraction, TwoRootsCannotSayWhichCarriesTheCharacter)
 {
     AnimationClipData clip = TravellingClip();
-    SkeletonData skeleton = Walker();
+    SkeletonData skeleton = RootAndSpineSkeleton();
     skeleton.Joints[1].ParentIndex = -1;
     std::string error;
     EXPECT_FALSE(ExtractAnimationRootMotion(clip, skeleton, &error));

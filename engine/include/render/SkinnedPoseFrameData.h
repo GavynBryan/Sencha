@@ -38,10 +38,8 @@ inline constexpr std::uint32_t kPaletteJointAlignment = 4;
 // Floats per palette matrix as the pose shader reads it.
 inline constexpr std::size_t kPaletteMatrixFloats = 16;
 
-// Writes palettes in the layout the pose shader declares: GLSL `mat4` in a
-// std430 buffer is column-major, and Mat4 is row-major, so each matrix is
-// transposed on the way out -- the same conversion every other pass makes at
-// its upload. `out` holds kPaletteMatrixFloats per palette matrix.
+// The pose shader's std430 `mat4` is column-major and Mat4 is row-major, so
+// each matrix is transposed. `out` holds kPaletteMatrixFloats per matrix.
 inline void CopyPalettesColumnMajor(std::span<const Mat4> palettes, std::span<float> out)
 {
     for (std::size_t m = 0; m < palettes.size() && (m + 1) * kPaletteMatrixFloats <= out.size(); ++m)

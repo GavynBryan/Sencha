@@ -38,8 +38,6 @@ const AnimationPreviewTickRecord* RecordAt(const AnimationPreviewSession& sessio
     return &history[static_cast<std::size_t>(tick - history.front().Tick)];
 }
 
-// Requests as one machine held them: what a snapshot said, and on the client
-// which records are its own guesses.
 void DrawRequests(const char* id, const AnimationPreviewSession& session, const std::vector<AnimRequest>& requests)
 {
     if (requests.empty())
@@ -94,8 +92,7 @@ public:
 
         const AnimationSessionLab* lab = Workspace.Lab.get();
         const bool ran = lab != nullptr && lab->IsOpen();
-        // Always first, whatever else is shown: which machine is which, and
-        // that nothing here is a real game's input.
+        // Always shown first: which machine is which, and that facts are synthetic.
         if (ran)
             ImGui::TextWrapped("%s", lab->Status().c_str());
         else
@@ -235,9 +232,6 @@ private:
                                "reconstruction cannot be trusted until both load the same content.");
     }
 
-    // One cell per tick: green where the client plays what the authority
-    // does, red where it does not, grey before it joined; a dark notch where
-    // a snapshot was lost. Click a tick to inspect it.
     void DrawTimeline(const AnimationSessionLab& lab)
     {
         const std::vector<AnimationLabTick>& ticks = lab.Ticks();

@@ -14,15 +14,8 @@
 #include <string_view>
 #include <vector>
 
-//=============================================================================
-// Animation document widgets
-//
-// The controls the animation panels edit working documents with: members of
-// a JSON object as text, numbers, choices and names, and the predicate
-// builder over one predicate's rows. Each reports what it did through Edit,
-// so a panel knows when to preview the working document and when to commit
-// it as one undo step.
-//=============================================================================
+// Widgets report through FieldEdit so a panel knows when to preview the working
+// document and when to commit one undo step.
 
 namespace AnimationWidgets
 {
@@ -31,8 +24,7 @@ namespace AnimationWidgets
 void SetMember(JsonValue& object, std::string_view key, JsonValue value);
 void EraseMember(JsonValue& object, std::string_view key);
 
-// A text member, committed when the field loses focus so one edit is one
-// undo step.
+// Commits when the field loses focus.
 void TextMember(const char* label, JsonValue& object, std::string_view key, FieldEdit& edit, float width = 160.0f);
 void NumberMember(const char* label, JsonValue& object, std::string_view key, FieldEdit& edit, float speed = 0.05f,
                   float width = 90.0f);
@@ -57,12 +49,10 @@ void ChoiceMember(const char* label, JsonValue& object, std::string_view key, co
     }
 }
 
-// A combo over names (fact slots, intents, params); free text when there is
-// nothing bound to pick from.
+// Free text when `names` is empty.
 void NameMember(const char* label, JsonValue& object, std::string_view key, const std::vector<std::string>& names,
                 FieldEdit& edit);
 
-// What the bound rig offers a predicate builder to pick from.
 struct PredicateVocabulary
 {
     const AnimBoundRig* Rig = nullptr;
@@ -100,7 +90,5 @@ struct PredicateVocabulary
     }
 };
 
-// One predicate's rows -- tests and any-of groups -- with add, group and
-// remove, choosing facts, intents and parameters from the bound rig.
 void DrawPredicate(JsonValue::Array& rows, const PredicateVocabulary& vocabulary, FieldEdit& edit);
 }

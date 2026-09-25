@@ -26,15 +26,10 @@
 //
 // The executable is "blender" on PATH, overridable via the SENCHA_BLENDER
 // environment variable.
-//
-// Its cook identity includes the toolchain: the Blender version and its glTF
-// exporter's version, because a different Blender exports different glTF from
-// the same .blend. The probe runs Blender once per importer, lazily, so a cook
-// that meets no .blend source never starts it.
 //=============================================================================
 
-// Describes the Blender toolchain the importer would run: "blender <version>
-// gltf <exporter version>", or a fixed "unavailable" when it cannot run.
+// "blender <version> gltf <exporter version>", or "unavailable". Part of the cook
+// identity, probed once and only when a .blend source is checked.
 using BlendToolchainProbe = std::function<std::string()>;
 [[nodiscard]] std::string ProbeBlendToolchain();
 

@@ -63,7 +63,6 @@ public:
     void Redo();
     [[nodiscard]] bool CanUndo() const { return History.CanUndo(); }
     [[nodiscard]] bool CanRedo() const { return History.CanRedo(); }
-    // Called each time an edit lands as a new undo step.
     void ObserveSteps(std::function<void()> observer) { History.SetExecuteObserver(std::move(observer)); }
 
     // Live edit transaction. A drag reports a change every frame; without a
@@ -90,8 +89,7 @@ public:
     [[nodiscard]] bool Reload(const DataAssetTypeRegistry& types,
                               const DataSchemaRegistry& schemas,
                               std::string* error = nullptr);
-    // The file as it is now becomes the working version, as one undo step, and
-    // what saving is measured against: a conflict settled in the file's favour.
+    // The file's contents become the working and saved version, as one undo step.
     [[nodiscard]] bool AdoptFileVersion(const DataAssetTypeRegistry& types,
                                         const DataSchemaRegistry& schemas,
                                         std::string* error = nullptr);

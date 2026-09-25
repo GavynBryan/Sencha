@@ -40,9 +40,8 @@ private:
 };
 }
 
-// The host owns the asset stack longer than the session and render features
-// borrowing it. The project's game module is loaded for its vocabulary hook
-// only; it is never started in this process.
+// Outlives the session and render features that borrow its asset stack. The
+// game module is loaded only for its vocabulary hook and never started.
 class AnimationEditorHost
 {
 public:
@@ -71,9 +70,6 @@ public:
         }
         else
             error = "Pass --project <path.senchaproj> to mount preview content.";
-        // The project's names reach each preview World through the module's
-        // vocabulary hook alone: the module is never started, so a verb it
-        // declares has no implementation here.
         std::function<void(World&)> vocabulary;
         if (GameModule.IsValid())
             vocabulary = [game = GameModule.Instance](World& world) { game->OnRegisterVocabulary(world); };
@@ -120,7 +116,7 @@ public:
         }
         Workspace.reset();
         Assets.reset();
-        // The preview Worlds that hold the module's declarations are gone.
+        // Only after the preview Worlds holding the module's declarations are destroyed.
         if (GameModule.IsValid())
             ModuleLoader.Unload(GameModule);
     }

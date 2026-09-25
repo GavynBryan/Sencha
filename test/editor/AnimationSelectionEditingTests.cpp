@@ -1,7 +1,6 @@
-// The selection editing loop without a GUI: selector edits as the rule table
-// applies them, predicates as every panel reads them, and a workspace where
-// editing a rule changes the running preview's winner and clip -- no game, and
-// nothing written to disk until saved.
+// Headless selection editing: selector edits as the rule table applies them,
+// predicates as panels read them, and rule edits that change the running
+// preview's winner and clip without writing to disk.
 
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationPredicateText.h"

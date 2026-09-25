@@ -19,10 +19,8 @@ struct DataAssetEntry
     uint32_t Generation = 0;
     uint32_t RefCount = 0;
     std::string PathKey;
-    // What the value's compile declared it depends on, held for as long as
-    // the value is: a fact schema the rig binds through, an action set a
-    // profile resolves against. Released when the entry is freed or reloaded
-    // with a new set.
+    // Leases on what the value's compile declared it depends on, held as long
+    // as the value is.
     std::vector<AssetLease> Dependencies;
     bool Alive = false;
 };

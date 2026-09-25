@@ -46,8 +46,7 @@ struct MovementIntent;
 
 // Advances one character by one fixed tick under the given intent. Components
 // are read and written in place, so consecutive calls compose exactly as
-// consecutive scheduled ticks do. `tick` is the tick being run, in the
-// authority's numbering: what a root motion source is asked about.
+// consecutive scheduled ticks do.
 //
 // Does nothing for a mode this does not implement, or for a character missing
 // the state a step is derived from. Callers that must react to either ask
@@ -56,7 +55,7 @@ void StepCharacterTick(World& world,
                        CharacterMoverPool* movers,
                        EntityId entity,
                        const MovementIntent& intent,
-                       std::uint64_t tick,
+                       std::uint64_t authorityTick,
                        float fixedDeltaSeconds,
                        Vec3d gravity,
                        Vec3d upAxis);

@@ -46,8 +46,6 @@ public:
     }
 
 private:
-    // Whether the character moves, and the walls it can meet. Each change is
-    // scenario state and replays the scenario to the current tick.
     void DrawMovement(AnimationPreviewSession& session)
     {
         std::optional<AnimationScenarioMovement> movement = session.Scenario().Movement;
@@ -88,7 +86,7 @@ private:
         }
         if (ImGui::SmallButton("Add a wall ahead"))
         {
-            // Two metres in front of where the character starts, facing it.
+            // Two metres ahead of the start position, facing the character.
             movement->Walls.push_back(AnimationScenarioWall{ .Center = Vec3d(0.0f, 1.0f, -2.0f),
                                                              .HalfExtents = Vec3d(2.0f, 1.0f, 0.25f) });
             changed = true;
@@ -100,7 +98,6 @@ private:
             session.SetMovement(std::move(movement));
     }
 
-    // The root curve of what the base layer plays at the shown tick.
     void DrawCurves(const AnimationPreviewSession& session)
     {
         const AnimBoundRig& rig = *session.Rig();
@@ -155,7 +152,6 @@ private:
                          FLT_MAX, FLT_MAX, ImVec2(width, 60.0f));
     }
 
-    // Where root motion carried the character against where it got.
     void DrawTravel(const AnimationPreviewSession& session)
     {
         if (!session.Scenario().Movement)

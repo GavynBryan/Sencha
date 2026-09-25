@@ -1,8 +1,6 @@
-// Animation across a session: an authority and a client, each with its own
-// World, its own tag numbering and its own tick count, joined only by the
-// snapshot bytes replication writes. Nothing in animation replicates except
-// the request set, so what these hold the client to is that it derives the
-// same sections, loops, times and tails from that alone -- whenever it joins.
+// An authority and a client with separate Worlds, tag numbering and tick counts,
+// joined only by snapshot bytes. Only the request set replicates, so the client
+// must derive the same sections, loops, times and tails from it alone.
 
 #include "AnimFlowFixture.h"
 
@@ -103,10 +101,9 @@ namespace
             Peer.Acknowledge(Ack);
         }
 
-        // The client hears of the prop for the first time, and gives its
-        // mirror what a prefab body would: the rig and something to gather
-        // facts from. Its clock is then aligned so that its next tick is the
-        // one the authority is about to run, `flight` ticks after the snapshot.
+        // Gives the client's mirror what a prefab body would (the rig and facts
+        // to gather), then aligns its clock so its next tick is the authority's
+        // next one, `flight` ticks after the snapshot.
         void Join(std::uint64_t flight = 0)
         {
             Replicate();
@@ -197,9 +194,9 @@ namespace
         }
     };
 
-    DataAssetHandle PumpContent(AnimRigFixture& fx, std::string_view onCancel)
+    DataAssetHandle ReloadRigContent(AnimRigFixture& fx, std::string_view onCancel)
     {
-        return LoadPumpReload(fx, PumpFlow(), onCancel);
+        return LoadReloadRig(fx, CountedLoopFlow(), onCancel);
     }
 }
 
@@ -207,7 +204,7 @@ namespace
 // for the source, its own ids for the intent and a tag parameter.
 TEST(AnimReplication, TheRequestArrivesInTheClientsOwnNames)
 {
-    AnimSession session([](AnimRigFixture& fx) { return PumpContent(fx, "cancel_section"); });
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     session.Authority.Tick();
     ASSERT_TRUE(session.Reload(3).Accepted());
     session.Authority.Tick();
@@ -229,7 +226,7 @@ TEST(AnimReplication, TheRequestArrivesInTheClientsOwnNames)
 // and stays with the authority through the loops, the close and the idle.
 TEST(AnimReplication, ALateJoinerReconstructsSectionsAndLoops)
 {
-    AnimSession session([](AnimRigFixture& fx) { return PumpContent(fx, "cancel_section"); });
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     session.Authority.Tick();
     ASSERT_TRUE(session.Reload(3).Accepted());
     session.Authority.Tick(49);
@@ -262,7 +259,7 @@ TEST(AnimReplication, ALateJoinerReconstructsSectionsAndLoops)
 // joins during that tail sees the close play, not an idle.
 TEST(AnimReplication, ALateJoinerDuringATailSeesItPlayOut)
 {
-    AnimSession session([](AnimRigFixture& fx) { return PumpContent(fx, "finish"); });
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "finish"); });
     session.Authority.Tick();
     const AnimRequestResult reload = session.Reload(2);
     ASSERT_TRUE(reload.Accepted());
@@ -333,11 +330,11 @@ namespace
               "arguments": { "Tag": { "input": "behavior" } } },
             { "key": "anim.reload.section", "verb": "test.announce", "inputs": [ "section" ],
               "arguments": { "Tag": { "input": "section" } } } ] })");
-        std::string flow = PumpFlow();
+        std::string flow = CountedLoopFlow();
         flow.insert(flow.rfind('}'), R"(, "on_section_entered": { "binding": "anim.reload.section" })");
-        return LoadPumpReload(fx, flow, "cancel_section", {},
-                              R"(, "on_entered": { "binding": "anim.reload.started", "scope": "gameplay" })",
-                              "asset://anim/r.bindings.sdata");
+        return LoadReloadRig(fx, flow, "cancel_section", {},
+                             R"(, "on_entered": { "binding": "anim.reload.started", "scope": "gameplay" })",
+                             "asset://anim/r.bindings.sdata");
     }
 }
 
@@ -383,7 +380,7 @@ TEST(AnimReplication, AClientNeverOriginatesGameplayEvents)
 // already showed stays in its history rather than being rewritten.
 TEST(AnimReplication, ACorrectionIsAbsorbedWithoutRewindingHistory)
 {
-    AnimSession session([](AnimRigFixture& fx) { return PumpContent(fx, "cancel_section"); });
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     session.Authority.Tick();
     session.Join();
     session.StepTo(9);
@@ -420,7 +417,7 @@ TEST(AnimReplication, ACorrectionIsAbsorbedWithoutRewindingHistory)
 // that section began, rather than playing it late to the end.
 TEST(AnimReplication, AClientHearingOfACancelLateFollowsTheAuthoritysAnchor)
 {
-    AnimSession session([](AnimRigFixture& fx) { return LoadPumpReload(fx, PumpFlow("immediate")); });
+    AnimSession session([](AnimRigFixture& fx) { return LoadReloadRig(fx, CountedLoopFlow("immediate")); });
     session.Authority.Tick();
     const AnimRequestResult reload = session.Reload(3);
     ASSERT_TRUE(reload.Accepted());
@@ -448,7 +445,7 @@ TEST(AnimReplication, AClientHearingOfACancelLateFollowsTheAuthoritysAnchor)
 // journal forgets it, and the client plays what the authority plays.
 TEST(AnimReplication, AConfirmedPredictionGivesWayToTheAuthoritysRequest)
 {
-    AnimSession session([](AnimRigFixture& fx) { return PumpContent(fx, "cancel_section"); });
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     session.Authority.Tick();
     session.Join();
     session.StepTo(9);
@@ -475,7 +472,7 @@ TEST(AnimReplication, AConfirmedPredictionGivesWayToTheAuthoritysRequest)
 // authority's set never changed and so was never sent again.
 TEST(AnimReplication, ARefusedPredictionIsTakenDown)
 {
-    AnimSession session([](AnimRigFixture& fx) { return PumpContent(fx, "cancel_section"); });
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     session.Authority.Tick();
     session.Join();
     session.StepTo(9);
@@ -501,7 +498,7 @@ TEST(AnimReplication, ARefusedPredictionIsTakenDown)
 // authority has not decided yet is put back on top of it.
 TEST(AnimReplication, AnUndecidedPredictionIsIssuedAgainOnTheAuthoritysSet)
 {
-    AnimSession session([](AnimRigFixture& fx) { return PumpContent(fx, "cancel_section"); });
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     const EntityId other = session.Authority.Entities.CreateEntity();
     session.Authority.Tick();
     session.Join();
@@ -538,7 +535,7 @@ TEST(AnimReplication, AnUndecidedPredictionIsIssuedAgainOnTheAuthoritysSet)
 // remembers nothing.
 TEST(AnimReplication, TheAuthoritysJournalOnlyIssues)
 {
-    FlowProp fx(PumpFlow());
+    ReloadFlowFixture fx(CountedLoopFlow());
     AnimRequestJournal journal;
     AnimRequestDesc desc;
     desc.Source = fx.Entity;
@@ -552,7 +549,7 @@ TEST(AnimReplication, TheAuthoritysJournalOnlyIssues)
 // differently agree on it; it moves with timing and not with looks.
 TEST(AnimReplication, TheTimingIdentityFollowsTimingNotLooks)
 {
-    AnimSession session([](AnimRigFixture& fx) { return PumpContent(fx, "cancel_section"); });
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     const std::uint64_t authority = session.Authority.Bound(session.AuthorityRig).TimingIdentity;
     EXPECT_NE(authority, 0u);
     EXPECT_EQ(session.Client.Bound(session.ClientRig).TimingIdentity, authority);
@@ -576,8 +573,8 @@ TEST(AnimReplication, TheTimingIdentityFollowsTimingNotLooks)
 // says so, rather than reconstructing something else in silence.
 TEST(AnimReplication, AClientWhoseTimingDiffersSaysSo)
 {
-    AnimSession session([](AnimRigFixture& fx) { return PumpContent(fx, "cancel_section"); },
-                        [](AnimRigFixture& fx) { return PumpContent(fx, "finish"); });
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); },
+                        [](AnimRigFixture& fx) { return ReloadRigContent(fx, "finish"); });
     ASSERT_NE(session.Client.Bound(session.ClientRig).TimingIdentity,
               session.Authority.Bound(session.AuthorityRig).TimingIdentity);
     session.Authority.Tick();

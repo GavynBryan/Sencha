@@ -27,8 +27,7 @@ namespace
 
 std::string AnimationRigBehaviorFor(const std::string& clipPath)
 {
-    // The name after '#anim:' for a clip cooked from a mesh source, else the
-    // file's stem.
+    // A clip cooked from a mesh source is named after '#anim:'.
     std::string name;
     if (const std::size_t anim = clipPath.rfind("#anim:"); anim != std::string::npos)
         name = clipPath.substr(anim + 6);
@@ -149,8 +148,7 @@ AnimationRigPlan PlanAnimationRig(const AnimationRigRecipe& recipe, const Animat
         }
     }
 
-    // What each clip is: the idle, locomotion (a selector tier's second
-    // clip), and actions.
+    // Clip 0 is the idle; for selector presets clip 1 is locomotion; the rest are actions.
     const bool selects = preset != AnimationRigPreset::Prop;
     const std::size_t firstAction = selects && behaviors.size() > 1 ? 2 : 1;
     const std::string folder = "animation/" + recipe.Name + "/";
@@ -250,8 +248,7 @@ AnimationRigPlan PlanAnimationRig(const AnimationRigRecipe& recipe, const Animat
                                             Object({ { "intents", JsonValue(std::move(intents)) } })) });
         rig.emplace_back("requests", JsonValue(asset + ".requests.sdata"));
     }
-    // The names the rig uses, declared as content so a game registers them
-    // when it loads the rig's folder; no module has to know them.
+    // Declared as content, so a game registers them without a module knowing them.
     plan.Documents.push_back({ folder + recipe.Name + ".tags.sdata",
                                Document("gameplay.tag_declarations", Object({ { "tags", Strings(behaviors) } })) });
     plan.Documents.push_back({ folder + recipe.Name + ".rig.sdata", Document("animation.rig", JsonValue(std::move(rig))) });

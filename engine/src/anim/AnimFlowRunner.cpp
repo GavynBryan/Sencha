@@ -27,7 +27,7 @@ namespace
 
     struct Runner
     {
-        const AnimFlowTick& Tick;
+        const AnimFlowAdvanceInput& Tick;
         AnimLayerContent& Layer;
         AnimLayerFlow& Flow;
         std::uint8_t LayerIndex = 0;
@@ -111,9 +111,8 @@ namespace
             if (Tick.Entered || Flow.Phase == AnimFlowPhase::None)
             {
                 Flow.Phase = AnimFlowPhase::None;
-                // A request that carries the authority's anchor says where the
-                // flow already is; otherwise it starts at the top, at the
-                // request's own start when there is one.
+                // An anchored request says where the flow already is; otherwise the flow starts at
+                // the top, at the request's own start when there is one.
                 const AnimRequest* request = Tick.Request;
                 if (request != nullptr && request->AnchorSection < flow.Sections.size()
                     && request->AnchorSectionStartTick <= Tick.Now)
@@ -125,11 +124,9 @@ namespace
                      && Tick.Request->AnchorSection < flow.Sections.size()
                      && Tick.Request->AnchorSectionStartTick <= Tick.Now)
             {
-                // The authority's word on where the flow is arrives a flight
-                // late. It corrects this machine when it names the section
-                // being played with another entry, or another section entered
-                // no earlier than this one was; an older stamp for another
-                // section is news this machine has already moved past.
+                // The authority's anchor arrives a flight late. It corrects this machine when it
+                // names the playing section with another entry, or another section entered no
+                // earlier; an older stamp for another section is already stale here.
                 const AnimRequest& anchor = *Tick.Request;
                 const bool sameSection = anchor.AnchorSection == Flow.Section;
                 const bool moved = sameSection ? anchor.AnchorSectionStartTick != Flow.SectionEnteredTick
@@ -206,7 +203,7 @@ namespace
     };
 }
 
-AnimFlowOutcome AdvanceAnimFlow(const AnimFlowTick& tick, AnimLayerContent& layer, AnimLayerFlow& flow,
+AnimFlowOutcome AdvanceAnimFlow(const AnimFlowAdvanceInput& tick, AnimLayerContent& layer, AnimLayerFlow& flow,
                                 std::uint8_t layerIndex, AnimDecisionLog* log)
 {
     Runner runner{ tick, layer, flow, layerIndex, log, {} };

@@ -35,15 +35,12 @@ public:
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source) override;
 
-    // The front door's commit: loads what the value declared it depends on
-    // (already resident on the async path) and has the entry hold it, as a
-    // clip holds its skeleton. A dependency that cannot load fails the commit,
-    // as it fails the async preload.
+    // Loads the value's declared dependencies and has the entry hold them; one
+    // that cannot load fails the commit.
     [[nodiscard]] DataAssetHandle CommitTyped(AssetStaging&& staged, AssetSystem& assets);
     [[nodiscard]] bool CommitReload(AssetStaging&& staged, AssetSystem& assets);
 
-    // For a value with no dependencies. Refuses one that declares any rather
-    // than committing it without them.
+    // Refuses a value that declares dependencies.
     [[nodiscard]] DataAssetHandle CommitTyped(AssetStaging&& staged);
     [[nodiscard]] bool CommitReload(AssetStaging&& staged);
 

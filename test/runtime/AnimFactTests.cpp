@@ -1,7 +1,5 @@
 // Fact schemas bind per World into one layout, derivations run as a closed
-// program over it, and gathering fills it from gameplay. These cover the
-// binding's diagnostics and invalidation, each derivation's timing, the
-// late-join horizon, and the gather pass.
+// program over it, and gathering fills it from gameplay.
 
 #include <gtest/gtest.h>
 

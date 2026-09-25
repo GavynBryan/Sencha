@@ -27,16 +27,14 @@ struct FieldEdit
     [[nodiscard]] static FieldEdit Instant() { return FieldEdit{ true, true }; }
 };
 
-// What a schema-generated form asks of the editor hosting it.
 class DataFormHost
 {
 public:
     virtual ~DataFormHost() = default;
 
-    // The data assets a reference of `subtype` may name; every one when empty.
+    // An empty `subtype` lists every data asset.
     [[nodiscard]] virtual std::vector<std::string> DataAssetPaths(std::string_view subtype) = 0;
     virtual void OpenDataAsset(std::string_view path) = 0;
-    // A field the author clicked, for a host that documents it.
     virtual void SelectField(const DataFieldSchema& field, std::string_view path) = 0;
     virtual void EditPreviewed(DataDocument& document) = 0;
     virtual void EditCommitted(DataDocument& document) = 0;

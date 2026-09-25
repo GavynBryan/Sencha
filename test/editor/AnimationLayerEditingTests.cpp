@@ -1,7 +1,6 @@
-// Layer and flow editing without a GUI: the mask steps the skeleton tree
-// applies, in the rig document's transaction, rebinding the running preview's
-// layers -- nothing written to disk until saved -- and the flow structure
-// edits, which cannot make control go backward.
+// Headless layer and flow editing: mask steps apply in the rig document's
+// transaction and rebind the running preview without writing to disk, and flow
+// structure edits cannot make control go backward.
 
 #include "authoring/AnimationFlowEdits.h"
 #include "authoring/AnimationPredicateEdits.h"

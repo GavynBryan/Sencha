@@ -235,9 +235,8 @@ AnimRequestResult IssueAnimRequest(World& world,
     if (set == nullptr)
         return { AnimRequestStatus::Rejected, {}, AnimRejectReason::Malformed };
 
-    // An intent the rig's request schema does not declare has no params to
-    // read and no rule written against it; refusing it here is what keeps a
-    // misspelt intent from being silently unclaimed forever.
+    // An undeclared intent has no params and no rule written against it; refusing it
+    // keeps a misspelt intent from going silently unclaimed.
     AnimRequestDesc declared = desc;
     if (const AnimRig* rig = Find<AnimRig>(world, animated))
     {

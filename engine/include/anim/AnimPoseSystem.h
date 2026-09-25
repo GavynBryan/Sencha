@@ -15,24 +15,12 @@ class StoragePartitionSet;
 class World;
 struct PostFixedContext;
 
-//=============================================================================
-// AnimPoseSystem
-//
-// Poses every rigged entity once per fixed tick, after movement has moved it,
-// in a World that presents a pose. A rig whose skeleton is loaded gets pose
-// state and a pool slot on its first pass; each pass then evaluates every such
-// entity into its slot.
-//
-// The pass has two halves. On the owner thread it assigns and shapes slots and
-// resolves each entity's binding, which is the only work that touches shared
-// state. Then it evaluates entities, each touching only its own components and
-// slot, across the job system -- or inline in entity order with no workers,
-// which is the reference every parallel pass must match.
-//=============================================================================
+// Runs after movement in a World that presents a pose. Slots are assigned on the
+// owner thread; evaluation then runs per entity across jobs, or inline in entity
+// order without workers, which is the reference the parallel path must match.
 class AnimPoseSystem
 {
 public:
-    // `jobs` may be null: every entity is then posed inline.
     explicit AnimPoseSystem(JobSystem* jobs = nullptr);
     ~AnimPoseSystem();
 
@@ -42,7 +30,6 @@ public:
     void PostFixed(PostFixedContext& ctx);
     void Pose(World& world, AnimTick now, double tickSeconds);
 
-    // Entities posed on the last pass.
     [[nodiscard]] std::size_t Posed() const { return Items.size(); }
 
 private:
@@ -51,8 +38,7 @@ private:
     struct Item
     {
         AnimPoseInput Input;
-        // Resolved to Input.Slot once every slot is assigned: assigning one
-        // can move the others.
+        // Resolved to Input.Slot after every slot is assigned, since assigning moves slots.
         std::uint32_t SlotHandle = 0;
     };
 

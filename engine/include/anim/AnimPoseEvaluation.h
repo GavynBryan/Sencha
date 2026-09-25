@@ -14,29 +14,6 @@
 
 class AnimationClipCache;
 
-//=============================================================================
-// Pose evaluation
-//
-// One posed entity, one tick: what each layer plays becomes a pose, a change to
-// what it plays is absorbed the way its destination's blend policy says, and
-// the layers compose into the entity's pose.
-//
-//   Snap         takes the new pose at once.
-//   Crossfade    keeps the outgoing playback posing beside the incoming one:
-//                the incoming weight rises over `in`, the outgoing falls over
-//                `out`, and the pose blends between them by their share.
-//   Inertialize  poses only the incoming content. On the change tick it takes
-//                each joint's offset from the incoming pose to what was being
-//                shown, and the offset's velocity from the tick before, and
-//                decays both to rest over `in` along a quintic. A change while
-//                one is decaying starts from what was shown, offset included,
-//                so stacked changes fold into one offset.
-//
-// Each layer blends inside itself before composition, so a change on one
-// layer never disturbs another. Everything here is a function of the content
-// state, the pose state and the tick, and touches only this entity's slot.
-//=============================================================================
-
 struct AnimPoseSources
 {
     const AnimBoundRig* Rig = nullptr;
@@ -57,12 +34,10 @@ struct AnimPoseScratch
     std::array<std::vector<Transform3f>, kAnimMaxLayers> References;
 };
 
-// The playback a layer's content describes on tick `now`.
 [[nodiscard]] AnimLayerPlayback AnimPlaybackOf(const AnimBoundRig& rig, const AnimLayerContent& layer, AnimTick now);
 
-// Poses `playback` at tick `at`: its clip at its time then, or its
-// blendspace's samples mixed at its phase then. Bind when it names nothing.
-// `reference` poses its first frame instead, what an additive layer adds from.
+// Poses `playback` at tick `at`, or the bind pose when it names nothing.
+// `reference` poses the first frame instead, which an additive layer adds from.
 void SampleAnimPlayback(const AnimPoseSources& sources, const AnimLayerPlayback& playback, AnimTick at,
                         double tickSeconds, bool reference, AnimPoseScratch& scratch, std::vector<Transform3f>& out);
 
@@ -71,7 +46,6 @@ void SampleAnimPlayback(const AnimPoseSources& sources, const AnimLayerPlayback&
 [[nodiscard]] AnimJointOffset AnimInertializeJoint(const Transform3f& shown, const Transform3f& shownBefore,
                                                    const Transform3f& target, float seconds, double tickSeconds);
 
-// Applies what remains of `offset` after `elapsed` seconds to `pose`.
 void AnimApplyJointOffset(const AnimJointOffset& offset, float elapsed, Transform3f& pose);
 
 // The largest translation any of `offsets` still carries `elapsed` seconds in.
@@ -84,12 +58,11 @@ struct AnimPoseInput
     const AnimSelectorState* Selection = nullptr;
     AnimPoseState* State = nullptr;
     AnimPosePool::Slot* Slot = nullptr;
-    // Null when the entity keeps no log.
     AnimDecisionLog* Log = nullptr;
     AnimTick Now = 0;
     double TickSeconds = 0.0;
 };
 
-// Poses one entity for tick `Now` into its slot: each layer's pose, then the
-// composed pose, the previous one kept for interpolation.
+// Writes each layer's pose and the composed pose into the slot, keeping the
+// previous composed pose for interpolation.
 void EvaluateAnimPose(const AnimPoseInput& input, AnimPoseScratch& scratch);

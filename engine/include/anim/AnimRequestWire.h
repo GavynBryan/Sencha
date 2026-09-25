@@ -7,23 +7,6 @@
 
 #include <cstdint>
 
-//=============================================================================
-// AnimRequestSet on the wire
-//
-// A request names an entity and gameplay tags, and both are this process's own
-// numbering, so the set travels as an image in the names every machine shares:
-// a NetEntityId for the source, a tag's wire key for the intent, the source
-// tag and any param the record marks as a tag. Ticks travel as they are,
-// because they are already the authority's, and so does the rig timing
-// identity, which is built from names.
-//
-// A record is two runs -- its ticks and its words -- so a change to one record
-// resends that record and the set's sequence and nothing else. A slot that is
-// empty is all zeros. A source this machine was never sent arrives as no
-// entity, and an intent this build does not register as no tag: the record
-// stays, still ordered and still retained, and matches no rule.
-//=============================================================================
-
 // Source, StartTick, CancelTick, TailUntilTick, AnchorSectionStartTick.
 struct AnimRequestWireTicks
 {

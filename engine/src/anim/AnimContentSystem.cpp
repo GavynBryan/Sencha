@@ -29,8 +29,7 @@ namespace
         return content < rig.Contents.size() ? rig.Contents[content].DurationSeconds : 0.0f;
     }
 
-    // The behavior's speed and start; a behavior the rig does not know plays
-    // as authored.
+    // A behavior the rig does not know plays as authored.
     const AnimBehaviorDecl& PlaybackOf(const AnimBoundRig& rig, GameplayTagId behavior)
     {
         static const AnimBehaviorDecl asAuthored;
@@ -38,8 +37,7 @@ namespace
         return bound != nullptr ? bound->Policy : asAuthored;
     }
 
-    // Time `elapsed` into content `duration` long: wrapped for cyclic content,
-    // either way round, and held at its ends otherwise.
+    // Wrapped either way round for cyclic content; held at its ends otherwise.
     double PlacedTime(double elapsed, double duration, bool cyclic)
     {
         if (!cyclic)
@@ -121,9 +119,8 @@ const AnimRequest* AnimLayerDrivingRequest(const AnimBoundRig& rig, std::size_t 
                     return &request;
             return nullptr;
         }
-        // A tail kept past the cancel tick says a flow is still playing the
-        // request out, which a machine that joined during it has to adopt to
-        // see what everyone else sees.
+        // A tail kept past the cancel tick means a flow is still playing the request out,
+        // which a machine that joined meanwhile adopts.
         const AnimRequest* tail = nullptr;
         for (const AnimRequest& request : requests->Records)
             if ((request.Layers & bit) != 0 && request.Occupied && request.IsCancelled()
@@ -179,8 +176,7 @@ namespace
         return nullptr;
     }
 
-    // Played: a layer's content is driven by it, or the rule a layer runs
-    // reads its intent.
+    // Driven by a layer's content, or read by the rule a layer runs.
     bool AnimRequestPlayed(const AnimBoundRig& rig, const AnimSelectorState* selection,
                            const AnimContentState& content, const AnimRequest& request)
     {
@@ -292,7 +288,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
                 lostPin = layer.Pinned;
                 layer.Pinned = false;
                 if (lostPin)
-                    Log(log, now, l, AnimDecisionCause::Anchored, AnimChangeReason::Rebound, layer);
+                    Log(log, now, l, AnimDecisionCause::IndexReset, AnimChangeReason::Rebound, layer);
             }
             else
             {
@@ -317,8 +313,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         const AnimTick instanceStart = driving != nullptr   ? std::min(driving->StartTick, now)
                                      : cutShort != nullptr ? std::min(cutShort->CancelTick, now)
                                                            : now;
-        // Where the outgoing content is now, in normalized time: a
-        // blendspace's phase, or a clip's time over its length.
+        // The outgoing content's normalized time: a blendspace's phase or clip time over length.
         const auto outgoingNormalized = [&](AnimBehaviorKind outgoingKind) {
             if (layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0)
                 return layer.Phase;
@@ -356,9 +351,8 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         }
         else if (behavior != layer.Behavior || lostPin)
         {
-            // Carried phase: cyclic content in one sync group continues at the
-            // normalized time the outgoing content had reached, so a walk that
-            // becomes a run keeps its footfalls.
+            // Cyclic content in one sync group continues at the outgoing normalized time, so a
+            // walk becoming a run keeps its footfalls.
             const AnimBoundBehavior* from = rig.FindBehavior(layer.Behavior);
             const AnimBoundBehavior* to = rig.FindBehavior(behavior);
             const bool carry = !lostPin && from != nullptr && to != nullptr
@@ -370,8 +364,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             startInstance(lostPin ? AnimChangeReason::Rebound : AnimChangeReason::BehaviorChanged);
             if (carry)
             {
-                // From this tick, not the request's start: the phase is what is
-                // carried, and it was reached now.
+                // From this tick, since the carried phase was reached now.
                 layer.StartTick = now;
                 layer.StartOffsetSeconds = normalized * DurationOf(rig, resolvedContent);
                 startNormalized = normalized;
@@ -397,16 +390,14 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         else if (layer.Pinned && driving != nullptr && driving->Id == layer.Request
                  && driving->StartTick != layer.RequestStartTick)
         {
-            // Nothing is rewound: what was shown stays shown, the instance
-            // starts again where the corrected request puts it, and the pose
-            // absorbs the jump like any other change.
+            // Nothing is rewound: the instance restarts where the corrected request puts it,
+            // and the pose absorbs the jump like any other change.
             startInstance(AnimChangeReason::RequestCorrected);
             entered = true;
         }
         else if (resolvedRow != layer.Row && !layer.Pinned)
         {
-            // Same behavior, a different row: cyclic and hold content takes
-            // it now, starting at the same normalized time.
+            // Cyclic and hold content takes a new row now, at the same normalized time.
             const float normalized = outgoingNormalized(kind);
             layer.Row = resolvedRow;
             layer.RowKey = row >= 0 ? rig.SlotRows[static_cast<std::size_t>(row)].Key : 0;
@@ -422,9 +413,8 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         {
             const AnimBoundBehavior* bound = rig.FindBehavior(layer.Behavior);
             const AnimBehaviorDecl* policy = bound != nullptr ? &bound->Policy : nullptr;
-            // Cancelling: a selector's latch says so; a request-keyed layer
-            // cancels when its request was cancelled and the behavior plays a
-            // cancel section for that.
+            // A selector's latch says so; a request-keyed layer cancels when its request was
+            // cancelled and the behavior plays a cancel section.
             const bool requestKeyed = rig.Layers[l].Selector < 0;
             const bool cancelling = requestKeyed
                 ? driving != nullptr && driving->IsCancelled() && policy != nullptr
@@ -433,7 +423,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
             const bool abortOnCancel = requestKeyed && policy != nullptr
                 && policy->Latch.OnRequestCancel == AnimRequestCancelAction::Abort;
 
-            AnimFlowTick tick;
+            AnimFlowAdvanceInput tick;
             tick.Rig = &rig;
             tick.Flow = &rig.Flows[static_cast<std::size_t>(flowIndex)];
             tick.Inputs = &inputs;
@@ -447,10 +437,8 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
                 AdvanceAnimFlow(tick, layer, flows->Layers[l], static_cast<std::uint8_t>(l), log);
             layer.ContentComplete = outcome.Complete;
 
-            // The one write outside the layer: the authority stamps where the
-            // flow is on its request, whenever that changes or a superseding
-            // request takes the flow over, and a cancelled request stays for
-            // as long as its flow plays it out.
+            // The authority stamps the flow's position on its request when it changes or a
+            // superseding request takes over, and keeps a cancelled request while its flow plays it out.
             const bool stamp = authority && (outcome.SectionChanged || adopted) && driving != nullptr;
             const bool keepTail = outcome.KeepTail && !abortOnCancel && driving != nullptr;
             if (stamp || keepTail)
@@ -477,9 +465,8 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         const int spaceIndex = layer.Content < rig.Contents.size() ? rig.Contents[layer.Content].Blendspace : -1;
         if (spaceIndex >= 0)
         {
-            // A mix advances its phase by the tick over the mix's length where
-            // the facts put it now, so its samples keep one phase however the
-            // weights move.
+            // Phase advances by the tick over the mix's current length, so the samples keep one
+            // phase however the weights move.
             const AnimBoundBlendspace& space = rig.Blendspaces[static_cast<std::size_t>(spaceIndex)];
             const AnimBlendspacePoint at = AnimBlendspaceCoordinates(space, facts, rig);
             std::array<float, kAnimBlendspaceMaxSamples> weights{};

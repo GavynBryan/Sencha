@@ -37,8 +37,7 @@
 
 namespace
 {
-    // A preview World's vocabulary: the game module's hook, then the names
-    // the project's content declares, read when the World is built.
+    // `names` is read when each World is built, not when this is called.
     std::function<void(World&)> WithContentTags(std::function<void(World&)> module,
                                                 const std::vector<std::string>* names)
     {
@@ -161,7 +160,7 @@ bool AnimationPreviewWorkspace::OpenAnimationDocument(const std::string& path)
                         "blendspace, blend overrides, bindings or tag declarations.";
         return false;
     }
-    Journalled(*document);
+    RecordJournalStep(*document);
     Documents.push_back(std::move(document));
     SelectDocument(Documents.size() - 1);
     DocumentError.clear();
@@ -192,14 +191,14 @@ private:
     bool Recorded = true;
 };
 
-void AnimationPreviewWorkspace::Journalled(DataDocument& document)
+void AnimationPreviewWorkspace::RecordJournalStep(DataDocument& document)
 {
     document.ObserveSteps([this, path = document.VirtualPath()] {
         Journal.Execute(std::make_unique<JournalStep>(*this, path, false));
     });
 }
 
-void AnimationPreviewWorkspace::Journalled(AnimationClipEventsDocument& document)
+void AnimationPreviewWorkspace::RecordJournalStep(AnimationClipEventsDocument& document)
 {
     document.ObserveSteps([this, path = document.ClipPath()] {
         Journal.Execute(std::make_unique<JournalStep>(*this, path, true));
@@ -272,7 +271,6 @@ std::vector<std::string> AnimationPreviewWorkspace::DataAssetPaths(std::string_v
     {
         if (record.Type != AssetType::Data)
             continue;
-        // A working document's subtype wins over the file's.
         const DataDocument* open = FindDocument(path);
         const std::string actual =
             open != nullptr ? open->Subtype() : PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record);
@@ -328,8 +326,7 @@ void AnimationPreviewWorkspace::RefreshContentTags()
     ContentTags.clear();
     ContentTagErrors.clear();
     CollectContentTags(Assets, ContentTags, ContentTagErrors);
-    // Working declarations count before they are saved; a name taken out of
-    // one stays declared until the file is saved.
+    // Unsaved declarations count; a name removed stays declared until saved.
     for (const auto& document : Documents)
     {
         const JsonValue* data = document->Subtype() == kGameplayTagDeclarationsType ? document->Data() : nullptr;
@@ -378,7 +375,6 @@ bool AnimationPreviewWorkspace::DeclareUndeclaredNames(std::string& error)
     relative = relative.substr(0, suffix) + ".tags.sdata";
     const std::string path = "asset://" + relative;
 
-    // Declaring is an edit in the declarations; the author stays where they were.
     const std::size_t active = ActiveDocument;
     DataDocument* document = FindDocument(path);
     if (document == nullptr)
@@ -410,7 +406,7 @@ void AnimationPreviewWorkspace::DocumentChanged(DataDocument& document)
     }
     std::string status;
     const std::string path = document.VirtualPath();
-    std::erase(NotYetPreviewed, path);
+    std::erase(PendingPreviewDocuments, path);
     bool applied = false;
     if (!document.IsSemanticallyValid())
         status = "The working version has errors; the preview keeps the last valid version.";
@@ -420,17 +416,17 @@ void AnimationPreviewWorkspace::DocumentChanged(DataDocument& document)
         applied = true;
     }
     else if (!Assets.DataAssets.Find(path).IsValid())
-        NotYetPreviewed.push_back(path);
+        PendingPreviewDocuments.push_back(path);
     PreviewStatus[path] = std::move(status);
     if (applied)
-        PreviewNotYetPreviewed();
+        ApplyPendingPreviewDocuments();
 }
 
-void AnimationPreviewWorkspace::PreviewNotYetPreviewed()
+void AnimationPreviewWorkspace::ApplyPendingPreviewDocuments()
 {
-    // An edit that just reached the preview may be what first loads one of
-    // these: a rig now naming a selector edited before it was referenced.
-    const std::vector<std::string> waiting = NotYetPreviewed;
+    // An edit that reached the preview may have loaded one of these, such as a
+    // rig now naming a selector edited before it was referenced.
+    const std::vector<std::string> waiting = PendingPreviewDocuments;
     for (const std::string& path : waiting)
         if (DataDocument* document = FindDocument(path); document != nullptr && Assets.DataAssets.Find(path).IsValid())
             DocumentChanged(*document);
@@ -438,8 +434,7 @@ void AnimationPreviewWorkspace::PreviewNotYetPreviewed()
 
 bool AnimationPreviewWorkspace::ApplyDocumentToPreview(DataDocument& document, std::string& status)
 {
-    // The preview's cache is this editor's own: replacing a value here is how
-    // an edit reaches the simulation, and it never touches the file.
+    // The preview's cache is this editor's own, so replacing a value here never touches the file.
     const DataAssetHandle handle = Assets.DataAssets.Find(document.VirtualPath());
     if (!handle.IsValid())
     {
@@ -493,11 +488,8 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
         ScenarioError = "Select an animation.rig asset that loads.";
         return false;
     }
-    // Another rig's layers are other layers.
     LayerDisplay = {};
 
-    // The scenario lives beside the rig's source as an editor-only sidecar the
-    // asset scanner does not register.
     std::filesystem::path sidecar(record->FilePath);
     sidecar.replace_extension(".sanimscenario");
 
@@ -532,7 +524,7 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
     Navigation = AnimationNavigation{};
     if (!rig->SkeletonPath.empty() && Session.SkeletonPath() != rig->SkeletonPath && MeshPath.empty())
         (void)SelectSkeleton(rig->SkeletonPath);
-    PreviewNotYetPreviewed();
+    ApplyPendingPreviewDocuments();
     return true;
 }
 
@@ -571,7 +563,6 @@ void AnimationPreviewWorkspace::CancelAuthoringEdit()
         Documents[ActiveDocument]->CancelEdit();
         ValidateDocument(*Documents[ActiveDocument]);
     }
-    // A marker mid-drag goes back where it was, and the preview with it.
     for (const auto& document : ClipEventDocuments)
     {
         if (!document->IsEditing())
@@ -605,8 +596,7 @@ bool AnimationPreviewWorkspace::OpenClipEvents(const std::string& clipPath)
         DocumentError = "Events are authored on a clip cooked from a mesh source in this project.";
         return false;
     }
-    // The cooked file sits under its content root's cooked directory; the
-    // sidecar sits beside the source in that root.
+    // The clip is cooked under its content root; the sidecar sits beside the source in that root.
     std::filesystem::path root;
     for (std::filesystem::path at(record->FilePath); at.has_parent_path() && at != at.parent_path();
          at = at.parent_path())
@@ -626,7 +616,7 @@ bool AnimationPreviewWorkspace::OpenClipEvents(const std::string& clipPath)
         clipPath, root / (source->SourceRelPath + std::string(kImportSettingsSuffix)), &DocumentError);
     if (document == nullptr)
         return false;
-    Journalled(*document);
+    RecordJournalStep(*document);
     ClipEventDocuments.push_back(std::move(document));
     ActiveClipEvents = clipPath;
     DocumentError.clear();
@@ -656,8 +646,6 @@ void AnimationPreviewWorkspace::ClipEventsChanged(AnimationClipEventsDocument& d
         status = "The preview keeps the last valid events: " + problems.front();
         return;
     }
-    // The preview's clip cache is this editor's own: replacing the clip here
-    // is how the working events reach the rig binding, and nothing is written.
     AnimationClipData working = *current;
     working.Events = document.CookedOrder();
     if (!Assets.AnimationClips.ReloadInPlace(clip, std::move(working)))
@@ -742,7 +730,7 @@ AnimationSaveReport AnimationPreviewWorkspace::SaveAll()
     return report;
 }
 
-bool AnimationPreviewWorkspace::KeepMine(std::string_view path, std::string& error)
+bool AnimationPreviewWorkspace::SaveOverFile(std::string_view path, std::string& error)
 {
     bool kept = false;
     if (DataDocument* document = FindDocument(path))
@@ -759,7 +747,7 @@ bool AnimationPreviewWorkspace::KeepMine(std::string_view path, std::string& err
     return kept;
 }
 
-bool AnimationPreviewWorkspace::TakeTheirs(std::string_view path, std::string& error)
+bool AnimationPreviewWorkspace::AdoptFileVersion(std::string_view path, std::string& error)
 {
     bool taken = false;
     if (DataDocument* document = FindDocument(path))
@@ -871,8 +859,6 @@ bool AnimationPreviewWorkspace::SelectSkeleton(const std::string& path)
 
 bool AnimationPreviewWorkspace::SelectClip(const std::string& path)
 {
-    // Picking a clip by hand is auditioning it; the simulation keeps running
-    // underneath, untouched, and the viewport switches back when asked.
     ViewportSource = AnimationViewportSource::Audition;
     if (path.empty())
     {
@@ -953,25 +939,22 @@ void AnimationPreviewWorkspace::Frame(double wallSeconds)
     Scene.Bounds = geometry->LocalBounds;
     const std::vector<Mat4>* shownPalette = &ViewportPalette();
     Aabb3d drawBounds = geometry->LocalBounds;
-    // A scenario that moves the character draws it where it stands: the
-    // skeleton's model space is the character's own, its feet half the
-    // capsule below the capsule's centre.
+    // Model space is the character's; its feet are half the capsule below the centre.
     if (ViewportSource == AnimationViewportSource::Simulation)
-        if (const Transform3f* stands = Simulation.SubjectTransform())
+        if (const Transform3f* subjectTransform = Simulation.SubjectTransform())
         {
-            const Vec3d feet = stands->Position - Vec3d(0.0f, Simulation.SubjectHeight() * 0.5f, 0.0f);
-            const Mat4 placed = Mat4::MakeTRS(feet, Vec3d::Zero(), Vec3d::One()) * stands->Rotation.ToMat4();
+            const Vec3d feet = subjectTransform->Position - Vec3d(0.0f, Simulation.SubjectHeight() * 0.5f, 0.0f);
+            const Mat4 placed = Mat4::MakeTRS(feet, Vec3d::Zero(), Vec3d::One()) * subjectTransform->Rotation.ToMat4();
             PlacedPalette.resize(shownPalette->size());
             for (std::size_t j = 0; j < PlacedPalette.size(); ++j)
                 PlacedPalette[j] = placed * (*shownPalette)[j];
             shownPalette = &PlacedPalette;
-            // Generous rather than exact: a turned box, moved.
+            // Conservative bounds: the local box's radius around the moved centre.
             const float reach = geometry->LocalBounds.HalfExtent().Magnitude();
             drawBounds = Aabb3d::FromCenterHalfExtent(feet + geometry->LocalBounds.Center(), Vec3d(reach, reach, reach));
         }
     const auto& palette = *shownPalette;
-    // What picking reads: a palette entry is model times inverse bind, so
-    // the joint's model transform is the entry times its bind.
+    // A palette entry is model times inverse bind; picking needs the model part.
     const SkeletonData& shown = Session.Skeleton();
     ViewportModelTransforms.resize(std::min(palette.size(), shown.Joints.size()));
     for (std::size_t j = 0; j < ViewportModelTransforms.size(); ++j)
@@ -1002,7 +985,6 @@ void AnimationPreviewWorkspace::Frame(double wallSeconds)
         else
             Scene.Queue.AddOpaque(item);
     }
-    // Take A drawn translucent where the simulation stands.
     if (const std::vector<Mat4>* ghost = GhostPalette(); ghost != nullptr && ghost->size() == palette.size())
     {
         const auto ghostSlot = Scene.Poses->AppendInstance(mesh, RenderEntityKey{ .Scope = 2, .Entity = {} },
@@ -1077,7 +1059,6 @@ bool AnimationPreviewWorkspace::WriteFile(const AnimationNewDocument& document, 
 bool AnimationPreviewWorkspace::WriteNewDocuments(const std::vector<AnimationNewDocument>& documents,
                                                   std::string& error)
 {
-    // All or nothing about what exists: refused before anything is written.
     for (const AnimationNewDocument& document : documents)
         if (std::filesystem::exists(AuthoringRoot / document.RelativePath)
             || Assets.Registry.Contains("asset://" + document.RelativePath))
@@ -1133,7 +1114,7 @@ bool AnimationPreviewWorkspace::CreateDocument(std::string_view subtype, std::st
     if (!document->Save(&error))
         return false;
     RegisterDataFile(relativePath);
-    Journalled(*document);
+    RecordJournalStep(*document);
     Documents.push_back(std::move(document));
     SelectDocument(Documents.size() - 1);
     DocumentError.clear();
@@ -1165,7 +1146,7 @@ bool AnimationPreviewWorkspace::MigrateClipPlayers(std::string& error)
     }
     if (!WriteNewDocuments(plan.Documents, error))
         return false;
-    // Scenes keep the two-space form scenes are written in.
+    // Two-space indent, as scenes are written.
     for (const AnimationNewDocument& scene : plan.Scenes)
         if (!WriteFile(scene, 2, error))
             return false;
@@ -1210,7 +1191,6 @@ void AnimationPreviewWorkspace::RunScenarioBatch(bool againstOpenRig)
         {
             if (againstOpenRig)
                 scenario->RigPath = RigPath;
-            // Resident for the run, as an open rig is.
             const AssetLease rig = Assets.Assets.LoadLease(scenario->RigPath, AssetType::Data);
             run = RunAnimationScenario(batch, std::move(*scenario), std::move(problems));
         }
@@ -1263,9 +1243,7 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
         ViewportNote.clear();
         return Session.Palette();
     }
-    // The pose the simulation's pose pass made, shown on the audition's
-    // skeleton when the rig poses that one; the audition's clip and clock are
-    // left as they were.
+    // Shown on the audition's skeleton only when the rig poses that skeleton.
     const SkeletonData& skeleton = Session.Skeleton();
     const AnimBoundRig* rig = Simulation.Rig();
     const AnimPosePool::Slot* slot = Simulation.SubjectPose();
@@ -1289,7 +1267,6 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
     const auto& history = Simulation.History();
     if (Navigation.InspectRecord && *Navigation.InspectRecord < history.size()
         && history[*Navigation.InspectRecord].Pose.size() == skeleton.Joints.size())
-        // A recorded tick shows the pose the pass made then, composed.
         SimulationLocal = history[*Navigation.InspectRecord].Pose;
     else
         AnimationPreviewDisplayPose(sources, *slot, *state, Simulation.Selection(), LayerDisplay, slot->Tick,

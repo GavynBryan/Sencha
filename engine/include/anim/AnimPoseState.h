@@ -10,23 +10,7 @@
 
 class World;
 
-//=============================================================================
-// AnimPoseState
-//
-// How each layer's pose absorbs changes to what it plays: the playback it was
-// last posed from, a crossfade's outgoing playback still alive beside it, and
-// when the current blend began. Only a World that presents a pose carries it;
-// selection, content and events never read it.
-//
-// The per-joint half -- inertialization offsets, each layer's pose and the
-// composed pose of the last two ticks -- is variable in size and lives in the
-// World's AnimPosePool, in the slot this names. The component is removed with
-// its slot released.
-//=============================================================================
-
-// Enough about what a layer plays to pose it again at another tick: a clip
-// from its start tick and offset, or a blendspace from its phase, the rate
-// that phase moved at and the point it stood at.
+// Enough to pose what a layer plays again at another tick.
 struct AnimLayerPlayback
 {
     AnimTick ClipStartTick = 0;
@@ -47,8 +31,7 @@ struct AnimLayerPlayback
 
 struct AnimLayerPose
 {
-    // What the layer was posed from last tick: a change to it is a
-    // transition.
+    // What the layer was posed from last tick; a change to it is a transition.
     AnimLayerPlayback Playing;
     // A crossfade's outgoing playback, posed beside Playing until it fades.
     AnimLayerPlayback FadingOut;
@@ -56,17 +39,17 @@ struct AnimLayerPose
     AnimTick OffsetStartTick = 0;
     float FadeInSeconds = 0.0f;
     float FadeOutSeconds = 0.0f;
-    // The longest joint offset still decaying, in seconds from its start: the
-    // offsets are spent once this has passed.
+    // The longest decaying offset's duration; the offsets are spent once it passes.
     float OffsetSeconds = 0.0f;
     bool Fading = false;
     bool Offsetting = false;
-    // Playing names something: the layer has been posed at least once.
     bool Posed = false;
 };
 
 inline constexpr std::uint32_t kAnimNoPoseSlot = 0;
 
+// Carried only where a pose is presented; selection, content and events never read
+// it. The per-joint half lives in the AnimPosePool slot it names.
 struct SENCHA_COMPONENT("sencha.anim_pose_state") AnimPoseState
 {
     AnimLayerPose Layers[kAnimMaxLayers] = {};
@@ -83,6 +66,5 @@ struct SENCHA_COMPONENT("sencha.anim_pose_state") AnimPoseState
 template <>
 struct ComponentTraits<AnimPoseState>
 {
-    // The slot's per-joint storage goes back to the pool with the component.
     static void OnRemove(const AnimPoseState& state, World& world, EntityId entity);
 };

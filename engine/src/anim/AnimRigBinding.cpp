@@ -182,9 +182,8 @@ void AnimRigBinder::BindDerivation(const AnimDerivedFactDecl& decl, const std::s
         const int slot = Out.FindSlot(operand.Fact);
         if (slot < 0)
         {
-            // Derived facts are bound in declaration order, so a later
-            // one is not found here: forward references cannot form a
-            // cycle, and a name not declared at all is simply unknown.
+            // Derived facts bind in declaration order, so forward references cannot form a
+            // cycle and simply read as unknown.
             Error("anim.fact.unknown_operand", schemaPath, operandPath,
                   std::format("'{}' is not a slot or an earlier derived fact in this "
                               "chain.",
@@ -282,9 +281,8 @@ void AnimRigBinder::BindRequests(const AnimRigData& rig)
         intent.Intent = tags != nullptr ? tags->FindTag(declared.Intent) : GameplayTagId{};
         if (!intent.Intent.IsValid())
         {
-            // Never registered on the author's behalf: a misspelt intent
-            // that became a new tag would bind fine and be requested by
-            // nothing.
+            // Never registered on the author's behalf: a misspelt intent would bind fine and
+            // be requested by nothing.
             Error("anim.request.intent_unresolved", rig.RequestSchemaPath,
                   std::format("$.data.intents[{}].intent", i),
                   std::format("'{}' is not a gameplay tag this World declares.",
@@ -467,9 +465,8 @@ const AnimBoundRig* AnimRigBindings::Resolve(DataAssetHandle rig, const World& w
     entry.ClipVersions.clear();
     for (const AnimBoundContent& content : entry.Bound.Contents)
         entry.ClipVersions.emplace_back(content.Clip, Clips != nullptr ? Clips->GetReloadVersion(content.Clip) : 0);
-    // Unique across every bindings instance: a republished resource starts
-    // empty, and per-entity history must not mistake its first generation for
-    // one it kept memory against.
+    // Unique across bindings instances: a republished resource starts empty, and
+    // per-entity history must not mistake its first generation for an old one.
     static std::atomic<std::uint64_t> generations{ 0 };
     entry.Bound.Generation = ++generations;
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();

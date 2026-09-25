@@ -31,11 +31,8 @@ struct AnimationClipPlayerUse
 
 struct AnimationClipPlayerMigrationPlan
 {
-    // Empty when the plan stands.
     std::string Error;
-    // The rigs' documents and their tag declaration.
     std::vector<AnimationNewDocument> Documents;
-    // Each scene rewritten, by path relative to the root.
     std::vector<AnimationNewDocument> Scenes;
 };
 

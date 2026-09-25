@@ -12,12 +12,10 @@
 
 namespace
 {
-    // The most loops one tick may cross. Content shorter than a tick loops
-    // several times per tick; content short enough to exceed this is not
-    // something whose every mark could be meant.
+    // Content shorter than a tick loops several times per tick; past this many loops,
+    // its marks cannot all be meant.
     constexpr std::int64_t kMaxLoopsPerTick = 64;
 
-    // Seconds into the playing clip at tick `tick`.
     double Elapsed(const AnimLayerContent& layer, AnimTick tick, double tickSeconds)
     {
         return static_cast<double>(layer.ClipOffsetSeconds)
@@ -25,10 +23,8 @@ namespace
                 * static_cast<double>(layer.ClipRate);
     }
 
-    // Calls `visit(index)` for every mark of `content` inside the stretch from
-    // `from` to `to` of content time, in time order: exclusive of `from`
-    // unless `includeFrom`, inclusive of `to`. Cyclic content repeats its
-    // marks every loop; other content has one pass.
+    // Marks of `content` from `from` to `to`, in time order: exclusive of `from` unless
+    // `includeFrom`, inclusive of `to`. Cyclic content repeats its marks every loop.
     template <typename Visit>
     void ForEachMark(const AnimBoundContent& content, bool cyclic, double from, double to, bool includeFrom,
                      Visit&& visit)
@@ -191,10 +187,9 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
                       behavior.Policy.EventWeight);
         };
 
-        // Lifecycle, outermost last on the way out and first on the way in:
-        // the old section is left before its behavior, the new behavior is
-        // entered before its section, and all of it before any mark of what
-        // now plays.
+        // Outermost last on the way out and first on the way in: the old section is left
+        // before its behavior, the new behavior entered before its section, all before
+        // any mark of what now plays.
         const bool behaviorChanged = previousBehavior != layer.Behavior;
         const bool sectionChanged = previousSection != section || previousContent != layer.EventContent
             || (playingFlow && previousContentStart != layer.StartTick);
@@ -265,9 +260,8 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
         const double to = Elapsed(layer, now, tickSeconds);
         if (!sameClip)
         {
-            // Entering a clip: a mark at its start is crossed on entry. A row
-            // change that carries normalized time across starts past its
-            // offset, whose marks the previous content already crossed.
+            // A mark at a clip's start is crossed on entry. A row change carrying normalized
+            // time starts past its offset, whose marks the previous content crossed.
             ForEachMark(played, cyclic, static_cast<double>(layer.ClipOffsetSeconds), to,
                         layer.ClipOffsetSeconds <= 0.0f, [&](std::size_t e) { produce(e, false); });
             continue;

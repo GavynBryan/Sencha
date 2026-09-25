@@ -104,8 +104,7 @@ AnimationClipPlayerMigrationPlan PlanAnimationClipPlayerMigration(const std::fil
     if (uses.empty())
         return plan;
 
-    // One rig per clip and settings; the same clip played two ways is two
-    // rigs, numbered in the order first met.
+    // One rig per distinct clip and settings, numbered in the order first met.
     using Settings = std::tuple<std::string, double, double, bool>;
     std::map<Settings, std::string> rigs;
     std::map<std::string, int> variants;

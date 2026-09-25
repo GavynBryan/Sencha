@@ -7,9 +7,8 @@
 #include <utility>
 #include <vector>
 
-// Builders for the authoring schemas of the animation data subtypes. Private to
-// the animation sources: every animation asset states its fields the same way,
-// and nothing outside them builds schemas this way.
+// Builders for the authoring schemas of the animation data subtypes, so every
+// animation asset states its fields the same way.
 namespace AnimSchema
 {
     inline DataFieldSchema Field(std::string key, DataFieldKind kind, std::string display,

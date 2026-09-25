@@ -19,8 +19,8 @@
 namespace
 {
     constexpr const char* kSkeleton = "asset://meshes/man.blend#skel:Man";
-    constexpr const char* kHero = "asset://animation/hero/hero.rig.sdata";
-    constexpr const char* kBrute = "asset://animation/brute/brute.rig.sdata";
+    constexpr const char* kCharacterRig = "asset://animation/character_rig/character_rig.rig.sdata";
+    constexpr const char* kSimpleRig = "asset://animation/simple_rig/simple_rig.rig.sdata";
 
     // What the session holds, compared whole between rounds.
     struct Footprint
@@ -95,23 +95,23 @@ TEST(AnimationLongSession, RepeatedWorkHoldsSteady)
     std::string error;
     const std::vector<std::string> clips = { "asset://meshes/man.blend#anim:Idle", "asset://meshes/man.blend#anim:Walk",
                                              "asset://meshes/man.blend#anim:Left_claw" };
-    ASSERT_TRUE(workspace.CreateRig({ .Name = "hero", .Clips = clips, .Preset = AnimationRigPreset::Character,
+    ASSERT_TRUE(workspace.CreateRig({ .Name = "character_rig", .Clips = clips, .Preset = AnimationRigPreset::Character,
                                       .UpperBodyJoint = "spine" },
                                     error))
         << error;
-    ASSERT_TRUE(workspace.CreateRig({ .Name = "brute", .Clips = clips, .Preset = AnimationRigPreset::Simple,
+    ASSERT_TRUE(workspace.CreateRig({ .Name = "simple_rig", .Clips = clips, .Preset = AnimationRigPreset::Simple,
                                       .UpperBodyJoint = {} },
                                     error))
         << error;
 
     // A first round opens every document and warms every cache it will use.
-    Round(workspace, kHero);
-    Round(workspace, kBrute);
+    Round(workspace, kCharacterRig);
+    Round(workspace, kSimpleRig);
     const Footprint settled = Measure(project, workspace);
     for (int round = 0; round < 25; ++round)
     {
-        Round(workspace, kHero);
-        Round(workspace, kBrute);
+        Round(workspace, kCharacterRig);
+        Round(workspace, kSimpleRig);
     }
     const Footprint after = Measure(project, workspace);
     EXPECT_EQ(after, settled) << "settled: " << Describe(settled) << "\nafter:   " << Describe(after);

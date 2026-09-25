@@ -1,7 +1,6 @@
-// The session laboratory, headless: an example rig on an authority and on a
-// client joined only by snapshot bytes over a delayed, lossy link. A client
-// that joins late, loses snapshots or guesses wrong has to arrive where the
-// authority is, and stay there.
+// The session lab runs an example rig on an authority and a client joined by
+// snapshot bytes over a delayed, lossy link. A client that joins late, loses
+// snapshots or mispredicts must converge on the authority and stay there.
 
 #include "authoring/AnimationScenario.h"
 #include "authoring/AnimationSessionLab.h"
@@ -50,10 +49,9 @@ namespace
     };
 }
 
-// Joining inside the reload loop over a link that delays every snapshot and
-// loses a fifth of them: the client finds the loop from the request's anchor,
-// falls behind while the fire request is on its way, and ends where the
-// authority is, pose for pose.
+// Joining inside the reload loop over a delaying link that loses a fifth of
+// the snapshots: the client finds the loop from the request's anchor and ends
+// where the authority is, pose for pose.
 TEST(AnimationSessionLab, ALateJoinerOverALossyLinkConvergesOnTheAuthority)
 {
     Lab lab({ .JoinTick = 100, .LatencyTicks = 3, .LossPercent = 20 });

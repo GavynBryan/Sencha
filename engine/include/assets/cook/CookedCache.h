@@ -73,10 +73,8 @@ struct CookedSourceEntry
     // include resolved assets, cook settings, and dependency fingerprints.
     uint64_t InputFingerprint = 0;
 
-    // The producing importer's CookIdentity when these artifacts were made. A
-    // matching fingerprint with a different identity is stale: the importer
-    // (or the tool it runs) would now produce something else. 0 for entries a
-    // document cook writes, which never compare it.
+    // The producing importer's CookIdentity; a different one makes the entry
+    // stale. 0 for document-cook entries, which never compare it.
     uint64_t CookIdentity = 0;
 
     // Size and last-write time (filesystem clock ticks) of the source file
@@ -99,21 +97,8 @@ struct CookedSourceEntry
     std::vector<CookedArtifact> Artifacts;
 };
 
-// Bumping this is the blunt cook-invalidation knob: an old index is a cold
-// cache, so every source recooks. Version 2: texture cook output changed
-// from RGBA8 to BC-compressed (Decision L format table). Version 3: .smesh
-// moved to v3 (skinning stream) and the glTF cook began emitting .sskel /
-// .sanim artifacts (Decisions J, M, N). Version 5: .smesh moved to v5
-// (lightmap UVs replaced the baked-direct vertex channel; per-zone atlas
-// artifacts). Version 6: lightmap atlases moved from RGBM RGBA8 to RGB9E5
-// (texels decode before filtering; the shader no longer applies a
-// multiplier, so older atlases would render wrong). Version 8: entries record
-// the additional sources a cook read (CookedAdditionalSource), so a multi-file
-// source like a UI document recooks when one of its stylesheets changes; a
-// version-7 entry has no such list and would go on ignoring them. Version 9:
-// entries record the importer's cook identity, the per-importer replacement
-// for bumping this knob; a version-8 entry has none and would stay fresh
-// across importer changes.
+// An index of another version is a cold cache. Why each version moved is in
+// docs/assets/pipeline.md.
 inline constexpr uint32_t kCookedCacheIndexVersion = 9;
 
 // The index's name inside <assets-root>/.cooked/. Part of the cache's contract

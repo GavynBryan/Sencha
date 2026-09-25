@@ -129,11 +129,9 @@ public:
     [[nodiscard]] virtual ImportResult Import(const ImportInput& input,
                                               ICookOutputWriter& output) = 0;
 
-    // What, besides the source bytes, decides this importer's output: its cook
-    // logic, and any external tool it runs. A cooked entry is fresh only while
-    // this matches the identity it was cooked with, so changing how an importer
-    // cooks -- or the tool it drives -- recooks everything it produced. Build
-    // it with CookFingerprint and bump the version whenever output changes.
+    // Everything besides the source bytes that decides the output: cook logic
+    // and any external tool. Built with CookFingerprint; a change recooks
+    // everything this importer produced.
     [[nodiscard]] virtual std::uint64_t CookIdentity() const = 0;
 };
 

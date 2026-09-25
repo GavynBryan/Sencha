@@ -227,10 +227,9 @@ TEST_F(AnimationClipPreviewTest, PauseRestartAndStepClearFractionalWallTime)
     EXPECT_EQ(Session.Tick(), 0u);
 }
 
-// Without a clip nothing poses the skeleton, so the palette is the identity:
-// cooked skinned vertices already sit at bind pose, and the runtime draws an
-// unposed instance the same way. Recomposing the bind TRS instead would show
-// any disagreement with the inverse binds as a deformation.
+// Cooked skinned vertices already sit at bind pose, so an unposed skeleton draws
+// with the identity palette, as the runtime does. Recomposing the bind TRS would
+// show any disagreement with the inverse binds as a deformation.
 TEST(AnimationClipPreviewNoClip, PaletteIsTheIdentity)
 {
     SkeletonData skeleton = Skeleton();

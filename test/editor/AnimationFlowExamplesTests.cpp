@@ -1,7 +1,6 @@
-// The six flow shapes the architecture was tested against, as content an
-// author opens and runs: each rig under the scenario saved beside it, loaded
-// through the runtime asset pipeline, plays its sections in the order and on
-// the ticks the flow rules say.
+// Each example flow rig, loaded through the runtime asset pipeline and run under
+// the scenario saved beside it, plays its sections in order and on the ticks its
+// flow rules give.
 
 #include "authoring/AnimationPreviewSession.h"
 #include "authoring/AnimationScenario.h"

@@ -1,6 +1,5 @@
-// The predicate language: rows that all must pass, each a test or an any-of
-// group, compiled against a bound rig and evaluated with the first failing row
-// named. Absent operands -- a request that is not live -- fail every
+// Predicates are rows that must all pass, each a test or an any-of group,
+// evaluated with the first failing row named. Absent operands fail every
 // comparison, and names that do not resolve are located errors.
 
 #include "AnimRigFixture.h"

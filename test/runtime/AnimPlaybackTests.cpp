@@ -12,11 +12,11 @@ namespace
 {
     // One layer, no selector, playing `behavior` -- a JSON behavior object
     // for "Anim.Play" over a one-second clip -- from tick 0.
-    struct Played : AnimRigFixture
+    struct PlaybackFixture : AnimRigFixture
     {
         EntityId Entity;
 
-        explicit Played(std::string_view behavior)
+        explicit PlaybackFixture(std::string_view behavior)
             : AnimRigFixture({ "Anim.Play" })
         {
             Clip("asset://anim/one_second.sanim", 1.0f);
@@ -45,9 +45,9 @@ namespace
 
 TEST(AnimPlayback, TimeAdvancesByTheTickAndScalesWithSpeed)
 {
-    Played normal(R"({ "tag": "Anim.Play", "kind": "cyclic" })");
-    Played twice(R"({ "tag": "Anim.Play", "kind": "cyclic", "rate": 2.0 })");
-    Played held(R"({ "tag": "Anim.Play", "kind": "cyclic", "rate": 0.0, "start_seconds": 0.25 })");
+    PlaybackFixture normal(R"({ "tag": "Anim.Play", "kind": "cyclic" })");
+    PlaybackFixture twice(R"({ "tag": "Anim.Play", "kind": "cyclic", "rate": 2.0 })");
+    PlaybackFixture held(R"({ "tag": "Anim.Play", "kind": "cyclic", "rate": 0.0, "start_seconds": 0.25 })");
     EXPECT_NEAR(normal.TimeAfter(0.3), 0.3f, 1e-5f);
     EXPECT_NEAR(twice.TimeAfter(0.3), 0.6f, 1e-5f);
     // A held behavior is an authored pose; nothing moves it.
@@ -58,9 +58,9 @@ TEST(AnimPlayback, TimeAdvancesByTheTickAndScalesWithSpeed)
 
 TEST(AnimPlayback, LoopingWrapsAndClampingHolds)
 {
-    Played looping(R"({ "tag": "Anim.Play", "kind": "cyclic", "start_seconds": 0.9 })");
-    Played clamping(R"({ "tag": "Anim.Play", "kind": "one_shot", "start_seconds": 0.9 })");
-    Played reversing(R"({ "tag": "Anim.Play", "kind": "cyclic", "rate": -1.0, "start_seconds": 0.1 })");
+    PlaybackFixture looping(R"({ "tag": "Anim.Play", "kind": "cyclic", "start_seconds": 0.9 })");
+    PlaybackFixture clamping(R"({ "tag": "Anim.Play", "kind": "one_shot", "start_seconds": 0.9 })");
+    PlaybackFixture reversing(R"({ "tag": "Anim.Play", "kind": "cyclic", "rate": -1.0, "start_seconds": 0.1 })");
     EXPECT_NEAR(looping.TimeAfter(0.2), 0.1f, 1e-5f);
     EXPECT_NEAR(clamping.TimeAfter(0.2), 1.0f, 1e-5f);
     EXPECT_TRUE(clamping.Playing(clamping.Entity).ContentComplete);
@@ -74,7 +74,7 @@ TEST(AnimPlayback, LoopingWrapsAndClampingHolds)
 
 TEST(AnimPlayback, BackwardsOneShotContentEndsAtItsStart)
 {
-    Played rewinding(R"({ "tag": "Anim.Play", "kind": "one_shot", "rate": -2.0, "start_seconds": 0.5 })");
+    PlaybackFixture rewinding(R"({ "tag": "Anim.Play", "kind": "one_shot", "rate": -2.0, "start_seconds": 0.5 })");
     EXPECT_NEAR(rewinding.TimeAfter(0.1), 0.3f, 1e-5f);
     EXPECT_FALSE(rewinding.Playing(rewinding.Entity).ContentComplete);
     EXPECT_FLOAT_EQ(rewinding.TimeAfter(0.5), 0.0f);

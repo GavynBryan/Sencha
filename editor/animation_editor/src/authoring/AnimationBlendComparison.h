@@ -10,33 +10,20 @@
 #include <string>
 #include <vector>
 
-//=============================================================================
-// Blend comparison
-//
-// An A/B of two runs of one scenario: a take records the subject's composed
-// pose on every tick the preview kept, with the scenario that produced it, and
-// two takes compare tick by tick. Only takes of the same scenario compare --
-// the same inputs, requests, tick rate and seed from the same start -- so a
-// residual is what the edits between them did and nothing else.
-//=============================================================================
-
 struct AnimationPoseTake
 {
     std::string Label;
-    // The scenario as written when the take ran.
-    std::string ScenarioForm;
+    // Serialized scenario; takes compare only when these match.
+    std::string ScenarioText;
     std::vector<AnimTick> Ticks;
     std::vector<std::vector<Transform3f>> Poses;
 
-    // The pose on `tick`, or null when the take has none then.
     [[nodiscard]] const std::vector<Transform3f>* At(AnimTick tick) const;
 };
 
-// The session's history as a take.
 [[nodiscard]] AnimationPoseTake RecordAnimationPoseTake(const AnimationPreviewSession& session, std::string label);
 
-// How far one tick's pose in B is from A's: the largest joint distance and
-// rotation, and the joint each was largest at.
+// Largest per-joint position and rotation difference, and where each occurred.
 struct AnimationPoseResidual
 {
     AnimTick Tick = 0;
@@ -51,9 +38,8 @@ struct AnimationPoseResidual
 
 struct AnimationPoseComparison
 {
-    // Empty when the takes compare; otherwise why they do not.
     std::string Refusal;
-    // One per tick both takes have, in tick order.
+    // Ticks both takes have, in order.
     std::vector<AnimationPoseResidual> Residuals;
 };
 

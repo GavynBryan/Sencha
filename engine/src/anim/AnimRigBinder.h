@@ -11,10 +11,8 @@
 
 class GameplayTagRegistry;
 
-// Binds one rig into one World. Private to the animation sources: the fact,
-// request and layer binding live in AnimRigBinding.cpp, behaviors, selectors
-// and slot maps each in their own file, and all of them report through here so
-// every problem is located the same way.
+// Binds one rig into one World. Each part binds in its own file and reports
+// through here, so every problem is located the same way.
 struct AnimRigBinder
 {
     const DataAssetCache& Data;
@@ -80,26 +78,20 @@ struct AnimRigBinder
     void BindBlendOverrides(const AnimRigData& rig);
     void BindSelectors(const AnimRigData& rig);
     void BindSlotMaps(const AnimRigData& rig);
-    // A flow's content entry, bound on first use: its sections' clips added as
-    // content of their own. -1 when it cannot be bound.
+    // Bound on first use, with its sections' clips as content entries; -1 on failure.
     int BindFlowContent(const std::string& path, const std::string& referrer, const std::string& field);
-    // After selectors and slot maps: the pairings a flow requires of the
-    // behavior playing it.
+    // After selectors and slot maps: what a flow requires of the behavior playing it.
     void ValidateFlows();
-    // A blendspace's content entry, bound on first use with its samples' clips
-    // as content of their own. -1 when it cannot be bound.
+    // Bound on first use, with its samples' clips as content entries; -1 on failure.
     int BindBlendspaceContent(const std::string& path, const std::string& referrer, const std::string& field);
-    // A flow `row` plays checked against every flow on another layer that
-    // one request can drive with it: they share that request's anchor.
+    // Flows on other layers that one request can drive with `row` share its anchor.
     void ValidateSharedAnchor(const AnimBoundSlotRow& row);
     [[nodiscard]] int FindOrAddClipContent(const std::string& path);
     // After slot maps, which decide the content whose events are bound.
     void BindEvents(const AnimRigData& rig);
 };
 
-// Where two flows would read one request anchor differently -- section count,
-// a section's length, its loop, how it is left, the cancel section -- or
-// empty when they agree.
+// How two flows would read one request anchor differently, or empty when they agree.
 [[nodiscard]] std::string AnimFlowAnchorDifference(const AnimBoundRig& rig, const AnimBoundFlow& a,
                                                    const AnimBoundFlow& b);
 

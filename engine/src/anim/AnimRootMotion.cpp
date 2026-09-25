@@ -6,7 +6,7 @@
 namespace
 {
     // `second` applied after `first`, in `first`'s starting frame.
-    AnimRootDelta Then(const AnimRootDelta& first, const AnimRootDelta& second)
+    AnimRootDelta ComposeRootDeltas(const AnimRootDelta& first, const AnimRootDelta& second)
     {
         const float c = std::cos(first.Yaw);
         const float s = std::sin(first.Yaw);
@@ -74,6 +74,6 @@ AnimRootDelta AnimRootMotionBetween(const AnimationRootCurve& curve, float durat
     AnimRootDelta total = Segment(curve, from, durationSeconds);
     const AnimRootDelta whole = Segment(curve, 0.0f, durationSeconds);
     for (double loop = firstLoop + 1.0; loop < lastLoop; loop += 1.0)
-        total = Then(total, whole);
-    return Then(total, Segment(curve, 0.0f, to));
+        total = ComposeRootDeltas(total, whole);
+    return ComposeRootDeltas(total, Segment(curve, 0.0f, to));
 }

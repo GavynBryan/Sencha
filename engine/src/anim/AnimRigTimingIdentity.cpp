@@ -156,7 +156,7 @@ std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const GameplayTagRe
     {
         for (const AnimBoundRule& rule : selector.Rules)
         {
-            h.Plain(rule.Band);
+            h.Plain(rule.PriorityBand);
             h.Program(rule.Enter);
             h.Plain(rule.HasStay);
             if (rule.HasStay)

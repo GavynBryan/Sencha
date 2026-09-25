@@ -105,12 +105,12 @@ TEST(AnimBlendspaceData, ABlendspacePlacesDistinctSamplesOnItsAxes)
 namespace
 {
     // Locomotion as one blendspace on Speed: walk (1 s) at 1, run (0.5 s) at 3.
-    struct Mixed : AnimRigFixture
+    struct BlendspaceFixture : AnimRigFixture
     {
         DataAssetHandle Rig;
         EntityId Entity;
 
-        explicit Mixed(std::string_view kind = "cyclic", std::string_view extraBehaviors = {})
+        explicit BlendspaceFixture(std::string_view kind = "cyclic", std::string_view extraBehaviors = {})
         {
             for (const char* tag : { "Anim.Idle", "Anim.Move", "Anim.Sync.Feet" })
                 (void)Tags().RegisterTag(tag);
@@ -157,7 +157,7 @@ namespace
 // so the samples stay at one phase as the weights move.
 TEST(AnimBlendspace, ThePhaseAdvancesByTheMixsLength)
 {
-    Mixed fx;
+    BlendspaceFixture fx;
     ASSERT_TRUE(fx.Bound(fx.Rig).Valid) << AnimRigFixture::Describe(fx.Bound(fx.Rig));
 
     fx.Motion(fx.Entity).Speed = 2.0f;
@@ -191,7 +191,7 @@ TEST(AnimBlendspace, ThePhaseAdvancesByTheMixsLength)
 // A one-shot mix completes when its phase reaches the end.
 TEST(AnimBlendspace, AOneShotMixCompletesAtTheEndOfItsPhase)
 {
-    Mixed fx("one_shot");
+    BlendspaceFixture fx("one_shot");
     fx.Motion(fx.Entity).Speed = 1.0f;
     fx.Tick(60);
     EXPECT_FALSE(fx.Playing(fx.Entity).ContentComplete);
@@ -203,7 +203,7 @@ TEST(AnimBlendspace, AOneShotMixCompletesAtTheEndOfItsPhase)
 // Carried phase enters a mix at the normalized time the clip had reached.
 TEST(AnimBlendspace, PhaseCarriesIntoAMix)
 {
-    Mixed fx;
+    BlendspaceFixture fx;
     fx.Tick(30);
     ASSERT_EQ(fx.BehaviorName(fx.Entity), "Anim.Idle");
     fx.Motion(fx.Entity).Speed = 2.0f;
@@ -238,7 +238,7 @@ TEST(AnimBlendspaceBinding, AnAxisIsANumericFactAndAMixIsNotAFlow)
         EXPECT_EQ(axis->FieldPath, "$.data.axes[0].fact");
     }
     {
-        Mixed fx("flow");
+        BlendspaceFixture fx("flow");
         const AnimDiagnostic* behavior = AnimRigFixture::FindCode(fx.Bound(fx.Rig), "anim.blendspace.behavior");
         ASSERT_NE(behavior, nullptr) << AnimRigFixture::Describe(fx.Bound(fx.Rig));
         EXPECT_EQ(behavior->FieldPath, "$.data.rows[1].blendspace");

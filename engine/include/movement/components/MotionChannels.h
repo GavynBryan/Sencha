@@ -32,8 +32,7 @@ struct SENCHA_COMPONENT("sencha.motion_axis_override") MotionAxisOverride
     bool HasUp = false;
     bool ForcedPlanar = false;
     bool ForcedUp = false;
-    // Radians to turn the character about the up axis this tick: a root
-    // motion source carrying the character round a corner.
+    // About the up axis, this tick.
     float TurnRadians = 0.0f;
     bool HasTurn = false;
 };

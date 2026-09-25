@@ -48,9 +48,9 @@ namespace
         return file.good();
     }
 
-    // This bridge's own cook version: the export options below are part of
-    // what it produces, so changing them bumps this.
-    constexpr std::uint32_t kBlendBridgeVersion = 1;
+    // Bump when the export options below change; they are part of what this
+    // importer produces.
+    constexpr std::uint32_t kBlendCookVersion = 1;
 
 #ifdef _WIN32
     constexpr std::string_view kQuiet = "> NUL 2>&1";
@@ -97,7 +97,7 @@ std::uint64_t BlendMeshImporter::CookIdentity() const
 {
     if (!Toolchain)
         Toolchain = Probe ? Probe() : std::string("unavailable");
-    return CookFingerprint("blend_mesh", kBlendBridgeVersion)
+    return CookFingerprint("blend_mesh", kBlendCookVersion)
         .AddString("toolchain", *Toolchain)
         .AddDependency("gltf_mesh", GltfMeshImporter{}.CookIdentity())
         .Value();

@@ -1,9 +1,8 @@
 #pragma once
 
-// A request-keyed flow on one prop: the reload intent plays a pump-action
-// flow (open, a counted insert loop, close) under its behavior's latch policy.
-// Shared by the flow tests and the paired authority/client tests, which need
-// the same content on two machines.
+// A request-keyed flow on one prop: the reload intent plays open, a counted
+// insert loop and close under its behavior's latch policy. Shared by the flow
+// tests and the authority/client tests, which need the same content twice.
 
 #include "AnimRigFixture.h"
 
@@ -22,16 +21,16 @@ inline constexpr const char* kFlowTags[] = {
 
 // Open for 15 ticks, insert for 30 a request's `shells` times, close for
 // 15; a cancel goes to the close.
-inline constexpr std::string_view kPumpFlow = R"({ "sections": [
+inline constexpr std::string_view kCountedLoopFlow = R"({ "sections": [
     { "tag": "Anim.Reload.Open", "clip": "asset://anim/open.sanim" },
     { "tag": "Anim.Reload.Insert", "clip": "asset://anim/insert.sanim", "loop": "count",
       "count_intent": "anim.intent.reload", "count_param": "shells" CANCEL_TIMING },
     { "tag": "Anim.Reload.Close", "clip": "asset://anim/close.sanim" } ],
     "cancel": "Anim.Reload.Close" })";
 
-inline std::string PumpFlow(std::string_view insertCancelTiming = {})
+inline std::string CountedLoopFlow(std::string_view insertCancelTiming = {})
 {
-    std::string flow(kPumpFlow);
+    std::string flow(kCountedLoopFlow);
     const std::string timing =
         insertCancelTiming.empty() ? std::string() : std::format(R"(, "cancel_timing": "{}")", insertCancelTiming);
     flow.replace(flow.find("CANCEL_TIMING"), std::string_view("CANCEL_TIMING").size(), timing);
@@ -56,14 +55,13 @@ inline void LoadFlowCommon(AnimRigFixture& fx)
         { "tag": "Anim.Reload.Close", "clip": "asset://anim/close.sanim" } ] })");
 }
 
-// The reload rig: a request-keyed layer where the reload request plays
-// `flow` under the behavior's latch policy, and which idles otherwise.
-// `reloadExtras` continues the reload behavior's object and `bindings` names a
-// binding set for the rig, for content that announces what it plays.
-inline DataAssetHandle LoadPumpReload(AnimRigFixture& fx, const std::string& flow,
-                                      std::string_view onCancel = "cancel_section",
-                                      std::string_view extraSlots = {}, std::string_view reloadExtras = {},
-                                      std::string_view bindings = {})
+// A request-keyed layer that plays `flow` for the reload request and idles
+// otherwise. `reloadExtras` continues the reload behavior's object; `bindings`
+// names a binding set for content that announces what it plays.
+inline DataAssetHandle LoadReloadRig(AnimRigFixture& fx, const std::string& flow,
+                                     std::string_view onCancel = "cancel_section",
+                                     std::string_view extraSlots = {}, std::string_view reloadExtras = {},
+                                     std::string_view bindings = {})
 {
     LoadFlowCommon(fx);
     (void)fx.Load("asset://anim/f.flow.sdata", kAnimFlowType, flow);
@@ -89,15 +87,15 @@ inline DataAssetHandle LoadPumpReload(AnimRigFixture& fx, const std::string& flo
 }
 
 // The reload rig on one prop.
-struct FlowProp : AnimRigFixture
+struct ReloadFlowFixture : AnimRigFixture
 {
     DataAssetHandle Rig;
     EntityId Entity;
 
-    explicit FlowProp(const std::string& flow, std::string_view onCancel = "cancel_section",
-                      std::string_view extraSlots = {})
+    explicit ReloadFlowFixture(const std::string& flow, std::string_view onCancel = "cancel_section",
+                               std::string_view extraSlots = {})
     {
-        Rig = LoadPumpReload(*this, flow, onCancel, extraSlots);
+        Rig = LoadReloadRig(*this, flow, onCancel, extraSlots);
         Entity = Character(Rig);
     }
 

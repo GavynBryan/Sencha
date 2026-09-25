@@ -15,7 +15,7 @@ std::string_view AnimDecisionCauseName(AnimDecisionCause cause)
     case AnimDecisionCause::LatchReleased: return "LatchReleased";
     case AnimDecisionCause::LatchInterrupted: return "LatchInterrupted";
     case AnimDecisionCause::ContentChanged: return "ContentChanged";
-    case AnimDecisionCause::Anchored: return "Anchored";
+    case AnimDecisionCause::IndexReset: return "IndexReset";
     case AnimDecisionCause::SectionChanged: return "SectionChanged";
     case AnimDecisionCause::EventCrossed: return "EventCrossed";
     case AnimDecisionCause::BehaviorEntered: return "BehaviorEntered";

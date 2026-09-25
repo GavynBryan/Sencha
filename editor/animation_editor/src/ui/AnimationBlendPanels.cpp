@@ -34,8 +34,6 @@ std::string FileOf(const std::string& path)
     return cut == std::string::npos ? path : path.substr(cut + 1);
 }
 
-// How each layer's pose is absorbing changes now, what changed recently and
-// how, and the A/B recorder that compares a blend edit against a take.
 class BlendPanel final : public IEditorPanel
 {
 public:
@@ -206,9 +204,6 @@ private:
     AnimationPreviewWorkspace& Workspace;
 };
 
-// The blendspace the selected layer plays: its samples on their axes, where
-// the facts put it, the weights there, and a point to drag that sets the
-// preview's facts.
 class BlendspacePanel final : public IEditorPanel
 {
 public:
@@ -245,7 +240,7 @@ public:
         AnimBlendspaceWeights(space, { layer.Coordinates[0], layer.Coordinates[1] }, weights);
         const bool twoAxes = space.AxisCount > 1;
 
-        // The plane, or the line: axis ranges mapped onto the canvas.
+        // Axis ranges mapped onto the canvas: a plane for two axes, a line for one.
         const float width = std::max(ImGui::GetContentRegionAvail().x, 160.0f);
         const float height = twoAxes ? std::min(width, 260.0f) : 48.0f;
         const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -273,8 +268,7 @@ public:
         const ImVec2 point = toCanvas(layer.Coordinates[0], layer.Coordinates[1]);
         draw->AddCircle(point, 7.0f, ImGui::GetColorU32(ImGuiCol_Text), 0, 2.0f);
 
-        // Dragging sets the axis facts for the next tick, as the Facts panel
-        // would: a live edit the scenario records, never an asset change.
+        // A live fact edit the scenario records, never an asset change.
         if (dragging)
         {
             const ImVec2 mouse = ImGui::GetIO().MousePos;

@@ -1,9 +1,5 @@
-// A measurement of the pose pass, not a test of it: a crowd of 62-joint
-// two-layer characters (the shape of the SenchaTest praying man), every joint
-// animated, walking and idling with inertialized changes, posed serially and
-// across workers. Env-gated like the render benches; run it from a Release
-// build:
-//
+// Measures the pose pass on a crowd of 62-joint, two-layer characters, posed
+// serially and across workers. Env-gated; run it from a Release build:
 //   SENCHA_ANIM_POSE_BENCH=1 build-profile/test/runtime_tests --gtest_filter='AnimPoseBench.*'
 
 #include "AnimRigFixture.h"

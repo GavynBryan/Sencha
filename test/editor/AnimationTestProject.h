@@ -1,6 +1,6 @@
 #pragma once
 
-// A throwaway animation project: a content root in the temp directory and a
+// A temporary animation project: a content root in the temp directory and a
 // RuntimeAssets over it, with procedural skeletons and clips registered the
 // way an import would register them.
 

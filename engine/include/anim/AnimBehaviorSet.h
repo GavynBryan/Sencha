@@ -11,21 +11,6 @@
 #include <string_view>
 #include <vector>
 
-//=============================================================================
-// Behavior set (`animation.behavior_set`)
-//
-// Behaviors are the boundary between shared selection logic and one rig's
-// content. A behavior is a gameplay tag (Anim.Locomotion.Sprint,
-// Anim.Action.Reload) plus the policy that says how it plays: its kind, how a
-// change to it is blended, whether it latches, how a late joiner sees it.
-// Selectors name behaviors and nothing below them; slot maps turn a behavior
-// into content.
-//
-// A rig lists behavior sets in order. A later set may add behaviors or
-// override an earlier set's policy for a tag, which is how a game or mod
-// changes a base behavior without editing it.
-//=============================================================================
-
 inline constexpr std::string_view kAnimBehaviorSetType = "animation.behavior_set";
 
 enum class AnimBehaviorKind : std::uint8_t
@@ -101,16 +86,14 @@ enum class AnimLateJoin : std::uint8_t
 [[nodiscard]] std::string_view AnimBehaviorKindName(AnimBehaviorKind kind);
 [[nodiscard]] std::string_view AnimLatchModeName(AnimLatchMode mode);
 
-// A binding invoked when a layer enters or leaves a behavior. The event
-// supplies one input, `behavior`, carrying the behavior's tag, to a binding
-// that declares it; everything else is the binding's.
+// Invoked when a layer enters or leaves a behavior, with the behavior's tag as the
+// `behavior` input.
 struct AnimLifecycleDecl
 {
     std::string Binding;
     AnimEventScope Scope = AnimEventScope::Cosmetic;
 };
 
-// The one input a lifecycle event supplies.
 inline constexpr std::string_view kAnimLifecycleBehaviorInput = "behavior";
 
 struct AnimBehaviorDecl
@@ -127,8 +110,7 @@ struct AnimBehaviorDecl
     // Flows play on the tick clock and take neither.
     float Rate = 1.0f;
     float StartSeconds = 0.0f;
-    // The layer weight below which cosmetic events on this behavior's content
-    // do not fire.
+    // Layer weight below which cosmetic events on this behavior's content do not fire.
     float EventWeight = 0.5f;
     std::optional<AnimLifecycleDecl> OnEntered;
     std::optional<AnimLifecycleDecl> OnExited;
@@ -141,8 +123,8 @@ struct AnimBehaviorSet
 
 void RegisterAnimBehaviorSet(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas);
 
-// The blend record, as a behavior declares it and a blend override replaces
-// it: `in`, `in_ms`, `out_ms`, `phase`. Reading fills only what is present.
+// The `in`, `in_ms`, `out_ms`, `phase` record behaviors and blend overrides share.
+// Reading fills only what is present.
 [[nodiscard]] DataFieldSchema AnimBlendPolicySchema(std::string key, std::string label, std::string summary);
 [[nodiscard]] bool ReadAnimBlendPolicy(const JsonValue* blend, const std::string& at, AnimBlendPolicy& out,
                                        std::string& error);

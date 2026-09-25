@@ -8,16 +8,6 @@
 #include <string_view>
 #include <vector>
 
-//=============================================================================
-// Blendspace (`animation.blendspace`)
-//
-// Clips placed at points along one or two axes, each axis read from a fact:
-// walk and run placed by Speed, strafes by Speed and a heading. What plays is
-// a weighted mix of the samples around the fact's point, all at one
-// normalized phase, so the mix keeps its footfalls however it is weighted.
-// A slot row plays a blendspace as it plays a clip or a flow.
-//=============================================================================
-
 inline constexpr std::string_view kAnimBlendspaceType = "animation.blendspace";
 inline constexpr std::size_t kAnimBlendspaceMaxAxes = 2;
 inline constexpr std::size_t kAnimBlendspaceMaxSamples = 16;

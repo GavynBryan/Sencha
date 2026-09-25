@@ -1,7 +1,6 @@
-// Selection is a pure function of facts, requests, the previous tick's
-// feedback and selector state. These drive it through the real gather, select
-// and resolve systems on authored content, and read the result the way the
-// debugger does: winners, verdicts, and decision records with causes.
+// Selection is a pure function of facts, requests, the previous tick's feedback
+// and selector state, driven here through the real gather, select and resolve
+// systems and read back as winners, verdicts and decision records.
 
 #include "AnimRigFixture.h"
 
@@ -9,17 +8,17 @@
 
 namespace
 {
-    struct Hero : AnimRigFixture
+    struct CharacterRigFixture : AnimRigFixture
     {
         using AnimRigFixture::Clip;
 
         DataAssetHandle Rig;
         EntityId Entity;
 
-        Hero()
+        CharacterRigFixture()
         {
-            AnimHero::RegisterTags(*this);
-            Rig = AnimHero::Load(*this);
+            AnimCharacterRig::RegisterTags(*this);
+            Rig = AnimCharacterRig::Load(*this);
             const AnimBoundRig& bound = Bound(Rig);
             EXPECT_TRUE(bound.Valid) << Describe(bound);
             Entity = Character(Rig);
@@ -55,7 +54,7 @@ namespace
 
 TEST(AnimSelection, TheSelectorFlattensInPriorityOrder)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     const AnimBoundSelector& selector = fx.Bound(fx.Rig).Selectors[0];
     std::vector<std::string> order;
     for (const AnimBoundRule& rule : selector.Rules)
@@ -66,7 +65,7 @@ TEST(AnimSelection, TheSelectorFlattensInPriorityOrder)
 
 TEST(AnimSelection, SpeedChangesTheWinnerAndTheResolvedClip)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Tick();
     EXPECT_EQ(fx.Behavior(), "Anim.Locomotion.Idle");
     EXPECT_EQ(fx.Clip(), "asset://anim/idle.sanim");
@@ -99,7 +98,7 @@ TEST(AnimSelection, SpeedChangesTheWinnerAndTheResolvedClip)
 
 TEST(AnimSelection, WhyARuleLostIsExplained)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Motion(fx.Entity).Speed = 1.0f;
     fx.Tick();
 
@@ -122,7 +121,7 @@ TEST(AnimSelection, WhyARuleLostIsExplained)
 
 TEST(AnimSelection, ALatchHoldsAOneShotUntilItsContentCompletes)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Motion(fx.Entity).Speed = 1.0f;
     fx.Motion(fx.Entity).Grounded = false;
     fx.Tick(5);
@@ -155,7 +154,7 @@ TEST(AnimSelection, ALatchHoldsAOneShotUntilItsContentCompletes)
 
 TEST(AnimSelection, OnlyWhatTheLatchAllowsInterruptsIt)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Motion(fx.Entity).Grounded = false;
     fx.Tick(5);
     fx.Motion(fx.Entity).Grounded = true;
@@ -182,7 +181,7 @@ TEST(AnimSelection, OnlyWhatTheLatchAllowsInterruptsIt)
 
 TEST(AnimSelection, ARequestLatchFinishesItsContentAfterTheRequestEnds)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Tick();
     const AnimRequestResult reload = fx.Issue(fx.Entity, "anim.intent.reload");
     ASSERT_TRUE(reload.Accepted());
@@ -207,7 +206,7 @@ TEST(AnimSelection, ARequestLatchFinishesItsContentAfterTheRequestEnds)
 
 TEST(AnimSelection, AnIdleEntityIsNotReevaluated)
 {
-    Hero fx;
+    CharacterRigFixture fx;
     fx.Motion(fx.Entity).Speed = 1.0f;
     fx.Tick(3);
     EXPECT_EQ(fx.Select.Evaluated(), 0u);
@@ -313,14 +312,14 @@ TEST(AnimSelection, ARebindKeepsTheWinnerByItsKeyAndResetsItWhenItIsGone)
         { "name": "burst", "priority": 10, "enter": [ { "fact": "Crouched" } ], "behavior": "Anim.Burst" } ] })");
     fx.Tick();
     EXPECT_EQ(fx.Behavior(), "Anim.Rest");
-    EXPECT_EQ(fx.LastRecord(fx.Entity, AnimDecisionCause::Anchored), nullptr);
+    EXPECT_EQ(fx.LastRecord(fx.Entity, AnimDecisionCause::IndexReset), nullptr);
 
     // Removed: the winner cannot be kept and the reset is recorded.
     fx.Reload("asset://anim/t.selector.sdata", kAnimSelectorType, R"({ "rules": [
         { "name": "burst", "priority": 10, "enter": [], "behavior": "Anim.Burst" } ] })");
     fx.Tick();
     EXPECT_EQ(fx.Behavior(), "Anim.Burst");
-    const AnimDecisionRecord* anchored = fx.LastRecord(fx.Entity, AnimDecisionCause::Anchored);
-    ASSERT_NE(anchored, nullptr);
-    EXPECT_EQ(anchored->Reason, AnimChangeReason::Rebound);
+    const AnimDecisionRecord* reset = fx.LastRecord(fx.Entity, AnimDecisionCause::IndexReset);
+    ASSERT_NE(reset, nullptr);
+    EXPECT_EQ(reset->Reason, AnimChangeReason::Rebound);
 }

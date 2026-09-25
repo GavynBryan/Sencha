@@ -71,34 +71,16 @@ struct ReplicatedField
     bool OwnerLocal = false;
 };
 
-// A component's wire image from its bytes, and its bytes back from an image.
 // FromWire writes into the receiver's own value, so what the image does not
-// carry is left as this machine had it.
+// carry keeps this machine's value.
 using ReplicationToWire = void (*)(const ReplicationWireContext& context, std::span<const std::byte> component,
                                    std::span<std::byte> wire);
 using ReplicationFromWire = void (*)(const ReplicationWireContext& context, std::span<const std::byte> wire,
                                      std::span<std::byte> component);
 
-//-----------------------------------------------------------------------------
-// ReplicationCodec<T>
-//
-// Specialized by a component whose wire form is not its bytes: it holds
-// process-local values -- an entity, a gameplay tag id -- that have to travel
-// as what every machine agrees on. The specialization names a plain Wire
-// struct with its own TypeSchema, which is all the rest of replication sees:
-// change detection, field masks, encoding, baselines and the desync probe
-// work on the image, so they stay the generic path.
-//
-//   template <> struct ReplicationCodec<Pointer>
-//   {
-//       using Wire = PointerWire;
-//       static void ToWire(const ReplicationWireContext&, const Pointer&, PointerWire&);
-//       static void FromWire(const ReplicationWireContext&, const PointerWire&, Pointer&);
-//   };
-//
-// Declaring one makes the component replicated; its own schema does not also
-// say Replicated. A translated component is never predicted.
-//-----------------------------------------------------------------------------
+// Specialized by a component holding process-local values (an entity, a tag id).
+// `Wire` is a plain struct with its own TypeSchema that replication sees instead
+// of T; static ToWire/FromWire translate. Implies replicated, never predicted.
 template <typename T>
 struct ReplicationCodec;
 
@@ -120,10 +102,8 @@ struct ReplicatedComponent
     // Set for a component that travels as a wire image rather than its bytes.
     ReplicationToWire ToWire = nullptr;
     ReplicationFromWire FromWire = nullptr;
-    // The image of the type's defaults. A receiver stages a translated
-    // component from it and writes the component whole from the result, so a
-    // run still at its default when the component is first seen is already
-    // what every receiver will hold, and is not sent.
+    // A receiver stages a translated component from this image of its
+    // defaults, so runs still at it when the component is first seen are not sent.
     std::vector<std::byte> WireDefault;
     // The owner's machine simulates this one for itself, so an applier holds
     // what arrives apart from the world's copy instead of overwriting it.
@@ -209,8 +189,6 @@ public:
                          RuntimeFieldsOf<T, SchemaPurpose::Replication>());
     }
 
-    // Registers T as travelling through its ReplicationCodec: what is sent is
-    // the codec's wire image, not T's bytes.
     template <ComponentHasReplicationCodec T>
     bool AddCodec()
     {

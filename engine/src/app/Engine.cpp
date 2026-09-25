@@ -1131,10 +1131,7 @@ int Engine::Run(Game& game)
     // OnStart sees a mounted, published stack rather than assembling one. The
     // game's data-asset subtypes register first, because the scan classifies
     // .sdata by the subtypes that exist when it runs.
-    // The engine's root last, so it is the fallback every root above it may
-    // shadow: RuntimeContent::Mount gives the first root that claims a
-    // virtual path ownership of it, so a game shipping its own ui/pause.rml
-    // shadows the engine's by path alone.
+    // Last, so it is the fallback every root above it may shadow.
     if (const std::filesystem::path engineContent = EngineContentRoot(); !engineContent.empty())
         Configuration.Runtime.ContentRoots.push_back(engineContent.string());
 

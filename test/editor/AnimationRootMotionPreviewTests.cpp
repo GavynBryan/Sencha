@@ -1,7 +1,6 @@
-// A moving preview without a GUI: a scenario that puts the character on a
-// floor runs the production movement pipeline and mover after content, so a
-// root-motion clip carries it, a wall the scenario places stops it, and each
-// tick records where it was carried against where it got.
+// A scenario that puts the character on a floor runs the production movement
+// pipeline after content: a root-motion clip carries it, a placed wall stops it,
+// and each tick records where the clip carried it against where it got.
 
 #include "authoring/AnimationPreviewSession.h"
 #include "authoring/AnimationScenario.h"

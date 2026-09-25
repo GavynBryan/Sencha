@@ -1,8 +1,6 @@
-// A data asset holds what its compile declared it depends on for as long as it
-// is resident, whichever path committed it. Without that, a synchronous load
-// never loads the dependency and an asynchronous one frees it as soon as the
-// preloader lets go, and a consumer binding the value later finds half of it
-// missing.
+// A resident data asset holds the dependencies its compile declared, whichever
+// load path committed it, so a consumer binding the value later never finds a
+// dependency missing or freed.
 
 #include <gtest/gtest.h>
 

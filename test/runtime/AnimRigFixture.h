@@ -1,8 +1,7 @@
 #pragma once
 
-// A World with the animation vocabulary and a data cache the animation data
-// subtypes compile into, for tests that bind real rig content. Content is
-// written as the JSON an author would write and compiled by the registered
+// A World with the animation vocabulary and a data cache for tests that bind
+// real rig content. Content is authored JSON compiled by the registered
 // compilers, so every test goes through the same parse and validation.
 
 #include <anim/AnimBehaviorSet.h>
@@ -233,10 +232,10 @@ struct AnimRigFixture
     [[nodiscard]] AnimTick Last() const { return Now - 1; }
 };
 
-// A character rig exercising every Stage 2 mechanism: a locomotion selector
+// A character rig exercising every selection mechanism: a locomotion selector
 // with hysteresis, a one-shot latched until complete, a request latch, a death
 // band that interrupts everything, and a slot map with a stance row.
-namespace AnimHero
+namespace AnimCharacterRig
 {
     inline constexpr const char* kTags[] = {
         "anim.intent.reload", "anim.intent.door_open", "stance.crouch",
@@ -288,14 +287,14 @@ namespace AnimHero
         { "behavior": "Anim.Death", "clip": "asset://anim/death.sanim" } ] })";
 
     inline constexpr std::string_view kRig = R"({
-        "facts": "asset://anim/hero.facts.sdata",
-        "requests": "asset://anim/hero.requests.sdata",
-        "behaviors": [ "asset://anim/hero.behaviors.sdata" ],
-        "slot_maps": [ "asset://anim/hero.slots.sdata" ],
-        "layers": [ { "name": "anim.layer.base", "selector": "asset://anim/hero.selector.sdata",
+        "facts": "asset://anim/character.facts.sdata",
+        "requests": "asset://anim/character.requests.sdata",
+        "behaviors": [ "asset://anim/character.behaviors.sdata" ],
+        "slot_maps": [ "asset://anim/character.slots.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "selector": "asset://anim/character.selector.sdata",
                       "idle": "Anim.Locomotion.Idle" } ] })";
 
-    // Loads the hero content and returns its rig.
+    // Loads the character rig's content and returns the rig.
     inline DataAssetHandle Load(AnimRigFixture& fx)
     {
         fx.Clip("asset://anim/idle.sanim", 2.0f);
@@ -306,12 +305,12 @@ namespace AnimHero
         fx.Clip("asset://anim/land_crouch.sanim", 0.4f);
         fx.Clip("asset://anim/reload.sanim", 1.0f);
         fx.Clip("asset://anim/death.sanim", 1.5f);
-        (void)fx.Load("asset://anim/hero.facts.sdata", kAnimFactSchemaType, kFacts);
-        (void)fx.Load("asset://anim/hero.requests.sdata", kAnimRequestSchemaType, kRequests);
-        (void)fx.Load("asset://anim/hero.behaviors.sdata", kAnimBehaviorSetType, kBehaviors);
-        (void)fx.Load("asset://anim/hero.selector.sdata", kAnimSelectorType, kSelector);
-        (void)fx.Load("asset://anim/hero.slots.sdata", kAnimSlotMapType, kSlots);
-        return fx.Load("asset://anim/hero.rig.sdata", kAnimRigType, kRig);
+        (void)fx.Load("asset://anim/character.facts.sdata", kAnimFactSchemaType, kFacts);
+        (void)fx.Load("asset://anim/character.requests.sdata", kAnimRequestSchemaType, kRequests);
+        (void)fx.Load("asset://anim/character.behaviors.sdata", kAnimBehaviorSetType, kBehaviors);
+        (void)fx.Load("asset://anim/character.selector.sdata", kAnimSelectorType, kSelector);
+        (void)fx.Load("asset://anim/character.slots.sdata", kAnimSlotMapType, kSlots);
+        return fx.Load("asset://anim/character.rig.sdata", kAnimRigType, kRig);
     }
 
     inline void RegisterTags(AnimRigFixture& fx)

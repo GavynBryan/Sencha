@@ -146,15 +146,13 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
         }
     }
 
-    // Priority first; within a priority the stack order, then row order,
-    // which is the order rows were appended in.
+    // Priority first, then stack order and row order, which is the append order.
     std::stable_sort(Out.SlotRows.begin(), Out.SlotRows.end(),
                      [](const AnimBoundSlotRow& a, const AnimBoundSlotRow& b) { return a.Priority > b.Priority; });
 
-    // A row that reads a local fact picks content per machine, so every
-    // candidate for its behavior must take the same time and produce the same
-    // gameplay events: otherwise what one machine chose would drift from what
-    // the others, and the authority, are timing against.
+    // A row reading a local fact picks content per machine, so every candidate for its
+    // behavior must take the same time and produce the same gameplay events, or machines
+    // drift from the authority's timing.
     for (const AnimBoundSlotRow& row : Out.SlotRows)
     {
         if (!row.When.ReadsLocalFacts)

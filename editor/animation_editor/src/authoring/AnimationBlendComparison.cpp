@@ -19,7 +19,7 @@ AnimationPoseTake RecordAnimationPoseTake(const AnimationPreviewSession& session
 {
     AnimationPoseTake take;
     take.Label = std::move(label);
-    take.ScenarioForm = JsonStringify(WriteAnimationScenario(session.Scenario()));
+    take.ScenarioText = JsonStringify(WriteAnimationScenario(session.Scenario()));
     for (const AnimationPreviewTickRecord& record : session.History())
     {
         if (record.Pose.empty())
@@ -57,7 +57,7 @@ AnimationPoseResidual AnimationPoseDifference(AnimTick tick, const std::vector<T
 AnimationPoseComparison CompareAnimationPoseTakes(const AnimationPoseTake& a, const AnimationPoseTake& b)
 {
     AnimationPoseComparison comparison;
-    if (a.ScenarioForm != b.ScenarioForm)
+    if (a.ScenarioText != b.ScenarioText)
     {
         comparison.Refusal = "The takes ran different scenarios, so their difference would not be the edits "
                              "alone. Record A again under the scenario B runs.";

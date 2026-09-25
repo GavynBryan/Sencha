@@ -25,7 +25,7 @@
 
 namespace
 {
-// The tick the panels show: the one the navigation inspects, else the latest.
+// The inspected record, else the latest.
 const AnimationPreviewTickRecord* ShownTick(const AnimationPreviewWorkspace& workspace)
 {
     const auto& history = workspace.Simulation.History();
@@ -43,8 +43,7 @@ std::string TagText(const AnimationPreviewSession& session, GameplayTagId tag)
     return std::string(tags->GetName(tag));
 }
 
-// The authored mask steps of `layer`, from the open rig document when there is
-// one -- it may be ahead of the bound rig -- else from the loaded asset.
+// Prefers the open rig document, which may be ahead of the bound rig.
 std::vector<AnimMaskOp> MaskSteps(AnimationPreviewWorkspace& workspace, std::size_t layer)
 {
     std::vector<AnimMaskOp> steps;
@@ -272,7 +271,6 @@ private:
             ImGui::PopStyleColor();
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
             Workspace.Navigation.Joint = static_cast<int>(joint);
-        // A joint picked in the viewport is brought into view here.
         if (selected && ScrollToSelection)
         {
             ImGui::SetScrollHereY();
@@ -322,8 +320,6 @@ public:
             ? &rig->Flows[static_cast<std::size_t>(rig->Contents[layer->Content].Flow)]
             : nullptr;
 
-        // An open flow document is edited here; otherwise the playing flow is
-        // shown, and can be opened.
         DataDocument* document = Workspace.ActiveDocumentOf(kAnimFlowType);
         if (document == nullptr && playing != nullptr)
             document = Workspace.FindDocument(playing->Path);
@@ -355,15 +351,13 @@ private:
     static float SectionSeconds(const AnimBoundRig& rig, const AnimBoundFlowSection& section,
                                 const AnimationPreviewLayerRecord& layer, bool current)
     {
-        // A slot section's length is its resolved clip's, known while it plays.
+        // A slot section's length is known only while it plays.
         const int content = section.Content >= 0 ? section.Content
             : current && layer.Clip < rig.Contents.size() ? static_cast<int>(layer.Clip)
                                                           : -1;
         return content >= 0 ? rig.Contents[static_cast<std::size_t>(content)].DurationSeconds : 0.0f;
     }
 
-    // Sections left to right, sized by length, the playing one lit with its
-    // progress; the cancel section again in its own lane beneath.
     void DrawStrip(const AnimBoundRig& rig, const AnimBoundFlow& flow, const AnimationPreviewLayerRecord& layer,
                    AnimTick now, double tickSeconds)
     {
@@ -421,7 +415,6 @@ private:
             }
             x += w;
         }
-        // The cancel lane.
         const float laneY = origin.y + height + 4.0f;
         draw->AddText(ImVec2(origin.x, laneY), ImGui::GetColorU32(ImGuiCol_TextDisabled), "cancel");
         if (cancelX >= 0.0f)
@@ -436,7 +429,6 @@ private:
             ImGui::Text("Complete, holding the last pose.");
     }
 
-    // How each section is left, as authored.
     static void DrawControl(const AnimBoundFlow& flow, const AnimFlowData* authored)
     {
         if (authored == nullptr)
@@ -464,9 +456,7 @@ private:
                                             : "none, a cancel ends the flow");
     }
 
-    // Sections, loops and their conditions, exits, branches and their
-    // conditions, and the cancel section. Structural changes are one undo step
-    // each; conditions edit like the rule table's, committing on release.
+    // Structural changes are one undo step each; conditions commit on release.
     void DrawEditor(DataDocument& document)
     {
         ImGui::SeparatorText(std::format("Editing {}", document.VirtualPath()).c_str());
@@ -554,7 +544,7 @@ private:
                         }
                         ImGui::PopID();
                     }
-                // Only later sections are offered: control goes forward.
+                // Only later sections: control never goes backward.
                 if (!changed && s + 1 < sections->size() && ImGui::BeginCombo("Add branch to", "later section..."))
                 {
                     for (std::size_t to = s + 1; to < sections->size(); ++to)

@@ -89,7 +89,8 @@ named scenario participants issue requests through the normal request API.
 Every live edit is recorded into the working scenario on the next tick, so the
 live session and a replay of the saved scenario run the same code on the same
 ticks. Acting at a tick the scenario has already scripted past drops the later
-actions (a new branch). **Save scenario** writes an editor-only sidecar beside
+actions (a new branch); further edits made while paused on that tick join the
+same branch. **Save scenario** writes an editor-only sidecar beside
 the rig's source, `<rig>.sanimscenario`; the asset scanner does not register it,
 and nothing in the preview writes the rig or its schemas. Opening a rig restores
 its sidecar when one exists.
@@ -164,7 +165,7 @@ reach the running preview as soon as they are committed (and on undo or redo);
 an invalid working edit leaves the preview on the last valid version and says
 so. Only Save writes the file.
 
-The fixture rig now carries a locomotion selector with a stay-hysteresis sprint,
+The fixture rig carries a locomotion selector with a stay-hysteresis sprint,
 a latched landing and a request-latched reload. Its content is the fixture's one
 cooked clip on every row, so the rules and decisions change visibly while the
 pose does not; `AnimationSelectionEditingTests.cpp` covers content switching
@@ -181,7 +182,9 @@ replay of a saved take, branching, unknown names, and asset immutability.
 A clip cooked from a mesh source (`asset://<source>#anim:<clip>`) carries
 events: timeline marks that invoke authored bindings. They are authored in the
 source's import sidecar, `<source>.meta`, because the cooked clip is rebuilt
-from the source on every import; the cook copies them into `.sanim`.
+from the source on every import; the cook copies them into `.sanim`. A clip's
+events document reads the whole sidecar, edits that clip's entry, and writes
+every other clip's entry back as it found it.
 
 - **Clip events** picks a clip the open rig plays (or the auditioned one) and
   shows its track: circles are cosmetic events, diamonds gameplay events, and
@@ -322,6 +325,12 @@ and prediction journal, across a link with a join tick, a latency in ticks and a
 loss rate. The loss rate drops a fixed pattern of snapshots, so a run repeats.
 The status line at the top always says which machine is which, and that facts
 are synthetic scenario inputs on both.
+
+Both machines read the same scenario facts on the same ticks, standing in for
+replicated gameplay; only requests cross the link, and the client hears nothing
+before its join tick. The client shares the authority's clock: latency is
+modelled by when snapshots are delivered, not by a clock offset, and
+acknowledgements return at once.
 
 - **Client guesses** inject a request the client predicts on a tick, plus the
   tick the authority decides the command behind it, confirming or refusing it.

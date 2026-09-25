@@ -502,9 +502,8 @@ void Engine::RegisterNetFramePhases()
                                            &engine.Prediction(),
                                            &engine.Interpolation());
 
-            // Animation requests this machine predicted: what the authority
-            // has decided is dropped, and what it has not is issued again on
-            // top of the sets that just arrived.
+            // Predicted animation requests the authority has decided are dropped;
+            // the rest are reissued on top of the sets that just arrived.
             if (applied.Ok())
             {
                 if (AnimRequestJournal* journal = world.TryGetResource<AnimRequestJournal>())

@@ -1,7 +1,6 @@
-// What the animation viewport shows of a posed entity: the pose pass's own
-// composed pose, or the layers it posed composed again without the ones the
-// author muted or soloed away -- a display choice that never reaches the rig
-// or what the pass keeps.
+// The viewport shows the pose pass's composed pose, or its layers recomposed
+// without the muted or soloed-away ones. That display choice never reaches the
+// rig or the pass's state.
 
 #include "authoring/AnimationPreviewWorkspace.h"
 

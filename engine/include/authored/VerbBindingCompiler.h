@@ -62,12 +62,9 @@ struct VerbBindingEnvironment
                                       CompiledVerbBinding& out,
                                       std::vector<std::string>& errors);
 
-// Compiles a value a producer authored for one of a compiled binding's inputs,
-// in the forms a binding's own constants take: a literal or a tag. The one
-// value must satisfy every argument the input fills, exactly as the dispatcher
-// checks it. For producers whose inputs are content rather than computed -- a
-// clip's events -- so the conversion runs once when the content binds, not on
-// every call. False appends a located diagnostic.
+// For a producer whose input values are content (a clip's events), so they are
+// converted once at bind time. The value must satisfy every argument the input
+// fills, as the dispatcher checks it; false appends a located diagnostic.
 [[nodiscard]] bool CompileVerbInputValue(const VerbBindingArgument& authored,
                                          const VerbCompiledInput& input,
                                          const VerbBindingEnvironment& environment,

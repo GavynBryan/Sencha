@@ -31,12 +31,12 @@ namespace
           "enter": [ { "request": "anim.intent.reload" }, { "fact": "Speed", "compare": "lt", "value": 0.1 } ] },
         { "name": "aim", "priority": 10, "weight_fact": "Speed", "enter": [ { "fact": "Crouched" } ] } ] })";
 
-    struct Layered : AnimRigFixture
+    struct LayerFixture : AnimRigFixture
     {
         DataAssetHandle Rig;
         EntityId Entity;
 
-        explicit Layered(std::string_view upperSelector = kUpperSelector)
+        explicit LayerFixture(std::string_view upperSelector = kUpperSelector)
         {
             for (const char* tag : kLayerTags)
                 (void)Tags().RegisterTag(tag);
@@ -75,7 +75,7 @@ namespace
 
 TEST(AnimLayerWeight, TheFirstWeightRuleToPassWeightsTheLayer)
 {
-    Layered fx;
+    LayerFixture fx;
     ASSERT_TRUE(fx.Bound(fx.Rig).Valid) << AnimRigFixture::Describe(fx.Bound(fx.Rig));
     const AnimBoundSelector& upper = fx.Bound(fx.Rig).Selectors[1];
     ASSERT_EQ(upper.WeightRules.size(), 2u);
@@ -131,7 +131,7 @@ TEST(AnimLayerWeight, AWeightRuleIsChosenByItsEnterAlone)
 
 TEST(AnimLayerWeight, AWeightFactIsAFloatFact)
 {
-    Layered fx(R"({ "rules": [
+    LayerFixture fx(R"({ "rules": [
         { "name": "none", "priority": 0, "enter": [], "behavior": "Anim.Upper.None" },
         { "name": "aim", "priority": 10, "weight_fact": "Crouched", "enter": [] } ] })");
     const AnimDiagnostic* fact = AnimRigFixture::FindCode(fx.Bound(fx.Rig), "anim.selector.weight_fact");

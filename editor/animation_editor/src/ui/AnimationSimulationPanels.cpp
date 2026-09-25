@@ -31,8 +31,7 @@ namespace
 constexpr std::array<const char*, 3> kLifetimes{ "Held", "Fixed", "Impulse" };
 constexpr std::array<const char*, 4> kCancelReasons{ "Released", "Interrupted", "Failed", "Superseded" };
 
-// A text field over a std::string, committing on Enter. Returns true when the
-// author submitted it.
+// True when Enter submitted the text.
 bool SubmitText(const char* label, std::string& text)
 {
     std::array<char, 256> buffer{};
@@ -188,8 +187,6 @@ public:
 
     }
 private:
-    // A name, the tier it starts as, and the clips to play in the order
-    // ticked: the first idles; what the rest do depends on the tier.
     void DrawNewRig()
     {
         ImGui::TextWrapped("Writes a behavior set, slot map, request schema, selectors, rig and scenario into "
@@ -220,8 +217,7 @@ private:
             {
                 const auto chosen = std::find(NewRigClips.begin(), NewRigClips.end(), path);
                 bool ticked = chosen != NewRigClips.end();
-                // One rig poses one skeleton: once a clip is chosen, clips of
-                // another cannot join it.
+                // One rig poses one skeleton.
                 ImGui::BeginDisabled(!ticked && !skeleton.empty() && skeletonOf(path) != skeleton);
                 const std::string label = ticked && chosen == NewRigClips.begin() ? path + "  (idle)" : path;
                 if (ImGui::Checkbox(label.c_str(), &ticked))
@@ -237,7 +233,6 @@ private:
         ImGui::EndChild();
         if (NewRigPreset == AnimationRigPreset::Character)
         {
-            // The joints of the chosen clips' skeleton, by name.
             const SkeletonData* data = skeleton.empty()
                 ? nullptr
                 : Workspace.Skeletons().Get(Workspace.Skeletons().Find(skeleton));
@@ -317,8 +312,6 @@ public:
             ImGui::TextWrapped("Warming up: derived facts are exact after %.0f ms of observation.",
                                rig->HorizonMs);
 
-        // While paused, a disposable evaluation of the next tick shows what the
-        // scheduled edits will do; stepping commits it.
         const std::vector<std::uint32_t> next =
             session.IsPlaying() ? std::vector<std::uint32_t>{} : session.PreviewNextTick();
         const std::span<const std::uint32_t> facts = session.Facts();
@@ -381,8 +374,7 @@ private:
         case AnimFactKind::Float:
         case AnimFactKind::Int:
         {
-            // A drag schedules one edit when it ends, not one per frame; until
-            // then the field shows the dragged value, not the fact.
+            // A drag schedules one edit when it ends; until then the field shows the dragged value.
             const float fact = slot.Kind == AnimFactKind::Float ? AnimFactToFloat(current)
                                                                 : static_cast<float>(AnimFactToInt(current));
             float value = Dragging == slot.Name ? Draft : fact;
@@ -445,7 +437,6 @@ private:
 
     AnimationPreviewWorkspace& Workspace;
     std::string Selected;
-    // The numeric fact being dragged, and its value until the drag ends.
     std::string Dragging;
     float Draft = 0.0f;
     std::unordered_map<std::string, std::string> TagDrafts;
@@ -775,8 +766,7 @@ public:
         ImGui::EndTabBar();
     }
 private:
-    // Names are read from the documents the problems point at, so only when
-    // the problems change.
+    // Reads documents, so recomputed only when the problems change.
     void DrawDeclareNames(const std::vector<AnimDiagnostic>& problems)
     {
         std::string signature;
@@ -804,8 +794,7 @@ private:
         ImGui::Separator();
     }
 
-    // The same measure `anim.risk` reports in the game, over the rig as bound
-    // here.
+    // Same measure `anim.risk` reports in a game.
     void DrawRisk()
     {
         const AnimBoundRig* rig = Workspace.Simulation.Rig();
@@ -835,7 +824,6 @@ private:
             ImGui::Text("%u requests ended without any layer playing them.", content->UnplayedRequests);
     }
 
-    // A trace exported from a running game with `anim.trace.export`.
     void DrawTrace()
     {
         ImGui::SetNextItemWidth(-160.0f);
@@ -859,8 +847,6 @@ private:
             if (ImGui::SmallButton("Open its rig") && !Workspace.OpenRig(Trace->Rig))
                 TraceError = Workspace.ScenarioError;
         }
-        // A trace is never replayed: what it did not capture is said, not
-        // reconstructed.
         ImGui::TextWrapped("Captured: %s. There is no pose history to scrub; these are the game's decisions as "
                            "it logged them.",
                            Trace->Captured.empty() ? "unknown" : Trace->Captured.c_str());
@@ -952,10 +938,10 @@ private:
             ImGui::PushID(path.c_str());
             ImGui::TextWrapped("%s changed on disk since it was read.", path.c_str());
             if (ImGui::SmallButton("Keep mine"))
-                (void)Workspace.KeepMine(path, ConflictError);
+                (void)Workspace.SaveOverFile(path, ConflictError);
             ImGui::SameLine();
             if (ImGui::SmallButton("Take the file's"))
-                (void)Workspace.TakeTheirs(path, ConflictError);
+                (void)Workspace.AdoptFileVersion(path, ConflictError);
             ImGui::PopID();
         }
         if (!ConflictError.empty())

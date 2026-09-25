@@ -28,17 +28,13 @@
 
 struct RuntimeAssets;
 
-// Which of the two previews the viewport shows: content picked by hand, or
-// the simulated rig's layers composed.
 enum class AnimationViewportSource : std::uint8_t
 {
     Audition,
     Simulation,
 };
 
-// Which of the simulated rig's layers the viewport composes. Preview-only: it
-// never reaches the rig, the simulation or its events. With any layer soloed
-// only soloed layers show; a muted layer never does.
+// Viewport-only layer visibility; never reaches the rig or the simulation.
 struct AnimationLayerDisplay
 {
     std::uint8_t Muted = 0;
@@ -51,18 +47,14 @@ struct AnimationLayerDisplay
     }
 };
 
-// The pose the viewport shows of a posed entity: the pose pass's composed
-// pose, or -- with a layer muted or soloed -- the layers it posed composed
-// again without the hidden ones. Neither touches what the pass keeps.
+// With every layer shown this is the pose pass's own result; otherwise the
+// shown layers are recomposed into `out` without touching the pass's state.
 void AnimationPreviewDisplayPose(const AnimPoseSources& sources, const AnimPosePool::Slot& slot,
                                  const AnimPoseState& state, const AnimSelectorState* selection,
                                  const AnimationLayerDisplay& display, AnimTick tick, double tickSeconds,
                                  AnimPoseScratch& scratch, std::vector<Transform3f>& out);
 
-// What the author is looking at across panels: a rule, the behavior it
-// selects, the slot row that resolves it, the content that row plays, and
-// optionally a recorded tick instead of the live one. Navigating changes this
-// and nothing else -- the simulation, scenario and camera are untouched.
+// Cross-panel selection. Changing it never touches the simulation or scenario.
 struct AnimationNavigation
 {
     std::size_t Layer = 0;
@@ -70,38 +62,30 @@ struct AnimationNavigation
     GameplayTagId Behavior;
     int Row = -1;
     int Content = -1;
-    // A joint of the viewport's skeleton, picked in the viewport or the
-    // skeleton tree.
     int Joint = -1;
-    // Index into the simulation's history, or none for the live tick.
+    // Index into the simulation's history; empty for the live tick.
     std::optional<std::size_t> InspectRecord;
 };
 
-// What saving every changed document did. Paths are asset paths, or clip
-// paths for a clip's events.
+// Paths are asset paths, or clip paths for a clip's events.
 struct AnimationSaveReport
 {
     std::vector<std::string> Saved;
-    // Saved with problems a game would refuse to load.
+    // Saved, but with problems a game would refuse to load.
     std::vector<std::string> SavedWithProblems;
-    // Changed on disk since this editor read them; left for KeepMine or TakeTheirs.
+    // Changed on disk since read; left for SaveOverFile or AdoptFileVersion.
     std::vector<std::string> Conflicts;
     std::vector<std::pair<std::string, std::string>> Failed;
 };
 
-// The data subtypes this editor opens and creates.
 [[nodiscard]] std::span<const std::string_view> AnimationDocumentSubtypes();
 
 // Owns preview selections and their leases, the open animation documents, the
-// rig under simulation, and navigation. Browsing and selecting preview content
-// is transient and never edits the asset being inspected.
+// rig under simulation, and navigation.
 class AnimationPreviewWorkspace final : public DataFormHost
 {
 public:
-    // `vocabulary` installs the project's names -- tags, verbs -- into each
-    // preview World; the application passes its loaded module's hook.
-    // `authoringRoot` is the content root new assets are written into; empty
-    // makes this a workspace that creates nothing.
+    // An empty `authoringRoot` makes a workspace that creates no assets.
     explicit AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary = {},
                                        std::filesystem::path authoringRoot = {});
     void RefreshBrowser();
@@ -110,29 +94,21 @@ public:
     bool SelectClip(const std::string& path);
     bool SelectMaterial(const std::string& path);
     void Frame(double wallSeconds);
-    // Opens any animation data asset for editing: rig, fact or request schema,
-    // behavior set, selector, slot map, flow.
     bool OpenAnimationDocument(const std::string& path);
-    // A new asset of `subtype` at `relativePath` under the authoring root, with
-    // its schema's required members, saved, registered and opened.
+    // Written with its schema's required members, then registered and opened.
     bool CreateDocument(std::string_view subtype, std::string relativePath, std::string& error);
-    // Names the open rig's content uses as gameplay tags that nothing
-    // declares; and adding them to the tag declarations beside the rig as one
-    // undo step there, creating the file when the rig has none.
+    // Gameplay tags the open rig's content uses that nothing declares.
     [[nodiscard]] std::vector<std::string> UndeclaredNames();
+    // One undo step on the tag declarations beside the rig, created if absent.
     bool DeclareUndeclaredNames(std::string& error);
-    // After any change to a document -- an edit committed, an undo -- revalidate
-    // it and, when it is valid, apply it to the preview's copy of the asset.
-    // The preview keeps its last valid version while the document is invalid.
+    // Revalidates; a valid document replaces the preview's copy of the asset,
+    // an invalid one leaves the preview on its last valid version.
     void DocumentChanged(DataDocument& document);
-    // Commits the document's open edit, then treats it as changed.
     void CommitDocumentEdit(DataDocument& document);
     [[nodiscard]] DataDocument* ActiveDocumentOf(std::string_view subtype);
     [[nodiscard]] DataDocument* ActiveDocumentAny();
     [[nodiscard]] const DataSchema* SchemaOf(const DataDocument& document) const;
 
-    // The schema form's host: references pick from the project's data assets,
-    // open here, and every edit previews and rebinds as a panel's does.
     [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype) override;
     void OpenDataAsset(std::string_view path) override;
     void SelectField(const DataFieldSchema& field, std::string_view path) override;
@@ -140,81 +116,56 @@ public:
     void EditCommitted(DataDocument& document) override;
     [[nodiscard]] DataDocument* FindDocument(std::string_view path);
 
-    // Opens the events of a clip cooked from a mesh source, from that source's
-    // import sidecar. Already open: selects it.
+    // Selects the document instead when it is already open.
     bool OpenClipEvents(const std::string& clipPath);
     [[nodiscard]] AnimationClipEventsDocument* FindClipEvents(std::string_view clipPath);
-    // After any change to an events document -- an edit, a preview, an undo.
-    // Valid working events replace the preview's copy of the clip, and every
-    // rig playing it rebinds; invalid ones leave the preview on the last
-    // valid events, and PreviewStatus says why.
+    // Same contract as DocumentChanged; every rig playing the clip rebinds.
     void ClipEventsChanged(AnimationClipEventsDocument& document);
     bool SaveClipEvents(AnimationClipEventsDocument& document);
-    // Adds a binding for `verb` under `key` to an authored.bindings document,
-    // every argument fed by an input of its own name, as one undo step. The
-    // document opens if it is not open.
+    // One undo step; each verb argument is fed by an input of its own name.
     bool CreateBinding(const std::string& bindingsPath, const std::string& key, const std::string& verb);
 
-    // Opens a rig under the scenario saved beside it, or a new one-participant
-    // scenario when there is none. Keeps the rig and its dependencies resident
-    // while it is open.
+    // Uses the scenario saved beside the rig, or a new one-participant scenario.
+    // The rig and its dependencies stay resident while it is open.
     bool OpenRig(const std::string& path);
-    // Writes the working scenario to its sidecar. Explicit: nothing else does.
     bool SaveScenario();
-    // Writes a new rig from `recipe` into the authoring root -- its behavior
-    // set, slot map, request schema, the rig and a scenario -- registers it
-    // and opens it. Refuses to overwrite; `error` says why it did not.
+    // Refuses before writing anything if any of the rig's files already exists.
     bool CreateRig(const AnimationRigRecipe& recipe, std::string& error);
-    // Scenes in the authoring root that still name the retired clip player,
-    // into ClipPlayerUses; and turning every one into a one-layer rig
-    // (AnimationClipPlayerMigration.h), rewriting the scenes.
     void ScanClipPlayers();
     bool MigrateClipPlayers(std::string& error);
 
-    // A/B of blends: take A is the simulation's pose on every kept tick under
-    // the working scenario. Replaying runs the scenario again from tick 0 to
-    // A's last tick -- the same inputs, clock, seed and start pose, with
-    // whatever has been edited since -- and compares it to A.
+    // Replay runs the working scenario from tick 0 to take A's last tick and
+    // compares poses, so any edit since the recording shows as a residual.
     bool RecordTakeA();
     bool ReplayAgainstTakeA();
     void ClearTakeA();
-    // The working scenario on an authority and a client over LabSettings'
-    // link, with LabInjections' guesses, run to LabTick. From tick 0 each
-    // time, so it always reflects the current edits.
+    // Always from tick 0, so the result reflects the current edits.
     bool RunLab();
-    // The tick the viewport shows: the inspected record's, else the latest.
+    // The inspected record's tick, else the latest.
     [[nodiscard]] std::optional<AnimTick> ShownTick() const;
-    // Discards the working scenario for the saved one.
     bool ReloadScenario();
-    // Every changed document and clip's events, each saved unless its file
-    // changed on disk meanwhile; one refused does not stop the others.
+    // Documents whose files changed on disk are held back as conflicts; one
+    // refusal does not stop the others.
     AnimationSaveReport SaveAll();
-    // A conflict settled: the working version written over the file, or the
-    // file's version taken as one undo step.
-    bool KeepMine(std::string_view path, std::string& error);
-    bool TakeTheirs(std::string_view path, std::string& error);
-    // Undo and redo across every open document and clip's events, newest step
-    // first, showing the document each step belongs to. Any interaction still
-    // open anywhere is cancelled first.
+    // Settle a conflict: write the working version over the file, or take the
+    // file's version as one undo step.
+    bool SaveOverFile(std::string_view path, std::string& error);
+    bool AdoptFileVersion(std::string_view path, std::string& error);
+    // Newest step across every open document, cancelling any open interaction first.
     void Undo();
     void Redo();
     [[nodiscard]] bool CanUndo() const { return Journal.CanUndo(); }
     [[nodiscard]] bool CanRedo() const { return Journal.CanRedo(); }
-    // Every scenario in the authoring root, each under its own rig or, when
-    // `againstOpenRig`, the open one, into ScenarioRuns. Runs in a session of
-    // its own: the working simulation is untouched.
+    // Runs in its own session; the working simulation is untouched.
     void RunScenarioBatch(bool againstOpenRig);
     [[nodiscard]] const DataAssetCache& DataCache() const;
-    // The editor's own clips, including working events not yet saved.
+    // Includes working clip events not yet saved.
     [[nodiscard]] const AnimationClipCache& Clips() const;
     [[nodiscard]] const SkeletonCache& Skeletons() const;
-    // The skeleton the simulated rig names, when it names one that is loaded.
     [[nodiscard]] const SkeletonData* RigSkeleton() const;
-    // One undo step on the open rig's document, opening it first: `edit`
-    // changes a copy of the root and returns whether it changed anything.
+    // One undo step on the rig document; `edit` returns whether it changed anything.
     bool EditRig(const std::function<bool(JsonValue&)>& edit);
-    // Model-space transforms of the joints as the viewport drew them last
-    // frame, one per joint of the skeleton on screen.
+    // One model-space transform per joint, as drawn last frame.
     [[nodiscard]] const std::vector<Mat4>& ViewportModel() const { return ViewportModelTransforms; }
     void SelectDocument(std::size_t index);
     void CancelAuthoringEdit();
@@ -231,37 +182,30 @@ public:
     std::vector<std::string> BlendspacePaths;
     std::vector<std::string> BlendOverridePaths;
     std::vector<std::string> FactSchemaPaths;
-    // Per document path: whether the preview runs its working version, or its
-    // last valid one and why.
+    // Per document path: whether the preview runs the working or last valid version.
     std::map<std::string, std::string> PreviewStatus;
     AnimationNavigation Navigation;
     AnimationViewportSource ViewportSource = AnimationViewportSource::Audition;
     AnimationLayerDisplay LayerDisplay;
     std::optional<AnimationPoseTake> TakeA;
     AnimationPoseComparison Comparison;
-    // Draws take A's pose on the shown tick over the simulation's.
     bool ShowGhost = true;
     std::string ViewportNote;
     std::vector<std::unique_ptr<DataDocument>> Documents;
     std::size_t ActiveDocument = 0;
     std::vector<std::unique_ptr<AnimationClipEventsDocument>> ClipEventDocuments;
-    // One entry per step any document took, in the order they were taken.
+    // One entry per step any document took, in order.
     CommandStack Journal;
-    // The events document the event panels act on; its path.
+    // Clip path of the events document the event panels act on.
     std::string ActiveClipEvents;
     std::string DocumentError;
 
     AnimationClipPreviewSession Session;
-    // The rig under its scenario. Separate from content audition: sampling a
-    // clip never advances or alters the simulation.
     AnimationPreviewSession Simulation;
-    // The names the project's tag declarations list, gathered when the
-    // browser refreshes; every preview World registers them, as the game does
-    // when content loads.
+    // Gathered on browser refresh from the project's tag declarations.
     std::vector<std::string> ContentTags;
     std::vector<std::string> ContentTagErrors;
-    // The project's vocabulary -- its game module's hook, then the content
-    // tags -- for every preview World.
+    // The game module's hook, then ContentTags.
     std::function<void(World&)> Vocabulary;
     std::unique_ptr<AnimationSessionLab> Lab;
     std::vector<AnimationClipPlayerUse> ClipPlayerUses;
@@ -275,8 +219,8 @@ public:
     std::vector<AnimDiagnostic> ScenarioLoadProblems;
     std::vector<AnimationScenarioRun> ScenarioRuns;
     AnimationSaveReport LastSave;
-    // Open documents with working edits the preview has not loaded yet.
-    std::vector<std::string> NotYetPreviewed;
+    // Documents edited before the preview loaded their asset.
+    std::vector<std::string> PendingPreviewDocuments;
     AnimationPreviewScene Scene;
     std::vector<std::string> MeshPaths;
     std::vector<std::string> SkeletonPaths;
@@ -290,26 +234,24 @@ public:
 private:
     void RegisterDataFile(const std::string& relativePath);
     class JournalStep;
-    void Journalled(DataDocument& document);
-    void Journalled(AnimationClipEventsDocument& document);
+    void RecordJournalStep(DataDocument& document);
+    void RecordJournalStep(AnimationClipEventsDocument& document);
     void CancelOpenEdits();
     void StepDocument(std::string_view path, bool clipEvents, bool undo);
     void RefreshContentTags();
-    void PreviewNotYetPreviewed();
+    void ApplyPendingPreviewDocuments();
     bool SetSkeletonContent(SkeletonHandle skeleton);
-    // Writes into the authoring root, refusing before anything is written if
-    // any document already exists, and registers each.
+    // Refuses before writing anything if any document already exists.
     bool WriteNewDocuments(const std::vector<AnimationNewDocument>& documents, std::string& error);
     bool WriteFile(const AnimationNewDocument& document, int indent, std::string& error);
     [[nodiscard]] bool ApplyDocumentToPreview(DataDocument& document, std::string& status);
-    // The simulation's composed pose, or the audition's.
     [[nodiscard]] const std::vector<Mat4>& ViewportPalette();
     AnimPoseScratch DisplayScratch;
-    // Take A's pose on the shown tick, when the ghost is drawn.
+    // Null when the ghost is not drawn.
     [[nodiscard]] const std::vector<Mat4>* GhostPalette();
     std::vector<Mat4> GhostModel;
     std::vector<Mat4> GhostPaletteScratch;
-    // The shown palette moved to where a moving character stands.
+    // The shown palette placed at a moving character's transform.
     std::vector<Mat4> PlacedPalette;
     MaterialHandle GhostMaterial;
     AssetLease GhostMaterialLease;

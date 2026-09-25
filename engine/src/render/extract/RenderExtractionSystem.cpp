@@ -357,10 +357,10 @@ std::uint32_t RenderExtractionSystem::RegisterSkinnedPose(
         && slot->Current.size() == skeleton->Joints.size())
     {
         PoseScratch.resize(slot->Current.size());
-        const float share = static_cast<float>(std::clamp(poseAlpha, 0.0, 1.0));
+        const float alpha = static_cast<float>(std::clamp(poseAlpha, 0.0, 1.0));
         for (std::size_t j = 0; j < slot->Current.size(); ++j)
-            PoseScratch[j] = slot->HasPrevious && share < 1.0f
-                ? Transform3f::Interpolate(slot->Previous[j], slot->Current[j], share)
+            PoseScratch[j] = slot->HasPrevious && alpha < 1.0f
+                ? Transform3f::Interpolate(slot->Previous[j], slot->Current[j], alpha)
                 : slot->Current[j];
         BuildPosedModelTransforms(*skeleton, PoseScratch, ModelScratch);
         BuildSkinningPalette(*skeleton, ModelScratch, PaletteScratch);

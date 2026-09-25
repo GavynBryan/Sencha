@@ -6,25 +6,13 @@
 #include <string>
 #include <string_view>
 
-//=============================================================================
-// Flow edits
-//
-// The operations the Flow panel offers over a flow document's root, as pure
-// edits of the authored JSON applied inside a document transaction, one undo
-// step each. None of them can make control go backward: a branch is added
-// only to a later section, and a move that would put a branch's target at or
-// before its section is refused. Removing a section removes the branches to
-// it and, when it was the cancel section, the cancel.
-//
-// Loop and branch conditions are predicates, edited with the predicate edits
-// over the rows the accessors below return. A new while loop or branch starts
-// with an empty condition for the author to fill in, which the document
-// reports until they do.
-//=============================================================================
+// Edits of a flow document's root. No edit can make control go backward:
+// branches only target later sections, and a move that would reverse one is refused.
 
 [[nodiscard]] JsonValue::Array* AnimFlowSections(JsonValue& root);
 
 void AddAnimFlowSection(JsonValue& root, std::string tag, std::string clip);
+// Also removes branches to the section, and the cancel when it was the cancel section.
 bool RemoveAnimFlowSection(JsonValue& root, std::size_t section);
 bool MoveAnimFlowSection(JsonValue& root, std::size_t from, std::size_t to);
 
@@ -39,8 +27,6 @@ bool SetAnimFlowCancel(JsonValue& root, std::string_view tag);
 bool AddAnimFlowBranch(JsonValue& root, std::size_t section, std::size_t to);
 bool RemoveAnimFlowBranch(JsonValue& root, std::size_t section, std::size_t branch);
 
-// A while loop's condition rows, created empty; null unless the section loops
-// while something holds.
+// Condition rows are created empty when absent. Null unless the section is a while loop.
 [[nodiscard]] JsonValue::Array* AnimFlowLoopCondition(JsonValue& root, std::size_t section);
-// A branch's condition rows, created empty; null for a branch that is not there.
 [[nodiscard]] JsonValue::Array* AnimFlowBranchCondition(JsonValue& root, std::size_t section, std::size_t branch);

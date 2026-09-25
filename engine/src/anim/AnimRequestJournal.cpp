@@ -24,9 +24,8 @@ namespace
         return nullptr;
     }
 
-    // Whether the authority's own set holds the guess as it was made: the
-    // same source and intent, from the same tick.
-    bool Guessed(const AnimRequestSet& set, const AnimRequestDesc& desc, AnimTick tick)
+    // Same source and intent, from the same tick.
+    bool AuthorityIssuedPrediction(const AnimRequestSet& set, const AnimRequestDesc& desc, AnimTick tick)
     {
         for (const AnimRequest& request : set.Records)
             if (request.Occupied && !request.Predicted && request.Id.Source == desc.Source
@@ -66,14 +65,12 @@ void AnimRequestJournal::Reconcile(World& world, std::uint64_t acknowledgedComma
             return true;
         if (entry.CommandTick > acknowledgedCommand)
             return false;
-        // Decided. A snapshot that carried the set already replaced the
-        // guess; one that did not left it standing, and nothing else would
-        // ever take it down.
-        if (AnimRequest* guess = FindPrediction(*set, entry.Desc, entry.IssuedTick))
-            *guess = AnimRequest{};
-        // Unless the authority issued exactly what was guessed, what played
-        // since the guess rested on something that did not happen.
-        if (!Guessed(*set, entry.Desc, entry.IssuedTick) && world.IsRegistered<AnimContentState>())
+        // Decided. A snapshot carrying the set already replaced the prediction;
+        // otherwise it still stands and nothing else would take it down.
+        if (AnimRequest* prediction = FindPrediction(*set, entry.Desc, entry.IssuedTick))
+            *prediction = AnimRequest{};
+        // Otherwise what played since the prediction rested on something that did not happen.
+        if (!AuthorityIssuedPrediction(*set, entry.Desc, entry.IssuedTick) && world.IsRegistered<AnimContentState>())
             if (AnimContentState* content = world.TryGet<AnimContentState>(entry.Animated))
                 content->Reconstruct = true;
         return true;
