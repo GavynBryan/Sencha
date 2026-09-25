@@ -10,11 +10,10 @@
 
 namespace
 {
-bool SaveAll(AnimationPreviewWorkspace& workspace)
+bool AnyUnsaved(const AnimationPreviewWorkspace& workspace)
 {
-    for (const auto& document : workspace.Documents)
-        if (document->IsDirty() && !workspace.SaveDocument(*document)) return false;
-    return true;
+    return std::ranges::any_of(workspace.Documents, [](const auto& document) { return document->IsDirty(); })
+        || std::ranges::any_of(workspace.ClipEventDocuments, [](const auto& document) { return document->IsDirty(); });
 }
 }
 
@@ -26,12 +25,10 @@ void ConfigureAnimationDocumentActions(EditorUiFeature& ui, Engine& engine,
     ui.SetFileActions({}, {}, [&workspace] {
         if (auto* doc = workspace.ActiveDocumentAny()) workspace.SaveDocument(*doc);
     }, {});
-    ui.SetSaveAllAction([&workspace] { (void)SaveAll(workspace); });
+    ui.SetSaveAllAction([&workspace] { (void)workspace.SaveAll(); });
     engine.OnExitRequested = [&workspace](Engine::ExitSource) {
         if (auto* doc = workspace.ActiveDocumentAny()) doc->CommitEdit();
-        return std::any_of(workspace.Documents.begin(), workspace.Documents.end(),
-            [](const auto& document) { return document->IsDirty(); })
-            ? Engine::ExitDecision::Defer : Engine::ExitDecision::Allow;
+        return AnyUnsaved(workspace) ? Engine::ExitDecision::Defer : Engine::ExitDecision::Allow;
     };
     ui.AddOverlay([&engine, &workspace] {
         if (!engine.IsExitPending()) return;
@@ -42,11 +39,20 @@ void ConfigureAnimationDocumentActions(EditorUiFeature& ui, Engine& engine,
             ImGui::TextUnformatted("Save authored changes before closing?");
             for (const auto& document : workspace.Documents)
                 if (document->IsDirty()) ImGui::BulletText("%s", document->VirtualPath().c_str());
-            if (!workspace.DocumentError.empty()) ImGui::TextWrapped("%s", workspace.DocumentError.c_str());
-            if (ImGui::Button("Save all and close") && SaveAll(workspace))
+            for (const auto& document : workspace.ClipEventDocuments)
+                if (document->IsDirty()) ImGui::BulletText("%s events", document->ClipPath().c_str());
+            for (const std::string& path : workspace.LastSave.Conflicts)
+                ImGui::TextWrapped("%s changed on disk: keep yours or take the file's under Changes.", path.c_str());
+            for (const auto& [path, why] : workspace.LastSave.Failed)
+                ImGui::TextWrapped("%s was not saved: %s", path.c_str(), why.c_str());
+            if (ImGui::Button("Save all and close"))
             {
-                ImGui::CloseCurrentPopup();
-                engine.ConfirmExit();
+                const AnimationSaveReport report = workspace.SaveAll();
+                if (report.Conflicts.empty() && report.Failed.empty())
+                {
+                    ImGui::CloseCurrentPopup();
+                    engine.ConfirmExit();
+                }
             }
             ImGui::SameLine();
             if (ImGui::Button("Discard and close"))

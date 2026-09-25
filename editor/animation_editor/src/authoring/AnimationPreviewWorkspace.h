@@ -80,6 +80,18 @@ struct AnimationNavigation
 // Owns preview selections and their leases, the open animation documents, the
 // rig under simulation, and navigation. Browsing and selecting preview content
 // is transient and never edits the asset being inspected.
+// What saving every changed document did. Paths are asset paths, or clip
+// paths for a clip's events.
+struct AnimationSaveReport
+{
+    std::vector<std::string> Saved;
+    // Saved with problems a game would refuse to load.
+    std::vector<std::string> SavedWithProblems;
+    // Changed on disk since this editor read them; left for KeepMine or TakeTheirs.
+    std::vector<std::string> Conflicts;
+    std::vector<std::pair<std::string, std::string>> Failed;
+};
+
 // The data subtypes this editor opens and creates.
 [[nodiscard]] std::span<const std::string_view> AnimationDocumentSubtypes();
 
@@ -174,6 +186,13 @@ public:
     [[nodiscard]] std::optional<AnimTick> ShownTick() const;
     // Discards the working scenario for the saved one.
     bool ReloadScenario();
+    // Every changed document and clip's events, each saved unless its file
+    // changed on disk meanwhile; one refused does not stop the others.
+    AnimationSaveReport SaveAll();
+    // A conflict settled: the working version written over the file, or the
+    // file's version taken as one undo step.
+    bool KeepMine(std::string_view path, std::string& error);
+    bool TakeTheirs(std::string_view path, std::string& error);
     // Undo and redo across every open document and clip's events, newest step
     // first, showing the document each step belongs to. Any interaction still
     // open anywhere is cancelled first.
@@ -255,6 +274,7 @@ public:
     std::string ScenarioError;
     std::vector<AnimDiagnostic> ScenarioLoadProblems;
     std::vector<AnimationScenarioRun> ScenarioRuns;
+    AnimationSaveReport LastSave;
     // Open documents with working edits the preview has not loaded yet.
     std::vector<std::string> NotYetPreviewed;
     AnimationPreviewScene Scene;

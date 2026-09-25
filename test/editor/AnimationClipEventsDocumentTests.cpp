@@ -210,3 +210,59 @@ TEST(AnimationClipEventsDocument, AnUnreadableSidecarDoesNotOpen)
     EXPECT_NE(error.find("'event'"), std::string::npos) << error;
     EXPECT_EQ(AnimationClipEventsDocument::Open("asset://chars/hero.blend#model:Rig", sidecar, &error), nullptr);
 }
+
+// A conflict settled in this clip's favour writes its events over the file as
+// it is now: what changed there for another clip meanwhile stays.
+TEST(AnimationClipEventsDocument, KeepingMineKeepsOtherClipsChangesOnDisk)
+{
+    TempDir dir;
+    const std::filesystem::path sidecar = dir.Path / "hero.blend.meta";
+    Write(sidecar, R"({ "version": 1, "clips": { "Walk": { "events": [] } } })");
+    std::string error;
+    auto document = AnimationClipEventsDocument::Open(std::string(kClip), sidecar, &error);
+    ASSERT_NE(document, nullptr) << error;
+    (void)document->Add(Step(0.3f));
+
+    Write(sidecar, R"({ "version": 1, "clips": { "Walk": { "events": [] },
+        "Swing": { "events": [ { "key": 1, "time": 0.5, "binding": "melee.hit", "scope": "gameplay" } ] } } })");
+    std::filesystem::last_write_time(sidecar, std::filesystem::last_write_time(sidecar) + std::chrono::seconds(5));
+    ASSERT_FALSE(document->Save(&error));
+    ASSERT_TRUE(document->SaveOverFile(&error)) << error;
+    EXPECT_FALSE(document->IsDirty());
+    EXPECT_FALSE(document->IsExternallyModified());
+
+    MeshImportSettings saved;
+    const std::string text = Read(sidecar);
+    ASSERT_TRUE(ParseMeshImportSettings({ reinterpret_cast<const std::byte*>(text.data()), text.size() }, saved,
+                                        &error))
+        << error;
+    EXPECT_EQ(saved.Clips.at("Walk").Events.size(), 1u);
+    ASSERT_EQ(saved.Clips.at("Swing").Events.size(), 1u) << "another clip's change on disk is kept";
+}
+
+// Settled in the file's favour, the file's events replace the working ones as
+// a step undo can take back.
+TEST(AnimationClipEventsDocument, TakingTheFilesIsAStepUndoTakesBack)
+{
+    TempDir dir;
+    const std::filesystem::path sidecar = dir.Path / "hero.blend.meta";
+    Write(sidecar, R"({ "version": 1, "clips": { "Walk": { "events": [] } } })");
+    std::string error;
+    auto document = AnimationClipEventsDocument::Open(std::string(kClip), sidecar, &error);
+    ASSERT_NE(document, nullptr) << error;
+    (void)document->Add(Step(0.3f));
+
+    Write(sidecar, R"({ "version": 1, "clips": { "Walk": { "events": [
+        { "key": 7, "time": 0.9, "binding": "anim.footstep" } ] } } })");
+    std::filesystem::last_write_time(sidecar, std::filesystem::last_write_time(sidecar) + std::chrono::seconds(5));
+    ASSERT_TRUE(document->AdoptFileVersion(&error)) << error;
+    ASSERT_EQ(document->Events().size(), 1u);
+    EXPECT_EQ(document->Events()[0].Key, 7u);
+    EXPECT_FALSE(document->IsDirty());
+    EXPECT_FALSE(document->IsExternallyModified());
+
+    document->Undo();
+    ASSERT_EQ(document->Events().size(), 1u);
+    EXPECT_NE(document->Events()[0].Key, 7u) << "the working event is back";
+    EXPECT_TRUE(document->IsDirty());
+}

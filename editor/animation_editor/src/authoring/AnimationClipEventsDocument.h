@@ -80,12 +80,19 @@ public:
     // Writes the sidecar: this clip's events and every other clip's as read.
     // Refuses a file changed on disk since it was read, and an invalid event.
     [[nodiscard]] bool Save(std::string* error = nullptr);
+    // A conflict with the file settled either way: this clip's events written
+    // over the sidecar as it is now, keeping what changed there for other
+    // clips; or this clip's events as the file has them, as one undo step.
+    [[nodiscard]] bool SaveOverFile(std::string* error = nullptr);
+    [[nodiscard]] bool AdoptFileVersion(std::string* error = nullptr);
 
 private:
     friend struct AnimationClipEventsSnapshot;
 
     AnimationClipEventsDocument() = default;
     void Set(std::vector<AnimationClipEvent> events);
+    [[nodiscard]] bool ReadSidecar(MeshImportSettings& settings, std::string* error) const;
+    [[nodiscard]] bool Write(std::string* error);
 
     std::string Clip;
     std::string Name;

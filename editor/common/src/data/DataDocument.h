@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -89,6 +90,11 @@ public:
     [[nodiscard]] bool Reload(const DataAssetTypeRegistry& types,
                               const DataSchemaRegistry& schemas,
                               std::string* error = nullptr);
+    // The file as it is now becomes the working version, as one undo step, and
+    // what saving is measured against: a conflict settled in the file's favour.
+    [[nodiscard]] bool AdoptFileVersion(const DataAssetTypeRegistry& types,
+                                        const DataSchemaRegistry& schemas,
+                                        std::string* error = nullptr);
 
     void Validate(const DataAssetTypeRegistry& types,
                   const DataSchemaRegistry& schemas);
@@ -106,6 +112,7 @@ private:
                  JsonValue root);
 
     void ApplyRoot(JsonValue root);
+    [[nodiscard]] std::optional<JsonValue> ReadFileRoot(std::string* error) const;
     void RefreshEnvelopeIdentity();
     void RefreshDirty();
     void RefreshTimestamp();

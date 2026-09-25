@@ -706,13 +706,91 @@ void AnimationPreviewWorkspace::ValidateDocument(DataDocument& document)
     document.Validate(Assets.DataTypes, Assets.DataSchemas);
 }
 
+AnimationSaveReport AnimationPreviewWorkspace::SaveAll()
+{
+    AnimationSaveReport report;
+    for (const auto& document : Documents)
+    {
+        if (!document->IsDirty() && !document->IsEditing())
+            continue;
+        const std::string& path = document->VirtualPath();
+        if (SaveDocument(*document))
+        {
+            report.Saved.push_back(path);
+            if (!document->IsSemanticallyValid())
+                report.SavedWithProblems.push_back(path);
+        }
+        else if (document->IsExternallyModified())
+            report.Conflicts.push_back(path);
+        else
+            report.Failed.emplace_back(path, DocumentError);
+    }
+    for (const auto& document : ClipEventDocuments)
+    {
+        if (!document->IsDirty() && !document->IsEditing())
+            continue;
+        std::string error;
+        if (document->Save(&error))
+            report.Saved.push_back(document->ClipPath());
+        else if (document->IsExternallyModified())
+            report.Conflicts.push_back(document->ClipPath());
+        else
+            report.Failed.emplace_back(document->ClipPath(), std::move(error));
+    }
+    DocumentError.clear();
+    LastSave = report;
+    return report;
+}
+
+bool AnimationPreviewWorkspace::KeepMine(std::string_view path, std::string& error)
+{
+    bool kept = false;
+    if (DataDocument* document = FindDocument(path))
+    {
+        document->CommitEdit();
+        kept = document->Save(&error);
+    }
+    else if (AnimationClipEventsDocument* events = FindClipEvents(path))
+        kept = events->SaveOverFile(&error);
+    else
+        error = std::format("'{}' is not open here.", path);
+    if (kept)
+        std::erase(LastSave.Conflicts, path);
+    return kept;
+}
+
+bool AnimationPreviewWorkspace::TakeTheirs(std::string_view path, std::string& error)
+{
+    bool taken = false;
+    if (DataDocument* document = FindDocument(path))
+    {
+        taken = document->AdoptFileVersion(Assets.DataTypes, Assets.DataSchemas, &error);
+        if (taken)
+            DocumentChanged(*document);
+    }
+    else if (AnimationClipEventsDocument* events = FindClipEvents(path))
+    {
+        taken = events->AdoptFileVersion(&error);
+        if (taken)
+            ClipEventsChanged(*events);
+    }
+    else
+        error = std::format("'{}' is not open here.", path);
+    if (taken)
+        std::erase(LastSave.Conflicts, path);
+    return taken;
+}
+
 bool AnimationPreviewWorkspace::SaveDocument(DataDocument& document)
 {
     document.CommitEdit();
     ValidateDocument(document);
     if (document.IsExternallyModified())
     {
-        DocumentError = "File changed on disk. Resolve or reload it before saving; external edits were not overwritten.";
+        DocumentError = "The file changed on disk since it was read. Keep yours or take the file's under "
+                        "Problems and changes > Changes.";
+        if (std::ranges::find(LastSave.Conflicts, document.VirtualPath()) == LastSave.Conflicts.end())
+            LastSave.Conflicts.push_back(document.VirtualPath());
         return false;
     }
     DocumentError.clear();

@@ -933,7 +933,33 @@ private:
             any = true;
             ImGui::BulletText("%s: unsaved edits", document->VirtualPath().c_str());
         }
+        for (const auto& document : Workspace.ClipEventDocuments)
+        {
+            if (!document->IsDirty()) continue;
+            any = true;
+            ImGui::BulletText("%s events: unsaved edits", document->ClipPath().c_str());
+        }
         if (!any) ImGui::TextDisabled("No open document has unsaved edits.");
+        if (ImGui::Button("Save all"))
+            (void)Workspace.SaveAll();
+        const AnimationSaveReport& saved = Workspace.LastSave;
+        for (const std::string& path : saved.SavedWithProblems)
+            ImGui::TextWrapped("%s was saved with problems a game will refuse to load.", path.c_str());
+        for (const auto& [path, why] : saved.Failed)
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s was not saved: %s", path.c_str(), why.c_str());
+        for (const std::string& path : std::vector<std::string>(saved.Conflicts))
+        {
+            ImGui::PushID(path.c_str());
+            ImGui::TextWrapped("%s changed on disk since it was read.", path.c_str());
+            if (ImGui::SmallButton("Keep mine"))
+                (void)Workspace.KeepMine(path, ConflictError);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Take the file's"))
+                (void)Workspace.TakeTheirs(path, ConflictError);
+            ImGui::PopID();
+        }
+        if (!ConflictError.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s", ConflictError.c_str());
         ImGui::TextWrapped("Preview inputs, requests and transport never modify a document.");
     }
 
@@ -943,6 +969,7 @@ private:
     std::optional<AnimationTrace> Trace;
     std::string TraceError;
     std::string ProblemSignature;
+    std::string ConflictError;
     std::vector<std::string> Undeclared;
     std::string DeclareError;
 };

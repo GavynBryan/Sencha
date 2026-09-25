@@ -61,21 +61,9 @@ std::unique_ptr<AnimationClipEventsDocument> AnimationClipEventsDocument::Open(s
     document->Name = source->ClipName;
     document->Sidecar = std::move(sidecarFile);
 
-    std::error_code ec;
-    if (std::filesystem::exists(document->Sidecar, ec))
-    {
-        std::vector<std::byte> bytes;
-        std::string parseError;
-        if (!ReadFileBytes(document->Sidecar, bytes)
-            || !ParseMeshImportSettings(bytes, document->Settings, &parseError))
-        {
-            if (error != nullptr)
-                *error = std::format("{}: {}", document->Sidecar.generic_string(),
-                                     parseError.empty() ? "could not be read" : parseError);
-            return nullptr;
-        }
-        document->SavedTime = WriteTime(document->Sidecar);
-    }
+    if (!document->ReadSidecar(document->Settings, error))
+        return nullptr;
+    document->SavedTime = WriteTime(document->Sidecar);
     if (const auto it = document->Settings.Clips.find(document->Name); it != document->Settings.Clips.end())
         document->Working = it->second.Events;
     document->Saved = document->Working;
@@ -238,8 +226,62 @@ bool AnimationClipEventsDocument::Save(std::string* error)
         return false;
     };
     if (IsExternallyModified())
-        return fail(std::format("{} changed on disk since it was read; reload it before saving.",
+        return fail(std::format("{} changed on disk since it was read; keep yours or take the file's.",
                                 Sidecar.generic_string()));
+    return Write(error);
+}
+
+bool AnimationClipEventsDocument::SaveOverFile(std::string* error)
+{
+    CommitEdit();
+    MeshImportSettings current;
+    if (!ReadSidecar(current, error))
+        return false;
+    Settings = std::move(current);
+    return Write(error);
+}
+
+bool AnimationClipEventsDocument::AdoptFileVersion(std::string* error)
+{
+    CancelEdit();
+    MeshImportSettings current;
+    if (!ReadSidecar(current, error))
+        return false;
+    const auto it = current.Clips.find(Name);
+    std::vector<AnimationClipEvent> events = it != current.Clips.end() ? it->second.Events
+                                                                        : std::vector<AnimationClipEvent>{};
+    Settings = std::move(current);
+    Saved = events;
+    SavedTime = WriteTime(Sidecar);
+    if (Text(Name, Working) != Text(Name, events))
+        History.Execute(std::make_unique<AnimationClipEventsSnapshot>(*this, Working, std::move(events)));
+    return true;
+}
+
+bool AnimationClipEventsDocument::ReadSidecar(MeshImportSettings& settings, std::string* error) const
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(Sidecar, ec))
+    {
+        settings = {};
+        return true;
+    }
+    std::vector<std::byte> bytes;
+    std::string parseError;
+    if (ReadFileBytes(Sidecar, bytes) && ParseMeshImportSettings(bytes, settings, &parseError))
+        return true;
+    if (error != nullptr)
+        *error = std::format("{}: {}", Sidecar.generic_string(), parseError.empty() ? "could not be read" : parseError);
+    return false;
+}
+
+bool AnimationClipEventsDocument::Write(std::string* error)
+{
+    const auto fail = [&](std::string message) {
+        if (error != nullptr)
+            *error = std::move(message);
+        return false;
+    };
     if (const std::vector<std::string> problems = Problems(); !problems.empty())
         return fail(problems.front());
 

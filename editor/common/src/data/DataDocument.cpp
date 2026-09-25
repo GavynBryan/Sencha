@@ -252,29 +252,48 @@ bool DataDocument::Save(std::string* error)
     return true;
 }
 
-bool DataDocument::Reload(const DataAssetTypeRegistry& types,
-                          const DataSchemaRegistry& schemas,
-                          std::string* error)
+std::optional<JsonValue> DataDocument::ReadFileRoot(std::string* error) const
 {
     std::ifstream input(File);
     if (!input.is_open())
     {
         if (error)
             *error = "could not reopen data asset";
-        return false;
+        return std::nullopt;
     }
 
     const std::string text{std::istreambuf_iterator<char>(input),
                            std::istreambuf_iterator<char>()};
     JsonParseError parseError;
     std::optional<JsonValue> root = JsonParse(text, &parseError);
+    if (!root && error)
+        *error = "JSON parse error at " + std::to_string(parseError.Position) + ": " + parseError.Message;
+    return root;
+}
+
+bool DataDocument::AdoptFileVersion(const DataAssetTypeRegistry& types,
+                                    const DataSchemaRegistry& schemas,
+                                    std::string* error)
+{
+    std::optional<JsonValue> root = ReadFileRoot(error);
     if (!root)
-    {
-        if (error)
-            *error = "JSON parse error at " + std::to_string(parseError.Position)
-                   + ": " + parseError.Message;
         return false;
-    }
+    CancelEdit();
+    SavedText = JsonFormat(*root);
+    ReplaceRoot(std::move(*root));
+    RefreshDirty();
+    RefreshTimestamp();
+    Validate(types, schemas);
+    return true;
+}
+
+bool DataDocument::Reload(const DataAssetTypeRegistry& types,
+                          const DataSchemaRegistry& schemas,
+                          std::string* error)
+{
+    std::optional<JsonValue> root = ReadFileRoot(error);
+    if (!root)
+        return false;
 
     // Clear drops a pending edit's callback without running it, so the
     // transaction is abandoned here rather than cancelled: the state it guarded
