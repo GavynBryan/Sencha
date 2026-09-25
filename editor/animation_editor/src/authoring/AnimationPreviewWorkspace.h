@@ -1,6 +1,7 @@
 #pragma once
 
 #include "authoring/AnimationBlendComparison.h"
+#include "authoring/AnimationClipPlayerMigration.h"
 #include "authoring/AnimationSessionLab.h"
 #include "authoring/AnimationClipEventsDocument.h"
 #include "authoring/AnimationClipPreviewSession.h"
@@ -127,6 +128,11 @@ public:
     // set, slot map, request schema, the rig and a scenario -- registers it
     // and opens it. Refuses to overwrite; `error` says why it did not.
     bool CreateRig(const AnimationRigRecipe& recipe, std::string& error);
+    // Scenes in the authoring root that still name the retired clip player,
+    // into ClipPlayerUses; and turning every one into a one-layer rig
+    // (AnimationClipPlayerMigration.h), rewriting the scenes.
+    void ScanClipPlayers();
+    bool MigrateClipPlayers(std::string& error);
 
     // A/B of blends: take A is the simulation's pose on every kept tick under
     // the working scenario. Replaying runs the scenario again from tick 0 to
@@ -192,9 +198,17 @@ public:
     // The rig under its scenario. Separate from content audition: sampling a
     // clip never advances or alters the simulation.
     AnimationPreviewSession Simulation;
-    // The project's vocabulary, for the laboratory's two preview Worlds.
+    // The names the project's tag declarations list, gathered when the
+    // browser refreshes; every preview World registers them, as the game does
+    // when content loads.
+    std::vector<std::string> ContentTags;
+    std::vector<std::string> ContentTagErrors;
+    // The project's vocabulary -- its game module's hook, then the content
+    // tags -- for every preview World.
     std::function<void(World&)> Vocabulary;
     std::unique_ptr<AnimationSessionLab> Lab;
+    std::vector<AnimationClipPlayerUse> ClipPlayerUses;
+    std::vector<std::string> ClipPlayerProblems;
     AnimationLabSettings LabSettings;
     std::vector<AnimationLabInjection> LabInjections;
     AnimTick LabTick = 300;
@@ -214,6 +228,10 @@ public:
 
 private:
     bool SetSkeletonContent(SkeletonHandle skeleton);
+    // Writes into the authoring root, refusing before anything is written if
+    // any document already exists, and registers each.
+    bool WriteNewDocuments(const std::vector<AnimationNewDocument>& documents, std::string& error);
+    bool WriteFile(const AnimationNewDocument& document, int indent, std::string& error);
     [[nodiscard]] bool ApplyDocumentToPreview(DataDocument& document, std::string& status);
     // The simulation's composed pose, or the audition's.
     [[nodiscard]] const std::vector<Mat4>& ViewportPalette();

@@ -6,6 +6,7 @@
 #include "ui/AnimationLabPanels.h"
 #include "ui/AnimationEventPanels.h"
 #include "ui/AnimationLayerPanels.h"
+#include "ui/AnimationMigrationPanels.h"
 #include "ui/AnimationRequestSchemaPanel.h"
 #include "ui/AnimationRootMotionPanels.h"
 #include "ui/AnimationSelectionPanels.h"
@@ -387,6 +388,7 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     AddAnimationBlendPanels(ui, workspace);
     AddAnimationLabPanels(ui, workspace);
     AddAnimationRootMotionPanels(ui, workspace);
+    AddAnimationMigrationPanels(ui, workspace);
     auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace);
     auto* requestSchemaPanel = requestSchema.get();
     ui.AddPanel(std::move(requestSchema));

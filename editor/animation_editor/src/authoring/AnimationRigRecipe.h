@@ -15,10 +15,11 @@ class SkeletonCache;
 //
 // What a new rig starts from: a name, the clips it plays and the tier it is.
 // The plan is the documents a rig is -- a behavior set, a slot map, a request
-// schema, selectors where the tier has them, and the rig -- plus the scenario
-// saved beside it, so a new rig opens ready to play, with every name it uses
-// declared as a preview fixture. The skeleton is the clips' own; clips of
-// different skeletons do not make one rig.
+// schema, selectors where the tier has them, the rig, and a tag declaration
+// listing every name it uses so a game registers them when it loads the rig --
+// plus the scenario saved beside it, so a new rig opens ready to play. The
+// skeleton is the clips' own; clips of different skeletons do not make one
+// rig.
 //
 // The tiers are the plan of record's, as starting points, not kinds:
 //

@@ -94,20 +94,33 @@ the rig's source, `<rig>.sanimscenario`; the asset scanner does not register it,
 and nothing in the preview writes the rig or its schemas. Opening a rig restores
 its sidecar when one exists.
 
-The editor runs without a game module, so names a module would declare are not
-known here. A scenario may list `declared_tags` as preview fixtures; they are
-registered only in the preview World, and **Rig and scenario** adds and removes
-them (the session replays to the current tick under the new names). Nothing a
-scenario names is registered on its behalf: an unknown fact, intent, parameter
-or tag is a located problem.
+A preview World knows the names the game will: the game module's own, when its
+vocabulary hook is loaded, and every name the project's
+`gameplay.tag_declarations` assets list, which the runtime registers when
+content loads. A scenario may also list `declared_tags` as preview fixtures for
+names a module would declare when none is loaded; they are registered only in
+the preview World, and **Rig and scenario** adds and removes them (the session
+replays to the current tick under the new names). Nothing a scenario names is
+registered on its behalf: an unknown fact, intent, parameter or tag is a
+located problem.
 
-**New rig** in the same panel starts a rig from a name and the clips it plays,
-ticked in order. It writes `animation/<name>/` into the project's first
-content root -- a behavior set, a slot map, a request schema, the rig and its
-scenario -- and opens it ready to play: the first clip idles, each other clip
-plays while a request of its name (`Anim.<Clip>`) is held, and the scenario
-declares those names. The skeleton is the clips' own; clips of different
-skeletons cannot share a rig. It never overwrites.
+**New rig** in the same panel starts a rig from a name, a tier and the clips it
+plays, ticked in order. It writes `animation/<name>/` into the project's first
+content root -- a behavior set, a slot map, a request schema, selectors for the
+selector tiers, the rig, a tag declaration listing every name the rig uses, and
+its scenario -- and opens it ready to play. The tiers:
+
+- *Prop*: the first clip idles, each other clip plays while a request of its
+  name (`Anim.<Clip>`) is held. Doors, machinery.
+- *Simple*: rules over the engine's facts. The first clip idles, the second
+  plays while `Speed` is above 0.1, and the rest are actions a request plays
+  through once. Most enemies.
+- *Character*: Simple's idle and locomotion, and an upper-body layer masked
+  from a chosen joint that plays the actions over them, shown only while one is
+  requested.
+
+The skeleton is the clips' own; clips of different skeletons cannot share a
+rig. It never overwrites.
 
 The engine's own content root is mounted after the project's, as at runtime,
 so a rig may extend `asset://animation/engine.facts.sdata`.

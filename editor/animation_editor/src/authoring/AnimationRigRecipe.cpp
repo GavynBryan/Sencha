@@ -250,6 +250,10 @@ AnimationRigPlan PlanAnimationRig(const AnimationRigRecipe& recipe, const Animat
                                             Object({ { "intents", JsonValue(std::move(intents)) } })) });
         rig.emplace_back("requests", JsonValue(asset + ".requests.sdata"));
     }
+    // The names the rig uses, declared as content so a game registers them
+    // when it loads the rig's folder; no module has to know them.
+    plan.Documents.push_back({ folder + recipe.Name + ".tags.sdata",
+                               Document("gameplay.tag_declarations", Object({ { "tags", Strings(behaviors) } })) });
     plan.Documents.push_back({ folder + recipe.Name + ".rig.sdata", Document("animation.rig", JsonValue(std::move(rig))) });
     plan.RigPath = asset + ".rig.sdata";
 
@@ -260,7 +264,6 @@ AnimationRigPlan PlanAnimationRig(const AnimationRigRecipe& recipe, const Animat
         { "rig", JsonValue(plan.RigPath) },
         { "tick_rate", JsonValue(60.0) },
         { "participants", Strings({ "player" }) },
-        { "declared_tags", Strings(behaviors) },
     };
     // A selector reads facts; the scenario starts them standing still.
     if (selects)

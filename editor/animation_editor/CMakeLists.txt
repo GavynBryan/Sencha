@@ -1,5 +1,6 @@
 add_library(animation_authoring STATIC
     src/authoring/AnimationClipEventsDocument.cpp
+    src/authoring/AnimationClipPlayerMigration.cpp
     src/authoring/AnimationBlendComparison.cpp
     src/authoring/AnimationClipPreviewSession.cpp
     src/authoring/AnimationEventBindings.cpp
@@ -30,6 +31,7 @@ add_executable(animation_editor
     src/ui/AnimationEventPanels.cpp
     src/ui/AnimationLabPanels.cpp
     src/ui/AnimationLayerPanels.cpp
+    src/ui/AnimationMigrationPanels.cpp
     src/ui/AnimationRequestSchemaPanel.cpp
     src/ui/AnimationRootMotionPanels.cpp
     src/ui/AnimationSelectionPanels.cpp

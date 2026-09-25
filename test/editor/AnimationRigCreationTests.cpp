@@ -87,7 +87,7 @@ TEST(AnimationRigCreation, ANewRigOpensReadyToPlay)
                                     error))
         << error;
     for (const char* file : { "praying_man.behaviors.sdata", "praying_man.slots.sdata", "praying_man.requests.sdata",
-                              "praying_man.rig.sdata", "praying_man.rig.sanimscenario" })
+                              "praying_man.rig.sdata", "praying_man.tags.sdata", "praying_man.rig.sanimscenario" })
         EXPECT_TRUE(std::filesystem::exists(project.Root / "animation/praying_man" / file)) << file;
 
     ASSERT_EQ(workspace.RigPath, "asset://animation/praying_man/praying_man.rig.sdata");

@@ -15,6 +15,9 @@
 #include <anim/AnimPoseComposition.h>
 #include <anim/SkinningPalette.h>
 #include <assets/data/DataAssetSubtype.h>
+#include <assets/runtime/ContentTagDeclarations.h>
+#include "authoring/AnimationClipPlayerMigration.h"
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonFormat.h>
@@ -26,10 +29,27 @@
 #include <filesystem>
 #include <fstream>
 
+namespace
+{
+    // A preview World's vocabulary: the game module's hook, then the names
+    // the project's content declares, read when the World is built.
+    std::function<void(World&)> WithContentTags(std::function<void(World&)> module,
+                                                const std::vector<std::string>* names)
+    {
+        return [module = std::move(module), names](World& world) {
+            if (module)
+                module(world);
+            if (GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
+                for (const std::string& name : *names)
+                    (void)tags->RegisterTag(name);
+        };
+    }
+}
+
 AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary,
                                                      std::filesystem::path authoringRoot)
-    : Simulation(assets.DataAssets, &assets.AnimationClips, vocabulary, &assets.Skeletons)
-    , Vocabulary(std::move(vocabulary))
+    : Simulation(assets.DataAssets, &assets.AnimationClips, WithContentTags(vocabulary, &ContentTags), &assets.Skeletons)
+    , Vocabulary(WithContentTags(std::move(vocabulary), &ContentTags))
     , Assets(assets)
     , AuthoringRoot(std::move(authoringRoot))
 {
@@ -48,6 +68,9 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std:
 
 void AnimationPreviewWorkspace::RefreshBrowser()
 {
+    ContentTags.clear();
+    ContentTagErrors.clear();
+    CollectContentTags(Assets, ContentTags, ContentTagErrors);
     MeshPaths.clear();
     SkeletonPaths.clear();
     ClipPaths.clear();
@@ -699,48 +722,87 @@ bool AnimationPreviewWorkspace::CreateRig(const AnimationRigRecipe& recipe, std:
         error = plan.Error;
         return false;
     }
-    for (const AnimationNewDocument& document : plan.Documents)
-        if (std::filesystem::exists(AuthoringRoot / document.RelativePath)
-            || Assets.Registry.Contains("asset://" + document.RelativePath))
-        {
-            error = std::format("'{}' already exists; choose another name.", document.RelativePath);
-            return false;
-        }
-
-    std::error_code ec;
-    std::filesystem::create_directories((AuthoringRoot / plan.RigPath.substr(8)).parent_path(), ec);
-    const auto write = [&](const AnimationNewDocument& document) {
-        const std::filesystem::path file = AuthoringRoot / document.RelativePath;
-        std::ofstream out(file, std::ios::binary);
-        out << JsonFormat(document.Root, 4) << "\n";
-        return out.good() ? file : std::filesystem::path();
-    };
-    for (const AnimationNewDocument& document : plan.Documents)
-    {
-        const std::filesystem::path file = write(document);
-        if (file.empty())
-        {
-            error = std::format("Could not write '{}'.", document.RelativePath);
-            return false;
-        }
-        AssetRecord record;
-        record.Type = AssetType::Data;
-        record.SourceKind = AssetSourceKind::File;
-        record.Path = "asset://" + document.RelativePath;
-        record.FilePath = file.generic_string();
-        (void)Assets.Registry.RegisterOrVerify(record);
-    }
-    if (write(plan.Scenario).empty())
-    {
-        error = std::format("Could not write '{}'.", plan.Scenario.RelativePath);
+    if (!WriteNewDocuments(plan.Documents, error) || !WriteFile(plan.Scenario, 4, error))
         return false;
-    }
     RefreshBrowser();
     if (!OpenRig(plan.RigPath))
     {
         error = ScenarioError;
         return false;
     }
+    error.clear();
+    return true;
+}
+
+bool AnimationPreviewWorkspace::WriteFile(const AnimationNewDocument& document, int indent, std::string& error)
+{
+    const std::filesystem::path file = AuthoringRoot / document.RelativePath;
+    std::error_code ec;
+    std::filesystem::create_directories(file.parent_path(), ec);
+    std::ofstream out(file, std::ios::binary);
+    out << JsonFormat(document.Root, indent) << "\n";
+    if (out.good())
+        return true;
+    error = std::format("Could not write '{}'.", document.RelativePath);
+    return false;
+}
+
+bool AnimationPreviewWorkspace::WriteNewDocuments(const std::vector<AnimationNewDocument>& documents,
+                                                  std::string& error)
+{
+    // All or nothing about what exists: refused before anything is written.
+    for (const AnimationNewDocument& document : documents)
+        if (std::filesystem::exists(AuthoringRoot / document.RelativePath)
+            || Assets.Registry.Contains("asset://" + document.RelativePath))
+        {
+            error = std::format("'{}' already exists; choose another name.", document.RelativePath);
+            return false;
+        }
+    for (const AnimationNewDocument& document : documents)
+    {
+        if (!WriteFile(document, 4, error))
+            return false;
+        AssetRecord record;
+        record.Type = AssetType::Data;
+        record.SourceKind = AssetSourceKind::File;
+        record.Path = "asset://" + document.RelativePath;
+        record.FilePath = (AuthoringRoot / document.RelativePath).generic_string();
+        (void)Assets.Registry.RegisterOrVerify(record);
+    }
+    return true;
+}
+
+void AnimationPreviewWorkspace::ScanClipPlayers()
+{
+    ClipPlayerUses.clear();
+    ClipPlayerProblems.clear();
+    if (!AuthoringRoot.empty())
+        ClipPlayerUses = FindAnimationClipPlayers(AuthoringRoot, ClipPlayerProblems);
+}
+
+bool AnimationPreviewWorkspace::MigrateClipPlayers(std::string& error)
+{
+    if (AuthoringRoot.empty())
+    {
+        error = "No project content root is open to migrate.";
+        return false;
+    }
+    ScanClipPlayers();
+    const AnimationClipPlayerMigrationPlan plan =
+        PlanAnimationClipPlayerMigration(AuthoringRoot, ClipPlayerUses, Assets.AnimationClips);
+    if (!plan.Error.empty())
+    {
+        error = plan.Error;
+        return false;
+    }
+    if (!WriteNewDocuments(plan.Documents, error))
+        return false;
+    // Scenes keep the two-space form scenes are written in.
+    for (const AnimationNewDocument& scene : plan.Scenes)
+        if (!WriteFile(scene, 2, error))
+            return false;
+    RefreshBrowser();
+    ScanClipPlayers();
     error.clear();
     return true;
 }
