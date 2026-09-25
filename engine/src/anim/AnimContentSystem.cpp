@@ -169,6 +169,16 @@ int ResolveAnimSlotRow(const AnimBoundRig& rig, GameplayTagId behavior, const An
 
 namespace
 {
+    const AnimRequest* CancelledAnimRequest(const AnimRequestSet* requests, AnimRequestId id)
+    {
+        if (requests == nullptr || !id.IsValid())
+            return nullptr;
+        for (const AnimRequest& request : requests->Records)
+            if (request.Occupied && request.Id == id && request.IsCancelled())
+                return &request;
+        return nullptr;
+    }
+
     // Played: a layer's content is driven by it, or the rule a layer runs
     // reads its intent.
     bool AnimRequestPlayed(const AnimBoundRig& rig, const AnimSelectorState* selection,
@@ -300,8 +310,14 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         const AnimBehaviorKind kind = KindOf(rig, behavior);
 
         // Content time runs from the driving request's start, which a late
-        // joiner can also see, and otherwise from the tick content changed.
-        const AnimTick instanceStart = driving != nullptr ? std::min(driving->StartTick, now) : now;
+        // joiner can also see; after content a cancel cut short, from the
+        // cancel, which a machine hearing of it late can also see; and
+        // otherwise from the tick content changed.
+        const AnimRequest* cutShort =
+            driving == nullptr && !layer.ContentComplete ? CancelledAnimRequest(requests, layer.Request) : nullptr;
+        const AnimTick instanceStart = driving != nullptr   ? std::min(driving->StartTick, now)
+                                     : cutShort != nullptr ? std::min(cutShort->CancelTick, now)
+                                                           : now;
         // Where the outgoing content is now, in normalized time: a
         // blendspace's phase, or a clip's time over its length.
         const auto outgoingNormalized = [&](AnimBehaviorKind outgoingKind) {

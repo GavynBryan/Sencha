@@ -211,3 +211,48 @@ TEST(AnimContent, PhaseCarriesWithinASyncGroup)
     ASSERT_EQ(fx.Clip(), "asset://anim/walk.sanim");
     EXPECT_FLOAT_EQ(fx.Playing(fx.Entity).TimeSeconds, 0.0f);
 }
+
+// A cancel that reaches this machine late -- as a client hears it, after the
+// authority made it -- still ends the request at the tick it was made: what
+// plays next starts there, so it runs in step with the authority's.
+TEST(AnimContent, ContentAfterALateCancelStartsAtTheCancel)
+{
+    Hero fx;
+    fx.Reload("asset://anim/hero.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+        { "tag": "Anim.Locomotion.Idle", "kind": "cyclic" },
+        { "tag": "Anim.Locomotion.Walk", "kind": "cyclic" },
+        { "tag": "Anim.Locomotion.Sprint", "kind": "cyclic" },
+        { "tag": "Anim.Action.Land", "kind": "one_shot" },
+        { "tag": "Anim.Action.Reload", "kind": "one_shot",
+          "latch": { "mode": "until_request_ends", "interruptible_by": "never", "on_request_cancel": "abort" } },
+        { "tag": "Anim.Death", "kind": "hold" } ] })");
+    fx.Tick();
+    const AnimRequestResult reload = fx.Issue(fx.Entity, "anim.intent.reload");
+    fx.Tick(10);
+    ASSERT_EQ(fx.BehaviorName(fx.Entity), "Anim.Action.Reload");
+
+    const AnimTick cancelled = fx.Now - 2;
+    ASSERT_TRUE(CancelAnimRequest(*fx.Entities.TryGet<AnimRequestSet>(fx.Entity), reload.Id,
+                                  AnimCancelReason::Released, cancelled, nullptr));
+    fx.Tick();
+    EXPECT_EQ(fx.BehaviorName(fx.Entity), "Anim.Locomotion.Idle");
+    EXPECT_EQ(fx.Playing(fx.Entity).StartTick, cancelled);
+    EXPECT_NEAR(fx.Playing(fx.Entity).TimeSeconds, 2.0f / 60.0f, 1e-5f);
+}
+
+// A reload that finishes its clip after the cancel hands over when the clip
+// ends, which every machine works out from the request's start alike.
+TEST(AnimContent, ContentAfterAFinishedReloadStartsWhenItFinished)
+{
+    Hero fx;
+    fx.Tick();
+    const AnimRequestResult reload = fx.Issue(fx.Entity, "anim.intent.reload");
+    fx.Tick(10);
+    ASSERT_EQ(fx.BehaviorName(fx.Entity), "Anim.Action.Reload");
+    ASSERT_TRUE(CancelAnimRequest(*fx.Entities.TryGet<AnimRequestSet>(fx.Entity), reload.Id,
+                                  AnimCancelReason::Released, fx.Now - 2, nullptr));
+    while (fx.BehaviorName(fx.Entity) == "Anim.Action.Reload" && fx.Now < 200)
+        fx.Tick();
+    EXPECT_EQ(fx.BehaviorName(fx.Entity), "Anim.Locomotion.Idle");
+    EXPECT_EQ(fx.Playing(fx.Entity).StartTick, fx.Last()) << "not the cancel tick";
+}
