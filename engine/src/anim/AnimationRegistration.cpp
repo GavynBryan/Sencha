@@ -13,6 +13,7 @@
 #include <anim/AnimRigRisk.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimTrace.h>
+#include <anim/AnimWorldReport.h>
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonFormat.h>
@@ -178,8 +179,8 @@ void RegisterAnimationConsole(ConsoleRegistry& console, World& world)
         .Name = "anim.risk",
         .Owner = "engine",
         .Usage = "anim.risk",
-        .Help = "Every bound rig's content risk: blend overrides, selector rules, long flows, and what drifts "
-                "toward a graph.",
+        .Help = "Every bound rig's content risk -- blend overrides, selector rules, long flows, what drifts "
+                "toward a graph -- and what its entities carry and have left unplayed.",
         .Callback = [&world](ConsoleExecutionContext&, std::span<const std::string>) {
             ConsoleResult result;
             const AnimRigBindings* bindings = world.TryGetResource<AnimRigBindings>();
@@ -192,6 +193,7 @@ void RegisterAnimationConsole(ConsoleRegistry& console, World& world)
             std::vector<const AnimBoundRig*> rigs;
             bindings->ForEachBound([&](const AnimBoundRig& rig) { rigs.push_back(&rig); });
             std::ranges::sort(rigs, {}, &AnimBoundRig::RigPath);
+            const std::vector<AnimRigWorldReport> reports = ReportAnimWorld(world);
             for (const AnimBoundRig* bound : rigs)
             {
                 const AnimBoundRig& rig = *bound;
@@ -199,6 +201,14 @@ void RegisterAnimationConsole(ConsoleRegistry& console, World& world)
                 result.Info(std::format("{}: {} overrides, {} rules (deepest {}), {} long flows", rig.RigPath,
                                         risk.BlendOverrides, risk.SelectorRules, risk.DeepestSelector,
                                         risk.LongFlows));
+                const auto report = std::ranges::find(reports, rig.RigPath, &AnimRigWorldReport::RigPath);
+                if (report != reports.end())
+                    result.Info(std::format("  {} entities at {} bytes each; {} requests went unplayed",
+                                            report->Entities,
+                                            report->MinEntityBytes == report->MaxEntityBytes
+                                                ? std::format("{}", report->MaxEntityBytes)
+                                                : std::format("{}-{}", report->MinEntityBytes, report->MaxEntityBytes),
+                                            report->UnplayedRequests));
                 for (const AnimRigRiskFinding& finding : risk.Findings)
                     result.Info(std::format("  [{}] {}", finding.Rule, finding.Message));
             }

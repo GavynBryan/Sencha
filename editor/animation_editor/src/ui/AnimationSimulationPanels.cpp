@@ -9,6 +9,7 @@
 
 #include <anim/AnimFactEvaluation.h>
 #include <anim/AnimRigRisk.h>
+#include <anim/AnimWorldReport.h>
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -793,6 +794,15 @@ private:
             ImGui::TextDisabled("Nothing to look at.");
         for (const AnimRigRiskFinding& finding : risk.Findings)
             ImGui::BulletText("%s", finding.Message.c_str());
+
+        const World* world = Workspace.Simulation.SimulationWorld();
+        const EntityId subject = Workspace.Simulation.Subject();
+        if (world == nullptr || !subject.IsValid())
+            return;
+        ImGui::SeparatorText("The previewed entity");
+        ImGui::Text("%u bytes of animation state.", AnimEntityBytes(*world, subject));
+        if (const AnimContentState* content = world->TryGet<AnimContentState>(subject))
+            ImGui::Text("%u requests ended without any layer playing them.", content->UnplayedRequests);
     }
 
     // A trace exported from a running game with `anim.trace.export`.

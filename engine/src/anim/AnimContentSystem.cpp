@@ -167,6 +167,54 @@ int ResolveAnimSlotRow(const AnimBoundRig& rig, GameplayTagId behavior, const An
     return -1;
 }
 
+namespace
+{
+    // Played: a layer's content is driven by it, or the rule a layer runs
+    // reads its intent.
+    bool AnimRequestPlayed(const AnimBoundRig& rig, const AnimSelectorState* selection,
+                           const AnimContentState& content, const AnimRequest& request)
+    {
+        for (std::size_t l = 0; l < rig.Layers.size() && l < kAnimMaxLayers; ++l)
+        {
+            if (content.Layers[l].Request == request.Id)
+                return true;
+            const int selector = rig.Layers[l].Selector;
+            if (selector < 0 || selection == nullptr || (request.Layers & (1u << l)) == 0)
+                continue;
+            const std::vector<AnimBoundRule>& rules = rig.Selectors[static_cast<std::size_t>(selector)].Rules;
+            const std::uint16_t winner = selection->Layers[l].Winner;
+            if (winner >= rules.size())
+                continue;
+            const AnimBoundRule& rule = rules[winner];
+            if (std::ranges::find(rule.Enter.Intents, request.Intent) != rule.Enter.Intents.end()
+                || std::ranges::find(rule.Stay.Intents, request.Intent) != rule.Stay.Intents.end())
+                return true;
+        }
+        return false;
+    }
+
+    void NoteAnimRequestsPlayed(const AnimBoundRig& rig, const AnimSelectorState* selection,
+                                const AnimRequestSet& requests, AnimTick now, AnimContentState& content)
+    {
+        for (std::size_t slot = 0; slot < kAnimRequestCapacity; ++slot)
+        {
+            const AnimRequest& request = requests.Records[slot];
+            const std::uint32_t sequence = IsAnimRequestRetained(request, now) ? request.Id.Sequence : 0;
+            const auto bit = static_cast<std::uint8_t>(1u << slot);
+            if (content.RequestSeen[slot] != sequence)
+            {
+                if (content.RequestSeen[slot] != 0 && (content.RequestPlayed & bit) == 0)
+                    ++content.UnplayedRequests;
+                content.RequestSeen[slot] = sequence;
+                content.RequestPlayed = static_cast<std::uint8_t>(content.RequestPlayed & ~bit);
+            }
+            if (sequence != 0 && (content.RequestPlayed & bit) == 0
+                && AnimRequestPlayed(rig, selection, content, request))
+                content.RequestPlayed = static_cast<std::uint8_t>(content.RequestPlayed | bit);
+        }
+    }
+}
+
 void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
                        std::span<const std::uint32_t> facts, const AnimSelectorState* selection,
                        AnimContentState& content, AnimTick now, double tickSeconds, AnimDecisionLog* log)
@@ -476,6 +524,8 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
                 && (rate > 0.0f ? elapsed >= static_cast<double>(duration) : rate < 0.0f && elapsed <= 0.0);
         }
     }
+    if (requests != nullptr)
+        NoteAnimRequestsPlayed(rig, selection, *requests, now, content);
     content.Reconstruct = false;
 }
 

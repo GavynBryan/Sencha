@@ -87,7 +87,14 @@ struct SENCHA_COMPONENT("sencha.anim_content_state") AnimContentState
     // rebuilds every request-driven layer from the authority's requests and
     // anchors, as a joiner would.
     bool Reconstruct = false;
+    // Each request-set slot's retained request as last seen, and whether any
+    // layer has played it; a request that ends unplayed is counted.
+    std::uint32_t RequestSeen[kAnimRequestCapacity] = {};
+    std::uint8_t RequestPlayed = 0;
+    std::uint32_t UnplayedRequests = 0;
 };
+
+static_assert(kAnimRequestCapacity <= 8, "RequestPlayed holds one bit per request slot.");
 
 #if !defined(SENCHA_CODEGEN)
 #  include <anim/AnimContentState.sencha.h>
