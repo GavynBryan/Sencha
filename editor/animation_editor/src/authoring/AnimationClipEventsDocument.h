@@ -1,6 +1,7 @@
 #pragma once
 
 #include "commands/CommandStack.h"
+#include "documents/FileBaseline.h"
 
 #include <assets/cook/MeshImportSettings.h>
 
@@ -79,7 +80,7 @@ private:
     MeshImportSettings Settings;
     std::vector<AnimationClipEvent> Working;
     std::vector<AnimationClipEvent> Saved;
-    std::optional<std::filesystem::file_time_type> SavedTime;
+    FileBaseline Baseline;
     CommandStack History;
     struct OpenEdit
     {

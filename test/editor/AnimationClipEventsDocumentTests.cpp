@@ -192,6 +192,10 @@ TEST(AnimationClipEventsDocument, SaveRefusesAnInvalidEventOrAFileChangedOnDisk)
     document->Replace(late);
     ASSERT_TRUE(document->Save(&error)) << error;
     std::filesystem::last_write_time(sidecar, std::filesystem::last_write_time(sidecar) + std::chrono::seconds(5));
+    EXPECT_FALSE(document->IsExternallyModified()) << "a touch alone changes nothing";
+
+    Write(sidecar, R"({ "version": 1, "clips": { "Swing": { "events": [] } } })");
+    std::filesystem::last_write_time(sidecar, std::filesystem::last_write_time(sidecar) + std::chrono::seconds(10));
     (void)document->Add(Step(0.1f));
     EXPECT_TRUE(document->IsExternallyModified());
     EXPECT_FALSE(document->Save(&error));

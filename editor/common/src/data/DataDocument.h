@@ -1,6 +1,7 @@
 #pragma once
 
 #include "commands/CommandStack.h"
+#include "documents/FileBaseline.h"
 
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/json/JsonValue.h>
@@ -85,7 +86,10 @@ public:
     [[nodiscard]] bool IsDirty() const { return Dirty; }
     [[nodiscard]] bool IsExternallyModified() const;
 
+    // Commits an open edit, then refuses when the file changed on disk since it was read.
     [[nodiscard]] bool Save(std::string* error = nullptr);
+    // Commits an open edit and writes over whatever the file holds.
+    [[nodiscard]] bool SaveOverFile(std::string* error = nullptr);
     [[nodiscard]] bool Reload(const DataAssetTypeRegistry& types,
                               const DataSchemaRegistry& schemas,
                               std::string* error = nullptr);
@@ -111,9 +115,9 @@ private:
 
     void ApplyRoot(JsonValue root);
     [[nodiscard]] std::optional<JsonValue> ReadFileRoot(std::string* error) const;
+    [[nodiscard]] bool Write(std::string* error);
     void RefreshEnvelopeIdentity();
     void RefreshDirty();
-    void RefreshTimestamp();
 
     std::filesystem::path File;
     std::string AssetPath;
@@ -122,8 +126,7 @@ private:
 
     JsonValue WorkingRoot;
     std::string SavedText;
-    std::filesystem::file_time_type LastWriteTime{};
-    bool HasWriteTime = false;
+    FileBaseline Baseline;
     bool Dirty = false;
 
     JsonValue EditBaseline;

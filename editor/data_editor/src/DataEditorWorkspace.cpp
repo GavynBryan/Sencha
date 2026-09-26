@@ -274,7 +274,7 @@ bool DataEditorWorkspace::SaveActive(std::string* error)
     document->CommitEdit();
 
     document->Validate(Assets.DataTypes, Assets.DataSchemas);
-    if (!document->Save(error))
+    if (!document->SaveOverFile(error))
         return false;
 
     RegisterFile(document->VirtualPath(), document->FilePath());

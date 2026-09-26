@@ -100,7 +100,7 @@ std::unique_ptr<DataDocument> DataDocument::Open(
         new DataDocument(file, std::move(virtualPath), std::move(*root)));
     document->SavedText = JsonFormat(document->WorkingRoot);
     document->RefreshDirty();
-    document->RefreshTimestamp();
+    document->Baseline.Record(file);
     document->Validate(types, schemas);
     return document;
 }
@@ -120,6 +120,7 @@ std::unique_ptr<DataDocument> DataDocument::Create(
         new DataDocument(file, std::move(virtualPath), JsonValue(std::move(envelope))));
     document->SavedText.clear();
     document->RefreshDirty();
+    document->Baseline.RecordAbsent();
     return document;
 }
 
@@ -207,15 +208,28 @@ void DataDocument::Redo()
 
 bool DataDocument::IsExternallyModified() const
 {
-    if (!HasWriteTime)
-        return false;
-
-    std::error_code error;
-    const auto current = std::filesystem::last_write_time(File, error);
-    return !error && current != LastWriteTime;
+    return Baseline.FileChanged(File);
 }
 
 bool DataDocument::Save(std::string* error)
+{
+    CommitEdit();
+    if (IsExternallyModified())
+    {
+        if (error)
+            *error = "the file changed on disk since it was read";
+        return false;
+    }
+    return Write(error);
+}
+
+bool DataDocument::SaveOverFile(std::string* error)
+{
+    CommitEdit();
+    return Write(error);
+}
+
+bool DataDocument::Write(std::string* error)
 {
     std::error_code directoryError;
     if (!File.parent_path().empty())
@@ -248,7 +262,7 @@ bool DataDocument::Save(std::string* error)
 
     SavedText = formatted;
     RefreshDirty();
-    RefreshTimestamp();
+    Baseline.Record(File);
     return true;
 }
 
@@ -262,12 +276,15 @@ std::optional<JsonValue> DataDocument::ReadFileRoot(std::string* error) const
         return std::nullopt;
     }
 
-    const std::string text{std::istreambuf_iterator<char>(input),
-                           std::istreambuf_iterator<char>()};
+    const std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     JsonParseError parseError;
     std::optional<JsonValue> root = JsonParse(text, &parseError);
-    if (!root && error)
-        *error = "JSON parse error at " + std::to_string(parseError.Position) + ": " + parseError.Message;
+    if (!root)
+    {
+        if (error)
+            *error = "JSON parse error at " + std::to_string(parseError.Position) + ": " + parseError.Message;
+        return std::nullopt;
+    }
     return root;
 }
 
@@ -282,7 +299,7 @@ bool DataDocument::AdoptFileVersion(const DataAssetTypeRegistry& types,
     SavedText = JsonFormat(*root);
     ReplaceRoot(std::move(*root));
     RefreshDirty();
-    RefreshTimestamp();
+    Baseline.Record(File);
     Validate(types, schemas);
     return true;
 }
@@ -307,7 +324,7 @@ bool DataDocument::Reload(const DataAssetTypeRegistry& types,
     SavedText = JsonFormat(WorkingRoot);
     RefreshEnvelopeIdentity();
     RefreshDirty();
-    RefreshTimestamp();
+    Baseline.Record(File);
     Validate(types, schemas);
     return true;
 }
@@ -453,13 +470,6 @@ void DataDocument::RefreshEnvelopeIdentity()
 void DataDocument::RefreshDirty()
 {
     Dirty = JsonFormat(WorkingRoot) != SavedText;
-}
-
-void DataDocument::RefreshTimestamp()
-{
-    std::error_code error;
-    LastWriteTime = std::filesystem::last_write_time(File, error);
-    HasWriteTime = !error;
 }
 
 JsonValue CreateDefaultDataValue(const DataFieldSchema& field)

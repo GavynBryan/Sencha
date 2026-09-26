@@ -34,13 +34,6 @@ namespace
         settings.Clips[clip].Events = events;
         return WriteMeshImportSettings(settings);
     }
-
-    std::optional<std::filesystem::file_time_type> WriteTime(const std::filesystem::path& file)
-    {
-        std::error_code ec;
-        const auto time = std::filesystem::last_write_time(file, ec);
-        return ec ? std::nullopt : std::optional(time);
-    }
 }
 
 std::unique_ptr<AnimationClipEventsDocument> AnimationClipEventsDocument::Open(std::string clipPath,
@@ -62,7 +55,7 @@ std::unique_ptr<AnimationClipEventsDocument> AnimationClipEventsDocument::Open(s
 
     if (!document->ReadSidecar(document->Settings, error))
         return nullptr;
-    document->SavedTime = WriteTime(document->Sidecar);
+    document->Baseline.Record(document->Sidecar);
     if (const auto it = document->Settings.Clips.find(document->Name); it != document->Settings.Clips.end())
         document->Working = it->second.Events;
     document->Saved = document->Working;
@@ -212,7 +205,7 @@ void AnimationClipEventsDocument::Redo()
 
 bool AnimationClipEventsDocument::IsExternallyModified() const
 {
-    return WriteTime(Sidecar) != SavedTime;
+    return Baseline.FileChanged(Sidecar);
 }
 
 bool AnimationClipEventsDocument::Save(std::string* error)
@@ -250,7 +243,7 @@ bool AnimationClipEventsDocument::AdoptFileVersion(std::string* error)
                                                                         : std::vector<AnimationClipEvent>{};
     Settings = std::move(current);
     Saved = events;
-    SavedTime = WriteTime(Sidecar);
+    Baseline.Record(Sidecar);
     if (SidecarText(Name, Working) != SidecarText(Name, events))
         History.Execute(std::make_unique<AnimationClipEventsSnapshot>(*this, Working, std::move(events)));
     return true;
@@ -296,6 +289,6 @@ bool AnimationClipEventsDocument::Write(std::string* error)
     }
     Settings = std::move(settings);
     Saved = Working;
-    SavedTime = WriteTime(Sidecar);
+    Baseline.Record(Sidecar);
     return true;
 }

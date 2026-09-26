@@ -735,8 +735,7 @@ bool AnimationPreviewWorkspace::SaveOverFile(std::string_view path, std::string&
     bool kept = false;
     if (DataDocument* document = FindDocument(path))
     {
-        document->CommitEdit();
-        kept = document->Save(&error);
+        kept = document->SaveOverFile(&error);
     }
     else if (AnimationClipEventsDocument* events = FindClipEvents(path))
         kept = events->SaveOverFile(&error);
@@ -771,18 +770,21 @@ bool AnimationPreviewWorkspace::AdoptFileVersion(std::string_view path, std::str
 
 bool AnimationPreviewWorkspace::SaveDocument(DataDocument& document)
 {
-    document.CommitEdit();
-    ValidateDocument(document);
-    if (document.IsExternallyModified())
+    const bool wasEditing = document.IsEditing();
+    DocumentError.clear();
+    const bool saved = document.Save(&DocumentError);
+    if (wasEditing)
+        DocumentChanged(document);
+    else
+        ValidateDocument(document);
+    if (!saved && document.IsExternallyModified())
     {
         DocumentError = "The file changed on disk since it was read. Keep yours or take the file's under "
                         "Problems and changes > Changes.";
         if (std::ranges::find(LastSave.Conflicts, document.VirtualPath()) == LastSave.Conflicts.end())
             LastSave.Conflicts.push_back(document.VirtualPath());
-        return false;
     }
-    DocumentError.clear();
-    return document.Save(&DocumentError);
+    return saved;
 }
 
 bool AnimationPreviewWorkspace::ReloadDocument(DataDocument& document)
