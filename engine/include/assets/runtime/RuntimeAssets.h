@@ -117,6 +117,13 @@ private:
 public:
     AssetSystem Assets;
 
+    // A data envelope already in memory staged for Assets.Reload, such as an
+    // editor's working copy of a resident asset.
+    [[nodiscard]] AssetStaging StageDataRoot(const AssetRecord& record, const JsonValue& root)
+    {
+        return DataLoader.StageRoot(record, root);
+    }
+
     // The windowed composition: every kind this engine knows is loadable.
     // `sceneSerializers` is the component vocabulary scene loads validate
     // against -- the host's one registry (Engine::SceneSerializers()), which

@@ -3,6 +3,7 @@
 #include <assets/data/DataAssetCache.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/assets/AssetStager.h>
+#include <core/json/JsonValue.h>
 #include <core/logging/Logger.h>
 #include <core/metadata/DataSchema.h>
 
@@ -34,6 +35,8 @@ public:
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source) override;
+    // Stages an envelope already in memory, such as an editor's working copy.
+    [[nodiscard]] AssetStaging StageRoot(const AssetRecord& record, const JsonValue& root);
 
     // Loads the value's declared dependencies and has the entry hold them; one
     // that cannot load fails the commit.

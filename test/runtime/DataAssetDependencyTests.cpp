@@ -7,6 +7,7 @@
 #include <anim/AnimFactSchema.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/json/JsonParser.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <filesystem>
@@ -90,6 +91,29 @@ TEST(DataAssetDependencies, AReloadSwapsTheHeldSet)
 
     EXPECT_TRUE(chain.Resident("asset://animation/other.facts.sdata"));
     EXPECT_FALSE(chain.Resident("asset://animation/base.facts.sdata"));
+}
+
+// A working copy staged from memory reloads exactly as the file would, dependencies included.
+TEST(DataAssetDependencies, AnInMemoryRootReloadsLikeItsFile)
+{
+    SchemaChain chain;
+    chain.Write("other.facts.sdata", R"({ "type": "animation.fact_schema", "version": 1,
+        "data": { "slots": [ { "name": "Wet", "kind": "bool" } ] } })");
+    (void)ScanAssetsDirectory(chain.Root.generic_string(), chain.Assets.Registry,
+                              chain.Assets.Assets.Kinds());
+    AssetLease game = chain.Assets.Assets.LoadLease("asset://animation/game.facts.sdata", AssetType::Data);
+    ASSERT_TRUE(game);
+
+    const JsonValue working = *JsonParse(R"({ "type": "animation.fact_schema", "version": 1,
+        "data": { "extends": "asset://animation/other.facts.sdata", "slots": [] } })");
+    const AssetRecord* record = chain.Assets.Registry.FindByPath("asset://animation/game.facts.sdata");
+    ASSERT_NE(record, nullptr);
+    ASSERT_TRUE(chain.Assets.Assets.Reload(chain.Assets.StageDataRoot(*record, working)));
+    EXPECT_TRUE(chain.Resident("asset://animation/other.facts.sdata"));
+    EXPECT_FALSE(chain.Resident("asset://animation/base.facts.sdata"));
+
+    const AssetStaging refused = chain.Assets.StageDataRoot(*record, *JsonParse(R"({ "type": "nope" })"));
+    EXPECT_FALSE(refused.Error.empty());
 }
 
 TEST(DataAssetDependencies, ACycleFailsInsteadOfRecursing)

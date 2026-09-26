@@ -26,12 +26,6 @@ AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource
     AssetStaging staging;
     staging.Record = record;
 
-    if (Types == nullptr || Cache == nullptr)
-    {
-        staging.Error = "structured data services are not configured";
-        return staging;
-    }
-
     std::vector<std::byte> bytes;
     if (!ReadAssetBytes(source, record, bytes))
     {
@@ -48,15 +42,27 @@ AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource
                                     jsonError.Position, jsonError.Message);
         return staging;
     }
-    if (!root->IsObject())
+    return StageRoot(record, *root);
+}
+
+AssetStaging DataAssetLoader::StageRoot(const AssetRecord& record, const JsonValue& root)
+{
+    AssetStaging staging;
+    staging.Record = record;
+    if (Types == nullptr || Cache == nullptr)
+    {
+        staging.Error = "structured data services are not configured";
+        return staging;
+    }
+    if (!root.IsObject())
     {
         staging.Error = "data asset root must be an object";
         return staging;
     }
 
-    const JsonValue* typeValue = root->Find("type");
-    const JsonValue* versionValue = root->Find("version");
-    const JsonValue* dataValue = root->Find("data");
+    const JsonValue* typeValue = root.Find("type");
+    const JsonValue* versionValue = root.Find("version");
+    const JsonValue* dataValue = root.Find("data");
     if (typeValue == nullptr || !typeValue->IsString())
     {
         staging.Error = "data asset requires string field 'type'";
