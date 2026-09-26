@@ -280,7 +280,7 @@ bool DataEditorWorkspace::SaveActive(std::string* error)
     RegisterFile(document->VirtualPath(), document->FilePath());
     const bool valid = document->IsSemanticallyValid();
     if (valid)
-        ReloadResident(document->VirtualPath());
+        Resident.RestoreFromFile(*document);
 
     LastSave = DataSaveReport{
         .VirtualPath = document->VirtualPath(),
@@ -412,16 +412,4 @@ void DataEditorWorkspace::RegisterFile(std::string_view virtualPath,
     record.Path = std::string(virtualPath);
     record.FilePath = file.generic_string();
     (void)Assets.Registry.RegisterOrVerify(record);
-}
-
-void DataEditorWorkspace::ReloadResident(std::string_view virtualPath)
-{
-    const AssetRecord* record = Assets.Registry.FindByPath(virtualPath);
-    if (record == nullptr || !Assets.Assets.IsResident(virtualPath, AssetType::Data))
-        return;
-
-    AssetStaging staged =
-        Assets.Assets.LoaderFor(AssetType::Data)->LoadStaged(*record, Assets.Assets.DefaultSource());
-    if (staged.IsValid())
-        (void)Assets.Assets.Reload(std::move(staged));
 }

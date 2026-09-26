@@ -11,6 +11,7 @@
 #include "render/AnimationPreviewScene.h"
 #include "commands/CommandStack.h"
 #include "data/DataDocument.h"
+#include "data/DataResidentSync.h"
 #include "ui/DataForm.h"
 
 #include <anim/AnimPoseEvaluation.h>
@@ -104,6 +105,7 @@ public:
     // Revalidates; a valid document replaces the preview's copy of the asset,
     // an invalid one leaves the preview on its last valid version.
     void DocumentChanged(DataDocument& document);
+    [[nodiscard]] std::string PreviewStatusOf(const DataDocument& document) const;
     void CommitDocumentEdit(DataDocument& document);
     [[nodiscard]] DataDocument* ActiveDocumentOf(std::string_view subtype);
     [[nodiscard]] DataDocument* ActiveDocumentAny();
@@ -182,8 +184,8 @@ public:
     std::vector<std::string> BlendspacePaths;
     std::vector<std::string> BlendOverridePaths;
     std::vector<std::string> FactSchemaPaths;
-    // Per document path: whether the preview runs the working or last valid version.
-    std::map<std::string, std::string> PreviewStatus;
+    // Per clip path: whether the preview runs the working or last valid events.
+    std::map<std::string, std::string> ClipPreviewStatus;
     AnimationNavigation Navigation;
     AnimationViewportSource ViewportSource = AnimationViewportSource::Audition;
     AnimationLayerDisplay LayerDisplay;
@@ -219,8 +221,6 @@ public:
     std::vector<AnimDiagnostic> ScenarioLoadProblems;
     std::vector<AnimationScenarioRun> ScenarioRuns;
     AnimationSaveReport LastSave;
-    // Documents edited before the preview loaded their asset.
-    std::vector<std::string> PendingPreviewDocuments;
     AnimationPreviewScene Scene;
     std::vector<std::string> MeshPaths;
     std::vector<std::string> SkeletonPaths;
@@ -239,12 +239,10 @@ private:
     void CancelOpenEdits();
     void StepDocument(std::string_view path, bool clipEvents, bool undo);
     void RefreshContentTags();
-    void ApplyPendingPreviewDocuments();
     bool SetSkeletonContent(SkeletonHandle skeleton);
     // Refuses before writing anything if any document already exists.
     bool WriteNewDocuments(const std::vector<AnimationNewDocument>& documents, std::string& error);
     bool WriteFile(const AnimationNewDocument& document, int indent, std::string& error);
-    [[nodiscard]] bool ApplyDocumentToPreview(DataDocument& document, std::string& status);
     [[nodiscard]] const std::vector<Mat4>& ViewportPalette();
     AnimPoseScratch DisplayScratch;
     // Null when the ghost is not drawn.
@@ -260,6 +258,7 @@ private:
     std::vector<Mat4> SimulationPalette;
     std::vector<Mat4> ViewportModelTransforms;
     RuntimeAssets& Assets;
+    DataResidentSync Resident{ Assets };
     std::filesystem::path AuthoringRoot;
     AssetLease RigLease;
     AssetLease MeshLease;

@@ -82,6 +82,9 @@ public:
     // Bumped on every content change, including previews. Derived views cache
     // against it instead of re-serializing the document to detect edits.
     [[nodiscard]] uint64_t Revision() const { return ContentRevision; }
+    // Counts changes to the committed version only: commit, undo, redo, reload, adopt.
+    [[nodiscard]] uint64_t CommittedGeneration() const { return Committed; }
+    [[nodiscard]] const JsonValue& CommittedRoot() const { return Editing ? EditBaseline : WorkingRoot; }
 
     [[nodiscard]] bool IsDirty() const { return Dirty; }
     [[nodiscard]] bool IsExternallyModified() const;
@@ -132,6 +135,7 @@ private:
     JsonValue EditBaseline;
     bool Editing = false;
     uint64_t ContentRevision = 0;
+    uint64_t Committed = 0;
 
     CommandStack History;
     std::vector<DataValidationError> Errors;

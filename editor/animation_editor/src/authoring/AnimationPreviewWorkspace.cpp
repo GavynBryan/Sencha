@@ -404,76 +404,25 @@ void AnimationPreviewWorkspace::DocumentChanged(DataDocument& document)
         RefreshContentTags();
         Simulation.VocabularyChanged();
     }
-    std::string status;
-    const std::string path = document.VirtualPath();
-    std::erase(PendingPreviewDocuments, path);
-    bool applied = false;
-    if (!document.IsSemanticallyValid())
-        status = "The working version has errors; the preview keeps the last valid version.";
-    else if (ApplyDocumentToPreview(document, status))
-    {
+    if (Resident.Push(document))
         Simulation.Rebind();
-        applied = true;
-    }
-    else if (!Assets.DataAssets.Find(path).IsValid())
-        PendingPreviewDocuments.push_back(path);
-    PreviewStatus[path] = std::move(status);
-    if (applied)
-        ApplyPendingPreviewDocuments();
 }
 
-void AnimationPreviewWorkspace::ApplyPendingPreviewDocuments()
+std::string AnimationPreviewWorkspace::PreviewStatusOf(const DataDocument& document) const
 {
-    // An edit that reached the preview may have loaded one of these, such as a
-    // rig now naming a selector edited before it was referenced.
-    const std::vector<std::string> waiting = PendingPreviewDocuments;
-    for (const std::string& path : waiting)
-        if (DataDocument* document = FindDocument(path); document != nullptr && Assets.DataAssets.Find(path).IsValid())
-            DocumentChanged(*document);
-}
-
-bool AnimationPreviewWorkspace::ApplyDocumentToPreview(DataDocument& document, std::string& status)
-{
-    // The preview's cache is this editor's own, so replacing a value here never touches the file.
-    const DataAssetHandle handle = Assets.DataAssets.Find(document.VirtualPath());
-    if (!handle.IsValid())
+    const DataResidentState* state = Resident.StateOf(document);
+    if (state == nullptr)
+        return {};
+    switch (state->Status)
     {
-        status = "Not loaded by the open rig; nothing in the preview uses it yet.";
-        return false;
+    case DataResidentStatus::Current:
+        return "The preview runs the working version.";
+    case DataResidentStatus::Pending:
+        return "Not loaded by the open rig; nothing in the preview uses it yet.";
+    case DataResidentStatus::KeptLastValid:
+        return "The working version was refused (" + state->Error + "); the preview keeps the last valid version.";
     }
-    const DataAssetTypeRegistration* type = Assets.DataTypes.Find(document.Subtype());
-    const JsonValue* data = document.Data();
-    if (type == nullptr || data == nullptr)
-    {
-        status = "Not an animation asset the preview understands.";
-        return false;
-    }
-    DataAssetCompileResult compiled = type->Compile(*data);
-    if (!compiled.IsValid())
-    {
-        status = "The working version does not compile (" + compiled.Error
-            + "); the preview keeps the last valid version.";
-        return false;
-    }
-    std::vector<AssetLease> dependencies;
-    for (const AssetRef& dependency : compiled.Dependencies)
-    {
-        AssetLease lease = Assets.Assets.LoadLease(dependency.Path, dependency.Type);
-        if (!lease)
-        {
-            status = "'" + dependency.Path + "' does not load; the preview keeps the last valid version.";
-            return false;
-        }
-        dependencies.push_back(std::move(lease));
-    }
-    if (!Assets.DataAssets.ReloadInPlace(document.VirtualPath(), document.Subtype(), compiled.Value,
-                                         std::move(dependencies)))
-    {
-        status = "The preview could not take the new version.";
-        return false;
-    }
-    status = "The preview runs the working version.";
-    return true;
+    return {};
 }
 
 bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
@@ -524,7 +473,8 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
     Navigation = AnimationNavigation{};
     if (!rig->SkeletonPath.empty() && Session.SkeletonPath() != rig->SkeletonPath && MeshPath.empty())
         (void)SelectSkeleton(rig->SkeletonPath);
-    ApplyPendingPreviewDocuments();
+    if (Resident.PushWaiting())
+        Simulation.Rebind();
     return true;
 }
 
@@ -633,7 +583,7 @@ AnimationClipEventsDocument* AnimationPreviewWorkspace::FindClipEvents(std::stri
 
 void AnimationPreviewWorkspace::ClipEventsChanged(AnimationClipEventsDocument& document)
 {
-    std::string& status = PreviewStatus[document.ClipPath()];
+    std::string& status = ClipPreviewStatus[document.ClipPath()];
     const AnimationClipHandle clip = Assets.AnimationClips.Find(document.ClipPath());
     const AnimationClipData* current = Assets.AnimationClips.Get(clip);
     if (current == nullptr)
@@ -796,7 +746,11 @@ bool AnimationPreviewWorkspace::ReloadDocument(DataDocument& document)
         return false;
     }
     DocumentError.clear();
-    return document.Reload(Assets.DataTypes, Assets.DataSchemas, &DocumentError);
+    Resident.Forget(document);
+    if (!document.Reload(Assets.DataTypes, Assets.DataSchemas, &DocumentError))
+        return false;
+    DocumentChanged(document);
+    return true;
 }
 
 bool AnimationPreviewWorkspace::SetSkeletonContent(SkeletonHandle skeleton)
@@ -927,6 +881,8 @@ bool AnimationPreviewWorkspace::SelectMaterial(const std::string& path)
 
 void AnimationPreviewWorkspace::Frame(double wallSeconds)
 {
+    if (Resident.PushWaiting())
+        Simulation.Rebind();
     Session.Advance(wallSeconds);
     Simulation.Advance(wallSeconds);
     Scene.Queue.Reset();

@@ -193,7 +193,7 @@ private:
         ImGui::SameLine();
         ImGui::TextDisabled("%s", document.SidecarPath().filename().string().c_str());
 
-        const std::string& status = Workspace.PreviewStatus[document.ClipPath()];
+        const std::string& status = Workspace.ClipPreviewStatus[document.ClipPath()];
         if (!status.empty())
             ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "%s", status.c_str());
         else

@@ -45,9 +45,8 @@ public:
             (void)Workspace.SaveDocument(*document);
         if (!Workspace.DocumentError.empty())
             ImGui::TextWrapped("%s", Workspace.DocumentError.c_str());
-        const auto status = Workspace.PreviewStatus.find(document->VirtualPath());
-        if (status != Workspace.PreviewStatus.end() && !status->second.empty())
-            ImGui::TextWrapped("%s", status->second.c_str());
+        if (const std::string status = Workspace.PreviewStatusOf(*document); !status.empty())
+            ImGui::TextWrapped("%s", status.c_str());
         for (const DataValidationError& error : document->ValidationErrors())
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s: %s", error.Path.c_str(), error.Message.c_str());
         ImGui::Separator();

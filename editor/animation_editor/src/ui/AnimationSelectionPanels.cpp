@@ -196,9 +196,8 @@ private:
         if (ImGui::Button("Redo")) Workspace.Redo();
         ImGui::SameLine();
         if (ImGui::Button("Save")) Workspace.SaveDocument(document);
-        const auto status = Workspace.PreviewStatus.find(document.VirtualPath());
-        if (status != Workspace.PreviewStatus.end() && !status->second.empty())
-            ImGui::TextWrapped("%s", status->second.c_str());
+        if (const std::string status = Workspace.PreviewStatusOf(document); !status.empty())
+            ImGui::TextWrapped("%s", status.c_str());
 
         JsonValue root = document.CopyRoot();
         JsonValue::Array* rules = AnimSelectorRules(root);

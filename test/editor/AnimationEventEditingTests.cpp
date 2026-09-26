@@ -146,7 +146,7 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
 
     const std::uint32_t key = events->Add(Footstep(0.25f));
     workspace.ClipEventsChanged(*events);
-    EXPECT_TRUE(workspace.PreviewStatus[std::string(kClip)].empty()) << workspace.PreviewStatus[std::string(kClip)];
+    EXPECT_TRUE(workspace.ClipPreviewStatus[std::string(kClip)].empty()) << workspace.ClipPreviewStatus[std::string(kClip)];
 
     workspace.Simulation.RunTo(30);
     const AnimDecisionRecord* crossing = LastCrossing(workspace.Simulation);

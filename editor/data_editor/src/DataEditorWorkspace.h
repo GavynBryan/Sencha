@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/DataDocument.h"
+#include "data/DataResidentSync.h"
 #include "ui/DataForm.h"
 
 #include <assets/runtime/RuntimeAssets.h>
@@ -84,9 +85,9 @@ public:
 
 private:
     void RegisterFile(std::string_view virtualPath, const std::filesystem::path& file);
-    void ReloadResident(std::string_view virtualPath);
 
     RuntimeAssets& Assets;
+    DataResidentSync Resident{ Assets };
     const ProjectDescriptor& Project;
     std::vector<std::unique_ptr<DataDocument>> Tabs;
     std::size_t ActiveTab = 0;

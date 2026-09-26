@@ -56,11 +56,13 @@ public:
     void Execute() override
     {
         Document.ApplyRoot(After);
+        ++Document.Committed;
     }
 
     void Undo() override
     {
         Document.ApplyRoot(Before);
+        ++Document.Committed;
     }
 
 private:
@@ -321,6 +323,7 @@ bool DataDocument::Reload(const DataAssetTypeRegistry& types,
 
     WorkingRoot = std::move(*root);
     ++ContentRevision;
+    ++Committed;
     SavedText = JsonFormat(WorkingRoot);
     RefreshEnvelopeIdentity();
     RefreshDirty();
