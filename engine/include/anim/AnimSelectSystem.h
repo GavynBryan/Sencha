@@ -79,6 +79,8 @@ void LogAnimSelection(AnimDecisionLog& log, AnimTick now, std::uint8_t layer,
 class AnimSelectSystem
 {
 public:
+    explicit AnimSelectSystem(bool presentsPose = true) : PresentsPose(presentsPose) {}
+
     void FixedLogic(FixedLogicContext& ctx);
     void Select(World& world, AnimTick now, double tickSeconds);
 
@@ -94,6 +96,7 @@ private:
     std::optional<Query<Read<AnimRig>, Write<AnimSelectorState>, Read<AnimFactsLarge>>> LargeQuery;
     std::size_t EvaluatedCount = 0;
     std::size_t SkippedCount = 0;
+    bool PresentsPose = true;
 };
 
 // Shared with the preview; `verdicts` receives per-layer rule verdicts when given.

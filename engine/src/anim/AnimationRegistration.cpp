@@ -219,9 +219,9 @@ void RegisterAnimationConsole(ConsoleRegistry& console, World& world)
 
 void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging, const AnimationHost& host)
 {
-    schedule.Register<AnimFactGatherSystem>(logging);
-    schedule.Register<AnimSelectSystem>();
-    schedule.Register<AnimContentSystem>();
+    schedule.Register<AnimFactGatherSystem>(logging, host.PresentsPose);
+    schedule.Register<AnimSelectSystem>(host.PresentsPose);
+    schedule.Register<AnimContentSystem>(host.PresentsPose);
     AnimEventSystem& eventSystem = schedule.Register<AnimEventSystem>(host.Verbs, host.PresentsPose);
     // Selection reads this tick's facts; resolution reads this tick's winners;
     // events cross the content time resolution just advanced.

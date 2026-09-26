@@ -570,8 +570,11 @@ event-track equivalence validation described in this spec.
 A World with `SimulationAuthority` runs the authoritative decision/timing half
 of the pipeline. In a networked session this is the host/server; in standalone
 play it is the standalone World. A headless authority normally skips the pose
-half. Each animated entity has an animation participation tier, aligned with the
-existing participation LOD tiers:
+half. Each animated entity has an animation participation tier. The engine's
+participation LOD tiers are proposed, not built (see `docs/deferred.md`); the
+tiers below are realised today by `AnimationHost::PresentsPose` for the whole
+process and, per rig, by `AnimBoundRig::DrivesGameplay`
+(`docs/gameplay/animation.md`, "On a machine that presents no pose"):
 
 | Tier | Runs on server | Used for |
 | --- | --- | --- |

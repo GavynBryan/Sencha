@@ -66,7 +66,7 @@ const AnimBoundRig* AnimFactGatherSystem::Bind(AnimRigBindings& bindings, DataAs
                 logger.Warn(FormatAnimDiagnostic(diagnostic));
         }
     }
-    return bound->Valid && bound->HasFacts ? bound : nullptr;
+    return bound->Valid && bound->HasFacts && ShouldRunAnimationLogic(PresentsPose, *bound) ? bound : nullptr;
 }
 
 void AnimFactGatherSystem::GatherImpl(World& world, const StoragePartitionSet* partitions,

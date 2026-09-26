@@ -375,6 +375,30 @@ const AnimBoundBehavior* AnimBoundRig::FindBehavior(GameplayTagId behavior) cons
 
 namespace
 {
+    bool IsGameplay(const std::optional<AnimBoundEvent>& event)
+    {
+        return event.has_value() && event->Scope == AnimEventScope::Gameplay;
+    }
+
+    // Conservative: anything the binding could not see into counts as reaching gameplay.
+    bool ReachesGameplay(const AnimBoundRig& rig)
+    {
+        if (!rig.Flows.empty())
+            return true;
+        for (const AnimBoundBehavior& behavior : rig.Behaviors)
+            if (behavior.Policy.RootMotion || IsGameplay(behavior.Entered) || IsGameplay(behavior.Exited))
+                return true;
+        for (const AnimBoundContent& content : rig.Contents)
+        {
+            if (content.IsClip() && !content.Clip.IsValid())
+                return true;
+            for (const AnimBoundEvent& event : content.Events)
+                if (event.Scope == AnimEventScope::Gameplay)
+                    return true;
+        }
+        return false;
+    }
+
     AnimBoundRig Bind(const DataAssetCache& data, const AnimationClipCache* clips, const SkeletonCache* skeletons,
                       DataAssetHandle handle, const World& world,
                       std::vector<std::pair<DataAssetHandle, std::uint64_t>>* versions)
@@ -412,6 +436,7 @@ namespace
         binder.ValidateClipSkeletons();
         binder.BindEvents(*rig);
         bound.Valid = !HasAnimErrors(bound.Diagnostics);
+        bound.DrivesGameplay = !bound.Valid || ReachesGameplay(bound);
         bound.TimingIdentity = AnimRigTimingIdentity(bound, world.TryGetResource<GameplayTagRegistry>());
         return bound;
     }

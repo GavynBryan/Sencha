@@ -44,6 +44,8 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
 class AnimContentSystem
 {
 public:
+    explicit AnimContentSystem(bool presentsPose = true) : PresentsPose(presentsPose) {}
+
     void FixedLogic(FixedLogicContext& ctx);
     void Resolve(World& world, AnimTick now, double tickSeconds);
 
@@ -52,4 +54,5 @@ private:
 
     const World* LastWorld = nullptr;
     std::optional<Query<Read<AnimRig>, Write<AnimContentState>>> ContentQuery;
+    bool PresentsPose = true;
 };

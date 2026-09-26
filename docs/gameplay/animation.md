@@ -82,6 +82,28 @@ Capacities (layers, requests, request parameters, fact slots, cooldown slots)
 are architecture rather than tuning. Per-entity state is arrays of known size,
 so a rig that needs more has to be restructured, not a constant raised.
 
+### On a machine that presents no pose
+
+A headless server, or any host registered with `AnimationHost::PresentsPose`
+false, does not register the pose pass and produces no cosmetic events. It also
+skips gathering, selection, content resolution and events for every rig whose
+binding proves its animation cannot reach gameplay. `AnimBoundRig::DrivesGameplay`
+records the proof and `ShouldRunAnimationLogic` is the one test the systems make.
+
+A rig drives gameplay when it plays a flow (the authority stamps section anchors
+late joiners reconstruct from), has a root-motion behavior, or carries a
+Gameplay-scope clip event or lifecycle binding. Anything the binding cannot see
+into counts the same way: an invalid rig, or a clip that is not loaded and so
+has unknown events. A false positive costs animation work; a false negative
+would silence gameplay, so uncertainty runs the rig. The flag is rederived on
+every rebind, so a rig moves between the two as its content changes.
+
+Root motion needs facts, selection and content resolution, since
+`SampleAnimRootMotion` reads the base layer's resolved content or its request;
+the movement-side `RootMotionSystem` always runs. A root-motion rig is never
+skipped, so a headless authority carries its character. Cosmetic rigs also skip
+the authority's timing stamp, which only lets a client flag a timing mismatch.
+
 ## Binding
 
 A rig asset and the assets it lists only name things. `AnimRigBindings`, a

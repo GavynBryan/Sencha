@@ -20,7 +20,10 @@ struct FixedLogicContext;
 class AnimFactGatherSystem
 {
 public:
-    explicit AnimFactGatherSystem(LoggingProvider* logging = nullptr) : Logging(logging) {}
+    explicit AnimFactGatherSystem(LoggingProvider* logging = nullptr, bool presentsPose = true)
+        : Logging(logging), PresentsPose(presentsPose)
+    {
+    }
 
     void FixedLogic(FixedLogicContext& ctx);
 
@@ -34,6 +37,7 @@ private:
                                            const World& world);
 
     LoggingProvider* Logging = nullptr;
+    bool PresentsPose = true;
 
     const World* LastWorld = nullptr;
     std::optional<Query<Read<AnimRig>, Write<AnimFacts>, Write<AnimFactHistory>>> SmallQuery;

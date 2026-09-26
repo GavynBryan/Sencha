@@ -356,9 +356,22 @@ TEST(AnimRootMotion, AReplayIsCarriedFromACorrectedStart)
 
 // Through the schedule a game composes -- abilities, movement, then
 // animation -- a dash reaches the motion request the mover reads.
+// A machine presenting no pose still runs every stage root motion needs, and skips a
+// cosmetic rig beside it.
 TEST(AnimRootMotion, TheScheduledPipelineCarriesTheCharacter)
 {
     RootMotionFixture carried(false);
+    (void)carried.Load("asset://anim/prop.behaviors.sdata", kAnimBehaviorSetType,
+                       R"({ "behaviors": [ { "tag": "Anim.Idle", "kind": "cyclic" } ] })");
+    (void)carried.Load("asset://anim/prop.slots.sdata", kAnimSlotMapType,
+                       R"({ "rows": [ { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" } ] })");
+    const DataAssetHandle propRig = carried.Load("asset://anim/prop.rig.sdata", kAnimRigType, R"({
+        "behaviors": [ "asset://anim/prop.behaviors.sdata" ], "slot_maps": [ "asset://anim/prop.slots.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "idle": "Anim.Idle" } ] })");
+    ASSERT_FALSE(carried.Bound(propRig).DrivesGameplay);
+    ASSERT_TRUE(carried.Bound(carried.Rig).DrivesGameplay);
+    const EntityId prop = carried.Entities.CreateEntity();
+    carried.Entities.AddComponent(prop, AnimRig{ propRig });
     EngineConfig config;
     RuntimeFrameLoop runtime;
     DataAssetCache assets;
@@ -389,4 +402,5 @@ TEST(AnimRootMotion, TheScheduledPipelineCarriesTheCharacter)
     const MotionRequest* request = static_cast<const World&>(carried.Entities).TryGet<MotionRequest>(carried.Character);
     ASSERT_NE(request, nullptr);
     EXPECT_NEAR(request->Velocity.Z, -3.0f, 1e-3f) << "3 m over a second, at the tick's rate";
+    EXPECT_FALSE(carried.Playing(prop).Behavior.IsValid()) << "the cosmetic prop was never resolved";
 }

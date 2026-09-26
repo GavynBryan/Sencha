@@ -396,7 +396,7 @@ void AnimEventSystem::RunImpl(World& world, const StoragePartitionSet* partition
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
             const AnimBoundRig* rig = bindings->Resolve(rigs[i].Rig, world);
-            if (rig == nullptr || !rig->Valid)
+            if (rig == nullptr || !rig->Valid || !ShouldRunAnimationLogic(Presents, *rig))
                 continue;
             const EntityId entity = view.Entity(i);
             const World& reader = world;

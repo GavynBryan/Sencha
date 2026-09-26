@@ -572,7 +572,7 @@ void AnimSelectSystem::SelectImpl(World& world, const StoragePartitionSet* parti
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
             const AnimBoundRig* rig = bindings->Resolve(rigs[i].Rig, world);
-            if (rig == nullptr || !rig->Valid || rig->Selectors.empty())
+            if (rig == nullptr || !rig->Valid || rig->Selectors.empty() || !ShouldRunAnimationLogic(PresentsPose, *rig))
                 continue;
             const EntityId entity = view.Entity(i);
             const std::span<const std::uint32_t> values(facts[i].Values, std::min(rig->Slots.size(),

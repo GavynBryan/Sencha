@@ -335,6 +335,8 @@ struct AnimBoundRig
     std::uint64_t Generation = 0;
     // What a session has to agree on about this rig; see AnimRigTimingIdentity.
     std::uint64_t TimingIdentity = 0;
+    // False only when binding proved no execution of this rig can reach gameplay.
+    bool DrivesGameplay = true;
 
     [[nodiscard]] int FindSlot(std::string_view name) const;
     [[nodiscard]] const AnimBoundIntent* FindIntent(GameplayTagId intent) const;
@@ -344,6 +346,12 @@ struct AnimBoundRig
     [[nodiscard]] AnimBlendPolicy ResolveBlend(GameplayTagId from, GameplayTagId to,
                                                const AnimBoundBlendOverride** overridden = nullptr) const;
 };
+
+// A machine that presents no pose runs a rig only when its animation can reach gameplay.
+[[nodiscard]] inline bool ShouldRunAnimationLogic(bool presentsPose, const AnimBoundRig& rig)
+{
+    return presentsPose || rig.DrivesGameplay;
+}
 
 // Binds one rig without caching, for tools validating content against a World.
 [[nodiscard]] AnimBoundRig BindAnimRig(const DataAssetCache& data,

@@ -566,7 +566,7 @@ void AnimContentSystem::ResolveImpl(World& world, const StoragePartitionSet* par
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
             const AnimBoundRig* rig = bindings->Resolve(rigs[i].Rig, world);
-            if (rig == nullptr || !rig->Valid)
+            if (rig == nullptr || !rig->Valid || !ShouldRunAnimationLogic(PresentsPose, *rig))
                 continue;
             const EntityId entity = view.Entity(i);
             // Facts and selection are optional: a Prop carries neither.
