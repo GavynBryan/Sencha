@@ -18,6 +18,16 @@
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
+#include <anim/AnimBehaviorSet.h>
+#include <anim/AnimBlendOverrides.h>
+#include <anim/AnimBlendspaceData.h>
+#include <anim/AnimFactSchema.h>
+#include <anim/AnimFlowData.h>
+#include <anim/AnimRequestSchema.h>
+#include <anim/AnimRigData.h>
+#include <anim/AnimSelectorData.h>
+#include <anim/AnimSlotMapData.h>
+
 #include <imgui.h>
 
 #include <memory>
@@ -42,39 +52,40 @@ public:
         if (ImGui::Button("Refresh asset list")) Workspace.RefreshBrowser();
         if (ImGui::CollapsingHeader("Animation documents", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            const std::pair<const char*, const std::vector<std::string>*> kinds[] = {
-                { "Selectors", &Workspace.SelectorPaths },
-                { "Behavior sets", &Workspace.BehaviorSetPaths },
-                { "Slot maps", &Workspace.SlotMapPaths },
-                { "Flows", &Workspace.FlowPaths },
-                { "Blendspaces", &Workspace.BlendspacePaths },
-                { "Blend overrides", &Workspace.BlendOverridePaths },
-                { "Fact schemas", &Workspace.FactSchemaPaths },
-                { "Request schemas", &Workspace.RequestSchemaPaths },
-                { "Rigs (as documents)", &Workspace.RigPaths },
+            const std::pair<const char*, std::string_view> kinds[] = {
+                { "Selectors", kAnimSelectorType },
+                { "Behavior sets", kAnimBehaviorSetType },
+                { "Slot maps", kAnimSlotMapType },
+                { "Flows", kAnimFlowType },
+                { "Blendspaces", kAnimBlendspaceType },
+                { "Blend overrides", kAnimBlendOverridesType },
+                { "Fact schemas", kAnimFactSchemaType },
+                { "Request schemas", kAnimRequestSchemaType },
+                { "Rigs (as documents)", kAnimRigType },
             };
-            for (const auto& [title, paths] : kinds)
+            for (const auto& [title, subtype] : kinds)
             {
-                if (paths->empty() || !ImGui::TreeNode(title))
+                const std::span<const std::string> paths = Workspace.Content.OfSubtype(subtype);
+                if (paths.empty() || !ImGui::TreeNode(title))
                     continue;
-                for (const auto& path : *paths)
+                for (const auto& path : paths)
                     if (ImGui::Selectable(path.c_str())) (void)Workspace.Documents.OpenOrFocus(path, Workspace.DocumentError);
                 ImGui::TreePop();
             }
         }
-        DrawAssets("Skinned meshes", Workspace.MeshPaths, Workspace.MeshPath,
+        DrawAssets("Skinned meshes", Workspace.Content.Of(AssetType::SkinnedMesh), Workspace.MeshPath,
                    &AnimationPreviewWorkspace::SelectMesh);
-        DrawAssets("Skeletons (without mesh)", Workspace.SkeletonPaths, Workspace.Session.SkeletonPath(),
+        DrawAssets("Skeletons (without mesh)", Workspace.Content.Of(AssetType::Skeleton), Workspace.Session.SkeletonPath(),
                    &AnimationPreviewWorkspace::SelectSkeleton);
         if (ImGui::Button("Bind pose")) Workspace.SelectClip({});
-        DrawAssets("Clips", Workspace.ClipPaths, Workspace.ClipPath,
+        DrawAssets("Clips", Workspace.Content.Of(AssetType::AnimationClip), Workspace.ClipPath,
                    &AnimationPreviewWorkspace::SelectClip);
         if (ImGui::Button("Neutral preview material")) Workspace.SelectMaterial({});
-        DrawAssets("Material override", Workspace.MaterialPaths, Workspace.MaterialPath,
+        DrawAssets("Material override", Workspace.Content.Of(AssetType::Material), Workspace.MaterialPath,
                    &AnimationPreviewWorkspace::SelectMaterial);
     }
 private:
-    void DrawAssets(const char* title, const std::vector<std::string>& paths,
+    void DrawAssets(const char* title, std::span<const std::string> paths,
                     const std::string& selected,
                     bool (AnimationPreviewWorkspace::*select)(const std::string&))
     {

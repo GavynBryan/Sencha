@@ -4,6 +4,8 @@
 #include "authoring/AnimationClipPlayerMigration.h"
 #include "authoring/AnimationSessionLab.h"
 #include "authoring/AnimationClipEventsSet.h"
+#include "authoring/AnimationContentLists.h"
+#include "authoring/AnimationContentTags.h"
 #include "authoring/AnimationClipPreviewSession.h"
 #include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationScenarioBatch.h"
@@ -123,19 +125,13 @@ public:
     // One model-space transform per joint, as drawn last frame.
     [[nodiscard]] const std::vector<Mat4>& ViewportModel() const { return ViewportModelTransforms; }
 
+    // Declared before the vocabulary and every session that captures it.
+    AnimationContentTags Tags;
     // Declared before the document sets, which register with it.
     DocumentSourceSet Sources;
     DataDocumentSet Documents;
     AnimationClipEventsSet ClipEvents;
-    std::vector<std::string> RequestSchemaPaths;
-    std::vector<std::string> RigPaths;
-    std::vector<std::string> SelectorPaths;
-    std::vector<std::string> BehaviorSetPaths;
-    std::vector<std::string> SlotMapPaths;
-    std::vector<std::string> FlowPaths;
-    std::vector<std::string> BlendspacePaths;
-    std::vector<std::string> BlendOverridePaths;
-    std::vector<std::string> FactSchemaPaths;
+    AnimationContentLists Content;
     AnimationNavigation Navigation;
     AnimationViewportSource ViewportSource = AnimationViewportSource::Audition;
     AnimationLayerDisplay LayerDisplay;
@@ -147,10 +143,7 @@ public:
 
     AnimationClipPreviewSession Session;
     AnimationPreviewSession Simulation;
-    // Gathered on browser refresh from the project's tag declarations.
-    std::vector<std::string> ContentTags;
-    std::vector<std::string> ContentTagErrors;
-    // The game module's hook, then ContentTags.
+    // The game module's hook, then Tags.
     std::function<void(World&)> Vocabulary;
     std::unique_ptr<AnimationSessionLab> Lab;
     std::vector<AnimationClipPlayerUse> ClipPlayerUses;
@@ -164,10 +157,6 @@ public:
     std::vector<AnimDiagnostic> ScenarioLoadProblems;
     std::vector<AnimationScenarioRun> ScenarioRuns;
     AnimationPreviewScene Scene;
-    std::vector<std::string> MeshPaths;
-    std::vector<std::string> SkeletonPaths;
-    std::vector<std::string> ClipPaths;
-    std::vector<std::string> MaterialPaths;
     std::string MeshPath;
     std::string ClipPath;
     std::string MaterialPath;
@@ -175,7 +164,6 @@ public:
 
 private:
     void DataDocumentChanged(DataDocument& document, bool residentChanged);
-    void RefreshContentTags();
     bool SetSkeletonContent(SkeletonHandle skeleton);
     // Refuses before writing anything if any document already exists.
     bool WriteNewDocuments(const std::vector<AnimationNewDocument>& documents, std::string& error);

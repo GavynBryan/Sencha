@@ -580,9 +580,9 @@ private:
                 ImGui::EndCombo();
             }
         }
-        if (!changed && !Workspace.ClipPaths.empty() && ImGui::BeginCombo("Add section playing", "clip..."))
+        if (!changed && !Workspace.Content.Of(AssetType::AnimationClip).empty() && ImGui::BeginCombo("Add section playing", "clip..."))
         {
-            for (const std::string& clip : Workspace.ClipPaths)
+            for (const std::string& clip : Workspace.Content.Of(AssetType::AnimationClip))
                 if (ImGui::Selectable(clip.c_str()))
                 {
                     AddAnimFlowSection(root, std::format("Anim.Section.S{}", sections->size()), clip);

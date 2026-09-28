@@ -37,29 +37,13 @@
 #include <filesystem>
 #include <fstream>
 
-namespace
-{
-    // `names` is read when each World is built, not when this is called.
-    std::function<void(World&)> WithContentTags(std::function<void(World&)> module,
-                                                const std::vector<std::string>* names)
-    {
-        return [module = std::move(module), names](World& world) {
-            if (module)
-                module(world);
-            if (GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
-                for (const std::string& name : *names)
-                    (void)tags->RegisterTag(name);
-        };
-    }
-}
-
 AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary,
                                                      std::filesystem::path authoringRoot)
     : Documents(assets, Sources, { .ContentRoot = authoringRoot,
                                    .Subtypes = { AnimationDocumentSubtypes().begin(), AnimationDocumentSubtypes().end() } })
     , ClipEvents(assets, Sources)
-    , Simulation(assets.DataAssets, &assets.AnimationClips, WithContentTags(vocabulary, &ContentTags), &assets.Skeletons)
-    , Vocabulary(WithContentTags(std::move(vocabulary), &ContentTags))
+    , Simulation(assets.DataAssets, &assets.AnimationClips, Tags.Vocabulary(vocabulary), &assets.Skeletons)
+    , Vocabulary(Tags.Vocabulary(std::move(vocabulary)))
     , Assets(assets)
     , AuthoringRoot(std::move(authoringRoot))
 {
@@ -85,57 +69,8 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std:
 
 void AnimationPreviewWorkspace::RefreshBrowser()
 {
-    RefreshContentTags();
-    MeshPaths.clear();
-    SkeletonPaths.clear();
-    ClipPaths.clear();
-    MaterialPaths.clear();
-    RequestSchemaPaths.clear();
-    RigPaths.clear();
-    SelectorPaths.clear();
-    BehaviorSetPaths.clear();
-    SlotMapPaths.clear();
-    FlowPaths.clear();
-    BlendspacePaths.clear();
-    BlendOverridePaths.clear();
-    FactSchemaPaths.clear();
-    for (const auto& [path, record] : Assets.Registry.Records())
-    {
-        if (record.Type == AssetType::SkinnedMesh)
-            MeshPaths.push_back(path);
-        else if (record.Type == AssetType::Skeleton)
-            SkeletonPaths.push_back(path);
-        else if (record.Type == AssetType::AnimationClip)
-            ClipPaths.push_back(path);
-        else if (record.Type == AssetType::Material)
-            MaterialPaths.push_back(path);
-        else if (record.Type == AssetType::Data)
-        {
-            const std::string subtype = PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record);
-            if (subtype == kAnimRequestSchemaType)
-                RequestSchemaPaths.push_back(path);
-            else if (subtype == kAnimRigType)
-                RigPaths.push_back(path);
-            else if (subtype == kAnimSelectorType)
-                SelectorPaths.push_back(path);
-            else if (subtype == kAnimBehaviorSetType)
-                BehaviorSetPaths.push_back(path);
-            else if (subtype == kAnimSlotMapType)
-                SlotMapPaths.push_back(path);
-            else if (subtype == kAnimFlowType)
-                FlowPaths.push_back(path);
-            else if (subtype == kAnimBlendspaceType)
-                BlendspacePaths.push_back(path);
-            else if (subtype == kAnimBlendOverridesType)
-                BlendOverridePaths.push_back(path);
-            else if (subtype == kAnimFactSchemaType)
-                FactSchemaPaths.push_back(path);
-        }
-    }
-    for (auto* paths : { &MeshPaths, &SkeletonPaths, &ClipPaths, &MaterialPaths, &RequestSchemaPaths,
-                         &RigPaths, &SelectorPaths, &BehaviorSetPaths, &SlotMapPaths, &FlowPaths, &BlendspacePaths,
-                         &BlendOverridePaths, &FactSchemaPaths })
-        std::sort(paths->begin(), paths->end());
+    Tags.Refresh(Assets, Documents);
+    Content.Refresh(Assets.Registry, Assets.Assets.DefaultSource());
 }
 
 std::span<const std::string_view> AnimationDocumentSubtypes()
@@ -146,24 +81,6 @@ std::span<const std::string_view> AnimationDocumentSubtypes()
                                                       kAnimFactSchemaType, kVerbBindingsTypeName,
                                                       kGameplayTagDeclarationsType };
     return kSubtypes;
-}
-
-void AnimationPreviewWorkspace::RefreshContentTags()
-{
-    ContentTags.clear();
-    ContentTagErrors.clear();
-    CollectContentTags(Assets, ContentTags, ContentTagErrors);
-    // Unsaved declarations count; a name removed stays declared until saved.
-    for (const auto& document : Documents.Documents())
-    {
-        const JsonValue* data = document->Subtype() == kGameplayTagDeclarationsType ? document->Data() : nullptr;
-        const JsonValue* tags = data != nullptr ? data->Find("tags") : nullptr;
-        if (tags == nullptr || !tags->IsArray())
-            continue;
-        for (const JsonValue& tag : tags->AsArray())
-            if (tag.IsString() && std::ranges::find(ContentTags, tag.AsString()) == ContentTags.end())
-                ContentTags.push_back(tag.AsString());
-    }
 }
 
 std::vector<std::string> AnimationPreviewWorkspace::UndeclaredNames()
@@ -212,7 +129,7 @@ void AnimationPreviewWorkspace::DataDocumentChanged(DataDocument& document, bool
 {
     if (document.Subtype() == kGameplayTagDeclarationsType)
     {
-        RefreshContentTags();
+        Tags.Refresh(Assets, Documents);
         Simulation.VocabularyChanged();
     }
     if (residentChanged)

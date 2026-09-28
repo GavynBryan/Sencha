@@ -108,9 +108,9 @@ public:
 
         if (ImGui::CollapsingHeader("Rigs", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            for (const std::string& path : Workspace.RigPaths)
+            for (const std::string& path : Workspace.Content.OfSubtype(kAnimRigType))
                 if (ImGui::Selectable(path.c_str(), path == Workspace.RigPath)) Workspace.OpenRig(path);
-            if (Workspace.RigPaths.empty()) ImGui::TextDisabled("No animation.rig assets in the mounted project.");
+            if (Workspace.Content.OfSubtype(kAnimRigType).empty()) ImGui::TextDisabled("No animation.rig assets in the mounted project.");
         }
         if (ImGui::CollapsingHeader("New rig"))
             DrawNewRig();
@@ -214,7 +214,7 @@ private:
         const std::string skeleton = NewRigClips.empty() ? std::string() : skeletonOf(NewRigClips.front());
         if (ImGui::BeginChild("clips", ImVec2(0.0f, 140.0f), ImGuiChildFlags_Borders))
         {
-            for (const std::string& path : Workspace.ClipPaths)
+            for (const std::string& path : Workspace.Content.Of(AssetType::AnimationClip))
             {
                 const auto chosen = std::find(NewRigClips.begin(), NewRigClips.end(), path);
                 bool ticked = chosen != NewRigClips.end();

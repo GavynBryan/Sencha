@@ -49,7 +49,7 @@ namespace
         const World* world = workspace.Simulation.SimulationWorld();
         footprint.PreviewEntities = world != nullptr ? world->EntityCount() : 0;
         footprint.History = workspace.Simulation.History().size();
-        footprint.ContentTags = workspace.ContentTags.size();
+        footprint.ContentTags = workspace.Tags.Names().size();
         return footprint;
     }
 
