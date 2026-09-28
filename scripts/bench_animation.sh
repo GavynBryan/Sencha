@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Records the animation runtime's measurements by running AnimBench.Generate:
 # rig binding per tier, the headless server tick over cosmetic props with and
-# without the participation skip, and the pose pass serially and across workers.
+# without the participation skip, and the pose pass serially and across workers;
+# then AnimationPreviewBench.Generate: replaying the editor preview and running
+# the fixture project's scenario batch, written beside it as <out>_preview.json.
 #
 # The bench is built through the profile preset, not dev: the dev preset keeps
 # asserts and a debug allocator, which makes zone import roughly an order of
@@ -29,11 +31,13 @@ out=$(realpath -m "${1:-$repo/build-profile/bench/animation.json}")
 mkdir -p "$(dirname "$out")"
 
 binary="$repo/build-profile/test/runtime_tests"
+editor_binary="$repo/build-profile/test/editor_tests"
+preview_out="${out%.json}_preview.json"
 
 if [ -z "${SENCHA_SKIP_BUILD:-}" ]; then
     echo "building profile preset (release codegen + symbols)"
     cmake --preset profile >/dev/null
-    cmake --build --preset profile --target runtime_tests --parallel
+    cmake --build --preset profile --target runtime_tests editor_tests --parallel
 fi
 
 if [ ! -x "$binary" ]; then
@@ -55,16 +59,22 @@ fi
 echo "recording -> $out"
 SENCHA_ANIM_BENCH_OUT="$out" \
     "${pin[@]}" "$binary" --gtest_filter='AnimBench.Generate'
+echo "recording -> $preview_out"
+SENCHA_ANIMATION_PREVIEW_BENCH_OUT="$preview_out" \
+    "${pin[@]}" "$editor_binary" --gtest_filter='AnimationPreviewBench.Generate'
 
 echo
 echo "recorded metrics:"
-python3 - "$out" <<'PY'
+python3 - "$out" "$preview_out" <<'PY'
 import json, sys
-with open(sys.argv[1]) as handle:
-    payload = json.load(handle)
-print(f"  build: {payload['build']}")
-width = max(len(m["name"]) for m in payload["metrics"])
-for metric in payload["metrics"]:
+metrics = []
+for path in sys.argv[1:]:
+    with open(path) as handle:
+        payload = json.load(handle)
+    print(f"  {path}: build {payload['build']}")
+    metrics += payload["metrics"]
+width = max(len(m["name"]) for m in metrics)
+for metric in metrics:
     value = metric["value"]
     shown = f"{value:.4f}" if metric["unit"] == "ms" else f"{value:.0f}"
     print(f"  {metric['name']:<{width}}  {shown} {metric['unit']}")
