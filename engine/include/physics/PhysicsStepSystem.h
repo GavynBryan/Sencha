@@ -21,6 +21,7 @@ public:
     void Physics(PhysicsContext& ctx);
 
     [[nodiscard]] PhysicsWorld& GetSimulation() { return Simulation; }
+    [[nodiscard]] const PhysicsWorld& GetSimulation() const { return Simulation; }
     [[nodiscard]] CollisionShapeCache& GetShapeCache() { return Shapes; }
     [[nodiscard]] CharacterMoverPool& GetCharacterMovers()
     {

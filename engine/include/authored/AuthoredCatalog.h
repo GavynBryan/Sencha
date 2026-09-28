@@ -14,9 +14,9 @@
 #include <utility>
 #include <vector>
 
-// One World's catalog of one kind of authored contract -- verbs, queries or
-// events. Metadata only; slot, revision and registration rules are described
-// in docs/gameplay/authored-api.md.
+// A catalog of one kind of named contract: a World's verbs, queries or events,
+// or a host's candidate-evaluation operations. Slot, revision and registration
+// rules are described in docs/gameplay/authored-api.md.
 
 template<typename T>
 concept AuthoredCatalogTraits = requires(const typename T::Definition& definition,

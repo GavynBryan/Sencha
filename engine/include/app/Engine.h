@@ -15,6 +15,7 @@
 #include <authored/AuthoredQueryDispatcher.h>
 #include <authored/VerbBindingSet.h>
 #include <authored/VerbDispatcher.h>
+#include <spatial/candidates/CandidateEvaluator.h>
 #ifdef SENCHA_ENABLE_UI
 #include <ui/UiSurface.h>
 #endif
@@ -434,6 +435,12 @@ public:
         return QueryDispatcherState.get();
     }
 
+    // Candidate evaluation over the runtime World, with this host's physics
+    // when the game registered it. Built after OnRegisterSystems, so a game
+    // reaches it from OnStart or from a system's own phase method; null
+    // before that and after shutdown.
+    [[nodiscard]] CandidateEvaluator* TryCandidates() { return CandidateEvaluatorState.get(); }
+
     // Drained once per fixed tick, after fixed logic. Same lifetime as TryVerbs.
     [[nodiscard]] AuthoredEventDispatcher* TryAuthoredEvents() { return EventDispatcherState.get(); }
     [[nodiscard]] const AuthoredEventDispatcher* TryAuthoredEvents() const
@@ -637,6 +644,7 @@ private:
     std::unique_ptr<VerbDispatcher> VerbDispatcherState;
     std::unique_ptr<AuthoredQueryDispatcher> QueryDispatcherState;
     std::unique_ptr<AuthoredEventDispatcher> EventDispatcherState;
+    std::unique_ptr<CandidateEvaluator> CandidateEvaluatorState;
     // The stock shell's bindings, compiled against the runtime catalog. Derived
     // state: the authored records stay in the asset the lease holds.
     VerbBindingSet ShellBindingSet;

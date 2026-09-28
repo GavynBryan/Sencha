@@ -53,6 +53,10 @@ file(GLOB_RECURSE NAVIGATION_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/navigation/*.cpp
 )
 
+file(GLOB_RECURSE SPATIAL_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/spatial/*.cpp
+)
+
 file(GLOB_RECURSE BRUSH_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/brush/*.cpp
 )
@@ -169,6 +173,14 @@ if(NAVIGATION_TEST_SOURCES)
     add_executable(navigation_tests ${NAVIGATION_TEST_SOURCES})
     target_link_libraries(navigation_tests PRIVATE sencha_engine GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS navigation_tests)
+endif()
+
+# Spatial queries: candidate evaluation and sight over real cooked navigation and
+# a real physics scene, both reached through the engine only.
+if(SPATIAL_TEST_SOURCES)
+    add_executable(spatial_tests ${SPATIAL_TEST_SOURCES})
+    target_link_libraries(spatial_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS spatial_tests)
 endif()
 
 # The level cook is editor-side (it consumes editor brush/level types) but the
@@ -492,6 +504,12 @@ endif()
 
 if(TARGET navigation_tests)
     gtest_discover_tests(navigation_tests
+        DISCOVERY_TIMEOUT 30
+    )
+endif()
+
+if(TARGET spatial_tests)
+    gtest_discover_tests(spatial_tests
         DISCOVERY_TIMEOUT 30
     )
 endif()

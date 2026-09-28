@@ -96,3 +96,76 @@ TEST(PhysicsQueries, SweepSphereHitsBoxTop)
     EXPECT_NEAR(hit.Fraction, 0.35f, 0.03f);
     EXPECT_NEAR(hit.Normal.Y, 1.0f, 0.05f);
 }
+
+namespace
+{
+const EntityId kTriggerEntity{ 9, 1 };
+
+// A thin sensor slab at y = 3, between the ray origin at y = 5 and the box.
+void AddTriggerAbove(PhysicsWorld& world)
+{
+    BodyDesc trigger;
+    trigger.Shape = CollisionShape::MakeBox(Vec3d(2.0f, 0.1f, 2.0f));
+    trigger.Position = Vec3d(0.0f, 3.0f, 0.0f);
+    trigger.Motion = BodyMotion::Static;
+    trigger.Layer = CollisionLayer::Trigger;
+    trigger.IsTrigger = true;
+    trigger.UserData = PackEntity(kTriggerEntity);
+    (void)world.AddBody(trigger);
+}
+
+const Vec3d kDown(0.0f, -1.0f, 0.0f);
+const Vec3d kAbove(0.0f, 5.0f, 0.0f);
+} // namespace
+
+TEST(PhysicsQueries, UnfilteredRaycastStopsOnTrigger)
+{
+    PhysicsWorld world;
+    AddBoxAtOrigin(world);
+    AddTriggerAbove(world);
+    PhysicsQueries queries(world);
+
+    const RaycastHit hit = queries.Raycast(kAbove, kDown, 10.0f);
+
+    ASSERT_TRUE(hit.Hit);
+    EXPECT_EQ(hit.Entity, kTriggerEntity);
+}
+
+TEST(PhysicsQueries, FilteredRaycastSkipsTriggersByDefault)
+{
+    PhysicsWorld world;
+    AddBoxAtOrigin(world);
+    AddTriggerAbove(world);
+    PhysicsQueries queries(world);
+
+    const RaycastHit hit = queries.Raycast(kAbove, kDown, 10.0f, PhysicsQueryFilter{});
+
+    ASSERT_TRUE(hit.Hit);
+    EXPECT_EQ(hit.Entity, kBoxEntity);
+    EXPECT_NEAR(hit.Distance, 4.0f, 0.05f);
+}
+
+TEST(PhysicsQueries, FilteredRaycastCanIncludeTriggers)
+{
+    PhysicsWorld world;
+    AddBoxAtOrigin(world);
+    AddTriggerAbove(world);
+    PhysicsQueries queries(world);
+
+    const RaycastHit hit = queries.Raycast(kAbove, kDown, 10.0f, PhysicsQueryFilter{ .IncludeTriggers = true });
+
+    ASSERT_TRUE(hit.Hit);
+    EXPECT_EQ(hit.Entity, kTriggerEntity);
+}
+
+TEST(PhysicsQueries, FilteredRaycastPassesThroughIgnoredEntities)
+{
+    PhysicsWorld world;
+    AddBoxAtOrigin(world);
+    PhysicsQueries queries(world);
+    const EntityId ignored[] = { kBoxEntity };
+
+    const RaycastHit hit = queries.Raycast(kAbove, kDown, 10.0f, PhysicsQueryFilter{ .IgnoreEntities = ignored });
+
+    EXPECT_FALSE(hit.Hit);
+}

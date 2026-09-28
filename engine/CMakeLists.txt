@@ -332,6 +332,10 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # Navigation queries: a game holds locations, regions, requests, and route
     # buffers by value and reaches the system through Schedule().Get<>().
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/*.h"
+    # Spatial queries: a game holds candidate contexts, results, scratch and
+    # traces by value and reaches the evaluator through an Engine accessor.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/spatial/candidates/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/spatial/sight/*.h"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)

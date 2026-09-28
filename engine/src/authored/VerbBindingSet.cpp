@@ -29,9 +29,8 @@ void VerbBindingSet::Compile(const VerbBindingLibrary& library,
 
 void VerbBindingSet::Snapshot(const VerbBindingEnvironment& environment)
 {
-    Catalog = environment.Verbs != nullptr ? environment.Verbs->Catalog() : VerbCatalogId{};
-    CatalogGeneration = environment.Verbs != nullptr ? environment.Verbs->Generation() : 0;
-    TagCount = environment.Tags != nullptr ? environment.Tags->Size() : 0;
+    Verbs = environment.Verbs != nullptr ? CatalogStamp::Of(*environment.Verbs) : CatalogStamp{};
+    Tags = environment.Tags != nullptr ? TagVocabularyStamp::Of(*environment.Tags) : TagVocabularyStamp{};
 }
 
 void VerbBindingSet::Instantiate(const VerbBindingLibrary& library,
@@ -43,7 +42,7 @@ void VerbBindingSet::Instantiate(const VerbBindingLibrary& library,
     Unresolved = false;
     Bindings.reserve(library.Bindings.size());
     Compile(library, environment, errors);
-    Sources.push_back(Source{ .Asset = {}, .ReloadVersion = 0, .Library = library });
+    Sources.push_back(Source{ .Asset = {}, .Library = library });
     Snapshot(environment);
     ++Revision_;
 }
@@ -53,7 +52,7 @@ void VerbBindingSet::Append(const VerbBindingLibrary& library,
                             std::vector<std::string>& errors)
 {
     Compile(library, environment, errors);
-    Sources.push_back(Source{ .Asset = {}, .ReloadVersion = 0, .Library = library });
+    Sources.push_back(Source{ .Asset = {}, .Library = library });
     Snapshot(environment);
     ++Revision_;
 }
@@ -86,7 +85,7 @@ void VerbBindingSet::InstantiateFrom(const DataAssetCache& cache,
         Compile(*library, environment, errors);
     else
         Unresolved = true;
-    Sources.push_back(Source{ .Asset = asset, .ReloadVersion = cache.GetReloadVersion(asset), .Library = {} });
+    Sources.push_back(Source{ .Asset = DataAssetStamp::Of(cache, asset), .Library = {} });
     Snapshot(environment);
     ++Revision_;
 }
@@ -100,7 +99,7 @@ void VerbBindingSet::AppendFrom(const DataAssetCache& cache,
         Compile(*library, environment, errors);
     else
         Unresolved = true;
-    Sources.push_back(Source{ .Asset = asset, .ReloadVersion = cache.GetReloadVersion(asset), .Library = {} });
+    Sources.push_back(Source{ .Asset = DataAssetStamp::Of(cache, asset), .Library = {} });
     Snapshot(environment);
     ++Revision_;
 }
@@ -117,15 +116,16 @@ void VerbBindingSet::Rebuild(const DataAssetCache* cache,
     Unresolved = false;
     for (Source& source : sources)
     {
-        if (source.Asset.IsValid())
+        if (source.Asset.Asset.IsValid())
         {
             const VerbBindingLibrary* library =
-                cache != nullptr ? LibraryOf(*cache, source.Asset, errors) : nullptr;
+                cache != nullptr ? LibraryOf(*cache, source.Asset.Asset, errors) : nullptr;
             if (library != nullptr)
                 Compile(*library, environment, errors);
             else
                 Unresolved = true;
-            source.ReloadVersion = cache != nullptr ? cache->GetReloadVersion(source.Asset) : 0;
+            source.Asset = cache != nullptr ? DataAssetStamp::Of(*cache, source.Asset.Asset)
+                                            : DataAssetStamp{ source.Asset.Asset, 0 };
         }
         else
         {
@@ -144,16 +144,13 @@ bool VerbBindingSet::Refresh(const DataAssetCache* cache,
     bool changed = false;
     for (const Source& source : Sources)
     {
-        if (source.Asset.IsValid() && cache != nullptr)
-            changed = changed || cache->GetReloadVersion(source.Asset) != source.ReloadVersion;
+        if (source.Asset.Asset.IsValid() && cache != nullptr)
+            changed = changed || !source.Asset.Matches(*cache);
     }
     if (environment.Verbs != nullptr)
-    {
-        changed = changed || environment.Verbs->Catalog() != Catalog
-            || environment.Verbs->Generation() != CatalogGeneration;
-    }
+        changed = changed || !Verbs.Matches(*environment.Verbs);
     if (environment.Tags != nullptr)
-        changed = changed || environment.Tags->Size() != TagCount;
+        changed = changed || !Tags.Matches(*environment.Tags);
     if (!changed)
         return false;
 

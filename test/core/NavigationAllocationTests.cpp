@@ -82,6 +82,11 @@ TEST(NavigationAllocation, WarmedQueriesAllocateNothing)
         (void)NavRaycast(zone, context, request, a, Vec3d(2, 0, 9));
         EXPECT_EQ(NavCollectReachable(zone, context, request, a, 10.0f, 50.0f, reachable),
                   NavStatus::Success);
+        ASSERT_FALSE(reachable.Regions().empty());
+        const NavRegion region = reachable.Regions()[0].Region;
+        EXPECT_EQ(NavClosestPointInRegion(zone, context, region, Vec3d(3, 0, 6)).Status,
+                  NavStatus::Success);
+        EXPECT_TRUE(NavRegionBounds(zone, region).has_value());
         EXPECT_EQ(NavValidateRoute(zone, route), NavRouteValidity::Valid);
     };
 

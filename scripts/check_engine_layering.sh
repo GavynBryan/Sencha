@@ -100,4 +100,15 @@ check "BodySpawns decides a game policy" \
       "$ENGINE/include/app/BodySpawns.h" \
       "$ENGINE/src/app/BodySpawns.cpp"
 
+# G. Spatial queries read world state and answer; they never act on it or
+# present it. Candidate evaluation composes navigation, physics and ECS reads,
+# so movement, abilities, rendering, networking and the app layer stay out.
+# The sight test is a physics ray with a view cone and needs nothing else.
+check "spatial/candidates/ acts on or presents what it evaluates" \
+      '#include[[:space:]]*["<](app|graphics|render|net|movement|abilities|anim|controller|camera|ui)/' \
+      "$ENGINE/include/spatial/candidates" "$ENGINE/src/spatial/candidates"
+check "spatial/sight/ reaches beyond physics and math" \
+      '#include[[:space:]]*["<](app|graphics|render|net|navigation|movement|abilities|spatial/candidates)/' \
+      "$ENGINE/include/spatial/sight" "$ENGINE/src/spatial/sight"
+
 exit $status

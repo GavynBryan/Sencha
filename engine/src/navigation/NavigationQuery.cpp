@@ -462,6 +462,21 @@ NavStatus NavigationQuery::CollectReachable(NavQueryContext& context,
                   { return NavCollectReachable(zone, context, request, start, radius, maxCost, out); });
 }
 
+NavProjectResult NavigationQuery::ClosestPointInRegion(NavQueryContext& context,
+                                                       const NavRegion& region,
+                                                       const Vec3d& point) const
+{
+    return InZone(region.Zone, NavProjectResult{ NavStatus::ZoneUnavailable, {} },
+                  [&](const ZoneNavigation& zone)
+                  { return NavClosestPointInRegion(zone, context, region, point); });
+}
+
+std::optional<Aabb3d> NavigationQuery::RegionBounds(const NavRegion& region) const
+{
+    return InZone(region.Zone, std::optional<Aabb3d>{},
+                  [&](const ZoneNavigation& zone) { return NavRegionBounds(zone, region); });
+}
+
 NavRouteValidity NavigationQuery::ValidateRoute(const NavRouteBuffer& route) const
 {
     return InZone(route.Zone, NavRouteValidity::ZoneUnavailable,

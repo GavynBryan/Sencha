@@ -21,6 +21,7 @@
 #include <assets/ui/UiPackageCache.h>
 #include <assets/texture/TextureCache.h>
 #include <audio/AudioClipCache.h>
+#include <spatial/candidates/CandidateCatalogs.h>
 #include <core/assets/AssetReferenceStore.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/metadata/DataSchema.h>
@@ -86,6 +87,11 @@ struct RuntimeAssets
     // Parsed cooked scenes, plain CPU data: resident in every composition,
     // windowed and headless alike -- a dedicated host spawns scenes too.
     SceneCache Scenes;
+
+    // The operations `candidates.evaluation` data compiles against, owned by
+    // the host so every host validates it the same way. Declared before the
+    // data registries, whose compile step reads it from load threads.
+    CandidateCatalogs CandidateOperations;
 
     // Structured data. The subtype registry and schemas are separate from the
     // cache because a game module registers into them while the module is

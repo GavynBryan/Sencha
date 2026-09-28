@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <vector>
 
 #include <ecs/EntityId.h>
@@ -37,6 +38,12 @@ struct ShapeSweepHit
     Vec3d Normal = Vec3d::Zero();
 };
 
+struct PhysicsQueryFilter
+{
+    bool IncludeTriggers = false;
+    std::span<const EntityId> IgnoreEntities{};
+};
+
 class PhysicsQueries
 {
 public:
@@ -47,6 +54,13 @@ public:
 
     // Closest body hit by the ray, or { Hit = false } if none within maxDistance.
     [[nodiscard]] RaycastHit Raycast(const Vec3d& origin, const Vec3d& direction, float maxDistance) const;
+
+    // As above, skipping bodies the filter rejects. `unitDirection` must be
+    // normalized so Distance is in world units.
+    [[nodiscard]] RaycastHit Raycast(const Vec3d& origin,
+                                     const Vec3d& unitDirection,
+                                     float maxDistance,
+                                     const PhysicsQueryFilter& filter) const;
 
     // Closest body hit while sweeping shape from origin along direction*maxDistance.
     [[nodiscard]] ShapeSweepHit SweepShape(

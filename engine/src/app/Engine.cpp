@@ -30,6 +30,7 @@
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
 #include <navigation/NavigationSystem.h>
+#include <physics/PhysicsStepSystem.h>
 #include <audio/CaptionRuntime.h>
 #include <audio/CaptionSystem.h>
 #include <core/console/ConsoleService.h>
@@ -173,6 +174,7 @@ bool Engine::Initialize()
     CaptionState = std::make_unique<CaptionRuntime>(logging, Configuration.Captions);
     EngineSystems.Register<CaptionSystem>(CaptionState.get(), AudioState.get());
     auto failInitialize = [this]() {
+        CandidateEvaluatorState.reset();
         EngineSystems.Shutdown();
         NetState.reset();
         FrameDriverInstance.reset();
@@ -357,6 +359,7 @@ void Engine::Shutdown()
     // lanes before destroying the entity world they may have targeted.
     EngineSystems.Shutdown();
     // After the systems that hold them, before the World they read.
+    CandidateEvaluatorState.reset();
     EventDispatcherState.reset();
     QueryDispatcherState.reset();
     VerbDispatcherState.reset();
@@ -1348,6 +1351,13 @@ int Engine::Run(Game& game)
                                              &ConsoleState->Registry());
 
     game.OnRegisterSystems(registerSystems);
+    // After the game's systems, which is where physics is registered if at all.
+    {
+        const PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>();
+        CandidateEvaluatorState = std::make_unique<CandidateEvaluator>(
+            *RuntimeWorldState, ContentState->Assets().CandidateOperations,
+            physics != nullptr ? &physics->GetSimulation() : nullptr, QueryDispatcherState.get());
+    }
     // Every place a game binds has run.
     for (const AuthoredQueryId query : QueryDispatcherState->Unanswered())
     {

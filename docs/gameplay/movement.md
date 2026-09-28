@@ -376,9 +376,10 @@ fact.
   `CharacterMoverPool::Drive` always leaves it on; jumps currently escape snap
   on velocity alone. A mode that needs a guaranteed clean ground exit (mantle,
   launch pads) will need this plumbed through `MotionRequest`.
-- **`PhysicsQueries` has no gameplay consumer yet.** The surface is ready; the
-  first detection system establishes the access-and-phase pattern described
-  above.
+- **`PhysicsQueries`' first gameplay consumer is candidate evaluation**
+  (`docs/spatial/candidates.md`), which reads it from FixedLogic through the
+  filtered `Raycast` overload. A detection system follows the same
+  access-and-phase pattern described above.
 - **`ClingSession` / `FlightSession` ship as engine components** with no
   registered runtime mode; they anchor the candidate/session mechanism and its
   tests. A real climbing or flight feature may reuse or replace them.

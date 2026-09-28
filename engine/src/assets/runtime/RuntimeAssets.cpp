@@ -2,6 +2,7 @@
 
 #include <assets/runtime/RegisterAssetKind.h>
 #include <authored/VerbBindingData.h>
+#include <spatial/candidates/CandidateEvaluationData.h>
 #include <core/logging/LoggingProvider.h>
 #include <input/InputProfileData.h>
 #include <movement/MovementProfileData.h>
@@ -84,6 +85,7 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterNavigationPolicyData(DataTypes, DataSchemas);
     RegisterInputProfileData(DataTypes, DataSchemas);
     RegisterVerbBindingData(DataTypes, DataSchemas);
+    RegisterCandidateEvaluationData(DataTypes, DataSchemas, CandidateOperations);
 
     // A reference store is its own stager and store, so it takes the mesh
     // kind whole; the real loader stages against a cache this composition
