@@ -8,7 +8,7 @@
 #include <vector>
 
 class DataDocument;
-class DataEditorWorkspace;
+class DataDocumentSet;
 
 // The vocabulary a profile is binding against, resolved from the action set it
 // references.
@@ -26,7 +26,7 @@ class DataEditorWorkspace;
 class InputProfilePreview
 {
 public:
-    void Update(const DataDocument& document, const DataEditorWorkspace& workspace);
+    void Update(const DataDocument& document, const DataDocumentSet& documents);
 
     [[nodiscard]] std::span<const KnownInputAction> KnownActions() const { return Actions; }
     [[nodiscard]] std::span<const std::string> UnboundActions() const { return Unbound; }
@@ -37,7 +37,7 @@ public:
     [[nodiscard]] const std::string& ActionSetError() const { return LoadError; }
 
 private:
-    void Rebuild(const DataDocument& document, const DataEditorWorkspace& workspace);
+    void Rebuild(const DataDocument& document, const DataDocumentSet& documents);
 
     std::vector<KnownInputAction> Actions;
     std::vector<std::string> Unbound;

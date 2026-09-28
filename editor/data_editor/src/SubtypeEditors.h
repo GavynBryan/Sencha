@@ -1,6 +1,6 @@
 #pragma once
 
-class SubtypeEditorRegistry;
+class DataSubtypeEditorRegistry;
 
 // Wires the purpose-built subtype editors this build ships with.
 //
@@ -9,4 +9,4 @@ class SubtypeEditorRegistry;
 // rather than each editor announcing itself from a static initializer, because
 // what a build contains should be readable in one place and not depend on
 // whether the linker kept an object nothing references.
-void RegisterBuiltInSubtypeEditors(SubtypeEditorRegistry& registry);
+void RegisterBuiltInSubtypeEditors(DataSubtypeEditorRegistry& registry);

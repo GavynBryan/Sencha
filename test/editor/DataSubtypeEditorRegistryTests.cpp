@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "SubtypeEditorRegistry.h"
+#include "ui/DataSubtypeEditorRegistry.h"
 
 #include <string>
 #include <utility>
@@ -21,7 +21,7 @@ public:
     }
 
     [[nodiscard]] std::string_view Subtype() const override { return Name; }
-    [[nodiscard]] FieldEdit DrawForm(SubtypeFormContext&) override { return {}; }
+    [[nodiscard]] FieldEdit DrawForm(DataSubtypeFormContext&) override { return {}; }
 
 private:
     std::string Name;
@@ -33,9 +33,9 @@ std::unique_ptr<IDataSubtypeEditor> MakeEditor(std::string subtype)
 }
 }
 
-TEST(SubtypeEditorRegistry, FindsARegisteredEditorBySubtype)
+TEST(DataSubtypeEditorRegistry, FindsARegisteredEditorBySubtype)
 {
-    SubtypeEditorRegistry registry;
+    DataSubtypeEditorRegistry registry;
     ASSERT_TRUE(registry.Register(MakeEditor("movement.profile")));
     ASSERT_TRUE(registry.Register(MakeEditor("input.profile")));
 
@@ -46,9 +46,9 @@ TEST(SubtypeEditorRegistry, FindsARegisteredEditorBySubtype)
     EXPECT_EQ(registry.Entries().size(), 2u);
 }
 
-TEST(SubtypeEditorRegistry, RefusesASecondEditorForOneSubtype)
+TEST(DataSubtypeEditorRegistry, RefusesASecondEditorForOneSubtype)
 {
-    SubtypeEditorRegistry registry;
+    DataSubtypeEditorRegistry registry;
     ASSERT_TRUE(registry.Register(MakeEditor("input.profile")));
 
     // Two surfaces claiming one document would both draw it and race for its
@@ -57,9 +57,9 @@ TEST(SubtypeEditorRegistry, RefusesASecondEditorForOneSubtype)
     EXPECT_EQ(registry.Entries().size(), 1u);
 }
 
-TEST(SubtypeEditorRegistry, ReportsNothingForAnUnclaimedSubtype)
+TEST(DataSubtypeEditorRegistry, ReportsNothingForAnUnclaimedSubtype)
 {
-    SubtypeEditorRegistry registry;
+    DataSubtypeEditorRegistry registry;
     ASSERT_TRUE(registry.Register(MakeEditor("movement.profile")));
 
     // The caller's cue to draw the schema-generated form instead.
@@ -67,17 +67,17 @@ TEST(SubtypeEditorRegistry, ReportsNothingForAnUnclaimedSubtype)
     EXPECT_EQ(registry.Find(""), nullptr);
 }
 
-TEST(SubtypeEditorRegistry, RejectsAnEditorThatClaimsNothing)
+TEST(DataSubtypeEditorRegistry, RejectsAnEditorThatClaimsNothing)
 {
-    SubtypeEditorRegistry registry;
+    DataSubtypeEditorRegistry registry;
     EXPECT_FALSE(registry.Register(nullptr));
     EXPECT_FALSE(registry.Register(MakeEditor("")));
     EXPECT_TRUE(registry.Entries().empty());
 }
 
-TEST(SubtypeEditorRegistry, KeepsRegistrationOrder)
+TEST(DataSubtypeEditorRegistry, KeepsRegistrationOrder)
 {
-    SubtypeEditorRegistry registry;
+    DataSubtypeEditorRegistry registry;
     ASSERT_TRUE(registry.Register(MakeEditor("a.one")));
     ASSERT_TRUE(registry.Register(MakeEditor("b.two")));
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DataEditorWorkspace.h"
-#include "SubtypeEditorRegistry.h"
+#include "ui/DataSubtypeEditorRegistry.h"
 
 #include "input/ShortcutRegistry.h"
 #include "project/Project.h"
@@ -60,7 +60,7 @@ private:
     // The purpose-built authoring surfaces. Declared before the UI feature is
     // built so the panels an editor contributes never outlive the state they
     // read.
-    SubtypeEditorRegistry SubtypeEditors;
+    DataSubtypeEditorRegistry SubtypeEditors;
     ShortcutRegistry Shortcuts;
 
     EditorUiFeature* UiFeature = nullptr;

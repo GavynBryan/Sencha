@@ -57,6 +57,9 @@ public:
     [[nodiscard]] DocumentRef RefOf(const DataDocument& document) { return { this, document.VirtualPath() }; }
     [[nodiscard]] const DataSchema* SchemaOf(const DataDocument& document) const;
     [[nodiscard]] const DataSchema* ActiveSchema();
+    [[nodiscard]] const DataAssetTypeRegistry& Types() const;
+    // Subtypes this set opens that have both a registration and an authoring schema.
+    [[nodiscard]] std::vector<std::string> CreatableSubtypes() const;
 
     void CommitEdit(DataDocument& document);
     void CancelEdit(DataDocument& document);

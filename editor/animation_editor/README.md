@@ -372,12 +372,13 @@ wall stopping it, and movement as scenario state.
 
 ## Documents, undo and saving
 
-The **Document** panel draws the active document through the same
-schema-generated form Data Editor uses (`editor/common/src/ui/DataForm.h`), so
-every field of a rig, behavior set, slot map, selector, flow, blendspace, blend
-overrides, fact or request schema, bindings file and tag declaration is
-editable here; the purpose-built panels above are the richer views of the same
-documents. **New asset** creates any of those types, and a reference field's
+The **Document** panel shows each open document as a tab, drawn through the
+same tabs and schema-generated form Data Editor uses
+(`editor/common/src/ui/DataDocumentTabs.h`); closing a tab with unsaved changes
+asks Save, Discard or Cancel. Every field of a rig, behavior set, slot map,
+selector, flow, blendspace, blend overrides, fact or request schema, bindings
+file and tag declaration is editable here; the purpose-built panels above are
+the richer views of the same documents. **New asset** creates any of those types, and a reference field's
 Pick names it.
 
 A name content introduces as a gameplay tag -- a new behavior, intent or

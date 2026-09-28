@@ -14,15 +14,15 @@ public:
         return InputProfileSubtype();
     }
 
-    [[nodiscard]] FieldEdit DrawForm(SubtypeFormContext& ctx) override
+    [[nodiscard]] FieldEdit DrawForm(DataSubtypeFormContext& ctx) override
     {
-        return DrawInputProfileForm(ctx.Data, ctx.Schema, ctx.Workspace, Preview, Capture);
+        return DrawInputProfileForm(ctx.Data, ctx.Schema, ctx.Documents, Preview, Capture);
     }
 
     void UpdateForFrame(const DataDocument& document,
-                        DataEditorWorkspace& workspace) override
+                        DataDocumentSet& documents) override
     {
-        Preview.Update(document, workspace);
+        Preview.Update(document, documents);
     }
 
     // Claimed before the UI sees it: a control being bound must not also

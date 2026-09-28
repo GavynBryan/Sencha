@@ -1,7 +1,7 @@
 #include "movement/MovementProfileEditor.h"
 
 #include "data/DataDocument.h"
-#include "DataEditorWorkspace.h"
+#include "data/DataDocumentSet.h"
 #include "movement/MovementProfileForm.h"
 #include "movement/MovementResolvePanel.h"
 #include "movement/MovementResolvePreview.h"
@@ -17,28 +17,28 @@ public:
         return MovementProfileSubtype();
     }
 
-    [[nodiscard]] FieldEdit DrawForm(SubtypeFormContext& ctx) override
+    [[nodiscard]] FieldEdit DrawForm(DataSubtypeFormContext& ctx) override
     {
-        return DrawMovementProfileForm(ctx.Data, ctx.Schema, ctx.Workspace, Preview);
+        return DrawMovementProfileForm(ctx.Data, ctx.Schema, ctx.Documents, Preview);
     }
 
     void UpdateForFrame(const DataDocument& document,
-                        DataEditorWorkspace& workspace) override
+                        DataDocumentSet& documents) override
     {
         // Kept current whether or not the panels reading it are visible, so
         // opening one mid-edit shows the profile as it stands rather than as it
         // was when the panel last drew.
-        Preview.Update(document, workspace.Types());
+        Preview.Update(document, documents.Types());
     }
 
     [[nodiscard]] std::vector<std::unique_ptr<IEditorPanel>>
-    CreatePanels(DataEditorWorkspace& workspace) override
+    CreatePanels(DataDocumentSet& documents) override
     {
         // Both panels read the same dialled-in context as the form, so the
         // preview has one owner rather than a copy per surface.
         std::vector<std::unique_ptr<IEditorPanel>> panels;
-        panels.push_back(std::make_unique<MovementResolvePanel>(workspace, Preview));
-        panels.push_back(std::make_unique<MovementResponsePanel>(workspace, Preview));
+        panels.push_back(std::make_unique<MovementResolvePanel>(documents, Preview));
+        panels.push_back(std::make_unique<MovementResponsePanel>(documents, Preview));
         return panels;
     }
 

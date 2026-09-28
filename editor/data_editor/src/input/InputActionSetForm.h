@@ -5,7 +5,7 @@
 #include <string_view>
 
 struct DataSchema;
-class DataEditorWorkspace;
+class DataDocumentSet;
 
 // The subtype this form claims. Named rather than spelled at the call site so
 // the registration and the form cannot drift apart.
@@ -18,4 +18,4 @@ class DataEditorWorkspace;
 // copy and routes the returned edit through the document's transaction.
 [[nodiscard]] FieldEdit DrawInputActionSetForm(JsonValue& data,
                                                const DataSchema& schema,
-                                               DataEditorWorkspace& workspace);
+                                               DataDocumentSet& documents);

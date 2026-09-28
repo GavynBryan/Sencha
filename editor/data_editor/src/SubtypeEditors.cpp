@@ -1,11 +1,11 @@
 #include "SubtypeEditors.h"
 
-#include "SubtypeEditorRegistry.h"
+#include "ui/DataSubtypeEditorRegistry.h"
 #include "input/InputActionSetEditor.h"
 #include "input/InputProfileEditor.h"
 #include "movement/MovementProfileEditor.h"
 
-void RegisterBuiltInSubtypeEditors(SubtypeEditorRegistry& registry)
+void RegisterBuiltInSubtypeEditors(DataSubtypeEditorRegistry& registry)
 {
     (void)registry.Register(CreateMovementProfileEditor());
     (void)registry.Register(CreateInputActionSetEditor());

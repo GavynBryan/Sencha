@@ -255,7 +255,7 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
         # The data editor's GUI-free half: its file operations and the movement
         # authoring model. Its panels stay out by construction.
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/DataEditorWorkspace.cpp
-        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/SubtypeEditorRegistry.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/ui/DataSubtypeEditorRegistry.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputBindingSummary.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputControlCapture.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementLayerSummary.cpp

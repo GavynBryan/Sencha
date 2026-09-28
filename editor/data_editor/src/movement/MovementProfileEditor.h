@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../SubtypeEditor.h"
+#include "ui/DataSubtypeEditor.h"
 
 #include <memory>
 

@@ -1,13 +1,13 @@
 #include "input/InputProfilePreview.h"
 
 #include "data/DataDocument.h"
-#include "DataEditorWorkspace.h"
+#include "data/DataDocumentSet.h"
 #include "JsonObjectEdit.h"
 
 #include <optional>
 
 void InputProfilePreview::Update(const DataDocument& document,
-                                 const DataEditorWorkspace& workspace)
+                                 const DataDocumentSet& documents)
 {
     const JsonValue* data = document.Data();
     const std::string referenced =
@@ -16,7 +16,7 @@ void InputProfilePreview::Update(const DataDocument& document,
     // The action set's own revision counts when it is open: adding an action in
     // its tab must reach this profile's pickers without a save.
     std::uint64_t actionSetRevision = 0;
-    if (const DataDocument* open = workspace.Documents.Find(referenced))
+    if (const DataDocument* open = documents.Find(referenced))
         actionSetRevision = open->Revision();
 
     const bool sameSource = HasSource
@@ -30,11 +30,11 @@ void InputProfilePreview::Update(const DataDocument& document,
     SourcePath = document.VirtualPath();
     SourceRevision = document.Revision();
     ActionSetRevision = actionSetRevision;
-    Rebuild(document, workspace);
+    Rebuild(document, documents);
 }
 
 void InputProfilePreview::Rebuild(const DataDocument& document,
-                                  const DataEditorWorkspace& workspace)
+                                  const DataDocumentSet& documents)
 {
     Actions.clear();
     Unbound.clear();
@@ -52,7 +52,7 @@ void InputProfilePreview::Rebuild(const DataDocument& document,
         return;
     }
 
-    const std::optional<JsonValue> actionSet = workspace.Documents.CurrentRoot(ReferencedPath);
+    const std::optional<JsonValue> actionSet = documents.CurrentRoot(ReferencedPath);
     if (!actionSet)
     {
         LoadError = "No action set at '" + ReferencedPath + "'.";

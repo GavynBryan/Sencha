@@ -1,7 +1,7 @@
 #include "DataEditorPanels.h"
 
 #include "DataEditorWorkspace.h"
-#include "SubtypeEditorRegistry.h"
+#include "ui/DataSubtypeEditorRegistry.h"
 
 #include "data/DataAssetFiles.h"
 #include "ui/ButtonFlow.h"
@@ -61,32 +61,7 @@ void DataAssetBrowserPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    const auto types = Workspace.DataTypes();
-    if (!types.empty())
-    {
-        SelectedSubtype = std::clamp(SelectedSubtype, 0, static_cast<int>(types.size() - 1));
-        if (ImGui::BeginCombo("Type", types[SelectedSubtype].Name.c_str()))
-        {
-            for (int index = 0; index < static_cast<int>(types.size()); ++index)
-            {
-                if (ImGui::Selectable(types[index].Name.c_str(), index == SelectedSubtype))
-                    SelectedSubtype = index;
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::InputText("Path", NewPath.data(), NewPath.size());
-        if (ImGui::Button("Create") && NewPath[0] != '\0')
-        {
-            LastError.clear();
-            if (Workspace.Documents.Create(types[SelectedSubtype].Name, NewPath.data(), LastError) != nullptr)
-                NewPath.fill('\0');
-        }
-    }
-    else
-    {
-        ImGui::TextWrapped("No structured data subtypes are registered by this project.");
-    }
-
+    NewAsset.Draw(Workspace.Documents, "input/player.profile.sdata");
     ImGui::Separator();
     for (const AssetRecord* record : Workspace.DataAssets())
     {
@@ -147,9 +122,9 @@ void DataAssetBrowserPanel::OnDraw()
     Prompt.Draw();
 }
 
-DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, SubtypeEditorRegistry& editors)
+DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, DataSubtypeEditorRegistry& editors)
     : Workspace(workspace)
-    , Editors(editors)
+    , Tabs(workspace.Documents, &editors)
 {
 }
 
@@ -158,78 +133,9 @@ void DataFormPanel::OnDraw()
     ScopedPanel panel(GetTitle(), &Visible);
     if (!panel.IsOpen())
         return;
-
-    const auto documents = Workspace.Documents.Documents();
-    if (documents.empty())
-    {
+    if (Workspace.Documents.Documents().empty())
         ImGui::TextWrapped("Open or create a .sdata asset from the browser.");
-        return;
-    }
-
-    if (ImGui::BeginTabBar("DataDocuments", ImGuiTabBarFlags_Reorderable))
-    {
-        std::optional<std::size_t> close;
-        for (std::size_t index = 0; index < documents.size(); ++index)
-        {
-            DataDocument& document = *documents[index];
-            bool open = true;
-            std::string title = std::filesystem::path(document.VirtualPath()).filename().string();
-            if (document.IsDirty())
-                title += " *";
-            title += "##" + std::to_string(index);
-
-            const ImGuiTabItemFlags flags = Workspace.Documents.ActiveIndex() == index
-                ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
-            if (ImGui::BeginTabItem(title.c_str(), &open, flags))
-            {
-                Workspace.Documents.SetActive(index);
-                const DataSchema* schema = Workspace.Documents.SchemaOf(document);
-                JsonValue root = document.CopyRoot();
-                JsonValue* data = root.Find("data");
-                if (schema == nullptr || data == nullptr)
-                {
-                    ImGui::TextWrapped("No authoring schema is registered for subtype '%s'.",
-                                       document.Subtype().c_str());
-                }
-                else
-                {
-                    // Escape abandons an interaction wherever it started, so a
-                    // drag that went somewhere unintended costs nothing.
-                    if (document.IsEditing() && ImGui::IsKeyPressed(ImGuiKey_Escape))
-                    {
-                        Workspace.Documents.CancelEdit(document);
-                    }
-                    else
-                    {
-                        // A subtype with a purpose-built editor draws through
-                        // it; everything else gets the schema-generated form.
-                        IDataSubtypeEditor* editor = Editors.Find(document.Subtype());
-                        SubtypeFormContext ctx{ *data, *schema, document, Workspace };
-                        const FieldEdit edit = editor != nullptr
-                            ? editor->DrawForm(ctx)
-                            : DrawDataField(*data, schema->Root, "$.data", Workspace.Documents);
-                        ApplyFieldEdit(document, Workspace.Documents, edit, std::move(root));
-                    }
-                }
-                ImGui::EndTabItem();
-            }
-            if (!open)
-                close = index;
-        }
-        if (close)
-        {
-            const DataDocument& closing = *documents[*close];
-            Prompt.Ask(HasChanges(Workspace.Documents, closing.VirtualPath()), closing.VirtualPath(),
-                       [this, path = closing.VirtualPath()](DirtyDisposition disposition) {
-                           if (const std::optional<std::size_t> index = Workspace.Documents.IndexOf(path))
-                               (void)Workspace.Documents.Close(*index, disposition, CloseError);
-                       });
-        }
-        ImGui::EndTabBar();
-    }
-    if (!CloseError.empty())
-        ImGui::TextWrapped("%s", CloseError.c_str());
-    Prompt.Draw();
+    Tabs.Draw();
 }
 
 DataDocumentationPanel::DataDocumentationPanel(DataEditorWorkspace& workspace)

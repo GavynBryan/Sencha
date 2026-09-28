@@ -172,6 +172,24 @@ const DataSchema* DataDocumentSet::ActiveSchema()
     return active != nullptr ? SchemaOf(*active) : nullptr;
 }
 
+const DataAssetTypeRegistry& DataDocumentSet::Types() const
+{
+    return Assets.DataTypes;
+}
+
+std::vector<std::string> DataDocumentSet::CreatableSubtypes() const
+{
+    std::vector<std::string> subtypes;
+    for (const DataAssetTypeRegistration& type : Assets.DataTypes.Entries())
+        if (Accepts(type.Name) && Assets.DataSchemas.Find(type.Name) != nullptr)
+            subtypes.push_back(type.Name);
+    if (!Config.Subtypes.empty())
+        std::ranges::sort(subtypes, {}, [&](const std::string& subtype) {
+            return std::ranges::find(Config.Subtypes, subtype) - Config.Subtypes.begin();
+        });
+    return subtypes;
+}
+
 void DataDocumentSet::CommitEdit(DataDocument& document)
 {
     if (!document.IsEditing())

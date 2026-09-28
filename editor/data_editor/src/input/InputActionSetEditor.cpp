@@ -12,9 +12,9 @@ public:
         return InputActionSetSubtype();
     }
 
-    [[nodiscard]] FieldEdit DrawForm(SubtypeFormContext& ctx) override
+    [[nodiscard]] FieldEdit DrawForm(DataSubtypeFormContext& ctx) override
     {
-        return DrawInputActionSetForm(ctx.Data, ctx.Schema, ctx.Workspace);
+        return DrawInputActionSetForm(ctx.Data, ctx.Schema, ctx.Documents);
     }
 };
 }

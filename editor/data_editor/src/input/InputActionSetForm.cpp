@@ -1,6 +1,6 @@
 #include "input/InputActionSetForm.h"
 
-#include "DataEditorWorkspace.h"
+#include "data/DataDocumentSet.h"
 #include "JsonObjectEdit.h"
 #include "input/InputBindingSummary.h"
 
@@ -148,9 +148,9 @@ std::string_view InputActionSetSubtype()
 
 FieldEdit DrawInputActionSetForm(JsonValue& data,
                                  const DataSchema& schema,
-                                 DataEditorWorkspace& workspace)
+                                 DataDocumentSet& documents)
 {
-    (void)workspace;
+    (void)documents;
     FieldEdit edit;
 
     const DataFieldSchema* record = ActionRecordSchema(schema);

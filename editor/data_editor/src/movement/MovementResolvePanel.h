@@ -2,7 +2,7 @@
 
 #include "ui/IEditorPanel.h"
 
-class DataEditorWorkspace;
+class DataDocumentSet;
 class MovementResolvePreview;
 
 // Answers "why is this coefficient that value?" for a movement profile: dial in
@@ -11,7 +11,7 @@ class MovementResolvePreview;
 class MovementResolvePanel final : public IEditorPanel
 {
 public:
-    MovementResolvePanel(DataEditorWorkspace& workspace, MovementResolvePreview& preview);
+    MovementResolvePanel(DataDocumentSet& documents, MovementResolvePreview& preview);
     [[nodiscard]] std::string_view GetTitle() const override { return "Resolve"; }
     // The lower right column: the effective-value table is tall and needs the
     // full width of that column, which packing beside Documentation denies it.
@@ -20,6 +20,6 @@ public:
     void OnDraw() override;
 
 private:
-    DataEditorWorkspace& Workspace;
+    DataDocumentSet& Documents;
     MovementResolvePreview& Preview;
 };

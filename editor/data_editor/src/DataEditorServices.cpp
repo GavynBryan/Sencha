@@ -173,7 +173,7 @@ void DataEditorServices::BuildUi()
         // active subtype rather than appearing and disappearing.
         for (const auto& editor : SubtypeEditors.Entries())
         {
-            for (auto& panel : editor->CreatePanels(*Workspace))
+            for (auto& panel : editor->CreatePanels(Workspace->Documents))
                 UiFeature->AddPanel(std::move(panel));
         }
 
@@ -264,7 +264,7 @@ void DataEditorServices::ProcessFrame()
         if (const DataDocument* document = Workspace->Documents.Active())
         {
             if (IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype()))
-                editor->UpdateForFrame(*document, *Workspace);
+                editor->UpdateForFrame(*document, Workspace->Documents);
         }
     }
     UpdateTitle();

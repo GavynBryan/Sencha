@@ -6,7 +6,7 @@
 #include "MovementResponseSim.h"
 
 #include "data/DataDocument.h"
-#include "../DataEditorWorkspace.h"
+#include "data/DataDocumentSet.h"
 
 #include "ui/EditorUiStyle.h"
 #include "ui/ScopedPanel.h"
@@ -30,9 +30,9 @@ namespace
     }
 }
 
-MovementResponsePanel::MovementResponsePanel(DataEditorWorkspace& workspace,
+MovementResponsePanel::MovementResponsePanel(DataDocumentSet& documents,
                                              MovementResolvePreview& preview)
-    : Workspace(workspace)
+    : Documents(documents)
     , Preview(preview)
 {
 }
@@ -43,7 +43,7 @@ void MovementResponsePanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    const DataDocument* document = Workspace.Documents.Active();
+    const DataDocument* document = Documents.Active();
     if (document == nullptr || document->Subtype() != MovementProfileSubtype())
     {
         ImGui::TextDisabled("Open a movement profile to see how it feels.");

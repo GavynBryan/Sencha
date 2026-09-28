@@ -1,8 +1,8 @@
-#include "SubtypeEditorRegistry.h"
+#include "ui/DataSubtypeEditorRegistry.h"
 
 #include <utility>
 
-bool SubtypeEditorRegistry::Register(std::unique_ptr<IDataSubtypeEditor> editor)
+bool DataSubtypeEditorRegistry::Register(std::unique_ptr<IDataSubtypeEditor> editor)
 {
     if (editor == nullptr || editor->Subtype().empty())
         return false;
@@ -13,7 +13,7 @@ bool SubtypeEditorRegistry::Register(std::unique_ptr<IDataSubtypeEditor> editor)
     return true;
 }
 
-IDataSubtypeEditor* SubtypeEditorRegistry::Find(std::string_view subtype) const
+IDataSubtypeEditor* DataSubtypeEditorRegistry::Find(std::string_view subtype) const
 {
     for (const std::unique_ptr<IDataSubtypeEditor>& editor : Editors)
     {

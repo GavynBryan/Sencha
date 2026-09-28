@@ -1,7 +1,7 @@
 #include "input/InputProfileForm.h"
 
 #include "data/DataDocument.h"
-#include "DataEditorWorkspace.h"
+#include "data/DataDocumentSet.h"
 #include "JsonObjectEdit.h"
 #include "input/InputBindingSummary.h"
 #include "input/InputControlCapture.h"
@@ -19,6 +19,7 @@
 #include <imgui.h>
 
 #include <array>
+#include <cstring>
 #include <format>
 #include <optional>
 #include <string>
@@ -559,12 +560,12 @@ std::string_view InputProfileSubtype()
 
 FieldEdit DrawInputProfileForm(JsonValue& data,
                                const DataSchema& schema,
-                               DataEditorWorkspace& workspace,
+                               DataDocumentSet& documents,
                                InputProfilePreview& preview,
                                InputControlCapture& capture)
 {
     FieldEdit edit;
-    const DataDocument* document = workspace.Documents.Active();
+    const DataDocument* document = documents.Active();
     if (document == nullptr)
         return edit;
 
@@ -580,7 +581,7 @@ FieldEdit DrawInputProfileForm(JsonValue& data,
             value = FindMember(data, "actions");
             edit |= FieldEdit::Instant();
         }
-        edit |= DrawDataField(*value, *actionSet, "$.data.actions", workspace.Documents);
+        edit |= DrawDataField(*value, *actionSet, "$.data.actions", documents);
     }
 
     if (!preview.ActionSetError().empty())

@@ -5,7 +5,7 @@
 #include <string_view>
 
 struct DataSchema;
-class DataEditorWorkspace;
+class DataDocumentSet;
 class MovementResolvePreview;
 
 // The subtype this form claims. Named rather than spelled at the call site so
@@ -20,5 +20,5 @@ class MovementResolvePreview;
 // copy and routes the returned edit through the document's transaction.
 [[nodiscard]] FieldEdit DrawMovementProfileForm(JsonValue& data,
                                                 const DataSchema& schema,
-                                                DataEditorWorkspace& workspace,
+                                                DataDocumentSet& documents,
                                                 MovementResolvePreview& preview);
