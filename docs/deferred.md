@@ -27,3 +27,100 @@ do the work and delete the entry.
 - **Trigger:** the rig or scene format gaining a declared per-entity diagnostic
   setting, or the decision-log depth work above, which settles how a short ring
   is stored.
+
+## Engine-wide participation LOD tiers
+
+- **What:** the animation runtime plan places its server participation tiers
+  beside "the existing participation LOD tiers", which are proposed but not
+  built. Animation's server skip is its own rule today: a machine that does not
+  present poses skips a rig whose binding proves it drives no gameplay
+  (`AnimBoundRig::DrivesGameplay`, `ShouldRunAnimationLogic`).
+- **Where:** the proposal is `docs/action-adventure-core-runtime.md` §C and
+  `docs/plans/engine-roadmap.md`; the animation rule is in
+  `engine/include/anim/AnimRigBinding.h` and `engine/src/anim/AnimRigBinding.cpp`.
+- **Trigger:** the first engine participation tier landing. Animation's skip
+  then becomes a consumer of that tier rather than its own predicate.
+
+## Animation editor surfaces
+
+- **What:** purpose-built surfaces the animation editor still lacks. Every field
+  is editable today through the Document panel's schema form. Missing:
+  tag-set scenario inputs and the predicate text form; a behavior policy
+  inspector linked to the rules and rows that reach it; slot-map precedence, a
+  blendspace layout editor and fact derivations; lifecycle bindings in their
+  own inspector; event marks on the shared timeline; the take-A ghost drawn
+  where the character stood and a composed-motion view.
+- **Where:** `editor/animation_editor/src/ui/`.
+- **Trigger:** the animation editor UX polish pass that follows the editor
+  consolidation.
+
+## Layer weight fades
+
+- **What:** a layer's weight steps when its weight rule changes; it does not
+  fade over time.
+- **Where:** layer weights resolve in `engine/src/anim/AnimContentSystem.cpp`
+  and are applied by the pose pass.
+- **Trigger:** the first rig whose upper layer visibly pops in or out, or the
+  UX polish pass.
+
+## Picking up another program's edits before save
+
+- **What:** an open document does not notice its file changing on disk until
+  it is saved, when the conflict is refused and settled by keeping one side.
+- **Where:** the editors' document sets in `editor/common/src/data/` and
+  `editor/animation_editor/src/authoring/`.
+- **Trigger:** file watching in the consolidated editor.
+
+## Other editors' documents on the shared document layer
+
+- **What:** Shudei's `MaterialTabSet` and Kyusu's document handling keep their
+  own open, save and undo instead of the shared document layer the Data Editor
+  and the animation editor use.
+- **Where:** `editor/shudei/src/MaterialTabSet.*`, `editor/kyusu/src/document/`.
+- **Trigger:** the editor consolidation ticket, which gives the one application
+  one undo journal and one save-all.
+
+## Sanitizers and benchmarks in CI
+
+- **What:** the `asan` and `tsan` presets and the gated benchmarks run only by
+  hand; CI runs neither.
+- **Where:** `.github/workflows/ci.yml`, `CMakePresets.json`,
+  `test/runtime/*Bench*.cpp`.
+- **Trigger:** a performance or memory-safety regression gate wanted in CI.
+
+## Resident push against file-watcher reload
+
+- **What:** the editors push a committed working version into the resident
+  asset; nothing stops a file-watcher reload replacing it with the saved file.
+- **Where:** `editor/common/src/data/DataResidentSync.*`.
+- **Trigger:** a host that runs source hot reload beside a document set, which
+  the consolidated editor will.
+
+## Play-in-editor and unsaved values
+
+- **What:** because working versions are pushed into resident assets, a
+  play-in-editor session started from the same process would see unsaved
+  values. Whether it should is a product decision.
+- **Where:** `editor/common/src/data/DataResidentSync.*`.
+- **Trigger:** the consolidated editor wiring play-in-editor to the shared
+  document set.
+
+## Unsaved-document prompt polish
+
+- **What:** closing, renaming or deleting an unsaved document asks Save,
+  Discard or Cancel one document at a time with plain wording, and window focus
+  loss still cancels typed text that has not been committed.
+- **Where:** `editor/common/src/ui/DocumentShellActions.*`.
+- **Trigger:** the UX polish pass.
+
+## Destroying a document source that still has changes
+
+- **What:** the plan for the shared document layer makes destroying a document
+  source with unsaved documents a debug assertion, reachable only through the
+  exit prompt. Today "Discard and close" and tests destroy sets with changes,
+  so the assertion would need an explicit discard-everything step first.
+- **Where:** `editor/common/src/data/DataDocumentSet.cpp`,
+  `editor/animation_editor/src/authoring/AnimationClipEventsSet.cpp`,
+  `editor/common/src/ui/DocumentShellActions.cpp`.
+- **Trigger:** the consolidated editor's single shutdown path, which can
+  discard every source's documents before tearing them down.
