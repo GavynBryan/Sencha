@@ -135,8 +135,8 @@ private:
         if (const AnimBoundRig* rig = Workspace.Simulation.Rig())
             for (const AnimBoundContent& content : rig->Contents)
                 clips.push_back(content.Path);
-        if (!Workspace.ClipPath.empty() && std::ranges::find(clips, Workspace.ClipPath) == clips.end())
-            clips.push_back(Workspace.ClipPath);
+        if (!Workspace.Audition.ClipPath.empty() && std::ranges::find(clips, Workspace.Audition.ClipPath) == clips.end())
+            clips.push_back(Workspace.Audition.ClipPath);
         std::erase_if(clips, [](const std::string& clip) { return !MeshClipSourceOf(clip).has_value(); });
         return clips;
     }
@@ -213,8 +213,8 @@ private:
                     && rig->Contents[layer.Clip].DurationSeconds > 0.0f)
                     return layer.TimeSeconds / rig->Contents[layer.Clip].DurationSeconds;
             }
-        if (Workspace.ClipPath == document.ClipPath())
-            return static_cast<float>(Workspace.Session.NormalizedTime());
+        if (Workspace.Audition.ClipPath == document.ClipPath())
+            return static_cast<float>(Workspace.Audition.Session.NormalizedTime());
         return std::nullopt;
     }
 

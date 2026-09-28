@@ -42,21 +42,13 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std:
     : Documents(assets, Sources, { .ContentRoot = authoringRoot,
                                    .Subtypes = { AnimationDocumentSubtypes().begin(), AnimationDocumentSubtypes().end() } })
     , ClipEvents(assets, Sources)
+    , Audition(assets)
+    , Viewport(assets)
     , Simulation(assets.DataAssets, &assets.AnimationClips, Tags.Vocabulary(vocabulary), &assets.Skeletons)
     , Vocabulary(Tags.Vocabulary(std::move(vocabulary)))
     , Assets(assets)
     , AuthoringRoot(std::move(authoringRoot))
 {
-    Material material;
-    material.BaseColor = Vec4(0.65f, 0.7f, 0.8f, 1.0f);
-    DefaultMaterial = Assets.Materials.Create(material);
-    DefaultMaterialLease = AssetLease::Adopt(
-        AssetType::Material, Assets.Materials, DefaultMaterial.ToToken());
-    Material ghost;
-    ghost.BaseColor = Vec4(1.0f, 0.55f, 0.15f, 0.35f);
-    ghost.AlphaMode = MaterialAlphaMode::Blend;
-    GhostMaterial = Assets.Materials.Create(ghost);
-    GhostMaterialLease = AssetLease::Adopt(AssetType::Material, Assets.Materials, GhostMaterial.ToToken());
     Documents.OnChanged([this](DataDocument& document, bool residentChanged) {
         DataDocumentChanged(document, residentChanged);
     });
@@ -204,7 +196,7 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
         ScenarioError = "Select an animation.rig asset that loads.";
         return false;
     }
-    LayerDisplay = {};
+    Viewport.LayerDisplay = {};
 
     std::filesystem::path sidecar(record->FilePath);
     sidecar.replace_extension(".sanimscenario");
@@ -236,10 +228,10 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
     ScenarioFile = sidecar.string();
     ScenarioError.clear();
     (void)Simulation.Open(std::move(scenario));
-    ViewportSource = AnimationViewportSource::Simulation;
+    Viewport.Source = AnimationViewportSource::Simulation;
     Navigation = AnimationNavigation{};
-    if (!rig->SkeletonPath.empty() && Session.SkeletonPath() != rig->SkeletonPath && MeshPath.empty())
-        (void)SelectSkeleton(rig->SkeletonPath);
+    if (!rig->SkeletonPath.empty() && Audition.Session.SkeletonPath() != rig->SkeletonPath && Audition.MeshPath.empty())
+        (void)Audition.SelectSkeleton(rig->SkeletonPath);
     if (Documents.PushWaiting() | ClipEvents.PushWaiting())
         Simulation.Rebind();
     return true;
@@ -298,229 +290,6 @@ bool AnimationPreviewWorkspace::CreateBinding(const std::string& bindingsPath, c
     document->ReplaceRoot(std::move(root));
     Documents.Changed(*document);
     return true;
-}
-
-bool AnimationPreviewWorkspace::SetSkeletonContent(SkeletonHandle skeleton)
-{
-    const auto* value = Assets.Skeletons.Get(skeleton);
-    if (value == nullptr)
-    {
-        Error = "The selected skeleton is not resident.";
-        return false;
-    }
-    std::optional<AnimationClipData> clip;
-    if (ClipLease)
-    {
-        const auto* current = Assets.AnimationClips.Get(
-            AnimationClipHandle::FromToken(ClipLease.OpaqueToken()));
-        if (current && current->SkeletonPath == Assets.Skeletons.GetName(skeleton))
-            clip = *current;
-    }
-    if (!Session.SetContent(std::string(Assets.Skeletons.GetName(skeleton)), *value,
-                            clip, Error))
-        return false;
-    if (!clip)
-    {
-        ClipLease.Reset();
-        ClipPath.clear();
-    }
-    return true;
-}
-
-bool AnimationPreviewWorkspace::SelectMesh(const std::string& path)
-{
-    auto lease = Assets.Assets.LoadLease(path, AssetType::SkinnedMesh);
-    if (!lease)
-    {
-        Error = "Could not load skinned mesh: " + path;
-        return false;
-    }
-    const auto mesh = SkinnedMeshHandle::FromToken(lease.OpaqueToken());
-    if (!SetSkeletonContent(Assets.SkinnedMeshes->GetSkeletonHandle(mesh)))
-        return false;
-    MeshLease = std::move(lease);
-    SkeletonLease.Reset();
-    MeshPath = path;
-    return true;
-}
-
-bool AnimationPreviewWorkspace::SelectSkeleton(const std::string& path)
-{
-    auto lease = Assets.Assets.LoadLease(path, AssetType::Skeleton);
-    if (!lease)
-    {
-        Error = "Could not load skeleton: " + path;
-        return false;
-    }
-    if (!SetSkeletonContent(SkeletonHandle::FromToken(lease.OpaqueToken())))
-        return false;
-    SkeletonLease = std::move(lease);
-    MeshLease.Reset();
-    MeshPath.clear();
-    return true;
-}
-
-bool AnimationPreviewWorkspace::SelectClip(const std::string& path)
-{
-    ViewportSource = AnimationViewportSource::Audition;
-    if (path.empty())
-    {
-        if (Session.Skeleton().Joints.empty())
-            return true;
-        if (!Session.SetContent(Session.SkeletonPath(), Session.Skeleton(), std::nullopt, Error))
-            return false;
-        ClipLease.Reset();
-        ClipPath.clear();
-        return true;
-    }
-    auto lease = Assets.Assets.LoadLease(path, AssetType::AnimationClip);
-    const auto* clip = lease ? Assets.AnimationClips.Get(
-        AnimationClipHandle::FromToken(lease.OpaqueToken())) : nullptr;
-    if (!clip)
-    {
-        Error = "Could not load animation clip: " + path;
-        return false;
-    }
-    AssetLease skeletonLease;
-    const SkeletonData* skeleton = &Session.Skeleton();
-    std::string skeletonPath = Session.SkeletonPath();
-    if (skeleton->Joints.empty())
-    {
-        skeletonLease = Assets.Assets.LoadLease(clip->SkeletonPath, AssetType::Skeleton);
-        skeleton = skeletonLease ? Assets.Skeletons.Get(
-            SkeletonHandle::FromToken(skeletonLease.OpaqueToken())) : nullptr;
-        if (!skeleton)
-        {
-            Error = "Could not load the clip's skeleton: " + clip->SkeletonPath;
-            return false;
-        }
-        skeletonPath = clip->SkeletonPath;
-    }
-    if (!Session.SetContent(skeletonPath, *skeleton, *clip, Error))
-        return false;
-    if (skeletonLease)
-        SkeletonLease = std::move(skeletonLease);
-    ClipLease = std::move(lease);
-    ClipPath = path;
-    return true;
-}
-
-bool AnimationPreviewWorkspace::SelectMaterial(const std::string& path)
-{
-    if (path.empty())
-    {
-        MaterialLease.Reset();
-        MaterialPath.clear();
-        Error.clear();
-        return true;
-    }
-    auto lease = Assets.Assets.LoadLease(path, AssetType::Material);
-    if (!lease)
-    {
-        Error = "Could not load material: " + path;
-        return false;
-    }
-    MaterialLease = std::move(lease);
-    MaterialPath = path;
-    Error.clear();
-    return true;
-}
-
-void AnimationPreviewWorkspace::Frame(double wallSeconds)
-{
-    if (Documents.PushWaiting() | ClipEvents.PushWaiting())
-        Simulation.Rebind();
-    Session.Advance(wallSeconds);
-    Simulation.Advance(wallSeconds);
-    Scene.Queue.Reset();
-    Scene.Poses->Reset();
-    Scene.Bounds = Aabb3d::Empty();
-    if (!MeshLease)
-        return;
-    const auto mesh = SkinnedMeshHandle::FromToken(MeshLease.OpaqueToken());
-    const auto* geometry = Assets.SkinnedMeshes->Get(mesh);
-    if (!geometry)
-        return;
-    Scene.Bounds = geometry->LocalBounds;
-    const std::vector<Mat4>* shownPalette = &ViewportPalette();
-    Aabb3d drawBounds = geometry->LocalBounds;
-    // Model space is the character's; its feet are half the capsule below the centre.
-    if (ViewportSource == AnimationViewportSource::Simulation)
-        if (const Transform3f* subjectTransform = Simulation.SubjectTransform())
-        {
-            const Vec3d feet = subjectTransform->Position - Vec3d(0.0f, Simulation.SubjectHeight() * 0.5f, 0.0f);
-            const Mat4 placed = Mat4::MakeTRS(feet, Vec3d::Zero(), Vec3d::One()) * subjectTransform->Rotation.ToMat4();
-            PlacedPalette.resize(shownPalette->size());
-            for (std::size_t j = 0; j < PlacedPalette.size(); ++j)
-                PlacedPalette[j] = placed * (*shownPalette)[j];
-            shownPalette = &PlacedPalette;
-            // Conservative bounds: the local box's radius around the moved centre.
-            const float reach = geometry->LocalBounds.HalfExtent().Magnitude();
-            drawBounds = Aabb3d::FromCenterHalfExtent(feet + geometry->LocalBounds.Center(), Vec3d(reach, reach, reach));
-        }
-    const auto& palette = *shownPalette;
-    // A palette entry is model times inverse bind; picking needs the model part.
-    const SkeletonData& shown = Session.Skeleton();
-    ViewportModelTransforms.resize(std::min(palette.size(), shown.Joints.size()));
-    for (std::size_t j = 0; j < ViewportModelTransforms.size(); ++j)
-        ViewportModelTransforms[j] = palette[j] * shown.Joints[j].InverseBind.Inverse();
-    // This viewport owns its pose cache and one instance. Scope is nonzero to
-    // keep this editor identity distinct from runtime entity namespaces.
-    const auto slot = Scene.Poses->AppendInstance(mesh, RenderEntityKey{ .Scope = 1, .Entity = {} },
-                                                 static_cast<std::uint32_t>(palette.size()));
-    const auto offset = Scene.Poses->Instances[slot].PaletteOffset;
-    std::copy(palette.begin(), palette.end(), Scene.Poses->Palettes.begin() + offset);
-    const auto material = MaterialLease
-        ? MaterialHandle::FromToken(MaterialLease.OpaqueToken()) : DefaultMaterial;
-    const auto* value = Assets.Materials.Get(material);
-    if (!value)
-        return;
-    for (std::size_t section = 0; section < geometry->Sections.size(); ++section)
-    {
-        RenderQueueItem item;
-        item.SkinnedMesh = mesh;
-        item.Material = material;
-        item.SectionIndex = static_cast<std::uint32_t>(section);
-        item.WorldBounds = drawBounds;
-        item.PoseSlot = slot;
-        item.Pipeline = SelectOpaquePipeline(*value);
-        item.Pass = ResolveMaterialPass(*value);
-        if (item.Pass == ShaderPassId::ForwardTransparent)
-            Scene.Queue.AddTransparent(item);
-        else
-            Scene.Queue.AddOpaque(item);
-    }
-    if (const std::vector<Mat4>* ghost = GhostPalette(); ghost != nullptr && ghost->size() == palette.size())
-    {
-        const auto ghostSlot = Scene.Poses->AppendInstance(mesh, RenderEntityKey{ .Scope = 2, .Entity = {} },
-                                                          static_cast<std::uint32_t>(ghost->size()));
-        std::copy(ghost->begin(), ghost->end(),
-                  Scene.Poses->Palettes.begin() + Scene.Poses->Instances[ghostSlot].PaletteOffset);
-        if (const auto* ghostMaterial = Assets.Materials.Get(GhostMaterial))
-            for (std::size_t section = 0; section < geometry->Sections.size(); ++section)
-            {
-                RenderQueueItem item;
-                item.SkinnedMesh = mesh;
-                item.Material = GhostMaterial;
-                item.SectionIndex = static_cast<std::uint32_t>(section);
-                item.WorldBounds = geometry->LocalBounds;
-                item.PoseSlot = ghostSlot;
-                item.Pipeline = SelectOpaquePipeline(*ghostMaterial);
-                item.Pass = ResolveMaterialPass(*ghostMaterial);
-                Scene.Queue.AddTransparent(item);
-            }
-    }
-    Scene.Queue.SortOpaque();
-}
-
-std::optional<AnimTick> AnimationPreviewWorkspace::ShownTick() const
-{
-    const auto& history = Simulation.History();
-    if (history.empty())
-        return std::nullopt;
-    if (Navigation.InspectRecord && *Navigation.InspectRecord < history.size())
-        return history[*Navigation.InspectRecord].Tick;
-    return history.back().Tick;
 }
 
 bool AnimationPreviewWorkspace::CreateRig(const AnimationRigRecipe& recipe, std::string& error)
@@ -615,6 +384,25 @@ bool AnimationPreviewWorkspace::MigrateClipPlayers(std::string& error)
     return true;
 }
 
+bool AnimationPreviewWorkspace::AuditionClip(const std::string& path)
+{
+    Viewport.Source = AnimationViewportSource::Audition;
+    return Audition.SelectClip(path);
+}
+
+void AnimationPreviewWorkspace::Advance(double wallSeconds)
+{
+    if (Documents.PushWaiting() | ClipEvents.PushWaiting())
+        Simulation.Rebind();
+    Audition.Session.Advance(wallSeconds);
+    Simulation.Advance(wallSeconds);
+}
+
+void AnimationPreviewWorkspace::ExtractViewport()
+{
+    Viewport.Extract(Audition, Simulation, Navigation, TakeA ? &*TakeA : nullptr);
+}
+
 bool AnimationPreviewWorkspace::RecordTakeA()
 {
     if (!Simulation.IsOpen() || Simulation.History().empty())
@@ -681,67 +469,6 @@ void AnimationPreviewWorkspace::ClearTakeA()
     Comparison = {};
 }
 
-const std::vector<Mat4>* AnimationPreviewWorkspace::GhostPalette()
-{
-    if (!TakeA || !ShowGhost || ViewportSource != AnimationViewportSource::Simulation)
-        return nullptr;
-    const std::optional<AnimTick> tick = ShownTick();
-    const std::vector<Transform3f>* pose = tick ? TakeA->At(*tick) : nullptr;
-    const SkeletonData& skeleton = Session.Skeleton();
-    if (pose == nullptr || pose->size() != skeleton.Joints.size())
-        return nullptr;
-    BuildPosedModelTransforms(skeleton, *pose, GhostModel);
-    BuildSkinningPalette(skeleton, GhostModel, GhostPaletteScratch);
-    return &GhostPaletteScratch;
-}
-
-const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
-{
-    if (ViewportSource != AnimationViewportSource::Simulation || !Simulation.IsOpen())
-    {
-        ViewportNote.clear();
-        return Session.Palette();
-    }
-    // Shown on the audition's skeleton only when the rig poses that skeleton.
-    const SkeletonData& skeleton = Session.Skeleton();
-    const AnimBoundRig* rig = Simulation.Rig();
-    const AnimPosePool::Slot* slot = Simulation.SubjectPose();
-    const AnimPoseState* state = Simulation.SubjectPoseState();
-    ViewportNote.clear();
-    if (rig == nullptr || slot == nullptr || state == nullptr || !slot->HasCurrent)
-    {
-        ViewportNote = rig != nullptr && rig->SkeletonPath.empty()
-            ? "The rig names no skeleton, so nothing poses it."
-            : "Nothing posed yet.";
-        BuildRestSkinningPalette(skeleton, SimulationPalette);
-        return SimulationPalette;
-    }
-    if (rig->SkeletonPath != Session.SkeletonPath() || skeleton.Joints.size() != slot->Joints)
-    {
-        ViewportNote = "The rig poses " + rig->SkeletonPath + ", not the skeleton on screen; showing the bind pose.";
-        BuildRestSkinningPalette(skeleton, SimulationPalette);
-        return SimulationPalette;
-    }
-    const AnimPoseSources sources{ rig, &Assets.AnimationClips, &skeleton };
-    const auto& history = Simulation.History();
-    if (Navigation.InspectRecord && *Navigation.InspectRecord < history.size()
-        && history[*Navigation.InspectRecord].Pose.size() == skeleton.Joints.size())
-        SimulationLocal = history[*Navigation.InspectRecord].Pose;
-    else
-        AnimationPreviewDisplayPose(sources, *slot, *state, Simulation.Selection(), LayerDisplay, slot->Tick,
-                                    Simulation.TickSeconds(), DisplayScratch, SimulationLocal);
-    for (std::size_t l = 0; l < rig->Layers.size() && l < kAnimMaxLayers; ++l)
-    {
-        const std::uint16_t content = state->Layers[l].Playing.Content;
-        if (content < rig->Contents.size())
-            ViewportNote += std::format("{}{}: {}{}", ViewportNote.empty() ? "" : "; ", rig->Layers[l].NameText,
-                                        rig->Contents[content].Path, LayerDisplay.Shows(l) ? "" : " (hidden)");
-    }
-    BuildPosedModelTransforms(skeleton, SimulationLocal, SimulationModel);
-    BuildSkinningPalette(skeleton, SimulationModel, SimulationPalette);
-    return SimulationPalette;
-}
-
 bool AnimationPreviewWorkspace::EditRig(const std::function<bool(JsonValue&)>& edit)
 {
     DataDocument* rig = Documents.Find(RigPath);
@@ -762,40 +489,4 @@ const SkeletonData* AnimationPreviewWorkspace::RigSkeleton() const
 {
     const AnimBoundRig* rig = Simulation.Rig();
     return rig != nullptr && rig->Skeleton.IsValid() ? Assets.Skeletons.Get(rig->Skeleton) : nullptr;
-}
-
-void AnimationPreviewDisplayPose(const AnimPoseSources& sources, const AnimPosePool::Slot& slot,
-                                 const AnimPoseState& state, const AnimSelectorState* selection,
-                                 const AnimationLayerDisplay& display, AnimTick tick, double tickSeconds,
-                                 AnimPoseScratch& scratch, std::vector<Transform3f>& out)
-{
-    const AnimBoundRig& rig = *sources.Rig;
-    const std::size_t layers = std::min<std::size_t>(rig.Layers.size(), slot.Layers);
-    bool everyLayer = true;
-    for (std::size_t l = 0; l < layers; ++l)
-        everyLayer = everyLayer && display.Shows(l);
-    if (everyLayer)
-    {
-        out = slot.Current;
-        return;
-    }
-    std::array<AnimPoseLayer, kAnimMaxLayers> compose{};
-    for (std::size_t l = 0; l < layers; ++l)
-    {
-        const AnimLayerPose& layer = state.Layers[l];
-        const bool plays = layer.Playing.Content != kAnimNoContent || layer.Fading;
-        if (!display.Shows(l) || !plays)
-            continue;
-        const AnimBoundLayer& bound = rig.Layers[l];
-        compose[l].Pose = slot.LayerPose(l);
-        compose[l].Weight = AnimLayerWeight(rig, l, selection);
-        compose[l].Mode = bound.Mode;
-        compose[l].Mask = bound.Mask;
-        if (bound.Mode == AnimLayerMode::Additive)
-        {
-            SampleAnimPlayback(sources, layer.Playing, tick, tickSeconds, true, scratch, scratch.References[l]);
-            compose[l].Reference = scratch.References[l];
-        }
-    }
-    ComposeAnimPose(*sources.Skeleton, std::span(compose.data(), layers), out);
 }

@@ -161,7 +161,7 @@ private:
         if (ImGui::Button("Clear"))
             Workspace.ClearTakeA();
         ImGui::SameLine();
-        ImGui::Checkbox("Ghost", &Workspace.ShowGhost);
+        ImGui::Checkbox("Ghost", &Workspace.Viewport.ShowGhost);
         ImGui::EndDisabled();
         if (!Workspace.TakeA)
             return;

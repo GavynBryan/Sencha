@@ -480,16 +480,16 @@ public:
         {
             const AnimBoundSlotRow& row = rig->SlotRows[static_cast<std::size_t>(nav.Row)];
             if (ImGui::Button("Audition this clip"))
-                Workspace.SelectClip(ContentPath(*rig, static_cast<std::uint16_t>(row.Content)));
+                Workspace.AuditionClip(ContentPath(*rig, static_cast<std::uint16_t>(row.Content)));
             ImGui::SameLine();
             if (ImGui::Button("Edit slot map"))
                 (void)Workspace.Documents.OpenOrFocus(row.DeclaredIn, Workspace.DocumentError);
         }
-        if (Workspace.ViewportSource == AnimationViewportSource::Audition && Workspace.Simulation.IsOpen())
+        if (Workspace.Viewport.Source == AnimationViewportSource::Audition && Workspace.Simulation.IsOpen())
         {
             ImGui::SameLine();
             if (ImGui::Button("Back to the simulation"))
-                Workspace.ViewportSource = AnimationViewportSource::Simulation;
+                Workspace.Viewport.Source = AnimationViewportSource::Simulation;
         }
     }
 

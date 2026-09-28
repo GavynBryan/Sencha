@@ -139,23 +139,23 @@ public:
                 }
                 ImGui::TableNextColumn();
                 const auto bit = static_cast<std::uint8_t>(1u << l);
-                bool muted = (Workspace.LayerDisplay.Muted & bit) != 0;
-                bool soloed = (Workspace.LayerDisplay.Soloed & bit) != 0;
+                bool muted = (Workspace.Viewport.LayerDisplay.Muted & bit) != 0;
+                bool soloed = (Workspace.Viewport.LayerDisplay.Soloed & bit) != 0;
                 if (ImGui::Checkbox("##mute", &muted))
-                    Workspace.LayerDisplay.Muted = static_cast<std::uint8_t>(Workspace.LayerDisplay.Muted ^ bit);
+                    Workspace.Viewport.LayerDisplay.Muted = static_cast<std::uint8_t>(Workspace.Viewport.LayerDisplay.Muted ^ bit);
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Mute: the viewport leaves this layer out.");
                 ImGui::SameLine();
                 if (ImGui::Checkbox("##solo", &soloed))
-                    Workspace.LayerDisplay.Soloed = static_cast<std::uint8_t>(Workspace.LayerDisplay.Soloed ^ bit);
+                    Workspace.Viewport.LayerDisplay.Soloed = static_cast<std::uint8_t>(Workspace.Viewport.LayerDisplay.Soloed ^ bit);
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("Solo: the viewport shows only soloed layers.");
                 ImGui::PopID();
             }
             ImGui::EndTable();
         }
-        if (!Workspace.ViewportNote.empty())
-            ImGui::TextWrapped("Viewport: %s", Workspace.ViewportNote.c_str());
+        if (!Workspace.Viewport.Note.empty())
+            ImGui::TextWrapped("Viewport: %s", Workspace.Viewport.Note.c_str());
     }
 
 private:

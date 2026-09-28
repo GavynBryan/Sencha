@@ -30,6 +30,7 @@
 
 #include <imgui.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -73,27 +74,27 @@ public:
                 ImGui::TreePop();
             }
         }
-        DrawAssets("Skinned meshes", Workspace.Content.Of(AssetType::SkinnedMesh), Workspace.MeshPath,
-                   &AnimationPreviewWorkspace::SelectMesh);
-        DrawAssets("Skeletons (without mesh)", Workspace.Content.Of(AssetType::Skeleton), Workspace.Session.SkeletonPath(),
-                   &AnimationPreviewWorkspace::SelectSkeleton);
-        if (ImGui::Button("Bind pose")) Workspace.SelectClip({});
-        DrawAssets("Clips", Workspace.Content.Of(AssetType::AnimationClip), Workspace.ClipPath,
-                   &AnimationPreviewWorkspace::SelectClip);
-        if (ImGui::Button("Neutral preview material")) Workspace.SelectMaterial({});
-        DrawAssets("Material override", Workspace.Content.Of(AssetType::Material), Workspace.MaterialPath,
-                   &AnimationPreviewWorkspace::SelectMaterial);
+        AnimationAuditionSelection& audition = Workspace.Audition;
+        DrawAssets("Skinned meshes", Workspace.Content.Of(AssetType::SkinnedMesh), audition.MeshPath,
+                   [&](const std::string& path) { (void)audition.SelectMesh(path); });
+        DrawAssets("Skeletons (without mesh)", Workspace.Content.Of(AssetType::Skeleton), audition.Session.SkeletonPath(),
+                   [&](const std::string& path) { (void)audition.SelectSkeleton(path); });
+        if (ImGui::Button("Bind pose")) Workspace.AuditionClip({});
+        DrawAssets("Clips", Workspace.Content.Of(AssetType::AnimationClip), audition.ClipPath,
+                   [&](const std::string& path) { (void)Workspace.AuditionClip(path); });
+        if (ImGui::Button("Neutral preview material")) audition.SelectMaterial({});
+        DrawAssets("Material override", Workspace.Content.Of(AssetType::Material), audition.MaterialPath,
+                   [&](const std::string& path) { (void)audition.SelectMaterial(path); });
     }
 private:
     void DrawAssets(const char* title, std::span<const std::string> paths,
-                    const std::string& selected,
-                    bool (AnimationPreviewWorkspace::*select)(const std::string&))
+                    const std::string& selected, const std::function<void(const std::string&)>& select)
     {
         if (!ImGui::CollapsingHeader(title, ImGuiTreeNodeFlags_DefaultOpen)) return;
         ImGui::PushID(title);
         for (const auto& path : paths)
         {
-            if (ImGui::Selectable(path.c_str(), path == selected)) (Workspace.*select)(path);
+            if (ImGui::Selectable(path.c_str(), path == selected)) select(path);
         }
         if (paths.empty()) ImGui::TextDisabled("No assets of this kind in the mounted project.");
         ImGui::PopID();
@@ -126,11 +127,11 @@ public:
         ImGui::SameLine();
         if (Workspace.Simulation.IsOpen())
         {
-            int source = static_cast<int>(Workspace.ViewportSource);
+            int source = static_cast<int>(Workspace.Viewport.Source);
             ImGui::RadioButton("Audition", &source, 0);
             ImGui::SameLine();
             ImGui::RadioButton("Simulation", &source, 1);
-            Workspace.ViewportSource = static_cast<AnimationViewportSource>(source);
+            Workspace.Viewport.Source = static_cast<AnimationViewportSource>(source);
             ImGui::SameLine();
         }
         ImGui::Checkbox("Joints", &ShowJoints);
@@ -145,8 +146,8 @@ public:
         }
         ImGui::TextDisabled(ShowJoints ? "Drag to orbit; click a joint to select it, right-click to mask"
                                        : "Drag to orbit; wheel to zoom");
-        if (Workspace.ViewportSource == AnimationViewportSource::Simulation && !Workspace.ViewportNote.empty())
-            ImGui::TextWrapped("%s", Workspace.ViewportNote.c_str());
+        if (Workspace.Viewport.Source == AnimationViewportSource::Simulation && !Workspace.Viewport.Note.empty())
+            ImGui::TextWrapped("%s", Workspace.Viewport.Note.c_str());
         const auto size = ImGui::GetContentRegionAvail();
         if (size.x < 8.0f || size.y < 8.0f) return;
         const auto texture = Viewport->Display({ static_cast<std::uint32_t>(size.x),
@@ -165,7 +166,7 @@ public:
         }
         if (ShowJoints)
             DrawJoints(position, size, hovered);
-        if (ShowPath && Workspace.ViewportSource == AnimationViewportSource::Simulation)
+        if (ShowPath && Workspace.Viewport.Source == AnimationViewportSource::Simulation)
             DrawPath(position, size);
     }
 
@@ -206,7 +207,7 @@ private:
                             line(corners[i], corners[i | bit], IM_COL32(170, 180, 200, 200), 1.0f);
             }
 
-        const std::optional<AnimTick> shown = Workspace.ShownTick();
+        const std::optional<AnimTick> shown = ShownAnimationTick(Workspace.Simulation, Workspace.Navigation);
         Vec3d previous;
         bool first = true;
         for (const AnimationPreviewTickRecord& record : session.History())
@@ -231,9 +232,9 @@ private:
     // A click that did not orbit picks a joint; a right-click also offers mask steps.
     void DrawJoints(ImVec2 origin, ImVec2 size, bool hovered)
     {
-        const SkeletonData& skeleton = Workspace.Session.Skeleton();
+        const SkeletonData& skeleton = Workspace.Audition.Session.Skeleton();
         const std::vector<AnimationJointMarker> markers = ProjectAnimationJoints(
-            Workspace.ViewportModel(), Viewport->ViewCamera(size.x / size.y).ViewProjection, size.x, size.y);
+            Workspace.Viewport.Model(), Viewport->ViewCamera(size.x / size.y).ViewProjection, size.x, size.y);
         std::vector<const AnimationJointMarker*> byJoint(skeleton.Joints.size(), nullptr);
         for (const AnimationJointMarker& marker : markers)
             if (marker.Joint < byJoint.size())
@@ -358,17 +359,17 @@ public:
         if (!IsVisible()) return;
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
-        if (!Workspace.Error.empty())
+        if (!Workspace.Audition.Error.empty())
         {
-            ImGui::TextWrapped("Selection rejected: %s", Workspace.Error.c_str());
+            ImGui::TextWrapped("Selection rejected: %s", Workspace.Audition.Error.c_str());
             ImGui::TextWrapped("The previous valid content remains selected.");
         }
-        ImGui::TextWrapped("Mesh: %s", Workspace.MeshPath.c_str());
-        ImGui::TextWrapped("Skeleton: %s", Workspace.Session.SkeletonPath().c_str());
-        ImGui::TextWrapped("Clip: %s", Workspace.ClipPath.empty() ? "Bind pose" : Workspace.ClipPath.c_str());
+        ImGui::TextWrapped("Mesh: %s", Workspace.Audition.MeshPath.c_str());
+        ImGui::TextWrapped("Skeleton: %s", Workspace.Audition.Session.SkeletonPath().c_str());
+        ImGui::TextWrapped("Clip: %s", Workspace.Audition.ClipPath.empty() ? "Bind pose" : Workspace.Audition.ClipPath.c_str());
         ImGui::Separator();
         ImGui::TextWrapped("This surface auditions cooked clips; auditioning never crosses an event mark. Rigs simulate under a scenario in the Simulation panels, and clip events are authored in Clip events.");
-        const auto& joints = Workspace.Session.Skeleton().Joints;
+        const auto& joints = Workspace.Audition.Session.Skeleton().Joints;
         if (ImGui::CollapsingHeader("Skeleton hierarchy", ImGuiTreeNodeFlags_DefaultOpen))
         {
             for (std::size_t i = 0; i < joints.size(); ++i)
@@ -387,7 +388,7 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
 {
     ui.AddPanel(std::make_unique<PreviewAssetsPanel>(workspace));
     ui.AddPanel(std::make_unique<PreviewViewportPanel>(viewport, workspace));
-    ui.AddPanel(std::make_unique<PreviewTransportPanel>(workspace.Session));
+    ui.AddPanel(std::make_unique<PreviewTransportPanel>(workspace.Audition.Session));
     ui.AddPanel(std::make_unique<PreviewDetailsPanel>(workspace));
     AddAnimationSimulationPanels(ui, workspace);
     AddAnimationSelectionPanels(ui, workspace);

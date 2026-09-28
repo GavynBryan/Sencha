@@ -74,11 +74,11 @@ public:
         if (GameModule.IsValid())
             vocabulary = [game = GameModule.Instance](World& world) { game->OnRegisterVocabulary(world); };
         Workspace = std::make_unique<AnimationPreviewWorkspace>(*Assets, std::move(vocabulary), authoringRoot);
-        Workspace->Error = std::move(error);
-        if (Workspace->Error.empty())
+        Workspace->Audition.Error = std::move(error);
+        if (Workspace->Audition.Error.empty())
         {
-            const bool meshReady = !meshPath || Workspace->SelectMesh(*meshPath);
-            if (meshReady && clipPath) Workspace->SelectClip(*clipPath);
+            const bool meshReady = !meshPath || Workspace->Audition.SelectMesh(*meshPath);
+            if (meshReady && clipPath) Workspace->AuditionClip(*clipPath);
         }
         ApplyEditorThemeFromConsole(engine.Console(), "Animation Editor");
         auto& renderer = graphics.MainRenderer;
@@ -86,7 +86,7 @@ public:
             graphics.Frames, "animation_editor.imgui.ini");
         Ui = renderer.StageFeature(std::move(ui), { .Id = "animation_editor_ui" });
         Viewport = renderer.StageFeature(
-            std::make_unique<AnimationPreviewRenderFeature>(*Assets, Workspace->Scene),
+            std::make_unique<AnimationPreviewRenderFeature>(*Assets, Workspace->Viewport.Scene),
             { .Id = "animation_editor_preview", .DependsOn = PreviewDependencies });
         if (Ui)
             AddAnimationPreviewPanels(*Ui, *Workspace, Viewport);
@@ -129,11 +129,12 @@ public:
 
     void Frame(double seconds)
     {
-        Workspace->Frame(seconds);
-        if (Viewport && FramedMesh != Workspace->MeshPath)
+        Workspace->Advance(seconds);
+        Workspace->ExtractViewport();
+        if (Viewport && FramedMesh != Workspace->Audition.MeshPath)
         {
             Viewport->FrameSubject();
-            FramedMesh = Workspace->MeshPath;
+            FramedMesh = Workspace->Audition.MeshPath;
         }
     }
 
@@ -141,7 +142,7 @@ public:
     {
         if (context.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
         {
-            Workspace->Session.Pause();
+            Workspace->Audition.Session.Pause();
             Workspace->Sources.CancelEdits();
         }
         if (context.Event.type == SDL_EVENT_KEY_DOWN && context.Event.key.key == SDLK_ESCAPE)
