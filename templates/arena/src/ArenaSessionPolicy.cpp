@@ -65,7 +65,6 @@ ArenaSessionPolicy::~ArenaSessionPolicy() = default;
 void ArenaSessionPolicy::Open()
 {
     Engine& engine = Host;
-    RuntimeAssets& runtimeAssets = Assets();
 
     // Which gameplay features exist in this game's world. The engine's schema
     // registry carries the vocabulary for every component cooked content can
@@ -83,7 +82,7 @@ void ArenaSessionPolicy::Open()
     // Composed here rather than by the engine overlay because the world being
     // simulated is the game's.
     engine.AddDebugPanel(std::make_unique<MovementStatePanel>(
-        world, &runtimeAssets.DataAssets));
+        world, &Assets().DataAssets));
 #endif
 }
 
