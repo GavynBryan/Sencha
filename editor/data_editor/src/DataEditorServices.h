@@ -44,6 +44,7 @@ private:
     void ProcessFrame();
     void UpdateTitle();
     void SaveActive();
+    [[nodiscard]] std::optional<DocumentRef> ActiveDocument();
 
     Engine* EnginePtr = nullptr;
     SdlWindow* Window = nullptr;

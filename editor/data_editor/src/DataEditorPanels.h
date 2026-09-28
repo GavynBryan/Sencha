@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ui/DocumentShellActions.h"
 #include "ui/IEditorPanel.h"
 
 #include <array>
@@ -27,6 +28,7 @@ private:
     std::array<char, 512> NewPath{};
     std::array<char, 512> OperationPath{};
     std::string LastError;
+    UnsavedDocumentPrompt Prompt;
 };
 
 class DataFormPanel final : public IEditorPanel
@@ -41,6 +43,8 @@ public:
 private:
     DataEditorWorkspace& Workspace;
     SubtypeEditorRegistry& Editors;
+    UnsavedDocumentPrompt Prompt;
+    std::string CloseError;
 };
 
 class DataDocumentationPanel final : public IEditorPanel
@@ -67,6 +71,7 @@ public:
 
 private:
     DataEditorWorkspace& Workspace;
+    std::string SettleError;
 };
 
 class DataRawJsonPanel final : public IEditorPanel

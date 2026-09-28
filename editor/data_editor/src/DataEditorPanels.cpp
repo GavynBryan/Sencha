@@ -3,8 +3,10 @@
 #include "DataEditorWorkspace.h"
 #include "SubtypeEditorRegistry.h"
 
+#include "data/DataAssetFiles.h"
 #include "ui/ButtonFlow.h"
 #include "ui/DataForm.h"
+#include "ui/DocumentSaveReportView.h"
 #include "ui/ScopedPanel.h"
 #include "ui/TextBuffer.h"
 
@@ -24,6 +26,12 @@
 
 namespace
 {
+    bool HasChanges(DataDocumentSet& documents, std::string_view virtualPath)
+    {
+        const DataDocument* document = documents.Find(virtualPath);
+        return document != nullptr && (document->IsDirty() || document->IsEditing());
+    }
+
     std::string DefaultText(const DataDefaultValue& value)
     {
         return std::visit([](const auto& item) -> std::string
@@ -70,7 +78,7 @@ void DataAssetBrowserPanel::OnDraw()
         if (ImGui::Button("Create") && NewPath[0] != '\0')
         {
             LastError.clear();
-            if (Workspace.Create(types[SelectedSubtype].Name, NewPath.data(), &LastError))
+            if (Workspace.Documents.Create(types[SelectedSubtype].Name, NewPath.data(), LastError) != nullptr)
                 NewPath.fill('\0');
         }
     }
@@ -90,7 +98,7 @@ void DataAssetBrowserPanel::OnDraw()
             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             {
                 LastError.clear();
-                (void)Workspace.Open(record->Path, &LastError);
+                (void)Workspace.Documents.OpenOrFocus(record->Path, LastError);
             }
         }
     }
@@ -100,36 +108,43 @@ void DataAssetBrowserPanel::OnDraw()
         if (ImGui::Button("Open"))
         {
             LastError.clear();
-            (void)Workspace.Open(SelectedAsset, &LastError);
+            (void)Workspace.Documents.OpenOrFocus(SelectedAsset, LastError);
         }
         ImGui::InputText("New path", OperationPath.data(), OperationPath.size());
         if (ImGui::Button("Duplicate") && OperationPath[0] != '\0')
         {
             LastError.clear();
-            if (Workspace.Duplicate(SelectedAsset, OperationPath.data(), &LastError))
+            if (Workspace.Duplicate(SelectedAsset, OperationPath.data(), LastError))
                 OperationPath.fill('\0');
         }
         ImGui::SameLine();
         if (ImGui::Button("Rename") && OperationPath[0] != '\0')
         {
             LastError.clear();
-            if (Workspace.Rename(SelectedAsset, OperationPath.data(), &LastError))
-            {
-                SelectedAsset = Workspace.MakeVirtualPath(OperationPath.data());
-                OperationPath.fill('\0');
-            }
+            Prompt.Ask(HasChanges(Workspace.Documents, SelectedAsset), SelectedAsset,
+                       [this, from = SelectedAsset, to = std::string(OperationPath.data())](DirtyDisposition disposition) {
+                           if (Workspace.Rename(from, to, disposition, LastError))
+                           {
+                               SelectedAsset = DataAssetVirtualPath(to);
+                               OperationPath.fill('\0');
+                           }
+                       });
         }
         ImGui::SameLine();
         if (ImGui::Button("Delete"))
         {
             LastError.clear();
-            if (Workspace.Delete(SelectedAsset, &LastError))
-                SelectedAsset.clear();
+            Prompt.Ask(HasChanges(Workspace.Documents, SelectedAsset), SelectedAsset,
+                       [this, path = SelectedAsset](DirtyDisposition disposition) {
+                           if (Workspace.Delete(path, disposition, LastError))
+                               SelectedAsset.clear();
+                       });
         }
     }
 
     if (!LastError.empty())
         ImGui::TextWrapped("Error: %s", LastError.c_str());
+    Prompt.Draw();
 }
 
 DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, SubtypeEditorRegistry& editors)
@@ -144,7 +159,7 @@ void DataFormPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    auto& documents = Workspace.Documents();
+    const auto documents = Workspace.Documents.Documents();
     if (documents.empty())
     {
         ImGui::TextWrapped("Open or create a .sdata asset from the browser.");
@@ -163,12 +178,12 @@ void DataFormPanel::OnDraw()
                 title += " *";
             title += "##" + std::to_string(index);
 
-            const ImGuiTabItemFlags flags = Workspace.ActiveIndex() == index
+            const ImGuiTabItemFlags flags = Workspace.Documents.ActiveIndex() == index
                 ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
             if (ImGui::BeginTabItem(title.c_str(), &open, flags))
             {
-                Workspace.SetActive(index);
-                const DataSchema* schema = Workspace.ActiveSchema();
+                Workspace.Documents.SetActive(index);
+                const DataSchema* schema = Workspace.Documents.SchemaOf(document);
                 JsonValue root = document.CopyRoot();
                 JsonValue* data = root.Find("data");
                 if (schema == nullptr || data == nullptr)
@@ -182,8 +197,7 @@ void DataFormPanel::OnDraw()
                     // drag that went somewhere unintended costs nothing.
                     if (document.IsEditing() && ImGui::IsKeyPressed(ImGuiKey_Escape))
                     {
-                        document.CancelEdit();
-                        Workspace.ValidateActive();
+                        Workspace.Documents.CancelEdit(document);
                     }
                     else
                     {
@@ -193,8 +207,8 @@ void DataFormPanel::OnDraw()
                         SubtypeFormContext ctx{ *data, *schema, document, Workspace };
                         const FieldEdit edit = editor != nullptr
                             ? editor->DrawForm(ctx)
-                            : DrawDataField(*data, schema->Root, "$.data", Workspace);
-                        ApplyFieldEdit(document, Workspace, edit, std::move(root));
+                            : DrawDataField(*data, schema->Root, "$.data", Workspace.Documents);
+                        ApplyFieldEdit(document, Workspace.Documents, edit, std::move(root));
                     }
                 }
                 ImGui::EndTabItem();
@@ -203,9 +217,19 @@ void DataFormPanel::OnDraw()
                 close = index;
         }
         if (close)
-            Workspace.Close(*close);
+        {
+            const DataDocument& closing = *documents[*close];
+            Prompt.Ask(HasChanges(Workspace.Documents, closing.VirtualPath()), closing.VirtualPath(),
+                       [this, path = closing.VirtualPath()](DirtyDisposition disposition) {
+                           if (const std::optional<std::size_t> index = Workspace.Documents.IndexOf(path))
+                               (void)Workspace.Documents.Close(*index, disposition, CloseError);
+                       });
+        }
         ImGui::EndTabBar();
     }
+    if (!CloseError.empty())
+        ImGui::TextWrapped("%s", CloseError.c_str());
+    Prompt.Draw();
 }
 
 DataDocumentationPanel::DataDocumentationPanel(DataEditorWorkspace& workspace)
@@ -219,10 +243,10 @@ void DataDocumentationPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    const DataFieldSchema* field = Workspace.SelectedField();
+    const DataFieldSchema* field = Workspace.Documents.SelectedField();
     if (field == nullptr)
     {
-        if (const DataSchema* schema = Workspace.ActiveSchema())
+        if (const DataSchema* schema = Workspace.Documents.ActiveSchema())
         {
             ImGui::TextUnformatted(schema->DisplayName.c_str());
             ImGui::Separator();
@@ -236,7 +260,7 @@ void DataDocumentationPanel::OnDraw()
     }
 
     ImGui::TextUnformatted(DataFieldDisplayName(*field).c_str());
-    ImGui::TextDisabled("%s", Workspace.SelectedPath().c_str());
+    ImGui::TextDisabled("%s", Workspace.Documents.SelectedPath().c_str());
     ImGui::Separator();
     if (!field->Summary.empty())
         ImGui::TextWrapped("%s", field->Summary.c_str());
@@ -271,7 +295,7 @@ void DataValidationPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    DataDocument* document = Workspace.Active();
+    DataDocument* document = Workspace.Documents.Active();
     if (document == nullptr)
     {
         ImGui::TextUnformatted("No open document.");
@@ -281,24 +305,19 @@ void DataValidationPanel::OnDraw()
     // The editor has no channel to a running game, so this reports what the
     // saved file now permits rather than a confirmed reload. The authoritative
     // confirmation is the reload counter in the game's own movement panel.
-    const DataSaveReport& save = Workspace.LastSaveReport();
-    if (save.Saved && save.VirtualPath == document->VirtualPath())
+    if (const DocumentSaveResult* save = Workspace.Sources.LastSave().Find(Workspace.Documents.RefOf(*document)))
     {
-        if (save.SemanticallyValid)
-        {
+        if (save->Status == DocumentSaveStatus::Saved)
             ImGui::TextUnformatted("Saved. A running game hot reloads this within ~0.3 s.");
-        }
-        else
-        {
-            ImGui::TextWrapped(
-                "Saved with validation errors. The runtime and any running game keep "
-                "the last valid version.");
-        }
+        else if (save->Status == DocumentSaveStatus::SavedWithProblems)
+            ImGui::TextWrapped("Saved with validation errors. The runtime and any running game keep "
+                               "the last valid version.");
         ImGui::Separator();
     }
-
+    DrawDocumentSaveReport(Workspace.Sources, SettleError);
     if (document->IsExternallyModified())
-        ImGui::TextWrapped("The file changed outside the editor. Reload or save explicitly to resolve the conflict.");
+        ImGui::TextWrapped("The file changed outside the editor. Save refuses to overwrite it; keep yours or take "
+                           "the file's once a save reports the conflict.");
 
     const auto& errors = document->ValidationErrors();
     if (errors.empty())
@@ -321,7 +340,7 @@ DataRawJsonPanel::DataRawJsonPanel(DataEditorWorkspace& workspace)
 
 void DataRawJsonPanel::Refresh()
 {
-    const DataDocument* document = Workspace.Active();
+    const DataDocument* document = Workspace.Documents.Active();
     Buffer.fill('\0');
     if (document == nullptr)
     {
@@ -342,7 +361,7 @@ void DataRawJsonPanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    DataDocument* document = Workspace.Active();
+    DataDocument* document = Workspace.Documents.Active();
     if (document == nullptr)
     {
         ImGui::TextUnformatted("No open document.");
@@ -365,7 +384,7 @@ void DataRawJsonPanel::OnDraw()
         else
         {
             document->ReplaceRoot(std::move(*parsed));
-            Workspace.ValidateActive();
+            Workspace.Documents.Changed(*document);
             Refresh();
         }
     }

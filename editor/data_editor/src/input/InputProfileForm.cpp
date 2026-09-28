@@ -564,7 +564,7 @@ FieldEdit DrawInputProfileForm(JsonValue& data,
                                InputControlCapture& capture)
 {
     FieldEdit edit;
-    const DataDocument* document = workspace.Active();
+    const DataDocument* document = workspace.Documents.Active();
     if (document == nullptr)
         return edit;
 
@@ -580,7 +580,7 @@ FieldEdit DrawInputProfileForm(JsonValue& data,
             value = FindMember(data, "actions");
             edit |= FieldEdit::Instant();
         }
-        edit |= DrawDataField(*value, *actionSet, "$.data.actions", workspace);
+        edit |= DrawDataField(*value, *actionSet, "$.data.actions", workspace.Documents);
     }
 
     if (!preview.ActionSetError().empty())

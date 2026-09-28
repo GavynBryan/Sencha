@@ -7,6 +7,8 @@
 #include <imgui.h>
 
 #include <memory>
+#include <optional>
+#include <utility>
 
 Engine::ExitDecision DecideDocumentExit(const DocumentSourceSet& sources)
 {
@@ -60,4 +62,44 @@ void InstallDocumentShellActions(EditorUiFeature& ui, Engine& engine, DocumentSo
         }
         ImGui::EndPopup();
     });
+}
+
+void UnsavedDocumentPrompt::Ask(bool hasChanges, std::string documentName,
+                                std::function<void(DirtyDisposition)> proceed)
+{
+    if (!hasChanges)
+    {
+        proceed(DirtyDisposition::Refuse);
+        return;
+    }
+    DocumentName = std::move(documentName);
+    Proceed = std::move(proceed);
+    Asking = true;
+}
+
+void UnsavedDocumentPrompt::Draw()
+{
+    constexpr const char* title = "Unsaved changes";
+    if (Asking && !ImGui::IsPopupOpen(title))
+        ImGui::OpenPopup(title);
+    if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    ImGui::Text("%s has unsaved changes.", DocumentName.c_str());
+    std::optional<DirtyDisposition> chosen;
+    if (ImGui::Button("Save"))
+        chosen = DirtyDisposition::Save;
+    ImGui::SameLine();
+    if (ImGui::Button("Discard"))
+        chosen = DirtyDisposition::Discard;
+    ImGui::SameLine();
+    const bool cancelled = ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape);
+    if (chosen || cancelled)
+    {
+        ImGui::CloseCurrentPopup();
+        Asking = false;
+        if (chosen)
+            std::exchange(Proceed, {})(*chosen);
+        Proceed = {};
+    }
+    ImGui::EndPopup();
 }

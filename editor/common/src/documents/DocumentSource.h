@@ -13,6 +13,14 @@ enum class DocumentStep
     Redo,
 };
 
+// What an operation that would drop a document's changes does with them.
+enum class DirtyDisposition
+{
+    Refuse,
+    Save,
+    Discard,
+};
+
 enum class ConflictChoice
 {
     KeepMine,

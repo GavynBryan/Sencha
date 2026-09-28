@@ -105,7 +105,7 @@ void MovementResolvePanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    const DataDocument* document = Workspace.Active();
+    const DataDocument* document = Workspace.Documents.Active();
     if (document == nullptr || document->Subtype() != MovementProfileSubtype())
     {
         ImGui::TextDisabled("Open a movement profile to resolve it.");
@@ -200,7 +200,7 @@ void MovementResolvePanel::OnDraw()
     // Same display names and units the form uses, read from the registered
     // schema rather than restated here.
     const std::vector<MovementCoefficientLabel> labels =
-        Workspace.ActiveSchema() ? MovementCoefficientLabels(*Workspace.ActiveSchema())
+        Workspace.Documents.ActiveSchema() ? MovementCoefficientLabels(*Workspace.Documents.ActiveSchema())
                                  : std::vector<MovementCoefficientLabel>{};
     const auto labelFor = [&labels](std::string_view key) -> std::string
     {

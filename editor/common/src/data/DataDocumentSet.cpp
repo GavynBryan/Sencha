@@ -166,6 +166,12 @@ const DataSchema* DataDocumentSet::SchemaOf(const DataDocument& document) const
     return Assets.DataSchemas.Find(document.Subtype());
 }
 
+const DataSchema* DataDocumentSet::ActiveSchema()
+{
+    const DataDocument* active = Active();
+    return active != nullptr ? SchemaOf(*active) : nullptr;
+}
+
 void DataDocumentSet::CommitEdit(DataDocument& document)
 {
     if (!document.IsEditing())

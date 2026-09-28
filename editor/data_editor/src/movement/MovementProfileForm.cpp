@@ -115,7 +115,7 @@ namespace
         edit.Committed = ImGui::IsItemDeactivatedAfterEdit();
 
         if (fieldSchema != nullptr)
-            DrawDataFieldHelp(workspace, *fieldSchema, path);
+            DrawDataFieldHelp(workspace.Documents, *fieldSchema, path);
 
         ImGui::SameLine();
         if (ImGui::SmallButton("Clear"))
@@ -624,7 +624,7 @@ FieldEdit DrawMovementProfileForm(JsonValue& data,
         ImGui::TextDisabled("Tuning that applies only while a locomotion mode is active.");
 
         JsonValue& modes = EnsureMember(data, "modes", JsonValue(JsonValue::Array{}));
-        edit |= DrawDataField(modes, *modesSchema, "$.data.modes", workspace);
+        edit |= DrawDataField(modes, *modesSchema, "$.data.modes", workspace.Documents);
 
         // The whole document is committed on any change, so an untouched empty
         // array should not start appearing in the file.

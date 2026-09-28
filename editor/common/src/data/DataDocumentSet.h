@@ -18,13 +18,6 @@
 
 struct RuntimeAssets;
 
-enum class DirtyDisposition
-{
-    Refuse,
-    Save,
-    Discard,
-};
-
 struct DataDocumentSetConfig
 {
     std::filesystem::path ContentRoot;
@@ -63,6 +56,7 @@ public:
     [[nodiscard]] std::span<const std::unique_ptr<DataDocument>> Documents() const { return Open; }
     [[nodiscard]] DocumentRef RefOf(const DataDocument& document) { return { this, document.VirtualPath() }; }
     [[nodiscard]] const DataSchema* SchemaOf(const DataDocument& document) const;
+    [[nodiscard]] const DataSchema* ActiveSchema();
 
     void CommitEdit(DataDocument& document);
     void CancelEdit(DataDocument& document);

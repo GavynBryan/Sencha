@@ -4,44 +4,7 @@
 #include "DataEditorWorkspace.h"
 #include "JsonObjectEdit.h"
 
-#include <core/json/JsonParser.h>
-
-#include <fstream>
 #include <optional>
-#include <sstream>
-
-namespace
-{
-// The open tab editing a given asset, or null. A dirty tab is the truth about
-// what that asset currently declares; the file is one save behind.
-const DataDocument* FindOpenDocument(const DataEditorWorkspace& workspace,
-                                     std::string_view virtualPath)
-{
-    if (virtualPath.empty())
-        return nullptr;
-    for (const auto& tab : workspace.Documents())
-    {
-        if (tab->VirtualPath() == virtualPath)
-            return tab.get();
-    }
-    return nullptr;
-}
-
-std::optional<JsonValue> ReadDocumentFile(const DataEditorWorkspace& workspace,
-                                          std::string_view virtualPath)
-{
-    const std::filesystem::path file = workspace.ResolveFile(virtualPath);
-    if (file.empty())
-        return std::nullopt;
-
-    std::ifstream stream(file);
-    if (!stream)
-        return std::nullopt;
-    std::ostringstream contents;
-    contents << stream.rdbuf();
-    return JsonParse(contents.str());
-}
-}
 
 void InputProfilePreview::Update(const DataDocument& document,
                                  const DataEditorWorkspace& workspace)
@@ -53,7 +16,7 @@ void InputProfilePreview::Update(const DataDocument& document,
     // The action set's own revision counts when it is open: adding an action in
     // its tab must reach this profile's pickers without a save.
     std::uint64_t actionSetRevision = 0;
-    if (const DataDocument* open = FindOpenDocument(workspace, referenced))
+    if (const DataDocument* open = workspace.Documents.Find(referenced))
         actionSetRevision = open->Revision();
 
     const bool sameSource = HasSource
@@ -89,22 +52,13 @@ void InputProfilePreview::Rebuild(const DataDocument& document,
         return;
     }
 
-    const JsonValue* actionSetRoot = nullptr;
-    std::optional<JsonValue> loaded;
-    if (const DataDocument* open = FindOpenDocument(workspace, ReferencedPath))
+    const std::optional<JsonValue> actionSet = workspace.Documents.CurrentRoot(ReferencedPath);
+    if (!actionSet)
     {
-        actionSetRoot = &open->Root();
+        LoadError = "No action set at '" + ReferencedPath + "'.";
+        return;
     }
-    else
-    {
-        loaded = ReadDocumentFile(workspace, ReferencedPath);
-        if (!loaded.has_value())
-        {
-            LoadError = "No action set at '" + ReferencedPath + "'.";
-            return;
-        }
-        actionSetRoot = &loaded.value();
-    }
+    const JsonValue* actionSetRoot = &*actionSet;
 
     if (ReadMemberString(*actionSetRoot, "type") != "input.actions")
     {

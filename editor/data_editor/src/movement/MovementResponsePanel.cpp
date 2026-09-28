@@ -43,7 +43,7 @@ void MovementResponsePanel::OnDraw()
     if (!panel.IsOpen())
         return;
 
-    const DataDocument* document = Workspace.Active();
+    const DataDocument* document = Workspace.Documents.Active();
     if (document == nullptr || document->Subtype() != MovementProfileSubtype())
     {
         ImGui::TextDisabled("Open a movement profile to see how it feels.");

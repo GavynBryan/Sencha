@@ -1,14 +1,11 @@
 #pragma once
 
-#include "data/DataDocument.h"
-#include "data/DataResidentSync.h"
-#include "ui/DataForm.h"
+#include "data/DataDocumentSet.h"
+#include "documents/DocumentSourceSet.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 
-#include <cstddef>
 #include <filesystem>
-#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -16,82 +13,35 @@
 
 struct ProjectDescriptor;
 
-// What the last save did, so the editor can say whether a running game will
-// pick the change up. The editor cannot observe the game process, so a valid
-// save reports what the file now permits, not a confirmed reload.
-struct DataSaveReport
-{
-    std::string VirtualPath;
-    bool SemanticallyValid = false;
-    bool Saved = false;
-};
-
-class DataEditorWorkspace final : public DataFormHost
+// The Data Editor's documents, plus the file operations only it offers. Each
+// operation that would drop an open document's changes refuses unless told.
+class DataEditorWorkspace final
 {
 public:
     DataEditorWorkspace(RuntimeAssets& assets, const ProjectDescriptor& project);
 
-    [[nodiscard]] bool Open(std::string_view virtualPath, std::string* error = nullptr);
-    [[nodiscard]] bool Create(std::string_view subtype,
-                              std::string_view relativePath,
-                              std::string* error = nullptr);
-    [[nodiscard]] bool Duplicate(std::string_view virtualPath,
-                                 std::string_view relativePath,
-                                 std::string* error = nullptr);
-    [[nodiscard]] bool Rename(std::string_view virtualPath,
-                              std::string_view relativePath,
-                              std::string* error = nullptr);
-    [[nodiscard]] bool Delete(std::string_view virtualPath,
-                              std::string* error = nullptr);
+    DataEditorWorkspace(const DataEditorWorkspace&) = delete;
+    DataEditorWorkspace& operator=(const DataEditorWorkspace&) = delete;
+    DataEditorWorkspace(DataEditorWorkspace&&) = delete;
+    DataEditorWorkspace& operator=(DataEditorWorkspace&&) = delete;
 
-    void Close(std::size_t index);
-    void SetActive(std::size_t index);
+    [[nodiscard]] bool Duplicate(std::string_view virtualPath, std::string_view relativePath, std::string& error);
+    [[nodiscard]] bool Rename(std::string_view virtualPath, std::string_view relativePath,
+                              DirtyDisposition disposition, std::string& error);
+    [[nodiscard]] bool Delete(std::string_view virtualPath, DirtyDisposition disposition, std::string& error);
 
-    [[nodiscard]] DataDocument* Active();
-    [[nodiscard]] const DataDocument* Active() const;
-    [[nodiscard]] std::size_t ActiveIndex() const { return ActiveTab; }
-    [[nodiscard]] std::vector<std::unique_ptr<DataDocument>>& Documents() { return Tabs; }
-    [[nodiscard]] const std::vector<std::unique_ptr<DataDocument>>& Documents() const { return Tabs; }
-
-    [[nodiscard]] bool SaveActive(std::string* error = nullptr);
-    void SaveAll();
-    void ValidateActive();
-    [[nodiscard]] const DataSaveReport& LastSaveReport() const { return LastSave; }
-
-    [[nodiscard]] const DataSchema* ActiveSchema() const;
     [[nodiscard]] const DataAssetTypeRegistry& Types() const { return Assets.DataTypes; }
-    [[nodiscard]] std::span<const DataAssetTypeRegistration> DataTypes() const
-    {
-        return Assets.DataTypes.Entries();
-    }
-    void SelectField(const DataFieldSchema* field, std::string path);
-    [[nodiscard]] const DataFieldSchema* SelectedField() const { return Selected; }
-    [[nodiscard]] const std::string& SelectedPath() const { return SelectedJsonPath; }
-
+    [[nodiscard]] std::span<const DataAssetTypeRegistration> DataTypes() const { return Assets.DataTypes.Entries(); }
     [[nodiscard]] std::vector<const AssetRecord*> DataAssets() const;
 
-    [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype) override;
-    void OpenDataAsset(std::string_view path) override;
-    void SelectField(const DataFieldSchema& field, std::string_view path) override;
-    void EditPreviewed(DataDocument& document) override;
-    void EditCommitted(DataDocument& document) override;
-
-    // The declared subtype of a data asset, for reference fields that only
-    // accept one kind. Reads an open tab's working envelope when there is one,
-    // so an unsaved retype is honoured.
-    [[nodiscard]] std::string DataSubtypeOf(std::string_view virtualPath) const;
-    [[nodiscard]] std::filesystem::path ResolveFile(std::string_view virtualPath) const;
-    [[nodiscard]] std::string MakeVirtualPath(std::string_view relativePath) const;
-
 private:
-    void RegisterFile(std::string_view virtualPath, const std::filesystem::path& file);
+    [[nodiscard]] bool CloseIfOpen(std::string_view virtualPath, DirtyDisposition disposition, std::string& error);
 
     RuntimeAssets& Assets;
-    DataResidentSync Resident{ Assets };
-    const ProjectDescriptor& Project;
-    std::vector<std::unique_ptr<DataDocument>> Tabs;
-    std::size_t ActiveTab = 0;
-    const DataFieldSchema* Selected = nullptr;
-    std::string SelectedJsonPath;
-    DataSaveReport LastSave;
+    std::filesystem::path ContentRoot;
+
+public:
+    // Declared before the document set, which registers with it.
+    DocumentSourceSet Sources;
+    DataDocumentSet Documents;
 };
