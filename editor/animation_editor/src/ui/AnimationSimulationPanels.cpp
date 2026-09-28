@@ -1,6 +1,7 @@
 #include "ui/AnimationSimulationPanels.h"
 
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "ui/DocumentSaveReportView.h"
 #include "authoring/AnimationRigOutline.h"
 #include "authoring/AnimationTraceImport.h"
 #include "ui/EditorUiFeature.h"
@@ -912,34 +913,10 @@ private:
         if (session.IsOpen())
             ImGui::TextWrapped("Scenario %s: %s", session.Scenario().Name.c_str(),
                                session.ScenarioModified() ? "recorded edits not saved" : "saved");
-        const std::vector<DocumentRef> changed = Workspace.Sources.ChangedDocuments();
-        for (const DocumentRef& document : changed)
-            ImGui::BulletText("%s: unsaved edits", document.Key.c_str());
-        if (changed.empty()) ImGui::TextDisabled("No open document has unsaved edits.");
+        DrawUnsavedDocuments(Workspace.Sources);
         if (ImGui::Button("Save all"))
             (void)Workspace.Sources.SaveAll();
-        const DocumentSaveReport& saved = Workspace.Sources.LastSave();
-        for (const DocumentSaveResult* result : saved.WithStatus(DocumentSaveStatus::SavedWithProblems))
-            ImGui::TextWrapped("%s was saved with problems a game will refuse to load.", result->Document.Key.c_str());
-        for (const DocumentSaveResult* result : saved.WithStatus(DocumentSaveStatus::Failed))
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s was not saved: %s", result->Document.Key.c_str(),
-                               result->Error.c_str());
-        std::vector<DocumentRef> conflicts;
-        for (const DocumentSaveResult* result : saved.WithStatus(DocumentSaveStatus::Conflict))
-            conflicts.push_back(result->Document);
-        for (const DocumentRef& document : conflicts)
-        {
-            ImGui::PushID(document.Key.c_str());
-            ImGui::TextWrapped("%s changed on disk since it was read.", document.Key.c_str());
-            if (ImGui::SmallButton("Keep mine"))
-                (void)Workspace.Sources.Settle(document, ConflictChoice::KeepMine, ConflictError);
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Take the file's"))
-                (void)Workspace.Sources.Settle(document, ConflictChoice::TakeFile, ConflictError);
-            ImGui::PopID();
-        }
-        if (!ConflictError.empty())
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s", ConflictError.c_str());
+        DrawDocumentSaveReport(Workspace.Sources, ConflictError);
         ImGui::TextWrapped("Preview inputs, requests and transport never modify a document.");
     }
 

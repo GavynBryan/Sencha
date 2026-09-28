@@ -3,6 +3,7 @@
 // conflict leaves the document, the resident asset and the file agreeing.
 
 #include "data/DataDocumentSet.h"
+#include "ui/DocumentShellActions.h"
 
 #include <anim/AnimFactSchema.h>
 #include <anim/AnimRequestSchema.h>
@@ -291,4 +292,17 @@ TEST_F(FactDocuments, UndoMidEditInTheSameDocumentTakesTheCommittedStep)
     EXPECT_FALSE(game.IsEditing());
     EXPECT_EQ(SlotOf(game), "Crouched");
     EXPECT_FALSE(Sources.CanUndo());
+}
+
+TEST_F(FactDocuments, ExitWaitsWhileAnyDocumentHasChanges)
+{
+    DataDocument& game = OpenFacts(kGame);
+    EXPECT_EQ(DecideDocumentExit(Sources), Engine::ExitDecision::Allow);
+    game.BeginEdit();
+    game.PreviewRoot(WithSlot(game, "Sliding"));
+    EXPECT_EQ(DecideDocumentExit(Sources), Engine::ExitDecision::Defer);
+    Set->CommitEdit(game);
+    EXPECT_EQ(DecideDocumentExit(Sources), Engine::ExitDecision::Defer);
+    ASSERT_EQ(Sources.Save(Set->RefOf(game)).Status, DocumentSaveStatus::Saved);
+    EXPECT_EQ(DecideDocumentExit(Sources), Engine::ExitDecision::Allow);
 }

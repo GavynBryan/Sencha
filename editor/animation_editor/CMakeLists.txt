@@ -30,7 +30,6 @@ add_executable(animation_editor
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
     src/ui/AnimationBlendPanels.cpp
-    src/ui/AnimationDocumentActions.cpp
     src/ui/AnimationDocumentWidgets.cpp
     src/ui/AnimationEventPanels.cpp
     src/ui/AnimationLabPanels.cpp

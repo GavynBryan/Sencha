@@ -3,7 +3,7 @@
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "ui/AnimationPreviewPanels.h"
-#include "ui/AnimationDocumentActions.h"
+#include "ui/DocumentShellActions.h"
 
 #include "project/Project.h"
 #include "project/ProjectContentMount.h"
@@ -99,7 +99,13 @@ public:
         }
         if (std::find(failed.begin(), failed.end(), "animation_editor_ui") != failed.end()) Ui = nullptr;
         if (std::find(failed.begin(), failed.end(), "animation_editor_preview") != failed.end()) Viewport = nullptr;
-        if (Ui) ConfigureAnimationDocumentActions(*Ui, engine, *Workspace);
+        if (Ui)
+            InstallDocumentShellActions(*Ui, engine, Workspace->Sources,
+                                        [workspace = Workspace.get()]() -> std::optional<DocumentRef> {
+                                            if (DataDocument* active = workspace->Documents.Active())
+                                                return workspace->Documents.RefOf(*active);
+                                            return std::nullopt;
+                                        });
     }
 
     ~AnimationEditorHost()
