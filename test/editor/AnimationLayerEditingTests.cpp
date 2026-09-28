@@ -107,7 +107,7 @@ namespace
         ASSERT_TRUE(edit(root));
         rig.BeginEdit();
         rig.PreviewRoot(std::move(root));
-        workspace.CommitDocumentEdit(rig);
+        workspace.Documents.CommitEdit(rig);
     }
 }
 
@@ -122,8 +122,8 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
         ASSERT_NE(workspace.RigSkeleton(), nullptr);
         EXPECT_FALSE(workspace.Simulation.Rig()->Layers[1].Masked());
 
-        ASSERT_TRUE(workspace.OpenAnimationDocument("asset://anim/hero.rig.sdata"));
-        DataDocument* rig = workspace.ActiveDocumentOf(kAnimRigType);
+        ASSERT_TRUE((workspace.Documents.OpenOrFocus("asset://anim/hero.rig.sdata", workspace.DocumentError) != nullptr));
+        DataDocument* rig = workspace.Documents.ActiveOf(kAnimRigType);
         ASSERT_NE(rig, nullptr);
         const std::string saved = project.Read("hero.rig.sdata");
 
@@ -149,7 +149,7 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
         for (int i = 0; i < 3; ++i)
         {
             rig->Undo();
-            workspace.DocumentChanged(*rig);
+            workspace.Documents.Changed(*rig);
         }
         workspace.Simulation.Step();
         EXPECT_FALSE(workspace.Simulation.Rig()->Layers[1].Masked());

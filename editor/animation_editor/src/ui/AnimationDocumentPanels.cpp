@@ -31,7 +31,7 @@ public:
         if (!panel.IsOpen()) return;
 
         DrawNewAsset();
-        DataDocument* document = Workspace.ActiveDocumentAny();
+        DataDocument* document = Workspace.Documents.Active();
         if (document == nullptr)
         {
             ImGui::TextWrapped("Open an animation asset from Preview content, or follow an \"Edit\" link, to "
@@ -42,7 +42,7 @@ public:
         ImGui::SameLine();
         ImGui::TextDisabled("%s%s", document->Subtype().c_str(), document->IsDirty() ? ", unsaved" : "");
         if (ImGui::Button("Save"))
-            (void)Workspace.SaveDocument(*document);
+            (void)Workspace.SaveDocument(Workspace.Documents.RefOf(*document));
         if (!Workspace.DocumentError.empty())
             ImGui::TextWrapped("%s", Workspace.DocumentError.c_str());
         if (const std::string status = Workspace.PreviewStatusOf(*document); !status.empty())
@@ -51,7 +51,7 @@ public:
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s: %s", error.Path.c_str(), error.Message.c_str());
         ImGui::Separator();
 
-        const DataSchema* schema = Workspace.SchemaOf(*document);
+        const DataSchema* schema = Workspace.Documents.SchemaOf(*document);
         JsonValue root = document->CopyRoot();
         JsonValue* data = root.Find("data");
         if (schema == nullptr || data == nullptr)
@@ -62,13 +62,12 @@ public:
         // Escape abandons an interaction wherever it started.
         if (document->IsEditing() && ImGui::IsKeyPressed(ImGuiKey_Escape))
         {
-            document->CancelEdit();
-            Workspace.DocumentChanged(*document);
+            Workspace.Documents.CancelEdit(*document);
             return;
         }
         ImGui::PushID(document->VirtualPath().c_str());
-        const FieldEdit edit = DrawDataField(*data, schema->Root, "$.data", Workspace);
-        ApplyFieldEdit(*document, Workspace, edit, std::move(root));
+        const FieldEdit edit = DrawDataField(*data, schema->Root, "$.data", Workspace.Documents);
+        ApplyFieldEdit(*document, Workspace.Documents, edit, std::move(root));
         ImGui::PopID();
     }
 
@@ -90,7 +89,7 @@ private:
         if (ImGui::Button("Create"))
         {
             NewError.clear();
-            if (Workspace.CreateDocument(subtypes[NewSubtype], NewPath.data(), NewError))
+            if ((Workspace.Documents.Create(subtypes[NewSubtype], NewPath.data(), NewError) != nullptr))
                 NewPath[0] = '\0';
         }
         if (!NewError.empty())

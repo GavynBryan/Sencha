@@ -58,7 +58,7 @@ public:
                 if (paths->empty() || !ImGui::TreeNode(title))
                     continue;
                 for (const auto& path : *paths)
-                    if (ImGui::Selectable(path.c_str())) Workspace.OpenAnimationDocument(path);
+                    if (ImGui::Selectable(path.c_str())) (void)Workspace.Documents.OpenOrFocus(path, Workspace.DocumentError);
                 ImGui::TreePop();
             }
         }
@@ -393,6 +393,6 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     ui.AddPanel(std::move(requestSchema));
     // Hidden panels do not receive OnDraw, including when hidden via View.
     ui.AddOverlay([&workspace, requestSchemaPanel] {
-        if (!requestSchemaPanel->IsVisible()) workspace.CancelAuthoringEdit();
+        if (!requestSchemaPanel->IsVisible()) workspace.Sources.CancelEdits();
     });
 }

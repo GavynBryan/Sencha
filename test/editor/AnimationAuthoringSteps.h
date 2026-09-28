@@ -16,11 +16,12 @@
 inline void AuthorDocument(AnimationPreviewWorkspace& workspace, const std::string& path,
                            const std::function<void(JsonValue& data)>& edit)
 {
-    ASSERT_TRUE(workspace.OpenAnimationDocument(path)) << path << ": " << workspace.DocumentError;
-    DataDocument& document = *workspace.FindDocument(path);
+    DataDocument* opened = workspace.Documents.OpenOrFocus(path, workspace.DocumentError);
+    ASSERT_NE(opened, nullptr) << path << ": " << workspace.DocumentError;
+    DataDocument& document = *opened;
     JsonValue root = document.CopyRoot();
     edit(*root.Find("data"));
-    ApplyFieldEdit(document, workspace, FieldEdit::Instant(), std::move(root));
+    ApplyFieldEdit(document, workspace.Documents, FieldEdit::Instant(), std::move(root));
 }
 
 inline JsonValue JsonObjectOf(std::initializer_list<std::pair<const char*, JsonValue>> members)

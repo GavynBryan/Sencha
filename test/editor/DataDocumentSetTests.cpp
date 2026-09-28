@@ -277,3 +277,18 @@ TEST_F(FactDocuments, TheJournalStepsAcrossDocumentsNewestFirst)
     Sources.Redo();
     EXPECT_EQ(SlotOf(game), "Sliding");
 }
+
+// Mid-edit in the document whose step is next: the edit is abandoned and the
+// committed step undone, rather than undo spending itself on the edit.
+TEST_F(FactDocuments, UndoMidEditInTheSameDocumentTakesTheCommittedStep)
+{
+    DataDocument& game = OpenFacts(kGame);
+    Commit(game, "Sliding");
+    game.BeginEdit();
+    game.PreviewRoot(WithSlot(game, "Swimming"));
+
+    Sources.Undo();
+    EXPECT_FALSE(game.IsEditing());
+    EXPECT_EQ(SlotOf(game), "Crouched");
+    EXPECT_FALSE(Sources.CanUndo());
+}

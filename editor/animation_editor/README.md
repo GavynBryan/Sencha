@@ -51,8 +51,8 @@ int, bool, or tag. Duplicates, invalid value kinds, and capacity violations repo
 their precise field paths. Names remain text in the asset; no runtime tag IDs are
 persisted. Unknown fields are retained and diagnosed, not silently discarded.
 
-Text edits coalesce into one undo operation. Escape, focus loss, and document
-switching cancel an unfinished edit. Undo/redo and Save are available through the
+Text edits coalesce into one undo operation. Escape and focus loss cancel an
+unfinished edit; switching documents commits it. Undo/redo and Save are available through the
 shell and pane. Open documents retain independent history; selecting one does not
 change the preview subject or time. Reload is explicit and refuses dirty documents;
 Save refuses externally modified files. Closing with unsaved changes offers Save
@@ -189,8 +189,9 @@ every other clip's entry back as it found it.
 - **Clip events** picks a clip the open rig plays (or the auditioned one) and
   shows its track: circles are cosmetic events, diamonds gameplay events, and
   the playhead follows whichever preview is playing the clip. Double-click to
-  add, drag to move, right-click to delete. A drag is one undo step; Escape,
-  focus loss or hiding the panel cancel it and put the marker back.
+  add, drag to move, right-click to delete. A drag is one undo step, and the
+  preview plays the marker's new time once it is released; Escape, focus loss
+  or hiding the panel cancel it and put the marker back.
 - The inspector edits name, normalized time, scope and a cosmetic event's own
   weight threshold, then the binding: search the rig's bindings, open the
   file that declares one, or create one from any declared verb (each argument

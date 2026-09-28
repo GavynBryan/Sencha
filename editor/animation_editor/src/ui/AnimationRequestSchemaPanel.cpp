@@ -111,20 +111,21 @@ void DrawIntents(JsonValue::Array& intents, FieldEdit& edit)
 
 void AnimationRequestSchemaPanel::OnDraw()
 {
-    if (!IsVisible()) { Workspace.CancelAuthoringEdit(); return; }
+    if (!IsVisible()) { Workspace.Sources.CancelEdits(); return; }
     ScopedPanel panel(GetTitle(), &Visible);
-    if (!panel.IsOpen()) { Workspace.CancelAuthoringEdit(); return; }
+    if (!panel.IsOpen()) { Workspace.Sources.CancelEdits(); return; }
     ImGui::TextWrapped("Author intent contracts here; preview requests and gameplay state are separate. Create new schemas from the Document panel's New asset, then open them from the content browser.");
-    if (Workspace.Documents.empty()) return;
-    auto& documents = Workspace.Documents;
-    if (ImGui::BeginCombo("Document", documents[Workspace.ActiveDocument]->VirtualPath().c_str()))
+    const auto documents = Workspace.Documents.Documents();
+    if (documents.empty()) return;
+    const std::size_t active = Workspace.Documents.ActiveIndex();
+    if (ImGui::BeginCombo("Document", documents[active]->VirtualPath().c_str()))
     {
         for (std::size_t i = 0; i < documents.size(); ++i)
-            if (ImGui::Selectable(documents[i]->VirtualPath().c_str(), i == Workspace.ActiveDocument))
-                Workspace.SelectDocument(i);
+            if (ImGui::Selectable(documents[i]->VirtualPath().c_str(), i == active))
+                Workspace.Documents.SetActive(i);
         ImGui::EndCombo();
     }
-    auto& document = *documents[Workspace.ActiveDocument];
+    auto& document = *documents[Workspace.Documents.ActiveIndex()];
     if (document.Subtype() != kAnimRequestSchemaType)
     {
         if (document.Subtype() == kAnimSelectorType)
@@ -138,13 +139,13 @@ void AnimationRequestSchemaPanel::OnDraw()
         return;
     }
     ImGui::PushID(&document);
-    if (ImGui::Button("Undo")) Workspace.Undo();
+    if (ImGui::Button("Undo")) Workspace.Sources.Undo();
     ImGui::SameLine();
-    if (ImGui::Button("Redo")) Workspace.Redo();
+    if (ImGui::Button("Redo")) Workspace.Sources.Redo();
     ImGui::SameLine();
-    if (ImGui::Button("Save")) Workspace.SaveDocument(document);
+    if (ImGui::Button("Save")) Workspace.SaveDocument(Workspace.Documents.RefOf(document));
     ImGui::SameLine();
-    if (ImGui::Button("Reload")) Workspace.ReloadDocument(document);
+    if (ImGui::Button("Reload")) (void)Workspace.Documents.Reload(document, Workspace.DocumentError);
     if (document.IsDirty()) ImGui::TextDisabled("Unsaved changes (save before closing the application)");
     if (document.IsExternallyModified()) ImGui::TextWrapped("Changed externally: reload a clean document to adopt disk changes.");
     if (!Workspace.DocumentError.empty()) ImGui::TextWrapped("%s", Workspace.DocumentError.c_str());
@@ -154,7 +155,7 @@ void AnimationRequestSchemaPanel::OnDraw()
     auto* intents = data ? data->Find("intents") : nullptr;
     FieldEdit edit;
     if (intents && intents->IsArray()) DrawIntents(intents->AsArray(), edit);
-    ApplyFieldEdit(document, Workspace, edit, std::move(root));
+    ApplyFieldEdit(document, Workspace.Documents, edit, std::move(root));
     for (const auto& error : document.ValidationErrors())
         ImGui::TextWrapped("%s: %s", error.Path.c_str(), error.Message.c_str());
     ImGui::PopID();

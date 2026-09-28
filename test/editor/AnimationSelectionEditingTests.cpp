@@ -196,8 +196,8 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
 
         // Raise walk's threshold above the scenario's speed, through the same
         // edit and transaction the rule table uses.
-        ASSERT_TRUE(workspace.OpenAnimationDocument("asset://anim/hero.selector.sdata"));
-        DataDocument* selector = workspace.ActiveDocumentOf(kAnimSelectorType);
+        ASSERT_TRUE((workspace.Documents.OpenOrFocus("asset://anim/hero.selector.sdata", workspace.DocumentError) != nullptr));
+        DataDocument* selector = workspace.Documents.ActiveOf(kAnimSelectorType);
         ASSERT_NE(selector, nullptr);
         const std::string saved = project.Read("hero.selector.sdata");
         JsonValue root = selector->CopyRoot();
@@ -205,7 +205,7 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
             Parse(R"({ "fact": "Speed", "compare": "gt", "value": 5 })");
         selector->BeginEdit();
         selector->PreviewRoot(std::move(root));
-        workspace.CommitDocumentEdit(*selector);
+        workspace.Documents.CommitEdit(*selector);
         EXPECT_EQ(workspace.PreviewStatusOf(*selector), "The preview runs the working version.");
 
         // The next tick decides with the edited rule; nothing restarted.
@@ -220,16 +220,16 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
         (*AnimSelectorRules(root))[0].Find("enter")->AsArray()[0].AsObject().emplace_back("value", JsonValue("fast"));
         selector->BeginEdit();
         selector->PreviewRoot(std::move(root));
-        workspace.CommitDocumentEdit(*selector);
+        workspace.Documents.CommitEdit(*selector);
         EXPECT_NE(workspace.PreviewStatusOf(*selector).find("last valid"), std::string::npos);
         workspace.Simulation.Step();
         EXPECT_EQ(Playing(workspace), "asset://anim/idle.sanim");
 
         // Undo twice: back to the authored rule, and the preview follows.
         selector->Undo();
-        workspace.DocumentChanged(*selector);
+        workspace.Documents.Changed(*selector);
         selector->Undo();
-        workspace.DocumentChanged(*selector);
+        workspace.Documents.Changed(*selector);
         workspace.Simulation.Step();
         EXPECT_EQ(Playing(workspace), "asset://anim/walk.sanim");
 

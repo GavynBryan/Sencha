@@ -45,7 +45,7 @@ namespace
         for (const auto& [path, record] : project.Assets->Registry.Records())
             if (project.Assets->Assets.HasStore(record.Type) && project.Assets->Assets.IsResident(path, record.Type))
                 ++footprint.ResidentAssets;
-        footprint.Documents = workspace.Documents.size();
+        footprint.Documents = workspace.Documents.Documents().size();
         const World* world = workspace.Simulation.SimulationWorld();
         footprint.PreviewEntities = world != nullptr ? world->EntityCount() : 0;
         footprint.History = workspace.Simulation.History().size();
@@ -71,9 +71,9 @@ namespace
         AuthorDocument(workspace, behaviors, [](JsonValue& data) {
             JsonArrayOf(data, "behaviors").front().AsObject().emplace_back("rate", JsonValue(1.5));
         });
-        workspace.Undo();
-        workspace.Redo();
-        workspace.Undo();
+        workspace.Sources.Undo();
+        workspace.Sources.Redo();
+        workspace.Sources.Undo();
 
         ASSERT_TRUE(workspace.RecordTakeA());
         ASSERT_TRUE(workspace.ReplayAgainstTakeA());
@@ -116,7 +116,7 @@ TEST(AnimationLongSession, RepeatedWorkHoldsSteady)
     const Footprint after = Measure(project, workspace);
     EXPECT_EQ(after, settled) << "settled: " << Describe(settled) << "\nafter:   " << Describe(after);
 
-    for (const auto& document : workspace.Documents)
+    for (const auto& document : workspace.Documents.Documents())
         EXPECT_FALSE(document->IsEditing()) << document->VirtualPath();
-    EXPECT_FALSE(workspace.CanUndo()) << "every edit was taken back";
+    EXPECT_FALSE(workspace.Sources.CanUndo()) << "every edit was taken back";
 }

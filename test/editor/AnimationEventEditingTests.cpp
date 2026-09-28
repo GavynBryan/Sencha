@@ -5,6 +5,8 @@
 #include "authoring/AnimationEventBindings.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 
+#include "AnimationAuthoringSteps.h"
+
 #include <anim/AnimationClipCache.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <authored/VerbRegistry.h>
@@ -15,6 +17,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -139,14 +142,14 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
     EventProject project;
     AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.ScenarioError;
-    ASSERT_TRUE(workspace.OpenClipEvents(std::string(kClip))) << workspace.DocumentError;
-    AnimationClipEventsDocument* events = workspace.FindClipEvents(kClip);
+    ASSERT_TRUE((workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError) != nullptr)) << workspace.DocumentError;
+    AnimationClipEventsDocument* events = workspace.ClipEvents.Find(kClip);
     ASSERT_NE(events, nullptr);
     EXPECT_EQ(events->SidecarPath(), project.Root / "anim" / "hero.glb.meta");
 
     const std::uint32_t key = events->Add(Footstep(0.25f));
-    workspace.ClipEventsChanged(*events);
-    EXPECT_TRUE(workspace.ClipPreviewStatus[std::string(kClip)].empty()) << workspace.ClipPreviewStatus[std::string(kClip)];
+    workspace.ClipEvents.Changed(*events);
+    EXPECT_TRUE(workspace.PreviewStatusOf(*events).empty()) << workspace.PreviewStatusOf(*events);
 
     workspace.Simulation.RunTo(30);
     const AnimDecisionRecord* crossing = LastCrossing(workspace.Simulation);
@@ -155,35 +158,43 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
     EXPECT_EQ(crossing->Admission, VerbAdmission::Accepted);
     EXPECT_FALSE(project.Exists("hero.glb.meta")) << "nothing is written until saved";
 
-    ASSERT_TRUE(workspace.SaveClipEvents(*events)) << workspace.DocumentError;
+    ASSERT_TRUE(workspace.SaveDocument(workspace.ClipEvents.RefOf(*events))) << workspace.DocumentError;
     EXPECT_TRUE(project.Exists("hero.glb.meta"));
 }
 
 // Escape during a drag puts the marker back, in the document and in the
 // preview's clip.
-TEST(AnimationEventEditing, CancellingADragRestoresThePreviewToo)
+// Like a data document, a clip's events reach the preview only once committed.
+TEST(AnimationEventEditing, ADragReachesThePreviewOnlyWhenCommitted)
 {
     EventProject project;
     AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata"));
-    ASSERT_TRUE(workspace.OpenClipEvents(std::string(kClip)));
-    AnimationClipEventsDocument& events = *workspace.FindClipEvents(kClip);
+    AnimationClipEventsDocument* opened = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
+    ASSERT_NE(opened, nullptr) << workspace.DocumentError;
+    AnimationClipEventsDocument& events = *opened;
     const std::uint32_t key = events.Add(Footstep(0.25f));
-    workspace.ClipEventsChanged(events);
-
-    events.BeginEdit(key);
-    AnimationClipEvent moved = *events.Find(key);
-    moved.Time = 0.8f;
-    events.PreviewEdit(moved);
-    workspace.ClipEventsChanged(events);
+    workspace.ClipEvents.Changed(events);
     const AnimationClipData* clip = project.Assets->AnimationClips.Get(project.Assets->AnimationClips.Find(kClip));
     ASSERT_EQ(clip->Events.size(), 1u);
-    EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.8f) << "the preview follows the drag";
 
-    workspace.CancelAuthoringEdit();
+    const auto drag = [&] {
+        events.BeginEdit(key);
+        AnimationClipEvent moved = *events.Find(key);
+        moved.Time = 0.8f;
+        events.PreviewEdit(moved);
+        workspace.ClipEvents.Changed(events);
+    };
+    drag();
+    EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.25f) << "a preview never reaches the clip";
+    workspace.Sources.CancelEdits();
     EXPECT_FALSE(events.IsEditing());
     EXPECT_FLOAT_EQ(events.Find(key)->Time, 0.25f);
     EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.25f);
+
+    drag();
+    workspace.ClipEvents.CommitEdit(events);
+    EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.8f);
 }
 
 // A binding created from a declared verb takes an input per argument, and an
@@ -208,14 +219,14 @@ TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
     EXPECT_EQ(created->Inputs[0].Name, "Surface");
     EXPECT_EQ(created->Inputs[0].Destinations.at(0).second, DataFieldKind::GameplayTag);
 
-    ASSERT_TRUE(workspace.OpenClipEvents(std::string(kClip)));
-    AnimationClipEventsDocument& events = *workspace.FindClipEvents(kClip);
+    ASSERT_TRUE((workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError) != nullptr));
+    AnimationClipEventsDocument& events = *workspace.ClipEvents.Find(kClip);
     AnimationClipEvent loud = Footstep(0.5f);
     loud.Binding = "anim.footstep_loud";
     loud.Inputs[0].Key = "Surface";
     loud.Inputs[1].Key = "Volume";
     (void)events.Add(loud);
-    workspace.ClipEventsChanged(events);
+    workspace.ClipEvents.Changed(events);
     ASSERT_EQ(workspace.Simulation.Rig()->Contents.at(0).Events.size(), 1u);
     EXPECT_TRUE(workspace.Simulation.Rig()->Contents[0].Events[0].Resolved)
         << (workspace.Simulation.Rig()->Diagnostics.empty() ? "" : workspace.Simulation.Rig()->Diagnostics.back().Message);
@@ -249,4 +260,71 @@ TEST(AnimationEventEditing, AnInputIsCheckedAgainstEveryDestination)
     EXPECT_FALSE(checks[0].Supplied);
     EXPECT_EQ(checks[1].Input, "amout");
     EXPECT_FALSE(checks[1].Valid);
+}
+
+// One journal steps a clip's events and a data document newest first, and each
+// step brings its document forward and reaches the preview.
+TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
+{
+    EventProject project;
+    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.ScenarioError;
+    AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
+    ASSERT_NE(events, nullptr) << workspace.DocumentError;
+    (void)events->Add(Footstep(0.25f));
+    workspace.ClipEvents.Changed(*events);
+    AuthorDocument(workspace, "asset://anim/hero.behaviors.sdata", [](JsonValue& data) {
+        JsonArrayOf(data, "behaviors").front().AsObject().emplace_back("rate", JsonValue(2.0));
+    });
+    const AnimationClipData* clip = project.Assets->AnimationClips.Get(project.Assets->AnimationClips.Find(kClip));
+    ASSERT_EQ(clip->Events.size(), 1u);
+
+    workspace.Sources.Undo();
+    EXPECT_EQ(workspace.Documents.Active()->VirtualPath(), "asset://anim/hero.behaviors.sdata");
+    EXPECT_EQ(workspace.Documents.Active()->Data()->Find("behaviors")->AsArray().front().Find("rate"), nullptr);
+    EXPECT_EQ(clip->Events.size(), 1u) << "the older clip step is still in place";
+
+    workspace.Sources.Undo();
+    EXPECT_TRUE(events->Events().empty());
+    EXPECT_TRUE(clip->Events.empty()) << "the preview follows the step";
+    EXPECT_EQ(workspace.ClipEvents.ActiveClip(), kClip);
+    EXPECT_FALSE(workspace.Sources.CanUndo());
+
+    workspace.Sources.Redo();
+    EXPECT_EQ(clip->Events.size(), 1u);
+}
+
+// Save all writes the data document and holds back a sidecar changed on disk;
+// taking the file's version is one step, and the preview follows it.
+TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
+{
+    EventProject project;
+    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.ScenarioError;
+    AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
+    ASSERT_NE(events, nullptr) << workspace.DocumentError;
+    (void)events->Add(Footstep(0.25f));
+    workspace.ClipEvents.Changed(*events);
+    AuthorDocument(workspace, "asset://anim/hero.behaviors.sdata", [](JsonValue& data) {
+        JsonArrayOf(data, "behaviors").front().AsObject().emplace_back("rate", JsonValue(2.0));
+    });
+    project.Write("hero.glb.meta", R"({ "version": 1, "clips": { "Walk": { "events": [] } } })");
+    const std::filesystem::path sidecar = project.Root / "anim" / "hero.glb.meta";
+    std::filesystem::last_write_time(sidecar, std::filesystem::last_write_time(sidecar) + std::chrono::seconds(5));
+
+    const DocumentSaveReport& report = workspace.Sources.SaveAll();
+    ASSERT_EQ(report.WithStatus(DocumentSaveStatus::Saved).size(), 1u);
+    EXPECT_EQ(report.WithStatus(DocumentSaveStatus::Saved)[0]->Document.Key, "asset://anim/hero.behaviors.sdata");
+    ASSERT_EQ(report.WithStatus(DocumentSaveStatus::Conflict).size(), 1u);
+    const DocumentRef conflict = report.WithStatus(DocumentSaveStatus::Conflict)[0]->Document;
+    EXPECT_EQ(conflict, workspace.ClipEvents.RefOf(*events));
+
+    std::string error;
+    ASSERT_TRUE(workspace.Sources.Settle(conflict, ConflictChoice::TakeFile, error)) << error;
+    const AnimationClipData* clip = project.Assets->AnimationClips.Get(project.Assets->AnimationClips.Find(kClip));
+    EXPECT_TRUE(events->Events().empty());
+    EXPECT_TRUE(clip->Events.empty());
+    EXPECT_TRUE(workspace.Sources.LastSave().WithStatus(DocumentSaveStatus::Conflict).empty());
+    workspace.Sources.Undo();
+    EXPECT_EQ(events->Events().size(), 1u) << "the author's events are one step away";
 }

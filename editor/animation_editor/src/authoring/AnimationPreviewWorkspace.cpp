@@ -2,6 +2,8 @@
 
 #include "authoring/AnimationEventBindings.h"
 #include "authoring/AnimationNameDeclarations.h"
+#include "data/DataAssetFiles.h"
+#include "ui/DataForm.h"
 
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
@@ -53,7 +55,10 @@ namespace
 
 AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary,
                                                      std::filesystem::path authoringRoot)
-    : Simulation(assets.DataAssets, &assets.AnimationClips, WithContentTags(vocabulary, &ContentTags), &assets.Skeletons)
+    : Documents(assets, Sources, { .ContentRoot = authoringRoot,
+                                   .Subtypes = { AnimationDocumentSubtypes().begin(), AnimationDocumentSubtypes().end() } })
+    , ClipEvents(assets, Sources)
+    , Simulation(assets.DataAssets, &assets.AnimationClips, WithContentTags(vocabulary, &ContentTags), &assets.Skeletons)
     , Vocabulary(WithContentTags(std::move(vocabulary), &ContentTags))
     , Assets(assets)
     , AuthoringRoot(std::move(authoringRoot))
@@ -68,6 +73,13 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std:
     ghost.AlphaMode = MaterialAlphaMode::Blend;
     GhostMaterial = Assets.Materials.Create(ghost);
     GhostMaterialLease = AssetLease::Adopt(AssetType::Material, Assets.Materials, GhostMaterial.ToToken());
+    Documents.OnChanged([this](DataDocument& document, bool residentChanged) {
+        DataDocumentChanged(document, residentChanged);
+    });
+    ClipEvents.OnChanged([this](AnimationClipEventsDocument&, bool clipChanged) {
+        if (clipChanged)
+            Simulation.Rebind();
+    });
     RefreshBrowser();
 }
 
@@ -136,198 +148,13 @@ std::span<const std::string_view> AnimationDocumentSubtypes()
     return kSubtypes;
 }
 
-bool AnimationPreviewWorkspace::OpenAnimationDocument(const std::string& path)
-{
-    if (DataDocument* open = FindDocument(path))
-    {
-        for (std::size_t i = 0; i < Documents.size(); ++i)
-            if (Documents[i].get() == open)
-                SelectDocument(i);
-        return true;
-    }
-    const auto* record = Assets.Registry.FindByPath(path);
-    if (!record || record->Type != AssetType::Data)
-    {
-        DocumentError = "The asset is not registered in this project.";
-        return false;
-    }
-    auto document = DataDocument::Open(record->FilePath, path, Assets.DataTypes,
-                                      Assets.DataSchemas, &DocumentError);
-    if (!document) return false;
-    if (std::ranges::find(AnimationDocumentSubtypes(), document->Subtype()) == AnimationDocumentSubtypes().end())
-    {
-        DocumentError = "Select an animation asset: a rig, schema, behavior set, selector, slot map, flow, "
-                        "blendspace, blend overrides, bindings or tag declarations.";
-        return false;
-    }
-    RecordJournalStep(*document);
-    Documents.push_back(std::move(document));
-    SelectDocument(Documents.size() - 1);
-    DocumentError.clear();
-    return true;
-}
-
-class AnimationPreviewWorkspace::JournalStep final : public ICommand
-{
-public:
-    JournalStep(AnimationPreviewWorkspace& workspace, std::string path, bool clipEvents)
-        : Workspace(workspace), Path(std::move(path)), ClipEvents(clipEvents)
-    {
-    }
-
-    // The document took the step already; only a redo retakes it.
-    void Execute() override
-    {
-        if (std::exchange(Recorded, false))
-            return;
-        Workspace.StepDocument(Path, ClipEvents, false);
-    }
-    void Undo() override { Workspace.StepDocument(Path, ClipEvents, true); }
-
-private:
-    AnimationPreviewWorkspace& Workspace;
-    std::string Path;
-    bool ClipEvents = false;
-    bool Recorded = true;
-};
-
-void AnimationPreviewWorkspace::RecordJournalStep(DataDocument& document)
-{
-    document.ObserveSteps([this, path = document.VirtualPath()] {
-        Journal.Execute(std::make_unique<JournalStep>(*this, path, false));
-    });
-}
-
-void AnimationPreviewWorkspace::RecordJournalStep(AnimationClipEventsDocument& document)
-{
-    document.ObserveSteps([this, path = document.ClipPath()] {
-        Journal.Execute(std::make_unique<JournalStep>(*this, path, true));
-    });
-}
-
-void AnimationPreviewWorkspace::CancelOpenEdits()
-{
-    for (const auto& document : Documents)
-        if (document->IsEditing())
-        {
-            document->CancelEdit();
-            DocumentChanged(*document);
-        }
-    for (const auto& document : ClipEventDocuments)
-        if (document->IsEditing())
-        {
-            document->CancelEdit();
-            ClipEventsChanged(*document);
-        }
-}
-
-void AnimationPreviewWorkspace::StepDocument(std::string_view path, bool clipEvents, bool undo)
-{
-    if (clipEvents)
-    {
-        if (AnimationClipEventsDocument* document = FindClipEvents(path))
-        {
-            undo ? document->Undo() : document->Redo();
-            ClipEventsChanged(*document);
-            ActiveClipEvents = std::string(path);
-        }
-        return;
-    }
-    for (std::size_t i = 0; i < Documents.size(); ++i)
-        if (Documents[i]->VirtualPath() == path)
-        {
-            undo ? Documents[i]->Undo() : Documents[i]->Redo();
-            DocumentChanged(*Documents[i]);
-            SelectDocument(i);
-        }
-}
-
-void AnimationPreviewWorkspace::Undo()
-{
-    CancelOpenEdits();
-    Journal.Undo();
-}
-
-void AnimationPreviewWorkspace::Redo()
-{
-    CancelOpenEdits();
-    Journal.Redo();
-}
-
-DataDocument* AnimationPreviewWorkspace::ActiveDocumentAny()
-{
-    return ActiveDocument < Documents.size() ? Documents[ActiveDocument].get() : nullptr;
-}
-
-const DataSchema* AnimationPreviewWorkspace::SchemaOf(const DataDocument& document) const
-{
-    return Assets.DataSchemas.Find(document.Subtype());
-}
-
-std::vector<std::string> AnimationPreviewWorkspace::DataAssetPaths(std::string_view subtype)
-{
-    std::vector<std::string> paths;
-    for (const auto& [path, record] : Assets.Registry.Records())
-    {
-        if (record.Type != AssetType::Data)
-            continue;
-        const DataDocument* open = FindDocument(path);
-        const std::string actual =
-            open != nullptr ? open->Subtype() : PeekDataAssetSubtype(Assets.Assets.DefaultSource(), record);
-        if (subtype.empty() || actual == subtype)
-            paths.push_back(path);
-    }
-    std::ranges::sort(paths);
-    return paths;
-}
-
-void AnimationPreviewWorkspace::OpenDataAsset(std::string_view path)
-{
-    (void)OpenAnimationDocument(std::string(path));
-}
-
-void AnimationPreviewWorkspace::SelectField(const DataFieldSchema&, std::string_view)
-{
-}
-
-void AnimationPreviewWorkspace::EditPreviewed(DataDocument& document)
-{
-    ValidateDocument(document);
-}
-
-void AnimationPreviewWorkspace::EditCommitted(DataDocument& document)
-{
-    DocumentChanged(document);
-}
-
-DataDocument* AnimationPreviewWorkspace::FindDocument(std::string_view path)
-{
-    for (const auto& document : Documents)
-        if (document->VirtualPath() == path)
-            return document.get();
-    return nullptr;
-}
-
-DataDocument* AnimationPreviewWorkspace::ActiveDocumentOf(std::string_view subtype)
-{
-    if (ActiveDocument >= Documents.size() || Documents[ActiveDocument]->Subtype() != subtype)
-        return nullptr;
-    return Documents[ActiveDocument].get();
-}
-
-void AnimationPreviewWorkspace::CommitDocumentEdit(DataDocument& document)
-{
-    document.CommitEdit();
-    DocumentChanged(document);
-}
-
 void AnimationPreviewWorkspace::RefreshContentTags()
 {
     ContentTags.clear();
     ContentTagErrors.clear();
     CollectContentTags(Assets, ContentTags, ContentTagErrors);
     // Unsaved declarations count; a name removed stays declared until saved.
-    for (const auto& document : Documents)
+    for (const auto& document : Documents.Documents())
     {
         const JsonValue* data = document->Subtype() == kGameplayTagDeclarationsType ? document->Data() : nullptr;
         const JsonValue* tags = data != nullptr ? data->Find("tags") : nullptr;
@@ -347,16 +174,8 @@ std::vector<std::string> AnimationPreviewWorkspace::UndeclaredNames()
     std::deque<JsonValue> read;
     return UndeclaredAnimationNames(Simulation.Problems(), *tags, [&](std::string_view path) -> AnimationDocumentView {
         const JsonValue* root = nullptr;
-        if (const DataDocument* open = FindDocument(path))
-            root = &open->Root();
-        else if (const AssetRecord* record = Assets.Registry.FindByPath(path))
-        {
-            std::ifstream in(record->FilePath);
-            std::stringstream text;
-            text << in.rdbuf();
-            if (std::optional<JsonValue> parsed = JsonParse(text.str()))
-                root = &read.emplace_back(std::move(*parsed));
-        }
+        if (std::optional<JsonValue> current = Documents.CurrentRoot(path))
+            root = &read.emplace_back(std::move(*current));
         const JsonValue* type = root != nullptr ? root->Find("type") : nullptr;
         const DataSchema* schema =
             type != nullptr && type->IsString() ? Assets.DataSchemas.Find(type->AsString()) : nullptr;
@@ -375,42 +194,34 @@ bool AnimationPreviewWorkspace::DeclareUndeclaredNames(std::string& error)
     relative = relative.substr(0, suffix) + ".tags.sdata";
     const std::string path = "asset://" + relative;
 
-    const std::size_t active = ActiveDocument;
-    DataDocument* document = FindDocument(path);
+    const std::size_t active = Documents.ActiveIndex();
+    DataDocument* document = Documents.Find(path);
     if (document == nullptr)
-    {
-        const bool ready = Assets.Registry.Contains(path) ? OpenAnimationDocument(path)
-                                                          : CreateDocument(kGameplayTagDeclarationsType, relative, error);
-        if (!ready)
-        {
-            error = error.empty() ? DocumentError : error;
-            return false;
-        }
-        document = FindDocument(path);
-    }
+        document = Assets.Registry.Contains(path) ? Documents.OpenOrFocus(path, error)
+                                                  : Documents.Create(kGameplayTagDeclarationsType, relative, error);
+    if (document == nullptr)
+        return false;
     JsonValue root = document->CopyRoot();
     if (AddAnimationTagDeclarations(root, names))
-        ApplyFieldEdit(*document, *this, FieldEdit::Instant(), std::move(root));
-    if (active < Documents.size())
-        SelectDocument(active);
+        ApplyFieldEdit(*document, Documents, FieldEdit::Instant(), std::move(root));
+    Documents.SetActive(active);
     return true;
 }
 
-void AnimationPreviewWorkspace::DocumentChanged(DataDocument& document)
+void AnimationPreviewWorkspace::DataDocumentChanged(DataDocument& document, bool residentChanged)
 {
-    ValidateDocument(document);
     if (document.Subtype() == kGameplayTagDeclarationsType)
     {
         RefreshContentTags();
         Simulation.VocabularyChanged();
     }
-    if (Resident.Push(document))
+    if (residentChanged)
         Simulation.Rebind();
 }
 
 std::string AnimationPreviewWorkspace::PreviewStatusOf(const DataDocument& document) const
 {
-    const DataResidentState* state = Resident.StateOf(document);
+    const DataResidentState* state = Documents.ResidentStateOf(document);
     if (state == nullptr)
         return {};
     switch (state->Status)
@@ -423,6 +234,45 @@ std::string AnimationPreviewWorkspace::PreviewStatusOf(const DataDocument& docum
         return "The working version was refused (" + state->Error + "); the preview keeps the last valid version.";
     }
     return {};
+}
+
+std::string AnimationPreviewWorkspace::PreviewStatusOf(const AnimationClipEventsDocument& document) const
+{
+    const ClipEventsPreviewState* state = ClipEvents.PreviewStateOf(document);
+    if (state == nullptr)
+        return {};
+    switch (state->Status)
+    {
+    case ClipEventsPreviewStatus::Current:
+        return {};
+    case ClipEventsPreviewStatus::ClipNotLoaded:
+        return "The clip is not loaded, so the preview cannot play these events.";
+    case ClipEventsPreviewStatus::KeptLastValid:
+        return "The preview keeps the last valid events: " + state->Problem;
+    case ClipEventsPreviewStatus::Refused:
+        return "The preview's copy of the clip could not be replaced.";
+    }
+    return {};
+}
+
+bool AnimationPreviewWorkspace::SaveDocument(const DocumentRef& document)
+{
+    const DocumentSaveResult result = Sources.Save(document);
+    switch (result.Status)
+    {
+    case DocumentSaveStatus::Saved:
+    case DocumentSaveStatus::SavedWithProblems:
+        DocumentError.clear();
+        return true;
+    case DocumentSaveStatus::Conflict:
+        DocumentError = "The file changed on disk since it was read. Keep yours or take the file's under "
+                        "Problems and changes > Changes.";
+        return false;
+    case DocumentSaveStatus::Failed:
+        DocumentError = result.Error;
+        return false;
+    }
+    return false;
 }
 
 bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
@@ -473,7 +323,7 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
     Navigation = AnimationNavigation{};
     if (!rig->SkeletonPath.empty() && Session.SkeletonPath() != rig->SkeletonPath && MeshPath.empty())
         (void)SelectSkeleton(rig->SkeletonPath);
-    if (Resident.PushWaiting())
+    if (Documents.PushWaiting() | ClipEvents.PushWaiting())
         Simulation.Rebind();
     return true;
 }
@@ -499,29 +349,6 @@ bool AnimationPreviewWorkspace::ReloadScenario()
     return !RigPath.empty() && OpenRig(RigPath);
 }
 
-void AnimationPreviewWorkspace::SelectDocument(std::size_t index)
-{
-    if (index >= Documents.size() || index == ActiveDocument) return;
-    CancelAuthoringEdit();
-    ActiveDocument = index;
-}
-
-void AnimationPreviewWorkspace::CancelAuthoringEdit()
-{
-    if (ActiveDocument < Documents.size() && Documents[ActiveDocument]->IsEditing())
-    {
-        Documents[ActiveDocument]->CancelEdit();
-        ValidateDocument(*Documents[ActiveDocument]);
-    }
-    for (const auto& document : ClipEventDocuments)
-    {
-        if (!document->IsEditing())
-            continue;
-        document->CancelEdit();
-        ClipEventsChanged(*document);
-    }
-}
-
 const AnimationClipCache& AnimationPreviewWorkspace::Clips() const
 {
     return Assets.AnimationClips;
@@ -530,89 +357,6 @@ const AnimationClipCache& AnimationPreviewWorkspace::Clips() const
 const SkeletonCache& AnimationPreviewWorkspace::Skeletons() const
 {
     return Assets.Skeletons;
-}
-
-bool AnimationPreviewWorkspace::OpenClipEvents(const std::string& clipPath)
-{
-    if (FindClipEvents(clipPath) != nullptr)
-    {
-        ActiveClipEvents = clipPath;
-        return true;
-    }
-    const std::optional<MeshClipSource> source = MeshClipSourceOf(clipPath);
-    const AssetRecord* record = Assets.Registry.FindByPath(clipPath);
-    if (!source || record == nullptr)
-    {
-        DocumentError = "Events are authored on a clip cooked from a mesh source in this project.";
-        return false;
-    }
-    // The clip is cooked under its content root; the sidecar sits beside the source in that root.
-    std::filesystem::path root;
-    for (std::filesystem::path at(record->FilePath); at.has_parent_path() && at != at.parent_path();
-         at = at.parent_path())
-    {
-        if (at.filename() == kCookedCacheDirName)
-        {
-            root = at.parent_path();
-            break;
-        }
-    }
-    if (root.empty())
-    {
-        DocumentError = std::format("'{}' was not cooked into a content root, so its source cannot be found.", clipPath);
-        return false;
-    }
-    std::unique_ptr<AnimationClipEventsDocument> document = AnimationClipEventsDocument::Open(
-        clipPath, root / (source->SourceRelPath + std::string(kImportSettingsSuffix)), &DocumentError);
-    if (document == nullptr)
-        return false;
-    RecordJournalStep(*document);
-    ClipEventDocuments.push_back(std::move(document));
-    ActiveClipEvents = clipPath;
-    DocumentError.clear();
-    return true;
-}
-
-AnimationClipEventsDocument* AnimationPreviewWorkspace::FindClipEvents(std::string_view clipPath)
-{
-    for (const auto& document : ClipEventDocuments)
-        if (document->ClipPath() == clipPath)
-            return document.get();
-    return nullptr;
-}
-
-void AnimationPreviewWorkspace::ClipEventsChanged(AnimationClipEventsDocument& document)
-{
-    std::string& status = ClipPreviewStatus[document.ClipPath()];
-    const AnimationClipHandle clip = Assets.AnimationClips.Find(document.ClipPath());
-    const AnimationClipData* current = Assets.AnimationClips.Get(clip);
-    if (current == nullptr)
-    {
-        status = "The clip is not loaded, so the preview cannot play these events.";
-        return;
-    }
-    if (const std::vector<std::string> problems = document.Problems(); !problems.empty())
-    {
-        status = "The preview keeps the last valid events: " + problems.front();
-        return;
-    }
-    AnimationClipData working = *current;
-    working.Events = document.CookedOrder();
-    if (!Assets.AnimationClips.ReloadInPlace(clip, std::move(working)))
-    {
-        status = "The preview's copy of the clip could not be replaced.";
-        return;
-    }
-    Simulation.Rebind();
-    status.clear();
-}
-
-bool AnimationPreviewWorkspace::SaveClipEvents(AnimationClipEventsDocument& document)
-{
-    if (!document.Save(&DocumentError))
-        return false;
-    DocumentError.clear();
-    return true;
 }
 
 bool AnimationPreviewWorkspace::CreateBinding(const std::string& bindingsPath, const std::string& key,
@@ -625,9 +369,9 @@ bool AnimationPreviewWorkspace::CreateBinding(const std::string& bindingsPath, c
         DocumentError = std::format("'{}' is not a verb the preview declares.", verb);
         return false;
     }
-    if (!OpenAnimationDocument(bindingsPath))
+    DataDocument* document = Documents.OpenOrFocus(bindingsPath, DocumentError);
+    if (document == nullptr)
         return false;
-    DataDocument* document = FindDocument(bindingsPath);
     JsonValue root = document->CopyRoot();
     if (!AddAnimationBindingRecord(root, MakeAnimationBindingRecord(key, *definition)))
     {
@@ -635,121 +379,7 @@ bool AnimationPreviewWorkspace::CreateBinding(const std::string& bindingsPath, c
         return false;
     }
     document->ReplaceRoot(std::move(root));
-    DocumentChanged(*document);
-    return true;
-}
-
-void AnimationPreviewWorkspace::ValidateDocument(DataDocument& document)
-{
-    document.Validate(Assets.DataTypes, Assets.DataSchemas);
-}
-
-AnimationSaveReport AnimationPreviewWorkspace::SaveAll()
-{
-    AnimationSaveReport report;
-    for (const auto& document : Documents)
-    {
-        if (!document->IsDirty() && !document->IsEditing())
-            continue;
-        const std::string& path = document->VirtualPath();
-        if (SaveDocument(*document))
-        {
-            report.Saved.push_back(path);
-            if (!document->IsSemanticallyValid())
-                report.SavedWithProblems.push_back(path);
-        }
-        else if (document->IsExternallyModified())
-            report.Conflicts.push_back(path);
-        else
-            report.Failed.emplace_back(path, DocumentError);
-    }
-    for (const auto& document : ClipEventDocuments)
-    {
-        if (!document->IsDirty() && !document->IsEditing())
-            continue;
-        std::string error;
-        if (document->Save(&error))
-            report.Saved.push_back(document->ClipPath());
-        else if (document->IsExternallyModified())
-            report.Conflicts.push_back(document->ClipPath());
-        else
-            report.Failed.emplace_back(document->ClipPath(), std::move(error));
-    }
-    DocumentError.clear();
-    LastSave = report;
-    return report;
-}
-
-bool AnimationPreviewWorkspace::SaveOverFile(std::string_view path, std::string& error)
-{
-    bool kept = false;
-    if (DataDocument* document = FindDocument(path))
-    {
-        kept = document->SaveOverFile(&error);
-    }
-    else if (AnimationClipEventsDocument* events = FindClipEvents(path))
-        kept = events->SaveOverFile(&error);
-    else
-        error = std::format("'{}' is not open here.", path);
-    if (kept)
-        std::erase(LastSave.Conflicts, path);
-    return kept;
-}
-
-bool AnimationPreviewWorkspace::AdoptFileVersion(std::string_view path, std::string& error)
-{
-    bool taken = false;
-    if (DataDocument* document = FindDocument(path))
-    {
-        taken = document->AdoptFileVersion(Assets.DataTypes, Assets.DataSchemas, &error);
-        if (taken)
-            DocumentChanged(*document);
-    }
-    else if (AnimationClipEventsDocument* events = FindClipEvents(path))
-    {
-        taken = events->AdoptFileVersion(&error);
-        if (taken)
-            ClipEventsChanged(*events);
-    }
-    else
-        error = std::format("'{}' is not open here.", path);
-    if (taken)
-        std::erase(LastSave.Conflicts, path);
-    return taken;
-}
-
-bool AnimationPreviewWorkspace::SaveDocument(DataDocument& document)
-{
-    const bool wasEditing = document.IsEditing();
-    DocumentError.clear();
-    const bool saved = document.Save(&DocumentError);
-    if (wasEditing)
-        DocumentChanged(document);
-    else
-        ValidateDocument(document);
-    if (!saved && document.IsExternallyModified())
-    {
-        DocumentError = "The file changed on disk since it was read. Keep yours or take the file's under "
-                        "Problems and changes > Changes.";
-        if (std::ranges::find(LastSave.Conflicts, document.VirtualPath()) == LastSave.Conflicts.end())
-            LastSave.Conflicts.push_back(document.VirtualPath());
-    }
-    return saved;
-}
-
-bool AnimationPreviewWorkspace::ReloadDocument(DataDocument& document)
-{
-    document.CancelEdit();
-    if (document.IsDirty())
-    {
-        DocumentError = "Reload refused: undo or save local edits first.";
-        return false;
-    }
-    DocumentError.clear();
-    Resident.Forget(document);
-    if (!document.Reload(Assets.DataTypes, Assets.DataSchemas, &DocumentError))
-        return false;
-    DocumentChanged(document);
+    Documents.Changed(*document);
     return true;
 }
 
@@ -881,7 +511,7 @@ bool AnimationPreviewWorkspace::SelectMaterial(const std::string& path)
 
 void AnimationPreviewWorkspace::Frame(double wallSeconds)
 {
-    if (Resident.PushWaiting())
+    if (Documents.PushWaiting() | ClipEvents.PushWaiting())
         Simulation.Rebind();
     Session.Advance(wallSeconds);
     Simulation.Advance(wallSeconds);
@@ -1028,54 +658,8 @@ bool AnimationPreviewWorkspace::WriteNewDocuments(const std::vector<AnimationNew
     {
         if (!WriteFile(document, 4, error))
             return false;
-        RegisterDataFile(document.RelativePath);
+        RegisterDataAssetFile(Assets.Registry, "asset://" + document.RelativePath, AuthoringRoot / document.RelativePath);
     }
-    return true;
-}
-
-void AnimationPreviewWorkspace::RegisterDataFile(const std::string& relativePath)
-{
-    AssetRecord record;
-    record.Type = AssetType::Data;
-    record.SourceKind = AssetSourceKind::File;
-    record.Path = "asset://" + relativePath;
-    record.FilePath = (AuthoringRoot / relativePath).generic_string();
-    (void)Assets.Registry.RegisterOrVerify(record);
-}
-
-bool AnimationPreviewWorkspace::CreateDocument(std::string_view subtype, std::string relativePath, std::string& error)
-{
-    const DataAssetTypeRegistration* type = Assets.DataTypes.Find(subtype);
-    const DataSchema* schema = Assets.DataSchemas.Find(subtype);
-    if (type == nullptr || schema == nullptr)
-    {
-        error = std::format("'{}' has no registered schema.", subtype);
-        return false;
-    }
-    if (AuthoringRoot.empty() || relativePath.empty())
-    {
-        error = "Name the new asset's path under the project's content root.";
-        return false;
-    }
-    if (!relativePath.ends_with(".sdata"))
-        relativePath += ".sdata";
-    const std::filesystem::path file = AuthoringRoot / relativePath;
-    const std::string path = "asset://" + relativePath;
-    if (std::filesystem::exists(file) || Assets.Registry.Contains(path))
-    {
-        error = std::format("'{}' already exists; choose another name.", relativePath);
-        return false;
-    }
-    std::filesystem::create_directories(file.parent_path());
-    std::unique_ptr<DataDocument> document = DataDocument::Create(file, path, *type, *schema);
-    ValidateDocument(*document);
-    if (!document->Save(&error))
-        return false;
-    RegisterDataFile(relativePath);
-    RecordJournalStep(*document);
-    Documents.push_back(std::move(document));
-    SelectDocument(Documents.size() - 1);
-    DocumentError.clear();
     return true;
 }
 
@@ -1243,9 +827,9 @@ const std::vector<Mat4>& AnimationPreviewWorkspace::ViewportPalette()
 
 bool AnimationPreviewWorkspace::EditRig(const std::function<bool(JsonValue&)>& edit)
 {
-    DataDocument* rig = FindDocument(RigPath);
-    if (rig == nullptr && OpenAnimationDocument(RigPath))
-        rig = FindDocument(RigPath);
+    DataDocument* rig = Documents.Find(RigPath);
+    if (rig == nullptr)
+        rig = Documents.OpenOrFocus(RigPath, DocumentError);
     if (rig == nullptr)
         return false;
     JsonValue root = rig->CopyRoot();
@@ -1253,7 +837,7 @@ bool AnimationPreviewWorkspace::EditRig(const std::function<bool(JsonValue&)>& e
         return false;
     rig->BeginEdit();
     rig->PreviewRoot(std::move(root));
-    CommitDocumentEdit(*rig);
+    Documents.CommitEdit(*rig);
     return true;
 }
 

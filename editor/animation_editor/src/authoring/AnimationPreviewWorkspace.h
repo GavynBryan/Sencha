@@ -3,16 +3,14 @@
 #include "authoring/AnimationBlendComparison.h"
 #include "authoring/AnimationClipPlayerMigration.h"
 #include "authoring/AnimationSessionLab.h"
-#include "authoring/AnimationClipEventsDocument.h"
+#include "authoring/AnimationClipEventsSet.h"
 #include "authoring/AnimationClipPreviewSession.h"
 #include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationScenarioBatch.h"
 #include "authoring/AnimationPreviewSession.h"
 #include "render/AnimationPreviewScene.h"
-#include "commands/CommandStack.h"
-#include "data/DataDocument.h"
-#include "data/DataResidentSync.h"
-#include "ui/DataForm.h"
+#include "data/DataDocumentSet.h"
+#include "documents/DocumentSourceSet.h"
 
 #include <anim/AnimPoseEvaluation.h>
 #include <anim/Skeleton.h>
@@ -22,7 +20,6 @@
 
 #include <filesystem>
 #include <functional>
-#include <map>
 #include <span>
 #include <string>
 #include <vector>
@@ -68,22 +65,11 @@ struct AnimationNavigation
     std::optional<std::size_t> InspectRecord;
 };
 
-// Paths are asset paths, or clip paths for a clip's events.
-struct AnimationSaveReport
-{
-    std::vector<std::string> Saved;
-    // Saved, but with problems a game would refuse to load.
-    std::vector<std::string> SavedWithProblems;
-    // Changed on disk since read; left for SaveOverFile or AdoptFileVersion.
-    std::vector<std::string> Conflicts;
-    std::vector<std::pair<std::string, std::string>> Failed;
-};
-
 [[nodiscard]] std::span<const std::string_view> AnimationDocumentSubtypes();
 
 // Owns preview selections and their leases, the open animation documents, the
 // rig under simulation, and navigation.
-class AnimationPreviewWorkspace final : public DataFormHost
+class AnimationPreviewWorkspace final
 {
 public:
     // An empty `authoringRoot` makes a workspace that creates no assets.
@@ -95,35 +81,14 @@ public:
     bool SelectClip(const std::string& path);
     bool SelectMaterial(const std::string& path);
     void Frame(double wallSeconds);
-    bool OpenAnimationDocument(const std::string& path);
-    // Written with its schema's required members, then registered and opened.
-    bool CreateDocument(std::string_view subtype, std::string relativePath, std::string& error);
     // Gameplay tags the open rig's content uses that nothing declares.
     [[nodiscard]] std::vector<std::string> UndeclaredNames();
     // One undo step on the tag declarations beside the rig, created if absent.
     bool DeclareUndeclaredNames(std::string& error);
-    // Revalidates; a valid document replaces the preview's copy of the asset,
-    // an invalid one leaves the preview on its last valid version.
-    void DocumentChanged(DataDocument& document);
     [[nodiscard]] std::string PreviewStatusOf(const DataDocument& document) const;
-    void CommitDocumentEdit(DataDocument& document);
-    [[nodiscard]] DataDocument* ActiveDocumentOf(std::string_view subtype);
-    [[nodiscard]] DataDocument* ActiveDocumentAny();
-    [[nodiscard]] const DataSchema* SchemaOf(const DataDocument& document) const;
-
-    [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype) override;
-    void OpenDataAsset(std::string_view path) override;
-    void SelectField(const DataFieldSchema& field, std::string_view path) override;
-    void EditPreviewed(DataDocument& document) override;
-    void EditCommitted(DataDocument& document) override;
-    [[nodiscard]] DataDocument* FindDocument(std::string_view path);
-
-    // Selects the document instead when it is already open.
-    bool OpenClipEvents(const std::string& clipPath);
-    [[nodiscard]] AnimationClipEventsDocument* FindClipEvents(std::string_view clipPath);
-    // Same contract as DocumentChanged; every rig playing the clip rebinds.
-    void ClipEventsChanged(AnimationClipEventsDocument& document);
-    bool SaveClipEvents(AnimationClipEventsDocument& document);
+    [[nodiscard]] std::string PreviewStatusOf(const AnimationClipEventsDocument& document) const;
+    // Leaves a message in DocumentError when the save did not happen.
+    bool SaveDocument(const DocumentRef& document);
     // One undo step; each verb argument is fed by an input of its own name.
     bool CreateBinding(const std::string& bindingsPath, const std::string& key, const std::string& verb);
 
@@ -146,18 +111,6 @@ public:
     // The inspected record's tick, else the latest.
     [[nodiscard]] std::optional<AnimTick> ShownTick() const;
     bool ReloadScenario();
-    // Documents whose files changed on disk are held back as conflicts; one
-    // refusal does not stop the others.
-    AnimationSaveReport SaveAll();
-    // Settle a conflict: write the working version over the file, or take the
-    // file's version as one undo step.
-    bool SaveOverFile(std::string_view path, std::string& error);
-    bool AdoptFileVersion(std::string_view path, std::string& error);
-    // Newest step across every open document, cancelling any open interaction first.
-    void Undo();
-    void Redo();
-    [[nodiscard]] bool CanUndo() const { return Journal.CanUndo(); }
-    [[nodiscard]] bool CanRedo() const { return Journal.CanRedo(); }
     // Runs in its own session; the working simulation is untouched.
     void RunScenarioBatch(bool againstOpenRig);
     [[nodiscard]] const DataAssetCache& DataCache() const;
@@ -169,12 +122,11 @@ public:
     bool EditRig(const std::function<bool(JsonValue&)>& edit);
     // One model-space transform per joint, as drawn last frame.
     [[nodiscard]] const std::vector<Mat4>& ViewportModel() const { return ViewportModelTransforms; }
-    void SelectDocument(std::size_t index);
-    void CancelAuthoringEdit();
-    void ValidateDocument(DataDocument& document);
-    bool SaveDocument(DataDocument& document);
-    bool ReloadDocument(DataDocument& document);
 
+    // Declared before the document sets, which register with it.
+    DocumentSourceSet Sources;
+    DataDocumentSet Documents;
+    AnimationClipEventsSet ClipEvents;
     std::vector<std::string> RequestSchemaPaths;
     std::vector<std::string> RigPaths;
     std::vector<std::string> SelectorPaths;
@@ -184,8 +136,6 @@ public:
     std::vector<std::string> BlendspacePaths;
     std::vector<std::string> BlendOverridePaths;
     std::vector<std::string> FactSchemaPaths;
-    // Per clip path: whether the preview runs the working or last valid events.
-    std::map<std::string, std::string> ClipPreviewStatus;
     AnimationNavigation Navigation;
     AnimationViewportSource ViewportSource = AnimationViewportSource::Audition;
     AnimationLayerDisplay LayerDisplay;
@@ -193,13 +143,6 @@ public:
     AnimationPoseComparison Comparison;
     bool ShowGhost = true;
     std::string ViewportNote;
-    std::vector<std::unique_ptr<DataDocument>> Documents;
-    std::size_t ActiveDocument = 0;
-    std::vector<std::unique_ptr<AnimationClipEventsDocument>> ClipEventDocuments;
-    // One entry per step any document took, in order.
-    CommandStack Journal;
-    // Clip path of the events document the event panels act on.
-    std::string ActiveClipEvents;
     std::string DocumentError;
 
     AnimationClipPreviewSession Session;
@@ -220,7 +163,6 @@ public:
     std::string ScenarioError;
     std::vector<AnimDiagnostic> ScenarioLoadProblems;
     std::vector<AnimationScenarioRun> ScenarioRuns;
-    AnimationSaveReport LastSave;
     AnimationPreviewScene Scene;
     std::vector<std::string> MeshPaths;
     std::vector<std::string> SkeletonPaths;
@@ -232,12 +174,7 @@ public:
     std::string Error;
 
 private:
-    void RegisterDataFile(const std::string& relativePath);
-    class JournalStep;
-    void RecordJournalStep(DataDocument& document);
-    void RecordJournalStep(AnimationClipEventsDocument& document);
-    void CancelOpenEdits();
-    void StepDocument(std::string_view path, bool clipEvents, bool undo);
+    void DataDocumentChanged(DataDocument& document, bool residentChanged);
     void RefreshContentTags();
     bool SetSkeletonContent(SkeletonHandle skeleton);
     // Refuses before writing anything if any document already exists.
@@ -258,7 +195,6 @@ private:
     std::vector<Mat4> SimulationPalette;
     std::vector<Mat4> ViewportModelTransforms;
     RuntimeAssets& Assets;
-    DataResidentSync Resident{ Assets };
     std::filesystem::path AuthoringRoot;
     AssetLease RigLease;
     AssetLease MeshLease;

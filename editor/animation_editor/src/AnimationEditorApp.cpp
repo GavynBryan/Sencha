@@ -104,7 +104,7 @@ public:
 
     ~AnimationEditorHost()
     {
-        Workspace->CancelAuthoringEdit();
+        Workspace->Sources.CancelEdits();
         EngineRef.OnExitRequested = {};
         // A refused removal means a feature still borrows our state. Fail
         // closed rather than let teardown continue with dangling references.
@@ -136,10 +136,10 @@ public:
         if (context.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
         {
             Workspace->Session.Pause();
-            Workspace->CancelAuthoringEdit();
+            Workspace->Sources.CancelEdits();
         }
         if (context.Event.type == SDL_EVENT_KEY_DOWN && context.Event.key.key == SDLK_ESCAPE)
-            Workspace->CancelAuthoringEdit();
+            Workspace->Sources.CancelEdits();
         if (Ui) Ui->ProcessSdlEvent(context.Event);
     }
 

@@ -63,16 +63,16 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
     // New assets, from the Document panel: the upper body's selector and the
     // request schema the reload is asked for through. The selector is edited
     // before the rig names it; the preview picks it up once the rig does.
-    ASSERT_TRUE(workspace.CreateDocument(kAnimSelectorType, "animation/brute/upper.selector", error)) << error;
+    ASSERT_TRUE((workspace.Documents.Create(kAnimSelectorType, "animation/brute/upper.selector", error) != nullptr)) << error;
     {
-        DataDocument& selector = *workspace.FindDocument("asset://animation/brute/upper.selector.sdata");
+        DataDocument& selector = *workspace.Documents.Find("asset://animation/brute/upper.selector.sdata");
         JsonValue root = selector.CopyRoot();
         AddAnimSelectorRule(root, "rest", "Anim.Upper.Rest", 0);
         AddAnimSelectorRule(root, "reload", "Anim.Weapon.Reload", 50);
         AddAnimPredicateRow(*AnimSelectorPredicate(root, 1, "enter"), MakeAnimRequestTest("Anim.Weapon.Reload"));
-        ApplyFieldEdit(selector, workspace, FieldEdit::Instant(), std::move(root));
+        ApplyFieldEdit(selector, workspace.Documents, FieldEdit::Instant(), std::move(root));
     }
-    ASSERT_TRUE(workspace.CreateDocument(kAnimRequestSchemaType, "animation/brute/brute.requests", error)) << error;
+    ASSERT_TRUE((workspace.Documents.Create(kAnimRequestSchemaType, "animation/brute/brute.requests", error) != nullptr)) << error;
     AuthorDocument(workspace, "asset://animation/brute/brute.requests.sdata", [](JsonValue& data) {
         JsonArrayOf(data, "intents").push_back(JsonObjectOf({ { "intent", JsonValue("Anim.Weapon.Reload") },
                                                   { "params", JsonValue(JsonValue::Array{}) } }));
@@ -100,10 +100,10 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
                                                  { "idle", JsonValue("Anim.Upper.Rest") } }));
     });
     {
-        DataDocument& rig = *workspace.FindDocument(kRig);
+        DataDocument& rig = *workspace.Documents.Find(kRig);
         JsonValue root = rig.CopyRoot();
         ASSERT_TRUE(AddAnimMaskStep(root, 1, "spine", false, true));
-        ApplyFieldEdit(rig, workspace, FieldEdit::Instant(), std::move(root));
+        ApplyFieldEdit(rig, workspace.Documents, FieldEdit::Instant(), std::move(root));
     }
 
     // The new names are not declared yet; the Problems fix declares them.
@@ -119,7 +119,7 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
     ASSERT_EQ(rig->Layers.size(), 2u);
     EXPECT_FALSE(rig->Layers[1].Covers(0));
     EXPECT_TRUE(rig->Layers[1].Covers(2));
-    EXPECT_EQ(workspace.ActiveDocumentAny()->VirtualPath(), kRig) << "declaring leaves the author where they were";
+    EXPECT_EQ(workspace.Documents.Active()->VirtualPath(), kRig) << "declaring leaves the author where they were";
 
     // It plays: a reload on the upper body over the base's idle.
     workspace.Simulation.Step();
@@ -133,8 +133,8 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
     EXPECT_EQ(Playing(workspace, 0), "asset://meshes/man.blend#anim:Idle");
     EXPECT_EQ(Playing(workspace, 1), "asset://meshes/man.blend#anim:Reload");
 
-    for (const auto& document : workspace.Documents)
-        ASSERT_TRUE(!document->IsDirty() || workspace.SaveDocument(*document))
+    for (const auto& document : workspace.Documents.Documents())
+        ASSERT_TRUE(!document->IsDirty() || workspace.SaveDocument(workspace.Documents.RefOf(*document)))
             << document->VirtualPath() << ": " << workspace.DocumentError;
     workspace.Simulation.Close();
 

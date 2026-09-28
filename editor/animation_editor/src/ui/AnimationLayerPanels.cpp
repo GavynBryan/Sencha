@@ -47,7 +47,7 @@ std::string TagText(const AnimationPreviewSession& session, GameplayTagId tag)
 std::vector<AnimMaskOp> MaskSteps(AnimationPreviewWorkspace& workspace, std::size_t layer)
 {
     std::vector<AnimMaskOp> steps;
-    if (DataDocument* document = workspace.FindDocument(workspace.RigPath))
+    if (DataDocument* document = workspace.Documents.Find(workspace.RigPath))
     {
         JsonValue root = document->CopyRoot();
         const JsonValue::Array* layers = AnimRigLayers(root);
@@ -320,9 +320,9 @@ public:
             ? &rig->Flows[static_cast<std::size_t>(rig->Contents[layer->Content].Flow)]
             : nullptr;
 
-        DataDocument* document = Workspace.ActiveDocumentOf(kAnimFlowType);
+        DataDocument* document = Workspace.Documents.ActiveOf(kAnimFlowType);
         if (document == nullptr && playing != nullptr)
-            document = Workspace.FindDocument(playing->Path);
+            document = Workspace.Documents.Find(playing->Path);
         if (playing != nullptr)
         {
             const DataAssetCache& data = Workspace.DataCache();
@@ -332,7 +332,7 @@ public:
             {
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Edit"))
-                    (void)Workspace.OpenAnimationDocument(playing->Path);
+                    (void)(void)Workspace.Documents.OpenOrFocus(playing->Path, Workspace.DocumentError);
             }
             const double tickSeconds = 1.0 / std::max(1u, session.Scenario().TickRate);
             DrawStrip(*rig, *playing, *layer, tick->Tick, tickSeconds);
@@ -461,11 +461,11 @@ private:
     {
         ImGui::SeparatorText(std::format("Editing {}", document.VirtualPath()).c_str());
         ImGui::PushID(&document);
-        if (ImGui::SmallButton("Undo")) Workspace.Undo();
+        if (ImGui::SmallButton("Undo")) Workspace.Sources.Undo();
         ImGui::SameLine();
-        if (ImGui::SmallButton("Redo")) Workspace.Redo();
+        if (ImGui::SmallButton("Redo")) Workspace.Sources.Redo();
         ImGui::SameLine();
-        if (ImGui::SmallButton("Save")) Workspace.SaveDocument(document);
+        if (ImGui::SmallButton("Save")) Workspace.SaveDocument(Workspace.Documents.RefOf(document));
         if (document.IsDirty())
         {
             ImGui::SameLine();
@@ -592,7 +592,7 @@ private:
         }
         if (changed)
             edit |= FieldEdit::Instant();
-        ApplyFieldEdit(document, Workspace, edit, std::move(root));
+        ApplyFieldEdit(document, Workspace.Documents, edit, std::move(root));
         for (const DataValidationError& error : document.ValidationErrors())
             ImGui::TextWrapped("%s: %s", error.Path.c_str(), error.Message.c_str());
         ImGui::PopID();

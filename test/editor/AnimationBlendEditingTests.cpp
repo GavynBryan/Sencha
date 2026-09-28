@@ -109,14 +109,14 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
 
         // Lengthen the walk's inertialization through the behavior set's
         // document, as the Behavior panel or Data Editor would.
-        ASSERT_TRUE(workspace.OpenAnimationDocument("asset://anim/walker.behaviors.sdata"));
-        DataDocument* behaviors = workspace.ActiveDocumentOf(kAnimBehaviorSetType);
+        ASSERT_TRUE((workspace.Documents.OpenOrFocus("asset://anim/walker.behaviors.sdata", workspace.DocumentError) != nullptr));
+        DataDocument* behaviors = workspace.Documents.ActiveOf(kAnimBehaviorSetType);
         ASSERT_NE(behaviors, nullptr);
         JsonValue root = behaviors->CopyRoot();
         (*root.Find("data")->Find("behaviors")->AsArray()[1].Find("blend")->Find("in_ms")) = JsonValue(300.0);
         behaviors->BeginEdit();
         behaviors->PreviewRoot(std::move(root));
-        workspace.CommitDocumentEdit(*behaviors);
+        workspace.Documents.CommitEdit(*behaviors);
 
         ASSERT_TRUE(workspace.ReplayAgainstTakeA()) << workspace.Comparison.Refusal;
         const std::vector<AnimationPoseResidual>& residuals = workspace.Comparison.Residuals;

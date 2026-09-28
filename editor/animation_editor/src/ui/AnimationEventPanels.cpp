@@ -114,7 +114,7 @@ public:
             return;
 
         DrawClipPicker();
-        AnimationClipEventsDocument* document = Workspace.FindClipEvents(Workspace.ActiveClipEvents);
+        AnimationClipEventsDocument* document = Workspace.ClipEvents.Find(Workspace.ClipEvents.ActiveClip());
         if (document == nullptr)
         {
             ImGui::TextWrapped("Choose a clip cooked from a mesh source and open its events. They are authored "
@@ -144,14 +144,14 @@ private:
     void DrawClipPicker()
     {
         const std::vector<std::string> clips = CandidateClips();
-        const char* shown = Workspace.ActiveClipEvents.empty() ? "(choose a clip)" : Workspace.ActiveClipEvents.c_str();
+        const char* shown = Workspace.ClipEvents.ActiveClip().empty() ? "(choose a clip)" : Workspace.ClipEvents.ActiveClip().c_str();
         if (ImGui::BeginCombo("Clip", shown))
         {
             for (const std::string& clip : clips)
-                if (ImGui::Selectable(clip.c_str(), clip == Workspace.ActiveClipEvents))
+                if (ImGui::Selectable(clip.c_str(), clip == Workspace.ClipEvents.ActiveClip()))
                 {
-                    Workspace.CancelAuthoringEdit();
-                    if (Workspace.OpenClipEvents(clip))
+                    Workspace.Sources.CancelEdits();
+                    if ((Workspace.ClipEvents.OpenOrFocus(clip, Workspace.DocumentError) != nullptr))
                         Selected.reset();
                 }
             ImGui::EndCombo();
@@ -160,7 +160,7 @@ private:
             ImGui::TextColored(ImVec4(0.9f, 0.5f, 0.4f, 1.0f), "%s", Workspace.DocumentError.c_str());
     }
 
-    void Changed(AnimationClipEventsDocument& document) { Workspace.ClipEventsChanged(document); }
+    void Changed(AnimationClipEventsDocument& document) { Workspace.ClipEvents.Changed(document); }
 
     void DrawToolbar(AnimationClipEventsDocument& document)
     {
@@ -176,24 +176,24 @@ private:
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::BeginDisabled(!Workspace.CanUndo());
+        ImGui::BeginDisabled(!Workspace.Sources.CanUndo());
         if (ImGui::Button("Undo"))
-            Workspace.Undo();
+            Workspace.Sources.Undo();
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::BeginDisabled(!Workspace.CanRedo());
+        ImGui::BeginDisabled(!Workspace.Sources.CanRedo());
         if (ImGui::Button("Redo"))
-            Workspace.Redo();
+            Workspace.Sources.Redo();
         ImGui::EndDisabled();
         ImGui::SameLine();
         ImGui::BeginDisabled(!document.IsDirty());
         if (ImGui::Button(document.IsDirty() ? "Save*" : "Save"))
-            (void)Workspace.SaveClipEvents(document);
+            (void)Workspace.SaveDocument(Workspace.ClipEvents.RefOf(document));
         ImGui::EndDisabled();
         ImGui::SameLine();
         ImGui::TextDisabled("%s", document.SidecarPath().filename().string().c_str());
 
-        const std::string& status = Workspace.ClipPreviewStatus[document.ClipPath()];
+        const std::string status = Workspace.PreviewStatusOf(document);
         if (!status.empty())
             ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "%s", status.c_str());
         else
@@ -438,7 +438,7 @@ private:
         const std::string file = BindingFileOf(Workspace, draft.Binding);
         ImGui::BeginDisabled(file.empty());
         if (ImGui::Button("Open binding"))
-            (void)Workspace.OpenAnimationDocument(file);
+            (void)(void)Workspace.Documents.OpenOrFocus(file, Workspace.DocumentError);
         ImGui::EndDisabled();
         ImGui::SameLine();
         if (ImGui::Button("Create binding..."))
@@ -774,11 +774,7 @@ void AddAnimationEventPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& wor
     // A hidden panel is not drawn, so a drag it started cannot finish there.
     ui.AddOverlay([&workspace, eventsPanel] {
         if (!eventsPanel->IsVisible())
-            for (const auto& document : workspace.ClipEventDocuments)
-                if (document->IsEditing())
-                {
-                    document->CancelEdit();
-                    workspace.ClipEventsChanged(*document);
-                }
+            for (const auto& document : workspace.ClipEvents.Documents())
+                workspace.ClipEvents.CancelEdit(*document);
     });
 }

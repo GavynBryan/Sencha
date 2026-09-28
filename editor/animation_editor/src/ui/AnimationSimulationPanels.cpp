@@ -912,36 +912,30 @@ private:
         if (session.IsOpen())
             ImGui::TextWrapped("Scenario %s: %s", session.Scenario().Name.c_str(),
                                session.ScenarioModified() ? "recorded edits not saved" : "saved");
-        bool any = false;
-        for (const auto& document : Workspace.Documents)
-        {
-            if (!document->IsDirty()) continue;
-            any = true;
-            ImGui::BulletText("%s: unsaved edits", document->VirtualPath().c_str());
-        }
-        for (const auto& document : Workspace.ClipEventDocuments)
-        {
-            if (!document->IsDirty()) continue;
-            any = true;
-            ImGui::BulletText("%s events: unsaved edits", document->ClipPath().c_str());
-        }
-        if (!any) ImGui::TextDisabled("No open document has unsaved edits.");
+        const std::vector<DocumentRef> changed = Workspace.Sources.ChangedDocuments();
+        for (const DocumentRef& document : changed)
+            ImGui::BulletText("%s: unsaved edits", document.Key.c_str());
+        if (changed.empty()) ImGui::TextDisabled("No open document has unsaved edits.");
         if (ImGui::Button("Save all"))
-            (void)Workspace.SaveAll();
-        const AnimationSaveReport& saved = Workspace.LastSave;
-        for (const std::string& path : saved.SavedWithProblems)
-            ImGui::TextWrapped("%s was saved with problems a game will refuse to load.", path.c_str());
-        for (const auto& [path, why] : saved.Failed)
-            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s was not saved: %s", path.c_str(), why.c_str());
-        for (const std::string& path : std::vector<std::string>(saved.Conflicts))
+            (void)Workspace.Sources.SaveAll();
+        const DocumentSaveReport& saved = Workspace.Sources.LastSave();
+        for (const DocumentSaveResult* result : saved.WithStatus(DocumentSaveStatus::SavedWithProblems))
+            ImGui::TextWrapped("%s was saved with problems a game will refuse to load.", result->Document.Key.c_str());
+        for (const DocumentSaveResult* result : saved.WithStatus(DocumentSaveStatus::Failed))
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s was not saved: %s", result->Document.Key.c_str(),
+                               result->Error.c_str());
+        std::vector<DocumentRef> conflicts;
+        for (const DocumentSaveResult* result : saved.WithStatus(DocumentSaveStatus::Conflict))
+            conflicts.push_back(result->Document);
+        for (const DocumentRef& document : conflicts)
         {
-            ImGui::PushID(path.c_str());
-            ImGui::TextWrapped("%s changed on disk since it was read.", path.c_str());
+            ImGui::PushID(document.Key.c_str());
+            ImGui::TextWrapped("%s changed on disk since it was read.", document.Key.c_str());
             if (ImGui::SmallButton("Keep mine"))
-                (void)Workspace.SaveOverFile(path, ConflictError);
+                (void)Workspace.Sources.Settle(document, ConflictChoice::KeepMine, ConflictError);
             ImGui::SameLine();
             if (ImGui::SmallButton("Take the file's"))
-                (void)Workspace.AdoptFileVersion(path, ConflictError);
+                (void)Workspace.Sources.Settle(document, ConflictChoice::TakeFile, ConflictError);
             ImGui::PopID();
         }
         if (!ConflictError.empty())

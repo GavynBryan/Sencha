@@ -79,9 +79,9 @@ public:
     DockSlot GetDockSlot() const override { return DockSlot::Right; }
     void OnDraw() override
     {
-        if (!IsVisible()) { Workspace.CancelAuthoringEdit(); return; }
+        if (!IsVisible()) { Workspace.Sources.CancelEdits(); return; }
         ScopedPanel panel(GetTitle(), &Visible);
-        if (!panel.IsOpen()) { Workspace.CancelAuthoringEdit(); return; }
+        if (!panel.IsOpen()) { Workspace.Sources.CancelEdits(); return; }
 
         AnimationPreviewSession& session = Workspace.Simulation;
         const AnimBoundRig* rig = session.Rig();
@@ -90,7 +90,7 @@ public:
         else
             ImGui::TextWrapped("Open a rig to see its rules decide.");
 
-        if (DataDocument* document = Workspace.ActiveDocumentOf(kAnimSelectorType))
+        if (DataDocument* document = Workspace.Documents.ActiveOf(kAnimSelectorType))
         {
             ImGui::SeparatorText(("Editing " + document->VirtualPath()).c_str());
             DrawEditor(*document, PredicateVocabulary{ rig });
@@ -184,18 +184,18 @@ private:
         {
             const AnimBoundRule& rule = selector.Rules[static_cast<std::size_t>(nav.Rule)];
             if (ImGui::Button("Edit where it is authored") && !rule.Source.empty())
-                Workspace.OpenAnimationDocument(rule.Source.back().Selector);
+                (void)Workspace.Documents.OpenOrFocus(rule.Source.back().Selector, Workspace.DocumentError);
         }
     }
 
     void DrawEditor(DataDocument& document, const PredicateVocabulary& vocabulary)
     {
         ImGui::PushID(&document);
-        if (ImGui::Button("Undo")) Workspace.Undo();
+        if (ImGui::Button("Undo")) Workspace.Sources.Undo();
         ImGui::SameLine();
-        if (ImGui::Button("Redo")) Workspace.Redo();
+        if (ImGui::Button("Redo")) Workspace.Sources.Redo();
         ImGui::SameLine();
-        if (ImGui::Button("Save")) Workspace.SaveDocument(document);
+        if (ImGui::Button("Save")) Workspace.SaveDocument(Workspace.Documents.RefOf(document));
         if (const std::string status = Workspace.PreviewStatusOf(document); !status.empty())
             ImGui::TextWrapped("%s", status.c_str());
 
@@ -282,7 +282,7 @@ private:
             }
         }
 
-        ApplyFieldEdit(document, Workspace, edit, std::move(root));
+        ApplyFieldEdit(document, Workspace.Documents, edit, std::move(root));
         for (const DataValidationError& error : document.ValidationErrors())
             ImGui::TextWrapped("%s: %s", error.Path.c_str(), error.Message.c_str());
         ImGui::PopID();
@@ -363,7 +363,7 @@ public:
             }
             ImGui::TextDisabled("Declared in %s", behavior->DeclaredIn.c_str());
             if (ImGui::SmallButton("Edit behavior set"))
-                Workspace.OpenAnimationDocument(behavior->DeclaredIn);
+                (void)Workspace.Documents.OpenOrFocus(behavior->DeclaredIn, Workspace.DocumentError);
         }
 
         ImGui::SeparatorText("Selected by");
@@ -483,7 +483,7 @@ public:
                 Workspace.SelectClip(ContentPath(*rig, static_cast<std::uint16_t>(row.Content)));
             ImGui::SameLine();
             if (ImGui::Button("Edit slot map"))
-                Workspace.OpenAnimationDocument(row.DeclaredIn);
+                (void)Workspace.Documents.OpenOrFocus(row.DeclaredIn, Workspace.DocumentError);
         }
         if (Workspace.ViewportSource == AnimationViewportSource::Audition && Workspace.Simulation.IsOpen())
         {
