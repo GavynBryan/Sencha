@@ -1,6 +1,8 @@
 #include "ui/AnimationBlendPanels.h"
 
-#include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationBlendComparison.h"
+#include "authoring/AnimationRigScenario.h"
+#include "authoring/AnimationViewportExtraction.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
@@ -37,7 +39,10 @@ std::string FileOf(const std::string& path)
 class BlendPanel final : public IEditorPanel
 {
 public:
-    explicit BlendPanel(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
+    BlendPanel(AnimationRigScenario& rig, AnimationTakeComparison& takes, AnimationViewportExtraction& viewport)
+        : Rig(rig), Takes(takes), Viewport(viewport)
+    {
+    }
     std::string_view GetTitle() const override { return "Blends"; }
     PanelPersistence GetPersistence() const override { return { "animation.blends" }; }
     DockSlot GetDockSlot() const override { return DockSlot::Bottom; }
@@ -47,7 +52,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        const AnimationPreviewSession& session = Workspace.Rig.Simulation;
+        const AnimationPreviewSession& session = Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         if (rig == nullptr)
         {
@@ -137,7 +142,7 @@ private:
         ImGui::Text("%zu bound. Past half the cap a rig warns, past the cap it fails to bind "
                     "(anim.blend.override_cap).",
                     rig.BlendOverrides.size());
-        const AnimationPreviewSession& session = Workspace.Rig.Simulation;
+        const AnimationPreviewSession& session = Rig.Simulation;
         for (const AnimBoundBlendOverride& entry : rig.BlendOverrides)
             ImGui::BulletText("%s -> %s: %s %.0f ms  (%s)", TagText(session, entry.From).c_str(),
                               TagText(session, entry.To).c_str(),
@@ -152,22 +157,22 @@ private:
                            "inputs, clock, seed and start pose -- and is compared with A tick by tick. A is "
                            "drawn as an orange ghost.");
         if (ImGui::Button("Record A"))
-            (void)Workspace.Takes.RecordA(Workspace.Rig.Simulation);
+            (void)Takes.RecordA(Rig.Simulation);
         ImGui::SameLine();
-        ImGui::BeginDisabled(!Workspace.Takes.A());
+        ImGui::BeginDisabled(!Takes.A());
         if (ImGui::Button("Replay B against A"))
-            (void)Workspace.Takes.ReplayAgainstA(Workspace.Rig.Simulation);
+            (void)Takes.ReplayAgainstA(Rig.Simulation);
         ImGui::SameLine();
         if (ImGui::Button("Clear"))
-            Workspace.Takes.Clear();
+            Takes.Clear();
         ImGui::SameLine();
-        ImGui::Checkbox("Ghost", &Workspace.Viewport.ShowGhost);
+        ImGui::Checkbox("Ghost", &Viewport.ShowGhost);
         ImGui::EndDisabled();
-        if (!Workspace.Takes.A())
+        if (!Takes.A())
             return;
-        ImGui::Text("A: ticks %llu to %llu", static_cast<unsigned long long>(Workspace.Takes.A()->Ticks.front()),
-                    static_cast<unsigned long long>(Workspace.Takes.A()->Ticks.back()));
-        const AnimationPoseComparison& comparison = Workspace.Takes.Comparison();
+        ImGui::Text("A: ticks %llu to %llu", static_cast<unsigned long long>(Takes.A()->Ticks.front()),
+                    static_cast<unsigned long long>(Takes.A()->Ticks.back()));
+        const AnimationPoseComparison& comparison = Takes.Comparison();
         if (!comparison.Refusal.empty())
         {
             ImGui::TextWrapped("%s", comparison.Refusal.c_str());
@@ -185,7 +190,7 @@ private:
         }
         ImGui::PlotLines("Largest joint residual", positions.data(), static_cast<int>(positions.size()), 0, nullptr,
                          0.0f, FLT_MAX, ImVec2(-1.0f, 80.0f));
-        const SkeletonData* skeleton = Workspace.Rig.Skeleton();
+        const SkeletonData* skeleton = Rig.Skeleton();
         const auto jointName = [&](std::uint32_t joint) {
             return skeleton != nullptr && joint < skeleton->Joints.size() && !skeleton->Joints[joint].Name.empty()
                 ? skeleton->Joints[joint].Name
@@ -201,13 +206,15 @@ private:
         (void)rig;
     }
 
-    AnimationPreviewWorkspace& Workspace;
+    AnimationRigScenario& Rig;
+    AnimationTakeComparison& Takes;
+    AnimationViewportExtraction& Viewport;
 };
 
 class BlendspacePanel final : public IEditorPanel
 {
 public:
-    explicit BlendspacePanel(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
+    explicit BlendspacePanel(AnimationRigScenario& rig) : Rig(rig) {}
     std::string_view GetTitle() const override { return "Blendspace"; }
     PanelPersistence GetPersistence() const override { return { "animation.blendspace" }; }
     DockSlot GetDockSlot() const override { return DockSlot::Right; }
@@ -217,10 +224,10 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        AnimationPreviewSession& session = Workspace.Rig.Simulation;
+        AnimationPreviewSession& session = Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         const AnimContentState* content = session.Content();
-        const std::size_t l = Workspace.Rig.Navigation.Layer;
+        const std::size_t l = Rig.Navigation.Layer;
         if (rig == nullptr || content == nullptr || l >= rig->Layers.size())
         {
             ImGui::TextDisabled("Run a rig to see the blendspace its selected layer plays.");
@@ -313,12 +320,13 @@ public:
     }
 
 private:
-    AnimationPreviewWorkspace& Workspace;
+    AnimationRigScenario& Rig;
 };
 }
 
-void AddAnimationBlendPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationBlendPanels(EditorUiFeature& ui, AnimationRigScenario& rig, AnimationTakeComparison& takes,
+                             AnimationViewportExtraction& viewport)
 {
-    ui.AddPanel(std::make_unique<BlendPanel>(workspace));
-    ui.AddPanel(std::make_unique<BlendspacePanel>(workspace));
+    ui.AddPanel(std::make_unique<BlendPanel>(rig, takes, viewport));
+    ui.AddPanel(std::make_unique<BlendspacePanel>(rig));
 }

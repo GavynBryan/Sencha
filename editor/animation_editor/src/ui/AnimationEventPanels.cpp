@@ -2,6 +2,8 @@
 
 #include "authoring/AnimationEventBindings.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "ui/AnimationPreviewStatus.h"
+#include "ui/DocumentSaveReportView.h"
 #include "authoring/AnimationRigDocumentEdits.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"
@@ -189,12 +191,12 @@ private:
         ImGui::SameLine();
         ImGui::BeginDisabled(!document.IsDirty());
         if (ImGui::Button(document.IsDirty() ? "Save*" : "Save"))
-            (void)Workspace.SaveDocument(Workspace.ClipEvents.RefOf(document));
+            Workspace.DocumentError = DescribeDocumentSave(Workspace.Sources.Save(Workspace.ClipEvents.RefOf(document)));
         ImGui::EndDisabled();
         ImGui::SameLine();
         ImGui::TextDisabled("%s", document.SidecarPath().filename().string().c_str());
 
-        const std::string status = Workspace.PreviewStatusOf(document);
+        const std::string status = AnimationPreviewStatusText(Workspace.ClipEvents.PreviewStateOf(document));
         if (!status.empty())
             ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f), "%s", status.c_str());
         else

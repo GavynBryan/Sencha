@@ -1,6 +1,7 @@
 #pragma once
 
-class AnimationPreviewWorkspace;
+class AnimationClipCache;
+class AnimationRigScenario;
 class EditorUiFeature;
 
-void AddAnimationRootMotionPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace);
+void AddAnimationRootMotionPanels(EditorUiFeature& ui, AnimationRigScenario& rig, const AnimationClipCache& clips);

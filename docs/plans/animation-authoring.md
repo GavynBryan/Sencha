@@ -34,12 +34,12 @@ specialized workspace.
 | Repository evidence | Reuse decision |
 | --- | --- |
 | `DataDocument` owns working data, revisions, validation, dirty tracking, and begin/preview/commit/cancel transactions. | Extracted into editor-common (done); Data Editor behavior and tests preserved. |
-| `IDataSubtypeEditor` / `DataEditorServices` are active-document oriented. | Reuse schema field rendering and focused forms; animation gets its own multi-asset workspace and session lifetime. |
+| `IDataSubtypeEditor` / `DataEditorServices` are active-document oriented. | The subtype editor contract, document tabs, journal, save report and resident sync moved to editor-common (done); both editors use them, and animation keeps its own session lifetime. |
 | `UiPreviewSession` separates simulation/model ownership from panels and owns the single diagnostic drain. | Follow the pattern with a concrete `AnimationPreviewSession`; do not generalize Shoji's session into a universal preview interface. |
 | Shoji's `VocabularyCatalog` loads module declarations into a metadata World without executable implementations. | Moved into editor-common (done); used for verb, binding, and vocabulary inspection. |
 | Kyusu's `EditorRenderFeature` depends on level documents, brushes, manipulators, zone views. | Do not import it. The orbit/projection math shared by the material and animation previews is in editor-common (`OrbitCamera`); Kyusu's fly/ortho camera is a different mechanism and stays. |
 | `MaterialPreviewRenderFeature` demonstrates an offscreen target using runtime passes. | Reuse the approach and `RenderTargetStore`, `ImGuiTargetPresenter`, `MeshForwardPass`, GPU skinning. |
-| `EditorUiFeature`, `IEditorPanel`, `CommandStack`, `CompositeCommand`. | Reuse directly; extend only the missing multi-document transaction ownership. |
+| `EditorUiFeature`, `IEditorPanel`, `CommandStack`, `CompositeCommand`. | Reuse directly; multi-document transaction ownership is `DocumentSourceSet` in editor-common (done). |
 | `SelectionService` addresses entities and mesh elements. | Animation selection is asset identity plus stable authored item key; entity selection is not overloaded. |
 | `SourceReloadRoots` watches, cooks, and publishes through owner-thread reload. | Reuse for saved assets; add skeletal reload operations and dependency invalidation. |
 | Generic asset/tag fields are largely text; skeleton joint names may be empty or duplicated. | Add typed catalog pickers and durable skeleton joint references; bone masks cannot depend on display names. |

@@ -394,13 +394,13 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     AddAnimationSelectionPanels(ui, workspace);
     AddAnimationEventPanels(ui, workspace);
     AddAnimationLayerPanels(ui, workspace);
-    AddAnimationBlendPanels(ui, workspace);
-    AddAnimationLabPanels(ui, workspace);
-    AddAnimationRootMotionPanels(ui, workspace);
-    AddAnimationDocumentPanels(ui, workspace);
+    AddAnimationBlendPanels(ui, workspace.Rig, workspace.Takes, workspace.Viewport);
+    AddAnimationLabPanels(ui, workspace.Lab, workspace.Rig);
+    AddAnimationRootMotionPanels(ui, workspace.Rig, workspace.Clips());
+    AddAnimationDocumentPanels(ui, workspace.Documents, workspace.Sources);
     AddAnimationMigrationPanels(ui, workspace);
     AddAnimationScenarioBatchPanels(ui, workspace);
-    auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace);
+    auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace.Documents, workspace.Sources);
     auto* requestSchemaPanel = requestSchema.get();
     ui.AddPanel(std::move(requestSchema));
     // Hidden panels do not receive OnDraw, including when hidden via View.

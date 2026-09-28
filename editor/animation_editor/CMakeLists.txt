@@ -36,6 +36,7 @@ add_executable(animation_editor
     src/AnimationEditorApp.cpp
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
+    src/ui/AnimationPreviewStatus.cpp
     src/ui/AnimationBlendPanels.cpp
     src/ui/AnimationDocumentWidgets.cpp
     src/ui/AnimationEventPanels.cpp

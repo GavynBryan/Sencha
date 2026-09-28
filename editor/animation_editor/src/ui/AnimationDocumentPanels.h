@@ -1,6 +1,7 @@
 #pragma once
 
-class AnimationPreviewWorkspace;
+class DataDocumentSet;
+class DocumentSourceSet;
 class EditorUiFeature;
 
-void AddAnimationDocumentPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace);
+void AddAnimationDocumentPanels(EditorUiFeature& ui, DataDocumentSet& documents, DocumentSourceSet& sources);

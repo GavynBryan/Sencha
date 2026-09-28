@@ -378,8 +378,8 @@ same tabs and schema-generated form Data Editor uses
 asks Save, Discard or Cancel. Every field of a rig, behavior set, slot map,
 selector, flow, blendspace, blend overrides, fact or request schema, bindings
 file and tag declaration is editable here; the purpose-built panels above are
-the richer views of the same documents. **New asset** creates any of those types, and a reference field's
-Pick names it.
+the richer views of the same documents. **New asset** creates any of those
+types, and a reference field's Pick names it.
 
 A name content introduces as a gameplay tag -- a new behavior, intent or
 layer -- fails the rig's binding until something declares it. The Problems tab
@@ -389,16 +389,22 @@ preview before they are saved.
 
 Undo and redo take the newest step across every open document and clip's
 events, whichever the author is looking at, and bring its document forward.
-Any interaction still open is cancelled first. An edit to an asset the
-preview has not loaded yet -- a selector edited before the rig names it --
-reaches the preview once something loads it.
+Any interaction still open is cancelled first; switching documents commits it.
+Only a committed version reaches the preview, never an edit in progress. An
+edit to an asset the preview has not loaded yet -- a selector edited before
+the rig names it -- reaches the preview once something loads it.
 
 **Save all** (Changes tab, the File menu and the exit prompt) saves every
 changed document it can and holds back each whose file changed on disk since
 it was read. Each held-back file is settled with **Keep mine**, which writes
 the working version over it, or **Take the file's**, which adopts the file's
 version as an undo step. Keeping a clip's events re-reads the sidecar first,
-so another clip's change there survives.
+so another clip's change there survives. Closing the editor with unsaved
+documents asks first.
+
+The journal, save report, document tabs and exit prompt are the shared document
+layer in `editor/common` (`documents/`, `data/DataDocumentSet.h`), the same one
+Data Editor uses; clip events join it as `AnimationClipEventsSet`.
 
 ## Qualification
 
@@ -419,14 +425,28 @@ The runtime side of these is described in
 
 ## Ownership
 
-`animation_authoring` is a GUI-independent library. `AnimationClipPreviewSession`
-owns audition time and pose scratch. `AnimationPreviewSession` owns the preview
-World, fixed clock, scenario runner and tick history; `AnimationScenario` is the
-sidecar format. `AnimationPreviewWorkspace` owns asset leases
-and selection, then extracts `AnimationPreviewScene`. The rendering feature
-consumes that scene, never a simulation World. The application removes its render
-features before destroying the asset stack. No game module is activated during
-content audition.
+`animation_authoring` is a GUI-independent library. `AnimationPreviewWorkspace`
+is its composition root: it holds the parts below, in destruction-safe order,
+and runs only the operations that span them (opening or creating a rig,
+migrating clip players, the scenario batch, advancing the clocks, extracting
+the viewport).
+
+| Part | Owns |
+| --- | --- |
+| `AnimationContentTags` | Declared tag names, unsaved declarations included, and the vocabulary hook. |
+| `DocumentSourceSet`, `DataDocumentSet`, `AnimationClipEventsSet` | Open documents, the one journal, saves and conflicts. |
+| `AnimationContentLists` | The project's assets by kind and data subtype. |
+| `AnimationAuditionSelection` | The auditioned mesh, skeleton, clip and material, their leases and `AnimationClipPreviewSession`. |
+| `AnimationViewportExtraction` | The `AnimationPreviewScene`, display modes and ghost; it reads clocks and never advances them. |
+| `AnimationRigScenario` | The rig under simulation: `AnimationPreviewSession` (World, fixed clock, history), its scenario sidecar and navigation. |
+| `AnimationTakeComparison`, `AnimationLabRun`, `AnimationClipPlayerScan` | Take A and its replay, the session lab, and scenes still naming the clip player. |
+
+Document edits that touch the rig (`AnimationRigDocumentEdits.h`) are free
+functions over the document set. A panel takes the parts it uses; one that
+spans many parts or runs a cross-part operation takes the workspace. The
+rendering feature consumes the extracted scene, never a simulation World. The
+application removes its render features before destroying the asset stack. No
+game module is activated during content audition.
 
 Playback tests in `test/editor/AnimationClipPreviewSessionTests.cpp` exercise the
 production sampler without graphics. `AnimRequestSchemaTests.cpp` covers the

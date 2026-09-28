@@ -89,62 +89,6 @@ void AnimationPreviewWorkspace::DataDocumentChanged(DataDocument& document, bool
         Rig.Simulation.Rebind();
 }
 
-std::string AnimationPreviewWorkspace::PreviewStatusOf(const DataDocument& document) const
-{
-    const DataResidentState* state = Documents.ResidentStateOf(document);
-    if (state == nullptr)
-        return {};
-    switch (state->Status)
-    {
-    case DataResidentStatus::Current:
-        return "The preview runs the working version.";
-    case DataResidentStatus::Pending:
-        return "Not loaded by the open rig; nothing in the preview uses it yet.";
-    case DataResidentStatus::KeptLastValid:
-        return "The working version was refused (" + state->Error + "); the preview keeps the last valid version.";
-    }
-    return {};
-}
-
-std::string AnimationPreviewWorkspace::PreviewStatusOf(const AnimationClipEventsDocument& document) const
-{
-    const ClipEventsPreviewState* state = ClipEvents.PreviewStateOf(document);
-    if (state == nullptr)
-        return {};
-    switch (state->Status)
-    {
-    case ClipEventsPreviewStatus::Current:
-        return {};
-    case ClipEventsPreviewStatus::ClipNotLoaded:
-        return "The clip is not loaded, so the preview cannot play these events.";
-    case ClipEventsPreviewStatus::KeptLastValid:
-        return "The preview keeps the last valid events: " + state->Problem;
-    case ClipEventsPreviewStatus::Refused:
-        return "The preview's copy of the clip could not be replaced.";
-    }
-    return {};
-}
-
-bool AnimationPreviewWorkspace::SaveDocument(const DocumentRef& document)
-{
-    const DocumentSaveResult result = Sources.Save(document);
-    switch (result.Status)
-    {
-    case DocumentSaveStatus::Saved:
-    case DocumentSaveStatus::SavedWithProblems:
-        DocumentError.clear();
-        return true;
-    case DocumentSaveStatus::Conflict:
-        DocumentError = "The file changed on disk since it was read. Keep yours or take the file's under "
-                        "Problems and changes > Changes.";
-        return false;
-    case DocumentSaveStatus::Failed:
-        DocumentError = result.Error;
-        return false;
-    }
-    return false;
-}
-
 bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
 {
     if (!Rig.Open(path))

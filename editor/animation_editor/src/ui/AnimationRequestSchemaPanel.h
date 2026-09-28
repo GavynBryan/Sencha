@@ -2,16 +2,25 @@
 
 #include "ui/IEditorPanel.h"
 
-class AnimationPreviewWorkspace;
+#include <string>
+
+class DataDocumentSet;
+class DocumentSourceSet;
 
 class AnimationRequestSchemaPanel final : public IEditorPanel
 {
 public:
-    explicit AnimationRequestSchemaPanel(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
+    AnimationRequestSchemaPanel(DataDocumentSet& documents, DocumentSourceSet& sources)
+        : Documents(documents)
+        , Sources(sources)
+    {
+    }
     std::string_view GetTitle() const override { return "Request schema authoring"; }
     PanelPersistence GetPersistence() const override { return {"animation.request_schema"}; }
     DockSlot GetDockSlot() const override { return DockSlot::RightBottom; }
     void OnDraw() override;
 private:
-    AnimationPreviewWorkspace& Workspace;
+    DataDocumentSet& Documents;
+    DocumentSourceSet& Sources;
+    std::string Message;
 };

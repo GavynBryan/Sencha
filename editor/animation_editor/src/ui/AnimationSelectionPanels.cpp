@@ -2,6 +2,8 @@
 
 #include "authoring/AnimationPredicateText.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "ui/AnimationPreviewStatus.h"
+#include "ui/DocumentSaveReportView.h"
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationSelectorEdits.h"
 #include "ui/AnimationDocumentWidgets.h"
@@ -195,8 +197,8 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Redo")) Workspace.Sources.Redo();
         ImGui::SameLine();
-        if (ImGui::Button("Save")) Workspace.SaveDocument(Workspace.Documents.RefOf(document));
-        if (const std::string status = Workspace.PreviewStatusOf(document); !status.empty())
+        if (ImGui::Button("Save")) Workspace.DocumentError = DescribeDocumentSave(Workspace.Sources.Save(Workspace.Documents.RefOf(document)));
+        if (const std::string status = AnimationPreviewStatusText(Workspace.Documents.ResidentStateOf(document)); !status.empty())
             ImGui::TextWrapped("%s", status.c_str());
 
         JsonValue root = document.CopyRoot();

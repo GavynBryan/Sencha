@@ -3,6 +3,7 @@
 #include "authoring/AnimationFlowEdits.h"
 #include "authoring/AnimationPredicateText.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "ui/DocumentSaveReportView.h"
 #include "authoring/AnimationRigDocumentEdits.h"
 #include "authoring/AnimationRigEdits.h"
 #include "authoring/AnimationPredicateEdits.h"
@@ -466,7 +467,7 @@ private:
         ImGui::SameLine();
         if (ImGui::SmallButton("Redo")) Workspace.Sources.Redo();
         ImGui::SameLine();
-        if (ImGui::SmallButton("Save")) Workspace.SaveDocument(Workspace.Documents.RefOf(document));
+        if (ImGui::SmallButton("Save")) Workspace.DocumentError = DescribeDocumentSave(Workspace.Sources.Save(Workspace.Documents.RefOf(document)));
         if (document.IsDirty())
         {
             ImGui::SameLine();

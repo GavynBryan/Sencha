@@ -1,6 +1,7 @@
 #include "ui/AnimationRootMotionPanels.h"
 
-#include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRigScenario.h"
+#include "authoring/AnimationViewportExtraction.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
@@ -22,7 +23,7 @@ namespace
 class RootMotionPanel final : public IEditorPanel
 {
 public:
-    explicit RootMotionPanel(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
+    RootMotionPanel(AnimationRigScenario& rig, const AnimationClipCache& clips) : Rig(rig), Clips(clips) {}
     std::string_view GetTitle() const override { return "Root motion"; }
     PanelPersistence GetPersistence() const override { return { "animation.root_motion" }; }
     DockSlot GetDockSlot() const override { return DockSlot::Bottom; }
@@ -32,7 +33,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        AnimationPreviewSession& session = Workspace.Rig.Simulation;
+        AnimationPreviewSession& session = Rig.Simulation;
         if (!session.IsOpen() || session.Rig() == nullptr)
         {
             ImGui::TextDisabled("Open a rig to see what its clips carry.");
@@ -110,7 +111,7 @@ private:
         const AnimationPreviewLayerRecord& base = record->Layers.front();
         const AnimBoundBehavior* behavior = rig.FindBehavior(base.Behavior);
         const AnimationClipData* clip =
-            base.Clip < rig.Contents.size() ? Workspace.Clips().Get(rig.Contents[base.Clip].Clip) : nullptr;
+            base.Clip < rig.Contents.size() ? Clips.Get(rig.Contents[base.Clip].Clip) : nullptr;
         if (clip == nullptr)
         {
             ImGui::TextDisabled("The base layer plays no clip.");
@@ -159,7 +160,7 @@ private:
             ImGui::TextDisabled("The character poses in place; move it to compare carried and achieved paths.");
             return;
         }
-        const std::optional<AnimTick> shown = ShownAnimationTick(Workspace.Rig.Simulation, Workspace.Rig.Navigation);
+        const std::optional<AnimTick> shown = ShownAnimationTick(Rig.Simulation, Rig.Navigation);
         float requested = 0.0f;
         float achieved = 0.0f;
         std::vector<AnimTick> blocked;
@@ -187,18 +188,19 @@ private:
 
     const AnimationPreviewTickRecord* Shown(const AnimationPreviewSession& session) const
     {
-        const std::optional<AnimTick> tick = ShownAnimationTick(Workspace.Rig.Simulation, Workspace.Rig.Navigation);
+        const std::optional<AnimTick> tick = ShownAnimationTick(Rig.Simulation, Rig.Navigation);
         for (const AnimationPreviewTickRecord& record : session.History())
             if (tick && record.Tick == *tick)
                 return &record;
         return session.History().empty() ? nullptr : &session.History().back();
     }
 
-    AnimationPreviewWorkspace& Workspace;
+    AnimationRigScenario& Rig;
+    const AnimationClipCache& Clips;
 };
 }
 
-void AddAnimationRootMotionPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationRootMotionPanels(EditorUiFeature& ui, AnimationRigScenario& rig, const AnimationClipCache& clips)
 {
-    ui.AddPanel(std::make_unique<RootMotionPanel>(workspace));
+    ui.AddPanel(std::make_unique<RootMotionPanel>(rig, clips));
 }

@@ -1,6 +1,9 @@
 #include "ui/AnimationDocumentPanels.h"
 
-#include "authoring/AnimationPreviewWorkspace.h"
+#include "data/DataDocumentSet.h"
+#include "documents/DocumentSourceSet.h"
+#include "ui/AnimationPreviewStatus.h"
+#include "ui/DocumentSaveReportView.h"
 #include "ui/DataDocumentTabs.h"
 #include "ui/NewDataAssetForm.h"
 #include "ui/EditorUiFeature.h"
@@ -17,9 +20,10 @@ namespace
 class DocumentFormPanel final : public IEditorPanel
 {
 public:
-    explicit DocumentFormPanel(AnimationPreviewWorkspace& workspace)
-        : Workspace(workspace)
-        , Tabs(workspace.Documents)
+    DocumentFormPanel(DataDocumentSet& documents, DocumentSourceSet& sources)
+        : Documents(documents)
+        , Sources(sources)
+        , Tabs(documents)
     {
     }
     std::string_view GetTitle() const override { return "Document"; }
@@ -33,11 +37,11 @@ public:
 
         if (ImGui::CollapsingHeader("New asset"))
         {
-            NewAsset.Draw(Workspace.Documents, "animation/character/upper.selector.sdata");
+            NewAsset.Draw(Documents, "animation/character/upper.selector.sdata");
             ImGui::TextDisabled("Reference it from the rig with Pick on the field that names it.");
             ImGui::Separator();
         }
-        if (Workspace.Documents.Documents().empty())
+        if (Documents.Documents().empty())
             ImGui::TextWrapped("Open an animation asset from Preview content, or follow an \"Edit\" link, to "
                                "edit every field of it here.");
         Tabs.Draw([this](DataDocument& document) { DrawHeader(document); });
@@ -48,23 +52,25 @@ private:
     {
         ImGui::TextDisabled("%s%s", document.Subtype().c_str(), document.IsDirty() ? ", unsaved" : "");
         if (ImGui::Button("Save"))
-            (void)Workspace.SaveDocument(Workspace.Documents.RefOf(document));
-        if (!Workspace.DocumentError.empty())
-            ImGui::TextWrapped("%s", Workspace.DocumentError.c_str());
-        if (const std::string status = Workspace.PreviewStatusOf(document); !status.empty())
+            SaveMessage = DescribeDocumentSave(Sources.Save(Documents.RefOf(document)));
+        if (!SaveMessage.empty())
+            ImGui::TextWrapped("%s", SaveMessage.c_str());
+        if (const std::string status = AnimationPreviewStatusText(Documents.ResidentStateOf(document)); !status.empty())
             ImGui::TextWrapped("%s", status.c_str());
         for (const DataValidationError& error : document.ValidationErrors())
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s: %s", error.Path.c_str(), error.Message.c_str());
         ImGui::Separator();
     }
 
-    AnimationPreviewWorkspace& Workspace;
+    DataDocumentSet& Documents;
+    DocumentSourceSet& Sources;
     DataDocumentTabs Tabs;
+    std::string SaveMessage;
     NewDataAssetForm NewAsset;
 };
 }
 
-void AddAnimationDocumentPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationDocumentPanels(EditorUiFeature& ui, DataDocumentSet& documents, DocumentSourceSet& sources)
 {
-    ui.AddPanel(std::make_unique<DocumentFormPanel>(workspace));
+    ui.AddPanel(std::make_unique<DocumentFormPanel>(documents, sources));
 }

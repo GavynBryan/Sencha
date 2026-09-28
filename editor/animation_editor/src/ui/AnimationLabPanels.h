@@ -1,6 +1,7 @@
 #pragma once
 
-class AnimationPreviewWorkspace;
+class AnimationLabRun;
+class AnimationRigScenario;
 class EditorUiFeature;
 
-void AddAnimationLabPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace);
+void AddAnimationLabPanels(EditorUiFeature& ui, AnimationLabRun& lab, AnimationRigScenario& rig);

@@ -11,6 +11,21 @@ namespace
     constexpr ImVec4 kErrorColor(1.0f, 0.5f, 0.4f, 1.0f);
 }
 
+std::string DescribeDocumentSave(const DocumentSaveResult& result)
+{
+    switch (result.Status)
+    {
+    case DocumentSaveStatus::Saved:
+    case DocumentSaveStatus::SavedWithProblems:
+        return {};
+    case DocumentSaveStatus::Conflict:
+        return "The file changed on disk since it was read. Keep yours or take the file's under Changes.";
+    case DocumentSaveStatus::Failed:
+        return result.Error;
+    }
+    return {};
+}
+
 void DrawUnsavedDocuments(const DocumentSourceSet& sources)
 {
     const std::vector<DocumentRef> changed = sources.ChangedDocuments();

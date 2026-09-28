@@ -206,7 +206,7 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
         selector->BeginEdit();
         selector->PreviewRoot(std::move(root));
         workspace.Documents.CommitEdit(*selector);
-        EXPECT_EQ(workspace.PreviewStatusOf(*selector), "The preview runs the working version.");
+        EXPECT_EQ(workspace.Documents.ResidentStateOf(*selector)->Status, DataResidentStatus::Current);
 
         // The next tick decides with the edited rule; nothing restarted.
         const AnimTick before = workspace.Rig.Simulation.Tick();
@@ -221,7 +221,7 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
         selector->BeginEdit();
         selector->PreviewRoot(std::move(root));
         workspace.Documents.CommitEdit(*selector);
-        EXPECT_NE(workspace.PreviewStatusOf(*selector).find("last valid"), std::string::npos);
+        EXPECT_EQ(workspace.Documents.ResidentStateOf(*selector)->Status, DataResidentStatus::KeptLastValid);
         workspace.Rig.Simulation.Step();
         EXPECT_EQ(Playing(workspace), "asset://anim/idle.sanim");
 

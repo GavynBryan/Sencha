@@ -1,6 +1,7 @@
 #include "ui/AnimationLabPanels.h"
 
-#include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRigScenario.h"
+#include "authoring/AnimationSessionLab.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
@@ -80,7 +81,7 @@ void DrawRequests(const char* id, const AnimationPreviewSession& session, const 
 class LabPanel final : public IEditorPanel
 {
 public:
-    explicit LabPanel(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
+    LabPanel(AnimationLabRun& lab, AnimationRigScenario& rig) : Lab(lab), Rig(rig) {}
     std::string_view GetTitle() const override { return "Session lab"; }
     PanelPersistence GetPersistence() const override { return { "animation.session_lab" }; }
     DockSlot GetDockSlot() const override { return DockSlot::Bottom; }
@@ -90,7 +91,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        const AnimationSessionLab* lab = Workspace.Lab.Session.get();
+        const AnimationSessionLab* lab = Lab.Session.get();
         const bool ran = lab != nullptr && lab->IsOpen();
         // Always shown first: which machine is which, and that facts are synthetic.
         if (ran)
@@ -101,7 +102,7 @@ public:
                                "on both.");
         ImGui::Separator();
 
-        if (!Workspace.Rig.Simulation.IsOpen())
+        if (!Rig.Simulation.IsOpen())
         {
             ImGui::TextDisabled("Open a rig to run it on two machines.");
             return;
@@ -119,7 +120,7 @@ public:
 private:
     void DrawControls(bool ran)
     {
-        AnimationLabSettings& settings = Workspace.Lab.Settings;
+        AnimationLabSettings& settings = Lab.Settings;
         const AnimationLabSettings before = settings;
         const std::uint64_t step = 1;
         ImGui::SetNextItemWidth(90.0f);
@@ -133,18 +134,18 @@ private:
         if (ImGui::SliderInt("Loss %", &loss, 0, 90))
             settings.LossPercent = static_cast<std::uint32_t>(loss);
         ImGui::SetNextItemWidth(90.0f);
-        ImGui::InputScalar("Run to tick", ImGuiDataType_U64, &Workspace.Lab.Tick, &step);
+        ImGui::InputScalar("Run to tick", ImGuiDataType_U64, &Lab.Tick, &step);
         ImGui::SameLine();
         if (ImGui::Button(ran ? "Run again" : "Run"))
         {
-            if (!Workspace.Lab.Run(Workspace.Rig.Simulation))
+            if (!Lab.Run(Rig.Simulation))
                 Problem = "The rig did not open on both machines.";
             else
                 Problem.clear();
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Runs both machines from tick 0 under the working scenario and the settings above.");
-        if (ran && !(before == settings && Workspace.Lab.Session->Settings() == settings))
+        if (ran && !(before == settings && Lab.Session->Settings() == settings))
         {
             ImGui::SameLine();
             ImGui::TextDisabled("(settings changed; run again)");
@@ -158,8 +159,8 @@ private:
         if (!ImGui::CollapsingHeader("Client guesses"))
             return;
         ImGui::TextDisabled("A request the client predicts, and what the authority does with the command behind it.");
-        std::vector<AnimationLabInjection>& injections = Workspace.Lab.Injections;
-        const std::vector<std::string>& participants = Workspace.Rig.Simulation.Scenario().Participants;
+        std::vector<AnimationLabInjection>& injections = Lab.Injections;
+        const std::vector<std::string>& participants = Rig.Simulation.Scenario().Participants;
         std::size_t removed = injections.size();
         for (std::size_t i = 0; i < injections.size(); ++i)
         {
@@ -198,7 +199,7 @@ private:
         if (ImGui::SmallButton("Add a guess"))
         {
             AnimationLabInjection injection;
-            injection.Tick = Workspace.Rig.Simulation.Tick();
+            injection.Tick = Rig.Simulation.Tick();
             injection.AuthorityTick = injection.Tick + 2;
             if (!participants.empty())
                 injection.Participant = participants.front();
@@ -337,13 +338,14 @@ private:
         ImGui::PopID();
     }
 
-    AnimationPreviewWorkspace& Workspace;
+    AnimationLabRun& Lab;
+    AnimationRigScenario& Rig;
     AnimTick Inspected = 0;
     std::string Problem;
 };
 }
 
-void AddAnimationLabPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationLabPanels(EditorUiFeature& ui, AnimationLabRun& lab, AnimationRigScenario& rig)
 {
-    ui.AddPanel(std::make_unique<LabPanel>(workspace));
+    ui.AddPanel(std::make_unique<LabPanel>(lab, rig));
 }

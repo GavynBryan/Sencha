@@ -43,10 +43,6 @@ public:
     // Moves both clocks; the viewport is extracted separately and never moves them.
     void Advance(double wallSeconds);
     void ExtractViewport();
-    [[nodiscard]] std::string PreviewStatusOf(const DataDocument& document) const;
-    [[nodiscard]] std::string PreviewStatusOf(const AnimationClipEventsDocument& document) const;
-    // Leaves a message in DocumentError when the save did not happen.
-    bool SaveDocument(const DocumentRef& document);
 
     // Opens the rig's scenario, shows it in the viewport and brings waiting edits to it.
     bool OpenRig(const std::string& path);

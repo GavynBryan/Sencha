@@ -150,7 +150,8 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
 
     const std::uint32_t key = events->Add(Footstep(0.25f));
     workspace.ClipEvents.Changed(*events);
-    EXPECT_TRUE(workspace.PreviewStatusOf(*events).empty()) << workspace.PreviewStatusOf(*events);
+    ASSERT_NE(workspace.ClipEvents.PreviewStateOf(*events), nullptr);
+    EXPECT_EQ(workspace.ClipEvents.PreviewStateOf(*events)->Status, ClipEventsPreviewStatus::Current);
 
     workspace.Rig.Simulation.RunTo(30);
     const AnimDecisionRecord* crossing = LastCrossing(workspace.Rig.Simulation);
@@ -159,7 +160,8 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
     EXPECT_EQ(crossing->Admission, VerbAdmission::Accepted);
     EXPECT_FALSE(project.Exists("hero.glb.meta")) << "nothing is written until saved";
 
-    ASSERT_TRUE(workspace.SaveDocument(workspace.ClipEvents.RefOf(*events))) << workspace.DocumentError;
+    const DocumentSaveResult saved = workspace.Sources.Save(workspace.ClipEvents.RefOf(*events));
+    ASSERT_EQ(saved.Status, DocumentSaveStatus::Saved) << saved.Error;
     EXPECT_TRUE(project.Exists("hero.glb.meta"));
 }
 

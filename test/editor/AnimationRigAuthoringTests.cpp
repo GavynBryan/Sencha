@@ -135,7 +135,7 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
     EXPECT_EQ(Playing(workspace, 1), "asset://meshes/man.blend#anim:Reload");
 
     for (const auto& document : workspace.Documents.Documents())
-        ASSERT_TRUE(!document->IsDirty() || workspace.SaveDocument(workspace.Documents.RefOf(*document)))
+        ASSERT_TRUE(!document->IsDirty() || workspace.Sources.Save(workspace.Documents.RefOf(*document)).Status == DocumentSaveStatus::Saved)
             << document->VirtualPath() << ": " << workspace.DocumentError;
     workspace.Rig.Simulation.Close();
 
