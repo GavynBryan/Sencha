@@ -101,7 +101,7 @@ public:
                                "on both.");
         ImGui::Separator();
 
-        if (!Workspace.Simulation.IsOpen())
+        if (!Workspace.Rig.Simulation.IsOpen())
         {
             ImGui::TextDisabled("Open a rig to run it on two machines.");
             return;
@@ -159,7 +159,7 @@ private:
             return;
         ImGui::TextDisabled("A request the client predicts, and what the authority does with the command behind it.");
         std::vector<AnimationLabInjection>& injections = Workspace.LabInjections;
-        const std::vector<std::string>& participants = Workspace.Simulation.Scenario().Participants;
+        const std::vector<std::string>& participants = Workspace.Rig.Simulation.Scenario().Participants;
         std::size_t removed = injections.size();
         for (std::size_t i = 0; i < injections.size(); ++i)
         {
@@ -198,7 +198,7 @@ private:
         if (ImGui::SmallButton("Add a guess"))
         {
             AnimationLabInjection injection;
-            injection.Tick = Workspace.Simulation.Tick();
+            injection.Tick = Workspace.Rig.Simulation.Tick();
             injection.AuthorityTick = injection.Tick + 2;
             if (!participants.empty())
                 injection.Participant = participants.front();

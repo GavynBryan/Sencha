@@ -166,6 +166,16 @@ const DataSchema* DataDocumentSet::SchemaOf(const DataDocument& document) const
     return Assets.DataSchemas.Find(document.Subtype());
 }
 
+const DataSchema* DataDocumentSet::SchemaOf(std::string_view subtype) const
+{
+    return Assets.DataSchemas.Find(subtype);
+}
+
+bool DataDocumentSet::IsRegistered(std::string_view virtualPath) const
+{
+    return Assets.Registry.Contains(virtualPath);
+}
+
 const DataSchema* DataDocumentSet::ActiveSchema()
 {
     const DataDocument* active = Active();

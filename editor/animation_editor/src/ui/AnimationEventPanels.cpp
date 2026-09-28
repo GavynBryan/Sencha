@@ -2,6 +2,7 @@
 
 #include "authoring/AnimationEventBindings.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRigDocumentEdits.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
@@ -80,7 +81,7 @@ VerbBindingArgument DefaultInput(const std::string& name, DataFieldKind kind)
 std::string BindingFileOf(const AnimationPreviewWorkspace& workspace, const std::string& key)
 {
     const DataAssetCache& data = workspace.DataCache();
-    const AnimRigData* rig = data.TryGet<AnimRigData>(data.Find(workspace.RigPath), kAnimRigType);
+    const AnimRigData* rig = data.TryGet<AnimRigData>(data.Find(workspace.Rig.Path), kAnimRigType);
     if (rig == nullptr)
         return {};
     for (const std::string& path : rig->BindingSetPaths)
@@ -93,7 +94,7 @@ std::string BindingFileOf(const AnimationPreviewWorkspace& workspace, const std:
 std::vector<std::string> RigBindingFiles(const AnimationPreviewWorkspace& workspace)
 {
     const DataAssetCache& data = workspace.DataCache();
-    const AnimRigData* rig = data.TryGet<AnimRigData>(data.Find(workspace.RigPath), kAnimRigType);
+    const AnimRigData* rig = data.TryGet<AnimRigData>(data.Find(workspace.Rig.Path), kAnimRigType);
     return rig != nullptr ? rig->BindingSetPaths : std::vector<std::string>{};
 }
 
@@ -132,7 +133,7 @@ private:
     std::vector<std::string> CandidateClips() const
     {
         std::vector<std::string> clips;
-        if (const AnimBoundRig* rig = Workspace.Simulation.Rig())
+        if (const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig())
             for (const AnimBoundContent& content : rig->Contents)
                 clips.push_back(content.Path);
         if (!Workspace.Audition.ClipPath.empty() && std::ranges::find(clips, Workspace.Audition.ClipPath) == clips.end())
@@ -203,8 +204,8 @@ private:
     // Normalized; the simulation's playhead when a layer plays the clip, else the audition's.
     std::optional<float> Playhead(const AnimationClipEventsDocument& document) const
     {
-        const AnimBoundRig* rig = Workspace.Simulation.Rig();
-        const AnimContentState* content = Workspace.Simulation.Content();
+        const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
+        const AnimContentState* content = Workspace.Rig.Simulation.Content();
         if (rig != nullptr && content != nullptr)
             for (std::size_t l = 0; l < rig->Layers.size() && l < kAnimMaxLayers; ++l)
             {
@@ -222,7 +223,7 @@ private:
     {
         AnimationClipEvent event;
         event.Time = std::clamp(time, 0.0f, 1.0f);
-        if (const AnimBoundRig* rig = Workspace.Simulation.Rig(); rig != nullptr && rig->Bindings.Size() > 0)
+        if (const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig(); rig != nullptr && rig->Bindings.Size() > 0)
         {
             const CompiledVerbBinding& first = rig->Bindings.All().front();
             event.Binding = first.KeyText;
@@ -402,8 +403,8 @@ private:
     bool DrawBinding(AnimationClipEventsDocument& document, AnimationClipEvent& draft)
     {
         (void)document;
-        const AnimBoundRig* rig = Workspace.Simulation.Rig();
-        const VerbRegistry* verbs = Workspace.Simulation.Verbs();
+        const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
+        const VerbRegistry* verbs = Workspace.Rig.Simulation.Verbs();
         bool changed = false;
         if (ImGui::BeginCombo("Binding", draft.Binding.c_str()))
         {
@@ -467,9 +468,9 @@ private:
             ImGui::BeginDisabled(NewBindingFile.empty() || NewBindingVerb.empty() || NewBindingKey.empty());
             if (ImGui::Button("Create"))
             {
-                if (Workspace.CreateBinding(NewBindingFile, NewBindingKey, NewBindingVerb))
+                if (CreateAnimationBinding(Workspace.Documents, Workspace.Rig.Simulation, NewBindingFile, NewBindingKey, NewBindingVerb, Workspace.DocumentError))
                 {
-                    Workspace.Simulation.Rebind();
+                    Workspace.Rig.Simulation.Rebind();
                     draft.Binding = NewBindingKey;
                     draft.Inputs.clear();
                     changed = true;
@@ -498,14 +499,14 @@ private:
 
     void DrawInputs(AnimationClipEvent& draft, bool& commit)
     {
-        const AnimBoundRig* rig = Workspace.Simulation.Rig();
+        const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
         const CompiledVerbBinding* binding = rig != nullptr ? rig->Bindings.Find(draft.Binding) : nullptr;
         if (binding == nullptr)
             return;
-        const VerbBindingEnvironment environment{ .Verbs = Workspace.Simulation.Verbs(),
-                                                  .Tags = Workspace.Simulation.Tags() };
+        const VerbBindingEnvironment environment{ .Verbs = Workspace.Rig.Simulation.Verbs(),
+                                                  .Tags = Workspace.Rig.Simulation.Tags() };
         const std::vector<AnimationEventInputCheck> checks = CheckAnimationEventInputs(draft, *binding, environment);
-        const VerbRegistry* verbs = Workspace.Simulation.Verbs();
+        const VerbRegistry* verbs = Workspace.Rig.Simulation.Verbs();
         const VerbDefinition* definition = verbs != nullptr ? verbs->Get(binding->Verb) : nullptr;
 
         for (const VerbCompiledInput& input : binding->Inputs)
@@ -567,7 +568,7 @@ private:
             bool changed = false;
             if (ImGui::BeginCombo(name.c_str(), value.Text.empty() ? "(choose a tag)" : value.Text.c_str()))
             {
-                if (const GameplayTagRegistry* tags = Workspace.Simulation.Tags())
+                if (const GameplayTagRegistry* tags = Workspace.Rig.Simulation.Tags())
                     for (std::size_t id = 1; id <= tags->Size(); ++id)
                     {
                         const std::string_view tag = tags->GetName(GameplayTagId{ static_cast<std::uint32_t>(id) });
@@ -648,7 +649,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen())
             return;
-        AnimationPreviewSession& session = Workspace.Simulation;
+        AnimationPreviewSession& session = Workspace.Rig.Simulation;
         if (!session.IsOpen())
         {
             ImGui::TextDisabled("Open a rig to simulate it.");

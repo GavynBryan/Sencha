@@ -101,9 +101,9 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
     Project project;
     {
         AnimationPreviewWorkspace workspace(*project.Assets);
-        ASSERT_TRUE(workspace.OpenRig("asset://anim/walker.rig.sdata")) << workspace.ScenarioError;
-        ASSERT_TRUE(workspace.Simulation.Rig()->Valid);
-        workspace.Simulation.RunTo(90);
+        ASSERT_TRUE(workspace.OpenRig("asset://anim/walker.rig.sdata")) << workspace.Rig.Error;
+        ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);
+        workspace.Rig.Simulation.RunTo(90);
         ASSERT_TRUE(workspace.RecordTakeA());
         ASSERT_EQ(workspace.TakeA->Ticks.back(), 90u);
 
@@ -136,10 +136,10 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
         // A take under another scenario does not compare.
         AnimationScenarioValue faster;
         faster.Number = 2.0;
-        workspace.Simulation.SetFact("Speed", faster);
-        workspace.Simulation.Step();
+        workspace.Rig.Simulation.SetFact("Speed", faster);
+        workspace.Rig.Simulation.Step();
         EXPECT_FALSE(workspace.ReplayAgainstTakeA());
         EXPECT_NE(workspace.Comparison.Refusal.find("different scenarios"), std::string::npos);
-        workspace.Simulation.Close();
+        workspace.Rig.Simulation.Close();
     }
 }

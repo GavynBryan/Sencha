@@ -32,7 +32,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        AnimationPreviewSession& session = Workspace.Simulation;
+        AnimationPreviewSession& session = Workspace.Rig.Simulation;
         if (!session.IsOpen() || session.Rig() == nullptr)
         {
             ImGui::TextDisabled("Open a rig to see what its clips carry.");
@@ -159,7 +159,7 @@ private:
             ImGui::TextDisabled("The character poses in place; move it to compare carried and achieved paths.");
             return;
         }
-        const std::optional<AnimTick> shown = ShownAnimationTick(Workspace.Simulation, Workspace.Navigation);
+        const std::optional<AnimTick> shown = ShownAnimationTick(Workspace.Rig.Simulation, Workspace.Rig.Navigation);
         float requested = 0.0f;
         float achieved = 0.0f;
         std::vector<AnimTick> blocked;
@@ -187,7 +187,7 @@ private:
 
     const AnimationPreviewTickRecord* Shown(const AnimationPreviewSession& session) const
     {
-        const std::optional<AnimTick> tick = ShownAnimationTick(Workspace.Simulation, Workspace.Navigation);
+        const std::optional<AnimTick> tick = ShownAnimationTick(Workspace.Rig.Simulation, Workspace.Rig.Navigation);
         for (const AnimationPreviewTickRecord& record : session.History())
             if (tick && record.Tick == *tick)
                 return &record;

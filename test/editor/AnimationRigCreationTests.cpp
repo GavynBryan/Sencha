@@ -49,27 +49,27 @@ TEST(AnimationRigCreation, ANewRigOpensReadyToPlay)
                               "praying_man.rig.sdata", "praying_man.tags.sdata", "praying_man.rig.sanimscenario" })
         EXPECT_TRUE(std::filesystem::exists(project.Root / "animation/praying_man" / file)) << file;
 
-    ASSERT_EQ(workspace.RigPath, "asset://animation/praying_man/praying_man.rig.sdata");
-    const AnimBoundRig* rig = workspace.Simulation.Rig();
+    ASSERT_EQ(workspace.Rig.Path, "asset://animation/praying_man/praying_man.rig.sdata");
+    const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();
     ASSERT_NE(rig, nullptr);
     ASSERT_TRUE(rig->Valid) << (rig->Diagnostics.empty() ? "" : FormatAnimDiagnostic(rig->Diagnostics.front()));
     EXPECT_EQ(rig->SkeletonPath, "asset://meshes/man.blend#skel:Man");
     const auto playing = [&] {
-        const AnimContentState* content = workspace.Simulation.Content();
+        const AnimContentState* content = workspace.Rig.Simulation.Content();
         return rig->Contents[content->Layers[0].Content].Path;
     };
-    workspace.Simulation.Step();
+    workspace.Rig.Simulation.Step();
     EXPECT_EQ(playing(), "asset://meshes/man.blend#anim:Idle");
 
     AnimationScenarioAction claw;
     claw.Kind = AnimationScenarioActionKind::IssueRequest;
     claw.Participant = "player";
     claw.Intent = "Anim.Left_claw";
-    workspace.Simulation.IssueRequest(claw);
-    workspace.Simulation.Step();
-    rig = workspace.Simulation.Rig();
+    workspace.Rig.Simulation.IssueRequest(claw);
+    workspace.Rig.Simulation.Step();
+    rig = workspace.Rig.Simulation.Rig();
     EXPECT_EQ(playing(), "asset://meshes/man.blend#anim:Left_claw");
-    workspace.Simulation.Close();
+    workspace.Rig.Simulation.Close();
 
     // Created once: the same name again is refused rather than overwritten.
     EXPECT_FALSE(workspace.CreateRig({ .Name = "praying_man", .Clips = { "asset://meshes/man.blend#anim:Idle" }, .Preset = AnimationRigPreset::Prop, .UpperBodyJoint = {} }, error));
@@ -99,8 +99,8 @@ namespace
 {
     std::string Playing(AnimationPreviewWorkspace& workspace, std::size_t layer)
     {
-        const AnimBoundRig* rig = workspace.Simulation.Rig();
-        const AnimContentState* content = workspace.Simulation.Content();
+        const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();
+        const AnimContentState* content = workspace.Rig.Simulation.Content();
         const std::uint16_t playing = content->Layers[layer].Content;
         return playing < rig->Contents.size() ? rig->Contents[playing].Path : std::string("(none)");
     }
@@ -113,7 +113,7 @@ namespace
         action.Participant = "player";
         action.Intent = intent;
         action.Lifetime = lifetime;
-        workspace.Simulation.IssueRequest(action);
+        workspace.Rig.Simulation.IssueRequest(action);
     }
 
     void SetSpeed(AnimationPreviewWorkspace& workspace, double speed)
@@ -121,7 +121,7 @@ namespace
         AnimationScenarioValue value;
         value.Type = AnimationScenarioValue::Kind::Number;
         value.Number = speed;
-        workspace.Simulation.SetFact("Speed", value);
+        workspace.Rig.Simulation.SetFact("Speed", value);
     }
 }
 
@@ -139,25 +139,25 @@ TEST(AnimationRigCreation, ASimpleRigIdlesWalksAndActs)
                                     error))
         << error;
     EXPECT_TRUE(std::filesystem::exists(project.Root / "animation/brute/brute.selector.sdata"));
-    const AnimBoundRig* rig = workspace.Simulation.Rig();
+    const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();
     ASSERT_TRUE(rig != nullptr && rig->Valid)
         << (rig == nullptr || rig->Diagnostics.empty() ? "" : FormatAnimDiagnostic(rig->Diagnostics.front()));
     ASSERT_EQ(rig->Layers.size(), 1u);
 
-    workspace.Simulation.Step();
+    workspace.Rig.Simulation.Step();
     EXPECT_EQ(Playing(workspace, 0), "asset://meshes/man.blend#anim:Idle");
     SetSpeed(workspace, 2.0);
-    workspace.Simulation.Step();
-    workspace.Simulation.Step();
+    workspace.Rig.Simulation.Step();
+    workspace.Rig.Simulation.Step();
     EXPECT_EQ(Playing(workspace, 0), "asset://meshes/man.blend#anim:Walk");
     // An action is asked for once, as a game fires one.
     Request(workspace, "Anim.Left_claw", AnimRequestLifetime::Impulse);
-    workspace.Simulation.Step();
+    workspace.Rig.Simulation.Step();
     EXPECT_EQ(Playing(workspace, 0), "asset://meshes/man.blend#anim:Left_claw");
     // Played through once, then back to walking.
-    workspace.Simulation.RunTo(workspace.Simulation.Tick() + 70);
+    workspace.Rig.Simulation.RunTo(workspace.Rig.Simulation.Tick() + 70);
     EXPECT_EQ(Playing(workspace, 0), "asset://meshes/man.blend#anim:Walk");
-    workspace.Simulation.Close();
+    workspace.Rig.Simulation.Close();
 }
 
 // A Character rig acts on its upper body over its walk, and its upper layer
@@ -174,24 +174,24 @@ TEST(AnimationRigCreation, ACharacterRigActsOverItsLocomotion)
                                       .UpperBodyJoint = "root" },
                                     error))
         << error;
-    const AnimBoundRig* rig = workspace.Simulation.Rig();
+    const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();
     ASSERT_TRUE(rig != nullptr && rig->Valid)
         << (rig == nullptr || rig->Diagnostics.empty() ? "" : FormatAnimDiagnostic(rig->Diagnostics.front()));
     ASSERT_EQ(rig->Layers.size(), 2u);
     EXPECT_TRUE(rig->Layers[1].Masked());
 
     SetSpeed(workspace, 2.0);
-    workspace.Simulation.Step();
-    workspace.Simulation.Step();
+    workspace.Rig.Simulation.Step();
+    workspace.Rig.Simulation.Step();
     EXPECT_EQ(Playing(workspace, 0), "asset://meshes/man.blend#anim:Walk");
-    EXPECT_FLOAT_EQ(workspace.Simulation.History().back().Layers[1].Weight, 0.0f) << "hidden while it does nothing";
+    EXPECT_FLOAT_EQ(workspace.Rig.Simulation.History().back().Layers[1].Weight, 0.0f) << "hidden while it does nothing";
 
     Request(workspace, "Anim.Left_claw");
-    workspace.Simulation.Step();
+    workspace.Rig.Simulation.Step();
     EXPECT_EQ(Playing(workspace, 0), "asset://meshes/man.blend#anim:Walk") << "the legs keep walking";
     EXPECT_EQ(Playing(workspace, 1), "asset://meshes/man.blend#anim:Left_claw");
-    EXPECT_FLOAT_EQ(workspace.Simulation.History().back().Layers[1].Weight, 1.0f);
-    workspace.Simulation.Close();
+    EXPECT_FLOAT_EQ(workspace.Rig.Simulation.History().back().Layers[1].Weight, 1.0f);
+    workspace.Rig.Simulation.Close();
 }
 
 TEST(AnimationRigCreation, ACharacterNeedsItsActionsAndAnUpperBodyJoint)

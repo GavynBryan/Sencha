@@ -53,7 +53,7 @@ public:
         if (ImGui::Button("Run all"))
             Workspace.RunScenarioBatch(false);
         ImGui::SameLine();
-        ImGui::BeginDisabled(Workspace.RigPath.empty());
+        ImGui::BeginDisabled(Workspace.Rig.Path.empty());
         if (ImGui::Button("Run all against the open rig"))
             Workspace.RunScenarioBatch(true);
         ImGui::EndDisabled();

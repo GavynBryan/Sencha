@@ -176,8 +176,8 @@ namespace
 
     std::string Playing(AnimationPreviewWorkspace& workspace)
     {
-        const AnimBoundRig* rig = workspace.Simulation.Rig();
-        const AnimContentState* content = workspace.Simulation.Content();
+        const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();
+        const AnimContentState* content = workspace.Rig.Simulation.Content();
         if (rig == nullptr || content == nullptr || content->Layers[0].Content >= rig->Contents.size())
             return "(none)";
         return rig->Contents[content->Layers[0].Content].Path;
@@ -189,9 +189,9 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
     Project project;
     {
         AnimationPreviewWorkspace workspace(*project.Assets);
-        ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.ScenarioError;
-        ASSERT_NE(workspace.Simulation.Rig(), nullptr);
-        ASSERT_TRUE(workspace.Simulation.Rig()->Valid);
+        ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+        ASSERT_NE(workspace.Rig.Simulation.Rig(), nullptr);
+        ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);
         EXPECT_EQ(Playing(workspace), "asset://anim/walk.sanim");
 
         // Raise walk's threshold above the scenario's speed, through the same
@@ -209,9 +209,9 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
         EXPECT_EQ(workspace.PreviewStatusOf(*selector), "The preview runs the working version.");
 
         // The next tick decides with the edited rule; nothing restarted.
-        const AnimTick before = workspace.Simulation.Tick();
-        workspace.Simulation.Step();
-        EXPECT_EQ(workspace.Simulation.Tick(), before + 1);
+        const AnimTick before = workspace.Rig.Simulation.Tick();
+        workspace.Rig.Simulation.Step();
+        EXPECT_EQ(workspace.Rig.Simulation.Tick(), before + 1);
         EXPECT_EQ(Playing(workspace), "asset://anim/idle.sanim");
 
         // An invalid working edit leaves the preview on the last valid one.
@@ -222,7 +222,7 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
         selector->PreviewRoot(std::move(root));
         workspace.Documents.CommitEdit(*selector);
         EXPECT_NE(workspace.PreviewStatusOf(*selector).find("last valid"), std::string::npos);
-        workspace.Simulation.Step();
+        workspace.Rig.Simulation.Step();
         EXPECT_EQ(Playing(workspace), "asset://anim/idle.sanim");
 
         // Undo twice: back to the authored rule, and the preview follows.
@@ -230,13 +230,13 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
         workspace.Documents.Changed(*selector);
         selector->Undo();
         workspace.Documents.Changed(*selector);
-        workspace.Simulation.Step();
+        workspace.Rig.Simulation.Step();
         EXPECT_EQ(Playing(workspace), "asset://anim/walk.sanim");
 
         // None of it reached the file.
         EXPECT_EQ(project.Read("hero.selector.sdata"), saved);
         EXPECT_FALSE(selector->IsDirty());
-        workspace.Simulation.Close();
+        workspace.Rig.Simulation.Close();
     }
 }
 
@@ -244,11 +244,11 @@ TEST(AnimationSelectionEditing, TheSessionRecordsWhyEveryRuleLost)
 {
     Project project;
     AnimationPreviewWorkspace workspace(*project.Assets);
-    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.ScenarioError;
-    workspace.Simulation.SetFact("Speed", AnimationScenarioValue::FromNumber(0.0));
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+    workspace.Rig.Simulation.SetFact("Speed", AnimationScenarioValue::FromNumber(0.0));
 
     // Before stepping, the next tick is explained from disposable copies.
-    const std::vector<std::vector<AnimRuleVerdict>> next = workspace.Simulation.ExplainNextTick();
+    const std::vector<std::vector<AnimRuleVerdict>> next = workspace.Rig.Simulation.ExplainNextTick();
     ASSERT_EQ(next.size(), 1u);
     ASSERT_EQ(next[0].size(), 2u);
     EXPECT_EQ(next[0][0].Kind, AnimRuleVerdictKind::Failed);
@@ -256,12 +256,12 @@ TEST(AnimationSelectionEditing, TheSessionRecordsWhyEveryRuleLost)
     EXPECT_EQ(next[0][1].Kind, AnimRuleVerdictKind::Winner);
     EXPECT_EQ(Playing(workspace), "asset://anim/walk.sanim");
 
-    workspace.Simulation.Step();
-    const AnimationPreviewTickRecord& record = workspace.Simulation.History().back();
+    workspace.Rig.Simulation.Step();
+    const AnimationPreviewTickRecord& record = workspace.Rig.Simulation.History().back();
     ASSERT_EQ(record.Layers.size(), 1u);
     EXPECT_EQ(record.Layers[0].Winner, 1u);
-    const AnimBoundRule& walk = workspace.Simulation.Rig()->Selectors[0].Rules[0];
+    const AnimBoundRule& walk = workspace.Rig.Simulation.Rig()->Selectors[0].Rules[0];
     EXPECT_EQ(DescribeAnimVerdict(workspace.DataCache(), walk, record.Layers[0].Verdicts[0]),
               "stay failed: Speed > 0.1 (read 0)");
-    workspace.Simulation.Close();
+    workspace.Rig.Simulation.Close();
 }

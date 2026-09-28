@@ -1,6 +1,7 @@
 #include "ui/AnimationSimulationPanels.h"
 
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRigDocumentEdits.h"
 #include "ui/DocumentSaveReportView.h"
 #include "authoring/AnimationRigOutline.h"
 #include "authoring/AnimationTraceImport.h"
@@ -109,24 +110,24 @@ public:
         if (ImGui::CollapsingHeader("Rigs", ImGuiTreeNodeFlags_DefaultOpen))
         {
             for (const std::string& path : Workspace.Content.OfSubtype(kAnimRigType))
-                if (ImGui::Selectable(path.c_str(), path == Workspace.RigPath)) Workspace.OpenRig(path);
+                if (ImGui::Selectable(path.c_str(), path == Workspace.Rig.Path)) Workspace.OpenRig(path);
             if (Workspace.Content.OfSubtype(kAnimRigType).empty()) ImGui::TextDisabled("No animation.rig assets in the mounted project.");
         }
         if (ImGui::CollapsingHeader("New rig"))
             DrawNewRig();
-        if (!Workspace.ScenarioError.empty())
-            ImGui::TextWrapped("%s", Workspace.ScenarioError.c_str());
+        if (!Workspace.Rig.Error.empty())
+            ImGui::TextWrapped("%s", Workspace.Rig.Error.c_str());
 
-        AnimationPreviewSession& session = Workspace.Simulation;
-        if (!session.IsOpen() || Workspace.RigPath.empty()) return;
+        AnimationPreviewSession& session = Workspace.Rig.Simulation;
+        if (!session.IsOpen() || Workspace.Rig.Path.empty()) return;
 
         if (ImGui::CollapsingHeader("Scenario", ImGuiTreeNodeFlags_DefaultOpen))
         {
             const AnimationScenario& scenario = session.Scenario();
             ImGui::TextWrapped("%s%s", scenario.Name.c_str(), session.ScenarioModified() ? " (unsaved)" : "");
-            ImGui::TextDisabled("%s", Workspace.ScenarioFile.c_str());
+            ImGui::TextDisabled("%s", Workspace.Rig.ScenarioFile.c_str());
             ImGui::Text("%u Hz, %zu actions", scenario.TickRate, scenario.Actions.size());
-            if (ImGui::Button("Save scenario")) Workspace.SaveScenario();
+            if (ImGui::Button("Save scenario")) Workspace.Rig.Save();
             ImGui::SameLine();
             if (ImGui::Button("Revert to saved")) Workspace.ReloadScenario();
             ImGui::TextWrapped("Live edits are recorded into the scenario on the next tick. Saving is "
@@ -170,7 +171,7 @@ public:
         if (ImGui::CollapsingHeader("Dependencies", ImGuiTreeNodeFlags_DefaultOpen))
         {
             for (const AnimationRigDependency& row :
-                 DescribeAnimationRigDependencies(Workspace.DataCache(), Workspace.RigPath))
+                 DescribeAnimationRigDependencies(Workspace.DataCache(), Workspace.Rig.Path))
             {
                 const char* status = "";
                 switch (row.Status)
@@ -293,7 +294,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        AnimationPreviewSession& session = Workspace.Simulation;
+        AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         if (rig == nullptr || !rig->HasFacts)
         {
@@ -456,7 +457,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        AnimationPreviewSession& session = Workspace.Simulation;
+        AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         if (rig == nullptr)
         {
@@ -680,7 +681,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        AnimationPreviewSession& session = Workspace.Simulation;
+        AnimationPreviewSession& session = Workspace.Rig.Simulation;
         if (!session.IsOpen())
         {
             ImGui::TextWrapped("Open a rig to simulate it under a scenario.");
@@ -734,9 +735,9 @@ public:
         if (!ImGui::BeginTabBar("tabs")) return;
         if (ImGui::BeginTabItem("Problems"))
         {
-            std::vector<AnimDiagnostic> problems = Workspace.Simulation.Problems();
-            problems.insert(problems.end(), Workspace.ScenarioLoadProblems.begin(),
-                            Workspace.ScenarioLoadProblems.end());
+            std::vector<AnimDiagnostic> problems = Workspace.Rig.Simulation.Problems();
+            problems.insert(problems.end(), Workspace.Rig.LoadProblems.begin(),
+                            Workspace.Rig.LoadProblems.end());
             if (problems.empty()) ImGui::TextDisabled("No problems with the open rig or scenario.");
             DrawDeclareNames(problems);
             for (const AnimDiagnostic& problem : problems)
@@ -776,7 +777,7 @@ private:
         if (signature != ProblemSignature)
         {
             ProblemSignature = std::move(signature);
-            Undeclared = Workspace.UndeclaredNames();
+            Undeclared = UndeclaredAnimationNamesOf(Workspace.Rig.Simulation, Workspace.Documents);
         }
         if (Undeclared.empty())
             return;
@@ -787,7 +788,7 @@ private:
         if (ImGui::Button("Declare them beside the rig"))
         {
             DeclareError.clear();
-            (void)Workspace.DeclareUndeclaredNames(DeclareError);
+            (void)DeclareUndeclaredAnimationNames(Workspace.Documents, Workspace.Rig.Simulation, Workspace.Rig.Path, DeclareError);
             ProblemSignature.clear();
         }
         if (!DeclareError.empty())
@@ -798,13 +799,13 @@ private:
     // Same measure `anim.risk` reports in a game.
     void DrawRisk()
     {
-        const AnimBoundRig* rig = Workspace.Simulation.Rig();
+        const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
         if (rig == nullptr)
         {
             ImGui::TextDisabled("Open a rig to measure it.");
             return;
         }
-        const AnimRigRisk risk = MeasureAnimRigRisk(*rig, Workspace.Simulation.Tags());
+        const AnimRigRisk risk = MeasureAnimRigRisk(*rig, Workspace.Rig.Simulation.Tags());
         ImGui::TextWrapped("%u blend overrides, %u selector rules (the largest selector weighs %u), %u flows "
                            "longer than %u sections.",
                            risk.BlendOverrides, risk.SelectorRules, risk.DeepestSelector, risk.LongFlows,
@@ -815,8 +816,8 @@ private:
         for (const AnimRigRiskFinding& finding : risk.Findings)
             ImGui::BulletText("%s", finding.Message.c_str());
 
-        const World* world = Workspace.Simulation.SimulationWorld();
-        const EntityId subject = Workspace.Simulation.Subject();
+        const World* world = Workspace.Rig.Simulation.SimulationWorld();
+        const EntityId subject = Workspace.Rig.Simulation.Subject();
         if (world == nullptr || !subject.IsValid())
             return;
         ImGui::SeparatorText("The previewed entity");
@@ -846,7 +847,7 @@ private:
         {
             ImGui::SameLine();
             if (ImGui::SmallButton("Open its rig") && !Workspace.OpenRig(Trace->Rig))
-                TraceError = Workspace.ScenarioError;
+                TraceError = Workspace.Rig.Error;
         }
         ImGui::TextWrapped("Captured: %s. There is no pose history to scrub; these are the game's decisions as "
                            "it logged them.",
@@ -887,7 +888,7 @@ private:
 
     void DrawDecisions()
     {
-        const AnimationPreviewSession& session = Workspace.Simulation;
+        const AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const AnimDecisionLog* log = session.DecisionLog();
         if (log == nullptr || log->Size() == 0)
         {
@@ -909,7 +910,7 @@ private:
 
     void DrawChanges()
     {
-        const AnimationPreviewSession& session = Workspace.Simulation;
+        const AnimationPreviewSession& session = Workspace.Rig.Simulation;
         if (session.IsOpen())
             ImGui::TextWrapped("Scenario %s: %s", session.Scenario().Name.c_str(),
                                session.ScenarioModified() ? "recorded edits not saved" : "saved");

@@ -125,7 +125,7 @@ public:
         }
         if (ImGui::Button("Frame mesh")) Viewport->FrameSubject();
         ImGui::SameLine();
-        if (Workspace.Simulation.IsOpen())
+        if (Workspace.Rig.Simulation.IsOpen())
         {
             int source = static_cast<int>(Workspace.Viewport.Source);
             ImGui::RadioButton("Audition", &source, 0);
@@ -136,7 +136,7 @@ public:
         }
         ImGui::Checkbox("Joints", &ShowJoints);
         ImGui::SameLine();
-        if (Workspace.Simulation.SubjectTransform() != nullptr)
+        if (Workspace.Rig.Simulation.SubjectTransform() != nullptr)
         {
             ImGui::Checkbox("Path", &ShowPath);
             if (ImGui::IsItemHovered())
@@ -173,7 +173,7 @@ public:
 private:
     void DrawPath(ImVec2 origin, ImVec2 size)
     {
-        const AnimationPreviewSession& session = Workspace.Simulation;
+        const AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const Mat4 viewProjection = Viewport->ViewCamera(size.x / size.y).ViewProjection;
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const float feet = session.SubjectHeight() * 0.5f;
@@ -207,7 +207,7 @@ private:
                             line(corners[i], corners[i | bit], IM_COL32(170, 180, 200, 200), 1.0f);
             }
 
-        const std::optional<AnimTick> shown = ShownAnimationTick(Workspace.Simulation, Workspace.Navigation);
+        const std::optional<AnimTick> shown = ShownAnimationTick(Workspace.Rig.Simulation, Workspace.Rig.Navigation);
         Vec3d previous;
         bool first = true;
         for (const AnimationPreviewTickRecord& record : session.History())
@@ -257,7 +257,7 @@ private:
         }
         for (const AnimationJointMarker& marker : markers)
         {
-            const bool selected = Workspace.Navigation.Joint == static_cast<int>(marker.Joint);
+            const bool selected = Workspace.Rig.Navigation.Joint == static_cast<int>(marker.Joint);
             draw->AddCircleFilled(ImVec2(origin.x + marker.X, origin.y + marker.Y), selected ? 5.0f : 3.0f,
                                   selected ? picked : joint);
             if (selected)
@@ -274,17 +274,17 @@ private:
             && ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] < 9.0f)
         {
             const std::optional<std::uint32_t> hit = pick();
-            Workspace.Navigation.Joint = hit ? static_cast<int>(*hit) : -1;
+            Workspace.Rig.Navigation.Joint = hit ? static_cast<int>(*hit) : -1;
         }
         if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
             if (const std::optional<std::uint32_t> hit = pick())
             {
-                Workspace.Navigation.Joint = static_cast<int>(*hit);
+                Workspace.Rig.Navigation.Joint = static_cast<int>(*hit);
                 ImGui::OpenPopup("joint");
             }
         if (ImGui::BeginPopup("joint"))
         {
-            const int selected = Workspace.Navigation.Joint;
+            const int selected = Workspace.Rig.Navigation.Joint;
             if (selected >= 0 && static_cast<std::size_t>(selected) < skeleton.Joints.size())
                 DrawAnimationMaskMenu(Workspace, skeleton.Joints[static_cast<std::size_t>(selected)].Name);
             ImGui::EndPopup();

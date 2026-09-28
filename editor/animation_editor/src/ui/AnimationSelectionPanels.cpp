@@ -29,17 +29,17 @@ using namespace AnimationWidgets;
 
 const AnimationPreviewTickRecord* InspectedRecord(const AnimationPreviewWorkspace& workspace)
 {
-    const std::deque<AnimationPreviewTickRecord>& history = workspace.Simulation.History();
+    const std::deque<AnimationPreviewTickRecord>& history = workspace.Rig.Simulation.History();
     if (history.empty())
         return nullptr;
-    if (workspace.Navigation.InspectRecord && *workspace.Navigation.InspectRecord < history.size())
-        return &history[*workspace.Navigation.InspectRecord];
+    if (workspace.Rig.Navigation.InspectRecord && *workspace.Rig.Navigation.InspectRecord < history.size())
+        return &history[*workspace.Rig.Navigation.InspectRecord];
     return &history.back();
 }
 
 std::string TagName(const AnimationPreviewWorkspace& workspace, GameplayTagId tag)
 {
-    const GameplayTagRegistry* tags = workspace.Simulation.Tags();
+    const GameplayTagRegistry* tags = workspace.Rig.Simulation.Tags();
     if (!tag.IsValid() || tags == nullptr)
         return "(none)";
     return std::string(tags->GetName(tag));
@@ -52,7 +52,7 @@ std::string ContentPath(const AnimBoundRig& rig, std::uint16_t content)
 
 bool LayerPicker(AnimationPreviewWorkspace& workspace, const AnimBoundRig& rig)
 {
-    AnimationNavigation& nav = workspace.Navigation;
+    AnimationNavigation& nav = workspace.Rig.Navigation;
     if (rig.Layers.empty())
         return false;
     nav.Layer = std::min(nav.Layer, rig.Layers.size() - 1);
@@ -83,7 +83,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) { Workspace.Sources.CancelEdits(); return; }
 
-        AnimationPreviewSession& session = Workspace.Simulation;
+        AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         if (rig != nullptr && LayerPicker(Workspace, *rig))
             DrawLayerRules(session, *rig);
@@ -100,7 +100,7 @@ public:
 private:
     void DrawLayerRules(AnimationPreviewSession& session, const AnimBoundRig& rig)
     {
-        AnimationNavigation& nav = Workspace.Navigation;
+        AnimationNavigation& nav = Workspace.Rig.Navigation;
         const int selectorIndex = rig.Layers[nav.Layer].Selector;
         if (selectorIndex < 0)
         {
@@ -305,8 +305,8 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        const AnimBoundRig* rig = Workspace.Simulation.Rig();
-        AnimationNavigation& nav = Workspace.Navigation;
+        const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
+        AnimationNavigation& nav = Workspace.Rig.Navigation;
         if (rig == nullptr)
         {
             ImGui::TextWrapped("Open a rig, then pick a rule or a slot row.");
@@ -422,8 +422,8 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        const AnimBoundRig* rig = Workspace.Simulation.Rig();
-        AnimationNavigation& nav = Workspace.Navigation;
+        const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
+        AnimationNavigation& nav = Workspace.Rig.Navigation;
         if (rig == nullptr)
         {
             ImGui::TextWrapped("Open a rig to see its effective slot map.");
@@ -433,7 +433,7 @@ public:
         ImGui::SameLine();
         ImGui::TextDisabled("Merged across the rig's slot maps: priority first, then stack order.");
 
-        const AnimContentState* content = Workspace.Simulation.Content();
+        const AnimContentState* content = Workspace.Rig.Simulation.Content();
         const DataAssetCache& data = Workspace.DataCache();
         if (ImGui::BeginTable("rows", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable))
         {
@@ -485,7 +485,7 @@ public:
             if (ImGui::Button("Edit slot map"))
                 (void)Workspace.Documents.OpenOrFocus(row.DeclaredIn, Workspace.DocumentError);
         }
-        if (Workspace.Viewport.Source == AnimationViewportSource::Audition && Workspace.Simulation.IsOpen())
+        if (Workspace.Viewport.Source == AnimationViewportSource::Audition && Workspace.Rig.Simulation.IsOpen())
         {
             ImGui::SameLine();
             if (ImGui::Button("Back to the simulation"))
@@ -511,10 +511,10 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        AnimationPreviewSession& session = Workspace.Simulation;
+        AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         const std::deque<AnimationPreviewTickRecord>& history = session.History();
-        AnimationNavigation& nav = Workspace.Navigation;
+        AnimationNavigation& nav = Workspace.Rig.Navigation;
         if (rig == nullptr || history.empty())
         {
             ImGui::TextWrapped("Run a rig to record its decisions.");

@@ -4,6 +4,7 @@
 
 #include "authoring/AnimationEventBindings.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRigDocumentEdits.h"
 
 #include "AnimationAuthoringSteps.h"
 
@@ -141,7 +142,7 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
 {
     EventProject project;
     AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
-    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.ScenarioError;
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     ASSERT_TRUE((workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError) != nullptr)) << workspace.DocumentError;
     AnimationClipEventsDocument* events = workspace.ClipEvents.Find(kClip);
     ASSERT_NE(events, nullptr);
@@ -151,8 +152,8 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
     workspace.ClipEvents.Changed(*events);
     EXPECT_TRUE(workspace.PreviewStatusOf(*events).empty()) << workspace.PreviewStatusOf(*events);
 
-    workspace.Simulation.RunTo(30);
-    const AnimDecisionRecord* crossing = LastCrossing(workspace.Simulation);
+    workspace.Rig.Simulation.RunTo(30);
+    const AnimDecisionRecord* crossing = LastCrossing(workspace.Rig.Simulation);
     ASSERT_NE(crossing, nullptr);
     EXPECT_EQ(crossing->EventKey, key);
     EXPECT_EQ(crossing->Admission, VerbAdmission::Accepted);
@@ -204,14 +205,14 @@ TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
     EventProject project;
     AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata"));
-    ASSERT_TRUE(workspace.CreateBinding("asset://anim/hero.bindings.sdata", "anim.footstep_loud", "test.footstep"))
+    ASSERT_TRUE(CreateAnimationBinding(workspace.Documents, workspace.Rig.Simulation, "asset://anim/hero.bindings.sdata", "anim.footstep_loud", "test.footstep", workspace.DocumentError))
         << workspace.DocumentError;
-    EXPECT_FALSE(workspace.CreateBinding("asset://anim/hero.bindings.sdata", "anim.footstep", "test.footstep"));
+    EXPECT_FALSE(CreateAnimationBinding(workspace.Documents, workspace.Rig.Simulation, "asset://anim/hero.bindings.sdata", "anim.footstep", "test.footstep", workspace.DocumentError));
 
-    workspace.Simulation.Rebind();
-    const AnimBoundRig* rig = workspace.Simulation.Rig();
+    workspace.Rig.Simulation.Rebind();
+    const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();
     ASSERT_NE(rig, nullptr);
-    const std::vector<AnimationBindingView> views = DescribeAnimationBindings(*rig, *workspace.Simulation.Verbs());
+    const std::vector<AnimationBindingView> views = DescribeAnimationBindings(*rig, *workspace.Rig.Simulation.Verbs());
     const auto created = std::ranges::find(views, std::string("anim.footstep_loud"), &AnimationBindingView::Key);
     ASSERT_NE(created, views.end());
     EXPECT_EQ(created->Verb, "test.footstep");
@@ -227,9 +228,9 @@ TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
     loud.Inputs[1].Key = "Volume";
     (void)events.Add(loud);
     workspace.ClipEvents.Changed(events);
-    ASSERT_EQ(workspace.Simulation.Rig()->Contents.at(0).Events.size(), 1u);
-    EXPECT_TRUE(workspace.Simulation.Rig()->Contents[0].Events[0].Resolved)
-        << (workspace.Simulation.Rig()->Diagnostics.empty() ? "" : workspace.Simulation.Rig()->Diagnostics.back().Message);
+    ASSERT_EQ(workspace.Rig.Simulation.Rig()->Contents.at(0).Events.size(), 1u);
+    EXPECT_TRUE(workspace.Rig.Simulation.Rig()->Contents[0].Events[0].Resolved)
+        << (workspace.Rig.Simulation.Rig()->Diagnostics.empty() ? "" : workspace.Rig.Simulation.Rig()->Diagnostics.back().Message);
 }
 
 // The inspector's check is the binding's: one input filling an Int and a
@@ -239,9 +240,9 @@ TEST(AnimationEventEditing, AnInputIsCheckedAgainstEveryDestination)
     EventProject project;
     AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata"));
-    const CompiledVerbBinding* count = workspace.Simulation.Rig()->Bindings.Find("anim.count");
+    const CompiledVerbBinding* count = workspace.Rig.Simulation.Rig()->Bindings.Find("anim.count");
     ASSERT_NE(count, nullptr);
-    VerbBindingEnvironment environment{ .Verbs = workspace.Simulation.Verbs(), .Tags = workspace.Simulation.Tags() };
+    VerbBindingEnvironment environment{ .Verbs = workspace.Rig.Simulation.Verbs(), .Tags = workspace.Rig.Simulation.Tags() };
 
     AnimationClipEvent event;
     event.Binding = "anim.count";
@@ -268,7 +269,7 @@ TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
 {
     EventProject project;
     AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
-    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.ScenarioError;
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
     (void)events->Add(Footstep(0.25f));
@@ -300,7 +301,7 @@ TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
 {
     EventProject project;
     AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
-    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.ScenarioError;
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
     (void)events->Add(Footstep(0.25f));

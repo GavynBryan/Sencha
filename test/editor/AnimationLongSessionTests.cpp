@@ -46,9 +46,9 @@ namespace
             if (project.Assets->Assets.HasStore(record.Type) && project.Assets->Assets.IsResident(path, record.Type))
                 ++footprint.ResidentAssets;
         footprint.Documents = workspace.Documents.Documents().size();
-        const World* world = workspace.Simulation.SimulationWorld();
+        const World* world = workspace.Rig.Simulation.SimulationWorld();
         footprint.PreviewEntities = world != nullptr ? world->EntityCount() : 0;
-        footprint.History = workspace.Simulation.History().size();
+        footprint.History = workspace.Rig.Simulation.History().size();
         footprint.ContentTags = workspace.Tags.Names().size();
         return footprint;
     }
@@ -57,15 +57,15 @@ namespace
     // edit back, compare blends, run the lab and every scenario.
     void Round(AnimationPreviewWorkspace& workspace, const char* rig)
     {
-        ASSERT_TRUE(workspace.OpenRig(rig)) << workspace.ScenarioError;
-        workspace.Simulation.RunTo(90);
+        ASSERT_TRUE(workspace.OpenRig(rig)) << workspace.Rig.Error;
+        workspace.Rig.Simulation.RunTo(90);
         AnimationScenarioAction act;
         act.Kind = AnimationScenarioActionKind::IssueRequest;
         act.Participant = "player";
         act.Intent = "Anim.Left_claw";
         act.Lifetime = AnimRequestLifetime::Impulse;
-        workspace.Simulation.IssueRequest(act);
-        workspace.Simulation.RunTo(200);
+        workspace.Rig.Simulation.IssueRequest(act);
+        workspace.Rig.Simulation.RunTo(200);
 
         const std::string behaviors = std::string(rig).replace(std::string(rig).find(".rig."), 5, ".behaviors.");
         AuthorDocument(workspace, behaviors, [](JsonValue& data) {

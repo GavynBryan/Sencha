@@ -3,6 +3,7 @@
 #include "authoring/AnimationFlowEdits.h"
 #include "authoring/AnimationPredicateText.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRigDocumentEdits.h"
 #include "authoring/AnimationRigEdits.h"
 #include "authoring/AnimationPredicateEdits.h"
 #include "ui/AnimationDocumentWidgets.h"
@@ -28,10 +29,10 @@ namespace
 // The inspected record, else the latest.
 const AnimationPreviewTickRecord* ShownTick(const AnimationPreviewWorkspace& workspace)
 {
-    const auto& history = workspace.Simulation.History();
+    const auto& history = workspace.Rig.Simulation.History();
     if (history.empty())
         return nullptr;
-    const std::optional<std::size_t> inspect = workspace.Navigation.InspectRecord;
+    const std::optional<std::size_t> inspect = workspace.Rig.Navigation.InspectRecord;
     return inspect && *inspect < history.size() ? &history[*inspect] : &history.back();
 }
 
@@ -47,7 +48,7 @@ std::string TagText(const AnimationPreviewSession& session, GameplayTagId tag)
 std::vector<AnimMaskOp> MaskSteps(AnimationPreviewWorkspace& workspace, std::size_t layer)
 {
     std::vector<AnimMaskOp> steps;
-    if (DataDocument* document = workspace.Documents.Find(workspace.RigPath))
+    if (DataDocument* document = workspace.Documents.Find(workspace.Rig.Path))
     {
         JsonValue root = document->CopyRoot();
         const JsonValue::Array* layers = AnimRigLayers(root);
@@ -67,7 +68,7 @@ std::vector<AnimMaskOp> MaskSteps(AnimationPreviewWorkspace& workspace, std::siz
         return steps;
     }
     const DataAssetCache& data = workspace.DataCache();
-    if (const AnimRigData* rig = data.TryGet<AnimRigData>(data.Find(workspace.RigPath), kAnimRigType);
+    if (const AnimRigData* rig = data.TryGet<AnimRigData>(data.Find(workspace.Rig.Path), kAnimRigType);
         rig != nullptr && layer < rig->Layers.size())
         steps = rig->Layers[layer].Mask;
     return steps;
@@ -86,7 +87,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        const AnimationPreviewSession& session = Workspace.Simulation;
+        const AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         if (rig == nullptr)
         {
@@ -113,9 +114,9 @@ public:
                 ImGui::PushID(static_cast<int>(l));
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
-                if (ImGui::Selectable(layer.NameText.c_str(), Workspace.Navigation.Layer == l,
+                if (ImGui::Selectable(layer.NameText.c_str(), Workspace.Rig.Navigation.Layer == l,
                                       ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
-                    Workspace.Navigation.Layer = l;
+                    Workspace.Rig.Navigation.Layer = l;
                 ImGui::TableNextColumn();
                 ImGui::TextUnformatted(layer.Mode == AnimLayerMode::Additive ? "additive" : "override");
                 ImGui::TableNextColumn();
@@ -187,13 +188,13 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        const AnimBoundRig* rig = Workspace.Simulation.Rig();
+        const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
         if (rig == nullptr)
         {
             ImGui::TextDisabled("Open a rig to edit its masks.");
             return;
         }
-        const SkeletonData* skeleton = Workspace.RigSkeleton();
+        const SkeletonData* skeleton = Workspace.Rig.Skeleton();
         if (skeleton == nullptr)
         {
             ImGui::TextWrapped(rig->SkeletonPath.empty()
@@ -202,7 +203,7 @@ public:
                                rig->SkeletonPath.c_str());
             return;
         }
-        const std::size_t layer = std::min(Workspace.Navigation.Layer, rig->Layers.size() - 1);
+        const std::size_t layer = std::min(Workspace.Rig.Navigation.Layer, rig->Layers.size() - 1);
         ImGui::Text("Editing the mask of %s", rig->Layers[layer].NameText.c_str());
         if (layer == 0)
             ImGui::TextWrapped("The first layer is the pose the others compose onto and covers every joint; "
@@ -216,10 +217,10 @@ public:
                 Children[static_cast<std::size_t>(parent)].push_back(j);
 
         ImGui::SeparatorText("Joints");
-        if (Workspace.Navigation.Joint != LastJoint)
+        if (Workspace.Rig.Navigation.Joint != LastJoint)
         {
             ScrollToSelection = true;
-            LastJoint = Workspace.Navigation.Joint;
+            LastJoint = Workspace.Rig.Navigation.Joint;
         }
         ImGui::TextDisabled("Right-click a joint to add it to the mask or take it out, with or without "
                             "what is below it. A filled mark is a layer covering the joint.");
@@ -242,11 +243,11 @@ private:
                               steps[s].Subtree ? " and below" : " only");
             ImGui::SameLine();
             if (ImGui::SmallButton("Remove step"))
-                Workspace.EditRig([&](JsonValue& root) { return RemoveAnimMaskStep(root, layer, s); });
+                EditAnimationRig(Workspace.Documents, Workspace.Rig.Path, [&](JsonValue& root) { return RemoveAnimMaskStep(root, layer, s); }, Workspace.DocumentError);
             ImGui::PopID();
         }
         if (!steps.empty() && ImGui::SmallButton("Clear mask"))
-            Workspace.EditRig([&](JsonValue& root) { return ClearAnimMask(root, layer); });
+            EditAnimationRig(Workspace.Documents, Workspace.Rig.Path, [&](JsonValue& root) { return ClearAnimMask(root, layer); }, Workspace.DocumentError);
     }
 
     void DrawJoint(const SkeletonData& skeleton, const AnimBoundRig& rig, std::size_t joint, std::size_t layer)
@@ -260,7 +261,7 @@ private:
             | ImGuiTreeNodeFlags_OpenOnArrow;
         if (Children[joint].empty())
             flags |= ImGuiTreeNodeFlags_Leaf;
-        const bool selected = Workspace.Navigation.Joint == static_cast<int>(joint);
+        const bool selected = Workspace.Rig.Navigation.Joint == static_cast<int>(joint);
         if (selected)
             flags |= ImGuiTreeNodeFlags_Selected;
         if (!covered)
@@ -270,7 +271,7 @@ private:
         if (!covered)
             ImGui::PopStyleColor();
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
-            Workspace.Navigation.Joint = static_cast<int>(joint);
+            Workspace.Rig.Navigation.Joint = static_cast<int>(joint);
         if (selected && ScrollToSelection)
         {
             ImGui::SetScrollHereY();
@@ -278,7 +279,7 @@ private:
         }
         if (ImGui::BeginPopupContextItem())
         {
-            Workspace.Navigation.Joint = static_cast<int>(joint);
+            Workspace.Rig.Navigation.Joint = static_cast<int>(joint);
             DrawAnimationMaskMenu(Workspace, name);
             ImGui::EndPopup();
         }
@@ -309,10 +310,10 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        const AnimationPreviewSession& session = Workspace.Simulation;
+        const AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         const AnimationPreviewTickRecord* tick = ShownTick(Workspace);
-        const std::size_t l = Workspace.Navigation.Layer;
+        const std::size_t l = Workspace.Rig.Navigation.Layer;
         const AnimationPreviewLayerRecord* layer =
             rig != nullptr && tick != nullptr && l < tick->Layers.size() ? &tick->Layers[l] : nullptr;
         const AnimBoundFlow* playing = layer != nullptr && layer->Content < rig->Contents.size()
@@ -481,7 +482,7 @@ private:
         }
         bool changed = false;
         FieldEdit edit;
-        const AnimationWidgets::PredicateVocabulary vocabulary{ Workspace.Simulation.Rig() };
+        const AnimationWidgets::PredicateVocabulary vocabulary{ Workspace.Rig.Simulation.Rig() };
         const auto tagOf = [&](std::size_t s) {
             const JsonValue* tag = (*sections)[s].Find("tag");
             return tag != nullptr && tag->IsString() ? tag->AsString() : std::string();
@@ -604,8 +605,8 @@ private:
 
 void DrawAnimationMaskMenu(AnimationPreviewWorkspace& workspace, const std::string& joint)
 {
-    const AnimBoundRig* rig = workspace.Simulation.Rig();
-    const std::size_t layer = workspace.Navigation.Layer;
+    const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();
+    const std::size_t layer = workspace.Rig.Navigation.Layer;
     ImGui::TextDisabled("%s", joint.empty() ? "(unnamed joint)" : joint.c_str());
     if (rig == nullptr || layer == 0 || layer >= rig->Layers.size() || joint.empty())
     {
@@ -616,7 +617,7 @@ void DrawAnimationMaskMenu(AnimationPreviewWorkspace& workspace, const std::stri
     ImGui::TextDisabled("Mask of %s:", rig->Layers[layer].NameText.c_str());
     const auto step = [&](const char* label, bool exclude, bool subtree) {
         if (ImGui::MenuItem(label))
-            (void)workspace.EditRig([&](JsonValue& root) { return AddAnimMaskStep(root, layer, joint, exclude, subtree); });
+            (void)EditAnimationRig(workspace.Documents, workspace.Rig.Path, [&](JsonValue& root) { return AddAnimMaskStep(root, layer, joint, exclude, subtree); }, workspace.DocumentError);
     };
     step("Add with everything below", false, true);
     step("Add this joint only", false, false);

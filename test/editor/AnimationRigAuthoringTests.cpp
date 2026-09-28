@@ -4,6 +4,7 @@
 
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRigDocumentEdits.h"
 #include "authoring/AnimationRigEdits.h"
 #include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationSelectorEdits.h"
@@ -35,14 +36,14 @@ namespace
 
     std::string Playing(AnimationPreviewWorkspace& workspace, std::size_t layer)
     {
-        const AnimBoundRig* rig = workspace.Simulation.Rig();
-        const std::uint16_t content = workspace.Simulation.Content()->Layers[layer].Content;
+        const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();
+        const std::uint16_t content = workspace.Rig.Simulation.Content()->Layers[layer].Content;
         return content < rig->Contents.size() ? rig->Contents[content].Path : std::string("(none)");
     }
 
     std::string FirstProblem(const AnimationPreviewWorkspace& workspace)
     {
-        const std::vector<AnimDiagnostic> problems = workspace.Simulation.Problems();
+        const std::vector<AnimDiagnostic> problems = workspace.Rig.Simulation.Problems();
         return problems.empty() ? std::string() : FormatAnimDiagnostic(problems.front());
     }
 }
@@ -107,14 +108,14 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
     }
 
     // The new names are not declared yet; the Problems fix declares them.
-    ASSERT_FALSE(workspace.Simulation.Rig()->Valid);
-    std::vector<std::string> undeclared = workspace.UndeclaredNames();
+    ASSERT_FALSE(workspace.Rig.Simulation.Rig()->Valid);
+    std::vector<std::string> undeclared = UndeclaredAnimationNamesOf(workspace.Rig.Simulation, workspace.Documents);
     std::ranges::sort(undeclared);
     EXPECT_EQ(undeclared, (std::vector<std::string>{ "Anim.Upper.Rest", "Anim.Weapon.Reload" }))
         << FirstProblem(workspace);
-    ASSERT_TRUE(workspace.DeclareUndeclaredNames(error)) << error;
-    EXPECT_TRUE(workspace.UndeclaredNames().empty());
-    const AnimBoundRig* rig = workspace.Simulation.Rig();
+    ASSERT_TRUE(DeclareUndeclaredAnimationNames(workspace.Documents, workspace.Rig.Simulation, workspace.Rig.Path, error)) << error;
+    EXPECT_TRUE(UndeclaredAnimationNamesOf(workspace.Rig.Simulation, workspace.Documents).empty());
+    const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();
     ASSERT_TRUE(rig != nullptr && rig->Valid) << FirstProblem(workspace);
     ASSERT_EQ(rig->Layers.size(), 2u);
     EXPECT_FALSE(rig->Layers[1].Covers(0));
@@ -122,29 +123,29 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
     EXPECT_EQ(workspace.Documents.Active()->VirtualPath(), kRig) << "declaring leaves the author where they were";
 
     // It plays: a reload on the upper body over the base's idle.
-    workspace.Simulation.Step();
+    workspace.Rig.Simulation.Step();
     AnimationScenarioAction reload;
     reload.Kind = AnimationScenarioActionKind::IssueRequest;
     reload.Participant = "player";
     reload.Intent = "Anim.Weapon.Reload";
     reload.Lifetime = AnimRequestLifetime::Impulse;
-    workspace.Simulation.IssueRequest(reload);
-    workspace.Simulation.Step();
+    workspace.Rig.Simulation.IssueRequest(reload);
+    workspace.Rig.Simulation.Step();
     EXPECT_EQ(Playing(workspace, 0), "asset://meshes/man.blend#anim:Idle");
     EXPECT_EQ(Playing(workspace, 1), "asset://meshes/man.blend#anim:Reload");
 
     for (const auto& document : workspace.Documents.Documents())
         ASSERT_TRUE(!document->IsDirty() || workspace.SaveDocument(workspace.Documents.RefOf(*document)))
             << document->VirtualPath() << ": " << workspace.DocumentError;
-    workspace.Simulation.Close();
+    workspace.Rig.Simulation.Close();
 
     // A fresh editor over what was saved.
     AnimationTestProject reopened("sencha_rig_authoring", true);
     RegisterContent(reopened);
     AnimationPreviewWorkspace fresh(*reopened.Assets, {}, reopened.Root);
-    ASSERT_TRUE(fresh.OpenRig(kRig)) << fresh.ScenarioError;
-    const AnimBoundRig* saved = fresh.Simulation.Rig();
+    ASSERT_TRUE(fresh.OpenRig(kRig)) << fresh.Rig.Error;
+    const AnimBoundRig* saved = fresh.Rig.Simulation.Rig();
     ASSERT_TRUE(saved != nullptr && saved->Valid) << FirstProblem(fresh);
     EXPECT_EQ(saved->Layers.size(), 2u);
-    fresh.Simulation.Close();
+    fresh.Rig.Simulation.Close();
 }

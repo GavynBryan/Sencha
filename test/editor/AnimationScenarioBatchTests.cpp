@@ -103,8 +103,8 @@ TEST(AnimationScenarioBatch, ScenariosRunAgainstTheOpenRigWithoutDisturbingIt)
     std::string error;
     ASSERT_TRUE(workspace.CreateRig(Prop("bower", "asset://meshes/man.blend#anim:Bow"), error)) << error;
     ASSERT_TRUE(workspace.CreateRig(Prop("waver", "asset://meshes/man.blend#anim:Wave"), error)) << error;
-    ASSERT_EQ(workspace.RigPath, "asset://animation/waver/waver.rig.sdata");
-    workspace.Simulation.RunTo(17);
+    ASSERT_EQ(workspace.Rig.Path, "asset://animation/waver/waver.rig.sdata");
+    workspace.Rig.Simulation.RunTo(17);
 
     workspace.RunScenarioBatch(true);
     ASSERT_EQ(workspace.ScenarioRuns.size(), 2u);
@@ -114,9 +114,9 @@ TEST(AnimationScenarioBatch, ScenariosRunAgainstTheOpenRigWithoutDisturbingIt)
         EXPECT_EQ(run.Verdict, AnimationScenarioVerdict::Passed) << run.File;
     }
 
-    ASSERT_TRUE(workspace.Simulation.IsOpen());
-    EXPECT_EQ(workspace.Simulation.Scenario().RigPath, "asset://animation/waver/waver.rig.sdata");
-    EXPECT_EQ(workspace.Simulation.History().back().Tick, 17u);
+    ASSERT_TRUE(workspace.Rig.Simulation.IsOpen());
+    EXPECT_EQ(workspace.Rig.Simulation.Scenario().RigPath, "asset://animation/waver/waver.rig.sdata");
+    EXPECT_EQ(workspace.Rig.Simulation.History().back().Tick, 17u);
 }
 
 TEST(AnimationScenarioBatch, AScenarioRunsTwoSecondsPastItsLastAction)

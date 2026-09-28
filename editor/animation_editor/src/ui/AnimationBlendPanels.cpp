@@ -47,7 +47,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        const AnimationPreviewSession& session = Workspace.Simulation;
+        const AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         if (rig == nullptr)
         {
@@ -137,7 +137,7 @@ private:
         ImGui::Text("%zu bound. Past half the cap a rig warns, past the cap it fails to bind "
                     "(anim.blend.override_cap).",
                     rig.BlendOverrides.size());
-        const AnimationPreviewSession& session = Workspace.Simulation;
+        const AnimationPreviewSession& session = Workspace.Rig.Simulation;
         for (const AnimBoundBlendOverride& entry : rig.BlendOverrides)
             ImGui::BulletText("%s -> %s: %s %.0f ms  (%s)", TagText(session, entry.From).c_str(),
                               TagText(session, entry.To).c_str(),
@@ -185,7 +185,7 @@ private:
         }
         ImGui::PlotLines("Largest joint residual", positions.data(), static_cast<int>(positions.size()), 0, nullptr,
                          0.0f, FLT_MAX, ImVec2(-1.0f, 80.0f));
-        const SkeletonData* skeleton = Workspace.RigSkeleton();
+        const SkeletonData* skeleton = Workspace.Rig.Skeleton();
         const auto jointName = [&](std::uint32_t joint) {
             return skeleton != nullptr && joint < skeleton->Joints.size() && !skeleton->Joints[joint].Name.empty()
                 ? skeleton->Joints[joint].Name
@@ -217,10 +217,10 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        AnimationPreviewSession& session = Workspace.Simulation;
+        AnimationPreviewSession& session = Workspace.Rig.Simulation;
         const AnimBoundRig* rig = session.Rig();
         const AnimContentState* content = session.Content();
-        const std::size_t l = Workspace.Navigation.Layer;
+        const std::size_t l = Workspace.Rig.Navigation.Layer;
         if (rig == nullptr || content == nullptr || l >= rig->Layers.size())
         {
             ImGui::TextDisabled("Run a rig to see the blendspace its selected layer plays.");

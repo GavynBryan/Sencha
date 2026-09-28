@@ -82,15 +82,15 @@ TEST(AnimationClipPlayerMigration, PlayersBecomeRigsThatPlayAsTheyDid)
     EXPECT_TRUE(std::filesystem::exists(project.Root / "animation/migrated/migrated.tags.sdata"));
 
     // Held at 0.5s, as the paused player was.
-    ASSERT_TRUE(workspace.OpenRig("asset://animation/migrated/Wave.rig.sdata")) << workspace.ScenarioError;
-    ASSERT_TRUE(workspace.Simulation.Rig()->Valid);
-    workspace.Simulation.RunTo(30);
-    EXPECT_FLOAT_EQ(workspace.Simulation.Content()->Layers[0].TimeSeconds, 0.5f);
+    ASSERT_TRUE(workspace.OpenRig("asset://animation/migrated/Wave.rig.sdata")) << workspace.Rig.Error;
+    ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);
+    workspace.Rig.Simulation.RunTo(30);
+    EXPECT_FLOAT_EQ(workspace.Rig.Simulation.Content()->Layers[0].TimeSeconds, 0.5f);
     // Backwards from the start, clamped: it rests at the start.
-    ASSERT_TRUE(workspace.OpenRig("asset://animation/migrated/Wave_2.rig.sdata")) << workspace.ScenarioError;
-    workspace.Simulation.RunTo(30);
-    EXPECT_FLOAT_EQ(workspace.Simulation.Content()->Layers[0].TimeSeconds, 0.0f);
-    workspace.Simulation.Close();
+    ASSERT_TRUE(workspace.OpenRig("asset://animation/migrated/Wave_2.rig.sdata")) << workspace.Rig.Error;
+    workspace.Rig.Simulation.RunTo(30);
+    EXPECT_FLOAT_EQ(workspace.Rig.Simulation.Content()->Layers[0].TimeSeconds, 0.0f);
+    workspace.Rig.Simulation.Close();
 
     // Converting again finds nothing and writes nothing.
     EXPECT_TRUE(workspace.MigrateClipPlayers(error)) << error;

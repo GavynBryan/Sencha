@@ -56,6 +56,8 @@ public:
     [[nodiscard]] std::span<const std::unique_ptr<DataDocument>> Documents() const { return Open; }
     [[nodiscard]] DocumentRef RefOf(const DataDocument& document) { return { this, document.VirtualPath() }; }
     [[nodiscard]] const DataSchema* SchemaOf(const DataDocument& document) const;
+    [[nodiscard]] const DataSchema* SchemaOf(std::string_view subtype) const;
+    [[nodiscard]] bool IsRegistered(std::string_view virtualPath) const;
     [[nodiscard]] const DataSchema* ActiveSchema();
     [[nodiscard]] const DataAssetTypeRegistry& Types() const;
     // Subtypes this set opens that have both a registration and an authoring schema.

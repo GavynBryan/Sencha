@@ -23,26 +23,26 @@ TEST(AnimationViewportExtraction, ExtractingNeverMovesAClock)
                                       .Preset = AnimationRigPreset::Simple, .UpperBodyJoint = {} },
                                     error))
         << error;
-    ASSERT_TRUE(workspace.OpenRig("asset://animation/brute/brute.rig.sdata")) << workspace.ScenarioError;
-    workspace.Simulation.Play();
+    ASSERT_TRUE(workspace.OpenRig("asset://animation/brute/brute.rig.sdata")) << workspace.Rig.Error;
+    workspace.Rig.Simulation.Play();
     workspace.Advance(0.25);
 
     for (const AnimationViewportSource source : { AnimationViewportSource::Audition, AnimationViewportSource::Simulation })
     {
         workspace.Viewport.Source = source;
         const std::uint64_t audition = workspace.Audition.Session.Tick();
-        const AnimTick simulation = workspace.Simulation.Tick();
-        const std::size_t history = workspace.Simulation.History().size();
+        const AnimTick simulation = workspace.Rig.Simulation.Tick();
+        const std::size_t history = workspace.Rig.Simulation.History().size();
         workspace.ExtractViewport();
         const std::string note = workspace.Viewport.Note;
         workspace.ExtractViewport();
         EXPECT_EQ(workspace.Audition.Session.Tick(), audition);
-        EXPECT_EQ(workspace.Simulation.Tick(), simulation);
-        EXPECT_EQ(workspace.Simulation.History().size(), history);
+        EXPECT_EQ(workspace.Rig.Simulation.Tick(), simulation);
+        EXPECT_EQ(workspace.Rig.Simulation.History().size(), history);
         EXPECT_EQ(workspace.Viewport.Note, note);
     }
 
-    const AnimTick before = workspace.Simulation.Tick();
+    const AnimTick before = workspace.Rig.Simulation.Tick();
     workspace.Advance(0.25);
-    EXPECT_GT(workspace.Simulation.Tick(), before) << "Advance is what moves the clocks";
+    EXPECT_GT(workspace.Rig.Simulation.Tick(), before) << "Advance is what moves the clocks";
 }

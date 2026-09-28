@@ -6,8 +6,7 @@
 #include "authoring/AnimationClipPlayerMigration.h"
 #include "authoring/AnimationContentLists.h"
 #include "authoring/AnimationContentTags.h"
-#include "authoring/AnimationNavigation.h"
-#include "authoring/AnimationPreviewSession.h"
+#include "authoring/AnimationRigScenario.h"
 #include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationScenarioBatch.h"
 #include "authoring/AnimationSessionLab.h"
@@ -41,21 +40,13 @@ public:
     // Moves both clocks; the viewport is extracted separately and never moves them.
     void Advance(double wallSeconds);
     void ExtractViewport();
-    // Gameplay tags the open rig's content uses that nothing declares.
-    [[nodiscard]] std::vector<std::string> UndeclaredNames();
-    // One undo step on the tag declarations beside the rig, created if absent.
-    bool DeclareUndeclaredNames(std::string& error);
     [[nodiscard]] std::string PreviewStatusOf(const DataDocument& document) const;
     [[nodiscard]] std::string PreviewStatusOf(const AnimationClipEventsDocument& document) const;
     // Leaves a message in DocumentError when the save did not happen.
     bool SaveDocument(const DocumentRef& document);
-    // One undo step; each verb argument is fed by an input of its own name.
-    bool CreateBinding(const std::string& bindingsPath, const std::string& key, const std::string& verb);
 
-    // Uses the scenario saved beside the rig, or a new one-participant scenario.
-    // The rig and its dependencies stay resident while it is open.
+    // Opens the rig's scenario, shows it in the viewport and brings waiting edits to it.
     bool OpenRig(const std::string& path);
-    bool SaveScenario();
     // Refuses before writing anything if any of the rig's files already exists.
     bool CreateRig(const AnimationRigRecipe& recipe, std::string& error);
     void ScanClipPlayers();
@@ -75,9 +66,6 @@ public:
     // Includes working clip events not yet saved.
     [[nodiscard]] const AnimationClipCache& Clips() const;
     [[nodiscard]] const SkeletonCache& Skeletons() const;
-    [[nodiscard]] const SkeletonData* RigSkeleton() const;
-    // One undo step on the rig document; `edit` returns whether it changed anything.
-    bool EditRig(const std::function<bool(JsonValue&)>& edit);
 
     // Declared before the vocabulary and every session that captures it.
     AnimationContentTags Tags;
@@ -88,12 +76,11 @@ public:
     AnimationContentLists Content;
     AnimationAuditionSelection Audition;
     AnimationViewportExtraction Viewport;
-    AnimationNavigation Navigation;
     std::optional<AnimationPoseTake> TakeA;
     AnimationPoseComparison Comparison;
     std::string DocumentError;
 
-    AnimationPreviewSession Simulation;
+    AnimationRigScenario Rig;
     // The game module's hook, then Tags.
     std::function<void(World&)> Vocabulary;
     std::unique_ptr<AnimationSessionLab> Lab;
@@ -102,10 +89,6 @@ public:
     AnimationLabSettings LabSettings;
     std::vector<AnimationLabInjection> LabInjections;
     AnimTick LabTick = 300;
-    std::string RigPath;
-    std::string ScenarioFile;
-    std::string ScenarioError;
-    std::vector<AnimDiagnostic> ScenarioLoadProblems;
     std::vector<AnimationScenarioRun> ScenarioRuns;
 
 private:
@@ -115,5 +98,4 @@ private:
     bool WriteFile(const AnimationNewDocument& document, int indent, std::string& error);
     RuntimeAssets& Assets;
     std::filesystem::path AuthoringRoot;
-    AssetLease RigLease;
 };

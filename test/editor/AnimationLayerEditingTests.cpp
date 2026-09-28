@@ -116,11 +116,11 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
     Project project;
     {
         AnimationPreviewWorkspace workspace(*project.Assets);
-        ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.ScenarioError;
-        ASSERT_NE(workspace.Simulation.Rig(), nullptr);
-        ASSERT_TRUE(workspace.Simulation.Rig()->Valid);
-        ASSERT_NE(workspace.RigSkeleton(), nullptr);
-        EXPECT_FALSE(workspace.Simulation.Rig()->Layers[1].Masked());
+        ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+        ASSERT_NE(workspace.Rig.Simulation.Rig(), nullptr);
+        ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);
+        ASSERT_NE(workspace.Rig.Skeleton(), nullptr);
+        EXPECT_FALSE(workspace.Rig.Simulation.Rig()->Layers[1].Masked());
 
         ASSERT_TRUE((workspace.Documents.OpenOrFocus("asset://anim/hero.rig.sdata", workspace.DocumentError) != nullptr));
         DataDocument* rig = workspace.Documents.ActiveOf(kAnimRigType);
@@ -129,8 +129,8 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
 
         Apply(workspace, *rig, [](JsonValue& root) { return AddAnimMaskStep(root, 1, "spine", false, true); });
         Apply(workspace, *rig, [](JsonValue& root) { return AddAnimMaskStep(root, 1, "head", true, false); });
-        workspace.Simulation.Step();
-        const AnimBoundRig* bound = workspace.Simulation.Rig();
+        workspace.Rig.Simulation.Step();
+        const AnimBoundRig* bound = workspace.Rig.Simulation.Rig();
         ASSERT_TRUE(bound->Valid);
         EXPECT_EQ(bound->Layers[1].Mask, (std::vector<std::uint8_t>{ 0, 0, 1, 0, 1 }));
         EXPECT_EQ(AnimMaskCoverage(*bound), (std::vector<std::uint8_t>{ 0b01, 0b01, 0b11, 0b01, 0b11 }));
@@ -138,8 +138,8 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
         // A joint the skeleton lacks is a document that compiles and a rig
         // that does not bind, and the problem names the step.
         Apply(workspace, *rig, [](JsonValue& root) { return AddAnimMaskStep(root, 1, "tail", false, true); });
-        workspace.Simulation.Step();
-        bound = workspace.Simulation.Rig();
+        workspace.Rig.Simulation.Step();
+        bound = workspace.Rig.Simulation.Rig();
         EXPECT_FALSE(bound->Valid);
         ASSERT_FALSE(bound->Diagnostics.empty());
         EXPECT_EQ(bound->Diagnostics.front().Code, "anim.mask.joint_unknown");
@@ -151,10 +151,10 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
             rig->Undo();
             workspace.Documents.Changed(*rig);
         }
-        workspace.Simulation.Step();
-        EXPECT_FALSE(workspace.Simulation.Rig()->Layers[1].Masked());
+        workspace.Rig.Simulation.Step();
+        EXPECT_FALSE(workspace.Rig.Simulation.Rig()->Layers[1].Masked());
         EXPECT_EQ(project.Read("hero.rig.sdata"), saved);
-        workspace.Simulation.Close();
+        workspace.Rig.Simulation.Close();
     }
 }
 

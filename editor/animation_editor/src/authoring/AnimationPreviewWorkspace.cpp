@@ -44,7 +44,7 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std:
     , ClipEvents(assets, Sources)
     , Audition(assets)
     , Viewport(assets)
-    , Simulation(assets.DataAssets, &assets.AnimationClips, Tags.Vocabulary(vocabulary), &assets.Skeletons)
+    , Rig(assets, Tags.Vocabulary(vocabulary))
     , Vocabulary(Tags.Vocabulary(std::move(vocabulary)))
     , Assets(assets)
     , AuthoringRoot(std::move(authoringRoot))
@@ -54,7 +54,7 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std:
     });
     ClipEvents.OnChanged([this](AnimationClipEventsDocument&, bool clipChanged) {
         if (clipChanged)
-            Simulation.Rebind();
+            Rig.Simulation.Rebind();
     });
     RefreshBrowser();
 }
@@ -75,57 +75,15 @@ std::span<const std::string_view> AnimationDocumentSubtypes()
     return kSubtypes;
 }
 
-std::vector<std::string> AnimationPreviewWorkspace::UndeclaredNames()
-{
-    const GameplayTagRegistry* tags = Simulation.Tags();
-    if (tags == nullptr)
-        return {};
-    std::deque<JsonValue> read;
-    return UndeclaredAnimationNames(Simulation.Problems(), *tags, [&](std::string_view path) -> AnimationDocumentView {
-        const JsonValue* root = nullptr;
-        if (std::optional<JsonValue> current = Documents.CurrentRoot(path))
-            root = &read.emplace_back(std::move(*current));
-        const JsonValue* type = root != nullptr ? root->Find("type") : nullptr;
-        const DataSchema* schema =
-            type != nullptr && type->IsString() ? Assets.DataSchemas.Find(type->AsString()) : nullptr;
-        return { root, schema != nullptr ? &schema->Root : nullptr };
-    });
-}
-
-bool AnimationPreviewWorkspace::DeclareUndeclaredNames(std::string& error)
-{
-    const std::vector<std::string> names = UndeclaredNames();
-    if (names.empty() || RigPath.empty())
-        return true;
-    std::string relative = RigPath.substr(std::string_view("asset://").size());
-    const std::size_t suffix = relative.ends_with(".rig.sdata") ? relative.size() - std::string_view(".rig.sdata").size()
-                                                                : relative.size() - std::string_view(".sdata").size();
-    relative = relative.substr(0, suffix) + ".tags.sdata";
-    const std::string path = "asset://" + relative;
-
-    const std::size_t active = Documents.ActiveIndex();
-    DataDocument* document = Documents.Find(path);
-    if (document == nullptr)
-        document = Assets.Registry.Contains(path) ? Documents.OpenOrFocus(path, error)
-                                                  : Documents.Create(kGameplayTagDeclarationsType, relative, error);
-    if (document == nullptr)
-        return false;
-    JsonValue root = document->CopyRoot();
-    if (AddAnimationTagDeclarations(root, names))
-        ApplyFieldEdit(*document, Documents, FieldEdit::Instant(), std::move(root));
-    Documents.SetActive(active);
-    return true;
-}
-
 void AnimationPreviewWorkspace::DataDocumentChanged(DataDocument& document, bool residentChanged)
 {
     if (document.Subtype() == kGameplayTagDeclarationsType)
     {
         Tags.Refresh(Assets, Documents);
-        Simulation.VocabularyChanged();
+        Rig.Simulation.VocabularyChanged();
     }
     if (residentChanged)
-        Simulation.Rebind();
+        Rig.Simulation.Rebind();
 }
 
 std::string AnimationPreviewWorkspace::PreviewStatusOf(const DataDocument& document) const
@@ -186,65 +144,15 @@ bool AnimationPreviewWorkspace::SaveDocument(const DocumentRef& document)
 
 bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
 {
-    const auto* record = Assets.Registry.FindByPath(path);
-    AssetLease lease = Assets.Assets.LoadLease(path, AssetType::Data);
-    const DataAssetHandle handle =
-        lease ? DataAssetHandle::FromToken(lease.OpaqueToken()) : DataAssetHandle{};
-    const AnimRigData* rig = Assets.DataAssets.TryGet<AnimRigData>(handle, kAnimRigType);
-    if (record == nullptr || rig == nullptr)
-    {
-        ScenarioError = "Select an animation.rig asset that loads.";
+    if (!Rig.Open(path))
         return false;
-    }
     Viewport.LayerDisplay = {};
-
-    std::filesystem::path sidecar(record->FilePath);
-    sidecar.replace_extension(".sanimscenario");
-
-    AnimationScenario scenario;
-    ScenarioLoadProblems.clear();
-    if (std::filesystem::exists(sidecar))
-    {
-        std::optional<AnimationScenario> loaded =
-            LoadAnimationScenario(sidecar.string(), ScenarioLoadProblems);
-        if (!loaded)
-        {
-            ScenarioError = "The saved scenario could not be read; see Problems.";
-            return false;
-        }
-        scenario = std::move(*loaded);
-        scenario.RigPath = path;
-    }
-    else
-    {
-        scenario.Name = sidecar.stem().string();
-        scenario.RigPath = path;
-        scenario.Participants = { "player" };
-    }
-
-    Simulation.Close();
-    RigLease = std::move(lease);
-    RigPath = path;
-    ScenarioFile = sidecar.string();
-    ScenarioError.clear();
-    (void)Simulation.Open(std::move(scenario));
     Viewport.Source = AnimationViewportSource::Simulation;
-    Navigation = AnimationNavigation{};
-    if (!rig->SkeletonPath.empty() && Audition.Session.SkeletonPath() != rig->SkeletonPath && Audition.MeshPath.empty())
-        (void)Audition.SelectSkeleton(rig->SkeletonPath);
+    const std::string& skeleton = Rig.Data()->SkeletonPath;
+    if (!skeleton.empty() && Audition.Session.SkeletonPath() != skeleton && Audition.MeshPath.empty())
+        (void)Audition.SelectSkeleton(skeleton);
     if (Documents.PushWaiting() | ClipEvents.PushWaiting())
-        Simulation.Rebind();
-    return true;
-}
-
-bool AnimationPreviewWorkspace::SaveScenario()
-{
-    if (!Simulation.IsOpen() || ScenarioFile.empty())
-        return false;
-    if (!SaveAnimationScenario(Simulation.Scenario(), ScenarioFile, ScenarioError))
-        return false;
-    Simulation.MarkScenarioSaved();
-    ScenarioError.clear();
+        Rig.Simulation.Rebind();
     return true;
 }
 
@@ -255,7 +163,7 @@ const DataAssetCache& AnimationPreviewWorkspace::DataCache() const
 
 bool AnimationPreviewWorkspace::ReloadScenario()
 {
-    return !RigPath.empty() && OpenRig(RigPath);
+    return !Rig.Path.empty() && OpenRig(Rig.Path);
 }
 
 const AnimationClipCache& AnimationPreviewWorkspace::Clips() const
@@ -266,30 +174,6 @@ const AnimationClipCache& AnimationPreviewWorkspace::Clips() const
 const SkeletonCache& AnimationPreviewWorkspace::Skeletons() const
 {
     return Assets.Skeletons;
-}
-
-bool AnimationPreviewWorkspace::CreateBinding(const std::string& bindingsPath, const std::string& key,
-                                              const std::string& verb)
-{
-    const VerbRegistry* verbs = Simulation.Verbs();
-    const VerbDefinition* definition = verbs != nullptr ? verbs->Get(verbs->Find(verb)) : nullptr;
-    if (definition == nullptr)
-    {
-        DocumentError = std::format("'{}' is not a verb the preview declares.", verb);
-        return false;
-    }
-    DataDocument* document = Documents.OpenOrFocus(bindingsPath, DocumentError);
-    if (document == nullptr)
-        return false;
-    JsonValue root = document->CopyRoot();
-    if (!AddAnimationBindingRecord(root, MakeAnimationBindingRecord(key, *definition)))
-    {
-        DocumentError = std::format("'{}' already declares a binding '{}'.", bindingsPath, key);
-        return false;
-    }
-    document->ReplaceRoot(std::move(root));
-    Documents.Changed(*document);
-    return true;
 }
 
 bool AnimationPreviewWorkspace::CreateRig(const AnimationRigRecipe& recipe, std::string& error)
@@ -310,7 +194,7 @@ bool AnimationPreviewWorkspace::CreateRig(const AnimationRigRecipe& recipe, std:
     RefreshBrowser();
     if (!OpenRig(plan.RigPath))
     {
-        error = ScenarioError;
+        error = Rig.Error;
         return false;
     }
     error.clear();
@@ -393,40 +277,40 @@ bool AnimationPreviewWorkspace::AuditionClip(const std::string& path)
 void AnimationPreviewWorkspace::Advance(double wallSeconds)
 {
     if (Documents.PushWaiting() | ClipEvents.PushWaiting())
-        Simulation.Rebind();
+        Rig.Simulation.Rebind();
     Audition.Session.Advance(wallSeconds);
-    Simulation.Advance(wallSeconds);
+    Rig.Simulation.Advance(wallSeconds);
 }
 
 void AnimationPreviewWorkspace::ExtractViewport()
 {
-    Viewport.Extract(Audition, Simulation, Navigation, TakeA ? &*TakeA : nullptr);
+    Viewport.Extract(Audition, Rig.Simulation, Rig.Navigation, TakeA ? &*TakeA : nullptr);
 }
 
 bool AnimationPreviewWorkspace::RecordTakeA()
 {
-    if (!Simulation.IsOpen() || Simulation.History().empty())
+    if (!Rig.Simulation.IsOpen() || Rig.Simulation.History().empty())
         return false;
-    TakeA = RecordAnimationPoseTake(Simulation, "A");
+    TakeA = RecordAnimationPoseTake(Rig.Simulation, "A");
     Comparison = {};
     return !TakeA->Ticks.empty();
 }
 
 bool AnimationPreviewWorkspace::ReplayAgainstTakeA()
 {
-    if (!TakeA || TakeA->Ticks.empty() || !Simulation.IsOpen())
+    if (!TakeA || TakeA->Ticks.empty() || !Rig.Simulation.IsOpen())
         return false;
-    Simulation.Pause();
-    Simulation.Restart();
-    Simulation.RunTo(TakeA->Ticks.back());
-    Comparison = CompareAnimationPoseTakes(*TakeA, RecordAnimationPoseTake(Simulation, "B"));
+    Rig.Simulation.Pause();
+    Rig.Simulation.Restart();
+    Rig.Simulation.RunTo(TakeA->Ticks.back());
+    Comparison = CompareAnimationPoseTakes(*TakeA, RecordAnimationPoseTake(Rig.Simulation, "B"));
     return Comparison.Refusal.empty();
 }
 
 void AnimationPreviewWorkspace::RunScenarioBatch(bool againstOpenRig)
 {
     ScenarioRuns.clear();
-    if (againstOpenRig && RigPath.empty())
+    if (againstOpenRig && Rig.Path.empty())
         return;
     AnimationPreviewSession batch(Assets.DataAssets, &Assets.AnimationClips, Vocabulary, &Assets.Skeletons);
     for (const std::filesystem::path& file : FindAnimationScenarios(AuthoringRoot))
@@ -437,7 +321,7 @@ void AnimationPreviewWorkspace::RunScenarioBatch(bool againstOpenRig)
         if (scenario)
         {
             if (againstOpenRig)
-                scenario->RigPath = RigPath;
+                scenario->RigPath = Rig.Path;
             const AssetLease rig = Assets.Assets.LoadLease(scenario->RigPath, AssetType::Data);
             run = RunAnimationScenario(batch, std::move(*scenario), std::move(problems));
         }
@@ -452,12 +336,12 @@ void AnimationPreviewWorkspace::RunScenarioBatch(bool againstOpenRig)
 
 bool AnimationPreviewWorkspace::RunLab()
 {
-    if (!Simulation.IsOpen())
+    if (!Rig.Simulation.IsOpen())
         return false;
     if (Lab == nullptr)
         Lab = std::make_unique<AnimationSessionLab>(Assets.DataAssets, &Assets.AnimationClips, Vocabulary,
                                                     &Assets.Skeletons);
-    if (!Lab->Open(Simulation.Scenario(), LabSettings, LabInjections))
+    if (!Lab->Open(Rig.Simulation.Scenario(), LabSettings, LabInjections))
         return false;
     Lab->RunTo(LabTick);
     return true;
@@ -467,26 +351,4 @@ void AnimationPreviewWorkspace::ClearTakeA()
 {
     TakeA.reset();
     Comparison = {};
-}
-
-bool AnimationPreviewWorkspace::EditRig(const std::function<bool(JsonValue&)>& edit)
-{
-    DataDocument* rig = Documents.Find(RigPath);
-    if (rig == nullptr)
-        rig = Documents.OpenOrFocus(RigPath, DocumentError);
-    if (rig == nullptr)
-        return false;
-    JsonValue root = rig->CopyRoot();
-    if (!edit(root))
-        return false;
-    rig->BeginEdit();
-    rig->PreviewRoot(std::move(root));
-    Documents.CommitEdit(*rig);
-    return true;
-}
-
-const SkeletonData* AnimationPreviewWorkspace::RigSkeleton() const
-{
-    const AnimBoundRig* rig = Simulation.Rig();
-    return rig != nullptr && rig->Skeleton.IsValid() ? Assets.Skeletons.Get(rig->Skeleton) : nullptr;
 }
