@@ -1,8 +1,11 @@
 #pragma once
 
+#include <core/hash/TransparentStringHash.h>
+
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -54,7 +57,7 @@ private:
                                                                  GameplayTagError* error);
 
     std::vector<TagRecord> Tags;
-    std::unordered_map<std::string, GameplayTagId> IdsByName;
+    std::unordered_map<std::string, GameplayTagId, TransparentStringHash, std::equal_to<>> IdsByName;
     // Invalid where two names share a key.
     std::unordered_map<std::uint32_t, GameplayTagId> IdsByWireKey;
 };

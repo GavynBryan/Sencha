@@ -3,9 +3,11 @@
 #include <core/assets/AssetStore.h>
 #include <core/handle/ILifetimeOwner.h>
 #include <core/handle/Owned.h>
+#include <core/hash/TransparentStringHash.h>
 
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -78,7 +80,7 @@ public:
     // been committed under that path yet.
     [[nodiscard]] THandle Acquire(std::string_view path)
     {
-        auto it = PathLookup.find(std::string(path));
+        auto it = PathLookup.find(path);
         if (it == PathLookup.end())
             return {};
 
@@ -167,8 +169,7 @@ public:
 protected:
     [[nodiscard]] THandle FindRegisteredHandle(std::string_view path, bool addRef = false)
     {
-        const std::string key(path);
-        auto it = PathLookup.find(key);
+        auto it = PathLookup.find(path);
         if (it == PathLookup.end())
             return {};
 
@@ -186,8 +187,7 @@ protected:
 
     [[nodiscard]] THandle FindRegisteredHandle(std::string_view path) const
     {
-        const std::string key(path);
-        auto it = PathLookup.find(key);
+        auto it = PathLookup.find(path);
         if (it == PathLookup.end())
             return {};
 
@@ -329,5 +329,5 @@ private:
 
     std::vector<TEntry>                          Entries;
     std::vector<uint32_t>                        FreeSlots;
-    std::unordered_map<std::string, THandle>     PathLookup;
+    std::unordered_map<std::string, THandle, TransparentStringHash, std::equal_to<>> PathLookup;
 };

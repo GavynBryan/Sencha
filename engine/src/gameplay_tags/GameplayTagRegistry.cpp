@@ -80,7 +80,7 @@ std::optional<GameplayTagId> GameplayTagRegistry::RegisterTag(std::string_view n
     if (!ValidateGameplayTagName(name, error))
         return std::nullopt;
 
-    auto existing = IdsByName.find(std::string(name));
+    auto existing = IdsByName.find(name);
     if (existing != IdsByName.end())
         return existing->second;
 
@@ -89,7 +89,7 @@ std::optional<GameplayTagId> GameplayTagRegistry::RegisterTag(std::string_view n
 
 GameplayTagId GameplayTagRegistry::FindTag(std::string_view name) const
 {
-    auto it = IdsByName.find(std::string(name));
+    auto it = IdsByName.find(name);
     return it == IdsByName.end() ? GameplayTagId{} : it->second;
 }
 
