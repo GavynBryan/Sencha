@@ -1,7 +1,6 @@
-// What animation costs on the wire in steady state: every case publishes and
-// acknowledges its baseline first, then measures the next snapshot's bytes above
-// a snapshot in which nothing changed. That excess is the entity's envelope plus
-// the request set's delta; the snapshot header is excluded.
+// Animation's steady-state wire cost: each case acknowledges its baseline, then
+// measures the next snapshot above one describing nothing (the bare header), so
+// the excess is the entity's envelope plus the request set's delta.
 
 #include "AnimRigFixture.h"
 

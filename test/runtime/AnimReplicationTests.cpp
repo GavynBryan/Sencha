@@ -154,14 +154,14 @@ namespace
 
         AnimRequestJournal& Journal() { return Client.Entities.GetResource<AnimRequestJournal>(); }
 
-        // The client guessing a reload for its command `command`.
+        // The client predicting a reload for its command `command`.
         AnimRequestResult Predict(AnimTick tick, std::uint64_t command)
         {
-            AnimRequestDesc guess;
-            guess.Source = Mirror;
-            guess.Intent = Client.Tag("anim.intent.reload");
-            guess.Params[0] = AnimFactFromInt(2);
-            return Journal().Issue(Client.Entities, Mirror, guess, tick, command);
+            AnimRequestDesc prediction;
+            prediction.Source = Mirror;
+            prediction.Intent = Client.Tag("anim.intent.reload");
+            prediction.Params[0] = AnimFactFromInt(2);
+            return Journal().Issue(Client.Entities, Mirror, prediction, tick, command);
         }
 
         const AnimRequestSet& ClientRequests() const
@@ -385,12 +385,12 @@ TEST(AnimReplication, ACorrectionIsAbsorbedWithoutRewindingHistory)
     session.Join();
     session.StepTo(9);
 
-    // The client's guess: the reload starts on tick 10.
-    AnimRequestDesc guess;
-    guess.Source = session.Mirror;
-    guess.Intent = session.Client.Tag("anim.intent.reload");
-    guess.Params[0] = AnimFactFromInt(2);
-    ASSERT_TRUE(IssueAnimRequest(session.Client.Entities, session.Mirror, guess, 10).Accepted());
+    // The client's prediction: the reload starts on tick 10.
+    AnimRequestDesc prediction;
+    prediction.Source = session.Mirror;
+    prediction.Intent = session.Client.Tag("anim.intent.reload");
+    prediction.Params[0] = AnimFactFromInt(2);
+    ASSERT_TRUE(IssueAnimRequest(session.Client.Entities, session.Mirror, prediction, 10).Accepted());
     session.StepTo(11);
     ASSERT_EQ(session.Client.BehaviorName(session.Mirror), "anim.intent.reload");
     ASSERT_EQ(session.Authority.BehaviorName(session.Prop), "Anim.Idle");
@@ -406,10 +406,11 @@ TEST(AnimReplication, ACorrectionIsAbsorbedWithoutRewindingHistory)
     }
 
     const AnimDecisionLog& log = session.Client.Log(session.Mirror);
-    bool guessed = false;
+    bool predictedChangeKept = false;
     for (std::size_t i = 0; i < log.Size(); ++i)
-        guessed = guessed || (log.At(i).Tick == 10 && log.At(i).Cause == AnimDecisionCause::ContentChanged);
-    EXPECT_TRUE(guessed) << "the change the client showed on tick 10 is still in its history";
+        predictedChangeKept = predictedChangeKept
+                           || (log.At(i).Tick == 10 && log.At(i).Cause == AnimDecisionCause::ContentChanged);
+    EXPECT_TRUE(predictedChangeKept) << "the change the client showed on tick 10 is still in its history";
 }
 
 // The news of a cancel arrives a flight late. The client enters the cancel

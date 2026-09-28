@@ -1,7 +1,6 @@
-// Records what scrubbing the animation preview costs: seeking back to tick 0 and
-// replaying to a later tick, up to the full kept history, and a scenario batch
-// over the fixture project. Env-gated; build the profile preset and run
-//   SENCHA_ANIMATION_PREVIEW_BENCH_OUT=<json> build-profile/test/editor_tests --gtest_filter='AnimationPreviewBench.*'
+// Records what scrubbing the animation preview costs -- replaying from tick 0 up
+// to the full kept history -- and a scenario batch over the fixture project.
+// Env-gated; scripts/bench_animation.sh runs it from the profile preset.
 
 #include "authoring/AnimationPreviewSession.h"
 #include "authoring/AnimationScenarioBatch.h"

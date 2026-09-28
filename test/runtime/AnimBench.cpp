@@ -1,7 +1,6 @@
-// Records the animation runtime's costs: binding a rig of each tier, a headless
-// server tick over cosmetic props with and without the participation skip, and
-// the pose pass serially and across workers. Env-gated; run through
-// scripts/bench_animation.sh, which builds the profile preset.
+// Records rig binding per tier, a headless server tick over cosmetic props with
+// and without the participation skip, and the pose pass serially and across
+// workers. Env-gated; scripts/bench_animation.sh runs it from the profile preset.
 
 #include "AnimCrowdFixture.h"
 #include "BenchRecorder.h"
