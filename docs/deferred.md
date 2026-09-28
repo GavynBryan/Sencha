@@ -85,7 +85,8 @@ do the work and delete the entry.
 - **What:** the `asan` and `tsan` presets and the gated benchmarks run only by
   hand; CI runs neither.
 - **Where:** `.github/workflows/ci.yml`, `CMakePresets.json`,
-  `test/runtime/*Bench*.cpp`.
+  `scripts/bench_animation.sh` (`test/runtime/AnimBench.cpp`,
+  `test/editor/AnimationPreviewBench.cpp`) and the other gated benches.
 - **Trigger:** a performance or memory-safety regression gate wanted in CI.
 
 ## Resident push against file-watcher reload

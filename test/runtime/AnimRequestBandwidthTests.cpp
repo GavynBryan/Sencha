@@ -1,6 +1,6 @@
 // Animation's steady-state wire cost: each case acknowledges its baseline, then
 // measures the next snapshot above one describing nothing (the bare header), so
-// the excess is the entity's envelope plus the request set's delta.
+// the excess is the entity's envelope plus the records that changed.
 
 #include "AnimRigFixture.h"
 
@@ -117,13 +117,13 @@ TEST(AnimRequestBandwidth, IssuingAndCancellingAHeldRequest)
     AuthorityWire wire;
     const AnimRequestId held = wire.IssueFrom(wire.Sources[0]);
     wire.Tick();
-    EXPECT_LE(wire.Excess(), 90u) << "the entity's envelope and the one-record set";
+    EXPECT_LE(wire.Excess(), 90u) << "the entity's envelope and the new record";
     wire.Tick(10);
     EXPECT_EQ(wire.Excess(), 0u) << "a held request costs nothing while it holds";
 
     ASSERT_TRUE(CancelAnimRequest(wire.Entities, wire.Animated, held, AnimCancelReason::Released, wire.Now));
     wire.Tick();
-    EXPECT_LE(wire.Excess(), 86u) << "the set again, the record now ended";
+    EXPECT_LE(wire.Excess(), 86u) << "the entity's envelope and the ended record";
 }
 
 TEST(AnimRequestBandwidth, AFullRequestSet)
@@ -132,5 +132,5 @@ TEST(AnimRequestBandwidth, AFullRequestSet)
     for (EntityId source : wire.Sources)
         (void)wire.IssueFrom(source);
     wire.Tick();
-    EXPECT_LE(wire.Excess(), 650u) << "the envelope and eight records";
+    EXPECT_LE(wire.Excess(), 650u) << "the entity's envelope and eight new records";
 }

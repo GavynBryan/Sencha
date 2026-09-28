@@ -103,6 +103,8 @@ Root motion needs facts, selection and content resolution, since
 the movement-side `RootMotionSystem` always runs. A root-motion rig is never
 skipped, so a headless authority carries its character. Cosmetic rigs also skip
 the authority's timing stamp, which only lets a client flag a timing mismatch.
+The skip roughly halves a headless tick over cosmetic props (see Measurements);
+what remains is visiting each entity and resolving its rig.
 
 ## Binding
 
@@ -468,6 +470,41 @@ only those stays compatible with a session in progress. The authority stamps
 its identity on the request set; a machine whose binding differs records
 `TimingDisagreed` and cannot trust reconstruction until the rig reloads or the
 session rejoins.
+
+## Measurements
+
+Recorded with `scripts/bench_animation.sh`: the profile preset (release code
+generation with symbols), pinned to the performance cores of an Intel i7-13620H,
+each figure a median after warm-up.
+
+| Measurement | Result |
+| --- | --- |
+| Binding a rig: prop, two-layer, character | 0.8 µs, 7.3 µs, 11.6 µs |
+| Headless tick over 64 cosmetic props: skipped, run | 0.016 ms, 0.030 ms |
+| Headless tick over 1024 cosmetic props: skipped, run | 0.27 ms, 0.49 ms |
+| Pose pass, 64 two-layer 62-joint characters: 0, 3, 7 workers | 0.46 ms, 0.20 ms, 0.12 ms |
+| Pose pass, 256 characters: 0, 3, 7 workers | 1.92 ms, 0.57 ms, 0.40 ms |
+| Editor preview, replay from tick 0 to 600 and to 3600 | 0.96 ms, 5.46 ms |
+| Editor scenario batch over the fixture project's 8 scenarios | 9.3 ms |
+
+A steady tick allocates nothing: `AnimSteadyStateAllocation` runs 600 ticks of
+facts, selection, content, events and poses over two rigs, with speed changes,
+landings and requests issued and cancelled, after the same input has reached
+every state once, and counts every form of allocation, serially and with three
+workers.
+
+On the wire (`AnimRequestBandwidth`), each case acknowledges its baseline and
+counts the next snapshot's bytes above one that describes nothing, which is the
+23-byte snapshot header. An animated entity at rest, and a request that keeps
+holding, cost nothing. Issuing a held request costs 90 bytes and ending it 86:
+the entity's envelope plus the changed record. Filling all eight records at
+once costs 650.
+
+Every animation, data-asset, document-layer and gameplay-tag suite (412 tests
+across core, framework, runtime and editor) passes under the `asan` preset,
+with leak detection off, and the `tsan` preset. Each instrument was first shown
+to fire on a deliberate out-of-bounds read and data race. An `asan` build needs
+`ASAN_OPTIONS=detect_leaks=0` because component code generation runs under it.
 
 ## Diagnostics
 
