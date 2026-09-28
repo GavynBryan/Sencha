@@ -2,6 +2,7 @@
 
 #include <anim/AnimRequestJournal.h>
 #include <anim/AnimationRegistration.h>
+#include <assets/runtime/RuntimeAssets.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <net/NetReplicationComponents.h>
@@ -295,4 +296,17 @@ std::vector<AnimDiagnostic> AnimationSessionLab::Problems() const
             }) == problems.end())
             problems.push_back(problem);
     return problems;
+}
+
+bool AnimationLabRun::Run(const AnimationPreviewSession& simulation)
+{
+    if (!simulation.IsOpen())
+        return false;
+    if (Session == nullptr)
+        Session = std::make_unique<AnimationSessionLab>(Assets.DataAssets, &Assets.AnimationClips, Vocabulary,
+                                                        &Assets.Skeletons);
+    if (!Session->Open(simulation.Scenario(), Settings, Injections))
+        return false;
+    Session->RunTo(Tick);
+    return true;
 }

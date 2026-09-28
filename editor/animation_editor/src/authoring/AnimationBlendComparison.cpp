@@ -70,3 +70,29 @@ AnimationPoseComparison CompareAnimationPoseTakes(const AnimationPoseTake& a, co
         comparison.Refusal = "The takes share no tick.";
     return comparison;
 }
+
+bool AnimationTakeComparison::RecordA(const AnimationPreviewSession& simulation)
+{
+    if (!simulation.IsOpen() || simulation.History().empty())
+        return false;
+    TakeA = RecordAnimationPoseTake(simulation, "A");
+    Result = {};
+    return !TakeA->Ticks.empty();
+}
+
+bool AnimationTakeComparison::ReplayAgainstA(AnimationPreviewSession& simulation)
+{
+    if (!TakeA || TakeA->Ticks.empty() || !simulation.IsOpen())
+        return false;
+    simulation.Pause();
+    simulation.Restart();
+    simulation.RunTo(TakeA->Ticks.back());
+    Result = CompareAnimationPoseTakes(*TakeA, RecordAnimationPoseTake(simulation, "B"));
+    return Result.Refusal.empty();
+}
+
+void AnimationTakeComparison::Clear()
+{
+    TakeA.reset();
+    Result = {};
+}

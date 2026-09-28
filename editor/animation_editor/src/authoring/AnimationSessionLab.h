@@ -12,9 +12,12 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+struct RuntimeAssets;
 
 struct AnimationLabSettings
 {
@@ -117,4 +120,28 @@ private:
     std::vector<AnimationLabTick> Record;
     std::vector<AnimRequest> Joined;
     std::optional<AnimTick> JoinedTick;
+};
+
+// The lab the author runs against the open scenario, with the settings and
+// injections it runs under. The lab session is built on the first run.
+class AnimationLabRun
+{
+public:
+    AnimationLabRun(RuntimeAssets& assets, std::function<void(World&)> vocabulary)
+        : Assets(assets)
+        , Vocabulary(std::move(vocabulary))
+    {
+    }
+
+    // Always from tick 0, so the result reflects the current edits.
+    bool Run(const AnimationPreviewSession& simulation);
+
+    AnimationLabSettings Settings;
+    std::vector<AnimationLabInjection> Injections;
+    AnimTick Tick = 300;
+    std::unique_ptr<AnimationSessionLab> Session;
+
+private:
+    RuntimeAssets& Assets;
+    std::function<void(World&)> Vocabulary;
 };

@@ -11,6 +11,7 @@
 #include <vector>
 
 class AnimationPreviewSession;
+class AssetSystem;
 
 enum class AnimationScenarioVerdict : std::uint8_t
 {
@@ -47,3 +48,10 @@ struct AnimationScenarioRun
 [[nodiscard]] AnimationScenarioRun RunAnimationScenario(AnimationPreviewSession& session,
                                                         AnimationScenario scenario,
                                                         std::vector<AnimDiagnostic> loadProblems = {});
+
+// Every saved scenario under `root`, each under its own rig, or under
+// `rigOverride` when that is not empty. Each rig stays resident while it runs.
+[[nodiscard]] std::vector<AnimationScenarioRun> RunAnimationScenarios(AnimationPreviewSession& session,
+                                                                      AssetSystem& assets,
+                                                                      const std::filesystem::path& root,
+                                                                      const std::string& rigOverride);

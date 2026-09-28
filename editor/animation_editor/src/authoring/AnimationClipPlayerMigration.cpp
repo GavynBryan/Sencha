@@ -198,3 +198,11 @@ AnimationClipPlayerMigrationPlan PlanAnimationClipPlayerMigration(const std::fil
     }
     return plan;
 }
+
+void AnimationClipPlayerScan::Scan()
+{
+    Uses.clear();
+    Problems.clear();
+    if (!Root.empty())
+        Uses = FindAnimationClipPlayers(Root, Problems);
+}

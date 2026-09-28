@@ -33,10 +33,10 @@ namespace
                  .Preset = AnimationRigPreset::Prop, .UpperBodyJoint = {} };
     }
 
-    const AnimationScenarioRun& RunOf(const AnimationPreviewWorkspace& workspace, std::string_view file)
+    const AnimationScenarioRun& RunOf(const std::vector<AnimationScenarioRun>& runs, std::string_view file)
     {
-        const auto found = std::ranges::find(workspace.ScenarioRuns, file, &AnimationScenarioRun::File);
-        EXPECT_NE(found, workspace.ScenarioRuns.end()) << file;
+        const auto found = std::ranges::find(runs, file, &AnimationScenarioRun::File);
+        EXPECT_NE(found, runs.end()) << file;
         return *found;
     }
 }
@@ -71,10 +71,10 @@ TEST(AnimationScenarioBatch, EveryScenarioIsRunAndJudged)
     ASSERT_TRUE(SaveAnimationScenario(missingRig, (project.Root / "extra/missing_rig.sanimscenario").string(), error))
         << error;
 
-    workspace.RunScenarioBatch(false);
-    ASSERT_EQ(workspace.ScenarioRuns.size(), 4u);
+    const std::vector<AnimationScenarioRun> runs = workspace.RunScenarioBatch(false);
+    ASSERT_EQ(runs.size(), 4u);
 
-    const AnimationScenarioRun& waver = RunOf(workspace, "animation/waver/waver.rig.sanimscenario");
+    const AnimationScenarioRun& waver = RunOf(runs, "animation/waver/waver.rig.sanimscenario");
     EXPECT_EQ(waver.Verdict, AnimationScenarioVerdict::Passed);
     EXPECT_TRUE(waver.Ran);
     EXPECT_TRUE(waver.Reproduces);
@@ -82,14 +82,14 @@ TEST(AnimationScenarioBatch, EveryScenarioIsRunAndJudged)
     ASSERT_EQ(waver.Ending.size(), 1u);
     EXPECT_NE(waver.Ending[0].find("asset://meshes/man.blend#anim:Idle"), std::string::npos) << waver.Ending[0];
 
-    const AnimationScenarioRun& fact = RunOf(workspace, "extra/unknown_fact.sanimscenario");
+    const AnimationScenarioRun& fact = RunOf(runs, "extra/unknown_fact.sanimscenario");
     EXPECT_EQ(fact.Verdict, AnimationScenarioVerdict::Failed);
     EXPECT_TRUE(fact.Ran) << "it fails for its fact, not its rig";
     EXPECT_TRUE(std::ranges::any_of(fact.Problems, [](const AnimDiagnostic& problem) {
         return problem.Code == "anim.scenario.unknown_fact";
     }));
 
-    const AnimationScenarioRun& missing = RunOf(workspace, "extra/missing_rig.sanimscenario");
+    const AnimationScenarioRun& missing = RunOf(runs, "extra/missing_rig.sanimscenario");
     EXPECT_EQ(missing.Verdict, AnimationScenarioVerdict::Failed);
     EXPECT_FALSE(missing.Ran);
 }
@@ -106,9 +106,9 @@ TEST(AnimationScenarioBatch, ScenariosRunAgainstTheOpenRigWithoutDisturbingIt)
     ASSERT_EQ(workspace.Rig.Path, "asset://animation/waver/waver.rig.sdata");
     workspace.Rig.Simulation.RunTo(17);
 
-    workspace.RunScenarioBatch(true);
-    ASSERT_EQ(workspace.ScenarioRuns.size(), 2u);
-    for (const AnimationScenarioRun& run : workspace.ScenarioRuns)
+    const std::vector<AnimationScenarioRun> runs = workspace.RunScenarioBatch(true);
+    ASSERT_EQ(runs.size(), 2u);
+    for (const AnimationScenarioRun& run : runs)
     {
         EXPECT_EQ(run.RigPath, "asset://animation/waver/waver.rig.sdata") << run.File;
         EXPECT_EQ(run.Verdict, AnimationScenarioVerdict::Passed) << run.File;

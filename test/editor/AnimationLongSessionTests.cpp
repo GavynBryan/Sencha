@@ -75,11 +75,11 @@ namespace
         workspace.Sources.Redo();
         workspace.Sources.Undo();
 
-        ASSERT_TRUE(workspace.RecordTakeA());
-        ASSERT_TRUE(workspace.ReplayAgainstTakeA());
-        workspace.ClearTakeA();
-        ASSERT_TRUE(workspace.RunLab());
-        workspace.RunScenarioBatch(false);
+        ASSERT_TRUE(workspace.Takes.RecordA(workspace.Rig.Simulation));
+        ASSERT_TRUE(workspace.Takes.ReplayAgainstA(workspace.Rig.Simulation));
+        workspace.Takes.Clear();
+        ASSERT_TRUE(workspace.Lab.Run(workspace.Rig.Simulation));
+        (void)workspace.RunScenarioBatch(false);
     }
 }
 

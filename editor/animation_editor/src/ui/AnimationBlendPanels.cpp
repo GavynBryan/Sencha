@@ -152,22 +152,22 @@ private:
                            "inputs, clock, seed and start pose -- and is compared with A tick by tick. A is "
                            "drawn as an orange ghost.");
         if (ImGui::Button("Record A"))
-            (void)Workspace.RecordTakeA();
+            (void)Workspace.Takes.RecordA(Workspace.Rig.Simulation);
         ImGui::SameLine();
-        ImGui::BeginDisabled(!Workspace.TakeA);
+        ImGui::BeginDisabled(!Workspace.Takes.A());
         if (ImGui::Button("Replay B against A"))
-            (void)Workspace.ReplayAgainstTakeA();
+            (void)Workspace.Takes.ReplayAgainstA(Workspace.Rig.Simulation);
         ImGui::SameLine();
         if (ImGui::Button("Clear"))
-            Workspace.ClearTakeA();
+            Workspace.Takes.Clear();
         ImGui::SameLine();
         ImGui::Checkbox("Ghost", &Workspace.Viewport.ShowGhost);
         ImGui::EndDisabled();
-        if (!Workspace.TakeA)
+        if (!Workspace.Takes.A())
             return;
-        ImGui::Text("A: ticks %llu to %llu", static_cast<unsigned long long>(Workspace.TakeA->Ticks.front()),
-                    static_cast<unsigned long long>(Workspace.TakeA->Ticks.back()));
-        const AnimationPoseComparison& comparison = Workspace.Comparison;
+        ImGui::Text("A: ticks %llu to %llu", static_cast<unsigned long long>(Workspace.Takes.A()->Ticks.front()),
+                    static_cast<unsigned long long>(Workspace.Takes.A()->Ticks.back()));
+        const AnimationPoseComparison& comparison = Workspace.Takes.Comparison();
         if (!comparison.Refusal.empty())
         {
             ImGui::TextWrapped("%s", comparison.Refusal.c_str());

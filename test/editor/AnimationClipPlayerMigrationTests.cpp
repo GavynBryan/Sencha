@@ -64,7 +64,7 @@ TEST(AnimationClipPlayerMigration, PlayersBecomeRigsThatPlayAsTheyDid)
     AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.MigrateClipPlayers(error)) << error;
-    EXPECT_TRUE(workspace.ClipPlayerUses.empty()) << "nothing left to migrate";
+    EXPECT_TRUE(workspace.ClipPlayers.Uses.empty()) << "nothing left to migrate";
 
     const JsonValue scene = project.Read("levels/old.sscene");
     const JsonValue::Array& entities = scene.Find("entities")->AsArray();

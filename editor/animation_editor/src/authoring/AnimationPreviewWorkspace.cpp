@@ -2,6 +2,7 @@
 
 #include "authoring/AnimationEventBindings.h"
 #include "authoring/AnimationNameDeclarations.h"
+#include "authoring/AnimationNewFiles.h"
 #include "data/DataAssetFiles.h"
 #include "ui/DataForm.h"
 
@@ -46,6 +47,8 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std:
     , Viewport(assets)
     , Rig(assets, Tags.Vocabulary(vocabulary))
     , Vocabulary(Tags.Vocabulary(std::move(vocabulary)))
+    , Lab(assets, Vocabulary)
+    , ClipPlayers(authoringRoot)
     , Assets(assets)
     , AuthoringRoot(std::move(authoringRoot))
 {
@@ -189,7 +192,8 @@ bool AnimationPreviewWorkspace::CreateRig(const AnimationRigRecipe& recipe, std:
         error = plan.Error;
         return false;
     }
-    if (!WriteNewDocuments(plan.Documents, error) || !WriteFile(plan.Scenario, 4, error))
+    if (!WriteAnimationNewDocuments(AuthoringRoot, Assets.Registry, plan.Documents, error)
+        || !WriteAnimationNewFile(AuthoringRoot, plan.Scenario, 4, error))
         return false;
     RefreshBrowser();
     if (!OpenRig(plan.RigPath))
@@ -201,46 +205,6 @@ bool AnimationPreviewWorkspace::CreateRig(const AnimationRigRecipe& recipe, std:
     return true;
 }
 
-bool AnimationPreviewWorkspace::WriteFile(const AnimationNewDocument& document, int indent, std::string& error)
-{
-    const std::filesystem::path file = AuthoringRoot / document.RelativePath;
-    std::error_code ec;
-    std::filesystem::create_directories(file.parent_path(), ec);
-    std::ofstream out(file, std::ios::binary);
-    out << JsonFormat(document.Root, indent) << "\n";
-    if (out.good())
-        return true;
-    error = std::format("Could not write '{}'.", document.RelativePath);
-    return false;
-}
-
-bool AnimationPreviewWorkspace::WriteNewDocuments(const std::vector<AnimationNewDocument>& documents,
-                                                  std::string& error)
-{
-    for (const AnimationNewDocument& document : documents)
-        if (std::filesystem::exists(AuthoringRoot / document.RelativePath)
-            || Assets.Registry.Contains("asset://" + document.RelativePath))
-        {
-            error = std::format("'{}' already exists; choose another name.", document.RelativePath);
-            return false;
-        }
-    for (const AnimationNewDocument& document : documents)
-    {
-        if (!WriteFile(document, 4, error))
-            return false;
-        RegisterDataAssetFile(Assets.Registry, "asset://" + document.RelativePath, AuthoringRoot / document.RelativePath);
-    }
-    return true;
-}
-
-void AnimationPreviewWorkspace::ScanClipPlayers()
-{
-    ClipPlayerUses.clear();
-    ClipPlayerProblems.clear();
-    if (!AuthoringRoot.empty())
-        ClipPlayerUses = FindAnimationClipPlayers(AuthoringRoot, ClipPlayerProblems);
-}
-
 bool AnimationPreviewWorkspace::MigrateClipPlayers(std::string& error)
 {
     if (AuthoringRoot.empty())
@@ -248,22 +212,22 @@ bool AnimationPreviewWorkspace::MigrateClipPlayers(std::string& error)
         error = "No project content root is open to migrate.";
         return false;
     }
-    ScanClipPlayers();
+    ClipPlayers.Scan();
     const AnimationClipPlayerMigrationPlan plan =
-        PlanAnimationClipPlayerMigration(AuthoringRoot, ClipPlayerUses, Assets.AnimationClips);
+        PlanAnimationClipPlayerMigration(AuthoringRoot, ClipPlayers.Uses, Assets.AnimationClips);
     if (!plan.Error.empty())
     {
         error = plan.Error;
         return false;
     }
-    if (!WriteNewDocuments(plan.Documents, error))
+    if (!WriteAnimationNewDocuments(AuthoringRoot, Assets.Registry, plan.Documents, error))
         return false;
     // Two-space indent, as scenes are written.
     for (const AnimationNewDocument& scene : plan.Scenes)
-        if (!WriteFile(scene, 2, error))
+        if (!WriteAnimationNewFile(AuthoringRoot, scene, 2, error))
             return false;
     RefreshBrowser();
-    ScanClipPlayers();
+    ClipPlayers.Scan();
     error.clear();
     return true;
 }
@@ -284,71 +248,13 @@ void AnimationPreviewWorkspace::Advance(double wallSeconds)
 
 void AnimationPreviewWorkspace::ExtractViewport()
 {
-    Viewport.Extract(Audition, Rig.Simulation, Rig.Navigation, TakeA ? &*TakeA : nullptr);
+    Viewport.Extract(Audition, Rig.Simulation, Rig.Navigation, Takes.A());
 }
 
-bool AnimationPreviewWorkspace::RecordTakeA()
+std::vector<AnimationScenarioRun> AnimationPreviewWorkspace::RunScenarioBatch(bool againstOpenRig)
 {
-    if (!Rig.Simulation.IsOpen() || Rig.Simulation.History().empty())
-        return false;
-    TakeA = RecordAnimationPoseTake(Rig.Simulation, "A");
-    Comparison = {};
-    return !TakeA->Ticks.empty();
-}
-
-bool AnimationPreviewWorkspace::ReplayAgainstTakeA()
-{
-    if (!TakeA || TakeA->Ticks.empty() || !Rig.Simulation.IsOpen())
-        return false;
-    Rig.Simulation.Pause();
-    Rig.Simulation.Restart();
-    Rig.Simulation.RunTo(TakeA->Ticks.back());
-    Comparison = CompareAnimationPoseTakes(*TakeA, RecordAnimationPoseTake(Rig.Simulation, "B"));
-    return Comparison.Refusal.empty();
-}
-
-void AnimationPreviewWorkspace::RunScenarioBatch(bool againstOpenRig)
-{
-    ScenarioRuns.clear();
     if (againstOpenRig && Rig.Path.empty())
-        return;
+        return {};
     AnimationPreviewSession batch(Assets.DataAssets, &Assets.AnimationClips, Vocabulary, &Assets.Skeletons);
-    for (const std::filesystem::path& file : FindAnimationScenarios(AuthoringRoot))
-    {
-        std::vector<AnimDiagnostic> problems;
-        std::optional<AnimationScenario> scenario = LoadAnimationScenario(file.string(), problems);
-        AnimationScenarioRun run;
-        if (scenario)
-        {
-            if (againstOpenRig)
-                scenario->RigPath = Rig.Path;
-            const AssetLease rig = Assets.Assets.LoadLease(scenario->RigPath, AssetType::Data);
-            run = RunAnimationScenario(batch, std::move(*scenario), std::move(problems));
-        }
-        else
-        {
-            run.Problems = std::move(problems);
-        }
-        run.File = std::filesystem::relative(file, AuthoringRoot).generic_string();
-        ScenarioRuns.push_back(std::move(run));
-    }
-}
-
-bool AnimationPreviewWorkspace::RunLab()
-{
-    if (!Rig.Simulation.IsOpen())
-        return false;
-    if (Lab == nullptr)
-        Lab = std::make_unique<AnimationSessionLab>(Assets.DataAssets, &Assets.AnimationClips, Vocabulary,
-                                                    &Assets.Skeletons);
-    if (!Lab->Open(Rig.Simulation.Scenario(), LabSettings, LabInjections))
-        return false;
-    Lab->RunTo(LabTick);
-    return true;
-}
-
-void AnimationPreviewWorkspace::ClearTakeA()
-{
-    TakeA.reset();
-    Comparison = {};
+    return RunAnimationScenarios(batch, Assets.Assets, AuthoringRoot, againstOpenRig ? Rig.Path : std::string());
 }

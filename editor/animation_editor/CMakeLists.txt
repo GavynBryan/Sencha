@@ -7,6 +7,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationViewportExtraction.cpp
     src/authoring/AnimationRigScenario.cpp
     src/authoring/AnimationRigDocumentEdits.cpp
+    src/authoring/AnimationNewFiles.cpp
     src/authoring/AnimationClipPlayerMigration.cpp
     src/authoring/AnimationTraceImport.cpp
     src/authoring/AnimationBlendComparison.cpp

@@ -44,3 +44,19 @@ struct AnimationPoseComparison
 };
 
 [[nodiscard]] AnimationPoseComparison CompareAnimationPoseTakes(const AnimationPoseTake& a, const AnimationPoseTake& b);
+
+// Take A recorded from the simulation, and how a replay of the working scenario compares with it.
+class AnimationTakeComparison
+{
+public:
+    bool RecordA(const AnimationPreviewSession& simulation);
+    // Replays from tick 0 to take A's last tick, so any edit since the recording shows as a residual.
+    bool ReplayAgainstA(AnimationPreviewSession& simulation);
+    void Clear();
+    [[nodiscard]] const AnimationPoseTake* A() const { return TakeA ? &*TakeA : nullptr; }
+    [[nodiscard]] const AnimationPoseComparison& Comparison() const { return Result; }
+
+private:
+    std::optional<AnimationPoseTake> TakeA;
+    AnimationPoseComparison Result;
+};

@@ -90,7 +90,7 @@ public:
         ScopedPanel panel(GetTitle(), &Visible);
         if (!panel.IsOpen()) return;
 
-        const AnimationSessionLab* lab = Workspace.Lab.get();
+        const AnimationSessionLab* lab = Workspace.Lab.Session.get();
         const bool ran = lab != nullptr && lab->IsOpen();
         // Always shown first: which machine is which, and that facts are synthetic.
         if (ran)
@@ -119,7 +119,7 @@ public:
 private:
     void DrawControls(bool ran)
     {
-        AnimationLabSettings& settings = Workspace.LabSettings;
+        AnimationLabSettings& settings = Workspace.Lab.Settings;
         const AnimationLabSettings before = settings;
         const std::uint64_t step = 1;
         ImGui::SetNextItemWidth(90.0f);
@@ -133,18 +133,18 @@ private:
         if (ImGui::SliderInt("Loss %", &loss, 0, 90))
             settings.LossPercent = static_cast<std::uint32_t>(loss);
         ImGui::SetNextItemWidth(90.0f);
-        ImGui::InputScalar("Run to tick", ImGuiDataType_U64, &Workspace.LabTick, &step);
+        ImGui::InputScalar("Run to tick", ImGuiDataType_U64, &Workspace.Lab.Tick, &step);
         ImGui::SameLine();
         if (ImGui::Button(ran ? "Run again" : "Run"))
         {
-            if (!Workspace.RunLab())
+            if (!Workspace.Lab.Run(Workspace.Rig.Simulation))
                 Problem = "The rig did not open on both machines.";
             else
                 Problem.clear();
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Runs both machines from tick 0 under the working scenario and the settings above.");
-        if (ran && !(before == settings && Workspace.Lab->Settings() == settings))
+        if (ran && !(before == settings && Workspace.Lab.Session->Settings() == settings))
         {
             ImGui::SameLine();
             ImGui::TextDisabled("(settings changed; run again)");
@@ -158,7 +158,7 @@ private:
         if (!ImGui::CollapsingHeader("Client guesses"))
             return;
         ImGui::TextDisabled("A request the client predicts, and what the authority does with the command behind it.");
-        std::vector<AnimationLabInjection>& injections = Workspace.LabInjections;
+        std::vector<AnimationLabInjection>& injections = Workspace.Lab.Injections;
         const std::vector<std::string>& participants = Workspace.Rig.Simulation.Scenario().Participants;
         std::size_t removed = injections.size();
         for (std::size_t i = 0; i < injections.size(); ++i)

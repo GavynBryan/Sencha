@@ -14,9 +14,6 @@
 #include "data/DataDocumentSet.h"
 #include "documents/DocumentSourceSet.h"
 
-#include <anim/Skeleton.h>
-#include <core/assets/AssetLease.h>
-
 #include <filesystem>
 #include <functional>
 #include <span>
@@ -34,6 +31,12 @@ public:
     // An empty `authoringRoot` makes a workspace that creates no assets.
     explicit AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary = {},
                                        std::filesystem::path authoringRoot = {});
+
+    AnimationPreviewWorkspace(const AnimationPreviewWorkspace&) = delete;
+    AnimationPreviewWorkspace& operator=(const AnimationPreviewWorkspace&) = delete;
+    AnimationPreviewWorkspace(AnimationPreviewWorkspace&&) = delete;
+    AnimationPreviewWorkspace& operator=(AnimationPreviewWorkspace&&) = delete;
+
     void RefreshBrowser();
     // Shows the clip in the viewport; an empty path shows the bind pose.
     bool AuditionClip(const std::string& path);
@@ -49,19 +52,10 @@ public:
     bool OpenRig(const std::string& path);
     // Refuses before writing anything if any of the rig's files already exists.
     bool CreateRig(const AnimationRigRecipe& recipe, std::string& error);
-    void ScanClipPlayers();
     bool MigrateClipPlayers(std::string& error);
-
-    // Replay runs the working scenario from tick 0 to take A's last tick and
-    // compares poses, so any edit since the recording shows as a residual.
-    bool RecordTakeA();
-    bool ReplayAgainstTakeA();
-    void ClearTakeA();
-    // Always from tick 0, so the result reflects the current edits.
-    bool RunLab();
     bool ReloadScenario();
     // Runs in its own session; the working simulation is untouched.
-    void RunScenarioBatch(bool againstOpenRig);
+    [[nodiscard]] std::vector<AnimationScenarioRun> RunScenarioBatch(bool againstOpenRig);
     [[nodiscard]] const DataAssetCache& DataCache() const;
     // Includes working clip events not yet saved.
     [[nodiscard]] const AnimationClipCache& Clips() const;
@@ -76,26 +70,17 @@ public:
     AnimationContentLists Content;
     AnimationAuditionSelection Audition;
     AnimationViewportExtraction Viewport;
-    std::optional<AnimationPoseTake> TakeA;
-    AnimationPoseComparison Comparison;
     std::string DocumentError;
 
     AnimationRigScenario Rig;
     // The game module's hook, then Tags.
     std::function<void(World&)> Vocabulary;
-    std::unique_ptr<AnimationSessionLab> Lab;
-    std::vector<AnimationClipPlayerUse> ClipPlayerUses;
-    std::vector<std::string> ClipPlayerProblems;
-    AnimationLabSettings LabSettings;
-    std::vector<AnimationLabInjection> LabInjections;
-    AnimTick LabTick = 300;
-    std::vector<AnimationScenarioRun> ScenarioRuns;
+    AnimationTakeComparison Takes;
+    AnimationLabRun Lab;
+    AnimationClipPlayerScan ClipPlayers;
 
 private:
     void DataDocumentChanged(DataDocument& document, bool residentChanged);
-    // Refuses before writing anything if any document already exists.
-    bool WriteNewDocuments(const std::vector<AnimationNewDocument>& documents, std::string& error);
-    bool WriteFile(const AnimationNewDocument& document, int indent, std::string& error);
     RuntimeAssets& Assets;
     std::filesystem::path AuthoringRoot;
 };

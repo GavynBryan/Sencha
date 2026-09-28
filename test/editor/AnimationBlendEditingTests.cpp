@@ -104,8 +104,8 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
         ASSERT_TRUE(workspace.OpenRig("asset://anim/walker.rig.sdata")) << workspace.Rig.Error;
         ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);
         workspace.Rig.Simulation.RunTo(90);
-        ASSERT_TRUE(workspace.RecordTakeA());
-        ASSERT_EQ(workspace.TakeA->Ticks.back(), 90u);
+        ASSERT_TRUE(workspace.Takes.RecordA(workspace.Rig.Simulation));
+        ASSERT_EQ(workspace.Takes.A()->Ticks.back(), 90u);
 
         // Lengthen the walk's inertialization through the behavior set's
         // document, as the Behavior panel or Data Editor would.
@@ -118,8 +118,8 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
         behaviors->PreviewRoot(std::move(root));
         workspace.Documents.CommitEdit(*behaviors);
 
-        ASSERT_TRUE(workspace.ReplayAgainstTakeA()) << workspace.Comparison.Refusal;
-        const std::vector<AnimationPoseResidual>& residuals = workspace.Comparison.Residuals;
+        ASSERT_TRUE(workspace.Takes.ReplayAgainstA(workspace.Rig.Simulation)) << workspace.Takes.Comparison().Refusal;
+        const std::vector<AnimationPoseResidual>& residuals = workspace.Takes.Comparison().Residuals;
         ASSERT_FALSE(residuals.empty());
         const auto at = [&](AnimTick tick) {
             const auto it = std::ranges::find_if(residuals, [&](const AnimationPoseResidual& r) { return r.Tick == tick; });
@@ -138,8 +138,8 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
         faster.Number = 2.0;
         workspace.Rig.Simulation.SetFact("Speed", faster);
         workspace.Rig.Simulation.Step();
-        EXPECT_FALSE(workspace.ReplayAgainstTakeA());
-        EXPECT_NE(workspace.Comparison.Refusal.find("different scenarios"), std::string::npos);
+        EXPECT_FALSE(workspace.Takes.ReplayAgainstA(workspace.Rig.Simulation));
+        EXPECT_NE(workspace.Takes.Comparison().Refusal.find("different scenarios"), std::string::npos);
         workspace.Rig.Simulation.Close();
     }
 }

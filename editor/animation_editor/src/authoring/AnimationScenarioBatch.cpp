@@ -4,6 +4,7 @@
 
 #include <anim/AnimContentState.h>
 #include <anim/AnimRigBinding.h>
+#include <assets/runtime/AssetSystem.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
@@ -103,4 +104,31 @@ AnimationScenarioRun RunAnimationScenario(AnimationPreviewSession& session, Anim
                 : !run.Problems.empty() || run.UnplayedRequests > 0 ? AnimationScenarioVerdict::Warned
                                                                      : AnimationScenarioVerdict::Passed;
     return run;
+}
+
+std::vector<AnimationScenarioRun> RunAnimationScenarios(AnimationPreviewSession& session, AssetSystem& assets,
+                                                        const std::filesystem::path& root,
+                                                        const std::string& rigOverride)
+{
+    std::vector<AnimationScenarioRun> runs;
+    for (const std::filesystem::path& file : FindAnimationScenarios(root))
+    {
+        std::vector<AnimDiagnostic> problems;
+        std::optional<AnimationScenario> scenario = LoadAnimationScenario(file.string(), problems);
+        AnimationScenarioRun run;
+        if (scenario)
+        {
+            if (!rigOverride.empty())
+                scenario->RigPath = rigOverride;
+            const AssetLease rig = assets.LoadLease(scenario->RigPath, AssetType::Data);
+            run = RunAnimationScenario(session, std::move(*scenario), std::move(problems));
+        }
+        else
+        {
+            run.Problems = std::move(problems);
+        }
+        run.File = std::filesystem::relative(file, root).generic_string();
+        runs.push_back(std::move(run));
+    }
+    return runs;
 }

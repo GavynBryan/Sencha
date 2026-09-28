@@ -27,7 +27,7 @@ public:
 
         if (!Scanned)
         {
-            Workspace.ScanClipPlayers();
+            Workspace.ClipPlayers.Scan();
             Scanned = true;
         }
         ImGui::TextWrapped("Scenes may still name a clip directly on an AnimationClipPlayer, which no longer "
@@ -36,20 +36,20 @@ public:
                            "animation/migrated/, declares the rigs' names, and rewrites the scenes.");
         if (ImGui::Button("Scan project"))
         {
-            Workspace.ScanClipPlayers();
+            Workspace.ClipPlayers.Scan();
             Status.clear();
         }
         ImGui::SameLine();
-        ImGui::BeginDisabled(Workspace.ClipPlayerUses.empty());
+        ImGui::BeginDisabled(Workspace.ClipPlayers.Uses.empty());
         if (ImGui::Button("Convert to rigs"))
             Status = Workspace.MigrateClipPlayers(Error) ? "Converted." : Error;
         ImGui::EndDisabled();
         if (!Status.empty())
             ImGui::TextWrapped("%s", Status.c_str());
-        for (const std::string& problem : Workspace.ClipPlayerProblems)
+        for (const std::string& problem : Workspace.ClipPlayers.Problems)
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s", problem.c_str());
 
-        if (Workspace.ClipPlayerUses.empty())
+        if (Workspace.ClipPlayers.Uses.empty())
         {
             ImGui::TextDisabled("No scene in the project names a clip player.");
             return;
@@ -62,7 +62,7 @@ public:
         ImGui::TableSetupColumn("Time / speed");
         ImGui::TableSetupColumn("Loop");
         ImGui::TableHeadersRow();
-        for (const AnimationClipPlayerUse& use : Workspace.ClipPlayerUses)
+        for (const AnimationClipPlayerUse& use : Workspace.ClipPlayers.Uses)
         {
             ImGui::TableNextRow();
             ImGui::TableNextColumn();

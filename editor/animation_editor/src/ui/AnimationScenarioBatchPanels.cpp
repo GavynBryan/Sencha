@@ -51,14 +51,14 @@ public:
                            "to two seconds past its last action. A scenario fails on an error or a second run that "
                            "differs from the first, and warns on a warning or a request nothing played.");
         if (ImGui::Button("Run all"))
-            Workspace.RunScenarioBatch(false);
+            Runs = Workspace.RunScenarioBatch(false);
         ImGui::SameLine();
         ImGui::BeginDisabled(Workspace.Rig.Path.empty());
         if (ImGui::Button("Run all against the open rig"))
-            Workspace.RunScenarioBatch(true);
+            Runs = Workspace.RunScenarioBatch(true);
         ImGui::EndDisabled();
 
-        if (Workspace.ScenarioRuns.empty())
+        if (Runs.empty())
         {
             ImGui::TextDisabled("No results yet.");
             return;
@@ -71,7 +71,7 @@ public:
         ImGui::TableSetupColumn("Ending");
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
-        for (const AnimationScenarioRun& run : Workspace.ScenarioRuns)
+        for (const AnimationScenarioRun& run : Runs)
         {
             ImGui::PushID(run.File.c_str());
             ImGui::TableNextRow();
@@ -102,6 +102,7 @@ public:
 
 private:
     AnimationPreviewWorkspace& Workspace;
+    std::vector<AnimationScenarioRun> Runs;
 };
 }
 

@@ -36,5 +36,20 @@ struct AnimationClipPlayerMigrationPlan
     std::vector<AnimationNewDocument> Scenes;
 };
 
+// The scenes under a content root that still name the retired clip player.
+class AnimationClipPlayerScan
+{
+public:
+    // An empty root finds nothing.
+    explicit AnimationClipPlayerScan(std::filesystem::path root) : Root(std::move(root)) {}
+    void Scan();
+
+    std::vector<AnimationClipPlayerUse> Uses;
+    std::vector<std::string> Problems;
+
+private:
+    std::filesystem::path Root;
+};
+
 [[nodiscard]] AnimationClipPlayerMigrationPlan PlanAnimationClipPlayerMigration(
     const std::filesystem::path& root, const std::vector<AnimationClipPlayerUse>& uses, const AnimationClipCache& clips);
