@@ -1,5 +1,7 @@
 #include <app/EngineVerbs.h>
 
+#include <anim/AnimRequestVerbs.h>
+
 #include <string>
 
 bool DeclareEngineVerbs(VerbRegistry& registry)
@@ -19,6 +21,8 @@ bool DeclareEngineVerbs(VerbRegistry& registry)
     quit.Description = "Asks the host to exit. The game's exit handler still sees the request.";
     quit.Category = "Application";
     (void)scope.Declare(std::move(quit));
+
+    DeclareAnimRequestVerbs(scope);
 
     return scope.Commit();
 }

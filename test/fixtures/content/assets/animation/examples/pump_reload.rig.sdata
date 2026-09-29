@@ -1,0 +1,22 @@
+{
+    "type": "animation.rig",
+    "version": 1,
+    "data": {
+        "skeleton": "asset://meshes/dev/golden_rig.sskel",
+        "facts": "asset://animation/examples/examples.facts.sdata",
+        "requests": "asset://animation/examples/examples.requests.sdata",
+        "layers": [
+            {
+                "name": "anim.layer.base",
+                "selector": "asset://animation/examples/pump_reload.selector.sdata",
+                "idle": "Anim.Locomotion.Idle"
+            }
+        ],
+        "behaviors": [
+            "asset://animation/examples/examples.behaviors.sdata"
+        ],
+        "slot_maps": [
+            "asset://animation/examples/examples.slots.sdata"
+        ]
+    }
+}

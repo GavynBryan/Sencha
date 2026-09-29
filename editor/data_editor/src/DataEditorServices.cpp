@@ -5,6 +5,7 @@
 
 #include "project/ProjectContentMount.h"
 #include "ui/EditorThemeStartup.h"
+#include "ui/DocumentShellActions.h"
 #include "ui/EditorUiFeature.h"
 
 #include <SDL3/SDL.h>
@@ -60,7 +61,7 @@ DataEditorServices::DataEditorServices(Engine& engine,
     if (Workspace && InitialAsset)
     {
         std::string error;
-        if (!Workspace->Open(*InitialAsset, &error))
+        if (Workspace->Documents.OpenOrFocus(*InitialAsset, error) == nullptr)
         {
             std::fprintf(stderr, "[data_editor] failed to open '%s': %s\n",
                          InitialAsset->c_str(), error.c_str());
@@ -71,6 +72,13 @@ DataEditorServices::DataEditorServices(Engine& engine,
 
 DataEditorServices::~DataEditorServices()
 {
+    // Nothing that reaches the documents may outlive them.
+    EnginePtr->OnExitRequested = {};
+    if (UiFeature != nullptr && !EnginePtr->Graphics().MainRenderer.RemoveFeature(UiFeature))
+    {
+        std::fprintf(stderr, "[data_editor] the editor UI could not be detached.\n");
+        std::abort();
+    }
     Workspace.reset();
 
     if (ProjectModule.IsValid() && Assets)
@@ -129,6 +137,7 @@ void DataEditorServices::InitAssets()
     }
 
     MountProjectContent(*Project, *Assets, engine.Logging(), &engine.Jobs());
+    MountEngineContent(*Assets, engine.Logging(), &engine.Jobs());
     Workspace = std::make_unique<DataEditorWorkspace>(*Assets, *Project);
     RegisterBuiltInSubtypeEditors(SubtypeEditors);
 }
@@ -151,13 +160,7 @@ void DataEditorServices::BuildUi()
 
     if (Workspace)
     {
-        UiFeature->SetUndoActions(
-            [this]() { if (DataDocument* document = Workspace->Active()) document->Undo(); },
-            [this]() { if (DataDocument* document = Workspace->Active()) document->Redo(); },
-            [this]() { const DataDocument* document = Workspace->Active(); return document && document->CanUndo(); },
-            [this]() { const DataDocument* document = Workspace->Active(); return document && document->CanRedo(); });
-        UiFeature->SetFileActions({}, {}, [this]() { SaveActive(); }, {});
-        UiFeature->SetSaveAllAction([this]() { Workspace->SaveAll(); });
+        InstallDocumentShellActions(*UiFeature, engine, Workspace->Sources, [this] { return ActiveDocument(); });
 
         UiFeature->AddPanel(std::make_unique<DataAssetBrowserPanel>(*Workspace));
         UiFeature->AddPanel(std::make_unique<DataFormPanel>(*Workspace, SubtypeEditors));
@@ -170,7 +173,7 @@ void DataEditorServices::BuildUi()
         // active subtype rather than appearing and disappearing.
         for (const auto& editor : SubtypeEditors.Entries())
         {
-            for (auto& panel : editor->CreatePanels(*Workspace))
+            for (auto& panel : editor->CreatePanels(Workspace->Documents))
                 UiFeature->AddPanel(std::move(panel));
         }
 
@@ -185,22 +188,25 @@ void DataEditorServices::BuildShortcuts()
     Shortcuts.Register("data.save", SDLK_S, ModifierFlags{ .Ctrl = true },
                        [this] { SaveActive(); });
     Shortcuts.Register("data.save_all", SDLK_S, ModifierFlags{ .Ctrl = true, .Shift = true },
-                       [this] { Workspace->SaveAll(); });
+                       [this] { (void)Workspace->Sources.SaveAll(); });
     Shortcuts.Register("data.undo", SDLK_Z, ModifierFlags{ .Ctrl = true },
-                       [this] { if (DataDocument* d = Workspace->Active()) d->Undo(); });
+                       [this] { Workspace->Sources.Undo(); });
     Shortcuts.Register("data.redo", SDLK_Y, ModifierFlags{ .Ctrl = true },
-                       [this] { if (DataDocument* d = Workspace->Active()) d->Redo(); });
+                       [this] { Workspace->Sources.Redo(); });
     Shortcuts.Register("data.redo_alt", SDLK_Z, ModifierFlags{ .Ctrl = true, .Shift = true },
-                       [this] { if (DataDocument* d = Workspace->Active()) d->Redo(); });
+                       [this] { Workspace->Sources.Redo(); });
 }
 
 void DataEditorServices::SaveActive()
 {
-    if (!Workspace)
-        return;
-    std::string error;
-    if (!Workspace->SaveActive(&error) && !error.empty())
-        std::fprintf(stderr, "[data_editor] save failed: %s\n", error.c_str());
+    if (const std::optional<DocumentRef> document = ActiveDocument())
+        (void)Workspace->Sources.Save(*document);
+}
+
+std::optional<DocumentRef> DataEditorServices::ActiveDocument()
+{
+    DataDocument* active = Workspace ? Workspace->Documents.Active() : nullptr;
+    return active != nullptr ? std::optional(Workspace->Documents.RefOf(*active)) : std::nullopt;
 }
 
 void DataEditorServices::RegisterSystems(EngineSchedule& schedule)
@@ -215,7 +221,7 @@ void DataEditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
     // same keystroke also lands in whatever widget has focus.
     if (Workspace)
     {
-        if (const DataDocument* document = Workspace->Active())
+        if (const DataDocument* document = Workspace->Documents.Active())
         {
             if (IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype());
                 editor != nullptr && editor->HandlePlatformEvent(ctx.Event))
@@ -254,10 +260,11 @@ void DataEditorServices::ProcessFrame()
     // on screen and nothing that reads its state.
     if (Workspace)
     {
-        if (const DataDocument* document = Workspace->Active())
+        (void)Workspace->Documents.PushWaiting();
+        if (const DataDocument* document = Workspace->Documents.Active())
         {
             if (IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype()))
-                editor->UpdateForFrame(*document, *Workspace);
+                editor->UpdateForFrame(*document, Workspace->Documents);
         }
     }
     UpdateTitle();
@@ -270,7 +277,7 @@ void DataEditorServices::UpdateTitle()
         title += " - " + Project->Name;
     if (Workspace)
     {
-        if (const DataDocument* document = Workspace->Active())
+        if (const DataDocument* document = Workspace->Documents.Active())
         {
             title += " - " + document->VirtualPath();
             if (document->IsDirty())

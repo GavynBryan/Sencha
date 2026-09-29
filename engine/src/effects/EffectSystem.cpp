@@ -173,15 +173,15 @@ void FoldActiveEffectsImpl(
 }
 } // namespace
 
-void ApplyEffect(World& world, EntityId target, EffectId effect)
+EntityId ApplyEffect(World& world, EntityId target, EffectId effect)
 {
     const EffectRegistry* effReg =
         std::as_const(world).TryGetResource<EffectRegistry>();
     if (effReg == nullptr || !world.IsAlive(target))
-        return;
+        return {};
     const EffectDefinition* def = effReg->Get(effect);
     if (def == nullptr)
-        return;
+        return {};
 
     if (def->Duration == EffectDuration::Instant)
     {
@@ -189,7 +189,7 @@ void ApplyEffect(World& world, EntityId target, EffectId effect)
             std::as_const(world).TryGetResource<AttributeRegistry>();
         if (AttributeSet* set = world.TryGet<AttributeSet>(target))
             ApplyModifiersToBase(*set, *def, attrReg);
-        return;
+        return {};
     }
 
     const StoragePartitionId partition = world.GetEntityPartition(target);
@@ -205,6 +205,7 @@ void ApplyEffect(World& world, EntityId target, EffectId effect)
     if (GameplayTagContainer* tags = world.TryGet<GameplayTagContainer>(target))
         for (GameplayTagId tag : def->GrantedTags)
             tags->Grant(tag);
+    return fx;
 }
 
 void TickEffects(World& world, float dt)

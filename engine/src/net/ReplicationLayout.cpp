@@ -134,6 +134,7 @@ bool ReplicationLayout::AddErased(ComponentTypeId type,
     component.Type = type;
     component.Name = name;
     component.Size = size;
+    component.LocalSize = size;
     component.Predicted = predicted;
 
     for (const RuntimeField& field : fields)
@@ -240,6 +241,11 @@ std::uint64_t ReplicationLayout::TableHash() const
     {
         MixU64(hash, component.Type.Value);
         MixU64(hash, component.Size);
+        // A peer that sends a component's bytes and one that sends its wire
+        // image disagree even when the sizes happen to match. Mixed only for a
+        // translated component, so a table without one keeps its hash.
+        if (component.ToWire != nullptr)
+            MixU64(hash, component.LocalSize);
         MixU64(hash, component.Fields.size());
         for (const ReplicatedField& field : component.Fields)
         {

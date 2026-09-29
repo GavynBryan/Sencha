@@ -174,6 +174,125 @@ One consequence worth stating now: a single glTF/.blend source can yield
 Decision J). The cooked-cache keying is therefore source-hash → *set of
 outputs*, not one-to-one, from day one.
 
+#### The glTF import contract (current)
+
+What `ImportGltfScene` and `GltfMeshImporter` (`assets/cook/MeshCook.h`)
+guarantee today. The stage notes below record how it got here; where they
+disagree, this is the contract.
+
+- **Engine frame.** glTF faces +Z and the engine faces -Z. The importer
+  turns everything by one half turn about +Y (`assets/cook/GltfFrame.h`),
+  through its geometry bake and its skeleton fold and nowhere else. Cooked
+  data is in the engine frame, and nothing downstream knows a source was
+  glTF. Kyusu's `.glb` exporter writes the inverse turn on its node, so a
+  round trip is exact.
+- **Placement.** The cook imports what the scene places, node by node in
+  glTF order. A static mesh is baked through its node's world transform
+  (parents included; a mirroring transform flips winding and tangent
+  handedness with it). Two nodes placing one mesh are two artifacts. A mesh
+  no node places is an error.
+- **Skeleton model space.** A skin's inverse binds and skinned vertices are
+  in scene space, which includes every non-joint node above the root joints
+  (an exported armature object, for one). The cook folds those nodes into
+  the root joints' bind transforms, so at rest every palette entry is the
+  identity (`anim/Skeleton.h`). In clips, a static chain composes key by
+  key; an animated one is resampled at the union of every contributing key
+  time, and a root the source never keyed gets tracks of its own, so
+  object-level motion arrives as root-joint motion. Located errors: a
+  non-uniform, sheared or mirrored chain; a non-joint node between joints;
+  inverse binds that disagree with the rest pose ("Apply Pose as Rest Pose").
+  Every joint has a name and no two share one: a joint's name is its stable
+  key, what a bone mask names it by, so the skeleton format needs no second
+  identity; an unnamed or shared name is a located error.
+- **One model per skeleton.** Everything a skeleton draws is one
+  `.skmesh`: every mesh placed with its skin, and every mesh parented beneath
+  one of its joints as a rigid part bound wholly to that joint (joints
+  `{J,0,0,0}`, weights `{255,0,0,0}`), baked through the transforms from
+  beneath the joint down to the mesh. Every piece is baked into the
+  skeleton's model space before it joins. Sections are one per material in
+  first-appearance order, at most `kMaxMeshSections`. The one duplicate the
+  cook folds is a mesh placed twice with the same skin, which is the same
+  geometry twice. A mesh placed with two skins is part of both models. A
+  node between a rigid part and its joint may not be animated.
+- **Names.** Artifacts are named by the source's names, sanitized to
+  `[A-Za-z0-9_-]`, with the glTF index for an unnamed element (`node12`,
+  `skin0`, `animation3`):
+
+  | Artifact | Path |
+  |---|---|
+  | skeleton | `asset://<source>#skel:<skin>` |
+  | its model | `asset://<source>#model:<skin>` |
+  | static mesh | `asset://<source>#<node>`, or `asset://<source>` when the source is one static mesh with no skins |
+  | clip | `asset://<source>#anim:<animation>` |
+
+  Two elements landing on one name fail the import with both named. A name
+  never depends on discovery order.
+- **Clip events.** A source's clips take their events from its import
+  sidecar (`<source>.meta`, `assets/cook/MeshImportSettings.h`), keyed by the
+  name after `#anim:`, because the cooked clip is rebuilt on every import.
+  The cook sorts them by time and writes them into `.sanim` version 2;
+  version 1 clips load with no events. A sidecar naming a clip the source no
+  longer exports fails the import rather than dropping its events. An event
+  names an authored binding key and supplies only constants and tags as
+  inputs; references belong on the binding.
+- **Root motion.** A clip whose sidecar entry says `"root_motion": true` has
+  its skeleton root's planar travel and yaw, measured from its first frame,
+  moved out of the pose tracks and into a root curve
+  (`assets/cook/AnimationRootExtraction.h`). The cook writes the curve as
+  `.sanim` version 3's root block; versions 1 and 2 load with none. Opt-in,
+  because extraction changes how the clip poses when played without root
+  motion. A skeleton with more than one root joint is refused.
+- **Freshness.** The importer's cook identity (its version, and for
+  `.blend` the Blender and glTF exporter versions) is part of every cooked
+  entry, so changing the importer or the toolchain recooks its artifacts.
+
+#### Import sidecar
+
+A mesh source (`.glb`, `.gltf`, `.blend`) may have a JSON sidecar beside it
+(`hero.blend` + `hero.blend.meta`), parsed by `ParseMeshImportSettings`
+(`assets/cook/MeshImportSettings.h`). The import driver hands its bytes to
+the importer and folds them into the cooked-cache freshness hash, so editing
+it recooks. A missing sidecar means the defaults. Clip events live here
+rather than in the cooked clip because the clip is rebuilt from the source on
+every import, and an event authored only into it would be lost.
+
+Every field is optional. Unknown fields and invalid events fail the import,
+so a typo cannot cook a clip that silently lost its events.
+
+```jsonc
+{
+  "version": 1,
+  "clips": {
+    "<clip>": {              // the name after "#anim:" in the clip's path
+      "root_motion": true,   // extract the root's travel into a root curve
+      "events": [
+        { "key": 3, "name": "Left foot", "time": 0.25,
+          "binding": "anim.footstep",
+          "scope": "cosmetic",          // or "gameplay"
+          "min_weight": 0.5,
+          "inputs": { "surface": { "tag": "Surface.Grass" },
+                      "volume": { "const": 0.8 } } }
+      ]
+    }
+  }
+}
+```
+
+#### Cooked cache index versions
+
+`kCookedCacheIndexVersion` (`engine/include/assets/cook/CookedCache.h`) is the
+blunt invalidation knob: an index of another version is a cold cache, and every
+source recooks.
+
+| Version | Why it moved |
+| --- | --- |
+| 2 | Texture cook output went from RGBA8 to BC-compressed (Decision L). |
+| 3 | `.smesh` moved to v3 (skinning stream), and the glTF cook began emitting `.sskel` and `.sanim` (Decisions J, M, N). |
+| 5 | `.smesh` moved to v5: lightmap UVs replaced the baked-direct vertex channel, with per-zone atlas artifacts. |
+| 6 | Lightmap atlases moved from RGBM RGBA8 to RGB9E5; the shader no longer applies a multiplier, so older atlases would render wrong. |
+| 8 | Entries record the additional sources a cook read, so a multi-file source recooks when one of its inputs changes. |
+| 9 | Entries record the importer's cook identity, so an importer change recooks what it produced. |
+
 ### C. The staged-load contract — `IAssetStager` work/commit split
 
 **Proposed.** This is the centerpiece; everything else feeds it.
@@ -433,6 +552,29 @@ is unchanged and orthogonal to this.
   blind. How skinning reaches the GPU was originally deferred wholesale the
   same way; it is now **sketched but not chosen** in Decision N, because the
   asset formats need to know what either choice demands of them.
+
+#### `.sanim` layout
+
+`WriteAnimationClip` and `ReadAnimationClip`
+(`engine/include/assets/animation/AnimationClipSerializer.h`) are pure. The
+container stores keyframes as the cook extracted them. Version 3, little-endian:
+
+```text
+magic 'SANM', u32 version, u32 trackCount, f32 durationSeconds,
+u32 skeletonPathLength, u32 reserved(0), skeleton path bytes
+per track:  u32 jointIndex, u32 channelPath, u32 interpolation,
+            u32 keyCount, f32 times[keyCount], f32 values[keyCount * components]
+u32 eventCount, then per event:
+            u32 key, f32 time, u8 scope, u8 hasMinWeight, u16 inputCount,
+            f32 minWeight, string name, string binding,
+            per input: string name, u8 source (0 constant, 1 tag),
+                       string value (a constant as JSON text, a tag's name)
+u8 hasRoot, then when set: u32 keyCount, f32 times[keyCount],
+            f32 values[keyCount * 3] (x, z, yaw)
+where a string is u32 length + bytes
+```
+
+Version 2 lacks the root block, and version 1 also the event block; both load.
 
 ### L. Texture sets and the PBR material model (added 2026-06-11)
 
@@ -950,7 +1092,8 @@ skips where it isn't installed). Decisions B and M made real:
   triple its vertex count), and UV-less sources get a deterministic
   normal-derived basis. The MikkTSpace handedness is pinned by test: a +Z
   quad with U along +X must yield T = +X, w = +1.
-- **Artifact naming:** a single-mesh source keeps the source's virtual
+- **Artifact naming** (superseded by the import contract under Decision B:
+  names now come from nodes and skins): a single-mesh source keeps the source's virtual
   path (`asset://meshes/torus.glb` serves `.smesh` bytes — the texture-
   cook precedent; the loader already sniffs bytes, not extensions). A
   multi-mesh source emits `asset://<source>#<mesh-name>` per mesh — `#`
@@ -973,8 +1116,9 @@ skips where it isn't installed). Decisions B and M made real:
   glb and streams all six manifest assets through the async lane with
   zero errors and zero fallback warnings; warm run serves both from the
   cooked cache without invoking an importer.
-- Deliberately not done, with reasons: no node-transform baking (the
-  scene places instances; the cook emits geometry as authored), no
+- Deliberately not done, with reasons: no node-transform baking (since
+  reversed: the cook now bakes node placement, see the import contract under
+  Decision B), no
   material/skin/animation extraction from glTF (materials are authored
   `.smat`; skins/clips are Stage 5, where the multi-artifact keying
   built in 4a starts paying), and glTF primitives without NORMAL are
@@ -1144,9 +1288,10 @@ mesh type split (the Decision J revision above) was taken here.
 - **No silent partial cooking.** Where one glTF asset is ambiguous about
   which single skeleton an artifact should bind to, the cook rejects with a
   pointed error rather than honoring the first match and dropping the rest:
-  a mesh instanced with more than one skin, and an animation whose channels
-  target joints across more than one skin, are both refused (split per
-  skeleton or re-export). Skinned primitives must likewise carry authored
+  an animation whose channels target joints across more than one skin is
+  refused (split per skeleton or re-export). A mesh instanced with more than
+  one skin was refused too; each skin now has its own model, so such a mesh
+  joins both. Skinned primitives must likewise carry authored
   tangents (or be UV-less): MikkTSpace's de-index/reweld would desync the
   influence stream, so the cook asks for a tangent re-export rather than
   corrupt it. All three are in the spirit of the existing "reject missing

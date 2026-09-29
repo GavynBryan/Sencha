@@ -2,6 +2,7 @@
 
 #include <core/io/FileBytes.h>
 
+#include <assets/cook/CookFingerprint.h>
 #include <assets/cook/MeshCook.h>
 #include <core/hash/ContentHash.h>
 
@@ -47,7 +48,60 @@ namespace
         return file.good();
     }
 
+    // Bump when the export options below change; they are part of what this
+    // importer produces.
+    constexpr std::uint32_t kBlendCookVersion = 1;
+
+#ifdef _WIN32
+    constexpr std::string_view kQuiet = "> NUL 2>&1";
+#else
+    constexpr std::string_view kQuiet = "> /dev/null 2>&1";
+#endif
+
 } // namespace
+
+std::string ProbeBlendToolchain()
+{
+    std::error_code ec;
+    const std::filesystem::path tempRoot = std::filesystem::temp_directory_path(ec);
+    if (ec)
+        return "unavailable";
+    ScopedTempDir temp;
+    temp.Path = tempRoot / std::format("sencha-blend-probe-{:016x}",
+                                       HashBytes64(BlenderExecutable()));
+    std::filesystem::create_directories(temp.Path, ec);
+    const std::filesystem::path reportPath = temp.Path / "toolchain.txt";
+
+    // Blender's stdout carries its own banner and warnings, so the answer is
+    // written to a file instead.
+    const std::string pythonExpr = std::format(
+        "import bpy, io_scene_gltf2; "
+        "open(r'{}', 'w').write('blender ' + bpy.app.version_string + ' gltf ' "
+        "+ '.'.join(str(v) for v in io_scene_gltf2.bl_info['version']))",
+        reportPath.generic_string());
+    const std::string command = std::format(
+        "\"{}\" --background --factory-startup --python-exit-code 1 --python-expr \"{}\" {}",
+        BlenderExecutable(), pythonExpr, kQuiet);
+    std::vector<std::byte> report;
+    if (std::system(command.c_str()) != 0 || !ReadFileBytes(reportPath, report) || report.empty())
+        return "unavailable";
+    return std::string(reinterpret_cast<const char*>(report.data()), report.size());
+}
+
+BlendMeshImporter::BlendMeshImporter(BlendToolchainProbe probe)
+    : Probe(std::move(probe))
+{
+}
+
+std::uint64_t BlendMeshImporter::CookIdentity() const
+{
+    if (!Toolchain)
+        Toolchain = Probe ? Probe() : std::string("unavailable");
+    return CookFingerprint("blend_mesh", kBlendCookVersion)
+        .AddString("toolchain", *Toolchain)
+        .AddDependency("gltf_mesh", GltfMeshImporter{}.CookIdentity())
+        .Value();
+}
 
 std::vector<std::string_view> BlendMeshImporter::SourceExtensions() const
 {
@@ -93,11 +147,6 @@ ImportResult BlendMeshImporter::Import(const ImportInput& input, ICookOutputWrit
         "export_image_format='NONE', export_tangents=skinned)",
         glbPath.generic_string());
 
-#ifdef _WIN32
-    constexpr std::string_view kQuiet = "> NUL 2>&1";
-#else
-    constexpr std::string_view kQuiet = "> /dev/null 2>&1";
-#endif
     const std::string command = std::format(
         "\"{}\" --background --factory-startup \"{}\" --python-exit-code 1 --python-expr \"{}\" {}",
         BlenderExecutable(), blendPath.generic_string(), pythonExpr, kQuiet);
@@ -117,7 +166,8 @@ ImportResult BlendMeshImporter::Import(const ImportInput& input, ICookOutputWrit
     // Everything funnels through the one glTF import path (Decision B); the
     // .blend source's rel-path keeps artifact naming on the authored file.
     GltfMeshImporter gltfImporter;
-    ImportResult result = gltfImporter.Import(ImportInput{ input.SourceRelPath, glbBytes }, output);
+    ImportResult result = gltfImporter.Import(
+        ImportInput{ .SourceRelPath = input.SourceRelPath, .Bytes = glbBytes, .MetaBytes = input.MetaBytes }, output);
     if (!result.IsValid())
         result.Error = "blend import: " + result.Error;
     return result;

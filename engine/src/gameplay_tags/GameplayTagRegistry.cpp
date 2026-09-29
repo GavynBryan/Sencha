@@ -80,7 +80,7 @@ std::optional<GameplayTagId> GameplayTagRegistry::RegisterTag(std::string_view n
     if (!ValidateGameplayTagName(name, error))
         return std::nullopt;
 
-    auto existing = IdsByName.find(std::string(name));
+    auto existing = IdsByName.find(name);
     if (existing != IdsByName.end())
         return existing->second;
 
@@ -89,7 +89,7 @@ std::optional<GameplayTagId> GameplayTagRegistry::RegisterTag(std::string_view n
 
 GameplayTagId GameplayTagRegistry::FindTag(std::string_view name) const
 {
-    auto it = IdsByName.find(std::string(name));
+    auto it = IdsByName.find(name);
     return it == IdsByName.end() ? GameplayTagId{} : it->second;
 }
 
@@ -168,6 +168,9 @@ std::optional<GameplayTagId> GameplayTagRegistry::EnsureSegmentPath(std::string_
             .Children = {},
         });
         IdsByName.emplace(Tags.back().Name, current);
+        const auto [key, inserted] = IdsByWireKey.emplace(WireKeyOf(Tags.back().Name), current);
+        if (!inserted)
+            key->second = GameplayTagId{};
 
         if (parent.IsValid())
             Tags[parent.Value].Children.push_back(current);
@@ -176,4 +179,26 @@ std::optional<GameplayTagId> GameplayTagRegistry::EnsureSegmentPath(std::string_
     }
 
     return current;
+}
+
+std::uint32_t GameplayTagRegistry::WireKeyOf(std::string_view name)
+{
+    std::uint32_t hash = 2166136261u;
+    for (const char c : name)
+    {
+        hash ^= static_cast<std::uint8_t>(c);
+        hash *= 16777619u;
+    }
+    return hash == 0 ? 1u : hash;
+}
+
+std::uint32_t GameplayTagRegistry::WireKey(GameplayTagId id) const
+{
+    return IsKnown(id) ? WireKeyOf(Tags[id.Value].Name) : 0u;
+}
+
+GameplayTagId GameplayTagRegistry::FindByWireKey(std::uint32_t key) const
+{
+    const auto it = IdsByWireKey.find(key);
+    return it != IdsByWireKey.end() ? it->second : GameplayTagId{};
 }

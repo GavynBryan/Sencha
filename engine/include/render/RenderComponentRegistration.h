@@ -1,6 +1,5 @@
 #pragma once
 
-#include <anim/AnimationClipPlayerComponent.h>
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
@@ -15,9 +14,6 @@
 using RenderComponents = ComponentSet<
     StaticMeshComponent,
     SkinnedMeshComponent,
-    // The pose source for the skinned meshes above; authored beside them
-    // and sampled by the same extraction walk.
-    AnimationClipPlayerComponent,
     ZoneLightmapComponent,
     IrradianceVolumeComponent,
     PointLightComponent,

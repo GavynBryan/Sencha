@@ -5,7 +5,6 @@
 
 
 #include <cstdint>
-#include <cstring>
 
 namespace
 {
@@ -117,8 +116,10 @@ void SkinnedPoseRenderFeature::OnDraw(const RenderFrame& frame)
                           ScratchTag::SkinningPalettes);
     if (!palettes.IsValid())
         return; // items fall back to rest geometry, counted as not Ready
-    std::memcpy(palettes.Mapped, data.Palettes.data(),
-                static_cast<std::size_t>(paletteBytes));
+    CopyPalettesColumnMajor(
+        data.Palettes,
+        std::span<float>(static_cast<float*>(palettes.Mapped),
+                         data.Palettes.size() * kPaletteMatrixFloats));
     DispatchScratch.clear();
     for (std::size_t index = 0; index < data.Instances.size(); ++index)
     {

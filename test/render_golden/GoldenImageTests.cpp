@@ -244,13 +244,9 @@ TEST(GoldenImage, ARestPoseSkinnedMeshDraws)
                  .EditorCook = true });
 }
 
-// The same rig posed by a clip: the pose gate. The player is paused
-// (rate 0) at 0.5s of a one-second bend, so the pose is a fixed authored
-// value rather than a function of how many fixed ticks the wall clock
-// happened to allow -- a playing clip cannot be captured deterministically
-// under the tick accumulator. Everything from the clip asset through
-// sampling, the palette, the compute dispatch, and the posed draw has to
-// hold for the upper box to sit rotated a quarter turn.
+// The pose gate: a one-layer rig holds a one-second bend at 0.5s, a fixed pose
+// the tick accumulator cannot vary, so every stage from clip to posed draw must
+// tilt the upper box an eighth turn about its joint.
 TEST(GoldenImage, AClipPosesASkinnedMesh)
 {
     CheckScene({ .Name = "skinned_pose", .Map = "levels/golden_skinned_pose",

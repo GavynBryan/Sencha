@@ -3,6 +3,7 @@
 #include <assets/cook/CookedCache.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -127,6 +128,11 @@ public:
 
     [[nodiscard]] virtual ImportResult Import(const ImportInput& input,
                                               ICookOutputWriter& output) = 0;
+
+    // Everything besides the source bytes that decides the output: cook logic
+    // and any external tool. Built with CookFingerprint; a change recooks
+    // everything this importer produced.
+    [[nodiscard]] virtual std::uint64_t CookIdentity() const = 0;
 };
 
 //=============================================================================

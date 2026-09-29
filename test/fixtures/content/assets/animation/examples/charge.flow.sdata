@@ -1,0 +1,41 @@
+{
+    "type": "animation.flow",
+    "version": 1,
+    "data": {
+        "sections": [
+            {
+                "tag": "Anim.Charge.Windup",
+                "clip": "asset://meshes/dev/golden_rig.sanim",
+                "branches": [
+                    {
+                        "to": "Anim.Charge.Release",
+                        "when": [
+                            {
+                                "request": "Anim.Charge",
+                                "not": true
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "tag": "Anim.Charge.Hold",
+                "clip": "asset://meshes/dev/golden_rig.sanim",
+                "loop": "while",
+                "while": [
+                    {
+                        "request": "Anim.Charge"
+                    }
+                ]
+            },
+            {
+                "tag": "Anim.Charge.Release",
+                "slot": "Anim.Charge.ReleaseVariant"
+            },
+            {
+                "tag": "Anim.Charge.Recover",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            }
+        ]
+    }
+}

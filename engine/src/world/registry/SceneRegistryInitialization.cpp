@@ -11,8 +11,7 @@
 
 void InitializeSceneRegistry(Registry& registry,
                              AssetStoreTable stores,
-                             AudioSourceRuntime audio,
-                             AnimationClipPlaybackRuntime animation)
+                             AudioSourceRuntime audio)
 {
     registry.Resources.Register<ActiveCameraService>();
     // The same feature registrars the runtime composes its sealed vocabulary
@@ -23,7 +22,6 @@ void InitializeSceneRegistry(Registry& registry,
     RegisterEngineComponents(components);
     registry.Components.SetResource(std::move(stores));
     registry.Components.SetResource(audio);
-    registry.Components.SetResource(animation);
     // Tags, attributes, abilities, and locomotion modes are named in content by
     // the name they were registered under, so a registry that is going to hold
     // a loaded scene needs the vocabulary those names resolve against -- the

@@ -2,12 +2,14 @@
 
 #include <assets/data/DataAssetHandle.h>
 #include <core/assets/AssetCache.h>
+#include <core/assets/AssetLease.h>
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 struct DataAssetEntry
 {
@@ -17,6 +19,9 @@ struct DataAssetEntry
     uint32_t Generation = 0;
     uint32_t RefCount = 0;
     std::string PathKey;
+    // Leases on what the value's compile declared it depends on, held as long
+    // as the value is.
+    std::vector<AssetLease> Dependencies;
     bool Alive = false;
 };
 
@@ -37,10 +42,14 @@ public:
 
     [[nodiscard]] DataAssetHandle Register(std::string_view path,
                                            std::string typeName,
-                                           std::shared_ptr<const void> value);
+                                           std::shared_ptr<const void> value,
+                                           std::vector<AssetLease> dependencies = {});
+    // Replaces the value and its dependency set together; the new set is held
+    // before the old one is released, so a dependency both share survives.
     [[nodiscard]] bool ReloadInPlace(std::string_view path,
                                      std::string_view typeName,
-                                     std::shared_ptr<const void> value);
+                                     std::shared_ptr<const void> value,
+                                     std::vector<AssetLease> dependencies = {});
 
     [[nodiscard]] DataAssetHandle Acquire(std::string_view path);
     [[nodiscard]] DataAssetCacheHandle AcquireOwned(std::string_view path);

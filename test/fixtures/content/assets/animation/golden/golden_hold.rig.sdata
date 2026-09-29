@@ -1,0 +1,19 @@
+{
+    "type": "animation.rig",
+    "version": 1,
+    "data": {
+        "skeleton": "asset://meshes/dev/golden_rig.sskel",
+        "behaviors": [
+            "asset://animation/golden/golden_hold.behaviors.sdata"
+        ],
+        "slot_maps": [
+            "asset://animation/golden/golden_hold.slots.sdata"
+        ],
+        "layers": [
+            {
+                "name": "anim.layer.base",
+                "idle": "Anim.Golden.Hold"
+            }
+        ]
+    }
+}

@@ -26,15 +26,59 @@
 
 namespace
 {
+    // Names another entity, which the client knows by a different EntityId.
+    struct Aimed
+    {
+        EntityId Target;
+    };
+
+    struct AimedWire
+    {
+        std::uint64_t Target = 0;
+    };
+}
+
+template <>
+struct TypeSchema<Aimed>
+{
+    static constexpr std::string_view Name = "test.ProbeAimed";
+    static auto Fields() { return std::tuple{}; }
+};
+
+template <>
+struct TypeSchema<AimedWire>
+{
+    static constexpr std::string_view Name = "test.ProbeAimedWire";
+    static auto Fields() { return std::tuple{ MakeField("target", &AimedWire::Target) }; }
+};
+
+template <>
+struct ReplicationCodec<Aimed>
+{
+    using Wire = AimedWire;
+    static void ToWire(const ReplicationWireContext& context, const Aimed& local, AimedWire& wire)
+    {
+        wire.Target = context.WireEntity(local.Target);
+    }
+    static void FromWire(const ReplicationWireContext& context, const AimedWire& wire, Aimed& local)
+    {
+        local.Target = context.LocalEntity(wire.Target);
+    }
+};
+
+namespace
+{
     struct ProbeTables
     {
         WorldComponentSchema Schema;
         ReplicationLayout Layout;
 
-        ProbeTables()
+        explicit ProbeTables(void (*extra)(ComponentRegistrar&) = nullptr)
         {
             ComponentRegistrar components(&Schema, nullptr, &Layout);
             RegisterEngineComponents(components);
+            if (extra != nullptr)
+                extra(components);
             Schema.Seal();
             Layout.Seal();
         }
@@ -56,7 +100,9 @@ namespace
         ReplicationClientIdentity ClientIds;
         std::vector<std::byte> Scratch;
 
-        ProbeFixture() : Scratch(64 * 1024)
+        explicit ProbeFixture(void (*extra)(ComponentRegistrar&) = nullptr)
+            : ProbeTables(extra)
+            , Scratch(64 * 1024)
         {
             Schema.Apply(Authority);
             Schema.Apply(Client);
@@ -517,4 +563,32 @@ TEST(NetDesyncProbe, OwnerGatedFieldsDoNotMakeANonOwnerLookDivergent)
     EXPECT_GT(result.Compared, 0u);
     EXPECT_EQ(result.Diverged, 0u)
         << "a field this peer was never sent was folded into the comparison";
+}
+
+// A component that names an entity is compared as what the wire says, so the
+// two machines agree although their EntityIds do not -- and a client naming
+// the wrong entity is still caught.
+TEST(NetDesyncProbe, AComponentNamingAnEntityIsComparedByItsWireName)
+{
+    ProbeFixture fixture([](ComponentRegistrar& components) { components.Add<Aimed>(); });
+    for (int i = 0; i < 3; ++i)
+        (void)fixture.Client.CreateEntity();
+    const EntityId aiming = fixture.Replicated(Vec3d{ 0.0f, 0.0f, 0.0f });
+    const EntityId target = fixture.Replicated(Vec3d{ 1.0f, 0.0f, 0.0f });
+    const EntityId other = fixture.Replicated(Vec3d{ 2.0f, 0.0f, 0.0f });
+    fixture.Authority.AddComponent<Aimed>(aiming, Aimed{ target });
+    fixture.Replicate();
+
+    fixture.Build();
+    ASSERT_FALSE(fixture.Samples.empty());
+    NetDesyncResult result = fixture.Check();
+    EXPECT_GT(result.Compared, 0u);
+    EXPECT_EQ(result.Diverged, 0u);
+
+    const EntityId mirror = fixture.ClientIds.TryResolve(fixture.Identity.TryFind(aiming));
+    fixture.Client.TryGet<Aimed>(mirror)->Target =
+        fixture.ClientIds.TryResolve(fixture.Identity.TryFind(other));
+    result = fixture.Check();
+    EXPECT_EQ(result.Diverged, 1u);
+    EXPECT_EQ(result.FirstDiverged, fixture.Identity.TryFind(aiming));
 }

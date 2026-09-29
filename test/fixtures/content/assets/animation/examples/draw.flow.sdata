@@ -1,0 +1,16 @@
+{
+    "type": "animation.flow",
+    "version": 1,
+    "data": {
+        "sections": [
+            {
+                "tag": "Anim.Draw.Unholster",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "tag": "Anim.Draw.Ready",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            }
+        ]
+    }
+}

@@ -1,11 +1,11 @@
 #pragma once
 
-#include "../DataFormEdit.h"
+#include "ui/DataForm.h"
 
 #include <string_view>
 
 struct DataSchema;
-class DataEditorWorkspace;
+class DataDocumentSet;
 class InputControlCapture;
 class InputProfilePreview;
 
@@ -20,6 +20,6 @@ class InputProfilePreview;
 // copy and routes the returned edit through the document's transaction.
 [[nodiscard]] FieldEdit DrawInputProfileForm(JsonValue& data,
                                              const DataSchema& schema,
-                                             DataEditorWorkspace& workspace,
+                                             DataDocumentSet& documents,
                                              InputProfilePreview& preview,
                                              InputControlCapture& capture);

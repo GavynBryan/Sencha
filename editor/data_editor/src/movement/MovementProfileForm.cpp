@@ -3,7 +3,7 @@
 #include "MovementLayerSummary.h"
 #include "MovementResolvePreview.h"
 
-#include "../DataEditorWorkspace.h"
+#include "data/DataDocumentSet.h"
 
 #include "ui/ButtonFlow.h"
 #include "ui/EditorUiStyle.h"
@@ -86,7 +86,7 @@ namespace
                                  const MovementCoefficientLabel& label,
                                  const DataFieldSchema* fieldSchema,
                                  const std::string& path,
-                                 DataEditorWorkspace& workspace,
+                                 DataDocumentSet& documents,
                                  bool& removed)
     {
         FieldEdit edit;
@@ -115,7 +115,7 @@ namespace
         edit.Committed = ImGui::IsItemDeactivatedAfterEdit();
 
         if (fieldSchema != nullptr)
-            DrawDataFieldHelp(workspace, *fieldSchema, path);
+            DrawDataFieldHelp(documents, *fieldSchema, path);
 
         ImGui::SameLine();
         if (ImGui::SmallButton("Clear"))
@@ -365,7 +365,7 @@ namespace
                             const std::vector<MovementCoefficientLabel>& labels,
                             const MovementResolvePreview& preview,
                             const std::string& layerPath,
-                            DataEditorWorkspace& workspace)
+                            DataDocumentSet& documents)
     {
         FieldEdit edit;
 
@@ -414,7 +414,7 @@ namespace
                     *patch, label,
                     patchSchema ? FindChild(*patchSchema, label.Key) : nullptr,
                     std::format("{}.{}.{}", layerPath, operation.Key, label.Key),
-                    workspace, removed);
+                    documents, removed);
                 if (removed)
                 {
                     EraseKey(*patch, label.Key);
@@ -444,7 +444,7 @@ namespace
                              const std::vector<MovementCoefficientLabel>& labels,
                              const MovementResolvePreview& preview,
                              const std::string& path,
-                             DataEditorWorkspace& workspace)
+                             DataDocumentSet& documents)
     {
         FieldEdit edit;
         if (!layersValue.IsArray())
@@ -513,7 +513,7 @@ namespace
             {
                 ImGui::Indent();
                 edit |= DrawLayerBody(layers[index], layerSchema, labels, preview,
-                                      elementPath, workspace);
+                                      elementPath, documents);
 
                 ButtonFlow verbs;
                 if (verbs.Button("Duplicate"))
@@ -566,7 +566,7 @@ std::string_view MovementProfileSubtype()
 
 FieldEdit DrawMovementProfileForm(JsonValue& data,
                                   const DataSchema& schema,
-                                  DataEditorWorkspace& workspace,
+                                  DataDocumentSet& documents,
                                   MovementResolvePreview& preview)
 {
     FieldEdit edit;
@@ -611,7 +611,7 @@ FieldEdit DrawMovementProfileForm(JsonValue& data,
                 : std::span<const MovementLayerTrace>{};
         edit |= DrawLayerCards(layers, *layersSchema,
                                compiled ? &compiled->Layers : nullptr,
-                               trace, labels, preview, "$.data.layers", workspace);
+                               trace, labels, preview, "$.data.layers", documents);
     }
 
     // Modes have no purpose-built surface, so they get the schema-generated one
@@ -624,7 +624,7 @@ FieldEdit DrawMovementProfileForm(JsonValue& data,
         ImGui::TextDisabled("Tuning that applies only while a locomotion mode is active.");
 
         JsonValue& modes = EnsureMember(data, "modes", JsonValue(JsonValue::Array{}));
-        edit |= DrawDataField(modes, *modesSchema, "$.data.modes", workspace);
+        edit |= DrawDataField(modes, *modesSchema, "$.data.modes", documents);
 
         // The whole document is committed on any change, so an untouched empty
         // array should not start appearing in the file.

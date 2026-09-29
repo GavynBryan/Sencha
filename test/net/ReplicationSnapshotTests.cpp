@@ -30,6 +30,57 @@
 
 namespace
 {
+    // Names another entity, which a peer knows by a different EntityId, and
+    // keeps a value of its own that never travels.
+    struct Pointer
+    {
+        EntityId Target;
+        std::uint32_t Count = 0;
+        std::uint32_t Local = 7;
+    };
+
+    struct PointerWire
+    {
+        std::uint64_t Target = 0;
+        std::uint32_t Count = 0;
+    };
+}
+
+template <>
+struct TypeSchema<Pointer>
+{
+    static constexpr std::string_view Name = "test.Pointer";
+    static auto Fields() { return std::tuple{ MakeField("count", &Pointer::Count) }; }
+};
+
+template <>
+struct TypeSchema<PointerWire>
+{
+    static constexpr std::string_view Name = "test.PointerWire";
+    static auto Fields()
+    {
+        return std::tuple{ MakeField("target", &PointerWire::Target), MakeField("count", &PointerWire::Count) };
+    }
+};
+
+template <>
+struct ReplicationCodec<Pointer>
+{
+    using Wire = PointerWire;
+    static void ToWire(const ReplicationWireContext& context, const Pointer& local, PointerWire& wire)
+    {
+        wire.Target = context.WireEntity(local.Target);
+        wire.Count = local.Count;
+    }
+    static void FromWire(const ReplicationWireContext& context, const PointerWire& wire, Pointer& local)
+    {
+        local.Target = context.LocalEntity(wire.Target);
+        local.Count = wire.Count;
+    }
+};
+
+namespace
+{
     constexpr std::size_t kSnapshotBytes = 64 * 1024;
 
     // What the wire can express. A replicated position is not the authority's
@@ -77,10 +128,12 @@ namespace
         SnapshotWriteResult LastWrite;
         SnapshotApplyResult LastApply;
 
-        Pair() : Scratch(kSnapshotBytes)
+        explicit Pair(void (*extra)(ComponentRegistrar&) = nullptr) : Scratch(kSnapshotBytes)
         {
             ComponentRegistrar components(&Schema, nullptr, &Layout);
             RegisterEngineComponents(components);
+            if (extra != nullptr)
+                extra(components);
             Schema.Seal();
             Schema.Apply(Authority);
             Schema.Apply(Client);
@@ -2652,4 +2705,95 @@ TEST(ReplicationIdentity, RebindingAnIdentityLeavesNoStaleName)
     EXPECT_EQ(identity.TryFind(second), NetEntityId{ 7 });
     EXPECT_FALSE(identity.TryFind(first).IsValid())
         << "the entity the identity moved off still answers to it";
+}
+
+// A component that names an entity travels as the name both ends agree on and
+// lands naming the receiver's own entity -- including one spawned later in the
+// same snapshot -- while what it keeps locally stays as the receiver had it.
+TEST(ReplicationComponentCodec, AComponentNamingAnEntityNamesTheMirrorOnTheClient)
+{
+    Pair pair([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+    const ReplicatedComponent* layout = pair.Layout.Find(ResolveComponentTypeId<Pointer>());
+    ASSERT_NE(layout, nullptr);
+    EXPECT_EQ(layout->Size, sizeof(PointerWire));
+    EXPECT_EQ(layout->LocalSize, sizeof(Pointer));
+
+    // The client's entities are numbered differently from the authority's.
+    for (int i = 0; i < 3; ++i)
+        (void)pair.Client.CreateEntity();
+    const EntityId pointing = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    const EntityId target = pair.SpawnReplicated(PoseAt(1.0f, 0.0f, 0.0f));
+    pair.Authority.AddComponent<Pointer>(pointing, Pointer{ .Target = target, .Count = 3, .Local = 99 });
+    // In an archetype made after the pointer's, so the publish reaches it
+    // second and the client spawns it after the entity that names it.
+    pair.Authority.AddComponent<Pointer>(target, Pointer{});
+    pair.Authority.AddComponent<NetOwner>(target, NetOwner{ .Peer = 5 });
+
+    pair.Replicate();
+
+    const EntityId mirror = pair.Mirror(pointing);
+    const EntityId mirroredTarget = pair.Mirror(target);
+    ASSERT_TRUE(mirror.IsValid());
+    ASSERT_TRUE(mirroredTarget.IsValid());
+    ASSERT_NE(mirroredTarget, target) << "the ends must disagree on EntityIds for this to prove anything";
+    const Pointer* seen = pair.Client.TryGet<Pointer>(mirror);
+    ASSERT_NE(seen, nullptr);
+    EXPECT_EQ(seen->Target, mirroredTarget);
+    EXPECT_EQ(seen->Count, 3u);
+    EXPECT_EQ(seen->Local, 7u) << "a value the image does not carry is the receiver's own";
+
+    // A change that leaves the target alone keeps it, and one that clears it
+    // clears it.
+    pair.Client.TryGet<Pointer>(mirror)->Local = 11;
+    pair.Authority.TryGet<Pointer>(pointing)->Count = 4;
+    pair.Replicate();
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Target, mirroredTarget);
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Count, 4u);
+    EXPECT_EQ(pair.Client.TryGet<Pointer>(mirror)->Local, 11u);
+
+    pair.Authority.TryGet<Pointer>(pointing)->Target = EntityId{};
+    pair.Replicate();
+    EXPECT_FALSE(pair.Client.TryGet<Pointer>(mirror)->Target.IsValid());
+}
+
+// Naming an entity that does not replicate sends nothing rather than a number
+// that means something else on the other machine.
+TEST(ReplicationComponentCodec, AnUnreplicatedTargetArrivesAsNoEntity)
+{
+    Pair pair([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+    const EntityId pointing = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+    const EntityId local = pair.Authority.CreateEntity();
+    pair.Authority.AddComponent<Pointer>(pointing, Pointer{ .Target = local, .Count = 1 });
+
+    pair.Replicate();
+
+    const Pointer* seen = pair.Client.TryGet<Pointer>(pair.Mirror(pointing));
+    ASSERT_NE(seen, nullptr);
+    EXPECT_FALSE(seen->Target.IsValid());
+    EXPECT_EQ(seen->Count, 1u);
+    EXPECT_FALSE(pair.Identity.TryFind(local).IsValid()) << "nothing is minted for an entity that does not travel";
+}
+
+
+// A translated component is staged from the image of its defaults, so the
+// runs still at their default when it is first seen cost nothing -- and the
+// client still ends up holding exactly what the authority does.
+TEST(ReplicationComponentCodec, RunsAtTheirDefaultAreNotSentOnFirstSight)
+{
+    const auto firstSnapshotBits = [](Pointer value, Pointer& arrived) {
+        Pair pair([](ComponentRegistrar& components) { components.Add<Pointer>(); });
+        const EntityId pointing = pair.SpawnReplicated(PoseAt(0.0f, 0.0f, 0.0f));
+        pair.Authority.AddComponent<Pointer>(pointing, value);
+        pair.Replicate();
+        arrived = *pair.Client.TryGet<Pointer>(pair.Mirror(pointing));
+        return pair.LastWrite.BytesWritten;
+    };
+    Pointer idle;
+    Pointer counted;
+    const std::size_t atDefaults = firstSnapshotBits(Pointer{}, idle);
+    const std::size_t moved = firstSnapshotBits(Pointer{ .Target = EntityId{}, .Count = 3 }, counted);
+    EXPECT_LT(atDefaults, moved);
+    EXPECT_EQ(idle.Count, 0u);
+    EXPECT_FALSE(idle.Target.IsValid());
+    EXPECT_EQ(counted.Count, 3u);
 }

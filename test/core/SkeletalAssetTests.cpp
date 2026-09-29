@@ -11,6 +11,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
+#include <string>
 #include <vector>
 
 namespace
@@ -202,6 +204,147 @@ TEST(AnimationClipSerializer, ValidationRejectsBadTracks)
     AnimationClipData keyPastDuration = TwoKeyRotationClip();
     keyPastDuration.DurationSeconds = 0.5f; // last key at t=1.0
     EXPECT_FALSE(ValidateAnimationClipData(keyPastDuration, &error));
+}
+
+namespace
+{
+    // Two events: a cosmetic one with a threshold and both input forms, and a
+    // gameplay one with none.
+    AnimationClipData ClipWithEvents()
+    {
+        AnimationClipData clip = TwoKeyRotationClip();
+        AnimationClipEvent step;
+        step.Key = 7;
+        step.Name = "Left foot";
+        step.Time = 0.25f;
+        step.Binding = "anim.footstep";
+        step.MinWeight = 0.4f;
+        VerbBindingArgument surface;
+        surface.Key = "surface";
+        surface.Source = VerbArgumentSource::Tag;
+        surface.Text = "Surface.Grass";
+        VerbBindingArgument volume;
+        volume.Key = "volume";
+        volume.Literal = JsonValue(0.75);
+        step.Inputs = { surface, volume };
+
+        AnimationClipEvent release;
+        release.Key = 2;
+        release.Time = 0.5f;
+        release.Binding = "ability.release";
+        release.Scope = AnimEventScope::Gameplay;
+        clip.Events = { step, release };
+        return clip;
+    }
+}
+
+TEST(AnimationClipSerializer, EventsRoundTrip)
+{
+    const AnimationClipData clip = ClipWithEvents();
+    std::vector<std::byte> bytes;
+    std::string error;
+    ASSERT_TRUE(WriteSanimToBytes(clip, bytes, &error)) << error;
+
+    AnimationClipData loaded;
+    ASSERT_TRUE(LoadSanimFromBytes(bytes, loaded, &error)) << error;
+    ASSERT_EQ(loaded.Events.size(), 2u);
+    const AnimationClipEvent& step = loaded.Events[0];
+    EXPECT_EQ(step.Key, 7u);
+    EXPECT_EQ(step.Name, "Left foot");
+    EXPECT_FLOAT_EQ(step.Time, 0.25f);
+    EXPECT_EQ(step.Binding, "anim.footstep");
+    EXPECT_EQ(step.Scope, AnimEventScope::Cosmetic);
+    ASSERT_TRUE(step.MinWeight.has_value());
+    EXPECT_FLOAT_EQ(*step.MinWeight, 0.4f);
+    ASSERT_EQ(step.Inputs.size(), 2u);
+    EXPECT_EQ(step.Inputs[0].Key, "surface");
+    EXPECT_EQ(step.Inputs[0].Source, VerbArgumentSource::Tag);
+    EXPECT_EQ(step.Inputs[0].Text, "Surface.Grass");
+    EXPECT_EQ(step.Inputs[1].Key, "volume");
+    EXPECT_EQ(step.Inputs[1].Source, VerbArgumentSource::Literal);
+    ASSERT_TRUE(step.Inputs[1].Literal.IsNumber());
+    EXPECT_DOUBLE_EQ(step.Inputs[1].Literal.AsNumber(), 0.75);
+
+    const AnimationClipEvent& release = loaded.Events[1];
+    EXPECT_EQ(release.Key, 2u);
+    EXPECT_EQ(release.Scope, AnimEventScope::Gameplay);
+    EXPECT_FALSE(release.MinWeight.has_value());
+    EXPECT_TRUE(release.Inputs.empty());
+}
+
+// A clip cooked before events existed still loads, with none.
+TEST(AnimationClipSerializer, VersionOneLoadsWithNoEvents)
+{
+    std::vector<std::byte> bytes;
+    std::string error;
+    ASSERT_TRUE(WriteSanimToBytes(TwoKeyRotationClip(), bytes, &error)) << error;
+    // Version 1 is version 3 without the trailing event count and root flag.
+    const uint32_t versionOne = 1;
+    std::memcpy(bytes.data() + 4, &versionOne, sizeof(versionOne));
+    bytes.resize(bytes.size() - sizeof(uint32_t) - sizeof(uint8_t));
+
+    AnimationClipData loaded;
+    ASSERT_TRUE(LoadSanimFromBytes(bytes, loaded, &error)) << error;
+    EXPECT_TRUE(loaded.Events.empty());
+    EXPECT_EQ(loaded.Tracks.size(), 1u);
+}
+
+// A clip cooked before root motion existed still loads, with no root curve.
+TEST(AnimationClipSerializer, VersionTwoLoadsWithNoRootCurve)
+{
+    std::vector<std::byte> bytes;
+    std::string error;
+    ASSERT_TRUE(WriteSanimToBytes(TwoKeyRotationClip(), bytes, &error)) << error;
+    // Version 2 is version 3 without the trailing root flag.
+    const uint32_t versionTwo = 2;
+    std::memcpy(bytes.data() + 4, &versionTwo, sizeof(versionTwo));
+    bytes.resize(bytes.size() - sizeof(uint8_t));
+
+    AnimationClipData loaded;
+    ASSERT_TRUE(LoadSanimFromBytes(bytes, loaded, &error)) << error;
+    EXPECT_FALSE(loaded.Root.has_value());
+    EXPECT_EQ(loaded.Tracks.size(), 1u);
+}
+
+TEST(AnimationClipSerializer, ValidationRejectsBadEvents)
+{
+    std::string error;
+    const auto expectRejected = [&](AnimationClipData clip, std::string_view why) {
+        EXPECT_FALSE(ValidateAnimationClipData(clip, &error)) << why;
+        std::vector<std::byte> bytes;
+        EXPECT_FALSE(WriteSanimToBytes(clip, bytes, &error)) << why;
+    };
+
+    AnimationClipData outOfOrder = ClipWithEvents();
+    std::swap(outOfOrder.Events[0], outOfOrder.Events[1]);
+    expectRejected(outOfOrder, "events out of time order");
+
+    AnimationClipData sameKey = ClipWithEvents();
+    sameKey.Events[1].Key = 7;
+    expectRejected(sameKey, "a key used twice");
+
+    AnimationClipData lateTime = ClipWithEvents();
+    lateTime.Events[1].Time = 1.5f;
+    expectRejected(lateTime, "time past the end");
+
+    AnimationClipData gameplayThreshold = ClipWithEvents();
+    gameplayThreshold.Events[1].MinWeight = 0.5f;
+    expectRejected(gameplayThreshold, "a gameplay event with a weight threshold");
+
+    AnimationClipData reference = ClipWithEvents();
+    reference.Events[0].Inputs[0].Source = VerbArgumentSource::Asset;
+    reference.Events[0].Inputs[0].Text = "asset://fx/dust.smat";
+    expectRejected(reference, "an asset reference supplied by the event");
+
+    AnimationClipData tooMany = ClipWithEvents();
+    for (int i = 0; i < 3; ++i)
+    {
+        VerbBindingArgument extra;
+        extra.Key = "extra" + std::to_string(i);
+        extra.Literal = JsonValue(1.0);
+        tooMany.Events[0].Inputs.push_back(extra);
+    }
+    expectRejected(tooMany, "five inputs");
 }
 
 // -- Skinned .skmesh ----------------------------------------------------------

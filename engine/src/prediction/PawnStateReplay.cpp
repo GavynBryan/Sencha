@@ -9,6 +9,8 @@
 #include <world/transform/TransformComponents.h>
 #include <world/transform/TransformHistory.h>
 
+#include <algorithm>
+
 void CollectUnresumedPredictedComponents(const ReplicationLayout& layout,
                                          std::vector<std::string_view>& out)
 {
@@ -94,9 +96,10 @@ PawnReplayResult ReplayPawnState(const PawnReplayRequest& request)
             std::uint32_t replayed = 0;
             const bool complete = prediction.Commands().ForEachAfter(
                 request.AckTick, [&](const PawnCommandTick& command) {
-                    StepCharacterTick(world, request.Movers, pawn, command.Intent,
-                                      request.FixedDeltaSeconds, request.Gravity,
-                                      request.UpAxis);
+                    // The predicted pawn lives on the command timeline, so a command's
+                    // tick is the tick its animation and root motion ran on live.
+                    StepCharacterTick(world, request.Movers, pawn, command.Intent, command.Tick,
+                                      request.FixedDeltaSeconds, request.Gravity, request.UpAxis);
                     ++replayed;
                 });
 

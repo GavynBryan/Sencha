@@ -276,6 +276,31 @@ All in `FixedLogic` (deterministic), ordered with `After<>`:
 5. Reaction systems — `Changed<Health>` death detection → `Dead` tag +
    `DeathEvent`; cue emission; etc.
 
+## Animation
+
+An ability may ask its actor for animation: `AbilityDefinition::Animation` names
+an intent the actor's rig declares, a lifetime and the layers it may play on.
+Activation asks through `RequestAnimation`, the one door every producer of
+animation requests uses (`docs/gameplay/animation.md`, "Requests"): the
+authority issues the request, and a client predicts it only for the pawn it
+predicts, on that pawn's command timeline.
+
+The request's source is the actor. Its lifetime is the ability's:
+
+- A `Held` request lasts while the activation does. The activation is the entity
+  its `OnActivate` effect spawns; the kit leases the request to it
+  (`AbilityAnimationLeases` on the actor) and cancels the request, `Released`,
+  once that entity has ended. The release happens at the start of the next
+  activation pass, before selection, so an effect that expires on tick N ends its
+  animation on tick N + 1 on every machine alike.
+- An activation with no lasting effect holds its request for the tick it
+  happened, as an `Impulse`.
+- `Fixed` and `Impulse` requests end on their own.
+
+Animation never ends a producer's held request for it. A held request whose
+source or owner has ended while it is still held is reported as orphaned, in the
+decision log and `anim.risk`, and stays held: the fix belongs in the producer.
+
 ## Rollout
 
 Each stage is independently testable and buildable with physics/animation

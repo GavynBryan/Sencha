@@ -67,7 +67,6 @@ constexpr FrozenComponent kFrozenComponents[] = {
     { "scene_instance",                       0x17084CA474E1957Full },
     { "StaticMesh",                           0xC8A13ED72D0FBD7Eull },
     { "SkinnedMesh",                          0x1EE6CB7FBD7486D6ull },
-    { "AnimationClipPlayer",                  0xFB8C76C712E6CA02ull },
     { "ZoneLightmap",                         0xC85ECD44D42C5D5Dull },
     { "IrradianceVolume",                     0xB477A83303BC3F19ull },
     { "PointLight",                           0x6A79ACB9CBC5CDDBull },
@@ -121,7 +120,6 @@ constexpr FrozenComponent kFrozenComponents[] = {
 constexpr FrozenSerializer kFrozenSerializers[] = {
     { "AbilitySet",          0x398F71246E3983A2ull, MakeFourCC('A','B','L','S'), 0x836F1C5BF9C32295ull },
     { "AimFacing",           0xA70764228D1A908Dull, MakeFourCC('A','I','M','F'), 0x141188942D7459D8ull },
-    { "AnimationClipPlayer", 0xFB8C76C712E6CA02ull, MakeFourCC('A','C','L','P'), 0xDFB69B18CFE656A3ull },
     { "Attributes",          0xCBAB285D411E9BC8ull, MakeFourCC('A','T','T','R'), 0x0DB13B4D4DCFF19Cull },
     { "AudioCaption",        0x4513D14CA77A1639ull, MakeFourCC('A','C','A','P'), 0xD7974DBF9F9CAD02ull },
     { "AudioSource",         0x917CF03FFE5623A4ull, MakeFourCC('A','S','R','C'), 0x7A7F3ECBA5C09B6Cull },
@@ -160,7 +158,6 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     constexpr std::string_view kComponentsWithLifecycleHooks[] = {
         "StaticMesh",
         "SkinnedMesh",
-        "AnimationClipPlayer",
         "ZoneLightmap",
         "AudioSource",
         "AudioCaption",
@@ -170,9 +167,9 @@ constexpr FrozenSerializer kFrozenSerializers[] = {
     };
 
 // The wire contract: two builds refuse each other unless these agree. Moving
-// it is a deliberate act with a reason, never a side effect: the last move put
-// SupportState's fields on the wire in declaration order.
-constexpr std::uint64_t kFrozenReplicationTableHash = 0xD2F75DBD53AAFBE9ull;
+// it is a deliberate act with a reason, never a side effect: the last move gave
+// each animation request the command that issued it, what predictions match by.
+constexpr std::uint64_t kFrozenReplicationTableHash = 0x26EC8C622F9FAEB2ULL;
 
 struct EngineVocabulary
 {

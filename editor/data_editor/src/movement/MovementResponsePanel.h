@@ -4,7 +4,7 @@
 
 #include <vector>
 
-class DataEditorWorkspace;
+class DataDocumentSet;
 class MovementResolvePreview;
 
 // Translates coefficients into the outcomes a designer judges: how high and how
@@ -13,7 +13,7 @@ class MovementResolvePreview;
 class MovementResponsePanel final : public IEditorPanel
 {
 public:
-    MovementResponsePanel(DataEditorWorkspace& workspace, MovementResolvePreview& preview);
+    MovementResponsePanel(DataDocumentSet& documents, MovementResolvePreview& preview);
     [[nodiscard]] std::string_view GetTitle() const override { return "Response"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::CenterBottom; }
     [[nodiscard]] PanelPersistence GetPersistence() const override { return { "movement_response", PanelVisibilityPolicy::Remembered }; }
@@ -21,7 +21,7 @@ public:
     void OnDraw() override;
 
 private:
-    DataEditorWorkspace& Workspace;
+    DataDocumentSet& Documents;
     MovementResolvePreview& Preview;
 
     // Reused between frames so a redraw does not reallocate the plot buffers.

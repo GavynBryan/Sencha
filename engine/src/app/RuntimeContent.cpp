@@ -1,16 +1,18 @@
 #include <app/RuntimeContent.h>
 
-#include <anim/AnimationClipPlaybackRuntime.h>
+#include <anim/AnimRigBinding.h>
 #include <app/DefaultRenderPipeline.h>
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
+#include <assets/runtime/ContentTagDeclarations.h>
 #include <audio/AudioSourceRuntime.h>
 #include <core/assets/AssetStoreTable.h>
 #include <core/config/EngineConfig.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <input/InputBindingCache.h>
 #include <movement/MovementProfileBindingCache.h>
@@ -21,6 +23,7 @@
 #include <cassert>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -134,7 +137,16 @@ void RuntimeContent::Publish(World& world)
     world.SetResource(assets.Assets.Stores());
     world.SetResource(AudioSourceRuntime{
         &assets.AudioClips, &Host.Audio(), &Host.Captions() });
-    world.SetResource(AnimationClipPlaybackRuntime{ &assets.AnimationClips });
+    world.SetResource(AnimRigBindings{ &assets.DataAssets, &assets.AnimationClips, &assets.Skeletons });
+
+    // The names content declares, before anything binds against them.
+    if (GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
+    {
+        std::vector<std::string> errors;
+        DeclareContentTags(assets, *tags, errors);
+        for (const std::string& error : errors)
+            Log.Error("gameplay tags: {}", error);
+    }
 
     // The spawn services are engine-owned; the asset stack they resolve scenes
     // through is this one. The second is for the spawns a peer names rather
@@ -156,7 +168,6 @@ void RuntimeContent::Publish(World& world)
             assets.MaterialSets,
             assets.Textures.get(),
             assets.SkinnedMeshes.get(),
-            &assets.AnimationClips,
             &assets.Skeletons);
         pipeline->AddMeshRenderFeature(*graphics);
     }
@@ -201,7 +212,7 @@ void RuntimeContent::Disconnect(World& world)
 
     world.SetResource(AssetStoreTable{});
     world.SetResource(AudioSourceRuntime{});
-    world.SetResource(AnimationClipPlaybackRuntime{});
+    world.SetResource(AnimRigBindings{});
 
 #ifdef SENCHA_ENABLE_COOK
     HotReloadRoots.clear();

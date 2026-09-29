@@ -10,13 +10,20 @@
 #include <authored/WorldVocabulary.h>
 #include <logic/VerbRelaySystem.h>
 #include <abilities/AbilityKit.h>
+#include <anim/AnimFactProviders.h>
+#include <anim/AnimRequestVerbs.h>
+#include <anim/AnimationRegistration.h>
+#include <movement/MovementAnimFacts.h>
 #include <participant/ParticipantLifecycle.h>
 #include <world/SimulationAuthority.h>
+#include <world/SimulationTimeline.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <core/assets/AssetLease.h>
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
+
+#include <app/EngineContentRoot.h>
 #include <app/SessionParticipantDiagnostics.h>
 #include <app/EngineConsoleBuiltins.h>
 #include <app/PauseInputSystem.h>
@@ -81,51 +88,38 @@
 #include <string>
 #include <utility>
 
-namespace
+std::filesystem::path EngineContentRoot()
 {
-    // The engine's own content root: the application shell's default documents
-    // and the face they draw with.
-    //
-    // Appended to the configured roots rather than prepended, so it is a
-    // fallback and not an override -- RuntimeContent::Mount gives the first
-    // root that claims a virtual path ownership of it, so a game shipping its
-    // own ui/pause.rml shadows this one by path alone.
-    //
-    // Empty when there is nothing to mount, which is the ordinary case for a
-    // build that installed no content and for a test binary.
-    std::filesystem::path EngineContentRoot()
+    const auto usable = [](const std::filesystem::path& candidate) {
+        std::error_code ec;
+        return !candidate.empty() && std::filesystem::is_directory(candidate, ec) && !ec;
+    };
+
+    // An override first, so a packaging layout this does not anticipate can
+    // be pointed at without a rebuild.
+    if (const char* override = SDL_getenv_unsafe("SENCHA_ENGINE_CONTENT");
+        override != nullptr && override[0] != '\0')
     {
-        const auto usable = [](const std::filesystem::path& candidate) {
-            std::error_code ec;
-            return !candidate.empty() && std::filesystem::is_directory(candidate, ec) && !ec;
-        };
+        const std::filesystem::path path(override);
+        if (usable(path))
+            return path;
+    }
 
-        // An override first, so a packaging layout this does not anticipate can
-        // be pointed at without a rebuild.
-        if (const char* override = std::getenv("SENCHA_ENGINE_CONTENT");
-            override != nullptr && override[0] != '\0')
-        {
-            const std::filesystem::path path(override);
-            if (usable(path))
-                return path;
-        }
-
-        // Installed, beside the executable, next to where the templates land.
-        if (const char* base = SDL_GetBasePath(); base != nullptr)
-        {
-            const std::filesystem::path installed =
-                std::filesystem::path(base) / ".." / "share" / "sencha" / "content";
-            if (usable(installed))
-                return installed.lexically_normal();
-        }
+    // Installed, beside the executable, next to where the templates land.
+    if (const char* base = SDL_GetBasePath(); base != nullptr)
+    {
+        const std::filesystem::path installed =
+            std::filesystem::path(base) / ".." / "share" / "sencha" / "content";
+        if (usable(installed))
+            return installed.lexically_normal();
+    }
 
 #ifdef SENCHA_ENGINE_CONTENT_DIR
-        // In-tree. Defined only for a build from this source tree.
-        if (const std::filesystem::path source(SENCHA_ENGINE_CONTENT_DIR); usable(source))
-            return source;
+    // In-tree. Defined only for a build from this source tree.
+    if (const std::filesystem::path source(SENCHA_ENGINE_CONTENT_DIR); usable(source))
+        return source;
 #endif
-        return {};
-    }
+    return {};
 }
 
 Engine::Engine(EngineConfig engineConfig)
@@ -636,6 +630,17 @@ void Engine::PublishSimulationAuthority()
         ? entities.GetResource<SimulationAuthority>()
         : entities.AddResource<SimulationAuthority>();
     fact.Authoritative = NetState == nullptr || NetState->Role() != NetSessionRole::Client;
+    fact.TickOffset = !fact.Authoritative && NetClockState.HasEstimate() ? NetClockState.Offset() : 0;
+
+    // The pawn this client runs ahead is named on the timeline its commands are
+    // stamped in, so what it does on a tick is what the authority does on that tick.
+    PredictedSimulation predicted;
+    if (!fact.Authoritative && NetClockState.HasEstimate())
+    {
+        predicted.Entity = Prediction().Predicted();
+        predicted.CommandTickOffset = NetClockState.CommandOffset();
+    }
+    entities.SetResource(predicted);
 }
 
 void Engine::RefreshShellBindings()
@@ -1095,6 +1100,11 @@ int Engine::Run(Game& game)
         // Movement is not among them: it is a feature a game opts into, and a
         // locomotion mode is declared once the game has, as the templates do.
         InstallAbilityKitVocabulary(entities);
+        InstallAnimationVocabulary(entities);
+        // The engine's character facts read movement's components; a game without
+        // movement has no entity they answer for.
+        (void)BindMovementAnimFacts(entities.GetResource<AnimFactProviders>());
+        RegisterAnimationConsole(ConsoleState->Registry(), entities);
         InstallAuthoredVocabulary(entities);
         VerbRegistry& verbs = *FindVerbRegistry(entities);
         (void)DeclareEngineVerbs(verbs);
@@ -1347,6 +1357,28 @@ int Engine::Run(Game& game)
     EngineSystems.Register<NavigationSystem>(*RuntimeWorldState, &Jobs(),
                                              &ConsoleState->Registry());
 
+    // Animation requests from authored content go through the same door an ability's do.
+    {
+        AnimationOperations = std::make_unique<AnimRequestOperations>(RuntimeWorldState->Entities(),
+                                                                      RuntimeLoop.GetSimulationClock());
+        const VerbRegistry& verbs = RuntimeWorldState->Entities().GetResource<VerbRegistry>();
+        AnimRequestBinding =
+            VerbDispatcherState->Bind<&InvokeAnimRequest>(verbs.Find(kAnimRequestVerb), *AnimationOperations);
+        AnimCancelBinding =
+            VerbDispatcherState->Bind<&InvokeAnimCancel>(verbs.Find(kAnimCancelVerb), *AnimationOperations);
+    }
+
+    // Every host animates: an entity that names a rig plays it, in a process whose
+    // game registered nothing for it. Before the game's hook, so a game orders its
+    // request producers against these; poses only where a window presents them.
+    RegisterAnimationSystems(EngineSystems, &LoggingState,
+                             AnimationHost{
+                                 .Verbs = VerbDispatcherState.get(),
+                                 .Console = &console.Registry(),
+                                 .PresentsPose = Configuration.Window.GraphicsApi != WindowGraphicsApi::None,
+                                 .Jobs = &Jobs(),
+                             });
+
     game.OnRegisterSystems(registerSystems);
     // Every place a game binds has run.
     for (const AuthoredQueryId query : QueryDispatcherState->Unanswered())
@@ -1438,8 +1470,11 @@ int Engine::Run(Game& game)
     // The game's own hook ran above, which is where it gave back its tokens.
     ResumeBinding.Reset();
     QuitBinding.Reset();
+    AnimRequestBinding.Reset();
+    AnimCancelBinding.Reset();
     ResumeOperation.reset();
     QuitOperation.reset();
+    AnimationOperations.reset();
 #ifdef SENCHA_ENABLE_UI
     if (PauseMenuState != nullptr)
         PauseMenuState->SetVerbBindings(nullptr, nullptr);

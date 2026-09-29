@@ -7,7 +7,6 @@
 #include <assets/static_mesh/MeshGeometry.h>
 
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -28,32 +27,40 @@
 // invariant (tangent w is ±1) holds for every vertex.
 //=============================================================================
 
+// Placement, naming and engine-frame rules: docs/assets/pipeline.md, "The glTF
+// import contract". Each element's `Origin` names its source element in errors.
 struct ImportedGltfMesh
 {
-    // glTF mesh name; may be empty (artifact naming falls back to ordinals).
+    // The placing node's name, or "node<index>" when unnamed.
     std::string Name;
+    std::string Origin;
     MeshGeometry Geometry;
+};
 
-    // Index of the glTF skin this mesh is skinned to, or -1 if static. When
-    // set, Skinning is populated with skeleton-local joints and normalized
-    // weights, but Skinning->SkeletonPath is left empty — the importer
-    // assigns it once skeleton artifact paths are decided, then emits the
-    // mesh as a SkinnedMeshData (`.skmesh`) rather than a `.smesh`.
+// Everything one skeleton draws, in the skeleton's model space.
+struct ImportedSkinnedModel
+{
+    // The skeleton's name; the model and its skeleton are one identity.
+    std::string Name;
+    std::string Origin;
     int SkinIndex = -1;
-    std::optional<MeshSkinning> Skinning;
+    MeshGeometry Geometry;
+    MeshSkinning Skinning; // SkeletonPath left empty; the importer assigns it.
 };
 
 struct ImportedSkeleton
 {
-    // glTF skin name; may be empty (artifact naming falls back to ordinals).
+    // The glTF skin name, or "skin<index>" when unnamed.
     std::string Name;
+    std::string Origin;
     SkeletonData Data;
 };
 
 struct ImportedAnimation
 {
-    // glTF animation name; may be empty.
+    // The glTF animation name, or "animation<index>" when unnamed.
     std::string Name;
+    std::string Origin;
     AnimationClipData Data; // SkeletonPath left empty; the importer assigns it.
 
     // The glTF skin this animation poses (its channels target that skin's
@@ -61,15 +68,14 @@ struct ImportedAnimation
     int SkinIndex = -1;
 };
 
-// Everything one glTF source yields (Decisions B, J, M): meshes, skeletons
-// (one per skin), and animation clips. Skeleton-local joint resolution,
-// weight normalization, and node→joint remapping all happen here so the
-// runtime never fixes data (Decision N). SkeletonPath fields are left empty
-// for the importer to fill from artifact naming.
+// Everything one glTF source yields; Skeletons is indexed by skin. Joint
+// resolution, weight normalization and node→joint remapping all happen here so
+// the runtime never fixes data (Decision N).
 struct ImportedGltfScene
 {
     std::vector<ImportedSkeleton> Skeletons;
-    std::vector<ImportedGltfMesh> Meshes;
+    std::vector<ImportedSkinnedModel> SkinnedModels;
+    std::vector<ImportedGltfMesh> StaticMeshes;
     std::vector<ImportedAnimation> Animations;
 };
 
@@ -78,37 +84,20 @@ struct ImportedGltfScene
                                    ImportedGltfScene& out,
                                    std::string* error = nullptr);
 
-// Pure stage half: glTF bytes → one validated MeshGeometry per glTF mesh,
-// primitives as sections (MaterialSlot = primitive ordinal), geometry in
-// mesh-local space (node transforms are the scene's business, not the
-// cook's). Skinning is ignored — this is the static-geometry path. Errors
-// travel in `error`.
-[[nodiscard]] bool ImportGltfMeshes(std::span<const std::byte> bytes,
-                                    std::vector<ImportedGltfMesh>& out,
-                                    std::string* error = nullptr);
-
 // MikkTSpace over one section's triangles: de-index, generate, re-weld
-// exact-duplicate vertices. Exposed for tests; ImportGltfMeshes calls it for
+// exact-duplicate vertices. Exposed for tests; the import calls it for
 // primitives that have UVs but no authored tangents.
 [[nodiscard]] bool GenerateSectionTangents(std::vector<StaticMeshVertex>& vertices,
                                            std::vector<uint32_t>& indices,
                                            std::string* error = nullptr);
 
-//=============================================================================
-// GltfMeshImporter — .glb/.gltf → cooked .smesh + .sskel + .sanim artifacts.
-//
-// A single-mesh source keeps the source's virtual path (the texture-cook
-// precedent: "asset://meshes/chair.glb" serves .smesh bytes). A multi-mesh
-// source emits "asset://<source>#<mesh-name>" per mesh — '#' cannot appear
-// in scanned file paths, so cooked names can never collide with real files.
-// Skeletons and animations always take the '#'-suffixed form
-// ("asset://<source>#skel:<name>", "asset://<source>#anim:<name>"), and the
-// skinned mesh / clip artifacts reference the skeleton artifact by that path.
-//=============================================================================
+// .glb/.gltf → cooked .smesh, .skmesh, .sskel and .sanim artifacts, named as
+// docs/assets/pipeline.md's glTF import contract tabulates.
 class GltfMeshImporter final : public IAssetImporter
 {
 public:
     [[nodiscard]] std::vector<std::string_view> SourceExtensions() const override;
     [[nodiscard]] ImportResult Import(const ImportInput& input,
                                       ICookOutputWriter& output) override;
+    [[nodiscard]] std::uint64_t CookIdentity() const override;
 };

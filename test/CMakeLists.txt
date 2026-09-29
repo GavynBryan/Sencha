@@ -15,6 +15,13 @@ set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(googletest)
 
+# Shared by every test binary: the bench recorder and the allocation counter.
+# The counter replaces the program's allocation functions, so only a binary
+# whose tests read it links it.
+add_library(test_allocation_counter STATIC support/AllocationCounter.cpp)
+target_include_directories(test_allocation_counter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/support)
+sencha_warnings(test_allocation_counter)
+
 file(GLOB_RECURSE CORE_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/core/*.cpp
 )
@@ -78,7 +85,7 @@ file(GLOB_RECURSE PARTICIPANT_TEST_SOURCES CONFIGURE_DEPENDS
 )
 
 add_executable(core_tests ${CORE_TEST_SOURCES})
-target_link_libraries(core_tests PRIVATE sencha_engine app_host_arguments GTest::gtest_main)
+target_link_libraries(core_tests PRIVATE sencha_engine app_host_arguments test_allocation_counter GTest::gtest_main)
 # The component-codegen golden fixture is included by logical path.
 target_include_directories(core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # Committed content lives in the source tree, not beside the test binary.
@@ -94,7 +101,7 @@ set(SENCHA_TEST_TARGETS core_tests math_geometry_tests)
 
 if(RUNTIME_TEST_SOURCES)
     add_executable(runtime_tests ${RUNTIME_TEST_SOURCES})
-    target_link_libraries(runtime_tests PRIVATE sencha_engine GTest::gtest_main)
+    target_link_libraries(runtime_tests PRIVATE sencha_engine test_allocation_counter GTest::gtest_main)
     list(APPEND SENCHA_TEST_TARGETS runtime_tests)
 
     # A real loadable game module for the S2 boundary integration test. MODULE so
@@ -241,6 +248,8 @@ endif()
 # its math headers -- the brush_tests discipline. GUI-coupled editor code (ImGui,
 # render passes) is out of scope for headless tests by construction.
 if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
+    add_executable(editor_process_probe editor_process/ProcessProbe.cpp)
+    sencha_warnings(editor_process_probe)
     # Kyusu's authoring half arrives as a library; only the other editor
     # applications, which have no such split, are still listed by hand.
     add_executable(editor_tests
@@ -250,10 +259,10 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
         ${CMAKE_SOURCE_DIR}/editor/shudei/src/MaterialTabSet.cpp
         ${CMAKE_SOURCE_DIR}/editor/shudei/src/PreviewPrimitives.cpp
         ${CMAKE_SOURCE_DIR}/editor/kettle/src/ProjectCatalog.cpp
-        # The data editor's GUI-free half: the document's edit transaction and
-        # the movement authoring model. Its panels stay out by construction.
-        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/DataDocument.cpp
-        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/SubtypeEditorRegistry.cpp
+        # The data editor's GUI-free half: its file operations and the movement
+        # authoring model. Its panels stay out by construction.
+        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/DataEditorWorkspace.cpp
+        ${CMAKE_SOURCE_DIR}/editor/common/src/ui/DataSubtypeEditorRegistry.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputBindingSummary.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputControlCapture.cpp
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementLayerSummary.cpp
@@ -268,8 +277,12 @@ if(EDITOR_TEST_SOURCES AND TARGET kyusu_authoring)
         ${CMAKE_SOURCE_DIR}/editor/data_editor/src)
     # The previewer's authoring half arrives as a library too, and its tests
     # open the shipped documents from the source tree with their sidecars.
-    target_link_libraries(editor_tests PRIVATE kyusu_authoring shoji_authoring GTest::gtest_main)
+    target_link_libraries(editor_tests PRIVATE kyusu_authoring shoji_authoring animation_authoring GTest::gtest_main)
+    target_include_directories(editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
     target_compile_definitions(editor_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(editor_tests PRIVATE
+        TEST_PROCESS_PROBE_PATH="$<TARGET_FILE:editor_process_probe>")
+    add_dependencies(editor_tests editor_process_probe)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 

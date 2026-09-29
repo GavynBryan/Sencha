@@ -1,8 +1,11 @@
 #pragma once
 
+#include <core/hash/TransparentStringHash.h>
+
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -34,6 +37,13 @@ public:
     [[nodiscard]] std::vector<GameplayTagId> GetChildren(GameplayTagId id) const;
     [[nodiscard]] std::size_t Size() const;
 
+    // A hash of the name: a tag's identity between machines, where ids (which
+    // are registration order) mean nothing. Zero is no tag.
+    [[nodiscard]] static std::uint32_t WireKeyOf(std::string_view name);
+    [[nodiscard]] std::uint32_t WireKey(GameplayTagId id) const;
+    // Invalid when no tag has the key, or when two registered names share it.
+    [[nodiscard]] GameplayTagId FindByWireKey(std::uint32_t key) const;
+
 private:
     struct TagRecord
     {
@@ -47,5 +57,7 @@ private:
                                                                  GameplayTagError* error);
 
     std::vector<TagRecord> Tags;
-    std::unordered_map<std::string, GameplayTagId> IdsByName;
+    std::unordered_map<std::string, GameplayTagId, TransparentStringHash, std::equal_to<>> IdsByName;
+    // Invalid where two names share a key.
+    std::unordered_map<std::uint32_t, GameplayTagId> IdsByWireKey;
 };

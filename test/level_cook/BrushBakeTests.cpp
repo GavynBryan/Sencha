@@ -132,18 +132,36 @@ TEST(GltfMeshExport, GlbRoundTripsThroughTheImporter)
     file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     file.close();
 
-    std::vector<ImportedGltfMesh> imported;
-    ASSERT_TRUE(ImportGltfMeshes(bytes, imported, &error)) << error;
-    ASSERT_EQ(imported.size(), 1u);
+    ImportedGltfScene scene;
+    ASSERT_TRUE(ImportGltfScene(bytes, scene, &error)) << error;
+    ASSERT_EQ(scene.StaticMeshes.size(), 1u);
 
-    const MeshGeometry& in = imported[0].Geometry;
+    // The exporter writes the inverse of the importer's engine-frame turn, so
+    // the round trip lands every vertex back where the brush put it, facing
+    // the same way.
+    const MeshGeometry& in = scene.StaticMeshes[0].Geometry;
     EXPECT_EQ(in.Sections.size(), baked.Sections.size());
-    EXPECT_EQ(in.Indices.size(), baked.Indices.size());
-    // Positions survive exactly (same handedness and axes on both sides): the
-    // bounds of the reimported mesh match the baked ones.
+    ASSERT_EQ(in.Indices.size(), baked.Indices.size());
     EXPECT_NEAR(in.LocalBounds.Min.X, baked.LocalBounds.Min.X, 1e-4f);
+    EXPECT_NEAR(in.LocalBounds.Min.Y, baked.LocalBounds.Min.Y, 1e-4f);
+    EXPECT_NEAR(in.LocalBounds.Min.Z, baked.LocalBounds.Min.Z, 1e-4f);
+    EXPECT_NEAR(in.LocalBounds.Max.X, baked.LocalBounds.Max.X, 1e-4f);
     EXPECT_NEAR(in.LocalBounds.Max.Y, baked.LocalBounds.Max.Y, 1e-4f);
     EXPECT_NEAR(in.LocalBounds.Max.Z, baked.LocalBounds.Max.Z, 1e-4f);
+    // Corner by corner, in triangle order: the importer reads the shared
+    // vertex stream once per section, so vertex indices differ while every
+    // triangle's corners, and so its winding, must not.
+    for (std::size_t i = 0; i < in.Indices.size(); ++i)
+    {
+        const StaticMeshVertex& a = in.Vertices[in.Indices[i]];
+        const StaticMeshVertex& b = baked.Vertices[baked.Indices[i]];
+        EXPECT_NEAR(a.Position.X, b.Position.X, 1e-4f) << "corner " << i;
+        EXPECT_NEAR(a.Position.Y, b.Position.Y, 1e-4f) << "corner " << i;
+        EXPECT_NEAR(a.Position.Z, b.Position.Z, 1e-4f) << "corner " << i;
+        EXPECT_NEAR(a.Normal.X, b.Normal.X, 1e-4f) << "corner " << i;
+        EXPECT_NEAR(a.Normal.Y, b.Normal.Y, 1e-4f) << "corner " << i;
+        EXPECT_NEAR(a.Normal.Z, b.Normal.Z, 1e-4f) << "corner " << i;
+    }
 
     std::filesystem::remove(path);
 }

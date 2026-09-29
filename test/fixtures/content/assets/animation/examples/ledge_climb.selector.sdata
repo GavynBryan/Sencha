@@ -1,0 +1,24 @@
+{
+    "type": "animation.selector",
+    "version": 1,
+    "data": {
+        "rules": [
+            {
+                "name": "idle",
+                "priority": 0,
+                "enter": [],
+                "behavior": "Anim.Locomotion.Idle"
+            },
+            {
+                "name": "climb",
+                "priority": 50,
+                "enter": [
+                    {
+                        "request": "Anim.Ledge.Climb"
+                    }
+                ],
+                "behavior": "Anim.Ledge.Climb"
+            }
+        ]
+    }
+}

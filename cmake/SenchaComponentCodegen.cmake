@@ -149,6 +149,12 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
     # Per-header generation cannot see a collision with another header, so one
     # aggregate stage reads every index.
     set(_index "${CMAKE_CURRENT_BINARY_DIR}/${target}.components.index")
+    # Which sidecars the aggregate is made of. A header dropped from the list
+    # removes an input, which no remaining input's timestamp reports, so the
+    # list itself is a dependency; rewritten only when it changes.
+    set(_manifest "${CMAKE_CURRENT_BINARY_DIR}/${target}.components.inputs")
+    string(REPLACE ";" "\n" _manifest_text "${_indexes}")
+    file(CONFIGURE OUTPUT "${_manifest}" CONTENT "${_manifest_text}\n")
     set(_base_index "")
     set(_base_argument "")
     if(ARG_BASE)
@@ -164,7 +170,7 @@ $<JOIN:$<LIST:TRANSFORM,$<REMOVE_DUPLICATES:$<TARGET_PROPERTY:${target},INCLUDE_
         OUTPUT "${_index}"
         COMMAND ${CMAKE_COMMAND} -DINDEX_DIR=${_generated} -DOUTPUT=${_index} ${_base_argument}
                 -P "${SENCHA_COMPONENT_CODEGEN_DIR}/ValidateComponentIndex.cmake"
-        DEPENDS ${_indexes} ${_base_index}
+        DEPENDS ${_indexes} ${_base_index} "${_manifest}"
                 "${SENCHA_COMPONENT_CODEGEN_DIR}/ValidateComponentIndex.cmake"
         COMMENT "Validating component metadata for ${target}"
         VERBATIM)

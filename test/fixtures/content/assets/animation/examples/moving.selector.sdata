@@ -1,0 +1,26 @@
+{
+    "type": "animation.selector",
+    "version": 1,
+    "data": {
+        "rules": [
+            {
+                "name": "idle",
+                "priority": 0,
+                "enter": [],
+                "behavior": "Anim.Locomotion.Idle"
+            },
+            {
+                "name": "move",
+                "priority": 10,
+                "enter": [
+                    {
+                        "fact": "Speed",
+                        "compare": "gt",
+                        "value": 0.1
+                    }
+                ],
+                "behavior": "Anim.Locomotion.Move"
+            }
+        ]
+    }
+}

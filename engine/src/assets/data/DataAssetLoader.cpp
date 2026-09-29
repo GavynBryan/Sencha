@@ -1,8 +1,10 @@
 #include <assets/data/DataAssetLoader.h>
 
+#include <assets/runtime/AssetSystem.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/LoggingProvider.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <optional>
@@ -24,12 +26,6 @@ AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource
     AssetStaging staging;
     staging.Record = record;
 
-    if (Types == nullptr || Cache == nullptr)
-    {
-        staging.Error = "structured data services are not configured";
-        return staging;
-    }
-
     std::vector<std::byte> bytes;
     if (!ReadAssetBytes(source, record, bytes))
     {
@@ -46,15 +42,27 @@ AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource
                                     jsonError.Position, jsonError.Message);
         return staging;
     }
-    if (!root->IsObject())
+    return StageRoot(record, *root);
+}
+
+AssetStaging DataAssetLoader::StageRoot(const AssetRecord& record, const JsonValue& root)
+{
+    AssetStaging staging;
+    staging.Record = record;
+    if (Types == nullptr || Cache == nullptr)
+    {
+        staging.Error = "structured data services are not configured";
+        return staging;
+    }
+    if (!root.IsObject())
     {
         staging.Error = "data asset root must be an object";
         return staging;
     }
 
-    const JsonValue* typeValue = root->Find("type");
-    const JsonValue* versionValue = root->Find("version");
-    const JsonValue* dataValue = root->Find("data");
+    const JsonValue* typeValue = root.Find("type");
+    const JsonValue* versionValue = root.Find("version");
+    const JsonValue* dataValue = root.Find("data");
     if (typeValue == nullptr || !typeValue->IsString())
     {
         staging.Error = "data asset requires string field 'type'";
@@ -120,7 +128,86 @@ AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource
     return staging;
 }
 
+bool DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
+                                       std::vector<AssetLease>& out)
+{
+    // A dependency still being committed further up this stack is a cycle.
+    // The asynchronous preloader refuses one before it stages anything; the
+    // synchronous path would otherwise recurse until the stack ran out.
+    if (std::find(Committing.begin(), Committing.end(), staged.Record.Path) != Committing.end())
+    {
+        Log.Error("DataAssetLoader: dependency cycle through '{}'", staged.Record.Path);
+        return false;
+    }
+    Committing.push_back(staged.Record.Path);
+    struct Unwind
+    {
+        std::vector<std::string>& Stack;
+        ~Unwind() { Stack.pop_back(); }
+    } unwind{ Committing };
+
+    out.reserve(staged.Dependencies.size());
+    for (const AssetRef& dependency : staged.Dependencies)
+    {
+        if (std::find(Committing.begin(), Committing.end(), dependency.Path) != Committing.end())
+        {
+            Log.Error("DataAssetLoader: dependency cycle between '{}' and '{}'",
+                      staged.Record.Path, dependency.Path);
+            return false;
+        }
+        AssetLease lease = assets.LoadLease(dependency.Path, dependency.Type);
+        if (!lease)
+        {
+            Log.Error("DataAssetLoader: '{}' depends on '{}', which did not load",
+                      staged.Record.Path, dependency.Path);
+            return false;
+        }
+        out.push_back(std::move(lease));
+    }
+    return true;
+}
+
+DataAssetHandle DataAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
+{
+    std::vector<AssetLease> dependencies;
+    if (staged.IsValid() && !LoadDependencies(staged, assets, dependencies))
+        return {};
+    return Commit(std::move(staged), std::move(dependencies));
+}
+
+bool DataAssetLoader::CommitReload(AssetStaging&& staged, AssetSystem& assets)
+{
+    std::vector<AssetLease> dependencies;
+    if (staged.IsValid() && !LoadDependencies(staged, assets, dependencies))
+        return false;
+    return Reload(std::move(staged), std::move(dependencies));
+}
+
 DataAssetHandle DataAssetLoader::CommitTyped(AssetStaging&& staged)
+{
+    if (!staged.Dependencies.empty())
+    {
+        Log.Error("DataAssetLoader: '{}' declares dependencies and must commit through the "
+                  "asset system",
+                  staged.Record.Path);
+        return {};
+    }
+    return Commit(std::move(staged), {});
+}
+
+bool DataAssetLoader::CommitReload(AssetStaging&& staged)
+{
+    if (!staged.Dependencies.empty())
+    {
+        Log.Error("DataAssetLoader: '{}' declares dependencies and must reload through the "
+                  "asset system",
+                  staged.Record.Path);
+        return false;
+    }
+    return Reload(std::move(staged), {});
+}
+
+DataAssetHandle DataAssetLoader::Commit(AssetStaging&& staged, std::vector<AssetLease> dependencies)
 {
     if (!staged.IsValid())
     {
@@ -143,13 +230,14 @@ DataAssetHandle DataAssetLoader::CommitTyped(AssetStaging&& staged)
 
     DataAssetHandle handle = Cache->Register(staged.Record.Path,
                                              std::move(compiled->TypeName),
-                                             std::move(compiled->Value));
+                                             std::move(compiled->Value),
+                                             std::move(dependencies));
     if (!handle.IsValid())
         Log.Error("DataAssetLoader: failed to register '{}'", staged.Record.Path);
     return handle;
 }
 
-bool DataAssetLoader::CommitReload(AssetStaging&& staged)
+bool DataAssetLoader::Reload(AssetStaging&& staged, std::vector<AssetLease> dependencies)
 {
     if (!staged.IsValid() || Cache == nullptr)
         return false;
@@ -160,5 +248,6 @@ bool DataAssetLoader::CommitReload(AssetStaging&& staged)
 
     return Cache->ReloadInPlace(staged.Record.Path,
                                 compiled->TypeName,
-                                std::move(compiled->Value));
+                                std::move(compiled->Value),
+                                std::move(dependencies));
 }

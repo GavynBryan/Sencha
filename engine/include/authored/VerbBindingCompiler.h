@@ -4,6 +4,7 @@
 #include <authored/VerbRegistry.h>
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 class AssetRegistry;
@@ -60,6 +61,16 @@ struct VerbBindingEnvironment
                                       const VerbBindingEnvironment& environment,
                                       CompiledVerbBinding& out,
                                       std::vector<std::string>& errors);
+
+// For a producer whose input values are content (a clip's events), so they are
+// converted once at bind time. The value must satisfy every argument the input
+// fills, as the dispatcher checks it; false appends a located diagnostic.
+[[nodiscard]] bool CompileVerbInputValue(const VerbBindingArgument& authored,
+                                         const VerbCompiledInput& input,
+                                         const VerbBindingEnvironment& environment,
+                                         std::string_view bindingKey,
+                                         AuthoredValue& out,
+                                         std::vector<std::string>& errors);
 
 // Whether a compiled binding still describes the catalog it was compiled
 // against. False after a World teardown, a schema change, or a retirement, and

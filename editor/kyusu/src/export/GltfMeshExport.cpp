@@ -1,5 +1,6 @@
 #include "GltfMeshExport.h"
 
+#include <assets/cook/GltfFrame.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
 #include <assets/static_mesh/StaticMeshVertex.h>
@@ -141,13 +142,21 @@ bool WriteGlbFile(const MeshGeometry& geometry,
     for (std::size_t i = 0; i < materialOrder.size(); ++i)
         materials.push_back(obj({ { "name", JsonValue(MaterialName(materialOrder[i], i)) } }));
 
+    const Quat<float> engineToGltf = kGltfToEngineRotation.Conjugate();
     JsonValue::Object root{
         { "asset", obj({ { "version", JsonValue("2.0") }, { "generator", JsonValue("sencha_editor") } }) },
         { "buffers", JsonValue(JsonValue::Array{ obj({ { "byteLength", JsonValue(double(bin.size())) } }) }) },
         { "bufferViews", JsonValue(std::move(bufferViews)) },
         { "accessors", JsonValue(std::move(accessors)) },
         { "meshes", JsonValue(JsonValue::Array{ obj({ { "primitives", JsonValue(std::move(primitives)) } }) }) },
-        { "nodes", JsonValue(JsonValue::Array{ obj({ { "mesh", JsonValue(0) } }) }) },
+        // The node carries the turn from the engine frame back to glTF's, so
+        // the vertex data stays byte-for-byte the engine's and the importer's
+        // own turn undoes it exactly.
+        { "nodes", JsonValue(JsonValue::Array{ obj({
+              { "mesh", JsonValue(0) },
+              { "rotation", JsonValue(JsonValue::Array{
+                    JsonValue(double(engineToGltf.X)), JsonValue(double(engineToGltf.Y)),
+                    JsonValue(double(engineToGltf.Z)), JsonValue(double(engineToGltf.W)) }) } }) }) },
         { "scenes", JsonValue(JsonValue::Array{ obj({ { "nodes", JsonValue(JsonValue::Array{ JsonValue(0) }) } }) }) },
         { "scene", JsonValue(0) },
     };

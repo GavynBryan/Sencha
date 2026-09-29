@@ -29,6 +29,7 @@
 #include <effects/EffectSystem.h>
 
 #include <abilities/AbilityActivation.h>
+#include <abilities/AbilityAnimation.h>
 #include <abilities/AbilityDefinition.h>
 #include <abilities/AbilityRegistry.h>
 #include <abilities/AbilitySet.h>
@@ -46,7 +47,8 @@ using AbilityKitComponents = ComponentSet<
     GameplayTagContainer,
     AttributeSet,
     AbilitySet,
-    ActiveEffect>;
+    ActiveEffect,
+    AbilityAnimationLeases>;
 
 void RegisterAbilityKitComponents(ComponentRegistrar& registrar);
 

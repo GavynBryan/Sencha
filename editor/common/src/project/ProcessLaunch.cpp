@@ -1,5 +1,16 @@
 #include "project/ProcessLaunch.h"
 
+#include <string_view>
+#include <utility>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <limits>
+#endif
+
 #if defined(__unix__) || defined(__APPLE__)
 #include <cerrno>
 #include <cstdint>
@@ -11,6 +22,38 @@
 
 namespace
 {
+#if defined(_WIN32)
+    bool Wide(std::string_view text, std::wstring& out)
+    {
+        if (text.find('\0') != std::string_view::npos
+            || text.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+            return false;
+        if (text.empty()) { out.clear(); return true; }
+        const auto size = static_cast<int>(text.size());
+        const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), size, nullptr, 0);
+        if (length == 0) return false;
+        out.resize(static_cast<std::size_t>(length));
+        return MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), size, out.data(), length) != 0;
+    }
+
+    // Windows passes one command-line string to the child's CRT. Escape both
+    // literal quotes and trailing backslashes inside an always-quoted argument.
+    void AppendArgument(std::wstring& line, std::wstring_view argument)
+    {
+        if (!line.empty()) line += L' ';
+        line += L'"';
+        std::size_t slashes = 0;
+        for (const wchar_t c : argument)
+        {
+            if (c == L'\\') { ++slashes; continue; }
+            line.append(c == L'"' ? slashes * 2 + 1 : slashes, L'\\');
+            line += c;
+            slashes = 0;
+        }
+        line.append(slashes * 2, L'\\');
+        line += L'"';
+    }
+#endif
 #if defined(__unix__) || defined(__APPLE__)
     // What the child reports back through the close-on-exec pipe when it cannot
     // reach execv. On a successful exec the pipe's write end closes and the
@@ -22,6 +65,90 @@ namespace
         std::int32_t Errno;
     };
 #endif
+}
+
+ChildProcess::~ChildProcess() { Close(); }
+
+ChildProcess::ChildProcess(ChildProcess&& other) noexcept
+    : ProcessId(std::exchange(other.ProcessId, -1)), NativeHandle(std::exchange(other.NativeHandle, 0))
+{
+}
+
+ChildProcess& ChildProcess::operator=(ChildProcess&& other) noexcept
+{
+    if (this != &other)
+    {
+        Close();
+        ProcessId = std::exchange(other.ProcessId, -1);
+        NativeHandle = std::exchange(other.NativeHandle, 0);
+    }
+    return *this;
+}
+
+void ChildProcess::Close()
+{
+#if defined(_WIN32)
+    if (NativeHandle) CloseHandle(reinterpret_cast<HANDLE>(NativeHandle));
+#endif
+    NativeHandle = 0;
+    ProcessId = -1;
+}
+
+bool ChildProcess::HasExited()
+{
+#if defined(_WIN32)
+    if (NativeHandle == 0) return true;
+    if (WaitForSingleObject(reinterpret_cast<HANDLE>(NativeHandle), 0) == WAIT_TIMEOUT)
+        return false;
+#else
+    if (ProcessId < 0) return true;
+    if (!HasProcessExited(ProcessId)) return false;
+#endif
+    Close();
+    return true;
+}
+
+bool SpawnProcess(const std::string& executablePath,
+                  const std::vector<std::string>& args,
+                  const std::string& workingDir,
+                  ChildProcess& outProcess,
+                  std::string* error)
+{
+    ChildProcess child;
+#if defined(_WIN32)
+    const auto fail = [error](std::string message) {
+        if (error) *error = std::move(message);
+        return false;
+    };
+    std::wstring executable;
+    std::wstring directory;
+    if (executablePath.empty() || !Wide(executablePath, executable) || !Wide(workingDir, directory))
+        return fail("invalid UTF-8 process path or working directory");
+    std::wstring commandLine;
+    AppendArgument(commandLine, executable);
+    for (const auto& arg : args)
+    {
+        std::wstring value;
+        if (!Wide(arg, value)) return fail("invalid UTF-8 process argument");
+        AppendArgument(commandLine, value);
+    }
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION info{};
+    if (!CreateProcessW(executable.c_str(), commandLine.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, directory.empty() ? nullptr : directory.c_str(),
+                        &startup, &info))
+        return fail("CreateProcessW failed with error " + std::to_string(GetLastError()));
+    CloseHandle(info.hThread);
+    child.ProcessId = static_cast<long>(info.dwProcessId);
+    child.NativeHandle = reinterpret_cast<std::uintptr_t>(info.hProcess);
+#else
+    if (!SpawnProcess(executablePath, args, workingDir, child.ProcessId, error))
+        return false;
+#endif
+    outProcess = std::move(child);
+    if (error) error->clear();
+    return true;
 }
 
 bool SpawnProcess(const std::string& executablePath,

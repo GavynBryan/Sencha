@@ -3,12 +3,15 @@
 #include <assets/data/DataAssetCache.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/assets/AssetStager.h>
+#include <core/json/JsonValue.h>
 #include <core/logging/Logger.h>
 #include <core/metadata/DataSchema.h>
 
 #include <memory>
 #include <string>
+#include <vector>
 
+class AssetSystem;
 class LoggingProvider;
 
 struct CompiledDataAsset
@@ -32,13 +35,28 @@ public:
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source) override;
+    // Stages an envelope already in memory, such as an editor's working copy.
+    [[nodiscard]] AssetStaging StageRoot(const AssetRecord& record, const JsonValue& root);
 
+    // Loads the value's declared dependencies and has the entry hold them; one
+    // that cannot load fails the commit.
+    [[nodiscard]] DataAssetHandle CommitTyped(AssetStaging&& staged, AssetSystem& assets);
+    [[nodiscard]] bool CommitReload(AssetStaging&& staged, AssetSystem& assets);
+
+    // Refuses a value that declares dependencies.
     [[nodiscard]] DataAssetHandle CommitTyped(AssetStaging&& staged);
     [[nodiscard]] bool CommitReload(AssetStaging&& staged);
 
 private:
+    [[nodiscard]] bool LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
+                                        std::vector<AssetLease>& out);
+    [[nodiscard]] DataAssetHandle Commit(AssetStaging&& staged, std::vector<AssetLease> dependencies);
+    [[nodiscard]] bool Reload(AssetStaging&& staged, std::vector<AssetLease> dependencies);
+
     Logger& Log;
     DataAssetTypeRegistry* Types = nullptr;
     DataSchemaRegistry* Schemas = nullptr;
     DataAssetCache* Cache = nullptr;
+    // Paths whose commit is loading its dependencies, outermost first.
+    std::vector<std::string> Committing;
 };

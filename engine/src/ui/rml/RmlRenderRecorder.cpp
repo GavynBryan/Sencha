@@ -3,6 +3,7 @@
 #include <core/logging/Logger.h>
 
 #include <algorithm>
+#include <span>
 #include <array>
 #include <cmath>
 #include <cstring>

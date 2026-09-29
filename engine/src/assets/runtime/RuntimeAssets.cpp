@@ -1,8 +1,18 @@
 #include <assets/runtime/RuntimeAssets.h>
 
 #include <assets/runtime/RegisterAssetKind.h>
+#include <anim/AnimBehaviorSet.h>
+#include <anim/AnimFactSchema.h>
+#include <anim/AnimRequestSchema.h>
+#include <anim/AnimRigData.h>
+#include <anim/AnimSelectorData.h>
+#include <anim/AnimBlendOverrides.h>
+#include <anim/AnimBlendspaceData.h>
+#include <anim/AnimFlowData.h>
+#include <anim/AnimSlotMapData.h>
 #include <authored/VerbBindingData.h>
 #include <core/logging/LoggingProvider.h>
+#include <gameplay_tags/GameplayTagDeclarations.h>
 #include <input/InputProfileData.h>
 #include <movement/MovementProfileData.h>
 #include <navigation/NavigationPolicyData.h>
@@ -84,6 +94,16 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterNavigationPolicyData(DataTypes, DataSchemas);
     RegisterInputProfileData(DataTypes, DataSchemas);
     RegisterVerbBindingData(DataTypes, DataSchemas);
+    RegisterAnimRequestSchema(DataTypes, DataSchemas);
+    RegisterAnimFactSchema(DataTypes, DataSchemas);
+    RegisterAnimRigData(DataTypes, DataSchemas);
+    RegisterAnimBehaviorSet(DataTypes, DataSchemas);
+    RegisterAnimSelectorData(DataTypes, DataSchemas);
+    RegisterAnimSlotMapData(DataTypes, DataSchemas);
+    RegisterAnimFlowData(DataTypes, DataSchemas);
+    RegisterAnimBlendOverrides(DataTypes, DataSchemas);
+    RegisterAnimBlendspaceData(DataTypes, DataSchemas);
+    RegisterGameplayTagDeclarations(DataTypes, DataSchemas);
 
     // A reference store is its own stager and store, so it takes the mesh
     // kind whole; the real loader stages against a cache this composition

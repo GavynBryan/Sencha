@@ -1,5 +1,7 @@
 #pragma once
 
+#include "viewport/OrbitCamera.h"
+
 #include "PreviewBackdropRenderer.h"
 #include "PreviewPrimitives.h"
 
@@ -76,7 +78,9 @@ private:
     PreviewPrimitive Active = PreviewPrimitive::Sphere;
     MaterialHandle Material{};
 
-    float Yaw = 0.6f;
-    float Pitch = 0.35f;
-    float Distance = 1.6f;
+    // A material sphere at the origin, turned over by the author. The zoom and
+    // depth range are the sphere's, not a framed subject's.
+    OrbitCamera Camera{ .Target = {}, .Yaw = 0.6f, .Pitch = 0.35f, .Distance = 1.6f,
+                        .MinDistance = 0.6f, .MaxDistance = 8.0f, .FovYRadians = 0.9f,
+                        .Near = 0.05f, .Far = 50.0f };
 };

@@ -2,6 +2,10 @@
 
 #include <assets/cook/AssetImporter.h>
 
+#include <functional>
+#include <optional>
+#include <string>
+
 //=============================================================================
 // .blend cook front end (docs/assets/pipeline.md, Decision B). Dev-only —
 // compiled under SENCHA_ENABLE_COOK, never shipped.
@@ -23,10 +27,23 @@
 // The executable is "blender" on PATH, overridable via the SENCHA_BLENDER
 // environment variable.
 //=============================================================================
+
+// "blender <version> gltf <exporter version>", or "unavailable". Part of the cook
+// identity, probed once and only when a .blend source is checked.
+using BlendToolchainProbe = std::function<std::string()>;
+[[nodiscard]] std::string ProbeBlendToolchain();
+
 class BlendMeshImporter final : public IAssetImporter
 {
 public:
+    explicit BlendMeshImporter(BlendToolchainProbe probe = ProbeBlendToolchain);
+
     [[nodiscard]] std::vector<std::string_view> SourceExtensions() const override;
     [[nodiscard]] ImportResult Import(const ImportInput& input,
                                       ICookOutputWriter& output) override;
+    [[nodiscard]] std::uint64_t CookIdentity() const override;
+
+private:
+    BlendToolchainProbe Probe;
+    mutable std::optional<std::string> Toolchain;
 };

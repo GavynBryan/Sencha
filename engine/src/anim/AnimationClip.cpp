@@ -3,6 +3,7 @@
 #include <anim/Skeleton.h>
 #include <core/assets/AssetPath.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 
@@ -15,6 +16,57 @@ namespace
         return false;
     }
 } // namespace
+
+std::string_view AnimEventScopeName(AnimEventScope scope)
+{
+    switch (scope)
+    {
+    case AnimEventScope::Cosmetic: return "cosmetic";
+    case AnimEventScope::Gameplay: return "gameplay";
+    }
+    return "unknown";
+}
+
+bool ValidateAnimationClipEvent(const AnimationClipEvent& event, std::string* error)
+{
+    const auto fail = [&](std::string_view why) {
+        return Fail(error, std::format("event {}: {}", event.Key, why));
+    };
+    if (event.Key == 0)
+        return Fail(error, "an event needs a nonzero key");
+    if (!std::isfinite(event.Time) || event.Time < 0.0f || event.Time > 1.0f)
+        return fail("time must be normalized, between 0 and 1");
+    if (event.Binding.empty())
+        return fail("names no binding");
+    if (event.Scope != AnimEventScope::Cosmetic && event.Scope != AnimEventScope::Gameplay)
+        return fail("unknown scope");
+    if (event.MinWeight.has_value())
+    {
+        if (event.Scope != AnimEventScope::Cosmetic)
+            return fail("only a cosmetic event has a minimum weight");
+        if (!std::isfinite(*event.MinWeight) || *event.MinWeight < 0.0f || *event.MinWeight > 1.0f)
+            return fail("minimum weight must be between 0 and 1");
+    }
+    if (event.Inputs.size() > kAnimEventMaxInputs)
+        return fail(std::format("supplies {} inputs; an event supplies at most {}", event.Inputs.size(),
+                                kAnimEventMaxInputs));
+    for (size_t index = 0; index < event.Inputs.size(); ++index)
+    {
+        const VerbBindingArgument& input = event.Inputs[index];
+        if (input.Key.empty())
+            return fail("an input has no name");
+        for (size_t other = index + 1; other < event.Inputs.size(); ++other)
+            if (event.Inputs[other].Key == input.Key)
+                return fail(std::format("input '{}' is supplied twice", input.Key));
+        if (input.Source != VerbArgumentSource::Literal && input.Source != VerbArgumentSource::Tag)
+            return fail(std::format("input '{}' is a reference; asset and entity references are "
+                                    "constants on the binding",
+                                    input.Key));
+        if (input.Source == VerbArgumentSource::Tag && input.Text.empty())
+            return fail(std::format("input '{}' names no tag", input.Key));
+    }
+    return true;
+}
 
 uint32_t AnimationChannelComponentCount(AnimationChannelPath path)
 {
@@ -80,6 +132,47 @@ bool ValidateAnimationClipData(const AnimationClipData& clip, std::string* error
                 if (std::abs(lengthSq - 1.0f) > 1e-3f)
                     return fail("rotation keys must be unit quaternions");
             }
+        }
+    }
+
+    if (clip.Root.has_value())
+    {
+        const AnimationRootCurve& root = *clip.Root;
+        if (root.TimesSeconds.empty())
+            return Fail(error, "root curve has no keys");
+        if (root.Values.size() != root.TimesSeconds.size() * 3)
+            return Fail(error, "root curve value count does not match its key count");
+        float previous = -1.0f;
+        for (const float time : root.TimesSeconds)
+        {
+            if (!std::isfinite(time) || time < 0.0f || time <= previous)
+                return Fail(error, "root curve key times must be finite, non-negative and strictly ascending");
+            previous = time;
+        }
+        if (previous > clip.DurationSeconds)
+            return Fail(error, "root curve's last key exceeds the clip duration");
+        if (!std::ranges::all_of(root.Values, [](float value) { return std::isfinite(value); }))
+            return Fail(error, "root curve values must be finite");
+    }
+
+    if (clip.Events.size() > kAnimClipMaxEvents)
+        return Fail(error, std::format("clip has {} events; a clip holds at most {}", clip.Events.size(),
+                                       kAnimClipMaxEvents));
+    for (size_t index = 0; index < clip.Events.size(); ++index)
+    {
+        const AnimationClipEvent& event = clip.Events[index];
+        if (!ValidateAnimationClipEvent(event, error))
+            return false;
+        for (size_t other = 0; other < index; ++other)
+            if (clip.Events[other].Key == event.Key)
+                return Fail(error, std::format("event key {} is used twice", event.Key));
+        if (index > 0)
+        {
+            const AnimationClipEvent& previous = clip.Events[index - 1];
+            if (event.Time < previous.Time || (event.Time == previous.Time && event.Key < previous.Key))
+                return Fail(error, std::format("event {} is out of order; events are ordered by time, "
+                                               "then key",
+                                               event.Key));
         }
     }
 

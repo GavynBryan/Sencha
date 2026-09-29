@@ -35,7 +35,7 @@ struct SkeletonJoint
     // joint's own index (topological order is a format invariant).
     int32_t ParentIndex = -1;
 
-    // Bind pose, local to the parent joint.
+    // Bind pose, local to the parent joint (a root's is in model space).
     Vec3d BindTranslation{};
     Quat<float> BindRotation{};
     Vec3d BindScale = Vec3d(1.0f, 1.0f, 1.0f);

@@ -1,0 +1,46 @@
+{
+    "type": "animation.request_schema",
+    "version": 1,
+    "data": {
+        "intents": [
+            {
+                "intent": "Anim.Weapon.Reload",
+                "params": []
+            },
+            {
+                "intent": "Anim.Weapon.Fire",
+                "params": []
+            },
+            {
+                "intent": "Anim.Weapon.Draw",
+                "params": []
+            },
+            {
+                "intent": "Anim.Melee",
+                "params": [
+                    {
+                        "name": "combo",
+                        "kind": "int"
+                    }
+                ]
+            },
+            {
+                "intent": "Anim.Charge",
+                "params": [
+                    {
+                        "name": "charge",
+                        "kind": "float"
+                    }
+                ]
+            },
+            {
+                "intent": "Anim.Ledge.Climb",
+                "params": []
+            },
+            {
+                "intent": "Anim.Door.Open",
+                "params": []
+            }
+        ]
+    }
+}

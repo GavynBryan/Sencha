@@ -1,0 +1,26 @@
+{
+    "type": "animation.flow",
+    "version": 1,
+    "data": {
+        "sections": [
+            {
+                "tag": "Anim.Ledge.Grab",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "tag": "Anim.Ledge.Pull",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "tag": "Anim.Ledge.Mantle",
+                "clip": "asset://meshes/dev/golden_rig.sanim",
+                "ends": true
+            },
+            {
+                "tag": "Anim.Ledge.Drop",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            }
+        ],
+        "cancel": "Anim.Ledge.Drop"
+    }
+}

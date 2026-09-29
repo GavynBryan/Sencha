@@ -1,10 +1,10 @@
-#include <anim/AnimationClipPlaybackSystem.h>
 #include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <app/Game.h>
 #include <app/GameModule.h>
 #include <app/RuntimeContent.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
@@ -165,6 +165,13 @@ class RenderHostGame final : public Game
 public:
     void OnRegisterComponents(ComponentRegistrar&) override {}
 
+    // The behavior the golden rig plays; the one name this host declares.
+    void OnRegisterVocabulary(World& world) override
+    {
+        if (GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
+            (void)tags->RegisterTag("Anim.Golden.Hold");
+    }
+
     void OnStart(GameStartupContext&) override
     {
         Engine& engine = GetEngine();
@@ -214,9 +221,6 @@ public:
     {
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
         ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
-        // Clip playback: a posed skinned mesh is one of the things the goldens
-        // watch, and nothing else in this host would advance it.
-        RegisterAnimationSystems(ctx.Schedule);
     }
 
     void OnShutdown(GameShutdownContext&) override

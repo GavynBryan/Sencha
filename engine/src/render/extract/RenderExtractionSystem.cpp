@@ -1,7 +1,8 @@
 #include <render/extract/RenderExtractionSystem.h>
 #include <render/skinned_mesh/SkinnedMeshCache.h>
 
-#include <anim/AnimationClipPlayerComponent.h>
+#include <anim/AnimPosePool.h>
+#include <anim/AnimPoseState.h>
 #include <anim/AnimationClipSampling.h>
 #include <anim/SkinningPalette.h>
 
@@ -251,7 +252,7 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
 {
     const SkinnedMeshCache& skinnedMeshes = *caches.SkinnedMeshes;
 
-    const auto emitSkinnedChunk = [&](auto& view, auto&& poseAt)
+    const auto emitSkinnedChunk = [&](auto& view, auto&& poseAt, double poseAlpha)
     {
         const auto renderers = view.template Read<SkinnedMeshComponent>();
 
@@ -289,7 +290,7 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
             if (skinnedPoses != nullptr)
             {
                 poseSlot = RegisterSkinnedPose(world, caches, renderer,
-                                               view.Entity(i), *skinnedPoses);
+                                               view.Entity(i), poseAlpha, *skinnedPoses);
             }
 
             MeshDrawInstance instance;
@@ -307,7 +308,8 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
     CachedSkinnedQuery->ForEachChunkIn(partitions, [&](auto& view)
     {
         const auto transforms = view.template Read<WorldTransform>();
-        emitSkinnedChunk(view, [&](uint32_t i) -> const Transform3f& { return transforms[i].Value; });
+        // Drawn where the last tick left it, so posed as the last tick left it.
+        emitSkinnedChunk(view, [&](uint32_t i) -> const Transform3f& { return transforms[i].Value; }, 1.0);
     });
 
     CachedSkinnedInterpolatedQuery->ForEachChunkIn(partitions, [&](auto& view)
@@ -315,20 +317,19 @@ void RenderExtractionSystem::EmitSkinnedMeshes(
         const auto histories = view.template Read<WorldTransformHistory>();
         emitSkinnedChunk(view, [&](uint32_t i) {
             return ResolvePresentationPose(histories[i], interpolationAlpha);
-        });
+        }, interpolationAlpha);
     });
 }
 
 std::uint32_t RenderExtractionSystem::RegisterSkinnedPose(
     const World& world, const RenderExtractCaches& caches,
-    const SkinnedMeshComponent& renderer, EntityId entity,
+    const SkinnedMeshComponent& renderer, EntityId entity, double poseAlpha,
     SkinnedPoseFrameData& skinnedPoses)
 {
     const SkinnedMeshCache& skinnedMeshes = *caches.SkinnedMeshes;
 
-    // One slot per entity (every section shares it). A clip player poses the
-    // skeleton at its current time; without one the palette stays the bind
-    // identity, which reproduces the rest bytes exactly.
+    // One slot per entity (every section shares it). Without a rig pose the
+    // palette stays the bind identity, which reproduces the rest bytes exactly.
     const MeshSkinning* skinning = skinnedMeshes.GetSkinning(renderer.Mesh);
     if (skinning == nullptr || skinning->JointCount == 0)
         return UINT32_MAX;
@@ -338,27 +339,51 @@ std::uint32_t RenderExtractionSystem::RegisterSkinnedPose(
     const std::uint32_t paletteOffset =
         skinnedPoses.Instances[poseSlot].PaletteOffset;
 
-    // Pose evaluation is per rendered frame, not per tick: the player
-    // advanced its time on the fixed tick and this samples whatever it
-    // currently holds.
+    const SkeletonHandle skeletonHandle = skinnedMeshes.GetSkeletonHandle(renderer.Mesh);
     const SkeletonData* skeleton =
-        caches.Skeletons != nullptr
-            ? caches.Skeletons->Get(skinnedMeshes.GetSkeletonHandle(renderer.Mesh))
-            : nullptr;
-    const AnimationClipPlayerComponent* player =
-        world.TryGet<AnimationClipPlayerComponent>(entity);
-    const AnimationClipData* clip =
-        (player != nullptr && caches.AnimationClips != nullptr)
-            ? caches.AnimationClips->Get(player->Clip)
-            : nullptr;
-    if (clip != nullptr && skeleton != nullptr
-        && skeleton->Joints.size() == skinning->JointCount)
+        caches.Skeletons != nullptr ? caches.Skeletons->Get(skeletonHandle) : nullptr;
+    if (skeleton == nullptr || skeleton->Joints.size() != skinning->JointCount)
+        return poseSlot;
+
+    // A rig's pose was made on the fixed tick by the pose pass; this copies
+    // it, between the last two ticks by the same share the entity's transform
+    // is drawn at, and never evaluates animation.
+    const AnimPosePool* pool = world.TryGetResource<AnimPosePool>();
+    const AnimPoseState* posed =
+        pool != nullptr && world.IsRegistered<AnimPoseState>() ? world.TryGet<AnimPoseState>(entity) : nullptr;
+    const AnimPosePool::Slot* slot = posed != nullptr ? pool->Find(posed->Slot, entity) : nullptr;
+    switch (MatchSkinnedPose(slot, skeletonHandle, skeleton->Joints.size()))
     {
-        SampleAnimationClip(*clip, *skeleton, player->TimeSeconds, PoseScratch);
+    case SkinnedPoseMatch::Unposed:
+        break;
+    case SkinnedPoseMatch::OtherSkeleton:
+        if (Log != nullptr && WarnedOtherSkeleton.insert(entity).second)
+            Log->Warn("Entity {}:{} draws its skinned mesh '{}' at bind: its animation rig poses skeleton '{}', "
+                      "and the mesh skins '{}'.",
+                      entity.Index, entity.Generation, skinnedMeshes.GetName(renderer.Mesh),
+                      caches.Skeletons->GetName(slot->Skeleton), caches.Skeletons->GetName(skeletonHandle));
+        break;
+    case SkinnedPoseMatch::Posed:
+    {
+        PoseScratch.resize(slot->Current.size());
+        const float alpha = static_cast<float>(std::clamp(poseAlpha, 0.0, 1.0));
+        for (std::size_t j = 0; j < slot->Current.size(); ++j)
+            PoseScratch[j] = slot->HasPrevious && alpha < 1.0f
+                ? Transform3f::Interpolate(slot->Previous[j], slot->Current[j], alpha)
+                : slot->Current[j];
         BuildPosedModelTransforms(*skeleton, PoseScratch, ModelScratch);
         BuildSkinningPalette(*skeleton, ModelScratch, PaletteScratch);
-        std::copy(PaletteScratch.begin(), PaletteScratch.end(),
-                  skinnedPoses.Palettes.begin() + paletteOffset);
+        std::copy(PaletteScratch.begin(), PaletteScratch.end(), skinnedPoses.Palettes.begin() + paletteOffset);
+        break;
+    }
     }
     return poseSlot;
+}
+
+SkinnedPoseMatch MatchSkinnedPose(const AnimPosePool::Slot* pose, SkeletonHandle meshSkeleton, std::size_t meshJoints)
+{
+    if (pose == nullptr || !pose->HasCurrent)
+        return SkinnedPoseMatch::Unposed;
+    return pose->Skeleton == meshSkeleton && pose->Current.size() == meshJoints ? SkinnedPoseMatch::Posed
+                                                                                 : SkinnedPoseMatch::OtherSkeleton;
 }

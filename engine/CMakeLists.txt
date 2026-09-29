@@ -15,8 +15,19 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
 # The annotated component headers: the generator reads them, and the ABI
 # fingerprint below hashes them.
 set(SENCHA_ENGINE_COMPONENT_HEADERS
+    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilityAnimation.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilitySet.h"
-    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimationClipPlayerComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimContentState.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimDecisionLog.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimEventCursor.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimFacts.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimFlowState.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimPoseState.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRequestReport.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRequestSet.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRig.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRigComposition.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimSelectorState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/attributes/AttributeSet.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioCaptionComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioSourceComponent.h"

@@ -1,0 +1,16 @@
+{
+    "type": "animation.blend_overrides",
+    "version": 1,
+    "data": {
+        "overrides": [
+            {
+                "from": "Anim.Locomotion.Move",
+                "to": "Anim.Locomotion.Idle",
+                "blend": {
+                    "in": "crossfade",
+                    "in_ms": 150
+                }
+            }
+        ]
+    }
+}

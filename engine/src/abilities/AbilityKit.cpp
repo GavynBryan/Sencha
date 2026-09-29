@@ -1,5 +1,7 @@
 #include <abilities/AbilityKit.h>
 
+#include <anim/AnimSelectSystem.h>
+
 #include <abilities/AbilityActivation.h>
 #include <abilities/AbilityActivationSystem.h>
 #include <abilities/AbilityRegistry.h>
@@ -62,4 +64,8 @@ void RegisterAbilityKitSystems(EngineSchedule& schedule)
 
     schedule.After<AttributeResolveSystem, AbilityActivationSystem>();
     schedule.After<EffectLifetimeSystem, AttributeResolveSystem>();
+    // An ability's animation request is seen by the same tick's selection. Declared
+    // by whichever of the two registers second.
+    if (schedule.Get<AnimSelectSystem>() != nullptr)
+        schedule.After<AnimSelectSystem, AbilityActivationSystem>();
 }

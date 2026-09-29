@@ -4,6 +4,8 @@
 #include <ecs/EntityId.h>
 #include <math/Vec.h>
 
+#include <cstdint>
+
 class CharacterMoverPool;
 class World;
 struct MovementIntent;
@@ -53,6 +55,7 @@ void StepCharacterTick(World& world,
                        CharacterMoverPool* movers,
                        EntityId entity,
                        const MovementIntent& intent,
+                       std::uint64_t authorityTick,
                        float fixedDeltaSeconds,
                        Vec3d gravity,
                        Vec3d upAxis);

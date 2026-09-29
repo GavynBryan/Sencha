@@ -4,6 +4,7 @@
 #include <input/InputContextSet.h>
 #include <ui/UiService.h>
 #endif
+#include <anim/AnimRequestJournal.h>
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <input/SdlGamepadCapture.h>
@@ -501,6 +502,14 @@ void Engine::RegisterNetFramePhases()
                                            &engine.Prediction(),
                                            &engine.Interpolation());
 
+            // Predicted animation requests the authority has decided are dropped;
+            // the rest are reissued on top of the sets that just arrived.
+            if (applied.Ok())
+            {
+                if (AnimRequestJournal* journal = world.TryGetResource<AnimRequestJournal>())
+                    journal->Reconcile(world, applied.CommandAck);
+            }
+
             // Start again from what the authority did, then re-run the ticks it
             // has not answered. Both halves are necessary: the state alone
             // rewinds the player by a round trip, and the input alone is what
@@ -540,6 +549,9 @@ void Engine::RegisterNetFramePhases()
                 engine.NetClock().Observe(applied.Tick, simulation.GetTickIndex(),
                                           session->RoundTripMicroseconds(),
                                           simulation.GetFixedDt());
+                // Before this frame's ticks, which read what the snapshot
+                // just said against the authority's count.
+                engine.PublishSimulationAuthority();
             }
 
             // An entity whose recipe this build does not have is alive, holds

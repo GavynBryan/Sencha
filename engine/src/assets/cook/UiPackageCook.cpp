@@ -1,5 +1,6 @@
 #include <assets/cook/UiPackageCook.h>
 
+#include <assets/cook/CookFingerprint.h>
 #include <assets/cook/UiSourceScan.h>
 #include <assets/ui/UiPackage.h>
 #include <assets/ui/UiPackageSerializer.h>
@@ -55,6 +56,11 @@ std::string TextOf(std::span<const std::byte> bytes)
 std::vector<std::string_view> UiPackageImporter::SourceExtensions() const
 {
     return { ".rml" };
+}
+
+std::uint64_t UiPackageImporter::CookIdentity() const
+{
+    return CookFingerprint("ui_package", 1).Value();
 }
 
 ImportResult UiPackageImporter::Import(const ImportInput& input, ICookOutputWriter& output)

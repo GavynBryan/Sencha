@@ -1,5 +1,6 @@
 #include <assets/cook/FontCook.h>
 
+#include <assets/cook/CookFingerprint.h>
 #include <assets/cook/FontImportSettings.h>
 #include <assets/font/FontFace.h>
 #include <assets/font/FontFaceSerializer.h>
@@ -9,6 +10,11 @@
 std::vector<std::string_view> FontFaceImporter::SourceExtensions() const
 {
     return { ".ttf", ".otf" };
+}
+
+std::uint64_t FontFaceImporter::CookIdentity() const
+{
+    return CookFingerprint("font_face", 1).Value();
 }
 
 ImportResult FontFaceImporter::Import(const ImportInput& input, ICookOutputWriter& output)

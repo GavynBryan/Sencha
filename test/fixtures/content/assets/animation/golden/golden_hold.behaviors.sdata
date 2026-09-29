@@ -1,0 +1,14 @@
+{
+    "type": "animation.behavior_set",
+    "version": 1,
+    "data": {
+        "behaviors": [
+            {
+                "tag": "Anim.Golden.Hold",
+                "kind": "cyclic",
+                "rate": 0.0,
+                "start_seconds": 0.5
+            }
+        ]
+    }
+}

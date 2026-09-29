@@ -17,6 +17,8 @@ struct AnimationClipEntry
     SkeletonCacheHandle OwnedSkeleton;
     uint32_t Generation = 0;
     uint32_t RefCount = 0;
+    // Bumped when the clip is replaced in place, so a rig's bound events can tell they are stale.
+    uint64_t ReloadVersion = 0;
     std::string PathKey;
     bool Alive = false;
 };
@@ -51,7 +53,13 @@ public:
     [[nodiscard]] AnimationClipCacheHandle AcquireOwned(std::string_view name);
     [[nodiscard]] AnimationClipHandle Find(std::string_view name) const;
 
+    // Every holder of the handle sees the new data. False when the handle is not live
+    // or the clip poses another skeleton, since the entry keeps its skeleton reference.
+    [[nodiscard]] bool ReloadInPlace(AnimationClipHandle handle, AnimationClipData clip);
+    [[nodiscard]] uint64_t GetReloadVersion(AnimationClipHandle handle) const;
+
     [[nodiscard]] const AnimationClipData* Get(AnimationClipHandle handle) const;
+    [[nodiscard]] SkeletonHandle GetSkeleton(AnimationClipHandle handle) const;
     [[nodiscard]] std::string_view GetName(AnimationClipHandle handle) const;
 
 private:

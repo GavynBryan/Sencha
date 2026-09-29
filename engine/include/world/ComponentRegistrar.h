@@ -169,10 +169,17 @@ public:
             }
         }
 
+        static_assert(!(ComponentIsReplicated<T> && ComponentHasReplicationCodec<T>),
+                      "A component travels either as its bytes or through its ReplicationCodec, not both.");
         if constexpr (ComponentIsReplicated<T>)
         {
             if (Replication != nullptr)
                 Replication->Add<T>();
+        }
+        else if constexpr (ComponentHasReplicationCodec<T>)
+        {
+            if (Replication != nullptr)
+                Replication->AddCodec<T>();
         }
     }
 

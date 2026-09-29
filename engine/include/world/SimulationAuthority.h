@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 //=============================================================================
 // SimulationAuthority
 //
@@ -22,6 +24,10 @@
 struct SimulationAuthority
 {
     bool Authoritative = true;
+    // The authority's tick minus this process's, as a client estimates it;
+    // zero on the authority. It settles a tick at a time, so a converted tick
+    // can repeat or skip one.
+    std::int64_t TickOffset = 0;
 };
 
 class World;
@@ -30,3 +36,7 @@ class World;
 // that is the answer for every headless test and every process a session
 // never touched.
 [[nodiscard]] bool IsSimulationAuthority(const World& world);
+
+// `localTick` as the authority numbers it: itself in a World with no resource
+// or on the authority, and the estimate on a client. Floors at zero.
+[[nodiscard]] std::uint64_t AuthorityTickOf(const World& world, std::uint64_t localTick);

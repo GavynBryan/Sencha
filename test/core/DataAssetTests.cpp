@@ -180,11 +180,26 @@ TEST(DataAsset, LoadsTypedValueAndReportsDependencies)
     ASSERT_EQ(staged.Dependencies.size(), 1u);
     EXPECT_EQ(staged.Dependencies[0].Type, AssetType::Material);
 
+    // A value holds what it declared, so committing one that declares a
+    // dependency needs the front door to load it; the bare commit refuses
+    // rather than register the value without it.
+    EXPECT_FALSE(loader.CommitTyped(std::move(staged)).IsValid());
+    EXPECT_FALSE(cache.Find(file.Record().Path).IsValid());
+
+    file.Write(R"({
+        "type": "test.definition",
+        "version": 1,
+        "data": { "speed": 8.5, "label": "runner" }
+    })");
+    AssetStaging independent = loader.LoadStaged(file.Record(), source);
+    ASSERT_TRUE(independent.IsValid()) << independent.Error;
+    EXPECT_TRUE(independent.Dependencies.empty());
+
     // The lease is what generic orchestration would hold; taking it here
     // pins the same reference the commit created.
     AssetLease committed =
         AssetLease::Adopt(AssetType::Data, cache,
-                          loader.CommitTyped(std::move(staged)).ToToken());
+                          loader.CommitTyped(std::move(independent)).ToToken());
     ASSERT_TRUE(committed.IsValid());
 
     const DataAssetHandle handle = cache.Find(file.Record().Path);

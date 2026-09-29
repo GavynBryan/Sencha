@@ -1,0 +1,37 @@
+{
+    "type": "animation.preview_scenario",
+    "version": 1,
+    "name": "start, speed up, stop",
+    "rig": "asset://animation/examples/moving.rig.sdata",
+    "tick_rate": 60,
+    "seed": 0,
+    "participants": [
+        "player"
+    ],
+    "declared_tags": [
+        "Anim.Locomotion.Idle",
+        "Anim.Locomotion.Move",
+        "Anim.Sync.Feet"
+    ],
+    "inputs": {
+        "Grounded": true,
+        "Speed": 0.0
+    },
+    "actions": [
+        {
+            "tick": 30,
+            "set": "Speed",
+            "value": 1.0
+        },
+        {
+            "tick": 90,
+            "set": "Speed",
+            "value": 3.0
+        },
+        {
+            "tick": 150,
+            "set": "Speed",
+            "value": 0.0
+        }
+    ]
+}

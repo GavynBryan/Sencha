@@ -1,0 +1,74 @@
+{
+    "type": "animation.preview_scenario",
+    "version": 1,
+    "name": "the window answered with a superseding combo request",
+    "rig": "asset://animation/examples/melee_combo.rig.sdata",
+    "tick_rate": 60,
+    "seed": 0,
+    "participants": [
+        "player"
+    ],
+    "declared_tags": [
+        "Anim.Charge",
+        "Anim.Charge.Hold",
+        "Anim.Charge.Recover",
+        "Anim.Charge.Release",
+        "Anim.Charge.ReleaseVariant",
+        "Anim.Charge.Windup",
+        "Anim.Door.Closed",
+        "Anim.Door.Open",
+        "Anim.Door.Opened",
+        "Anim.Door.Opening",
+        "Anim.Door.Swing",
+        "Anim.Draw.Ready",
+        "Anim.Draw.Unholster",
+        "Anim.Ledge.Climb",
+        "Anim.Ledge.Drop",
+        "Anim.Ledge.Grab",
+        "Anim.Ledge.Mantle",
+        "Anim.Ledge.Pull",
+        "Anim.Locomotion.Idle",
+        "Anim.Locomotion.Walk",
+        "Anim.Melee",
+        "Anim.Melee.First.Recover",
+        "Anim.Melee.First.Swing",
+        "Anim.Melee.First.Window",
+        "Anim.Melee.Second.Recover",
+        "Anim.Melee.Second.Swing",
+        "Anim.Melee.Second.Window",
+        "Anim.Reload.Enter",
+        "Anim.Reload.Exit",
+        "Anim.Reload.Insert",
+        "Anim.Weapon.Draw",
+        "Anim.Weapon.Fire",
+        "Anim.Weapon.Lowered",
+        "Anim.Weapon.Reload"
+    ],
+    "inputs": {
+        "Grounded": true
+    },
+    "actions": [
+        {
+            "tick": 10,
+            "issue": "Anim.Melee",
+            "source": "player",
+            "params": {
+                "combo": 0
+            }
+        },
+        {
+            "tick": 80,
+            "issue": "Anim.Melee",
+            "source": "player",
+            "params": {
+                "combo": 1
+            }
+        },
+        {
+            "tick": 400,
+            "cancel": "Anim.Melee",
+            "source": "player",
+            "reason": "released"
+        }
+    ]
+}

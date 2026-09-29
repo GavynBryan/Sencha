@@ -1,100 +1,80 @@
+// The pose shader reads palette entries as column-major std430 mat4s while the
+// CPU builds row-major Mat4. These pin every element and the rebuilt matrix's
+// effect on a point and a direction, so a plain memcpy cannot pass.
+
 #include <gtest/gtest.h>
 
-#include <graphics/FrameScratchRing.h>
+#include <math/Quat.h>
+#include <math/geometry/3d/Transform3d.h>
 #include <render/SkinnedPoseFrameData.h>
 
-#include <cstdint>
+#include <array>
+#include <cmath>
+#include <numbers>
 #include <vector>
-
-// The pose dispatch hands each palette's byte offset to a storage-buffer
-// descriptor, so every offset has to be a legal one on the strictest
-// conformant device. These pin the packing that guarantees it without the
-// extraction path querying a device it is not allowed to name.
 
 namespace
 {
-constexpr std::uint64_t kMatrixBytes = sizeof(Mat4);
-
-SkinnedPoseInstance AppendJoints(SkinnedPoseFrameData& data, std::uint32_t joints)
-{
-    const std::uint32_t slot =
-        data.AppendInstance(SkinnedMeshHandle{}, RenderEntityKey{}, joints);
-    return data.Instances[slot];
-}
-} // namespace
-
-TEST(SkinnedPalettePacking, EveryPaletteStartsOnADescriptorLegalBoundary)
-{
-    // Joint counts chosen so a tightly packed layout would land three of the
-    // four palettes on illegal offsets.
-    SkinnedPoseFrameData data;
-    const std::vector<std::uint32_t> jointCounts{ 17, 5, 64, 1 };
-    for (const std::uint32_t joints : jointCounts)
+    // A palette entry with a 3x3 that is not symmetric, so its transpose is a
+    // different matrix: translation, two rotations about different axes, and
+    // non-uniform scale.
+    Mat4 AsymmetricPaletteEntry()
     {
-        const SkinnedPoseInstance instance = AppendJoints(data, joints);
-        const std::uint64_t byteOffset =
-            static_cast<std::uint64_t>(instance.PaletteOffset) * kMatrixBytes;
-        EXPECT_EQ(byteOffset % kMaxDescriptorOffsetAlignment, 0u)
-            << "palette at element " << instance.PaletteOffset
-            << " is not a legal storage-buffer offset";
+        const float deg = std::numbers::pi_v<float> / 180.0f;
+        const Quatf rotation = Quatf::FromAxisAngle(Vec3d(1.0f, 0.0f, 0.0f), 30.0f * deg)
+            * Quatf::FromAxisAngle(Vec3d(0.0f, 0.0f, 1.0f), 50.0f * deg);
+        return Transform3f(Vec3d(1.0f, 2.0f, 3.0f), rotation, Vec3d(1.0f, 2.0f, 3.0f)).ToMat4();
+    }
+
+    // What GLSL does with a column-major mat4 m and a vec4 v: m * v, where
+    // m[col][row] = floats[col * 4 + row].
+    std::array<float, 4> GlslMultiply(const float* floats, std::array<float, 4> v)
+    {
+        std::array<float, 4> out{};
+        for (int row = 0; row < 4; ++row)
+            for (int col = 0; col < 4; ++col)
+                out[static_cast<std::size_t>(row)] += floats[col * 4 + row] * v[static_cast<std::size_t>(col)];
+        return out;
     }
 }
 
-TEST(SkinnedPalettePacking, PaletteOffsetsAdvanceByAlignedJointCounts)
+TEST(SkinnedPalettePacking, EveryElementLandsWhereTheShaderReadsIt)
 {
-    SkinnedPoseFrameData data;
-    EXPECT_EQ(AppendJoints(data, 17).PaletteOffset, 0u);   // 17 joints end at 17
-    EXPECT_EQ(AppendJoints(data, 5).PaletteOffset, 20u);   // 17 rounds up to 20; ends at 25
-    EXPECT_EQ(AppendJoints(data, 64).PaletteOffset, 28u);  // 25 rounds up to 28; ends at 92
-    EXPECT_EQ(AppendJoints(data, 1).PaletteOffset, 92u);   // 92 is already aligned
+    const Mat4 entry = AsymmetricPaletteEntry();
+    ASSERT_NE(entry, entry.Transposed());
+    const std::vector<Mat4> palettes{ Mat4::Identity(), entry };
+    std::vector<float> packed(palettes.size() * kPaletteMatrixFloats, -99.0f);
+
+    CopyPalettesColumnMajor(palettes, packed);
+
+    const Mat4 expected = entry.Transposed();
+    const float* second = packed.data() + kPaletteMatrixFloats;
+    for (int row = 0; row < 4; ++row)
+        for (int col = 0; col < 4; ++col)
+            EXPECT_FLOAT_EQ(second[row * 4 + col], expected.Data[row][col]) << "element " << row * 4 + col;
+    for (int i = 0; i < 16; ++i)
+        EXPECT_FLOAT_EQ(packed[static_cast<std::size_t>(i)], (i % 5 == 0) ? 1.0f : 0.0f) << "identity element " << i;
 }
 
-TEST(SkinnedPalettePacking, AlignmentGapsAreIdentityNotUninitialized)
+TEST(SkinnedPalettePacking, TheShaderTransformsAsTheCpuDoes)
 {
-    // A gap the dispatch never reads is still scratch memory the next frame
-    // reuses, so it must carry the bind pose rather than whatever was there.
-    SkinnedPoseFrameData data;
-    for (Mat4& matrix : data.Palettes)
-        matrix = Mat4{};
+    const Mat4 entry = AsymmetricPaletteEntry();
+    std::vector<float> packed(kPaletteMatrixFloats);
+    CopyPalettesColumnMajor(std::span<const Mat4>(&entry, 1), packed);
 
-    AppendJoints(data, 3);
-    AppendJoints(data, 2);
+    const Vec3d point(0.3f, -1.7f, 2.9f);
+    const Vec3d cpuPoint = entry.TransformPoint(point);
+    const std::array<float, 4> gpuPoint = GlslMultiply(packed.data(), { point.X, point.Y, point.Z, 1.0f });
+    EXPECT_NEAR(gpuPoint[0], cpuPoint.X, 1e-5f);
+    EXPECT_NEAR(gpuPoint[1], cpuPoint.Y, 1e-5f);
+    EXPECT_NEAR(gpuPoint[2], cpuPoint.Z, 1e-5f);
+    EXPECT_NEAR(gpuPoint[3], 1.0f, 1e-6f);
 
-    ASSERT_EQ(data.Palettes.size(), 6u);
-    EXPECT_EQ(data.Palettes[3], Mat4::Identity());
-    EXPECT_EQ(data.Instances[1].PaletteOffset, 4u);
-}
-
-TEST(SkinnedPalettePacking, PoseSlotsIndexInstancesInAppendOrder)
-{
-    SkinnedPoseFrameData data;
-    EXPECT_EQ(data.AppendInstance(SkinnedMeshHandle{}, RenderEntityKey{}, 4), 0u);
-    EXPECT_EQ(data.AppendInstance(SkinnedMeshHandle{}, RenderEntityKey{}, 4), 1u);
-    EXPECT_EQ(data.Instances.size(), 2u);
-}
-
-TEST(SkinnedPalettePacking, ResetClearsPackingState)
-{
-    SkinnedPoseFrameData data;
-    AppendJoints(data, 7);
-    data.Reset();
-    EXPECT_TRUE(data.Instances.empty());
-    EXPECT_TRUE(data.Palettes.empty());
-    EXPECT_EQ(AppendJoints(data, 7).PaletteOffset, 0u);
-}
-
-// The ring aligns cursors relative to a slice, so a slice size that is not a
-// multiple of the binding alignment makes every slice after the first serve
-// absolutely misaligned offsets.
-TEST(ScratchSliceBytes, SliceBoundariesLandOnDescriptorAlignment)
-{
-    EXPECT_EQ(ResolveScratchSliceBytes(1024 * 1024, 64), 1024u * 1024u);
-    EXPECT_EQ(ResolveScratchSliceBytes(1024 * 1024 + 100, 64), 1024u * 1024u + 256u);
-    EXPECT_EQ(ResolveScratchSliceBytes(300, 256), 512u);
-    EXPECT_EQ(ResolveScratchSliceBytes(300, 64), 512u);
-}
-
-TEST(ScratchSliceBytes, HonorsADeviceStricterThanTheSpecCeiling)
-{
-    EXPECT_EQ(ResolveScratchSliceBytes(600, 512), 1024u);
+    const Vec3d direction(1.0f, 2.0f, -0.5f);
+    const Vec3d cpuDirection = entry.TransformVector(direction);
+    const std::array<float, 4> gpuDirection =
+        GlslMultiply(packed.data(), { direction.X, direction.Y, direction.Z, 0.0f });
+    EXPECT_NEAR(gpuDirection[0], cpuDirection.X, 1e-5f);
+    EXPECT_NEAR(gpuDirection[1], cpuDirection.Y, 1e-5f);
+    EXPECT_NEAR(gpuDirection[2], cpuDirection.Z, 1e-5f);
 }

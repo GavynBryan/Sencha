@@ -1,0 +1,32 @@
+{
+    "type": "animation.flow",
+    "version": 1,
+    "data": {
+        "sections": [
+            {
+                "tag": "Anim.Reload.Enter",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "tag": "Anim.Reload.Insert",
+                "clip": "asset://meshes/dev/golden_rig.sanim",
+                "loop": "while",
+                "while": [
+                    {
+                        "fact": "AmmoFull",
+                        "not": true
+                    },
+                    {
+                        "request": "Anim.Weapon.Reload"
+                    }
+                ],
+                "cancel_timing": "immediate"
+            },
+            {
+                "tag": "Anim.Reload.Exit",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            }
+        ],
+        "cancel": "Anim.Reload.Exit"
+    }
+}

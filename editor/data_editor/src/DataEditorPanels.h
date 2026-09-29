@@ -1,6 +1,9 @@
 #pragma once
 
+#include "ui/DataDocumentTabs.h"
+#include "ui/DocumentShellActions.h"
 #include "ui/IEditorPanel.h"
+#include "ui/NewDataAssetForm.h"
 
 #include <array>
 #include <cstddef>
@@ -9,7 +12,7 @@
 #include <cstdint>
 
 class DataEditorWorkspace;
-class SubtypeEditorRegistry;
+class DataSubtypeEditorRegistry;
 
 class DataAssetBrowserPanel final : public IEditorPanel
 {
@@ -22,17 +25,17 @@ public:
 
 private:
     DataEditorWorkspace& Workspace;
-    int SelectedSubtype = 0;
+    NewDataAssetForm NewAsset;
     std::string SelectedAsset;
-    std::array<char, 512> NewPath{};
     std::array<char, 512> OperationPath{};
     std::string LastError;
+    UnsavedDocumentPrompt Prompt;
 };
 
 class DataFormPanel final : public IEditorPanel
 {
 public:
-    DataFormPanel(DataEditorWorkspace& workspace, SubtypeEditorRegistry& editors);
+    DataFormPanel(DataEditorWorkspace& workspace, DataSubtypeEditorRegistry& editors);
     [[nodiscard]] std::string_view GetTitle() const override { return "Data"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Center; }
     [[nodiscard]] PanelPersistence GetPersistence() const override { return { "data", PanelVisibilityPolicy::SessionOnly }; }
@@ -40,7 +43,7 @@ public:
 
 private:
     DataEditorWorkspace& Workspace;
-    SubtypeEditorRegistry& Editors;
+    DataDocumentTabs Tabs;
 };
 
 class DataDocumentationPanel final : public IEditorPanel
@@ -67,6 +70,7 @@ public:
 
 private:
     DataEditorWorkspace& Workspace;
+    std::string SettleError;
 };
 
 class DataRawJsonPanel final : public IEditorPanel

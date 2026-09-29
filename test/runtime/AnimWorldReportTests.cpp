@@ -1,0 +1,136 @@
+// What a World's animated entities carry, per rig, and the requests they were
+// given that nothing played.
+
+#include "AnimRigFixture.h"
+
+#include <anim/AnimDecisionLog.h>
+#include <anim/AnimRigComposition.h>
+#include <anim/AnimWorldReport.h>
+#include <core/console/ConsoleService.h>
+
+#include <format>
+
+namespace
+{
+    struct ReportFixture
+    {
+        AnimRigFixture Fx;
+        DataAssetHandle Rig;
+
+        ReportFixture()
+        {
+            AnimCharacterRig::RegisterTags(Fx);
+            Rig = AnimCharacterRig::Load(Fx);
+        }
+
+        EntityId Prop()
+        {
+            const EntityId entity = Fx.Entities.CreateEntity();
+            Fx.Entities.AddComponent(entity, AnimRig{ Rig });
+            return entity;
+        }
+
+        AnimRequestResult IssueFor(EntityId animated, AnimTick ticks)
+        {
+            AnimRequestDesc desc;
+            desc.Source = animated;
+            desc.Intent = Fx.Tag("anim.intent.reload");
+            desc.Lifetime = AnimRequestLifetime::Fixed;
+            desc.FixedTicks = ticks;
+            return IssueAnimRequest(Fx.Entities, animated, desc, Fx.Now);
+        }
+
+        std::uint32_t Unplayed(EntityId entity)
+        {
+            return Fx.Entities.TryGet<AnimRequestReport>(entity)->Unplayed;
+        }
+    };
+}
+
+// A footprint is what the entity's rig composes it to carry: the character rig
+// adds facts, their history and selection to what every rig has, and a trace adds
+// its log.
+TEST(AnimWorldReport, FootprintsAreTheComponentsARigComposes)
+{
+    ReportFixture fixture;
+    const EntityId character = fixture.Prop();
+    const EntityId traced = fixture.Prop();
+    fixture.Fx.Entities.AddComponent(traced, AnimDecisionLog{});
+    fixture.Fx.Tick();
+
+    const World& world = fixture.Fx.Entities;
+    const std::uint32_t everyRig =
+        sizeof(AnimRig) + sizeof(AnimRequestSet) + sizeof(AnimContentState) + sizeof(AnimEventCursor)
+        + sizeof(AnimRequestReport) + sizeof(AnimRigComposition);
+    const std::uint32_t characterBytes = AnimEntityBytes(world, character);
+    EXPECT_EQ(characterBytes, everyRig + sizeof(AnimFacts) + sizeof(AnimFactHistory) + sizeof(AnimSelectorState));
+    EXPECT_EQ(AnimEntityBytes(world, traced), characterBytes + sizeof(AnimDecisionLog));
+    EXPECT_EQ(AnimEntityBytes(world, fixture.Fx.Entities.CreateEntity()), 0u);
+
+    RecordProperty("every_rig_bytes", static_cast<int>(everyRig));
+    RecordProperty("character_bytes", static_cast<int>(characterBytes));
+}
+
+TEST(AnimWorldReport, EntitiesAreReportedByTheirRig)
+{
+    ReportFixture fixture;
+    const EntityId prop = fixture.Prop();
+    const EntityId simple = fixture.Prop();
+    fixture.Fx.Entities.AddComponent(simple, AnimDecisionLog{});
+    fixture.Fx.Tick();
+
+    const std::vector<AnimRigWorldReport> reports = ReportAnimWorld(fixture.Fx.Entities);
+    ASSERT_EQ(reports.size(), 1u);
+    EXPECT_EQ(reports[0].RigPath, "asset://anim/character.rig.sdata");
+    EXPECT_EQ(reports[0].Entities, 2u);
+    EXPECT_EQ(reports[0].MinEntityBytes, AnimEntityBytes(fixture.Fx.Entities, prop));
+    EXPECT_EQ(reports[0].MaxEntityBytes, AnimEntityBytes(fixture.Fx.Entities, simple));
+}
+
+// A reload the selector plays is not counted; one issued while death holds
+// every layer ends without playing, and is.
+TEST(AnimWorldReport, ARequestThatEndsUnplayedIsCounted)
+{
+    ReportFixture fixture;
+    const EntityId animated = fixture.Fx.Character(fixture.Rig);
+    fixture.Fx.Tick();
+
+    ASSERT_EQ(fixture.IssueFor(animated, 3).Status, AnimRequestStatus::Accepted);
+    fixture.Fx.Tick();
+    EXPECT_EQ(fixture.Fx.BehaviorName(animated), "Anim.Action.Reload");
+    fixture.Fx.Tick(90);
+    EXPECT_EQ(fixture.Fx.BehaviorName(animated), "Anim.Locomotion.Idle") << "the reload has played through";
+    EXPECT_EQ(fixture.Unplayed(animated), 0u);
+
+    fixture.Fx.Motion(animated).Dead = true;
+    fixture.Fx.Tick();
+    ASSERT_EQ(fixture.IssueFor(animated, 3).Status, AnimRequestStatus::Accepted);
+    fixture.Fx.Tick(2);
+    EXPECT_EQ(fixture.Unplayed(animated), 0u) << "still live: it could yet play";
+    fixture.Fx.Tick(8);
+    EXPECT_EQ(fixture.Fx.BehaviorName(animated), "Anim.Death");
+    EXPECT_EQ(fixture.Unplayed(animated), 1u);
+
+    const std::vector<AnimRigWorldReport> reports = ReportAnimWorld(fixture.Fx.Entities);
+    ASSERT_EQ(reports.size(), 1u);
+    EXPECT_EQ(reports[0].UnplayedRequests, 1u);
+}
+
+TEST(AnimWorldReport, TheRiskCommandReportsEntitiesAndUnplayedRequests)
+{
+    ReportFixture fixture;
+    ConsoleService console;
+    RegisterAnimationConsole(console.Registry(), fixture.Fx.Entities);
+    const EntityId prop = fixture.Prop();
+    fixture.Fx.Tick();
+
+    const ConsoleResult report = console.ExecuteLine("anim.risk");
+    ASSERT_TRUE(report.Succeeded());
+    std::string text;
+    for (const ConsoleOutputEntry& entry : report.Output)
+        text += entry.Text + "\n";
+    EXPECT_NE(text.find(std::format("  1 entities at {} bytes each; 0 requests went unplayed",
+                                    AnimEntityBytes(fixture.Fx.Entities, prop))),
+              std::string::npos)
+        << text;
+}

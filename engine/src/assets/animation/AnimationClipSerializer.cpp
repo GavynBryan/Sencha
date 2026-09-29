@@ -1,7 +1,12 @@
 #include <assets/animation/AnimationClipSerializer.h>
 
+#include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
+
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 
 namespace
 {
@@ -12,6 +17,11 @@ namespace
     constexpr uint32_t kMaxTrackCount = 65536;
     constexpr uint32_t kMaxKeyCount = 1u << 24;
     constexpr uint32_t kMaxSkeletonPathLength = 4096;
+    constexpr uint32_t kMaxEventStringLength = 4096;
+
+    // The on-disk input source, independent of VerbArgumentSource's numbering.
+    constexpr uint8_t kEventInputConstant = 0;
+    constexpr uint8_t kEventInputTag = 1;
 
     void SetError(std::string* error, const char* message)
     {
@@ -33,6 +43,12 @@ namespace
         out.resize(offset + size);
         if (size > 0)
             std::memcpy(out.data() + offset, data, size);
+    }
+
+    void AppendString(std::vector<std::byte>& out, std::string_view text)
+    {
+        Append(out, static_cast<uint32_t>(text.size()));
+        AppendBytes(out, text.data(), text.size());
     }
 
     struct ByteCursor
@@ -57,6 +73,12 @@ namespace
             out.assign(reinterpret_cast<const char*>(Bytes.data() + Offset), length);
             Offset += length;
             return true;
+        }
+
+        bool ReadLengthPrefixed(std::string& out)
+        {
+            uint32_t length = 0;
+            return Read(length) && length <= kMaxEventStringLength && ReadString(length, out);
         }
 
         bool ReadFloats(size_t count, std::vector<float>& out)
@@ -122,6 +144,56 @@ bool WriteSanimToBytes(const AnimationClipData& clip,
         AppendBytes(out, track.Values.data(), track.Values.size() * sizeof(float));
     }
 
+    Append(out, static_cast<uint32_t>(clip.Events.size()));
+    for (const AnimationClipEvent& event : clip.Events)
+    {
+        std::vector<std::string> values;
+        values.reserve(event.Inputs.size());
+        for (const VerbBindingArgument& input : event.Inputs)
+            values.push_back(input.Source == VerbArgumentSource::Tag ? input.Text : JsonStringify(input.Literal));
+        const bool tooLong = event.Name.size() > kMaxEventStringLength
+            || event.Binding.size() > kMaxEventStringLength
+            || std::ranges::any_of(event.Inputs, [](const VerbBindingArgument& input) {
+                   return input.Key.size() > kMaxEventStringLength;
+               })
+            || std::ranges::any_of(values, [](const std::string& value) { return value.size() > kMaxEventStringLength; });
+        if (tooLong)
+        {
+            SetError(error, "sanim: an event string exceeds the maximum length");
+            out.clear();
+            return false;
+        }
+
+        Append(out, event.Key);
+        Append(out, event.Time);
+        Append(out, static_cast<uint8_t>(event.Scope));
+        Append(out, static_cast<uint8_t>(event.MinWeight.has_value() ? 1 : 0));
+        Append(out, static_cast<uint16_t>(event.Inputs.size()));
+        Append(out, event.MinWeight.value_or(0.0f));
+        AppendString(out, event.Name);
+        AppendString(out, event.Binding);
+        for (size_t index = 0; index < event.Inputs.size(); ++index)
+        {
+            AppendString(out, event.Inputs[index].Key);
+            Append(out, event.Inputs[index].Source == VerbArgumentSource::Tag ? kEventInputTag : kEventInputConstant);
+            AppendString(out, values[index]);
+        }
+    }
+
+    Append(out, static_cast<uint8_t>(clip.Root.has_value() ? 1 : 0));
+    if (clip.Root.has_value())
+    {
+        if (clip.Root->TimesSeconds.size() > kMaxKeyCount)
+        {
+            SetError(error, "sanim: root curve key count exceeds the maximum");
+            out.clear();
+            return false;
+        }
+        Append(out, static_cast<uint32_t>(clip.Root->TimesSeconds.size()));
+        AppendBytes(out, clip.Root->TimesSeconds.data(), clip.Root->TimesSeconds.size() * sizeof(float));
+        AppendBytes(out, clip.Root->Values.data(), clip.Root->Values.size() * sizeof(float));
+    }
+
     return true;
 }
 
@@ -142,7 +214,7 @@ bool LoadSanimFromBytes(std::span<const std::byte> bytes,
         SetError(error, "sanim: missing or invalid magic");
         return false;
     }
-    if (!cursor.Read(version) || version != kSanimFormatVersion)
+    if (!cursor.Read(version) || version < 1 || version > kSanimFormatVersion)
     {
         SetError(error, "sanim: unsupported container version");
         return false;
@@ -196,6 +268,71 @@ bool LoadSanimFromBytes(std::span<const std::byte> bytes,
             SetError(error, "sanim: truncated track data");
             out = {};
             return false;
+        }
+    }
+
+    const auto failEvents = [&] {
+        SetError(error, "sanim: truncated or malformed event data");
+        out = {};
+        return false;
+    };
+    uint32_t eventCount = 0;
+    if (version >= 2 && (!cursor.Read(eventCount) || eventCount > kAnimClipMaxEvents))
+        return failEvents();
+    out.Events.resize(eventCount);
+    for (AnimationClipEvent& event : out.Events)
+    {
+        uint8_t scope = 0;
+        uint8_t hasMinWeight = 0;
+        uint16_t inputCount = 0;
+        float minWeight = 0.0f;
+        if (!cursor.Read(event.Key) || !cursor.Read(event.Time) || !cursor.Read(scope) || !cursor.Read(hasMinWeight)
+            || !cursor.Read(inputCount) || !cursor.Read(minWeight) || !cursor.ReadLengthPrefixed(event.Name)
+            || !cursor.ReadLengthPrefixed(event.Binding) || scope > static_cast<uint8_t>(AnimEventScope::Gameplay)
+            || hasMinWeight > 1 || inputCount > kAnimEventMaxInputs)
+            return failEvents();
+        event.Scope = static_cast<AnimEventScope>(scope);
+        if (hasMinWeight != 0)
+            event.MinWeight = minWeight;
+        event.Inputs.resize(inputCount);
+        for (VerbBindingArgument& input : event.Inputs)
+        {
+            uint8_t source = 0;
+            std::string value;
+            if (!cursor.ReadLengthPrefixed(input.Key) || !cursor.Read(source) || !cursor.ReadLengthPrefixed(value))
+                return failEvents();
+            if (source == kEventInputTag)
+            {
+                input.Source = VerbArgumentSource::Tag;
+                input.Text = std::move(value);
+                continue;
+            }
+            std::optional<JsonValue> literal = source == kEventInputConstant ? JsonParse(value) : std::nullopt;
+            if (!literal.has_value())
+                return failEvents();
+            input.Source = VerbArgumentSource::Literal;
+            input.Literal = std::move(*literal);
+        }
+    }
+
+    if (version >= 3)
+    {
+        uint8_t hasRoot = 0;
+        if (!cursor.Read(hasRoot) || hasRoot > 1)
+            return failEvents();
+        if (hasRoot != 0)
+        {
+            uint32_t keyCount = 0;
+            AnimationRootCurve root;
+            if (!cursor.Read(keyCount) || keyCount == 0 || keyCount > kMaxKeyCount
+                || !cursor.ReadFloats(keyCount, root.TimesSeconds)
+                || !cursor.ReadFloats(size_t{ keyCount } * 3, root.Values))
+            {
+                SetError(error, "sanim: truncated or malformed root curve");
+                out = {};
+                return false;
+            }
+            out.Root = std::move(root);
         }
     }
 

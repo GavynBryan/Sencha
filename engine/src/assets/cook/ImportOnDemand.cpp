@@ -409,7 +409,12 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
         const FileStat sourceStat = StatFile(it->path());
         const FileStat metaStat = StatFile(metaPath);
 
-        const CookedSourceEntry* cached = index.Find(sourceRel);
+        // An entry another cook identity produced is stale however unchanged
+        // its source is; treat it as uncached.
+        const std::uint64_t cookIdentity = importer->CookIdentity();
+        const CookedSourceEntry* indexed = index.Find(sourceRel);
+        const CookedSourceEntry* cached =
+            indexed != nullptr && indexed->CookIdentity == cookIdentity ? indexed : nullptr;
 
         // Freshness fast path: unchanged size + mtime for the source and its
         // sidecar means the source bytes are never read. Resolve any pre-hash
@@ -493,6 +498,7 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
         // is what makes editing one of them recook this source.
         entry.InputFingerprint =
             CombineAdditionalSourceHashes(sourceHash, entry.AdditionalSources, assetsRoot);
+        entry.CookIdentity = cookIdentity;
         StampSourceStats(entry, sourceStat, metaStat);
         entry.Artifacts = result.Artifacts;
 
@@ -707,6 +713,7 @@ bool ReimportOneSource(std::string_view rootDirectory,
     entry.AdditionalSources = StampAdditionalSources(result.AdditionalSources, root);
     entry.InputFingerprint =
         CombineAdditionalSourceHashes(sourceHash, entry.AdditionalSources, root);
+    entry.CookIdentity = importer->CookIdentity();
     std::filesystem::path metaPath = sourcePath;
     metaPath += std::string(kImportSettingsSuffix);
     StampSourceStats(entry, StatFile(sourcePath), StatFile(metaPath));

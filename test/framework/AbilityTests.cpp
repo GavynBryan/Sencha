@@ -113,66 +113,66 @@ protected:
 TEST_F(AbilityFixture, RequireTagGatesActivation)
 {
     EntityId hero = MakeActor(100.0f, { readyAbility });
-    EXPECT_FALSE(TryActivateAbility(world, hero, readyAbility)); // missing State.Ready
+    EXPECT_FALSE(TryActivateAbility(world, hero, readyAbility, 0)); // missing State.Ready
     Tags(hero).Grant(ready);
-    EXPECT_TRUE(TryActivateAbility(world, hero, readyAbility));
+    EXPECT_TRUE(TryActivateAbility(world, hero, readyAbility, 0));
 }
 
 TEST_F(AbilityFixture, BlockTagPreventsActivation)
 {
     EntityId hero = MakeActor(100.0f, { strike });
     Tags(hero).Grant(stunned);
-    EXPECT_FALSE(TryActivateAbility(world, hero, strike));
+    EXPECT_FALSE(TryActivateAbility(world, hero, strike, 0));
 }
 
 TEST_F(AbilityFixture, CostIsPaidAndUnaffordableActivationFails)
 {
     EntityId hero = MakeActor(50.0f, { strike });
-    EXPECT_TRUE(TryActivateAbility(world, hero, strike));
+    EXPECT_TRUE(TryActivateAbility(world, hero, strike, 0));
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 30.0f);
-    EXPECT_TRUE(TryActivateAbility(world, hero, strike));
+    EXPECT_TRUE(TryActivateAbility(world, hero, strike, 0));
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 10.0f);
-    EXPECT_FALSE(TryActivateAbility(world, hero, strike)); // 10 < 20
+    EXPECT_FALSE(TryActivateAbility(world, hero, strike, 0)); // 10 < 20
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 10.0f);  // unchanged
 }
 
 TEST_F(AbilityFixture, CooldownTagBlocksReactivationUntilExpiry)
 {
     EntityId hero = MakeActor(100.0f, { dash });
-    EXPECT_TRUE(TryActivateAbility(world, hero, dash));
+    EXPECT_TRUE(TryActivateAbility(world, hero, dash, 0));
     EXPECT_TRUE(Tags(hero).HasExact(cooldownDash));
-    EXPECT_FALSE(TryActivateAbility(world, hero, dash)); // on cooldown
+    EXPECT_FALSE(TryActivateAbility(world, hero, dash, 0)); // on cooldown
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 80.0f); // no second charge
 
     TickEffects(world, 3.0f); // cooldown expires
     EXPECT_FALSE(Tags(hero).HasExact(cooldownDash));
-    EXPECT_TRUE(TryActivateAbility(world, hero, dash));
+    EXPECT_TRUE(TryActivateAbility(world, hero, dash, 0));
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 60.0f);
 }
 
 TEST_F(AbilityFixture, MutuallyBlockingAbilitiesCannotCoexist)
 {
     EntityId hero = MakeActor(100.0f, { abilityA, abilityB });
-    EXPECT_TRUE(TryActivateAbility(world, hero, abilityA));
+    EXPECT_TRUE(TryActivateAbility(world, hero, abilityA, 0));
     EXPECT_TRUE(Tags(hero).HasExact(stateA));
-    EXPECT_FALSE(TryActivateAbility(world, hero, abilityB)); // blocked by State.A
+    EXPECT_FALSE(TryActivateAbility(world, hero, abilityB, 0)); // blocked by State.A
 
     EntityId other = MakeActor(100.0f, { abilityA, abilityB });
-    EXPECT_TRUE(TryActivateAbility(world, other, abilityB));
-    EXPECT_FALSE(TryActivateAbility(world, other, abilityA)); // blocked by State.B
+    EXPECT_TRUE(TryActivateAbility(world, other, abilityB, 0));
+    EXPECT_FALSE(TryActivateAbility(world, other, abilityA, 0)); // blocked by State.B
 }
 
 TEST_F(AbilityFixture, UngrantedAbilityCannotActivate)
 {
     EntityId hero = MakeActor(100.0f, { strike }); // not granted Dash
-    EXPECT_FALSE(TryActivateAbility(world, hero, dash));
+    EXPECT_FALSE(TryActivateAbility(world, hero, dash, 0));
 }
 
 TEST_F(AbilityFixture, IntentQueueDrains)
 {
     EntityId hero = MakeActor(100.0f, { abilityA });
     world.GetResource<AbilityActivationQueue>().Pending.push_back({ hero, abilityA });
-    ProcessAbilityActivations(world);
+    ProcessAbilityActivations(world, 0);
     EXPECT_TRUE(Tags(hero).HasExact(stateA));
     EXPECT_TRUE(world.GetResource<AbilityActivationQueue>().Pending.empty());
 }

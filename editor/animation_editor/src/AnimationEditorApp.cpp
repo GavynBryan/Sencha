@@ -1,0 +1,215 @@
+#include "AnimationEditorApp.h"
+
+#include "authoring/AnimationPreviewWorkspace.h"
+#include "render/AnimationPreviewRenderFeature.h"
+#include "ui/AnimationPreviewPanels.h"
+#include "ui/DocumentShellActions.h"
+
+#include "project/Project.h"
+#include "project/ProjectContentMount.h"
+#include "ui/EditorThemeStartup.h"
+#include "ui/EditorUiFeature.h"
+
+#include <app/Engine.h>
+#include <app/EngineSchedule.h>
+#include <app/GameModuleLoader.h>
+#include <assets/runtime/RuntimeAssets.h>
+#include <graphics/vulkan/GraphicsServices.h>
+#include <platform/PlatformServices.h>
+#include <platform/SdlWindow.h>
+
+#include <SDL3/SDL.h>
+
+#include <array>
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <functional>
+
+namespace
+{
+constexpr std::array<std::string_view, 1> PreviewDependencies{ "animation_editor_ui" };
+
+class AnimationPreviewFrame
+{
+public:
+    explicit AnimationPreviewFrame(std::function<void(double)> frame) : Frame(std::move(frame)) {}
+    void FrameUpdate(FrameUpdateContext& context) { Frame(context.WallDeltaSeconds); }
+private:
+    std::function<void(double)> Frame;
+};
+}
+
+// Outlives the session and render features that borrow its asset stack. The
+// game module is loaded only for its vocabulary hook and never started.
+class AnimationEditorHost
+{
+public:
+    AnimationEditorHost(Engine& engine, SdlWindow& window,
+                        const std::optional<std::string>& projectPath,
+                        const std::optional<std::string>& meshPath,
+                        const std::optional<std::string>& clipPath)
+        : EngineRef(engine)
+    {
+        auto& graphics = engine.Graphics();
+        Assets = std::make_unique<RuntimeAssets>(engine.Logging(), graphics.Buffers,
+            graphics.Images, graphics.Descriptors, graphics.Samplers, engine.SceneSerializers());
+        std::string error;
+        std::filesystem::path authoringRoot;
+        if (projectPath)
+        {
+            ProjectDescriptor project;
+            if (ProjectDescriptor::Load(*projectPath, project, &error))
+            {
+                MountProjectContent(project, *Assets, engine.Logging(), &engine.Jobs());
+                MountEngineContent(*Assets, engine.Logging(), &engine.Jobs());
+                LoadModuleVocabulary(project);
+                if (!project.ContentRoots.empty())
+                    authoringRoot = project.ContentRoots.front();
+            }
+        }
+        else
+            error = "Pass --project <path.senchaproj> to mount preview content.";
+        std::function<void(World&)> vocabulary;
+        if (GameModule.IsValid())
+            vocabulary = [game = GameModule.Instance](World& world) { game->OnRegisterVocabulary(world); };
+        Workspace = std::make_unique<AnimationPreviewWorkspace>(*Assets, std::move(vocabulary), authoringRoot);
+        Workspace->Audition.Error = std::move(error);
+        if (Workspace->Audition.Error.empty())
+        {
+            const bool meshReady = !meshPath || Workspace->Audition.SelectMesh(*meshPath);
+            if (meshReady && clipPath) Workspace->AuditionClip(*clipPath);
+        }
+        ApplyEditorThemeFromConsole(engine.Console(), "Animation Editor");
+        auto& renderer = graphics.MainRenderer;
+        auto ui = std::make_unique<EditorUiFeature>(engine, window, graphics.Instance,
+            graphics.Frames, "animation_editor.imgui.ini");
+        Ui = renderer.StageFeature(std::move(ui), { .Id = "animation_editor_ui" });
+        Viewport = renderer.StageFeature(
+            std::make_unique<AnimationPreviewRenderFeature>(*Assets, Workspace->Viewport.Scene),
+            { .Id = "animation_editor_preview", .DependsOn = PreviewDependencies });
+        if (Ui)
+            AddAnimationPreviewPanels(*Ui, *Workspace, Viewport);
+        std::vector<std::string_view> failed;
+        if (!renderer.CommitStagedFeatures(&failed))
+        {
+            Ui = nullptr;
+            Viewport = nullptr;
+            std::fprintf(stderr, "Animation editor feature registration failed.\n");
+        }
+        if (std::find(failed.begin(), failed.end(), "animation_editor_ui") != failed.end()) Ui = nullptr;
+        if (std::find(failed.begin(), failed.end(), "animation_editor_preview") != failed.end()) Viewport = nullptr;
+        if (Ui)
+            InstallDocumentShellActions(*Ui, engine, Workspace->Sources,
+                                        [workspace = Workspace.get()]() -> std::optional<DocumentRef> {
+                                            if (DataDocument* active = workspace->Documents.Active())
+                                                return workspace->Documents.RefOf(*active);
+                                            return std::nullopt;
+                                        });
+    }
+
+    ~AnimationEditorHost()
+    {
+        Workspace->Sources.CancelEdits();
+        EngineRef.OnExitRequested = {};
+        // A refused removal means a feature still borrows our state. Fail
+        // closed rather than let teardown continue with dangling references.
+        auto& renderer = EngineRef.Graphics().MainRenderer;
+        if ((Viewport && !renderer.RemoveFeature(Viewport)) || (Ui && !renderer.RemoveFeature(Ui)))
+        {
+            std::fprintf(stderr, "Animation editor render features could not be detached.\n");
+            std::abort();
+        }
+        Workspace.reset();
+        Assets.reset();
+        // Only after the preview Worlds holding the module's declarations are destroyed.
+        if (GameModule.IsValid())
+            ModuleLoader.Unload(GameModule);
+    }
+
+    void Frame(double seconds)
+    {
+        Workspace->Advance(seconds);
+        Workspace->ExtractViewport();
+        if (Viewport && FramedMesh != Workspace->Audition.MeshPath)
+        {
+            Viewport->FrameSubject();
+            FramedMesh = Workspace->Audition.MeshPath;
+        }
+    }
+
+    void Event(PlatformEventContext& context)
+    {
+        if (context.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+        {
+            Workspace->Audition.Session.Pause();
+            Workspace->Sources.CancelEdits();
+        }
+        if (context.Event.type == SDL_EVENT_KEY_DOWN && context.Event.key.key == SDLK_ESCAPE)
+            Workspace->Sources.CancelEdits();
+        if (Ui) Ui->ProcessSdlEvent(context.Event);
+    }
+
+private:
+    void LoadModuleVocabulary(const ProjectDescriptor& project)
+    {
+        if (project.GameModulePath.empty())
+            return;
+        std::string error;
+        GameModule = ModuleLoader.Load(project.GameModulePath, &error);
+        if (!GameModule.IsValid())
+            std::fprintf(stderr, "[animation_editor] failed to load game module '%s': %s\n",
+                         project.GameModulePath.c_str(), error.c_str());
+    }
+
+    Engine& EngineRef;
+    GameModuleLoader ModuleLoader;
+    LoadedModule GameModule;
+    std::unique_ptr<RuntimeAssets> Assets;
+    std::unique_ptr<AnimationPreviewWorkspace> Workspace;
+    EditorUiFeature* Ui = nullptr;
+    AnimationPreviewRenderFeature* Viewport = nullptr;
+    std::string FramedMesh;
+};
+
+AnimationEditorApp::AnimationEditorApp(std::optional<std::string> projectPath,
+                                     std::optional<std::string> meshPath,
+                                     std::optional<std::string> clipPath)
+    : ProjectPath(std::move(projectPath)), MeshPath(std::move(meshPath)), ClipPath(std::move(clipPath))
+{
+}
+
+AnimationEditorApp::~AnimationEditorApp() = default;
+
+void AnimationEditorApp::OnConfigure(GameConfigureContext& context)
+{
+    context.Config.Window.Title = "Animation Editor";
+    context.Config.Window.ClientDecorations = true;
+    context.Config.Console.UiEnabled = false;
+    context.Config.Runtime.ApplicationShell = false;
+    context.Config.Runtime.ContentRoots.clear();
+}
+
+void AnimationEditorApp::OnStart(GameStartupContext&)
+{
+    auto& engine = GetEngine();
+    if (auto* window = engine.Platform().Windows.GetPrimaryWindow())
+        Host = std::make_unique<AnimationEditorHost>(engine, *window, ProjectPath, MeshPath, ClipPath);
+}
+
+void AnimationEditorApp::OnRegisterSystems(SystemRegisterContext& context)
+{
+    if (Host)
+        context.Schedule.Register<AnimationPreviewFrame>([this](double seconds) { Host->Frame(seconds); });
+}
+
+void AnimationEditorApp::OnPlatformEvent(PlatformEventContext& context)
+{
+    if (Host) Host->Event(context);
+}
+
+void AnimationEditorApp::OnShutdown(GameShutdownContext&)
+{
+    if (auto* graphics = GetEngine().TryGraphics()) graphics->WaitIdle();
+    Host.reset();
+}

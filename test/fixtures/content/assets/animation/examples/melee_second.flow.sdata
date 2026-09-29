@@ -1,0 +1,20 @@
+{
+    "type": "animation.flow",
+    "version": 1,
+    "data": {
+        "sections": [
+            {
+                "tag": "Anim.Melee.Second.Swing",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "tag": "Anim.Melee.Second.Window",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            },
+            {
+                "tag": "Anim.Melee.Second.Recover",
+                "clip": "asset://meshes/dev/golden_rig.sanim"
+            }
+        ]
+    }
+}
