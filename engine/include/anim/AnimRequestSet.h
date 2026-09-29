@@ -1,6 +1,7 @@
 #pragma once
 
 #include <anim/AnimTypes.h>
+#include <authored/VerbId.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
 #include <gameplay_tags/GameplayTagId.h>
@@ -41,6 +42,14 @@ struct AnimRequest
 
     // Written only by the authority's flow runner at a section boundary or cancel.
     AnimTick AnchorSectionStartTick = 0;
+    // The command whose processing issued it, on the command timeline: what a
+    // prediction and the authority's record are matched by.
+    AnimTick Command = 0;
+
+    // Local only, never replicated: the entity whose lifetime bounds a Held request,
+    // and the invocation that asked for it.
+    EntityId Owner;
+    InvocationId Cause;
 
     std::uint8_t Layers = kAnimAllLayers;
     AnimRequestLifetime Lifetime = AnimRequestLifetime::Held;

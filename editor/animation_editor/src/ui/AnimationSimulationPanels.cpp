@@ -10,6 +10,7 @@
 #include "ui/ScopedPanel.h"
 
 #include <anim/AnimFactEvaluation.h>
+#include <anim/AnimRequestReport.h>
 #include <anim/AnimRigRisk.h>
 #include <anim/AnimWorldReport.h>
 #include <anim/AnimationClipCache.h>
@@ -822,8 +823,8 @@ private:
             return;
         ImGui::SeparatorText("The previewed entity");
         ImGui::Text("%u bytes of animation state.", AnimEntityBytes(*world, subject));
-        if (const AnimContentState* content = world->TryGet<AnimContentState>(subject))
-            ImGui::Text("%u requests ended without any layer playing them.", content->UnplayedRequests);
+        if (const AnimRequestReport* report = world->TryGet<AnimRequestReport>(subject))
+            ImGui::Text("%u requests ended without any layer playing them.", report->Unplayed);
     }
 
     void DrawTrace()

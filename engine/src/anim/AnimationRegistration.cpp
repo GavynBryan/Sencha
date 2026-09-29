@@ -10,10 +10,12 @@
 #include <anim/AnimRootMotionSource.h>
 #include <anim/AnimRig.h>
 #include <anim/AnimRigBinding.h>
+#include <anim/AnimRigCompositionSystem.h>
 #include <anim/AnimRigRisk.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimTrace.h>
 #include <anim/AnimWorldReport.h>
+#include <abilities/AbilityActivationSystem.h>
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonFormat.h>
@@ -40,7 +42,7 @@ void InstallAnimationVocabulary(World& world)
 {
     if (GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
     {
-        for (const char* layer : { "anim.layer.base", "anim.layer.upper", "anim.layer.aim" })
+        for (const char* layer : { "anim.layer.base", "anim.layer.upper" })
             (void)tags->RegisterTag(layer);
     }
     if (!world.HasResource<AnimFactProviders>())
@@ -203,12 +205,13 @@ void RegisterAnimationConsole(ConsoleRegistry& console, World& world)
                                         risk.LongFlows));
                 const auto report = std::ranges::find(reports, rig.RigPath, &AnimRigWorldReport::RigPath);
                 if (report != reports.end())
-                    result.Info(std::format("  {} entities at {} bytes each; {} requests went unplayed",
+                    result.Info(std::format("  {} entities at {} bytes each; {} requests went unplayed; "
+                                            "{} held requests were left held by a producer that ended",
                                             report->Entities,
                                             report->MinEntityBytes == report->MaxEntityBytes
                                                 ? std::format("{}", report->MaxEntityBytes)
                                                 : std::format("{}-{}", report->MinEntityBytes, report->MaxEntityBytes),
-                                            report->UnplayedRequests));
+                                            report->UnplayedRequests, report->OrphanedRequests));
                 for (const AnimRigRiskFinding& finding : risk.Findings)
                     result.Info(std::format("  [{}] {}", finding.Rule, finding.Message));
             }
@@ -219,19 +222,25 @@ void RegisterAnimationConsole(ConsoleRegistry& console, World& world)
 
 void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging, const AnimationHost& host)
 {
-    schedule.Register<AnimFactGatherSystem>(logging, host.PresentsPose);
+    // Every rigged entity carries what its rig needs before anything reads it.
+    schedule.Register<AnimRigCompositionSystem>(host.PresentsPose, logging);
+    schedule.Register<AnimFactGatherSystem>(host.PresentsPose);
     schedule.Register<AnimSelectSystem>(host.PresentsPose);
-    schedule.Register<AnimContentSystem>(host.PresentsPose);
-    AnimEventSystem& eventSystem = schedule.Register<AnimEventSystem>(host.Verbs, host.PresentsPose);
+    schedule.Register<AnimContentSystem>(host.PresentsPose, logging);
+    AnimEventSystem& eventSystem = schedule.Register<AnimEventSystem>(host.Verbs, host.PresentsPose, logging);
     // Selection reads this tick's facts; resolution reads this tick's winners;
     // events cross the content time resolution just advanced.
+    schedule.After<AnimFactGatherSystem, AnimRigCompositionSystem>();
     schedule.After<AnimSelectSystem, AnimFactGatherSystem>();
     schedule.After<AnimContentSystem, AnimSelectSystem>();
     schedule.After<AnimEventSystem, AnimContentSystem>();
-    // Root motion reads what content resolution decided. Declared only when movement
-    // is registered, since a schedule with no characters has nothing to carry.
+    // Root motion reads what content resolution decided, and selection sees what an
+    // ability requested this tick. Movement and the ability kit declare the same
+    // edges when they register second.
     if (schedule.Get<RootMotionSystem>() != nullptr)
         schedule.After<RootMotionSystem, AnimContentSystem>();
+    if (schedule.Get<AbilityActivationSystem>() != nullptr)
+        schedule.After<AnimSelectSystem, AbilityActivationSystem>();
 
     // Posing runs in the post-fixed phase, after movement has moved what it
     // poses; nothing in the fixed phase reads it.
@@ -240,21 +249,29 @@ void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging
 
     if (host.Console != nullptr)
     {
-        (void)host.Console->RegisterCVar({
-            .Name = "anim.events.queue_capacity",
-            .Owner = "engine",
-            .Type = CVarType::Int,
-            .DefaultValue = static_cast<std::int64_t>(eventSystem.GetCapacity()),
-            .CurrentValue = static_cast<std::int64_t>(eventSystem.GetCapacity()),
-            .Flags = CVarFlags::None,
-            .Help = "How many clip events one tick may offer to their bindings. A crossing past it is "
-                    "recorded as refused rather than dropped unseen.",
-            .Source = { "engine" },
-            .Min = 1.0,
-            .Max = 65536.0,
-            .OnChange = [&eventSystem](const CVarChangeContext& ctx) {
-                eventSystem.SetCapacity(static_cast<std::size_t>(std::get<std::int64_t>(ctx.NewValue)));
-            },
-        });
+        const auto capacityCVar = [&](AnimEventScope scope, const char* name, const char* help) {
+            const auto capacity = static_cast<std::int64_t>(eventSystem.GetCapacity(scope));
+            (void)host.Console->RegisterCVar({
+                .Name = name,
+                .Owner = "engine",
+                .Type = CVarType::Int,
+                .DefaultValue = capacity,
+                .CurrentValue = capacity,
+                .Flags = CVarFlags::None,
+                .Help = help,
+                .Source = { "engine" },
+                .Min = 1.0,
+                .Max = 65536.0,
+                .OnChange = [&eventSystem, scope](const CVarChangeContext& ctx) {
+                    eventSystem.SetCapacity(scope, static_cast<std::size_t>(std::get<std::int64_t>(ctx.NewValue)));
+                },
+            });
+        };
+        capacityCVar(AnimEventScope::Gameplay, "anim.events.gameplay_capacity",
+                     "How many gameplay animation events one tick may offer to their bindings. Cosmetic events "
+                     "never use this room. A crossing past it is logged as an error and recorded as refused.");
+        capacityCVar(AnimEventScope::Cosmetic, "anim.events.cosmetic_capacity",
+                     "How many cosmetic animation events one tick may offer to their bindings. A crossing past it "
+                     "is counted and recorded as refused: the bound on presentation traffic.");
     }
 }

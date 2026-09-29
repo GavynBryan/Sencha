@@ -233,6 +233,111 @@ TEST(AnimFlow, ALateJoinerStartsAtTheRequestsAnchor)
     EXPECT_EQ(fx.SectionRecords(joiner).front().Reason, AnimChangeReason::FlowAnchored);
 }
 
+// Adopting a superseding request mid-loop stamps when the section was entered, not
+// when its current loop began, so a joiner replays the loops the authority played.
+TEST(AnimFlow, ASupersedeAfterALoopAnchorsTheSectionEntry)
+{
+    ReloadFlowFixture fx(CountedLoopFlow());
+    (void)fx.Start(3);
+    fx.TickTo(50);
+    ASSERT_EQ(fx.Flow().LoopCount, 1u);
+
+    const AnimRequestResult again = fx.Reload(3);
+    ASSERT_EQ(again.Status, AnimRequestStatus::Superseded);
+    fx.TickTo(51);
+    const AnimRequest* adopted = fx.Request(fx.Entity, again.Id);
+    ASSERT_NE(adopted, nullptr);
+    EXPECT_EQ(adopted->AnchorSection, 1u);
+    EXPECT_EQ(adopted->AnchorSectionStartTick, 16u);
+
+    const EntityId joiner = fx.Character(fx.Rig);
+    *fx.Entities.TryGet<AnimRequestSet>(joiner) =
+        *static_cast<const World&>(fx.Entities).TryGet<AnimRequestSet>(fx.Entity);
+    fx.TickTo(60);
+    EXPECT_EQ(fx.Flow(joiner).LoopCount, fx.Flow().LoopCount);
+    EXPECT_EQ(fx.Flow(joiner).SectionStartTick, fx.Flow().SectionStartTick);
+}
+
+// A reload that removes or reorders sections leaves a playing flow on its section,
+// found by tag; a flow whose section is gone starts again and says why.
+TEST(AnimFlow, AReloadedFlowKeepsItsSectionByTag)
+{
+    ReloadFlowFixture fx(CountedLoopFlow());
+    (void)fx.Start(3);
+    fx.TickTo(20);
+    ASSERT_EQ(fx.SectionName(), "Anim.Reload.Insert");
+
+    fx.AnimRigFixture::Reload("asset://anim/f.flow.sdata", kAnimFlowType, R"({ "sections": [
+        { "tag": "Anim.Reload.Insert", "clip": "asset://anim/insert.sanim", "loop": "count",
+          "count_intent": "anim.intent.reload", "count_param": "shells" },
+        { "tag": "Anim.Reload.Close", "clip": "asset://anim/close.sanim" } ],
+        "cancel": "Anim.Reload.Close" })");
+    fx.TickTo(21);
+    EXPECT_EQ(fx.SectionName(), "Anim.Reload.Insert");
+    EXPECT_EQ(fx.Flow().SectionStartTick, 16u);
+
+    fx.AnimRigFixture::Reload("asset://anim/f.flow.sdata", kAnimFlowType, R"({ "sections": [
+        { "tag": "Anim.Reload.Close", "clip": "asset://anim/close.sanim" } ] })");
+    fx.TickTo(22);
+    EXPECT_EQ(fx.SectionName(), "Anim.Reload.Close");
+    const AnimDecisionRecord* reset = fx.LastRecord(fx.Entity, AnimDecisionCause::IndexReset);
+    ASSERT_NE(reset, nullptr);
+    EXPECT_EQ(reset->Reason, AnimChangeReason::Rebound);
+}
+
+// Rows are known by their authored ids: a row added above a pinned one changes
+// nothing about what plays.
+TEST(AnimFlow, ARowAddedAboveAPinnedRowLeavesItPlaying)
+{
+    ReloadFlowFixture fx(CountedLoopFlow());
+    (void)fx.Start(3);
+    fx.TickTo(20);
+    ASSERT_EQ(fx.SectionName(), "Anim.Reload.Insert");
+
+    fx.AnimRigFixture::Reload("asset://anim/f.slots.sdata", kAnimSlotMapType, R"({ "rows": [
+        { "id": "quick", "behavior": "anim.intent.reload", "when": [ { "fact": "Crouched" } ],
+          "flow": "asset://anim/f.quick.flow.sdata" },
+        { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+        { "id": "reload", "behavior": "anim.intent.reload", "flow": "asset://anim/f.flow.sdata" } ] })");
+    fx.TickTo(21);
+    EXPECT_EQ(fx.ClipName(fx.Entity, fx.Bound(fx.Rig)), "asset://anim/f.flow.sdata");
+    EXPECT_EQ(fx.SectionName(), "Anim.Reload.Insert");
+    EXPECT_EQ(fx.LastRecord(fx.Entity, AnimDecisionCause::IndexReset), nullptr);
+}
+
+// An unpinned row removed takes its content with it: with no row left for its
+// behavior the layer plays nothing, never whatever the old index names now.
+TEST(AnimFlow, ARemovedRowTakesItsContentWithIt)
+{
+    AnimRigFixture fx({ "Anim.Walk", "Anim.Other" });
+    fx.Clip("asset://anim/crouch.sanim", 1.0f);
+    fx.Clip("asset://anim/walk.sanim", 1.0f);
+    fx.Clip("asset://anim/other.sanim", 1.0f);
+    (void)fx.Load("asset://anim/r.facts.sdata", kAnimFactSchemaType,
+                  R"({ "slots": [ { "name": "Crouched", "kind": "bool" } ] })");
+    (void)fx.Load("asset://anim/r.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+        { "tag": "Anim.Walk", "kind": "cyclic" }, { "tag": "Anim.Other", "kind": "cyclic" } ] })");
+    (void)fx.Load("asset://anim/r.slots.sdata", kAnimSlotMapType, R"({ "rows": [
+        { "id": "crouch", "behavior": "Anim.Walk", "when": [ { "fact": "Crouched" } ],
+          "clip": "asset://anim/crouch.sanim" },
+        { "id": "walk", "behavior": "Anim.Walk", "clip": "asset://anim/walk.sanim" } ] })");
+    const DataAssetHandle rig = fx.Load("asset://anim/r.rig.sdata", kAnimRigType, R"({
+        "facts": "asset://anim/r.facts.sdata", "behaviors": [ "asset://anim/r.behaviors.sdata" ],
+        "slot_maps": [ "asset://anim/r.slots.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "idle": "Anim.Walk" } ] })");
+    const EntityId walker = fx.Character(rig);
+    fx.Tick(5);
+    ASSERT_EQ(fx.ClipName(walker, fx.Bound(rig)), "asset://anim/walk.sanim");
+
+    // The walk row goes, and with it the content its index named.
+    fx.Reload("asset://anim/r.slots.sdata", kAnimSlotMapType, R"({ "rows": [
+        { "id": "crouch", "behavior": "Anim.Walk", "when": [ { "fact": "Crouched" } ],
+          "clip": "asset://anim/crouch.sanim" } ] })");
+    fx.Tick();
+    EXPECT_EQ(fx.Playing(walker).Content, kAnimNoContent);
+    EXPECT_EQ(fx.ClipName(walker, fx.Bound(rig)), "(none)");
+}
+
 TEST(AnimFlow, OnlyTheAuthorityWritesTheAnchor)
 {
     ReloadFlowFixture fx(CountedLoopFlow());
@@ -249,7 +354,7 @@ TEST(AnimFlow, OnlyTheAuthorityWritesTheAnchor)
 TEST(AnimFlow, ASupersedingRequestContinuesTheSameRowAndRestartsAnother)
 {
     ReloadFlowFixture fx(CountedLoopFlow(), "cancel_section", R"(
-        { "behavior": "anim.intent.reload", "when": [ { "fact": "Crouched" } ],
+        { "id": "reload_crouched", "behavior": "anim.intent.reload", "when": [ { "fact": "Crouched" } ],
           "flow": "asset://anim/f.quick.flow.sdata" },)");
     (void)fx.Start(3);
     fx.TickTo(20);
@@ -290,9 +395,9 @@ TEST(AnimFlow, ASlotSectionResolvesOnEntry)
         { "tag": "Anim.Reload.Insert", "slot": "Anim.Reload.Shell", "loop": "count",
           "count_intent": "anim.intent.reload", "count_param": "shells" } ] })",
                 "cancel_section", R"(
-        { "behavior": "Anim.Reload.Shell", "when": [ { "fact": "Crouched" } ],
+        { "id": "shell_crouched", "behavior": "Anim.Reload.Shell", "when": [ { "fact": "Crouched" } ],
           "clip": "asset://anim/insert_crouch.sanim" },
-        { "behavior": "Anim.Reload.Shell", "clip": "asset://anim/insert.sanim" },)");
+        { "id": "shell", "behavior": "Anim.Reload.Shell", "clip": "asset://anim/insert.sanim" },)");
     (void)fx.Start(2);
     fx.TickTo(16);
     EXPECT_EQ(fx.PlayingClip(fx.Entity), "asset://anim/insert.sanim");
@@ -324,9 +429,9 @@ namespace
                   "behavior": "Anim.Reload" },
                 { "name": "hit", "priority": 100, "enter": [ { "fact": "Dead" } ], "behavior": "Anim.Hit" } ] })");
             (void)Load("asset://anim/c.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-                { "behavior": "Anim.Reload", "flow": "asset://anim/f.flow.sdata" },
-                { "behavior": "Anim.Hit", "clip": "asset://anim/hit.sanim" } ] })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+                { "id": "reload", "behavior": "Anim.Reload", "flow": "asset://anim/f.flow.sdata" },
+                { "id": "hit", "behavior": "Anim.Hit", "clip": "asset://anim/hit.sanim" } ] })");
             Rig = Load("asset://anim/c.rig.sdata", kAnimRigType, R"({
                 "facts": "asset://anim/f.facts.sdata", "requests": "asset://anim/f.requests.sdata",
                 "behaviors": [ "asset://anim/c.behaviors.sdata" ], "slot_maps": [ "asset://anim/c.slots.sdata" ],
@@ -389,8 +494,8 @@ namespace
                           {{ "tag": "Anim.Reload", "kind": "{}" }} ] }})",
                                   kind));
         (void)fx.Load("asset://anim/v.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-            { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-            { "behavior": "Anim.Reload", "flow": "asset://anim/v.flow.sdata" } ] })");
+            { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+            { "id": "reload", "behavior": "Anim.Reload", "flow": "asset://anim/v.flow.sdata" } ] })");
         std::string layer = std::format(R"({{ "name": "anim.layer.base", "idle": "{}" }})", layerIdle);
         if (!selector.empty())
         {
@@ -459,8 +564,8 @@ TEST(AnimFlowBinding, ACountLoopReadsAnIntParameterOfItsIntent)
     (void)fx.Load("asset://anim/n.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
         { "tag": "Anim.Idle", "kind": "cyclic" }, { "tag": "anim.intent.reload", "kind": "flow" } ] })");
     (void)fx.Load("asset://anim/n.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-        { "behavior": "anim.intent.reload", "flow": "asset://anim/n.flow.sdata" } ] })");
+        { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+        { "id": "reload", "behavior": "anim.intent.reload", "flow": "asset://anim/n.flow.sdata" } ] })");
     const AnimBoundRig& rig = fx.Bound(fx.Load("asset://anim/n.rig.sdata", kAnimRigType, R"({
         "requests": "asset://anim/n.requests.sdata", "behaviors": [ "asset://anim/n.behaviors.sdata" ],
         "slot_maps": [ "asset://anim/n.slots.sdata" ],
@@ -535,8 +640,8 @@ TEST(AnimFlowEvents, SectionsAreAnnouncedInsideTheirBehavior)
         { "tag": "anim.intent.reload", "kind": "flow", "on_entered": { "binding": "anim.entered" },
           "on_exited": { "binding": "anim.exited" } } ] })");
     (void)fx.Load("asset://anim/e.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-        { "behavior": "anim.intent.reload", "flow": "asset://anim/e.flow.sdata" } ] })");
+        { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+        { "id": "reload", "behavior": "anim.intent.reload", "flow": "asset://anim/e.flow.sdata" } ] })");
     const DataAssetHandle rig = fx.Load("asset://anim/e.rig.sdata", kAnimRigType, R"({
         "requests": "asset://anim/f.requests.sdata", "behaviors": [ "asset://anim/e.behaviors.sdata" ],
         "slot_maps": [ "asset://anim/e.slots.sdata" ], "bindings": [ "asset://anim/e.bindings.sdata" ],
@@ -609,9 +714,9 @@ namespace
             { "tag": "Anim.Reload", "kind": "flow", "latch": { "mode": "until_request_ends" } } ] })");
         (void)fx.Load("asset://anim/t.slots.sdata", kAnimSlotMapType,
                       std::format(R"({{ "rows": [
-            {{ "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" }},
-            {{ "behavior": "anim.intent.reload", "flow": "{}" }},
-            {{ "behavior": "Anim.Reload", "flow": "{}" }} ] }})",
+            {{ "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" }},
+            {{ "id": "reload", "behavior": "anim.intent.reload", "flow": "{}" }},
+            {{ "id": "reload_selected", "behavior": "Anim.Reload", "flow": "{}" }} ] }})",
                                   baseFlow, upperFlow));
         (void)fx.Load("asset://anim/t.upper.sdata", kAnimSelectorType, R"({ "rules": [
             { "name": "reload", "priority": 50, "enter": [ { "request": "anim.intent.reload" } ],
@@ -660,10 +765,10 @@ TEST(AnimFlowBinding, RowsReadingLocalFactsChooseBetweenFlowsThatKeepTheSameTime
     (void)fx.Load("asset://anim/lf.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
         { "tag": "Anim.Idle", "kind": "cyclic" }, { "tag": "anim.intent.reload", "kind": "flow" } ] })");
     (void)fx.Load("asset://anim/lf.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-        { "behavior": "anim.intent.reload", "when": [ { "fact": "Variant", "compare": "eq", "value": 1 } ],
+        { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+        { "id": "reload", "behavior": "anim.intent.reload", "when": [ { "fact": "Variant", "compare": "eq", "value": 1 } ],
           "flow": "asset://anim/f.quick.flow.sdata" },
-        { "behavior": "anim.intent.reload", "flow": "asset://anim/f.flow.sdata" } ] })");
+        { "id": "reload_2", "behavior": "anim.intent.reload", "flow": "asset://anim/f.flow.sdata" } ] })");
     const AnimBoundRig& rig = fx.Bound(fx.Load("asset://anim/lf.rig.sdata", kAnimRigType, R"({
         "facts": "asset://anim/lf.facts.sdata", "requests": "asset://anim/f.requests.sdata",
         "behaviors": [ "asset://anim/lf.behaviors.sdata" ], "slot_maps": [ "asset://anim/lf.slots.sdata" ],
@@ -687,11 +792,11 @@ TEST(AnimFlow, ALatchFollowsTheRequestThatSupersedesItsOwn)
         { "tag": "Anim.Reload", "kind": "flow",
           "latch": { "mode": "until_request_ends", "on_request_cancel": "finish" } } ] })");
     (void)fx.Load("asset://anim/s.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-        { "behavior": "Anim.Reload",
+        { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+        { "id": "reload", "behavior": "Anim.Reload",
           "when": [ { "request": "anim.intent.reload", "test": "param", "param": "shells", "compare": "eq", "value": 2 } ],
           "flow": "asset://anim/f.quick.flow.sdata" },
-        { "behavior": "Anim.Reload", "flow": "asset://anim/f.flow.sdata" } ] })");
+        { "id": "reload_2", "behavior": "Anim.Reload", "flow": "asset://anim/f.flow.sdata" } ] })");
     (void)fx.Load("asset://anim/s.selector.sdata", kAnimSelectorType, R"({ "rules": [
         { "name": "reload", "priority": 50, "enter": [ { "request": "anim.intent.reload" } ], "behavior": "Anim.Reload" },
         { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Idle" } ] })");

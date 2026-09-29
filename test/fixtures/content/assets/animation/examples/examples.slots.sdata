@@ -3,31 +3,31 @@
     "version": 1,
     "data": {
         "rows": [
-            {
+            { "id": "idle",
                 "behavior": "Anim.Locomotion.Idle",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "walk",
                 "behavior": "Anim.Locomotion.Walk",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "reload",
                 "behavior": "Anim.Weapon.Reload",
                 "flow": "asset://animation/examples/pump_reload.flow.sdata"
             },
-            {
+            { "id": "fire",
                 "behavior": "Anim.Weapon.Fire",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "draw",
                 "behavior": "Anim.Weapon.Draw",
                 "flow": "asset://animation/examples/draw.flow.sdata"
             },
-            {
+            { "id": "lowered",
                 "behavior": "Anim.Weapon.Lowered",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "melee",
                 "behavior": "Anim.Melee",
                 "when": [
                     {
@@ -40,15 +40,15 @@
                 ],
                 "flow": "asset://animation/examples/melee_second.flow.sdata"
             },
-            {
+            { "id": "melee_2",
                 "behavior": "Anim.Melee",
                 "flow": "asset://animation/examples/melee_first.flow.sdata"
             },
-            {
+            { "id": "charge",
                 "behavior": "Anim.Charge",
                 "flow": "asset://animation/examples/charge.flow.sdata"
             },
-            {
+            { "id": "releasevariant",
                 "behavior": "Anim.Charge.ReleaseVariant",
                 "when": [
                     {
@@ -61,23 +61,23 @@
                 ],
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "releasevariant_2",
                 "behavior": "Anim.Charge.ReleaseVariant",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "climb",
                 "behavior": "Anim.Ledge.Climb",
                 "flow": "asset://animation/examples/ledge_climb.flow.sdata"
             },
-            {
+            { "id": "opening",
                 "behavior": "Anim.Door.Opening",
                 "flow": "asset://animation/examples/door.flow.sdata"
             },
-            {
+            { "id": "opened",
                 "behavior": "Anim.Door.Opened",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "closed",
                 "behavior": "Anim.Door.Closed",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             }

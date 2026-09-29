@@ -168,7 +168,6 @@ void RuntimeContent::Publish(World& world)
             assets.MaterialSets,
             assets.Textures.get(),
             assets.SkinnedMeshes.get(),
-            &assets.AnimationClips,
             &assets.Skeletons);
         pipeline->AddMeshRenderFeature(*graphics);
     }

@@ -45,13 +45,6 @@ namespace
     {
         return world.IsRegistered<T>() ? world.TryGet<T>(entity) : nullptr;
     }
-
-    bool Newer(const AnimRequest& a, const AnimRequest& b)
-    {
-        if (a.StartTick != b.StartTick)
-            return a.StartTick > b.StartTick;
-        return a.Id.Sequence > b.Id.Sequence;
-    }
 }
 
 bool IsAnimRequestLive(const AnimRequest& request, AnimTick now)
@@ -103,6 +96,10 @@ AnimRequestResult IssueAnimRequest(AnimRequestSet& set,
     request.Lifetime = desc.Lifetime;
     request.Occupied = true;
     request.Id.Source = desc.Source;
+    request.Command = desc.Command;
+    request.Owner = desc.Owner;
+    request.Cause = desc.Cause;
+    request.Predicted = desc.Predicted;
 
     if (!desc.Intent.IsValid() || !desc.Source.IsValid() || desc.Layers == 0)
     {
@@ -118,8 +115,8 @@ AnimRequestResult IssueAnimRequest(AnimRequestSet& set,
         for (const AnimRequest& existing : set.Records)
         {
             if (existing.Occupied && existing.Lifetime == AnimRequestLifetime::Impulse
-                && existing.Id.Source == desc.Source && existing.Intent == desc.Intent
-                && existing.StartTick == now)
+                && existing.Predicted == desc.Predicted && existing.Id.Source == desc.Source
+                && existing.Intent == desc.Intent && existing.StartTick == now)
             {
                 Log(log, now, AnimDecisionCause::RequestDeduplicated, existing);
                 return { AnimRequestStatus::Deduplicated, existing.Id, AnimRejectReason::None };
@@ -130,8 +127,11 @@ AnimRequestResult IssueAnimRequest(AnimRequestSet& set,
     {
         for (AnimRequest& existing : set.Records)
         {
+            // A guess never takes the place of what the authority wrote, which only the
+            // authority's next word may change.
             if (!IsAnimRequestLive(existing, now) || existing.Lifetime == AnimRequestLifetime::Impulse
-                || !(existing.Id.Source == desc.Source) || existing.Intent != desc.Intent)
+                || existing.Predicted != desc.Predicted || !(existing.Id.Source == desc.Source)
+                || existing.Intent != desc.Intent)
             {
                 continue;
             }
@@ -203,7 +203,7 @@ const AnimRequest* FindPrimaryAnimRequest(const AnimRequestSet& set,
         {
             continue;
         }
-        if (primary == nullptr || Newer(request, *primary))
+        if (primary == nullptr || IsNewerAnimRequest(request, *primary))
             primary = &request;
     }
     return primary;
@@ -219,7 +219,7 @@ AnimCancelReason FindAnimCancelReason(const AnimRequestSet& set, GameplayTagId i
         {
             continue;
         }
-        if (primary == nullptr || Newer(request, *primary))
+        if (primary == nullptr || IsNewerAnimRequest(request, *primary))
             primary = &request;
     }
     return primary != nullptr ? primary->CancelReason : AnimCancelReason::None;

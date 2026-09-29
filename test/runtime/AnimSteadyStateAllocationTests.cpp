@@ -31,9 +31,9 @@ namespace
             AnimCharacterRig::RegisterTags(*this);
             CharacterRig = AnimCharacterRig::Load(*this);
             for (int i = 0; i < 8; ++i)
-                Characters.push_back(Character(Rig));
+                Characters.push_back(DrawnCharacter(Rig));
             for (int i = 0; i < 4; ++i)
-                Requesters.push_back(Character(CharacterRig));
+                Requesters.push_back(DrawnCharacter(CharacterRig));
             Held.resize(Requesters.size());
             Reload = Tag("anim.intent.reload");
             Jobs = workers > 0 ? std::make_unique<JobSystem>(workers) : nullptr;

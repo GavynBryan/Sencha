@@ -1,9 +1,11 @@
 #include <anim/AnimEventSystem.h>
 
 #include <anim/AnimContentSystem.h>
+#include <anim/AnimPlayback.h>
 #include <anim/AnimRequests.h>
 #include <app/GameContexts.h>
 #include <authored/VerbDispatcher.h>
+#include <core/logging/LoggingProvider.h>
 #include <ecs/StoragePartitionSet.h>
 #include <world/SimulationAuthority.h>
 
@@ -12,43 +14,6 @@
 
 namespace
 {
-    // Content shorter than a tick loops several times per tick; past this many loops,
-    // its marks cannot all be meant.
-    constexpr std::int64_t kMaxLoopsPerTick = 64;
-
-    double Elapsed(const AnimLayerContent& layer, AnimTick tick, double tickSeconds)
-    {
-        return static_cast<double>(layer.ClipOffsetSeconds)
-            + static_cast<double>(tick >= layer.ClipStartTick ? tick - layer.ClipStartTick : 0) * tickSeconds
-                * static_cast<double>(layer.ClipRate);
-    }
-
-    // Marks of `content` from `from` to `to`, in time order: exclusive of `from` unless
-    // `includeFrom`, inclusive of `to`. Cyclic content repeats its marks every loop.
-    template <typename Visit>
-    void ForEachMark(const AnimBoundContent& content, bool cyclic, double from, double to, bool includeFrom,
-                     Visit&& visit)
-    {
-        if (content.Events.empty() || to < from)
-            return;
-        const double duration = static_cast<double>(content.DurationSeconds);
-        const auto inside = [&](double at) { return at <= to && (at > from || (includeFrom && at == from)); };
-        if (!cyclic || duration <= 0.0)
-        {
-            for (std::size_t e = 0; e < content.Events.size(); ++e)
-                if (inside(static_cast<double>(content.Events[e].Time) * std::max(duration, 0.0)))
-                    visit(e);
-            return;
-        }
-        const auto first = static_cast<std::int64_t>(std::floor(from / duration));
-        const auto last = std::min(static_cast<std::int64_t>(std::floor(to / duration)), first + kMaxLoopsPerTick);
-        for (std::int64_t loop = first; loop <= last; ++loop)
-            for (std::size_t e = 0; e < content.Events.size(); ++e)
-                if (inside(static_cast<double>(loop) * duration
-                           + static_cast<double>(content.Events[e].Time) * duration))
-                    visit(e);
-    }
-
     std::uint8_t SectionOf(const AnimPendingEvent& record)
     {
         return record.Kind == AnimPendingKind::SectionEntered || record.Kind == AnimPendingKind::SectionExited
@@ -92,49 +57,88 @@ namespace
 
 void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBoundRig& rig,
                        const AnimSelectorState* selection, const AnimRequestSet* requests,
-                       const AnimFlowState* flows, AnimContentState& content, AnimTick now, double tickSeconds,
-                       AnimEventGates gates, std::vector<AnimPendingEvent>& pending, std::size_t capacity,
+                       const AnimFlowState* flows, const AnimContentState& content, AnimEventCursor& cursor,
+                       AnimTick now, double tickSeconds, AnimEventGates gates, AnimPendingEvents& pending,
                        AnimDecisionLog* log)
 {
+    // Indices the pass kept from another binding name other content now: across a
+    // rebind an instance is known by its placement alone, and nothing is announced.
+    const bool rebound = cursor.BindingGeneration != 0 && cursor.BindingGeneration != rig.Generation;
+    cursor.BindingGeneration = rig.Generation;
     for (std::size_t l = 0; l < rig.Layers.size() && l < kAnimMaxLayers; ++l)
     {
-        AnimLayerContent& layer = content.Layers[l];
-        const bool sameClip = layer.EventStartTick == layer.ClipStartTick && layer.EventTick != kAnimNoTick
-            && layer.EventTick < now;
-        const AnimTick coveredThrough = layer.EventTick;
-        const GameplayTagId previousBehavior = layer.EventBehavior;
-        const std::uint16_t previousContent = layer.EventContent;
-        const std::uint8_t previousSection = layer.EventSection;
-        const AnimTick previousContentStart = layer.EventContentStartTick;
-        const float previousPhase = layer.EventPhase;
-        layer.EventPhase = layer.Phase;
+        const AnimLayerContent& layer = content.Layers[l];
+        AnimLayerEventCursor& seen = cursor.Layers[l];
+        const AnimTick through = seen.Tick;
+        const AnimPlayback previousPlayback = seen.Playback;
+        const std::uint16_t previousClip = seen.Clip;
+        const GameplayTagId previousBehavior = seen.Behavior;
+        const AnimRequestId previousRequest = seen.Request;
+        const std::uint16_t previousContent = seen.Content;
+        const std::uint8_t previousSection = seen.Section;
+        const AnimTick previousContentStart = seen.ContentStartTick;
+        const float previousPhase = seen.Phase;
 
         const AnimLayerFlow* flow = flows != nullptr ? &flows->Layers[l] : nullptr;
         const bool playingFlow = flow != nullptr && flow->Phase != AnimFlowPhase::None
             && layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Flow >= 0;
+        const bool playingMix = layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0;
         const std::uint8_t section = playingFlow ? flow->Section : kAnimNoSection;
 
-        layer.EventStartTick = layer.ClipStartTick;
-        layer.EventTick = now;
-        layer.EventBehavior = layer.Behavior;
-        layer.EventContent = playingFlow ? layer.Content : kAnimNoContent;
-        layer.EventSection = section;
-        layer.EventContentStartTick = layer.StartTick;
+        // One content instance runs on while its content and start hold; a clip instance
+        // while its clip and placement do. A mix's instance is its content's, whichever
+        // sample is heaviest.
+        const bool sameContent = through != kAnimNoTick && (rebound || previousContent == layer.Content)
+            && previousContentStart == layer.StartTick;
+        const bool sameInstance = playingMix
+            ? sameContent
+            : through != kAnimNoTick && (rebound || previousClip == layer.Clip)
+                && previousPlayback.StartTick == layer.Playback.StartTick
+                && previousPlayback.OffsetSeconds == layer.Playback.OffsetSeconds;
+        // A flow that moved to another section, or looped one, within the same instance
+        // played the one it left until it left it.
+        const bool sectionPlayedOut = !rebound && playingFlow && sameContent && !sameInstance;
+
+        // A pass never moves an instance's coverage backwards: a repeated or earlier tick
+        // leaves it where it was.
+        if (!sameInstance || now > through)
+        {
+            seen.Tick = now;
+            seen.Phase = layer.Phase;
+        }
+        seen.Playback = layer.Playback;
+        seen.Clip = layer.Clip;
+        seen.Behavior = layer.Behavior;
+        seen.Request = layer.Request;
+        seen.Content = layer.Content;
+        seen.Section = section;
+        seen.ContentStartTick = layer.StartTick;
 
         const float weight = AnimLayerWeight(rig, l, selection);
-        const AnimRequest* driving = AnimLayerDrivingRequest(rig, l, selection, requests, now, &layer);
-        const EntityId instigator = driving != nullptr ? driving->Id.Source : EntityId{};
-        // False when the tick's queue is full; the caller records the refusal.
-        const auto admit = [&](AnimPendingEvent record) {
-            if (pending.size() >= capacity)
+        // A request's source instigated what it drives, and its cause is the parent of
+        // what that plays; what a layer leaves was the previous request's.
+        const auto causeOf = [&](AnimRequestId id) {
+            if (requests != nullptr && id.IsValid())
+                for (const AnimRequest& request : requests->Records)
+                    if (request.Occupied && request.Id == id)
+                        return request.Cause;
+            return InvocationId{};
+        };
+        // False when the scope's queue is full this tick; the caller records the refusal.
+        const auto admit = [&](AnimPendingEvent record, AnimEventScope scope) {
+            if (!pending.Admit(scope))
                 return false;
+            const bool leaving = record.Kind == AnimPendingKind::BehaviorExited
+                              || record.Kind == AnimPendingKind::SectionExited;
+            const AnimRequestId request = leaving ? previousRequest : layer.Request;
             record.Producer = entity;
-            record.Instigator = instigator;
+            record.Instigator = request.Source;
+            record.Cause = causeOf(request);
             record.Rig = rigHandle;
             record.RigGeneration = rig.Generation;
             record.Tick = now;
             record.Layer = static_cast<std::uint8_t>(l);
-            pending.push_back(record);
+            pending.Queue(scope).push_back(record);
             return true;
         };
         // A lifecycle event: gated by scope, suppressed below the weight a
@@ -152,7 +156,7 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
                        sectionIndex);
                 return;
             }
-            if (!admit(record))
+            if (!admit(record, event->Scope))
                 Record(log, now, l, logged, *event, AnimEventOutcome::Fired, VerbAdmission::QueueFull, record.Kind,
                        sectionIndex);
         };
@@ -191,8 +195,9 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
         // before its behavior, the new behavior entered before its section, all before
         // any mark of what now plays.
         const bool behaviorChanged = previousBehavior != layer.Behavior;
-        const bool sectionChanged = previousSection != section || previousContent != layer.EventContent
-            || (playingFlow && previousContentStart != layer.StartTick);
+        const bool sectionChanged = !rebound
+            && (previousSection != section || previousContent != seen.Content
+                || (playingFlow && previousContentStart != layer.StartTick));
         if (sectionChanged && previousSection != kAnimNoSection)
             sectionEvent(previousContent, previousSection, AnimPendingKind::SectionExited);
         if (behaviorChanged)
@@ -203,81 +208,117 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
         if (sectionChanged && section != kAnimNoSection)
             sectionEvent(layer.Content, section, AnimPendingKind::SectionEntered);
 
-        if (layer.Clip >= rig.Contents.size())
-            continue;
-        const AnimBoundContent& played = rig.Contents[layer.Clip];
-        if (played.Events.empty())
-            continue;
-        const AnimBoundBehavior* behavior = rig.FindBehavior(layer.Behavior);
-        // A flow's section plays its clip once per section instance; a
-        // behavior's own clip loops when the behavior is cyclic.
-        const bool cyclic = !playingFlow && (behavior == nullptr || behavior->Policy.Kind == AnimBehaviorKind::Cyclic);
-        const float threshold = behavior != nullptr ? behavior->Policy.EventWeight : 0.5f;
-
-        const auto produce = [&](std::size_t index, bool skipped) {
-            const AnimBoundEvent& event = played.Events[index];
-            if (event.Scope == AnimEventScope::Gameplay ? !gates.Authority : !gates.Presents)
+        // Crosses marks of the clip at `clipIndex` inside `stretch`.
+        const auto crossMarks = [&](std::uint16_t clipIndex, const AnimPlayback& playback,
+                                    const AnimCrossedStretch& stretch) {
+            if (clipIndex >= rig.Contents.size())
                 return;
-            // The authority is never the machine catching up from replicated
-            // state, so it does not skip a gameplay event: it produces it.
-            if (skipped && !(event.Scope == AnimEventScope::Gameplay && gates.Authority))
-            {
-                Record(log, now, l, layer, event, AnimEventOutcome::Skipped, VerbAdmission::Accepted);
-                return;
-            }
-            if (event.Scope == AnimEventScope::Cosmetic && weight < event.MinWeight.value_or(threshold))
-            {
-                Record(log, now, l, layer, event, AnimEventOutcome::BelowWeight, VerbAdmission::Accepted);
-                return;
-            }
-            AnimPendingEvent record;
-            record.Content = layer.Clip;
-            record.Event = static_cast<std::uint16_t>(index);
-            if (!admit(record))
-                Record(log, now, l, layer, event, AnimEventOutcome::Fired, VerbAdmission::QueueFull);
+            const AnimBoundContent& played = rig.Contents[clipIndex];
+            const AnimBoundBehavior* behavior = rig.FindBehavior(layer.Behavior);
+            const float threshold = behavior != nullptr ? behavior->Policy.EventWeight : 0.5f;
+            const double length = static_cast<double>(played.DurationSeconds);
+            ForEachAnimMark(
+                playback, stretch, played.Events.size(),
+                [&](std::size_t e) { return static_cast<double>(played.Events[e].Time) * std::max(length, 0.0); },
+                [&](std::size_t e) {
+                    const AnimBoundEvent& event = played.Events[e];
+                    if (event.Scope == AnimEventScope::Gameplay ? !gates.Authority : !gates.Presents)
+                        return;
+                    AnimLayerContent logged = layer;
+                    logged.Clip = clipIndex;
+                    // Passed over by a jump, on any machine and at any scope: nothing replays
+                    // marks nobody saw as they were reached.
+                    if (stretch.Skipped)
+                    {
+                        Record(log, now, l, logged, event, AnimEventOutcome::Skipped, VerbAdmission::Accepted);
+                        return;
+                    }
+                    if (event.Scope == AnimEventScope::Cosmetic && weight < event.MinWeight.value_or(threshold))
+                    {
+                        Record(log, now, l, logged, event, AnimEventOutcome::BelowWeight, VerbAdmission::Accepted);
+                        return;
+                    }
+                    AnimPendingEvent record;
+                    record.Content = clipIndex;
+                    record.Event = static_cast<std::uint16_t>(e);
+                    if (!admit(record, event.Scope))
+                        Record(log, now, l, logged, event, AnimEventOutcome::Fired, VerbAdmission::QueueFull);
+                });
         };
 
-        // A blendspace's marks are its heaviest sample's, crossed in its shared
-        // phase: the stretch since the last pass, unwrapped across a loop.
-        if (layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0)
+        if (sectionPlayedOut)
         {
-            const double length = static_cast<double>(played.DurationSeconds);
+            const AnimCrossing tail =
+                AnimCrossPlayback(previousPlayback, through, AnimPlaybackEntry::Start, now, tickSeconds);
+            for (std::uint8_t s = 0; s < tail.Count; ++s)
+                crossMarks(previousClip, previousPlayback, tail.Stretches[s]);
+        }
+
+        if (layer.Clip >= rig.Contents.size() || rig.Contents[layer.Clip].Events.empty())
+            continue;
+
+        if (playingMix)
+        {
+            // A mix's marks are its heaviest sample's, crossed in its shared phase: the
+            // stretch since the last pass, unwrapped across a loop. Where the phase stood
+            // on ticks no pass saw is not recorded, so a gap skips the whole stretch.
+            const AnimPlayback phase{ .StartTick = layer.StartTick, .OffsetSeconds = 0.0f, .Rate = 1.0f,
+                                      .DurationSeconds = rig.Contents[layer.Clip].DurationSeconds,
+                                      .Cyclic = layer.Playback.Cyclic };
+            const double length = static_cast<double>(phase.DurationSeconds);
             const double at = static_cast<double>(layer.Phase) * length;
-            if (!sameClip)
+            if (!sameInstance)
             {
-                ForEachMark(played, cyclic, at, at, layer.Phase <= 0.0f, [&](std::size_t e) { produce(e, false); });
+                crossMarks(layer.Clip, phase, AnimCrossedStretch{ at, at, layer.Phase <= 0.0f, now > layer.StartTick + 1 });
                 continue;
             }
+            if (now <= through)
+                continue;
             const double from = static_cast<double>(previousPhase) * length;
-            const double until = cyclic && layer.Phase < previousPhase ? at + length : at;
-            // Where the phase stood on ticks the pass did not see is not
-            // recorded, so a gap skips the whole stretch.
-            const bool skipped = coveredThrough + 1 < now;
-            ForEachMark(played, cyclic, from, until, false, [&](std::size_t e) { produce(e, skipped); });
+            const double until = phase.Cyclic && layer.Phase < previousPhase ? at + length : at;
+            crossMarks(layer.Clip, phase, AnimCrossedStretch{ from, until, false, through + 1 < now });
             continue;
         }
 
-        const double to = Elapsed(layer, now, tickSeconds);
-        if (!sameClip)
-        {
-            // A mark at a clip's start is crossed on entry. A row change carrying normalized
-            // time starts past its offset, whose marks the previous content crossed.
-            ForEachMark(played, cyclic, static_cast<double>(layer.ClipOffsetSeconds), to,
-                        layer.ClipOffsetSeconds <= 0.0f, [&](std::size_t e) { produce(e, false); });
-            continue;
-        }
-        const double previous = Elapsed(layer, now - 1, tickSeconds);
-        if (coveredThrough + 1 < now)
-        {
-            // Ticks this pass did not see: what they covered was not played.
-            ForEachMark(played, cyclic, Elapsed(layer, coveredThrough, tickSeconds), previous, false,
-                        [&](std::size_t e) { produce(e, true); });
-        }
-        ForEachMark(played, cyclic, previous, to, false, [&](std::size_t e) { produce(e, false); });
+        const AnimCrossing crossing = AnimCrossPlayback(
+            layer.Playback, sameInstance ? through : kAnimNoTick,
+            layer.Carried ? AnimPlaybackEntry::Carried : AnimPlaybackEntry::Start, now, tickSeconds);
+        for (std::uint8_t s = 0; s < crossing.Count; ++s)
+            crossMarks(layer.Clip, layer.Playback, crossing.Stretches[s]);
     }
 }
 
-void DrainAnimEvents(World& world, std::span<const AnimPendingEvent> pending, VerbDispatcher* dispatcher)
+bool AnimPendingEvents::Admit(AnimEventScope scope)
+{
+    const bool gameplay = scope == AnimEventScope::Gameplay;
+    if ((gameplay ? Gameplay.size() : Cosmetic.size()) < (gameplay ? GameplayCapacity : CosmeticCapacity))
+        return true;
+    ++(gameplay ? GameplayRefused : CosmeticRefused);
+    return false;
+}
+
+void AnimPendingEvents::Clear()
+{
+    Gameplay.clear();
+    Cosmetic.clear();
+    GameplayRefused = 0;
+    CosmeticRefused = 0;
+}
+
+namespace
+{
+    void Drain(World& world, std::span<const AnimPendingEvent> pending, VerbDispatcher* dispatcher);
+}
+
+void DrainAnimEvents(World& world, const AnimPendingEvents& pending, VerbDispatcher* dispatcher)
+{
+    Drain(world, pending.Gameplay, dispatcher);
+    Drain(world, pending.Cosmetic, dispatcher);
+}
+
+namespace
+{
+void Drain(World& world, std::span<const AnimPendingEvent> pending, VerbDispatcher* dispatcher)
 {
     AnimRigBindings* bindings = world.TryGetResource<AnimRigBindings>();
     const bool hasLog = world.IsRegistered<AnimDecisionLog>();
@@ -346,6 +387,7 @@ void DrainAnimEvents(World& world, std::span<const AnimPendingEvent> pending, Ve
             VerbInvocationSource source;
             source.Producer = record.Producer;
             source.Instigator = record.Instigator;
+            source.Parent = record.Cause;
             source.Tick = record.Tick;
             admission = dispatcher->Invoke(*binding, event.Inputs, source).Status;
         }
@@ -353,27 +395,41 @@ void DrainAnimEvents(World& world, std::span<const AnimPendingEvent> pending, Ve
                SectionOf(record));
     }
 }
+}
 
-AnimEventSystem::AnimEventSystem(VerbDispatcher* dispatcher, bool presents)
+AnimEventSystem::AnimEventSystem(VerbDispatcher* dispatcher, bool presents, LoggingProvider* logging)
     : Dispatcher(dispatcher)
     , Presents(presents)
+    , Logging(logging)
 {
+}
+
+void AnimEventSystem::SetCapacity(AnimEventScope scope, std::size_t capacity)
+{
+    (scope == AnimEventScope::Gameplay ? Pending.GameplayCapacity : Pending.CosmeticCapacity) = capacity;
+}
+
+std::size_t AnimEventSystem::GetCapacity(AnimEventScope scope) const
+{
+    return scope == AnimEventScope::Gameplay ? Pending.GameplayCapacity : Pending.CosmeticCapacity;
 }
 
 void AnimEventSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    RunImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
+    RunImpl(ctx.Entities, &ctx.Partitions, AnimClockAt(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimEventSystem::Run(World& world, AnimTick now, double tickSeconds)
 {
-    RunImpl(world, nullptr, now, tickSeconds);
+    RunImpl(world, nullptr, AnimClock::Uniform(now), tickSeconds);
 }
 
-void AnimEventSystem::RunImpl(World& world, const StoragePartitionSet* partitions, AnimTick now, double tickSeconds)
+void AnimEventSystem::RunImpl(World& world, const StoragePartitionSet* partitions, const AnimClock& clock,
+                              double tickSeconds)
 {
     AnimRigBindings* bindings = world.TryGetResource<AnimRigBindings>();
-    if (bindings == nullptr || !world.IsRegistered<AnimRig>() || !world.IsRegistered<AnimContentState>())
+    if (bindings == nullptr || !world.IsRegistered<AnimRig>() || !world.IsRegistered<AnimContentState>()
+        || !world.IsRegistered<AnimEventCursor>())
         return;
     if (LastWorld != &world)
     {
@@ -389,13 +445,15 @@ void AnimEventSystem::RunImpl(World& world, const StoragePartitionSet* partition
     const bool hasLog = world.IsRegistered<AnimDecisionLog>();
     const bool hasFlows = world.IsRegistered<AnimFlowState>();
 
-    Pending.clear();
+    Pending.Clear();
+    AnimRigRunCache resolver(*bindings, world);
     const auto visit = [&](auto& view) {
         const auto rigs = view.template Read<AnimRig>();
-        auto contents = view.template Write<AnimContentState>();
+        const auto contents = view.template Read<AnimContentState>();
+        auto cursors = view.template Write<AnimEventCursor>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            const AnimBoundRig* rig = bindings->Resolve(rigs[i].Rig, world);
+            const AnimBoundRig* rig = resolver.Resolve(rigs[i].Rig);
             if (rig == nullptr || !rig->Valid || !ShouldRunAnimationLogic(Presents, *rig))
                 continue;
             const EntityId entity = view.Entity(i);
@@ -403,8 +461,9 @@ void AnimEventSystem::RunImpl(World& world, const StoragePartitionSet* partition
             CollectAnimEvents(entity, rigs[i].Rig, *rig,
                               hasSelection ? reader.TryGet<AnimSelectorState>(entity) : nullptr,
                               hasRequests ? reader.TryGet<AnimRequestSet>(entity) : nullptr,
-                              hasFlows ? reader.TryGet<AnimFlowState>(entity) : nullptr, contents[i], now,
-                              tickSeconds, gates, Pending, Capacity,
+                              hasFlows ? reader.TryGet<AnimFlowState>(entity) : nullptr, contents[i], cursors[i],
+                              clock.For(entity),
+                              tickSeconds, gates, Pending,
                               hasLog ? world.TryGet<AnimDecisionLog>(entity) : nullptr);
         }
     };
@@ -416,5 +475,16 @@ void AnimEventSystem::RunImpl(World& world, const StoragePartitionSet* partition
     // After the query has finished: an operation the drain reaches may change
     // what the World holds.
     DrainAnimEvents(world, Pending, Dispatcher);
-    Pending.clear();
+
+    TotalGameplayRefused += Pending.GameplayRefused;
+    TotalCosmeticRefused += Pending.CosmeticRefused;
+    // A refused gameplay event is a lost effect, logged whether or not anyone traces the
+    // entity; cosmetic refusals are the documented bound and only counted.
+    if (Pending.GameplayRefused > 0 && !Overflowing && Logging != nullptr)
+        Logging->GetLogger<AnimEventSystem>().Error(
+            "{} gameplay animation events at tick {} found their queue full ({}); raise "
+            "anim.events.gameplay_capacity or spread the content's gameplay marks.",
+            Pending.GameplayRefused, clock.Now, Pending.GameplayCapacity);
+    Overflowing = Pending.GameplayRefused > 0;
+    Pending.Clear();
 }

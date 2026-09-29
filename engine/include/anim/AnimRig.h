@@ -1,8 +1,11 @@
 #pragma once
 
 #include <anim/AnimContentState.h>
+#include <anim/AnimEventCursor.h>
 #include <anim/AnimFlowState.h>
+#include <anim/AnimRequestReport.h>
 #include <anim/AnimRequestSet.h>
+#include <anim/AnimRigComposition.h>
 #include <anim/AnimRigData.h>
 #include <assets/data/DataAssetHandle.h>
 #include <ecs/ComponentAnnotations.h>
@@ -27,10 +30,12 @@ AnimRig
 #  include <anim/AnimRig.sencha.h>
 #endif
 
-// Owns one reference to its rig. Every tier takes requests and plays content, so a
-// rig brings its request set, content state and flow state.
+// Owns one reference to its rig. Every rig takes requests, plays content and crosses
+// its marks, so it brings what each of those owns; anything else is its binding's to
+// say (AnimRigCompositionSystem).
 template <>
 struct ComponentTraits<AnimRig> : SchemaAssetOwnership<AnimRig>
 {
-    using DerivedComponents = std::tuple<AnimRequestSet, AnimContentState, AnimFlowState>;
+    using DerivedComponents =
+        std::tuple<AnimRequestSet, AnimContentState, AnimEventCursor, AnimRequestReport, AnimRigComposition>;
 };

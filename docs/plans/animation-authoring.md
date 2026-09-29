@@ -224,7 +224,10 @@ the pending edit first.
 ### Preview execution boundary
 
 Preview uses the production compiler, selector, flow, timing, pose,
-root-motion, and authored dispatch kernels. The editor substitutes only the
+root-motion, and authored dispatch kernels, and runs them through a schedule
+built by `RegisterAnimationSystems`, so its order is the game's. The rule
+verdicts it shows come from the select system through an
+`AnimSelectionExplanation` resource naming the previewed entity. The editor substitutes only the
 gameplay input environment: scenario fact providers write preview-owned inputs;
 scenario actions use the normal request APIs; metadata declarations load
 without starting the game; each preview World sets its authority role; the

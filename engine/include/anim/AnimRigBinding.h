@@ -313,6 +313,9 @@ struct AnimBoundRig
     // The longest temporal window: how long until every derived fact is exact.
     float HorizonMs = 0.0f;
     bool HasTemporalDerivations = false;
+    // Some derivation keeps memory tick to tick (every temporal op, and hysteresis), so
+    // an entity needs AnimFactHistory.
+    bool DerivationsKeepMemory = false;
 
     bool HasRequestSchema = false;
     std::vector<AnimBoundIntent> Intents;
@@ -413,4 +416,32 @@ private:
     const SkeletonCache* Skeletons = nullptr;
     std::unordered_map<std::uint64_t, Entry> Entries;
     std::uint64_t Rebuilds = 0;
+};
+
+// One pass's resolver: entities sharing a rig tend to share chunks, so a pass resolves
+// once per run of equal handles rather than once per entity.
+class AnimRigRunCache
+{
+public:
+    AnimRigRunCache(AnimRigBindings& bindings, const World& world)
+        : Bindings(bindings)
+        , Reader(world)
+    {
+    }
+
+    [[nodiscard]] const AnimBoundRig* Resolve(DataAssetHandle rig)
+    {
+        if (Last != rig)
+        {
+            Last = rig;
+            Bound = Bindings.Resolve(rig, Reader);
+        }
+        return Bound;
+    }
+
+private:
+    AnimRigBindings& Bindings;
+    const World& Reader;
+    std::optional<DataAssetHandle> Last;
+    const AnimBoundRig* Bound = nullptr;
 };

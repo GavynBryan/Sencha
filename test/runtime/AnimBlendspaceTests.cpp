@@ -134,8 +134,8 @@ namespace
                 { "name": "move", "priority": 10, "enter": [ { "fact": "Speed", "compare": "gt", "value": 0.1 } ],
                   "behavior": "Anim.Move" } ] })");
             (void)Load("asset://anim/m.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-                { "behavior": "Anim.Move", "blendspace": "asset://anim/m.space.sdata" } ] })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+                { "id": "move", "behavior": "Anim.Move", "blendspace": "asset://anim/m.space.sdata" } ] })");
             Rig = Load("asset://anim/m.rig.sdata", kAnimRigType, R"({
                 "facts": "asset://anim/m.facts.sdata", "behaviors": [ "asset://anim/m.behaviors.sdata" ],
                 "slot_maps": [ "asset://anim/m.slots.sdata" ],
@@ -228,7 +228,7 @@ TEST(AnimBlendspaceBinding, AnAxisIsANumericFactAndAMixIsNotAFlow)
         (void)fx.Load("asset://anim/b.behaviors.sdata", kAnimBehaviorSetType,
                       R"({ "behaviors": [ { "tag": "Anim.Move", "kind": "flow" } ] })");
         (void)fx.Load("asset://anim/b.slots.sdata", kAnimSlotMapType,
-                      R"({ "rows": [ { "behavior": "Anim.Move", "blendspace": "asset://anim/b.space.sdata" } ] })");
+                      R"({ "rows": [ { "id": "move", "behavior": "Anim.Move", "blendspace": "asset://anim/b.space.sdata" } ] })");
         const AnimBoundRig& rig = fx.Bound(fx.Load("asset://anim/b.rig.sdata", kAnimRigType, R"({
             "facts": "asset://anim/b.facts.sdata", "behaviors": [ "asset://anim/b.behaviors.sdata" ],
             "slot_maps": [ "asset://anim/b.slots.sdata" ],
@@ -244,7 +244,39 @@ TEST(AnimBlendspaceBinding, AnAxisIsANumericFactAndAMixIsNotAFlow)
         EXPECT_EQ(behavior->FieldPath, "$.data.rows[1].blendspace");
     }
     EXPECT_NE(AnimRigFixture().CompileError(kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Move", "clip": "a", "blendspace": "b" } ] })")
+        { "id": "move", "behavior": "Anim.Move", "clip": "a", "blendspace": "b" } ] })")
                   .find("exactly one of a clip, a flow or a blendspace"),
               std::string::npos);
+}
+
+// A mix plays its heaviest sample's marks, so its samples carry one gameplay
+// track between them; otherwise the weights would decide what gameplay hears.
+TEST(AnimBlendspaceBinding, SamplesShareTheirGameplayEvents)
+{
+    AnimRigFixture fx({ "Anim.Move" });
+    AnimationClipEvent step;
+    step.Key = 1;
+    step.Time = 0.5f;
+    step.Binding = "game.step";
+    step.Scope = AnimEventScope::Gameplay;
+    fx.Clip("asset://anim/walk.sanim", 1.0f, { step });
+    fx.Clip("asset://anim/run.sanim", 0.5f);
+    (void)fx.Load("asset://anim/g.facts.sdata", kAnimFactSchemaType,
+                  R"({ "slots": [ { "name": "Speed", "kind": "float" } ] })");
+    (void)fx.Load("asset://anim/g.space.sdata", kAnimBlendspaceType, R"({
+        "axes": [ { "fact": "Speed", "min": 0, "max": 4 } ],
+        "samples": [ { "clip": "asset://anim/walk.sanim", "at": [ 1 ] },
+                     { "clip": "asset://anim/run.sanim", "at": [ 3 ] } ] })");
+    (void)fx.Load("asset://anim/g.behaviors.sdata", kAnimBehaviorSetType,
+                  R"({ "behaviors": [ { "tag": "Anim.Move", "kind": "cyclic" } ] })");
+    (void)fx.Load("asset://anim/g.slots.sdata", kAnimSlotMapType,
+                  R"({ "rows": [ { "id": "move", "behavior": "Anim.Move", "blendspace": "asset://anim/g.space.sdata" } ] })");
+    const AnimBoundRig& rig = fx.Bound(fx.Load("asset://anim/g.rig.sdata", kAnimRigType, R"({
+        "facts": "asset://anim/g.facts.sdata", "behaviors": [ "asset://anim/g.behaviors.sdata" ],
+        "slot_maps": [ "asset://anim/g.slots.sdata" ],
+        "layers": [ { "name": "anim.layer.base", "idle": "Anim.Move" } ] })"));
+    const AnimDiagnostic* differ = AnimRigFixture::FindCode(rig, "anim.blendspace.gameplay_events");
+    ASSERT_NE(differ, nullptr) << AnimRigFixture::Describe(rig);
+    EXPECT_EQ(differ->AssetPath, "asset://anim/g.space.sdata");
+    EXPECT_FALSE(rig.Valid);
 }

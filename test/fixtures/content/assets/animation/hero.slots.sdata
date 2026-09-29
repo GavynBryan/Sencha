@@ -3,27 +3,27 @@
     "version": 1,
     "data": {
         "rows": [
-            {
+            { "id": "idle",
                 "behavior": "Anim.Locomotion.Idle",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "walk",
                 "behavior": "Anim.Locomotion.Walk",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "sprint",
                 "behavior": "Anim.Locomotion.Sprint",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "land",
                 "behavior": "Anim.Action.Land",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "reload",
                 "behavior": "Anim.Action.Reload",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "reload_2",
                 "behavior": "Anim.Reload",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             }

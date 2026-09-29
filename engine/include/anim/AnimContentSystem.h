@@ -1,8 +1,10 @@
 #pragma once
 
+#include <anim/AnimClock.h>
 #include <anim/AnimContentState.h>
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimPredicate.h>
+#include <anim/AnimRequestReport.h>
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimRig.h>
 #include <anim/AnimRigBinding.h>
@@ -12,6 +14,7 @@
 #include <optional>
 #include <span>
 
+class LoggingProvider;
 class StoragePartitionSet;
 struct FixedLogicContext;
 
@@ -35,24 +38,36 @@ struct FixedLogicContext;
                                      const AnimPredicateInputs& inputs);
 
 // Resolves and advances every layer of one entity; shared with the preview. The
-// World is mutable for the authority's anchor on a flow's request and the tail that
-// keeps a cancelled request while its flow plays out.
+// World is mutable for what resolution writes back into the request set: the timing
+// stamp, a flow's anchor, and the tail that keeps a cancelled request playing out.
 void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
                        std::span<const std::uint32_t> facts, const AnimSelectorState* selection,
                        AnimContentState& content, AnimTick now, double tickSeconds, AnimDecisionLog* log);
 
+// Runs after ResolveAnimEntity: counts requests that ended without a layer playing
+// them and, on the authority, Held requests their producer ended without cancelling.
+// True when it reported such an orphan this call.
+bool NoteAnimRequestOutcomes(const World& world, EntityId entity, const AnimBoundRig& rig,
+                             const AnimSelectorState* selection, const AnimContentState& content, AnimTick now,
+                             AnimRequestReport& report, AnimDecisionLog* log);
+
 class AnimContentSystem
 {
 public:
-    explicit AnimContentSystem(bool presentsPose = true) : PresentsPose(presentsPose) {}
+    explicit AnimContentSystem(bool presentsPose = true, LoggingProvider* logging = nullptr)
+        : PresentsPose(presentsPose)
+        , Logging(logging)
+    {
+    }
 
     void FixedLogic(FixedLogicContext& ctx);
     void Resolve(World& world, AnimTick now, double tickSeconds);
 
 private:
-    void ResolveImpl(World& world, const StoragePartitionSet* partitions, AnimTick now, double tickSeconds);
+    void ResolveImpl(World& world, const StoragePartitionSet* partitions, const AnimClock& clock, double tickSeconds);
 
     const World* LastWorld = nullptr;
-    std::optional<Query<Read<AnimRig>, Write<AnimContentState>>> ContentQuery;
+    std::optional<Query<Read<AnimRig>, Write<AnimContentState>, Write<AnimRequestReport>>> ContentQuery;
     bool PresentsPose = true;
+    LoggingProvider* Logging = nullptr;
 };

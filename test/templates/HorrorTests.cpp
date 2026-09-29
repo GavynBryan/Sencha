@@ -24,8 +24,8 @@ namespace
     struct HorrorProbe
     {
         Engine* Host = nullptr;
-        // No starter content animates; the template must not pay for animation.
-        bool AnimationRegistered = true;
+        // The engine registers animation for every host, whatever it loads.
+        bool AnimationRegistered = false;
         int Participants = 0;
         bool BodyAssigned = false;
         bool BodyAims = true;
@@ -74,7 +74,7 @@ TEST(HorrorTemplate, TheRoomsCameraIsTheViewAndTheBodyDoesNotAim)
     ASSERT_EQ(run.Exit(), 0);
 
     const HorrorProbe& seen = run.Seen();
-    EXPECT_FALSE(seen.AnimationRegistered) << "no starter content plays clips";
+    EXPECT_TRUE(seen.AnimationRegistered) << "every host animates whatever names a rig";
     EXPECT_EQ(seen.Participants, 1);
     ASSERT_TRUE(seen.BodyAssigned) << "the prefab pawn never landed";
     EXPECT_FALSE(seen.BodyAims) << "tank controls turn the body; nothing aims";

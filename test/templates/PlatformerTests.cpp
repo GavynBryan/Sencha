@@ -24,8 +24,8 @@ namespace
     struct PlatformerProbe
     {
         Engine* Host = nullptr;
-        // No starter content animates; the template must not pay for animation.
-        bool AnimationRegistered = true;
+        // The engine registers animation for every host, whatever it loads.
+        bool AnimationRegistered = false;
         int Participants = 0;
         bool BodyAssigned = false;
         bool BodyMoves = false;
@@ -76,7 +76,7 @@ TEST(PlatformerTemplate, ABodyThatRunsUnderAnOrbitingCamera)
     ASSERT_EQ(run.Exit(), 0);
 
     const PlatformerProbe& seen = run.Seen();
-    EXPECT_FALSE(seen.AnimationRegistered) << "no starter content plays clips";
+    EXPECT_TRUE(seen.AnimationRegistered) << "every host animates whatever names a rig";
     EXPECT_EQ(seen.Participants, 1);
     ASSERT_TRUE(seen.BodyAssigned) << "the prefab pawn never landed";
     EXPECT_TRUE(seen.BodyMoves);

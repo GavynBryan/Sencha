@@ -1,6 +1,7 @@
 #include "authoring/AnimationSelectorEdits.h"
 
 #include <algorithm>
+#include <format>
 
 namespace
 {
@@ -55,6 +56,16 @@ void AddAnimSelectorRule(JsonValue& root, std::string name, std::string behavior
     JsonValue::Array* rules = AnimSelectorRules(root);
     if (rules == nullptr)
         return;
+    // A rule's name is its identity across reloads, so a taken one gets a number.
+    const auto taken = [&](const std::string& candidate) {
+        return std::ranges::any_of(*rules, [&](const JsonValue& rule) {
+            const JsonValue* existing = rule.IsObject() ? rule.Find("name") : nullptr;
+            return existing != nullptr && existing->IsString() && existing->AsString() == candidate;
+        });
+    };
+    const std::string base = name;
+    for (int n = 2; taken(name); ++n)
+        name = std::format("{} {}", base, n);
     rules->emplace_back(JsonValue::Object{
         { "name", JsonValue(std::move(name)) },
         { "priority", JsonValue(priority) },

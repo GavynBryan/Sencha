@@ -6,17 +6,12 @@
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimEventSystem.h>
 #include <anim/AnimPoseSystem.h>
-#include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimRequests.h>
 #include <anim/AnimRigBinding.h>
 #include <assets/data/DataAssetCache.h>
 #include <authored/VerbDispatcher.h>
 #include <ecs/StoragePartitionSet.h>
-#include <movement/FreeLocomotionSystem.h>
-#include <movement/JumpExecutionSystem.h>
-#include <movement/MotionComposition.h>
-#include <movement/RootMotionSource.h>
 
 #include <cstdint>
 #include <deque>
@@ -267,12 +262,12 @@ private:
     std::unique_ptr<VerbDispatcher> Dispatcher;
     std::deque<Recorder> Recorders;
     std::vector<VerbBindingToken> RecorderTokens;
-    std::vector<AnimPendingEvent> PendingEvents;
     // Set only while a tick drains its events.
     std::vector<AnimationPreviewInvocation>* InvocationSink = nullptr;
-    AnimFactGatherSystem Gather;
-    // Runs inline: the preview is the serial reference.
-    AnimPoseSystem PosePass;
+    // Built with the World and dropped with it, so no system's cached queries
+    // outlive the World they were made on.
+    struct WorldSystems;
+    std::unique_ptr<WorldSystems> Systems;
     const AnimBoundRig* Bound = nullptr;
     EntityId SubjectEntity;
     std::vector<std::pair<std::string, EntityId>> Participants;
@@ -292,13 +287,8 @@ private:
     double PendingTicks = 0.0;
     bool FromWire = false;
 
-    // Run in game schedule order after content resolves and before posing.
     // Torn down before the World, whose movers they hold.
     std::unique_ptr<PhysicsWorld> Physics;
     std::unique_ptr<CharacterMoverPool> Movers;
     StoragePartitionSet AllPartitions;
-    FreeLocomotionSystem Locomotion{ Vec3d(0.0f, -9.81f, 0.0f), Vec3d(0.0f, 1.0f, 0.0f) };
-    JumpExecutionSystem Jump;
-    RootMotionSystem Root;
-    MotionCompositionSystem Composition;
 };

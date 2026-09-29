@@ -6,6 +6,10 @@
 
 #include <abilities/AbilityKit.h>
 #include <anim/AnimPoseSystem.h>
+#include <world/SimulationTimeline.h>
+#include <world/SimulationAuthority.h>
+#include <anim/AnimationRegistration.h>
+#include <anim/AnimRequestJournal.h>
 #include <anim/AnimRootMotionSource.h>
 #include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
@@ -122,8 +126,8 @@ namespace
                 { "tag": "Anim.Idle", "kind": "cyclic" },
                 { "tag": "anim.intent.dash", "kind": "one_shot", "root_motion": true } ] })");
             (void)Load("asset://anim/c.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-                { "behavior": "anim.intent.dash", "clip": "asset://anim/dash.sanim" } ] })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+                { "id": "dash", "behavior": "anim.intent.dash", "clip": "asset://anim/dash.sanim" } ] })");
             Rig = Load("asset://anim/c.rig.sdata", kAnimRigType, R"({
                 "skeleton": "asset://anim/runner.sskel", "requests": "asset://anim/c.requests.sdata",
                 "behaviors": [ "asset://anim/c.behaviors.sdata" ], "slot_maps": [ "asset://anim/c.slots.sdata" ],
@@ -137,6 +141,7 @@ namespace
             Entities.AddComponent<CharacterMovement>(
                 Character, CharacterMovement{ .Mode = Entities.GetResource<LocomotionModeRegistry>().FreeMode() });
             Entities.AddComponent(Character, AnimRig{ Rig });
+            Entities.AddComponent(Character, AnimPoseConsumer{});
             Entities.AddComponent(Character, AnimDecisionLog{});
             Movers.Reconcile(Entities, Partitions());
         }
@@ -274,7 +279,7 @@ TEST(AnimRootMotion, AStrippedPoseDoesNotDoubleApply)
     {
         carried.StepTo(tick);
         const AnimPosePool::Slot* pose = carried.Entities.GetResource<AnimPosePool>().Find(
-            carried.Entities.TryGet<AnimPoseState>(carried.Character)->Slot);
+            carried.Entities.TryGet<AnimPoseState>(carried.Character)->Slot, carried.Character);
         ASSERT_NE(pose, nullptr);
         ASSERT_TRUE(pose->HasCurrent);
         EXPECT_NEAR(pose->Current[0].Position.Z, 0.0f, 1e-5f) << "tick " << tick;
@@ -364,7 +369,7 @@ TEST(AnimRootMotion, TheScheduledPipelineCarriesTheCharacter)
     (void)carried.Load("asset://anim/prop.behaviors.sdata", kAnimBehaviorSetType,
                        R"({ "behaviors": [ { "tag": "Anim.Idle", "kind": "cyclic" } ] })");
     (void)carried.Load("asset://anim/prop.slots.sdata", kAnimSlotMapType,
-                       R"({ "rows": [ { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" } ] })");
+                       R"({ "rows": [ { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" } ] })");
     const DataAssetHandle propRig = carried.Load("asset://anim/prop.rig.sdata", kAnimRigType, R"({
         "behaviors": [ "asset://anim/prop.behaviors.sdata" ], "slot_maps": [ "asset://anim/prop.slots.sdata" ],
         "layers": [ { "name": "anim.layer.base", "idle": "Anim.Idle" } ] })");
@@ -403,4 +408,159 @@ TEST(AnimRootMotion, TheScheduledPipelineCarriesTheCharacter)
     ASSERT_NE(request, nullptr);
     EXPECT_NEAR(request->Velocity.Z, -3.0f, 1e-3f) << "3 m over a second, at the tick's rate";
     EXPECT_FALSE(carried.Playing(prop).Behavior.IsValid()) << "the cosmetic prop was never resolved";
+}
+
+// On a client the character it predicts is named on the command timeline: what the
+// schedule plays and carries it by on a tick is the command of that name, while an
+// entity it does not predict stays on the authority's estimated present.
+TEST(AnimRootMotion, APredictedCharacterIsAnimatedAndCarriedOnItsCommandTimeline)
+{
+    constexpr std::int64_t kOffset = 100;
+    constexpr std::int64_t kLead = 3;
+    RootMotionFixture client(false);
+    client.Entities.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = kOffset });
+    client.Entities.SetResource(
+        PredictedSimulation{ .Entity = client.Character, .CommandTickOffset = kOffset + kLead });
+
+    EngineConfig config;
+    RuntimeFrameLoop runtime;
+    DataAssetCache assets;
+    EngineSchedule schedule;
+    RegisterAbilityKitSystems(schedule);
+    RegisterMovementSystems(schedule, assets);
+    RegisterAnimationSystems(schedule, nullptr, AnimationHost{ .PresentsPose = false });
+    schedule.Init();
+    const auto run = [&](std::uint64_t local) {
+        FixedLogicContext context{
+            .Config = config,
+            .Runtime = runtime,
+            .Time = FixedSimTime{ .DeltaSeconds = AnimRigFixture::kTick, .TickIndex = local },
+            .Entities = client.Entities,
+            .Partitions = Partitions(),
+        };
+        schedule.RunFixedLogic(context);
+    };
+    for (std::uint64_t local = 0; local < 5; ++local)
+        run(local);
+
+    AnimRequestDesc desc;
+    desc.Source = client.Character;
+    desc.Intent = client.Tag("anim.intent.dash");
+    const AnimRequestResult dash = RequestAnimation(client.Entities, client.Character, desc, 5);
+    ASSERT_TRUE(dash.Accepted());
+    run(5);
+
+    const AnimTick command = 5 + kOffset + kLead;
+    EXPECT_EQ(client.Playing(client.Character).StartTick, command);
+    const MotionRequest* request = static_cast<const World&>(client.Entities).TryGet<MotionRequest>(client.Character);
+    ASSERT_NE(request, nullptr);
+    run(6);
+    EXPECT_NEAR(request->Velocity.Z, -3.0f, 1e-3f) << "carried on the command's own tick";
+    EXPECT_EQ(SimulationTickOf(client.Entities, client.Entities.CreateEntity(), 6), 6u + kOffset)
+        << "anything else is on the authority's estimated present";
+}
+
+// A client runs its character on the command timeline, hears late that the
+// authority cancelled the move, and replays its commands by their ticks: it ends
+// where the authority's character is.
+TEST(AnimRootMotion, APredictedReplayOnTheCommandTimelineEndsWhereTheAuthorityIs)
+{
+    constexpr AnimTick kCommand = 30;
+    RootMotionFixture authority(false);
+    authority.StepTo(kCommand - 1);
+    const AnimRequestResult dash = authority.Dash();
+    ASSERT_TRUE(dash.Accepted());
+    authority.StepTo(kCommand + 19);
+    ASSERT_TRUE(CancelAnimRequest(authority.Entities, authority.Character, dash.Id, AnimCancelReason::Released,
+                                  authority.Now));
+    authority.StepTo(kCommand + 60);
+
+    // The client names its character's ticks as its commands: the dash it predicts
+    // for command 30 starts on its tick 30, however far ahead of the authority it runs.
+    RootMotionFixture client(false);
+    client.Entities.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = -3 });
+    client.Entities.SetResource(PredictedSimulation{ .Entity = client.Character, .CommandTickOffset = 0 });
+    client.StepTo(kCommand - 1);
+    AnimRequestDesc desc;
+    desc.Source = client.Character;
+    desc.Intent = client.Tag("anim.intent.dash");
+    ASSERT_TRUE(RequestAnimation(client.Entities, client.Character, desc, client.Now).Accepted());
+    client.StepTo(kCommand + 9);
+    const RootMotionFixture::Saved acknowledged = client.Save();
+    client.StepTo(kCommand + 60);
+    ASSERT_LT(client.Position().Z, authority.Position().Z - 0.5f) << "still carried past the cancel";
+
+    // The authority's set arrives, and the unanswered commands replay by their ticks.
+    *client.Entities.TryGet<AnimRequestSet>(client.Character) =
+        *static_cast<const World&>(authority.Entities).TryGet<AnimRequestSet>(authority.Character);
+    client.Restore(acknowledged);
+    client.Replay(kCommand + 10, kCommand + 60);
+    EXPECT_NEAR(client.Position().Z, authority.Position().Z, 1e-4f);
+}
+
+// What carries a character is timing two machines must share: a clip whose root
+// curve goes elsewhere, or a behavior that stops carrying, is another identity.
+TEST(AnimRootMotion, TheTimingIdentityIncludesWhatCarriesTheCharacter)
+{
+    RootMotionFixture straight(false);
+    const std::uint64_t identity = straight.Bound(straight.Rig).TimingIdentity;
+
+    AnimationRootCurve farther = RootMotionFixture::Straight();
+    farther.Values[4] = -6.0f;
+    RootMotionFixture longer(false, false, farther);
+    EXPECT_NE(longer.Bound(longer.Rig).TimingIdentity, identity) << "the curve differs";
+
+    straight.Reload("asset://anim/c.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
+        { "tag": "Anim.Idle", "kind": "cyclic" },
+        { "tag": "anim.intent.dash", "kind": "one_shot" } ] })");
+    EXPECT_NE(straight.Bound(straight.Rig).TimingIdentity, identity) << "the behavior no longer carries";
+}
+
+namespace
+{
+    // The same move, chosen by a selector rule that reads the dash request.
+    void SelectTheDash(RootMotionFixture& fx)
+    {
+        (void)fx.Load("asset://anim/c.selector.sdata", kAnimSelectorType, R"({ "rules": [
+            { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Idle" },
+            { "name": "dash", "priority": 10, "enter": [ { "request": "anim.intent.dash" } ],
+              "behavior": "anim.intent.dash" } ] })");
+        fx.Reload("asset://anim/c.rig.sdata", kAnimRigType, R"({
+            "skeleton": "asset://anim/runner.sskel", "requests": "asset://anim/c.requests.sdata",
+            "behaviors": [ "asset://anim/c.behaviors.sdata" ], "slot_maps": [ "asset://anim/c.slots.sdata" ],
+            "layers": [ { "name": "anim.layer.base", "selector": "asset://anim/c.selector.sdata",
+                          "idle": "Anim.Idle" } ] })");
+        ASSERT_TRUE(fx.Bound(fx.Rig).Valid) << AnimRigFixture::Describe(fx.Bound(fx.Rig));
+    }
+}
+
+// On a selector's base layer, too, what carried the character on a replayed tick
+// follows from the requests: a client that heard of a cancel late replays to
+// where the authority stopped, not to what it had been playing.
+TEST(AnimRootMotion, ASelectorLayersReplayIsCarriedThroughACancel)
+{
+    RootMotionFixture authority(false);
+    SelectTheDash(authority);
+    authority.StepTo(29);
+    const AnimRequestResult dash = authority.Dash();
+    ASSERT_TRUE(dash.Accepted());
+    authority.StepTo(49);
+    ASSERT_TRUE(CancelAnimRequest(authority.Entities, authority.Character, dash.Id, AnimCancelReason::Released,
+                                  authority.Now));
+    authority.StepTo(80);
+
+    RootMotionFixture client(false);
+    SelectTheDash(client);
+    client.StepTo(29);
+    ASSERT_TRUE(client.Dash().Accepted());
+    client.StepTo(39);
+    const RootMotionFixture::Saved at39 = client.Save();
+    client.StepTo(80);
+    ASSERT_LT(client.Position().Z, authority.Position().Z - 0.5f) << "the client went further";
+
+    *client.Entities.TryGet<AnimRequestSet>(client.Character) =
+        *static_cast<const World&>(authority.Entities).TryGet<AnimRequestSet>(authority.Character);
+    client.Restore(at39);
+    client.Replay(40, 80);
+    EXPECT_NEAR(client.Position().Z, authority.Position().Z, 1e-4f);
 }

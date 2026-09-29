@@ -39,8 +39,8 @@ namespace
                 "behaviors": [ { "tag": "Anim.Idle", "kind": "cyclic" },
                                { "tag": "anim.intent.dash", "kind": "one_shot", "root_motion": true } ] } })");
             Write("runner.slots.sdata", R"({ "type": "animation.slot_map", "version": 1, "data": { "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-                { "behavior": "anim.intent.dash", "clip": "asset://anim/dash.sanim" } ] } })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+                { "id": "dash", "behavior": "anim.intent.dash", "clip": "asset://anim/dash.sanim" } ] } })");
             Write("runner.rig.sdata", R"({ "type": "animation.rig", "version": 1, "data": {
                 "skeleton": "asset://anim/runner.sskel", "requests": "asset://anim/runner.requests.sdata",
                 "behaviors": [ "asset://anim/runner.behaviors.sdata" ], "slot_maps": [ "asset://anim/runner.slots.sdata" ],

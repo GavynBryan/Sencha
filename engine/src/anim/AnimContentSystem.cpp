@@ -6,6 +6,7 @@
 #include <anim/AnimFlowRunner.h>
 #include <anim/AnimRequests.h>
 #include <app/GameContexts.h>
+#include <core/logging/LoggingProvider.h>
 #include <ecs/StoragePartitionSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -15,6 +16,7 @@
 #include <array>
 #include <cmath>
 #include <optional>
+#include <utility>
 
 namespace
 {
@@ -29,21 +31,14 @@ namespace
         return content < rig.Contents.size() ? rig.Contents[content].DurationSeconds : 0.0f;
     }
 
+    bool IsCyclic(AnimBehaviorKind kind) { return kind == AnimBehaviorKind::Cyclic; }
+
     // A behavior the rig does not know plays as authored.
     const AnimBehaviorDecl& PlaybackOf(const AnimBoundRig& rig, GameplayTagId behavior)
     {
         static const AnimBehaviorDecl asAuthored;
         const AnimBoundBehavior* bound = rig.FindBehavior(behavior);
         return bound != nullptr ? bound->Policy : asAuthored;
-    }
-
-    // Wrapped either way round for cyclic content; held at its ends otherwise.
-    double PlacedTime(double elapsed, double duration, bool cyclic)
-    {
-        if (!cyclic)
-            return std::clamp(elapsed, 0.0, duration);
-        const double wrapped = std::fmod(elapsed, duration);
-        return wrapped < 0.0 ? wrapped + duration : wrapped;
     }
 
     void Log(AnimDecisionLog* log, AnimTick now, std::size_t layer, AnimDecisionCause cause,
@@ -70,20 +65,6 @@ float AnimLayerWeight(const AnimBoundRig& rig, std::size_t layer, const AnimSele
     return rig.Layers[layer].Weight;
 }
 
-GameplayTagId AnimLayerBehavior(const AnimBoundRig& rig, std::size_t layer, const AnimSelectorState* selection,
-                                const AnimRequestSet* requests, AnimTick now, const AnimLayerContent* playing)
-{
-    const AnimBoundLayer& bound = rig.Layers[layer];
-    if (bound.Selector >= 0)
-    {
-        if (selection != nullptr && selection->Layers[layer].Winner != kAnimNoRule)
-            return selection->Layers[layer].Behavior;
-        return bound.Idle;
-    }
-    const AnimRequest* request = AnimLayerDrivingRequest(rig, layer, selection, requests, now, playing);
-    return request != nullptr ? request->Intent : bound.Idle;
-}
-
 const AnimRequest* AnimLayerDrivingRequest(const AnimBoundRig& rig, std::size_t layer,
                                            const AnimSelectorState* selection, const AnimRequestSet* requests,
                                            AnimTick now, const AnimLayerContent* playing)
@@ -92,8 +73,7 @@ const AnimRequest* AnimLayerDrivingRequest(const AnimBoundRig& rig, std::size_t 
         return nullptr;
     const std::uint8_t bit = static_cast<std::uint8_t>(1u << layer);
     const auto newer = [](const AnimRequest& a, const AnimRequest* b) {
-        return b == nullptr || a.StartTick > b->StartTick
-            || (a.StartTick == b->StartTick && a.Id.Sequence > b->Id.Sequence);
+        return b == nullptr || IsNewerAnimRequest(a, *b);
     };
 
     const AnimBoundLayer& bound = rig.Layers[layer];
@@ -176,6 +156,428 @@ namespace
         return nullptr;
     }
 
+    // What this tick asks a layer to play.
+    struct LayerTarget
+    {
+        const AnimRequest* Driving = nullptr;
+        GameplayTagId Behavior;
+        AnimBehaviorKind Kind = AnimBehaviorKind::Cyclic;
+        std::uint16_t Row = kAnimNoContent;
+        std::uint32_t RowKey = 0;
+        std::uint16_t Content = kAnimNoContent;
+        // Where a new instance starts: somewhere every machine can place it.
+        AnimTick InstanceStart = 0;
+    };
+
+    enum class LayerInstanceChange : std::uint8_t
+    {
+        Continue,
+        Start,
+        // Starts at the outgoing content's normalized time.
+        StartCarried,
+        // The same content runs on under a superseding request.
+        Adopt,
+        // Cyclic or hold content takes another row at the same normalized time.
+        ChangeRow,
+    };
+
+    struct LayerInstanceDecision
+    {
+        LayerInstanceChange Change = LayerInstanceChange::Continue;
+        AnimChangeReason Reason = AnimChangeReason::None;
+    };
+
+    struct LayerEntry
+    {
+        bool Entered = false;
+        bool Adopted = false;
+        // Set when content starts this tick: the normalized time it starts at.
+        std::optional<float> StartNormalized;
+    };
+
+    struct LayerRequestProgress
+    {
+        AnimRequestId Tail;
+        AnimRequestId Anchored;
+        std::uint8_t AnchorSection = kAnimNoAnchorSection;
+        AnimTick AnchorSectionStartTick = 0;
+    };
+
+    // What resolution writes back into gameplay's request set, applied once after every
+    // layer has read the set as it stood.
+    struct AnimRequestProgress
+    {
+        bool StampTiming = false;
+        LayerRequestProgress Layers[kAnimMaxLayers] = {};
+    };
+
+    GameplayTagId LayerBehavior(const AnimBoundRig& rig, std::size_t layer, const AnimSelectorState* selection,
+                                const AnimRequest* driving)
+    {
+        const AnimBoundLayer& bound = rig.Layers[layer];
+        if (bound.Selector >= 0)
+            return selection != nullptr && selection->Layers[layer].Winner != kAnimNoRule
+                     ? selection->Layers[layer].Behavior
+                     : bound.Idle;
+        return driving != nullptr ? driving->Intent : bound.Idle;
+    }
+
+    // The authority says which timing its requests were made under; a machine binding
+    // the rig differently cannot reconstruct them, and says so.
+    void NoteRigTiming(const AnimBoundRig& rig, const AnimRequestSet& requests, bool authority,
+                       AnimContentState& content, AnimRequestProgress& progress, AnimTick now, AnimDecisionLog* log)
+    {
+        if (authority)
+        {
+            progress.StampTiming = requests.RigTiming != rig.TimingIdentity;
+            return;
+        }
+        const bool disagrees = requests.RigTiming != 0 && requests.RigTiming != rig.TimingIdentity;
+        if (disagrees == content.TimingDisagrees)
+            return;
+        content.TimingDisagrees = disagrees;
+        if (log != nullptr)
+        {
+            AnimDecisionRecord record;
+            record.Tick = now;
+            record.Cause = disagrees ? AnimDecisionCause::TimingDisagreed : AnimDecisionCause::TimingAgreed;
+            log->Append(record);
+        }
+    }
+
+    // Indices from another binding follow their row's stable key. True when pinned
+    // content lost its row, which cannot stay pinned.
+    bool RemapLayerAfterRebind(const AnimBoundRig& rig, std::size_t l, AnimLayerContent& layer, AnimTick now,
+                               AnimDecisionLog* log)
+    {
+        if (layer.Row == kAnimNoContent)
+            return false;
+        std::uint16_t remapped = kAnimNoContent;
+        for (std::size_t r = 0; r < rig.SlotRows.size(); ++r)
+            if (rig.SlotRows[r].Key == layer.RowKey)
+                remapped = static_cast<std::uint16_t>(r);
+        bool lostPin = false;
+        if (remapped == kAnimNoContent)
+        {
+            // Its content went with the row; nothing plays until a row resolves.
+            layer.Content = kAnimNoContent;
+            lostPin = layer.Pinned;
+            layer.Pinned = false;
+            if (lostPin)
+                Log(log, now, l, AnimDecisionCause::IndexReset, AnimChangeReason::Rebound, layer);
+        }
+        else
+        {
+            layer.Content = static_cast<std::uint16_t>(rig.SlotRows[remapped].Content);
+        }
+        layer.Row = remapped;
+        return lostPin;
+    }
+
+    LayerTarget ResolveLayerTarget(const AnimBoundRig& rig, std::size_t l, const AnimSelectorState* selection,
+                                   const AnimRequestSet* requests, const AnimPredicateInputs& inputs,
+                                   const AnimLayerContent& layer, AnimTick now)
+    {
+        LayerTarget target;
+        target.Driving = AnimLayerDrivingRequest(rig, l, selection, requests, now, &layer);
+        target.Behavior = LayerBehavior(rig, l, selection, target.Driving);
+        target.Kind = KindOf(rig, target.Behavior);
+        if (const int row = ResolveAnimSlotRow(rig, target.Behavior, inputs); row >= 0)
+        {
+            const AnimBoundSlotRow& bound = rig.SlotRows[static_cast<std::size_t>(row)];
+            target.Row = static_cast<std::uint16_t>(row);
+            target.RowKey = bound.Key;
+            target.Content = static_cast<std::uint16_t>(bound.Content);
+        }
+        // The driving request's start, or the cancel that cut the last content short;
+        // otherwise this tick. See docs/gameplay/animation.md.
+        const AnimRequest* cutShort = target.Driving == nullptr && !layer.ContentComplete
+                                        ? CancelledAnimRequest(requests, layer.Request)
+                                        : nullptr;
+        target.InstanceStart = target.Driving != nullptr ? std::min(target.Driving->StartTick, now)
+                             : cutShort != nullptr       ? std::min(cutShort->CancelTick, now)
+                                                         : now;
+        return target;
+    }
+
+    // Cyclic content in one sync group continues at the outgoing normalized time, so a
+    // walk becoming a run keeps its footfalls.
+    bool CarriesPhase(const AnimBoundRig& rig, GameplayTagId fromTag, GameplayTagId toTag)
+    {
+        const AnimBoundBehavior* from = rig.FindBehavior(fromTag);
+        const AnimBoundBehavior* to = rig.FindBehavior(toTag);
+        const auto continuous = [](const AnimBoundBehavior& behavior) {
+            return behavior.Policy.Kind == AnimBehaviorKind::Cyclic || behavior.Policy.Kind == AnimBehaviorKind::Hold;
+        };
+        return from != nullptr && to != nullptr
+            && rig.ResolveBlend(from->Tag, to->Tag).Phase == AnimPhasePolicy::Carry && to->SyncGroup.IsValid()
+            && to->SyncGroup == from->SyncGroup && continuous(*from) && continuous(*to);
+    }
+
+    LayerInstanceDecision DecideLayerInstance(const AnimBoundRig& rig, const AnimLayerContent& layer,
+                                              const LayerTarget& target, bool lostPin, bool reconstruct)
+    {
+        using enum LayerInstanceChange;
+        if (reconstruct && (target.Driving != nullptr || layer.Request.IsValid()))
+            return { Start, AnimChangeReason::Reconstructed };
+        if (lostPin)
+            return { Start, AnimChangeReason::Rebound };
+        if (target.Behavior != layer.Behavior)
+            return { CarriesPhase(rig, layer.Behavior, target.Behavior) ? StartCarried : Start,
+                     AnimChangeReason::BehaviorChanged };
+        if (layer.Pinned && target.Driving != nullptr && target.Driving->Id != layer.Request)
+            // Content the superseding request resolves differently starts over from it.
+            return { target.Row != layer.Row ? Start : Adopt, AnimChangeReason::RequestSuperseded };
+        if (layer.Pinned && target.Driving != nullptr && target.Driving->StartTick != layer.RequestStartTick)
+            // Nothing is rewound: the instance restarts where the corrected request puts
+            // it, and the pose absorbs the jump like any other change.
+            return { Start, AnimChangeReason::RequestCorrected };
+        if (target.Row != layer.Row && !layer.Pinned)
+            return { ChangeRow, AnimChangeReason::RowChanged };
+        return {};
+    }
+
+    // A blendspace's phase, or clip time over length.
+    float NormalizedTime(const AnimBoundRig& rig, const AnimLayerContent& layer, AnimBehaviorKind kind, AnimTick now,
+                         double tickSeconds)
+    {
+        if (layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0)
+            return layer.Phase;
+        const float length = DurationOf(rig, layer.Content);
+        if (length <= 0.0f)
+            return 0.0f;
+        AnimPlayback playback = layer.Playback;
+        playback.DurationSeconds = length;
+        playback.Cyclic = IsCyclic(kind);
+        return static_cast<float>(AnimPlaybackSeconds(playback, now, tickSeconds) / length);
+    }
+
+    LayerEntry EnterLayerInstance(const AnimBoundRig& rig, std::size_t l, AnimLayerContent& layer,
+                                  const LayerTarget& target, LayerInstanceDecision decision, AnimTick now,
+                                  double tickSeconds, AnimDecisionLog* log)
+    {
+        LayerEntry entry;
+        const auto carryFrom = [&](float normalized) {
+            layer.StartTick = now;
+            layer.Playback.StartTick = now;
+            layer.Playback.OffsetSeconds = normalized * DurationOf(rig, target.Content);
+            layer.Carried = true;
+            entry.StartNormalized = normalized;
+        };
+        switch (decision.Change)
+        {
+        case LayerInstanceChange::Continue:
+            break;
+        case LayerInstanceChange::Start:
+        case LayerInstanceChange::StartCarried:
+        {
+            const bool carried = decision.Change == LayerInstanceChange::StartCarried;
+            const float normalized = carried ? NormalizedTime(rig, layer, KindOf(rig, layer.Behavior), now, tickSeconds)
+                                             : 0.0f;
+            layer.Behavior = target.Behavior;
+            layer.Row = target.Row;
+            layer.RowKey = target.RowKey;
+            layer.Content = target.Content;
+            layer.Request = target.Driving != nullptr ? target.Driving->Id : AnimRequestId{};
+            layer.RequestStartTick = target.Driving != nullptr ? target.Driving->StartTick : 0;
+            layer.StartTick = target.InstanceStart;
+            layer.Playback.StartTick = target.InstanceStart;
+            layer.Playback.OffsetSeconds = PlaybackOf(rig, target.Behavior).StartSeconds;
+            layer.Carried = false;
+            layer.Pinned = target.Kind == AnimBehaviorKind::OneShot || target.Kind == AnimBehaviorKind::Flow;
+            entry.StartNormalized = 0.0f;
+            entry.Entered = true;
+            Log(log, now, l, AnimDecisionCause::ContentChanged, decision.Reason, layer);
+            if (carried)
+                carryFrom(normalized);
+            break;
+        }
+        case LayerInstanceChange::Adopt:
+            layer.Request = target.Driving->Id;
+            layer.RequestStartTick = target.Driving->StartTick;
+            entry.Adopted = true;
+            break;
+        case LayerInstanceChange::ChangeRow:
+        {
+            const float normalized = NormalizedTime(rig, layer, target.Kind, now, tickSeconds);
+            layer.Row = target.Row;
+            layer.RowKey = target.RowKey;
+            layer.Content = target.Content;
+            carryFrom(normalized);
+            Log(log, now, l, AnimDecisionCause::ContentChanged, decision.Reason, layer);
+            break;
+        }
+        }
+        return entry;
+    }
+
+    struct LayerStep
+    {
+        const AnimBoundRig& Rig;
+        std::size_t Layer;
+        const AnimSelectorState* Selection;
+        const AnimPredicateInputs& Inputs;
+        const AnimRequest* Driving;
+        LayerEntry Entry;
+        bool Rebound;
+        bool Authority;
+        AnimTick Now;
+        double TickSeconds;
+        AnimDecisionLog* Log;
+    };
+
+    void AdvanceFlowLayer(const LayerStep& step, int flowIndex, AnimLayerContent& layer, AnimLayerFlow& flow,
+                          LayerRequestProgress& progress)
+    {
+        const AnimBoundBehavior* bound = step.Rig.FindBehavior(layer.Behavior);
+        const AnimBehaviorDecl* policy = bound != nullptr ? &bound->Policy : nullptr;
+        // A selector's latch says so; a request-keyed layer cancels when its request was
+        // cancelled and the behavior plays a cancel section.
+        const bool requestKeyed = step.Rig.Layers[step.Layer].Selector < 0;
+        const AnimRequest* driving = step.Driving;
+        const bool cancelling = requestKeyed
+            ? driving != nullptr && driving->IsCancelled() && policy != nullptr
+                && policy->Latch.OnRequestCancel == AnimRequestCancelAction::CancelSection
+            : step.Selection != nullptr && step.Selection->Layers[step.Layer].Latch == AnimLatchState::Cancelling;
+        const bool abortOnCancel =
+            requestKeyed && policy != nullptr && policy->Latch.OnRequestCancel == AnimRequestCancelAction::Abort;
+
+        AnimFlowAdvanceInput tick;
+        tick.Rig = &step.Rig;
+        tick.Flow = &step.Rig.Flows[static_cast<std::size_t>(flowIndex)];
+        tick.Inputs = &step.Inputs;
+        tick.Request = driving;
+        tick.Now = step.Now;
+        tick.TickSeconds = step.TickSeconds;
+        tick.Entered = step.Entry.Entered;
+        tick.Rebound = step.Rebound;
+        tick.Cancelling = cancelling;
+        tick.FollowsAnchor = !step.Authority;
+        const AnimFlowOutcome outcome =
+            AdvanceAnimFlow(tick, layer, flow, static_cast<std::uint8_t>(step.Layer), step.Log);
+        layer.ContentComplete = outcome.Complete;
+
+        // The authority anchors the flow's position on its request when it changes or a
+        // superseding request takes over; a cancelled request is kept while its flow plays it out.
+        if (driving == nullptr)
+            return;
+        if (outcome.KeepTail && !abortOnCancel)
+            progress.Tail = driving->Id;
+        if (step.Authority && (outcome.SectionChanged || step.Entry.Adopted))
+        {
+            progress.Anchored = layer.Request;
+            progress.AnchorSection = flow.Section;
+            progress.AnchorSectionStartTick = flow.SectionEnteredTick;
+        }
+    }
+
+    // Phase advances by the tick over the mix's current length, so the samples keep one
+    // phase however the weights move.
+    void AdvanceBlendspaceLayer(const LayerStep& step, int spaceIndex, std::span<const std::uint32_t> facts,
+                                AnimLayerContent& layer)
+    {
+        const AnimBoundRig& rig = step.Rig;
+        const AnimBoundBlendspace& space = rig.Blendspaces[static_cast<std::size_t>(spaceIndex)];
+        const AnimBlendspacePoint at = AnimBlendspaceCoordinates(space, facts, rig);
+        std::array<float, kAnimBlendspaceMaxSamples> weights{};
+        AnimBlendspaceWeights(space, at, weights);
+        const float duration = AnimBlendspaceDuration(rig, space, weights);
+        const float rate = PlaybackOf(rig, layer.Behavior).Rate;
+        const AnimBehaviorKind kind = KindOf(rig, layer.Behavior);
+        if (step.Entry.StartNormalized)
+            layer.Phase = *step.Entry.StartNormalized;
+        else if (duration > 0.0f)
+            layer.Phase += static_cast<float>(step.TickSeconds * rate / duration);
+        // The phase is a sum of per-tick steps, so the tick that reaches the end may
+        // land a rounding short of it; it counts as there.
+        constexpr float kEndSlack = 1e-5f;
+        if (kind == AnimBehaviorKind::Cyclic)
+        {
+            layer.Phase = std::max(layer.Phase - std::floor(layer.Phase + kEndSlack), 0.0f);
+            layer.ContentComplete = false;
+        }
+        else
+        {
+            layer.ContentComplete = rate > 0.0f ? layer.Phase >= 1.0f - kEndSlack
+                                  : rate < 0.0f ? layer.Phase <= kEndSlack
+                                                : false;
+            layer.Phase = layer.ContentComplete ? (rate > 0.0f ? 1.0f : 0.0f) : std::clamp(layer.Phase, 0.0f, 1.0f);
+        }
+        layer.Coordinates[0] = at[0];
+        layer.Coordinates[1] = at[1];
+        const int dominant = space.Samples[AnimBlendspaceDominant(space, weights)].Content;
+        layer.Clip = dominant >= 0 ? static_cast<std::uint16_t>(dominant) : kAnimNoContent;
+        layer.Playback = AnimPlayback{ .StartTick = layer.StartTick, .OffsetSeconds = 0.0f, .Rate = rate,
+                                       .DurationSeconds = duration, .Cyclic = IsCyclic(kind) };
+        layer.TimeSeconds = layer.Phase * duration;
+    }
+
+    void AdvanceClipLayer(const LayerStep& step, AnimLayerContent& layer)
+    {
+        const AnimBehaviorKind kind = KindOf(step.Rig, layer.Behavior);
+        layer.Clip = layer.Content;
+        layer.Playback.Rate = PlaybackOf(step.Rig, layer.Behavior).Rate;
+        layer.Playback.DurationSeconds = DurationOf(step.Rig, layer.Content);
+        layer.Playback.Cyclic = IsCyclic(kind);
+        if (layer.Content == kAnimNoContent || layer.Playback.DurationSeconds <= 0.0f)
+        {
+            // Nothing to play ends at once, so a latch on it cannot hold the layer.
+            layer.TimeSeconds = 0.0f;
+            layer.ContentComplete = layer.Behavior.IsValid() && kind != AnimBehaviorKind::Cyclic;
+            return;
+        }
+        layer.TimeSeconds = static_cast<float>(AnimPlaybackSeconds(layer.Playback, step.Now, step.TickSeconds));
+        layer.ContentComplete = AnimPlaybackEnded(layer.Playback, step.Now, step.TickSeconds);
+    }
+
+    // Closed over what a slot row resolves to: a flow, a blendspace or a clip.
+    void AdvanceLayerContent(const LayerStep& step, std::span<const std::uint32_t> facts, AnimLayerContent& layer,
+                             AnimFlowState* flows, LayerRequestProgress& progress)
+    {
+        const bool known = layer.Content < step.Rig.Contents.size();
+        const int flowIndex = known ? step.Rig.Contents[layer.Content].Flow : -1;
+        if (flowIndex >= 0 && flows != nullptr)
+        {
+            AdvanceFlowLayer(step, flowIndex, layer, flows->Layers[step.Layer], progress);
+            return;
+        }
+        if (flows != nullptr)
+            flows->Layers[step.Layer] = AnimLayerFlow{};
+        const int spaceIndex = known ? step.Rig.Contents[layer.Content].Blendspace : -1;
+        if (spaceIndex >= 0)
+            AdvanceBlendspaceLayer(step, spaceIndex, facts, layer);
+        else
+            AdvanceClipLayer(step, layer);
+    }
+
+    // The one place animation writes gameplay's request set.
+    void WriteAnimRequestProgress(World& world, EntityId entity, const AnimBoundRig& rig,
+                                  const AnimRequestProgress& progress, AnimTick now)
+    {
+        const bool any = progress.StampTiming
+            || std::ranges::any_of(progress.Layers, [](const LayerRequestProgress& layer) {
+                   return layer.Tail.IsValid() || layer.Anchored.IsValid();
+               });
+        AnimRequestSet* set = any ? world.TryGet<AnimRequestSet>(entity) : nullptr;
+        if (set == nullptr)
+            return;
+        if (progress.StampTiming)
+            set->RigTiming = rig.TimingIdentity;
+        for (const LayerRequestProgress& layer : progress.Layers)
+        {
+            if (layer.Tail.IsValid())
+                ExtendAnimRequestTail(*set, layer.Tail, now + 1);
+            if (!layer.Anchored.IsValid())
+                continue;
+            for (AnimRequest& request : set->Records)
+                if (request.Occupied && request.Id == layer.Anchored)
+                {
+                    request.AnchorSection = layer.AnchorSection;
+                    request.AnchorSectionStartTick = layer.AnchorSectionStartTick;
+                }
+        }
+    }
+
     // Driven by a layer's content, or read by the rule a layer runs.
     bool AnimRequestPlayed(const AnimBoundRig& rig, const AnimSelectorState* selection,
                            const AnimContentState& content, const AnimRequest& request)
@@ -199,26 +601,22 @@ namespace
         return false;
     }
 
-    void NoteAnimRequestsPlayed(const AnimBoundRig& rig, const AnimSelectorState* selection,
-                                const AnimRequestSet& requests, AnimTick now, AnimContentState& content)
+    bool Unowned(const World& world, const AnimRequest& request, AnimTick now)
     {
-        for (std::size_t slot = 0; slot < kAnimRequestCapacity; ++slot)
-        {
-            const AnimRequest& request = requests.Records[slot];
-            const std::uint32_t sequence = IsAnimRequestRetained(request, now) ? request.Id.Sequence : 0;
-            const auto bit = static_cast<std::uint8_t>(1u << slot);
-            if (content.RequestSeen[slot] != sequence)
-            {
-                if (content.RequestSeen[slot] != 0 && (content.RequestPlayed & bit) == 0)
-                    ++content.UnplayedRequests;
-                content.RequestSeen[slot] = sequence;
-                content.RequestPlayed = static_cast<std::uint8_t>(content.RequestPlayed & ~bit);
-            }
-            if (sequence != 0 && (content.RequestPlayed & bit) == 0
-                && AnimRequestPlayed(rig, selection, content, request))
-                content.RequestPlayed = static_cast<std::uint8_t>(content.RequestPlayed | bit);
-        }
+        if (request.Lifetime != AnimRequestLifetime::Held || !IsAnimRequestLive(request, now))
+            return false;
+        return (request.Id.Source.IsValid() && !world.IsAlive(request.Id.Source))
+            || (request.Owner.IsValid() && !world.IsAlive(request.Owner));
     }
+}
+
+GameplayTagId AnimLayerBehavior(const AnimBoundRig& rig, std::size_t layer, const AnimSelectorState* selection,
+                                const AnimRequestSet* requests, AnimTick now, const AnimLayerContent* playing)
+{
+    const AnimRequest* driving = rig.Layers[layer].Selector >= 0
+                                   ? nullptr
+                                   : AnimLayerDrivingRequest(rig, layer, selection, requests, now, playing);
+    return LayerBehavior(rig, layer, selection, driving);
 }
 
 void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
@@ -242,31 +640,9 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
     const bool rebound = content.BindingGeneration != rig.Generation;
     content.BindingGeneration = rig.Generation;
 
-    // The authority says which timing its requests were made under; a machine
-    // binding the rig differently cannot reconstruct them, and says so.
+    AnimRequestProgress progress;
     if (requests != nullptr)
-    {
-        if (authority)
-        {
-            if (requests->RigTiming != rig.TimingIdentity)
-                world.TryGet<AnimRequestSet>(entity)->RigTiming = rig.TimingIdentity;
-        }
-        else
-        {
-            const bool disagrees = requests->RigTiming != 0 && requests->RigTiming != rig.TimingIdentity;
-            if (disagrees != content.TimingDisagrees)
-            {
-                content.TimingDisagrees = disagrees;
-                if (log != nullptr)
-                {
-                    AnimDecisionRecord record;
-                    record.Tick = now;
-                    record.Cause = disagrees ? AnimDecisionCause::TimingDisagreed : AnimDecisionCause::TimingAgreed;
-                    log->Append(record);
-                }
-            }
-        }
-    }
+        NoteRigTiming(rig, *requests, authority, content, progress, now, log);
 
     for (std::size_t l = 0; l < rig.Layers.size() && l < kAnimMaxLayers; ++l)
     {
@@ -274,278 +650,97 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
         inputs.LayerBit = static_cast<std::uint8_t>(1u << l);
         inputs.BehaviorStartTick = selection != nullptr ? selection->Layers[l].WinnerStartTick : layer.StartTick;
 
-        // Indices from another binding follow their row's stable key; pinned
-        // content whose row is gone cannot stay pinned, and says so.
-        bool lostPin = false;
-        if (rebound && layer.Row != kAnimNoContent)
-        {
-            std::uint16_t remapped = kAnimNoContent;
-            for (std::size_t r = 0; r < rig.SlotRows.size(); ++r)
-                if (rig.SlotRows[r].Key == layer.RowKey)
-                    remapped = static_cast<std::uint16_t>(r);
-            if (remapped == kAnimNoContent)
-            {
-                lostPin = layer.Pinned;
-                layer.Pinned = false;
-                if (lostPin)
-                    Log(log, now, l, AnimDecisionCause::IndexReset, AnimChangeReason::Rebound, layer);
-            }
-            else
-            {
-                layer.Content = static_cast<std::uint16_t>(rig.SlotRows[remapped].Content);
-            }
-            layer.Row = remapped;
-        }
+        const bool lostPin = rebound && RemapLayerAfterRebind(rig, l, layer, now, log);
+        const LayerTarget target = ResolveLayerTarget(rig, l, selection, requests, inputs, layer, now);
+        const LayerInstanceDecision decision = DecideLayerInstance(rig, layer, target, lostPin, content.Reconstruct);
+        const LayerStep step{ .Rig = rig,
+                              .Layer = l,
+                              .Selection = selection,
+                              .Inputs = inputs,
+                              .Driving = target.Driving,
+                              .Entry = EnterLayerInstance(rig, l, layer, target, decision, now, tickSeconds, log),
+                              .Rebound = rebound,
+                              .Authority = authority,
+                              .Now = now,
+                              .TickSeconds = tickSeconds,
+                              .Log = log };
+        AdvanceLayerContent(step, facts, layer, flows, progress.Layers[l]);
+    }
+    WriteAnimRequestProgress(world, entity, rig, progress, now);
+    content.Reconstruct = false;
+}
 
-        const AnimRequest* driving = AnimLayerDrivingRequest(rig, l, selection, requests, now, &layer);
-        const GameplayTagId behavior = AnimLayerBehavior(rig, l, selection, requests, now, &layer);
-        const int row = ResolveAnimSlotRow(rig, behavior, inputs);
-        const std::uint16_t resolvedRow = row >= 0 ? static_cast<std::uint16_t>(row) : kAnimNoContent;
-        const std::uint16_t resolvedContent =
-            row >= 0 ? static_cast<std::uint16_t>(rig.SlotRows[static_cast<std::size_t>(row)].Content) : kAnimNoContent;
-        const AnimBehaviorKind kind = KindOf(rig, behavior);
-
-        // Content time starts where every machine can place it: the driving
-        // request's start, or the cancel that cut the last content short;
-        // otherwise this tick. See docs/gameplay/animation.md.
-        const AnimRequest* cutShort =
-            driving == nullptr && !layer.ContentComplete ? CancelledAnimRequest(requests, layer.Request) : nullptr;
-        const AnimTick instanceStart = driving != nullptr   ? std::min(driving->StartTick, now)
-                                     : cutShort != nullptr ? std::min(cutShort->CancelTick, now)
-                                                           : now;
-        // The outgoing content's normalized time: a blendspace's phase or clip time over length.
-        const auto outgoingNormalized = [&](AnimBehaviorKind outgoingKind) {
-            if (layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0)
-                return layer.Phase;
-            const float length = DurationOf(rig, layer.Content);
-            if (length <= 0.0f)
-                return 0.0f;
-            const double elapsed = static_cast<double>(layer.StartOffsetSeconds)
-                + static_cast<double>(now >= layer.StartTick ? now - layer.StartTick : 0) * tickSeconds
-                    * static_cast<double>(layer.ClipRate);
-            const double at = PlacedTime(elapsed, length, outgoingKind == AnimBehaviorKind::Cyclic);
-            return static_cast<float>(at / length);
-        };
-        // Set when content starts this tick: the normalized time it starts at.
-        std::optional<float> startNormalized;
-        const auto startInstance = [&](AnimChangeReason reason) {
-            layer.Behavior = behavior;
-            layer.Row = resolvedRow;
-            layer.RowKey = row >= 0 ? rig.SlotRows[static_cast<std::size_t>(row)].Key : 0;
-            layer.Content = resolvedContent;
-            layer.Request = driving != nullptr ? driving->Id : AnimRequestId{};
-            layer.RequestStartTick = driving != nullptr ? driving->StartTick : 0;
-            layer.StartTick = instanceStart;
-            layer.StartOffsetSeconds = PlaybackOf(rig, behavior).StartSeconds;
-            layer.Pinned = kind == AnimBehaviorKind::OneShot || kind == AnimBehaviorKind::Flow;
-            startNormalized = 0.0f;
-            Log(log, now, l, AnimDecisionCause::ContentChanged, reason, layer);
-        };
-
-        bool entered = false;
-        bool adopted = false;
-        if (content.Reconstruct && (driving != nullptr || layer.Request.IsValid()))
+bool NoteAnimRequestOutcomes(const World& world, EntityId entity, const AnimBoundRig& rig,
+                             const AnimSelectorState* selection, const AnimContentState& content, AnimTick now,
+                             AnimRequestReport& report, AnimDecisionLog* log)
+{
+    const AnimRequestSet* requests =
+        world.IsRegistered<AnimRequestSet>() ? world.TryGet<AnimRequestSet>(entity) : nullptr;
+    if (requests == nullptr)
+        return false;
+    const bool authority = IsSimulationAuthority(world);
+    bool orphaned = false;
+    for (std::size_t slot = 0; slot < kAnimRequestCapacity; ++slot)
+    {
+        const AnimRequest& request = requests->Records[slot];
+        const std::uint32_t sequence = IsAnimRequestRetained(request, now) ? request.Id.Sequence : 0;
+        const auto bit = static_cast<std::uint8_t>(1u << slot);
+        const auto clear = static_cast<std::uint8_t>(~bit);
+        if (report.Seen[slot] != sequence)
         {
-            startInstance(AnimChangeReason::Reconstructed);
-            entered = true;
+            if (report.Seen[slot] != 0 && (report.Played & bit) == 0)
+                ++report.Unplayed;
+            report.Seen[slot] = sequence;
+            report.Played &= clear;
+            report.Unowned &= clear;
+            report.Reported &= clear;
         }
-        else if (behavior != layer.Behavior || lostPin)
-        {
-            // Cyclic content in one sync group continues at the outgoing normalized time, so a
-            // walk becoming a run keeps its footfalls.
-            const AnimBoundBehavior* from = rig.FindBehavior(layer.Behavior);
-            const AnimBoundBehavior* to = rig.FindBehavior(behavior);
-            const bool carry = !lostPin && from != nullptr && to != nullptr
-                && rig.ResolveBlend(from->Tag, to->Tag).Phase == AnimPhasePolicy::Carry && to->SyncGroup.IsValid()
-                && to->SyncGroup == from->SyncGroup
-                && (from->Policy.Kind == AnimBehaviorKind::Cyclic || from->Policy.Kind == AnimBehaviorKind::Hold)
-                && (to->Policy.Kind == AnimBehaviorKind::Cyclic || to->Policy.Kind == AnimBehaviorKind::Hold);
-            const float normalized = carry ? outgoingNormalized(from->Policy.Kind) : 0.0f;
-            startInstance(lostPin ? AnimChangeReason::Rebound : AnimChangeReason::BehaviorChanged);
-            if (carry)
-            {
-                // From this tick, since the carried phase was reached now.
-                layer.StartTick = now;
-                layer.StartOffsetSeconds = normalized * DurationOf(rig, resolvedContent);
-                startNormalized = normalized;
-            }
-            entered = true;
-        }
-        else if (layer.Pinned && driving != nullptr && driving->Id != layer.Request)
-        {
-            // A superseding request: content it resolves differently starts
-            // over from the new request; the same content runs on under it.
-            if (resolvedRow != layer.Row)
-            {
-                startInstance(AnimChangeReason::RequestSuperseded);
-                entered = true;
-            }
-            else
-            {
-                layer.Request = driving->Id;
-                layer.RequestStartTick = driving->StartTick;
-                adopted = true;
-            }
-        }
-        else if (layer.Pinned && driving != nullptr && driving->Id == layer.Request
-                 && driving->StartTick != layer.RequestStartTick)
-        {
-            // Nothing is rewound: the instance restarts where the corrected request puts it,
-            // and the pose absorbs the jump like any other change.
-            startInstance(AnimChangeReason::RequestCorrected);
-            entered = true;
-        }
-        else if (resolvedRow != layer.Row && !layer.Pinned)
-        {
-            // Cyclic and hold content takes a new row now, at the same normalized time.
-            const float normalized = outgoingNormalized(kind);
-            layer.Row = resolvedRow;
-            layer.RowKey = row >= 0 ? rig.SlotRows[static_cast<std::size_t>(row)].Key : 0;
-            layer.Content = resolvedContent;
-            layer.StartTick = now;
-            layer.StartOffsetSeconds = normalized * DurationOf(rig, resolvedContent);
-            startNormalized = normalized;
-            Log(log, now, l, AnimDecisionCause::ContentChanged, AnimChangeReason::RowChanged, layer);
-        }
+        if (sequence == 0)
+            continue;
+        if ((report.Played & bit) == 0 && AnimRequestPlayed(rig, selection, content, request))
+            report.Played |= bit;
 
-        const int flowIndex = layer.Content < rig.Contents.size() ? rig.Contents[layer.Content].Flow : -1;
-        if (flowIndex >= 0 && flows != nullptr)
+        // Held requests end only when their producer says so; one that outlived its
+        // producer is that producer's bug, made visible rather than tidied away.
+        if (!authority || (report.Reported & bit) != 0 || !Unowned(world, request, now))
+            continue;
+        if ((report.Unowned & bit) == 0)
         {
-            const AnimBoundBehavior* bound = rig.FindBehavior(layer.Behavior);
-            const AnimBehaviorDecl* policy = bound != nullptr ? &bound->Policy : nullptr;
-            // A selector's latch says so; a request-keyed layer cancels when its request was
-            // cancelled and the behavior plays a cancel section.
-            const bool requestKeyed = rig.Layers[l].Selector < 0;
-            const bool cancelling = requestKeyed
-                ? driving != nullptr && driving->IsCancelled() && policy != nullptr
-                    && policy->Latch.OnRequestCancel == AnimRequestCancelAction::CancelSection
-                : selection != nullptr && selection->Layers[l].Latch == AnimLatchState::Cancelling;
-            const bool abortOnCancel = requestKeyed && policy != nullptr
-                && policy->Latch.OnRequestCancel == AnimRequestCancelAction::Abort;
-
-            AnimFlowAdvanceInput tick;
-            tick.Rig = &rig;
-            tick.Flow = &rig.Flows[static_cast<std::size_t>(flowIndex)];
-            tick.Inputs = &inputs;
-            tick.Request = driving;
-            tick.Now = now;
-            tick.TickSeconds = tickSeconds;
-            tick.Entered = entered;
-            tick.Cancelling = cancelling;
-            tick.FollowsAnchor = !authority;
-            const AnimFlowOutcome outcome =
-                AdvanceAnimFlow(tick, layer, flows->Layers[l], static_cast<std::uint8_t>(l), log);
-            layer.ContentComplete = outcome.Complete;
-
-            // The authority stamps the flow's position on its request when it changes or a
-            // superseding request takes over, and keeps a cancelled request while its flow plays it out.
-            const bool stamp = authority && (outcome.SectionChanged || adopted) && driving != nullptr;
-            const bool keepTail = outcome.KeepTail && !abortOnCancel && driving != nullptr;
-            if (stamp || keepTail)
-            {
-                if (AnimRequestSet* writable = world.TryGet<AnimRequestSet>(entity))
-                {
-                    if (keepTail)
-                        ExtendAnimRequestTail(*writable, driving->Id, now + 1);
-                    if (stamp)
-                        for (AnimRequest& request : writable->Records)
-                            if (request.Occupied && request.Id == layer.Request)
-                            {
-                                request.AnchorSection = flows->Layers[l].Section;
-                                request.AnchorSectionStartTick = flows->Layers[l].SectionStartTick;
-                            }
-                }
-            }
+            report.Unowned |= bit;
             continue;
         }
-
-        if (flows != nullptr)
-            flows->Layers[l] = AnimLayerFlow{};
-
-        const int spaceIndex = layer.Content < rig.Contents.size() ? rig.Contents[layer.Content].Blendspace : -1;
-        if (spaceIndex >= 0)
+        report.Reported |= bit;
+        ++report.Orphaned;
+        orphaned = true;
+        if (log != nullptr)
         {
-            // Phase advances by the tick over the mix's current length, so the samples keep one
-            // phase however the weights move.
-            const AnimBoundBlendspace& space = rig.Blendspaces[static_cast<std::size_t>(spaceIndex)];
-            const AnimBlendspacePoint at = AnimBlendspaceCoordinates(space, facts, rig);
-            std::array<float, kAnimBlendspaceMaxSamples> weights{};
-            AnimBlendspaceWeights(space, at, weights);
-            const float duration = AnimBlendspaceDuration(rig, space, weights);
-            const float rate = PlaybackOf(rig, layer.Behavior).Rate;
-            if (startNormalized)
-                layer.Phase = *startNormalized;
-            else if (duration > 0.0f)
-                layer.Phase += static_cast<float>(tickSeconds * rate / duration);
-            // The phase is a sum of per-tick steps, so the tick that reaches
-            // the end may land a rounding short of it; it counts as there.
-            constexpr float kEndSlack = 1e-5f;
-            if (kind == AnimBehaviorKind::Cyclic)
-            {
-                layer.Phase = std::max(layer.Phase - std::floor(layer.Phase + kEndSlack), 0.0f);
-                layer.ContentComplete = false;
-            }
-            else
-            {
-                layer.ContentComplete = rate > 0.0f ? layer.Phase >= 1.0f - kEndSlack
-                                      : rate < 0.0f ? layer.Phase <= kEndSlack
-                                                    : false;
-                layer.Phase = layer.ContentComplete ? (rate > 0.0f ? 1.0f : 0.0f) : std::clamp(layer.Phase, 0.0f, 1.0f);
-            }
-            layer.Coordinates[0] = at[0];
-            layer.Coordinates[1] = at[1];
-            const int dominant = space.Samples[AnimBlendspaceDominant(space, weights)].Content;
-            layer.Clip = dominant >= 0 ? static_cast<std::uint16_t>(dominant) : kAnimNoContent;
-            layer.ClipStartTick = layer.StartTick;
-            layer.ClipOffsetSeconds = 0.0f;
-            layer.ClipRate = rate;
-            layer.TimeSeconds = layer.Phase * duration;
-            continue;
-        }
-        const float rate = PlaybackOf(rig, layer.Behavior).Rate;
-        layer.Clip = layer.Content;
-        layer.ClipStartTick = layer.StartTick;
-        layer.ClipOffsetSeconds = layer.StartOffsetSeconds;
-        layer.ClipRate = rate;
-        const float duration = DurationOf(rig, layer.Content);
-        const double elapsed = static_cast<double>(layer.StartOffsetSeconds)
-            + static_cast<double>(now >= layer.StartTick ? now - layer.StartTick : 0) * tickSeconds
-                * static_cast<double>(rate);
-        if (layer.Content == kAnimNoContent || duration <= 0.0f)
-        {
-            layer.TimeSeconds = 0.0f;
-            layer.ContentComplete = layer.Content != kAnimNoContent && kind != AnimBehaviorKind::Cyclic;
-        }
-        else
-        {
-            const bool cyclic = kind == AnimBehaviorKind::Cyclic;
-            layer.TimeSeconds = static_cast<float>(PlacedTime(elapsed, duration, cyclic));
-            // Played forward it ends at its length, backward at its start;
-            // held, it does not end.
-            layer.ContentComplete = !cyclic
-                && (rate > 0.0f ? elapsed >= static_cast<double>(duration) : rate < 0.0f && elapsed <= 0.0);
+            AnimDecisionRecord record;
+            record.Tick = now;
+            record.Cause = AnimDecisionCause::RequestOrphaned;
+            record.Request = request.Id;
+            record.Intent = request.Intent;
+            log->Append(record);
         }
     }
-    if (requests != nullptr)
-        NoteAnimRequestsPlayed(rig, selection, *requests, now, content);
-    content.Reconstruct = false;
+    return orphaned;
 }
 
 void AnimContentSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    ResolveImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
+    ResolveImpl(ctx.Entities, &ctx.Partitions, AnimClockAt(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimContentSystem::Resolve(World& world, AnimTick now, double tickSeconds)
 {
-    ResolveImpl(world, nullptr, now, tickSeconds);
+    ResolveImpl(world, nullptr, AnimClock::Uniform(now), tickSeconds);
 }
 
-void AnimContentSystem::ResolveImpl(World& world, const StoragePartitionSet* partitions, AnimTick now,
+void AnimContentSystem::ResolveImpl(World& world, const StoragePartitionSet* partitions, const AnimClock& clock,
                                     double tickSeconds)
 {
     AnimRigBindings* bindings = world.TryGetResource<AnimRigBindings>();
-    if (bindings == nullptr || !world.IsRegistered<AnimRig>() || !world.IsRegistered<AnimContentState>())
+    if (bindings == nullptr || !world.IsRegistered<AnimRig>() || !world.IsRegistered<AnimContentState>()
+        || !world.IsRegistered<AnimRequestReport>())
         return;
     if (LastWorld != &world)
     {
@@ -560,12 +755,14 @@ void AnimContentSystem::ResolveImpl(World& world, const StoragePartitionSet* par
     const bool hasSelection = world.IsRegistered<AnimSelectorState>();
     const bool hasLog = world.IsRegistered<AnimDecisionLog>();
 
+    AnimRigRunCache resolver(*bindings, world);
     const auto visit = [&](auto& view) {
         const auto rigs = view.template Read<AnimRig>();
         auto contents = view.template Write<AnimContentState>();
+        auto reports = view.template Write<AnimRequestReport>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            const AnimBoundRig* rig = bindings->Resolve(rigs[i].Rig, world);
+            const AnimBoundRig* rig = resolver.Resolve(rigs[i].Rig);
             if (rig == nullptr || !rig->Valid || !ShouldRunAnimationLogic(PresentsPose, *rig))
                 continue;
             const EntityId entity = view.Entity(i);
@@ -578,7 +775,14 @@ void AnimContentSystem::ResolveImpl(World& world, const StoragePartitionSet* par
                 facts = std::span<const std::uint32_t>(large->Values, std::min(rig->Slots.size(), kAnimFactsLarge));
             const AnimSelectorState* selection = hasSelection ? reader.TryGet<AnimSelectorState>(entity) : nullptr;
             AnimDecisionLog* log = hasLog ? world.TryGet<AnimDecisionLog>(entity) : nullptr;
+            const AnimTick now = clock.For(entity);
             ResolveAnimEntity(world, entity, *rig, facts, selection, contents[i], now, tickSeconds, log);
+            if (NoteAnimRequestOutcomes(world, entity, *rig, selection, contents[i], now, reports[i], log)
+                && Logging != nullptr)
+                Logging->GetLogger<AnimContentSystem>().Warn(
+                    "'{}' holds an animation request whose producer ended without cancelling it; "
+                    "the producer owns a held request's lifetime (anim.risk counts them).",
+                    rig->RigPath);
         }
     };
     if (partitions != nullptr)

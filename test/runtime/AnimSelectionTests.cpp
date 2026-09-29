@@ -241,8 +241,8 @@ namespace
                   "hold_min_ms": 100, "cooldown_ms": 200 },
                 { "name": "rest", "priority": 0, "enter": [], "behavior": "Anim.Rest" } ] })");
             (void)Load("asset://anim/t.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-                { "behavior": "Anim.Burst", "clip": "asset://anim/burst.sanim" },
-                { "behavior": "Anim.Rest", "clip": "asset://anim/rest.sanim" } ] })");
+                { "id": "burst", "behavior": "Anim.Burst", "clip": "asset://anim/burst.sanim" },
+                { "id": "rest", "behavior": "Anim.Rest", "clip": "asset://anim/rest.sanim" } ] })");
             Rig = Load("asset://anim/t.rig.sdata", kAnimRigType, R"({
                 "facts": "asset://anim/t.facts.sdata", "behaviors": [ "asset://anim/t.behaviors.sdata" ],
                 "slot_maps": [ "asset://anim/t.slots.sdata" ],

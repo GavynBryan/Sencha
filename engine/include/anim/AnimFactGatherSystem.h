@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimClock.h>
 #include <anim/AnimFactProviders.h>
 #include <anim/AnimFacts.h>
 #include <anim/AnimRig.h>
@@ -8,20 +9,18 @@
 
 #include <cstdint>
 #include <optional>
-#include <unordered_set>
 
-class LoggingProvider;
 class StoragePartitionSet;
 struct FixedLogicContext;
 
 // Fills every animated entity's facts each fixed tick: providers, then the tagset
-// slot, then derivations in order. A rig that fails to bind or outgrows its storage
-// leaves the entity untouched and is logged once per binding generation.
+// slot, then derivations in order. Which entities carry facts, and whether they keep
+// derivation memory, is AnimRigCompositionSystem's to decide.
 class AnimFactGatherSystem
 {
 public:
-    explicit AnimFactGatherSystem(LoggingProvider* logging = nullptr, bool presentsPose = true)
-        : Logging(logging), PresentsPose(presentsPose)
+    explicit AnimFactGatherSystem(bool presentsPose = true)
+        : PresentsPose(presentsPose)
     {
     }
 
@@ -31,27 +30,23 @@ public:
     void Gather(World& world, AnimTick now, double tickSeconds);
 
 private:
-    void GatherImpl(World& world, const StoragePartitionSet* partitions, AnimTick now,
+    void GatherImpl(World& world, const StoragePartitionSet* partitions, const AnimClock& clock,
                     double tickSeconds);
-    [[nodiscard]] const AnimBoundRig* Bind(AnimRigBindings& bindings, DataAssetHandle rig,
-                                           const World& world);
 
-    LoggingProvider* Logging = nullptr;
     bool PresentsPose = true;
 
     const World* LastWorld = nullptr;
-    std::optional<Query<Read<AnimRig>, Write<AnimFacts>, Write<AnimFactHistory>>> SmallQuery;
-    std::optional<Query<Read<AnimRig>, Write<AnimFactsLarge>, Write<AnimFactHistory>>> LargeQuery;
-    // Binding generations already logged for diagnostics and for storage mismatch.
-    std::unordered_set<std::uint64_t> Reported;
-    std::unordered_set<std::uint64_t> ReportedCapacity;
+    std::optional<Query<Read<AnimRig>, Write<AnimFacts>, Write<AnimFactHistory>>> SmallKept;
+    std::optional<Query<Read<AnimRig>, Write<AnimFacts>, Without<AnimFactHistory>>> Small;
+    std::optional<Query<Read<AnimRig>, Write<AnimFactsLarge>, Write<AnimFactHistory>>> LargeKept;
+    std::optional<Query<Read<AnimRig>, Write<AnimFactsLarge>, Without<AnimFactHistory>>> Large;
 };
 
-// Shared with the preview.
+// Shared with the preview. `history` is null for a rig whose derivations keep no memory.
 void GatherAnimFacts(const World& world,
                      EntityId entity,
                      const AnimBoundRig& rig,
                      std::span<std::uint32_t> values,
-                     AnimFactHistory& history,
+                     AnimFactHistory* history,
                      AnimTick now,
                      double tickSeconds);

@@ -43,13 +43,16 @@ void ReplicationCodec<AnimRequestSet>::ToWire(const ReplicationWireContext& cont
         AnimRequestWireRecord& out = *records[i];
         out = AnimRequestWireRecord{};
         const AnimRequest& request = set.Records[i];
-        if (!request.Occupied)
+        // A prediction is this machine's guess: the image a delta lands on is the
+        // authority's alone, so a guess the delta does not touch cannot survive it.
+        if (!request.Occupied || request.Predicted)
             continue;
         out.Ticks.Values[0] = context.WireEntity(request.Id.Source);
         out.Ticks.Values[1] = request.StartTick;
         out.Ticks.Values[2] = request.CancelTick;
         out.Ticks.Values[3] = request.TailUntilTick;
         out.Ticks.Values[4] = request.AnchorSectionStartTick;
+        out.Ticks.Values[5] = request.Command;
         out.Words.Values[0] = request.Id.Sequence;
         out.Words.Values[1] = TagToWire(tags, request.Intent.Value);
         out.Words.Values[2] = TagToWire(tags, request.SourceTag.Value);
@@ -87,6 +90,7 @@ void ReplicationCodec<AnimRequestSet>::FromWire(const ReplicationWireContext& co
         request.CancelTick = in.Ticks.Values[2];
         request.TailUntilTick = in.Ticks.Values[3];
         request.AnchorSectionStartTick = in.Ticks.Values[4];
+        request.Command = in.Ticks.Values[5];
         request.Id.Sequence = in.Words.Values[0];
         request.Intent = GameplayTagId{ TagFromWire(tags, in.Words.Values[1]) };
         request.SourceTag = GameplayTagId{ TagFromWire(tags, in.Words.Values[2]) };

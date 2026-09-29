@@ -58,7 +58,7 @@ namespace
             Write("hero.behaviors.sdata", R"({ "type": "animation.behavior_set", "version": 1, "data": {
                 "behaviors": [ { "tag": "Anim.Idle", "kind": "cyclic" } ] } })");
             Write("hero.slots.sdata", R"({ "type": "animation.slot_map", "version": 1, "data": { "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" } ] } })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" } ] } })");
             Write("hero.rig.sdata", R"({ "type": "animation.rig", "version": 1, "data": {
                 "skeleton": "asset://anim/biped.sskel",
                 "behaviors": [ "asset://anim/hero.behaviors.sdata" ], "slot_maps": [ "asset://anim/hero.slots.sdata" ],

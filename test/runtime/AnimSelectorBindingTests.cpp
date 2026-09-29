@@ -108,10 +108,10 @@ TEST(AnimSelectorBinding, DelegationDeeperThanFourIsAnError)
     Selectors fx;
     for (int i = 1; i <= 4; ++i)
         (void)fx.Load(std::format("asset://anim/d{}.selector.sdata", i), kAnimSelectorType,
-                      i < 4 ? std::format(R"({{ "rules": [ {{ "enter": [], "delegate": "asset://anim/d{}.selector.sdata" }} ] }})", i + 1)
-                            : std::string(R"({ "rules": [ { "enter": [], "behavior": "Anim.Idle" } ] })"));
+                      i < 4 ? std::format(R"({{ "rules": [ {{ "name": "deeper", "enter": [], "delegate": "asset://anim/d{}.selector.sdata" }} ] }})", i + 1)
+                            : std::string(R"({ "rules": [ { "name": "idle", "enter": [], "behavior": "Anim.Idle" } ] })"));
     const DataAssetHandle rig =
-        fx.Rig(R"({ "rules": [ { "enter": [], "delegate": "asset://anim/d1.selector.sdata" } ] })");
+        fx.Rig(R"({ "rules": [ { "name": "delegate", "enter": [], "delegate": "asset://anim/d1.selector.sdata" } ] })");
     const AnimDiagnostic* depth = AnimRigFixture::FindCode(fx.Bound(rig), "anim.selector.depth");
     ASSERT_NE(depth, nullptr) << AnimRigFixture::Describe(fx.Bound(rig));
     EXPECT_EQ(depth->AssetPath, "asset://anim/d3.selector.sdata");
@@ -152,8 +152,9 @@ TEST(AnimSelectorBinding, CooldownsAreBoundedPerLayer)
     Selectors fx;
     std::string rules = R"({ "rules": [ )";
     for (int i = 0; i < 5; ++i)
-        rules += std::format(R"({}{{ "priority": {}, "enter": [], "behavior": "Anim.Idle", "cooldown_ms": 100 }})",
-                             i ? ", " : "", i);
+        rules += std::format(
+            R"({}{{ "name": "cooling {}", "priority": {}, "enter": [], "behavior": "Anim.Idle", "cooldown_ms": 100 }})",
+            i ? ", " : "", i, i);
     rules += " ] }";
     const DataAssetHandle rig = fx.Rig(rules);
     EXPECT_NE(AnimRigFixture::FindCode(fx.Bound(rig), "anim.selector.cooldowns"), nullptr);
@@ -183,6 +184,6 @@ TEST(AnimSelectorBinding, BehaviorPoliciesRejectImpossibleCombinations)
         { "tag": "Anim.Idle", "kind": "cyclic", "latch": { "mode": "until_complete" } } ] })"),
               "");
     EXPECT_NE(fx.CompileError(kAnimSelectorType, R"({ "rules": [
-        { "enter": [], "behavior": "Anim.Idle", "delegate": "asset://anim/x.selector.sdata" } ] })"),
+        { "name": "idle", "enter": [], "behavior": "Anim.Idle", "delegate": "asset://anim/x.selector.sdata" } ] })"),
               "");
 }

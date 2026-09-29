@@ -238,6 +238,8 @@ void AnimRigBinder::BindDerivation(const AnimDerivedFactDecl& decl, const std::s
         Out.HasTemporalDerivations = true;
         Out.HorizonMs = std::max(Out.HorizonMs, decl.WindowMs);
     }
+    if (decl.IsTemporal() || decl.Op == AnimDerivationOp::Hysteresis)
+        Out.DerivationsKeepMemory = true;
     Out.Derivations.push_back(derivation);
 }
 
@@ -250,7 +252,13 @@ void AnimRigBinder::BindProviders()
             continue;
         slot.Provider = providers->IndexOf(slot.Name);
         if (slot.Provider < 0)
+        {
+            Warning("anim.fact.unprovided", slot.DeclaredIn, slot.DeclaredAt + ".name",
+                    std::format("Nothing in this World provides '{}', so it keeps its first value until gameplay "
+                                "binds a provider (AnimFactProviders).",
+                                slot.Name));
             continue;
+        }
         const AnimFactKind provided = providers->At(slot.Provider).Kind;
         if (provided != slot.Kind)
         {
@@ -432,12 +440,14 @@ namespace
         binder.BindBlendOverrides(*rig);
         binder.BindSelectors(*rig);
         binder.BindSlotMaps(*rig);
+        binder.ValidateSlotCoverage(*rig);
         binder.ValidateFlows();
         binder.ValidateClipSkeletons();
         binder.BindEvents(*rig);
+        binder.ValidateBlendspaceGameplayEvents();
         bound.Valid = !HasAnimErrors(bound.Diagnostics);
         bound.DrivesGameplay = !bound.Valid || ReachesGameplay(bound);
-        bound.TimingIdentity = AnimRigTimingIdentity(bound, world.TryGetResource<GameplayTagRegistry>());
+        bound.TimingIdentity = AnimRigTimingIdentity(bound, clips, world.TryGetResource<GameplayTagRegistry>());
         return bound;
     }
 }
@@ -478,7 +488,9 @@ bool AnimRigBindings::IsCurrent(const Entry& entry, const World& world) const
 
 const AnimBoundRig* AnimRigBindings::Resolve(DataAssetHandle rig, const World& world)
 {
-    if (Data == nullptr || !rig.IsValid() || Data->GetSubtype(rig) != kAnimRigType)
+    // Not resident yet is quiet; resident as something else binds as an invalid rig
+    // that says so.
+    if (Data == nullptr || !rig.IsValid() || Data->GetRaw(rig) == nullptr)
         return nullptr;
 
     Entry& entry = Entries[rig.ToToken()];

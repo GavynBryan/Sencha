@@ -53,6 +53,7 @@ DefaultRenderPipeline::DefaultRenderPipeline(LoggingProvider* logging,
     : Log(logging ? &logging->GetLogger<DefaultRenderPipeline>() : nullptr)
     , Logging(logging)
     , Console(console)
+    , RenderExtractor(logging ? &logging->GetLogger<RenderExtractionSystem>() : nullptr)
 {
 }
 
@@ -61,12 +62,10 @@ void DefaultRenderPipeline::SetAssetStores(StaticMeshCache& meshes,
                                            MaterialSetCache& materialSets,
                                            TextureCache* textures,
                                            const SkinnedMeshCache* skinnedMeshes,
-                                           const AnimationClipCache* clips,
                                            const SkeletonCache* skeletons)
 {
     Meshes = &meshes;
     SkinnedMeshes = skinnedMeshes;
-    AnimationClips = clips;
     Skeletons = skeletons;
     Materials = &materials;
     MaterialSets = &materialSets;
@@ -239,7 +238,7 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
         RenderExtractor.Extract(
             world, ctx.Partitions,
             RenderExtractCaches{ *Meshes, *Materials, *MaterialSets, Textures,
-                                 SkinnedMeshes, AnimationClips, Skeletons },
+                                 SkinnedMeshes, Skeletons },
             Camera, Queue, ctx.Presentation.Alpha, SkinnedPoses.get());
         Queue.SortOpaque();
     }

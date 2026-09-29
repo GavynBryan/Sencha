@@ -109,10 +109,10 @@ namespace
                 { "name": "walk", "priority": 10, "enter": [ { "fact": "Speed", "compare": "gt", "value": 0.1 } ],
                   "behavior": "Anim.Walk" } ] })");
             (void)Load("asset://anim/p.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-                { "behavior": "Anim.Walk", "clip": "asset://anim/walk.sanim" },
-                { "behavior": "Anim.Rest", "clip": "asset://anim/rest.sanim" },
-                { "behavior": "anim.intent.wave", "clip": "asset://anim/wave.sanim" } ] })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+                { "id": "walk", "behavior": "Anim.Walk", "clip": "asset://anim/walk.sanim" },
+                { "id": "rest", "behavior": "Anim.Rest", "clip": "asset://anim/rest.sanim" },
+                { "id": "wave", "behavior": "anim.intent.wave", "clip": "asset://anim/wave.sanim" } ] })");
             std::string blendOverrides;
             if (!overrides.empty())
             {
@@ -131,7 +131,7 @@ namespace
             if (workers > 0)
                 Workers = std::make_unique<JobSystem>(workers);
             Poser = std::make_unique<AnimPoseSystem>(Workers.get());
-            Entity = Character(Rig);
+            Entity = DrawnCharacter(Rig);
         }
 
         // A one-second clip holding `joint` at `at`, every other joint at bind.
@@ -163,7 +163,7 @@ namespace
             const World& reader = Entities;
             const AnimPoseState* state = reader.TryGet<AnimPoseState>(entity);
             EXPECT_NE(state, nullptr);
-            const AnimPosePool::Slot* slot = Entities.GetResource<AnimPosePool>().Find(state->Slot);
+            const AnimPosePool::Slot* slot = Entities.GetResource<AnimPosePool>().Find(state->Slot, entity);
             EXPECT_NE(slot, nullptr);
             return *slot;
         }
@@ -188,6 +188,24 @@ TEST(AnimPose, ARiggedEntityIsPosedIntoItsSlotAndReleasesItOnDestroy)
     fx.Entities.DestroyEntity(fx.Entity);
     fx.Step();
     EXPECT_EQ(fx.Entities.GetResource<AnimPosePool>().LiveCount(), 0u);
+}
+
+// A slot is the entity's it was assigned to: a duplicate carrying its original's
+// pose state gets a slot of its own, and ending it leaves the original's alone.
+TEST(AnimPose, APoseSlotIsOnlyTheEntitysItWasAssignedTo)
+{
+    PoseFixture fx(R"({ "in": "snap" })");
+    fx.Step();
+    const World& reader = fx.Entities;
+    const EntityId duplicate = fx.DrawnCharacter(fx.Rig);
+    fx.Entities.AddComponent(duplicate, AnimPoseState{ *reader.TryGet<AnimPoseState>(fx.Entity) });
+    fx.Step();
+    EXPECT_NE(reader.TryGet<AnimPoseState>(duplicate)->Slot, reader.TryGet<AnimPoseState>(fx.Entity)->Slot);
+
+    fx.Entities.DestroyEntity(duplicate);
+    fx.Step();
+    EXPECT_EQ(fx.Entities.GetResource<AnimPosePool>().LiveCount(), 1u);
+    EXPECT_TRUE(fx.Pose(fx.Entity).HasCurrent);
 }
 
 TEST(AnimPose, ASnapTakesTheNewPoseAtOnce)
@@ -308,7 +326,7 @@ TEST(AnimPose, TheParallelPassMatchesTheSerialOne)
         PoseFixture fx(kBlend, workers);
         std::vector<EntityId> crowd{ fx.Entity };
         for (int i = 0; i < 47; ++i)
-            crowd.push_back(fx.Character(fx.Rig));
+            crowd.push_back(fx.DrawnCharacter(fx.Rig));
         std::vector<std::vector<Transform3f>> poses;
         for (int tick = 0; tick < 90; ++tick)
         {

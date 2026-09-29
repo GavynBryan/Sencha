@@ -5,6 +5,7 @@
 
 #include <anim/AnimFactEvaluation.h>
 #include <anim/AnimFactGatherSystem.h>
+#include <anim/AnimRigCompositionSystem.h>
 #include <anim/AnimFactProviders.h>
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimationRegistration.h>
@@ -580,18 +581,15 @@ TEST(AnimFactGather, FillsProvidedSlotsThenDerives)
 
     const EntityId character = fx.Entities.CreateEntity();
     fx.Entities.AddComponent(character, AnimRig{ rig });
-    fx.Entities.AddComponent(character, AnimFacts{});
     fx.Entities.AddComponent(character, Stable());
     fx.Entities.AddComponent(character, KinematicState{ .Velocity = Vec3d(3.0f, -2.0f, 4.0f) });
 
-    // A Prop: a rig and nothing to gather into.
-    const EntityId prop = fx.Entities.CreateEntity();
-    fx.Entities.AddComponent(prop, AnimRig{ rig });
-
-    // The tier's storage brings what it cannot work without.
-    EXPECT_NE(fx.Entities.TryGet<AnimFactHistory>(character), nullptr);
-    EXPECT_NE(fx.Entities.TryGet<AnimRequestSet>(prop), nullptr);
-    EXPECT_EQ(fx.Entities.TryGet<AnimFactHistory>(prop), nullptr);
+    // The rig says what the entity carries: facts to gather into, and no history,
+    // since a comparison remembers nothing.
+    AnimRigCompositionSystem composition(true);
+    composition.Compose(fx.Entities);
+    ASSERT_NE(fx.Entities.TryGet<AnimFacts>(character), nullptr);
+    EXPECT_EQ(fx.Entities.TryGet<AnimFactHistory>(character), nullptr);
 
     AnimFactGatherSystem gather;
     gather.Gather(fx.Entities, 3, kTick);
@@ -604,38 +602,7 @@ TEST(AnimFactGather, FillsProvidedSlotsThenDerives)
     EXPECT_TRUE(AnimFactToBool(at("Grounded")));
     EXPECT_FLOAT_EQ(AnimFactToFloat(at("Speed")), 5.0f);
     EXPECT_FLOAT_EQ(AnimFactToFloat(at("VerticalSpeed")), -2.0f);
-    EXPECT_FALSE(AnimFactToBool(at("Dead"))); // unbound: keeps its value
     EXPECT_TRUE(AnimFactToBool(at("Falling")));
-    EXPECT_EQ(fx.Entities.TryGet<AnimFactHistory>(character)->ObservedSinceTick, 3u);
-}
-
-TEST(AnimFactGather, StorageNarrowerThanTheLayoutIsLeftAlone)
-{
-    AnimFixture fx;
-    std::string slots;
-    for (int i = 0; i < 14; ++i)
-        slots += std::format(R"({}{{ "name": "Extra{}", "kind": "float" }})", i ? "," : "", i);
-    const DataAssetHandle rig = fx.Rig(
-        std::format(R"({{ "extends": "asset://animation/engine.facts.sdata", "slots": [ {} ] }})",
-                    slots),
-        R"("fact_capacity": "large",)");
-    ASSERT_TRUE(BindMovementAnimFacts(fx.Entities.GetResource<AnimFactProviders>()));
-
-    const EntityId small = fx.Entities.CreateEntity();
-    fx.Entities.AddComponent(small, AnimRig{ rig });
-    fx.Entities.AddComponent(small, AnimFacts{});
-    fx.Entities.AddComponent(small, Stable());
-    const EntityId large = fx.Entities.CreateEntity();
-    fx.Entities.AddComponent(large, AnimRig{ rig });
-    fx.Entities.AddComponent(large, AnimFactsLarge{});
-    fx.Entities.AddComponent(large, Stable());
-
-    AnimFactGatherSystem gather;
-    gather.Gather(fx.Entities, 0, kTick);
-
-    EXPECT_EQ(fx.Bound(rig).Slots.size(), 18u);
-    EXPECT_EQ(fx.Entities.TryGet<AnimFacts>(small)->Values[0], 0u);
-    EXPECT_EQ(fx.Entities.TryGet<AnimFactsLarge>(large)->Values[0], 1u);
 }
 
 TEST(AnimFactGather, AnInvalidRigGathersNothing)
@@ -654,5 +621,4 @@ TEST(AnimFactGather, AnInvalidRigGathersNothing)
     AnimFactGatherSystem gather;
     gather.Gather(fx.Entities, 0, kTick);
     EXPECT_EQ(fx.Entities.TryGet<AnimFacts>(character)->Values[0], 0u);
-    EXPECT_EQ(fx.Entities.TryGet<AnimFactHistory>(character)->ObservedSinceTick, kAnimNoTick);
 }

@@ -167,7 +167,9 @@ AnimationRigPlan PlanAnimationRig(const AnimationRigRecipe& recipe, const Animat
         if (selects && action)
             decl.emplace_back("latch", Object({ { "mode", JsonValue("until_complete") } }));
         behaviorDecls.emplace_back(std::move(decl));
-        rows.emplace_back(Object({ { "behavior", JsonValue(behaviors[i]) }, { "clip", JsonValue(recipe.Clips[i]) } }));
+        // One row per behavior, so the behavior names its row.
+        rows.emplace_back(Object({ { "id", JsonValue(behaviors[i]) }, { "behavior", JsonValue(behaviors[i]) },
+                                   { "clip", JsonValue(recipe.Clips[i]) } }));
         if (action)
             intents.emplace_back(Object({ { "intent", JsonValue(behaviors[i]) },
                                           { "params", JsonValue(JsonValue::Array{}) } }));

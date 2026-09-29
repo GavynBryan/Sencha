@@ -75,7 +75,7 @@ namespace
             Write("hero.behaviors.sdata", R"({ "type": "animation.behavior_set", "version": 1, "data": {
                 "behaviors": [ { "tag": "Anim.Walk", "kind": "cyclic" } ] } })");
             Write("hero.slots.sdata", R"({ "type": "animation.slot_map", "version": 1, "data": { "rows": [
-                { "behavior": "Anim.Walk", "clip": "asset://anim/hero.glb#anim:Walk" } ] } })");
+                { "id": "walk", "behavior": "Anim.Walk", "clip": "asset://anim/hero.glb#anim:Walk" } ] } })");
             Write("hero.rig.sdata", R"({ "type": "animation.rig", "version": 1, "data": {
                 "behaviors": [ "asset://anim/hero.behaviors.sdata" ], "slot_maps": [ "asset://anim/hero.slots.sdata" ],
                 "bindings": [ "asset://anim/hero.bindings.sdata" ],

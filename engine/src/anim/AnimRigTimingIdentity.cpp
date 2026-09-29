@@ -1,6 +1,7 @@
 #include <anim/AnimRigTimingIdentity.h>
 
 #include <anim/AnimRigBinding.h>
+#include <anim/AnimationClipCache.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <cstring>
@@ -8,6 +9,8 @@
 
 namespace
 {
+    // FNV-1a, kept here rather than on core/hash/Fnv1a.h: machines compare this
+    // identity, so it owns its construction, as the cooked scene format does.
     struct Hasher
     {
         const AnimBoundRig& Rig;
@@ -87,7 +90,8 @@ namespace
     };
 }
 
-std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const GameplayTagRegistry* tags)
+std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const AnimationClipCache* clips,
+                                    const GameplayTagRegistry* tags)
 {
     Hasher h{ rig, tags };
 
@@ -148,6 +152,7 @@ std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const GameplayTagRe
         h.Plain(behavior.Policy.LateJoin);
         h.Plain(behavior.Policy.Rate);
         h.Plain(behavior.Policy.StartSeconds);
+        h.Plain(behavior.Policy.RootMotion);
         h.Event(behavior.Entered);
         h.Event(behavior.Exited);
     }
@@ -180,6 +185,15 @@ std::uint64_t AnimRigTimingIdentity(const AnimBoundRig& rig, const GameplayTagRe
     for (const AnimBoundContent& content : rig.Contents)
     {
         h.Plain(content.DurationSeconds);
+        // What carries a character is timing two machines must agree on.
+        const AnimationClipData* clip = clips != nullptr && content.Clip.IsValid() ? clips->Get(content.Clip) : nullptr;
+        const bool carries = clip != nullptr && clip->Root.has_value();
+        h.Plain(carries);
+        if (carries)
+        {
+            h.Bytes(clip->Root->TimesSeconds.data(), clip->Root->TimesSeconds.size() * sizeof(float));
+            h.Bytes(clip->Root->Values.data(), clip->Root->Values.size() * sizeof(float));
+        }
         h.Plain(content.Flow);
         h.Plain(content.Blendspace);
         for (const AnimBoundEvent& event : content.Events)

@@ -34,9 +34,12 @@ and no transition graph.
 - **Root motion** is a curve inside the clip. `RootMotionSystem` reads it
   through `RootMotionSource`, so movement moves the character, not animation.
 
-Each fixed tick runs gather, select, content resolution (`AnimContentSystem`)
-and events, in that order; root motion follows content resolution, and the pose
-is composed from what content resolution settled.
+Every host registers the animation systems: an entity that names a rig plays
+it, in a process whose game registered nothing for it. Each fixed tick runs
+composition, gather, select, content resolution (`AnimContentSystem`) and
+events, in that order; root motion follows content resolution, and the pose is
+composed from what content resolution settled. Movement and the ability kit
+declare their edges to these whichever registers second.
 
 ## Content
 
@@ -61,23 +64,40 @@ when content is published, in asset-path order, before anything binds. A name
 nothing declares fails the binding with a diagnostic rather than becoming a
 new tag.
 
-### Tiers
+### Taking part
 
-A tier is which components an entity carries, not a type:
+An entity takes part by naming its rig, `AnimRig`, and nothing else. `AnimRig`
+brings what every rig needs, each part with one writer: `AnimRequestSet` (its
+producers'), `AnimContentState` (content resolution's), `AnimEventCursor` (what
+the event system last crossed) and `AnimRequestReport` (what became of the
+requests, for `anim.risk` and the editor; nothing that plays reads it). Everything else is the rig's to say: `AnimRigCompositionSystem`,
+first in the tick, composes each rigged entity to what its binding needs and is
+the only thing that adds or removes these parts.
 
-- **Prop**: `AnimRig`, which brings `AnimRequestSet`, `AnimContentState` and
-  `AnimFlowState`. Requests alone choose what plays.
-- **Simple**: a Prop plus `AnimFacts`, which brings `AnimFactHistory` and
-  `AnimSelectorState`, so selectors run.
-- **Character**: `AnimFactsLarge` instead, usually with `AnimDecisionLog`.
+| Part | Carried when the rig |
+| --- | --- |
+| `AnimFacts` or `AnimFactsLarge` | declares facts, at the capacity its `fact_capacity` names |
+| `AnimFactHistory` | has a derivation that keeps memory (a temporal op, or hysteresis) |
+| `AnimSelectorState` | has a layer with a selector |
+| `AnimFlowState` | plays a flow |
+| `AnimPoseState` | has a skeleton, the machine presents a pose, and something consumes it |
 
-Measured per-entity footprints are 2000, 3648 and 8456 bytes, the last
-including a decision log (`AnimWorldReport.FootprintsAreTheComponentsEachTierCarries`
-records them). A clip played on its own is a one-layer rig whose behavior sets
-its speed and start; the animation editor's Migration panel converts scenes
-that still name the clip player component.
+A pose consumer carries `AnimPoseConsumer`; `SkinnedMesh` brings it, so a skinned
+mesh beside a rig is posed and a rig nobody draws is not. A rig still loading,
+or one that fails to bind, leaves what the entity carries alone until it binds.
+A reload that changes what a rig needs recomposes its entities, and an entity
+whose rig is removed loses what the rig brought. Swapping one rig for another
+is removing `AnimRig` and adding the new one: assigning `AnimRig::Rig` in place
+keeps the old rig's asset lease, as for any asset-owning component. A rig a machine skips (below)
+needs nothing beyond what every rig has.
 
-The rig does not declare its tier: a rig without a fact schema is a Prop rig.
+What the rig carries is what an entity costs: every rig carries 2,334 bytes,
+and the fixture's character rig (small facts, history, selection) 3,982, before a
+decision log (`AnimWorldReport.FootprintsAreTheComponentsARigComposes` records
+them). A clip played on its own is a
+one-layer rig whose behavior sets its speed and start; the animation editor's
+Migration panel converts scenes that still name the clip player component.
+
 Capacities (layers, requests, request parameters, fact slots, cooldown slots)
 are architecture rather than tuning. Per-entity state is arrays of known size,
 so a rig that needs more has to be restructured, not a constant raised.
@@ -92,15 +112,16 @@ records the proof and `ShouldRunAnimationLogic` is the one test the systems make
 
 A rig drives gameplay when it plays a flow (the authority stamps section anchors
 late joiners reconstruct from), has a root-motion behavior, or carries a
-Gameplay-scope clip event or lifecycle binding. Anything the binding cannot see
-into counts the same way: an invalid rig, or a clip that is not loaded and so
-has unknown events. A false positive costs animation work; a false negative
-would silence gameplay, so uncertainty runs the rig. The flag is rederived on
-every rebind, so a rig moves between the two as its content changes.
+Gameplay-scope clip event or lifecycle binding. A false positive costs animation
+work; a false negative would silence gameplay. A rig that is still loading, or
+fails to bind, runs nothing on any machine; once it binds, marks it passed while
+unbound are skipped (see "Playback time"). The flag is rederived on every
+rebind, so a rig moves between the two as its content changes, and composition
+follows it.
 
 Root motion needs facts, selection and content resolution, since
-`SampleAnimRootMotion` reads the base layer's resolved content or its request;
-the movement-side `RootMotionSystem` always runs. A root-motion rig is never
+`SampleAnimRootMotion` reads the first layer's requests and the content they
+resolved; the movement-side `RootMotionSystem` always runs. A root-motion rig is never
 skipped, so a headless authority carries its character. Cosmetic rigs also skip
 the authority's timing stamp, which only lets a client flag a timing mismatch.
 The skip roughly halves a headless tick over cosmetic props (see Measurements);
@@ -119,12 +140,19 @@ addressed by the indices the binding produces.
 
 Every problem with the content is a located `AnimDiagnostic`. A rig with an
 error binds as invalid, and its entities gather nothing rather than run half a
-layout. The binding is derived state: it is rebuilt when an asset it read
+layout. `AnimRigCompositionSystem` logs a rig's diagnostics once per binding
+generation, whatever tier its entities are, so a prop's broken rig is heard as
+surely as a character's. Among the warnings: a fact slot nothing in the World
+provides (`anim.fact.unprovided`, which reads its first value until a provider is
+bound), and a behavior a rule or an idle can select that no slot row plays
+(`anim.slot.no_row`). A rig handle that names another kind of asset binds as an
+invalid rig that says so (`anim.asset.wrong_subtype`). The binding is derived state: it is rebuilt when an asset it read
 reloads, a clip it plays is replaced in place, the tag vocabulary grows, a fact
 provider is bound, the verb catalog changes, or the blend override cap
 changes. No component holds a pointer into it: per-entity state records the
-binding generation it was taken against, and remaps by stable key or resets
-when that generation moves.
+binding generation it was taken against, and remaps by authored identity (a
+rule's name, a row's id, a section's tag) or resets when that generation moves.
+Nothing is remapped by position.
 
 ## Facts
 
@@ -153,7 +181,9 @@ not an override. Assets hold names only; slot indices and tag ids belong to
 the binding.
 
 Gameplay values reach fact slots through `AnimFactProviders`, a World resource
-binding a slot name to a plain function over a const World. Adding an
+binding a slot name to a plain function over a const World. The runtime binds
+movement's (`BindMovementAnimFacts`: `Grounded`, `Speed`, `VerticalSpeed`, the
+engine schema's slots) in every host; a game binds its own. Adding an
 animation-relevant value is one `Bind` or `BindField` call in game code, with
 no engine edit, and gathering is a call per slot per entity with no allocation
 and no virtual dispatch. A provider must produce the same value on a server
@@ -178,7 +208,13 @@ like a message back to gameplay is a verb travelling the wrong direction.
 
 The set changes only through `IssueAnimRequest` and `CancelAnimRequest`
 (`AnimRequests.h`), so an ability, a preview scenario and a replicated snapshot
-all get the same outcome for the same inputs:
+all get the same outcome for the same inputs. Producers reach them through one
+door, `RequestAnimation` and `CancelAnimation` (`AnimRequestJournal.h`): the
+authority issues on the tick the animated entity is simulating, a client predicts
+only for the entity it predicts, and cancels are the authority's. The ability
+kit asks through it (`docs/gameplay/abilitykit.md`, "Animation"), and so do the
+engine's authored verbs `anim.request` and `anim.cancel`, for level logic,
+scripted gameplay, AI and props. The rules:
 
 - expired Fixed and Impulse records, and cancelled records whose tail has
   ended, are pruned before any insert;
@@ -187,7 +223,21 @@ all get the same outcome for the same inputs:
 - an Impulse is deduplicated per source, intent and tick, and never supersedes
   anything;
 - with every record occupied the new request is rejected. Nothing is evicted,
-  so server and client decide identically.
+  so server and client decide identically;
+- a prediction supersedes and deduplicates only against predictions: it never
+  takes the place of a record the authority wrote.
+
+A record carries `Command`, the command whose processing issued it, which is
+what a prediction and the authority's record of the same request are matched
+by. Two fields stay on the machine that issued it: `Owner`, the entity whose
+lifetime bounds a Held request, and `Cause`, the invocation that asked for it,
+which becomes the parent of every event the request plays.
+
+A Held request is its producer's to end. Animation never ends one for it: a held
+request still held a pass after its source or owner ended -- the producer's pass
+to let go -- is reported once as orphaned (the decision log's `RequestOrphaned`,
+`AnimRequestReport::Orphaned`, `anim.risk`, and a warning) and stays
+held.
 
 The rules are pure over the component data. The World overloads find the
 components, validate the intent against the entity's rig and write the
@@ -269,8 +319,18 @@ The request driving a layer (`AnimLayerDrivingRequest`) is found this way:
 `AnimContentState` records what each layer plays: the behavior, the slot row
 that resolved it, the content, and where in it. Content is an index into the
 bound rig's content table, never an asset handle, since the rig's slot maps
-hold the clips. A row is named by index and by stable key, so a reload can tell
-whether pinned content still exists.
+hold the clips. A row is named by index and by its authored id, so a reload can
+tell whether pinned content still exists; a row that is gone takes its content
+with it.
+
+Resolution runs in named steps per layer (`AnimContentSystem.cpp`): remap after
+a rebind, resolve what the tick asks the layer to play, decide whether the
+instance starts, carries, is adopted by a superseding request or changes row,
+then advance it by what the row resolved to (flow, blendspace or clip). What
+resolution writes back into the request set (the authority's timing stamp and
+flow anchors, and the tail that keeps a cancelled request while its flow plays
+out) is collected across the layers and written in one place after them all,
+so every layer reads the set as the tick found it.
 
 `ContentComplete` is the one value selection reads back. It is published after
 content resolution and read by the next tick's selection: the only read
@@ -279,7 +339,10 @@ against the dependency order, and never a fact.
 ## Slot maps and blend overrides
 
 A slot map is one rig's answer to "what plays for this behavior": ordered rows
-of a behavior tag, a predicate over facts, and content. Resolution is first
+of an authored `id`, a behavior tag, a predicate over facts, and content. The id
+is the row's identity, unique in its map: what plays stays on its row across a
+reload that adds, removes or reorders rows, and a row's position means nothing.
+A selector's rules are named the same way, each `name` unique in its selector. Resolution is first
 match, memoryless and runs every tick, so content can change under a stable
 behavior, as a reload becomes a shotgun reload when the weapon fact says so. A
 rig stacks slot maps, a base map then overlays. Rows merge by priority, higher
@@ -315,8 +378,10 @@ moves to the next section, unless the section ends the flow. Past the last
 section, or at the end of the cancel section, the flow is complete and holds
 its final pose. An immediate cancel goes to the cancel section at once.
 
-`AnimFlowState` remembers only the section, the tick it began, the loop count
-and whether the flow is complete. Which flow plays, and the clip its section
+`AnimFlowState` remembers only the section (by index and by tag), the tick it
+began, the loop count and whether the flow is complete. After a rebind the
+playing section follows its tag, keeping where it was; a flow whose section is
+gone starts again and records why. Which flow plays, and the clip its section
 plays, are the layer's content. The runner never writes a request: the
 authority's anchor and the tail that keeps a cancelled request for a late
 joiner are returned for the caller to apply.
@@ -335,6 +400,37 @@ normalized. On one axis that is linear interpolation between neighbours; on
 two it covers any layout without a triangulation, and a point on a sample
 gives that sample alone.
 
+## Playback time
+
+Where a clip is on a tick, and which of its marks a stretch of ticks crosses, is
+one mechanism, `AnimPlayback` (`AnimPlayback.h`): a start tick, the clip seconds
+at it, a rate, the clip's length and whether it wraps. Content resolution, flows,
+the event pass, the pose pass and root motion all read clip time through it, so
+a section ends, a one-shot completes and a mark is crossed on the same tick
+everywhere.
+
+A clip ends on the first tick at or past its length, and never the tick it
+began, so a sequence always moves forward. What an event pass crosses at tick
+`now` follows from how far it had crossed before:
+
+- a pass plays only the stretch of the tick before `now`;
+- a repeated or earlier `now`, which a client's estimate of the authority's clock
+  can produce, crosses nothing;
+- ticks no pass saw -- a dormant zone, a rig bound late -- are skipped, and
+  their marks recorded as Skipped at every scope, gameplay included, on every
+  machine;
+- an instance first seen more than a tick after it began (a late joiner, a
+  corrected or reconstructed request, a flow following an anchor) is skipped up
+  to the tick before;
+- an instance that carries another's phase (a sync-group carry, a row change)
+  plays the tick leading up to it, so a footstep on that tick is the new row's;
+- a flow section that ends, or loops, is played to its end before the next
+  begins, so a mark at a section's last instant is crossed.
+
+Content time itself is a function of ticks, so a zone that wakes shows its
+content where the ticks put it, not where it stopped; only the marks it passed
+while asleep are skipped.
+
 ## Events
 
 After content resolution each layer's content time has advanced by one tick,
@@ -347,12 +443,24 @@ lifecycle events they declare; a flow that changed section does the same for
 its sections.
 
 Collection and dispatch are separate passes. `CollectAnimEvents` reads content
-state and appends fixed-size `AnimPendingEvent` records that name an event by
+state, keeps what it last crossed in the entity's `AnimEventCursor`, and appends fixed-size `AnimPendingEvent` records that name an event by
 rig, content and index; it never calls a verb. `DrainAnimEvents` runs on the
-owner thread, resolves each record's binding by key in the rig's current
-binding set, and offers it through the dispatcher. Every crossing is recorded
-in the decision log, fired with its admission, skipped, or below weight, so an
-event that did nothing says why.
+owner thread, gameplay events first, resolves each record's binding by key in
+the rig's current binding set, and offers it through the dispatcher. Every
+crossing is recorded in the decision log, fired with its admission, skipped, or
+below weight, so an event that did nothing says why.
+
+Gameplay and cosmetic events queue apart, each bounded by its own capacity
+(`anim.events.gameplay_capacity`, `anim.events.cosmetic_capacity`), so however
+much cosmetic traffic a tick carries it cannot take a gameplay event's place. A
+crossing past its queue's room is refused and counted; a gameplay refusal is
+also logged as an error when an overflow starts.
+
+An invocation's `Producer` is the animated entity, its `Instigator` the source
+of the request driving what played -- for an exit, the request that drove what
+was left -- and its `Parent` that request's `Cause`. A blendspace plays its
+heaviest sample's marks, so binding requires its samples to share one gameplay
+event track: the weights never decide what gameplay hears.
 
 Scope gates production, not authority. A gameplay event is produced only in a
 World with simulation authority, a cosmetic one only where a pose is
@@ -404,22 +512,28 @@ A root curve is data, and content time is a function of a request's start
 tick, so the motion between two content times is the same on every machine and
 every replay of the same ticks. Movement applies it; animation moves nothing.
 
-An entity is carried while its base layer plays a behavior flagged
-`root_motion` whose clip has a root curve. The motion on a tick is the curve
+An entity is carried while a request for a behavior flagged `root_motion`,
+whose clip has a root curve, is live on the rig's first layer. The motion on a tick is the curve
 between that tick's content time and the previous tick's, turned into the
-character's facing. On a request-keyed base layer, what played on a tick
-follows from the request records alone, each carrying its start and cancel
-ticks, so a replayed tick is carried as the authority carried it, through a
-cancel or a corrected start. A selector's base layer is carried by what it
-plays now: selection is state, and a replay across a selection change is
-carried by the newer choice. While carried, the character goes nowhere else
+character's facing. What carried the character on a tick follows from
+the request records alone, each carrying its start and cancel ticks, so a
+replayed tick is carried as the authority carried it, through a cancel or a
+corrected start. On a request-keyed layer the request names the behavior; on a
+selector's layer the rule that reads the request does, which binding requires
+of every behavior that carries. Root motion follows its request: a move whose
+request ends stops carrying even if its content plays on under a latch. While carried, the character goes nowhere else
 across the ground even when the curve is still, so a mantle's first frames
 hold it in place.
 
 ## Timing across machines
 
-What plays is the same on every machine; when it started must be too. Content
-time runs from:
+What plays is the same on every machine; when it started must be too. An
+entity's ticks are named by `SimulationTickOf` (`world/SimulationTimeline.h`):
+the entity a client predicts on the command timeline its commands are stamped in
+(`PredictedSimulation`, which the host publishes), so what it does on a tick --
+its selection, content, events, pose and root motion, live and replayed -- is
+what the authority does on the tick of that name; every other entity on the
+estimate of the authority's present. Content time runs from:
 
 1. the start tick of the request driving it, which a late joiner also sees;
 2. the cancel tick of a request whose content was cut short by that cancel,
@@ -448,25 +562,35 @@ zeros. A source this machine was never sent arrives as no entity and an intent
 this build does not register as no tag; the record stays, still ordered and
 retained, and matches no rule.
 
-A client predicts only issuing, through `AnimRequestJournal`. On the authority,
-or with no session, a request is simply issued; on a client it is issued as a
-prediction and remembered with the command whose processing issues it for
-real. A snapshot replaces the set with the authority's, wiping every
-prediction. After each one, `Reconcile` forgets what the authority has decided
-(every prediction whose command it processed, whether it kept or refused the
-request), removes that prediction from the set if the snapshot did not, and
-issues what is still undecided again on top. Nothing in animation is rewound:
-content follows the set it is given, and a corrected start restarts content
-where the authority put it. Cancels, anchors and tails are the authority's.
+A client predicts only issuing, through `AnimRequestJournal`, and only for the
+entity it predicts. A prediction is a local record the wire never carries: the
+image a snapshot's delta lands on is the authority's alone, so a guess the delta
+does not touch cannot come out of it looking like the authority's word. After
+each snapshot, `Reconcile` decides every prediction whose tick the authority has
+run: it is confirmed if the authority's set holds a record from the same source,
+for the same intent and command, and refused otherwise, and either way the guess
+is taken down. What is still undecided is issued again on top. A refused guess
+starts selection over from the authority's word. Past its capacity the journal
+predicts nothing more, so every guess on a set is one it will take down.
+
+Nothing in animation is rewound: content follows the set it is given, and a
+corrected start restarts content where the authority put it. Cancels and anchors
+are the authority's. A client keeps a cancelled request retained while its own
+flow plays the cancel out, a local extension never sent back; the authority's
+next word for that record replaces it.
 
 `AnimRigTimingIdentity` hashes what two machines must agree on about a rig for
 one request set to play out the same on both: the fact layout and its
 derivations, the request schema, which rule wins, what each behavior latches
-and how it cancels, which content a row plays and for how long, a flow's
-sections, loops and branches, and every gameplay-scope event. It is built from
+and how it cancels, which behaviors carry the character, which content a row
+plays, for how long and along which root curve (the curve's samples, read from
+the clip), a flow's sections, loops and
+branches, and every gameplay-scope event. It is built from
 tag, slot and intent names. Blends, weights, masks and cosmetic events are
 left out: they change how a pose looks, not what happens, so a reload touching
-only those stays compatible with a session in progress. The authority stamps
+only those stays compatible with a session in progress. Machines compare the
+identity, so it keeps its own FNV-1a construction rather than
+`core/hash/Fnv1a.h`, whose digests are for one process. The authority stamps
 its identity on the request set; a machine whose binding differs records
 `TimingDisagreed` and cannot trust reconstruction until the rig reloads or the
 session rejoins.
@@ -479,13 +603,23 @@ each figure a median after warm-up.
 
 | Measurement | Result |
 | --- | --- |
-| Binding a rig: prop, two-layer, character | 0.8 µs, 7.3 µs, 11.6 µs |
-| Headless tick over 64 cosmetic props: skipped, run | 0.016 ms, 0.030 ms |
-| Headless tick over 1024 cosmetic props: skipped, run | 0.27 ms, 0.49 ms |
-| Pose pass, 64 two-layer 62-joint characters: 0, 3, 7 workers | 0.46 ms, 0.20 ms, 0.12 ms |
-| Pose pass, 256 characters: 0, 3, 7 workers | 1.92 ms, 0.57 ms, 0.40 ms |
-| Editor preview, replay from tick 0 to 600 and to 3600 | 0.96 ms, 5.46 ms |
-| Editor scenario batch over the fixture project's 8 scenarios | 9.3 ms |
+| Binding a rig: prop, two-layer, character | 0.9 µs, 7.1 µs, 11.5 µs |
+| Headless tick over 64 cosmetic props: skipped, run | 0.0012 ms, 0.012 ms |
+| Headless tick over 1024 cosmetic props: skipped, run | 0.012 ms, 0.20 ms |
+| Pose pass, 64 two-layer 62-joint characters: 0, 3, 7 workers | 0.45 ms, 0.13 ms, 0.10 ms |
+| Pose pass, 256 characters: 0, 3, 7 workers | 1.84 ms, 0.54 ms, 0.42 ms |
+| Editor preview, replay from tick 0 to 600 and to 3600 | 1.36 ms, 7.96 ms |
+| Editor scenario batch over the fixture project's 8 scenarios | 13.3 ms |
+
+Recorded 2026-09-28, after the review's structural pass; the headless tick
+includes composition. Against the remediation run before it (0.17 ms and
+0.40 ms for 1024 props, 0.90 ms and 4.91 ms for the preview replays, 9.0 ms for
+the batch), every system now resolves a rig once per run of equal handles
+(`AnimRigRunCache`) rather than once per entity, which is most of a skipped
+tick's cost. The preview now runs the game's registered schedule rather than
+calling the per-entity steps in its own order, and pays each system's per-pass
+setup, mostly World resource lookups that hash a type name, on its single
+entity: about 0.8 µs a tick.
 
 A steady tick allocates nothing: `AnimSteadyStateAllocation` runs 600 ticks of
 facts, selection, content, events and poses over two rigs, with speed changes,
@@ -496,9 +630,10 @@ workers.
 On the wire (`AnimRequestBandwidth`), each case acknowledges its baseline and
 counts the next snapshot's bytes above one that describes nothing, which is the
 23-byte snapshot header. An animated entity at rest, and a request that keeps
-holding, cost nothing. Issuing a held request costs 90 bytes and ending it 86:
-the entity's envelope plus the changed record. Filling all eight records at
-once costs 650.
+holding, cost nothing. Issuing a held request costs 98 bytes and ending it 94:
+the entity's envelope plus the changed record, whose ticks include the command
+that issued it (eight bytes, what a prediction is matched by). Filling all
+eight records at once costs 714.
 
 Every animation, data-asset, document-layer and gameplay-tag suite (412 tests
 across core, framework, runtime and editor) passes under the `asan` preset,
@@ -526,16 +661,19 @@ The console:
   every record with names resolved, how many the ring had overwritten, and
   `"captured": "decisions"` — a trace has no pose history. The animation
   editor reads one back in Problems and changes > Imported trace.
-- `anim.risk` reports each bound rig's content risk and what its entities in
-  this World carry and have left unplayed.
+- `anim.risk` reports each bound rig's content risk, what its entities in this
+  World carry, what they left unplayed, and how many held requests a producer
+  left held after it ended.
 - `anim.blend.override_cap` limits pairwise blend overrides per rig.
+- `anim.events.gameplay_capacity` and `anim.events.cosmetic_capacity` bound one
+  tick's events, each queue on its own.
 
 Content risk (`MeasureAnimRigRisk`) counts blend overrides, selector rules, the
 largest selector, and flows longer than eight sections. It flags intents
 nothing plays and behaviors that both a fact and a request select. Each is a
 sign a rig is drifting toward a graph; none is an error.
 
-At runtime, `AnimContentState::UnplayedRequests` counts requests that ended
+At runtime, `AnimRequestReport::Unplayed` counts requests that ended
 without any layer playing them. A request is played when a layer's content was
 driven by it, or the rule a layer is running reads its intent.
 `ReportAnimWorld` sums it per rig with each entity's footprint.

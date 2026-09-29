@@ -16,6 +16,7 @@
 #include <anim/AnimRequestSchema.h>
 #include <anim/AnimRequests.h>
 #include <anim/AnimRigBinding.h>
+#include <anim/AnimRigCompositionSystem.h>
 #include <anim/AnimRigData.h>
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimSelectorData.h>
@@ -62,6 +63,7 @@ struct AnimRigFixture
     SkeletonCache Skeletons;
     AnimationClipCache Clips;
     World Entities;
+    AnimRigCompositionSystem RigComposition{ true };
     AnimFactGatherSystem Gather;
     AnimSelectSystem Select;
     AnimContentSystem Content;
@@ -161,9 +163,10 @@ struct AnimRigFixture
         return nullptr;
     }
 
-    // Gather, select and resolve for tick Now, then advance it.
+    // Compose, gather, select and resolve for tick Now, then advance it.
     void Tick()
     {
+        RigComposition.Compose(Entities);
         Gather.Gather(Entities, Now, kTick);
         Select.Select(Entities, Now, kTick);
         Content.Resolve(Entities, Now, kTick);
@@ -176,15 +179,22 @@ struct AnimRigFixture
             Tick();
     }
 
-    // A Simple-tier character: the rig, small facts (which bring history and
-    // selector state), motion to gather from, and a decision log.
+    // A rigged character: the rig, which composes whatever else it needs on the next
+    // tick, motion to gather from, and a decision log.
     EntityId Character(DataAssetHandle rig, AnimTestMotion motion = {})
     {
         const EntityId entity = Entities.CreateEntity();
         Entities.AddComponent(entity, AnimRig{ rig });
-        Entities.AddComponent(entity, AnimFacts{});
         Entities.AddComponent(entity, motion);
         Entities.AddComponent(entity, AnimDecisionLog{});
+        return entity;
+    }
+
+    // A character something draws, as a skinned mesh would: it consumes poses.
+    EntityId DrawnCharacter(DataAssetHandle rig, AnimTestMotion motion = {})
+    {
+        const EntityId entity = Character(rig, motion);
+        Entities.AddComponent(entity, AnimPoseConsumer{});
         return entity;
     }
 
@@ -275,16 +285,16 @@ namespace AnimCharacterRig
         { "name": "death", "priority": 100, "enter": [ { "fact": "Dead" } ], "behavior": "Anim.Death" } ] })";
 
     inline constexpr std::string_view kSlots = R"({ "rows": [
-        { "behavior": "Anim.Locomotion.Idle", "clip": "asset://anim/idle.sanim" },
-        { "behavior": "Anim.Locomotion.Walk", "when": [ { "fact": "Crouched" } ],
+        { "id": "idle", "behavior": "Anim.Locomotion.Idle", "clip": "asset://anim/idle.sanim" },
+        { "id": "walk", "behavior": "Anim.Locomotion.Walk", "when": [ { "fact": "Crouched" } ],
           "clip": "asset://anim/walk_crouch.sanim" },
-        { "behavior": "Anim.Locomotion.Walk", "clip": "asset://anim/walk.sanim" },
-        { "behavior": "Anim.Locomotion.Sprint", "clip": "asset://anim/sprint.sanim" },
-        { "behavior": "Anim.Action.Land", "when": [ { "fact": "Crouched" } ],
+        { "id": "walk_2", "behavior": "Anim.Locomotion.Walk", "clip": "asset://anim/walk.sanim" },
+        { "id": "sprint", "behavior": "Anim.Locomotion.Sprint", "clip": "asset://anim/sprint.sanim" },
+        { "id": "land", "behavior": "Anim.Action.Land", "when": [ { "fact": "Crouched" } ],
           "clip": "asset://anim/land_crouch.sanim" },
-        { "behavior": "Anim.Action.Land", "clip": "asset://anim/land.sanim" },
-        { "behavior": "Anim.Action.Reload", "clip": "asset://anim/reload.sanim" },
-        { "behavior": "Anim.Death", "clip": "asset://anim/death.sanim" } ] })";
+        { "id": "land_2", "behavior": "Anim.Action.Land", "clip": "asset://anim/land.sanim" },
+        { "id": "reload", "behavior": "Anim.Action.Reload", "clip": "asset://anim/reload.sanim" },
+        { "id": "death", "behavior": "Anim.Death", "clip": "asset://anim/death.sanim" } ] })";
 
     inline constexpr std::string_view kRig = R"({
         "facts": "asset://anim/character.facts.sdata",

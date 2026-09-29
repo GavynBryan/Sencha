@@ -91,7 +91,7 @@ namespace
             Load("asset://animation/walker.behaviors.sdata", kAnimBehaviorSetType,
                  R"({ "behaviors": [ { "tag": "Anim.Walk", "kind": "cyclic" } ] })");
             Load("asset://animation/walker.slots.sdata", kAnimSlotMapType,
-                 R"({ "rows": [ { "behavior": "Anim.Walk", "clip": "asset://animation/walk.sanim" } ] })");
+                 R"({ "rows": [ { "id": "walk", "behavior": "Anim.Walk", "clip": "asset://animation/walk.sanim" } ] })");
             Load(kRig, kAnimRigType, R"({
                 "behaviors": [ "asset://animation/walker.behaviors.sdata" ],
                 "slot_maps": [ "asset://animation/walker.slots.sdata" ],

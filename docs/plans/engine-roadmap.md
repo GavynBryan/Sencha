@@ -229,20 +229,17 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    a player command projects from, which is what the networking track builds on.
    Deferred: a rebinding UI, chords and timed sequences, analog-to-digital thresholds.
 
-2. **Animation runtime (v1.0).** Clip sampling into pose buffers plus a data-authored
-   blend/state graph asset (states, transitions, blend parameters), evaluated by an
-   animation system in the fixed and post-fixed phases. Builds on `anim/AnimationClip.h`,
-   `anim/Skeleton.h`, and their caches, which load today and are consumed by nothing.
-   The `IPoseModifier` seam is added only when the second modifier exists (the graph
-   output plus one procedural modifier such as look-at); until then the concrete system
-   stands alone (directive 4). No longer blocked: Track B item 1 shipped (compute
-   pre-skin, Decision N resolved 2026-08-23), and with it the first slice of this item
-   -- `anim/AnimationClipSampling.h` samples a cooked clip into a local pose,
-   `AnimationClipPlayerComponent` + `AnimationClipPlaybackSystem` advance one clip on
-   the fixed tick, and a clip poses a skinned character on a cooked level
-   (`skinned_pose` golden). What remains for the gate: the data-authored blend/state
-   graph asset, and the serial/parallel bit-identical pose comparison. Deferred with
-   it: blending, pose history for presentation interpolation, and editor playback.
+2. **Animation runtime (v1.0).** Shipped as specified by
+   [animation-runtime.md](animation-runtime.md): stateless selection over gathered
+   facts and requests, slot maps resolving behaviors to clips, blendspaces and flows,
+   one clip clock (`anim/AnimPlayback.h`), gameplay and cosmetic events through the
+   authored verb vocabulary, and a pose pass in the post-fixed phase whose parallel
+   path matches the serial one (`AnimPose.TheParallelPassMatchesTheSerialOne`). Clip
+   sampling (`anim/AnimationClipSampling.h`) and the `skinned_pose` golden came first,
+   with Track B item 1. The earlier single-clip player was removed; the animation
+   editor's migration panel converts scenes that still name it. The `IPoseModifier`
+   seam is still added only when a second pose modifier exists (directive 4). Open
+   animation work is recorded in `docs/deferred.md`.
 
 3. **Scripting runtime (v1.0; owner decision 2026-07-02, recorded in Section 11).** An
    embedded Lua-family VM hosted as an engine service. The design constraints that keep
@@ -777,7 +774,7 @@ The repo's deferral pattern: every deferral records the concrete trigger that re
   second-RHI trigger via a Metal path or a translation layer decision).
 - **`IZonePopulationStrategy`: not until a second population policy exists.**
   `WorldPartitionRuntime` ships with one concrete policy.
-- **`IPoseModifier`: not until the second modifier exists.** The state graph plus one
+- **`IPoseModifier`: not until the second modifier exists.** The pose pass plus one
   procedural modifier earn the seam.
 - **GI: v2.0 baked.** Trigger to accelerate: the 3rd-person target's look development
   demands bounce light.

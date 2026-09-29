@@ -74,8 +74,8 @@ inline DataAssetHandle LoadReloadRig(AnimRigFixture& fx, const std::string& flow
                               onCancel, reloadExtras));
     (void)fx.Load("asset://anim/f.slots.sdata", kAnimSlotMapType,
                   std::format(R"({{ "rows": [ {}
-                      {{ "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" }},
-                      {{ "behavior": "anim.intent.reload", "flow": "asset://anim/f.flow.sdata" }} ] }})",
+                      {{ "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" }},
+                      {{ "id": "reload", "behavior": "anim.intent.reload", "flow": "asset://anim/f.flow.sdata" }} ] }})",
                               extraSlots));
     const std::string bindingList = bindings.empty() ? std::string() : std::format(R"("bindings": [ "{}" ],)", bindings);
     const DataAssetHandle rig = fx.Load("asset://anim/f.rig.sdata", kAnimRigType, std::format(R"({{

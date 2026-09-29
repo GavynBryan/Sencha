@@ -17,14 +17,6 @@ namespace
         return clip < rig.Contents.size() ? rig.Contents[clip].DurationSeconds : 0.0f;
     }
 
-    // The tick a section's clip ends: the first at or past its length, and
-    // never the tick it began, so a flow always moves forward in time.
-    AnimTick EndTick(AnimTick start, float duration, double tickSeconds)
-    {
-        const double ticks = tickSeconds > 0.0 ? std::ceil(static_cast<double>(duration) / tickSeconds - 1e-9) : 1.0;
-        return start + std::max<AnimTick>(1, static_cast<AnimTick>(std::max(ticks, 1.0)));
-    }
-
     struct Runner
     {
         const AnimFlowAdvanceInput& Tick;
@@ -55,14 +47,15 @@ namespace
             const std::uint8_t previous = Flow.Phase == AnimFlowPhase::Playing ? Flow.Section : kAnimNoSection;
             Flow.LoopCount = reason == AnimChangeReason::SectionLooped ? static_cast<std::uint16_t>(Flow.LoopCount + 1) : 0;
             Flow.Section = static_cast<std::uint8_t>(index);
+            Flow.SectionTag = Tick.Flow->Sections[index].Tag;
             Flow.SectionStartTick = start;
             if (reason != AnimChangeReason::SectionLooped)
                 Flow.SectionEnteredTick = start;
             Flow.Phase = AnimFlowPhase::Playing;
             Layer.Clip = SectionClip(index);
-            Layer.ClipStartTick = start;
-            Layer.ClipOffsetSeconds = 0.0f;
-            Layer.ClipRate = 1.0f;
+            // A section plays its clip once, forward; its loops are new starts.
+            Layer.Playback = AnimPlayback{ .StartTick = start, .OffsetSeconds = 0.0f, .Rate = 1.0f,
+                                           .DurationSeconds = ClipDuration(*Tick.Rig, Layer.Clip), .Cyclic = false };
             if (reason != AnimChangeReason::SectionLooped)
                 Outcome.SectionChanged = true;
             if (Log == nullptr)
@@ -105,9 +98,40 @@ namespace
             return false;
         }
 
+        // After a rebind the playing section follows its tag; a flow whose section is
+        // gone starts again, and says so.
+        void Relocate()
+        {
+            const AnimBoundFlow& flow = *Tick.Flow;
+            const auto found = std::ranges::find(flow.Sections, Flow.SectionTag, &AnimBoundFlowSection::Tag);
+            if (found == flow.Sections.end())
+            {
+                Flow.Phase = AnimFlowPhase::None;
+                if (Log != nullptr)
+                {
+                    AnimDecisionRecord record;
+                    record.Tick = Tick.Now;
+                    record.Cause = AnimDecisionCause::IndexReset;
+                    record.Reason = AnimChangeReason::Rebound;
+                    record.Layer = LayerIndex;
+                    record.Behavior = Layer.Behavior;
+                    record.Section = Flow.Section;
+                    Log->Append(record);
+                }
+                return;
+            }
+            const auto index = static_cast<std::size_t>(found - flow.Sections.begin());
+            Flow.Section = static_cast<std::uint8_t>(index);
+            // Same place in the section; its clip and length are the new binding's.
+            Layer.Clip = SectionClip(index);
+            Layer.Playback.DurationSeconds = ClipDuration(*Tick.Rig, Layer.Clip);
+        }
+
         void Run()
         {
             const AnimBoundFlow& flow = *Tick.Flow;
+            if (Tick.Rebound && !Tick.Entered && Flow.Phase != AnimFlowPhase::None)
+                Relocate();
             if (Tick.Entered || Flow.Phase == AnimFlowPhase::None)
             {
                 Flow.Phase = AnimFlowPhase::None;
@@ -152,7 +176,7 @@ namespace
                     break;
                 }
 
-                const AnimTick end = EndTick(Flow.SectionStartTick, ClipDuration(*Tick.Rig, Layer.Clip), Tick.TickSeconds);
+                const AnimTick end = AnimPlaybackEndTick(Layer.Playback, Tick.TickSeconds);
                 if (Tick.Now < end)
                     break;
 
@@ -191,12 +215,9 @@ namespace
                 Enter(current + 1, end, AnimChangeReason::SectionFollowed);
             }
 
-            const float duration = ClipDuration(*Tick.Rig, Layer.Clip);
-            const double elapsed = static_cast<double>(Tick.Now >= Flow.SectionStartTick ? Tick.Now - Flow.SectionStartTick : 0)
-                * Tick.TickSeconds;
             Layer.TimeSeconds = Flow.Phase == AnimFlowPhase::Complete
-                ? duration
-                : static_cast<float>(std::min(elapsed, static_cast<double>(duration)));
+                ? Layer.Playback.DurationSeconds
+                : static_cast<float>(AnimPlaybackSeconds(Layer.Playback, Tick.Now, Tick.TickSeconds));
             Outcome.Complete = Flow.Phase == AnimFlowPhase::Complete;
             Outcome.KeepTail = Tick.Request != nullptr && Tick.Request->IsCancelled() && !Outcome.Complete;
         }

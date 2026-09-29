@@ -78,6 +78,8 @@ struct AnimRigBinder
     void BindBlendOverrides(const AnimRigData& rig);
     void BindSelectors(const AnimRigData& rig);
     void BindSlotMaps(const AnimRigData& rig);
+    // Every behavior a rule or an idle can select has a row to play.
+    void ValidateSlotCoverage(const AnimRigData& rig);
     // Bound on first use, with its sections' clips as content entries; -1 on failure.
     int BindFlowContent(const std::string& path, const std::string& referrer, const std::string& field);
     // After selectors and slot maps: what a flow requires of the behavior playing it.
@@ -89,6 +91,9 @@ struct AnimRigBinder
     [[nodiscard]] int FindOrAddClipContent(const std::string& path);
     // After slot maps, which decide the content whose events are bound.
     void BindEvents(const AnimRigData& rig);
+    // A mix plays its heaviest sample's marks, so its samples share one gameplay track:
+    // which sample is heaviest must never decide what gameplay hears.
+    void ValidateBlendspaceGameplayEvents();
 };
 
 // How two flows would read one request anchor differently, or empty when they agree.

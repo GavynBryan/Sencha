@@ -7,6 +7,7 @@
 #include <anim/AnimPoseState.h>
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimRig.h>
+#include <anim/AnimRigComposition.h>
 #include <anim/AnimSelectorState.h>
 #include <world/ComponentSet.h>
 
@@ -18,15 +19,20 @@ class LoggingProvider;
 class VerbDispatcher;
 class World;
 
-// Which of these an entity carries is its tier; see docs/gameplay/animation.md.
+// An entity names its rig; the rig's binding decides which of the rest it carries.
+// See docs/gameplay/animation.md, "Taking part".
 using AnimationComponents = ComponentSet<
     AnimRig,
+    AnimRigComposition,
+    AnimPoseConsumer,
     AnimRequestSet,
     AnimFacts,
     AnimFactsLarge,
     AnimFactHistory,
     AnimSelectorState,
     AnimContentState,
+    AnimEventCursor,
+    AnimRequestReport,
     AnimFlowState,
     AnimPoseState,
     AnimDecisionLog>;
@@ -48,7 +54,8 @@ struct AnimationHost
 {
     // Null still produces and records events, each answered Unavailable.
     VerbDispatcher* Verbs = nullptr;
-    // Registers `anim.events.queue_capacity`; null keeps the default capacity.
+    // Registers `anim.events.gameplay_capacity` and `anim.events.cosmetic_capacity`;
+    // null keeps the default capacities.
     ConsoleRegistry* Console = nullptr;
     // Cosmetic events and posing happen only where a pose is presented; a headless
     // authority produces gameplay events alone.

@@ -7,10 +7,10 @@
 
 #include <cstdint>
 
-// Source, StartTick, CancelTick, TailUntilTick, AnchorSectionStartTick.
+// Source, StartTick, CancelTick, TailUntilTick, AnchorSectionStartTick, Command.
 struct AnimRequestWireTicks
 {
-    std::uint64_t Values[5] = {};
+    std::uint64_t Values[6] = {};
 };
 
 // Sequence, Intent, SourceTag, FixedTicks, Params[4], then the small fields
@@ -39,7 +39,7 @@ struct AnimRequestSetWire
 template <>
 struct PackedScalarGroup<AnimRequestWireTicks>
 {
-    static constexpr std::size_t Count = 5;
+    static constexpr std::size_t Count = 6;
     using Component = std::uint64_t;
 };
 

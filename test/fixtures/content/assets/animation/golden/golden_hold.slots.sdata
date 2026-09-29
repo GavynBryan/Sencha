@@ -3,7 +3,7 @@
     "version": 1,
     "data": {
         "rows": [
-            {
+            { "id": "hold",
                 "behavior": "Anim.Golden.Hold",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             }

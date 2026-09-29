@@ -6,7 +6,7 @@
 #include <ecs/World.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/MotionChannels.h>
-#include <world/SimulationAuthority.h>
+#include <world/SimulationTimeline.h>
 
 #include <cmath>
 
@@ -33,16 +33,16 @@ void ApplyRootMotion(MotionAxisOverride& overrides, const RootMotionSample& samp
 
 void RootMotionSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    StepImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
+    StepImpl(ctx.Entities, &ctx.Partitions, ctx.Time.TickIndex, true, ctx.Time.DeltaSeconds);
 }
 
 void RootMotionSystem::Step(World& world, std::uint64_t tick, double tickSeconds)
 {
-    StepImpl(world, nullptr, tick, tickSeconds);
+    StepImpl(world, nullptr, tick, false, tickSeconds);
 }
 
-void RootMotionSystem::StepImpl(World& world, const StoragePartitionSet* partitions, std::uint64_t tick,
-                                double tickSeconds)
+void RootMotionSystem::StepImpl(World& world, const StoragePartitionSet* partitions, std::uint64_t localTick,
+                                bool timeline, double tickSeconds)
 {
     const RootMotionSource* source = world.TryGetResource<RootMotionSource>();
     if (source == nullptr || source->Sample == nullptr)
@@ -51,7 +51,14 @@ void RootMotionSystem::StepImpl(World& world, const StoragePartitionSet* partiti
     // holding chunk pointers while it does is one structural change from
     // reading freed memory.
     Characters.clear();
-    Query<Read<CharacterMovement>, Read<MotionAxisOverride>> query(world);
+    if (LastWorld != &world)
+    {
+        CharacterQuery.reset();
+        LastWorld = &world;
+    }
+    if (!CharacterQuery)
+        CharacterQuery.emplace(world);
+    auto& query = *CharacterQuery;
     const auto visit = [&](auto& view) {
         for (std::uint32_t row = 0; row < view.Count(); ++row)
             Characters.push_back(view.Entity(row));
@@ -62,6 +69,9 @@ void RootMotionSystem::StepImpl(World& world, const StoragePartitionSet* partiti
         query.ForEachChunk(visit);
     for (const EntityId character : Characters)
     {
+        // The character this process predicts moves on its command timeline, as its
+        // replay and the authority's run of the same command do.
+        const std::uint64_t tick = timeline ? SimulationTickOf(world, character, localTick) : localTick;
         RootMotionSample sample;
         if (!source->Sample(world, character, tick, tickSeconds, sample))
             continue;

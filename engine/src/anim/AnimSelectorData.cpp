@@ -4,6 +4,7 @@
 
 #include <gameplay_tags/GameplayTagRegistry.h>
 
+#include <algorithm>
 #include <format>
 #include <memory>
 
@@ -39,7 +40,9 @@ namespace
 
         DataFieldSchema rule = Record({}, "Rule", {},
             {
-                optional(Field("name", DataFieldKind::String, "Name", "A label for the debugger.")),
+                Field("name", DataFieldKind::String, "Name",
+                      "Names the rule for good: a winning rule keeps winning across reloads that add, remove "
+                      "or reorder rules, and the debugger shows it. Unique in the selector."),
                 std::move(priority),
                 AnimPredicateSchema("enter", "Enter", "Every row must pass for the rule to win."),
                 AnimPredicateSchema("stay", "Stay",
@@ -84,6 +87,17 @@ namespace
             AnimSelectorRuleDecl rule;
             if (const JsonValue* name = entry.Find("name"); name != nullptr && name->IsString())
                 rule.Name = name->AsString();
+            if (rule.Name.empty())
+            {
+                result.Error = at + ".name A rule needs a name: it is what a reload keeps the winner on.";
+                return result;
+            }
+            if (std::ranges::any_of(selector->Rules,
+                                    [&](const AnimSelectorRuleDecl& other) { return other.Name == rule.Name; }))
+            {
+                result.Error = std::format("{}.name '{}' names another rule of this selector.", at, rule.Name);
+                return result;
+            }
             if (const JsonValue* priority = entry.Find("priority"); priority != nullptr && priority->IsNumber())
                 rule.Priority = static_cast<std::int32_t>(priority->AsNumber());
             if (!ReadAnimPredicate(entry.Find("enter"), at + ".enter", rule.Enter, result.Error))

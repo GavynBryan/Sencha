@@ -1,5 +1,6 @@
 #include <anim/AnimWorldReport.h>
 
+#include <anim/AnimRequestReport.h>
 #include <anim/AnimRig.h>
 #include <anim/AnimRigBinding.h>
 #include <anim/AnimationRegistration.h>
@@ -30,18 +31,22 @@ std::vector<AnimRigWorldReport> ReportAnimWorld(World& world)
     if (bindings == nullptr || !world.IsRegistered<AnimRig>())
         return {};
     const World& reader = world;
-    const bool hasContent = reader.IsRegistered<AnimContentState>();
+    const bool hasReports = reader.IsRegistered<AnimRequestReport>();
     std::map<std::string, AnimRigWorldReport> byRig;
+    AnimRigRunCache resolver(*bindings, world);
     reader.ForEachComponent<AnimRig>([&](EntityId entity, const AnimRig& rig) {
-        const AnimBoundRig* bound = bindings->Resolve(rig.Rig, world);
+        const AnimBoundRig* bound = resolver.Resolve(rig.Rig);
         AnimRigWorldReport& report = byRig[bound != nullptr ? bound->RigPath : std::string()];
         report.RigPath = bound != nullptr ? bound->RigPath : std::string();
         const std::uint32_t bytes = AnimEntityBytes(reader, entity);
         report.MinEntityBytes = report.Entities == 0 ? bytes : std::min(report.MinEntityBytes, bytes);
         report.MaxEntityBytes = std::max(report.MaxEntityBytes, bytes);
         ++report.Entities;
-        if (const AnimContentState* content = hasContent ? reader.TryGet<AnimContentState>(entity) : nullptr)
-            report.UnplayedRequests += content->UnplayedRequests;
+        if (const AnimRequestReport* requests = hasReports ? reader.TryGet<AnimRequestReport>(entity) : nullptr)
+        {
+            report.UnplayedRequests += requests->Unplayed;
+            report.OrphanedRequests += requests->Orphaned;
+        }
     });
     std::vector<AnimRigWorldReport> reports;
     reports.reserve(byRig.size());

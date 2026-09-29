@@ -77,8 +77,8 @@ TEST(AnimContent, APropPlaysRequestsWithNoFactsOrSelector)
     (void)fx.Load("asset://anim/door.behaviors.sdata", kAnimBehaviorSetType, R"({ "behaviors": [
         { "tag": "Anim.Door.Closed", "kind": "hold" }, { "tag": "anim.intent.door_open", "kind": "hold" } ] })");
     (void)fx.Load("asset://anim/door.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Door.Closed", "clip": "asset://anim/closed.sanim" },
-        { "behavior": "anim.intent.door_open", "clip": "asset://anim/open.sanim" } ] })");
+        { "id": "closed", "behavior": "Anim.Door.Closed", "clip": "asset://anim/closed.sanim" },
+        { "id": "door_open", "behavior": "anim.intent.door_open", "clip": "asset://anim/open.sanim" } ] })");
     const DataAssetHandle rig = fx.Load("asset://anim/door.rig.sdata", kAnimRigType, R"({
         "behaviors": [ "asset://anim/door.behaviors.sdata" ], "slot_maps": [ "asset://anim/door.slots.sdata" ],
         "layers": [ { "name": "anim.layer.base", "idle": "Anim.Door.Closed" } ] })");
@@ -114,8 +114,8 @@ TEST(AnimContent, OverlaysInsertRowsByPriority)
     fx.Clip("asset://anim/walk_mod.sanim", 1.0f);
     fx.Clip("asset://anim/walk_tie.sanim", 1.0f);
     (void)fx.Load("asset://anim/mod.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Locomotion.Walk", "priority": 0, "clip": "asset://anim/walk_tie.sanim" },
-        { "behavior": "Anim.Locomotion.Walk", "priority": 5, "when": [ { "fact": "Crouched", "not": true } ],
+        { "id": "walk", "behavior": "Anim.Locomotion.Walk", "priority": 0, "clip": "asset://anim/walk_tie.sanim" },
+        { "id": "walk_2", "behavior": "Anim.Locomotion.Walk", "priority": 5, "when": [ { "fact": "Crouched", "not": true } ],
           "clip": "asset://anim/walk_mod.sanim" } ] })");
     fx.Reload("asset://anim/character.rig.sdata", kAnimRigType, R"({
         "facts": "asset://anim/character.facts.sdata", "requests": "asset://anim/character.requests.sdata",
@@ -144,9 +144,9 @@ TEST(AnimContent, RowsReadingLocalFactsMustShareTiming)
     (void)fx.Load("asset://anim/l.facts.sdata", kAnimFactSchemaType, R"({
         "slots": [ { "name": "Variant", "kind": "int", "local": true } ] })");
     (void)fx.Load("asset://anim/l.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Idle", "when": [ { "fact": "Variant", "compare": "eq", "value": 1 } ],
+        { "id": "idle", "behavior": "Anim.Idle", "when": [ { "fact": "Variant", "compare": "eq", "value": 1 } ],
           "clip": "asset://anim/a.sanim" },
-        { "behavior": "Anim.Idle", "clip": "asset://anim/b.sanim" } ] })");
+        { "id": "idle_2", "behavior": "Anim.Idle", "clip": "asset://anim/b.sanim" } ] })");
     const DataAssetHandle rig = fx.Load("asset://anim/l.rig.sdata", kAnimRigType, R"({
         "facts": "asset://anim/l.facts.sdata", "slot_maps": [ "asset://anim/l.slots.sdata" ],
         "layers": [ { "name": "anim.layer.base", "idle": "Anim.Idle" } ] })");
@@ -168,8 +168,8 @@ TEST(AnimContent, PinnedContentWhoseRowIsRemovedReanchors)
     ASSERT_EQ(fx.Clip(), "asset://anim/land.sanim");
 
     fx.Reload("asset://anim/character.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Locomotion.Idle", "clip": "asset://anim/idle.sanim" },
-        { "behavior": "Anim.Action.Land", "clip": "asset://anim/land_crouch.sanim" } ] })");
+        { "id": "idle", "behavior": "Anim.Locomotion.Idle", "clip": "asset://anim/idle.sanim" },
+        { "id": "land", "behavior": "Anim.Action.Land", "clip": "asset://anim/land_crouch.sanim" } ] })");
     fx.Tick();
     EXPECT_EQ(fx.Clip(), "asset://anim/land_crouch.sanim");
     const AnimDecisionRecord* reset = fx.LastRecord(fx.Entity, AnimDecisionCause::IndexReset);

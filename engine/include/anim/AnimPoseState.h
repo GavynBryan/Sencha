@@ -1,6 +1,7 @@
 #pragma once
 
 #include <anim/AnimBehaviorSet.h>
+#include <anim/AnimPlayback.h>
 #include <anim/AnimTypes.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
@@ -13,11 +14,9 @@ class World;
 // Enough to pose what a layer plays again at another tick.
 struct AnimLayerPlayback
 {
-    AnimTick ClipStartTick = 0;
+    AnimPlayback Time;
     // The tick Phase was read at.
     AnimTick PhaseTick = 0;
-    float ClipOffsetSeconds = 0.0f;
-    float ClipRate = 1.0f;
     float Phase = 0.0f;
     // Normalized phase per second.
     float PhaseRate = 0.0f;
@@ -25,8 +24,6 @@ struct AnimLayerPlayback
     GameplayTagId Behavior;
     std::uint16_t Content = kAnimNoContent;
     std::uint16_t Clip = kAnimNoContent;
-    // Wraps at its end rather than holding the last frame.
-    bool Cyclic = false;
 };
 
 struct AnimLayerPose

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimPosePool.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
@@ -7,7 +8,6 @@
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
 #include <render/RenderQueue.h>
-#include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
 #include <render/SkinnedPoseFrameData.h>
 #include <render/StaticMeshComponent.h>
@@ -20,9 +20,11 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+class Logger;
 class TextureCache;
 
 // One resident zone's baked-lighting atlas and the AO plane sharing its layout,
@@ -73,6 +75,18 @@ void BuildZoneLightmapTable(
     std::span<const ZoneLightmapIndices> table,
     StoragePartitionId partition);
 
+enum class SkinnedPoseMatch : std::uint8_t
+{
+    // No pose yet, or no rig: the mesh draws at bind.
+    Unposed,
+    Posed,
+    // The rig poses a skeleton the mesh does not skin; the mesh draws at bind.
+    OtherSkeleton,
+};
+
+[[nodiscard]] SkinnedPoseMatch MatchSkinnedPose(const AnimPosePool::Slot* pose, SkeletonHandle meshSkeleton,
+                                                std::size_t meshJoints);
+
 // The read-only caches one extraction resolves against. `Textures` stays
 // optional: without it, items carry no lightmap. Holds references into the
 // caller's frame and owns nothing, so constructing one allocates nothing.
@@ -85,10 +99,8 @@ struct RenderExtractCaches
     // Optional: without it, skinned components extract nothing and a scene of
     // static meshes pays nothing.
     const SkinnedMeshCache* SkinnedMeshes = nullptr;
-    // Optional, and needed together: a clip supplies the pose and the
-    // skeleton supplies what it poses. Without either, skinned instances
-    // stay at bind (identity palette), which is the rest-pose draw.
-    const AnimationClipCache* AnimationClips = nullptr;
+    // Optional: what a rig's pose is palettized against. Without it, skinned
+    // instances stay at bind (identity palette), which is the rest-pose draw.
     const SkeletonCache* Skeletons = nullptr;
 };
 
@@ -106,6 +118,12 @@ struct RenderExtractCaches
 class RenderExtractionSystem
 {
 public:
+    // `log` hears, once per entity, of a rig posing another skeleton than its mesh skins.
+    explicit RenderExtractionSystem(Logger* log = nullptr)
+        : Log(log)
+    {
+    }
+
     // `interpolationAlpha` is how far this frame sits past the last completed
     // simulation tick (PresentationTime::Alpha). Entities carrying
     // WorldTransformHistory render the blend at that point; everything else
@@ -151,13 +169,15 @@ private:
                            double interpolationAlpha,
                            SkinnedPoseFrameData* skinnedPoses);
     // Poses the palette from the pose pass's rig pose (`poseAlpha` of the way
-    // from last tick's to this one's), else the clip player, else bind
-    // identity. Returns UINT32_MAX when the mesh carries no skinning data.
+    // from last tick's to this one's), else bind identity. Returns UINT32_MAX
+    // when the mesh carries no skinning data.
     [[nodiscard]] std::uint32_t RegisterSkinnedPose(
         const World& world, const RenderExtractCaches& caches,
         const SkinnedMeshComponent& renderer, EntityId entity, double poseAlpha,
         SkinnedPoseFrameData& skinnedPoses);
 
+    Logger* Log = nullptr;
+    std::unordered_set<EntityId, EntityIdHash> WarnedOtherSkeleton;
     const World* LastWorld = nullptr;
     std::optional<Query<Read<WorldTransform>,
                         Read<StaticMeshComponent>,

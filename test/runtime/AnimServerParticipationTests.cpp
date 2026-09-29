@@ -13,7 +13,8 @@ namespace
     {
         DataAssetHandle Rig;
         EntityId Entity;
-        AnimFactGatherSystem HeadlessGather{ nullptr, false };
+        AnimRigCompositionSystem HeadlessComposition{ false };
+        AnimFactGatherSystem HeadlessGather{ false };
         AnimSelectSystem HeadlessSelect{ false };
         AnimContentSystem HeadlessContent{ false };
         AnimEventSystem HeadlessEvents{ nullptr, false };
@@ -29,6 +30,7 @@ namespace
         {
             for (int i = 0; i < count; ++i, ++Now)
             {
+                HeadlessComposition.Compose(Entities);
                 HeadlessGather.Gather(Entities, Now, kTick);
                 HeadlessSelect.Select(Entities, Now, kTick);
                 HeadlessContent.Resolve(Entities, Now, kTick);
@@ -63,7 +65,8 @@ TEST(AnimServerParticipation, AHeadlessMachineLeavesACosmeticRigAlone)
     ASSERT_FALSE(headless.Bound().DrivesGameplay);
     headless.TickHeadless(10);
     EXPECT_FALSE(headless.Playing(headless.Entity).Behavior.IsValid());
-    EXPECT_EQ(headless.Entities.TryGet<AnimFacts>(headless.Entity)->Values[0], 0u) << "facts not gathered";
+    EXPECT_EQ(headless.Entities.TryGet<AnimFacts>(headless.Entity), nullptr) << "nothing to gather into";
+    EXPECT_EQ(headless.Entities.TryGet<AnimSelectorState>(headless.Entity), nullptr);
     EXPECT_EQ(headless.Log(headless.Entity).Written, 0u);
 
     HeadlessCharacter presenting;
@@ -117,6 +120,6 @@ TEST(AnimServerParticipation, WhatBindingCannotSeeIntoCountsAsGameplay)
 
     HeadlessCharacter missing;
     missing.Reload("asset://anim/character.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-        { "behavior": "Anim.Locomotion.Idle", "clip": "asset://anim/not_loaded.sanim" } ] })");
+        { "id": "idle", "behavior": "Anim.Locomotion.Idle", "clip": "asset://anim/not_loaded.sanim" } ] })");
     EXPECT_TRUE(missing.Bound().DrivesGameplay) << "a clip whose events are unknown";
 }

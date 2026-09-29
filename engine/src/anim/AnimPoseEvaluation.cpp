@@ -112,7 +112,7 @@ namespace
 
     bool SamePlayback(const AnimBoundRig& rig, const AnimLayerPlayback& a, const AnimLayerPlayback& b)
     {
-        if (a.Behavior != b.Behavior || a.Content != b.Content || a.ClipStartTick != b.ClipStartTick)
+        if (a.Behavior != b.Behavior || a.Content != b.Content || a.Time.StartTick != b.Time.StartTick)
             return false;
         // A blendspace's clip is only its heaviest sample; which one that is
         // changes nothing about the pose.
@@ -127,21 +127,15 @@ AnimLayerPlayback AnimPlaybackOf(const AnimBoundRig& rig, const AnimLayerContent
     playback.Behavior = layer.Behavior;
     playback.Content = layer.Content;
     playback.Clip = layer.Clip;
-    playback.ClipStartTick = layer.ClipStartTick;
-    playback.ClipOffsetSeconds = layer.ClipOffsetSeconds;
-    playback.ClipRate = layer.ClipRate;
+    playback.Time = layer.Playback;
     playback.Phase = layer.Phase;
     playback.PhaseTick = now;
     playback.Coordinates[0] = layer.Coordinates[0];
     playback.Coordinates[1] = layer.Coordinates[1];
-    const AnimBoundBehavior* behavior = rig.FindBehavior(layer.Behavior);
-    const bool flow = layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Flow >= 0;
-    // A flow section plays its clip once; its loops are new clip starts.
-    playback.Cyclic = !flow && (behavior == nullptr || behavior->Policy.Kind == AnimBehaviorKind::Cyclic);
     if (layer.Content < rig.Contents.size() && rig.Contents[layer.Content].Blendspace >= 0)
         playback.PhaseRate = BlendspaceRate(
             rig, rig.Blendspaces[static_cast<std::size_t>(rig.Contents[layer.Content].Blendspace)],
-            layer.Coordinates) * layer.ClipRate;
+            layer.Coordinates) * layer.Playback.Rate;
     return playback;
 }
 
@@ -163,7 +157,7 @@ void SampleAnimPlayback(const AnimPoseSources& sources, const AnimLayerPlayback&
         double phase = reference ? 0.0
                                  : static_cast<double>(playback.Phase)
                 + Elapsed(playback.PhaseTick, at, tickSeconds) * static_cast<double>(playback.PhaseRate);
-        phase = playback.Cyclic ? phase - std::floor(phase) : std::clamp(phase, 0.0, 1.0);
+        phase = playback.Time.Cyclic ? phase - std::floor(phase) : std::clamp(phase, 0.0, 1.0);
         std::array<float, kAnimBlendspaceMaxSamples> weights{};
         AnimBlendspaceWeights(mix, { playback.Coordinates[0], playback.Coordinates[1] }, weights);
 
@@ -210,22 +204,9 @@ void SampleAnimPlayback(const AnimPoseSources& sources, const AnimLayerPlayback&
         AnimBindPose(skeleton, out);
         return;
     }
-    double time = reference ? 0.0
-                            : static_cast<double>(playback.ClipOffsetSeconds)
-            + std::max(0.0, Elapsed(playback.ClipStartTick, at, tickSeconds)) * static_cast<double>(playback.ClipRate);
-    const double duration = static_cast<double>(clip->DurationSeconds);
-    if (duration > 0.0)
-    {
-        if (playback.Cyclic)
-        {
-            time = std::fmod(time, duration);
-            time = time < 0.0 ? time + duration : time;
-        }
-        else
-        {
-            time = std::clamp(time, 0.0, duration);
-        }
-    }
+    const double time = reference ? 0.0
+                                  : AnimPlaceSeconds(AnimElapsedSeconds(playback.Time, at, tickSeconds),
+                                                     static_cast<double>(clip->DurationSeconds), playback.Time.Cyclic);
     SampleAnimationClip(*clip, skeleton, static_cast<float>(time), out);
 }
 

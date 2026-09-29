@@ -6,7 +6,8 @@
 class StoragePartitionSet;
 class World;
 
-void ApplyEffect(World& world, EntityId target, EffectId effect);
+// The effect entity a lasting effect spawns; none for an instant one.
+EntityId ApplyEffect(World& world, EntityId target, EffectId effect);
 
 void TickEffects(World& world, float dt);
 void FoldActiveEffects(World& world);

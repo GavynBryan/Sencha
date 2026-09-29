@@ -23,7 +23,7 @@ namespace
             (void)Load("asset://anim/p.behaviors.sdata", kAnimBehaviorSetType,
                        std::format(R"({{ "behaviors": [ {} ] }})", behavior));
             (void)Load("asset://anim/p.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-                { "behavior": "Anim.Play", "clip": "asset://anim/one_second.sanim" } ] })");
+                { "id": "play", "behavior": "Anim.Play", "clip": "asset://anim/one_second.sanim" } ] })");
             const DataAssetHandle rig = Load("asset://anim/p.rig.sdata", kAnimRigType, R"({
                 "behaviors": [ "asset://anim/p.behaviors.sdata" ], "slot_maps": [ "asset://anim/p.slots.sdata" ],
                 "layers": [ { "name": "anim.layer.base", "idle": "Anim.Play" } ] })");

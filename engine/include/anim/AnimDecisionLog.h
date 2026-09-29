@@ -37,6 +37,9 @@ enum class AnimDecisionCause : std::uint8_t
     // authority's requests were made under; reconstruction is untrustworthy meanwhile.
     TimingDisagreed,
     TimingAgreed,
+    // A Held request outlived its source or owner: the producer that holds it never
+    // cancelled it. Reported once per request; animation does not end it.
+    RequestOrphaned,
 };
 
 enum class AnimEventOutcome : std::uint8_t
@@ -87,6 +90,8 @@ enum class AnimRejectReason : std::uint8_t
     UndeclaredIntent,
     // The request names no source, no intent, or no layer.
     Malformed,
+    // A client asked for another entity's request, which only the authority issues.
+    LeftToAuthority,
 };
 
 [[nodiscard]] std::string_view AnimRejectReasonName(AnimRejectReason reason);

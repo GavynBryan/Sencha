@@ -6,7 +6,6 @@
 #include <anim/AnimSelectorState.h>
 #include <anim/SkeletonCache.h>
 #include <app/GameContexts.h>
-#include <ecs/CommandBuffer.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <jobs/JobSystem.h>
@@ -30,15 +29,16 @@ AnimPoseSystem::~AnimPoseSystem() = default;
 
 void AnimPoseSystem::PostFixed(PostFixedContext& ctx)
 {
-    PoseImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
+    PoseImpl(ctx.Entities, &ctx.Partitions, AnimClockAt(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimPoseSystem::Pose(World& world, AnimTick now, double tickSeconds)
 {
-    PoseImpl(world, nullptr, now, tickSeconds);
+    PoseImpl(world, nullptr, AnimClock::Uniform(now), tickSeconds);
 }
 
-void AnimPoseSystem::PoseImpl(World& world, const StoragePartitionSet* partitions, AnimTick now, double tickSeconds)
+void AnimPoseSystem::PoseImpl(World& world, const StoragePartitionSet* partitions, const AnimClock& clock,
+                              double tickSeconds)
 {
     Items.clear();
     AnimRigBindings* bindings = world.TryGetResource<AnimRigBindings>();
@@ -49,12 +49,9 @@ void AnimPoseSystem::PoseImpl(World& world, const StoragePartitionSet* partition
         world.AddResource<AnimPosePool>();
     if (LastWorld != &world)
     {
-        Unposed.reset();
         Posing.reset();
         LastWorld = &world;
     }
-    if (!Unposed)
-        Unposed.emplace(world);
     if (!Posing)
         Posing.emplace(world);
 
@@ -65,30 +62,20 @@ void AnimPoseSystem::PoseImpl(World& world, const StoragePartitionSet* partition
             query.ForEachChunk(fn);
     };
 
-    // A rig becomes posed on its first pass; the structural change waits for
-    // the query to finish.
-    {
-        CommandBuffer commands(world);
-        each(*Unposed, [&](auto& view) {
-            for (std::uint32_t i = 0; i < view.Count(); ++i)
-                commands.AddComponent(view.Entity(i), AnimPoseState{});
-        });
-        commands.Flush();
-    }
-
     // Owner thread: bindings resolve through a shared cache, and slots are
     // assigned and shaped here so the jobs below never resize storage.
     AnimPosePool& pool = world.GetResource<AnimPosePool>();
     const World& reader = world;
     const bool hasSelection = world.IsRegistered<AnimSelectorState>();
     const bool hasLog = world.IsRegistered<AnimDecisionLog>();
+    AnimRigRunCache resolver(*bindings, world);
     each(*Posing, [&](auto& view) {
         const auto rigs = view.template Read<AnimRig>();
         const auto contents = view.template Read<AnimContentState>();
         auto states = view.template Write<AnimPoseState>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            const AnimBoundRig* rig = bindings->Resolve(rigs[i].Rig, world);
+            const AnimBoundRig* rig = resolver.Resolve(rigs[i].Rig);
             const SkeletonData* skeleton = rig != nullptr && rig->Valid && rig->Skeleton.IsValid()
                     && bindings->SkeletonSource() != nullptr
                 ? bindings->SkeletonSource()->Get(rig->Skeleton)
@@ -97,11 +84,15 @@ void AnimPoseSystem::PoseImpl(World& world, const StoragePartitionSet* partition
                 continue;
             const EntityId entity = view.Entity(i);
             AnimPoseState& state = states[i];
-            if (pool.Find(state.Slot) == nullptr)
+            AnimPosePool::Slot* slot = pool.Find(state.Slot, entity);
+            if (slot == nullptr)
+            {
                 state.Slot = pool.Allocate(entity);
-            pool.Shape(state.Slot, static_cast<std::uint32_t>(skeleton->Joints.size()),
-                       static_cast<std::uint32_t>(std::min(rig->Layers.size(), kAnimMaxLayers)));
-            pool.Find(state.Slot)->Skeleton = rig->Skeleton;
+                slot = pool.Find(state.Slot, entity);
+            }
+            slot->Shape(static_cast<std::uint32_t>(skeleton->Joints.size()),
+                        static_cast<std::uint32_t>(std::min(rig->Layers.size(), kAnimMaxLayers)));
+            slot->Skeleton = rig->Skeleton;
 
             Item item;
             item.Input.Sources = AnimPoseSources{ rig, bindings->ClipSource(), skeleton };
@@ -109,15 +100,16 @@ void AnimPoseSystem::PoseImpl(World& world, const StoragePartitionSet* partition
             item.Input.Selection = hasSelection ? reader.TryGet<AnimSelectorState>(entity) : nullptr;
             item.Input.State = &state;
             item.SlotHandle = state.Slot;
+            item.Owner = entity;
             item.Input.Log = hasLog ? world.TryGet<AnimDecisionLog>(entity) : nullptr;
-            item.Input.Now = now;
+            item.Input.Now = clock.For(entity);
             item.Input.TickSeconds = tickSeconds;
             Items.push_back(item);
         }
     });
 
     for (Item& item : Items)
-        item.Input.Slot = pool.Find(item.SlotHandle);
+        item.Input.Slot = pool.Find(item.SlotHandle, item.Owner);
 
     // Every entity reads only shared immutable data and writes only its own
     // components and slot, so the jobs need no ordering between them.

@@ -1,14 +1,17 @@
 #pragma once
 
 #include <ecs/EntityId.h>
+#include <ecs/Query.h>
 #include <math/Vec.h>
+#include <movement/components/CharacterMovement.h>
+#include <movement/components/MotionChannels.h>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 class World;
 struct FixedLogicContext;
-struct MotionAxisOverride;
 
 // A World resource another layer installs, asked for a character's motion as a
 // pure function of the tick so a replay gets the live answer
@@ -44,12 +47,17 @@ class RootMotionSystem
 {
 public:
     void FixedLogic(FixedLogicContext& ctx);
-    // Whole-world overload for tests.
+    // Whole-world overload for tests: every character sampled at `tick`.
     void Step(World& world, std::uint64_t tick, double tickSeconds);
 
 private:
-    void StepImpl(World& world, const class StoragePartitionSet* partitions, std::uint64_t tick, double tickSeconds);
+    // `localTick` is named per character (SimulationTickOf) when `timeline` is set,
+    // and taken as every character's tick otherwise.
+    void StepImpl(World& world, const class StoragePartitionSet* partitions, std::uint64_t localTick,
+                  bool timeline, double tickSeconds);
 
     // Reused each tick.
     std::vector<EntityId> Characters;
+    const World* LastWorld = nullptr;
+    std::optional<Query<Read<CharacterMovement>, Read<MotionAxisOverride>>> CharacterQuery;
 };

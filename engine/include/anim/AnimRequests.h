@@ -19,6 +19,16 @@ struct AnimRequestDesc
     std::array<std::uint32_t, kAnimRequestParams> Params{};
     // Which params are gameplay tag ids; the World form sets it from the request schema.
     std::uint8_t TagParams = 0;
+    // The command whose processing issues it; RequestAnimation fills in the tick it is
+    // issued on when a producer names none.
+    AnimTick Command = 0;
+    // The entity whose lifetime bounds a Held request: its producer cancels the request
+    // when this ends, and one left held past it is reported as orphaned.
+    EntityId Owner;
+    InvocationId Cause;
+    // A client's guess ahead of the authority: it never replaces, supersedes or
+    // deduplicates against a record the authority wrote.
+    bool Predicted = false;
 };
 
 enum class AnimRequestStatus : std::uint8_t
@@ -40,6 +50,12 @@ struct AnimRequestResult
     [[nodiscard]] bool Accepted() const { return Status != AnimRequestStatus::Rejected; }
     friend bool operator==(const AnimRequestResult&, const AnimRequestResult&) = default;
 };
+
+// The order every machine agrees on: the later start, ties to the higher sequence.
+[[nodiscard]] inline bool IsNewerAnimRequest(const AnimRequest& a, const AnimRequest& b)
+{
+    return a.StartTick != b.StartTick ? a.StartTick > b.StartTick : a.Id.Sequence > b.Id.Sequence;
+}
 
 // Occupied, not cancelled, and not past a Fixed or Impulse lifetime.
 [[nodiscard]] bool IsAnimRequestLive(const AnimRequest& request, AnimTick now);

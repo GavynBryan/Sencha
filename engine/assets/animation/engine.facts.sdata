@@ -5,8 +5,7 @@
         "slots": [
             { "name": "Grounded", "kind": "bool" },
             { "name": "Speed", "kind": "float" },
-            { "name": "VerticalSpeed", "kind": "float" },
-            { "name": "Dead", "kind": "bool" }
+            { "name": "VerticalSpeed", "kind": "float" }
         ]
     }
 }

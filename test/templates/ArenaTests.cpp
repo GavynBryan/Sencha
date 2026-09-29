@@ -37,8 +37,8 @@ namespace
     struct ArenaProbe
     {
         Engine* Host = nullptr;
-        // No starter content animates; the template must not pay for animation.
-        bool AnimationRegistered = true;
+        // The engine registers animation for every host, whatever it loads.
+        bool AnimationRegistered = false;
         int Frames = 0;
         static constexpr int kHostAtFrame = 150;
 
@@ -108,7 +108,7 @@ TEST(ArenaTemplate, APawnBeforeTheSessionIsStampedWhenHostingStarts)
     ASSERT_EQ(run.Exit(), 0);
 
     const ArenaProbe& seen = run.Seen();
-    EXPECT_FALSE(seen.AnimationRegistered) << "no starter content plays clips";
+    EXPECT_TRUE(seen.AnimationRegistered) << "every host animates whatever names a rig";
     ASSERT_TRUE(seen.BodyBeforeHost) << "the prefab pawn never landed before hosting";
     EXPECT_TRUE(seen.PrefabNamedBeforeHost)
         << "the body names its prefab so a later host can tell peers how to build it";

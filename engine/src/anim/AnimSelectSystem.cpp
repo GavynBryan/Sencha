@@ -2,6 +2,7 @@
 
 #include <anim/AnimRequests.h>
 #include <app/GameContexts.h>
+#include <core/hash/Fnv1a.h>
 #include <ecs/StoragePartitionSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -9,58 +10,47 @@
 
 #include <algorithm>
 #include <cmath>
+#include <type_traits>
 
 namespace
 {
-    constexpr std::uint64_t kFnvOffset = 14695981039346656037ull;
-    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
-
-    void Mix(std::uint64_t& hash, std::uint64_t value)
-    {
-        for (int i = 0; i < 8; ++i)
-        {
-            hash ^= (value >> (i * 8)) & 0xFFu;
-            hash *= kFnvPrime;
-        }
-    }
-
     std::uint64_t RequestDigest(const AnimRequestSet* set, AnimTick now)
     {
-        std::uint64_t hash = kFnvOffset;
+        std::uint64_t hash = kFnv1aOffsetBasis;
         if (set == nullptr)
             return hash;
         for (const AnimRequest& request : set->Records)
         {
             if (!request.Occupied)
                 continue;
-            Mix(hash, request.Id.Sequence);
-            Mix(hash, request.Intent.Value);
-            Mix(hash, request.StartTick);
-            Mix(hash, request.CancelTick);
-            Mix(hash, request.TailUntilTick);
-            Mix(hash, request.FixedTicks);
-            Mix(hash, (static_cast<std::uint64_t>(request.Layers) << 16)
-                          | (static_cast<std::uint64_t>(request.Lifetime) << 8)
-                          | static_cast<std::uint64_t>(request.CancelReason));
+            HashFnv1aValue(hash, request.Id.Sequence);
+            HashFnv1aValue(hash, request.Intent.Value);
+            HashFnv1aValue(hash, request.StartTick);
+            HashFnv1aValue(hash, request.CancelTick);
+            HashFnv1aValue(hash, request.TailUntilTick);
+            HashFnv1aValue(hash, request.FixedTicks);
+            HashFnv1aValue(hash, (static_cast<std::uint64_t>(request.Layers) << 16)
+                                     | (static_cast<std::uint64_t>(request.Lifetime) << 8)
+                                     | static_cast<std::uint64_t>(request.CancelReason));
             for (const std::uint32_t param : request.Params)
-                Mix(hash, param);
+                HashFnv1aValue(hash, param);
             // Liveness moves with time alone for fixed and impulse requests.
-            Mix(hash, IsAnimRequestLive(request, now) ? 1u : 0u);
+            HashFnv1aValue(hash, IsAnimRequestLive(request, now) ? 1u : 0u);
         }
         return hash;
     }
 
     std::uint64_t FactDigest(std::span<const std::uint32_t> facts, const AnimContentState* content)
     {
-        std::uint64_t hash = kFnvOffset;
+        std::uint64_t hash = kFnv1aOffsetBasis;
         for (const std::uint32_t value : facts)
-            Mix(hash, value);
+            HashFnv1aValue(hash, value);
         if (content != nullptr)
         {
             std::uint64_t feedback = 0;
             for (std::size_t l = 0; l < kAnimMaxLayers; ++l)
                 feedback |= static_cast<std::uint64_t>(content->Layers[l].ContentComplete) << l;
-            Mix(hash, feedback);
+            HashFnv1aValue(hash, feedback);
         }
         return hash;
     }
@@ -540,15 +530,15 @@ void SelectAnimEntity(const World& world, EntityId entity, const AnimBoundRig& r
 
 void AnimSelectSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    SelectImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
+    SelectImpl(ctx.Entities, &ctx.Partitions, AnimClockAt(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimSelectSystem::Select(World& world, AnimTick now, double tickSeconds)
 {
-    SelectImpl(world, nullptr, now, tickSeconds);
+    SelectImpl(world, nullptr, AnimClock::Uniform(now), tickSeconds);
 }
 
-void AnimSelectSystem::SelectImpl(World& world, const StoragePartitionSet* partitions, AnimTick now,
+void AnimSelectSystem::SelectImpl(World& world, const StoragePartitionSet* partitions, const AnimClock& clock,
                                   double tickSeconds)
 {
     EvaluatedCount = 0;
@@ -560,24 +550,33 @@ void AnimSelectSystem::SelectImpl(World& world, const StoragePartitionSet* parti
     {
         SmallQuery.reset();
         LargeQuery.reset();
+        FactlessQuery.reset();
         LastWorld = &world;
     }
     const bool hasLog = world.IsRegistered<AnimDecisionLog>();
     const bool hasContent = world.IsRegistered<AnimContentState>();
+    AnimSelectionExplanation* explained = world.TryGetResource<AnimSelectionExplanation>();
+    AnimRigRunCache resolver(*bindings, world);
 
     const auto visit = [&]<typename Storage>(auto& view) {
         const auto rigs = view.template Read<AnimRig>();
         auto states = view.template Write<AnimSelectorState>();
-        const auto facts = view.template Read<Storage>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            const AnimBoundRig* rig = bindings->Resolve(rigs[i].Rig, world);
+            const AnimBoundRig* rig = resolver.Resolve(rigs[i].Rig);
             if (rig == nullptr || !rig->Valid || rig->Selectors.empty() || !ShouldRunAnimationLogic(PresentsPose, *rig))
                 continue;
             const EntityId entity = view.Entity(i);
-            const std::span<const std::uint32_t> values(facts[i].Values, std::min(rig->Slots.size(),
-                                                                                    std::size(facts[i].Values)));
+            const AnimTick now = clock.For(entity);
+            std::span<const std::uint32_t> values;
+            if constexpr (!std::is_void_v<Storage>)
+            {
+                const auto facts = view.template Read<Storage>();
+                values = std::span<const std::uint32_t>(facts[i].Values,
+                                                        std::min(rig->Slots.size(), std::size(facts[i].Values)));
+            }
             AnimSelectorState& state = states[i];
+            const bool explaining = explained != nullptr && explained->Entity == entity;
 
             // Skip an entity nothing has touched: same facts, same requests,
             // same feedback, no timer due, nothing that reads the clock.
@@ -593,7 +592,8 @@ void AnimSelectSystem::SelectImpl(World& world, const StoragePartitionSet* parti
                     || state.Layers[l].Latch != AnimLatchState::None;
                 wake = std::min(wake, state.Layers[l].WakeTick);
             }
-            if (state.Evaluated && !timeDriven && now < wake && state.BindingGeneration == rig->Generation)
+            if (!explaining && state.Evaluated && !timeDriven && now < wake
+                && state.BindingGeneration == rig->Generation)
             {
                 const World& reader = world;
                 const AnimContentState* content = hasContent ? reader.TryGet<AnimContentState>(entity) : nullptr;
@@ -606,7 +606,8 @@ void AnimSelectSystem::SelectImpl(World& world, const StoragePartitionSet* parti
             }
 
             AnimDecisionLog* log = hasLog ? world.TryGet<AnimDecisionLog>(entity) : nullptr;
-            SelectAnimEntity(world, entity, *rig, values, state, now, tickSeconds, log);
+            SelectAnimEntity(world, entity, *rig, values, state, now, tickSeconds, log,
+                             explaining ? &explained->Verdicts : nullptr);
             ++EvaluatedCount;
         }
     };
@@ -627,5 +628,11 @@ void AnimSelectSystem::SelectImpl(World& world, const StoragePartitionSet* parti
         if (!LargeQuery.has_value())
             LargeQuery.emplace(world);
         run(*LargeQuery, [&](auto& view) { visit.template operator()<AnimFactsLarge>(view); });
+    }
+    if (world.IsRegistered<AnimFacts>() && world.IsRegistered<AnimFactsLarge>())
+    {
+        if (!FactlessQuery.has_value())
+            FactlessQuery.emplace(world);
+        run(*FactlessQuery, [&](auto& view) { visit.template operator()<void>(view); });
     }
 }

@@ -13,12 +13,12 @@ class World;
 class AnimRequestJournal
 {
 public:
-    // Bounds what one client may have in flight; a prediction past it is
-    // issued unrecorded and left to the authority's next word.
+    // Bounds what one client may have in flight. Past it nothing more is predicted,
+    // so every guess on a set is one this journal will take down.
     static constexpr std::size_t kCapacity = 32;
 
-    AnimRequestResult Issue(World& world, EntityId animated, const AnimRequestDesc& desc, AnimTick now,
-                            std::uint64_t commandTick);
+    // Issues `desc` as a prediction at `now`, the predicted entity's command-timeline tick.
+    AnimRequestResult Predict(World& world, EntityId animated, AnimRequestDesc desc, AnimTick now);
 
     // Call after applying a snapshot, with the last command the authority processed.
     void Reconcile(World& world, std::uint64_t acknowledgedCommand);
@@ -32,8 +32,17 @@ private:
         EntityId Animated;
         AnimRequestDesc Desc;
         AnimTick IssuedTick = 0;
-        std::uint64_t CommandTick = 0;
     };
 
     std::vector<Entry> Entries;
 };
+
+// How gameplay asks animation for something. The authority issues it on the tick
+// `animated` is simulating; a client predicts it for the entity it predicts and
+// leaves every other entity's requests to the authority's word.
+AnimRequestResult RequestAnimation(World& world, EntityId animated, AnimRequestDesc desc, std::uint64_t localTick);
+
+// Ends a request its producer holds. Cancels are the authority's: a client leaves
+// them to the authority's next word and answers false.
+bool CancelAnimation(World& world, EntityId animated, AnimRequestId id, AnimCancelReason reason,
+                     std::uint64_t localTick);

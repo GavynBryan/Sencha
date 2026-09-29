@@ -95,10 +95,10 @@ namespace
                   "latch": { "mode": "until_request_ends", "interruptible_by": "never", "on_request_cancel": "abort" },
                   "on_entered": { "binding": "weapon.reload_started" } } ] })");
             Load("asset://tp/character.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-                { "behavior": "Anim.Locomotion.Idle", "clip": "asset://tp/idle.sanim" },
-                { "behavior": "Anim.Locomotion.Walk", "clip": "asset://tp/walk.sanim" },
-                { "behavior": "Anim.Upper.Rest", "clip": "asset://tp/rest.sanim" },
-                { "behavior": "Anim.Weapon.Reload", "clip": "asset://tp/reload.sanim" } ] })");
+                { "id": "idle", "behavior": "Anim.Locomotion.Idle", "clip": "asset://tp/idle.sanim" },
+                { "id": "walk", "behavior": "Anim.Locomotion.Walk", "clip": "asset://tp/walk.sanim" },
+                { "id": "rest", "behavior": "Anim.Upper.Rest", "clip": "asset://tp/rest.sanim" },
+                { "id": "reload", "behavior": "Anim.Weapon.Reload", "clip": "asset://tp/reload.sanim" } ] })");
             Load("asset://tp/locomotion.selector.sdata", kAnimSelectorType, R"({ "rules": [
                 { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Locomotion.Idle" },
                 { "name": "walk", "priority": 10, "enter": [ { "fact": "Speed", "compare": "gt", "value": 0.1 } ],

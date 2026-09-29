@@ -125,3 +125,36 @@ do the work and delete the entry.
   `editor/common/src/ui/DocumentShellActions.cpp`.
 - **Trigger:** the consolidated editor's single shutdown path, which can
   discard every source's documents before tearing them down.
+
+## Gameplay events on behaviors reached without a request
+
+- **What:** the plan's invariant 12 forbids Gameplay-scope events (clip marks or
+  lifecycle bindings) on behaviors reachable without a request. Binding does not
+  enforce that half: gameplay events are produced only by the authority, and the
+  remediation's requirements include gameplay events surviving a carry, which
+  happens between fact-selected cyclic behaviors. Blendspace samples are required
+  to share one gameplay track.
+- **Where:** `AnimSelectorBinding.cpp` (`Validate`, beside the Reconstruct and
+  root-motion pairings) and `docs/plans/animation-runtime.md`, invariant 12.
+- **Trigger:** the owner's ruling on whether fact-selected behaviors may carry
+  gameplay events.
+
+## Animation performance pass
+
+- **What:** the review's Phase D, left out of the correctness ticket: validating
+  each rig's binding once per tick through a bindings epoch rather than once per
+  run of equal handles in each system (`AnimRigRunCache` is where the epoch
+  lands); an optional-column accessor on `Query` so systems stop reading
+  same-chunk components through `TryGet`; rig-sized per-layer state in place of
+  eight-layer arrays; selector gate digests over only the slots selectors read;
+  per-behavior row ranges; skipping layers that contribute nothing to a pose; a
+  release-mode check on archetype rows wider than a chunk; evicting
+  `AnimRigBindings` entries for rigs no longer resident (a released rig's key is
+  never looked up again, so this is memory, not correctness); World resource
+  lookups hashing a type name, which a single-entity World such as the editor
+  preview pays per system per tick; and a logic-tick bench for Simple and
+  Character entities, which comes first.
+- **Where:** `docs/plans/animation-runtime-review.md`, findings P1-P6 and P8,
+  and "Remediation plan", phase D.
+- **Trigger:** the performance and cleanup ticket that follows, and before any
+  scene with hundreds of rigged entities ships.

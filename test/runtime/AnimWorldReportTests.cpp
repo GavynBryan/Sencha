@@ -4,6 +4,7 @@
 #include "AnimRigFixture.h"
 
 #include <anim/AnimDecisionLog.h>
+#include <anim/AnimRigComposition.h>
 #include <anim/AnimWorldReport.h>
 #include <core/console/ConsoleService.h>
 
@@ -41,35 +42,33 @@ namespace
 
         std::uint32_t Unplayed(EntityId entity)
         {
-            return Fx.Entities.TryGet<AnimContentState>(entity)->UnplayedRequests;
+            return Fx.Entities.TryGet<AnimRequestReport>(entity)->Unplayed;
         }
     };
 }
 
-// The tiers are one mechanism with more components, so each one's footprint is
-// the one below it plus what it adds -- and a rig alone brings its derived state.
-TEST(AnimWorldReport, FootprintsAreTheComponentsEachTierCarries)
+// A footprint is what the entity's rig composes it to carry: the character rig
+// adds facts, their history and selection to what every rig has, and a trace adds
+// its log.
+TEST(AnimWorldReport, FootprintsAreTheComponentsARigComposes)
 {
     ReportFixture fixture;
-    const EntityId prop = fixture.Prop();
-    const EntityId simple = fixture.Prop();
-    fixture.Fx.Entities.AddComponent(simple, AnimFacts{});
     const EntityId character = fixture.Prop();
-    fixture.Fx.Entities.AddComponent(character, AnimFactsLarge{});
-    fixture.Fx.Entities.AddComponent(character, AnimDecisionLog{});
+    const EntityId traced = fixture.Prop();
+    fixture.Fx.Entities.AddComponent(traced, AnimDecisionLog{});
+    fixture.Fx.Tick();
 
     const World& world = fixture.Fx.Entities;
-    const std::uint32_t propBytes = AnimEntityBytes(world, prop);
-    EXPECT_EQ(propBytes, sizeof(AnimRig) + sizeof(AnimRequestSet) + sizeof(AnimContentState) + sizeof(AnimFlowState));
-    const std::uint32_t selection = sizeof(AnimFactHistory) + sizeof(AnimSelectorState);
-    EXPECT_EQ(AnimEntityBytes(world, simple), propBytes + sizeof(AnimFacts) + selection);
-    EXPECT_EQ(AnimEntityBytes(world, character),
-              propBytes + sizeof(AnimFactsLarge) + selection + sizeof(AnimDecisionLog));
+    const std::uint32_t everyRig =
+        sizeof(AnimRig) + sizeof(AnimRequestSet) + sizeof(AnimContentState) + sizeof(AnimEventCursor)
+        + sizeof(AnimRequestReport) + sizeof(AnimRigComposition);
+    const std::uint32_t characterBytes = AnimEntityBytes(world, character);
+    EXPECT_EQ(characterBytes, everyRig + sizeof(AnimFacts) + sizeof(AnimFactHistory) + sizeof(AnimSelectorState));
+    EXPECT_EQ(AnimEntityBytes(world, traced), characterBytes + sizeof(AnimDecisionLog));
     EXPECT_EQ(AnimEntityBytes(world, fixture.Fx.Entities.CreateEntity()), 0u);
 
-    RecordProperty("prop_bytes", static_cast<int>(propBytes));
-    RecordProperty("simple_bytes", static_cast<int>(AnimEntityBytes(world, simple)));
-    RecordProperty("character_bytes", static_cast<int>(AnimEntityBytes(world, character)));
+    RecordProperty("every_rig_bytes", static_cast<int>(everyRig));
+    RecordProperty("character_bytes", static_cast<int>(characterBytes));
 }
 
 TEST(AnimWorldReport, EntitiesAreReportedByTheirRig)
@@ -77,7 +76,8 @@ TEST(AnimWorldReport, EntitiesAreReportedByTheirRig)
     ReportFixture fixture;
     const EntityId prop = fixture.Prop();
     const EntityId simple = fixture.Prop();
-    fixture.Fx.Entities.AddComponent(simple, AnimFacts{});
+    fixture.Fx.Entities.AddComponent(simple, AnimDecisionLog{});
+    fixture.Fx.Tick();
 
     const std::vector<AnimRigWorldReport> reports = ReportAnimWorld(fixture.Fx.Entities);
     ASSERT_EQ(reports.size(), 1u);

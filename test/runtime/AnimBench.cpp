@@ -31,7 +31,7 @@ namespace
         (void)fx.Load("asset://bench/prop.behaviors.sdata", kAnimBehaviorSetType,
                       R"({ "behaviors": [ { "tag": "Anim.Prop.Spin", "kind": "cyclic" } ] })");
         (void)fx.Load("asset://bench/prop.slots.sdata", kAnimSlotMapType,
-                      R"({ "rows": [ { "behavior": "Anim.Prop.Spin", "clip": "asset://bench/spin.sanim" } ] })");
+                      R"({ "rows": [ { "id": "spin", "behavior": "Anim.Prop.Spin", "clip": "asset://bench/spin.sanim" } ] })");
         return fx.Load("asset://bench/prop.rig.sdata", kAnimRigType, R"({
             "behaviors": [ "asset://bench/prop.behaviors.sdata" ], "slot_maps": [ "asset://bench/prop.slots.sdata" ],
             "layers": [ { "name": "anim.layer.base", "idle": "Anim.Prop.Spin" } ] })");
@@ -69,7 +69,8 @@ namespace
         const DataAssetHandle rig = LoadProp(fx);
         for (std::size_t i = 0; i < props; ++i)
             (void)fx.Character(rig);
-        AnimFactGatherSystem gather(nullptr, presentsPose);
+        AnimRigCompositionSystem composition(presentsPose);
+        AnimFactGatherSystem gather(presentsPose);
         AnimSelectSystem select(presentsPose);
         AnimContentSystem content(presentsPose);
         AnimEventSystem events(nullptr, presentsPose);
@@ -77,6 +78,7 @@ namespace
         for (int tick = 0; tick < 60 + reps; ++tick, ++fx.Now)
         {
             const auto start = Bench::Clock::now();
+            composition.Compose(fx.Entities);
             gather.Gather(fx.Entities, fx.Now, AnimRigFixture::kTick);
             select.Select(fx.Entities, fx.Now, AnimRigFixture::kTick);
             content.Resolve(fx.Entities, fx.Now, AnimRigFixture::kTick);
@@ -103,7 +105,7 @@ namespace
     {
         AnimCrowd::Fixture crowd;
         for (std::size_t i = 0; i < characters; ++i)
-            crowd.Characters.push_back(crowd.Character(crowd.Rig));
+            crowd.Characters.push_back(crowd.DrawnCharacter(crowd.Rig));
         std::unique_ptr<JobSystem> jobs = workers > 0 ? std::make_unique<JobSystem>(workers) : nullptr;
         AnimPoseSystem poser(jobs.get());
         std::vector<double> samples;

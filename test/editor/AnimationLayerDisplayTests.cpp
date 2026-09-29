@@ -44,8 +44,8 @@ namespace
             Rig.Contents.push_back(content);
 
             State.Slot = Pool.Allocate(EntityId{});
-            Pool.Shape(State.Slot, 2, 2);
-            Slot = Pool.Find(State.Slot);
+            Slot = Pool.Find(State.Slot, EntityId{});
+            Slot->Shape(2, 2);
             Slot->LayerPose(0)[0].Position = Vec3d(2.0f, 0.0f, 0.0f);
             Slot->LayerPose(1)[1].Position = Vec3d(5.0f, 0.0f, 0.0f);
             Slot->Current[0].Position = Vec3d(2.0f, 0.0f, 0.0f);

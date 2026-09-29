@@ -2,6 +2,7 @@
 
 #include <anim/AnimTypes.h>
 #include <ecs/ComponentAnnotations.h>
+#include <gameplay_tags/GameplayTagId.h>
 
 #include <cstdint>
 
@@ -20,6 +21,8 @@ struct AnimLayerFlow
     AnimTick SectionStartTick = 0;
     // Excludes loops; what the authority stamps as the anchor's start.
     AnimTick SectionEnteredTick = 0;
+    // The playing section by its tag: what a rebind finds it again by.
+    GameplayTagId SectionTag;
     std::uint16_t LoopCount = 0;
     std::uint8_t Section = kAnimNoSection;
     AnimFlowPhase Phase = AnimFlowPhase::None;

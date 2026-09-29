@@ -7,6 +7,7 @@
 
 #include <gameplay_tags/GameplayTagRegistry.h>
 
+#include <algorithm>
 #include <format>
 #include <memory>
 
@@ -24,6 +25,9 @@ namespace
 
         DataFieldSchema row = Record({}, "Row", {},
             {
+                Field("id", DataFieldKind::String, "Id",
+                      "Names this row for good: what is playing stays on it across reloads that add, remove "
+                      "or reorder rows. Unique in the slot map."),
                 Field("behavior", DataFieldKind::GameplayTag, "Behavior", "The behavior this row resolves."),
                 Field("priority", DataFieldKind::Int, "Priority",
                       "Higher rows are tried first; overlays insert rows by priority.", false),
@@ -36,7 +40,7 @@ namespace
             });
         DataFieldSchema rows = ArrayOf("rows", "Rows", "First match per behavior.", std::move(row), true);
         rows.Editor.Widget = "cards";
-        rows.Editor.TitleKey = "behavior";
+        rows.Editor.TitleKey = "id";
 
         DataSchema schema;
         schema.TypeName = std::string(kAnimSlotMapType);
@@ -59,6 +63,17 @@ namespace
             const JsonValue& entry = rows[i];
             const std::string at = std::format("$.data.rows[{}]", i);
             AnimSlotRowDecl row;
+            row.Id = entry.Find("id")->AsString();
+            if (row.Id.empty())
+            {
+                result.Error = at + ".id A row needs an id: it is what a reload keeps playing content on.";
+                return result;
+            }
+            if (std::ranges::any_of(map->Rows, [&](const AnimSlotRowDecl& other) { return other.Id == row.Id; }))
+            {
+                result.Error = std::format("{}.id '{}' names another row of this slot map.", at, row.Id);
+                return result;
+            }
             row.Behavior = entry.Find("behavior")->AsString();
             GameplayTagError error;
             if (!tagSyntax.RegisterTag(row.Behavior, &error))

@@ -1,4 +1,3 @@
-#include <anim/AnimationRegistration.h>
 #include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <app/Game.h>
@@ -222,15 +221,6 @@ public:
     {
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
         ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
-        // Clip playback: a posed skinned mesh is one of the things the goldens
-        // watch, and nothing else in this host would advance it.
-        RegisterAnimationSystems(ctx.Schedule, &GetEngine().Logging(),
-                                 AnimationHost{
-                                     .Verbs = GetEngine().TryVerbs(),
-                                     .Console = &GetEngine().Console().Registry(),
-                                     .PresentsPose = ctx.Config.Window.GraphicsApi != WindowGraphicsApi::None,
-                                     .Jobs = &GetEngine().Jobs(),
-                                 });
     }
 
     void OnShutdown(GameShutdownContext&) override

@@ -145,12 +145,14 @@ void AnimationSessionLab::InjectAuthority(AnimTick tick)
         const AnimationLabInjection& injection = Injected[i];
         if (injection.AuthorityTick != tick)
             continue;
-        CommandAck = std::max<std::uint64_t>(CommandAck, i + 1);
+        // The command the client stamped on its tick, answered when the authority gets to it.
+        CommandAck = std::max<std::uint64_t>(CommandAck, injection.Tick);
         if (!injection.Confirmed || tags == nullptr)
             continue;
         AnimRequestDesc desc;
         desc.Source = AuthoritySession.ParticipantEntity(injection.Participant);
         desc.Intent = tags->FindTag(injection.Intent);
+        desc.Command = injection.Tick;
         (void)IssueAnimRequest(world, AuthoritySession.Subject(), desc, tick);
     }
 }
@@ -170,7 +172,8 @@ void AnimationSessionLab::InjectClient(AnimTick tick)
         AnimRequestDesc desc;
         desc.Source = ClientSession.ParticipantEntity(injection.Participant);
         desc.Intent = tags->FindTag(injection.Intent);
-        (void)journal->Issue(world, ClientSession.Subject(), desc, tick, i + 1);
+        desc.Command = tick;
+        (void)journal->Predict(world, ClientSession.Subject(), desc, tick);
     }
 }
 

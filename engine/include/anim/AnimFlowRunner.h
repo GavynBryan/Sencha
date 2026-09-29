@@ -18,6 +18,9 @@ struct AnimFlowAdvanceInput
     double TickSeconds = 0.0;
     // The layer is new to this flow this tick.
     bool Entered = false;
+    // The rig bound again since the last tick: indices the flow state holds may name
+    // other sections and clips now.
+    bool Rebound = false;
     bool Cancelling = false;
     // Plays the authority's flow rather than deciding it: an anchor elsewhere moves it.
     bool FollowsAnchor = false;

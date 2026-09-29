@@ -1,5 +1,6 @@
 #pragma once
 
+#include <abilities/AbilityAnimation.h>
 #include <effects/EffectId.h>
 #include <gameplay_tags/GameplayTagQuery.h>
 
@@ -23,4 +24,5 @@ struct AbilityDefinition
     EffectId Cost;       // invalid = free
     EffectId Cooldown;   // invalid = no cooldown
     EffectId OnActivate; // invalid = no behavior effect
+    AbilityAnimation Animation;
 };

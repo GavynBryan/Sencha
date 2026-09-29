@@ -70,8 +70,8 @@ namespace AnimCrowd
                 { "name": "walk", "priority": 10, "enter": [ { "fact": "Speed", "compare": "gt", "value": 0.1 } ],
                   "behavior": "Anim.Walk" } ] })");
             (void)Load("asset://bench/slots.sdata", kAnimSlotMapType, R"({ "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://bench/idle.sanim" },
-                { "behavior": "Anim.Walk", "clip": "asset://bench/walk.sanim" } ] })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://bench/idle.sanim" },
+                { "id": "walk", "behavior": "Anim.Walk", "clip": "asset://bench/walk.sanim" } ] })");
             Rig = Load("asset://bench/rig.sdata", kAnimRigType, R"({
                 "skeleton": "asset://bench/crowd.sskel", "facts": "asset://bench/facts.sdata",
                 "behaviors": [ "asset://bench/behaviors.sdata" ], "slot_maps": [ "asset://bench/slots.sdata" ],

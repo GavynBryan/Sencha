@@ -167,3 +167,32 @@ void AnimRigBinder::BindEvents(const AnimRigData& rig)
         }
     }
 }
+
+void AnimRigBinder::ValidateBlendspaceGameplayEvents()
+{
+    const auto gameplayTrack = [&](int content) {
+        std::vector<std::pair<float, VerbBindingKey>> track;
+        if (content < 0 || static_cast<std::size_t>(content) >= Out.Contents.size())
+            return track;
+        for (const AnimBoundEvent& event : Out.Contents[static_cast<std::size_t>(content)].Events)
+            if (event.Scope == AnimEventScope::Gameplay)
+                track.emplace_back(event.Time, event.Binding);
+        std::ranges::sort(track);
+        return track;
+    };
+    for (const AnimBoundBlendspace& space : Out.Blendspaces)
+    {
+        if (space.Samples.empty())
+            continue;
+        const auto first = gameplayTrack(space.Samples.front().Content);
+        for (std::size_t s = 1; s < space.Samples.size(); ++s)
+        {
+            if (gameplayTrack(space.Samples[s].Content) == first)
+                continue;
+            Error("anim.blendspace.gameplay_events", space.Path, std::format("$.data.samples[{}]", s),
+                  "Every sample of a blendspace carries the same gameplay events at the same times: the mix "
+                  "plays its heaviest sample's marks, and the weights must not decide what gameplay hears.");
+            break;
+        }
+    }
+}

@@ -96,10 +96,9 @@ PawnReplayResult ReplayPawnState(const PawnReplayRequest& request)
             std::uint32_t replayed = 0;
             const bool complete = prediction.Commands().ForEachAfter(
                 request.AckTick, [&](const PawnCommandTick& command) {
-                    const std::int64_t shifted =
-                        static_cast<std::int64_t>(command.Tick) + request.AnimationTickOffset;
-                    StepCharacterTick(world, request.Movers, pawn, command.Intent,
-                                      static_cast<std::uint64_t>(std::max<std::int64_t>(shifted, 0)),
+                    // The predicted pawn lives on the command timeline, so a command's
+                    // tick is the tick its animation and root motion ran on live.
+                    StepCharacterTick(world, request.Movers, pawn, command.Intent, command.Tick,
                                       request.FixedDeltaSeconds, request.Gravity, request.UpAxis);
                     ++replayed;
                 });

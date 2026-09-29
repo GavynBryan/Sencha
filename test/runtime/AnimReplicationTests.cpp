@@ -6,6 +6,7 @@
 
 #include <anim/AnimEventSystem.h>
 #include <anim/AnimRequestJournal.h>
+#include <world/SimulationTimeline.h>
 #include <authored/VerbDispatcher.h>
 #include <authored/VerbRegistry.h>
 #include <ecs/WorldComponentSchema.h>
@@ -111,7 +112,6 @@ namespace
             ASSERT_TRUE(Mirror.IsValid());
             ASSERT_NE(Mirror, Prop);
             Client.Entities.AddComponent(Mirror, AnimRig{ ClientRig });
-            Client.Entities.AddComponent(Mirror, AnimFacts{});
             Client.Entities.AddComponent(Mirror, AnimTestMotion{});
             Client.Entities.AddComponent(Mirror, AnimDecisionLog{});
             const auto offset = static_cast<std::int64_t>(Authority.Now + flight)
@@ -119,13 +119,46 @@ namespace
             Client.Entities.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = offset });
         }
 
-        // One client tick, at whatever its own clock says the authority's
-        // tick is.
+        // Makes the mirror the entity this client predicts: its commands are stamped
+        // `lead` ticks ahead of the authority's present, and it ticks on that timeline.
+        void PredictMirror(std::int64_t lead)
+        {
+            const std::int64_t offset = Client.Entities.GetResource<SimulationAuthority>().TickOffset;
+            Client.Entities.SetResource(PredictedSimulation{ .Entity = Mirror, .CommandTickOffset = offset + lead });
+        }
+
+        // One client tick, on the tick the mirror is simulating.
         void ClientTick()
         {
-            Client.Now = AuthorityTickOf(Client.Entities, ClientLocalTick);
+            Client.Now = SimulationTickOf(Client.Entities, Mirror, ClientLocalTick);
             Client.Tick();
             ++ClientLocalTick;
+        }
+
+        // The client asking for a reload on the tick it is about to simulate: predicted
+        // for the mirror it predicts, with that tick's command as its identity.
+        AnimRequestResult RequestReload()
+        {
+            AnimRequestDesc desc;
+            desc.Source = Mirror;
+            desc.Intent = Client.Tag("anim.intent.reload");
+            desc.Params[0] = AnimFactFromInt(2);
+            return RequestAnimation(Client.Entities, Mirror, desc, ClientLocalTick);
+        }
+
+        // The authority processing the client's command `command` on its tick of that
+        // name, which is now: the ability asks for the same reload.
+        AnimRequestResult ProcessReload(std::uint64_t command)
+        {
+            EXPECT_EQ(Authority.Now, command);
+            AnimRequestDesc desc;
+            desc.Source = Prop;
+            desc.Intent = Authority.Tag("anim.intent.reload");
+            desc.Params[0] = AnimFactFromInt(2);
+            desc.Command = command;
+            const AnimRequestResult result = IssueAnimRequest(Authority.Entities, Prop, desc, Authority.Now);
+            CommandAck = command;
+            return result;
         }
 
         // A tick on both: the authority's, a snapshot, then the client's for
@@ -154,14 +187,15 @@ namespace
 
         AnimRequestJournal& Journal() { return Client.Entities.GetResource<AnimRequestJournal>(); }
 
-        // The client predicting a reload for its command `command`.
+        // The client predicting a reload for its command `command`, on its tick `tick`.
         AnimRequestResult Predict(AnimTick tick, std::uint64_t command)
         {
             AnimRequestDesc prediction;
             prediction.Source = Mirror;
             prediction.Intent = Client.Tag("anim.intent.reload");
             prediction.Params[0] = AnimFactFromInt(2);
-            return Journal().Issue(Client.Entities, Mirror, prediction, tick, command);
+            prediction.Command = command;
+            return Journal().Predict(Client.Entities, Mirror, prediction, tick);
         }
 
         const AnimRequestSet& ClientRequests() const
@@ -442,89 +476,100 @@ TEST(AnimReplication, AClientHearingOfACancelLateFollowsTheAuthoritysAnchor)
     session.ExpectAgree("through the cancel section");
 }
 
-// A prediction the authority confirms: its request replaces the guess, the
-// journal forgets it, and the client plays what the authority plays.
-TEST(AnimReplication, AConfirmedPredictionGivesWayToTheAuthoritysRequest)
+// The client runs its own mirror `lead` ticks ahead of the authority, on the
+// command timeline: what it predicts on a tick is what the authority does on
+// the tick of the same name, so a confirmed guess plays on untouched.
+TEST(AnimReplication, AConfirmedPredictionPlaysOnWithoutACorrection)
 {
+    constexpr std::int64_t kLead = 3;
     AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     session.Authority.Tick();
     session.Join();
+    session.PredictMirror(kLead);
     session.StepTo(9);
-    ASSERT_TRUE(session.Predict(10, 100).Accepted());
-    EXPECT_TRUE(session.ClientRequests().Records[0].Predicted);
-    session.StepTo(11);
-    EXPECT_EQ(session.Journal().Size(), 1u) << "undecided until the authority processes command 100";
+
+    const AnimTick command = SimulationTickOf(session.Client.Entities, session.Mirror, session.ClientLocalTick);
+    ASSERT_EQ(command, 10u + kLead);
+    ASSERT_TRUE(session.RequestReload().Accepted());
+    session.StepTo(command - 1);
+    EXPECT_EQ(session.Journal().Size(), 1u) << "undecided until the authority runs that command";
     ASSERT_EQ(session.Client.BehaviorName(session.Mirror), "anim.intent.reload");
 
-    // The authority processes command 100 on tick 12.
-    ASSERT_TRUE(session.Reload(2).Accepted());
-    session.CommandAck = 100;
-    session.StepTo(12);
+    ASSERT_TRUE(session.ProcessReload(command).Accepted());
+    session.StepTo(command);
     EXPECT_EQ(session.Journal().Size(), 0u);
-    EXPECT_FALSE(session.ClientRequests().Records[0].Predicted);
-    for (const AnimTick tick : { 12u, 30u, 60u })
+    EXPECT_EQ(session.Client.Playing(session.Mirror).StartTick, command);
+    EXPECT_EQ(session.Authority.Playing(session.Prop).StartTick, command);
+    session.StepTo(command + 40);
+    const AnimDecisionLog& log = session.Client.Log(session.Mirror);
+    for (std::size_t i = 0; i < log.Size(); ++i)
     {
-        session.StepTo(tick);
-        session.ExpectAgree(std::to_string(tick).c_str());
+        EXPECT_NE(log.At(i).Reason, AnimChangeReason::Reconstructed) << "nothing rebuilt";
+        EXPECT_NE(log.At(i).Reason, AnimChangeReason::RequestCorrected) << "nothing corrected";
     }
+    EXPECT_EQ(AnimSession::Flow(session.Client, session.Mirror).SectionStartTick,
+              AnimSession::Flow(session.Authority, session.Prop).SectionStartTick)
+        << "the same section, entered on the same named tick";
 }
 
 // A prediction the authority refuses leaves no request behind, although the
 // authority's set never changed and so was never sent again.
 TEST(AnimReplication, ARefusedPredictionIsTakenDown)
 {
+    constexpr std::int64_t kLead = 3;
     AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     session.Authority.Tick();
     session.Join();
+    session.PredictMirror(kLead);
     session.StepTo(9);
-    ASSERT_TRUE(session.Predict(10, 100).Accepted());
-    session.StepTo(11);
+    const AnimTick command = SimulationTickOf(session.Client.Entities, session.Mirror, session.ClientLocalTick);
+    ASSERT_TRUE(session.RequestReload().Accepted());
+    session.StepTo(command - 1);
     ASSERT_EQ(session.Client.BehaviorName(session.Mirror), "anim.intent.reload");
 
-    session.CommandAck = 100;
-    session.StepTo(12);
+    // The authority runs the command and asks for nothing.
+    session.CommandAck = command;
+    session.StepTo(command);
     EXPECT_EQ(session.Journal().Size(), 0u);
-    EXPECT_FALSE(session.ClientRequests().Records[0].Occupied);
+    for (const AnimRequest& request : session.ClientRequests().Records)
+        EXPECT_FALSE(request.Occupied);
     const AnimDecisionRecord* rebuilt = session.Client.LastRecord(session.Mirror, AnimDecisionCause::ContentChanged);
     ASSERT_NE(rebuilt, nullptr);
-    EXPECT_EQ(rebuilt->Tick, 12u);
     EXPECT_EQ(rebuilt->Reason, AnimChangeReason::Reconstructed);
-    // Idle is not request-driven, so its clock is this machine's own; what
-    // has to agree is what plays.
     EXPECT_EQ(session.Client.BehaviorName(session.Mirror), "Anim.Idle");
-    EXPECT_EQ(session.Client.Playing(session.Mirror).Content, session.Authority.Playing(session.Prop).Content);
 }
 
 // The authority's set arriving for another reason wipes the guess; one the
 // authority has not decided yet is put back on top of it.
 TEST(AnimReplication, AnUndecidedPredictionIsIssuedAgainOnTheAuthoritysSet)
 {
+    constexpr std::int64_t kLead = 3;
     AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
     const EntityId other = session.Authority.Entities.CreateEntity();
     session.Authority.Tick();
     session.Join();
+    session.PredictMirror(kLead);
     session.StepTo(9);
-    ASSERT_TRUE(session.Predict(10, 100).Accepted());
+    const AnimTick command = SimulationTickOf(session.Client.Entities, session.Mirror, session.ClientLocalTick);
+    ASSERT_TRUE(session.RequestReload().Accepted());
     session.StepTo(10);
 
     AnimRequestDesc elsewhere;
     elsewhere.Source = other;
     elsewhere.Intent = session.Authority.Tag("anim.intent.reload");
-    elsewhere.Lifetime = AnimRequestLifetime::Impulse;
     ASSERT_TRUE(IssueAnimRequest(session.Authority.Entities, session.Prop, elsewhere, session.Authority.Now).Accepted());
     session.StepTo(11);
 
-    const AnimRequestSet& requests = session.ClientRequests();
     int authoritative = 0;
     int predicted = 0;
-    for (const AnimRequest& request : requests.Records)
+    for (const AnimRequest& request : session.ClientRequests().Records)
     {
         if (!request.Occupied)
             continue;
         ++(request.Predicted ? predicted : authoritative);
         if (request.Predicted)
         {
-            EXPECT_EQ(request.StartTick, 10u) << "put back where the client guessed it";
+            EXPECT_EQ(request.StartTick, command) << "put back where the client guessed it";
         }
     }
     EXPECT_EQ(authoritative, 1);
@@ -532,18 +577,96 @@ TEST(AnimReplication, AnUndecidedPredictionIsIssuedAgainOnTheAuthoritysSet)
     EXPECT_EQ(session.Journal().Size(), 1u);
 }
 
-// On the authority there is nothing to predict: the journal issues and
-// remembers nothing.
-TEST(AnimReplication, TheAuthoritysJournalOnlyIssues)
+// A delta lands on the image of what the authority said, so a guess in a slot the
+// delta leaves alone cannot come out of it looking like the authority's word.
+TEST(AnimReplication, ADeltaCannotLeaveAGuessLookingLikeTheAuthoritysRecord)
+{
+    constexpr std::int64_t kLead = 3;
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
+    const EntityId other = session.Authority.Entities.CreateEntity();
+    session.Authority.Tick();
+    AnimRequestDesc held;
+    held.Source = other;
+    held.Intent = session.Authority.Tag("anim.intent.reload");
+    const AnimRequestResult first =
+        IssueAnimRequest(session.Authority.Entities, session.Prop, held, session.Authority.Now);
+    ASSERT_TRUE(first.Accepted());
+    session.Join();
+    session.PredictMirror(kLead);
+    session.StepTo(9);
+    const AnimTick command = SimulationTickOf(session.Client.Entities, session.Mirror, session.ClientLocalTick);
+    ASSERT_TRUE(session.RequestReload().Accepted());
+    session.StepTo(10);
+
+    // Only the first record changes, in the same snapshot that refuses the guess; the
+    // guess's slot is not in the delta.
+    session.StepTo(command - 1);
+    ASSERT_TRUE(CancelAnimRequest(session.Authority.Entities, session.Prop, first.Id, AnimCancelReason::Released,
+                                  session.Authority.Now));
+    session.CommandAck = command;
+    session.StepTo(command + 5);
+    const GameplayTagId reload = session.Client.Tag("anim.intent.reload");
+    for (const AnimRequest& request : session.ClientRequests().Records)
+        EXPECT_FALSE(request.Occupied && request.Intent == reload && request.StartTick == command)
+            << "a refused guess cannot survive as if the authority wrote it";
+}
+
+// A guess never takes the place of a record the authority wrote: refused, it
+// leaves the authority's request standing.
+TEST(AnimReplication, AGuessNeverTakesTheAuthoritysRecordsPlace)
+{
+    constexpr std::int64_t kLead = 3;
+    AnimSession session([](AnimRigFixture& fx) { return ReloadRigContent(fx, "cancel_section"); });
+    session.Authority.Tick();
+    ASSERT_TRUE(session.Reload(3).Accepted());
+    session.Join();
+    session.PredictMirror(kLead);
+    session.StepTo(9);
+    const AnimTick command = SimulationTickOf(session.Client.Entities, session.Mirror, session.ClientLocalTick);
+    // The same source asking for the same intent again: a combo's next swing.
+    const AnimRequestResult guess = session.RequestReload();
+    ASSERT_TRUE(guess.Accepted());
+    EXPECT_EQ(guess.Status, AnimRequestStatus::Accepted) << "beside the authority's record, not over it";
+
+    session.CommandAck = command;
+    session.StepTo(command);
+    const GameplayTagId reload = session.Client.Tag("anim.intent.reload");
+    int standing = 0;
+    for (const AnimRequest& request : session.ClientRequests().Records)
+        standing += request.Occupied && !request.Predicted && request.Intent == reload ? 1 : 0;
+    EXPECT_EQ(standing, 1) << "the authority's reload is still there";
+}
+
+// Gameplay asks through one door: the authority issues, a client predicts only the
+// entity it predicts, and leaves every other entity's requests to the authority.
+TEST(AnimReplication, RequestsIssueOnTheAuthorityAndArePredictedOnlyForTheClientsOwnEntity)
 {
     ReloadFlowFixture fx(CountedLoopFlow());
-    AnimRequestJournal journal;
     AnimRequestDesc desc;
     desc.Source = fx.Entity;
     desc.Intent = fx.Tag("anim.intent.reload");
-    ASSERT_TRUE(journal.Issue(fx.Entities, fx.Entity, desc, 0, 7).Accepted());
-    EXPECT_EQ(journal.Size(), 0u);
+    const AnimRequestResult issued = RequestAnimation(fx.Entities, fx.Entity, desc, 0);
+    ASSERT_TRUE(issued.Accepted());
+    EXPECT_EQ(fx.Entities.GetResource<AnimRequestJournal>().Size(), 0u);
     EXPECT_FALSE(static_cast<const World&>(fx.Entities).TryGet<AnimRequestSet>(fx.Entity)->Records[0].Predicted);
+
+    ReloadFlowFixture client(CountedLoopFlow());
+    client.Entities.SetResource(SimulationAuthority{ .Authoritative = false });
+    desc.Source = client.Entity;
+    desc.Intent = client.Tag("anim.intent.reload");
+    const AnimRequestResult refused = RequestAnimation(client.Entities, client.Entity, desc, 0);
+    EXPECT_EQ(refused.Reject, AnimRejectReason::LeftToAuthority);
+
+    client.Entities.SetResource(PredictedSimulation{ .Entity = client.Entity, .CommandTickOffset = 4 });
+    const AnimRequestResult predicted = RequestAnimation(client.Entities, client.Entity, desc, 10);
+    ASSERT_TRUE(predicted.Accepted());
+    const AnimRequest& guess =
+        static_cast<const World&>(client.Entities).TryGet<AnimRequestSet>(client.Entity)->Records[0];
+    EXPECT_TRUE(guess.Predicted);
+    EXPECT_EQ(guess.StartTick, 14u) << "on the command timeline";
+    EXPECT_EQ(guess.Command, 14u);
+    EXPECT_FALSE(CancelAnimation(client.Entities, client.Entity, predicted.Id, AnimCancelReason::Released, 11))
+        << "cancels are the authority's";
 }
 
 // The timing identity names things, so two machines numbering tags

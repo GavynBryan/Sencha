@@ -31,6 +31,8 @@ class AnimPosePool
 public:
     struct Slot
     {
+        // Only the entity a slot was assigned to reads or releases it: pose state
+        // copied onto another entity names a slot that is not that entity's.
         EntityId Owner;
         // What a renderer checks its mesh skins against before drawing.
         SkeletonHandle Skeleton;
@@ -46,6 +48,9 @@ public:
         bool HasCurrent = false;
         bool HasPrevious = false;
         bool Live = false;
+
+        // Clears the slot when the shape changes.
+        void Shape(std::uint32_t joints, std::uint32_t layers);
 
         [[nodiscard]] std::span<AnimJointOffset> LayerOffsets(std::size_t layer)
         {
@@ -63,12 +68,11 @@ public:
 
     // Empty until shaped. The handle is the slot index plus one.
     [[nodiscard]] std::uint32_t Allocate(EntityId owner);
-    void Release(std::uint32_t handle);
-    // Clears the slot when the shape changes.
-    void Shape(std::uint32_t handle, std::uint32_t joints, std::uint32_t layers);
+    void Release(std::uint32_t handle, EntityId owner);
 
-    [[nodiscard]] Slot* Find(std::uint32_t handle);
-    [[nodiscard]] const Slot* Find(std::uint32_t handle) const;
+    // Null unless `handle` names a live slot assigned to `owner`.
+    [[nodiscard]] Slot* Find(std::uint32_t handle, EntityId owner);
+    [[nodiscard]] const Slot* Find(std::uint32_t handle, EntityId owner) const;
     [[nodiscard]] std::size_t LiveCount() const { return Slots.size() - Free.size(); }
 
 private:

@@ -10,9 +10,13 @@
 #include <authored/WorldVocabulary.h>
 #include <logic/VerbRelaySystem.h>
 #include <abilities/AbilityKit.h>
+#include <anim/AnimFactProviders.h>
+#include <anim/AnimRequestVerbs.h>
 #include <anim/AnimationRegistration.h>
+#include <movement/MovementAnimFacts.h>
 #include <participant/ParticipantLifecycle.h>
 #include <world/SimulationAuthority.h>
+#include <world/SimulationTimeline.h>
 #include <world/identity/PersistentEntityIndex.h>
 #include <core/assets/AssetLease.h>
 #include <ui/UiService.h>
@@ -627,6 +631,16 @@ void Engine::PublishSimulationAuthority()
         : entities.AddResource<SimulationAuthority>();
     fact.Authoritative = NetState == nullptr || NetState->Role() != NetSessionRole::Client;
     fact.TickOffset = !fact.Authoritative && NetClockState.HasEstimate() ? NetClockState.Offset() : 0;
+
+    // The pawn this client runs ahead is named on the timeline its commands are
+    // stamped in, so what it does on a tick is what the authority does on that tick.
+    PredictedSimulation predicted;
+    if (!fact.Authoritative && NetClockState.HasEstimate())
+    {
+        predicted.Entity = Prediction().Predicted();
+        predicted.CommandTickOffset = NetClockState.CommandOffset();
+    }
+    entities.SetResource(predicted);
 }
 
 void Engine::RefreshShellBindings()
@@ -1087,6 +1101,9 @@ int Engine::Run(Game& game)
         // locomotion mode is declared once the game has, as the templates do.
         InstallAbilityKitVocabulary(entities);
         InstallAnimationVocabulary(entities);
+        // The engine's character facts read movement's components; a game without
+        // movement has no entity they answer for.
+        (void)BindMovementAnimFacts(entities.GetResource<AnimFactProviders>());
         RegisterAnimationConsole(ConsoleState->Registry(), entities);
         InstallAuthoredVocabulary(entities);
         VerbRegistry& verbs = *FindVerbRegistry(entities);
@@ -1340,6 +1357,28 @@ int Engine::Run(Game& game)
     EngineSystems.Register<NavigationSystem>(*RuntimeWorldState, &Jobs(),
                                              &ConsoleState->Registry());
 
+    // Animation requests from authored content go through the same door an ability's do.
+    {
+        AnimationOperations = std::make_unique<AnimRequestOperations>(RuntimeWorldState->Entities(),
+                                                                      RuntimeLoop.GetSimulationClock());
+        const VerbRegistry& verbs = RuntimeWorldState->Entities().GetResource<VerbRegistry>();
+        AnimRequestBinding =
+            VerbDispatcherState->Bind<&InvokeAnimRequest>(verbs.Find(kAnimRequestVerb), *AnimationOperations);
+        AnimCancelBinding =
+            VerbDispatcherState->Bind<&InvokeAnimCancel>(verbs.Find(kAnimCancelVerb), *AnimationOperations);
+    }
+
+    // Every host animates: an entity that names a rig plays it, in a process whose
+    // game registered nothing for it. Before the game's hook, so a game orders its
+    // request producers against these; poses only where a window presents them.
+    RegisterAnimationSystems(EngineSystems, &LoggingState,
+                             AnimationHost{
+                                 .Verbs = VerbDispatcherState.get(),
+                                 .Console = &console.Registry(),
+                                 .PresentsPose = Configuration.Window.GraphicsApi != WindowGraphicsApi::None,
+                                 .Jobs = &Jobs(),
+                             });
+
     game.OnRegisterSystems(registerSystems);
     // Every place a game binds has run.
     for (const AuthoredQueryId query : QueryDispatcherState->Unanswered())
@@ -1431,8 +1470,11 @@ int Engine::Run(Game& game)
     // The game's own hook ran above, which is where it gave back its tokens.
     ResumeBinding.Reset();
     QuitBinding.Reset();
+    AnimRequestBinding.Reset();
+    AnimCancelBinding.Reset();
     ResumeOperation.reset();
     QuitOperation.reset();
+    AnimationOperations.reset();
 #ifdef SENCHA_ENABLE_UI
     if (PauseMenuState != nullptr)
         PauseMenuState->SetVerbBindings(nullptr, nullptr);

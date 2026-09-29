@@ -130,8 +130,8 @@ namespace
                   "behavior": "Anim.Walk" },
                 { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Idle" } ] } })");
             Write("hero.slots.sdata", R"({ "type": "animation.slot_map", "version": 1, "data": { "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-                { "behavior": "Anim.Walk", "clip": "asset://anim/walk.sanim" } ] } })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+                { "id": "walk", "behavior": "Anim.Walk", "clip": "asset://anim/walk.sanim" } ] } })");
             Write("hero.rig.sdata", R"({ "type": "animation.rig", "version": 1, "data": {
                 "facts": "asset://anim/hero.facts.sdata", "behaviors": [ "asset://anim/hero.behaviors.sdata" ],
                 "slot_maps": [ "asset://anim/hero.slots.sdata" ],

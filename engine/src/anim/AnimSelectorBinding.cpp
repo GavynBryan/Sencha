@@ -94,11 +94,7 @@ namespace
                     context.StayRows.push_back({ path, rowIndex, rule.HasStay, r });
                 context.Source = parent.Source;
                 context.Source.push_back({ path, static_cast<std::uint32_t>(index), rule.Name });
-                // Named rules keep their key when reordered; unnamed ones are
-                // known only by position.
-                context.KeyPrefix = rule.Name.empty()
-                    ? std::format("{}{}#{}/", parent.KeyPrefix, path, index)
-                    : std::format("{}{}#{}/", parent.KeyPrefix, path, rule.Name);
+                context.KeyPrefix = std::format("{}{}#{}/", parent.KeyPrefix, path, rule.Name);
 
                 switch (rule.Result)
                 {

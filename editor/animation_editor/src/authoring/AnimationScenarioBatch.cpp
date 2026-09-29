@@ -2,7 +2,7 @@
 
 #include "authoring/AnimationPreviewSession.h"
 
-#include <anim/AnimContentState.h>
+#include <anim/AnimRequestReport.h>
 #include <anim/AnimRigBinding.h>
 #include <assets/runtime/AssetSystem.h>
 #include <ecs/World.h>
@@ -38,10 +38,10 @@ namespace
     {
         const World* world = session.SimulationWorld();
         const EntityId subject = session.Subject();
-        if (world == nullptr || !subject.IsValid() || !world->IsRegistered<AnimContentState>())
+        if (world == nullptr || !subject.IsValid() || !world->IsRegistered<AnimRequestReport>())
             return 0;
-        const AnimContentState* content = world->TryGet<AnimContentState>(subject);
-        return content != nullptr ? content->UnplayedRequests : 0;
+        const AnimRequestReport* report = world->TryGet<AnimRequestReport>(subject);
+        return report != nullptr ? report->Unplayed : 0;
     }
 }
 

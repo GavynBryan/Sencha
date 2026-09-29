@@ -46,8 +46,8 @@ namespace
                   "behavior": "Anim.Walk" },
                 { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Idle" } ] } })");
             Write("walker.slots.sdata", R"({ "type": "animation.slot_map", "version": 1, "data": { "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-                { "behavior": "Anim.Walk", "clip": "asset://anim/walk.sanim" } ] } })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+                { "id": "walk", "behavior": "Anim.Walk", "clip": "asset://anim/walk.sanim" } ] } })");
             Write("walker.rig.sdata", R"({ "type": "animation.rig", "version": 1, "data": {
                 "skeleton": "asset://anim/walker.sskel", "facts": "asset://anim/walker.facts.sdata",
                 "behaviors": [ "asset://anim/walker.behaviors.sdata" ], "slot_maps": [ "asset://anim/walker.slots.sdata" ],

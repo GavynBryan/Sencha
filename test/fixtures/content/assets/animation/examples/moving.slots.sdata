@@ -3,11 +3,11 @@
     "version": 1,
     "data": {
         "rows": [
-            {
+            { "id": "idle",
                 "behavior": "Anim.Locomotion.Idle",
                 "clip": "asset://meshes/dev/golden_rig.sanim"
             },
-            {
+            { "id": "move",
                 "behavior": "Anim.Locomotion.Move",
                 "blendspace": "asset://animation/examples/moving.blendspace.sdata"
             }

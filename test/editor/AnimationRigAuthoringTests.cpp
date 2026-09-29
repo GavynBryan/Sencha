@@ -87,9 +87,9 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
                                                     { "kind", JsonValue("one_shot") } }));
     });
     AuthorDocument(workspace, "asset://animation/brute/brute.slots.sdata", [](JsonValue& data) {
-        JsonArrayOf(data, "rows").push_back(JsonObjectOf({ { "behavior", JsonValue("Anim.Upper.Rest") },
+        JsonArrayOf(data, "rows").push_back(JsonObjectOf({ { "id", JsonValue("upper_rest") }, { "behavior", JsonValue("Anim.Upper.Rest") },
                                                { "clip", JsonValue("asset://meshes/man.blend#anim:Idle") } }));
-        JsonArrayOf(data, "rows").push_back(JsonObjectOf({ { "behavior", JsonValue("Anim.Weapon.Reload") },
+        JsonArrayOf(data, "rows").push_back(JsonObjectOf({ { "id", JsonValue("weapon_reload") }, { "behavior", JsonValue("Anim.Weapon.Reload") },
                                                { "clip", JsonValue("asset://meshes/man.blend#anim:Reload") } }));
     });
 

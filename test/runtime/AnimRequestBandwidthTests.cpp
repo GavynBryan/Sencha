@@ -117,13 +117,14 @@ TEST(AnimRequestBandwidth, IssuingAndCancellingAHeldRequest)
     AuthorityWire wire;
     const AnimRequestId held = wire.IssueFrom(wire.Sources[0]);
     wire.Tick();
-    EXPECT_LE(wire.Excess(), 90u) << "the entity's envelope and the new record";
+    // Each record carries the command that issued it, eight bytes of its ticks run.
+    EXPECT_LE(wire.Excess(), 98u) << "the entity's envelope and the new record";
     wire.Tick(10);
     EXPECT_EQ(wire.Excess(), 0u) << "a held request costs nothing while it holds";
 
     ASSERT_TRUE(CancelAnimRequest(wire.Entities, wire.Animated, held, AnimCancelReason::Released, wire.Now));
     wire.Tick();
-    EXPECT_LE(wire.Excess(), 86u) << "the entity's envelope and the ended record";
+    EXPECT_LE(wire.Excess(), 94u) << "the entity's envelope and the ended record";
 }
 
 TEST(AnimRequestBandwidth, AFullRequestSet)
@@ -132,5 +133,5 @@ TEST(AnimRequestBandwidth, AFullRequestSet)
     for (EntityId source : wire.Sources)
         (void)wire.IssueFrom(source);
     wire.Tick();
-    EXPECT_LE(wire.Excess(), 650u) << "the entity's envelope and eight new records";
+    EXPECT_LE(wire.Excess(), 714u) << "the entity's envelope and eight new records";
 }

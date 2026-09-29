@@ -1,6 +1,7 @@
 #include "AnimRigBinder.h"
 
 #include <anim/AnimSlotMapData.h>
+#include <gameplay_tags/GameplayTagRegistry.h>
 #include <anim/AnimationClipCache.h>
 
 #include <algorithm>
@@ -141,7 +142,7 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
             row.Content = content;
             row.DeclaredIn = path;
             row.Index = static_cast<std::uint32_t>(r);
-            row.Key = AnimStableKey(std::format("{}#{}", path, r));
+            row.Key = AnimStableKey(std::format("{}#{}", path, decl.Id));
             Out.SlotRows.push_back(std::move(row));
         }
     }
@@ -214,4 +215,35 @@ void AnimRigBinder::BindSlotMaps(const AnimRigData& rig)
             }
         }
     }
+}
+
+void AnimRigBinder::ValidateSlotCoverage(const AnimRigData& rig)
+{
+    const GameplayTagRegistry* tags = Tags();
+    const auto name = [&](GameplayTagId tag) {
+        return tags != nullptr ? std::string(tags->GetName(tag)) : std::string();
+    };
+    const auto played = [&](GameplayTagId behavior) {
+        return std::ranges::any_of(Out.SlotRows, [&](const AnimBoundSlotRow& row) { return row.Behavior == behavior; });
+    };
+    for (std::size_t l = 0; l < Out.Layers.size(); ++l)
+    {
+        const GameplayTagId idle = Out.Layers[l].Idle;
+        if (idle.IsValid() && !played(idle))
+            Warning("anim.slot.no_row", Out.RigPath, std::format("$.data.layers[{}].idle", l),
+                    std::format("No slot row plays the idle '{}': the layer shows nothing while it rests.", name(idle)));
+    }
+    (void)rig;
+    for (const AnimBoundSelector& selector : Out.Selectors)
+        for (const AnimBoundRule& rule : selector.Rules)
+        {
+            if (played(rule.Behavior))
+                continue;
+            const AnimRuleSource* source = rule.Source.empty() ? nullptr : &rule.Source.back();
+            Warning("anim.slot.no_row", source != nullptr ? source->Selector : Out.RigPath,
+                    source != nullptr ? std::format("$.data.rules[{}].behavior", source->Rule) : std::string(),
+                    std::format("Rule '{}' selects '{}', which no slot row plays: the layer shows nothing and "
+                                "one-shot content ends at once.",
+                                rule.Label, name(rule.Behavior)));
+        }
 }

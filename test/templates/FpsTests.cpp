@@ -1,6 +1,7 @@
 #include "TemplateModuleRun.h"
 
 #include <anim/AnimContentSystem.h>
+#include <anim/AnimFactProviders.h>
 #include <camera/CameraExclusion.h>
 #include <components/ActiveCameraService.h>
 #include <components/CameraComponent.h>
@@ -28,8 +29,10 @@ namespace
     struct FpsProbe
     {
         Engine* Host = nullptr;
-        // No starter content animates; the template must not pay for animation.
-        bool AnimationRegistered = true;
+        // The engine registers animation for every host, whatever it loads, and binds
+        // the character facts movement provides.
+        bool AnimationRegistered = false;
+        bool MovementFactsBound = false;
         int Frames = 0;
         int Participants = 0;
         bool BodyAssigned = false;
@@ -45,6 +48,9 @@ namespace
         {
             AnimationRegistered = Host->Schedule().Has<AnimContentSystem>();
             const World& world = ctx.Entities;
+            const AnimFactProviders* facts = world.TryGetResource<AnimFactProviders>();
+            MovementFactsBound = facts != nullptr && facts->IndexOf("Speed") >= 0 && facts->IndexOf("Grounded") >= 0
+                && facts->IndexOf("VerticalSpeed") >= 0;
             ++Frames;
             Participants = 0;
             EntityId participant;
@@ -92,7 +98,8 @@ TEST(FpsTemplate, OnePlayerOneBodyLookedThroughFromInside)
     ASSERT_EQ(run.Exit(), 0);
 
     const FpsProbe& seen = run.Seen();
-    EXPECT_FALSE(seen.AnimationRegistered) << "no starter content plays clips";
+    EXPECT_TRUE(seen.AnimationRegistered) << "every host animates whatever names a rig";
+    EXPECT_TRUE(seen.MovementFactsBound) << "a rig reading the engine's facts reads movement";
     EXPECT_EQ(seen.Participants, 1) << "the player at this machine, and nobody else";
     ASSERT_TRUE(seen.BodyAssigned) << "the prefab pawn never landed";
     EXPECT_TRUE(seen.BodyAims) << "an FPS body carries the aim it is steered along";

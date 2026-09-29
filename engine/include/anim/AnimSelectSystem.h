@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimClock.h>
 #include <anim/AnimContentState.h>
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimFacts.h>
@@ -76,6 +77,14 @@ AnimSelectionOutcome SelectAnimLayer(const AnimBoundRig& rig,
 void LogAnimSelection(AnimDecisionLog& log, AnimTick now, std::uint8_t layer,
                       const AnimSelectionOutcome& outcome, const AnimLayerSelection& state);
 
+// Set on a World whose selection a tool explains: the select system evaluates
+// `Entity` every pass, never skipping it, and leaves each layer's rule verdicts here.
+struct AnimSelectionExplanation
+{
+    EntityId Entity;
+    std::vector<std::vector<AnimRuleVerdict>> Verdicts;
+};
+
 class AnimSelectSystem
 {
 public:
@@ -89,11 +98,15 @@ public:
     [[nodiscard]] std::size_t Skipped() const { return SkippedCount; }
 
 private:
-    void SelectImpl(World& world, const StoragePartitionSet* partitions, AnimTick now, double tickSeconds);
+    void SelectImpl(World& world, const StoragePartitionSet* partitions, const AnimClock& clock,
+                    double tickSeconds);
 
     const World* LastWorld = nullptr;
     std::optional<Query<Read<AnimRig>, Write<AnimSelectorState>, Read<AnimFacts>>> SmallQuery;
     std::optional<Query<Read<AnimRig>, Write<AnimSelectorState>, Read<AnimFactsLarge>>> LargeQuery;
+    // A selector reading only requests needs no facts.
+    std::optional<Query<Read<AnimRig>, Write<AnimSelectorState>, Without<AnimFacts>, Without<AnimFactsLarge>>>
+        FactlessQuery;
     std::size_t EvaluatedCount = 0;
     std::size_t SkippedCount = 0;
     bool PresentsPose = true;

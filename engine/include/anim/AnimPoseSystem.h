@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimClock.h>
 #include <anim/AnimContentState.h>
 #include <anim/AnimPoseEvaluation.h>
 #include <anim/AnimPoseState.h>
@@ -33,18 +34,18 @@ public:
     [[nodiscard]] std::size_t Posed() const { return Items.size(); }
 
 private:
-    void PoseImpl(World& world, const StoragePartitionSet* partitions, AnimTick now, double tickSeconds);
+    void PoseImpl(World& world, const StoragePartitionSet* partitions, const AnimClock& clock, double tickSeconds);
 
     struct Item
     {
         AnimPoseInput Input;
         // Resolved to Input.Slot after every slot is assigned, since assigning moves slots.
         std::uint32_t SlotHandle = 0;
+        EntityId Owner;
     };
 
     JobSystem* Jobs = nullptr;
     const World* LastWorld = nullptr;
-    std::optional<Query<Read<AnimRig>, Without<AnimPoseState>>> Unposed;
     std::optional<Query<Read<AnimRig>, Read<AnimContentState>, Write<AnimPoseState>>> Posing;
     std::vector<Item> Items;
     std::vector<AnimPoseScratch> Scratch;

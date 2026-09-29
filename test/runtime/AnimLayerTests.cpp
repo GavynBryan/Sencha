@@ -50,9 +50,9 @@ namespace
                 { "tag": "Anim.Idle", "kind": "cyclic" }, { "tag": "Anim.Upper.None", "kind": "cyclic" },
                 { "tag": "Anim.Upper.Reload", "kind": "one_shot" } ] })");
             (void)Load("asset://anim/l.slots.sdata", kAnimSlotMapType, R"({ "rows": [
-                { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
-                { "behavior": "Anim.Upper.None", "clip": "asset://anim/idle.sanim" },
-                { "behavior": "Anim.Upper.Reload", "clip": "asset://anim/reload.sanim" } ] })");
+                { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" },
+                { "id": "none", "behavior": "Anim.Upper.None", "clip": "asset://anim/idle.sanim" },
+                { "id": "reload", "behavior": "Anim.Upper.Reload", "clip": "asset://anim/reload.sanim" } ] })");
             (void)Load("asset://anim/l.base.sdata", kAnimSelectorType, R"({ "rules": [
                 { "name": "idle", "priority": 0, "enter": [], "behavior": "Anim.Idle" } ] })");
             (void)Load("asset://anim/l.upper.sdata", kAnimSelectorType, upperSelector);
@@ -117,14 +117,14 @@ TEST(AnimLayerWeight, AWeightRuleIsChosenByItsEnterAlone)
 {
     AnimRigFixture fx;
     EXPECT_NE(fx.CompileError(kAnimSelectorType, R"({ "rules": [
-        { "priority": 1, "enter": [], "stay": [], "weight": 0.5 } ] })")
+        { "name": "weight", "priority": 1, "enter": [], "stay": [], "weight": 0.5 } ] })")
                   .find("no stay, hold or cooldown"),
               std::string::npos);
     EXPECT_NE(fx.CompileError(kAnimSelectorType, R"({ "rules": [
-        { "priority": 1, "enter": [], "weight": 0.5, "behavior": "Anim.Idle" } ] })")
+        { "name": "idle", "priority": 1, "enter": [], "weight": 0.5, "behavior": "Anim.Idle" } ] })")
                   .find("exactly one of"),
               std::string::npos);
-    EXPECT_NE(fx.CompileError(kAnimSelectorType, R"({ "rules": [ { "priority": 1, "enter": [], "weight": 1.5 } ] })")
+    EXPECT_NE(fx.CompileError(kAnimSelectorType, R"({ "rules": [ { "name": "weight", "priority": 1, "enter": [], "weight": 1.5 } ] })")
                   .find("$.data.rules[0].weight"),
               std::string::npos);
 }
@@ -174,7 +174,7 @@ namespace
         (void)fx.Load("asset://anim/m.behaviors.sdata", kAnimBehaviorSetType,
                       R"({ "behaviors": [ { "tag": "Anim.Idle", "kind": "cyclic" } ] })");
         (void)fx.Load("asset://anim/m.slots.sdata", kAnimSlotMapType,
-                      R"({ "rows": [ { "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" } ] })");
+                      R"({ "rows": [ { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/idle.sanim" } ] })");
         const std::string skeletonField =
             skeleton.empty() ? std::string() : std::format(R"("skeleton": "{}",)", skeleton);
         const std::string base = baseMask.empty() ? std::string() : std::format(R"(, "mask": {})", baseMask);
@@ -263,7 +263,7 @@ TEST(AnimLayerMask, EveryClipIsKeyedToTheRigsSkeleton)
     (void)fx.Load("asset://anim/k.behaviors.sdata", kAnimBehaviorSetType,
                   R"({ "behaviors": [ { "tag": "Anim.Idle", "kind": "cyclic" } ] })");
     (void)fx.Load("asset://anim/k.slots.sdata", kAnimSlotMapType,
-                  R"({ "rows": [ { "behavior": "Anim.Idle", "clip": "asset://anim/other_idle.sanim" } ] })");
+                  R"({ "rows": [ { "id": "idle", "behavior": "Anim.Idle", "clip": "asset://anim/other_idle.sanim" } ] })");
     const AnimBoundRig& rig = fx.Bound(fx.Load("asset://anim/k.rig.sdata", kAnimRigType, R"({
         "skeleton": "asset://anim/biped.sskel",
         "behaviors": [ "asset://anim/k.behaviors.sdata" ], "slot_maps": [ "asset://anim/k.slots.sdata" ],

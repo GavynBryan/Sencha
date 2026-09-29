@@ -142,6 +142,7 @@ AnimationClipPlayerMigrationPlan PlanAnimationClipPlayerMigration(const std::fil
             { stem + ".slots.sdata",
               Document("animation.slot_map",
                        JsonValue(JsonValue::Object{ { "rows", JsonValue(JsonValue::Array{ JsonValue(JsonValue::Object{
+                                                                  { "id", JsonValue(tag) },
                                                                   { "behavior", JsonValue(tag) },
                                                                   { "clip", JsonValue(use.Clip) } }) }) } })) });
         JsonValue::Object rig{

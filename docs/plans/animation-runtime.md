@@ -83,7 +83,8 @@ values without touching engine code.
 A fact schema is a data asset listing typed slots. Slot types are `bool`,
 `float`, `int`, `tag` (one interned tag), and `tagset` (a reference to a
 `CountedGameplayTagSet` on the entity). A rig references one schema; the engine
-ships a core schema (`Grounded`, `Speed`, `VerticalSpeed`, `Dead`) and games and
+ships a core schema (`Grounded`, `Speed`, `VerticalSpeed`; as built, `Dead` is a
+game's to declare, since the engine has nothing to provide it from) and games and
 mods extend it by declaring more slots by name. Schemas merge at load into one
 fixed layout per rig, and slots are addressed by index in compiled rules and by
 name in authored assets.
@@ -943,3 +944,37 @@ The honest limit: this is still a system with memory, and the memory is
 enumerable: fact history, request set with anchors, selector state, flow state,
 pose residue. The difference from an FSM is not the absence of state but that
 every piece of it has one owner, one derivation, and one place in the log.
+
+## As built after the runtime review (2026-09-28)
+
+`docs/plans/animation-runtime-review.md` audited the runtime against this plan;
+the remediation made these deliberate departures from the text above, each by
+owner decision or as the review's direction:
+
+- **Tier comes from the rig.** Invariant 17 holds in its effect but is realised
+  differently: an entity names its rig, and `AnimRigCompositionSystem` provisions
+  the components the rig's binding needs (facts at its capacity, history only for
+  derivations that keep memory, selector state only with a selector, flow state
+  only with a flow, pose state only where a pose is presented and consumed). No
+  second, hand-written decision exists.
+- **Skipped ticks are skipped at every scope.** "The one exception is a Gameplay
+  event on the simulation authority" is withdrawn: ticks no pass saw -- a
+  dormant zone, a rig bound late -- skip their marks on every machine, so no
+  burst of gameplay events follows a wake.
+- **A predicted entity lives on the command timeline.** Its animation and root
+  motion, live and replayed, are named by the command tick, so a guess and the
+  authority's record of it share a start. Predictions are matched by an explicit,
+  replicated `Command`, never by start tick, and never take an authority record's
+  place.
+- **Root motion follows its request on every base layer.** A selector layer's
+  carrier is derived from request records, as a request-keyed layer's is.
+- **Identity is authored.** Slot rows carry a required `id` and selector rules a
+  required unique `name`; nothing is remapped by position.
+- **One request door, several producers.** `RequestAnimation` fronts the
+  primitive for the ability kit, the `anim.request` / `anim.cancel` verbs and
+  anything else; Held requests are their producer's to end, and one left held is
+  reported, not ended.
+- **Open.** Invariant 12's "no Gameplay events" on behaviors reachable without a
+  request is not enforced at bind; gameplay events are produced only by the
+  authority, and gameplay events surviving a carry (a fact-selected cyclic
+  behavior) is a stated requirement. See `docs/deferred.md`.

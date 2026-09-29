@@ -1,5 +1,6 @@
 #pragma once
 
+#include <anim/AnimRigComposition.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
@@ -9,6 +10,7 @@
 #include <world/ComponentAssetOwnership.h>
 
 #include <cstdint>
+#include <tuple>
 
 //=============================================================================
 // SkinnedMeshComponent
@@ -67,4 +69,8 @@ SkinnedMeshComponent
 #endif
 
 template <>
-struct ComponentTraits<SkinnedMeshComponent> : SchemaAssetOwnership<SkinnedMeshComponent> {};
+struct ComponentTraits<SkinnedMeshComponent> : SchemaAssetOwnership<SkinnedMeshComponent>
+{
+    // A skinned mesh draws whatever pose its entity's rig makes, so it is what asks for one.
+    using DerivedComponents = std::tuple<AnimPoseConsumer>;
+};

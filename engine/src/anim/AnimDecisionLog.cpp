@@ -9,6 +9,7 @@ std::string_view AnimDecisionCauseName(AnimDecisionCause cause)
     case AnimDecisionCause::RequestDeduplicated: return "RequestDeduplicated";
     case AnimDecisionCause::RequestCancelled: return "RequestCancelled";
     case AnimDecisionCause::RequestExpired: return "RequestExpired";
+    case AnimDecisionCause::RequestOrphaned: return "RequestOrphaned";
     case AnimDecisionCause::RequestRejected: return "RequestRejected";
     case AnimDecisionCause::WinnerChanged: return "WinnerChanged";
     case AnimDecisionCause::LatchArmed: return "LatchArmed";
@@ -49,6 +50,7 @@ std::string_view AnimRejectReasonName(AnimRejectReason reason)
     case AnimRejectReason::Capacity: return "Capacity";
     case AnimRejectReason::UndeclaredIntent: return "UndeclaredIntent";
     case AnimRejectReason::Malformed: return "Malformed";
+    case AnimRejectReason::LeftToAuthority: return "LeftToAuthority";
     }
     return "Unknown";
 }

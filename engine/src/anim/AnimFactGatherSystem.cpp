@@ -2,7 +2,6 @@
 
 #include <anim/AnimFactEvaluation.h>
 #include <app/GameContexts.h>
-#include <core/logging/LoggingProvider.h>
 #include <ecs/StoragePartitionSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <world/SimulationAuthority.h>
@@ -11,7 +10,7 @@ void GatherAnimFacts(const World& world,
                      EntityId entity,
                      const AnimBoundRig& rig,
                      std::span<std::uint32_t> values,
-                     AnimFactHistory& history,
+                     AnimFactHistory* history,
                      AnimTick now,
                      double tickSeconds)
 {
@@ -35,92 +34,62 @@ void GatherAnimFacts(const World& world,
         if (provider.Read(world, entity, provider.Context, value))
             values[slot] = value;
     }
-    EvaluateAnimDerivations(rig, values, history, now, tickSeconds);
+    if (rig.Derivations.empty())
+        return;
+    if (history != nullptr)
+    {
+        EvaluateAnimDerivations(rig, values, *history, now, tickSeconds);
+        return;
+    }
+    // Nothing kept: the rig's derivations remember nothing from one tick to the next.
+    AnimFactHistory scratch;
+    EvaluateAnimDerivations(rig, values, scratch, now, tickSeconds);
 }
 
 void AnimFactGatherSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    GatherImpl(ctx.Entities, &ctx.Partitions, AuthorityTickOf(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
+    GatherImpl(ctx.Entities, &ctx.Partitions, AnimClockAt(ctx.Entities, ctx.Time.TickIndex), ctx.Time.DeltaSeconds);
 }
 
 void AnimFactGatherSystem::Gather(World& world, AnimTick now, double tickSeconds)
 {
-    GatherImpl(world, nullptr, now, tickSeconds);
-}
-
-const AnimBoundRig* AnimFactGatherSystem::Bind(AnimRigBindings& bindings, DataAssetHandle rig,
-                                               const World& world)
-{
-    const AnimBoundRig* bound = bindings.Resolve(rig, world);
-    if (bound == nullptr)
-        return nullptr;
-    if (!bound->Diagnostics.empty() && Logging != nullptr
-        && Reported.insert(bound->Generation).second)
-    {
-        auto& logger = Logging->GetLogger<AnimFactGatherSystem>();
-        for (const AnimDiagnostic& diagnostic : bound->Diagnostics)
-        {
-            if (diagnostic.Severity == AnimDiagnosticSeverity::Error)
-                logger.Error(FormatAnimDiagnostic(diagnostic));
-            else
-                logger.Warn(FormatAnimDiagnostic(diagnostic));
-        }
-    }
-    return bound->Valid && bound->HasFacts && ShouldRunAnimationLogic(PresentsPose, *bound) ? bound : nullptr;
+    GatherImpl(world, nullptr, AnimClock::Uniform(now), tickSeconds);
 }
 
 void AnimFactGatherSystem::GatherImpl(World& world, const StoragePartitionSet* partitions,
-                                      AnimTick now, double tickSeconds)
+                                      const AnimClock& clock, double tickSeconds)
 {
     AnimRigBindings* bindings = world.TryGetResource<AnimRigBindings>();
-    if (bindings == nullptr || !world.IsRegistered<AnimRig>()
-        || !world.IsRegistered<AnimFactHistory>())
-    {
+    if (bindings == nullptr || !world.IsRegistered<AnimRig>())
         return;
-    }
 
     if (LastWorld != &world)
     {
-        SmallQuery.reset();
-        LargeQuery.reset();
+        SmallKept.reset();
+        Small.reset();
+        LargeKept.reset();
+        Large.reset();
         LastWorld = &world;
     }
 
-    // Entities sharing a rig tend to share chunks, so the binding is resolved
-    // once per run of equal handles rather than once per entity.
-    DataAssetHandle lastHandle{};
-    const AnimBoundRig* lastRig = nullptr;
-    bool haveLast = false;
+    AnimRigRunCache rigs(*bindings, world);
 
-    // A rig laid out wider than the entity's storage cannot be gathered into
-    // it; the entity keeps its last snapshot and the mismatch is logged once.
-    const auto visit = [&]<typename Storage>(auto& view)
+    const auto visit = [&]<typename Storage, bool Kept>(auto& view)
     {
-        const auto rigs = view.template Read<AnimRig>();
+        const auto handles = view.template Read<AnimRig>();
         auto facts = view.template Write<Storage>();
-        auto histories = view.template Write<AnimFactHistory>();
         for (std::uint32_t i = 0; i < view.Count(); ++i)
         {
-            if (!haveLast || rigs[i].Rig != lastHandle)
-            {
-                lastHandle = rigs[i].Rig;
-                lastRig = Bind(*bindings, lastHandle, world);
-                haveLast = true;
-            }
-            const AnimBoundRig* rig = lastRig;
-            if (rig == nullptr)
-                continue;
+            const AnimBoundRig* rig = rigs.Resolve(handles[i].Rig);
             std::span<std::uint32_t> values(facts[i].Values);
-            if (rig->Slots.size() > values.size())
-            {
-                if (Logging != nullptr && ReportedCapacity.insert(rig->Generation).second)
-                    Logging->GetLogger<AnimFactGatherSystem>().Error(
-                        "'{}' lays out {} facts and an entity using it carries storage for {}; "
-                        "give the entity the storage its rig's fact_capacity names.",
-                        rig->RigPath, rig->Slots.size(), values.size());
+            // Storage the rig outgrew is recomposed before the next tick.
+            if (rig == nullptr || !rig->Valid || !rig->HasFacts || !ShouldRunAnimationLogic(PresentsPose, *rig)
+                || rig->Slots.size() > values.size())
                 continue;
-            }
-            GatherAnimFacts(world, view.Entity(i), *rig, values, histories[i], now, tickSeconds);
+            AnimFactHistory* history = nullptr;
+            if constexpr (Kept)
+                history = &view.template Write<AnimFactHistory>()[i];
+            GatherAnimFacts(world, view.Entity(i), *rig, values, history, clock.For(view.Entity(i)), tickSeconds);
         }
     };
 
@@ -131,17 +100,16 @@ void AnimFactGatherSystem::GatherImpl(World& world, const StoragePartitionSet* p
         else
             query.ForEachChunk(fn);
     };
-
-    if (world.IsRegistered<AnimFacts>())
+    const auto each = [&]<typename Storage, bool Kept>(auto& slot)
     {
-        if (!SmallQuery.has_value())
-            SmallQuery.emplace(world);
-        run(*SmallQuery, [&](auto& view) { visit.template operator()<AnimFacts>(view); });
-    }
-    if (world.IsRegistered<AnimFactsLarge>())
-    {
-        if (!LargeQuery.has_value())
-            LargeQuery.emplace(world);
-        run(*LargeQuery, [&](auto& view) { visit.template operator()<AnimFactsLarge>(view); });
-    }
+        if (!world.IsRegistered<Storage>() || (Kept && !world.IsRegistered<AnimFactHistory>()))
+            return;
+        if (!slot.has_value())
+            slot.emplace(world);
+        run(*slot, [&](auto& view) { visit.template operator()<Storage, Kept>(view); });
+    };
+    each.template operator()<AnimFacts, true>(SmallKept);
+    each.template operator()<AnimFacts, false>(Small);
+    each.template operator()<AnimFactsLarge, true>(LargeKept);
+    each.template operator()<AnimFactsLarge, false>(Large);
 }

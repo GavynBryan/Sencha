@@ -2,20 +2,30 @@
 
 #include <abilities/AbilityKit.h>
 #include <anim/AnimFactEvaluation.h>
+#include <anim/AnimFactGatherSystem.h>
 #include <anim/AnimFactProviders.h>
 #include <anim/AnimationRegistration.h>
+#include <anim/AnimRigCompositionSystem.h>
+#include <app/EngineSchedule.h>
 #include <app/EngineVerbs.h>
+#include <app/GameContexts.h>
 #include <authored/WorldVocabulary.h>
+#include <core/config/EngineConfig.h>
 #include <core/json/JsonStringify.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <movement/FreeLocomotionSystem.h>
+#include <movement/JumpExecutionSystem.h>
 #include <movement/LocomotionMode.h>
+#include <movement/MotionComposition.h>
 #include <movement/MovementRegistration.h>
+#include <movement/RootMotionSource.h>
 #include <movement/components/CharacterMovement.h>
 #include <net/NetReplicationComponents.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/components/CharacterController.h>
+#include <runtime/RuntimeFrameLoop.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 #include <world/ComponentRegistrar.h>
@@ -29,8 +39,6 @@
 namespace
 {
     constexpr int kMaxTicksPerAdvance = 8;
-    // Per entity per tick; crossings past it are refused, as at runtime.
-    constexpr std::size_t kPreviewEventCapacity = 256;
 
     std::string ValueText(const AuthoredValue& value, const GameplayTagRegistry* tags)
     {
@@ -188,6 +196,20 @@ bool SameAnimationPreviewTick(const AnimationPreviewTickRecord& a, const Animati
         && a.Movement == b.Movement;
 }
 
+// Animation runs as the game registers it, so the preview cannot drift from the game's
+// order. Movement steps by hand between the fixed and post-fixed phases, as the
+// game's movement runs after content resolves and before posing.
+struct AnimationPreviewSession::WorldSystems
+{
+    EngineConfig Config;
+    RuntimeFrameLoop Runtime;
+    EngineSchedule Animation;
+    FreeLocomotionSystem Locomotion{ Vec3d(0.0f, -9.81f, 0.0f), Vec3d(0.0f, 1.0f, 0.0f) };
+    JumpExecutionSystem Jump;
+    RootMotionSystem Root;
+    MotionCompositionSystem Composition;
+};
+
 AnimationPreviewSession::AnimationPreviewSession(const DataAssetCache& data, const AnimationClipCache* clips,
                                                  std::function<void(World&)> vocabulary,
                                                  const SkeletonCache* skeletons)
@@ -214,6 +236,7 @@ void AnimationPreviewSession::DropWorld()
     // Tokens reference the dispatcher, and the dispatcher the World's catalog.
     RecorderTokens.clear();
     Recorders.clear();
+    Systems.reset();
     Dispatcher.reset();
     if (Movers != nullptr && Preview != nullptr)
         Movers->EvictAll(*Preview);
@@ -348,6 +371,11 @@ void AnimationPreviewSession::BuildWorld()
         Recorders.push_back(Recorder{ this, Working.Recorders[i] });
         RecorderTokens.push_back(Dispatcher->Bind(verb, Recorders.back()));
     }
+    Systems = std::make_unique<WorldSystems>();
+    // Posing runs inline: the preview is the serial reference.
+    RegisterAnimationSystems(Systems->Animation, nullptr,
+                             AnimationHost{ .Verbs = Dispatcher.get(), .PresentsPose = true });
+    Systems->Animation.Init();
     GameplayTagRegistry& tags = Preview->GetResource<GameplayTagRegistry>();
     for (std::size_t i = 0; i < Working.DeclaredTags.size(); ++i)
     {
@@ -383,14 +411,11 @@ void AnimationPreviewSession::BuildWorld()
 
     SubjectEntity = Preview->CreateEntity();
     Preview->AddComponent(SubjectEntity, AnimRig{ rig });
-    if (bound->HasFacts)
-    {
-        if (bound->Capacity == AnimFactCapacity::Large)
-            Preview->AddComponent(SubjectEntity, AnimFactsLarge{});
-        else
-            Preview->AddComponent(SubjectEntity, AnimFacts{});
-    }
+    // The viewport draws the subject's pose.
+    Preview->AddComponent(SubjectEntity, AnimPoseConsumer{});
     Preview->AddComponent(SubjectEntity, AnimDecisionLog{});
+    Preview->SetResource(AnimSelectionExplanation{ .Entity = SubjectEntity, .Verdicts = {} });
+    Systems->Animation.Get<AnimRigCompositionSystem>()->Compose(*Preview);
     if (Movers != nullptr)
     {
         const CharacterController capsule;
@@ -562,10 +587,10 @@ AnimationPreviewMovementRecord AnimationPreviewSession::StepMovement(AnimTick ti
     if (record.Carried)
         record.Requested = carried.PlanarVelocity * dt;
 
-    Locomotion.Step(world, dt);
-    Jump.Step(world, dt);
-    Root.Step(world, tick, TickSeconds());
-    Composition.Step(world);
+    Systems->Locomotion.Step(world, dt);
+    Systems->Jump.Step(world, dt);
+    Systems->Root.Step(world, tick, TickSeconds());
+    Systems->Composition.Step(world);
     Movers->Reconcile(world, AllPartitions);
     Movers->Drive(world, AllPartitions, dt, Vec3d(0.0f, -9.81f, 0.0f));
 
@@ -835,39 +860,26 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
         record.Actions.push_back(Apply(*it, index, tick));
     }
 
-    Gather.Gather(*Preview, tick, TickSeconds());
-    const DataAssetHandle rig = Preview->TryGet<AnimRig>(SubjectEntity)->Rig;
-    Bound = Preview->GetResource<AnimRigBindings>().Resolve(rig, *Preview);
+    const FixedSimTime time{ .DeltaSeconds = TickSeconds(), .TickIndex = tick };
+    AnimSelectionExplanation& explained = Preview->GetResource<AnimSelectionExplanation>();
+    explained.Verdicts.clear();
+    FixedLogicContext logic{ .Config = Systems->Config, .Runtime = Systems->Runtime, .Time = time,
+                             .Entities = *Preview, .Partitions = AllPartitions };
+    InvocationSink = &record.Invocations;
+    Systems->Animation.RunFixedLogic(logic);
+    InvocationSink = nullptr;
+    std::vector<std::vector<AnimRuleVerdict>> verdicts = std::move(explained.Verdicts);
+    Bound = Preview->GetResource<AnimRigBindings>().Resolve(Preview->TryGet<AnimRig>(SubjectEntity)->Rig, *Preview);
 
-    // Calls the systems' own functions so the rule verdicts can be kept.
-    std::vector<std::vector<AnimRuleVerdict>> verdicts;
     if (Bound != nullptr && Bound->Valid)
     {
-        AnimSelectorState* selection = Preview->TryGet<AnimSelectorState>(SubjectEntity);
-        AnimContentState* content = Preview->TryGet<AnimContentState>(SubjectEntity);
-        AnimDecisionLog* log = Preview->TryGet<AnimDecisionLog>(SubjectEntity);
-        if (selection != nullptr && !Bound->Selectors.empty())
-            SelectAnimEntity(*Preview, SubjectEntity, *Bound, Facts(), *selection, tick, TickSeconds(), log,
-                             &verdicts);
-        if (content != nullptr)
-        {
-            ResolveAnimEntity(*Preview, SubjectEntity, *Bound, Facts(), selection, *content, tick, TickSeconds(),
-                              log);
-            PendingEvents.clear();
-            const AnimFlowState* flows = static_cast<const World&>(*Preview).TryGet<AnimFlowState>(SubjectEntity);
-            CollectAnimEvents(SubjectEntity, rig, *Bound, selection, Requests(), flows, *content, tick, TickSeconds(),
-                              AnimEventGates{ .Authority = Working.Role == AnimationPreviewRole::Authority,
-                                              .Presents = true },
-                              PendingEvents, kPreviewEventCapacity, log);
-            InvocationSink = &record.Invocations;
-            DrainAnimEvents(*Preview, PendingEvents, Dispatcher.get());
-            InvocationSink = nullptr;
-        }
-        // After resolution so root motion reads this tick's content, and
-        // before posing so the pose is where the character ended up.
         if (Movers != nullptr)
             record.Movement = StepMovement(tick);
-        PosePass.Pose(*Preview, tick, TickSeconds());
+        PostFixedContext post{ .Config = Systems->Config, .Runtime = Systems->Runtime, .Time = time,
+                               .Entities = *Preview, .Partitions = AllPartitions };
+        Systems->Animation.RunPostFixed(post);
+        const AnimSelectorState* selection = Selection();
+        const AnimContentState* content = Content();
         if (const AnimPosePool::Slot* pose = SubjectPose(); pose != nullptr && pose->HasCurrent)
             record.Pose = pose->Current;
         for (std::size_t l = 0; l < Bound->Layers.size() && l < kAnimMaxLayers; ++l)
@@ -939,10 +951,13 @@ std::vector<std::uint32_t> AnimationPreviewSession::PreviewNextTick()
     const std::span<const std::uint32_t> facts = Facts();
     std::vector<std::uint32_t> values(kAnimFactsLarge, 0u);
     std::copy(facts.begin(), facts.end(), values.begin());
-    AnimFactHistory history = *Preview->TryGet<AnimFactHistory>(SubjectEntity);
+    // A copy, so looking ahead changes nothing the next real tick reads.
+    const AnimFactHistory* kept = static_cast<const World&>(*Preview).TryGet<AnimFactHistory>(SubjectEntity);
+    AnimFactHistory history = kept != nullptr ? *kept : AnimFactHistory{};
 
     ActiveInputs = &next;
-    GatherAnimFacts(*Preview, SubjectEntity, *Bound, values, history, NextTick(), TickSeconds());
+    GatherAnimFacts(*Preview, SubjectEntity, *Bound, values, kept != nullptr ? &history : nullptr, NextTick(),
+                    TickSeconds());
     ActiveInputs = &Inputs;
 
     values.resize(Bound->Slots.size());
@@ -1006,7 +1021,7 @@ const AnimPosePool::Slot* AnimationPreviewSession::SubjectPose() const
 {
     const AnimPoseState* state = SubjectPoseState();
     const AnimPosePool* pool = Preview != nullptr ? Preview->TryGetResource<AnimPosePool>() : nullptr;
-    return state != nullptr && pool != nullptr ? pool->Find(state->Slot) : nullptr;
+    return state != nullptr && pool != nullptr ? pool->Find(state->Slot, SubjectEntity) : nullptr;
 }
 
 const AnimPoseState* AnimationPreviewSession::SubjectPoseState() const

@@ -17,6 +17,7 @@ struct AnimRigWorldReport
     std::uint32_t MaxEntityBytes = 0;
     // Requests that left their entity's request set without any layer playing them.
     std::uint64_t UnplayedRequests = 0;
+    std::uint64_t OrphanedRequests = 0;
 };
 
 // Bytes of animation component data `entity` carries.

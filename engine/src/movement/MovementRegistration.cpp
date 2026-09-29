@@ -15,6 +15,7 @@
 #include <movement/CharacterMovementSerializer.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/JumpExecutionSystem.h>
+#include <anim/AnimContentSystem.h>
 #include <movement/RootMotionSource.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
@@ -131,6 +132,10 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     // asked for across the ground, so it writes after them.
     schedule.After<RootMotionSystem, JumpExecutionSystem>();
     schedule.After<MotionCompositionSystem, RootMotionSystem>();
+    // Root motion reads what animation resolved this tick. Declared by whichever of
+    // the two registers second, so neither has to come first.
+    if (schedule.Get<AnimContentSystem>() != nullptr)
+        schedule.After<RootMotionSystem, AnimContentSystem>();
 
     schedule.After<EffectLifetimeSystem, MotionCompositionSystem>();
 }

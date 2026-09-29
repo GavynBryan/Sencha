@@ -56,19 +56,6 @@ struct SENCHA_COMPONENT("sencha.anim_fact_history") AnimFactHistory
     std::uint64_t BindingGeneration = 0;
 };
 
-// Facts bring the derivation history and the selector state their rules decide into.
-template <>
-struct ComponentTraits<AnimFacts>
-{
-    using DerivedComponents = std::tuple<AnimFactHistory, AnimSelectorState>;
-};
-
-template <>
-struct ComponentTraits<AnimFactsLarge>
-{
-    using DerivedComponents = std::tuple<AnimFactHistory, AnimSelectorState>;
-};
-
 #if !defined(SENCHA_CODEGEN)
 #  include <anim/AnimFacts.sencha.h>
 #endif

@@ -4,6 +4,7 @@
 
 #include "vocabulary/VocabularyCatalog.h"
 
+#include <anim/AnimRequestVerbs.h>
 #include <app/EngineVerbs.h>
 #include <app/Game.h>
 #include <authored/WorldVocabulary.h>
@@ -63,10 +64,12 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 2u);
+    ASSERT_EQ(verbs.size(), 4u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
+    EXPECT_EQ(verbs[2].Name, kAnimRequestVerb);
+    EXPECT_EQ(verbs[3].Name, kAnimCancelVerb);
 }
 
 TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRuntime)
@@ -78,10 +81,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 3u);
-    EXPECT_EQ(verbs[2].Name, kModuleVerb);
-    EXPECT_EQ(verbs[2].Provider, "spike");
-    EXPECT_EQ(verbs[2].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 5u);
+    EXPECT_EQ(verbs[4].Name, kModuleVerb);
+    EXPECT_EQ(verbs[4].Provider, "spike");
+    EXPECT_EQ(verbs[4].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -121,7 +124,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 2u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 4u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)
