@@ -82,11 +82,6 @@ public:
     void SetActivated(bool activated);
     [[nodiscard]] bool IsActivated() const { return Activated; }
 
-    // A stylesheet to inject as the host's theme (the editor's, for the
-    // editor's own documents), or nullopt for the document as a game shows it.
-    void SetHostTheme(std::optional<std::string> themeRcss);
-    [[nodiscard]] bool HasHostTheme() const { return Theme.has_value(); }
-
     // Once per frame: drains the layer's diagnostics and this screen's actions
     // into the histories below.
     void Poll();
@@ -110,7 +105,6 @@ private:
     float Scale = 1.0f;
     PointerMode Pointer = PointerMode::Interact;
     bool Activated = false;
-    std::optional<std::string> Theme;
     std::deque<UiDiagnostic> DiagnosticHistory;
     std::deque<UiAction> ActionHistory;
 };

@@ -1,4 +1,4 @@
-#include "ShojiStatusBar.h"
+#include "UiPreviewStatusBar.h"
 
 #include <assets/hotreload/SourceReloadRoots.h>
 #include "ui/chrome/ChromeBars.h"
@@ -8,21 +8,21 @@
 
 #include <cstdio>
 
-ShojiStatusBar::ShojiStatusBar(UiPreviewSession& session, DocumentLibrary& library, SourceReloadRoots& watch)
+UiPreviewStatusBar::UiPreviewStatusBar(UiPreviewSession& session, DocumentLibrary& library, SourceReloadRoots& watch)
     : Session(session)
     , Library(library)
     , Watch(watch)
 {
 }
 
-void ShojiStatusBar::Draw()
+void UiPreviewStatusBar::Draw()
 {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     const float barHeight = ImGui::GetFrameHeight();
     const ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
 
-    if (!ImGui::BeginViewportSideBar("##ShojiStatusBar", viewport, ImGuiDir_Down, barHeight, flags))
+    if (!ImGui::BeginViewportSideBar("##UiPreviewStatusBar", viewport, ImGuiDir_Down, barHeight, flags))
     {
         ImGui::End();
         return;

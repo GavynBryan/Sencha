@@ -1,14 +1,14 @@
 #pragma once
 
 #include "authoring/DocumentLibrary.h"
-#include "vocabulary/VocabularyCatalog.h"
+#include "authoring/UiPreviewModel.h"
 #include "authoring/UiPreviewSession.h"
 #include "ui/PreviewViewState.h"
+#include "ui/WorkspaceView.h"
+#include "vocabulary/VocabularyCatalog.h"
+#include "workspaces/IWorkspace.h"
 
-#include "project/Project.h"
 #include "render/UiSurfaceTargetRenderFeature.h"
-
-#include <app/GameModuleLoader.h>
 
 #include <filesystem>
 #include <memory>
@@ -17,78 +17,56 @@
 
 class EditorUiFeature;
 class Engine;
-class EngineSchedule;
-class SdlWindow;
+class Game;
 class SourceReloadRoots;
-struct EngineConfig;
-struct PlatformEventContext;
+struct ProjectDescriptor;
 
-//=============================================================================
-// ShojiServices
-//
-// The previewer's composition root: mounts the libraries of authored documents
-// into the engine's asset stack (the one its UI layer resolves through), keeps
-// them re-cooking as their sources change, holds the one preview session and
-// the render target that shows it, and wires the panels over both.
-//
-// Member order is dependency order; the destructor takes the render feature
-// out while the caches it borrows are still alive.
-//=============================================================================
-class ShojiServices
+// The UI preview workspace: a live view of an authored document through the
+// engine's own UI pass, re-cooked on every save, with its elements, preview
+// model, raised actions and diagnostics beside it.
+class UiPreviewWorkspace final : public IWorkspace
 {
 public:
-    ShojiServices(Engine& engine,
-                  SdlWindow& window,
-                  const EngineConfig& config,
-                  std::optional<std::string> projectPath,
-                  std::optional<std::string> initialDocument);
-    ~ShojiServices();
+    // The module is loaded for its vocabulary alone and never started.
+    UiPreviewWorkspace(Engine& engine, const ProjectDescriptor* project, Game* module);
+    ~UiPreviewWorkspace() override;
 
-    ShojiServices(const ShojiServices&) = delete;
-    ShojiServices& operator=(const ShojiServices&) = delete;
+    UiPreviewWorkspace(const UiPreviewWorkspace&) = delete;
+    UiPreviewWorkspace& operator=(const UiPreviewWorkspace&) = delete;
 
-    void RegisterSystems(EngineSchedule& schedule);
-    void HandlePlatformEvent(PlatformEventContext& ctx);
+    void Tick(FrameUpdateContext& ctx) override;
+    void SetVisible(bool visible) override;
+    void HandlePlatformEvent(PlatformEventContext& ctx) override;
+    WorkspaceView& View() override { return Surface; }
+    void Place(EditorUiFeature& window) override { Window = &window; }
 
 private:
-    void LoadProject();
-    void LoadVocabulary();
-    void MountLibraries();
-    void BuildSourceWatch();
+    void BuildLibrary(const ProjectDescriptor* project);
     void BuildUi();
-    void ProcessFrame();
+    void RegisterCommands();
 
     void OpenDocument(const std::string& packagePath);
     void RescanLibrary();
     bool SaveModel(std::string* error);
     void ResetModel();
     void OpenInEditor(const DocumentEntry& entry);
-    void UpdateTitle();
 
-    Engine* EnginePtr = nullptr;
-    SdlWindow* Window = nullptr;
-    std::optional<std::string> ProjectPath;
-    std::optional<std::string> InitialDocument;
-    std::optional<ProjectDescriptor> Project;
-
-    // The project's module, loaded for its declarations only, and the metadata
-    // World those declarations fill. The catalog is destroyed before the
-    // module is unmapped: a declaration can carry module code.
-    GameModuleLoader ModuleLoader;
-    LoadedModule GameModule;
-    std::unique_ptr<VocabularyCatalog> Vocabulary;
-
-    DocumentLibrary Library;
-    // The engine's watcher over the stack these libraries are mounted into.
+    Engine& EngineRef;
+    EditorUiFeature* Window = nullptr;
     SourceReloadRoots* Watch = nullptr;
+    VocabularyCatalog Vocabulary;
+    DocumentLibrary Library;
     std::unique_ptr<UiPreviewSession> Session;
-    PreviewViewState View;
+    PreviewViewState ViewState;
     // The document's source, for the sidecar beside it.
     std::filesystem::path OpenSource;
-    bool EditorThemeApplied = false;
+    // What was open when the tab went to the background: the screen closes
+    // with it, and the working model comes back when the tab does.
+    std::optional<std::pair<std::string, UiPreviewModel>> Suspended;
 
-    EditorUiFeature* UiFeature = nullptr;
     UiSurfaceTargetRenderFeature* Target = nullptr;
     UiSurfaceTargetId Binding;
-    std::string LastWindowTitle;
+
+    // Declared last: its panels reference everything above.
+    WorkspaceView Surface;
 };

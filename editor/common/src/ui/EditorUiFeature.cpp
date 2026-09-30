@@ -276,8 +276,7 @@ EditorUiFeature::EditorUiFeature(Engine& engine,
                                  SdlWindow& window,
                                  VulkanInstanceService& instance,
                                  VulkanFrameService& frames,
-                                 std::string iniFileName,
-                                 DockLayoutRatios layoutRatios)
+                                 std::string iniFileName)
     : EngineInstance(engine)
     , Window(window)
     , Instance(instance)
@@ -285,7 +284,6 @@ EditorUiFeature::EditorUiFeature(Engine& engine,
     , IniFileName(std::move(iniFileName))
     , ThemePrefs(SENCHA_EDITOR_THEME_DIR)
 {
-    OwnView.Layout = layoutRatios;
 }
 
 EditorUiFeature::~EditorUiFeature()
@@ -315,7 +313,7 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
 
     if (!LoggedFirstDraw && Log != nullptr)
     {
-        Log->Info("EditorUiFeature drawing {}", Workspaces != nullptr ? "workspaces" : "its panels");
+        Log->Info("EditorUiFeature drawing");
         LoggedFirstDraw = true;
     }
 
@@ -421,8 +419,7 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
 
     if (view != nullptr)
     {
-        const ImGuiID dockId = Workspaces != nullptr ? dockIdOf(Workspaces->ActiveKind()->Id)
-                                                     : ImGui::GetID("EditorDockSpace");
+        const ImGuiID dockId = dockIdOf(Workspaces->ActiveKind()->Id);
         // A dockable panel with no saved placement (a renamed or newly added
         // panel against an older ini) would come up floating; the designed
         // layout is rebuilt instead. Checked once per view; DockBuilder places
@@ -458,8 +455,6 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
 
 void EditorUiFeature::UpdateWindowTitle(const WorkspaceView* view)
 {
-    // Only a shell hosting workspaces owns the title; a single-view
-    // application writes its own.
     if (Workspaces == nullptr || Identity.WindowTitle.empty())
         return;
     std::string title = Identity.WindowTitle;
@@ -660,23 +655,6 @@ void EditorUiFeature::SetKeyboardInputEnabled(bool enabled)
         io.ConfigFlags |= ImGuiConfigFlags_NoKeyboard;
 }
 
-void EditorUiFeature::AddPanel(std::unique_ptr<IEditorPanel> panel)
-{
-    OwnView.AddPanel(std::move(panel));
-}
-
-void EditorUiFeature::AddChrome(std::function<void()> draw)
-{
-    if (draw)
-        OwnView.Chrome.push_back(std::move(draw));
-}
-
-void EditorUiFeature::AddOverlay(std::function<void()> draw)
-{
-    if (draw)
-        OwnView.Overlays.push_back(std::move(draw));
-}
-
 void EditorUiFeature::AddShellOverlay(std::function<void()> draw)
 {
     if (draw)
@@ -726,9 +704,7 @@ void EditorUiFeature::ToggleConsole()
 
 WorkspaceView* EditorUiFeature::ActiveView() const
 {
-    if (Workspaces == nullptr)
-        return const_cast<WorkspaceView*>(&OwnView);
-    IWorkspace* active = Workspaces->Active();
+    IWorkspace* active = Workspaces != nullptr ? Workspaces->Active() : nullptr;
     return active != nullptr ? &active->View() : nullptr;
 }
 
@@ -743,35 +719,14 @@ void EditorUiFeature::SetUndoActions(std::function<void()> undoAction,
     CanRedoAction = std::move(canRedoAction);
 }
 
-void EditorUiFeature::SetFileActions(std::function<void()> newAction,
-                                     std::function<void()> openAction,
-                                     std::function<void()> saveAction,
-                                     std::function<void()> saveAsAction)
-{
-    OwnView.File.New = std::move(newAction);
-    OwnView.File.Open = std::move(openAction);
-    OwnView.File.Save = std::move(saveAction);
-    OwnView.File.SaveAs = std::move(saveAsAction);
-}
-
 void EditorUiFeature::SetSaveAllAction(std::function<void()> saveAllAction)
 {
     SaveAllAction = std::move(saveAllAction);
 }
 
-void EditorUiFeature::SetNewWorldAction(std::function<void()> newWorldAction)
-{
-    OwnView.File.NewWorld = std::move(newWorldAction);
-}
-
 void EditorUiFeature::SetIdentity(ShellIdentity identity)
 {
     Identity = std::move(identity);
-}
-
-void EditorUiFeature::SetStatusProvider(std::function<std::string()> statusProvider)
-{
-    OwnView.Status = std::move(statusProvider);
 }
 
 bool EditorUiFeature::InitImGui(const RendererServices& services)
@@ -806,8 +761,6 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
         io.IniFilename = IniFileName.c_str();
     // Before the first NewFrame, which is when ImGui reads the file.
     PanelVisibility.Register();
-    if (Workspaces == nullptr)
-        PanelVisibility.Attach("", OwnView.Panels);
 
     // Every ImGuiTextureBinding costs one combined-image-sampler set: the
     // viewport targets and up to editor.materials.thumbnail_budget resident
@@ -958,8 +911,6 @@ void EditorUiFeature::PublishAuthoredTheme(bool themeChanged)
     // Written as a stylesheet rather than published through any document's
     // model. A theme is the host's presentation policy; a presentation model is
     // what a surface presents, and a colour is not that.
-    if (!AuthoredThemeEnabled)
-        return;
     if (!themeChanged && AuthoredThemePublished)
         return;
 
@@ -969,21 +920,6 @@ void EditorUiFeature::PublishAuthoredTheme(bool themeChanged)
 
     (void)ui->SetHostStyleSheet(kAuthoredThemeStyleSheetName, BuildAuthoredThemeStyleSheet());
     AuthoredThemePublished = true;
-}
-
-void EditorUiFeature::SetAuthoredThemePublishing(bool enabled)
-{
-    if (AuthoredThemeEnabled == enabled)
-        return;
-    AuthoredThemeEnabled = enabled;
-    // Turning it off takes the sheet back out, so packages return to the copy
-    // they were cooked with; turning it on republishes at the next boundary.
-    if (!enabled && AuthoredThemePublished)
-    {
-        if (UiService* ui = EngineInstance.TryUi(); ui != nullptr && ui->IsReady())
-            (void)ui->SetHostStyleSheet(kAuthoredThemeStyleSheetName, {});
-        AuthoredThemePublished = false;
-    }
 }
 
 void EditorUiFeature::PrepareThemeTextures()

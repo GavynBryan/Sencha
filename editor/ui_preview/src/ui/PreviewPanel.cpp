@@ -116,11 +116,6 @@ void PreviewPanel::DrawControls()
                                  View.SafeArea, size))
         View.SafeArea = !View.SafeArea;
     ImGui::SameLine();
-    if (EditorChrome::ToolButton("theme", "Theme",
-                                 "Publish the editor's theme as theme.rcss. Only a document that links it changes",
-                                 View.EditorTheme, size))
-        View.EditorTheme = !View.EditorTheme;
-    ImGui::SameLine();
     EditorChrome::Divider();
     ImGui::SameLine();
     DrawNavigation();

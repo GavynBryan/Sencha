@@ -16,7 +16,6 @@ struct PreviewViewState
     UiElementRef Selected;
     Zoom ZoomLevel = Zoom::Fit;
     bool SafeArea = false;
-    bool EditorTheme = false;
     // Set by a diagnostics row; cleared by the Model panel once it has shown
     // the tab.
     bool ShowBindings = false;

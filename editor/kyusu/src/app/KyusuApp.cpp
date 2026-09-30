@@ -167,7 +167,7 @@ void KyusuApp::InstallDocumentActions()
     DocumentSourceSet& documents = Session->Documents();
     if (Ui != nullptr)
     {
-        InstallDocumentShellActions(*Ui, GetEngine(), documents, [] { return std::optional<DocumentRef>{}; });
+        InstallDocumentShellActions(*Ui, GetEngine(), documents);
         Ui->SetUndoActions([this] { Undo(); }, [&documents] { documents.Redo(); }, [this] { return CanUndo(); },
                            [&documents] { return documents.CanRedo(); });
         Ui->AddShellOverlay([this] { DrawClosePrompt(); });

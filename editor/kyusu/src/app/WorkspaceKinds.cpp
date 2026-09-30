@@ -6,6 +6,7 @@
 #include "DataWorkspace.h"
 #include "MaterialWorkspace.h"
 #include "ProjectWorkspace.h"
+#include "UiPreviewWorkspace.h"
 
 #include <memory>
 
@@ -45,6 +46,15 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         .Create = [&engine, &session] {
             return std::make_unique<AnimationWorkspace>(engine, *session.Project(), session.Module(),
                                                         session.Documents(), session.DataDocuments());
+        },
+    });
+    kinds.push_back(WorkspaceKind{
+        .Id = "ui_preview",
+        .DisplayName = "UI Preview",
+        // The engine's and the editor's own documents are there without one.
+        .RequiresProject = false,
+        .Create = [&engine, &session] {
+            return std::make_unique<UiPreviewWorkspace>(engine, session.Project(), session.Module());
         },
     });
     kinds.push_back(WorkspaceKind{

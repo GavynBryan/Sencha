@@ -1,4 +1,4 @@
-#include "ShojiServices.h"
+#include "UiPreviewWorkspace.h"
 
 #include "ui/ActionLogPanel.h"
 #include "ui/DiagnosticsPanel.h"
@@ -7,62 +7,47 @@
 #include "ui/ModelPanel.h"
 #include "ui/OutlinePanel.h"
 #include "ui/PreviewPanel.h"
-#include "ui/ShojiStatusBar.h"
+#include "ui/UiPreviewStatusBar.h"
 #include "ui/VocabularyPanel.h"
 
 #include "project/ProcessLaunch.h"
-#include "project/ProjectContentMount.h"
-#include <assets/hotreload/SourceReloadRoots.h>
-#include "ui/AuthoredThemeStyleSheet.h"
-#include "ui/EditorThemeStartup.h"
+#include "project/Project.h"
+#include "render/RenderFeatureDetach.h"
 #include "ui/EditorUiFeature.h"
+#include "ui/EditorUiStyle.h"
 
 #include <app/Engine.h>
-#include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
 #include <app/RuntimeContent.h>
+#include <assets/hotreload/SourceReloadRoots.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <authored/VerbBindingData.h>
 #include <core/assets/AssetLease.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/console/ConsoleRegistry.h>
+#include <core/console/ConsoleService.h>
+#include <core/console/ConsoleTypes.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
-#include <platform/SdlWindow.h>
 #include <ui/UiService.h>
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <functional>
-
-#ifndef SENCHA_EDITOR_SHOJI_BRAND_DIR
-#define SENCHA_EDITOR_SHOJI_BRAND_DIR "."
-#endif
+#include <span>
 
 namespace
 {
-    constexpr std::string_view kUiFeatureId = "editor_ui";
     constexpr std::string_view kTargetFeatureId = "ui_surface_target";
-    constexpr std::array<std::string_view, 1> kTargetDependsOn{ kUiFeatureId };
+    constexpr std::array<std::string_view, 1> kTargetDependsOn{ "editor_ui" };
+    constexpr std::string_view kCommandOwner = "editor.ui_preview";
 
     constexpr const char* kLibraryProject = "Project";
     constexpr const char* kLibraryEngine = "Engine";
     constexpr const char* kLibraryEditor = "Editor";
-
-    // One callback per frame, off the event path.
-    class FrameHook
-    {
-    public:
-        explicit FrameHook(std::function<void()> fn) : Fn(std::move(fn)) {}
-        void FrameUpdate(FrameUpdateContext&) { if (Fn) Fn(); }
-
-    private:
-        std::function<void()> Fn;
-    };
 
     // The ground the document composes over: the palette's panel well, in
     // linear light because the target is cleared before any encoding.
@@ -73,173 +58,83 @@ namespace
     }
 }
 
-ShojiServices::ShojiServices(Engine& engine,
-                             SdlWindow& window,
-                             const EngineConfig&,
-                             std::optional<std::string> projectPath,
-                             std::optional<std::string> initialDocument)
-    : EnginePtr(&engine)
-    , Window(&window)
-    , ProjectPath(std::move(projectPath))
-    , InitialDocument(std::move(initialDocument))
+UiPreviewWorkspace::UiPreviewWorkspace(Engine& engine, const ProjectDescriptor* project, Game* module)
+    : EngineRef(engine)
+    , Watch(engine.Content().SourceReload())
 {
-    LoadProject();
-    LoadVocabulary();
-    MountLibraries();
-    BuildSourceWatch();
+    if (module != nullptr)
+    {
+        Vocabulary.InstallModuleVocabulary(*module);
+        for (const std::string& diagnostic : Vocabulary.Errors())
+            std::fprintf(stderr, "[ui preview] vocabulary: %s\n", diagnostic.c_str());
+    }
+    BuildLibrary(project);
     BuildUi();
-
-    if (InitialDocument)
-        OpenDocument(*InitialDocument);
+    RegisterCommands();
 }
 
-ShojiServices::~ShojiServices()
+UiPreviewWorkspace::~UiPreviewWorkspace()
 {
+    EngineRef.Console().Registry().UnregisterOwner(kCommandOwner);
     // The session closes its screen before the feature that drew it goes, and
     // the feature goes while the caches it borrows are still alive.
+    Surface = WorkspaceView{};
     Session.reset();
-    if (Target != nullptr && EnginePtr != nullptr)
-    {
-        if (GraphicsServices* graphics = EnginePtr->TryGraphics();
-            graphics == nullptr || !graphics->MainRenderer.RemoveFeature(Target))
-        {
-            std::fprintf(stderr, "[shoji] the preview target feature could not be removed\n");
-        }
-        Target = nullptr;
-    }
-    Watch = nullptr;
-    // The World that holds the module's declarations goes before the module.
-    Vocabulary.reset();
-    if (GameModule.IsValid())
-        ModuleLoader.Unload(GameModule);
+    DetachRenderFeature(EngineRef, Target);
 }
 
-// The vocabulary a project's documents author against. The module is loaded
-// for one hook and never started: no components, no systems, no engine state,
-// and no dispatcher behind the names it declares.
-void ShojiServices::LoadVocabulary()
+void UiPreviewWorkspace::BuildLibrary(const ProjectDescriptor* project)
 {
-    Vocabulary = std::make_unique<VocabularyCatalog>();
-    if (!Project || Project->GameModulePath.empty())
-        return;
-
-    std::string error;
-    GameModule = ModuleLoader.Load(Project->GameModulePath, &error);
-    if (!GameModule.IsValid())
-    {
-        std::fprintf(stderr, "[shoji] failed to load game module '%s': %s\n",
-                     Project->GameModulePath.c_str(), error.c_str());
-        return;
-    }
-    Vocabulary->InstallModuleVocabulary(*GameModule.Instance);
-    for (const std::string& diagnostic : Vocabulary->Errors())
-        std::fprintf(stderr, "[shoji] vocabulary: %s\n", diagnostic.c_str());
-}
-
-void ShojiServices::LoadProject()
-{
-    if (!ProjectPath)
-    {
-        std::fprintf(stderr, "[shoji] no project: pass --project <path.senchaproj> or set SENCHA_PROJECT; "
-                             "the engine's and the editor's own documents are still available\n");
-        return;
-    }
-    ProjectDescriptor descriptor;
-    std::string error;
-    if (!ProjectDescriptor::Load(*ProjectPath, descriptor, &error))
-    {
-        std::fprintf(stderr, "[shoji] failed to open project '%s': %s\n", ProjectPath->c_str(), error.c_str());
-        return;
-    }
-    Project = std::move(descriptor);
-}
-
-void ShojiServices::MountLibraries()
-{
-    Engine& engine = *EnginePtr;
-    RuntimeAssets& assets = engine.Content().Assets();
-
-    // Into the ENGINE's stack, because Engine::Ui() resolves packages through
-    // it: a document mounted anywhere else is one the UI layer cannot find.
-    // The engine's own content is already there; the editor's surfaces and
-    // the project's roots join it.
+    // The session has mounted and watches every root; the library only lists
+    // the documents in them.
 #ifdef SENCHA_EDITOR_UI_DIR
-    MountEditorContent(SENCHA_EDITOR_UI_DIR, assets, engine.Logging(), &engine.Jobs());
     Library.AddRoot(kLibraryEditor, SENCHA_EDITOR_UI_DIR);
 #endif
-    if (Project)
-    {
-        for (const std::string& root : Project->ContentRoots)
-        {
-            MountEditorContent(root, assets, engine.Logging(), &engine.Jobs());
+    if (project != nullptr)
+        for (const std::string& root : project->ContentRoots)
             Library.AddRoot(kLibraryProject, root);
-        }
-    }
-    for (const ContentRootPaths& root : engine.Content().Roots())
+    for (const ContentRootPaths& root : EngineRef.Content().Roots())
     {
-        const std::string path = root.Authored.generic_string();
         bool named = false;
+        std::error_code ec;
 #ifdef SENCHA_EDITOR_UI_DIR
-        named |= std::filesystem::equivalent(root.Authored, SENCHA_EDITOR_UI_DIR);
+        named |= std::filesystem::equivalent(root.Authored, SENCHA_EDITOR_UI_DIR, ec);
 #endif
-        if (Project)
-            for (const std::string& projectRoot : Project->ContentRoots)
-                named |= std::filesystem::equivalent(root.Authored, projectRoot);
+        if (project != nullptr)
+            for (const std::string& projectRoot : project->ContentRoots)
+                named |= std::filesystem::equivalent(root.Authored, projectRoot, ec);
         if (!named)
-            Library.AddRoot(kLibraryEngine, path);
+            Library.AddRoot(kLibraryEngine, root.Authored.generic_string());
     }
     Library.Rescan();
 }
 
-void ShojiServices::BuildSourceWatch()
+void UiPreviewWorkspace::BuildUi()
 {
-    Engine& engine = *EnginePtr;
-    Watch = engine.Content().SourceReload();
-    if (Watch == nullptr)
-        return;
-    // Every library root, against the stack it was mounted into. A save in
-    // any of them re-cooks and the open document rebuilds in place.
-    for (const DocumentLibrary::LibraryRoot& root : Library.LibraryRoots())
-        Watch->AddRoot(root.Path, { ".rml", ".rcss", ".ttf", ".otf", ".png" });
-}
-
-void ShojiServices::BuildUi()
-{
-    Engine& engine = *EnginePtr;
-    ApplyEditorThemeFromConsole(engine.Console());
-
-    UiService* ui = engine.TryUi();
+    UiService* ui = EngineRef.TryUi();
     if (ui == nullptr || !ui->IsReady())
     {
-        std::fprintf(stderr, "[shoji] the authored UI layer is unavailable; nothing to preview with\n");
+        std::fprintf(stderr, "[ui preview] the authored UI layer is unavailable; nothing to preview with\n");
         return;
     }
     Session = std::make_unique<UiPreviewSession>(*ui);
 
-    Renderer& renderer = engine.Graphics().MainRenderer;
-    RuntimeAssets& assets = engine.Content().Assets();
+    Renderer& renderer = EngineRef.Graphics().MainRenderer;
+    Target = renderer.StageFeature(
+        std::make_unique<UiSurfaceTargetRenderFeature>(*ui, EngineRef.Content().Assets().Textures.get()),
+        FeatureRegistration{ .Id = kTargetFeatureId, .DependsOn = kTargetDependsOn });
+    std::vector<std::string_view> failed;
+    if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
+    {
+        std::fprintf(stderr, "[ui preview] the preview target failed to set up; the Preview panel is unavailable\n");
+        Target = nullptr;
+    }
 
-    auto target = std::make_unique<UiSurfaceTargetRenderFeature>(*ui, assets.Textures.get());
-    Target = renderer.StageFeature(std::move(target),
-                                   FeatureRegistration{ .Id = kTargetFeatureId,
-                                                        .DependsOn = kTargetDependsOn });
+    Surface.Layout = DockLayoutRatios{ .Bottom = 0.22f, .Left = 0.20f, .Right = 0.26f, .RightBottom = 0.45f };
+    Surface.Status = [this] { return Session ? Session->PackagePath() : std::string{}; };
+    Surface.File.Save = [this] { std::string error; (void)SaveModel(&error); };
 
-    auto uiFeature = std::make_unique<EditorUiFeature>(
-        engine, *Window, engine.Graphics().Instance, engine.Graphics().Frames, "shoji.imgui.ini",
-        DockLayoutRatios{ .Bottom = 0.22f, .Left = 0.20f, .Right = 0.26f, .RightBottom = 0.45f });
-    UiFeature = uiFeature.get();
-    UiFeature->SetIdentity(ShellIdentity{
-        .Product = "SHOJI",
-        .LogoPath = std::string(SENCHA_EDITOR_SHOJI_BRAND_DIR) + "/shoji-logo.svg",
-        .WindowTitle = {},
-    });
-    // The theme belongs on a previewed document only when the author says so
-    // (the Preview's Host theme switch), never by the shell's default.
-    UiFeature->SetAuthoredThemePublishing(false);
-    UiFeature->SetStatusProvider([this] { return Session ? Session->PackagePath() : std::string{}; });
-    UiFeature->SetFileActions({}, {}, [this] { std::string e; (void)SaveModel(&e); }, {});
-
-    UiFeature->AddPanel(std::make_unique<DocumentLibraryPanel>(
+    Surface.AddPanel(std::make_unique<DocumentLibraryPanel>(
         Library, *Session,
         DocumentLibraryPanel::Actions{
             .Open = [this](const std::string& package) { OpenDocument(package); },
@@ -249,31 +144,26 @@ void ShojiServices::BuildUi()
     if (Target != nullptr)
     {
         // Bound before the panel is made, because the panel holds the binding
-        // it was given. The feature is only staged at this point; a binding is
-        // a declaration and its target is created on the first frame drawn.
+        // it was given; a binding is a declaration, and its target is created
+        // on the first frame drawn.
         Binding = Target->Bind(Session->Surface(), PreviewGroundLinear());
-        UiFeature->AddPanel(std::make_unique<PreviewPanel>(*Session, View, *Target, Binding));
+        Surface.AddPanel(std::make_unique<PreviewPanel>(*Session, ViewState, *Target, Binding));
     }
-    else
-    {
-        std::fprintf(stderr, "[shoji] the preview target feature failed to stage; "
-                             "the Preview panel is unavailable\n");
-    }
-    UiFeature->AddPanel(std::make_unique<OutlinePanel>(*Session, View));
-    UiFeature->AddPanel(std::make_unique<ElementPanel>(*Session, View));
-    UiFeature->AddPanel(std::make_unique<ModelPanel>(
-        *Session, View,
+    Surface.AddPanel(std::make_unique<OutlinePanel>(*Session, ViewState));
+    Surface.AddPanel(std::make_unique<ElementPanel>(*Session, ViewState));
+    Surface.AddPanel(std::make_unique<ModelPanel>(
+        *Session, ViewState,
         ModelPanel::Actions{
             .Save = [this](std::string* error) { return SaveModel(error); },
             .Reset = [this] { ResetModel(); },
         }));
-    UiFeature->AddPanel(std::make_unique<ActionLogPanel>(*Session));
-    UiFeature->AddPanel(std::make_unique<VocabularyPanel>(*Vocabulary, [this] {
+    Surface.AddPanel(std::make_unique<ActionLogPanel>(*Session));
+    Surface.AddPanel(std::make_unique<VocabularyPanel>(Vocabulary, [this] {
         // Every structured-data asset in the mounted stack whose compiled
         // value is a binding set, inspected against the metadata catalog. The
         // path order is sorted so the panel reads the same way twice.
         std::vector<VocabularyPanel::BindingAsset> found;
-        RuntimeAssets& stack = EnginePtr->Content().Assets();
+        RuntimeAssets& stack = EngineRef.Content().Assets();
         std::vector<std::string> paths;
         for (const auto& [path, record] : stack.Registry.Records())
         {
@@ -290,108 +180,106 @@ void ShojiServices::BuildUi()
                 DataAssetHandle::FromToken(lease.OpaqueToken()), kVerbBindingsTypeName);
             if (library == nullptr)
                 continue;
-            found.push_back({ path, Vocabulary->Inspect(*library, &stack.Registry,
+            found.push_back({ path, Vocabulary.Inspect(*library, &stack.Registry,
                                                          &stack.DataAssets) });
         }
         return found;
     }));
-    UiFeature->AddPanel(std::make_unique<DiagnosticsPanel>(
-        *Session, View, [this](const std::string& path) {
+    Surface.AddPanel(std::make_unique<DiagnosticsPanel>(
+        *Session, ViewState, [this](const std::string& path) {
             if (const DocumentEntry* entry = Library.Find("asset://" + path))
                 OpenInEditor(*entry);
         }));
 
-    auto statusBar = std::make_shared<ShojiStatusBar>(*Session, Library, *Watch);
-    UiFeature->AddChrome([statusBar] { statusBar->Draw(); });
-
-    renderer.StageFeature(std::move(uiFeature), FeatureRegistration{ .Id = kUiFeatureId });
-
-    std::vector<std::string_view> failed;
-    if (!renderer.CommitStagedFeatures(&failed))
-        std::fprintf(stderr, "[shoji] render feature batch was refused; the editor runs without its own features\n");
-    const auto didFail = [&failed](std::string_view id) {
-        return std::find(failed.begin(), failed.end(), id) != failed.end();
-    };
-    if (didFail(kUiFeatureId))
+    if (Watch != nullptr)
     {
-        std::fprintf(stderr, "[shoji] UI feature failed to set up; panels are unavailable\n");
-        UiFeature = nullptr;
+        auto statusBar = std::make_shared<UiPreviewStatusBar>(*Session, Library, *Watch);
+        Surface.Chrome.push_back([statusBar] { statusBar->Draw(); });
     }
-    if (didFail(kTargetFeatureId))
-        Target = nullptr;
 }
 
-void ShojiServices::RegisterSystems(EngineSchedule& schedule)
+void UiPreviewWorkspace::RegisterCommands()
 {
-    schedule.Register<FrameHook>([this] { ProcessFrame(); });
-}
-
-void ShojiServices::HandlePlatformEvent(PlatformEventContext& ctx)
-{
-    // The editor's own shortcuts, but never while a panel's field is taking
-    // text. The preview surface has already had its chance at this event: what
-    // it consumed never got here.
-    const bool typing = UiFeature != nullptr && UiFeature->GetInputCapture().Keyboard;
-    if (!typing && ctx.Event.type == SDL_EVENT_KEY_DOWN && !ctx.Event.key.repeat
-        && (ctx.Event.key.mod & SDL_KMOD_CTRL) != 0)
-    {
-        switch (ctx.Event.key.scancode)
-        {
-        case SDL_SCANCODE_S:
-        {
-            std::string error;
-            (void)SaveModel(&error);
-            ctx.Handled = true;
-            return;
-        }
-        case SDL_SCANCODE_R:
-            RescanLibrary();
-            ctx.Handled = true;
-            return;
-        case SDL_SCANCODE_I:
-            if (Session)
+    EngineRef.Console().Registry().RegisterCommand({
+        .Name = "ui_preview.open",
+        .Owner = std::string(kCommandOwner),
+        .Usage = "ui_preview.open <asset>",
+        .Help = "Open an authored document in the UI preview workspace.",
+        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            if (args.size() != 1 || !Session)
             {
-                Session->SetPointerMode(Session->Mode() == UiPreviewSession::PointerMode::Inspect
-                                            ? UiPreviewSession::PointerMode::Interact
-                                            : UiPreviewSession::PointerMode::Inspect);
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("expected one document path");
+                return result;
             }
-            ctx.Handled = true;
-            return;
-        default:
-            break;
-        }
-    }
-    if (UiFeature != nullptr)
-        UiFeature->ProcessSdlEvent(ctx.Event);
+            OpenDocument(args[0]);
+            result.Info("opened '" + args[0] + "'");
+            return result;
+        },
+    });
 }
 
-void ShojiServices::ProcessFrame()
+void UiPreviewWorkspace::SetVisible(bool visible)
 {
     if (!Session)
         return;
+    // A screen in the background still updates and draws, so it closes with
+    // the tab and comes back with the model it had.
+    if (!visible && Session->IsOpen())
+    {
+        Suspended.emplace(Session->PackagePath(), Session->Model());
+        Session->Close();
+    }
+    else if (visible && Suspended.has_value())
+    {
+        auto [package, model] = std::move(*Suspended);
+        Suspended.reset();
+        (void)Session->Open(package, std::move(model));
+    }
+}
 
-    UiService* ui = EnginePtr->TryUi();
+void UiPreviewWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
+{
+    // The previewer's own keys; the preview surface has already had its
+    // chance at this event, and what it consumed never got here.
+    const bool typing = Window != nullptr && Window->GetInputCapture().Keyboard;
+    if (ctx.Handled || typing || ctx.Event.type != SDL_EVENT_KEY_DOWN || ctx.Event.key.repeat
+        || (ctx.Event.key.mod & SDL_KMOD_CTRL) == 0)
+        return;
+    switch (ctx.Event.key.scancode)
+    {
+    case SDL_SCANCODE_R:
+        RescanLibrary();
+        ctx.Handled = true;
+        return;
+    case SDL_SCANCODE_I:
+        if (Session)
+            Session->SetPointerMode(Session->Mode() == UiPreviewSession::PointerMode::Inspect
+                                        ? UiPreviewSession::PointerMode::Interact
+                                        : UiPreviewSession::PointerMode::Inspect);
+        ctx.Handled = true;
+        return;
+    default:
+        return;
+    }
+}
+
+void UiPreviewWorkspace::Tick(FrameUpdateContext&)
+{
+    if (!Session)
+        return;
     // The keyboard follows the pointer: while it is over the preview the
     // document has it, and the moment it leaves the editor's shortcuts are
     // back. Read from the layer, because the events the document consumed
     // never reached this side.
+    UiService* ui = EngineRef.TryUi();
     if (ui != nullptr && Session->Mode() == UiPreviewSession::PointerMode::Interact)
         Session->SetActivated(ui->IsPointerOver(Session->Surface()));
-
-    if (View.EditorTheme != EditorThemeApplied || View.EditorTheme)
-    {
-        // Republished every frame it is on: SetHostStyleSheet compares before
-        // it restyles, so an unchanged theme costs a comparison.
-        Session->SetHostTheme(View.EditorTheme ? std::optional<std::string>(BuildAuthoredThemeStyleSheet())
-                                               : std::nullopt);
-        EditorThemeApplied = View.EditorTheme;
-    }
-
     Session->Poll();
-    UpdateTitle();
 }
 
-void ShojiServices::OpenDocument(const std::string& packagePath)
+void UiPreviewWorkspace::OpenDocument(const std::string& packagePath)
 {
     if (!Session)
         return;
@@ -414,25 +302,25 @@ void ShojiServices::OpenDocument(const std::string& packagePath)
             // asked for.
             model.ModelName = entry->ModelName;
             if (entry->HasPreviewModel)
-                std::fprintf(stderr, "[shoji] %s: %s\n", packagePath.c_str(), error.c_str());
+                std::fprintf(stderr, "[ui preview] %s: %s\n", packagePath.c_str(), error.c_str());
         }
     }
-    View.Hovered = {};
-    View.Selected = {};
+    ViewState.Hovered = {};
+    ViewState.Selected = {};
     Session->ClearDiagnostics();
     Session->ClearActions();
     if (!Session->Open(packagePath, std::move(model)))
-        std::fprintf(stderr, "[shoji] '%s' did not open; see Diagnostics\n", packagePath.c_str());
+        std::fprintf(stderr, "[ui preview] '%s' did not open; see Diagnostics\n", packagePath.c_str());
 }
 
-void ShojiServices::RescanLibrary()
+void UiPreviewWorkspace::RescanLibrary()
 {
     Library.Rescan();
     if (Watch)
         Watch->Rescan();
 }
 
-bool ShojiServices::SaveModel(std::string* error)
+bool UiPreviewWorkspace::SaveModel(std::string* error)
 {
     if (!Session || !Session->IsOpen() || OpenSource.empty())
     {
@@ -445,14 +333,14 @@ bool ShojiServices::SaveModel(std::string* error)
     return saved;
 }
 
-void ShojiServices::ResetModel()
+void UiPreviewWorkspace::ResetModel()
 {
     if (!Session || !Session->IsOpen())
         return;
     OpenDocument(Session->PackagePath());
 }
 
-void ShojiServices::OpenInEditor(const DocumentEntry& entry)
+void UiPreviewWorkspace::OpenInEditor(const DocumentEntry& entry)
 {
     // The author's editor: $VISUAL, then $EDITOR, then the desktop's handler.
     const char* editor = std::getenv("VISUAL");
@@ -462,18 +350,6 @@ void ShojiServices::OpenInEditor(const DocumentEntry& entry)
     long pid = 0;
     std::string error;
     if (!SpawnProcess(binary, { entry.SourcePath().string() }, "", pid, &error))
-        std::fprintf(stderr, "[shoji] could not open '%s' in '%s': %s\n",
+        std::fprintf(stderr, "[ui preview] could not open '%s' in '%s': %s\n",
                      entry.SourcePath().string().c_str(), binary.c_str(), error.c_str());
-}
-
-void ShojiServices::UpdateTitle()
-{
-    std::string title = "Shoji";
-    if (Session && Session->IsOpen())
-        title += " - " + Session->PackagePath();
-    if (title != LastWindowTitle)
-    {
-        Window->SetTitle(title);
-        LastWindowTitle = title;
-    }
 }

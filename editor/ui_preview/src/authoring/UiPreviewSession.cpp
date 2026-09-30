@@ -1,10 +1,5 @@
 #include "authoring/UiPreviewSession.h"
 
-namespace
-{
-    constexpr std::string_view kThemeSheetName = "theme.rcss";
-}
-
 UiPreviewSession::UiPreviewSession(UiService& ui)
     : Ui(ui)
 {
@@ -90,13 +85,6 @@ void UiPreviewSession::ApplyInputPolicy()
     if (Pointer == PointerMode::Interact)
         policy = Activated ? UiSurfaceInputPolicy::Full : UiSurfaceInputPolicy::Pointer;
     Ui.SetSurfaceInputPolicy(SurfaceId, policy);
-}
-
-void UiPreviewSession::SetHostTheme(std::optional<std::string> themeRcss)
-{
-    Theme = std::move(themeRcss);
-    // Empty text puts packages back on the copy they were cooked with.
-    (void)Ui.SetHostStyleSheet(kThemeSheetName, Theme.value_or(std::string{}));
 }
 
 void UiPreviewSession::Poll()
