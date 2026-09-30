@@ -70,8 +70,6 @@ editor/common/src/ui/ScopedPanel.cpp
 editor/common/src/ui/ScopedPanel.h
 editor/common/src/ui/ThemePreferences.cpp
 editor/common/src/ui/ThemePreferences.h
-editor/common/src/ui/ThemeTextureCache.cpp
-editor/common/src/ui/ThemeTextureCache.h
 editor/data_editor/src/DataEditorPanels.cpp
 editor/data_editor/src/input/InputActionSetForm.cpp
 editor/data_editor/src/input/InputControlPicker.cpp
@@ -92,9 +90,6 @@ editor/level_editor/src/render/ViewportTargetCache.h
 editor/level_editor/src/ui/ActiveMaterialPanel.cpp
 editor/level_editor/src/ui/ActiveMaterialPanel.h
 editor/level_editor/src/ui/CookProfilesPanel.cpp
-editor/level_editor/src/ui/EditorStatusBar.cpp
-editor/level_editor/src/ui/EditorToolbar.cpp
-editor/level_editor/src/ui/EditorToolbar.h
 editor/level_editor/src/ui/FaceUvControls.cpp
 editor/level_editor/src/ui/GraphViewerPanel.cpp
 editor/level_editor/src/ui/InspectorPanel.cpp
@@ -102,7 +97,6 @@ editor/level_editor/src/ui/LightingPanel.cpp
 editor/level_editor/src/ui/MaterialPickerPanel.cpp
 editor/level_editor/src/ui/SceneBrowserPanel.cpp
 editor/level_editor/src/ui/SceneHierarchyPanel.cpp
-editor/level_editor/src/ui/ToolPalettePanel.cpp
 editor/level_editor/src/ui/ToolPropertiesPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.h

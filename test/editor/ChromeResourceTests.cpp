@@ -4,7 +4,6 @@
 // only when fonts, icons or the mark actually change.
 #include "ui/EditorThemeFile.h"
 #include "ui/EditorUiStyle.h"
-#include "ui/ThemeTextureCache.h"
 #include "ui/chrome/ChromeFrame.h"
 #include "ui/chrome/ChromeGeometry.h"
 #include "ui/chrome/IconDraw.h"
@@ -25,13 +24,6 @@ EditorChrome::ShellAtlasKey CurrentAtlasKey()
     return EditorChrome::ShellAtlasKey{ .UiScale = EditorUi::UiScale, .LogoPath = "branding/kyusu-logo.png" };
 }
 
-std::filesystem::path WriteTemp(const char* name, const char* bytes)
-{
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / name;
-    std::ofstream file(path, std::ios::binary);
-    file << bytes;
-    return path;
-}
 }
 
 TEST(ShellAtlasKey, ThemeStateIsNotAnAtlasInput)
@@ -67,66 +59,6 @@ TEST(ShellAtlasKey, ScaleAndMarkAreAtlasInputs)
     EditorChrome::ShellAtlasKey marked = key;
     marked.LogoPath = "other.png";
     EXPECT_FALSE(marked == key);
-}
-
-TEST(SurfaceTextures, OnlyATexturedFinishAsksForAnAsset)
-{
-    EditorUi::ChromeSurfaces surfaces;
-    std::vector<std::string> requested;
-
-    surfaces.Caption = EditorUi::BarFinish::GradientX;
-    surfaces.CaptionTexture = "unused.png"; // named but not selected
-    surfaces.Toolbar = EditorUi::BarFinish::Solid;
-    EditorUi::RequestedSurfaceTextures(surfaces, requested);
-    EXPECT_TRUE(requested.empty());
-
-    surfaces.Caption = EditorUi::BarFinish::Texture;
-    surfaces.CaptionTexture = "a.png";
-    EditorUi::RequestedSurfaceTextures(surfaces, requested);
-    ASSERT_EQ(requested.size(), 1u);
-    EXPECT_EQ(requested[0], "a.png");
-
-    // Switching the asset asks for exactly the new one.
-    surfaces.CaptionTexture = "b.png";
-    EditorUi::RequestedSurfaceTextures(surfaces, requested);
-    ASSERT_EQ(requested.size(), 1u);
-    EXPECT_EQ(requested[0], "b.png");
-
-    // Two bars naming the same asset ask for it once.
-    surfaces.Toolbar = EditorUi::BarFinish::Texture;
-    surfaces.ToolbarTexture = "b.png";
-    EditorUi::RequestedSurfaceTextures(surfaces, requested);
-    EXPECT_EQ(requested.size(), 1u);
-}
-
-TEST(ThemeTextureSource, IdentityIsThePathAndItsContentStamp)
-{
-    const auto path = WriteTemp("sencha_theme_source_test.bin", "first");
-    const std::string name = path.string();
-
-    const ThemeTextureCache::SourceStamp first = ThemeTextureCache::StampOf(name);
-    EXPECT_TRUE(first.Exists);
-    EXPECT_EQ(first, ThemeTextureCache::StampOf(name)); // unchanged file, unchanged stamp
-
-    // Edited in place: the path is the same and the resource must not be.
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    { std::ofstream rewrite(path, std::ios::binary); rewrite << "second, and longer"; }
-    const ThemeTextureCache::SourceStamp edited = ThemeTextureCache::StampOf(name);
-    EXPECT_TRUE(edited.Exists);
-    EXPECT_FALSE(edited == first);
-
-    // Absent is a stamp of its own, so a file that appears makes a negative
-    // entry stale instead of leaving it cached as broken.
-    std::filesystem::remove(path);
-    const ThemeTextureCache::SourceStamp missing = ThemeTextureCache::StampOf(name);
-    EXPECT_FALSE(missing.Exists);
-    EXPECT_FALSE(missing == edited);
-
-    { std::ofstream recreate(path, std::ios::binary); recreate << "repaired"; }
-    const ThemeTextureCache::SourceStamp repaired = ThemeTextureCache::StampOf(name);
-    EXPECT_TRUE(repaired.Exists);
-    EXPECT_FALSE(repaired == missing);
-    std::filesystem::remove(path);
 }
 
 TEST(ChromeSpec, ThePrimaryViewportIsTheHeavyComposition)

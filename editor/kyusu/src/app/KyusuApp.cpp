@@ -5,6 +5,7 @@
 #include <render/feature/UiRenderFeature.h>
 
 #include "app/ProjectSession.h"
+#include "actions/ActionOffer.h"
 #include "app/SynthesizedInput.h"
 #include "app/WorkspaceKinds.h"
 #include "render/RenderFeatureDetach.h"
@@ -401,12 +402,11 @@ void KyusuApp::DefineApplicationActions()
     DocumentSourceSet& documents = Session->Documents();
     const auto offer = [this](std::string id, std::string label, std::vector<KeyChord> chords,
                               ActionHandler handler) {
-        std::string defineError;
-        if (!Catalog.Define({ .Id = id, .Label = std::move(label),
-                              .Category = id.substr(0, id.find('.')) == "edit" ? "Edit" : "File",
-                              .DefaultChords = std::move(chords) }, &defineError))
-            std::fprintf(stderr, "[kyusu] %s\n", defineError.c_str());
-        ApplicationActions.Claim(std::move(id), std::move(handler));
+        std::string category = id.substr(0, id.find('.')) == "edit" ? "Edit" : "File";
+        OfferAction(Catalog, ApplicationActions,
+                    { .Id = std::move(id), .Label = std::move(label), .Category = std::move(category),
+                      .DefaultChords = std::move(chords) },
+                    std::move(handler));
     };
     offer("edit.undo", "Undo", { { SDLK_Z, { .Ctrl = true } } },
           { .Invoke = [this] { Undo(); }, .Enabled = [this] { return CanUndo(); } });

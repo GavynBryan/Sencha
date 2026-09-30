@@ -28,8 +28,6 @@
 #include "ui/InspectorSurface.h"
 #include <ui/UiService.h>
 #include "ui/CookProfilesPanel.h"
-#include "ui/EditorStatusBar.h"
-#include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/EditorUiStyle.h"
 #include "ui/chrome/ChromeControls.h"
@@ -46,6 +44,8 @@
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
+#include "actions/ActionOffer.h"
+#include "workspace/ManipulationActions.h"
 #include "tools/ToolParameterSource.h"
 #include "ui/RadialMenuScreen.h"
 #include "ui/LevelViewSurface.h"
@@ -175,8 +175,6 @@ LevelWorkspace::~LevelWorkspace()
     // free ImGui descriptor sets (the panels referencing the cache never touch
     // it in their destructors).
     Thumbnails.reset();
-    // Toolbar and StatusBar release with the object in reverse declaration
-    // order; neither touches the subsystems reset above.
 }
 
 void LevelWorkspace::BuildDocument()
@@ -261,45 +259,55 @@ void LevelWorkspace::BuildInput()
         { "edit.escape",           "Step Back",                   "Edit",     { SDLK_ESCAPE, {} },                        [this] { Workspace->EscapeStep(); } },
         { "file.new",              "New Level",                   "File",     { SDLK_N, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->New(); }); } },
         { "file.open",             "Open...",                     "File",     { SDLK_O, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } },
-        { "mode.cycle",            "Next Element Mode",           "Mode",     { SDLK_V, { .Shift = true } },              [this] { Workspace->MeshEdit.CycleElementKind(); } },
-        { "mode.object",           "Object Mode",                 "Mode",     { SDLK_1, {} },                             [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Object); } },
-        { "mode.vertex",           "Vertex Mode",                 "Mode",     { SDLK_2, {} },                             [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Vertex); } },
-        { "mode.edge",             "Edge Mode",                   "Mode",     { SDLK_3, {} },                             [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Edge); } },
-        { "mode.face",             "Face Mode",                   "Mode",     { SDLK_4, {} },                             [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Face); } },
-        { "gizmo.resize",          "Resize",                      "Transform", { SDLK_Q, { .Shift = true } },             [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Resize); } },
-        { "gizmo.move",            "Move",                        "Transform", { SDLK_W, { .Shift = true } },             [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Move); } },
-        { "gizmo.rotate",          "Rotate",                      "Transform", { SDLK_E, { .Shift = true } },             [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Rotate); } },
-        { "gizmo.scale",           "Scale",                       "Transform", { SDLK_R, { .Shift = true } },             [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Scale); } },
-        { "gizmo.space",           "Next Transform Space",        "Transform", { SDLK_G, { .Ctrl = true } },              [this] { Workspace->Interaction.Manipulators->CycleTransformSpace(); } },
-        { "grid.origin_selection", "Grid Origin to Selection",    "Grid",     { SDLK_G, { .Shift = true } },              [this] { Workspace->SetGridOriginToSelection(); } },
-        { "grid.align_face",       "Align Grid to Face",          "Grid",     { SDLK_G, { .Alt = true } },                [this] { Workspace->AlignGridToSelectedFace(); } },
-        { "grid.reset",            "Reset Grid",                  "Grid",     { SDLK_G, { .Ctrl = true, .Shift = true } }, [this] { Workspace->ResetGrid(); } },
-        { "grid.finer",            "Finer Grid",                  "Grid",     { SDLK_LEFTBRACKET, {} },                   [this] { Workspace->Grid.StepSpacing(-1); } },
-        { "grid.coarser",          "Coarser Grid",                "Grid",     { SDLK_RIGHTBRACKET, {} },                  [this] { Workspace->Grid.StepSpacing(+1); } },
         { "material.apply",        "Apply Material",              "Material", { SDLK_T, { .Shift = true } },              [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); } },
         { "material.copy_proj",    "Copy Face Projection",        "Material", { SDLK_C, { .Ctrl = true, .Shift = true } }, [this] { Workspace->CopySelectedFaceProjection(); } },
         { "material.paste_proj",   "Paste Face Projection",       "Material", { SDLK_V, { .Ctrl = true, .Shift = true } }, [this] { Workspace->PasteFaceProjectionToSelection(); } },
-        { "view.one",              "One View",                    "View",     { SDLK_1, { .Alt = true } },                [this] { SetArrangement(ViewportArrangementKind::Single); } },
-        { "view.two",              "Two Views",                   "View",     { SDLK_2, { .Alt = true } },                [this] { SetArrangement(ViewportArrangementKind::Split); } },
-        { "view.four",             "Four Views",                  "View",     { SDLK_4, { .Alt = true } },                [this] { SetArrangement(ViewportArrangementKind::Quad); } },
-        { "view.perspective",      "Perspective View",            "View",     { SDLK_KP_5, {} },                          [this] { ShowView(ViewportOrientation::Perspective); } },
-        { "view.top",              "Top View",                    "View",     { SDLK_KP_7, {} },                          [this] { ShowView(ViewportOrientation::Top); } },
-        { "view.front",            "Front View",                  "View",     { SDLK_KP_1, {} },                          [this] { ShowView(ViewportOrientation::Front); } },
-        { "view.side",             "Side View",                   "View",     { SDLK_KP_3, {} },                          [this] { ShowView(ViewportOrientation::Right); } },
     };
     const auto offer = [&](std::string_view id, std::string_view label, std::string_view category,
                            std::vector<KeyChord> chords, IconId icon, std::function<void()> invoke)
     {
-        std::string error;
-        if (!Catalog.Define({ .Id = std::string(id), .Label = std::string(label),
-                              .Category = std::string(category), .Icon = icon,
-                              .DefaultChords = std::move(chords) }, &error))
-            std::fprintf(stderr, "[editor] %s\n", error.c_str());
-        if (invoke)
-            ActionHandlers.Claim(std::string(id), ActionHandler{ .Invoke = std::move(invoke) });
+        OfferAction(Catalog, ActionHandlers,
+                    { .Id = std::string(id), .Label = std::string(label), .Category = std::string(category),
+                      .Icon = icon, .DefaultChords = std::move(chords) },
+                    { .Invoke = std::move(invoke) });
     };
     for (const LevelAction& action : actions)
         offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
+    OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
+
+    // How the views share the content area, and which one a single view shows.
+    struct ArrangementRow
+    {
+        const char* Id;
+        const char* Label;
+        SDL_Keycode Key;
+        ViewportArrangementKind Kind;
+    };
+    for (const ArrangementRow& row : { ArrangementRow{ "view.one", "One View", SDLK_1, ViewportArrangementKind::Single },
+                                       ArrangementRow{ "view.two", "Two Views", SDLK_2, ViewportArrangementKind::Split },
+                                       ArrangementRow{ "view.four", "Four Views", SDLK_4, ViewportArrangementKind::Quad } })
+        OfferAction(Catalog, ActionHandlers,
+                    { .Id = row.Id, .Label = row.Label, .Category = "View", .DefaultChords = { { row.Key, { .Alt = true } } } },
+                    { .Invoke = [this, kind = row.Kind] { SetArrangement(kind); },
+                      .Checked = [this, kind = row.Kind] { return Arrangement() == kind; } });
+    struct ProjectionRow
+    {
+        const char* Id;
+        const char* Label;
+        SDL_Keycode Key;
+        ViewportOrientation Orientation;
+    };
+    for (const ProjectionRow& row : { ProjectionRow{ "view.perspective", "Perspective View", SDLK_KP_5, ViewportOrientation::Perspective },
+                                      ProjectionRow{ "view.top", "Top View", SDLK_KP_7, ViewportOrientation::Top },
+                                      ProjectionRow{ "view.front", "Front View", SDLK_KP_1, ViewportOrientation::Front },
+                                      ProjectionRow{ "view.side", "Side View", SDLK_KP_3, ViewportOrientation::Right } })
+        OfferAction(Catalog, ActionHandlers,
+                    { .Id = row.Id, .Label = row.Label, .Category = "View", .DefaultChords = { { row.Key, {} } } },
+                    { .Invoke = [this, orientation = row.Orientation] { ShowView(orientation); },
+                      .Checked = [this, orientation = row.Orientation] {
+                          const EditorViewport* active = Workspace->Layout.Active();
+                          return active != nullptr && active->Orientation == orientation;
+                      } });
 
     // Tool activation is generated from the registry rather than listed above: a
     // tool declares its own key, so adding one needs no edit here. The action is
@@ -568,45 +576,6 @@ void LevelWorkspace::BuildUi()
         .SaveAs = [this] { Files->RequestSaveAs(); },
     };
 
-    // The editing toolbar's presentation, hosted by the perspective viewport;
-    // the workspace bar and the status bar are the fixed bars of app chrome,
-    // registered before the panels so the space they reserve is subtracted
-    // from the work area.
-    Toolbar = std::make_unique<EditorToolbar>(
-        [this] { return Workspace->Interaction.Tools.get(); },
-        [this] { return Workspace->Interaction.Manipulators; },
-        Workspace->MeshEdit, Workspace->Grid, Workspace->WorldView);
-    Toolbar->SetGridFrameControls({
-        .OriginToSelection = [this] { Workspace->SetGridOriginToSelection(); },
-        .AlignToFace = [this] { Workspace->AlignGridToSelectedFace(); },
-        .RotateInPlane = [this] { Workspace->RotateGridInPlane(90.0f); },
-        .Reset = [this] { Workspace->ResetGrid(); },
-        .ToggleMoveOrigin = [this]
-        { Workspace->Interaction.Manipulators->SetEditingGridOrigin(!Workspace->Interaction.Manipulators->IsEditingGridOrigin()); },
-        .IsMovingOrigin = [this] { return Workspace->Interaction.Manipulators->IsEditingGridOrigin(); },
-    });
-    Toolbar->SetTransformControls({
-        .SetOriginToPivot = [this] { Workspace->SetSelectedBrushOriginToPivot(); },
-        .SetOriginToVertex = [this]
-        { Workspace->SetSelectedBrushOrigin(EditorWorkspace::OriginAnchor::SelectedVertex); },
-        .SetOriginToBoundsCenter = [this]
-        { Workspace->SetSelectedBrushOrigin(EditorWorkspace::OriginAnchor::BoundsCenter); },
-        .SetOriginToBoundsCorner = [this]
-        { Workspace->SetSelectedBrushOrigin(EditorWorkspace::OriginAnchor::BoundsMinCorner); },
-        .HasSelection = [this] { return !Workspace->Selection.GetSelection().empty(); },
-    });
-    StatusBar = std::make_unique<EditorStatusBar>(
-        [this] { return Workspace->Interaction.Tools.get(); },
-        [this]() -> const ManipulatorSession* { return Workspace->Interaction.Manipulators; },
-        Workspace->Layout, Workspace->Selection, Workspace->Grid,
-        Workspace->MeshEdit);
-    Surface.AddPanel(std::make_unique<ToolPalettePanel>([this] { return Workspace->Interaction.Tools.get(); }));
-    Toolbar->SetSurfaceProvider([this] {
-        return UiFeature != nullptr ? UiFeature->SurfaceFor(BarRole::Toolbar) : EditorChrome::BarSurface{};
-    });
-    // The workspace bar sits under the caption as app chrome, on the primary
-    // viewport's header plate, so it reads apart from the editing row.
-    Surface.Chrome.push_back([this] { StatusBar->Draw(); });
 
     // The views and lighting panels read state the render feature owns, and
     // staging hands back nothing when the renderer never came up. Skipping them
@@ -648,18 +617,6 @@ void LevelWorkspace::BuildUi()
 
         auto views = std::make_unique<ViewsPanel>(Workspace->Layout, Surface);
         views->SetSceneDropHandler(placeDroppedScene);
-        // The editing toolbar is one row above the views, with the gizmo strip
-        // on the window's midline, where the eye rests, rather than the pane's.
-        views->SetHeaderRows({
-            {
-                .Height = [] { return EditorToolbar::ViewportRowHeight(); },
-                .Draw = [this](ImDrawList* dl, ImVec2 mn, ImVec2 mx)
-                {
-                    const ImGuiViewport* window = ImGui::GetMainViewport();
-                    Toolbar->DrawViewportRow(dl, mn, mx, window->Pos.x + window->Size.x * 0.5f);
-                },
-            },
-        });
         Views = views.get();
         Surface.AddPanel(std::move(views));
         if (UiService* ui = EnginePtr->TryUi(); ui != nullptr && ui->IsReady())
@@ -1253,10 +1210,8 @@ void LevelWorkspace::DefineTransportActions()
     // force-saves the world first), so open previews settle before it starts or
     // they would cook half-staged.
     const auto offer = [this](std::string id, std::string label, ActionHandler handler) {
-        std::string error;
-        if (!Catalog.Define({ .Id = id, .Label = std::move(label), .Category = "Transport" }, &error))
-            std::fprintf(stderr, "[editor] %s\n", error.c_str());
-        ActionHandlers.Claim(std::move(id), std::move(handler));
+        OfferAction(Catalog, ActionHandlers,
+                    { .Id = std::move(id), .Label = std::move(label), .Category = "Transport" }, std::move(handler));
     };
     const auto cooking = [this] { return CookRuntime != nullptr && CookRuntime->IsActive(); };
     const auto playing = [this] { return CookRuntime != nullptr && CookRuntime->Player().IsPlaying(); };
@@ -1305,6 +1260,18 @@ WorkspaceDocumentFacet LevelWorkspace::Document() const
         facet.Changed = !changed.empty();
     }
     return facet;
+}
+
+WorkspaceViewFacet LevelWorkspace::Viewing() const
+{
+    const EditorViewport* active = Workspace->Layout.Active();
+    return { .Projection = active != nullptr ? active->GetDisplayLabel() : "",
+             .Views = static_cast<int>(TileCount(Arrangement())) };
+}
+
+WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
+{
+    return ManipulationOf(*Workspace);
 }
 
 WorkspaceOperationFacet LevelWorkspace::Operation()

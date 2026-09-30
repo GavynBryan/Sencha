@@ -37,6 +37,14 @@ const UiModelPropertyId kStationIcon = UiPropertyIdAt(15);
 const UiModelPropertyId kStationHint = UiPropertyIdAt(16);
 const UiModelPropertyId kDraft = UiPropertyIdAt(17);
 const UiModelPropertyId kCardOpen = UiPropertyIdAt(18);
+const UiModelPropertyId kElement = UiPropertyIdAt(19);
+const UiModelPropertyId kGizmoMode = UiPropertyIdAt(20);
+const UiModelPropertyId kGizmoSpace = UiPropertyIdAt(21);
+const UiModelPropertyId kGrid = UiPropertyIdAt(22);
+const UiModelPropertyId kSnap = UiPropertyIdAt(23);
+const UiModelPropertyId kPivot = UiPropertyIdAt(24);
+const UiModelPropertyId kProjection = UiPropertyIdAt(25);
+const UiModelPropertyId kViewCount = UiPropertyIdAt(26);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -77,6 +85,14 @@ UiScreenDesc Describe()
         UiModelProperty{ "station_hint", UiValue(std::string{}) },
         UiModelProperty{ "draft", UiValue(std::string("none")) },
         UiModelProperty{ "card_open", UiValue(false) },
+        UiModelProperty{ "element", UiValue(std::string{}) },
+        UiModelProperty{ "gizmo_mode", UiValue(std::string{}) },
+        UiModelProperty{ "gizmo_space", UiValue(std::string{}) },
+        UiModelProperty{ "grid", UiValue(std::string{}) },
+        UiModelProperty{ "snap", UiValue(false) },
+        UiModelProperty{ "pivot", UiValue(false) },
+        UiModelProperty{ "projection", UiValue(std::string{}) },
+        UiModelProperty{ "view_count", UiValue(std::int64_t{ 0 }) },
     };
     desc.RowLists = { "notices", "entries", "tool_rows" };
     desc.Actions = { "shell_popover", "shell_choose", "shell_invoke", "shell_window", "shell_tool_set",
@@ -261,13 +277,11 @@ void ShellWindow::HandleActions()
         const std::string argument = ArgumentText(action);
         if (action.Id == kPopoverAction)
         {
-            const Popover requested = argument == "hatch"      ? Popover::Hatch
-                                    : argument == "workspaces" ? Popover::Workspaces
-                                    : argument == "document"   ? Popover::Document
-                                    : argument == "tools"      ? Popover::Tools
-                                                               : Popover::None;
             // Pressing the instrument whose popover is open closes it.
-            OpenPopover(requested == Showing ? Popover::None : requested);
+            if (argument == PopoverName())
+                OpenPopover(Popover::None);
+            else
+                OpenNamedPopover(argument);
         }
         else if (action.Id == kChooseAction)
         {
@@ -314,20 +328,44 @@ void ShellWindow::YieldPointerToContent()
 
 void ShellWindow::ShowPopover(std::string_view name)
 {
-    OpenPopover(name == "hatch" ? Popover::Hatch
-                : name == "workspaces" ? Popover::Workspaces
-                : name == "document" ? Popover::Document
-                : name == "tools" ? Popover::Tools
-                                     : Popover::None);
+    OpenNamedPopover(name);
 }
 
-void ShellWindow::OpenPopover(Popover popover)
+void ShellWindow::OpenNamedPopover(std::string_view name)
+{
+    constexpr std::string_view kCategory = "category:";
+    if (name.starts_with(kCategory))
+        OpenPopover(Popover::Category, std::string(name.substr(kCategory.size())));
+    else
+        OpenPopover(name == "hatch"        ? Popover::Hatch
+                    : name == "workspaces" ? Popover::Workspaces
+                    : name == "document"   ? Popover::Document
+                    : name == "tools"      ? Popover::Tools
+                                           : Popover::None);
+}
+
+std::string ShellWindow::PopoverName() const
+{
+    switch (Showing)
+    {
+    case Popover::Hatch:      return "hatch";
+    case Popover::Workspaces: return "workspaces";
+    case Popover::Document:   return "document";
+    case Popover::Tools:      return "tools";
+    case Popover::Category:   return "category:" + PopoverCategory;
+    case Popover::None:
+    default:                  return {};
+    }
+}
+
+void ShellWindow::OpenPopover(Popover popover, std::string category)
 {
     if (PopoverTransient != 0)
         Transients.Close(PopoverTransient);
     if (popover == Popover::None)
         return;
     Showing = popover;
+    PopoverCategory = popover == Popover::Category ? std::move(category) : std::string{};
     PopoverTransient = Transients.Open({ .Owner = "shell", .Dismiss = TransientDismiss::Light });
     PopoverLayer = Services.Actions.Push(PopoverActions, ActionRank::Surface);
 }
@@ -387,6 +425,7 @@ void ShellWindow::Publish(double now)
     (void)ui.SetValue(Screen, kStopEnabled, UiValue(Services.Actions.Query("transport.stop").Enabled));
 
     PublishStation(workspace);
+    PublishReadouts(workspace);
 
     std::vector<UiRow> notices;
     for (const Notice& notice : Services.Notices.Showing(now))
@@ -399,25 +438,68 @@ void ShellWindow::Publish(double now)
 void ShellWindow::PublishEntries()
 {
     UiService& ui = Services.Ui;
-    std::string name;
     std::string anchor;
     std::vector<UiRow> entries;
     switch (Showing)
     {
-    case Popover::Hatch:      name = "hatch";      anchor = "hatch";          entries = HatchEntries();     break;
-    case Popover::Workspaces: name = "workspaces"; anchor = "workspace_dial"; entries = WorkspaceEntries(); break;
-    case Popover::Document:   name = "document";   anchor = "document_dial";  entries = DocumentEntries();  break;
-    case Popover::Tools:      name = "tools";      anchor = "station";        entries = ToolEntries();      break;
+    case Popover::Hatch:      anchor = "hatch";          entries = HatchEntries();                   break;
+    case Popover::Workspaces: anchor = "workspace_dial"; entries = WorkspaceEntries();               break;
+    case Popover::Document:   anchor = "document_dial";  entries = CategoryEntries("File");          break;
+    case Popover::Tools:      anchor = "station";        entries = ToolEntries();                    break;
+    case Popover::Category:   anchor = "cat_" + PopoverCategory; entries = CategoryEntries(PopoverCategory); break;
     case Popover::None:       break;
     }
-    (void)ui.SetValue(Screen, kPopover, UiValue(name));
-    (void)ui.SetValue(Screen, kPopoverRises, UiValue(Showing == Popover::Tools));
+    (void)ui.SetValue(Screen, kPopover, UiValue(PopoverName()));
+    // From the stations along the bottom, a popover rises instead of hanging.
+    (void)ui.SetValue(Screen, kPopoverRises, UiValue(Showing == Popover::Tools || Showing == Popover::Category));
     double x = 0.0;
     if (!anchor.empty())
         if (const std::optional<UiElementBox> box = ui.MeasureElement(Screen, anchor))
             x = std::floor(box->X);
+    // Kept inside the window: an instrument at the right edge opens leftward.
+    if (const std::optional<UiElementBox> popover = ui.MeasureElement(Screen, "popover"))
+    {
+        const double room = static_cast<double>(Services.Window.GetExtent().Width) - popover->Width - 8.0;
+        x = std::max(0.0, std::min(x, room));
+    }
     (void)ui.SetValue(Screen, kPopoverX, UiValue(x));
     (void)ui.SetRows(Screen, kEntries, entries);
+}
+
+std::vector<UiRow> ShellWindow::CategoryEntries(std::string_view category) const
+{
+    std::vector<UiRow> rows;
+    for (const ActionDefinition* action : Services.Catalog.All())
+    {
+        if (action->Category != category)
+            continue;
+        const ActionContextStack::State state = Services.Actions.Query(action->Id);
+        if (!state.Claimed)
+            continue;
+        UiRow row{ action->Label, Services.Catalog.ChordText(action->Id), "" };
+        row.Key = action->Id;
+        row.Icon = std::string(IconName(action->Icon));
+        row.Disabled = !state.Enabled;
+        row.Selected = state.Checked;
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+void ShellWindow::PublishReadouts(const IWorkspace* workspace)
+{
+    UiService& ui = Services.Ui;
+    const WorkspaceManipulationFacet hands = workspace != nullptr ? workspace->Manipulation() : WorkspaceManipulationFacet{};
+    (void)ui.SetValue(Screen, kElement, UiValue(hands.Element));
+    (void)ui.SetValue(Screen, kGizmoMode, UiValue(hands.Mode));
+    (void)ui.SetValue(Screen, kGizmoSpace, UiValue(hands.Space));
+    (void)ui.SetValue(Screen, kGrid, UiValue(hands.Grid));
+    (void)ui.SetValue(Screen, kSnap, UiValue(hands.Snap));
+    (void)ui.SetValue(Screen, kPivot, UiValue(hands.Pivot));
+
+    const WorkspaceViewFacet seeing = workspace != nullptr ? workspace->Viewing() : WorkspaceViewFacet{};
+    (void)ui.SetValue(Screen, kProjection, UiValue(seeing.Projection));
+    (void)ui.SetValue(Screen, kViewCount, UiValue(static_cast<std::int64_t>(seeing.Views)));
 }
 
 std::vector<UiRow> ShellWindow::HatchEntries() const
@@ -426,33 +508,19 @@ std::vector<UiRow> ShellWindow::HatchEntries() const
     // menu bar. Categories keep the order their first action was defined in,
     // which puts the application's own File and Edit first.
     std::vector<std::string> categories;
-    const std::vector<const ActionDefinition*> actions = Services.Catalog.All();
-    for (const ActionDefinition* action : actions)
+    for (const ActionDefinition* action : Services.Catalog.All())
         if (std::find(categories.begin(), categories.end(), action->Category) == categories.end())
             categories.push_back(action->Category);
 
     std::vector<UiRow> rows;
     for (const std::string& category : categories)
     {
-        bool headed = false;
-        for (const ActionDefinition* action : actions)
-        {
-            if (action->Category != category)
-                continue;
-            const ActionContextStack::State state = Services.Actions.Query(action->Id);
-            if (!state.Claimed)
-                continue;
-            if (!headed)
-            {
-                rows.push_back(Heading(category));
-                headed = true;
-            }
-            UiRow row{ action->Label, Services.Catalog.ChordText(action->Id), "" };
-            row.Key = action->Id;
-            row.Disabled = !state.Enabled;
-            row.Selected = state.Checked;
-            rows.push_back(std::move(row));
-        }
+        std::vector<UiRow> entries = CategoryEntries(category);
+        if (entries.empty())
+            continue;
+        rows.push_back(Heading(category));
+        for (UiRow& entry : entries)
+            rows.push_back(std::move(entry));
     }
     return rows;
 }
@@ -517,24 +585,6 @@ void ShellWindow::PublishStation(IWorkspace* workspace)
     // or drafted work to apply or cancel.
     (void)ui.SetValue(Screen, kCardOpen, UiValue(!rows.empty() || operation.Draft != ToolDraft::None));
     (void)ui.SetRows(Screen, kToolRows, rows);
-}
-
-std::vector<UiRow> ShellWindow::DocumentEntries() const
-{
-    std::vector<UiRow> rows;
-    for (const ActionDefinition* action : Services.Catalog.All())
-    {
-        if (action->Category != "File")
-            continue;
-        const ActionContextStack::State state = Services.Actions.Query(action->Id);
-        if (!state.Claimed)
-            continue;
-        UiRow row{ action->Label, Services.Catalog.ChordText(action->Id), "" };
-        row.Key = action->Id;
-        row.Disabled = !state.Enabled;
-        rows.push_back(std::move(row));
-    }
-    return rows;
 }
 
 void ShellWindow::PublishCaption()

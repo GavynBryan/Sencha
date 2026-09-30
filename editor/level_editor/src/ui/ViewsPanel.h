@@ -17,7 +17,7 @@ struct WorkspaceView;
 // Where the Level's views show while the workspace still docks panels. The
 // views and what is drawn over them are on the window's content surface, under
 // the panels; this panel holds the dock's centre for them, transparent where
-// they show, with the toolbar row above them. It goes when the dock does.
+// they show. It goes when the dock does.
 class ViewsPanel : public IEditorPanel
 {
 public:
@@ -42,22 +42,11 @@ public:
     using SceneDropHandler = std::function<void(ViewportId, Vec2d, std::string_view)>;
     void SetSceneDropHandler(SceneDropHandler handler) { SceneDrop = std::move(handler); }
 
-    // Rows of chrome reserved above the views, drawn by whoever owns what is
-    // on them.
-    struct ChromeRow
-    {
-        std::function<float()> Height;
-        std::function<void(ImDrawList* dl, ImVec2 mn, ImVec2 mx)> Draw;
-    };
-    void SetHeaderRows(std::vector<ChromeRow> rows) { Rows = std::move(rows); }
-
 private:
-    void DrawChromeRow(const ChromeRow& row);
 
     ViewportLayout& Layout;
     WorkspaceView& View;
     Rect2d Content{};
     bool RegionHovered = false;
     SceneDropHandler SceneDrop;
-    std::vector<ChromeRow> Rows;
 };

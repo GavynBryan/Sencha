@@ -56,6 +56,8 @@ public:
     [[nodiscard]] virtual WorkspaceTransportFacet Transport() const { return {}; }
     // Not const: the parameters it hands out are the workspace's to edit.
     [[nodiscard]] virtual WorkspaceOperationFacet Operation() { return {}; }
+    [[nodiscard]] virtual WorkspaceManipulationFacet Manipulation() const { return {}; }
+    [[nodiscard]] virtual WorkspaceViewFacet Viewing() const { return {}; }
 
     virtual WorkspaceView& View() = 0;
     // The window this workspace now draws in: its UI capture, input gates and

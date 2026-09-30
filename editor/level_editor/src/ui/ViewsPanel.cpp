@@ -39,9 +39,6 @@ void ViewsPanel::OnDraw()
         return;
     }
 
-    for (const ChromeRow& row : Rows)
-        DrawChromeRow(row);
-
     const ImVec2 size(std::max(0.0f, ImGui::GetContentRegionAvail().x),
                       std::max(0.0f, ImGui::GetContentRegionAvail().y));
     ImGui::BeginChild("ViewsRegion", size, ImGuiChildFlags_None, kViewsChildFlags);
@@ -66,19 +63,4 @@ void ViewsPanel::OnDraw()
         ImGui::EndDragDropTarget();
     }
     ImGui::End();
-}
-
-void ViewsPanel::DrawChromeRow(const ChromeRow& row)
-{
-    if (!row.Height || !row.Draw)
-        return;
-    const float rowHeight = std::max(0.0f, row.Height());
-    if (rowHeight <= 0.0f)
-        return;
-    // Reserved the way the title row is: the rect handed over, the cursor
-    // moved under it, so what follows starts below the row.
-    const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-    const ImVec2 rowMax(rowMin.x + std::max(0.0f, ImGui::GetContentRegionAvail().x), rowMin.y + rowHeight);
-    row.Draw(ImGui::GetWindowDrawList(), rowMin, rowMax);
-    ImGui::SetCursorScreenPos(ImVec2(rowMin.x, rowMax.y + EditorUi::Px(2.0f)));
 }

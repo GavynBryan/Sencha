@@ -196,10 +196,6 @@ struct ChromeSurfaces
 };
 inline ChromeSurfaces Surfaces{};
 
-// The texture assets this surface configuration needs, in no particular order
-// and without duplicates. Pure: the one input a resource owner derives its work
-// from, so a theme that only changes colors asks for nothing.
-void RequestedSurfaceTextures(const ChromeSurfaces& surfaces, std::vector<std::string>& out);
 
 // Applies the palette + metrics onto the ImGui style (seeded from a fresh
 // ImGuiStyle + StyleColorsDark so no entry is left uninitialized), then scales

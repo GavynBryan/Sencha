@@ -117,6 +117,11 @@ constexpr Rule kRules[] = {
     { ".theme-key.destructive", [] { return Color(EditorUi::Danger); } },
     { ".theme-readout", [] { return Fill(EditorUi::ChassisBg) + Edge(EditorUi::Border) + Color(EditorUi::Accent); } },
     { ".theme-art", [] { return Tint(EditorUi::MetalHighlight); } },
+    // One part of a readout that opens something: a seam between parts, lit
+    // while its popover is open.
+    { ".theme-segment", [] { return Edge(EditorUi::Border); } },
+    { ".theme-segment:hover", [] { return Fill(EditorUi::FrameBgHovered); } },
+    { ".theme-segment.lit", [] { return Fill(EditorUi::Selected) + Color(EditorUi::SelectedOutline); } },
     // A slider's and a drop-down's parts, which a document styles by element.
     { "slidertrack", [] { return Fill(EditorUi::FrameBg); } },
     { "sliderprogress", [] { return Fill(EditorUi::AccentDim); } },

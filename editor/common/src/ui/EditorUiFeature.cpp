@@ -531,23 +531,14 @@ void EditorUiFeature::RegisterPointerCommands(ConsoleRegistry& registry)
         return result;
     };
 
-    // What the chrome's resources have actually done. The point is to be able
-    // to show that switching a theme invalidated only what it should: colors
-    // and metrics cost nothing, a new texture path costs one load, and neither
-    // touches the font atlas.
     registry.RegisterCommand({
         .Name = "editor.ui.chromestats",
         .Owner = "editor",
         .Usage = "editor.ui.chromestats",
-        .Help = "Reports shell atlas builds and theme texture loads, replacements, "
-                "failures, and resident count.",
+        .Help = "Reports how many times the shell font atlas has been built.",
         .Callback = [this](ConsoleExecutionContext&, std::span<const std::string>) {
-            const ThemeTextureCache::Counters counters =
-                ThemeTextures.has_value() ? ThemeTextures->Stats() : ThemeTextureCache::Counters{};
             ConsoleResult result;
             result.Info(std::format("shell atlas builds: {}", AtlasBuilds));
-            result.Info(std::format("theme textures: {} loaded, {} replaced, {} failed, {} resident",
-                                    counters.Loads, counters.Replacements, counters.Failures, counters.Resident));
             return result;
         },
     });
@@ -932,20 +923,6 @@ void EditorUiFeature::ShutdownImGui()
     if (DeviceHandle != VK_NULL_HANDLE)
         vkDeviceWaitIdle(DeviceHandle);
 
-    // Between the wait above and the backend teardown below: the device is
-    // idle, so nothing in flight can still sample these, and the backend is
-    // still alive to free their descriptor sets. Deferred retirement is no use
-    // here -- there are no further frames to retire against.
-    if (ThemeTextures.has_value())
-    {
-        ThemeTextures->Shutdown();
-        ThemeTextures.reset();
-        // The images went to the deletion queue, which defers even when idle,
-        // and nothing will advance its ring again. Run it out here rather than
-        // leaving it to the graphics services' own teardown.
-        if (GraphicsServices* graphics = EngineInstance.TryGraphics())
-            graphics->DeletionQueue.FlushAll();
-    }
 
     if (Context != nullptr)
     {
@@ -1003,7 +980,6 @@ void EditorUiFeature::PrepareFrameChrome()
     }
     const bool themeChanged = ThemePrefs.CommitPending();
     PublishAuthoredTheme(themeChanged);
-    PrepareThemeTextures();
     BuildShellAtlasIfStale();
 }
 
@@ -1025,50 +1001,6 @@ void EditorUiFeature::PublishAuthoredTheme(bool themeChanged)
 
     (void)ui->SetHostStyleSheet(kAuthoredThemeStyleSheetName, BuildAuthoredThemeStyleSheet());
     AuthoredThemePublished = true;
-}
-
-void EditorUiFeature::PrepareThemeTextures()
-{
-    GraphicsServices* graphics = EngineInstance.TryGraphics();
-    if (graphics == nullptr)
-        return;
-    if (!ThemeTextures.has_value())
-        ThemeTextures.emplace(graphics->Images, graphics->Samplers, Log);
-
-    // Retire first, then resolve: this is the one place in the frame that is
-    // allowed to touch the filesystem, allocate, or upload for chrome art.
-    ThemeTextures->BeginFrame(graphics->Frames.GetRetirement());
-    EditorUi::RequestedSurfaceTextures(EditorUi::Surfaces, RequestedTextures);
-    ThemeTextures->Prepare(RequestedTextures);
-
-    const EditorUi::ChromeSurfaces& surfaces = EditorUi::Surfaces;
-    CaptionSurface = ResolveSurface(surfaces.Caption, surfaces.CaptionTexture, surfaces.CaptionModulate);
-    ToolbarSurface = ResolveSurface(surfaces.Toolbar, surfaces.ToolbarTexture, surfaces.ToolbarModulate);
-}
-
-EditorChrome::BarSurface EditorUiFeature::ResolveSurface(EditorUi::BarFinish finish, const std::string& path,
-                                                         EditorUi::SurfaceModulation modulation) const
-{
-    EditorChrome::BarSurface surface;
-    surface.Finish = finish;
-    if (finish != EditorUi::BarFinish::Texture || !ThemeTextures.has_value())
-        return surface;
-    const ThemeTextureCache::Texture texture = ThemeTextures->Get(path);
-    surface.Texture = texture.Id;
-    surface.TextureSize = texture.Size;
-    // Authored colour by default. A theme that painted a neutral greyscale
-    // surface asks for Metal instead, and gets the palette's metal lifted so a
-    // mid-grey texel lands near MetalBase rather than being crushed to black.
-    if (modulation == EditorUi::SurfaceModulation::Metal)
-        surface.Tint = ImGui::GetColorU32(EditorUi::Lighten(EditorUi::MetalBase, 0.35f));
-    return surface;
-}
-
-EditorChrome::BarSurface EditorUiFeature::SurfaceFor(BarRole role) const
-{
-    if (Role == ShellRole::Detached)
-        return PrimaryShell->SurfaceFor(role);
-    return role == BarRole::Caption ? CaptionSurface : ToolbarSurface;
 }
 
 void EditorUiFeature::BuildShellAtlasIfStale()

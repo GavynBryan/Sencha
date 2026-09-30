@@ -64,10 +64,6 @@ BarRects BarFrame(ImDrawList* dl, ImVec2 mn, ImVec2 mx, BarEdge lipEdge, float i
 // geometry (a strip of menus, say) mounts one directly.
 void DrawBay(ImDrawList* dl, ImVec2 mn, ImVec2 mx, bool active);
 
-// Technical markings in a run of the lane the controls left free, between
-// fromX and toX. Draws nothing in a run too short to carry them.
-void BarMarkings(ImDrawList* dl, const BarRects& bar, float fromX, float toX);
-
 // The width a run of horizontal ImGui menus takes, for a caller placing the
 // strip itself. Mirrors the spacing BeginMenu adds around each label, so it is
 // pinned by a test against the ImGui the editor builds with.

@@ -263,16 +263,74 @@ body
 
 /* The station and its card, bottom left: the operation in hand and what it
    is set to. */
+#instruments_left
+{
+    display: flex;
+    position: absolute;
+    left: 8dp;
+    bottom: 8dp;
+    align-items: flex-end;
+    gap: 8dp;
+    pointer-events: none;
+}
+
 #station_bay
 {
     display: flex;
     flex-direction: column;
-    position: absolute;
-    left: 8dp;
-    bottom: 8dp;
     width: 260dp;
     gap: 6dp;
     pointer-events: none;
+}
+
+#readout
+{
+    display: flex;
+    height: 34dp;
+    align-items: center;
+    border-width: 1dp;
+    border-radius: 4dp;
+    font-family: "JetBrains Mono";
+    font-size: 12dp;
+    pointer-events: auto;
+}
+
+.segment
+{
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0dp 10dp;
+    gap: 6dp;
+    border-right-width: 1dp;
+}
+.segment .lamp { width: 8dp; height: 8dp; border-width: 1dp; border-radius: 4dp; }
+
+#instruments_right
+{
+    display: flex;
+    position: absolute;
+    right: 8dp;
+    bottom: 8dp;
+    gap: 8dp;
+    pointer-events: none;
+}
+
+#cat_View
+{
+    display: flex;
+    align-items: center;
+    height: 34dp;
+    padding: 0dp 12dp;
+    gap: 10dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+    pointer-events: auto;
 }
 
 #station

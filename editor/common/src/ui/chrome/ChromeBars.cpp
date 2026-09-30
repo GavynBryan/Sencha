@@ -181,20 +181,6 @@ float BarButtonSize()
     return ImGui::GetFrameHeight();
 }
 
-void BarMarkings(ImDrawList* dl, const BarRects& bar, float fromX, float toX)
-{
-    const float slash = EditorUi::Px(EditorUi::Metrics.VentLength * 0.5f);
-    const float gap = EditorUi::Px(6.0f);
-    // A run only carries a marking when it is comfortably longer than one, so
-    // the bars stay quiet as their contents grow.
-    if (slash <= 0.0f || toX - fromX < slash + gap * 3.0f)
-        return;
-    const float h = bar.LaneMax.y - bar.LaneMin.y;
-    const float inset = std::floor(h * 0.3f);
-    DrawOrnament(dl, OrnamentKind::TripleSlash, ImVec2(toX - gap - slash, bar.LaneMin.y + inset),
-                 ImVec2(toX - gap, bar.LaneMax.y - inset),
-                 ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::Accent, 0.35f)));
-}
 
 float MenuBarStripWidth(std::span<const char* const> labels)
 {

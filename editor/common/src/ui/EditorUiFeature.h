@@ -4,7 +4,6 @@
 #include "actions/ActionContext.h"
 #include "PanelVisibilitySettings.h"
 #include "ThemePreferences.h"
-#include "ThemeTextureCache.h"
 #include "WorkspaceView.h"
 #include "chrome/ChromeBars.h"
 #include "chrome/IconDraw.h"
@@ -34,13 +33,6 @@ class SdlWindow;
 class VulkanFrameService;
 class VulkanInstanceService;
 struct IEditorPanel;
-
-// Which themed bar a surface belongs to.
-enum class BarRole
-{
-    Caption,
-    Toolbar,
-};
 
 // The ImGui content of one window while workspaces migrate to authored UI: the
 // panels of the workspace its WorkspaceHost shows there, docked under the
@@ -124,7 +116,6 @@ public:
 
     // The resolved surface for a bar, as prepared at this frame's boundary.
     // A pure lookup: a bar painting itself never reaches a loader.
-    [[nodiscard]] EditorChrome::BarSurface SurfaceFor(BarRole role) const;
 
 private:
     enum class ShellRole : std::uint8_t
@@ -145,10 +136,7 @@ private:
     // have changed yet.
     void PublishAuthoredTheme(bool themeChanged);
     bool AuthoredThemePublished = false;
-    void PrepareThemeTextures();
     void BuildShellAtlasIfStale();
-    [[nodiscard]] EditorChrome::BarSurface ResolveSurface(EditorUi::BarFinish finish, const std::string& path,
-                                                          EditorUi::SurfaceModulation modulation) const;
     // The host's active workspace's view; null when none is open.
     [[nodiscard]] WorkspaceView* ActiveView() const;
     void AdoptWorkspace(const WorkspaceKind& kind, IWorkspace& workspace);
@@ -186,10 +174,6 @@ private:
 
     // Theme artwork, with a lifetime of its own: a theme switch replaces these
     // and leaves the font atlas alone.
-    std::optional<ThemeTextureCache> ThemeTextures;
-    std::vector<std::string> RequestedTextures;
-    EditorChrome::BarSurface CaptionSurface;
-    EditorChrome::BarSurface ToolbarSurface;
 
     // The inputs the shell atlas was last built from. Compared, not signalled:
     // nothing tells this feature "the theme changed", it decides for itself

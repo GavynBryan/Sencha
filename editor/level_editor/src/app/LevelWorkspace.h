@@ -20,9 +20,6 @@
 #include "project/MaterialLibrary.h"
 #include "viewport/ViewportArrangement.h"
 #include "project/Project.h"
-#include "ui/EditorStatusBar.h"
-#include "ui/ToolPalettePanel.h"
-#include "ui/EditorToolbar.h"
 #include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 
@@ -86,6 +83,8 @@ public:
     void MoveTo(const WorkspaceWindow& window) override;
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     [[nodiscard]] WorkspaceOperationFacet Operation() override;
+    [[nodiscard]] WorkspaceManipulationFacet Manipulation() const override;
+    [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;
@@ -173,11 +172,6 @@ private:
     ActionContext ActionHandlers;
     // The tool in hand's settings, as the operation facet hands them out.
     std::unique_ptr<ToolParameterSource> ToolParameters;
-    // Declared after Workspace so they are destroyed before the state they
-    // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
-    std::unique_ptr<EditorToolbar> Toolbar;
-    // The cook/play loop, mounted on the window's tab strip.
-    std::unique_ptr<EditorStatusBar> StatusBar;
     MaterialLibrary* Materials = nullptr;
     // Thumbnail GPU residency for the browser and active-material previews.
     // Reset explicitly in the destructor after the render feature releases its

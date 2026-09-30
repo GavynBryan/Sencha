@@ -99,7 +99,9 @@ public:
     void ShowPopover(std::string_view name);
 
 private:
-    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Document, Tools };
+    // Category: a category's actions, named by PopoverCategory, from the
+    // instrument whose id is "cat_" and the category.
+    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Document, Tools, Category };
 
     void HandleActions();
     void Publish(double now);
@@ -108,15 +110,22 @@ private:
     // The rail yields the pointer while the content holds it, so a drag
     // released over the rail still ends where it began.
     void YieldPointerToContent();
-    void OpenPopover(Popover popover);
+    void OpenPopover(Popover popover, std::string category = {});
+    // A popover as a document or a script names it: "hatch", "tools",
+    // "category:Grid", or anything else for none.
+    void OpenNamedPopover(std::string_view name);
+    [[nodiscard]] std::string PopoverName() const;
     void Choose(const std::string& key);
 
     [[nodiscard]] std::vector<UiRow> HatchEntries() const;
     [[nodiscard]] std::vector<UiRow> WorkspaceEntries() const;
-    [[nodiscard]] std::vector<UiRow> DocumentEntries() const;
+    [[nodiscard]] std::vector<UiRow> CategoryEntries(std::string_view category) const;
     [[nodiscard]] std::vector<UiRow> ToolEntries();
     // The operation in hand, bottom left, and its card.
     void PublishStation(IWorkspace* workspace);
+    // How the hands act and how the work is seen: the readouts beside the
+    // stations, each opening its category's actions.
+    void PublishReadouts(const IWorkspace* workspace);
 
     ShellWindowServices Services;
     UiSurfaceId SurfaceId;
@@ -127,6 +136,7 @@ private:
     UiScreenHandle Screen;
 
     Popover Showing = Popover::None;
+    std::string PopoverCategory;
     TransientSurfaces Transients;
     TransientSurfaces::Id PopoverTransient = 0;
     std::string ShownTitle;

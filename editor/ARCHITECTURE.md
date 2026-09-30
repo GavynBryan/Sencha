@@ -169,7 +169,6 @@ Shared shell (`editor/common/src/`):
 | `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first). | Kyusu, workspaces |
 | `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
 | `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/ui/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/ui/icons/` |
-| `ui/ThemeTextureCache` | The raster art a theme owns, keyed by path and source stamp, with its own GPU lifetime. Deliberately not the font atlas: a theme switch costs one upload, not a font rebuild. | add a texture path to a theme's `surfaces` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `workspaces/` | The workspace model: `IWorkspace`, the `WorkspaceKind` row, `WorkspaceHost` (open, close, activate, window placement, requests at the frame boundary; headless-tested). | a row in `WorkspaceKinds.cpp` |
 | `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`), display-driven target lifetime (`DisplayLedger`, `DisplayedTargets`), `DetachRenderFeature`. | -- |
@@ -188,7 +187,7 @@ Level editor (`editor/level_editor/src/`):
 | `meshedit/` | Polygon mesh-editing verbs (`MeshEditService`). | `IMeshEditTarget` |
 | `viewport/` | Viewport layout, camera, picking (`ViewportLayout`, `EditorCamera`, `EditorViewportCameraSystem`, `Picking`). | -- |
 | `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes, the 14 embedded shaders). | `IRenderFeature` (engine) |
-| `ui/` | The level editor's panels + chrome (viewport, inspector, hierarchy, mesh edit, material, tool palette, toolbar, status bar). | `IEditorPanel` |
+| `ui/` | The level editor's remaining ImGui panels (views, inspector, hierarchy, material) and its authored surfaces (`LevelViewSurface`). | `IEditorPanel` |
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
@@ -275,10 +274,12 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   staged (`CommitPending`). It draws nothing: the Level's operation facet hands
   the shell those facts and a `ToolParameterSource`, and the shell's station and
   tool card present them through `PropertySheet`, so the station, the card,
-  the tool palette, the tool wheel, the status bar, and the keymap all pick it
-  up without an edit. The toolbar is not a bar of its own: it is the row the
-  views panel reserves above the views (`ViewsPanel::SetHeaderRows`), with the
-  gizmo strip centred on the window's midline. Cook, play and stop are the `transport.*` actions the
+  the tool wheel and the keymap all pick it up without an edit. How the hands
+  act -- element mode, gizmo mode and axes, pivot, snapping, the grid -- and
+  what the views show are actions with a checked state
+  (`workspace/ManipulationActions`), named for the readout by the manipulation
+  and view facets; the readout's segments and the view instrument open their
+  categories' actions. Cook, play and stop are the `transport.*` actions the
   rail's transport shows.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
@@ -307,7 +308,7 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   window's overlay surface) over `IRadialMenuModel`; the tools are one model
   (`tool.wheel`, `ToolRegistryMenuModel`), the gizmo modes another
   (`gizmo.wheel`, `TransformModeMenuModel` over the `TransformModeItems`
-  table the toolbar strip reads too). An open wheel is modal, which is what
+  table the Transform actions read too). An open wheel is modal, which is what
   keeps the other closed.
 - A viewport visual: a render feature/pass in `level_editor/src/render/`, added in
   `LevelWorkspace::BuildViewportRendering`. A tool's world strokes go through

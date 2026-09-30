@@ -64,8 +64,10 @@
         </div>
     </div>
 
-    <!-- The station: what the hands are doing, bottom left. Over it, while the
-         operation has settings or drafted work, its card. -->
+    <!-- Bottom left, what the hands are doing: the station (and over it, while
+         the operation has settings or drafted work, its card), then how they
+         act -- element, gizmo, grid -- each segment opening its category. -->
+    <div id="instruments_left">
     <div id="station_bay" data-if="station_name != ''">
         <div id="tool_card" class="theme-plate" data-if="card_open">
             <div class="setting" data-for="row : tool_rows">
@@ -95,6 +97,30 @@
             <span data-if="station_icon != ''" data-attr-class="'station_icon icon icon-' + station_icon"></span>
             <span class="station_name">{{station_name}}</span>
             <span class="station_variant theme-accent" data-if="station_variant != ''">{{station_variant}}</span>
+        </div>
+    </div>
+    <div id="readout" class="theme-readout" data-if="element != ''">
+        <div id="cat_Mode" class="segment theme-segment" data-class-lit="popover == 'category:Mode'"
+             data-event-click="shell_popover('category:Mode')"><span>{{element}}</span></div>
+        <div id="cat_Transform" class="segment theme-segment" data-class-lit="popover == 'category:Transform'"
+             data-event-click="shell_popover('category:Transform')">
+            <span>{{gizmo_mode}}</span><span class="theme-dim">&#183;</span><span>{{gizmo_space}}</span>
+            <span class="theme-warning" data-if="pivot">PIVOT</span>
+        </div>
+        <div id="cat_Grid" class="segment theme-segment" data-class-lit="popover == 'category:Grid'"
+             data-event-click="shell_popover('category:Grid')">
+            <div class="lamp theme-lamp" data-class-on="snap"></div><span>{{grid}}u</span>
+        </div>
+    </div>
+    </div>
+
+    <!-- Bottom right, how the work is seen: which view, and how many share
+         the content. -->
+    <div id="instruments_right">
+        <div id="cat_View" class="theme-plate" data-if="projection != ''"
+             data-class-lit="popover == 'category:View'" data-event-click="shell_popover('category:View')">
+            <span class="view_projection">{{projection}}</span>
+            <span class="view_count theme-accent">{{view_count}}&#9635;</span>
         </div>
     </div>
 

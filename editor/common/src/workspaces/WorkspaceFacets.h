@@ -68,3 +68,27 @@ struct WorkspaceOperationFacet
     // Every operation the workspace offers, in its own order.
     std::vector<OperationChoice> Choices = {};
 };
+
+// How the workspace's hands act on what they hold: what a click selects, the
+// gizmo's mode and axes, the grid, whether snapping is on. The settings
+// themselves are actions (their categories: Mode, Transform, Grid), so a
+// readout names them and a popover lists them.
+struct WorkspaceManipulationFacet
+{
+    // Empty when the workspace manipulates nothing.
+    std::string Element = {};
+    std::string Mode = {};
+    std::string Space = {};
+    std::string Grid = {};
+    bool Snap = false;
+    bool Pivot = false; // the gizmo is moving the pivot, not the selection
+};
+
+// How the workspace is being seen: which view is in front and how many share
+// the content area. The choices are actions in the View category.
+struct WorkspaceViewFacet
+{
+    // Empty when the workspace has no views to arrange.
+    std::string Projection = {};
+    int Views = 0;
+};

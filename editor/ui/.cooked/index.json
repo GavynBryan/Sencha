@@ -37,8 +37,8 @@
     },
     {
       "source": "cook_profiles.rml",
-      "input_fingerprint": "91b49133ed4c7f4d",
-      "cook_identity": "62c86b07d68abd42",
+      "input_fingerprint": "0bc9cdac27bae40d",
+      "cook_identity": "4765341e77032c66",
       "size": "1730",
       "mtime": "-4648151002176733126",
       "meta_size": "0",
@@ -51,8 +51,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "4298",
-          "mtime": "-4646879039695122856"
+          "size": "4472",
+          "mtime": "-4646877067248872502"
         }
       ],
       "artifacts": [
@@ -60,7 +60,7 @@
           "path": "asset://cook_profiles.rml",
           "file": ".cooked/cook_profiles.rml.sui",
           "type": "UiPackage",
-          "hash": "707eef7590b00a2a"
+          "hash": "41284c200f0e3e0a"
         }
       ]
     },
@@ -933,8 +933,8 @@
     },
     {
       "source": "inspector.rml",
-      "input_fingerprint": "65dbbd475482927c",
-      "cook_identity": "62c86b07d68abd42",
+      "input_fingerprint": "ff15502f9ad404bc",
+      "cook_identity": "4765341e77032c66",
       "size": "2242",
       "mtime": "-4648151002172867364",
       "meta_size": "0",
@@ -947,8 +947,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "4298",
-          "mtime": "-4646879039695122856"
+          "size": "4472",
+          "mtime": "-4646877067248872502"
         }
       ],
       "artifacts": [
@@ -956,14 +956,14 @@
           "path": "asset://inspector.rml",
           "file": ".cooked/inspector.rml.sui",
           "type": "UiPackage",
-          "hash": "8563919fa698e5e5"
+          "hash": "7fa99edc24a918dc"
         }
       ]
     },
     {
       "source": "palette.rml",
-      "input_fingerprint": "0d1fd9d772aeba49",
-      "cook_identity": "62c86b07d68abd42",
+      "input_fingerprint": "9764aa6084e03309",
+      "cook_identity": "4765341e77032c66",
       "size": "1030",
       "mtime": "-4646888290794166014",
       "meta_size": "0",
@@ -976,8 +976,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "4298",
-          "mtime": "-4646879039695122856"
+          "size": "4472",
+          "mtime": "-4646877067248872502"
         }
       ],
       "artifacts": [
@@ -985,14 +985,14 @@
           "path": "asset://palette.rml",
           "file": ".cooked/palette.rml.sui",
           "type": "UiPackage",
-          "hash": "7d31991f9a8cd9e6"
+          "hash": "5fc4c6402b51259f"
         }
       ]
     },
     {
       "source": "prompt.rml",
-      "input_fingerprint": "cea572a18728229e",
-      "cook_identity": "62c86b07d68abd42",
+      "input_fingerprint": "b4ee2fd8ddf5945e",
+      "cook_identity": "4765341e77032c66",
       "size": "871",
       "mtime": "-4646887282353163968",
       "meta_size": "0",
@@ -1005,8 +1005,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "4298",
-          "mtime": "-4646879039695122856"
+          "size": "4472",
+          "mtime": "-4646877067248872502"
         }
       ],
       "artifacts": [
@@ -1014,23 +1014,23 @@
           "path": "asset://prompt.rml",
           "file": ".cooked/prompt.rml.sui",
           "type": "UiPackage",
-          "hash": "7eeb4d8a335db82d"
+          "hash": "0fe2695f5162fa33"
         }
       ]
     },
     {
       "source": "shell.rml",
-      "input_fingerprint": "bb508854b21953f0",
-      "cook_identity": "62c86b07d68abd42",
-      "size": "7192",
-      "mtime": "-4646878933422983384",
+      "input_fingerprint": "eb11adb57d86cbdb",
+      "cook_identity": "4765341e77032c66",
+      "size": "8731",
+      "mtime": "-4646876868100126884",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "shell.rcss",
-          "size": "6601",
-          "mtime": "-4646878933422553609"
+          "size": "7600",
+          "mtime": "-4646876833452332636"
         },
         {
           "source": "icons.rcss",
@@ -1039,8 +1039,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "4298",
-          "mtime": "-4646879039695122856"
+          "size": "4472",
+          "mtime": "-4646877067248872502"
         }
       ],
       "artifacts": [
@@ -1048,14 +1048,14 @@
           "path": "asset://shell.rml",
           "file": ".cooked/shell.rml.sui",
           "type": "UiPackage",
-          "hash": "c5c753a4c7df63de"
+          "hash": "7b40283bd7abe130"
         }
       ]
     },
     {
       "source": "views.rml",
-      "input_fingerprint": "af739dca72e51361",
-      "cook_identity": "62c86b07d68abd42",
+      "input_fingerprint": "452cc952a8b09a21",
+      "cook_identity": "4765341e77032c66",
       "size": "3524",
       "mtime": "-4646878608184534101",
       "meta_size": "0",
@@ -1073,8 +1073,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "4298",
-          "mtime": "-4646879039695122856"
+          "size": "4472",
+          "mtime": "-4646877067248872502"
         }
       ],
       "artifacts": [
@@ -1082,14 +1082,14 @@
           "path": "asset://views.rml",
           "file": ".cooked/views.rml.sui",
           "type": "UiPackage",
-          "hash": "c4bbd6097c3d5b79"
+          "hash": "7b6f0be41f8ba2f9"
         }
       ]
     },
     {
       "source": "wheel.rml",
-      "input_fingerprint": "1f62a576e996468f",
-      "cook_identity": "62c86b07d68abd42",
+      "input_fingerprint": "86a5c9cfa02bcf4f",
+      "cook_identity": "4765341e77032c66",
       "size": "2054",
       "mtime": "-4646878608184425458",
       "meta_size": "0",
@@ -1107,8 +1107,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "4298",
-          "mtime": "-4646879039695122856"
+          "size": "4472",
+          "mtime": "-4646877067248872502"
         }
       ],
       "artifacts": [
@@ -1116,7 +1116,7 @@
           "path": "asset://wheel.rml",
           "file": ".cooked/wheel.rml.sui",
           "type": "UiPackage",
-          "hash": "d9435e9f02d1fe63"
+          "hash": "1d9f49b34666bc0c"
         }
       ]
     }
