@@ -46,9 +46,10 @@ public:
     void SetShown(bool shown);
 
     // Per frame, before the UI updates and after the overlay is rebuilt: lays
-    // the views `kind` shows over `content`, in window pixels, and marks them.
-    // An empty rect shows none. `scale` is the UI scale tools lay out at.
-    void Arrange(const Rect2d& content, ViewportArrangementKind kind, float scale);
+    // the views `kind` shows over `content`, in window pixels, meeting at
+    // `divider`, and marks them. An empty rect shows none. `scale` is the UI
+    // scale tools lay out at.
+    void Arrange(const Rect2d& content, ViewportArrangementKind kind, Vec2d divider, float scale);
 
 private:
     void Open();

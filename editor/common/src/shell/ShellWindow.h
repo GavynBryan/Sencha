@@ -52,6 +52,15 @@ struct ShellWindowServices
     std::string Title;
 };
 
+// What the person has chosen about how every shell looks and moves.
+struct ShellPreferences
+{
+    // 0 follows each window's display.
+    double Scale = 0.0;
+    // Transitions play; off, everything changes at once.
+    bool Motion = true;
+};
+
 //=============================================================================
 // ShellWindow
 //
@@ -76,10 +85,8 @@ public:
     ShellWindow& operator=(const ShellWindow&) = delete;
 
     // Per frame, before the UI updates: act on what the rail asked for, then
-    // publish what it should show. `now` is presentation seconds, for notices;
-    // `requestedScale` is the person's UI scale, 0 to follow this window's
-    // display.
-    void Update(double now, double requestedScale);
+    // publish what it should show. `now` is presentation seconds, for notices.
+    void Update(double now, const ShellPreferences& preferences);
 
     // How much of the top of the window the rail covers, in window points:
     // where content under it has to start.

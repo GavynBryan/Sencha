@@ -134,12 +134,12 @@ void LevelViewSurface::Close()
     Screen = {};
 }
 
-void LevelViewSurface::Arrange(const Rect2d& content, ViewportArrangementKind kind, float scale)
+void LevelViewSurface::Arrange(const Rect2d& content, ViewportArrangementKind kind, Vec2d divider, float scale)
 {
     const bool showing = Shown && content.Area() > 0.0f;
     const std::vector<ViewportId> shown = showing ? ViewsShownIn(kind, Layout) : std::vector<ViewportId>{};
     const std::vector<Rect2d> tiles =
-        shown.empty() ? std::vector<Rect2d>{} : ArrangeViewports(kind, content, Vec2d(0.5f, 0.5f), kGutter);
+        shown.empty() ? std::vector<Rect2d>{} : ArrangeViewports(kind, content, divider, kGutter);
 
     std::vector<EditorRenderFeature::ViewImage> images;
     std::vector<UiRow> rows;

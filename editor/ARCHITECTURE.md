@@ -49,7 +49,9 @@ the window's content surface (`WorkspaceWindow::Content`, drawn in
 the Level draws its views there as host images (`LevelViewSurface`), laid out
 by `ViewportArrangement` over the views panel's rect, and the panel stays
 transparent where they show
-(`docs/editor/interaction-grammar.md`).
+(`docs/editor/interaction-grammar.md`). The views meet at a divider the
+person drags (`ViewDividerDrag`, kept in the `editor.view.divider_x/_y`
+cvars); the shell's transitions follow `editor.ui.motion`.
 Opening, closing and switching are requests applied at the frame boundary by
 the one `WorkspaceTickSystem`, since a workspace adds and removes render
 features as it comes and goes; each open workspace is ticked there too.

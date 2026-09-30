@@ -361,14 +361,24 @@ body
 .station_icon { width: 18dp; height: 18dp; }
 .station_variant { font-size: 11dp; }
 
+/* Shut, the card sits folded into its station: out of sight and out of
+   reach. Open, it has risen out of it. */
 #tool_card
 {
     display: block;
     padding: 8dp 10dp;
     border-width: 1dp;
     border-radius: 4dp;
-    pointer-events: auto;
+    opacity: 0;
+    transform: translateY(10dp);
+    pointer-events: none;
 }
+#tool_card.open { opacity: 1; transform: translateY(0dp); pointer-events: auto; }
+#tool_card.shut * { pointer-events: none; }
+
+/* Motion, while the person wants it (editor.ui.motion). Only transform and
+   opacity move, so nothing reflows and input is never held up. */
+.moving #tool_card { transition: opacity transform 0.14s cubic-out; }
 
 #tool_hint { display: block; margin-top: 6dp; font-size: 11dp; }
 

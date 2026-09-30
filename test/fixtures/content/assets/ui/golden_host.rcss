@@ -1,0 +1,29 @@
+/* Geometry fully determined here, so the image is a statement about the host
+   image path rather than about layout. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+#large
+{
+    display: block;
+    position: absolute;
+    left: 40px;
+    top: 40px;
+    width: 256px;
+    height: 256px;
+}
+
+#small
+{
+    display: block;
+    position: absolute;
+    left: 320px;
+    top: 40px;
+    width: 64px;
+    height: 64px;
+}

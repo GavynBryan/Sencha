@@ -1,0 +1,12 @@
+<rml>
+<head>
+    <link type="text/rcss" href="golden_host.rcss"/>
+</head>
+<body data-model="golden">
+    <!-- Pixels the host chooses at runtime, drawn where the document names
+         them: a stretched picture and a small one, so both the image and its
+         sampling show. -->
+    <img id="large" src="host:golden.picture"/>
+    <img id="small" src="host:golden.picture"/>
+</body>
+</rml>

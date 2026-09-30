@@ -6,7 +6,7 @@
     <link type="text/rcss" href="icons.rcss"/>
     <link type="text/rcss" href="theme.rcss"/>
 </head>
-<body data-model="shell">
+<body data-model="shell" data-class-moving="motion">
     <!-- The rail: the window's caption and the one full-width piece of chrome.
          Left is identity (the hatch, which workspace, which document), right is
          consequence (problems, the transport, the window), and the middle is
@@ -74,7 +74,7 @@
          act -- element, gizmo, grid -- each segment opening its category. -->
     <div id="instruments_left">
     <div id="station_bay" data-if="station_name != ''">
-        <div id="tool_card" class="theme-plate" data-if="card_open">
+        <div id="tool_card" class="theme-plate" data-class-open="card_open" data-class-shut="!card_open">
             <div class="setting" data-for="row : tool_rows">
                 <span class="setting_label">{{row.label}}</span>
                 <input type="range" class="setting_control" data-if="row.control == 'range'"

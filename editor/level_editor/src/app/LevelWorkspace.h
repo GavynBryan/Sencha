@@ -18,6 +18,7 @@
 #include "workspace/LevelDocumentSource.h"
 #include "prompts/DocumentPrompts.h"
 #include "project/MaterialLibrary.h"
+#include "viewport/ViewDividerDrag.h"
 #include "viewport/ViewportArrangement.h"
 #include "project/Project.h"
 #include "ui/WorkspaceView.h"
@@ -122,6 +123,8 @@ private:
     // choice outlives the session.
     [[nodiscard]] ViewportArrangementKind Arrangement() const;
     void SetArrangement(ViewportArrangementKind kind);
+    [[nodiscard]] Vec2d Divider() const;
+    void SetDivider(Vec2d divider);
     // Makes the view looking along `orientation` the active one, which is the
     // one a single view shows: each keeps its own camera.
     void ShowView(ViewportOrientation orientation);
@@ -169,6 +172,7 @@ private:
     std::unique_ptr<RadialMenuSession> GizmoWheel;
     std::unique_ptr<InputRouter> Router;
     std::unique_ptr<ViewportNavigation> Navigation;
+    std::unique_ptr<ViewDividerDrag> DividerDrag;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
     // The tool in hand's settings, as the operation facet hands them out.

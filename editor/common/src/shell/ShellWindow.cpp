@@ -48,6 +48,7 @@ const UiModelPropertyId kViewCount = UiPropertyIdAt(26);
 const UiModelPropertyId kHoldingRole = UiPropertyIdAt(27);
 const UiModelPropertyId kHoldingLabel = UiPropertyIdAt(28);
 const UiModelPropertyId kHoldingImage = UiPropertyIdAt(29);
+const UiModelPropertyId kMotion = UiPropertyIdAt(30);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -100,6 +101,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "holding_role", UiValue(std::string{}) },
         UiModelProperty{ "holding_label", UiValue(std::string{}) },
         UiModelProperty{ "holding_image", UiValue(std::string{}) },
+        UiModelProperty{ "motion", UiValue(true) },
     };
     desc.RowLists = { "notices", "entries", "tool_rows", "stash" };
     desc.Actions = { "shell_popover", "shell_choose", "shell_invoke", "shell_window", "shell_tool_set",
@@ -220,12 +222,13 @@ WorkspaceWindow ShellWindow::Binding() const
              .Interactive = SurfaceId };
 }
 
-void ShellWindow::Update(double now, double requestedScale)
+void ShellWindow::Update(double now, const ShellPreferences& preferences)
 {
     if (!Screen.IsValid())
         return;
     const WindowExtent extent = Services.Window.GetExtent();
-    const float scale = ChooseUiScale(requestedScale, Services.Window.GetDisplayScale());
+    const float scale = ChooseUiScale(preferences.Scale, Services.Window.GetDisplayScale());
+    (void)Services.Ui.SetValue(Screen, kMotion, UiValue(preferences.Motion));
     for (const UiSurfaceId surface : { SurfaceId, ContentSurfaceId, OverlaySurfaceId })
     {
         Services.Ui.SetSurfaceSize(surface, RenderExtent{ extent.Width, extent.Height });

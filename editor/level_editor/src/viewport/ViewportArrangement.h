@@ -43,3 +43,19 @@ class ViewportLayout;
 // pixels, so an image drawn into one is never resampled.
 [[nodiscard]] std::vector<Rect2d> ArrangeViewports(ViewportArrangementKind kind, const Rect2d& content,
                                                    Vec2d divider, float gutter);
+
+// Which dividers of `kind` lie within `reach` window pixels of `point`: X is
+// the one between left and right, Y the one between top and bottom.
+struct DividerGrip
+{
+    bool X = false;
+    bool Y = false;
+
+    [[nodiscard]] bool Any() const { return X || Y; }
+};
+
+[[nodiscard]] DividerGrip GripDivider(ViewportArrangementKind kind, const Rect2d& content, Vec2d divider,
+                                      Vec2d point, float reach);
+// The divider moved to `point` along the axes `grip` holds, as the fraction
+// ArrangeViewports reads, kept clear of the edges.
+[[nodiscard]] Vec2d MoveDivider(const Rect2d& content, Vec2d divider, DividerGrip grip, Vec2d point);

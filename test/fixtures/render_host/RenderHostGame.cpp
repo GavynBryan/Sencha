@@ -4,9 +4,11 @@
 #include <app/GameModule.h>
 #include <app/RuntimeContent.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <assets/texture/TextureCache.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
+#include <graphics/vulkan/UiTextureResidency.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <render/feature/UiRenderFeature.h>
 #include <ui/UiService.h>
@@ -88,6 +90,16 @@ struct ScriptedCameraPathSystem
     static constexpr float kPi = 3.14159265358979323846f;
 };
 
+// A texture the host shows where a document names `host:golden.picture`: the
+// path a host takes to put pixels it chose at runtime into a document. Owned by
+// the game, so the lease is let go before the asset stack is.
+struct HostPicture
+{
+    std::string Path;
+    AssetLease Texture;
+    UiHostImageId Image = kInvalidUiHostImage;
+};
+
 }  // namespace
 
 // Authored UI, hosted the way a game hosts it: the engine owns the service and
@@ -101,9 +113,10 @@ struct ScriptedCameraPathSystem
 class UiHostSystem
 {
 public:
-    UiHostSystem(Engine& engine, std::string packagePath)
+    UiHostSystem(Engine& engine, std::string packagePath, HostPicture& picture)
         : EnginePtr(&engine)
         , PackagePath(std::move(packagePath))
+        , Picture(picture)
     {
     }
 
@@ -121,6 +134,7 @@ public:
             return;
         for (const UiAction& action : ui->DrainActions())
             (void)action;
+        PublishPicture();
     }
 
 private:
@@ -138,6 +152,13 @@ private:
         const UiSurfaceId surface =
             ui->CreateSurface("render_host", RenderExtent{ extent.width, extent.height });
 
+        // Registered before the document that names it opens.
+        if (!Picture.Path.empty())
+        {
+            Picture.Texture = EnginePtr->Content().Assets().Assets.LoadLease(Picture.Path, AssetType::Texture);
+            Picture.Image = ui->SetHostImage("golden.picture", RenderExtent{ 64, 64 });
+        }
+
         UiScreenDesc desc;
         desc.PackagePath = PackagePath;
         desc.ModelName = "golden";
@@ -154,8 +175,20 @@ private:
         (void)ui->SetValue(Screen, UiPropertyIdAt(0), UiValue(210.0));
     }
 
+    // Once the texture is resident; a reload keeps its slot.
+    void PublishPicture()
+    {
+        if (!Picture.Texture.IsValid())
+            return;
+        const BindlessImageIndex slot = EnginePtr->Content().Assets().Textures->GetBindlessIndex(
+            TextureHandle::FromToken(Picture.Texture.OpaqueToken()));
+        if (slot.IsValid())
+            EnginePtr->Graphics().MainRenderer.GetUiTextures().PublishHostImage(Picture.Image, slot);
+    }
+
     Engine* EnginePtr = nullptr;
     std::string PackagePath;
+    HostPicture& Picture;
     UiScreenHandle Screen;
     bool Initialised = false;
 };
@@ -215,16 +248,34 @@ public:
                 UiPackagePath = std::get<std::string>(ctx.NewValue);
             },
         });
+
+        engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.ui.picture",
+            .Owner = "render_host",
+            .Type = CVarType::String,
+            .DefaultValue = std::string{},
+            .CurrentValue = std::string{},
+            .Flags = CVarFlags::Transient,
+            .Help = "Texture the host shows where the UI names host:golden.picture "
+                    "(\"asset://textures/dev/checker.png\"). Empty shows none.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) {
+                Picture.Path = std::get<std::string>(ctx.NewValue);
+            },
+        });
     }
 
     void OnRegisterSystems(SystemRegisterContext& ctx) override
     {
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
-        ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath);
+        ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath, Picture);
     }
 
     void OnShutdown(GameShutdownContext&) override
     {
+        if (Picture.Image != kInvalidUiHostImage)
+            GetEngine().Graphics().MainRenderer.GetUiTextures().WithdrawHostImage(Picture.Image);
+        Picture.Texture.Reset();
         World& world = GetEngine().World().Entities();
         world.GetResource<ActiveCameraService>().SetActive(EntityId{});
         if (Camera.IsValid() && world.IsAlive(Camera))
@@ -236,6 +287,7 @@ private:
     EntityId Camera;
     bool ScriptedCamera = false;
     std::string UiPackagePath;
+    HostPicture Picture;
 };
 
 extern "C" SENCHA_GAME_EXPORT Game* SenchaCreateGameModule()

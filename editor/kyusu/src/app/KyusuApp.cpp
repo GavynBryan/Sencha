@@ -50,6 +50,7 @@ namespace
 {
 constexpr std::string_view kEditorUiFeatureId = "editor_ui";
 constexpr std::string_view kContentUiFeatureId = "content_ui";
+constexpr std::string_view kMotionCVar = "editor.ui.motion";
 constexpr std::string_view kEditorUiDependsOn[] = { kContentUiFeatureId };
 
 // Platform branding, not theme art: the icon is the product's and never
@@ -424,6 +425,28 @@ void KyusuApp::DefineApplicationActions()
             } });
     offer("file.save_all", "Save All", { { SDLK_S, { .Ctrl = true, .Shift = true } } },
           { .Invoke = [&documents] { (void)documents.SaveAll(); } });
+
+    registry.RegisterCVar({
+        .Name = std::string(kMotionCVar),
+        .Owner = "editor",
+        .Type = CVarType::Bool,
+        .DefaultValue = true,
+        .CurrentValue = true,
+        .Flags = CVarFlags::Archive,
+        .Help = "Editor transitions play; off, everything changes at once.",
+        .Source = { "editor" },
+    });
+    const auto motion = [&registry] {
+        const CVarMetadata* var = registry.FindCVar(kMotionCVar);
+        const bool* on = var != nullptr ? std::get_if<bool>(&var->CurrentValue) : nullptr;
+        return on == nullptr || *on;
+    };
+    OfferAction(Catalog, ApplicationActions, { .Id = "view.motion", .Label = "Motion", .Category = "View" },
+                { .Invoke = [&registry, motion] {
+                      (void)registry.SetCVar(kMotionCVar, !motion(), ConsoleValueSource{ .Description = "view action" },
+                                             ConsolePhase::GameplayStarted);
+                  },
+                  .Checked = motion });
 }
 
 KyusuApp::WindowActions& KyusuApp::ActionsFor(PresentationId window)
@@ -683,13 +706,17 @@ std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, Presentation
 void KyusuApp::UpdateShells()
 {
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    double requestedScale = 0.0;
-    if (const CVarMetadata* var = GetEngine().Console().Registry().FindCVar("editor.ui.scale"))
+    ShellPreferences preferences;
+    const ConsoleRegistry& registry = GetEngine().Console().Registry();
+    if (const CVarMetadata* var = registry.FindCVar("editor.ui.scale"))
         if (const double* value = std::get_if<double>(&var->CurrentValue))
-            requestedScale = *value;
+            preferences.Scale = *value;
+    if (const CVarMetadata* var = registry.FindCVar(kMotionCVar))
+        if (const bool* value = std::get_if<bool>(&var->CurrentValue))
+            preferences.Motion = *value;
     if (MainWindowShell != nullptr)
     {
-        MainWindowShell->Update(now, requestedScale);
+        MainWindowShell->Update(now, preferences);
         if (Ui != nullptr)
         {
             Ui->SetContentTopInset(MainWindowShell->RailHeight());
@@ -700,7 +727,7 @@ void KyusuApp::UpdateShells()
     {
         if (entry.WindowShell == nullptr)
             continue;
-        entry.WindowShell->Update(now, requestedScale);
+        entry.WindowShell->Update(now, preferences);
         if (entry.Shell != nullptr)
         {
             entry.Shell->SetContentTopInset(entry.WindowShell->RailHeight());

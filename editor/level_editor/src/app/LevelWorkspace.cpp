@@ -101,6 +101,8 @@ constexpr std::string_view kEditorRenderFeatureId = "editor_render";
 constexpr std::string_view kEditorUiFeatureId = "editor_ui";
 constexpr std::array<std::string_view, 1> kEditorRenderDependsOn{ kEditorUiFeatureId };
 constexpr std::string_view kArrangementCVar = "editor.view.arrangement";
+constexpr std::string_view kDividerXCVar = "editor.view.divider_x";
+constexpr std::string_view kDividerYCVar = "editor.view.divider_y";
 } // namespace
 
 LevelWorkspace::LevelWorkspace(Engine& engine,
@@ -415,6 +417,14 @@ void LevelWorkspace::BuildInput()
     // to any gesture already holding the pointer.
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return ToolWheel->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return GizmoWheel->OnInput(e, cap); });
+    DividerDrag = std::make_unique<ViewDividerDrag>(
+        [this] {
+            return ViewDividerDrag::Arrangement{ .Kind = Arrangement(),
+                                                 .Content = Views != nullptr ? Views->ContentRect() : Rect2d{},
+                                                 .Divider = Divider() };
+        },
+        [this](Vec2d divider) { SetDivider(divider); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return DividerDrag->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Interaction.Dispatcher->OnInput(e, cap); });
 
@@ -499,6 +509,21 @@ void LevelWorkspace::BuildViewportRendering()
         .Min = 0.0,
         .Max = 2.0,
     });
+
+    for (const auto& [name, help] : { std::pair{ kDividerXCVar, "Level views: where side-by-side views meet, as a fraction of the width." },
+                                      std::pair{ kDividerYCVar, "Level views: where the rows of four views meet, as a fraction of the height." } })
+        console.Registry().RegisterCVar({
+            .Name = std::string(name),
+            .Owner = "editor",
+            .Type = CVarType::Double,
+            .DefaultValue = 0.5,
+            .CurrentValue = 0.5,
+            .Flags = CVarFlags::Archive,
+            .Help = help,
+            .Source = { "editor" },
+            .Min = 0.15,
+            .Max = 0.85,
+        });
 
     // Selection bloom/glow knobs, read per frame by EditorRenderFeature.
     console.Registry().RegisterCVar({
@@ -867,6 +892,24 @@ ViewportArrangementKind LevelWorkspace::Arrangement() const
     }
 }
 
+Vec2d LevelWorkspace::Divider() const
+{
+    const auto read = [this](std::string_view name) {
+        const CVarMetadata* var = EnginePtr->Console().Registry().FindCVar(name);
+        const double* value = var != nullptr ? std::get_if<double>(&var->CurrentValue) : nullptr;
+        return value != nullptr ? static_cast<float>(*value) : 0.5f;
+    };
+    return Vec2d(read(kDividerXCVar), read(kDividerYCVar));
+}
+
+void LevelWorkspace::SetDivider(Vec2d divider)
+{
+    ConsoleRegistry& registry = EnginePtr->Console().Registry();
+    const ConsoleValueSource source{ .Description = "view divider" };
+    (void)registry.SetCVar(kDividerXCVar, static_cast<double>(divider.X), source, ConsolePhase::GameplayStarted);
+    (void)registry.SetCVar(kDividerYCVar, static_cast<double>(divider.Y), source, ConsolePhase::GameplayStarted);
+}
+
 void LevelWorkspace::SetArrangement(ViewportArrangementKind kind)
 {
     const std::int64_t value = kind == ViewportArrangementKind::Split ? 1 : kind == ViewportArrangementKind::Quad ? 2 : 0;
@@ -1052,7 +1095,7 @@ void LevelWorkspace::ProcessFrame()
     // never routes input to it.
     if (ViewSurface != nullptr)
         ViewSurface->Arrange(Views != nullptr && Visible ? Views->ContentRect() : Rect2d{}, Arrangement(),
-                             EditorUi::UiScale);
+                             Divider(), EditorUi::UiScale);
     // Only one wheel is ever open: each yields its key to the other.
     if (WheelScreen != nullptr)
     {

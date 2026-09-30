@@ -273,6 +273,16 @@ TEST(GoldenImage, AuthoredUiDrawsOverTheScene)
                  .ExtraArgs = "+set render_host.ui asset://ui/golden.rml" });
 }
 
+// A host image: pixels the host chooses at runtime, drawn where a document names
+// them. The host leases a texture and publishes it by its bindless slot, the
+// path an editor's views, thumbnails and previews take into authored UI.
+TEST(GoldenImage, AHostImageDrawsWhereTheDocumentNamesIt)
+{
+    CheckScene({ .Name = "host_image", .Map = "levels/shadow_probe",
+                 .ExtraArgs = "+set render_host.ui.picture asset://textures/dev/checker.png "
+                              "+set render_host.ui asset://ui/golden_host.rml" });
+}
+
 // The same geometry through a blended default material: the transparent pass's
 // pixel proof. If blend ever silently falls back to opaque again, this frame
 // stops showing the background through the floor and the comparison fails.

@@ -75,3 +75,26 @@ std::vector<Rect2d> ArrangeViewports(ViewportArrangementKind kind, const Rect2d&
         Tile(splitX + half, splitY + half, max.X, max.Y),
     };
 }
+
+DividerGrip GripDivider(ViewportArrangementKind kind, const Rect2d& content, Vec2d divider, Vec2d point, float reach)
+{
+    if (kind == ViewportArrangementKind::Single || !content.Contains(point))
+        return {};
+    const Vec2d min = content.Min();
+    const float splitX = min.X + content.Width() * std::clamp(divider.X, kDividerMargin, 1.0f - kDividerMargin);
+    const float splitY = min.Y + content.Height() * std::clamp(divider.Y, kDividerMargin, 1.0f - kDividerMargin);
+    return { .X = std::abs(point.X - splitX) <= reach,
+             .Y = kind == ViewportArrangementKind::Quad && std::abs(point.Y - splitY) <= reach };
+}
+
+Vec2d MoveDivider(const Rect2d& content, Vec2d divider, DividerGrip grip, Vec2d point)
+{
+    const auto fraction = [](float at, float from, float length) {
+        return length > 0.0f ? std::clamp((at - from) / length, kDividerMargin, 1.0f - kDividerMargin) : 0.5f;
+    };
+    if (grip.X)
+        divider.X = fraction(point.X, content.Min().X, content.Width());
+    if (grip.Y)
+        divider.Y = fraction(point.Y, content.Min().Y, content.Height());
+    return divider;
+}
