@@ -1120,6 +1120,10 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
 
             CpuScopeTimer timer(engine.Instrumentation().CpuScopes, CpuScope::UiExtract);
             ui->ExtractRender();
+#ifdef SENCHA_ENABLE_VULKAN
+            if (engine.HasPresentation())
+                engine.Graphics().MainRenderer.GetUiTextures().Queue(ui->TextureChanges());
+#endif
         }
 #endif
     });

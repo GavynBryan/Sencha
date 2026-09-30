@@ -24,11 +24,9 @@ class TextureCache;
 // recording set growing a fourth member -- the SkyGradientPass precedent
 // (cmake/CheckRenderIsolation.cmake).
 //
-// It owns the GPU side of generated textures. The runtime hands over pixels and
-// an id; this creates the image, registers a bindless slot, and retires both
-// through the frame clock when the document is done with them. That division is
-// the point: the document engine produces presentation resources, and the
-// renderer is the only thing that creates GPU ones.
+// Generated textures are resolved through the renderer's one
+// UiTextureResidency, shared by every pass that draws authored UI, and the
+// first pass to draw in a frame applies what the last extraction handed over.
 //=============================================================================
 class UiDrawPass
 {
@@ -59,22 +57,6 @@ public:
 private:
     DrawStats LastStats;
 
-    struct GeneratedTexture
-    {
-        ImageHandle Image{};
-        BindlessImageIndex Bindless{};
-        RenderExtent Size{};
-    };
-
-    // Kept alive until the frames that referenced them have retired, then
-    // destroyed. A texture released mid-flight is still named by command
-    // buffers that have not finished.
-    struct RetiredTexture
-    {
-        GeneratedTexture Texture;
-        std::uint64_t RetireStamp = 0;
-    };
-
     // Which pipeline a command needs. Four rather than one because the clip
     // mask is pipeline state: writing the mask means colour off and a stencil
     // op, testing against it means colour on and a stencil compare.
@@ -89,9 +71,6 @@ private:
 
     [[nodiscard]] VkPipeline EnsurePipeline(const FrameContext& frame, Variant variant);
     void ClearStencil(const FrameContext& frame, const UiDrawFrame& ui, std::uint32_t value);
-    void ApplyUploads(const UiDrawFrame& ui);
-    void ApplyReleases(const UiDrawFrame& ui, const FrameContext& frame);
-    void CollectRetired(const FrameContext& frame);
 
     const RendererServices* Services = nullptr;
     TextureCache* Textures = nullptr;
@@ -105,8 +84,4 @@ private:
     bool WarnedNoStencil = false;
     ShaderHandle VertexShader{};
     ShaderHandle FragmentShader{};
-    VkSampler Sampler = VK_NULL_HANDLE;
-
-    std::unordered_map<UiGeneratedTextureId, GeneratedTexture> Generated;
-    std::vector<RetiredTexture> Retiring;
 };

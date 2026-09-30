@@ -1554,6 +1554,7 @@ void UiRuntime::ExtractRender()
 {
     DrawFrames.clear();
     OffscreenFrames.clear();
+    ExtractedTextureChanges = {};
     if (!Ready)
         return;
 
@@ -1586,6 +1587,7 @@ void UiRuntime::ExtractRender()
         else
             DrawFrames.push_back(std::move(frame));
     }
+    ExtractedTextureChanges = Recorder->TakeTextureChanges();
 }
 
 std::string UiRuntime::AssetPathFor(const Screen& screen, std::string_view source) const

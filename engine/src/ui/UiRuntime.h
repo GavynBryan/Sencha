@@ -148,6 +148,7 @@ public:
     void ExtractRender();
     [[nodiscard]] const std::vector<UiDrawFrame>& Frames() const { return DrawFrames; }
     [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
+    [[nodiscard]] const UiTextureChanges& TextureChanges() const { return ExtractedTextureChanges; }
 
     // IUiTextureResolver: a content image resolves against the open screen's
     // own resource table and nothing else.
@@ -424,6 +425,7 @@ private:
     // list, because each one has exactly one consumer and that consumer asks
     // for it by name.
     std::vector<std::pair<UiSurfaceId, UiDrawFrame>> OffscreenFrames;
+    UiTextureChanges ExtractedTextureChanges;
 
     // Whose resource table answers an image or font request while one document
     // is loading, rebuilding or being restyled. Exact by design: a package must

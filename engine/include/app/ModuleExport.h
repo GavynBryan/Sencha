@@ -125,5 +125,10 @@
 // PlatformEventContext carries the event's WindowId and RuntimeFrameLoop
 // gains the other-presentation flag, for rendering to more than one window;
 // graphics/vulkan and platform headers join the fingerprint, since a module
-// reaches their members through Graphics() and Platform().
-#define SENCHA_GAME_ABI_VERSION 24u
+// reaches their members through Graphics() and Platform(). v25: the authored
+// UI serves editors that present through it entirely. Generated-texture uploads
+// and releases leave the per-surface UiDrawFrame for UiService::TextureChanges,
+// applied through the renderer's one UiTextureResidency that RendererServices
+// now names, and render/ui headers join the fingerprint because a module
+// receives those frames by reference.
+#define SENCHA_GAME_ABI_VERSION 25u

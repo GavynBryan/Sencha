@@ -57,6 +57,7 @@ engine/src/ui/rml/        The interface implementations, grouped because they
 engine/include/render/ui/ Render-domain UI data. Plain CPU values, no backend.
 engine/include/render/feature/UiRenderFeature.h
 engine/include/graphics/vulkan/UiDrawPass.h
+engine/include/graphics/vulkan/UiTextureResidency.h
 ```
 
 `cmake/CheckUiIsolation.cmake` (ctest `ui_isolation`) enforces that boundary
@@ -311,9 +312,15 @@ its whole palette in linear for the same reason.
 **RmlUi creates presentation-domain resources; the renderer creates GPU
 resources.** The runtime links no backend header and owns no GPU object.
 
-- `GenerateTexture` mints a `UiTextureId` and stores CPU pixels. The record
-  travels in the draw frame the first time it is used; the render feature
-  materialises, owns, and retires the GPU image.
+- `GenerateTexture` mints a `UiGeneratedTextureId` and stores CPU pixels. The
+  upload, and later its release, travel in the extraction's
+  `UiService::TextureChanges()` -- one list for every surface, never a
+  surface's frame, because a glyph atlas belongs to a font and every pass that
+  draws any surface names the same id. The host queues the list into the
+  renderer's one `UiTextureResidency`; the first pass to draw authored UI in a
+  frame materialises the uploads and stamps the releases against that frame's
+  retirement clock. A release that happens between frames, a screen closing,
+  waits in the same list instead of being lost with a frame record.
 - `LoadTexture` resolves against the loaded package's **resource table** to an
   asset the open screen already holds a lease on. It performs no ad-hoc asset
   discovery: a source the table does not name is an authoring error, diagnosed as

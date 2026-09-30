@@ -200,6 +200,11 @@ public:
     // valid from ExtractRender until the next.
     [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
 
+    // Generated textures this extraction minted and released, across every
+    // surface. Whatever owns the GPU side applies them once, before any surface
+    // is drawn; same lifetime as Frames().
+    [[nodiscard]] const UiTextureChanges& TextureChanges() const;
+
     // -- presentation model --------------------------------------------------
 
     // Publishes a value. Returns whether it changed: an unchanged set costs a

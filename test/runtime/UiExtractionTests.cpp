@@ -412,3 +412,59 @@ TEST(UiExtraction, TwoScreensShareASurfaceAndEachKeepsItsOwnResources)
     ASSERT_EQ(ui.Frames().size(), 1u) << "one surface still records one frame";
     EXPECT_GT(TotalIndices(ui.Frames().front()), 0u);
 }
+
+TEST(UiExtraction, AGlyphAtlasIsHandedOverOnceForEverySurfaceThatDrawsIt)
+{
+    // A font's atlas is minted while whichever surface first needs it records.
+    // A window surface and an offscreen one are drawn by different passes, so
+    // an upload carried by one surface's frame never reached the other's pass,
+    // and its text drew as solid boxes. The handover is the extraction's, not
+    // a surface's.
+    TempAssetRoot root;
+    InstallFontFixture(root);
+    std::vector<std::byte> typed;
+    ASSERT_TRUE(WriteSuiToBytes(MakeFontPackage("typed.rml"), typed));
+    root.WriteBytes("ui/typed.sui", typed);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    ASSERT_TRUE(ui.IsReady());
+
+    const UiSurfaceId window = ui.CreateSurface("window", RenderExtent{ 800, 600 });
+    const UiSurfaceId offscreen = ui.CreateSurface("offscreen", RenderExtent{ 400, 300 });
+    ui.SetSurfaceDestination(offscreen, UiSurfaceDestination::Offscreen);
+    ASSERT_TRUE(ui.OpenScreen(window, "asset://ui/typed.sui").IsValid());
+    ASSERT_TRUE(ui.OpenScreen(offscreen, "asset://ui/typed.sui").IsValid());
+
+    ui.Update();
+    ui.ExtractRender();
+
+    std::vector<UiGeneratedTextureId> uploaded;
+    for (const UiTextureUpload& upload : ui.TextureChanges().Uploads)
+        uploaded.push_back(upload.Id);
+    ASSERT_FALSE(uploaded.empty()) << "text drew without a glyph atlas being minted";
+
+    const auto everyGeneratedIdWasHandedOver = [&](const UiDrawFrame& frame) {
+        bool anyGenerated = false;
+        for (const UiDrawCommand& command : frame.Commands)
+        {
+            if (command.Texture.Kind != UiTextureKind::Generated)
+                continue;
+            anyGenerated = true;
+            EXPECT_NE(std::ranges::find(uploaded, command.Texture.Generated), uploaded.end())
+                << "a surface names a generated texture no pass was ever given";
+        }
+        return anyGenerated;
+    };
+    ASSERT_EQ(ui.Frames().size(), 1u);
+    EXPECT_TRUE(everyGeneratedIdWasHandedOver(ui.Frames().front()));
+    const UiDrawFrame* offscreenFrame = ui.OffscreenFrame(offscreen);
+    ASSERT_NE(offscreenFrame, nullptr);
+    EXPECT_TRUE(everyGeneratedIdWasHandedOver(*offscreenFrame));
+
+    // Handed over once: the next extraction has nothing new to mint.
+    ui.Update();
+    ui.ExtractRender();
+    EXPECT_TRUE(ui.TextureChanges().Uploads.empty())
+        << "an atlas already handed over was handed over again";
+}

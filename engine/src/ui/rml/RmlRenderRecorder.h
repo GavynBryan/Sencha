@@ -57,10 +57,14 @@ public:
     // resolve, which is the correct answer in a process with no texture cache.
     void SetTextureResolver(IUiTextureResolver* resolver) { Resolver = resolver; }
 
-    // Opens recording for one surface. Commands issued until EndFrame land in
-    // it, and the pixels of any texture generated meanwhile ride along.
+    // Opens recording for one surface. Commands issued until EndFrame land in it.
     void BeginFrame(RenderExtent surface);
     [[nodiscard]] UiDrawFrame EndFrame();
+
+    // Every texture generated or released since the last call, whenever it
+    // happened: inside a surface's recording, during layout, or on a screen
+    // closing between frames.
+    [[nodiscard]] UiTextureChanges TakeTextureChanges();
 
     // Live CPU resources, for a test that wants to prove a closed screen left
     // nothing behind. Frames hold their own references, so a nonzero count
@@ -144,6 +148,7 @@ private:
     UiGeneratedTextureId NextGeneratedId = 1;
 
     UiDrawFrame Frame;
+    UiTextureChanges Changes;
     UiClipRect Clip;
     std::optional<Mat4> Transform;
     bool ClipMaskEnabled = false;

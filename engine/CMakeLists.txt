@@ -339,6 +339,9 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # by value and reaches the service through an inline Engine accessor, so
     # these decide layout a module compiles against.
     "${SENCHA_ENGINE_INCLUDE_DIR}/ui/*.h"
+    # UiService::Frames() and TextureChanges() hand these to a module by
+    # reference, and a host drawing its own surfaces reads their members.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/ui/*.h"
     # The authored vocabulary: a game declares verbs through VerbRegistry and
     # binds implementations through VerbDispatcher, holding tokens and
     # invocation values by value.

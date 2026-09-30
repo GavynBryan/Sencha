@@ -60,7 +60,7 @@ enum class UiTextureKind : std::uint8_t
 {
     None = 0,
     Content,    // an ordinary asset the open screen holds a lease on
-    Generated,  // minted by the document engine, uploaded from PendingUploads
+    Generated,  // minted by the document engine, uploaded from UiTextureChanges
 };
 
 struct UiTextureRef
@@ -70,14 +70,25 @@ struct UiTextureRef
     UiGeneratedTextureId Generated = kInvalidUiGeneratedTexture;
 };
 
-// Pixels for a generated texture, carried on the first frame that uses it. RGBA8
-// with premultiplied alpha, already converted to linear (§8): the document
-// engine hands over sRGB, and converting once here beats converting per sample.
+// Pixels for a generated texture, handed over the first extraction after the
+// document engine minted it. RGBA8 with premultiplied alpha, already converted
+// to linear (§8): the document engine hands over sRGB, and converting once here
+// beats converting per sample.
 struct UiTextureUpload
 {
     UiGeneratedTextureId Id = kInvalidUiGeneratedTexture;
     RenderExtent Size{};
     std::vector<std::byte> LinearPremultipliedRgba8;
+};
+
+// Generated textures minted and finished with since the previous extraction,
+// for every surface at once. Kept apart from the per-surface frames because a
+// glyph atlas belongs to a font, not to whichever surface first drew it: every
+// pass drawing any surface resolves the same ids through one GPU owner.
+struct UiTextureChanges
+{
+    std::vector<UiTextureUpload> Uploads;
+    std::vector<UiGeneratedTextureId> Released;
 };
 
 // Scissor rectangle in surface pixels. Disabled means "the whole surface".
@@ -128,13 +139,5 @@ struct UiDrawFrame
 
     std::vector<UiDrawCommand> Commands;
 
-    // Generated textures first used this frame, and ones the document engine
-    // has finished with. The feature owns the GPU side of both.
-    std::vector<UiTextureUpload> PendingUploads;
-    std::vector<UiGeneratedTextureId> ReleasedTextures;
-
-    [[nodiscard]] bool IsEmpty() const
-    {
-        return Commands.empty() && PendingUploads.empty() && ReleasedTextures.empty();
-    }
+    [[nodiscard]] bool IsEmpty() const { return Commands.empty(); }
 };

@@ -110,6 +110,11 @@ UiDrawFrame RmlRenderRecorder::EndFrame()
     return std::exchange(Frame, UiDrawFrame{});
 }
 
+UiTextureChanges RmlRenderRecorder::TakeTextureChanges()
+{
+    return std::exchange(Changes, UiTextureChanges{});
+}
+
 Rml::CompiledGeometryHandle RmlRenderRecorder::CompileGeometry(
     Rml::Span<const Rml::Vertex> vertices, Rml::Span<const int> indices)
 {
@@ -216,7 +221,7 @@ Rml::TextureHandle RmlRenderRecorder::GenerateTexture(Rml::Span<const Rml::byte>
     ref.Generated = upload.Id;
     Textures.emplace(key, TextureRecord{ ref });
 
-    Frame.PendingUploads.push_back(std::move(upload));
+    Changes.Uploads.push_back(std::move(upload));
     return static_cast<Rml::TextureHandle>(key);
 }
 
@@ -230,7 +235,7 @@ void RmlRenderRecorder::ReleaseTexture(Rml::TextureHandle texture)
     // A content texture's lifetime is the screen's lease, and releasing it here
     // would be releasing something this layer never acquired.
     if (it->second.Ref.Kind == UiTextureKind::Generated)
-        Frame.ReleasedTextures.push_back(it->second.Ref.Generated);
+        Changes.Released.push_back(it->second.Ref.Generated);
 
     Textures.erase(it);
 }

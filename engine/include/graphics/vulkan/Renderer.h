@@ -7,6 +7,7 @@
 #include <graphics/PresentationId.h>
 #include <graphics/vulkan/FeatureRegistrationOrder.h>
 #include <graphics/vulkan/FrameImageCapture.h>
+#include <graphics/vulkan/UiTextureResidency.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
 
@@ -98,6 +99,9 @@ struct RendererServices
     // renderer's life; the members flip with render.profile.mode, so cache
     // the bundle and re-read its members per frame, never the members.
     const RenderInstrumentation* Instrumentation = nullptr;
+    // The one GPU owner of the authored UI's generated textures, which every
+    // pass drawing authored UI resolves through.
+    UiTextureResidency* UiTextures = nullptr;
 };
 
 // Small dense payload handed to OnDraw(). Everything a feature needs to
@@ -155,6 +159,10 @@ public:
     Renderer& operator=(Renderer&&) = delete;
 
     [[nodiscard]] bool IsValid() const { return Valid; }
+
+    // Where the host queues each extraction's generated-texture changes; every
+    // pass drawing authored UI reaches the same owner through RendererServices.
+    [[nodiscard]] UiTextureResidency& GetUiTextures() { return UiTextures; }
 
     // Take ownership of a feature, run its Setup(), and return the raw
     // pointer (or nullptr on failure). The Renderer owns the feature for its
@@ -289,6 +297,7 @@ private:
     std::vector<FeatureRegistration> StagedRegistrations;
     RendererFrameTiming LastTiming;
     FrameImageCapture ImageCapture;
+    UiTextureResidency UiTextures;
     PresentationId CapturePresentation;
     std::uint64_t FramesDrawn = 0;
 
