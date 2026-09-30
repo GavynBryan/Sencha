@@ -400,3 +400,95 @@ TEST(UiInput, AnotherScreensQueuedActionsSurviveACloseBesideThem)
     ASSERT_EQ(left.size(), 1u) << "the lower screen's action was taken too";
     EXPECT_EQ(left.front().Screen, lower);
 }
+
+namespace
+{
+// A click in a given window: every event carries the id the platform stamps.
+void ClickInWindow(UiService& ui, std::uint32_t window, float x, float y)
+{
+    SDL_Event move = MouseMove(x, y);
+    move.motion.windowID = window;
+    SDL_Event down = MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, x, y);
+    down.button.windowID = window;
+    SDL_Event up = MouseButton(SDL_EVENT_MOUSE_BUTTON_UP, x, y);
+    up.button.windowID = window;
+    (void)ui.ProcessPlatformEvent(move);
+    (void)ui.ProcessPlatformEvent(down);
+    (void)ui.ProcessPlatformEvent(up);
+}
+} // namespace
+
+TEST(UiInput, ASurfaceHearsOnlyItsOwnWindow)
+{
+    // A workspace moved into a window of its own takes its surfaces with it.
+    // The same point in two windows is two different places, so a click in
+    // one must not press a button that happens to sit there in the other.
+    TempAssetRoot root;
+    WritePackage(root, "ui/menu.sui");
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+
+    constexpr std::uint32_t kDetached = 7;
+    const UiSurfaceId primary = ui.CreateSurface("primary", RenderExtent{ 800, 600 });
+    const UiSurfaceId detached = ui.CreateSurface("detached", RenderExtent{ 800, 600 });
+    ui.SetSurfaceWindow(detached, kDetached);
+    const UiScreenHandle primaryScreen = ui.OpenScreen(primary, MakeDesc());
+    const UiScreenHandle detachedScreen = ui.OpenScreen(detached, MakeDesc());
+    ASSERT_TRUE(primaryScreen.IsValid());
+    ASSERT_TRUE(detachedScreen.IsValid());
+    ui.Update();
+
+    ClickInWindow(ui, kDetached, 150.0f, 130.0f);
+    ui.Update();
+    std::vector<UiAction> actions = ui.DrainActions();
+    ASSERT_EQ(actions.size(), 1u);
+    EXPECT_EQ(actions[0].Screen, detachedScreen) << "the detached window's click pressed the primary's button";
+
+    ClickInWindow(ui, 0, 150.0f, 130.0f);
+    ui.Update();
+    actions = ui.DrainActions();
+    ASSERT_EQ(actions.size(), 1u);
+    EXPECT_EQ(actions[0].Screen, primaryScreen) << "a primary-window click reached the detached window";
+}
+
+TEST(UiInput, CaptureIsReportedPerWindow)
+{
+    // A host routes each window's input to that window's own shortcuts, so it
+    // needs to know whether the UI took the pointer in that window, not in any.
+    TempAssetRoot root;
+    WritePackage(root, "ui/menu.sui");
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+
+    constexpr std::uint32_t kDetached = 7;
+    const UiSurfaceId detached = ui.CreateSurface("detached", RenderExtent{ 800, 600 });
+    ui.SetSurfaceWindow(detached, kDetached);
+    ASSERT_TRUE(ui.OpenScreen(detached, MakeDesc()).IsValid());
+    ui.Update();
+
+    SDL_Event move = MouseMove(150.0f, 130.0f);
+    move.motion.windowID = kDetached;
+    (void)ui.ProcessPlatformEvent(move);
+
+    EXPECT_TRUE(ui.Capture(kDetached).Mouse);
+    EXPECT_FALSE(ui.Capture(0).Mouse) << "the primary reported a pointer that is in another window";
+    EXPECT_TRUE(ui.Capture().Mouse) << "the all-windows answer lost the detached window's pointer";
+}
+
+TEST(UiInput, AFrameNamesItsWindow)
+{
+    TempAssetRoot root;
+    WritePackage(root, "ui/menu.sui");
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+
+    const UiSurfaceId detached = ui.CreateSurface("detached", RenderExtent{ 800, 600 });
+    ui.SetSurfaceWindow(detached, 7);
+    ASSERT_TRUE(ui.OpenScreen(detached, MakeDesc()).IsValid());
+    ui.Update();
+    ui.ExtractRender();
+
+    ASSERT_EQ(ui.Frames().size(), 1u);
+    EXPECT_EQ(ui.Frames().front().WindowId, 7u)
+        << "the primary's render feature would draw another window's surface";
+}

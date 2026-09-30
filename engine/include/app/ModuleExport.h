@@ -130,5 +130,8 @@
 // and releases leave the per-surface UiDrawFrame for UiService::TextureChanges,
 // applied through the renderer's one UiTextureResidency that RendererServices
 // now names, and render/ui headers join the fingerprint because a module
-// receives those frames by reference.
+// receives those frames by reference. A surface names the platform window it
+// lives on (UiService::SetSurfaceWindow), its frames carry that window, capture
+// can be asked per window, and UiRenderFeature draws one window's surfaces; the
+// engine now offers every window's events to the UI rather than the primary's.
 #define SENCHA_GAME_ABI_VERSION 25u

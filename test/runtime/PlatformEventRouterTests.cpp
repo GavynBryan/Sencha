@@ -2,6 +2,7 @@
 #include <input/InputFrame.h>
 #include <input/PlatformEventRouter.h>
 #include <input/SdlInputCapture.h>
+#include <platform/SdlWindowService.h>
 
 #include <SDL3/SDL.h>
 
@@ -141,4 +142,29 @@ TEST(PlatformEventRouter, SurfaceCaptureIsPublishedNotCompensatedFor)
     EXPECT_FALSE(frame.UiCapture.Keyboard) << "a stale claim must not outlive its frame";
     EXPECT_TRUE(frame.IsKeyDown(SDL_SCANCODE_ESCAPE))
         << "clearing the claim must not disturb held device state";
+}
+
+TEST(PlatformEventRouter, AnEventIsRoutedByTheWindowItWasStampedWith)
+{
+    // Read from the event rather than resolved through a live window, so an
+    // event arriving after its window closed goes nowhere instead of to the
+    // primary, and routing is testable with no window at all.
+    SDL_Event press{};
+    press.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    press.button.windowID = 7;
+    EXPECT_EQ(SdlEventWindowId(press), 7u);
+
+    SDL_Event key{};
+    key.type = SDL_EVENT_KEY_DOWN;
+    key.key.windowID = 9;
+    EXPECT_EQ(SdlEventWindowId(key), 9u);
+
+    SDL_Event close{};
+    close.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+    close.window.windowID = 3;
+    EXPECT_EQ(SdlEventWindowId(close), 3u);
+
+    SDL_Event quit{};
+    quit.type = SDL_EVENT_QUIT;
+    EXPECT_EQ(SdlEventWindowId(quit), 0u) << "an event naming no window names none";
 }

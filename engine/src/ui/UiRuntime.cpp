@@ -1,5 +1,7 @@
 #include "UiRuntime.h"
 
+#include <platform/SdlWindowService.h>
+
 #include <ui/UiSurfacePlacement.h>
 
 #include "rml/RmlInputBridge.h"
@@ -10,6 +12,7 @@
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_video.h>
 #include <RmlUi/Core/DataModelHandle.h>
 
 #include <assets/font/FontFace.h>
@@ -139,6 +142,8 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
     SystemBridge = std::make_unique<RmlSystemBridge>(Diagnostics);
     FileSource = std::make_unique<RmlPackageFileSource>(Log);
     TextInput = std::make_unique<RmlTextInputBridge>(window);
+    PrimaryWindow = window;
+    PrimaryWindowId = window != nullptr ? SDL_GetWindowID(window) : 0;
     Recorder = std::make_unique<RmlRenderRecorder>(Log);
 
     Rml::SetSystemInterface(SystemBridge.get());
@@ -438,6 +443,45 @@ UiSurfaceDestination UiRuntime::GetSurfaceDestination(UiSurfaceId surface) const
 {
     const Surface* slot = ResolveSurface(surface);
     return slot != nullptr ? slot->Destination : UiSurfaceDestination::Window;
+}
+
+void UiRuntime::SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId)
+{
+    Surface* slot = ResolveSurface(surface);
+    if (slot == nullptr)
+        return;
+    const std::uint32_t window = platformWindowId == PrimaryWindowId ? 0 : platformWindowId;
+    if (slot->WindowId == window)
+        return;
+    // Whatever the old window's pointer and focus were doing is not the new
+    // window's business.
+    if (slot->Context != nullptr)
+    {
+        (void)slot->Context->ProcessMouseLeave();
+        DropFocus(*slot->Context);
+    }
+    slot->PointerInside = false;
+    slot->PointerOwned = false;
+    slot->WindowId = window;
+}
+
+std::uint32_t UiRuntime::GetSurfaceWindow(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr ? slot->WindowId : 0;
+}
+
+bool UiRuntime::Hears(const Surface& surface, std::uint32_t eventWindow) const
+{
+    if (eventWindow == 0)
+        return surface.WindowId == 0;
+    const std::uint32_t own = surface.WindowId != 0 ? surface.WindowId : PrimaryWindowId;
+    return eventWindow == own;
+}
+
+SDL_Window* UiRuntime::WindowOf(const Surface& surface) const
+{
+    return surface.WindowId != 0 ? SDL_GetWindowFromID(surface.WindowId) : PrimaryWindow;
 }
 
 const UiDrawFrame* UiRuntime::OffscreenFrame(UiSurfaceId surface) const
@@ -1106,7 +1150,9 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
 
     // Topmost first, and the first surface to consume ends it. Surfaces are
     // created bottom-up, so reverse creation order is the z-order a host would
-    // expect without having to state one.
+    // expect without having to state one. Only the event's window's surfaces
+    // are asked: another window's surface is not under this pointer at all.
+    const std::uint32_t eventWindow = SdlEventWindowId(event);
     for (auto it = Surfaces.rbegin(); it != Surfaces.rend(); ++it)
     {
         Surface& surface = *it;
@@ -1114,6 +1160,9 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
             continue;
         if (surface.InputPolicy == UiSurfaceInputPolicy::Disabled)
             continue;
+        if (!Hears(surface, eventWindow))
+            continue;
+        TextInput->SetWindow(WindowOf(surface));
         const bool keys = surface.InputPolicy == UiSurfaceInputPolicy::Full;
 
         Rml::Context& context = *surface.Context;
@@ -1192,7 +1241,7 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
                 {
                     for (auto below = std::next(it); below != Surfaces.rend(); ++below)
                     {
-                        if (below->Live && below->Context != nullptr)
+                        if (below->Live && below->Context != nullptr && Hears(*below, eventWindow))
                             DropFocus(*below->Context);
                     }
                 }
@@ -1261,6 +1310,16 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
 
 UiInputCapture UiRuntime::Capture() const
 {
+    return CaptureOver(std::nullopt);
+}
+
+UiInputCapture UiRuntime::Capture(std::uint32_t platformWindowId) const
+{
+    return CaptureOver(platformWindowId);
+}
+
+UiInputCapture UiRuntime::CaptureOver(std::optional<std::uint32_t> window) const
+{
     UiInputCapture capture;
     if (!Ready)
         return capture;
@@ -1272,7 +1331,12 @@ UiInputCapture UiRuntime::Capture() const
             continue;
         if (surface.InputPolicy == UiSurfaceInputPolicy::Disabled)
             continue;
-        anyTakesKeys |= surface.InputPolicy == UiSurfaceInputPolicy::Full;
+        if (window.has_value() && !Hears(surface, *window))
+            continue;
+        // The keyboard is taken on the window whose field has text input, not
+        // on every window that has a surface able to take keys.
+        anyTakesKeys |= surface.InputPolicy == UiSurfaceInputPolicy::Full
+            && (!window.has_value() || WindowOf(surface) == TextInput->ActiveWindow());
         // A surface the pointer is not over is not interacting with it,
         // whatever hover state its context still remembers; one it holds a
         // press in is, wherever the pointer went.
@@ -1579,6 +1643,7 @@ void UiRuntime::ExtractRender()
         UiDrawFrame frame = Recorder->EndFrame();
         if (frame.IsEmpty())
             continue;
+        frame.WindowId = surface.WindowId;
         // Published once, to one place. The window feature reads the list; a
         // host feature drawing this surface into its own target reads the
         // entry by surface, and never sees the same recording twice.

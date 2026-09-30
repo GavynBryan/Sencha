@@ -121,6 +121,13 @@ public:
     void SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination);
     [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
 
+    // The platform window a surface lives on, by its window id; 0, the default,
+    // is the window the service was created with. The surface hears only that
+    // window's events, its frames name that window, and a field focused in it
+    // takes text input there. Naming the primary's own id is the same as 0.
+    void SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId);
+    [[nodiscard]] std::uint32_t GetSurfaceWindow(UiSurfaceId surface) const;
+
     // -- screens -------------------------------------------------------------
 
     // Opens a screen: the cooked package, what it presents, and what it can ask
@@ -175,6 +182,10 @@ public:
     // device snapshot still records everything that happened, and this is what
     // tells a reader of raw state which of it was not meant for them.
     [[nodiscard]] UiInputCapture Capture() const;
+
+    // The same, for one window's surfaces: what a host with several windows
+    // asks before handing that window's input to its own shortcuts.
+    [[nodiscard]] UiInputCapture Capture(std::uint32_t platformWindowId) const;
 
     // Abstract navigation, from whatever the host mapped it to. A document
     // names no key and no gamepad button, so remapping, controller profiles and

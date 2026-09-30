@@ -24,7 +24,10 @@ void RmlTextInputBridge::OnActivate(Rml::TextInputContext* context)
     // about the UI, and a reader of raw device state gates on it; only the
     // platform call is conditional, because a windowless process has no input
     // method to ask.
+    if (Active != nullptr && ActiveOn != Window)
+        Stop();
     Active = context;
+    ActiveOn = Window;
     if (Window == nullptr)
         return;
 
@@ -69,6 +72,7 @@ void RmlTextInputBridge::Stop()
     if (Active == nullptr)
         return;
     Active = nullptr;
-    if (Window != nullptr)
-        SDL_StopTextInput(Window);
+    if (ActiveOn != nullptr)
+        SDL_StopTextInput(ActiveOn);
+    ActiveOn = nullptr;
 }

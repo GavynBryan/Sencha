@@ -9,8 +9,43 @@
 
 std::uint32_t SdlEventWindowId(const SDL_Event& event)
 {
-    SDL_Window* window = SDL_GetWindowFromEvent(&event);
-    return window != nullptr ? SDL_GetWindowID(window) : 0;
+    // The id the platform stamped, read rather than resolved: an event outlives
+    // the window it names when that window closes, and routing it by the stamp
+    // sends it nowhere instead of to the primary.
+    if (event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST)
+        return event.window.windowID;
+    switch (event.type)
+    {
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP:
+        return event.key.windowID;
+    case SDL_EVENT_TEXT_EDITING:
+        return event.edit.windowID;
+    case SDL_EVENT_TEXT_EDITING_CANDIDATES:
+        return event.edit_candidates.windowID;
+    case SDL_EVENT_TEXT_INPUT:
+        return event.text.windowID;
+    case SDL_EVENT_MOUSE_MOTION:
+        return event.motion.windowID;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        return event.button.windowID;
+    case SDL_EVENT_MOUSE_WHEEL:
+        return event.wheel.windowID;
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_UP:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_FINGER_CANCELED:
+        return event.tfinger.windowID;
+    case SDL_EVENT_DROP_BEGIN:
+    case SDL_EVENT_DROP_FILE:
+    case SDL_EVENT_DROP_TEXT:
+    case SDL_EVENT_DROP_COMPLETE:
+    case SDL_EVENT_DROP_POSITION:
+        return event.drop.windowID;
+    default:
+        return 0;
+    }
 }
 
 SdlWindowService::SdlWindowService(LoggingProvider& logging, SdlVideoService& video)

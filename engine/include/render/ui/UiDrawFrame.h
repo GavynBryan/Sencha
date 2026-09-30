@@ -137,6 +137,10 @@ struct UiDrawFrame
     // smaller than the window still maps correctly.
     RenderExtent Surface{};
 
+    // The platform window the surface lives on, 0 for the primary. A window's
+    // own render feature draws the frames that name it and nothing else.
+    std::uint32_t WindowId = 0;
+
     std::vector<UiDrawCommand> Commands;
 
     [[nodiscard]] bool IsEmpty() const { return Commands.empty(); }

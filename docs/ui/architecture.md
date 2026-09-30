@@ -593,6 +593,17 @@ Kyusu creates one surface for its window and hands it to every authored
 controller; the surface tracks the window's size each frame, because a retained
 document re-flows on a resize where a baked font atlas cannot.
 
+**A surface lives on one platform window.** `SetSurfaceWindow(surface, id)`
+names it (0, the default, is the primary). The surface hears only that window's
+events -- routed by the id the platform stamped on each event, so a click in one
+window never presses a button that sits at the same point in another -- its
+frames carry the window (`UiDrawFrame::WindowId`), a `UiRenderFeature` draws only
+its own window's frames, and a field focused there takes text input on that
+window. `Capture(windowId)` answers for one window, which is what a host routing
+each window's input to its own shortcuts asks; `Capture()` still answers for all.
+A host presenting authored UI in a second window adds a `UiRenderFeature` for
+that window, scoped to its presentation.
+
 The engine creates one for the primary window and tracks its size and display
 scale every frame, which is what the application shell's pages open on. Tracking
 is not optional: a surface still holding the extent it was created with lays out

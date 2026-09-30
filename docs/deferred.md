@@ -136,16 +136,14 @@ do the work and delete the entry.
 
 ## Authored UI in detached windows
 
-- **What:** `UiService` surfaces live on the primary window: its platform-event
-  consumer takes only primary-window events and its surfaces are sized to the
-  primary. A workspace detached into its own window keeps its ImGui panels
-  there, but an authored surface it opens (the level's cook-profiles modal and
-  inspector surface) still appears on the main window.
-- **Where:** `engine/include/ui/UiService.h`, the `authored_ui` consumer in
-  `engine/src/app/EngineFramePhases.cpp`, and `LevelWorkspace`'s
-  `AuthoredSurface`, sized from `PrimaryWindow`.
-- **Trigger:** the Shoji-hosted editor UI, whose panels are authored surfaces;
-  it needs a surface to name its presentation, which is a `ui/` ABI change.
+- **What:** the engine places authored surfaces on any window
+  (`UiService::SetSurfaceWindow`, per-window routing, capture and render
+  feature), but Kyusu still creates its surfaces for the primary window, so the
+  level's cook-profiles modal and inspector surface appear on the main window
+  when the Level workspace is detached.
+- **Where:** `LevelWorkspace`'s `AuthoredSurface`, sized from `PrimaryWindow`.
+- **Trigger:** the Shoji shell's per-window controller (`ShellWindow`), which
+  owns each window's surfaces; the Level workspace's surfaces move onto it.
 
 ## Detached window layout write-back
 

@@ -104,6 +104,8 @@ public:
     [[nodiscard]] bool IsPointerOver(UiSurfaceId surface) const;
     void SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination);
     [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
+    void SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId);
+    [[nodiscard]] std::uint32_t GetSurfaceWindow(UiSurfaceId surface) const;
 
     [[nodiscard]] UiScreenHandle OpenScreen(UiSurfaceId surface, const UiScreenDesc& desc);
     void CloseScreen(UiScreenHandle screen);
@@ -117,6 +119,7 @@ public:
 
     // What the UI is currently consuming, for a reader of raw device state.
     [[nodiscard]] UiInputCapture Capture() const;
+    [[nodiscard]] UiInputCapture Capture(std::uint32_t platformWindowId) const;
 
     // Abstract navigation, driven by the host's own mapped actions rather than
     // by keys this layer decided on. The document engine's focus and spatial
@@ -201,6 +204,9 @@ private:
         std::optional<Rect2d> Placement;
         UiSurfaceInputPolicy InputPolicy = UiSurfaceInputPolicy::Full;
         UiSurfaceDestination Destination = UiSurfaceDestination::Window;
+        // The platform window the surface lives on; 0 is the primary, which is
+        // how every surface began and how a host that never names one is served.
+        std::uint32_t WindowId = 0;
 
         // The last pointer position delivered, in surface pixels. The document
         // engine is told where the pointer is on a move; a click has to be told
@@ -408,6 +414,14 @@ private:
     std::unique_ptr<RmlSystemBridge> SystemBridge;
     std::unique_ptr<RmlPackageFileSource> FileSource;
     std::unique_ptr<RmlTextInputBridge> TextInput;
+    SDL_Window* PrimaryWindow = nullptr;
+    std::uint32_t PrimaryWindowId = 0;
+
+    // Whether an event from `eventWindow` is the surface's to hear. A windowless
+    // event (a device, a key with nothing focused) belongs to the primary.
+    [[nodiscard]] bool Hears(const Surface& surface, std::uint32_t eventWindow) const;
+    [[nodiscard]] SDL_Window* WindowOf(const Surface& surface) const;
+    [[nodiscard]] UiInputCapture CaptureOver(std::optional<std::uint32_t> window) const;
     std::unique_ptr<RmlRenderRecorder> Recorder;
 
     std::vector<Surface> Surfaces;
