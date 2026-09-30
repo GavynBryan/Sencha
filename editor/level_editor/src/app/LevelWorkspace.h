@@ -29,7 +29,6 @@
 #include <vector>
 
 class EditorUiFeature;
-class MaterialPickerPanel;
 class MaterialThumbnailCache;
 class LevelViewSurface;
 class RadialMenuScreen;
@@ -46,6 +45,7 @@ class CookSession;
 class CookProfilesModal;
 class ComponentPropertySource;
 class ElementVerbs;
+class MaterialExplorer;
 class FaceUvSource;
 class EditorCookRuntime;
 class DocumentFileActions;
@@ -89,6 +89,9 @@ public:
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
+    [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
+    [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
+    void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice) override;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;
@@ -137,7 +140,6 @@ private:
 
     ViewsPanel* Views = nullptr;
     // Held for the Active Material panel's Browse jump (Reveal()).
-    MaterialPickerPanel* Browser = nullptr;
     // Owned by the engine renderer; the views are drawn from its targets.
     EditorRenderFeature* RenderFeature = nullptr;
     // The views on the window's content surface; gone before RenderFeature.
@@ -178,6 +180,7 @@ private:
     std::unique_ptr<ElementVerbs> Verbs;
     std::unique_ptr<FaceUvSource> Uv;
     std::unique_ptr<ComponentPropertySource> Components;
+    std::unique_ptr<MaterialExplorer> MaterialsExplorer;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
     // The tool in hand's settings, as the operation facet hands them out.

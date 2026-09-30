@@ -53,6 +53,14 @@ const UiModelPropertyId kSelectionTitle = UiPropertyIdAt(31);
 const UiModelPropertyId kSelectionStaged = UiPropertyIdAt(32);
 const UiModelPropertyId kDrawer = UiPropertyIdAt(33);
 const UiModelPropertyId kDrawerFocus = UiPropertyIdAt(34);
+const UiModelPropertyId kHoldingExplorer = UiPropertyIdAt(35);
+const UiModelPropertyId kExplorerId = UiPropertyIdAt(36);
+const UiModelPropertyId kExplorerTitle = UiPropertyIdAt(37);
+const UiModelPropertyId kExplorerShape = UiPropertyIdAt(38);
+const UiModelPropertyId kExplorerRange = UiPropertyIdAt(39);
+const UiModelPropertyId kExplorerEmpty = UiPropertyIdAt(40);
+const UiModelPropertyId kExplorerEarlier = UiPropertyIdAt(41);
+const UiModelPropertyId kExplorerLater = UiPropertyIdAt(42);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -61,6 +69,8 @@ const UiModelRowsId kStash = UiRowsIdAt(3);
 const UiModelRowsId kSelectionRows = UiRowsIdAt(4);
 const UiModelRowsId kSelectionVerbs = UiRowsIdAt(5);
 const UiModelRowsId kSelectionChips = UiRowsIdAt(6);
+const UiModelRowsId kExplorerItems = UiRowsIdAt(7);
+const UiModelRowsId kExplorerVerbs = UiRowsIdAt(8);
 
 const UiActionId kPopoverAction = UiActionIdAt(0);
 const UiActionId kChooseAction = UiActionIdAt(1);
@@ -73,6 +83,15 @@ const UiActionId kSheetReleaseAction = UiActionIdAt(7);
 const UiActionId kSheetActAction = UiActionIdAt(8);
 const UiActionId kDrawerAction = UiActionIdAt(9);
 const UiActionId kSheetPickAction = UiActionIdAt(10);
+const UiActionId kExploreAction = UiActionIdAt(11);
+const UiActionId kExplorerFilterAction = UiActionIdAt(12);
+const UiActionId kExplorerPageAction = UiActionIdAt(13);
+const UiActionId kExplorerPickAction = UiActionIdAt(14);
+const UiActionId kExplorerCommitAction = UiActionIdAt(15);
+const UiActionId kExplorerCloseAction = UiActionIdAt(16);
+
+// How many items an explorer shows at once, and asks its workspace for.
+constexpr std::size_t kExplorerPage = 40;
 
 // The rail's height in dp, when the document has not laid out to say.
 constexpr float kRailHeightDp = 34.0f;
@@ -118,12 +137,21 @@ UiScreenDesc Describe()
         UiModelProperty{ "selection_staged", UiValue(false) },
         UiModelProperty{ "drawer", UiValue(false) },
         UiModelProperty{ "drawer_focus", UiValue(std::string{}) },
+        UiModelProperty{ "holding_explorer", UiValue(std::string{}) },
+        UiModelProperty{ "explorer_id", UiValue(std::string{}) },
+        UiModelProperty{ "explorer_title", UiValue(std::string{}) },
+        UiModelProperty{ "explorer_shape", UiValue(std::string{}) },
+        UiModelProperty{ "explorer_range", UiValue(std::string{}) },
+        UiModelProperty{ "explorer_empty", UiValue(std::string{}) },
+        UiModelProperty{ "explorer_earlier", UiValue(false) },
+        UiModelProperty{ "explorer_later", UiValue(false) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
-                      "selection_rows", "selection_verbs", "selection_chips" };
+                      "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs" };
     desc.Actions = { "shell_popover",   "shell_choose",     "shell_invoke",     "shell_window",       "shell_sheet_set",
                      "shell_sheet_flip", "shell_sheet_hold", "shell_sheet_release", "shell_sheet_act", "shell_drawer",
-                     "shell_sheet_pick" };
+                     "shell_sheet_pick", "shell_explore", "shell_explorer_filter", "shell_explorer_page",
+                     "shell_explorer_pick", "shell_explorer_commit", "shell_explorer_close" };
     return desc;
 }
 
@@ -199,6 +227,11 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         {
             PopoverTransient = 0;
             Showing = Popover::None;
+        }
+        else if (id == ExplorerTransient)
+        {
+            ExplorerTransient = 0;
+            ExplorerShown.clear();
         }
         else if (id == DrawerTransient)
         {
@@ -320,6 +353,40 @@ void ShellWindow::HandleActions()
                  || action.Id == kSheetReleaseAction || action.Id == kSheetActAction || action.Id == kSheetPickAction)
         {
             HandleSheetAction(action);
+        }
+        else if (action.Id == kExploreAction)
+        {
+            if (argument == ExplorerShown)
+                Transients.Close(ExplorerTransient);
+            else
+                ShowExplorer(argument);
+        }
+        else if (action.Id == kExplorerFilterAction)
+        {
+            ExplorerFilter = argument;
+            ExplorerFirst = 0;
+        }
+        else if (action.Id == kExplorerPageAction)
+        {
+            const std::int64_t step = action.Arguments.empty() ? 0 : action.Arguments[0].AsInt();
+            if (step < 0)
+                ExplorerFirst -= std::min(ExplorerFirst, kExplorerPage);
+            else if (step > 0)
+                ExplorerFirst += kExplorerPage;
+        }
+        else if (action.Id == kExplorerPickAction || action.Id == kExplorerCommitAction)
+        {
+            if (IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation))
+                workspace->ChooseInExplorer(ExplorerShown, argument,
+                                            action.Id == kExplorerPickAction ? ExplorerChoice::Pick : ExplorerChoice::Commit);
+            // Putting an item to use is what the explorer was open for.
+            if (action.Id == kExplorerCommitAction && ExplorerTransient != 0)
+                Transients.Close(ExplorerTransient);
+        }
+        else if (action.Id == kExplorerCloseAction)
+        {
+            if (ExplorerTransient != 0)
+                Transients.Close(ExplorerTransient);
         }
         else if (action.Id == kDrawerAction)
         {
@@ -455,6 +522,101 @@ void ShellWindow::TakeEscape()
         EscapeLayer = Services.Actions.Push(EscapeActions, ActionRank::Surface);
 }
 
+void ShellWindow::ShowExplorer(std::string explorer)
+{
+    if (ExplorerTransient != 0)
+        Transients.Close(ExplorerTransient);
+    if (explorer.empty())
+        return;
+    ExplorerShown = std::move(explorer);
+    ExplorerFirst = 0;
+    ExplorerTransient = Transients.Open({ .Owner = "shell", .Dismiss = TransientDismiss::Explicit });
+    TakeEscape();
+}
+
+void ShellWindow::ClaimExplorers(const IWorkspace* workspace)
+{
+    std::vector<WorkspaceExplorerInfo> explorers = workspace != nullptr ? workspace->Explorers()
+                                                                        : std::vector<WorkspaceExplorerInfo>{};
+    std::vector<std::string> actions;
+    for (const WorkspaceExplorerInfo& explorer : explorers)
+        actions.push_back(explorer.Action);
+    if (actions == ClaimedExplorers)
+        return;
+    for (const std::string& action : ClaimedExplorers)
+        WindowActions.Release(action);
+    for (const WorkspaceExplorerInfo& explorer : explorers)
+        WindowActions.Claim(explorer.Action, ActionHandler{ .Invoke = [this, id = explorer.Id] {
+                                if (id == ExplorerShown)
+                                    Transients.Close(ExplorerTransient);
+                                else
+                                    ShowExplorer(id);
+                            } });
+    ClaimedExplorers = std::move(actions);
+    // What was open belongs to the workspace that was showing.
+    if (!ExplorerShown.empty()
+        && std::ranges::none_of(explorers, [&](const WorkspaceExplorerInfo& e) { return e.Id == ExplorerShown; }))
+        Transients.Close(ExplorerTransient);
+}
+
+void ShellWindow::PublishExplorer(IWorkspace* workspace)
+{
+    UiService& ui = Services.Ui;
+    ClaimExplorers(workspace);
+    const std::vector<WorkspaceExplorerInfo> explorers = workspace != nullptr ? workspace->Explorers()
+                                                                              : std::vector<WorkspaceExplorerInfo>{};
+    const auto shown = std::ranges::find(explorers, ExplorerShown, &WorkspaceExplorerInfo::Id);
+    if (shown == explorers.end() || workspace == nullptr)
+    {
+        (void)ui.SetValue(Screen, kExplorerId, UiValue(std::string{}));
+        return;
+    }
+    ExplorerPage page = workspace->Explore({ .Explorer = ExplorerShown,
+                                             .Filter = ExplorerFilter,
+                                             .First = ExplorerFirst,
+                                             .Count = kExplorerPage });
+    // A narrower filter can leave the page past the end.
+    if (ExplorerFirst > 0 && ExplorerFirst >= page.Total)
+    {
+        ExplorerFirst = 0;
+        page = workspace->Explore({ .Explorer = ExplorerShown, .Filter = ExplorerFilter, .First = 0,
+                                    .Count = kExplorerPage });
+    }
+    (void)ui.SetValue(Screen, kExplorerId, UiValue(ExplorerShown));
+    (void)ui.SetValue(Screen, kExplorerTitle, UiValue(shown->Title));
+    (void)ui.SetValue(Screen, kExplorerShape,
+                      UiValue(std::string(shown->Shape == ExplorerShape::Outline ? "outline" : "pictures")));
+    (void)ui.SetValue(Screen, kExplorerRange,
+                      UiValue(page.Total == 0 ? std::string{}
+                                              : std::format("{}-{} of {}", ExplorerFirst + 1,
+                                                            ExplorerFirst + page.Items.size(), page.Total)));
+    (void)ui.SetValue(Screen, kExplorerEmpty, UiValue(page.Items.empty() ? page.Empty : std::string{}));
+    (void)ui.SetValue(Screen, kExplorerEarlier, UiValue(ExplorerFirst > 0));
+    (void)ui.SetValue(Screen, kExplorerLater, UiValue(ExplorerFirst + page.Items.size() < page.Total));
+
+    std::vector<UiRow> items;
+    for (const ExplorerItem& item : page.Items)
+    {
+        UiRow row{ item.Label, item.Image, "" };
+        row.Key = item.Key;
+        row.Depth = item.Depth;
+        row.Selected = item.Current;
+        items.push_back(std::move(row));
+    }
+    (void)ui.SetRows(Screen, kExplorerItems, items);
+
+    std::vector<UiRow> verbs;
+    for (const std::string& id : page.Actions)
+        if (const ActionDefinition* definition = Services.Catalog.Find(id))
+        {
+            UiRow verb{ definition->Label, "", "" };
+            verb.Key = id;
+            verb.Disabled = !Services.Actions.Query(id).Enabled;
+            verbs.push_back(std::move(verb));
+        }
+    (void)ui.SetRows(Screen, kExplorerVerbs, verbs);
+}
+
 void ShellWindow::ShowDrawer(std::string focus)
 {
     DrawerFocus = std::move(focus);
@@ -538,6 +700,7 @@ void ShellWindow::Publish(double now)
     PublishReadouts(workspace);
     PublishHolding(workspace);
     PublishSelection(workspace);
+    PublishExplorer(workspace);
 
     std::vector<UiRow> notices;
     for (const Notice& notice : Services.Notices.Showing(now))
@@ -707,6 +870,7 @@ void ShellWindow::PublishHolding(IWorkspace* workspace)
     (void)ui.SetValue(Screen, kHoldingRole, UiValue(held.Role));
     (void)ui.SetValue(Screen, kHoldingLabel, UiValue(held.Active.Label));
     (void)ui.SetValue(Screen, kHoldingImage, UiValue(held.Active.Image));
+    (void)ui.SetValue(Screen, kHoldingExplorer, UiValue(held.Explorer));
 
     std::vector<UiRow> stash;
     for (std::size_t slot = 0; slot < held.Stash.size(); ++slot)

@@ -156,6 +156,12 @@ private:
     void ShowDrawer(std::string focus);
     // While anything transient is open, Escape takes it away one at a time.
     void TakeEscape();
+    // Opens the named explorer in place of any other; empty closes it.
+    void ShowExplorer(std::string explorer);
+    // The active workspace's explorers are opened by their actions, which this
+    // window performs while that workspace is the one showing.
+    void ClaimExplorers(const IWorkspace* workspace);
+    void PublishExplorer(IWorkspace* workspace);
 
     ShellWindowServices Services;
     UiSurfaceId SurfaceId;
@@ -186,6 +192,11 @@ private:
     SelectionView SelectionShown = SelectionView::Card;
     std::string DrawerFocus;
     TransientSurfaces::Id DrawerTransient = 0;
+    std::string ExplorerShown;
+    std::string ExplorerFilter;
+    std::size_t ExplorerFirst = 0;
+    TransientSurfaces::Id ExplorerTransient = 0;
+    std::vector<std::string> ClaimedExplorers;
     // After the palette, so a question opens over it.
     std::unique_ptr<PromptDialog> Prompt;
     // What the shell itself performs in its window, whatever is showing.

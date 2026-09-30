@@ -217,3 +217,14 @@ do the work and delete the entry.
   selection.
 - **Trigger:** a designer editing the same field on several selected objects
   at once.
+
+## Previewing a material on the selected faces
+
+- **What:** hovering a tile in the material explorer does not show that
+  material on the selected faces; picking puts it in hand and putting it to
+  use (a double click) applies it as one step.
+- **Where:** `editor/level_editor/src/workspace/MaterialExplorer.cpp`; a
+  preview would be a pending edit through the command stack's pending scope,
+  cancelled when the pointer leaves the tile or the explorer closes.
+- **Trigger:** the owner's walkthrough at the explorers checkpoint, or a report
+  that choosing a material takes trial applications and undos.

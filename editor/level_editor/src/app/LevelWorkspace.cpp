@@ -30,7 +30,6 @@
 #include "ui/chrome/ChromeControls.h"
 #include "document/commands/SceneInstanceCommands.h"
 #include "ui/LightingPanel.h"
-#include "ui/MaterialPickerPanel.h"
 #include "render/RenderFeatureDetach.h"
 #include "documents/DocumentSourceSet.h"
 #include "ui/MaterialThumbnailCache.h"
@@ -44,6 +43,7 @@
 #include "authoring/ComponentPropertySource.h"
 #include "workspace/ElementVerbs.h"
 #include "workspace/FaceUvSource.h"
+#include "workspace/MaterialExplorer.h"
 #include "workspace/SelectionSummary.h"
 #include "workspace/ManipulationActions.h"
 #include "tools/ToolParameterSource.h"
@@ -282,8 +282,19 @@ void LevelWorkspace::BuildInput()
     Uv->Offer(Catalog, ActionHandlers);
     Components = std::make_unique<ComponentPropertySource>(Workspace->World, Workspace->Selection, *Commands,
                                                            Workspace->Affordances->Registry());
-    offer("resource.browse", "Browse...", "Resource", { { SDLK_M, {} } }, IconId::Folder,
-          [this] { if (Browser != nullptr) Browser->Reveal(); });
+    // The explorers: defined here, opened by whichever shell shows the workspace.
+    OfferAction(Catalog, ActionHandlers,
+                { .Id = "explorer.materials", .Label = "Materials", .Category = "Explore",
+                  .Icon = IconId::Folder, .DefaultChords = { { SDLK_M, {} } } },
+                {});
+    offer("materials.rescan", "Rescan Materials", "Material", {}, IconId::Refresh, [this] {
+        if (Materials == nullptr)
+            return;
+        Materials->Rescan(Materials->Roots());
+        // A rescan may follow a save that re-pointed a material's textures.
+        if (Thumbnails != nullptr)
+            Thumbnails->Clear();
+    });
     OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [] { return AssetType::Material; });
 
     // How the views share the content area, and which one a single view shows.
@@ -755,17 +766,7 @@ void LevelWorkspace::BuildUi()
         .DefaultValue = std::int64_t{ 128 },
         .CurrentValue = std::int64_t{ 128 },
         .Flags = CVarFlags::Archive,
-        .Help = "Max GPU-resident material thumbnails in the browser cache.",
-        .Source = { "editor" },
-    });
-    console.Registry().RegisterCVar({
-        .Name = "editor.materials.thumbnail_size",
-        .Owner = "editor",
-        .Type = CVarType::Double,
-        .DefaultValue = 96.0,
-        .CurrentValue = 96.0,
-        .Flags = CVarFlags::Archive,
-        .Help = "Material browser cell size in pixels.",
+        .Help = "Most material thumbnails kept on the GPU; the ones shown most recently stay.",
         .Source = { "editor" },
     });
     UiService* ui = engine.TryUi();
@@ -773,12 +774,9 @@ void LevelWorkspace::BuildUi()
         Assets->Assets, *Assets->Textures, engine.Graphics().Images, engine.Graphics().Samplers,
         Assets->Registry, ui != nullptr && ui->IsReady() ? ui : nullptr,
         &engine.Graphics().MainRenderer.GetUiTextures());
+    MaterialsExplorer = std::make_unique<MaterialExplorer>(
+        *Materials, *Workspace, [this](const std::string& path) { return Thumbnails->ImageName(path); });
 
-    auto browserPanel = std::make_unique<MaterialPickerPanel>(
-        *Materials, *Thumbnails, Workspace->Resources, console.Registry(),
-        [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); });
-    Browser = browserPanel.get();
-    Surface.AddPanel(std::move(browserPanel));
 }
 
 bool LevelWorkspace::OwnsDocument(const DocumentRef& document) const
@@ -1038,6 +1036,12 @@ void LevelWorkspace::ProcessFrame()
             retirement = graphics->Frames.GetRetirement();
         }
         Thumbnails->BeginFrame(retirement);
+        // Only what an explorer showed recently stays on the GPU.
+        std::int64_t budget = 128;
+        if (const CVarMetadata* var = EnginePtr->Console().Registry().FindCVar("editor.materials.thumbnail_budget"))
+            if (const std::int64_t* value = std::get_if<std::int64_t>(&var->CurrentValue))
+                budget = *value;
+        Thumbnails->TrimToBudget(static_cast<std::size_t>(std::max<std::int64_t>(1, budget)));
     }
 }
 
@@ -1230,6 +1234,24 @@ WorkspaceSelectionFacet LevelWorkspace::Selection()
     return SelectionOf(*Workspace, *Verbs, *Uv, *Components);
 }
 
+std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const
+{
+    return { MaterialExplorer::Info() };
+}
+
+ExplorerPage LevelWorkspace::Explore(const ExplorerQuery& query)
+{
+    if (query.Explorer == MaterialExplorer::kId && MaterialsExplorer != nullptr)
+        return MaterialsExplorer->Explore(query);
+    return {};
+}
+
+void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice)
+{
+    if (explorer == MaterialExplorer::kId && MaterialsExplorer != nullptr)
+        MaterialsExplorer->Choose(key, choice);
+}
+
 std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()
 {
     const auto held = [this](const AssetRef& ref) -> HeldResource {
@@ -1238,7 +1260,7 @@ std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()
         return { .Label = MaterialLeafName(ref.Path),
                  .Image = Thumbnails != nullptr ? Thumbnails->ImageName(ref.Path) : std::string{} };
     };
-    WorkspaceResourceFacet material{ .Role = "Material", .Primary = true,
+    WorkspaceResourceFacet material{ .Role = "Material", .Primary = true, .Explorer = std::string(MaterialExplorer::kId),
                                      .Active = held(Workspace->Resources.Active(AssetType::Material)) };
     for (const AssetRef& slot : Workspace->Resources.Stash(AssetType::Material))
         material.Stash.push_back(held(slot));

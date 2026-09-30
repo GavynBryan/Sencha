@@ -3,6 +3,7 @@
 #include "icons/IconId.h"
 #include "tools/ToolDraft.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -109,6 +110,8 @@ struct WorkspaceResourceFacet
 {
     std::string Role = {};
     bool Primary = false;
+    // The explorer that browses for another, or empty.
+    std::string Explorer = {};
     HeldResource Active = {};
     std::vector<HeldResource> Stash = {};
 };
@@ -135,4 +138,64 @@ struct WorkspaceSelectionFacet
     // components, each a top-level group.
     std::vector<PropertySection> Details = {};
     bool Staged = false;
+};
+
+// Something the workspace lets a person browse and pick from: its materials,
+// its prefabs, the structure of its world. The workspace says what is in one
+// and what picking does; the shell decides whether it is a tray, a sheet or a
+// list, and pages through it so only what shows is ever asked for.
+enum class ExplorerShape : std::uint8_t
+{
+    Pictures, // items are recognised by their picture: a grid of tiles
+    Outline,  // items are recognised by their name and place in a tree
+};
+
+struct WorkspaceExplorerInfo
+{
+    std::string Id;
+    std::string Title;
+    ExplorerShape Shape = ExplorerShape::Pictures;
+    // The action that opens it; the workspace defines it, the shell performs it.
+    std::string Action;
+};
+
+struct ExplorerQuery
+{
+    std::string Explorer;
+    // Items whose label holds this, or every item when it is empty.
+    std::string Filter = {};
+    std::size_t First = 0;
+    std::size_t Count = 0;
+};
+
+struct ExplorerItem
+{
+    // What choosing it names back to the workspace.
+    std::string Key;
+    std::string Label;
+    // A host image picturing it, or empty.
+    std::string Image = {};
+    int Depth = 0;
+    // The one in hand now.
+    bool Current = false;
+};
+
+// One page of an explorer's items that match a query.
+struct ExplorerPage
+{
+    std::vector<ExplorerItem> Items;
+    // How many match, on every page together.
+    std::size_t Total = 0;
+    // What to say when nothing matches.
+    std::string Empty = {};
+    // What the explorer offers besides its items: a rescan, a new item.
+    std::vector<std::string> Actions = {};
+};
+
+// Choosing an item: picking it up, or putting it to use at once (a double
+// click, Enter).
+enum class ExplorerChoice : std::uint8_t
+{
+    Pick,
+    Commit,
 };

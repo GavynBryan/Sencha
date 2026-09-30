@@ -295,7 +295,11 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   (`authoring/ComponentPropertySource`; a component adapter contributes its own
   properties and verbs through `InspectorNodes`/`SetInspectorValue`/
   `ActInspector`). The shell's selection card presents it, and turns into the
-  drawer that shows every property. Cook, play and
+  drawer that shows every property. What a workspace lets a person browse is
+  an explorer (`WorkspaceExplorerInfo`, paged through `Explore` and chosen
+  from with `ChooseInExplorer`); the Level's materials are
+  `workspace/MaterialExplorer`, which the shell shows as a tray and opens from
+  its `explorer.materials` action or the cartridge. Cook, play and
   stop are the `transport.*` actions the rail's transport shows.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.

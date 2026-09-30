@@ -62,6 +62,10 @@ public:
     [[nodiscard]] virtual std::vector<WorkspaceResourceFacet> Resources() { return {}; }
     // Not const: the property sources it hands out are the workspace's to edit.
     [[nodiscard]] virtual WorkspaceSelectionFacet Selection() { return {}; }
+    [[nodiscard]] virtual std::vector<WorkspaceExplorerInfo> Explorers() const { return {}; }
+    // Not const: picturing an item may start loading its image.
+    [[nodiscard]] virtual ExplorerPage Explore(const ExplorerQuery&) { return {}; }
+    virtual void ChooseInExplorer(std::string_view /*explorer*/, std::string_view /*key*/, ExplorerChoice) {}
 
     virtual WorkspaceView& View() = 0;
     // The window this workspace now draws in: its UI capture, input gates and

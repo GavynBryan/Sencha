@@ -1059,10 +1059,10 @@
     },
     {
       "source": "shell.rml",
-      "input_fingerprint": "4770b4fe9b5bac9e",
+      "input_fingerprint": "0125b935b344a141",
       "cook_identity": "4765341e77032c66",
-      "size": "15935",
-      "mtime": "-4646868864772115446",
+      "size": "18345",
+      "mtime": "-4646867850194949057",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
@@ -1073,8 +1073,8 @@
         },
         {
           "source": "shell.rcss",
-          "size": "8324",
-          "mtime": "-4646869058616645116"
+          "size": "10048",
+          "mtime": "-4646867850194775823"
         },
         {
           "source": "icons.rcss",
@@ -1092,7 +1092,7 @@
           "path": "asset://shell.rml",
           "file": ".cooked/shell.rml.sui",
           "type": "UiPackage",
-          "hash": "242990b6e2c16302"
+          "hash": "3a1ca145045e362e"
         }
       ]
     },

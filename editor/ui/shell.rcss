@@ -449,3 +449,80 @@ body
     gap: 6dp;
     margin-top: 8dp;
 }
+
+/* An explorer of pictures: a tray over the bottom of the content, above the
+   instruments. */
+#explorer
+{
+    display: block;
+    position: absolute;
+    left: 8dp;
+    right: 8dp;
+    bottom: 50dp;
+    height: 272dp;
+    padding: 8dp 10dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+/* An explorer of names: a sheet down the left of the content. */
+#explorer.outline
+{
+    right: auto;
+    top: 42dp;
+    width: 320dp;
+    height: auto;
+}
+
+#explorer_head
+{
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    height: 26dp;
+    margin-bottom: 8dp;
+}
+#explorer_title
+{
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+}
+#explorer_filter { display: block; width: 180dp; height: 20dp; padding: 0dp 6dp; border-width: 1dp; }
+#explorer_range { flex: 1; font-size: 11dp; }
+
+#explorer_items
+{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8dp;
+    height: 222dp;
+    overflow-y: auto;
+}
+#explorer.outline #explorer_items { display: block; position: absolute; top: 42dp; bottom: 8dp; left: 10dp; right: 10dp; height: auto; }
+
+.explorer_item
+{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 84dp;
+    gap: 3dp;
+    border-radius: 3dp;
+    pointer-events: auto;
+}
+.explorer_item .picture_well { width: 72dp; height: 72dp; }
+.explorer_item .item_label
+{
+    display: block;
+    width: 84dp;
+    font-size: 10dp;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+}
+#explorer.outline .explorer_item { flex-direction: row; width: auto; height: 22dp; }
+#explorer.outline .explorer_item .item_label { width: auto; text-align: left; font-size: 11dp; }
