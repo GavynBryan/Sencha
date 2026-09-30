@@ -2,6 +2,7 @@
 
 #include "app/LevelWorkspace.h"
 #include "app/ProjectSession.h"
+#include "MaterialWorkspace.h"
 #include "ProjectWorkspace.h"
 
 #include <memory>
@@ -18,6 +19,14 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         .Create = [&engine, &window, &session] {
             return std::make_unique<LevelWorkspace>(engine, window, session.Project(), session.Module(),
                                                     session.Materials(), session.Documents());
+        },
+    });
+    kinds.push_back(WorkspaceKind{
+        .Id = "materials",
+        .DisplayName = "Materials",
+        .Create = [&engine, &session] {
+            return std::make_unique<MaterialWorkspace>(engine, session.Project(), session.Materials(),
+                                                       session.Documents());
         },
     });
     kinds.push_back(WorkspaceKind{

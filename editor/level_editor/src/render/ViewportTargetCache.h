@@ -19,7 +19,7 @@
 // shown in the UI through ImGui::Image.
 //
 // Kyusu-local, not editor-common: the bloom pair per viewport is this editor's
-// policy, and its one other consumer -- shudei's material preview -- owns a
+// policy, and its one other consumer -- the material preview -- owns a
 // single target directly rather than inventing a viewport identity for it.
 // ImGuiTargetPresenter stays common; the ImGui binding is the shared part.
 //

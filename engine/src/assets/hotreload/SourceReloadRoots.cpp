@@ -69,6 +69,8 @@ std::size_t SourceReloadRoots::Poll(std::chrono::steady_clock::time_point now)
             std::string_view source = changed;
             if (source.ends_with(kImportSettingsSuffix))
                 source.remove_suffix(kImportSettingsSuffix.size());
+            if (ReloadFilter && !ReloadFilter(std::filesystem::path(root->Path) / source))
+                continue;
             root->Reloader.ReloadSource(source);
             ++reloaded;
         }

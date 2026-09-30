@@ -34,7 +34,7 @@ class UiService;
 //
 // Editor-side on purpose. The engine exports the reusable half -- UiDrawPass
 // over a plain FrameContext -- and the target store and the ImGui binding are
-// editor concerns, the same split Shudei's material preview made.
+// editor concerns, the same split the material preview made.
 //
 // The target is cleared opaque with the host's backdrop. The UI pass writes
 // premultiplied alpha and ImGui composites straight alpha, so a transparent

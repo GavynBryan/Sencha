@@ -65,19 +65,15 @@ do the work and delete the entry.
 
 ## Picking up another program's edits before save
 
-- **What:** an open document does not notice its file changing on disk until
-  it is saved, when the conflict is refused and settled by keeping one side.
-- **Where:** the editors' document sets in `editor/common/src/data/` and
-  `editor/animation_editor/src/authoring/`.
-- **Trigger:** file watching in the consolidated editor.
-
-## The material editor's documents on the shared document layer
-
-- **What:** Shudei's `MaterialTabSet` keeps its own open, save and undo instead
-  of the shared document layer the level, data and animation editors use.
-- **Where:** `editor/material_editor/src/MaterialTabSet.*`.
-- **Trigger:** the materials workspace joining Kyusu, which gives it the one
-  undo journal and save-all.
+- **What:** a material document takes a file changed on disk while it is clean
+  and holds off a change while it has its own; level and data documents do not
+  notice until they are saved, when the conflict is refused and settled by
+  keeping one side. Their files are not among the watched sources.
+- **Where:** `DocumentSource::FileChangedOnDisk` and its only implementation,
+  `editor/material_editor/src/MaterialDocumentSet.*`; the watched extensions in
+  `editor/kyusu/src/app/ProjectSession.cpp`.
+- **Trigger:** the data workspace joining Kyusu (`.sdata` sources are watched
+  for the runtime already), or level files being watched.
 ## Sanitizers and benchmarks in CI
 
 - **What:** the `asan` and `tsan` presets and the gated benchmarks run only by
@@ -86,14 +82,6 @@ do the work and delete the entry.
   `scripts/bench_animation.sh` (`test/runtime/AnimBench.cpp`,
   `test/editor/AnimationPreviewBench.cpp`) and the other gated benches.
 - **Trigger:** a performance or memory-safety regression gate wanted in CI.
-
-## Resident push against file-watcher reload
-
-- **What:** the editors push a committed working version into the resident
-  asset; nothing stops a file-watcher reload replacing it with the saved file.
-- **Where:** `editor/common/src/data/DataResidentSync.*`.
-- **Trigger:** a host that runs source hot reload beside a document set, which
-  the consolidated editor will.
 
 ## Unsaved-document prompt polish
 

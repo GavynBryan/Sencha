@@ -49,6 +49,8 @@ ProjectSession::ProjectSession(Engine& engine, std::optional<std::string> projec
 
 ProjectSession::~ProjectSession()
 {
+    if (SourceReloadRoots* sources = Host.Content().SourceReload())
+        sources->SetReloadFilter({});
     if (!GameModule.IsValid())
         return;
     UnregisterGameDataAssets(*GameModule.Instance, Assets());
@@ -100,6 +102,11 @@ void ProjectSession::WatchSources()
     SourceReloadRoots* sources = Host.Content().SourceReload();
     if (sources == nullptr)
         return;
+    // A changed source an open document holds its own version of stays out of
+    // the stack: the document pushed its working version there.
+    sources->SetReloadFilter([this](const std::filesystem::path& file) {
+        return Journal.FileChangedOnDisk(file) != ExternalChange::Held;
+    });
     const std::vector<std::string> extensions{ ".smat", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" };
     for (const ContentRootPaths& root : Host.Content().Roots())
         sources->AddRoot(root.Authored.string(), extensions);

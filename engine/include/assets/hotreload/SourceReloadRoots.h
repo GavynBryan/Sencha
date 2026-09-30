@@ -2,6 +2,8 @@
 
 #include <chrono>
 #include <cstddef>
+#include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -57,6 +59,13 @@ public:
     // Re-walks every root so files created since are watched too.
     void Rescan();
 
+    // Asked before a changed file is re-cooked into the stack; false leaves
+    // the resident asset as it is, for a host holding its own version of it.
+    void SetReloadFilter(std::function<bool(const std::filesystem::path& file)> filter)
+    {
+        ReloadFilter = std::move(filter);
+    }
+
     [[nodiscard]] std::size_t RootCount() const { return Roots.size(); }
     [[nodiscard]] std::size_t WatchedFileCount() const;
 
@@ -72,4 +81,5 @@ private:
     std::unique_ptr<ContentImporterSet> Importers;
     std::vector<std::unique_ptr<Root>> Roots;
     std::chrono::steady_clock::time_point NextPoll{};
+    std::function<bool(const std::filesystem::path& file)> ReloadFilter;
 };

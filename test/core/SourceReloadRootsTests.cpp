@@ -169,3 +169,24 @@ TEST(SourceReloadRoots, AddingARootAgainWidensItsExtensions)
     EXPECT_EQ(roots.RootCount(), 1u) << "the same root is watched once";
     EXPECT_EQ(roots.WatchedFileCount(), 2u) << "the second call widened the first's extensions";
 }
+
+TEST(SourceReloadRoots, AFilterRefusingAFileLeavesTheResidentAssetAlone)
+{
+    Fixture f;
+    const std::uint64_t before = f.Version();
+    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks, f.Assets.Assets, f.Assets.Registry);
+    roots.AddRoot(f.Root.generic_string(), { ".rml", ".rcss" });
+    std::vector<std::filesystem::path> asked;
+    roots.SetReloadFilter([&](const std::filesystem::path& file) {
+        asked.push_back(file);
+        return false;
+    });
+
+    WriteText(f.Root / "ui" / "a.rcss", "#box { display: block; width: 40px; height: 40px; }");
+    BumpMtime(f.Root / "ui" / "a.rcss");
+    EXPECT_EQ(roots.Poll(Clock::now()), 0u);
+    f.Drain();
+    ASSERT_EQ(asked.size(), 1u);
+    EXPECT_EQ(asked[0].lexically_normal(), (f.Root / "ui" / "a.rcss").lexically_normal());
+    EXPECT_EQ(f.Version(), before) << "a refused change was re-cooked anyway";
+}

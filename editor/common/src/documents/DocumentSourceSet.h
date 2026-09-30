@@ -48,6 +48,8 @@ public:
     bool Settle(const DocumentRef& document, ConflictChoice choice, std::string& error);
     [[nodiscard]] const DocumentSaveReport& LastSave() const { return Report; }
     [[nodiscard]] std::vector<DocumentRef> ChangedDocuments() const;
+    // Offered to every source until one has the file open.
+    [[nodiscard]] ExternalChange FileChangedOnDisk(const std::filesystem::path& file);
 
 private:
     void Step(DocumentStep step);

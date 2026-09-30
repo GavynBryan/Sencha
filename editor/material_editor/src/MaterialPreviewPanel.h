@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MaterialTabSet.h"
+#include "MaterialDocumentSet.h"
 
 #include "ui/IEditorPanel.h"
 
@@ -18,7 +18,7 @@ class MaterialPreviewPanel final : public IEditorPanel
 {
 public:
     MaterialPreviewPanel(MaterialPreviewRenderFeature& preview,
-                         MaterialTabSet& tabs,
+                         MaterialDocumentSet& tabs,
                          std::function<void(std::size_t)> closeTab);
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Preview"; }
@@ -31,6 +31,8 @@ private:
     void DrawPreviewImage();
 
     MaterialPreviewRenderFeature& Preview;
-    MaterialTabSet& Tabs;
+    MaterialDocumentSet& Tabs;
     std::function<void(std::size_t)> CloseTab;
+    // The active tab the bar last showed.
+    std::size_t ShownActive = static_cast<std::size_t>(-1);
 };

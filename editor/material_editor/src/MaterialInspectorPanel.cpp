@@ -43,7 +43,7 @@ namespace
 }
 
 MaterialInspectorPanel::MaterialInspectorPanel(
-    MaterialTabSet& tabs, const AssetRegistry& registry,
+    MaterialDocumentSet& tabs, const AssetRegistry& registry,
     std::function<void(const std::string&)> openTextureSettings)
     : Tabs(tabs)
     , Registry(registry)

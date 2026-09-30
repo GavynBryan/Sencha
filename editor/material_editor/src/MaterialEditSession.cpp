@@ -45,6 +45,7 @@ bool MaterialEditSession::Open(std::string virtualPath, std::string filePath, st
 
     OpenVirtualPath = std::move(virtualPath);
     OpenFilePath = std::move(filePath);
+    Baseline.Record(OpenFilePath);
     SavedState = loaded;
     WorkingState = loaded;
     Dirty = false;
@@ -71,7 +72,23 @@ void MaterialEditSession::SetWorking(const MaterialDescription& description)
     ++StateVersion;
 }
 
+bool MaterialEditSession::IsExternallyModified() const
+{
+    return HasOpen() && Baseline.FileChanged(OpenFilePath);
+}
+
 bool MaterialEditSession::Save(std::string* error)
+{
+    if (IsExternallyModified())
+    {
+        if (error != nullptr)
+            *error = "the file changed on disk since it was read";
+        return false;
+    }
+    return SaveOverFile(error);
+}
+
+bool MaterialEditSession::SaveOverFile(std::string* error)
 {
     if (!HasOpen())
     {
@@ -81,9 +98,17 @@ bool MaterialEditSession::Save(std::string* error)
     }
     if (!SaveMaterialFile(OpenFilePath, WorkingState, error))
         return false;
+    Baseline.Record(OpenFilePath);
     SavedState = WorkingState;
     Dirty = false;
     return true;
+}
+
+bool MaterialEditSession::ReloadFromFile(std::string* error)
+{
+    std::string virtualPath = OpenVirtualPath;
+    std::string filePath = OpenFilePath;
+    return Open(std::move(virtualPath), std::move(filePath), error);
 }
 
 bool MaterialEditSession::SaveTo(const std::string& filePath, std::string* error) const
@@ -102,4 +127,5 @@ void MaterialEditSession::RenameTo(std::string virtualPath, std::string filePath
         return;
     OpenVirtualPath = std::move(virtualPath);
     OpenFilePath = std::move(filePath);
+    Baseline.Record(OpenFilePath);
 }

@@ -8,8 +8,8 @@
 
 // One property edit as a value swap of the whole description: cheap (a few
 // strings and floats), and undo/redo re-previews for free because the session
-// version bumps on every SetWorking. The command stack is cleared when a
-// different material is opened, so a command never outlives its target.
+// version bumps on every SetWorking. Each tab owns its stack, so a command
+// never outlives the session it edits.
 class EditMaterialCommand final : public ICommand
 {
 public:

@@ -34,9 +34,7 @@ foreach(_entry IN LISTS MATERIAL_EDITOR_SHADERS)
     list(APPEND MATERIAL_EDITOR_GENERATED_HEADERS "${_header}")
 endforeach()
 
-# The materials workspace as a library, so the application that hosts it links
-# it; the executable is only the entry point.
-list(REMOVE_ITEM MATERIAL_EDITOR_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+# The materials workspace, linked by the application that hosts it.
 add_library(material_editor STATIC
     ${MATERIAL_EDITOR_SOURCES}
     ${MATERIAL_EDITOR_HEADERS}
@@ -49,11 +47,3 @@ target_include_directories(material_editor
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
     PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
-
-add_executable(shudei src/main.cpp)
-target_link_libraries(shudei PRIVATE material_editor)
-sencha_warnings(shudei)
-
-set_target_properties(shudei PROPERTIES
-    INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
-install(TARGETS shudei RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")

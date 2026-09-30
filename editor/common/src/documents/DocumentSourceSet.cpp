@@ -98,6 +98,14 @@ std::vector<DocumentRef> DocumentSourceSet::ChangedDocuments() const
     return changed;
 }
 
+ExternalChange DocumentSourceSet::FileChangedOnDisk(const std::filesystem::path& file)
+{
+    for (DocumentSource* source : Sources)
+        if (const ExternalChange change = source->FileChangedOnDisk(file); change != ExternalChange::NotOpen)
+            return change;
+    return ExternalChange::NotOpen;
+}
+
 void DocumentSourceSet::Step(DocumentStep step)
 {
     // A copy: the observer may bring another workspace forward, and nothing it

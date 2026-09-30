@@ -16,7 +16,6 @@ set(LEVEL_SHELL_PATTERNS
     "/src/app/"
     "/src/ui/"
     "/src/render/"
-    "/src/input/SdlEventTranslation\\.cpp$"
     "/src/viewport/EditorViewportCameraSystem\\.cpp$"
     "/src/document/DocumentFileActions\\.cpp$"
     "/src/project/PieDriver\\.cpp$"

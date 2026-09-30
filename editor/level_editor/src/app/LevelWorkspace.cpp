@@ -6,6 +6,7 @@
 #include "input/KeymapFile.h"
 #include "tools/ToolRegistry.h"
 #include "input/ViewportToolDispatcher.h"
+#include "input/OriginViewportStamp.h"
 #include "input/SdlEventTranslation.h"
 #include "input/UiInputGuard.h"
 #include "commands/CompositeCommand.h"

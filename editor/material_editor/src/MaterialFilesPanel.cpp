@@ -36,7 +36,7 @@ namespace
 }
 
 MaterialFilesPanel::MaterialFilesPanel(MaterialLibrary& materials,
-                                           MaterialTabSet& tabs,
+                                           MaterialDocumentSet& tabs,
                                            Actions actions)
     : Materials(materials)
     , Tabs(tabs)

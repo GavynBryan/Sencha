@@ -5,6 +5,8 @@
 #include "render/RenderFeatureDetach.h"
 #include "ui/DocumentSaveReportView.h"
 #include "ui/DocumentShellActions.h"
+#include "input/KeymapFile.h"
+#include "input/SdlEventTranslation.h"
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorUiFeature.h"
 #include "workspaces/WorkspaceHost.h"
@@ -147,6 +149,7 @@ void KyusuApp::OnStart(GameStartupContext&)
     }
 
     InstallDocumentActions();
+    BuildShortcuts();
     RegisterWorkspaceCommands();
     // Before the startup script runs, so an argv +editor.open or +cook finds
     // the level it acts on. Without a project to edit, choose one.
@@ -159,20 +162,8 @@ void KyusuApp::InstallDocumentActions()
     if (Ui != nullptr)
     {
         InstallDocumentShellActions(*Ui, GetEngine(), documents, [] { return std::optional<DocumentRef>{}; });
-        // The active workspace's staged edit comes before the journal's newest
-        // step, as its own Ctrl+Z has it.
-        Ui->SetUndoActions(
-            [this, &documents] {
-                IWorkspace* active = Workspaces->Active();
-                if (active == nullptr || !active->UndoStagedEdit())
-                    documents.Undo();
-            },
-            [&documents] { documents.Redo(); },
-            [this, &documents] {
-                const IWorkspace* active = Workspaces->Active();
-                return documents.CanUndo() || (active != nullptr && active->HasStagedEdit());
-            },
-            [&documents] { return documents.CanRedo(); });
+        Ui->SetUndoActions([this] { Undo(); }, [&documents] { documents.Redo(); }, [this] { return CanUndo(); },
+                           [&documents] { return documents.CanRedo(); });
         Ui->AddShellOverlay([this] { DrawClosePrompt(); });
     }
 
@@ -200,6 +191,52 @@ void KyusuApp::InstallDocumentActions()
         }
         return true;
     });
+}
+
+void KyusuApp::Undo()
+{
+    IWorkspace* active = Workspaces->Active();
+    if (active == nullptr || !active->UndoStagedEdit())
+        Session->Documents().Undo();
+}
+
+bool KyusuApp::CanUndo() const
+{
+    const IWorkspace* active = Workspaces->Active();
+    return Session->Documents().CanUndo() || (active != nullptr && active->HasStagedEdit());
+}
+
+void KyusuApp::BuildShortcuts()
+{
+    DocumentSourceSet& documents = Session->Documents();
+    struct Row
+    {
+        std::string_view Action;
+        SDL_Keycode Key;
+        ModifierFlags Mods;
+        std::function<void()> Callback;
+    };
+    const Row rows[] = {
+        { "edit.undo",     SDLK_Z, { .Ctrl = true },                [this] { Undo(); } },
+        { "edit.redo",     SDLK_Z, { .Ctrl = true, .Shift = true }, [&documents] { documents.Redo(); } },
+        { "edit.redo",     SDLK_Y, { .Ctrl = true },                [&documents] { documents.Redo(); } },
+        { "file.save",     SDLK_S, { .Ctrl = true },                [this] {
+              IWorkspace* active = Workspaces->Active();
+              if (active != nullptr && active->View().File.Save)
+                  active->View().File.Save();
+          } },
+        { "file.save_all", SDLK_S, { .Ctrl = true, .Shift = true }, [&documents] { (void)documents.SaveAll(); } },
+    };
+    std::string error;
+    const auto overrides = LoadKeymapOverrides("keybinds.json", &error);
+    for (const Row& row : rows)
+    {
+        const auto it = overrides.find(std::string(row.Action));
+        if (it != overrides.end())
+            Shortcuts.Register(row.Action, it->second.Key, it->second.Mods, row.Callback);
+        else
+            Shortcuts.Register(row.Action, row.Key, row.Mods, row.Callback);
+    }
 }
 
 void KyusuApp::DrawClosePrompt()
@@ -314,6 +351,12 @@ void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
     Ui->ProcessSdlEvent(ctx.Event);
     if (IWorkspace* active = Workspaces->Active())
         active->HandlePlatformEvent(ctx);
+    // Keys the active workspace left alone, unless a text field has them.
+    if (ctx.Handled || Ui->GetInputCapture().Keyboard)
+        return;
+    if (const std::optional<InputEvent> event = TranslateSdlEvent(ctx.Event))
+        if (Shortcuts.OnInput(*event) == InputConsumed::Yes)
+            ctx.Handled = true;
 }
 
 void KyusuApp::OnShutdown(GameShutdownContext&)

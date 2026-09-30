@@ -26,7 +26,7 @@ namespace
 }
 
 MaterialPreviewPanel::MaterialPreviewPanel(MaterialPreviewRenderFeature& preview,
-                                           MaterialTabSet& tabs,
+                                           MaterialDocumentSet& tabs,
                                            std::function<void(std::size_t)> closeTab)
     : Preview(preview)
     , Tabs(tabs)
@@ -43,6 +43,11 @@ void MaterialPreviewPanel::DrawTabBar()
                                 | ImGuiTabBarFlags_AutoSelectNewTabs))
         return;
 
+    // The active tab also moves from outside the bar (a journal step, an
+    // open); the bar is told once, rather than overriding it from its own
+    // stale selection.
+    const std::size_t active = Tabs.ActiveIndex();
+    const bool moved = active != ShownActive;
     std::optional<std::size_t> closeRequest;
     for (std::size_t i = 0; i < Tabs.Tabs().size(); ++i)
     {
@@ -57,9 +62,11 @@ void MaterialPreviewPanel::DrawTabBar()
 
         bool open = true;
         ImGuiTabItemFlags flags = tab.Session.IsDirty() ? ImGuiTabItemFlags_UnsavedDocument : 0;
+        if (moved && i == active)
+            flags |= ImGuiTabItemFlags_SetSelected;
         if (ImGui::BeginTabItem(label.c_str(), &open, flags))
         {
-            if (Tabs.ActiveIndex() != i)
+            if (!moved && Tabs.ActiveIndex() != i)
                 Tabs.SetActive(i);
             ImGui::EndTabItem();
         }
@@ -69,6 +76,7 @@ void MaterialPreviewPanel::DrawTabBar()
             closeRequest = i;
     }
     ImGui::EndTabBar();
+    ShownActive = Tabs.ActiveIndex();
 
     if (closeRequest && CloseTab)
         CloseTab(*closeRequest);

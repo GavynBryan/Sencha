@@ -2,6 +2,8 @@
 
 #include <app/Game.h>
 
+#include "input/ShortcutRegistry.h"
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -32,6 +34,12 @@ private:
     // a workspace with changes asking before it closes.
     void InstallDocumentActions();
     void DrawClosePrompt();
+    // The keys every workspace shares, for one that does not bind its own:
+    // undo, redo, save and save all. Rebindable from keybinds.json.
+    void BuildShortcuts();
+    // The active workspace's staged edit, then the journal's newest step.
+    void Undo();
+    [[nodiscard]] bool CanUndo() const;
     // Whether this session starts in a level rather than choosing a project.
     [[nodiscard]] bool OpensLevel() const;
 
@@ -46,4 +54,5 @@ private:
     // or discarded.
     std::string HeldClose;
     std::string SettleError;
+    ShortcutRegistry Shortcuts;
 };

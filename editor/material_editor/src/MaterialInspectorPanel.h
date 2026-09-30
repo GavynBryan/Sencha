@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MaterialTabSet.h"
+#include "MaterialDocumentSet.h"
 
 #include "ui/IEditorPanel.h"
 
@@ -16,7 +16,7 @@ class AssetRegistry;
 class MaterialInspectorPanel final : public IEditorPanel
 {
 public:
-    MaterialInspectorPanel(MaterialTabSet& tabs, const AssetRegistry& registry,
+    MaterialInspectorPanel(MaterialDocumentSet& tabs, const AssetRegistry& registry,
                            std::function<void(const std::string& virtualPath)> openTextureSettings);
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Inspector"; }
@@ -33,7 +33,7 @@ private:
     void DrawTextureSlot(MaterialEditTab& tab, const char* id, const char* label,
                          AssetRef& slot, MaterialDescription& edited);
 
-    MaterialTabSet& Tabs;
+    MaterialDocumentSet& Tabs;
     const AssetRegistry& Registry;
     std::function<void(const std::string&)> OpenTextureSettings;
 

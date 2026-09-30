@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MaterialTabSet.h"
+#include "MaterialDocumentSet.h"
 
 #include "ui/IEditorPanel.h"
 
@@ -26,7 +26,7 @@ public:
     };
 
     MaterialFilesPanel(MaterialLibrary& materials,
-                         MaterialTabSet& tabs,
+                         MaterialDocumentSet& tabs,
                          Actions actions);
 
     [[nodiscard]] std::string_view GetTitle() const override { return "Materials"; }
@@ -41,7 +41,7 @@ private:
     void DrawRenamePopup();
 
     MaterialLibrary& Materials;
-    MaterialTabSet& Tabs;
+    MaterialDocumentSet& Tabs;
     Actions Act;
     char NameBuffer[128] = "new_material";
     char FilterBuffer[128] = "";

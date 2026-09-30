@@ -14,11 +14,11 @@ The editor tooling is a family of applications over one shared shell library:
 | `editor/common/` | `editor_common` (static lib) | The shared editor shell: ImGui UI feature + theme/skin, generic input, commands/selection/tools/interaction abstractions, offscreen viewport targets, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
 | `editor/level_editor/` | `level_authoring` + `level_editor` (static libs) | The level editor. Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `level_editor` library is the shell over it (composition root, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
 | `editor/kyusu/` | `kyusu` | The Kyusu executable: the entry point and `Game` adapter that hosts the level editor. |
-| `editor/material_editor/` | `material_editor` (static lib) + `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
+| `editor/material_editor/` | `material_editor` (static lib) | The Materials workspace: browse, edit and save `.smat` with a live MeshForwardPass preview. |
 | `editor/project_browser/` | `project_browser` (static lib) | The Project workspace: recent projects, create project, project settings. Opening a project starts Kyusu again on it and ends the choosing process. Kyusu opens on it when started without a project. |
 | `editor/ui_preview/` | `ui_preview_authoring` + `ui_preview` (static libs) + `shoji` | The authored-UI previewer ("Shoji - UI Previewer"): renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. Same split as Kyusu: the authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the executable is the shell. Built to fold into Kyusu: every panel takes a `UiPreviewSession&`, and consolidation is constructing one in Kyusu's composition root and adding these panels under a workspace tab. |
 
-Product names (Kyusu, Shudei) exist only on executables and
+Product names (Kyusu) exist only on executables and
 window titles; internal types stay mechanically named.
 
 Every application is a `Game` running inside the runtime `Engine`. It does not
@@ -150,13 +150,17 @@ Level editor (`editor/level_editor/src/`):
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
-Material editor (`editor/material_editor/src/`, flat): `MaterialEditorApp` +
-`MaterialEditorServices`, `MaterialEditSession` (open/edit/save/duplicate,
-headless-tested), `EditMaterialCommand`, `PreviewPrimitives` (procedural
-sphere/cube/plane), `MaterialPreviewRenderFeature` (MeshForwardPass into its own
-offscreen target), and the browser/inspector/preview panels. Live
-preview swaps the working description into the resident material via
-`MaterialAssetLoader::CommitReload`.
+Materials workspace (`editor/material_editor/src/`, flat): `MaterialWorkspace`,
+`MaterialDocumentSet` (the open materials as journal documents, one tab and
+one undo history each, headless-tested), `MaterialEditSession`
+(open/edit/save/duplicate, conflict detection by file baseline),
+`EditMaterialCommand`, `PreviewPrimitives` (procedural sphere/cube/plane),
+`MaterialPreviewRenderFeature` (MeshForwardPass into its own offscreen
+target), and the files/inspector/preview/textures panels. Live preview pushes
+the working description into the resident material via `AssetSystem::Reload`;
+a watched `.smat` that changes on disk is taken by a clean tab and kept out of
+the stack while a tab holds its own changes (`DocumentSource::FileChangedOnDisk`
+behind `SourceReloadRoots::SetReloadFilter`).
 
 Project workspace (`editor/project_browser/src/`, flat): `ProjectWorkspace`,
 `ProjectCatalog` (recent projects JSON in the user config dir,
@@ -236,7 +240,9 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
 - A keyboard shortcut: the binding table in `LevelWorkspace::BuildInput` (the level editor);
-  Shudei handles its few chords directly in `HandlePlatformEvent`. Tool
+  the keys every workspace shares (undo, redo, save, save all) are Kyusu's own
+  rows in `KyusuApp::BuildShortcuts`, reached by a workspace that binds none of
+  its own. Tool
   activation rows are generated from the registry instead, under `tool.<id>`.
   Any action, listed or generated, is rebindable from `keybinds.json`. A held
   key is owned by a `RadialMenuSession` rather than the shortcut registry,
