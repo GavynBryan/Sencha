@@ -3,6 +3,7 @@
 #include "properties/PropertyNode.h"
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -38,4 +39,13 @@ public:
     virtual PropertyEditResult CommitEdit(std::string_view key, std::string_view value) = 0;
     // Puts back what BeginEdit found.
     virtual void CancelEdit(std::string_view key) = 0;
+    // What an asset property may be set to, as the values an edit takes. Asked
+    // when a picker opens, never per frame: it may scan the project.
+    [[nodiscard]] virtual std::vector<std::string> Candidates(std::string_view /*key*/) const { return {}; }
+    // One of the property's verbs, as one step; `choice` is one of the verb's
+    // choices, or empty for a verb that has none.
+    virtual PropertyEditResult Act(std::string_view /*key*/, std::string_view /*verb*/, std::string_view /*choice*/)
+    {
+        return PropertyEditResult::Gone;
+    }
 };

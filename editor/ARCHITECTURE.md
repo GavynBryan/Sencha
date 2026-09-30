@@ -190,7 +190,7 @@ Level editor (`editor/level_editor/src/`):
 | `meshedit/` | Polygon mesh-editing verbs (`MeshEditService`). | `IMeshEditTarget` |
 | `viewport/` | Viewport layout, camera, picking (`ViewportLayout`, `EditorCamera`, `EditorViewportCameraSystem`, `Picking`). | -- |
 | `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes, the 14 embedded shaders). | `IRenderFeature` (engine) |
-| `ui/` | The level editor's remaining ImGui panels (views, inspector, hierarchy, material) and its authored surfaces (`LevelViewSurface`). | `IEditorPanel` |
+| `ui/` | The level editor's remaining ImGui panels (views, hierarchy, material) and its authored surfaces (`LevelViewSurface`). | `IEditorPanel` |
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
@@ -291,7 +291,11 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   selection facet: a title, the actions that apply now, and property sections
   -- the Level's `ElementVerbs` (every brush, face, edge and vertex verb, and
   the settings the parametric ones read) and `FaceUvSource`, composed by
-  `SelectionSummary`; the shell's selection card presents it. Cook, play and
+  `SelectionSummary`, with one object's components as its details
+  (`authoring/ComponentPropertySource`; a component adapter contributes its own
+  properties and verbs through `InspectorNodes`/`SetInspectorValue`/
+  `ActInspector`). The shell's selection card presents it, and turns into the
+  drawer that shows every property. Cook, play and
   stop are the `transport.*` actions the rail's transport shows.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.

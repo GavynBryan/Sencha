@@ -67,10 +67,13 @@
 }
 .setting.heading .setting_label { width: auto; font-size: 11dp; }
 .setting.locked { opacity: 0.5; }
+.setting_value { display: block; flex: 1; font-size: 11dp; }
 .setting.locked * { pointer-events: none; }
 
-/* A setting's slider and drop-down: geometry here, colours the theme's. */
-slidertrack
+/* A setting's slider and drop-down: geometry here, colours the theme's. The
+   slider's parts are scoped to the input, because a scrollbar is built from
+   parts of the same names. */
+input slidertrack
 {
     display: block;
     height: 4dp;
@@ -78,7 +81,7 @@ slidertrack
     border-radius: 2dp;
     pointer-events: auto;
 }
-sliderbar
+input sliderbar
 {
     display: block;
     width: 10dp;
@@ -87,8 +90,18 @@ sliderbar
     border-radius: 2dp;
     pointer-events: auto;
 }
-sliderprogress { display: block; height: 4dp; pointer-events: auto; }
-sliderarrowdec, sliderarrowinc { display: none; }
+input sliderprogress { display: block; height: 4dp; pointer-events: auto; }
+input sliderarrowdec, input sliderarrowinc { display: none; }
+
+/* A scrollbar that takes a sliver of what it scrolls. With no size of its own
+   it takes the whole width, and what it scrolls is laid out in none. */
+scrollbarvertical { width: 6dp; margin-left: 2dp; pointer-events: auto; }
+scrollbarvertical slidertrack { width: 6dp; }
+scrollbarvertical sliderbar { width: 6dp; min-height: 16dp; border-radius: 3dp; }
+scrollbarhorizontal { height: 6dp; pointer-events: auto; }
+scrollbarhorizontal sliderbar { height: 6dp; min-width: 16dp; border-radius: 3dp; }
+scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc,
+scrollbarhorizontal sliderarrowdec, scrollbarhorizontal sliderarrowinc { width: 0dp; height: 0dp; }
 
 selectvalue { display: block; padding: 2dp 6dp; pointer-events: auto; }
 selectarrow { display: block; width: 16dp; height: 100%; pointer-events: auto; }

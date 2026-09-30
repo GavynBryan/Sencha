@@ -45,7 +45,6 @@ list(APPEND LEVEL_AUTHORING_SOURCES
 # authored UI in the first place.
 list(APPEND LEVEL_AUTHORING_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/CookProfilesModal.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/InspectorSurface.cpp"
 )
 
 set(LEVEL_SHELL_SOURCES ${LEVEL_SOURCES})

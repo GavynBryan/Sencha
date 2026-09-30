@@ -10,18 +10,16 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 class CommandStack;
 class EditorComponentAdapterRegistry;
 class SelectionService;
 class WorldDocument;
+struct EditorComponentInspectorContext;
 struct IComponentSerializer;
 struct RuntimeField;
-
-// A component whose adapter authors its own presentation, rather than its
-// schema's generic fields.
-inline constexpr std::string_view kComponentAdapterHint = "component-adapter";
 
 //=============================================================================
 // ComponentPropertySource
@@ -33,8 +31,13 @@ inline constexpr std::string_view kComponentAdapterHint = "component-adapter";
 //
 // A component is a Group keyed by its serializer's JSON key; a field is keyed
 // "<component>/<field name>", and one slot of a list of assets
-// "<component>/<field name>#<slot>". Keys, not positions, so an edit still
-// lands where it was aimed after the list around it changed.
+// "<component>/<field name>#<slot>". A component whose adapter authors its
+// presentation shows the adapter's properties instead, keyed
+// "<component>:<adapter key>". Keys, not positions, so an edit still lands
+// where it was aimed after the list around it changed.
+//
+// For a member of a scene instance, a field that differs from the
+// placement's source carries a "reset" verb, and so does its component.
 //
 // Byte fields preview into the live component inside the command stack's
 // pending-edit scope and commit as one RawComponentEditCommand, so undo, save
@@ -61,11 +64,16 @@ public:
     PropertyEditResult PreviewEdit(std::string_view key, std::string_view value) override;
     PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
     void CancelEdit(std::string_view key) override;
+    // A component's "remove" and "reset", an overridden field's "reset",
+    // "add" on "components" with the component to add, or an adapter's verb.
+    PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
     // What an asset property may be set to: stable, sorted, narrowed to the
     // data subtype the field accepts. Scans the project, so ask when a picker
     // opens rather than every frame.
     [[nodiscard]] std::vector<AssetFieldCandidate> AssetChoices(std::string_view key) const;
+    // The same, as the paths an edit takes.
+    [[nodiscard]] std::vector<std::string> Candidates(std::string_view key) const override;
 
 private:
     struct Field
@@ -76,6 +84,14 @@ private:
         std::size_t Slot = 0;
     };
     [[nodiscard]] std::optional<Field> Resolve(std::string_view key) const;
+    [[nodiscard]] EditorComponentInspectorContext InspectorContext(EntityId entity) const;
+    // The component as the placement's source defines it, for a member of a
+    // scene instance: empty when the source has no such component. Built on a
+    // scratch entity, so kept until the selection moves to another entity.
+    [[nodiscard]] const std::vector<std::byte>& Baseline(EntityId entity, IComponentSerializer& serializer,
+                                                         ComponentId component) const;
+    [[nodiscard]] PropertyEditResult ActOnComponent(EntityId entity, std::string_view key, std::string_view verb,
+                                                    std::string_view choice);
     [[nodiscard]] PropertyEditResult CommitAsset(const Field& field, std::string_view path);
     void RestoreBefore();
 
@@ -93,4 +109,7 @@ private:
     EntityId EditingEntity{};
     ComponentId EditingComponent = InvalidComponentId;
     std::vector<std::byte> Before;
+
+    mutable EntityId BaselineEntity{};
+    mutable std::unordered_map<ComponentId, std::vector<std::byte>> Baselines;
 };

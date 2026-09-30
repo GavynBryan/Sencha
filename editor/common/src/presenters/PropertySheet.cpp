@@ -40,7 +40,8 @@ std::vector<UiRow> PropertySheet::Present(const IPropertySource& source, bool ev
     return rows;
 }
 
-std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> sections, bool everything)
+std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> sections, bool everything,
+                                          std::string_view only)
 {
     Rows.clear();
     std::vector<UiRow> rows;
@@ -48,7 +49,9 @@ std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> secti
     {
         if (sections[section].Source == nullptr)
             continue;
-        const std::vector<PropertyNode> nodes = sections[section].Source->Nodes();
+        std::vector<PropertyNode> nodes = sections[section].Source->Nodes();
+        if (!only.empty())
+            std::erase_if(nodes, [only](const PropertyNode& node) { return node.Key != only; });
         if (nodes.empty())
             continue;
         if (!sections[section].Heading.empty())
@@ -87,6 +90,16 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     }
     rows.push_back(std::move(row));
     Rows.push_back({ node.Key, node.Value, section });
+    for (const PropertyVerb& verb : descriptor.Verbs)
+    {
+        UiRow action{ verb.Label, "", "" };
+        action.Key = verb.Id;
+        action.Depth = depth;
+        action.Control = UiRowControl::Action;
+        action.Choices = verb.Choices;
+        rows.push_back(std::move(action));
+        Rows.push_back({ node.Key, {}, section, verb.Id, verb.Choices });
+    }
 
     for (const PropertyNode& child : node.Children)
         Append(child, depth + 1, section, everything, rows);
@@ -101,7 +114,7 @@ IPropertySource* PropertySheet::SourceOf(std::span<const PropertySection> sectio
 
 PropertyEditResult PropertySheet::Set(IPropertySource& source, std::size_t index, std::string_view value)
 {
-    if (index >= Rows.size() || Rows[index].Key.empty())
+    if (index >= Rows.size() || Rows[index].Key.empty() || !Rows[index].Verb.empty())
         return PropertyEditResult::Gone;
     const Presented& row = Rows[index];
     if (value == row.Value)
@@ -154,6 +167,32 @@ PropertyEditResult PropertySheet::Flip(std::span<const PropertySection> sections
 {
     IPropertySource* source = SourceOf(sections, index);
     return source != nullptr ? Flip(*source, index) : PropertyEditResult::Gone;
+}
+
+PropertyEditResult PropertySheet::Act(IPropertySource& source, std::size_t index, std::string_view choice)
+{
+    if (index >= Rows.size() || Rows[index].Verb.empty())
+        return PropertyEditResult::Gone;
+    return source.Act(Rows[index].Key, Rows[index].Verb, choice);
+}
+
+PropertyEditResult PropertySheet::Act(std::span<const PropertySection> sections, std::size_t index,
+                                      std::string_view choice)
+{
+    IPropertySource* source = SourceOf(sections, index);
+    return source != nullptr ? Act(*source, index, choice) : PropertyEditResult::Gone;
+}
+
+std::vector<std::string> PropertySheet::ChoicesOf(std::size_t index) const
+{
+    return index < Rows.size() ? Rows[index].Choices : std::vector<std::string>{};
+}
+
+std::vector<std::string> PropertySheet::CandidatesOf(std::span<const PropertySection> sections,
+                                                    std::size_t index) const
+{
+    const IPropertySource* source = SourceOf(sections, index);
+    return source != nullptr ? source->Candidates(Rows[index].Key) : std::vector<std::string>{};
 }
 
 void PropertySheet::Hold(std::size_t index)

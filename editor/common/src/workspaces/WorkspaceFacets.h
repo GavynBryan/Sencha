@@ -131,5 +131,8 @@ struct WorkspaceSelectionFacet
     std::string Title = {};
     std::vector<std::string> Actions = {};
     std::vector<PropertySection> Sections = {};
+    // Everything else about it, for when it is looked at closely: an object's
+    // components, each a top-level group.
+    std::vector<PropertySection> Details = {};
     bool Staged = false;
 };

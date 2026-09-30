@@ -72,9 +72,3 @@ struct UiPreviewModel
     [[nodiscard]] bool DeclaresRows(std::string_view name) const;
     [[nodiscard]] bool DeclaresAction(std::string_view name) const;
 };
-
-// The document-facing names of a row's control, as a document compares them
-// (`row.control == 'range'`). Shared with the sidecar so the two spellings
-// cannot part.
-[[nodiscard]] const char* UiRowControlName(UiRowControl control);
-[[nodiscard]] std::optional<UiRowControl> ParseUiRowControl(std::string_view name);

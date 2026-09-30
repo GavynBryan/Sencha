@@ -1,7 +1,5 @@
 #include "WorldDockEditorAdapter.h"
 
-#include "ui/chrome/ChromeControls.h"
-
 #include "EditorTheme.h"
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
@@ -9,15 +7,16 @@
 #include "document/WorldDockAuthoring.h"
 #include "document/WorldDocument.h"
 #include "document/commands/ValueCommand.h"
+#include "properties/SettingProperties.h"
 #include "selection/SelectionService.h"
 
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>
 
-#include <imgui.h>
-
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <format>
 #include <string>
 #include <string_view>
 
@@ -251,197 +250,229 @@ public:
 
     bool AuthorsInspectorRows() const override { return true; }
 
-    bool DrawInspector(EditorComponentInspectorContext& context) const override
+    std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
+    {
+        const Registry& registry = std::as_const(context.Scene.GetRegistry());
+        const WorldDock* dock = registry.Components.TryGet<WorldDock>(context.Entity);
+        if (dock == nullptr || registry.Components.TryGet<LocalTransform>(context.Entity) == nullptr)
+            return {};
+        const WorldPartitionManifest& manifest = context.World.Manifest();
+
+        PropertyNode group;
+        group.Key = "dock";
+        group.Descriptor.Kind = PropertyKind::Group;
+        group.Descriptor.Label = "Dock";
+        group.Descriptor.Verbs = { { .Id = "swap", .Label = "Swap Sides" },
+                                   { .Id = "suggest", .Label = "Suggest Zones From Bounds" } };
+
+        PropertyNode id = Note("id", "Id", std::format("{:016x}", dock->Id.Value));
+        id.Descriptor.Verbs.push_back({ .Id = "generate", .Label = "Generate" });
+        group.Children.push_back(std::move(id));
+        group.Children.push_back(ZoneChoice("zone_a", "Zone A", manifest, dock->ZoneA));
+        group.Children.push_back(ZoneChoice("zone_b", "Zone B", manifest, dock->ZoneB));
+        group.Children.push_back(ChoiceProperty("directions", "Directions", kDirections, DirectionIndex(dock->Directions)));
+        const std::array<double, 2> size{ dock->HalfExtents.X * 2.0, dock->HalfExtents.Y * 2.0 };
+        group.Children.push_back(VectorProperty("size", "Width, Height", size));
+
+        // Bounds that overlap leave the suggestion ambiguous: the person picks.
+        if (SuggestionEntity == context.Entity)
+        {
+            if (!AmbiguousA.empty())
+                group.Children.push_back(CandidateChoice("candidate_a", "Side A could be", manifest, AmbiguousA));
+            if (!AmbiguousB.empty())
+                group.Children.push_back(CandidateChoice("candidate_b", "Side B could be", manifest, AmbiguousB));
+            if (!SuggestionStatus.empty())
+                group.Children.push_back(Note("suggestion", "Suggestion", SuggestionStatus));
+        }
+
+        bool reported = false;
+        for (const ContentRiskRecord& record : context.World.ValidationRecords())
+        {
+            if (record.Kind != ContentRiskSourceKind::Dock || record.SourceId != dock->Id.Value)
+                continue;
+            group.Children.push_back(Note("risk" + std::to_string(group.Children.size()),
+                                          record.Severity == ContentRiskSeverity::Error ? "Error" : "Warning",
+                                          record.Message));
+            reported = true;
+        }
+        if (!reported)
+            group.Children.push_back(Note("valid", "Checked", "Assignments and geometry are valid"));
+        return { std::move(group) };
+    }
+
+    PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
+                                         std::string_view value) const override
+    {
+        const WorldDock* dock = std::as_const(context.Scene.GetRegistry()).Components.TryGet<WorldDock>(context.Entity);
+        if (dock == nullptr)
+            return PropertyEditResult::Gone;
+        const WorldPartitionManifest& manifest = context.World.Manifest();
+        WorldDock after = *dock;
+        if (key == "zone_a" || key == "zone_b" || key == "candidate_a" || key == "candidate_b")
+        {
+            const std::optional<ZoneId> zone = ZoneNamed(manifest, value);
+            if (!zone.has_value())
+                return PropertyEditResult::Refused;
+            (key.ends_with("_a") ? after.ZoneA : after.ZoneB) = *zone;
+            if (key.starts_with("candidate"))
+                (key.ends_with("_a") ? AmbiguousA : AmbiguousB).clear();
+        }
+        else if (key == "directions")
+        {
+            const std::optional<std::size_t> choice = ParseChoice(value, kDirections);
+            if (!choice.has_value())
+                return PropertyEditResult::Refused;
+            after.Directions = *choice == 0 ? DockDirectionBoth : *choice == 1 ? DockDirectionAToB : DockDirectionBToA;
+        }
+        else if (key == "size")
+        {
+            const std::optional<std::vector<double>> size = ParseVector(value, 2);
+            if (!size.has_value())
+                return PropertyEditResult::Refused;
+            after.HalfExtents = { std::max(0.025f, static_cast<float>((*size)[0]) * 0.5f),
+                                  std::max(0.025f, static_cast<float>((*size)[1]) * 0.5f) };
+        }
+        else
+        {
+            return PropertyEditResult::Gone;
+        }
+        ApplyDock(context, *dock, after);
+        return PropertyEditResult::Applied;
+    }
+
+    PropertyEditResult ActInspector(EditorComponentInspectorContext& context, std::string_view key,
+                                    std::string_view verb, std::string_view) const override
     {
         Registry& registry = context.Scene.GetRegistry();
-        WorldDock* dock = registry.Components.TryGet<WorldDock>(context.Entity);
-        LocalTransform* local = registry.Components.TryGet<LocalTransform>(context.Entity);
+        const WorldDock* dock = std::as_const(registry).Components.TryGet<WorldDock>(context.Entity);
+        const LocalTransform* local = std::as_const(registry).Components.TryGet<LocalTransform>(context.Entity);
         if (dock == nullptr || local == nullptr)
-            return false;
-
-        const auto applyDock = [&](WorldDock before, WorldDock after)
-        {
-            context.Commands.Execute(std::make_unique<ValueCommand<WorldDock>>(
-                before, after,
-                [&scene = context.Scene, &world = context.World,
-                 entity = context.Entity](const WorldDock& value)
-                {
-                    scene.SetComponent(entity, value);
-                    world.Revalidate();
-                }, context.Document));
-        };
-
-        ImGui::Text("Id  %016llx", static_cast<unsigned long long>(dock->Id.Value));
-        ImGui::SameLine();
-        if (EditorChrome::Button("Generate##dock_id", "Generate##dock_id", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
+            return PropertyEditResult::Gone;
+        if (key == "id" && verb == "generate")
         {
             WorldDock after = *dock;
             after.Id = context.World.MintDockId();
-            applyDock(*dock, after);
+            ApplyDock(context, *dock, after);
+            return PropertyEditResult::Applied;
         }
-
-        const auto zoneCombo = [&](const char* label, ZoneId current, auto set)
+        if (key == "dock" && verb == "swap")
         {
-            const std::string currentName = ZoneName(context.World.Manifest(), current);
-            if (EditorChrome::BeginCombo(label, currentName.c_str()))
-            {
-                for (const ZoneHeader& zone : context.World.Manifest().Zones)
-                    if (ImGui::Selectable(zone.Name.c_str(), zone.Id == current))
-                        set(zone.Id);
-                EditorChrome::EndCombo();
-            }
-        };
-        zoneCombo("Zone A", dock->ZoneA, [&](ZoneId id)
-        { WorldDock after = *dock; after.ZoneA = id; applyDock(*dock, after); });
-        zoneCombo("Zone B", dock->ZoneB, [&](ZoneId id)
-        { WorldDock after = *dock; after.ZoneB = id; applyDock(*dock, after); });
-
-        int direction = dock->Directions == DockDirectionBoth ? 0
-            : dock->Directions == DockDirectionAToB ? 1 : 2;
-        const char* directionNames[] = { "Both", "A to B", "B to A" };
-        if (ImGui::Combo("Directions", &direction, directionNames, 3))
-        {
-            WorldDock after = *dock;
-            after.Directions = direction == 0 ? DockDirectionBoth
-                : direction == 1 ? DockDirectionAToB : DockDirectionBToA;
-            applyDock(*dock, after);
-        }
-        float dimensions[2]{ dock->HalfExtents.X * 2.0f,
-                             dock->HalfExtents.Y * 2.0f };
-        if (ImGui::DragFloat2("Width / Height", dimensions, 0.05f, 0.01f))
-        {
-            WorldDock after = *dock;
-            after.HalfExtents = { std::max(0.025f, dimensions[0] * 0.5f),
-                                  std::max(0.025f, dimensions[1] * 0.5f) };
-            applyDock(*dock, after);
-        }
-        if (EditorChrome::Button("Swap Sides", "Swap Sides", {}, EditorChrome::ButtonTone::Normal))
-        {
-            DockEntityState before{ *dock, local->Value };
+            const DockEntityState before{ *dock, local->Value };
             DockEntityState after = before;
             SwapWorldDockSides(after.Dock, after.Transform);
             context.Commands.Execute(std::make_unique<ValueCommand<DockEntityState>>(
                 before, after,
-                [&scene = context.Scene, &world = context.World,
-                 entity = context.Entity](const DockEntityState& value)
+                [&scene = context.Scene, &world = context.World, entity = context.Entity](const DockEntityState& value)
                 {
                     scene.SetComponent(entity, value.Dock);
                     scene.SetTransform(entity, value.Transform);
                     world.Revalidate();
-                }, context.Document));
+                },
+                context.Document));
+            return PropertyEditResult::Applied;
         }
-        if (EditorChrome::Button("Suggest Zones From AABBs", "Suggest Zones From AABBs", {}, EditorChrome::ButtonTone::Normal))
+        if (key == "dock" && verb == "suggest")
         {
-            const Vec3d normal = -local->Value.Forward();
-            WorldDock after = *dock;
-            const std::vector<ZoneId> sideA = WorldDockZoneCandidates(
-                context.World.Manifest(), local->Value.Position - normal);
-            if (sideA.size() == 1)
-                after.ZoneA = sideA.front();
-            const std::vector<ZoneId> sideB = WorldDockZoneCandidates(
-                context.World.Manifest(), local->Value.Position + normal,
-                after.ZoneA);
-            if (sideB.size() == 1)
-                after.ZoneB = sideB.front();
-            if (after.ZoneA != dock->ZoneA || after.ZoneB != dock->ZoneB)
-                applyDock(*dock, after);
-
-            SuggestionEntity = context.Entity;
-            AmbiguousA = sideA.size() > 1 ? sideA : std::vector<ZoneId>{};
-            AmbiguousB = sideB.size() > 1 ? sideB : std::vector<ZoneId>{};
-            CandidateA = {};
-            CandidateB = {};
-            SuggestionStatus.clear();
-            if (sideA.empty())
-                SuggestionStatus += "No Side A candidate. ";
-            if (sideB.empty())
-                SuggestionStatus += "No Side B candidate.";
-            if (!AmbiguousA.empty() || !AmbiguousB.empty())
-                ImGui::OpenPopup("Resolve ambiguous Dock sides");
+            Suggest(context, *dock, local->Value);
+            return PropertyEditResult::Applied;
         }
-        if (!SuggestionStatus.empty() && SuggestionEntity == context.Entity)
-            ImGui::TextDisabled("%s", SuggestionStatus.c_str());
-
-        if (ImGui::BeginPopupModal("Resolve ambiguous Dock sides", nullptr,
-                                   ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            ImGui::TextWrapped("Overlapping Zone AABBs produced multiple candidates. "
-                               "Choose explicitly; the Dock references remain authoritative.");
-            const auto candidateCombo = [&](const char* label,
-                                            const std::vector<ZoneId>& candidates,
-                                            ZoneId& choice)
-            {
-                if (candidates.empty())
-                    return;
-                const std::string preview = choice.IsValid()
-                    ? ZoneName(context.World.Manifest(), choice) : "Select a Zone";
-                if (EditorChrome::BeginCombo(label, preview.c_str()))
-                {
-                    for (ZoneId candidate : candidates)
-                    {
-                        const std::string name = ZoneName(context.World.Manifest(), candidate);
-                        if (ImGui::Selectable(name.c_str(), choice == candidate))
-                            choice = candidate;
-                    }
-                    EditorChrome::EndCombo();
-                }
-            };
-            candidateCombo("Side A", AmbiguousA, CandidateA);
-            candidateCombo("Side B", AmbiguousB, CandidateB);
-            const bool complete = (AmbiguousA.empty() || CandidateA.IsValid())
-                && (AmbiguousB.empty() || CandidateB.IsValid());
-            if (!complete)
-                ImGui::BeginDisabled();
-            if (EditorChrome::Button("Apply Explicit Candidates", "Apply Explicit Candidates", {}, EditorChrome::ButtonTone::Active))
-            {
-                if (WorldDock* current = registry.Components.TryGet<WorldDock>(context.Entity))
-                {
-                    WorldDock after = *current;
-                    if (CandidateA.IsValid())
-                        after.ZoneA = CandidateA;
-                    if (CandidateB.IsValid())
-                        after.ZoneB = CandidateB;
-                    applyDock(*current, after);
-                }
-                AmbiguousA.clear();
-                AmbiguousB.clear();
-                ImGui::CloseCurrentPopup();
-            }
-            if (!complete)
-                ImGui::EndDisabled();
-            ImGui::SameLine();
-            if (EditorChrome::Button("Cancel", "Cancel", {}, EditorChrome::ButtonTone::Normal))
-            {
-                AmbiguousA.clear();
-                AmbiguousB.clear();
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndPopup();
-        }
-
-        bool decorated = false;
-        for (const ContentRiskRecord& record : context.World.ValidationRecords())
-        {
-            if (record.Kind != ContentRiskSourceKind::Dock
-                || record.SourceId != dock->Id.Value)
-                continue;
-            const ImVec4 color = record.Severity == ContentRiskSeverity::Error
-                ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f)
-                : ImVec4(1.0f, 0.7f, 0.25f, 1.0f);
-            ImGui::TextColored(color, "%s", record.Message.c_str());
-            decorated = true;
-        }
-        if (!decorated)
-            ImGui::TextDisabled("Dock assignments and geometry are valid");
-        return true;
+        return PropertyEditResult::Gone;
     }
 
 private:
+    static constexpr std::array<std::string_view, 3> kDirections = { "Both", "A to B", "B to A" };
+
+    static std::size_t DirectionIndex(std::uint8_t directions)
+    {
+        return directions == DockDirectionBoth ? 0 : directions == DockDirectionAToB ? 1 : 2;
+    }
+
+    static PropertyNode Note(std::string key, std::string label, std::string text)
+    {
+        PropertyNode node;
+        node.Key = std::move(key);
+        node.Descriptor.Kind = PropertyKind::Text;
+        node.Descriptor.Label = std::move(label);
+        node.Descriptor.ReadOnly = true;
+        node.Value = std::move(text);
+        return node;
+    }
+
+    static PropertyNode ZoneChoice(std::string key, std::string label, const WorldPartitionManifest& manifest, ZoneId current)
+    {
+        PropertyNode node;
+        node.Key = std::move(key);
+        node.Descriptor.Kind = PropertyKind::Choice;
+        node.Descriptor.Label = std::move(label);
+        for (const ZoneHeader& zone : manifest.Zones)
+            node.Descriptor.Choices.push_back(zone.Name);
+        node.Value = ZoneName(manifest, current);
+        if (std::ranges::find(node.Descriptor.Choices, node.Value) == node.Descriptor.Choices.end())
+            node.Descriptor.Choices.push_back(node.Value);
+        return node;
+    }
+
+    static PropertyNode CandidateChoice(std::string key, std::string label, const WorldPartitionManifest& manifest,
+                                        const std::vector<ZoneId>& candidates)
+    {
+        PropertyNode node;
+        node.Key = std::move(key);
+        node.Descriptor.Kind = PropertyKind::Choice;
+        node.Descriptor.Label = std::move(label);
+        node.Descriptor.Choices.push_back("Choose a zone");
+        for (const ZoneId candidate : candidates)
+            node.Descriptor.Choices.push_back(ZoneName(manifest, candidate));
+        node.Value = node.Descriptor.Choices.front();
+        return node;
+    }
+
+    static std::optional<ZoneId> ZoneNamed(const WorldPartitionManifest& manifest, std::string_view name)
+    {
+        for (const ZoneHeader& zone : manifest.Zones)
+            if (zone.Name == name)
+                return zone.Id;
+        return std::nullopt;
+    }
+
+    static void ApplyDock(EditorComponentInspectorContext& context, const WorldDock& before, const WorldDock& after)
+    {
+        context.Commands.Execute(std::make_unique<ValueCommand<WorldDock>>(
+            before, after,
+            [&scene = context.Scene, &world = context.World, entity = context.Entity](const WorldDock& value)
+            {
+                scene.SetComponent(entity, value);
+                world.Revalidate();
+            },
+            context.Document));
+    }
+
+    void Suggest(EditorComponentInspectorContext& context, const WorldDock& dock, const Transform3f& transform) const
+    {
+        const Vec3d normal = -transform.Forward();
+        const WorldPartitionManifest& manifest = context.World.Manifest();
+        WorldDock after = dock;
+        const std::vector<ZoneId> sideA = WorldDockZoneCandidates(manifest, transform.Position - normal);
+        if (sideA.size() == 1)
+            after.ZoneA = sideA.front();
+        const std::vector<ZoneId> sideB = WorldDockZoneCandidates(manifest, transform.Position + normal, after.ZoneA);
+        if (sideB.size() == 1)
+            after.ZoneB = sideB.front();
+        if (after.ZoneA != dock.ZoneA || after.ZoneB != dock.ZoneB)
+            ApplyDock(context, dock, after);
+
+        SuggestionEntity = context.Entity;
+        AmbiguousA = sideA.size() > 1 ? sideA : std::vector<ZoneId>{};
+        AmbiguousB = sideB.size() > 1 ? sideB : std::vector<ZoneId>{};
+        SuggestionStatus.clear();
+        if (sideA.empty())
+            SuggestionStatus += "No Side A candidate. ";
+        if (sideB.empty())
+            SuggestionStatus += "No Side B candidate.";
+    }
+
     mutable EntityId SuggestionEntity;
     mutable std::vector<ZoneId> AmbiguousA;
     mutable std::vector<ZoneId> AmbiguousB;
-    mutable ZoneId CandidateA;
-    mutable ZoneId CandidateB;
     mutable std::string SuggestionStatus;
 };
 }

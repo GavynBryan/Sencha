@@ -87,12 +87,11 @@ body
     tab-index: auto;
 }
 
-/* Not a scroll container: a flex item that scrolls lays its children out at
-   no width. Every setting a profile has fits. */
 #form
 {
     display: block;
     width: 404dp;
+    overflow-y: auto;
 }
 
 .setting_label { width: 130dp; }

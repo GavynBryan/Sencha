@@ -58,21 +58,6 @@ void ToRmlVariant(const UiValue& value, Rml::Variant& out)
     }
 }
 
-const char* ControlName(UiRowControl control)
-{
-    switch (control)
-    {
-    case UiRowControl::Range:   return "range";
-    case UiRowControl::Choice:  return "choice";
-    case UiRowControl::Toggle:  return "toggle";
-    case UiRowControl::Asset:   return "asset";
-    case UiRowControl::Color:   return "color";
-    case UiRowControl::Section: return "section";
-    case UiRowControl::Text:
-    default:                   return "text";
-    }
-}
-
 UiValue FromRmlVariant(const Rml::Variant& value)
 {
     switch (value.GetType())
@@ -578,7 +563,7 @@ void UiRuntime::DeclareModelTypes(Rml::DataModelConstructor& constructor, Surfac
     // would author.
     (void)constructor.RegisterScalar<UiRowControl>(
         [](const UiRowControl& control, Rml::Variant& out) {
-            out = Rml::String(ControlName(control));
+            out = Rml::String(UiRowControlName(control));
         });
     (void)constructor.RegisterArray<std::vector<std::string>>();
 

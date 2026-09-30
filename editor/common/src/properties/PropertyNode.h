@@ -22,6 +22,16 @@ enum class PropertyKind : std::uint8_t
     Unsupported,  // shown for completeness, never edited
 };
 
+// Something that can be done to a property, rather than a value it can hold:
+// remove a list entry, add one, reset an override. A verb with choices needs
+// one chosen first -- which kind of modifier to add.
+struct PropertyVerb
+{
+    std::string Id;
+    std::string Label;
+    std::vector<std::string> Choices = {};
+};
+
 struct PropertyDescriptor
 {
     PropertyKind Kind = PropertyKind::Text;
@@ -39,6 +49,7 @@ struct PropertyDescriptor
     // Names a purpose-built editor that presents this property instead of the
     // generic one; empty for the generic one.
     std::string PresentationHint = {};
+    std::vector<PropertyVerb> Verbs = {};
 };
 
 // One property of whatever is being edited: a component field, a data field, a

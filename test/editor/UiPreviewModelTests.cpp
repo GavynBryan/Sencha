@@ -154,7 +154,7 @@ TEST(UiPreviewModel, TheOptionsSidecarDeclaresWhatTheOptionsPageDeclares)
 
 TEST(UiPreviewModel, EveryShippedDocumentOpensAgainstItsSidecarWithNothingMissing)
 {
-    // Four documents, four sidecars, zero misses: the previewer shows each one
+    // Every shipped document with a sidecar, zero misses: the previewer shows each one
     // the way its host would, and the sidecar is a complete declaration.
     ShippedContent content;
     ASSERT_TRUE(content.Service().IsReady());
@@ -165,7 +165,6 @@ TEST(UiPreviewModel, EveryShippedDocumentOpensAgainstItsSidecarWithNothingMissin
         { "/engine/assets/ui/options.rml", "asset://ui/options.rml" },
     };
     const Shipped editorShipped[] = {
-        { "/inspector.rml", "asset://inspector.rml" },
         { "/cook_profiles.rml", "asset://cook_profiles.rml" },
     };
 

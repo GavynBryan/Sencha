@@ -4,6 +4,7 @@
 #include "authoring/EditorComponentAdapter.h"
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
+#include "document/EntityNameComponent.h"
 #include "document/EditorDocument.h"
 #include "document/WorldDocument.h"
 #include "properties/PropertyEditSession.h"
@@ -13,7 +14,10 @@
 #include <core/logging/LoggingProvider.h>
 #include <world/transform/TransformComponents.h>
 
+#include <algorithm>
+#include <memory>
 #include <string>
+#include <vector>
 
 // The selected entity's components as properties, and the one way they change.
 // What matters is the transaction: a live edit writes the component at once but
@@ -135,4 +139,107 @@ TEST(ComponentPropertySource, AValueTheFieldCannotHoldIsRefusedAndChangesNothing
     EXPECT_EQ(session.Set(fixture.Source, fixture.PositionKey(), "1, 2, 3"), PropertyEditResult::Unchanged);
     EXPECT_FALSE(fixture.Commands.CanUndo()) << "setting what is already there made a step";
     EXPECT_EQ(session.Set(fixture.Source, "missing/field", "1"), PropertyEditResult::Gone);
+}
+
+// What was the ImGui inspector's is the source's now: components added and
+// removed as steps, an adapter's own properties routed to it, asset fields
+// chosen from what the project holds.
+namespace
+{
+// Speaks for the name component: one property of its own and one verb, so
+// routing to an adapter is visible without a real one's registries.
+class NameAdapter final : public IEditorComponentAdapter
+{
+public:
+    [[nodiscard]] ComponentTypeId Type() const override { return ResolveComponentTypeId<EntityNameComponent>(); }
+    [[nodiscard]] bool AuthorsInspectorRows() const override { return true; }
+    std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext&) const override
+    {
+        PropertyNode shout{ .Key = "shout", .Descriptor = { .Kind = PropertyKind::Text, .Label = "Shout" } };
+        shout.Descriptor.Verbs.push_back({ .Id = "clear", .Label = "Clear" });
+        return { std::move(shout) };
+    }
+    PropertyEditResult SetInspectorValue(EditorComponentInspectorContext&, std::string_view key,
+                                         std::string_view value) const override
+    {
+        Log.push_back("set " + std::string(key) + "=" + std::string(value));
+        return PropertyEditResult::Applied;
+    }
+    PropertyEditResult ActInspector(EditorComponentInspectorContext&, std::string_view key, std::string_view verb,
+                                    std::string_view) const override
+    {
+        Log.push_back(std::string(verb) + " " + std::string(key));
+        return PropertyEditResult::Applied;
+    }
+    mutable std::vector<std::string> Log;
+};
+
+const PropertyNode* FindNode(const std::vector<PropertyNode>& nodes, std::string_view key)
+{
+    for (const PropertyNode& node : nodes)
+    {
+        if (node.Key == key)
+            return &node;
+        if (const PropertyNode* child = FindNode(node.Children, key))
+            return child;
+    }
+    return nullptr;
+}
+} // namespace
+
+TEST(ComponentPropertySource, RemovingAndAddingAComponentAreStepsLikeAnyOther)
+{
+    Fixture f;
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    const PropertyNode* name = FindNode(nodes, "name");
+    ASSERT_NE(name, nullptr) << "the scene stamps a name on what it creates";
+    ASSERT_TRUE(std::ranges::any_of(name->Descriptor.Verbs, [](const PropertyVerb& v) { return v.Id == "remove"; }));
+
+    EXPECT_EQ(f.Source.Act("name", "remove", {}), PropertyEditResult::Applied);
+    EXPECT_EQ(FindNode(f.Source.Nodes(), "name"), nullptr);
+
+    const std::vector<PropertyNode> afterRemoval = f.Source.Nodes();
+    const PropertyNode* components = FindNode(afterRemoval, "components");
+    ASSERT_NE(components, nullptr);
+    ASSERT_FALSE(components->Descriptor.Verbs.empty());
+    const std::vector<std::string>& addable = components->Descriptor.Verbs.front().Choices;
+    ASSERT_NE(std::ranges::find(addable, name->Descriptor.Label), addable.end()) << "what was removed can come back";
+    EXPECT_EQ(f.Source.Act("components", "add", name->Descriptor.Label), PropertyEditResult::Applied);
+    EXPECT_NE(FindNode(f.Source.Nodes(), "name"), nullptr);
+
+    f.Commands.Undo();
+    f.Commands.Undo();
+    EXPECT_NE(FindNode(f.Source.Nodes(), "name"), nullptr) << "undoing both puts the original back";
+}
+
+TEST(ComponentPropertySource, AnAdaptersPropertiesAndVerbsReachTheAdapter)
+{
+    Fixture f;
+    auto adapter = std::make_unique<NameAdapter>();
+    NameAdapter* spoken = adapter.get();
+    ASSERT_TRUE(f.Adapters.Register(std::move(adapter)));
+
+    EXPECT_NE(FindNode(f.Source.Nodes(), "name:shout"), nullptr) << "the adapter's property, keyed under its component";
+    ASSERT_TRUE(f.Source.BeginEdit("name:shout"));
+    EXPECT_EQ(f.Source.CommitEdit("name:shout", "hey"), PropertyEditResult::Applied);
+    EXPECT_EQ(f.Source.Act("name:shout", "clear", {}), PropertyEditResult::Applied);
+    EXPECT_EQ(spoken->Log, (std::vector<std::string>{ "set shout=hey", "clear shout" }));
+}
+
+TEST(ComponentPropertySource, AnEntitysNameIsEditedAndOneTooLongIsRefused)
+{
+    Fixture f;
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    const PropertyNode* name = FindNode(nodes, "name");
+    ASSERT_NE(name, nullptr);
+    ASSERT_FALSE(name->Children.empty());
+    const std::string key = name->Children.front().Key;
+
+    ASSERT_TRUE(f.Source.BeginEdit(key));
+    EXPECT_EQ(f.Source.CommitEdit(key, "Crate"), PropertyEditResult::Applied);
+    EXPECT_EQ(FindNode(f.Source.Nodes(), key)->Value, "Crate");
+
+    ASSERT_TRUE(f.Source.BeginEdit(key));
+    EXPECT_EQ(f.Source.CommitEdit(key, std::string(200, 'x')), PropertyEditResult::Refused);
+    EXPECT_EQ(FindNode(f.Source.Nodes(), key)->Value, "Crate");
 }

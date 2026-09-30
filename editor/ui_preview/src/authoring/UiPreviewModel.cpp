@@ -6,7 +6,6 @@
 #include <ui/UiService.h>
 
 #include <fstream>
-#include <utility>
 
 namespace
 {
@@ -76,7 +75,7 @@ namespace
             out.emplace_back("detail", JsonValue(row.Detail));
         out.emplace_back("editable", JsonValue(row.Editable));
         if (row.Control != UiRowControl::Text)
-            out.emplace_back("control", JsonValue(UiRowControlName(row.Control)));
+            out.emplace_back("control", JsonValue(std::string(UiRowControlName(row.Control))));
         if (row.Control == UiRowControl::Range)
         {
             out.emplace_back("number", JsonValue(row.Number));
@@ -137,31 +136,6 @@ namespace
                 out.push_back(item.AsString());
         return out;
     }
-}
-
-namespace
-{
-    constexpr std::pair<UiRowControl, const char*> kRowControlNames[] = {
-        { UiRowControl::Text, "text" },     { UiRowControl::Range, "range" }, { UiRowControl::Choice, "choice" },
-        { UiRowControl::Toggle, "toggle" }, { UiRowControl::Asset, "asset" }, { UiRowControl::Color, "color" },
-        { UiRowControl::Section, "section" },
-    };
-}
-
-const char* UiRowControlName(UiRowControl control)
-{
-    for (const auto& [value, name] : kRowControlNames)
-        if (value == control)
-            return name;
-    return "text";
-}
-
-std::optional<UiRowControl> ParseUiRowControl(std::string_view name)
-{
-    for (const auto& [value, known] : kRowControlNames)
-        if (name == known)
-            return value;
-    return std::nullopt;
 }
 
 std::filesystem::path UiPreviewModel::SidecarFor(const std::filesystem::path& documentSource)

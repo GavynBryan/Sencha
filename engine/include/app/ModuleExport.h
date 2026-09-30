@@ -137,8 +137,9 @@
 // UiTextureRef gains the Host kind: a document names `host:NAME`, the host
 // registers it with UiService::SetHostImage and publishes the pixels through
 // UiTextureResidency. UiRow gains Key, Depth, Icon, Selected, Expanded, Mixed,
-// Disabled and Parts, and UiRowControl gains Toggle, Asset, Color and Section,
-// so rows can present trees and grouped property sheets. A surface names the
+// Disabled and Parts, and UiRowControl gains Toggle, Asset, Color, Section and
+// Action, with the names documents read exported (UiRowControlName), so rows can
+// present trees, grouped property sheets and the verbs beside them. A surface names the
 // layer it draws in (UiService::SetSurfaceLayer) and its frames carry it, so a
 // host can draw its own UI between two authored layers.
 #define SENCHA_GAME_ABI_VERSION 25u

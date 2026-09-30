@@ -51,6 +51,8 @@ const UiModelPropertyId kHoldingImage = UiPropertyIdAt(29);
 const UiModelPropertyId kMotion = UiPropertyIdAt(30);
 const UiModelPropertyId kSelectionTitle = UiPropertyIdAt(31);
 const UiModelPropertyId kSelectionStaged = UiPropertyIdAt(32);
+const UiModelPropertyId kDrawer = UiPropertyIdAt(33);
+const UiModelPropertyId kDrawerFocus = UiPropertyIdAt(34);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -58,6 +60,7 @@ const UiModelRowsId kToolRows = UiRowsIdAt(2);
 const UiModelRowsId kStash = UiRowsIdAt(3);
 const UiModelRowsId kSelectionRows = UiRowsIdAt(4);
 const UiModelRowsId kSelectionVerbs = UiRowsIdAt(5);
+const UiModelRowsId kSelectionChips = UiRowsIdAt(6);
 
 const UiActionId kPopoverAction = UiActionIdAt(0);
 const UiActionId kChooseAction = UiActionIdAt(1);
@@ -67,6 +70,9 @@ const UiActionId kSheetSetAction = UiActionIdAt(4);
 const UiActionId kSheetFlipAction = UiActionIdAt(5);
 const UiActionId kSheetHoldAction = UiActionIdAt(6);
 const UiActionId kSheetReleaseAction = UiActionIdAt(7);
+const UiActionId kSheetActAction = UiActionIdAt(8);
+const UiActionId kDrawerAction = UiActionIdAt(9);
+const UiActionId kSheetPickAction = UiActionIdAt(10);
 
 // The rail's height in dp, when the document has not laid out to say.
 constexpr float kRailHeightDp = 34.0f;
@@ -110,10 +116,14 @@ UiScreenDesc Describe()
         UiModelProperty{ "motion", UiValue(true) },
         UiModelProperty{ "selection_title", UiValue(std::string{}) },
         UiModelProperty{ "selection_staged", UiValue(false) },
+        UiModelProperty{ "drawer", UiValue(false) },
+        UiModelProperty{ "drawer_focus", UiValue(std::string{}) },
     };
-    desc.RowLists = { "notices", "entries", "tool_rows", "stash", "selection_rows", "selection_verbs" };
-    desc.Actions = { "shell_popover",   "shell_choose",    "shell_invoke",    "shell_window",
-                     "shell_sheet_set", "shell_sheet_flip", "shell_sheet_hold", "shell_sheet_release" };
+    desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
+                      "selection_rows", "selection_verbs", "selection_chips" };
+    desc.Actions = { "shell_popover",   "shell_choose",     "shell_invoke",     "shell_window",       "shell_sheet_set",
+                     "shell_sheet_flip", "shell_sheet_hold", "shell_sheet_release", "shell_sheet_act", "shell_drawer",
+                     "shell_sheet_pick" };
     return desc;
 }
 
@@ -185,13 +195,22 @@ ShellWindow::ShellWindow(ShellWindowServices services)
     Services.Ui.SetSurfaceInputPolicy(OverlaySurfaceId, UiSurfaceInputPolicy::Disabled);
 
     Transients.SetClosedObserver([this](TransientSurfaces::Id id) {
-        if (id != PopoverTransient)
-            return;
-        PopoverTransient = 0;
-        Showing = Popover::None;
-        PopoverLayer.Reset();
+        if (id == PopoverTransient)
+        {
+            PopoverTransient = 0;
+            Showing = Popover::None;
+        }
+        else if (id == DrawerTransient)
+        {
+            DrawerTransient = 0;
+            SelectionShown = SelectionView::Card;
+            DrawerFocus.clear();
+        }
+        if (Transients.OpenIds().empty())
+            EscapeLayer.Reset();
     });
-    PopoverActions.Claim("edit.escape", ActionHandler{ .Invoke = [this] { (void)Transients.Escape(); } });
+    // Escape belongs to what is open while anything is.
+    EscapeActions.Claim("edit.escape", ActionHandler{ .Invoke = [this] { (void)Transients.Escape(); } });
 
     Palette = std::make_unique<CommandPalette>(Services.Ui, SurfaceId, Services.Catalog, Services.Actions,
                                                Services.Workspaces);
@@ -208,7 +227,7 @@ ShellWindow::ShellWindow(ShellWindowServices services)
 ShellWindow::~ShellWindow()
 {
     WindowLayer.Reset();
-    PopoverLayer.Reset();
+    EscapeLayer.Reset();
     Prompt.reset();
     Palette.reset();
     if (Screen.IsValid())
@@ -298,9 +317,18 @@ void ShellWindow::HandleActions()
             (void)Services.Actions.Invoke(argument);
         }
         else if (action.Id == kSheetSetAction || action.Id == kSheetFlipAction || action.Id == kSheetHoldAction
-                 || action.Id == kSheetReleaseAction)
+                 || action.Id == kSheetReleaseAction || action.Id == kSheetActAction || action.Id == kSheetPickAction)
         {
             HandleSheetAction(action);
+        }
+        else if (action.Id == kDrawerAction)
+        {
+            if (argument != "toggle")
+                ShowDrawer(argument);
+            else if (SelectionShown == SelectionView::Drawer)
+                Transients.Close(DrawerTransient);
+            else
+                ShowDrawer({});
         }
         else if (action.Id == kWindowAction)
         {
@@ -324,19 +352,7 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     if (row < 0)
         return;
     const auto index = static_cast<std::size_t>(row);
-
-    // The sources are asked for again: the workspace's frame may have moved on
-    // since the rows were presented.
-    std::vector<PropertySection> sections;
-    if (tool)
-    {
-        if (IPropertySource* parameters = workspace->Operation().Parameters)
-            sections.push_back({ .Heading = {}, .Source = parameters });
-    }
-    else
-    {
-        sections = workspace->Selection().Sections;
-    }
+    const std::vector<PropertySection> sections = SheetSections(tool ? "tool" : "selection", *workspace);
     PropertySheet& sheet = tool ? ToolSheet : SelectionSheet;
 
     if (action.Id == kSheetHoldAction)
@@ -348,6 +364,22 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     }
     else if (action.Id == kSheetFlipAction)
         (void)sheet.Flip(sections, index);
+    else if (action.Id == kSheetActAction)
+    {
+        // A verb that asks for a choice first opens its choices under it.
+        const std::vector<std::string> choices = sheet.ChoicesOf(index);
+        const std::string chosen = action.Arguments.size() > 2 ? std::string(action.Arguments[2].AsString()) : std::string{};
+        if (!choices.empty() && chosen.empty())
+            OpenChoices(tool ? "tool" : "selection", index, ChoiceFor::Verb, choices);
+        else
+            (void)sheet.Act(sections, index, chosen);
+    }
+    else if (action.Id == kSheetPickAction)
+    {
+        std::vector<std::string> candidates = sheet.CandidatesOf(sections, index);
+        candidates.insert(candidates.begin(), std::string{});
+        OpenChoices(tool ? "tool" : "selection", index, ChoiceFor::Value, std::move(candidates));
+    }
     else if (action.Arguments.size() > 2)
         (void)sheet.SetFromControl(sections, index, action.Arguments[2]);
 }
@@ -390,9 +422,19 @@ std::string ShellWindow::PopoverName() const
     case Popover::Document:   return "document";
     case Popover::Tools:      return "tools";
     case Popover::Category:   return "category:" + PopoverCategory;
+    case Popover::Choices:    return "choices";
     case Popover::None:
     default:                  return {};
     }
+}
+
+void ShellWindow::OpenChoices(std::string sheet, std::size_t row, ChoiceFor kind, std::vector<std::string> choices)
+{
+    OpenPopover(Popover::Choices);
+    ChoicesSheet = std::move(sheet);
+    ChoicesRow = row;
+    ChoicesFor = kind;
+    ChoicesListed = std::move(choices);
 }
 
 void ShellWindow::OpenPopover(Popover popover, std::string category)
@@ -403,13 +445,44 @@ void ShellWindow::OpenPopover(Popover popover, std::string category)
         return;
     Showing = popover;
     PopoverCategory = popover == Popover::Category ? std::move(category) : std::string{};
-    PopoverTransient = Transients.Open({ .Owner = "shell", .Dismiss = TransientDismiss::Light });
-    PopoverLayer = Services.Actions.Push(PopoverActions, ActionRank::Surface);
+    PopoverTransient = Transients.Open({ .Owner = "shell", .Dismiss = TransientDismiss::Light, .Priority = 1 });
+    TakeEscape();
+}
+
+void ShellWindow::TakeEscape()
+{
+    if (!EscapeLayer.IsActive())
+        EscapeLayer = Services.Actions.Push(EscapeActions, ActionRank::Surface);
+}
+
+void ShellWindow::ShowDrawer(std::string focus)
+{
+    DrawerFocus = std::move(focus);
+    SelectionSheet.Drop();
+    if (SelectionShown == SelectionView::Drawer)
+        return;
+    SelectionShown = SelectionView::Drawer;
+    DrawerTransient = Transients.Open({ .Owner = "shell", .Dismiss = TransientDismiss::Explicit });
+    TakeEscape();
 }
 
 void ShellWindow::Choose(const std::string& key)
 {
+    const Popover chosenFrom = Showing;
     OpenPopover(Popover::None);
+    if (chosenFrom == Popover::Choices)
+    {
+        if (IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation))
+        {
+            PropertySheet& sheet = ChoicesSheet == "tool" ? ToolSheet : SelectionSheet;
+            const std::vector<PropertySection> sections = SheetSections(ChoicesSheet, *workspace);
+            if (ChoicesFor == ChoiceFor::Verb)
+                (void)sheet.Act(sections, ChoicesRow, key);
+            else
+                (void)sheet.Set(sections, ChoicesRow, key);
+        }
+        return;
+    }
     const std::size_t colon = key.find(':');
     const std::string verb = colon == std::string::npos ? std::string{} : key.substr(0, colon);
     const std::string kind = colon == std::string::npos ? std::string{} : key.substr(colon + 1);
@@ -486,6 +559,15 @@ void ShellWindow::PublishEntries()
     case Popover::Document:   anchor = "document_dial";  entries = CategoryEntries("File");          break;
     case Popover::Tools:      anchor = "station";        entries = ToolEntries();                    break;
     case Popover::Category:   anchor = "cat_" + PopoverCategory; entries = CategoryEntries(PopoverCategory); break;
+    case Popover::Choices:
+        anchor = ChoicesSheet == "tool" ? "tool_card" : "selection_card";
+        for (const std::string& choice : ChoicesListed)
+        {
+            UiRow entry{ choice.empty() ? std::string("None") : choice, "", "" };
+            entry.Key = choice;
+            entries.push_back(std::move(entry));
+        }
+        break;
     case Popover::None:       break;
     }
     (void)ui.SetValue(Screen, kPopover, UiValue(PopoverName()));
@@ -546,6 +628,23 @@ void ShellWindow::PublishReadouts(const IWorkspace* workspace)
     (void)ui.SetValue(Screen, kViewCount, UiValue(static_cast<std::int64_t>(seeing.Views)));
 }
 
+std::vector<PropertySection> ShellWindow::SheetSections(std::string_view sheet, IWorkspace& workspace)
+{
+    if (sheet != "tool")
+        return SelectionSections(workspace.Selection());
+    if (IPropertySource* parameters = workspace.Operation().Parameters)
+        return { PropertySection{ .Heading = {}, .Source = parameters } };
+    return {};
+}
+
+std::vector<PropertySection> ShellWindow::SelectionSections(const WorkspaceSelectionFacet& selection) const
+{
+    std::vector<PropertySection> sections = selection.Sections;
+    if (SelectionShown == SelectionView::Drawer)
+        sections.insert(sections.end(), selection.Details.begin(), selection.Details.end());
+    return sections;
+}
+
 void ShellWindow::PublishSelection(IWorkspace* workspace)
 {
     UiService& ui = Services.Ui;
@@ -556,11 +655,32 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
     {
         SelectionSheet.Drop();
         ShownSelection = selection.Title;
+        // A drawer is about what was selected: nothing selected, nothing to show.
+        if (selection.Title.empty() && DrawerTransient != 0)
+            Transients.Close(DrawerTransient);
     }
     (void)ui.SetValue(Screen, kSelectionTitle, UiValue(selection.Title));
     (void)ui.SetValue(Screen, kSelectionStaged, UiValue(selection.Staged));
+    const bool drawer = SelectionShown == SelectionView::Drawer;
+    (void)ui.SetValue(Screen, kDrawer, UiValue(drawer));
+    (void)ui.SetValue(Screen, kDrawerFocus, UiValue(DrawerFocus));
     if (!SelectionSheet.Holding())
-        (void)ui.SetRows(Screen, kSelectionRows, SelectionSheet.Present(selection.Sections));
+        (void)ui.SetRows(Screen, kSelectionRows,
+                         SelectionSheet.Present(SelectionSections(selection), drawer, drawer ? DrawerFocus : ""));
+
+    // What else there is to look at closely, one key each.
+    std::vector<UiRow> chips;
+    for (const PropertySection& section : selection.Details)
+        if (section.Source != nullptr)
+            for (const PropertyNode& node : section.Source->Nodes())
+                if (node.Descriptor.Kind == PropertyKind::Group && !node.Children.empty())
+                {
+                    UiRow chip{ node.Descriptor.Label, "", "" };
+                    chip.Key = node.Key;
+                    chip.Selected = drawer && DrawerFocus == node.Key;
+                    chips.push_back(std::move(chip));
+                }
+    (void)ui.SetRows(Screen, kSelectionChips, chips);
 
     std::vector<UiRow> verbs;
     for (const std::string& id : selection.Actions)

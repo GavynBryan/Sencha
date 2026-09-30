@@ -16,7 +16,8 @@ std::string Counted(std::size_t count, std::string_view one, std::string_view ma
 }
 } // namespace
 
-WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& verbs, FaceUvSource& uv)
+WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& verbs, FaceUvSource& uv,
+                                    IPropertySource& components)
 {
     const std::span<const SelectableRef> selected = workspace.Selection.GetSelection();
     if (selected.empty())
@@ -63,6 +64,8 @@ WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& ve
         facet.Title = objects == 1
             ? EntityLabel(std::as_const(workspace.World.FocusDocument().GetScene().GetRegistry()).Components, one->Entity)
             : Counted(objects, "object", "objects");
+        if (objects == 1)
+            facet.Details.push_back({ .Heading = {}, .Source = &components });
         return facet;
     }
 

@@ -77,10 +77,6 @@ editor/data_editor/src/input/InputProfileForm.cpp
 editor/data_editor/src/movement/MovementProfileForm.cpp
 editor/data_editor/src/movement/MovementResolvePanel.cpp
 editor/data_editor/src/movement/MovementResponsePanel.cpp
-editor/level_editor/src/app/LevelWorkspace.cpp
-editor/level_editor/src/authoring/BrushModifierEditorAdapter.cpp
-editor/level_editor/src/authoring/GameplayVocabularyAdapters.cpp
-editor/level_editor/src/authoring/WorldDockEditorAdapter.cpp
 editor/level_editor/src/render/SceneThumbnailCache.cpp
 editor/level_editor/src/render/SceneThumbnailCache.h
 editor/level_editor/src/render/ThumbnailStudio.cpp
@@ -88,7 +84,6 @@ editor/level_editor/src/render/ThumbnailStudio.h
 editor/level_editor/src/render/ViewportTargetCache.cpp
 editor/level_editor/src/render/ViewportTargetCache.h
 editor/level_editor/src/ui/GraphViewerPanel.cpp
-editor/level_editor/src/ui/InspectorPanel.cpp
 editor/level_editor/src/ui/LightingPanel.cpp
 editor/level_editor/src/ui/MaterialPickerPanel.cpp
 editor/level_editor/src/ui/SceneBrowserPanel.cpp

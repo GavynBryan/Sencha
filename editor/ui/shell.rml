@@ -76,11 +76,15 @@
     <div id="station_bay" data-if="station_name != ''">
         <div id="tool_card" class="theme-plate" data-class-open="card_open" data-class-shut="!card_open">
             <div class="setting" data-for="row : tool_rows"
-                 data-class-heading="row.control == 'section'" data-class-locked="!row.editable &amp;&amp; row.control != 'section'">
-                <span class="setting_label">{{row.label}}</span>
-                <input type="text" class="setting_control theme-field" data-if="row.control == 'text'" data-value="row.value"
+                 data-style-margin-left="(row.depth * 8) + 'dp'"
+                 data-class-heading="row.control == 'section'" data-class-verb="row.control == 'action'"
+                 data-class-locked="!row.editable &amp;&amp; row.control != 'section' &amp;&amp; row.control != 'action'">
+                <span class="setting_label" data-if="row.control != 'action'">{{row.label}}</span>
+                <input type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
+                       data-value="row.value"
                        data-event-focus="shell_sheet_hold('tool', it_index)"
                        data-event-blur="shell_sheet_release('tool', it_index)"/>
+                <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
                 <input type="range" class="setting_control" data-if="row.control == 'range'"
                        data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
                        data-value="row.number" data-event-change="shell_sheet_set('tool', it_index, ev.value)"/>
@@ -92,6 +96,12 @@
                 <div class="setting_toggle key theme-key" data-if="row.control == 'toggle'"
                      data-class-lit="row.value == 'true'" data-event-click="shell_sheet_flip('tool', it_index)">
                     <span data-if="row.value == 'true'">ON</span><span data-if="row.value != 'true'">OFF</span>
+                </div>
+                <div class="key theme-key" data-if="row.control == 'action'"
+                     data-event-click="shell_sheet_act('tool', it_index, '')">{{row.label}}</div>
+                <div class="setting_control key theme-key" data-if="row.control == 'asset'"
+                     data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('tool', it_index)">
+                    <span data-if="row.value != ''">{{row.value}}</span><span data-if="row.value == ''">NONE</span>
                 </div>
             </div>
             <div id="tool_hint" class="theme-dim" data-if="station_hint != ''">{{station_hint}}</div>
@@ -123,41 +133,67 @@
     </div>
     </div>
 
+    <!-- What is selected: its name, its settings, and what can be done to
+         it now -- or, while an edit is previewed, applying or cancelling it.
+         Looked at closely it becomes the drawer along the right edge, with
+         every property it has. -->
+    <div id="selection_card" class="theme-plate" data-class-open="selection_title != ''"
+         data-class-shut="selection_title == ''" data-class-drawer="drawer">
+        <div id="selection_head">
+            <span id="selection_title" class="theme-accent">{{selection_title}}</span>
+            <div class="key theme-key" data-class-lit="drawer" data-event-click="shell_drawer('toggle')">
+                <span data-if="!drawer">DETAILS</span><span data-if="drawer">CLOSE</span>
+            </div>
+        </div>
+        <div id="selection_chips" data-if="!drawer">
+            <div class="key theme-key" data-for="chip : selection_chips"
+                 data-event-click="shell_drawer(chip.key)">{{chip.label}}</div>
+        </div>
+        <div id="drawer_chips" data-if="drawer">
+            <div class="key theme-key" data-class-lit="drawer_focus == ''" data-event-click="shell_drawer('')">ALL</div>
+            <div class="key theme-key" data-for="chip : selection_chips" data-class-lit="chip.selected"
+                 data-event-click="shell_drawer(chip.key)">{{chip.label}}</div>
+        </div>
+        <div class="setting" data-for="row : selection_rows"
+             data-style-margin-left="(row.depth * 8) + 'dp'"
+             data-class-heading="row.control == 'section'" data-class-verb="row.control == 'action'"
+             data-class-locked="!row.editable &amp;&amp; row.control != 'section' &amp;&amp; row.control != 'action'">
+            <span class="setting_label" data-if="row.control != 'action'">{{row.label}}</span>
+            <input type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
+                   data-value="row.value"
+                   data-event-focus="shell_sheet_hold('selection', it_index)"
+                   data-event-blur="shell_sheet_release('selection', it_index)"/>
+            <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
+            <input type="range" class="setting_control" data-if="row.control == 'range'"
+                   data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
+                   data-value="row.number" data-event-change="shell_sheet_set('selection', it_index, ev.value)"/>
+            <span class="setting_number theme-readout" data-if="row.control == 'range'">{{row.value}}</span>
+            <select class="setting_control theme-field" data-if="row.control == 'choice'"
+                    data-value="row.value" data-event-change="shell_sheet_set('selection', it_index, ev.value)">
+                <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
+            </select>
+            <div class="setting_toggle key theme-key" data-if="row.control == 'toggle'"
+                 data-class-lit="row.value == 'true'" data-event-click="shell_sheet_flip('selection', it_index)">
+                <span data-if="row.value == 'true'">ON</span><span data-if="row.value != 'true'">OFF</span>
+            </div>
+            <div class="key theme-key" data-if="row.control == 'action'"
+                 data-event-click="shell_sheet_act('selection', it_index, '')">{{row.label}}</div>
+            <div class="setting_control key theme-key" data-if="row.control == 'asset'"
+                 data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('selection', it_index)">
+                <span data-if="row.value != ''">{{row.value}}</span><span data-if="row.value == ''">NONE</span>
+            </div>
+        </div>
+        <div id="selection_verbs">
+            <div class="key theme-key" data-for="verb : selection_verbs"
+                 data-class-disabled="verb.disabled" data-class-lit="selection_staged &amp;&amp; it_index == 0"
+                 data-event-click="shell_invoke(verb.key)">{{verb.label}}</div>
+        </div>
+    </div>
     <!-- Bottom right, what the hands hold: the cartridge the next operation
          consumes, which opens what can be done with it, and the stash beside
          it, where a click trades a slot with the cartridge. Then how the work
          is seen: which view, and how many share the content. -->
     <div id="instruments_right">
-        <!-- What is selected: its name, its settings, and what can be done to
-             it now -- or, while an edit is previewed, applying or cancelling it. -->
-        <div id="selection_card" class="theme-plate" data-class-open="selection_title != ''"
-             data-class-shut="selection_title == ''">
-            <div id="selection_title" class="theme-accent">{{selection_title}}</div>
-            <div class="setting" data-for="row : selection_rows"
-                 data-class-heading="row.control == 'section'" data-class-locked="!row.editable &amp;&amp; row.control != 'section'">
-                <span class="setting_label">{{row.label}}</span>
-                <input type="text" class="setting_control theme-field" data-if="row.control == 'text'" data-value="row.value"
-                       data-event-focus="shell_sheet_hold('selection', it_index)"
-                       data-event-blur="shell_sheet_release('selection', it_index)"/>
-                <input type="range" class="setting_control" data-if="row.control == 'range'"
-                       data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
-                       data-value="row.number" data-event-change="shell_sheet_set('selection', it_index, ev.value)"/>
-                <span class="setting_number theme-readout" data-if="row.control == 'range'">{{row.value}}</span>
-                <select class="setting_control theme-field" data-if="row.control == 'choice'"
-                        data-value="row.value" data-event-change="shell_sheet_set('selection', it_index, ev.value)">
-                    <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
-                </select>
-                <div class="setting_toggle key theme-key" data-if="row.control == 'toggle'"
-                     data-class-lit="row.value == 'true'" data-event-click="shell_sheet_flip('selection', it_index)">
-                    <span data-if="row.value == 'true'">ON</span><span data-if="row.value != 'true'">OFF</span>
-                </div>
-            </div>
-            <div id="selection_verbs">
-                <div class="key theme-key" data-for="verb : selection_verbs"
-                     data-class-disabled="verb.disabled" data-class-lit="selection_staged &amp;&amp; it_index == 0"
-                     data-event-click="shell_invoke(verb.key)">{{verb.label}}</div>
-            </div>
-        </div>
         <div id="instrument_row">
         <div id="holding" class="theme-plate" data-if="holding_role != ''">
             <div id="cat_Resource" class="cartridge theme-segment" data-class-lit="popover == 'category:Resource'"

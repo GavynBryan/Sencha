@@ -24,13 +24,11 @@
 #include <world/ComponentRegistrar.h>
 #include "render/EditorRenderFeature.h"
 #include "ui/CookProfilesModal.h"
-#include "ui/InspectorSurface.h"
 #include <ui/UiService.h>
 #include "ui/EditorUiFeature.h"
 #include "ui/EditorUiStyle.h"
 #include "ui/chrome/ChromeControls.h"
 #include "document/commands/SceneInstanceCommands.h"
-#include "ui/InspectorPanel.h"
 #include "ui/LightingPanel.h"
 #include "ui/MaterialPickerPanel.h"
 #include "render/RenderFeatureDetach.h"
@@ -43,6 +41,7 @@
 #include "ui/GraphViewerPanel.h"
 #include "actions/ActionOffer.h"
 #include "resources/ResourceActions.h"
+#include "authoring/ComponentPropertySource.h"
 #include "workspace/ElementVerbs.h"
 #include "workspace/FaceUvSource.h"
 #include "workspace/SelectionSummary.h"
@@ -281,6 +280,8 @@ void LevelWorkspace::BuildInput()
     Verbs->Offer(Catalog, ActionHandlers);
     Uv = std::make_unique<FaceUvSource>(*Workspace);
     Uv->Offer(Catalog, ActionHandlers);
+    Components = std::make_unique<ComponentPropertySource>(Workspace->World, Workspace->Selection, *Commands,
+                                                           Workspace->Affordances->Registry());
     offer("resource.browse", "Browse...", "Resource", { { SDLK_M, {} } }, IconId::Folder,
           [this] { if (Browser != nullptr) Browser->Reveal(); });
     OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [] { return AssetType::Material; });
@@ -696,9 +697,6 @@ void LevelWorkspace::BuildUi()
             Workspace->World, Workspace->Selection, *Commands,
             std::move(sceneRoots), std::move(thumbnails)));
     }
-    Surface.AddPanel(std::make_unique<InspectorPanel>(
-        Workspace->World, Workspace->Selection, *Commands,
-        Workspace->Affordances->Registry()));
     const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
         return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
     };
@@ -977,59 +975,6 @@ void LevelWorkspace::BuildAuthoredWorkflows()
     if (ui == nullptr || !ui->IsReady() || Project == nullptr)
         return;
     ProfilesModal = std::make_unique<CookProfilesModal>(*ui, *Project);
-
-    // The window, as authored UI sees it. One surface for every authored screen
-    // Kyusu opens, because focus and modality are arbitrated within a surface:
-    // a dialog on a surface of its own would take focus from nothing. Tracked
-    // against the window in ProcessFrame, since a retained document re-flows on
-    // a resize where a baked atlas cannot.
-    if (!AuthoredSurface.IsValid() && PrimaryWindow != nullptr)
-    {
-        AuthoredSurface = ui->CreateSurface(
-            "kyusu",
-            RenderExtent{ PrimaryWindow->GetExtent().Width, PrimaryWindow->GetExtent().Height });
-    }
-    if (!AuthoredSurface.IsValid())
-        return;
-
-    if (Workspace != nullptr && Commands != nullptr)
-    {
-        Inspector = std::make_unique<InspectorSurface>(
-            *ui, AuthoredSurface, Workspace->World, Workspace->Selection, *Commands,
-            Workspace->Affordances->Registry());
-    }
-
-    // Openable from the console as well as the menu, so a startup script can
-    // bring it up -- which is how it gets captured and looked at without a
-    // person driving a menu.
-    EnginePtr->Console().Registry().RegisterCommand({
-        .Name = "editor.inspector.authored",
-        .Owner = "editor",
-        .Usage = "editor.inspector.authored [close]",
-        .Help = "Open the authored inspector, the RML document that presents the "
-                "selected entity's components beside the ImGui panel.",
-        .Callback = [this](ConsoleExecutionContext&,
-                           std::span<const std::string> args) {
-            ConsoleResult result;
-            if (Inspector == nullptr)
-            {
-                result.Status = ConsoleStatus::ExecutionFailed;
-                result.Error("the authored inspector is unavailable");
-                return result;
-            }
-            if (!args.empty() && args[0] == "close")
-            {
-                Inspector->Close();
-                result.Info("closed the authored inspector");
-            }
-            else
-            {
-                Inspector->Open();
-                result.Info("opened the authored inspector");
-            }
-            return result;
-        },
-    });
 }
 
 void LevelWorkspace::ProcessFrame()
@@ -1038,26 +983,6 @@ void LevelWorkspace::ProcessFrame()
     // publish what it should now show, so a click and its answer land in the
     // same frame. This hook runs inside FramePhase::Update, which is where the
     // engine guarantees that ordering.
-    // A retained document re-flows on a resize, so the surface follows the
-    // window rather than latching whatever size it was created at. Unchanged
-    // sizes cost a comparison.
-    if (AuthoredSurface.IsValid() && PrimaryWindow != nullptr)
-    {
-        if (UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr; ui != nullptr)
-        {
-            ui->SetSurfaceSize(AuthoredSurface,
-                               RenderExtent{ PrimaryWindow->GetExtent().Width,
-                                             PrimaryWindow->GetExtent().Height });
-            // The same display scale the shell resolved. Without this an
-            // authored surface stays at 1.0 while the ImGui chrome beside it
-            // scales, so on a HiDPI display the two halves of the same editor
-            // disagree about how big a pixel is. Unchanged values cost a
-            // comparison; a change re-flows the documents, which is the whole
-            // reason this is live rather than latched.
-            ui->SetSurfaceScale(AuthoredSurface, EditorUi::UiScale);
-        }
-    }
-
     if (ProfilesModal != nullptr)
     {
         ProfilesModal->Update();
@@ -1067,8 +992,6 @@ void LevelWorkspace::ProcessFrame()
             OfferedProfilesRevision = ProfilesModal->Editor().Revision();
         }
     }
-    if (Inspector != nullptr)
-        Inspector->Update();
 
     if (Files)
         Files->ProcessPending();
@@ -1302,9 +1225,9 @@ WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
 
 WorkspaceSelectionFacet LevelWorkspace::Selection()
 {
-    if (Verbs == nullptr || Uv == nullptr)
+    if (Verbs == nullptr || Uv == nullptr || Components == nullptr)
         return {};
-    return SelectionOf(*Workspace, *Verbs, *Uv);
+    return SelectionOf(*Workspace, *Verbs, *Uv, *Components);
 }
 
 std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()

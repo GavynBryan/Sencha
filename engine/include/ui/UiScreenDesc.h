@@ -5,7 +5,9 @@
 #include <ui/UiValue.h>
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 //=============================================================================
@@ -80,7 +82,12 @@ enum class UiRowControl : std::uint8_t
     Asset,    // Value names an asset; the document offers a way to pick another
     Color,    // Value is #RRGGBB or #RRGGBBAA text
     Section,  // not a value at all: a heading the rows after it sit under
+    Action,   // not a value either: something to do, named by its label, raised by its key
 };
+
+// What a document reads `row.control` as ("text", "range", ...), and back.
+[[nodiscard]] std::string_view UiRowControlName(UiRowControl control);
+[[nodiscard]] std::optional<UiRowControl> ParseUiRowControl(std::string_view name);
 
 // One row of a presented list.
 //

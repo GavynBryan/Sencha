@@ -196,45 +196,24 @@ do the work and delete the entry.
 - **Trigger:** an unattended run that needs two windows, or two frames,
   captured in one process.
 
-## Rounded scrolling containers in authored UI
+## Inset and bevel as gestures in the view
 
-- **What:** a container with both `border-radius` and `overflow-y: auto` drew
-  none of its content in Kyusu's main window (seen on the shell's hatch
-  popover), where the same container with square corners draws correctly.
-  Rounded clipping goes through the stencil clip mask rather than the scissor,
-  so the fault is in that path or in its interaction with the window's scope;
-  it is not yet reproduced by a golden image. Square scrolling containers
-  sidestep it, which is what the shell's popover and palette do today.
-- **Where:** `engine/src/graphics/vulkan/UiDrawPass.cpp` (the Set/Intersect
-  mask variants and `ClearStencil`), `engine/src/ui/rml/RmlRenderRecorder.cpp`
-  (clip mask recording); repro: `editor/ui/shell.rcss` `#popover` with
-  `max-height` and `overflow-y: auto`.
-- **Trigger:** the first authored surface that needs a rounded scrolling
-  container -- the selection drawer -- which starts with a golden image
-  reproducing it.
+- **What:** an inset or bevel is staged from the selection card and tuned by
+  its setting there (distance, width, segments), then applied or cancelled.
+  Dragging in the view to set the distance, with the wheel for segments, is not
+  built.
+- **Where:** `editor/level_editor/src/workspace/ElementVerbs.cpp` stages them
+  through `PendingElementEdit`; a gesture would drive the same setting.
+- **Trigger:** the owner's walkthrough at the explorers checkpoint, or the
+  first report that tuning an inset from the card is slower than dragging it.
 
-## Row control names in two places
+## Common properties across a multi-selection
 
-- **What:** `UiRowControl` is named for documents twice: privately in
-  `engine/src/ui/UiRuntime.cpp` (`ControlName`, what `row.control` reads as)
-  and in the UI Preview's sidecar format
-  (`editor/ui_preview/src/authoring/UiPreviewModel.cpp`). One public mapping
-  beside the enum in `engine/include/ui/UiScreenDesc.h` removes the second, but
-  that header is part of the game-module ABI fingerprint, so adding it forces
-  every module to rebuild.
-- **Trigger:** the next change to `engine/include/ui/` headers, which moves the
-  fingerprint anyway -- the selection drawer's row additions are the likely one.
-
-## Scrolling flex items in authored UI
-
-- **What:** a flex item with `overflow-y: auto` lays its children out at zero
-  width, even with a definite width of its own; without the overflow the same
-  item lays them out correctly. Seen on the cook-profile dialog's settings
-  column, which does not scroll for that reason (every setting fits).
-- **Where:** RmlUi's flex formatting of scroll containers, reached through
-  `engine/src/ui/`; repro: `editor/ui/cook_profiles.rcss` `#form` with
-  `overflow-y: auto`, measured with `UiService::MeasureElement` in a headless
-  test.
-- **Trigger:** the first authored surface whose rows can outgrow it inside a
-  flex layout -- the selection drawer -- which starts with a headless test
-  measuring a scrolled row's width.
+- **What:** the selection card for several objects names them and offers the
+  verbs that apply to all of them, but shows no properties: fields they share,
+  with mixed values marked, are not presented.
+- **Where:** `editor/level_editor/src/workspace/SelectionSummary.cpp` offers
+  details for one object only; `ComponentPropertySource` reads the primary
+  selection.
+- **Trigger:** a designer editing the same field on several selected objects
+  at once.

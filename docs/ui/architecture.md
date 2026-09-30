@@ -727,13 +727,19 @@ an engine upgrade fails there rather than in a tool. `DrainDiagnostics` is
 destructive and meant for one consumer per service; a host with several
 interested parties drains once and fans out.
 
-Per-panel parity is separate work and belongs to each panel. The authored
-inspector, for instance, now matches the ImGui one for anything the component
-schema describes -- numbers, enums, flags, inline text, asset references -- and
-does not yet present the six components whose `EditorComponentAdapter` authors
-its own rows, or offer adding and removing components. It says so on the rows
-concerned rather than showing something the panel would contradict. Neither
-inspector goes away until one is better at all of it.
+Per-panel parity is separate work and belongs to each panel. Kyusu's
+inspector is now its selection drawer: every component the schema describes,
+the components whose `EditorComponentAdapter` authors its own properties (brush
+modifiers, the gameplay vocabularies, world docks), adding and removing
+components and resetting a scene instance's overrides -- all as property nodes
+and verbs the shell presents as rows, with the ImGui inspector gone.
+
+**A scrollbar needs a size.** A container with `overflow: auto` whose content
+overflows builds a scrollbar from `scrollbarvertical` and its parts; with no
+width given, the scrollbar takes the container's whole width and what it
+scrolls is laid out at none. Kyusu's `controls.rcss` sizes them, and scopes the
+range input's own `slidertrack`/`sliderbar` rules under `input` so they do not
+reach a scrollbar's parts of the same names.
 
 **Authored lengths are `dp`, not `px`.** A surface carries the display scale its
 host resolved, and the document engine applies that to the `dp` unit alone. A

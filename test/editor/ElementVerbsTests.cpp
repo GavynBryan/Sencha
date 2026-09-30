@@ -2,6 +2,7 @@
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "authoring/ComponentPropertySource.h"
 #include "brush/BrushMesh.h"
 #include "workspace/ElementVerbs.h"
 #include "workspace/FaceUvSource.h"
@@ -39,6 +40,8 @@ protected:
 
     ElementVerbs Verbs{ Workspace, {} };
     FaceUvSource Uv{ Workspace };
+    ComponentPropertySource Components{ Workspace.World, Workspace.Selection, Commands,
+                                        Workspace.Affordances->Registry() };
     ActionCatalog Catalog;
     ActionContext Context;
     ActionContextStack Stack;
@@ -48,7 +51,7 @@ protected:
 
 TEST_F(ElementVerbsTest, NothingSelectedHasNoCard)
 {
-    EXPECT_TRUE(SelectionOf(Workspace, Verbs, Uv).Title.empty());
+    EXPECT_TRUE(SelectionOf(Workspace, Verbs, Uv, Components).Title.empty());
     EXPECT_FALSE(Stack.Query("brush.normals").Enabled);
 }
 
@@ -56,15 +59,16 @@ TEST_F(ElementVerbsTest, EachElementKindOffersItsOwnVerbs)
 {
     const EntityId brush = AddBrush({ 0, 0, 0 });
     SelectEntity(brush);
-    WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Uv);
+    WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Uv, Components);
     EXPECT_FALSE(facet.Title.empty());
     EXPECT_TRUE(Lists(facet, "brush.normals"));
+    ASSERT_EQ(facet.Details.size(), 1u) << "one object's components are there to look at closely";
     EXPECT_TRUE(Stack.Query("brush.normals").Enabled);
     EXPECT_FALSE(Stack.Query("brush.merge").Enabled) << "merging needs two brushes";
 
     Workspace.MeshEdit.SetElementKind(MeshElementKind::Face);
     SelectElements(brush, MeshElementKind::Face, { 0, 1 });
-    facet = SelectionOf(Workspace, Verbs, Uv);
+    facet = SelectionOf(Workspace, Verbs, Uv, Components);
     EXPECT_EQ(facet.Title, "2 faces");
     EXPECT_TRUE(Lists(facet, "face.inset"));
     EXPECT_TRUE(Lists(facet, "uv.fit"));
@@ -73,7 +77,7 @@ TEST_F(ElementVerbsTest, EachElementKindOffersItsOwnVerbs)
 
     Workspace.MeshEdit.SetElementKind(MeshElementKind::Edge);
     SelectElements(brush, MeshElementKind::Edge, { 0 });
-    facet = SelectionOf(Workspace, Verbs, Uv);
+    facet = SelectionOf(Workspace, Verbs, Uv, Components);
     EXPECT_EQ(facet.Title, "1 edge");
     EXPECT_TRUE(Lists(facet, "edge.bevel"));
     EXPECT_FALSE(Stack.Query("edge.bridge").Enabled) << "a bridge spans two edges";
@@ -87,7 +91,7 @@ TEST_F(ElementVerbsTest, AStagedInsetFollowsItsSettingUntilAppliedOrCancelled)
 
     ASSERT_TRUE(Stack.Invoke("face.inset"));
     ASSERT_TRUE(Workspace.HasPendingInset());
-    const WorkspaceSelectionFacet staged = SelectionOf(Workspace, Verbs, Uv);
+    const WorkspaceSelectionFacet staged = SelectionOf(Workspace, Verbs, Uv, Components);
     EXPECT_TRUE(staged.Staged);
     EXPECT_EQ(staged.Actions, (std::vector<std::string>{ "element.apply", "element.cancel" }));
     EXPECT_FALSE(Stack.Query("face.inset").Enabled) << "one staged edit at a time";

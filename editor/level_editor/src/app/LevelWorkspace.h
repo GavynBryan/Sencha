@@ -44,9 +44,9 @@ class SdlWindow;
 class PieDriver;
 class CookSession;
 class CookProfilesModal;
+class ComponentPropertySource;
 class ElementVerbs;
 class FaceUvSource;
-class InspectorSurface;
 class EditorCookRuntime;
 class DocumentFileActions;
 
@@ -177,6 +177,7 @@ private:
     std::unique_ptr<ViewDividerDrag> DividerDrag;
     std::unique_ptr<ElementVerbs> Verbs;
     std::unique_ptr<FaceUvSource> Uv;
+    std::unique_ptr<ComponentPropertySource> Components;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
     // The tool in hand's settings, as the operation facet hands them out.
@@ -197,19 +198,10 @@ private:
     // Declared last so they are torn down before the state they reference.
     // Cooking, the player it feeds, and the serials that hand one to the other.
     std::unique_ptr<EditorCookRuntime>  CookRuntime;
-    // Kyusu's authored workflows. Owned here rather than by the UI feature
-    // because they are editor logic that happens to present through a document,
-    // not panels.
-    //
-    // One surface between them: focus and modality are arbitrated within a
-    // surface, so a surface each would mean the profile dialog taking focus
-    // from nothing while the inspector kept taking clicks behind it.
-    UiSurfaceId                         AuthoredSurface;
     std::unique_ptr<CookProfilesModal>  ProfilesModal;
     // The transport.profile.* actions in play, one per cook profile.
     std::vector<std::string> OfferedProfiles;
     std::uint64_t OfferedProfilesRevision = 0;
-    std::unique_ptr<InspectorSurface>   Inspector;
     std::unique_ptr<DocumentFileActions> Files;
     // Declared last: its panels and chrome reference everything above.
     WorkspaceView Surface;

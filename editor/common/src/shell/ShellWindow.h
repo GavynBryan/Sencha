@@ -109,7 +109,11 @@ public:
 private:
     // Category: a category's actions, named by PopoverCategory, from the
     // instrument whose id is "cat_" and the category.
-    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Document, Tools, Category };
+    // Choices: what a sheet's row asks to be chosen -- a verb's choices, or an
+    // asset row's candidates -- for the row ChoicesRow of the sheet
+    // ChoicesSheet names, listed once as it opens.
+    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Document, Tools, Category, Choices };
+    enum class ChoiceFor : std::uint8_t { Verb, Value };
 
     void HandleActions();
     void Publish(double now);
@@ -119,6 +123,7 @@ private:
     // released over the rail still ends where it began.
     void YieldPointerToContent();
     void OpenPopover(Popover popover, std::string category = {});
+    void OpenChoices(std::string sheet, std::size_t row, ChoiceFor kind, std::vector<std::string> choices);
     // A popover as a document or a script names it: "hatch", "tools",
     // "category:Grid", or anything else for none.
     void OpenNamedPopover(std::string_view name);
@@ -140,6 +145,17 @@ private:
     void PublishSelection(IWorkspace* workspace);
     // A row of the tool card or the selection card edited, focused or let go.
     void HandleSheetAction(const UiAction& action);
+    // The sources behind a sheet's rows, asked for again: the workspace's frame
+    // may have moved on since they were presented.
+    [[nodiscard]] std::vector<PropertySection> SheetSections(std::string_view sheet, IWorkspace& workspace);
+    // The selection's rows as its view shows them: the card's settings, or in
+    // the drawer everything, narrowed to one component when one was chosen.
+    [[nodiscard]] std::vector<PropertySection> SelectionSections(const WorkspaceSelectionFacet& selection) const;
+    // Opens the selection's drawer, or turns the open one to `focus` (a
+    // top-level property's key, or empty for all of it).
+    void ShowDrawer(std::string focus);
+    // While anything transient is open, Escape takes it away one at a time.
+    void TakeEscape();
 
     ShellWindowServices Services;
     UiSurfaceId SurfaceId;
@@ -151,17 +167,25 @@ private:
 
     Popover Showing = Popover::None;
     std::string PopoverCategory;
+    std::string ChoicesSheet;
+    std::size_t ChoicesRow = 0;
+    ChoiceFor ChoicesFor = ChoiceFor::Verb;
+    std::vector<std::string> ChoicesListed;
     TransientSurfaces Transients;
     TransientSurfaces::Id PopoverTransient = 0;
     std::string ShownTitle;
     UiSurfaceInputPolicy InputPolicy = UiSurfaceInputPolicy::Full;
-    // Escape belongs to the popover while one is open.
-    ActionContext PopoverActions;
-    ActionContextStack::Layer PopoverLayer;
+    ActionContext EscapeActions;
+    ActionContextStack::Layer EscapeLayer;
     std::unique_ptr<CommandPalette> Palette;
     PropertySheet ToolSheet;
     PropertySheet SelectionSheet;
     std::string ShownSelection;
+    // The selection as a card, or turned into the drawer that shows all of it.
+    enum class SelectionView : std::uint8_t { Card, Drawer };
+    SelectionView SelectionShown = SelectionView::Card;
+    std::string DrawerFocus;
+    TransientSurfaces::Id DrawerTransient = 0;
     // After the palette, so a question opens over it.
     std::unique_ptr<PromptDialog> Prompt;
     // What the shell itself performs in its window, whatever is showing.
