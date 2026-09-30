@@ -37,6 +37,9 @@ public:
         std::unique_ptr<IWorkspace> Instance;
     };
     using Listener = std::function<void(const WorkspaceKind&, IWorkspace&)>;
+    // Whether a workspace may close now. One that may not stays open; whoever
+    // refused settles what stopped it and asks again.
+    using CloseGuard = std::function<bool(const WorkspaceKind&, IWorkspace&)>;
 
     WorkspaceHost(std::vector<WorkspaceKind> kinds, bool hasProject);
     ~WorkspaceHost();
@@ -46,6 +49,7 @@ public:
 
     void SetOpenedListener(Listener listener) { OnOpened = std::move(listener); }
     void SetClosingListener(Listener listener) { OnClosing = std::move(listener); }
+    void SetCloseGuard(CloseGuard guard) { MayClose = std::move(guard); }
 
     [[nodiscard]] std::span<const WorkspaceKind> Kinds() const { return Table; }
     // Known, and not needing a project this application does not have.
@@ -57,6 +61,8 @@ public:
     IWorkspace* Open(std::string_view kind);
     bool Close(std::string_view kind);
     bool Activate(std::string_view kind);
+    // Past the close guard: this is the way out, after the application's exit
+    // has settled every document.
     void CloseAll();
 
     void Request(WorkspaceRequest request) { Pending.push_back(std::move(request)); }
@@ -74,6 +80,7 @@ public:
 
 private:
     [[nodiscard]] const WorkspaceKind* FindKind(std::string_view kind) const;
+    bool Destroy(std::string_view kind);
 
     std::vector<WorkspaceKind> Table;
     bool HasProject = false;
@@ -85,4 +92,5 @@ private:
     std::vector<WorkspaceRequest> Pending;
     Listener OnOpened;
     Listener OnClosing;
+    CloseGuard MayClose;
 };

@@ -598,6 +598,8 @@ bool EditorDocument::Save()
     file << text;
     if (!file.good())
         return false;
+    file.close();
+    Baseline.Record(FilePath);
 
     Dirty = false;
     return true;
@@ -625,6 +627,7 @@ bool EditorDocument::Load(std::string_view path)
         return false;
 
     FilePath.assign(path);
+    Baseline.Record(FilePath);
     return true;
 }
 
@@ -634,12 +637,18 @@ void EditorDocument::New()
     Retained_ = SceneSourceDocument{};
     Projection.Reset();
     FilePath.clear();
+    Baseline.RecordAbsent();
     Dirty = false;
 }
 
 bool EditorDocument::HasFilePath() const
 {
     return !FilePath.empty();
+}
+
+bool EditorDocument::IsExternallyModified() const
+{
+    return !FilePath.empty() && Baseline.FileChanged(FilePath);
 }
 
 void EditorDocument::MarkDirty(bool dirty)

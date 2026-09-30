@@ -3,6 +3,8 @@
 #include "app/ProjectSession.h"
 #include "app/WorkspaceKinds.h"
 #include "render/RenderFeatureDetach.h"
+#include "ui/DocumentSaveReportView.h"
+#include "ui/DocumentShellActions.h"
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorUiFeature.h"
 #include "workspaces/WorkspaceHost.h"
@@ -20,6 +22,7 @@
 #include <platform/SdlWindow.h>
 
 #include <SDL3/SDL.h>
+#include <imgui.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -143,10 +146,118 @@ void KyusuApp::OnStart(GameStartupContext&)
         Ui = nullptr;
     }
 
+    InstallDocumentActions();
     RegisterWorkspaceCommands();
     // Before the startup script runs, so an argv +editor.open or +cook finds
     // the level it acts on. Without a project to edit, choose one.
     (void)Workspaces->Open(opensLevel ? "level" : "project");
+}
+
+void KyusuApp::InstallDocumentActions()
+{
+    DocumentSourceSet& documents = Session->Documents();
+    if (Ui != nullptr)
+    {
+        InstallDocumentShellActions(*Ui, GetEngine(), documents, [] { return std::optional<DocumentRef>{}; });
+        // The active workspace's staged edit comes before the journal's newest
+        // step, as its own Ctrl+Z has it.
+        Ui->SetUndoActions(
+            [this, &documents] {
+                IWorkspace* active = Workspaces->Active();
+                if (active == nullptr || !active->UndoStagedEdit())
+                    documents.Undo();
+            },
+            [&documents] { documents.Redo(); },
+            [this, &documents] {
+                const IWorkspace* active = Workspaces->Active();
+                return documents.CanUndo() || (active != nullptr && active->HasStagedEdit());
+            },
+            [&documents] { return documents.CanRedo(); });
+        Ui->AddShellOverlay([this] { DrawClosePrompt(); });
+    }
+
+    documents.SetStepObserver([this](const DocumentRef& document) {
+        for (const WorkspaceHost::Entry& entry : Workspaces->OpenWorkspaces())
+        {
+            if (!entry.Instance->OwnsDocument(document))
+                continue;
+            // Nothing changes out of sight: the workspace comes forward, at the
+            // frame boundary since a step can arrive mid-event.
+            Workspaces->Request({ WorkspaceAction::Activate, entry.Kind->Id });
+            entry.Instance->RevealDocument(document);
+            return;
+        }
+    });
+
+    Workspaces->SetCloseGuard([this, &documents](const WorkspaceKind& kind, IWorkspace& workspace) {
+        for (const DocumentRef& document : documents.ChangedDocuments())
+        {
+            if (workspace.OwnsDocument(document))
+            {
+                HeldClose = kind.Id;
+                return false;
+            }
+        }
+        return true;
+    });
+}
+
+void KyusuApp::DrawClosePrompt()
+{
+    constexpr const char* title = "Close workspace";
+    IWorkspace* closing = HeldClose.empty() ? nullptr : Workspaces->Find(HeldClose);
+    if (closing == nullptr)
+    {
+        HeldClose.clear();
+        return;
+    }
+    if (!ImGui::IsPopupOpen(title))
+        ImGui::OpenPopup(title);
+    if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+
+    DocumentSourceSet& documents = Session->Documents();
+    std::vector<DocumentRef> owned;
+    for (const DocumentRef& document : documents.ChangedDocuments())
+        if (closing->OwnsDocument(document))
+            owned.push_back(document);
+    ImGui::TextUnformatted("Save changes before closing?");
+    for (const DocumentRef& document : owned)
+        ImGui::BulletText("%s", document.Source->DocumentLabel(document.Key).c_str());
+    DrawDocumentSaveReport(documents, SettleError);
+
+    const auto finish = [this] {
+        Workspaces->Request({ WorkspaceAction::Close, HeldClose });
+        HeldClose.clear();
+        SettleError.clear();
+        ImGui::CloseCurrentPopup();
+    };
+    if (ImGui::Button("Save and close"))
+    {
+        bool saved = true;
+        for (const DocumentRef& document : owned)
+        {
+            const DocumentSaveStatus status = documents.Save(document).Status;
+            saved &= status == DocumentSaveStatus::Saved || status == DocumentSaveStatus::SavedWithProblems;
+        }
+        if (saved)
+            finish();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Discard and close"))
+    {
+        for (const DocumentRef& document : owned)
+            document.Source->DiscardDocument(document.Key);
+        finish();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Keep editing") || ImGui::IsKeyPressed(ImGuiKey_Escape))
+    {
+        HeldClose.clear();
+        SettleError.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }
 
 void KyusuApp::RegisterWorkspaceCommands()
@@ -220,5 +331,7 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
         Workspaces->CloseAll();
     DetachRenderFeature(GetEngine(), Ui);
     Workspaces.reset();
+    // The exit gate reads the journal the session is about to take with it.
+    GetEngine().OnExitRequested = nullptr;
     Session.reset();
 }

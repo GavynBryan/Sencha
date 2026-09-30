@@ -358,6 +358,13 @@ void DataDocumentSet::CancelDocumentEdits()
         CancelEdit(*document);
 }
 
+void DataDocumentSet::DiscardDocument(std::string_view key)
+{
+    std::string error;
+    if (const std::optional<std::size_t> index = IndexOf(key))
+        (void)Close(*index, DirtyDisposition::Discard, error);
+}
+
 bool DataDocumentSet::Accepts(std::string_view subtype) const
 {
     return Config.Subtypes.empty() || std::ranges::find(Config.Subtypes, subtype) != Config.Subtypes.end();

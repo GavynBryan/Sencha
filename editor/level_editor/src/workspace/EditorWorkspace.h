@@ -41,10 +41,11 @@ public:
     [[nodiscard]] EditorDocument& ActiveDocument() { return World.FocusDocument(); }
     [[nodiscard]] const EditorDocument& ActiveDocument() const { return World.FocusDocument(); }
 
-    // Terminates every transaction staging state in the active document (the
-    // active tool's gesture, the pending bridge, the pending element edit) and
-    // drops the undo stack. Safe to run immediately before the document is
-    // destroyed: it touches only state that is still alive at the call.
+    // Terminates every transaction staging state in the active document: the
+    // active tool's gesture, the pending bridge, the pending element edit.
+    void CancelOpenEdits();
+    // CancelOpenEdits, then drops the undo stack. Safe to run immediately
+    // before the document is destroyed: it touches only state still alive.
     void CancelDocumentTransactions();
 
     // Settles every open preview into the document as ordinary undo steps, so

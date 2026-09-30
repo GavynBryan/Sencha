@@ -40,4 +40,9 @@ public:
     [[nodiscard]] virtual bool SettleDocument(std::string_view key, ConflictChoice choice, std::string& error) = 0;
     virtual void StepDocument(std::string_view key, DocumentStep step) = 0;
     virtual void CancelDocumentEdits() = 0;
+    // Throws the document's changes away and closes it.
+    virtual void DiscardDocument(std::string_view key) = 0;
+
+    // What a person reading a prompt or a save report calls the document.
+    [[nodiscard]] virtual std::string DocumentLabel(std::string_view key) const { return std::string(key); }
 };

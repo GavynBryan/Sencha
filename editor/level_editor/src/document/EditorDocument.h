@@ -4,6 +4,7 @@
 #include "EditorScene.h"
 #include "SceneInstanceProjection.h"
 
+#include "documents/FileBaseline.h"
 #include "scene_source/SceneComposition.h"
 #include "scene_source/SceneSourceCache.h"
 #include "scene_source/SceneSourceDocument.h"
@@ -58,6 +59,8 @@ public:
 
     [[nodiscard]] std::string_view GetDisplayName() const;
     [[nodiscard]] bool IsDirty() const;
+    // The file changed on disk since this document last read or wrote it.
+    [[nodiscard]] bool IsExternallyModified() const;
     bool Save();
     bool SaveAs(std::string_view path);
     bool Load(std::string_view path);
@@ -243,6 +246,7 @@ private:
     [[nodiscard]] SceneSourceDocument BuildSceneSource() const;
 
     std::string FilePath;
+    FileBaseline Baseline;
     bool Dirty = false;
     Registry Registry_;
     EditorScene Scene;

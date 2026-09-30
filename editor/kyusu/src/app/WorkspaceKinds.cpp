@@ -17,7 +17,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         .RequiresProject = false,
         .Create = [&engine, &window, &session] {
             return std::make_unique<LevelWorkspace>(engine, window, session.Project(), session.Module(),
-                                                    session.Materials());
+                                                    session.Materials(), session.Documents());
         },
     });
     kinds.push_back(WorkspaceKind{

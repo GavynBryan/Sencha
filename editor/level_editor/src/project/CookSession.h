@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -69,7 +70,11 @@ public:
     [[nodiscard]] const std::string& LastCookedZone() const;
     [[nodiscard]] std::uint64_t PublicationSerial() const;
 
+    // Runs before a cook reads the disk; false stops the cook with `error`.
+    void SetSaveGate(std::function<bool(std::string& error)> gate) { SaveGate = std::move(gate); }
+
 private:
+    std::function<bool(std::string& error)> SaveGate;
     struct SharedState;
 
     Engine& Engine_;

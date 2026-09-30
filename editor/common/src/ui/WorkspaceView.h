@@ -31,16 +31,6 @@ struct WorkspaceFileActions
     std::function<void()> SaveAs;
 };
 
-// Undo and redo for a workspace that keeps its own history; unset, the Edit
-// menu uses the window's.
-struct WorkspaceEditActions
-{
-    std::function<void()> Undo;
-    std::function<void()> Redo;
-    std::function<bool()> CanUndo;
-    std::function<bool()> CanRedo;
-};
-
 // Controls a workspace mounts at the right end of the window's tab strip,
 // drawn at the cursor. Lit is whether the strip should read as busy.
 struct WorkspaceBarControls
@@ -70,7 +60,6 @@ struct WorkspaceView
     std::vector<std::function<void()>> Overlays;
     DockLayoutRatios Layout;
     WorkspaceFileActions File;
-    WorkspaceEditActions Edit;
     WorkspaceBarControls BarControls;
     // The open document and whether it has unsaved edits, read each frame.
     std::function<std::string()> Status;

@@ -15,6 +15,8 @@
 #include "tools/ToolRegistryMenuModel.h"
 #include "editmodes/TransformModeMenuModel.h"
 #include "workspace/EditorWorkspace.h"
+#include "workspace/LevelDocumentSource.h"
+#include "ui/DocumentShellActions.h"
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
 #include "ui/EditorStatusBar.h"
@@ -34,6 +36,7 @@ class MaterialThumbnailCache;
 class ViewportPanel;
 class EditorRenderFeature;
 class EditorViewportCameraSystem;
+class DocumentSourceSet;
 class Engine;
 class Game;
 class SdlWindow;
@@ -57,7 +60,8 @@ public:
                    SdlWindow& window,
                    ProjectDescriptor* project,
                    Game* module,
-                   MaterialLibrary& materials);
+                   MaterialLibrary& materials,
+                   DocumentSourceSet& documents);
     ~LevelWorkspace() override;
 
     LevelWorkspace(const LevelWorkspace&) = delete;
@@ -67,6 +71,9 @@ public:
     void SetVisible(bool visible) override;
     // Routes one platform event through the input router chain.
     void HandlePlatformEvent(PlatformEventContext& ctx) override;
+    [[nodiscard]] bool OwnsDocument(const DocumentRef& document) const override;
+    bool UndoStagedEdit() override;
+    [[nodiscard]] bool HasStagedEdit() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override { UiFeature = &window; }
 
@@ -82,6 +89,12 @@ private:
     void BuildUi();
 
     void ProcessFrame();
+    // Runs `proceed` once the open level's changes are saved or discarded, as
+    // the author chooses; at once when it has none.
+    void AfterSettlingChanges(std::function<void()> proceed);
+    // Saves every changed document before a cook or a play session reads the
+    // disk; false, with the save report shown, when one could not be saved.
+    [[nodiscard]] bool SaveBeforeLaunch(std::string& error);
     // The tool wheel while it is open, painted over the whole window.
     // A radial menu while it is open, painted over the whole window.
     void DrawRadialMenu(const RadialMenuSession& wheel, const IRadialMenuModel& menu);
@@ -116,8 +129,15 @@ private:
     // The engine's asset stack, which the application mounted the project into.
     RuntimeAssets* Assets = nullptr;
 
+    DocumentSourceSet& Documents;
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<EditorWorkspace> Workspace;
+    // The open level in the application's journal; destroyed before the
+    // workspace whose world it reports on.
+    std::unique_ptr<LevelDocumentSource> LevelDocument;
+    UnsavedDocumentPrompt ChangesPrompt;
+    bool ShowSaveReport = false;
+    std::string SettleError;
     // The held-key radial menus: the tools over the workspace's registry, the
     // gizmo modes over the manipulator session. One mechanism, two models.
     std::unique_ptr<ToolRegistryMenuModel> ToolMenu;

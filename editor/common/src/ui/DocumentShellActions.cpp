@@ -28,7 +28,7 @@ void InstallDocumentShellActions(EditorUiFeature& ui, Engine& engine, DocumentSo
     engine.OnExitRequested = [&sources](Engine::ExitSource) { return DecideDocumentExit(sources); };
 
     auto settleError = std::make_shared<std::string>();
-    ui.AddOverlay([&engine, &sources, settleError] {
+    ui.AddShellOverlay([&engine, &sources, settleError] {
         if (!engine.IsExitPending())
             return;
         constexpr const char* title = "Unsaved documents";
@@ -51,6 +51,9 @@ void InstallDocumentShellActions(EditorUiFeature& ui, Engine& engine, DocumentSo
         ImGui::SameLine();
         if (ImGui::Button("Discard and close"))
         {
+            // Thrown away here, deliberately, so nothing is destroyed later
+            // still holding changes.
+            sources.DiscardAll();
             ImGui::CloseCurrentPopup();
             engine.ConfirmExit();
         }

@@ -172,6 +172,11 @@ public:
     }
 
     [[nodiscard]] bool IsDirty() const;   // any zone document dirty, or the manifest edited
+    // Any file this world last read or wrote changed on disk since: the world
+    // file, the world scene, an open zone's scene, or the legacy document's.
+    [[nodiscard]] bool IsExternallyModified() const;
+    // Every edit forgotten without saving, for a world about to be closed.
+    void DiscardChanges();
 
     // Id minting: random nonzero 64-bit, re-rolled on collision with any id
     // already in the manifest. Editor-side only by design; the engine mints
@@ -293,6 +298,7 @@ private:
     mutable WorldPartitionIndex Index_;
     mutable bool IndexDirty_ = true;
     bool WorldDirty_ = false;
+    FileBaseline WorldBaseline_;
     std::vector<ContentRiskRecord> ValidationRecords_;
 
     ZoneId FocusZone_;

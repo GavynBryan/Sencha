@@ -98,6 +98,12 @@ bool CookSession::Start(const CookProfile& profile,
         log.Warn("cook: another cook is already active");
         return false;
     }
+    if (std::string gateError; SaveGate && !SaveGate(gateError))
+    {
+        State->LastError = std::move(gateError);
+        log.Error("cook: {}", State->LastError);
+        return false;
+    }
     if (Project_ == nullptr || Assets_ == nullptr)
     {
         State->LastError = "no project or asset system is open";

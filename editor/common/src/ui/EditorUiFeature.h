@@ -126,6 +126,8 @@ public:
     // space, as opposed to a chrome bar, which does. Insertion order = draw
     // order.
     void AddOverlay(std::function<void()> draw);
+    // Drawn over whichever view is showing, or none: the window's own prompts.
+    void AddShellOverlay(std::function<void()> draw);
     void SetUndoActions(std::function<void()> undoAction,
                         std::function<void()> redoAction,
                         std::function<bool()> canUndoAction,
@@ -227,6 +229,7 @@ private:
     WorkspaceView OwnView;
     WorkspaceHost* Workspaces = nullptr;
     std::unique_ptr<WorkspaceBar> TabStrip;
+    std::vector<std::function<void()>> ShellOverlays;
     // Each open workspace's console, which this shell adds to its view.
     std::vector<std::pair<IWorkspace*, EditorConsolePanel*>> Consoles;
     std::string LastWindowTitle;

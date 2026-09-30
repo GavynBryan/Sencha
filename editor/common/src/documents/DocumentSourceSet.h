@@ -5,6 +5,7 @@
 #include "documents/DocumentSource.h"
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -20,7 +21,13 @@ public:
     DocumentSourceSet& operator=(DocumentSourceSet&&) = delete;
 
     void AddSource(DocumentSource& source);
+    // A source leaves with no changes: whoever drops them decides to, through
+    // a save or a discard, before the source is destroyed.
     void RemoveSource(DocumentSource& source);
+
+    // Told which document a step is about to be retaken on, before it is, so
+    // whatever shows that document can bring it forward.
+    void SetStepObserver(std::function<void(const DocumentRef&)> observer) { StepObserver = std::move(observer); }
 
     // A document took a new step on its own history.
     void Record(DocumentRef document);
@@ -33,6 +40,8 @@ public:
     [[nodiscard]] bool CanUndo() const { return Cursor > 0; }
     [[nodiscard]] bool CanRedo() const { return Cursor < Steps.size(); }
     void CancelEdits();
+    // Every changed document's changes thrown away, and the documents closed.
+    void DiscardAll();
 
     const DocumentSaveReport& SaveAll();
     DocumentSaveResult Save(const DocumentRef& document);
@@ -51,4 +60,5 @@ private:
     std::size_t Cursor = 0;
     bool Stepping = false;
     DocumentSaveReport Report;
+    std::function<void(const DocumentRef&)> StepObserver;
 };

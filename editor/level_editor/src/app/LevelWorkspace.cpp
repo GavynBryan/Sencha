@@ -35,6 +35,8 @@
 #include "ui/LightingPanel.h"
 #include "ui/MaterialPickerPanel.h"
 #include "render/RenderFeatureDetach.h"
+#include "documents/DocumentSourceSet.h"
+#include "ui/DocumentSaveReportView.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ToolPropertiesPanel.h"
 #include "render/SceneThumbnailCache.h"
@@ -98,8 +100,10 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
                                SdlWindow& window,
                                ProjectDescriptor* project,
                                Game* module,
-                               MaterialLibrary& materials)
-    : Materials(&materials)
+                               MaterialLibrary& materials,
+                               DocumentSourceSet& documents)
+    : Documents(documents)
+    , Materials(&materials)
     , Project(project)
 {
     EnginePtr = &engine;
@@ -143,6 +147,7 @@ LevelWorkspace::~LevelWorkspace()
     // would have made it a use-after-free. The renderer would otherwise hold the
     // feature until ~Renderer, long after all of this is gone.
     DetachRenderFeature(*EnginePtr, RenderFeature);
+    LevelDocument.reset();
     Workspace.reset();
     // After the documents, not before: their worlds hold things the module
     // compiled, and the document destructor is what runs them. The module
@@ -166,6 +171,7 @@ void LevelWorkspace::BuildDocument()
     Commands = std::make_unique<CommandStack>();
     Workspace = std::make_unique<EditorWorkspace>(engine.Logging(), *Commands);
     CameraSystem = std::make_unique<EditorViewportCameraSystem>(Workspace->Layout);
+    LevelDocument = std::make_unique<LevelDocumentSource>(*Workspace, *Commands, Documents);
     if (Assets)
         Workspace->World.SetAssetEnvironment(*Assets);
     Workspace->Layout.OnResize(Window->GetExtent().Width, Window->GetExtent().Height);
@@ -178,6 +184,7 @@ void LevelWorkspace::BuildPlayLoop()
                                                       Project ? &*Project : nullptr,
                                                       Assets ? &*Assets : nullptr);
     CookRuntime->RegisterConsoleCommands(engine.Console().Registry());
+    CookRuntime->SetSaveGate([this](std::string& error) { return SaveBeforeLaunch(error); });
 }
 
 void LevelWorkspace::BuildFileActions()
@@ -234,9 +241,9 @@ void LevelWorkspace::BuildInput()
         std::function<void()> Callback;
     };
     const KeyBinding bindings[] = {
-        { "edit.undo",             SDLK_Z,      { .Ctrl = true },                [this] { Commands->Undo(); } },
-        { "edit.redo",             SDLK_Z,      { .Ctrl = true, .Shift = true }, [this] { Commands->Redo(); } },
-        { "edit.redo",             SDLK_Y,      { .Ctrl = true },                [this] { Commands->Redo(); } },
+        { "edit.undo",             SDLK_Z,      { .Ctrl = true },                [this] { if (!UndoStagedEdit()) Documents.Undo(); } },
+        { "edit.redo",             SDLK_Z,      { .Ctrl = true, .Shift = true }, [this] { Documents.Redo(); } },
+        { "edit.redo",             SDLK_Y,      { .Ctrl = true },                [this] { Documents.Redo(); } },
         { "edit.delete",           SDLK_DELETE, {},                              [this] { Workspace->DeleteSelection(); } },
         { "edit.dissolve",         SDLK_BACKSPACE, {},                           [this] { Workspace->DissolveSelectedEdges(); } },
         { "edit.select_all",       SDLK_A,      { .Ctrl = true },                [this] { Workspace->SelectAll(); } },
@@ -244,8 +251,8 @@ void LevelWorkspace::BuildInput()
         { "edit.duplicate_instance", SDLK_D,    { .Alt = true },                 [this] { Workspace->Actions.Duplicate(/*asInstance*/ true); } },
         { "edit.repeat",           SDLK_R,      { .Ctrl = true },                [this] { Workspace->Actions.RepeatLast(); } },
         { "edit.escape",           SDLK_ESCAPE, {},                              [this] { Workspace->EscapeStep(); } },
-        { "file.new",              SDLK_N,      { .Ctrl = true },                [this] { if (Files) Files->New(); } },
-        { "file.open",             SDLK_O,      { .Ctrl = true },                [this] { if (Files) Files->RequestOpen(); } },
+        { "file.new",              SDLK_N,      { .Ctrl = true },                [this] { AfterSettlingChanges([this] { Files->New(); }); } },
+        { "file.open",             SDLK_O,      { .Ctrl = true },                [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } },
         { "file.save",             SDLK_S,      { .Ctrl = true },                [this] { if (Files) Files->Save(); } },
         { "mode.cycle",            SDLK_V,      { .Shift = true },               [this] { Workspace->MeshEdit.CycleElementKind(); } },
         { "mode.object",           SDLK_1,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Object); } },
@@ -517,16 +524,10 @@ void LevelWorkspace::BuildUi()
         .CenterBottom = 0.35f,
         .RightBottom = 0.3f,
     };
-    Surface.Edit = WorkspaceEditActions{
-        .Undo = [this] { Commands->Undo(); },
-        .Redo = [this] { Commands->Redo(); },
-        .CanUndo = [this] { return Commands->CanUndo(); },
-        .CanRedo = [this] { return Commands->CanRedo(); },
-    };
     Surface.File = WorkspaceFileActions{
-        .New = [this] { Files->New(); },
-        .NewWorld = [this] { Files->NewWorld(); },
-        .Open = [this] { Files->RequestOpen(); },
+        .New = [this] { AfterSettlingChanges([this] { Files->New(); }); },
+        .NewWorld = [this] { AfterSettlingChanges([this] { Files->NewWorld(); }); },
+        .Open = [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); },
         .Save = [this] { Files->Save(); },
         .SaveAs = [this] { Files->RequestSaveAs(); },
     };
@@ -630,6 +631,23 @@ void LevelWorkspace::BuildUi()
     // The workspace bar sits under the caption as app chrome, on the primary
     // viewport's header plate, so it reads apart from the editing row.
     Surface.Chrome.push_back([this] { StatusBar->Draw(); });
+    Surface.Overlays.push_back([this] { ChangesPrompt.Draw(); });
+    Surface.Overlays.push_back([this] {
+        constexpr const char* title = "Documents not saved";
+        if (ShowSaveReport && !ImGui::IsPopupOpen(title))
+            ImGui::OpenPopup(title);
+        if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+            return;
+        ImGui::TextUnformatted("Every document is saved before a cook or a play session reads the disk.");
+        DrawDocumentSaveReport(Documents, SettleError);
+        if (ImGui::Button("Close") || ImGui::IsKeyPressed(ImGuiKey_Escape))
+        {
+            ShowSaveReport = false;
+            SettleError.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    });
     Surface.Overlays.push_back([this]
     {
         DrawRadialMenu(*ToolWheel, *ToolMenu);
@@ -862,6 +880,70 @@ void LevelWorkspace::BuildUi()
         [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); });
     Browser = browserPanel.get();
     Surface.AddPanel(std::move(browserPanel));
+}
+
+bool LevelWorkspace::OwnsDocument(const DocumentRef& document) const
+{
+    return document.Source == LevelDocument.get();
+}
+
+bool LevelWorkspace::UndoStagedEdit()
+{
+    // A live preview is undone by itself, as the command stack defines: the
+    // committed step before it stays for the next undo.
+    if (!Commands->HasPendingEdit())
+        return false;
+    Commands->Undo();
+    return true;
+}
+
+bool LevelWorkspace::HasStagedEdit() const
+{
+    return Commands->HasPendingEdit();
+}
+
+void LevelWorkspace::AfterSettlingChanges(std::function<void()> proceed)
+{
+    std::vector<DocumentRef> changed;
+    LevelDocument->AppendChangedDocuments(changed);
+    ChangesPrompt.Ask(!changed.empty(), LevelDocument->DocumentLabel(LevelDocumentSource::kKey),
+                      [this, proceed = std::move(proceed)](DirtyDisposition disposition) {
+                          if (disposition == DirtyDisposition::Save)
+                          {
+                              const DocumentSaveResult saved = Documents.Save(LevelDocument->Ref());
+                              if (saved.Status != DocumentSaveStatus::Saved
+                                  && saved.Status != DocumentSaveStatus::SavedWithProblems)
+                              {
+                                  ShowSaveReport = true;
+                                  return;
+                              }
+                          }
+                          else if (disposition == DirtyDisposition::Discard)
+                          {
+                              LevelDocument->DiscardDocument(LevelDocumentSource::kKey);
+                          }
+                          proceed();
+                      });
+}
+
+bool LevelWorkspace::SaveBeforeLaunch(std::string& error)
+{
+    const std::vector<DocumentRef> changed = Documents.ChangedDocuments();
+    (void)Documents.SaveAll();
+    // Only what this save wrote decides: an older failure for a document saved
+    // since by other means is not a reason to stop.
+    for (const DocumentRef& document : changed)
+    {
+        const DocumentSaveResult* result = Documents.LastSave().Find(document);
+        if (result != nullptr && (result->Status == DocumentSaveStatus::Conflict
+                                  || result->Status == DocumentSaveStatus::Failed))
+        {
+            error = "a document could not be saved";
+            ShowSaveReport = true;
+            return false;
+        }
+    }
+    return true;
 }
 
 void LevelWorkspace::Tick(FrameUpdateContext& ctx)

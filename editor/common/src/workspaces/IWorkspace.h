@@ -1,5 +1,7 @@
 #pragma once
 
+#include "documents/DocumentRef.h"
+
 struct FrameUpdateContext;
 struct PlatformEventContext;
 struct WorkspaceView;
@@ -22,6 +24,15 @@ public:
     // Platform events the window routes to its active workspace, after the
     // window's own UI has seen them.
     virtual void HandlePlatformEvent(PlatformEventContext&) {}
+
+    // Whether this workspace edits the document, and bringing it forward when
+    // the journal is about to step it.
+    [[nodiscard]] virtual bool OwnsDocument(const DocumentRef&) const { return false; }
+    virtual void RevealDocument(const DocumentRef&) {}
+    // Undoes an edit staged but not yet a step, such as a live preview, on its
+    // own. False when there is none and the journal's newest step is next.
+    virtual bool UndoStagedEdit() { return false; }
+    [[nodiscard]] virtual bool HasStagedEdit() const { return false; }
 
     virtual WorkspaceView& View() = 0;
     // The window this workspace now draws in: its UI capture, input gates and

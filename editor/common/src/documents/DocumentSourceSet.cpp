@@ -11,6 +11,11 @@ void DocumentSourceSet::AddSource(DocumentSource& source)
 
 void DocumentSourceSet::RemoveSource(DocumentSource& source)
 {
+#ifndef NDEBUG
+    std::vector<DocumentRef> changed;
+    source.AppendChangedDocuments(changed);
+    assert(changed.empty() && "a document source was destroyed with changes nobody saved or discarded");
+#endif
     EraseSteps([&](const DocumentRef& step) { return step.Source == &source; });
     Report.RemoveSource(source);
     std::erase(Sources, &source);
@@ -56,6 +61,12 @@ void DocumentSourceSet::CancelEdits()
         source->CancelDocumentEdits();
 }
 
+void DocumentSourceSet::DiscardAll()
+{
+    for (const DocumentRef& document : ChangedDocuments())
+        document.Source->DiscardDocument(document.Key);
+}
+
 const DocumentSaveReport& DocumentSourceSet::SaveAll()
 {
     for (const DocumentRef& document : ChangedDocuments())
@@ -89,7 +100,11 @@ std::vector<DocumentRef> DocumentSourceSet::ChangedDocuments() const
 
 void DocumentSourceSet::Step(DocumentStep step)
 {
-    const DocumentRef& document = Steps[Cursor];
+    // A copy: the observer may bring another workspace forward, and nothing it
+    // runs may hold a reference into the journal.
+    const DocumentRef document = Steps[Cursor];
+    if (StepObserver)
+        StepObserver(document);
     Stepping = true;
     document.Source->StepDocument(document.Key, step);
     Stepping = false;

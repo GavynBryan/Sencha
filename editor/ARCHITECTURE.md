@@ -39,6 +39,18 @@ Opening, closing and switching are requests applied at the frame boundary by
 the one `WorkspaceTickSystem`, since a workspace adds and removes render
 features as it comes and goes; each open workspace is ticked there too.
 
+Documents share one journal, the session's `DocumentSourceSet`: every
+workspace's documents are sources in it (the level's is `LevelDocumentSource`,
+one document for the whole world since a command may span zones). Undo retakes
+the newest step wherever it is and brings the owning workspace forward first;
+a workspace's own staged edit, such as the level's live preview, is undone by
+itself before that. A workspace with changed documents asks Save, Discard or
+Keep editing before it closes, the exit prompt does the same for all of them,
+and a source destroyed with changes is a debug assertion: whoever drops them
+does so deliberately. Cook and Play save every document first and stop on a
+conflict or a failure. Saving a document whose file changed on disk since it
+was read is a conflict the author settles, never an overwrite.
+
 Each panel is given a window identity `<kind>.<settings id>` and its
 remembered visibility is filed under `<kind>/<settings id>`, so two
 workspaces' panels never share a window or a setting. The host adds a console

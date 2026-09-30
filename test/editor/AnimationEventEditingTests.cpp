@@ -198,6 +198,7 @@ TEST(AnimationEventEditing, ADragReachesThePreviewOnlyWhenCommitted)
     drag();
     workspace.ClipEvents.CommitEdit(events);
     EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.8f);
+    workspace.Sources.DiscardAll();
 }
 
 // A binding created from a declared verb takes an input per argument, and an
@@ -233,6 +234,7 @@ TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
     ASSERT_EQ(workspace.Rig.Simulation.Rig()->Contents.at(0).Events.size(), 1u);
     EXPECT_TRUE(workspace.Rig.Simulation.Rig()->Contents[0].Events[0].Resolved)
         << (workspace.Rig.Simulation.Rig()->Diagnostics.empty() ? "" : workspace.Rig.Simulation.Rig()->Diagnostics.back().Message);
+    workspace.Sources.DiscardAll();
 }
 
 // The inspector's check is the binding's: one input filling an Int and a
@@ -295,6 +297,7 @@ TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
 
     workspace.Sources.Redo();
     EXPECT_EQ(clip->Events.size(), 1u);
+    workspace.Sources.DiscardAll();
 }
 
 // Save all writes the data document and holds back a sidecar changed on disk;
@@ -330,4 +333,5 @@ TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
     EXPECT_TRUE(workspace.Sources.LastSave().WithStatus(DocumentSaveStatus::Conflict).empty());
     workspace.Sources.Undo();
     EXPECT_EQ(events->Events().size(), 1u) << "the author's events are one step away";
+    workspace.Sources.DiscardAll();
 }

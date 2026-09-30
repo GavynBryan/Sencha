@@ -155,3 +155,24 @@ TEST(WorkspaceHost, DestroyingTheHostClosesEverything)
     }
     EXPECT_EQ((Log{ "materials destroyed", "level destroyed" }), log);
 }
+
+TEST(WorkspaceHost, AGuardHoldsACloseAndTheWayOutPassesIt)
+{
+    Log log;
+    WorkspaceHost host(Table(log), true);
+    bool mayClose = false;
+    host.SetCloseGuard([&](const WorkspaceKind&, IWorkspace&) { return mayClose; });
+    (void)host.Open("level");
+    log.clear();
+
+    EXPECT_FALSE(host.Close("level"));
+    EXPECT_NE(host.Find("level"), nullptr) << "a held close destroyed the workspace";
+    mayClose = true;
+    EXPECT_TRUE(host.Close("level"));
+    EXPECT_EQ((Log{ "level destroyed" }), log);
+
+    mayClose = false;
+    (void)host.Open("materials");
+    host.CloseAll();
+    EXPECT_TRUE(host.OpenWorkspaces().empty()) << "the application's exit is past the guard";
+}

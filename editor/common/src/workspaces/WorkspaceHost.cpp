@@ -82,6 +82,16 @@ bool WorkspaceHost::Close(std::string_view kind)
     const auto it = std::find_if(Opened.begin(), Opened.end(), [&](const Entry& entry) { return entry.Kind->Id == kind; });
     if (it == Opened.end())
         return false;
+    if (MayClose && !MayClose(*it->Kind, *it->Instance))
+        return false;
+    return Destroy(kind);
+}
+
+bool WorkspaceHost::Destroy(std::string_view kind)
+{
+    const auto it = std::find_if(Opened.begin(), Opened.end(), [&](const Entry& entry) { return entry.Kind->Id == kind; });
+    if (it == Opened.end())
+        return false;
 
     const WorkspaceKind* row = it->Kind;
     if (OnClosing)
@@ -107,7 +117,7 @@ void WorkspaceHost::CloseAll()
     ActiveEntryKind = nullptr;
     RecentlyActive.clear();
     while (!Opened.empty())
-        (void)Close(Opened.back().Kind->Id);
+        (void)Destroy(Opened.back().Kind->Id);
 }
 
 void WorkspaceHost::ApplyRequests()

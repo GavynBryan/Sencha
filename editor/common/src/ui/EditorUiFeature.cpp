@@ -361,6 +361,8 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         for (const std::function<void()>& overlay : view->Overlays)
             if (overlay)
                 overlay();
+    for (const std::function<void()>& overlay : ShellOverlays)
+        overlay();
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
@@ -673,6 +675,12 @@ void EditorUiFeature::AddOverlay(std::function<void()> draw)
 {
     if (draw)
         OwnView.Overlays.push_back(std::move(draw));
+}
+
+void EditorUiFeature::AddShellOverlay(std::function<void()> draw)
+{
+    if (draw)
+        ShellOverlays.push_back(std::move(draw));
 }
 
 void EditorUiFeature::SetWorkspaceHost(WorkspaceHost& host)
@@ -1175,18 +1183,13 @@ void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
 
     if (ImGui::BeginMenu("Edit"))
     {
-        const bool own = view != nullptr && view->Edit.Undo;
-        const std::function<void()>& undo = own ? view->Edit.Undo : UndoAction;
-        const std::function<void()>& redo = own ? view->Edit.Redo : RedoAction;
-        const std::function<bool()>& canUndoFn = own ? view->Edit.CanUndo : CanUndoAction;
-        const std::function<bool()>& canRedoFn = own ? view->Edit.CanRedo : CanRedoAction;
-        const bool canUndo = canUndoFn ? canUndoFn() : false;
-        const bool canRedo = canRedoFn ? canRedoFn() : false;
+        const bool canUndo = CanUndoAction ? CanUndoAction() : false;
+        const bool canRedo = CanRedoAction ? CanRedoAction() : false;
 
-        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo) && undo)
-            undo();
-        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && redo)
-            redo();
+        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo) && UndoAction)
+            UndoAction();
+        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && RedoAction)
+            RedoAction();
 
         ImGui::EndMenu();
     }

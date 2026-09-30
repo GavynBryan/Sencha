@@ -28,6 +28,13 @@ public:
 
     void RegisterConsoleCommands(ConsoleRegistry& registry);
 
+    // Runs before a cook or a play session reads the disk; false stops it.
+    void SetSaveGate(const std::function<bool(std::string& error)>& gate)
+    {
+        Session.SetSaveGate(gate);
+        Driver.SetSaveGate(gate);
+    }
+
     // Republishes a completed cook into the player, and refreshes the baked
     // lighting preview when one is showing. Called once per frame; each step is
     // a no-op until its serial moves.

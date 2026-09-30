@@ -141,5 +141,6 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
         EXPECT_FALSE(workspace.Takes.ReplayAgainstA(workspace.Rig.Simulation));
         EXPECT_NE(workspace.Takes.Comparison().Refusal.find("different scenarios"), std::string::npos);
         workspace.Rig.Simulation.Close();
+        workspace.Sources.DiscardAll();
     }
 }

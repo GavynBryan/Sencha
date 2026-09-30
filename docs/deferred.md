@@ -71,15 +71,13 @@ do the work and delete the entry.
   `editor/animation_editor/src/authoring/`.
 - **Trigger:** file watching in the consolidated editor.
 
-## Other editors' documents on the shared document layer
+## The material editor's documents on the shared document layer
 
-- **What:** Shudei's `MaterialTabSet` and Kyusu's document handling keep their
-  own open, save and undo instead of the shared document layer the Data Editor
-  and the animation editor use.
-- **Where:** `editor/material_editor/src/MaterialTabSet.*`, `editor/level_editor/src/document/`.
-- **Trigger:** the editor consolidation ticket, which gives the one application
-  one undo journal and one save-all.
-
+- **What:** Shudei's `MaterialTabSet` keeps its own open, save and undo instead
+  of the shared document layer the level, data and animation editors use.
+- **Where:** `editor/material_editor/src/MaterialTabSet.*`.
+- **Trigger:** the materials workspace joining Kyusu, which gives it the one
+  undo journal and save-all.
 ## Sanitizers and benchmarks in CI
 
 - **What:** the `asan` and `tsan` presets and the gated benchmarks run only by
@@ -97,15 +95,6 @@ do the work and delete the entry.
 - **Trigger:** a host that runs source hot reload beside a document set, which
   the consolidated editor will.
 
-## Play-in-editor and unsaved values
-
-- **What:** because working versions are pushed into resident assets, a
-  play-in-editor session started from the same process would see unsaved
-  values. Whether it should is a product decision.
-- **Where:** `editor/common/src/data/DataResidentSync.*`.
-- **Trigger:** the consolidated editor wiring play-in-editor to the shared
-  document set.
-
 ## Unsaved-document prompt polish
 
 - **What:** closing, renaming or deleting an unsaved document asks Save,
@@ -113,18 +102,6 @@ do the work and delete the entry.
   loss still cancels typed text that has not been committed.
 - **Where:** `editor/common/src/ui/DocumentShellActions.*`.
 - **Trigger:** the UX polish pass.
-
-## Destroying a document source that still has changes
-
-- **What:** the plan for the shared document layer makes destroying a document
-  source with unsaved documents a debug assertion, reachable only through the
-  exit prompt. Today "Discard and close" and tests destroy sets with changes,
-  so the assertion would need an explicit discard-everything step first.
-- **Where:** `editor/common/src/data/DataDocumentSet.cpp`,
-  `editor/animation_editor/src/authoring/AnimationClipEventsSet.cpp`,
-  `editor/common/src/ui/DocumentShellActions.cpp`.
-- **Trigger:** the consolidated editor's single shutdown path, which can
-  discard every source's documents before tearing them down.
 
 ## Gameplay events on behaviors reached without a request
 

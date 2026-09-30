@@ -138,6 +138,7 @@ bool WorldDocument::LoadWorld(std::string_view path)
     SelectedZone_ = ZoneId{};
     WorldSceneFocused_ = false;
     WorldPath_.assign(path);
+    WorldBaseline_.Record(WorldPath_);
     Manifest_ = std::move(*manifest);
     IndexDirty_ = true;
     WorldDirty_ = false;
@@ -294,6 +295,8 @@ bool WorldDocument::SaveWorld()
     file << text;
     if (!file.good())
         return false;
+    file.close();
+    WorldBaseline_.Record(WorldPath_);
 
     WorldDirty_ = false;
     WriteUserSidecar();
@@ -607,6 +610,34 @@ const EditorDocument& WorldDocument::FocusDocument() const
     const auto it = OpenZones_.find(FocusZone_);
     assert(it != OpenZones_.end() && "FocusDocument: focus zone is not open");
     return *it->second.Document;
+}
+
+bool WorldDocument::IsExternallyModified() const
+{
+    if (!WorldMode_)
+        return LegacyDocument_->IsExternallyModified();
+    if (!WorldPath_.empty() && WorldBaseline_.FileChanged(WorldPath_))
+        return true;
+    if (WorldScene_ && WorldScene_->IsExternallyModified())
+        return true;
+    for (const auto& [zone, open] : OpenZones_)
+        if (open.Document->IsExternallyModified())
+            return true;
+    return false;
+}
+
+void WorldDocument::DiscardChanges()
+{
+    if (!WorldMode_)
+    {
+        LegacyDocument_->MarkDirty(false);
+        return;
+    }
+    WorldDirty_ = false;
+    if (WorldScene_)
+        WorldScene_->MarkDirty(false);
+    for (const auto& [zone, open] : OpenZones_)
+        open.Document->MarkDirty(false);
 }
 
 bool WorldDocument::IsDirty() const

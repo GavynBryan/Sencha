@@ -2,6 +2,7 @@
 
 #include "PieSession.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -46,7 +47,11 @@ public:
     // Registers play/stop/project. CookSession owns cook commands and settings.
     void RegisterCommands(ConsoleRegistry& registry);
 
+    // Runs before a session is launched from what is on disk; false stops it.
+    void SetSaveGate(std::function<bool(std::string& error)> gate) { SaveGate = std::move(gate); }
+
 private:
+    std::function<bool(std::string& error)> SaveGate;
     // Resolves the prebuilt `app` host: beside the editor (installed SDK layout),
     // else build/app/app (the build tree, where editor and app sit in sibling dirs).
     [[nodiscard]] std::string ResolveHostAppPath() const;

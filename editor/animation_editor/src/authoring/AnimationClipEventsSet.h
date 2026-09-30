@@ -67,6 +67,7 @@ public:
     [[nodiscard]] bool SettleDocument(std::string_view key, ConflictChoice choice, std::string& error) override;
     void StepDocument(std::string_view key, DocumentStep step) override;
     void CancelDocumentEdits() override;
+    void DiscardDocument(std::string_view key) override;
 
 private:
     [[nodiscard]] bool Push(AnimationClipEventsDocument& document);

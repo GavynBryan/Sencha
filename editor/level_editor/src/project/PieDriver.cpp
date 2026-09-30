@@ -27,6 +27,11 @@ bool PieDriver::PreparePlay(const std::string& map,
                             std::string& appPath)
 {
     Logger& log = Engine_.Logging().GetLogger<PieDriver>();
+    if (std::string gateError; SaveGate && !SaveGate(gateError))
+    {
+        log.Error("play: {}", gateError);
+        return false;
+    }
 
     if (Project_ == nullptr)
     {

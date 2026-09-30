@@ -54,6 +54,9 @@ namespace
 
         void TearDown() override
         {
+            // A test that leaves changes behind says so; nothing is destroyed
+            // holding them.
+            Sources.DiscardAll();
             Set.reset();
             std::error_code ec;
             std::filesystem::remove_all(Root, ec);

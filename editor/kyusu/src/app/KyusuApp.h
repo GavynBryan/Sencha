@@ -27,6 +27,11 @@ public:
 
 private:
     void RegisterWorkspaceCommands();
+    // Undo, redo, save all and the exit prompt over the session's journal;
+    // the journal bringing forward the workspace whose document it steps; and
+    // a workspace with changes asking before it closes.
+    void InstallDocumentActions();
+    void DrawClosePrompt();
     // Whether this session starts in a level rather than choosing a project.
     [[nodiscard]] bool OpensLevel() const;
 
@@ -37,4 +42,8 @@ private:
     std::unique_ptr<WorkspaceHost> Workspaces;
     // Owned by the renderer.
     EditorUiFeature* Ui = nullptr;
+    // A workspace whose close is held until its changed documents are saved
+    // or discarded.
+    std::string HeldClose;
+    std::string SettleError;
 };

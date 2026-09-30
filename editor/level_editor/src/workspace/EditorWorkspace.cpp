@@ -115,7 +115,7 @@ void EditorWorkspace::BuildInteractionState()
         Commands);
 }
 
-void EditorWorkspace::CancelDocumentTransactions()
+void EditorWorkspace::CancelOpenEdits()
 {
     Interaction.CancelActiveTool();
     // Every preview stages state in a document: the bridge owns an entity in the
@@ -124,6 +124,11 @@ void EditorWorkspace::CancelDocumentTransactions()
     // reverted while the document that holds it is still alive.
     for (const PendingEditHooks& pending : PendingPanelEdits)
         pending.Cancel();
+}
+
+void EditorWorkspace::CancelDocumentTransactions()
+{
+    CancelOpenEdits();
     Commands.Clear();
 }
 

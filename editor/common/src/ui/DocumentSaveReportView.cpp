@@ -9,6 +9,11 @@
 namespace
 {
     constexpr ImVec4 kErrorColor(1.0f, 0.5f, 0.4f, 1.0f);
+
+    std::string LabelOf(const DocumentRef& document)
+    {
+        return document.Source != nullptr ? document.Source->DocumentLabel(document.Key) : document.Key;
+    }
 }
 
 std::string DescribeDocumentSave(const DocumentSaveResult& result)
@@ -30,7 +35,7 @@ void DrawUnsavedDocuments(const DocumentSourceSet& sources)
 {
     const std::vector<DocumentRef> changed = sources.ChangedDocuments();
     for (const DocumentRef& document : changed)
-        ImGui::BulletText("%s: unsaved edits", document.Key.c_str());
+        ImGui::BulletText("%s: unsaved edits", LabelOf(document).c_str());
     if (changed.empty())
         ImGui::TextDisabled("No open document has unsaved edits.");
 }
@@ -39,9 +44,9 @@ void DrawDocumentSaveReport(DocumentSourceSet& sources, std::string& settleError
 {
     const DocumentSaveReport& report = sources.LastSave();
     for (const DocumentSaveResult* result : report.WithStatus(DocumentSaveStatus::SavedWithProblems))
-        ImGui::TextWrapped("%s was saved with problems a game will refuse to load.", result->Document.Key.c_str());
+        ImGui::TextWrapped("%s was saved with problems a game will refuse to load.", LabelOf(result->Document).c_str());
     for (const DocumentSaveResult* result : report.WithStatus(DocumentSaveStatus::Failed))
-        ImGui::TextColored(kErrorColor, "%s was not saved: %s", result->Document.Key.c_str(), result->Error.c_str());
+        ImGui::TextColored(kErrorColor, "%s was not saved: %s", LabelOf(result->Document).c_str(), result->Error.c_str());
 
     // Settling one removes it from the report being walked.
     std::vector<DocumentRef> conflicts;
@@ -50,7 +55,7 @@ void DrawDocumentSaveReport(DocumentSourceSet& sources, std::string& settleError
     for (const DocumentRef& document : conflicts)
     {
         ImGui::PushID(document.Key.c_str());
-        ImGui::TextWrapped("%s changed on disk since it was read.", document.Key.c_str());
+        ImGui::TextWrapped("%s changed on disk since it was read.", LabelOf(document).c_str());
         if (ImGui::SmallButton("Keep mine"))
             (void)sources.Settle(document, ConflictChoice::KeepMine, settleError);
         ImGui::SameLine();

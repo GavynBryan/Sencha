@@ -1,5 +1,6 @@
 #pragma once
 
+#include "documents/DocumentSourceSet.h"
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
 
@@ -31,6 +32,8 @@ public:
     [[nodiscard]] Game* Module() const { return GameModule.Instance; }
     [[nodiscard]] RuntimeAssets& Assets() const;
     [[nodiscard]] MaterialLibrary& Materials() { return MaterialList; }
+    // The one journal and save-all across every workspace's documents.
+    [[nodiscard]] DocumentSourceSet& Documents() { return Journal; }
 
 private:
     void LoadModule(const std::string& modulePath);
@@ -42,4 +45,5 @@ private:
     GameModuleLoader ModuleLoader;
     LoadedModule GameModule;
     MaterialLibrary MaterialList;
+    DocumentSourceSet Journal;
 };
