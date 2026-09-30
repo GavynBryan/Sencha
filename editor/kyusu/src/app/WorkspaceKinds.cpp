@@ -29,9 +29,9 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
     kinds.push_back(WorkspaceKind{
         .Id = "materials",
         .DisplayName = "Materials",
-        .Create = [&engine, &session, &prompts] {
+        .Create = [&engine, &session, &prompts, &actions] {
             return std::make_unique<MaterialWorkspace>(engine, session.Project(), session.Materials(),
-                                                       session.Documents(), prompts);
+                                                       session.Documents(), prompts, actions);
         },
     });
     kinds.push_back(WorkspaceKind{

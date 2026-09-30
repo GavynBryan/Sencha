@@ -69,6 +69,9 @@ public:
     [[nodiscard]] virtual std::vector<WorkspaceResourceFacet> Resources() { return {}; }
     // Not const: the property sources it hands out are the workspace's to edit.
     [[nodiscard]] virtual WorkspaceSelectionFacet Selection() { return {}; }
+    // Makes one of the open documents (WorkspaceDocumentFacet::Open) the one
+    // being edited.
+    virtual void ShowDocument(std::string_view /*key*/) {}
     // Shows where a problem in one of its documents is; false when it cannot.
     virtual bool RevealProblem(const Problem&) { return false; }
     [[nodiscard]] virtual std::vector<WorkspaceExplorerInfo> Explorers() const { return {}; }

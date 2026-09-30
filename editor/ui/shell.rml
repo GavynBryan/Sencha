@@ -100,6 +100,12 @@
                 </div>
                 <div class="key theme-key" data-if="row.control == 'action'"
                      data-event-click="shell_sheet_act('tool', it_index, '')">{{row.label}}</div>
+                <div class="setting_color" data-if="row.control == 'color'">
+                    <div class="swatch theme-field" data-style-background-color="row.parts[0]"></div>
+                    <input type="text" class="setting_control theme-field" data-value="row.value"
+                           data-event-focus="shell_sheet_hold('tool', it_index)"
+                           data-event-blur="shell_sheet_release('tool', it_index)"/>
+                </div>
                 <div class="setting_control key theme-key" data-if="row.control == 'asset'"
                      data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('tool', it_index)">
                     <span data-if="row.value != ''">{{row.value}}</span><span data-if="row.value == ''">NONE</span>
@@ -179,6 +185,12 @@
             </div>
             <div class="key theme-key" data-if="row.control == 'action'"
                  data-event-click="shell_sheet_act('selection', it_index, '')">{{row.label}}</div>
+            <div class="setting_color" data-if="row.control == 'color'">
+                <div class="swatch theme-field" data-style-background-color="row.parts[0]"></div>
+                <input type="text" class="setting_control theme-field" data-value="row.value"
+                       data-event-focus="shell_sheet_hold('selection', it_index)"
+                       data-event-blur="shell_sheet_release('selection', it_index)"/>
+            </div>
             <div class="setting_control key theme-key" data-if="row.control == 'asset'"
                  data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('selection', it_index)">
                 <span data-if="row.value != ''">{{row.value}}</span><span data-if="row.value == ''">NONE</span>

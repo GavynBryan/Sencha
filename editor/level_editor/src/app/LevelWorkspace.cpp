@@ -300,10 +300,7 @@ void LevelWorkspace::BuildInput()
                   .DefaultChords = { { SDLK_O, {} } } },
                 {});
     // The explorers: defined here, opened by whichever shell shows the workspace.
-    OfferAction(Catalog, ActionHandlers,
-                { .Id = "explorer.materials", .Label = "Materials", .Category = "Explore",
-                  .Icon = IconId::Folder, .DefaultChords = { { SDLK_M, {} } } },
-                {});
+    OfferAction(Catalog, ActionHandlers, MaterialExplorerAction(), {});
     OfferAction(Catalog, ActionHandlers,
                 { .Id = "explorer.prefabs", .Label = "Prefabs", .Category = "Explore",
                   .Icon = IconId::Box, .DefaultChords = { { SDLK_P, { .Shift = true } } } },
@@ -320,14 +317,14 @@ void LevelWorkspace::BuildInput()
         if (SceneThumbnailCache* cache = RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr)
             cache->Clear();
     });
-    offer("materials.rescan", "Rescan Materials", "Material", {}, IconId::Refresh, [this] {
-        if (Materials == nullptr)
-            return;
-        Materials->Rescan(Materials->Roots());
-        // A rescan may follow a save that re-pointed a material's textures.
-        if (Thumbnails != nullptr)
-            Thumbnails->Clear();
-    });
+    OfferAction(Catalog, ActionHandlers, MaterialRescanAction(), { .Invoke = [this] {
+                    if (Materials == nullptr)
+                        return;
+                    Materials->Rescan(Materials->Roots());
+                    // A rescan may follow a save that re-pointed a material's textures.
+                    if (Thumbnails != nullptr)
+                        Thumbnails->Clear();
+                } });
     OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [this] { return HeldType(); });
 
     // How the views share the content area, and which one a single view shows.
@@ -703,16 +700,7 @@ void LevelWorkspace::BuildUi()
     // Material picking surfaces: thumbnail residency for both panels, bounded
     // by the budget cvar so a large library never pins every base color
     // texture on the GPU.
-    console.Registry().RegisterCVar({
-        .Name = "editor.materials.thumbnail_budget",
-        .Owner = "editor",
-        .Type = CVarType::Int,
-        .DefaultValue = std::int64_t{ 128 },
-        .CurrentValue = std::int64_t{ 128 },
-        .Flags = CVarFlags::Archive,
-        .Help = "Most material thumbnails kept on the GPU; the ones shown most recently stay.",
-        .Source = { "editor" },
-    });
+    MaterialThumbnailCache::RegisterBudget(console.Registry());
     UiService* ui = engine.TryUi();
     Thumbnails = std::make_unique<MaterialThumbnailCache>(
         Assets->Assets, *Assets->Textures, engine.Graphics().Images, engine.Graphics().Samplers,
@@ -970,26 +958,9 @@ void LevelWorkspace::ProcessFrame()
             WheelScreen->Present(nullptr, nullptr);
     }
 
-    // One LRU tick per frame, before the UI panels request thumbnails. The
-    // renderer's fence-anchored clock decides when an evicted binding's
-    // descriptor set is safe to free; this used to be a local countdown of
-    // four, which is one short of the guarantee at the maximum frames-in-flight.
+    // Only what an explorer showed recently stays on the GPU.
     if (Thumbnails)
-    {
-        GpuFrameRetirement retirement;
-        if (const GraphicsServices* graphics =
-                EnginePtr != nullptr ? EnginePtr->TryGraphics() : nullptr)
-        {
-            retirement = graphics->Frames.GetRetirement();
-        }
-        Thumbnails->BeginFrame(retirement);
-        // Only what an explorer showed recently stays on the GPU.
-        std::int64_t budget = 128;
-        if (const CVarMetadata* var = EnginePtr->Console().Registry().FindCVar("editor.materials.thumbnail_budget"))
-            if (const std::int64_t* value = std::get_if<std::int64_t>(&var->CurrentValue))
-                budget = *value;
-        Thumbnails->TrimToBudget(static_cast<std::size_t>(std::max<std::int64_t>(1, budget)));
-    }
+        Thumbnails->UpdateFrame(*EnginePtr);
 }
 
 namespace
@@ -1187,7 +1158,7 @@ std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const
     std::vector<WorkspaceExplorerInfo> explorers{ WorldExplorer::Info() };
     if (Workspace->World.IsWorld())
         explorers.push_back(PartitionOutline::Info());
-    explorers.push_back(MaterialExplorer::Info());
+    explorers.push_back(MaterialExplorerInfo());
     explorers.push_back(PrefabExplorer::Info());
     return explorers;
 }

@@ -11,8 +11,10 @@
 #include <render/pass/MeshForwardPass.h>
 #include <render/RenderLight.h>
 #include <render/RenderQueue.h>
+#include <render/ui/UiDrawFrame.h>
 
 #include <array>
+#include <optional>
 
 struct RuntimeAssets;
 
@@ -21,9 +23,8 @@ struct RuntimeAssets;
 //
 // The material editor's single offscreen view: one procedural primitive, one
 // material, one point light plus hemispheric ambient, drawn through the
-// runtime MeshForwardPass into an offscreen target the preview panel
-// shows via ImGui::Image. Orbit state lives here; the panel feeds it mouse
-// deltas.
+// runtime MeshForwardPass into an offscreen target a host image shows. Orbit
+// state lives here; the workspace feeds it pointer deltas.
 //=============================================================================
 class MaterialPreviewRenderFeature : public IRenderFeature
 {
@@ -35,8 +36,8 @@ public:
     void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
-    // UI side: record the on-screen size, get the texture to display.
-    [[nodiscard]] ImTextureID Display(VkExtent2D extent);
+    // UI side: the size it is shown at, and the host image that shows it.
+    void Show(VkExtent2D extent, UiHostImageId image);
 
     void SetMaterial(MaterialHandle material) { Material = material; }
     void SetPrimitive(PreviewPrimitive primitive) { Active = primitive; }
@@ -55,6 +56,7 @@ private:
     RuntimeAssets& Assets;
     DisplayedTargets Targets;
     RenderTargetId SceneTarget;
+    std::optional<UiHostImageId> Image;
     PreviewBackdropRenderer Backdrop;
     // The forward pass requires the lighting bindings for its descriptor
     // layout. The preview never renders shadow tiles, so it skips atlas

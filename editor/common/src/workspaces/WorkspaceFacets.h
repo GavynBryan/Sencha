@@ -15,11 +15,23 @@ class IPropertySource;
 // document is a dial, a tab or a title, and a transport is keys or a menu.
 // The operations beside them are actions in the ActionCatalog.
 
-// The document the workspace is editing right now.
+// One document a workspace has open, named by the key it takes back.
+struct WorkspaceOpenDocument
+{
+    std::string Key;
+    std::string Label;
+    bool Changed = false;
+};
+
+// The document the workspace is editing right now, and, for a workspace that
+// keeps several open, all of them.
 struct WorkspaceDocumentFacet
 {
     std::string Label;
     bool Changed = false;
+    std::vector<WorkspaceOpenDocument> Open = {};
+    // The key of the one being edited, among Open.
+    std::string Active = {};
 };
 
 // Whether the workspace cooks and plays, and what that is doing now. The keys
@@ -203,6 +215,14 @@ struct ExplorerPage
     // What the explorer offers besides its items: a rescan, a new item.
     std::vector<std::string> Actions = {};
 };
+
+// Counts one more item that matches and says whether it falls on the page the
+// query asks for: every match counts toward the total, only the page's are kept.
+[[nodiscard]] inline bool CountOnPage(ExplorerPage& page, const ExplorerQuery& query)
+{
+    const std::size_t index = page.Total++;
+    return index >= query.First && page.Items.size() < query.Count;
+}
 
 // Choosing an item: picking it up alone, or putting it to use at once (a
 // double click, Enter); in an outline, picking everything from the current one

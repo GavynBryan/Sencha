@@ -15,6 +15,8 @@
 
 class AssetRegistry;
 class AssetSystem;
+class ConsoleRegistry;
+class Engine;
 class TextureCache;
 class UiService;
 class UiTextureResidency;
@@ -48,7 +50,14 @@ public:
                            VulkanSamplerCache& samplers,
                            const AssetRegistry& registry,
                            UiService* ui = nullptr,
-                           UiTextureResidency* uiTextures = nullptr);
+                           UiTextureResidency* uiTextures = nullptr,
+                           std::string imagePrefix = "material:");
+    // editor.materials.thumbnail_budget, for every cache; registering it again
+    // changes nothing.
+    static void RegisterBudget(ConsoleRegistry& registry);
+    // Once per frame, before any thumbnail is asked for: BeginFrame with the
+    // renderer's retirement, then TrimToBudget to the budget cvar.
+    void UpdateFrame(Engine& engine);
 
     // Advances the LRU clock; call once per UI frame before any Thumbnail().
     void BeginFrame(GpuFrameRetirement retirement);
@@ -77,6 +86,8 @@ public:
     [[nodiscard]] std::size_t ResidentCount() const { return Entries.size(); }
 
 private:
+    // Host image names start with this, so two caches never share one.
+    std::string ImagePrefix;
     struct Entry
     {
         // Empty when the material resolved to "no base color texture" (or

@@ -55,9 +55,14 @@ std::optional<RenderTargetView> DisplayedTargets::Acquire(RenderTargetId id)
     return Store.Acquire(id);
 }
 
-ImTextureID DisplayedTargets::Display(RenderTargetId id, VkExtent2D extent)
+void DisplayedTargets::Show(RenderTargetId id, VkExtent2D extent)
 {
     Ledger.MarkDisplayed(id);
     Store.SetExtent(id, extent);
+}
+
+ImTextureID DisplayedTargets::Display(RenderTargetId id, VkExtent2D extent)
+{
+    Show(id, extent);
     return Presenter.Present(Store, id);
 }

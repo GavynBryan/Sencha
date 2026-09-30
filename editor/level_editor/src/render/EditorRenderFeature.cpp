@@ -16,6 +16,7 @@
 
 #include <app/EngineConsoleBuiltins.h>
 #include "BrushBakeGpu.h"
+#include "render/TargetImagePublish.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
@@ -358,12 +359,10 @@ void EditorRenderFeature::PublishViewImages()
         const auto slot = std::ranges::find_if(ViewSlots, [&](const ViewSlot& s) {
             return s.Viewport->Id == image.Viewport;
         });
-        // Only an image this frame's view left readable: a view the
-        // composition skipped is still in whatever layout it was acquired in.
-        const bool readable = slot != ViewSlots.end() && slot->Target.ColorLayout != nullptr
-                           && *slot->Target.ColorLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        if (readable)
-            Services.UiTextures->PublishHostImage(image.Image, BindlessImageIndex{ slot->Target.ColorBindless });
+        // A view the composition skipped is still in whatever layout it was
+        // acquired in.
+        if (slot != ViewSlots.end())
+            PublishTargetImage(*Services.UiTextures, image.Image, slot->Target.ColorLayout, slot->Target.ColorBindless);
         else
             Services.UiTextures->WithdrawHostImage(image.Image);
     }

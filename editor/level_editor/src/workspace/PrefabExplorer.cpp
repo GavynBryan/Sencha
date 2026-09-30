@@ -56,8 +56,7 @@ ExplorerPage PrefabExplorer::Explore(const ExplorerQuery& query) const
         const bool self = !editing.empty() && editing.ends_with(prefab.AssetPath.substr(sizeof("asset://") - 1));
         if (self || !TextFilterMatch(prefab.Label, query.Filter))
             continue;
-        const std::size_t index = page.Total++;
-        if (index < query.First || page.Items.size() >= query.Count)
+        if (!CountOnPage(page, query))
             continue;
         page.Items.push_back({ .Key = prefab.AssetPath,
                                .Label = prefab.Label,

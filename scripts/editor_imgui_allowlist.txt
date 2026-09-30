@@ -77,11 +77,6 @@ editor/data_editor/src/input/InputProfileForm.cpp
 editor/data_editor/src/movement/MovementProfileForm.cpp
 editor/data_editor/src/movement/MovementResolvePanel.cpp
 editor/data_editor/src/movement/MovementResponsePanel.cpp
-editor/material_editor/src/MaterialFilesPanel.cpp
-editor/material_editor/src/MaterialInspectorPanel.cpp
-editor/material_editor/src/MaterialPreviewPanel.cpp
-editor/material_editor/src/MaterialPreviewRenderFeature.cpp
-editor/material_editor/src/MaterialPreviewRenderFeature.h
 editor/material_editor/src/TexturesPanel.cpp
 editor/ui_preview/src/ui/ActionLogPanel.cpp
 editor/ui_preview/src/ui/DiagnosticsPanel.cpp

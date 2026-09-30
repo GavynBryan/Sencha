@@ -32,8 +32,11 @@ public:
     // This frame's images, only for a target displayed last frame.
     [[nodiscard]] std::optional<RenderTargetView> Acquire(RenderTargetId id);
 
-    // UI side: records the on-screen size and returns the texture to draw, 0
-    // until a render has filled it.
+    // UI side: records the on-screen size, so it renders next frame at that
+    // size; a host image then shows it (`PublishTargetImage`).
+    void Show(RenderTargetId id, VkExtent2D extent);
+    // The same, for an ImGui panel: also returns the texture to draw, 0 until
+    // a render has filled it.
     [[nodiscard]] ImTextureID Display(RenderTargetId id, VkExtent2D extent);
 
 private:

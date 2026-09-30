@@ -133,6 +133,8 @@ private:
     [[nodiscard]] std::vector<UiRow> HatchEntries() const;
     [[nodiscard]] std::vector<UiRow> WorkspaceEntries() const;
     [[nodiscard]] std::vector<UiRow> CategoryEntries(std::string_view category) const;
+    // The workspace's open documents, then its File actions.
+    [[nodiscard]] std::vector<UiRow> DocumentEntries() const;
     [[nodiscard]] std::vector<UiRow> ToolEntries();
     // The operation in hand, bottom left, and its card.
     void PublishStation(IWorkspace* workspace);

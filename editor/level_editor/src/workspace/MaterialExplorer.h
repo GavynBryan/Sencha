@@ -1,5 +1,6 @@
 #pragma once
 
+#include "project/MaterialLibraryExplorer.h"
 #include "workspaces/WorkspaceFacets.h"
 
 #include <functional>
@@ -19,14 +20,13 @@ class MaterialLibrary;
 class MaterialExplorer
 {
 public:
-    static constexpr std::string_view kId = "materials";
+    static constexpr std::string_view kId = kMaterialExplorerId;
 
     // `picture` names the host image showing a material, loading it if it has
     // to; it is asked only for the page being shown.
     MaterialExplorer(MaterialLibrary& materials, EditorWorkspace& workspace,
                      std::function<std::string(const std::string&)> picture);
 
-    [[nodiscard]] static WorkspaceExplorerInfo Info();
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) const;
     void Choose(std::string_view key, ExplorerChoice choice);
 

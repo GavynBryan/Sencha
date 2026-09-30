@@ -1,0 +1,12 @@
+<rml>
+<head>
+    <title>Content Picture</title>
+    <link type="text/rcss" href="content_picture.rcss"/>
+</head>
+<body data-model="content_picture">
+    <!-- The picture a workspace renders, where the window keeps its content.
+         The pixels are the host's; the document only places them. -->
+    <img id="picture" data-if="image != ''" data-attr-src="'host:' + image"
+         data-style-left="left" data-style-top="top" data-style-width="width" data-style-height="height"/>
+</body>
+</rml>

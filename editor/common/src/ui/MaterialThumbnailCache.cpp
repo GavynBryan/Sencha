@@ -1,12 +1,17 @@
 #include "MaterialThumbnailCache.h"
 
+#include <app/Engine.h>
 #include <assets/material/MaterialLoader.h>
 #include <assets/runtime/AssetSystem.h>
 #include <assets/texture/TextureCache.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/console/ConsoleRegistry.h>
+#include <core/console/ConsoleService.h>
+#include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/UiTextureResidency.h>
 #include <ui/UiService.h>
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -16,8 +21,10 @@ MaterialThumbnailCache::MaterialThumbnailCache(AssetSystem& assets,
                                                VulkanSamplerCache& samplers,
                                                const AssetRegistry& registry,
                                                UiService* ui,
-                                               UiTextureResidency* uiTextures)
-    : Assets(assets)
+                                               UiTextureResidency* uiTextures,
+                                               std::string imagePrefix)
+    : ImagePrefix(std::move(imagePrefix))
+    , Assets(assets)
     , Textures(textures)
     , Images(images)
     , Samplers(samplers)
@@ -25,6 +32,42 @@ MaterialThumbnailCache::MaterialThumbnailCache(AssetSystem& assets,
     , Ui(ui)
     , UiTextures(uiTextures)
 {
+}
+
+namespace
+{
+constexpr const char* kBudgetCVar = "editor.materials.thumbnail_budget";
+}
+
+void MaterialThumbnailCache::RegisterBudget(ConsoleRegistry& registry)
+{
+    if (registry.FindCVar(kBudgetCVar) != nullptr)
+        return;
+    registry.RegisterCVar({
+        .Name = kBudgetCVar,
+        .Owner = "editor",
+        .Type = CVarType::Int,
+        .DefaultValue = std::int64_t{ 128 },
+        .CurrentValue = std::int64_t{ 128 },
+        .Flags = CVarFlags::Archive,
+        .Help = "Most material thumbnails kept on the GPU; the ones shown most recently stay.",
+        .Source = { "editor" },
+    });
+}
+
+void MaterialThumbnailCache::UpdateFrame(Engine& engine)
+{
+    // The renderer's fence-anchored clock decides when an evicted binding's
+    // descriptor set is safe to free.
+    GpuFrameRetirement retirement;
+    if (const GraphicsServices* graphics = engine.TryGraphics())
+        retirement = graphics->Frames.GetRetirement();
+    BeginFrame(retirement);
+    std::int64_t budget = 128;
+    if (const CVarMetadata* var = engine.Console().Registry().FindCVar(kBudgetCVar))
+        if (const std::int64_t* value = std::get_if<std::int64_t>(&var->CurrentValue))
+            budget = *value;
+    TrimToBudget(static_cast<std::size_t>(std::max<std::int64_t>(1, budget)));
 }
 
 void MaterialThumbnailCache::BeginFrame(GpuFrameRetirement retirement)
@@ -91,7 +134,7 @@ std::string MaterialThumbnailCache::ImageName(const std::string& materialPath)
     Entry& entry = Find(materialPath);
     if (entry.TexturePath.empty() || Ui == nullptr || UiTextures == nullptr)
         return {};
-    std::string name = "material:" + materialPath;
+    std::string name = ImagePrefix + materialPath;
     if (!entry.Texture.IsValid())
     {
         entry.Texture = Assets.LoadLease(entry.TexturePath, AssetType::Texture);

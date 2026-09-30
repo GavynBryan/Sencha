@@ -74,6 +74,9 @@ const UiModelRowsId kSelectionChips = UiRowsIdAt(6);
 const UiModelRowsId kExplorerItems = UiRowsIdAt(7);
 const UiModelRowsId kExplorerVerbs = UiRowsIdAt(8);
 
+// A document popover entry naming an open document rather than an action.
+constexpr std::string_view kOpenDocumentKey = "document:";
+
 const UiActionId kPopoverAction = UiActionIdAt(0);
 const UiActionId kChooseAction = UiActionIdAt(1);
 const UiActionId kInvokeAction = UiActionIdAt(2);
@@ -710,6 +713,12 @@ void ShellWindow::Choose(const std::string& key)
         RevealProblem(key);
         return;
     }
+    if (chosenFrom == Popover::Document && key.starts_with(kOpenDocumentKey))
+    {
+        if (IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation))
+            workspace->ShowDocument(std::string_view(key).substr(kOpenDocumentKey.size()));
+        return;
+    }
     if (chosenFrom == Popover::Choices)
     {
         if (IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation))
@@ -797,7 +806,7 @@ void ShellWindow::PublishEntries()
     {
     case Popover::Hatch:      anchor = "hatch";          entries = HatchEntries();                   break;
     case Popover::Workspaces: anchor = "workspace_dial"; entries = WorkspaceEntries();               break;
-    case Popover::Document:   anchor = "document_dial";  entries = CategoryEntries("File");          break;
+    case Popover::Document:   anchor = "document_dial";  entries = DocumentEntries();                break;
     case Popover::Tools:      anchor = "station";        entries = ToolEntries();                    break;
     case Popover::Category:   anchor = "cat_" + PopoverCategory; entries = CategoryEntries(PopoverCategory); break;
     case Popover::Problems:
@@ -844,6 +853,29 @@ void ShellWindow::PublishEntries()
     }
     (void)ui.SetValue(Screen, kPopoverX, UiValue(x));
     (void)ui.SetRows(Screen, kEntries, entries);
+}
+
+std::vector<UiRow> ShellWindow::DocumentEntries() const
+{
+    std::vector<UiRow> rows;
+    const IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+    const WorkspaceDocumentFacet facet = workspace != nullptr ? workspace->Document() : WorkspaceDocumentFacet{};
+    for (const WorkspaceOpenDocument& document : facet.Open)
+    {
+        UiRow row{ document.Label, document.Changed ? std::string("\xE2\x97\x8F") : std::string{}, "" };
+        row.Key = std::string(kOpenDocumentKey) + document.Key;
+        row.Selected = document.Key == facet.Active;
+        rows.push_back(std::move(row));
+    }
+    std::vector<UiRow> file = CategoryEntries("File");
+    if (!rows.empty() && !file.empty())
+    {
+        UiRow heading{ "FILE", "", "" };
+        heading.Control = UiRowControl::Section;
+        rows.push_back(std::move(heading));
+    }
+    rows.insert(rows.end(), std::make_move_iterator(file.begin()), std::make_move_iterator(file.end()));
+    return rows;
 }
 
 std::vector<UiRow> ShellWindow::CategoryEntries(std::string_view category) const
