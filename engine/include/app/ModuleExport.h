@@ -136,5 +136,7 @@
 // engine now offers every window's events to the UI rather than the primary's.
 // UiTextureRef gains the Host kind: a document names `host:NAME`, the host
 // registers it with UiService::SetHostImage and publishes the pixels through
-// UiTextureResidency.
+// UiTextureResidency. UiRow gains Key, Depth, Icon, Selected, Expanded, Mixed,
+// Disabled and Parts, and UiRowControl gains Toggle, Asset, Color and Section,
+// so rows can present trees and grouped property sheets.
 #define SENCHA_GAME_ABI_VERSION 25u

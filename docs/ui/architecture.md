@@ -457,6 +457,15 @@ unbound, and an enum binds as an integer unless a string getter is registered
 for it before any member of that type -- which is why `control` compares as a
 name at all.
 
+Rows also describe structure, because a tree and a grouped property sheet are
+lists too. `Key` is the host's stable name for the row (a property path, an
+entity id) and is what an action about a row should carry, never its position;
+`Depth` nests it under the rows before it; `Icon` names an icon; `Selected`,
+`Expanded`, `Mixed` and `Disabled` are its standing; `Parts` holds a vector's
+components as text, edited side by side. `Control` adds `toggle`, `asset`,
+`color` and `section`, the last being a heading rather than a value. All of it
+stays presentation: the host still decides what a value read back means.
+
 Arbitrary value structs are still not here. Rows cover what surfaces have asked
 for; a shape rows cannot express is a design question when it turns up.
 

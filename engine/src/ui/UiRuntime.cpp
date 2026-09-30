@@ -61,8 +61,12 @@ const char* ControlName(UiRowControl control)
 {
     switch (control)
     {
-    case UiRowControl::Range:  return "range";
-    case UiRowControl::Choice: return "choice";
+    case UiRowControl::Range:   return "range";
+    case UiRowControl::Choice:  return "choice";
+    case UiRowControl::Toggle:  return "toggle";
+    case UiRowControl::Asset:   return "asset";
+    case UiRowControl::Color:   return "color";
+    case UiRowControl::Section: return "section";
     case UiRowControl::Text:
     default:                   return "text";
     }
@@ -581,6 +585,14 @@ void UiRuntime::DeclareModelTypes(Rml::DataModelConstructor& constructor, Surfac
         (void)row.RegisterMember("max", &UiRow::Max);
         (void)row.RegisterMember("step", &UiRow::Step);
         (void)row.RegisterMember("choices", &UiRow::Choices);
+        (void)row.RegisterMember("key", &UiRow::Key);
+        (void)row.RegisterMember("depth", &UiRow::Depth);
+        (void)row.RegisterMember("icon", &UiRow::Icon);
+        (void)row.RegisterMember("selected", &UiRow::Selected);
+        (void)row.RegisterMember("expanded", &UiRow::Expanded);
+        (void)row.RegisterMember("mixed", &UiRow::Mixed);
+        (void)row.RegisterMember("disabled", &UiRow::Disabled);
+        (void)row.RegisterMember("parts", &UiRow::Parts);
     }
     (void)constructor.RegisterArray<std::vector<UiRow>>();
 }

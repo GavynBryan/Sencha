@@ -960,3 +960,93 @@ TEST(UiControls, ListsAndRowsBindOnTheSameScreen)
     EXPECT_EQ(fixture.Ui().ArraySize(fixture.Screen, UiArrayIdAt(0)), 3u);
     EXPECT_EQ(fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0)).front().Value, "Low");
 }
+
+// -- rows that describe structure ---------------------------------------------
+
+namespace
+{
+// A tree of rows the way an outliner or a grouped property sheet presents one:
+// each row keyed, indented by depth, marked when selected, with a heading row
+// and a vector row whose parts are edited side by side.
+constexpr std::string_view kTreeMarkup = R"rml(<rml>
+<head><link type="text/rcss" href="tree.rcss"/></head>
+<body data-model="tree">
+    <div class="node" data-for="row : rows"
+         data-attr-data-key="row.key"
+         data-class-selected="row.selected"
+         data-class-heading="row.control == 'section'"
+         data-style-padding-left="(row.depth * 12) + 'px'">
+        {{row.label}}<span class="part" data-for="p : row.parts">{{p}}</span>
+    </div>
+</body>
+</rml>)rml";
+
+constexpr std::string_view kTreeStyle = R"(
+body { display: block; width: 100%; height: 100%; }
+.node { display: block; height: 20px; }
+.part { display: inline-block; width: 30px; }
+)";
+} // namespace
+
+TEST(UiControls, ARowCarriesItsKeyDepthStateAndParts)
+{
+    TempAssetRoot root;
+    UiPackage package;
+    package.RootDocumentName = "tree.rml";
+    package.Blobs.push_back(UiPackageBlob{ .VirtualName = "tree.rml", .SourcePath = "ui/tree.rml",
+                                           .Kind = UiBlobKind::Document, .Bytes = BytesOf(kTreeMarkup) });
+    package.Blobs.push_back(UiPackageBlob{ .VirtualName = "tree.rcss", .SourcePath = "ui/tree.rcss",
+                                           .Kind = UiBlobKind::StyleSheet, .Bytes = BytesOf(kTreeStyle) });
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(WriteSuiToBytes(package, bytes));
+    root.WriteBytes("ui/tree.sui", bytes);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    UiScreenDesc desc;
+    desc.PackagePath = "asset://ui/tree.sui";
+    desc.ModelName = "tree";
+    desc.RowLists = { "rows" };
+    const UiScreenHandle screen = ui.OpenScreen(surface, desc);
+    ASSERT_TRUE(screen.IsValid());
+
+    UiRow heading{ "Transform", "", "" };
+    heading.Control = UiRowControl::Section;
+    heading.Key = "section:transform";
+    UiRow position{ "Position", "", "" };
+    position.Key = "transform.position";
+    position.Depth = 1;
+    position.Selected = true;
+    position.Parts = { "1", "2", "3" };
+    ASSERT_TRUE(ui.SetRows(screen, UiRowsIdAt(0), std::vector<UiRow>{ heading, position }));
+    ui.Update();
+
+    const auto hasClass = [](const UiElementInfo& e, std::string_view c) {
+        return std::ranges::find(e.Classes, std::string(c)) != e.Classes.end();
+    };
+    const auto keyOf = [](const UiElementInfo& e) {
+        for (const auto& [name, value] : e.Attributes)
+            if (name == "data-key")
+                return value;
+        return std::string{};
+    };
+
+    int parts = 0;
+    bool sawHeading = false;
+    bool sawSelectedPosition = false;
+    for (const UiElementInfo& element : ui.ElementTree(screen))
+    {
+        if (hasClass(element, "part") && element.Boxes.Content.Width > 0.0f)
+            ++parts;
+        if (!hasClass(element, "node"))
+            continue;
+        if (keyOf(element) == "section:transform")
+            sawHeading = hasClass(element, "heading");
+        if (keyOf(element) == "transform.position")
+            sawSelectedPosition = hasClass(element, "selected") && !hasClass(element, "heading");
+    }
+    EXPECT_TRUE(sawHeading) << "a section row was not presented as a heading under its key";
+    EXPECT_TRUE(sawSelectedPosition) << "the selected row lost its key or its selection";
+    EXPECT_EQ(parts, 3) << "a vector row's parts were not repeated";
+}

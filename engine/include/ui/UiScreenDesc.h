@@ -76,6 +76,10 @@ enum class UiRowControl : std::uint8_t
     Text,
     Range,
     Choice,
+    Toggle,   // Value is "true" or "false"
+    Asset,    // Value names an asset; the document offers a way to pick another
+    Color,    // Value is #RRGGBB or #RRGGBBAA text
+    Section,  // not a value at all: a heading the rows after it sit under
 };
 
 // One row of a presented list.
@@ -128,6 +132,30 @@ struct UiRow
     // free: the compiler waives the missing-initializer warning for members
     // that have a default of their own.
     std::vector<std::string> Choices = {};
+
+    // What the host calls this row, stable across republishing: a property
+    // path, an entity id, an asset path. An action about a row carries it, so
+    // the host never has to trust a position in a list that may have changed.
+    std::string Key = {};
+
+    // How far the row is nested under the rows before it: a tree's depth, a
+    // field inside a section. The document indents by it; nothing else does.
+    int Depth = 0;
+
+    // A named icon the document shows beside the row, or empty.
+    std::string Icon = {};
+
+    // The row's standing in whatever the list presents: picked, opened to show
+    // what is nested under it, standing for several values that differ, or not
+    // actionable right now.
+    bool Selected = false;
+    bool Expanded = false;
+    bool Mixed = false;
+    bool Disabled = false;
+
+    // A value made of parts edited side by side -- a vector's components --
+    // each as text, the same rule as Value. Empty for a single value.
+    std::vector<std::string> Parts = {};
 
     friend bool operator==(const UiRow&, const UiRow&) = default;
 };
