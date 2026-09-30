@@ -14,20 +14,6 @@ add_library(editor_common STATIC
 target_link_libraries(editor_common PUBLIC sencha::engine)
 sencha_warnings(editor_common)
 
-# SVG parsing and rasterization for the editor icons (editor/icons), read once
-# at startup into the ImGui font atlas. Header-only; SOURCE_SUBDIR names a
-# directory the repo lacks so FetchContent downloads without building its own
-# project (the engine's form for cgltf and mikktspace). Editor-only: never
-# reaches a game binary. The implementation TU is ui/chrome/IconDraw.cpp.
-include(FetchContent)
-FetchContent_Declare(
-    nanosvg
-    GIT_REPOSITORY https://github.com/memononen/nanosvg.git
-    GIT_TAG        239e102ec2c691f2902e20ace2ed36ee4a35cfe6
-    SOURCE_SUBDIR  sencha-does-not-build-this
-)
-FetchContent_MakeAvailable(nanosvg)
-target_include_directories(editor_common SYSTEM PRIVATE "${nanosvg_SOURCE_DIR}/src")
 
 # The parent editor/ dir carries the shared fonts/ headers ("fonts/...").
 # Application-private sources are NOT on this path: an editor application can

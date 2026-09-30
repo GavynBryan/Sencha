@@ -7,13 +7,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <vector>
 
-#define NANOSVG_IMPLEMENTATION
-#define NANOSVGRAST_IMPLEMENTATION
-#include <nanosvg.h>
-#include <nanosvgrast.h>
+#include <assets/cook/SvgRasterize.h>
+#include <core/io/FileBytes.h>
 
 namespace
 {
@@ -125,119 +124,93 @@ ShellAtlasResult BakeAtlasArt(ImFontAtlas& atlas, const ShellAtlasKey& key)
     g_Logo = {};
     g_BakedAtlas = nullptr;
 
-    // The mark is parsed before anything is packed: its rect has to be reserved
-    // alongside the icons so one Build() places them all.
-    NSVGimage* logo = nullptr;
-    int logoW = 0;
-    int logoH = 0;
+    // Everything is rasterized before anything is packed: each rect has to be
+    // reserved at its raster's size so one Build() places them all.
+    std::optional<Image> logo;
     int logoRect = -1;
     if (!key.LogoPath.empty())
     {
-        logo = nsvgParseFromFile(key.LogoPath.c_str(), "px", 96.0f);
-        if (logo != nullptr && logo->width > 0.0f && logo->height > 0.0f)
-        {
-            logoH = std::max(1, static_cast<int>(std::lround(kLogoBakeHeight * uiScale)));
-            logoW = std::max(1, static_cast<int>(std::lround(static_cast<float>(logoH) * logo->width / logo->height)));
-            logoRect = atlas.AddCustomRectRegular(logoW, logoH);
-        }
-        else
-        {
-            nsvgDelete(logo);
-            logo = nullptr;
-        }
+        std::vector<std::byte> bytes;
+        (void)ReadFileBytes(key.LogoPath, bytes);
+        const auto logoH = static_cast<std::uint32_t>(std::max(1L, std::lround(kLogoBakeHeight * uiScale)));
+        logo = RasterizeSvg(bytes, logoH);
+        if (logo.has_value())
+            logoRect = atlas.AddCustomRectRegular(static_cast<int>(logo->Width), static_cast<int>(logo->Height));
     }
 
-    struct Parsed
+    struct Rasterized
     {
-        NSVGimage* Image = nullptr;
+        std::array<std::optional<Image>, kSizeCount> Size{};
         std::array<int, kSizeCount> Rect{};
     };
-    std::array<Parsed, kCount> parsed{};
-    int maxPx = 1;
+    std::array<Rasterized, kCount> rasters{};
     for (std::size_t i = 1; i < kCount; ++i)
     {
         if (kIcons[i].File == nullptr)
             continue;
-        const std::string path = std::string(SENCHA_EDITOR_ICON_DIR) + "/" + kIcons[i].File + ".svg";
-        NSVGimage* image = nsvgParseFromFile(path.c_str(), "px", 96.0f);
-        if (image == nullptr || image->width <= 0.0f || image->height <= 0.0f)
-        {
-            nsvgDelete(image);
+        std::vector<std::byte> bytes;
+        if (!ReadFileBytes(std::string(SENCHA_EDITOR_ICON_DIR) + "/" + kIcons[i].File + ".svg", bytes))
             continue;
-        }
-        parsed[i].Image = image;
         for (std::size_t s = 0; s < kSizeCount; ++s)
         {
-            const int px = std::max(1, static_cast<int>(std::lround(kSizes[s] * uiScale)));
-            maxPx = std::max(maxPx, px);
-            parsed[i].Rect[s] = atlas.AddCustomRectRegular(px, px);
+            const auto px = static_cast<std::uint32_t>(std::max(1L, std::lround(kSizes[s] * uiScale)));
+            std::optional<Image> image = RasterizeSvg(bytes, px);
+            if (!image.has_value())
+                break;
+            rasters[i].Rect[s] = atlas.AddCustomRectRegular(static_cast<int>(image->Width),
+                                                            static_cast<int>(image->Height));
+            rasters[i].Size[s] = std::move(image);
         }
     }
 
     // Build packs the rects and allocates the coverage plane the backend
-    // uploads as white times alpha; the rasters are written straight into it.
+    // uploads as white times alpha; the rasters' alpha is written straight in.
     atlas.Build();
-    std::vector<unsigned char> scratch(static_cast<std::size_t>(maxPx) * static_cast<std::size_t>(maxPx) * 4u);
-    NSVGrasterizer* rasterizer = nsvgCreateRasterizer();
+    const auto blit = [&](const ImFontAtlasCustomRect& rect, const Image& image) {
+        bool any = false;
+        for (std::uint32_t y = 0; y < image.Height; ++y)
+        {
+            unsigned char* row = atlas.TexPixelsAlpha8 + (rect.Y + static_cast<int>(y)) * atlas.TexWidth + rect.X;
+            for (std::uint32_t x = 0; x < image.Width; ++x)
+            {
+                const unsigned char alpha = image.Pixels[(static_cast<std::size_t>(y) * image.Width + x) * 4u + 3u];
+                row[x] = alpha;
+                any |= alpha != 0;
+            }
+        }
+        return any;
+    };
+
     int loaded = 0;
     for (std::size_t i = 1; i < kCount; ++i)
     {
-        NSVGimage* image = parsed[i].Image;
-        if (image == nullptr)
-            continue;
         bool any = false;
         for (std::size_t s = 0; s < kSizeCount; ++s)
         {
-            const ImFontAtlasCustomRect* rect = atlas.GetCustomRectByIndex(parsed[i].Rect[s]);
+            if (!rasters[i].Size[s].has_value())
+                continue;
+            const ImFontAtlasCustomRect* rect = atlas.GetCustomRectByIndex(rasters[i].Rect[s]);
             if (rect == nullptr || !rect->IsPacked() || atlas.TexPixelsAlpha8 == nullptr)
                 continue;
-            const int px = rect->Width;
-            std::memset(scratch.data(), 0, static_cast<std::size_t>(px) * static_cast<std::size_t>(px) * 4u);
-            nsvgRasterize(rasterizer, image, 0.0f, 0.0f, static_cast<float>(px) / image->height, scratch.data(), px, px, px * 4);
-            for (int y = 0; y < px; ++y)
-            {
-                unsigned char* row = atlas.TexPixelsAlpha8 + (rect->Y + y) * atlas.TexWidth + rect->X;
-                for (int x = 0; x < px; ++x)
-                {
-                    const unsigned char alpha = scratch[(static_cast<std::size_t>(y) * static_cast<std::size_t>(px) + static_cast<std::size_t>(x)) * 4u + 3u];
-                    row[x] = alpha;
-                    any |= alpha != 0;
-                }
-            }
+            any |= blit(*rect, *rasters[i].Size[s]);
             Raster& raster = g_Rasters[i][s];
             atlas.CalcCustomRectUV(rect, &raster.Uv0, &raster.Uv1);
-            raster.Px = static_cast<float>(px);
+            raster.Px = static_cast<float>(rect->Width);
         }
-        nsvgDelete(image);
         loaded += any ? 1 : 0;
     }
-    // The mark rides the same coverage plane as the icons, written before the
-    // rasterizer goes away.
+
     bool logoBaked = false;
-    if (logo != nullptr)
+    if (logo.has_value())
     {
         const ImFontAtlasCustomRect* rect = atlas.GetCustomRectByIndex(logoRect);
         if (rect != nullptr && rect->IsPacked() && atlas.TexPixelsAlpha8 != nullptr)
         {
-            std::vector<unsigned char> logoPixels(static_cast<std::size_t>(logoW) * static_cast<std::size_t>(logoH) * 4u);
-            nsvgRasterize(rasterizer, logo, 0.0f, 0.0f, static_cast<float>(logoH) / logo->height,
-                          logoPixels.data(), logoW, logoH, logoW * 4);
-            for (int y = 0; y < logoH; ++y)
-            {
-                unsigned char* row = atlas.TexPixelsAlpha8 + (rect->Y + y) * atlas.TexWidth + rect->X;
-                for (int x = 0; x < logoW; ++x)
-                {
-                    row[x] = logoPixels[(static_cast<std::size_t>(y) * static_cast<std::size_t>(logoW)
-                                         + static_cast<std::size_t>(x)) * 4u + 3u];
-                    logoBaked |= row[x] != 0;
-                }
-            }
+            logoBaked = blit(*rect, *logo);
             atlas.CalcCustomRectUV(rect, &g_Logo.Uv0, &g_Logo.Uv1);
-            g_Logo.Aspect = static_cast<float>(logoW) / static_cast<float>(logoH);
+            g_Logo.Aspect = static_cast<float>(logo->Width) / static_cast<float>(logo->Height);
         }
-        nsvgDelete(logo);
     }
-    nsvgDeleteRasterizer(rasterizer);
 
     g_BakedAtlas = &atlas;
     return ShellAtlasResult{ loaded, logoBaked };

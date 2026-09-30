@@ -1039,6 +1039,10 @@ TSan-clean), Decisions E and L made real:
   Normal -> BC5, ORM/LinearData -> BC7. `PngTextureImporter` emits the
   artifact under the **source's virtual path** — authored references never
   churn when the cooked format evolves.
+  `SvgTextureImporter` cooks `.svg` vector art the same way: `RasterizeSvg`
+  (nanosvg, the one SVG rasterizer, cook-only) draws it 64 px tall, and it is
+  kept uncompressed with a full mip chain, because block encoding smears the
+  edges icons are made of. White art stays white; a document tints it.
 - Runtime consumption: `VulkanImageService::UploadMips` (one staging pass,
   per-level copy regions, explicit chains only — it rejects GenerateMips
   images), `TextureCache::CreateFromTextureData` with the BC VkFormat

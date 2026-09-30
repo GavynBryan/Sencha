@@ -1,4 +1,5 @@
 #include <assets/cook/TextureCook.h>
+#include <assets/cook/SvgRasterize.h>
 
 #include <assets/cook/CookFingerprint.h>
 #include <assets/cook/TextureImportSettings.h>
@@ -463,6 +464,50 @@ ImportResult PngTextureImporter::Import(const ImportInput& input, ICookOutputWri
 
     if (!output.WriteBytes(artifact.FileRelPath, stexBytes))
         return ImportResult{ .Error = "png import: artifact write failed" };
+
+    ImportResult result;
+    result.Artifacts.push_back(std::move(artifact));
+    return result;
+}
+
+std::vector<std::string_view> SvgTextureImporter::SourceExtensions() const
+{
+    return { ".svg" };
+}
+
+std::uint64_t SvgTextureImporter::CookIdentity() const
+{
+    return CookFingerprint("svg_texture", kRasterHeight).Value();
+}
+
+ImportResult SvgTextureImporter::Import(const ImportInput& input, ICookOutputWriter& output)
+{
+    std::string rasterError;
+    const std::optional<Image> image = RasterizeSvg(input.Bytes, kRasterHeight, &rasterError);
+    if (!image)
+        return ImportResult{ .Error = "svg import: " + rasterError };
+
+    const TextureCookParams params{
+        .Usage = TextureUsage::BaseColor,
+        .Filter = TextureFilter::Linear,
+        .Compress = false,
+        .GenerateMips = true,
+    };
+    TextureData texture;
+    std::string cookError;
+    if (!CookImageToTexture(*image, params, texture, &cookError))
+        return ImportResult{ .Error = cookError };
+
+    std::vector<std::byte> stexBytes;
+    if (!WriteStexToBytes(texture, stexBytes))
+        return ImportResult{ .Error = "svg import: stex serialization failed" };
+
+    CookedArtifact artifact;
+    artifact.Path = "asset://" + std::string(input.SourceRelPath);
+    artifact.FileRelPath = ".cooked/" + std::string(input.SourceRelPath) + ".stex";
+    artifact.Type = AssetType::Texture;
+    if (!output.WriteBytes(artifact.FileRelPath, stexBytes))
+        return ImportResult{ .Error = "svg import: artifact write failed" };
 
     ImportResult result;
     result.Artifacts.push_back(std::move(artifact));

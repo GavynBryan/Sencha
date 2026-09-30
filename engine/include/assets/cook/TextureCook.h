@@ -102,3 +102,26 @@ public:
 private:
     JobSystem* Jobs = nullptr;
 };
+
+//=============================================================================
+// SvgTextureImporter -- .svg -> cooked .stex.
+//
+// Authored vector art (the editor's icons, UI ornaments) becomes an ordinary
+// texture, rasterized once at the cook rather than at every launch, so a
+// document names `icons/move.svg` like any image. White art stays white: a
+// document tints it with `image-color`. Uncompressed, because block encoding
+// smears the edges icons are made of; mipped, because they draw at several
+// sizes. Same virtual-path rule as the PNG importer.
+//=============================================================================
+class SvgTextureImporter final : public IAssetImporter
+{
+public:
+    // The rasterized height. Large enough for the biggest a UI draws an icon at
+    // a 2x display scale; the mips cover everything smaller.
+    static constexpr std::uint32_t kRasterHeight = 64;
+
+    [[nodiscard]] std::vector<std::string_view> SourceExtensions() const override;
+    [[nodiscard]] ImportResult Import(const ImportInput& input,
+                                      ICookOutputWriter& output) override;
+    [[nodiscard]] std::uint64_t CookIdentity() const override;
+};

@@ -36,6 +36,7 @@ public:
 
 private:
     PngTextureImporter Texture;
+    SvgTextureImporter VectorTexture;
     GltfMeshImporter Gltf;
     BlendMeshImporter Blend;
     FontFaceImporter Font;

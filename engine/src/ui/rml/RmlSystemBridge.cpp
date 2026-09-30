@@ -2,6 +2,10 @@
 
 #include "../UiDiagnosticLog.h"
 
+#include <SDL3/SDL_clipboard.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_stdinc.h>
+
 #include <optional>
 #include <string>
 #include <string_view>
@@ -106,4 +110,74 @@ bool RmlSystemBridge::LogMessage(Rml::Log::Type type, const Rml::String& message
     // mistake in a document is a diagnostic, never a reason to take the game
     // down with it.
     return true;
+}
+
+RmlSystemBridge::~RmlSystemBridge()
+{
+    for (SDL_Cursor* cursor : Cursors)
+    {
+        if (cursor != nullptr)
+            SDL_DestroyCursor(cursor);
+    }
+}
+
+void RmlSystemBridge::SetClipboardText(const Rml::String& text)
+{
+    if (SDL_WasInit(SDL_INIT_VIDEO) != 0)
+        (void)SDL_SetClipboardText(text.c_str());
+}
+
+void RmlSystemBridge::GetClipboardText(Rml::String& text)
+{
+    text.clear();
+    if (SDL_WasInit(SDL_INIT_VIDEO) == 0)
+        return;
+    if (char* clipboard = SDL_GetClipboardText(); clipboard != nullptr)
+    {
+        text = clipboard;
+        SDL_free(clipboard);
+    }
+}
+
+namespace
+{
+    // The CSS cursor names a document writes, as the shapes SDL offers.
+    SDL_SystemCursor SystemCursorFor(std::string_view name)
+    {
+        if (name == "pointer" || name == "hand")
+            return SDL_SYSTEM_CURSOR_POINTER;
+        if (name == "text")
+            return SDL_SYSTEM_CURSOR_TEXT;
+        if (name == "move" || name == "grab" || name == "grabbing")
+            return SDL_SYSTEM_CURSOR_MOVE;
+        if (name == "crosshair")
+            return SDL_SYSTEM_CURSOR_CROSSHAIR;
+        if (name == "ew-resize" || name == "col-resize")
+            return SDL_SYSTEM_CURSOR_EW_RESIZE;
+        if (name == "ns-resize" || name == "row-resize")
+            return SDL_SYSTEM_CURSOR_NS_RESIZE;
+        if (name == "nwse-resize")
+            return SDL_SYSTEM_CURSOR_NWSE_RESIZE;
+        if (name == "nesw-resize")
+            return SDL_SYSTEM_CURSOR_NESW_RESIZE;
+        if (name == "not-allowed")
+            return SDL_SYSTEM_CURSOR_NOT_ALLOWED;
+        if (name == "wait")
+            return SDL_SYSTEM_CURSOR_WAIT;
+        if (name == "progress")
+            return SDL_SYSTEM_CURSOR_PROGRESS;
+        return SDL_SYSTEM_CURSOR_DEFAULT;
+    }
+}
+
+void RmlSystemBridge::SetMouseCursor(const Rml::String& cursorName)
+{
+    if (SDL_WasInit(SDL_INIT_VIDEO) == 0)
+        return;
+    const SDL_SystemCursor shape = SystemCursorFor(cursorName);
+    SDL_Cursor*& cursor = Cursors[static_cast<std::size_t>(shape)];
+    if (cursor == nullptr)
+        cursor = SDL_CreateSystemCursor(shape);
+    if (cursor != nullptr)
+        (void)SDL_SetCursor(cursor);
 }

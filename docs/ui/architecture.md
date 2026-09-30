@@ -531,6 +531,14 @@ Reading a sibling any other way would leave it outside the hash, and a stale
 build cache is a worse failure than a missing feature because nothing about it
 looks wrong.
 
+Images a document names are ordinary textures, and that includes vector art:
+an `.svg` cooks to a texture like a `.png` does, so a document writes
+`icons/move.svg` and tints the white art with `image-color`.
+
+The system bridge answers the document engine's ambient requests with the
+platform's: the desktop clipboard for a field's copy and paste, and the
+platform's own pointer shapes for a document's `cursor` property.
+
 Fonts cook `.ttf`/`.otf` to `.sfont`: the face bytes unchanged, plus the family,
 style and weight, taken from the filename convention (`Inter-BoldItalic.ttf`)
 and overridable in a `.meta` sidecar. No glyphs are baked. An atlas depends on

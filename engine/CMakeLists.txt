@@ -509,6 +509,18 @@ if(SENCHA_ENABLE_COOK)
     )
     FetchContent_MakeAvailable(mikktspace)
 
+    # SVG parsing and rasterization for vector art (SvgRasterize, the .svg
+    # texture importer). Header-only; its implementation TU is
+    # src/assets/cook/SvgRasterize.cpp. Cook-only, never ships.
+    FetchContent_Declare(
+        nanosvg
+        GIT_REPOSITORY https://github.com/memononen/nanosvg.git
+        GIT_TAG        239e102ec2c691f2902e20ace2ed36ee4a35cfe6
+        SOURCE_SUBDIR  sencha-does-not-build-this
+    )
+    FetchContent_MakeAvailable(nanosvg)
+    target_include_directories(sencha_engine SYSTEM PRIVATE "${nanosvg_SOURCE_DIR}/src")
+
     # Vendored encoder/tangent sources compile in their own target so the
     # first-party diagnostic set never binds to third-party code. OBJECT rather
     # than STATIC for the sencha_imgui_support reason: the objects have to land
