@@ -2,6 +2,8 @@
 
 #include "IEditorPanel.h"
 
+#include <math/geometry/2d/Rect2d.h>
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -53,6 +55,10 @@ struct WorkspaceView
     WorkspaceFileActions File;
 
     WorkspaceDockState Dock;
+
+    // Where a panel shows content drawn under the panels this frame, in window
+    // pixels; the chassis leaves it unpainted. Cleared before the panels draw.
+    Rect2d ContentHole{};
 
     void AddPanel(std::unique_ptr<IEditorPanel> panel)
     {

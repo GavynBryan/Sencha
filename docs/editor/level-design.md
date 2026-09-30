@@ -59,10 +59,13 @@ with a return path.
 `PERSP · LIT · 1▢`: projection, display mode and arrangement.
 
 - One full-bleed view by default.
-- Numpad 7 / 1 / 3 swap the view to top / front / side; numpad 5 toggles
-  perspective and orthographic.
-- Arrangements are one choice: single, two-way split, quad. A split has one
-  divider; nothing docks.
+- Numpad 7 / 1 / 3 swap the view to top / front / side and numpad 5 back to
+  perspective. Each of the four views keeps its own camera; swapping is
+  choosing which one shows, so nothing is re-framed.
+- Arrangements are one choice (Alt+1 / Alt+2 / Alt+4, kept in
+  `editor.view.arrangement`): single, two-way split, quad. Two views are
+  perspective beside the active ortho view; four are all of them. A split has
+  one divider; nothing docks.
 - Also here: lit / baked-lighting preview, debug view modes, zone bounds,
   streaming preview.
 

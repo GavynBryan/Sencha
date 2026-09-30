@@ -108,8 +108,8 @@ editor/level_editor/src/ui/SceneBrowserPanel.cpp
 editor/level_editor/src/ui/SceneHierarchyPanel.cpp
 editor/level_editor/src/ui/ToolPalettePanel.cpp
 editor/level_editor/src/ui/ToolPropertiesPanel.cpp
-editor/level_editor/src/ui/ViewportPanel.cpp
-editor/level_editor/src/ui/ViewportPanel.h
+editor/level_editor/src/ui/ViewsPanel.cpp
+editor/level_editor/src/ui/ViewsPanel.h
 editor/level_editor/src/ui/WorldPartitionPanel.cpp
 editor/material_editor/src/MaterialFilesPanel.cpp
 editor/material_editor/src/MaterialInspectorPanel.cpp

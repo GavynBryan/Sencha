@@ -6,6 +6,9 @@
 #include "document/WorldDocument.h"
 #include "document/commands/SetZoneBoundsCommand.h"
 #include "selection/SelectionService.h"
+#include "EditorTheme.h"
+#include "viewport/EditorViewport.h"
+#include "viewport/ViewportProjection.h"
 
 #include <world/serialization/SceneSerializer.h>
 
@@ -148,33 +151,33 @@ void EditorAffordanceService::Build(ViewportAffordanceOutput& output) const
     // component type.
     const std::span<const EditorComponentAdapterRegistry::Entry> entries =
         Adapters.ViewportEntries();
-    if (entries.empty())
+    if (!entries.empty())
     {
-        AppendZoneBoundsTarget(output);
-        return;
-    }
-
-    for (EntityId entity : scene.GetAllEntities())
-    {
-        if (!scene.IsEntityEffectivelyVisible(entity))
-            continue;
-        const Transform3f* transform = scene.TryGetWorldTransform(entity);
-        for (const EditorComponentAdapterRegistry::Entry& entry : entries)
+        for (EntityId entity : scene.GetAllEntities())
         {
-            if (!entry.Serializer->HasComponent(entity, registry))
+            if (!scene.IsEntityEffectivelyVisible(entity))
                 continue;
-            entry.Adapter->BuildViewport(EditorComponentContext{
-                .World = World,
-                .Document = document,
-                .Scene = scene,
-                .Commands = Commands,
-                .Entity = entity,
-                .Transform = transform != nullptr ? *transform : Transform3f::Identity(),
-                .Selected = selected.IsEntity() && selected.Registry == registry.Id
-                    && selected.Entity == entity,
-            }, output);
+            const Transform3f* transform = scene.TryGetWorldTransform(entity);
+            for (const EditorComponentAdapterRegistry::Entry& entry : entries)
+            {
+                if (!entry.Serializer->HasComponent(entity, registry))
+                    continue;
+                entry.Adapter->BuildViewport(EditorComponentContext{
+                    .World = World,
+                    .Document = document,
+                    .Scene = scene,
+                    .Commands = Commands,
+                    .Entity = entity,
+                    .Transform = transform != nullptr ? *transform : Transform3f::Identity(),
+                    .Selected = selected.IsEntity() && selected.Registry == registry.Id
+                        && selected.Entity == entity,
+                }, output);
+            }
         }
     }
+
+    for (const MarkerSource& source : MarkerSources)
+        source.Collect(scene, source.Icon, output.Markers);
 
     AppendZoneBoundsTarget(output);
 }
@@ -211,22 +214,44 @@ void EditorAffordanceService::AppendZoneBoundsTarget(
 }
 
 std::optional<std::pair<SelectableRef, float>> EditorAffordanceService::Pick(
-    const Ray3d& ray, const EditorScene& scene) const
+    const EditorViewport& viewport, Vec2d point, const Ray3d& ray, const EditorScene& scene) const
 {
     if (&scene != &World.FocusDocument().GetScene())
         return std::nullopt;
     ViewportAffordanceOutput output;
     Build(output);
     std::optional<std::pair<SelectableRef, float>> best;
+    const auto consider = [&](EntityId entity, float distance) {
+        if (best && best->second <= distance)
+            return;
+        best = std::pair{ SelectableRef::EntitySelection(scene.GetRegistry().Id, entity), distance };
+    };
     for (const EditorPickProxy& proxy : output.PickProxies)
+        if (const std::optional<float> distance = IntersectRectangle(ray, proxy))
+            consider(proxy.Entity, *distance);
+
+    // A marker is its icon, drawn over everything in the view: the pointer on
+    // it picks it ahead of whatever lies behind, and of two under the pointer,
+    // the one it is nearer on screen.
+    const ViewportProjection projection(viewport);
+    float nearest = EditorTheme::MarkerPixels * 0.5f;
+    std::optional<EntityId> onTop;
+    for (const EditorMarker& marker : output.Markers)
     {
-        const std::optional<float> distance = IntersectRectangle(ray, proxy);
-        if (!distance || (best && best->second <= *distance))
+        if (scene.IsEntityEffectivelyLocked(marker.Entity))
             continue;
-        best = std::pair{ SelectableRef::EntitySelection(scene.GetRegistry().Id,
-                                                          proxy.Entity),
-                          *distance };
+        const std::optional<ProjectedPoint> at = projection.WorldToPixel(marker.World);
+        if (!at.has_value())
+            continue;
+        const float offset = (at->Pixel - point).Magnitude();
+        if (offset <= nearest)
+        {
+            nearest = offset;
+            onTop = marker.Entity;
+        }
     }
+    if (onTop.has_value())
+        return std::pair{ SelectableRef::EntitySelection(scene.GetRegistry().Id, *onTop), 0.0f };
     return best;
 }
 

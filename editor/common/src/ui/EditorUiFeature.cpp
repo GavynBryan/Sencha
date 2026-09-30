@@ -11,6 +11,7 @@
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
 #include "ImGuiTextureOwner.h"
+#include "ImGuiVec.h"
 #include "workspaces/WorkspaceHost.h"
 #include "chrome/ChromeBars.h"
 #include "chrome/ChromeChassis.h"
@@ -367,9 +368,15 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
     DrawDockHost(view);
 
     if (view != nullptr)
+    {
+        view->ContentHole = {};
         for (const std::unique_ptr<IEditorPanel>& panel : view->Panels)
             if (panel != nullptr && panel->IsVisible())
                 panel->OnDraw();
+    }
+    // After the panels, which say where content shows through: the background
+    // list draws first whenever it is added to.
+    DrawChassisGround(view);
     if (Role == ShellRole::Primary)
     {
         // After the panels have drawn: a close box acts during a panel's own
@@ -389,6 +396,25 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
 }
 
+void EditorUiFeature::DrawChassisGround(const WorkspaceView* view)
+{
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const float top = std::min(ContentTopInset, vp->WorkSize.y);
+    const ImVec2 workMin(vp->WorkPos.x, vp->WorkPos.y + top);
+    const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y);
+    ImVec2 holeMin{};
+    ImVec2 holeMax{};
+    if (view != nullptr && view->ContentHole.Area() > 0.0f)
+    {
+        holeMin = ToImVec2(view->ContentHole.Min());
+        holeMax = ToImVec2(view->ContentHole.Max());
+    }
+    ImDrawList* background = ImGui::GetBackgroundDrawList();
+    EditorChrome::DrawChassisBase(background, workMin, workMax, holeMin, holeMax);
+    EditorChrome::DrawChassisEdges(background, workMin, workMax);
+    EditorChrome::DrawChassisOrnaments(background, workMin, workMax);
+}
+
 void EditorUiFeature::DrawDockHost(WorkspaceView* view)
 {
     // The chassis fills the work area the chrome bars left, and the dock host
@@ -399,11 +425,6 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     const float top = std::min(ContentTopInset, vp->WorkSize.y);
     const ImVec2 workMin(vp->WorkPos.x, vp->WorkPos.y + top);
-    const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y);
-    ImDrawList* background = ImGui::GetBackgroundDrawList();
-    EditorChrome::DrawChassisBase(background, workMin, workMax);
-    EditorChrome::DrawChassisEdges(background, workMin, workMax);
-    EditorChrome::DrawChassisOrnaments(background, workMin, workMax);
 
     const float inset = EditorChrome::ChassisInset();
     ImGui::SetNextWindowPos(ImVec2(workMin.x + inset, workMin.y + inset));

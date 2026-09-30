@@ -69,8 +69,10 @@ struct SurfaceHit
 class PickingService
 {
 public:
-    using EntityProxyProvider = std::function<
-        std::optional<std::pair<SelectableRef, float>>(const Ray3d&, const EditorScene&)>;
+    // What stands for an entity without a shape of its own under the pointer
+    // at a point of a viewport, and how far along the ray through it.
+    using EntityProxyProvider = std::function<std::optional<std::pair<SelectableRef, float>>(
+        const EditorViewport&, Vec2d, const Ray3d&, const EditorScene&)>;
 
     void SetEntityProxyProvider(EntityProxyProvider provider)
     {
@@ -123,7 +125,8 @@ private:
         uint8_t Priority = 0;
     };
 
-    [[nodiscard]] SelectableRef PickBrushElement(const Ray3d& ray,
+    [[nodiscard]] SelectableRef PickBrushElement(const EditorViewport& viewport,
+                                                 Vec2d point,
                                                  const EditorScene& scene,
                                                  BrushPickRequest request) const;
     [[nodiscard]] static bool AllowsEntities(BrushPickRequest request);

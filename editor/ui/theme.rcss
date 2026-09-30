@@ -29,6 +29,9 @@ body { color: #d8dce4ff; }
 .theme-field:hover  { background-color: #161b24ff; }
 .theme-field:focus  { background-color: #161b24ff; border-color: #4c7fd0ff; }
 .theme-well         { background-color: #12161dff; border-color: #39414fff; }
+.theme-frame        { border-color: #39414fff; }
+.theme-frame.active { border-color: #ffb347ff; }
+.theme-marquee      { background-color: #4c7fd029; border-color: #6f9be0ff; }
 
 .theme-icon        { color: #8d95a5ff; }
 .theme-icon:hover  { background-color: #38414fff; color: #e8ecf4ff; }

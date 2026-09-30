@@ -16,25 +16,22 @@
 #include <vector>
 
 // Maps kyusu's viewports onto engine render targets: one scene target (HDR
-// colour + depth) plus two full-resolution bloom ping-pong planes per viewport,
-// shown in the UI through ImGui::Image.
+// colour + depth) plus two full-resolution bloom ping-pong planes per viewport.
+// The scene target is bindless, so the authored UI draws it as a host image.
 //
 // Kyusu-local, not editor-common: the bloom pair per viewport is this editor's
 // policy, and its one other consumer -- the material preview -- owns a
 // single target directly rather than inventing a viewport identity for it.
-// ImGuiTargetPresenter stays common; the ImGui binding is the shared part.
 //
 // The images, their per-frame-in-flight slots, resizing, and retirement all
-// belong to RenderTargetStore now; what is left here is the editor's own
-// business -- which ViewportId owns which targets, the bloom pair being a
-// property of an editor viewport rather than of targets in general, and the
-// ImGui binding, which the engine must not know about.
+// belong to RenderTargetStore; what is left here is which ViewportId owns
+// which targets, the bloom pair being a property of an editor viewport rather
+// than of targets in general.
 //
 // The render side (Offscreen phase) calls BeginFrame then AcquireForRender per
-// viewport; the UI side (panel draw) calls Display to record the on-screen size
-// and fetch the current texture. There is a one-frame size lag -- the render
-// uses the size the panel recorded last frame -- which is the lag the
-// screen-rect rendering already had.
+// viewport; the arrangement calls Show with each shown view's size. Scene
+// thumbnails, still drawn by an ImGui panel, call Display instead, which also
+// hands back the ImGui texture; it goes with that panel.
 class ViewportTargetCache
 {
 public:
@@ -53,6 +50,9 @@ public:
         VkImageView   DepthView = VK_NULL_HANDLE;
         VkExtent2D    Extent{};
         VkImageLayout* ColorLayout = nullptr; // caller updates after its transitions
+        // The scene colour's bindless index, readable once its layout is
+        // SHADER_READ_ONLY_OPTIMAL.
+        uint32_t      ColorBindless = UINT32_MAX;
         // Bloom scratch: two full-res ping-pong targets + the bindless sample indices.
         VkImage        BloomImage[2]{ VK_NULL_HANDLE, VK_NULL_HANDLE };
         VkImageView    BloomView[2]{ VK_NULL_HANDLE, VK_NULL_HANDLE };
@@ -68,13 +68,15 @@ public:
     [[nodiscard]] std::optional<RenderView> AcquireForRender(ViewportId id);
     // Destroy targets for viewports not in `live` (closed or re-laid-out).
     void Prune(std::span<const ViewportId> live);
-    // Whether the UI showed `id` last frame; a viewport it did not show does
-    // not render.
+    // Whether `id` was shown last frame; a viewport nobody shows does not
+    // render.
     [[nodiscard]] bool WasDisplayed(ViewportId id) const { return Displays.WasDisplayed(id); }
 
-    // -- UI side (panel draw) ------------------------------------------------
-    // Record the on-screen pixel size and return the current slot's texture to
-    // display (0 until the first render fills it).
+    // -- Arrangement side ----------------------------------------------------
+    // `id` is on screen this frame at `extent` pixels.
+    void Show(ViewportId id, VkExtent2D extent);
+    // Show, for an ImGui panel: also the current slot's texture (0 until the
+    // first render fills it).
     [[nodiscard]] ImTextureID Display(ViewportId id, VkExtent2D extent);
 
 private:

@@ -153,6 +153,7 @@ private:
     void AdoptWorkspace(const WorkspaceKind& kind, IWorkspace& workspace);
     void ReleaseWorkspace(IWorkspace& workspace);
     void DrawDockHost(WorkspaceView* view);
+    void DrawChassisGround(const WorkspaceView* view);
     void ClaimViewActions(WorkspaceView* view);
     void ShowThemePreferences();
     void RegisterPointerCommands(ConsoleRegistry& registry);

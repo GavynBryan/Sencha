@@ -15,11 +15,25 @@ ModifierFlags ReadModifiers(SDL_Keymod mod)
 
 namespace
 {
-// Where the pointer is as a key event is translated. A key event carries no
-// position of its own, and SDL keeps the pointer in the same window space the
-// mouse events report.
+// Where the last pointer event said the pointer is, once one has. A key event
+// carries no position of its own; for a real pointer this is what SDL's mouse
+// state says, and for a pointer a script moved, SDL's state never heard of it.
+struct PointerSeen
+{
+    bool Heard = false;
+    Vec2d At = {};
+};
+PointerSeen LastPointer;
+
+void Hear(float x, float y)
+{
+    LastPointer = { true, { x, y } };
+}
+
 Vec2d PointerNow()
 {
+    if (LastPointer.Heard)
+        return LastPointer.At;
     float x = 0.0f;
     float y = 0.0f;
     SDL_GetMouseState(&x, &y);
@@ -43,6 +57,7 @@ std::optional<InputEvent> TranslateSdlEvent(const SDL_Event& event)
         else
             return std::nullopt;
 
+        Hear(event.button.x, event.button.y);
         return PointerDownEvent{
             .Position = { event.button.x, event.button.y },
             .Button = button,
@@ -70,6 +85,7 @@ std::optional<InputEvent> TranslateSdlEvent(const SDL_Event& event)
     }
 
     case SDL_EVENT_MOUSE_MOTION:
+        Hear(event.motion.x, event.motion.y);
         return PointerMoveEvent{
             .Position = { event.motion.x, event.motion.y },
             .Delta = { event.motion.xrel, event.motion.yrel },

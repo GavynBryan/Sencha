@@ -4,6 +4,7 @@
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "app/SynthesizedInput.h"
 #include "notices/NoticeQueue.h"
 #include "problems/ProblemList.h"
 #include "prompts/DocumentPrompts.h"
@@ -74,6 +75,7 @@ private:
     // The shell of the window an event names; the primary's for one naming none.
     [[nodiscard]] EditorUiFeature* ShellForWindowId(std::uint32_t windowId) const;
     [[nodiscard]] EditorUiFeature* ShellFor(PresentationId window) const;
+    [[nodiscard]] ShellWindow* WindowShellFor(PresentationId window) const;
     // Windows asked to close mid-frame, closed at the next frame boundary.
     void CloseRequestedWindows();
 
@@ -116,9 +118,12 @@ private:
         std::unique_ptr<WindowActions> Actions;
         std::unique_ptr<ShellWindow> WindowShell;
         UiRenderFeature* Ui = nullptr;
+        // The content layer, drawn under the window's panels.
+        UiRenderFeature* ContentUi = nullptr;
     };
     std::vector<DetachedWindow> Detached;
     std::vector<PresentationId> WindowsToClose;
+    SynthesizedInput Input;
     // Until the first frame nothing records, so the startup script's workspace
     // commands apply at once and the commands after them find what they open.
     bool FramesStarted = false;

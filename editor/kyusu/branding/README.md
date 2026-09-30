@@ -9,7 +9,7 @@ these, and they carry no `IconId`.
 | `kyusu-icon.png` | the window icon, set once at startup |
 | `kyusu.ico` | the Windows executable icon, compiled in as a resource |
 
-`kyusu-logo.svg` is a flat white silhouette, like the files in `editor/icons`.
+`kyusu-logo.svg` is a flat white silhouette, like the files in `editor/ui/icons`.
 It is rasterized into the ImGui font atlas as coverage and tinted with the
 theme's accent when it is drawn, so changing a theme recolors the mark with no
 rebake. Keep it white and keep it to paths: gradients and color in the file

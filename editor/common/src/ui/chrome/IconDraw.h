@@ -6,7 +6,7 @@
 
 #include <string>
 
-// The editor's icons are SVG files under editor/icons, one per IconId. They
+// The editor's icons are SVG files under editor/ui/icons, one per IconId. They
 // are rasterized once at startup into the ImGui font atlas at a few sampling
 // sizes; a control asks for an IconId and a tint and never learns what drew
 // it.

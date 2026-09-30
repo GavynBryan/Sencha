@@ -97,6 +97,8 @@ IWorkspace* WorkspaceHost::Open(std::string_view kind)
     Opened.push_back(Entry{ row, std::move(instance), Main });
     if (OnOpened)
         OnOpened(*row, *built);
+    if (OnPlaced)
+        OnPlaced(*row, *built);
     (void)Activate(kind);
     return built;
 }

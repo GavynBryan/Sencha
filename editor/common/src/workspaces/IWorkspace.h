@@ -7,6 +7,7 @@ class ActionContext;
 struct FrameUpdateContext;
 struct PlatformEventContext;
 struct WorkspaceView;
+struct WorkspaceWindow;
 class EditorUiFeature;
 
 // One kind of editing offered in a tab, alive only while open. The first half
@@ -32,6 +33,9 @@ public:
     // Whether a drag that began in this workspace's content has the pointer:
     // until it ends, nothing over the content takes the pointer from it.
     [[nodiscard]] virtual bool HoldsPointer() const { return false; }
+    // The window the workspace now shows in: when it is first placed, and
+    // whenever it moves to another.
+    virtual void MoveTo(const WorkspaceWindow&) {}
 
     // Whether this workspace edits the document, and bringing it forward when
     // the journal is about to step it.

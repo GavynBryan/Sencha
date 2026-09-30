@@ -75,6 +75,10 @@ constexpr Rule kRules[] = {
     // surface, a read-out. Separate from a field because lighting a whole list
     // when the pointer crosses it says something untrue about what is clickable.
     { ".theme-well", [] { return Fill(EditorUi::FrameBg) + Edge(EditorUi::Border); } },
+    // The edge around a view, and around the one being edited.
+    { ".theme-frame", [] { return Edge(EditorUi::Border); } },
+    { ".theme-frame.active", [] { return Edge(EditorUi::SelectedOutline); } },
+    { ".theme-marquee", [] { return Fill(EditorUi::WithAlpha(EditorUi::Accent, 0.16f)) + Edge(EditorUi::AccentHover); } },
 
     // A bare clickable glyph -- a close cross, a disclosure arrow. No plate
     // behind it until the pointer is on it.

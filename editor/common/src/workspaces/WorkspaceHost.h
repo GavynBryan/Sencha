@@ -62,7 +62,8 @@ public:
     void SetClosingListener(Listener listener) { OnClosing = std::move(listener); }
     void SetCloseGuard(CloseGuard guard) { MayClose = std::move(guard); }
     void SetWindowOpener(WindowOpener opener) { OpenWindow = std::move(opener); }
-    // Runs after a workspace moves to another window, before it shows there.
+    // Runs when a workspace is placed in a window, before it shows there: once
+    // when it opens, then after every move to another window.
     void SetPlacedListener(Listener listener) { OnPlaced = std::move(listener); }
     // A window other than the main one that no workspace is placed in any more.
     void SetWindowEmptiedListener(WindowListener listener) { OnWindowEmptied = std::move(listener); }

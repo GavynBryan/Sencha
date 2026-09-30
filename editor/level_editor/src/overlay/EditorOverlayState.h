@@ -128,6 +128,15 @@ struct ViewportDialRequest
     ViewportId Viewport = {};
 };
 
+// An entity's marker, drawn at a fixed size wherever its world point shows:
+// how a light, a camera or an empty is seen and clicked in the views.
+struct MarkerRequest
+{
+    Vec3d World = {};
+    IconId Icon = IconId::None;
+    bool Selected = false;
+};
+
 // The element under the cursor for the active element mode. The renderer glows it
 // to show it is selection-eligible; an edge also carries its length, drawn at
 // MeasureAnchor. Element is invalid when nothing is hovered.
@@ -149,6 +158,7 @@ struct EditorOverlayState
     std::vector<PointHandleRequest> PointHandles;
     std::vector<ViewportButtonRequest> ViewportButtons;
     std::vector<ViewportDialRequest> ViewportDials;
+    std::vector<MarkerRequest> Markers;
     DragReadout Readout;
     ElementHoverState Hover;
     // A whole brush to highlight as a selected body while hovering, even when it is

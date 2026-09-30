@@ -4,6 +4,7 @@ add_executable(kyusu
     src/main.cpp
     src/app/KyusuApp.cpp
     src/app/ProjectSession.cpp
+    src/app/SynthesizedInput.cpp
     src/app/WorkspaceKinds.cpp
 )
 

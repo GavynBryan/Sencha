@@ -289,20 +289,21 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
     if (request.Mode == BrushPickMode::VertexOnly)
         return PickVertex(viewport, point, scene, request.RestrictTo);
 
-    const Ray3d ray = BuildRay(viewport, point);
-    return PickBrushElement(ray, scene, request);
+    return PickBrushElement(viewport, point, scene, request);
 }
 
-SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
+SelectableRef PickingService::PickBrushElement(const EditorViewport& viewport,
+                                               Vec2d point,
                                                const EditorScene& scene,
                                                BrushPickRequest request) const
 {
+    const Ray3d ray = BuildRay(viewport, point);
     PickCandidate bestCandidate{};
     bool hasBestCandidate = false;
 
     if (AllowsEntities(request) && ProxyProvider)
     {
-        if (const auto proxy = ProxyProvider(ray, scene);
+        if (const auto proxy = ProxyProvider(viewport, point, ray, scene);
             proxy && (!request.RestrictTo.IsValid()
                       || proxy->first.Entity == request.RestrictTo))
         {
@@ -533,8 +534,7 @@ SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
 
     // Face mode seeds from the edge of the picked face nearest the cursor: ray-pick
     // the face, then pick its screen-nearest loop edge.
-    const Ray3d ray = BuildRay(viewport, point);
-    const SelectableRef face = PickBrushElement(ray, scene,
+    const SelectableRef face = PickBrushElement(viewport, point, scene,
         BrushPickRequest{ .Mode = BrushPickMode::FaceOnly, .RestrictTo = restrictTo });
     if (!face.IsFace())
         return {};

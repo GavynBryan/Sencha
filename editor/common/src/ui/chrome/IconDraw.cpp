@@ -1,6 +1,7 @@
 #include "IconDraw.h"
 
 #include "fonts/IconsFontAwesome6.h"
+#include "icons/IconNames.h"
 
 #include <algorithm>
 #include <array>
@@ -30,62 +31,57 @@ constexpr std::size_t kCount = static_cast<std::size_t>(IconId::Count);
 constexpr float kSizes[] = { 12.0f, 16.0f, 24.0f };
 constexpr std::size_t kSizeCount = sizeof(kSizes) / sizeof(kSizes[0]);
 
-// One row per id: the file under editor/icons and the Font Awesome glyph that
-// stands in when it cannot be baked. IconId::None has neither and draws nothing.
-struct Icon
-{
-    const char* File = nullptr;
-    const char* Glyph = nullptr;
-};
-
-constexpr std::array<Icon, kCount> kIcons = [] {
-    std::array<Icon, kCount> t{};
-    const auto row = [&](IconId id, const char* file, const char* glyph) { t[static_cast<std::size_t>(id)] = Icon{ file, glyph }; };
-    row(IconId::Pointer, "pointer", ICON_FA_ARROW_POINTER);
-    row(IconId::Move, "move", ICON_FA_UP_DOWN_LEFT_RIGHT);
-    row(IconId::Rotate, "rotate", ICON_FA_ROTATE);
-    row(IconId::Scale, "scale", ICON_FA_MAXIMIZE);
-    row(IconId::Resize, "resize", ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER);
-    row(IconId::Pivot, "pivot", ICON_FA_CROSSHAIRS);
-    row(IconId::Anchor, "anchor", ICON_FA_ANCHOR);
-    row(IconId::Box, "box", ICON_FA_CUBE);
-    row(IconId::Plane, "plane", ICON_FA_SQUARE);
-    row(IconId::Cylinder, "cylinder", ICON_FA_DATABASE);
-    row(IconId::Light, "light", ICON_FA_LIGHTBULB);
-    row(IconId::Grid, "grid", ICON_FA_BORDER_ALL);
-    row(IconId::GridFrame, "grid-frame", ICON_FA_RULER_COMBINED);
-    row(IconId::Snap, "snap", ICON_FA_MAGNET);
-    row(IconId::ZoneBounds, "zone-bounds", ICON_FA_VECTOR_SQUARE);
-    row(IconId::Play, "play", ICON_FA_PLAY);
-    row(IconId::Stop, "stop", ICON_FA_STOP);
-    row(IconId::Hammer, "hammer", ICON_FA_HAMMER);
-    row(IconId::Cancel, "cancel", ICON_FA_XMARK);
-    row(IconId::Check, "check", ICON_FA_CHECK);
-    row(IconId::Folder, "folder", ICON_FA_FOLDER);
-    row(IconId::Search, "search", ICON_FA_MAGNIFYING_GLASS);
-    row(IconId::Refresh, "refresh", ICON_FA_ARROWS_ROTATE);
-    row(IconId::ChevronDown, "chevron-down", ICON_FA_CHEVRON_DOWN);
-    row(IconId::Add, "add", ICON_FA_PLUS);
-    row(IconId::Delete, "delete", ICON_FA_TRASH);
-    row(IconId::Eye, "eye", ICON_FA_EYE);
-    row(IconId::EyeOff, "eye-off", ICON_FA_EYE_SLASH);
-    row(IconId::Lock, "lock", ICON_FA_LOCK);
-    row(IconId::Unlock, "unlock", ICON_FA_LOCK_OPEN);
-    row(IconId::Cut, "cut", ICON_FA_SCISSORS);
-    row(IconId::Carve, "carve", ICON_FA_CROP_SIMPLE);
-    row(IconId::Clip, "clip", ICON_FA_SLASH);
-    row(IconId::ClipFront, "clip-front", ICON_FA_ARROW_RIGHT_TO_BRACKET);
-    row(IconId::ClipBack, "clip-back", ICON_FA_ARROWS_LEFT_RIGHT_TO_LINE);
-    row(IconId::ClipSplit, "clip-split", ICON_FA_OBJECT_UNGROUP);
-    row(IconId::ClipCap, "clip-cap", ICON_FA_SQUARE);
-    row(IconId::ModeObject, "mode-object", ICON_FA_CUBE);
-    row(IconId::ModeVertex, "mode-vertex", ICON_FA_CIRCLE_DOT);
-    row(IconId::ModeEdge, "mode-edge", ICON_FA_GRIP_LINES);
-    row(IconId::ModeFace, "mode-face", ICON_FA_VECTOR_SQUARE);
-    row(IconId::WindowMinimize, "window-minimize", ICON_FA_WINDOW_MINIMIZE);
-    row(IconId::WindowMaximize, "window-maximize", ICON_FA_WINDOW_MAXIMIZE);
-    row(IconId::WindowRestore, "window-restore", ICON_FA_WINDOW_RESTORE);
-    row(IconId::WindowClose, "window-close", ICON_FA_XMARK);
+// The Font Awesome glyph that stands in for each icon when its file cannot be
+// baked. IconId::None has none and draws nothing.
+constexpr std::array<const char*, kCount> kGlyphs = [] {
+    std::array<const char*, kCount> t{};
+    const auto row = [&](IconId id, const char* glyph) { t[static_cast<std::size_t>(id)] = glyph; };
+    row(IconId::Pointer, ICON_FA_ARROW_POINTER);
+    row(IconId::Move, ICON_FA_UP_DOWN_LEFT_RIGHT);
+    row(IconId::Rotate, ICON_FA_ROTATE);
+    row(IconId::Scale, ICON_FA_MAXIMIZE);
+    row(IconId::Resize, ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER);
+    row(IconId::Pivot, ICON_FA_CROSSHAIRS);
+    row(IconId::Anchor, ICON_FA_ANCHOR);
+    row(IconId::Box, ICON_FA_CUBE);
+    row(IconId::Plane, ICON_FA_SQUARE);
+    row(IconId::Cylinder, ICON_FA_DATABASE);
+    row(IconId::Light, ICON_FA_LIGHTBULB);
+    row(IconId::Camera, ICON_FA_VIDEO);
+    row(IconId::Grid, ICON_FA_BORDER_ALL);
+    row(IconId::GridFrame, ICON_FA_RULER_COMBINED);
+    row(IconId::Snap, ICON_FA_MAGNET);
+    row(IconId::ZoneBounds, ICON_FA_VECTOR_SQUARE);
+    row(IconId::Play, ICON_FA_PLAY);
+    row(IconId::Stop, ICON_FA_STOP);
+    row(IconId::Hammer, ICON_FA_HAMMER);
+    row(IconId::Cancel, ICON_FA_XMARK);
+    row(IconId::Check, ICON_FA_CHECK);
+    row(IconId::Folder, ICON_FA_FOLDER);
+    row(IconId::Search, ICON_FA_MAGNIFYING_GLASS);
+    row(IconId::Refresh, ICON_FA_ARROWS_ROTATE);
+    row(IconId::ChevronDown, ICON_FA_CHEVRON_DOWN);
+    row(IconId::Add, ICON_FA_PLUS);
+    row(IconId::Delete, ICON_FA_TRASH);
+    row(IconId::Eye, ICON_FA_EYE);
+    row(IconId::EyeOff, ICON_FA_EYE_SLASH);
+    row(IconId::Lock, ICON_FA_LOCK);
+    row(IconId::Unlock, ICON_FA_LOCK_OPEN);
+    row(IconId::Cut, ICON_FA_SCISSORS);
+    row(IconId::Carve, ICON_FA_CROP_SIMPLE);
+    row(IconId::Clip, ICON_FA_SLASH);
+    row(IconId::ClipFront, ICON_FA_ARROW_RIGHT_TO_BRACKET);
+    row(IconId::ClipBack, ICON_FA_ARROWS_LEFT_RIGHT_TO_LINE);
+    row(IconId::ClipSplit, ICON_FA_OBJECT_UNGROUP);
+    row(IconId::ClipCap, ICON_FA_SQUARE);
+    row(IconId::ModeObject, ICON_FA_CUBE);
+    row(IconId::ModeVertex, ICON_FA_CIRCLE_DOT);
+    row(IconId::ModeEdge, ICON_FA_GRIP_LINES);
+    row(IconId::ModeFace, ICON_FA_VECTOR_SQUARE);
+    row(IconId::WindowMinimize, ICON_FA_WINDOW_MINIMIZE);
+    row(IconId::WindowMaximize, ICON_FA_WINDOW_MAXIMIZE);
+    row(IconId::WindowRestore, ICON_FA_WINDOW_RESTORE);
+    row(IconId::WindowClose, ICON_FA_XMARK);
     return t;
 }();
 
@@ -146,10 +142,11 @@ ShellAtlasResult BakeAtlasArt(ImFontAtlas& atlas, const ShellAtlasKey& key)
     std::array<Rasterized, kCount> rasters{};
     for (std::size_t i = 1; i < kCount; ++i)
     {
-        if (kIcons[i].File == nullptr)
+        const std::string_view name = IconName(static_cast<IconId>(i));
+        if (name.empty())
             continue;
         std::vector<std::byte> bytes;
-        if (!ReadFileBytes(std::string(SENCHA_EDITOR_ICON_DIR) + "/" + kIcons[i].File + ".svg", bytes))
+        if (!ReadFileBytes(std::string(SENCHA_EDITOR_ICON_DIR) + "/" + std::string(name) + ".svg", bytes))
             continue;
         for (std::size_t s = 0; s < kSizeCount; ++s)
         {
@@ -258,7 +255,7 @@ void DrawIcon(ImDrawList* dl, IconId id, ImVec2 mn, ImVec2 mx, ImU32 tint)
         }
     }
 
-    const char* glyph = kIcons[index].Glyph;
+    const char* glyph = kGlyphs[index];
     if (glyph == nullptr)
         return;
     const ImVec2 size = ImGui::CalcTextSize(glyph);

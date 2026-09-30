@@ -18,6 +18,7 @@
 #include "workspace/LevelDocumentSource.h"
 #include "prompts/DocumentPrompts.h"
 #include "project/MaterialLibrary.h"
+#include "viewport/ViewportArrangement.h"
 #include "project/Project.h"
 #include "ui/EditorStatusBar.h"
 #include "ui/ToolPalettePanel.h"
@@ -32,7 +33,9 @@
 class EditorUiFeature;
 class MaterialPickerPanel;
 class MaterialThumbnailCache;
-class ViewportPanel;
+class LevelViewSurface;
+class RadialMenuScreen;
+class ViewsPanel;
 class EditorRenderFeature;
 class EditorViewportCameraSystem;
 class DocumentSourceSet;
@@ -79,6 +82,7 @@ public:
     [[nodiscard]] bool HasStagedEdit() const override;
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     [[nodiscard]] bool HoldsPointer() const override;
+    void MoveTo(const WorkspaceWindow& window) override;
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
@@ -101,11 +105,8 @@ private:
     // the author chooses; at once when it has none.
     void AfterSettlingChanges(std::function<void()> proceed);
     // Saves every changed document before a cook or a play session reads the
-    // disk; false, with the save report shown, when one could not be saved.
+    // disk; false, and the save's follow-up says why, when one could not be saved.
     [[nodiscard]] bool SaveBeforeLaunch(std::string& error);
-    // The tool wheel while it is open, painted over the whole window.
-    // A radial menu while it is open, painted over the whole window.
-    void DrawRadialMenu(const RadialMenuSession& wheel, const IRadialMenuModel& menu);
 
     // The game module's components into the editor's serializer registry, and
     // its vocabulary into every document's World, before the document exists.
@@ -115,17 +116,27 @@ private:
 
     void BuildAuthoredWorkflows();
 
+    // How the views share the content area: editor.view.arrangement, so the
+    // choice outlives the session.
+    [[nodiscard]] ViewportArrangementKind Arrangement() const;
+    void SetArrangement(ViewportArrangementKind kind);
+    // Makes the view looking along `orientation` the active one, which is the
+    // one a single view shows: each keeps its own camera.
+    void ShowView(ViewportOrientation orientation);
+
     // Bake-to-static-mesh actions behind the ToolPropertiesPanel buttons. All need a
     // mounted project (the .smesh is written under its first content root).
     void ExportSelectionGlb();
 
-    ViewportPanel* PerspectivePanel = nullptr;
-    ViewportPanel* OrthoPanel = nullptr;
+    ViewsPanel* Views = nullptr;
     // Held for the Active Material panel's Browse jump (Reveal()).
     MaterialPickerPanel* Browser = nullptr;
-    // Owned by the engine renderer; kept here so BuildUi can hand its viewport target
-    // cache to ViewportPanel (the panel composites those targets via ImGui::Image).
+    // Owned by the engine renderer; the views are drawn from its targets.
     EditorRenderFeature* RenderFeature = nullptr;
+    // The views on the window's content surface; gone before RenderFeature.
+    std::unique_ptr<LevelViewSurface> ViewSurface;
+    // Whichever wheel is open, over everything in the window.
+    std::unique_ptr<RadialMenuScreen> WheelScreen;
     // The window this workspace is placed in; null until it is.
     EditorUiFeature* UiFeature = nullptr;
     std::unique_ptr<EditorViewportCameraSystem> CameraSystem;

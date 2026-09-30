@@ -25,19 +25,31 @@ float ChassisInset()
     return spec.Border + spec.Recess;
 }
 
-void DrawChassisBase(ImDrawList* dl, ImVec2 mn, ImVec2 mx)
+void DrawChassisBase(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImVec2 holeMin, ImVec2 holeMax)
 {
     if (mx.x <= mn.x || mx.y <= mn.y)
         return;
     const ChassisSpec spec = ChassisSpecNow();
-    dl->AddRectFilled(mn, mx, ImGui::GetColorU32(EditorUi::ChassisBg));
-    FrameRing(dl, mn, mx, spec.Border + spec.Recess, spec.Chamfer, ImGui::GetColorU32(EditorUi::MetalBase),
-              ImGui::GetColorU32(EditorUi::ChassisBg));
+    const ImU32 ground = ImGui::GetColorU32(EditorUi::ChassisBg);
+    const auto fillAroundHole = [&](ImVec2 a, ImVec2 b) {
+        if (holeMax.x <= holeMin.x || holeMax.y <= holeMin.y)
+        {
+            dl->AddRectFilled(a, b, ground);
+            return;
+        }
+        const ImVec2 lo(std::clamp(holeMin.x, a.x, b.x), std::clamp(holeMin.y, a.y, b.y));
+        const ImVec2 hi(std::clamp(holeMax.x, a.x, b.x), std::clamp(holeMax.y, a.y, b.y));
+        dl->AddRectFilled(a, ImVec2(b.x, lo.y), ground);
+        dl->AddRectFilled(ImVec2(a.x, hi.y), b, ground);
+        dl->AddRectFilled(ImVec2(a.x, lo.y), ImVec2(lo.x, hi.y), ground);
+        dl->AddRectFilled(ImVec2(hi.x, lo.y), ImVec2(b.x, hi.y), ground);
+    };
+    fillAroundHole(mn, mx);
+    FrameRing(dl, mn, mx, spec.Border + spec.Recess, spec.Chamfer, ImGui::GetColorU32(EditorUi::MetalBase), ground);
     // The well the panels sit in shows the ground through the seams between
     // dock nodes.
     const float inset = spec.Border + spec.Recess;
-    dl->AddRectFilled(ImVec2(mn.x + inset, mn.y + inset), ImVec2(mx.x - inset, mx.y - inset),
-                      ImGui::GetColorU32(EditorUi::ChassisBg));
+    fillAroundHole(ImVec2(mn.x + inset, mn.y + inset), ImVec2(mx.x - inset, mx.y - inset));
 }
 
 void DrawChassisEdges(ImDrawList* dl, ImVec2 mn, ImVec2 mx)

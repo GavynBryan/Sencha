@@ -4,6 +4,7 @@
 #include "shell/CommandPalette.h"
 #include "shell/PromptDialog.h"
 #include "shell/TransientSurfaces.h"
+#include "workspaces/WorkspaceWindow.h"
 
 #include <graphics/PresentationId.h>
 #include <ui/UiScreenHandle.h>
@@ -23,6 +24,10 @@ class SdlWindow;
 class UiService;
 class WorkspaceHost;
 struct UiRow;
+
+// The surface layer a window's content draws in: under the window's legacy
+// panels, which draw between it and the shell's own layer 0.
+inline constexpr std::uint8_t kContentUiLayer = 1;
 
 // What a window's shell presents and acts through. The action stack is the
 // window's own: everything the rail does goes through it, so a key on the rail
@@ -79,6 +84,8 @@ public:
     [[nodiscard]] float RailHeight() const;
 
     [[nodiscard]] UiSurfaceId Surface() const { return SurfaceId; }
+    // What a workspace placed in this window is handed.
+    [[nodiscard]] WorkspaceWindow Binding() const;
 
     // Opens one of the rail's popovers by name ("hatch", "workspaces",
     // "document"), or closes it with anything else: what a script or a test
@@ -104,6 +111,10 @@ private:
 
     ShellWindowServices Services;
     UiSurfaceId SurfaceId;
+    // Display-only, in kContentUiLayer: where workspaces draw their content.
+    UiSurfaceId ContentSurfaceId;
+    // Display-only, over the shell's own surface.
+    UiSurfaceId OverlaySurfaceId;
     UiScreenHandle Screen;
 
     Popover Showing = Popover::None;

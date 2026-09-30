@@ -26,12 +26,14 @@
 #include "WireframeRenderer.h"
 #include "ZoneBoundsRenderer.h"
 #include "AffordanceRenderer.h"
+#include "AnnotationStrokeRenderer.h"
 
 #include "viewport/ViewportShading.h"
 
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/SkyGradientPass.h>
 #include <render/FrameComposition.h>
+#include <render/ui/UiDrawFrame.h>
 #include <render/pass/MeshForwardPass.h>
 #include <render/ShadowCasterSet.h>
 #include <render/ShadowResidency.h>
@@ -96,9 +98,19 @@ public:
     void OnDraw(const RenderFrame& frame) override;
     void Teardown() override;
 
-    // The viewport offscreen targets, shared with ViewportPanel (which displays them
-    // via ImGui::Image). Owned here so its GPU resources tear down with this feature.
+    // The viewport offscreen targets, sized by whatever arranges the views.
+    // Owned here so its GPU resources tear down with this feature.
     [[nodiscard]] ViewportTargetCache& GetViewportTargets() { return Targets; }
+
+    // The host image each shown viewport is drawn as, from whatever arranges
+    // the views. Each rendered view publishes its image under its host image
+    // once the image is readable; a view with none renders unseen.
+    struct ViewImage
+    {
+        ViewportId Viewport;
+        UiHostImageId Image = kInvalidUiHostImage;
+    };
+    void SetViewImages(std::vector<ViewImage> images) { ViewImages = std::move(images); }
 
     // The frame's shadow arbitration snapshot, read by the lighting panel.
     [[nodiscard]] const ShadowResidencyReadout& ShadowReadout() const
@@ -137,6 +149,9 @@ private:
     // view was declared with and renders it with the camera the view carries.
     // Drops targets for viewports not in LiveViewports.
     void PruneViewportTargets();
+    // Hands each rendered view's image to the UI under its host image; takes
+    // back any whose view did not render readable this frame.
+    void PublishViewImages();
     void RecordViewportView(const FrameContext& frame, const FrameView& view);
     // Render one viewport's scene chain into its offscreen color+depth target, with
     // the surrounding layout transitions and rendering scope.
@@ -240,6 +255,7 @@ private:
     ZoneBoundsRenderer     ZoneBounds;
     IrradianceVolumeRenderer IrradianceVolumes;
     AffordanceRenderer     Affordances;
+    AnnotationStrokeRenderer Annotations;
     // Create-drag preview overlay; runs in every viewport (not a body strategy).
     BrushPreviewRenderer   Preview;
     // Per-viewport offscreen targets this feature renders into; the UI composites them.
@@ -253,6 +269,7 @@ private:
     // a declared view holds a pointer into ViewSlots until the frame executes.
     std::vector<ViewSlot>  ViewSlots;
     std::vector<ViewportId> LiveViewports;
+    std::vector<ViewImage> ViewImages;
     EditorBloomPass        Bloom;
     bool                   BloomEnabled = true;     // editor.bloom.enable
     BloomParams            BloomParamsCache{};       // editor.bloom.threshold/intensity/radius

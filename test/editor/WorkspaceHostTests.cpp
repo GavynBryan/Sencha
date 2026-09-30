@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -261,6 +263,9 @@ TEST(WorkspaceHost, APlacedWorkspaceIsReboundBeforeItShows)
     WorkspaceHost host(Table(log), true, kMain);
     host.SetPlacedListener([&](const WorkspaceKind& kind, IWorkspace&) { log.push_back("placed " + kind.Id); });
     (void)host.Open("level");
+    EXPECT_EQ((Log{ "placed level", "level shown" }),
+              Log(std::find(log.begin(), log.end(), "placed level"), log.end()))
+        << "opening places it in the main window before it shows";
     log.clear();
     host.Request({ WorkspaceAction::Detach, "level" });
     host.ApplyRequests();

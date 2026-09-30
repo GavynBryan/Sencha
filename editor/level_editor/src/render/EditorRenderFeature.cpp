@@ -93,6 +93,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , ZoneBounds(WideLines)
     , IrradianceVolumes(selection, WideLines, Lines)
     , Affordances(affordances, WideLines, Fills)
+    , Annotations(overlay, WideLines)
     , Preview(preview, Lines)
     , Console(&console)
 {
@@ -223,6 +224,8 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
     if (!viewportShown && !(Thumbnails && Thumbnails->HasPendingWork()))
     {
         LiveViewports.clear();
+        ViewSlots.clear();
+        PublishViewImages();
         PruneViewportTargets();
         return;
     }
@@ -339,7 +342,28 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         });
 
     Composition.Execute(renderFrame);
+    PublishViewImages();
     PruneViewportTargets();
+}
+
+void EditorRenderFeature::PublishViewImages()
+{
+    if (Services.UiTextures == nullptr)
+        return;
+    for (const ViewImage& image : ViewImages)
+    {
+        const auto slot = std::ranges::find_if(ViewSlots, [&](const ViewSlot& s) {
+            return s.Viewport->Id == image.Viewport;
+        });
+        // Only an image this frame's view left readable: a view the
+        // composition skipped is still in whatever layout it was acquired in.
+        const bool readable = slot != ViewSlots.end() && slot->Target.ColorLayout != nullptr
+                           && *slot->Target.ColorLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        if (readable)
+            Services.UiTextures->PublishHostImage(image.Image, BindlessImageIndex{ slot->Target.ColorBindless });
+        else
+            Services.UiTextures->WithdrawHostImage(image.Image);
+    }
 }
 
 void EditorRenderFeature::PruneViewportTargets()
@@ -636,6 +660,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
             ZoneBounds.DrawViewport(local, viewport, camera, World, WorldView);
         Affordances.DrawViewport(local, viewport, camera);
         Preview.DrawViewport(local, viewport, camera);
+        Annotations.DrawViewport(local, viewport, camera);
     }
 
     // Sampled and committed, so the UI's ImGui::Image can read it -- and so
@@ -707,6 +732,9 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
 
 void EditorRenderFeature::Teardown()
 {
+    // The UI stops naming the view images before the targets behind them go.
+    ViewSlots.clear();
+    PublishViewImages();
     Thumbnails.reset();
     Studio.reset();
     // Scene resources first: the brush GPU meshes and material refs below are

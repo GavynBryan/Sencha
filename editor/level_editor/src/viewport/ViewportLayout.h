@@ -9,9 +9,9 @@
 #include <span>
 #include <vector>
 
-// The editor's viewport set: one perspective view and one switchable ortho
-// view, each drawn by its own dock panel. This owns the viewports and the
-// active-viewport state; on-screen placement belongs to the dock layout.
+// The editor's viewport set: a perspective view and the three ortho views, each
+// keeping its own camera. This owns the viewports and the active-viewport
+// state; which of them show, and where, belongs to the arrangement.
 class ViewportLayout
 {
 public:

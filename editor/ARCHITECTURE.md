@@ -43,7 +43,12 @@ workspace's facets (`WorkspaceFacets.h`) and actions. It also presents the
 command palette (Ctrl+K) and the prompt queue's front question; every window
 shows the same question, so it is answered wherever the person is. Under the rail the
 window's `EditorUiFeature` docks the active workspace's ImGui `WorkspaceView`
-panels until each workspace presents through the shell
+panels until each workspace presents through the shell. Under the panels is
+the window's content surface (`WorkspaceWindow::Content`, drawn in
+`kContentUiLayer` by a `UiRenderFeature` ordered before the ImGui feature):
+the Level draws its views there as host images (`LevelViewSurface`), laid out
+by `ViewportArrangement` over the views panel's rect, and the panel stays
+transparent where they show
 (`docs/editor/interaction-grammar.md`).
 Opening, closing and switching are requests applied at the frame boundary by
 the one `WorkspaceTickSystem`, since a workspace adds and removes render
@@ -163,7 +168,7 @@ Shared shell (`editor/common/src/`):
 | `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `CommandPalette`, `PromptDialog` and `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of. Workspaces never include it. | Kyusu |
 | `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first). | Kyusu, workspaces |
 | `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
-| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/icons/` |
+| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/ui/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/ui/icons/` |
 | `ui/ThemeTextureCache` | The raster art a theme owns, keyed by path and source stamp, with its own GPU lifetime. Deliberately not the font atlas: a theme switch costs one upload, not a font rebuild. | add a texture path to a theme's `surfaces` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `workspaces/` | The workspace model: `IWorkspace`, the `WorkspaceKind` row, `WorkspaceHost` (open, close, activate, window placement, requests at the frame boundary; headless-tested). | a row in `WorkspaceKinds.cpp` |
@@ -268,10 +273,9 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   (`DrawToolbarControls`), activation key (`GetShortcut`), and how a save should
   resolve anything it has staged (`CommitPending`), so the panel, the toolbar,
   the tool palette, the tool wheel, the status bar, and the keymap all pick it
-  up without an edit. The toolbar is not a bar of its own: the perspective
-  viewport's header is the toolbar row it reserves in place of a title
-  (`ViewportPanel::SetHeaderRows`), with the gizmo strip centred on the
-  window's midline. Cook, play and stop are the `transport.*` actions the
+  up without an edit. The toolbar is not a bar of its own: it is the row the
+  views panel reserves above the views (`ViewsPanel::SetHeaderRows`), with the
+  gizmo strip centred on the window's midline. Cook, play and stop are the `transport.*` actions the
   rail's transport shows.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
@@ -295,14 +299,21 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   `tool.<id>`. Any action is rebindable from `keybinds.json`. A held key is
   owned by a `RadialMenuSession` rather than an action handler, which fires on
   presses; its chord is still the catalog's (`tool.wheel`, `gizmo.wheel`). There is
-  one radial-menu mechanism (`RadialMenuMath`, `RadialMenuSession`, the chrome's
-  `DrawRadialMenu`) over `IRadialMenuModel`; the tools are one model
+  one radial-menu mechanism (`RadialMenuMath`, `RadialMenuSession`, `FaceOf`
+  for what an open wheel shows, and `RadialMenuScreen`, which draws it on the
+  window's overlay surface) over `IRadialMenuModel`; the tools are one model
   (`tool.wheel`, `ToolRegistryMenuModel`), the gizmo modes another
   (`gizmo.wheel`, `TransformModeMenuModel` over the `TransformModeItems`
   table the toolbar strip reads too). An open wheel is modal, which is what
   keeps the other closed.
 - A viewport visual: a render feature/pass in `level_editor/src/render/`, added in
-  `LevelWorkspace::BuildViewportRendering`.
+  `LevelWorkspace::BuildViewportRendering`. A tool's world strokes go through
+  `EditorOverlayState` (segments, dials, the drag readout), drawn into each view
+  by `AnnotationStrokeRenderer`; what sits at a point (labels, handles, buttons,
+  a dial's knob) becomes a `ViewMark` the views document places.
+- A scripted walkthrough: `input.pointer`, `input.key` and `input.button` push
+  platform events at a named frame, so an unattended run can hold a wheel open
+  or click a view before `render.screenshot` captures it.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in
   `BuildViewportRendering`).
 - A workspace: a library under `editor/<name>/` linking `editor_common`, with

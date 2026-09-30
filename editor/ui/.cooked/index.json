@@ -37,7 +37,7 @@
     },
     {
       "source": "cook_profiles.rml",
-      "input_fingerprint": "938b5d891d5e0129",
+      "input_fingerprint": "2734e61ac5c78e19",
       "cook_identity": "62c86b07d68abd42",
       "size": "1730",
       "mtime": "-4648151002176733126",
@@ -51,8 +51,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3686",
-          "mtime": "-4646886284047263594"
+          "size": "3862",
+          "mtime": "-4646883187788014413"
         }
       ],
       "artifacts": [
@@ -60,7 +60,7 @@
           "path": "asset://cook_profiles.rml",
           "file": ".cooked/cook_profiles.rml.sui",
           "type": "UiPackage",
-          "hash": "d08c27ec8ca29c04"
+          "hash": "402dcba041a202d0"
         }
       ]
     },
@@ -150,8 +150,790 @@
       ]
     },
     {
+      "source": "icons/add.svg",
+      "input_fingerprint": "f272ce5fbac6c742",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "277",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/add.svg",
+          "file": ".cooked/icons/add.svg.stex",
+          "type": "Texture",
+          "hash": "c7ec4fdeb292ed99"
+        }
+      ]
+    },
+    {
+      "source": "icons/anchor.svg",
+      "input_fingerprint": "246060c4f821da3d",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "418",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/anchor.svg",
+          "file": ".cooked/icons/anchor.svg.stex",
+          "type": "Texture",
+          "hash": "ec954166238bfd65"
+        }
+      ]
+    },
+    {
+      "source": "icons/box.svg",
+      "input_fingerprint": "baaafd7f5d6fc753",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "438",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/box.svg",
+          "file": ".cooked/icons/box.svg.stex",
+          "type": "Texture",
+          "hash": "9fee57052861257f"
+        }
+      ]
+    },
+    {
+      "source": "icons/camera.svg",
+      "input_fingerprint": "7a20446fd542a9dc",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "295",
+      "mtime": "-4646881415769879254",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/camera.svg",
+          "file": ".cooked/icons/camera.svg.stex",
+          "type": "Texture",
+          "hash": "86dbd0ebf125b36d"
+        }
+      ]
+    },
+    {
+      "source": "icons/cancel.svg",
+      "input_fingerprint": "474d172bf3e8f656",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "287",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/cancel.svg",
+          "file": ".cooked/icons/cancel.svg.stex",
+          "type": "Texture",
+          "hash": "e0443919c8dc905b"
+        }
+      ]
+    },
+    {
+      "source": "icons/carve.svg",
+      "input_fingerprint": "6ed9d7b41455b366",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "309",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/carve.svg",
+          "file": ".cooked/icons/carve.svg.stex",
+          "type": "Texture",
+          "hash": "6e57919a3ec153da"
+        }
+      ]
+    },
+    {
+      "source": "icons/check.svg",
+      "input_fingerprint": "311a5a3d723ae7a5",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "218",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/check.svg",
+          "file": ".cooked/icons/check.svg.stex",
+          "type": "Texture",
+          "hash": "3920558942fb77c3"
+        }
+      ]
+    },
+    {
+      "source": "icons/chevron-down.svg",
+      "input_fingerprint": "7c2fffc12ab2fe93",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "211",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/chevron-down.svg",
+          "file": ".cooked/icons/chevron-down.svg.stex",
+          "type": "Texture",
+          "hash": "063c2360f4ec2e1f"
+        }
+      ]
+    },
+    {
+      "source": "icons/clip-back.svg",
+      "input_fingerprint": "2c5f3f41d3e0cb92",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "402",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/clip-back.svg",
+          "file": ".cooked/icons/clip-back.svg.stex",
+          "type": "Texture",
+          "hash": "3aa492abc83b4555"
+        }
+      ]
+    },
+    {
+      "source": "icons/clip-cap.svg",
+      "input_fingerprint": "3bc23ba0453fc833",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "387",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/clip-cap.svg",
+          "file": ".cooked/icons/clip-cap.svg.stex",
+          "type": "Texture",
+          "hash": "db1fb321b7155eef"
+        }
+      ]
+    },
+    {
+      "source": "icons/clip-front.svg",
+      "input_fingerprint": "fa6d9b3f5af3f6f0",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "402",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/clip-front.svg",
+          "file": ".cooked/icons/clip-front.svg.stex",
+          "type": "Texture",
+          "hash": "e57ca5552652ade7"
+        }
+      ]
+    },
+    {
+      "source": "icons/clip-split.svg",
+      "input_fingerprint": "ecfb891d367acafe",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "428",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/clip-split.svg",
+          "file": ".cooked/icons/clip-split.svg.stex",
+          "type": "Texture",
+          "hash": "4fd58633a4f2a272"
+        }
+      ]
+    },
+    {
+      "source": "icons/clip.svg",
+      "input_fingerprint": "b7ab55924103ddb1",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "284",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/clip.svg",
+          "file": ".cooked/icons/clip.svg.stex",
+          "type": "Texture",
+          "hash": "6fc4a048c892bf78"
+        }
+      ]
+    },
+    {
+      "source": "icons/cut.svg",
+      "input_fingerprint": "d5a76fb0de0fedfa",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "408",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/cut.svg",
+          "file": ".cooked/icons/cut.svg.stex",
+          "type": "Texture",
+          "hash": "f63a66cd4491c9b5"
+        }
+      ]
+    },
+    {
+      "source": "icons/cylinder.svg",
+      "input_fingerprint": "46ed5f921ef5081b",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "435",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/cylinder.svg",
+          "file": ".cooked/icons/cylinder.svg.stex",
+          "type": "Texture",
+          "hash": "8e4309c48ab3a94a"
+        }
+      ]
+    },
+    {
+      "source": "icons/delete.svg",
+      "input_fingerprint": "ae1022a3b11ac44e",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "517",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/delete.svg",
+          "file": ".cooked/icons/delete.svg.stex",
+          "type": "Texture",
+          "hash": "5d12e3fe0ec294af"
+        }
+      ]
+    },
+    {
+      "source": "icons/eye-off.svg",
+      "input_fingerprint": "16c3e1038815d929",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "358",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/eye-off.svg",
+          "file": ".cooked/icons/eye-off.svg.stex",
+          "type": "Texture",
+          "hash": "27ca8d26086cfb3b"
+        }
+      ]
+    },
+    {
+      "source": "icons/eye.svg",
+      "input_fingerprint": "1626bee5ba54d2bc",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "288",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/eye.svg",
+          "file": ".cooked/icons/eye.svg.stex",
+          "type": "Texture",
+          "hash": "c8bc4307bbe85c07"
+        }
+      ]
+    },
+    {
+      "source": "icons/folder.svg",
+      "input_fingerprint": "b202546a2bbc2ada",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "239",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/folder.svg",
+          "file": ".cooked/icons/folder.svg.stex",
+          "type": "Texture",
+          "hash": "c8574613aa794a7d"
+        }
+      ]
+    },
+    {
+      "source": "icons/grid-frame.svg",
+      "input_fingerprint": "dc33164d96314cfb",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "563",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/grid-frame.svg",
+          "file": ".cooked/icons/grid-frame.svg.stex",
+          "type": "Texture",
+          "hash": "b51fde85731e47b2"
+        }
+      ]
+    },
+    {
+      "source": "icons/grid.svg",
+      "input_fingerprint": "ada1ccbfe9c0b35d",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "496",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/grid.svg",
+          "file": ".cooked/icons/grid.svg.stex",
+          "type": "Texture",
+          "hash": "6fb310a35f114c0d"
+        }
+      ]
+    },
+    {
+      "source": "icons/hammer.svg",
+      "input_fingerprint": "2d3b3e51d1eca422",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "305",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/hammer.svg",
+          "file": ".cooked/icons/hammer.svg.stex",
+          "type": "Texture",
+          "hash": "ffd2360c9a448a08"
+        }
+      ]
+    },
+    {
+      "source": "icons/light.svg",
+      "input_fingerprint": "228aeecd85e567e8",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "770",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/light.svg",
+          "file": ".cooked/icons/light.svg.stex",
+          "type": "Texture",
+          "hash": "f61f065f08394208"
+        }
+      ]
+    },
+    {
+      "source": "icons/lock.svg",
+      "input_fingerprint": "4a266dedf555f3cf",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "494",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/lock.svg",
+          "file": ".cooked/icons/lock.svg.stex",
+          "type": "Texture",
+          "hash": "89c87010e27ac954"
+        }
+      ]
+    },
+    {
+      "source": "icons/mode-edge.svg",
+      "input_fingerprint": "b2a0fe84bbd950c4",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "419",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/mode-edge.svg",
+          "file": ".cooked/icons/mode-edge.svg.stex",
+          "type": "Texture",
+          "hash": "1a0a4a641721a3f7"
+        }
+      ]
+    },
+    {
+      "source": "icons/mode-face.svg",
+      "input_fingerprint": "32ae6c0b7709564e",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "308",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/mode-face.svg",
+          "file": ".cooked/icons/mode-face.svg.stex",
+          "type": "Texture",
+          "hash": "68d7fefc10d591c7"
+        }
+      ]
+    },
+    {
+      "source": "icons/mode-object.svg",
+      "input_fingerprint": "baaafd7f5d6fc753",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "438",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/mode-object.svg",
+          "file": ".cooked/icons/mode-object.svg.stex",
+          "type": "Texture",
+          "hash": "9fee57052861257f"
+        }
+      ]
+    },
+    {
+      "source": "icons/mode-vertex.svg",
+      "input_fingerprint": "3d62959c6081cf89",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "414",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/mode-vertex.svg",
+          "file": ".cooked/icons/mode-vertex.svg.stex",
+          "type": "Texture",
+          "hash": "c876fb384f3c218e"
+        }
+      ]
+    },
+    {
+      "source": "icons/move.svg",
+      "input_fingerprint": "89b6ad8863b46777",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "599",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/move.svg",
+          "file": ".cooked/icons/move.svg.stex",
+          "type": "Texture",
+          "hash": "5c366a063ce2082b"
+        }
+      ]
+    },
+    {
+      "source": "icons/pivot.svg",
+      "input_fingerprint": "697d60b83803e260",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "526",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/pivot.svg",
+          "file": ".cooked/icons/pivot.svg.stex",
+          "type": "Texture",
+          "hash": "34a4b192a2aa3beb"
+        }
+      ]
+    },
+    {
+      "source": "icons/plane.svg",
+      "input_fingerprint": "642e6118088ceaa5",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "229",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/plane.svg",
+          "file": ".cooked/icons/plane.svg.stex",
+          "type": "Texture",
+          "hash": "0d691d09b53b1f23"
+        }
+      ]
+    },
+    {
+      "source": "icons/play.svg",
+      "input_fingerprint": "499a8ce8c521747d",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "222",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/play.svg",
+          "file": ".cooked/icons/play.svg.stex",
+          "type": "Texture",
+          "hash": "5703b98c2def0301"
+        }
+      ]
+    },
+    {
+      "source": "icons/pointer.svg",
+      "input_fingerprint": "6db6e72c4d4b4cfe",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "271",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/pointer.svg",
+          "file": ".cooked/icons/pointer.svg.stex",
+          "type": "Texture",
+          "hash": "361190cd80035166"
+        }
+      ]
+    },
+    {
+      "source": "icons/refresh.svg",
+      "input_fingerprint": "b8be75d4eed515ed",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "301",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/refresh.svg",
+          "file": ".cooked/icons/refresh.svg.stex",
+          "type": "Texture",
+          "hash": "661a7b87c299307c"
+        }
+      ]
+    },
+    {
+      "source": "icons/resize.svg",
+      "input_fingerprint": "ee38f3ee019ee620",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "345",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/resize.svg",
+          "file": ".cooked/icons/resize.svg.stex",
+          "type": "Texture",
+          "hash": "2cff9f7f8f77e5e3"
+        }
+      ]
+    },
+    {
+      "source": "icons/rotate.svg",
+      "input_fingerprint": "b8be75d4eed515ed",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "301",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/rotate.svg",
+          "file": ".cooked/icons/rotate.svg.stex",
+          "type": "Texture",
+          "hash": "661a7b87c299307c"
+        }
+      ]
+    },
+    {
+      "source": "icons/scale.svg",
+      "input_fingerprint": "f79ecc3dfdcbe206",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "359",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/scale.svg",
+          "file": ".cooked/icons/scale.svg.stex",
+          "type": "Texture",
+          "hash": "4c272d5df40d043d"
+        }
+      ]
+    },
+    {
+      "source": "icons/search.svg",
+      "input_fingerprint": "adb2131a5a1d5943",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "278",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/search.svg",
+          "file": ".cooked/icons/search.svg.stex",
+          "type": "Texture",
+          "hash": "aa0cb6ff23bb81e0"
+        }
+      ]
+    },
+    {
+      "source": "icons/snap.svg",
+      "input_fingerprint": "fff7e90d0398169e",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "553",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/snap.svg",
+          "file": ".cooked/icons/snap.svg.stex",
+          "type": "Texture",
+          "hash": "af3fcc3c047ab1ab"
+        }
+      ]
+    },
+    {
+      "source": "icons/stop.svg",
+      "input_fingerprint": "430f2eafea936095",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "229",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/stop.svg",
+          "file": ".cooked/icons/stop.svg.stex",
+          "type": "Texture",
+          "hash": "c8c67af867ba5795"
+        }
+      ]
+    },
+    {
+      "source": "icons/unlock.svg",
+      "input_fingerprint": "bf91bc0c1962dc73",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "498",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/unlock.svg",
+          "file": ".cooked/icons/unlock.svg.stex",
+          "type": "Texture",
+          "hash": "1153522d2b4e076a"
+        }
+      ]
+    },
+    {
+      "source": "icons/window-close.svg",
+      "input_fingerprint": "474d172bf3e8f656",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "287",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/window-close.svg",
+          "file": ".cooked/icons/window-close.svg.stex",
+          "type": "Texture",
+          "hash": "e0443919c8dc905b"
+        }
+      ]
+    },
+    {
+      "source": "icons/window-maximize.svg",
+      "input_fingerprint": "82a12766cd16afb3",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "216",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/window-maximize.svg",
+          "file": ".cooked/icons/window-maximize.svg.stex",
+          "type": "Texture",
+          "hash": "e20af7531f416b7c"
+        }
+      ]
+    },
+    {
+      "source": "icons/window-minimize.svg",
+      "input_fingerprint": "a6be636f7c3dad8b",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "210",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/window-minimize.svg",
+          "file": ".cooked/icons/window-minimize.svg.stex",
+          "type": "Texture",
+          "hash": "655969fe1476c2e8"
+        }
+      ]
+    },
+    {
+      "source": "icons/window-restore.svg",
+      "input_fingerprint": "a085594d2625721c",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "318",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/window-restore.svg",
+          "file": ".cooked/icons/window-restore.svg.stex",
+          "type": "Texture",
+          "hash": "09168647696b5985"
+        }
+      ]
+    },
+    {
+      "source": "icons/zone-bounds.svg",
+      "input_fingerprint": "823cd98077a24a97",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "497",
+      "mtime": "-4648281512815406458",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/zone-bounds.svg",
+          "file": ".cooked/icons/zone-bounds.svg.stex",
+          "type": "Texture",
+          "hash": "f5ea80fc38458e4b"
+        }
+      ]
+    },
+    {
       "source": "inspector.rml",
-      "input_fingerprint": "67d7e00cc4b0abd8",
+      "input_fingerprint": "0a5848be7c1f22c8",
       "cook_identity": "62c86b07d68abd42",
       "size": "2242",
       "mtime": "-4648151002172867364",
@@ -165,8 +947,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3686",
-          "mtime": "-4646886284047263594"
+          "size": "3862",
+          "mtime": "-4646883187788014413"
         }
       ],
       "artifacts": [
@@ -174,13 +956,13 @@
           "path": "asset://inspector.rml",
           "file": ".cooked/inspector.rml.sui",
           "type": "UiPackage",
-          "hash": "ab5a06e308aee995"
+          "hash": "562aa007f6dda63d"
         }
       ]
     },
     {
       "source": "palette.rml",
-      "input_fingerprint": "0f221a1de2bcd035",
+      "input_fingerprint": "e49f428e5b2b4905",
       "cook_identity": "62c86b07d68abd42",
       "size": "1030",
       "mtime": "-4646888290794166014",
@@ -194,8 +976,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3686",
-          "mtime": "-4646886284047263594"
+          "size": "3862",
+          "mtime": "-4646883187788014413"
         }
       ],
       "artifacts": [
@@ -203,13 +985,13 @@
           "path": "asset://palette.rml",
           "file": ".cooked/palette.rml.sui",
           "type": "UiPackage",
-          "hash": "d8f3483ed9132799"
+          "hash": "342f434df6aa6433"
         }
       ]
     },
     {
       "source": "prompt.rml",
-      "input_fingerprint": "cca9bffff756cb3a",
+      "input_fingerprint": "a725074ebfaeb22a",
       "cook_identity": "62c86b07d68abd42",
       "size": "871",
       "mtime": "-4646887282353163968",
@@ -223,8 +1005,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3686",
-          "mtime": "-4646886284047263594"
+          "size": "3862",
+          "mtime": "-4646883187788014413"
         }
       ],
       "artifacts": [
@@ -232,13 +1014,13 @@
           "path": "asset://prompt.rml",
           "file": ".cooked/prompt.rml.sui",
           "type": "UiPackage",
-          "hash": "0d8a2164763e5e67"
+          "hash": "eca23925dc4ab762"
         }
       ]
     },
     {
       "source": "shell.rml",
-      "input_fingerprint": "5686087de1463561",
+      "input_fingerprint": "bb0550ef2ad1bc51",
       "cook_identity": "62c86b07d68abd42",
       "size": "4590",
       "mtime": "-4646886284038606544",
@@ -252,8 +1034,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3686",
-          "mtime": "-4646886284047263594"
+          "size": "3862",
+          "mtime": "-4646883187788014413"
         }
       ],
       "artifacts": [
@@ -261,7 +1043,75 @@
           "path": "asset://shell.rml",
           "file": ".cooked/shell.rml.sui",
           "type": "UiPackage",
-          "hash": "b88e287e2c134d93"
+          "hash": "16228b139f29d8bd"
+        }
+      ]
+    },
+    {
+      "source": "views.rml",
+      "input_fingerprint": "586509e997183ab4",
+      "cook_identity": "62c86b07d68abd42",
+      "size": "3520",
+      "mtime": "-4646881310078425348",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "views.rcss",
+          "size": "1298",
+          "mtime": "-4646881310078377555"
+        },
+        {
+          "source": "icons.rcss",
+          "size": "3264",
+          "mtime": "-4646881427138628967"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "3862",
+          "mtime": "-4646883187788014413"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://views.rml",
+          "file": ".cooked/views.rml.sui",
+          "type": "UiPackage",
+          "hash": "8ae49c39b64b193e"
+        }
+      ]
+    },
+    {
+      "source": "wheel.rml",
+      "input_fingerprint": "51f1e822f234ab72",
+      "cook_identity": "62c86b07d68abd42",
+      "size": "2053",
+      "mtime": "-4646882716888259394",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "wheel.rcss",
+          "size": "1183",
+          "mtime": "-4646882716887503991"
+        },
+        {
+          "source": "icons.rcss",
+          "size": "3264",
+          "mtime": "-4646881427138628967"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "3862",
+          "mtime": "-4646883187788014413"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://wheel.rml",
+          "file": ".cooked/wheel.rml.sui",
+          "type": "UiPackage",
+          "hash": "e770f83c9d521ae8"
         }
       ]
     }

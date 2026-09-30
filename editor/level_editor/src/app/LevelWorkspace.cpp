@@ -46,7 +46,10 @@
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
-#include "ui/ViewportPanel.h"
+#include "ui/RadialMenuScreen.h"
+#include "ui/LevelViewSurface.h"
+#include "ui/ViewsPanel.h"
+#include "workspaces/WorkspaceWindow.h"
 #include "ui/ImGuiVec.h"
 
 #include <SDL3/SDL.h>
@@ -97,6 +100,7 @@ namespace
 constexpr std::string_view kEditorRenderFeatureId = "editor_render";
 constexpr std::string_view kEditorUiFeatureId = "editor_ui";
 constexpr std::array<std::string_view, 1> kEditorRenderDependsOn{ kEditorUiFeatureId };
+constexpr std::string_view kArrangementCVar = "editor.view.arrangement";
 } // namespace
 
 LevelWorkspace::LevelWorkspace(Engine& engine,
@@ -154,6 +158,8 @@ LevelWorkspace::~LevelWorkspace()
     // order survived; nothing enforced that, and the next line added to Teardown
     // would have made it a use-after-free. The renderer would otherwise hold the
     // feature until ~Renderer, long after all of this is gone.
+    WheelScreen.reset();
+    ViewSurface.reset();
     DetachRenderFeature(*EnginePtr, RenderFeature);
     LevelDocument.reset();
     Workspace.reset();
@@ -272,6 +278,13 @@ void LevelWorkspace::BuildInput()
         { "material.apply",        "Apply Material",              "Material", { SDLK_T, { .Shift = true } },              [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); } },
         { "material.copy_proj",    "Copy Face Projection",        "Material", { SDLK_C, { .Ctrl = true, .Shift = true } }, [this] { Workspace->CopySelectedFaceProjection(); } },
         { "material.paste_proj",   "Paste Face Projection",       "Material", { SDLK_V, { .Ctrl = true, .Shift = true } }, [this] { Workspace->PasteFaceProjectionToSelection(); } },
+        { "view.one",              "One View",                    "View",     { SDLK_1, { .Alt = true } },                [this] { SetArrangement(ViewportArrangementKind::Single); } },
+        { "view.two",              "Two Views",                   "View",     { SDLK_2, { .Alt = true } },                [this] { SetArrangement(ViewportArrangementKind::Split); } },
+        { "view.four",             "Four Views",                  "View",     { SDLK_4, { .Alt = true } },                [this] { SetArrangement(ViewportArrangementKind::Quad); } },
+        { "view.perspective",      "Perspective View",            "View",     { SDLK_KP_5, {} },                          [this] { ShowView(ViewportOrientation::Perspective); } },
+        { "view.top",              "Top View",                    "View",     { SDLK_KP_7, {} },                          [this] { ShowView(ViewportOrientation::Top); } },
+        { "view.front",            "Front View",                  "View",     { SDLK_KP_1, {} },                          [this] { ShowView(ViewportOrientation::Front); } },
+        { "view.side",             "Side View",                   "View",     { SDLK_KP_3, {} },                          [this] { ShowView(ViewportOrientation::Right); } },
     };
     const auto offer = [&](std::string_view id, std::string_view label, std::string_view category,
                            std::vector<KeyChord> chords, IconId icon, std::function<void()> invoke)
@@ -344,15 +357,8 @@ void LevelWorkspace::BuildInput()
             // viewport's panel saying nothing is drawn over it: one
             // viewport, one hover flag. Which view is active or was
             // focused last plays no part.
-            const ViewportId under = Workspace->Layout.ResolveAt(pointer);
-            if (!under.IsValid())
-                return false;
-            for (const ViewportPanel* panel : { PerspectivePanel, OrthoPanel })
-            {
-                if (panel != nullptr && panel->GetViewportId() == under)
-                    return panel->IsViewportRegionHovered();
-            }
-            return false;
+            return Workspace->Layout.ResolveAt(pointer).IsValid() && Views != nullptr
+                && Views->IsViewRegionHovered();
         };
         ToolMenu = std::make_unique<ToolRegistryMenuModel>(*Workspace->Interaction.Tools);
         ToolWheel = std::make_unique<RadialMenuSession>(*ToolMenu, chordFor("tool.wheel", SDLK_Q), frame, pointerOnScene);
@@ -371,9 +377,7 @@ void LevelWorkspace::BuildInput()
         {
             const UiInputCapture shell =
                 UiFeature != nullptr ? UiFeature->GetInputCapture() : UiInputCapture{};
-            const bool overViewport =
-                (PerspectivePanel != nullptr && PerspectivePanel->IsViewportRegionHovered())
-                || (OrthoPanel != nullptr && OrthoPanel->IsViewportRegionHovered());
+            const bool overViewport = Views != nullptr && Views->IsViewRegionHovered();
             UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
             return CombineUiCapture(shell, overViewport,
                                     ui != nullptr ? ui->Capture() : UiInputCapture{});
@@ -455,6 +459,19 @@ void LevelWorkspace::BuildViewportRendering()
     registerGridFloat("editor.grid.opacity", 0.6, "Editor grid: line opacity 0..1 (larger = bolder).");
     registerGridFloat("editor.grid.brightness", 0.62, "Editor grid: line brightness 0..1 (gray level).");
     registerGridFloat("editor.grid.fade_start", -0.3, "Editor grid: fade start as a signed fraction of reach; negative fades gradually from near the camera (~ -0.3 is a good global falloff).");
+
+    console.Registry().RegisterCVar({
+        .Name = std::string(kArrangementCVar),
+        .Owner = "editor",
+        .Type = CVarType::Int,
+        .DefaultValue = std::int64_t{ 0 },
+        .CurrentValue = std::int64_t{ 0 },
+        .Flags = CVarFlags::Archive,
+        .Help = "Level views: 0 one view, 1 two side by side, 2 four in a grid.",
+        .Source = { "editor" },
+        .Min = 0.0,
+        .Max = 2.0,
+    });
 
     // Selection bloom/glow knobs, read per frame by EditorRenderFeature.
     console.Registry().RegisterCVar({
@@ -573,28 +590,10 @@ void LevelWorkspace::BuildUi()
     // The workspace bar sits under the caption as app chrome, on the primary
     // viewport's header plate, so it reads apart from the editing row.
     Surface.Chrome.push_back([this] { StatusBar->Draw(); });
-    Surface.Overlays.push_back([this]
-    {
-        DrawRadialMenu(*ToolWheel, *ToolMenu);
-        DrawRadialMenu(*GizmoWheel, *GizmoMenu);
-    });
 
-    // One panel per viewport: the perspective view owns the central node, the
-    // ortho view shares the center-bottom strip with the Materials browser.
-    ViewportId perspectiveId{};
-    ViewportId orthoId{};
-    for (const auto& viewport : Workspace->Layout.All())
-    {
-        if (viewport == nullptr)
-            continue;
-        if (viewport->Orientation == ViewportOrientation::Perspective)
-            perspectiveId = viewport->Id;
-        else
-            orthoId = viewport->Id;
-    }
-    // The viewport and lighting panels read state the render feature owns, and
+    // The views and lighting panels read state the render feature owns, and
     // staging hands back nothing when the renderer never came up. Skipping them
-    // leaves an editor with no viewports, which is what a dead renderer means
+    // leaves an editor with no views, which is what a dead renderer means
     // anyway; dereferencing would just make it a crash instead of a message.
     if (RenderFeature != nullptr)
     {
@@ -630,17 +629,11 @@ void LevelWorkspace::BuildUi()
                 std::string(source), placement, document, Workspace->Selection));
         };
 
-        auto perspectivePanel = std::make_unique<ViewportPanel>(
-            Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-            RenderFeature->GetViewportTargets(), "VIEWPORT", DockSlot::Center, 1.0f,
-            PanelStyle::ViewportPrimary,
-            // The central node has no tab bar and no View entry: nothing can hide it.
-            PanelPersistence{ "viewport", PanelVisibilityPolicy::SessionOnly }, perspectiveId);
-        perspectivePanel->SetSceneDropHandler(placeDroppedScene);
-        // This viewport's header is the editing toolbar: one row in place of
-        // a title, above the scene, with the gizmo strip on the window's
-        // midline, where the eye rests, rather than the pane's own.
-        perspectivePanel->SetHeaderRows({
+        auto views = std::make_unique<ViewsPanel>(Workspace->Layout, Surface);
+        views->SetSceneDropHandler(placeDroppedScene);
+        // The editing toolbar is one row above the views, with the gizmo strip
+        // on the window's midline, where the eye rests, rather than the pane's.
+        views->SetHeaderRows({
             {
                 .Height = [] { return EditorToolbar::ViewportRowHeight(); },
                 .Draw = [this](ImDrawList* dl, ImVec2 mn, ImVec2 mx)
@@ -650,15 +643,13 @@ void LevelWorkspace::BuildUi()
                 },
             },
         });
-        PerspectivePanel = perspectivePanel.get();
-        Surface.AddPanel(std::move(perspectivePanel));
-        auto orthoPanel = std::make_unique<ViewportPanel>(
-            Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
-            RenderFeature->GetViewportTargets(), "ORTHO", DockSlot::CenterBottom, 1.0f,
-            PanelStyle::Viewport, PanelPersistence{ "ortho", PanelVisibilityPolicy::Remembered }, orthoId);
-        orthoPanel->SetSceneDropHandler(placeDroppedScene);
-        OrthoPanel = orthoPanel.get();
-        Surface.AddPanel(std::move(orthoPanel));
+        Views = views.get();
+        Surface.AddPanel(std::move(views));
+        if (UiService* ui = EnginePtr->TryUi(); ui != nullptr && ui->IsReady())
+            ViewSurface = std::make_unique<LevelViewSurface>(*ui, Workspace->Layout, Workspace->Interaction.Overlay,
+                                                             Workspace->Interaction.Marquee, RenderFeature);
+        if (UiService* ui = EnginePtr->TryUi(); ui != nullptr && ui->IsReady())
+            WheelScreen = std::make_unique<RadialMenuScreen>(*ui);
     }
     else
     {
@@ -897,11 +888,57 @@ void LevelWorkspace::Place(EditorUiFeature& window)
         Files->SetWindow(*Window);
 }
 
+ViewportArrangementKind LevelWorkspace::Arrangement() const
+{
+    std::int64_t value = 0;
+    if (const CVarMetadata* var = EnginePtr->Console().Registry().FindCVar(kArrangementCVar))
+        if (const std::int64_t* stored = std::get_if<std::int64_t>(&var->CurrentValue))
+            value = *stored;
+    switch (value)
+    {
+    case 1:  return ViewportArrangementKind::Split;
+    case 2:  return ViewportArrangementKind::Quad;
+    default: return ViewportArrangementKind::Single;
+    }
+}
+
+void LevelWorkspace::SetArrangement(ViewportArrangementKind kind)
+{
+    const std::int64_t value = kind == ViewportArrangementKind::Split ? 1 : kind == ViewportArrangementKind::Quad ? 2 : 0;
+    (void)EnginePtr->Console().Registry().SetCVar(kArrangementCVar, value,
+                                                  ConsoleValueSource{ .Description = "view action" },
+                                                  ConsolePhase::GameplayStarted);
+}
+
+void LevelWorkspace::ShowView(ViewportOrientation orientation)
+{
+    for (const ViewportLayout::ViewportStorage& viewport : Workspace->Layout.All())
+    {
+        if (viewport != nullptr && viewport->Orientation == orientation)
+        {
+            Workspace->Layout.SetActive(viewport->Id);
+            return;
+        }
+    }
+}
+
+void LevelWorkspace::MoveTo(const WorkspaceWindow& window)
+{
+    if (ViewSurface != nullptr)
+        ViewSurface->MoveTo(window.Content);
+    if (WheelScreen != nullptr)
+        WheelScreen->MoveTo(window.Overlay);
+}
+
 void LevelWorkspace::SetVisible(bool visible)
 {
     if (Visible == visible)
         return;
     Visible = visible;
+    if (ViewSurface != nullptr)
+        ViewSurface->SetShown(visible);
+    if (WheelScreen != nullptr)
+        WheelScreen->SetShown(visible);
     // Going to the background is a focus loss: a fly-look releases the
     // pointer and a drag in flight is cancelled rather than left holding it.
     if (!visible && Router != nullptr)
@@ -1019,84 +1056,6 @@ void LevelWorkspace::BuildAuthoredWorkflows()
     });
 }
 
-void LevelWorkspace::DrawRadialMenu(const RadialMenuSession& wheel, const IRadialMenuModel& menu)
-{
-    if (wheel.GetPhase() != RadialMenuPhase::Open)
-        return;
-
-    // Every position comes from the session's layout, the same numbers it
-    // hit-tests; this only pairs each slot with what the model says it looks
-    // like. Labels are the model's storage, null-terminated where they come
-    // from tables and registries.
-    const RadialMenu::Layout& layout = wheel.GetLayout();
-    const int hot = wheel.GetHot();
-    const int hotVariant = wheel.GetHotVariant();
-    const int active = menu.ActiveIndex();
-    const int count = menu.Count();
-    std::vector<EditorChrome::WheelSlot> slots;
-    slots.reserve(static_cast<std::size_t>(std::max(count, 0)));
-    std::string caption;
-    for (int index = 0; index < count; ++index)
-    {
-        const IRadialMenuModel::MenuItem item = menu.Item(index);
-        const RadialMenu::Span span = RadialMenu::SectorSpan(index, layout.Count);
-        slots.push_back({
-            .Center = ToImVec2(RadialMenu::SlotCenter(layout, index)),
-            .Size = layout.Button,
-            .Angle0 = span.Begin,
-            .Angle1 = span.End,
-            .Icon = item.Icon,
-            .Label = item.Label.data(),
-            .Active = index == active,
-            .Hot = index == hot,
-        });
-        if (index == hot || (hot < 0 && index == active))
-            caption = item.Label;
-    }
-
-    // The hot entry's variants on the outer ring, from the same layout the
-    // session resolves them against.
-    std::vector<EditorChrome::WheelSlot> variants;
-    if (hot >= 0 && hot < count)
-    {
-        const std::span<const IRadialMenuModel::MenuItem> choices = menu.Variants(hot);
-        const int choiceCount = static_cast<int>(choices.size());
-        const int current = menu.ActiveVariant(hot);
-        variants.reserve(choices.size());
-        for (int v = 0; v < choiceCount; ++v)
-        {
-            const RadialMenu::Span span = RadialMenu::VariantSpan(layout, hot, v, choiceCount);
-            variants.push_back({
-                .Center = ToImVec2(RadialMenu::VariantSlotCenter(layout, hot, v, choiceCount)),
-                .Size = layout.Button,
-                .Angle0 = span.Begin,
-                .Angle1 = span.End,
-                .Icon = choices[static_cast<std::size_t>(v)].Icon,
-                .Label = choices[static_cast<std::size_t>(v)].Label.data(),
-                .Active = v == current,
-                .Hot = v == hotVariant,
-            });
-        }
-        if (hotVariant >= 0 && hotVariant < choiceCount)
-            caption += std::string(" \xC2\xB7 ") + std::string(choices[static_cast<std::size_t>(hotVariant)].Label);
-    }
-    // The foreground list draws after every window, floating panels and open
-    // menus included, which is where a modal surface belongs.
-    EditorChrome::DrawRadialMenu(ImGui::GetForegroundDrawList(), EditorChrome::WheelPaint{
-        .Center = ToImVec2(layout.Center),
-        .Radius = layout.Radius,
-        .Hub = layout.Hub,
-        .Seam = layout.Seam,
-        .Rim = layout.Rim,
-        .OuterRadius = layout.OuterRadius,
-        .CaptionY = layout.CaptionY(),
-        .Slots = slots,
-        .Variants = variants,
-        .Caption = caption,
-        .CaptionDim = hot < 0,
-    });
-}
-
 void LevelWorkspace::ProcessFrame()
 {
     // Before the engine updates the UI: act on what the document asked for and
@@ -1143,12 +1102,22 @@ void LevelWorkspace::ProcessFrame()
         Workspace->SyncOrthoViewsToGridFrame();
     }
 
-    // A hidden viewport panel, or any panel of a workspace in the background,
-    // is never drawn, so it cannot clear its own stale on-screen rect; do it
-    // here so ResolveAt never routes input to an invisible view.
-    for (ViewportPanel* panel : { PerspectivePanel, OrthoPanel })
-        if (panel != nullptr && (!Visible || !panel->IsVisible()))
-            panel->ClearViewportRegion();
+    // Every view's rect, target size and image for this frame, from where the
+    // views panel sat last frame; a view not shown loses its rect, so ResolveAt
+    // never routes input to it.
+    if (ViewSurface != nullptr)
+        ViewSurface->Arrange(Views != nullptr && Visible ? Views->ContentRect() : Rect2d{}, Arrangement(),
+                             EditorUi::UiScale);
+    // Only one wheel is ever open: each yields its key to the other.
+    if (WheelScreen != nullptr)
+    {
+        if (ToolWheel->GetPhase() == RadialMenuPhase::Open)
+            WheelScreen->Present(ToolWheel.get(), ToolMenu.get());
+        else if (GizmoWheel->GetPhase() == RadialMenuPhase::Open)
+            WheelScreen->Present(GizmoWheel.get(), GizmoMenu.get());
+        else
+            WheelScreen->Present(nullptr, nullptr);
+    }
 
     // One LRU tick per frame, before the UI panels request thumbnails. The
     // renderer's fence-anchored clock decides when an evicted binding's

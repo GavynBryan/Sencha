@@ -4,7 +4,7 @@
 
 // The icons the editor's controls can show, named for what they depict. A
 // tool, a toolbar group, or a panel names an IconId; the chrome draws it from
-// its file under editor/icons and tints it with the widget's state. A leaf header with no
+// its file under editor/ui/icons and tints it with the widget's state. A leaf header with no
 // ImGui dependency, so the tool framework can carry an icon id without
 // reaching into the UI layer.
 enum class IconId : std::uint8_t
@@ -25,6 +25,7 @@ enum class IconId : std::uint8_t
     Plane,
     Cylinder,
     Light,
+    Camera,
 
     // Grid and snapping
     Grid,

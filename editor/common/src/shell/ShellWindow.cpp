@@ -110,6 +110,16 @@ ShellWindow::ShellWindow(ShellWindowServices services)
     Services.Ui.SetSurfaceWindow(SurfaceId, Services.Window.GetId());
     Screen = Services.Ui.OpenScreen(SurfaceId, Describe());
 
+    ContentSurfaceId = Services.Ui.CreateSurface("content", RenderExtent{ extent.Width, extent.Height });
+    Services.Ui.SetSurfaceWindow(ContentSurfaceId, Services.Window.GetId());
+    Services.Ui.SetSurfaceLayer(ContentSurfaceId, kContentUiLayer);
+    Services.Ui.SetSurfaceInputPolicy(ContentSurfaceId, UiSurfaceInputPolicy::Disabled);
+
+    // Created after the shell's surface, so it draws over it.
+    OverlaySurfaceId = Services.Ui.CreateSurface("overlay", RenderExtent{ extent.Width, extent.Height });
+    Services.Ui.SetSurfaceWindow(OverlaySurfaceId, Services.Window.GetId());
+    Services.Ui.SetSurfaceInputPolicy(OverlaySurfaceId, UiSurfaceInputPolicy::Disabled);
+
     Transients.SetClosedObserver([this](TransientSurfaces::Id id) {
         if (id != PopoverTransient)
             return;
@@ -141,6 +151,18 @@ ShellWindow::~ShellWindow()
         Services.Ui.CloseScreen(Screen);
     if (SurfaceId.IsValid())
         Services.Ui.DestroySurface(SurfaceId);
+    if (ContentSurfaceId.IsValid())
+        Services.Ui.DestroySurface(ContentSurfaceId);
+    if (OverlaySurfaceId.IsValid())
+        Services.Ui.DestroySurface(OverlaySurfaceId);
+}
+
+WorkspaceWindow ShellWindow::Binding() const
+{
+    return { .Window = &Services.Window,
+             .Presentation = Services.Presentation,
+             .Content = ContentSurfaceId,
+             .Overlay = OverlaySurfaceId };
 }
 
 void ShellWindow::Update(double now, double requestedScale)
@@ -148,8 +170,12 @@ void ShellWindow::Update(double now, double requestedScale)
     if (!Screen.IsValid())
         return;
     const WindowExtent extent = Services.Window.GetExtent();
-    Services.Ui.SetSurfaceSize(SurfaceId, RenderExtent{ extent.Width, extent.Height });
-    Services.Ui.SetSurfaceScale(SurfaceId, ChooseUiScale(requestedScale, Services.Window.GetDisplayScale()));
+    const float scale = ChooseUiScale(requestedScale, Services.Window.GetDisplayScale());
+    for (const UiSurfaceId surface : { SurfaceId, ContentSurfaceId, OverlaySurfaceId })
+    {
+        Services.Ui.SetSurfaceSize(surface, RenderExtent{ extent.Width, extent.Height });
+        Services.Ui.SetSurfaceScale(surface, scale);
+    }
 
     YieldPointerToContent();
     HandleActions();

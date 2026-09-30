@@ -47,6 +47,14 @@ inline constexpr Vec4 PreviewUndemanded{ 0.65f, 0.2f, 0.2f, 1.0f };
 
 inline constexpr Vec4 DimensionLabel{ 0.85f, 0.9f, 1.0f, 1.0f }; // selected-brush W/L/H text
 inline constexpr Vec4 Readout{ 0.3f, 0.6f, 1.0f, 1.0f };         // drag origin->current line + distance
+// A tool's rotation dial: the rim, the rim while the pointer is on it, and the
+// stops a snapped turn lands on.
+inline constexpr Vec4 DialRim{ 0.35f, 0.42f, 0.5f, 1.0f };
+inline constexpr Vec4 DialRimHot = Hover;
+inline constexpr Vec4 DialStop{ 0.55f, 0.62f, 0.7f, 1.0f };
+// An entity's marker in the views -- a light, a camera, an empty -- and how
+// near the pointer has to be to pick it.
+inline constexpr float MarkerPixels = 20.0f;
 // The active selection's mesh edges: a vivid blue authored above 1.0 so the bloom pass
 // (editor.bloom.*) extracts the bright excess into a glow. Exceeding 1.0 is intended
 // now: it renders into the RGBA16F viewport target, and only the > threshold part blooms

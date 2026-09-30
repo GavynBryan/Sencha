@@ -5,6 +5,7 @@
 #include <render/feature/UiRenderFeature.h>
 
 #include "app/ProjectSession.h"
+#include "app/SynthesizedInput.h"
 #include "app/WorkspaceKinds.h"
 #include "render/RenderFeatureDetach.h"
 #include "input/KeymapFile.h"
@@ -47,6 +48,8 @@
 namespace
 {
 constexpr std::string_view kEditorUiFeatureId = "editor_ui";
+constexpr std::string_view kContentUiFeatureId = "content_ui";
+constexpr std::string_view kEditorUiDependsOn[] = { kContentUiFeatureId };
 
 // Platform branding, not theme art: the icon is the product's and never
 // changes with a theme, so it is set once and forgotten. SDL copies the
@@ -156,7 +159,17 @@ void KyusuApp::OnStart(GameStartupContext&)
     ui->SetWorkspaceHost(*Workspaces, mainWindow);
     ui->SetActionCatalog(&Catalog);
     Renderer& renderer = graphics.MainRenderer;
-    Ui = renderer.StageFeature(std::move(ui), FeatureRegistration{ .Id = kEditorUiFeatureId });
+    // The window's content layer draws before the panels, which draw before
+    // the engine's own authored UI: content, then panels, then the shell.
+    std::span<const std::string_view> uiDependsOn;
+    if (UiService* authored = engine.TryUi())
+    {
+        (void)renderer.StageFeature(std::make_unique<UiRenderFeature>(*authored, engine.Content().Assets().Textures.get(),
+                                                                      0, kContentUiLayer),
+                                    FeatureRegistration{ .Id = kContentUiFeatureId });
+        uiDependsOn = kEditorUiDependsOn;
+    }
+    Ui = renderer.StageFeature(std::move(ui), FeatureRegistration{ .Id = kEditorUiFeatureId, .DependsOn = uiDependsOn });
     std::vector<std::string_view> failed;
     if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
     {
@@ -166,8 +179,11 @@ void KyusuApp::OnStart(GameStartupContext&)
 
     Workspaces->SetWindowOpener([this](const WorkspaceKind& kind) { return OpenDetachedWindow(kind); });
     Workspaces->SetPlacedListener([this](const WorkspaceKind& kind, IWorkspace& workspace) {
-        if (EditorUiFeature* shell = ShellFor(Workspaces->WindowOf(kind.Id)))
+        const PresentationId placedIn = Workspaces->WindowOf(kind.Id);
+        if (EditorUiFeature* shell = ShellFor(placedIn))
             workspace.Place(*shell);
+        if (const ShellWindow* windowShell = WindowShellFor(placedIn))
+            workspace.MoveTo(windowShell->Binding());
     });
     Workspaces->SetWindowEmptiedListener([this](PresentationId emptied) { CloseDetachedWindow(emptied); });
 
@@ -181,6 +197,7 @@ void KyusuApp::OnStart(GameStartupContext&)
     if (engine.TryUi() != nullptr)
         MainWindowShell = MakeShell(*window, mainWindow, *MainWindowActions, [&engine] { engine.RequestExit(); });
     RegisterWorkspaceCommands();
+    Input.Register(engine.Console().Registry(), [window] { return window->GetId(); });
     // Before the startup script runs, so an argv +editor.open or +cook finds
     // the level it acts on. Without a project to edit, choose one.
     (void)Workspaces->Open(opensLevel ? "level" : "project");
@@ -207,12 +224,22 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
     SdlWindow& window = graphics.Frames.FindPresentation(presentation)->Window();
     ApplyWindowIcon(window);
 
+    // Content, then panels, then the shell, as in the main window: features
+    // in one phase draw in the order they were added.
+    UiRenderFeature* contentFeature = nullptr;
+    if (UiService* ui = engine.TryUi())
+        contentFeature = graphics.MainRenderer.AddFeature(
+            std::make_unique<UiRenderFeature>(*ui, engine.Content().Assets().Textures.get(), window.GetId(),
+                                              kContentUiLayer),
+            RenderFeatureScope::For(presentation));
     auto shell = std::make_unique<EditorUiFeature>(*Ui, window);
     shell->SetWorkspaceHost(*Workspaces, presentation);
     shell->SetActionCatalog(&Catalog);
     EditorUiFeature* added = graphics.MainRenderer.AddFeature(std::move(shell), RenderFeatureScope::For(presentation));
     if (added == nullptr)
     {
+        if (contentFeature != nullptr)
+            DetachRenderFeature(engine, contentFeature);
         (void)ClosePresentationWindow(graphics, windows, presentation);
         return {};
     }
@@ -228,7 +255,7 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
     std::unique_ptr<ShellWindow> windowShell =
         MakeShell(window, presentation, *actions, [this, presentation] { WindowsToClose.push_back(presentation); });
     Detached.push_back(DetachedWindow{ presentation, window.GetId(), added, std::move(actions),
-                                       std::move(windowShell), uiFeature });
+                                       std::move(windowShell), uiFeature, contentFeature });
     return presentation;
 }
 
@@ -246,6 +273,8 @@ void KyusuApp::CloseDetachedWindow(PresentationId window)
     DetachRenderFeature(engine, it->Shell);
     if (it->Ui != nullptr)
         DetachRenderFeature(engine, it->Ui);
+    if (it->ContentUi != nullptr)
+        DetachRenderFeature(engine, it->ContentUi);
     (void)ClosePresentationWindow(engine.Graphics(), engine.Platform().Windows, window);
     Detached.erase(it);
 }
@@ -266,6 +295,16 @@ EditorUiFeature* KyusuApp::ShellFor(PresentationId window) const
     for (const DetachedWindow& entry : Detached)
         if (entry.Presentation == window)
             return entry.Shell;
+    return nullptr;
+}
+
+ShellWindow* KyusuApp::WindowShellFor(PresentationId window) const
+{
+    if (Workspaces != nullptr && window == Workspaces->MainWindow())
+        return MainWindowShell.get();
+    for (const DetachedWindow& entry : Detached)
+        if (entry.Presentation == window)
+            return entry.WindowShell.get();
     return nullptr;
 }
 
@@ -533,6 +572,7 @@ void KyusuApp::OnRegisterSystems(SystemRegisterContext& ctx)
             CloseRequestedWindows();
             SyncActionLayers();
             UpdateShells();
+            Input.Advance();
         });
 }
 

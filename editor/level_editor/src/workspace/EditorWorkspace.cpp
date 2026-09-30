@@ -14,6 +14,11 @@
 #include "EditorTheme.h"
 #include "authoring/GameplayVocabularyAdapters.h"
 #include "authoring/BrushModifierEditorAdapter.h"
+#include "authoring/MarkerSources.h"
+
+#include <components/CameraComponent.h>
+#include <render/PointLightComponent.h>
+#include <render/SpotLightComponent.h>
 #include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
 #include "document/EditorScene.h"
@@ -182,9 +187,12 @@ void EditorWorkspace::Build()
     Affordances->Registry().Register(MakeAbilitySetEditorAdapter());
     Affordances->Registry().Register(MakeCharacterMovementEditorAdapter());
     CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());
+    Affordances->AddMarkerSource(MarkEntitiesWith<PointLightComponent>(IconId::Light));
+    Affordances->AddMarkerSource(MarkEntitiesWith<SpotLightComponent>(IconId::Light));
+    Affordances->AddMarkerSource(MarkEntitiesWith<CameraComponent>(IconId::Camera));
     Picking.SetEntityProxyProvider(
-        [this](const Ray3d& ray, const EditorScene& scene)
-        { return Affordances->Pick(ray, scene); });
+        [this](const EditorViewport& viewport, Vec2d point, const Ray3d& ray, const EditorScene& scene)
+        { return Affordances->Pick(viewport, point, ray, scene); });
 
     BuildInteractionState();
 
@@ -491,6 +499,7 @@ void EditorWorkspace::UpdateOverlay()
         }
     }
 
+    Interaction.Overlay.Markers.clear();
     if (Affordances)
     {
         ViewportAffordanceOutput affordances;
@@ -498,6 +507,13 @@ void EditorWorkspace::UpdateOverlay()
         Interaction.Overlay.Labels.insert(Interaction.Overlay.Labels.end(),
                               std::make_move_iterator(affordances.Labels.begin()),
                               std::make_move_iterator(affordances.Labels.end()));
+        const RegistryId registry = World.FocusDocument().GetScene().GetRegistry().Id;
+        for (const EditorMarker& marker : affordances.Markers)
+            Interaction.Overlay.Markers.push_back({
+                .World = marker.World,
+                .Icon = marker.Icon,
+                .Selected = Selection.Contains(SelectableRef::EntitySelection(registry, marker.Entity)),
+            });
     }
 }
 

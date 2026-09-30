@@ -20,8 +20,10 @@ struct ChassisSpec
 // How far the dock host sits inside the work area on every side.
 [[nodiscard]] float ChassisInset();
 
-// The ground and the ring, drawn behind everything the chassis holds.
-void DrawChassisBase(ImDrawList* dl, ImVec2 mn, ImVec2 mx);
+// The ground and the ring, drawn behind everything the chassis holds. The
+// ground leaves [holeMin, holeMax] unpainted, for content drawn under the
+// panels; an empty hole leaves none.
+void DrawChassisBase(ImDrawList* dl, ImVec2 mn, ImVec2 mx, ImVec2 holeMin = {}, ImVec2 holeMax = {});
 
 // The ring's bevel and the well's inset edge, drawn after the base.
 void DrawChassisEdges(ImDrawList* dl, ImVec2 mn, ImVec2 mx);
