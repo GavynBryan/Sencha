@@ -1,6 +1,7 @@
 #include "EditorApp.h"
 
 #include "app/EditorServices.h"
+#include "app/ProjectSession.h"
 
 #include <app/Engine.h>
 #include <graphics/vulkan/GraphicsServices.h>
@@ -80,7 +81,9 @@ void EditorApp::OnStart(GameStartupContext& ctx)
         return;
 
     ApplyWindowIcon(*window);
-    Services = std::make_unique<EditorServices>(engine, *window, ctx.Config, std::move(ProjectPath));
+    Session = std::make_unique<ProjectSession>(engine, std::move(ProjectPath));
+    Services = std::make_unique<EditorServices>(engine, *window, ctx.Config, Session->Project(),
+                                                Session->Module(), Session->Materials());
 }
 
 void EditorApp::OnRegisterSystems(SystemRegisterContext& ctx)
@@ -105,8 +108,9 @@ void EditorApp::OnShutdown(GameShutdownContext&)
     if (GraphicsServices* graphics = GetEngine().TryGraphics())
         graphics->WaitIdle();
 
-    // Tear the editor down inside the Game shutdown window: EditorServices releases
-    // the asset system before the engine frees the graphics services its caches
-    // borrow.
+    // Inside the Game shutdown window, before the engine disconnects the asset
+    // stack both hold leases into. The editor first: its documents hold code
+    // the session's module compiled.
     Services.reset();
+    Session.reset();
 }

@@ -105,19 +105,20 @@ constexpr std::array<std::string_view, 1> kEditorRenderDependsOn{ kEditorUiFeatu
 EditorServices::EditorServices(Engine& engine,
                                SdlWindow& window,
                                const EngineConfig& config,
-                               std::optional<std::string> projectPath)
-    : ProjectPath(std::move(projectPath))
+                               ProjectDescriptor* project,
+                               Game* module,
+                               MaterialLibrary& materials)
+    : Materials(&materials)
+    , Project(project)
 {
     EnginePtr = &engine;
     Window = &window;
+    Assets = &engine.Content().Assets();
 
     RegisterDocumentSerializers();
-    // Load the project's game module (if any) BEFORE the document is created, so its
-    // components are registered when the document's World registers storage.
-    LoadGameModule();
-    // Build the asset system and mount the project content (needs the project from
-    // LoadGameModule). The document then serializes through it.
-    InitAssets();
+    // Before the document is created, so its World registers storage for the
+    // module's components.
+    RegisterModuleComponents(module);
     BuildSourceWatch();
 
     BuildDocument();
@@ -164,26 +165,20 @@ EditorServices::~EditorServices()
     }
     Workspace.reset();
     // After the documents, not before: their worlds hold things the module
-    // compiled -- a locomotion mode's enter and exit closures, a game
-    // component's type-erased OnRemove hook and its stable name. Unmapping
-    // first leaves every one of those pointing into freed pages, and the
-    // document destructor is what runs them.
-    UnloadGameModule();
+    // compiled, and the document destructor is what runs them. The module
+    // itself is unmapped by its owner, after this.
+    RetractModuleComponents();
     Commands.reset();
     Router.reset();
     Navigation.reset();
     Shortcuts.reset();
-    // Last, and after both: the document's StaticMeshComponents release into
-    // these caches as it dies, and the render feature held handles into them
-    // too, so Assets has to outlive both. The thumbnail bindings release
-    // texture refs through Assets and free ImGui descriptor sets, so they land
-    // between (the panels referencing the cache never touch it in their
-    // destructors).
+    // The thumbnail bindings release texture refs through the asset stack and
+    // free ImGui descriptor sets (the panels referencing the cache never touch
+    // it in their destructors).
     Thumbnails.reset();
     SourceWatch.reset();
-    Assets.reset();
-    // Toolbar, StatusBar, Materials, and the project/module state release with the
-    // object in reverse declaration order; none touch the subsystems reset above.
+    // Toolbar and StatusBar release with the object in reverse declaration
+    // order; neither touches the subsystems reset above.
 }
 
 void EditorServices::BuildDocument()
@@ -208,7 +203,6 @@ void EditorServices::BuildPlayLoop()
 void EditorServices::BuildFileActions()
 {
     Engine& engine = *EnginePtr;
-    Materials = std::make_unique<MaterialLibrary>(engine.Logging());
     std::vector<std::string> contentRoots;
     if (Project)
         contentRoots = Project->ContentRoots;
@@ -219,10 +213,6 @@ void EditorServices::BuildFileActions()
             sourceRoots.emplace_back(root);
         Workspace->World.SetContentRoots(std::move(sourceRoots));
     }
-    // Populate the material list up front (not just after Open/SaveAs): with a
-    // project the pickable set is the project's, independent of any level.
-    if (!contentRoots.empty())
-        Materials->Rescan(contentRoots);
     // Baking writes a mesh asset into the project, so the selection actions get
     // the asset environment once it exists (they stay inert without one).
     if (Assets && Project && !Project->ContentRoots.empty())
@@ -991,7 +981,7 @@ void EditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
 void EditorServices::BuildAuthoredWorkflows()
 {
     UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
-    if (ui == nullptr || !ui->IsReady() || !Project.has_value())
+    if (ui == nullptr || !ui->IsReady() || Project == nullptr)
         return;
 
     // The window, as authored UI sees it. One surface for every authored screen
@@ -1322,51 +1312,17 @@ void EditorServices::ExportSelectionGlb()
         nullptr);
 }
 
-void EditorServices::LoadGameModule()
+void EditorServices::RegisterModuleComponents(Game* module)
 {
-    // Prefer a project descriptor (--project / SENCHA_PROJECT, resolved by the
-    // caller); fall back to a bare module path (SENCHA_GAME_MODULE) so the
-    // pre-project workflow still works.
-    std::string modulePath;
-    if (ProjectPath)
-    {
-        ProjectDescriptor descriptor;
-        std::string error;
-        if (!ProjectDescriptor::Load(*ProjectPath, descriptor, &error))
-        {
-            std::fprintf(stderr, "[editor] failed to open project '%s': %s\n",
-                         ProjectPath->c_str(), error.c_str());
-            return;
-        }
-        Project = std::move(descriptor);
-        modulePath = Project->GameModulePath;
-        std::fprintf(stderr, "[editor] opened project '%s' (%s)\n",
-                     Project->Name.c_str(), ProjectPath->c_str());
-    }
-    else if (const char* envPath = std::getenv("SENCHA_GAME_MODULE");
-             envPath != nullptr && envPath[0] != '\0')
-    {
-        modulePath = envPath;
-    }
-
-    if (modulePath.empty())
+    if (module == nullptr)
         return;
-
-    std::string error;
-    GameModule = ModuleLoader.Load(modulePath, &error);
-    if (!GameModule.IsValid())
-    {
-        std::fprintf(stderr, "[editor] failed to load game module '%s': %s\n",
-                     modulePath.c_str(), error.c_str());
-        return;
-    }
 
     // The editor only borrows the module's component serializers (so it can edit
     // scenes containing game components); it never runs the game's lifecycle.
     // No World and no session here, so the registrar carries neither -- a game
     // component that only replicates is registered and simply has nowhere to go.
     ComponentRegistrar registrar(nullptr, &EditorSceneSerializers(), nullptr);
-    GameModule.Instance->OnRegisterComponents(registrar);
+    module->OnRegisterComponents(registrar);
     const std::span<const ComponentTypeId> added = registrar.AddedSerializers();
     GameModuleSerializerTypes.assign(added.begin(), added.end());
 
@@ -1374,48 +1330,16 @@ void EditorServices::LoadGameModule()
     // gameplay vocabulary is what the names inside authored content resolve
     // against. Each document installs it into its own World, so this is held
     // rather than run once.
-    SetEditorModuleVocabulary([game = GameModule.Instance](World& world)
-                              { game->OnRegisterVocabulary(world); });
-    std::fprintf(stderr, "[editor] loaded game module '%s'\n", modulePath.c_str());
+    SetEditorModuleVocabulary([module](World& world) { module->OnRegisterVocabulary(world); });
 }
 
-void EditorServices::InitAssets()
+void EditorServices::RetractModuleComponents()
 {
-    if (EnginePtr == nullptr)
-        return;
-    Engine& engine = *EnginePtr;
-    GraphicsServices& graphics = engine.Graphics();
-    LoggingProvider& logging = engine.Logging();
-
-    Assets.emplace(logging, graphics.Buffers, graphics.Images, graphics.Descriptors,
-                   graphics.Samplers, engine.SceneSerializers());
-    if (!Project)
-        return;
-
-    MountProjectContent(*Project, *Assets, logging, &engine.Jobs());
-#ifdef SENCHA_ENABLE_UI
-#ifdef SENCHA_EDITOR_UI_DIR
-    // Into the ENGINE's asset stack, not the editor's. The editor keeps its own
-    // RuntimeAssets for project content, but Engine::Ui() resolves a package
-    // through the engine's -- so authored UI mounted anywhere else is authored
-    // UI the UI service cannot find.
-    MountEditorContent(SENCHA_EDITOR_UI_DIR, engine.Content().Assets(), logging, &engine.Jobs());
-#endif
-#endif
-}
-
-void EditorServices::UnloadGameModule()
-{
-    if (!GameModule.IsValid())
-        return;
-
-    // Retract the serializers while the module is still mapped, then unmap. The
-    // vocabulary installer goes with them: its target is code in the module's
-    // image, so it must not outlive the mapping. Documents already built keep
-    // the names they were given -- they are values in their own worlds.
+    // The vocabulary installer goes with the serializers: its target is code in
+    // the module's image. Documents already built keep the names they were
+    // given -- they are values in their own worlds.
     for (ComponentTypeId type : GameModuleSerializerTypes)
         (void)EditorSceneSerializers().Remove(type);
     GameModuleSerializerTypes.clear();
     SetEditorModuleVocabulary({});
-    ModuleLoader.Unload(GameModule);
 }

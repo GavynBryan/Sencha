@@ -3,6 +3,7 @@
 add_executable(kyusu
     src/main.cpp
     src/app/EditorApp.cpp
+    src/app/ProjectSession.cpp
 )
 
 target_link_libraries(kyusu PRIVATE level_editor)

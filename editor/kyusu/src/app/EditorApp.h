@@ -7,10 +7,11 @@
 #include <string>
 
 class EditorServices;
+class ProjectSession;
 
-// The editor's Game entry point: it owns the EditorServices composition root and
-// forwards each Game lifecycle hook to it. All subsystem ownership and wiring
-// lives in EditorServices; this stays glue.
+// The editor's Game entry point: it owns the project session and the level
+// editor built over it, and forwards each Game lifecycle hook. Glue; the
+// wiring lives in the objects it owns.
 class EditorApp : public Game
 {
 public:
@@ -28,5 +29,8 @@ public:
 
 private:
     std::optional<std::string> ProjectPath;
+    // Declared before the editor so it is destroyed after it: the module stays
+    // mapped while any document holds code it compiled.
+    std::unique_ptr<ProjectSession> Session;
     std::unique_ptr<EditorServices> Services;
 };

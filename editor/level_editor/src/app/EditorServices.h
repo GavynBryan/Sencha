@@ -1,7 +1,6 @@
 #pragma once
 
 #include <app/GameContexts.h>
-#include <app/GameModuleLoader.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <ecs/ComponentTypeId.h>
 #include <ui/UiSurface.h>
@@ -36,6 +35,7 @@ class EditorRenderFeature;
 class EditorViewportCameraSystem;
 class EditorFrameHook;
 class Engine;
+class Game;
 class EngineSchedule;
 class SdlWindow;
 class PieDriver;
@@ -65,14 +65,15 @@ class DocumentFileActions;
 class EditorServices
 {
 public:
-    // Builds and wires every subsystem. Defined out of line so the .cpp sees the
-    // complete PieDriver / DocumentFileActions the unique_ptr members forward-
-    // declare. config supplies startup-only settings (console open-on-start);
-    // projectPath is the resolved .senchaproj path (ResolveProjectPath), if any.
+    // Builds and wires every subsystem. config supplies startup-only settings
+    // (console open-on-start). The project, the game module and the materials
+    // belong to the application and outlive this.
     EditorServices(Engine& engine,
                    SdlWindow& window,
                    const EngineConfig& config,
-                   std::optional<std::string> projectPath);
+                   ProjectDescriptor* project,
+                   Game* module,
+                   MaterialLibrary& materials);
     ~EditorServices();
 
     EditorServices(const EditorServices&) = delete;
@@ -101,17 +102,11 @@ private:
     // A radial menu while it is open, painted over the whole window.
     void DrawRadialMenu(const RadialMenuSession& wheel, const IRadialMenuModel& menu);
 
-    // Opens the project (SENCHA_PROJECT = path to a .senchaproj) and loads its
-    // game module so its components register into the editor's serializer registry
-    // before the document is created. Falls back to a bare module path in
-    // SENCHA_GAME_MODULE when no project is set.
-    void LoadGameModule();
-    void UnloadGameModule();
-
-    // Builds the engine asset system from the live graphics services and mounts the
-    // project's content roots (authored + cooked overlay) so asset refs resolve as
-    // they do at runtime. No-op without a project.
-    void InitAssets();
+    // The game module's components into the editor's serializer registry, and
+    // its vocabulary into every document's World, before the document exists.
+    void RegisterModuleComponents(Game* module);
+    // Retracted while the module is still mapped: it built the serializers.
+    void RetractModuleComponents();
 
     // Watches project .smat/.png sources and hot-reloads resident assets in
     // place (detection: AssetSourceWatcher; reaction: AssetHotReloader), so a
@@ -138,11 +133,8 @@ private:
     Engine* EnginePtr = nullptr;
     SdlWindow* Window = nullptr;
 
-    // The engine asset system, shared by editor authoring, the cook, and (by the
-    // same paths) the runtime. Declared before Workspace so it outlives the
-    // document whose StaticMeshComponents hold handles into its caches. Reset in
-    // the destructor before the engine frees the graphics services it borrows.
-    std::optional<RuntimeAssets> Assets;
+    // The engine's asset stack, which the application mounted the project into.
+    RuntimeAssets* Assets = nullptr;
 
     // Source watch state (definition in the .cpp keeps the cook/hotreload
     // headers out of this one). References Assets; reset before it.
@@ -165,23 +157,18 @@ private:
     // The bar under the caption: the cook/play loop, and workspace tabs to come.
     std::unique_ptr<WorkspaceBar> TopBar;
     std::unique_ptr<EditorStatusBar> StatusBar;
-    std::unique_ptr<MaterialLibrary> Materials;
+    MaterialLibrary* Materials = nullptr;
     // Thumbnail GPU residency for the browser and active-material previews.
     // Reset explicitly in the destructor after the render feature releases its
     // scene resources and before Assets goes away (the bindings inside release
     // through the asset system and the live ImGui backend).
     std::unique_ptr<MaterialThumbnailCache> Thumbnails;
 
-    GameModuleLoader ModuleLoader;
-    LoadedModule     GameModule;
-    // Component identities the module's registration added serializers for.
-    // Recorded so unload retracts exactly those, while the module is still
-    // mapped -- the module built the serializer objects, so freeing one after
-    // unmapping runs a destructor that is gone.
+    // Component identities the module's registration added serializers for,
+    // so retraction removes exactly those.
     std::vector<ComponentTypeId> GameModuleSerializerTypes;
 
-    std::optional<std::string> ProjectPath;
-    std::optional<ProjectDescriptor> Project;
+    ProjectDescriptor* Project = nullptr;
 
     // Declared last so they are torn down before the state they reference.
     // Cooking, the player it feeds, and the serials that hand one to the other.
