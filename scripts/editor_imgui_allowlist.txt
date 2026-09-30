@@ -81,7 +81,6 @@ editor/level_editor/src/ui/GraphViewerPanel.cpp
 editor/level_editor/src/ui/LightingPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.h
-editor/level_editor/src/ui/WorldPartitionPanel.cpp
 editor/material_editor/src/MaterialFilesPanel.cpp
 editor/material_editor/src/MaterialInspectorPanel.cpp
 editor/material_editor/src/MaterialPreviewPanel.cpp

@@ -303,7 +303,12 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   `workspace/PrefabExplorer` (Shift+P), whose choice takes up the Place tool,
   and its scene is `workspace/WorldExplorer` (O), an outline the shell shows
   as a sheet, with the structural verbs (parent, hide, lock, move to a zone,
-  a placement's source) in `workspace/EntityVerbs`.
+  a placement's source) in `workspace/EntityVerbs`. An open world adds
+  `workspace/PartitionOutline` (Shift+O): the world, its graphs and zones as
+  an outline whose pick is the selection card when no entity is selected
+  (manifest edits, zone load and focus, streaming preview). It also turns the
+  world's validation into problems, and `IWorkspace::RevealProblem` answers
+  the shell's problems popover by picking the problem's zone or graph.
   A tool declares what it consumes (`ITool::Resources`), and the cartridge
   follows the tool in hand's primary role. Cook, play and
   stop are the `transport.*` actions the rail's transport shows.

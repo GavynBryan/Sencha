@@ -1319,7 +1319,7 @@ void WorldDocument::RunValidation()
             .SourceId = zone.Id.Value,
             .RuleId = "partition.zone.entity_outside_bounds",
             .Message = std::format("zone {} has {} entities outside its bounds",
-                                   ZoneIdToString(zone.Id), outside),
+                                   zone.Name.empty() ? ZoneIdToString(zone.Id) : zone.Name, outside),
         });
     }
 

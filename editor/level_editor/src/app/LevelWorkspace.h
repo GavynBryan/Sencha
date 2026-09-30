@@ -47,6 +47,8 @@ class ComponentPropertySource;
 class ElementVerbs;
 class MaterialExplorer;
 class PrefabExplorer;
+class ProblemList;
+class PartitionOutline;
 class EntityVerbs;
 class WorldExplorer;
 class FaceUvSource;
@@ -70,7 +72,8 @@ public:
                    MaterialLibrary& materials,
                    DocumentSourceSet& documents,
                    ActionCatalog& actions,
-                   PromptQueue& prompts);
+                   PromptQueue& prompts,
+                   ProblemList& problems);
     ~LevelWorkspace() override;
 
     LevelWorkspace(const LevelWorkspace&) = delete;
@@ -98,6 +101,9 @@ public:
                           std::size_t mark) override;
     // The kind of resource the hands hold now: what the tool in hand consumes.
     [[nodiscard]] AssetType HeldType() const;
+    bool RevealProblem(const Problem& problem) override;
+    // The world's validation, republished only when it changed.
+    void PublishProblems();
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;
@@ -174,6 +180,10 @@ private:
     std::unique_ptr<LevelDocumentSource> LevelDocument;
     // After the document its questions act on, so they are withdrawn first.
     PromptQueue::Asker Prompts;
+    // Where the world's validation is reported.
+    ProblemList& Problems;
+    // What was last reported there, so an unchanged set is not published again.
+    std::vector<std::string> PublishedProblems;
     // The held-key radial menus: the tools over the workspace's registry, the
     // gizmo modes over the manipulator session. One mechanism, two models.
     std::unique_ptr<ToolRegistryMenuModel> ToolMenu;
@@ -190,6 +200,7 @@ private:
     std::unique_ptr<PrefabExplorer> PrefabsExplorer;
     std::unique_ptr<EntityVerbs> Entities;
     std::unique_ptr<WorldExplorer> WorldOutline;
+    std::unique_ptr<PartitionOutline> Partition;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
     // The tool in hand's settings, as the operation facet hands them out.

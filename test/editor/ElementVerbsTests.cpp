@@ -7,6 +7,7 @@
 #include "workspace/ElementVerbs.h"
 #include "workspace/EntityVerbs.h"
 #include "workspace/FaceUvSource.h"
+#include "workspace/PartitionOutline.h"
 #include "workspace/SelectionSummary.h"
 
 #include <gtest/gtest.h>
@@ -42,6 +43,7 @@ protected:
     ElementVerbs Verbs{ Workspace, {} };
     FaceUvSource Uv{ Workspace };
     EntityVerbs Entities{ Workspace, {} };
+    PartitionOutline Partition{ Workspace };
     ComponentPropertySource Components{ Workspace.World, Workspace.Selection, Commands,
                                         Workspace.Affordances->Registry() };
     ActionCatalog Catalog;
@@ -53,7 +55,7 @@ protected:
 
 TEST_F(ElementVerbsTest, NothingSelectedHasNoCard)
 {
-    EXPECT_TRUE(SelectionOf(Workspace, Verbs, Entities, Uv, Components).Title.empty());
+    EXPECT_TRUE(SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition).Title.empty());
     EXPECT_FALSE(Stack.Query("brush.normals").Enabled);
 }
 
@@ -61,7 +63,7 @@ TEST_F(ElementVerbsTest, EachElementKindOffersItsOwnVerbs)
 {
     const EntityId brush = AddBrush({ 0, 0, 0 });
     SelectEntity(brush);
-    WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components);
+    WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition);
     EXPECT_FALSE(facet.Title.empty());
     EXPECT_TRUE(Lists(facet, "brush.normals"));
     ASSERT_EQ(facet.Details.size(), 1u) << "one object's components are there to look at closely";
@@ -70,7 +72,7 @@ TEST_F(ElementVerbsTest, EachElementKindOffersItsOwnVerbs)
 
     Workspace.MeshEdit.SetElementKind(MeshElementKind::Face);
     SelectElements(brush, MeshElementKind::Face, { 0, 1 });
-    facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components);
+    facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition);
     EXPECT_EQ(facet.Title, "2 faces");
     EXPECT_TRUE(Lists(facet, "face.inset"));
     EXPECT_TRUE(Lists(facet, "uv.fit"));
@@ -79,7 +81,7 @@ TEST_F(ElementVerbsTest, EachElementKindOffersItsOwnVerbs)
 
     Workspace.MeshEdit.SetElementKind(MeshElementKind::Edge);
     SelectElements(brush, MeshElementKind::Edge, { 0 });
-    facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components);
+    facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition);
     EXPECT_EQ(facet.Title, "1 edge");
     EXPECT_TRUE(Lists(facet, "edge.bevel"));
     EXPECT_FALSE(Stack.Query("edge.bridge").Enabled) << "a bridge spans two edges";
@@ -93,7 +95,7 @@ TEST_F(ElementVerbsTest, AStagedInsetFollowsItsSettingUntilAppliedOrCancelled)
 
     ASSERT_TRUE(Stack.Invoke("face.inset"));
     ASSERT_TRUE(Workspace.HasPendingInset());
-    const WorkspaceSelectionFacet staged = SelectionOf(Workspace, Verbs, Entities, Uv, Components);
+    const WorkspaceSelectionFacet staged = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition);
     EXPECT_TRUE(staged.Staged);
     EXPECT_EQ(staged.Actions, (std::vector<std::string>{ "element.apply", "element.cancel" }));
     EXPECT_FALSE(Stack.Query("face.inset").Enabled) << "one staged edit at a time";

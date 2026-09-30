@@ -40,7 +40,8 @@
         </div>
 
         <div id="rail_right">
-            <div id="problems" class="readout theme-readout" data-if="problem_count > 0">
+            <div id="problems" class="readout theme-readout" data-if="problem_count > 0"
+                 data-class-lit="popover == 'problems'" data-event-click="shell_popover('problems')">
                 <div class="lamp theme-lamp" data-class-warn="!problem_errors" data-class-fault="problem_errors"></div>
                 <span class="count">{{problem_count}}</span>
             </div>
@@ -200,9 +201,9 @@
             <input type="text" id="explorer_filter" class="theme-field"
                    data-event-change="shell_explorer_filter(ev.value)"/>
             <span id="explorer_range" class="theme-dim">{{explorer_range}}</span>
-            <div class="key theme-key" data-class-disabled="!explorer_earlier"
+            <div class="key theme-key" data-if="explorer_earlier || explorer_later" data-class-disabled="!explorer_earlier"
                  data-event-click="shell_explorer_page(-1)"><span class="glyph">&#xf053;</span></div>
-            <div class="key theme-key" data-class-disabled="!explorer_later"
+            <div class="key theme-key" data-if="explorer_earlier || explorer_later" data-class-disabled="!explorer_later"
                  data-event-click="shell_explorer_page(1)"><span class="glyph">&#xf054;</span></div>
             <div class="key theme-key" data-for="verb : explorer_verbs" data-class-disabled="verb.disabled"
                  data-event-click="shell_invoke(verb.key)">{{verb.label}}</div>
@@ -266,6 +267,7 @@
          Anything outside it takes it away, which is what the catch is for. -->
     <div id="dismiss" data-if="popover != ''" data-event-click="shell_popover('')"></div>
     <div id="popover" class="theme-surface" data-if="popover != ''" data-class-rising="popover_rises"
+         data-class-problems="popover == 'problems'"
          data-style-left="popover_x + 'px'">
         <div class="entry theme-row" data-for="entry : entries"
              data-class-heading="entry.control == 'section'"

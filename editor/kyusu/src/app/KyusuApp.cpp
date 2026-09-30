@@ -150,7 +150,7 @@ void KyusuApp::OnStart(GameStartupContext&)
     Session = std::make_unique<ProjectSession>(engine, std::move(ProjectPath));
     MainWindowActions = std::make_unique<WindowActions>();
     MainWindowActions->Application = MainWindowActions->Stack.Push(ApplicationActions, ActionRank::Application);
-    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts),
+    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts, Problems),
                                                  Session->Project() != nullptr, mainWindow);
 
     // Chrome theme (behavior from data), loaded before the UI feature applies

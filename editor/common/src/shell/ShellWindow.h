@@ -112,7 +112,7 @@ private:
     // Choices: what a sheet's row asks to be chosen -- a verb's choices, or an
     // asset row's candidates -- for the row ChoicesRow of the sheet
     // ChoicesSheet names, listed once as it opens.
-    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Document, Tools, Category, Choices };
+    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Document, Tools, Category, Choices, Problems };
     enum class ChoiceFor : std::uint8_t { Verb, Value };
 
     void HandleActions();
@@ -156,6 +156,8 @@ private:
     void ShowDrawer(std::string focus);
     // While anything transient is open, Escape takes it away one at a time.
     void TakeEscape();
+    // Asks the workspace a listed problem belongs to to show where it is.
+    void RevealProblem(std::string_view index);
     // Opens the named explorer in place of any other; empty closes it.
     void ShowExplorer(std::string explorer);
     // The active workspace's explorers are opened by their actions, which this

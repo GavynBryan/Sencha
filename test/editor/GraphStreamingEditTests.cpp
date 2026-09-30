@@ -2,7 +2,6 @@
 
 #include "document/DocumentSerialization.h"
 #include "document/WorldDocument.h"
-#include "ui/WorldPartitionPanel.h"
 
 #include <core/logging/LoggingProvider.h>
 
@@ -67,21 +66,4 @@ TEST_F(GraphStreamingEditTest, VerbsRefuseUnknownGraph)
     EXPECT_FALSE(World.SetGraphHopCount(GraphId{ 0xdead }, 1));
     EXPECT_FALSE(World.SetGraphRadius(GraphId{ 0xdead }, 1.0));
     EXPECT_FALSE(World.SetGraphResidentCap(GraphId{ 0xdead }, 1));
-}
-
-TEST(GraphStreamingShapeLabel, DerivesShapeFromRadiusInForce)
-{
-    GraphStreamingConfig streaming;
-    EXPECT_STREQ(GraphStreamingShapeLabel(streaming, 0.0), "Inherited (Graph)");
-    EXPECT_STREQ(GraphStreamingShapeLabel(streaming, 250.0), "Inherited (Proximity)");
-
-    streaming.Radius = 0.0;   // explicit zero pins the graph shape
-    EXPECT_STREQ(GraphStreamingShapeLabel(streaming, 250.0), "Graph");
-
-    streaming.Radius = 250.0;
-    EXPECT_STREQ(GraphStreamingShapeLabel(streaming, 0.0), "Proximity");
-
-    streaming.HopCount = 2;   // hop and cap overrides never change the shape
-    streaming.ResidentZoneCap = 12;
-    EXPECT_STREQ(GraphStreamingShapeLabel(streaming, 0.0), "Proximity");
 }

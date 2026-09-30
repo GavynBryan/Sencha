@@ -13,6 +13,7 @@
 #include <ui/UiService.h>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <format>
 
@@ -510,6 +511,7 @@ void ShellWindow::OpenNamedPopover(std::string_view name)
                     : name == "workspaces" ? Popover::Workspaces
                     : name == "document"   ? Popover::Document
                     : name == "tools"      ? Popover::Tools
+                    : name == "problems"   ? Popover::Problems
                                            : Popover::None);
 }
 
@@ -523,6 +525,7 @@ std::string ShellWindow::PopoverName() const
     case Popover::Tools:      return "tools";
     case Popover::Category:   return "category:" + PopoverCategory;
     case Popover::Choices:    return "choices";
+    case Popover::Problems:   return "problems";
     case Popover::None:
     default:                  return {};
     }
@@ -547,6 +550,28 @@ void ShellWindow::OpenPopover(Popover popover, std::string category)
     PopoverCategory = popover == Popover::Category ? std::move(category) : std::string{};
     PopoverTransient = Transients.Open({ .Owner = "shell", .Dismiss = TransientDismiss::Light, .Priority = 1 });
     TakeEscape();
+}
+
+void ShellWindow::RevealProblem(std::string_view index)
+{
+    const std::vector<const Problem*> problems = Services.Problems.All();
+    std::size_t at = 0;
+    if (std::from_chars(index.data(), index.data() + index.size(), at).ec != std::errc{} || at >= problems.size())
+        return;
+    const Problem& problem = *problems[at];
+    // The workspace whose document it is shows where; the one in this window
+    // is asked first.
+    IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation);
+    std::vector<IWorkspace*> asked;
+    if (active != nullptr)
+        asked.push_back(active);
+    for (const WorkspaceKind& kind : Services.Workspaces.Kinds())
+        if (IWorkspace* open = Services.Workspaces.Find(kind.Id); open != nullptr && open != active)
+            asked.push_back(open);
+    for (IWorkspace* workspace : asked)
+        if (!problem.Document.has_value() || workspace->OwnsDocument(*problem.Document))
+            if (workspace->RevealProblem(problem))
+                return;
 }
 
 void ShellWindow::TakeEscape()
@@ -672,6 +697,11 @@ void ShellWindow::Choose(const std::string& key)
 {
     const Popover chosenFrom = Showing;
     OpenPopover(Popover::None);
+    if (chosenFrom == Popover::Problems)
+    {
+        RevealProblem(key);
+        return;
+    }
     if (chosenFrom == Popover::Choices)
     {
         if (IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation))
@@ -762,6 +792,15 @@ void ShellWindow::PublishEntries()
     case Popover::Document:   anchor = "document_dial";  entries = CategoryEntries("File");          break;
     case Popover::Tools:      anchor = "station";        entries = ToolEntries();                    break;
     case Popover::Category:   anchor = "cat_" + PopoverCategory; entries = CategoryEntries(PopoverCategory); break;
+    case Popover::Problems:
+        anchor = "problems";
+        for (const Problem* problem : Services.Problems.All())
+        {
+            UiRow entry{ problem->Message, "", "" };
+            entry.Key = std::to_string(entries.size());
+            entries.push_back(std::move(entry));
+        }
+        break;
     case Popover::Choices:
         anchor = ChoicesSheet == "tool" ? "tool_card" : "selection_card";
         for (const std::string& choice : ChoicesListed)

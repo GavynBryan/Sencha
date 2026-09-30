@@ -11,7 +11,7 @@
 #include <memory>
 
 std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window, ProjectSession& session,
-                                               ActionCatalog& actions, PromptQueue& prompts)
+                                               ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems)
 {
     std::vector<WorkspaceKind> kinds;
     kinds.push_back(WorkspaceKind{
@@ -20,9 +20,10 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         // A level can be authored without a project; its materials then come
         // from beside the level file.
         .RequiresProject = false,
-        .Create = [&engine, &window, &session, &actions, &prompts] {
+        .Create = [&engine, &window, &session, &actions, &prompts, &problems] {
             return std::make_unique<LevelWorkspace>(engine, window, session.Project(), session.Module(),
-                                                    session.Materials(), session.Documents(), actions, prompts);
+                                                    session.Materials(), session.Documents(), actions, prompts,
+                                                    problems);
         },
     });
     kinds.push_back(WorkspaceKind{

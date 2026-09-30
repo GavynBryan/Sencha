@@ -5,6 +5,7 @@
 #include "workspace/ElementVerbs.h"
 #include "workspace/EntityVerbs.h"
 #include "workspace/FaceUvSource.h"
+#include "workspace/PartitionOutline.h"
 
 #include <algorithm>
 #include <format>
@@ -18,11 +19,17 @@ std::string Counted(std::size_t count, std::string_view one, std::string_view ma
 } // namespace
 
 WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& verbs,
-                                    const EntityVerbs& entityVerbs, FaceUvSource& uv, IPropertySource& components)
+                                    const EntityVerbs& entityVerbs, FaceUvSource& uv, IPropertySource& components,
+                                    PartitionOutline& partition)
 {
     const std::span<const SelectableRef> selected = workspace.Selection.GetSelection();
     if (selected.empty())
-        return {};
+    {
+        WorkspaceSelectionFacet zone{ .Title = partition.Title() };
+        if (!zone.Title.empty())
+            zone.Sections.push_back({ .Heading = {}, .Source = &partition });
+        return zone;
+    }
 
     WorkspaceSelectionFacet facet;
     facet.Actions = verbs.Relevant();

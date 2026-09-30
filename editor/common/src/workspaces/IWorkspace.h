@@ -3,6 +3,8 @@
 #include "documents/DocumentRef.h"
 #include "workspaces/WorkspaceFacets.h"
 
+struct Problem;
+
 class ActionContext;
 struct FrameUpdateContext;
 struct PlatformEventContext;
@@ -62,6 +64,8 @@ public:
     [[nodiscard]] virtual std::vector<WorkspaceResourceFacet> Resources() { return {}; }
     // Not const: the property sources it hands out are the workspace's to edit.
     [[nodiscard]] virtual WorkspaceSelectionFacet Selection() { return {}; }
+    // Shows where a problem in one of its documents is; false when it cannot.
+    virtual bool RevealProblem(const Problem&) { return false; }
     [[nodiscard]] virtual std::vector<WorkspaceExplorerInfo> Explorers() const { return {}; }
     // Not const: picturing an item may start loading its image.
     [[nodiscard]] virtual ExplorerPage Explore(const ExplorerQuery&) { return {}; }

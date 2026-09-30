@@ -34,7 +34,6 @@
 #include "documents/DocumentSourceSet.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "render/SceneThumbnailCache.h"
-#include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
 #include "actions/ActionOffer.h"
 #include "resources/ResourceActions.h"
@@ -44,6 +43,7 @@
 #include "workspace/MaterialExplorer.h"
 #include "workspace/PrefabExplorer.h"
 #include "workspace/EntityVerbs.h"
+#include "workspace/PartitionOutline.h"
 #include "workspace/WorldExplorer.h"
 #include "scene_source/SceneSourcePaths.h"
 #include "workspace/SelectionSummary.h"
@@ -114,9 +114,10 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
                                Game* module,
                                MaterialLibrary& materials,
                                DocumentSourceSet& documents,
-                               ActionCatalog& actions, PromptQueue& prompts)
+                               ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems)
     : Documents(documents)
     , Prompts(prompts.MakeAsker())
+    , Problems(problems)
     , Catalog(actions)
     , Materials(&materials)
     , Project(project)
@@ -147,6 +148,8 @@ LevelWorkspace::~LevelWorkspace()
 {
     if (Window != nullptr)
         SetRelativeMouseMode(*Window, false);
+    // Its problems go with it.
+    Problems.Clear("world");
 
     // The panels and chrome first: they hold references into everything below.
     Surface = WorkspaceView{};
@@ -290,6 +293,11 @@ void LevelWorkspace::BuildInput()
     Entities->Offer(Catalog, ActionHandlers);
     Entities->OfferZoneMoves(Catalog, ActionHandlers);
     WorldOutline = std::make_unique<WorldExplorer>(*Workspace);
+    Partition = std::make_unique<PartitionOutline>(*Workspace);
+    OfferAction(Catalog, ActionHandlers,
+                { .Id = "explorer.zones", .Label = "Zones", .Category = "Explore",
+                  .DefaultChords = { { SDLK_O, { .Shift = true } } } },
+                {});
     OfferAction(Catalog, ActionHandlers,
                 { .Id = "explorer.world", .Label = "World", .Category = "Explore",
                   .DefaultChords = { { SDLK_O, {} } } },
@@ -670,9 +678,6 @@ void LevelWorkspace::BuildUi()
         std::fprintf(stderr, "[editor] no viewport render feature; "
                              "viewport panels are unavailable\n");
     }
-    Surface.AddPanel(std::make_unique<WorldPartitionPanel>(
-        Workspace->World, Workspace->Selection, *Commands,
-        Workspace->CreationRecipes));
     Surface.AddPanel(std::make_unique<GraphViewerPanel>(
         Workspace->World, Workspace->Selection, *Commands, Workspace->Layout));
     {
@@ -977,6 +982,7 @@ void LevelWorkspace::ProcessFrame()
 
     if (Entities != nullptr)
         Entities->OfferZoneMoves(Catalog, ActionHandlers);
+    PublishProblems();
     if (Files)
         Files->ProcessPending();
 
@@ -1215,14 +1221,19 @@ WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
 
 WorkspaceSelectionFacet LevelWorkspace::Selection()
 {
-    if (Verbs == nullptr || Entities == nullptr || Uv == nullptr || Components == nullptr)
+    if (Verbs == nullptr || Entities == nullptr || Uv == nullptr || Components == nullptr || Partition == nullptr)
         return {};
-    return SelectionOf(*Workspace, *Verbs, *Entities, *Uv, *Components);
+    return SelectionOf(*Workspace, *Verbs, *Entities, *Uv, *Components, *Partition);
 }
 
 std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const
 {
-    return { WorldExplorer::Info(), MaterialExplorer::Info(), PrefabExplorer::Info() };
+    std::vector<WorkspaceExplorerInfo> explorers{ WorldExplorer::Info() };
+    if (Workspace->World.IsWorld())
+        explorers.push_back(PartitionOutline::Info());
+    explorers.push_back(MaterialExplorer::Info());
+    explorers.push_back(PrefabExplorer::Info());
+    return explorers;
 }
 
 ExplorerPage LevelWorkspace::Explore(const ExplorerQuery& query)
@@ -1233,6 +1244,8 @@ ExplorerPage LevelWorkspace::Explore(const ExplorerQuery& query)
         return PrefabsExplorer->Explore(query);
     if (query.Explorer == WorldExplorer::kId && WorldOutline != nullptr)
         return WorldOutline->Explore(query);
+    if (query.Explorer == PartitionOutline::kId && Partition != nullptr)
+        return Partition->Explore(query);
     return {};
 }
 
@@ -1245,6 +1258,27 @@ void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_vie
         PrefabsExplorer->Choose(key, choice);
     else if (explorer == WorldExplorer::kId && WorldOutline != nullptr)
         WorldOutline->Choose(key, choice, mark);
+    else if (explorer == PartitionOutline::kId && Partition != nullptr)
+        Partition->Choose(key, choice, mark);
+}
+
+void LevelWorkspace::PublishProblems()
+{
+    if (Partition == nullptr || LevelDocument == nullptr)
+        return;
+    std::vector<Problem> problems = Partition->Problems(DocumentRef{ .Source = LevelDocument.get(), .Key = {} });
+    std::vector<std::string> shown;
+    for (const Problem& problem : problems)
+        shown.push_back(problem.Location + " " + problem.Message);
+    if (shown == PublishedProblems)
+        return;
+    Problems.Publish("world", std::move(problems));
+    PublishedProblems = std::move(shown);
+}
+
+bool LevelWorkspace::RevealProblem(const Problem& problem)
+{
+    return Partition != nullptr && Partition->Reveal(problem.Location);
 }
 
 AssetType LevelWorkspace::HeldType() const
