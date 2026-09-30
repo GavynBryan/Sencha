@@ -148,19 +148,6 @@ std::string ArgumentText(const UiAction& action)
     return action.Arguments.empty() ? std::string{} : std::string(action.Arguments[0].AsString());
 }
 
-// What a control reported, as the text a property reads back: a slider sends a
-// number, a drop-down its option.
-std::string ValueText(const UiValue& value)
-{
-    switch (value.Kind())
-    {
-    case UiValueKind::Float: return std::format("{}", value.AsFloat());
-    case UiValueKind::Int:   return std::format("{}", value.AsInt());
-    case UiValueKind::Bool:  return value.AsBool() ? "true" : "false";
-    default:                 return std::string(value.AsString());
-    }
-}
-
 UiRow Heading(std::string label)
 {
     UiRow row{ std::move(label), "", "" };
@@ -229,7 +216,8 @@ WorkspaceWindow ShellWindow::Binding() const
     return { .Window = &Services.Window,
              .Presentation = Services.Presentation,
              .Content = ContentSurfaceId,
-             .Overlay = OverlaySurfaceId };
+             .Overlay = OverlaySurfaceId,
+             .Interactive = SurfaceId };
 }
 
 void ShellWindow::Update(double now, double requestedScale)
@@ -308,7 +296,7 @@ void ShellWindow::HandleActions()
             if (action.Id == kToolFlipAction)
                 (void)ToolSheet.Flip(*parameters, static_cast<std::size_t>(row));
             else if (action.Arguments.size() > 1)
-                (void)ToolSheet.Set(*parameters, static_cast<std::size_t>(row), ValueText(action.Arguments[1]));
+                (void)ToolSheet.SetFromControl(*parameters, static_cast<std::size_t>(row), action.Arguments[1]);
         }
         else if (action.Id == kWindowAction)
         {
@@ -458,12 +446,17 @@ void ShellWindow::PublishEntries()
     case Popover::None:       break;
     }
     (void)ui.SetValue(Screen, kPopover, UiValue(PopoverName()));
-    // From the stations along the bottom, a popover rises instead of hanging.
-    (void)ui.SetValue(Screen, kPopoverRises, UiValue(Showing == Popover::Tools || Showing == Popover::Category));
     double x = 0.0;
+    bool rises = false;
     if (!anchor.empty())
         if (const std::optional<UiElementBox> box = ui.MeasureElement(Screen, anchor))
+        {
             x = std::floor(box->X);
+            // From an instrument in the lower half, a popover rises instead of
+            // hanging.
+            rises = box->Y > static_cast<float>(Services.Window.GetExtent().Height) / 2.0f;
+        }
+    (void)ui.SetValue(Screen, kPopoverRises, UiValue(rises));
     // Kept inside the window: an instrument at the right edge opens leftward.
     if (const std::optional<UiElementBox> popover = ui.MeasureElement(Screen, "popover"))
     {

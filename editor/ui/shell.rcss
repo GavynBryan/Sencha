@@ -1,7 +1,4 @@
 @font-face { src: "fonts/Inter-Regular.ttf"; }
-@font-face { src: "fonts/ChakraPetch-SemiBold.ttf"; }
-@font-face { src: "fonts/JetBrainsMono-Regular.ttf"; }
-@font-face { src: "fonts/fa-solid-900.ttf"; }
 
 /* The shell's own chrome: the rail and its popovers. Geometry only; every
    colour comes from theme.rcss roles. The whole document passes the pointer
@@ -81,37 +78,6 @@ body
     font-size: 11dp;
 }
 
-.key
-{
-    display: block;
-    min-width: 24dp;
-    height: 22dp;
-    line-height: 22dp;
-    padding: 0dp 7dp;
-    text-align: center;
-    border-width: 1dp;
-    border-radius: 3dp;
-    font-family: "Chakra Petch";
-    font-weight: 600;
-    font-size: 11dp;
-    letter-spacing: 1dp;
-    pointer-events: auto;
-    tab-index: auto;
-}
-
-.key:active
-{
-    /* Pressed in by a physical key's travel. */
-    transform: translateY(1dp);
-}
-
-.glyph
-{
-    font-family: "Font Awesome 6 Free";
-    font-weight: 900;
-    font-size: 11dp;
-}
-
 .dial
 {
     display: flex;
@@ -176,6 +142,8 @@ body
     border-radius: 4dp;
     pointer-events: auto;
 }
+
+#cat_Transport { padding: 0dp 6dp; border-right-width: 0dp; }
 
 .transport_text
 {
@@ -259,7 +227,6 @@ body
     font-family: "JetBrains Mono";
     font-size: 11dp;
 }
-
 
 /* The station and its card, bottom left: the operation in hand and what it
    is set to. */
@@ -403,28 +370,6 @@ body
     pointer-events: auto;
 }
 
-.setting
-{
-    display: flex;
-    align-items: center;
-    height: 26dp;
-    gap: 8dp;
-}
-
-.setting_label { display: block; width: 84dp; font-size: 11dp; }
-.setting_control { display: block; flex: 1; height: 20dp; }
-.setting_number
-{
-    display: block;
-    width: 38dp;
-    padding: 0dp 4dp;
-    border-width: 1dp;
-    text-align: right;
-    font-family: "JetBrains Mono";
-    font-size: 11dp;
-}
-.setting_toggle { flex: 0; }
-
 #tool_hint { display: block; margin-top: 6dp; font-size: 11dp; }
 
 #tool_keys
@@ -434,29 +379,3 @@ body
     gap: 6dp;
     margin-top: 8dp;
 }
-
-/* A setting's slider and drop-down: geometry here, colours the theme's. */
-slidertrack
-{
-    display: block;
-    height: 4dp;
-    margin-top: 8dp;
-    border-radius: 2dp;
-    pointer-events: auto;
-}
-sliderbar
-{
-    display: block;
-    width: 10dp;
-    height: 16dp;
-    margin-top: -6dp;
-    border-radius: 2dp;
-    pointer-events: auto;
-}
-sliderprogress { display: block; height: 4dp; pointer-events: auto; }
-sliderarrowdec, sliderarrowinc { display: none; }
-
-selectvalue { display: block; padding: 2dp 6dp; pointer-events: auto; }
-selectarrow { display: block; width: 16dp; height: 100%; pointer-events: auto; }
-selectbox { display: block; border-width: 1dp; border-radius: 3dp; pointer-events: auto; }
-selectbox option { display: block; padding: 4dp 6dp; pointer-events: auto; }

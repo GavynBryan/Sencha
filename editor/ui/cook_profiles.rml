@@ -1,43 +1,51 @@
 <rml>
 <head>
     <title>Cook Profiles</title>
+    <link type="text/rcss" href="controls.rcss"/>
     <link type="text/rcss" href="cook_profiles.rcss"/>
     <link type="text/rcss" href="theme.rcss"/>
 </head>
 <body data-model="cook_profiles">
-    <div id="scrim" class="theme-scrim"/>
+    <div id="scrim" class="theme-scrim" data-event-click="profiles_close"/>
 
-    <div id="dialog" class="theme-surface">
-        <div id="titlebar" class="theme-header">
-            <span id="title" class="theme-title">COOK PROFILES</span>
-            <div id="close" class="theme-icon" data-event-click="profiles_close">x</div>
+    <div id="dialog" class="theme-plate">
+        <div id="titlebar">
+            <span id="title">COOK PROFILES</span>
+            <div id="close" class="key theme-key" data-event-click="profiles_close"><span class="glyph">&#xf00d;</span></div>
         </div>
 
         <div id="body">
-            <div id="list" class="theme-well">
+            <div id="list" class="theme-field">
                 <div class="row theme-row" data-for="profile : profiles"
                      data-event-click="profiles_select(it_index)"
                      data-class-selected="it_index == selected_index">{{profile}}</div>
             </div>
 
             <div id="form">
-                <div class="label theme-dim">Name</div>
-                <input id="name" class="theme-field" type="text" data-value="selected_name"/>
-
-                <div class="label theme-dim">Steps</div>
-                <div id="steps" class="theme-well">
-                    <div class="step theme-muted" data-for="step : steps">{{step}}</div>
+                <div class="setting" data-for="row : settings"
+                     data-class-heading="row.control == 'section'" data-class-locked="!row.editable">
+                    <span class="setting_label">{{row.label}}</span>
+                    <input type="text" class="setting_control theme-field" data-if="row.control == 'text'"
+                           data-value="row.value" data-event-change="profiles_set(it_index, ev.value)"/>
+                    <select class="setting_control theme-field" data-if="row.control == 'choice'"
+                            data-value="row.value" data-event-change="profiles_set(it_index, ev.value)">
+                        <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
+                    </select>
+                    <div class="setting_toggle key theme-key" data-if="row.control == 'toggle'"
+                         data-class-lit="row.value == 'true'" data-event-click="profiles_flip(it_index)">
+                        <span data-if="row.value == 'true'">ON</span><span data-if="row.value != 'true'">OFF</span>
+                    </div>
                 </div>
-
-                <div class="label theme-warning" data-if="builtin">Built-in profiles cannot be edited.</div>
+                <div id="builtin" class="theme-warning" data-if="builtin">Built in: duplicate it to change it.</div>
             </div>
         </div>
 
-        <div id="footer" class="theme-footer">
-            <div id="status">{{status}}</div>
-            <div class="button theme-button" data-event-click="profiles_validate">Validate</div>
-            <div class="button theme-button" data-event-click="profiles_save"
-                 data-class-disabled="!dirty">Save</div>
+        <div id="footer">
+            <div id="status" class="theme-dim">{{status}}</div>
+            <div class="key theme-key" data-event-click="profiles_duplicate">DUPLICATE</div>
+            <div class="key theme-key" data-class-disabled="builtin" data-event-click="profiles_delete">DELETE</div>
+            <div class="key theme-key" data-event-click="profiles_validate">VALIDATE</div>
+            <div class="key theme-key" data-class-lit="dirty" data-event-click="profiles_save">SAVE</div>
         </div>
     </div>
 </body>

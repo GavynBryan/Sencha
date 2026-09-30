@@ -37,17 +37,22 @@
     },
     {
       "source": "cook_profiles.rml",
-      "input_fingerprint": "0bc9cdac27bae40d",
+      "input_fingerprint": "ed4ad9b6b2ad56d4",
       "cook_identity": "4765341e77032c66",
-      "size": "1730",
-      "mtime": "-4648151002176733126",
+      "size": "2757",
+      "mtime": "-4646874180620810256",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
+          "source": "controls.rcss",
+          "size": "2064",
+          "mtime": "-4646874900304443434"
+        },
+        {
           "source": "cook_profiles.rcss",
-          "size": "3129",
-          "mtime": "-4648151002176751467"
+          "size": "2286",
+          "mtime": "-4646874136951527556"
         },
         {
           "source": "theme.rcss",
@@ -60,7 +65,7 @@
           "path": "asset://cook_profiles.rml",
           "file": ".cooked/cook_profiles.rml.sui",
           "type": "UiPackage",
-          "hash": "41284c200f0e3e0a"
+          "hash": "dde4530e38553f3e"
         }
       ]
     },
@@ -1020,17 +1025,22 @@
     },
     {
       "source": "shell.rml",
-      "input_fingerprint": "4a8b965a3ac105e3",
+      "input_fingerprint": "3e7fe92c4feb8d50",
       "cook_identity": "4765341e77032c66",
-      "size": "10005",
-      "mtime": "-4646876102201681904",
+      "size": "10356",
+      "mtime": "-4646874841078583244",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
+          "source": "controls.rcss",
+          "size": "2064",
+          "mtime": "-4646874900304443434"
+        },
+        {
           "source": "shell.rcss",
-          "size": "8411",
-          "mtime": "-4646876102198464627"
+          "size": "6582",
+          "mtime": "-4646874026344429820"
         },
         {
           "source": "icons.rcss",
@@ -1048,7 +1058,7 @@
           "path": "asset://shell.rml",
           "file": ".cooked/shell.rml.sui",
           "type": "UiPackage",
-          "hash": "bc4cd94f5ad5bc4f"
+          "hash": "e813209ec90a87e3"
         }
       ]
     },

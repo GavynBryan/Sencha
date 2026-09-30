@@ -212,3 +212,29 @@ do the work and delete the entry.
 - **Trigger:** the first authored surface that needs a rounded scrolling
   container -- the selection drawer -- which starts with a golden image
   reproducing it.
+
+## Row control names in two places
+
+- **What:** `UiRowControl` is named for documents twice: privately in
+  `engine/src/ui/UiRuntime.cpp` (`ControlName`, what `row.control` reads as)
+  and in the UI Preview's sidecar format
+  (`editor/ui_preview/src/authoring/UiPreviewModel.cpp`). One public mapping
+  beside the enum in `engine/include/ui/UiScreenDesc.h` removes the second, but
+  that header is part of the game-module ABI fingerprint, so adding it forces
+  every module to rebuild.
+- **Trigger:** the next change to `engine/include/ui/` headers, which moves the
+  fingerprint anyway -- the selection drawer's row additions are the likely one.
+
+## Scrolling flex items in authored UI
+
+- **What:** a flex item with `overflow-y: auto` lays its children out at zero
+  width, even with a definite width of its own; without the overflow the same
+  item lays them out correctly. Seen on the cook-profile dialog's settings
+  column, which does not scroll for that reason (every setting fits).
+- **Where:** RmlUi's flex formatting of scroll containers, reached through
+  `engine/src/ui/`; repro: `editor/ui/cook_profiles.rcss` `#form` with
+  `overflow-y: auto`, measured with `UiService::MeasureElement` in a headless
+  test.
+- **Trigger:** the first authored surface whose rows can outgrow it inside a
+  flex layout -- the selection drawer -- which starts with a headless test
+  measuring a scrolled row's width.

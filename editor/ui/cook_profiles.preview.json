@@ -2,16 +2,29 @@
   "model": "cook_profiles",
   "modal": true,
   "properties": [
-    { "name": "selected_index", "kind": "int", "value": 0 },
-    { "name": "selected_name", "kind": "string", "value": "Default", "editable": true },
-    { "name": "status", "kind": "string", "value": "2 profiles" },
-    { "name": "dirty", "kind": "bool", "value": false },
-    { "name": "builtin", "kind": "bool", "value": true }
+    { "name": "selected_index", "kind": "int", "value": 3 },
+    { "name": "status", "kind": "string", "value": "" },
+    { "name": "dirty", "kind": "bool", "value": true },
+    { "name": "builtin", "kind": "bool", "value": false }
   ],
   "arrays": [
-    { "name": "profiles", "items": ["Default", "Fast Iteration"] },
-    { "name": "steps", "items": ["Bake lighting", "Cook levels", "Copy runtime content"] }
+    { "name": "profiles", "items": ["Full", "Lighting Only", "No Lighting", "Nightly"] }
   ],
-  "rows": [],
-  "actions": ["profiles_select", "profiles_save", "profiles_validate", "profiles_close"]
+  "rows": [
+    {
+      "name": "settings",
+      "items": [
+        { "label": "Name", "value": "Nightly", "control": "text", "editable": true },
+        { "label": "Steps", "value": "", "control": "section" },
+        { "label": "Structure", "value": "true", "control": "toggle", "editable": true },
+        { "label": "Collision", "value": "true", "control": "toggle", "editable": true },
+        { "label": "Direct lightmap", "value": "false", "control": "toggle", "editable": true },
+        { "label": "Published outputs", "value": "", "control": "section" },
+        { "label": "Structure", "value": "Publish", "control": "choice", "editable": true,
+          "choices": ["Publish", "Preserve", "Withdraw"] }
+      ]
+    }
+  ],
+  "actions": ["profiles_select", "profiles_set", "profiles_flip", "profiles_duplicate",
+              "profiles_delete", "profiles_validate", "profiles_save", "profiles_close"]
 }

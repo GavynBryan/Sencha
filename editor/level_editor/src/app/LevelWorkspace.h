@@ -44,7 +44,6 @@ class PieDriver;
 class CookSession;
 class CookProfilesModal;
 class InspectorSurface;
-class CookProfilesPanel;
 class EditorCookRuntime;
 class DocumentFileActions;
 
@@ -92,6 +91,7 @@ public:
 
 private:
     void DefineTransportActions();
+    void OfferProfileActions();
     // Constructor phases, in call order. Each builds one cohesive slice of the
     // editor against the engine (*EnginePtr) and primary window (*Window), so the
     // constructor reads as the bring-up sequence.
@@ -198,6 +198,9 @@ private:
     // from nothing while the inspector kept taking clicks behind it.
     UiSurfaceId                         AuthoredSurface;
     std::unique_ptr<CookProfilesModal>  ProfilesModal;
+    // The transport.profile.* actions in play, one per cook profile.
+    std::vector<std::string> OfferedProfiles;
+    std::uint64_t OfferedProfilesRevision = 0;
     std::unique_ptr<InspectorSurface>   Inspector;
     std::unique_ptr<DocumentFileActions> Files;
     // Declared last: its panels and chrome reference everything above.

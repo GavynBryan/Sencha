@@ -1,5 +1,5 @@
 #include "properties/SettingProperties.h"
-#include "shell/PropertySheet.h"
+#include "presenters/PropertySheet.h"
 
 #include <gtest/gtest.h>
 

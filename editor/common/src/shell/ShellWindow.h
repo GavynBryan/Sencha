@@ -3,7 +3,7 @@
 #include "actions/ActionContext.h"
 #include "shell/CommandPalette.h"
 #include "shell/PromptDialog.h"
-#include "shell/PropertySheet.h"
+#include "presenters/PropertySheet.h"
 #include "shell/TransientSurfaces.h"
 #include "workspaces/WorkspaceWindow.h"
 

@@ -53,6 +53,10 @@ public:
     // is what a workspace reopening does.
     bool Define(ActionDefinition definition, std::string* error = nullptr);
 
+    // An action named for data that is renamed, as a cook profile is. False
+    // when nothing has that id.
+    bool Relabel(std::string_view id, std::string label);
+
     [[nodiscard]] const ActionDefinition* Find(std::string_view id) const;
     [[nodiscard]] std::vector<const ActionDefinition*> All() const;
 

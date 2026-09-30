@@ -24,6 +24,19 @@ bool ActionCatalog::Define(ActionDefinition definition, std::string* error)
     return true;
 }
 
+bool ActionCatalog::Relabel(std::string_view id, std::string label)
+{
+    for (const std::unique_ptr<Entry>& entry : Entries)
+    {
+        if (entry->Definition.Id == id)
+        {
+            entry->Definition.Label = std::move(label);
+            return true;
+        }
+    }
+    return false;
+}
+
 const ActionDefinition* ActionCatalog::Find(std::string_view id) const
 {
     const Entry* entry = FindEntry(id);

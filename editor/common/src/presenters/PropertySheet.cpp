@@ -1,6 +1,7 @@
-#include "shell/PropertySheet.h"
+#include "presenters/PropertySheet.h"
 
 #include <charconv>
+#include <format>
 
 namespace
 {
@@ -76,6 +77,17 @@ PropertyEditResult PropertySheet::Set(IPropertySource& source, std::size_t index
     if (!source.BeginEdit(row.Key))
         return PropertyEditResult::Gone;
     return source.CommitEdit(row.Key, value);
+}
+
+PropertyEditResult PropertySheet::SetFromControl(IPropertySource& source, std::size_t index, const UiValue& reported)
+{
+    switch (reported.Kind())
+    {
+    case UiValueKind::Float: return Set(source, index, std::format("{}", reported.AsFloat()));
+    case UiValueKind::Int:   return Set(source, index, std::format("{}", reported.AsInt()));
+    case UiValueKind::Bool:  return Set(source, index, reported.AsBool() ? "true" : "false");
+    default:                 return Set(source, index, reported.AsString());
+    }
 }
 
 PropertyEditResult PropertySheet::Flip(IPropertySource& source, std::size_t index)

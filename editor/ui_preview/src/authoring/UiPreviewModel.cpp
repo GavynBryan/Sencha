@@ -1,10 +1,12 @@
 #include "authoring/UiPreviewModel.h"
 
+#include <utility>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <ui/UiService.h>
 
 #include <fstream>
+#include <utility>
 
 namespace
 {
@@ -137,22 +139,28 @@ namespace
     }
 }
 
+namespace
+{
+    constexpr std::pair<UiRowControl, const char*> kRowControlNames[] = {
+        { UiRowControl::Text, "text" },     { UiRowControl::Range, "range" }, { UiRowControl::Choice, "choice" },
+        { UiRowControl::Toggle, "toggle" }, { UiRowControl::Asset, "asset" }, { UiRowControl::Color, "color" },
+        { UiRowControl::Section, "section" },
+    };
+}
+
 const char* UiRowControlName(UiRowControl control)
 {
-    switch (control)
-    {
-    case UiRowControl::Range:  return "range";
-    case UiRowControl::Choice: return "choice";
-    case UiRowControl::Text:
-    default:                   return "text";
-    }
+    for (const auto& [value, name] : kRowControlNames)
+        if (value == control)
+            return name;
+    return "text";
 }
 
 std::optional<UiRowControl> ParseUiRowControl(std::string_view name)
 {
-    if (name == "text") return UiRowControl::Text;
-    if (name == "range") return UiRowControl::Range;
-    if (name == "choice") return UiRowControl::Choice;
+    for (const auto& [value, known] : kRowControlNames)
+        if (name == known)
+            return value;
     return std::nullopt;
 }
 

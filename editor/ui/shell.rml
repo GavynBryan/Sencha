@@ -1,6 +1,7 @@
 <rml>
 <head>
     <title>Shell</title>
+    <link type="text/rcss" href="controls.rcss"/>
     <link type="text/rcss" href="shell.rcss"/>
     <link type="text/rcss" href="icons.rcss"/>
     <link type="text/rcss" href="theme.rcss"/>
@@ -51,10 +52,14 @@
                      data-event-click="shell_invoke('transport.play')">PLAY</div>
                 <div class="key theme-key" data-class-disabled="!stop_enabled"
                      data-event-click="shell_invoke('transport.stop')">STOP</div>
-                <div class="lamp theme-lamp" data-class-on="transport_state == 'playing'"
-                     data-class-warn="transport_state == 'cooking'"
-                     data-class-fault="transport_state == 'failed'"></div>
-                <span class="transport_text theme-dim" data-if="transport_text != ''">{{transport_text}}</span>
+                <div id="cat_Transport" class="segment theme-segment" data-class-lit="popover == 'category:Transport'"
+                     data-event-click="shell_popover('category:Transport')">
+                    <div class="lamp theme-lamp" data-class-on="transport_state == 'playing'"
+                         data-class-warn="transport_state == 'cooking'"
+                         data-class-fault="transport_state == 'failed'"></div>
+                    <span class="transport_text theme-dim" data-if="transport_text != ''">{{transport_text}}</span>
+                    <span class="glyph theme-dim">&#xf078;</span>
+                </div>
             </div>
             <div id="window_keys">
                 <div class="key theme-key" data-event-click="shell_window('minimize')"><span class="glyph">&#xf2d1;</span></div>

@@ -165,6 +165,7 @@ Shared shell (`editor/common/src/`):
 | `resources/` | `ActiveResources`: what the person is holding, per asset kind, with a stash; changes reach the tool in hand through `ToolRegistry`. `ResourceActions` offers the stash as actions. | tools, workspaces |
 | `problems/`, `notices/` | `ProblemList` (every located problem, republished whole by each source) and `NoticeQueue` (brief word that something happened). | the shell |
 | `prompts/` | `PromptQueue` (questions that hold an operation, answered one at a time; an `Asker` withdraws its questions when it goes) and the document questions over it: `AskAboutChanges`, `DocumentExitHold` (exit waits on changed documents) and `DocumentSaveFollowUp` (a failed save is a problem, a conflict is a question). | workspaces, Kyusu |
+| `presenters/` | Neutral models as the rows a document shows: `PropertySheet` turns property nodes into rows and a row's edit back into its source. Used by the shell and by documents a workspace owns. | shell, workspaces |
 | `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `CommandPalette`, `PromptDialog` and `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of. Workspaces never include it. | Kyusu |
 | `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first). | Kyusu, workspaces |
 | `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
@@ -248,7 +249,9 @@ format boundary; the editor's own types use document/scene vocabulary.
   generic `commands/` directory.
 - No workspace includes `common/src/shell/`: a workspace exposes what it has
   (actions, properties, resources) and the shell, a replaceable presentation
-  policy, decides how it appears.
+  policy, decides how it appears. A document a workspace owns outright (a
+  dialog, a bench) presents properties through `common/src/presenters/`, which
+  the shell uses too; restyling the grammar rewrites both.
 - ImGui is on its way out of the editor (`docs/editor/interaction-grammar.md`).
   Geometry, input, tools and viewport math are written in engine vectors
   (`Vec2d`); only files listed in `scripts/editor_imgui_allowlist.txt` may name

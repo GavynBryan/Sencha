@@ -35,6 +35,17 @@ TEST(ActionCatalog, RedefiningIdenticallyIsAWorkspaceReopeningNotAConflict)
     EXPECT_FALSE(error.empty());
 }
 
+TEST(ActionCatalog, AnActionNamedForDataFollowsItsRename)
+{
+    ActionCatalog catalog;
+    ASSERT_TRUE(catalog.Define(Define("transport.profile.nightly", { kDelete })));
+    EXPECT_TRUE(catalog.Relabel("transport.profile.nightly", "Cook with Nightly Build"));
+    EXPECT_EQ(catalog.Find("transport.profile.nightly")->Label, "Cook with Nightly Build");
+    ASSERT_NE(catalog.ForChord(kDelete), nullptr);
+    EXPECT_EQ(catalog.ForChord(kDelete)->Id, "transport.profile.nightly") << "the chord stays with the action";
+    EXPECT_FALSE(catalog.Relabel("transport.profile.gone", "Cook with Nothing"));
+}
+
 TEST(ActionCatalog, AChordNamesItsActionAndReadsBackAsText)
 {
     ActionCatalog catalog;

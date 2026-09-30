@@ -26,7 +26,6 @@
 #include "ui/CookProfilesModal.h"
 #include "ui/InspectorSurface.h"
 #include <ui/UiService.h>
-#include "ui/CookProfilesPanel.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/EditorUiStyle.h"
 #include "ui/chrome/ChromeControls.h"
@@ -669,12 +668,6 @@ void LevelWorkspace::BuildUi()
     Surface.AddPanel(std::make_unique<InspectorPanel>(
         Workspace->World, Workspace->Selection, *Commands,
         Workspace->Affordances->Registry()));
-    auto cookProfiles = std::make_unique<CookProfilesPanel>(
-        Project ? &*Project : nullptr);
-    cookProfiles->SetVisible(false);
-    if (CookRuntime)
-        CookRuntime->SetProfilesPanel(cookProfiles.get());
-    Surface.AddPanel(std::move(cookProfiles));
     const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
         return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
     };
@@ -900,6 +893,8 @@ void LevelWorkspace::MoveTo(const WorkspaceWindow& window)
         ViewSurface->MoveTo(window.Content);
     if (WheelScreen != nullptr)
         WheelScreen->MoveTo(window.Overlay);
+    if (ProfilesModal != nullptr)
+        ProfilesModal->MoveTo(window.Interactive);
 }
 
 void LevelWorkspace::SetVisible(bool visible)
@@ -943,6 +938,7 @@ void LevelWorkspace::BuildAuthoredWorkflows()
     UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
     if (ui == nullptr || !ui->IsReady() || Project == nullptr)
         return;
+    ProfilesModal = std::make_unique<CookProfilesModal>(*ui, *Project);
 
     // The window, as authored UI sees it. One surface for every authored screen
     // Kyusu opens, because focus and modality are arbitrated within a surface:
@@ -958,7 +954,6 @@ void LevelWorkspace::BuildAuthoredWorkflows()
     if (!AuthoredSurface.IsValid())
         return;
 
-    ProfilesModal = std::make_unique<CookProfilesModal>(*ui, AuthoredSurface, &*Project);
     if (Workspace != nullptr && Commands != nullptr)
     {
         Inspector = std::make_unique<InspectorSurface>(
@@ -997,35 +992,6 @@ void LevelWorkspace::BuildAuthoredWorkflows()
             return result;
         },
     });
-
-    EnginePtr->Console().Registry().RegisterCommand({
-        .Name = "editor.profiles.authored",
-        .Owner = "editor",
-        .Usage = "editor.profiles.authored [close]",
-        .Help = "Open the authored cook-profile workflow, the RML document that "
-                "coexists with the ImGui panel while it earns its place.",
-        .Callback = [this](ConsoleExecutionContext&,
-                           std::span<const std::string> args) {
-            ConsoleResult result;
-            if (ProfilesModal == nullptr)
-            {
-                result.Status = ConsoleStatus::ExecutionFailed;
-                result.Error("authored cook profiles are unavailable");
-                return result;
-            }
-            if (!args.empty() && args[0] == "close")
-            {
-                ProfilesModal->Close();
-                result.Info("closed the authored cook profiles");
-            }
-            else
-            {
-                ProfilesModal->Open();
-                result.Info("opened the authored cook profiles");
-            }
-            return result;
-        },
-    });
 }
 
 void LevelWorkspace::ProcessFrame()
@@ -1055,7 +1021,14 @@ void LevelWorkspace::ProcessFrame()
     }
 
     if (ProfilesModal != nullptr)
+    {
         ProfilesModal->Update();
+        if (ProfilesModal->Editor().Revision() != OfferedProfilesRevision)
+        {
+            OfferProfileActions();
+            OfferedProfilesRevision = ProfilesModal->Editor().Revision();
+        }
+    }
     if (Inspector != nullptr)
         Inspector->Update();
 
@@ -1230,15 +1203,32 @@ void LevelWorkspace::DefineTransportActions()
     offer("transport.profiles", "Cook Profiles...", {
         .Invoke = [this] { if (ProfilesModal) ProfilesModal->Open(); },
         .Enabled = [this] { return ProfilesModal != nullptr; } });
+    OfferProfileActions();
+}
+
+void LevelWorkspace::OfferProfileActions()
+{
     if (CookRuntime == nullptr)
         return;
-    for (const CookProfile& profile : CookRuntime->GetSession().AvailableProfiles())
+    const std::vector<CookProfile> profiles = CookRuntime->GetSession().AvailableProfiles();
+    std::vector<std::string> offered;
+    for (const CookProfile& profile : profiles)
     {
-        const std::string id = profile.Id;
-        offer("transport.profile." + id, "Cook with " + profile.Name, {
-            .Invoke = [this, id] { if (CookRuntime) CookRuntime->SelectProfile(id); },
-            .Checked = [this, id] { return CookRuntime != nullptr && CookRuntime->SelectedProfileId() == id; } });
+        const std::string action = "transport.profile." + profile.Id;
+        const std::string label = "Cook with " + profile.Name;
+        if (const ActionDefinition* existing = Catalog.Find(action); existing != nullptr && existing->Label != label)
+            (void)Catalog.Relabel(action, label);
+        OfferAction(Catalog, ActionHandlers, { .Id = action, .Label = label, .Category = "Transport" },
+                    { .Invoke = [this, id = profile.Id] { if (CookRuntime) CookRuntime->SelectProfile(id); },
+                      .Checked = [this, id = profile.Id] {
+                          return CookRuntime != nullptr && CookRuntime->SelectedProfileId() == id;
+                      } });
+        offered.push_back(action);
     }
+    for (const std::string& action : OfferedProfiles)
+        if (std::ranges::find(offered, action) == offered.end())
+            ActionHandlers.Release(action);
+    OfferedProfiles = std::move(offered);
 }
 
 bool LevelWorkspace::HoldsPointer() const

@@ -26,6 +26,9 @@ public:
 
     // Row `index` set to `value` as one step.
     PropertyEditResult Set(IPropertySource& source, std::size_t index, std::string_view value);
+    // Row `index` set to what its control reported: a slider's number, a
+    // drop-down's option, a field's text.
+    PropertyEditResult SetFromControl(IPropertySource& source, std::size_t index, const UiValue& reported);
     // A toggle row turned the other way.
     PropertyEditResult Flip(IPropertySource& source, std::size_t index);
 
