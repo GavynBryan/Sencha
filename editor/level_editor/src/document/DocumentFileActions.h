@@ -52,8 +52,6 @@ public:
 
     // Applies any file actions a dialog callback queued (called once per frame).
     void ProcessPending();
-    // Sets the window title to the document name + dirty marker when it changes.
-    void UpdateTitle();
     // What is open, as the window title and the shell's status readout show
     // it: the world or document name, the focus zone, and a dirty marker.
     [[nodiscard]] std::string DocumentLabel() const;
@@ -87,5 +85,4 @@ private:
 
     std::mutex                     PendingFileMutex;
     std::vector<PendingFileAction> PendingFileActions;
-    std::string                    LastWindowTitle;
 };

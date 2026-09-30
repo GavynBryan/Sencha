@@ -129,6 +129,4 @@ target_compile_definitions(level_editor PRIVATE
     # Dev-time editor visual assets (e.g. camera.glb). Packaging will replace
     # this with a resolved install path.
     SENCHA_EDITOR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/meshes"
-    # The product's own branding: the caption mark.
-    SENCHA_EDITOR_BRAND_DIR="${CMAKE_SOURCE_DIR}/editor/kyusu/branding"
 )

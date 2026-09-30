@@ -93,7 +93,7 @@ DiagnosticsPanel::DiagnosticsPanel(UiPreviewSession& session,
 
 void DiagnosticsPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 

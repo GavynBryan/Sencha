@@ -258,7 +258,7 @@ void ProjectBrowserPanel::OnDraw()
     if (!IsVisible())
         return;
 
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetWindowName(), &Visible);
     if (!panel.IsOpen())
         return;
 

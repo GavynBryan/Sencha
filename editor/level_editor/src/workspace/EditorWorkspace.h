@@ -159,7 +159,7 @@ public:
     // Entity/mesh selection and Zone selection are mutually exclusive while
     // still sharing one visible selection across panels and viewport affordances.
     std::shared_ptr<SelectionService::ObserverFn> ZoneSelectionObserver;
-    // Owned by EditorServices, which declares it ahead of the workspace and so
+    // Owned by LevelWorkspace, which declares it ahead of the workspace and so
     // outlives it. Workspace-level edits (DeleteSelection) route through the
     // same undo history every other surface writes to.
     CommandStack& Commands;

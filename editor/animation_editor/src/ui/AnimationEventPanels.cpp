@@ -112,7 +112,7 @@ public:
     {
         if (!IsVisible())
             return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen())
             return;
 
@@ -648,7 +648,7 @@ public:
     {
         if (!IsVisible())
             return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen())
             return;
         AnimationPreviewSession& session = Workspace.Rig.Simulation;

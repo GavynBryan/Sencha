@@ -88,7 +88,6 @@ void DocumentFileActions::RegisterCommands(ConsoleRegistry& registry)
             }
             RescanMaterials(path);
             LogUnresolvedFaceMaterials(path);
-            UpdateTitle();
             result.Info("opened '" + path + "'");
             return result;
         },
@@ -402,14 +401,4 @@ std::string DocumentFileActions::DocumentLabel() const
             label += " *";
     }
     return label;
-}
-
-void DocumentFileActions::UpdateTitle()
-{
-    const std::string title = "Kyusu - Level Editor - " + DocumentLabel();
-    if (title != LastWindowTitle)
-    {
-        Window.SetTitle(title);
-        LastWindowTitle = title;
-    }
 }

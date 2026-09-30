@@ -44,7 +44,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         ImGui::TextWrapped("Runs every saved scenario in the project twice from the start, in a session of its own, "

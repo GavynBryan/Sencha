@@ -83,7 +83,7 @@ void MaterialPickerPanel::DrawCell(const MaterialAsset& material, float cellSize
 
 void MaterialPickerPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 

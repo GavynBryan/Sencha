@@ -17,7 +17,7 @@ VocabularyPanel::VocabularyPanel(const VocabularyCatalog& catalog,
 
 void VocabularyPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 

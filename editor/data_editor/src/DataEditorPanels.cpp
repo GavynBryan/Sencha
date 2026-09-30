@@ -57,7 +57,7 @@ DataAssetBrowserPanel::DataAssetBrowserPanel(DataEditorWorkspace& workspace)
 
 void DataAssetBrowserPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetWindowName(), &Visible);
     if (!panel.IsOpen())
         return;
 
@@ -130,7 +130,7 @@ DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, DataSubtypeEditorRe
 
 void DataFormPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetWindowName(), &Visible);
     if (!panel.IsOpen())
         return;
     if (Workspace.Documents.Documents().empty())
@@ -145,7 +145,7 @@ DataDocumentationPanel::DataDocumentationPanel(DataEditorWorkspace& workspace)
 
 void DataDocumentationPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetWindowName(), &Visible);
     if (!panel.IsOpen())
         return;
 
@@ -197,7 +197,7 @@ DataValidationPanel::DataValidationPanel(DataEditorWorkspace& workspace)
 
 void DataValidationPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetWindowName(), &Visible);
     if (!panel.IsOpen())
         return;
 
@@ -263,7 +263,7 @@ void DataRawJsonPanel::Refresh()
 
 void DataRawJsonPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetWindowName(), &Visible);
     if (!panel.IsOpen())
         return;
 

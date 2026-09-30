@@ -705,7 +705,7 @@ void SceneHierarchyPanel::DrawRow(DrawContext& ctx, EntityId entity, int depth,
 
 void SceneHierarchyPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 

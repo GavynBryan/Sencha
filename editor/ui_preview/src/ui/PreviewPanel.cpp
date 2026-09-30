@@ -78,7 +78,7 @@ PreviewPanel::PreviewPanel(UiPreviewSession& session,
 
 void PreviewPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::ViewportPrimary);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::ViewportPrimary);
     if (!panel.IsOpen())
     {
         // A hidden preview has no placement; nothing should map into it.

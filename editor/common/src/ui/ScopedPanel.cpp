@@ -29,12 +29,12 @@ ImVec2 FrameMax()
 }
 }
 
-ScopedPanel::ScopedPanel(std::string_view title, bool* open, PanelStyle style, ImGuiWindowFlags flags)
+ScopedPanel::ScopedPanel(std::string_view windowName, bool* open, PanelStyle style, ImGuiWindowFlags flags)
     : Style(style)
 {
     // The padding keeps widgets inside the ring; ImGui reads it at Begin.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, EditorChrome::ChromeSpecFor(style).ContentPadding);
-    Open = ImGui::Begin(title.data(), open, flags);
+    Open = ImGui::Begin(windowName.data(), open, flags);
     ImGui::PopStyleVar();
     if (!Open)
         return;

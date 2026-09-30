@@ -114,7 +114,7 @@ void DrawIntents(JsonValue::Array& intents, FieldEdit& edit)
 void AnimationRequestSchemaPanel::OnDraw()
 {
     if (!IsVisible()) { Sources.CancelEdits(); return; }
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetWindowName(), &Visible);
     if (!panel.IsOpen()) { Sources.CancelEdits(); return; }
     ImGui::TextWrapped("Author intent contracts here; preview requests and gameplay state are separate. Create new schemas from the Document panel's New asset, then open them from the content browser.");
     const auto documents = Documents.Documents();

@@ -26,7 +26,7 @@ ActiveMaterialPanel::ActiveMaterialPanel(ActiveMaterialState& activeMaterial,
 
 void ActiveMaterialPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Compact);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Compact);
     if (!panel.IsOpen())
         return;
 

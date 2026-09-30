@@ -73,7 +73,7 @@ void ViewportPanel::OnDraw()
 
     RegionHovered = false;
 
-    ScopedPanel panel(Title, &Visible, Style, windowFlags);
+    ScopedPanel panel(GetWindowName(), &Visible, Style, windowFlags);
     if (!panel.IsOpen())
     {
         // Collapsed or fully clipped: no rect was drawn this frame, so drop the

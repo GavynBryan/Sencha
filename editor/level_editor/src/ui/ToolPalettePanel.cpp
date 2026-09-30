@@ -17,7 +17,7 @@ void ToolPalettePanel::OnDraw()
 {
     // The tab carries a close box: a user who works from the tool wheel can
     // put the palette away, and the shell remembers that.
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Compact,
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Compact,
                        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (!panel.IsOpen())
         return;

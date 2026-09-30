@@ -124,7 +124,7 @@ void GraphViewerPanel::OnDraw()
 {
     if (!World.IsWorld())
         return;
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 

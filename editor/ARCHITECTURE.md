@@ -26,17 +26,33 @@ embed or wrap the engine; it shares the engine's window, Vulkan context,
 console, and logging, and extends the engine by adding render features and
 frame systems. The engine never depends on editor code (one-way dependency).
 
-Each application follows the same two-file entry pattern:
+## Kyusu and its workspaces
 
-- A `Game` lifecycle adapter (`app/EditorApp`, `MaterialEditorApp`,
-  `LauncherApp`). Glue: each hook (`OnStart`, `OnRegisterSystems`,
-  `OnPlatformEvent`, `OnShutdown`) forwards to the services object.
-- A composition root (`app/EditorServices`, `MaterialEditorServices`,
-  `LauncherServices`) that owns every subsystem and wires them. Kyusu's
-  constructor is the bring-up sequence, split into named phases:
-  `BuildDocument` -> `BuildPlayLoop` -> `BuildFileActions` -> `BuildInput` ->
-  `BuildViewportRendering` -> `BuildUi`. Member order is teardown order; the
-  destructor reproduces the load-bearing sequence explicitly.
+Kyusu (`editor/kyusu/`, `KyusuApp`) is the one `Game`. It owns the
+`ProjectSession`, the window's `EditorUiFeature` and a `WorkspaceHost`
+(`common/src/workspaces/`) built from the kinds table in
+`kyusu/src/app/WorkspaceKinds.cpp`. A workspace (`IWorkspace`) is built when
+first opened and destroyed when closed; the window draws the active one's
+`WorkspaceView` (its panels, chrome, overlays, file actions and tab-strip
+controls) under the `WorkspaceBar` tab strip and nothing of the others.
+Opening, closing and switching are requests applied at the frame boundary by
+the one `WorkspaceTickSystem`, since a workspace adds and removes render
+features as it comes and goes; each open workspace is ticked there too.
+
+Each panel is given a window identity `<kind>.<settings id>` and its
+remembered visibility is filed under `<kind>/<settings id>`, so two
+workspaces' panels never share a window or a setting. The host adds a console
+to every workspace it adopts.
+
+The level workspace (`level_editor/src/app/LevelWorkspace`) is the level
+editor's composition root. Its constructor is the bring-up sequence, split
+into named phases: `BuildDocument` -> `BuildPlayLoop` -> `BuildFileActions` ->
+`BuildInput` -> `BuildViewportRendering` -> `BuildUi`. Member order is teardown
+order; the destructor reproduces the load-bearing sequence explicitly.
+
+The other editors still run as their own executables, each with a `Game`
+adapter (`MaterialEditorApp`, `LauncherApp`, ...) forwarding to a services
+object that owns and wires its subsystems.
 
 ## Projects
 
@@ -83,8 +99,8 @@ Read the level editor bottom to top. Each layer depends only on layers below it.
    `SelectionActions` (verbs over the selection as a whole), `GridEditing`. It
    is the editor's central hub by design, so it has the widest fan-out; that
    breadth lives here, not scattered.
-5. App composition: `app/`. `EditorServices` owns the workspace, input, UI, and
-   play loop, and wires them into the engine.
+5. App composition: `app/`. `LevelWorkspace` owns the authoring hub, input,
+   panels and play loop, and wires them into the engine.
 
 ## Subsystem map
 
@@ -109,7 +125,7 @@ Level editor (`editor/level_editor/src/`):
 
 | Directory | Owns | Extension seam |
 | --- | --- | --- |
-| `app/` | Entry point + composition root (`EditorApp`, `EditorServices`, `EditorFrameHook`, source hot-reload wiring) and `EditorCookRuntime` (the cook session, the player it feeds, and the serials that hand one to the other). | -- |
+| `app/` | The composition root (`LevelWorkspace`) and `EditorCookRuntime` (the cook session, the player it feeds, and the serials that hand one to the other). | -- |
 | `workspace/` | The per-document authoring hub (`EditorWorkspace`, `BrushManipulationSink`) plus the mechanisms it composes: `WorkspaceInteractionRuntime`, `PendingBridgeEdit`, `PendingElementEdit`, `SelectionActions`, `GridEditing`, `EscapePolicy`. | -- |
 | `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `ui`, `editmodes`, interactions, and the test suite. | -- |
 | `input/` | Viewport-coupled input (`ViewportNavigation`, `ViewportToolDispatcher`, `SdlEventTranslation`). | -- |
@@ -194,7 +210,7 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   up without an edit. The toolbar is not a bar of its own: the perspective
   viewport's header is the toolbar row it reserves in place of a title
   (`ViewportPanel::SetHeaderRows`), with the gizmo strip centred on the
-  window's midline; the cook/play loop sits in the `WorkspaceBar` under the caption, the bare
+  window's midline; the cook/play loop (`CookPlayControls`) sits at the right of the `WorkspaceBar` tab strip under the caption, the
   plate that will carry workspace tabs.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
@@ -206,7 +222,7 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   hot and the properties row draws them; neither learns the type behind them.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
-- A keyboard shortcut: the binding table in `EditorServices::BuildInput` (Kyusu);
+- A keyboard shortcut: the binding table in `LevelWorkspace::BuildInput` (the level editor);
   Shudei handles its few chords directly in `HandlePlatformEvent`. Tool
   activation rows are generated from the registry instead, under `tool.<id>`.
   Any action, listed or generated, is rebindable from `keybinds.json`. A held
@@ -219,7 +235,7 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   table the toolbar strip reads too). An open wheel is modal, which is what
   keeps the other closed.
 - A viewport visual: a render feature/pass in `level_editor/src/render/`, added in
-  `EditorServices::BuildViewportRendering`.
+  `LevelWorkspace::BuildViewportRendering`.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in
   `BuildViewportRendering`).
 - A new editor application: a new `editor/<name>/` subdirectory linking

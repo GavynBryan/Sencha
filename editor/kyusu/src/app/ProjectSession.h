@@ -12,15 +12,9 @@ class Engine;
 class Game;
 struct RuntimeAssets;
 
-//=============================================================================
-// ProjectSession
-//
-// The project one Kyusu process edits, held once for every workspace: its
-// descriptor, its game module, its content mounted into the engine's asset
-// stack, and the materials it offers. Workspaces are built after it and
-// destroyed before it, so the module stays mapped while anything it compiled
-// is alive.
-//=============================================================================
+// The project a Kyusu process edits, held once for every workspace. Built
+// before the workspaces and destroyed after them, so the module stays mapped
+// while anything it compiled is alive.
 class ProjectSession
 {
 public:

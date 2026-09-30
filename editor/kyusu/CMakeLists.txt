@@ -2,8 +2,9 @@
 # libraries.
 add_executable(kyusu
     src/main.cpp
-    src/app/EditorApp.cpp
+    src/app/KyusuApp.cpp
     src/app/ProjectSession.cpp
+    src/app/WorkspaceKinds.cpp
 )
 
 target_link_libraries(kyusu PRIVATE level_editor)
@@ -11,7 +12,8 @@ sencha_warnings(kyusu)
 target_include_directories(kyusu PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 target_compile_definitions(kyusu PRIVATE
-    # The product's own branding: the window and executable icons.
+    # The product's own branding: the caption mark and the window and
+    # executable icons.
     SENCHA_EDITOR_BRAND_DIR="${CMAKE_CURRENT_SOURCE_DIR}/branding"
 )
 

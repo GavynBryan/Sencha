@@ -3,6 +3,7 @@
 #include <app/GameContexts.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <ecs/ComponentTypeId.h>
+#include <platform/WindowTypes.h>
 #include <ui/UiSurface.h>
 
 #include "commands/CommandStack.h"
@@ -19,23 +20,22 @@
 #include "ui/EditorStatusBar.h"
 #include "ui/ToolPalettePanel.h"
 #include "ui/EditorToolbar.h"
-#include "ui/WorkspaceBar.h"
+#include "ui/CookPlayControls.h"
+#include "ui/WorkspaceView.h"
+#include "workspaces/IWorkspace.h"
 
 #include <memory>
 #include <optional>
 #include <vector>
 
 class EditorUiFeature;
-class EditorConsolePanel;
 class MaterialPickerPanel;
 class MaterialThumbnailCache;
 class ViewportPanel;
 class EditorRenderFeature;
 class EditorViewportCameraSystem;
-class EditorFrameHook;
 class Engine;
 class Game;
-class EngineSchedule;
 class SdlWindow;
 class PieDriver;
 class CookSession;
@@ -45,45 +45,30 @@ class CookProfilesPanel;
 class EditorCookRuntime;
 class DocumentFileActions;
 
-//=============================================================================
-// EditorServices
-//
-// The editor's subsystems, owned and wired as a group against the live engine
-// and primary window. The constructor mounts the project, builds the asset
-// system, creates the document/command/input/UI subsystems, and registers the
-// editor's render and UI features on the engine renderer: it is where the editor
-// is composed. EditorApp holds one behind a unique_ptr and forwards the Game
-// lifecycle hooks to it, so EditorApp stays glue.
-//
-// Member order is dependency order. The destructor reproduces the load-bearing
-// teardown sequence explicitly: Pie and Files reference document/command state so
-// they go first; Assets must outlive the document (whose StaticMeshComponents
-// hold handles into its caches) yet be released before the engine frees the
-// graphics services those caches borrow.
-//=============================================================================
-class EditorServices
+// The level editor as a workspace. The constructor is the bring-up sequence;
+// member order is teardown order, and the destructor spells out the
+// load-bearing part of it.
+class LevelWorkspace final : public IWorkspace
 {
 public:
-    // Builds and wires every subsystem. config supplies startup-only settings
-    // (console open-on-start). The project, the game module and the materials
-    // belong to the application and outlive this.
-    EditorServices(Engine& engine,
+    // The project, the game module and the materials belong to the
+    // application and outlive this.
+    LevelWorkspace(Engine& engine,
                    SdlWindow& window,
-                   const EngineConfig& config,
                    ProjectDescriptor* project,
                    Game* module,
                    MaterialLibrary& materials);
-    ~EditorServices();
+    ~LevelWorkspace() override;
 
-    EditorServices(const EditorServices&) = delete;
-    EditorServices& operator=(const EditorServices&) = delete;
+    LevelWorkspace(const LevelWorkspace&) = delete;
+    LevelWorkspace& operator=(const LevelWorkspace&) = delete;
 
-    // Registers the editor's frame systems (viewport camera + the per-frame hook).
-    void RegisterSystems(EngineSchedule& schedule);
-
-    // Routes one platform event: window resize, console toggle, ImGui
-    // preprocessing, then the input router chain.
-    void HandlePlatformEvent(PlatformEventContext& ctx);
+    void Tick(FrameUpdateContext& ctx) override;
+    void SetVisible(bool visible) override;
+    // Routes one platform event through the input router chain.
+    void HandlePlatformEvent(PlatformEventContext& ctx) override;
+    WorkspaceView& View() override { return Surface; }
+    void Place(EditorUiFeature& window) override { UiFeature = &window; }
 
 private:
     // Constructor phases, in call order. Each builds one cohesive slice of the
@@ -94,7 +79,7 @@ private:
     void BuildFileActions();
     void BuildInput();
     void BuildViewportRendering();
-    void BuildUi(bool consoleOpenOnStart);
+    void BuildUi();
 
     void ProcessFrame();
     // The tool wheel while it is open, painted over the whole window.
@@ -120,12 +105,13 @@ private:
     // Owned by the engine renderer; kept here so BuildUi can hand its viewport target
     // cache to ViewportPanel (the panel composites those targets via ImGui::Image).
     EditorRenderFeature* RenderFeature = nullptr;
-    EditorConsolePanel* ConsolePanel = nullptr;
+    // The window this workspace is placed in; null until it is.
     EditorUiFeature* UiFeature = nullptr;
-    EditorViewportCameraSystem* CameraSystem = nullptr;
-    EditorFrameHook* FrameHook = nullptr;
+    std::unique_ptr<EditorViewportCameraSystem> CameraSystem;
     Engine* EnginePtr = nullptr;
     SdlWindow* Window = nullptr;
+    bool Visible = false;
+    WindowExtent LayoutExtent{};
 
     // The engine's asset stack, which the application mounted the project into.
     RuntimeAssets* Assets = nullptr;
@@ -144,8 +130,8 @@ private:
     // Declared after Workspace so they are destroyed before the state they
     // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
     std::unique_ptr<EditorToolbar> Toolbar;
-    // The bar under the caption: the cook/play loop, and workspace tabs to come.
-    std::unique_ptr<WorkspaceBar> TopBar;
+    // The cook/play loop, mounted on the window's tab strip.
+    std::unique_ptr<CookPlayControls> CookPlay;
     std::unique_ptr<EditorStatusBar> StatusBar;
     MaterialLibrary* Materials = nullptr;
     // Thumbnail GPU residency for the browser and active-material previews.
@@ -174,4 +160,6 @@ private:
     std::unique_ptr<CookProfilesModal>  ProfilesModal;
     std::unique_ptr<InspectorSurface>   Inspector;
     std::unique_ptr<DocumentFileActions> Files;
+    // Declared last: its panels and chrome reference everything above.
+    WorkspaceView Surface;
 };

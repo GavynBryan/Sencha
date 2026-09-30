@@ -4,8 +4,11 @@
 
 #include <ui/UiService.h>
 
+#include "EditorConsolePanel.h"
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
+#include "WorkspaceBar.h"
+#include "workspaces/WorkspaceHost.h"
 #include "chrome/ChromeBars.h"
 #include "chrome/ChromeChassis.h"
 #include "chrome/ChromeControls.h"
@@ -15,7 +18,9 @@
 #include <app/Engine.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
+#include <core/config/EngineConfig.h>
 #include <core/console/ConsoleTypes.h>
+#include <debug/DebugService.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanFrameService.h>
@@ -103,13 +108,13 @@ void DockPacked(ImGuiID region, const std::vector<IEditorPanel*>& panels, ImGuiD
             totalWeight -= weight;
         }
         for (IEditorPanel* member : units[i].Members)
-            ImGui::DockBuilderDockWindow(member->GetTitle().data(), node);
+            ImGui::DockBuilderDockWindow(member->GetWindowName().data(), node);
         if (units[i].Members.size() > 1)
         {
             for (IEditorPanel* member : units[i].Members)
                 if (member->IsVisible())
                 {
-                    outFrontTabs.emplace_back(member->GetTitle());
+                    outFrontTabs.emplace_back(member->GetWindowName());
                     break;
                 }
         }
@@ -278,9 +283,9 @@ EditorUiFeature::EditorUiFeature(Engine& engine,
     , Instance(instance)
     , Frames(frames)
     , IniFileName(std::move(iniFileName))
-    , LayoutRatios(layoutRatios)
     , ThemePrefs(SENCHA_EDITOR_THEME_DIR)
 {
+    OwnView.Layout = layoutRatios;
 }
 
 EditorUiFeature::~EditorUiFeature()
@@ -310,7 +315,7 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
 
     if (!LoggedFirstDraw && Log != nullptr)
     {
-        Log->Info("EditorUiFeature drawing {} panel(s)", Panels.size());
+        Log->Info("EditorUiFeature drawing {}", Workspaces != nullptr ? "workspaces" : "its panels");
         LoggedFirstDraw = true;
     }
 
@@ -321,77 +326,121 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
     FeedPointerActions();
     ImGui::NewFrame();
 
+    WorkspaceView* view = ActiveView();
+
     // One frame after a layout rebuild: raise the intended front tab of each
     // tab-group node. Deferred because SetWindowFocus is by-name and the freshly
     // docked windows only exist once they have been submitted.
-    if (!PendingTabFocus.empty())
+    if (view != nullptr && !view->Dock.PendingTabFocus.empty())
     {
-        for (const std::string& title : PendingTabFocus)
-            ImGui::SetWindowFocus(title.c_str());
-        PendingTabFocus.clear();
+        for (const std::string& name : view->Dock.PendingTabFocus)
+            ImGui::SetWindowFocus(name.c_str());
+        view->Dock.PendingTabFocus.clear();
     }
 
-    DrawMainMenuBar();
-    for (const std::function<void()>& chrome : ChromeBars)
-    {
-        if (chrome)
-            chrome();
-    }
+    DrawMainMenuBar(view);
+    if (TabStrip != nullptr)
+        TabStrip->Draw(view != nullptr ? &view->BarControls : nullptr);
+    if (view != nullptr)
+        for (const std::function<void()>& chrome : view->Chrome)
+            if (chrome)
+                chrome();
 
+    DrawDockHost(view);
+
+    if (view != nullptr)
+        for (const std::unique_ptr<IEditorPanel>& panel : view->Panels)
+            if (panel != nullptr && panel->IsVisible())
+                panel->OnDraw();
+    // After the panels have drawn: a close box acts during a panel's own draw.
+    PanelVisibility.Track();
+
+    ThemePrefs.DrawWindow(EngineInstance.Console().Registry());
+
+    if (view != nullptr)
+        for (const std::function<void()>& overlay : view->Overlays)
+            if (overlay)
+                overlay();
+
+    ImGui::Render();
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
+    UpdateWindowTitle(view);
+}
+
+void EditorUiFeature::DrawDockHost(WorkspaceView* view)
+{
     // The chassis fills the work area the chrome bars left, and the dock host
     // sits inside its ring: our own window with no background and a plain
     // DockSpace, so the chassis ground shows through the seams between nodes.
     // Every docked panel, the viewports included, paints its own opaque body.
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImVec2 workMin = vp->WorkPos;
+    const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y);
+    ImDrawList* background = ImGui::GetBackgroundDrawList();
+    EditorChrome::DrawChassisBase(background, workMin, workMax);
+    EditorChrome::DrawChassisEdges(background, workMin, workMax);
+    EditorChrome::DrawChassisOrnaments(background, workMin, workMax);
+
+    const float inset = EditorChrome::ChassisInset();
+    ImGui::SetNextWindowPos(ImVec2(workMin.x + inset, workMin.y + inset));
+    ImGui::SetNextWindowSize(ImVec2(std::max(0.0f, vp->WorkSize.x - inset * 2.0f),
+                                    std::max(0.0f, vp->WorkSize.y - inset * 2.0f)));
+    ImGui::SetNextWindowViewport(vp->ID);
+
+    const ImGuiWindowFlags hostFlags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
+        | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus
+        | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin("##EditorDockHost", nullptr, hostFlags);
+    ImGui::PopStyleVar(3);
+
+    // The file has been read by the first NewFrame; a remembered choice
+    // overrides the compiled default exactly once.
+    if (!VisibilityApplied)
     {
-        const ImGuiViewport* vp = ImGui::GetMainViewport();
-        const ImVec2 workMin = vp->WorkPos;
-        const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y);
-        ImDrawList* background = ImGui::GetBackgroundDrawList();
-        EditorChrome::DrawChassisBase(background, workMin, workMax);
-        EditorChrome::DrawChassisEdges(background, workMin, workMax);
-        EditorChrome::DrawChassisOrnaments(background, workMin, workMax);
+        PanelVisibility.Apply();
+        VisibilityApplied = true;
+    }
 
-        const float inset = EditorChrome::ChassisInset();
-        ImGui::SetNextWindowPos(ImVec2(workMin.x + inset, workMin.y + inset));
-        ImGui::SetNextWindowSize(ImVec2(std::max(0.0f, vp->WorkSize.x - inset * 2.0f),
-                                        std::max(0.0f, vp->WorkSize.y - inset * 2.0f)));
-        ImGui::SetNextWindowViewport(vp->ID);
+    // Each workspace keeps its own dockspace, so its arrangement survives the
+    // tab being in the background; a hidden one is only kept alive.
+    const auto dockIdOf = [](std::string_view kind) {
+        const std::string name = "workspace/" + std::string(kind);
+        return ImGui::GetID(name.c_str());
+    };
+    if (Workspaces != nullptr)
+        for (const WorkspaceHost::Entry& entry : Workspaces->OpenWorkspaces())
+            if (entry.Kind != Workspaces->ActiveKind())
+                ImGui::DockSpace(dockIdOf(entry.Kind->Id), ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_KeepAliveOnly);
 
-        const ImGuiWindowFlags hostFlags =
-            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
-            | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus
-            | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
-
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::Begin("##EditorDockHost", nullptr, hostFlags);
-        ImGui::PopStyleVar(3);
-
-        const ImGuiID dockId = ImGui::GetID("EditorDockSpace");
+    if (view != nullptr)
+    {
+        const ImGuiID dockId = Workspaces != nullptr ? dockIdOf(Workspaces->ActiveKind()->Id)
+                                                     : ImGui::GetID("EditorDockSpace");
         // A dockable panel with no saved placement (a renamed or newly added
         // panel against an older ini) would come up floating; the designed
-        // layout is rebuilt instead. Checked once, after ImGui has loaded the
-        // ini in its first NewFrame; DockBuilder places every panel, so the
-        // check is quiet on later launches.
-        if (!PlacementChecked)
+        // layout is rebuilt instead. Checked once per view; DockBuilder places
+        // every panel, so the check is quiet on later launches.
+        if (!view->Dock.PlacementChecked)
         {
-            LayoutDirty |= std::any_of(Panels.begin(), Panels.end(), [](const std::unique_ptr<IEditorPanel>& panel) {
+            view->Dock.LayoutDirty |= std::any_of(view->Panels.begin(), view->Panels.end(),
+                                                  [](const std::unique_ptr<IEditorPanel>& panel) {
                 if (panel == nullptr || panel->GetDockSlot() == DockSlot::Floating)
                     return false;
-                const std::string_view title = panel->GetTitle();
-                return ImGui::FindWindowSettingsByID(ImHashStr(title.data(), title.size())) == nullptr;
+                const std::string_view name = panel->GetWindowName();
+                return ImGui::FindWindowSettingsByID(ImHashStr(name.data(), name.size())) == nullptr;
             });
-            // The file has been read by now; a remembered choice overrides the
-            // compiled default exactly once.
-            PanelVisibility.Apply();
-            PlacementChecked = true;
+            view->Dock.PlacementChecked = true;
         }
-        if (LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
+        if (view->Dock.LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
         {
-            PendingTabFocus.clear();
-            BuildDefaultDockLayout(dockId, Panels, LayoutRatios, PendingTabFocus);
-            LayoutDirty = false;
+            view->Dock.PendingTabFocus.clear();
+            BuildDefaultDockLayout(dockId, view->Panels, view->Layout, view->Dock.PendingTabFocus);
+            view->Dock.LayoutDirty = false;
         }
         // The tab bars are drawn inside DockSpace, so the font pushed here is
         // the one every docked tab label takes.
@@ -401,27 +450,26 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
         if (tabFont != nullptr)
             ImGui::PopFont();
-        ImGui::End();
     }
+    ImGui::End();
+}
 
-    for (const std::unique_ptr<IEditorPanel>& panel : Panels)
-    {
-        if (panel != nullptr && panel->IsVisible())
-            panel->OnDraw();
-    }
-    // After the panels have drawn: a close box acts during a panel's own draw.
-    PanelVisibility.Track();
-
-    ThemePrefs.DrawWindow(EngineInstance.Console().Registry());
-
-    for (const std::function<void()>& overlay : Overlays)
-    {
-        if (overlay)
-            overlay();
-    }
-
-    ImGui::Render();
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
+void EditorUiFeature::UpdateWindowTitle(const WorkspaceView* view)
+{
+    // Only a shell hosting workspaces owns the title; a single-view
+    // application writes its own.
+    if (Workspaces == nullptr || Identity.WindowTitle.empty())
+        return;
+    std::string title = Identity.WindowTitle;
+    if (const WorkspaceKind* kind = Workspaces->ActiveKind())
+        title += " - " + kind->DisplayName;
+    if (view != nullptr && view->Status)
+        if (const std::string status = view->Status(); !status.empty())
+            title += " - " + status;
+    if (title == LastWindowTitle)
+        return;
+    Window.SetTitle(title);
+    LastWindowTitle = std::move(title);
 }
 
 void EditorUiFeature::RegisterPointerCommands(ConsoleRegistry& registry)
@@ -612,20 +660,68 @@ void EditorUiFeature::SetKeyboardInputEnabled(bool enabled)
 
 void EditorUiFeature::AddPanel(std::unique_ptr<IEditorPanel> panel)
 {
-    if (panel != nullptr)
-        Panels.push_back(std::move(panel));
+    OwnView.AddPanel(std::move(panel));
 }
 
 void EditorUiFeature::AddChrome(std::function<void()> draw)
 {
     if (draw)
-        ChromeBars.push_back(std::move(draw));
+        OwnView.Chrome.push_back(std::move(draw));
 }
 
 void EditorUiFeature::AddOverlay(std::function<void()> draw)
 {
     if (draw)
-        Overlays.push_back(std::move(draw));
+        OwnView.Overlays.push_back(std::move(draw));
+}
+
+void EditorUiFeature::SetWorkspaceHost(WorkspaceHost& host)
+{
+    Workspaces = &host;
+    TabStrip = std::make_unique<WorkspaceBar>(host);
+    host.SetOpenedListener([this](const WorkspaceKind& kind, IWorkspace& workspace) { AdoptWorkspace(kind, workspace); });
+    host.SetClosingListener([this](const WorkspaceKind&, IWorkspace& workspace) { ReleaseWorkspace(workspace); });
+    for (const WorkspaceHost::Entry& entry : host.OpenWorkspaces())
+        AdoptWorkspace(*entry.Kind, *entry.Instance);
+}
+
+void EditorUiFeature::AdoptWorkspace(const WorkspaceKind& kind, IWorkspace& workspace)
+{
+    WorkspaceView& view = workspace.View();
+    // Every workspace gets a console over the one log: which one is showing is
+    // a workspace's layout, like any of its panels.
+    auto console = std::make_unique<EditorConsolePanel>(EngineInstance.Debug().GetLogSink(), EngineInstance.Console());
+    console->SetVisible(EngineInstance.Config().Console.OpenOnStart);
+    Consoles.emplace_back(&workspace, console.get());
+    view.AddPanel(std::move(console));
+
+    for (const std::unique_ptr<IEditorPanel>& panel : view.Panels)
+        if (panel != nullptr)
+            panel->SetWindowIdentity(kind.Id + "." + std::string(panel->GetPersistence().Id));
+    PanelVisibility.Attach(kind.Id, view.Panels);
+    workspace.Place(*this);
+}
+
+void EditorUiFeature::ReleaseWorkspace(IWorkspace& workspace)
+{
+    PanelVisibility.Detach(workspace.View().Panels);
+    std::erase_if(Consoles, [&](const auto& entry) { return entry.first == &workspace; });
+}
+
+void EditorUiFeature::ToggleConsole()
+{
+    IWorkspace* active = Workspaces != nullptr ? Workspaces->Active() : nullptr;
+    for (const auto& [workspace, console] : Consoles)
+        if (workspace == active)
+            console->ToggleVisible();
+}
+
+WorkspaceView* EditorUiFeature::ActiveView() const
+{
+    if (Workspaces == nullptr)
+        return const_cast<WorkspaceView*>(&OwnView);
+    IWorkspace* active = Workspaces->Active();
+    return active != nullptr ? &active->View() : nullptr;
 }
 
 void EditorUiFeature::SetUndoActions(std::function<void()> undoAction,
@@ -644,10 +740,10 @@ void EditorUiFeature::SetFileActions(std::function<void()> newAction,
                                      std::function<void()> saveAction,
                                      std::function<void()> saveAsAction)
 {
-    NewAction = std::move(newAction);
-    OpenAction = std::move(openAction);
-    SaveAction = std::move(saveAction);
-    SaveAsAction = std::move(saveAsAction);
+    OwnView.File.New = std::move(newAction);
+    OwnView.File.Open = std::move(openAction);
+    OwnView.File.Save = std::move(saveAction);
+    OwnView.File.SaveAs = std::move(saveAsAction);
 }
 
 void EditorUiFeature::SetSaveAllAction(std::function<void()> saveAllAction)
@@ -657,7 +753,7 @@ void EditorUiFeature::SetSaveAllAction(std::function<void()> saveAllAction)
 
 void EditorUiFeature::SetNewWorldAction(std::function<void()> newWorldAction)
 {
-    NewWorldAction = std::move(newWorldAction);
+    OwnView.File.NewWorld = std::move(newWorldAction);
 }
 
 void EditorUiFeature::SetIdentity(ShellIdentity identity)
@@ -667,7 +763,7 @@ void EditorUiFeature::SetIdentity(ShellIdentity identity)
 
 void EditorUiFeature::SetStatusProvider(std::function<std::string()> statusProvider)
 {
-    StatusProvider = std::move(statusProvider);
+    OwnView.Status = std::move(statusProvider);
 }
 
 bool EditorUiFeature::InitImGui(const RendererServices& services)
@@ -701,7 +797,9 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     if (!IniFileName.empty())
         io.IniFilename = IniFileName.c_str();
     // Before the first NewFrame, which is when ImGui reads the file.
-    PanelVisibility.Register(Panels);
+    PanelVisibility.Register();
+    if (Workspaces == nullptr)
+        PanelVisibility.Attach("", OwnView.Panels);
 
     // Every ImGuiTextureBinding costs one combined-image-sampler set: the
     // viewport targets and up to editor.materials.thumbnail_budget resident
@@ -958,7 +1056,7 @@ void EditorUiFeature::BuildShellAtlasIfStale()
                   baked.Logo ? "yes" : "no", AtlasBuilds);
 }
 
-void EditorUiFeature::DrawMainMenuBar()
+void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
 {
     // The bar is the window's caption when the window draws its own frame: the
     // identity plate and the free strips drag it, the controls at the right
@@ -1029,7 +1127,7 @@ void EditorUiFeature::DrawMainMenuBar()
     static const char* const kMenuLabels[] = { "File", "Edit", "View" };
     const float centerWidth = EditorChrome::MenuBarStripWidth(kMenuLabels) + style.ItemSpacing.x * 2.0f;
 
-    std::string status = StatusProvider ? StatusProvider() : std::string{};
+    std::string status = view != nullptr && view->Status ? view->Status() : std::string{};
     // A path or a name is data: it reads out of a cell, like the status bar's.
     const auto rightWidthFor = [&](const std::string& text) {
         const float readout = text.empty() ? 0.0f
@@ -1054,20 +1152,22 @@ void EditorUiFeature::DrawMainMenuBar()
     // so the strip starts that far inside its bay.
     ImGui::SetCursorScreenPos(ImVec2(row.CenterMin + std::trunc(style.ItemSpacing.x * 0.5f), barMin.y));
 
+    static const WorkspaceFileActions kNoFile;
+    const WorkspaceFileActions& file = view != nullptr ? view->File : kNoFile;
     if (ImGui::BeginMenu("File"))
     {
-        if (ImGui::MenuItem("New", "Ctrl+N", false, NewAction != nullptr) && NewAction)
-            NewAction();
-        if (NewWorldAction && ImGui::MenuItem("New World"))
-            NewWorldAction();
-        if (ImGui::MenuItem("Open", "Ctrl+O", false, OpenAction != nullptr) && OpenAction)
-            OpenAction();
-        if (ImGui::MenuItem("Save", "Ctrl+S", false, SaveAction != nullptr) && SaveAction)
-            SaveAction();
+        if (ImGui::MenuItem("New", "Ctrl+N", false, file.New != nullptr) && file.New)
+            file.New();
+        if (file.NewWorld && ImGui::MenuItem("New World"))
+            file.NewWorld();
+        if (ImGui::MenuItem("Open", "Ctrl+O", false, file.Open != nullptr) && file.Open)
+            file.Open();
+        if (ImGui::MenuItem("Save", "Ctrl+S", false, file.Save != nullptr) && file.Save)
+            file.Save();
         if (ImGui::MenuItem("Save All", "Ctrl+Shift+S", false, SaveAllAction != nullptr) && SaveAllAction)
             SaveAllAction();
-        if (ImGui::MenuItem("Save As", nullptr, false, SaveAsAction != nullptr) && SaveAsAction)
-            SaveAsAction();
+        if (ImGui::MenuItem("Save As", nullptr, false, file.SaveAs != nullptr) && file.SaveAs)
+            file.SaveAs();
         if (ImGui::MenuItem("Exit"))
             EngineInstance.RequestExit();
         ImGui::EndMenu();
@@ -1075,13 +1175,18 @@ void EditorUiFeature::DrawMainMenuBar()
 
     if (ImGui::BeginMenu("Edit"))
     {
-        const bool canUndo = CanUndoAction ? CanUndoAction() : false;
-        const bool canRedo = CanRedoAction ? CanRedoAction() : false;
+        const bool own = view != nullptr && view->Edit.Undo;
+        const std::function<void()>& undo = own ? view->Edit.Undo : UndoAction;
+        const std::function<void()>& redo = own ? view->Edit.Redo : RedoAction;
+        const std::function<bool()>& canUndoFn = own ? view->Edit.CanUndo : CanUndoAction;
+        const std::function<bool()>& canRedoFn = own ? view->Edit.CanRedo : CanRedoAction;
+        const bool canUndo = canUndoFn ? canUndoFn() : false;
+        const bool canRedo = canRedoFn ? canRedoFn() : false;
 
-        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo) && UndoAction)
-            UndoAction();
-        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && RedoAction)
-            RedoAction();
+        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo) && undo)
+            undo();
+        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && redo)
+            redo();
 
         ImGui::EndMenu();
     }
@@ -1089,17 +1194,20 @@ void EditorUiFeature::DrawMainMenuBar()
     if (ImGui::BeginMenu("View"))
     {
         // Per-panel visibility (the viewport is the central node — not hideable).
-        for (const std::unique_ptr<IEditorPanel>& panel : Panels)
+        if (view != nullptr)
         {
-            if (panel == nullptr || panel->GetDockSlot() == DockSlot::Center)
-                continue;
-            const std::string title(panel->GetTitle());
-            if (ImGui::MenuItem(title.c_str(), nullptr, panel->IsVisible()))
-                panel->ToggleVisible();
+            for (const std::unique_ptr<IEditorPanel>& panel : view->Panels)
+            {
+                if (panel == nullptr || panel->GetDockSlot() == DockSlot::Center)
+                    continue;
+                const std::string title(panel->GetTitle());
+                if (ImGui::MenuItem(title.c_str(), nullptr, panel->IsVisible()))
+                    panel->ToggleVisible();
+            }
+            ImGui::Separator();
         }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Reset Layout"))
-            LayoutDirty = true;
+        if (ImGui::MenuItem("Reset Layout", nullptr, false, view != nullptr) && view != nullptr)
+            view->Dock.LayoutDirty = true;
         ImGui::Separator();
         if (ImGui::BeginMenu("Preferences"))
         {

@@ -21,7 +21,7 @@ DocumentLibraryPanel::DocumentLibraryPanel(DocumentLibrary& library, UiPreviewSe
 
 void DocumentLibraryPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Tool);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Tool);
     if (!panel.IsOpen())
         return;
 

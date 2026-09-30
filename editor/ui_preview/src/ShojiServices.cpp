@@ -231,6 +231,7 @@ void ShojiServices::BuildUi()
     UiFeature->SetIdentity(ShellIdentity{
         .Product = "SHOJI",
         .LogoPath = std::string(SENCHA_EDITOR_SHOJI_BRAND_DIR) + "/shoji-logo.svg",
+        .WindowTitle = {},
     });
     // The theme belongs on a previewed document only when the author says so
     // (the Preview's Host theme switch), never by the shell's default.

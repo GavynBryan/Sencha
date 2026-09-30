@@ -1,6 +1,5 @@
-#include "EditorServices.h"
+#include "LevelWorkspace.h"
 
-#include "EditorFrameHook.h"
 #include "viewport/EditorViewportCameraSystem.h"
 #include "editmodes/ManipulatorSession.h"
 #include "workspace/BrushManipulationSink.h"
@@ -26,9 +25,7 @@
 #include "ui/InspectorSurface.h"
 #include <ui/UiService.h>
 #include "ui/CookProfilesPanel.h"
-#include "ui/EditorConsolePanel.h"
 #include "ui/EditorStatusBar.h"
-#include "ui/EditorThemeStartup.h"
 #include "ui/EditorToolbar.h"
 #include "ui/EditorUiFeature.h"
 #include "ui/EditorUiStyle.h"
@@ -37,6 +34,7 @@
 #include "ui/InspectorPanel.h"
 #include "ui/LightingPanel.h"
 #include "ui/MaterialPickerPanel.h"
+#include "render/RenderFeatureDetach.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ToolPropertiesPanel.h"
 #include "render/SceneThumbnailCache.h"
@@ -86,24 +84,18 @@
 #include <vector>
 
 
-#ifndef SENCHA_EDITOR_BRAND_DIR
-#define SENCHA_EDITOR_BRAND_DIR "."
-#endif
-
 namespace
 {
-// The editor's two render features and the one edge between them: the render
-// feature's teardown frees ImGui descriptor sets through the backend the UI
-// feature owns, so it must tear down first. Reverse-resolved teardown gives
-// that ordering; before the edge existed it came from registration order.
+// The viewport feature's teardown frees ImGui descriptor sets through the
+// backend the window's UI feature owns, so it depends on it and tears down
+// first.
 constexpr std::string_view kEditorRenderFeatureId = "editor_render";
 constexpr std::string_view kEditorUiFeatureId = "editor_ui";
 constexpr std::array<std::string_view, 1> kEditorRenderDependsOn{ kEditorUiFeatureId };
 } // namespace
 
-EditorServices::EditorServices(Engine& engine,
+LevelWorkspace::LevelWorkspace(Engine& engine,
                                SdlWindow& window,
-                               const EngineConfig& config,
                                ProjectDescriptor* project,
                                Game* module,
                                MaterialLibrary& materials)
@@ -127,13 +119,16 @@ EditorServices::EditorServices(Engine& engine,
     BuildFileActions();
     BuildInput();
     BuildViewportRendering();
-    BuildUi(config.Console.OpenOnStart);
+    BuildUi();
 }
 
-EditorServices::~EditorServices()
+LevelWorkspace::~LevelWorkspace()
 {
     if (Window != nullptr)
         SetRelativeMouseMode(*Window, false);
+
+    // The panels and chrome first: they hold references into everything below.
+    Surface = WorkspaceView{};
 
     // The cook runtime and Files reference Workspace/Commands/Materials/Project;
     // tear them down before that state goes away.
@@ -147,20 +142,7 @@ EditorServices::~EditorServices()
     // order survived; nothing enforced that, and the next line added to Teardown
     // would have made it a use-after-free. The renderer would otherwise hold the
     // feature until ~Renderer, long after all of this is gone.
-    if (RenderFeature != nullptr && EnginePtr != nullptr)
-    {
-        GraphicsServices* graphics = EnginePtr->TryGraphics();
-        // Refusal means the feature is still registered and still holding
-        // references into what is about to be destroyed. Nothing depends on it
-        // today, so this is a guard against a future edge, not a live path.
-        if (graphics == nullptr || !graphics->MainRenderer.RemoveFeature(RenderFeature))
-        {
-            std::fprintf(stderr, "[editor] viewport render feature could not be "
-                                 "removed; editor state it borrows is being "
-                                 "destroyed underneath it\n");
-        }
-        RenderFeature = nullptr;
-    }
+    DetachRenderFeature(*EnginePtr, RenderFeature);
     Workspace.reset();
     // After the documents, not before: their worlds hold things the module
     // compiled, and the document destructor is what runs them. The module
@@ -178,17 +160,18 @@ EditorServices::~EditorServices()
     // order; neither touches the subsystems reset above.
 }
 
-void EditorServices::BuildDocument()
+void LevelWorkspace::BuildDocument()
 {
     Engine& engine = *EnginePtr;
     Commands = std::make_unique<CommandStack>();
     Workspace = std::make_unique<EditorWorkspace>(engine.Logging(), *Commands);
+    CameraSystem = std::make_unique<EditorViewportCameraSystem>(Workspace->Layout);
     if (Assets)
         Workspace->World.SetAssetEnvironment(*Assets);
     Workspace->Layout.OnResize(Window->GetExtent().Width, Window->GetExtent().Height);
 }
 
-void EditorServices::BuildPlayLoop()
+void LevelWorkspace::BuildPlayLoop()
 {
     Engine& engine = *EnginePtr;
     CookRuntime = std::make_unique<EditorCookRuntime>(engine, Workspace->World,
@@ -197,7 +180,7 @@ void EditorServices::BuildPlayLoop()
     CookRuntime->RegisterConsoleCommands(engine.Console().Registry());
 }
 
-void EditorServices::BuildFileActions()
+void LevelWorkspace::BuildFileActions()
 {
     Engine& engine = *EnginePtr;
     std::vector<std::string> contentRoots;
@@ -221,7 +204,7 @@ void EditorServices::BuildFileActions()
     Files->RegisterCommands(engine.Console().Registry());
 }
 
-void EditorServices::BuildInput()
+void LevelWorkspace::BuildInput()
 {
     Navigation = std::make_unique<ViewportNavigation>(
         Workspace->Layout,
@@ -412,7 +395,7 @@ void EditorServices::BuildInput()
         });
 }
 
-void EditorServices::BuildViewportRendering()
+void LevelWorkspace::BuildViewportRendering()
 {
     Engine& engine = *EnginePtr;
     ConsoleService& console = engine.Console();
@@ -502,60 +485,52 @@ void EditorServices::BuildViewportRendering()
     // Staged, not added: the commit happens at the end of BuildUi, once the UI
     // feature this one depends on has been staged too. The pointer is good only
     // if the commit reports the id succeeded.
-    RenderFeature = engine.Graphics().MainRenderer.StageFeature(
+    Renderer& renderer = engine.Graphics().MainRenderer;
+    RenderFeature = renderer.StageFeature(
         std::move(renderFeature),
         FeatureRegistration{ .Id = kEditorRenderFeatureId,
                              .DependsOn = kEditorRenderDependsOn });
+    // Committed before any panel is built against it, so a feature that fails
+    // to set up leaves nothing holding its caches.
+    std::vector<std::string_view> failed;
+    if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
+    {
+        std::fprintf(stderr, "[editor] viewport render feature failed to set up; "
+                             "viewports will not draw\n");
+        RenderFeature = nullptr;
+    }
 }
 
-void EditorServices::BuildUi(bool consoleOpenOnStart)
+void LevelWorkspace::BuildUi()
 {
     Engine& engine = *EnginePtr;
     ConsoleService& console = engine.Console();
-    DebugService& debug = engine.Debug();
-
-    // Chrome theme (directive: behavior from data), loaded BEFORE the UI
-    // feature applies the ImGui style.
-    ApplyEditorThemeFromConsole(console);
-
-    auto& instance = engine.Graphics().Instance;
-    auto& frames = engine.Graphics().Frames;
-    Renderer& renderer = engine.Graphics().MainRenderer;
 
     // Default layout proportions: mesh tools over the active material in a
     // narrow left column, the perspective viewport dominating the center with
     // the ortho view + Materials/Console strip under it, world/hierarchy row
     // over the inspector on the right.
-    const DockLayoutRatios layoutRatios{
+    Surface.Layout = DockLayoutRatios{
         .LeftEdge = 0.06f,
         .Left = 0.16f,
         .Right = 0.3f,
         .CenterBottom = 0.35f,
         .RightBottom = 0.3f,
     };
-    auto uiFeature = std::make_unique<EditorUiFeature>(engine, *Window, instance, frames,
-                                                       "kyusu.imgui.ini", layoutRatios);
-    // Provisional, for the panel and chrome wiring below; reassigned from what
-    // AddFeature returns once the feature is actually registered.
-    UiFeature = uiFeature.get();
-    UiFeature->SetUndoActions(
-        [this]() { if (Commands) Commands->Undo(); },
-        [this]() { if (Commands) Commands->Redo(); },
-        [this]() { return Commands != nullptr && Commands->CanUndo(); },
-        [this]() { return Commands != nullptr && Commands->CanRedo(); });
-    UiFeature->SetFileActions(
-        [this]() { if (Files) Files->New(); },
-        [this]() { if (Files) Files->RequestOpen(); },
-        [this]() { if (Files) Files->Save(); },
-        [this]() { if (Files) Files->RequestSaveAs(); });
-    UiFeature->SetNewWorldAction([this]() { if (Files) Files->NewWorld(); });
-    // The shell's nameplate and its readout of what is open. Product names
-    // are data here, as on the window title.
-    UiFeature->SetIdentity(ShellIdentity{
-        .Product = "KYUSU",
-        .LogoPath = std::string(SENCHA_EDITOR_BRAND_DIR) + "/kyusu-logo.svg",
-    });
-    UiFeature->SetStatusProvider([this]() { return Files ? Files->DocumentLabel() : std::string{}; });
+    Surface.Edit = WorkspaceEditActions{
+        .Undo = [this] { Commands->Undo(); },
+        .Redo = [this] { Commands->Redo(); },
+        .CanUndo = [this] { return Commands->CanUndo(); },
+        .CanRedo = [this] { return Commands->CanRedo(); },
+    };
+    Surface.File = WorkspaceFileActions{
+        .New = [this] { Files->New(); },
+        .NewWorld = [this] { Files->NewWorld(); },
+        .Open = [this] { Files->RequestOpen(); },
+        .Save = [this] { Files->Save(); },
+        .SaveAs = [this] { Files->RequestSaveAs(); },
+    };
+    Surface.Status = [this] { return Files->DocumentLabel(); };
 
     // The editing toolbar's presentation, hosted by the perspective viewport;
     // the workspace bar and the status bar are the fixed bars of app chrome,
@@ -569,8 +544,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // console commands.
     // A cook reads the live documents (and force-saves the world first), so open
     // previews settle before it starts or they would cook half-staged.
-    TopBar = std::make_unique<WorkspaceBar>();
-    TopBar->SetPlayControls({
+    CookPlay = std::make_unique<CookPlayControls>(CookPlayControls::Actions{
         .RunCook = [this] {
             Workspace->ResolvePendingEdits();
             if (CookRuntime) CookRuntime->Start();
@@ -582,7 +556,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         },
         .IsCooking = [this] { return CookRuntime != nullptr && CookRuntime->IsActive(); },
         .Profiles = [this] {
-            std::vector<WorkspaceBar::PlayControls::ProfileChoice> choices;
+            std::vector<CookPlayControls::ProfileChoice> choices;
             if (CookRuntime)
                 for (const CookProfile& profile : CookRuntime->GetSession().AvailableProfiles())
                     choices.push_back({ profile.Id, profile.Name, profile.BuiltIn });
@@ -644,13 +618,19 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         [this]() -> const ManipulatorSession* { return Workspace->Interaction.Manipulators; },
         Workspace->Layout, Workspace->Selection, Workspace->Grid,
         Workspace->MeshEdit);
-    UiFeature->AddPanel(std::make_unique<ToolPalettePanel>([this] { return Workspace->Interaction.Tools.get(); }));
-    Toolbar->SetSurfaceProvider([this] { return UiFeature->SurfaceFor(BarRole::Toolbar); });
+    Surface.BarControls = WorkspaceBarControls{
+        .Width = [this] { return CookPlay->Width(EditorChrome::BarButtonSize()); },
+        .Draw = [this] { CookPlay->Draw(EditorChrome::BarButtonSize()); },
+        .Lit = [this] { return CookPlay->IsBusy(); },
+    };
+    Surface.AddPanel(std::make_unique<ToolPalettePanel>([this] { return Workspace->Interaction.Tools.get(); }));
+    Toolbar->SetSurfaceProvider([this] {
+        return UiFeature != nullptr ? UiFeature->SurfaceFor(BarRole::Toolbar) : EditorChrome::BarSurface{};
+    });
     // The workspace bar sits under the caption as app chrome, on the primary
     // viewport's header plate, so it reads apart from the editing row.
-    UiFeature->AddChrome([this] { TopBar->Draw(); });
-    UiFeature->AddChrome([this] { StatusBar->Draw(); });
-    UiFeature->AddOverlay([this]
+    Surface.Chrome.push_back([this] { StatusBar->Draw(); });
+    Surface.Overlays.push_back([this]
     {
         DrawRadialMenu(*ToolWheel, *ToolMenu);
         DrawRadialMenu(*GizmoWheel, *GizmoMenu);
@@ -728,30 +708,26 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
             },
         });
         PerspectivePanel = perspectivePanel.get();
-        UiFeature->AddPanel(std::move(perspectivePanel));
+        Surface.AddPanel(std::move(perspectivePanel));
         auto orthoPanel = std::make_unique<ViewportPanel>(
             Workspace->Layout, Workspace->Interaction.Marquee, Workspace->Interaction.Overlay,
             RenderFeature->GetViewportTargets(), "ORTHO", DockSlot::CenterBottom, 1.0f,
             PanelStyle::Viewport, PanelPersistence{ "ortho", PanelVisibilityPolicy::Remembered }, orthoId);
         orthoPanel->SetSceneDropHandler(placeDroppedScene);
         OrthoPanel = orthoPanel.get();
-        UiFeature->AddPanel(std::move(orthoPanel));
+        Surface.AddPanel(std::move(orthoPanel));
     }
     else
     {
         std::fprintf(stderr, "[editor] no viewport render feature; "
                              "viewport panels are unavailable\n");
     }
-    auto editorConsole = std::make_unique<EditorConsolePanel>(debug.GetLogSink(), console);
-    ConsolePanel = editorConsole.get();
-    ConsolePanel->SetVisible(consoleOpenOnStart);
-    UiFeature->AddPanel(std::move(editorConsole));
-    UiFeature->AddPanel(std::make_unique<WorldPartitionPanel>(
+    Surface.AddPanel(std::make_unique<WorldPartitionPanel>(
         Workspace->World, Workspace->Selection, *Commands,
         Workspace->CreationRecipes));
-    UiFeature->AddPanel(std::make_unique<GraphViewerPanel>(
+    Surface.AddPanel(std::make_unique<GraphViewerPanel>(
         Workspace->World, Workspace->Selection, *Commands, Workspace->Layout));
-    UiFeature->AddPanel(std::make_unique<SceneHierarchyPanel>(
+    Surface.AddPanel(std::make_unique<SceneHierarchyPanel>(
         Workspace->World, Workspace->Selection, *Commands,
         [this](const std::string& assetPath)
         { return Files != nullptr && Files->OpenSceneSource(assetPath); }));
@@ -775,11 +751,11 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
             }
             return cache;
         };
-        UiFeature->AddPanel(std::make_unique<SceneBrowserPanel>(
+        Surface.AddPanel(std::make_unique<SceneBrowserPanel>(
             Workspace->World, Workspace->Selection, *Commands,
             std::move(sceneRoots), std::move(thumbnails)));
     }
-    UiFeature->AddPanel(std::make_unique<InspectorPanel>(
+    Surface.AddPanel(std::make_unique<InspectorPanel>(
         Workspace->World, Workspace->Selection, *Commands,
         Workspace->Affordances->Registry()));
     auto cookProfiles = std::make_unique<CookProfilesPanel>(
@@ -787,7 +763,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     cookProfiles->SetVisible(false);
     if (CookRuntime)
         CookRuntime->SetProfilesPanel(cookProfiles.get());
-    UiFeature->AddPanel(std::move(cookProfiles));
+    Surface.AddPanel(std::move(cookProfiles));
     const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
         return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
     };
@@ -795,7 +771,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // feature's own state, so there is nothing to show without it.
     if (RenderFeature != nullptr)
     {
-        UiFeature->AddPanel(std::make_unique<LightingPanel>(
+        Surface.AddPanel(std::make_unique<LightingPanel>(
             RenderFeature->ShadowReadout(), Workspace->Selection, *Commands,
             [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); },
             [this]() -> std::uint32_t {
@@ -836,7 +812,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
                 return summary;
             }));
     }
-    UiFeature->AddPanel(std::make_unique<ToolPropertiesPanel>(
+    Surface.AddPanel(std::make_unique<ToolPropertiesPanel>(
         [this]() -> IMeshEditTarget* { return Workspace->Interaction.Sink.get(); },
         [this]() -> ManipulationSink* { return Workspace->Interaction.Sink.get(); },
         [this]() -> ToolRegistry* { return Workspace->Interaction.Tools.get(); },
@@ -877,7 +853,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
     // Added after ToolPropertiesPanel so the left column's Down-pack puts it
     // below the tool properties, and before the browser so its previews are
     // always fresher than the browser's trim.
-    UiFeature->AddPanel(std::make_unique<ActiveMaterialPanel>(
+    Surface.AddPanel(std::make_unique<ActiveMaterialPanel>(
         Workspace->ActiveMaterial, *Thumbnails,
         [this] { if (Browser != nullptr) Browser->Reveal(); }));
 
@@ -885,80 +861,44 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         *Materials, *Thumbnails, Workspace->ActiveMaterial, console.Registry(),
         [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); });
     Browser = browserPanel.get();
-    UiFeature->AddPanel(std::move(browserPanel));
-
-    renderer.StageFeature(std::move(uiFeature),
-                          FeatureRegistration{ .Id = kEditorUiFeatureId });
-
-    // Both features are staged now, so the batch can resolve. Setup runs here,
-    // in dependency order, and a feature that fails takes its dependents and
-    // the pointers cached against them with it. EditorUiFeature has real
-    // failure paths -- no graphics queue family, descriptor pool, SDL or Vulkan
-    // backend init -- and it owns the panels below.
-    std::vector<std::string_view> failed;
-    if (!renderer.CommitStagedFeatures(&failed))
-    {
-        // The renderer has already named the graph problem per offending id.
-        // What matters here is that a refused batch registers nothing, so the
-        // list names every staged id and the clauses below null all of them.
-        std::fprintf(stderr, "[editor] render feature batch was refused; "
-                             "the editor runs without its own features\n");
-    }
-    const auto didFail = [&failed](std::string_view id)
-    {
-        return std::find(failed.begin(), failed.end(), id) != failed.end();
-    };
-    if (didFail(kEditorUiFeatureId))
-    {
-        std::fprintf(stderr, "[editor] UI feature failed to set up; "
-                             "editor panels are unavailable\n");
-        UiFeature = nullptr;
-        PerspectivePanel = nullptr;
-        OrthoPanel = nullptr;
-        ConsolePanel = nullptr;
-        Browser = nullptr;
-    }
-    if (didFail(kEditorRenderFeatureId))
-    {
-        std::fprintf(stderr, "[editor] viewport render feature failed to set up; "
-                             "viewports will not draw\n");
-        RenderFeature = nullptr;
-    }
+    Surface.AddPanel(std::move(browserPanel));
 }
 
-void EditorServices::RegisterSystems(EngineSchedule& schedule)
+void LevelWorkspace::Tick(FrameUpdateContext& ctx)
 {
-    CameraSystem = &schedule.Register<EditorViewportCameraSystem>(Workspace->Layout);
-    FrameHook = &schedule.Register<EditorFrameHook>([this] { ProcessFrame(); });
+    // The layout follows the window it is placed in, whether or not it is
+    // showing, so it is right the moment its tab comes forward.
+    if (Window != nullptr)
+    {
+        const WindowExtent extent = Window->GetExtent();
+        if (extent.Width != LayoutExtent.Width || extent.Height != LayoutExtent.Height)
+        {
+            Workspace->Layout.OnResize(extent.Width, extent.Height);
+            LayoutExtent = extent;
+        }
+    }
+    // The fly camera reads held keys, which belong to the workspace in front.
+    if (Visible)
+        CameraSystem->FrameUpdate(ctx);
+    ProcessFrame();
 }
 
-void EditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
+void LevelWorkspace::SetVisible(bool visible)
 {
-    switch (ctx.Event.type)
-    {
-    case SDL_EVENT_WINDOW_RESIZED:
-    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-        Workspace->Layout.OnResize(
-            static_cast<uint32_t>(ctx.Event.window.data1),
-            static_cast<uint32_t>(ctx.Event.window.data2));
-        break;
-    default:
-        break;
-    }
-
-    if (ctx.Event.type == SDL_EVENT_KEY_DOWN
-        && !ctx.Event.key.repeat
-        && ctx.Event.key.scancode == SDL_SCANCODE_GRAVE)
-    {
-        if (ConsolePanel != nullptr)
-            ConsolePanel->ToggleVisible();
-        ctx.Handled = true;
+    if (Visible == visible)
         return;
+    Visible = visible;
+    // Going to the background is a focus loss: a fly-look releases the
+    // pointer and a drag in flight is cancelled rather than left holding it.
+    if (!visible && Router != nullptr)
+    {
+        InputEvent focusLost = FocusLostEvent{};
+        (void)Router->Route(focusLost);
     }
+}
 
-    if (UiFeature != nullptr)
-        UiFeature->ProcessSdlEvent(ctx.Event);
-
+void LevelWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
+{
     if (Router != nullptr)
     {
         // Uniform routing: the UI-capture guard at the head of the chain decides
@@ -975,7 +915,7 @@ void EditorServices::HandlePlatformEvent(PlatformEventContext& ctx)
     }
 }
 
-void EditorServices::BuildAuthoredWorkflows()
+void LevelWorkspace::BuildAuthoredWorkflows()
 {
     UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
     if (ui == nullptr || !ui->IsReady() || Project == nullptr)
@@ -1065,7 +1005,7 @@ void EditorServices::BuildAuthoredWorkflows()
     });
 }
 
-void EditorServices::DrawRadialMenu(const RadialMenuSession& wheel, const IRadialMenuModel& menu)
+void LevelWorkspace::DrawRadialMenu(const RadialMenuSession& wheel, const IRadialMenuModel& menu)
 {
     if (wheel.GetPhase() != RadialMenuPhase::Open)
         return;
@@ -1143,7 +1083,7 @@ void EditorServices::DrawRadialMenu(const RadialMenuSession& wheel, const IRadia
     });
 }
 
-void EditorServices::ProcessFrame()
+void LevelWorkspace::ProcessFrame()
 {
     // Before the engine updates the UI: act on what the document asked for and
     // publish what it should now show, so a click and its answer land in the
@@ -1175,10 +1115,7 @@ void EditorServices::ProcessFrame()
         Inspector->Update();
 
     if (Files)
-    {
         Files->ProcessPending();
-        Files->UpdateTitle();
-    }
 
     if (CookRuntime != nullptr)
         CookRuntime->Update(RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr);
@@ -1186,17 +1123,18 @@ void EditorServices::ProcessFrame()
     // Rebuild the transient viewport overlay (selected-brush dimension labels)
     // before the UI panel draws it this frame, and keep the ortho views aligned
     // to the (possibly gizmo-dragged) grid frame.
-    if (Workspace)
+    if (Workspace && Visible)
     {
         Workspace->UpdateOverlay();
         Workspace->SyncOrthoViewsToGridFrame();
     }
 
-    // A hidden viewport panel is never drawn, so it cannot clear its own stale
-    // on-screen rect; do it here so ResolveAt never routes input to an
-    // invisible view (and the render feature skips its offscreen target).
+    // A hidden viewport panel, or any panel of a workspace in the background,
+    // is never drawn, so it cannot clear its own stale on-screen rect; do it
+    // here so ResolveAt never routes input to an invisible view and the render
+    // feature skips its offscreen target.
     for (ViewportPanel* panel : { PerspectivePanel, OrthoPanel })
-        if (panel != nullptr && !panel->IsVisible())
+        if (panel != nullptr && (!Visible || !panel->IsVisible()))
             panel->ClearViewportRegion();
 
     // One LRU tick per frame, before the UI panels request thumbnails. The
@@ -1229,7 +1167,7 @@ struct GlbExportPayload
 
 
 
-void EditorServices::ExportSelectionGlb()
+void LevelWorkspace::ExportSelectionGlb()
 {
     if (Window == nullptr || Window->GetHandle() == nullptr)
         return;
@@ -1277,7 +1215,7 @@ void EditorServices::ExportSelectionGlb()
         nullptr);
 }
 
-void EditorServices::RegisterModuleComponents(Game* module)
+void LevelWorkspace::RegisterModuleComponents(Game* module)
 {
     if (module == nullptr)
         return;
@@ -1298,7 +1236,7 @@ void EditorServices::RegisterModuleComponents(Game* module)
     SetEditorModuleVocabulary([module](World& world) { module->OnRegisterVocabulary(world); });
 }
 
-void EditorServices::RetractModuleComponents()
+void LevelWorkspace::RetractModuleComponents()
 {
     // The vocabulary installer goes with the serializers: its target is code in
     // the module's image. Documents already built keep the names they were

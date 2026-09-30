@@ -13,7 +13,7 @@
 // early-return in the body safe. Usage:
 //
 //   void XxxPanel::OnDraw() {
-//       ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
+//       ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Standard);
 //       if (!panel.IsOpen()) return;   // End() still fires via the dtor
 //       ... body, may early-return freely ...
 //   }
@@ -27,7 +27,7 @@
 class ScopedPanel
 {
 public:
-    ScopedPanel(std::string_view title, bool* open, PanelStyle style = PanelStyle::Standard,
+    ScopedPanel(std::string_view windowName, bool* open, PanelStyle style = PanelStyle::Standard,
                 ImGuiWindowFlags flags = 0);
     ~ScopedPanel();
 

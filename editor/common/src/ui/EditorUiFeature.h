@@ -4,6 +4,7 @@
 #include "PanelVisibilitySettings.h"
 #include "ThemePreferences.h"
 #include "ThemeTextureCache.h"
+#include "WorkspaceView.h"
 #include "chrome/ChromeBars.h"
 #include "chrome/IconDraw.h"
 
@@ -20,7 +21,12 @@
 union SDL_Event;
 
 class ConsoleRegistry;
+class EditorConsolePanel;
 class Engine;
+class IWorkspace;
+class WorkspaceBar;
+class WorkspaceHost;
+struct WorkspaceKind;
 class SdlWindow;
 class VulkanFrameService;
 class VulkanInstanceService;
@@ -35,6 +41,9 @@ struct ShellIdentity
     // The product's mark, a path to a PNG. Shell branding, not theme art: it
     // is fixed by the application and rides the font atlas with the icons.
     std::string LogoPath;
+    // The window's title while the shell hosts workspaces; the active one's
+    // name and its status follow it.
+    std::string WindowTitle;
 };
 
 // Which themed bar a surface belongs to.
@@ -44,19 +53,9 @@ enum class BarRole
     Toolbar,
 };
 
-// Fraction of its parent split each DockSlot region takes when the default
-// layout is built. Regions without panels are never split, so the fields for
-// slots an application leaves empty are inert.
-struct DockLayoutRatios
-{
-    float Bottom = 0.19f;       // full-width strip, of the whole dockspace height
-    float LeftEdge = 0.05f;    // tool column, of the main row width
-    float Left = 0.18f;         // left column, of the main row width
-    float Right = 0.24f;        // right column, of the width left after the left column
-    float CenterBottom = 0.26f; // strip under the central node, of the center column height
-    float RightBottom = 0.285f; // lower right, of the right column height
-};
-
+// The ImGui shell of one window. Given a WorkspaceHost it draws the active
+// workspace under a tab strip; without one, the single view an application
+// fills through AddPanel and its neighbours.
 class EditorUiFeature : public IRenderFeature
 {
 public:
@@ -106,6 +105,13 @@ public:
     // input (fly camera) the keys belong to the camera, so ImGui must not route
     // them to a focused widget (otherwise WASD fills the console input box).
     void SetKeyboardInputEnabled(bool enabled);
+
+    // Draws the host's workspaces from now on: their panels are adopted as they
+    // open (named, given a console, their remembered visibility restored) and
+    // let go before they close. The host outlives this feature's drawing.
+    void SetWorkspaceHost(WorkspaceHost& host);
+    // Shows or hides the active workspace's console.
+    void ToggleConsole();
 
     void AddPanel(std::unique_ptr<IEditorPanel> panel);
 
@@ -163,7 +169,14 @@ private:
     void BuildShellAtlasIfStale();
     [[nodiscard]] EditorChrome::BarSurface ResolveSurface(EditorUi::BarFinish finish, const std::string& path,
                                                           EditorUi::SurfaceModulation modulation) const;
-    void DrawMainMenuBar();
+    // The view drawn this frame: the host's active workspace, or the single
+    // view without a host. Null when the host has none open.
+    [[nodiscard]] WorkspaceView* ActiveView() const;
+    void AdoptWorkspace(const WorkspaceKind& kind, IWorkspace& workspace);
+    void ReleaseWorkspace(IWorkspace& workspace);
+    void DrawDockHost(WorkspaceView* view);
+    void UpdateWindowTitle(const WorkspaceView* view);
+    void DrawMainMenuBar(WorkspaceView* view);
     void RegisterPointerCommands(ConsoleRegistry& registry);
     void FeedPointerActions();
 
@@ -204,33 +217,24 @@ private:
     std::function<void()> RedoAction;
     std::function<bool()> CanUndoAction;
     std::function<bool()> CanRedoAction;
-
-    std::function<void()> NewAction;
-    std::function<void()> OpenAction;
-    std::function<void()> SaveAction;
-    std::function<void()> SaveAsAction;
     std::function<void()> SaveAllAction;
-    std::function<void()> NewWorldAction;
     ShellIdentity Identity;
-    std::function<std::string()> StatusProvider;
     // The caption's frame snapshot for the window, rewritten every frame the
     // window draws its own frame.
     WindowFrameRegions FrameRegions;
 
-    std::vector<std::unique_ptr<IEditorPanel>> Panels;
-    // Remembers which panels are shown; declared after Panels, which it reads.
+    // The one view an application without a WorkspaceHost fills.
+    WorkspaceView OwnView;
+    WorkspaceHost* Workspaces = nullptr;
+    std::unique_ptr<WorkspaceBar> TabStrip;
+    // Each open workspace's console, which this shell adds to its view.
+    std::vector<std::pair<IWorkspace*, EditorConsolePanel*>> Consoles;
+    std::string LastWindowTitle;
+    // Remembers which panels are shown; declared after the views it reads.
     PanelVisibilitySettings PanelVisibility;
-    std::vector<std::function<void()>> ChromeBars;
-    std::vector<std::function<void()>> Overlays;
-    DockLayoutRatios LayoutRatios;
+    bool VisibilityApplied = false;
     // View > Preferences > Theme: theme selection plus the palette override window.
     ThemePreferences ThemePrefs;
-    // Forces a default-layout rebuild on the next frame (first run / View>Reset).
-    bool LayoutDirty = false;
-    bool PlacementChecked = false; // the no-saved-placement check has run for this session
-    // Front tabs to raise on the frame after a layout rebuild (window titles of
-    // tab-group nodes; SetWindowFocus needs the windows to exist first).
-    std::vector<std::string> PendingTabFocus;
     // Pointer actions queued by the editor.ui.click and editor.ui.pointer
     // commands, so an unattended run can drive or hover a widget before a
     // screenshot. A click is pressed on the named frame and released on the

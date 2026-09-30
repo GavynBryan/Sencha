@@ -47,7 +47,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
         ImGui::TextWrapped("Preview selections are transient. Animation documents open for editing; valid edits reach the running preview at once and the file only when saved.");
         if (ImGui::Button("Refresh asset list")) Workspace.RefreshBrowser();
@@ -116,7 +116,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
         if (!Viewport)
         {
@@ -311,7 +311,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
         if (ImGui::Button(Session.IsPlaying() ? "Pause" : "Play"))
         {
@@ -357,7 +357,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
         if (!Workspace.Audition.Error.empty())
         {

@@ -101,7 +101,7 @@ MovementResolvePanel::MovementResolvePanel(DataDocumentSet& documents,
 
 void MovementResolvePanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetWindowName(), &Visible);
     if (!panel.IsOpen())
         return;
 

@@ -43,7 +43,7 @@ ElementPanel::ElementPanel(UiPreviewSession& session, PreviewViewState& view)
 
 void ElementPanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
     if (!View.Selected.IsValid())

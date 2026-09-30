@@ -34,7 +34,7 @@ OutlinePanel::OutlinePanel(UiPreviewSession& session, PreviewViewState& view)
 
 void OutlinePanel::OnDraw()
 {
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
     if (!Session.IsOpen())

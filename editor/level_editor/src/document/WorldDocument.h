@@ -49,7 +49,7 @@ class WorldDocument
 {
 public:
     // Where every document this world owns resolves asset:// scene sources.
-    // EditorServices supplies the project's roots; cook drivers supply their
+    // The level workspace supplies the project's roots; cook drivers supply their
     // assets root. Applied to the documents that already exist and to every
     // one created afterwards.
     void SetContentRoots(std::vector<std::filesystem::path> roots);
