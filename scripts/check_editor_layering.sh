@@ -6,12 +6,12 @@
 #
 # The editor is a family of applications over a shared shell:
 #   editor/common/src  the shared editor shell (editor_common)
-#   editor/kyusu/src   the level editor application
+#   editor/level_editor/src   the level editor
 #
-# Three rules:
+# Rules:
 #
 #   A. Core abstractions (common commands/ selection/ tools/ interaction/ and
-#      kyusu brush/) must not depend on the authoring/domain subsystems
+#      level editor brush/) must not depend on the authoring/domain subsystems
 #      (document/ viewport/ render/ ui/ editmodes/ meshedit/ workspace/). They
 #      are the editor's reusable leaves; domain code depends on them, not the
 #      reverse. The shared pointer-event header (input/InputEvent.h) and the
@@ -38,7 +38,7 @@ set -uo pipefail
 
 ROOT="${1:-.}"
 COMMON="$ROOT/editor/common/src"
-KYUSU="$ROOT/editor/kyusu/src"
+LEVEL="$ROOT/editor/level_editor/src"
 status=0
 
 # Greps for a pattern but drops comment-only lines, so prose mentioning a
@@ -61,7 +61,7 @@ check() {
 # optional path prefix makes this catch relative includes ("../document/...").
 check "core abstraction depends on a domain subsystem (only input/InputEvent.h may cross)" \
       '#include[[:space:]]*["<]([^">]*/)?(document|viewport|render|ui|editmodes|meshedit|workspace)/' \
-      "$COMMON/commands" "$COMMON/selection" "$COMMON/tools" "$COMMON/interaction" "$KYUSU/brush"
+      "$COMMON/commands" "$COMMON/selection" "$COMMON/tools" "$COMMON/interaction" "$LEVEL/brush"
 
 # B. The shared shell must not include a subsystem that exists only inside an
 # application tree. Quoted includes only: angle includes name engine headers
@@ -78,12 +78,12 @@ check "editor_common depends on an application-only subsystem" \
 # which contains "workspace/" by construction), so a real violation in content
 # is not masked.
 ws_panel_mechanisms='workspace/(PendingBridgeEdit|PendingElementEdit|SelectionActions)\.h'
-ws_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?workspace/' "$COMMON" "$KYUSU" 2>/dev/null \
-                | grep -vE '^'"$KYUSU"'/(app|workspace)/')"
+ws_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?workspace/' "$COMMON" "$LEVEL" 2>/dev/null \
+                | grep -vE '^'"$LEVEL"'/(app|workspace)/')"
 for file in $ws_includers; do
     # A ui/ file is clean only when EVERY workspace include it has is an allowed
     # mechanism; one stray aggregator include still fails.
-    if [ "${file#"$KYUSU"/ui/}" != "$file" ] \
+    if [ "${file#"$LEVEL"/ui/}" != "$file" ] \
        && ! grep -E '#include[[:space:]]*["<]([^">]*/)?workspace/' "$file" \
             | grep -qvE "$ws_panel_mechanisms"; then
         continue
@@ -97,7 +97,7 @@ done
 # D. Chrome internals stay inside common/ui/. Filter on the including FILE's
 # path, as in rule C.
 chrome_internals='ui/chrome/(ChromeGeometry|ChromePaint|ChromeFrame|ChromeChassis|ChromeOrnaments|IconDraw)\.h'
-chrome_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?'"$chrome_internals" "$COMMON" "$KYUSU" 2>/dev/null \
+chrome_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?'"$chrome_internals" "$COMMON" "$LEVEL" 2>/dev/null \
                     | grep -vE '^'"$COMMON"'/ui/')"
 if [ -n "$chrome_includers" ]; then
     echo "VIOLATION: a panel or subsystem draws chrome internals (use ScopedPanel, ChromeHeader, ChromeSelection, ChromeControls, ChromeDecor, ChromeBars)"

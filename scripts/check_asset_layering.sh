@@ -57,7 +57,7 @@ fi
 # means one kind got special treatment, which is the shape both of these were
 # rewritten to remove.
 FIELD_IO="$ROOT/engine/src/world/serialization/SceneAssetFieldIo.cpp
-$ROOT/editor/kyusu/src/document/AssetFieldIo.cpp"
+$ROOT/editor/level_editor/src/document/AssetFieldIo.cpp"
 while read -r unit; do
     [ -f "$unit" ] || continue
     named="$(grep -nE '#include[[:space:]]*[\"<]([^\">]*/)?([A-Za-z]*Handle|[A-Za-z]*Cache)\.h' \

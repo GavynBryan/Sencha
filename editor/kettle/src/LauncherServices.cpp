@@ -68,11 +68,11 @@ void LauncherServices::BuildUi()
     auto browserPanel = std::make_unique<ProjectBrowserPanel>(
         Catalog,
         ProjectBrowserPanel::Actions{
-            .OpenLevelEditor = [this](const std::string& path) { LaunchEditor("kyusu", path); },
-            .OpenMaterialEditor = [this](const std::string& path) { LaunchEditor("shudei", path); },
-            .OpenDataEditor = [this](const std::string& path) { LaunchEditor("data_editor", path); },
-            .OpenUiPreviewer = [this](const std::string& path) { LaunchEditor("shoji", path); },
-            .OpenAnimationEditor = [this](const std::string& path) { LaunchEditor("animation_editor", path); },
+            .OpenLevelEditor = [this](const std::string& path) { LaunchEditor("kyusu", "kyusu", path); },
+            .OpenMaterialEditor = [this](const std::string& path) { LaunchEditor("material_editor", "shudei", path); },
+            .OpenDataEditor = [this](const std::string& path) { LaunchEditor("data_editor", "data_editor", path); },
+            .OpenUiPreviewer = [this](const std::string& path) { LaunchEditor("ui_preview", "shoji", path); },
+            .OpenAnimationEditor = [this](const std::string& path) { LaunchEditor("animation_editor", "animation_editor", path); },
             .BrowseForProject = [this]() { BrowseForProject(); },
             .CreateProject = [this](const std::string& dir, const std::string& name,
                                     const std::string& templateName)
@@ -169,7 +169,7 @@ std::vector<std::string> LauncherServices::ListTemplates()
     return names;
 }
 
-std::string LauncherServices::ResolveEditorBinary(const char* name)
+std::string LauncherServices::ResolveEditorBinary(const char* sourceDir, const char* name)
 {
     const char* base = SDL_GetBasePath();
     if (base == nullptr)
@@ -188,17 +188,17 @@ std::string LauncherServices::ResolveEditorBinary(const char* name)
     if (std::filesystem::exists(candidate, ec))
         return candidate.string();
 
-    // Build tree: build/editor/kettle/ next to build/editor/<name>/<name>.
-    candidate = baseDir.parent_path() / name / binaryName;
+    // Build tree: build/editor/kettle/ next to build/editor/<source dir>/<name>.
+    candidate = baseDir.parent_path() / sourceDir / binaryName;
     if (std::filesystem::exists(candidate, ec))
         return candidate.string();
 
     return (baseDir / binaryName).string();
 }
 
-void LauncherServices::LaunchEditor(const char* binaryName, const std::string& projectPath)
+void LauncherServices::LaunchEditor(const char* sourceDir, const char* binaryName, const std::string& projectPath)
 {
-    const std::string binary = ResolveEditorBinary(binaryName);
+    const std::string binary = ResolveEditorBinary(sourceDir, binaryName);
     const std::string absolute =
         std::filesystem::absolute(std::filesystem::path(projectPath)).lexically_normal().string();
 

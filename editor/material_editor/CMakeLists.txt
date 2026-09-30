@@ -1,8 +1,8 @@
-file(GLOB_RECURSE SHUDEI_SOURCES CONFIGURE_DEPENDS
+file(GLOB_RECURSE MATERIAL_EDITOR_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
-file(GLOB_RECURSE SHUDEI_HEADERS CONFIGURE_DEPENDS
+file(GLOB_RECURSE MATERIAL_EDITOR_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
 )
 
@@ -10,13 +10,13 @@ file(GLOB_RECURSE SHUDEI_HEADERS CONFIGURE_DEPENDS
 # generated headers land in ${CMAKE_CURRENT_BINARY_DIR}/generated/shaders/.
 # Mesh/material rendering itself goes through the engine's MeshForwardPass;
 # these cover only the editor-side backdrop.
-set(SHUDEI_SHADERS
+set(MATERIAL_EDITOR_SHADERS
     "preview_backdrop.vert.glsl|vert|kPreviewBackdropVertSpv"
     "preview_backdrop.frag.glsl|frag|kPreviewBackdropFragSpv"
 )
 
-set(SHUDEI_GENERATED_HEADERS "")
-foreach(_entry IN LISTS SHUDEI_SHADERS)
+set(MATERIAL_EDITOR_GENERATED_HEADERS "")
+foreach(_entry IN LISTS MATERIAL_EDITOR_SHADERS)
     string(REPLACE "|" ";" _entry "${_entry}")
     list(GET _entry 0 _file)
     list(GET _entry 1 _stage)
@@ -31,13 +31,13 @@ foreach(_entry IN LISTS SHUDEI_SHADERS)
         VAR_NAME   "${_var}"
         OUT_HEADER _header
     )
-    list(APPEND SHUDEI_GENERATED_HEADERS "${_header}")
+    list(APPEND MATERIAL_EDITOR_GENERATED_HEADERS "${_header}")
 endforeach()
 
 add_executable(shudei
-    ${SHUDEI_SOURCES}
-    ${SHUDEI_HEADERS}
-    ${SHUDEI_GENERATED_HEADERS}
+    ${MATERIAL_EDITOR_SOURCES}
+    ${MATERIAL_EDITOR_HEADERS}
+    ${MATERIAL_EDITOR_GENERATED_HEADERS}
 )
 
 target_link_libraries(shudei PRIVATE editor_common)

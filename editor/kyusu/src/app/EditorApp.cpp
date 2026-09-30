@@ -1,6 +1,6 @@
 #include "EditorApp.h"
 
-#include "EditorServices.h"
+#include "app/EditorServices.h"
 
 #include <app/Engine.h>
 #include <graphics/vulkan/GraphicsServices.h>

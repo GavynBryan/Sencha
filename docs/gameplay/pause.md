@@ -295,7 +295,7 @@ a developer panel wearing a player's name. Four rows ship:
 
 **Each shell document has a preview model beside it** -- `pause.preview.json`,
 `options.preview.json` -- the declaration and sample values the host would
-publish, so Shoji (`editor/shoji/`) shows the page as the game does without the
+publish, so Shoji (`editor/ui_preview/`) shows the page as the game does without the
 game running, and `UiPreviewModelTests` checks the sidecar against
 `OptionsPage::Describe` so preview and host cannot drift. A binding the document
 uses and the sidecar lacks shows up in Shoji as a `binding missing` diagnostic

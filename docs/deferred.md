@@ -76,7 +76,7 @@ do the work and delete the entry.
 - **What:** Shudei's `MaterialTabSet` and Kyusu's document handling keep their
   own open, save and undo instead of the shared document layer the Data Editor
   and the animation editor use.
-- **Where:** `editor/shudei/src/MaterialTabSet.*`, `editor/kyusu/src/document/`.
+- **Where:** `editor/material_editor/src/MaterialTabSet.*`, `editor/level_editor/src/document/`.
 - **Trigger:** the editor consolidation ticket, which gives the one application
   one undo journal and one save-all.
 

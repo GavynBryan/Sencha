@@ -16,7 +16,7 @@ set -uo pipefail
 
 ROOT="${1:-.}"
 COMMON="$ROOT/editor/common/src"
-KYUSU="$ROOT/editor/kyusu/src"
+LEVEL="$ROOT/editor/level_editor/src"
 status=0
 
 # Greps for a pattern but drops lines that are purely comments, so prose that
@@ -38,24 +38,24 @@ check() {
 check "UI/viewport/render/editmodes include BrushOps" \
       '#include[[:space:]]*["<].*BrushOps' \
       "$COMMON/ui" "$COMMON/render" \
-      "$KYUSU/ui" "$KYUSU/viewport" "$KYUSU/render" "$KYUSU/editmodes"
+      "$LEVEL/ui" "$LEVEL/viewport" "$LEVEL/render" "$LEVEL/editmodes"
 
 check "editor/meshedit depends on scene/UI/render/viewport" \
       'EditorScene|EditorDocument|imgui|Renderer|EditorViewport' \
-      "$KYUSU/meshedit"
+      "$LEVEL/meshedit"
 
 check "retired BrushGeometry face-projection API is referenced" \
       'EnumerateFaces|BrushFaceDescriptor|BrushFaceGeometry' \
-      "$COMMON" "$KYUSU"
+      "$COMMON" "$LEVEL"
 
 check "editor/editmodes depends on the scene (must go through ManipulationSink)" \
       'EditorScene|EditorDocument' \
-      "$KYUSU/editmodes"
+      "$LEVEL/editmodes"
 
 # The ManipulationSink must only be implemented under editor/workspace (the lone
 # scene-mutation seam). An implementor anywhere else breaks the layering.
-sink_impls="$(grep -rlE 'public[[:space:]]+ManipulationSink' "$COMMON" "$KYUSU" 2>/dev/null \
-              | grep -vE '^'"$KYUSU"'/workspace/')"
+sink_impls="$(grep -rlE 'public[[:space:]]+ManipulationSink' "$COMMON" "$LEVEL" 2>/dev/null \
+              | grep -vE '^'"$LEVEL"'/workspace/')"
 if [ -n "$sink_impls" ]; then
     echo "VIOLATION: ManipulationSink implemented outside editor/workspace"
     echo "$sink_impls"

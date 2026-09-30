@@ -199,7 +199,7 @@ to 1.0, so comparison samples read fully lit.
 
 ## Editor reuse
 
-`editor/kyusu/src/render/EditorRenderFeature` is an `IRenderFeature` in the
+`editor/level_editor/src/render/EditorRenderFeature` is an `IRenderFeature` in the
 `Offscreen` phase that owns its own `LightBindings`, `ShadowDepthPass`,
 `ShadowResidency`, `ShadowCasterDiff`, and `MeshForwardPass`. It renders each
 viewport into an offscreen target that ImGui then composites.

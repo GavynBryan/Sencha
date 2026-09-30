@@ -12,10 +12,11 @@ The editor tooling is a family of applications over one shared shell library:
 | Tree | Target | What it is |
 | --- | --- | --- |
 | `editor/common/` | `editor_common` (static lib) | The shared editor shell: ImGui UI feature + theme/skin, generic input, commands/selection/tools/interaction abstractions, offscreen viewport targets, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
-| `editor/kyusu/` | `kyusu_authoring` (static lib) + `kyusu` | The level editor ("Kyusu - Level Editor"). Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `kyusu` executable is the shell over it (entry point, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
-| `editor/shudei/` | `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
+| `editor/level_editor/` | `level_authoring` + `level_editor` (static libs) | The level editor. Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `level_editor` library is the shell over it (composition root, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
+| `editor/kyusu/` | `kyusu` | The Kyusu executable: the entry point and `Game` adapter that hosts the level editor. |
+| `editor/material_editor/` | `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
 | `editor/kettle/` | `kettle` | The project launcher ("Kettle - Project Launcher"): recent projects, create project, project settings, launches the editors. |
-| `editor/shoji/` | `shoji_authoring` (static lib) + `shoji` | The authored-UI previewer ("Shoji - UI Previewer"): renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. Same split as Kyusu: the authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the executable is the shell. Built to fold into Kyusu: every panel takes a `UiPreviewSession&`, and consolidation is constructing one in Kyusu's composition root and adding these panels under a workspace tab. |
+| `editor/ui_preview/` | `shoji_authoring` (static lib) + `shoji` | The authored-UI previewer ("Shoji - UI Previewer"): renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. Same split as Kyusu: the authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the executable is the shell. Built to fold into Kyusu: every panel takes a `UiPreviewSession&`, and consolidation is constructing one in Kyusu's composition root and adding these panels under a workspace tab. |
 
 Product names (Kyusu, Shudei, Kettle, Shoji) exist only on executables and
 window titles; internal types stay mechanically named.
@@ -69,7 +70,7 @@ Read the level editor bottom to top. Each layer depends only on layers below it.
 
 1. Engine (external): window, Vulkan, console, logging, ECS, assets.
 2. Core abstractions: `common/commands/`, `common/selection/`, `common/tools/`,
-   `common/interaction/`, `kyusu/brush/`. Self-contained, no editor-domain
+   `common/interaction/`, `level_editor/brush/`. Self-contained, no editor-domain
    dependencies. `brush/` is the half-edge geometry kernel and a pure leaf
    (engine-only).
 3. Authoring subsystems: `input/`, `editmodes/`, `meshedit/`, `viewport/`,
@@ -103,7 +104,7 @@ Shared shell (`editor/common/src/`):
 | `viewport/` | `ViewportId`. | -- |
 | `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`). | -- |
 
-Level editor (`editor/kyusu/src/`):
+Level editor (`editor/level_editor/src/`):
 
 | Directory | Owns | Extension seam |
 | --- | --- | --- |
@@ -119,7 +120,7 @@ Level editor (`editor/kyusu/src/`):
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
-Material editor (`editor/shudei/src/`, flat): `MaterialEditorApp` +
+Material editor (`editor/material_editor/src/`, flat): `MaterialEditorApp` +
 `MaterialEditorServices`, `MaterialEditSession` (open/edit/save/duplicate,
 headless-tested), `EditMaterialCommand`, `PreviewPrimitives` (procedural
 sphere/cube/plane), `MaterialPreviewRenderFeature` (MeshForwardPass into its own
@@ -176,11 +177,11 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
 
 ## Where do I add ...
 
-- A panel: implement `IEditorPanel` (kyusu panels in `kyusu/src/ui/`), register
+- A panel: implement `IEditorPanel` (level editor panels in `level_editor/src/ui/`), register
   it in the owning services' `BuildUi`. It declares a stable settings id and
   whether its shown/hidden state is remembered across launches
   (`GetPersistence`); the shell keeps that in the ImGui layout file.
-- A tool: implement `ITool` (built-ins live in `kyusu/src/document/tools/`) and
+- A tool: implement `ITool` (built-ins live in `level_editor/src/document/tools/`) and
   register it in `WorkspaceInteractionRuntime::Rebuild`. That is the whole cost:
   a tool declares its own properties UI (`DrawProperties`), toolbar chrome
   (`DrawToolbarControls`), activation key (`GetShortcut`), and how a save should
@@ -213,7 +214,7 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   (`gizmo.wheel`, `TransformModeMenuModel` over the `TransformModeItems`
   table the toolbar strip reads too). An open wheel is modal, which is what
   keeps the other closed.
-- A viewport visual: a render feature/pass in `kyusu/src/render/`, added in
+- A viewport visual: a render feature/pass in `level_editor/src/render/`, added in
   `EditorServices::BuildViewportRendering`.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in
   `BuildViewportRendering`).

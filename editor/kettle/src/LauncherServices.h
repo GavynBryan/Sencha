@@ -41,7 +41,7 @@ private:
     void ProcessFrame();
 
     // Panel actions.
-    void LaunchEditor(const char* binaryName, const std::string& projectPath);
+    void LaunchEditor(const char* sourceDir, const char* binaryName, const std::string& projectPath);
     void BrowseForProject();
     // `templateName` names a directory under the SDK's templates, or is empty
     // for a bare descriptor.
@@ -53,7 +53,7 @@ private:
 
     // Sibling editor binary: beside this executable in an installed SDK,
     // ../<name>/<name> in the build tree.
-    [[nodiscard]] static std::string ResolveEditorBinary(const char* name);
+    [[nodiscard]] static std::string ResolveEditorBinary(const char* sourceDir, const char* name);
     // Where the starter templates are: share/sencha/templates beside the
     // installed binaries, or the repository's templates/ when running in-tree.
     // Empty when neither is found.

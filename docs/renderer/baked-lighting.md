@@ -10,7 +10,7 @@ them, all sampled by the same forward fragment shader.
 | Irradiance | per-zone L1 SH probe volumes | `R16G16B16A16_SFLOAT` 3D, three per volume | set 2 binding 2, by frame-UBO header | replaces hemispheric ambient where a volume covers |
 
 The bake itself lives in the editor and the cook layer
-(`engine/src/assets/cook`, `editor/kyusu/src/document`) and is out of scope
+(`engine/src/assets/cook`, `editor/level_editor/src/document`) and is out of scope
 here. This document covers what the renderer consumes.
 
 ## Baked static direct
