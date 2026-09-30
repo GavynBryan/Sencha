@@ -62,7 +62,7 @@ WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& ve
             return {};
         const auto one = std::ranges::find_if(selected, [](const SelectableRef& ref) { return ref.IsEntity(); });
         facet.Title = objects == 1
-            ? EntityLabel(std::as_const(workspace.World.FocusDocument().GetScene().GetRegistry()).Components, one->Entity)
+            ? EntityLabel(workspace.World.FocusDocument(), one->Entity)
             : Counted(objects, "object", "objects");
         if (objects == 1)
             facet.Details.push_back({ .Heading = {}, .Source = &components });

@@ -13,7 +13,6 @@ void ViewportTargetCache::Setup(const RendererServices& services)
 {
     Services = services;
     Store.Setup(services);
-    Presenter.Setup(services.Samplers->GetNearestClamp());
 }
 
 void ViewportTargetCache::Teardown()
@@ -26,15 +25,11 @@ void ViewportTargetCache::Teardown()
     Entries.clear();
     Displays = {};
     Store.Teardown();
-    Presenter.Teardown();
 }
 
-void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex, GpuFrameRetirement retirement)
+void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex)
 {
     Store.BeginFrame(frameInFlightIndex);
-    // The ImGui descriptor sets the presenter hands out outlive the target
-    // they name.
-    Presenter.BeginFrame(retirement);
     Displays.Advance();
 }
 
@@ -83,7 +78,6 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
 
 void ViewportTargetCache::Release(Entry& entry)
 {
-    Presenter.Release(entry.Scene);
     Store.Destroy(entry.Scene);
     for (RenderTargetId& bloom : entry.Bloom)
         Store.Destroy(bloom);
@@ -151,10 +145,4 @@ void ViewportTargetCache::Show(ViewportId id, VkExtent2D extent)
     Store.SetExtent(entry.Scene, extent);
     for (RenderTargetId bloom : entry.Bloom)
         Store.SetExtent(bloom, extent);
-}
-
-ImTextureID ViewportTargetCache::Display(ViewportId id, VkExtent2D extent)
-{
-    Show(id, extent);
-    return Presenter.Present(Store, Find(id)->Scene);
 }

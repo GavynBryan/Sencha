@@ -4,8 +4,8 @@
 
 #include <string>
 
-class World;
+class EditorDocument;
 
-// What an entity is called where a person reads it: its authored name, or its
-// handle when it has none.
-[[nodiscard]] std::string EntityLabel(const World& world, EntityId entity);
+// What an entity is called where a person reads it: its authored name, the
+// source a nameless placement came from, or its handle.
+[[nodiscard]] std::string EntityLabel(const EditorDocument& document, EntityId entity);

@@ -1,6 +1,5 @@
 #include "ViewsPanel.h"
 
-#include "SceneBrowserPanel.h"
 #include "ui/EditorUiStyle.h"
 #include "ui/ImGuiVec.h"
 #include "ui/WorkspaceView.h"
@@ -48,19 +47,5 @@ void ViewsPanel::OnDraw()
 
     ImGui::EndChild();
 
-    // The region child is the last item: a scene dropped anywhere on it lands
-    // in the view under the pointer.
-    if (SceneDrop && ImGui::BeginDragDropTarget())
-    {
-        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(SceneBrowserPanel::kDragPayloadType))
-        {
-            const Vec2d at = ToVec2d(ImGui::GetMousePos());
-            if (const ViewportId under = Layout.ResolveAt(at); under.IsValid())
-                SceneDrop(under, at,
-                          std::string_view(static_cast<const char*>(payload->Data),
-                                           static_cast<std::size_t>(payload->DataSize) - 1));
-        }
-        ImGui::EndDragDropTarget();
-    }
     ImGui::End();
 }

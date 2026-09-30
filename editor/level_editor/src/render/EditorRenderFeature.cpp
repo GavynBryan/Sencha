@@ -207,7 +207,7 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
     BloomParamsCache.Intensity = ReadCVarFloat(Console, "editor.bloom.intensity", 1.0f);
     BloomParamsCache.Radius    = ReadCVarFloat(Console, "editor.bloom.radius", 2.0f);
 
-    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
+    Targets.BeginFrame(frame.FrameInFlightIndex);
     if (Thumbnails)
         Thumbnails->BeginFrame();
     Highlight.BeginFrame();
@@ -350,6 +350,8 @@ void EditorRenderFeature::PublishViewImages()
 {
     if (Services.UiTextures == nullptr)
         return;
+    if (Thumbnails)
+        Thumbnails->PublishImages(*Services.UiTextures);
     for (const ViewImage& image : ViewImages)
     {
         const auto slot = std::ranges::find_if(ViewSlots, [&](const ViewSlot& s) {

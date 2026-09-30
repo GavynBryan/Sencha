@@ -37,16 +37,10 @@ public:
     // the last drawn frame: input there belongs to the scene.
     [[nodiscard]] bool IsViewRegionHovered() const { return RegionHovered; }
 
-    // A scene source dropped from the browser: the view it landed in, the
-    // drop position in window pixels, and the asset:// path it carried.
-    using SceneDropHandler = std::function<void(ViewportId, Vec2d, std::string_view)>;
-    void SetSceneDropHandler(SceneDropHandler handler) { SceneDrop = std::move(handler); }
-
 private:
 
     ViewportLayout& Layout;
     WorkspaceView& View;
     Rect2d Content{};
     bool RegionHovered = false;
-    SceneDropHandler SceneDrop;
 };

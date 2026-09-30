@@ -4,6 +4,7 @@
 
 #include "CommandChoice.h"
 #include "properties/PropertySource.h"
+#include "resources/ActiveResources.h"
 #include "tools/ToolDraft.h"
 #include "icons/IconId.h"
 #include "input/InputEvent.h"
@@ -84,6 +85,10 @@ struct ITool
     // One line on what to do next, or why the draft cannot apply; empty for
     // nothing to say.
     [[nodiscard]] virtual std::string Hint(const ToolContext& /*ctx*/) const { return {}; }
+    // What the tool consumes, the primary role first: a shell shows the
+    // primary one where what is held belongs. Empty when it consumes nothing
+    // of its own.
+    [[nodiscard]] virtual std::span<const ResourceRole> Resources() const { return {}; }
 
     // A sub-mode the tool exposes as a choice: what a control shows for it.
     // The tool maps an index back to whatever the choice means, so a surface

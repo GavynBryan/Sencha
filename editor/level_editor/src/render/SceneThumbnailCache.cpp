@@ -1,5 +1,8 @@
 #include "SceneThumbnailCache.h"
 
+#include <graphics/vulkan/UiTextureResidency.h>
+#include <ui/UiService.h>
+
 #include "BrushBakeGpu.h"
 #include "SceneRenderQueueBuilder.h"
 
@@ -90,16 +93,39 @@ void SceneThumbnailCache::BeginFrame()
     ++FrameClock;
 }
 
-ImTextureID SceneThumbnailCache::Thumbnail(const std::string& assetPath)
+std::string SceneThumbnailCache::ImageName(const std::string& assetPath)
 {
+    if (Ui == nullptr)
+        return {};
     Entry& entry = Entries[assetPath];
     if (!entry.Target.IsValid())
     {
         entry.Target = Studio.AllocateTarget();
         entry.RemainingPasses = ThumbnailStudio::PassesPerTarget();
     }
+    std::string name = "scene:" + assetPath;
+    // Registered for as long as the process runs: the document engine keeps a
+    // texture per source, so a name re-registered under a new id would leave
+    // it drawing the old one.
+    if (entry.Image == kInvalidUiHostImage)
+        entry.Image = Ui->SetHostImage(name, RenderExtent{ 1, 1 });
     entry.LastUsedFrame = FrameClock;
-    return Studio.Display(entry.Target);
+    Studio.Show(entry.Target);
+    return name;
+}
+
+void SceneThumbnailCache::PublishImages(UiTextureResidency& textures)
+{
+    for (const UiHostImageId image : Gone)
+        textures.WithdrawHostImage(image);
+    Gone.clear();
+    for (auto& [path, entry] : Entries)
+    {
+        if (entry.Image == kInvalidUiHostImage || entry.RemainingPasses > 0 || entry.Failed)
+            continue;
+        if (const std::optional<std::uint32_t> image = Studio.ReadableImage(entry.Target))
+            textures.PublishHostImage(entry.Image, BindlessImageIndex{ *image });
+    }
 }
 
 void SceneThumbnailCache::AppendLiveViewports(std::vector<ViewportId>& live) const
@@ -202,11 +228,16 @@ void SceneThumbnailCache::TrimToBudget(std::size_t budget)
                 oldest = it;
         if (oldest->second.LastUsedFrame == FrameClock)
             break; // everything left was drawn this frame
+        if (oldest->second.Image != kInvalidUiHostImage)
+            Gone.push_back(oldest->second.Image);
         Entries.erase(oldest);
     }
 }
 
 void SceneThumbnailCache::Clear()
 {
+    for (const auto& [path, entry] : Entries)
+        if (entry.Image != kInvalidUiHostImage)
+            Gone.push_back(entry.Image);
     Entries.clear();
 }

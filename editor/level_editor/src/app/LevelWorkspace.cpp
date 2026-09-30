@@ -34,7 +34,6 @@
 #include "documents/DocumentSourceSet.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "render/SceneThumbnailCache.h"
-#include "ui/SceneBrowserPanel.h"
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
@@ -44,6 +43,8 @@
 #include "workspace/ElementVerbs.h"
 #include "workspace/FaceUvSource.h"
 #include "workspace/MaterialExplorer.h"
+#include "workspace/PrefabExplorer.h"
+#include "scene_source/SceneSourcePaths.h"
 #include "workspace/SelectionSummary.h"
 #include "workspace/ManipulationActions.h"
 #include "tools/ToolParameterSource.h"
@@ -287,6 +288,22 @@ void LevelWorkspace::BuildInput()
                 { .Id = "explorer.materials", .Label = "Materials", .Category = "Explore",
                   .Icon = IconId::Folder, .DefaultChords = { { SDLK_M, {} } } },
                 {});
+    OfferAction(Catalog, ActionHandlers,
+                { .Id = "explorer.prefabs", .Label = "Prefabs", .Category = "Explore",
+                  .Icon = IconId::Box, .DefaultChords = { { SDLK_P, { .Shift = true } } } },
+                {});
+    offer("prefabs.rescan", "Rescan Prefabs", "Explore", {}, IconId::Refresh, [this] {
+        if (PrefabsExplorer == nullptr)
+            return;
+        std::vector<std::filesystem::path> roots;
+        if (Project)
+            for (const std::string& root : Project->ContentRoots)
+                roots.emplace_back(root);
+        PrefabsExplorer->Rescan(roots);
+        // A saved scene may have changed: its old picture is stale.
+        if (SceneThumbnailCache* cache = RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr)
+            cache->Clear();
+    });
     offer("materials.rescan", "Rescan Materials", "Material", {}, IconId::Refresh, [this] {
         if (Materials == nullptr)
             return;
@@ -295,7 +312,7 @@ void LevelWorkspace::BuildInput()
         if (Thumbnails != nullptr)
             Thumbnails->Clear();
     });
-    OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [] { return AssetType::Material; });
+    OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [this] { return HeldType(); });
 
     // How the views share the content area, and which one a single view shows.
     struct ArrangementRow
@@ -628,40 +645,7 @@ void LevelWorkspace::BuildUi()
     // anyway; dereferencing would just make it a crash instead of a message.
     if (RenderFeature != nullptr)
     {
-        // A scene dropped from the browser lands where the cursor points:
-        // the nearest brush surface, or the working grid where the ray misses
-        // everything. One undoable command, the placement's root selected.
-        const auto placeDroppedScene =
-            [this](ViewportId viewportId, Vec2d position, std::string_view source)
-        {
-            const EditorViewport* viewport = Workspace->Layout.Find(viewportId);
-            if (viewport == nullptr || Commands == nullptr)
-                return;
-            EditorDocument& document = Workspace->World.FocusDocument();
-            Vec3d point{};
-            if (const std::optional<SurfaceHit> hit = Workspace->Picking.PickSurface(
-                    *viewport, position, document.GetScene()))
-            {
-                point = hit->Point;
-            }
-            else if (const std::optional<Vec3d> onGrid =
-                         Workspace->Picking.ProjectPointToGrid(*viewport, position,
-                                                               Workspace->Grid))
-            {
-                point = *onGrid;
-            }
-            else
-            {
-                return;
-            }
-            Transform3f placement = Transform3f::Identity();
-            placement.Position = point;
-            Commands->Execute(std::make_unique<PlaceSceneInstanceCommand>(
-                std::string(source), placement, document, Workspace->Selection));
-        };
-
         auto views = std::make_unique<ViewsPanel>(Workspace->Layout, Surface);
-        views->SetSceneDropHandler(placeDroppedScene);
         Views = views.get();
         Surface.AddPanel(std::move(views));
         if (UiService* ui = EnginePtr->TryUi(); ui != nullptr && ui->IsReady())
@@ -689,24 +673,17 @@ void LevelWorkspace::BuildUi()
         if (Project)
             for (const std::string& root : Project->ContentRoots)
                 sceneRoots.emplace_back(root);
-        // The thumbnail cache exists only after the render feature's Setup;
-        // the accessor resolves lazily and hands the roots over exactly once.
-        std::vector<std::filesystem::path> thumbnailRoots = sceneRoots;
-        auto thumbnails = [this, roots = std::move(thumbnailRoots),
-                           handed = false]() mutable -> SceneThumbnailCache*
+        if (SceneThumbnailCache* cache = RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr)
         {
-            SceneThumbnailCache* cache =
-                RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr;
-            if (cache != nullptr && !handed)
-            {
-                cache->SetContentRoots(roots);
-                handed = true;
-            }
-            return cache;
-        };
-        Surface.AddPanel(std::make_unique<SceneBrowserPanel>(
-            Workspace->World, Workspace->Selection, *Commands,
-            std::move(sceneRoots), std::move(thumbnails)));
+            UiService* ui = engine.TryUi();
+            cache->SetContentRoots(sceneRoots);
+            cache->SetUi(ui != nullptr && ui->IsReady() ? ui : nullptr);
+        }
+        PrefabsExplorer = std::make_unique<PrefabExplorer>(*Workspace, [this](const std::string& path) {
+            SceneThumbnailCache* cache = RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr;
+            return cache != nullptr ? cache->ImageName(path) : std::string{};
+        });
+        PrefabsExplorer->Rescan(sceneRoots);
     }
     const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
         return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
@@ -1236,13 +1213,15 @@ WorkspaceSelectionFacet LevelWorkspace::Selection()
 
 std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const
 {
-    return { MaterialExplorer::Info() };
+    return { MaterialExplorer::Info(), PrefabExplorer::Info() };
 }
 
 ExplorerPage LevelWorkspace::Explore(const ExplorerQuery& query)
 {
     if (query.Explorer == MaterialExplorer::kId && MaterialsExplorer != nullptr)
         return MaterialsExplorer->Explore(query);
+    if (query.Explorer == PrefabExplorer::kId && PrefabsExplorer != nullptr)
+        return PrefabsExplorer->Explore(query);
     return {};
 }
 
@@ -1250,21 +1229,44 @@ void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_vie
 {
     if (explorer == MaterialExplorer::kId && MaterialsExplorer != nullptr)
         MaterialsExplorer->Choose(key, choice);
+    else if (explorer == PrefabExplorer::kId && PrefabsExplorer != nullptr)
+        PrefabsExplorer->Choose(key, choice);
+}
+
+AssetType LevelWorkspace::HeldType() const
+{
+    // The tool in hand says what it consumes; without a say of its own, what
+    // the Level holds is the material its face verbs apply.
+    const ToolRegistry* tools = Workspace->Interaction.Tools.get();
+    const ITool* tool = tools != nullptr ? tools->GetActiveTool() : nullptr;
+    if (tool != nullptr)
+        for (const ResourceRole& role : tool->Resources())
+            if (role.Primary)
+                return role.Type;
+    return AssetType::Material;
 }
 
 std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()
 {
-    const auto held = [this](const AssetRef& ref) -> HeldResource {
+    const AssetType type = HeldType();
+    const bool prefab = type == AssetType::Scene;
+    SceneThumbnailCache* scenes = RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr;
+    const auto held = [&](const AssetRef& ref) -> HeldResource {
         if (!ref.IsValid())
             return {};
+        if (prefab)
+            return { .Label = std::string(SceneSourceStem(ref.Path)),
+                     .Image = scenes != nullptr ? scenes->ImageName(ref.Path) : std::string{} };
         return { .Label = MaterialLeafName(ref.Path),
                  .Image = Thumbnails != nullptr ? Thumbnails->ImageName(ref.Path) : std::string{} };
     };
-    WorkspaceResourceFacet material{ .Role = "Material", .Primary = true, .Explorer = std::string(MaterialExplorer::kId),
-                                     .Active = held(Workspace->Resources.Active(AssetType::Material)) };
-    for (const AssetRef& slot : Workspace->Resources.Stash(AssetType::Material))
-        material.Stash.push_back(held(slot));
-    return { std::move(material) };
+    WorkspaceResourceFacet facet{ .Role = prefab ? "Prefab" : "Material",
+                                  .Primary = true,
+                                  .Explorer = std::string(prefab ? PrefabExplorer::kId : MaterialExplorer::kId),
+                                  .Active = held(Workspace->Resources.Active(type)) };
+    for (const AssetRef& slot : Workspace->Resources.Stash(type))
+        facet.Stash.push_back(held(slot));
+    return { std::move(facet) };
 }
 
 WorkspaceOperationFacet LevelWorkspace::Operation()

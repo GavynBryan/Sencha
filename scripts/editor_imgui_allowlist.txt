@@ -77,15 +77,8 @@ editor/data_editor/src/input/InputProfileForm.cpp
 editor/data_editor/src/movement/MovementProfileForm.cpp
 editor/data_editor/src/movement/MovementResolvePanel.cpp
 editor/data_editor/src/movement/MovementResponsePanel.cpp
-editor/level_editor/src/render/SceneThumbnailCache.cpp
-editor/level_editor/src/render/SceneThumbnailCache.h
-editor/level_editor/src/render/ThumbnailStudio.cpp
-editor/level_editor/src/render/ThumbnailStudio.h
-editor/level_editor/src/render/ViewportTargetCache.cpp
-editor/level_editor/src/render/ViewportTargetCache.h
 editor/level_editor/src/ui/GraphViewerPanel.cpp
 editor/level_editor/src/ui/LightingPanel.cpp
-editor/level_editor/src/ui/SceneBrowserPanel.cpp
 editor/level_editor/src/ui/SceneHierarchyPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.h

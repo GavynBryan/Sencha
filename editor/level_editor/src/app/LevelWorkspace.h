@@ -46,6 +46,7 @@ class CookProfilesModal;
 class ComponentPropertySource;
 class ElementVerbs;
 class MaterialExplorer;
+class PrefabExplorer;
 class FaceUvSource;
 class EditorCookRuntime;
 class DocumentFileActions;
@@ -92,6 +93,8 @@ public:
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice) override;
+    // The kind of resource the hands hold now: what the tool in hand consumes.
+    [[nodiscard]] AssetType HeldType() const;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;
@@ -181,6 +184,7 @@ private:
     std::unique_ptr<FaceUvSource> Uv;
     std::unique_ptr<ComponentPropertySource> Components;
     std::unique_ptr<MaterialExplorer> MaterialsExplorer;
+    std::unique_ptr<PrefabExplorer> PrefabsExplorer;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
     // The tool in hand's settings, as the operation facet hands them out.

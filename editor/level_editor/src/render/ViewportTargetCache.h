@@ -1,7 +1,6 @@
 #pragma once
 
 #include "render/DisplayLedger.h"
-#include "render/ImGuiTargetPresenter.h"
 #include "viewport/ViewportId.h"
 
 #include <graphics/GpuFrameRetirement.h>
@@ -9,7 +8,6 @@
 #include <graphics/vulkan/RenderTargetStore.h>
 #include <graphics/vulkan/Renderer.h>
 
-#include <imgui.h>
 
 #include <cstdint>
 #include <span>
@@ -62,7 +60,7 @@ public:
     };
 
     // -- Render side (Offscreen phase), in this order ------------------------
-    void BeginFrame(uint32_t frameInFlightIndex, GpuFrameRetirement retirement);
+    void BeginFrame(uint32_t frameInFlightIndex);
     // The current slot's images for `id`, sized to what the panel last
     // requested. nullopt until the panel has requested a size.
     [[nodiscard]] std::optional<RenderView> AcquireForRender(ViewportId id);
@@ -75,9 +73,6 @@ public:
     // -- Arrangement side ----------------------------------------------------
     // `id` is on screen this frame at `extent` pixels.
     void Show(ViewportId id, VkExtent2D extent);
-    // Show, for an ImGui panel: also the current slot's texture (0 until the
-    // first render fills it).
-    [[nodiscard]] ImTextureID Display(ViewportId id, VkExtent2D extent);
 
 private:
     struct Entry
@@ -93,7 +88,6 @@ private:
 
     RendererServices Services{};
     RenderTargetStore Store;
-    ImGuiTargetPresenter Presenter;
     DisplayLedger<ViewportId> Displays;
     std::vector<Entry> Entries;
 };

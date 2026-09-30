@@ -299,7 +299,10 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   an explorer (`WorkspaceExplorerInfo`, paged through `Explore` and chosen
   from with `ChooseInExplorer`); the Level's materials are
   `workspace/MaterialExplorer`, which the shell shows as a tray and opens from
-  its `explorer.materials` action or the cartridge. Cook, play and
+  its `explorer.materials` action or the cartridge; its prefabs are
+  `workspace/PrefabExplorer` (Shift+P), whose choice takes up the Place tool.
+  A tool declares what it consumes (`ITool::Resources`), and the cartridge
+  follows the tool in hand's primary role. Cook, play and
   stop are the `transport.*` actions the rail's transport shows.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.

@@ -2,10 +2,11 @@
 
 #include "ViewportTargetCache.h"
 
-#include <imgui.h>
 
 #include <render/extract/Camera.h>
 
+#include <cstdint>
+#include <optional>
 #include <span>
 
 class MaterialCache;
@@ -47,9 +48,11 @@ public:
     // the layout counts up from one, the studio counts up from the top half.
     [[nodiscard]] ViewportId AllocateTarget();
 
-    // The target's current texture for the UI, registering its size; 0 until a
-    // render has filled the displayed slot.
-    [[nodiscard]] ImTextureID Display(ViewportId target);
+    // The target is on screen this frame, at the studio's size.
+    void Show(ViewportId target);
+    // The bindless index of the target's current slot, once a render has left
+    // it readable; nullopt before.
+    [[nodiscard]] std::optional<std::uint32_t> ReadableImage(ViewportId target);
 
     // How many single-frame renders a target needs before every in-flight slot
     // shows the image. The authority is the engine's frames-in-flight bound; a

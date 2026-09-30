@@ -2,6 +2,8 @@
 
 #include "ThumbnailStudio.h"
 
+#include <render/ui/UiDrawFrame.h>
+
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -9,6 +11,8 @@
 #include <vector>
 
 class EditorDocument;
+class UiService;
+class UiTextureResidency;
 class LoggingProvider;
 class BrushBakeCache;
 class SceneRenderQueueBuilder;
@@ -42,10 +46,15 @@ public:
     // Advances the entry clock; call once per frame before any Thumbnail().
     void BeginFrame();
 
-    // UI side: the thumbnail texture for the source, 0 while it has not
-    // rendered (the caller draws a placeholder). Requests it if new and marks
-    // it used this frame.
-    [[nodiscard]] ImTextureID Thumbnail(const std::string& assetPath);
+    // Where the previews are shown: host images registered with `ui`.
+    void SetUi(UiService* ui) { Ui = ui; }
+    // UI side: the host image an authored document names the preview by, as
+    // `host:NAME`; empty without authored UI. Requests it if new and marks it
+    // used this frame.
+    [[nodiscard]] std::string ImageName(const std::string& assetPath);
+    // Render side, once this frame's passes are recorded: publishes every
+    // finished preview's image and withdraws the ones that went.
+    void PublishImages(UiTextureResidency& textures);
 
     // Render side, inside the feature's offscreen recording: renders at most
     // one pending thumbnail pass this frame, and releases payloads whose
@@ -79,6 +88,7 @@ private:
         bool Loaded = false;
         bool Failed = false;
         std::uint64_t LastUsedFrame = 0;
+        UiHostImageId Image = kInvalidUiHostImage;
     };
 
     [[nodiscard]] bool LoadEntry(const std::string& assetPath, Entry& entry);
@@ -90,4 +100,7 @@ private:
     std::vector<std::filesystem::path> ContentRoots;
     std::unordered_map<std::string, Entry> Entries;
     std::uint64_t FrameClock = 0;
+    UiService* Ui = nullptr;
+    // Images of entries that went, withdrawn at the next publish.
+    std::vector<UiHostImageId> Gone;
 };

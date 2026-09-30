@@ -228,3 +228,14 @@ do the work and delete the entry.
   cancelled when the pointer leaves the tile or the explorer closes.
 - **Trigger:** the owner's walkthrough at the explorers checkpoint, or a report
   that choosing a material takes trial applications and undos.
+
+## Dragging a prefab into the view
+
+- **What:** a prefab is placed by choosing it in the explorer, which takes up
+  the Place tool, then clicking in the view. Pressing on a tile and dragging it
+  into the view as the same gesture is not built, and the Place tool turns a
+  placement by its yaw setting rather than by a key while hovering.
+- **Where:** `editor/level_editor/src/document/tools/PlaceTool.cpp`; the shell's
+  explorer tray (`editor/common/src/shell/ShellWindow.cpp`) would hand the
+  press over to the view's input router.
+- **Trigger:** the owner's walkthrough at the explorers checkpoint.
