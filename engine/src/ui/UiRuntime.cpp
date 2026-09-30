@@ -476,6 +476,18 @@ std::uint32_t UiRuntime::GetSurfaceWindow(UiSurfaceId surface) const
     return slot != nullptr ? slot->WindowId : 0;
 }
 
+void UiRuntime::SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer)
+{
+    if (Surface* slot = ResolveSurface(surface))
+        slot->Layer = layer;
+}
+
+std::uint8_t UiRuntime::GetSurfaceLayer(UiSurfaceId surface) const
+{
+    const Surface* slot = ResolveSurface(surface);
+    return slot != nullptr ? slot->Layer : 0;
+}
+
 bool UiRuntime::Hears(const Surface& surface, std::uint32_t eventWindow) const
 {
     if (eventWindow == 0)
@@ -1657,6 +1669,7 @@ void UiRuntime::ExtractRender()
         if (frame.IsEmpty())
             continue;
         frame.WindowId = surface.WindowId;
+        frame.Layer = surface.Layer;
         // Published once, to one place. The window feature reads the list; a
         // host feature drawing this surface into its own target reads the
         // entry by surface, and never sees the same recording twice.

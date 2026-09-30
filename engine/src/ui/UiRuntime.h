@@ -106,6 +106,8 @@ public:
     [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
     void SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId);
     [[nodiscard]] std::uint32_t GetSurfaceWindow(UiSurfaceId surface) const;
+    void SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer);
+    [[nodiscard]] std::uint8_t GetSurfaceLayer(UiSurfaceId surface) const;
 
     [[nodiscard]] UiScreenHandle OpenScreen(UiSurfaceId surface, const UiScreenDesc& desc);
     void CloseScreen(UiScreenHandle screen);
@@ -213,6 +215,7 @@ private:
         // The platform window the surface lives on; 0 is the primary, which is
         // how every surface began and how a host that never names one is served.
         std::uint32_t WindowId = 0;
+        std::uint8_t Layer = 0;
 
         // The last pointer position delivered, in surface pixels. The document
         // engine is told where the pointer is on a move; a click has to be told

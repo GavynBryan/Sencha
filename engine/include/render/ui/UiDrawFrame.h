@@ -149,6 +149,10 @@ struct UiDrawFrame
     // own render feature draws the frames that name it and nothing else.
     std::uint32_t WindowId = 0;
 
+    // Which of the window's UI render features draws it. A host that draws UI
+    // of its own between authored layers stages one feature per layer.
+    std::uint8_t Layer = 0;
+
     std::vector<UiDrawCommand> Commands;
 
     [[nodiscard]] bool IsEmpty() const { return Commands.empty(); }

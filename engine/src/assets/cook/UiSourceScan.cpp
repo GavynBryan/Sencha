@@ -69,11 +69,13 @@ std::string_view AttributeValue(std::string_view text, std::size_t tagStart,
         std::size_t equals = tag.find('=', cursor + attribute.size());
         if (equals == std::string_view::npos)
             return {};
-        // Only whitespace may sit between the name and the '=', or this is a
-        // different attribute whose name happens to contain ours.
+        // Whitespace before the name, and only whitespace between it and the
+        // '=', or this is a different attribute whose name contains ours --
+        // data-attr-src ends in src.
         const std::string_view between = tag.substr(cursor + attribute.size(),
                                                     equals - cursor - attribute.size());
-        if (!std::all_of(between.begin(), between.end(), IsSpace))
+        const bool startsName = cursor > 0 && IsSpace(tag[cursor - 1]);
+        if (!startsName || !std::all_of(between.begin(), between.end(), IsSpace))
         {
             cursor += attribute.size();
             continue;
@@ -94,6 +96,18 @@ std::string_view AttributeValue(std::string_view text, std::size_t tagStart,
         return tag.substr(valueStart + 1, valueEnd - valueStart - 1);
     }
     return {};
+}
+
+// The first whitespace-separated token of `argument`, a quoted one whole.
+std::string_view FirstToken(std::string_view argument)
+{
+    if (!argument.empty() && (argument.front() == '"' || argument.front() == '\''))
+    {
+        const std::size_t close = argument.find(argument.front(), 1);
+        return close == std::string_view::npos ? argument : argument.substr(0, close + 1);
+    }
+    const auto end = std::find_if(argument.begin(), argument.end(), IsSpace);
+    return argument.substr(0, static_cast<std::size_t>(end - argument.begin()));
 }
 
 // The argument of a functional value -- image(...), url(...) -- starting at the
@@ -255,11 +269,12 @@ void ScanUiSource(std::string_view text,
         cursor += 10;
     }
 
-    // decorator: image( <path> )
+    // decorator: image( <path> <fit>? <align-x>? <align-y>? ) -- the path is
+    // the first token, quoted or not.
     cursor = 0;
     while ((cursor = body.find("image", cursor)) != std::string_view::npos)
     {
-        AddResource(out, AssetType::Texture, FunctionArgument(body, cursor + 5));
+        AddResource(out, AssetType::Texture, FirstToken(FunctionArgument(body, cursor + 5)));
         cursor += 5;
     }
 

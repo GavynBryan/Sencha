@@ -4,10 +4,11 @@
 
 #include <ui/UiService.h>
 
-UiRenderFeature::UiRenderFeature(UiService& ui, TextureCache* textures, std::uint32_t windowId)
+UiRenderFeature::UiRenderFeature(UiService& ui, TextureCache* textures, std::uint32_t windowId, std::uint8_t layer)
     : Ui(ui)
     , Textures(textures)
     , WindowId(windowId)
+    , Layer(layer)
 {
 }
 
@@ -38,7 +39,7 @@ void UiRenderFeature::OnDraw(const RenderFrame& frame)
     // to know is what the authored UI cost, not what one surface of it did.
     for (const UiDrawFrame& ui : Ui.Frames())
     {
-        if (ui.WindowId != WindowId)
+        if (ui.WindowId != WindowId || ui.Layer != Layer)
             continue;
         Pass.Draw(*frame.Backend, ui);
         if (stats == nullptr)

@@ -261,6 +261,16 @@ std::uint32_t UiService::GetSurfaceWindow(UiSurfaceId surface) const
     return Runtime->GetSurfaceWindow(surface);
 }
 
+void UiService::SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer)
+{
+    Runtime->SetSurfaceLayer(surface, layer);
+}
+
+std::uint8_t UiService::GetSurfaceLayer(UiSurfaceId surface) const
+{
+    return Runtime->GetSurfaceLayer(surface);
+}
+
 UiHostImageId UiService::SetHostImage(std::string_view name, RenderExtent size)
 {
     return Runtime->SetHostImage(name, size);

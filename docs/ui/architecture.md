@@ -629,6 +629,16 @@ each window's input to its own shortcuts asks; `Capture()` still answers for all
 A host presenting authored UI in a second window adds a `UiRenderFeature` for
 that window, scoped to its presentation.
 
+**A surface draws in a layer.** `SetSurfaceLayer(surface, layer)` (0 by
+default) says which of its window's `UiRenderFeature`s draws it, and its frames
+carry the layer (`UiDrawFrame::Layer`). A window has the layer-0 feature; a host
+that draws UI of its own between two authored layers -- an editor whose
+display-only view surface sits under its legacy panels and whose shell sits
+over them -- stages one more `UiRenderFeature` for the lower layer and orders
+its own feature after it with `DependsOn`. Layers order drawing and nothing
+else: input reaches surfaces by their input policy whatever their layer, which
+is why a lower layer's surface is normally `Disabled`.
+
 The engine creates one for the primary window and tracks its size and display
 scale every frame, which is what the application shell's pages open on. Tracking
 is not optional: a surface still holding the extent it was created with lays out

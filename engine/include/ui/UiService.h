@@ -128,6 +128,14 @@ public:
     void SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId);
     [[nodiscard]] std::uint32_t GetSurfaceWindow(UiSurfaceId surface) const;
 
+    // Which of its window's UI render features draws the surface; 0, the
+    // default, is the one every window has. A host that draws UI of its own
+    // between two authored layers stages a UiRenderFeature per layer and
+    // orders its own feature between them. Layers order drawing only; input
+    // still goes to surfaces by their input policy.
+    void SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer);
+    [[nodiscard]] std::uint8_t GetSurfaceLayer(UiSurfaceId surface) const;
+
     // -- screens -------------------------------------------------------------
 
     // Opens a screen: the cooked package, what it presents, and what it can ask

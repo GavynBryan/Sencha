@@ -551,3 +551,32 @@ TEST(UiExtraction, AHostImageTheHostNeverRegisteredDrawsNothing)
         for (const UiDrawCommand& command : frame.Commands)
             EXPECT_NE(command.Texture.Kind, UiTextureKind::Host);
 }
+
+TEST(UiExtraction, AFrameSaysWhichLayerDrawsIt)
+{
+    // What lets a host draw its own UI between two authored layers: each
+    // window's features draw one layer, told apart by the frame.
+    TempAssetRoot root;
+    InstallFontFixture(root);
+    std::vector<std::byte> typed;
+    ASSERT_TRUE(WriteSuiToBytes(MakeFontPackage("typed.rml"), typed));
+    root.WriteBytes("ui/typed.sui", typed);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    ASSERT_TRUE(ui.IsReady());
+
+    const UiSurfaceId under = ui.CreateSurface("under", RenderExtent{ 800, 600 });
+    const UiSurfaceId over = ui.CreateSurface("over", RenderExtent{ 800, 600 });
+    ui.SetSurfaceLayer(under, 1);
+    EXPECT_EQ(ui.GetSurfaceLayer(under), 1);
+    EXPECT_EQ(ui.GetSurfaceLayer(over), 0) << "a surface nobody placed draws in the layer every window has";
+    ASSERT_TRUE(ui.OpenScreen(under, "asset://ui/typed.sui").IsValid());
+    ASSERT_TRUE(ui.OpenScreen(over, "asset://ui/typed.sui").IsValid());
+
+    ui.Update();
+    ui.ExtractRender();
+    ASSERT_EQ(ui.Frames().size(), 2u);
+    EXPECT_EQ(ui.Frames()[0].Layer, 1);
+    EXPECT_EQ(ui.Frames()[1].Layer, 0);
+}

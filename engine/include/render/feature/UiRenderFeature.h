@@ -36,8 +36,9 @@ public:
     // same answer the runtime gives when asked to resolve one. `windowId` is
     // the platform window whose surfaces this draws, 0 for the primary: a host
     // presenting authored UI in a window of its own adds one scoped to that
-    // window's presentation.
-    UiRenderFeature(UiService& ui, TextureCache* textures, std::uint32_t windowId = 0);
+    // window's presentation. `layer` is the surface layer it draws
+    // (UiService::SetSurfaceLayer).
+    UiRenderFeature(UiService& ui, TextureCache* textures, std::uint32_t windowId = 0, std::uint8_t layer = 0);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::ApplicationUi; }
     [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
@@ -48,6 +49,7 @@ private:
     UiService& Ui;
     TextureCache* Textures = nullptr;
     std::uint32_t WindowId = 0;
+    std::uint8_t Layer = 0;
     const RenderInstrumentation* Instrumentation = nullptr;
     UiDrawPass Pass;
     bool Ready = false;

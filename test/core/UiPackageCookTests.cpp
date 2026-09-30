@@ -265,6 +265,28 @@ TEST(UiPackageCook, FontsAndTexturesBecomeResourceTableEntriesNotCopies)
         EXPECT_NE(blob.VirtualName, "icons/health.png");
 }
 
+TEST(UiPackageCook, AnImageDecoratorsFitAndAlignmentAreNotPartOfItsPath)
+{
+    // image( <source> <fit>? <align-x>? <align-y>? ): only the first token names
+    // a file.
+    TempAssetRoot root;
+    root.Write("ui/icons.rml", R"(<rml>
+<head><link type="text/rcss" href="icons.rcss"/></head>
+<body><div class="icon-move"/></body>
+</rml>)");
+    root.Write("ui/icons.rcss", R"(.icon-move { decorator: image(icons/move.svg contain center); })");
+
+    ASSERT_TRUE(Cook(root).Ok);
+    UiPackage package;
+    ASSERT_TRUE(root.ReadPackage(".cooked/ui/icons.rml.sui", package));
+    const bool named = std::any_of(package.Resources.begin(), package.Resources.end(), [](const AssetRef& ref) {
+        return ref.Type == AssetType::Texture && ref.Path == "asset://ui/icons/move.svg";
+    });
+    EXPECT_TRUE(named);
+    for (const AssetRef& ref : package.Resources)
+        EXPECT_EQ(ref.Path.find("contain"), std::string::npos) << ref.Path;
+}
+
 TEST(UiPackageCook, AHostImageIsLeftForTheHostRatherThanPackaged)
 {
     // `host:` names pixels the host supplies at draw time -- a viewport, a
@@ -282,6 +304,22 @@ TEST(UiPackageCook, AHostImageIsLeftForTheHostRatherThanPackaged)
     ASSERT_TRUE(root.ReadPackage(".cooked/ui/view.rml.sui", package));
     for (const AssetRef& ref : package.Resources)
         EXPECT_EQ(ref.Path.find("host:"), std::string::npos) << ref.Path;
+}
+
+TEST(UiPackageCook, AnImageWhoseSourceIsBoundIsNotMistakenForALiteralOne)
+{
+    // data-attr-src ends in "src"; the expression it holds is evaluated at
+    // load, and packaging it as a path would be an asset that never resolves.
+    TempAssetRoot root;
+    root.Write("ui/views.rml", R"(<rml>
+<body data-model="views"><img data-for="tile : tiles" data-attr-src="'host:' + tile.key"/></body>
+</rml>)");
+
+    ASSERT_TRUE(Cook(root).Ok);
+    UiPackage package;
+    ASSERT_TRUE(root.ReadPackage(".cooked/ui/views.rml.sui", package));
+    for (const AssetRef& ref : package.Resources)
+        EXPECT_EQ(ref.Path.find("tile.key"), std::string::npos) << ref.Path;
 }
 
 TEST(UiPackageCook, ConstructsOutsideTheSupportedProfileAreRecordedWithTheirSource)
