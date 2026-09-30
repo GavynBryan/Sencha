@@ -7,13 +7,16 @@ code and has drifted, so where they differ the code is the source of truth).
 
 ## Big picture
 
-The editor tooling is a family of applications over one shared shell library:
+The editor is one application, Kyusu, over one shared shell library; each kind
+of editing it offers is a workspace library:
 
 | Tree | Target | What it is |
 | --- | --- | --- |
 | `editor/common/` | `editor_common` (static lib) | The shared editor shell: ImGui UI feature + theme/skin, generic input, commands/selection/tools/interaction abstractions, offscreen viewport targets, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
 | `editor/level_editor/` | `level_authoring` + `level_editor` (static libs) | The level editor. Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `level_editor` library is the shell over it (composition root, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
-| `editor/kyusu/` | `kyusu` | The Kyusu executable: the entry point and `Game` adapter that hosts the level editor. |
+| `editor/kyusu/` | `kyusu` | The Kyusu executable and composition root: `KyusuApp`, the `ProjectSession`, and the table of workspace kinds. The only tree that sees every workspace. |
+| `editor/data_editor/` | `data_editor` (static lib) | The Data workspace: schema-driven forms over typed `.sdata` documents. |
+| `editor/animation_editor/` | `animation_authoring` + `animation_editor` (static libs) | The Animation workspace: rig, selector and clip-event authoring over a live skinned preview and a scenario lab. |
 | `editor/material_editor/` | `material_editor` (static lib) | The Materials workspace: browse, edit and save `.smat` with a live MeshForwardPass preview. |
 | `editor/project_browser/` | `project_browser` (static lib) | The Project workspace: recent projects, create project, project settings. Opening a project starts Kyusu again on it and ends the choosing process. Kyusu opens on it when started without a project. |
 | `editor/ui_preview/` | `ui_preview_authoring` + `ui_preview` (static libs) | The UI Preview workspace: renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. The authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the shell library holds `UiPreviewWorkspace` and its panels. |
@@ -21,10 +24,10 @@ The editor tooling is a family of applications over one shared shell library:
 Product names (Kyusu) exist only on executables and
 window titles; internal types stay mechanically named.
 
-Every application is a `Game` running inside the runtime `Engine`. It does not
-embed or wrap the engine; it shares the engine's window, Vulkan context,
-console, and logging, and extends the engine by adding render features and
-frame systems. The engine never depends on editor code (one-way dependency).
+Kyusu is a `Game` running inside the runtime `Engine`. It does not embed or
+wrap the engine; it shares the engine's windows, Vulkan context, console, and
+logging, and extends the engine by adding render features and frame systems.
+The engine never depends on editor code (one-way dependency).
 
 ## Kyusu and its workspaces
 
@@ -61,15 +64,29 @@ remembered visibility is filed under `<kind>/<settings id>`, so two
 workspaces' panels never share a window or a setting. The host adds a console
 to every workspace it adopts.
 
+A workspace is placed in a window. The main window is the engine's primary
+presentation; `workspace.detach` (or a tab dragged off the strip, or its "Move
+to New Window") opens another through `OpenPresentationWindow` and draws the
+workspace there with a detached `EditorUiFeature`: its own ImGui context and
+backends over the primary's font atlas, style and layout, recorded into that
+presentation's swapchain scope. Each window shows the workspace most recently
+activated in it; closing a window, or `workspace.attach`, brings its
+workspaces back, and a window left empty closes. Every ImGui texture set is
+added and freed through the primary's backend (`ui/ImGuiTextureOwner`), since
+a preview shown in one window may be released from another. Platform events
+reach the shell and workspace of the window they name.
+
+Offscreen previews render only while a panel shows them: the UI marks what it
+displayed in a `DisplayLedger`, and the next frame renders and keeps only that
+(`render/DisplayedTargets`; the level viewports read the same ledger). A
+hidden workspace, a closed panel and a minimized window cost no target and no
+recording.
+
 The level workspace (`level_editor/src/app/LevelWorkspace`) is the level
 editor's composition root. Its constructor is the bring-up sequence, split
 into named phases: `BuildDocument` -> `BuildPlayLoop` -> `BuildFileActions` ->
 `BuildInput` -> `BuildViewportRendering` -> `BuildUi`. Member order is teardown
 order; the destructor reproduces the load-bearing sequence explicitly.
-
-The other editors still run as their own executables, each with a `Game`
-adapter (`MaterialEditorApp`, `DataEditorApp`, ...) forwarding to a services
-object that owns and wires its subsystems.
 
 ## Projects
 
@@ -135,7 +152,8 @@ Shared shell (`editor/common/src/`):
 | `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/icons/` |
 | `ui/ThemeTextureCache` | The raster art a theme owns, keyed by path and source stamp, with its own GPU lifetime. Deliberately not the font atlas: a theme switch costs one upload, not a font rebuild. | add a texture path to a theme's `surfaces` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
-| `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`). | -- |
+| `workspaces/` | The workspace model: `IWorkspace`, the `WorkspaceKind` row, `WorkspaceHost` (open, close, activate, window placement, requests at the frame boundary; headless-tested). | a row in `WorkspaceKinds.cpp` |
+| `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`), display-driven target lifetime (`DisplayLedger`, `DisplayedTargets`), `DetachRenderFeature`. | -- |
 | `viewport/` | `ViewportId`. | -- |
 | `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`). | -- |
 
@@ -262,6 +280,7 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   `LevelWorkspace::BuildViewportRendering`.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in
   `BuildViewportRendering`).
-- A new editor application: a new `editor/<name>/` subdirectory linking
-  `editor_common`, following the app-adapter + services pattern; add it in
-  `editor/CMakeLists.txt`.
+- A workspace: a library under `editor/<name>/` linking `editor_common`, with
+  an `IWorkspace` that builds its panels into a `WorkspaceView`, and one row in
+  `editor/kyusu/src/app/WorkspaceKinds.cpp` that constructs it with exactly
+  the services it needs. It never includes another workspace's headers.

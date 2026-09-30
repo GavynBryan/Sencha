@@ -130,7 +130,7 @@ The fixture project ships `asset://animation/hero.rig.sdata` with a
 landing-and-reload scenario beside it:
 
 ```text
-animation_editor --project test/fixtures/content/animation_preview.senchaproj
+kyusu --project test/fixtures/content/animation_preview.senchaproj +workspace.open animation
 ```
 
 ## Selection: rules, behaviors, slot maps, decisions
