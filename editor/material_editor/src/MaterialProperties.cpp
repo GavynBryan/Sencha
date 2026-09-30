@@ -3,6 +3,7 @@
 #include "EditMaterialCommand.h"
 #include "MaterialDocumentSet.h"
 
+#include "project/TextureImportStore.h"
 #include "properties/SettingProperties.h"
 
 #include <core/assets/AssetRegistry.h>
@@ -153,12 +154,6 @@ const MaterialField* FieldOf(std::string_view key)
     return found != kFields.end() ? &*found : nullptr;
 }
 
-// Source textures only: the registry also holds cooked artifacts, and a
-// material names the source, which the asset system resolves to its cook.
-bool IsSourceTexture(const AssetRecord& record)
-{
-    return record.Type == AssetType::Texture && !record.Path.ends_with(".stex");
-}
 } // namespace
 
 std::vector<PropertyNode> MaterialProperties::Nodes() const

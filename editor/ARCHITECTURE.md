@@ -205,7 +205,9 @@ target, shown full-bleed by a `presenters/ContentPicture` host image and
 turned over by a drag on it), `MaterialProperties` (the open material's
 parameters as a property source on the card: a drag previews, letting go is
 one step), the shared material explorer (`project/MaterialLibraryExplorer`,
-also the Level's), and the textures panel. Every open material is on the
+also the Level's), and a texture explorer whose pick puts that texture's
+import settings on the card (`TextureImportProperties`: each change saves the
+sidecar and recooks, and the cook is read back). Every open material is on the
 shell's document dial (`WorkspaceDocumentFacet::Open`,
 `IWorkspace::ShowDocument`). Live preview pushes
 the working description into the resident material via `AssetSystem::Reload`;

@@ -7,6 +7,12 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <core/assets/AssetRegistry.h>
+
+bool IsSourceTexture(const AssetRecord& record)
+{
+    return record.Type == AssetType::Texture && !record.Path.ends_with(".stex");
+}
 
 std::string TextureSourceLocation::SourceFile() const
 {

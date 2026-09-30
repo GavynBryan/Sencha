@@ -61,8 +61,6 @@ editor/common/src/ui/ImGuiTextureBinding.cpp
 editor/common/src/ui/ImGuiTextureBinding.h
 editor/common/src/ui/ImGuiTextureOwner.cpp
 editor/common/src/ui/ImGuiVec.h
-editor/common/src/ui/MaterialThumbnailCache.cpp
-editor/common/src/ui/MaterialThumbnailCache.h
 editor/common/src/ui/NewDataAssetForm.cpp
 editor/common/src/ui/PanelVisibilitySettings.cpp
 editor/common/src/ui/SchemaWidgets.h
@@ -77,7 +75,6 @@ editor/data_editor/src/input/InputProfileForm.cpp
 editor/data_editor/src/movement/MovementProfileForm.cpp
 editor/data_editor/src/movement/MovementResolvePanel.cpp
 editor/data_editor/src/movement/MovementResponsePanel.cpp
-editor/material_editor/src/TexturesPanel.cpp
 editor/ui_preview/src/ui/ActionLogPanel.cpp
 editor/ui_preview/src/ui/DiagnosticsPanel.cpp
 editor/ui_preview/src/ui/DocumentLibraryPanel.cpp

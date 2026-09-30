@@ -17,8 +17,6 @@
 
 MaterialThumbnailCache::MaterialThumbnailCache(AssetSystem& assets,
                                                TextureCache& textures,
-                                               VulkanImageService& images,
-                                               VulkanSamplerCache& samplers,
                                                const AssetRegistry& registry,
                                                UiService* ui,
                                                UiTextureResidency* uiTextures,
@@ -26,8 +24,6 @@ MaterialThumbnailCache::MaterialThumbnailCache(AssetSystem& assets,
     : ImagePrefix(std::move(imagePrefix))
     , Assets(assets)
     , Textures(textures)
-    , Images(images)
-    , Samplers(samplers)
     , Registry(registry)
     , Ui(ui)
     , UiTextures(uiTextures)
@@ -88,8 +84,8 @@ void MaterialThumbnailCache::Retire(Entry& entry)
 {
     if (entry.Image != kInvalidUiHostImage && UiTextures != nullptr)
         UiTextures->WithdrawHostImage(entry.Image);
-    if (entry.Binding != nullptr || entry.Texture.IsValid())
-        RetireList.push_back(Retiring{ std::move(entry.Binding), std::move(entry.Texture), Retirement.Stamp() });
+    if (entry.Texture.IsValid())
+        RetireList.push_back(Retiring{ std::move(entry.Texture), Retirement.Stamp() });
 }
 
 std::string MaterialThumbnailCache::ResolveBaseColor(const std::string& materialPath) const
@@ -103,38 +99,36 @@ std::string MaterialThumbnailCache::ResolveBaseColor(const std::string& material
     return description.BaseColorTexture.Path;
 }
 
-MaterialThumbnailCache::Entry& MaterialThumbnailCache::Find(const std::string& materialPath)
+template <typename TexturePath>
+MaterialThumbnailCache::Entry& MaterialThumbnailCache::Find(const std::string& key, TexturePath&& texturePath)
 {
-    auto it = Entries.find(materialPath);
+    auto it = Entries.find(key);
     if (it == Entries.end())
     {
         Entry entry;
-        entry.TexturePath = ResolveBaseColor(materialPath);
-        it = Entries.emplace(materialPath, std::move(entry)).first;
+        entry.TexturePath = texturePath();
+        it = Entries.emplace(key, std::move(entry)).first;
     }
     it->second.LastUsedFrame = Frame;
     return it->second;
 }
 
-ImTextureID MaterialThumbnailCache::Thumbnail(const std::string& materialPath)
-{
-    Entry& entry = Find(materialPath);
-    if (entry.TexturePath.empty())
-        return ImTextureID{};
-    if (entry.Binding == nullptr)
-    {
-        entry.Binding = std::make_unique<ImGuiTextureBinding>(Assets, Textures, Images, Samplers);
-        entry.Binding->SetTexture(entry.TexturePath);
-    }
-    return entry.Binding->TextureId();
-}
-
 std::string MaterialThumbnailCache::ImageName(const std::string& materialPath)
 {
-    Entry& entry = Find(materialPath);
+    return Publish(materialPath, Find(materialPath, [&] { return ResolveBaseColor(materialPath); }));
+}
+
+std::string MaterialThumbnailCache::TextureImageName(const std::string& texturePath)
+{
+    const std::string key = "texture:" + texturePath;
+    return Publish(key, Find(key, [&] { return texturePath; }));
+}
+
+std::string MaterialThumbnailCache::Publish(const std::string& key, Entry& entry)
+{
     if (entry.TexturePath.empty() || Ui == nullptr || UiTextures == nullptr)
         return {};
-    std::string name = ImagePrefix + materialPath;
+    std::string name = ImagePrefix + key;
     if (!entry.Texture.IsValid())
     {
         entry.Texture = Assets.LoadLease(entry.TexturePath, AssetType::Texture);

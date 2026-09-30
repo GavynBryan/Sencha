@@ -263,3 +263,16 @@ do the work and delete the entry.
   image or view marks, not a new readout.
 - **Trigger:** an atlas packing or tier downgrade that the card's tier and pool
   lines cannot explain, met while tuning shadow budgets or the allocator.
+
+## A texture cartridge for the slot in hand
+
+- **What:** the Materials workspace sets a texture slot by choosing among the
+  source textures on the card, and inspects a texture by picking it in the
+  texture explorer. The plan's cartridge -- the texture the focused slot holds,
+  in the lower right, with the explorer a click away and a pick loading it into
+  that slot -- is not built.
+- **Where:** `editor/material_editor/src/MaterialWorkspace.cpp` would offer a
+  resources facet (`WorkspaceResourceFacet`, the Level's cartridge) for the
+  focused texture slot of `MaterialProperties`; the shell already presents it.
+- **Trigger:** the owner's walkthrough of the Materials workspace, or a material
+  with several texture slots being filled one after another.

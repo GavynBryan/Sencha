@@ -2,6 +2,7 @@
 
 #include "MaterialDocumentSet.h"
 #include "MaterialProperties.h"
+#include "TextureImportProperties.h"
 
 #include "actions/ActionContext.h"
 #include "project/TextureImportStore.h"
@@ -23,7 +24,6 @@ class Engine;
 class MaterialLibrary;
 class MaterialThumbnailCache;
 class MaterialPreviewRenderFeature;
-class TexturesPanel;
 struct ProjectDescriptor;
 struct RuntimeAssets;
 
@@ -81,6 +81,9 @@ private:
     // not rewritten; they fall back to the level default until reassigned.
     void RenameMaterial(const std::string& virtualPath, const std::string& newRelPath);
     void RescanMaterials();
+    void PickTexture(const std::string& texturePath);
+    // The card goes back to the open material.
+    void ShowMaterial();
 
     // Recooks a texture source and swaps the resident texture in place so the
     // preview (and every material sampling it) shows the new cook at once.
@@ -109,9 +112,17 @@ private:
     PromptQueue::Asker Prompts;
 
     MaterialPreviewRenderFeature* Preview = nullptr;
-    TexturesPanel* Textures = nullptr;
     ActionContext ActionHandlers;
     MaterialProperties Properties;
+    TextureImportProperties TextureImport;
+    // What the card is about: the open material, or a texture picked in the
+    // texture explorer. Only PickTexture and ShowMaterial change it.
+    enum class CardSubject : std::uint8_t
+    {
+        Material,
+        Texture,
+    };
+    CardSubject Subject = CardSubject::Material;
     // The open material's file, as the one property naming where it lives.
     std::unique_ptr<IPropertySource> FilePath;
     std::unique_ptr<ContentPicture> Picture;

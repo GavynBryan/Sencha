@@ -1,12 +1,12 @@
 #include "MaterialWorkspace.h"
 
 #include "MaterialPreviewRenderFeature.h"
-#include "TexturesPanel.h"
 
 #include "actions/ActionOffer.h"
 #include "presenters/ContentPicture.h"
 #include "project/MaterialLibraryExplorer.h"
 #include "properties/SettingProperties.h"
+#include "text/TextFilterMatch.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "workspaces/WorkspaceWindow.h"
 
@@ -15,7 +15,6 @@
 #include "project/Project.h"
 #include "render/RenderFeatureDetach.h"
 #include "ui/EditorThemeFile.h"
-#include "ui/ImGuiTextureBinding.h"
 
 #include <app/Engine.h>
 #include <app/RuntimeContent.h>
@@ -63,6 +62,8 @@ constexpr std::array<PrimitiveRow, 3> kPrimitives = { {
     { PreviewPrimitive::Cube, "preview.cube", "Cube" },
     { PreviewPrimitive::Plane, "preview.plane", "Plane" },
 } };
+
+constexpr std::string_view kTextureExplorerId = "textures";
 
 // Where the open material lives, as the one property that moves it.
 class MaterialFileProperty final : public IPropertySource
@@ -115,6 +116,26 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
     })
     , Prompts(prompts.MakeAsker())
     , Properties(Tabs, engine.Content().Assets().Registry)
+    , TextureImport(
+          [this](const std::string& texture, const TextureImportSettings& settings, std::string& cooked,
+                 std::string& error) {
+              const std::optional<TextureSourceLocation> source =
+                  Project != nullptr ? ResolveTextureSource(Project->ContentRoots, texture) : std::nullopt;
+              if (!source.has_value())
+              {
+                  error = "No source file under any content root";
+                  return false;
+              }
+              if (!SaveTextureImportSettingsFor(*source, settings, &error) || !RecookTexture(*source, &error))
+                  return false;
+              // What the cook wrote, read back rather than assumed.
+              cooked = DescribeCookedTextureState(ReadCookedTextureState(*source));
+              return true;
+          },
+          [this](const std::string& texture) {
+              CreateMaterialFromTexture(texture);
+              ShowMaterial();
+          })
 {
     FilePath = std::make_unique<MaterialFileProperty>(
         [this] {
@@ -137,8 +158,6 @@ MaterialWorkspace::~MaterialWorkspace()
     // stack, and the textures panel's bindings free their sets through the
     // live UI backend; both go before the panels and the tabs.
     DetachRenderFeature(EngineRef, Preview);
-    if (Textures != nullptr)
-        Textures->ReleasePreviewResources();
     Surface = WorkspaceView{};
     Picture.reset();
     Thumbnails.reset();
@@ -161,24 +180,12 @@ void MaterialWorkspace::BuildUi()
     {
         Picture = std::make_unique<ContentPicture>(*ui, "material_preview");
         Thumbnails = std::make_unique<MaterialThumbnailCache>(
-            Assets.Assets, *Assets.Textures, EngineRef.Graphics().Images, EngineRef.Graphics().Samplers,
+            Assets.Assets, *Assets.Textures,
             Assets.Registry, ui, &renderer.GetUiTextures(), "materials-workspace:");
     }
 
     Surface.File.Save = [this] { SaveActiveMaterial(); };
 
-    auto texturesPanel = std::make_unique<TexturesPanel>(
-        Assets.Registry,
-        Project != nullptr ? Project->ContentRoots : std::vector<std::string>{},
-        [this](const TextureSourceLocation& source, std::string* error)
-        { return RecookTexture(source, error); },
-        std::make_unique<ImGuiTextureBinding>(
-            Assets.Assets, *Assets.Textures,
-            EngineRef.Graphics().Images, EngineRef.Graphics().Samplers),
-        [this](const std::string& textureVirtualPath)
-        { CreateMaterialFromTexture(textureVirtualPath); });
-    Textures = texturesPanel.get();
-    Surface.AddPanel(std::move(texturesPanel));
 }
 
 void MaterialWorkspace::DefineActions(ActionCatalog& catalog)
@@ -205,6 +212,10 @@ void MaterialWorkspace::DefineActions(ActionCatalog& catalog)
                   .DefaultChords = { { SDLK_W, { .Ctrl = true } } } },
                 { .Invoke = [this] { CloseTab(Tabs.ActiveIndex()); }, .Enabled = open });
     OfferAction(catalog, ActionHandlers, MaterialExplorerAction(), {});
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "explorer.textures", .Label = "Textures", .Category = "Explore", .Icon = IconId::Folder,
+                  .DefaultChords = { { SDLK_T, {} } } },
+                {});
     OfferAction(catalog, ActionHandlers, MaterialRescanAction(), { .Invoke = [this] {
                     RescanMaterials();
                     if (Thumbnails != nullptr)
@@ -678,6 +689,29 @@ void MaterialWorkspace::ShowDocument(std::string_view key)
     for (std::size_t i = 0; i < Tabs.Tabs().size(); ++i)
         if (Tabs.Tabs()[i]->Session.VirtualPath() == key)
             Tabs.SetActive(i);
+    ShowMaterial();
+}
+
+void MaterialWorkspace::PickTexture(const std::string& texturePath)
+{
+    const std::optional<TextureSourceLocation> source =
+        Project != nullptr ? ResolveTextureSource(Project->ContentRoots, texturePath) : std::nullopt;
+    TextureImportProperties::Shown shown{ .Texture = texturePath, .Settings = std::nullopt, .Cooked = "No source file" };
+    if (source.has_value())
+    {
+        std::string error;
+        shown.Settings = LoadTextureImportSettingsFor(*source, &error);
+        shown.Cooked = DescribeCookedTextureState(ReadCookedTextureState(*source));
+        if (!error.empty())
+            shown.Problem = "The settings file is unreadable; these are the defaults: " + error;
+    }
+    TextureImport.Show(std::move(shown));
+    Subject = CardSubject::Texture;
+}
+
+void MaterialWorkspace::ShowMaterial()
+{
+    Subject = CardSubject::Material;
 }
 
 WorkspaceViewFacet MaterialWorkspace::Viewing() const
@@ -689,6 +723,12 @@ WorkspaceViewFacet MaterialWorkspace::Viewing() const
 
 WorkspaceSelectionFacet MaterialWorkspace::Selection()
 {
+    if (Subject == CardSubject::Texture && !TextureImport.Texture().empty())
+    {
+        const std::string& texture = TextureImport.Texture();
+        return { .Title = texture.substr(texture.rfind('/') + 1),
+                 .Sections = { { .Heading = {}, .Source = &TextureImport } } };
+    }
     const MaterialEditTab* tab = Tabs.Active();
     if (tab == nullptr || !tab->Session.HasOpen())
         return {};
@@ -702,11 +742,28 @@ WorkspaceSelectionFacet MaterialWorkspace::Selection()
 
 std::vector<WorkspaceExplorerInfo> MaterialWorkspace::Explorers() const
 {
-    return { MaterialExplorerInfo() };
+    return { MaterialExplorerInfo(), { .Id = std::string(kTextureExplorerId), .Title = "Textures",
+                                       .Shape = ExplorerShape::Pictures, .Action = "explorer.textures" } };
 }
 
 ExplorerPage MaterialWorkspace::Explore(const ExplorerQuery& query)
 {
+    if (query.Explorer == kTextureExplorerId)
+    {
+        ExplorerPage page;
+        page.Empty = "No source texture's name holds that.";
+        for (const auto& [path, record] : Assets.Registry.Records())
+        {
+            if (!IsSourceTexture(record) || !TextFilterMatch(record.Path, query.Filter) || !CountOnPage(page, query))
+                continue;
+            page.Items.push_back({ .Key = record.Path,
+                                   .Label = record.Path.substr(record.Path.rfind('/') + 1),
+                                   .Image = Thumbnails != nullptr ? Thumbnails->TextureImageName(record.Path)
+                                                                  : std::string{},
+                                   .Current = Subject == CardSubject::Texture && TextureImport.Texture() == record.Path });
+        }
+        return page;
+    }
     if (query.Explorer != kMaterialExplorerId)
         return {};
     const MaterialEditTab* active = Tabs.Active();
@@ -720,5 +777,10 @@ ExplorerPage MaterialWorkspace::Explore(const ExplorerQuery& query)
 void MaterialWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice, std::size_t)
 {
     if (explorer == kMaterialExplorerId)
+    {
         OpenMaterial(std::string(key));
+        ShowMaterial();
+    }
+    else if (explorer == kTextureExplorerId)
+        PickTexture(std::string(key));
 }

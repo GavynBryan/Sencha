@@ -703,7 +703,7 @@ void LevelWorkspace::BuildUi()
     MaterialThumbnailCache::RegisterBudget(console.Registry());
     UiService* ui = engine.TryUi();
     Thumbnails = std::make_unique<MaterialThumbnailCache>(
-        Assets->Assets, *Assets->Textures, engine.Graphics().Images, engine.Graphics().Samplers,
+        Assets->Assets, *Assets->Textures,
         Assets->Registry, ui != nullptr && ui->IsReady() ? ui : nullptr,
         &engine.Graphics().MainRenderer.GetUiTextures());
     MaterialsExplorer = std::make_unique<MaterialExplorer>(
