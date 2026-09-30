@@ -105,6 +105,11 @@ DataDocument* DataDocumentSet::Active()
     return ActiveTab < Tabs.size() ? Tabs[ActiveTab] : nullptr;
 }
 
+const DataDocument* DataDocumentSet::Active() const
+{
+    return ActiveTab < Tabs.size() ? Tabs[ActiveTab] : nullptr;
+}
+
 DataDocument* DataDocumentSet::ActiveOf(std::string_view subtype)
 {
     DataDocument* active = Active();

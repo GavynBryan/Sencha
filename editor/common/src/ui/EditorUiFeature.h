@@ -1,6 +1,7 @@
 #pragma once
 
 #include <input/UiInputCapture.h>
+#include "actions/ActionContext.h"
 #include "PanelVisibilitySettings.h"
 #include "ThemePreferences.h"
 #include "ThemeTextureCache.h"
@@ -26,7 +27,6 @@ class ConsoleRegistry;
 class EditorConsolePanel;
 class Engine;
 class IWorkspace;
-class WorkspaceBar;
 class ActionCatalog;
 class WorkspaceHost;
 struct WorkspaceKind;
@@ -35,20 +35,6 @@ class VulkanFrameService;
 class VulkanInstanceService;
 struct IEditorPanel;
 
-// What the shell says it is, drawn at the head of the menu bar: the product
-// name and what kind of editor this is. Data the application supplies;
-// the shell never names a product itself.
-struct ShellIdentity
-{
-    std::string Product;
-    // The product's mark, a path to a PNG. Shell branding, not theme art: it
-    // is fixed by the application and rides the font atlas with the icons.
-    std::string LogoPath;
-    // The window's title while the shell hosts workspaces; the active one's
-    // name and its status follow it.
-    std::string WindowTitle;
-};
-
 // Which themed bar a surface belongs to.
 enum class BarRole
 {
@@ -56,11 +42,12 @@ enum class BarRole
     Toolbar,
 };
 
-// The ImGui shell of one window: the workspace its WorkspaceHost shows there,
-// under a tab strip, with the caption and menus around it. The primary shell
-// owns what every window shares -- the font atlas, the theme, the layout file,
-// the shell's actions and prompts; a detached one draws with them in a window
-// of its own, over an ImGui context of its own.
+// The ImGui content of one window while workspaces migrate to authored UI: the
+// panels of the workspace its WorkspaceHost shows there, docked under the
+// window's shell rail. The primary owns what every window shares -- the font
+// atlas, the theme, the layout file, the prompts; a detached one draws with
+// them in a window of its own, over an ImGui context of its own. It goes when
+// the last workspace presents through the shell (docs/editor/interaction-grammar.md).
 class EditorUiFeature : public IRenderFeature
 {
 public:
@@ -118,22 +105,21 @@ public:
     void SetWorkspaceHost(WorkspaceHost& host, PresentationId window);
     [[nodiscard]] PresentationId ShownWindow() const { return Presentation; }
     [[nodiscard]] SdlWindow& GetWindow() const { return Window; }
-    // Where menus read the chords they show; none means they show none.
-    void SetActionCatalog(const ActionCatalog* catalog) { Catalog = catalog; }
-    // What the caption's close button does; exit, unless the host says otherwise.
-    void SetCloseWindowAction(std::function<void()> action) { CloseWindowAction = std::move(action); }
+    // Where this window's view actions are defined: showing each panel,
+    // rebuilding the layout.
+    void SetActionCatalog(ActionCatalog* catalog) { Catalog = catalog; }
+    // The actions this window's docked content performs; the host puts them in
+    // play in the window's stack.
+    [[nodiscard]] ActionContext& ViewActionContext() { return ViewActions; }
+    // Where the docked content starts, below the rail, in window points.
+    void SetContentTopInset(float points) { ContentTopInset = points; }
+    // Theme choice, as actions: one per theme, and the palette window.
+    void DefineThemeActions();
     // Shows or hides the active workspace's console.
     void ToggleConsole();
 
     // Drawn over whichever view is showing, or none: the window's own prompts.
     void AddShellOverlay(std::function<void()> draw);
-    void SetUndoActions(std::function<void()> undoAction,
-                        std::function<void()> redoAction,
-                        std::function<bool()> canUndoAction,
-                        std::function<bool()> canRedoAction);
-    void SetSaveAllAction(std::function<void()> saveAllAction);
-
-    void SetIdentity(ShellIdentity identity);
 
     // The resolved surface for a bar, as prepared at this frame's boundary.
     // A pure lookup: a bar painting itself never reaches a loader.
@@ -167,8 +153,8 @@ private:
     void AdoptWorkspace(const WorkspaceKind& kind, IWorkspace& workspace);
     void ReleaseWorkspace(IWorkspace& workspace);
     void DrawDockHost(WorkspaceView* view);
-    void UpdateWindowTitle(const WorkspaceView* view);
-    void DrawMainMenuBar(WorkspaceView* view);
+    void ClaimViewActions(WorkspaceView* view);
+    void ShowThemePreferences();
     void RegisterPointerCommands(ConsoleRegistry& registry);
     void FeedPointerActions();
 
@@ -176,7 +162,6 @@ private:
     EditorUiFeature* PrimaryShell = nullptr;
     ImGuiContext* Context = nullptr;
     PresentationId Presentation;
-    std::function<void()> CloseWindowAction;
 
     Engine& EngineInstance;
     SdlWindow& Window;
@@ -211,22 +196,14 @@ private:
     bool AtlasBuilt = false;
     std::uint32_t AtlasBuilds = 0;
 
-    std::function<void()> UndoAction;
-    std::function<void()> RedoAction;
-    std::function<bool()> CanUndoAction;
-    std::function<bool()> CanRedoAction;
-    std::function<void()> SaveAllAction;
-    ShellIdentity Identity;
-    // The caption's frame snapshot for the window, rewritten every frame the
-    // window draws its own frame.
-    WindowFrameRegions FrameRegions;
-
     WorkspaceHost* Workspaces = nullptr;
-    std::unique_ptr<WorkspaceBar> TabStrip;
+    float ContentTopInset = 0.0f;
+    ActionContext ViewActions;
+    WorkspaceView* ClaimedView = nullptr;
+    std::vector<std::string> ClaimedPanelActions;
     std::vector<std::function<void()>> ShellOverlays;
     // Each open workspace's console, which this shell adds to its view.
     std::vector<std::pair<IWorkspace*, EditorConsolePanel*>> Consoles;
-    std::string LastWindowTitle;
     // Remembers which panels are shown; declared after the views it reads.
     PanelVisibilitySettings PanelVisibility;
     bool VisibilityApplied = false;
@@ -249,5 +226,5 @@ private:
     std::vector<PointerAction> PointerActions;
     // The held pointer position from the latest Move, re-fed every frame.
     std::optional<ImVec2> HeldPointer;
-    const ActionCatalog* Catalog = nullptr;
+    ActionCatalog* Catalog = nullptr;
 };

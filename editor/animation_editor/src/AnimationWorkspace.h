@@ -32,6 +32,7 @@ public:
     void HandlePlatformEvent(PlatformEventContext& ctx) override;
     [[nodiscard]] bool OwnsDocument(const DocumentRef& document) const override;
     void RevealDocument(const DocumentRef& document) override;
+    [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     WorkspaceView& View() override { return Surface; }
 
 private:

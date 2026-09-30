@@ -131,6 +131,7 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
     BuildInput();
     BuildViewportRendering();
     BuildUi();
+    DefineTransportActions();
 }
 
 LevelWorkspace::~LevelWorkspace()
@@ -532,7 +533,6 @@ void LevelWorkspace::BuildUi()
         .Save = [this] { Files->Save(); },
         .SaveAs = [this] { Files->RequestSaveAs(); },
     };
-    Surface.Status = [this] { return Files->DocumentLabel(); };
 
     // The editing toolbar's presentation, hosted by the perspective viewport;
     // the workspace bar and the status bar are the fixed bars of app chrome,
@@ -542,60 +542,6 @@ void LevelWorkspace::BuildUi()
         [this] { return Workspace->Interaction.Tools.get(); },
         [this] { return Workspace->Interaction.Manipulators; },
         Workspace->MeshEdit, Workspace->Grid, Workspace->WorldView);
-    // The Cook/Play/Stop group routes through the same paths as the cook/play/stop
-    // console commands.
-    // A cook reads the live documents (and force-saves the world first), so open
-    // previews settle before it starts or they would cook half-staged.
-    CookPlay = std::make_unique<CookPlayControls>(CookPlayControls::Actions{
-        .RunCook = [this] {
-            Workspace->ResolvePendingEdits();
-            if (CookRuntime) CookRuntime->Start();
-        },
-        .CancelCook = [this] { if (CookRuntime) CookRuntime->Cancel(); },
-        .RebuildCook = [this] {
-            Workspace->ResolvePendingEdits();
-            if (CookRuntime) CookRuntime->Start(/*rebuild*/ true);
-        },
-        .IsCooking = [this] { return CookRuntime != nullptr && CookRuntime->IsActive(); },
-        .Profiles = [this] {
-            std::vector<CookPlayControls::ProfileChoice> choices;
-            if (CookRuntime)
-                for (const CookProfile& profile : CookRuntime->GetSession().AvailableProfiles())
-                    choices.push_back({ profile.Id, profile.Name, profile.BuiltIn });
-            return choices;
-        },
-        .SelectedProfileId = [this] { return CookRuntime ? CookRuntime->SelectedProfileId() : std::string{}; },
-        .SelectProfile = [this](std::string_view id) {
-            if (CookRuntime) CookRuntime->SelectProfile(std::string(id));
-        },
-        .OpenProfiles = [this] {
-            if (CookRuntime && CookRuntime->ProfilesPanel() != nullptr)
-                CookRuntime->ProfilesPanel()->SetVisible(true);
-        },
-        // The authored workflow, beside the ImGui panel rather than instead of
-        // it. Both stay until one is demonstrably better.
-        .OpenAuthoredProfiles = [this] {
-            if (ProfilesModal)
-                ProfilesModal->Open();
-        },
-        .CookStatus = [this] {
-            if (!CookRuntime)
-                return std::string{};
-            const CookSession::Status status = CookRuntime->GetSession().GetStatus();
-            if (!status.Active)
-                return status.LastError;
-            std::string text = status.ProfileName;
-            if (!status.StepName.empty())
-                text += ": " + status.StepName;
-            if (status.TotalSteps > 0)
-                text += " (" + std::to_string(status.CompletedSteps) + "/" +
-                        std::to_string(status.TotalSteps) + ")";
-            return text;
-        },
-        .Play = [this] { if (CookRuntime) CookRuntime->Player().Play(CookRuntime->Player().LastCookedMap()); },
-        .Stop = [this] { if (CookRuntime) CookRuntime->Player().Stop(); },
-        .IsPlaying = [this] { return CookRuntime != nullptr && CookRuntime->Player().IsPlaying(); },
-    });
     Toolbar->SetGridFrameControls({
         .OriginToSelection = [this] { Workspace->SetGridOriginToSelection(); },
         .AlignToFace = [this] { Workspace->AlignGridToSelectedFace(); },
@@ -620,11 +566,6 @@ void LevelWorkspace::BuildUi()
         [this]() -> const ManipulatorSession* { return Workspace->Interaction.Manipulators; },
         Workspace->Layout, Workspace->Selection, Workspace->Grid,
         Workspace->MeshEdit);
-    Surface.BarControls = WorkspaceBarControls{
-        .Width = [this] { return CookPlay->Width(EditorChrome::BarButtonSize()); },
-        .Draw = [this] { CookPlay->Draw(EditorChrome::BarButtonSize()); },
-        .Lit = [this] { return CookPlay->IsBusy(); },
-    };
     Surface.AddPanel(std::make_unique<ToolPalettePanel>([this] { return Workspace->Interaction.Tools.get(); }));
     Toolbar->SetSurfaceProvider([this] {
         return UiFeature != nullptr ? UiFeature->SurfaceFor(BarRole::Toolbar) : EditorChrome::BarSurface{};
@@ -1337,4 +1278,81 @@ void LevelWorkspace::RetractModuleComponents()
         (void)EditorSceneSerializers().Remove(type);
     GameModuleSerializerTypes.clear();
     SetEditorModuleVocabulary({});
+}
+
+void LevelWorkspace::DefineTransportActions()
+{
+    // The transport as actions: the rail shows the keys, the console and the
+    // palette reach the same handlers. A cook reads the live documents (and
+    // force-saves the world first), so open previews settle before it starts or
+    // they would cook half-staged.
+    const auto offer = [this](std::string id, std::string label, ActionHandler handler) {
+        std::string error;
+        if (!Catalog.Define({ .Id = id, .Label = std::move(label), .Category = "Transport" }, &error))
+            std::fprintf(stderr, "[editor] %s\n", error.c_str());
+        ActionHandlers.Claim(std::move(id), std::move(handler));
+    };
+    const auto cooking = [this] { return CookRuntime != nullptr && CookRuntime->IsActive(); };
+    const auto playing = [this] { return CookRuntime != nullptr && CookRuntime->Player().IsPlaying(); };
+    offer("transport.cook", "Cook", {
+        .Invoke = [this] { Workspace->ResolvePendingEdits(); if (CookRuntime) CookRuntime->Start(); },
+        .Enabled = [this, cooking] { return CookRuntime != nullptr && !cooking(); } });
+    offer("transport.rebuild", "Cook From Scratch", {
+        .Invoke = [this] { Workspace->ResolvePendingEdits(); if (CookRuntime) CookRuntime->Start(/*rebuild*/ true); },
+        .Enabled = [this, cooking] { return CookRuntime != nullptr && !cooking(); } });
+    offer("transport.cancel", "Cancel Cook", {
+        .Invoke = [this] { if (CookRuntime) CookRuntime->Cancel(); },
+        .Enabled = cooking });
+    offer("transport.play", "Play", {
+        .Invoke = [this] { if (CookRuntime) CookRuntime->Player().Play(CookRuntime->Player().LastCookedMap()); },
+        .Enabled = [this, playing] { return CookRuntime != nullptr && !playing(); } });
+    offer("transport.stop", "Stop", { .Invoke = [this] { if (CookRuntime) CookRuntime->Player().Stop(); },
+                                      .Enabled = playing });
+    offer("transport.profiles", "Cook Profiles...", {
+        .Invoke = [this] { if (ProfilesModal) ProfilesModal->Open(); },
+        .Enabled = [this] { return ProfilesModal != nullptr; } });
+    if (CookRuntime == nullptr)
+        return;
+    for (const CookProfile& profile : CookRuntime->GetSession().AvailableProfiles())
+    {
+        const std::string id = profile.Id;
+        offer("transport.profile." + id, "Cook with " + profile.Name, {
+            .Invoke = [this, id] { if (CookRuntime) CookRuntime->SelectProfile(id); },
+            .Checked = [this, id] { return CookRuntime != nullptr && CookRuntime->SelectedProfileId() == id; } });
+    }
+}
+
+WorkspaceDocumentFacet LevelWorkspace::Document() const
+{
+    if (Files == nullptr)
+        return {};
+    WorkspaceDocumentFacet facet{ .Label = Files->DocumentLabel() };
+    if (LevelDocument != nullptr)
+    {
+        std::vector<DocumentRef> changed;
+        LevelDocument->AppendChangedDocuments(changed);
+        facet.Changed = !changed.empty();
+    }
+    return facet;
+}
+
+WorkspaceTransportFacet LevelWorkspace::Transport() const
+{
+    if (CookRuntime == nullptr)
+        return {};
+    const CookSession::Status status = CookRuntime->GetSession().GetStatus();
+    if (CookRuntime->Player().IsPlaying())
+        return { .State = TransportState::Playing };
+    if (status.Active)
+    {
+        std::string text = status.ProfileName;
+        if (!status.StepName.empty())
+            text += ": " + status.StepName;
+        if (status.TotalSteps > 0)
+            text += " (" + std::to_string(status.CompletedSteps) + "/" + std::to_string(status.TotalSteps) + ")";
+        return { .State = TransportState::Cooking, .Readout = std::move(text) };
+    }
+    if (!status.LastError.empty())
+        return { .State = TransportState::Failed, .Readout = status.LastError };
+    return { .State = TransportState::Idle };
 }

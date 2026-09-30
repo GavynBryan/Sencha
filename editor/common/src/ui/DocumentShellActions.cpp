@@ -17,9 +17,6 @@ Engine::ExitDecision DecideDocumentExit(const DocumentSourceSet& sources)
 
 void InstallDocumentShellActions(EditorUiFeature& ui, Engine& engine, DocumentSourceSet& sources)
 {
-    ui.SetUndoActions([&sources] { sources.Undo(); }, [&sources] { sources.Redo(); },
-                      [&sources] { return sources.CanUndo(); }, [&sources] { return sources.CanRedo(); });
-    ui.SetSaveAllAction([&sources] { (void)sources.SaveAll(); });
     engine.OnExitRequested = [&sources](Engine::ExitSource) { return DecideDocumentExit(sources); };
 
     auto settleError = std::make_shared<std::string>();

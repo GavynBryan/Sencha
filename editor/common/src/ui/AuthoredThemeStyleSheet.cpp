@@ -95,6 +95,22 @@ constexpr Rule kRules[] = {
     { ".theme-warning", [] { return Color(EditorUi::Warning); } },
     { ".theme-danger", [] { return Color(EditorUi::Danger); } },
 
+    // The machine the editor is built as: the rail along the top, the plates
+    // instruments are mounted on, the keys pressed on them, the readouts that
+    // report and the lamps that signal. Colours only, like everything here.
+    { ".theme-rail", [] { return Fill(EditorUi::Mix(EditorUi::MetalBase, EditorUi::ChassisBg, 0.45f)) + Edge(EditorUi::MetalHighlight); } },
+    { ".theme-plate", [] { return Fill(EditorUi::MetalBase) + Edge(EditorUi::MetalHighlight); } },
+    { ".theme-key", [] { return Fill(EditorUi::ButtonBg) + Edge(EditorUi::MetalHighlight) + Color(EditorUi::TextPrimary); } },
+    { ".theme-key:hover", [] { return Fill(EditorUi::ButtonHovered) + Edge(EditorUi::ControlHover); } },
+    { ".theme-key.lit", [] { return Fill(EditorUi::Selected) + Edge(EditorUi::SelectedOutline) + Color(EditorUi::SelectedOutline); } },
+    { ".theme-key.disabled", [] { return Fill(EditorUi::WindowBg) + Edge(EditorUi::Border) + Color(EditorUi::TextDim); } },
+    { ".theme-readout", [] { return Fill(EditorUi::ChassisBg) + Edge(EditorUi::Border) + Color(EditorUi::Accent); } },
+    { ".theme-lamp", [] { return Fill(EditorUi::Mix(EditorUi::MetalBase, EditorUi::ChassisBg, 0.5f)) + Edge(EditorUi::MetalShadow); } },
+    { ".theme-lamp.on", [] { return Fill(EditorUi::Accent); } },
+    { ".theme-lamp.lit", [] { return Fill(EditorUi::SelectedOutline); } },
+    { ".theme-lamp.warn", [] { return Fill(EditorUi::Warning); } },
+    { ".theme-lamp.fault", [] { return Fill(EditorUi::Danger); } },
+
     // Scrollbars are element types rather than classes, so every scrolling
     // authored surface gets these without asking.
     { "scrollbarvertical, scrollbarhorizontal", [] { return Fill(EditorUi::WindowBg); } },

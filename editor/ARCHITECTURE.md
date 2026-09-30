@@ -32,12 +32,17 @@ The engine never depends on editor code (one-way dependency).
 ## Kyusu and its workspaces
 
 Kyusu (`editor/kyusu/`, `KyusuApp`) is the one `Game`. It owns the
-`ProjectSession`, the window's `EditorUiFeature` and a `WorkspaceHost`
-(`common/src/workspaces/`) built from the kinds table in
+`ProjectSession`, each window's `ShellWindow` and `EditorUiFeature`, and a
+`WorkspaceHost` (`common/src/workspaces/`) built from the kinds table in
 `kyusu/src/app/WorkspaceKinds.cpp`. A workspace (`IWorkspace`) is built when
-first opened and destroyed when closed; the window draws the active one's
-`WorkspaceView` (its panels, chrome, overlays, file actions and tab-strip
-controls) under the `WorkspaceBar` tab strip and nothing of the others.
+first opened and destroyed when closed. Each window's `ShellWindow`
+(`common/src/shell/`, authored UI, `editor/ui/shell.rml`) is its rail: the
+hatch listing every action in play, the workspace and document dials, the
+problems lamp, the transport and the window keys, all fed by the active
+workspace's facets (`WorkspaceFacets.h`) and actions. Under the rail the
+window's `EditorUiFeature` docks the active workspace's ImGui `WorkspaceView`
+panels until each workspace presents through the shell
+(`docs/editor/interaction-grammar.md`).
 Opening, closing and switching are requests applied at the frame boundary by
 the one `WorkspaceTickSystem`, since a workspace adds and removes render
 features as it comes and goes; each open workspace is ticked there too.
@@ -263,8 +268,8 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   up without an edit. The toolbar is not a bar of its own: the perspective
   viewport's header is the toolbar row it reserves in place of a title
   (`ViewportPanel::SetHeaderRows`), with the gizmo strip centred on the
-  window's midline; the cook/play loop (`CookPlayControls`) sits at the right of the `WorkspaceBar` tab strip under the caption, the
-  plate that will carry workspace tabs.
+  window's midline. Cook, play and stop are the `transport.*` actions the
+  rail's transport shows.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
   A tool with sub-modes exposes them as variants (`GetVariants`,

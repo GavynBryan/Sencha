@@ -22,7 +22,6 @@
 #include "ui/EditorStatusBar.h"
 #include "ui/ToolPalettePanel.h"
 #include "ui/EditorToolbar.h"
-#include "ui/CookPlayControls.h"
 #include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 
@@ -78,10 +77,13 @@ public:
     bool UndoStagedEdit() override;
     [[nodiscard]] bool HasStagedEdit() const override;
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
+    [[nodiscard]] WorkspaceDocumentFacet Document() const override;
+    [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;
 
 private:
+    void DefineTransportActions();
     // Constructor phases, in call order. Each builds one cohesive slice of the
     // editor against the engine (*EnginePtr) and primary window (*Window), so the
     // constructor reads as the bring-up sequence.
@@ -159,7 +161,6 @@ private:
     // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
     std::unique_ptr<EditorToolbar> Toolbar;
     // The cook/play loop, mounted on the window's tab strip.
-    std::unique_ptr<CookPlayControls> CookPlay;
     std::unique_ptr<EditorStatusBar> StatusBar;
     MaterialLibrary* Materials = nullptr;
     // Thumbnail GPU residency for the browser and active-material previews.

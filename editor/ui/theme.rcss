@@ -46,6 +46,19 @@ body { color: #d8dce4ff; }
 .theme-warning  { color: #d8a24aff; }
 .theme-danger   { color: #d86a5aff; }
 
+.theme-rail         { background-color: #10151cff; border-color: #3a4856ff; }
+.theme-plate        { background-color: #1a222cff; border-color: #3a4856ff; }
+.theme-key          { background-color: #131a23ff; border-color: #3a4856ff; color: #d6e4f0ff; }
+.theme-key:hover    { background-color: #1b2633ff; border-color: #ffd84aff; }
+.theme-key.lit      { background-color: #4d330bff; border-color: #ffb347ff; color: #ffb347ff; }
+.theme-key.disabled { background-color: #080b10ff; border-color: #24303cff; color: #6e8296ff; }
+.theme-readout      { background-color: #05070aff; border-color: #24303cff; color: #2ed0eaff; }
+.theme-lamp         { background-color: #10141bff; border-color: #03050aff; }
+.theme-lamp.on      { background-color: #2ed0eaff; }
+.theme-lamp.lit     { background-color: #ffb347ff; }
+.theme-lamp.warn    { background-color: #ee9d26ff; }
+.theme-lamp.fault   { background-color: #e0473cff; }
+
 scrollbarvertical, scrollbarhorizontal { background-color: #12161dff; }
 scrollbarvertical sliderbar, scrollbarhorizontal sliderbar { background-color: #39414fff; }
 scrollbarvertical sliderbar:hover, scrollbarhorizontal sliderbar:hover { background-color: #4c5566ff; }

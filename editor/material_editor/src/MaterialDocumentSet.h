@@ -57,6 +57,7 @@ public:
     [[nodiscard]] bool Close(std::size_t index, DirtyDisposition disposition, std::string& error);
 
     [[nodiscard]] MaterialEditTab* Active();
+    [[nodiscard]] const MaterialEditTab* Active() const;
     [[nodiscard]] std::size_t ActiveIndex() const { return ActiveTab; }
     void SetActive(std::size_t index);
 

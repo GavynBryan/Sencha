@@ -88,12 +88,6 @@ void MaterialWorkspace::BuildUi()
     }
 
     Surface.File.Save = [this] { SaveActiveMaterial(); };
-    Surface.Status = [this] {
-        const MaterialEditTab* tab = Tabs.Active();
-        if (tab == nullptr || !tab->Session.HasOpen())
-            return std::string{};
-        return tab->Session.VirtualPath() + (tab->Session.IsDirty() ? " *" : "");
-    };
     Surface.Overlays.push_back([this] { ClosePrompt.Draw(); });
 
     Surface.AddPanel(std::make_unique<MaterialFilesPanel>(
@@ -467,4 +461,12 @@ void MaterialWorkspace::PushToResident(MaterialEditTab& tab, const MaterialDescr
     staging.Record = *record;
     staging.Payload = description;
     (void)Assets.Assets.Reload(std::move(staging));
+}
+
+WorkspaceDocumentFacet MaterialWorkspace::Document() const
+{
+    const MaterialEditTab* tab = Tabs.Active();
+    if (tab == nullptr || !tab->Session.HasOpen())
+        return {};
+    return { .Label = tab->Session.VirtualPath(), .Changed = tab->Session.IsDirty() };
 }

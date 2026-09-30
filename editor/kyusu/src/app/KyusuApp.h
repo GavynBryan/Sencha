@@ -4,6 +4,9 @@
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "notices/NoticeQueue.h"
+#include "problems/ProblemList.h"
+#include "shell/ShellWindow.h"
 
 #include <graphics/PresentationId.h>
 
@@ -14,6 +17,8 @@
 #include <vector>
 
 class EditorUiFeature;
+class SdlWindow;
+class UiRenderFeature;
 class IWorkspace;
 class ProjectSession;
 class WorkspaceHost;
@@ -47,8 +52,13 @@ private:
     void DefineApplicationActions();
     // Puts each window's active workspace's actions in play there, and takes a
     // workspace's out once it is no longer the one in use.
-    void SyncActionLayers();
     struct WindowActions;
+    void SyncActionLayers();
+    // Each window's shell: act on and publish its rail, and give the docked
+    // content under it the room left.
+    void UpdateShells();
+    [[nodiscard]] std::unique_ptr<ShellWindow> MakeShell(SdlWindow& window, PresentationId presentation,
+                                                         WindowActions& actions, std::function<void()> close);
     [[nodiscard]] WindowActions& ActionsFor(PresentationId window);
     // The active workspace's staged edit, then the journal's newest step.
     void Undo();
@@ -70,14 +80,19 @@ private:
     // contexts in it are gone before the catalog they resolve against.
     ActionCatalog Catalog;
     ActionContext ApplicationActions;
+    ProblemList Problems;
+    NoticeQueue Notices;
     struct WindowActions
     {
         ActionContextStack Stack;
         ActionContextStack::Layer Application;
+        ActionContextStack::Layer View;
         ActionContextStack::Layer Workspace;
         const IWorkspace* Layered = nullptr;
     };
     std::unique_ptr<WindowActions> MainWindowActions;
+    // After the window's actions, so it lets go of its layer in them first.
+    std::unique_ptr<ShellWindow> MainWindowShell;
     // Declared before the workspaces so it is destroyed after them: the module
     // stays mapped while any document holds code it compiled.
     std::unique_ptr<ProjectSession> Session;
@@ -91,6 +106,8 @@ private:
         // Owned by the renderer.
         EditorUiFeature* Shell = nullptr;
         std::unique_ptr<WindowActions> Actions;
+        std::unique_ptr<ShellWindow> WindowShell;
+        UiRenderFeature* Ui = nullptr;
     };
     std::vector<DetachedWindow> Detached;
     std::vector<PresentationId> WindowsToClose;

@@ -131,7 +131,6 @@ void UiPreviewWorkspace::BuildUi()
     }
 
     Surface.Layout = DockLayoutRatios{ .Bottom = 0.22f, .Left = 0.20f, .Right = 0.26f, .RightBottom = 0.45f };
-    Surface.Status = [this] { return Session ? Session->PackagePath() : std::string{}; };
     Surface.File.Save = [this] { std::string error; (void)SaveModel(&error); };
 
     Surface.AddPanel(std::make_unique<DocumentLibraryPanel>(
@@ -352,4 +351,9 @@ void UiPreviewWorkspace::OpenInEditor(const DocumentEntry& entry)
     if (!SpawnProcess(binary, { entry.SourcePath().string() }, "", pid, &error))
         std::fprintf(stderr, "[ui preview] could not open '%s' in '%s': %s\n",
                      entry.SourcePath().string().c_str(), binary.c_str(), error.c_str());
+}
+
+WorkspaceDocumentFacet UiPreviewWorkspace::Document() const
+{
+    return { .Label = Session ? Session->PackagePath() : std::string{} };
 }

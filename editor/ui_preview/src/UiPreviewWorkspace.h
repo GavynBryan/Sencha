@@ -37,6 +37,7 @@ public:
     void Tick(FrameUpdateContext& ctx) override;
     void SetVisible(bool visible) override;
     void HandlePlatformEvent(PlatformEventContext& ctx) override;
+    [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override { Window = &window; }
 

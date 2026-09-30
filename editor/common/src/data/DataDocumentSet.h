@@ -51,6 +51,7 @@ public:
     void Reveal(std::string_view virtualPath);
     [[nodiscard]] std::size_t ActiveIndex() const { return ActiveTab; }
     [[nodiscard]] DataDocument* Active();
+    [[nodiscard]] const DataDocument* Active() const;
     [[nodiscard]] DataDocument* ActiveOf(std::string_view subtype);
     [[nodiscard]] DataDocument* Find(std::string_view virtualPath);
     [[nodiscard]] const DataDocument* Find(std::string_view virtualPath) const;

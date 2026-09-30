@@ -20,11 +20,9 @@ namespace
 // The palette keys shown as a theme's preview strip, background to accent.
 constexpr const char* kSwatchKeys[] = { "window_bg", "header_bg", "accent", "secondary", "text_primary" };
 
-// Swatch previews and pickers work by eye: the palette stores LINEAR values and
-// the sRGB swapchain encodes on write, so the rendered swatch is the authored
-// color. The numeric fields would show the linear encoding, so they stay hidden.
-constexpr ImGuiColorEditFlags kSwatchFlags =
-    ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoDragDrop;
+// Pickers work by eye: the palette stores LINEAR values and the sRGB swapchain
+// encodes on write, so the rendered swatch is the authored color. The numeric
+// fields would show the linear encoding, so they stay hidden.
 constexpr ImGuiColorEditFlags kEditFlags =
     ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaPreviewHalf;
 
@@ -134,39 +132,20 @@ bool ThemePreferences::CommitPending()
     return true;
 }
 
-void ThemePreferences::DrawMenu(ConsoleRegistry& console)
+std::vector<std::string> ThemePreferences::ThemeNames(ConsoleRegistry& console)
 {
     if (!Scanned)
     {
         Rescan();
-        // Pick up the startup theme so the check mark starts on the right entry.
+        // The startup theme, so the choice starts on the right entry.
         if (const CVarMetadata* var = console.FindCVar("editor.ui.theme"))
             if (const std::string* name = std::get_if<std::string>(&var->CurrentValue))
                 ActiveName = *name;
     }
-
-    if (ImGui::MenuItem("Built-in", nullptr, ActiveName.empty()))
-        RequestChoice(console, std::string{});
-
+    std::vector<std::string> names{ std::string{} };
     for (const ThemeChoice& theme : Themes)
-    {
-        for (std::size_t i = 0; i < theme.Swatches.size(); ++i)
-        {
-            ImGui::PushID(static_cast<int>(i));
-            ImGui::ColorButton(("##swatch_" + theme.Name).c_str(), theme.Swatches[i], kSwatchFlags,
-                               ImVec2(ImGui::GetFontSize() * 0.75f, ImGui::GetFontSize() * 0.75f));
-            ImGui::PopID();
-            ImGui::SameLine(0.0f, 2.0f);
-        }
-        if (ImGui::MenuItem(theme.Name.c_str(), nullptr, theme.Name == ActiveName))
-            RequestChoice(console, theme.Name);
-    }
-
-    ImGui::Separator();
-    if (ImGui::MenuItem("Customize Palette..."))
-        WindowOpen = true;
-    if (ImGui::MenuItem("Rescan Themes"))
-        Rescan();
+        names.push_back(theme.Name);
+    return names;
 }
 
 void ThemePreferences::DrawWindow(ConsoleRegistry& console)

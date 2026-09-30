@@ -1,6 +1,7 @@
 #pragma once
 
 #include "documents/DocumentRef.h"
+#include "workspaces/WorkspaceFacets.h"
 
 class ActionContext;
 struct FrameUpdateContext;
@@ -42,6 +43,10 @@ public:
     // puts them in play in the window showing it, and takes them out when it
     // hides or goes elsewhere; the definitions live in the ActionCatalog.
     [[nodiscard]] virtual ActionContext* Actions() { return nullptr; }
+
+    // What the shell presents about this workspace (WorkspaceFacets.h).
+    [[nodiscard]] virtual WorkspaceDocumentFacet Document() const { return {}; }
+    [[nodiscard]] virtual WorkspaceTransportFacet Transport() const { return {}; }
 
     virtual WorkspaceView& View() = 0;
     // The window this workspace now draws in: its UI capture, input gates and

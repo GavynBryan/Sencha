@@ -9,18 +9,20 @@
 
 class ConsoleRegistry;
 
-// The View > Preferences > Theme UI: lists the theme JSONs in the bundled themes
-// directory (each with a color swatch preview), applies a choice live, and hosts
-// the palette window where individual colors are overridden in place and saved
-// back out as a theme file. The chosen theme name is written to the
+// Theme choice: the theme JSONs in the bundled themes directory, applying one
+// live, and the palette window where individual colors are overridden in place
+// and saved back out as a theme file. The chosen theme name is written to the
 // editor.ui.theme cvar, the same value the startup path reads.
 class ThemePreferences
 {
 public:
     explicit ThemePreferences(std::filesystem::path themeDir);
 
-    // The contents of the "Theme" submenu; call between BeginMenu/EndMenu.
-    void DrawMenu(ConsoleRegistry& console);
+    // The themes on offer, by name; empty is the built-in one.
+    [[nodiscard]] std::vector<std::string> ThemeNames(ConsoleRegistry& console);
+    [[nodiscard]] const std::string& ActiveTheme() const { return ActiveName; }
+    void Choose(ConsoleRegistry& console, const std::string& name) { RequestChoice(console, name); }
+    void OpenPaletteWindow() { WindowOpen = true; }
     // The palette override window, when open. Call once per frame, outside the
     // menu bar.
     void DrawWindow(ConsoleRegistry& console);

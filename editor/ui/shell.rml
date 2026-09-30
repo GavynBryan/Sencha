@@ -1,0 +1,75 @@
+<rml>
+<head>
+    <title>Shell</title>
+    <link type="text/rcss" href="shell.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="shell">
+    <!-- The rail: the window's caption and the one full-width piece of chrome.
+         Left is identity (the hatch, which workspace, which document), right is
+         consequence (problems, the transport, the window), and the middle is
+         where the window is dragged from and where notices pass through. -->
+    <div id="rail" class="theme-rail">
+        <div id="rail_left">
+            <div id="hatch" class="key theme-key" data-class-lit="popover == 'hatch'"
+                 data-event-click="shell_popover('hatch')"><span class="glyph">&#xf0c9;</span></div>
+            <div id="workspace_dial" class="dial theme-plate" data-class-lit="popover == 'workspaces'"
+                 data-event-click="shell_popover('workspaces')">
+                <div class="knob theme-key"></div>
+                <span class="dial_label">{{workspace_label}}</span>
+            </div>
+            <div id="document_dial" class="dial theme-plate" data-if="document_label != ''"
+                 data-event-click="shell_popover('document')">
+                <div class="lamp theme-lamp" data-class-lit="document_changed"></div>
+                <span class="dial_label">{{document_label}}</span>
+            </div>
+        </div>
+
+        <div id="notices">
+            <div class="notice theme-readout" data-for="notice : notices"
+                 data-class-warning="notice.detail == 'warning'"
+                 data-class-failed="notice.detail == 'failed'">{{notice.label}}</div>
+        </div>
+
+        <div id="rail_right">
+            <div id="problems" class="readout theme-readout" data-if="problem_count > 0">
+                <div class="lamp theme-lamp" data-class-warn="!problem_errors" data-class-fault="problem_errors"></div>
+                <span class="count">{{problem_count}}</span>
+            </div>
+            <div id="transport" class="theme-plate" data-if="transport_state != 'none'">
+                <div class="key theme-key" data-class-disabled="!cook_enabled"
+                     data-event-click="shell_invoke('transport.cook')">COOK</div>
+                <div class="key theme-key" data-class-lit="transport_state == 'playing'"
+                     data-class-disabled="!play_enabled"
+                     data-event-click="shell_invoke('transport.play')">PLAY</div>
+                <div class="key theme-key" data-class-disabled="!stop_enabled"
+                     data-event-click="shell_invoke('transport.stop')">STOP</div>
+                <div class="lamp theme-lamp" data-class-on="transport_state == 'playing'"
+                     data-class-warn="transport_state == 'cooking'"
+                     data-class-fault="transport_state == 'failed'"></div>
+                <span class="transport_text theme-dim" data-if="transport_text != ''">{{transport_text}}</span>
+            </div>
+            <div id="window_keys">
+                <div class="key theme-key" data-event-click="shell_window('minimize')"><span class="glyph">&#xf2d1;</span></div>
+                <div class="key theme-key" data-event-click="shell_window('maximize')"><span class="glyph">&#xf2d0;</span></div>
+                <div class="key theme-key" data-event-click="shell_window('close')"><span class="glyph">&#xf00d;</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- A popover: one decision, anchored under the instrument that opened it.
+         Anything outside it takes it away, which is what the catch is for. -->
+    <div id="dismiss" data-if="popover != ''" data-event-click="shell_popover('')"></div>
+    <div id="popover" class="theme-surface" data-if="popover != ''"
+         data-style-left="popover_x + 'px'">
+        <div class="entry theme-row" data-for="entry : entries"
+             data-class-heading="entry.control == 'section'"
+             data-class-disabled="entry.disabled"
+             data-class-selected="entry.selected"
+             data-event-click="shell_choose(entry.key)">
+            <span class="entry_label">{{entry.label}}</span>
+            <span class="entry_chord theme-muted">{{entry.value}}</span>
+        </div>
+    </div>
+</body>
+</rml>

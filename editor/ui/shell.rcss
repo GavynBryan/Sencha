@@ -1,0 +1,234 @@
+@font-face { src: "fonts/Inter-Regular.ttf"; }
+@font-face { src: "fonts/ChakraPetch-SemiBold.ttf"; }
+@font-face { src: "fonts/JetBrainsMono-Regular.ttf"; }
+@font-face { src: "fonts/fa-solid-900.ttf"; }
+
+/* The shell's own chrome: the rail and its popovers. Geometry only; every
+   colour comes from theme.rcss roles. The whole document passes the pointer
+   through except where something is actually mounted. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: Inter;
+    font-size: 12dp;
+}
+
+#rail
+{
+    display: flex;
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    height: 34dp;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom-width: 1dp;
+    pointer-events: auto;
+}
+
+#rail_left, #rail_right
+{
+    display: flex;
+    align-items: center;
+    height: 34dp;
+    padding: 0dp 6dp;
+    gap: 6dp;
+}
+
+#notices
+{
+    display: flex;
+    flex: 1;
+    justify-content: center;
+    align-items: center;
+    height: 34dp;
+    pointer-events: none;
+}
+
+.notice
+{
+    display: block;
+    height: 20dp;
+    line-height: 20dp;
+    padding: 0dp 10dp;
+    margin: 0dp 4dp;
+    border-width: 1dp;
+    border-radius: 3dp;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+
+.key
+{
+    display: block;
+    min-width: 24dp;
+    height: 22dp;
+    line-height: 22dp;
+    padding: 0dp 7dp;
+    text-align: center;
+    border-width: 1dp;
+    border-radius: 3dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 11dp;
+    letter-spacing: 1dp;
+    pointer-events: auto;
+    tab-index: auto;
+}
+
+.key:active
+{
+    /* Pressed in by a physical key's travel. */
+    transform: translateY(1dp);
+}
+
+.glyph
+{
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    font-size: 11dp;
+}
+
+.dial
+{
+    display: flex;
+    align-items: center;
+    height: 24dp;
+    padding: 0dp 10dp 0dp 3dp;
+    gap: 7dp;
+    border-width: 1dp;
+    border-radius: 12dp;
+    pointer-events: auto;
+    tab-index: auto;
+}
+
+.knob
+{
+    display: block;
+    width: 18dp;
+    height: 18dp;
+    border-width: 1dp;
+    border-radius: 9dp;
+}
+
+.dial_label
+{
+    display: block;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+}
+
+.lamp
+{
+    display: block;
+    width: 8dp;
+    height: 8dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+}
+
+.readout
+{
+    display: flex;
+    align-items: center;
+    gap: 5dp;
+    height: 22dp;
+    padding: 0dp 7dp;
+    border-width: 1dp;
+    border-radius: 3dp;
+    font-family: "JetBrains Mono";
+    pointer-events: auto;
+}
+
+#transport
+{
+    display: flex;
+    align-items: center;
+    gap: 4dp;
+    height: 26dp;
+    padding: 0dp 4dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+.transport_text
+{
+    display: block;
+    max-width: 220dp;
+    overflow: hidden;
+    padding: 0dp 4dp;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+
+#window_keys
+{
+    display: flex;
+    gap: 3dp;
+    margin-left: 6dp;
+}
+
+#dismiss
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+}
+
+#popover
+{
+    display: block;
+    position: absolute;
+    top: 38dp;
+    width: 280dp;
+    padding: 4dp 0dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+.entry
+{
+    display: flex;
+    justify-content: space-between;
+    height: 24dp;
+    line-height: 24dp;
+    padding: 0dp 12dp;
+}
+
+.entry.heading
+{
+    height: 20dp;
+    line-height: 20dp;
+    margin-top: 4dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 10dp;
+    letter-spacing: 2dp;
+    pointer-events: none;
+}
+
+.entry.disabled
+{
+    pointer-events: none;
+}
+
+.entry_chord
+{
+    display: block;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+

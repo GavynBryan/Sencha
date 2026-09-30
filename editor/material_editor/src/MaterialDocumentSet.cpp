@@ -88,6 +88,11 @@ MaterialEditTab* MaterialDocumentSet::Active()
     return ActiveTab < List.size() ? List[ActiveTab].get() : nullptr;
 }
 
+const MaterialEditTab* MaterialDocumentSet::Active() const
+{
+    return ActiveTab < List.size() ? List[ActiveTab].get() : nullptr;
+}
+
 void MaterialDocumentSet::SetActive(std::size_t index)
 {
     if (index < List.size())

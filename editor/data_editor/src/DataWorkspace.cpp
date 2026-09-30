@@ -44,12 +44,6 @@ void DataWorkspace::BuildUi()
         .CenterBottom = 0.30f,
     };
     Surface.File.Save = [this] { SaveActive(); };
-    Surface.Status = [this] {
-        const DataDocument* document = Model.Documents.Active();
-        if (document == nullptr)
-            return std::string{};
-        return document->VirtualPath() + (document->IsDirty() ? " *" : "");
-    };
 
     Surface.AddPanel(std::make_unique<DataAssetBrowserPanel>(Model));
     Surface.AddPanel(std::make_unique<DataFormPanel>(Model, SubtypeEditors));
@@ -122,4 +116,12 @@ bool DataWorkspace::OwnsDocument(const DocumentRef& document) const
 void DataWorkspace::RevealDocument(const DocumentRef& document)
 {
     Model.Documents.Reveal(document.Key);
+}
+
+WorkspaceDocumentFacet DataWorkspace::Document() const
+{
+    const DataDocument* document = Model.Documents.Active();
+    if (document == nullptr)
+        return {};
+    return { .Label = document->VirtualPath(), .Changed = document->IsDirty() };
 }

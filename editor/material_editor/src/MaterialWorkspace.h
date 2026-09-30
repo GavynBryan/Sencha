@@ -35,6 +35,7 @@ public:
 
     void Tick(FrameUpdateContext& ctx) override;
     [[nodiscard]] bool OwnsDocument(const DocumentRef& document) const override;
+    [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     WorkspaceView& View() override { return Surface; }
 
 private:

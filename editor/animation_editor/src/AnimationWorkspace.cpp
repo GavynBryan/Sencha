@@ -63,12 +63,6 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
         if (const DataDocument* active = Workspace->Documents.Active())
             (void)sources.Save(Workspace->Documents.RefOf(*active));
     };
-    Surface.Status = [this] {
-        const DataDocument* active = Workspace->Documents.Active();
-        if (active == nullptr)
-            return std::string{};
-        return active->VirtualPath() + (active->IsDirty() ? " *" : "");
-    };
     AddAnimationPreviewPanels(Surface, *Workspace, Viewport);
     RegisterCommands();
 }
@@ -157,4 +151,12 @@ void AnimationWorkspace::RevealDocument(const DocumentRef& document)
 {
     if (document.Source == &Store)
         Workspace->Documents.Reveal(document.Key);
+}
+
+WorkspaceDocumentFacet AnimationWorkspace::Document() const
+{
+    const DataDocument* active = Workspace->Documents.Active();
+    if (active == nullptr)
+        return {};
+    return { .Label = active->VirtualPath(), .Changed = active->IsDirty() };
 }

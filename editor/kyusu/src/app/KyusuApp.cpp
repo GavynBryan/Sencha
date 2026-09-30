@@ -1,4 +1,8 @@
 #include "app/KyusuApp.h"
+#include "ui/EditorUiStyle.h"
+#include <chrono>
+#include <ui/UiService.h>
+#include <render/feature/UiRenderFeature.h>
 
 #include "app/ProjectSession.h"
 #include "app/WorkspaceKinds.h"
@@ -152,11 +156,6 @@ void KyusuApp::OnStart(GameStartupContext&)
     ApplyEditorThemeFromConsole(engine.Console());
     auto ui = std::make_unique<EditorUiFeature>(engine, *window, graphics.Instance, graphics.Frames,
                                                 "kyusu.imgui.ini");
-    ui->SetIdentity(ShellIdentity{
-        .Product = "KYUSU",
-        .LogoPath = std::string(SENCHA_EDITOR_BRAND_DIR) + "/kyusu-logo.svg",
-        .WindowTitle = "Kyusu",
-    });
     ui->SetWorkspaceHost(*Workspaces, mainWindow);
     ui->SetActionCatalog(&Catalog);
     Renderer& renderer = graphics.MainRenderer;
@@ -177,6 +176,13 @@ void KyusuApp::OnStart(GameStartupContext&)
 
     InstallDocumentActions();
     DefineApplicationActions();
+    if (Ui != nullptr)
+    {
+        Ui->DefineThemeActions();
+        MainWindowActions->View = MainWindowActions->Stack.Push(Ui->ViewActionContext(), ActionRank::Window);
+    }
+    if (engine.TryUi() != nullptr)
+        MainWindowShell = MakeShell(*window, mainWindow, *MainWindowActions, [&engine] { engine.RequestExit(); });
     RegisterWorkspaceCommands();
     // Before the startup script runs, so an argv +editor.open or +cook finds
     // the level it acts on. Without a project to edit, choose one.
@@ -196,9 +202,9 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
     info.Width = extent.Width;
     info.Height = extent.Height;
     info.ClientDecorations = engine.Config().Window.ClientDecorations;
-    // ImGui draws without depth, so the window's swapchain scope binds none.
+    // With the stencil aspect authored UI clips rounded shapes against.
     const PresentationId presentation =
-        OpenPresentationWindow(graphics, windows, info, PresentationDesc{ .DepthStencil = false });
+        OpenPresentationWindow(graphics, windows, info, PresentationDesc{ .DepthStencil = true });
     if (presentation.IsNull())
         return {};
     SdlWindow& window = graphics.Frames.FindPresentation(presentation)->Window();
@@ -207,7 +213,6 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
     auto shell = std::make_unique<EditorUiFeature>(*Ui, window);
     shell->SetWorkspaceHost(*Workspaces, presentation);
     shell->SetActionCatalog(&Catalog);
-    shell->SetCloseWindowAction([this, presentation] { WindowsToClose.push_back(presentation); });
     EditorUiFeature* added = graphics.MainRenderer.AddFeature(std::move(shell), RenderFeatureScope::For(presentation));
     if (added == nullptr)
     {
@@ -216,7 +221,17 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
     }
     auto actions = std::make_unique<WindowActions>();
     actions->Application = actions->Stack.Push(ApplicationActions, ActionRank::Application);
-    Detached.push_back(DetachedWindow{ presentation, window.GetId(), added, std::move(actions) });
+    actions->View = actions->Stack.Push(added->ViewActionContext(), ActionRank::Window);
+    // The window's own authored UI: its shell, drawn by a UI feature of its own.
+    UiRenderFeature* uiFeature = nullptr;
+    if (UiService* ui = engine.TryUi())
+        uiFeature = graphics.MainRenderer.AddFeature(
+            std::make_unique<UiRenderFeature>(*ui, engine.Content().Assets().Textures.get(), window.GetId()),
+            RenderFeatureScope::For(presentation));
+    std::unique_ptr<ShellWindow> windowShell =
+        MakeShell(window, presentation, *actions, [this, presentation] { WindowsToClose.push_back(presentation); });
+    Detached.push_back(DetachedWindow{ presentation, window.GetId(), added, std::move(actions),
+                                       std::move(windowShell), uiFeature });
     return presentation;
 }
 
@@ -227,8 +242,13 @@ void KyusuApp::CloseDetachedWindow(PresentationId window)
     if (it == Detached.end())
         return;
     Engine& engine = GetEngine();
-    // The shell first: a presentation something still records into refuses to go.
+    // Everything recording into it first: a presentation something still
+    // records into refuses to go.
+    it->WindowShell.reset();
+    it->Actions.reset();
     DetachRenderFeature(engine, it->Shell);
+    if (it->Ui != nullptr)
+        DetachRenderFeature(engine, it->Ui);
     (void)ClosePresentationWindow(engine.Graphics(), engine.Platform().Windows, window);
     Detached.erase(it);
 }
@@ -266,8 +286,6 @@ void KyusuApp::InstallDocumentActions()
     if (Ui != nullptr)
     {
         InstallDocumentShellActions(*Ui, GetEngine(), documents);
-        Ui->SetUndoActions([this] { Undo(); }, [&documents] { documents.Redo(); }, [this] { return CanUndo(); },
-                           [&documents] { return documents.CanRedo(); });
         Ui->AddShellOverlay([this] { DrawClosePrompt(); });
     }
 
@@ -497,6 +515,19 @@ void KyusuApp::RegisterWorkspaceCommands()
             },
         });
     };
+    registry.RegisterCommand({
+        .Name = "shell.popover",
+        .Owner = "editor",
+        .Usage = "shell.popover <hatch|workspaces|document|none>",
+        .Help = "Open one of the main window's rail popovers, or close it.",
+        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            if (MainWindowShell != nullptr)
+                MainWindowShell->ShowPopover(args.empty() ? std::string_view{} : std::string_view(args[0]));
+            result.Info("done");
+            return result;
+        },
+    });
     registerAction("workspace.open", WorkspaceAction::Open, "Open a workspace, or bring it to the front if open.");
     registerAction("workspace.close", WorkspaceAction::Close, "Close a workspace.");
     registerAction("workspace.activate", WorkspaceAction::Activate, "Bring an open workspace to the front.");
@@ -533,6 +564,7 @@ void KyusuApp::OnRegisterSystems(SystemRegisterContext& ctx)
         ctx.Schedule.Register<WorkspaceTickSystem>(*Workspaces, FramesStarted, [this] {
             CloseRequestedWindows();
             SyncActionLayers();
+            UpdateShells();
         });
 }
 
@@ -603,9 +635,11 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
     {
         while (!Detached.empty())
             Workspaces->Gather(Detached.back().Presentation);
+        MainWindowShell.reset();
         if (MainWindowActions != nullptr)
         {
             MainWindowActions->Workspace.Reset();
+            MainWindowActions->View.Reset();
             MainWindowActions->Layered = nullptr;
         }
         Workspaces->CloseAll();
@@ -615,4 +649,41 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
     // The exit gate reads the journal the session is about to take with it.
     GetEngine().OnExitRequested = nullptr;
     Session.reset();
+}
+
+std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, PresentationId presentation,
+                                                 WindowActions& actions, std::function<void()> close)
+{
+    Engine& engine = GetEngine();
+    return std::make_unique<ShellWindow>(ShellWindowServices{
+        .Ui = engine.Ui(),
+        .Workspaces = *Workspaces,
+        .Catalog = Catalog,
+        .Actions = actions.Stack,
+        .Problems = Problems,
+        .Notices = Notices,
+        .Window = window,
+        .Presentation = presentation,
+        .CloseWindow = std::move(close),
+        .Title = "Kyusu",
+    });
+}
+
+void KyusuApp::UpdateShells()
+{
+    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (MainWindowShell != nullptr)
+    {
+        MainWindowShell->Update(now, EditorUi::UiScale);
+        if (Ui != nullptr)
+            Ui->SetContentTopInset(MainWindowShell->RailHeight());
+    }
+    for (DetachedWindow& entry : Detached)
+    {
+        if (entry.WindowShell == nullptr)
+            continue;
+        entry.WindowShell->Update(now, EditorUi::UiScale);
+        if (entry.Shell != nullptr)
+            entry.Shell->SetContentTopInset(entry.WindowShell->RailHeight());
+    }
 }

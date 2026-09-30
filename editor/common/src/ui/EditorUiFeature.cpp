@@ -10,7 +10,6 @@
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
 #include "ImGuiTextureOwner.h"
-#include "WorkspaceBar.h"
 #include "workspaces/WorkspaceHost.h"
 #include "chrome/ChromeBars.h"
 #include "chrome/ChromeChassis.h"
@@ -298,7 +297,6 @@ EditorUiFeature::EditorUiFeature(EditorUiFeature& primary, SdlWindow& window)
     , Frames(primary.Frames)
     , ThemePrefs(SENCHA_EDITOR_THEME_DIR)
 {
-    Identity = primary.Identity;
 }
 
 EditorUiFeature::~EditorUiFeature()
@@ -370,9 +368,7 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         view->Dock.PendingTabFocus.clear();
     }
 
-    DrawMainMenuBar(view);
-    if (TabStrip != nullptr)
-        TabStrip->Draw(view != nullptr ? &view->BarControls : nullptr);
+    ClaimViewActions(view);
     if (view != nullptr)
         for (const std::function<void()>& chrome : view->Chrome)
             if (chrome)
@@ -401,7 +397,6 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
-    UpdateWindowTitle(view);
 }
 
 void EditorUiFeature::DrawDockHost(WorkspaceView* view)
@@ -410,8 +405,10 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
     // sits inside its ring: our own window with no background and a plain
     // DockSpace, so the chassis ground shows through the seams between nodes.
     // Every docked panel, the viewports included, paints its own opaque body.
+    // Under the shell's rail, which is authored UI drawn over this window.
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    const ImVec2 workMin = vp->WorkPos;
+    const float top = std::min(ContentTopInset, vp->WorkSize.y);
+    const ImVec2 workMin(vp->WorkPos.x, vp->WorkPos.y + top);
     const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y);
     ImDrawList* background = ImGui::GetBackgroundDrawList();
     EditorChrome::DrawChassisBase(background, workMin, workMax);
@@ -421,7 +418,7 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
     const float inset = EditorChrome::ChassisInset();
     ImGui::SetNextWindowPos(ImVec2(workMin.x + inset, workMin.y + inset));
     ImGui::SetNextWindowSize(ImVec2(std::max(0.0f, vp->WorkSize.x - inset * 2.0f),
-                                    std::max(0.0f, vp->WorkSize.y - inset * 2.0f)));
+                                    std::max(0.0f, vp->WorkSize.y - top - inset * 2.0f)));
     ImGui::SetNextWindowViewport(vp->ID);
 
     const ImGuiWindowFlags hostFlags =
@@ -488,22 +485,6 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
             ImGui::PopFont();
     }
     ImGui::End();
-}
-
-void EditorUiFeature::UpdateWindowTitle(const WorkspaceView* view)
-{
-    if (Workspaces == nullptr || Identity.WindowTitle.empty())
-        return;
-    std::string title = Identity.WindowTitle;
-    if (const WorkspaceKind* kind = Workspaces->ActiveKindIn(Presentation))
-        title += " - " + kind->DisplayName;
-    if (view != nullptr && view->Status)
-        if (const std::string status = view->Status(); !status.empty())
-            title += " - " + status;
-    if (title == LastWindowTitle)
-        return;
-    Window.SetTitle(title);
-    LastWindowTitle = std::move(title);
 }
 
 void EditorUiFeature::RegisterPointerCommands(ConsoleRegistry& registry)
@@ -706,7 +687,6 @@ void EditorUiFeature::SetWorkspaceHost(WorkspaceHost& host, PresentationId windo
 {
     Workspaces = &host;
     Presentation = window;
-    TabStrip = std::make_unique<WorkspaceBar>(host, window);
     if (Role == ShellRole::Detached)
         return;
     host.SetOpenedListener([this](const WorkspaceKind& kind, IWorkspace& workspace) { AdoptWorkspace(kind, workspace); });
@@ -738,6 +718,60 @@ void EditorUiFeature::ReleaseWorkspace(IWorkspace& workspace)
     std::erase_if(Consoles, [&](const auto& entry) { return entry.first == &workspace; });
 }
 
+void EditorUiFeature::ClaimViewActions(WorkspaceView* view)
+{
+    // What the View menu used to offer, as actions the window's shell lists:
+    // showing each of the active workspace's panels, and rebuilding its layout.
+    // Claimed per view, so the hatch lists only what this window shows.
+    if (view == ClaimedView)
+        return;
+    for (const std::string& id : ClaimedPanelActions)
+        ViewActions.Release(id);
+    ClaimedPanelActions.clear();
+    ViewActions.Release("view.reset_layout");
+    ClaimedView = view;
+    const WorkspaceKind* kind = Workspaces != nullptr ? Workspaces->ActiveKindIn(Presentation) : nullptr;
+    if (view == nullptr || kind == nullptr || Catalog == nullptr)
+        return;
+
+    ViewActions.Claim("view.reset_layout", ActionHandler{ .Invoke = [view] { view->Dock.LayoutDirty = true; } });
+    for (const std::unique_ptr<IEditorPanel>& owned : view->Panels)
+    {
+        IEditorPanel* panel = owned.get();
+        if (panel == nullptr || panel->GetDockSlot() == DockSlot::Center)
+            continue;
+        const std::string id = "panel." + kind->Id + "." + std::string(panel->GetPersistence().Id);
+        (void)Catalog->Define({ .Id = id, .Label = std::string(panel->GetTitle()), .Category = "Panels" });
+        ViewActions.Claim(id, ActionHandler{ .Invoke = [panel] { panel->ToggleVisible(); },
+                                             .Checked = [panel] { return panel->IsVisible(); } });
+        ClaimedPanelActions.push_back(id);
+    }
+}
+
+void EditorUiFeature::ShowThemePreferences()
+{
+    Shell().ThemePrefs.OpenPaletteWindow();
+}
+
+void EditorUiFeature::DefineThemeActions()
+{
+    if (Catalog == nullptr || Role != ShellRole::Primary)
+        return;
+    ConsoleRegistry& console = EngineInstance.Console().Registry();
+    for (const std::string& name : ThemePrefs.ThemeNames(console))
+    {
+        const std::string id = "theme.use." + (name.empty() ? std::string("builtin") : name);
+        (void)Catalog->Define({ .Id = id, .Label = name.empty() ? std::string("Built-in") : name,
+                                .Category = "Theme" });
+        ViewActions.Claim(id, ActionHandler{
+            .Invoke = [this, name] { ThemePrefs.Choose(EngineInstance.Console().Registry(), name); },
+            .Checked = [this, name] { return ThemePrefs.ActiveTheme() == name; } });
+    }
+    (void)Catalog->Define({ .Id = "theme.palette", .Label = "Customize Palette...", .Category = "Theme" });
+    ViewActions.Claim("theme.palette", ActionHandler{ .Invoke = [this] { ShowThemePreferences(); } });
+    (void)Catalog->Define({ .Id = "view.reset_layout", .Label = "Reset Layout", .Category = "View" });
+}
+
 void EditorUiFeature::ToggleConsole()
 {
     IWorkspace* active = Workspaces != nullptr ? Workspaces->ActiveIn(Presentation) : nullptr;
@@ -750,27 +784,6 @@ WorkspaceView* EditorUiFeature::ActiveView() const
 {
     IWorkspace* active = Workspaces != nullptr ? Workspaces->ActiveIn(Presentation) : nullptr;
     return active != nullptr ? &active->View() : nullptr;
-}
-
-void EditorUiFeature::SetUndoActions(std::function<void()> undoAction,
-                                     std::function<void()> redoAction,
-                                     std::function<bool()> canUndoAction,
-                                     std::function<bool()> canRedoAction)
-{
-    UndoAction = std::move(undoAction);
-    RedoAction = std::move(redoAction);
-    CanUndoAction = std::move(canUndoAction);
-    CanRedoAction = std::move(canRedoAction);
-}
-
-void EditorUiFeature::SetSaveAllAction(std::function<void()> saveAllAction)
-{
-    SaveAllAction = std::move(saveAllAction);
-}
-
-void EditorUiFeature::SetIdentity(ShellIdentity identity)
-{
-    Identity = std::move(identity);
 }
 
 bool EditorUiFeature::InitImGui(const RendererServices& services)
@@ -1047,7 +1060,7 @@ EditorChrome::BarSurface EditorUiFeature::SurfaceFor(BarRole role) const
 
 void EditorUiFeature::BuildShellAtlasIfStale()
 {
-    const EditorChrome::ShellAtlasKey key{ .UiScale = EditorUi::UiScale, .LogoPath = Identity.LogoPath };
+    const EditorChrome::ShellAtlasKey key{ .UiScale = EditorUi::UiScale, .LogoPath = {} };
     if (AtlasBuilt && key == BuiltAtlas)
         return;
 
@@ -1079,273 +1092,4 @@ void EditorUiFeature::BuildShellAtlasIfStale()
     if (Log != nullptr)
         Log->Info("EditorUiFeature: shell atlas built ({} icons, mark {}) -- build #{}", baked.Icons,
                   baked.Logo ? "yes" : "no", AtlasBuilds);
-}
-
-void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
-{
-    // The bar is the window's caption when the window draws its own frame: the
-    // identity plate and the free strips drag it, the controls at the right
-    // minimize, maximize, and close it.
-    //
-    // The row is submitted as two menu-bar appends, and the order is load
-    // bearing. BeginMainMenuBar takes the bar's height from the frame height,
-    // so the padding pushed here is what makes the caption taller than a plain
-    // menu row. ImGui also aligns the first append's items to that same
-    // padding, which is what centers File/Edit/View in the taller bar. Chrome
-    // sized from the ordinary frame height would inherit that alignment and
-    // hang below the bar, so the menus take the first append and the chrome
-    // follows in a second one, taken with the ordinary padding and seated on
-    // the chassis lane. ImGui supports appending to a menu bar more than once
-    // (EndMenuBar saves the cursor for the next append), but the menus must be
-    // the first of the two: EndMenuBar captures a child menu's failed left or
-    // right navigation, and asserts that menu-layer items have already been
-    // submitted this frame when it does.
-    const ImGuiStyle& style = ImGui::GetStyle();
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                        ImVec2(style.FramePadding.x, style.FramePadding.y + EditorChrome::BarLaneInset()));
-    const bool open = ImGui::BeginMainMenuBar();
-    ImGui::PopStyleVar();
-    if (!open)
-        return;
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    const ImVec2 barMin = ImGui::GetWindowPos();
-    const ImVec2 barMax(barMin.x + ImGui::GetWindowSize().x, barMin.y + ImGui::GetWindowSize().y);
-    const float buttonSize = EditorChrome::BarButtonSize();
-    const EditorChrome::BarRects bar = EditorChrome::BarFrame(dl, barMin, barMax, EditorChrome::BarEdge::Bottom,
-                                                              buttonSize, SurfaceFor(BarRole::Caption));
-
-    const bool clientFrame = Window.HasClientDecorations();
-    const float gap = EditorUi::Px(8.0f);
-    const float pad = EditorUi::Px(EditorUi::Metrics.ModulePad);
-    const float edgePad = pad * 2.0f;
-    const float laneHeight = bar.LaneMax.y - bar.LaneMin.y;
-
-    // The nameplate: a titled header row spanning the channel, so the title
-    // face has room to sit on the bar's centerline rather than in a control's
-    // frame height.
-    const float reveal = EditorUi::Px(2.0f);
-    const float plateHeight = std::max(0.0f, (bar.ChannelMax.y - bar.ChannelMin.y) - reveal * 2.0f);
-    const float plateGap = EditorUi::Px(6.0f);
-    const float plateRule = EditorUi::Px(36.0f);
-    EditorChrome::HeaderRowSpec plateSpec;
-    float plateWidth = 0.0f;
-    if (!Identity.Product.empty())
-    {
-        // The mark, when there is one, is the plate's cap: the composition
-        // stays mark, wordmark, rule, with the teapot where the accent block
-        // would otherwise be. Its width follows the baked art's aspect at the
-        // plate's band height.
-        const float aspect = EditorChrome::LogoAspect();
-        if (aspect > 0.0f)
-            plateSpec.CapWidth = std::max(0.0f, plateHeight - EditorUi::Px(8.0f)) * aspect;
-        const float productW = EditorUi::MeasureRoleText(EditorUi::TextRole::ApplicationTitle, Identity.Product).x;
-        plateWidth = EditorChrome::HeaderRowWidth(plateSpec, plateHeight, productW, plateRule, plateGap);
-    }
-    const float dividerWidth = EditorUi::Px(4.0f);
-    const float leftWidth = plateWidth > 0.0f ? plateWidth + gap + dividerWidth : 0.0f;
-
-    // The menus are centered on the bar, on their own mounted bay. The bay is
-    // the strip plus one item spacing on each side, which is exactly how far
-    // ImGui extends a horizontal menu's click box past its label, so the bay a
-    // user sees and the strip they can click are the same rectangle.
-    static const char* const kMenuLabels[] = { "File", "Edit", "View" };
-    const float centerWidth = EditorChrome::MenuBarStripWidth(kMenuLabels) + style.ItemSpacing.x * 2.0f;
-
-    std::string status = view != nullptr && view->Status ? view->Status() : std::string{};
-    // A path or a name is data: it reads out of a cell, like the status bar's.
-    const auto rightWidthFor = [&](const std::string& text) {
-        const float readout = text.empty() ? 0.0f
-            : EditorChrome::ReadoutWidth("DOC", text.c_str(), EditorChrome::LedState::Off);
-        const float controls = clientFrame ? buttonSize * 3.0f + style.ItemSpacing.x * 2.0f + pad : 0.0f;
-        return readout + (readout > 0.0f && controls > 0.0f ? gap : 0.0f) + controls;
-    };
-
-    EditorChrome::BarRowRects row = EditorChrome::BarRowLayout(bar.ChannelMin.x + edgePad, bar.ChannelMax.x - edgePad,
-                                                              leftWidth, centerWidth, rightWidthFor(status), gap);
-    if (row.Fit == EditorChrome::BarRowFit::Flowed && !status.empty())
-    {
-        // The document readout is the one part of the row that is a nicety;
-        // it yields before the menus or the window controls do.
-        status.clear();
-        row = EditorChrome::BarRowLayout(bar.ChannelMin.x + edgePad, bar.ChannelMax.x - edgePad, leftWidth,
-                                         centerWidth, rightWidthFor(status), gap);
-    }
-
-    EditorChrome::DrawBay(dl, ImVec2(row.CenterMin, bar.LaneMin.y), ImVec2(row.CenterMax, bar.LaneMax.y), false);
-    // A horizontal menu offsets itself by half an item spacing before drawing,
-    // so the strip starts that far inside its bay.
-    ImGui::SetCursorScreenPos(ImVec2(row.CenterMin + std::trunc(style.ItemSpacing.x * 0.5f), barMin.y));
-
-    static const WorkspaceFileActions kNoFile;
-    const WorkspaceFileActions& file = view != nullptr ? view->File : kNoFile;
-    // The chords a menu shows are the catalog's, so a rebinding shows here too.
-    const auto chord = [this](std::string_view action) {
-        return Catalog != nullptr ? Catalog->ChordText(action) : std::string{};
-    };
-    const auto chordOrNull = [](const std::string& text) { return text.empty() ? nullptr : text.c_str(); };
-    const std::string newChord = chord("file.new");
-    const std::string openChord = chord("file.open");
-    const std::string saveChord = chord("file.save");
-    const std::string saveAllChord = chord("file.save_all");
-    const std::string undoChord = chord("edit.undo");
-    const std::string redoChord = chord("edit.redo");
-    if (ImGui::BeginMenu("File"))
-    {
-        if (ImGui::MenuItem("New", chordOrNull(newChord), false, file.New != nullptr) && file.New)
-            file.New();
-        if (file.NewWorld && ImGui::MenuItem("New World"))
-            file.NewWorld();
-        if (ImGui::MenuItem("Open", chordOrNull(openChord), false, file.Open != nullptr) && file.Open)
-            file.Open();
-        if (ImGui::MenuItem("Save", chordOrNull(saveChord), false, file.Save != nullptr) && file.Save)
-            file.Save();
-        const std::function<void()>& saveAll = Shell().SaveAllAction;
-        if (ImGui::MenuItem("Save All", chordOrNull(saveAllChord), false, saveAll != nullptr) && saveAll)
-            saveAll();
-        if (ImGui::MenuItem("Save As", nullptr, false, file.SaveAs != nullptr) && file.SaveAs)
-            file.SaveAs();
-        if (ImGui::MenuItem("Exit"))
-            EngineInstance.RequestExit();
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("Edit"))
-    {
-        EditorUiFeature& shell = Shell();
-        const bool canUndo = shell.CanUndoAction ? shell.CanUndoAction() : false;
-        const bool canRedo = shell.CanRedoAction ? shell.CanRedoAction() : false;
-
-        if (ImGui::MenuItem("Undo", chordOrNull(undoChord), false, canUndo) && shell.UndoAction)
-            shell.UndoAction();
-        if (ImGui::MenuItem("Redo", chordOrNull(redoChord), false, canRedo) && shell.RedoAction)
-            shell.RedoAction();
-
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("View"))
-    {
-        // Per-panel visibility (the viewport is the central node — not hideable).
-        if (view != nullptr)
-        {
-            for (const std::unique_ptr<IEditorPanel>& panel : view->Panels)
-            {
-                if (panel == nullptr || panel->GetDockSlot() == DockSlot::Center)
-                    continue;
-                const std::string title(panel->GetTitle());
-                if (ImGui::MenuItem(title.c_str(), nullptr, panel->IsVisible()))
-                    panel->ToggleVisible();
-            }
-            ImGui::Separator();
-        }
-        if (ImGui::MenuItem("Reset Layout", nullptr, false, view != nullptr) && view != nullptr)
-            view->Dock.LayoutDirty = true;
-        ImGui::Separator();
-        if (ImGui::BeginMenu("Preferences"))
-        {
-            if (ImGui::BeginMenu("Theme"))
-            {
-                Shell().ThemePrefs.DrawMenu(EngineInstance.Console().Registry());
-                ImGui::EndMenu();
-            }
-            ImGui::EndMenu();
-        }
-        ImGui::EndMenu();
-    }
-
-    // The chrome half of the row, taken with the ordinary frame padding so
-    // every control seats on the lane instead of on the menus' baseline.
-    ImGui::EndMenuBar();
-    if (!ImGui::BeginMenuBar())
-    {
-        ImGui::EndMainMenuBar();
-        return;
-    }
-
-    const ImVec2 viewportPos = ImGui::GetMainViewport()->Pos;
-    const auto toWindowRect = [&](ImVec2 mn, ImVec2 mx) {
-        return WindowRect{ static_cast<int32_t>(mn.x - viewportPos.x), static_cast<int32_t>(mn.y - viewportPos.y),
-                           static_cast<int32_t>(mx.x - mn.x), static_cast<int32_t>(mx.y - mn.y) };
-    };
-    WindowFrameRegions regions;
-    regions.ResizeBorder = static_cast<int32_t>(std::lround(EditorUi::Px(EditorUi::Metrics.ResizeBorder)));
-
-    if (plateWidth > 0.0f)
-    {
-        ImGui::SetCursorScreenPos(ImVec2(row.LeftMin, bar.LaneMin.y));
-        const ImVec2 itemMin = ImGui::GetCursorScreenPos();
-        ImGui::Dummy(ImVec2(plateWidth, laneHeight));
-        const EditorChrome::HeaderRegions plate = EditorChrome::DrawHeaderRow(
-            dl, ImVec2(itemMin.x, bar.ChannelMin.y + reveal),
-            ImVec2(itemMin.x + plateWidth, bar.ChannelMax.y - reveal), Identity.Product,
-            EditorUi::TextRole::ApplicationTitle, EditorChrome::HeaderState{ .Focused = true }, plateSpec);
-        // Greyscale art times the accent: the mark keeps its shading and takes
-        // the theme's colour, with no rebake when a theme changes it.
-        if (plate.HasCap && plateSpec.CapWidth > 0.0f)
-            EditorChrome::DrawLogo(dl, plate.CapMin, plate.CapMax, ImGui::GetColorU32(EditorUi::Accent));
-        ImGui::SameLine(0.0f, gap);
-        EditorChrome::Divider();
-    }
-
-    // Technical markings in whatever the row left free, so a wide window reads
-    // as a finished panel rather than as empty metal.
-    EditorChrome::BarMarkings(dl, bar, row.LeftFreeMin, row.LeftFreeMax);
-    EditorChrome::BarMarkings(dl, bar, row.RightFreeMin, row.RightFreeMax);
-
-    ImGui::SetCursorScreenPos(ImVec2(row.RightMin, bar.LaneMin.y));
-    if (!status.empty())
-    {
-        EditorChrome::Readout("DOC", status.c_str());
-        ImGui::SameLine(0.0f, gap);
-    }
-    if (clientFrame)
-    {
-        {
-            EditorChrome::ModuleScope module("window");
-            if (EditorChrome::IconButton("win_minimize", IconId::WindowMinimize, buttonSize,
-                                         EditorChrome::ButtonTone::Normal))
-                Window.Minimize();
-            ImGui::SameLine();
-            const bool maximized = Window.IsMaximized();
-            if (EditorChrome::IconButton("win_maximize", maximized ? IconId::WindowRestore : IconId::WindowMaximize,
-                                         buttonSize, EditorChrome::ButtonTone::Normal))
-            {
-                if (maximized)
-                    Window.Restore();
-                else
-                    Window.Maximize();
-            }
-            ImGui::SameLine();
-            if (EditorChrome::IconButton("win_close", IconId::WindowClose, buttonSize,
-                                         EditorChrome::ButtonTone::Destructive))
-            {
-                if (CloseWindowAction)
-                    CloseWindowAction();
-                else
-                    EngineInstance.RequestExit();
-            }
-        }
-
-        // The bar drags everywhere the menus and the right cluster are not:
-        // one strip from the window's edge to the menu bay, one from the bay to
-        // the cluster. The menus are left out so a click opens them.
-        if (row.CenterMin > barMin.x)
-            regions.Caption[regions.CaptionCount++] =
-                toWindowRect(barMin, ImVec2(row.CenterMin, barMax.y));
-        if (row.RightMin > row.CenterMax)
-            regions.Caption[regions.CaptionCount++] =
-                toWindowRect(ImVec2(row.CenterMax, barMin.y), ImVec2(row.RightMin, barMax.y));
-
-        // Dragging is permitted only while the pointer is over this bar with
-        // nothing in the way: an open menu, an overlapping floating panel, or
-        // the scene owning the pointer all make IsWindowHovered false. The
-        // geometry is published regardless; the regions lag one frame, since
-        // the platform consumes the press before ImGui sees it.
-        regions.CaptionEnabled = ImGui::IsWindowHovered();
-        FrameRegions = regions;
-        Window.SetFrameRegions(FrameRegions);
-    }
-
-    ImGui::EndMainMenuBar();
 }

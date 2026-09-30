@@ -3,7 +3,7 @@
   "sources": [
     {
       "source": "cook_profiles.rml",
-      "input_fingerprint": "59d964a56d646cac",
+      "input_fingerprint": "7fe78f67460bd5ca",
       "cook_identity": "62c86b07d68abd42",
       "size": "1730",
       "mtime": "-4648151002176733126",
@@ -17,8 +17,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "2684",
-          "mtime": "-4648151002172847880"
+          "size": "3593",
+          "mtime": "-4646889578560548163"
         }
       ],
       "artifacts": [
@@ -26,7 +26,7 @@
           "path": "asset://cook_profiles.rml",
           "file": ".cooked/cook_profiles.rml.sui",
           "type": "UiPackage",
-          "hash": "6f7f664f66cf2559"
+          "hash": "5affe4e41b34d755"
         }
       ]
     },
@@ -117,7 +117,7 @@
     },
     {
       "source": "inspector.rml",
-      "input_fingerprint": "2d65ced8d4fa7d5d",
+      "input_fingerprint": "430a931afa44f4fb",
       "cook_identity": "62c86b07d68abd42",
       "size": "2242",
       "mtime": "-4648151002172867364",
@@ -131,8 +131,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "2684",
-          "mtime": "-4648151002172847880"
+          "size": "3593",
+          "mtime": "-4646889578560548163"
         }
       ],
       "artifacts": [
@@ -140,7 +140,36 @@
           "path": "asset://inspector.rml",
           "file": ".cooked/inspector.rml.sui",
           "type": "UiPackage",
-          "hash": "59052d672f955b56"
+          "hash": "365456a5adac554c"
+        }
+      ]
+    },
+    {
+      "source": "shell.rml",
+      "input_fingerprint": "717dcce918938808",
+      "cook_identity": "62c86b07d68abd42",
+      "size": "4263",
+      "mtime": "-4646888582887393677",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "shell.rcss",
+          "size": "3825",
+          "mtime": "-4646888532662525823"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "3593",
+          "mtime": "-4646889578560548163"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://shell.rml",
+          "file": ".cooked/shell.rml.sui",
+          "type": "UiPackage",
+          "hash": "cd44c36b144b3218"
         }
       ]
     }

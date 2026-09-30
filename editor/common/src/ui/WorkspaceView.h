@@ -31,15 +31,6 @@ struct WorkspaceFileActions
     std::function<void()> SaveAs;
 };
 
-// Controls a workspace mounts at the right end of the window's tab strip,
-// drawn at the cursor. Lit is whether the strip should read as busy.
-struct WorkspaceBarControls
-{
-    std::function<float()> Width;
-    std::function<void()> Draw;
-    std::function<bool()> Lit;
-};
-
 // What the window host keeps per view between frames to lay its dockspace out.
 struct WorkspaceDockState
 {
@@ -60,9 +51,6 @@ struct WorkspaceView
     std::vector<std::function<void()>> Overlays;
     DockLayoutRatios Layout;
     WorkspaceFileActions File;
-    WorkspaceBarControls BarControls;
-    // The open document and whether it has unsaved edits, read each frame.
-    std::function<std::string()> Status;
 
     WorkspaceDockState Dock;
 
