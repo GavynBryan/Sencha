@@ -12,6 +12,10 @@ class SdlVideoService;
 class SdlWindow;
 struct WindowCreateInfo;
 
+// The window an SDL event belongs to, or 0 for one that names none (a
+// device connection, a quit request).
+[[nodiscard]] std::uint32_t SdlEventWindowId(const SDL_Event& event);
+
 class SdlWindowService
 {
 public:
@@ -51,6 +55,9 @@ public:
     [[nodiscard]] bool IsAlive(WindowId id) const;
 
     void RequestClose(WindowId id);
+    // Destroys a window other than the primary. The caller has already let go
+    // of anything presenting to it; false for the primary or an unknown id.
+    bool DestroyWindow(WindowId id);
     void HandleEvent(const SDL_Event& event);
     bool ConsumeResize(WindowId id, WindowExtent* extent = nullptr);
 

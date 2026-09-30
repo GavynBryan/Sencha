@@ -1,5 +1,7 @@
 #include <graphics/vulkan/Renderer.h>
 
+#include <graphics/vulkan/PresentationFramePlan.h>
+#include <graphics/vulkan/PresentationTarget.h>
 #include <graphics/vulkan/VulkanAllocatorService.h>
 #include <graphics/vulkan/VulkanBarriers.h>
 #include <graphics/vulkan/VulkanBufferService.h>
@@ -89,7 +91,6 @@ Renderer::Renderer(LoggingProvider& logging,
                    VulkanDeviceService& device,
                    VulkanPhysicalDeviceService& physicalDevice,
                    VulkanQueueService& queues,
-                   VulkanSwapchainService& swapchain,
                    VulkanFrameService& frames,
                    VulkanAllocatorService& allocator,
                    VulkanBufferService& buffers,
@@ -101,11 +102,10 @@ Renderer::Renderer(LoggingProvider& logging,
                    GpuFrameScratch& scratch,
                    VulkanUploadContextService& upload)
     : Log(logging.GetLogger<Renderer>())
-    , Swapchain(swapchain)
     , Frames(frames)
 {
     if (!device.IsValid() || !physicalDevice.IsValid() || !queues.IsValid()
-        || !swapchain.IsValid() || !frames.IsValid() || !allocator.IsValid()
+        || !frames.IsValid() || !allocator.IsValid()
         || !buffers.IsValid() || !images.IsValid() || !samplers.IsValid()
         || !shaders.IsValid() || !pipelines.IsValid() || !descriptors.IsValid()
         || !scratch.IsValid() || !upload.IsValid())
@@ -118,7 +118,7 @@ Renderer::Renderer(LoggingProvider& logging,
     Services.Device = &device;
     Services.PhysicalDevice = &physicalDevice;
     Services.Queues = &queues;
-    Services.Swapchain = &swapchain;
+    Services.Swapchain = &frames.PrimarySwapchain();
     Services.Allocator = &allocator;
     Services.Buffers = &buffers;
     Services.Images = &images;
@@ -134,12 +134,13 @@ Renderer::Renderer(LoggingProvider& logging,
     // shared binding somewhere its peers do not expect.
     descriptors.SetFrameUniformBuffer(scratch.GetBuffer());
 
-    ImageLayouts.assign(swapchain.GetImageCount(), VK_IMAGE_LAYOUT_UNDEFINED);
-    DepthTarget = std::make_unique<VulkanDepthTarget>(images, physicalDevice);
-    DepthTarget->Create(swapchain.GetExtent());
-    Services.DepthFormat = DepthTarget->GetFormat();
-    Services.StencilFormat = DepthTarget->HasStencil()
-        ? DepthTarget->GetFormat() : VK_FORMAT_UNDEFINED;
+    // The device's depth format, which offscreen targets use too; the primary
+    // presentation's swapchain scope binds one of it.
+    const VulkanDepthTarget depthProbe(images, physicalDevice);
+    Services.DepthFormat = depthProbe.GetFormat();
+    Services.StencilFormat = depthProbe.HasStencil() ? depthProbe.GetFormat() : VK_FORMAT_UNDEFINED;
+    PresentationTarget& primary = *frames.FindPresentation(frames.PrimaryPresentation());
+    primary.SwapchainFeatureServices = MakeSwapchainServices(primary);
     ImageCapture.Setup(Services);
     Valid = true;
 }
@@ -295,7 +296,7 @@ bool Renderer::RemoveFeature(IRenderFeature* feature)
     feature->Teardown();
     for (auto& bucket : PhaseBuckets)
     {
-        bucket.erase(std::remove(bucket.begin(), bucket.end(), feature), bucket.end());
+        std::erase_if(bucket, [feature](const BucketEntry& entry) { return entry.Feature == feature; });
     }
     OwnedFeatures.erase(owned);
     RegisteredOrder.erase(RegisteredOrder.begin() + static_cast<std::ptrdiff_t>(index));
@@ -316,13 +317,38 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
         return nullptr;
     }
 
+    RenderFeatureScope scope;
+    PresentationTarget* presentation = registration.Scope.Kind == RenderFeatureScopeKind::Presentation
+        ? Frames.FindPresentation(registration.Scope.Presentation)
+        : nullptr;
+    const FeatureScopeFault fault = ResolveFeatureScope(phase, registration.Scope, Frames.PrimaryPresentation(),
+                                                        presentation != nullptr, scope);
+    if (fault != FeatureScopeFault::None)
+    {
+        Log.Error("Renderer::AddFeature: feature '{}' {}; not registered", registration.Id,
+                  fault == FeatureScopeFault::SwapchainPhaseNeedsPresentation
+                      ? "records in a swapchain phase but is scoped Global"
+                      : "names a presentation that does not exist");
+        return nullptr;
+    }
+
+    // A swapchain-phase feature is set up against its presentation's
+    // swapchain and attachment formats; everything else sees the device's.
+    const RendererServices* backend = &Services;
+    if (phase != RenderPhase::Offscreen)
+    {
+        PresentationTarget& target = *Frames.FindPresentation(scope.Presentation);
+        target.SwapchainFeatureServices = MakeSwapchainServices(target);
+        backend = &target.SwapchainFeatureServices;
+    }
+
     RenderFeatureServices featureServices;
     featureServices.Logging = Services.Logging;
     featureServices.Instrumentation = Services.Instrumentation;
     featureServices.Buffers = GpuBuffers{Services.Buffers};
     featureServices.Images = GpuImages{Services.Images};
     featureServices.Scratch = Services.Scratch;
-    featureServices.Backend = &Services;
+    featureServices.Backend = backend;
     if (!feature->Setup(featureServices))
     {
         Log.Error("Renderer::AddFeature: feature setup failed; not registered");
@@ -331,9 +357,11 @@ IRenderFeature* Renderer::AddFeatureImpl(std::unique_ptr<IRenderFeature> feature
     }
 
     IRenderFeature* raw = feature.get();
-    PhaseBuckets[phaseIdx].push_back(raw);
+    PhaseBuckets[phaseIdx].push_back(BucketEntry{ raw, scope });
     OwnedFeatures.push_back(std::move(feature));
-    RegisteredOrder.push_back(registration);
+    FeatureRegistration registered = registration;
+    registered.Scope = scope;
+    RegisteredOrder.push_back(registered);
     return raw;
 }
 
@@ -345,20 +373,10 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     const auto totalStart = RendererClock::now();
     VulkanFrame frame;
     const VulkanFrameStatus begin = Frames.BeginFrame(frame);
-    if (begin == VulkanFrameStatus::SwapchainOutOfDate
-        || begin == VulkanFrameStatus::SurfaceSuboptimal
-        || begin == VulkanFrameStatus::SurfaceUnavailable)
-    {
-        if (begin == VulkanFrameStatus::SurfaceUnavailable)
-            return RenderFrameResult::SkippedMinimized;
-        return begin == VulkanFrameStatus::SurfaceSuboptimal
-            ? RenderFrameResult::SurfaceSuboptimal
-            : RenderFrameResult::SwapchainOutOfDate;
-    }
+    if (begin == VulkanFrameStatus::NothingAcquired)
+        return SummarizeFrame(frame.PrimaryAcquire, 0);
     if (begin != VulkanFrameStatus::Ready)
-    {
         return RenderFrameResult::Failed;
-    }
 
     // Rotate the per-frame scratch allocator into this frame's slice before
     // any feature draws -- feature code allocates transient UBOs from it.
@@ -394,9 +412,10 @@ RenderFrameResult Renderer::DrawFrameScheduled()
         VulkanDebugLabels::EndLabel(frame.CommandBuffer);
     }
 #endif
-    // The three swapchain phases share one rendering scope, so each is labelled
-    // and timed inside rather than wrapped as a group here.
-    RecordSwapchainPhases(frame);
+    // The three swapchain phases share one rendering scope per presentation,
+    // so each is labelled and timed inside rather than wrapped as a group here.
+    for (const AcquiredPresentation& presentation : frame.Presentations)
+        RecordSwapchainPhases(frame, presentation);
     LastTiming.RecordSeconds = SecondsSince(recordStart);
 
     if (Services.Instrumentation != nullptr
@@ -425,49 +444,82 @@ RenderFrameResult Renderer::DrawFrameScheduled()
     ImageCapture.Drain(Frames.GetRetirement());
     ++FramesDrawn;
 
-    const VulkanFrameStatus end = Frames.EndFrame(frame);
+    const std::size_t recorded = frame.Presentations.size();
+    const SurfaceOutcome end = Frames.EndFrame(frame);
     LastTiming.TotalSeconds = SecondsSince(totalStart);
-    if (end == VulkanFrameStatus::SwapchainOutOfDate
-        || end == VulkanFrameStatus::SurfaceSuboptimal
-        || end == VulkanFrameStatus::SurfaceUnavailable)
-    {
-        if (end == VulkanFrameStatus::SurfaceUnavailable)
-            return RenderFrameResult::SkippedMinimized;
-        return end == VulkanFrameStatus::SurfaceSuboptimal
-            ? RenderFrameResult::SurfaceSuboptimal
-            : RenderFrameResult::SwapchainOutOfDate;
-    }
-    if (end != VulkanFrameStatus::Ready)
-    {
-        return RenderFrameResult::Failed;
-    }
-    return RenderFrameResult::Presented;
+    return SummarizeFrame(end, recorded);
 }
 
-FrameContext Renderer::MakeCaptureContext(const VulkanFrame& frame) const
+FrameContext Renderer::MakeCaptureContext(const VulkanFrame& frame,
+                                          const AcquiredPresentation& presentation) const
 {
     FrameContext context;
     context.Cmd = frame.CommandBuffer;
     context.FrameInFlightIndex = frame.FrameIndex;
-    context.TargetExtent = frame.SwapchainExtent;
-    context.TargetFormat = frame.SwapchainFormat;
+    context.TargetExtent = presentation.Extent;
+    context.TargetFormat = presentation.Format;
     context.Phase = RenderPhase::MainColor;
     context.Retirement = Frames.GetRetirement();
     return context;
 }
 
-bool Renderer::CaptureFrame(std::string path, std::uint64_t atFrame)
+RendererServices Renderer::MakeSwapchainServices(const PresentationTarget& target) const
 {
-    if (!Swapchain.AreImagesCapturable())
-        return false;
-    ImageCapture.Request(std::move(path), atFrame);
-    return true;
+    RendererServices services = Services;
+    services.Swapchain = &target.Swapchain();
+    if (!target.Desc().DepthStencil)
+    {
+        services.DepthFormat = VK_FORMAT_UNDEFINED;
+        services.StencilFormat = VK_FORMAT_UNDEFINED;
+    }
+    return services;
 }
 
-void Renderer::NotifySwapchainRecreated()
+bool Renderer::WasAcquired(const VulkanFrame& frame, PresentationId id) const
 {
-    ImageLayouts.assign(Swapchain.GetImageCount(), VK_IMAGE_LAYOUT_UNDEFINED);
-    DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    return std::ranges::any_of(frame.Presentations,
+                               [id](const AcquiredPresentation& presentation) { return presentation.Id == id; });
+}
+
+PresentationId Renderer::CreatePresentation(SdlWindow& window, const PresentationDesc& desc)
+{
+    if (!Valid)
+        return {};
+    const PresentationId id = Frames.CreatePresentation(window, desc);
+    if (PresentationTarget* target = Frames.FindPresentation(id))
+        target->SwapchainFeatureServices = MakeSwapchainServices(*target);
+    return id;
+}
+
+bool Renderer::DestroyPresentation(PresentationId id, std::function<void()> afterRetired)
+{
+    std::vector<RenderFeatureScope> scopes;
+    scopes.reserve(RegisteredOrder.size());
+    for (const FeatureRegistration& registration : RegisteredOrder)
+        scopes.push_back(registration.Scope);
+    if (IsPresentationBound(scopes, id))
+    {
+        Log.Error("Renderer: a presentation cannot be destroyed while a feature records into it");
+        return false;
+    }
+    if (CapturePresentation == id)
+        CapturePresentation = {};
+    return Frames.RetirePresentation(id, std::move(afterRetired));
+}
+
+bool Renderer::CaptureFrame(std::string path, std::uint64_t atFrame)
+{
+    return CaptureFrame(Frames.PrimaryPresentation(), std::move(path), atFrame);
+}
+
+bool Renderer::CaptureFrame(PresentationId presentation, std::string path, std::uint64_t atFrame)
+{
+    const PresentationTarget* target = Frames.FindPresentation(presentation);
+    if (target == nullptr || !target->Swapchain().AreImagesCapturable())
+        return false;
+    CapturePresentation = presentation;
+    ImageCapture.Request(std::move(path), atFrame);
+    return true;
 }
 
 void Renderer::RecordOffscreenPhase(const VulkanFrame& frame)
@@ -481,56 +533,68 @@ void Renderer::RecordOffscreenPhase(const VulkanFrame& frame)
     FrameContext ctx;
     ctx.Cmd = frame.CommandBuffer;
     ctx.FrameInFlightIndex = frame.FrameIndex;
-    ctx.TargetExtent = frame.SwapchainExtent;
     ctx.Phase = RenderPhase::Offscreen;
     ctx.Retirement = Frames.GetRetirement();
 
-    for (IRenderFeature* feat : bucket)
-        feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
+    for (const BucketEntry& entry : bucket)
+    {
+        // A presentation that is not taking part this frame costs its
+        // features nothing.
+        ctx.TargetExtent = Services.Swapchain->GetExtent();
+        if (entry.Scope.Kind == RenderFeatureScopeKind::Presentation)
+        {
+            if (!WasAcquired(frame, entry.Scope.Presentation))
+                continue;
+            ctx.TargetExtent = Frames.FindPresentation(entry.Scope.Presentation)->Swapchain().GetExtent();
+        }
+        entry.Feature->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
+    }
 }
 
-// The swapchain phases, in one rendering scope. MainColor is the scene;
-// ApplicationUi is authored user-facing UI drawn over it; DevelopmentOverlay is
-// diagnostics drawn over everything. One vkCmdBeginRendering serves all three:
-// the UI phases want the same colour attachment and no depth interaction, and
-// their pipelines disable depth test and write rather than open a scope of their
-// own.
+// The swapchain phases of one presentation, in one rendering scope. MainColor
+// is the scene; ApplicationUi is authored user-facing UI drawn over it;
+// DevelopmentOverlay is diagnostics drawn over everything. One
+// vkCmdBeginRendering serves all three: the UI phases want the same colour
+// attachment and no depth interaction, and their pipelines disable depth test
+// and write rather than open a scope of their own.
 //
 // Capture and the present transition stay after the last bucket, so a capture is
 // still the finished frame.
-void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
+void Renderer::RecordSwapchainPhases(const VulkanFrame& frame, const AcquiredPresentation& presentation)
 {
-    VkImageLayout oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    if (frame.ImageIndex < ImageLayouts.size())
-    {
-        oldLayout = ImageLayouts[frame.ImageIndex];
-    }
+    PresentationTarget& target = *presentation.Target;
+    PresentationTarget::ImageState& image = *target.Image(presentation.ImageIndex);
 
-    VulkanBarriers::TransitionForColorAttachment(
-        frame.CommandBuffer, frame.SwapchainImage, oldLayout);
+    VulkanBarriers::TransitionForColorAttachment(frame.CommandBuffer, presentation.Image, image.Layout);
 
-    const VkExtent2D oldDepthExtent = DepthTarget->GetExtent();
-    DepthTarget->Recreate(frame.SwapchainExtent);
-    if (oldDepthExtent.width != frame.SwapchainExtent.width
-        || oldDepthExtent.height != frame.SwapchainExtent.height)
+    // Made the first frame this scope records, and remade on a resize.
+    VulkanDepthTarget* depth = target.Depth();
+    if (depth != nullptr)
     {
-        DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        const VkExtent2D oldDepthExtent = depth->GetExtent();
+        depth->Recreate(presentation.Extent);
+        if (oldDepthExtent.width != presentation.Extent.width
+            || oldDepthExtent.height != presentation.Extent.height)
+        {
+            target.DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        }
     }
     // One layout for the whole attachment, decided by whether it carries a
     // stencil. A barrier whose aspect mask includes stencil may not use a
     // depth-only layout, and a rendering scope's attachments have to agree with
     // the layout the image is actually in -- so the barrier, the depth
     // attachment and the stencil attachment all read from here.
-    const bool depthHasStencil = DepthTarget->HasStencil();
+    const bool depthHasStencil = depth != nullptr && depth->HasStencil();
     const VkImageLayout depthLayout = depthHasStencil
         ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
         : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    const VkImageView depthView = depth != nullptr ? depth->GetView() : VK_NULL_HANDLE;
 
-    if (DepthTarget->GetImage() != VK_NULL_HANDLE)
+    if (depth != nullptr && depth->GetImage() != VK_NULL_HANDLE)
     {
         VulkanBarriers::ImageTransition t{};
-        t.Image = DepthTarget->GetImage();
-        t.OldLayout = DepthLayout;
+        t.Image = depth->GetImage();
+        t.OldLayout = target.DepthLayout;
         t.NewLayout = depthLayout;
         // One depth image serves every frame in flight, and a frame only
         // waits on the fence of the frame two slots back, so this barrier is
@@ -548,12 +612,12 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
             ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
             : VK_IMAGE_ASPECT_DEPTH_BIT;
         VulkanBarriers::TransitionImage(frame.CommandBuffer, t);
-        DepthLayout = depthLayout;
+        target.DepthLayout = depthLayout;
     }
 
     VkRenderingAttachmentInfo colorAttach{};
     colorAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    colorAttach.imageView = frame.SwapchainImageView;
+    colorAttach.imageView = presentation.View;
     colorAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -561,7 +625,7 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
 
     VkRenderingAttachmentInfo depthAttach{};
     depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depthAttach.imageView = DepthTarget->GetView();
+    depthAttach.imageView = depthView;
     depthAttach.imageLayout = depthLayout;
     depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -571,7 +635,7 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
     // zero so authored UI's clip mask starts from a known state rather than
     // from whatever the previous frame left; nothing else in the scope tests
     // against it.
-    const bool hasStencil = depthHasStencil && DepthTarget->GetView() != VK_NULL_HANDLE;
+    const bool hasStencil = depthHasStencil && depthView != VK_NULL_HANDLE;
     VkRenderingAttachmentInfo stencilAttach = depthAttach;
     stencilAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     stencilAttach.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -579,11 +643,11 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
     renderingInfo.renderArea.offset = { 0, 0 };
-    renderingInfo.renderArea.extent = frame.SwapchainExtent;
+    renderingInfo.renderArea.extent = presentation.Extent;
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 1;
     renderingInfo.pColorAttachments = &colorAttach;
-    renderingInfo.pDepthAttachment = depthAttach.imageView != VK_NULL_HANDLE ? &depthAttach : nullptr;
+    renderingInfo.pDepthAttachment = depthView != VK_NULL_HANDLE ? &depthAttach : nullptr;
     renderingInfo.pStencilAttachment = hasStencil ? &stencilAttach : nullptr;
 
     vkCmdBeginRendering(frame.CommandBuffer, &renderingInfo);
@@ -591,11 +655,11 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
     FrameContext ctx;
     ctx.Cmd = frame.CommandBuffer;
     ctx.FrameInFlightIndex = frame.FrameIndex;
-    ctx.TargetExtent = frame.SwapchainExtent;
-    ctx.TargetFormat = frame.SwapchainFormat;
-    ctx.DepthView = DepthTarget->GetView();
-    ctx.DepthFormat = DepthTarget->GetFormat();
-    ctx.StencilFormat = hasStencil ? DepthTarget->GetFormat() : VK_FORMAT_UNDEFINED;
+    ctx.TargetExtent = presentation.Extent;
+    ctx.TargetFormat = presentation.Format;
+    ctx.DepthView = depthView;
+    ctx.DepthFormat = depth != nullptr ? depth->GetFormat() : VK_FORMAT_UNDEFINED;
+    ctx.StencilFormat = hasStencil ? depth->GetFormat() : VK_FORMAT_UNDEFINED;
     ctx.Retirement = Frames.GetRetirement();
 
     struct SwapchainPhase { RenderPhase Phase; GpuScope Scope; };
@@ -604,6 +668,8 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
         { RenderPhase::ApplicationUi,      GpuScope::PhaseApplicationUi },
         { RenderPhase::DevelopmentOverlay, GpuScope::PhaseDevelopmentOverlay },
     };
+    // Phase timings are the primary's: a scope is one entry per frame.
+    [[maybe_unused]] const bool timed = presentation.Id == Frames.PrimaryPresentation();
 
     for (const auto& [phase, scope] : kSwapchainPhases)
     {
@@ -612,7 +678,7 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
             continue;
 
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
-        GpuTimestampPool* const phaseScopes = Services.Instrumentation != nullptr
+        GpuTimestampPool* const phaseScopes = timed && Services.Instrumentation != nullptr
             ? Services.Instrumentation->GpuTimestamps
             : nullptr;
         if (phaseScopes != nullptr)
@@ -622,9 +688,10 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
         }
 #endif
         ctx.Phase = phase;
-        for (IRenderFeature* feat : bucket)
+        for (const BucketEntry& entry : bucket)
         {
-            feat->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
+            if (entry.Scope.Presentation == presentation.Id)
+                entry.Feature->OnDraw(MakeRenderFrame(ctx, Services.Instrumentation));
         }
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
         if (phaseScopes != nullptr)
@@ -639,14 +706,10 @@ void Renderer::RecordSwapchainPhases(const VulkanFrame& frame)
 
     // Before the present transition, with the image still a colour attachment:
     // this is the finished frame, and capture leaves the layout as it found it.
-    ImageCapture.Record(MakeCaptureContext(frame), FramesDrawn, frame.SwapchainImage,
-                        frame.SwapchainExtent, frame.SwapchainFormat);
+    if (presentation.Id == CapturePresentation)
+        ImageCapture.Record(MakeCaptureContext(frame, presentation), FramesDrawn, presentation.Image,
+                            presentation.Extent, presentation.Format);
 
-    VulkanBarriers::TransitionFromColorAttachmentToPresent(
-        frame.CommandBuffer, frame.SwapchainImage);
-
-    if (frame.ImageIndex < ImageLayouts.size())
-    {
-        ImageLayouts[frame.ImageIndex] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    }
+    VulkanBarriers::TransitionFromColorAttachmentToPresent(frame.CommandBuffer, presentation.Image);
+    image.Layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 }

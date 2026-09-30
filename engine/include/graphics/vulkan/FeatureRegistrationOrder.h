@@ -1,5 +1,7 @@
 #pragma once
 
+#include <graphics/RenderFeatureScope.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -35,6 +37,7 @@ struct FeatureRegistration
 {
     std::string_view Id{};
     std::span<const std::string_view> DependsOn{};
+    RenderFeatureScope Scope{};
 };
 
 enum class FeatureOrderFault : std::uint8_t

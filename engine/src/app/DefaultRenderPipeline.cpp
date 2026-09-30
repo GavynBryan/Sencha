@@ -78,7 +78,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     if (Meshes == nullptr || Materials == nullptr)
         return false;
 
-    Swapchain = &graphics.Swapchain;
+    Swapchain = &graphics.Frames.PrimarySwapchain();
 
     // Declared edges, not call order. Each one is a real constraint that used
     // to live in a comment above the call that happened to satisfy it:

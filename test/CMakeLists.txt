@@ -307,6 +307,17 @@ if(RENDER_GOLDEN_TEST_SOURCES AND SENCHA_ENABLE_VULKAN)
     list(APPEND SENCHA_TEST_TARGETS render_golden_tests)
 endif()
 
+# Several windows through one renderer, against a real device. Like the golden
+# images it needs a display, and skips where there is none.
+file(GLOB_RECURSE PRESENTATION_TEST_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/presentation/*.cpp
+)
+if(PRESENTATION_TEST_SOURCES AND SENCHA_ENABLE_VULKAN)
+    add_executable(presentation_tests ${PRESENTATION_TEST_SOURCES})
+    target_link_libraries(presentation_tests PRIVATE sencha_engine GTest::gtest_main)
+    list(APPEND SENCHA_TEST_TARGETS presentation_tests)
+endif()
+
 # Per-template composition proofs. Each template's cases load its built module
 # through the real module path and run the engine headless against its content;
 # a template that is not in SENCHA_BUILD_TEMPLATES has its cases skip.
@@ -411,6 +422,10 @@ if(TARGET render_golden_tests)
     gtest_discover_tests(render_golden_tests
         DISCOVERY_TIMEOUT 60
     )
+endif()
+
+if(TARGET presentation_tests)
+    gtest_discover_tests(presentation_tests)
 endif()
 
 if(TARGET engine_feature_tests)

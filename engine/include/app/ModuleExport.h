@@ -121,5 +121,9 @@
 // row can name the slider or drop-down a document offers for it. v24:
 // RuntimeContent's source watching is SourceReloadRoots, the one watcher the
 // editors use too, so its members change layout and a host that mounts more
-// roots adds them to RuntimeContent::SourceReload().
+// roots adds them to RuntimeContent::SourceReload(). In the same bump:
+// PlatformEventContext carries the event's WindowId and RuntimeFrameLoop
+// gains the other-presentation flag, for rendering to more than one window;
+// graphics/vulkan and platform headers join the fingerprint, since a module
+// reaches their members through Graphics() and Platform().
 #define SENCHA_GAME_ABI_VERSION 24u

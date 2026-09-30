@@ -123,3 +123,13 @@ do the work and delete the entry.
   and "Remediation plan", phase D.
 - **Trigger:** the performance and cleanup ticket that follows, and before any
   scene with hundreds of rigged entities ships.
+
+## Hand-rolled generational pools
+
+- **What:** `HandlePool<Tag, T>` (`engine/include/core/handle/HandlePool.h`) is
+  the one generational slot container; presentations use it. Older owners
+  still keep their own slots, generation counters and free lists.
+- **Where:** `VulkanImageService`, `VulkanBufferService`, `VulkanShaderCache`,
+  `RenderTargetStore`, and `UiSurfaceTargetRenderFeature`'s bindings.
+- **Trigger:** the next change to how any of them allocates, resolves or frees
+  a handle moves that owner onto `HandlePool` in the same change.

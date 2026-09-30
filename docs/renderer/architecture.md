@@ -55,7 +55,7 @@ declares -- see `FeatureRegistrationOrder`.)
 
 ```mermaid
 graph TD
-  Instance[VulkanInstanceService] --> Surface[VulkanSurfaceService]
+  Instance[VulkanInstanceService] --> Surface[PrimarySurface<br/>VulkanSurfaceService]
   Instance --> Phys[VulkanPhysicalDeviceService]
   Surface --> Phys
   Phys --> Device[VulkanDeviceService]
@@ -80,14 +80,12 @@ graph TD
   Images --> Desc
   Buffers --> Scratch[GpuFrameScratch]
   Phys --> Scratch
-  Device --> Swap[VulkanSwapchainService]
-  Surface --> Swap
-  Queues --> Swap
-  Swap --> Frames[VulkanFrameService]
+  Surface --> Frames[VulkanFrameService<br/>owns PresentationTargets:<br/>surface + swapchain per window]
+  Device --> Frames
   DelQ --> Frames
   Queues --> Frames
+  Images --> Frames
   Frames --> Renderer[Renderer<br/>member name MainRenderer]
-  Swap --> Renderer
   Scratch --> Renderer
   Desc --> Renderer
   Pipelines --> Renderer

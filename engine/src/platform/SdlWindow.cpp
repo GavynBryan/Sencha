@@ -280,6 +280,12 @@ bool SdlWindow::IsMaximized() const
     return (SDL_GetWindowFlags(Window) & SDL_WINDOW_MAXIMIZED) != 0;
 }
 
+bool SdlWindow::IsMinimized() const
+{
+    if (!Window) return true;
+    return (SDL_GetWindowFlags(Window) & SDL_WINDOW_MINIMIZED) != 0;
+}
+
 uint32_t SdlWindow::GetId() const
 {
     if (!Window) return 0;

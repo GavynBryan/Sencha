@@ -322,6 +322,10 @@ endif()
 file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/app/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/graphics/*.h"
+    # A module reaches the renderer and the windows through Engine::Graphics()
+    # and Platform(), so the members it touches there are layout it compiled.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/graphics/vulkan/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/platform/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/input/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/serialization/*.h"

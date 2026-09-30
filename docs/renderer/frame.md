@@ -8,12 +8,14 @@ The renderer occupies two of the eleven `FramePhase` slots
 
 | Phase | Renderer work |
 |---|---|
-| `RebuildGraphics` (2) | `VulkanSwapchainService::Recreate`, `VulkanFrameService::ResetAfterSwapchainRecreate`, `Renderer::NotifySwapchainRecreated` |
+| `RebuildGraphics` (2) | `VulkanFrameService::RebuildPresentation` for the primary when the frame loop says so, then `RebuildStaleSecondaries` |
 | `ExtractRender` (10) | latch the profile mode, propagate visible transforms, run every registered extract system (`DefaultRenderPipeline::ExtractRender`) |
 | `Render` (11) | `Renderer::DrawFrameScheduled`, then push the timing sample and the stats frame |
 
 Lifecycle-only frames (resize, minimize, swapchain rebuild) skip extract and
-render but still pump platform events and stamp telemetry.
+render but still pump platform events and stamp telemetry. A minimized primary
+makes a frame lifecycle-only only when no other presentation can be shown
+(`RuntimeFrameLoop::SetOtherPresentationLive`).
 
 ## Extract
 
@@ -57,27 +59,32 @@ DrawFrameScheduled
   VulkanFrameService::BeginFrame
     wait on this slot's in-flight fence (if it was submitted)
     VulkanDeletionQueueService::AdvanceFrame
-    vkWaitForPresentKHR on this slot's previous presentId   [if present_wait]
-    vkAcquireNextImageKHR                                    [signals ImageAvailable]
-    wait on the acquired image's last-recorded fence         [if same generation]
+    destroy retired presentations, then run their callbacks
+    vkWaitForPresentKHR on the primary's previous presentId  [if present_wait]
+    for each acquirable presentation:
+      vkAcquireNextImageKHR                                  [signals its ImageAvailable]
+      wait on the acquired image's last-recorded fence
+    nothing acquired -> NothingAcquired, no recording
     vkResetCommandPool + vkBeginCommandBuffer
-  GpuFrameScratch::BeginFrame                             [rotate slice, reset cursor]
+  GpuFrameScratch::BeginFrame                                [rotate slice, reset cursor]
   GpuTimestampPool::BeginFrame                               [collect previous, reset queries]
   RecordOffscreenPhase                                       [GpuScope::PhaseOffscreen]
-    for each Offscreen feature: OnDraw   (features own their own rendering scopes)
-  RecordMainColorPhase                                       [GpuScope::PhaseMainColor]
+    for each Offscreen feature: OnDraw   (Global ones always; presentation-scoped
+                                          ones only if their presentation was acquired)
+  for each acquired presentation: RecordSwapchainPhases     [phase GpuScopes for the primary]
     barrier: swapchain image -> COLOR_ATTACHMENT_OPTIMAL
-    depth target Recreate(extent) + depth barrier
+    its depth attachment Recreate(extent) + barrier          [if declared]
     vkCmdBeginRendering (color clear, depth clear, depth storeOp DONT_CARE)
-    for each MainColor feature: OnDraw
+    for each swapchain phase, each feature scoped to this presentation: OnDraw
     vkCmdEndRendering
+    capture, if armed for this presentation
     barrier: swapchain image -> PRESENT_SRC_KHR
   publish scratch counters into RenderStats
   VulkanFrameService::EndFrame
     vkEndCommandBuffer
-    vkResetFences + vkQueueSubmit                            [waits ImageAvailable, signals per-image RenderFinished]
-    record this image's in-flight fence
-    vkQueuePresentKHR                                        [waits per-image RenderFinished, carries presentId]
+    vkResetFences + vkQueueSubmit     [waits every acquired ImageAvailable, signals each image's RenderFinished]
+    record each image's in-flight fence
+    vkQueuePresentKHR over every acquired swapchain          [pResults per swapchain; presentId on the primary]
     advance CurrentFrame
 ```
 
@@ -90,18 +97,17 @@ swapchain rendering scope is open around them.
 
 | Object | Count | Signalled by | Waited by |
 |---|---|---|---|
-| `ImageAvailable` semaphore | one per frame in flight | `vkAcquireNextImageKHR` | the frame's `vkQueueSubmit`, at `ALL_COMMANDS` |
-| `RenderFinished` semaphore | one per **swapchain image** | that frame's submit | `vkQueuePresentKHR` |
-| `InFlightFence` | one per frame in flight | that frame's submit | next `BeginFrame` for the same slot, and by any frame acquiring the same image |
-| `presentId` | monotonic per present | `VK_KHR_present_id` | `vkWaitForPresentKHR` at the next `BeginFrame` for that slot |
+| `ImageAvailable` semaphore | one per frame in flight, per presentation | `vkAcquireNextImageKHR` | the frame's `vkQueueSubmit`, at `ALL_COMMANDS` |
+| `RenderFinished` semaphore | one per **swapchain image**, per presentation | that frame's submit | `vkQueuePresentKHR` |
+| `InFlightFence` | one per frame in flight | that frame's submit | next `BeginFrame` for the same slot, and by any frame acquiring an image it last rendered |
+| `presentId` | monotonic, primary only | `VK_KHR_present_id` | `vkWaitForPresentKHR` at the next `BeginFrame` for that slot |
 
 `RenderFinished` is per image, not per frame slot. A per-slot signal semaphore
 would be waited by a present for an image another slot is still using when the
 swapchain has more images than frames in flight.
 
-`ImageInFlightFences` is stamped with the swapchain generation. After a
-recreate, the recorded fences describe a dead chain, so the generation check
-skips the wait rather than blocking on a fence that will never be relevant.
+Per-image state lives on the `PresentationTarget` and is dropped when its
+swapchain is rebuilt, so a recorded fence never describes a dead chain.
 
 ## Pacing
 
@@ -129,35 +135,70 @@ work and not the vsync interval.
 ## Swapchain lifecycle
 
 `RenderFrameResult` is the renderer's report to `RuntimeFrameLoop`. It exists so
-surface instability never leaks into game time.
+surface instability never leaks into game time. It speaks for the primary
+presentation, whose resize lifecycle the loop owns; a secondary that goes out
+of date is marked on its own target and rebuilt at the next `RebuildGraphics`
+without colouring the frame (`SummarizeFrame`).
 
 | Result | Meaning | Frame loop reaction |
 |---|---|---|
 | `Presented` | normal | nothing |
 | `SwapchainOutOfDate` | acquire or present returned `VK_ERROR_OUT_OF_DATE_KHR` | set surface extent, mark swapchain invalidated |
 | `SurfaceSuboptimal` | acquire or present returned `VK_SUBOPTIMAL_KHR` | same as out of date |
-| `SkippedMinimized` | swapchain invalid or zero images | nothing; lifecycle-only frames continue |
+| `SkippedMinimized` | no presentation could be acquired | nothing; lifecycle-only frames continue |
 | `Failed` | device lost or an unrecoverable Vulkan error | request quit |
 
 Recreation happens in the `RebuildGraphics` phase, never mid-frame:
 
 ```
-VulkanSwapchainService::Recreate(extent)
-  vkDeviceWaitIdle
-  destroy views + images of the outgoing chain, keep its handle
-  vkCreateSwapchainKHR(oldSwapchain = outgoing)     [driver may reuse resources]
-  vkDestroySwapchainKHR(outgoing)                   [retired by the create either way]
-  ++Generation, ++RecreateCount
-VulkanFrameService::ResetAfterSwapchainRecreate
-  recreate per-image semaphores, clear per-slot submitted/presentId state
+PresentationTarget::Rebuild(extent)
+  VulkanSwapchainService::Recreate(extent)
+    vkDeviceWaitIdle
+    destroy views + images of the outgoing chain, keep its handle
+    vkCreateSwapchainKHR(oldSwapchain = outgoing)   [driver may reuse resources]
+    vkDestroySwapchainKHR(outgoing)                 [retired by the create either way]
+    ++Generation, ++RecreateCount
+  recreate per-image semaphores and layouts, clear presentIds and the depth layout
   (no second device idle: Recreate already idled)
-Renderer::NotifySwapchainRecreated
-  reset the tracked per-image layouts and the depth layout to UNDEFINED
 ```
 
-The depth target is recreated inside `RecordMainColorPhase` instead, because it
-follows the swapchain extent and `VulkanDepthTarget::Recreate` is a no-op when
-the extent has not changed.
+The depth attachment is recreated inside `RecordSwapchainPhases` instead,
+because it follows the swapchain extent and `VulkanDepthTarget::Recreate` is a
+no-op when the extent has not changed.
+
+## Presentations
+
+One `Renderer` drives any number of peer presentations, one per window
+(`graphics/vulkan/PresentationTarget.h`). The primary is the one created with
+`GraphicsServices`; it is the default target for a swapchain-phase feature and
+the one frame pacing follows, and nothing else about it is special.
+
+- **Identity.** `PresentationId` is a generational handle held in a
+  `HandlePool`, so an id kept past its presentation's destruction resolves to
+  nothing, never to the presentation created after it.
+- **Per-target state.** Each target owns its surface, swapchain, acquire and
+  render-finished semaphores, per-image layouts and fences, and its depth
+  attachment. `PresentationDesc::DepthStencil` decides whether its swapchain
+  scope binds one; the image is made the first frame the scope records.
+- **Scope.** `FeatureRegistration::Scope` (`graphics/RenderFeatureScope.h`) says
+  where a feature records: `Global` (Offscreen only) or `Presentation(id)`. The
+  default is the primary for a swapchain phase and `Global` for Offscreen. A
+  swapchain-phase feature is set up against its presentation's swapchain and
+  attachment formats (`PresentationTarget::SwapchainFeatureServices`).
+- **Isolation.** Each target's availability (minimized, zero extent, needs
+  rebuild) and each swapchain's acquire and present result are its own; one
+  target going out of date never fails the frame for the others.
+- **Destruction.** `Renderer::DestroyPresentation` fails closed while any
+  feature records into the presentation. Otherwise it leaves every later frame
+  at once and retires through the frame clock, one frame past the current so
+  its last present has run too, with no device idle. The callback then
+  destroys the window: the surface always dies before its native window.
+  `OpenPresentationWindow` and `ClosePresentationWindow`
+  (`graphics/vulkan/PresentationWindows.h`) pair the two.
+- **Events.** Every window's events go through `PlatformEventRouter`;
+  `PlatformEventContext::WindowId` names the window. The authored UI and the
+  debug overlay take only primary-window events, and a secondary window's
+  minimize or focus does not touch the frame loop.
 
 ## Timing sample
 
