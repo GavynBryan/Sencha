@@ -1,5 +1,7 @@
 #include "LevelWorkspace.h"
 
+#include "actions/ActionCatalog.h"
+
 #include "viewport/EditorViewportCameraSystem.h"
 #include "editmodes/ManipulatorSession.h"
 #include "workspace/BrushManipulationSink.h"
@@ -103,8 +105,10 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
                                ProjectDescriptor* project,
                                Game* module,
                                MaterialLibrary& materials,
-                               DocumentSourceSet& documents)
+                               DocumentSourceSet& documents,
+                               ActionCatalog& actions)
     : Documents(documents)
+    , Catalog(actions)
     , Materials(&materials)
     , Project(project)
 {
@@ -159,7 +163,6 @@ LevelWorkspace::~LevelWorkspace()
     Commands.reset();
     Router.reset();
     Navigation.reset();
-    Shortcuts.reset();
     // The thumbnail bindings release texture refs through the asset stack and
     // free ImGui descriptor sets (the panels referencing the cache never touch
     // it in their destructors).
@@ -227,74 +230,66 @@ void LevelWorkspace::BuildInput()
                 SetRelativeMouseMode(*Window, enabled);
         });
 
-    Shortcuts = std::make_unique<ShortcutRegistry>();
-
-    // The editor keymap, as one table. Notes on the choices:
-    // - Gizmo switches (Shift+Q/W/E/R) carry Shift to stay off the fly camera's
-    //   bare W/A/S/D + Q/E; key events reach shortcuts even while the camera holds
-    //   the pointer. The UI guard still blocks them while a text field is focused.
-    // - Escape lands here only when no drag is in flight (the viewport dispatcher
-    //   ahead in the chain consumes it to cancel an active interaction), so it
-    //   climbs the editing context one level per press.
-    struct KeyBinding
+    // The workspace's operations: defined once in the catalog, performed by
+    // this workspace's handlers while it is the one in use. Gizmo switches carry
+    // Shift to stay off the fly camera's bare W/A/S/D + Q/E. Escape reaches its
+    // handler only when no drag is in flight (the viewport dispatcher consumes
+    // it to cancel one), so it climbs the editing context one level per press.
+    struct LevelAction
     {
-        std::string_view Action;
-        SDL_Keycode Key;
-        ModifierFlags Mods;
-        std::function<void()> Callback;
+        std::string_view Id;
+        std::string_view Label;
+        std::string_view Category;
+        KeyChord Chord;
+        std::function<void()> Invoke;
     };
-    const KeyBinding bindings[] = {
-        { "edit.delete",           SDLK_DELETE, {},                              [this] { Workspace->DeleteSelection(); } },
-        { "edit.dissolve",         SDLK_BACKSPACE, {},                           [this] { Workspace->DissolveSelectedEdges(); } },
-        { "edit.select_all",       SDLK_A,      { .Ctrl = true },                [this] { Workspace->SelectAll(); } },
-        { "edit.duplicate",        SDLK_D,      { .Ctrl = true },                [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } },
-        { "edit.duplicate_instance", SDLK_D,    { .Alt = true },                 [this] { Workspace->Actions.Duplicate(/*asInstance*/ true); } },
-        { "edit.repeat",           SDLK_R,      { .Ctrl = true },                [this] { Workspace->Actions.RepeatLast(); } },
-        { "edit.escape",           SDLK_ESCAPE, {},                              [this] { Workspace->EscapeStep(); } },
-        { "file.new",              SDLK_N,      { .Ctrl = true },                [this] { AfterSettlingChanges([this] { Files->New(); }); } },
-        { "file.open",             SDLK_O,      { .Ctrl = true },                [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } },
-        { "mode.cycle",            SDLK_V,      { .Shift = true },               [this] { Workspace->MeshEdit.CycleElementKind(); } },
-        { "mode.object",           SDLK_1,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Object); } },
-        { "mode.vertex",           SDLK_2,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Vertex); } },
-        { "mode.edge",             SDLK_3,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Edge); } },
-        { "mode.face",             SDLK_4,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Face); } },
-        { "gizmo.resize",          SDLK_Q,      { .Shift = true },               [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Resize); } },
-        { "gizmo.move",            SDLK_W,      { .Shift = true },               [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Move); } },
-        { "gizmo.rotate",          SDLK_E,      { .Shift = true },               [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Rotate); } },
-        { "gizmo.scale",           SDLK_R,      { .Shift = true },               [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Scale); } },
-        { "gizmo.space",           SDLK_G,      { .Ctrl = true },                [this] { Workspace->Interaction.Manipulators->CycleTransformSpace(); } },
-        { "grid.origin_selection", SDLK_G,      { .Shift = true },               [this] { Workspace->SetGridOriginToSelection(); } },
-        { "grid.align_face",       SDLK_G,      { .Alt = true },                 [this] { Workspace->AlignGridToSelectedFace(); } },
-        { "grid.reset",            SDLK_G,      { .Ctrl = true, .Shift = true }, [this] { Workspace->ResetGrid(); } },
-        { "grid.finer",            SDLK_LEFTBRACKET,  {},                        [this] { Workspace->Grid.StepSpacing(-1); } },
-        { "grid.coarser",          SDLK_RIGHTBRACKET, {},                        [this] { Workspace->Grid.StepSpacing(+1); } },
-        { "material.apply",        SDLK_T,      { .Shift = true },               [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); } },
-        { "material.copy_proj",    SDLK_C,      { .Ctrl = true, .Shift = true }, [this] { Workspace->CopySelectedFaceProjection(); } },
-        { "material.paste_proj",   SDLK_V,      { .Ctrl = true, .Shift = true }, [this] { Workspace->PasteFaceProjectionToSelection(); } },
+    const LevelAction actions[] = {
+        { "edit.delete",           "Delete",                      "Edit",     { SDLK_DELETE, {} },                        [this] { Workspace->DeleteSelection(); } },
+        { "edit.dissolve",         "Dissolve Edges",              "Edit",     { SDLK_BACKSPACE, {} },                     [this] { Workspace->DissolveSelectedEdges(); } },
+        { "edit.select_all",       "Select All",                  "Edit",     { SDLK_A, { .Ctrl = true } },               [this] { Workspace->SelectAll(); } },
+        { "edit.duplicate",        "Duplicate",                   "Edit",     { SDLK_D, { .Ctrl = true } },               [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } },
+        { "edit.duplicate_instance", "Duplicate as Instance",     "Edit",     { SDLK_D, { .Alt = true } },                [this] { Workspace->Actions.Duplicate(/*asInstance*/ true); } },
+        { "edit.repeat",           "Repeat Last",                 "Edit",     { SDLK_R, { .Ctrl = true } },               [this] { Workspace->Actions.RepeatLast(); } },
+        { "edit.escape",           "Step Back",                   "Edit",     { SDLK_ESCAPE, {} },                        [this] { Workspace->EscapeStep(); } },
+        { "file.new",              "New Level",                   "File",     { SDLK_N, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->New(); }); } },
+        { "file.open",             "Open...",                     "File",     { SDLK_O, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } },
+        { "mode.cycle",            "Next Element Mode",           "Mode",     { SDLK_V, { .Shift = true } },              [this] { Workspace->MeshEdit.CycleElementKind(); } },
+        { "mode.object",           "Object Mode",                 "Mode",     { SDLK_1, {} },                             [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Object); } },
+        { "mode.vertex",           "Vertex Mode",                 "Mode",     { SDLK_2, {} },                             [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Vertex); } },
+        { "mode.edge",             "Edge Mode",                   "Mode",     { SDLK_3, {} },                             [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Edge); } },
+        { "mode.face",             "Face Mode",                   "Mode",     { SDLK_4, {} },                             [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Face); } },
+        { "gizmo.resize",          "Resize",                      "Transform", { SDLK_Q, { .Shift = true } },             [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Resize); } },
+        { "gizmo.move",            "Move",                        "Transform", { SDLK_W, { .Shift = true } },             [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Move); } },
+        { "gizmo.rotate",          "Rotate",                      "Transform", { SDLK_E, { .Shift = true } },             [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Rotate); } },
+        { "gizmo.scale",           "Scale",                       "Transform", { SDLK_R, { .Shift = true } },             [this] { Workspace->Interaction.Manipulators->SetTransformMode(TransformMode::Scale); } },
+        { "gizmo.space",           "Next Transform Space",        "Transform", { SDLK_G, { .Ctrl = true } },              [this] { Workspace->Interaction.Manipulators->CycleTransformSpace(); } },
+        { "grid.origin_selection", "Grid Origin to Selection",    "Grid",     { SDLK_G, { .Shift = true } },              [this] { Workspace->SetGridOriginToSelection(); } },
+        { "grid.align_face",       "Align Grid to Face",          "Grid",     { SDLK_G, { .Alt = true } },                [this] { Workspace->AlignGridToSelectedFace(); } },
+        { "grid.reset",            "Reset Grid",                  "Grid",     { SDLK_G, { .Ctrl = true, .Shift = true } }, [this] { Workspace->ResetGrid(); } },
+        { "grid.finer",            "Finer Grid",                  "Grid",     { SDLK_LEFTBRACKET, {} },                   [this] { Workspace->Grid.StepSpacing(-1); } },
+        { "grid.coarser",          "Coarser Grid",                "Grid",     { SDLK_RIGHTBRACKET, {} },                  [this] { Workspace->Grid.StepSpacing(+1); } },
+        { "material.apply",        "Apply Material",              "Material", { SDLK_T, { .Shift = true } },              [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); } },
+        { "material.copy_proj",    "Copy Face Projection",        "Material", { SDLK_C, { .Ctrl = true, .Shift = true } }, [this] { Workspace->CopySelectedFaceProjection(); } },
+        { "material.paste_proj",   "Paste Face Projection",       "Material", { SDLK_V, { .Ctrl = true, .Shift = true } }, [this] { Workspace->PasteFaceProjectionToSelection(); } },
     };
-    // User keymap overrides ride on the action names: a keybinds.json in the
-    // working directory rebinds any table entry without a recompile.
-    std::string keymapError;
-    const auto overrides = LoadKeymapOverrides("keybinds.json", &keymapError);
-    if (!keymapError.empty())
-        std::fprintf(stderr, "[editor] %s\n", keymapError.c_str());
-    const auto registerBinding = [&](std::string_view action, SDL_Keycode key,
-                                     ModifierFlags mods, std::function<void()> callback)
+    const auto offer = [&](std::string_view id, std::string_view label, std::string_view category,
+                           std::vector<KeyChord> chords, IconId icon, std::function<void()> invoke)
     {
-        const auto it = overrides.find(std::string(action));
-        if (it != overrides.end())
-            Shortcuts->Register(action, it->second.Key, it->second.Mods, std::move(callback));
-        else if (key != SDLK_UNKNOWN)
-            Shortcuts->Register(action, key, mods, std::move(callback));
+        std::string error;
+        if (!Catalog.Define({ .Id = std::string(id), .Label = std::string(label),
+                              .Category = std::string(category), .Icon = icon,
+                              .DefaultChords = std::move(chords) }, &error))
+            std::fprintf(stderr, "[editor] %s\n", error.c_str());
+        if (invoke)
+            ActionHandlers.Claim(std::string(id), ActionHandler{ .Invoke = std::move(invoke) });
     };
-
-    for (const KeyBinding& binding : bindings)
-        registerBinding(binding.Action, binding.Key, binding.Mods, binding.Callback);
+    for (const LevelAction& action : actions)
+        offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
 
     // Tool activation is generated from the registry rather than listed above: a
-    // tool declares its own key, so adding one needs no edit here. The action
-    // name is "tool.<id>", which is also what a keymap file overrides, and the
-    // registry resolves at fire time because the workspace owns it.
+    // tool declares its own key, so adding one needs no edit here. The action is
+    // "tool.<id>", which is also what a keymap file overrides, and the registry
+    // resolves at fire time because the workspace owns it.
     if (ToolRegistry* tools = Workspace->Interaction.Tools.get())
     {
         for (const std::unique_ptr<ITool>& tool : tools->GetTools())
@@ -303,14 +298,23 @@ void LevelWorkspace::BuildInput()
                 continue;
             const std::string id(tool->GetId());
             const ITool::Shortcut shortcut = tool->GetShortcut();
-            registerBinding("tool." + id, shortcut.Key, shortcut.Mods,
-                            [this, id]
-                            {
-                                if (ToolRegistry* live = Workspace->Interaction.Tools.get())
-                                    (void)live->Activate(id);
-                            });
+            std::vector<KeyChord> chords;
+            if (shortcut.Key != SDLK_UNKNOWN)
+                chords.push_back(KeyChord{ shortcut.Key, shortcut.Mods });
+            offer("tool." + id, tool->GetDisplayName(), "Tool", std::move(chords), tool->GetIcon(),
+                  [this, id]
+                  {
+                      if (ToolRegistry* live = Workspace->Interaction.Tools.get())
+                          (void)live->Activate(id);
+                  });
         }
     }
+
+    // A wheel's key is held rather than pressed, so the session owns both
+    // edges of it and no handler claims the action; it is defined so the
+    // keymap, hints and palette name it like any other.
+    offer("tool.wheel", "Tool Wheel", "Tool", { KeyChord{ SDLK_Q, {} } }, IconId::None, {});
+    offer("gizmo.wheel", "Transform Wheel", "Transform", { KeyChord{ SDLK_Z, {} } }, IconId::None, {});
 
     // A wheel's key is held, not pressed, so it is not a shortcut row: the
     // session owns both edges of it. The action names are what a keymap file
@@ -319,9 +323,8 @@ void LevelWorkspace::BuildInput()
     {
         const auto chordFor = [&](std::string_view action, SDL_Keycode fallback)
         {
-            if (const auto it = overrides.find(std::string(action)); it != overrides.end())
-                return it->second;
-            return KeyChord{ .Key = fallback, .Mods = {} };
+            const std::span<const KeyChord> chords = Catalog.Chords(action);
+            return chords.empty() ? KeyChord{ .Key = fallback, .Mods = {} } : chords.front();
         };
         const auto frame = [this]
         {
@@ -382,7 +385,6 @@ void LevelWorkspace::BuildInput()
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return GizmoWheel->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Interaction.Dispatcher->OnInput(e, cap); });
-    Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return Shortcuts->OnInput(e); });
 
     // The pointer's owner drives the ImGui input gate: while a viewport gesture
     // (fly-look, ortho-pan, or a tool drag) holds capture, ImGui ignores both mouse

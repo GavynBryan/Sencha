@@ -142,7 +142,9 @@ void KyusuApp::OnStart(GameStartupContext&)
     GraphicsServices& graphics = engine.Graphics();
     const PresentationId mainWindow = graphics.MainRenderer.PrimaryPresentation();
     Session = std::make_unique<ProjectSession>(engine, std::move(ProjectPath));
-    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session),
+    MainWindowActions = std::make_unique<WindowActions>();
+    MainWindowActions->Application = MainWindowActions->Stack.Push(ApplicationActions, ActionRank::Application);
+    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog),
                                                  Session->Project() != nullptr, mainWindow);
 
     // Chrome theme (behavior from data), loaded before the UI feature applies
@@ -156,6 +158,7 @@ void KyusuApp::OnStart(GameStartupContext&)
         .WindowTitle = "Kyusu",
     });
     ui->SetWorkspaceHost(*Workspaces, mainWindow);
+    ui->SetActionCatalog(&Catalog);
     Renderer& renderer = graphics.MainRenderer;
     Ui = renderer.StageFeature(std::move(ui), FeatureRegistration{ .Id = kEditorUiFeatureId });
     std::vector<std::string_view> failed;
@@ -173,7 +176,7 @@ void KyusuApp::OnStart(GameStartupContext&)
     Workspaces->SetWindowEmptiedListener([this](PresentationId emptied) { CloseDetachedWindow(emptied); });
 
     InstallDocumentActions();
-    BuildShortcuts();
+    DefineApplicationActions();
     RegisterWorkspaceCommands();
     // Before the startup script runs, so an argv +editor.open or +cook finds
     // the level it acts on. Without a project to edit, choose one.
@@ -203,6 +206,7 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
 
     auto shell = std::make_unique<EditorUiFeature>(*Ui, window);
     shell->SetWorkspaceHost(*Workspaces, presentation);
+    shell->SetActionCatalog(&Catalog);
     shell->SetCloseWindowAction([this, presentation] { WindowsToClose.push_back(presentation); });
     EditorUiFeature* added = graphics.MainRenderer.AddFeature(std::move(shell), RenderFeatureScope::For(presentation));
     if (added == nullptr)
@@ -210,7 +214,9 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
         (void)ClosePresentationWindow(graphics, windows, presentation);
         return {};
     }
-    Detached.push_back(DetachedWindow{ presentation, window.GetId(), added });
+    auto actions = std::make_unique<WindowActions>();
+    actions->Application = actions->Stack.Push(ApplicationActions, ActionRank::Application);
+    Detached.push_back(DetachedWindow{ presentation, window.GetId(), added, std::move(actions) });
     return presentation;
 }
 
@@ -304,37 +310,95 @@ bool KyusuApp::CanUndo() const
     return Session->Documents().CanUndo() || (active != nullptr && active->HasStagedEdit());
 }
 
-void KyusuApp::BuildShortcuts()
+void KyusuApp::DefineApplicationActions()
 {
-    DocumentSourceSet& documents = Session->Documents();
-    struct Row
-    {
-        std::string_view Action;
-        SDL_Keycode Key;
-        ModifierFlags Mods;
-        std::function<void()> Callback;
-    };
-    const Row rows[] = {
-        { "edit.undo",     SDLK_Z, { .Ctrl = true },                [this] { Undo(); } },
-        { "edit.redo",     SDLK_Z, { .Ctrl = true, .Shift = true }, [&documents] { documents.Redo(); } },
-        { "edit.redo",     SDLK_Y, { .Ctrl = true },                [&documents] { documents.Redo(); } },
-        { "file.save",     SDLK_S, { .Ctrl = true },                [this] {
-              IWorkspace* active = Workspaces->Active();
-              if (active != nullptr && active->View().File.Save)
-                  active->View().File.Save();
-          } },
-        { "file.save_all", SDLK_S, { .Ctrl = true, .Shift = true }, [&documents] { (void)documents.SaveAll(); } },
-    };
+    // Before anything is defined, so every action -- a workspace's too, when
+    // it first opens -- is also a console command of the same id, performed by
+    // whatever claims it in the window in use.
+    ConsoleRegistry& registry = GetEngine().Console().Registry();
+    Catalog.SetDefinedObserver([this, &registry](const ActionDefinition& action) {
+        (void)registry.RegisterCommand({
+            .Name = action.Id,
+            .Owner = "editor.actions",
+            .Usage = action.Id,
+            .Help = action.Label + " (" + action.Category + ")",
+            .Callback = [this, id = action.Id](ConsoleExecutionContext&, std::span<const std::string>) {
+                ConsoleResult result;
+                SyncActionLayers();
+                const WorkspaceKind* active = Workspaces->ActiveKind();
+                const PresentationId window = active != nullptr ? Workspaces->WindowOf(active->Id)
+                                                                : Workspaces->MainWindow();
+                if (!ActionsFor(window).Stack.Invoke(id))
+                {
+                    result.Status = ConsoleStatus::ExecutionFailed;
+                    result.Error("nothing in use performs '" + id + "'");
+                    return result;
+                }
+                result.Info("done");
+                return result;
+            },
+        });
+    });
+
     std::string error;
-    const auto overrides = LoadKeymapOverrides("keybinds.json", &error);
-    for (const Row& row : rows)
-    {
-        const auto it = overrides.find(std::string(row.Action));
-        if (it != overrides.end())
-            Shortcuts.Register(row.Action, it->second.Key, it->second.Mods, row.Callback);
-        else
-            Shortcuts.Register(row.Action, row.Key, row.Mods, row.Callback);
-    }
+    const auto keymap = LoadKeymapOverrides("keybinds.json", &error);
+    if (!error.empty())
+        std::fprintf(stderr, "[kyusu] %s\n", error.c_str());
+    (void)Catalog.ApplyKeymap(keymap);
+
+    DocumentSourceSet& documents = Session->Documents();
+    const auto offer = [this](std::string id, std::string label, std::vector<KeyChord> chords,
+                              ActionHandler handler) {
+        std::string defineError;
+        if (!Catalog.Define({ .Id = id, .Label = std::move(label),
+                              .Category = id.substr(0, id.find('.')) == "edit" ? "Edit" : "File",
+                              .DefaultChords = std::move(chords) }, &defineError))
+            std::fprintf(stderr, "[kyusu] %s\n", defineError.c_str());
+        ApplicationActions.Claim(std::move(id), std::move(handler));
+    };
+    offer("edit.undo", "Undo", { { SDLK_Z, { .Ctrl = true } } },
+          { .Invoke = [this] { Undo(); }, .Enabled = [this] { return CanUndo(); } });
+    offer("edit.redo", "Redo", { { SDLK_Z, { .Ctrl = true, .Shift = true } }, { SDLK_Y, { .Ctrl = true } } },
+          { .Invoke = [&documents] { documents.Redo(); }, .Enabled = [&documents] { return documents.CanRedo(); } });
+    offer("file.save", "Save", { { SDLK_S, { .Ctrl = true } } },
+          { .Invoke = [this] {
+                IWorkspace* active = Workspaces->Active();
+                if (active != nullptr && active->View().File.Save)
+                    active->View().File.Save();
+            },
+            .Enabled = [this] {
+                IWorkspace* active = Workspaces->Active();
+                return active != nullptr && active->View().File.Save != nullptr;
+            } });
+    offer("file.save_all", "Save All", { { SDLK_S, { .Ctrl = true, .Shift = true } } },
+          { .Invoke = [&documents] { (void)documents.SaveAll(); } });
+}
+
+KyusuApp::WindowActions& KyusuApp::ActionsFor(PresentationId window)
+{
+    for (DetachedWindow& entry : Detached)
+        if (entry.Presentation == window && entry.Actions != nullptr)
+            return *entry.Actions;
+    return *MainWindowActions;
+}
+
+void KyusuApp::SyncActionLayers()
+{
+    const auto sync = [this](PresentationId window, WindowActions& actions) {
+        IWorkspace* active = Workspaces->ActiveIn(window);
+        if (active == actions.Layered)
+            return;
+        actions.Workspace.Reset();
+        actions.Layered = active;
+        if (active != nullptr)
+            if (ActionContext* context = active->Actions())
+                actions.Workspace = actions.Stack.Push(*context, ActionRank::Workspace);
+    };
+    if (MainWindowActions != nullptr)
+        sync(Workspaces->MainWindow(), *MainWindowActions);
+    for (DetachedWindow& entry : Detached)
+        if (entry.Actions != nullptr)
+            sync(entry.Presentation, *entry.Actions);
 }
 
 void KyusuApp::DrawClosePrompt()
@@ -466,7 +530,10 @@ void KyusuApp::RegisterWorkspaceCommands()
 void KyusuApp::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     if (Workspaces)
-        ctx.Schedule.Register<WorkspaceTickSystem>(*Workspaces, FramesStarted, [this] { CloseRequestedWindows(); });
+        ctx.Schedule.Register<WorkspaceTickSystem>(*Workspaces, FramesStarted, [this] {
+            CloseRequestedWindows();
+            SyncActionLayers();
+        });
 }
 
 void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
@@ -506,12 +573,17 @@ void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
     shell->ProcessSdlEvent(ctx.Event);
     if (active != nullptr)
         active->HandlePlatformEvent(ctx);
-    // Keys the active workspace left alone, unless a text field has them.
+    // Keys the active workspace left alone, unless a text field has them, are
+    // the window's actions.
     if (ctx.Handled || shell->GetInputCapture().Keyboard)
         return;
-    if (const std::optional<InputEvent> event = TranslateSdlEvent(ctx.Event))
-        if (Shortcuts.OnInput(*event) == InputConsumed::Yes)
-            ctx.Handled = true;
+    const std::optional<InputEvent> event = TranslateSdlEvent(ctx.Event);
+    const KeyDownEvent* key = event.has_value() ? std::get_if<KeyDownEvent>(&*event) : nullptr;
+    if (key == nullptr)
+        return;
+    SyncActionLayers();
+    if (ActionsFor(window).Stack.Dispatch(Catalog, KeyChord{ key->Key, key->Modifiers }))
+        ctx.Handled = true;
 }
 
 void KyusuApp::OnShutdown(GameShutdownContext&)
@@ -531,6 +603,11 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
     {
         while (!Detached.empty())
             Workspaces->Gather(Detached.back().Presentation);
+        if (MainWindowActions != nullptr)
+        {
+            MainWindowActions->Workspace.Reset();
+            MainWindowActions->Layered = nullptr;
+        }
         Workspaces->CloseAll();
     }
     DetachRenderFeature(GetEngine(), Ui);

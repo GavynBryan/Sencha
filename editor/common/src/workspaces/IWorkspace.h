@@ -2,6 +2,7 @@
 
 #include "documents/DocumentRef.h"
 
+class ActionContext;
 struct FrameUpdateContext;
 struct PlatformEventContext;
 struct WorkspaceView;
@@ -36,6 +37,11 @@ public:
     // own. False when there is none and the journal's newest step is next.
     virtual bool UndoStagedEdit() { return false; }
     [[nodiscard]] virtual bool HasStagedEdit() const { return false; }
+
+    // The actions this workspace performs while it is the one in use. The host
+    // puts them in play in the window showing it, and takes them out when it
+    // hides or goes elsewhere; the definitions live in the ActionCatalog.
+    [[nodiscard]] virtual ActionContext* Actions() { return nullptr; }
 
     virtual WorkspaceView& View() = 0;
     // The window this workspace now draws in: its UI capture, input gates and

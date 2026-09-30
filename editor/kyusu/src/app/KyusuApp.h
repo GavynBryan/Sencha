@@ -2,7 +2,8 @@
 
 #include <app/Game.h>
 
-#include "input/ShortcutRegistry.h"
+#include "actions/ActionCatalog.h"
+#include "actions/ActionContext.h"
 
 #include <graphics/PresentationId.h>
 
@@ -13,6 +14,7 @@
 #include <vector>
 
 class EditorUiFeature;
+class IWorkspace;
 class ProjectSession;
 class WorkspaceHost;
 struct WorkspaceKind;
@@ -39,9 +41,15 @@ private:
     // a workspace with changes asking before it closes.
     void InstallDocumentActions();
     void DrawClosePrompt();
-    // The keys every workspace shares, for one that does not bind its own:
-    // undo, redo, save and save all. Rebindable from keybinds.json.
-    void BuildShortcuts();
+    // The operations every workspace shares -- undo, redo, save, save all --
+    // and the user's keymap. Every action defined from then on is also a
+    // console command of the same id.
+    void DefineApplicationActions();
+    // Puts each window's active workspace's actions in play there, and takes a
+    // workspace's out once it is no longer the one in use.
+    void SyncActionLayers();
+    struct WindowActions;
+    [[nodiscard]] WindowActions& ActionsFor(PresentationId window);
     // The active workspace's staged edit, then the journal's newest step.
     void Undo();
     [[nodiscard]] bool CanUndo() const;
@@ -58,6 +66,18 @@ private:
     void CloseRequestedWindows();
 
     std::optional<std::string> ProjectPath;
+    // Before everything that claims actions, so every window's stack and the
+    // contexts in it are gone before the catalog they resolve against.
+    ActionCatalog Catalog;
+    ActionContext ApplicationActions;
+    struct WindowActions
+    {
+        ActionContextStack Stack;
+        ActionContextStack::Layer Application;
+        ActionContextStack::Layer Workspace;
+        const IWorkspace* Layered = nullptr;
+    };
+    std::unique_ptr<WindowActions> MainWindowActions;
     // Declared before the workspaces so it is destroyed after them: the module
     // stays mapped while any document holds code it compiled.
     std::unique_ptr<ProjectSession> Session;
@@ -70,6 +90,7 @@ private:
         std::uint32_t WindowId = 0;
         // Owned by the renderer.
         EditorUiFeature* Shell = nullptr;
+        std::unique_ptr<WindowActions> Actions;
     };
     std::vector<DetachedWindow> Detached;
     std::vector<PresentationId> WindowsToClose;
@@ -77,7 +98,6 @@ private:
     // or discarded.
     std::string HeldClose;
     std::string SettleError;
-    ShortcutRegistry Shortcuts;
     // Until the first frame nothing records, so the startup script's workspace
     // commands apply at once and the commands after them find what they open.
     bool FramesStarted = false;

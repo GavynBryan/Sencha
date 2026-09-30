@@ -13,20 +13,26 @@
 //
 //   { "edit.undo": "Ctrl+Z", "gizmo.move": "Shift+W", "mode.face": "4" }
 //
-// Actions are the names the level workspace registers its shortcut table under;
-// chord text is modifiers + one SDL key name joined with '+'. Absent file or
+// Actions are the ids of ActionCatalog definitions; chord text is modifiers
+// plus one SDL key name joined with '+'. Absent file or
 // absent action = the built-in default binding.
 
 struct KeyChord
 {
     SDL_Keycode Key = SDLK_UNKNOWN;
     ModifierFlags Mods;
+
+    bool operator==(const KeyChord&) const = default;
 };
 
 // "Ctrl+Shift+Z" -> chord. Case-insensitive modifiers (Ctrl/Shift/Alt); the
 // final token resolves through SDL's key-name table. nullopt on anything
 // malformed.
 [[nodiscard]] std::optional<KeyChord> ParseKeyChord(std::string_view text);
+
+// chord -> "Ctrl+Shift+Z", the text ParseKeyChord reads back, for showing a
+// binding wherever an action is offered.
+[[nodiscard]] std::string FormatKeyChord(const KeyChord& chord);
 
 // action name -> chord for every valid entry in the file. Missing file is not
 // an error (empty map); malformed entries are reported through *error and

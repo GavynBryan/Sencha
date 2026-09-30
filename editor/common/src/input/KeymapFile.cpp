@@ -59,6 +59,19 @@ std::optional<KeyChord> ParseKeyChord(std::string_view text)
     return std::nullopt;
 }
 
+std::string FormatKeyChord(const KeyChord& chord)
+{
+    std::string text;
+    if (chord.Mods.Ctrl)
+        text += "Ctrl+";
+    if (chord.Mods.Shift)
+        text += "Shift+";
+    if (chord.Mods.Alt)
+        text += "Alt+";
+    text += SDL_GetKeyName(chord.Key);
+    return text;
+}
+
 std::unordered_map<std::string, KeyChord> LoadKeymapOverrides(const std::filesystem::path& path,
                                                               std::string* error)
 {

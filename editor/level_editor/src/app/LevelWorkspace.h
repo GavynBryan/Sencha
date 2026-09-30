@@ -8,7 +8,7 @@
 
 #include "commands/CommandStack.h"
 #include "input/InputRouter.h"
-#include "input/ShortcutRegistry.h"
+#include "actions/ActionContext.h"
 #include "input/ViewportNavigation.h"
 #include "tools/RadialMenuModel.h"
 #include "tools/RadialMenuSession.h"
@@ -51,6 +51,8 @@ class DocumentFileActions;
 // The level editor as a workspace. The constructor is the bring-up sequence;
 // member order is teardown order, and the destructor spells out the
 // load-bearing part of it.
+class ActionCatalog;
+
 class LevelWorkspace final : public IWorkspace
 {
 public:
@@ -61,7 +63,8 @@ public:
                    ProjectDescriptor* project,
                    Game* module,
                    MaterialLibrary& materials,
-                   DocumentSourceSet& documents);
+                   DocumentSourceSet& documents,
+                   ActionCatalog& actions);
     ~LevelWorkspace() override;
 
     LevelWorkspace(const LevelWorkspace&) = delete;
@@ -74,6 +77,7 @@ public:
     [[nodiscard]] bool OwnsDocument(const DocumentRef& document) const override;
     bool UndoStagedEdit() override;
     [[nodiscard]] bool HasStagedEdit() const override;
+    [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;
 
@@ -149,7 +153,8 @@ private:
     std::unique_ptr<RadialMenuSession> GizmoWheel;
     std::unique_ptr<InputRouter> Router;
     std::unique_ptr<ViewportNavigation> Navigation;
-    std::unique_ptr<ShortcutRegistry> Shortcuts;
+    ActionCatalog& Catalog;
+    ActionContext ActionHandlers;
     // Declared after Workspace so they are destroyed before the state they
     // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
     std::unique_ptr<EditorToolbar> Toolbar;

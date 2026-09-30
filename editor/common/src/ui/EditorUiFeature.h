@@ -27,6 +27,7 @@ class EditorConsolePanel;
 class Engine;
 class IWorkspace;
 class WorkspaceBar;
+class ActionCatalog;
 class WorkspaceHost;
 struct WorkspaceKind;
 class SdlWindow;
@@ -117,6 +118,8 @@ public:
     void SetWorkspaceHost(WorkspaceHost& host, PresentationId window);
     [[nodiscard]] PresentationId ShownWindow() const { return Presentation; }
     [[nodiscard]] SdlWindow& GetWindow() const { return Window; }
+    // Where menus read the chords they show; none means they show none.
+    void SetActionCatalog(const ActionCatalog* catalog) { Catalog = catalog; }
     // What the caption's close button does; exit, unless the host says otherwise.
     void SetCloseWindowAction(std::function<void()> action) { CloseWindowAction = std::move(action); }
     // Shows or hides the active workspace's console.
@@ -246,4 +249,5 @@ private:
     std::vector<PointerAction> PointerActions;
     // The held pointer position from the latest Move, re-fed every frame.
     std::optional<ImVec2> HeldPointer;
+    const ActionCatalog* Catalog = nullptr;
 };

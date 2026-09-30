@@ -1,5 +1,7 @@
 #include "EditorUiFeature.h"
 
+#include "actions/ActionCatalog.h"
+
 #include "AuthoredThemeStyleSheet.h"
 
 #include <ui/UiService.h>
@@ -1177,18 +1179,29 @@ void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
 
     static const WorkspaceFileActions kNoFile;
     const WorkspaceFileActions& file = view != nullptr ? view->File : kNoFile;
+    // The chords a menu shows are the catalog's, so a rebinding shows here too.
+    const auto chord = [this](std::string_view action) {
+        return Catalog != nullptr ? Catalog->ChordText(action) : std::string{};
+    };
+    const auto chordOrNull = [](const std::string& text) { return text.empty() ? nullptr : text.c_str(); };
+    const std::string newChord = chord("file.new");
+    const std::string openChord = chord("file.open");
+    const std::string saveChord = chord("file.save");
+    const std::string saveAllChord = chord("file.save_all");
+    const std::string undoChord = chord("edit.undo");
+    const std::string redoChord = chord("edit.redo");
     if (ImGui::BeginMenu("File"))
     {
-        if (ImGui::MenuItem("New", "Ctrl+N", false, file.New != nullptr) && file.New)
+        if (ImGui::MenuItem("New", chordOrNull(newChord), false, file.New != nullptr) && file.New)
             file.New();
         if (file.NewWorld && ImGui::MenuItem("New World"))
             file.NewWorld();
-        if (ImGui::MenuItem("Open", "Ctrl+O", false, file.Open != nullptr) && file.Open)
+        if (ImGui::MenuItem("Open", chordOrNull(openChord), false, file.Open != nullptr) && file.Open)
             file.Open();
-        if (ImGui::MenuItem("Save", "Ctrl+S", false, file.Save != nullptr) && file.Save)
+        if (ImGui::MenuItem("Save", chordOrNull(saveChord), false, file.Save != nullptr) && file.Save)
             file.Save();
         const std::function<void()>& saveAll = Shell().SaveAllAction;
-        if (ImGui::MenuItem("Save All", "Ctrl+Shift+S", false, saveAll != nullptr) && saveAll)
+        if (ImGui::MenuItem("Save All", chordOrNull(saveAllChord), false, saveAll != nullptr) && saveAll)
             saveAll();
         if (ImGui::MenuItem("Save As", nullptr, false, file.SaveAs != nullptr) && file.SaveAs)
             file.SaveAs();
@@ -1203,9 +1216,9 @@ void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
         const bool canUndo = shell.CanUndoAction ? shell.CanUndoAction() : false;
         const bool canRedo = shell.CanRedoAction ? shell.CanRedoAction() : false;
 
-        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo) && shell.UndoAction)
+        if (ImGui::MenuItem("Undo", chordOrNull(undoChord), false, canUndo) && shell.UndoAction)
             shell.UndoAction();
-        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && shell.RedoAction)
+        if (ImGui::MenuItem("Redo", chordOrNull(redoChord), false, canRedo) && shell.RedoAction)
             shell.RedoAction();
 
         ImGui::EndMenu();

@@ -147,7 +147,8 @@ Shared shell (`editor/common/src/`):
 | `selection/` | Multi-element selection model (`SelectionService`, `SelectionContext`, `SelectableRef`). | -- |
 | `tools/` | Tool framework (`ToolRegistry`, `ToolContext`). | `ITool` |
 | `interaction/` | Drag-interaction host (`InteractionHost`). | `IInteraction` |
-| `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `ShortcutRegistry`, `KeymapFile`, `UiInputGuard`). | router handlers |
+| `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `KeymapFile`, `UiInputGuard`). | router handlers |
+| `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first). | Kyusu, workspaces |
 | `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
 | `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/icons/` |
 | `ui/ThemeTextureCache` | The raster art a theme owns, keyed by path and source stamp, with its own GPU lifetime. Deliberately not the font atlas: a theme switch costs one upload, not a font rebuild. | add a texture path to a theme's `surfaces` |
@@ -266,14 +267,18 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   hot and the properties row draws them; neither learns the type behind them.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
-- A keyboard shortcut: the binding table in `LevelWorkspace::BuildInput` (the level editor);
-  the keys every workspace shares (undo, redo, save, save all) are Kyusu's own
-  rows in `KyusuApp::BuildShortcuts`, reached by a workspace that binds none of
-  its own. Tool
-  activation rows are generated from the registry instead, under `tool.<id>`.
-  Any action, listed or generated, is rebindable from `keybinds.json`. A held
-  key is owned by a `RadialMenuSession` rather than the shortcut registry,
-  which fires on presses; it resolves its override from the same file. There is
+- An operation a person can invoke: define it in the `ActionCatalog` (its id,
+  label, category and default chords -- data, no callback) and claim it in the
+  `ActionContext` of whatever performs it. The level workspace's table is in
+  `LevelWorkspace::BuildInput`; the operations every workspace shares (undo,
+  redo, save, save all) are Kyusu's, in `KyusuApp::DefineApplicationActions`.
+  Kyusu puts the active workspace's context in play in its window, so a chord,
+  a menu, the console (every action is a console command of its id) and later
+  the palette all reach one table, and a chord belongs to one action whoever
+  performs it. Tool activation is generated from the registry, under
+  `tool.<id>`. Any action is rebindable from `keybinds.json`. A held key is
+  owned by a `RadialMenuSession` rather than an action handler, which fires on
+  presses; its chord is still the catalog's (`tool.wheel`, `gizmo.wheel`). There is
   one radial-menu mechanism (`RadialMenuMath`, `RadialMenuSession`, the chrome's
   `DrawRadialMenu`) over `IRadialMenuModel`; the tools are one model
   (`tool.wheel`, `ToolRegistryMenuModel`), the gizmo modes another
