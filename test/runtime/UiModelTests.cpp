@@ -10,6 +10,7 @@
 
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <random>
 #include <string>
@@ -172,6 +173,27 @@ TEST(UiModel, APublishedValueReachesTheDocument)
     ui.Update();
     EXPECT_FLOAT_EQ(ui.MeasureElement(screen, "bar")->Width, 42.0f)
         << "the published value did not reach the binding that reads it";
+}
+
+TEST(UiModel, AScreenStillReadsItsValuesAfterOthersOpen)
+{
+    // Opening screens moves the runtime's screen slots; a binding that held
+    // on to where its screen used to be would read freed memory.
+    TempAssetRoot root;
+    WritePackage(root);
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+
+    const UiScreenHandle first = ui.OpenScreen(ui.CreateSurface("first", RenderExtent{ 800, 600 }), MakeDesc());
+    ASSERT_TRUE(first.IsValid());
+    for (int i = 0; i < 16; ++i)
+        ASSERT_TRUE(ui.OpenScreen(ui.CreateSurface(std::format("other{}", i), RenderExtent{ 800, 600 }), MakeDesc())
+                        .IsValid());
+
+    EXPECT_TRUE(ui.SetValue(first, kHealth, UiValue(42.0)));
+    ui.Update();
+    ASSERT_TRUE(ui.MeasureElement(first, "bar").has_value());
+    EXPECT_FLOAT_EQ(ui.MeasureElement(first, "bar")->Width, 42.0f);
 }
 
 TEST(UiModel, SettingAnUnchangedValueReportsNoChange)

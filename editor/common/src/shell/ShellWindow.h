@@ -1,6 +1,7 @@
 #pragma once
 
 #include "actions/ActionContext.h"
+#include "shell/CommandPalette.h"
 #include "shell/TransientSurfaces.h"
 
 #include <graphics/PresentationId.h>
@@ -9,6 +10,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -27,7 +29,7 @@ struct ShellWindowServices
 {
     UiService& Ui;
     WorkspaceHost& Workspaces;
-    const ActionCatalog& Catalog;
+    ActionCatalog& Catalog;
     ActionContextStack& Actions;
     ProblemList& Problems;
     NoticeQueue& Notices;
@@ -104,4 +106,8 @@ private:
     // Escape belongs to the popover while one is open.
     ActionContext PopoverActions;
     ActionContextStack::Layer PopoverLayer;
+    std::unique_ptr<CommandPalette> Palette;
+    // What the shell itself performs in its window, whatever is showing.
+    ActionContext WindowActions;
+    ActionContextStack::Layer WindowLayer;
 };

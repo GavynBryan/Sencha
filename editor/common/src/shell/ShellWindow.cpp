@@ -117,11 +117,23 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         PopoverLayer.Reset();
     });
     PopoverActions.Claim("edit.escape", ActionHandler{ .Invoke = [this] { (void)Transients.Escape(); } });
+
+    Palette = std::make_unique<CommandPalette>(Services.Ui, SurfaceId, Services.Catalog, Services.Actions,
+                                               Services.Workspaces);
+    (void)Services.Catalog.Define({ .Id = "shell.palette", .Label = "Command Palette", .Category = "View",
+                                    .DefaultChords = { KeyChord{ SDLK_K, { .Ctrl = true } } } });
+    WindowActions.Claim("shell.palette", ActionHandler{ .Invoke = [this] {
+        OpenPopover(Popover::None);
+        Palette->Open();
+    } });
+    WindowLayer = Services.Actions.Push(WindowActions, ActionRank::Window);
 }
 
 ShellWindow::~ShellWindow()
 {
+    WindowLayer.Reset();
     PopoverLayer.Reset();
+    Palette.reset();
     if (Screen.IsValid())
         Services.Ui.CloseScreen(Screen);
     if (SurfaceId.IsValid())
@@ -137,6 +149,7 @@ void ShellWindow::Update(double now, float scale)
     Services.Ui.SetSurfaceScale(SurfaceId, scale);
 
     HandleActions();
+    Palette->Update();
     Publish(now);
     PublishCaption();
 }

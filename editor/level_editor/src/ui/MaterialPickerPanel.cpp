@@ -7,7 +7,7 @@
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ScopedPanel.h"
 #include "ui/chrome/ChromeDecor.h"
-#include "ui/TextFilterMatch.h"
+#include "text/TextFilterMatch.h"
 
 #include "project/MaterialLibrary.h"
 #include "resources/ActiveResources.h"

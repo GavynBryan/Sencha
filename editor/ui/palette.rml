@@ -1,0 +1,25 @@
+<rml>
+<head>
+    <title>Palette</title>
+    <link type="text/rcss" href="palette.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="palette">
+    <div id="catch" data-event-click="palette_close"></div>
+    <div id="palette" class="theme-plate">
+        <input id="query" class="theme-field" type="text" autofocus="autofocus"
+               data-value="query"
+               data-event-change="palette_query(ev.value, ev.linebreak)"
+               data-event-keydown="palette_key(ev.key_identifier)"/>
+        <div id="results" class="theme-well">
+            <div class="result theme-row" data-for="result : results"
+                 data-class-selected="result.selected"
+                 data-event-click="palette_choose(it_index)">
+                <span class="label">{{result.label}}</span>
+                <span class="category theme-muted">{{result.detail}}</span>
+                <span class="chord theme-dim">{{result.value}}</span>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

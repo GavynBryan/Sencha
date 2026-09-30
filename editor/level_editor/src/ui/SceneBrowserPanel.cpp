@@ -5,7 +5,7 @@
 
 #include "ui/ScopedPanel.h"
 #include "ui/chrome/ChromeDecor.h"
-#include "ui/TextFilterMatch.h"
+#include "text/TextFilterMatch.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"

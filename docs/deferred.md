@@ -194,3 +194,20 @@ do the work and delete the entry.
   `Renderer::CaptureFrame`.
 - **Trigger:** an unattended run that needs two windows, or two frames,
   captured in one process.
+
+## Rounded scrolling containers in authored UI
+
+- **What:** a container with both `border-radius` and `overflow-y: auto` drew
+  none of its content in Kyusu's main window (seen on the shell's hatch
+  popover), where the same container with square corners draws correctly.
+  Rounded clipping goes through the stencil clip mask rather than the scissor,
+  so the fault is in that path or in its interaction with the window's scope;
+  it is not yet reproduced by a golden image. Square scrolling containers
+  sidestep it, which is what the shell's popover and palette do today.
+- **Where:** `engine/src/graphics/vulkan/UiDrawPass.cpp` (the Set/Intersect
+  mask variants and `ClearStencil`), `engine/src/ui/rml/RmlRenderRecorder.cpp`
+  (clip mask recording); repro: `editor/ui/shell.rcss` `#popover` with
+  `max-height` and `overflow-y: auto`.
+- **Trigger:** the first authored surface that needs a rounded scrolling
+  container -- the selection drawer -- which starts with a golden image
+  reproducing it.

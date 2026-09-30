@@ -5,6 +5,7 @@
 #include <assets/ui/UiPackageSerializer.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <ui/UiKeys.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -1049,4 +1050,67 @@ TEST(UiControls, ARowCarriesItsKeyDepthStateAndParts)
     EXPECT_TRUE(sawHeading) << "a section row was not presented as a heading under its key";
     EXPECT_TRUE(sawSelectedPosition) << "the selected row lost its key or its selection";
     EXPECT_EQ(parts, 3) << "a vector row's parts were not repeated";
+}
+
+// -- keys a document reports --------------------------------------------------
+
+namespace
+{
+constexpr std::string_view kKeyMarkup = R"rml(<rml>
+<head><link type="text/rcss" href="keys.rcss"/></head>
+<body data-model="keys">
+    <input id="field" type="text" data-event-keydown="keys_key(ev.key_identifier)"/>
+</body>
+</rml>)rml";
+
+constexpr std::string_view kKeyStyle = R"(
+body { display: block; width: 100%; height: 100%; pointer-events: none; }
+#field { display: block; position: absolute; left: 20px; top: 20px;
+         width: 200px; height: 30px; pointer-events: auto; tab-index: auto; }
+)";
+} // namespace
+
+TEST(UiControls, AKeyADocumentReportsIsReadBackAsAUiKey)
+{
+    // A focused field takes every key, so the document is what reports them;
+    // the host reads the number back without learning which engine chose it.
+    TempAssetRoot root;
+    UiPackage package;
+    package.RootDocumentName = "keys.rml";
+    package.Blobs.push_back(UiPackageBlob{ .VirtualName = "keys.rml", .SourcePath = "ui/keys.rml",
+                                           .Kind = UiBlobKind::Document, .Bytes = BytesOf(kKeyMarkup) });
+    package.Blobs.push_back(UiPackageBlob{ .VirtualName = "keys.rcss", .SourcePath = "ui/keys.rcss",
+                                           .Kind = UiBlobKind::StyleSheet, .Bytes = BytesOf(kKeyStyle) });
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(WriteSuiToBytes(package, bytes));
+    root.WriteBytes("ui/keys.sui", bytes);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    UiScreenDesc desc;
+    desc.PackagePath = "asset://ui/keys.sui";
+    desc.ModelName = "keys";
+    desc.Actions = { "keys_key" };
+    const UiScreenHandle screen = ui.OpenScreen(surface, desc);
+    ASSERT_TRUE(screen.IsValid());
+    ui.Update();
+    ClickAt(ui, 80.0f, 35.0f);
+    ui.Update();
+
+    const auto pressed = [&](SDL_Scancode scancode) {
+        SDL_Event down{};
+        down.type = SDL_EVENT_KEY_DOWN;
+        down.key.scancode = scancode;
+        (void)ui.ProcessPlatformEvent(down);
+        ui.Update();
+        const std::vector<UiAction> actions = ui.DrainActions(screen);
+        EXPECT_EQ(actions.size(), 1u);
+        return actions.empty() || actions[0].Arguments.empty()
+            ? std::optional<UiKey>{}
+            : UiKeyFromEvent(actions[0].Arguments[0].AsInt());
+    };
+    EXPECT_EQ(pressed(SDL_SCANCODE_ESCAPE), UiKey::Escape);
+    EXPECT_EQ(pressed(SDL_SCANCODE_DOWN), UiKey::Down);
+    EXPECT_EQ(pressed(SDL_SCANCODE_A), std::nullopt) << "a key outside the vocabulary reads as none";
 }

@@ -145,6 +145,35 @@
       ]
     },
     {
+      "source": "palette.rml",
+      "input_fingerprint": "2b4eeb2a25771cca",
+      "cook_identity": "62c86b07d68abd42",
+      "size": "1030",
+      "mtime": "-4646888290794166014",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "palette.rcss",
+          "size": "1394",
+          "mtime": "-4646888290792970424"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "3593",
+          "mtime": "-4646889578560548163"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://palette.rml",
+          "file": ".cooked/palette.rml.sui",
+          "type": "UiPackage",
+          "hash": "f138bc79029e15eb"
+        }
+      ]
+    },
+    {
       "source": "shell.rml",
       "input_fingerprint": "717dcce918938808",
       "cook_identity": "62c86b07d68abd42",

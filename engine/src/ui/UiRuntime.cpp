@@ -2,6 +2,7 @@
 
 #include <platform/SdlWindowService.h>
 
+#include <ui/UiKeys.h>
 #include <ui/UiSurfacePlacement.h>
 
 #include "rml/RmlInputBridge.h"
@@ -632,10 +633,10 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
         // one of them; a getter routes every kind through the same path and
         // keeps the value where the dirty comparison already lives.
         //
-        // The capture is the screen slot and an index, not a pointer into the
-        // property vector: the vector is rebuilt when a slot is reused, and a
-        // captured pointer would survive that.
-        Screen* slot = &screen;
+        // The capture is the slot's position and an index, never a pointer:
+        // opening another screen can move every slot, and reusing a slot
+        // rebuilds its property vector.
+        const auto slot = static_cast<std::size_t>(&screen - Screens.data());
         const std::size_t index = i;
 
         // A setter only where the description said a control may write. Without
@@ -645,16 +646,16 @@ bool UiRuntime::BuildModel(Screen& screen, UiScreenHandle handle, Surface& surfa
         Rml::DataSetFunc setter;
         if (screen.Properties[i].Editable)
         {
-            setter = [slot, index](const Rml::Variant& in) {
+            setter = [this, slot, index](const Rml::Variant& in) {
                 // Presentation only. Nothing here reaches the application: the
                 // host reads this back when the document says to apply.
-                slot->Properties[index].Value = FromRmlVariant(in);
+                Screens[slot].Properties[index].Value = FromRmlVariant(in);
             };
         }
 
         if (!constructor.BindFunc(
                 screen.Properties[i].Path,
-                [slot, index](Rml::Variant& out) { ToRmlVariant(slot->Properties[index].Value, out); },
+                [this, slot, index](Rml::Variant& out) { ToRmlVariant(Screens[slot].Properties[index].Value, out); },
                 std::move(setter)))
         {
             Refuse(UiDiagnosticKind::ModelRefused, std::nullopt, std::format("UiRuntime: data model '{}' refused the property '{}'",
@@ -2016,4 +2017,17 @@ const UiRuntime::Screen* UiRuntime::ResolveScreen(UiScreenHandle screen) const
     if (!slot.Live || slot.Generation != screen.Generation)
         return nullptr;
     return &slot;
+}
+
+std::optional<UiKey> UiKeyFromEvent(std::int64_t keyIdentifier)
+{
+    switch (keyIdentifier)
+    {
+    case Rml::Input::KI_TAB:    return UiKey::Tab;
+    case Rml::Input::KI_RETURN: return UiKey::Return;
+    case Rml::Input::KI_ESCAPE: return UiKey::Escape;
+    case Rml::Input::KI_UP:     return UiKey::Up;
+    case Rml::Input::KI_DOWN:   return UiKey::Down;
+    default:                    return std::nullopt;
+    }
 }

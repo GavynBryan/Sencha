@@ -7,7 +7,7 @@
 #include "ui/chrome/ChromeControls.h"
 #include "ui/chrome/ChromeDecor.h"
 #include "ui/chrome/ChromeSelection.h"
-#include "ui/TextFilterMatch.h"
+#include "text/TextFilterMatch.h"
 #include "fonts/IconsFontAwesome6.h"
 
 #include "commands/CommandStack.h"
