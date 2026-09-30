@@ -83,7 +83,6 @@ editor/material_editor/src/MaterialPreviewPanel.cpp
 editor/material_editor/src/MaterialPreviewRenderFeature.cpp
 editor/material_editor/src/MaterialPreviewRenderFeature.h
 editor/material_editor/src/TexturesPanel.cpp
-editor/project_browser/src/ProjectBrowserPanel.cpp
 editor/ui_preview/src/ui/ActionLogPanel.cpp
 editor/ui_preview/src/ui/DiagnosticsPanel.cpp
 editor/ui_preview/src/ui/DocumentLibraryPanel.cpp

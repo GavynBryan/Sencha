@@ -209,8 +209,11 @@ behind `SourceReloadRoots::SetReloadFilter`).
 
 Project workspace (`editor/project_browser/src/`, flat): `ProjectWorkspace`,
 `ProjectCatalog` (recent projects JSON in the user config dir,
-headless-tested), `ProjectBrowserPanel` (recent list, create form, settings
-editor), `ProjectRelaunch` (the command that opens a project in a new process).
+headless-tested), `ProjectRack` (the catalog as the workspace's content, a
+rack of cartridges behind the shell), `ProjectSettings` and `ProjectCreation`
+(the picked project's settings, each change saved at once, and a new project
+as property sources the shell's card presents), `ProjectRelaunch` (the command
+that opens a project in a new process).
 
 ### Inside `document/` (the document domain)
 

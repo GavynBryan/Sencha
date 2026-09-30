@@ -1,0 +1,90 @@
+@font-face { src: "fonts/Inter-Regular.ttf"; }
+@font-face { src: "fonts/ChakraPetch-SemiBold.ttf"; }
+@font-face { src: "fonts/JetBrainsMono-Regular.ttf"; }
+@font-face { src: "fonts/fa-solid-900.ttf"; }
+
+/* The project rack: cartridges down the middle of the window, under the rail
+   and behind every instrument the shell mounts. Geometry only; colours are
+   the theme's roles. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    pointer-events: none;
+    font-family: Inter;
+    font-size: 12dp;
+}
+
+#rack
+{
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    left: 50%;
+    top: 72dp;
+    bottom: 72dp;
+    width: 720dp;
+    margin-left: -360dp;
+    gap: 12dp;
+    pointer-events: auto;
+}
+
+#rack_head { display: flex; align-items: center; gap: 8dp; height: 30dp; }
+
+#rack_title
+{
+    flex: 1;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 16dp;
+    letter-spacing: 4dp;
+}
+
+#rack_slots
+{
+    display: block;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.cartridge
+{
+    display: flex;
+    align-items: center;
+    height: 64dp;
+    margin-bottom: 8dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+}
+
+.cartridge_spine { display: block; width: 10dp; height: 100%; border-radius: 4dp 0dp 0dp 4dp; }
+
+.cartridge_face
+{
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    padding: 0dp 14dp;
+    gap: 4dp;
+}
+
+.cartridge_name
+{
+    display: block;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 15dp;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+}
+
+.cartridge_path { display: block; font-family: "JetBrains Mono"; font-size: 10dp; white-space: nowrap; }
+.cartridge_state { display: block; font-size: 10dp; letter-spacing: 1dp; text-transform: uppercase; }
+.cartridge.missing .cartridge_name { opacity: 0.55; }
+.cartridge_forget { margin-right: 12dp; opacity: 0.6; }
+.cartridge_forget:hover { opacity: 1; }
+
+#rack_empty { display: block; padding: 24dp 0dp; text-align: center; }

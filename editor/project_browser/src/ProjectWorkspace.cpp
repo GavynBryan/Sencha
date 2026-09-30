@@ -1,15 +1,18 @@
 #include "ProjectWorkspace.h"
 
-#include "ProjectBrowserPanel.h"
+#include "ProjectRack.h"
 #include "ProjectRelaunch.h"
 
+#include "actions/ActionOffer.h"
 #include "project/ProcessLaunch.h"
 #include "project/Project.h"
+#include "workspaces/WorkspaceWindow.h"
 
 #include <SDL3/SDL.h>
 
 #include <app/Engine.h>
 #include <platform/SdlWindow.h>
+#include <ui/UiService.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -25,37 +28,46 @@ namespace
     };
 }
 
-ProjectWorkspace::ProjectWorkspace(Engine& engine, SdlWindow& window, std::string executable)
+ProjectWorkspace::ProjectWorkspace(Engine& engine, SdlWindow& window, ActionCatalog& catalog, std::string executable)
     : EngineRef(engine)
     , Window(window)
     , Executable(std::move(executable))
+    , Settings([](const ProjectDescriptor& descriptor, std::string& error) {
+        ProjectDescriptor saved = descriptor;
+        return saved.Save(descriptor.Directory + "/project.senchaproj", &error);
+    })
+    , Creation(ListTemplates(), [this](const std::string& directory, const std::string& name,
+                                       const std::string& templateName, std::string& error) {
+        return CreateProject(directory, name, templateName, error);
+    })
 {
     std::string error;
     if (!Catalog.Load(ProjectCatalog::DefaultCatalogPath(), &error))
         std::fprintf(stderr, "[projects] %s (starting with an empty list)\n", error.c_str());
-
-    auto browserPanel = std::make_unique<ProjectBrowserPanel>(
-        Catalog,
-        ProjectBrowserPanel::Actions{
-            .OpenProject = [this](const std::string& path) { OpenProject(path); },
-            .BrowseForProject = [this] { BrowseForProject(); },
-            .CreateProject = [this](const std::string& dir, const std::string& name,
-                                    const std::string& templateName)
-            { CreateProject(dir, name, templateName); },
-            .RemoveEntry = [this](const std::string& path) { RemoveCatalogEntry(path); },
-            .SettingsSaved = [this](const ProjectDescriptor&, const std::string& path) { TouchCatalog(path); },
-        },
-        ListTemplates());
-
-    // New is the create-project form and Open browses for a .senchaproj;
-    // there is nothing document-like to save.
-    ProjectBrowserPanel* browser = browserPanel.get();
-    Surface.File.New = [browser] { browser->RequestCreateProject(); };
-    Surface.File.Open = [this] { BrowseForProject(); };
-    Surface.AddPanel(std::move(browserPanel));
+    if (UiService* ui = engine.TryUi(); ui != nullptr && ui->IsReady())
+        Rack = std::make_unique<ProjectRack>(*ui);
+    DefineActions(catalog);
 }
 
 ProjectWorkspace::~ProjectWorkspace() = default;
+
+void ProjectWorkspace::DefineActions(ActionCatalog& catalog)
+{
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "project.new", .Label = "New Project", .Category = "File",
+                  .DefaultChords = { { SDLK_N, { .Ctrl = true } } } },
+                { .Invoke = [this] { BeginNewProject(); } });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "project.browse", .Label = "Open Project File...", .Category = "File",
+                  .DefaultChords = { { SDLK_O, { .Ctrl = true } } } },
+                { .Invoke = [this] { BrowseForProject(); } });
+    OfferAction(catalog, ActionHandlers, { .Id = "project.open", .Label = "Open Project", .Category = "File" },
+                { .Invoke = [this] { OpenProject(Picked); },
+                  .Enabled = [this] { return !Creating && !Picked.empty() && Settings.Shown().has_value(); } });
+    OfferAction(catalog, ActionHandlers, { .Id = "project.forget", .Label = "Forget", .Category = "File" },
+                { .Invoke = [this] { RemoveCatalogEntry(Picked); },
+                  .Enabled = [this] { return !Creating && !Picked.empty(); } });
+}
 
 void ProjectWorkspace::Tick(FrameUpdateContext&)
 {
@@ -65,7 +77,74 @@ void ProjectWorkspace::Tick(FrameUpdateContext&)
         browsed.swap(PendingBrowsedProjects);
     }
     for (const std::string& path : browsed)
+    {
         TouchCatalog(path);
+        Pick(Catalog.Entries().empty() ? std::string{} : Catalog.Entries().front().Path);
+    }
+
+    if (Rack == nullptr)
+        return;
+    for (const RackRequest& request : Rack->Update(Catalog, Creating ? std::string{} : Picked, Creating))
+    {
+        switch (request.Choice)
+        {
+        case RackChoice::Pick:   Pick(request.Path); break;
+        case RackChoice::Open:   OpenProject(request.Path); break;
+        case RackChoice::Forget: RemoveCatalogEntry(request.Path); break;
+        case RackChoice::New:    BeginNewProject(); break;
+        case RackChoice::Browse: BrowseForProject(); break;
+        }
+    }
+}
+
+void ProjectWorkspace::SetVisible(bool visible)
+{
+    if (Rack != nullptr)
+        Rack->SetVisible(visible);
+}
+
+void ProjectWorkspace::MoveTo(const WorkspaceWindow& window)
+{
+    if (Rack != nullptr)
+        Rack->MoveTo(window.Interactive);
+}
+
+WorkspaceSelectionFacet ProjectWorkspace::Selection()
+{
+    if (Creating)
+        return { .Title = "New Project", .Sections = { { .Heading = {}, .Source = &Creation } } };
+    if (Picked.empty())
+        return {};
+    const std::optional<ProjectDescriptor>& shown = Settings.Shown();
+    WorkspaceSelectionFacet facet;
+    facet.Title = shown.has_value() && !shown->Name.empty() ? shown->Name
+                                                            : std::filesystem::path(Picked).parent_path().filename().string();
+    facet.Actions = { "project.open", "project.forget" };
+    facet.Sections.push_back({ .Heading = {}, .Source = &Settings });
+    return facet;
+}
+
+void ProjectWorkspace::BeginNewProject()
+{
+    Creating = true;
+    Creation.Clear();
+}
+
+void ProjectWorkspace::Pick(const std::string& projectPath)
+{
+    Creating = false;
+    Picked = projectPath;
+    if (projectPath.empty())
+    {
+        Settings.Show(std::nullopt);
+        return;
+    }
+    ProjectDescriptor descriptor;
+    std::string error;
+    if (ProjectDescriptor::Load(projectPath, descriptor, &error))
+        Settings.Show(std::move(descriptor));
+    else
+        Settings.Show(std::nullopt, error);
 }
 
 void ProjectWorkspace::OpenProject(const std::string& projectPath)
@@ -154,11 +233,10 @@ void ProjectWorkspace::BrowseForProject()
         false);
 }
 
-void ProjectWorkspace::CreateProject(const std::string& directory, const std::string& name,
-                                     const std::string& templateName)
+bool ProjectWorkspace::CreateProject(const std::string& directory, const std::string& name,
+                                     const std::string& templateName, std::string& error)
 {
     ProjectDescriptor descriptor;
-    std::string error;
     bool created = false;
     if (templateName.empty())
     {
@@ -174,15 +252,14 @@ void ProjectWorkspace::CreateProject(const std::string& directory, const std::st
             error = "no templates directory beside this application";
     }
     if (!created)
-    {
-        std::fprintf(stderr, "[projects] create project failed: %s\n", error.c_str());
-        return;
-    }
+        return false;
 
     const std::string path =
         (std::filesystem::path(directory) / "project.senchaproj").lexically_normal().string();
     Catalog.Touch(path, descriptor.Name);
     SaveCatalog();
+    Pick(path);
+    return true;
 }
 
 void ProjectWorkspace::TouchCatalog(const std::string& projectPath)
@@ -207,6 +284,8 @@ void ProjectWorkspace::RemoveCatalogEntry(const std::string& projectPath)
 {
     Catalog.Remove(projectPath);
     SaveCatalog();
+    if (projectPath == Picked)
+        Pick({});
 }
 
 void ProjectWorkspace::SaveCatalog()
