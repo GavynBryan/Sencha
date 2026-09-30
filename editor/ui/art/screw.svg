@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- A slotted pan-head screw, lit from the top left. White: the theme tints it. -->
+  <circle cx="8" cy="8" r="6.5" fill="#ffffff" fill-opacity="0.55"/>
+  <circle cx="8" cy="8" r="5.5" fill="#ffffff" fill-opacity="0.85"/>
+  <path d="M4.2 5.4 L10.6 11.8 L11.8 10.6 L5.4 4.2 Z" fill="#000000" fill-opacity="0.55"/>
+  <path d="M4.6 5.0 L5.0 4.6 L11.4 11.0 L11.0 11.4 Z" fill="#ffffff" fill-opacity="0.35"/>
+</svg>

@@ -1302,6 +1302,11 @@ void LevelWorkspace::DefineTransportActions()
     }
 }
 
+bool LevelWorkspace::HoldsPointer() const
+{
+    return Router != nullptr && Router->PointerCaptured();
+}
+
 WorkspaceDocumentFacet LevelWorkspace::Document() const
 {
     if (Files == nullptr)

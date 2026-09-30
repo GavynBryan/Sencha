@@ -54,6 +54,7 @@ body { color: #d8dce4ff; }
 .theme-key.disabled { background-color: #080b10ff; border-color: #24303cff; color: #6e8296ff; }
 .theme-key.destructive { color: #d86a5aff; }
 .theme-readout      { background-color: #05070aff; border-color: #24303cff; color: #2ed0eaff; }
+.theme-art          { image-color: #3a4856ff; }
 .theme-lamp         { background-color: #10141bff; border-color: #03050aff; }
 .theme-lamp.on      { background-color: #2ed0eaff; }
 .theme-lamp.lit     { background-color: #ffb347ff; }

@@ -3,6 +3,7 @@
 #include "actions/ActionCatalog.h"
 #include "notices/NoticeQueue.h"
 #include "problems/ProblemList.h"
+#include "ui/UiScaleChoice.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/WorkspaceHost.h"
 
@@ -142,14 +143,15 @@ ShellWindow::~ShellWindow()
         Services.Ui.DestroySurface(SurfaceId);
 }
 
-void ShellWindow::Update(double now, float scale)
+void ShellWindow::Update(double now, double requestedScale)
 {
     if (!Screen.IsValid())
         return;
     const WindowExtent extent = Services.Window.GetExtent();
     Services.Ui.SetSurfaceSize(SurfaceId, RenderExtent{ extent.Width, extent.Height });
-    Services.Ui.SetSurfaceScale(SurfaceId, scale);
+    Services.Ui.SetSurfaceScale(SurfaceId, ChooseUiScale(requestedScale, Services.Window.GetDisplayScale()));
 
+    YieldPointerToContent();
     HandleActions();
     Prompt->Update();
     // A question stands alone: nothing else opened stays open under it.
@@ -203,6 +205,17 @@ void ShellWindow::HandleActions()
                 Services.CloseWindow();
         }
     }
+}
+
+void ShellWindow::YieldPointerToContent()
+{
+    const IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation);
+    const UiSurfaceInputPolicy policy = active != nullptr && active->HoldsPointer() ? UiSurfaceInputPolicy::Disabled
+                                                                                   : UiSurfaceInputPolicy::Full;
+    if (policy == InputPolicy)
+        return;
+    Services.Ui.SetSurfaceInputPolicy(SurfaceId, policy);
+    InputPolicy = policy;
 }
 
 void ShellWindow::ShowPopover(std::string_view name)

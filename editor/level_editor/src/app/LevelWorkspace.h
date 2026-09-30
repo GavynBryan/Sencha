@@ -78,6 +78,7 @@ public:
     bool UndoStagedEdit() override;
     [[nodiscard]] bool HasStagedEdit() const override;
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
+    [[nodiscard]] bool HoldsPointer() const override;
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }

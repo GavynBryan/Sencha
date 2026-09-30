@@ -26,6 +26,12 @@
         </div>
 
         <div id="notices">
+            <!-- The grille the rail is dragged by, fastened at both ends. -->
+            <div id="grille">
+                <img class="screw theme-art" src="art/screw.svg"/>
+                <img class="vent theme-art" src="art/vent.svg"/>
+                <img class="screw theme-art" src="art/screw.svg"/>
+            </div>
             <div class="notice theme-readout" data-for="notice : notices"
                  data-class-warning="notice.detail == 'warning'"
                  data-class-failed="notice.detail == 'failed'">{{notice.label}}</div>

@@ -43,12 +43,30 @@ body
 #notices
 {
     display: flex;
+    position: relative;
     flex: 1;
     justify-content: center;
     align-items: center;
     height: 34dp;
     pointer-events: none;
 }
+
+/* Behind the notices, which pass over it. */
+#grille
+{
+    display: flex;
+    position: absolute;
+    left: 50%;
+    top: 11dp;
+    width: 108dp;
+    height: 12dp;
+    margin-left: -54dp;
+    align-items: center;
+    gap: 6dp;
+}
+
+.screw { display: block; width: 12dp; height: 12dp; }
+.vent { display: block; width: 72dp; height: 12dp; }
 
 .notice
 {

@@ -643,9 +643,13 @@ std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, Presentation
 void KyusuApp::UpdateShells()
 {
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    double requestedScale = 0.0;
+    if (const CVarMetadata* var = GetEngine().Console().Registry().FindCVar("editor.ui.scale"))
+        if (const double* value = std::get_if<double>(&var->CurrentValue))
+            requestedScale = *value;
     if (MainWindowShell != nullptr)
     {
-        MainWindowShell->Update(now, EditorUi::UiScale);
+        MainWindowShell->Update(now, requestedScale);
         if (Ui != nullptr)
             Ui->SetContentTopInset(MainWindowShell->RailHeight());
     }
@@ -653,7 +657,7 @@ void KyusuApp::UpdateShells()
     {
         if (entry.WindowShell == nullptr)
             continue;
-        entry.WindowShell->Update(now, EditorUi::UiScale);
+        entry.WindowShell->Update(now, requestedScale);
         if (entry.Shell != nullptr)
             entry.Shell->SetContentTopInset(entry.WindowShell->RailHeight());
     }

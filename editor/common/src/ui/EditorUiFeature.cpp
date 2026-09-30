@@ -3,6 +3,7 @@
 #include "actions/ActionCatalog.h"
 
 #include "AuthoredThemeStyleSheet.h"
+#include "ui/UiScaleChoice.h"
 
 #include <ui/UiService.h>
 
@@ -237,19 +238,8 @@ float ResolveUiScale(ConsoleRegistry& registry, SDL_Window* window, Logger* log)
         if (const double* value = std::get_if<double>(&var->CurrentValue))
             requested = *value;
 
-    float scale = static_cast<float>(requested);
-    const char* origin = "editor.ui.scale";
-    if (scale <= 0.0f)
-    {
-        scale = window != nullptr ? SDL_GetWindowDisplayScale(window) : 0.0f;
-        origin = "display";
-        if (scale <= 0.0f)
-        {
-            scale = 1.0f;
-            origin = "fallback";
-        }
-    }
-    scale = std::clamp(scale, 0.5f, 4.0f);
+    const float scale = ChooseUiScale(requested, window != nullptr ? SDL_GetWindowDisplayScale(window) : 0.0f);
+    const char* origin = requested > 0.0 ? "editor.ui.scale" : "display";
     if (log != nullptr)
         log->Info("EditorUiFeature: UI scale {} ({})", scale, origin);
     return scale;

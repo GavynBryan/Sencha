@@ -43,6 +43,12 @@ struct Rule
     return "border-color: " + Hex(color) + ";";
 }
 
+[[nodiscard]] std::string Tint(const ImVec4& color)
+{
+    // White art takes the role's colour; the art's own shading survives.
+    return "image-color: " + Hex(color) + ";";
+}
+
 constexpr Rule kRules[] = {
     { "body", [] { return Color(EditorUi::TextPrimary); } },
 
@@ -106,6 +112,7 @@ constexpr Rule kRules[] = {
     { ".theme-key.disabled", [] { return Fill(EditorUi::WindowBg) + Edge(EditorUi::Border) + Color(EditorUi::TextDim); } },
     { ".theme-key.destructive", [] { return Color(EditorUi::Danger); } },
     { ".theme-readout", [] { return Fill(EditorUi::ChassisBg) + Edge(EditorUi::Border) + Color(EditorUi::Accent); } },
+    { ".theme-art", [] { return Tint(EditorUi::MetalHighlight); } },
     { ".theme-lamp", [] { return Fill(EditorUi::Mix(EditorUi::MetalBase, EditorUi::ChassisBg, 0.5f)) + Edge(EditorUi::MetalShadow); } },
     { ".theme-lamp.on", [] { return Fill(EditorUi::Accent); } },
     { ".theme-lamp.lit", [] { return Fill(EditorUi::SelectedOutline); } },

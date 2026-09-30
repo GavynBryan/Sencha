@@ -70,8 +70,9 @@ public:
 
     // Per frame, before the UI updates: act on what the rail asked for, then
     // publish what it should show. `now` is presentation seconds, for notices;
-    // `scale` is the display scale the editor resolved.
-    void Update(double now, float scale);
+    // `requestedScale` is the person's UI scale, 0 to follow this window's
+    // display.
+    void Update(double now, double requestedScale);
 
     // How much of the top of the window the rail covers, in window points:
     // where content under it has to start.
@@ -91,6 +92,9 @@ private:
     void Publish(double now);
     void PublishEntries();
     void PublishCaption();
+    // The rail yields the pointer while the content holds it, so a drag
+    // released over the rail still ends where it began.
+    void YieldPointerToContent();
     void OpenPopover(Popover popover);
     void Choose(const std::string& key);
 
@@ -106,6 +110,7 @@ private:
     TransientSurfaces Transients;
     TransientSurfaces::Id PopoverTransient = 0;
     std::string ShownTitle;
+    UiSurfaceInputPolicy InputPolicy = UiSurfaceInputPolicy::Full;
     // Escape belongs to the popover while one is open.
     ActionContext PopoverActions;
     ActionContextStack::Layer PopoverLayer;
