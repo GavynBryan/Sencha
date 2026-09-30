@@ -6,6 +6,7 @@
 
 #include "actions/ActionContext.h"
 #include "data/DataProperties.h"
+#include "data/DataSubtypeAuthoring.h"
 #include "prompts/PromptQueue.h"
 #include "properties/FilePathProperty.h"
 #include "ui/DataSubtypeEditorRegistry.h"
@@ -65,6 +66,8 @@ private:
     PromptQueue::Asker Prompts;
     ProblemList& Problems;
     ActionContext ActionHandlers;
+    // What subtypes add to their schema's properties; the properties read it.
+    DataSubtypeAuthoringRegistry Authoring;
     DataProperties Properties;
     DataSourceText Source;
     DataCreation Creation;

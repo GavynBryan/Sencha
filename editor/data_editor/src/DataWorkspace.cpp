@@ -47,7 +47,7 @@ DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, D
     , Model(engine.Content().Assets(), project, sources, store)
     , Prompts(prompts.MakeAsker())
     , Problems(problems)
-    , Properties(Model.Documents, [this] { return Model.Documents.Active(); })
+    , Properties(Model.Documents, [this] { return Model.Documents.Active(); }, &Authoring)
     , Source(Model.Documents, [this] { return Model.Documents.Active(); })
     , Creation([this] { return Model.Documents.CreatableSubtypes(); },
                [this](const std::string& subtype, const std::string& path, std::string& error) {
@@ -68,6 +68,7 @@ DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, D
                })
 {
     RegisterBuiltInSubtypeEditors(SubtypeEditors);
+    RegisterBuiltInSubtypeAuthoring(Authoring);
     BuildUi();
     RegisterCommands();
     DefineActions(catalog);
@@ -230,8 +231,18 @@ void DataWorkspace::Tick(FrameUpdateContext&)
     if (!Visible)
         return;
     if (const DataDocument* document = Model.Documents.Active())
+    {
         if (IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype()))
             editor->UpdateForFrame(*document, Model.Documents);
+        if (IDataSubtypeAuthoring* authoring = Authoring.Find(document->Subtype()))
+        {
+            authoring->Update(*document, Model.Documents);
+            // A control pressed while listening, written as the author would.
+            if (std::optional<std::pair<std::string, std::string>> write = authoring->TakeWrite(*document))
+                if (Properties.BeginEdit(write->first))
+                    (void)Properties.CommitEdit(write->first, write->second);
+        }
+    }
 }
 
 bool DataWorkspace::ClaimPlatformEvent(PlatformEventContext& ctx)
@@ -241,6 +252,9 @@ bool DataWorkspace::ClaimPlatformEvent(PlatformEventContext& ctx)
     const DataDocument* document = Model.Documents.Active();
     if (document == nullptr)
         return false;
+    if (IDataSubtypeAuthoring* authoring = Authoring.Find(document->Subtype());
+        authoring != nullptr && authoring->HandlePlatformEvent(ctx.Event))
+        return true;
     IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype());
     return editor != nullptr && editor->HandlePlatformEvent(ctx.Event);
 }
@@ -291,6 +305,9 @@ WorkspaceSelectionFacet DataWorkspace::Selection()
     facet.Sections.push_back({ .Heading = {}, .Source = &FilePath });
     facet.Sections.push_back({ .Heading = {}, .Source = ShowingSource ? static_cast<IPropertySource*>(&Source)
                                                                       : static_cast<IPropertySource*>(&Properties) });
+    if (IDataSubtypeAuthoring* authoring = Authoring.Find(document->Subtype()))
+        for (const PropertySection& section : authoring->Sections(*document))
+            facet.Sections.push_back(section);
     facet.Primary = true;
     return facet;
 }

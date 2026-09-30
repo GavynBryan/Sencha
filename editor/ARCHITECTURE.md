@@ -221,9 +221,16 @@ fields laid out by the schema through `data/DataProperties` (a property per
 JSON path; array and record verbs; validation errors as notes beside their
 field and as problems), or its JSON through `DataSourceText` (View Source).
 A new asset is a `DataCreation` card; files move by their path property
-(`properties/FilePathProperty`, shared with Materials). The input and movement
-subtypes still draw their purpose-built forms and previews in ImGui
-(`IDataSubtypeEditor`), and their documents use the schema sheet meanwhile.
+(`properties/FilePathProperty`, shared with Materials). A subtype makes its
+documents read as what they are through `data/DataSubtypeAuthoring`: it
+reshapes the laid-out properties, takes the writes, candidates and verbs whose
+meaning it knows, claims platform events, and may add preview sections. The
+input action set and profile (`input/Input*Authoring`) are built this way:
+titled cards, actions chosen among the declared ones they can drive, a
+binding's shape setting its slots, and a slot picked or filled by pressing a
+control. A control whose value moved while its rows were laid out is not a
+change (`PropertySheet` settles for one presentation). The movement subtype
+still draws its form and previews in ImGui (`IDataSubtypeEditor`).
 
 Project workspace (`editor/project_browser/src/`, flat): `ProjectWorkspace`,
 `ProjectCatalog` (recent projects JSON in the user config dir,

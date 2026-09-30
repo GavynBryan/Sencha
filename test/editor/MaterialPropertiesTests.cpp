@@ -98,9 +98,8 @@ TEST_F(MaterialPropertiesTest, ATextureSlotIsChosenFromTheSourceTextures)
     ASSERT_TRUE(Registry.Register({ .Type = AssetType::Texture, .SourceKind = AssetSourceKind::File, .Path = "asset://textures/rock.png" }));
     ASSERT_TRUE(Registry.Register({ .Type = AssetType::Texture, .SourceKind = AssetSourceKind::File, .Path = "asset://textures/rock.png.stex" }));
     const std::vector<std::string> candidates = Properties.Candidates("base_color_texture");
-    ASSERT_EQ(candidates.size(), 2u);
-    EXPECT_EQ(candidates[0], "") << "none comes first";
-    EXPECT_EQ(candidates[1], "asset://textures/rock.png") << "the cook is not offered";
+    ASSERT_EQ(candidates.size(), 1u);
+    EXPECT_EQ(candidates[0], "asset://textures/rock.png") << "the cook is not offered";
     ASSERT_TRUE(Properties.BeginEdit("base_color_texture"));
     EXPECT_EQ(Properties.CommitEdit("base_color_texture", "asset://textures/rock.png"), PropertyEditResult::Applied);
     EXPECT_EQ(Tab->Session.Working().BaseColorTexture.Path, "asset://textures/rock.png");

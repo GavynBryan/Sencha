@@ -116,3 +116,20 @@ TEST(PropertySheet, AFieldHeldWhileTypedCommitsWhenItLetsGo)
     EXPECT_FALSE(sheet.Holding());
     EXPECT_EQ(settings.Values["segments"], "9") << "dropping commits nothing";
 }
+
+TEST(PropertySheet, ControlsReportingAsTheyAreLaidOutChangeNothing)
+{
+    Settings settings;
+    PropertySheet sheet;
+    (void)sheet.Present(settings);
+    // A slider made this frame reports where it started, before its value bound.
+    EXPECT_EQ(sheet.SetFromControl(settings, 2, UiValue(std::string("2"))), PropertyEditResult::Unchanged);
+    EXPECT_EQ(settings.Values["segments"], "6");
+
+    (void)sheet.Present(settings);
+    // Laid out the same again: a slider reporting where it snapped the value
+    // it was given changes nothing either, and a person's drag does.
+    EXPECT_EQ(sheet.SetFromControl(settings, 2, UiValue(std::string("6.4"))), PropertyEditResult::Unchanged);
+    EXPECT_EQ(sheet.SetFromControl(settings, 2, UiValue(std::string("12"))), PropertyEditResult::Applied);
+    EXPECT_EQ(settings.Values["segments"], "12");
+}

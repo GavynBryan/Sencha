@@ -78,11 +78,20 @@ private:
         std::size_t Section = 0;
         std::string Verb = {};
         std::vector<std::string> Choices = {};
+        // A slider's step: it reports where it snapped the value it was given,
+        // which is no change of the value.
+        double Snap = 0.0;
     };
 
     void Append(const PropertyNode& node, int depth, std::size_t section, bool everything, std::vector<UiRow>& rows);
+    // Notes whether this presentation laid out other properties than the last.
+    void Settle();
     [[nodiscard]] IPropertySource* SourceOf(std::span<const PropertySection> sections, std::size_t index) const;
 
     std::vector<Presented> Rows;
     std::size_t Held = kNothingHeld;
+    // Laid out anew: until it is presented unchanged once, what its controls
+    // report is them settling on their new values, not a person changing one.
+    std::vector<std::string> LaidOut;
+    bool Settling = false;
 };

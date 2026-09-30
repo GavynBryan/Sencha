@@ -68,9 +68,6 @@ editor/common/src/ui/ScopedPanel.cpp
 editor/common/src/ui/ScopedPanel.h
 editor/common/src/ui/ThemePreferences.cpp
 editor/common/src/ui/ThemePreferences.h
-editor/data_editor/src/input/InputActionSetForm.cpp
-editor/data_editor/src/input/InputControlPicker.cpp
-editor/data_editor/src/input/InputProfileForm.cpp
 editor/data_editor/src/movement/MovementProfileForm.cpp
 editor/data_editor/src/movement/MovementResolvePanel.cpp
 editor/data_editor/src/movement/MovementResponsePanel.cpp

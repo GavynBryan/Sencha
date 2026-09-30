@@ -1,5 +1,6 @@
 #pragma once
 
+class DataSubtypeAuthoringRegistry;
 class DataSubtypeEditorRegistry;
 
 // Wires the purpose-built subtype editors this build ships with.
@@ -10,3 +11,5 @@ class DataSubtypeEditorRegistry;
 // what a build contains should be readable in one place and not depend on
 // whether the linker kept an object nothing references.
 void RegisterBuiltInSubtypeEditors(DataSubtypeEditorRegistry& registry);
+// The same for what subtypes add to their schema's properties.
+void RegisterBuiltInSubtypeAuthoring(DataSubtypeAuthoringRegistry& registry);

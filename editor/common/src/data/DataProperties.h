@@ -10,6 +10,8 @@
 
 class DataDocument;
 class DataDocumentSet;
+class DataSubtypeAuthoringRegistry;
+class IDataSubtypeAuthoring;
 struct DataFieldSchema;
 
 //=============================================================================
@@ -27,10 +29,13 @@ struct DataFieldSchema;
 class DataProperties final : public IPropertySource
 {
 public:
-    // `document` names the document shown, or null for none.
-    DataProperties(DataDocumentSet& documents, std::function<DataDocument*()> document)
+    // `document` names the document shown, or null for none; `subtypes`, when
+    // given, add to the schema's properties for their documents.
+    DataProperties(DataDocumentSet& documents, std::function<DataDocument*()> document,
+                   const DataSubtypeAuthoringRegistry* subtypes = nullptr)
         : Documents(documents)
         , Shown(std::move(document))
+        , Subtypes(subtypes)
     {
     }
 
@@ -48,6 +53,9 @@ private:
     PropertyEditResult Change(std::string_view key, const std::function<bool(JsonValue& value, const DataFieldSchema&)>& change,
                               bool step);
 
+    [[nodiscard]] IDataSubtypeAuthoring* AuthoringOf(const DataDocument& document) const;
+
     DataDocumentSet& Documents;
     std::function<DataDocument*()> Shown;
+    const DataSubtypeAuthoringRegistry* Subtypes = nullptr;
 };

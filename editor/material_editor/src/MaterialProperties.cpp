@@ -238,10 +238,10 @@ std::vector<std::string> MaterialProperties::Candidates(std::string_view key) co
     const MaterialField* field = FieldOf(key);
     if (field == nullptr || field->Kind != PropertyKind::Asset)
         return {};
-    std::vector<std::string> textures{ std::string{} };
+    std::vector<std::string> textures;
     for (const auto& [path, record] : Registry.Records())
         if (IsSourceTexture(record))
             textures.push_back(record.Path);
-    std::sort(textures.begin() + 1, textures.end());
+    std::ranges::sort(textures);
     return textures;
 }

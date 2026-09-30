@@ -2,6 +2,8 @@
 
 #include "data/DataDocument.h"
 #include "data/DataDocumentSet.h"
+#include "data/DataPath.h"
+#include "data/DataSubtypeAuthoring.h"
 #include "properties/SettingProperties.h"
 
 #include <core/metadata/DataSchema.h>
@@ -14,7 +16,6 @@
 
 namespace
 {
-constexpr std::string_view kDataRoot = "$.data";
 // Suffixes naming what sits beside a field rather than the field: an optional
 // member's switch, and a validation error's note.
 constexpr char kSwitch = '?';
@@ -48,43 +49,6 @@ const DataFieldSchema& Unwrapped(const DataFieldSchema& field)
     return child != nullptr ? *child : field;
 }
 
-struct Step
-{
-    std::string Key;
-    std::optional<std::size_t> Index;
-};
-
-// "$.data.a[2].b" -> a, [2], b. Nothing past the data root is a bad path.
-std::optional<std::vector<Step>> Steps(std::string_view path)
-{
-    if (!path.starts_with(kDataRoot))
-        return std::nullopt;
-    path.remove_prefix(kDataRoot.size());
-    std::vector<Step> steps;
-    while (!path.empty())
-    {
-        if (path.front() == '.')
-        {
-            path.remove_prefix(1);
-            const std::size_t end = path.find_first_of(".[");
-            steps.push_back({ std::string(path.substr(0, end)), std::nullopt });
-            path.remove_prefix(end == std::string_view::npos ? path.size() : end);
-        }
-        else if (path.front() == '[')
-        {
-            std::size_t index = 0;
-            const auto parsed = std::from_chars(path.data() + 1, path.data() + path.size(), index);
-            if (parsed.ec != std::errc{} || parsed.ptr == path.data() + path.size() || *parsed.ptr != ']')
-                return std::nullopt;
-            steps.push_back({ {}, index });
-            path.remove_prefix(static_cast<std::size_t>(parsed.ptr - path.data()) + 1);
-        }
-        else
-            return std::nullopt;
-    }
-    return steps;
-}
-
 struct Located
 {
     JsonValue* Value = nullptr;
@@ -96,12 +60,12 @@ struct Located
 // way, as writing a required member the file does not yet hold must.
 Located Locate(JsonValue& data, const DataFieldSchema& root, std::string_view path, bool create)
 {
-    const std::optional<std::vector<Step>> steps = Steps(path);
+    const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);
     if (!steps.has_value())
         return {};
     JsonValue* value = &data;
     const DataFieldSchema* field = &root;
-    for (const Step& step : *steps)
+    for (const DataPathStep& step : *steps)
     {
         const DataFieldSchema& reading = Unwrapped(*field);
         if (step.Index.has_value())
@@ -138,9 +102,9 @@ Located Locate(JsonValue& data, const DataFieldSchema& root, std::string_view pa
 }
 
 // The path up to the last step, and that step.
-std::optional<std::pair<std::string, Step>> Parent(std::string_view path)
+std::optional<std::pair<std::string, DataPathStep>> Parent(std::string_view path)
 {
-    const std::optional<std::vector<Step>> steps = Steps(path);
+    const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);
     if (!steps.has_value() || steps->empty())
         return std::nullopt;
     const std::size_t cut = steps->back().Index.has_value() ? path.rfind('[') : path.rfind('.');
@@ -295,8 +259,14 @@ public:
         {
             node.Value = Text(value, field);
             if (field.Kind == DataFieldKind::Enum)
+            {
                 for (const DataEnumChoice& choice : field.EnumChoices)
                     node.Descriptor.Choices.push_back(ChoiceLabel(choice));
+                // A value no choice names is offered as it is, so showing it
+                // changes nothing.
+                if (std::ranges::find(node.Descriptor.Choices, node.Value) == node.Descriptor.Choices.end())
+                    node.Descriptor.Choices.push_back(node.Value);
+            }
             if (field.Kind == DataFieldKind::DataAssetRef && !node.Value.empty())
                 node.Descriptor.Verbs.push_back({ .Id = "open", .Label = "Open" });
         }
@@ -368,9 +338,16 @@ std::vector<PropertyNode> DataProperties::Nodes() const
     // members have somewhere to be added from.
     std::vector<PropertyNode> nodes;
     Layout(document->ValidationErrors())
-        .Field(nodes, *data, schema->Root, std::string(kDataRoot),
+        .Field(nodes, *data, schema->Root, std::string(kDataPathRoot),
                schema->DisplayName.empty() ? schema->TypeName : schema->DisplayName);
+    if (const IDataSubtypeAuthoring* authoring = AuthoringOf(*document))
+        authoring->Refine(nodes, *document, *schema);
     return nodes;
+}
+
+IDataSubtypeAuthoring* DataProperties::AuthoringOf(const DataDocument& document) const
+{
+    return Subtypes != nullptr ? Subtypes->Find(document.Subtype()) : nullptr;
 }
 
 PropertyEditResult DataProperties::Change(std::string_view key,
@@ -411,8 +388,10 @@ bool DataProperties::BeginEdit(std::string_view key)
         return false;
     const std::string_view path = key.ends_with(kSwitch) ? key.substr(0, key.size() - 1) : key;
     JsonValue scratch = *data;
-    const Located at = Locate(scratch, schema->Root, path, true);
-    if (at.Field == nullptr || at.Field->ReadOnly)
+    const IDataSubtypeAuthoring* authoring = AuthoringOf(*document);
+    const bool subtypes = authoring != nullptr && authoring->Write(key, {}, scratch, *schema).has_value();
+    const Located at = subtypes ? Located{} : Locate(scratch, schema->Root, path, true);
+    if (!subtypes && (at.Field == nullptr || at.Field->ReadOnly))
         return false;
     if (!document->IsEditing())
         document->BeginEdit();
@@ -421,6 +400,16 @@ bool DataProperties::BeginEdit(std::string_view key)
 
 PropertyEditResult DataProperties::PreviewEdit(std::string_view key, std::string_view value)
 {
+    if (const DataDocument* document = Shown ? Shown() : nullptr)
+        if (const IDataSubtypeAuthoring* authoring = AuthoringOf(*document))
+        {
+            const DataSchema* schema = Documents.Store().SchemaOf(*document);
+            JsonValue probe = document->Data() != nullptr ? *document->Data() : JsonValue();
+            if (schema != nullptr && authoring->Write(key, value, probe, *schema).has_value())
+                return Change(kDataPathRoot, [&](JsonValue& data, const DataFieldSchema&) {
+                    return authoring->Write(key, value, data, *schema).value_or(false);
+                }, false);
+        }
     if (key.ends_with(kSwitch))
         return Change(key.substr(0, key.size() - 1), [value](JsonValue& held, const DataFieldSchema& field) {
             const std::optional<bool> on = ParseToggle(value);
@@ -471,18 +460,22 @@ std::vector<std::string> DataProperties::Candidates(std::string_view key) const
     const JsonValue* data = document != nullptr ? document->Data() : nullptr;
     if (schema == nullptr || data == nullptr)
         return {};
+    if (const IDataSubtypeAuthoring* authoring = AuthoringOf(*document))
+        if (std::optional<std::vector<std::string>> own = authoring->Candidates(key, *data))
+            return *own;
     JsonValue scratch = *data;
     const Located at = Locate(scratch, schema->Root, key, true);
     if (at.Field == nullptr || Unwrapped(*at.Field).Kind != DataFieldKind::DataAssetRef)
         return {};
-    std::vector<std::string> candidates{ std::string{} };
-    for (std::string& path : Documents.DataAssetPaths(Unwrapped(*at.Field).Reference.DataSubtype))
-        candidates.push_back(std::move(path));
-    return candidates;
+    return Documents.DataAssetPaths(Unwrapped(*at.Field).Reference.DataSubtype);
 }
 
 PropertyEditResult DataProperties::Act(std::string_view key, std::string_view verb, std::string_view choice)
 {
+    if (const DataDocument* document = Shown ? Shown() : nullptr)
+        if (IDataSubtypeAuthoring* authoring = AuthoringOf(*document))
+            if (const std::optional<PropertyEditResult> taken = authoring->Act(key, verb, *document))
+                return *taken;
     if (verb == "open")
     {
         const DataDocument* document = Shown ? Shown() : nullptr;
@@ -522,10 +515,10 @@ PropertyEditResult DataProperties::Act(std::string_view key, std::string_view ve
             return true;
         }, true);
 
-    const std::optional<std::pair<std::string, Step>> parent = Parent(key);
+    const std::optional<std::pair<std::string, DataPathStep>> parent = Parent(key);
     if (!parent.has_value())
         return PropertyEditResult::Gone;
-    const Step step = parent->second;
+    const DataPathStep step = parent->second;
     return Change(parent->first, [&](JsonValue& held, const DataFieldSchema&) {
         if (verb == "remove" && !step.Index.has_value() && held.IsObject())
         {

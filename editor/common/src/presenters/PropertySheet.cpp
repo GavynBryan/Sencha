@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <format>
 
 namespace
@@ -55,7 +56,18 @@ std::vector<UiRow> PropertySheet::Present(const IPropertySource& source, bool ev
     std::vector<UiRow> rows;
     for (const PropertyNode& node : source.Nodes())
         Append(node, 0, 0, everything, rows);
+    Settle();
     return rows;
+}
+
+void PropertySheet::Settle()
+{
+    std::vector<std::string> keys;
+    keys.reserve(Rows.size());
+    for (const Presented& row : Rows)
+        keys.push_back(row.Key + (row.Verb.empty() ? std::string{} : "#" + row.Verb));
+    Settling = keys != LaidOut;
+    LaidOut = std::move(keys);
 }
 
 std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> sections, bool everything,
@@ -82,6 +94,7 @@ std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> secti
         for (const PropertyNode& node : nodes)
             Append(node, 0, section, everything, rows);
     }
+    Settle();
     return rows;
 }
 
@@ -109,8 +122,9 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
         row.Max = descriptor.Max;
         row.Step = descriptor.Step > 0.0 ? descriptor.Step : (descriptor.Max - descriptor.Min) / 100.0;
     }
+    const double snap = row.Control == UiRowControl::Range ? row.Step : 0.0;
     rows.push_back(std::move(row));
-    Rows.push_back({ node.Key, node.Value, section });
+    Rows.push_back({ .Key = node.Key, .Value = node.Value, .Section = section, .Snap = snap });
     for (const PropertyVerb& verb : descriptor.Verbs)
     {
         UiRow action{ verb.Label, "", "" };
@@ -166,14 +180,46 @@ std::string ReportedText(const UiValue& reported)
 }
 } // namespace
 
+namespace
+{
+bool WithinSnap(const UiValue& reported, std::string_view presented, double snap)
+{
+    if (snap <= 0.0)
+        return false;
+    double value = 0.0;
+    switch (reported.Kind())
+    {
+    case UiValueKind::Float:  value = reported.AsFloat(); break;
+    case UiValueKind::Int:    value = static_cast<double>(reported.AsInt()); break;
+    case UiValueKind::String:
+    {
+        const std::string_view text = reported.AsString();
+        if (std::from_chars(text.data(), text.data() + text.size(), value).ec != std::errc{})
+            return false;
+        break;
+    }
+    default: return false;
+    }
+    return std::abs(value - NumberOf(presented)) <= snap * 0.5;
+}
+} // namespace
+
 PropertyEditResult PropertySheet::SetFromControl(IPropertySource& source, std::size_t index, const UiValue& reported)
 {
+    if (Settling)
+        return PropertyEditResult::Unchanged;
+    if (index < Rows.size() && WithinSnap(reported, Rows[index].Value, Rows[index].Snap))
+        return PropertyEditResult::Unchanged;
     return Set(source, index, ReportedText(reported));
 }
 
 PropertyEditResult PropertySheet::SetFromControl(std::span<const PropertySection> sections, std::size_t index,
                                                  const UiValue& reported)
 {
+    if (Settling)
+        return PropertyEditResult::Unchanged;
+    if (index < Rows.size() && WithinSnap(reported, Rows[index].Value, Rows[index].Snap))
+        return PropertyEditResult::Unchanged;
     return Set(sections, index, ReportedText(reported));
 }
 
