@@ -60,6 +60,8 @@ public:
     [[nodiscard]] virtual WorkspaceViewFacet Viewing() const { return {}; }
     // Non-const: naming a resource's picture may start loading it.
     [[nodiscard]] virtual std::vector<WorkspaceResourceFacet> Resources() { return {}; }
+    // Not const: the property sources it hands out are the workspace's to edit.
+    [[nodiscard]] virtual WorkspaceSelectionFacet Selection() { return {}; }
 
     virtual WorkspaceView& View() = 0;
     // The window this workspace now draws in: its UI capture, input gates and

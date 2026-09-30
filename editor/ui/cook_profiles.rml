@@ -26,7 +26,8 @@
                      data-class-heading="row.control == 'section'" data-class-locked="!row.editable">
                     <span class="setting_label">{{row.label}}</span>
                     <input type="text" class="setting_control theme-field" data-if="row.control == 'text'"
-                           data-value="row.value" data-event-change="profiles_set(it_index, ev.value)"/>
+                           data-value="row.value" data-event-focus="profiles_hold(it_index)"
+                           data-event-blur="profiles_release(it_index)"/>
                     <select class="setting_control theme-field" data-if="row.control == 'choice'"
                             data-value="row.value" data-event-change="profiles_set(it_index, ev.value)">
                         <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>

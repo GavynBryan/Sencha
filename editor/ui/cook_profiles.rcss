@@ -95,17 +95,7 @@ body
     width: 404dp;
 }
 
-.setting.heading
-{
-    margin-top: 8dp;
-    font-family: "Chakra Petch";
-    font-weight: 600;
-    letter-spacing: 1dp;
-}
-.setting.heading .setting_label { width: auto; font-size: 11dp; }
 .setting_label { width: 130dp; }
-.setting.locked { opacity: 0.5; }
-.setting.locked * { pointer-events: none; }
 
 #builtin { display: block; margin-top: 10dp; font-size: 11dp; }
 

@@ -87,14 +87,12 @@ editor/level_editor/src/render/ThumbnailStudio.cpp
 editor/level_editor/src/render/ThumbnailStudio.h
 editor/level_editor/src/render/ViewportTargetCache.cpp
 editor/level_editor/src/render/ViewportTargetCache.h
-editor/level_editor/src/ui/FaceUvControls.cpp
 editor/level_editor/src/ui/GraphViewerPanel.cpp
 editor/level_editor/src/ui/InspectorPanel.cpp
 editor/level_editor/src/ui/LightingPanel.cpp
 editor/level_editor/src/ui/MaterialPickerPanel.cpp
 editor/level_editor/src/ui/SceneBrowserPanel.cpp
 editor/level_editor/src/ui/SceneHierarchyPanel.cpp
-editor/level_editor/src/ui/ToolPropertiesPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.h
 editor/level_editor/src/ui/WorldPartitionPanel.cpp

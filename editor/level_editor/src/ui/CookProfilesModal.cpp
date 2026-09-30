@@ -25,6 +25,8 @@ const UiActionId kDelete = UiActionIdAt(4);
 const UiActionId kValidate = UiActionIdAt(5);
 const UiActionId kSave = UiActionIdAt(6);
 const UiActionId kClose = UiActionIdAt(7);
+const UiActionId kHold = UiActionIdAt(8);
+const UiActionId kRelease = UiActionIdAt(9);
 
 UiScreenDesc Describe()
 {
@@ -41,7 +43,8 @@ UiScreenDesc Describe()
     };
     desc.RowLists = { "settings" };
     desc.Actions = { "profiles_select", "profiles_set",      "profiles_flip",     "profiles_duplicate",
-                     "profiles_delete", "profiles_validate", "profiles_save",     "profiles_close" };
+                     "profiles_delete", "profiles_validate", "profiles_save",     "profiles_close",
+                     "profiles_hold",   "profiles_release" };
     return desc;
 }
 
@@ -75,6 +78,7 @@ void CookProfilesModal::Open()
     if (Screen.IsValid() || !Surface.IsValid())
         return;
     Screen = Ui.OpenScreen(Surface, Describe());
+    Sheet.Drop();
     Publish();
 }
 
@@ -102,6 +106,14 @@ void CookProfilesModal::HandleActions()
             Profiles.Select(IndexArgument(action));
         else if (action.Id == kSet && action.Arguments.size() > 1)
             (void)Sheet.SetFromControl(Profiles, IndexArgument(action), action.Arguments[1]);
+        else if (action.Id == kHold)
+            Sheet.Hold(IndexArgument(action));
+        else if (action.Id == kRelease)
+        {
+            const std::size_t row = IndexArgument(action);
+            const std::vector<UiRow> shown = Ui.GetRows(Screen, kSettings);
+            (void)Sheet.Release(Profiles, row, row < shown.size() ? std::string_view(shown[row].Value) : std::string_view{});
+        }
         else if (action.Id == kFlip)
             (void)Sheet.Flip(Profiles, IndexArgument(action));
         else if (action.Id == kDuplicate)
@@ -132,5 +144,6 @@ void CookProfilesModal::Publish()
     (void)Ui.SetValue(Screen, kStatus, UiValue(Profiles.Status()));
     (void)Ui.SetValue(Screen, kDirty, UiValue(Profiles.Changed()));
     (void)Ui.SetValue(Screen, kBuiltIn, UiValue(Profiles.SelectedIsBuiltIn()));
-    (void)Ui.SetRows(Screen, kSettings, Sheet.Present(Profiles));
+    if (!Sheet.Holding())
+        (void)Ui.SetRows(Screen, kSettings, Sheet.Present(Profiles));
 }

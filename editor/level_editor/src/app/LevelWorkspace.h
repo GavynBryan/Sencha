@@ -44,6 +44,8 @@ class SdlWindow;
 class PieDriver;
 class CookSession;
 class CookProfilesModal;
+class ElementVerbs;
+class FaceUvSource;
 class InspectorSurface;
 class EditorCookRuntime;
 class DocumentFileActions;
@@ -86,6 +88,7 @@ public:
     [[nodiscard]] WorkspaceManipulationFacet Manipulation() const override;
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
+    [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;
@@ -129,8 +132,7 @@ private:
     // one a single view shows: each keeps its own camera.
     void ShowView(ViewportOrientation orientation);
 
-    // Bake-to-static-mesh actions behind the ToolPropertiesPanel buttons. All need a
-    // mounted project (the .smesh is written under its first content root).
+    // Writes the selection's geometry as binary glTF, behind a save dialog.
     void ExportSelectionGlb();
 
     ViewsPanel* Views = nullptr;
@@ -173,6 +175,8 @@ private:
     std::unique_ptr<InputRouter> Router;
     std::unique_ptr<ViewportNavigation> Navigation;
     std::unique_ptr<ViewDividerDrag> DividerDrag;
+    std::unique_ptr<ElementVerbs> Verbs;
+    std::unique_ptr<FaceUvSource> Uv;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
     // The tool in hand's settings, as the operation facet hands them out.

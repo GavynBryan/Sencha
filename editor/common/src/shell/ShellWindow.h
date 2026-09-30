@@ -25,6 +25,7 @@ class SdlWindow;
 class UiService;
 class IWorkspace;
 class WorkspaceHost;
+struct UiAction;
 struct UiRow;
 
 // The surface layer a window's content draws in: under the window's legacy
@@ -135,6 +136,10 @@ private:
     void PublishReadouts(const IWorkspace* workspace);
     // What the hands hold, bottom right: the primary resource and its stash.
     void PublishHolding(IWorkspace* workspace);
+    // What is selected, bottom right above what is held: its card.
+    void PublishSelection(IWorkspace* workspace);
+    // A row of the tool card or the selection card edited, focused or let go.
+    void HandleSheetAction(const UiAction& action);
 
     ShellWindowServices Services;
     UiSurfaceId SurfaceId;
@@ -155,6 +160,8 @@ private:
     ActionContextStack::Layer PopoverLayer;
     std::unique_ptr<CommandPalette> Palette;
     PropertySheet ToolSheet;
+    PropertySheet SelectionSheet;
+    std::string ShownSelection;
     // After the palette, so a question opens over it.
     std::unique_ptr<PromptDialog> Prompt;
     // What the shell itself performs in its window, whatever is showing.

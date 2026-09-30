@@ -36,11 +36,36 @@ std::vector<UiRow> PropertySheet::Present(const IPropertySource& source, bool ev
     Rows.clear();
     std::vector<UiRow> rows;
     for (const PropertyNode& node : source.Nodes())
-        Append(node, 0, everything, rows);
+        Append(node, 0, 0, everything, rows);
     return rows;
 }
 
-void PropertySheet::Append(const PropertyNode& node, int depth, bool everything, std::vector<UiRow>& rows)
+std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> sections, bool everything)
+{
+    Rows.clear();
+    std::vector<UiRow> rows;
+    for (std::size_t section = 0; section < sections.size(); ++section)
+    {
+        if (sections[section].Source == nullptr)
+            continue;
+        const std::vector<PropertyNode> nodes = sections[section].Source->Nodes();
+        if (nodes.empty())
+            continue;
+        if (!sections[section].Heading.empty())
+        {
+            UiRow heading{ sections[section].Heading, "", "" };
+            heading.Control = UiRowControl::Section;
+            rows.push_back(std::move(heading));
+            Rows.push_back({ {}, {}, section });
+        }
+        for (const PropertyNode& node : nodes)
+            Append(node, 0, section, everything, rows);
+    }
+    return rows;
+}
+
+void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t section, bool everything,
+                           std::vector<UiRow>& rows)
 {
     const PropertyDescriptor& descriptor = node.Descriptor;
     if (descriptor.Advanced && !everything)
@@ -61,15 +86,22 @@ void PropertySheet::Append(const PropertyNode& node, int depth, bool everything,
         row.Step = descriptor.Step > 0.0 ? descriptor.Step : (descriptor.Max - descriptor.Min) / 100.0;
     }
     rows.push_back(std::move(row));
-    Rows.push_back({ node.Key, node.Value });
+    Rows.push_back({ node.Key, node.Value, section });
 
     for (const PropertyNode& child : node.Children)
-        Append(child, depth + 1, everything, rows);
+        Append(child, depth + 1, section, everything, rows);
+}
+
+IPropertySource* PropertySheet::SourceOf(std::span<const PropertySection> sections, std::size_t index) const
+{
+    if (index >= Rows.size() || Rows[index].Section >= sections.size())
+        return nullptr;
+    return sections[Rows[index].Section].Source;
 }
 
 PropertyEditResult PropertySheet::Set(IPropertySource& source, std::size_t index, std::string_view value)
 {
-    if (index >= Rows.size())
+    if (index >= Rows.size() || Rows[index].Key.empty())
         return PropertyEditResult::Gone;
     const Presented& row = Rows[index];
     if (value == row.Value)
@@ -79,15 +111,36 @@ PropertyEditResult PropertySheet::Set(IPropertySource& source, std::size_t index
     return source.CommitEdit(row.Key, value);
 }
 
-PropertyEditResult PropertySheet::SetFromControl(IPropertySource& source, std::size_t index, const UiValue& reported)
+PropertyEditResult PropertySheet::Set(std::span<const PropertySection> sections, std::size_t index,
+                                      std::string_view value)
+{
+    IPropertySource* source = SourceOf(sections, index);
+    return source != nullptr ? Set(*source, index, value) : PropertyEditResult::Gone;
+}
+
+namespace
+{
+std::string ReportedText(const UiValue& reported)
 {
     switch (reported.Kind())
     {
-    case UiValueKind::Float: return Set(source, index, std::format("{}", reported.AsFloat()));
-    case UiValueKind::Int:   return Set(source, index, std::format("{}", reported.AsInt()));
-    case UiValueKind::Bool:  return Set(source, index, reported.AsBool() ? "true" : "false");
-    default:                 return Set(source, index, reported.AsString());
+    case UiValueKind::Float: return std::format("{}", reported.AsFloat());
+    case UiValueKind::Int:   return std::format("{}", reported.AsInt());
+    case UiValueKind::Bool:  return reported.AsBool() ? "true" : "false";
+    default:                 return std::string(reported.AsString());
     }
+}
+} // namespace
+
+PropertyEditResult PropertySheet::SetFromControl(IPropertySource& source, std::size_t index, const UiValue& reported)
+{
+    return Set(source, index, ReportedText(reported));
+}
+
+PropertyEditResult PropertySheet::SetFromControl(std::span<const PropertySection> sections, std::size_t index,
+                                                 const UiValue& reported)
+{
+    return Set(sections, index, ReportedText(reported));
 }
 
 PropertyEditResult PropertySheet::Flip(IPropertySource& source, std::size_t index)
@@ -95,4 +148,28 @@ PropertyEditResult PropertySheet::Flip(IPropertySource& source, std::size_t inde
     if (index >= Rows.size())
         return PropertyEditResult::Gone;
     return Set(source, index, Rows[index].Value == "true" ? "false" : "true");
+}
+
+PropertyEditResult PropertySheet::Flip(std::span<const PropertySection> sections, std::size_t index)
+{
+    IPropertySource* source = SourceOf(sections, index);
+    return source != nullptr ? Flip(*source, index) : PropertyEditResult::Gone;
+}
+
+void PropertySheet::Hold(std::size_t index)
+{
+    Held = index < Rows.size() ? index : kNothingHeld;
+}
+
+PropertyEditResult PropertySheet::Release(IPropertySource& source, std::size_t index, std::string_view value)
+{
+    Held = kNothingHeld;
+    return Set(source, index, value);
+}
+
+PropertyEditResult PropertySheet::Release(std::span<const PropertySection> sections, std::size_t index,
+                                          std::string_view value)
+{
+    Held = kNothingHeld;
+    return Set(sections, index, value);
 }

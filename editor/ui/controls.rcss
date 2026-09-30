@@ -58,6 +58,16 @@
     font-size: 11dp;
 }
 .setting_toggle { flex: 0; }
+.setting.heading
+{
+    margin-top: 6dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    letter-spacing: 1dp;
+}
+.setting.heading .setting_label { width: auto; font-size: 11dp; }
+.setting.locked { opacity: 0.5; }
+.setting.locked * { pointer-events: none; }
 
 /* A setting's slider and drop-down: geometry here, colours the theme's. */
 slidertrack

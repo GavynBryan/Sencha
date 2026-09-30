@@ -26,5 +26,6 @@
     }
   ],
   "actions": ["profiles_select", "profiles_set", "profiles_flip", "profiles_duplicate",
-              "profiles_delete", "profiles_validate", "profiles_save", "profiles_close"]
+              "profiles_delete", "profiles_validate", "profiles_save", "profiles_close",
+              "profiles_hold", "profiles_release"]
 }

@@ -112,3 +112,24 @@ struct WorkspaceResourceFacet
     HeldResource Active = {};
     std::vector<HeldResource> Stash = {};
 };
+
+// Properties the shell shows together, under a heading.
+struct PropertySection
+{
+    std::string Heading = {};
+    // Owned by the workspace, valid until its next frame.
+    IPropertySource* Source = nullptr;
+};
+
+// What is selected, as the shell presents it: what to call it, the actions
+// that apply to it now, and its properties in sections. While an edit is
+// staged (a previewed inset, bevel or bridge) the actions are how it applies
+// or cancels.
+struct WorkspaceSelectionFacet
+{
+    // Empty when nothing is selected.
+    std::string Title = {};
+    std::vector<std::string> Actions = {};
+    std::vector<PropertySection> Sections = {};
+    bool Staged = false;
+};

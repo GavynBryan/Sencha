@@ -287,8 +287,12 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   categories' actions. What the hands hold is the resources facet: per role,
   the active resource and its stash, each named and pictured by a host image
   (`MaterialThumbnailCache::ImageName`); the stash is worked through the
-  `resource.*` actions (`resources/ResourceActions`). Cook, play and stop are
-  the `transport.*` actions the rail's transport shows.
+  `resource.*` actions (`resources/ResourceActions`). What is selected is the
+  selection facet: a title, the actions that apply now, and property sections
+  -- the Level's `ElementVerbs` (every brush, face, edge and vertex verb, and
+  the settings the parametric ones read) and `FaceUvSource`, composed by
+  `SelectionSummary`; the shell's selection card presents it. Cook, play and
+  stop are the `transport.*` actions the rail's transport shows.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
   A tool with sub-modes exposes them as variants (`GetVariants`,

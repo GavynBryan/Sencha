@@ -303,7 +303,7 @@ public:
 
         Sink.CommitMesh(Entity, Initial, std::move(result->Mesh));
         // The mesh reindexed; select the freshly created outer cap/edge so it can be
-        // extruded or moved again (empty refs clears, as ToolPropertiesPanel does).
+        // extruded or moved again (empty refs clears, as the element verbs do).
         const RegistryId registry = Elements.empty() ? RegistryId::Invalid() : Elements.front().Registry;
         std::vector<SelectableRef> refs;
         refs.reserve(result->NewElementIds.size());

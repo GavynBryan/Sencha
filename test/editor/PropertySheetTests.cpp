@@ -84,3 +84,35 @@ TEST(PropertySheet, ARowsEditIsOneStepByKey)
     EXPECT_EQ(sheet.Set(settings, 1, "Arch"), PropertyEditResult::Unchanged) << "the value it already shows";
     EXPECT_EQ(sheet.Set(settings, 9, "x"), PropertyEditResult::Gone);
 }
+
+TEST(PropertySheet, SectionsPresentUnderHeadingsAndEditTheirOwnSource)
+{
+    Settings first;
+    Settings second;
+    const PropertySection sections[] = { { .Heading = "First", .Source = &first }, { .Heading = "Second", .Source = &second } };
+    PropertySheet sheet;
+    const std::vector<UiRow> rows = sheet.Present(sections);
+    ASSERT_EQ(rows.size(), 10u) << "a heading and four rows for each";
+    EXPECT_EQ(rows[5].Label, "Second");
+    EXPECT_EQ(sheet.Set(sections, 8, "40"), PropertyEditResult::Applied);
+    EXPECT_EQ(second.Values["segments"], "40");
+    EXPECT_EQ(first.Values["segments"], "6");
+    EXPECT_EQ(sheet.Set(sections, 5, "x"), PropertyEditResult::Gone) << "a heading holds nothing";
+}
+
+TEST(PropertySheet, AFieldHeldWhileTypedCommitsWhenItLetsGo)
+{
+    Settings settings;
+    PropertySheet sheet;
+    (void)sheet.Present(settings);
+    sheet.Hold(2);
+    EXPECT_TRUE(sheet.Holding());
+    EXPECT_EQ(sheet.Release(settings, 2, "9"), PropertyEditResult::Applied);
+    EXPECT_FALSE(sheet.Holding());
+    EXPECT_EQ(settings.Values["segments"], "9");
+
+    sheet.Hold(2);
+    sheet.Drop();
+    EXPECT_FALSE(sheet.Holding());
+    EXPECT_EQ(settings.Values["segments"], "9") << "dropping commits nothing";
+}

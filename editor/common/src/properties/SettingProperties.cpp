@@ -44,6 +44,18 @@ PropertyNode ToggleProperty(std::string key, std::string label, bool on, std::st
     return node;
 }
 
+PropertyNode VectorProperty(std::string key, std::string label, std::span<const double> values, std::string tooltip)
+{
+    PropertyNode node;
+    node.Key = std::move(key);
+    node.Descriptor.Kind = PropertyKind::Vector;
+    node.Descriptor.Label = std::move(label);
+    node.Descriptor.Tooltip = std::move(tooltip);
+    for (std::size_t i = 0; i < values.size(); ++i)
+        node.Value += (i == 0 ? "" : ", ") + std::format("{}", values[i]);
+    return node;
+}
+
 std::optional<std::size_t> ParseChoice(std::string_view value, std::span<const std::string_view> options)
 {
     const auto it = std::ranges::find(options, value);
@@ -68,4 +80,28 @@ std::optional<bool> ParseToggle(std::string_view value)
     if (value == "false" || value == "0")
         return false;
     return std::nullopt;
+}
+
+std::optional<std::vector<double>> ParseVector(std::string_view value, std::size_t count)
+{
+    std::vector<double> numbers;
+    while (!value.empty())
+    {
+        const std::size_t comma = value.find(',');
+        std::string_view part = value.substr(0, comma);
+        while (!part.empty() && part.front() == ' ')
+            part.remove_prefix(1);
+        while (!part.empty() && part.back() == ' ')
+            part.remove_suffix(1);
+        const std::optional<double> number = ParseNumber(part);
+        if (!number.has_value())
+            return std::nullopt;
+        numbers.push_back(*number);
+        if (comma == std::string_view::npos)
+            break;
+        value.remove_prefix(comma + 1);
+    }
+    if (numbers.size() != count)
+        return std::nullopt;
+    return numbers;
 }

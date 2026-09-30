@@ -36,7 +36,6 @@
 #include "render/RenderFeatureDetach.h"
 #include "documents/DocumentSourceSet.h"
 #include "ui/MaterialThumbnailCache.h"
-#include "ui/ToolPropertiesPanel.h"
 #include "render/SceneThumbnailCache.h"
 #include "ui/SceneBrowserPanel.h"
 #include "ui/SceneHierarchyPanel.h"
@@ -44,6 +43,9 @@
 #include "ui/GraphViewerPanel.h"
 #include "actions/ActionOffer.h"
 #include "resources/ResourceActions.h"
+#include "workspace/ElementVerbs.h"
+#include "workspace/FaceUvSource.h"
+#include "workspace/SelectionSummary.h"
 #include "workspace/ManipulationActions.h"
 #include "tools/ToolParameterSource.h"
 #include "ui/RadialMenuScreen.h"
@@ -275,6 +277,10 @@ void LevelWorkspace::BuildInput()
     for (const LevelAction& action : actions)
         offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
     OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
+    Verbs = std::make_unique<ElementVerbs>(*Workspace, [this] { ExportSelectionGlb(); });
+    Verbs->Offer(Catalog, ActionHandlers);
+    Uv = std::make_unique<FaceUvSource>(*Workspace);
+    Uv->Offer(Catalog, ActionHandlers);
     offer("resource.browse", "Browse...", "Resource", { { SDLK_M, {} } }, IconId::Folder,
           [this] { if (Browser != nullptr) Browser->Reveal(); });
     OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [] { return AssetType::Material; });
@@ -741,17 +747,6 @@ void LevelWorkspace::BuildUi()
                 return summary;
             }));
     }
-    Surface.AddPanel(std::make_unique<ToolPropertiesPanel>(
-        [this]() -> IMeshEditTarget* { return Workspace->Interaction.Sink.get(); },
-        [this]() -> ManipulationSink* { return Workspace->Interaction.Sink.get(); },
-        [this]() -> ToolRegistry* { return Workspace->Interaction.Tools.get(); },
-        Workspace->Selection, Workspace->MeshEdit, *Commands,
-        Workspace->World, Workspace->Resources, Workspace->UvClipboard,
-        Workspace->Actions, Workspace->BridgeEdit, Workspace->ElementEdit,
-        // Export is the one verb that needs a native file dialog, so the shell
-        // keeps it; the geometry itself comes from the selection actions.
-        [this] { ExportSelectionGlb(); }));
-
     // Material picking surfaces: thumbnail residency for both panels, bounded
     // by the budget cvar so a large library never pins every base color
     // texture on the GPU.
@@ -1303,6 +1298,13 @@ WorkspaceViewFacet LevelWorkspace::Viewing() const
 WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
 {
     return ManipulationOf(*Workspace);
+}
+
+WorkspaceSelectionFacet LevelWorkspace::Selection()
+{
+    if (Verbs == nullptr || Uv == nullptr)
+        return {};
+    return SelectionOf(*Workspace, *Verbs, *Uv);
 }
 
 std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()

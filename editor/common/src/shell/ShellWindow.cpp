@@ -49,18 +49,24 @@ const UiModelPropertyId kHoldingRole = UiPropertyIdAt(27);
 const UiModelPropertyId kHoldingLabel = UiPropertyIdAt(28);
 const UiModelPropertyId kHoldingImage = UiPropertyIdAt(29);
 const UiModelPropertyId kMotion = UiPropertyIdAt(30);
+const UiModelPropertyId kSelectionTitle = UiPropertyIdAt(31);
+const UiModelPropertyId kSelectionStaged = UiPropertyIdAt(32);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
 const UiModelRowsId kToolRows = UiRowsIdAt(2);
 const UiModelRowsId kStash = UiRowsIdAt(3);
+const UiModelRowsId kSelectionRows = UiRowsIdAt(4);
+const UiModelRowsId kSelectionVerbs = UiRowsIdAt(5);
 
 const UiActionId kPopoverAction = UiActionIdAt(0);
 const UiActionId kChooseAction = UiActionIdAt(1);
 const UiActionId kInvokeAction = UiActionIdAt(2);
 const UiActionId kWindowAction = UiActionIdAt(3);
-const UiActionId kToolSetAction = UiActionIdAt(4);
-const UiActionId kToolFlipAction = UiActionIdAt(5);
+const UiActionId kSheetSetAction = UiActionIdAt(4);
+const UiActionId kSheetFlipAction = UiActionIdAt(5);
+const UiActionId kSheetHoldAction = UiActionIdAt(6);
+const UiActionId kSheetReleaseAction = UiActionIdAt(7);
 
 // The rail's height in dp, when the document has not laid out to say.
 constexpr float kRailHeightDp = 34.0f;
@@ -102,10 +108,12 @@ UiScreenDesc Describe()
         UiModelProperty{ "holding_label", UiValue(std::string{}) },
         UiModelProperty{ "holding_image", UiValue(std::string{}) },
         UiModelProperty{ "motion", UiValue(true) },
+        UiModelProperty{ "selection_title", UiValue(std::string{}) },
+        UiModelProperty{ "selection_staged", UiValue(false) },
     };
-    desc.RowLists = { "notices", "entries", "tool_rows", "stash" };
-    desc.Actions = { "shell_popover", "shell_choose", "shell_invoke", "shell_window", "shell_tool_set",
-                     "shell_tool_flip" };
+    desc.RowLists = { "notices", "entries", "tool_rows", "stash", "selection_rows", "selection_verbs" };
+    desc.Actions = { "shell_popover",   "shell_choose",    "shell_invoke",    "shell_window",
+                     "shell_sheet_set", "shell_sheet_flip", "shell_sheet_hold", "shell_sheet_release" };
     return desc;
 }
 
@@ -289,17 +297,10 @@ void ShellWindow::HandleActions()
         {
             (void)Services.Actions.Invoke(argument);
         }
-        else if (action.Id == kToolSetAction || action.Id == kToolFlipAction)
+        else if (action.Id == kSheetSetAction || action.Id == kSheetFlipAction || action.Id == kSheetHoldAction
+                 || action.Id == kSheetReleaseAction)
         {
-            IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
-            IPropertySource* parameters = workspace != nullptr ? workspace->Operation().Parameters : nullptr;
-            const std::int64_t row = action.Arguments.empty() ? -1 : action.Arguments[0].AsInt();
-            if (parameters == nullptr || row < 0)
-                continue;
-            if (action.Id == kToolFlipAction)
-                (void)ToolSheet.Flip(*parameters, static_cast<std::size_t>(row));
-            else if (action.Arguments.size() > 1)
-                (void)ToolSheet.SetFromControl(*parameters, static_cast<std::size_t>(row), action.Arguments[1]);
+            HandleSheetAction(action);
         }
         else if (action.Id == kWindowAction)
         {
@@ -311,6 +312,44 @@ void ShellWindow::HandleActions()
                 Services.CloseWindow();
         }
     }
+}
+
+void ShellWindow::HandleSheetAction(const UiAction& action)
+{
+    IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+    if (workspace == nullptr || action.Arguments.size() < 2)
+        return;
+    const bool tool = action.Arguments[0].AsString() == "tool";
+    const std::int64_t row = action.Arguments[1].AsInt();
+    if (row < 0)
+        return;
+    const auto index = static_cast<std::size_t>(row);
+
+    // The sources are asked for again: the workspace's frame may have moved on
+    // since the rows were presented.
+    std::vector<PropertySection> sections;
+    if (tool)
+    {
+        if (IPropertySource* parameters = workspace->Operation().Parameters)
+            sections.push_back({ .Heading = {}, .Source = parameters });
+    }
+    else
+    {
+        sections = workspace->Selection().Sections;
+    }
+    PropertySheet& sheet = tool ? ToolSheet : SelectionSheet;
+
+    if (action.Id == kSheetHoldAction)
+        sheet.Hold(index);
+    else if (action.Id == kSheetReleaseAction)
+    {
+        const std::vector<UiRow> shown = Services.Ui.GetRows(Screen, tool ? kToolRows : kSelectionRows);
+        (void)sheet.Release(sections, index, index < shown.size() ? std::string_view(shown[index].Value) : std::string_view{});
+    }
+    else if (action.Id == kSheetFlipAction)
+        (void)sheet.Flip(sections, index);
+    else if (action.Arguments.size() > 2)
+        (void)sheet.SetFromControl(sections, index, action.Arguments[2]);
 }
 
 void ShellWindow::YieldPointerToContent()
@@ -425,6 +464,7 @@ void ShellWindow::Publish(double now)
     PublishStation(workspace);
     PublishReadouts(workspace);
     PublishHolding(workspace);
+    PublishSelection(workspace);
 
     std::vector<UiRow> notices;
     for (const Notice& notice : Services.Notices.Showing(now))
@@ -504,6 +544,37 @@ void ShellWindow::PublishReadouts(const IWorkspace* workspace)
     const WorkspaceViewFacet seeing = workspace != nullptr ? workspace->Viewing() : WorkspaceViewFacet{};
     (void)ui.SetValue(Screen, kProjection, UiValue(seeing.Projection));
     (void)ui.SetValue(Screen, kViewCount, UiValue(static_cast<std::int64_t>(seeing.Views)));
+}
+
+void ShellWindow::PublishSelection(IWorkspace* workspace)
+{
+    UiService& ui = Services.Ui;
+    const WorkspaceSelectionFacet selection = workspace != nullptr ? workspace->Selection() : WorkspaceSelectionFacet{};
+    // A field being typed into describes what was selected; once something
+    // else is, what it holds no longer applies to anything.
+    if (selection.Title != ShownSelection)
+    {
+        SelectionSheet.Drop();
+        ShownSelection = selection.Title;
+    }
+    (void)ui.SetValue(Screen, kSelectionTitle, UiValue(selection.Title));
+    (void)ui.SetValue(Screen, kSelectionStaged, UiValue(selection.Staged));
+    if (!SelectionSheet.Holding())
+        (void)ui.SetRows(Screen, kSelectionRows, SelectionSheet.Present(selection.Sections));
+
+    std::vector<UiRow> verbs;
+    for (const std::string& id : selection.Actions)
+    {
+        const ActionDefinition* definition = Services.Catalog.Find(id);
+        const ActionContextStack::State state = Services.Actions.Query(id);
+        if (definition == nullptr || !state.Claimed)
+            continue;
+        UiRow verb{ definition->Label, Services.Catalog.ChordText(id), "" };
+        verb.Key = id;
+        verb.Disabled = !state.Enabled;
+        verbs.push_back(std::move(verb));
+    }
+    (void)ui.SetRows(Screen, kSelectionVerbs, verbs);
 }
 
 void ShellWindow::PublishHolding(IWorkspace* workspace)
@@ -599,8 +670,9 @@ void ShellWindow::PublishStation(IWorkspace* workspace)
 {
     UiService& ui = Services.Ui;
     WorkspaceOperationFacet operation = workspace != nullptr ? workspace->Operation() : WorkspaceOperationFacet{};
+    const bool holding = ToolSheet.Holding();
     std::vector<UiRow> rows =
-        operation.Parameters != nullptr ? ToolSheet.Present(*operation.Parameters) : std::vector<UiRow>{};
+        operation.Parameters != nullptr && !holding ? ToolSheet.Present(*operation.Parameters) : std::vector<UiRow>{};
     (void)ui.SetValue(Screen, kStationName, UiValue(operation.Name));
     (void)ui.SetValue(Screen, kStationVariant, UiValue(operation.Variant));
     (void)ui.SetValue(Screen, kStationIcon, UiValue(std::string(IconName(operation.Icon))));
@@ -608,6 +680,8 @@ void ShellWindow::PublishStation(IWorkspace* workspace)
     (void)ui.SetValue(Screen, kDraft, UiValue(std::string(DraftName(operation.Draft))));
     // The card is up while there is something on it beyond a hint: settings,
     // or drafted work to apply or cancel.
+    if (holding)
+        return;
     (void)ui.SetValue(Screen, kCardOpen, UiValue(!rows.empty() || operation.Draft != ToolDraft::None));
     (void)ui.SetRows(Screen, kToolRows, rows);
 }
