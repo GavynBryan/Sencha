@@ -4,7 +4,7 @@
 
 #include "input/InputEvent.h"
 
-#include <imgui.h>
+#include <math/Vec.h>
 #include <memory>
 
 struct ToolContext;

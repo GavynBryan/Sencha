@@ -47,7 +47,7 @@ bool IsSignedWorldAxis(const Vec3d& v)
 }
 
 std::optional<BrushCreationPlane>
-ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport, ImVec2 pressPos,
+ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport, Vec2d pressPos,
                           BrushPrimitive primitive)
 {
     const OrientationTraits& traits = viewport.GetOrientationTraits();

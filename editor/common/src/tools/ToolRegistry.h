@@ -4,7 +4,7 @@
 
 #include "input/InputEvent.h"
 
-#include <imgui.h>
+#include <math/Vec.h>
 
 #include <memory>
 #include <string_view>
@@ -49,7 +49,7 @@ public:
     InputConsumed Click(EditorViewport& viewport, const PointerEvent& pointer);
     InputConsumed DoubleClick(EditorViewport& viewport, const PointerEvent& pointer);
     std::unique_ptr<IInteraction> BeginDrag(EditorViewport& viewport, const PointerEvent& pressPointer);
-    InputConsumed Hover(EditorViewport& viewport, ImVec2 pos);
+    InputConsumed Hover(EditorViewport& viewport, Vec2d pos);
     void HoverEnd();
     InputConsumed OnInput(const InputEvent& event);
 

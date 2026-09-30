@@ -21,7 +21,7 @@ protected:
     {
         WorkspaceTest::SetUp();
         const auto frame = [] { return RadialMenu::Frame{ .Scale = 1.0f, .Min = { 0.0f, 0.0f }, .Max = { 1600.0f, 900.0f } }; };
-        const auto onScene = [](ImVec2) { return true; };
+        const auto onScene = [](Vec2d) { return true; };
         ToolMenu = std::make_unique<ToolRegistryMenuModel>(*Workspace.Interaction.Tools);
         ToolWheel = std::make_unique<RadialMenuSession>(*ToolMenu, KeyChord{ .Key = SDLK_Q, .Mods = {} }, frame, onScene);
         GizmoMenu = std::make_unique<TransformModeMenuModel>([this] { return Workspace.Interaction.Manipulators; });

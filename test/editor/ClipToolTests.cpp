@@ -49,8 +49,8 @@ protected:
         EditorViewport viewport;
         viewport.ApplyOrientation(ViewportOrientation::Top);
         viewport.Id = ViewportId{ 1 };
-        viewport.RegionMin = ImVec2(0.0f, 0.0f);
-        viewport.RegionMax = ImVec2(400.0f, 400.0f);
+        viewport.RegionMin = Vec2d(0.0f, 0.0f);
+        viewport.RegionMax = Vec2d(400.0f, 400.0f);
         return viewport;
     }
 
@@ -60,16 +60,16 @@ protected:
         viewport.ApplyOrientation(ViewportOrientation::Perspective);
         viewport.Id = ViewportId{ 2 };
         viewport.Camera.Position = Vec3d(0.0f, 0.0f, 6.0f); // looking down -Z at the origin
-        viewport.RegionMin = ImVec2(0.0f, 0.0f);
-        viewport.RegionMax = ImVec2(400.0f, 400.0f);
+        viewport.RegionMin = Vec2d(0.0f, 0.0f);
+        viewport.RegionMax = Vec2d(400.0f, 400.0f);
         return viewport;
     }
 
-    [[nodiscard]] static ImVec2 PixelOf(const EditorViewport& viewport, Vec3d world)
+    [[nodiscard]] static Vec2d PixelOf(const EditorViewport& viewport, Vec3d world)
     {
         const std::optional<ProjectedPoint> p = ViewportProjection(viewport).WorldToPixel(world);
         EXPECT_TRUE(p.has_value());
-        return p.has_value() ? p->Pixel : ImVec2{};
+        return p.has_value() ? p->Pixel : Vec2d{};
     }
 
     // Draw the line from `a` to `b` (world points on the view's plane) and
@@ -414,8 +414,8 @@ TEST_F(ClipToolTest, ACutThroughADoorwayMakesOneBrushPerPiece)
         EditorViewport front;
         front.ApplyOrientation(ViewportOrientation::Front);
         front.Id = ViewportId{ 3 };
-        front.RegionMin = ImVec2(0.0f, 0.0f);
-        front.RegionMax = ImVec2(400.0f, 400.0f);
+        front.RegionMin = Vec2d(0.0f, 0.0f);
+        front.RegionMax = Vec2d(400.0f, 400.0f);
         Tool().SetMode(Context(), mode);
         Draw(front, Vec3d{ -3, 0, 0 }, Vec3d{ 3, 0, 0 });
         ASSERT_TRUE(Tool().CanCommit());

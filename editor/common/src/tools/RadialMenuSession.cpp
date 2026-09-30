@@ -7,7 +7,7 @@
 
 RadialMenuSession::RadialMenuSession(IRadialMenuModel& menu, KeyChord key,
                                      std::function<RadialMenu::Frame()> frame,
-                                     std::function<bool(ImVec2)> pointerOnScene)
+                                     std::function<bool(Vec2d)> pointerOnScene)
     : Menu(menu)
     , Key(key)
     , FrameProvider(std::move(frame))
@@ -84,7 +84,7 @@ InputConsumed RadialMenuSession::OnKeyUp(const KeyUpEvent& event, PointerCapture
     return InputConsumed::Yes;
 }
 
-void RadialMenuSession::Open(ImVec2 pointer, PointerCapture& capture)
+void RadialMenuSession::Open(Vec2d pointer, PointerCapture& capture)
 {
     const int count = Menu.Count();
     int maxVariants = 0;
@@ -106,7 +106,7 @@ void RadialMenuSession::Leave(RadialMenuPhase next, PointerCapture& capture)
     Phase = next;
 }
 
-void RadialMenuSession::Track(ImVec2 pointer)
+void RadialMenuSession::Track(Vec2d pointer)
 {
     switch (RadialMenu::RingAt(Layout, pointer))
     {

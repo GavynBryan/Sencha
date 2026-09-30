@@ -46,7 +46,7 @@ public:
     // hit-testing the live mouse there compares mismatched spaces and never
     // hits. ClearHover drops the highlight when the cursor leaves the
     // viewports or a drag owns the pointer.
-    void UpdateHover(const EditorViewport& viewport, ImVec2 pos);
+    void UpdateHover(const EditorViewport& viewport, Vec2d pos);
     void ClearHover();
 
     // Visuals for every applicable manipulator (drawn by the overlay renderer).

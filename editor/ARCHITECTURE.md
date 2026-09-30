@@ -228,6 +228,10 @@ format boundary; the editor's own types use document/scene vocabulary.
   layer-3 subsystems stay independent of each other.
 - Domain commands live next to their domain (`document/commands/`), not in the
   generic `commands/` directory.
+- ImGui is on its way out of the editor (`docs/editor/interaction-grammar.md`).
+  Geometry, input, tools and viewport math are written in engine vectors
+  (`Vec2d`); only files listed in `scripts/editor_imgui_allowlist.txt` may name
+  ImGui, and the list only shrinks. `ui/ImGuiVec.h` converts at the boundary.
 
 Enforced by `scripts/check_editor_layering.sh` (a ctest) plus the include-path
 firewall above. One deliberate exception: a panel may include the narrow

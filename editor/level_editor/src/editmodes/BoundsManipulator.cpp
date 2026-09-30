@@ -273,7 +273,7 @@ void BoundsManipulator::BuildVisual(const ManipulatorContext& ctx,
 
 int BoundsManipulator::HitTest(const ManipulatorContext& ctx,
                                const EditorViewport& viewport,
-                               ImVec2 screenPos) const
+                               Vec2d screenPos) const
 {
     Resolved r;
     if (!Resolve(ctx, r))
@@ -289,8 +289,8 @@ int BoundsManipulator::HitTest(const ManipulatorContext& ctx,
         const std::optional<ProjectedPoint> p = projection.WorldToPixel(FramePoint(ctx.Axes, handles[i].Center));
         if (!p.has_value())
             continue;
-        const float dx = screenPos.x - p->Pixel.x;
-        const float dy = screenPos.y - p->Pixel.y;
+        const float dx = screenPos.X - p->Pixel.X;
+        const float dy = screenPos.Y - p->Pixel.Y;
         const float pixels = std::sqrt(dx * dx + dy * dy);
         if (pixels <= bestPixels)
         {
@@ -305,7 +305,7 @@ std::unique_ptr<IInteraction> BoundsManipulator::BeginDrag(
     int part,
     const ManipulatorContext& ctx,
     const EditorViewport&,
-    ImVec2,
+    Vec2d,
     ModifierFlags) const
 {
     Resolved r;

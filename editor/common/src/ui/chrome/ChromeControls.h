@@ -1,5 +1,7 @@
 #pragma once
 
+#include "actions/ActionTone.h"
+
 #include "icons/IconId.h"
 
 #include <imgui.h>
@@ -13,12 +15,7 @@
 // styled by the palette, so a panel's noise stays low.
 namespace EditorChrome
 {
-enum class ButtonTone
-{
-    Normal,      // an ordinary action: dark body, steel edge, cyan label
-    Active,      // a toggle that is on or an important action: amber
-    Destructive, // removes something: red
-};
+using ButtonTone = ActionTone;
 
 // A mounted button. Hover brightens the edge and adds a faint glow; pressing
 // lights the interior. size (0, 0) fits the label. `id` is the ImGui id;

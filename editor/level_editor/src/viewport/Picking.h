@@ -5,7 +5,7 @@
 #include "meshedit/MeshElementKind.h"
 #include "selection/SelectableRef.h"
 
-#include <imgui.h>
+#include <math/Vec.h>
 
 #include <cstdint>
 #include <functional>
@@ -77,30 +77,30 @@ public:
         ProxyProvider = std::move(provider);
     }
     [[nodiscard]] SelectableRef Pick(const EditorViewport& viewport,
-                                     ImVec2 point,
+                                     Vec2d point,
                                      const EditorScene& scene,
                                      BrushPickRequest request = {}) const;
     [[nodiscard]] std::optional<Vec3d> ProjectPointToGrid(const EditorViewport& viewport,
-                                                          ImVec2 point,
+                                                          Vec2d point,
                                                           const GridSettings& settings) const;
     // Ray/plane intersection snapped on the given plane (which carries its own
     // origin, axes, spacing and snap-enable). ProjectPointToGrid is this against
     // the viewport's orientation grid.
     [[nodiscard]] std::optional<Vec3d> ProjectPointToPlane(const EditorViewport& viewport,
-                                                           ImVec2 point,
+                                                           Vec2d point,
                                                            const GridPlane& plane) const;
     // Nearest brush surface under the cursor (visible, unlocked brushes), or
     // nullopt if the ray misses every brush.
     [[nodiscard]] std::optional<SurfaceHit> PickSurface(const EditorViewport& viewport,
-                                                        ImVec2 point,
+                                                        Vec2d point,
                                                         const EditorScene& scene) const;
 
     // Rubber-band selection: every element of the given mode whose projection
     // falls in the screen rectangle. Entities by projected-bounds overlap;
     // vertices/edges/faces by projected point (position/midpoint/center) inside.
     [[nodiscard]] std::vector<SelectableRef> PickInRect(const EditorViewport& viewport,
-                                                        ImVec2 rectMin,
-                                                        ImVec2 rectMax,
+                                                        Vec2d rectMin,
+                                                        Vec2d rectMax,
                                                         const EditorScene& scene,
                                                         MeshElementKind mode) const;
 
@@ -110,7 +110,7 @@ public:
     // the cursor leans toward, anywhere on the face). Invalid ref if nothing is hit
     // or the mode is not Edge/Face.
     [[nodiscard]] SelectableRef PickLoopSeedEdge(const EditorViewport& viewport,
-                                                 ImVec2 point,
+                                                 Vec2d point,
                                                  const EditorScene& scene,
                                                  MeshElementKind mode,
                                                  EntityId restrictTo = {}) const;
@@ -137,15 +137,15 @@ private:
     // viewport and select the nearest within a pixel threshold, breaking ties by
     // depth.
     [[nodiscard]] SelectableRef PickEdge(const EditorViewport& viewport,
-                                         ImVec2 point,
+                                         Vec2d point,
                                          const EditorScene& scene,
                                          EntityId restrictTo = {}) const;
     [[nodiscard]] SelectableRef PickVertex(const EditorViewport& viewport,
-                                           ImVec2 point,
+                                           Vec2d point,
                                            const EditorScene& scene,
                                            EntityId restrictTo = {}) const;
 
-    [[nodiscard]] Ray3d BuildRay(const EditorViewport& viewport, ImVec2 point) const;
+    [[nodiscard]] Ray3d BuildRay(const EditorViewport& viewport, Vec2d point) const;
 
     EntityProxyProvider ProxyProvider;
 };

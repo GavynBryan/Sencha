@@ -39,6 +39,12 @@
 #      that names a header existing only in another workspace tree is a
 #      violation.
 #
+#   F. ImGui leaves the editor one stage at a time. A file under editor/ may
+#      name ImGui (its headers, its namespace, its types) only while it is
+#      listed in scripts/editor_imgui_allowlist.txt, and a listed file that no
+#      longer names it is a violation too, so the list can only shrink until it
+#      is empty and the editor stops linking ImGui.
+#
 # Usage: check_editor_layering.sh <source-root>
 
 set -uo pipefail
@@ -138,6 +144,26 @@ for ws in $WORKSPACES; do
     done < <(grep -rnE '^[[:space:]]*#include[[:space:]]*"' "$own" 2>/dev/null)
 done
 
+# F. The ImGui ratchet. Comment-only lines are ignored, like every rule here.
+imgui_pattern='(#include[[:space:]]*[<"][^">]*imgui|\bIm(Gui|Vec2|Vec4|TextureID|DrawList|U32|Font|Wchar)\b|ImGui::|ImGui[A-Z][A-Za-z]*Flags)'
+imgui_allowlist="$ROOT/scripts/editor_imgui_allowlist.txt"
+imgui_users="$(cd "$ROOT" && grep -rnE "$imgui_pattern" editor --include='*.h' --include='*.cpp' 2>/dev/null \
+               | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*)' | cut -d: -f1 | sort -u)"
+imgui_allowed="$(grep -vE '^[[:space:]]*(#|$)' "$imgui_allowlist" 2>/dev/null | sort -u)"
+imgui_new="$(comm -23 <(printf '%s\n' "$imgui_users") <(printf '%s\n' "$imgui_allowed") | grep -v '^$')"
+if [ -n "$imgui_new" ]; then
+    echo "VIOLATION: ImGui in a file that is not on scripts/editor_imgui_allowlist.txt (present it through Shoji instead)"
+    echo "$imgui_new"
+    echo
+    status=1
+fi
+imgui_stale="$(comm -13 <(printf '%s\n' "$imgui_users") <(printf '%s\n' "$imgui_allowed") | grep -v '^$')"
+if [ -n "$imgui_stale" ]; then
+    echo "VIOLATION: listed in scripts/editor_imgui_allowlist.txt but no longer uses ImGui (remove the entry)"
+    echo "$imgui_stale"
+    echo
+    status=1
+fi
 if [ "$status" -eq 0 ]; then
     echo "editor layering directions: OK"
 fi

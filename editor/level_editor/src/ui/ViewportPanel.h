@@ -50,7 +50,7 @@ public:
     // payload carried. The composition root installs the handler that picks a
     // point and places; the panel only reports the drop.
     using SceneDropHandler =
-        std::function<void(ViewportId, ImVec2, std::string_view)>;
+        std::function<void(ViewportId, Vec2d, std::string_view)>;
     void SetSceneDropHandler(SceneDropHandler handler)
     {
         SceneDrop = std::move(handler);

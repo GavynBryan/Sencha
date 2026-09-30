@@ -488,10 +488,10 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     // screen rect. The offscreen target is origin-(0,0) and sized to the target,
     // so override the rect for this pass and restore it after. Picking reads the
     // screen rect on the input path, not here.
-    const ImVec2 savedMin = viewport.RegionMin;
-    const ImVec2 savedMax = viewport.RegionMax;
-    viewport.RegionMin = ImVec2(0.0f, 0.0f);
-    viewport.RegionMax = ImVec2(static_cast<float>(target.Extent.width),
+    const Vec2d savedMin = viewport.RegionMin;
+    const Vec2d savedMax = viewport.RegionMax;
+    viewport.RegionMin = Vec2d(0.0f, 0.0f);
+    viewport.RegionMax = Vec2d(static_cast<float>(target.Extent.width),
                                 static_cast<float>(target.Extent.height));
 
     // Brackets the recording below: both planes into attachment layouts now,
@@ -669,10 +669,10 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
         RenderTargetSession glowTarget(frame.Cmd, target.BloomImage[0],
                                        target.BloomLayout[0]);
 
-        const ImVec2 savedMin = viewport.RegionMin;
-        const ImVec2 savedMax = viewport.RegionMax;
-        viewport.RegionMin = ImVec2(0.0f, 0.0f);
-        viewport.RegionMax = ImVec2(static_cast<float>(target.BloomExtent.width),
+        const Vec2d savedMin = viewport.RegionMin;
+        const Vec2d savedMax = viewport.RegionMax;
+        viewport.RegionMin = Vec2d(0.0f, 0.0f);
+        viewport.RegionMax = Vec2d(static_cast<float>(target.BloomExtent.width),
                                     static_cast<float>(target.BloomExtent.height));
 
         // Depth is attached but neither loaded nor stored: the wide-line pipeline

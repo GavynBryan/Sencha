@@ -16,7 +16,7 @@ public:
     std::string_view GetDisplayName() const override;
     IconId GetIcon() const override;
 
-    InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) override;
+    InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, Vec2d pos) override;
     void OnHoverEnd(ToolContext& ctx) override;
     InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     InputConsumed OnKeyDown(ToolContext& ctx, const KeyDownEvent& event) override;
@@ -37,7 +37,7 @@ public:
 
 private:
     // Revert any active preview, pick the edge under the cursor, and preview its cut.
-    void UpdatePreview(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos);
+    void UpdatePreview(ToolContext& ctx, EditorViewport& viewport, Vec2d pos);
     void Commit(ToolContext& ctx);
     void Revert(ToolContext& ctx);
 

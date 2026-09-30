@@ -1,4 +1,5 @@
 #include "ViewportPanel.h"
+#include "ui/ImGuiVec.h"
 
 #include "ui/chrome/ChromeSelection.h"
 
@@ -56,8 +57,8 @@ void ViewportPanel::ClearViewportRegion()
     RegionHovered = false;
     if (EditorViewport* viewport = Layout.Find(Viewport))
     {
-        viewport->RegionMin = ImVec2(0.0f, 0.0f);
-        viewport->RegionMax = ImVec2(0.0f, 0.0f);
+        viewport->RegionMin = {};
+        viewport->RegionMax = {};
     }
 }
 
@@ -106,9 +107,8 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
     if (ImGui::IsWindowHovered())
         RegionHovered = true;
 
-    viewport.RegionMin = ImGui::GetWindowPos();
-    viewport.RegionMax = ImVec2(viewport.RegionMin.x + ImGui::GetWindowSize().x,
-                                viewport.RegionMin.y + ImGui::GetWindowSize().y);
+    viewport.RegionMin = ToVec2d(ImGui::GetWindowPos());
+    viewport.RegionMax = viewport.RegionMin + ToVec2d(ImGui::GetWindowSize());
 
     // Composite this viewport's offscreen render (filled by the Offscreen phase this
     // frame). Recording the pixel size here also drives the target size next render.
@@ -121,8 +121,8 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
         // Snap to integer pixels and display at the texture's exact integer size so the
         // nearest-sampled copy maps 1:1; a fractional position would resample the texels
         // against the pixel grid.
-        ImGui::SetCursorScreenPos(ImVec2(std::round(viewport.RegionMin.x),
-                                         std::round(viewport.RegionMin.y)));
+        ImGui::SetCursorScreenPos(ImVec2(std::round(viewport.RegionMin.X),
+                                         std::round(viewport.RegionMin.Y)));
         ImGui::Image(tex, ImVec2(static_cast<float>(targetExtent.width),
                                  static_cast<float>(targetExtent.height)));
         if (SceneDrop && ImGui::BeginDragDropTarget())
@@ -130,7 +130,7 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
             if (const ImGuiPayload* payload =
                     ImGui::AcceptDragDropPayload(SceneBrowserPanel::kDragPayloadType))
             {
-                SceneDrop(viewport.Id, ImGui::GetMousePos(),
+                SceneDrop(viewport.Id, ToVec2d(ImGui::GetMousePos()),
                           std::string_view(static_cast<const char*>(payload->Data),
                                            static_cast<std::size_t>(payload->DataSize) - 1));
             }
@@ -141,15 +141,16 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
     // The active view is the one being edited, so it carries the selection
     // outline; the others keep the steel hairline.
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    EditorChrome::ContentBoundary(drawList, viewport.RegionMin, viewport.RegionMax, Style, viewport.IsActive);
+    EditorChrome::ContentBoundary(drawList, ToImVec2(viewport.RegionMin), ToImVec2(viewport.RegionMax),
+                                 Style, viewport.IsActive);
 
     // Rubber-band selection rectangle, drawn in the viewport it was started in.
     if (Marquee.Active && Marquee.Viewport == viewport.Id)
     {
-        const ImVec2 lo(std::min(Marquee.Start.x, Marquee.Current.x),
-                        std::min(Marquee.Start.y, Marquee.Current.y));
-        const ImVec2 hi(std::max(Marquee.Start.x, Marquee.Current.x),
-                        std::max(Marquee.Start.y, Marquee.Current.y));
+        const ImVec2 lo(std::min(Marquee.Start.X, Marquee.Current.X),
+                        std::min(Marquee.Start.Y, Marquee.Current.Y));
+        const ImVec2 hi(std::max(Marquee.Start.X, Marquee.Current.X),
+                        std::max(Marquee.Start.Y, Marquee.Current.Y));
         drawList->AddRectFilled(lo, hi, ImGui::GetColorU32(EditorUi::WithAlpha(EditorUi::Accent, 0.16f)));
         drawList->AddRect(lo, hi, ImGui::GetColorU32(EditorUi::AccentHover));
     }
@@ -163,9 +164,9 @@ void ViewportPanel::DrawViewport(EditorViewport& viewport, ImVec2 size)
 void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* drawList)
 {
     const ViewportProjection projection(viewport);
-    const auto inRegion = [&](ImVec2 px) {
-        return px.x >= viewport.RegionMin.x && px.x <= viewport.RegionMax.x
-            && px.y >= viewport.RegionMin.y && px.y <= viewport.RegionMax.y;
+    const auto inRegion = [&](Vec2d px) {
+        return px.X >= viewport.RegionMin.X && px.X <= viewport.RegionMax.X
+            && px.Y >= viewport.RegionMin.Y && px.Y <= viewport.RegionMax.Y;
     };
     const auto toColor = [](const Vec4& c) {
         return ImGui::GetColorU32(ImVec4(c.X, c.Y, c.Z, c.W));
@@ -192,7 +193,7 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         const std::optional<ProjectedPoint> p = projection.WorldToPixel(label.World);
         if (!p.has_value() || !inRegion(p->Pixel))
             continue;
-        drawList->AddText(ImVec2(p->Pixel.x + 4.0f, p->Pixel.y - 6.0f), toColor(label.Color), label.Text.c_str());
+        drawList->AddText(ImVec2(p->Pixel.X + 4.0f, p->Pixel.Y - 6.0f), toColor(label.Color), label.Text.c_str());
     }
 
     for (const PointHandleRequest& handle : Overlay.PointHandles)
@@ -203,8 +204,8 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         if (!p.has_value() || !inRegion(p->Pixel))
             continue;
         const float half = std::max(2.0f, handle.SizePixels * 0.5f);
-        const ImVec2 min(p->Pixel.x - half, p->Pixel.y - half);
-        const ImVec2 max(p->Pixel.x + half, p->Pixel.y + half);
+        const ImVec2 min(p->Pixel.X - half, p->Pixel.Y - half);
+        const ImVec2 max(p->Pixel.X + half, p->Pixel.Y + half);
         drawList->AddRectFilled(min, max, toColor(handle.Fill), 1.0f);
         drawList->AddRect(min, max, toColor(handle.Border), 1.0f, 0, 1.5f);
     }
@@ -232,7 +233,7 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
                 projection.WorldToPixel(ring[static_cast<std::size_t>(i)]);
             whole = p.has_value();
             if (whole)
-                rim.push_back(p->Pixel);
+                rim.push_back(ToImVec2(p->Pixel));
         }
         const std::optional<ProjectedPoint> knob =
             projection.WorldToPixel(placement.PointAt(request.Angle));
@@ -248,10 +249,10 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
             const std::optional<ProjectedPoint> p =
                 projection.WorldToPixel(stops[static_cast<std::size_t>(i)]);
             if (p.has_value())
-                ticks.push_back(p->Pixel);
+                ticks.push_back(ToImVec2(p->Pixel));
         }
 
-        EditorChrome::DrawDial(drawList, rim, ticks, knob->Pixel, request.Hot);
+        EditorChrome::DrawDial(drawList, rim, ticks, ToImVec2(knob->Pixel), request.Hot);
     }
 
     // Tool buttons pinned over the geometry they act on. Painted here rather
@@ -261,12 +262,12 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
     {
         if (request.Viewport.IsValid() && request.Viewport != viewport.Id)
             continue;
-        std::vector<std::optional<ImVec2>> anchors;
+        std::vector<std::optional<Vec2d>> anchors;
         anchors.reserve(request.Anchors.size());
         for (const Vec3d& world : request.Anchors)
         {
             const std::optional<ProjectedPoint> p = projection.WorldToPixel(world);
-            anchors.push_back(p.has_value() ? std::optional<ImVec2>(p->Pixel) : std::nullopt);
+            anchors.push_back(p.has_value() ? std::optional<Vec2d>(p->Pixel) : std::nullopt);
         }
         const ViewportButtons::Row row =
             ViewportButtons::Layout(anchors, static_cast<int>(request.Buttons.size()),
@@ -277,8 +278,8 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         for (int i = 0; i < row.Count; ++i)
         {
             const ViewportButton& button = request.Buttons[static_cast<std::size_t>(i)];
-            const ImVec2 min = row.MinOf(i);
-            const ImVec2 max = row.MaxOf(i);
+            const ImVec2 min = ToImVec2(row.MinOf(i));
+            const ImVec2 max = ToImVec2(row.MaxOf(i));
             const bool hot = request.Hot == i;
             if (button.Icon == IconId::None)
                 EditorChrome::DrawTextButton(drawList, min, max, button.Label.c_str(), button.Tone,
@@ -296,8 +297,8 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         // the buttons it describes and never hit-tested.
         if (request.Caption.has_value())
         {
-            const ImVec2 center = row.CaptionCenter(request.Caption->FirstButton,
-                                                    request.Caption->LastButton);
+            const ImVec2 center = ToImVec2(row.CaptionCenter(request.Caption->FirstButton,
+                                                             request.Caption->LastButton));
             const ImVec2 size = ImGui::CalcTextSize(request.Caption->Text.c_str());
             drawList->AddText(ImVec2(center.x - size.x * 0.5f, center.y - size.y),
                               toColor(EditorTheme::DimensionLabel), request.Caption->Text.c_str());
@@ -309,7 +310,7 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
     {
         const std::optional<ProjectedPoint> p = projection.WorldToPixel(Overlay.Hover.MeasureAnchor);
         if (p.has_value() && inRegion(p->Pixel))
-            drawList->AddText(ImVec2(p->Pixel.x + 4.0f, p->Pixel.y - 6.0f),
+            drawList->AddText(ImVec2(p->Pixel.X + 4.0f, p->Pixel.Y - 6.0f),
                               toColor(EditorTheme::HoverEligible), Overlay.Hover.Measure.c_str());
     }
 
@@ -321,7 +322,7 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         const std::optional<ProjectedPoint> a = projection.WorldToPixel(segment.From);
         const std::optional<ProjectedPoint> b = projection.WorldToPixel(segment.To);
         if (a.has_value() && b.has_value())
-            drawList->AddLine(a->Pixel, b->Pixel, toColor(segment.Color), segment.Thickness);
+            drawList->AddLine(ToImVec2(a->Pixel), ToImVec2(b->Pixel), toColor(segment.Color), segment.Thickness);
     }
 
     // Active drag's origin->current line + distance, only in the view it started in.
@@ -332,8 +333,8 @@ void ViewportPanel::DrawOverlay(const EditorViewport& viewport, ImDrawList* draw
         if (a.has_value() && b.has_value())
         {
             const ImU32 color = toColor(EditorTheme::Readout);
-            drawList->AddLine(a->Pixel, b->Pixel, color, 2.0f);
-            const ImVec2 mid((a->Pixel.x + b->Pixel.x) * 0.5f, (a->Pixel.y + b->Pixel.y) * 0.5f);
+            drawList->AddLine(ToImVec2(a->Pixel), ToImVec2(b->Pixel), color, 2.0f);
+            const ImVec2 mid((a->Pixel.X + b->Pixel.X) * 0.5f, (a->Pixel.Y + b->Pixel.Y) * 0.5f);
             drawList->AddText(ImVec2(mid.x + 4.0f, mid.y - 6.0f), color, Overlay.Readout.Text.c_str());
         }
     }

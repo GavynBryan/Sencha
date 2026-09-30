@@ -302,10 +302,10 @@ std::optional<double> SelectionBoundCoord(const ManipulatorContext& ctx, MeshEle
     return (maxCoord - p >= p - minCoord) ? maxCoord : minCoord;
 }
 
-float ScreenDistance(ImVec2 a, ImVec2 b)
+float ScreenDistance(Vec2d a, Vec2d b)
 {
-    const float dx = a.x - b.x;
-    const float dy = a.y - b.y;
+    const float dx = a.X - b.X;
+    const float dy = a.Y - b.Y;
     return std::sqrt(dx * dx + dy * dy);
 }
 
@@ -313,7 +313,7 @@ class ScaleDrag : public IInteraction
 {
 public:
     ScaleDrag(Vec3d pivot, int part, Vec3d axisDir, double startParam,
-              ImVec2 pivotScreen, float startScreenDist, std::optional<double> boundOffset,
+              Vec2d pivotScreen, float startScreenDist, std::optional<double> boundOffset,
               std::unique_ptr<IScaleApply> apply)
         : Pivot(pivot), Part(part), AxisDir(axisDir), StartParam(startParam)
         , PivotScreen(pivotScreen), StartScreenDist(startScreenDist)
@@ -339,7 +339,7 @@ public:
     }
 
 private:
-    Vec3d FactorAt(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos) const
+    Vec3d FactorAt(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos) const
     {
         if (Part >= 1 && Part <= 3)
         {
@@ -389,7 +389,7 @@ private:
     int Part;
     Vec3d AxisDir;
     double StartParam;
-    ImVec2 PivotScreen;
+    Vec2d PivotScreen;
     float StartScreenDist;
     // AABB bound minus pivot along AxisDir at drag start, for absolute grid snap.
     std::optional<double> BoundOffset;
@@ -433,7 +433,7 @@ void ScaleManipulator::BuildVisual(const ManipulatorContext& ctx,
 
 int ScaleManipulator::HitTest(const ManipulatorContext& ctx,
                               const EditorViewport& viewport,
-                              ImVec2 screenPos) const
+                              Vec2d screenPos) const
 {
     const std::optional<Vec3d> pivot =
         ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind(), ctx.Pivot);
@@ -480,7 +480,7 @@ std::unique_ptr<IInteraction> ScaleManipulator::BeginDrag(
     int part,
     const ManipulatorContext& ctx,
     const EditorViewport& viewport,
-    ImVec2 screenPos,
+    Vec2d screenPos,
     ModifierFlags modifiers) const
 {
     if (part < 1 || part > kUniformPart)
@@ -503,7 +503,7 @@ std::unique_ptr<IInteraction> ScaleManipulator::BeginDrag(
         startParam = *s;
     }
 
-    ImVec2 pivotScreen = screenPos;
+    Vec2d pivotScreen = screenPos;
     if (const std::optional<ProjectedPoint> p = projection.WorldToPixel(*pivot))
         pivotScreen = p->Pixel;
     const float startScreenDist = ScreenDistance(screenPos, pivotScreen);

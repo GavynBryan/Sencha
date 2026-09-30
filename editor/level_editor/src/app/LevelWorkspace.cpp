@@ -46,6 +46,7 @@
 #include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
 #include "ui/ViewportPanel.h"
+#include "ui/ImGuiVec.h"
 
 #include <SDL3/SDL.h>
 
@@ -322,18 +323,18 @@ void LevelWorkspace::BuildInput()
                 return it->second;
             return KeyChord{ .Key = fallback, .Mods = {} };
         };
-        const auto frame = []
+        const auto frame = [this]
         {
             // The one place a wheel learns the window and the UI scale:
             // captured together at open, resolved once into its layout.
-            const ImGuiViewport* vp = ImGui::GetMainViewport();
+            const WindowExtent extent = Window->GetExtent();
             return RadialMenu::Frame{
                 .Scale = EditorUi::UiScale,
-                .Min = vp->WorkPos,
-                .Max = ImVec2(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y),
+                .Min = {},
+                .Max = { static_cast<float>(extent.Width), static_cast<float>(extent.Height) },
             };
         };
-        const auto pointerOnScene = [this](ImVec2 pointer)
+        const auto pointerOnScene = [this](Vec2d pointer)
         {
             // The viewport whose rect holds the pointer, and that same
             // viewport's panel saying nothing is drawn over it: one
@@ -675,7 +676,7 @@ void LevelWorkspace::BuildUi()
         // the nearest brush surface, or the working grid where the ray misses
         // everything. One undoable command, the placement's root selected.
         const auto placeDroppedScene =
-            [this](ViewportId viewportId, ImVec2 position, std::string_view source)
+            [this](ViewportId viewportId, Vec2d position, std::string_view source)
         {
             const EditorViewport* viewport = Workspace->Layout.Find(viewportId);
             if (viewport == nullptr || Commands == nullptr)
@@ -1117,7 +1118,7 @@ void LevelWorkspace::DrawRadialMenu(const RadialMenuSession& wheel, const IRadia
         const IRadialMenuModel::MenuItem item = menu.Item(index);
         const RadialMenu::Span span = RadialMenu::SectorSpan(index, layout.Count);
         slots.push_back({
-            .Center = RadialMenu::SlotCenter(layout, index),
+            .Center = ToImVec2(RadialMenu::SlotCenter(layout, index)),
             .Size = layout.Button,
             .Angle0 = span.Begin,
             .Angle1 = span.End,
@@ -1143,7 +1144,7 @@ void LevelWorkspace::DrawRadialMenu(const RadialMenuSession& wheel, const IRadia
         {
             const RadialMenu::Span span = RadialMenu::VariantSpan(layout, hot, v, choiceCount);
             variants.push_back({
-                .Center = RadialMenu::VariantSlotCenter(layout, hot, v, choiceCount),
+                .Center = ToImVec2(RadialMenu::VariantSlotCenter(layout, hot, v, choiceCount)),
                 .Size = layout.Button,
                 .Angle0 = span.Begin,
                 .Angle1 = span.End,
@@ -1159,7 +1160,7 @@ void LevelWorkspace::DrawRadialMenu(const RadialMenuSession& wheel, const IRadia
     // The foreground list draws after every window, floating panels and open
     // menus included, which is where a modal surface belongs.
     EditorChrome::DrawRadialMenu(ImGui::GetForegroundDrawList(), EditorChrome::WheelPaint{
-        .Center = layout.Center,
+        .Center = ToImVec2(layout.Center),
         .Radius = layout.Radius,
         .Hub = layout.Hub,
         .Seam = layout.Seam,

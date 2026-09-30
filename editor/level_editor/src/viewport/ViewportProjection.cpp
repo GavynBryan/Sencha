@@ -6,8 +6,8 @@
 
 namespace
 {
-Vec2d ToVec2(ImVec2 v) { return Vec2d(v.x, v.y); }
-ImVec2 ToImVec2(Vec2d v) { return ImVec2{ v.X, v.Y }; }
+Vec2d ToVec2(Vec2d v) { return Vec2d(v.X, v.Y); }
+Vec2d ToImVec2(Vec2d v) { return Vec2d{ v.X, v.Y }; }
 }
 
 ViewportProjection::ViewportProjection(const EditorViewport& viewport)
@@ -26,7 +26,7 @@ ViewportProjection::ViewportProjection(const EditorViewport& viewport)
     ScreenRight = delta.SqrMagnitude() > 0.0f ? delta.Normalized() : Vec3d(1.0f, 0.0f, 0.0f);
 }
 
-Ray3d ViewportProjection::RayThroughPixel(ImVec2 pixel) const
+Ray3d ViewportProjection::RayThroughPixel(Vec2d pixel) const
 {
     return ViewportMath::RayThroughPixel(InverseViewProjection, Region, ToVec2(pixel));
 }
@@ -47,15 +47,15 @@ float ViewportProjection::WorldSizeForPixels(Vec3d at, float pixels) const
     if (!a.has_value() || !b.has_value())
         return pixels * 0.01f;
 
-    const float dx = b->Pixel.x - a->Pixel.x;
-    const float dy = b->Pixel.y - a->Pixel.y;
+    const float dx = b->Pixel.X - a->Pixel.X;
+    const float dy = b->Pixel.Y - a->Pixel.Y;
     const float pixelsPerWorld = std::sqrt(dx * dx + dy * dy);
     if (pixelsPerWorld <= 1.0e-6f)
         return pixels * 0.01f;
     return pixels / pixelsPerWorld;
 }
 
-float ViewportProjection::DistancePointToSegment(ImVec2 p, ImVec2 a, ImVec2 b)
+float ViewportProjection::DistancePointToSegment(Vec2d p, Vec2d a, Vec2d b)
 {
     return ViewportMath::DistancePointToSegment(ToVec2(p), ToVec2(a), ToVec2(b));
 }

@@ -6,7 +6,6 @@
 #include <math/Vec.h>
 #include <math/geometry/3d/Ray3d.h>
 
-#include <imgui.h>
 
 #include <optional>
 
@@ -16,7 +15,7 @@ struct EditorViewport;
 // (W) for front-to-back tie-breaking.
 struct ProjectedPoint
 {
-    ImVec2 Pixel = {};
+    Vec2d Pixel = {};
     float Depth = 0.0f;
 };
 
@@ -29,11 +28,11 @@ class ViewportProjection
 public:
     explicit ViewportProjection(const EditorViewport& viewport);
 
-    [[nodiscard]] Ray3d RayThroughPixel(ImVec2 pixel) const;
+    [[nodiscard]] Ray3d RayThroughPixel(Vec2d pixel) const;
     [[nodiscard]] std::optional<ProjectedPoint> WorldToPixel(Vec3d world) const;
     [[nodiscard]] float WorldSizeForPixels(Vec3d at, float pixels) const;
 
-    [[nodiscard]] static float DistancePointToSegment(ImVec2 p, ImVec2 a, ImVec2 b);
+    [[nodiscard]] static float DistancePointToSegment(Vec2d p, Vec2d a, Vec2d b);
 
 private:
     ViewportMath::Rect Region = {};

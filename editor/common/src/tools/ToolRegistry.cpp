@@ -113,7 +113,7 @@ std::unique_ptr<IInteraction> ToolRegistry::BeginDrag(EditorViewport& viewport, 
     return active->BeginDrag(*Context, viewport, pressPointer);
 }
 
-InputConsumed ToolRegistry::Hover(EditorViewport& viewport, ImVec2 pos)
+InputConsumed ToolRegistry::Hover(EditorViewport& viewport, Vec2d pos)
 {
     ITool* active = GetActiveTool();
     if (active == nullptr)

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "icons/IconId.h"
-#include "ui/chrome/ChromeControls.h"
+#include "actions/ActionTone.h"
 #include "selection/SelectableRef.h"
 #include "viewport/ViewportId.h"
 
@@ -75,7 +75,7 @@ struct ViewportButton
     IconId Icon = IconId::None;
     std::string Label;
     bool Enabled = true;
-    EditorChrome::ButtonTone Tone = EditorChrome::ButtonTone::Normal; // the panel buttons' own voice
+    ActionTone Tone = ActionTone::Normal;
     std::string Tooltip; // shown while the button is hot; empty for none
 };
 

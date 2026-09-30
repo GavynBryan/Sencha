@@ -23,8 +23,8 @@ protected:
         EditorViewport viewport;
         viewport.ApplyOrientation(ViewportOrientation::Top);
         viewport.Id = ViewportId{ 1 };
-        viewport.RegionMin = ImVec2(0.0f, 0.0f);
-        viewport.RegionMax = ImVec2(400.0f, 400.0f);
+        viewport.RegionMin = Vec2d(0.0f, 0.0f);
+        viewport.RegionMax = Vec2d(400.0f, 400.0f);
         return viewport;
     }
 
@@ -46,7 +46,7 @@ TEST_F(GizmoGateTest, AToolThatOwnsItsInteractionHidesTheGizmo)
     ASSERT_GT(VisualLines(top), 0u) << "the select tool shows the gizmo";
 
     // Hover a gizmo handle under Select: the bounds corner of the selected brush.
-    const ImVec2 corner = ViewportProjection(top).WorldToPixel(Vec3d{ 1, 0, 1 })->Pixel;
+    const Vec2d corner = ViewportProjection(top).WorldToPixel(Vec3d{ 1, 0, 1 })->Pixel;
     Session().UpdateHover(top, corner);
 
     ASSERT_TRUE(Workspace.Interaction.Tools->Activate("clip"));

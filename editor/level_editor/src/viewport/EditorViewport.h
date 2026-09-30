@@ -8,7 +8,7 @@
 
 #include <math/spatial/GridPlane.h>
 
-#include <imgui.h>
+#include <math/Vec.h>
 
 struct EditorViewport
 {
@@ -18,8 +18,8 @@ struct EditorViewport
     // How brushes draw in this view. Defaulted from the orientation by
     // ApplyOrientation; left public so a future per-view toggle can override it.
     ViewportShading Shading = ViewportShading::Wireframe;
-    ImVec2 RegionMin = {};
-    ImVec2 RegionMax = {};
+    Vec2d RegionMin = {};
+    Vec2d RegionMax = {};
     bool IsActive = false;
     bool WantsFlyCameraInput = false;
     bool WantsOrthoPanInput = false;
@@ -41,5 +41,5 @@ struct EditorViewport
     // goes through this one, once per view, and every renderer in the view is
     // handed the result.
     [[nodiscard]] CameraRenderData CameraForExtent(uint32_t width, uint32_t height) const;
-    [[nodiscard]] bool Contains(ImVec2 point) const;
+    [[nodiscard]] bool Contains(Vec2d point) const;
 };

@@ -2,7 +2,6 @@
 
 #include "ViewportMath.h"
 
-#include <imgui.h>
 #include <math/Vec.h>
 
 #include <algorithm>
@@ -109,8 +108,8 @@ struct Placement
 
 // Distance in pixels from `cursor` to the projected rim, or nothing when too
 // little of the rim reached the screen to measure against.
-[[nodiscard]] inline std::optional<float> DistanceToRim(std::span<const std::optional<ImVec2>> rim,
-                                                        ImVec2 cursor)
+[[nodiscard]] inline std::optional<float> DistanceToRim(std::span<const std::optional<Vec2d>> rim,
+                                                        Vec2d cursor)
 {
     std::optional<float> best;
     for (std::size_t i = 0; i + 1 < rim.size(); ++i)
@@ -118,8 +117,8 @@ struct Placement
         if (!rim[i].has_value() || !rim[i + 1].has_value())
             continue;
         const float distance = ViewportMath::DistancePointToSegment(
-            Vec2d{ cursor.x, cursor.y }, Vec2d{ rim[i]->x, rim[i]->y },
-            Vec2d{ rim[i + 1]->x, rim[i + 1]->y });
+            Vec2d{ cursor.X, cursor.Y }, Vec2d{ rim[i]->X, rim[i]->Y },
+            Vec2d{ rim[i + 1]->X, rim[i + 1]->Y });
         if (!best.has_value() || distance < *best)
             best = distance;
     }

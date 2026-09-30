@@ -30,7 +30,7 @@ private:
 
     // Resolves the element under the cursor for the active element mode and writes
     // it (plus an edge's length) to the overlay hover state, for the renderer glow.
-    void UpdateHover(EditorViewport& viewport, ImVec2 pos);
+    void UpdateHover(EditorViewport& viewport, Vec2d pos);
 
     // Shift+Right-click: sample the material the face under the cursor renders
     // with into the active material. View state only; not an undo step.

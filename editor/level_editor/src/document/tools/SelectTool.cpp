@@ -36,7 +36,7 @@ constexpr std::array<IconId, MeshElementKindCount> kModeIcons = {
 
 // Expand the loop through the element under the cursor (edge loop or face strip),
 // restricted to the active body. Empty if nothing resolves.
-std::vector<SelectableRef> GatherLoop(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos,
+std::vector<SelectableRef> GatherLoop(ToolContext& ctx, EditorViewport& viewport, Vec2d pos,
                                       MeshElementKind mode, EntityId restrictTo)
 {
     const SelectableRef seed = ctx.Picking.PickLoopSeedEdge(viewport, pos, ctx.Scene, mode, restrictTo);

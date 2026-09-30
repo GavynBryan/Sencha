@@ -11,7 +11,7 @@ void StampOriginViewport(InputRouter& router, ViewportLayout& layout, InputEvent
     // in; otherwise a positioned event belongs to the viewport under the cursor, which
     // also becomes the focused viewport. (Wheel carries no position and keeps
     // targeting the focused viewport downstream.)
-    const auto resolve = [&](ImVec2 position) -> ViewportId
+    const auto resolve = [&](Vec2d position) -> ViewportId
     {
         if (router.PointerCaptured())
             return router.CaptureViewport();

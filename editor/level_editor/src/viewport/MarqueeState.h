@@ -2,7 +2,7 @@
 
 #include "viewport/ViewportId.h"
 
-#include <imgui.h>
+#include <math/Vec.h>
 
 // Transient rubber-band selection rectangle. Written by the select tool during a
 // drag, read by the viewport panel to draw the overlay. Screen-pixel coordinates
@@ -11,7 +11,7 @@
 struct MarqueeState
 {
     bool Active = false;
-    ImVec2 Start = {};
-    ImVec2 Current = {};
+    Vec2d Start = {};
+    Vec2d Current = {};
     ViewportId Viewport = {};
 };

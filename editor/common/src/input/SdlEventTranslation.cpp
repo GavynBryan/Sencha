@@ -18,7 +18,7 @@ namespace
 // Where the pointer is as a key event is translated. A key event carries no
 // position of its own, and SDL keeps the pointer in the same window space the
 // mouse events report.
-ImVec2 PointerNow()
+Vec2d PointerNow()
 {
     float x = 0.0f;
     float y = 0.0f;

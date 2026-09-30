@@ -2,7 +2,6 @@
 
 #include <math/Vec.h>
 
-#include <imgui.h>
 
 #include <optional>
 
@@ -15,4 +14,4 @@ struct EditorViewport;
 // cursor, so callers fall back to their grid snap or a free move.
 [[nodiscard]] std::optional<Vec3d> ElementSnapPoint(const ToolContext& ctx,
                                                     const EditorViewport& viewport,
-                                                    ImVec2 point);
+                                                    Vec2d point);

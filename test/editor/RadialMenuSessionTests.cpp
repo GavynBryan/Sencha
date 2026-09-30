@@ -54,7 +54,7 @@ protected:
         Wheel = std::make_unique<RadialMenuSession>(
             Menu, KeyChord{ .Key = SDLK_Q, .Mods = {} },
             [] { return RadialMenu::Frame{ .Scale = 1.0f, .Min = { 0.0f, 0.0f }, .Max = { 1600.0f, 900.0f } }; },
-            [this](ImVec2 pointer)
+            [this](Vec2d pointer)
             {
                 Asked.push_back(pointer);
                 return OnScene;
@@ -85,7 +85,7 @@ protected:
         });
     }
 
-    InputConsumed Press(SDL_Keycode key, ImVec2 at = { 800.0f, 450.0f }, ModifierFlags mods = {})
+    InputConsumed Press(SDL_Keycode key, Vec2d at = { 800.0f, 450.0f }, ModifierFlags mods = {})
     {
         return Router.Route(KeyDownEvent{ .Key = key, .Modifiers = mods, .Pointer = at });
     }
@@ -93,20 +93,20 @@ protected:
     {
         return Router.Route(KeyUpEvent{ .Key = key, .Modifiers = mods, .Pointer = { 800.0f, 450.0f } });
     }
-    InputConsumed Move(ImVec2 to)
+    InputConsumed Move(Vec2d to)
     {
         return Router.Route(PointerMoveEvent{ .Position = to, .Delta = {}, .Modifiers = {} });
     }
     // A point inside sector `index` of the open wheel: twice the radius out,
     // the wedge rather than the button.
-    [[nodiscard]] ImVec2 InSector(int index) const
+    [[nodiscard]] Vec2d InSector(int index) const
     {
         const RadialMenu::Layout& layout = Wheel->GetLayout();
-        const ImVec2 slot = RadialMenu::SlotCenter(layout, index);
-        return { layout.Center.x + (slot.x - layout.Center.x) * 2.0f, layout.Center.y + (slot.y - layout.Center.y) * 2.0f };
+        const Vec2d slot = RadialMenu::SlotCenter(layout, index);
+        return { layout.Center.X + (slot.X - layout.Center.X) * 2.0f, layout.Center.Y + (slot.Y - layout.Center.Y) * 2.0f };
     }
-    [[nodiscard]] ImVec2 OnSlot(int index) const { return RadialMenu::SlotCenter(Wheel->GetLayout(), index); }
-    [[nodiscard]] ImVec2 InVariant(int parent, int index) const
+    [[nodiscard]] Vec2d OnSlot(int index) const { return RadialMenu::SlotCenter(Wheel->GetLayout(), index); }
+    [[nodiscard]] Vec2d InVariant(int parent, int index) const
     {
         return RadialMenu::VariantSlotCenter(Wheel->GetLayout(), parent, index, static_cast<int>(Menu.VariantsOf[static_cast<std::size_t>(parent)].size()));
     }
@@ -123,7 +123,7 @@ protected:
     std::unique_ptr<RadialMenuSession> Wheel;
     bool AheadGrabs = false;
     bool OnScene = true;
-    std::vector<ImVec2> Asked;
+    std::vector<Vec2d> Asked;
     std::vector<InputEvent> Reached;
 };
 }
@@ -132,8 +132,8 @@ TEST_F(RadialMenuSessionTest, HoldMoveReleaseSelectsTheSectorsEntry)
 {
     EXPECT_EQ(Press(SDLK_Q, { 300.0f, 300.0f }), InputConsumed::Yes);
     EXPECT_EQ(Wheel->GetPhase(), RadialMenuPhase::Open);
-    EXPECT_FLOAT_EQ(Wheel->GetLayout().Center.x, 300.0f);
-    EXPECT_FLOAT_EQ(Wheel->GetLayout().Center.y, 300.0f);
+    EXPECT_FLOAT_EQ(Wheel->GetLayout().Center.X, 300.0f);
+    EXPECT_FLOAT_EQ(Wheel->GetLayout().Center.Y, 300.0f);
     EXPECT_EQ(Wheel->GetLayout().Count, 6);
     EXPECT_EQ(Wheel->GetLayout().MaxVariants, 4);
     EXPECT_EQ(Wheel->GetHot(), -1);
@@ -172,7 +172,7 @@ TEST_F(RadialMenuSessionTest, AnEdgeOpenWithNoMotionSelectsNothing)
     // The wheel is shifted in from the edge, so the pointer already sits in a
     // sector; only motion makes a sector hot.
     (void)Press(SDLK_Q, { 5.0f, 450.0f });
-    EXPECT_GT(Wheel->GetLayout().Center.x, 5.0f);
+    EXPECT_GT(Wheel->GetLayout().Center.X, 5.0f);
     EXPECT_GE(RadialMenu::SectorAt(Wheel->GetLayout(), { 5.0f, 450.0f }), 0);
     EXPECT_EQ(Wheel->GetHot(), -1);
     (void)Release(SDLK_Q);
@@ -282,8 +282,8 @@ TEST_F(RadialMenuSessionTest, OffTheSceneTheKeyIsSwallowedAndNothingOpens)
     EXPECT_TRUE(Reached.empty());
     // The question was asked about where the key went down.
     ASSERT_EQ(Asked.size(), 1u);
-    EXPECT_FLOAT_EQ(Asked.front().x, 40.0f);
-    EXPECT_FLOAT_EQ(Asked.front().y, 40.0f);
+    EXPECT_FLOAT_EQ(Asked.front().X, 40.0f);
+    EXPECT_FLOAT_EQ(Asked.front().Y, 40.0f);
     // Motion and the release are nobody's.
     (void)Move({ 500.0f, 500.0f });
     EXPECT_EQ(ReachedMoves(), 1u);
@@ -313,9 +313,9 @@ TEST_F(RadialMenuSessionTest, MovingOutFromAnEntryIntoItsVariantsKeepsTheEntry)
     EXPECT_EQ(Wheel->GetHotVariant(), -1);
     for (int i = 0; i < 4; ++i)
     {
-        const ImVec2 slot = OnSlot(0);
-        const ImVec2 child = InVariant(0, i);
-        (void)Move({ (slot.x + child.x) * 0.5f, (slot.y + child.y) * 0.5f });
+        const Vec2d slot = OnSlot(0);
+        const Vec2d child = InVariant(0, i);
+        (void)Move({ (slot.X + child.X) * 0.5f, (slot.Y + child.Y) * 0.5f });
         EXPECT_EQ(Wheel->GetHot(), 0) << "variant " << i;
         (void)Move(child);
         EXPECT_EQ(Wheel->GetHot(), 0) << "variant " << i;

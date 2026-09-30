@@ -8,7 +8,7 @@
 
 std::optional<Vec3d> ElementSnapPoint(const ToolContext& ctx,
                                       const EditorViewport& viewport,
-                                      ImVec2 point)
+                                      Vec2d point)
 {
     if (!ctx.Grid.SnapEnabled || ctx.Grid.Target == SnapTarget::Grid)
         return std::nullopt;

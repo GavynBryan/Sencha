@@ -10,10 +10,10 @@ constexpr float kDragDeadzonePixels = 4.0f;
 constexpr float kDoubleClickPixels = 5.0f;
 constexpr std::chrono::milliseconds kDoubleClickTime{400};
 
-float Distance(ImVec2 a, ImVec2 b)
+float Distance(Vec2d a, Vec2d b)
 {
-    const float dx = a.x - b.x;
-    const float dy = a.y - b.y;
+    const float dx = a.X - b.X;
+    const float dy = a.Y - b.Y;
     return std::sqrt(dx * dx + dy * dy);
 }
 }

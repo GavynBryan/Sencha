@@ -111,8 +111,8 @@ public:
         if (pipeline == VK_NULL_HANDLE)
             return;
 
-        const float vpWidth = viewport.RegionMax.x - viewport.RegionMin.x;
-        const float vpHeight = viewport.RegionMax.y - viewport.RegionMin.y;
+        const float vpWidth = viewport.RegionMax.X - viewport.RegionMin.X;
+        const float vpHeight = viewport.RegionMax.Y - viewport.RegionMin.Y;
         if (vpWidth <= 1.0f || vpHeight <= 1.0f)
             return;
 
@@ -147,8 +147,8 @@ public:
         std::memcpy(allocation.Mapped, vertices.data(), static_cast<size_t>(byteCount));
 
         VkViewport vkViewport{};
-        vkViewport.x = viewport.RegionMin.x;
-        vkViewport.y = viewport.RegionMin.y;
+        vkViewport.x = viewport.RegionMin.X;
+        vkViewport.y = viewport.RegionMin.Y;
         vkViewport.width = vpWidth;
         vkViewport.height = vpHeight;
         vkViewport.minDepth = 0.0f;
@@ -156,8 +156,8 @@ public:
 
         VkRect2D scissor{};
         scissor.offset = {
-            static_cast<int32_t>(viewport.RegionMin.x),
-            static_cast<int32_t>(viewport.RegionMin.y),
+            static_cast<int32_t>(viewport.RegionMin.X),
+            static_cast<int32_t>(viewport.RegionMin.Y),
         };
         scissor.extent = { static_cast<uint32_t>(vpWidth), static_cast<uint32_t>(vpHeight) };
 
@@ -210,8 +210,8 @@ public:
         if (pipeline == VK_NULL_HANDLE)
             return;
 
-        const float vpWidth = viewport.RegionMax.x - viewport.RegionMin.x;
-        const float vpHeight = viewport.RegionMax.y - viewport.RegionMin.y;
+        const float vpWidth = viewport.RegionMax.X - viewport.RegionMin.X;
+        const float vpHeight = viewport.RegionMax.Y - viewport.RegionMin.Y;
         if (vpWidth <= 1.0f || vpHeight <= 1.0f)
             return;
 
@@ -235,15 +235,15 @@ public:
         std::memcpy(instanceAllocation.Mapped, instances.data(), static_cast<size_t>(instanceBytes));
 
         VkViewport vkViewport{};
-        vkViewport.x = viewport.RegionMin.x;
-        vkViewport.y = viewport.RegionMin.y;
+        vkViewport.x = viewport.RegionMin.X;
+        vkViewport.y = viewport.RegionMin.Y;
         vkViewport.width = vpWidth;
         vkViewport.height = vpHeight;
         vkViewport.minDepth = 0.0f;
         vkViewport.maxDepth = 1.0f;
         VkRect2D scissor{};
-        scissor.offset = { static_cast<int32_t>(viewport.RegionMin.x),
-                           static_cast<int32_t>(viewport.RegionMin.y) };
+        scissor.offset = { static_cast<int32_t>(viewport.RegionMin.X),
+                           static_cast<int32_t>(viewport.RegionMin.Y) };
         scissor.extent = { static_cast<uint32_t>(vpWidth), static_cast<uint32_t>(vpHeight) };
 
         const PushConstants push{

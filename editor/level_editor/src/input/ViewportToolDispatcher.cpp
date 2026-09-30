@@ -178,7 +178,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
     return InputConsumed::No;
 }
 
-void ViewportToolDispatcher::UpdateHover(EditorViewport& viewport, ImVec2 pos)
+void ViewportToolDispatcher::UpdateHover(EditorViewport& viewport, Vec2d pos)
 {
     const MeshElementKind mode = Context.MeshEdit.GetElementKind();
     // Hover any brush, even in an element mode: hovering another mesh's element

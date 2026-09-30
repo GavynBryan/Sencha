@@ -33,7 +33,7 @@ public:
     // an invalid id if none. A hidden panel zeroes its viewport's rect, so only
     // views actually on screen can match. The one place a pixel maps to a
     // viewport; the input boundary stamps events with the result.
-    [[nodiscard]] ViewportId ResolveAt(ImVec2 point) const;
+    [[nodiscard]] ViewportId ResolveAt(Vec2d point) const;
 
 private:
     void SyncActiveFlags();

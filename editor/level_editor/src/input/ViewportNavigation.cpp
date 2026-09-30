@@ -85,15 +85,15 @@ InputConsumed ViewportNavigation::HandlePointerMove(const PointerMoveEvent& e)
     if (vp->WantsFlyCameraInput
         && vp->Camera.ActiveMode == EditorCamera::Mode::Perspective)
     {
-        vp->Camera.ApplyPerspectiveLook(e.Delta.x, e.Delta.y);
+        vp->Camera.ApplyPerspectiveLook(e.Delta.X, e.Delta.Y);
         return InputConsumed::Yes;
     }
 
     if (vp->WantsOrthoPanInput
         && vp->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
     {
-        const float viewportHeight = vp->RegionMax.y - vp->RegionMin.y;
-        vp->Camera.ApplyOrthoPan(e.Delta.x, e.Delta.y, viewportHeight);
+        const float viewportHeight = vp->RegionMax.Y - vp->RegionMin.Y;
+        vp->Camera.ApplyOrthoPan(e.Delta.X, e.Delta.Y, viewportHeight);
         return InputConsumed::Yes;
     }
 

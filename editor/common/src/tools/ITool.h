@@ -5,7 +5,7 @@
 #include "input/InputEvent.h"
 #include "interaction/IInteraction.h"
 
-#include <imgui.h>
+#include <math/Vec.h>
 
 #include <cstddef>
 #include <memory>
@@ -50,7 +50,7 @@ struct ITool
     // (e.g. the edge cut) handles it and returns Yes, which suppresses the default
     // element-hover glow. OnHoverEnd fires when the cursor leaves the viewport, a
     // drag starts, or the tool deactivates, so the tool can drop its preview.
-    virtual InputConsumed OnHover(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, ImVec2 /*pos*/) { return InputConsumed::No; }
+    virtual InputConsumed OnHover(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, Vec2d /*pos*/) { return InputConsumed::No; }
     virtual void OnHoverEnd(ToolContext& /*ctx*/) {}
 
     // Whether the transform gizmo belongs on screen while this tool is active.

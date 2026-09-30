@@ -34,18 +34,18 @@ namespace
 {
 // Position 0..1 of the cursor along the edge's screen segment (a -> b), matching
 // the a, b convention the cut ops use.
-float CursorPositionOnEdge(const EditorViewport& viewport, ImVec2 pos, Vec3d a, Vec3d b)
+float CursorPositionOnEdge(const EditorViewport& viewport, Vec2d pos, Vec3d a, Vec3d b)
 {
     const ViewportProjection projection(viewport);
     const std::optional<ProjectedPoint> pa = projection.WorldToPixel(a);
     const std::optional<ProjectedPoint> pb = projection.WorldToPixel(b);
     if (!pa.has_value() || !pb.has_value())
         return 0.5f;
-    const ImVec2 ab{ pb->Pixel.x - pa->Pixel.x, pb->Pixel.y - pa->Pixel.y };
-    const float len2 = ab.x * ab.x + ab.y * ab.y;
+    const Vec2d ab{ pb->Pixel.X - pa->Pixel.X, pb->Pixel.Y - pa->Pixel.Y };
+    const float len2 = ab.X * ab.X + ab.Y * ab.Y;
     if (len2 < 1.0e-6f)
         return 0.5f;
-    const float s = ((pos.x - pa->Pixel.x) * ab.x + (pos.y - pa->Pixel.y) * ab.y) / len2;
+    const float s = ((pos.X - pa->Pixel.X) * ab.X + (pos.Y - pa->Pixel.Y) * ab.Y) / len2;
     return std::clamp(s, 0.0f, 1.0f);
 }
 
@@ -74,7 +74,7 @@ float SnapCutPosition(float t, Vec3d worldA, Vec3d worldB, float spacing)
 // is always a seed edge, so the cut preview doesn't require pixel-perfect aim.
 std::optional<std::pair<std::uint32_t, std::uint32_t>> NearestFaceEdge(
     const BrushMesh& mesh, const Transform3f& transform, std::uint32_t faceIndex,
-    const EditorViewport& viewport, ImVec2 cursor)
+    const EditorViewport& viewport, Vec2d cursor)
 {
     if (faceIndex >= mesh.Faces.size())
         return std::nullopt;
@@ -135,7 +135,7 @@ std::string_view EdgeCutTool::GetId() const { return "edgecut"; }
 std::string_view EdgeCutTool::GetDisplayName() const { return "Edge Cut"; }
 IconId EdgeCutTool::GetIcon() const { return IconId::Cut; }
 
-InputConsumed EdgeCutTool::OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
+InputConsumed EdgeCutTool::OnHover(ToolContext& ctx, EditorViewport& viewport, Vec2d pos)
 {
     UpdatePreview(ctx, viewport, pos);
     return InputConsumed::Yes; // own the hover so the element glow doesn't double up
@@ -185,7 +185,7 @@ InputConsumed EdgeCutTool::OnKeyDown(ToolContext& /*ctx*/, const KeyDownEvent& e
     return InputConsumed::No;
 }
 
-void EdgeCutTool::UpdatePreview(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
+void EdgeCutTool::UpdatePreview(ToolContext& ctx, EditorViewport& viewport, Vec2d pos)
 {
     // Revert any live preview so the picker sees real meshes, then re-derive.
     if (PreviewEntity.IsValid())

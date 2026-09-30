@@ -236,7 +236,7 @@ void AffordanceManipulator::BuildVisual(const ManipulatorContext& context,
 
 int AffordanceManipulator::HitTest(const ManipulatorContext& context,
                                    const EditorViewport& viewport,
-                                   ImVec2 screen) const
+                                   Vec2d screen) const
 {
     if (context.Affordances == nullptr)
         return 0;
@@ -251,8 +251,8 @@ int AffordanceManipulator::HitTest(const ManipulatorContext& context,
         const auto point = projection.WorldToPixel(handles[i].World);
         if (!point)
             continue;
-        const float dx = screen.x - point->Pixel.x;
-        const float dy = screen.y - point->Pixel.y;
+        const float dx = screen.X - point->Pixel.X;
+        const float dy = screen.Y - point->Pixel.Y;
         const float distance = std::sqrt(dx * dx + dy * dy);
         if (distance <= bestDistance)
         {
@@ -265,7 +265,7 @@ int AffordanceManipulator::HitTest(const ManipulatorContext& context,
 
 std::unique_ptr<IInteraction> AffordanceManipulator::BeginDrag(
     int part, const ManipulatorContext& context, const EditorViewport&,
-    ImVec2, ModifierFlags) const
+    Vec2d, ModifierFlags) const
 {
     if (context.Affordances == nullptr || part <= 0)
         return nullptr;

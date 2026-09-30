@@ -21,7 +21,7 @@ public:
 
     // Gizmo hover tracking, forwarded to the active session (see
     // ManipulatorSession::UpdateHover for why hover comes from the input path).
-    void UpdateHover(const EditorViewport& viewport, ImVec2 pos);
+    void UpdateHover(const EditorViewport& viewport, Vec2d pos);
     void ClearHover();
 
 private:

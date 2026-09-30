@@ -58,7 +58,7 @@ public:
     // is placed against, which is what keeps hit-testing and painting on one
     // set of numbers.
     RadialMenuSession(IRadialMenuModel& menu, KeyChord key, std::function<RadialMenu::Frame()> frame,
-                      std::function<bool(ImVec2 pointer)> pointerOnScene);
+                      std::function<bool(Vec2d pointer)> pointerOnScene);
 
     InputConsumed OnInput(const InputEvent& event, PointerCapture& capture);
 
@@ -73,9 +73,9 @@ public:
 private:
     InputConsumed OnKeyDown(const KeyDownEvent& event, PointerCapture& capture);
     InputConsumed OnKeyUp(const KeyUpEvent& event, PointerCapture& capture);
-    void Open(ImVec2 pointer, PointerCapture& capture);
+    void Open(Vec2d pointer, PointerCapture& capture);
     void Leave(RadialMenuPhase next, PointerCapture& capture);
-    void Track(ImVec2 pointer);
+    void Track(Vec2d pointer);
     void Select(int index, int variant);
     [[nodiscard]] int VariantCount(int index) const;
     [[nodiscard]] bool IsWheelKey(SDL_Keycode key) const { return key == Key.Key; }
@@ -83,7 +83,7 @@ private:
     IRadialMenuModel& Menu;
     KeyChord Key;
     std::function<RadialMenu::Frame()> FrameProvider;
-    std::function<bool(ImVec2)> PointerOnScene;
+    std::function<bool(Vec2d)> PointerOnScene;
     RadialMenuPhase Phase = RadialMenuPhase::Closed;
     RadialMenu::Layout Layout{};
     int Hot = -1;

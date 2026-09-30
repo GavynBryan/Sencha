@@ -400,7 +400,7 @@ public:
     }
 
 private:
-    bool UpdateDelta(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos)
+    bool UpdateDelta(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos)
     {
         const std::optional<double> s =
             GizmoMath::ClosestAxisParam(Pivot, AxisDir, ViewportProjection(viewport).RayThroughPixel(pos));
@@ -481,7 +481,7 @@ public:
     }
 
 private:
-    bool UpdateDelta(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos)
+    bool UpdateDelta(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos)
     {
         const std::optional<Vec3d> hit = GizmoMath::RayPlanePoint(
             ViewportProjection(viewport).RayThroughPixel(pos), Pivot, Normal);
@@ -639,7 +639,7 @@ void TranslateManipulator::BuildVisual(const ManipulatorContext& ctx,
 
 int TranslateManipulator::HitTest(const ManipulatorContext& ctx,
                                   const EditorViewport& viewport,
-                                  ImVec2 screenPos) const
+                                  Vec2d screenPos) const
 {
     const std::optional<Vec3d> pivot = GizmoPivot(ctx);
     if (!pivot.has_value())
@@ -671,8 +671,8 @@ int TranslateManipulator::HitTest(const ManipulatorContext& ctx,
 
     // The center square wins ties against the axis stalks that meet in it.
     {
-        const float dx = screenPos.x - origin->Pixel.x;
-        const float dy = screenPos.y - origin->Pixel.y;
+        const float dx = screenPos.X - origin->Pixel.X;
+        const float dy = screenPos.Y - origin->Pixel.Y;
         const float toCenter = std::sqrt(dx * dx + dy * dy);
         if (toCenter <= kCenterHitPixels && (best == 0 || toCenter <= bestPixels))
             best = kCenterPart;
@@ -684,7 +684,7 @@ std::unique_ptr<IInteraction> TranslateManipulator::BeginDrag(
     int part,
     const ManipulatorContext& ctx,
     const EditorViewport& viewport,
-    ImVec2 screenPos,
+    Vec2d screenPos,
     ModifierFlags modifiers) const
 {
     const Vec3d axisDir = AxisDirection(ctx, part);

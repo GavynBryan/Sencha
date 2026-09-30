@@ -56,7 +56,7 @@ public:
     std::string_view GetDisplayName() const override;
     IconId GetIcon() const override;
 
-    InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) override;
+    InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, Vec2d pos) override;
     void OnHoverEnd(ToolContext& ctx) override;
     InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     std::unique_ptr<IInteraction> BeginDrag(ToolContext& ctx, EditorViewport& viewport,
@@ -85,7 +85,7 @@ public:
 
     // Called by the drag interaction: `endpoint` is 0 or 1 for a grabbed
     // endpoint handle, -1 for a fresh line whose second point follows the cursor.
-    void UpdateDrag(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos, int endpoint);
+    void UpdateDrag(ToolContext& ctx, EditorViewport& viewport, Vec2d pos, int endpoint);
     void EndDrag(ToolContext& ctx, EditorViewport& viewport);
     void RevertAll(ToolContext& ctx);
 
@@ -111,12 +111,12 @@ private:
     };
 
     // What a press took hold of: an endpoint handle, or nothing.
-    [[nodiscard]] int HandleUnderCursor(const EditorViewport& viewport, ImVec2 pos) const;
-    [[nodiscard]] int ButtonUnderCursor(const EditorViewport& viewport, ImVec2 pos) const;
+    [[nodiscard]] int HandleUnderCursor(const EditorViewport& viewport, Vec2d pos) const;
+    [[nodiscard]] int ButtonUnderCursor(const EditorViewport& viewport, Vec2d pos) const;
     [[nodiscard]] bool CaptureTargets(ToolContext& ctx);
-    [[nodiscard]] bool CaptureGesture(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos);
+    [[nodiscard]] bool CaptureGesture(ToolContext& ctx, EditorViewport& viewport, Vec2d pos);
     [[nodiscard]] std::optional<Vec3d> SnappedPoint(ToolContext& ctx, const EditorViewport& viewport,
-                                                    ImVec2 pos) const;
+                                                    Vec2d pos) const;
     // Rebuild the clip plane from A and B and the captured view, then the preview.
     void RefreshPreview(ToolContext& ctx);
     void RestorePreviews(ToolContext& ctx);

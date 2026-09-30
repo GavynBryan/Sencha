@@ -172,7 +172,7 @@ ClipTool::ButtonRow ClipTool::BuildButtons() const
     ButtonRow row;
     const auto toggle = [&](IconId icon, const char* tooltip, bool on, ClipButton role) {
         ViewportButton button{ icon, {}, true,
-                               on ? EditorChrome::ButtonTone::Active : EditorChrome::ButtonTone::Normal,
+                               on ? ActionTone::Active : ActionTone::Normal,
                                tooltip };
         row.Buttons.push_back(std::move(button));
         row.Roles.push_back(role);
@@ -182,25 +182,25 @@ ClipTool::ButtonRow ClipTool::BuildButtons() const
                mode == ClipMode::KeepFront ? ClipButton::Front
                : mode == ClipMode::KeepBack ? ClipButton::Back : ClipButton::Split);
     toggle(IconId::ClipCap, kCapTooltip, Capped, ClipButton::Cap);
-    ViewportButton confirm{ IconId::Check, {}, CanCommit(), EditorChrome::ButtonTone::Active, "Apply  [Enter]" };
+    ViewportButton confirm{ IconId::Check, {}, CanCommit(), ActionTone::Active, "Apply  [Enter]" };
     row.Buttons.push_back(std::move(confirm));
     row.Roles.push_back(ClipButton::Confirm);
-    ViewportButton cancel{ IconId::Cancel, {}, true, EditorChrome::ButtonTone::Destructive, "Cancel  [Esc]" };
+    ViewportButton cancel{ IconId::Cancel, {}, true, ActionTone::Destructive, "Cancel  [Esc]" };
     row.Buttons.push_back(std::move(cancel));
     row.Roles.push_back(ClipButton::Cancel);
     return row;
 }
 
-int ClipTool::ButtonUnderCursor(const EditorViewport& viewport, ImVec2 pos) const
+int ClipTool::ButtonUnderCursor(const EditorViewport& viewport, Vec2d pos) const
 {
     if (Phase != ClipPhase::Pending || viewport.Id != SourceViewport)
         return -1;
     const ViewportProjection projection(viewport);
-    std::vector<std::optional<ImVec2>> anchors;
+    std::vector<std::optional<Vec2d>> anchors;
     for (const Vec3d& world : { A, B })
     {
         const std::optional<ProjectedPoint> p = projection.WorldToPixel(world);
-        anchors.push_back(p.has_value() ? std::optional<ImVec2>(p->Pixel) : std::nullopt);
+        anchors.push_back(p.has_value() ? std::optional<Vec2d>(p->Pixel) : std::nullopt);
     }
     const ViewportButtons::Row row =
         ViewportButtons::Layout(anchors, static_cast<int>(BuildButtons().Buttons.size()),
@@ -208,7 +208,7 @@ int ClipTool::ButtonUnderCursor(const EditorViewport& viewport, ImVec2 pos) cons
     return row.HitTest(pos);
 }
 
-int ClipTool::HandleUnderCursor(const EditorViewport& viewport, ImVec2 pos) const
+int ClipTool::HandleUnderCursor(const EditorViewport& viewport, Vec2d pos) const
 {
     if (Phase != ClipPhase::Pending || viewport.Id != SourceViewport)
         return -1;
@@ -222,7 +222,7 @@ int ClipTool::HandleUnderCursor(const EditorViewport& viewport, ImVec2 pos) cons
         const std::optional<ProjectedPoint> p = projection.WorldToPixel(ends[i]);
         if (!p.has_value())
             continue;
-        const float distance = std::hypot(p->Pixel.x - pos.x, p->Pixel.y - pos.y);
+        const float distance = std::hypot(p->Pixel.X - pos.X, p->Pixel.Y - pos.Y);
         if (distance <= bestDistance)
         {
             bestDistance = distance;
@@ -232,7 +232,7 @@ int ClipTool::HandleUnderCursor(const EditorViewport& viewport, ImVec2 pos) cons
     return best;
 }
 
-InputConsumed ClipTool::OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
+InputConsumed ClipTool::OnHover(ToolContext& ctx, EditorViewport& viewport, Vec2d pos)
 {
     if (Phase != ClipPhase::Pending)
         return InputConsumed::No;
@@ -302,12 +302,12 @@ bool ClipTool::CaptureTargets(ToolContext& ctx)
     return !Targets.empty();
 }
 
-std::optional<Vec3d> ClipTool::SnappedPoint(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos) const
+std::optional<Vec3d> ClipTool::SnappedPoint(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos) const
 {
     return ctx.Picking.ProjectPointToPlane(viewport, pos, SnapPlane);
 }
 
-bool ClipTool::CaptureGesture(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
+bool ClipTool::CaptureGesture(ToolContext& ctx, EditorViewport& viewport, Vec2d pos)
 {
     SourceViewport = viewport.Id;
     const bool perspective = viewport.GetOrientationTraits().Mode == EditorCamera::Mode::Perspective;
@@ -369,7 +369,7 @@ std::unique_ptr<IInteraction> ClipTool::BeginDrag(ToolContext& ctx, EditorViewpo
     return std::make_unique<ClipDragInteraction>(*this, -1);
 }
 
-void ClipTool::UpdateDrag(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos, int endpoint)
+void ClipTool::UpdateDrag(ToolContext& ctx, EditorViewport& viewport, Vec2d pos, int endpoint)
 {
     if (Phase != ClipPhase::Dragging || viewport.Id != SourceViewport)
         return;
@@ -390,8 +390,8 @@ void ClipTool::EndDrag(ToolContext& ctx, EditorViewport& viewport)
     // A, captured now and kept, so the line never grows or shrinks with a camera
     // moving afterwards.
     const ViewportProjection projection(viewport);
-    const float diagonal = std::hypot(viewport.RegionMax.x - viewport.RegionMin.x,
-                                      viewport.RegionMax.y - viewport.RegionMin.y);
+    const float diagonal = std::hypot(viewport.RegionMax.X - viewport.RegionMin.X,
+                                      viewport.RegionMax.Y - viewport.RegionMin.Y);
     Reach = projection.WorldSizeForPixels(A, diagonal);
     Phase = ClipPhase::Pending;
     WriteOverlay(ctx);
@@ -766,11 +766,11 @@ void ClipTool::DrawProperties(ToolContext& ctx)
         if (!Status.empty())
             ImGui::TextDisabled("%s", Status.c_str());
         if (EditorChrome::Button("clipapply", "Apply", ImVec2(0, 0),
-                                 CanCommit() ? EditorChrome::ButtonTone::Active : EditorChrome::ButtonTone::Normal)
+                                 CanCommit() ? ActionTone::Active : ActionTone::Normal)
             && CanCommit())
             Commit(ctx);
         ImGui::SameLine();
-        if (EditorChrome::Button("clipcancel", "Cancel", ImVec2(0, 0), EditorChrome::ButtonTone::Normal))
+        if (EditorChrome::Button("clipcancel", "Cancel", ImVec2(0, 0), ActionTone::Normal))
             RevertAll(ctx);
     }
 }
