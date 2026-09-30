@@ -42,7 +42,7 @@
 {
     display: flex;
     align-items: center;
-    height: 26dp;
+    min-height: 26dp;
     gap: 8dp;
 }
 
@@ -59,6 +59,7 @@
     font-size: 11dp;
 }
 .setting_toggle { flex: 0; }
+.setting_long { height: 80dp; }
 .setting_color { display: flex; flex: 1; align-items: center; gap: 6dp; }
 .swatch { display: block; width: 20dp; height: 20dp; border-width: 1dp; border-radius: 2dp; }
 .setting.heading

@@ -37,9 +37,9 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
     kinds.push_back(WorkspaceKind{
         .Id = "data",
         .DisplayName = "Data",
-        .Create = [&engine, &session, &prompts] {
+        .Create = [&engine, &session, &prompts, &actions, &problems] {
             return std::make_unique<DataWorkspace>(engine, *session.Project(), session.Documents(),
-                                                   session.DataDocuments(), prompts);
+                                                   session.DataDocuments(), prompts, actions, problems);
         },
     });
     kinds.push_back(WorkspaceKind{

@@ -95,7 +95,8 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     UiRow row{ descriptor.Label, node.Value, descriptor.Tooltip };
     row.Key = node.Key;
     row.Depth = depth;
-    row.Control = ControlFor(descriptor);
+    row.Control = descriptor.Kind == PropertyKind::Text && descriptor.Multiline ? UiRowControl::LongText
+                                                                               : ControlFor(descriptor);
     row.Editable = !descriptor.ReadOnly && descriptor.Kind != PropertyKind::Group
                 && descriptor.Kind != PropertyKind::Unsupported;
     row.Choices = descriptor.Choices;

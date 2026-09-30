@@ -215,6 +215,16 @@ a watched `.smat` that changes on disk is taken by a clean tab and kept out of
 the stack while a tab holds its own changes (`DocumentSource::FileChangedOnDisk`
 behind `SourceReloadRoots::SetReloadFilter`).
 
+Data workspace (`editor/data_editor/src/`): `DataWorkspace` presents the
+active document whole, as a sheet (`WorkspaceSelectionFacet::Primary`): its
+fields laid out by the schema through `data/DataProperties` (a property per
+JSON path; array and record verbs; validation errors as notes beside their
+field and as problems), or its JSON through `DataSourceText` (View Source).
+A new asset is a `DataCreation` card; files move by their path property
+(`properties/FilePathProperty`, shared with Materials). The input and movement
+subtypes still draw their purpose-built forms and previews in ImGui
+(`IDataSubtypeEditor`), and their documents use the schema sheet meanwhile.
+
 Project workspace (`editor/project_browser/src/`, flat): `ProjectWorkspace`,
 `ProjectCatalog` (recent projects JSON in the user config dir,
 headless-tested), `ProjectRack` (the catalog as the workspace's content, a

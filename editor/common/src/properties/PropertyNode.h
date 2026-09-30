@@ -44,6 +44,8 @@ struct PropertyDescriptor
     double Max = -1.0;
     double Step = 0.0;
     bool ReadOnly = false;
+    // Text that runs over several lines: a description, a document's source.
+    bool Multiline = false;
     // Kept out of a compact presentation until someone asks for everything.
     bool Advanced = false;
     // Names a purpose-built editor that presents this property instead of the

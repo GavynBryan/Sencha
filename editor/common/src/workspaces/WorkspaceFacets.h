@@ -150,6 +150,9 @@ struct WorkspaceSelectionFacet
     // components, each a top-level group.
     std::vector<PropertySection> Details = {};
     bool Staged = false;
+    // The properties are the work itself rather than a note about something in
+    // the content: a data asset is its fields.
+    bool Primary = false;
 };
 
 // Something the workspace lets a person browse and pick from: its materials,

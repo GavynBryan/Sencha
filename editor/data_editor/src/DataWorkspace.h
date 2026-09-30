@@ -1,23 +1,34 @@
 #pragma once
 
+#include "DataCreation.h"
 #include "DataEditorWorkspace.h"
+#include "DataSourceText.h"
+
+#include "actions/ActionContext.h"
+#include "data/DataProperties.h"
+#include "prompts/PromptQueue.h"
+#include "properties/FilePathProperty.h"
 #include "ui/DataSubtypeEditorRegistry.h"
 #include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 
+#include <cstdint>
 #include <string>
 
+class ActionCatalog;
 class Engine;
-class PromptQueue;
+class ProblemList;
 struct ProjectDescriptor;
 
-// The data workspace: every structured data asset in the project, edited
-// through the schema form and the purpose-built surfaces its subtypes register.
+// The data workspace: every structured data asset in the project, the open
+// one presented whole as a sheet of its schema's fields (or as its source),
+// the project's data assets in an explorer, and every open one on the
+// document dial. Subtypes with purpose-built previews add them beside it.
 class DataWorkspace final : public IWorkspace
 {
 public:
     DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
-                  DataDocumentStore& store, PromptQueue& prompts);
+                  DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog, ProblemList& problems);
     ~DataWorkspace() override;
 
     DataWorkspace(const DataWorkspace&) = delete;
@@ -28,21 +39,50 @@ public:
     [[nodiscard]] bool ClaimPlatformEvent(PlatformEventContext& ctx) override;
     [[nodiscard]] bool OwnsDocument(const DocumentRef& document) const override;
     void RevealDocument(const DocumentRef& document) override;
+    [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
+    void ShowDocument(std::string_view key) override;
+    [[nodiscard]] WorkspaceSelectionFacet Selection() override;
+    bool RevealProblem(const Problem& problem) override;
+    [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
+    [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
+    void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
+                          std::size_t mark) override;
     WorkspaceView& View() override { return Surface; }
 
 private:
     void BuildUi();
     void RegisterCommands();
+    void DefineActions(ActionCatalog& catalog);
     void SaveActive();
+    void DuplicateActive();
+    // Settles the active document's changes as the person says, then runs `then`.
+    void AfterSettling(std::function<void(const std::string& path, DirtyDisposition disposition)> then);
+    void PublishProblems();
 
     Engine& EngineRef;
     DataEditorWorkspace Model;
-    PromptQueue& Prompts;
+    PromptQueue::Asker Prompts;
+    ProblemList& Problems;
+    ActionContext ActionHandlers;
+    DataProperties Properties;
+    DataSourceText Source;
+    DataCreation Creation;
+    FilePathProperty FilePath;
+    // What the sheet is about: the active document, or a new asset being made.
+    // Only the new-asset action and showing a document change it.
+    enum class CardSubject : std::uint8_t
+    {
+        Document,
+        Creating,
+    };
+    CardSubject Subject = CardSubject::Document;
+    // The active document shown as its source rather than as fields.
+    bool ShowingSource = false;
     // The purpose-built authoring surfaces; their panels never outlive them.
     DataSubtypeEditorRegistry SubtypeEditors;
     bool Visible = false;
-
+    std::string OperationError;
     // Declared last: its panels reference everything above.
     WorkspaceView Surface;
 };

@@ -80,9 +80,10 @@ enum class UiRowControl : std::uint8_t
     Choice,
     Toggle,   // Value is "true" or "false"
     Asset,    // Value names an asset; the document offers a way to pick another
-    Color,    // Value is #RRGGBB or #RRGGBBAA text
+    Color,    // Value is the colour as the host writes it; Parts[0], when set, is a CSS colour to swatch it with
     Section,  // not a value at all: a heading the rows after it sit under
     Action,   // not a value either: something to do, named by its label, raised by its key
+    LongText, // text that runs over several lines
 };
 
 // What a document reads `row.control` as ("text", "range", ...), and back.

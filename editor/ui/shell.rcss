@@ -311,6 +311,11 @@ body
 .moving #selection_card { transition: opacity transform 0.14s cubic-out; }
 
 #selection_card.drawer { top: 42dp; width: 360dp; max-height: none; }
+/* The work itself: a sheet down the middle of the window, each field's help
+   in the margin beside it. */
+#selection_card.sheet { left: 50%; right: auto; top: 72dp; bottom: 60dp; width: 760dp; margin-left: -380dp; max-height: none; }
+#selection_card.sheet .setting_label { width: 160dp; }
+.setting_help { display: block; width: 240dp; padding-left: 12dp; font-size: 10dp; }
 
 #selection_head
 {
@@ -328,7 +333,8 @@ body
     margin-bottom: 6dp;
 }
 
-.setting.verb { height: 24dp; }
+/* A field's verbs run along one line under it rather than a line each. */
+.setting.verb { display: inline-flex; min-height: 24dp; margin-right: 6dp; }
 
 #selection_title
 {

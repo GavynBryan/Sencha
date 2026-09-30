@@ -63,6 +63,7 @@ const UiModelPropertyId kExplorerEmpty = UiPropertyIdAt(40);
 const UiModelPropertyId kExplorerEarlier = UiPropertyIdAt(41);
 const UiModelPropertyId kExplorerLater = UiPropertyIdAt(42);
 const UiModelPropertyId kPopoverTop = UiPropertyIdAt(43);
+const UiModelPropertyId kSheet = UiPropertyIdAt(44);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -153,6 +154,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "explorer_earlier", UiValue(false) },
         UiModelProperty{ "explorer_later", UiValue(false) },
         UiModelProperty{ "popover_top", UiValue(std::string("auto")) },
+        UiModelProperty{ "sheet", UiValue(false) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs" };
@@ -926,7 +928,7 @@ std::vector<PropertySection> ShellWindow::SheetSections(std::string_view sheet, 
 std::vector<PropertySection> ShellWindow::SelectionSections(const WorkspaceSelectionFacet& selection) const
 {
     std::vector<PropertySection> sections = selection.Sections;
-    if (SelectionShown == SelectionView::Drawer)
+    if (SelectionShown == SelectionView::Drawer || selection.Primary)
         sections.insert(sections.end(), selection.Details.begin(), selection.Details.end());
     return sections;
 }
@@ -948,11 +950,15 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
     (void)ui.SetValue(Screen, kSelectionTitle, UiValue(selection.Title));
     (void)ui.SetValue(Screen, kSelectionStaged, UiValue(selection.Staged));
     const bool drawer = SelectionShown == SelectionView::Drawer;
+    // Properties that are the work itself are shown whole, as a sheet.
+    const bool sheet = selection.Primary;
     (void)ui.SetValue(Screen, kDrawer, UiValue(drawer));
+    (void)ui.SetValue(Screen, kSheet, UiValue(sheet));
     (void)ui.SetValue(Screen, kDrawerFocus, UiValue(DrawerFocus));
     if (!SelectionSheet.Holding())
         (void)ui.SetRows(Screen, kSelectionRows,
-                         SelectionSheet.Present(SelectionSections(selection), drawer, drawer ? DrawerFocus : ""));
+                         SelectionSheet.Present(SelectionSections(selection), drawer || sheet,
+                                                drawer ? DrawerFocus : ""));
 
     // What else there is to look at closely, one key each.
     std::vector<UiRow> chips;

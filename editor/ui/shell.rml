@@ -100,8 +100,14 @@
                 </div>
                 <div class="key theme-key" data-if="row.control == 'action'"
                      data-event-click="shell_sheet_act('tool', it_index, '')">{{row.label}}</div>
-                <div class="setting_color" data-if="row.control == 'color'">
-                    <div class="swatch theme-field" data-style-background-color="row.parts[0]"></div>
+                <textarea class="setting_control setting_long theme-field" data-if="row.control == 'longtext'" rows="5"
+                          data-value="row.value" data-event-focus="shell_sheet_hold('tool', it_index)"
+                          data-event-blur="shell_sheet_release('tool', it_index)"></textarea>
+                <textarea class="setting_control setting_long theme-field" data-if="row.control == 'longtext'" rows="5"
+                      data-value="row.value" data-event-focus="shell_sheet_hold('selection', it_index)"
+                      data-event-blur="shell_sheet_release('selection', it_index)"></textarea>
+            <div class="setting_color" data-if="row.control == 'color'">
+                    <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"></div>
                     <input type="text" class="setting_control theme-field" data-value="row.value"
                            data-event-focus="shell_sheet_hold('tool', it_index)"
                            data-event-blur="shell_sheet_release('tool', it_index)"/>
@@ -145,14 +151,14 @@
          Looked at closely it becomes the drawer along the right edge, with
          every property it has. -->
     <div id="selection_card" class="theme-plate" data-class-open="selection_title != ''"
-         data-class-shut="selection_title == ''" data-class-drawer="drawer">
+         data-class-shut="selection_title == ''" data-class-drawer="drawer" data-class-sheet="sheet">
         <div id="selection_head">
             <span id="selection_title" class="theme-accent">{{selection_title}}</span>
-            <div class="key theme-key" data-class-lit="drawer" data-event-click="shell_drawer('toggle')">
+            <div class="key theme-key" data-if="!sheet" data-class-lit="drawer" data-event-click="shell_drawer('toggle')">
                 <span data-if="!drawer">DETAILS</span><span data-if="drawer">CLOSE</span>
             </div>
         </div>
-        <div id="selection_chips" data-if="!drawer">
+        <div id="selection_chips" data-if="!drawer &amp;&amp; !sheet">
             <div class="key theme-key" data-for="chip : selection_chips"
                  data-event-click="shell_drawer(chip.key)">{{chip.label}}</div>
         </div>
@@ -186,7 +192,7 @@
             <div class="key theme-key" data-if="row.control == 'action'"
                  data-event-click="shell_sheet_act('selection', it_index, '')">{{row.label}}</div>
             <div class="setting_color" data-if="row.control == 'color'">
-                <div class="swatch theme-field" data-style-background-color="row.parts[0]"></div>
+                <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"></div>
                 <input type="text" class="setting_control theme-field" data-value="row.value"
                        data-event-focus="shell_sheet_hold('selection', it_index)"
                        data-event-blur="shell_sheet_release('selection', it_index)"/>
@@ -195,6 +201,7 @@
                  data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('selection', it_index)">
                 <span data-if="row.value != ''">{{row.value}}</span><span data-if="row.value == ''">NONE</span>
             </div>
+            <span class="setting_help theme-dim" data-if="sheet &amp;&amp; row.detail != ''">{{row.detail}}</span>
         </div>
         <div id="selection_verbs">
             <div class="key theme-key" data-for="verb : selection_verbs"

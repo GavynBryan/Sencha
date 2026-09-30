@@ -5,6 +5,7 @@
 #include "actions/ActionOffer.h"
 #include "presenters/ContentPicture.h"
 #include "project/MaterialLibraryExplorer.h"
+#include "properties/FilePathProperty.h"
 #include "properties/SettingProperties.h"
 #include "text/TextFilterMatch.h"
 #include "ui/MaterialThumbnailCache.h"
@@ -65,39 +66,6 @@ constexpr std::array<PrimitiveRow, 3> kPrimitives = { {
 
 constexpr std::string_view kTextureExplorerId = "textures";
 
-// Where the open material lives, as the one property that moves it.
-class MaterialFileProperty final : public IPropertySource
-{
-public:
-    MaterialFileProperty(std::function<std::string()> path, std::function<void(const std::string&)> move)
-        : Path(std::move(path))
-        , Move(std::move(move))
-    {
-    }
-
-    [[nodiscard]] std::vector<PropertyNode> Nodes() const override
-    {
-        const std::string path = Path();
-        if (path.empty())
-            return {};
-        return { TextProperty("path", "File", path.substr(path.find("://") == std::string::npos ? 0 : path.find("://") + 3),
-                              "Where it lives in its content root; changing it moves the file") };
-    }
-    bool BeginEdit(std::string_view key) override { return key == "path" && !Path().empty(); }
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Unchanged; }
-    PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override
-    {
-        if (key != "path" || value.empty())
-            return PropertyEditResult::Refused;
-        Move(std::string(value));
-        return PropertyEditResult::Applied;
-    }
-    void CancelEdit(std::string_view) override {}
-
-private:
-    std::function<std::string()> Path;
-    std::function<void(const std::string&)> Move;
-};
 } // namespace
 
 MaterialWorkspace::MaterialWorkspace(Engine& engine,
@@ -137,7 +105,7 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
               ShowMaterial();
           })
 {
-    FilePath = std::make_unique<MaterialFileProperty>(
+    FilePath = std::make_unique<FilePathProperty>(
         [this] {
             const MaterialEditTab* tab = Tabs.Active();
             return tab != nullptr && tab->Session.HasOpen() ? tab->Session.VirtualPath() : std::string{};
