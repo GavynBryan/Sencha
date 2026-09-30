@@ -103,6 +103,16 @@ Rml::Vector2i ToRmlDimensions(RenderExtent size)
 }
 
 
+
+    // Moves focus off whatever holds it, which ends text input if a field did.
+    // Pressing empty space or losing the keyboard is the person moving on, and
+    // the document engine only moves focus to something a press landed on.
+    void DropFocus(Rml::Context& context)
+    {
+        Rml::Element* focus = context.GetFocusElement();
+        if (focus != nullptr && focus != context.GetRootElement())
+            focus->Blur();
+    }
 } // namespace
 
 UiRuntime::UiRuntime(LoggingProvider& logging,
@@ -401,6 +411,8 @@ void UiRuntime::SetSurfaceInputPolicy(UiSurfaceId surface, UiSurfaceInputPolicy 
         slot->PointerInside = false;
         slot->PointerOwned = false;
     }
+    if (policy != UiSurfaceInputPolicy::Full && slot->Context != nullptr)
+        DropFocus(*slot->Context);
     slot->InputPolicy = policy;
 }
 
@@ -1151,7 +1163,11 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
             // A press lands only inside; a release goes to whoever holds the
             // pointer, wherever it is now, else only inside.
             if (!at.Inside && !(surface.PointerOwned && !down))
+            {
+                if (down)
+                    DropFocus(context);
                 break;
+            }
             // Re-stated, because a press with no preceding move -- a synthetic
             // event, a tap -- would otherwise be resolved against wherever the
             // pointer happened to be last.
@@ -1166,8 +1182,22 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
                 surface.PointerOwned = !free;
             else
                 surface.PointerOwned = false;
+            if (down && free)
+                DropFocus(context);
             if (!free || owned)
+            {
+                // The surfaces below never see this press, so they are told
+                // the person has moved on here rather than left focused.
+                if (down)
+                {
+                    for (auto below = std::next(it); below != Surfaces.rend(); ++below)
+                    {
+                        if (below->Live && below->Context != nullptr)
+                            DropFocus(*below->Context);
+                    }
+                }
                 return true;
+            }
             break;
         }
 

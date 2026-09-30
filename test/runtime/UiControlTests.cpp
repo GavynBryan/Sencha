@@ -334,6 +334,49 @@ TEST(UiControls, AFocusedFieldTakesTheKeyboardAndReleasesItOnBlur)
         << "the field lost focus and the keyboard stayed captured";
 }
 
+TEST(UiControls, APressOnNothingTakesFocusOffTheField)
+{
+    // A full-window surface passes presses on empty space through to whatever is
+    // behind it -- an editor's world, a game. A person who typed into a field and
+    // then clicked the world has moved on; if the field kept focus, the next
+    // camera key would type into it instead.
+    Fixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+
+    ClickAt(fixture.Ui(), 80.0f, 35.0f);
+    fixture.Ui().Update();
+    ASSERT_TRUE(fixture.Ui().Capture().Keyboard);
+
+    SDL_Event press = MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, 600.0f, 500.0f);
+    EXPECT_FALSE(fixture.Ui().ProcessPlatformEvent(press))
+        << "a press on empty space must still reach whatever is behind the surface";
+    fixture.Ui().Update();
+    EXPECT_FALSE(fixture.Ui().Capture().Keyboard)
+        << "a press on nothing left the field focused, so keys keep going to it";
+}
+
+TEST(UiControls, TakingKeysFromASurfaceTakesFocusOffItsField)
+{
+    // A host withdraws the keyboard from a surface by its policy. A field left
+    // focused behind that would keep text input running for a surface that can
+    // no longer receive keys, and another surface that can would report the
+    // keyboard captured on its behalf.
+    Fixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    const UiSurfaceId other = fixture.Ui().CreateSurface("other", RenderExtent{ 800, 600 });
+
+    ClickAt(fixture.Ui(), 80.0f, 35.0f);
+    fixture.Ui().Update();
+    ASSERT_TRUE(fixture.Ui().Capture().Keyboard);
+
+    fixture.Ui().SetSurfaceInputPolicy(fixture.Surface, UiSurfaceInputPolicy::Pointer);
+    fixture.Ui().Update();
+    EXPECT_FALSE(fixture.Ui().Capture().Keyboard)
+        << "the surface lost the keyboard but its field still holds text input";
+
+    fixture.Ui().DestroySurface(other);
+}
+
 // -- lists -------------------------------------------------------------------
 
 namespace

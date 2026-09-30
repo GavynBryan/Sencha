@@ -69,7 +69,7 @@ namespace
         }
     }
 
-    struct FieldEdit
+    struct WidgetEdit
     {
         bool Activated = false; // widget gained focus this frame (pre-edit)
         bool Committed = false; // edit finished this frame
@@ -115,9 +115,9 @@ namespace
 
     // A combo edit is atomic: selecting an option both begins and commits the
     // edit in one frame, unlike a drag's activate/deactivate pair.
-    FieldEdit DrawEnumField(const RuntimeField& field, void* ptr, const std::string& id)
+    WidgetEdit DrawEnumField(const RuntimeField& field, void* ptr, const std::string& id)
     {
-        FieldEdit edit;
+        WidgetEdit edit;
         const std::int64_t current = ReadEnumUnderlying(ptr, field);
 
         std::string preview;
@@ -174,9 +174,9 @@ namespace
     // Lays out one row as [label column | widget column], the widget filling the
     // rest of the width — the two-column inspector look. The widget uses a hidden
     // ("##") label so only the left-column text shows.
-    FieldEdit DrawRuntimeField(const RuntimeField& field, std::byte* component, float labelWidth)
+    WidgetEdit DrawRuntimeField(const RuntimeField& field, std::byte* component, float labelWidth)
     {
-        FieldEdit edit;
+        WidgetEdit edit;
         void* ptr = component + field.Offset;
 
         DrawFieldLabel(field);
@@ -285,13 +285,14 @@ void InspectorPanel::ResetEditState()
     // already written this frame's preview bytes into the live component. Restore
     // the pre-edit snapshot so an abandoned edit cannot strand an un-undoable
     // mutation.
-    if (EditActive && EditingComponent != InvalidComponentId && !EditBefore.empty())
+    if (Phase == EditPhase::Previewing)
     {
         World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
         if (void* live = world.GetComponentRaw(EditingEntity, EditingComponent))
             std::memcpy(live, EditBefore.data(), EditBefore.size());
+        Commands.ClosePendingEdit();
     }
-    EditActive = false;
+    Phase = EditPhase::Idle;
     EditingEntity = {};
     EditingComponent = InvalidComponentId;
     EditBefore.clear();
@@ -491,7 +492,7 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
             continue;
         }
         const ImVec2 rowMin = ImGui::GetCursorScreenPos();
-        const FieldEdit edit = DrawRuntimeField(field, working.data(), labelWidth);
+        const WidgetEdit edit = DrawRuntimeField(field, working.data(), labelWidth);
         activated |= edit.Activated;
         committed |= edit.Committed;
 
@@ -532,9 +533,11 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     // Begin an undoable edit: snapshot the pre-edit bytes on widget activation.
     // Refresh on every activation (only one widget is active at a time) so a
     // click-release without an edit can't leave a stale snapshot behind.
-    if (activated)
+    if (activated || (Phase == EditPhase::Idle && size > 0
+                      && std::memcmp(working.data(), frameStart.data(), size) != 0))
     {
-        EditActive = true;
+        ResetEditState();
+        Phase = EditPhase::Armed;
         EditingEntity = entity;
         EditingComponent = id;
         EditBefore = frameStart;
@@ -543,16 +546,23 @@ void InspectorPanel::DrawComponent(IComponentSerializer& serializer, EntityId en
     // Apply this frame's edit to the live component for immediate feedback.
     if (size > 0 && std::memcmp(working.data(), frameStart.data(), size) != 0)
     {
+        if (Phase == EditPhase::Armed)
+        {
+            Commands.OpenPendingEdit([this] { ResetEditState(); });
+            Phase = EditPhase::Previewing;
+        }
         if (void* live = world.GetComponentRaw(entity, id))
             std::memcpy(live, working.data(), size);
     }
 
     // Commit: record one undoable command spanning the whole drag.
-    if (committed && EditActive && EditingComponent == id)
+    if (committed && Phase != EditPhase::Idle && EditingComponent == id)
     {
+        if (Phase == EditPhase::Previewing)
+            Commands.ClosePendingEdit();
         Commands.Execute(std::make_unique<RawComponentEditCommand>(
             entity, id, EditBefore, working, WorldDoc.FocusDocument().GetScene(), WorldDoc.FocusDocument()));
-        EditActive = false;
+        Phase = EditPhase::Idle;
         EditingComponent = InvalidComponentId;
     }
 

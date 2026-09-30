@@ -97,14 +97,15 @@ private:
     CommandStack& Commands;
     EditorComponentAdapterRegistry& Adapters;
 
-    // A single in-flight edit (only one widget drags at a time). Captured on
-    // widget activation (pre-edit bytes), committed to a RawComponentEditCommand
-    // when the drag finishes. EditingEntity is the entity those bytes belong to,
-    // so an interrupted edit can be reverted to them (see ResetEditState).
+    // A single in-flight edit (only one widget drags at a time). Armed on widget
+    // activation with the pre-edit bytes; Previewing once it has written the live
+    // component, which is when it holds the command stack's pending-edit scope so
+    // undo, save and every interruption revert it (see ResetEditState).
+    enum class EditPhase : std::uint8_t { Idle, Armed, Previewing };
+    EditPhase              Phase = EditPhase::Idle;
     EntityId               EditingEntity = {};
     ComponentId            EditingComponent = InvalidComponentId;
     std::vector<std::byte> EditBefore;
-    bool                   EditActive = false;
 
     // A component remove requested this frame, executed after the component loop
     // (removal is a structural change, so it must not run mid-iteration). Points

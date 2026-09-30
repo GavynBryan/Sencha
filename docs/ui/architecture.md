@@ -131,9 +131,11 @@ The distinction is not stylistic, and it decides where an ImGui host belongs:
 | `EditorUiFeature` (Kyusu's shell) | `ApplicationUi` | It is the editor's *application UI*, which happens to be built in ImGui. Retained surfaces record later in the same phase, so an authored panel draws **over** the ImGui panel it replaces. Putting it in `DevelopmentOverlay` would let the legacy shell paint over its own replacement and make incremental migration impossible. |
 | `ImGuiDebugOverlay` | `DevelopmentOverlay` | The console and timing panels, which must stay readable on top of whatever is underneath. |
 
-Order within `ApplicationUi` is a **declared edge**, not a staging accident.
-`UiRenderFeature` stages under a known id and accepts host-supplied predecessors,
-so Kyusu names its ImGui shell as one and a game names nothing.
+Order within `ApplicationUi` follows registration, and the engine fixes when
+it registers: `UiRenderFeature` is added after `Game::OnStart` returns, so any
+application-UI feature a host registers during `OnStart` (Kyusu's ImGui shell)
+records under it. It registers under `kUiRenderFeatureId`, so a feature that has
+to draw over authored UI declares that id as a dependency.
 
 GPU scopes `Phase/ApplicationUi` and `Phase/DevelopmentOverlay` report each
 bucket separately under `render.profile.mode gpu`.
@@ -188,6 +190,14 @@ reconstructed from keycodes -- that is wrong in every locale but the author's.
 Text input is started and stopped rather than left on, because a platform with
 it always active is one where the IME is always eligible to eat a keystroke
 meant for the game.
+
+**Focus leaves when the person does.** The document engine moves focus only to
+something a press lands on, so a press that lands on nothing -- empty space on
+a pass-through surface, a point outside its placement, or anywhere on a surface
+below one that took the press -- takes focus off whatever held it. So does a
+surface losing `Full` input. Otherwise a field typed into and then clicked
+away from keeps text input, and the next key meant for the world types into it
+(`UiControlTests`).
 
 ### Navigation
 

@@ -243,9 +243,6 @@ void LevelWorkspace::BuildInput()
         std::function<void()> Callback;
     };
     const KeyBinding bindings[] = {
-        { "edit.undo",             SDLK_Z,      { .Ctrl = true },                [this] { if (!UndoStagedEdit()) Documents.Undo(); } },
-        { "edit.redo",             SDLK_Z,      { .Ctrl = true, .Shift = true }, [this] { Documents.Redo(); } },
-        { "edit.redo",             SDLK_Y,      { .Ctrl = true },                [this] { Documents.Redo(); } },
         { "edit.delete",           SDLK_DELETE, {},                              [this] { Workspace->DeleteSelection(); } },
         { "edit.dissolve",         SDLK_BACKSPACE, {},                           [this] { Workspace->DissolveSelectedEdges(); } },
         { "edit.select_all",       SDLK_A,      { .Ctrl = true },                [this] { Workspace->SelectAll(); } },
@@ -255,7 +252,6 @@ void LevelWorkspace::BuildInput()
         { "edit.escape",           SDLK_ESCAPE, {},                              [this] { Workspace->EscapeStep(); } },
         { "file.new",              SDLK_N,      { .Ctrl = true },                [this] { AfterSettlingChanges([this] { Files->New(); }); } },
         { "file.open",             SDLK_O,      { .Ctrl = true },                [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } },
-        { "file.save",             SDLK_S,      { .Ctrl = true },                [this] { if (Files) Files->Save(); } },
         { "mode.cycle",            SDLK_V,      { .Shift = true },               [this] { Workspace->MeshEdit.CycleElementKind(); } },
         { "mode.object",           SDLK_1,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Object); } },
         { "mode.vertex",           SDLK_2,      {},                              [this] { Workspace->MeshEdit.SetElementKind(MeshElementKind::Vertex); } },

@@ -171,7 +171,7 @@ void EditorToolbar::DrawTransformTail(float buttonSize)
         return;
     ManipulatorSession& session = *Session();
 
-    // Gizmo frame (Shift+T cycles): grid follows the workspace grid frame,
+    // Gizmo frame (Ctrl+G cycles): grid follows the workspace grid frame,
     // local follows the primary selection's rotation.
     ImGui::SetNextItemWidth(ImGui::GetFontSize() * 5.0f);
     const TransformSpace space = session.GetTransformSpace();
@@ -183,7 +183,7 @@ void EditorToolbar::DrawTransformTail(float buttonSize)
         EditorChrome::EndCombo();
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Gizmo axes: grid frame, world, or the selection's local axes  [Shift+T]");
+        ImGui::SetTooltip("Gizmo axes: grid frame, world, or the selection's local axes  [Ctrl+G]");
 
     // Pivot pair, shown only while something is selected: Edit Pivot retargets
     // the Move gizmo to the transient pivot; Set Origin commits the moved pivot
