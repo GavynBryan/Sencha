@@ -26,9 +26,7 @@ bool MaterialPreviewRenderFeature::Setup(const RenderFeatureServices& featureSer
 {
     const RendererServices& services = *featureServices.Backend;
     Services = services;
-    Targets.Setup(services);
-    if (services.Samplers != nullptr)
-        Presenter.Setup(services.Samplers->GetLinearClamp());
+    Targets.Setup(services, services.Samplers != nullptr ? services.Samplers->GetLinearClamp() : VK_NULL_HANDLE);
     RenderTargetDesc scene{};
     scene.ColorFormat = kPreviewColorFormat;
     scene.DepthFormat = services.DepthFormat;
@@ -70,9 +68,7 @@ void MaterialPreviewRenderFeature::Teardown()
     Forward.Teardown();
     Lighting.Teardown();
     Backdrop.Teardown();
-    Presenter.Release(SceneTarget);
     Targets.Teardown();
-    Presenter.Teardown();
     SceneTarget = {};
 }
 
@@ -88,22 +84,20 @@ void MaterialPreviewRenderFeature::Zoom(float wheelDelta)
 
 ImTextureID MaterialPreviewRenderFeature::Display(VkExtent2D extent)
 {
-    Targets.SetExtent(SceneTarget, extent);
-    return Presenter.Present(Targets, SceneTarget);
+    return Targets.Display(SceneTarget, extent);
 }
 
 void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
 {
     const FrameContext& frame = *renderFrame.Backend;
-    Targets.BeginFrame(frame.FrameInFlightIndex);
-    Presenter.BeginFrame(frame.Retirement);
+    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
     const std::optional<RenderTargetView> target = Targets.Acquire(SceneTarget);
     if (!target)
         return;
 
     // Brackets the recording below and commits the layout the store remembers.
     RenderTargetSession session(frame.Cmd, target->ColorImage, target->ColorLayout,
-                                target->DepthImage);
+                                target->DepthImage, Services.DepthFormat);
 
     RenderScopeDesc scope{};
     scope.Area.offset = { 0, 0 };

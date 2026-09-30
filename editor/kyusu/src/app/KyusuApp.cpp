@@ -324,6 +324,12 @@ void KyusuApp::RegisterWorkspaceCommands()
                     result.Error("expected one of: " + kinds);
                     return result;
                 }
+                if (action == WorkspaceAction::Activate && Workspaces->Find(args[0]) == nullptr)
+                {
+                    result.Status = ConsoleStatus::InvalidArguments;
+                    result.Error("'" + args[0] + "' is not open; workspace.open opens it");
+                    return result;
+                }
                 // Mid-frame, applied at the next frame boundary: a workspace
                 // adds and removes render work as it comes and goes.
                 Workspaces->Request({ action, args[0] });

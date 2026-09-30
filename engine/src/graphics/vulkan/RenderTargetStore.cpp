@@ -84,6 +84,15 @@ void RenderTargetStore::Destroy(RenderTargetId id)
     FreeList.push_back(id.Index);
 }
 
+void RenderTargetStore::Evict(RenderTargetId id)
+{
+    if (Target* target = Resolve(id))
+    {
+        for (Slot& slot : target->Slots)
+            ReleaseSlot(slot);
+    }
+}
+
 void RenderTargetStore::SetExtent(RenderTargetId id, VkExtent2D extent)
 {
     if (Target* target = Resolve(id))

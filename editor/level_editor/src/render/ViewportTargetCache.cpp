@@ -28,6 +28,7 @@ void ViewportTargetCache::Teardown()
     for (Entry& entry : Entries)
         Release(entry);
     Entries.clear();
+    Displays = {};
     Store.Teardown();
     Presenter.Teardown();
 }
@@ -39,6 +40,7 @@ void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex,
     // The presenter is the one here that retires anything of its own: the
     // ImGui descriptor sets it hands the UI outlive the target they name.
     Presenter.BeginFrame(retirement);
+    Displays.Advance();
 }
 
 ViewportTargetCache::Entry* ViewportTargetCache::Find(ViewportId id)
@@ -138,6 +140,7 @@ void ViewportTargetCache::Prune(std::span<const ViewportId> live)
             ++it;
             continue;
         }
+        Displays.Forget(it->Id);
         Release(*it);
         it = Entries.erase(it);
     }
@@ -145,6 +148,7 @@ void ViewportTargetCache::Prune(std::span<const ViewportId> live)
 
 ImTextureID ViewportTargetCache::Display(ViewportId id, VkExtent2D extent)
 {
+    Displays.MarkDisplayed(id);
     Entry& entry = FindOrAdd(id);
     Store.SetExtent(entry.Scene, extent);
     for (RenderTargetId bloom : entry.Bloom)

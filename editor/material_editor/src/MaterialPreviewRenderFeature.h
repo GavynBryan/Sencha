@@ -5,10 +5,7 @@
 #include "PreviewBackdropRenderer.h"
 #include "PreviewPrimitives.h"
 
-#include "render/ImGuiTargetPresenter.h"
-
-#include <graphics/RenderTargetId.h>
-#include <graphics/vulkan/RenderTargetStore.h>
+#include "render/DisplayedTargets.h"
 
 #include <graphics/vulkan/Renderer.h>
 #include <render/pass/MeshForwardPass.h>
@@ -56,12 +53,7 @@ public:
 
 private:
     RuntimeAssets& Assets;
-    // One scene target, owned directly. The preview is not a viewport host: it
-    // has a single view and no bloom, and going through the viewport cache meant
-    // inventing a ViewportId for a layout that does not exist and allocating two
-    // full-resolution bloom planes per frame in flight that nothing ever read.
-    RenderTargetStore Targets;
-    ImGuiTargetPresenter Presenter;
+    DisplayedTargets Targets;
     RenderTargetId SceneTarget;
     PreviewBackdropRenderer Backdrop;
     // The forward pass requires the lighting bindings for its descriptor

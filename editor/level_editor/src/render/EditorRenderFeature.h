@@ -135,6 +135,8 @@ private:
 
     // The composition's entry point for a viewport view: recovers the slot the
     // view was declared with and renders it with the camera the view carries.
+    // Drops targets for viewports not in LiveViewports.
+    void PruneViewportTargets();
     void RecordViewportView(const FrameContext& frame, const FrameView& view);
     // Render one viewport's scene chain into its offscreen color+depth target, with
     // the surrounding layout transitions and rendering scope.

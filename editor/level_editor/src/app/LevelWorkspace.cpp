@@ -1214,8 +1214,7 @@ void LevelWorkspace::ProcessFrame()
 
     // A hidden viewport panel, or any panel of a workspace in the background,
     // is never drawn, so it cannot clear its own stale on-screen rect; do it
-    // here so ResolveAt never routes input to an invisible view and the render
-    // feature skips its offscreen target.
+    // here so ResolveAt never routes input to an invisible view.
     for (ViewportPanel* panel : { PerspectivePanel, OrthoPanel })
         if (panel != nullptr && (!Visible || !panel->IsVisible()))
             panel->ClearViewportRegion();

@@ -1,10 +1,9 @@
 #pragma once
 
 #include "AnimationPreviewScene.h"
-#include "render/ImGuiTargetPresenter.h"
+#include "render/DisplayedTargets.h"
 #include "viewport/OrbitCamera.h"
 
-#include <graphics/vulkan/RenderTargetStore.h>
 #include <render/feature/SkinnedPoseRenderFeature.h>
 #include <render/pass/MeshForwardPass.h>
 
@@ -28,8 +27,7 @@ private:
     RuntimeAssets& Assets;
     AnimationPreviewScene& Scene;
     SkinnedPoseRenderFeature Skinning;
-    RenderTargetStore Targets;
-    ImGuiTargetPresenter Presenter;
+    DisplayedTargets Targets;
     RenderTargetId Target;
     LightBindings Lighting;
     MeshForwardPass Forward;

@@ -184,6 +184,14 @@ void SceneThumbnailCache::RenderPending(const FrameContext& frame)
             FrameClock + static_cast<std::uint64_t>(ThumbnailStudio::PassesPerTarget());
 }
 
+bool SceneThumbnailCache::HasPendingWork() const
+{
+    return std::ranges::any_of(Entries, [](const auto& item) {
+        const Entry& entry = item.second;
+        return entry.Document != nullptr || (entry.RemainingPasses > 0 && !entry.Failed);
+    });
+}
+
 void SceneThumbnailCache::TrimToBudget(std::size_t budget)
 {
     while (Entries.size() > budget)

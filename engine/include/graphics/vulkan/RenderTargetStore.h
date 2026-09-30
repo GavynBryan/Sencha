@@ -127,6 +127,8 @@ public:
 
     [[nodiscard]] RenderTargetId Create(const RenderTargetDesc& desc);
     void Destroy(RenderTargetId id);
+    // Releases the images and keeps the target; the next Acquire rebuilds them.
+    void Evict(RenderTargetId id);
 
     // Requests a size for subsequent frames. A change takes effect the next
     // time the affected slot is acquired, so a resize costs one recreate per

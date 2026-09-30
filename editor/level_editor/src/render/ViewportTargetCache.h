@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/DisplayLedger.h"
 #include "render/ImGuiTargetPresenter.h"
 #include "viewport/ViewportId.h"
 
@@ -67,6 +68,9 @@ public:
     [[nodiscard]] std::optional<RenderView> AcquireForRender(ViewportId id);
     // Destroy targets for viewports not in `live` (closed or re-laid-out).
     void Prune(std::span<const ViewportId> live);
+    // Whether the UI showed `id` last frame; a viewport it did not show does
+    // not render.
+    [[nodiscard]] bool WasDisplayed(ViewportId id) const { return Displays.WasDisplayed(id); }
 
     // -- UI side (panel draw) ------------------------------------------------
     // Record the on-screen pixel size and return the current slot's texture to
@@ -88,5 +92,6 @@ private:
     RendererServices Services{};
     RenderTargetStore Store;
     ImGuiTargetPresenter Presenter;
+    DisplayLedger<ViewportId> Displays;
     std::vector<Entry> Entries;
 };

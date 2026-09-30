@@ -215,6 +215,18 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
     // counters start over for this frame.
     (void)BrushWorkCounters::TakeFrame();
 
+    // Nothing on screen -- the workspace is hidden, or its viewports are
+    // docked away -- costs no queue, shadow, or view work.
+    const bool viewportShown = std::ranges::any_of(Layout.All(), [this](const auto& viewport) {
+        return viewport != nullptr && Targets.WasDisplayed(viewport->Id);
+    });
+    if (!viewportShown && !(Thumbnails && Thumbnails->HasPendingWork()))
+    {
+        LiveViewports.clear();
+        PruneViewportTargets();
+        return;
+    }
+
     // Build the scene draw queues once per frame; the per-viewport camera is applied at
     // draw time, so every viewport reuses the same brush + placed-mesh queues. Brush
     // meshes upload only when a distinct mesh's content is new to the bake cache.
@@ -288,20 +300,14 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         });
     }
 
-    // Every viewport that is actually on screen. A hidden panel zeroes its
-    // viewport's rect, so a degenerate rect means "not shown this frame"; its
-    // target is pruned below and rebuilt when the panel reappears.
+    // Every viewport the UI showed last frame; the rest have their targets
+    // pruned below and rebuilt when their panel shows them again.
     ViewSlots.clear();
     LiveViewports.clear();
     for (const auto& viewport : Layout.All())
     {
-        if (viewport == nullptr
-            || viewport->RegionMax.x <= viewport->RegionMin.x
-            || viewport->RegionMax.y <= viewport->RegionMin.y)
+        if (viewport == nullptr || !Targets.WasDisplayed(viewport->Id))
             continue;
-        // Pruning is about which panels the layout still shows, so it counts a
-        // viewport whose target is not renderable yet -- a panel in its first
-        // frame has not reported a size.
         LiveViewports.push_back(viewport->Id);
         if (std::optional<ViewportTargetCache::RenderView> target =
                 Targets.AcquireForRender(viewport->Id))
@@ -333,9 +339,12 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         });
 
     Composition.Execute(renderFrame);
+    PruneViewportTargets();
+}
 
-    // Drop targets for viewports the layout no longer shows. Thumbnail
-    // targets are live as long as their entries are.
+void EditorRenderFeature::PruneViewportTargets()
+{
+    // Thumbnail targets are live as long as their entries are.
     if (Thumbnails)
     {
         Thumbnails->TrimToBudget(64);

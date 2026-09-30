@@ -25,11 +25,9 @@ bool UiSurfaceTargetRenderFeature::Setup(const RenderFeatureServices& featureSer
     if (featureServices.Backend == nullptr)
         return false;
     Services = *featureServices.Backend;
-    Targets.Setup(Services);
     // Linear, because the panel fits a full-resolution surface into whatever
     // space it has; nearest would shimmer at every non-integer ratio.
-    if (Services.Samplers != nullptr)
-        Presenter.Setup(Services.Samplers->GetLinearClamp());
+    Targets.Setup(Services, Services.Samplers != nullptr ? Services.Samplers->GetLinearClamp() : VK_NULL_HANDLE);
     Ready = Pass.Setup(Services, Textures);
     return Ready;
 }
@@ -41,15 +39,10 @@ void UiSurfaceTargetRenderFeature::Teardown()
     {
         // A binding is the host's declaration and outlives the device state it
         // names: the target goes, the binding stays, and the next Setup makes a
-        // new target for it. Rendered goes with the target, so Display stops
-        // handing out a texture that no longer exists.
-        Presenter.Release(binding.Target);
-        Targets.Destroy(binding.Target);
+        // new target for it.
         binding.Target = {};
-        binding.Rendered = false;
     }
     Targets.Teardown();
-    Presenter.Teardown();
     Ready = false;
 }
 
@@ -78,20 +71,18 @@ UiSurfaceTargetId UiSurfaceTargetRenderFeature::Bind(UiSurfaceId surface, Vec3d 
     Binding& binding = Bindings[index];
     binding.Surface = surface;
     binding.Clear = clearLinear;
-    binding.Rendered = false;
     binding.Live = true;
     binding.Target = {};
 
     return UiSurfaceTargetId{ static_cast<std::uint32_t>(index + 1), binding.Generation };
 }
 
-bool UiSurfaceTargetRenderFeature::EnsureTarget(Binding& binding)
+void UiSurfaceTargetRenderFeature::EnsureTarget(Binding& binding)
 {
-    // The target is made on the first frame the binding is drawn, not when it
-    // is declared: its depth format is the device's, and a composition root
-    // binds while it is wiring panels -- before any feature has been set up.
+    // Made on first display, not when declared: its depth format is the
+    // device's, and a composition root binds before any feature is set up.
     if (binding.Target.IsValid())
-        return true;
+        return;
 
     RenderTargetDesc desc{};
     desc.ColorFormat = kTargetColorFormat;
@@ -102,7 +93,6 @@ bool UiSurfaceTargetRenderFeature::EnsureTarget(Binding& binding)
     desc.Read = RenderTargetRead::Sampled;
     desc.DebugName = "ui_surface_target";
     binding.Target = Targets.Create(desc);
-    return binding.Target.IsValid();
 }
 
 void UiSurfaceTargetRenderFeature::Unbind(UiSurfaceTargetId id)
@@ -110,7 +100,6 @@ void UiSurfaceTargetRenderFeature::Unbind(UiSurfaceTargetId id)
     Binding* binding = Resolve(id);
     if (binding == nullptr)
         return;
-    Presenter.Release(binding->Target);
     Targets.Destroy(binding->Target);
     binding->Target = {};
     binding->Live = false;
@@ -126,9 +115,13 @@ void UiSurfaceTargetRenderFeature::SetClearColor(UiSurfaceTargetId id, Vec3d cle
 ImTextureID UiSurfaceTargetRenderFeature::Display(UiSurfaceTargetId id)
 {
     Binding* binding = Resolve(id);
-    if (binding == nullptr || !binding->Rendered)
+    if (binding == nullptr || !Ready)
         return 0;
-    return Presenter.Present(Targets, binding->Target);
+    EnsureTarget(*binding);
+    // The target follows the surface, so the recording's projection and the
+    // target's viewport agree.
+    const RenderExtent size = Ui.GetSurfaceSize(binding->Surface);
+    return Targets.Display(binding->Target, VkExtent2D{ size.Width, size.Height });
 }
 
 std::size_t UiSurfaceTargetRenderFeature::BindingCount() const
@@ -144,20 +137,12 @@ void UiSurfaceTargetRenderFeature::OnDraw(const RenderFrame& renderFrame)
     if (!Ready || renderFrame.Backend == nullptr)
         return;
     const FrameContext& frame = *renderFrame.Backend;
-    Targets.BeginFrame(frame.FrameInFlightIndex);
-    Presenter.BeginFrame(frame.Retirement);
+    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
 
     for (Binding& binding : Bindings)
     {
-        if (!binding.Live || !EnsureTarget(binding))
+        if (!binding.Live)
             continue;
-
-        // The target follows the surface, so the recording's projection and
-        // the target's viewport agree. A surface with no size yet draws nothing.
-        const RenderExtent size = Ui.GetSurfaceSize(binding.Surface);
-        if (size.Width == 0 || size.Height == 0)
-            continue;
-        Targets.SetExtent(binding.Target, VkExtent2D{ size.Width, size.Height });
         const std::optional<RenderTargetView> target = Targets.Acquire(binding.Target);
         if (!target)
             continue;
@@ -198,6 +183,5 @@ void UiSurfaceTargetRenderFeature::OnDraw(const RenderFrame& renderFrame)
             if (const UiDrawFrame* ui = Ui.OffscreenFrame(binding.Surface))
                 Pass.Draw(rendering.Context(), *ui);
         }
-        binding.Rendered = true;
     }
 }

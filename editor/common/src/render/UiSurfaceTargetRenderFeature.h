@@ -1,11 +1,10 @@
 #pragma once
 
-#include "render/ImGuiTargetPresenter.h"
+#include "render/DisplayedTargets.h"
 
 #include <core/handle/Handle.h>
 #include <graphics/RenderFeature.h>
 #include <graphics/RenderTargetId.h>
-#include <graphics/vulkan/RenderTargetStore.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/UiDrawPass.h>
 #include <math/Vec.h>
@@ -66,7 +65,7 @@ public:
     // Panel side: the texture to show, at the surface's size. 0 until the
     // binding has rendered once, and for a binding that is gone. A host may
     // Bind before this feature is set up and hold the id: the binding is a
-    // declaration, and the target behind it appears on the first frame drawn.
+    // declaration, and the target behind it appears once it is displayed.
     [[nodiscard]] ImTextureID Display(UiSurfaceTargetId binding);
     [[nodiscard]] std::size_t BindingCount() const;
 
@@ -78,18 +77,14 @@ private:
         Vec3d Clear{};
         std::uint32_t Generation = 1;
         bool Live = false;
-        bool Rendered = false;
     };
     [[nodiscard]] Binding* Resolve(UiSurfaceTargetId binding);
-    // Creates the binding's target if it has none yet. False when it could
-    // not be created, which the caller treats as "nothing to draw this frame".
-    [[nodiscard]] bool EnsureTarget(Binding& binding);
+    void EnsureTarget(Binding& binding);
 
     UiService& Ui;
     TextureCache* Textures = nullptr;
     RendererServices Services{};
-    RenderTargetStore Targets;
-    ImGuiTargetPresenter Presenter;
+    DisplayedTargets Targets;
     UiDrawPass Pass;
     std::vector<Binding> Bindings;
     bool Ready = false;

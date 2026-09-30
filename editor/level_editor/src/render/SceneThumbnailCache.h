@@ -52,6 +52,9 @@ public:
     // recorded passes are safely behind us.
     void RenderPending(const FrameContext& frame);
 
+    // Whether RenderPending has a pass to record or a payload to release.
+    [[nodiscard]] bool HasPendingWork() const;
+
     // Keeps this cache's synthetic ids out of the viewport prune.
     void AppendLiveViewports(std::vector<ViewportId>& live) const;
 
