@@ -49,12 +49,13 @@ runtime uses. Kettle spawns editors with `--project` via `ProcessLaunch`; the
 same helper drives PIE's out-of-process player.
 
 Materials (and assets generally) resolve against the project's content roots,
-never against the open level file's location. Kyusu watches `.smat`/`.png`
-sources per content root (`AssetSourceWatcher` + `AssetHotReloader`, polled
-from the frame hook) and hot-swaps resident assets in place, so a save from
-Shudei or a text editor shows up live. The assembly -- watcher, reloader,
-importer set, throttled poll -- is `SourceReloadRoots` in `common/src/project/`,
-shared by Kyusu, Shudei and Shoji; an editor adds roots and calls `Poll`.
+never against the open level file's location. Kyusu mounts the project into
+the engine's asset stack once (`ProjectSession`) and watches its authored
+sources there, hot-swapping resident assets in place, so a save from any tool
+shows up live. The assembly -- watcher, reloader, importer set, throttled poll
+-- is the engine's `SourceReloadRoots` (`assets/hotreload/`), which
+`RuntimeContent` owns and polls; an editor adds roots to
+`RuntimeContent::SourceReload()`.
 
 ## Include convention
 
