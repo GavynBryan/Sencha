@@ -234,6 +234,9 @@ format boundary; the editor's own types use document/scene vocabulary.
   layer-3 subsystems stay independent of each other.
 - Domain commands live next to their domain (`document/commands/`), not in the
   generic `commands/` directory.
+- No workspace includes `common/src/shell/`: a workspace exposes what it has
+  (actions, properties, resources) and the shell, a replaceable presentation
+  policy, decides how it appears.
 - ImGui is on its way out of the editor (`docs/editor/interaction-grammar.md`).
   Geometry, input, tools and viewport math are written in engine vectors
   (`Vec2d`); only files listed in `scripts/editor_imgui_allowlist.txt` may name

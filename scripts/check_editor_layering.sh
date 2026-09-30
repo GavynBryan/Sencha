@@ -39,6 +39,12 @@
 #      that names a header existing only in another workspace tree is a
 #      violation.
 #
+#   G. The shell is a replaceable presentation policy
+#      (docs/editor/interaction-grammar.md). No workspace tree includes
+#      common/shell/: a workspace says what it has (actions, properties,
+#      resources, facets) and asks for surfaces by role, and only the Kyusu
+#      application and the shell itself decide how any of it appears.
+#
 #   F. ImGui leaves the editor one stage at a time. A file under editor/ may
 #      name ImGui (its headers, its namespace, its types) only while it is
 #      listed in scripts/editor_imgui_allowlist.txt, and a listed file that no
@@ -142,6 +148,14 @@ for ws in $WORKSPACES; do
             fi
         done
     done < <(grep -rnE '^[[:space:]]*#include[[:space:]]*"' "$own" 2>/dev/null)
+done
+
+# G. Workspaces never include the shell's policy.
+for ws in $WORKSPACES; do
+    own="$ROOT/editor/$ws/src"
+    [ -d "$own" ] || continue
+    check "workspace $ws includes the shell's presentation policy (expose semantics; the shell presents them)" \
+          '#include[[:space:]]*"([^"]*/)?shell/' "$own"
 done
 
 # F. The ImGui ratchet. Comment-only lines are ignored, like every rule here.
