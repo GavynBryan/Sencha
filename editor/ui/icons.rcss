@@ -34,6 +34,7 @@
 .icon-hammer { decorator: image(icons/hammer.svg contain); }
 .icon-light { decorator: image(icons/light.svg contain); }
 .icon-lock { decorator: image(icons/lock.svg contain); }
+.icon-local { decorator: image(icons/local.svg contain); }
 .icon-mode-edge { decorator: image(icons/mode-edge.svg contain); }
 .icon-mode-face { decorator: image(icons/mode-face.svg contain); }
 .icon-mode-object { decorator: image(icons/mode-object.svg contain); }
@@ -55,4 +56,5 @@
 .icon-window-maximize { decorator: image(icons/window-maximize.svg contain); }
 .icon-window-minimize { decorator: image(icons/window-minimize.svg contain); }
 .icon-window-restore { decorator: image(icons/window-restore.svg contain); }
+.icon-world { decorator: image(icons/world.svg contain); }
 .icon-zone-bounds { decorator: image(icons/zone-bounds.svg contain); }

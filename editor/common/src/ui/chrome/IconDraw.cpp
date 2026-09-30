@@ -43,6 +43,8 @@ constexpr std::array<const char*, kCount> kGlyphs = [] {
     row(IconId::Resize, ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER);
     row(IconId::Pivot, ICON_FA_CROSSHAIRS);
     row(IconId::Anchor, ICON_FA_ANCHOR);
+    row(IconId::World, ICON_FA_GLOBE);
+    row(IconId::Local, ICON_FA_LOCATION_ARROW);
     row(IconId::Box, ICON_FA_CUBE);
     row(IconId::Plane, ICON_FA_SQUARE);
     row(IconId::Cylinder, ICON_FA_DATABASE);

@@ -30,18 +30,6 @@ constexpr std::array<ElementModeRow, 4> kElementModes = { {
     { MeshElementKind::Face, "mode.face", "Face Mode", SDLK_4 },
 } };
 
-struct SpaceRow
-{
-    TransformSpace Space;
-    const char* Id;
-    const char* Label;
-};
-constexpr std::array<SpaceRow, 3> kSpaces = { {
-    { TransformSpace::Grid, "gizmo.space.grid", "Grid Axes" },
-    { TransformSpace::World, "gizmo.space.world", "World Axes" },
-    { TransformSpace::Local, "gizmo.space.local", "Local Axes" },
-} };
-
 struct SnapRow
 {
     SnapTarget Target;
@@ -108,10 +96,10 @@ void OfferManipulationActions(ActionCatalog& catalog, ActionContext& context, Ed
                 .Checked = [w, mode = item.Mode] { return w->Interaction.Manipulators->EffectiveMode() == mode; } });
     offer("gizmo.space", "Next Transform Space", "Transform", { { SDLK_G, { .Ctrl = true } } }, IconId::None,
           { .Invoke = [w] { w->Interaction.Manipulators->CycleTransformSpace(); } });
-    for (const SpaceRow& row : kSpaces)
-        offer(row.Id, row.Label, "Transform", {}, IconId::None,
-              { .Invoke = [w, space = row.Space] { w->Interaction.Manipulators->SetTransformSpace(space); },
-                .Checked = [w, space = row.Space] { return w->Interaction.Manipulators->GetTransformSpace() == space; } });
+    for (const TransformSpaceItem& item : kTransformSpaceItems)
+        offer(item.Action, std::string(item.Choice.Label) + " Axes", "Transform", {}, item.Choice.Icon,
+              { .Invoke = [w, space = item.Space] { w->Interaction.Manipulators->SetTransformSpace(space); },
+                .Checked = [w, space = item.Space] { return w->Interaction.Manipulators->GetTransformSpace() == space; } });
 
     // The pivot, and moving a brush's origin to it or to its geometry.
     const auto hasSelection = [w] { return !w->Selection.GetSelection().empty(); };

@@ -16,6 +16,8 @@ std::string_view IconName(IconId id)
     case IconId::Cylinder: return "cylinder";
     case IconId::Light: return "light";
     case IconId::Camera: return "camera";
+    case IconId::World: return "world";
+    case IconId::Local: return "local";
     case IconId::Grid: return "grid";
     case IconId::GridFrame: return "grid-frame";
     case IconId::Snap: return "snap";

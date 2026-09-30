@@ -19,6 +19,8 @@ enum class IconId : std::uint8_t
     Resize,
     Pivot,
     Anchor,
+    World, // the gizmo along world axes
+    Local, // the gizmo along the selection's own axes
 
     // Shapes and scene objects
     Box,

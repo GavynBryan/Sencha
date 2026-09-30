@@ -546,6 +546,23 @@
       ]
     },
     {
+      "source": "icons/local.svg",
+      "input_fingerprint": "371c2b4ca51aa1b1",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "382",
+      "mtime": "-4646872277555130179",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/local.svg",
+          "file": ".cooked/icons/local.svg.stex",
+          "type": "Texture",
+          "hash": "c00e3d46a9e0fcb4"
+        }
+      ]
+    },
+    {
       "source": "icons/lock.svg",
       "input_fingerprint": "4a266dedf555f3cf",
       "cook_identity": "f69a7450659d4d5d",
@@ -920,6 +937,23 @@
       ]
     },
     {
+      "source": "icons/world.svg",
+      "input_fingerprint": "34a7aeaae35a4a0f",
+      "cook_identity": "f69a7450659d4d5d",
+      "size": "331",
+      "mtime": "-4646872277556254565",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/world.svg",
+          "file": ".cooked/icons/world.svg.stex",
+          "type": "Texture",
+          "hash": "3a00d06bc1c6d775"
+        }
+      ]
+    },
+    {
       "source": "icons/zone-bounds.svg",
       "input_fingerprint": "823cd98077a24a97",
       "cook_identity": "f69a7450659d4d5d",
@@ -1025,7 +1059,7 @@
     },
     {
       "source": "shell.rml",
-      "input_fingerprint": "1b8e0423ff603dec",
+      "input_fingerprint": "cabb8f424f31d1ff",
       "cook_identity": "4765341e77032c66",
       "size": "10420",
       "mtime": "-4646873223662793765",
@@ -1044,8 +1078,8 @@
         },
         {
           "source": "icons.rcss",
-          "size": "3264",
-          "mtime": "-4646881427138628967"
+          "size": "3382",
+          "mtime": "-4646872191488615692"
         },
         {
           "source": "theme.rcss",
@@ -1058,13 +1092,13 @@
           "path": "asset://shell.rml",
           "file": ".cooked/shell.rml.sui",
           "type": "UiPackage",
-          "hash": "bb10479804a1b774"
+          "hash": "1b0ffeb1e25e79b9"
         }
       ]
     },
     {
       "source": "views.rml",
-      "input_fingerprint": "452cc952a8b09a21",
+      "input_fingerprint": "d508d9f17df8e940",
       "cook_identity": "4765341e77032c66",
       "size": "3524",
       "mtime": "-4646878608184534101",
@@ -1078,8 +1112,8 @@
         },
         {
           "source": "icons.rcss",
-          "size": "3264",
-          "mtime": "-4646881427138628967"
+          "size": "3382",
+          "mtime": "-4646872191488615692"
         },
         {
           "source": "theme.rcss",
@@ -1092,13 +1126,13 @@
           "path": "asset://views.rml",
           "file": ".cooked/views.rml.sui",
           "type": "UiPackage",
-          "hash": "7b6f0be41f8ba2f9"
+          "hash": "8002f612a8cbb9d5"
         }
       ]
     },
     {
       "source": "wheel.rml",
-      "input_fingerprint": "86a5c9cfa02bcf4f",
+      "input_fingerprint": "2873d860a64812e1",
       "cook_identity": "4765341e77032c66",
       "size": "2054",
       "mtime": "-4646878608184425458",
@@ -1112,8 +1146,8 @@
         },
         {
           "source": "icons.rcss",
-          "size": "3264",
-          "mtime": "-4646881427138628967"
+          "size": "3382",
+          "mtime": "-4646872191488615692"
         },
         {
           "source": "theme.rcss",
@@ -1126,7 +1160,7 @@
           "path": "asset://wheel.rml",
           "file": ".cooked/wheel.rml.sui",
           "type": "UiPackage",
-          "hash": "1d9f49b34666bc0c"
+          "hash": "4bc2f7aaed22bd9e"
         }
       ]
     }
