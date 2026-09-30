@@ -1,18 +1,24 @@
 #pragma once
 
+#include <graphics/PresentationId.h>
+
 #include <imgui.h>
 
 class WorkspaceHost;
 struct WorkspaceBarControls;
 
-// The tab strip under the caption: a tab per open workspace, a way to open the
-// rest, and the active one's controls. Its clicks are requests the host
-// applies at the frame boundary. Draw reserves its own height of work area.
+// The tab strip under a window's caption: a tab per workspace placed in that
+// window, the active one's controls, and in the main window a way to open the
+// rest. A tab dragged down off the strip, or moved from its menu, goes to a
+// window of its own; a detached tab's menu brings it back. Its clicks are
+// requests the host applies at the frame boundary. Draw reserves its own
+// height of work area.
 class WorkspaceBar
 {
 public:
-    explicit WorkspaceBar(WorkspaceHost& host)
+    WorkspaceBar(WorkspaceHost& host, PresentationId window)
         : Host(host)
+        , Window(window)
     {
     }
 
@@ -24,4 +30,5 @@ private:
     void DrawTabs(float buttonSize, float right);
 
     WorkspaceHost& Host;
+    PresentationId Window;
 };

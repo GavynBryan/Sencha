@@ -75,7 +75,7 @@ public:
     bool UndoStagedEdit() override;
     [[nodiscard]] bool HasStagedEdit() const override;
     WorkspaceView& View() override { return Surface; }
-    void Place(EditorUiFeature& window) override { UiFeature = &window; }
+    void Place(EditorUiFeature& window) override;
 
 private:
     // Constructor phases, in call order. Each builds one cohesive slice of the
@@ -122,7 +122,10 @@ private:
     EditorUiFeature* UiFeature = nullptr;
     std::unique_ptr<EditorViewportCameraSystem> CameraSystem;
     Engine* EnginePtr = nullptr;
+    // The window the workspace is placed in: its pointer, layout and dialogs.
     SdlWindow* Window = nullptr;
+    // Where authored surfaces live, whichever window the workspace is in.
+    SdlWindow* PrimaryWindow = nullptr;
     bool Visible = false;
     WindowExtent LayoutExtent{};
 

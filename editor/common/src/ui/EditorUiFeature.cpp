@@ -7,6 +7,7 @@
 #include "EditorConsolePanel.h"
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
+#include "ImGuiTextureOwner.h"
 #include "WorkspaceBar.h"
 #include "workspaces/WorkspaceHost.h"
 #include "chrome/ChromeBars.h"
@@ -286,6 +287,18 @@ EditorUiFeature::EditorUiFeature(Engine& engine,
 {
 }
 
+EditorUiFeature::EditorUiFeature(EditorUiFeature& primary, SdlWindow& window)
+    : Role(ShellRole::Detached)
+    , PrimaryShell(&primary)
+    , EngineInstance(primary.EngineInstance)
+    , Window(window)
+    , Instance(primary.Instance)
+    , Frames(primary.Frames)
+    , ThemePrefs(SENCHA_EDITOR_THEME_DIR)
+{
+    Identity = primary.Identity;
+}
+
 EditorUiFeature::~EditorUiFeature()
 {
     Teardown();
@@ -296,7 +309,7 @@ bool EditorUiFeature::Setup(const RenderFeatureServices& featureServices)
     const RendererServices& services = *featureServices.Backend;
     Log = services.Logging ? &services.Logging->GetLogger<EditorUiFeature>() : nullptr;
     Valid = InitImGui(services);
-    if (Valid)
+    if (Valid && Role == ShellRole::Primary)
         RegisterPointerCommands(EngineInstance.Console().Registry());
     if (Log != nullptr)
         Log->Info("EditorUiFeature setup {}", Valid ? "succeeded" : "failed");
@@ -317,11 +330,30 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         LoggedFirstDraw = true;
     }
 
-    PrepareFrameChrome();
-
-    ImGui_ImplVulkan_NewFrame();
+    const ScopedImGuiContext scope(Context);
+    if (Role == ShellRole::Primary)
+    {
+        PrepareFrameChrome();
+        ImGui_ImplVulkan_NewFrame();
+    }
+    else
+    {
+        // The primary's style and atlas. Its backend made the font texture, so
+        // this one never calls ImGui_ImplVulkan_NewFrame, which would make a
+        // second; imgui 1.92's managed textures retire this.
+        ImGui::GetStyle() = PrimaryShell->Context->Style;
+        if (ImGui::GetIO().Fonts->TexID == 0)
+            return;
+    }
+    // The cursor is one per desktop: only the window under the pointer sets it.
+    ImGuiIO& io = ImGui::GetIO();
+    if (SDL_GetMouseFocus() == Window.GetHandle())
+        io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+    else
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     ImGui_ImplSDL3_NewFrame();
-    FeedPointerActions();
+    if (Role == ShellRole::Primary)
+        FeedPointerActions();
     ImGui::NewFrame();
 
     WorkspaceView* view = ActiveView();
@@ -350,10 +382,13 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         for (const std::unique_ptr<IEditorPanel>& panel : view->Panels)
             if (panel != nullptr && panel->IsVisible())
                 panel->OnDraw();
-    // After the panels have drawn: a close box acts during a panel's own draw.
-    PanelVisibility.Track();
-
-    ThemePrefs.DrawWindow(EngineInstance.Console().Registry());
+    if (Role == ShellRole::Primary)
+    {
+        // After the panels have drawn: a close box acts during a panel's own
+        // draw. The primary tracks every window's panels.
+        PanelVisibility.Track();
+        ThemePrefs.DrawWindow(EngineInstance.Console().Registry());
+    }
 
     if (view != nullptr)
         for (const std::function<void()>& overlay : view->Overlays)
@@ -400,7 +435,7 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
 
     // The file has been read by the first NewFrame; a remembered choice
     // overrides the compiled default exactly once.
-    if (!VisibilityApplied)
+    if (Role == ShellRole::Primary && !VisibilityApplied)
     {
         PanelVisibility.Apply();
         VisibilityApplied = true;
@@ -414,12 +449,12 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
     };
     if (Workspaces != nullptr)
         for (const WorkspaceHost::Entry& entry : Workspaces->OpenWorkspaces())
-            if (entry.Kind != Workspaces->ActiveKind())
+            if (entry.Window == Presentation && entry.Kind != Workspaces->ActiveKindIn(Presentation))
                 ImGui::DockSpace(dockIdOf(entry.Kind->Id), ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_KeepAliveOnly);
 
     if (view != nullptr)
     {
-        const ImGuiID dockId = dockIdOf(Workspaces->ActiveKind()->Id);
+        const ImGuiID dockId = dockIdOf(Workspaces->ActiveKindIn(Presentation)->Id);
         // A dockable panel with no saved placement (a renamed or newly added
         // panel against an older ini) would come up floating; the designed
         // layout is rebuilt instead. Checked once per view; DockBuilder places
@@ -458,7 +493,7 @@ void EditorUiFeature::UpdateWindowTitle(const WorkspaceView* view)
     if (Workspaces == nullptr || Identity.WindowTitle.empty())
         return;
     std::string title = Identity.WindowTitle;
-    if (const WorkspaceKind* kind = Workspaces->ActiveKind())
+    if (const WorkspaceKind* kind = Workspaces->ActiveKindIn(Presentation))
         title += " - " + kind->DisplayName;
     if (view != nullptr && view->Status)
         if (const std::string status = view->Status(); !status.empty())
@@ -593,7 +628,7 @@ void EditorUiFeature::FeedPointerActions()
 
 void EditorUiFeature::Teardown()
 {
-    if (!Valid && DescriptorPool == VK_NULL_HANDLE)
+    if (!Valid && Context == nullptr)
         return;
 
     ShutdownImGui();
@@ -604,6 +639,7 @@ bool EditorUiFeature::ProcessSdlEvent(const SDL_Event& event)
 {
     if (!Valid)
         return false;
+    const ScopedImGuiContext scope(Context);
 
     ImGui_ImplSDL3_ProcessEvent(&event);
     if (!IsEditorUiInputEvent(event))
@@ -618,6 +654,7 @@ UiInputCapture EditorUiFeature::GetInputCapture() const
     if (!Valid)
         return {};
 
+    const ScopedImGuiContext scope(Context);
     const ImGuiIO& io = ImGui::GetIO();
     return UiInputCapture{
         .Mouse = io.WantCaptureMouse,
@@ -633,6 +670,7 @@ void EditorUiFeature::SetMouseInputEnabled(bool enabled)
 
     // NoMouse parks io.MousePos off-screen and drops button state on the next
     // NewFrame, so hover/highlight/click all stop until the flag is cleared.
+    const ScopedImGuiContext scope(Context);
     ImGuiIO& io = ImGui::GetIO();
     if (enabled)
         io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
@@ -648,6 +686,7 @@ void EditorUiFeature::SetKeyboardInputEnabled(bool enabled)
     // NoKeyboard ignores keyboard events and clears existing key state, so a
     // focused widget (e.g. the console input) stops receiving keystrokes while a
     // viewport gesture owns input and the keys belong to the fly camera.
+    const ScopedImGuiContext scope(Context);
     ImGuiIO& io = ImGui::GetIO();
     if (enabled)
         io.ConfigFlags &= ~ImGuiConfigFlags_NoKeyboard;
@@ -661,10 +700,13 @@ void EditorUiFeature::AddShellOverlay(std::function<void()> draw)
         ShellOverlays.push_back(std::move(draw));
 }
 
-void EditorUiFeature::SetWorkspaceHost(WorkspaceHost& host)
+void EditorUiFeature::SetWorkspaceHost(WorkspaceHost& host, PresentationId window)
 {
     Workspaces = &host;
-    TabStrip = std::make_unique<WorkspaceBar>(host);
+    Presentation = window;
+    TabStrip = std::make_unique<WorkspaceBar>(host, window);
+    if (Role == ShellRole::Detached)
+        return;
     host.SetOpenedListener([this](const WorkspaceKind& kind, IWorkspace& workspace) { AdoptWorkspace(kind, workspace); });
     host.SetClosingListener([this](const WorkspaceKind&, IWorkspace& workspace) { ReleaseWorkspace(workspace); });
     for (const WorkspaceHost::Entry& entry : host.OpenWorkspaces())
@@ -696,15 +738,15 @@ void EditorUiFeature::ReleaseWorkspace(IWorkspace& workspace)
 
 void EditorUiFeature::ToggleConsole()
 {
-    IWorkspace* active = Workspaces != nullptr ? Workspaces->Active() : nullptr;
-    for (const auto& [workspace, console] : Consoles)
+    IWorkspace* active = Workspaces != nullptr ? Workspaces->ActiveIn(Presentation) : nullptr;
+    for (const auto& [workspace, console] : Shell().Consoles)
         if (workspace == active)
             console->ToggleVisible();
 }
 
 WorkspaceView* EditorUiFeature::ActiveView() const
 {
-    IWorkspace* active = Workspaces != nullptr ? Workspaces->Active() : nullptr;
+    IWorkspace* active = Workspaces != nullptr ? Workspaces->ActiveIn(Presentation) : nullptr;
     return active != nullptr ? &active->View() : nullptr;
 }
 
@@ -747,8 +789,9 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     DeviceHandle = services.Device->GetDevice();
 
     IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
+    Context = ImGui::CreateContext(Role == ShellRole::Detached ? PrimaryShell->Context->IO.Fonts : nullptr);
     ImGuiContextReady = true;
+    const ScopedImGuiContext scope(Context);
 
     ImGuiIO& io = ImGui::GetIO();
     // No keyboard nav: it reserves Tab/arrows/Enter for widget focus cycling, which
@@ -757,10 +800,25 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     // Per-application layout file: the editor family would otherwise fight
     // over one ./imgui.ini. Points at the member so it outlives the context.
-    if (!IniFileName.empty())
-        io.IniFilename = IniFileName.c_str();
-    // Before the first NewFrame, which is when ImGui reads the file.
-    PanelVisibility.Register();
+    if (Role == ShellRole::Primary)
+    {
+        if (!IniFileName.empty())
+            io.IniFilename = IniFileName.c_str();
+        // Before the first NewFrame, which is when ImGui reads the file.
+        PanelVisibility.Register();
+    }
+    else
+    {
+        // A detached window starts from the primary's layout, so a workspace
+        // arrives arranged as it was; what changes here is not written back.
+        io.IniFilename = nullptr;
+        std::string layout;
+        {
+            const ScopedImGuiContext primary(PrimaryShell->Context);
+            layout = ImGui::SaveIniSettingsToMemory();
+        }
+        ImGui::LoadIniSettingsFromMemory(layout.c_str(), layout.size());
+    }
 
     // Every ImGuiTextureBinding costs one combined-image-sampler set: the
     // viewport targets and up to editor.materials.thumbnail_budget resident
@@ -787,7 +845,10 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
 
-    if (vkCreateDescriptorPool(DeviceHandle, &poolInfo, nullptr, &DescriptorPool) != VK_SUCCESS)
+    // Every texture set is the primary's (ImGuiTextureOwner.h), so a detached
+    // window's backend allocates none and takes the smallest pool it accepts.
+    if (Role == ShellRole::Primary
+        && vkCreateDescriptorPool(DeviceHandle, &poolInfo, nullptr, &DescriptorPool) != VK_SUCCESS)
     {
         if (Log) Log->Error("EditorUiFeature: failed to create descriptor pool");
         ShutdownImGui();
@@ -809,6 +870,8 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     vulkanInfo.QueueFamily = *queueFamilies.Graphics;
     vulkanInfo.Queue = services.Queues->GetGraphicsQueue();
     vulkanInfo.DescriptorPool = DescriptorPool;
+    if (Role == ShellRole::Detached)
+        vulkanInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE + 1;
     vulkanInfo.MinImageCount = Frames.GetFramesInFlight();
     vulkanInfo.ImageCount = Frames.GetFramesInFlight();
     vulkanInfo.UseDynamicRendering = true;
@@ -830,6 +893,8 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
         return false;
     }
     VulkanBackendReady = true;
+    if (Role == ShellRole::Primary)
+        SetImGuiTextureOwner(Context);
 
     return true;
 }
@@ -854,13 +919,25 @@ void EditorUiFeature::ShutdownImGui()
             graphics->DeletionQueue.FlushAll();
     }
 
-    if (VulkanBackendReady)
-        ImGui_ImplVulkan_Shutdown();
-    if (SdlBackendReady)
-        ImGui_ImplSDL3_Shutdown();
-
-    if (ImGuiContextReady && ImGui::GetCurrentContext())
-        ImGui::DestroyContext();
+    if (Context != nullptr)
+    {
+        const ScopedImGuiContext scope(Context);
+        if (VulkanBackendReady)
+            ImGui_ImplVulkan_Shutdown();
+        if (SdlBackendReady)
+            ImGui_ImplSDL3_Shutdown();
+    }
+    if (Role == ShellRole::Primary)
+        SetImGuiTextureOwner(nullptr);
+    if (ImGuiContextReady && Context != nullptr)
+    {
+        ImGui::DestroyContext(Context);
+        Context = nullptr;
+        // Destroying the current context leaves none; the primary's is the
+        // one everything outside a draw expects.
+        if (Role == ShellRole::Detached && ImGui::GetCurrentContext() == nullptr)
+            ImGui::SetCurrentContext(PrimaryShell->Context);
+    }
 
     if (DescriptorPool != VK_NULL_HANDLE && DeviceHandle != VK_NULL_HANDLE)
     {
@@ -961,6 +1038,8 @@ EditorChrome::BarSurface EditorUiFeature::ResolveSurface(EditorUi::BarFinish fin
 
 EditorChrome::BarSurface EditorUiFeature::SurfaceFor(BarRole role) const
 {
+    if (Role == ShellRole::Detached)
+        return PrimaryShell->SurfaceFor(role);
     return role == BarRole::Caption ? CaptionSurface : ToolbarSurface;
 }
 
@@ -1108,8 +1187,9 @@ void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
             file.Open();
         if (ImGui::MenuItem("Save", "Ctrl+S", false, file.Save != nullptr) && file.Save)
             file.Save();
-        if (ImGui::MenuItem("Save All", "Ctrl+Shift+S", false, SaveAllAction != nullptr) && SaveAllAction)
-            SaveAllAction();
+        const std::function<void()>& saveAll = Shell().SaveAllAction;
+        if (ImGui::MenuItem("Save All", "Ctrl+Shift+S", false, saveAll != nullptr) && saveAll)
+            saveAll();
         if (ImGui::MenuItem("Save As", nullptr, false, file.SaveAs != nullptr) && file.SaveAs)
             file.SaveAs();
         if (ImGui::MenuItem("Exit"))
@@ -1119,13 +1199,14 @@ void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
 
     if (ImGui::BeginMenu("Edit"))
     {
-        const bool canUndo = CanUndoAction ? CanUndoAction() : false;
-        const bool canRedo = CanRedoAction ? CanRedoAction() : false;
+        EditorUiFeature& shell = Shell();
+        const bool canUndo = shell.CanUndoAction ? shell.CanUndoAction() : false;
+        const bool canRedo = shell.CanRedoAction ? shell.CanRedoAction() : false;
 
-        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo) && UndoAction)
-            UndoAction();
-        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && RedoAction)
-            RedoAction();
+        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo) && shell.UndoAction)
+            shell.UndoAction();
+        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && shell.RedoAction)
+            shell.RedoAction();
 
         ImGui::EndMenu();
     }
@@ -1152,7 +1233,7 @@ void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
         {
             if (ImGui::BeginMenu("Theme"))
             {
-                ThemePrefs.DrawMenu(EngineInstance.Console().Registry());
+                Shell().ThemePrefs.DrawMenu(EngineInstance.Console().Registry());
                 ImGui::EndMenu();
             }
             ImGui::EndMenu();
@@ -1225,7 +1306,12 @@ void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
             ImGui::SameLine();
             if (EditorChrome::IconButton("win_close", IconId::WindowClose, buttonSize,
                                          EditorChrome::ButtonTone::Destructive))
-                EngineInstance.RequestExit();
+            {
+                if (CloseWindowAction)
+                    CloseWindowAction();
+                else
+                    EngineInstance.RequestExit();
+            }
         }
 
         // The bar drags everywhere the menus and the right cluster are not:

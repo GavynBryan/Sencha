@@ -39,6 +39,8 @@ public:
     // editor.select <persistent-id>, so a scripted run can measure what the
     // editor draws for a selected entity without a pointer.
     void RegisterCommands(ConsoleRegistry& registry);
+    // The window file dialogs open over.
+    void SetWindow(SdlWindow& window) { Window = &window; }
 
     void New();
     void NewWorld();
@@ -75,7 +77,7 @@ private:
     // as the level default), so cross-project level moves are diagnosable.
     void LogUnresolvedFaceMaterials(const std::string& levelPath);
 
-    SdlWindow&        Window;
+    SdlWindow*        Window;
     WorldDocument&    World;
     std::function<void()> ResolvePendingEdits;
     MaterialLibrary&  Materials;

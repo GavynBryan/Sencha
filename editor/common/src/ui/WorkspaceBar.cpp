@@ -85,9 +85,13 @@ void WorkspaceBar::DrawRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, const Workspace
 void WorkspaceBar::DrawTabs(float buttonSize, float right)
 {
     EditorChrome::ModuleScope module("workspaces");
-    const WorkspaceKind* active = Host.ActiveKind();
+    const WorkspaceKind* active = Host.ActiveKindIn(Window);
+    const bool mainWindow = Window == Host.MainWindow();
+    const float stripBottom = ImGui::GetWindowPos().y + ImGui::GetWindowSize().y;
     for (const WorkspaceHost::Entry& entry : Host.OpenWorkspaces())
     {
+        if (entry.Window != Window)
+            continue;
         const WorkspaceKind& kind = *entry.Kind;
         ImGui::PushID(kind.Id.c_str());
         const bool isActive = &kind == active;
@@ -96,6 +100,19 @@ void WorkspaceBar::DrawTabs(float buttonSize, float right)
             && !isActive)
         {
             Host.Request({ WorkspaceAction::Activate, kind.Id });
+        }
+        // Pulled well clear of the strip, a tab leaves for a window of its own.
+        if (mainWindow && ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)
+            && ImGui::GetIO().MousePos.y > stripBottom + RowHeight() * 2.0f)
+        {
+            Host.Request({ WorkspaceAction::Detach, kind.Id });
+            ImGui::ClearActiveID();
+        }
+        if (ImGui::BeginPopupContextItem("tab_menu"))
+        {
+            if (ImGui::MenuItem(mainWindow ? "Move to New Window" : "Move to Main Window"))
+                Host.Request({ mainWindow ? WorkspaceAction::Detach : WorkspaceAction::Attach, kind.Id });
+            ImGui::EndPopup();
         }
         ImGui::SameLine(0.0f, 1.0f);
         if (EditorChrome::IconButton("close", IconId::WindowClose, buttonSize, EditorChrome::ButtonTone::Normal))
@@ -106,6 +123,12 @@ void WorkspaceBar::DrawTabs(float buttonSize, float right)
         ImGui::SameLine();
     }
 
+    // New workspaces open in the main window, so only its strip offers them.
+    if (!mainWindow)
+    {
+        ImGui::NewLine();
+        return;
+    }
     // Nothing to open means no button: every offered kind is already a tab.
     bool anyClosed = false;
     for (const WorkspaceKind& kind : Host.Kinds())

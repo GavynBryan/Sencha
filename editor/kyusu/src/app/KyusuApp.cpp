@@ -19,14 +19,20 @@
 #include <core/console/ConsoleService.h>
 #include <core/console/ConsoleTypes.h>
 #include <graphics/vulkan/GraphicsServices.h>
+#include <graphics/vulkan/PresentationTarget.h>
+#include <graphics/vulkan/PresentationWindows.h>
 #include <graphics/vulkan/Renderer.h>
 #include <platform/PlatformServices.h>
 #include <platform/SdlWindow.h>
+#include <platform/SdlWindowService.h>
+#include <platform/WindowCreateInfo.h>
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <functional>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -65,20 +71,24 @@ void ApplyWindowIcon(SdlWindow& window)
 // registering its own.
 struct WorkspaceTickSystem
 {
-    WorkspaceTickSystem(WorkspaceHost& host, bool& framesStarted)
+    WorkspaceTickSystem(WorkspaceHost& host, bool& framesStarted, std::function<void()> atBoundary)
         : Host(host)
         , FramesStarted(framesStarted)
+        , AtBoundary(std::move(atBoundary))
     {
     }
 
     void FrameUpdate(FrameUpdateContext& ctx)
     {
         FramesStarted = true;
+        AtBoundary();
         Host.Tick(ctx);
     }
 
     WorkspaceHost& Host;
     bool& FramesStarted;
+    // What the application settles at the frame boundary before the host does.
+    std::function<void()> AtBoundary;
 };
 } // namespace
 
@@ -129,14 +139,15 @@ void KyusuApp::OnStart(GameStartupContext&)
     ApplyWindowIcon(*window);
 
     const bool opensLevel = OpensLevel();
+    GraphicsServices& graphics = engine.Graphics();
+    const PresentationId mainWindow = graphics.MainRenderer.PrimaryPresentation();
     Session = std::make_unique<ProjectSession>(engine, std::move(ProjectPath));
     Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session),
-                                                 Session->Project() != nullptr);
+                                                 Session->Project() != nullptr, mainWindow);
 
     // Chrome theme (behavior from data), loaded before the UI feature applies
     // the ImGui style.
     ApplyEditorThemeFromConsole(engine.Console());
-    GraphicsServices& graphics = engine.Graphics();
     auto ui = std::make_unique<EditorUiFeature>(engine, *window, graphics.Instance, graphics.Frames,
                                                 "kyusu.imgui.ini");
     ui->SetIdentity(ShellIdentity{
@@ -144,7 +155,7 @@ void KyusuApp::OnStart(GameStartupContext&)
         .LogoPath = std::string(SENCHA_EDITOR_BRAND_DIR) + "/kyusu-logo.svg",
         .WindowTitle = "Kyusu",
     });
-    ui->SetWorkspaceHost(*Workspaces);
+    ui->SetWorkspaceHost(*Workspaces, mainWindow);
     Renderer& renderer = graphics.MainRenderer;
     Ui = renderer.StageFeature(std::move(ui), FeatureRegistration{ .Id = kEditorUiFeatureId });
     std::vector<std::string_view> failed;
@@ -154,12 +165,93 @@ void KyusuApp::OnStart(GameStartupContext&)
         Ui = nullptr;
     }
 
+    Workspaces->SetWindowOpener([this](const WorkspaceKind& kind) { return OpenDetachedWindow(kind); });
+    Workspaces->SetPlacedListener([this](const WorkspaceKind& kind, IWorkspace& workspace) {
+        if (EditorUiFeature* shell = ShellFor(Workspaces->WindowOf(kind.Id)))
+            workspace.Place(*shell);
+    });
+    Workspaces->SetWindowEmptiedListener([this](PresentationId emptied) { CloseDetachedWindow(emptied); });
+
     InstallDocumentActions();
     BuildShortcuts();
     RegisterWorkspaceCommands();
     // Before the startup script runs, so an argv +editor.open or +cook finds
     // the level it acts on. Without a project to edit, choose one.
     (void)Workspaces->Open(opensLevel ? "level" : "project");
+}
+
+PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
+{
+    Engine& engine = GetEngine();
+    if (Ui == nullptr)
+        return {};
+    GraphicsServices& graphics = engine.Graphics();
+    SdlWindowService& windows = engine.Platform().Windows;
+    WindowCreateInfo info;
+    info.Title = "Kyusu - " + kind.DisplayName;
+    const WindowExtent extent = Ui->GetWindow().GetExtent();
+    info.Width = extent.Width;
+    info.Height = extent.Height;
+    info.ClientDecorations = engine.Config().Window.ClientDecorations;
+    // ImGui draws without depth, so the window's swapchain scope binds none.
+    const PresentationId presentation =
+        OpenPresentationWindow(graphics, windows, info, PresentationDesc{ .DepthStencil = false });
+    if (presentation.IsNull())
+        return {};
+    SdlWindow& window = graphics.Frames.FindPresentation(presentation)->Window();
+    ApplyWindowIcon(window);
+
+    auto shell = std::make_unique<EditorUiFeature>(*Ui, window);
+    shell->SetWorkspaceHost(*Workspaces, presentation);
+    shell->SetCloseWindowAction([this, presentation] { WindowsToClose.push_back(presentation); });
+    EditorUiFeature* added = graphics.MainRenderer.AddFeature(std::move(shell), RenderFeatureScope::For(presentation));
+    if (added == nullptr)
+    {
+        (void)ClosePresentationWindow(graphics, windows, presentation);
+        return {};
+    }
+    Detached.push_back(DetachedWindow{ presentation, window.GetId(), added });
+    return presentation;
+}
+
+void KyusuApp::CloseDetachedWindow(PresentationId window)
+{
+    const auto it = std::find_if(Detached.begin(), Detached.end(),
+                                 [window](const DetachedWindow& entry) { return entry.Presentation == window; });
+    if (it == Detached.end())
+        return;
+    Engine& engine = GetEngine();
+    // The shell first: a presentation something still records into refuses to go.
+    DetachRenderFeature(engine, it->Shell);
+    (void)ClosePresentationWindow(engine.Graphics(), engine.Platform().Windows, window);
+    Detached.erase(it);
+}
+
+void KyusuApp::CloseRequestedWindows()
+{
+    std::vector<PresentationId> closing = std::move(WindowsToClose);
+    WindowsToClose.clear();
+    // Closing a window brings its workspaces back, which empties and closes it.
+    for (const PresentationId window : closing)
+        Workspaces->Gather(window);
+}
+
+EditorUiFeature* KyusuApp::ShellFor(PresentationId window) const
+{
+    if (Workspaces != nullptr && window == Workspaces->MainWindow())
+        return Ui;
+    for (const DetachedWindow& entry : Detached)
+        if (entry.Presentation == window)
+            return entry.Shell;
+    return nullptr;
+}
+
+EditorUiFeature* KyusuApp::ShellForWindowId(std::uint32_t windowId) const
+{
+    for (const DetachedWindow& entry : Detached)
+        if (entry.WindowId == windowId)
+            return entry.Shell;
+    return Ui;
 }
 
 void KyusuApp::InstallDocumentActions()
@@ -324,7 +416,8 @@ void KyusuApp::RegisterWorkspaceCommands()
                     result.Error("expected one of: " + kinds);
                     return result;
                 }
-                if (action == WorkspaceAction::Activate && Workspaces->Find(args[0]) == nullptr)
+                if (action != WorkspaceAction::Open && action != WorkspaceAction::Close
+                    && Workspaces->Find(args[0]) == nullptr)
                 {
                     result.Status = ConsoleStatus::InvalidArguments;
                     result.Error("'" + args[0] + "' is not open; workspace.open opens it");
@@ -343,36 +436,78 @@ void KyusuApp::RegisterWorkspaceCommands()
     registerAction("workspace.open", WorkspaceAction::Open, "Open a workspace, or bring it to the front if open.");
     registerAction("workspace.close", WorkspaceAction::Close, "Close a workspace.");
     registerAction("workspace.activate", WorkspaceAction::Activate, "Bring an open workspace to the front.");
+    registerAction("workspace.detach", WorkspaceAction::Detach, "Move an open workspace into a window of its own.");
+    registerAction("workspace.attach", WorkspaceAction::Attach, "Move a workspace back into the main window.");
+
+    registry.RegisterCommand({
+        .Name = "editor.window.screenshot",
+        .Owner = "editor",
+        .Usage = "editor.window.screenshot <kind> <path.png> [frame]",
+        .Help = "Write the window showing an open workspace to a PNG, once the renderer has drawn [frame] frames.",
+        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            const PresentationId window = args.size() >= 2 ? Workspaces->WindowOf(args[0]) : PresentationId{};
+            std::uint64_t atFrame = 0;
+            if (args.size() == 3)
+                atFrame = std::strtoull(args[2].c_str(), nullptr, 10);
+            if (window.IsNull() || args.size() > 3
+                || !GetEngine().Graphics().MainRenderer.CaptureFrame(window, args[1], atFrame))
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("expected an open workspace, a path, and optionally a frame");
+                return result;
+            }
+            result.Info("capture armed for '" + args[0] + "'");
+            return result;
+        },
+    });
 }
 
 void KyusuApp::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     if (Workspaces)
-        ctx.Schedule.Register<WorkspaceTickSystem>(*Workspaces, FramesStarted);
+        ctx.Schedule.Register<WorkspaceTickSystem>(*Workspaces, FramesStarted, [this] { CloseRequestedWindows(); });
 }
 
 void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
 {
     if (Ui == nullptr || Workspaces == nullptr)
         return;
+    // Every window's events arrive here; each goes to the shell of its window
+    // and the workspace showing there.
+    EditorUiFeature* shell = ShellForWindowId(ctx.WindowId);
+    const PresentationId window = shell->ShownWindow();
+    if (window != Workspaces->MainWindow())
+    {
+        if (ctx.Event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
+        {
+            WindowsToClose.push_back(window);
+            ctx.Handled = true;
+            return;
+        }
+    }
+    // The workspace a window shows is the one in use once its window has focus.
+    if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
+        if (const WorkspaceKind* kind = Workspaces->ActiveKindIn(window))
+            Workspaces->Request({ WorkspaceAction::Activate, kind->Id });
     if (ctx.Event.type == SDL_EVENT_KEY_DOWN && !ctx.Event.key.repeat
         && ctx.Event.key.scancode == SDL_SCANCODE_GRAVE)
     {
-        Ui->ToggleConsole();
+        shell->ToggleConsole();
         ctx.Handled = true;
         return;
     }
-    IWorkspace* active = Workspaces->Active();
+    IWorkspace* active = Workspaces->ActiveIn(window);
     if (active != nullptr && active->ClaimPlatformEvent(ctx))
     {
         ctx.Handled = true;
         return;
     }
-    Ui->ProcessSdlEvent(ctx.Event);
+    shell->ProcessSdlEvent(ctx.Event);
     if (active != nullptr)
         active->HandlePlatformEvent(ctx);
     // Keys the active workspace left alone, unless a text field has them.
-    if (ctx.Handled || Ui->GetInputCapture().Keyboard)
+    if (ctx.Handled || shell->GetInputCapture().Keyboard)
         return;
     if (const std::optional<InputEvent> event = TranslateSdlEvent(ctx.Event))
         if (Shortcuts.OnInput(*event) == InputConsumed::Yes)
@@ -390,8 +525,14 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
     // Inside the Game shutdown window, before the engine disconnects the asset
     // stack they hold leases into. The workspaces first: their documents hold
     // code the session's module compiled.
+    // Detached workspaces come home before anything closes, so each one's
+    // window, and the shell drawn in it, go while the workspace still lives.
     if (Workspaces)
+    {
+        while (!Detached.empty())
+            Workspaces->Gather(Detached.back().Presentation);
         Workspaces->CloseAll();
+    }
     DetachRenderFeature(GetEngine(), Ui);
     Workspaces.reset();
     // The exit gate reads the journal the session is about to take with it.

@@ -4,7 +4,7 @@
 #include <assets/texture/TextureCache.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
 
-#include <imgui_impl_vulkan.h>
+#include "ui/ImGuiTextureOwner.h"
 
 namespace
 {
@@ -56,11 +56,11 @@ void ImGuiTextureBinding::Release()
     // down anything that holds bindings (EditorApp::OnShutdown).
     if (Set != VK_NULL_HANDLE)
     {
-        ImGui_ImplVulkan_RemoveTexture(Set);
+        RemoveImGuiTexture(Set);
         Set = VK_NULL_HANDLE;
     }
     for (const RetiredSet& retired : Retired)
-        ImGui_ImplVulkan_RemoveTexture(retired.Set);
+        RemoveImGuiTexture(retired.Set);
     Retired.clear();
 }
 
@@ -70,7 +70,7 @@ ImTextureID ImGuiTextureBinding::TextureId()
     {
         if (it->Countdown-- == 0)
         {
-            ImGui_ImplVulkan_RemoveTexture(it->Set);
+            RemoveImGuiTexture(it->Set);
             it = Retired.erase(it);
         }
         else
@@ -91,7 +91,7 @@ ImTextureID ImGuiTextureBinding::TextureId()
         RetireSet();
         const VkSampler sampler = Nearest ? Samplers.GetNearestClamp()
                                           : Samplers.GetLinearClamp();
-        Set = ImGui_ImplVulkan_AddTexture(sampler, Images.GetView(current),
+        Set = AddImGuiTexture(sampler, Images.GetView(current),
                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         BoundImage = current;
     }

@@ -109,6 +109,7 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
 {
     EnginePtr = &engine;
     Window = &window;
+    PrimaryWindow = &window;
     Assets = &engine.Content().Assets();
 
     RegisterDocumentSerializers();
@@ -966,6 +967,16 @@ void LevelWorkspace::Tick(FrameUpdateContext& ctx)
     ProcessFrame();
 }
 
+void LevelWorkspace::Place(EditorUiFeature& window)
+{
+    UiFeature = &window;
+    if (Window != nullptr && Window != &window.GetWindow())
+        SetRelativeMouseMode(*Window, false);
+    Window = &window.GetWindow();
+    if (Files != nullptr)
+        Files->SetWindow(*Window);
+}
+
 void LevelWorkspace::SetVisible(bool visible)
 {
     if (Visible == visible)
@@ -1009,11 +1020,11 @@ void LevelWorkspace::BuildAuthoredWorkflows()
     // a dialog on a surface of its own would take focus from nothing. Tracked
     // against the window in ProcessFrame, since a retained document re-flows on
     // a resize where a baked atlas cannot.
-    if (!AuthoredSurface.IsValid() && Window != nullptr)
+    if (!AuthoredSurface.IsValid() && PrimaryWindow != nullptr)
     {
         AuthoredSurface = ui->CreateSurface(
             "kyusu",
-            RenderExtent{ Window->GetExtent().Width, Window->GetExtent().Height });
+            RenderExtent{ PrimaryWindow->GetExtent().Width, PrimaryWindow->GetExtent().Height });
     }
     if (!AuthoredSurface.IsValid())
         return;
@@ -1175,13 +1186,13 @@ void LevelWorkspace::ProcessFrame()
     // A retained document re-flows on a resize, so the surface follows the
     // window rather than latching whatever size it was created at. Unchanged
     // sizes cost a comparison.
-    if (AuthoredSurface.IsValid() && Window != nullptr)
+    if (AuthoredSurface.IsValid() && PrimaryWindow != nullptr)
     {
         if (UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr; ui != nullptr)
         {
             ui->SetSurfaceSize(AuthoredSurface,
-                               RenderExtent{ Window->GetExtent().Width,
-                                             Window->GetExtent().Height });
+                               RenderExtent{ PrimaryWindow->GetExtent().Width,
+                                             PrimaryWindow->GetExtent().Height });
             // The same display scale the shell resolved. Without this an
             // authored surface stays at 1.0 while the ImGui chrome beside it
             // scales, so on a HiDPI display the two halves of the same editor

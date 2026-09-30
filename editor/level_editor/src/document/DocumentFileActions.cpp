@@ -48,7 +48,7 @@ DocumentFileActions::DocumentFileActions(SdlWindow& window, WorldDocument& world
                                          std::vector<std::string> contentRoots,
                                          SelectionService& selection,
                                          MeshEditService& meshEdit)
-    : Window(window)
+    : Window(&window)
     , World(world)
     , ResolvePendingEdits(std::move(resolvePendingEdits))
     , Materials(materials)
@@ -255,7 +255,7 @@ bool DocumentFileActions::OpenSceneSource(std::string_view assetPath)
 
 void DocumentFileActions::RequestOpen()
 {
-    if (Window.GetHandle() == nullptr)
+    if (Window->GetHandle() == nullptr)
         return;
 
     SDL_ShowOpenFileDialog(
@@ -266,7 +266,7 @@ void DocumentFileActions::RequestOpen()
                 self->EnqueueFileAction(FileActionKind::Open, filelist[0]);
         },
         this,
-        Window.GetHandle(),
+        Window->GetHandle(),
         kDocumentFileFilters,
         static_cast<int>(std::size(kDocumentFileFilters)),
         nullptr,
@@ -275,7 +275,7 @@ void DocumentFileActions::RequestOpen()
 
 void DocumentFileActions::RequestSaveAs()
 {
-    if (Window.GetHandle() == nullptr)
+    if (Window->GetHandle() == nullptr)
         return;
 
     SDL_ShowSaveFileDialog(
@@ -286,7 +286,7 @@ void DocumentFileActions::RequestSaveAs()
                 self->EnqueueFileAction(FileActionKind::SaveAs, filelist[0]);
         },
         this,
-        Window.GetHandle(),
+        Window->GetHandle(),
         kDocumentFileFilters,
         static_cast<int>(std::size(kDocumentFileFilters)),
         nullptr);

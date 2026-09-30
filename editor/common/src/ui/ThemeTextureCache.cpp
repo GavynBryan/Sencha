@@ -6,7 +6,7 @@
 #include <graphics/vulkan/VulkanImageService.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
 
-#include <imgui_impl_vulkan.h>
+#include "ui/ImGuiTextureOwner.h"
 
 #include <algorithm>
 #include <system_error>
@@ -96,7 +96,7 @@ bool ThemeTextureCache::Load(Entry& entry)
     // Repeat, not clamp: a strip narrower than the surface it dresses is tiled
     // by drawing one quad with a UV above one, which only works if the sampler
     // wraps.
-    entry.Set = ImGui_ImplVulkan_AddTexture(Samplers.GetLinearRepeat(), Images.GetView(uploaded),
+    entry.Set = AddImGuiTexture(Samplers.GetLinearRepeat(), Images.GetView(uploaded),
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     if (entry.Set == VK_NULL_HANDLE)
     {
@@ -119,7 +119,7 @@ void ThemeTextureCache::ReleaseResources(Entry& entry, bool immediate)
     if (entry.Set != VK_NULL_HANDLE)
     {
         if (immediate)
-            ImGui_ImplVulkan_RemoveTexture(entry.Set);
+            RemoveImGuiTexture(entry.Set);
         else
             Retire(entry.Set);
         entry.Set = VK_NULL_HANDLE;
@@ -147,7 +147,7 @@ void ThemeTextureCache::FlushRetired(bool force)
     {
         if (force || Retirement.IsRetired(it->Stamp))
         {
-            ImGui_ImplVulkan_RemoveTexture(it->Set);
+            RemoveImGuiTexture(it->Set);
             it = Retired.erase(it);
         }
         else

@@ -8,6 +8,7 @@
 #include "chrome/ChromeBars.h"
 #include "chrome/IconDraw.h"
 
+#include <graphics/PresentationId.h>
 #include <graphics/vulkan/Renderer.h>
 #include <platform/WindowFrameHit.h>
 
@@ -19,6 +20,7 @@
 #include <vector>
 
 union SDL_Event;
+struct ImGuiContext;
 
 class ConsoleRegistry;
 class EditorConsolePanel;
@@ -53,8 +55,11 @@ enum class BarRole
     Toolbar,
 };
 
-// The ImGui shell of one window: the active workspace of its WorkspaceHost,
-// under a tab strip, with the caption and menus around it.
+// The ImGui shell of one window: the workspace its WorkspaceHost shows there,
+// under a tab strip, with the caption and menus around it. The primary shell
+// owns what every window shares -- the font atlas, the theme, the layout file,
+// the shell's actions and prompts; a detached one draws with them in a window
+// of its own, over an ImGui context of its own.
 class EditorUiFeature : public IRenderFeature
 {
 public:
@@ -64,6 +69,8 @@ public:
                     VulkanInstanceService& instance,
                     VulkanFrameService& frames,
                     std::string iniFileName);
+    // A detached window's shell. `primary` outlives it.
+    EditorUiFeature(EditorUiFeature& primary, SdlWindow& window);
     ~EditorUiFeature() override;
 
     EditorUiFeature(const EditorUiFeature&) = delete;
@@ -103,10 +110,15 @@ public:
     // them to a focused widget (otherwise WASD fills the console input box).
     void SetKeyboardInputEnabled(bool enabled);
 
-    // Draws the host's workspaces from now on: their panels are adopted as they
-    // open (named, given a console, their remembered visibility restored) and
-    // let go before they close. The host outlives this feature's drawing.
-    void SetWorkspaceHost(WorkspaceHost& host);
+    // Draws the host's workspaces placed in `window` from now on. The primary
+    // shell also adopts their panels as they open (named, given a console,
+    // their remembered visibility restored) and lets go before they close.
+    // The host outlives this feature's drawing.
+    void SetWorkspaceHost(WorkspaceHost& host, PresentationId window);
+    [[nodiscard]] PresentationId ShownWindow() const { return Presentation; }
+    [[nodiscard]] SdlWindow& GetWindow() const { return Window; }
+    // What the caption's close button does; exit, unless the host says otherwise.
+    void SetCloseWindowAction(std::function<void()> action) { CloseWindowAction = std::move(action); }
     // Shows or hides the active workspace's console.
     void ToggleConsole();
 
@@ -125,6 +137,14 @@ public:
     [[nodiscard]] EditorChrome::BarSurface SurfaceFor(BarRole role) const;
 
 private:
+    enum class ShellRole : std::uint8_t
+    {
+        Primary,
+        Detached,
+    };
+
+    // The primary shell, which holds what every window shares.
+    [[nodiscard]] EditorUiFeature& Shell() { return Role == ShellRole::Primary ? *this : *PrimaryShell; }
     bool InitImGui(const RendererServices& services);
     void ShutdownImGui();
     // The frame boundary: commit a pending theme, then resolve everything
@@ -148,6 +168,12 @@ private:
     void DrawMainMenuBar(WorkspaceView* view);
     void RegisterPointerCommands(ConsoleRegistry& registry);
     void FeedPointerActions();
+
+    ShellRole Role = ShellRole::Primary;
+    EditorUiFeature* PrimaryShell = nullptr;
+    ImGuiContext* Context = nullptr;
+    PresentationId Presentation;
+    std::function<void()> CloseWindowAction;
 
     Engine& EngineInstance;
     SdlWindow& Window;

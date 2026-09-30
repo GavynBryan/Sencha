@@ -4,13 +4,18 @@
 
 #include "input/ShortcutRegistry.h"
 
+#include <graphics/PresentationId.h>
+
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 class EditorUiFeature;
 class ProjectSession;
 class WorkspaceHost;
+struct WorkspaceKind;
 
 // Kyusu's Game entry point: the project session, the window's UI and the
 // workspaces drawn in it, built in that order and torn down in reverse.
@@ -42,6 +47,15 @@ private:
     [[nodiscard]] bool CanUndo() const;
     // Whether this session starts in a level rather than choosing a project.
     [[nodiscard]] bool OpensLevel() const;
+    // A window for a detached workspace and the shell drawn in it; null when
+    // either cannot be made.
+    PresentationId OpenDetachedWindow(const WorkspaceKind& kind);
+    void CloseDetachedWindow(PresentationId window);
+    // The shell of the window an event names; the primary's for one naming none.
+    [[nodiscard]] EditorUiFeature* ShellForWindowId(std::uint32_t windowId) const;
+    [[nodiscard]] EditorUiFeature* ShellFor(PresentationId window) const;
+    // Windows asked to close mid-frame, closed at the next frame boundary.
+    void CloseRequestedWindows();
 
     std::optional<std::string> ProjectPath;
     // Declared before the workspaces so it is destroyed after them: the module
@@ -50,6 +64,15 @@ private:
     std::unique_ptr<WorkspaceHost> Workspaces;
     // Owned by the renderer.
     EditorUiFeature* Ui = nullptr;
+    struct DetachedWindow
+    {
+        PresentationId Presentation;
+        std::uint32_t WindowId = 0;
+        // Owned by the renderer.
+        EditorUiFeature* Shell = nullptr;
+    };
+    std::vector<DetachedWindow> Detached;
+    std::vector<PresentationId> WindowsToClose;
     // A workspace whose close is held until its changed documents are saved
     // or discarded.
     std::string HeldClose;
