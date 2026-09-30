@@ -148,6 +148,7 @@ Shared shell (`editor/common/src/`):
 | `tools/` | Tool framework (`ToolRegistry`, `ToolContext`). | `ITool` |
 | `interaction/` | Drag-interaction host (`InteractionHost`). | `IInteraction` |
 | `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `KeymapFile`, `UiInputGuard`). | router handlers |
+| `properties/` | The toolkit-free property model: `PropertyNode` trees (key, descriptor, value as text, children; no rows), `IPropertySource` (begin/preview/commit/cancel mapped onto a document's own transaction) and `PropertyEditSession` (the one edit in flight, ended by any interruption). The level's source is `authoring/ComponentPropertySource`. | inspectors, cards, drawers |
 | `observers/` | `WeakObserverList`: subscribers held for as long as they keep their token. | selection, resources, problems |
 | `resources/` | `ActiveResources`: what the person is holding, per asset kind, with a stash; changes reach the tool in hand through `ToolRegistry`. | tools, panels |
 | `problems/`, `notices/` | `ProblemList` (every located problem, republished whole by each source) and `NoticeQueue` (brief word that something happened). | the shell |

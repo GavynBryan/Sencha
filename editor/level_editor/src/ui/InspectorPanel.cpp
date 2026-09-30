@@ -1,7 +1,7 @@
 #include "InspectorPanel.h"
 
-#include "AssetFieldCandidates.h"
-#include "RuntimeFieldText.h"
+#include "authoring/AssetFieldCandidates.h"
+#include "authoring/RuntimeFieldText.h"
 
 #include "ui/chrome/ChromeHeader.h"
 

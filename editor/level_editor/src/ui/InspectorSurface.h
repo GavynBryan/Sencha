@@ -1,6 +1,8 @@
 #pragma once
 
-#include "AssetFieldCandidates.h"
+#include "authoring/AssetFieldCandidates.h"
+#include "authoring/ComponentPropertySource.h"
+#include "properties/PropertyEditSession.h"
 
 #include <core/assets/AssetRef.h>
 #include <ecs/ComponentId.h>
@@ -27,11 +29,9 @@ struct IComponentSerializer;
 // leaf, published from the live bytes and read back when the document says an
 // edit is finished.
 //
-// Registry-driven, exactly like the ImGui inspector it sits over. It walks the
-// component serializer registry and presents each present component's
-// RuntimeFields(), so any component -- engine or game-module -- is shown and
-// edited without this naming its type. What changes is where the widgets live:
-// the document decides how a row looks, this decides what a row means.
+// A presenter over ComponentPropertySource, which is what walks the component
+// registry and owns the edit transaction; this flattens its properties into
+// rows. The document decides how a row looks, the source what a row means.
 //
 // The edit transaction is the interesting part, and it is spelled out in the
 // document's vocabulary rather than in focus state this would have to mirror:
@@ -108,12 +108,9 @@ private:
     // layer has no use for and no business holding.
     struct RowOrigin
     {
-        const IComponentSerializer* Serializer = nullptr;
-        ComponentId Component = InvalidComponentId;
-        std::size_t Field = 0;
-        // Which slot of a list-arity asset field this row stands for. Zero for
-        // everything else, which is also the only slot a single-arity field has.
-        std::size_t Slot = 0;
+        // The property this row presents; empty for a row that presents none.
+        std::string Key{};
+        std::string Label{};
         // An asset handle is chosen, never typed, so a click on this row opens
         // a picker instead of doing nothing.
         bool Pickable = false;
@@ -140,32 +137,19 @@ private:
     void ClosePicker();
     void PublishPicker();
 
-    // One asset field as rows: one for a single handle, one per slot for a
-    // list. Separate from the scalar path because an asset reference is read
-    // through the asset system rather than off an offset, and because a list
-    // arity is several rows where every other field is one.
-    void AppendAssetRows(const IComponentSerializer& serializer,
-                         ComponentId component,
-                         std::size_t fieldIndex,
-                         const struct RuntimeField& field,
-                         const void* bytes,
-                         const std::string& componentKey,
-                         std::vector<UiRow>& rows,
-                         std::vector<RowOrigin>& origins) const;
     // Ends the edit transaction. Nothing to undo: the text never left the
     // presentation copy.
     void AbandonEdit();
-
-    [[nodiscard]] EntityId SelectedEntity() const;
+    // What a commit's answer tells the person.
+    void Report(PropertyEditResult result, const RowOrigin& origin, const std::string& text);
     // What the title bar says: the authored name, or the handle when there is
     // none to say.
     [[nodiscard]] std::string EntityLabel(EntityId entity) const;
 
     UiService& Ui;
     WorldDocument& WorldDoc;
-    SelectionService& Selection;
-    CommandStack& Commands;
-    const EditorComponentAdapterRegistry& Adapters;
+    ComponentPropertySource Properties;
+    PropertyEditSession Session;
 
     UiSurfaceId Surface;
     UiScreenHandle Screen;

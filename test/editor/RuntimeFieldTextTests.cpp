@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "ui/RuntimeFieldText.h"
+#include "authoring/RuntimeFieldText.h"
 
 #include <core/text/InlineString.h>
 

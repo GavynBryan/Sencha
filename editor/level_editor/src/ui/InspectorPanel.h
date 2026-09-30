@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ui/AssetFieldCandidates.h"
+#include "authoring/AssetFieldCandidates.h"
 #include "ui/IEditorPanel.h"
 
 #include <core/assets/AssetId.h>

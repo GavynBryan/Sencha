@@ -1,7 +1,7 @@
 #include "InspectorSurface.h"
 
-#include "AssetFieldCandidates.h"
-#include "RuntimeFieldText.h"
+#include "authoring/AssetFieldCandidates.h"
+#include "authoring/RuntimeFieldText.h"
 
 #include "authoring/EditorComponentAdapter.h"
 #include "commands/CommandStack.h"
@@ -72,9 +72,7 @@ InspectorSurface::InspectorSurface(UiService& ui,
                                    const EditorComponentAdapterRegistry& adapters)
     : Ui(ui)
     , WorldDoc(world)
-    , Selection(selection)
-    , Commands(commands)
-    , Adapters(adapters)
+    , Properties(world, selection, commands, adapters)
     , Surface(surface)
 {
 }
@@ -136,6 +134,7 @@ void InspectorSurface::AbandonEdit()
     // copy until a commit reads it back, so an edit interrupted by a selection
     // change, a close, or the entity going away simply never happened.
     EditingRow = kNoRow;
+    Session.Cancel();
     // The picker goes too: it is holding a row index into a list that is about
     // to describe a different entity.
     ClosePicker();
@@ -147,15 +146,6 @@ void InspectorSurface::ClosePicker()
     PickerCandidates.clear();
 }
 
-EntityId InspectorSurface::SelectedEntity() const
-{
-    const SelectableRef selection = Selection.GetPrimarySelection();
-    if (!selection.IsEntity())
-        return {};
-    if (!WorldDoc.FocusDocument().GetScene().HasEntity(selection.Entity))
-        return {};
-    return selection.Entity;
-}
 
 void InspectorSurface::Update()
 {
@@ -196,7 +186,7 @@ void InspectorSurface::Update()
 
 void InspectorSurface::HandleBegin(std::size_t row)
 {
-    if (row >= Origins.size())
+    if (row >= Origins.size() || Origins[row].Key.empty())
     {
         EditingRow = kNoRow;
         return;
@@ -205,6 +195,7 @@ void InspectorSurface::HandleBegin(std::size_t row)
     // what the person is looking at.
     Status.clear();
     EditingRow = row;
+    (void)Session.Begin(Properties, Origins[row].Key);
 }
 
 void InspectorSurface::HandleCommit(std::size_t row)
@@ -213,15 +204,18 @@ void InspectorSurface::HandleCommit(std::size_t row)
     if (wasEditing)
         EditingRow = kNoRow;
 
-    if (row >= Origins.size())
+    if (row >= Origins.size() || Origins[row].Key.empty())
+    {
+        Session.Cancel();
         return;
+    }
     const RowOrigin& origin = Origins[row];
-    if (origin.Serializer == nullptr)
-        return;
-
     const std::vector<UiRow> presented = Ui.GetRows(Screen, kFields);
     if (row >= presented.size())
+    {
+        Session.Cancel();
         return;
+    }
 
     const std::string& text = presented[row].Value;
     // A field somebody focused and left alone is not an edit. Compared against
@@ -229,43 +223,25 @@ void InspectorSurface::HandleCommit(std::size_t row)
     // display rounds and re-parsing what it shows would otherwise write a
     // slightly different number every time a field was merely clicked.
     if (text == origin.Published)
-        return;
-
-    const EntityId entity = SelectedEntity();
-    if (!entity.IsValid())
-        return;
-
-    EditorDocument& document = WorldDoc.FocusDocument();
-    World& world = document.GetScene().GetRegistry().Components;
-    const ComponentMeta* meta = world.GetMeta(origin.Component);
-    const void* live = std::as_const(world).GetComponentRaw(entity, origin.Component);
-    if (meta == nullptr || live == nullptr || meta->Size == 0)
-        return;
-
-    const std::span<const RuntimeField> fields = origin.Serializer->RuntimeFields();
-    if (origin.Field >= fields.size())
-        return;
-    const RuntimeField& field = fields[origin.Field];
-
-    std::vector<std::byte> before(meta->Size);
-    std::memcpy(before.data(), live, meta->Size);
-    std::vector<std::byte> after = before;
-
-    if (!ParseRuntimeField(field, text, after.data()))
     {
-        // Refused, and said so. The next publish refills the row from the
-        // component, which is what puts the old text back on screen.
-        Status = "\"" + text + "\" is not a value " + RuntimeFieldLabel(field)
-            + " can hold";
+        Session.Cancel();
         return;
     }
-    if (after == before)
-        return;
 
-    Commands.Execute(std::make_unique<RawComponentEditCommand>(
-        entity, origin.Component, std::move(before), std::move(after),
-        document.GetScene(), document));
-    Status = RuntimeFieldLabel(field) + " updated";
+    const PropertyEditResult result = Session.IsOpen() && Session.Key() == origin.Key
+        ? Session.Commit(text)
+        : Session.Set(Properties, origin.Key, text);
+    Report(result, origin, text);
+}
+
+void InspectorSurface::Report(PropertyEditResult result, const RowOrigin& origin, const std::string& text)
+{
+    // Refused, and said so. The next publish refills the row from the
+    // component, which is what puts the old text back on screen.
+    if (result == PropertyEditResult::Refused)
+        Status = "\"" + text + "\" is not a value " + origin.Label + " can hold";
+    else if (result == PropertyEditResult::Applied)
+        Status = origin.Label + " updated";
 }
 
 void InspectorSurface::PublishPicker()
@@ -294,72 +270,6 @@ void InspectorSurface::PublishPicker()
     (void)Ui.SetValue(Screen, kPickerLabel, UiValue(label));
 }
 
-void InspectorSurface::AppendAssetRows(const IComponentSerializer& serializer,
-                                       ComponentId component,
-                                       std::size_t fieldIndex,
-                                       const RuntimeField& field,
-                                       const void* bytes,
-                                       const std::string& componentKey,
-                                       std::vector<UiRow>& rows,
-                                       std::vector<RowOrigin>& origins) const
-{
-    const std::string label = RuntimeFieldLabel(field);
-
-    AssetSystem* assets = WorldDoc.FocusDocument().GetAssetSystem();
-    if (assets == nullptr || bytes == nullptr)
-    {
-        UiRow row;
-        row.Label = label;
-        row.Detail = componentKey;
-        row.Value = "(no asset system)";
-        origins.push_back(RowOrigin{ .Serializer = &serializer,
-                                     .Component = component,
-                                     .Field = fieldIndex,
-                                     .Published = row.Value,
-                                     .PickerLabel = label });
-        rows.push_back(std::move(row));
-        return;
-    }
-
-    const void* fieldPtr = static_cast<const std::byte*>(bytes) + field.Offset;
-    const AssetFieldValue value =
-        ReadAssetField(*assets, field.Asset, field.Arity, fieldPtr);
-
-    const auto emit = [&](std::string rowLabel, std::size_t slot, const AssetFieldRef& ref) {
-        UiRow row;
-        row.Label = std::move(rowLabel);
-        row.Detail = componentKey;
-        // Never editable as text. A path typed into a box is a path that does
-        // not exist yet, and the reference is an id first.
-        row.Editable = false;
-        row.Value = ref.Path.empty() ? std::string(kNoAsset) : ShortAssetPath(ref.Path);
-        origins.push_back(RowOrigin{ .Serializer = &serializer,
-                                     .Component = component,
-                                     .Field = fieldIndex,
-                                     .Slot = slot,
-                                     .Pickable = true,
-                                     .Published = row.Value,
-                                     .PickerLabel = row.Label });
-        rows.push_back(std::move(row));
-    };
-
-    if (field.Arity != AssetArity::List)
-    {
-        emit(label, 0, value.Refs.empty() ? AssetFieldRef{} : value.Refs.front());
-        return;
-    }
-
-    // A slot per authored entry, in order: this is how a mesh's per-slot
-    // materials read. Adding and removing slots is not offered here, so a field
-    // with none shows as one rather than vanishing.
-    if (value.Refs.empty())
-    {
-        emit(label, 0, AssetFieldRef{});
-        return;
-    }
-    for (std::size_t slot = 0; slot < value.Refs.size(); ++slot)
-        emit(label + " " + std::to_string(slot), slot, value.Refs[slot]);
-}
 
 void InspectorSurface::HandlePick(std::size_t row)
 {
@@ -368,24 +278,16 @@ void InspectorSurface::HandlePick(std::size_t row)
     if (row >= Origins.size() || !Origins[row].Pickable)
         return; // a read-only row with nothing to choose from
 
-    EditorDocument& document = WorldDoc.FocusDocument();
-    AssetSystem* assets = document.GetAssetSystem();
-    const AssetRegistry* catalog = document.GetAssetCatalog();
-    if (assets == nullptr || catalog == nullptr)
+    if (WorldDoc.FocusDocument().GetAssetSystem() == nullptr
+        || WorldDoc.FocusDocument().GetAssetCatalog() == nullptr)
     {
         Status = "this document has no asset system to pick from";
         return;
     }
-
-    const RowOrigin& origin = Origins[row];
-    const std::span<const RuntimeField> fields = origin.Serializer->RuntimeFields();
-    if (origin.Field >= fields.size())
-        return;
-
     // Scanned once, here. Narrowing a structured-data field reads each
     // candidate's envelope off disk, which is not work to repeat on every frame
     // a picker happens to be open.
-    PickerCandidates = FindAssetFieldCandidates(*catalog, *assets, fields[origin.Field]);
+    PickerCandidates = Properties.AssetChoices(Origins[row].Key);
     PickingRow = row;
 }
 
@@ -399,77 +301,18 @@ void InspectorSurface::HandleChoose(std::size_t option)
     if (row >= Origins.size())
         return;
 
-    const RowOrigin& origin = Origins[row];
-    const EntityId entity = SelectedEntity();
-    if (!entity.IsValid())
-        return;
-
-    EditorDocument& document = WorldDoc.FocusDocument();
-    AssetSystem* assets = document.GetAssetSystem();
-    if (assets == nullptr)
-        return;
-
-    World& world = document.GetScene().GetRegistry().Components;
-    const void* base = std::as_const(world).GetComponentRaw(entity, origin.Component);
-    if (base == nullptr)
-        return;
-
-    const std::span<const RuntimeField> fields = origin.Serializer->RuntimeFields();
-    if (origin.Field >= fields.size())
-        return;
-    const RuntimeField& field = fields[origin.Field];
-
-    const void* fieldPtr = static_cast<const std::byte*>(base) + field.Offset;
-    const AssetFieldValue current =
-        ReadAssetField(*assets, field.Asset, field.Arity, fieldPtr);
-
     // Index zero is "(none)", so the candidates start at one. An index past the
     // end is a document and a host disagreeing about a list that changed under
     // them, which is a refusal rather than a guess.
-    AssetFieldRef picked;
+    std::string path;
     if (option > 0)
     {
         if (option - 1 >= candidates.size())
             return;
-        const AssetFieldCandidate& chosen = candidates[option - 1];
-        picked = AssetFieldRef{ chosen.Id, chosen.Path };
+        path = candidates[option - 1].Path;
     }
-
-    // One edit is one whole before/after value through the refcount-balanced
-    // command: a handle that is retained and released in halves does not come
-    // back from an undo.
-    AssetFieldValue next = current;
-    if (field.Arity == AssetArity::List)
-    {
-        // A list with no slots still shows one row, so that a field nobody has
-        // filled in yet can be filled in. Choosing there appends the slot;
-        // choosing "(none)" on it asks for nothing and gets nothing.
-        if (origin.Slot == next.Refs.size())
-        {
-            if (picked.Path.empty())
-                return;
-            next.Refs.push_back(std::move(picked));
-        }
-        else if (origin.Slot < next.Refs.size())
-        {
-            next.Refs[origin.Slot] = std::move(picked);
-        }
-        else
-        {
-            return;
-        }
-    }
-    else
-    {
-        next.Refs.clear();
-        if (!picked.Path.empty())
-            next.Refs.push_back(std::move(picked));
-    }
-
-    Commands.Execute(std::make_unique<AssetFieldEditCommand>(
-        entity, origin.Component, field.Offset, field.Asset, field.Arity,
-        current, std::move(next), document.GetScene(), document, *assets));
-    Status = RuntimeFieldLabel(field) + " updated";
+    const RowOrigin origin = Origins[row];
+    Report(Session.Set(Properties, origin.Key, path), origin, path);
 }
 
 std::string InspectorSurface::EntityLabel(EntityId entity) const
@@ -493,7 +336,7 @@ std::string InspectorSurface::EntityLabel(EntityId entity) const
 
 void InspectorSurface::Publish()
 {
-    const EntityId entity = SelectedEntity();
+    const EntityId entity = Properties.Entity();
     if (!(entity == Showing))
     {
         // The entity the rows described is gone or replaced, so the row indices
@@ -516,91 +359,51 @@ void InspectorSurface::Publish()
 
     std::vector<UiRow> rows;
     std::vector<RowOrigin> origins;
+    const auto emit = [&](UiRow row, RowOrigin origin) {
+        origin.Published = row.Value;
+        origins.push_back(std::move(origin));
+        rows.push_back(std::move(row));
+    };
 
-    if (entity.IsValid())
+    // Which component a row belongs to is on every row rather than once per
+    // group: a row that says what it is stays meaningful when the list is
+    // filtered or reordered, and grouping is then a question for the stylesheet.
+    for (const PropertyNode& group : Properties.Nodes())
     {
-        const World& world =
-            std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
-
-        // Registry-driven: every component the registry knows about, described
-        // by its own schema. No component is named here.
-        for (const auto& serializer : EditorSceneSerializers().Entries())
+        if (group.Descriptor.PresentationHint == kComponentAdapterHint)
         {
-            const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
-            if (id == InvalidComponentId || !world.HasComponent(entity, id))
-                continue;
-            const std::string key(serializer->JsonKey());
-
-            // An adapter that authors its own rows replaces this component's
-            // generic ones in the panel, so showing them here would be two
-            // inspectors disagreeing about the same component.
-            const IEditorComponentAdapter* adapter =
-                Adapters.Find(serializer->TypeId());
-            if (adapter != nullptr && adapter->AuthorsInspectorRows())
+            emit(UiRow{ group.Descriptor.Label, "(edited in the panel)", group.Key }, RowOrigin{});
+            continue;
+        }
+        if (group.Children.empty())
+        {
+            // A tag, or anything else that describes no leaves. Given a row of
+            // its own because otherwise an entity carrying it looks exactly
+            // like one that does not.
+            emit(UiRow{ group.Descriptor.Label, "(no fields)", group.Key }, RowOrigin{});
+            continue;
+        }
+        for (const PropertyNode& field : group.Children)
+        {
+            UiRow row{ field.Descriptor.Label, field.Value, group.Key };
+            RowOrigin origin{ .Key = field.Key, .Label = field.Descriptor.Label };
+            if (field.Descriptor.Kind == PropertyKind::Asset)
             {
-                UiRow row;
-                row.Label = HumanizeSchemaName(key);
-                row.Value = "(edited in the panel)";
-                row.Detail = key;
-                origins.push_back(RowOrigin{ .Serializer = serializer.get(),
-                                             .Component = id,
-                                             .Published = row.Value });
-                rows.push_back(std::move(row));
-                continue;
+                // Never editable as text. A path typed into a box is a path that
+                // does not exist yet, and the reference is an id first.
+                row.Value = field.Value.empty() ? std::string(kNoAsset) : ShortAssetPath(field.Value);
+                origin.Pickable = !field.Descriptor.ReadOnly;
+                origin.PickerLabel = field.Descriptor.Label;
             }
-
-            const std::span<const RuntimeField> fields = serializer->RuntimeFields();
-            // Asked for only when there is something to read at an offset: a
-            // zero-size tag has no storage, so requiring bytes first would drop
-            // exactly the components the row below exists to show.
-            const void* bytes =
-                fields.empty() ? nullptr : world.GetComponentRaw(entity, id);
-            if (!fields.empty() && bytes == nullptr)
-                continue;
-
-            if (fields.empty())
+            else if (field.Descriptor.Kind == PropertyKind::Unsupported)
             {
-                // A tag, or anything else that describes no leaves. Given a row
-                // of its own because otherwise an entity carrying it looks
-                // exactly like one that does not, and an entity that is quietly
-                // more than its file says is the surprise.
-                UiRow row;
-                row.Label = HumanizeSchemaName(key);
-                row.Value = "(no fields)";
-                row.Detail = key;
-                origins.push_back(RowOrigin{ .Serializer = serializer.get(),
-                                             .Component = id,
-                                             .Published = row.Value });
-                rows.push_back(std::move(row));
-                continue;
+                row.Value = "(unsupported)";
             }
-            for (std::size_t i = 0; i < fields.size(); ++i)
+            else
             {
-                const RuntimeField& field = fields[i];
-                // Which component the field belongs to, on every row rather than
-                // once per group: a row that says what it is stays meaningful
-                // when the list is filtered or reordered, and grouping is then a
-                // question for the stylesheet.
-                if (field.Asset != AssetType::Unknown)
-                {
-                    AppendAssetRows(*serializer, id, i, field, bytes, key, rows, origins);
-                    continue;
-                }
-
-                UiRow row;
-                row.Label = RuntimeFieldLabel(field);
-                row.Detail = key;
-                row.Editable = IsRuntimeFieldEditable(field);
-                row.Value = (row.Editable || field.ReadOnly)
-                    ? FormatRuntimeField(field, bytes)
-                    : std::string("(unsupported)");
-
-                origins.push_back(RowOrigin{ .Serializer = serializer.get(),
-                                             .Component = id,
-                                             .Field = i,
-                                             .Published = row.Value });
-                rows.push_back(std::move(row));
+                row.Editable = !field.Descriptor.ReadOnly;
             }
+            emit(std::move(row), std::move(origin));
         }
     }
 
