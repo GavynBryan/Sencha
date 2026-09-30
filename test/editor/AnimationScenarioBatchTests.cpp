@@ -1,6 +1,7 @@
 // Every saved scenario in a project run and judged, without touching the
 // scenario being worked on.
 
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationScenarioBatch.h"
@@ -44,7 +45,8 @@ namespace
 TEST(AnimationScenarioBatch, EveryScenarioIsRunAndJudged)
 {
     Project project;
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.CreateRig(Prop("waver", "asset://meshes/man.blend#anim:Wave"), error)) << error;
     ASSERT_TRUE(workspace.CreateRig(Prop("bower", "asset://meshes/man.blend#anim:Bow"), error)) << error;
@@ -99,7 +101,8 @@ TEST(AnimationScenarioBatch, EveryScenarioIsRunAndJudged)
 TEST(AnimationScenarioBatch, ScenariosRunAgainstTheOpenRigWithoutDisturbingIt)
 {
     Project project;
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.CreateRig(Prop("bower", "asset://meshes/man.blend#anim:Bow"), error)) << error;
     ASSERT_TRUE(workspace.CreateRig(Prop("waver", "asset://meshes/man.blend#anim:Wave"), error)) << error;

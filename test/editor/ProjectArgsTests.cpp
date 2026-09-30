@@ -5,6 +5,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -155,4 +156,23 @@ TEST(ProjectDescriptorTest, ProjectFolderIsRelocatable)
               (moved / "assets").lexically_normal().string());
 
     std::filesystem::remove_all(moved);
+}
+
+TEST(ProjectDescriptorTest, AnEmptyGameModuleNamesNoModule)
+{
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "sencha_project_no_module";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const std::filesystem::path file = dir / "project.senchaproj";
+    std::ofstream(file) << R"({ "name": "Content only", "gameModule": "", "contentRoots": ["assets"] })";
+
+    ProjectDescriptor loaded;
+    std::string error;
+    ASSERT_TRUE(ProjectDescriptor::Load(file.string(), loaded, &error)) << error;
+    EXPECT_TRUE(loaded.GameModulePath.empty()) << "an empty module resolved to " << loaded.GameModulePath;
+    ASSERT_TRUE(loaded.Save(file.string(), &error)) << error;
+    ProjectDescriptor reloaded;
+    ASSERT_TRUE(ProjectDescriptor::Load(file.string(), reloaded, &error)) << error;
+    EXPECT_TRUE(reloaded.GameModulePath.empty());
+    std::filesystem::remove_all(dir);
 }

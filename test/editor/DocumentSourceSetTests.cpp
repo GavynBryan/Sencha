@@ -71,6 +71,13 @@ namespace
                     Log.push_back(Name + ":" + key + ":cancel");
         }
 
+        void DiscardDocument(std::string_view key) override
+        {
+            Log.push_back(Name + ":" + std::string(key) + ":discard");
+            Documents.erase(std::string(key));
+            Set.ForgetDocument({ this, std::string(key) });
+        }
+
         std::string Name;
         DocumentSourceSet& Set;
         std::vector<std::string>& Log;
@@ -84,6 +91,9 @@ namespace
         DocumentSourceSet Set;
         FakeSource Data{ "data", Set, Log };
         FakeSource Events{ "events", Set, Log };
+
+        // The contract every owner keeps: nothing is destroyed holding changes.
+        void TearDown() override { Set.DiscardAll(); }
 
         std::vector<std::string> Drain() { return std::exchange(Log, {}); }
     };
@@ -155,6 +165,7 @@ TEST_F(TwoSources, RemovingASourceDropsItsSteps)
         scratch.Edit("x");
         scratch.Documents["x"].SaveAs = DocumentSaveStatus::Conflict;
         (void)Set.SaveAll();
+        scratch.Documents.clear();
     }
     EXPECT_EQ(Set.LastSave().Results.size(), 2u);
     EXPECT_TRUE(Set.LastSave().WithStatus(DocumentSaveStatus::Conflict).empty());
@@ -223,4 +234,43 @@ TEST_F(TwoSources, SettlingRoutesToTheOwningSourceAndClearsTheConflict)
     ASSERT_EQ(conflicts.size(), 1u);
     EXPECT_EQ(conflicts[0]->Document, (DocumentRef{ &Data, "same" }));
     EXPECT_EQ(Set.ChangedDocuments(), (std::vector<DocumentRef>{ { &Data, "same" } }));
+}
+
+TEST_F(TwoSources, DiscardingAllClosesEveryChangedDocumentAndItsSteps)
+{
+    Data.Edit("rig");
+    Events.Edit("walk");
+    Events.Documents["typing"].Editing = true;
+    Data.Documents["clean"] = {};
+    Set.DiscardAll();
+    EXPECT_TRUE(Set.ChangedDocuments().empty());
+    EXPECT_FALSE(Set.CanUndo());
+    EXPECT_EQ(Drain(), (Strings{ "data:rig:discard", "events:typing:discard", "events:walk:discard" }));
+    EXPECT_EQ(Data.Documents.count("clean"), 1u) << "a clean document is left open";
+}
+
+TEST_F(TwoSources, TheStepObserverHearsOfEachStepBeforeItIsTaken)
+{
+    std::vector<DocumentRef> observed;
+    Set.SetStepObserver([&](const DocumentRef& document) {
+        observed.push_back(document);
+        Log.push_back("observed");
+    });
+    Data.Edit("rig");
+    Events.Edit("walk");
+    Set.Undo();
+    Set.Redo();
+    EXPECT_EQ(observed, (std::vector<DocumentRef>{ { &Events, "walk" }, { &Events, "walk" } }));
+    EXPECT_EQ(Drain(), (Strings{ "observed", "events:walk:undo", "observed", "events:walk:redo" }));
+}
+
+TEST_F(TwoSources, DestroyingASourceThatStillHasChangesIsAnError)
+{
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    const auto destroyChanged = [this] {
+        std::vector<std::string> log;
+        FakeSource scratch{ "scratch", Set, log };
+        scratch.Edit("x");
+    };
+    EXPECT_DEBUG_DEATH(destroyChanged(), "destroyed with changes nobody saved or discarded");
 }

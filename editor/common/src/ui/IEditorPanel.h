@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 // Where a panel wants to live in the default dock layout. The dockspace host
@@ -64,8 +65,35 @@ struct IEditorPanel
     void SetVisible(bool visible) { Visible = visible; }
     void ToggleVisible() { Visible = !Visible; }
 
+    // The title, shown, over the identity a host gives the panel, so two
+    // workspaces' panels of one title never share a window. Rebuilt only when
+    // the title changes.
+    [[nodiscard]] std::string_view GetWindowName() const
+    {
+        const std::string_view title = GetTitle();
+        if (WindowIdentity.empty())
+            return title;
+        if (WindowName.empty() || title != WindowTitle)
+        {
+            WindowTitle.assign(title);
+            WindowName.assign(title).append("###").append(WindowIdentity);
+        }
+        return WindowName;
+    }
+    void SetWindowIdentity(std::string identity)
+    {
+        WindowIdentity = std::move(identity);
+        WindowTitle.clear();
+        WindowName.clear();
+    }
+
     virtual ~IEditorPanel() = default;
 
 protected:
     bool Visible = true;
+
+private:
+    std::string WindowIdentity;
+    mutable std::string WindowTitle;
+    mutable std::string WindowName;
 };

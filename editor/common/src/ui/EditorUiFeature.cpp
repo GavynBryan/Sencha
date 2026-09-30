@@ -4,8 +4,12 @@
 
 #include <ui/UiService.h>
 
+#include "EditorConsolePanel.h"
 #include "EditorUiStyle.h"
 #include "IEditorPanel.h"
+#include "ImGuiTextureOwner.h"
+#include "WorkspaceBar.h"
+#include "workspaces/WorkspaceHost.h"
 #include "chrome/ChromeBars.h"
 #include "chrome/ChromeChassis.h"
 #include "chrome/ChromeControls.h"
@@ -15,7 +19,9 @@
 #include <app/Engine.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
+#include <core/config/EngineConfig.h>
 #include <core/console/ConsoleTypes.h>
+#include <debug/DebugService.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanFrameService.h>
@@ -103,13 +109,13 @@ void DockPacked(ImGuiID region, const std::vector<IEditorPanel*>& panels, ImGuiD
             totalWeight -= weight;
         }
         for (IEditorPanel* member : units[i].Members)
-            ImGui::DockBuilderDockWindow(member->GetTitle().data(), node);
+            ImGui::DockBuilderDockWindow(member->GetWindowName().data(), node);
         if (units[i].Members.size() > 1)
         {
             for (IEditorPanel* member : units[i].Members)
                 if (member->IsVisible())
                 {
-                    outFrontTabs.emplace_back(member->GetTitle());
+                    outFrontTabs.emplace_back(member->GetWindowName());
                     break;
                 }
         }
@@ -271,16 +277,26 @@ EditorUiFeature::EditorUiFeature(Engine& engine,
                                  SdlWindow& window,
                                  VulkanInstanceService& instance,
                                  VulkanFrameService& frames,
-                                 std::string iniFileName,
-                                 DockLayoutRatios layoutRatios)
+                                 std::string iniFileName)
     : EngineInstance(engine)
     , Window(window)
     , Instance(instance)
     , Frames(frames)
     , IniFileName(std::move(iniFileName))
-    , LayoutRatios(layoutRatios)
     , ThemePrefs(SENCHA_EDITOR_THEME_DIR)
 {
+}
+
+EditorUiFeature::EditorUiFeature(EditorUiFeature& primary, SdlWindow& window)
+    : Role(ShellRole::Detached)
+    , PrimaryShell(&primary)
+    , EngineInstance(primary.EngineInstance)
+    , Window(window)
+    , Instance(primary.Instance)
+    , Frames(primary.Frames)
+    , ThemePrefs(SENCHA_EDITOR_THEME_DIR)
+{
+    Identity = primary.Identity;
 }
 
 EditorUiFeature::~EditorUiFeature()
@@ -293,7 +309,7 @@ bool EditorUiFeature::Setup(const RenderFeatureServices& featureServices)
     const RendererServices& services = *featureServices.Backend;
     Log = services.Logging ? &services.Logging->GetLogger<EditorUiFeature>() : nullptr;
     Valid = InitImGui(services);
-    if (Valid)
+    if (Valid && Role == ShellRole::Primary)
         RegisterPointerCommands(EngineInstance.Console().Registry());
     if (Log != nullptr)
         Log->Info("EditorUiFeature setup {}", Valid ? "succeeded" : "failed");
@@ -310,88 +326,155 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
 
     if (!LoggedFirstDraw && Log != nullptr)
     {
-        Log->Info("EditorUiFeature drawing {} panel(s)", Panels.size());
+        Log->Info("EditorUiFeature drawing");
         LoggedFirstDraw = true;
     }
 
-    PrepareFrameChrome();
-
-    ImGui_ImplVulkan_NewFrame();
+    const ScopedImGuiContext scope(Context);
+    if (Role == ShellRole::Primary)
+    {
+        PrepareFrameChrome();
+        ImGui_ImplVulkan_NewFrame();
+    }
+    else
+    {
+        // The primary's style and atlas. Its backend made the font texture, so
+        // this one never calls ImGui_ImplVulkan_NewFrame, which would make a
+        // second; imgui 1.92's managed textures retire this.
+        ImGui::GetStyle() = PrimaryShell->Context->Style;
+        if (ImGui::GetIO().Fonts->TexID == 0)
+            return;
+    }
+    // The cursor is one per desktop: only the window under the pointer sets it.
+    ImGuiIO& io = ImGui::GetIO();
+    if (SDL_GetMouseFocus() == Window.GetHandle())
+        io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+    else
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     ImGui_ImplSDL3_NewFrame();
-    FeedPointerActions();
+    if (Role == ShellRole::Primary)
+        FeedPointerActions();
     ImGui::NewFrame();
+
+    WorkspaceView* view = ActiveView();
 
     // One frame after a layout rebuild: raise the intended front tab of each
     // tab-group node. Deferred because SetWindowFocus is by-name and the freshly
     // docked windows only exist once they have been submitted.
-    if (!PendingTabFocus.empty())
+    if (view != nullptr && !view->Dock.PendingTabFocus.empty())
     {
-        for (const std::string& title : PendingTabFocus)
-            ImGui::SetWindowFocus(title.c_str());
-        PendingTabFocus.clear();
+        for (const std::string& name : view->Dock.PendingTabFocus)
+            ImGui::SetWindowFocus(name.c_str());
+        view->Dock.PendingTabFocus.clear();
     }
 
-    DrawMainMenuBar();
-    for (const std::function<void()>& chrome : ChromeBars)
+    DrawMainMenuBar(view);
+    if (TabStrip != nullptr)
+        TabStrip->Draw(view != nullptr ? &view->BarControls : nullptr);
+    if (view != nullptr)
+        for (const std::function<void()>& chrome : view->Chrome)
+            if (chrome)
+                chrome();
+
+    DrawDockHost(view);
+
+    if (view != nullptr)
+        for (const std::unique_ptr<IEditorPanel>& panel : view->Panels)
+            if (panel != nullptr && panel->IsVisible())
+                panel->OnDraw();
+    if (Role == ShellRole::Primary)
     {
-        if (chrome)
-            chrome();
+        // After the panels have drawn: a close box acts during a panel's own
+        // draw. The primary tracks every window's panels.
+        PanelVisibility.Track();
+        ThemePrefs.DrawWindow(EngineInstance.Console().Registry());
     }
 
+    if (view != nullptr)
+        for (const std::function<void()>& overlay : view->Overlays)
+            if (overlay)
+                overlay();
+    for (const std::function<void()>& overlay : ShellOverlays)
+        overlay();
+
+    ImGui::Render();
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
+    UpdateWindowTitle(view);
+}
+
+void EditorUiFeature::DrawDockHost(WorkspaceView* view)
+{
     // The chassis fills the work area the chrome bars left, and the dock host
     // sits inside its ring: our own window with no background and a plain
     // DockSpace, so the chassis ground shows through the seams between nodes.
     // Every docked panel, the viewports included, paints its own opaque body.
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImVec2 workMin = vp->WorkPos;
+    const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y);
+    ImDrawList* background = ImGui::GetBackgroundDrawList();
+    EditorChrome::DrawChassisBase(background, workMin, workMax);
+    EditorChrome::DrawChassisEdges(background, workMin, workMax);
+    EditorChrome::DrawChassisOrnaments(background, workMin, workMax);
+
+    const float inset = EditorChrome::ChassisInset();
+    ImGui::SetNextWindowPos(ImVec2(workMin.x + inset, workMin.y + inset));
+    ImGui::SetNextWindowSize(ImVec2(std::max(0.0f, vp->WorkSize.x - inset * 2.0f),
+                                    std::max(0.0f, vp->WorkSize.y - inset * 2.0f)));
+    ImGui::SetNextWindowViewport(vp->ID);
+
+    const ImGuiWindowFlags hostFlags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
+        | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus
+        | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin("##EditorDockHost", nullptr, hostFlags);
+    ImGui::PopStyleVar(3);
+
+    // The file has been read by the first NewFrame; a remembered choice
+    // overrides the compiled default exactly once.
+    if (Role == ShellRole::Primary && !VisibilityApplied)
     {
-        const ImGuiViewport* vp = ImGui::GetMainViewport();
-        const ImVec2 workMin = vp->WorkPos;
-        const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y);
-        ImDrawList* background = ImGui::GetBackgroundDrawList();
-        EditorChrome::DrawChassisBase(background, workMin, workMax);
-        EditorChrome::DrawChassisEdges(background, workMin, workMax);
-        EditorChrome::DrawChassisOrnaments(background, workMin, workMax);
+        PanelVisibility.Apply();
+        VisibilityApplied = true;
+    }
 
-        const float inset = EditorChrome::ChassisInset();
-        ImGui::SetNextWindowPos(ImVec2(workMin.x + inset, workMin.y + inset));
-        ImGui::SetNextWindowSize(ImVec2(std::max(0.0f, vp->WorkSize.x - inset * 2.0f),
-                                        std::max(0.0f, vp->WorkSize.y - inset * 2.0f)));
-        ImGui::SetNextWindowViewport(vp->ID);
+    // Each workspace keeps its own dockspace, so its arrangement survives the
+    // tab being in the background; a hidden one is only kept alive.
+    const auto dockIdOf = [](std::string_view kind) {
+        const std::string name = "workspace/" + std::string(kind);
+        return ImGui::GetID(name.c_str());
+    };
+    if (Workspaces != nullptr)
+        for (const WorkspaceHost::Entry& entry : Workspaces->OpenWorkspaces())
+            if (entry.Window == Presentation && entry.Kind != Workspaces->ActiveKindIn(Presentation))
+                ImGui::DockSpace(dockIdOf(entry.Kind->Id), ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_KeepAliveOnly);
 
-        const ImGuiWindowFlags hostFlags =
-            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
-            | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBringToFrontOnFocus
-            | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
-
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::Begin("##EditorDockHost", nullptr, hostFlags);
-        ImGui::PopStyleVar(3);
-
-        const ImGuiID dockId = ImGui::GetID("EditorDockSpace");
+    if (view != nullptr)
+    {
+        const ImGuiID dockId = dockIdOf(Workspaces->ActiveKindIn(Presentation)->Id);
         // A dockable panel with no saved placement (a renamed or newly added
         // panel against an older ini) would come up floating; the designed
-        // layout is rebuilt instead. Checked once, after ImGui has loaded the
-        // ini in its first NewFrame; DockBuilder places every panel, so the
-        // check is quiet on later launches.
-        if (!PlacementChecked)
+        // layout is rebuilt instead. Checked once per view; DockBuilder places
+        // every panel, so the check is quiet on later launches.
+        if (!view->Dock.PlacementChecked)
         {
-            LayoutDirty |= std::any_of(Panels.begin(), Panels.end(), [](const std::unique_ptr<IEditorPanel>& panel) {
+            view->Dock.LayoutDirty |= std::any_of(view->Panels.begin(), view->Panels.end(),
+                                                  [](const std::unique_ptr<IEditorPanel>& panel) {
                 if (panel == nullptr || panel->GetDockSlot() == DockSlot::Floating)
                     return false;
-                const std::string_view title = panel->GetTitle();
-                return ImGui::FindWindowSettingsByID(ImHashStr(title.data(), title.size())) == nullptr;
+                const std::string_view name = panel->GetWindowName();
+                return ImGui::FindWindowSettingsByID(ImHashStr(name.data(), name.size())) == nullptr;
             });
-            // The file has been read by now; a remembered choice overrides the
-            // compiled default exactly once.
-            PanelVisibility.Apply();
-            PlacementChecked = true;
+            view->Dock.PlacementChecked = true;
         }
-        if (LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
+        if (view->Dock.LayoutDirty || ImGui::DockBuilderGetNode(dockId) == nullptr)
         {
-            PendingTabFocus.clear();
-            BuildDefaultDockLayout(dockId, Panels, LayoutRatios, PendingTabFocus);
-            LayoutDirty = false;
+            view->Dock.PendingTabFocus.clear();
+            BuildDefaultDockLayout(dockId, view->Panels, view->Layout, view->Dock.PendingTabFocus);
+            view->Dock.LayoutDirty = false;
         }
         // The tab bars are drawn inside DockSpace, so the font pushed here is
         // the one every docked tab label takes.
@@ -401,27 +484,24 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
         ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
         if (tabFont != nullptr)
             ImGui::PopFont();
-        ImGui::End();
     }
+    ImGui::End();
+}
 
-    for (const std::unique_ptr<IEditorPanel>& panel : Panels)
-    {
-        if (panel != nullptr && panel->IsVisible())
-            panel->OnDraw();
-    }
-    // After the panels have drawn: a close box acts during a panel's own draw.
-    PanelVisibility.Track();
-
-    ThemePrefs.DrawWindow(EngineInstance.Console().Registry());
-
-    for (const std::function<void()>& overlay : Overlays)
-    {
-        if (overlay)
-            overlay();
-    }
-
-    ImGui::Render();
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), frame.Cmd);
+void EditorUiFeature::UpdateWindowTitle(const WorkspaceView* view)
+{
+    if (Workspaces == nullptr || Identity.WindowTitle.empty())
+        return;
+    std::string title = Identity.WindowTitle;
+    if (const WorkspaceKind* kind = Workspaces->ActiveKindIn(Presentation))
+        title += " - " + kind->DisplayName;
+    if (view != nullptr && view->Status)
+        if (const std::string status = view->Status(); !status.empty())
+            title += " - " + status;
+    if (title == LastWindowTitle)
+        return;
+    Window.SetTitle(title);
+    LastWindowTitle = std::move(title);
 }
 
 void EditorUiFeature::RegisterPointerCommands(ConsoleRegistry& registry)
@@ -548,7 +628,7 @@ void EditorUiFeature::FeedPointerActions()
 
 void EditorUiFeature::Teardown()
 {
-    if (!Valid && DescriptorPool == VK_NULL_HANDLE)
+    if (!Valid && Context == nullptr)
         return;
 
     ShutdownImGui();
@@ -559,6 +639,7 @@ bool EditorUiFeature::ProcessSdlEvent(const SDL_Event& event)
 {
     if (!Valid)
         return false;
+    const ScopedImGuiContext scope(Context);
 
     ImGui_ImplSDL3_ProcessEvent(&event);
     if (!IsEditorUiInputEvent(event))
@@ -573,6 +654,7 @@ UiInputCapture EditorUiFeature::GetInputCapture() const
     if (!Valid)
         return {};
 
+    const ScopedImGuiContext scope(Context);
     const ImGuiIO& io = ImGui::GetIO();
     return UiInputCapture{
         .Mouse = io.WantCaptureMouse,
@@ -588,6 +670,7 @@ void EditorUiFeature::SetMouseInputEnabled(bool enabled)
 
     // NoMouse parks io.MousePos off-screen and drops button state on the next
     // NewFrame, so hover/highlight/click all stop until the flag is cleared.
+    const ScopedImGuiContext scope(Context);
     ImGuiIO& io = ImGui::GetIO();
     if (enabled)
         io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
@@ -603,6 +686,7 @@ void EditorUiFeature::SetKeyboardInputEnabled(bool enabled)
     // NoKeyboard ignores keyboard events and clears existing key state, so a
     // focused widget (e.g. the console input) stops receiving keystrokes while a
     // viewport gesture owns input and the keys belong to the fly camera.
+    const ScopedImGuiContext scope(Context);
     ImGuiIO& io = ImGui::GetIO();
     if (enabled)
         io.ConfigFlags &= ~ImGuiConfigFlags_NoKeyboard;
@@ -610,22 +694,60 @@ void EditorUiFeature::SetKeyboardInputEnabled(bool enabled)
         io.ConfigFlags |= ImGuiConfigFlags_NoKeyboard;
 }
 
-void EditorUiFeature::AddPanel(std::unique_ptr<IEditorPanel> panel)
-{
-    if (panel != nullptr)
-        Panels.push_back(std::move(panel));
-}
-
-void EditorUiFeature::AddChrome(std::function<void()> draw)
+void EditorUiFeature::AddShellOverlay(std::function<void()> draw)
 {
     if (draw)
-        ChromeBars.push_back(std::move(draw));
+        ShellOverlays.push_back(std::move(draw));
 }
 
-void EditorUiFeature::AddOverlay(std::function<void()> draw)
+void EditorUiFeature::SetWorkspaceHost(WorkspaceHost& host, PresentationId window)
 {
-    if (draw)
-        Overlays.push_back(std::move(draw));
+    Workspaces = &host;
+    Presentation = window;
+    TabStrip = std::make_unique<WorkspaceBar>(host, window);
+    if (Role == ShellRole::Detached)
+        return;
+    host.SetOpenedListener([this](const WorkspaceKind& kind, IWorkspace& workspace) { AdoptWorkspace(kind, workspace); });
+    host.SetClosingListener([this](const WorkspaceKind&, IWorkspace& workspace) { ReleaseWorkspace(workspace); });
+    for (const WorkspaceHost::Entry& entry : host.OpenWorkspaces())
+        AdoptWorkspace(*entry.Kind, *entry.Instance);
+}
+
+void EditorUiFeature::AdoptWorkspace(const WorkspaceKind& kind, IWorkspace& workspace)
+{
+    WorkspaceView& view = workspace.View();
+    // Every workspace gets a console over the one log: which one is showing is
+    // a workspace's layout, like any of its panels.
+    auto console = std::make_unique<EditorConsolePanel>(EngineInstance.Debug().GetLogSink(), EngineInstance.Console());
+    console->SetVisible(EngineInstance.Config().Console.OpenOnStart);
+    Consoles.emplace_back(&workspace, console.get());
+    view.AddPanel(std::move(console));
+
+    for (const std::unique_ptr<IEditorPanel>& panel : view.Panels)
+        if (panel != nullptr)
+            panel->SetWindowIdentity(kind.Id + "." + std::string(panel->GetPersistence().Id));
+    PanelVisibility.Attach(kind.Id, view.Panels);
+    workspace.Place(*this);
+}
+
+void EditorUiFeature::ReleaseWorkspace(IWorkspace& workspace)
+{
+    PanelVisibility.Detach(workspace.View().Panels);
+    std::erase_if(Consoles, [&](const auto& entry) { return entry.first == &workspace; });
+}
+
+void EditorUiFeature::ToggleConsole()
+{
+    IWorkspace* active = Workspaces != nullptr ? Workspaces->ActiveIn(Presentation) : nullptr;
+    for (const auto& [workspace, console] : Shell().Consoles)
+        if (workspace == active)
+            console->ToggleVisible();
+}
+
+WorkspaceView* EditorUiFeature::ActiveView() const
+{
+    IWorkspace* active = Workspaces != nullptr ? Workspaces->ActiveIn(Presentation) : nullptr;
+    return active != nullptr ? &active->View() : nullptr;
 }
 
 void EditorUiFeature::SetUndoActions(std::function<void()> undoAction,
@@ -639,35 +761,14 @@ void EditorUiFeature::SetUndoActions(std::function<void()> undoAction,
     CanRedoAction = std::move(canRedoAction);
 }
 
-void EditorUiFeature::SetFileActions(std::function<void()> newAction,
-                                     std::function<void()> openAction,
-                                     std::function<void()> saveAction,
-                                     std::function<void()> saveAsAction)
-{
-    NewAction = std::move(newAction);
-    OpenAction = std::move(openAction);
-    SaveAction = std::move(saveAction);
-    SaveAsAction = std::move(saveAsAction);
-}
-
 void EditorUiFeature::SetSaveAllAction(std::function<void()> saveAllAction)
 {
     SaveAllAction = std::move(saveAllAction);
 }
 
-void EditorUiFeature::SetNewWorldAction(std::function<void()> newWorldAction)
-{
-    NewWorldAction = std::move(newWorldAction);
-}
-
 void EditorUiFeature::SetIdentity(ShellIdentity identity)
 {
     Identity = std::move(identity);
-}
-
-void EditorUiFeature::SetStatusProvider(std::function<std::string()> statusProvider)
-{
-    StatusProvider = std::move(statusProvider);
 }
 
 bool EditorUiFeature::InitImGui(const RendererServices& services)
@@ -688,8 +789,9 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     DeviceHandle = services.Device->GetDevice();
 
     IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
+    Context = ImGui::CreateContext(Role == ShellRole::Detached ? PrimaryShell->Context->IO.Fonts : nullptr);
     ImGuiContextReady = true;
+    const ScopedImGuiContext scope(Context);
 
     ImGuiIO& io = ImGui::GetIO();
     // No keyboard nav: it reserves Tab/arrows/Enter for widget focus cycling, which
@@ -698,10 +800,25 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     // Per-application layout file: the editor family would otherwise fight
     // over one ./imgui.ini. Points at the member so it outlives the context.
-    if (!IniFileName.empty())
-        io.IniFilename = IniFileName.c_str();
-    // Before the first NewFrame, which is when ImGui reads the file.
-    PanelVisibility.Register(Panels);
+    if (Role == ShellRole::Primary)
+    {
+        if (!IniFileName.empty())
+            io.IniFilename = IniFileName.c_str();
+        // Before the first NewFrame, which is when ImGui reads the file.
+        PanelVisibility.Register();
+    }
+    else
+    {
+        // A detached window starts from the primary's layout, so a workspace
+        // arrives arranged as it was; what changes here is not written back.
+        io.IniFilename = nullptr;
+        std::string layout;
+        {
+            const ScopedImGuiContext primary(PrimaryShell->Context);
+            layout = ImGui::SaveIniSettingsToMemory();
+        }
+        ImGui::LoadIniSettingsFromMemory(layout.c_str(), layout.size());
+    }
 
     // Every ImGuiTextureBinding costs one combined-image-sampler set: the
     // viewport targets and up to editor.materials.thumbnail_budget resident
@@ -728,7 +845,10 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
 
-    if (vkCreateDescriptorPool(DeviceHandle, &poolInfo, nullptr, &DescriptorPool) != VK_SUCCESS)
+    // Every texture set is the primary's (ImGuiTextureOwner.h), so a detached
+    // window's backend allocates none and takes the smallest pool it accepts.
+    if (Role == ShellRole::Primary
+        && vkCreateDescriptorPool(DeviceHandle, &poolInfo, nullptr, &DescriptorPool) != VK_SUCCESS)
     {
         if (Log) Log->Error("EditorUiFeature: failed to create descriptor pool");
         ShutdownImGui();
@@ -750,6 +870,8 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
     vulkanInfo.QueueFamily = *queueFamilies.Graphics;
     vulkanInfo.Queue = services.Queues->GetGraphicsQueue();
     vulkanInfo.DescriptorPool = DescriptorPool;
+    if (Role == ShellRole::Detached)
+        vulkanInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE + 1;
     vulkanInfo.MinImageCount = Frames.GetFramesInFlight();
     vulkanInfo.ImageCount = Frames.GetFramesInFlight();
     vulkanInfo.UseDynamicRendering = true;
@@ -771,6 +893,8 @@ bool EditorUiFeature::InitImGui(const RendererServices& services)
         return false;
     }
     VulkanBackendReady = true;
+    if (Role == ShellRole::Primary)
+        SetImGuiTextureOwner(Context);
 
     return true;
 }
@@ -795,13 +919,25 @@ void EditorUiFeature::ShutdownImGui()
             graphics->DeletionQueue.FlushAll();
     }
 
-    if (VulkanBackendReady)
-        ImGui_ImplVulkan_Shutdown();
-    if (SdlBackendReady)
-        ImGui_ImplSDL3_Shutdown();
-
-    if (ImGuiContextReady && ImGui::GetCurrentContext())
-        ImGui::DestroyContext();
+    if (Context != nullptr)
+    {
+        const ScopedImGuiContext scope(Context);
+        if (VulkanBackendReady)
+            ImGui_ImplVulkan_Shutdown();
+        if (SdlBackendReady)
+            ImGui_ImplSDL3_Shutdown();
+    }
+    if (Role == ShellRole::Primary)
+        SetImGuiTextureOwner(nullptr);
+    if (ImGuiContextReady && Context != nullptr)
+    {
+        ImGui::DestroyContext(Context);
+        Context = nullptr;
+        // Destroying the current context leaves none; the primary's is the
+        // one everything outside a draw expects.
+        if (Role == ShellRole::Detached && ImGui::GetCurrentContext() == nullptr)
+            ImGui::SetCurrentContext(PrimaryShell->Context);
+    }
 
     if (DescriptorPool != VK_NULL_HANDLE && DeviceHandle != VK_NULL_HANDLE)
     {
@@ -852,8 +988,6 @@ void EditorUiFeature::PublishAuthoredTheme(bool themeChanged)
     // Written as a stylesheet rather than published through any document's
     // model. A theme is the host's presentation policy; a presentation model is
     // what a surface presents, and a colour is not that.
-    if (!AuthoredThemeEnabled)
-        return;
     if (!themeChanged && AuthoredThemePublished)
         return;
 
@@ -863,21 +997,6 @@ void EditorUiFeature::PublishAuthoredTheme(bool themeChanged)
 
     (void)ui->SetHostStyleSheet(kAuthoredThemeStyleSheetName, BuildAuthoredThemeStyleSheet());
     AuthoredThemePublished = true;
-}
-
-void EditorUiFeature::SetAuthoredThemePublishing(bool enabled)
-{
-    if (AuthoredThemeEnabled == enabled)
-        return;
-    AuthoredThemeEnabled = enabled;
-    // Turning it off takes the sheet back out, so packages return to the copy
-    // they were cooked with; turning it on republishes at the next boundary.
-    if (!enabled && AuthoredThemePublished)
-    {
-        if (UiService* ui = EngineInstance.TryUi(); ui != nullptr && ui->IsReady())
-            (void)ui->SetHostStyleSheet(kAuthoredThemeStyleSheetName, {});
-        AuthoredThemePublished = false;
-    }
 }
 
 void EditorUiFeature::PrepareThemeTextures()
@@ -919,6 +1038,8 @@ EditorChrome::BarSurface EditorUiFeature::ResolveSurface(EditorUi::BarFinish fin
 
 EditorChrome::BarSurface EditorUiFeature::SurfaceFor(BarRole role) const
 {
+    if (Role == ShellRole::Detached)
+        return PrimaryShell->SurfaceFor(role);
     return role == BarRole::Caption ? CaptionSurface : ToolbarSurface;
 }
 
@@ -958,7 +1079,7 @@ void EditorUiFeature::BuildShellAtlasIfStale()
                   baked.Logo ? "yes" : "no", AtlasBuilds);
 }
 
-void EditorUiFeature::DrawMainMenuBar()
+void EditorUiFeature::DrawMainMenuBar(WorkspaceView* view)
 {
     // The bar is the window's caption when the window draws its own frame: the
     // identity plate and the free strips drag it, the controls at the right
@@ -1029,7 +1150,7 @@ void EditorUiFeature::DrawMainMenuBar()
     static const char* const kMenuLabels[] = { "File", "Edit", "View" };
     const float centerWidth = EditorChrome::MenuBarStripWidth(kMenuLabels) + style.ItemSpacing.x * 2.0f;
 
-    std::string status = StatusProvider ? StatusProvider() : std::string{};
+    std::string status = view != nullptr && view->Status ? view->Status() : std::string{};
     // A path or a name is data: it reads out of a cell, like the status bar's.
     const auto rightWidthFor = [&](const std::string& text) {
         const float readout = text.empty() ? 0.0f
@@ -1054,20 +1175,23 @@ void EditorUiFeature::DrawMainMenuBar()
     // so the strip starts that far inside its bay.
     ImGui::SetCursorScreenPos(ImVec2(row.CenterMin + std::trunc(style.ItemSpacing.x * 0.5f), barMin.y));
 
+    static const WorkspaceFileActions kNoFile;
+    const WorkspaceFileActions& file = view != nullptr ? view->File : kNoFile;
     if (ImGui::BeginMenu("File"))
     {
-        if (ImGui::MenuItem("New", "Ctrl+N", false, NewAction != nullptr) && NewAction)
-            NewAction();
-        if (NewWorldAction && ImGui::MenuItem("New World"))
-            NewWorldAction();
-        if (ImGui::MenuItem("Open", "Ctrl+O", false, OpenAction != nullptr) && OpenAction)
-            OpenAction();
-        if (ImGui::MenuItem("Save", "Ctrl+S", false, SaveAction != nullptr) && SaveAction)
-            SaveAction();
-        if (ImGui::MenuItem("Save All", "Ctrl+Shift+S", false, SaveAllAction != nullptr) && SaveAllAction)
-            SaveAllAction();
-        if (ImGui::MenuItem("Save As", nullptr, false, SaveAsAction != nullptr) && SaveAsAction)
-            SaveAsAction();
+        if (ImGui::MenuItem("New", "Ctrl+N", false, file.New != nullptr) && file.New)
+            file.New();
+        if (file.NewWorld && ImGui::MenuItem("New World"))
+            file.NewWorld();
+        if (ImGui::MenuItem("Open", "Ctrl+O", false, file.Open != nullptr) && file.Open)
+            file.Open();
+        if (ImGui::MenuItem("Save", "Ctrl+S", false, file.Save != nullptr) && file.Save)
+            file.Save();
+        const std::function<void()>& saveAll = Shell().SaveAllAction;
+        if (ImGui::MenuItem("Save All", "Ctrl+Shift+S", false, saveAll != nullptr) && saveAll)
+            saveAll();
+        if (ImGui::MenuItem("Save As", nullptr, false, file.SaveAs != nullptr) && file.SaveAs)
+            file.SaveAs();
         if (ImGui::MenuItem("Exit"))
             EngineInstance.RequestExit();
         ImGui::EndMenu();
@@ -1075,13 +1199,14 @@ void EditorUiFeature::DrawMainMenuBar()
 
     if (ImGui::BeginMenu("Edit"))
     {
-        const bool canUndo = CanUndoAction ? CanUndoAction() : false;
-        const bool canRedo = CanRedoAction ? CanRedoAction() : false;
+        EditorUiFeature& shell = Shell();
+        const bool canUndo = shell.CanUndoAction ? shell.CanUndoAction() : false;
+        const bool canRedo = shell.CanRedoAction ? shell.CanRedoAction() : false;
 
-        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo) && UndoAction)
-            UndoAction();
-        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && RedoAction)
-            RedoAction();
+        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo) && shell.UndoAction)
+            shell.UndoAction();
+        if (ImGui::MenuItem("Redo", "Ctrl+Y", false, canRedo) && shell.RedoAction)
+            shell.RedoAction();
 
         ImGui::EndMenu();
     }
@@ -1089,23 +1214,26 @@ void EditorUiFeature::DrawMainMenuBar()
     if (ImGui::BeginMenu("View"))
     {
         // Per-panel visibility (the viewport is the central node — not hideable).
-        for (const std::unique_ptr<IEditorPanel>& panel : Panels)
+        if (view != nullptr)
         {
-            if (panel == nullptr || panel->GetDockSlot() == DockSlot::Center)
-                continue;
-            const std::string title(panel->GetTitle());
-            if (ImGui::MenuItem(title.c_str(), nullptr, panel->IsVisible()))
-                panel->ToggleVisible();
+            for (const std::unique_ptr<IEditorPanel>& panel : view->Panels)
+            {
+                if (panel == nullptr || panel->GetDockSlot() == DockSlot::Center)
+                    continue;
+                const std::string title(panel->GetTitle());
+                if (ImGui::MenuItem(title.c_str(), nullptr, panel->IsVisible()))
+                    panel->ToggleVisible();
+            }
+            ImGui::Separator();
         }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Reset Layout"))
-            LayoutDirty = true;
+        if (ImGui::MenuItem("Reset Layout", nullptr, false, view != nullptr) && view != nullptr)
+            view->Dock.LayoutDirty = true;
         ImGui::Separator();
         if (ImGui::BeginMenu("Preferences"))
         {
             if (ImGui::BeginMenu("Theme"))
             {
-                ThemePrefs.DrawMenu(EngineInstance.Console().Registry());
+                Shell().ThemePrefs.DrawMenu(EngineInstance.Console().Registry());
                 ImGui::EndMenu();
             }
             ImGui::EndMenu();
@@ -1178,7 +1306,12 @@ void EditorUiFeature::DrawMainMenuBar()
             ImGui::SameLine();
             if (EditorChrome::IconButton("win_close", IconId::WindowClose, buttonSize,
                                          EditorChrome::ButtonTone::Destructive))
-                EngineInstance.RequestExit();
+            {
+                if (CloseWindowAction)
+                    CloseWindowAction();
+                else
+                    EngineInstance.RequestExit();
+            }
         }
 
         // The bar drags everywhere the menus and the right cluster are not:

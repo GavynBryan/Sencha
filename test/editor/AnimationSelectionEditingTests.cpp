@@ -4,6 +4,7 @@
 
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationPredicateText.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationSelectorEdits.h"
 
@@ -188,7 +189,8 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
 {
     Project project;
     {
-        AnimationPreviewWorkspace workspace(*project.Assets);
+        EditorDocuments documents(*project.Assets);
+        AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
         ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
         ASSERT_NE(workspace.Rig.Simulation.Rig(), nullptr);
         ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);
@@ -205,8 +207,8 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
             Parse(R"({ "fact": "Speed", "compare": "gt", "value": 5 })");
         selector->BeginEdit();
         selector->PreviewRoot(std::move(root));
-        workspace.Documents.CommitEdit(*selector);
-        EXPECT_EQ(workspace.Documents.ResidentStateOf(*selector)->Status, DataResidentStatus::Current);
+        workspace.Documents.Store().CommitEdit(*selector);
+        EXPECT_EQ(workspace.Documents.Store().ResidentStateOf(*selector)->Status, DataResidentStatus::Current);
 
         // The next tick decides with the edited rule; nothing restarted.
         const AnimTick before = workspace.Rig.Simulation.Tick();
@@ -220,16 +222,16 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
         (*AnimSelectorRules(root))[0].Find("enter")->AsArray()[0].AsObject().emplace_back("value", JsonValue("fast"));
         selector->BeginEdit();
         selector->PreviewRoot(std::move(root));
-        workspace.Documents.CommitEdit(*selector);
-        EXPECT_EQ(workspace.Documents.ResidentStateOf(*selector)->Status, DataResidentStatus::KeptLastValid);
+        workspace.Documents.Store().CommitEdit(*selector);
+        EXPECT_EQ(workspace.Documents.Store().ResidentStateOf(*selector)->Status, DataResidentStatus::KeptLastValid);
         workspace.Rig.Simulation.Step();
         EXPECT_EQ(Playing(workspace), "asset://anim/idle.sanim");
 
         // Undo twice: back to the authored rule, and the preview follows.
         selector->Undo();
-        workspace.Documents.Changed(*selector);
+        workspace.Documents.Store().Changed(*selector);
         selector->Undo();
-        workspace.Documents.Changed(*selector);
+        workspace.Documents.Store().Changed(*selector);
         workspace.Rig.Simulation.Step();
         EXPECT_EQ(Playing(workspace), "asset://anim/walk.sanim");
 
@@ -243,7 +245,8 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
 TEST(AnimationSelectionEditing, TheSessionRecordsWhyEveryRuleLost)
 {
     Project project;
-    AnimationPreviewWorkspace workspace(*project.Assets);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     workspace.Rig.Simulation.SetFact("Speed", AnimationScenarioValue::FromNumber(0.0));
 

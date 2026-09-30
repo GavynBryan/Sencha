@@ -7,6 +7,12 @@
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 
+std::uint32_t SdlEventWindowId(const SDL_Event& event)
+{
+    SDL_Window* window = SDL_GetWindowFromEvent(&event);
+    return window != nullptr ? SDL_GetWindowID(window) : 0;
+}
+
 SdlWindowService::SdlWindowService(LoggingProvider& logging, SdlVideoService& video)
     : Log(logging.GetLogger<SdlWindowService>())
     , Logging(logging)
@@ -119,6 +125,18 @@ void SdlWindowService::RequestClose(WindowId id)
     {
         record->State.CloseRequested = true;
     }
+}
+
+bool SdlWindowService::DestroyWindow(WindowId id)
+{
+    if (id == PrimaryWindowId)
+        return false;
+    const auto iter = std::find_if(Windows.begin(), Windows.end(),
+        [id](const WindowRecord& record) { return record.Id == id; });
+    if (iter == Windows.end())
+        return false;
+    Windows.erase(iter);
+    return true;
 }
 
 void SdlWindowService::HandleEvent(const SDL_Event& event)

@@ -2,7 +2,7 @@
 
 class AnimationPreviewWorkspace;
 class AnimationPreviewRenderFeature;
-class EditorUiFeature;
+struct WorkspaceView;
 
-void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace,
+void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace,
                                AnimationPreviewRenderFeature*& viewport);

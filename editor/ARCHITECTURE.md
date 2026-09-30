@@ -7,35 +7,86 @@ code and has drifted, so where they differ the code is the source of truth).
 
 ## Big picture
 
-The editor tooling is a family of applications over one shared shell library:
+The editor is one application, Kyusu, over one shared shell library; each kind
+of editing it offers is a workspace library:
 
 | Tree | Target | What it is |
 | --- | --- | --- |
 | `editor/common/` | `editor_common` (static lib) | The shared editor shell: ImGui UI feature + theme/skin, generic input, commands/selection/tools/interaction abstractions, offscreen viewport targets, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
-| `editor/kyusu/` | `kyusu_authoring` (static lib) + `kyusu` | The level editor ("Kyusu - Level Editor"). Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `kyusu` executable is the shell over it (entry point, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
-| `editor/shudei/` | `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
-| `editor/kettle/` | `kettle` | The project launcher ("Kettle - Project Launcher"): recent projects, create project, project settings, launches the editors. |
-| `editor/shoji/` | `shoji_authoring` (static lib) + `shoji` | The authored-UI previewer ("Shoji - UI Previewer"): renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. Same split as Kyusu: the authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the executable is the shell. Built to fold into Kyusu: every panel takes a `UiPreviewSession&`, and consolidation is constructing one in Kyusu's composition root and adding these panels under a workspace tab. |
+| `editor/level_editor/` | `level_authoring` + `level_editor` (static libs) | The level editor. Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `level_editor` library is the shell over it (composition root, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
+| `editor/kyusu/` | `kyusu` | The Kyusu executable and composition root: `KyusuApp`, the `ProjectSession`, and the table of workspace kinds. The only tree that sees every workspace. |
+| `editor/data_editor/` | `data_editor` (static lib) | The Data workspace: schema-driven forms over typed `.sdata` documents. |
+| `editor/animation_editor/` | `animation_authoring` + `animation_editor` (static libs) | The Animation workspace: rig, selector and clip-event authoring over a live skinned preview and a scenario lab. |
+| `editor/material_editor/` | `material_editor` (static lib) | The Materials workspace: browse, edit and save `.smat` with a live MeshForwardPass preview. |
+| `editor/project_browser/` | `project_browser` (static lib) | The Project workspace: recent projects, create project, project settings. Opening a project starts Kyusu again on it and ends the choosing process. Kyusu opens on it when started without a project. |
+| `editor/ui_preview/` | `ui_preview_authoring` + `ui_preview` (static libs) | The UI Preview workspace: renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. The authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the shell library holds `UiPreviewWorkspace` and its panels. |
 
-Product names (Kyusu, Shudei, Kettle, Shoji) exist only on executables and
+Product names (Kyusu) exist only on executables and
 window titles; internal types stay mechanically named.
 
-Every application is a `Game` running inside the runtime `Engine`. It does not
-embed or wrap the engine; it shares the engine's window, Vulkan context,
-console, and logging, and extends the engine by adding render features and
-frame systems. The engine never depends on editor code (one-way dependency).
+Kyusu is a `Game` running inside the runtime `Engine`. It does not embed or
+wrap the engine; it shares the engine's windows, Vulkan context, console, and
+logging, and extends the engine by adding render features and frame systems.
+The engine never depends on editor code (one-way dependency).
 
-Each application follows the same two-file entry pattern:
+## Kyusu and its workspaces
 
-- A `Game` lifecycle adapter (`app/EditorApp`, `MaterialEditorApp`,
-  `LauncherApp`). Glue: each hook (`OnStart`, `OnRegisterSystems`,
-  `OnPlatformEvent`, `OnShutdown`) forwards to the services object.
-- A composition root (`app/EditorServices`, `MaterialEditorServices`,
-  `LauncherServices`) that owns every subsystem and wires them. Kyusu's
-  constructor is the bring-up sequence, split into named phases:
-  `BuildDocument` -> `BuildPlayLoop` -> `BuildFileActions` -> `BuildInput` ->
-  `BuildViewportRendering` -> `BuildUi`. Member order is teardown order; the
-  destructor reproduces the load-bearing sequence explicitly.
+Kyusu (`editor/kyusu/`, `KyusuApp`) is the one `Game`. It owns the
+`ProjectSession`, the window's `EditorUiFeature` and a `WorkspaceHost`
+(`common/src/workspaces/`) built from the kinds table in
+`kyusu/src/app/WorkspaceKinds.cpp`. A workspace (`IWorkspace`) is built when
+first opened and destroyed when closed; the window draws the active one's
+`WorkspaceView` (its panels, chrome, overlays, file actions and tab-strip
+controls) under the `WorkspaceBar` tab strip and nothing of the others.
+Opening, closing and switching are requests applied at the frame boundary by
+the one `WorkspaceTickSystem`, since a workspace adds and removes render
+features as it comes and goes; each open workspace is ticked there too.
+
+Data documents live once per process in the session's `DataDocumentStore`;
+each workspace shows them through a `DataDocumentSet` view (its tabs, active
+document and selected field), so the Data and Animation workspaces showing one
+file edit one document, and the store closes it when its last view lets go.
+
+Documents share one journal, the session's `DocumentSourceSet`: every
+workspace's documents are sources in it (the level's is `LevelDocumentSource`,
+one document for the whole world since a command may span zones). Undo retakes
+the newest step wherever it is and brings the owning workspace forward first;
+a workspace's own staged edit, such as the level's live preview, is undone by
+itself before that. A workspace with changed documents asks Save, Discard or
+Keep editing before it closes, the exit prompt does the same for all of them,
+and a source destroyed with changes is a debug assertion: whoever drops them
+does so deliberately. Cook and Play save every document first and stop on a
+conflict or a failure. Saving a document whose file changed on disk since it
+was read is a conflict the author settles, never an overwrite.
+
+Each panel is given a window identity `<kind>.<settings id>` and its
+remembered visibility is filed under `<kind>/<settings id>`, so two
+workspaces' panels never share a window or a setting. The host adds a console
+to every workspace it adopts.
+
+A workspace is placed in a window. The main window is the engine's primary
+presentation; `workspace.detach` (or a tab dragged off the strip, or its "Move
+to New Window") opens another through `OpenPresentationWindow` and draws the
+workspace there with a detached `EditorUiFeature`: its own ImGui context and
+backends over the primary's font atlas, style and layout, recorded into that
+presentation's swapchain scope. Each window shows the workspace most recently
+activated in it; closing a window, or `workspace.attach`, brings its
+workspaces back, and a window left empty closes. Every ImGui texture set is
+added and freed through the primary's backend (`ui/ImGuiTextureOwner`), since
+a preview shown in one window may be released from another. Platform events
+reach the shell and workspace of the window they name.
+
+Offscreen previews render only while a panel shows them: the UI marks what it
+displayed in a `DisplayLedger`, and the next frame renders and keeps only that
+(`render/DisplayedTargets`; the level viewports read the same ledger). A
+hidden workspace, a closed panel and a minimized window cost no target and no
+recording.
+
+The level workspace (`level_editor/src/app/LevelWorkspace`) is the level
+editor's composition root. Its constructor is the bring-up sequence, split
+into named phases: `BuildDocument` -> `BuildPlayLoop` -> `BuildFileActions` ->
+`BuildInput` -> `BuildViewportRendering` -> `BuildUi`. Member order is teardown
+order; the destructor reproduces the load-bearing sequence explicitly.
 
 ## Projects
 
@@ -44,16 +95,18 @@ the game module and the content roots. Editors resolve it via `--project
 <path>` argv first, then the `SENCHA_PROJECT` env var (`ProjectArgs`), and
 mount every content root (authored scan + `.cooked` overlay + on-demand texture
 cook + asset id map) through `ProjectContentMount`, the same resolution the
-runtime uses. Kettle spawns editors with `--project` via `ProcessLaunch`; the
-same helper drives PIE's out-of-process player.
+runtime uses. The Project workspace starts Kyusu on a chosen project with
+`--project` via `ProcessLaunch`; the same helper drives PIE's out-of-process
+player.
 
 Materials (and assets generally) resolve against the project's content roots,
-never against the open level file's location. Kyusu watches `.smat`/`.png`
-sources per content root (`AssetSourceWatcher` + `AssetHotReloader`, polled
-from the frame hook) and hot-swaps resident assets in place, so a save from
-Shudei or a text editor shows up live. The assembly -- watcher, reloader,
-importer set, throttled poll -- is `SourceReloadRoots` in `common/src/project/`,
-shared by Kyusu, Shudei and Shoji; an editor adds roots and calls `Poll`.
+never against the open level file's location. Kyusu mounts the project into
+the engine's asset stack once (`ProjectSession`) and watches its authored
+sources there, hot-swapping resident assets in place, so a save from any tool
+shows up live. The assembly -- watcher, reloader, importer set, throttled poll
+-- is the engine's `SourceReloadRoots` (`assets/hotreload/`), which
+`RuntimeContent` owns and polls; an editor adds roots to
+`RuntimeContent::SourceReload()`.
 
 ## Include convention
 
@@ -69,7 +122,7 @@ Read the level editor bottom to top. Each layer depends only on layers below it.
 
 1. Engine (external): window, Vulkan, console, logging, ECS, assets.
 2. Core abstractions: `common/commands/`, `common/selection/`, `common/tools/`,
-   `common/interaction/`, `kyusu/brush/`. Self-contained, no editor-domain
+   `common/interaction/`, `level_editor/brush/`. Self-contained, no editor-domain
    dependencies. `brush/` is the half-edge geometry kernel and a pure leaf
    (engine-only).
 3. Authoring subsystems: `input/`, `editmodes/`, `meshedit/`, `viewport/`,
@@ -81,8 +134,8 @@ Read the level editor bottom to top. Each layer depends only on layers below it.
    `SelectionActions` (verbs over the selection as a whole), `GridEditing`. It
    is the editor's central hub by design, so it has the widest fan-out; that
    breadth lives here, not scattered.
-5. App composition: `app/`. `EditorServices` owns the workspace, input, UI, and
-   play loop, and wires them into the engine.
+5. App composition: `app/`. `LevelWorkspace` owns the authoring hub, input,
+   panels and play loop, and wires them into the engine.
 
 ## Subsystem map
 
@@ -99,15 +152,16 @@ Shared shell (`editor/common/src/`):
 | `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/icons/` |
 | `ui/ThemeTextureCache` | The raster art a theme owns, keyed by path and source stamp, with its own GPU lifetime. Deliberately not the font atlas: a theme switch costs one upload, not a font rebuild. | add a texture path to a theme's `surfaces` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
-| `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`). | -- |
+| `workspaces/` | The workspace model: `IWorkspace`, the `WorkspaceKind` row, `WorkspaceHost` (open, close, activate, window placement, requests at the frame boundary; headless-tested). | a row in `WorkspaceKinds.cpp` |
+| `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`), display-driven target lifetime (`DisplayLedger`, `DisplayedTargets`), `DetachRenderFeature`. | -- |
 | `viewport/` | `ViewportId`. | -- |
 | `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`). | -- |
 
-Level editor (`editor/kyusu/src/`):
+Level editor (`editor/level_editor/src/`):
 
 | Directory | Owns | Extension seam |
 | --- | --- | --- |
-| `app/` | Entry point + composition root (`EditorApp`, `EditorServices`, `EditorFrameHook`, source hot-reload wiring) and `EditorCookRuntime` (the cook session, the player it feeds, and the serials that hand one to the other). | -- |
+| `app/` | The composition root (`LevelWorkspace`) and `EditorCookRuntime` (the cook session, the player it feeds, and the serials that hand one to the other). | -- |
 | `workspace/` | The per-document authoring hub (`EditorWorkspace`, `BrushManipulationSink`) plus the mechanisms it composes: `WorkspaceInteractionRuntime`, `PendingBridgeEdit`, `PendingElementEdit`, `SelectionActions`, `GridEditing`, `EscapePolicy`. | -- |
 | `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `ui`, `editmodes`, interactions, and the test suite. | -- |
 | `input/` | Viewport-coupled input (`ViewportNavigation`, `ViewportToolDispatcher`, `SdlEventTranslation`). | -- |
@@ -119,18 +173,22 @@ Level editor (`editor/kyusu/src/`):
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
-Material editor (`editor/shudei/src/`, flat): `MaterialEditorApp` +
-`MaterialEditorServices`, `MaterialEditSession` (open/edit/save/duplicate,
-headless-tested), `EditMaterialCommand`, `PreviewPrimitives` (procedural
-sphere/cube/plane), `MaterialPreviewRenderFeature` (MeshForwardPass into its own
-offscreen target), and the browser/inspector/preview panels. Live
-preview swaps the working description into the resident material via
-`MaterialAssetLoader::CommitReload`.
+Materials workspace (`editor/material_editor/src/`, flat): `MaterialWorkspace`,
+`MaterialDocumentSet` (the open materials as journal documents, one tab and
+one undo history each, headless-tested), `MaterialEditSession`
+(open/edit/save/duplicate, conflict detection by file baseline),
+`EditMaterialCommand`, `PreviewPrimitives` (procedural sphere/cube/plane),
+`MaterialPreviewRenderFeature` (MeshForwardPass into its own offscreen
+target), and the files/inspector/preview/textures panels. Live preview pushes
+the working description into the resident material via `AssetSystem::Reload`;
+a watched `.smat` that changes on disk is taken by a clean tab and kept out of
+the stack while a tab holds its own changes (`DocumentSource::FileChangedOnDisk`
+behind `SourceReloadRoots::SetReloadFilter`).
 
-Launcher (`editor/kettle/src/`, flat): `LauncherApp` + `LauncherServices`,
+Project workspace (`editor/project_browser/src/`, flat): `ProjectWorkspace`,
 `ProjectCatalog` (recent projects JSON in the user config dir,
 headless-tested), `ProjectBrowserPanel` (recent list, create form, settings
-editor).
+editor), `ProjectRelaunch` (the command that opens a project in a new process).
 
 ### Inside `document/` (the document domain)
 
@@ -158,6 +216,9 @@ format boundary; the editor's own types use document/scene vocabulary.
 - Editor depends on engine, never the reverse.
 - `editor_common` never includes an application-only subsystem; applications
   link `editor_common`, never each other.
+- Workspace trees (level, material, data, animation, UI preview, project
+  browser) never include one another's headers; only `editor/kyusu` composes
+  them.
 - Each application's `app/` (or services) layer sits on top; it composes
   everything and is depended on by nothing.
 - Core abstractions (`commands/`, `selection/`, `tools/`, `interaction/`,
@@ -176,11 +237,11 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
 
 ## Where do I add ...
 
-- A panel: implement `IEditorPanel` (kyusu panels in `kyusu/src/ui/`), register
+- A panel: implement `IEditorPanel` (level editor panels in `level_editor/src/ui/`), register
   it in the owning services' `BuildUi`. It declares a stable settings id and
   whether its shown/hidden state is remembered across launches
   (`GetPersistence`); the shell keeps that in the ImGui layout file.
-- A tool: implement `ITool` (built-ins live in `kyusu/src/document/tools/`) and
+- A tool: implement `ITool` (built-ins live in `level_editor/src/document/tools/`) and
   register it in `WorkspaceInteractionRuntime::Rebuild`. That is the whole cost:
   a tool declares its own properties UI (`DrawProperties`), toolbar chrome
   (`DrawToolbarControls`), activation key (`GetShortcut`), and how a save should
@@ -189,7 +250,7 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   up without an edit. The toolbar is not a bar of its own: the perspective
   viewport's header is the toolbar row it reserves in place of a title
   (`ViewportPanel::SetHeaderRows`), with the gizmo strip centred on the
-  window's midline; the cook/play loop sits in the `WorkspaceBar` under the caption, the bare
+  window's midline; the cook/play loop (`CookPlayControls`) sits at the right of the `WorkspaceBar` tab strip under the caption, the
   plate that will carry workspace tabs.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
@@ -201,8 +262,10 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   hot and the properties row draws them; neither learns the type behind them.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
-- A keyboard shortcut: the binding table in `EditorServices::BuildInput` (Kyusu);
-  Shudei handles its few chords directly in `HandlePlatformEvent`. Tool
+- A keyboard shortcut: the binding table in `LevelWorkspace::BuildInput` (the level editor);
+  the keys every workspace shares (undo, redo, save, save all) are Kyusu's own
+  rows in `KyusuApp::BuildShortcuts`, reached by a workspace that binds none of
+  its own. Tool
   activation rows are generated from the registry instead, under `tool.<id>`.
   Any action, listed or generated, is rebindable from `keybinds.json`. A held
   key is owned by a `RadialMenuSession` rather than the shortcut registry,
@@ -213,10 +276,11 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   (`gizmo.wheel`, `TransformModeMenuModel` over the `TransformModeItems`
   table the toolbar strip reads too). An open wheel is modal, which is what
   keeps the other closed.
-- A viewport visual: a render feature/pass in `kyusu/src/render/`, added in
-  `EditorServices::BuildViewportRendering`.
+- A viewport visual: a render feature/pass in `level_editor/src/render/`, added in
+  `LevelWorkspace::BuildViewportRendering`.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in
   `BuildViewportRendering`).
-- A new editor application: a new `editor/<name>/` subdirectory linking
-  `editor_common`, following the app-adapter + services pattern; add it in
-  `editor/CMakeLists.txt`.
+- A workspace: a library under `editor/<name>/` linking `editor_common`, with
+  an `IWorkspace` that builds its panels into a `WorkspaceView`, and one row in
+  `editor/kyusu/src/app/WorkspaceKinds.cpp` that constructs it with exactly
+  the services it needs. It never includes another workspace's headers.

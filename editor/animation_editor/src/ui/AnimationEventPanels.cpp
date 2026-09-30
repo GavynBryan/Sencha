@@ -5,7 +5,7 @@
 #include "ui/AnimationPreviewStatus.h"
 #include "ui/DocumentSaveReportView.h"
 #include "authoring/AnimationRigDocumentEdits.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -112,7 +112,7 @@ public:
     {
         if (!IsVisible())
             return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen())
             return;
 
@@ -648,7 +648,7 @@ public:
     {
         if (!IsVisible())
             return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen())
             return;
         AnimationPreviewSession& session = Workspace.Rig.Simulation;
@@ -768,14 +768,14 @@ private:
 };
 }
 
-void AddAnimationEventPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationEventPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     auto events = std::make_unique<ClipEventsPanel>(workspace);
     auto* eventsPanel = events.get();
     ui.AddPanel(std::move(events));
     ui.AddPanel(std::make_unique<EventAdmissionsPanel>(workspace));
     // A hidden panel is not drawn, so a drag it started cannot finish there.
-    ui.AddOverlay([&workspace, eventsPanel] {
+    ui.Overlays.push_back([&workspace, eventsPanel] {
         if (!eventsPanel->IsVisible())
             for (const auto& document : workspace.ClipEvents.Documents())
                 workspace.ClipEvents.CancelEdit(*document);

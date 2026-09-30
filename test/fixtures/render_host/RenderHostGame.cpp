@@ -134,7 +134,7 @@ private:
         if (ui == nullptr || !ui->IsReady() || PackagePath.empty())
             return;
 
-        const VkExtent2D extent = EnginePtr->Graphics().Swapchain.GetExtent();
+        const VkExtent2D extent = EnginePtr->Graphics().Frames.PrimarySwapchain().GetExtent();
         const UiSurfaceId surface =
             ui->CreateSurface("render_host", RenderExtent{ extent.width, extent.height });
 

@@ -65,21 +65,15 @@ do the work and delete the entry.
 
 ## Picking up another program's edits before save
 
-- **What:** an open document does not notice its file changing on disk until
-  it is saved, when the conflict is refused and settled by keeping one side.
-- **Where:** the editors' document sets in `editor/common/src/data/` and
-  `editor/animation_editor/src/authoring/`.
-- **Trigger:** file watching in the consolidated editor.
-
-## Other editors' documents on the shared document layer
-
-- **What:** Shudei's `MaterialTabSet` and Kyusu's document handling keep their
-  own open, save and undo instead of the shared document layer the Data Editor
-  and the animation editor use.
-- **Where:** `editor/shudei/src/MaterialTabSet.*`, `editor/kyusu/src/document/`.
-- **Trigger:** the editor consolidation ticket, which gives the one application
-  one undo journal and one save-all.
-
+- **What:** material and data documents take a file changed on disk while
+  they are clean and hold off a change while they have their own; the level
+  document does not notice until it is saved, when the conflict is refused and
+  settled by keeping one side. Level files are not among the watched sources.
+- **Where:** `DocumentSource::FileChangedOnDisk`; `LevelDocumentSource` in
+  `editor/level_editor/src/workspace/`; the watched extensions in
+  `editor/kyusu/src/app/ProjectSession.cpp`.
+- **Trigger:** level files (`.sscene`, `.sworld`) being watched, for example
+  by a scene-reload workflow.
 ## Sanitizers and benchmarks in CI
 
 - **What:** the `asan` and `tsan` presets and the gated benchmarks run only by
@@ -89,23 +83,6 @@ do the work and delete the entry.
   `test/editor/AnimationPreviewBench.cpp`) and the other gated benches.
 - **Trigger:** a performance or memory-safety regression gate wanted in CI.
 
-## Resident push against file-watcher reload
-
-- **What:** the editors push a committed working version into the resident
-  asset; nothing stops a file-watcher reload replacing it with the saved file.
-- **Where:** `editor/common/src/data/DataResidentSync.*`.
-- **Trigger:** a host that runs source hot reload beside a document set, which
-  the consolidated editor will.
-
-## Play-in-editor and unsaved values
-
-- **What:** because working versions are pushed into resident assets, a
-  play-in-editor session started from the same process would see unsaved
-  values. Whether it should is a product decision.
-- **Where:** `editor/common/src/data/DataResidentSync.*`.
-- **Trigger:** the consolidated editor wiring play-in-editor to the shared
-  document set.
-
 ## Unsaved-document prompt polish
 
 - **What:** closing, renaming or deleting an unsaved document asks Save,
@@ -113,18 +90,6 @@ do the work and delete the entry.
   loss still cancels typed text that has not been committed.
 - **Where:** `editor/common/src/ui/DocumentShellActions.*`.
 - **Trigger:** the UX polish pass.
-
-## Destroying a document source that still has changes
-
-- **What:** the plan for the shared document layer makes destroying a document
-  source with unsaved documents a debug assertion, reachable only through the
-  exit prompt. Today "Discard and close" and tests destroy sets with changes,
-  so the assertion would need an explicit discard-everything step first.
-- **Where:** `editor/common/src/data/DataDocumentSet.cpp`,
-  `editor/animation_editor/src/authoring/AnimationClipEventsSet.cpp`,
-  `editor/common/src/ui/DocumentShellActions.cpp`.
-- **Trigger:** the consolidated editor's single shutdown path, which can
-  discard every source's documents before tearing them down.
 
 ## Gameplay events on behaviors reached without a request
 
@@ -158,3 +123,76 @@ do the work and delete the entry.
   and "Remediation plan", phase D.
 - **Trigger:** the performance and cleanup ticket that follows, and before any
   scene with hundreds of rigged entities ships.
+
+## Hand-rolled generational pools
+
+- **What:** `HandlePool<Tag, T>` (`engine/include/core/handle/HandlePool.h`) is
+  the one generational slot container; presentations use it. Older owners
+  still keep their own slots, generation counters and free lists.
+- **Where:** `VulkanImageService`, `VulkanBufferService`, `VulkanShaderCache`,
+  `RenderTargetStore`, and `UiSurfaceTargetRenderFeature`'s bindings.
+- **Trigger:** the next change to how any of them allocates, resolves or frees
+  a handle moves that owner onto `HandlePool` in the same change.
+
+## Authored UI in detached windows
+
+- **What:** `UiService` surfaces live on the primary window: its platform-event
+  consumer takes only primary-window events and its surfaces are sized to the
+  primary. A workspace detached into its own window keeps its ImGui panels
+  there, but an authored surface it opens (the level's cook-profiles modal and
+  inspector surface) still appears on the main window.
+- **Where:** `engine/include/ui/UiService.h`, the `authored_ui` consumer in
+  `engine/src/app/EngineFramePhases.cpp`, and `LevelWorkspace`'s
+  `AuthoredSurface`, sized from `PrimaryWindow`.
+- **Trigger:** the Shoji-hosted editor UI, whose panels are authored surfaces;
+  it needs a surface to name its presentation, which is a `ui/` ABI change.
+
+## Detached window layout write-back
+
+- **What:** a detached window starts from the primary's in-memory layout
+  (`EditorUiFeature::InitImGui`), but dock changes made in it are not written
+  back, so a workspace rearranged while detached comes home in its old layout.
+- **Where:** `editor/common/src/ui/EditorUiFeature.cpp`, detached `InitImGui`
+  (`io.IniFilename = nullptr`).
+- **Trigger:** the first report of a lost detached arrangement, or the 3D
+  workspace manager, which will want placement to persist.
+
+## Per-window UI scale
+
+- **What:** the UI scale is resolved once from the primary window's display
+  and shared by every window's style and font atlas; a detached window on a
+  display of another scale draws at the primary's.
+- **Where:** `ResolveUiScale` and `EditorUi::UiScale` in
+  `editor/common/src/ui/EditorUiFeature.cpp` and `EditorUiStyle`.
+- **Trigger:** a mixed-DPI setup where a detached window reads at the wrong
+  size; the fix is an atlas per scale, since fonts bake at a size.
+
+## Frame scratch after the level closes
+
+- **What:** a session that opens a level sizes the per-frame GPU scratch at
+  64 MB at configure time (`KyusuApp::OnConfigure`); it stays that size after
+  the Level workspace closes, since the scratch ring is fixed for the run.
+- **Where:** `GpuFrameScratch`, `EngineGraphicsConfig::FrameScratchBytesPerFrame`.
+- **Trigger:** a memory budget pass over the editor, or the scratch ring
+  gaining a resize at a frame boundary.
+
+## Level document dirty state is a flag
+
+- **What:** `LevelDocumentSource` reports changes from the documents' dirty
+  flags, so undoing back to the saved point still reads as changed, where the
+  other sources derive it from the journal position.
+- **Where:** `editor/level_editor/src/workspace/LevelDocumentSource.cpp`,
+  `EditorDocument::MarkDirty`.
+- **Trigger:** a report of a spurious save prompt after undoing to the saved
+  state, or the level document gaining a saved-step marker in its
+  `CommandStack`.
+
+## One frame capture at a time
+
+- **What:** `FrameImageCapture` holds one pending request, so arming a second
+  capture (another presentation, or another frame) before the first is
+  written replaces it.
+- **Where:** `engine/include/graphics/vulkan/FrameImageCapture.h`,
+  `Renderer::CaptureFrame`.
+- **Trigger:** an unattended run that needs two windows, or two frames,
+  captured in one process.

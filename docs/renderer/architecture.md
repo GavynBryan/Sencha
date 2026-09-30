@@ -55,7 +55,7 @@ declares -- see `FeatureRegistrationOrder`.)
 
 ```mermaid
 graph TD
-  Instance[VulkanInstanceService] --> Surface[VulkanSurfaceService]
+  Instance[VulkanInstanceService] --> Surface[PrimarySurface<br/>VulkanSurfaceService]
   Instance --> Phys[VulkanPhysicalDeviceService]
   Surface --> Phys
   Phys --> Device[VulkanDeviceService]
@@ -80,14 +80,12 @@ graph TD
   Images --> Desc
   Buffers --> Scratch[GpuFrameScratch]
   Phys --> Scratch
-  Device --> Swap[VulkanSwapchainService]
-  Surface --> Swap
-  Queues --> Swap
-  Swap --> Frames[VulkanFrameService]
+  Surface --> Frames[VulkanFrameService<br/>owns PresentationTargets:<br/>surface + swapchain per window]
+  Device --> Frames
   DelQ --> Frames
   Queues --> Frames
+  Images --> Frames
   Frames --> Renderer[Renderer<br/>member name MainRenderer]
-  Swap --> Renderer
   Scratch --> Renderer
   Desc --> Renderer
   Pipelines --> Renderer
@@ -199,7 +197,7 @@ to 1.0, so comparison samples read fully lit.
 
 ## Editor reuse
 
-`editor/kyusu/src/render/EditorRenderFeature` is an `IRenderFeature` in the
+`editor/level_editor/src/render/EditorRenderFeature` is an `IRenderFeature` in the
 `Offscreen` phase that owns its own `LightBindings`, `ShadowDepthPass`,
 `ShadowResidency`, `ShadowCasterDiff`, and `MeshForwardPass`. It renders each
 viewport into an offscreen target that ImGui then composites.

@@ -5,6 +5,7 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 
+#include <algorithm>
 #include <format>
 
 AnimationClipEventsSet::AnimationClipEventsSet(RuntimeAssets& assets, DocumentSourceSet& sources)
@@ -159,6 +160,26 @@ void AnimationClipEventsSet::CancelDocumentEdits()
 {
     for (const auto& document : Open)
         CancelEdit(*document);
+}
+
+void AnimationClipEventsSet::DiscardDocument(std::string_view key)
+{
+    const auto it = std::find_if(Open.begin(), Open.end(),
+                                 [&](const auto& document) { return document->ClipPath() == key; });
+    if (it == Open.end())
+        return;
+    AnimationClipEventsDocument& document = **it;
+    CancelEdit(document);
+    // The resident clip plays the committed events; the file's version goes
+    // back into it before the document goes.
+    std::string error;
+    if (document.IsDirty() && document.AdoptFileVersion(&error))
+        Changed(document);
+    Sources.ForgetDocument(RefOf(document));
+    States.erase(&document);
+    if (ActiveClipPath == key)
+        ActiveClipPath.clear();
+    Open.erase(it);
 }
 
 bool AnimationClipEventsSet::Push(AnimationClipEventsDocument& document)

@@ -14,7 +14,7 @@
 #include "ui/AnimationSelectionPanels.h"
 #include "ui/AnimationSimulationPanels.h"
 #include "render/AnimationPreviewRenderFeature.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -47,7 +47,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
         ImGui::TextWrapped("Preview selections are transient. Animation documents open for editing; valid edits reach the running preview at once and the file only when saved.");
         if (ImGui::Button("Refresh asset list")) Workspace.RefreshBrowser();
@@ -116,7 +116,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
         if (!Viewport)
         {
@@ -311,7 +311,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
         if (ImGui::Button(Session.IsPlaying() ? "Pause" : "Play"))
         {
@@ -357,7 +357,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
         if (!Workspace.Audition.Error.empty())
         {
@@ -383,7 +383,7 @@ private:
 };
 }
 
-void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace,
+void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace,
                                AnimationPreviewRenderFeature*& viewport)
 {
     ui.AddPanel(std::make_unique<PreviewAssetsPanel>(workspace));
@@ -404,7 +404,7 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     auto* requestSchemaPanel = requestSchema.get();
     ui.AddPanel(std::move(requestSchema));
     // Hidden panels do not receive OnDraw, including when hidden via View.
-    ui.AddOverlay([&workspace, requestSchemaPanel] {
+    ui.Overlays.push_back([&workspace, requestSchemaPanel] {
         if (!requestSchemaPanel->IsVisible()) workspace.Sources.CancelEdits();
     });
 }

@@ -1,6 +1,6 @@
 #pragma once
 
 class AnimationPreviewWorkspace;
-class EditorUiFeature;
+struct WorkspaceView;
 
-void AddAnimationScenarioBatchPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace);
+void AddAnimationScenarioBatchPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace);

@@ -3,6 +3,7 @@
 // game, and nothing written to disk until saved.
 
 #include "authoring/AnimationEventBindings.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigDocumentEdits.h"
 
@@ -141,7 +142,8 @@ namespace
 TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     ASSERT_TRUE((workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError) != nullptr)) << workspace.DocumentError;
     AnimationClipEventsDocument* events = workspace.ClipEvents.Find(kClip);
@@ -171,7 +173,8 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
 TEST(AnimationEventEditing, ADragReachesThePreviewOnlyWhenCommitted)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata"));
     AnimationClipEventsDocument* opened = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(opened, nullptr) << workspace.DocumentError;
@@ -198,6 +201,7 @@ TEST(AnimationEventEditing, ADragReachesThePreviewOnlyWhenCommitted)
     drag();
     workspace.ClipEvents.CommitEdit(events);
     EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.8f);
+    workspace.Sources.DiscardAll();
 }
 
 // A binding created from a declared verb takes an input per argument, and an
@@ -205,7 +209,8 @@ TEST(AnimationEventEditing, ADragReachesThePreviewOnlyWhenCommitted)
 TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata"));
     ASSERT_TRUE(CreateAnimationBinding(workspace.Documents, workspace.Rig.Simulation, "asset://anim/hero.bindings.sdata", "anim.footstep_loud", "test.footstep", workspace.DocumentError))
         << workspace.DocumentError;
@@ -233,6 +238,7 @@ TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
     ASSERT_EQ(workspace.Rig.Simulation.Rig()->Contents.at(0).Events.size(), 1u);
     EXPECT_TRUE(workspace.Rig.Simulation.Rig()->Contents[0].Events[0].Resolved)
         << (workspace.Rig.Simulation.Rig()->Diagnostics.empty() ? "" : workspace.Rig.Simulation.Rig()->Diagnostics.back().Message);
+    workspace.Sources.DiscardAll();
 }
 
 // The inspector's check is the binding's: one input filling an Int and a
@@ -240,7 +246,8 @@ TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
 TEST(AnimationEventEditing, AnInputIsCheckedAgainstEveryDestination)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata"));
     const CompiledVerbBinding* count = workspace.Rig.Simulation.Rig()->Bindings.Find("anim.count");
     ASSERT_NE(count, nullptr);
@@ -270,7 +277,8 @@ TEST(AnimationEventEditing, AnInputIsCheckedAgainstEveryDestination)
 TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
@@ -295,6 +303,7 @@ TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
 
     workspace.Sources.Redo();
     EXPECT_EQ(clip->Events.size(), 1u);
+    workspace.Sources.DiscardAll();
 }
 
 // Save all writes the data document and holds back a sidecar changed on disk;
@@ -302,7 +311,8 @@ TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
 TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
@@ -330,4 +340,5 @@ TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
     EXPECT_TRUE(workspace.Sources.LastSave().WithStatus(DocumentSaveStatus::Conflict).empty());
     workspace.Sources.Undo();
     EXPECT_EQ(events->Events().size(), 1u) << "the author's events are one step away";
+    workspace.Sources.DiscardAll();
 }

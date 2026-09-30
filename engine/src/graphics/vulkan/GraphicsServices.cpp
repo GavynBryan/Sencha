@@ -58,8 +58,8 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
                                    std::uint64_t scratchBytesPerFrame,
                                    SdlWindow& window)
     : Instance(logging, policy)
-    , Surface(logging, Instance, window)
-    , PhysicalDevice(logging, Instance, policy, &Surface)
+    , PrimarySurface(std::make_unique<VulkanSurfaceService>(logging, Instance, window))
+    , PhysicalDevice(logging, Instance, policy, PrimarySurface.get())
     , Device(logging, PhysicalDevice, policy)
     , Queues(logging, Device, PhysicalDevice, policy)
     , Allocator(logging, Instance, PhysicalDevice, Device)
@@ -74,9 +74,15 @@ GraphicsServices::GraphicsServices(LoggingProvider& logging,
     , Scratch(logging, Device, PhysicalDevice, Buffers,
               GpuFrameScratch::Config{ .FramesInFlight = framesInFlight,
                                           .BytesPerFrame = scratchBytesPerFrame })
-    , Swapchain(logging, Device, PhysicalDevice, Surface, Queues, window.GetExtent())
-    , Frames(logging, Device, Queues, Swapchain, DeletionQueue, framesInFlight)
-    , MainRenderer(logging, Device, PhysicalDevice, Queues, Swapchain, Frames, Allocator,
+    , Frames(VulkanFrameService::Services{ .Logging = &logging,
+                                           .Instance = &Instance,
+                                           .PhysicalDevice = &PhysicalDevice,
+                                           .Device = &Device,
+                                           .Queues = &Queues,
+                                           .Images = &Images,
+                                           .DeletionQueue = &DeletionQueue },
+             std::move(PrimarySurface), window, framesInFlight)
+    , MainRenderer(logging, Device, PhysicalDevice, Queues, Frames, Allocator,
                    Buffers, Images, Samplers, Shaders, Pipelines, Descriptors, Scratch, Upload)
 {
 }
@@ -90,7 +96,6 @@ void GraphicsServices::WaitIdle() const
 bool GraphicsServices::IsValid() const
 {
     return Instance.IsValid()
-        && Surface.IsValid()
         && PhysicalDevice.IsValid()
         && Device.IsValid()
         && Queues.IsValid()
@@ -103,7 +108,6 @@ bool GraphicsServices::IsValid() const
         && Pipelines.IsValid()
         && Descriptors.IsValid()
         && Scratch.IsValid()
-        && Swapchain.IsValid()
         && Frames.IsValid()
         && MainRenderer.IsValid();
 }

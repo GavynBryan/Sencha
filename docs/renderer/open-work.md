@@ -77,7 +77,7 @@ device-lost fault injection are owed in the same bucket.
 ## Smaller items
 
 - **The editor render tree has no isolation fence.** `cmake/CheckRenderIsolation.cmake`
-  covers `engine/{include,src}/render` only. `editor/kyusu/src/render` names 81
+  covers `engine/{include,src}/render` only. `editor/level_editor/src/render` names 81
   distinct Vulkan symbols across 12 files, and `EditorBloomPass` is a complete
   offscreen post chain -- backend code living in an editor `render/` directory.
   Nothing enforces where that line sits. The engine-side rules are the template

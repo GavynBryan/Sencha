@@ -50,7 +50,7 @@ void EditorConsolePanel::OnDraw()
         ImGui::SetWindowFocus(GetTitle().data());
     LastDrawnFrame = frame;
 
-    ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
+    ScopedPanel panel(GetWindowName(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())
         return;
 

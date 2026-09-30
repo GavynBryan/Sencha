@@ -2,6 +2,7 @@
 // leaves the same assets resident, the same preview World, bounded history,
 // and no interaction open behind it.
 
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigRecipe.h"
 
@@ -91,7 +92,8 @@ TEST(AnimationLongSession, RepeatedWorkHoldsSteady)
                               "asset://meshes/man.blend#anim:Left_claw" })
         project.Clip(clip, kSkeleton);
     project.ScanEngineAssets();
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     const std::vector<std::string> clips = { "asset://meshes/man.blend#anim:Idle", "asset://meshes/man.blend#anim:Walk",
                                              "asset://meshes/man.blend#anim:Left_claw" };

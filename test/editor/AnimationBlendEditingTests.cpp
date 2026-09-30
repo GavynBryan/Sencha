@@ -3,6 +3,7 @@
 // and read where B differs from A -- only while the edited blend runs.
 
 #include "authoring/AnimationBlendComparison.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 
 #include <anim/AnimBehaviorSet.h>
@@ -100,7 +101,8 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
 {
     Project project;
     {
-        AnimationPreviewWorkspace workspace(*project.Assets);
+        EditorDocuments documents(*project.Assets);
+        AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
         ASSERT_TRUE(workspace.OpenRig("asset://anim/walker.rig.sdata")) << workspace.Rig.Error;
         ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);
         workspace.Rig.Simulation.RunTo(90);
@@ -116,7 +118,7 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
         (*root.Find("data")->Find("behaviors")->AsArray()[1].Find("blend")->Find("in_ms")) = JsonValue(300.0);
         behaviors->BeginEdit();
         behaviors->PreviewRoot(std::move(root));
-        workspace.Documents.CommitEdit(*behaviors);
+        workspace.Documents.Store().CommitEdit(*behaviors);
 
         ASSERT_TRUE(workspace.Takes.ReplayAgainstA(workspace.Rig.Simulation)) << workspace.Takes.Comparison().Refusal;
         const std::vector<AnimationPoseResidual>& residuals = workspace.Takes.Comparison().Residuals;
@@ -141,5 +143,6 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
         EXPECT_FALSE(workspace.Takes.ReplayAgainstA(workspace.Rig.Simulation));
         EXPECT_NE(workspace.Takes.Comparison().Refusal.find("different scenarios"), std::string::npos);
         workspace.Rig.Simulation.Close();
+        workspace.Sources.DiscardAll();
     }
 }

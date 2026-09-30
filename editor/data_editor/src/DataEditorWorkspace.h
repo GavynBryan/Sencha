@@ -13,12 +13,13 @@
 
 struct ProjectDescriptor;
 
-// The Data Editor's documents, plus the file operations only it offers. Each
+// The data workspace's documents, plus the file operations only it offers. Each
 // operation that would drop an open document's changes refuses unless told.
 class DataEditorWorkspace final
 {
 public:
-    DataEditorWorkspace(RuntimeAssets& assets, const ProjectDescriptor& project);
+    DataEditorWorkspace(RuntimeAssets& assets, const ProjectDescriptor& project, DocumentSourceSet& sources,
+                        DataDocumentStore& store);
 
     DataEditorWorkspace(const DataEditorWorkspace&) = delete;
     DataEditorWorkspace& operator=(const DataEditorWorkspace&) = delete;
@@ -41,7 +42,7 @@ private:
     std::filesystem::path ContentRoot;
 
 public:
-    // Declared before the document set, which registers with it.
-    DocumentSourceSet Sources;
+    // The application's journal, which the store's documents are steps in.
+    DocumentSourceSet& Sources;
     DataDocumentSet Documents;
 };

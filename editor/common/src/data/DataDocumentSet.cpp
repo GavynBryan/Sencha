@@ -1,29 +1,31 @@
 #include "data/DataDocumentSet.h"
 
-#include "data/DataAssetFiles.h"
-
-#include <assets/data/DataAssetSubtype.h>
-#include <assets/runtime/RuntimeAssets.h>
-#include <core/assets/AssetRegistry.h>
-#include <core/json/JsonParser.h>
-
 #include <algorithm>
 #include <format>
-#include <fstream>
-#include <sstream>
 
-DataDocumentSet::DataDocumentSet(RuntimeAssets& assets, DocumentSourceSet& sources, DataDocumentSetConfig config)
-    : Assets(assets)
-    , Sources(sources)
+DataDocumentSet::DataDocumentSet(DataDocumentStore& store, DataDocumentSetConfig config)
+    : Documents_(store)
     , Config(std::move(config))
-    , Resident(assets)
 {
-    Sources.AddSource(*this);
+    ChangeToken = Documents_.OnChanged([this](DataDocument& document, bool residentChanged) {
+        if (Observer && std::ranges::find(Tabs, &document) != Tabs.end())
+            Observer(document, residentChanged);
+    });
+    CloseToken = Documents_.OnClosing([this](const DataDocument& document) { Dropped(document); });
 }
 
 DataDocumentSet::~DataDocumentSet()
 {
-    Sources.RemoveSource(*this);
+    Documents_.Unobserve(ChangeToken);
+    Documents_.Unobserve(CloseToken);
+    // Whoever closed this view settled its changes; a document still changed
+    // stays in the store, which refuses to be destroyed with it.
+    const std::vector<DataDocument*> shown = Tabs;
+    for (DataDocument* document : shown)
+    {
+        std::string error;
+        (void)Documents_.Release(*document, DirtyDisposition::Refuse, error);
+    }
 }
 
 DataDocument* DataDocumentSet::OpenOrFocus(std::string_view virtualPath, std::string& error)
@@ -31,108 +33,76 @@ DataDocument* DataDocumentSet::OpenOrFocus(std::string_view virtualPath, std::st
     if (const std::optional<std::size_t> index = IndexOf(virtualPath))
     {
         SetActive(*index);
-        return Open[*index].get();
+        return Tabs[*index];
     }
-    const AssetRecord* record = Assets.Registry.FindByPath(virtualPath);
-    if (record == nullptr || record->Type != AssetType::Data)
+    const std::string subtype = Documents_.SubtypeOf(virtualPath);
+    if (!subtype.empty() && !Accepts(subtype))
     {
-        error = std::format("'{}' is not a data asset registered in this project.", virtualPath);
+        error = std::format("'{}' is a {} asset, which this editor does not open.", virtualPath, subtype);
         return nullptr;
     }
-    std::unique_ptr<DataDocument> document =
-        DataDocument::Open(record->FilePath, record->Path, Assets.DataTypes, Assets.DataSchemas, &error);
-    if (document == nullptr)
-        return nullptr;
-    if (!Accepts(document->Subtype()))
-    {
-        error = std::format("'{}' is a {} asset, which this editor does not open.", virtualPath, document->Subtype());
-        return nullptr;
-    }
-    return Adopt(std::move(document));
+    DataDocument* document = Documents_.Open(virtualPath, error);
+    return document != nullptr ? Show(*document) : nullptr;
 }
 
 DataDocument* DataDocumentSet::Create(std::string_view subtype, std::string_view relativePath, std::string& error)
 {
-    const DataAssetTypeRegistration* type = Assets.DataTypes.Find(subtype);
-    const DataSchema* schema = Assets.DataSchemas.Find(subtype);
-    if (type == nullptr || schema == nullptr || !Accepts(subtype))
+    if (!Accepts(subtype))
     {
         error = std::format("'{}' is not a subtype this editor can create.", subtype);
         return nullptr;
     }
-    if (Config.ContentRoot.empty() || relativePath.empty())
-    {
-        error = "Name the new asset's path under the project's content root.";
-        return nullptr;
-    }
-    const std::string relative = NormalizeDataAssetPath(relativePath);
-    const std::filesystem::path file = Config.ContentRoot / relative;
-    const std::string virtualPath = DataAssetVirtualPath(relative);
-    if (DataAssetPathTaken(Assets.Registry, file, virtualPath))
-    {
-        error = std::format("'{}' already exists; choose another name.", relative);
-        return nullptr;
-    }
-    std::unique_ptr<DataDocument> document = DataDocument::Create(file, virtualPath, *type, *schema);
-    Validate(*document);
-    if (!document->Save(&error))
-        return nullptr;
-    RegisterDataAssetFile(Assets.Registry, virtualPath, file);
-    return Adopt(std::move(document));
+    DataDocument* document = Documents_.Create(subtype, Config.ContentRoot, relativePath, error);
+    return document != nullptr ? Show(*document) : nullptr;
 }
 
 bool DataDocumentSet::Close(std::size_t index, DirtyDisposition disposition, std::string& error)
 {
-    if (index >= Open.size())
+    if (index >= Tabs.size())
     {
         error = "That document is not open.";
         return false;
     }
-    DataDocument& document = *Open[index];
-    const bool changed = document.IsDirty() || document.IsEditing();
-    if (changed && disposition == DirtyDisposition::Refuse)
-    {
-        error = std::format("'{}' has unsaved changes.", document.VirtualPath());
+    // The store tells every view, this one included, when the document goes.
+    DataDocument& document = *Tabs[index];
+    if (!Documents_.Release(document, disposition, error))
         return false;
-    }
-    if (changed && disposition == DirtyDisposition::Save)
-    {
-        const DocumentSaveResult saved = Sources.Save(RefOf(document));
-        if (saved.Status == DocumentSaveStatus::Conflict || saved.Status == DocumentSaveStatus::Failed)
-        {
-            error = saved.Status == DocumentSaveStatus::Conflict
-                ? std::format("'{}' changed on disk since it was read; settle that first.", document.VirtualPath())
-                : saved.Error;
-            return false;
-        }
-    }
-    document.CancelEdit();
-    if (document.IsDirty())
-        Resident.RestoreFromFile(document);
-    else
-        Resident.Forget(document);
-    Sources.ForgetDocument(RefOf(document));
-    Open.erase(Open.begin() + static_cast<std::ptrdiff_t>(index));
-    if (ActiveTab > index || ActiveTab >= Open.size())
+    Dropped(document);
+    return true;
+}
+
+void DataDocumentSet::Dropped(const DataDocument& document)
+{
+    const auto it = std::ranges::find(Tabs, &document);
+    if (it == Tabs.end())
+        return;
+    const std::size_t index = static_cast<std::size_t>(it - Tabs.begin());
+    Tabs.erase(it);
+    if (ActiveTab > index || ActiveTab >= Tabs.size())
         ActiveTab = ActiveTab == 0 ? 0 : ActiveTab - 1;
     SelectField(nullptr, {});
-    return true;
 }
 
 void DataDocumentSet::SetActive(std::size_t index)
 {
-    if (index >= Open.size())
+    if (index >= Tabs.size())
         return;
     if (index != ActiveTab)
         if (DataDocument* previous = Active())
-            CommitEdit(*previous);
+            Documents_.CommitEdit(*previous);
     ActiveTab = index;
     SelectField(nullptr, {});
 }
 
+void DataDocumentSet::Reveal(std::string_view virtualPath)
+{
+    if (const std::optional<std::size_t> index = IndexOf(virtualPath))
+        SetActive(*index);
+}
+
 DataDocument* DataDocumentSet::Active()
 {
-    return ActiveTab < Open.size() ? Open[ActiveTab].get() : nullptr;
+    return ActiveTab < Tabs.size() ? Tabs[ActiveTab] : nullptr;
 }
 
 DataDocument* DataDocumentSet::ActiveOf(std::string_view subtype)
@@ -144,123 +114,40 @@ DataDocument* DataDocumentSet::ActiveOf(std::string_view subtype)
 DataDocument* DataDocumentSet::Find(std::string_view virtualPath)
 {
     const std::optional<std::size_t> index = IndexOf(virtualPath);
-    return index ? Open[*index].get() : nullptr;
+    return index ? Tabs[*index] : nullptr;
 }
 
 const DataDocument* DataDocumentSet::Find(std::string_view virtualPath) const
 {
     const std::optional<std::size_t> index = IndexOf(virtualPath);
-    return index ? Open[*index].get() : nullptr;
+    return index ? Tabs[*index] : nullptr;
 }
 
 std::optional<std::size_t> DataDocumentSet::IndexOf(std::string_view virtualPath) const
 {
-    for (std::size_t index = 0; index < Open.size(); ++index)
-        if (Open[index]->VirtualPath() == virtualPath)
+    for (std::size_t index = 0; index < Tabs.size(); ++index)
+        if (Tabs[index]->VirtualPath() == virtualPath)
             return index;
     return std::nullopt;
-}
-
-const DataSchema* DataDocumentSet::SchemaOf(const DataDocument& document) const
-{
-    return Assets.DataSchemas.Find(document.Subtype());
-}
-
-const DataSchema* DataDocumentSet::SchemaOf(std::string_view subtype) const
-{
-    return Assets.DataSchemas.Find(subtype);
-}
-
-bool DataDocumentSet::IsRegistered(std::string_view virtualPath) const
-{
-    return Assets.Registry.Contains(virtualPath);
 }
 
 const DataSchema* DataDocumentSet::ActiveSchema()
 {
     const DataDocument* active = Active();
-    return active != nullptr ? SchemaOf(*active) : nullptr;
-}
-
-const DataAssetTypeRegistry& DataDocumentSet::Types() const
-{
-    return Assets.DataTypes;
+    return active != nullptr ? Documents_.SchemaOf(*active) : nullptr;
 }
 
 std::vector<std::string> DataDocumentSet::CreatableSubtypes() const
 {
     std::vector<std::string> subtypes;
-    for (const DataAssetTypeRegistration& type : Assets.DataTypes.Entries())
-        if (Accepts(type.Name) && Assets.DataSchemas.Find(type.Name) != nullptr)
+    for (const DataAssetTypeRegistration& type : Documents_.Types().Entries())
+        if (Accepts(type.Name) && Documents_.SchemaOf(type.Name) != nullptr)
             subtypes.push_back(type.Name);
     if (!Config.Subtypes.empty())
         std::ranges::sort(subtypes, {}, [&](const std::string& subtype) {
             return std::ranges::find(Config.Subtypes, subtype) - Config.Subtypes.begin();
         });
     return subtypes;
-}
-
-void DataDocumentSet::CommitEdit(DataDocument& document)
-{
-    if (!document.IsEditing())
-        return;
-    document.CommitEdit();
-    Changed(document);
-}
-
-void DataDocumentSet::CancelEdit(DataDocument& document)
-{
-    if (!document.IsEditing())
-        return;
-    document.CancelEdit();
-    Changed(document);
-}
-
-void DataDocumentSet::Changed(DataDocument& document)
-{
-    Validate(document);
-    const bool residentChanged = Resident.Push(document);
-    if (Observer)
-        Observer(document, residentChanged);
-}
-
-bool DataDocumentSet::Reload(DataDocument& document, std::string& error)
-{
-    CancelEdit(document);
-    if (document.IsDirty())
-    {
-        error = "Reload refused: undo or save local edits first.";
-        return false;
-    }
-    if (!document.Reload(Assets.DataTypes, Assets.DataSchemas, &error))
-        return false;
-    Sources.ForgetDocument(RefOf(document));
-    Resident.Forget(document);
-    Changed(document);
-    return true;
-}
-
-std::string DataDocumentSet::SubtypeOf(std::string_view virtualPath) const
-{
-    if (const DataDocument* open = Find(virtualPath))
-        return open->Subtype();
-    const AssetRecord* record = Assets.Registry.FindByPath(virtualPath);
-    return record != nullptr && record->Type == AssetType::Data
-        ? PeekDataAssetSubtype(Assets.Assets.DefaultSource(), *record)
-        : std::string();
-}
-
-std::optional<JsonValue> DataDocumentSet::CurrentRoot(std::string_view virtualPath) const
-{
-    if (const DataDocument* open = Find(virtualPath))
-        return open->Root();
-    const AssetRecord* record = Assets.Registry.FindByPath(virtualPath);
-    if (record == nullptr)
-        return std::nullopt;
-    std::ifstream in(record->FilePath);
-    std::stringstream text;
-    text << in.rdbuf();
-    return JsonParse(text.str());
 }
 
 void DataDocumentSet::SelectField(const DataFieldSchema* field, std::string path)
@@ -271,12 +158,7 @@ void DataDocumentSet::SelectField(const DataFieldSchema* field, std::string path
 
 std::vector<std::string> DataDocumentSet::DataAssetPaths(std::string_view subtype)
 {
-    std::vector<std::string> paths;
-    for (const auto& [path, record] : Assets.Registry.Records())
-        if (record.Type == AssetType::Data && (subtype.empty() || SubtypeOf(path) == subtype))
-            paths.push_back(path);
-    std::ranges::sort(paths);
-    return paths;
+    return Documents_.DataAssetPaths(subtype);
 }
 
 void DataDocumentSet::OpenDataAsset(std::string_view path)
@@ -292,70 +174,12 @@ void DataDocumentSet::SelectField(const DataFieldSchema& field, std::string_view
 
 void DataDocumentSet::EditPreviewed(DataDocument& document)
 {
-    Validate(document);
+    Documents_.Validate(document);
 }
 
 void DataDocumentSet::EditCommitted(DataDocument& document)
 {
-    Changed(document);
-}
-
-void DataDocumentSet::AppendChangedDocuments(std::vector<DocumentRef>& out)
-{
-    for (const auto& document : Open)
-        if (document->IsDirty() || document->IsEditing())
-            out.push_back(RefOf(*document));
-}
-
-DocumentSaveResult DataDocumentSet::SaveDocument(std::string_view key)
-{
-    DataDocument* document = Find(key);
-    if (document == nullptr)
-        return { {}, DocumentSaveStatus::Failed, "That document is not open." };
-    const bool wasEditing = document->IsEditing();
-    std::string error;
-    const bool saved = document->Save(&error);
-    if (wasEditing)
-        Changed(*document);
-    if (!saved)
-        return { {}, document->IsExternallyModified() ? DocumentSaveStatus::Conflict : DocumentSaveStatus::Failed,
-                 std::move(error) };
-    RegisterDataAssetFile(Assets.Registry, document->VirtualPath(), document->FilePath());
-    return { {}, document->IsSemanticallyValid() ? DocumentSaveStatus::Saved : DocumentSaveStatus::SavedWithProblems,
-             {} };
-}
-
-bool DataDocumentSet::SettleDocument(std::string_view key, ConflictChoice choice, std::string& error)
-{
-    DataDocument* document = Find(key);
-    if (document == nullptr)
-    {
-        error = "That document is not open.";
-        return false;
-    }
-    if (choice == ConflictChoice::KeepMine)
-        return document->SaveOverFile(&error);
-    if (!document->AdoptFileVersion(Assets.DataTypes, Assets.DataSchemas, &error))
-        return false;
-    Changed(*document);
-    return true;
-}
-
-void DataDocumentSet::StepDocument(std::string_view key, DocumentStep step)
-{
-    const std::optional<std::size_t> index = IndexOf(key);
-    if (!index)
-        return;
-    DataDocument& document = *Open[*index];
-    step == DocumentStep::Undo ? document.Undo() : document.Redo();
-    Changed(document);
-    SetActive(*index);
-}
-
-void DataDocumentSet::CancelDocumentEdits()
-{
-    for (const auto& document : Open)
-        CancelEdit(*document);
+    Documents_.Changed(document);
 }
 
 bool DataDocumentSet::Accepts(std::string_view subtype) const
@@ -363,15 +187,10 @@ bool DataDocumentSet::Accepts(std::string_view subtype) const
     return Config.Subtypes.empty() || std::ranges::find(Config.Subtypes, subtype) != Config.Subtypes.end();
 }
 
-DataDocument* DataDocumentSet::Adopt(std::unique_ptr<DataDocument> document)
+DataDocument* DataDocumentSet::Show(DataDocument& document)
 {
-    document->ObserveSteps([this, key = document->VirtualPath()] { Sources.Record({ this, key }); });
-    Open.push_back(std::move(document));
-    SetActive(Open.size() - 1);
-    return Open.back().get();
-}
-
-void DataDocumentSet::Validate(DataDocument& document)
-{
-    document.Validate(Assets.DataTypes, Assets.DataSchemas);
+    Documents_.Hold(document);
+    Tabs.push_back(&document);
+    SetActive(Tabs.size() - 1);
+    return &document;
 }

@@ -45,7 +45,19 @@
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
 #include <platform/PlatformServices.h>
+#include <platform/SdlWindow.h>
 #include <platform/SdlWindowService.h>
+
+namespace
+{
+    // An event with no window -- a key while nothing is focused, a device --
+    // belongs to the primary as much as to anything.
+    [[nodiscard]] bool IsPrimaryWindowEvent(const SDL_Event& event, std::uint32_t primaryWindow)
+    {
+        const std::uint32_t window = SdlEventWindowId(event);
+        return window == 0 || window == primaryWindow;
+    }
+}
 #endif
 
 // Defined here rather than in Engine.cpp so the phase bodies -- which reach
@@ -908,8 +920,8 @@ void Engine::RegisterSimulationFramePhases()
             TimingSampler::PushLifecycleFrame(
                 engine.Timing(),
                 rf,
-                GraphicsState->Swapchain.GetState(),
-                GraphicsState->Swapchain.GetRecreateCount());
+                GraphicsState->Frames.PrimarySwapchain().GetState(),
+                GraphicsState->Frames.PrimarySwapchain().GetRecreateCount());
         }
 #endif
     });
@@ -926,8 +938,8 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
 
     auto& config = engine.Config();
     auto& windows = engine.Platform().Windows;
-    auto& swapchain = engine.Graphics().Swapchain;
     auto& frames = engine.Graphics().Frames;
+    auto& swapchain = frames.PrimarySwapchain();
     auto& renderer = engine.Graphics().MainRenderer;
     const SdlWindowService::WindowId windowId = windows.GetPrimaryWindowId();
 
@@ -937,18 +949,19 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
     // at whatever is underneath it. Registered once here rather than when the
     // overlay is constructed, and resolved per event, so it costs no lifetime
     // coupling to a feature the renderer owns and may refuse to set up.
-    engine.PlatformEvents().AddConsumer("debug_overlay", [&engine](const SDL_Event& event) {
+    engine.PlatformEvents().AddConsumer("debug_overlay", [&engine, primaryWindow = engine.Platform().Windows.GetPrimaryWindowId()](const SDL_Event& event) {
         ImGuiDebugOverlay* overlay = engine.GetDebugOverlay();
-        return overlay != nullptr && overlay->ProcessSdlEvent(event);
+        return overlay != nullptr && IsPrimaryWindowEvent(event, primaryWindow) && overlay->ProcessSdlEvent(event);
     });
 #endif
 
 #ifdef SENCHA_ENABLE_UI
     // Below diagnostics and above the application, matching the z-order: the
     // console has to be usable over a menu, and a menu over the game.
-    engine.PlatformEvents().AddConsumer("authored_ui", [&engine](const SDL_Event& event) {
+    // Authored surfaces live on the primary window.
+    engine.PlatformEvents().AddConsumer("authored_ui", [&engine, primaryWindow = engine.Platform().Windows.GetPrimaryWindowId()](const SDL_Event& event) {
         UiService* ui = engine.TryUi();
-        return ui != nullptr && ui->ProcessPlatformEvent(event);
+        return ui != nullptr && IsPrimaryWindowEvent(event, primaryWindow) && ui->ProcessPlatformEvent(event);
     });
 #endif
 
@@ -972,12 +985,18 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
             PlatformEventContext eventCtx{
                 .Config = config,
                 .Event = event,
+                .WindowId = SdlEventWindowId(event),
             };
             if (engine.PlatformEvents().Route(event, *ctx.Input, gamepads))
                 continue;
 
             game.OnPlatformEvent(eventCtx);
             if (eventCtx.Handled)
+                continue;
+
+            // The frame's lifecycle follows the primary; another window's
+            // minimize or focus is its own presentation's business.
+            if (eventCtx.WindowId != 0 && eventCtx.WindowId != windowId)
                 continue;
 
             if (event.type == SDL_EVENT_WINDOW_MINIMIZED)
@@ -1036,7 +1055,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         }
     });
 
-    driver.Register(FramePhase::ResolveLifecycle, [&windows, windowId](PhaseContext& ctx) {
+    driver.Register(FramePhase::ResolveLifecycle, [&windows, &frames, windowId](PhaseContext& ctx) {
         WindowExtent resizedExtent;
         if (windows.ConsumeResize(windowId, &resizedExtent))
             ctx.Runtime->NotifyResize(resizedExtent);
@@ -1044,24 +1063,21 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         const SdlWindowService::WindowState* windowState = windows.GetState(windowId);
         if (windowState != nullptr && windowState->Minimized)
             ctx.Runtime->NotifyMinimized();
+
+        ctx.Runtime->SetOtherPresentationLive(frames.AnySecondaryVisible());
     });
 
-    driver.Register(FramePhase::RebuildGraphics, [&swapchain, &frames, &renderer](PhaseContext& ctx) {
+    driver.Register(FramePhase::RebuildGraphics, [&frames](PhaseContext& ctx) {
         if (ctx.Runtime->ShouldRebuildSwapchain())
         {
             const WindowExtent rebuildExtent = ctx.Runtime->GetDesiredSwapchainExtent();
             ctx.Runtime->BeginSwapchainRebuild();
-            if (swapchain.Recreate(rebuildExtent))
-            {
-                frames.ResetAfterSwapchainRecreate();
-                renderer.NotifySwapchainRecreated();
+            if (frames.RebuildPresentation(frames.PrimaryPresentation(), rebuildExtent))
                 ctx.Runtime->CompleteSwapchainRebuild(rebuildExtent);
-            }
             else
-            {
                 ctx.Runtime->FailSwapchainRebuild();
-            }
         }
+        frames.RebuildStaleSecondaries();
     });
 
     driver.Register(FramePhase::ExtractRender, [&engine, &config](PhaseContext& ctx) {

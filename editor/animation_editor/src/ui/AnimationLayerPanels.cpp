@@ -8,7 +8,7 @@
 #include "authoring/AnimationRigEdits.h"
 #include "authoring/AnimationPredicateEdits.h"
 #include "ui/AnimationDocumentWidgets.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -85,7 +85,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         const AnimationPreviewSession& session = Workspace.Rig.Simulation;
@@ -186,7 +186,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
@@ -308,7 +308,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         const AnimationPreviewSession& session = Workspace.Rig.Simulation;
@@ -626,7 +626,7 @@ void DrawAnimationMaskMenu(AnimationPreviewWorkspace& workspace, const std::stri
     step("Remove this joint only", true, false);
 }
 
-void AddAnimationLayerPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationLayerPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     ui.AddPanel(std::make_unique<LayerStackPanel>(workspace));
     ui.AddPanel(std::make_unique<SkeletonMaskPanel>(workspace));

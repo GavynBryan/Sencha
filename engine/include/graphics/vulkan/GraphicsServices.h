@@ -22,6 +22,7 @@
 #include <graphics/vulkan/VulkanUploadContextService.h>
 
 #include <cstdint>
+#include <memory>
 
 class LoggingProvider;
 class SdlWindow;
@@ -42,7 +43,9 @@ class SdlWindowService;
 struct GraphicsServices
 {
     VulkanInstanceService       Instance;
-    VulkanSurfaceService        Surface;
+    // The primary window's surface until the frame service adopts it; the
+    // device is chosen against it first.
+    std::unique_ptr<VulkanSurfaceService> PrimarySurface;
     VulkanPhysicalDeviceService PhysicalDevice;
     VulkanDeviceService         Device;
     VulkanQueueService          Queues;
@@ -56,7 +59,6 @@ struct GraphicsServices
     VulkanPipelineCache         Pipelines;
     VulkanDescriptorCache       Descriptors;
     GpuFrameScratch          Scratch;
-    VulkanSwapchainService      Swapchain;
     VulkanFrameService          Frames;
     // Named MainRenderer, not Renderer: a member may not share its type's name.
     Renderer                    MainRenderer;

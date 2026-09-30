@@ -6,12 +6,12 @@
 #
 # The editor is a family of applications over a shared shell:
 #   editor/common/src  the shared editor shell (editor_common)
-#   editor/kyusu/src   the level editor application
+#   editor/level_editor/src   the level editor
 #
-# Three rules:
+# Rules:
 #
 #   A. Core abstractions (common commands/ selection/ tools/ interaction/ and
-#      kyusu brush/) must not depend on the authoring/domain subsystems
+#      level editor brush/) must not depend on the authoring/domain subsystems
 #      (document/ viewport/ render/ ui/ editmodes/ meshedit/ workspace/). They
 #      are the editor's reusable leaves; domain code depends on them, not the
 #      reverse. The shared pointer-event header (input/InputEvent.h) and the
@@ -32,13 +32,20 @@
 #      scope, a control; it never draws a screw or a chamfer itself, so the
 #      look can change without a panel changing.
 #
+#   E. Workspaces never include one another. Each workspace tree (the level,
+#      material, data, animation and UI preview editors, the project browser)
+#      depends on editor_common and the engine only; the one tree that sees
+#      them all is the Kyusu application, which composes them. A quoted include
+#      that names a header existing only in another workspace tree is a
+#      violation.
+#
 # Usage: check_editor_layering.sh <source-root>
 
 set -uo pipefail
 
 ROOT="${1:-.}"
 COMMON="$ROOT/editor/common/src"
-KYUSU="$ROOT/editor/kyusu/src"
+LEVEL="$ROOT/editor/level_editor/src"
 status=0
 
 # Greps for a pattern but drops comment-only lines, so prose mentioning a
@@ -61,7 +68,7 @@ check() {
 # optional path prefix makes this catch relative includes ("../document/...").
 check "core abstraction depends on a domain subsystem (only input/InputEvent.h may cross)" \
       '#include[[:space:]]*["<]([^">]*/)?(document|viewport|render|ui|editmodes|meshedit|workspace)/' \
-      "$COMMON/commands" "$COMMON/selection" "$COMMON/tools" "$COMMON/interaction" "$KYUSU/brush"
+      "$COMMON/commands" "$COMMON/selection" "$COMMON/tools" "$COMMON/interaction" "$LEVEL/brush"
 
 # B. The shared shell must not include a subsystem that exists only inside an
 # application tree. Quoted includes only: angle includes name engine headers
@@ -78,12 +85,12 @@ check "editor_common depends on an application-only subsystem" \
 # which contains "workspace/" by construction), so a real violation in content
 # is not masked.
 ws_panel_mechanisms='workspace/(PendingBridgeEdit|PendingElementEdit|SelectionActions)\.h'
-ws_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?workspace/' "$COMMON" "$KYUSU" 2>/dev/null \
-                | grep -vE '^'"$KYUSU"'/(app|workspace)/')"
+ws_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?workspace/' "$COMMON" "$LEVEL" 2>/dev/null \
+                | grep -vE '^'"$LEVEL"'/(app|workspace)/')"
 for file in $ws_includers; do
     # A ui/ file is clean only when EVERY workspace include it has is an allowed
     # mechanism; one stray aggregator include still fails.
-    if [ "${file#"$KYUSU"/ui/}" != "$file" ] \
+    if [ "${file#"$LEVEL"/ui/}" != "$file" ] \
        && ! grep -E '#include[[:space:]]*["<]([^">]*/)?workspace/' "$file" \
             | grep -qvE "$ws_panel_mechanisms"; then
         continue
@@ -97,7 +104,7 @@ done
 # D. Chrome internals stay inside common/ui/. Filter on the including FILE's
 # path, as in rule C.
 chrome_internals='ui/chrome/(ChromeGeometry|ChromePaint|ChromeFrame|ChromeChassis|ChromeOrnaments|IconDraw)\.h'
-chrome_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?'"$chrome_internals" "$COMMON" "$KYUSU" 2>/dev/null \
+chrome_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?'"$chrome_internals" "$COMMON" "$LEVEL" 2>/dev/null \
                     | grep -vE '^'"$COMMON"'/ui/')"
 if [ -n "$chrome_includers" ]; then
     echo "VIOLATION: a panel or subsystem draws chrome internals (use ScopedPanel, ChromeHeader, ChromeSelection, ChromeControls, ChromeDecor, ChromeBars)"
@@ -105,6 +112,31 @@ if [ -n "$chrome_includers" ]; then
     echo
     status=1
 fi
+
+# E. No workspace tree includes another's headers. An include resolves against
+# its own tree or editor_common first; one that only another tree can satisfy
+# is a reach across workspaces.
+WORKSPACES="level_editor material_editor ui_preview data_editor animation_editor project_browser"
+for ws in $WORKSPACES; do
+    own="$ROOT/editor/$ws/src"
+    [ -d "$own" ] || continue
+    while IFS= read -r hit; do
+        file="${hit%%:*}"
+        header="$(printf '%s\n' "$hit" | sed -E 's/.*#include[[:space:]]*"([^"]+)".*/\1/')"
+        [ -f "$own/$header" ] && continue
+        [ -f "$COMMON/$header" ] && continue
+        [ -f "$(dirname "$file")/$header" ] && continue
+        for other in $WORKSPACES; do
+            [ "$other" = "$ws" ] && continue
+            if [ -f "$ROOT/editor/$other/src/$header" ]; then
+                echo "VIOLATION: workspace $ws includes $other's header (compose workspaces in editor/kyusu instead)"
+                echo "$hit"
+                echo
+                status=1
+            fi
+        done
+    done < <(grep -rnE '^[[:space:]]*#include[[:space:]]*"' "$own" 2>/dev/null)
+done
 
 if [ "$status" -eq 0 ]; then
     echo "editor layering directions: OK"

@@ -50,6 +50,8 @@ void CommandStack::Clear()
     PendingEditCancel = nullptr;
     Commands.clear();
     Cursor = 0;
+    if (ClearObserver)
+        ClearObserver();
 }
 
 bool CommandStack::CanUndo() const

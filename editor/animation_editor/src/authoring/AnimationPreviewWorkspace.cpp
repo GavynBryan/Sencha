@@ -38,10 +38,12 @@
 #include <filesystem>
 #include <fstream>
 
-AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary,
+AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, DocumentSourceSet& sources,
+                                                     DataDocumentStore& store, std::function<void(World&)> vocabulary,
                                                      std::filesystem::path authoringRoot)
-    : Documents(assets, Sources, { .ContentRoot = authoringRoot,
-                                   .Subtypes = { AnimationDocumentSubtypes().begin(), AnimationDocumentSubtypes().end() } })
+    : Sources(sources)
+    , Documents(store, { .ContentRoot = authoringRoot,
+                         .Subtypes = { AnimationDocumentSubtypes().begin(), AnimationDocumentSubtypes().end() } })
     , ClipEvents(assets, Sources)
     , Audition(assets)
     , Viewport(assets)
@@ -98,7 +100,7 @@ bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
     const std::string& skeleton = Rig.Data()->SkeletonPath;
     if (!skeleton.empty() && Audition.Session.SkeletonPath() != skeleton && Audition.MeshPath.empty())
         (void)Audition.SelectSkeleton(skeleton);
-    if (Documents.PushWaiting() | ClipEvents.PushWaiting())
+    if (Documents.Store().PushWaiting() | ClipEvents.PushWaiting())
         Rig.Simulation.Rebind();
     return true;
 }
@@ -184,7 +186,7 @@ bool AnimationPreviewWorkspace::AuditionClip(const std::string& path)
 
 void AnimationPreviewWorkspace::Advance(double wallSeconds)
 {
-    if (Documents.PushWaiting() | ClipEvents.PushWaiting())
+    if (Documents.Store().PushWaiting() | ClipEvents.PushWaiting())
         Rig.Simulation.Rebind();
     Audition.Session.Advance(wallSeconds);
     Rig.Simulation.Advance(wallSeconds);

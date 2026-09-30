@@ -3,7 +3,7 @@
 Status: **current architecture** (2026-09). The navigation module lives in
 `engine/include/navigation/` and `engine/src/navigation/`; the cook side is in
 `engine/src/assets/cook/Navigation*.cpp` and the Kyusu glue in
-`editor/kyusu/src/document/DocumentNavigationCook.cpp`. Tests are in
+`editor/level_editor/src/document/DocumentNavigationCook.cpp`. Tests are in
 `test/navigation/`, `test/level_cook/NavigationDocumentCookTests.cpp`, and
 `test/core/NavigationAllocationTests.cpp`. The plan that produced it, and the
 work still ahead, is `docs/plans/navigation-core.md`.

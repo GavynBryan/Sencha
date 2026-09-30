@@ -12,8 +12,8 @@ class VulkanPhysicalDeviceService;
 // VulkanDepthTarget
 //
 // Owns a depth image and its view for use as the depth attachment in the main
-// color pass. The format is selected at Create() time by probing the physical
-// device; D32_SFLOAT is preferred, with D24/D32 stencil variants as fallbacks.
+// color pass. The format is selected at construction by probing the physical
+// device, before any image exists, so pipelines can be built against it.
 //
 // Recreate() is a no-op when the extent hasn't changed, making it safe to call
 // every frame before recording the render pass.
@@ -48,7 +48,8 @@ private:
     VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
     ImageHandle Handle{};
     VkExtent2D Extent{};
-    VkFormat Format = VK_FORMAT_UNDEFINED;
 
     [[nodiscard]] VkFormat ChooseDepthFormat() const;
+
+    VkFormat Format = VK_FORMAT_UNDEFINED;
 };

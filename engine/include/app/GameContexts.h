@@ -10,6 +10,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <span>
 
 //=============================================================================
@@ -49,6 +50,9 @@ struct PlatformEventContext
 {
     EngineConfig& Config;
     SDL_Event& Event;
+    // The window the event belongs to, 0 when it names none. Any window but
+    // Platform().Windows.GetPrimaryWindowId() is one the game created.
+    std::uint32_t WindowId = 0;
     bool Handled = false;
 };
 

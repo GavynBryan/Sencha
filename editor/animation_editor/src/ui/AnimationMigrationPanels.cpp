@@ -1,7 +1,7 @@
 #include "ui/AnimationMigrationPanels.h"
 
 #include "authoring/AnimationPreviewWorkspace.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -22,7 +22,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         if (!Scanned)
@@ -87,7 +87,7 @@ private:
 };
 }
 
-void AddAnimationMigrationPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationMigrationPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     ui.AddPanel(std::make_unique<MigrationPanel>(workspace));
 }

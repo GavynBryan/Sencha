@@ -23,9 +23,7 @@ AnimationPreviewRenderFeature::AnimationPreviewRenderFeature(
 bool AnimationPreviewRenderFeature::Setup(const RenderFeatureServices& services)
 {
     Services = *services.Backend;
-    Targets.Setup(Services);
-    if (Services.Samplers)
-        Presenter.Setup(Services.Samplers->GetLinearClamp());
+    Targets.Setup(Services, Services.Samplers != nullptr ? Services.Samplers->GetLinearClamp() : VK_NULL_HANDLE);
     RenderTargetDesc desc{};
     desc.ColorFormat = ColorFormat;
     desc.DepthFormat = Services.DepthFormat;
@@ -44,16 +42,13 @@ void AnimationPreviewRenderFeature::Teardown()
     Forward.Teardown();
     Skinning.Teardown();
     Lighting.Teardown();
-    Presenter.Release(Target);
     Targets.Teardown();
-    Presenter.Teardown();
     Target = {};
 }
 
 ImTextureID AnimationPreviewRenderFeature::Display(VkExtent2D extent)
 {
-    Targets.SetExtent(Target, extent);
-    return Presenter.Present(Targets, Target);
+    return Targets.Display(Target, extent);
 }
 
 void AnimationPreviewRenderFeature::Orbit(float yaw, float pitch)
@@ -77,14 +72,13 @@ void AnimationPreviewRenderFeature::FrameSubject()
 void AnimationPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
 {
     const auto& frame = *renderFrame.Backend;
-    Targets.BeginFrame(frame.FrameInFlightIndex);
-    Presenter.BeginFrame(frame.Retirement);
+    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
     const auto target = Targets.Acquire(Target);
     if (!target)
         return;
     // Dispatch before opening dynamic rendering, using the runtime pose pass.
     Skinning.OnDraw(renderFrame);
-    RenderTargetSession session(frame.Cmd, target->ColorImage, target->ColorLayout, target->DepthImage);
+    RenderTargetSession session(frame.Cmd, target->ColorImage, target->ColorLayout, target->DepthImage, Services.DepthFormat);
     RenderScopeDesc desc{};
     desc.Area.extent = target->Extent;
     desc.Color.View = target->ColorView;

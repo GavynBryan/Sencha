@@ -295,10 +295,10 @@ a developer panel wearing a player's name. Four rows ship:
 
 **Each shell document has a preview model beside it** -- `pause.preview.json`,
 `options.preview.json` -- the declaration and sample values the host would
-publish, so Shoji (`editor/shoji/`) shows the page as the game does without the
+publish, so Kyusu's UI Preview workspace (`editor/ui_preview/`) shows the page as the game does without the
 game running, and `UiPreviewModelTests` checks the sidecar against
 `OptionsPage::Describe` so preview and host cannot drift. A binding the document
-uses and the sidecar lacks shows up in Shoji as a `binding missing` diagnostic
+uses and the sidecar lacks shows up in the UI Preview workspace as a `binding missing` diagnostic
 naming the variable; the blank-label bug a `{{row.Label}}` against a member
 registered as `label` produces is that row, on save. Note the attribution rule
 from `docs/ui/architecture.md` §13: a miss in body text names the screen, a miss
@@ -406,5 +406,5 @@ button-to-look convention they used to share is gone.
 |---|---|
 | `docs/gameplay/input.md` | the action mapping, contexts, and the clocks this reads |
 | `docs/ui/architecture.md` | the surfaces, screens and semantic actions the pages are built on |
-| `editor/ARCHITECTURE.md` | Shoji, the previewer the shell documents are authored against |
+| `editor/ARCHITECTURE.md` | The UI Preview workspace the shell documents are authored against |
 | `docs/core-systems-map.md` | the frame phases the transitions sit in |

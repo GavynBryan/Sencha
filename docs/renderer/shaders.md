@@ -21,7 +21,7 @@ directory: engine shaders are compiled at build time and baked into the binary.
 | `probe_sampling.glsli` | include | probe volume selection and SH evaluation |
 | `tonemap.glsli` | include | exposure and the shoulder curve, shared by the mesh and sky passes |
 
-Editor shaders live under `editor/kyusu/src/render` with their own pipelines and
+Editor shaders live under `editor/level_editor/src/render` with their own pipelines and
 are built the same way.
 
 ## Include topology

@@ -66,8 +66,9 @@ void RuntimeFrameLoop::ResolveLifecycleTransitions()
     if (Minimized)
     {
         State = RuntimeFrameState::Minimized;
-        Current.LifecycleOnly = true;
-        Current.Events |= RuntimeFrameEventFlags::LifecycleOnly;
+        Current.LifecycleOnly = !OtherPresentationLive;
+        if (Current.LifecycleOnly)
+            Current.Events |= RuntimeFrameEventFlags::LifecycleOnly;
     }
     else if (SwapchainDirty)
     {

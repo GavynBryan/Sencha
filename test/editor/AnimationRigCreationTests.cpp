@@ -2,6 +2,7 @@
 // into the project, registered, and opened ready to play -- the first clip
 // idling, the others played by holding a request of their name.
 
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigRecipe.h"
 
@@ -39,7 +40,8 @@ TEST(AnimationRigRecipe, AClipNamesTheBehaviorItPlaysAs)
 TEST(AnimationRigCreation, ANewRigOpensReadyToPlay)
 {
     Project project;
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.CreateRig({ .Name = "praying_man", .Clips = { "asset://meshes/man.blend#anim:Idle",
                                                        "asset://meshes/man.blend#anim:Left_claw" }, .Preset = AnimationRigPreset::Prop, .UpperBodyJoint = {} },
@@ -79,7 +81,8 @@ TEST(AnimationRigCreation, ANewRigOpensReadyToPlay)
 TEST(AnimationRigCreation, ARecipeNeedsANameClipsAndOneSkeleton)
 {
     Project project;
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     EXPECT_FALSE(workspace.CreateRig({ .Name = "bad name", .Clips = { "asset://meshes/man.blend#anim:Idle" }, .Preset = AnimationRigPreset::Prop, .UpperBodyJoint = {} }, error));
     EXPECT_NE(error.find("letters, digits and underscores"), std::string::npos);
@@ -90,7 +93,8 @@ TEST(AnimationRigCreation, ARecipeNeedsANameClipsAndOneSkeleton)
     EXPECT_NE(error.find("one rig poses one skeleton"), std::string::npos) << error;
     EXPECT_FALSE(std::filesystem::exists(project.Root / "animation")) << "a refused recipe writes nothing";
 
-    AnimationPreviewWorkspace readOnly(*project.Assets);
+    EditorDocuments readOnlyDocuments(*project.Assets);
+    AnimationPreviewWorkspace readOnly(*project.Assets, readOnlyDocuments.Sources, readOnlyDocuments.Store);
     EXPECT_FALSE(readOnly.CreateRig({ .Name = "man", .Clips = { "asset://meshes/man.blend#anim:Idle" }, .Preset = AnimationRigPreset::Prop, .UpperBodyJoint = {} }, error));
     EXPECT_NE(error.find("content root"), std::string::npos);
 }
@@ -130,7 +134,8 @@ namespace
 TEST(AnimationRigCreation, ASimpleRigIdlesWalksAndActs)
 {
     Project project;
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.CreateRig({ .Name = "brute",
                                       .Clips = { "asset://meshes/man.blend#anim:Idle", "asset://meshes/man.blend#anim:Walk",
@@ -165,7 +170,8 @@ TEST(AnimationRigCreation, ASimpleRigIdlesWalksAndActs)
 TEST(AnimationRigCreation, ACharacterRigActsOverItsLocomotion)
 {
     Project project;
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.CreateRig({ .Name = "hero",
                                       .Clips = { "asset://meshes/man.blend#anim:Idle", "asset://meshes/man.blend#anim:Walk",
@@ -197,7 +203,8 @@ TEST(AnimationRigCreation, ACharacterRigActsOverItsLocomotion)
 TEST(AnimationRigCreation, ACharacterNeedsItsActionsAndAnUpperBodyJoint)
 {
     Project project;
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     const std::vector<std::string> clips = { "asset://meshes/man.blend#anim:Idle", "asset://meshes/man.blend#anim:Walk",
                                              "asset://meshes/man.blend#anim:Left_claw" };

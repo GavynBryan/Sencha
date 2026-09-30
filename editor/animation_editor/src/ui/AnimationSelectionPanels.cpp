@@ -7,7 +7,7 @@
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationSelectorEdits.h"
 #include "ui/AnimationDocumentWidgets.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -82,7 +82,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) { Workspace.Sources.CancelEdits(); return; }
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) { Workspace.Sources.CancelEdits(); return; }
 
         AnimationPreviewSession& session = Workspace.Rig.Simulation;
@@ -198,7 +198,7 @@ private:
         if (ImGui::Button("Redo")) Workspace.Sources.Redo();
         ImGui::SameLine();
         if (ImGui::Button("Save")) Workspace.DocumentError = DescribeDocumentSave(Workspace.Sources.Save(Workspace.Documents.RefOf(document)));
-        if (const std::string status = AnimationPreviewStatusText(Workspace.Documents.ResidentStateOf(document)); !status.empty())
+        if (const std::string status = AnimationPreviewStatusText(Workspace.Documents.Store().ResidentStateOf(document)); !status.empty())
             ImGui::TextWrapped("%s", status.c_str());
 
         JsonValue root = document.CopyRoot();
@@ -304,7 +304,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
@@ -421,7 +421,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
@@ -510,7 +510,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         AnimationPreviewSession& session = Workspace.Rig.Simulation;
@@ -598,7 +598,7 @@ private:
 };
 }
 
-void AddAnimationSelectionPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationSelectionPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     ui.AddPanel(std::make_unique<RulesPanel>(workspace));
     ui.AddPanel(std::make_unique<BehaviorPanel>(workspace));

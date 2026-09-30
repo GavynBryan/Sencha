@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <imgui_internal.h> // ImGuiSettingsHandler, AddSettingsHandler, MarkIniSettingsDirty
 
+#include <algorithm>
 #include <cstdio>
 
 namespace
@@ -13,11 +14,20 @@ bool Remembered(const IEditorPanel& panel)
 {
     return panel.GetPersistence().Visibility == PanelVisibilityPolicy::Remembered;
 }
+
+std::string ScopedId(std::string_view scope, std::string_view id)
+{
+    if (scope.empty())
+        return std::string(id);
+    std::string key;
+    key.reserve(scope.size() + 1 + id.size());
+    key.append(scope).append("/").append(id);
+    return key;
+}
 }
 
-void PanelVisibilitySettings::Register(const std::vector<std::unique_ptr<IEditorPanel>>& panels)
+void PanelVisibilitySettings::Register()
 {
-    Panels = &panels;
     ImGuiSettingsHandler handler;
     handler.TypeName = kSectionType;
     handler.TypeHash = ImHashStr(kSectionType);
@@ -28,37 +38,57 @@ void PanelVisibilitySettings::Register(const std::vector<std::unique_ptr<IEditor
     ImGui::AddSettingsHandler(&handler);
 }
 
+void PanelVisibilitySettings::Attach(std::string scope, const std::vector<std::unique_ptr<IEditorPanel>>& panels)
+{
+    Groups.push_back(Group{ std::move(scope), &panels });
+    if (Applied)
+        ApplyTo(Groups.back());
+}
+
+void PanelVisibilitySettings::Detach(const std::vector<std::unique_ptr<IEditorPanel>>& panels)
+{
+    std::erase_if(Groups, [&](const Group& group) { return group.Panels == &panels; });
+}
+
 void PanelVisibilitySettings::Apply()
 {
-    if (Panels == nullptr)
-        return;
-    Seen.clear();
-    for (const std::unique_ptr<IEditorPanel>& panel : *Panels)
+    Applied = true;
+    for (const Group& group : Groups)
+        ApplyTo(group);
+}
+
+void PanelVisibilitySettings::ApplyTo(const Group& group)
+{
+    for (const std::unique_ptr<IEditorPanel>& panel : *group.Panels)
     {
         if (panel == nullptr || !Remembered(*panel))
             continue;
-        const std::string id(panel->GetPersistence().Id);
-        if (const auto it = Recorded.find(id); it != Recorded.end())
+        const std::string key = ScopedId(group.Scope, panel->GetPersistence().Id);
+        if (const auto it = Recorded.find(key); it != Recorded.end())
             panel->SetVisible(it->second);
-        Seen[id] = panel->IsVisible();
+        else
+            Recorded.emplace(key, panel->IsVisible());
     }
 }
 
 void PanelVisibilitySettings::Track()
 {
-    if (Panels == nullptr)
+    if (!Applied)
         return;
     bool changed = false;
-    for (const std::unique_ptr<IEditorPanel>& panel : *Panels)
+    for (const Group& group : Groups)
     {
-        if (panel == nullptr || !Remembered(*panel))
-            continue;
-        const std::string id(panel->GetPersistence().Id);
-        const auto it = Seen.find(id);
-        if (it == Seen.end() || it->second != panel->IsVisible())
+        for (const std::unique_ptr<IEditorPanel>& panel : *group.Panels)
         {
-            Seen[id] = panel->IsVisible();
-            changed = true;
+            if (panel == nullptr || !Remembered(*panel))
+                continue;
+            const std::string key = ScopedId(group.Scope, panel->GetPersistence().Id);
+            const auto [it, inserted] = Recorded.try_emplace(key, panel->IsVisible());
+            if (inserted || it->second != panel->IsVisible())
+            {
+                it->second = panel->IsVisible();
+                changed = true;
+            }
         }
     }
     if (changed)
@@ -84,14 +114,13 @@ void PanelVisibilitySettings::ReadLine(ImGuiContext*, ImGuiSettingsHandler*, voi
 void PanelVisibilitySettings::WriteAll(ImGuiContext*, ImGuiSettingsHandler* handler, ImGuiTextBuffer* out)
 {
     auto* self = static_cast<PanelVisibilitySettings*>(handler->UserData);
-    if (self->Panels == nullptr)
-        return;
-    for (const std::unique_ptr<IEditorPanel>& panel : *self->Panels)
+    for (const Group& group : self->Groups)
+        for (const std::unique_ptr<IEditorPanel>& panel : *group.Panels)
+            if (panel != nullptr && Remembered(*panel))
+                self->Recorded.insert_or_assign(ScopedId(group.Scope, panel->GetPersistence().Id), panel->IsVisible());
+    for (const auto& [key, visible] : self->Recorded)
     {
-        if (panel == nullptr || !Remembered(*panel))
-            continue;
-        const PanelPersistence persistence = panel->GetPersistence();
-        out->appendf("[%s][%.*s]\n", kSectionType, static_cast<int>(persistence.Id.size()), persistence.Id.data());
-        out->appendf("Visible=%d\n\n", panel->IsVisible() ? 1 : 0);
+        out->appendf("[%s][%s]\n", kSectionType, key.c_str());
+        out->appendf("Visible=%d\n\n", visible ? 1 : 0);
     }
 }

@@ -1,6 +1,6 @@
 #include "ImGuiTargetPresenter.h"
 
-#include <imgui_impl_vulkan.h>
+#include "ui/ImGuiTextureOwner.h"
 
 #include <algorithm>
 
@@ -35,7 +35,7 @@ void ImGuiTargetPresenter::Flush(bool force)
     {
         if (force || Retirement.IsRetired(it->Stamp))
         {
-            ImGui_ImplVulkan_RemoveTexture(it->Set);
+            RemoveImGuiTexture(it->Set);
             it = RetiredSets.erase(it);
         }
         else
@@ -68,7 +68,7 @@ ImTextureID ImGuiTargetPresenter::Present(RenderTargetStore& store, RenderTarget
     {
         Retire(binding.Set);
         binding.View = view->ColorView;
-        binding.Set = ImGui_ImplVulkan_AddTexture(Sampler, view->ColorView,
+        binding.Set = AddImGuiTexture(Sampler, view->ColorView,
                                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
 

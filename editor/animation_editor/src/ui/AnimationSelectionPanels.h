@@ -1,6 +1,6 @@
 #pragma once
 
 class AnimationPreviewWorkspace;
-class EditorUiFeature;
+struct WorkspaceView;
 
-void AddAnimationSelectionPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace);
+void AddAnimationSelectionPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace);

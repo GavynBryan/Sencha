@@ -91,6 +91,9 @@ public:
     void NotifyMinimized();
     void NotifyRestored(WindowExtent extent);
     void NotifySwapchainInvalidated();
+    // Whether a presentation besides the primary can show this frame. A
+    // minimized primary makes the frame lifecycle-only only when none can.
+    void SetOtherPresentationLive(bool live) { OtherPresentationLive = live; }
     void MarkTemporalDiscontinuity(TemporalDiscontinuityReason reason);
 
     void ResolveLifecycleTransitions();
@@ -190,6 +193,7 @@ private:
     bool SimulationSuspended = false;
     bool SwapchainDirty = false;
     bool Minimized = false;
+    bool OtherPresentationLive = false;
     bool DiscontinuityPending = false;
     TemporalDiscontinuityReason PendingDiscontinuityReason = TemporalDiscontinuityReason::None;
 };

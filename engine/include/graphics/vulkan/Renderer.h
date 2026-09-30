@@ -4,12 +4,14 @@
 
 #include <core/logging/LoggingProvider.h>
 #include <graphics/RenderFeature.h>
+#include <graphics/PresentationId.h>
 #include <graphics/vulkan/FeatureRegistrationOrder.h>
 #include <graphics/vulkan/FrameImageCapture.h>
 #include <graphics/vulkan/VulkanFrameService.h>
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <type_traits>
 #include <vector>
@@ -27,7 +29,8 @@ class VulkanPipelineCache;
 class VulkanDescriptorCache;
 class GpuFrameScratch;
 class VulkanUploadContextService;
-class VulkanDepthTarget;
+class SdlWindow;
+struct PresentationDesc;
 struct RenderInstrumentation;
 
 //=============================================================================
@@ -134,7 +137,6 @@ public:
              VulkanDeviceService& device,
              VulkanPhysicalDeviceService& physicalDevice,
              VulkanQueueService& queues,
-             VulkanSwapchainService& swapchain,
              VulkanFrameService& frames,
              VulkanAllocatorService& allocator,
              VulkanBufferService& buffers,
@@ -164,13 +166,13 @@ public:
     // immediately. Hosts whose features depend on each other stage them and
     // commit the batch instead.
     template <typename T>
-    T* AddFeature(std::unique_ptr<T> feature)
+    T* AddFeature(std::unique_ptr<T> feature, RenderFeatureScope scope = {})
     {
         static_assert(std::is_base_of_v<IRenderFeature, T>,
                       "T must derive from IRenderFeature");
         if (!Valid || !feature) return nullptr;
-        return static_cast<T*>(
-            AddFeatureImpl(std::unique_ptr<IRenderFeature>(feature.release()), {}));
+        return static_cast<T*>(AddFeatureImpl(std::unique_ptr<IRenderFeature>(feature.release()),
+                                              FeatureRegistration{ .Scope = scope }));
     }
 
     // Hold a feature and its declared dependencies until CommitStagedFeatures.
@@ -227,8 +229,16 @@ public:
 
     [[nodiscard]] const RendererFrameTiming& GetLastTiming() const { return LastTiming; }
 
-    // Reset per-swapchain-image tracking after VulkanSwapchainService::Recreate.
-    void NotifySwapchainRecreated();
+    // The presentation created with the renderer: where a swapchain-phase
+    // feature records unless its registration names another.
+    [[nodiscard]] PresentationId PrimaryPresentation() const { return Frames.PrimaryPresentation(); }
+    // Null when the window cannot be presented to.
+    [[nodiscard]] PresentationId CreatePresentation(SdlWindow& window, const PresentationDesc& desc);
+    // Refused while any feature records into `id`, the same rule removal
+    // follows for dependents. Otherwise the presentation leaves every later
+    // frame at once, its swapchain and surface retire through the frame clock,
+    // and `afterRetired` runs once they are gone -- when the window may go.
+    [[nodiscard]] bool DestroyPresentation(PresentationId id, std::function<void()> afterRetired);
 
     // Installs the engine's instrumentation bundle. Must run before any
     // AddFeature so every feature Setup sees it in RendererServices.
@@ -241,6 +251,7 @@ public:
     // `atFrame` of them. False when the surface did not offer readback usage,
     // in which case nothing is armed.
     [[nodiscard]] bool CaptureFrame(std::string path, std::uint64_t atFrame);
+    [[nodiscard]] bool CaptureFrame(PresentationId presentation, std::string path, std::uint64_t atFrame);
 
     // Frames this renderer has drawn. Monotonic and its own count: the loop
     // above it counts driven frames, which includes the ones that resized or
@@ -251,29 +262,34 @@ private:
     // The context handed to frame capture: the same command buffer and clock
     // the features saw, without the attachment fields, which describe a scope
     // that has already closed by the time the frame is copied.
-    [[nodiscard]] FrameContext MakeCaptureContext(const VulkanFrame& frame) const;
+    [[nodiscard]] FrameContext MakeCaptureContext(const VulkanFrame& frame,
+                                                  const AcquiredPresentation& presentation) const;
+    [[nodiscard]] RendererServices MakeSwapchainServices(const PresentationTarget& target) const;
+    [[nodiscard]] bool WasAcquired(const VulkanFrame& frame, PresentationId id) const;
 
+    struct BucketEntry
+    {
+        IRenderFeature* Feature = nullptr;
+        RenderFeatureScope Scope;
+    };
 
     Logger& Log;
-    VulkanSwapchainService& Swapchain;
     VulkanFrameService& Frames;
     RendererServices Services;
     bool Valid = false;
 
     std::vector<std::unique_ptr<IRenderFeature>> OwnedFeatures;
-    std::vector<IRenderFeature*> PhaseBuckets[static_cast<size_t>(RenderPhase::Count)];
-    // Parallel to OwnedFeatures: what each registered feature declared, which
-    // is what a removal consults to refuse orphaning a consumer. Ids point at
-    // string literals owned by the host.
+    std::vector<BucketEntry> PhaseBuckets[static_cast<size_t>(RenderPhase::Count)];
+    // Parallel to OwnedFeatures: what each registered feature declared, its
+    // scope resolved, which is what a removal consults to refuse orphaning a
+    // consumer. Ids point at string literals owned by the host.
     std::vector<FeatureRegistration> RegisteredOrder;
     // Staged but not yet committed, with the declarations they were staged with.
     std::vector<std::unique_ptr<IRenderFeature>> StagedFeatures;
     std::vector<FeatureRegistration> StagedRegistrations;
-    std::vector<VkImageLayout> ImageLayouts;
-    std::unique_ptr<VulkanDepthTarget> DepthTarget;
-    VkImageLayout DepthLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     RendererFrameTiming LastTiming;
     FrameImageCapture ImageCapture;
+    PresentationId CapturePresentation;
     std::uint64_t FramesDrawn = 0;
 
     IRenderFeature* StageFeatureImpl(std::unique_ptr<IRenderFeature> feature,
@@ -284,5 +300,5 @@ private:
                                    const FeatureRegistration& registration);
 
     void RecordOffscreenPhase(const VulkanFrame& frame);
-    void RecordSwapchainPhases(const VulkanFrame& frame);
+    void RecordSwapchainPhases(const VulkanFrame& frame, const AcquiredPresentation& presentation);
 };

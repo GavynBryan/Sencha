@@ -14,10 +14,12 @@ namespace
     }
 }
 
-DataEditorWorkspace::DataEditorWorkspace(RuntimeAssets& assets, const ProjectDescriptor& project)
+DataEditorWorkspace::DataEditorWorkspace(RuntimeAssets& assets, const ProjectDescriptor& project,
+                                         DocumentSourceSet& sources, DataDocumentStore& store)
     : Assets(assets)
     , ContentRoot(FirstContentRoot(project))
-    , Documents(assets, Sources, { .ContentRoot = ContentRoot, .Subtypes = {} })
+    , Sources(sources)
+    , Documents(store, { .ContentRoot = ContentRoot, .Subtypes = {} })
 {
 }
 

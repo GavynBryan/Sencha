@@ -20,7 +20,7 @@
 // store holds no retirement clock of its own.
 //
 // This is the editor's ViewportTargetCache generalised and moved down. That
-// cache is already shared by Kyusu's viewports and Shudei's material preview,
+// cache is already shared by the level editor's viewports and the material preview,
 // but it lives in editor/common, is keyed by a ViewportId, hardcodes one
 // descriptor, and knows about ImGui -- so the engine has no offscreen-target
 // story at all, and a game-side second view has nowhere to render. Split
@@ -127,6 +127,8 @@ public:
 
     [[nodiscard]] RenderTargetId Create(const RenderTargetDesc& desc);
     void Destroy(RenderTargetId id);
+    // Releases the images and keeps the target; the next Acquire rebuilds them.
+    void Evict(RenderTargetId id);
 
     // Requests a size for subsequent frames. A change takes effect the next
     // time the affected slot is acquired, so a resize costs one recreate per

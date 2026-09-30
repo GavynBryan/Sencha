@@ -1,6 +1,7 @@
 // Drawing the viewport reads the audition and the simulation as they stand;
 // only Advance moves their clocks.
 
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigRecipe.h"
 
@@ -17,7 +18,8 @@ TEST(AnimationViewportExtraction, ExtractingNeverMovesAClock)
     project.Clip("asset://meshes/man.blend#anim:Idle", kSkeleton);
     project.Clip(kWalk, kSkeleton);
     project.ScanEngineAssets();
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.CreateRig({ .Name = "brute", .Clips = { "asset://meshes/man.blend#anim:Idle", kWalk },
                                       .Preset = AnimationRigPreset::Simple, .UpperBodyJoint = {} },

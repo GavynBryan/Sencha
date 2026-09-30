@@ -71,6 +71,7 @@ public:
     bool Maximize();
     bool Restore();
     [[nodiscard]] bool IsMaximized() const;
+    [[nodiscard]] bool IsMinimized() const;
 
     [[nodiscard]] SDL_Window* GetHandle() const { return Window; }
     [[nodiscard]] uint32_t GetId() const;

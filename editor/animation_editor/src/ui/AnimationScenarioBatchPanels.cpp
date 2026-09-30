@@ -1,7 +1,7 @@
 #include "ui/AnimationScenarioBatchPanels.h"
 
 #include "authoring/AnimationPreviewWorkspace.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -44,7 +44,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         ImGui::TextWrapped("Runs every saved scenario in the project twice from the start, in a session of its own, "
@@ -106,7 +106,7 @@ private:
 };
 }
 
-void AddAnimationScenarioBatchPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationScenarioBatchPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     ui.AddPanel(std::make_unique<ScenarioBatchPanel>(workspace));
 }

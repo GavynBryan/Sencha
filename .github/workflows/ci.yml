@@ -101,7 +101,7 @@ jobs:
           retention-days: 7
 
       # The SDK front door, proven the way a game developer meets it: install
-      # the SDK, copy a template out of it -- the copy is what Kettle's "new
+      # the SDK, copy a template out of it -- the copy is what Kyusu's "new
       # project" does -- and build the copy against the installed SDK alone.
       # Copying from the installed tree rather than the source tree is what
       # proves the install carries no build tree, cook output, or user state.

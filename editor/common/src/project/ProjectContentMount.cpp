@@ -13,6 +13,24 @@
 
 #include <string>
 
+namespace
+{
+// The runtime's resolution of one root: authored scan, sources cooked on demand
+// (hash-gated, so an unchanged source costs a lookup), then the cooked overlay,
+// which wins. The cook is what makes the Solid viewport WYSIWYG.
+void MountSourceRoot(const std::string& root, RuntimeAssets& assets, LoggingProvider& logging,
+                     JobSystem* jobs, Logger& log)
+{
+    const ContentRootPaths paths = ResolveContentRoot(root);
+    ScanContentRoot(paths, assets);
+    {
+        ContentImporterSet importers(jobs);
+        (void)ImportAssetsOnDemand(root, importers.Registry(), assets.Registry, logging);
+    }
+    RegisterCookedContent(paths, assets, log);
+}
+} // namespace
+
 void MountProjectContent(const ProjectDescriptor& project,
                          RuntimeAssets& assets,
                          LoggingProvider& logging,
@@ -20,27 +38,7 @@ void MountProjectContent(const ProjectDescriptor& project,
 {
     Logger& log = logging.GetLogger<ProjectDescriptor>();
     for (const std::string& root : project.ContentRoots)
-    {
-        const ContentRootPaths paths = ResolveContentRoot(root);
-        ScanContentRoot(paths, assets);
-
-        // Cook source assets on demand and register the cooked overlay, so a
-        // material's asset://...png resolves to its cooked .stex with a bindless
-        // slot and a placed asset://...blend resolves to its cooked mesh: the same
-        // resolve the runtime uses, which is what makes the Solid viewport
-        // WYSIWYG. Editors are cook-enabled; cooked wins over the scan.
-        //
-        // Meshes belong here for the same reason textures do. Without them the
-        // .glb and .blend import paths exist, are tested, and are reachable from
-        // nothing -- a source mesh dropped into a project never becomes an asset,
-        // so it can never be placed. The work is hash-gated by the cooked-cache
-        // index, so an unchanged source costs a hash and a lookup.
-        {
-            ContentImporterSet importers(jobs);
-            (void)ImportAssetsOnDemand(root, importers.Registry(), assets.Registry, logging);
-        }
-        RegisterCookedContent(paths, assets, log);
-    }
+        MountSourceRoot(root, assets, logging, jobs, log);
     log.Info("assets: mounted {} content root(s)", project.ContentRoots.size());
 }
 
@@ -50,13 +48,7 @@ void MountEngineContent(RuntimeAssets& assets, LoggingProvider& logging, JobSyst
     const std::filesystem::path root = EngineContentRoot();
     if (root.empty())
         return;
-    const ContentRootPaths paths = ResolveContentRoot(root.string());
-    ScanContentRoot(paths, assets);
-    {
-        ContentImporterSet importers(jobs);
-        (void)ImportAssetsOnDemand(root.string(), importers.Registry(), assets.Registry, logging);
-    }
-    RegisterCookedContent(paths, assets, log);
+    MountSourceRoot(root.string(), assets, logging, jobs, log);
     log.Info("assets: mounted engine content at '{}'", root.string());
 }
 
@@ -67,13 +59,6 @@ void MountEditorContent(std::string_view root,
 {
     Logger& log = logging.GetLogger<ProjectDescriptor>();
     const std::string rootPath(root);
-
-    const ContentRootPaths paths = ResolveContentRoot(rootPath);
-    ScanContentRoot(paths, assets);
-    {
-        ContentImporterSet importers(jobs);
-        (void)ImportAssetsOnDemand(rootPath, importers.Registry(), assets.Registry, logging);
-    }
-    RegisterCookedContent(paths, assets, log);
+    MountSourceRoot(rootPath, assets, logging, jobs, log);
     log.Info("assets: mounted editor UI content at '{}'", rootPath);
 }

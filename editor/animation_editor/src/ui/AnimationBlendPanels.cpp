@@ -3,7 +3,7 @@
 #include "authoring/AnimationBlendComparison.h"
 #include "authoring/AnimationRigScenario.h"
 #include "authoring/AnimationViewportExtraction.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -49,7 +49,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         const AnimationPreviewSession& session = Rig.Simulation;
@@ -221,7 +221,7 @@ public:
     void OnDraw() override
     {
         if (!IsVisible()) return;
-        ScopedPanel panel(GetTitle(), &Visible);
+        ScopedPanel panel(GetWindowName(), &Visible);
         if (!panel.IsOpen()) return;
 
         AnimationPreviewSession& session = Rig.Simulation;
@@ -324,7 +324,7 @@ private:
 };
 }
 
-void AddAnimationBlendPanels(EditorUiFeature& ui, AnimationRigScenario& rig, AnimationTakeComparison& takes,
+void AddAnimationBlendPanels(WorkspaceView& ui, AnimationRigScenario& rig, AnimationTakeComparison& takes,
                              AnimationViewportExtraction& viewport)
 {
     ui.AddPanel(std::make_unique<BlendPanel>(rig, takes, viewport));

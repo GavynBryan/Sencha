@@ -4,6 +4,7 @@
 
 #include "authoring/AnimationFlowEdits.h"
 #include "authoring/AnimationPredicateEdits.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigEdits.h"
 
@@ -107,7 +108,7 @@ namespace
         ASSERT_TRUE(edit(root));
         rig.BeginEdit();
         rig.PreviewRoot(std::move(root));
-        workspace.Documents.CommitEdit(rig);
+        workspace.Documents.Store().CommitEdit(rig);
     }
 }
 
@@ -115,7 +116,8 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
 {
     Project project;
     {
-        AnimationPreviewWorkspace workspace(*project.Assets);
+        EditorDocuments documents(*project.Assets);
+        AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
         ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
         ASSERT_NE(workspace.Rig.Simulation.Rig(), nullptr);
         ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);
@@ -149,7 +151,7 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
         for (int i = 0; i < 3; ++i)
         {
             rig->Undo();
-            workspace.Documents.Changed(*rig);
+            workspace.Documents.Store().Changed(*rig);
         }
         workspace.Rig.Simulation.Step();
         EXPECT_FALSE(workspace.Rig.Simulation.Rig()->Layers[1].Masked());

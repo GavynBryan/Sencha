@@ -11,8 +11,10 @@
 #include <vector>
 
 // A remembered panel's visibility rides the ImGui layout file under its
-// declared id, so a title can change without a user's layout changing; a
-// session-only panel keeps whatever its owner set.
+// declared id, scoped by the group it was attached with, so a title can change
+// without a user's layout changing and two workspaces' panels of one id never
+// share a setting; a session-only panel keeps whatever its owner set, and a
+// group that is not attached keeps what the file recorded for it.
 namespace
 {
 class StubPanel : public IEditorPanel
@@ -42,7 +44,8 @@ protected:
         ImGui::GetIO().IniFilename = nullptr;
         Panels.push_back(std::make_unique<StubPanel>("TOOLS", "tools", PanelVisibilityPolicy::Remembered));
         Panels.push_back(std::make_unique<StubPanel>("CONSOLE", "console", PanelVisibilityPolicy::SessionOnly));
-        Settings.Register(Panels);
+        Settings.Register();
+        Settings.Attach("", Panels);
     }
     void TearDown() override { ImGui::DestroyContext(); }
 
@@ -101,4 +104,35 @@ TEST_F(PanelVisibilitySettingsTest, TrackMarksTheFileDirtyOnlyWhenVisibilityChan
     Console().SetVisible(false);
     Settings.Track();
     EXPECT_FLOAT_EQ(g.SettingsDirtyTimer, 0.0f);
+}
+
+TEST_F(PanelVisibilitySettingsTest, AScopedGroupIsFiledUnderItsScope)
+{
+    std::vector<std::unique_ptr<IEditorPanel>> level;
+    level.push_back(std::make_unique<StubPanel>("TOOLS", "tools", PanelVisibilityPolicy::Remembered));
+    ImGui::LoadIniSettingsFromMemory("[EditorPanels][level/tools]\nVisible=0\n\n");
+    Settings.Attach("level", level);
+    Settings.Apply();
+    EXPECT_FALSE(level[0]->IsVisible()) << "the scoped entry reached the scoped panel";
+    EXPECT_TRUE(Tools().IsVisible()) << "the unscoped panel of the same id kept its own state";
+}
+
+TEST_F(PanelVisibilitySettingsTest, ADetachedGroupKeepsWhatTheFileRecorded)
+{
+    ImGui::LoadIniSettingsFromMemory("[EditorPanels][materials/browser]\nVisible=0\n\n");
+    Settings.Apply();
+    const std::string saved = Saved();
+    EXPECT_NE(saved.find("[EditorPanels][materials/browser]\nVisible=0"), std::string::npos)
+        << "a closed workspace's choice was dropped: " << saved;
+}
+
+TEST_F(PanelVisibilitySettingsTest, AGroupAttachedLaterTakesItsRecordedStateAtOnce)
+{
+    ImGui::LoadIniSettingsFromMemory("[EditorPanels][materials/browser]\nVisible=0\n\n");
+    Settings.Apply();
+    std::vector<std::unique_ptr<IEditorPanel>> materials;
+    materials.push_back(std::make_unique<StubPanel>("BROWSER", "browser", PanelVisibilityPolicy::Remembered));
+    Settings.Attach("materials", materials);
+    EXPECT_FALSE(materials[0]->IsVisible());
+    Settings.Detach(materials);
 }

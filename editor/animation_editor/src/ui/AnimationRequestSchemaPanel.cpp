@@ -114,7 +114,7 @@ void DrawIntents(JsonValue::Array& intents, FieldEdit& edit)
 void AnimationRequestSchemaPanel::OnDraw()
 {
     if (!IsVisible()) { Sources.CancelEdits(); return; }
-    ScopedPanel panel(GetTitle(), &Visible);
+    ScopedPanel panel(GetWindowName(), &Visible);
     if (!panel.IsOpen()) { Sources.CancelEdits(); return; }
     ImGui::TextWrapped("Author intent contracts here; preview requests and gameplay state are separate. Create new schemas from the Document panel's New asset, then open them from the content browser.");
     const auto documents = Documents.Documents();
@@ -147,7 +147,7 @@ void AnimationRequestSchemaPanel::OnDraw()
     ImGui::SameLine();
     if (ImGui::Button("Save")) Message = DescribeDocumentSave(Sources.Save(Documents.RefOf(document)));
     ImGui::SameLine();
-    if (ImGui::Button("Reload")) (void)Documents.Reload(document, Message);
+    if (ImGui::Button("Reload")) (void)Documents.Store().Reload(document, Message);
     if (document.IsDirty()) ImGui::TextDisabled("Unsaved changes (save before closing the application)");
     if (document.IsExternallyModified()) ImGui::TextWrapped("Changed externally: reload a clean document to adopt disk changes.");
     if (!Message.empty()) ImGui::TextWrapped("%s", Message.c_str());

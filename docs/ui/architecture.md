@@ -561,10 +561,11 @@ so a broken document is not retried at frame rate.
 
 Kyusu watches its own UI root, so editing the editor's interface while the editor
 is running is a save-and-look loop rather than a restart. The watcher, reloader
-and importer assembly the editors share is `SourceReloadRoots`
-(`editor/common/src/project/`); Shoji, the previewer (`editor/shoji/`), adds the
-project's roots, the engine's and the editor's own to it and shows the open
-document rebuilt on every save, with the diagnostics above beside it.
+and importer assembly is the engine's `SourceReloadRoots`
+(`engine/include/assets/hotreload/`), owned by `RuntimeContent`; the UI
+previewer (`editor/ui_preview/`) adds the project's roots, the engine's and the
+editor's own to it and shows the open document rebuilt on every save, with the
+diagnostics above beside it.
 
 ## 13. Rendering destinations
 

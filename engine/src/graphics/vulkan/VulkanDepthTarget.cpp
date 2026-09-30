@@ -7,6 +7,7 @@ VulkanDepthTarget::VulkanDepthTarget(VulkanImageService& images,
                                      VulkanPhysicalDeviceService& physicalDevice)
     : Images(&images)
     , PhysicalDevice(physicalDevice.GetPhysicalDevice())
+    , Format(ChooseDepthFormat())
 {
 }
 
@@ -18,8 +19,6 @@ VulkanDepthTarget::~VulkanDepthTarget()
 void VulkanDepthTarget::Create(VkExtent2D extent)
 {
     if (Images == nullptr || extent.width == 0 || extent.height == 0) return;
-
-    Format = ChooseDepthFormat();
     if (Format == VK_FORMAT_UNDEFINED) return;
 
     ImageCreateInfo info{};

@@ -5,6 +5,9 @@
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
 #include <app/GameContexts.h>
+#ifdef SENCHA_ENABLE_COOK
+#include <assets/hotreload/SourceReloadRoots.h>
+#endif
 #include <assets/runtime/ContentTagDeclarations.h>
 #include <audio/AudioSourceRuntime.h>
 #include <core/assets/AssetStoreTable.h>
@@ -21,6 +24,7 @@
 #include <world/RuntimeWorld.h>
 
 #include <cassert>
+#include <chrono>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,32 +32,22 @@
 namespace
 {
 #ifdef SENCHA_ENABLE_COOK
-// Polls the source watchers on wall time and hands changed files to their
-// reloader, which stages an in-place swap that commits at the async drain.
+// Polls the watched sources; a changed one stages an in-place swap that
+// commits at the async drain. The poll throttles itself.
 struct HotReloadPollSystem
 {
-    using WatchedRoots = std::vector<std::unique_ptr<RuntimeContent::WatchedRoot>>;
-
-    explicit HotReloadPollSystem(WatchedRoots& roots)
-        : Roots(roots)
+    explicit HotReloadPollSystem(RuntimeContent& content)
+        : Content(content)
     {
     }
 
-    void FrameUpdate(FrameUpdateContext& ctx)
+    void FrameUpdate(FrameUpdateContext&)
     {
-        Accumulator += ctx.WallDeltaSeconds;
-        if (Accumulator < kPollIntervalSeconds)
-            return;
-        Accumulator = 0.0;
-
-        for (const std::unique_ptr<RuntimeContent::WatchedRoot>& root : Roots)
-            for (const std::string& changed : root->Watcher.PollChanged())
-                root->Reloader.ReloadSource(changed);
+        if (SourceReloadRoots* sources = Content.SourceReload())
+            (void)sources->Poll(std::chrono::steady_clock::now());
     }
 
-    static constexpr double kPollIntervalSeconds = 0.3;
-    WatchedRoots& Roots;
-    double Accumulator = 0.0;
+    RuntimeContent& Content;
 };
 #endif
 } // namespace
@@ -108,25 +102,10 @@ void RuntimeContent::Mount()
     }
 
 #ifdef SENCHA_ENABLE_COOK
+    SourceReloadState = std::make_unique<SourceReloadRoots>(
+        Host.Logging(), &Host.Jobs(), Host.Tasks(), Assets_->Assets, Assets_->Registry);
     for (const ContentRootPaths& root : MountedRoots)
-    {
-        // Constructed in place: neither half is movable.
-        auto watched = std::unique_ptr<WatchedRoot>(new WatchedRoot{
-            .Reloader = AssetHotReloader(
-                Host.Logging(),
-                Assets_->Assets,
-                Assets_->Registry,
-                HotReloadImporters,
-                Host.Tasks(),
-                root.Authored.string()),
-            .Watcher = AssetSourceWatcher(
-                Host.Logging(),
-                root.Authored.string(),
-                std::vector<std::string>{ ".sdata" }),
-        });
-        watched->Watcher.Initialize();
-        HotReloadRoots.push_back(std::move(watched));
-    }
+        SourceReloadState->AddRoot(root.Authored.string(), { ".sdata" });
 #endif
 }
 
@@ -178,7 +157,7 @@ void RuntimeContent::Publish(World& world)
 void RuntimeContent::RegisterSystems(EngineSchedule& schedule)
 {
 #ifdef SENCHA_ENABLE_COOK
-    schedule.Register<HotReloadPollSystem>(HotReloadRoots);
+    schedule.Register<HotReloadPollSystem>(*this);
 #else
     (void)schedule;
 #endif
@@ -215,7 +194,7 @@ void RuntimeContent::Disconnect(World& world)
     world.SetResource(AnimRigBindings{});
 
 #ifdef SENCHA_ENABLE_COOK
-    HotReloadRoots.clear();
+    SourceReloadState.reset();
 #endif
 }
 

@@ -13,7 +13,7 @@
 //
 //   { "edit.undo": "Ctrl+Z", "gizmo.move": "Shift+W", "mode.face": "4" }
 //
-// Actions are the names EditorServices registers its shortcut table under;
+// Actions are the names the level workspace registers its shortcut table under;
 // chord text is modifiers + one SDL key name joined with '+'. Absent file or
 // absent action = the built-in default binding.
 

@@ -4,9 +4,11 @@
 #include "PanelVisibilitySettings.h"
 #include "ThemePreferences.h"
 #include "ThemeTextureCache.h"
+#include "WorkspaceView.h"
 #include "chrome/ChromeBars.h"
 #include "chrome/IconDraw.h"
 
+#include <graphics/PresentationId.h>
 #include <graphics/vulkan/Renderer.h>
 #include <platform/WindowFrameHit.h>
 
@@ -18,9 +20,15 @@
 #include <vector>
 
 union SDL_Event;
+struct ImGuiContext;
 
 class ConsoleRegistry;
+class EditorConsolePanel;
 class Engine;
+class IWorkspace;
+class WorkspaceBar;
+class WorkspaceHost;
+struct WorkspaceKind;
 class SdlWindow;
 class VulkanFrameService;
 class VulkanInstanceService;
@@ -35,6 +43,9 @@ struct ShellIdentity
     // The product's mark, a path to a PNG. Shell branding, not theme art: it
     // is fixed by the application and rides the font atlas with the icons.
     std::string LogoPath;
+    // The window's title while the shell hosts workspaces; the active one's
+    // name and its status follow it.
+    std::string WindowTitle;
 };
 
 // Which themed bar a surface belongs to.
@@ -44,30 +55,22 @@ enum class BarRole
     Toolbar,
 };
 
-// Fraction of its parent split each DockSlot region takes when the default
-// layout is built. Regions without panels are never split, so the fields for
-// slots an application leaves empty are inert.
-struct DockLayoutRatios
-{
-    float Bottom = 0.19f;       // full-width strip, of the whole dockspace height
-    float LeftEdge = 0.05f;    // tool column, of the main row width
-    float Left = 0.18f;         // left column, of the main row width
-    float Right = 0.24f;        // right column, of the width left after the left column
-    float CenterBottom = 0.26f; // strip under the central node, of the center column height
-    float RightBottom = 0.285f; // lower right, of the right column height
-};
-
+// The ImGui shell of one window: the workspace its WorkspaceHost shows there,
+// under a tab strip, with the caption and menus around it. The primary shell
+// owns what every window shares -- the font atlas, the theme, the layout file,
+// the shell's actions and prompts; a detached one draws with them in a window
+// of its own, over an ImGui context of its own.
 class EditorUiFeature : public IRenderFeature
 {
 public:
-    // iniFileName is the application's ImGui layout file (e.g. "kyusu.imgui.ini");
-    // each editor application names its own so their layouts never collide.
+    // iniFileName is the ImGui layout file (e.g. "kyusu.imgui.ini").
     EditorUiFeature(Engine& engine,
                     SdlWindow& window,
                     VulkanInstanceService& instance,
                     VulkanFrameService& frames,
-                    std::string iniFileName,
-                    DockLayoutRatios layoutRatios = {});
+                    std::string iniFileName);
+    // A detached window's shell. `primary` outlives it.
+    EditorUiFeature(EditorUiFeature& primary, SdlWindow& window);
     ~EditorUiFeature() override;
 
     EditorUiFeature(const EditorUiFeature&) = delete;
@@ -107,47 +110,41 @@ public:
     // them to a focused widget (otherwise WASD fills the console input box).
     void SetKeyboardInputEnabled(bool enabled);
 
-    void AddPanel(std::unique_ptr<IEditorPanel> panel);
+    // Draws the host's workspaces placed in `window` from now on. The primary
+    // shell also adopts their panels as they open (named, given a console,
+    // their remembered visibility restored) and lets go before they close.
+    // The host outlives this feature's drawing.
+    void SetWorkspaceHost(WorkspaceHost& host, PresentationId window);
+    [[nodiscard]] PresentationId ShownWindow() const { return Presentation; }
+    [[nodiscard]] SdlWindow& GetWindow() const { return Window; }
+    // What the caption's close button does; exit, unless the host says otherwise.
+    void SetCloseWindowAction(std::function<void()> action) { CloseWindowAction = std::move(action); }
+    // Shows or hides the active workspace's console.
+    void ToggleConsole();
 
-    // Fixed app chrome (toolbar, status bar) drawn after the main menu bar and
-    // before the panels, so any viewport-side-bar space they reserve is subtracted
-    // from the work area the full-bleed viewport panel reads. Insertion order =
-    // draw order. Kept as opaque draw callbacks so this feature stays decoupled
-    // from the editor's domain types.
-    void AddChrome(std::function<void()> draw);
-    // Transient surfaces drawn after every panel: something that floats over
-    // the whole window for a moment (a held-key menu) and reserves no layout
-    // space, as opposed to a chrome bar, which does. Insertion order = draw
-    // order.
-    void AddOverlay(std::function<void()> draw);
+    // Drawn over whichever view is showing, or none: the window's own prompts.
+    void AddShellOverlay(std::function<void()> draw);
     void SetUndoActions(std::function<void()> undoAction,
                         std::function<void()> redoAction,
                         std::function<bool()> canUndoAction,
                         std::function<bool()> canRedoAction);
-    void SetFileActions(std::function<void()> newAction,
-                        std::function<void()> openAction,
-                        std::function<void()> saveAction,
-                        std::function<void()> saveAsAction);
     void SetSaveAllAction(std::function<void()> saveAllAction);
-    // Shown only when set (applications without world documents never see it).
-    void SetNewWorldAction(std::function<void()> newWorldAction);
 
     void SetIdentity(ShellIdentity identity);
-
-    // Whether the shell writes the editor theme into the authored UI layer as
-    // `theme.rcss`. On for an editor whose own documents are themed with its
-    // chrome; off for a host that shows documents the way a game would, and
-    // decides for itself when a theme belongs on one.
-    void SetAuthoredThemePublishing(bool enabled);
 
     // The resolved surface for a bar, as prepared at this frame's boundary.
     // A pure lookup: a bar painting itself never reaches a loader.
     [[nodiscard]] EditorChrome::BarSurface SurfaceFor(BarRole role) const;
-    // What the shell is working on, read each frame and shown at the tail of
-    // the menu bar (the open document and whether it has unsaved edits).
-    void SetStatusProvider(std::function<std::string()> statusProvider);
 
 private:
+    enum class ShellRole : std::uint8_t
+    {
+        Primary,
+        Detached,
+    };
+
+    // The primary shell, which holds what every window shares.
+    [[nodiscard]] EditorUiFeature& Shell() { return Role == ShellRole::Primary ? *this : *PrimaryShell; }
     bool InitImGui(const RendererServices& services);
     void ShutdownImGui();
     // The frame boundary: commit a pending theme, then resolve everything
@@ -158,14 +155,25 @@ private:
     // have changed yet.
     void PublishAuthoredTheme(bool themeChanged);
     bool AuthoredThemePublished = false;
-    bool AuthoredThemeEnabled = true;
     void PrepareThemeTextures();
     void BuildShellAtlasIfStale();
     [[nodiscard]] EditorChrome::BarSurface ResolveSurface(EditorUi::BarFinish finish, const std::string& path,
                                                           EditorUi::SurfaceModulation modulation) const;
-    void DrawMainMenuBar();
+    // The host's active workspace's view; null when none is open.
+    [[nodiscard]] WorkspaceView* ActiveView() const;
+    void AdoptWorkspace(const WorkspaceKind& kind, IWorkspace& workspace);
+    void ReleaseWorkspace(IWorkspace& workspace);
+    void DrawDockHost(WorkspaceView* view);
+    void UpdateWindowTitle(const WorkspaceView* view);
+    void DrawMainMenuBar(WorkspaceView* view);
     void RegisterPointerCommands(ConsoleRegistry& registry);
     void FeedPointerActions();
+
+    ShellRole Role = ShellRole::Primary;
+    EditorUiFeature* PrimaryShell = nullptr;
+    ImGuiContext* Context = nullptr;
+    PresentationId Presentation;
+    std::function<void()> CloseWindowAction;
 
     Engine& EngineInstance;
     SdlWindow& Window;
@@ -204,33 +212,23 @@ private:
     std::function<void()> RedoAction;
     std::function<bool()> CanUndoAction;
     std::function<bool()> CanRedoAction;
-
-    std::function<void()> NewAction;
-    std::function<void()> OpenAction;
-    std::function<void()> SaveAction;
-    std::function<void()> SaveAsAction;
     std::function<void()> SaveAllAction;
-    std::function<void()> NewWorldAction;
     ShellIdentity Identity;
-    std::function<std::string()> StatusProvider;
     // The caption's frame snapshot for the window, rewritten every frame the
     // window draws its own frame.
     WindowFrameRegions FrameRegions;
 
-    std::vector<std::unique_ptr<IEditorPanel>> Panels;
-    // Remembers which panels are shown; declared after Panels, which it reads.
+    WorkspaceHost* Workspaces = nullptr;
+    std::unique_ptr<WorkspaceBar> TabStrip;
+    std::vector<std::function<void()>> ShellOverlays;
+    // Each open workspace's console, which this shell adds to its view.
+    std::vector<std::pair<IWorkspace*, EditorConsolePanel*>> Consoles;
+    std::string LastWindowTitle;
+    // Remembers which panels are shown; declared after the views it reads.
     PanelVisibilitySettings PanelVisibility;
-    std::vector<std::function<void()>> ChromeBars;
-    std::vector<std::function<void()>> Overlays;
-    DockLayoutRatios LayoutRatios;
+    bool VisibilityApplied = false;
     // View > Preferences > Theme: theme selection plus the palette override window.
     ThemePreferences ThemePrefs;
-    // Forces a default-layout rebuild on the next frame (first run / View>Reset).
-    bool LayoutDirty = false;
-    bool PlacementChecked = false; // the no-saved-placement check has run for this session
-    // Front tabs to raise on the frame after a layout rebuild (window titles of
-    // tab-group nodes; SetWindowFocus needs the windows to exist first).
-    std::vector<std::string> PendingTabFocus;
     // Pointer actions queued by the editor.ui.click and editor.ui.pointer
     // commands, so an unattended run can drive or hover a widget before a
     // screenshot. A click is pressed on the named frame and released on the
