@@ -45,10 +45,14 @@ const UiModelPropertyId kSnap = UiPropertyIdAt(23);
 const UiModelPropertyId kPivot = UiPropertyIdAt(24);
 const UiModelPropertyId kProjection = UiPropertyIdAt(25);
 const UiModelPropertyId kViewCount = UiPropertyIdAt(26);
+const UiModelPropertyId kHoldingRole = UiPropertyIdAt(27);
+const UiModelPropertyId kHoldingLabel = UiPropertyIdAt(28);
+const UiModelPropertyId kHoldingImage = UiPropertyIdAt(29);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
 const UiModelRowsId kToolRows = UiRowsIdAt(2);
+const UiModelRowsId kStash = UiRowsIdAt(3);
 
 const UiActionId kPopoverAction = UiActionIdAt(0);
 const UiActionId kChooseAction = UiActionIdAt(1);
@@ -93,8 +97,11 @@ UiScreenDesc Describe()
         UiModelProperty{ "pivot", UiValue(false) },
         UiModelProperty{ "projection", UiValue(std::string{}) },
         UiModelProperty{ "view_count", UiValue(std::int64_t{ 0 }) },
+        UiModelProperty{ "holding_role", UiValue(std::string{}) },
+        UiModelProperty{ "holding_label", UiValue(std::string{}) },
+        UiModelProperty{ "holding_image", UiValue(std::string{}) },
     };
-    desc.RowLists = { "notices", "entries", "tool_rows" };
+    desc.RowLists = { "notices", "entries", "tool_rows", "stash" };
     desc.Actions = { "shell_popover", "shell_choose", "shell_invoke", "shell_window", "shell_tool_set",
                      "shell_tool_flip" };
     return desc;
@@ -426,6 +433,7 @@ void ShellWindow::Publish(double now)
 
     PublishStation(workspace);
     PublishReadouts(workspace);
+    PublishHolding(workspace);
 
     std::vector<UiRow> notices;
     for (const Notice& notice : Services.Notices.Showing(now))
@@ -500,6 +508,27 @@ void ShellWindow::PublishReadouts(const IWorkspace* workspace)
     const WorkspaceViewFacet seeing = workspace != nullptr ? workspace->Viewing() : WorkspaceViewFacet{};
     (void)ui.SetValue(Screen, kProjection, UiValue(seeing.Projection));
     (void)ui.SetValue(Screen, kViewCount, UiValue(static_cast<std::int64_t>(seeing.Views)));
+}
+
+void ShellWindow::PublishHolding(IWorkspace* workspace)
+{
+    UiService& ui = Services.Ui;
+    std::vector<WorkspaceResourceFacet> roles = workspace != nullptr ? workspace->Resources()
+                                                                     : std::vector<WorkspaceResourceFacet>{};
+    const auto primary = std::ranges::find_if(roles, &WorkspaceResourceFacet::Primary);
+    const WorkspaceResourceFacet held = primary != roles.end() ? std::move(*primary) : WorkspaceResourceFacet{};
+    (void)ui.SetValue(Screen, kHoldingRole, UiValue(held.Role));
+    (void)ui.SetValue(Screen, kHoldingLabel, UiValue(held.Active.Label));
+    (void)ui.SetValue(Screen, kHoldingImage, UiValue(held.Active.Image));
+
+    std::vector<UiRow> stash;
+    for (std::size_t slot = 0; slot < held.Stash.size(); ++slot)
+    {
+        UiRow row{ held.Stash[slot].Label, held.Stash[slot].Image, "" };
+        row.Key = std::format("resource.slot.{}", slot + 1);
+        stash.push_back(std::move(row));
+    }
+    (void)ui.SetRows(Screen, kStash, stash);
 }
 
 std::vector<UiRow> ShellWindow::HatchEntries() const

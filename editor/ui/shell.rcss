@@ -316,6 +316,47 @@ body
     pointer-events: none;
 }
 
+#holding
+{
+    display: flex;
+    align-items: center;
+    height: 34dp;
+    padding: 0dp 4dp;
+    gap: 6dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+.cartridge
+{
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding-right: 8dp;
+    gap: 8dp;
+    border-right-width: 1dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+}
+
+.picture_well
+{
+    display: block;
+    width: 26dp;
+    height: 26dp;
+    border-width: 1dp;
+    border-radius: 2dp;
+}
+.cartridge_label.empty { text-transform: uppercase; }
+.picture { display: block; width: 100%; height: 100%; }
+
+#stash { display: flex; gap: 4dp; }
+.stash_slot { width: 20dp; height: 20dp; opacity: 0.55; }
+.stash_slot.filled, .stash_slot:hover { opacity: 1; }
+
 #cat_View
 {
     display: flex;

@@ -25,6 +25,19 @@ bool ParseFrame(std::span<const std::string> args, std::size_t at, std::uint64_t
     const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), out);
     return error == std::errc{} && end == text.data() + text.size();
 }
+SDL_Keymod ModifierOf(SDL_Keycode key)
+{
+    switch (key)
+    {
+    case SDLK_LSHIFT: return SDL_KMOD_LSHIFT;
+    case SDLK_RSHIFT: return SDL_KMOD_RSHIFT;
+    case SDLK_LCTRL:  return SDL_KMOD_LCTRL;
+    case SDLK_RCTRL:  return SDL_KMOD_RCTRL;
+    case SDLK_LALT:   return SDL_KMOD_LALT;
+    case SDLK_RALT:   return SDL_KMOD_RALT;
+    default:          return SDL_KMOD_NONE;
+    }
+}
 } // namespace
 
 void SynthesizedInput::Register(ConsoleRegistry& registry, std::function<std::uint32_t()> window)
@@ -133,6 +146,17 @@ void SynthesizedInput::Advance()
         {
             event.button.x = PointerX;
             event.button.y = PointerY;
+        }
+        else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
+        {
+            // A held modifier holds for everything after it, a click included.
+            if (const SDL_Keymod bit = ModifierOf(event.key.key); bit != SDL_KMOD_NONE)
+            {
+                Modifiers = event.key.down ? static_cast<SDL_Keymod>(Modifiers | bit)
+                                           : static_cast<SDL_Keymod>(Modifiers & ~bit);
+                SDL_SetModState(Modifiers);
+            }
+            event.key.mod = Modifiers;
         }
         (void)SDL_PushEvent(&event);
         it = Queue.erase(it);

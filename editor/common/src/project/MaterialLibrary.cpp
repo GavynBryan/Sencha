@@ -16,6 +16,13 @@ std::string MaterialDisplayName(std::string_view virtualPath)
     return std::string(name);
 }
 
+std::string MaterialLeafName(std::string_view virtualPath)
+{
+    const std::string display = MaterialDisplayName(virtualPath);
+    const std::size_t slash = display.find_last_of('/');
+    return slash == std::string::npos ? display : display.substr(slash + 1);
+}
+
 MaterialLibrary::MaterialLibrary(LoggingProvider& logging)
     : Logging(logging)
 {

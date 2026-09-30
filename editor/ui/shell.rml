@@ -114,9 +114,27 @@
     </div>
     </div>
 
-    <!-- Bottom right, how the work is seen: which view, and how many share
-         the content. -->
+    <!-- Bottom right, what the hands hold: the cartridge the next operation
+         consumes, which opens what can be done with it, and the stash beside
+         it, where a click trades a slot with the cartridge. Then how the work
+         is seen: which view, and how many share the content. -->
     <div id="instruments_right">
+        <div id="holding" class="theme-plate" data-if="holding_role != ''">
+            <div id="cat_Resource" class="cartridge theme-segment" data-class-lit="popover == 'category:Resource'"
+                 data-event-click="shell_popover('category:Resource')">
+                <div class="picture_well theme-field">
+                    <img class="picture" data-if="holding_image != ''" data-attr-src="'host:' + holding_image"/>
+                </div>
+                <span class="cartridge_label" data-if="holding_label != ''">{{holding_label}}</span>
+                <span class="cartridge_label empty theme-dim" data-if="holding_label == ''">No {{holding_role}}</span>
+            </div>
+            <div id="stash">
+                <div class="picture_well stash_slot theme-field" data-for="slot : stash"
+                     data-class-filled="slot.label != ''" data-event-click="shell_invoke(slot.key)">
+                    <img class="picture" data-if="slot.value != ''" data-attr-src="'host:' + slot.value"/>
+                </div>
+            </div>
+        </div>
         <div id="cat_View" class="theme-plate" data-if="projection != ''"
              data-class-lit="popover == 'category:View'" data-event-click="shell_popover('category:View')">
             <span class="view_projection">{{projection}}</span>

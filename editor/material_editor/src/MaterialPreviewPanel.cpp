@@ -2,6 +2,7 @@
 
 #include "MaterialPreviewRenderFeature.h"
 
+#include "project/MaterialLibrary.h"
 #include "ui/ScopedPanel.h"
 
 #include <imgui.h>
@@ -10,20 +11,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-
-namespace
-{
-    // "asset://materials/dev/gray.smat" -> "gray"
-    std::string_view TabLeafName(std::string_view virtualPath)
-    {
-        std::string_view name = virtualPath;
-        if (const std::size_t slash = name.rfind('/'); slash != std::string_view::npos)
-            name.remove_prefix(slash + 1);
-        if (name.size() >= 5 && name.substr(name.size() - 5) == ".smat")
-            name.remove_suffix(5);
-        return name;
-    }
-}
 
 MaterialPreviewPanel::MaterialPreviewPanel(MaterialPreviewRenderFeature& preview,
                                            MaterialDocumentSet& tabs,
@@ -56,7 +43,7 @@ void MaterialPreviewPanel::DrawTabBar()
 
         // Leaf name for the label, full path for the ID (### keeps the tab
         // stable when the dirty marker changes) and duplicates distinct.
-        std::string label(TabLeafName(path));
+        std::string label(MaterialLeafName(path));
         label += "###";
         label += path;
 

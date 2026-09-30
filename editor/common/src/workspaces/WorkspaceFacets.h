@@ -92,3 +92,23 @@ struct WorkspaceViewFacet
     std::string Projection = {};
     int Views = 0;
 };
+
+// A resource as shown: its name, and the host image that pictures it. Both are
+// empty for an empty slot; the image alone is empty when nothing pictures it.
+struct HeldResource
+{
+    std::string Label = {};
+    std::string Image = {};
+};
+
+// What the workspace's operations consume, per role: the resource the next one
+// will use, and those stashed beside it. For the primary role, the actions in
+// the Resource category use, store and clear the slots (resource.slot.N,
+// resource.store.N, resource.clear.N) and browse for another (resource.browse).
+struct WorkspaceResourceFacet
+{
+    std::string Role = {};
+    bool Primary = false;
+    HeldResource Active = {};
+    std::vector<HeldResource> Stash = {};
+};

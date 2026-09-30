@@ -162,7 +162,7 @@ Shared shell (`editor/common/src/`):
 | `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `KeymapFile`, `UiInputGuard`). | router handlers |
 | `properties/` | The toolkit-free property model: `PropertyNode` trees (key, descriptor, value as text, children; no rows), `IPropertySource` (begin/preview/commit/cancel mapped onto a document's own transaction) and `PropertyEditSession` (the one edit in flight, ended by any interruption). The level's source is `authoring/ComponentPropertySource`. | inspectors, cards, drawers |
 | `observers/` | `WeakObserverList`: subscribers held for as long as they keep their token. | selection, resources, problems |
-| `resources/` | `ActiveResources`: what the person is holding, per asset kind, with a stash; changes reach the tool in hand through `ToolRegistry`. | tools, panels |
+| `resources/` | `ActiveResources`: what the person is holding, per asset kind, with a stash; changes reach the tool in hand through `ToolRegistry`. `ResourceActions` offers the stash as actions. | tools, workspaces |
 | `problems/`, `notices/` | `ProblemList` (every located problem, republished whole by each source) and `NoticeQueue` (brief word that something happened). | the shell |
 | `prompts/` | `PromptQueue` (questions that hold an operation, answered one at a time; an `Asker` withdraws its questions when it goes) and the document questions over it: `AskAboutChanges`, `DocumentExitHold` (exit waits on changed documents) and `DocumentSaveFollowUp` (a failed save is a problem, a conflict is a question). | workspaces, Kyusu |
 | `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `CommandPalette`, `PromptDialog` and `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of. Workspaces never include it. | Kyusu |
@@ -279,8 +279,11 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   what the views show are actions with a checked state
   (`workspace/ManipulationActions`), named for the readout by the manipulation
   and view facets; the readout's segments and the view instrument open their
-  categories' actions. Cook, play and stop are the `transport.*` actions the
-  rail's transport shows.
+  categories' actions. What the hands hold is the resources facet: per role,
+  the active resource and its stash, each named and pictured by a host image
+  (`MaterialThumbnailCache::ImageName`); the stash is worked through the
+  `resource.*` actions (`resources/ResourceActions`). Cook, play and stop are
+  the `transport.*` actions the rail's transport shows.
   Settings only that tool acts on are members on the tool; genuinely shared
   authoring state (the grid, the active material) goes through `ToolContext`.
   A tool with sub-modes exposes them as variants (`GetVariants`,

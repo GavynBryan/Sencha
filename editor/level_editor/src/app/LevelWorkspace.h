@@ -85,6 +85,7 @@ public:
     [[nodiscard]] WorkspaceOperationFacet Operation() override;
     [[nodiscard]] WorkspaceManipulationFacet Manipulation() const override;
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
+    [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_keycode.h>
 
 #include <cstdint>
 #include <functional>
@@ -36,4 +37,5 @@ private:
     std::uint64_t Frame = 0;
     float PointerX = 0.0f;
     float PointerY = 0.0f;
+    SDL_Keymod Modifiers = SDL_KMOD_NONE;
 };

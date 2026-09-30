@@ -126,6 +126,8 @@ private:
     // How the hands act and how the work is seen: the readouts beside the
     // stations, each opening its category's actions.
     void PublishReadouts(const IWorkspace* workspace);
+    // What the hands hold, bottom right: the primary resource and its stash.
+    void PublishHolding(IWorkspace* workspace);
 
     ShellWindowServices Services;
     UiSurfaceId SurfaceId;

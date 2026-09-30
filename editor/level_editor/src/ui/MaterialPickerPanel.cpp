@@ -24,18 +24,6 @@
 #include <variant>
 #include <vector>
 
-namespace
-{
-
-    // "materials/dev/gray" -> "gray": the cell label; the tooltip carries the
-    // full path.
-    std::string_view LeafName(std::string_view displayName)
-    {
-        const std::size_t slash = displayName.find_last_of('/');
-        return slash == std::string_view::npos ? displayName : displayName.substr(slash + 1);
-    }
-}
-
 MaterialPickerPanel::MaterialPickerPanel(MaterialLibrary& materials,
                                            MaterialThumbnailCache& thumbnails,
                                            ActiveResources& resources,
@@ -60,7 +48,7 @@ void MaterialPickerPanel::DrawCell(const MaterialAsset& material, float cellSize
     ImGui::PushID(material.Path.c_str());
     const EditorChrome::TileResult tile = EditorChrome::Tile({
         .Image = Thumbnails.Thumbnail(material.Path), .Size = cellSize,
-        .Label = LeafName(material.DisplayName), .Selected = Resources.Active(AssetType::Material).Path == material.Path });
+        .Label = MaterialLeafName(material.Path), .Selected = Resources.Active(AssetType::Material).Path == material.Path });
     if (tile.Clicked)
         Resources.SetActive(AssetRef{ AssetType::Material, material.Path });
     const bool hovered = tile.Hovered;

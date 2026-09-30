@@ -3,7 +3,9 @@
 #include "ImGuiTextureBinding.h"
 #include "ThumbnailEviction.h"
 
+#include <core/assets/AssetLease.h>
 #include <graphics/GpuFrameRetirement.h>
+#include <render/ui/UiDrawFrame.h>
 
 #include <cstdint>
 #include <memory>
@@ -14,6 +16,8 @@
 class AssetRegistry;
 class AssetSystem;
 class TextureCache;
+class UiService;
+class UiTextureResidency;
 class VulkanImageService;
 class VulkanSamplerCache;
 
@@ -21,7 +25,7 @@ class VulkanSamplerCache;
 // MaterialThumbnailCache: GPU-resident preview images for material assets,
 // keyed by .smat virtual path. A thumbnail is the material's base color
 // texture (slot parsed from the .smat source on first request), displayed
-// through an ImGuiTextureBinding. Residency is bounded by TrimToBudget, so a
+// through an ImGuiTextureBinding or, for authored UI, as a host image. Residency is bounded by TrimToBudget, so a
 // large library can be scrolled without holding every texture on the GPU:
 // only thumbnails a panel actually drew recently stay resident.
 //
@@ -42,7 +46,9 @@ public:
                            TextureCache& textures,
                            VulkanImageService& images,
                            VulkanSamplerCache& samplers,
-                           const AssetRegistry& registry);
+                           const AssetRegistry& registry,
+                           UiService* ui = nullptr,
+                           UiTextureResidency* uiTextures = nullptr);
 
     // Advances the LRU clock; call once per UI frame before any Thumbnail().
     void BeginFrame(GpuFrameRetirement retirement);
@@ -51,6 +57,12 @@ public:
     // request; 0 while unresolved or for a texture-less material (the caller
     // draws a placeholder). Marks the entry used this frame.
     [[nodiscard]] ImTextureID Thumbnail(const std::string& materialPath);
+
+    // The host image an authored document names the thumbnail by, as
+    // `host:NAME`; published while the texture is resident. Empty for a
+    // texture-less material, or when there is no authored UI. Marks the entry
+    // used this frame.
+    [[nodiscard]] std::string ImageName(const std::string& materialPath);
 
     // Evicts least-recently-used thumbnails until at most `budget` remain
     // (entries drawn this frame are kept regardless).
@@ -67,10 +79,13 @@ public:
 private:
     struct Entry
     {
-        // Null when the material resolved to "no base color texture" (or failed
-        // to parse); the negative result is cached so scrolling does not
+        // Empty when the material resolved to "no base color texture" (or
+        // failed to parse); the negative result is cached so scrolling does not
         // re-parse the .smat every frame.
+        std::string TexturePath;
         std::unique_ptr<ImGuiTextureBinding> Binding;
+        AssetLease Texture;
+        UiHostImageId Image = kInvalidUiHostImage;
         std::uint64_t LastUsedFrame = 0;
     };
 
@@ -82,6 +97,7 @@ private:
     struct Retiring
     {
         std::unique_ptr<ImGuiTextureBinding> Binding;
+        AssetLease Texture;
         // Frame the binding was evicted on; released once the renderer's
         // fence-anchored clock reports that frame retired.
         std::uint64_t Stamp = 0;
@@ -91,8 +107,9 @@ private:
     // or the .smat does not resolve/parse.
     [[nodiscard]] std::string ResolveBaseColor(const std::string& materialPath) const;
 
-    // Moves the map entry's binding (if any) into the retire list; the caller
-    // then erases the entry.
+    Entry& Find(const std::string& materialPath);
+    // Withdraws the entry's image and moves what it holds into the retire
+    // list; the caller then erases the entry.
     void Retire(Entry& entry);
 
     AssetSystem& Assets;
@@ -100,6 +117,8 @@ private:
     VulkanImageService& Images;
     VulkanSamplerCache& Samplers;
     const AssetRegistry& Registry;
+    UiService* Ui = nullptr;
+    UiTextureResidency* UiTextures = nullptr;
 
     std::unordered_map<std::string, Entry> Entries;
     std::vector<Retiring> RetireList;

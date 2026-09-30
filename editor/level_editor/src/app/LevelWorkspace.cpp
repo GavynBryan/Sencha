@@ -23,7 +23,6 @@
 
 #include <world/ComponentRegistrar.h>
 #include "render/EditorRenderFeature.h"
-#include "ui/ActiveMaterialPanel.h"
 #include "ui/CookProfilesModal.h"
 #include "ui/InspectorSurface.h"
 #include <ui/UiService.h>
@@ -45,6 +44,7 @@
 #include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
 #include "actions/ActionOffer.h"
+#include "resources/ResourceActions.h"
 #include "workspace/ManipulationActions.h"
 #include "tools/ToolParameterSource.h"
 #include "ui/RadialMenuScreen.h"
@@ -274,6 +274,9 @@ void LevelWorkspace::BuildInput()
     for (const LevelAction& action : actions)
         offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
     OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
+    offer("resource.browse", "Browse...", "Resource", { { SDLK_M, {} } }, IconId::Folder,
+          [this] { if (Browser != nullptr) Browser->Reveal(); });
+    OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [] { return AssetType::Material; });
 
     // How the views share the content area, and which one a single view shows.
     struct ArrangementRow
@@ -754,16 +757,11 @@ void LevelWorkspace::BuildUi()
         .Help = "Material browser cell size in pixels.",
         .Source = { "editor" },
     });
+    UiService* ui = engine.TryUi();
     Thumbnails = std::make_unique<MaterialThumbnailCache>(
         Assets->Assets, *Assets->Textures, engine.Graphics().Images, engine.Graphics().Samplers,
-        Assets->Registry);
-
-    // Added after ToolPropertiesPanel so the left column's Down-pack puts it
-    // below the tool properties, and before the browser so its previews are
-    // always fresher than the browser's trim.
-    Surface.AddPanel(std::make_unique<ActiveMaterialPanel>(
-        Workspace->Resources, *Thumbnails,
-        [this] { if (Browser != nullptr) Browser->Reveal(); }));
+        Assets->Registry, ui != nullptr && ui->IsReady() ? ui : nullptr,
+        &engine.Graphics().MainRenderer.GetUiTextures());
 
     auto browserPanel = std::make_unique<MaterialPickerPanel>(
         *Materials, *Thumbnails, Workspace->Resources, console.Registry(),
@@ -1272,6 +1270,21 @@ WorkspaceViewFacet LevelWorkspace::Viewing() const
 WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
 {
     return ManipulationOf(*Workspace);
+}
+
+std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()
+{
+    const auto held = [this](const AssetRef& ref) -> HeldResource {
+        if (!ref.IsValid())
+            return {};
+        return { .Label = MaterialLeafName(ref.Path),
+                 .Image = Thumbnails != nullptr ? Thumbnails->ImageName(ref.Path) : std::string{} };
+    };
+    WorkspaceResourceFacet material{ .Role = "Material", .Primary = true,
+                                     .Active = held(Workspace->Resources.Active(AssetType::Material)) };
+    for (const AssetRef& slot : Workspace->Resources.Stash(AssetType::Material))
+        material.Stash.push_back(held(slot));
+    return { std::move(material) };
 }
 
 WorkspaceOperationFacet LevelWorkspace::Operation()
