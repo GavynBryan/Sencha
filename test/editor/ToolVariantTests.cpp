@@ -127,3 +127,25 @@ TEST_F(ToolVariantTest, AToolWithoutVariantsAnswersEmptyAndIgnoresASelection)
         EXPECT_EQ(tool->GetActiveVariant(Tools().GetContext()), -1) << tool->GetId();
     }
 }
+
+TEST_F(ToolVariantTest, APendingBrushTakesTheMaterialPickedWhileItWaits)
+{
+    // The restyle used to happen in the properties panel's draw, so a pick
+    // made with that panel hidden left the preview in the old material.
+    ASSERT_TRUE(Tools().Activate("brush"));
+    auto& brush = static_cast<BrushTool&>(ToolById("brush"));
+    ToolContext& ctx = Tools().GetContext();
+    Workspace.Resources.SetActive(AssetRef{ AssetType::Material, "materials/brick.smat" });
+    brush.SetPending(ctx, BrushTool::PendingBrush{ .Center = { 0.0, 0.5, 0.0 }, .HalfExtents = { 0.5, 0.5, 0.5 },
+                                                   .DepthSign = 1.0f, .DragDepthHalf = 0.5f });
+    ASSERT_TRUE(brush.HasPending());
+    const EntityId pending = ctx.Selection.GetSelection().front().Entity;
+
+    Workspace.Resources.SetActive(AssetRef{ AssetType::Material, "materials/steel.smat" });
+
+    const BrushMesh* mesh = ctx.Scene.TryGetBrushMesh(pending);
+    ASSERT_NE(mesh, nullptr);
+    ASSERT_FALSE(mesh->Faces.empty());
+    for (const BrushFace& face : mesh->Faces)
+        EXPECT_EQ(face.Material.Material.Path, "materials/steel.smat");
+}

@@ -78,6 +78,7 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
         Tools->Register(std::make_unique<FaceCarveTool>());
         Tools->Register(std::make_unique<ClipTool>());
         Tools->Activate("select");
+        Tools->ForwardResourceChanges(inputs.Settings.Resources);
     }
     else
     {

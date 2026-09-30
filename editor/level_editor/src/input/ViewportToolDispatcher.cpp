@@ -9,7 +9,7 @@
 #include "interaction/InteractionHost.h"
 #include "meshedit/MeshEditService.h"
 #include "meshedit/MeshElements.h"
-#include "meshedit/ActiveMaterialState.h"
+#include "resources/ActiveResources.h"
 #include "overlay/EditorOverlayState.h"
 #include "overlay/SelectionLabels.h"
 #include "selection/SelectionService.h"
@@ -81,8 +81,8 @@ void ViewportToolDispatcher::SampleFaceMaterial(const PointerDownEvent& e)
 
     // Sample what the face RENDERS: an inherit-default face yields the level
     // default, not an empty ref.
-    Context.ActiveMaterial.Active = EffectiveMaterial(mesh->Faces[picked.ElementId].Material,
-                                                      Context.Document.GetDefaultMaterial());
+    Context.Resources.SetActive(EffectiveMaterial(mesh->Faces[picked.ElementId].Material,
+                                                      Context.Document.GetDefaultMaterial()));
 }
 
 InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& e, PointerCapture& capture)

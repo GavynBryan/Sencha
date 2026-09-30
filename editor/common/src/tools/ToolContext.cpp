@@ -21,6 +21,6 @@ ToolContext::ToolContext(CommandStack& commandStack,
     , Grid(settings.Grid)
     , Overlay(interaction.Overlay)
     , Sink(sink)
-    , ActiveMaterial(settings.ActiveMaterial)
+    , Resources(settings.Resources)
 {
 }

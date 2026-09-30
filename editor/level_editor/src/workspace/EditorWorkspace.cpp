@@ -106,7 +106,7 @@ void EditorWorkspace::BuildInteractionState()
             Layout,
             Pivot,
             *Affordances,
-            ToolAuthoringSettings{ Grid, ActiveMaterial },
+            ToolAuthoringSettings{ Grid, Resources },
             MakeDuplicateRemap(),
             // A committed duplicate (the gizmo Shift-drag) becomes the repeatable
             // action: Ctrl+R re-duplicates the current selection at the same offset.
@@ -573,9 +573,10 @@ void EditorWorkspace::SetSelectedBrushOrigin(OriginAnchor anchor)
 
 void EditorWorkspace::ApplyActiveMaterialToSelectedFaces()
 {
-    if (!ActiveMaterial.Active.IsValid() || Interaction.Sink == nullptr)
+    const AssetRef& material = Resources.Active(AssetType::Material);
+    if (!material.IsValid() || Interaction.Sink == nullptr)
         return;
-    ApplyMaterialToSelectedFaces(*Interaction.Sink, Selection, Commands, ActiveMaterial.Active);
+    ApplyMaterialToSelectedFaces(*Interaction.Sink, Selection, Commands, material);
 }
 
 void EditorWorkspace::CopySelectedFaceProjection()

@@ -9,7 +9,7 @@
 #include <functional>
 
 class MaterialThumbnailCache;
-struct ActiveMaterialState;
+class ActiveResources;
 
 // The active-material readout in the left column, under the Mesh Edit panel:
 // a large preview of the material the texturing verbs will apply, a Browse
@@ -19,7 +19,7 @@ struct ActiveMaterialState;
 class ActiveMaterialPanel : public IEditorPanel
 {
 public:
-    ActiveMaterialPanel(ActiveMaterialState& activeMaterial,
+    ActiveMaterialPanel(ActiveResources& resources,
                         MaterialThumbnailCache& thumbnails,
                         std::function<void()> browse);
 
@@ -29,7 +29,7 @@ public:
     PanelPersistence GetPersistence() const override { return { "active_material", PanelVisibilityPolicy::Remembered }; }
 
 private:
-    ActiveMaterialState& ActiveMaterial;
+    ActiveResources& Resources;
     MaterialThumbnailCache& Thumbnails;
     std::function<void()> Browse;
 };

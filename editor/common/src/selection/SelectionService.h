@@ -1,5 +1,7 @@
 #pragma once
 
+#include "observers/WeakObserverList.h"
+
 #include "ISelectionContext.h"
 
 #include <functional>
@@ -29,7 +31,7 @@ class World;
 class SelectionService
 {
 public:
-    using ObserverFn = std::function<void(const SelectionSnapshot&)>;
+    using ObserverFn = WeakObserverList<const SelectionSnapshot&>::Fn;
 
     explicit SelectionService(ISelectionContext& context);
 
@@ -71,7 +73,7 @@ public:
 private:
     ISelectionContext& Context;
     const World* Document = nullptr;
-    std::vector<std::weak_ptr<ObserverFn>> Observers;
+    WeakObserverList<const SelectionSnapshot&> Observers;
 
     // Stamps identity onto fresh refs and re-resolves handles on identified
     // ones. A ref whose identity is gone comes back invalid, which the

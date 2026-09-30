@@ -9,7 +9,7 @@
 #include "commands/CommandStack.h"
 #include "document/EditorEntityRecipe.h"
 #include "editmodes/PivotState.h"
-#include "meshedit/ActiveMaterialState.h"
+#include "resources/ActiveResources.h"
 #include "meshedit/FaceMaterialEdits.h"
 #include "meshedit/MeshEditService.h"
 #include "overlay/EditorOverlayState.h"
@@ -141,7 +141,7 @@ public:
     MeshEditService MeshEdit;
     // Editor-wide texturing state: the browser and viewport sampling write it,
     // the apply verbs read it.
-    ActiveMaterialState ActiveMaterial;
+    ActiveResources Resources;
     // Face projection clipboard. Lives here (not in a panel) so the copy/paste
     // shortcuts work with every panel closed.
     std::optional<FaceMaterialClipboard> UvClipboard;

@@ -8,17 +8,17 @@
 #include "ui/ScopedPanel.h"
 
 #include "project/MaterialLibrary.h"
-#include "meshedit/ActiveMaterialState.h"
+#include "resources/ActiveResources.h"
 
 #include <imgui.h>
 
 #include <algorithm>
 #include <utility>
 
-ActiveMaterialPanel::ActiveMaterialPanel(ActiveMaterialState& activeMaterial,
+ActiveMaterialPanel::ActiveMaterialPanel(ActiveResources& resources,
                                          MaterialThumbnailCache& thumbnails,
                                          std::function<void()> browse)
-    : ActiveMaterial(activeMaterial)
+    : Resources(resources)
     , Thumbnails(thumbnails)
     , Browse(std::move(browse))
 {
@@ -35,11 +35,11 @@ void ActiveMaterialPanel::OnDraw()
     // The preview: the material Shift+T / Apply will put on faces. Capped so the
     // Browse + slots row stays on screen in a narrow column without scrolling.
     const float previewSize = std::clamp(avail, 48.0f, 148.0f);
-    EditorChrome::Tile({ .Image = ActiveMaterial.Active.IsValid() ? Thumbnails.Thumbnail(ActiveMaterial.Active.Path) : 0,
-                         .Size = previewSize, .Selected = ActiveMaterial.Active.IsValid(), .Interactive = false });
+    EditorChrome::Tile({ .Image = Resources.Active(AssetType::Material).IsValid() ? Thumbnails.Thumbnail(Resources.Active(AssetType::Material).Path) : 0,
+                         .Size = previewSize, .Selected = Resources.Active(AssetType::Material).IsValid(), .Interactive = false });
 
-    if (ActiveMaterial.Active.IsValid())
-        ImGui::TextWrapped("%s", MaterialDisplayName(ActiveMaterial.Active.Path).c_str());
+    if (Resources.Active(AssetType::Material).IsValid())
+        ImGui::TextWrapped("%s", MaterialDisplayName(Resources.Active(AssetType::Material).Path).c_str());
     else
         ImGui::TextDisabled("No active material.\nPick one in Materials or Shift+RClick a face.");
 
@@ -52,21 +52,17 @@ void ActiveMaterialPanel::OnDraw()
         ImGui::SetTooltip("Show the Materials browser.");
 
     const float slotSize = ImGui::GetFrameHeight() * 1.8f;
-    for (int i = 0; i < static_cast<int>(ActiveMaterial.Slots.size()); ++i)
+    const ActiveResources::StashSlots& stash = Resources.Stash(AssetType::Material);
+    for (std::size_t i = 0; i < stash.size(); ++i)
     {
-        AssetRef& slot = ActiveMaterial.Slots[static_cast<std::size_t>(i)];
-        ImGui::PushID(i);
+        const AssetRef& slot = stash[i];
+        ImGui::PushID(static_cast<int>(i));
         ImGui::SameLine();
 
         const EditorChrome::TileResult tile = EditorChrome::Tile({
             .Image = slot.IsValid() ? Thumbnails.Thumbnail(slot.Path) : 0, .Size = slotSize });
         if (tile.Clicked)
-        {
-            if (slot.IsValid())
-                std::swap(slot, ActiveMaterial.Active);
-            else
-                slot = ActiveMaterial.Active;
-        }
+            Resources.UseStashSlot(AssetType::Material, i);
         const bool hovered = tile.Hovered;
         if (hovered)
         {
@@ -78,10 +74,10 @@ void ActiveMaterialPanel::OnDraw()
         }
         if (ImGui::BeginPopupContextItem("##slotmenu"))
         {
-            if (ImGui::MenuItem("Store active here", nullptr, false, ActiveMaterial.Active.IsValid()))
-                slot = ActiveMaterial.Active;
+            if (ImGui::MenuItem("Store active here", nullptr, false, Resources.Active(AssetType::Material).IsValid()))
+                Resources.StoreInStash(AssetType::Material, i);
             if (ImGui::MenuItem("Clear", nullptr, false, slot.IsValid()))
-                slot = {};
+                Resources.ClearStashSlot(AssetType::Material, i);
             ImGui::EndPopup();
         }
 

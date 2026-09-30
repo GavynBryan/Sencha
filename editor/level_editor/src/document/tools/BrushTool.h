@@ -63,6 +63,7 @@ public:
     void OnActivate(ToolContext& ctx) override;
     void OnDeactivate(ToolContext& ctx) override;
     void OnCancel(ToolContext& ctx) override;
+    void OnResourceChanged(ToolContext& ctx, AssetType type) override;
     InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     InputConsumed OnKeyDown(ToolContext& ctx, const KeyDownEvent& event) override;
     std::unique_ptr<IInteraction> BeginDrag(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pressPointer) override;

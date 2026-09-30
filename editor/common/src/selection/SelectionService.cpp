@@ -206,25 +206,10 @@ const ISelectionContext& SelectionService::GetContext() const
 
 std::shared_ptr<SelectionService::ObserverFn> SelectionService::Subscribe(ObserverFn fn)
 {
-    auto ptr = std::make_shared<ObserverFn>(std::move(fn));
-    Observers.push_back(ptr);
-    return ptr;
+    return Observers.Subscribe(std::move(fn));
 }
 
 void SelectionService::Notify()
 {
-    const SelectionSnapshot snapshot = Context.GetSnapshot();
-    auto it = Observers.begin();
-    while (it != Observers.end())
-    {
-        if (auto fn = it->lock())
-        {
-            (*fn)(snapshot);
-            ++it;
-        }
-        else
-        {
-            it = Observers.erase(it);
-        }
-    }
+    Observers.Notify(Context.GetSnapshot());
 }

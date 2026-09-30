@@ -14,7 +14,7 @@
 #include "document/commands/DeferredCreateBrushCommand.h"
 #include "document/interactions/BrushCreateDragInteraction.h"
 #include "document/interactions/BrushCreationPlane.h"
-#include "meshedit/ActiveMaterialState.h"
+#include "resources/ActiveResources.h"
 #include "meshedit/MeshEditService.h"
 #include "render/PreviewBuffer.h"
 #include "selection/commands/SelectCommand.h"
@@ -148,6 +148,13 @@ void BrushTool::OnCancel(ToolContext& ctx)
     CancelPending(ctx);
 }
 
+void BrushTool::OnResourceChanged(ToolContext& ctx, AssetType type)
+{
+    // The uncommitted brush always carries the material in hand.
+    if (type == AssetType::Material && HasPending() && PendingMaterialStale(ctx))
+        RefreshPending(ctx);
+}
+
 InputConsumed BrushTool::OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     // Clicking off a pending brush commits it; the click is spent on the commit
@@ -226,8 +233,8 @@ void BrushTool::SetPending(ToolContext& ctx, const PendingBrush& pending)
 
     BrushMesh mesh = BuildPendingMesh(Creation, Pending, depthHalf);
     MeshLocalBounds(mesh, Pending.LastBuiltBoundsMin, Pending.LastBuiltBoundsMax);
-    ApplyActiveMaterial(mesh, ctx.ActiveMaterial.Active);
-    PendingMaterial = ctx.ActiveMaterial.Active;
+    ApplyActiveMaterial(mesh, ctx.Resources.Active(AssetType::Material));
+    PendingMaterial = ctx.Resources.Active(AssetType::Material);
     PendingEntity = ctx.Scene.CreateBrushFromMesh(transform, std::move(mesh));
     ctx.Preview.Clear();
     ctx.Selection.SetSelection({
@@ -280,8 +287,8 @@ void BrushTool::RefreshPending(ToolContext& ctx)
 
     BrushMesh mesh = BuildPendingMesh(Creation, Pending, depthHalf);
     MeshLocalBounds(mesh, Pending.LastBuiltBoundsMin, Pending.LastBuiltBoundsMax);
-    ApplyActiveMaterial(mesh, ctx.ActiveMaterial.Active);
-    PendingMaterial = ctx.ActiveMaterial.Active;
+    ApplyActiveMaterial(mesh, ctx.Resources.Active(AssetType::Material));
+    PendingMaterial = ctx.Resources.Active(AssetType::Material);
 
     // Only a primitive-class depth change moves the entity beyond the adopted
     // recenter, and relatively, so the rest side stays where the drag put it.
@@ -301,8 +308,8 @@ void BrushTool::RefreshPending(ToolContext& ctx)
 bool BrushTool::PendingMaterialStale(const ToolContext& ctx) const
 {
     return State == BrushToolState::Pending
-        && ctx.ActiveMaterial.Active.IsValid()
-        && ctx.ActiveMaterial.Active.Path != PendingMaterial.Path;
+        && ctx.Resources.Active(AssetType::Material).IsValid()
+        && ctx.Resources.Active(AssetType::Material).Path != PendingMaterial.Path;
 }
 
 void BrushTool::CommitPending(ToolContext& ctx)
@@ -423,11 +430,6 @@ void BrushTool::DrawProperties(ToolContext& ctx)
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Inside-out brush (all normals flipped), for rooms seen from within");
-
-    // A material picked while the brush is pending restyles the preview: the
-    // uncommitted brush should always carry the current active material.
-    if (pending && PendingMaterialStale(ctx))
-        changed = true;
 
     if (changed && pending)
         RefreshPending(ctx);

@@ -6,12 +6,15 @@
 
 #include <math/Vec.h>
 
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <vector>
 
 struct EditorViewport;
 struct ToolContext;
+
+class ActiveResources;
 
 class ToolRegistry
 {
@@ -43,6 +46,10 @@ public:
     // resolves in-flight tool state before rebinding; nothing here does.
     void Rebind(ToolContext& context) { Context = &context; }
 
+    // Tells the tool in hand when a held resource changes, against whichever
+    // context the registry is bound to at the time.
+    void ForwardResourceChanges(ActiveResources& resources);
+
     // Aborts the active tool's in-progress gesture, if any. (W4.)
     void Cancel();
 
@@ -60,4 +67,5 @@ private:
     // that was never entered through Activate has not had OnActivate run, and
     // treating it as current would skip that setup.
     int ActiveIndex = -1;
+    std::shared_ptr<std::function<void(AssetType)>> ResourceWatch;
 };

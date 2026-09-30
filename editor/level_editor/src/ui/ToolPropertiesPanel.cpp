@@ -20,7 +20,7 @@
 #include "meshedit/MeshElementKindTraits.h"
 #include "project/MaterialLibrary.h"
 #include "selection/SelectionService.h"
-#include "meshedit/ActiveMaterialState.h"
+#include "resources/ActiveResources.h"
 #include "tools/ToolRegistry.h"
 #include "tools/ToolContext.h"
 #include "viewport/GridSettings.h"
@@ -38,7 +38,7 @@ ToolPropertiesPanel::ToolPropertiesPanel(std::function<IMeshEditTarget*()> targe
                                          MeshEditService& meshEdit,
                                          CommandStack& commands,
                                          WorldDocument& world,
-                                         ActiveMaterialState& activeMaterial,
+                                         ActiveResources& resources,
                                          std::optional<FaceMaterialClipboard>& uvClipboard,
                                          SelectionActions& actions,
                                          PendingBridgeEdit& bridgeEdit,
@@ -51,7 +51,7 @@ ToolPropertiesPanel::ToolPropertiesPanel(std::function<IMeshEditTarget*()> targe
     , MeshEdit(meshEdit)
     , Commands(commands)
     , World(world)
-    , ActiveMaterial(activeMaterial)
+    , Resources(resources)
     , UvClipboard(uvClipboard)
     , Actions(actions)
     , BridgeEdit(bridgeEdit)
@@ -254,17 +254,17 @@ void ToolPropertiesPanel::DrawTextureTools()
 {
     EditorChrome::SectionTitle("Texture Tools");
 
-    if (ActiveMaterial.Active.IsValid())
-        ImGui::TextUnformatted(MaterialDisplayName(ActiveMaterial.Active.Path).c_str());
+    if (Resources.Active(AssetType::Material).IsValid())
+        ImGui::TextUnformatted(MaterialDisplayName(Resources.Active(AssetType::Material).Path).c_str());
     else
         ImGui::TextDisabled("No active material (pick one in Materials,\nor Shift+RClick a face).");
 
     ButtonFlow flow;
-    if (!ActiveMaterial.Active.IsValid())
+    if (!Resources.Active(AssetType::Material).IsValid())
         ImGui::BeginDisabled();
     if (flow.Button("Apply##texture", EditorChrome::ButtonTone::Active))
-        ApplyMaterialToSelectedFaces(Target(), Selection, Commands, ActiveMaterial.Active);
-    if (!ActiveMaterial.Active.IsValid())
+        ApplyMaterialToSelectedFaces(Target(), Selection, Commands, Resources.Active(AssetType::Material));
+    if (!Resources.Active(AssetType::Material).IsValid())
         ImGui::EndDisabled();
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Apply the active material to the selected faces.  [Shift+T]");

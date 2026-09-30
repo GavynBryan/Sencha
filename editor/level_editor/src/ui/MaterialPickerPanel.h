@@ -8,7 +8,7 @@
 class ConsoleRegistry;
 class MaterialLibrary;
 class MaterialThumbnailCache;
-struct ActiveMaterialState;
+class ActiveResources;
 struct MaterialAsset;
 
 // The material picking surface: a filterable thumbnail grid over the
@@ -22,7 +22,7 @@ class MaterialPickerPanel : public IEditorPanel
 public:
     MaterialPickerPanel(MaterialLibrary& materials,
                          MaterialThumbnailCache& thumbnails,
-                         ActiveMaterialState& activeMaterial,
+                         ActiveResources& resources,
                          const ConsoleRegistry& console,
                          std::function<void()> applyToSelection);
 
@@ -42,7 +42,7 @@ private:
 
     MaterialLibrary& Materials;
     MaterialThumbnailCache& Thumbnails;
-    ActiveMaterialState& ActiveMaterial;
+    ActiveResources& Resources;
     const ConsoleRegistry& Console;
     std::function<void()> ApplyToSelection;
 

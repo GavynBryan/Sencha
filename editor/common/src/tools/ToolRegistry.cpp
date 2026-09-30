@@ -1,5 +1,7 @@
 #include "ToolRegistry.h"
 
+#include "resources/ActiveResources.h"
+
 #include "ToolContext.h"
 #include "interaction/InteractionHost.h"
 
@@ -138,4 +140,12 @@ InputConsumed ToolRegistry::OnInput(const InputEvent& event)
         return active->OnKeyDown(*Context, *e);
 
     return InputConsumed::No;
+}
+
+void ToolRegistry::ForwardResourceChanges(ActiveResources& resources)
+{
+    ResourceWatch = resources.Subscribe([this](AssetType type) {
+        if (ITool* tool = GetActiveTool(); tool != nullptr && Context != nullptr)
+            tool->OnResourceChanged(*Context, type);
+    });
 }

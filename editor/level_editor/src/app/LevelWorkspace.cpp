@@ -836,7 +836,7 @@ void LevelWorkspace::BuildUi()
         [this]() -> ManipulationSink* { return Workspace->Interaction.Sink.get(); },
         [this]() -> ToolRegistry* { return Workspace->Interaction.Tools.get(); },
         Workspace->Selection, Workspace->MeshEdit, *Commands,
-        Workspace->World, Workspace->ActiveMaterial, Workspace->UvClipboard,
+        Workspace->World, Workspace->Resources, Workspace->UvClipboard,
         Workspace->Actions, Workspace->BridgeEdit, Workspace->ElementEdit,
         // Export is the one verb that needs a native file dialog, so the shell
         // keeps it; the geometry itself comes from the selection actions.
@@ -873,11 +873,11 @@ void LevelWorkspace::BuildUi()
     // below the tool properties, and before the browser so its previews are
     // always fresher than the browser's trim.
     Surface.AddPanel(std::make_unique<ActiveMaterialPanel>(
-        Workspace->ActiveMaterial, *Thumbnails,
+        Workspace->Resources, *Thumbnails,
         [this] { if (Browser != nullptr) Browser->Reveal(); }));
 
     auto browserPanel = std::make_unique<MaterialPickerPanel>(
-        *Materials, *Thumbnails, Workspace->ActiveMaterial, console.Registry(),
+        *Materials, *Thumbnails, Workspace->Resources, console.Registry(),
         [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); });
     Browser = browserPanel.get();
     Surface.AddPanel(std::move(browserPanel));

@@ -10,7 +10,7 @@
 #include "ui/TextFilterMatch.h"
 
 #include "project/MaterialLibrary.h"
-#include "meshedit/ActiveMaterialState.h"
+#include "resources/ActiveResources.h"
 
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
@@ -38,12 +38,12 @@ namespace
 
 MaterialPickerPanel::MaterialPickerPanel(MaterialLibrary& materials,
                                            MaterialThumbnailCache& thumbnails,
-                                           ActiveMaterialState& activeMaterial,
+                                           ActiveResources& resources,
                                            const ConsoleRegistry& console,
                                            std::function<void()> applyToSelection)
     : Materials(materials)
     , Thumbnails(thumbnails)
-    , ActiveMaterial(activeMaterial)
+    , Resources(resources)
     , Console(console)
     , ApplyToSelection(std::move(applyToSelection))
 {
@@ -60,19 +60,19 @@ void MaterialPickerPanel::DrawCell(const MaterialAsset& material, float cellSize
     ImGui::PushID(material.Path.c_str());
     const EditorChrome::TileResult tile = EditorChrome::Tile({
         .Image = Thumbnails.Thumbnail(material.Path), .Size = cellSize,
-        .Label = LeafName(material.DisplayName), .Selected = ActiveMaterial.Active.Path == material.Path });
+        .Label = LeafName(material.DisplayName), .Selected = Resources.Active(AssetType::Material).Path == material.Path });
     if (tile.Clicked)
-        ActiveMaterial.Active = AssetRef{ AssetType::Material, material.Path };
+        Resources.SetActive(AssetRef{ AssetType::Material, material.Path });
     const bool hovered = tile.Hovered;
     if (hovered)
         ImGui::SetTooltip("%s", material.Path.c_str());
     if (ImGui::BeginPopupContextItem("##cellmenu"))
     {
         if (ImGui::MenuItem("Set active"))
-            ActiveMaterial.Active = AssetRef{ AssetType::Material, material.Path };
+            Resources.SetActive(AssetRef{ AssetType::Material, material.Path });
         if (ApplyToSelection && ImGui::MenuItem("Apply to selected faces"))
         {
-            ActiveMaterial.Active = AssetRef{ AssetType::Material, material.Path };
+            Resources.SetActive(AssetRef{ AssetType::Material, material.Path });
             ApplyToSelection();
         }
         ImGui::EndPopup();

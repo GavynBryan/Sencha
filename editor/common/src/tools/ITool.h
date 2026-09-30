@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/assets/AssetRef.h>
+
 #include "CommandChoice.h"
 #include "icons/IconId.h"
 #include "input/InputEvent.h"
@@ -30,6 +32,9 @@ struct ITool
     // transient state. Called on Escape and focus loss so a tool gesture can never
     // be left dangling. (W4.)
     virtual void OnCancel(ToolContext& /*ctx*/) {}
+    // What the person is holding changed while this tool is in hand: a pending
+    // preview built with the old resource takes the new one.
+    virtual void OnResourceChanged(ToolContext& /*ctx*/, AssetType /*type*/) {}
 
     // Resolve any staged-but-uncommitted state, because the document is about to
     // be persisted and a preview must not reach the file unresolved. A tool that

@@ -16,7 +16,7 @@ struct MarqueeState;
 struct GridSettings;
 struct EditorOverlayState;
 struct ManipulationSink;
-struct ActiveMaterialState;
+class ActiveResources;
 
 // The transient editing state a tool reads and writes: the live interaction,
 // the geometry it previews, the marquee, and the viewport overlay. They are
@@ -36,7 +36,7 @@ struct ToolInteractionState
 struct ToolAuthoringSettings
 {
     GridSettings& Grid;
-    ActiveMaterialState& ActiveMaterial;
+    ActiveResources& Resources;
 };
 
 struct ToolContext
@@ -64,9 +64,9 @@ struct ToolContext
     EditorOverlayState& Overlay;
     // The brush-edit backend, for tools that preview/commit mesh edits (the edge cut).
     ManipulationSink& Sink;
-    // The editor-wide texturing material: new brushes stamp it onto their
-    // faces, Shift+RClick sampling writes it.
-    ActiveMaterialState& ActiveMaterial;
+    // What the person is holding: new brushes stamp the active material onto
+    // their faces, Shift+RClick sampling writes it.
+    ActiveResources& Resources;
     // Lets a tool hand off to another tool by id (e.g. the edge cut switches to
     // Select after committing). Set by the workspace once the registry exists.
     std::function<void(std::string_view)> ActivateTool;

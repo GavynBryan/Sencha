@@ -18,7 +18,7 @@ struct ITool;
 struct ToolContext;
 struct ManipulationSink;
 class WorldDocument;
-struct ActiveMaterialState;
+class ActiveResources;
 struct IMeshEditTarget;
 
 // The active tool's contextual properties: brush-create parameters, edge-cut
@@ -40,7 +40,7 @@ public:
                         MeshEditService& meshEdit,
                         CommandStack& commands,
                         WorldDocument& world,
-                        ActiveMaterialState& activeMaterial,
+                        ActiveResources& resources,
                         std::optional<FaceMaterialClipboard>& uvClipboard,
                         SelectionActions& actions,
                         PendingBridgeEdit& bridgeEdit,
@@ -82,7 +82,7 @@ private:
     MeshEditService& MeshEdit;
     CommandStack& Commands;
     WorldDocument& World;
-    ActiveMaterialState& ActiveMaterial;
+    ActiveResources& Resources;
     std::optional<FaceMaterialClipboard>& UvClipboard;
     FaceUvControls Uv;
     // The workspace mechanisms this panel drives. Narrow by design: it reads

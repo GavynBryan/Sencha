@@ -28,7 +28,7 @@ TEST_F(WorkspaceMaterialProjectionTest, ApplyingWithNoActiveMaterialIsANoOp)
 {
     const EntityId brush = AddBrush(Vec3d{ 0, 0, 0 });
     SelectElements(brush, MeshElementKind::Face, { 0 });
-    ASSERT_FALSE(Workspace.ActiveMaterial.Active.IsValid());
+    ASSERT_FALSE(Workspace.Resources.Active(AssetType::Material).IsValid());
 
     Workspace.ApplyActiveMaterialToSelectedFaces();
 
@@ -39,7 +39,7 @@ TEST_F(WorkspaceMaterialProjectionTest, ApplyingSetsTheSelectedFaceMaterialAsAnU
 {
     const EntityId brush = AddBrush(Vec3d{ 0, 0, 0 });
     SelectElements(brush, MeshElementKind::Face, { 0 });
-    Workspace.ActiveMaterial.Active = TestMaterial();
+    Workspace.Resources.SetActive(TestMaterial());
 
     Workspace.ApplyActiveMaterialToSelectedFaces();
 
@@ -54,7 +54,7 @@ TEST_F(WorkspaceMaterialProjectionTest, ApplyingWithNoFaceSelectedIsANoOp)
 {
     const EntityId brush = AddBrush(Vec3d{ 0, 0, 0 });
     SelectEntity(brush);
-    Workspace.ActiveMaterial.Active = TestMaterial();
+    Workspace.Resources.SetActive(TestMaterial());
 
     Workspace.ApplyActiveMaterialToSelectedFaces();
 
@@ -65,7 +65,7 @@ TEST_F(WorkspaceMaterialProjectionTest, CopyingAFaceFillsTheClipboard)
 {
     const EntityId brush = AddBrush(Vec3d{ 0, 0, 0 });
     SelectElements(brush, MeshElementKind::Face, { 0 });
-    Workspace.ActiveMaterial.Active = TestMaterial();
+    Workspace.Resources.SetActive(TestMaterial());
     Workspace.ApplyActiveMaterialToSelectedFaces();
 
     Workspace.CopySelectedFaceProjection();
@@ -80,7 +80,7 @@ TEST_F(WorkspaceMaterialProjectionTest, AFailedCopyKeepsThePreviousClipboard)
 {
     const EntityId brush = AddBrush(Vec3d{ 0, 0, 0 });
     SelectElements(brush, MeshElementKind::Face, { 0 });
-    Workspace.ActiveMaterial.Active = TestMaterial();
+    Workspace.Resources.SetActive(TestMaterial());
     Workspace.ApplyActiveMaterialToSelectedFaces();
     Workspace.CopySelectedFaceProjection();
     ASSERT_TRUE(Workspace.UvClipboard.has_value());
@@ -96,7 +96,7 @@ TEST_F(WorkspaceMaterialProjectionTest, PastingCarriesTheMaterialToAnotherFace)
 {
     const EntityId brush = AddBrush(Vec3d{ 0, 0, 0 });
     SelectElements(brush, MeshElementKind::Face, { 0 });
-    Workspace.ActiveMaterial.Active = TestMaterial();
+    Workspace.Resources.SetActive(TestMaterial());
     Workspace.ApplyActiveMaterialToSelectedFaces();
     Workspace.CopySelectedFaceProjection();
 
@@ -123,7 +123,7 @@ TEST_F(WorkspaceMaterialProjectionTest, TheClipboardSurvivesAnInteractionReset)
 {
     const EntityId brush = AddBrush(Vec3d{ 0, 0, 0 });
     SelectElements(brush, MeshElementKind::Face, { 0 });
-    Workspace.ActiveMaterial.Active = TestMaterial();
+    Workspace.Resources.SetActive(TestMaterial());
     Workspace.ApplyActiveMaterialToSelectedFaces();
     Workspace.CopySelectedFaceProjection();
     ASSERT_TRUE(Workspace.UvClipboard.has_value());
@@ -132,7 +132,7 @@ TEST_F(WorkspaceMaterialProjectionTest, TheClipboardSurvivesAnInteractionReset)
 
     ASSERT_TRUE(Workspace.UvClipboard.has_value());
     EXPECT_EQ(Workspace.UvClipboard->Material.Path, TestMaterial().Path);
-    EXPECT_EQ(Workspace.ActiveMaterial.Active.Path, TestMaterial().Path);
+    EXPECT_EQ(Workspace.Resources.Active(AssetType::Material).Path, TestMaterial().Path);
 }
 
 } // namespace
