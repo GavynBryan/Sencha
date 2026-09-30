@@ -154,6 +154,10 @@ void OfferManipulationActions(ActionCatalog& catalog, ActionContext& context, Ed
     offer("view.zone_bounds", "Zone Bounds", "View", {}, IconId::ZoneBounds,
           { .Invoke = [w] { w->WorldView.ShowZoneBounds = !w->WorldView.ShowZoneBounds; },
             .Checked = [w] { return w->WorldView.ShowZoneBounds; } });
+    offer("view.zone_graph", "Zone Graph", "View", {}, IconId::None,
+          { .Invoke = [w] { w->WorldView.ShowZoneGraph = !w->WorldView.ShowZoneGraph; },
+            .Enabled = [w] { return w->World.IsWorld(); },
+            .Checked = [w] { return w->WorldView.ShowZoneGraph; } });
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     for (std::uint32_t index = 0; index < kRenderDebugViewCount; ++index)
     {

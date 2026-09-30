@@ -3,6 +3,7 @@
 #include <app/GameContexts.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <ecs/ComponentTypeId.h>
+#include <input/UiInputCapture.h>
 #include <platform/WindowTypes.h>
 #include <ui/UiSurface.h>
 
@@ -33,7 +34,6 @@ class MaterialThumbnailCache;
 class LevelViewSurface;
 class RadialMenuScreen;
 class ToolParameterSource;
-class ViewsPanel;
 class EditorRenderFeature;
 class EditorViewportCameraSystem;
 class DocumentSourceSet;
@@ -90,6 +90,7 @@ public:
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     [[nodiscard]] bool HoldsPointer() const override;
     void MoveTo(const WorkspaceWindow& window) override;
+    void SetContentRect(const Rect2d& content) override { ContentRect = content; }
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     [[nodiscard]] WorkspaceOperationFacet Operation() override;
     [[nodiscard]] WorkspaceManipulationFacet Manipulation() const override;
@@ -105,6 +106,9 @@ public:
     bool RevealProblem(const Problem& problem) override;
     // The world's validation, republished only when it changed.
     void PublishProblems();
+    // What the window's UI -- authored, or ImGui until it is gone -- wants of
+    // the pointer and keys now.
+    [[nodiscard]] UiInputCapture WindowUiCapture() const;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;
@@ -151,7 +155,8 @@ private:
     // Writes the selection's geometry as binary glTF, behind a save dialog.
     void ExportSelectionGlb();
 
-    ViewsPanel* Views = nullptr;
+    // Where the window last said the views show.
+    Rect2d ContentRect{};
     // Held for the Active Material panel's Browse jump (Reveal()).
     // Owned by the engine renderer; the views are drawn from its targets.
     EditorRenderFeature* RenderFeature = nullptr;

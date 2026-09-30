@@ -440,6 +440,12 @@ WorldPartitionManifest& WorldDocument::Manifest()
     return Manifest_;
 }
 
+const WorldPartitionManifest& WorldDocument::Manifest() const
+{
+    assert(WorldMode_ && "Manifest: world mode only");
+    return Manifest_;
+}
+
 const WorldPartitionIndex& WorldDocument::Index() const
 {
     assert(WorldMode_ && "Index: world mode only");
@@ -1376,6 +1382,7 @@ void WorldDocument::WriteUserSidecar() const
     if (ViewSettings_ != nullptr)
     {
         root.emplace_back("show_zone_bounds", JsonValue{ ViewSettings_->ShowZoneBounds });
+        root.emplace_back("show_zone_graph", JsonValue{ ViewSettings_->ShowZoneGraph });
         root.emplace_back("streaming_preview", JsonValue{ ViewSettings_->StreamingPreview });
         // Preview overrides follow the absent-inherits model on disk too: no
         // key means the preview shows the authored per-graph shape.
@@ -1441,6 +1448,9 @@ WorldDocument::SidecarFocus WorldDocument::ApplyUserSidecar()
     if (const JsonValue* show = root->Find("show_zone_bounds");
         show != nullptr && show->IsBool() && ViewSettings_ != nullptr)
         ViewSettings_->ShowZoneBounds = show->AsBool();
+    if (const JsonValue* graph = root->Find("show_zone_graph");
+        graph != nullptr && graph->IsBool() && ViewSettings_ != nullptr)
+        ViewSettings_->ShowZoneGraph = graph->AsBool();
     if (const JsonValue* preview = root->Find("streaming_preview");
         preview != nullptr && preview->IsBool() && ViewSettings_ != nullptr)
         ViewSettings_->StreamingPreview = preview->AsBool();

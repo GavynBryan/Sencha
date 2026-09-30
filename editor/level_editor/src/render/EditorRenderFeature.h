@@ -25,6 +25,7 @@
 #include "ViewportBackdropRenderer.h"
 #include "WireframeRenderer.h"
 #include "ZoneBoundsRenderer.h"
+#include "ZoneGraphRenderer.h"
 #include "AffordanceRenderer.h"
 #include "AnnotationStrokeRenderer.h"
 
@@ -253,6 +254,7 @@ private:
     SelectionRenderer      Highlight;
     BrushFillRenderer      BrushFills;
     ZoneBoundsRenderer     ZoneBounds;
+    ZoneGraphRenderer      ZoneGraph;
     IrradianceVolumeRenderer IrradianceVolumes;
     AffordanceRenderer     Affordances;
     AnnotationStrokeRenderer Annotations;

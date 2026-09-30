@@ -62,6 +62,7 @@ const UiModelPropertyId kExplorerRange = UiPropertyIdAt(39);
 const UiModelPropertyId kExplorerEmpty = UiPropertyIdAt(40);
 const UiModelPropertyId kExplorerEarlier = UiPropertyIdAt(41);
 const UiModelPropertyId kExplorerLater = UiPropertyIdAt(42);
+const UiModelPropertyId kPopoverTop = UiPropertyIdAt(43);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -148,6 +149,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "explorer_empty", UiValue(std::string{}) },
         UiModelProperty{ "explorer_earlier", UiValue(false) },
         UiModelProperty{ "explorer_later", UiValue(false) },
+        UiModelProperty{ "popover_top", UiValue(std::string("auto")) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs" };
@@ -299,6 +301,12 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
         Services.Ui.SetSurfaceScale(surface, scale);
     }
 
+    if (IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation))
+    {
+        const float rail = RailHeight();
+        active->SetContentRect(Rect2d(Vec2d(0.0f, rail), Vec2d(static_cast<float>(extent.Width),
+                                                               std::max(0.0f, static_cast<float>(extent.Height) - rail))));
+    }
     YieldPointerToContent();
     HandleActions();
     Prompt->Update();
@@ -815,15 +823,19 @@ void ShellWindow::PublishEntries()
     (void)ui.SetValue(Screen, kPopover, UiValue(PopoverName()));
     double x = 0.0;
     bool rises = false;
+    std::string top = "auto";
     if (!anchor.empty())
         if (const std::optional<UiElementBox> box = ui.MeasureElement(Screen, anchor))
         {
             x = std::floor(box->X);
             // From an instrument in the lower half, a popover rises instead of
-            // hanging.
+            // hanging below it.
             rises = box->Y > static_cast<float>(Services.Window.GetExtent().Height) / 2.0f;
+            if (!rises)
+                top = std::format("{}px", std::floor(box->Y + box->Height) + 4.0f);
         }
     (void)ui.SetValue(Screen, kPopoverRises, UiValue(rises));
+    (void)ui.SetValue(Screen, kPopoverTop, UiValue(top));
     // Kept inside the window: an instrument at the right edge opens leftward.
     if (const std::optional<UiElementBox> popover = ui.MeasureElement(Screen, "popover"))
     {

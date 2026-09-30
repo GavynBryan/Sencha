@@ -47,9 +47,10 @@ panels until each workspace presents through the shell. Under the panels is
 the window's content surface (`WorkspaceWindow::Content`, drawn in
 `kContentUiLayer` by a `UiRenderFeature` ordered before the ImGui feature):
 the Level draws its views there as host images (`LevelViewSurface`), laid out
-by `ViewportArrangement` over the views panel's rect, and the panel stays
-transparent where they show
-(`docs/editor/interaction-grammar.md`). The views meet at a divider the
+by `ViewportArrangement` over the rect the shell hands the showing workspace
+(`IWorkspace::SetContentRect`: the window below the rail). A workspace with no
+ImGui panel showing gets no dock or chassis, so the Level's views run edge to
+edge under the instruments (`docs/editor/interaction-grammar.md`). The views meet at a divider the
 person drags (`ViewDividerDrag`, kept in the `editor.view.divider_x/_y`
 cvars); the shell's transitions follow `editor.ui.motion`.
 Opening, closing and switching are requests applied at the frame boundary by
@@ -190,7 +191,7 @@ Level editor (`editor/level_editor/src/`):
 | `meshedit/` | Polygon mesh-editing verbs (`MeshEditService`). | `IMeshEditTarget` |
 | `viewport/` | Viewport layout, camera, picking (`ViewportLayout`, `EditorCamera`, `EditorViewportCameraSystem`, `Picking`). | -- |
 | `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes, the 14 embedded shaders). | `IRenderFeature` (engine) |
-| `ui/` | The level editor's remaining ImGui panels (views, hierarchy, material) and its authored surfaces (`LevelViewSurface`). | `IEditorPanel` |
+| `ui/` | The level editor's authored surfaces: the views (`LevelViewSurface`) and the cook profiles dialog (`CookProfilesModal`). | -- |
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
@@ -314,7 +315,9 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   baked light or probe volume became at the last cook, unshadowed lights and
   a stale baked preview as problems, and `view.baked_lighting` /
   `view.rerender_shadows` as view actions. F (`view.frame_selection`) frames
-  what is selected through `viewport/CameraFraming`.
+  what is selected through `viewport/CameraFraming`. `view.zone_graph` draws a
+  world's docks and links between its zones' centres over the views
+  (`document/ZoneGraph`, `render/ZoneGraphRenderer`), coloured by validation.
   A tool declares what it consumes (`ITool::Resources`), and the cartridge
   follows the tool in hand's primary role. Cook, play and
   stop are the `transport.*` actions the rail's transport shows.

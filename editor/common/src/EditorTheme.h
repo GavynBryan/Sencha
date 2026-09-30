@@ -36,6 +36,12 @@ inline constexpr Vec4 ContextZoneOverlay{ 0.55f, 0.55f, 0.60f, 0.30f };
 inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body
 // Transition graph edges in the streaming preview: cyan lines between zone centers.
 inline constexpr Vec4 TransitionLine{ 0.25f, 0.75f, 0.95f, 1.0f };
+// The zone graph over the views: teleport links, and a connection between two
+// graphs; one validation warns about or fails takes the problem colours.
+inline constexpr Vec4 ZoneGraphLink{ 0.62f, 0.5f, 0.98f, 1.0f };
+inline constexpr Vec4 ZoneGraphCrossGraph{ 0.95f, 0.55f, 0.85f, 1.0f };
+inline constexpr Vec4 ProblemWarning{ 1.0f, 0.75f, 0.2f, 1.0f };
+inline constexpr Vec4 ProblemError{ 1.0f, 0.32f, 0.28f, 1.0f };
 // Irradiance probe volumes: the authored bounds box, and the lattice points a
 // selected volume's bake will place (violet, distinct from zone/component blues).
 inline constexpr Vec4 IrradianceVolume{ 0.72f, 0.45f, 0.95f, 1.0f };

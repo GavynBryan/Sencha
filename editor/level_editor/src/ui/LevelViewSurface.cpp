@@ -169,7 +169,8 @@ void LevelViewSurface::Arrange(const Rect2d& content, ViewportArrangementKind ki
         }
         UiRow row{ viewport->GetDisplayLabel(), "", "" };
         row.Key = SlotName(slot);
-        row.Selected = viewport->IsActive;
+        // Which view is active only means something while views share the content.
+        row.Selected = viewport->IsActive && tiles.size() > 1;
         row.Parts = { Px(tile.Position.X), Px(tile.Position.Y), Px(tile.Width()), Px(tile.Height()) };
         rows.push_back(std::move(row));
     }

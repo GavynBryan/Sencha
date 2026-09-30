@@ -391,6 +391,10 @@ body
 #cat_View
 {
     display: flex;
+    position: absolute;
+    top: 42dp;
+    right: 8dp;
+    pointer-events: auto;
     align-items: center;
     height: 34dp;
     padding: 0dp 12dp;

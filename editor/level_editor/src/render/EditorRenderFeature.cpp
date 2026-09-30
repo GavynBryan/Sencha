@@ -91,6 +91,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
     , BrushFills(Fills)
     , ZoneBounds(WideLines)
+    , ZoneGraph(WideLines)
     , IrradianceVolumes(selection, WideLines, Lines)
     , Affordances(affordances, WideLines, Fills)
     , Annotations(overlay, WideLines)
@@ -660,6 +661,8 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         Highlight.DrawViewport(local, viewport, camera, scene, *Session());
         if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
             ZoneBounds.DrawViewport(local, viewport, camera, World, WorldView);
+        if (WorldView.ShowZoneGraph)
+            ZoneGraph.DrawViewport(local, viewport, camera, World);
         Affordances.DrawViewport(local, viewport, camera);
         Preview.DrawViewport(local, viewport, camera);
         Annotations.DrawViewport(local, viewport, camera);

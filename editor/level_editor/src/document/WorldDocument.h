@@ -111,6 +111,7 @@ public:
     }
 
     [[nodiscard]] WorldPartitionManifest& Manifest();          // World mode only (asserts)
+    [[nodiscard]] const WorldPartitionManifest& Manifest() const;
     [[nodiscard]] const WorldPartitionIndex& Index() const;    // rebuilt on manifest edits
 
     // Zone lifecycle. LoadZone deserializes the zone's scene into a fresh

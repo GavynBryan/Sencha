@@ -365,18 +365,33 @@ void EditorUiFeature::OnDraw(const RenderFrame& renderFrame)
             if (chrome)
                 chrome();
 
-    DrawDockHost(view);
+    // The file has been read by the first NewFrame; a remembered choice
+    // overrides the compiled default exactly once.
+    if (Role == ShellRole::Primary && !VisibilityApplied)
+    {
+        PanelVisibility.Apply();
+        VisibilityApplied = true;
+    }
+
+    // A workspace with no panel showing shows its content edge to edge.
+    const bool docked = view == nullptr
+        || std::any_of(view->Panels.begin(), view->Panels.end(),
+                       [](const std::unique_ptr<IEditorPanel>& panel) { return panel != nullptr && panel->IsVisible(); });
+    if (view != nullptr)
+        view->ContentHole = {};
+    if (docked)
+        DrawDockHost(view);
 
     if (view != nullptr)
     {
-        view->ContentHole = {};
         for (const std::unique_ptr<IEditorPanel>& panel : view->Panels)
             if (panel != nullptr && panel->IsVisible())
                 panel->OnDraw();
     }
     // After the panels, which say where content shows through: the background
     // list draws first whenever it is added to.
-    DrawChassisGround(view);
+    if (docked)
+        DrawChassisGround(view);
     if (Role == ShellRole::Primary)
     {
         // After the panels have drawn: a close box acts during a panel's own
@@ -445,14 +460,6 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
     ImGui::Begin("##EditorDockHost", nullptr, hostFlags);
     ImGui::PopStyleVar(3);
 
-    // The file has been read by the first NewFrame; a remembered choice
-    // overrides the compiled default exactly once.
-    if (Role == ShellRole::Primary && !VisibilityApplied)
-    {
-        PanelVisibility.Apply();
-        VisibilityApplied = true;
-    }
-
     // Each workspace keeps its own dockspace, so its arrangement survives the
     // tab being in the background; a hidden one is only kept alive.
     const auto dockIdOf = [](std::string_view kind) {
@@ -493,7 +500,11 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
         ImFont* tabFont = EditorUi::StyleFor(EditorUi::TextRole::Tab).Font;
         if (tabFont != nullptr)
             ImGui::PushFont(tabFont);
-        ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+        // A centre no panel fills shows the workspace's content through it.
+        ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+        if (const ImGuiDockNode* centre = ImGui::DockBuilderGetCentralNode(dockId);
+            centre != nullptr && centre->IsEmpty())
+            view->ContentHole = Rect2d(Vec2d(centre->Pos.x, centre->Pos.y), Vec2d(centre->Size.x, centre->Size.y));
         if (tabFont != nullptr)
             ImGui::PopFont();
     }

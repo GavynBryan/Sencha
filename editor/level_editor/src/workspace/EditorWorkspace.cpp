@@ -494,7 +494,7 @@ void EditorWorkspace::UpdateOverlay()
 
     // Zone name labels ride the same per-frame label rebuild as the dimension
     // text, anchored at each zone box's top center.
-    if (World.IsWorld() && WorldView.ShowZoneBounds)
+    if (World.IsWorld() && (WorldView.ShowZoneBounds || WorldView.ShowZoneGraph))
     {
         for (const ZoneHeader& zone : World.Manifest().Zones)
         {

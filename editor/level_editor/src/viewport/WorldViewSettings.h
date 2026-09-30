@@ -14,6 +14,9 @@
 struct WorldViewSettings
 {
     bool ShowZoneBounds = true;
+    // The zones as a graph drawn over the views: docks and links between the
+    // centres of the zones they join.
+    bool ShowZoneGraph = false;
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     // Session-only override for Solid viewports. None follows the production
     // forward pipeline; every other value substitutes the diagnostic shader.

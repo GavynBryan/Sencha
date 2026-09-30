@@ -32,7 +32,6 @@
 #include "documents/DocumentSourceSet.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "render/SceneThumbnailCache.h"
-#include "ui/GraphViewerPanel.h"
 #include "actions/ActionOffer.h"
 #include "resources/ResourceActions.h"
 #include "authoring/ComponentPropertySource.h"
@@ -50,9 +49,7 @@
 #include "tools/ToolParameterSource.h"
 #include "ui/RadialMenuScreen.h"
 #include "ui/LevelViewSurface.h"
-#include "ui/ViewsPanel.h"
 #include "workspaces/WorkspaceWindow.h"
-#include "ui/ImGuiVec.h"
 
 #include <SDL3/SDL.h>
 
@@ -436,12 +433,10 @@ void LevelWorkspace::BuildInput()
         };
         const auto pointerOnScene = [this](Vec2d pointer)
         {
-            // The viewport whose rect holds the pointer, and that same
-            // viewport's panel saying nothing is drawn over it: one
-            // viewport, one hover flag. Which view is active or was
-            // focused last plays no part.
-            return Workspace->Layout.ResolveAt(pointer).IsValid() && Views != nullptr
-                && Views->IsViewRegionHovered();
+            // The view whose rect holds the pointer, with nothing of the
+            // window's UI over it. Which view is active or was focused last
+            // plays no part.
+            return Workspace->Layout.ResolveAt(pointer).IsValid() && !WindowUiCapture().Mouse;
         };
         ToolMenu = std::make_unique<ToolRegistryMenuModel>(*Workspace->Interaction.Tools);
         ToolWheel = std::make_unique<RadialMenuSession>(*ToolMenu, chordFor("tool.wheel", SDLK_Q), frame, pointerOnScene);
@@ -450,21 +445,10 @@ void LevelWorkspace::BuildInput()
     }
 
     Router = std::make_unique<InputRouter>();
-    // The UI is the top layer of the input stack: events over an ImGui panel are
-    // consumed here before navigation, tools, or shortcuts can act on them. The
-    // viewport's 3D region is a passthrough hole — even though it is an ImGui
-    // window, input there belongs to the scene, so it is excluded from UI mouse
-    // ownership. (The guard adds pointer capture so drags survive crossing panels.)
-    Router->AddHandler(MakeUiInputGuard(
-        [this]
-        {
-            const UiInputCapture shell =
-                UiFeature != nullptr ? UiFeature->GetInputCapture() : UiInputCapture{};
-            const bool overViewport = Views != nullptr && Views->IsViewRegionHovered();
-            UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
-            return CombineUiCapture(shell, overViewport,
-                                    ui != nullptr ? ui->Capture() : UiInputCapture{});
-        }));
+    // The window's UI is the top layer of the input stack: events it wants are
+    // consumed here before navigation, tools, or shortcuts can act on them.
+    // (The guard adds pointer capture so drags survive crossing the UI.)
+    Router->AddHandler(MakeUiInputGuard([this] { return WindowUiCapture(); }));
     // The wheels sit under the guard (a focused text field keeps its letters)
     // and above everything else: an open wheel owns the pointer and the keys,
     // which is also what keeps the other wheel closed, and each yields its key
@@ -474,7 +458,7 @@ void LevelWorkspace::BuildInput()
     DividerDrag = std::make_unique<ViewDividerDrag>(
         [this] {
             return ViewDividerDrag::Arrangement{ .Kind = Arrangement(),
-                                                 .Content = Views != nullptr ? Views->ContentRect() : Rect2d{},
+                                                 .Content = ContentRect,
                                                  .Divider = Divider() };
         },
         [this](Vec2d divider) { SetDivider(divider); });
@@ -638,17 +622,6 @@ void LevelWorkspace::BuildUi()
     Engine& engine = *EnginePtr;
     ConsoleService& console = engine.Console();
 
-    // Default layout proportions: mesh tools over the active material in a
-    // narrow left column, the perspective viewport dominating the center with
-    // the ortho view + Materials/Console strip under it, world/hierarchy row
-    // over the inspector on the right.
-    Surface.Layout = DockLayoutRatios{
-        .LeftEdge = 0.06f,
-        .Left = 0.16f,
-        .Right = 0.3f,
-        .CenterBottom = 0.35f,
-        .RightBottom = 0.3f,
-    };
     Surface.File = WorkspaceFileActions{
         .New = [this] { AfterSettlingChanges([this] { Files->New(); }); },
         .NewWorld = [this] { AfterSettlingChanges([this] { Files->NewWorld(); }); },
@@ -658,15 +631,11 @@ void LevelWorkspace::BuildUi()
     };
 
 
-    // The views and lighting panels read state the render feature owns, and
-    // staging hands back nothing when the renderer never came up. Skipping them
-    // leaves an editor with no views, which is what a dead renderer means
-    // anyway; dereferencing would just make it a crash instead of a message.
+    // The views show what the render feature draws, and staging hands back
+    // nothing when the renderer never came up: an editor with no views is what
+    // a dead renderer means anyway.
     if (RenderFeature != nullptr)
     {
-        auto views = std::make_unique<ViewsPanel>(Workspace->Layout, Surface);
-        Views = views.get();
-        Surface.AddPanel(std::move(views));
         if (UiService* ui = EnginePtr->TryUi(); ui != nullptr && ui->IsReady())
             ViewSurface = std::make_unique<LevelViewSurface>(*ui, Workspace->Layout, Workspace->Interaction.Overlay,
                                                              Workspace->Interaction.Marquee, RenderFeature);
@@ -675,11 +644,8 @@ void LevelWorkspace::BuildUi()
     }
     else
     {
-        std::fprintf(stderr, "[editor] no viewport render feature; "
-                             "viewport panels are unavailable\n");
+        std::fprintf(stderr, "[editor] no viewport render feature; the views are unavailable\n");
     }
-    Surface.AddPanel(std::make_unique<GraphViewerPanel>(
-        Workspace->World, Workspace->Selection, *Commands, Workspace->Layout));
     {
         std::vector<std::filesystem::path> sceneRoots;
         if (Project)
@@ -988,10 +954,10 @@ void LevelWorkspace::ProcessFrame()
     }
 
     // Every view's rect, target size and image for this frame, from where the
-    // views panel sat last frame; a view not shown loses its rect, so ResolveAt
-    // never routes input to it.
+    // window last said the content shows; a view not shown loses its rect, so
+    // ResolveAt never routes input to it.
     if (ViewSurface != nullptr)
-        ViewSurface->Arrange(Views != nullptr && Visible ? Views->ContentRect() : Rect2d{}, Arrangement(),
+        ViewSurface->Arrange(Visible ? ContentRect : Rect2d{}, Arrangement(),
                              Divider(), EditorUi::UiScale);
     // Only one wheel is ever open: each yields its key to the other.
     if (WheelScreen != nullptr)
@@ -1250,6 +1216,13 @@ void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_vie
         WorldOutline->Choose(key, choice, mark);
     else if (explorer == PartitionOutline::kId && Partition != nullptr)
         Partition->Choose(key, choice, mark);
+}
+
+UiInputCapture LevelWorkspace::WindowUiCapture() const
+{
+    const UiInputCapture legacy = UiFeature != nullptr ? UiFeature->GetInputCapture() : UiInputCapture{};
+    UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
+    return CombineUiCapture(legacy, false, ui != nullptr ? ui->Capture() : UiInputCapture{});
 }
 
 void LevelWorkspace::PublishProblems()

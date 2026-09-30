@@ -233,8 +233,7 @@
 
     <!-- Bottom right, what the hands hold: the cartridge the next operation
          consumes, which opens what can be done with it, and the stash beside
-         it, where a click trades a slot with the cartridge. Then how the work
-         is seen: which view, and how many share the content. -->
+         it, where a click trades a slot with the cartridge. -->
     <div id="instruments_right">
         <div id="instrument_row">
         <div id="holding" class="theme-plate" data-if="holding_role != ''">
@@ -255,12 +254,15 @@
                 </div>
             </div>
         </div>
-        <div id="cat_View" class="theme-plate" data-if="projection != ''"
-             data-class-lit="popover == 'category:View'" data-event-click="shell_popover('category:View')">
-            <span class="view_projection">{{projection}}</span>
-            <span class="view_count theme-accent">{{view_count}}&#9635;</span>
         </div>
-        </div>
+    </div>
+
+    <!-- Top right of the content, how the work is seen: which view, and how
+         many share the content. -->
+    <div id="cat_View" class="theme-plate" data-if="projection != ''"
+         data-class-lit="popover == 'category:View'" data-event-click="shell_popover('category:View')">
+        <span class="view_projection">{{projection}}</span>
+        <span class="view_count theme-accent">{{view_count}}&#9635;</span>
     </div>
 
     <!-- A popover: one decision, anchored under the instrument that opened it.
@@ -268,7 +270,7 @@
     <div id="dismiss" data-if="popover != ''" data-event-click="shell_popover('')"></div>
     <div id="popover" class="theme-surface" data-if="popover != ''" data-class-rising="popover_rises"
          data-class-problems="popover == 'problems'"
-         data-style-left="popover_x + 'px'">
+         data-style-left="popover_x + 'px'" data-style-top="popover_top">
         <div class="entry theme-row" data-for="entry : entries"
              data-class-heading="entry.control == 'section'"
              data-class-disabled="entry.disabled"

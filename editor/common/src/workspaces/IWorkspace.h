@@ -3,6 +3,8 @@
 #include "documents/DocumentRef.h"
 #include "workspaces/WorkspaceFacets.h"
 
+#include <math/geometry/2d/Rect2d.h>
+
 struct Problem;
 
 class ActionContext;
@@ -38,6 +40,9 @@ public:
     // The window the workspace now shows in: when it is first placed, and
     // whenever it moves to another.
     virtual void MoveTo(const WorkspaceWindow&) {}
+    // Where its content shows, in window pixels: the whole window but what the
+    // host keeps for itself. Told every frame it is the one showing.
+    virtual void SetContentRect(const Rect2d&) {}
 
     // Whether this workspace edits the document, and bringing it forward when
     // the journal is about to step it.
