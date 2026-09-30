@@ -12,7 +12,7 @@ class MaterialLibrary;
 // Project material list plus the create/duplicate/rename entry points. The
 // panel stays presentation-only: every action is a callback the composition
 // root wires (it owns registries, the tabs, and the preview).
-class MaterialBrowserPanel final : public IEditorPanel
+class MaterialFilesPanel final : public IEditorPanel
 {
 public:
     struct Actions
@@ -25,7 +25,7 @@ public:
         std::function<void()> Rescan;
     };
 
-    MaterialBrowserPanel(MaterialLibrary& materials,
+    MaterialFilesPanel(MaterialLibrary& materials,
                          MaterialTabSet& tabs,
                          Actions actions);
 

@@ -1,4 +1,4 @@
-#include "MaterialBrowserPanel.h"
+#include "MaterialFilesPanel.h"
 
 #include "project/MaterialLibrary.h"
 #include "ui/ScopedPanel.h"
@@ -35,7 +35,7 @@ namespace
     }
 }
 
-MaterialBrowserPanel::MaterialBrowserPanel(MaterialLibrary& materials,
+MaterialFilesPanel::MaterialFilesPanel(MaterialLibrary& materials,
                                            MaterialTabSet& tabs,
                                            Actions actions)
     : Materials(materials)
@@ -44,7 +44,7 @@ MaterialBrowserPanel::MaterialBrowserPanel(MaterialLibrary& materials,
 {
 }
 
-void MaterialBrowserPanel::OnDraw()
+void MaterialFilesPanel::OnDraw()
 {
     if (!IsVisible())
         return;
@@ -85,7 +85,7 @@ void MaterialBrowserPanel::OnDraw()
     DrawRenamePopup();
 }
 
-void MaterialBrowserPanel::DrawMaterialRow(const char* label, const std::string& virtualPath,
+void MaterialFilesPanel::DrawMaterialRow(const char* label, const std::string& virtualPath,
                                            const std::string& displayName)
 {
     const bool selected = Tabs.Find(virtualPath) != nullptr;
@@ -105,7 +105,7 @@ void MaterialBrowserPanel::DrawMaterialRow(const char* label, const std::string&
     ImGui::PopID();
 }
 
-void MaterialBrowserPanel::DrawMaterialList()
+void MaterialFilesPanel::DrawMaterialList()
 {
     const std::string_view filter = FilterBuffer;
 
@@ -151,7 +151,7 @@ void MaterialBrowserPanel::DrawMaterialList()
         ImGui::TreePop();
 }
 
-void MaterialBrowserPanel::DrawRenamePopup()
+void MaterialFilesPanel::DrawRenamePopup()
 {
     if (RenamePopupPending)
     {

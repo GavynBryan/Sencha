@@ -32,6 +32,13 @@
 #      scope, a control; it never draws a screw or a chamfer itself, so the
 #      look can change without a panel changing.
 #
+#   E. Workspaces never include one another. Each workspace tree (the level,
+#      material, data, animation and UI preview editors, the project browser)
+#      depends on editor_common and the engine only; the one tree that sees
+#      them all is the Kyusu application, which composes them. A quoted include
+#      that names a header existing only in another workspace tree is a
+#      violation.
+#
 # Usage: check_editor_layering.sh <source-root>
 
 set -uo pipefail
@@ -105,6 +112,31 @@ if [ -n "$chrome_includers" ]; then
     echo
     status=1
 fi
+
+# E. No workspace tree includes another's headers. An include resolves against
+# its own tree or editor_common first; one that only another tree can satisfy
+# is a reach across workspaces.
+WORKSPACES="level_editor material_editor ui_preview data_editor animation_editor project_browser"
+for ws in $WORKSPACES; do
+    own="$ROOT/editor/$ws/src"
+    [ -d "$own" ] || continue
+    while IFS= read -r hit; do
+        file="${hit%%:*}"
+        header="$(printf '%s\n' "$hit" | sed -E 's/.*#include[[:space:]]*"([^"]+)".*/\1/')"
+        [ -f "$own/$header" ] && continue
+        [ -f "$COMMON/$header" ] && continue
+        [ -f "$(dirname "$file")/$header" ] && continue
+        for other in $WORKSPACES; do
+            [ "$other" = "$ws" ] && continue
+            if [ -f "$ROOT/editor/$other/src/$header" ]; then
+                echo "VIOLATION: workspace $ws includes $other's header (compose workspaces in editor/kyusu instead)"
+                echo "$hit"
+                echo
+                status=1
+            fi
+        done
+    done < <(grep -rnE '^[[:space:]]*#include[[:space:]]*"' "$own" 2>/dev/null)
+done
 
 if [ "$status" -eq 0 ]; then
     echo "editor layering directions: OK"

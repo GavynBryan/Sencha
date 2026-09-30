@@ -36,7 +36,7 @@
 #include "document/commands/SceneInstanceCommands.h"
 #include "ui/InspectorPanel.h"
 #include "ui/LightingPanel.h"
-#include "ui/MaterialBrowserPanel.h"
+#include "ui/MaterialPickerPanel.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ToolPropertiesPanel.h"
 #include "render/SceneThumbnailCache.h"
@@ -894,7 +894,7 @@ void EditorServices::BuildUi(bool consoleOpenOnStart)
         Workspace->ActiveMaterial, *Thumbnails,
         [this] { if (Browser != nullptr) Browser->Reveal(); }));
 
-    auto browserPanel = std::make_unique<MaterialBrowserPanel>(
+    auto browserPanel = std::make_unique<MaterialPickerPanel>(
         *Materials, *Thumbnails, Workspace->ActiveMaterial, console.Registry(),
         [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); });
     Browser = browserPanel.get();

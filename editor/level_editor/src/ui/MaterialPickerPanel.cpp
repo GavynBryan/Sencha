@@ -1,4 +1,4 @@
-#include "MaterialBrowserPanel.h"
+#include "MaterialPickerPanel.h"
 
 #include "ui/chrome/ChromeControls.h"
 #include "ui/chrome/ChromeTile.h"
@@ -36,7 +36,7 @@ namespace
     }
 }
 
-MaterialBrowserPanel::MaterialBrowserPanel(MaterialLibrary& materials,
+MaterialPickerPanel::MaterialPickerPanel(MaterialLibrary& materials,
                                            MaterialThumbnailCache& thumbnails,
                                            ActiveMaterialState& activeMaterial,
                                            const ConsoleRegistry& console,
@@ -49,13 +49,13 @@ MaterialBrowserPanel::MaterialBrowserPanel(MaterialLibrary& materials,
 {
 }
 
-void MaterialBrowserPanel::Reveal()
+void MaterialPickerPanel::Reveal()
 {
     SetVisible(true);
     ImGui::SetWindowFocus(GetTitle().data());
 }
 
-void MaterialBrowserPanel::DrawCell(const MaterialAsset& material, float cellSize)
+void MaterialPickerPanel::DrawCell(const MaterialAsset& material, float cellSize)
 {
     ImGui::PushID(material.Path.c_str());
     const EditorChrome::TileResult tile = EditorChrome::Tile({
@@ -81,7 +81,7 @@ void MaterialBrowserPanel::DrawCell(const MaterialAsset& material, float cellSiz
     ImGui::PopID();
 }
 
-void MaterialBrowserPanel::OnDraw()
+void MaterialPickerPanel::OnDraw()
 {
     ScopedPanel panel(GetTitle(), &Visible, PanelStyle::Standard);
     if (!panel.IsOpen())

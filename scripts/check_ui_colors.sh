@@ -13,7 +13,7 @@ set -uo pipefail
 
 ROOT="${1:-.}"
 UI_DIRS=("$ROOT/editor/common/src/ui" "$ROOT/editor/level_editor/src/ui" "$ROOT/editor/level_editor/src/document/tools"
-         "$ROOT/editor/level_editor/src/authoring" "$ROOT/editor/material_editor/src" "$ROOT/editor/kettle/src"
+         "$ROOT/editor/level_editor/src/authoring" "$ROOT/editor/material_editor/src" "$ROOT/editor/project_browser/src"
          "$ROOT/editor/data_editor/src")
 status=0
 

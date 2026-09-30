@@ -14,9 +14,9 @@ The editor tooling is a family of applications over one shared shell library:
 | `editor/common/` | `editor_common` (static lib) | The shared editor shell: ImGui UI feature + theme/skin, generic input, commands/selection/tools/interaction abstractions, offscreen viewport targets, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
 | `editor/level_editor/` | `level_authoring` + `level_editor` (static libs) | The level editor. Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `level_editor` library is the shell over it (composition root, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
 | `editor/kyusu/` | `kyusu` | The Kyusu executable: the entry point and `Game` adapter that hosts the level editor. |
-| `editor/material_editor/` | `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
-| `editor/kettle/` | `kettle` | The project launcher ("Kettle - Project Launcher"): recent projects, create project, project settings, launches the editors. |
-| `editor/ui_preview/` | `shoji_authoring` (static lib) + `shoji` | The authored-UI previewer ("Shoji - UI Previewer"): renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. Same split as Kyusu: the authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the executable is the shell. Built to fold into Kyusu: every panel takes a `UiPreviewSession&`, and consolidation is constructing one in Kyusu's composition root and adding these panels under a workspace tab. |
+| `editor/material_editor/` | `material_editor` (static lib) + `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
+| `editor/project_browser/` | `project_browser` (static lib) + `kettle` | The project launcher ("Kettle - Project Launcher"): recent projects, create project, project settings, launches the editors. |
+| `editor/ui_preview/` | `ui_preview_authoring` + `ui_preview` (static libs) + `shoji` | The authored-UI previewer ("Shoji - UI Previewer"): renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. Same split as Kyusu: the authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the executable is the shell. Built to fold into Kyusu: every panel takes a `UiPreviewSession&`, and consolidation is constructing one in Kyusu's composition root and adding these panels under a workspace tab. |
 
 Product names (Kyusu, Shudei, Kettle, Shoji) exist only on executables and
 window titles; internal types stay mechanically named.
@@ -128,7 +128,7 @@ offscreen target), and the browser/inspector/preview panels. Live
 preview swaps the working description into the resident material via
 `MaterialAssetLoader::CommitReload`.
 
-Launcher (`editor/kettle/src/`, flat): `LauncherApp` + `LauncherServices`,
+Launcher (`editor/project_browser/src/`, flat): `LauncherApp` + `LauncherServices`,
 `ProjectCatalog` (recent projects JSON in the user config dir,
 headless-tested), `ProjectBrowserPanel` (recent list, create form, settings
 editor).
@@ -159,6 +159,9 @@ format boundary; the editor's own types use document/scene vocabulary.
 - Editor depends on engine, never the reverse.
 - `editor_common` never includes an application-only subsystem; applications
   link `editor_common`, never each other.
+- Workspace trees (level, material, data, animation, UI preview, project
+  browser) never include one another's headers; only `editor/kyusu` composes
+  them.
 - Each application's `app/` (or services) layer sits on top; it composes
   everything and is depended on by nothing.
 - Core abstractions (`commands/`, `selection/`, `tools/`, `interaction/`,

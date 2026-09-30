@@ -1,6 +1,6 @@
 #include "MaterialEditorServices.h"
 
-#include "MaterialBrowserPanel.h"
+#include "MaterialFilesPanel.h"
 #include "MaterialInspectorPanel.h"
 #include "MaterialPreviewPanel.h"
 #include "MaterialPreviewRenderFeature.h"
@@ -181,9 +181,9 @@ void MaterialEditorServices::BuildUi()
         {});
     UiFeature->SetSaveAllAction([this]() { SaveAllMaterials(); });
 
-    UiFeature->AddPanel(std::make_unique<MaterialBrowserPanel>(
+    UiFeature->AddPanel(std::make_unique<MaterialFilesPanel>(
         *Materials, Tabs,
-        MaterialBrowserPanel::Actions{
+        MaterialFilesPanel::Actions{
             .Open = [this](const std::string& path) { OpenMaterial(path); },
             .CreateNew = [this](const std::string& name) { CreateMaterial(name, false); },
             .Duplicate = [this](const std::string& name) { CreateMaterial(name, true); },

@@ -29,7 +29,7 @@
 class SourceReloadRoots;
 class EditorUiFeature;
 class EditorConsolePanel;
-class MaterialBrowserPanel;
+class MaterialPickerPanel;
 class MaterialThumbnailCache;
 class ViewportPanel;
 class EditorRenderFeature;
@@ -127,7 +127,7 @@ private:
     ViewportPanel* PerspectivePanel = nullptr;
     ViewportPanel* OrthoPanel = nullptr;
     // Held for the Active Material panel's Browse jump (Reveal()).
-    MaterialBrowserPanel* Browser = nullptr;
+    MaterialPickerPanel* Browser = nullptr;
     // Owned by the engine renderer; kept here so BuildUi can hand its viewport target
     // cache to ViewportPanel (the panel composites those targets via ImGui::Image).
     EditorRenderFeature* RenderFeature = nullptr;

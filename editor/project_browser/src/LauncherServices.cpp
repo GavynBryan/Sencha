@@ -188,7 +188,7 @@ std::string LauncherServices::ResolveEditorBinary(const char* sourceDir, const c
     if (std::filesystem::exists(candidate, ec))
         return candidate.string();
 
-    // Build tree: build/editor/kettle/ next to build/editor/<source dir>/<name>.
+    // Build tree: build/editor/project_browser/ next to build/editor/<source dir>/<name>.
     candidate = baseDir.parent_path() / sourceDir / binaryName;
     if (std::filesystem::exists(candidate, ec))
         return candidate.string();

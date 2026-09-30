@@ -17,10 +17,10 @@ struct MaterialAsset;
 // cache is trimmed to the editor.materials.thumbnail_budget cvar after every
 // draw, so an arbitrarily large library scrolls without holding every base
 // color texture resident.
-class MaterialBrowserPanel : public IEditorPanel
+class MaterialPickerPanel : public IEditorPanel
 {
 public:
-    MaterialBrowserPanel(MaterialLibrary& materials,
+    MaterialPickerPanel(MaterialLibrary& materials,
                          MaterialThumbnailCache& thumbnails,
                          ActiveMaterialState& activeMaterial,
                          const ConsoleRegistry& console,

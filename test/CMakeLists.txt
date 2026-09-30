@@ -250,34 +250,18 @@ endif()
 if(EDITOR_TEST_SOURCES AND TARGET level_authoring)
     add_executable(editor_process_probe editor_process/ProcessProbe.cpp)
     sencha_warnings(editor_process_probe)
-    # The level editor's authoring half arrives as a library; only the other editor
-    # applications, which have no such split, are still listed by hand.
-    add_executable(editor_tests
-        ${EDITOR_TEST_SOURCES}
-        ${CMAKE_SOURCE_DIR}/editor/common/src/ui/EditorThemeFile.cpp
-        ${CMAKE_SOURCE_DIR}/editor/material_editor/src/MaterialEditSession.cpp
-        ${CMAKE_SOURCE_DIR}/editor/material_editor/src/MaterialTabSet.cpp
-        ${CMAKE_SOURCE_DIR}/editor/material_editor/src/PreviewPrimitives.cpp
-        ${CMAKE_SOURCE_DIR}/editor/kettle/src/ProjectCatalog.cpp
-        # The data editor's GUI-free half: its file operations and the movement
-        # authoring model. Its panels stay out by construction.
-        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/DataEditorWorkspace.cpp
-        ${CMAKE_SOURCE_DIR}/editor/common/src/ui/DataSubtypeEditorRegistry.cpp
-        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputBindingSummary.cpp
-        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/input/InputControlCapture.cpp
-        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementLayerSummary.cpp
-        ${CMAKE_SOURCE_DIR}/editor/data_editor/src/movement/MovementResponseSim.cpp)
-    # editor/ for the shared fonts, and the flat application trees. The level
-    # editor's and editor_common's include paths come with level_authoring, which is also
-    # what lets a test include a shell-only header (a panel) without compiling it.
-    target_include_directories(editor_tests PRIVATE
-        ${CMAKE_SOURCE_DIR}/editor
-        ${CMAKE_SOURCE_DIR}/editor/material_editor/src
-        ${CMAKE_SOURCE_DIR}/editor/kettle/src
-        ${CMAKE_SOURCE_DIR}/editor/data_editor/src)
-    # The previewer's authoring half arrives as a library too, and its tests
-    # open the shipped documents from the source tree with their sidecars.
-    target_link_libraries(editor_tests PRIVATE level_authoring ui_preview_authoring animation_authoring GTest::gtest_main)
+    # Every editor tree arrives as a library. Static linking pulls only the
+    # objects a test references, so a test of a document set or a file operation
+    # does not drag in the panels beside it; including a shell-only header (a
+    # panel) without compiling it is what the libraries' include paths allow.
+    add_executable(editor_tests ${EDITOR_TEST_SOURCES})
+    # editor/ for the shared fonts.
+    target_include_directories(editor_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor)
+    # The previewer's tests open the shipped documents from the source tree
+    # with their sidecars.
+    target_link_libraries(editor_tests PRIVATE
+        level_authoring ui_preview_authoring animation_authoring
+        material_editor data_editor project_browser GTest::gtest_main)
     target_include_directories(editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
     target_compile_definitions(editor_tests PRIVATE SENCHA_REPO_ROOT="${CMAKE_SOURCE_DIR}")
     target_compile_definitions(editor_tests PRIVATE
