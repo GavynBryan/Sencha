@@ -15,7 +15,6 @@
 #include "document/BrushBake.h"
 #include "document/DocumentFileActions.h"
 #include "document/DocumentSerialization.h"
-#include "document/LightingReadModel.h"
 #include "EditorCookRuntime.h"
 #include "project/MaterialLibrary.h"
 #include "document/commands/BakeBrushToMeshCommand.h"
@@ -29,7 +28,6 @@
 #include "ui/EditorUiStyle.h"
 #include "ui/chrome/ChromeControls.h"
 #include "document/commands/SceneInstanceCommands.h"
-#include "ui/LightingPanel.h"
 #include "render/RenderFeatureDetach.h"
 #include "documents/DocumentSourceSet.h"
 #include "ui/MaterialThumbnailCache.h"
@@ -43,6 +41,7 @@
 #include "workspace/MaterialExplorer.h"
 #include "workspace/PrefabExplorer.h"
 #include "workspace/EntityVerbs.h"
+#include "workspace/LightingDiagnostics.h"
 #include "workspace/PartitionOutline.h"
 #include "workspace/WorldExplorer.h"
 #include "scene_source/SceneSourcePaths.h"
@@ -150,6 +149,7 @@ LevelWorkspace::~LevelWorkspace()
         SetRelativeMouseMode(*Window, false);
     // Its problems go with it.
     Problems.Clear("world");
+    Problems.Clear("lighting");
 
     // The panels and chrome first: they hold references into everything below.
     Surface = WorkspaceView{};
@@ -700,51 +700,40 @@ void LevelWorkspace::BuildUi()
     const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
         return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
     };
-    // Same reason as the viewport panels: the shadow readout is the render
-    // feature's own state, so there is nothing to show without it.
-    if (RenderFeature != nullptr)
-    {
-        Surface.AddPanel(std::make_unique<LightingPanel>(
-            RenderFeature->ShadowReadout(), Workspace->Selection, *Commands,
-            [this] { if (RenderFeature != nullptr) RenderFeature->InvalidateShadows(); },
-            [this]() -> std::uint32_t {
-                return LightingReadModel::CountDirectBakeLights(
-                    Workspace->World.FocusDocument().GetRegistry().Components);
-            },
-            [this, previewBuilder]() -> LightingPanel::BakedPreviewState {
-                SceneRenderQueueBuilder* builder = previewBuilder();
-                const CookSession::Record* record =
-                    CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr;
-                if (builder == nullptr || record == nullptr)
-                    return LightingPanel::BakedPreviewState::Unavailable;
-                if (!builder->LightmapPreviewEnabled() || !builder->LightmapPreviewLoaded())
-                    return LightingPanel::BakedPreviewState::Off;
-                return builder->LightmapPreviewStale()
-                    ? LightingPanel::BakedPreviewState::Stale
-                    : LightingPanel::BakedPreviewState::Fresh;
-            },
-            [this, previewBuilder](bool enabled) {
-                SceneRenderQueueBuilder* builder = previewBuilder();
-                if (builder == nullptr)
-                    return;
-                if (enabled && CookRuntime != nullptr)
-                    CookRuntime->RefreshPreviewNow(*builder);
-                builder->SetLightmapPreviewEnabled(enabled);
-            },
-            [this]() -> LightingPanel::ProbeSummary {
-                LightingPanel::ProbeSummary summary;
-                summary.AuthoredVolumes = LightingReadModel::CountAuthoredIrradianceVolumes(
-                    Workspace->World.FocusDocument().GetRegistry().Components);
-                if (const CookSession::Record* record =
-                        CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr)
-                {
-                    summary.HasCook = true;
-                    summary.CookedVolumes = record->ProbeVolumeCount;
-                    summary.CookedProbes = record->ProbeCount;
-                }
-                return summary;
-            }));
-    }
+    const auto lastCook = [this]() -> const CookSession::Record* {
+        return CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr;
+    };
+    LightingReports lighting{
+        .Shadows = RenderFeature != nullptr ? &RenderFeature->ShadowReadout() : nullptr,
+        .Preview = [previewBuilder, lastCook] {
+            const SceneRenderQueueBuilder* builder = previewBuilder();
+            if (builder == nullptr || lastCook() == nullptr)
+                return BakedLightingPreview::Unavailable;
+            if (!builder->LightmapPreviewEnabled() || !builder->LightmapPreviewLoaded())
+                return BakedLightingPreview::Off;
+            return builder->LightmapPreviewStale() ? BakedLightingPreview::Stale : BakedLightingPreview::Fresh;
+        },
+        .ShowPreview = [this, previewBuilder](bool enabled) {
+            SceneRenderQueueBuilder* builder = previewBuilder();
+            if (builder == nullptr)
+                return;
+            if (enabled && CookRuntime != nullptr)
+                CookRuntime->RefreshPreviewNow(*builder);
+            builder->SetLightmapPreviewEnabled(enabled);
+        },
+        .RerenderShadows = [this] {
+            if (RenderFeature != nullptr)
+                RenderFeature->InvalidateShadows();
+        },
+        .LastCook = [lastCook]() -> std::optional<LightingCook> {
+            const CookSession::Record* record = lastCook();
+            if (record == nullptr)
+                return std::nullopt;
+            return LightingCook{ .ProbeVolumes = record->ProbeVolumeCount, .Probes = record->ProbeCount };
+        },
+    };
+    Lighting = std::make_unique<LightingDiagnostics>(*Workspace, *Commands, std::move(lighting));
+    Lighting->Offer(Catalog, ActionHandlers);
     // Material picking surfaces: thumbnail residency for both panels, bounded
     // by the budget cvar so a large library never pins every base color
     // texture on the GPU.
@@ -1221,9 +1210,10 @@ WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
 
 WorkspaceSelectionFacet LevelWorkspace::Selection()
 {
-    if (Verbs == nullptr || Entities == nullptr || Uv == nullptr || Components == nullptr || Partition == nullptr)
+    if (Verbs == nullptr || Entities == nullptr || Uv == nullptr || Components == nullptr || Partition == nullptr
+        || Lighting == nullptr)
         return {};
-    return SelectionOf(*Workspace, *Verbs, *Entities, *Uv, *Components, *Partition);
+    return SelectionOf(*Workspace, *Verbs, *Entities, *Uv, *Components, *Partition, *Lighting);
 }
 
 std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const
@@ -1264,21 +1254,19 @@ void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_vie
 
 void LevelWorkspace::PublishProblems()
 {
-    if (Partition == nullptr || LevelDocument == nullptr)
+    if (LevelDocument == nullptr)
         return;
-    std::vector<Problem> problems = Partition->Problems(DocumentRef{ .Source = LevelDocument.get(), .Key = {} });
-    std::vector<std::string> shown;
-    for (const Problem& problem : problems)
-        shown.push_back(problem.Location + " " + problem.Message);
-    if (shown == PublishedProblems)
-        return;
-    Problems.Publish("world", std::move(problems));
-    PublishedProblems = std::move(shown);
+    const DocumentRef document{ .Source = LevelDocument.get(), .Key = {} };
+    if (Partition != nullptr)
+        Problems.Publish("world", Partition->Problems(document));
+    if (Lighting != nullptr)
+        Problems.Publish("lighting", Lighting->Problems(document));
 }
 
 bool LevelWorkspace::RevealProblem(const Problem& problem)
 {
-    return Partition != nullptr && Partition->Reveal(problem.Location);
+    return (Partition != nullptr && Partition->Reveal(problem.Location))
+        || (Lighting != nullptr && Lighting->Reveal(problem.Location));
 }
 
 AssetType LevelWorkspace::HeldType() const

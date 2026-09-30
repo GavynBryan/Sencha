@@ -7,6 +7,7 @@
 #include "brush/BrushMeshStore.h"
 #include "brush/BrushRecord.h"
 #include "document/BrushComponents.h"
+#include "selection/SelectableRef.h"
 
 #include <core/identity/Id.h>
 #include <ecs/EntityId.h>
@@ -211,6 +212,9 @@ public:
     // against the visible result. Two names so each consumer chooses on
     // purpose; they agree for a brush without modifiers.
     [[nodiscard]] std::optional<Aabb3d> EvaluatedWorldBounds(EntityId entity) const;
+    // What a selection spans: each selected entity's evaluated bounds, or its
+    // position when it has none (a light, an empty); nullopt when nothing does.
+    [[nodiscard]] std::optional<Aabb3d> SelectionWorldBounds(std::span<const SelectableRef> selection) const;
     // The retained world-space facts every interactive consumer reads: piece
     // placements and bounds, union and source bounds, source world elements.
     // Queries validate their key on access, so they are exact in the same

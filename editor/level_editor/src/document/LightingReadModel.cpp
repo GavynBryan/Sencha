@@ -11,33 +11,22 @@ namespace
 // A light type only participates when the document's world registered it, which
 // depends on the loaded game module.
 template <typename T>
-std::uint32_t CountDirectBakeOf(const World& components)
+bool BakesDirectAs(const World& components, EntityId entity)
 {
     if (!components.IsRegistered<T>())
-        return 0;
-    std::uint32_t count = 0;
-    components.ForEachComponent<T>(
-        [&](EntityId, const T& light)
-        {
-            if (light.BakeContribution == LightBakeContribution::Direct)
-                ++count;
-        });
-    return count;
+        return false;
+    const T* light = components.TryGet<T>(entity);
+    return light != nullptr && light->BakeContribution == LightBakeContribution::Direct;
 }
 }
 
-std::uint32_t LightingReadModel::CountDirectBakeLights(const World& components)
+bool LightingReadModel::BakesDirect(const World& components, EntityId entity)
 {
-    return CountDirectBakeOf<PointLightComponent>(components)
-         + CountDirectBakeOf<SpotLightComponent>(components);
+    return BakesDirectAs<PointLightComponent>(components, entity) || BakesDirectAs<SpotLightComponent>(components, entity);
 }
 
-std::uint32_t LightingReadModel::CountAuthoredIrradianceVolumes(const World& components)
+bool LightingReadModel::IsIrradianceVolume(const World& components, EntityId entity)
 {
-    if (!components.IsRegistered<IrradianceVolumeComponent>())
-        return 0;
-    std::uint32_t count = 0;
-    components.ForEachComponent<IrradianceVolumeComponent>(
-        [&](EntityId, const IrradianceVolumeComponent&) { ++count; });
-    return count;
+    return components.IsRegistered<IrradianceVolumeComponent>()
+        && components.TryGet<IrradianceVolumeComponent>(entity) != nullptr;
 }

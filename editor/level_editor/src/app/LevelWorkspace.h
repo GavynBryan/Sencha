@@ -48,6 +48,7 @@ class ElementVerbs;
 class MaterialExplorer;
 class PrefabExplorer;
 class ProblemList;
+class LightingDiagnostics;
 class PartitionOutline;
 class EntityVerbs;
 class WorldExplorer;
@@ -180,10 +181,8 @@ private:
     std::unique_ptr<LevelDocumentSource> LevelDocument;
     // After the document its questions act on, so they are withdrawn first.
     PromptQueue::Asker Prompts;
-    // Where the world's validation is reported.
+    // Where the world's validation and the lighting's troubles are reported.
     ProblemList& Problems;
-    // What was last reported there, so an unchanged set is not published again.
-    std::vector<std::string> PublishedProblems;
     // The held-key radial menus: the tools over the workspace's registry, the
     // gizmo modes over the manipulator session. One mechanism, two models.
     std::unique_ptr<ToolRegistryMenuModel> ToolMenu;
@@ -201,6 +200,7 @@ private:
     std::unique_ptr<EntityVerbs> Entities;
     std::unique_ptr<WorldExplorer> WorldOutline;
     std::unique_ptr<PartitionOutline> Partition;
+    std::unique_ptr<LightingDiagnostics> Lighting;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
     // The tool in hand's settings, as the operation facet hands them out.

@@ -1,18 +1,16 @@
 #pragma once
 
-#include <cstdint>
+#include <ecs/EntityId.h>
 
 class World;
 
-// Counts the lighting authoring surfaces a panel reports on. These are reads
-// over the document, named so they sit beside the document rather than inline in
-// the UI construction that happens to display them.
+// What the document says about an entity's part in the lighting, as reads over
+// its components.
 namespace LightingReadModel
 {
-// Lights whose contribution is baked rather than evaluated at runtime, across
-// every light type that can carry that setting.
-[[nodiscard]] std::uint32_t CountDirectBakeLights(const World& components);
+// A light whose contribution is baked rather than evaluated at runtime, of any
+// light type that can carry that setting.
+[[nodiscard]] bool BakesDirect(const World& components, EntityId entity);
 
-// Irradiance volumes placed by the author, whatever the cook has made of them.
-[[nodiscard]] std::uint32_t CountAuthoredIrradianceVolumes(const World& components);
+[[nodiscard]] bool IsIrradianceVolume(const World& components, EntityId entity);
 }

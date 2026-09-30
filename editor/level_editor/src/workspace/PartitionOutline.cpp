@@ -41,36 +41,6 @@ std::string ZoneName(const WorldPartitionManifest& manifest, ZoneId zone)
                                 : header->Name;
 }
 
-PropertyNode Note(std::string key, std::string label, std::string text)
-{
-    PropertyNode node;
-    node.Key = std::move(key);
-    node.Descriptor.Kind = PropertyKind::Text;
-    node.Descriptor.Label = std::move(label);
-    node.Descriptor.ReadOnly = true;
-    node.Value = std::move(text);
-    return node;
-}
-
-PropertyNode Named(std::string key, std::string label, std::string value)
-{
-    PropertyNode node;
-    node.Key = std::move(key);
-    node.Descriptor.Kind = PropertyKind::Text;
-    node.Descriptor.Label = std::move(label);
-    node.Value = std::move(value);
-    return node;
-}
-
-PropertyNode Group(std::string key, std::string label)
-{
-    PropertyNode node;
-    node.Key = std::move(key);
-    node.Descriptor.Kind = PropertyKind::Group;
-    node.Descriptor.Label = std::move(label);
-    return node;
-}
-
 // A starter radius for a graph turned to Proximity: the largest horizontal
 // half-extent among its zones, so the first preview reaches the neighbours'
 // near faces. 100 when no zone has measurable bounds yet.
@@ -91,7 +61,7 @@ double SeedGraphRadius(const WorldPartitionManifest& manifest, GraphId graph)
 PropertyNode Inheritable(std::string key, std::string label, std::string resolved, bool authored,
                          std::string tooltip)
 {
-    PropertyNode node = Named(std::move(key), std::move(label), std::move(resolved));
+    PropertyNode node = TextProperty(std::move(key), std::move(label), std::move(resolved));
     node.Descriptor.Tooltip = std::move(tooltip) + (authored ? "" : " (inherited; empty it to inherit again)");
     return node;
 }
@@ -318,7 +288,7 @@ std::vector<PropertyNode> PartitionOutline::ZoneNodes(ZoneId id) const
     const EditorDocument* document = open ? world.ZoneDocument(id) : nullptr;
     const bool dirty = document != nullptr && document->IsDirty();
 
-    PropertyNode group = Group("zone", "Zone");
+    PropertyNode group = GroupProperty("zone", "Zone");
     if (!focus)
         group.Descriptor.Verbs.push_back({ .Id = "focus", .Label = "Focus" });
     if (!open)
@@ -334,7 +304,7 @@ std::vector<PropertyNode> PartitionOutline::ZoneNodes(ZoneId id) const
     if (!others.empty())
         group.Descriptor.Verbs.push_back({ .Id = "link", .Label = "Teleport Link To", .Choices = std::move(others) });
 
-    group.Children.push_back(Named("name", "Name", zone->Name));
+    group.Children.push_back(TextProperty("name", "Name", zone->Name));
     PropertyNode graph;
     graph.Key = "graph";
     graph.Descriptor.Kind = PropertyKind::Choice;
@@ -344,10 +314,10 @@ std::vector<PropertyNode> PartitionOutline::ZoneNodes(ZoneId id) const
     if (const GraphRecord* record = FindGraph(manifest, zone->Graph))
         graph.Value = record->Name;
     group.Children.push_back(std::move(graph));
-    group.Children.push_back(Note("state", "State", focus ? "Focus" : open ? "Loaded as context" : "Not loaded"));
+    group.Children.push_back(NoteProperty("state", "State", focus ? "Focus" : open ? "Loaded as context" : "Not loaded"));
     const Vec3d min = zone->Bounds.Min;
     const Vec3d max = zone->Bounds.Max;
-    group.Children.push_back(Note("bounds", zone->BoundsOverridden ? "Bounds (set)" : "Bounds",
+    group.Children.push_back(NoteProperty("bounds", zone->BoundsOverridden ? "Bounds (set)" : "Bounds",
                                   std::format("{:g}, {:g}, {:g} to {:g}, {:g}, {:g}", min.X, min.Y, min.Z, max.X,
                                               max.Y, max.Z)));
     return { std::move(group) };
@@ -369,9 +339,9 @@ std::vector<PropertyNode> PartitionOutline::GraphNodes(GraphId id) const
                          : WorldPartitionStreamingConfig{};
     const GraphStreamingConfig& authored = graph->Streaming;
 
-    PropertyNode group = Group("graph", "Graph");
+    PropertyNode group = GroupProperty("graph", "Graph");
     group.Descriptor.Verbs.push_back({ .Id = "add_zone", .Label = "Add Zone" });
-    group.Children.push_back(Named("name", "Name", graph->Name));
+    group.Children.push_back(TextProperty("name", "Name", graph->Name));
     const std::size_t shape = !authored.Radius.has_value() ? 0 : *authored.Radius > 0.0 ? 1 : 2;
     group.Children.push_back(ChoiceProperty("shape", "Streaming", kShapes, shape,
                                             "Proximity loads zones by distance; Graph through authored connections"));
@@ -388,18 +358,18 @@ std::vector<PropertyNode> PartitionOutline::WorldNodes() const
 {
     WorldDocument& world = Workspace.World;
     const WorldPartitionManifest& manifest = world.Manifest();
-    PropertyNode group = Group("world", "World");
+    PropertyNode group = GroupProperty("world", "World");
     group.Descriptor.Verbs.push_back({ .Id = "add_graph", .Label = "Add Graph" });
     if (!world.IsWorldSceneFocused())
         group.Descriptor.Verbs.push_back({ .Id = "focus", .Label = "Focus World Scene" });
     if (world.FocusZone().IsValid())
         group.Descriptor.Verbs.push_back({ .Id = "add_dock", .Label = "Add Dock in Focus Zone" });
-    group.Children.push_back(Note("zones", "Zones", std::to_string(manifest.Zones.size())));
+    group.Children.push_back(NoteProperty("zones", "Zones", std::to_string(manifest.Zones.size())));
 
     // Old connections block new-format saves until they are replaced.
     if (!manifest.Transitions.empty())
     {
-        PropertyNode legacy = Group("legacy", "Legacy transitions");
+        PropertyNode legacy = GroupProperty("legacy", "Legacy transitions");
         legacy.Descriptor.Tooltip = "Old connections block new-format saves. Teleport rows become links; a doorway "
                                     "or seam row needs a Dock placed at the crossing, then discarding.";
         if (std::ranges::any_of(manifest.Transitions, [](const TransitionRecord& transition) {
@@ -408,7 +378,7 @@ std::vector<PropertyNode> PartitionOutline::WorldNodes() const
             legacy.Descriptor.Verbs.push_back({ .Id = "migrate", .Label = "Migrate Teleport Rows" });
         for (const TransitionRecord& transition : manifest.Transitions)
         {
-            PropertyNode row = Note("transition:" + TransitionIdToString(transition.Id),
+            PropertyNode row = NoteProperty("transition:" + TransitionIdToString(transition.Id),
                                     ZoneName(manifest, transition.From) + " to " + ZoneName(manifest, transition.To),
                                     transition.Name);
             row.Descriptor.Verbs = { { .Id = "convert", .Label = "Convert to Link" },
@@ -422,7 +392,7 @@ std::vector<PropertyNode> PartitionOutline::WorldNodes() const
     // edit nothing.
     if (WorldViewSettings* view = world.ViewSettings())
     {
-        PropertyNode preview = Group("preview", "Streaming preview");
+        PropertyNode preview = GroupProperty("preview", "Streaming preview");
         preview.Children.push_back(ToggleProperty("preview.on", "Show", view->StreamingPreview));
         const ZoneId focus = view->PreviewFocus.IsValid() ? view->PreviewFocus : world.FocusZone();
         if (view->StreamingPreview && focus.IsValid())
@@ -448,7 +418,7 @@ std::vector<PropertyNode> PartitionOutline::WorldNodes() const
                      : record.Desired.Visible                        ? ", render preload"
                                                                      : ", dormant preload";
                 preview.Children.push_back(
-                    Note("demand:" + ZoneIdToString(record.Zone), ZoneName(manifest, record.Zone), std::move(why)));
+                    NoteProperty("demand:" + ZoneIdToString(record.Zone), ZoneName(manifest, record.Zone), std::move(why)));
             }
         }
         group.Children.push_back(std::move(preview));

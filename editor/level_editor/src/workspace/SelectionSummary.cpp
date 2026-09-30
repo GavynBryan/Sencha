@@ -5,6 +5,7 @@
 #include "workspace/ElementVerbs.h"
 #include "workspace/EntityVerbs.h"
 #include "workspace/FaceUvSource.h"
+#include "workspace/LightingDiagnostics.h"
 #include "workspace/PartitionOutline.h"
 
 #include <algorithm>
@@ -20,7 +21,7 @@ std::string Counted(std::size_t count, std::string_view one, std::string_view ma
 
 WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& verbs,
                                     const EntityVerbs& entityVerbs, FaceUvSource& uv, IPropertySource& components,
-                                    PartitionOutline& partition)
+                                    PartitionOutline& partition, LightingDiagnostics& lighting)
 {
     const std::span<const SelectableRef> selected = workspace.Selection.GetSelection();
     if (selected.empty())
@@ -73,7 +74,11 @@ WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& ve
             ? EntityLabel(workspace.World.FocusDocument(), one->Entity)
             : Counted(objects, "object", "objects");
         if (objects == 1)
+        {
+            if (!lighting.Nodes().empty())
+                facet.Sections.push_back({ .Heading = "Lighting", .Source = &lighting });
             facet.Details.push_back({ .Heading = {}, .Source = &components });
+        }
         if (!facet.Staged)
             for (std::string& verb : entityVerbs.Relevant())
                 facet.Actions.push_back(std::move(verb));

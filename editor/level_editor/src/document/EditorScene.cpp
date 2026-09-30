@@ -616,6 +616,21 @@ std::optional<Aabb3d> EditorScene::EvaluatedWorldBounds(EntityId entity) const
     return SourceWorldBounds(entity);
 }
 
+std::optional<Aabb3d> EditorScene::SelectionWorldBounds(std::span<const SelectableRef> selection) const
+{
+    Aabb3d bounds = Aabb3d::Empty();
+    for (const SelectableRef& ref : selection)
+    {
+        if (!ref.Entity.IsValid())
+            continue;
+        if (const std::optional<Aabb3d> entityBounds = EvaluatedWorldBounds(ref.Entity))
+            bounds.ExpandToInclude(*entityBounds);
+        else if (const Transform3f* transform = TryGetWorldTransform(ref.Entity))
+            bounds.ExpandToInclude(transform->Position);
+    }
+    return bounds.IsValid() ? std::optional<Aabb3d>(bounds) : std::nullopt;
+}
+
 Registry& EditorScene::GetRegistry()
 {
     return Registry_;

@@ -93,17 +93,6 @@ namespace
         return row;
     }
 
-    PropertyNode Note(std::string key, std::string label, std::string text)
-    {
-        PropertyNode node;
-        node.Key = std::move(key);
-        node.Descriptor.Kind = PropertyKind::Text;
-        node.Descriptor.Label = std::move(label);
-        node.Descriptor.ReadOnly = true;
-        node.Value = std::move(text);
-        return node;
-    }
-
     PropertyNode Advanced(PropertyNode node)
     {
         node.Descriptor.Advanced = true;
@@ -295,12 +284,12 @@ namespace
                 row.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove" });
                 row.Children = ModifierFields(prefix, modifier);
                 if (failed == i)
-                    row.Children.push_back(Note(prefix + ".failed", "Not shown",
+                    row.Children.push_back(NoteProperty(prefix + ".failed", "Not shown",
                                                 overHardLimit ? "Exceeds the piece limit: the level will not cook."
                                                               : "Exceeds the preview piece budget."));
                 modifiers.Children.push_back(std::move(row));
             }
-            return { Note("brush", "Brush", std::to_string(brush->Id.Value)), std::move(modifiers) };
+            return { NoteProperty("brush", "Brush", std::to_string(brush->Id.Value)), std::move(modifiers) };
         }
 
         PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,

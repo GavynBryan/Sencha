@@ -265,7 +265,7 @@ public:
         group.Descriptor.Verbs = { { .Id = "swap", .Label = "Swap Sides" },
                                    { .Id = "suggest", .Label = "Suggest Zones From Bounds" } };
 
-        PropertyNode id = Note("id", "Id", std::format("{:016x}", dock->Id.Value));
+        PropertyNode id = NoteProperty("id", "Id", std::format("{:016x}", dock->Id.Value));
         id.Descriptor.Verbs.push_back({ .Id = "generate", .Label = "Generate" });
         group.Children.push_back(std::move(id));
         group.Children.push_back(ZoneChoice("zone_a", "Zone A", manifest, dock->ZoneA));
@@ -282,7 +282,7 @@ public:
             if (!AmbiguousB.empty())
                 group.Children.push_back(CandidateChoice("candidate_b", "Side B could be", manifest, AmbiguousB));
             if (!SuggestionStatus.empty())
-                group.Children.push_back(Note("suggestion", "Suggestion", SuggestionStatus));
+                group.Children.push_back(NoteProperty("suggestion", "Suggestion", SuggestionStatus));
         }
 
         bool reported = false;
@@ -290,13 +290,13 @@ public:
         {
             if (record.Kind != ContentRiskSourceKind::Dock || record.SourceId != dock->Id.Value)
                 continue;
-            group.Children.push_back(Note("risk" + std::to_string(group.Children.size()),
+            group.Children.push_back(NoteProperty("risk" + std::to_string(group.Children.size()),
                                           record.Severity == ContentRiskSeverity::Error ? "Error" : "Warning",
                                           record.Message));
             reported = true;
         }
         if (!reported)
-            group.Children.push_back(Note("valid", "Checked", "Assignments and geometry are valid"));
+            group.Children.push_back(NoteProperty("valid", "Checked", "Assignments and geometry are valid"));
         return { std::move(group) };
     }
 
@@ -385,17 +385,6 @@ private:
     static std::size_t DirectionIndex(std::uint8_t directions)
     {
         return directions == DockDirectionBoth ? 0 : directions == DockDirectionAToB ? 1 : 2;
-    }
-
-    static PropertyNode Note(std::string key, std::string label, std::string text)
-    {
-        PropertyNode node;
-        node.Key = std::move(key);
-        node.Descriptor.Kind = PropertyKind::Text;
-        node.Descriptor.Label = std::move(label);
-        node.Descriptor.ReadOnly = true;
-        node.Value = std::move(text);
-        return node;
     }
 
     static PropertyNode ZoneChoice(std::string key, std::string label, const WorldPartitionManifest& manifest, ZoneId current)

@@ -61,26 +61,6 @@ namespace
         return name.empty() ? std::string("<unregistered>") : std::string(name);
     }
 
-    PropertyNode Note(std::string key, std::string label, std::string text)
-    {
-        PropertyNode node;
-        node.Key = std::move(key);
-        node.Descriptor.Kind = PropertyKind::Text;
-        node.Descriptor.Label = std::move(label);
-        node.Descriptor.ReadOnly = true;
-        node.Value = std::move(text);
-        return node;
-    }
-
-    PropertyNode Group(std::string key, std::string label)
-    {
-        PropertyNode node;
-        node.Key = std::move(key);
-        node.Descriptor.Kind = PropertyKind::Group;
-        node.Descriptor.Label = std::move(label);
-        return node;
-    }
-
     // "tag:12" -> 12, for a key naming a registry entry.
     std::optional<std::uint32_t> EntryOf(std::string_view key, std::string_view prefix)
     {
@@ -109,7 +89,7 @@ namespace
         void AppendTo(EntityId entity, std::vector<PropertyNode>& nodes) const
         {
             if (entity == Entity && !Message.empty())
-                nodes.push_back(Note("refused", "Refused", Message));
+                nodes.push_back(NoteProperty("refused", "Refused", Message));
         }
 
     private:
@@ -138,9 +118,9 @@ namespace
             if (held == nullptr)
                 return {};
             if (registry == nullptr)
-                return { Note("missing", "Tags", "This document has no gameplay tag registry.") };
+                return { NoteProperty("missing", "Tags", "This document has no gameplay tag registry.") };
 
-            PropertyNode tags = Group("tags", "Tags");
+            PropertyNode tags = GroupProperty("tags", "Tags");
             std::vector<std::string> offered;
             ForEachRegistered<GameplayTagId>(*registry, [&](GameplayTagId tag) {
                 if (!held->HasExact(tag))
@@ -246,9 +226,9 @@ namespace
             if (held == nullptr)
                 return {};
             if (registry == nullptr)
-                return { Note("missing", "Attributes", "This document has no attribute registry.") };
+                return { NoteProperty("missing", "Attributes", "This document has no attribute registry.") };
 
-            PropertyNode attributes = Group("attributes", "Attributes");
+            PropertyNode attributes = GroupProperty("attributes", "Attributes");
             std::vector<std::string> offered;
             ForEachRegistered<AttributeId>(*registry, [&](AttributeId id) {
                 if (!held->Has(id))
@@ -343,9 +323,9 @@ namespace
             if (held == nullptr)
                 return {};
             if (registry == nullptr)
-                return { Note("missing", "Abilities", "This document has no ability registry.") };
+                return { NoteProperty("missing", "Abilities", "This document has no ability registry.") };
 
-            PropertyNode abilities = Group("abilities", "Abilities");
+            PropertyNode abilities = GroupProperty("abilities", "Abilities");
             std::vector<std::string> offered;
             ForEachRegistered<AbilityId>(*registry, [&](AbilityId id) {
                 if (!held->Has(id))
@@ -356,7 +336,7 @@ namespace
             for (std::uint8_t i = 0; i < held->Count; ++i)
             {
                 const AbilityId id = held->Abilities[i];
-                PropertyNode row = Note("ability:" + std::to_string(id.Value), DisplayName(registry->GetName(id)), "");
+                PropertyNode row = NoteProperty("ability:" + std::to_string(id.Value), DisplayName(registry->GetName(id)), "");
                 row.Descriptor.Verbs.push_back({ .Id = "revoke", .Label = "Revoke" });
                 abilities.Children.push_back(std::move(row));
             }
@@ -419,7 +399,7 @@ namespace
             if (held == nullptr)
                 return {};
             if (modes == nullptr)
-                return { Note("missing", "Starting mode", "This document has no locomotion mode registry.") };
+                return { NoteProperty("missing", "Starting mode", "This document has no locomotion mode registry.") };
 
             PropertyNode mode;
             mode.Key = "mode";

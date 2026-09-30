@@ -172,6 +172,10 @@ std::vector<std::string> ElementVerbs::Relevant() const
         return { "vertex.weld", "vertex.snap" };
     case MeshElementKind::Object:
     default:
+        // A brush's verbs are for brushes and what was baked from them; a light
+        // or an empty is only duplicated or deleted.
+        if (Selected(MeshElementKind::Object) == 0 && !Workspace.Actions.HasBakedSelection())
+            return { "edit.duplicate", "edit.duplicate_instance", "edit.delete" };
         return { "brush.normals", "edit.duplicate", "edit.duplicate_instance", "brush.make_unique", "brush.merge",
                  "brush.bake", "brush.revert", "brush.export", "edit.delete" };
     }

@@ -91,6 +91,8 @@ public:
     // Origin to the selection: a single selected vertex wins (exact), otherwise
     // the center of the selection's world bounds. No-op when neither resolves.
     void SetGridOriginToSelection();
+    // Brings the selection into the active view; false when it spans nothing.
+    bool FrameSelection();
     // Aligns the frame to the primary selected face: origin at its centroid, U
     // along its longest edge, V completing the basis in the face plane.
     void AlignGridToSelectedFace();

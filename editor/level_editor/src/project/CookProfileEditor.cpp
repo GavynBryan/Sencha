@@ -72,16 +72,6 @@ std::string IdStem(std::string_view name)
     return stem.empty() ? std::string("profile") : stem;
 }
 
-PropertyNode Group(std::string key, std::string label, std::vector<PropertyNode> children)
-{
-    PropertyNode node;
-    node.Key = std::move(key);
-    node.Descriptor.Kind = PropertyKind::Group;
-    node.Descriptor.Label = std::move(label);
-    node.Children = std::move(children);
-    return node;
-}
-
 void MarkReadOnly(PropertyNode& node)
 {
     node.Descriptor.ReadOnly = true;
@@ -212,8 +202,8 @@ std::vector<PropertyNode> CookProfileEditor::Nodes() const
         outputs.push_back(ChoiceProperty(std::string(kOutputPrefix) + std::string(family), Label(family),
                                          kDispositions, static_cast<std::size_t>(DispositionOf(profile, family))));
 
-    std::vector<PropertyNode> nodes{ std::move(name), Group("steps", "Steps", std::move(steps)),
-                                     Group("outputs", "Published outputs", std::move(outputs)) };
+    std::vector<PropertyNode> nodes{ std::move(name), GroupProperty("steps", "Steps", std::move(steps)),
+                                     GroupProperty("outputs", "Published outputs", std::move(outputs)) };
     if (profile.BuiltIn)
         for (PropertyNode& node : nodes)
             MarkReadOnly(node);

@@ -1,5 +1,7 @@
 #include "GraphViewerPanel.h"
 
+#include "viewport/CameraFraming.h"
+
 #include "ui/chrome/ChromeControls.h"
 
 #include "commands/CommandStack.h"
@@ -93,20 +95,10 @@ void DrawArrowhead(ImDrawList& draw, ImVec2 tip, ImVec2 tail, ImU32 color)
         ImVec2{ base.x - side.x * 4.0f, base.y - side.y * 4.0f }, color);
 }
 
-void FrameViewport(ViewportLayout& viewports, Vec3d center, float span)
+void FrameViewport(ViewportLayout& viewports, const Aabb3d& bounds)
 {
-    EditorViewport* viewport = viewports.Active();
-    if (viewport == nullptr)
-        return;
-    span = std::max(span, 1.0f);
-    if (viewport->Camera.ActiveMode == EditorCamera::Mode::Orthographic)
-    {
-        viewport->Camera.OrthoCenter = center;
-        viewport->Camera.OrthoHeight = span * 1.5f;
-        return;
-    }
-    viewport->Camera.Position = center
-        - viewport->Camera.GetForwardVector() * (span * 1.75f);
+    if (EditorViewport* viewport = viewports.Active())
+        FrameBounds(viewport->Camera, bounds);
 }
 
 } // namespace
@@ -468,9 +460,11 @@ void GraphViewerPanel::OnDraw()
                 if (const WorldDock* dock = registry.Components.TryGet<WorldDock>(clickedEdge))
                     if (const LocalTransform* transform =
                             registry.Components.TryGet<LocalTransform>(clickedEdge))
-                        FrameViewport(Viewports, transform->Value.Position,
-                                      std::max(dock->HalfExtents.X,
-                                               dock->HalfExtents.Y) * 2.0f);
+                    {
+                        const float half = std::max(dock->HalfExtents.X, dock->HalfExtents.Y);
+                        FrameViewport(Viewports, Aabb3d::FromCenterHalfExtent(transform->Value.Position,
+                                                                             Vec3d(half, half, half)));
+                    }
             }
         }
         else if (clickedZone.IsValid())
@@ -480,10 +474,7 @@ void GraphViewerPanel::OnDraw()
             if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             {
                 if (const ZoneHeader* zone = FindZone(manifest, clickedZone))
-                    FrameViewport(Viewports, zone->Bounds.Center(),
-                                  std::max({ zone->Bounds.Extent().X,
-                                             zone->Bounds.Extent().Y,
-                                             zone->Bounds.Extent().Z }));
+                    FrameViewport(Viewports, zone->Bounds);
                 (void)World.SetFocusZone(clickedZone);
             }
         }

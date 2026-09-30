@@ -13,6 +13,10 @@
 // options, a number in a range, a switch. Values travel as text both ways, the
 // property model's rule; these write it and read it back.
 
+[[nodiscard]] PropertyNode GroupProperty(std::string key, std::string label, std::vector<PropertyNode> children = {});
+[[nodiscard]] PropertyNode TextProperty(std::string key, std::string label, std::string value, std::string tooltip = {});
+// A fact shown beside the settings, never edited.
+[[nodiscard]] PropertyNode NoteProperty(std::string key, std::string label, std::string text);
 [[nodiscard]] PropertyNode ChoiceProperty(std::string key, std::string label, std::span<const std::string_view> options,
                                           std::size_t current, std::string tooltip = {});
 [[nodiscard]] PropertyNode NumberProperty(std::string key, std::string label, double value, double min, double max,

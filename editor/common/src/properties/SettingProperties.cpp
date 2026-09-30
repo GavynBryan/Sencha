@@ -4,6 +4,34 @@
 #include <charconv>
 #include <format>
 
+PropertyNode GroupProperty(std::string key, std::string label, std::vector<PropertyNode> children)
+{
+    PropertyNode node;
+    node.Key = std::move(key);
+    node.Descriptor.Kind = PropertyKind::Group;
+    node.Descriptor.Label = std::move(label);
+    node.Children = std::move(children);
+    return node;
+}
+
+PropertyNode TextProperty(std::string key, std::string label, std::string value, std::string tooltip)
+{
+    PropertyNode node;
+    node.Key = std::move(key);
+    node.Descriptor.Kind = PropertyKind::Text;
+    node.Descriptor.Label = std::move(label);
+    node.Descriptor.Tooltip = std::move(tooltip);
+    node.Value = std::move(value);
+    return node;
+}
+
+PropertyNode NoteProperty(std::string key, std::string label, std::string text)
+{
+    PropertyNode node = TextProperty(std::move(key), std::move(label), std::move(text));
+    node.Descriptor.ReadOnly = true;
+    return node;
+}
+
 PropertyNode ChoiceProperty(std::string key, std::string label, std::span<const std::string_view> options,
                             std::size_t current, std::string tooltip)
 {

@@ -42,6 +42,7 @@
 #include "viewport/GridFrame.h"
 #include "selection/SelectionFold.h"
 #include "selection/commands/SelectCommand.h"
+#include "viewport/CameraFraming.h"
 
 #include <algorithm>
 #include <array>
@@ -346,6 +347,16 @@ void EditorWorkspace::SyncOrthoViewsToGridFrame()
 void EditorWorkspace::SetGridOriginToSelection()
 {
     GridEditing::SetOriginToSelection(Grid, ActiveDocument().GetScene(), Selection.GetSelection());
+}
+
+bool EditorWorkspace::FrameSelection()
+{
+    EditorViewport* view = Layout.Active();
+    const std::optional<Aabb3d> bounds = ActiveDocument().GetScene().SelectionWorldBounds(Selection.GetSelection());
+    if (view == nullptr || !bounds.has_value())
+        return false;
+    FrameBounds(view->Camera, *bounds);
+    return true;
 }
 
 void EditorWorkspace::AlignGridToSelectedFace()

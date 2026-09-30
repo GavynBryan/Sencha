@@ -42,6 +42,7 @@ body { color: #d8dce4ff; }
 
 .theme-row:hover     { background-color: #222834ff; }
 .theme-row.selected  { background-color: #2f6fb0ff; color: #ffffffff; }
+.theme-row.disabled  { color: #6b7285ff; }
 
 .theme-dim      { color: #aab3c4ff; }
 .theme-muted    { color: #6b7285ff; }

@@ -249,3 +249,17 @@ do the work and delete the entry.
   naming a drop target), `MakeReparentEntitiesCommand`'s reorder form, and the
   shell's outline rows.
 - **Trigger:** a designer ordering siblings, which no action can do today.
+
+## A picture of the shadow atlas
+
+- **What:** a selected light's card reads its shadow tier (and any downgrade),
+  its slot's state and how full its pool and the spot atlas are, and a light the
+  budget left unshadowed is a problem. The ImGui lighting panel also drew the
+  atlas itself, every live tile at its place and size with its guard band and
+  age; nothing draws that picture now.
+- **Where:** `editor/level_editor/src/workspace/LightingDiagnostics.cpp` reads
+  the same `ShadowResidencyReadout`; the deleted drawing is
+  `LightingPanel::DrawAtlasMap` in commit 95a45376. A picture would be a host
+  image or view marks, not a new readout.
+- **Trigger:** an atlas packing or tier downgrade that the card's tier and pool
+  lines cannot explain, met while tuning shadow budgets or the allocator.

@@ -78,7 +78,6 @@ editor/data_editor/src/movement/MovementProfileForm.cpp
 editor/data_editor/src/movement/MovementResolvePanel.cpp
 editor/data_editor/src/movement/MovementResponsePanel.cpp
 editor/level_editor/src/ui/GraphViewerPanel.cpp
-editor/level_editor/src/ui/LightingPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.h
 editor/material_editor/src/MaterialFilesPanel.cpp

@@ -309,6 +309,12 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   (manifest edits, zone load and focus, streaming preview). It also turns the
   world's validation into problems, and `IWorkspace::RevealProblem` answers
   the shell's problems popover by picking the problem's zone or graph.
+  `workspace/LightingDiagnostics` says how the lighting is doing where it
+  applies: a selected light's shadow tier, slot and pool on its card, what a
+  baked light or probe volume became at the last cook, unshadowed lights and
+  a stale baked preview as problems, and `view.baked_lighting` /
+  `view.rerender_shadows` as view actions. F (`view.frame_selection`) frames
+  what is selected through `viewport/CameraFraming`.
   A tool declares what it consumes (`ITool::Resources`), and the cartridge
   follows the tool in hand's primary role. Cook, play and
   stop are the `transport.*` actions the rail's transport shows.
