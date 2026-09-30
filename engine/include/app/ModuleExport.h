@@ -134,4 +134,7 @@
 // lives on (UiService::SetSurfaceWindow), its frames carry that window, capture
 // can be asked per window, and UiRenderFeature draws one window's surfaces; the
 // engine now offers every window's events to the UI rather than the primary's.
+// UiTextureRef gains the Host kind: a document names `host:NAME`, the host
+// registers it with UiService::SetHostImage and publishes the pixels through
+// UiTextureResidency.
 #define SENCHA_GAME_ABI_VERSION 25u

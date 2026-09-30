@@ -56,11 +56,18 @@ using UiGeometryRef = std::shared_ptr<const UiGeometryBlob>;
 using UiGeneratedTextureId = std::uint32_t;
 inline constexpr UiGeneratedTextureId kInvalidUiGeneratedTexture = 0;
 
+// Identity for an image the host supplies at draw time -- a viewport's render,
+// a thumbnail, a preview -- which a document names as `host:NAME`. What pixels
+// stand behind it is decided by the host each frame, never by the document.
+using UiHostImageId = std::uint32_t;
+inline constexpr UiHostImageId kInvalidUiHostImage = 0;
+
 enum class UiTextureKind : std::uint8_t
 {
     None = 0,
     Content,    // an ordinary asset the open screen holds a lease on
     Generated,  // minted by the document engine, uploaded from UiTextureChanges
+    Host,       // supplied by the host at draw time through UiTextureResidency
 };
 
 struct UiTextureRef
@@ -68,6 +75,7 @@ struct UiTextureRef
     UiTextureKind Kind = UiTextureKind::None;
     TextureHandle Content{};
     UiGeneratedTextureId Generated = kInvalidUiGeneratedTexture;
+    UiHostImageId Host = kInvalidUiHostImage;
 };
 
 // Pixels for a generated texture, handed over the first extraction after the

@@ -29,6 +29,11 @@ public:
     [[nodiscard]] virtual bool ResolveTexture(std::string_view source,
                                               TextureHandle& outHandle,
                                               RenderExtent& outSize) = 0;
+
+    // A `host:NAME` source: false when the host registered no image by that name.
+    [[nodiscard]] virtual bool ResolveHostImage(std::string_view name,
+                                                UiHostImageId& outId,
+                                                RenderExtent& outSize) = 0;
 };
 
 //=============================================================================

@@ -261,6 +261,16 @@ std::uint32_t UiService::GetSurfaceWindow(UiSurfaceId surface) const
     return Runtime->GetSurfaceWindow(surface);
 }
 
+UiHostImageId UiService::SetHostImage(std::string_view name, RenderExtent size)
+{
+    return Runtime->SetHostImage(name, size);
+}
+
+void UiService::RemoveHostImage(std::string_view name)
+{
+    Runtime->RemoveHostImage(name);
+}
+
 UiInputCapture UiService::Capture(std::uint32_t platformWindowId) const
 {
     return Runtime->Capture(platformWindowId);

@@ -51,6 +51,14 @@ public:
 
     [[nodiscard]] std::optional<BindlessImageIndex> FindGenerated(UiGeneratedTextureId id) const;
 
+    // What stands behind a host image this frame. The host publishes after it
+    // has rendered or chosen the image and before the UI draws; the image is
+    // the host's to keep alive while published. A document naming an image
+    // nothing is published under draws that element untextured.
+    void PublishHostImage(UiHostImageId id, BindlessImageIndex image);
+    void WithdrawHostImage(UiHostImageId id);
+    [[nodiscard]] std::optional<BindlessImageIndex> FindHost(UiHostImageId id) const;
+
     [[nodiscard]] std::size_t ResidentCount() const { return Generated.size(); }
 
 private:
@@ -75,4 +83,5 @@ private:
     UiTextureChanges Pending;
     std::unordered_map<UiGeneratedTextureId, GeneratedTexture> Generated;
     std::vector<RetiredTexture> Retiring;
+    std::unordered_map<UiHostImageId, BindlessImageIndex> HostImages;
 };

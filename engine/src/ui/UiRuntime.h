@@ -155,6 +155,12 @@ public:
 
     // IUiTextureResolver: a content image resolves against the open screen's
     // own resource table and nothing else.
+    [[nodiscard]] bool ResolveHostImage(std::string_view name,
+                                        UiHostImageId& outId,
+                                        RenderExtent& outSize) override;
+    UiHostImageId SetHostImage(std::string_view name, RenderExtent size);
+    void RemoveHostImage(std::string_view name);
+
     [[nodiscard]] bool ResolveTexture(std::string_view source,
                                       TextureHandle& outHandle,
                                       RenderExtent& outSize) override;
@@ -440,6 +446,14 @@ private:
     // for it by name.
     std::vector<std::pair<UiSurfaceId, UiDrawFrame>> OffscreenFrames;
     UiTextureChanges ExtractedTextureChanges;
+
+    struct HostImage
+    {
+        UiHostImageId Id = kInvalidUiHostImage;
+        RenderExtent Size{};
+    };
+    std::unordered_map<std::string, HostImage> HostImages;
+    UiHostImageId NextHostImageId = 1;
 
     // Whose resource table answers an image or font request while one document
     // is loading, rebuilding or being restyled. Exact by design: a package must

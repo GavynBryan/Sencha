@@ -265,6 +265,25 @@ TEST(UiPackageCook, FontsAndTexturesBecomeResourceTableEntriesNotCopies)
         EXPECT_NE(blob.VirtualName, "icons/health.png");
 }
 
+TEST(UiPackageCook, AHostImageIsLeftForTheHostRatherThanPackaged)
+{
+    // `host:` names pixels the host supplies at draw time -- a viewport, a
+    // thumbnail. There is nothing to cook, and a resource entry for it would be
+    // an asset that can never resolve.
+    TempAssetRoot root;
+    root.Write("ui/view.rml", R"(<rml>
+<head><link type="text/rcss" href="view.rcss"/></head>
+<body><img src="host:viewport"/></body>
+</rml>)");
+    root.Write("ui/view.rcss", R"(#frame { decorator: image(host:preview); })");
+
+    ASSERT_TRUE(Cook(root).Ok);
+    UiPackage package;
+    ASSERT_TRUE(root.ReadPackage(".cooked/ui/view.rml.sui", package));
+    for (const AssetRef& ref : package.Resources)
+        EXPECT_EQ(ref.Path.find("host:"), std::string::npos) << ref.Path;
+}
+
 TEST(UiPackageCook, ConstructsOutsideTheSupportedProfileAreRecordedWithTheirSource)
 {
     TempAssetRoot root;

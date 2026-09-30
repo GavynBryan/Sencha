@@ -266,6 +266,20 @@ public:
     // what its document asked for.
     [[nodiscard]] std::vector<UiAction> DrainActions(UiScreenHandle screen);
 
+    // -- host images ---------------------------------------------------------
+
+    // An image the host supplies at draw time, which a document names as
+    // `host:NAME` wherever it would name an image -- a viewport's render, a
+    // thumbnail chosen at runtime, a preview. The id is what the host's render
+    // feature publishes pixels under, each frame, through the renderer's
+    // UiTextureResidency; the document never learns what stands behind it.
+    //
+    // Register before a document that names it opens. The size is the image's
+    // natural size for layout; a document that sizes the element itself, as a
+    // viewport does, is unaffected when the host's pixels change size.
+    UiHostImageId SetHostImage(std::string_view name, RenderExtent size);
+    void RemoveHostImage(std::string_view name);
+
     // -- presentation policy -------------------------------------------------
 
     // A stylesheet the host supplies under a name packages already reference.

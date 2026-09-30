@@ -468,3 +468,86 @@ TEST(UiExtraction, AGlyphAtlasIsHandedOverOnceForEverySurfaceThatDrawsIt)
     EXPECT_TRUE(ui.TextureChanges().Uploads.empty())
         << "an atlas already handed over was handed over again";
 }
+
+namespace
+{
+UiPackage MakeHostImagePackage(std::string_view source)
+{
+    const std::string markup = std::string(R"(<rml>
+<head><link type="text/rcss" href="view.rcss"/></head>
+<body><img id="view" src=")") + std::string(source) + R"("/></body>
+</rml>)";
+    constexpr std::string_view style = R"(body { display: block; width: 100%; height: 100%; })";
+
+    UiPackage package;
+    package.RootDocumentName = "view.rml";
+    UiPackageBlob root;
+    root.VirtualName = "view.rml";
+    root.SourcePath = "ui/view.rml";
+    root.Kind = UiBlobKind::Document;
+    root.Bytes = BytesOf(markup);
+    package.Blobs.push_back(std::move(root));
+    UiPackageBlob sheet;
+    sheet.VirtualName = "view.rcss";
+    sheet.SourcePath = "ui/view.rcss";
+    sheet.Kind = UiBlobKind::StyleSheet;
+    sheet.Bytes = BytesOf(style);
+    package.Blobs.push_back(std::move(sheet));
+    return package;
+}
+} // namespace
+
+TEST(UiExtraction, AHostImageIsRecordedByItsIdAtTheSizeTheHostDeclared)
+{
+    // A viewport's render or a thumbnail chosen at runtime: the document names
+    // it, the host decides what stands behind it when the frame draws.
+    TempAssetRoot root;
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(WriteSuiToBytes(MakeHostImagePackage("host:viewport"), bytes));
+    root.WriteBytes("ui/view.sui", bytes);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    const UiHostImageId id = ui.SetHostImage("viewport", RenderExtent{ 64, 32 });
+    ASSERT_NE(id, kInvalidUiHostImage);
+
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    const UiScreenHandle screen = ui.OpenScreen(surface, "asset://ui/view.sui");
+    ASSERT_TRUE(screen.IsValid());
+    ui.Update();
+    ui.ExtractRender();
+
+    const std::optional<UiElementBox> box = ui.MeasureElement(screen, "view");
+    ASSERT_TRUE(box.has_value());
+    EXPECT_FLOAT_EQ(box->Width, 64.0f);
+    EXPECT_FLOAT_EQ(box->Height, 32.0f);
+
+    ASSERT_EQ(ui.Frames().size(), 1u);
+    const auto& commands = ui.Frames().front().Commands;
+    const bool drawsHost = std::any_of(commands.begin(), commands.end(), [&](const UiDrawCommand& command) {
+        return command.Texture.Kind == UiTextureKind::Host && command.Texture.Host == id;
+    });
+    EXPECT_TRUE(drawsHost) << "the image did not reach the frame as the host's";
+
+    EXPECT_EQ(ui.SetHostImage("viewport", RenderExtent{ 128, 64 }), id)
+        << "re-registering a name must keep its id, or a host would republish under a dead one";
+}
+
+TEST(UiExtraction, AHostImageTheHostNeverRegisteredDrawsNothing)
+{
+    TempAssetRoot root;
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(WriteSuiToBytes(MakeHostImagePackage("host:missing"), bytes));
+    root.WriteBytes("ui/view.sui", bytes);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    ASSERT_TRUE(ui.OpenScreen(surface, "asset://ui/view.sui").IsValid());
+    ui.Update();
+    ui.ExtractRender();
+
+    for (const UiDrawFrame& frame : ui.Frames())
+        for (const UiDrawCommand& command : frame.Commands)
+            EXPECT_NE(command.Texture.Kind, UiTextureKind::Host);
+}

@@ -471,6 +471,17 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
                 push.Flags = kFlagHasTexture;
             }
         }
+        else if (command.Texture.Kind == UiTextureKind::Host)
+        {
+            // Straight alpha like content: a host image is a render target or an
+            // ordinary texture, never premultiplied by the document engine.
+            if (const std::optional<BindlessImageIndex> index =
+                    Services->UiTextures->FindHost(command.Texture.Host))
+            {
+                push.TextureIndex = index->Value;
+                push.Flags = kFlagHasTexture | kFlagStraightAlphaTexture;
+            }
+        }
 
         vkCmdPushConstants(frame.Cmd, PipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,

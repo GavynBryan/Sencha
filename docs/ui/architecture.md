@@ -325,6 +325,14 @@ resources.** The runtime links no backend header and owns no GPU object.
   asset the open screen already holds a lease on. It performs no ad-hoc asset
   discovery: a source the table does not name is an authoring error, diagnosed as
   one, not fetched at render time.
+- A source written `host:NAME` is a **host image**: pixels the host supplies at
+  draw time -- a viewport's render, a thumbnail chosen at runtime, a preview.
+  The host registers the name with `UiService::SetHostImage` (its natural size
+  for layout) before a document naming it opens, and its render feature
+  publishes what stands behind the id each frame through
+  `UiTextureResidency::PublishHostImage`. The cook skips `host:` sources, the
+  document never learns what the pixels are, and an image nothing is published
+  under draws untextured. It samples as straight alpha, like content.
 
 A submitted `UiDrawFrame` is self-contained. It holds **references to immutable
 CPU geometry blobs**, not handles into a mutable store, so the render feature

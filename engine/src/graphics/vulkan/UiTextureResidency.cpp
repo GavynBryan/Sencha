@@ -33,6 +33,7 @@ void UiTextureResidency::Teardown()
     }
     Generated.clear();
     Retiring.clear();
+    HostImages.clear();
     Pending = {};
     Services = nullptr;
 }
@@ -115,6 +116,24 @@ std::optional<BindlessImageIndex> UiTextureResidency::FindGenerated(UiGeneratedT
     if (it == Generated.end())
         return std::nullopt;
     return it->second.Bindless;
+}
+
+void UiTextureResidency::PublishHostImage(UiHostImageId id, BindlessImageIndex image)
+{
+    HostImages[id] = image;
+}
+
+void UiTextureResidency::WithdrawHostImage(UiHostImageId id)
+{
+    HostImages.erase(id);
+}
+
+std::optional<BindlessImageIndex> UiTextureResidency::FindHost(UiHostImageId id) const
+{
+    const auto it = HostImages.find(id);
+    if (it == HostImages.end())
+        return std::nullopt;
+    return it->second;
 }
 
 void UiTextureResidency::Destroy(const GeneratedTexture& texture)

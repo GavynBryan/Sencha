@@ -1687,6 +1687,30 @@ std::vector<const UiRuntime::Screen*> UiRuntime::ResolutionCandidates() const
     return candidates;
 }
 
+UiHostImageId UiRuntime::SetHostImage(std::string_view name, RenderExtent size)
+{
+    HostImage& image = HostImages[std::string(name)];
+    if (image.Id == kInvalidUiHostImage)
+        image.Id = NextHostImageId++;
+    image.Size = size;
+    return image.Id;
+}
+
+void UiRuntime::RemoveHostImage(std::string_view name)
+{
+    HostImages.erase(std::string(name));
+}
+
+bool UiRuntime::ResolveHostImage(std::string_view name, UiHostImageId& outId, RenderExtent& outSize)
+{
+    const auto it = HostImages.find(std::string(name));
+    if (it == HostImages.end())
+        return false;
+    outId = it->second.Id;
+    outSize = it->second.Size;
+    return true;
+}
+
 bool UiRuntime::ResolveTexture(std::string_view source,
                                TextureHandle& outHandle,
                                RenderExtent& outSize)
