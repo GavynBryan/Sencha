@@ -471,7 +471,6 @@ body
 {
     right: auto;
     top: 42dp;
-    width: 320dp;
     height: auto;
 }
 
@@ -492,7 +491,7 @@ body
     text-transform: uppercase;
 }
 #explorer_filter { display: block; width: 180dp; height: 20dp; padding: 0dp 6dp; border-width: 1dp; }
-#explorer_range { flex: 1; font-size: 11dp; }
+#explorer_range { flex: 1; font-size: 11dp; white-space: nowrap; }
 
 #explorer_items
 {
@@ -524,5 +523,13 @@ body
     white-space: nowrap;
     overflow: hidden;
 }
-#explorer.outline .explorer_item { flex-direction: row; width: auto; height: 22dp; }
-#explorer.outline .explorer_item .item_label { width: auto; text-align: left; font-size: 11dp; }
+#explorer.outline .explorer_item { flex-direction: row; width: auto; height: 22dp; gap: 4dp; }
+#explorer.outline .explorer_item .item_label { flex: 1; width: auto; text-align: left; font-size: 11dp; }
+#explorer.outline { width: 340dp; }
+#explorer.outline #explorer_head { flex-wrap: wrap; height: auto; }
+#explorer.outline #explorer_filter { width: 120dp; }
+#explorer.outline #explorer_items { top: 70dp; }
+.branch { display: block; width: 12dp; text-align: center; pointer-events: auto; }
+.marks { display: flex; gap: 4dp; padding-right: 4dp; }
+.mark { display: block; width: 14dp; height: 14dp; opacity: 0.7; pointer-events: auto; }
+.mark:hover { opacity: 1; }

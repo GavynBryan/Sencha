@@ -34,7 +34,6 @@
 #include "documents/DocumentSourceSet.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "render/SceneThumbnailCache.h"
-#include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
 #include "actions/ActionOffer.h"
@@ -44,6 +43,8 @@
 #include "workspace/FaceUvSource.h"
 #include "workspace/MaterialExplorer.h"
 #include "workspace/PrefabExplorer.h"
+#include "workspace/EntityVerbs.h"
+#include "workspace/WorldExplorer.h"
 #include "scene_source/SceneSourcePaths.h"
 #include "workspace/SelectionSummary.h"
 #include "workspace/ManipulationActions.h"
@@ -283,6 +284,16 @@ void LevelWorkspace::BuildInput()
     Uv->Offer(Catalog, ActionHandlers);
     Components = std::make_unique<ComponentPropertySource>(Workspace->World, Workspace->Selection, *Commands,
                                                            Workspace->Affordances->Registry());
+    Entities = std::make_unique<EntityVerbs>(*Workspace, [this](const std::string& source) {
+        return Files != nullptr && Files->OpenSceneSource(source);
+    });
+    Entities->Offer(Catalog, ActionHandlers);
+    Entities->OfferZoneMoves(Catalog, ActionHandlers);
+    WorldOutline = std::make_unique<WorldExplorer>(*Workspace);
+    OfferAction(Catalog, ActionHandlers,
+                { .Id = "explorer.world", .Label = "World", .Category = "Explore",
+                  .DefaultChords = { { SDLK_O, {} } } },
+                {});
     // The explorers: defined here, opened by whichever shell shows the workspace.
     OfferAction(Catalog, ActionHandlers,
                 { .Id = "explorer.materials", .Label = "Materials", .Category = "Explore",
@@ -664,10 +675,6 @@ void LevelWorkspace::BuildUi()
         Workspace->CreationRecipes));
     Surface.AddPanel(std::make_unique<GraphViewerPanel>(
         Workspace->World, Workspace->Selection, *Commands, Workspace->Layout));
-    Surface.AddPanel(std::make_unique<SceneHierarchyPanel>(
-        Workspace->World, Workspace->Selection, *Commands,
-        [this](const std::string& assetPath)
-        { return Files != nullptr && Files->OpenSceneSource(assetPath); }));
     {
         std::vector<std::filesystem::path> sceneRoots;
         if (Project)
@@ -968,6 +975,8 @@ void LevelWorkspace::ProcessFrame()
         }
     }
 
+    if (Entities != nullptr)
+        Entities->OfferZoneMoves(Catalog, ActionHandlers);
     if (Files)
         Files->ProcessPending();
 
@@ -1206,14 +1215,14 @@ WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
 
 WorkspaceSelectionFacet LevelWorkspace::Selection()
 {
-    if (Verbs == nullptr || Uv == nullptr || Components == nullptr)
+    if (Verbs == nullptr || Entities == nullptr || Uv == nullptr || Components == nullptr)
         return {};
-    return SelectionOf(*Workspace, *Verbs, *Uv, *Components);
+    return SelectionOf(*Workspace, *Verbs, *Entities, *Uv, *Components);
 }
 
 std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const
 {
-    return { MaterialExplorer::Info(), PrefabExplorer::Info() };
+    return { WorldExplorer::Info(), MaterialExplorer::Info(), PrefabExplorer::Info() };
 }
 
 ExplorerPage LevelWorkspace::Explore(const ExplorerQuery& query)
@@ -1222,15 +1231,20 @@ ExplorerPage LevelWorkspace::Explore(const ExplorerQuery& query)
         return MaterialsExplorer->Explore(query);
     if (query.Explorer == PrefabExplorer::kId && PrefabsExplorer != nullptr)
         return PrefabsExplorer->Explore(query);
+    if (query.Explorer == WorldExplorer::kId && WorldOutline != nullptr)
+        return WorldOutline->Explore(query);
     return {};
 }
 
-void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice)
+void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
+                                      std::size_t mark)
 {
     if (explorer == MaterialExplorer::kId && MaterialsExplorer != nullptr)
         MaterialsExplorer->Choose(key, choice);
     else if (explorer == PrefabExplorer::kId && PrefabsExplorer != nullptr)
         PrefabsExplorer->Choose(key, choice);
+    else if (explorer == WorldExplorer::kId && WorldOutline != nullptr)
+        WorldOutline->Choose(key, choice, mark);
 }
 
 AssetType LevelWorkspace::HeldType() const

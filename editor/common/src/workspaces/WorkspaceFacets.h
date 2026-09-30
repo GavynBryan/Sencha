@@ -168,6 +168,14 @@ struct ExplorerQuery
     std::size_t Count = 0;
 };
 
+// In an outline, whether an item holds others and whether they show.
+enum class ExplorerBranch : std::uint8_t
+{
+    Leaf,
+    Closed,
+    Open,
+};
+
 struct ExplorerItem
 {
     // What choosing it names back to the workspace.
@@ -176,8 +184,12 @@ struct ExplorerItem
     // A host image picturing it, or empty.
     std::string Image = {};
     int Depth = 0;
-    // The one in hand now.
+    ExplorerBranch Branch = ExplorerBranch::Leaf;
+    // The one in hand now, or one of those selected.
     bool Current = false;
+    // Small switches on the item, each showing its state by its icon: an eye
+    // open or shut, a lock open or fastened. Choosing one names its index.
+    std::vector<IconId> Marks = {};
 };
 
 // One page of an explorer's items that match a query.
@@ -192,10 +204,16 @@ struct ExplorerPage
     std::vector<std::string> Actions = {};
 };
 
-// Choosing an item: picking it up, or putting it to use at once (a double
-// click, Enter).
+// Choosing an item: picking it up alone, or putting it to use at once (a
+// double click, Enter); in an outline, picking everything from the current one
+// to it, picking it or letting it go beside the others, opening or closing it,
+// or flipping one of its marks.
 enum class ExplorerChoice : std::uint8_t
 {
     Pick,
     Commit,
+    Extend,
+    Toggle,
+    Open,
+    Mark,
 };

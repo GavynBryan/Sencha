@@ -89,6 +89,8 @@ const UiActionId kExplorerPageAction = UiActionIdAt(13);
 const UiActionId kExplorerPickAction = UiActionIdAt(14);
 const UiActionId kExplorerCommitAction = UiActionIdAt(15);
 const UiActionId kExplorerCloseAction = UiActionIdAt(16);
+const UiActionId kExplorerOpenAction = UiActionIdAt(17);
+const UiActionId kExplorerMarkAction = UiActionIdAt(18);
 
 // How many items an explorer shows at once, and asks its workspace for.
 constexpr std::size_t kExplorerPage = 40;
@@ -151,7 +153,8 @@ UiScreenDesc Describe()
     desc.Actions = { "shell_popover",   "shell_choose",     "shell_invoke",     "shell_window",       "shell_sheet_set",
                      "shell_sheet_flip", "shell_sheet_hold", "shell_sheet_release", "shell_sheet_act", "shell_drawer",
                      "shell_sheet_pick", "shell_explore", "shell_explorer_filter", "shell_explorer_page",
-                     "shell_explorer_pick", "shell_explorer_commit", "shell_explorer_close" };
+                     "shell_explorer_pick", "shell_explorer_commit", "shell_explorer_close",
+                     "shell_explorer_open", "shell_explorer_mark" };
     return desc;
 }
 
@@ -374,13 +377,43 @@ void ShellWindow::HandleActions()
             else if (step > 0)
                 ExplorerFirst += kExplorerPage;
         }
-        else if (action.Id == kExplorerPickAction || action.Id == kExplorerCommitAction)
+        else if (action.Id == kExplorerPickAction || action.Id == kExplorerCommitAction
+                 || action.Id == kExplorerOpenAction || action.Id == kExplorerMarkAction)
         {
-            if (IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation))
+            IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+            if (workspace == nullptr)
+                continue;
+            // A press on a row's arrow or mark reaches the row too: it did
+            // what it was for, so the row does not also pick.
+            if (action.Id == kExplorerPickAction && argument == HandledInRow)
+                continue;
+            HandledInRow.clear();
+            const auto flag = [&](std::size_t at) {
+                return action.Arguments.size() > at && action.Arguments[at].Kind() == UiValueKind::Bool
+                    && action.Arguments[at].AsBool();
+            };
+            if (action.Id == kExplorerOpenAction || action.Id == kExplorerMarkAction)
+            {
+                const std::size_t mark = action.Arguments.size() > 1
+                    ? static_cast<std::size_t>(std::max<std::int64_t>(0, action.Arguments[1].AsInt()))
+                    : 0;
                 workspace->ChooseInExplorer(ExplorerShown, argument,
-                                            action.Id == kExplorerPickAction ? ExplorerChoice::Pick : ExplorerChoice::Commit);
-            // Putting an item to use is what the explorer was open for.
-            if (action.Id == kExplorerCommitAction && ExplorerTransient != 0)
+                                            action.Id == kExplorerOpenAction ? ExplorerChoice::Open : ExplorerChoice::Mark,
+                                            mark);
+                HandledInRow = argument;
+                continue;
+            }
+            const ExplorerChoice choice = action.Id == kExplorerCommitAction ? ExplorerChoice::Commit
+                                        : flag(1)                            ? ExplorerChoice::Extend
+                                        : flag(2)                            ? ExplorerChoice::Toggle
+                                                                             : ExplorerChoice::Pick;
+            workspace->ChooseInExplorer(ExplorerShown, argument, choice, 0);
+            // Putting an item to use is what an explorer of pictures was open
+            // for; an outline stays, since it is where the structure is worked.
+            const std::vector<WorkspaceExplorerInfo> explorers = workspace->Explorers();
+            const auto shown = std::ranges::find(explorers, ExplorerShown, &WorkspaceExplorerInfo::Id);
+            if (choice == ExplorerChoice::Commit && ExplorerTransient != 0 && shown != explorers.end()
+                && shown->Shape == ExplorerShape::Pictures)
                 Transients.Close(ExplorerTransient);
         }
         else if (action.Id == kExplorerCloseAction)
@@ -595,12 +628,19 @@ void ShellWindow::PublishExplorer(IWorkspace* workspace)
     (void)ui.SetValue(Screen, kExplorerLater, UiValue(ExplorerFirst + page.Items.size() < page.Total));
 
     std::vector<UiRow> items;
+    const bool outline = shown->Shape == ExplorerShape::Outline;
     for (const ExplorerItem& item : page.Items)
     {
-        UiRow row{ item.Label, item.Image, "" };
+        // An outline has no pictures: its value is whether the item is open.
+        const char* branch = item.Branch == ExplorerBranch::Open     ? "open"
+                           : item.Branch == ExplorerBranch::Closed ? "closed"
+                                                                   : "";
+        UiRow row{ item.Label, outline ? std::string(branch) : item.Image, "" };
         row.Key = item.Key;
         row.Depth = item.Depth;
         row.Selected = item.Current;
+        for (const IconId mark : item.Marks)
+            row.Parts.emplace_back(IconName(mark));
         items.push_back(std::move(row));
     }
     (void)ui.SetRows(Screen, kExplorerItems, items);

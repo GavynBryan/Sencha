@@ -197,6 +197,8 @@ private:
     std::size_t ExplorerFirst = 0;
     TransientSurfaces::Id ExplorerTransient = 0;
     std::vector<std::string> ClaimedExplorers;
+    // The row whose arrow or mark was pressed in this drain.
+    std::string HandledInRow;
     // After the palette, so a question opens over it.
     std::unique_ptr<PromptDialog> Prompt;
     // What the shell itself performs in its window, whatever is showing.

@@ -300,7 +300,10 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   from with `ChooseInExplorer`); the Level's materials are
   `workspace/MaterialExplorer`, which the shell shows as a tray and opens from
   its `explorer.materials` action or the cartridge; its prefabs are
-  `workspace/PrefabExplorer` (Shift+P), whose choice takes up the Place tool.
+  `workspace/PrefabExplorer` (Shift+P), whose choice takes up the Place tool,
+  and its scene is `workspace/WorldExplorer` (O), an outline the shell shows
+  as a sheet, with the structural verbs (parent, hide, lock, move to a zone,
+  a placement's source) in `workspace/EntityVerbs`.
   A tool declares what it consumes (`ITool::Resources`), and the cartridge
   follows the tool in hand's primary role. Cook, play and
   stop are the `transport.*` actions the rail's transport shows.

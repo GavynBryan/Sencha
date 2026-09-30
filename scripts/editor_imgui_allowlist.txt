@@ -79,7 +79,6 @@ editor/data_editor/src/movement/MovementResolvePanel.cpp
 editor/data_editor/src/movement/MovementResponsePanel.cpp
 editor/level_editor/src/ui/GraphViewerPanel.cpp
 editor/level_editor/src/ui/LightingPanel.cpp
-editor/level_editor/src/ui/SceneHierarchyPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.cpp
 editor/level_editor/src/ui/ViewsPanel.h
 editor/level_editor/src/ui/WorldPartitionPanel.cpp

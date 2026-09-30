@@ -211,11 +211,20 @@
         <div id="explorer_items">
             <div class="explorer_item theme-row" data-for="item : explorer_items" data-class-selected="item.selected"
                  data-style-padding-left="(item.depth * 12 + 6) + 'dp'"
-                 data-event-click="shell_explorer_pick(item.key)" data-event-dblclick="shell_explorer_commit(item.key)">
+                 data-event-click="shell_explorer_pick(item.key, ev.shift_key, ev.ctrl_key)"
+                 data-event-dblclick="shell_explorer_commit(item.key)">
                 <div class="picture_well theme-field" data-if="explorer_shape == 'pictures'">
                     <img class="picture" data-if="item.value != ''" data-attr-src="'host:' + item.value"/>
                 </div>
+                <span class="branch glyph theme-dim" data-if="explorer_shape == 'outline'"
+                      data-event-click="shell_explorer_open(item.key)">
+                    <span data-if="item.value == 'closed'">&#xf0da;</span><span data-if="item.value == 'open'">&#xf0d7;</span>
+                </span>
                 <span class="item_label">{{item.label}}</span>
+                <div class="marks" data-if="explorer_shape == 'outline'">
+                    <span data-for="mark : item.parts" data-attr-class="'mark icon icon-' + mark"
+                          data-event-click="shell_explorer_mark(item.key, it_index)"></span>
+                </div>
             </div>
             <div id="explorer_empty" class="theme-dim" data-if="explorer_empty != ''">{{explorer_empty}}</div>
         </div>

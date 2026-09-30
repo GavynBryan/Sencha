@@ -65,7 +65,11 @@ public:
     [[nodiscard]] virtual std::vector<WorkspaceExplorerInfo> Explorers() const { return {}; }
     // Not const: picturing an item may start loading its image.
     [[nodiscard]] virtual ExplorerPage Explore(const ExplorerQuery&) { return {}; }
-    virtual void ChooseInExplorer(std::string_view /*explorer*/, std::string_view /*key*/, ExplorerChoice) {}
+    // `mark` is the index of the mark chosen, for ExplorerChoice::Mark.
+    virtual void ChooseInExplorer(std::string_view /*explorer*/, std::string_view /*key*/, ExplorerChoice,
+                                  std::size_t /*mark*/)
+    {
+    }
 
     virtual WorkspaceView& View() = 0;
     // The window this workspace now draws in: its UI capture, input gates and

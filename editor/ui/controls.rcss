@@ -20,6 +20,7 @@
     font-weight: 600;
     font-size: 11dp;
     letter-spacing: 1dp;
+    white-space: nowrap;
     pointer-events: auto;
     tab-index: auto;
 }

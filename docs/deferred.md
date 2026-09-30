@@ -239,3 +239,13 @@ do the work and delete the entry.
   explorer tray (`editor/common/src/shell/ShellWindow.cpp`) would hand the
   press over to the view's input router.
 - **Trigger:** the owner's walkthrough at the explorers checkpoint.
+
+## Reordering and reparenting by dragging in the outline
+
+- **What:** the World explorer parents the selection under its primary
+  (Ctrl+P) and clears parents (Alt+P), but rows cannot be dragged onto another
+  row or between rows to reparent or reorder, as the ImGui hierarchy allowed.
+- **Where:** `editor/level_editor/src/workspace/WorldExplorer.cpp` (a choice
+  naming a drop target), `MakeReparentEntitiesCommand`'s reorder form, and the
+  shell's outline rows.
+- **Trigger:** a designer ordering siblings, which no action can do today.

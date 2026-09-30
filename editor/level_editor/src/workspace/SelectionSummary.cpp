@@ -3,6 +3,7 @@
 #include "document/EntityLabel.h"
 #include "workspace/EditorWorkspace.h"
 #include "workspace/ElementVerbs.h"
+#include "workspace/EntityVerbs.h"
 #include "workspace/FaceUvSource.h"
 
 #include <algorithm>
@@ -16,8 +17,8 @@ std::string Counted(std::size_t count, std::string_view one, std::string_view ma
 }
 } // namespace
 
-WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& verbs, FaceUvSource& uv,
-                                    IPropertySource& components)
+WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& verbs,
+                                    const EntityVerbs& entityVerbs, FaceUvSource& uv, IPropertySource& components)
 {
     const std::span<const SelectableRef> selected = workspace.Selection.GetSelection();
     if (selected.empty())
@@ -66,6 +67,9 @@ WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& ve
             : Counted(objects, "object", "objects");
         if (objects == 1)
             facet.Details.push_back({ .Heading = {}, .Source = &components });
+        if (!facet.Staged)
+            for (std::string& verb : entityVerbs.Relevant())
+                facet.Actions.push_back(std::move(verb));
         return facet;
     }
 
