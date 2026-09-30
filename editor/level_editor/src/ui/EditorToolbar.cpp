@@ -80,16 +80,11 @@ void EditorToolbar::DrawViewportRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float 
         return drew ? ImGui::GetItemRectSize().x : 0.0f;
     };
 
-    // The tool context sits at the channel's left end whatever its width, so
-    // it is drawn first and measured in this frame: the tool changing never
-    // leaves the strip a frame off its centre. The tail and the grid are
-    // placed by their widest so far; the first frame of a session, with no
-    // measurement at all, takes the narrow row once.
-    ImGui::SetCursorScreenPos(ImVec2(channelMin, bar.LaneMin.y));
-    const float leftWidth = measure([&] { DrawToolContextGroup(); });
-
+    // The tail and the grid are placed by their widest so far; the first frame
+    // of a session, with no measurement at all, takes the narrow row once. A
+    // tool's own settings are on the shell's tool card, not here.
     const ToolbarRow::Widths widths{
-        .Left = leftWidth,
+        .Left = 0.0f,
         .Strip = GizmoStripWidth(buttonSize),
         .Tail = TailWidth,
         .Right = GridWidth,
@@ -124,24 +119,9 @@ void EditorToolbar::DrawViewportRow(ImDrawList* dl, ImVec2 mn, ImVec2 mx, float 
     if (placed.Centered)
     {
         // Technical markings in the runs the row left free.
-        EditorChrome::BarMarkings(dl, bar, placed.Left + leftWidth + moduleGap, placed.Center - widths.Tail - moduleGap);
+        EditorChrome::BarMarkings(dl, bar, placed.Left + moduleGap, placed.Center - widths.Tail - moduleGap);
         EditorChrome::BarMarkings(dl, bar, placed.Center + widths.Strip + moduleGap, placed.Right - moduleGap);
     }
-}
-
-void EditorToolbar::DrawToolContextGroup()
-{
-    // Whatever the active tool wants here, it draws itself: a tool with contextual
-    // controls ships them with its own code rather than as a branch in the bar.
-    ToolRegistry& tools = Tools();
-    ITool* active = tools.GetActiveTool();
-    if (active == nullptr)
-        return;
-
-    // The row places the blocks after it; a tool that drew nothing leaves
-    // the cursor untouched, which is how the row knows there is no block.
-    EditorChrome::ModuleScope module("toolcontext");
-    active->DrawToolbarControls(tools.GetContext());
 }
 
 void EditorToolbar::DrawGizmoStrip(float buttonSize)

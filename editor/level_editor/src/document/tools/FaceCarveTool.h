@@ -98,7 +98,10 @@ public:
     // A carve that is far enough along to commit is placed work and goes into
     // the document; a half-formed draft cannot be committed, so it reverts.
     void CommitPending(ToolContext& ctx) override;
-    void DrawProperties(ToolContext& ctx) override;
+    [[nodiscard]] std::vector<PropertyNode> Parameters(const ToolContext& ctx) const override;
+    PropertyEditResult SetParameter(ToolContext& ctx, std::string_view key, std::string_view value) override;
+    [[nodiscard]] ToolDraft Draft() const override;
+    [[nodiscard]] std::string Hint(const ToolContext& ctx) const override;
     [[nodiscard]] Shortcut GetShortcut() const override;
     [[nodiscard]] bool UsesTransformGizmo() const override { return false; }
 

@@ -526,10 +526,10 @@ void ToolPropertiesPanel::OnDraw()
     }
 
     // The select tool's "properties" are the element-mode verbs over the current
-    // selection, which is panel work rather than tool work. Every other tool
-    // draws its own settings, so a new one needs nothing here.
+    // selection, which is panel work rather than tool work. Every other tool's
+    // settings are on the shell's tool card.
     if (activeTool->GetId() == "select")
         DrawSelectProperties(*activeTool, tools->GetContext());
     else
-        activeTool->DrawProperties(tools->GetContext());
+        EditorChrome::EmptyRegionLabel(EditorChrome::DecorSlot::ToolPropertiesIdle);
 }

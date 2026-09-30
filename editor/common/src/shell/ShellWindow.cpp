@@ -2,6 +2,7 @@
 
 #include "actions/ActionCatalog.h"
 #include "notices/NoticeQueue.h"
+#include "icons/IconNames.h"
 #include "problems/ProblemList.h"
 #include "ui/UiScaleChoice.h"
 #include "workspaces/IWorkspace.h"
@@ -13,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 
 namespace
 {
@@ -28,14 +30,24 @@ const UiModelPropertyId kPlayEnabled = UiPropertyIdAt(8);
 const UiModelPropertyId kStopEnabled = UiPropertyIdAt(9);
 const UiModelPropertyId kPopover = UiPropertyIdAt(10);
 const UiModelPropertyId kPopoverX = UiPropertyIdAt(11);
+const UiModelPropertyId kPopoverRises = UiPropertyIdAt(12);
+const UiModelPropertyId kStationName = UiPropertyIdAt(13);
+const UiModelPropertyId kStationVariant = UiPropertyIdAt(14);
+const UiModelPropertyId kStationIcon = UiPropertyIdAt(15);
+const UiModelPropertyId kStationHint = UiPropertyIdAt(16);
+const UiModelPropertyId kDraft = UiPropertyIdAt(17);
+const UiModelPropertyId kCardOpen = UiPropertyIdAt(18);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
+const UiModelRowsId kToolRows = UiRowsIdAt(2);
 
 const UiActionId kPopoverAction = UiActionIdAt(0);
 const UiActionId kChooseAction = UiActionIdAt(1);
 const UiActionId kInvokeAction = UiActionIdAt(2);
 const UiActionId kWindowAction = UiActionIdAt(3);
+const UiActionId kToolSetAction = UiActionIdAt(4);
+const UiActionId kToolFlipAction = UiActionIdAt(5);
 
 // The rail's height in dp, when the document has not laid out to say.
 constexpr float kRailHeightDp = 34.0f;
@@ -58,9 +70,17 @@ UiScreenDesc Describe()
         UiModelProperty{ "stop_enabled", UiValue(false) },
         UiModelProperty{ "popover", UiValue(std::string{}) },
         UiModelProperty{ "popover_x", UiValue(0.0) },
+        UiModelProperty{ "popover_rises", UiValue(false) },
+        UiModelProperty{ "station_name", UiValue(std::string{}) },
+        UiModelProperty{ "station_variant", UiValue(std::string{}) },
+        UiModelProperty{ "station_icon", UiValue(std::string{}) },
+        UiModelProperty{ "station_hint", UiValue(std::string{}) },
+        UiModelProperty{ "draft", UiValue(std::string("none")) },
+        UiModelProperty{ "card_open", UiValue(false) },
     };
-    desc.RowLists = { "notices", "entries" };
-    desc.Actions = { "shell_popover", "shell_choose", "shell_invoke", "shell_window" };
+    desc.RowLists = { "notices", "entries", "tool_rows" };
+    desc.Actions = { "shell_popover", "shell_choose", "shell_invoke", "shell_window", "shell_tool_set",
+                     "shell_tool_flip" };
     return desc;
 }
 
@@ -74,6 +94,17 @@ const char* TransportName(TransportState state)
     case TransportState::Failed:  return "failed";
     case TransportState::None:
     default:                      return "none";
+    }
+}
+
+const char* DraftName(ToolDraft draft)
+{
+    switch (draft)
+    {
+    case ToolDraft::Incomplete: return "incomplete";
+    case ToolDraft::Ready:      return "ready";
+    case ToolDraft::None:
+    default:                    return "none";
     }
 }
 
@@ -92,6 +123,19 @@ const char* NoticeToneName(NoticeTone tone)
 std::string ArgumentText(const UiAction& action)
 {
     return action.Arguments.empty() ? std::string{} : std::string(action.Arguments[0].AsString());
+}
+
+// What a control reported, as the text a property reads back: a slider sends a
+// number, a drop-down its option.
+std::string ValueText(const UiValue& value)
+{
+    switch (value.Kind())
+    {
+    case UiValueKind::Float: return std::format("{}", value.AsFloat());
+    case UiValueKind::Int:   return std::format("{}", value.AsInt());
+    case UiValueKind::Bool:  return value.AsBool() ? "true" : "false";
+    default:                 return std::string(value.AsString());
+    }
 }
 
 UiRow Heading(std::string label)
@@ -199,6 +243,17 @@ float ShellWindow::RailHeight() const
     return kRailHeightDp * Services.Ui.GetSurfaceScale(SurfaceId);
 }
 
+float ShellWindow::StationBand() const
+{
+    if (!Screen.IsValid())
+        return 0.0f;
+    const std::optional<UiElementBox> station = Services.Ui.MeasureElement(Screen, "station");
+    if (!station.has_value() || station->Height <= 0.0f)
+        return 0.0f;
+    const WindowExtent extent = Services.Window.GetExtent();
+    return std::max(0.0f, static_cast<float>(extent.Height) - station->Y);
+}
+
 void ShellWindow::HandleActions()
 {
     for (const UiAction& action : Services.Ui.DrainActions(Screen))
@@ -209,6 +264,7 @@ void ShellWindow::HandleActions()
             const Popover requested = argument == "hatch"      ? Popover::Hatch
                                     : argument == "workspaces" ? Popover::Workspaces
                                     : argument == "document"   ? Popover::Document
+                                    : argument == "tools"      ? Popover::Tools
                                                                : Popover::None;
             // Pressing the instrument whose popover is open closes it.
             OpenPopover(requested == Showing ? Popover::None : requested);
@@ -220,6 +276,18 @@ void ShellWindow::HandleActions()
         else if (action.Id == kInvokeAction)
         {
             (void)Services.Actions.Invoke(argument);
+        }
+        else if (action.Id == kToolSetAction || action.Id == kToolFlipAction)
+        {
+            IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+            IPropertySource* parameters = workspace != nullptr ? workspace->Operation().Parameters : nullptr;
+            const std::int64_t row = action.Arguments.empty() ? -1 : action.Arguments[0].AsInt();
+            if (parameters == nullptr || row < 0)
+                continue;
+            if (action.Id == kToolFlipAction)
+                (void)ToolSheet.Flip(*parameters, static_cast<std::size_t>(row));
+            else if (action.Arguments.size() > 1)
+                (void)ToolSheet.Set(*parameters, static_cast<std::size_t>(row), ValueText(action.Arguments[1]));
         }
         else if (action.Id == kWindowAction)
         {
@@ -249,6 +317,7 @@ void ShellWindow::ShowPopover(std::string_view name)
     OpenPopover(name == "hatch" ? Popover::Hatch
                 : name == "workspaces" ? Popover::Workspaces
                 : name == "document" ? Popover::Document
+                : name == "tools" ? Popover::Tools
                                      : Popover::None);
 }
 
@@ -289,7 +358,7 @@ void ShellWindow::Publish(double now)
 {
     UiService& ui = Services.Ui;
     const WorkspaceKind* kind = Services.Workspaces.ActiveKindIn(Services.Presentation);
-    const IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+    IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
     (void)ui.SetValue(Screen, kWorkspaceLabel, UiValue(kind != nullptr ? kind->DisplayName : std::string("KYUSU")));
 
     const WorkspaceDocumentFacet document = workspace != nullptr ? workspace->Document() : WorkspaceDocumentFacet{};
@@ -317,6 +386,8 @@ void ShellWindow::Publish(double now)
     (void)ui.SetValue(Screen, kPlayEnabled, UiValue(Services.Actions.Query("transport.play").Enabled));
     (void)ui.SetValue(Screen, kStopEnabled, UiValue(Services.Actions.Query("transport.stop").Enabled));
 
+    PublishStation(workspace);
+
     std::vector<UiRow> notices;
     for (const Notice& notice : Services.Notices.Showing(now))
         notices.push_back(UiRow{ notice.Text, "", NoticeToneName(notice.Tone) });
@@ -336,9 +407,11 @@ void ShellWindow::PublishEntries()
     case Popover::Hatch:      name = "hatch";      anchor = "hatch";          entries = HatchEntries();     break;
     case Popover::Workspaces: name = "workspaces"; anchor = "workspace_dial"; entries = WorkspaceEntries(); break;
     case Popover::Document:   name = "document";   anchor = "document_dial";  entries = DocumentEntries();  break;
+    case Popover::Tools:      name = "tools";      anchor = "station";        entries = ToolEntries();      break;
     case Popover::None:       break;
     }
     (void)ui.SetValue(Screen, kPopover, UiValue(name));
+    (void)ui.SetValue(Screen, kPopoverRises, UiValue(Showing == Popover::Tools));
     double x = 0.0;
     if (!anchor.empty())
         if (const std::optional<UiElementBox> box = ui.MeasureElement(Screen, anchor))
@@ -410,6 +483,40 @@ std::vector<UiRow> ShellWindow::WorkspaceEntries() const
     close.Key = "close:" + active->Id;
     rows.push_back(std::move(close));
     return rows;
+}
+
+std::vector<UiRow> ShellWindow::ToolEntries()
+{
+    IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+    std::vector<UiRow> rows;
+    if (workspace == nullptr)
+        return rows;
+    for (const OperationChoice& choice : workspace->Operation().Choices)
+    {
+        UiRow row{ choice.Label, Services.Catalog.ChordText(choice.Action), "" };
+        row.Key = choice.Action;
+        row.Icon = std::string(IconName(choice.Icon));
+        row.Selected = choice.Current;
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+void ShellWindow::PublishStation(IWorkspace* workspace)
+{
+    UiService& ui = Services.Ui;
+    WorkspaceOperationFacet operation = workspace != nullptr ? workspace->Operation() : WorkspaceOperationFacet{};
+    std::vector<UiRow> rows =
+        operation.Parameters != nullptr ? ToolSheet.Present(*operation.Parameters) : std::vector<UiRow>{};
+    (void)ui.SetValue(Screen, kStationName, UiValue(operation.Name));
+    (void)ui.SetValue(Screen, kStationVariant, UiValue(operation.Variant));
+    (void)ui.SetValue(Screen, kStationIcon, UiValue(std::string(IconName(operation.Icon))));
+    (void)ui.SetValue(Screen, kStationHint, UiValue(operation.Hint));
+    (void)ui.SetValue(Screen, kDraft, UiValue(std::string(DraftName(operation.Draft))));
+    // The card is up while there is something on it beyond a hint: settings,
+    // or drafted work to apply or cancel.
+    (void)ui.SetValue(Screen, kCardOpen, UiValue(!rows.empty() || operation.Draft != ToolDraft::None));
+    (void)ui.SetRows(Screen, kToolRows, rows);
 }
 
 std::vector<UiRow> ShellWindow::DocumentEntries() const

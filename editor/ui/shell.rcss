@@ -217,6 +217,13 @@ body
     pointer-events: auto;
 }
 
+/* From a bottom instrument, a popover rises over it instead. */
+#popover.rising
+{
+    top: auto;
+    bottom: 52dp;
+}
+
 .entry
 {
     display: flex;
@@ -243,6 +250,9 @@ body
     pointer-events: none;
 }
 
+.entry_icon { width: 16dp; height: 16dp; margin: 4dp 8dp 0dp 0dp; }
+.entry_label { display: block; flex: 1; }
+
 .entry_chord
 {
     display: block;
@@ -250,3 +260,104 @@ body
     font-size: 11dp;
 }
 
+
+/* The station and its card, bottom left: the operation in hand and what it
+   is set to. */
+#station_bay
+{
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    left: 8dp;
+    bottom: 8dp;
+    width: 260dp;
+    gap: 6dp;
+    pointer-events: none;
+}
+
+#station
+{
+    display: flex;
+    align-items: center;
+    height: 34dp;
+    padding: 0dp 12dp;
+    gap: 8dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+    pointer-events: auto;
+}
+
+.station_icon { width: 18dp; height: 18dp; }
+.station_variant { font-size: 11dp; }
+
+#tool_card
+{
+    display: block;
+    padding: 8dp 10dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+.setting
+{
+    display: flex;
+    align-items: center;
+    height: 26dp;
+    gap: 8dp;
+}
+
+.setting_label { display: block; width: 84dp; font-size: 11dp; }
+.setting_control { display: block; flex: 1; height: 20dp; }
+.setting_number
+{
+    display: block;
+    width: 38dp;
+    padding: 0dp 4dp;
+    border-width: 1dp;
+    text-align: right;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+.setting_toggle { flex: 0; }
+
+#tool_hint { display: block; margin-top: 6dp; font-size: 11dp; }
+
+#tool_keys
+{
+    display: flex;
+    justify-content: flex-end;
+    gap: 6dp;
+    margin-top: 8dp;
+}
+
+/* A setting's slider and drop-down: geometry here, colours the theme's. */
+slidertrack
+{
+    display: block;
+    height: 4dp;
+    margin-top: 8dp;
+    border-radius: 2dp;
+    pointer-events: auto;
+}
+sliderbar
+{
+    display: block;
+    width: 10dp;
+    height: 16dp;
+    margin-top: -6dp;
+    border-radius: 2dp;
+    pointer-events: auto;
+}
+sliderprogress { display: block; height: 4dp; pointer-events: auto; }
+sliderarrowdec, sliderarrowinc { display: none; }
+
+selectvalue { display: block; padding: 2dp 6dp; pointer-events: auto; }
+selectarrow { display: block; width: 16dp; height: 100%; pointer-events: auto; }
+selectbox { display: block; border-width: 1dp; border-radius: 3dp; pointer-events: auto; }
+selectbox option { display: block; padding: 4dp 6dp; pointer-events: auto; }

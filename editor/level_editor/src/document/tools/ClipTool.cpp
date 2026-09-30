@@ -1,8 +1,9 @@
 #include "ClipTool.h"
 
-#include "ui/chrome/ChromeHeader.h"
-#include "ui/chrome/ChromeBars.h"
-#include "ui/chrome/ChromeControls.h"
+#include "properties/SettingProperties.h"
+
+#include <array>
+
 #include "ui/EditorUiStyle.h"
 
 #include "EditorTheme.h"
@@ -27,7 +28,6 @@
 #include "viewport/ViewportOrientation.h"
 #include "viewport/ViewportProjection.h"
 
-#include <imgui.h>
 #include <SDL3/SDL_keycode.h>
 
 #include <algorithm>
@@ -72,6 +72,10 @@ IconId ModeIcon(ClipMode mode)
 }
 
 constexpr const char* kCapTooltip = "Close the cut with a face";
+
+// The modes as a setting shows them, in ClipMode order.
+constexpr std::array<std::string_view, 3> kModeNames = { "Keep Front", "Keep Back", "Split" };
+constexpr std::array<ClipMode, 3> kModes = { ClipMode::KeepFront, ClipMode::KeepBack, ClipMode::Split };
 
 // Forwards the drag to the tool. The ToolRegistry owns the tool and the
 // InteractionHost cancels interactions before any tool switch, so the reference
@@ -742,35 +746,48 @@ void ClipTool::RevertAll(ToolContext& ctx)
     WriteOverlay(ctx);
 }
 
-void ClipTool::DrawToolbarControls(ToolContext& ctx)
+std::vector<PropertyNode> ClipTool::Parameters(const ToolContext&) const
 {
-    const float size = EditorChrome::BarButtonSize();
-    for (const ClipMode mode : { ClipMode::KeepFront, ClipMode::KeepBack, ClipMode::Split })
-    {
-        const char* id = mode == ClipMode::KeepFront ? "clipfront" : mode == ClipMode::KeepBack ? "clipback" : "clipsplit";
-        if (EditorChrome::ToolButton(id, ModeIcon(mode), ModeTooltip(mode), Mode == mode, size))
-            SetMode(ctx, mode);
-        ImGui::SameLine();
-    }
-    if (EditorChrome::ToolButton("clipcap", IconId::ClipCap, kCapTooltip, Capped, size))
-        SetCapped(ctx, !Capped);
+    const auto current = static_cast<std::size_t>(std::ranges::find(kModes, Mode) - kModes.begin());
+    return { ChoiceProperty("mode", "Keep", kModeNames, current, "Tab cycles"),
+             ToggleProperty("cap", "Close the Cut", Capped, kCapTooltip) };
 }
 
-void ClipTool::DrawProperties(ToolContext& ctx)
+PropertyEditResult ClipTool::SetParameter(ToolContext& ctx, std::string_view key, std::string_view value)
 {
-    EditorChrome::SectionTitle("Clip");
-    DrawToolbarControls(ctx);
-    ImGui::TextDisabled("Tab cycles.  Drag a line across the selected brushes.");
-    if (Phase == ClipPhase::Pending)
+    if (key == "mode")
     {
-        if (!Status.empty())
-            ImGui::TextDisabled("%s", Status.c_str());
-        if (EditorChrome::Button("clipapply", "Apply", ImVec2(0, 0),
-                                 CanCommit() ? ActionTone::Active : ActionTone::Normal)
-            && CanCommit())
-            Commit(ctx);
-        ImGui::SameLine();
-        if (EditorChrome::Button("clipcancel", "Cancel", ImVec2(0, 0), ActionTone::Normal))
-            RevertAll(ctx);
+        const std::optional<std::size_t> index = ParseChoice(value, kModeNames);
+        if (!index)
+            return PropertyEditResult::Refused;
+        if (kModes[*index] == Mode)
+            return PropertyEditResult::Unchanged;
+        SetMode(ctx, kModes[*index]);
+        return PropertyEditResult::Applied;
     }
+    if (key == "cap")
+    {
+        const std::optional<bool> on = ParseToggle(value);
+        if (!on)
+            return PropertyEditResult::Refused;
+        if (*on == Capped)
+            return PropertyEditResult::Unchanged;
+        SetCapped(ctx, *on);
+        return PropertyEditResult::Applied;
+    }
+    return PropertyEditResult::Gone;
+}
+
+ToolDraft ClipTool::Draft() const
+{
+    if (Phase != ClipPhase::Pending)
+        return ToolDraft::None;
+    return CanCommit() ? ToolDraft::Ready : ToolDraft::Incomplete;
+}
+
+std::string ClipTool::Hint(const ToolContext&) const
+{
+    if (Phase == ClipPhase::Pending && !Status.empty())
+        return Status;
+    return "Drag a line across the selected brushes";
 }

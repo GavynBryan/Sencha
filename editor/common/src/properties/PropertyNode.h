@@ -29,6 +29,10 @@ struct PropertyDescriptor
     std::string Tooltip = {};
     std::vector<std::string> Choices = {};
     AssetType Asset = AssetType::Unknown;
+    // A number's range and the step it moves by; Max below Min is unbounded.
+    double Min = 0.0;
+    double Max = -1.0;
+    double Step = 0.0;
     bool ReadOnly = false;
     // Kept out of a compact presentation until someone asks for everything.
     bool Advanced = false;

@@ -269,9 +269,12 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   (`GetPersistence`); the shell keeps that in the ImGui layout file.
 - A tool: implement `ITool` (built-ins live in `level_editor/src/document/tools/`) and
   register it in `WorkspaceInteractionRuntime::Rebuild`. That is the whole cost:
-  a tool declares its own properties UI (`DrawProperties`), toolbar chrome
-  (`DrawToolbarControls`), activation key (`GetShortcut`), and how a save should
-  resolve anything it has staged (`CommitPending`), so the panel, the toolbar,
+  a tool declares its settings as properties (`Parameters`, `SetParameter`),
+  whether it has drafted work (`Draft`) and what to do next (`Hint`), its
+  activation key (`GetShortcut`), and how a save should resolve anything it has
+  staged (`CommitPending`). It draws nothing: the Level's operation facet hands
+  the shell those facts and a `ToolParameterSource`, and the shell's station and
+  tool card present them through `PropertySheet`, so the station, the card,
   the tool palette, the tool wheel, the status bar, and the keymap all pick it
   up without an edit. The toolbar is not a bar of its own: it is the row the
   views panel reserves above the views (`ViewsPanel::SetHeaderRows`), with the

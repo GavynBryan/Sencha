@@ -400,8 +400,9 @@ void EditorUiFeature::DrawChassisGround(const WorkspaceView* view)
 {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     const float top = std::min(ContentTopInset, vp->WorkSize.y);
+    const float bottom = std::min(ContentBottomInset, vp->WorkSize.y - top);
     const ImVec2 workMin(vp->WorkPos.x, vp->WorkPos.y + top);
-    const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y);
+    const ImVec2 workMax(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y - bottom);
     ImVec2 holeMin{};
     ImVec2 holeMax{};
     if (view != nullptr && view->ContentHole.Area() > 0.0f)
@@ -424,12 +425,13 @@ void EditorUiFeature::DrawDockHost(WorkspaceView* view)
     // Under the shell's rail, which is authored UI drawn over this window.
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     const float top = std::min(ContentTopInset, vp->WorkSize.y);
+    const float bottom = std::min(ContentBottomInset, vp->WorkSize.y - top);
     const ImVec2 workMin(vp->WorkPos.x, vp->WorkPos.y + top);
 
     const float inset = EditorChrome::ChassisInset();
     ImGui::SetNextWindowPos(ImVec2(workMin.x + inset, workMin.y + inset));
     ImGui::SetNextWindowSize(ImVec2(std::max(0.0f, vp->WorkSize.x - inset * 2.0f),
-                                    std::max(0.0f, vp->WorkSize.y - top - inset * 2.0f)));
+                                    std::max(0.0f, vp->WorkSize.y - top - bottom - inset * 2.0f)));
     ImGui::SetNextWindowViewport(vp->ID);
 
     const ImGuiWindowFlags hostFlags =

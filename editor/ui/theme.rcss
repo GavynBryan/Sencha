@@ -58,6 +58,13 @@ body { color: #d8dce4ff; }
 .theme-key.destructive { color: #d86a5aff; }
 .theme-readout      { background-color: #05070aff; border-color: #24303cff; color: #2ed0eaff; }
 .theme-art          { image-color: #3a4856ff; }
+slidertrack         { background-color: #12161dff; }
+sliderprogress      { background-color: #2e4a70ff; }
+sliderbar           { background-color: #4c7fd0ff; }
+sliderbar:hover, sliderbar:active { background-color: #6f9be0ff; }
+selectbox           { background-color: #12161dff; border-color: #4c7fd0ff; }
+selectbox option:hover { background-color: #1b2230ff; }
+selectbox option:checked { background-color: #4d330bff; color: #d6e4f0ff; }
 .theme-lamp         { background-color: #10141bff; border-color: #03050aff; }
 .theme-lamp.on      { background-color: #2ed0eaff; }
 .theme-lamp.lit     { background-color: #ffb347ff; }

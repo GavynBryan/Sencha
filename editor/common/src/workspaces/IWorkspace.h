@@ -54,6 +54,8 @@ public:
     // What the shell presents about this workspace (WorkspaceFacets.h).
     [[nodiscard]] virtual WorkspaceDocumentFacet Document() const { return {}; }
     [[nodiscard]] virtual WorkspaceTransportFacet Transport() const { return {}; }
+    // Not const: the parameters it hands out are the workspace's to edit.
+    [[nodiscard]] virtual WorkspaceOperationFacet Operation() { return {}; }
 
     virtual WorkspaceView& View() = 0;
     // The window this workspace now draws in: its UI capture, input gates and

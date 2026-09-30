@@ -80,7 +80,6 @@ public:
     [[nodiscard]] static float ViewportRowHeight();
 
 private:
-    void DrawToolContextGroup(); // edge-cut sub-mode / carve apply-cancel
     // The gizmo strip: the four mode buttons, GizmoStripWidth wide.
     void DrawGizmoStrip(float buttonSize);
     // What precedes the strip in the transform module: the gizmo space and,

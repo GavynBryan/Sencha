@@ -6,7 +6,7 @@
     <link type="text/rcss" href="theme.rcss"/>
 </head>
 <body data-model="views">
-    <!-- Each view the arrangement shows, at its tile. The pixels are the
+    <!-- Each view the arrangement shows, at its own tile. The pixels are the
          host's, rendered this frame; the document only places them. -->
     <div class="tile_slot" data-for="tile : tiles">
         <img class="view" data-attr-src="'host:' + tile.key"

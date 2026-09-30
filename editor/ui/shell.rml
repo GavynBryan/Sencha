@@ -2,6 +2,7 @@
 <head>
     <title>Shell</title>
     <link type="text/rcss" href="shell.rcss"/>
+    <link type="text/rcss" href="icons.rcss"/>
     <link type="text/rcss" href="theme.rcss"/>
 </head>
 <body data-model="shell">
@@ -63,16 +64,51 @@
         </div>
     </div>
 
+    <!-- The station: what the hands are doing, bottom left. Over it, while the
+         operation has settings or drafted work, its card. -->
+    <div id="station_bay" data-if="station_name != ''">
+        <div id="tool_card" class="theme-plate" data-if="card_open">
+            <div class="setting" data-for="row : tool_rows">
+                <span class="setting_label">{{row.label}}</span>
+                <input type="range" class="setting_control" data-if="row.control == 'range'"
+                       data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
+                       data-value="row.number" data-event-change="shell_tool_set(it_index, ev.value)"/>
+                <span class="setting_number theme-readout" data-if="row.control == 'range'">{{row.value}}</span>
+                <select class="setting_control theme-field" data-if="row.control == 'choice'"
+                        data-value="row.value" data-event-change="shell_tool_set(it_index, ev.value)">
+                    <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
+                </select>
+                <div class="setting_toggle key theme-key" data-if="row.control == 'toggle'"
+                     data-class-lit="row.value == 'true'" data-event-click="shell_tool_flip(it_index)">
+                    <span data-if="row.value == 'true'">ON</span><span data-if="row.value != 'true'">OFF</span>
+                </div>
+            </div>
+            <div id="tool_hint" class="theme-dim" data-if="station_hint != ''">{{station_hint}}</div>
+            <div id="tool_keys" data-if="draft != 'none'">
+                <div class="key theme-key" data-class-lit="draft == 'ready'" data-class-disabled="draft != 'ready'"
+                     data-event-click="shell_invoke('tool.apply')">APPLY</div>
+                <div class="key theme-key" data-event-click="shell_invoke('tool.cancel')">CANCEL</div>
+            </div>
+        </div>
+        <div id="station" class="theme-plate" data-class-lit="popover == 'tools'"
+             data-event-click="shell_popover('tools')">
+            <span data-if="station_icon != ''" data-attr-class="'station_icon icon icon-' + station_icon"></span>
+            <span class="station_name">{{station_name}}</span>
+            <span class="station_variant theme-accent" data-if="station_variant != ''">{{station_variant}}</span>
+        </div>
+    </div>
+
     <!-- A popover: one decision, anchored under the instrument that opened it.
          Anything outside it takes it away, which is what the catch is for. -->
     <div id="dismiss" data-if="popover != ''" data-event-click="shell_popover('')"></div>
-    <div id="popover" class="theme-surface" data-if="popover != ''"
+    <div id="popover" class="theme-surface" data-if="popover != ''" data-class-rising="popover_rises"
          data-style-left="popover_x + 'px'">
         <div class="entry theme-row" data-for="entry : entries"
              data-class-heading="entry.control == 'section'"
              data-class-disabled="entry.disabled"
              data-class-selected="entry.selected"
              data-event-click="shell_choose(entry.key)">
+            <span data-if="entry.icon != ''" data-attr-class="'entry_icon icon icon-' + entry.icon"></span>
             <span class="entry_label">{{entry.label}}</span>
             <span class="entry_chord theme-muted">{{entry.value}}</span>
         </div>

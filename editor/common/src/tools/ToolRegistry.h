@@ -39,6 +39,7 @@ public:
     // The shared context, for UI that drives tool operations directly (e.g. the
     // Tool Properties panel regenerating a tool's pending preview).
     [[nodiscard]] ToolContext& GetContext() { return *Context; }
+    [[nodiscard]] const ToolContext& GetContext() const { return *Context; }
 
     // Points the registry at a new context. The tools outlive any one document,
     // so a document swap rebinds them here instead of rebuilding them, which is

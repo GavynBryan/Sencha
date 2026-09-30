@@ -35,6 +35,7 @@ class MaterialPickerPanel;
 class MaterialThumbnailCache;
 class LevelViewSurface;
 class RadialMenuScreen;
+class ToolParameterSource;
 class ViewsPanel;
 class EditorRenderFeature;
 class EditorViewportCameraSystem;
@@ -84,6 +85,7 @@ public:
     [[nodiscard]] bool HoldsPointer() const override;
     void MoveTo(const WorkspaceWindow& window) override;
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
+    [[nodiscard]] WorkspaceOperationFacet Operation() override;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
     WorkspaceView& View() override { return Surface; }
     void Place(EditorUiFeature& window) override;
@@ -169,6 +171,8 @@ private:
     std::unique_ptr<ViewportNavigation> Navigation;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
+    // The tool in hand's settings, as the operation facet hands them out.
+    std::unique_ptr<ToolParameterSource> ToolParameters;
     // Declared after Workspace so they are destroyed before the state they
     // reference (ToolRegistry/MeshEdit/Layout/Selection live in Workspace).
     std::unique_ptr<EditorToolbar> Toolbar;

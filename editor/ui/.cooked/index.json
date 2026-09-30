@@ -37,7 +37,7 @@
     },
     {
       "source": "cook_profiles.rml",
-      "input_fingerprint": "2734e61ac5c78e19",
+      "input_fingerprint": "91b49133ed4c7f4d",
       "cook_identity": "62c86b07d68abd42",
       "size": "1730",
       "mtime": "-4648151002176733126",
@@ -51,8 +51,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3862",
-          "mtime": "-4646883187788014413"
+          "size": "4298",
+          "mtime": "-4646879039695122856"
         }
       ],
       "artifacts": [
@@ -60,7 +60,7 @@
           "path": "asset://cook_profiles.rml",
           "file": ".cooked/cook_profiles.rml.sui",
           "type": "UiPackage",
-          "hash": "402dcba041a202d0"
+          "hash": "707eef7590b00a2a"
         }
       ]
     },
@@ -933,7 +933,7 @@
     },
     {
       "source": "inspector.rml",
-      "input_fingerprint": "0a5848be7c1f22c8",
+      "input_fingerprint": "65dbbd475482927c",
       "cook_identity": "62c86b07d68abd42",
       "size": "2242",
       "mtime": "-4648151002172867364",
@@ -947,8 +947,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3862",
-          "mtime": "-4646883187788014413"
+          "size": "4298",
+          "mtime": "-4646879039695122856"
         }
       ],
       "artifacts": [
@@ -956,13 +956,13 @@
           "path": "asset://inspector.rml",
           "file": ".cooked/inspector.rml.sui",
           "type": "UiPackage",
-          "hash": "562aa007f6dda63d"
+          "hash": "8563919fa698e5e5"
         }
       ]
     },
     {
       "source": "palette.rml",
-      "input_fingerprint": "e49f428e5b2b4905",
+      "input_fingerprint": "0d1fd9d772aeba49",
       "cook_identity": "62c86b07d68abd42",
       "size": "1030",
       "mtime": "-4646888290794166014",
@@ -976,8 +976,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3862",
-          "mtime": "-4646883187788014413"
+          "size": "4298",
+          "mtime": "-4646879039695122856"
         }
       ],
       "artifacts": [
@@ -985,13 +985,13 @@
           "path": "asset://palette.rml",
           "file": ".cooked/palette.rml.sui",
           "type": "UiPackage",
-          "hash": "342f434df6aa6433"
+          "hash": "7d31991f9a8cd9e6"
         }
       ]
     },
     {
       "source": "prompt.rml",
-      "input_fingerprint": "a725074ebfaeb22a",
+      "input_fingerprint": "cea572a18728229e",
       "cook_identity": "62c86b07d68abd42",
       "size": "871",
       "mtime": "-4646887282353163968",
@@ -1005,8 +1005,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3862",
-          "mtime": "-4646883187788014413"
+          "size": "4298",
+          "mtime": "-4646879039695122856"
         }
       ],
       "artifacts": [
@@ -1014,28 +1014,33 @@
           "path": "asset://prompt.rml",
           "file": ".cooked/prompt.rml.sui",
           "type": "UiPackage",
-          "hash": "eca23925dc4ab762"
+          "hash": "7eeb4d8a335db82d"
         }
       ]
     },
     {
       "source": "shell.rml",
-      "input_fingerprint": "bb0550ef2ad1bc51",
+      "input_fingerprint": "bb508854b21953f0",
       "cook_identity": "62c86b07d68abd42",
-      "size": "4590",
-      "mtime": "-4646886284038606544",
+      "size": "7192",
+      "mtime": "-4646878933422983384",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "shell.rcss",
-          "size": "4188",
-          "mtime": "-4646886284038348282"
+          "size": "6601",
+          "mtime": "-4646878933422553609"
+        },
+        {
+          "source": "icons.rcss",
+          "size": "3264",
+          "mtime": "-4646881427138628967"
         },
         {
           "source": "theme.rcss",
-          "size": "3862",
-          "mtime": "-4646883187788014413"
+          "size": "4298",
+          "mtime": "-4646879039695122856"
         }
       ],
       "artifacts": [
@@ -1043,16 +1048,16 @@
           "path": "asset://shell.rml",
           "file": ".cooked/shell.rml.sui",
           "type": "UiPackage",
-          "hash": "16228b139f29d8bd"
+          "hash": "c5c753a4c7df63de"
         }
       ]
     },
     {
       "source": "views.rml",
-      "input_fingerprint": "586509e997183ab4",
+      "input_fingerprint": "af739dca72e51361",
       "cook_identity": "62c86b07d68abd42",
-      "size": "3520",
-      "mtime": "-4646881310078425348",
+      "size": "3524",
+      "mtime": "-4646878608184534101",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
@@ -1068,8 +1073,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3862",
-          "mtime": "-4646883187788014413"
+          "size": "4298",
+          "mtime": "-4646879039695122856"
         }
       ],
       "artifacts": [
@@ -1077,16 +1082,16 @@
           "path": "asset://views.rml",
           "file": ".cooked/views.rml.sui",
           "type": "UiPackage",
-          "hash": "8ae49c39b64b193e"
+          "hash": "c4bbd6097c3d5b79"
         }
       ]
     },
     {
       "source": "wheel.rml",
-      "input_fingerprint": "51f1e822f234ab72",
+      "input_fingerprint": "1f62a576e996468f",
       "cook_identity": "62c86b07d68abd42",
-      "size": "2053",
-      "mtime": "-4646882716888259394",
+      "size": "2054",
+      "mtime": "-4646878608184425458",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
@@ -1102,8 +1107,8 @@
         },
         {
           "source": "theme.rcss",
-          "size": "3862",
-          "mtime": "-4646883187788014413"
+          "size": "4298",
+          "mtime": "-4646879039695122856"
         }
       ],
       "artifacts": [
@@ -1111,7 +1116,7 @@
           "path": "asset://wheel.rml",
           "file": ".cooked/wheel.rml.sui",
           "type": "UiPackage",
-          "hash": "e770f83c9d521ae8"
+          "hash": "d9435e9f02d1fe63"
         }
       ]
     }

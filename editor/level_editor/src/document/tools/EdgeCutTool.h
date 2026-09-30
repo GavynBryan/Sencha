@@ -26,8 +26,9 @@ public:
     // work, so a save drops it rather than cutting the mesh on the user's behalf.
     void CommitPending(ToolContext& ctx) override;
 
-    void DrawProperties(ToolContext& ctx) override;
-    void DrawToolbarControls(ToolContext& ctx) override;
+    [[nodiscard]] std::vector<PropertyNode> Parameters(const ToolContext& ctx) const override;
+    PropertyEditResult SetParameter(ToolContext& ctx, std::string_view key, std::string_view value) override;
+    [[nodiscard]] std::string Hint(const ToolContext& ctx) const override;
     [[nodiscard]] Shortcut GetShortcut() const override;
     [[nodiscard]] bool UsesTransformGizmo() const override { return false; }
 

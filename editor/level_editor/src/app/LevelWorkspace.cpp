@@ -46,6 +46,7 @@
 #include "ui/SceneHierarchyPanel.h"
 #include "ui/WorldPartitionPanel.h"
 #include "ui/GraphViewerPanel.h"
+#include "tools/ToolParameterSource.h"
 #include "ui/RadialMenuScreen.h"
 #include "ui/LevelViewSurface.h"
 #include "ui/ViewsPanel.h"
@@ -329,6 +330,22 @@ void LevelWorkspace::BuildInput()
     // keymap, hints and palette name it like any other.
     offer("tool.wheel", "Tool Wheel", "Tool", { KeyChord{ SDLK_Q, {} } }, IconId::None, {});
     offer("gizmo.wheel", "Transform Wheel", "Transform", { KeyChord{ SDLK_Z, {} } }, IconId::None, {});
+
+    // A drafted operation's Apply and Cancel, for whatever presents them. The
+    // tools take Enter and Escape themselves, so these carry no chord.
+    const auto activeTool = [this]() -> std::pair<ITool*, ToolRegistry*> {
+        ToolRegistry* tools = Workspace->Interaction.Tools.get();
+        return { tools != nullptr ? tools->GetActiveTool() : nullptr, tools };
+    };
+    offer("tool.apply", "Apply", "Tool", {}, IconId::Check, [activeTool] {
+        if (const auto [tool, tools] = activeTool(); tool != nullptr && tool->Draft() == ToolDraft::Ready)
+            tool->CommitPending(tools->GetContext());
+    });
+    offer("tool.cancel", "Cancel", "Tool", {}, IconId::Cancel, [activeTool] {
+        if (const auto [tool, tools] = activeTool(); tool != nullptr && tool->Draft() != ToolDraft::None)
+            tool->OnCancel(tools->GetContext());
+    });
+    ToolParameters = std::make_unique<ToolParameterSource>([this] { return Workspace->Interaction.Tools.get(); });
 
     // A wheel's key is held, not pressed, so it is not a shortcut row: the
     // session owns both edges of it. The action names are what a keymap file
@@ -1288,6 +1305,34 @@ WorkspaceDocumentFacet LevelWorkspace::Document() const
         facet.Changed = !changed.empty();
     }
     return facet;
+}
+
+WorkspaceOperationFacet LevelWorkspace::Operation()
+{
+    ToolRegistry* tools = Workspace->Interaction.Tools.get();
+    ITool* tool = tools != nullptr ? tools->GetActiveTool() : nullptr;
+    if (tool == nullptr)
+        return {};
+    const std::span<const ITool::Variant> variants = tool->GetVariants();
+    const int variant = tool->GetActiveVariant(tools->GetContext());
+    std::vector<OperationChoice> choices;
+    for (const std::unique_ptr<ITool>& offered : tools->GetTools())
+        if (offered != nullptr)
+            choices.push_back({ .Label = std::string(offered->GetDisplayName()),
+                                .Icon = offered->GetIcon(),
+                                .Action = "tool." + std::string(offered->GetId()),
+                                .Current = offered.get() == tool });
+    return {
+        .Name = std::string(tool->GetDisplayName()),
+        .Variant = variant >= 0 && variant < static_cast<int>(variants.size())
+            ? std::string(variants[static_cast<std::size_t>(variant)].Label)
+            : std::string{},
+        .Icon = tool->GetIcon(),
+        .Draft = tool->Draft(),
+        .Hint = tool->Hint(tools->GetContext()),
+        .Parameters = ToolParameters.get(),
+        .Choices = std::move(choices),
+    };
 }
 
 WorkspaceTransportFacet LevelWorkspace::Transport() const

@@ -6,7 +6,7 @@
     <link type="text/rcss" href="theme.rcss"/>
 </head>
 <body data-model="wheel">
-    <!-- A radial menu while its key is held: a rotary selector whose keys sit
+    <!-- A radial menu, while its key is held: a rotary selector whose keys sit
          where the session hit-tests them. Positions are window pixels. -->
     <div id="wheel" data-if="open">
         <div class="disc_slot" data-for="disc : discs">

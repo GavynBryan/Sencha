@@ -81,7 +81,10 @@ public:
     // built; a RefreshPending restyles the preview with it.
     [[nodiscard]] bool PendingMaterialStale(const ToolContext& ctx) const;
 
-    void DrawProperties(ToolContext& ctx) override;
+    [[nodiscard]] std::vector<PropertyNode> Parameters(const ToolContext& ctx) const override;
+    PropertyEditResult SetParameter(ToolContext& ctx, std::string_view key, std::string_view value) override;
+    [[nodiscard]] ToolDraft Draft() const override { return HasPending() ? ToolDraft::Ready : ToolDraft::None; }
+    [[nodiscard]] std::string Hint(const ToolContext& ctx) const override;
     [[nodiscard]] Shortcut GetShortcut() const override;
 
     // The primitives as the tool's variants; Creation.ActivePrimitive is the

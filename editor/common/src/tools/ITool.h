@@ -3,6 +3,8 @@
 #include <core/assets/AssetRef.h>
 
 #include "CommandChoice.h"
+#include "properties/PropertySource.h"
+#include "tools/ToolDraft.h"
 #include "icons/IconId.h"
 #include "input/InputEvent.h"
 #include "interaction/IInteraction.h"
@@ -10,6 +12,9 @@
 #include <math/Vec.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -64,13 +69,21 @@ struct ITool
     // goes; the session honours it, and nothing else learns which tool it was.
     [[nodiscard]] virtual bool UsesTransformGizmo() const { return true; }
 
-    // A tool's own chrome, drawn while it is active: the settings and verbs in
-    // the Tool Properties panel, and the compact controls in the toolbar's
-    // contextual group. The tool draws them itself so that adding a tool does not
-    // mean editing the panel and the toolbar as well; both surfaces simply hand
-    // the active tool its space. Leave empty for a tool with no controls.
-    virtual void DrawProperties(ToolContext& /*ctx*/) {}
-    virtual void DrawToolbarControls(ToolContext& /*ctx*/) {}
+    // What the tool can be set to -- a primitive, a mode, a count -- as
+    // properties a surface presents however it likes, and setting one by key
+    // from the text that surface read back. The tool answers only in terms of
+    // its own settings; it never learns what showed them.
+    [[nodiscard]] virtual std::vector<PropertyNode> Parameters(const ToolContext& /*ctx*/) const { return {}; }
+    virtual PropertyEditResult SetParameter(ToolContext& /*ctx*/, std::string_view /*key*/, std::string_view /*value*/)
+    {
+        return PropertyEditResult::Gone;
+    }
+    // Whether the tool has drafted work waiting on Apply (CommitPending) or
+    // Cancel (OnCancel).
+    [[nodiscard]] virtual ToolDraft Draft() const { return ToolDraft::None; }
+    // One line on what to do next, or why the draft cannot apply; empty for
+    // nothing to say.
+    [[nodiscard]] virtual std::string Hint(const ToolContext& /*ctx*/) const { return {}; }
 
     // A sub-mode the tool exposes as a choice: what a control shows for it.
     // The tool maps an index back to whatever the choice means, so a surface

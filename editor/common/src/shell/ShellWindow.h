@@ -3,6 +3,7 @@
 #include "actions/ActionContext.h"
 #include "shell/CommandPalette.h"
 #include "shell/PromptDialog.h"
+#include "shell/PropertySheet.h"
 #include "shell/TransientSurfaces.h"
 #include "workspaces/WorkspaceWindow.h"
 
@@ -22,6 +23,7 @@ class ProblemList;
 class PromptQueue;
 class SdlWindow;
 class UiService;
+class IWorkspace;
 class WorkspaceHost;
 struct UiRow;
 
@@ -82,6 +84,10 @@ public:
     // How much of the top of the window the rail covers, in window points:
     // where content under it has to start.
     [[nodiscard]] float RailHeight() const;
+    // How much of the bottom of the window the stations take, in window
+    // points: where docked content has to end while the stations sit in a
+    // band of their own.
+    [[nodiscard]] float StationBand() const;
 
     [[nodiscard]] UiSurfaceId Surface() const { return SurfaceId; }
     // What a workspace placed in this window is handed.
@@ -93,7 +99,7 @@ public:
     void ShowPopover(std::string_view name);
 
 private:
-    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Document };
+    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Document, Tools };
 
     void HandleActions();
     void Publish(double now);
@@ -108,6 +114,9 @@ private:
     [[nodiscard]] std::vector<UiRow> HatchEntries() const;
     [[nodiscard]] std::vector<UiRow> WorkspaceEntries() const;
     [[nodiscard]] std::vector<UiRow> DocumentEntries() const;
+    [[nodiscard]] std::vector<UiRow> ToolEntries();
+    // The operation in hand, bottom left, and its card.
+    void PublishStation(IWorkspace* workspace);
 
     ShellWindowServices Services;
     UiSurfaceId SurfaceId;
@@ -126,6 +135,7 @@ private:
     ActionContext PopoverActions;
     ActionContextStack::Layer PopoverLayer;
     std::unique_ptr<CommandPalette> Palette;
+    PropertySheet ToolSheet;
     // After the palette, so a question opens over it.
     std::unique_ptr<PromptDialog> Prompt;
     // What the shell itself performs in its window, whatever is showing.

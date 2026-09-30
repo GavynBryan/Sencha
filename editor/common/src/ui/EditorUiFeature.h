@@ -113,6 +113,7 @@ public:
     [[nodiscard]] ActionContext& ViewActionContext() { return ViewActions; }
     // Where the docked content starts, below the rail, in window points.
     void SetContentTopInset(float points) { ContentTopInset = points; }
+    void SetContentBottomInset(float points) { ContentBottomInset = points; }
     // Theme choice, as actions: one per theme, and the palette window.
     void DefineThemeActions();
     // Shows or hides the active workspace's console.
@@ -199,6 +200,7 @@ private:
 
     WorkspaceHost* Workspaces = nullptr;
     float ContentTopInset = 0.0f;
+    float ContentBottomInset = 0.0f;
     ActionContext ViewActions;
     WorkspaceView* ClaimedView = nullptr;
     std::vector<std::string> ClaimedPanelActions;

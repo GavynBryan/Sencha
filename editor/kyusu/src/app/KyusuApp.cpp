@@ -691,7 +691,10 @@ void KyusuApp::UpdateShells()
     {
         MainWindowShell->Update(now, requestedScale);
         if (Ui != nullptr)
+        {
             Ui->SetContentTopInset(MainWindowShell->RailHeight());
+            Ui->SetContentBottomInset(MainWindowShell->StationBand());
+        }
     }
     for (DetachedWindow& entry : Detached)
     {
@@ -699,6 +702,9 @@ void KyusuApp::UpdateShells()
             continue;
         entry.WindowShell->Update(now, requestedScale);
         if (entry.Shell != nullptr)
+        {
             entry.Shell->SetContentTopInset(entry.WindowShell->RailHeight());
+            entry.Shell->SetContentBottomInset(entry.WindowShell->StationBand());
+        }
     }
 }
