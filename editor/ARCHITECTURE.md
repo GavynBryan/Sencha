@@ -39,7 +39,9 @@ first opened and destroyed when closed. Each window's `ShellWindow`
 (`common/src/shell/`, authored UI, `editor/ui/shell.rml`) is its rail: the
 hatch listing every action in play, the workspace and document dials, the
 problems lamp, the transport and the window keys, all fed by the active
-workspace's facets (`WorkspaceFacets.h`) and actions. Under the rail the
+workspace's facets (`WorkspaceFacets.h`) and actions. It also presents the
+command palette (Ctrl+K) and the prompt queue's front question; every window
+shows the same question, so it is answered wherever the person is. Under the rail the
 window's `EditorUiFeature` docks the active workspace's ImGui `WorkspaceView`
 panels until each workspace presents through the shell
 (`docs/editor/interaction-grammar.md`).
@@ -157,7 +159,8 @@ Shared shell (`editor/common/src/`):
 | `observers/` | `WeakObserverList`: subscribers held for as long as they keep their token. | selection, resources, problems |
 | `resources/` | `ActiveResources`: what the person is holding, per asset kind, with a stash; changes reach the tool in hand through `ToolRegistry`. | tools, panels |
 | `problems/`, `notices/` | `ProblemList` (every located problem, republished whole by each source) and `NoticeQueue` (brief word that something happened). | the shell |
-| `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of. Workspaces never include it. | Kyusu |
+| `prompts/` | `PromptQueue` (questions that hold an operation, answered one at a time; an `Asker` withdraws its questions when it goes) and the document questions over it: `AskAboutChanges`, `DocumentExitHold` (exit waits on changed documents) and `DocumentSaveFollowUp` (a failed save is a problem, a conflict is a question). | workspaces, Kyusu |
+| `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `CommandPalette`, `PromptDialog` and `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of. Workspaces never include it. | Kyusu |
 | `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first). | Kyusu, workspaces |
 | `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through), `SchemaWidgets`. | `IEditorPanel` |
 | `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/icons/` |

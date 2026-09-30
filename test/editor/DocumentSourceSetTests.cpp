@@ -2,6 +2,7 @@
 // retaken newest first by document identity, never by bare key.
 
 #include "documents/DocumentSourceSet.h"
+#include "FakeDocumentSource.h"
 
 #include <gtest/gtest.h>
 
@@ -11,86 +12,12 @@
 
 namespace
 {
-    struct FakeDocument
-    {
-        bool Changed = false;
-        bool Editing = false;
-        DocumentSaveStatus SaveAs = DocumentSaveStatus::Saved;
-    };
-
-    class FakeSource final : public DocumentSource
-    {
-    public:
-        FakeSource(std::string name, DocumentSourceSet& set, std::vector<std::string>& log)
-            : Name(std::move(name)), Set(set), Log(log)
-        {
-            Set.AddSource(*this);
-        }
-        ~FakeSource() override { Set.RemoveSource(*this); }
-
-        void Edit(const std::string& key)
-        {
-            Documents[key].Changed = true;
-            Set.Record({ this, key });
-        }
-
-        void AppendChangedDocuments(std::vector<DocumentRef>& out) override
-        {
-            for (const auto& [key, document] : Documents)
-                if (document.Changed || document.Editing)
-                    out.push_back({ this, key });
-        }
-
-        DocumentSaveResult SaveDocument(std::string_view key) override
-        {
-            FakeDocument& document = Documents[std::string(key)];
-            document.Editing = false;
-            if (document.SaveAs == DocumentSaveStatus::Saved)
-                document.Changed = false;
-            return { {}, document.SaveAs, document.SaveAs == DocumentSaveStatus::Failed ? "disk full" : "" };
-        }
-
-        bool SettleDocument(std::string_view key, ConflictChoice choice, std::string&) override
-        {
-            Log.push_back(Name + ":" + std::string(key) + (choice == ConflictChoice::KeepMine ? ":mine" : ":file"));
-            Documents[std::string(key)] = {};
-            return true;
-        }
-
-        void StepDocument(std::string_view key, DocumentStep step) override
-        {
-            Log.push_back(Name + ":" + std::string(key) + (step == DocumentStep::Undo ? ":undo" : ":redo"));
-            if (RecordWhileStepping)
-                Set.Record({ this, std::string(key) });
-        }
-
-        void CancelDocumentEdits() override
-        {
-            for (auto& [key, document] : Documents)
-                if (std::exchange(document.Editing, false))
-                    Log.push_back(Name + ":" + key + ":cancel");
-        }
-
-        void DiscardDocument(std::string_view key) override
-        {
-            Log.push_back(Name + ":" + std::string(key) + ":discard");
-            Documents.erase(std::string(key));
-            Set.ForgetDocument({ this, std::string(key) });
-        }
-
-        std::string Name;
-        DocumentSourceSet& Set;
-        std::vector<std::string>& Log;
-        std::map<std::string, FakeDocument> Documents;
-        bool RecordWhileStepping = false;
-    };
-
     struct TwoSources : testing::Test
     {
         std::vector<std::string> Log;
         DocumentSourceSet Set;
-        FakeSource Data{ "data", Set, Log };
-        FakeSource Events{ "events", Set, Log };
+        FakeDocumentSource Data{ "data", Set, Log };
+        FakeDocumentSource Events{ "events", Set, Log };
 
         // The contract every owner keeps: nothing is destroyed holding changes.
         void TearDown() override { Set.DiscardAll(); }
@@ -158,7 +85,7 @@ TEST_F(TwoSources, RemovingASourceDropsItsSteps)
 {
     std::vector<std::string> log;
     {
-        FakeSource scratch{ "scratch", Set, log };
+        FakeDocumentSource scratch{ "scratch", Set, log };
         Data.Edit("rig");
         scratch.Edit("x");
         Events.Edit("walk");
@@ -269,7 +196,7 @@ TEST_F(TwoSources, DestroyingASourceThatStillHasChangesIsAnError)
     GTEST_FLAG_SET(death_test_style, "threadsafe");
     const auto destroyChanged = [this] {
         std::vector<std::string> log;
-        FakeSource scratch{ "scratch", Set, log };
+        FakeDocumentSource scratch{ "scratch", Set, log };
         scratch.Edit("x");
     };
     EXPECT_DEBUG_DEATH(destroyChanged(), "destroyed with changes nobody saved or discarded");

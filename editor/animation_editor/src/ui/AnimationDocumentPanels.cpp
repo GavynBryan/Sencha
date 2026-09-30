@@ -20,10 +20,10 @@ namespace
 class DocumentFormPanel final : public IEditorPanel
 {
 public:
-    DocumentFormPanel(DataDocumentSet& documents, DocumentSourceSet& sources)
+    DocumentFormPanel(DataDocumentSet& documents, DocumentSourceSet& sources, PromptQueue& prompts)
         : Documents(documents)
         , Sources(sources)
-        , Tabs(documents)
+        , Tabs(documents, prompts)
     {
     }
     std::string_view GetTitle() const override { return "Document"; }
@@ -70,7 +70,8 @@ private:
 };
 }
 
-void AddAnimationDocumentPanels(WorkspaceView& ui, DataDocumentSet& documents, DocumentSourceSet& sources)
+void AddAnimationDocumentPanels(WorkspaceView& ui, DataDocumentSet& documents, DocumentSourceSet& sources,
+                                PromptQueue& prompts)
 {
-    ui.AddPanel(std::make_unique<DocumentFormPanel>(documents, sources));
+    ui.AddPanel(std::make_unique<DocumentFormPanel>(documents, sources, prompts));
 }

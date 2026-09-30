@@ -384,7 +384,7 @@ private:
 }
 
 void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace,
-                               AnimationPreviewRenderFeature*& viewport)
+                               AnimationPreviewRenderFeature*& viewport, PromptQueue& prompts)
 {
     ui.AddPanel(std::make_unique<PreviewAssetsPanel>(workspace));
     ui.AddPanel(std::make_unique<PreviewViewportPanel>(viewport, workspace));
@@ -397,7 +397,7 @@ void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& wor
     AddAnimationBlendPanels(ui, workspace.Rig, workspace.Takes, workspace.Viewport);
     AddAnimationLabPanels(ui, workspace.Lab, workspace.Rig);
     AddAnimationRootMotionPanels(ui, workspace.Rig, workspace.Clips());
-    AddAnimationDocumentPanels(ui, workspace.Documents, workspace.Sources);
+    AddAnimationDocumentPanels(ui, workspace.Documents, workspace.Sources, prompts);
     AddAnimationMigrationPanels(ui, workspace);
     AddAnimationScenarioBatchPanels(ui, workspace);
     auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace.Documents, workspace.Sources);

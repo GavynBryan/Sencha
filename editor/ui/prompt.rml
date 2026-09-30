@@ -1,0 +1,22 @@
+<rml>
+<head>
+    <title>Prompt</title>
+    <link type="text/rcss" href="prompt.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="prompt" data-event-keydown="prompt_key(ev.key_identifier)">
+    <div id="scrim" class="theme-scrim"></div>
+    <div id="prompt" class="theme-plate">
+        <div id="title" class="theme-title">{{title}}</div>
+        <div id="message">{{message}}</div>
+        <div id="items" data-if="items.size > 0">
+            <div class="item theme-dim" data-for="item : items">{{item.label}}</div>
+        </div>
+        <div id="choices">
+            <button class="choice theme-key" data-for="choice : choices"
+                    data-class-destructive="choice.detail == 'destructive'"
+                    data-event-click="prompt_choose(choice.key)">{{choice.label}}</button>
+        </div>
+    </div>
+</body>
+</rml>

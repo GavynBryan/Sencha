@@ -3,9 +3,11 @@
 #include "documents/DocumentRef.h"
 #include "documents/DocumentSaveReport.h"
 #include "documents/DocumentSource.h"
+#include "observers/WeakObserverList.h"
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -47,6 +49,13 @@ public:
     DocumentSaveResult Save(const DocumentRef& document);
     bool Settle(const DocumentRef& document, ConflictChoice choice, std::string& error);
     [[nodiscard]] const DocumentSaveReport& LastSave() const { return Report; }
+    // Told whenever LastSave changes: with the result when a save changed it,
+    // with null when a settle or a document leaving did.
+    using ReportObserver = WeakObserverList<const DocumentSaveResult*>;
+    [[nodiscard]] std::shared_ptr<ReportObserver::Fn> SubscribeReport(ReportObserver::Fn fn)
+    {
+        return ReportObservers.Subscribe(std::move(fn));
+    }
     [[nodiscard]] std::vector<DocumentRef> ChangedDocuments() const;
     // Offered to every source until one has the file open.
     [[nodiscard]] ExternalChange FileChangedOnDisk(const std::filesystem::path& file);
@@ -62,5 +71,6 @@ private:
     std::size_t Cursor = 0;
     bool Stepping = false;
     DocumentSaveReport Report;
+    ReportObserver ReportObservers;
     std::function<void(const DocumentRef&)> StepObserver;
 };

@@ -20,9 +20,10 @@ constexpr std::string_view kCommandOwner = "editor.data";
 }
 
 DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
-                             DataDocumentStore& store)
+                             DataDocumentStore& store, PromptQueue& prompts)
     : EngineRef(engine)
     , Model(engine.Content().Assets(), project, sources, store)
+    , Prompts(prompts)
 {
     RegisterBuiltInSubtypeEditors(SubtypeEditors);
     BuildUi();
@@ -45,8 +46,8 @@ void DataWorkspace::BuildUi()
     };
     Surface.File.Save = [this] { SaveActive(); };
 
-    Surface.AddPanel(std::make_unique<DataAssetBrowserPanel>(Model));
-    Surface.AddPanel(std::make_unique<DataFormPanel>(Model, SubtypeEditors));
+    Surface.AddPanel(std::make_unique<DataAssetBrowserPanel>(Model, Prompts));
+    Surface.AddPanel(std::make_unique<DataFormPanel>(Model, SubtypeEditors, Prompts));
     Surface.AddPanel(std::make_unique<DataDocumentationPanel>(Model));
     Surface.AddPanel(std::make_unique<DataValidationPanel>(Model));
     Surface.AddPanel(std::make_unique<DataRawJsonPanel>(Model));

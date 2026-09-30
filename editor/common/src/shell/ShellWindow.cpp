@@ -127,12 +127,14 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         Palette->Open();
     } });
     WindowLayer = Services.Actions.Push(WindowActions, ActionRank::Window);
+    Prompt = std::make_unique<PromptDialog>(Services.Ui, SurfaceId, Services.Prompts, Services.Actions);
 }
 
 ShellWindow::~ShellWindow()
 {
     WindowLayer.Reset();
     PopoverLayer.Reset();
+    Prompt.reset();
     Palette.reset();
     if (Screen.IsValid())
         Services.Ui.CloseScreen(Screen);
@@ -149,6 +151,13 @@ void ShellWindow::Update(double now, float scale)
     Services.Ui.SetSurfaceScale(SurfaceId, scale);
 
     HandleActions();
+    Prompt->Update();
+    // A question stands alone: nothing else opened stays open under it.
+    if (Prompt->IsShowing())
+    {
+        OpenPopover(Popover::None);
+        Palette->Close();
+    }
     Palette->Update();
     Publish(now);
     PublishCaption();
@@ -404,6 +413,6 @@ void ShellWindow::PublishCaption()
             regions.CaptionCount = 1;
         }
     }
-    regions.CaptionEnabled = Showing == Popover::None;
+    regions.CaptionEnabled = Showing == Popover::None && !Prompt->IsShowing();
     Services.Window.SetFrameRegions(regions);
 }

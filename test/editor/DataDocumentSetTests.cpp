@@ -4,7 +4,7 @@
 
 #include "data/DataDocumentSet.h"
 #include "documents/DocumentSourceSet.h"
-#include "ui/DocumentShellActions.h"
+#include "prompts/DocumentPrompts.h"
 
 #include <anim/AnimFactSchema.h>
 #include <anim/AnimRequestSchema.h>

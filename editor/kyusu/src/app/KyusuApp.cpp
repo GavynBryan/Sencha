@@ -7,8 +7,6 @@
 #include "app/ProjectSession.h"
 #include "app/WorkspaceKinds.h"
 #include "render/RenderFeatureDetach.h"
-#include "ui/DocumentSaveReportView.h"
-#include "ui/DocumentShellActions.h"
 #include "input/KeymapFile.h"
 #include "input/SdlEventTranslation.h"
 #include "ui/EditorThemeStartup.h"
@@ -32,7 +30,6 @@
 #include <platform/WindowCreateInfo.h>
 
 #include <SDL3/SDL.h>
-#include <imgui.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -148,7 +145,7 @@ void KyusuApp::OnStart(GameStartupContext&)
     Session = std::make_unique<ProjectSession>(engine, std::move(ProjectPath));
     MainWindowActions = std::make_unique<WindowActions>();
     MainWindowActions->Application = MainWindowActions->Stack.Push(ApplicationActions, ActionRank::Application);
-    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog),
+    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts),
                                                  Session->Project() != nullptr, mainWindow);
 
     // Chrome theme (behavior from data), loaded before the UI feature applies
@@ -283,11 +280,9 @@ EditorUiFeature* KyusuApp::ShellForWindowId(std::uint32_t windowId) const
 void KyusuApp::InstallDocumentActions()
 {
     DocumentSourceSet& documents = Session->Documents();
-    if (Ui != nullptr)
-    {
-        InstallDocumentShellActions(*Ui, GetEngine(), documents);
-        Ui->AddShellOverlay([this] { DrawClosePrompt(); });
-    }
+    ExitHold = std::make_unique<DocumentExitHold>(GetEngine(), documents, Prompts);
+    SaveFollowUp = std::make_unique<DocumentSaveFollowUp>(documents, Problems, Prompts);
+    CloseAsker = Prompts.MakeAsker();
 
     documents.SetStepObserver([this](const DocumentRef& document) {
         for (const WorkspaceHost::Entry& entry : Workspaces->OpenWorkspaces())
@@ -303,15 +298,15 @@ void KyusuApp::InstallDocumentActions()
     });
 
     Workspaces->SetCloseGuard([this, &documents](const WorkspaceKind& kind, IWorkspace& workspace) {
+        std::vector<DocumentRef> changed;
         for (const DocumentRef& document : documents.ChangedDocuments())
-        {
             if (workspace.OwnsDocument(document))
-            {
-                HeldClose = kind.Id;
-                return false;
-            }
-        }
-        return true;
+                changed.push_back(document);
+        if (changed.empty())
+            return true;
+        if (!CloseAsker.IsAsking())
+            AskBeforeClosing(kind, std::move(changed));
+        return false;
     });
 }
 
@@ -419,62 +414,35 @@ void KyusuApp::SyncActionLayers()
             sync(entry.Presentation, *entry.Actions);
 }
 
-void KyusuApp::DrawClosePrompt()
+void KyusuApp::AskBeforeClosing(const WorkspaceKind& kind, std::vector<DocumentRef> changed)
 {
-    constexpr const char* title = "Close workspace";
-    IWorkspace* closing = HeldClose.empty() ? nullptr : Workspaces->Find(HeldClose);
-    if (closing == nullptr)
-    {
-        HeldClose.clear();
-        return;
-    }
-    if (!ImGui::IsPopupOpen(title))
-        ImGui::OpenPopup(title);
-    if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        return;
-
-    DocumentSourceSet& documents = Session->Documents();
-    std::vector<DocumentRef> owned;
-    for (const DocumentRef& document : documents.ChangedDocuments())
-        if (closing->OwnsDocument(document))
-            owned.push_back(document);
-    ImGui::TextUnformatted("Save changes before closing?");
-    for (const DocumentRef& document : owned)
-        ImGui::BulletText("%s", document.Source->DocumentLabel(document.Key).c_str());
-    DrawDocumentSaveReport(documents, SettleError);
-
-    const auto finish = [this] {
-        Workspaces->Request({ WorkspaceAction::Close, HeldClose });
-        HeldClose.clear();
-        SettleError.clear();
-        ImGui::CloseCurrentPopup();
-    };
-    if (ImGui::Button("Save and close"))
-    {
-        bool saved = true;
-        for (const DocumentRef& document : owned)
-        {
-            const DocumentSaveStatus status = documents.Save(document).Status;
-            saved &= status == DocumentSaveStatus::Saved || status == DocumentSaveStatus::SavedWithProblems;
-        }
-        if (saved)
-            finish();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Discard and close"))
-    {
-        for (const DocumentRef& document : owned)
-            document.Source->DiscardDocument(document.Key);
-        finish();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Keep editing") || ImGui::IsKeyPressed(ImGuiKey_Escape))
-    {
-        HeldClose.clear();
-        SettleError.clear();
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
+    std::vector<std::string> labels;
+    for (const DocumentRef& document : changed)
+        labels.push_back(document.Source->DocumentLabel(document.Key));
+    CloseAsker.Ask({
+        .Title = "Close " + kind.DisplayName,
+        .Message = "Save changes before closing?",
+        .Items = std::move(labels),
+        .Choices = { { "save", "Save and close" },
+                     { "discard", "Discard and close", ActionTone::Destructive },
+                     { "cancel", "Keep editing" } },
+        .Answer =
+            [this, id = kind.Id, changed = std::move(changed)](std::string_view key) {
+                if (key == "cancel")
+                    return;
+                DocumentSourceSet& documents = Session->Documents();
+                for (const DocumentRef& document : changed)
+                {
+                    if (key == "discard")
+                        document.Source->DiscardDocument(document.Key);
+                    else
+                        (void)documents.Save(document);
+                }
+                // Asked again, by the close guard, if a save left something
+                // unsaved; the save's follow-up says what.
+                Workspaces->Request({ WorkspaceAction::Close, id });
+            },
+    });
 }
 
 void KyusuApp::RegisterWorkspaceCommands()
@@ -646,8 +614,10 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
     }
     DetachRenderFeature(GetEngine(), Ui);
     Workspaces.reset();
-    // The exit gate reads the journal the session is about to take with it.
-    GetEngine().OnExitRequested = nullptr;
+    // Both read the journal the session is about to take with it.
+    CloseAsker = {};
+    SaveFollowUp.reset();
+    ExitHold.reset();
     Session.reset();
 }
 
@@ -662,6 +632,7 @@ std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, Presentation
         .Actions = actions.Stack,
         .Problems = Problems,
         .Notices = Notices,
+        .Prompts = Prompts,
         .Window = window,
         .Presentation = presentation,
         .CloseWindow = std::move(close),

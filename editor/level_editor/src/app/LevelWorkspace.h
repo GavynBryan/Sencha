@@ -16,7 +16,7 @@
 #include "editmodes/TransformModeMenuModel.h"
 #include "workspace/EditorWorkspace.h"
 #include "workspace/LevelDocumentSource.h"
-#include "ui/DocumentShellActions.h"
+#include "prompts/DocumentPrompts.h"
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
 #include "ui/EditorStatusBar.h"
@@ -63,7 +63,8 @@ public:
                    Game* module,
                    MaterialLibrary& materials,
                    DocumentSourceSet& documents,
-                   ActionCatalog& actions);
+                   ActionCatalog& actions,
+                   PromptQueue& prompts);
     ~LevelWorkspace() override;
 
     LevelWorkspace(const LevelWorkspace&) = delete;
@@ -144,9 +145,8 @@ private:
     // The open level in the application's journal; destroyed before the
     // workspace whose world it reports on.
     std::unique_ptr<LevelDocumentSource> LevelDocument;
-    UnsavedDocumentPrompt ChangesPrompt;
-    bool ShowSaveReport = false;
-    std::string SettleError;
+    // After the document its questions act on, so they are withdrawn first.
+    PromptQueue::Asker Prompts;
     // The held-key radial menus: the tools over the workspace's registry, the
     // gizmo modes over the manipulator session. One mechanism, two models.
     std::unique_ptr<ToolRegistryMenuModel> ToolMenu;

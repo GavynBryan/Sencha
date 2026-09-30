@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ui/DocumentShellActions.h"
+#include "prompts/PromptQueue.h"
 
 #include <cstddef>
 #include <functional>
@@ -17,9 +17,11 @@ class DataSubtypeEditorRegistry;
 class DataDocumentTabs
 {
 public:
-    explicit DataDocumentTabs(DataDocumentSet& documents, const DataSubtypeEditorRegistry* editors = nullptr)
+    DataDocumentTabs(DataDocumentSet& documents, PromptQueue& prompts,
+                     const DataSubtypeEditorRegistry* editors = nullptr)
         : Documents(documents)
         , Editors(editors)
+        , Prompts(prompts.MakeAsker())
     {
     }
 
@@ -33,6 +35,6 @@ private:
     const DataSubtypeEditorRegistry* Editors = nullptr;
     // The active index the tab bar last showed; a difference means the set moved it.
     std::optional<std::size_t> Shown;
-    UnsavedDocumentPrompt Prompt;
+    PromptQueue::Asker Prompts;
     std::string CloseError;
 };

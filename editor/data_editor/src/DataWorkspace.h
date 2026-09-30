@@ -8,6 +8,7 @@
 #include <string>
 
 class Engine;
+class PromptQueue;
 struct ProjectDescriptor;
 
 // The data workspace: every structured data asset in the project, edited
@@ -16,7 +17,7 @@ class DataWorkspace final : public IWorkspace
 {
 public:
     DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
-                  DataDocumentStore& store);
+                  DataDocumentStore& store, PromptQueue& prompts);
     ~DataWorkspace() override;
 
     DataWorkspace(const DataWorkspace&) = delete;
@@ -37,6 +38,7 @@ private:
 
     Engine& EngineRef;
     DataEditorWorkspace Model;
+    PromptQueue& Prompts;
     // The purpose-built authoring surfaces; their panels never outlive them.
     DataSubtypeEditorRegistry SubtypeEditors;
     bool Visible = false;

@@ -2,6 +2,7 @@
 
 #include "actions/ActionContext.h"
 #include "shell/CommandPalette.h"
+#include "shell/PromptDialog.h"
 #include "shell/TransientSurfaces.h"
 
 #include <graphics/PresentationId.h>
@@ -17,6 +18,7 @@
 class ActionCatalog;
 class NoticeQueue;
 class ProblemList;
+class PromptQueue;
 class SdlWindow;
 class UiService;
 class WorkspaceHost;
@@ -33,6 +35,7 @@ struct ShellWindowServices
     ActionContextStack& Actions;
     ProblemList& Problems;
     NoticeQueue& Notices;
+    PromptQueue& Prompts;
     SdlWindow& Window;
     PresentationId Presentation;
     // What the rail's close key does: leave the editor from the main window,
@@ -107,6 +110,8 @@ private:
     ActionContext PopoverActions;
     ActionContextStack::Layer PopoverLayer;
     std::unique_ptr<CommandPalette> Palette;
+    // After the palette, so a question opens over it.
+    std::unique_ptr<PromptDialog> Prompt;
     // What the shell itself performs in its window, whatever is showing.
     ActionContext WindowActions;
     ActionContextStack::Layer WindowLayer;

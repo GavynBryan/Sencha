@@ -918,7 +918,6 @@ private:
         DrawUnsavedDocuments(Workspace.Sources);
         if (ImGui::Button("Save all"))
             (void)Workspace.Sources.SaveAll();
-        DrawDocumentSaveReport(Workspace.Sources, ConflictError);
         ImGui::TextWrapped("Preview inputs, requests and transport never modify a document.");
     }
 
@@ -928,7 +927,6 @@ private:
     std::optional<AnimationTrace> Trace;
     std::string TraceError;
     std::string ProblemSignature;
-    std::string ConflictError;
     std::vector<std::string> Undeclared;
     std::string DeclareError;
 };

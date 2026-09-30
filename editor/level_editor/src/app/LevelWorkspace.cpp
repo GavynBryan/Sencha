@@ -39,7 +39,6 @@
 #include "ui/MaterialPickerPanel.h"
 #include "render/RenderFeatureDetach.h"
 #include "documents/DocumentSourceSet.h"
-#include "ui/DocumentSaveReportView.h"
 #include "ui/MaterialThumbnailCache.h"
 #include "ui/ToolPropertiesPanel.h"
 #include "render/SceneThumbnailCache.h"
@@ -106,8 +105,9 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
                                Game* module,
                                MaterialLibrary& materials,
                                DocumentSourceSet& documents,
-                               ActionCatalog& actions)
+                               ActionCatalog& actions, PromptQueue& prompts)
     : Documents(documents)
+    , Prompts(prompts.MakeAsker())
     , Catalog(actions)
     , Materials(&materials)
     , Project(project)
@@ -573,23 +573,6 @@ void LevelWorkspace::BuildUi()
     // The workspace bar sits under the caption as app chrome, on the primary
     // viewport's header plate, so it reads apart from the editing row.
     Surface.Chrome.push_back([this] { StatusBar->Draw(); });
-    Surface.Overlays.push_back([this] { ChangesPrompt.Draw(); });
-    Surface.Overlays.push_back([this] {
-        constexpr const char* title = "Documents not saved";
-        if (ShowSaveReport && !ImGui::IsPopupOpen(title))
-            ImGui::OpenPopup(title);
-        if (!ImGui::BeginPopupModal(title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-            return;
-        ImGui::TextUnformatted("Every document is saved before a cook or a play session reads the disk.");
-        DrawDocumentSaveReport(Documents, SettleError);
-        if (ImGui::Button("Close") || ImGui::IsKeyPressed(ImGuiKey_Escape))
-        {
-            ShowSaveReport = false;
-            SettleError.clear();
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    });
     Surface.Overlays.push_back([this]
     {
         DrawRadialMenu(*ToolWheel, *ToolMenu);
@@ -848,24 +831,22 @@ void LevelWorkspace::AfterSettlingChanges(std::function<void()> proceed)
 {
     std::vector<DocumentRef> changed;
     LevelDocument->AppendChangedDocuments(changed);
-    ChangesPrompt.Ask(!changed.empty(), LevelDocument->DocumentLabel(LevelDocumentSource::kKey),
-                      [this, proceed = std::move(proceed)](DirtyDisposition disposition) {
-                          if (disposition == DirtyDisposition::Save)
-                          {
-                              const DocumentSaveResult saved = Documents.Save(LevelDocument->Ref());
-                              if (saved.Status != DocumentSaveStatus::Saved
-                                  && saved.Status != DocumentSaveStatus::SavedWithProblems)
-                              {
-                                  ShowSaveReport = true;
-                                  return;
-                              }
-                          }
-                          else if (disposition == DirtyDisposition::Discard)
-                          {
-                              LevelDocument->DiscardDocument(LevelDocumentSource::kKey);
-                          }
-                          proceed();
-                      });
+    AskAboutChanges(Prompts, !changed.empty(), LevelDocument->DocumentLabel(LevelDocumentSource::kKey),
+                    [this, proceed = std::move(proceed)](DirtyDisposition disposition) {
+                        if (disposition == DirtyDisposition::Save)
+                        {
+                            // A save that did not write stops here; its follow-up says why.
+                            const DocumentSaveResult saved = Documents.Save(LevelDocument->Ref());
+                            if (saved.Status != DocumentSaveStatus::Saved
+                                && saved.Status != DocumentSaveStatus::SavedWithProblems)
+                                return;
+                        }
+                        else if (disposition == DirtyDisposition::Discard)
+                        {
+                            LevelDocument->DiscardDocument(LevelDocumentSource::kKey);
+                        }
+                        proceed();
+                    });
 }
 
 bool LevelWorkspace::SaveBeforeLaunch(std::string& error)
@@ -881,7 +862,6 @@ bool LevelWorkspace::SaveBeforeLaunch(std::string& error)
                                   || result->Status == DocumentSaveStatus::Failed))
         {
             error = "a document could not be saved";
-            ShowSaveReport = true;
             return false;
         }
     }

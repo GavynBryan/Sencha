@@ -19,6 +19,7 @@ void DocumentSourceSet::RemoveSource(DocumentSource& source)
     EraseSteps([&](const DocumentRef& step) { return step.Source == &source; });
     Report.RemoveSource(source);
     std::erase(Sources, &source);
+    ReportObservers.Notify(nullptr);
 }
 
 void DocumentSourceSet::Record(DocumentRef document)
@@ -33,6 +34,7 @@ void DocumentSourceSet::ForgetDocument(const DocumentRef& document)
 {
     EraseSteps([&](const DocumentRef& step) { return step == document; });
     Report.Remove(document);
+    ReportObservers.Notify(nullptr);
 }
 
 void DocumentSourceSet::Undo()
@@ -79,6 +81,7 @@ DocumentSaveResult DocumentSourceSet::Save(const DocumentRef& document)
     DocumentSaveResult result = document.Source->SaveDocument(document.Key);
     result.Document = document;
     Report.Add(result);
+    ReportObservers.Notify(&result);
     return result;
 }
 
@@ -87,6 +90,7 @@ bool DocumentSourceSet::Settle(const DocumentRef& document, ConflictChoice choic
     if (!document.Source->SettleDocument(document.Key, choice, error))
         return false;
     Report.Remove(document);
+    ReportObservers.Notify(nullptr);
     return true;
 }
 

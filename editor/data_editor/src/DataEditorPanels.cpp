@@ -6,7 +6,7 @@
 #include "data/DataAssetFiles.h"
 #include "ui/ButtonFlow.h"
 #include "ui/DataForm.h"
-#include "ui/DocumentSaveReportView.h"
+#include "prompts/DocumentPrompts.h"
 #include "ui/ScopedPanel.h"
 #include "ui/TextBuffer.h"
 
@@ -50,8 +50,9 @@ namespace
 }
 
 
-DataAssetBrowserPanel::DataAssetBrowserPanel(DataEditorWorkspace& workspace)
+DataAssetBrowserPanel::DataAssetBrowserPanel(DataEditorWorkspace& workspace, PromptQueue& prompts)
     : Workspace(workspace)
+    , Prompts(prompts.MakeAsker())
 {
 }
 
@@ -96,35 +97,35 @@ void DataAssetBrowserPanel::OnDraw()
         if (ImGui::Button("Rename") && OperationPath[0] != '\0')
         {
             LastError.clear();
-            Prompt.Ask(HasChanges(Workspace.Documents, SelectedAsset), SelectedAsset,
-                       [this, from = SelectedAsset, to = std::string(OperationPath.data())](DirtyDisposition disposition) {
-                           if (Workspace.Rename(from, to, disposition, LastError))
-                           {
-                               SelectedAsset = DataAssetVirtualPath(to);
-                               OperationPath.fill('\0');
-                           }
-                       });
+            AskAboutChanges(Prompts, HasChanges(Workspace.Documents, SelectedAsset), SelectedAsset,
+                            [this, from = SelectedAsset, to = std::string(OperationPath.data())](DirtyDisposition disposition) {
+                                if (Workspace.Rename(from, to, disposition, LastError))
+                                {
+                                    SelectedAsset = DataAssetVirtualPath(to);
+                                    OperationPath.fill('\0');
+                                }
+                            });
         }
         ImGui::SameLine();
         if (ImGui::Button("Delete"))
         {
             LastError.clear();
-            Prompt.Ask(HasChanges(Workspace.Documents, SelectedAsset), SelectedAsset,
-                       [this, path = SelectedAsset](DirtyDisposition disposition) {
-                           if (Workspace.Delete(path, disposition, LastError))
-                               SelectedAsset.clear();
-                       });
+            AskAboutChanges(Prompts, HasChanges(Workspace.Documents, SelectedAsset), SelectedAsset,
+                            [this, path = SelectedAsset](DirtyDisposition disposition) {
+                                if (Workspace.Delete(path, disposition, LastError))
+                                    SelectedAsset.clear();
+                            });
         }
     }
 
     if (!LastError.empty())
         ImGui::TextWrapped("Error: %s", LastError.c_str());
-    Prompt.Draw();
 }
 
-DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, DataSubtypeEditorRegistry& editors)
+DataFormPanel::DataFormPanel(DataEditorWorkspace& workspace, DataSubtypeEditorRegistry& editors,
+                             PromptQueue& prompts)
     : Workspace(workspace)
-    , Tabs(workspace.Documents, &editors)
+    , Tabs(workspace.Documents, prompts, &editors)
 {
 }
 
@@ -220,7 +221,6 @@ void DataValidationPanel::OnDraw()
                                "the last valid version.");
         ImGui::Separator();
     }
-    DrawDocumentSaveReport(Workspace.Sources, SettleError);
     if (document->IsExternallyModified())
         ImGui::TextWrapped("The file changed outside the editor. Save refuses to overwrite it; keep yours or take "
                            "the file's once a save reports the conflict.");

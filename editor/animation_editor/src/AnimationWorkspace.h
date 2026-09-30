@@ -12,6 +12,7 @@ class DataDocumentStore;
 class DocumentSourceSet;
 class Engine;
 class Game;
+class PromptQueue;
 struct ProjectDescriptor;
 
 // The animation workspace: rigs, clips and their events authored against a
@@ -21,7 +22,7 @@ class AnimationWorkspace final : public IWorkspace
 {
 public:
     AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module,
-                       DocumentSourceSet& sources, DataDocumentStore& store);
+                       DocumentSourceSet& sources, DataDocumentStore& store, PromptQueue& prompts);
     ~AnimationWorkspace() override;
 
     AnimationWorkspace(const AnimationWorkspace&) = delete;

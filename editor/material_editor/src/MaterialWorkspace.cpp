@@ -48,7 +48,8 @@ constexpr std::array<std::string_view, 1> kPreviewDependsOn{ "editor_ui" };
 MaterialWorkspace::MaterialWorkspace(Engine& engine,
                                      const ProjectDescriptor* project,
                                      MaterialLibrary& materials,
-                                     DocumentSourceSet& documents)
+                                     DocumentSourceSet& documents,
+                                     PromptQueue& prompts)
     : EngineRef(engine)
     , Project(project)
     , Assets(engine.Content().Assets())
@@ -57,6 +58,7 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
     , Tabs(documents, [this](MaterialEditTab& tab, const MaterialDescription& description) {
         PushToResident(tab, description);
     })
+    , Prompts(prompts.MakeAsker())
 {
     RegisterPreviewBackdropCVars();
     BuildUi();
@@ -88,7 +90,6 @@ void MaterialWorkspace::BuildUi()
     }
 
     Surface.File.Save = [this] { SaveActiveMaterial(); };
-    Surface.Overlays.push_back([this] { ClosePrompt.Draw(); });
 
     Surface.AddPanel(std::make_unique<MaterialFilesPanel>(
         Materials, Tabs,
@@ -247,7 +248,7 @@ void MaterialWorkspace::CloseTab(std::size_t index)
     const MaterialEditTab& tab = *Tabs.Tabs()[index];
     const std::string path = tab.Session.VirtualPath();
     // By path, not index: the tabs may move while the question is open.
-    ClosePrompt.Ask(tab.Session.IsDirty(), path, [this, path](DirtyDisposition disposition) {
+    AskAboutChanges(Prompts, tab.Session.IsDirty(), path, [this, path](DirtyDisposition disposition) {
         const auto& tabs = Tabs.Tabs();
         for (std::size_t i = 0; i < tabs.size(); ++i)
         {

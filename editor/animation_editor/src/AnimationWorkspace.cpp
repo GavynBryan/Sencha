@@ -36,7 +36,7 @@ constexpr std::string_view kCommandOwner = "editor.animation";
 }
 
 AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module,
-                                       DocumentSourceSet& sources, DataDocumentStore& store)
+                                       DocumentSourceSet& sources, DataDocumentStore& store, PromptQueue& prompts)
     : EngineRef(engine)
     , Store(store)
 {
@@ -63,7 +63,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
         if (const DataDocument* active = Workspace->Documents.Active())
             (void)sources.Save(Workspace->Documents.RefOf(*active));
     };
-    AddAnimationPreviewPanels(Surface, *Workspace, Viewport);
+    AddAnimationPreviewPanels(Surface, *Workspace, Viewport, prompts);
     RegisterCommands();
 }
 

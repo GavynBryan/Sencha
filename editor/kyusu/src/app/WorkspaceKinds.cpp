@@ -11,7 +11,7 @@
 #include <memory>
 
 std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window, ProjectSession& session,
-                                               ActionCatalog& actions)
+                                               ActionCatalog& actions, PromptQueue& prompts)
 {
     std::vector<WorkspaceKind> kinds;
     kinds.push_back(WorkspaceKind{
@@ -20,33 +20,33 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         // A level can be authored without a project; its materials then come
         // from beside the level file.
         .RequiresProject = false,
-        .Create = [&engine, &window, &session, &actions] {
+        .Create = [&engine, &window, &session, &actions, &prompts] {
             return std::make_unique<LevelWorkspace>(engine, window, session.Project(), session.Module(),
-                                                    session.Materials(), session.Documents(), actions);
+                                                    session.Materials(), session.Documents(), actions, prompts);
         },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "materials",
         .DisplayName = "Materials",
-        .Create = [&engine, &session] {
+        .Create = [&engine, &session, &prompts] {
             return std::make_unique<MaterialWorkspace>(engine, session.Project(), session.Materials(),
-                                                       session.Documents());
+                                                       session.Documents(), prompts);
         },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "data",
         .DisplayName = "Data",
-        .Create = [&engine, &session] {
+        .Create = [&engine, &session, &prompts] {
             return std::make_unique<DataWorkspace>(engine, *session.Project(), session.Documents(),
-                                                   session.DataDocuments());
+                                                   session.DataDocuments(), prompts);
         },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "animation",
         .DisplayName = "Animation",
-        .Create = [&engine, &session] {
+        .Create = [&engine, &session, &prompts] {
             return std::make_unique<AnimationWorkspace>(engine, *session.Project(), session.Module(),
-                                                        session.Documents(), session.DataDocuments());
+                                                        session.Documents(), session.DataDocuments(), prompts);
         },
     });
     kinds.push_back(WorkspaceKind{

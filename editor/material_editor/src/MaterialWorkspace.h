@@ -3,7 +3,7 @@
 #include "MaterialDocumentSet.h"
 
 #include "project/TextureImportStore.h"
-#include "ui/DocumentShellActions.h"
+#include "prompts/DocumentPrompts.h"
 #include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 
@@ -27,7 +27,8 @@ public:
     MaterialWorkspace(Engine& engine,
                       const ProjectDescriptor* project,
                       MaterialLibrary& materials,
-                      DocumentSourceSet& documents);
+                      DocumentSourceSet& documents,
+                      PromptQueue& prompts);
     ~MaterialWorkspace() override;
 
     MaterialWorkspace(const MaterialWorkspace&) = delete;
@@ -77,7 +78,7 @@ private:
     MaterialLibrary& Materials;
     DocumentSourceSet& Documents;
     MaterialDocumentSet Tabs;
-    UnsavedDocumentPrompt ClosePrompt;
+    PromptQueue::Asker Prompts;
 
     MaterialPreviewRenderFeature* Preview = nullptr;
     TexturesPanel* Textures = nullptr;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ui/DataDocumentTabs.h"
-#include "ui/DocumentShellActions.h"
+#include "prompts/PromptQueue.h"
 #include "ui/IEditorPanel.h"
 #include "ui/NewDataAssetForm.h"
 
@@ -17,7 +17,7 @@ class DataSubtypeEditorRegistry;
 class DataAssetBrowserPanel final : public IEditorPanel
 {
 public:
-    explicit DataAssetBrowserPanel(DataEditorWorkspace& workspace);
+    DataAssetBrowserPanel(DataEditorWorkspace& workspace, PromptQueue& prompts);
     [[nodiscard]] std::string_view GetTitle() const override { return "Data Assets"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Left; }
     [[nodiscard]] PanelPersistence GetPersistence() const override { return { "data_assets", PanelVisibilityPolicy::Remembered }; }
@@ -29,13 +29,13 @@ private:
     std::string SelectedAsset;
     std::array<char, 512> OperationPath{};
     std::string LastError;
-    UnsavedDocumentPrompt Prompt;
+    PromptQueue::Asker Prompts;
 };
 
 class DataFormPanel final : public IEditorPanel
 {
 public:
-    DataFormPanel(DataEditorWorkspace& workspace, DataSubtypeEditorRegistry& editors);
+    DataFormPanel(DataEditorWorkspace& workspace, DataSubtypeEditorRegistry& editors, PromptQueue& prompts);
     [[nodiscard]] std::string_view GetTitle() const override { return "Data"; }
     [[nodiscard]] DockSlot GetDockSlot() const override { return DockSlot::Center; }
     [[nodiscard]] PanelPersistence GetPersistence() const override { return { "data", PanelVisibilityPolicy::SessionOnly }; }
@@ -70,7 +70,6 @@ public:
 
 private:
     DataEditorWorkspace& Workspace;
-    std::string SettleError;
 };
 
 class DataRawJsonPanel final : public IEditorPanel

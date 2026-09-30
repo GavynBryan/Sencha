@@ -1,6 +1,7 @@
 #include "ui/DataDocumentTabs.h"
 
 #include "data/DataDocumentSet.h"
+#include "prompts/DocumentPrompts.h"
 #include "ui/DataForm.h"
 #include "ui/DataSubtypeEditorRegistry.h"
 
@@ -50,15 +51,14 @@ void DataDocumentTabs::Draw(const std::function<void(DataDocument&)>& header)
     if (close)
     {
         const DataDocument& closing = *documents[*close];
-        Prompt.Ask(closing.IsDirty() || closing.IsEditing(), closing.VirtualPath(),
-                   [this, path = closing.VirtualPath()](DirtyDisposition disposition) {
-                       if (const std::optional<std::size_t> index = Documents.IndexOf(path))
-                           (void)Documents.Close(*index, disposition, CloseError);
-                   });
+        AskAboutChanges(Prompts, closing.IsDirty() || closing.IsEditing(), closing.VirtualPath(),
+                        [this, path = closing.VirtualPath()](DirtyDisposition disposition) {
+                            if (const std::optional<std::size_t> index = Documents.IndexOf(path))
+                                (void)Documents.Close(*index, disposition, CloseError);
+                        });
     }
     if (!CloseError.empty())
         ImGui::TextWrapped("%s", CloseError.c_str());
-    Prompt.Draw();
 }
 
 void DataDocumentTabs::DrawForm(DataDocument& document)

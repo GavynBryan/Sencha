@@ -50,7 +50,6 @@ editor/common/src/ui/chrome/IconDraw.h
 editor/common/src/ui/DataDocumentTabs.cpp
 editor/common/src/ui/DataForm.cpp
 editor/common/src/ui/DocumentSaveReportView.cpp
-editor/common/src/ui/DocumentShellActions.cpp
 editor/common/src/ui/EditorConsolePanel.cpp
 editor/common/src/ui/EditorThemeFile.cpp
 editor/common/src/ui/EditorThemeFile.h
@@ -80,7 +79,6 @@ editor/data_editor/src/input/InputProfileForm.cpp
 editor/data_editor/src/movement/MovementProfileForm.cpp
 editor/data_editor/src/movement/MovementResolvePanel.cpp
 editor/data_editor/src/movement/MovementResponsePanel.cpp
-editor/kyusu/src/app/KyusuApp.cpp
 editor/level_editor/src/app/LevelWorkspace.cpp
 editor/level_editor/src/authoring/BrushModifierEditorAdapter.cpp
 editor/level_editor/src/authoring/GameplayVocabularyAdapters.cpp

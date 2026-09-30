@@ -6,6 +6,8 @@
 #include "actions/ActionContext.h"
 #include "notices/NoticeQueue.h"
 #include "problems/ProblemList.h"
+#include "prompts/DocumentPrompts.h"
+#include "prompts/PromptQueue.h"
 #include "shell/ShellWindow.h"
 
 #include <graphics/PresentationId.h>
@@ -41,11 +43,11 @@ public:
 
 private:
     void RegisterWorkspaceCommands();
-    // Undo, redo, save all and the exit prompt over the session's journal;
+    // Exit held while documents have changes, and what follows every save;
     // the journal bringing forward the workspace whose document it steps; and
     // a workspace with changes asking before it closes.
     void InstallDocumentActions();
-    void DrawClosePrompt();
+    void AskBeforeClosing(const WorkspaceKind& kind, std::vector<DocumentRef> changed);
     // The operations every workspace shares -- undo, redo, save, save all --
     // and the user's keymap. Every action defined from then on is also a
     // console command of the same id.
@@ -82,6 +84,8 @@ private:
     ActionContext ApplicationActions;
     ProblemList Problems;
     NoticeQueue Notices;
+    // Before everything that asks, so every asker withdraws into a live queue.
+    PromptQueue Prompts;
     struct WindowActions
     {
         ActionContextStack Stack;
@@ -96,6 +100,10 @@ private:
     // Declared before the workspaces so it is destroyed after them: the module
     // stays mapped while any document holds code it compiled.
     std::unique_ptr<ProjectSession> Session;
+    // Over the session's journal, so gone before it.
+    std::unique_ptr<DocumentExitHold> ExitHold;
+    std::unique_ptr<DocumentSaveFollowUp> SaveFollowUp;
+    PromptQueue::Asker CloseAsker;
     std::unique_ptr<WorkspaceHost> Workspaces;
     // Owned by the renderer.
     EditorUiFeature* Ui = nullptr;
@@ -111,10 +119,6 @@ private:
     };
     std::vector<DetachedWindow> Detached;
     std::vector<PresentationId> WindowsToClose;
-    // A workspace whose close is held until its changed documents are saved
-    // or discarded.
-    std::string HeldClose;
-    std::string SettleError;
     // Until the first frame nothing records, so the startup script's workspace
     // commands apply at once and the commands after them find what they open.
     bool FramesStarted = false;

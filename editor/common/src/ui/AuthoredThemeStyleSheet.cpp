@@ -104,6 +104,7 @@ constexpr Rule kRules[] = {
     { ".theme-key:hover", [] { return Fill(EditorUi::ButtonHovered) + Edge(EditorUi::ControlHover); } },
     { ".theme-key.lit", [] { return Fill(EditorUi::Selected) + Edge(EditorUi::SelectedOutline) + Color(EditorUi::SelectedOutline); } },
     { ".theme-key.disabled", [] { return Fill(EditorUi::WindowBg) + Edge(EditorUi::Border) + Color(EditorUi::TextDim); } },
+    { ".theme-key.destructive", [] { return Color(EditorUi::Danger); } },
     { ".theme-readout", [] { return Fill(EditorUi::ChassisBg) + Edge(EditorUi::Border) + Color(EditorUi::Accent); } },
     { ".theme-lamp", [] { return Fill(EditorUi::Mix(EditorUi::MetalBase, EditorUi::ChassisBg, 0.5f)) + Edge(EditorUi::MetalShadow); } },
     { ".theme-lamp.on", [] { return Fill(EditorUi::Accent); } },

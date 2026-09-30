@@ -88,7 +88,8 @@ do the work and delete the entry.
 - **What:** closing, renaming or deleting an unsaved document asks Save,
   Discard or Cancel one document at a time with plain wording, and window focus
   loss still cancels typed text that has not been committed.
-- **Where:** `editor/common/src/ui/DocumentShellActions.*`.
+- **Where:** `editor/common/src/prompts/DocumentPrompts.*` (the questions; the
+  shell's `PromptDialog` presents them).
 - **Trigger:** the UX polish pass.
 
 ## Gameplay events on behaviors reached without a request

@@ -51,6 +51,7 @@ namespace
         RuntimeAssets Assets{ Logging, Serializers };
         DocumentSourceSet Sources;
         DataDocumentStore Store{ Assets, Sources };
+        PromptQueue Prompts;
         std::unique_ptr<DataDocumentSet> Set;
         std::unique_ptr<DataDocumentTabs> Tabs;
         int Notified = 0;
@@ -65,7 +66,7 @@ namespace
             (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
             Set = std::make_unique<DataDocumentSet>(Store, DataDocumentSetConfig{ .ContentRoot = Root, .Subtypes = {} });
             Set->OnChanged([this](DataDocument&, bool) { ++Notified; });
-            Tabs = std::make_unique<DataDocumentTabs>(*Set);
+            Tabs = std::make_unique<DataDocumentTabs>(*Set, Prompts);
 
             ImGui::CreateContext();
             ImGuiIO& io = ImGui::GetIO();
