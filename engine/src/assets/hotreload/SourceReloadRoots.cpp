@@ -1,34 +1,53 @@
-#include "project/SourceReloadRoots.h"
+#include <assets/hotreload/SourceReloadRoots.h>
 
 #include <assets/cook/AssetImporter.h>
+#include <assets/cook/ContentImporters.h>
 #include <assets/hotreload/AssetHotReloader.h>
 #include <assets/hotreload/AssetSourceWatcher.h>
+
+#include <algorithm>
 
 struct SourceReloadRoots::Root
 {
     std::string Path;
+    std::vector<std::string> Extensions;
     AssetSourceWatcher Watcher;
     AssetHotReloader Reloader;
 };
 
-SourceReloadRoots::SourceReloadRoots(LoggingProvider& logging, JobSystem* jobs, AsyncTaskQueue& tasks)
+SourceReloadRoots::SourceReloadRoots(LoggingProvider& logging,
+                                     JobSystem* jobs,
+                                     AsyncTaskQueue& tasks,
+                                     AssetSystem& assets,
+                                     AssetRegistry& registry)
     : Logging(logging)
     , Tasks(tasks)
-    , Importers(jobs)
+    , Assets(assets)
+    , Registry(registry)
+    , Importers(std::make_unique<ContentImporterSet>(jobs))
 {
 }
 
 SourceReloadRoots::~SourceReloadRoots() = default;
 
-void SourceReloadRoots::AddRoot(std::string root,
-                                std::vector<std::string> extensions,
-                                AssetSystem& assets,
-                                AssetRegistry& registry)
+void SourceReloadRoots::AddRoot(std::string root, std::vector<std::string> extensions)
 {
+    const auto existing = std::find_if(Roots.begin(), Roots.end(),
+                                       [&](const std::unique_ptr<Root>& entry) { return entry->Path == root; });
+    if (existing != Roots.end())
+    {
+        for (const std::string& extension : (*existing)->Extensions)
+            if (std::find(extensions.begin(), extensions.end(), extension) == extensions.end())
+                extensions.push_back(extension);
+        Roots.erase(existing);
+    }
+
+    // Built in place: neither the watcher nor the reloader is movable.
     auto entry = std::unique_ptr<Root>(new Root{
         root,
-        AssetSourceWatcher(Logging, root, std::move(extensions)),
-        AssetHotReloader(Logging, assets, registry, Importers.Registry(), Tasks, root),
+        extensions,
+        AssetSourceWatcher(Logging, root, extensions),
+        AssetHotReloader(Logging, Assets, Registry, Importers->Registry(), Tasks, root),
     });
     entry->Watcher.Initialize();
     Roots.push_back(std::move(entry));
@@ -47,7 +66,6 @@ std::size_t SourceReloadRoots::Poll(std::chrono::steady_clock::time_point now)
     {
         for (const std::string& changed : root->Watcher.PollChanged())
         {
-            // An import-settings sidecar edit re-cooks its source.
             std::string_view source = changed;
             if (source.ends_with(kImportSettingsSuffix))
                 source.remove_suffix(kImportSettingsSuffix.size());

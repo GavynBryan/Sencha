@@ -1,6 +1,6 @@
 #include "ShojiStatusBar.h"
 
-#include "project/SourceReloadRoots.h"
+#include <assets/hotreload/SourceReloadRoots.h>
 #include "ui/chrome/ChromeBars.h"
 
 #include <imgui.h>

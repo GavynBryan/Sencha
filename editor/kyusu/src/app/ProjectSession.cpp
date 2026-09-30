@@ -6,6 +6,7 @@
 #include <app/Game.h>
 #include <app/GameDataAssets.h>
 #include <app/RuntimeContent.h>
+#include <assets/hotreload/SourceReloadRoots.h>
 #include <assets/runtime/RuntimeAssets.h>
 
 #include <cstdio>
@@ -87,5 +88,25 @@ void ProjectSession::MountContent()
         MountProjectContent(*Descriptor, assets, Host.Logging(), &Host.Jobs());
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)
     MountEditorContent(SENCHA_EDITOR_UI_DIR, assets, Host.Logging(), &Host.Jobs());
+#endif
+    WatchSources();
+}
+
+void ProjectSession::WatchSources()
+{
+    // Every root in the stack, the engine's own included, for every authored
+    // source a workspace shows live: materials and their textures, and the
+    // documents, stylesheets and fonts of authored UI.
+    SourceReloadRoots* sources = Host.Content().SourceReload();
+    if (sources == nullptr)
+        return;
+    const std::vector<std::string> extensions{ ".smat", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" };
+    for (const ContentRootPaths& root : Host.Content().Roots())
+        sources->AddRoot(root.Authored.string(), extensions);
+    if (Descriptor)
+        for (const std::string& root : Descriptor->ContentRoots)
+            sources->AddRoot(root, extensions);
+#if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)
+    sources->AddRoot(SENCHA_EDITOR_UI_DIR, extensions);
 #endif
 }

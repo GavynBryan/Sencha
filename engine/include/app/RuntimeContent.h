@@ -4,12 +4,6 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <world/serialization/SceneSerializationContext.h>
 
-#ifdef SENCHA_ENABLE_COOK
-#include <assets/cook/AssetImporter.h>
-#include <assets/hotreload/AssetHotReloader.h>
-#include <assets/hotreload/AssetSourceWatcher.h>
-#endif
-
 #include <memory>
 #include <optional>
 #include <span>
@@ -18,6 +12,7 @@
 class Engine;
 class EngineSchedule;
 class Logger;
+class SourceReloadRoots;
 class World;
 
 //=============================================================================
@@ -79,15 +74,10 @@ public:
     [[nodiscard]] std::span<const ContentRootPaths> Roots() const;
 
 #ifdef SENCHA_ENABLE_COOK
-    // One watcher and reloader per mounted root, because both sides are built
-    // around a single root: the watcher walks it and reports paths relative to
-    // it, and the reloader re-cooks against it. Public because the poll system
-    // that drives them is a free system, not a member.
-    struct WatchedRoot
-    {
-        AssetHotReloader Reloader;
-        AssetSourceWatcher Watcher;
-    };
+    // The sources re-cooked into this stack when they change. Mount watches the
+    // roots it mounted for runtime data; a host that mounts more adds them.
+    // Null once disconnected.
+    [[nodiscard]] SourceReloadRoots* SourceReload() { return SourceReloadState.get(); }
 #endif
 
 private:
@@ -100,10 +90,7 @@ private:
     std::unique_ptr<SceneSerializationContext> SceneContextState;
 
 #ifdef SENCHA_ENABLE_COOK
-    // Dev-only source watching so authored data reloads in place while the
-    // process runs. No importers: the watched formats are runtime formats.
-    AssetImporterRegistry HotReloadImporters;
-    std::vector<std::unique_ptr<WatchedRoot>> HotReloadRoots;
+    std::unique_ptr<SourceReloadRoots> SourceReloadState;
 #endif
 
     std::vector<ContentRootPaths> MountedRoots;

@@ -19,7 +19,7 @@
 #include <app/Game.h>
 #include <assets/cook/AssetImporter.h>
 #include <assets/cook/TextureImportSettings.h>
-#include "project/SourceReloadRoots.h"
+#include <assets/hotreload/SourceReloadRoots.h>
 #include <assets/material/MaterialAssetLoader.h>
 #include <assets/material/MaterialWriter.h>
 #include <core/assets/AssetRegistry.h>
@@ -144,9 +144,10 @@ void MaterialEditorServices::InitAssets()
     MountProjectContent(*Project, *Assets, engine.Logging(), &engine.Jobs());
     Materials->Rescan(Project->ContentRoots);
 
-    TextureRecook = std::make_unique<SourceReloadRoots>(engine.Logging(), &engine.Jobs(), engine.Tasks());
+    TextureRecook = std::make_unique<SourceReloadRoots>(engine.Logging(), &engine.Jobs(), engine.Tasks(),
+                                                         Assets->Assets, Assets->Registry);
     for (const std::string& root : Project->ContentRoots)
-        TextureRecook->AddRoot(root, {}, Assets->Assets, Assets->Registry);
+        TextureRecook->AddRoot(root, {});
 }
 
 void MaterialEditorServices::BuildUi()

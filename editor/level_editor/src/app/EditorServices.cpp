@@ -58,7 +58,6 @@
 #include <render/IrradianceVolumeComponent.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
-#include "project/SourceReloadRoots.h"
 #include <core/assets/AssetRegistry.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
@@ -119,7 +118,6 @@ EditorServices::EditorServices(Engine& engine,
     // Before the document is created, so its World registers storage for the
     // module's components.
     RegisterModuleComponents(module);
-    BuildSourceWatch();
 
     BuildDocument();
     // After the document: an authored workflow presents editor state, and the
@@ -176,7 +174,6 @@ EditorServices::~EditorServices()
     // free ImGui descriptor sets (the panels referencing the cache never touch
     // it in their destructors).
     Thumbnails.reset();
-    SourceWatch.reset();
     // Toolbar and StatusBar release with the object in reverse declaration
     // order; neither touches the subsystems reset above.
 }
@@ -1068,30 +1065,6 @@ void EditorServices::BuildAuthoredWorkflows()
     });
 }
 
-void EditorServices::BuildSourceWatch()
-{
-    if (!Project || !Assets || Project->ContentRoots.empty())
-        return;
-
-    Engine& engine = *EnginePtr;
-    SourceWatch = std::make_unique<SourceReloadRoots>(engine.Logging(), &engine.Jobs(), engine.Tasks());
-
-#if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)
-    // The editor's own authored UI, watched against the ENGINE's asset stack --
-    // the one it was mounted into, and the one Engine::Ui() resolves through.
-    // This is what makes editing Kyusu's own interface a save-and-look loop
-    // rather than a restart.
-    SourceWatch->AddRoot(SENCHA_EDITOR_UI_DIR, { ".rml", ".rcss", ".ttf", ".otf" },
-                         engine.Content().Assets().Assets, engine.Content().Assets().Registry);
-#endif
-
-    for (const std::string& root : Project->ContentRoots)
-    {
-        SourceWatch->AddRoot(root, { ".smat", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" },
-                             Assets->Assets, Assets->Registry);
-    }
-}
-
 void EditorServices::DrawRadialMenu(const RadialMenuSession& wheel, const IRadialMenuModel& menu)
 {
     if (wheel.GetPhase() != RadialMenuPhase::Open)
@@ -1209,14 +1182,6 @@ void EditorServices::ProcessFrame()
 
     if (CookRuntime != nullptr)
         CookRuntime->Update(RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr);
-
-    // Poll watched sources on an interval, not per frame: the watcher is a
-    // content-hash-confirmed mtime scan over the content roots. A save from
-    // the material editor or a text editor lands in the viewport within ~0.5s.
-    // Files created after startup are not watched (Decision H); the material
-    // panel's Rescan refreshes the pickable list for those.
-    if (SourceWatch)
-        (void)SourceWatch->Poll(std::chrono::steady_clock::now());
 
     // Rebuild the transient viewport overlay (selected-brush dimension labels)
     // before the UI panel draws it this frame, and keep the ortho views aligned

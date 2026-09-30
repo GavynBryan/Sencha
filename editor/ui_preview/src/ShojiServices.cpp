@@ -12,7 +12,7 @@
 
 #include "project/ProcessLaunch.h"
 #include "project/ProjectContentMount.h"
-#include "project/SourceReloadRoots.h"
+#include <assets/hotreload/SourceReloadRoots.h>
 #include "ui/AuthoredThemeStyleSheet.h"
 #include "ui/EditorThemeStartup.h"
 #include "ui/EditorUiFeature.h"
@@ -107,7 +107,7 @@ ShojiServices::~ShojiServices()
         }
         Target = nullptr;
     }
-    Watch.reset();
+    Watch = nullptr;
     // The World that holds the module's declarations goes before the module.
     Vocabulary.reset();
     if (GameModule.IsValid())
@@ -194,15 +194,13 @@ void ShojiServices::MountLibraries()
 void ShojiServices::BuildSourceWatch()
 {
     Engine& engine = *EnginePtr;
-    Watch = std::make_unique<SourceReloadRoots>(engine.Logging(), &engine.Jobs(), engine.Tasks());
-    RuntimeAssets& assets = engine.Content().Assets();
+    Watch = engine.Content().SourceReload();
+    if (Watch == nullptr)
+        return;
     // Every library root, against the stack it was mounted into. A save in
     // any of them re-cooks and the open document rebuilds in place.
     for (const DocumentLibrary::LibraryRoot& root : Library.LibraryRoots())
-    {
-        Watch->AddRoot(root.Path, { ".rml", ".rcss", ".ttf", ".otf", ".png" },
-                       assets.Assets, assets.Registry);
-    }
+        Watch->AddRoot(root.Path, { ".rml", ".rcss", ".ttf", ".otf", ".png" });
 }
 
 void ShojiServices::BuildUi()
@@ -368,8 +366,6 @@ void ShojiServices::HandlePlatformEvent(PlatformEventContext& ctx)
 
 void ShojiServices::ProcessFrame()
 {
-    if (Watch)
-        (void)Watch->Poll(std::chrono::steady_clock::now());
     if (!Session)
         return;
 

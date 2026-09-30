@@ -1,7 +1,5 @@
 #pragma once
 
-#include <assets/cook/ContentImporters.h>
-
 #include <chrono>
 #include <cstddef>
 #include <memory>
@@ -12,44 +10,41 @@
 class AssetRegistry;
 class AssetSystem;
 class AsyncTaskQueue;
+class ContentImporterSet;
 class JobSystem;
 class LoggingProvider;
 
 //=============================================================================
-// SourceReloadRoots
+// SourceReloadRoots. Dev-only, compiled under SENCHA_ENABLE_COOK.
 //
-// The save-and-look loop: content roots whose authored sources are watched
-// and, when one changes, re-cooked into the asset stack that mounted them,
-// with the resident cooked artifacts swapped in place at the engine's async
-// drain so live handles never change.
-//
-// One assembly for every editor. Kyusu and Shudei each built the same
-// watcher-plus-reloader-plus-importer-set-plus-poll by hand; a third copy is
-// where the drift starts. A root is added with the asset stack it was mounted
-// into -- the engine's for an editor's own authored UI, the editor's for a
-// project's content -- because the reloader must swap the slot that is
-// actually resident.
+// The save-and-look loop over one asset stack: content roots whose authored
+// sources are watched and, when one changes, re-cooked into that stack, with
+// the resident cooked artifacts swapped in place at the engine's async drain
+// so live handles never change. RuntimeContent owns the instance over the
+// engine's stack; a tool with a stack of its own owns another.
 //
 // Only files present when a root was added (or last rescanned) are watched;
 // a rescan is a directory walk with a content hash per file, cheap for the
-// roots an editor mounts and the honest answer to "a file appeared".
+// roots a process mounts and the honest answer to "a file appeared".
+// Owner-thread only.
 //=============================================================================
 class SourceReloadRoots
 {
 public:
-    SourceReloadRoots(LoggingProvider& logging, JobSystem* jobs, AsyncTaskQueue& tasks);
+    SourceReloadRoots(LoggingProvider& logging,
+                      JobSystem* jobs,
+                      AsyncTaskQueue& tasks,
+                      AssetSystem& assets,
+                      AssetRegistry& registry);
     ~SourceReloadRoots();
 
     SourceReloadRoots(const SourceReloadRoots&) = delete;
     SourceReloadRoots& operator=(const SourceReloadRoots&) = delete;
 
-    // Watches `root` for sources with these extensions (leading dot) and
-    // re-cooks a changed one into `assets`/`registry`. An empty extension
-    // list watches nothing and still lets ReloadSource re-cook on demand.
-    void AddRoot(std::string root,
-                 std::vector<std::string> extensions,
-                 AssetSystem& assets,
-                 AssetRegistry& registry);
+    // Watches `root` for sources with these extensions (leading dot). Adding a
+    // root already watched widens its extensions. An empty list watches
+    // nothing and still lets ReloadSource re-cook on demand.
+    void AddRoot(std::string root, std::vector<std::string> extensions);
 
     // Polls every root at most once per Interval and re-cooks what changed.
     // An import-settings sidecar edit re-cooks the source it describes.
@@ -65,14 +60,16 @@ public:
     [[nodiscard]] std::size_t RootCount() const { return Roots.size(); }
     [[nodiscard]] std::size_t WatchedFileCount() const;
 
-    std::chrono::milliseconds Interval{ 500 };
+    std::chrono::milliseconds Interval{ 300 };
 
 private:
     struct Root;
 
     LoggingProvider& Logging;
     AsyncTaskQueue& Tasks;
-    ContentImporterSet Importers;
+    AssetSystem& Assets;
+    AssetRegistry& Registry;
+    std::unique_ptr<ContentImporterSet> Importers;
     std::vector<std::unique_ptr<Root>> Roots;
     std::chrono::steady_clock::time_point NextPoll{};
 };

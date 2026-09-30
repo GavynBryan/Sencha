@@ -118,5 +118,8 @@
 // SettingsRoot, so a host declares its posture and where settings may live;
 // EngineDebugConfig loses DebugUi, which nothing read; and UiRow carries
 // control metadata (Control, Min, Max, Step, Choices) beside Editable, so a
-// row can name the slider or drop-down a document offers for it.
-#define SENCHA_GAME_ABI_VERSION 23u
+// row can name the slider or drop-down a document offers for it. v24:
+// RuntimeContent's source watching is SourceReloadRoots, the one watcher the
+// editors use too, so its members change layout and a host that mounts more
+// roots adds them to RuntimeContent::SourceReload().
+#define SENCHA_GAME_ABI_VERSION 24u

@@ -25,7 +25,6 @@
 #include <optional>
 #include <vector>
 
-class SourceReloadRoots;
 class EditorUiFeature;
 class EditorConsolePanel;
 class MaterialPickerPanel;
@@ -108,12 +107,7 @@ private:
     // Retracted while the module is still mapped: it built the serializers.
     void RetractModuleComponents();
 
-    // Watches project .smat/.png sources and hot-reloads resident assets in
-    // place (detection: AssetSourceWatcher; reaction: AssetHotReloader), so a
-    // save from the material editor or a text editor shows up live. No-op
-    // without a mounted project.
     void BuildAuthoredWorkflows();
-    void BuildSourceWatch();
 
     // Bake-to-static-mesh actions behind the ToolPropertiesPanel buttons. All need a
     // mounted project (the .smesh is written under its first content root).
@@ -135,10 +129,6 @@ private:
 
     // The engine's asset stack, which the application mounted the project into.
     RuntimeAssets* Assets = nullptr;
-
-    // Source watch state (definition in the .cpp keeps the cook/hotreload
-    // headers out of this one). References Assets; reset before it.
-    std::unique_ptr<SourceReloadRoots> SourceWatch;
 
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<EditorWorkspace> Workspace;

@@ -1,9 +1,10 @@
 #include <gtest/gtest.h>
 
-#include "project/ProjectContentMount.h"
-#include "project/SourceReloadRoots.h"
-
+#include <assets/cook/ContentImporters.h>
+#include <assets/cook/ImportOnDemand.h>
+#include <assets/hotreload/SourceReloadRoots.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/ContentMount.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <assets/ui/UiPackageCache.h>
 #include <core/logging/LoggingProvider.h>
@@ -17,12 +18,13 @@
 #include <string>
 
 //=============================================================================
-// The save-and-look loop, as one assembly every editor shares.
+// The save-and-look loop, the one assembly the runtime and every editor use.
 //
 // What is pinned: a changed stylesheet re-cooks the document that imports it
 // and the resident package moves to a new version once the drain runs; the
-// poll is throttled to its interval; and a file that appeared after the roots
-// were added is watched after a rescan and not before.
+// poll is throttled to its interval; a file that appeared after the roots
+// were added is watched after a rescan and not before; and adding a root a
+// second time widens what it watches instead of watching it twice.
 //=============================================================================
 
 namespace
@@ -62,8 +64,12 @@ namespace
                       "<body><div id=\"box\"/></body></rml>");
             WriteText(Root / "ui" / "a.rcss", "#box { display: block; width: 10px; height: 10px; }");
 
-            // Cooked into this stack, the way an editor mounts a root.
-            MountEditorContent(Root.generic_string(), Assets, Logging, nullptr);
+            // Cooked into this stack, the way a content root is mounted.
+            const ContentRootPaths paths = ResolveContentRoot(Root.generic_string());
+            ScanContentRoot(paths, Assets);
+            ContentImporterSet importers;
+            (void)ImportAssetsOnDemand(Root.generic_string(), importers.Registry(), Assets.Registry, Logging);
+            RegisterCookedContent(paths, Assets, Logging.GetLogger<Fixture>());
             Package = Assets.Assets.LoadLease("asset://ui/a.rml", AssetType::UiPackage);
         }
         ~Fixture()
@@ -94,8 +100,8 @@ TEST(SourceReloadRoots, AChangedStylesheetRecooksTheDocumentThatImportsIt)
     ASSERT_TRUE(f.Package.IsValid()) << "the fixture's document did not cook";
     const std::uint64_t before = f.Version();
 
-    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks);
-    roots.AddRoot(f.Root.generic_string(), { ".rml", ".rcss" }, f.Assets.Assets, f.Assets.Registry);
+    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks, f.Assets.Assets, f.Assets.Registry);
+    roots.AddRoot(f.Root.generic_string(), { ".rml", ".rcss" });
     EXPECT_EQ(roots.RootCount(), 1u);
     EXPECT_EQ(roots.WatchedFileCount(), 2u);
 
@@ -112,8 +118,8 @@ TEST(SourceReloadRoots, AChangedStylesheetRecooksTheDocumentThatImportsIt)
 TEST(SourceReloadRoots, ThePollIsThrottledToItsInterval)
 {
     Fixture f;
-    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks);
-    roots.AddRoot(f.Root.generic_string(), { ".rml", ".rcss" }, f.Assets.Assets, f.Assets.Registry);
+    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks, f.Assets.Assets, f.Assets.Registry);
+    roots.AddRoot(f.Root.generic_string(), { ".rml", ".rcss" });
 
     const Clock::time_point t0 = Clock::now();
     EXPECT_EQ(roots.Poll(t0), 0u) << "nothing changed yet";
@@ -128,8 +134,8 @@ TEST(SourceReloadRoots, ThePollIsThrottledToItsInterval)
 TEST(SourceReloadRoots, AFileCreatedLaterIsWatchedAfterARescan)
 {
     Fixture f;
-    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks);
-    roots.AddRoot(f.Root.generic_string(), { ".rml", ".rcss" }, f.Assets.Assets, f.Assets.Registry);
+    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks, f.Assets.Assets, f.Assets.Registry);
+    roots.AddRoot(f.Root.generic_string(), { ".rml", ".rcss" });
     ASSERT_EQ(roots.WatchedFileCount(), 2u);
 
     WriteText(f.Root / "ui" / "b.rml", "<rml><body/></rml>");
@@ -141,8 +147,8 @@ TEST(SourceReloadRoots, AFileCreatedLaterIsWatchedAfterARescan)
 TEST(SourceReloadRoots, ReloadingByHandNamesARootItKnows)
 {
     Fixture f;
-    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks);
-    roots.AddRoot(f.Root.generic_string(), {}, f.Assets.Assets, f.Assets.Registry);
+    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks, f.Assets.Assets, f.Assets.Registry);
+    roots.AddRoot(f.Root.generic_string(), {});
     EXPECT_EQ(roots.WatchedFileCount(), 0u) << "no extensions, nothing watched";
 
     const std::uint64_t before = f.Version();
@@ -150,4 +156,16 @@ TEST(SourceReloadRoots, ReloadingByHandNamesARootItKnows)
     EXPECT_TRUE(roots.ReloadSource(f.Root.generic_string(), "ui/a.rml"));
     f.Drain();
     EXPECT_GT(f.Version(), before);
+}
+
+TEST(SourceReloadRoots, AddingARootAgainWidensItsExtensions)
+{
+    Fixture f;
+    SourceReloadRoots roots(f.Logging, nullptr, f.Tasks, f.Assets.Assets, f.Assets.Registry);
+    roots.AddRoot(f.Root.generic_string(), { ".rml" });
+    ASSERT_EQ(roots.WatchedFileCount(), 1u);
+
+    roots.AddRoot(f.Root.generic_string(), { ".rcss" });
+    EXPECT_EQ(roots.RootCount(), 1u) << "the same root is watched once";
+    EXPECT_EQ(roots.WatchedFileCount(), 2u) << "the second call widened the first's extensions";
 }

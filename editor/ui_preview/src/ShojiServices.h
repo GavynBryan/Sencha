@@ -79,7 +79,8 @@ private:
     std::unique_ptr<VocabularyCatalog> Vocabulary;
 
     DocumentLibrary Library;
-    std::unique_ptr<SourceReloadRoots> Watch;
+    // The engine's watcher over the stack these libraries are mounted into.
+    SourceReloadRoots* Watch = nullptr;
     std::unique_ptr<UiPreviewSession> Session;
     PreviewViewState View;
     // The document's source, for the sidecar beside it.

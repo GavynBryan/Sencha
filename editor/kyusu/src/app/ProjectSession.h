@@ -41,6 +41,7 @@ public:
 private:
     void LoadModule(const std::string& modulePath);
     void MountContent();
+    void WatchSources();
 
     Engine& Host;
     std::optional<ProjectDescriptor> Descriptor;
