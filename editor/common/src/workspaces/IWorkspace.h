@@ -21,6 +21,9 @@ public:
     // Hiding is an interruption: a workspace sent to the background cancels
     // any edit in flight, as losing focus does.
     virtual void SetVisible(bool) {}
+    // Offered before the window's own UI sees the event: true claims it
+    // outright, as a surface waiting for the next key to bind does.
+    [[nodiscard]] virtual bool ClaimPlatformEvent(PlatformEventContext&) { return false; }
     // Platform events the window routes to its active workspace, after the
     // window's own UI has seen them.
     virtual void HandlePlatformEvent(PlatformEventContext&) {}

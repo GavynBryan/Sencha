@@ -1,22 +1,16 @@
 #pragma once
 
-#include "data/DataDocument.h"
-#include "data/DataResidentSync.h"
-#include "documents/DocumentSource.h"
-#include "documents/DocumentSourceSet.h"
+#include "data/DataDocumentStore.h"
 #include "ui/DataForm.h"
 
 #include <cstddef>
 #include <filesystem>
 #include <functional>
-#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
-
-struct RuntimeAssets;
 
 struct DataDocumentSetConfig
 {
@@ -25,14 +19,15 @@ struct DataDocumentSetConfig
     std::vector<std::string> Subtypes;
 };
 
-// The open data documents of one editor: their edits, saves, journal steps and
-// resident assets. A document with changes is never dropped unless the caller chose to.
-class DataDocumentSet final : public DataFormHost, public DocumentSource
+// One workspace's tabs over the application's data documents: which it shows,
+// which is active, and the field selected in it. Documents themselves live in
+// the store, so two workspaces showing one file edit one document.
+class DataDocumentSet final : public DataFormHost
 {
 public:
-    using ChangeObserver = std::function<void(DataDocument& document, bool residentChanged)>;
+    using ChangeObserver = DataDocumentStore::ChangeObserver;
 
-    DataDocumentSet(RuntimeAssets& assets, DocumentSourceSet& sources, DataDocumentSetConfig config);
+    DataDocumentSet(DataDocumentStore& store, DataDocumentSetConfig config);
     ~DataDocumentSet() override;
 
     DataDocumentSet(const DataDocumentSet&) = delete;
@@ -40,45 +35,34 @@ public:
     DataDocumentSet(DataDocumentSet&&) = delete;
     DataDocumentSet& operator=(DataDocumentSet&&) = delete;
 
+    [[nodiscard]] DataDocumentStore& Store() { return Documents_; }
+    [[nodiscard]] const DataDocumentStore& Store() const { return Documents_; }
+
     DataDocument* OpenOrFocus(std::string_view virtualPath, std::string& error);
     // Writes the subtype's required members to a new file under the content root, then opens it.
     DataDocument* Create(std::string_view subtype, std::string_view relativePath, std::string& error);
+    // Drops the tab. The document closes with it when no other workspace shows
+    // it, refused, saved or discarded as `disposition` says.
     [[nodiscard]] bool Close(std::size_t index, DirtyDisposition disposition, std::string& error);
 
     // Commits the active document's open edit before another becomes active.
     void SetActive(std::size_t index);
+    // Brings an open document forward, as a journal step on it does.
+    void Reveal(std::string_view virtualPath);
     [[nodiscard]] std::size_t ActiveIndex() const { return ActiveTab; }
     [[nodiscard]] DataDocument* Active();
     [[nodiscard]] DataDocument* ActiveOf(std::string_view subtype);
     [[nodiscard]] DataDocument* Find(std::string_view virtualPath);
     [[nodiscard]] const DataDocument* Find(std::string_view virtualPath) const;
     [[nodiscard]] std::optional<std::size_t> IndexOf(std::string_view virtualPath) const;
-    [[nodiscard]] std::span<const std::unique_ptr<DataDocument>> Documents() const { return Open; }
-    [[nodiscard]] DocumentRef RefOf(const DataDocument& document) { return { this, document.VirtualPath() }; }
-    [[nodiscard]] const DataSchema* SchemaOf(const DataDocument& document) const;
-    [[nodiscard]] const DataSchema* SchemaOf(std::string_view subtype) const;
-    [[nodiscard]] bool IsRegistered(std::string_view virtualPath) const;
+    [[nodiscard]] std::span<DataDocument* const> Documents() const { return Tabs; }
+    [[nodiscard]] DocumentRef RefOf(const DataDocument& document) { return Documents_.RefOf(document); }
     [[nodiscard]] const DataSchema* ActiveSchema();
-    [[nodiscard]] const DataAssetTypeRegistry& Types() const;
-    // Subtypes this set opens that have both a registration and an authoring schema.
+    // Subtypes this view opens that have both a registration and an authoring schema.
     [[nodiscard]] std::vector<std::string> CreatableSubtypes() const;
 
-    void CommitEdit(DataDocument& document);
-    void CancelEdit(DataDocument& document);
-    // Revalidates, keeps the resident asset on the committed version, and tells the observer.
-    void Changed(DataDocument& document);
-    [[nodiscard]] bool Reload(DataDocument& document, std::string& error);
+    // Told of every change to a document this view shows.
     void OnChanged(ChangeObserver observer) { Observer = std::move(observer); }
-    // True when a push that was waiting reached a resident asset.
-    [[nodiscard]] bool PushWaiting() { return Resident.PushWaiting(); }
-    [[nodiscard]] const DataResidentState* ResidentStateOf(const DataDocument& document) const
-    {
-        return Resident.StateOf(document);
-    }
-
-    // An open document's working subtype or root wins over the file's.
-    [[nodiscard]] std::string SubtypeOf(std::string_view virtualPath) const;
-    [[nodiscard]] std::optional<JsonValue> CurrentRoot(std::string_view virtualPath) const;
 
     void SelectField(const DataFieldSchema* field, std::string path);
     [[nodiscard]] const DataFieldSchema* SelectedField() const { return Selected; }
@@ -90,25 +74,18 @@ public:
     void EditPreviewed(DataDocument& document) override;
     void EditCommitted(DataDocument& document) override;
 
-    void AppendChangedDocuments(std::vector<DocumentRef>& out) override;
-    [[nodiscard]] DocumentSaveResult SaveDocument(std::string_view key) override;
-    [[nodiscard]] bool SettleDocument(std::string_view key, ConflictChoice choice, std::string& error) override;
-    void StepDocument(std::string_view key, DocumentStep step) override;
-    void CancelDocumentEdits() override;
-    void DiscardDocument(std::string_view key) override;
-
 private:
     [[nodiscard]] bool Accepts(std::string_view subtype) const;
-    DataDocument* Adopt(std::unique_ptr<DataDocument> document);
-    void Validate(DataDocument& document);
+    DataDocument* Show(DataDocument& document);
+    void Dropped(const DataDocument& document);
 
-    RuntimeAssets& Assets;
-    DocumentSourceSet& Sources;
+    DataDocumentStore& Documents_;
     DataDocumentSetConfig Config;
-    DataResidentSync Resident;
-    std::vector<std::unique_ptr<DataDocument>> Open;
+    std::vector<DataDocument*> Tabs;
     std::size_t ActiveTab = 0;
     const DataFieldSchema* Selected = nullptr;
     std::string SelectedJsonPath;
     ChangeObserver Observer;
+    std::size_t ChangeToken = 0;
+    std::size_t CloseToken = 0;
 };

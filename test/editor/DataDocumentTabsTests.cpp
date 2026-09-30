@@ -3,6 +3,7 @@
 // forward stays forward -- driven through real ImGui input, frame by frame.
 
 #include "data/DataDocumentSet.h"
+#include "documents/DocumentSourceSet.h"
 #include "ui/DataDocumentTabs.h"
 
 #include <assets/runtime/RuntimeAssets.h>
@@ -49,6 +50,7 @@ namespace
         ComponentSerializerRegistry Serializers;
         RuntimeAssets Assets{ Logging, Serializers };
         DocumentSourceSet Sources;
+        DataDocumentStore Store{ Assets, Sources };
         std::unique_ptr<DataDocumentSet> Set;
         std::unique_ptr<DataDocumentTabs> Tabs;
         int Notified = 0;
@@ -61,7 +63,7 @@ namespace
                 std::ofstream(Root / name) << R"({ "type": "test.label", "version": 1, "data": { "label": ")" << label
                                            << R"(" } })";
             (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
-            Set = std::make_unique<DataDocumentSet>(Assets, Sources, DataDocumentSetConfig{ .ContentRoot = Root, .Subtypes = {} });
+            Set = std::make_unique<DataDocumentSet>(Store, DataDocumentSetConfig{ .ContentRoot = Root, .Subtypes = {} });
             Set->OnChanged([this](DataDocument&, bool) { ++Notified; });
             Tabs = std::make_unique<DataDocumentTabs>(*Set);
 
@@ -80,6 +82,7 @@ namespace
         void TearDown() override
         {
             ImGui::DestroyContext();
+            Sources.DiscardAll();
             Tabs.reset();
             Set.reset();
             std::error_code ec;

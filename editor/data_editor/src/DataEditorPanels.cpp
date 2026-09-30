@@ -290,7 +290,7 @@ void DataRawJsonPanel::OnDraw()
         else
         {
             document->ReplaceRoot(std::move(*parsed));
-            Workspace.Documents.Changed(*document);
+            Workspace.Documents.Store().Changed(*document);
             Refresh();
         }
     }

@@ -3,6 +3,7 @@
 // conflict leaves the document, the resident asset and the file agreeing.
 
 #include "data/DataDocumentSet.h"
+#include "documents/DocumentSourceSet.h"
 #include "ui/DocumentShellActions.h"
 
 #include <anim/AnimFactSchema.h>
@@ -32,6 +33,7 @@ namespace
         ComponentSerializerRegistry Serializers;
         RuntimeAssets Assets{ Logging, Serializers };
         DocumentSourceSet Sources;
+        DataDocumentStore Store{ Assets, Sources };
         std::unique_ptr<DataDocumentSet> Set;
         int Notified = 0;
         int ResidentChanges = 0;
@@ -44,12 +46,15 @@ namespace
             std::ofstream(Root / "animation" / "requests.sdata")
                 << R"({ "type": "animation.request_schema", "version": 1, "data": { "intents": [] } })";
             (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
-            Set = std::make_unique<DataDocumentSet>(Assets, Sources,
+            Set = std::make_unique<DataDocumentSet>(Store,
                 DataDocumentSetConfig{ .ContentRoot = Root, .Subtypes = { std::string(kAnimFactSchemaType) } });
             Set->OnChanged([this](DataDocument&, bool residentChanged) {
                 ++Notified;
                 ResidentChanges += residentChanged ? 1 : 0;
             });
+            // What the application does with a step: whatever shows the
+            // document brings it forward.
+            Sources.SetStepObserver([this](const DocumentRef& document) { Set->Reveal(document.Key); });
         }
 
         void TearDown() override
@@ -95,7 +100,7 @@ namespace
         void Commit(DataDocument& document, std::string_view slot)
         {
             document.ReplaceRoot(WithSlot(document, slot));
-            Set->Changed(document);
+            Set->Store().Changed(document);
         }
 
         [[nodiscard]] static std::string SlotOf(const DataDocument& document)
@@ -197,11 +202,11 @@ TEST_F(FactDocuments, ReloadRefusesChangesAndForgetsTheHistoryItClears)
     DataDocument& game = OpenFacts(kGame);
     Commit(game, "Sliding");
     std::string error;
-    EXPECT_FALSE(Set->Reload(game, error));
+    EXPECT_FALSE(Set->Store().Reload(game, error));
 
     ASSERT_EQ(Sources.Save(Set->RefOf(game)).Status, DocumentSaveStatus::Saved);
     ASSERT_TRUE(Sources.CanUndo());
-    ASSERT_TRUE(Set->Reload(game, error)) << error;
+    ASSERT_TRUE(Set->Store().Reload(game, error)) << error;
     EXPECT_FALSE(Sources.CanUndo()) << "no step is left that the document can no longer take";
 }
 
@@ -304,8 +309,43 @@ TEST_F(FactDocuments, ExitWaitsWhileAnyDocumentHasChanges)
     game.BeginEdit();
     game.PreviewRoot(WithSlot(game, "Sliding"));
     EXPECT_EQ(DecideDocumentExit(Sources), Engine::ExitDecision::Defer);
-    Set->CommitEdit(game);
+    Set->Store().CommitEdit(game);
     EXPECT_EQ(DecideDocumentExit(Sources), Engine::ExitDecision::Defer);
     ASSERT_EQ(Sources.Save(Set->RefOf(game)).Status, DocumentSaveStatus::Saved);
     EXPECT_EQ(DecideDocumentExit(Sources), Engine::ExitDecision::Allow);
+}
+
+TEST_F(FactDocuments, TwoViewsOfOneFileEditOneDocument)
+{
+    DataDocumentSet other(Store, { .ContentRoot = Root, .Subtypes = { std::string(kAnimFactSchemaType) } });
+    DataDocument& mine = OpenFacts(kGame);
+    std::string error;
+    DataDocument* theirs = other.OpenOrFocus(kGame, error);
+    ASSERT_EQ(theirs, &mine) << "a second view loaded a second copy of the file";
+
+    Commit(mine, "Sliding");
+    EXPECT_EQ(SlotOf(*theirs), "Sliding");
+    ASSERT_TRUE(Set->Close(*Set->IndexOf(kGame), DirtyDisposition::Refuse, error))
+        << "a document another view still shows is not this view's to refuse: " << error;
+    EXPECT_EQ(Store.Find(kGame), &mine) << "closing one view's tab closed the document under the other";
+    EXPECT_EQ(Sources.ChangedDocuments().size(), 1u);
+
+    Store.DiscardDocument(kGame);
+    EXPECT_FALSE(other.IndexOf(kGame).has_value()) << "a discarded document stayed in a view";
+    EXPECT_EQ(Store.Find(kGame), nullptr);
+}
+
+TEST_F(FactDocuments, AFileChangedOnDiskIsTakenByACleanDocumentAndHeldByAChangedOne)
+{
+    DataDocument& clean = OpenFacts(kGame);
+    DataDocument& changed = OpenFacts(kOther);
+    Commit(changed, "Dry");
+    ChangeOnDisk("game.facts.sdata", "Swimming");
+    ChangeOnDisk("other.facts.sdata", "Damp");
+
+    EXPECT_EQ(Sources.FileChangedOnDisk(clean.FilePath()), ExternalChange::Adopted);
+    EXPECT_EQ(SlotOf(clean), "Swimming");
+    EXPECT_EQ(Sources.FileChangedOnDisk(changed.FilePath()), ExternalChange::Held);
+    EXPECT_EQ(SlotOf(changed), "Dry") << "a held change was overwritten";
+    EXPECT_EQ(Sources.Save(Set->RefOf(changed)).Status, DocumentSaveStatus::Conflict);
 }

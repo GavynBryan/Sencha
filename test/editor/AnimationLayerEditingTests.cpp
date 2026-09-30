@@ -107,7 +107,7 @@ namespace
         ASSERT_TRUE(edit(root));
         rig.BeginEdit();
         rig.PreviewRoot(std::move(root));
-        workspace.Documents.CommitEdit(rig);
+        workspace.Documents.Store().CommitEdit(rig);
     }
 }
 
@@ -149,7 +149,7 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
         for (int i = 0; i < 3; ++i)
         {
             rig->Undo();
-            workspace.Documents.Changed(*rig);
+            workspace.Documents.Store().Changed(*rig);
         }
         workspace.Rig.Simulation.Step();
         EXPECT_FALSE(workspace.Rig.Simulation.Rig()->Layers[1].Masked());

@@ -28,6 +28,8 @@ namespace
         ComponentSerializerRegistry Serializers;
         RuntimeAssets Assets{ Logging, Serializers };
         ProjectDescriptor Project;
+        DocumentSourceSet Sources;
+        DataDocumentStore Store{ Assets, Sources };
         std::unique_ptr<DataEditorWorkspace> Workspace;
         std::string Error;
 
@@ -38,11 +40,12 @@ namespace
                 "data": { "slots": [ { "name": "Crouched", "kind": "bool" } ] } })";
             (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
             Project.ContentRoots = { Root.generic_string() };
-            Workspace = std::make_unique<DataEditorWorkspace>(Assets, Project);
+            Workspace = std::make_unique<DataEditorWorkspace>(Assets, Project, Sources, Store);
         }
 
         void TearDown() override
         {
+            Sources.DiscardAll();
             Workspace.reset();
             std::error_code ec;
             std::filesystem::remove_all(Root, ec);
@@ -55,7 +58,7 @@ namespace
             JsonValue root = document->CopyRoot();
             root.Find("data")->Find("slots")->AsArray()[0].AsObject()[0].second = JsonValue(std::string("Sliding"));
             document->ReplaceRoot(std::move(root));
-            Workspace->Documents.Changed(*document);
+            Workspace->Documents.Store().Changed(*document);
             return *document;
         }
 

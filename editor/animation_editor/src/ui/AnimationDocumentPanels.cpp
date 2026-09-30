@@ -55,7 +55,7 @@ private:
             SaveMessage = DescribeDocumentSave(Sources.Save(Documents.RefOf(document)));
         if (!SaveMessage.empty())
             ImGui::TextWrapped("%s", SaveMessage.c_str());
-        if (const std::string status = AnimationPreviewStatusText(Documents.ResidentStateOf(document)); !status.empty())
+        if (const std::string status = AnimationPreviewStatusText(Documents.Store().ResidentStateOf(document)); !status.empty())
             ImGui::TextWrapped("%s", status.c_str());
         for (const DataValidationError& error : document.ValidationErrors())
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s: %s", error.Path.c_str(), error.Message.c_str());

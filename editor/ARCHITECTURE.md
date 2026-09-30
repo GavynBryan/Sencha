@@ -39,6 +39,11 @@ Opening, closing and switching are requests applied at the frame boundary by
 the one `WorkspaceTickSystem`, since a workspace adds and removes render
 features as it comes and goes; each open workspace is ticked there too.
 
+Data documents live once per process in the session's `DataDocumentStore`;
+each workspace shows them through a `DataDocumentSet` view (its tabs, active
+document and selected field), so the Data and Animation workspaces showing one
+file edit one document, and the store closes it when its last view lets go.
+
 Documents share one journal, the session's `DocumentSourceSet`: every
 workspace's documents are sources in it (the level's is `LevelDocumentSource`,
 one document for the whole world since a command may span zones). Undo retakes

@@ -61,6 +61,7 @@ public:
     AnimationContentTags Tags;
     // Declared before the document sets, which register with it.
     DocumentSourceSet Sources;
+    DataDocumentStore DocumentStore;
     DataDocumentSet Documents;
     AnimationClipEventsSet ClipEvents;
     AnimationContentLists Content;

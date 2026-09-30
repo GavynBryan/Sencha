@@ -198,7 +198,7 @@ private:
         if (ImGui::Button("Redo")) Workspace.Sources.Redo();
         ImGui::SameLine();
         if (ImGui::Button("Save")) Workspace.DocumentError = DescribeDocumentSave(Workspace.Sources.Save(Workspace.Documents.RefOf(document)));
-        if (const std::string status = AnimationPreviewStatusText(Workspace.Documents.ResidentStateOf(document)); !status.empty())
+        if (const std::string status = AnimationPreviewStatusText(Workspace.Documents.Store().ResidentStateOf(document)); !status.empty())
             ImGui::TextWrapped("%s", status.c_str());
 
         JsonValue root = document.CopyRoot();

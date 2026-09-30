@@ -205,8 +205,8 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
             Parse(R"({ "fact": "Speed", "compare": "gt", "value": 5 })");
         selector->BeginEdit();
         selector->PreviewRoot(std::move(root));
-        workspace.Documents.CommitEdit(*selector);
-        EXPECT_EQ(workspace.Documents.ResidentStateOf(*selector)->Status, DataResidentStatus::Current);
+        workspace.Documents.Store().CommitEdit(*selector);
+        EXPECT_EQ(workspace.Documents.Store().ResidentStateOf(*selector)->Status, DataResidentStatus::Current);
 
         // The next tick decides with the edited rule; nothing restarted.
         const AnimTick before = workspace.Rig.Simulation.Tick();
@@ -220,16 +220,16 @@ TEST(AnimationSelectionEditing, EditingARuleChangesTheRunningPreview)
         (*AnimSelectorRules(root))[0].Find("enter")->AsArray()[0].AsObject().emplace_back("value", JsonValue("fast"));
         selector->BeginEdit();
         selector->PreviewRoot(std::move(root));
-        workspace.Documents.CommitEdit(*selector);
-        EXPECT_EQ(workspace.Documents.ResidentStateOf(*selector)->Status, DataResidentStatus::KeptLastValid);
+        workspace.Documents.Store().CommitEdit(*selector);
+        EXPECT_EQ(workspace.Documents.Store().ResidentStateOf(*selector)->Status, DataResidentStatus::KeptLastValid);
         workspace.Rig.Simulation.Step();
         EXPECT_EQ(Playing(workspace), "asset://anim/idle.sanim");
 
         // Undo twice: back to the authored rule, and the preview follows.
         selector->Undo();
-        workspace.Documents.Changed(*selector);
+        workspace.Documents.Store().Changed(*selector);
         selector->Undo();
-        workspace.Documents.Changed(*selector);
+        workspace.Documents.Store().Changed(*selector);
         workspace.Rig.Simulation.Step();
         EXPECT_EQ(Playing(workspace), "asset://anim/walk.sanim");
 

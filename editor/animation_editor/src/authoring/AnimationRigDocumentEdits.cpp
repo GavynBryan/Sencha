@@ -25,7 +25,7 @@ bool EditAnimationRig(DataDocumentSet& documents, const std::string& rigPath,
         return false;
     rig->BeginEdit();
     rig->PreviewRoot(std::move(root));
-    documents.CommitEdit(*rig);
+    documents.Store().CommitEdit(*rig);
     return true;
 }
 
@@ -50,7 +50,7 @@ bool CreateAnimationBinding(DataDocumentSet& documents, const AnimationPreviewSe
         return false;
     }
     document->ReplaceRoot(std::move(root));
-    documents.Changed(*document);
+    documents.Store().Changed(*document);
     return true;
 }
 
@@ -63,10 +63,10 @@ std::vector<std::string> UndeclaredAnimationNamesOf(const AnimationPreviewSessio
     std::deque<JsonValue> read;
     return UndeclaredAnimationNames(simulation.Problems(), *tags, [&](std::string_view path) -> AnimationDocumentView {
         const JsonValue* root = nullptr;
-        if (std::optional<JsonValue> current = documents.CurrentRoot(path))
+        if (std::optional<JsonValue> current = documents.Store().CurrentRoot(path))
             root = &read.emplace_back(std::move(*current));
         const JsonValue* type = root != nullptr ? root->Find("type") : nullptr;
-        const DataSchema* schema = type != nullptr && type->IsString() ? documents.SchemaOf(type->AsString()) : nullptr;
+        const DataSchema* schema = type != nullptr && type->IsString() ? documents.Store().SchemaOf(type->AsString()) : nullptr;
         return { root, schema != nullptr ? &schema->Root : nullptr };
     });
 }
@@ -86,7 +86,7 @@ bool DeclareUndeclaredAnimationNames(DataDocumentSet& documents, const Animation
     const std::size_t active = documents.ActiveIndex();
     DataDocument* document = documents.Find(path);
     if (document == nullptr)
-        document = documents.IsRegistered(path) ? documents.OpenOrFocus(path, error)
+        document = documents.Store().IsRegistered(path) ? documents.OpenOrFocus(path, error)
                                                 : documents.Create(kGameplayTagDeclarationsType, relative, error);
     if (document == nullptr)
         return false;

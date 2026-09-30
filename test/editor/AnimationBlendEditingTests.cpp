@@ -116,7 +116,7 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
         (*root.Find("data")->Find("behaviors")->AsArray()[1].Find("blend")->Find("in_ms")) = JsonValue(300.0);
         behaviors->BeginEdit();
         behaviors->PreviewRoot(std::move(root));
-        workspace.Documents.CommitEdit(*behaviors);
+        workspace.Documents.Store().CommitEdit(*behaviors);
 
         ASSERT_TRUE(workspace.Takes.ReplayAgainstA(workspace.Rig.Simulation)) << workspace.Takes.Comparison().Refusal;
         const std::vector<AnimationPoseResidual>& residuals = workspace.Takes.Comparison().Residuals;

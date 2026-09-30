@@ -52,7 +52,7 @@ void InputProfilePreview::Rebuild(const DataDocument& document,
         return;
     }
 
-    const std::optional<JsonValue> actionSet = documents.CurrentRoot(ReferencedPath);
+    const std::optional<JsonValue> actionSet = documents.Store().CurrentRoot(ReferencedPath);
     if (!actionSet)
     {
         LoadError = "No action set at '" + ReferencedPath + "'.";

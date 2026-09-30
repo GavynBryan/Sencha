@@ -28,7 +28,7 @@ public:
         // Kept current whether or not the panels reading it are visible, so
         // opening one mid-edit shows the profile as it stands rather than as it
         // was when the panel last drew.
-        Preview.Update(document, documents.Types());
+        Preview.Update(document, documents.Store().Types());
     }
 
     [[nodiscard]] std::vector<std::unique_ptr<IEditorPanel>>

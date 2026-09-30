@@ -348,8 +348,14 @@ void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
         ctx.Handled = true;
         return;
     }
+    IWorkspace* active = Workspaces->Active();
+    if (active != nullptr && active->ClaimPlatformEvent(ctx))
+    {
+        ctx.Handled = true;
+        return;
+    }
     Ui->ProcessSdlEvent(ctx.Event);
-    if (IWorkspace* active = Workspaces->Active())
+    if (active != nullptr)
         active->HandlePlatformEvent(ctx);
     // Keys the active workspace left alone, unless a text field has them.
     if (ctx.Handled || Ui->GetInputCapture().Keyboard)

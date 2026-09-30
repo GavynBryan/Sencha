@@ -65,15 +65,15 @@ do the work and delete the entry.
 
 ## Picking up another program's edits before save
 
-- **What:** a material document takes a file changed on disk while it is clean
-  and holds off a change while it has its own; level and data documents do not
-  notice until they are saved, when the conflict is refused and settled by
-  keeping one side. Their files are not among the watched sources.
-- **Where:** `DocumentSource::FileChangedOnDisk` and its only implementation,
-  `editor/material_editor/src/MaterialDocumentSet.*`; the watched extensions in
+- **What:** material and data documents take a file changed on disk while
+  they are clean and hold off a change while they have their own; the level
+  document does not notice until it is saved, when the conflict is refused and
+  settled by keeping one side. Level files are not among the watched sources.
+- **Where:** `DocumentSource::FileChangedOnDisk`; `LevelDocumentSource` in
+  `editor/level_editor/src/workspace/`; the watched extensions in
   `editor/kyusu/src/app/ProjectSession.cpp`.
-- **Trigger:** the data workspace joining Kyusu (`.sdata` sources are watched
-  for the runtime already), or level files being watched.
+- **Trigger:** level files (`.sscene`, `.sworld`) being watched, for example
+  by a scene-reload workflow.
 ## Sanitizers and benchmarks in CI
 
 - **What:** the `asan` and `tsan` presets and the gated benchmarks run only by

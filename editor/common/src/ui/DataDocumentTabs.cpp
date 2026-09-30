@@ -63,7 +63,7 @@ void DataDocumentTabs::Draw(const std::function<void(DataDocument&)>& header)
 
 void DataDocumentTabs::DrawForm(DataDocument& document)
 {
-    const DataSchema* schema = Documents.SchemaOf(document);
+    const DataSchema* schema = Documents.Store().SchemaOf(document);
     JsonValue root = document.CopyRoot();
     JsonValue* data = root.Find("data");
     if (schema == nullptr || data == nullptr)
@@ -73,7 +73,7 @@ void DataDocumentTabs::DrawForm(DataDocument& document)
     }
     if (document.IsEditing() && ImGui::IsKeyPressed(ImGuiKey_Escape))
     {
-        Documents.CancelEdit(document);
+        Documents.Store().CancelEdit(document);
         return;
     }
     ImGui::PushID(document.VirtualPath().c_str());

@@ -16,6 +16,7 @@
 ProjectSession::ProjectSession(Engine& engine, std::optional<std::string> projectPath)
     : Host(engine)
     , MaterialList(engine.Logging())
+    , DataDocumentFiles(engine.Content().Assets(), Journal)
 {
     std::string modulePath;
     if (projectPath)
@@ -97,8 +98,8 @@ void ProjectSession::MountContent()
 void ProjectSession::WatchSources()
 {
     // Every root in the stack, the engine's own included, for every authored
-    // source a workspace shows live: materials and their textures, and the
-    // documents, stylesheets and fonts of authored UI.
+    // source a workspace shows live: materials and their textures, data, and
+    // the documents, stylesheets and fonts of authored UI.
     SourceReloadRoots* sources = Host.Content().SourceReload();
     if (sources == nullptr)
         return;
@@ -107,7 +108,7 @@ void ProjectSession::WatchSources()
     sources->SetReloadFilter([this](const std::filesystem::path& file) {
         return Journal.FileChangedOnDisk(file) != ExternalChange::Held;
     });
-    const std::vector<std::string> extensions{ ".smat", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" };
+    const std::vector<std::string> extensions{ ".smat", ".sdata", ".png", ".meta", ".rml", ".rcss", ".ttf", ".otf" };
     for (const ContentRootPaths& root : Host.Content().Roots())
         sources->AddRoot(root.Authored.string(), extensions);
     if (Descriptor)
