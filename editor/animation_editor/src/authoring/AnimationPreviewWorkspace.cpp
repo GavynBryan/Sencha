@@ -38,11 +38,12 @@
 #include <filesystem>
 #include <fstream>
 
-AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary,
+AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, DocumentSourceSet& sources,
+                                                     DataDocumentStore& store, std::function<void(World&)> vocabulary,
                                                      std::filesystem::path authoringRoot)
-    : DocumentStore(assets, Sources)
-    , Documents(DocumentStore, { .ContentRoot = authoringRoot,
-                                   .Subtypes = { AnimationDocumentSubtypes().begin(), AnimationDocumentSubtypes().end() } })
+    : Sources(sources)
+    , Documents(store, { .ContentRoot = authoringRoot,
+                         .Subtypes = { AnimationDocumentSubtypes().begin(), AnimationDocumentSubtypes().end() } })
     , ClipEvents(assets, Sources)
     , Audition(assets)
     , Viewport(assets)

@@ -3,7 +3,7 @@
 #include "authoring/AnimationBlendComparison.h"
 #include "authoring/AnimationRigScenario.h"
 #include "authoring/AnimationViewportExtraction.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -324,7 +324,7 @@ private:
 };
 }
 
-void AddAnimationBlendPanels(EditorUiFeature& ui, AnimationRigScenario& rig, AnimationTakeComparison& takes,
+void AddAnimationBlendPanels(WorkspaceView& ui, AnimationRigScenario& rig, AnimationTakeComparison& takes,
                              AnimationViewportExtraction& viewport)
 {
     ui.AddPanel(std::make_unique<BlendPanel>(rig, takes, viewport));

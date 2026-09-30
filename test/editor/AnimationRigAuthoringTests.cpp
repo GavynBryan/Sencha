@@ -3,6 +3,7 @@
 // fresh editor. No file is written by hand.
 
 #include "authoring/AnimationPredicateEdits.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigDocumentEdits.h"
 #include "authoring/AnimationRigEdits.h"
@@ -52,7 +53,8 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
 {
     AnimationTestProject project("sencha_rig_authoring");
     RegisterContent(project);
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.CreateRig({ .Name = "brute",
                                       .Clips = { "asset://meshes/man.blend#anim:Idle",
@@ -142,7 +144,9 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
     // A fresh editor over what was saved.
     AnimationTestProject reopened("sencha_rig_authoring", true);
     RegisterContent(reopened);
-    AnimationPreviewWorkspace fresh(*reopened.Assets, {}, reopened.Root);
+    EditorDocuments reopenedDocuments(*reopened.Assets);
+    AnimationPreviewWorkspace fresh(*reopened.Assets, reopenedDocuments.Sources, reopenedDocuments.Store, {},
+                                    reopened.Root);
     ASSERT_TRUE(fresh.OpenRig(kRig)) << fresh.Rig.Error;
     const AnimBoundRig* saved = fresh.Rig.Simulation.Rig();
     ASSERT_TRUE(saved != nullptr && saved->Valid) << FirstProblem(fresh);

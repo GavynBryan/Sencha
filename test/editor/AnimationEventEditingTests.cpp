@@ -3,6 +3,7 @@
 // game, and nothing written to disk until saved.
 
 #include "authoring/AnimationEventBindings.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigDocumentEdits.h"
 
@@ -141,7 +142,8 @@ namespace
 TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     ASSERT_TRUE((workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError) != nullptr)) << workspace.DocumentError;
     AnimationClipEventsDocument* events = workspace.ClipEvents.Find(kClip);
@@ -171,7 +173,8 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
 TEST(AnimationEventEditing, ADragReachesThePreviewOnlyWhenCommitted)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata"));
     AnimationClipEventsDocument* opened = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(opened, nullptr) << workspace.DocumentError;
@@ -206,7 +209,8 @@ TEST(AnimationEventEditing, ADragReachesThePreviewOnlyWhenCommitted)
 TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata"));
     ASSERT_TRUE(CreateAnimationBinding(workspace.Documents, workspace.Rig.Simulation, "asset://anim/hero.bindings.sdata", "anim.footstep_loud", "test.footstep", workspace.DocumentError))
         << workspace.DocumentError;
@@ -242,7 +246,8 @@ TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
 TEST(AnimationEventEditing, AnInputIsCheckedAgainstEveryDestination)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata"));
     const CompiledVerbBinding* count = workspace.Rig.Simulation.Rig()->Bindings.Find("anim.count");
     ASSERT_NE(count, nullptr);
@@ -272,7 +277,8 @@ TEST(AnimationEventEditing, AnInputIsCheckedAgainstEveryDestination)
 TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
@@ -305,7 +311,8 @@ TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
 TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
 {
     EventProject project;
-    AnimationPreviewWorkspace workspace(*project.Assets, &Vocabulary);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;

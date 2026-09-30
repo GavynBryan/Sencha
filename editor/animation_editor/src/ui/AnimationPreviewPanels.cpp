@@ -14,7 +14,7 @@
 #include "ui/AnimationSelectionPanels.h"
 #include "ui/AnimationSimulationPanels.h"
 #include "render/AnimationPreviewRenderFeature.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -383,7 +383,7 @@ private:
 };
 }
 
-void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace,
+void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace,
                                AnimationPreviewRenderFeature*& viewport)
 {
     ui.AddPanel(std::make_unique<PreviewAssetsPanel>(workspace));
@@ -404,7 +404,7 @@ void AddAnimationPreviewPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& w
     auto* requestSchemaPanel = requestSchema.get();
     ui.AddPanel(std::move(requestSchema));
     // Hidden panels do not receive OnDraw, including when hidden via View.
-    ui.AddOverlay([&workspace, requestSchemaPanel] {
+    ui.Overlays.push_back([&workspace, requestSchemaPanel] {
         if (!requestSchemaPanel->IsVisible()) workspace.Sources.CancelEdits();
     });
 }

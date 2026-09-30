@@ -5,7 +5,7 @@
 #include "ui/DocumentSaveReportView.h"
 #include "authoring/AnimationRigOutline.h"
 #include "authoring/AnimationTraceImport.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -934,7 +934,7 @@ private:
 };
 }
 
-void AddAnimationSimulationPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationSimulationPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     ui.AddPanel(std::make_unique<RigScenarioPanel>(workspace));
     ui.AddPanel(std::make_unique<FactsPanel>(workspace));

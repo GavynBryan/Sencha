@@ -2,7 +2,7 @@
 
 #include "authoring/AnimationRigScenario.h"
 #include "authoring/AnimationSessionLab.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -345,7 +345,7 @@ private:
 };
 }
 
-void AddAnimationLabPanels(EditorUiFeature& ui, AnimationLabRun& lab, AnimationRigScenario& rig)
+void AddAnimationLabPanels(WorkspaceView& ui, AnimationLabRun& lab, AnimationRigScenario& rig)
 {
     ui.AddPanel(std::make_unique<LabPanel>(lab, rig));
 }

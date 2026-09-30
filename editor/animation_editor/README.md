@@ -1,4 +1,4 @@
-# Animation Editor
+# Animation Workspace
 
 The animation workspace is being built alongside the data-driven runtime. Its
 current surface auditions cooked skinned meshes and clips, simulates rigs under
@@ -8,14 +8,14 @@ own pose pass, with blend inspection, blendspaces and a blend A/B recorder.
 
 ## Content audition
 
-Launch `animation_editor --project path/to/project.senchaproj`. Optional
-`--mesh asset://...skmesh` and `--clip asset://...sanim` arguments select initial
-content.
+Open the Animation workspace in Kyusu (`workspace.open animation`, or the tab
+strip's +). `animation.audition asset://...skmesh [asset://...sanim]` selects
+initial content, from the console or a startup script.
 
 For the repository's two-joint fixture:
 
 ```text
-animation_editor --project test/fixtures/content/animation_preview.senchaproj --mesh asset://meshes/dev/golden_rig.skmesh --clip asset://meshes/dev/golden_rig.sanim
+kyusu --project test/fixtures/content/animation_preview.senchaproj +workspace.open animation +animation.audition asset://meshes/dev/golden_rig.skmesh asset://meshes/dev/golden_rig.sanim
 ```
 
 The left pane selects meshes, skeletons, clips, and a material override. A mesh

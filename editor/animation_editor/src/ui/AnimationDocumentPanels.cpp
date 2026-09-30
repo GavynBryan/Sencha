@@ -6,7 +6,7 @@
 #include "ui/DocumentSaveReportView.h"
 #include "ui/DataDocumentTabs.h"
 #include "ui/NewDataAssetForm.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -70,7 +70,7 @@ private:
 };
 }
 
-void AddAnimationDocumentPanels(EditorUiFeature& ui, DataDocumentSet& documents, DocumentSourceSet& sources)
+void AddAnimationDocumentPanels(WorkspaceView& ui, DataDocumentSet& documents, DocumentSourceSet& sources)
 {
     ui.AddPanel(std::make_unique<DocumentFormPanel>(documents, sources));
 }

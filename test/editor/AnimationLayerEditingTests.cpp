@@ -4,6 +4,7 @@
 
 #include "authoring/AnimationFlowEdits.h"
 #include "authoring/AnimationPredicateEdits.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigEdits.h"
 
@@ -115,7 +116,8 @@ TEST(AnimationLayerEditing, AMaskStepRebindsTheRunningPreview)
 {
     Project project;
     {
-        AnimationPreviewWorkspace workspace(*project.Assets);
+        EditorDocuments documents(*project.Assets);
+        AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
         ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
         ASSERT_NE(workspace.Rig.Simulation.Rig(), nullptr);
         ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);

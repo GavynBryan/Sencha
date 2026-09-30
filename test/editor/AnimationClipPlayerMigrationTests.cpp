@@ -2,6 +2,7 @@
 // play the clip as the player did, and the scenes carry the rigs instead.
 
 #include "authoring/AnimationClipPlayerMigration.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 
 #include "AnimationTestProject.h"
@@ -61,7 +62,8 @@ TEST(AnimationClipPlayerMigration, TheReportNamesEveryPlayer)
 TEST(AnimationClipPlayerMigration, PlayersBecomeRigsThatPlayAsTheyDid)
 {
     Project project;
-    AnimationPreviewWorkspace workspace(*project.Assets, {}, project.Root);
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.MigrateClipPlayers(error)) << error;
     EXPECT_TRUE(workspace.ClipPlayers.Uses.empty()) << "nothing left to migrate";

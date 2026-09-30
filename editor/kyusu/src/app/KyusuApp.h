@@ -55,4 +55,7 @@ private:
     std::string HeldClose;
     std::string SettleError;
     ShortcutRegistry Shortcuts;
+    // Until the first frame nothing records, so the startup script's workspace
+    // commands apply at once and the commands after them find what they open.
+    bool FramesStarted = false;
 };

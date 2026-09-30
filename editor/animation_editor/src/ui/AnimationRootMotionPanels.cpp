@@ -2,7 +2,7 @@
 
 #include "authoring/AnimationRigScenario.h"
 #include "authoring/AnimationViewportExtraction.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -200,7 +200,7 @@ private:
 };
 }
 
-void AddAnimationRootMotionPanels(EditorUiFeature& ui, AnimationRigScenario& rig, const AnimationClipCache& clips)
+void AddAnimationRootMotionPanels(WorkspaceView& ui, AnimationRigScenario& rig, const AnimationClipCache& clips)
 {
     ui.AddPanel(std::make_unique<RootMotionPanel>(rig, clips));
 }

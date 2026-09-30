@@ -2,6 +2,6 @@
 
 class AnimationClipCache;
 class AnimationRigScenario;
-class EditorUiFeature;
+struct WorkspaceView;
 
-void AddAnimationRootMotionPanels(EditorUiFeature& ui, AnimationRigScenario& rig, const AnimationClipCache& clips);
+void AddAnimationRootMotionPanels(WorkspaceView& ui, AnimationRigScenario& rig, const AnimationClipCache& clips);

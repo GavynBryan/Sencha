@@ -8,7 +8,7 @@
 #include "authoring/AnimationRigEdits.h"
 #include "authoring/AnimationPredicateEdits.h"
 #include "ui/AnimationDocumentWidgets.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -626,7 +626,7 @@ void DrawAnimationMaskMenu(AnimationPreviewWorkspace& workspace, const std::stri
     step("Remove this joint only", true, false);
 }
 
-void AddAnimationLayerPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationLayerPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     ui.AddPanel(std::make_unique<LayerStackPanel>(workspace));
     ui.AddPanel(std::make_unique<SkeletonMaskPanel>(workspace));

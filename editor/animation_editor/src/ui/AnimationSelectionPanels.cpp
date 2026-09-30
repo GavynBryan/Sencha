@@ -7,7 +7,7 @@
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationSelectorEdits.h"
 #include "ui/AnimationDocumentWidgets.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -598,7 +598,7 @@ private:
 };
 }
 
-void AddAnimationSelectionPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationSelectionPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     ui.AddPanel(std::make_unique<RulesPanel>(workspace));
     ui.AddPanel(std::make_unique<BehaviorPanel>(workspace));

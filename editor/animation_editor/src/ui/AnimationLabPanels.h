@@ -2,6 +2,6 @@
 
 class AnimationLabRun;
 class AnimationRigScenario;
-class EditorUiFeature;
+struct WorkspaceView;
 
-void AddAnimationLabPanels(EditorUiFeature& ui, AnimationLabRun& lab, AnimationRigScenario& rig);
+void AddAnimationLabPanels(WorkspaceView& ui, AnimationLabRun& lab, AnimationRigScenario& rig);

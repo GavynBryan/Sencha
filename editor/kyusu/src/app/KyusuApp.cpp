@@ -65,14 +65,20 @@ void ApplyWindowIcon(SdlWindow& window)
 // registering its own.
 struct WorkspaceTickSystem
 {
-    explicit WorkspaceTickSystem(WorkspaceHost& host)
+    WorkspaceTickSystem(WorkspaceHost& host, bool& framesStarted)
         : Host(host)
+        , FramesStarted(framesStarted)
     {
     }
 
-    void FrameUpdate(FrameUpdateContext& ctx) { Host.Tick(ctx); }
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        FramesStarted = true;
+        Host.Tick(ctx);
+    }
 
     WorkspaceHost& Host;
+    bool& FramesStarted;
 };
 } // namespace
 
@@ -318,10 +324,12 @@ void KyusuApp::RegisterWorkspaceCommands()
                     result.Error("expected one of: " + kinds);
                     return result;
                 }
-                // Applied at the next frame boundary: a workspace adds and
-                // removes render work as it comes and goes.
+                // Mid-frame, applied at the next frame boundary: a workspace
+                // adds and removes render work as it comes and goes.
                 Workspaces->Request({ action, args[0] });
-                result.Info("requested for '" + args[0] + "'");
+                if (!FramesStarted)
+                    Workspaces->ApplyRequests();
+                result.Info("done for '" + args[0] + "'");
                 return result;
             },
         });
@@ -334,7 +342,7 @@ void KyusuApp::RegisterWorkspaceCommands()
 void KyusuApp::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     if (Workspaces)
-        ctx.Schedule.Register<WorkspaceTickSystem>(*Workspaces);
+        ctx.Schedule.Register<WorkspaceTickSystem>(*Workspaces, FramesStarted);
 }
 
 void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)

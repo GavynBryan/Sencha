@@ -1,7 +1,7 @@
 #include "ui/AnimationScenarioBatchPanels.h"
 
 #include "authoring/AnimationPreviewWorkspace.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
 #include "ui/ScopedPanel.h"
 
@@ -106,7 +106,7 @@ private:
 };
 }
 
-void AddAnimationScenarioBatchPanels(EditorUiFeature& ui, AnimationPreviewWorkspace& workspace)
+void AddAnimationScenarioBatchPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     ui.AddPanel(std::make_unique<ScenarioBatchPanel>(workspace));
 }

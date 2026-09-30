@@ -28,9 +28,10 @@ struct RuntimeAssets;
 class AnimationPreviewWorkspace final
 {
 public:
+    // `sources` and `store` are the application's journal and data documents.
     // An empty `authoringRoot` makes a workspace that creates no assets.
-    explicit AnimationPreviewWorkspace(RuntimeAssets& assets, std::function<void(World&)> vocabulary = {},
-                                       std::filesystem::path authoringRoot = {});
+    AnimationPreviewWorkspace(RuntimeAssets& assets, DocumentSourceSet& sources, DataDocumentStore& store,
+                              std::function<void(World&)> vocabulary = {}, std::filesystem::path authoringRoot = {});
 
     AnimationPreviewWorkspace(const AnimationPreviewWorkspace&) = delete;
     AnimationPreviewWorkspace& operator=(const AnimationPreviewWorkspace&) = delete;
@@ -59,9 +60,7 @@ public:
 
     // Declared before the vocabulary and every session that captures it.
     AnimationContentTags Tags;
-    // Declared before the document sets, which register with it.
-    DocumentSourceSet Sources;
-    DataDocumentStore DocumentStore;
+    DocumentSourceSet& Sources;
     DataDocumentSet Documents;
     AnimationClipEventsSet ClipEvents;
     AnimationContentLists Content;

@@ -2,6 +2,7 @@
 
 #include "app/LevelWorkspace.h"
 #include "app/ProjectSession.h"
+#include "AnimationWorkspace.h"
 #include "DataWorkspace.h"
 #include "MaterialWorkspace.h"
 #include "ProjectWorkspace.h"
@@ -36,6 +37,14 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         .Create = [&engine, &session] {
             return std::make_unique<DataWorkspace>(engine, *session.Project(), session.Documents(),
                                                    session.DataDocuments());
+        },
+    });
+    kinds.push_back(WorkspaceKind{
+        .Id = "animation",
+        .DisplayName = "Animation",
+        .Create = [&engine, &session] {
+            return std::make_unique<AnimationWorkspace>(engine, *session.Project(), session.Module(),
+                                                        session.Documents(), session.DataDocuments());
         },
     });
     kinds.push_back(WorkspaceKind{

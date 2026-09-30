@@ -69,7 +69,9 @@ bool ProjectDescriptor::Load(const std::string& path, ProjectDescriptor& out, st
     const JsonValue* module = json->Find("gameModule");
     if (module == nullptr || !module->IsString())
         return setError("project file missing required string field 'gameModule'");
-    out.GameModulePath = ResolveAgainst(dir, module->AsString());
+    // Empty names no module: a project of content alone.
+    if (!module->AsString().empty())
+        out.GameModulePath = ResolveAgainst(dir, module->AsString());
 
     if (const JsonValue* roots = json->Find("contentRoots"); roots != nullptr && roots->IsArray())
         for (const JsonValue& entry : roots->AsArray())
@@ -105,7 +107,7 @@ bool ProjectDescriptor::Save(const std::string& path, std::string* error)
 
     JsonValue root(JsonValue::Object{
         { "name", JsonValue(Name) },
-        { "gameModule", JsonValue(RelativeTo(dir, GameModulePath)) },
+        { "gameModule", JsonValue(GameModulePath.empty() ? std::string{} : RelativeTo(dir, GameModulePath)) },
         { "contentRoots", JsonValue(std::move(roots)) },
         { "cookProfiles", WriteCookProfiles(CookProfiles) },
     });

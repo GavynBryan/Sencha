@@ -3,6 +3,7 @@
 // and read where B differs from A -- only while the edited blend runs.
 
 #include "authoring/AnimationBlendComparison.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 
 #include <anim/AnimBehaviorSet.h>
@@ -100,7 +101,8 @@ TEST(AnimationBlendEditing, ReplayingAnEditedBlendDiffersOnlyWhileItRuns)
 {
     Project project;
     {
-        AnimationPreviewWorkspace workspace(*project.Assets);
+        EditorDocuments documents(*project.Assets);
+        AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
         ASSERT_TRUE(workspace.OpenRig("asset://anim/walker.rig.sdata")) << workspace.Rig.Error;
         ASSERT_TRUE(workspace.Rig.Simulation.Rig()->Valid);
         workspace.Rig.Simulation.RunTo(90);

@@ -2,6 +2,6 @@
 
 class DataDocumentSet;
 class DocumentSourceSet;
-class EditorUiFeature;
+struct WorkspaceView;
 
-void AddAnimationDocumentPanels(EditorUiFeature& ui, DataDocumentSet& documents, DocumentSourceSet& sources);
+void AddAnimationDocumentPanels(WorkspaceView& ui, DataDocumentSet& documents, DocumentSourceSet& sources);

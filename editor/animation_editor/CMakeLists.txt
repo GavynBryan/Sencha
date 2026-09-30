@@ -31,10 +31,9 @@ target_link_libraries(animation_authoring PUBLIC editor_common)
 target_include_directories(animation_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 sencha_warnings(animation_authoring)
 
-# The animation workspace's shell as a library, so the application that hosts
-# it links it; the executable is only the entry point.
+# The animation workspace's shell, linked by the application that hosts it.
 add_library(animation_editor STATIC
-    src/AnimationEditorApp.cpp
+    src/AnimationWorkspace.cpp
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
     src/ui/AnimationPreviewStatus.cpp
@@ -52,11 +51,3 @@ add_library(animation_editor STATIC
     src/ui/AnimationSimulationPanels.cpp)
 target_link_libraries(animation_editor PUBLIC animation_authoring editor_common)
 sencha_warnings(animation_editor)
-
-add_executable(animation_editor_app src/main.cpp)
-target_link_libraries(animation_editor_app PRIVATE animation_editor)
-sencha_warnings(animation_editor_app)
-set_target_properties(animation_editor_app PROPERTIES
-    OUTPUT_NAME animation_editor
-    INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
-install(TARGETS animation_editor_app RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
