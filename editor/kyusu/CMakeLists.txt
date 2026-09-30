@@ -7,7 +7,7 @@ add_executable(kyusu
     src/app/WorkspaceKinds.cpp
 )
 
-target_link_libraries(kyusu PRIVATE level_editor)
+target_link_libraries(kyusu PRIVATE level_editor project_browser)
 sencha_warnings(kyusu)
 target_include_directories(kyusu PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 

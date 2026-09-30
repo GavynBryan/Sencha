@@ -10,7 +10,7 @@ own pose pass, with blend inspection, blendspaces and a blend A/B recorder.
 
 Launch `animation_editor --project path/to/project.senchaproj`. Optional
 `--mesh asset://...skmesh` and `--clip asset://...sanim` arguments select initial
-content. Kettle also exposes an Animation action for each project.
+content.
 
 For the repository's two-joint fixture:
 

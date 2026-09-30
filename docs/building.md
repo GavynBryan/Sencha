@@ -138,8 +138,8 @@ and module always receive the same ABI fingerprint. Leaving
 `templates/` holds the five starter games. Each is a complete project that
 refers to nothing outside its own directory, and the SDK installs them as
 source under `share/sencha/templates/<name>/` (never their build trees, cook
-output, or per-user state). A new game starts as a copy of one: Kettle's
-"New Project..." offers the installed templates, or copy a directory by hand and
+output, or per-user state). A new game starts as a copy of one: Kyusu's
+Project workspace ("New Project...") offers the installed templates, or copy a directory by hand and
 build it against the SDK:
 
 ```sh

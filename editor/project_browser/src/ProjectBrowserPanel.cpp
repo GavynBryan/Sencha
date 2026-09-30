@@ -92,25 +92,9 @@ void ProjectBrowserPanel::DrawRecentList()
 
         ImGui::TableNextColumn();
         ImGui::BeginDisabled(missing);
-        if (ImGui::SmallButton("Kyusu") && Act.OpenLevelEditor)
-            Act.OpenLevelEditor(entry.Path);
-        ImGui::SetItemTooltip("Open in the level editor");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Shudei") && Act.OpenMaterialEditor)
-            Act.OpenMaterialEditor(entry.Path);
-        ImGui::SetItemTooltip("Open in the material editor");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Data") && Act.OpenDataEditor)
-            Act.OpenDataEditor(entry.Path);
-        ImGui::SetItemTooltip("Open in the structured data editor");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Shoji") && Act.OpenUiPreviewer)
-            Act.OpenUiPreviewer(entry.Path);
-        ImGui::SetItemTooltip("Open in the UI previewer");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Animation") && Act.OpenAnimationEditor)
-            Act.OpenAnimationEditor(entry.Path);
-        ImGui::SetItemTooltip("Open in the animation editor");
+        if (ImGui::SmallButton("Open") && Act.OpenProject)
+            Act.OpenProject(entry.Path);
+        ImGui::SetItemTooltip("Open this project");
         ImGui::EndDisabled();
         ImGui::SameLine();
         if (ImGui::SmallButton("x") && Act.RemoveEntry)

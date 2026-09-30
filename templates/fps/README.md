@@ -35,7 +35,8 @@ This produces `build/game.so`. Nothing here rebuilds the engine.
 
 ## Play
 
-Open it in the editor (`kettle`, or `kyusu --project $PWD/project.senchaproj`)
+Open it in the editor (`kyusu`, which starts on its Project workspace, or
+`kyusu --project $PWD/project.senchaproj`)
 and use Cook / Play, or run the host from this directory so its working
 directory is the content root:
 

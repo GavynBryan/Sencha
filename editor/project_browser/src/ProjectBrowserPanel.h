@@ -10,20 +10,15 @@
 #include <string>
 #include <vector>
 
-// The launcher's single surface: recent projects (open in either editor),
-// create-project form, and settings for the selected project. Catalog
-// mutation and process launching stay behind callbacks the composition root
+// Recent projects, the create-project form, and settings for the selected
+// project. Catalog mutation and opening stay behind callbacks the workspace
 // wires; descriptor load/save is plain data I/O the panel does itself.
 class ProjectBrowserPanel final : public IEditorPanel
 {
 public:
     struct Actions
     {
-        std::function<void(const std::string& projectPath)> OpenLevelEditor;
-        std::function<void(const std::string& projectPath)> OpenMaterialEditor;
-        std::function<void(const std::string& projectPath)> OpenDataEditor;
-        std::function<void(const std::string& projectPath)> OpenUiPreviewer;
-        std::function<void(const std::string& projectPath)> OpenAnimationEditor;
+        std::function<void(const std::string& projectPath)> OpenProject;
         std::function<void()> BrowseForProject;
         // `templateName` is one of the names the panel was given, or empty for
         // a bare project with no module and no content.

@@ -15,10 +15,10 @@ The editor tooling is a family of applications over one shared shell library:
 | `editor/level_editor/` | `level_authoring` + `level_editor` (static libs) | The level editor. Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `level_editor` library is the shell over it (composition root, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
 | `editor/kyusu/` | `kyusu` | The Kyusu executable: the entry point and `Game` adapter that hosts the level editor. |
 | `editor/material_editor/` | `material_editor` (static lib) + `shudei` | The material editor ("Shudei - Material Editor"): browse/edit/save `.smat` with a live MeshForwardPass preview. |
-| `editor/project_browser/` | `project_browser` (static lib) + `kettle` | The project launcher ("Kettle - Project Launcher"): recent projects, create project, project settings, launches the editors. |
+| `editor/project_browser/` | `project_browser` (static lib) | The Project workspace: recent projects, create project, project settings. Opening a project starts Kyusu again on it and ends the choosing process. Kyusu opens on it when started without a project. |
 | `editor/ui_preview/` | `ui_preview_authoring` + `ui_preview` (static libs) + `shoji` | The authored-UI previewer ("Shoji - UI Previewer"): renders an `.rml` document through the engine's own UI pass into a panel at a chosen resolution and display scale, re-cooks and rebuilds it on save, and inspects elements, the preview model, raised actions and the layer's diagnostics. Same split as Kyusu: the authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`) is GUI-free; the executable is the shell. Built to fold into Kyusu: every panel takes a `UiPreviewSession&`, and consolidation is constructing one in Kyusu's composition root and adding these panels under a workspace tab. |
 
-Product names (Kyusu, Shudei, Kettle, Shoji) exist only on executables and
+Product names (Kyusu, Shudei) exist only on executables and
 window titles; internal types stay mechanically named.
 
 Every application is a `Game` running inside the runtime `Engine`. It does not
@@ -51,7 +51,7 @@ into named phases: `BuildDocument` -> `BuildPlayLoop` -> `BuildFileActions` ->
 order; the destructor reproduces the load-bearing sequence explicitly.
 
 The other editors still run as their own executables, each with a `Game`
-adapter (`MaterialEditorApp`, `LauncherApp`, ...) forwarding to a services
+adapter (`MaterialEditorApp`, `DataEditorApp`, ...) forwarding to a services
 object that owns and wires its subsystems.
 
 ## Projects
@@ -61,8 +61,9 @@ the game module and the content roots. Editors resolve it via `--project
 <path>` argv first, then the `SENCHA_PROJECT` env var (`ProjectArgs`), and
 mount every content root (authored scan + `.cooked` overlay + on-demand texture
 cook + asset id map) through `ProjectContentMount`, the same resolution the
-runtime uses. Kettle spawns editors with `--project` via `ProcessLaunch`; the
-same helper drives PIE's out-of-process player.
+runtime uses. The Project workspace starts Kyusu on a chosen project with
+`--project` via `ProcessLaunch`; the same helper drives PIE's out-of-process
+player.
 
 Materials (and assets generally) resolve against the project's content roots,
 never against the open level file's location. Kyusu mounts the project into
@@ -145,10 +146,10 @@ offscreen target), and the browser/inspector/preview panels. Live
 preview swaps the working description into the resident material via
 `MaterialAssetLoader::CommitReload`.
 
-Launcher (`editor/project_browser/src/`, flat): `LauncherApp` + `LauncherServices`,
+Project workspace (`editor/project_browser/src/`, flat): `ProjectWorkspace`,
 `ProjectCatalog` (recent projects JSON in the user config dir,
 headless-tested), `ProjectBrowserPanel` (recent list, create form, settings
-editor).
+editor), `ProjectRelaunch` (the command that opens a project in a new process).
 
 ### Inside `document/` (the document domain)
 

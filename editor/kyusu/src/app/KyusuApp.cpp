@@ -22,6 +22,7 @@
 #include <SDL3/SDL.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <span>
@@ -77,6 +78,13 @@ KyusuApp::KyusuApp(std::optional<std::string> projectPath)
 
 KyusuApp::~KyusuApp() = default;
 
+bool KyusuApp::OpensLevel() const
+{
+    // A bare game module still edits levels, beside their files.
+    const char* module = std::getenv("SENCHA_GAME_MODULE");
+    return ProjectPath.has_value() || (module != nullptr && module[0] != '\0');
+}
+
 void KyusuApp::OnConfigure(GameConfigureContext& ctx)
 {
     ctx.Config.Window.Title = "Kyusu";
@@ -94,10 +102,11 @@ void KyusuApp::OnConfigure(GameConfigureContext& ctx)
     // directory would be the wrong directory.
     ctx.Config.Runtime.ContentRoots.clear();
     // Each frame the level editor re-uploads every brush wireframe/solid/overlay
-    // once per viewport (up to 4) into a single frame-scratch slice. The game's
+    // once per viewport (up to 4) into a single frame-scratch slice; the game's
     // 1 MB default overflows on real scenes (dropped draws look like warped or
-    // missing geometry), so give the editor generous headroom.
-    ctx.Config.Graphics.FrameScratchBytesPerFrame = 64ull * 1024 * 1024;
+    // missing geometry). Only a session that opens a level pays for more.
+    if (OpensLevel())
+        ctx.Config.Graphics.FrameScratchBytesPerFrame = 64ull * 1024 * 1024;
 }
 
 void KyusuApp::OnStart(GameStartupContext&)
@@ -108,6 +117,7 @@ void KyusuApp::OnStart(GameStartupContext&)
         return;
     ApplyWindowIcon(*window);
 
+    const bool opensLevel = OpensLevel();
     Session = std::make_unique<ProjectSession>(engine, std::move(ProjectPath));
     Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session),
                                                  Session->Project() != nullptr);
@@ -135,8 +145,8 @@ void KyusuApp::OnStart(GameStartupContext&)
 
     RegisterWorkspaceCommands();
     // Before the startup script runs, so an argv +editor.open or +cook finds
-    // the level it acts on.
-    (void)Workspaces->Open("level");
+    // the level it acts on. Without a project to edit, choose one.
+    (void)Workspaces->Open(opensLevel ? "level" : "project");
 }
 
 void KyusuApp::RegisterWorkspaceCommands()

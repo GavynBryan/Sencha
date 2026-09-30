@@ -27,6 +27,8 @@ public:
 
 private:
     void RegisterWorkspaceCommands();
+    // Whether this session starts in a level rather than choosing a project.
+    [[nodiscard]] bool OpensLevel() const;
 
     std::optional<std::string> ProjectPath;
     // Declared before the workspaces so it is destroyed after them: the module
