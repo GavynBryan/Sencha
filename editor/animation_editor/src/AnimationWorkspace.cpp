@@ -6,6 +6,7 @@
 #include "authoring/AnimationRigCreation.h"
 #include "authoring/AnimationStageProperties.h"
 #include "authoring/AnimationStageStrokes.h"
+#include "authoring/AnimationTimeline.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "ui/AnimationPreviewPanels.h"
 
@@ -34,7 +35,11 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <deque>
+#include <format>
 #include <optional>
 #include <cstdio>
 #include <functional>
@@ -78,6 +83,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     Workspace = std::make_unique<AnimationPreviewWorkspace>(engine.Content().Assets(), sources, store,
                                                             std::move(vocabulary), authoringRoot);
     Bone = std::make_unique<AnimationBoneProperties>(*Workspace);
+    Clock = std::make_unique<AnimationTimeline>(*Workspace);
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
     Scenario = std::make_unique<AnimationScenarioProperties>(*Workspace);
     Creation = std::make_unique<AnimationRigCreation>(*Workspace, [this] { Subject = CardSubject::Stage; });
@@ -111,6 +117,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     };
     AddAnimationPreviewPanels(Surface, *Workspace);
     DefineActions(catalog);
+    DefineTransport(catalog);
     RegisterCommands();
 }
 
@@ -128,6 +135,7 @@ AnimationWorkspace::~AnimationWorkspace()
     Scenario.reset();
     Audition.reset();
     Bone.reset();
+    Clock.reset();
     Workspace.reset();
 }
 
@@ -236,6 +244,41 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
                 { .Invoke = [this] { Workspace->Viewport.Source = AnimationViewportSource::Simulation; },
                   .Enabled = [this] { return Workspace->Rig.Simulation.IsOpen(); },
                   .Checked = [this] { return Workspace->Viewport.Source == AnimationViewportSource::Simulation; } });
+}
+
+void AnimationWorkspace::DefineTransport(ActionCatalog& catalog)
+{
+    const auto offer = [&](std::string id, std::string label, std::vector<KeyChord> chords, ActionHandler handler) {
+        OfferAction(catalog, ActionHandlers,
+                    { .Id = std::move(id), .Label = std::move(label), .Category = "Timeline",
+                      .DefaultChords = std::move(chords) },
+                    std::move(handler));
+    };
+    offer("timeline.play", "Play", { { SDLK_SPACE, {} } },
+          { .Invoke = [this] { Clock->TogglePlay(); }, .Checked = [this] { return Clock->IsPlaying(); } });
+    offer("timeline.restart", "Restart", { { SDLK_HOME, {} } }, { .Invoke = [this] { Clock->Restart(); } });
+    offer("timeline.step_back", "Step Back", { { SDLK_COMMA, {} } }, { .Invoke = [this] { Clock->Step(-1); } });
+    offer("timeline.step_forward", "Step Forward", { { SDLK_PERIOD, {} } }, { .Invoke = [this] { Clock->Step(1); } });
+    offer("timeline.loop", "Loop", { { SDLK_L, {} } },
+          { .Invoke = [this] { Workspace->Audition.Session.SetLoop(!Workspace->Audition.Session.IsLooping()); },
+            .Enabled = [this] { return !Clock->IsSimulation(); },
+            .Checked = [this] { return !Clock->IsSimulation() && Workspace->Audition.Session.IsLooping(); } });
+    offer("timeline.slower", "Slower", { { SDLK_LEFTBRACKET, {} } }, { .Invoke = [this] { Clock->ChangeSpeed(-1); } });
+    offer("timeline.faster", "Faster", { { SDLK_RIGHTBRACKET, {} } }, { .Invoke = [this] { Clock->ChangeSpeed(1); } });
+    offer("timeline.run_ahead", "Run a Second Ahead", { { SDLK_PERIOD, { .Shift = true } } },
+          { .Invoke = [this] { Clock->RunAhead(); }, .Enabled = [this] { return Clock->IsSimulation(); } });
+    offer("timeline.live", "Back to Live", { { SDLK_END, {} } },
+          { .Invoke = [this] { Clock->ReturnToLive(); }, .Checked = [this] { return Clock->IsLive(); } });
+}
+
+WorkspaceTimelineFacet AnimationWorkspace::Timeline()
+{
+    return Clock->Facet();
+}
+
+void AnimationWorkspace::Scrub(double time, TimelineDrag)
+{
+    Clock->Scrub(time);
 }
 
 void AnimationWorkspace::Tick(FrameUpdateContext& ctx)

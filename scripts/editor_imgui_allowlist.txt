@@ -7,7 +7,6 @@ editor/animation_editor/src/ui/AnimationEventPanels.cpp
 editor/animation_editor/src/ui/AnimationLabPanels.cpp
 editor/animation_editor/src/ui/AnimationLayerPanels.cpp
 editor/animation_editor/src/ui/AnimationMigrationPanels.cpp
-editor/animation_editor/src/ui/AnimationPreviewPanels.cpp
 editor/animation_editor/src/ui/AnimationRequestSchemaPanel.cpp
 editor/animation_editor/src/ui/AnimationRootMotionPanels.cpp
 editor/animation_editor/src/ui/AnimationScenarioBatchPanels.cpp

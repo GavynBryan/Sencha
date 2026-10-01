@@ -64,6 +64,7 @@ const UiModelPropertyId kExplorerEarlier = UiPropertyIdAt(41);
 const UiModelPropertyId kExplorerLater = UiPropertyIdAt(42);
 const UiModelPropertyId kPopoverTop = UiPropertyIdAt(43);
 const UiModelPropertyId kSheet = UiPropertyIdAt(44);
+const UiModelPropertyId kDeck = UiPropertyIdAt(45);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -155,6 +156,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "explorer_later", UiValue(false) },
         UiModelProperty{ "popover_top", UiValue(std::string("auto")) },
         UiModelProperty{ "sheet", UiValue(false) },
+        UiModelProperty{ "deck", UiValue(false) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs" };
@@ -265,6 +267,8 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         Palette->Open();
     } });
     WindowLayer = Services.Actions.Push(WindowActions, ActionRank::Window);
+    Deck = std::make_unique<TimelineDeck>(Services.Ui, SurfaceId, Services.Workspaces, Services.Actions,
+                                          Services.Presentation);
     Prompt = std::make_unique<PromptDialog>(Services.Ui, SurfaceId, Services.Prompts, Services.Actions);
 }
 
@@ -273,6 +277,7 @@ ShellWindow::~ShellWindow()
     WindowLayer.Reset();
     EscapeLayer.Reset();
     Prompt.reset();
+    Deck.reset();
     Palette.reset();
     if (Screen.IsValid())
         Services.Ui.CloseScreen(Screen);
@@ -322,6 +327,11 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
         Palette->Close();
     }
     Palette->Update();
+    if (Prompt->IsShowing())
+        Deck->Hide();
+    else
+        Deck->Update();
+    (void)Services.Ui.SetValue(Screen, kDeck, UiValue(Deck->IsShowing()));
     Publish(now);
     PublishCaption();
 }

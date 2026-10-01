@@ -240,3 +240,48 @@ enum class ExplorerChoice : std::uint8_t
     Open,
     Mark,
 };
+
+// What a workspace whose work runs over time has on its clock, for a deck to
+// show, scrub and play: the clock's name, the span it covers and where it is,
+// in seconds, and what is marked along it. The transport is the timeline.*
+// actions (play, restart, step_back, step_forward, loop, slower, faster,
+// run_ahead, live) and the clock switch timeline.source.*, which a workspace
+// with a timeline claims.
+enum class TimelineMarkShape : std::uint8_t
+{
+    Round,
+    Diamond,
+};
+
+struct TimelineMark
+{
+    std::string Key;
+    double Time = 0.0;
+    std::string Label = {};
+    TimelineMarkShape Shape = TimelineMarkShape::Round;
+    bool Selected = false;
+    bool Movable = false;
+};
+
+struct WorkspaceTimelineFacet
+{
+    // Empty when the workspace keeps no time.
+    std::string Clock = {};
+    double Start = 0.0;
+    double End = 0.0;
+    double Time = 0.0;
+    bool Playing = false;
+    // Showing the running present rather than a moment scrubbed back to.
+    bool Live = true;
+    std::string Readout = {};
+    std::vector<TimelineMark> Marks = {};
+};
+
+// Where a drag along the deck is: pressed, moving, or let go. A drag the
+// workspace hears no end of -- focus lost, Escape -- it cancels itself.
+enum class TimelineDrag : std::uint8_t
+{
+    Begin,
+    Move,
+    End,
+};

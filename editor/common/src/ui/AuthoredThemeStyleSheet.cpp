@@ -95,6 +95,13 @@ constexpr Rule kRules[] = {
     // A point marked on a picture, and the one picked.
     { ".theme-dot", [] { return ShapeFill(EditorUi::Accent); } },
     { ".theme-dot.selected", [] { return ShapeFill(EditorUi::SelectedOutline); } },
+    // A clock's playhead and the marks along it: cosmetic, gameplay, picked.
+    { ".theme-playhead", [] { return Fill(EditorUi::SelectedOutline); } },
+    { ".theme-mark", [] { return ShapeFill(EditorUi::TextDim); } },
+    { ".theme-mark.gameplay", [] { return ShapeFill(EditorUi::Warning); } },
+    { ".theme-mark.selected", [] {
+         return ShapeFill(EditorUi::SelectedOutline) + ShapeStroke(EditorUi::TextPrimary);
+     } },
     { ".theme-marquee", [] { return Fill(EditorUi::WithAlpha(EditorUi::Accent, 0.16f)) + Edge(EditorUi::AccentHover); } },
 
     // A bare clickable glyph -- a close cross, a disclosure arrow. No plate

@@ -1,0 +1,81 @@
+/* The deck: geometry only, colours are theme roles. It sits along the bottom
+   edge above the instruments; the shell lifts what would cover it. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: "Chakra Petch";
+    font-size: 11dp;
+}
+
+#deck
+{
+    display: block;
+    position: absolute;
+    left: 8dp;
+    right: 8dp;
+    bottom: 50dp;
+    height: 58dp;
+    padding: 4dp 8dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+#transport { display: flex; align-items: center; gap: 4dp; height: 24dp; }
+.key_slot { display: block; }
+.key.glyph { font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: 10dp; }
+#readout
+{
+    display: block;
+    margin-left: 8dp;
+    padding: 2dp 8dp;
+    border-width: 1dp;
+    border-radius: 3dp;
+    font-family: "JetBrains Mono";
+    white-space: nowrap;
+}
+
+/* The ruler, the playhead over it, and the marks over that. */
+#track { display: block; position: relative; height: 24dp; margin-top: 4dp; }
+#ruler
+{
+    display: block;
+    position: absolute;
+    left: 0dp;
+    right: 0dp;
+    top: 8dp;
+    height: 10dp;
+    border-width: 1dp;
+    border-radius: 2dp;
+    drag: drag;
+    pointer-events: auto;
+}
+#playhead
+{
+    display: block;
+    position: absolute;
+    top: 2dp;
+    width: 2dp;
+    height: 22dp;
+    margin-left: -1dp;
+    pointer-events: none;
+}
+#playhead.recorded { opacity: 0.6; }
+.mark_slot { display: block; }
+.mark
+{
+    display: block;
+    position: absolute;
+    top: 0dp;
+    width: 14dp;
+    height: 14dp;
+    margin-left: -7dp;
+    pointer-events: auto;
+}
+.mark.movable { drag: drag; }
+.pin { display: block; width: 14dp; height: 14dp; stroke-width: 1dp; }
+.mark_label { display: block; position: absolute; left: 16dp; top: -1dp; white-space: nowrap; font-size: 10dp; }

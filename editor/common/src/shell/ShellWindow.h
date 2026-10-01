@@ -3,6 +3,7 @@
 #include "actions/ActionContext.h"
 #include "shell/CommandPalette.h"
 #include "shell/PromptDialog.h"
+#include "shell/TimelineDeck.h"
 #include "presenters/PropertySheet.h"
 #include "shell/TransientSurfaces.h"
 #include "workspaces/WorkspaceWindow.h"
@@ -205,6 +206,7 @@ private:
     std::string HandledInRow;
     // After the palette, so a question opens over it.
     std::unique_ptr<PromptDialog> Prompt;
+    std::unique_ptr<TimelineDeck> Deck;
     // What the shell itself performs in its window, whatever is showing.
     ActionContext WindowActions;
     ActionContextStack::Layer WindowLayer;

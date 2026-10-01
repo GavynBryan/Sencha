@@ -31,7 +31,8 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationSelectorEdits.cpp
     src/authoring/AnimationSessionLab.cpp
     src/authoring/AnimationStageProperties.cpp
-    src/authoring/AnimationStageStrokes.cpp)
+    src/authoring/AnimationStageStrokes.cpp
+    src/authoring/AnimationTimeline.cpp)
 target_link_libraries(animation_authoring PUBLIC editor_common)
 target_include_directories(animation_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 sencha_warnings(animation_authoring)

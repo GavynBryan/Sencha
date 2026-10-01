@@ -74,6 +74,13 @@ public:
     virtual void ShowDocument(std::string_view /*key*/) {}
     // Shows where a problem in one of its documents is; false when it cannot.
     virtual bool RevealProblem(const Problem&) { return false; }
+    // Not const: a clock reads what it is showing, which may settle it.
+    [[nodiscard]] virtual WorkspaceTimelineFacet Timeline() { return {}; }
+    // The deck's ruler dragged to `time`, in the clock's seconds.
+    virtual void Scrub(double /*time*/, TimelineDrag) {}
+    // A movable mark dragged to `time`: one edit from Begin to End.
+    virtual void MoveMark(std::string_view /*key*/, double /*time*/, TimelineDrag) {}
+    virtual void PickMark(std::string_view /*key*/) {}
     [[nodiscard]] virtual std::vector<WorkspaceExplorerInfo> Explorers() const { return {}; }
     // Not const: picturing an item may start loading its image.
     [[nodiscard]] virtual ExplorerPage Explore(const ExplorerQuery&) { return {}; }

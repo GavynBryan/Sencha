@@ -1,0 +1,42 @@
+<rml>
+<head>
+    <title>Deck</title>
+    <link type="text/rcss" href="deck.rcss"/>
+    <link type="text/rcss" href="controls.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="deck">
+    <!-- The workspace's clock along the bottom edge: the transport, the
+         readout, and a ruler to scrub with the playhead and the marks on it. -->
+    <div id="deck" class="theme-plate">
+        <div id="transport">
+            <div class="key_slot" data-for="key : keys">
+                <div class="key theme-key" data-class-lit="key.selected" data-class-disabled="key.disabled"
+                     data-class-glyph="key.detail == 'glyph'" data-event-click="deck_invoke(key.key)">{{key.label}}</div>
+            </div>
+            <span id="readout" class="theme-readout">{{readout}}</span>
+        </div>
+        <div id="track">
+            <div id="ruler" class="theme-well"
+                 data-event-dragstart="deck_scrub('begin', ev.mouse_x)"
+                 data-event-drag="deck_scrub('move', ev.mouse_x)"
+                 data-event-dragend="deck_scrub('end', ev.mouse_x)"></div>
+            <div id="playhead" class="theme-playhead" data-class-recorded="!live" data-style-left="playhead"></div>
+            <!-- parts: where along the ruler. A movable mark drags; any mark picks. -->
+            <div class="mark_slot" data-for="mark : marks">
+                <div class="mark" data-class-movable="mark.value == 'movable'" data-style-left="mark.parts[0]"
+                     data-event-click="deck_pick(mark.key)"
+                     data-event-dragstart="deck_mark('begin', mark.key, ev.mouse_x)"
+                     data-event-drag="deck_mark('move', mark.key, ev.mouse_x)"
+                     data-event-dragend="deck_mark('end', mark.key, ev.mouse_x)">
+                    <sector class="pin theme-mark" data-class-selected="mark.selected"
+                            data-class-gameplay="mark.detail == 'diamond'"
+                            data-attr-start="mark.detail == 'diamond' ? -40 : 0"
+                            data-attr-sweep="mark.detail == 'diamond' ? 80 : 360"></sector>
+                    <span class="mark_label theme-dim" data-if="mark.selected">{{mark.label}}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

@@ -6,7 +6,7 @@
     <link type="text/rcss" href="icons.rcss"/>
     <link type="text/rcss" href="theme.rcss"/>
 </head>
-<body data-model="shell" data-class-moving="motion">
+<body data-model="shell" data-class-moving="motion" data-class-deck="deck">
     <!-- The rail: the window's caption and the one full-width piece of chrome.
          Left is identity (the hatch, which workspace, which document), right is
          consequence (problems, the transport, the window), and the middle is

@@ -21,6 +21,7 @@ class AnimationBoneProperties;
 class AnimationPreviewRenderFeature;
 class AnimationRigCreation;
 class AnimationScenarioProperties;
+class AnimationTimeline;
 class AnimationPreviewWorkspace;
 class ContentPicture;
 class DataCreation;
@@ -62,6 +63,8 @@ public:
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
+    [[nodiscard]] WorkspaceTimelineFacet Timeline() override;
+    void Scrub(double time, TimelineDrag drag) override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
@@ -95,6 +98,7 @@ private:
     void ShowStage();
     void PickJointAt(Vec2d windowPoint);
     void OpenDocument(const std::string& path);
+    void DefineTransport(ActionCatalog& catalog);
     void CloseActiveDocument();
 
     Engine& EngineRef;
@@ -103,6 +107,7 @@ private:
     AnimationPreviewRenderFeature* Viewport = nullptr;
     std::unique_ptr<ContentPicture> Picture;
     std::unique_ptr<AnimationBoneProperties> Bone;
+    std::unique_ptr<AnimationTimeline> Clock;
     std::unique_ptr<AnimationAuditionProperties> Audition;
     std::unique_ptr<AnimationScenarioProperties> Scenario;
     std::unique_ptr<AnimationRigCreation> Creation;

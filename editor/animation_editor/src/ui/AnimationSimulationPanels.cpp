@@ -481,58 +481,6 @@ private:
     std::vector<AnimationScenarioValue> ParamDrafts;
 };
 
-class SimulationTransportPanel final : public IEditorPanel
-{
-public:
-    explicit SimulationTransportPanel(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
-    std::string_view GetTitle() const override { return "Simulation"; }
-    PanelPersistence GetPersistence() const override { return { "animation.simulation" }; }
-    DockSlot GetDockSlot() const override { return DockSlot::Bottom; }
-    void OnDraw() override
-    {
-        if (!IsVisible()) return;
-        ScopedPanel panel(GetWindowName(), &Visible);
-        if (!panel.IsOpen()) return;
-
-        AnimationPreviewSession& session = Workspace.Rig.Simulation;
-        if (!session.IsOpen())
-        {
-            ImGui::TextWrapped("Open a rig to simulate it under a scenario.");
-            return;
-        }
-        if (ImGui::Button(session.IsPlaying() ? "Pause" : "Play"))
-        {
-            if (session.IsPlaying()) session.Pause(); else session.Play();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Restart scenario")) session.Restart();
-        ImGui::SameLine();
-        if (ImGui::Button("Next tick")) session.Step();
-        ImGui::SameLine();
-        float speed = static_cast<float>(session.Speed());
-        ImGui::SetNextItemWidth(120.0f);
-        if (ImGui::SliderFloat("Speed", &speed, 0.05f, 8.0f, "%.2fx")) (void)session.SetSpeed(speed);
-        ImGui::SameLine();
-        ImGui::Text("Tick %llu (%.3f s at %u Hz)", static_cast<unsigned long long>(session.Tick()),
-                    static_cast<double>(session.Tick()) * session.TickSeconds(), session.Scenario().TickRate);
-
-        ImGui::SetNextItemWidth(120.0f);
-        ImGui::InputInt("##target", &Target);
-        Target = std::max(Target, 0);
-        ImGui::SameLine();
-        if (ImGui::Button("Run to tick"))
-        {
-            session.Pause();
-            session.RunTo(static_cast<AnimTick>(Target));
-        }
-        ImGui::SameLine();
-        ImGui::TextDisabled("Going back replays the scenario from tick 0; acting there starts a new branch.");
-    }
-private:
-    AnimationPreviewWorkspace& Workspace;
-    int Target = 0;
-};
-
 class ProblemsChangesPanel final : public IEditorPanel
 {
 public:
@@ -748,6 +696,5 @@ void AddAnimationSimulationPanels(WorkspaceView& ui, AnimationPreviewWorkspace& 
 {
     ui.AddPanel(std::make_unique<FactsPanel>(workspace));
     ui.AddPanel(std::make_unique<RequestsPanel>(workspace));
-    ui.AddPanel(std::make_unique<SimulationTransportPanel>(workspace));
     ui.AddPanel(std::make_unique<ProblemsChangesPanel>(workspace));
 }

@@ -553,3 +553,8 @@ body
 .marks { display: flex; gap: 4dp; padding-right: 4dp; }
 .mark { display: block; width: 14dp; height: 14dp; opacity: 0.7; pointer-events: auto; }
 .mark:hover { opacity: 1; }
+
+/* The workspace's clock deck runs along the bottom edge above the instruments
+   (deck.rcss); what would cover it rises above it. */
+.deck #selection_card { bottom: 114dp; }
+.deck #explorer { bottom: 114dp; }
