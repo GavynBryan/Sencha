@@ -10,7 +10,6 @@ editor/animation_editor/src/ui/AnimationMigrationPanels.cpp
 editor/animation_editor/src/ui/AnimationRequestSchemaPanel.cpp
 editor/animation_editor/src/ui/AnimationRootMotionPanels.cpp
 editor/animation_editor/src/ui/AnimationScenarioBatchPanels.cpp
-editor/animation_editor/src/ui/AnimationSelectionPanels.cpp
 editor/animation_editor/src/ui/AnimationSimulationPanels.cpp
 editor/common/src/ui/AuthoredThemeStyleSheet.cpp
 editor/common/src/ui/ButtonFlow.h

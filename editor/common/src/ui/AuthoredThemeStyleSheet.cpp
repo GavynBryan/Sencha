@@ -102,6 +102,11 @@ constexpr Rule kRules[] = {
     { ".theme-mark.selected", [] {
          return ShapeFill(EditorUi::SelectedOutline) + ShapeStroke(EditorUi::TextPrimary);
      } },
+    // A stretch along a clock's lane, and the one picked.
+    { ".theme-span", [] {
+         return Fill(EditorUi::ButtonBg) + Edge(EditorUi::Border) + Color(EditorUi::TextPrimary);
+     } },
+    { ".theme-span.selected", [] { return Fill(EditorUi::Selected) + Edge(EditorUi::SelectedOutline); } },
     { ".theme-marquee", [] { return Fill(EditorUi::WithAlpha(EditorUi::Accent, 0.16f)) + Edge(EditorUi::AccentHover); } },
 
     // A bare clickable glyph -- a close cross, a disclosure arrow. No plate

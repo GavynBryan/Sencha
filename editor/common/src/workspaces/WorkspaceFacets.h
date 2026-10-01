@@ -263,6 +263,24 @@ struct TimelineMark
     bool Movable = false;
 };
 
+// A stretch of the clock one thing held, such as the rule winning a layer
+// from one decision to the next.
+struct TimelineSpan
+{
+    std::string Key;
+    double Start = 0.0;
+    double End = 0.0;
+    std::string Label = {};
+    bool Selected = false;
+};
+
+// A row under the ruler: what held along the clock, span by span.
+struct TimelineLane
+{
+    std::string Label;
+    std::vector<TimelineSpan> Spans = {};
+};
+
 struct WorkspaceTimelineFacet
 {
     // Empty when the workspace keeps no time.
@@ -275,6 +293,7 @@ struct WorkspaceTimelineFacet
     bool Live = true;
     std::string Readout = {};
     std::vector<TimelineMark> Marks = {};
+    std::vector<TimelineLane> Lanes = {};
 };
 
 // Where a drag along the deck is: pressed, moving, or let go. A drag the

@@ -79,3 +79,13 @@ const SkeletonData* AnimationRigScenario::Skeleton() const
     const AnimBoundRig* rig = Simulation.Rig();
     return rig != nullptr && rig->Skeleton.IsValid() ? Assets.Skeletons.Get(rig->Skeleton) : nullptr;
 }
+
+const AnimationPreviewTickRecord* AnimationRigScenario::Inspected() const
+{
+    const std::deque<AnimationPreviewTickRecord>& history = Simulation.History();
+    if (history.empty())
+        return nullptr;
+    if (Navigation.InspectRecord && *Navigation.InspectRecord < history.size())
+        return &history[*Navigation.InspectRecord];
+    return &history.back();
+}

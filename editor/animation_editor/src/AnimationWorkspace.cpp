@@ -1,10 +1,12 @@
 #include "AnimationWorkspace.h"
 
 #include "authoring/AnimationBoneProperties.h"
+#include "authoring/AnimationDecisionLane.h"
 #include "authoring/AnimationEventProperties.h"
 #include "authoring/AnimationExplorers.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigCreation.h"
+#include "authoring/AnimationRuleProperties.h"
 #include "authoring/AnimationStageProperties.h"
 #include "authoring/AnimationStageStrokes.h"
 #include "authoring/AnimationTimeline.h"
@@ -87,6 +89,8 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     Workspace = std::make_unique<AnimationPreviewWorkspace>(engine.Content().Assets(), sources, store,
                                                             std::move(vocabulary), authoringRoot);
     Bone = std::make_unique<AnimationBoneProperties>(*Workspace);
+    RuleCard = std::make_unique<AnimationRuleProperties>(*Workspace,
+                                                         [this](const std::string& path) { OpenDocument(path); });
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
     EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
@@ -117,7 +121,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
         Picture = std::make_unique<ContentPicture>(*ui, "animation_stage");
 
     Surface.File.Save = [this, &sources] {
-        if (AnimationClipEventsDocument* events = AuditionedEvents(); events != nullptr && Subject == CardSubject::Events)
+        if (AnimationClipEventsDocument* events = AuditionedEvents(); events != nullptr && ShowingLens(AnimationLens::Events))
             (void)sources.Save(Workspace->ClipEvents.RefOf(*events));
         else if (const DataDocument* active = Workspace->Documents.Active())
             (void)sources.Save(Workspace->Documents.RefOf(*active));
@@ -126,6 +130,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     DefineActions(catalog);
     DefineTransport(catalog);
     DefineEventActions(catalog);
+    DefineLenses(catalog);
     RegisterCommands();
 }
 
@@ -142,6 +147,7 @@ AnimationWorkspace::~AnimationWorkspace()
     Creation.reset();
     Scenario.reset();
     Audition.reset();
+    RuleCard.reset();
     Bone.reset();
     EventCard.reset();
     Clock.reset();
@@ -173,6 +179,29 @@ void AnimationWorkspace::RegisterCommands()
             return result;
         },
     });
+    EngineRef.Console().Registry().RegisterCommand({
+        .Name = "animation.rig",
+        .Owner = std::string(kCommandOwner),
+        .Usage = "animation.rig <rig>",
+        .Help = "Open a rig and its scenario in the animation workspace.",
+        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            if (args.size() != 1)
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("expected <rig>");
+                return result;
+            }
+            if (!Workspace->OpenRig(args[0]))
+            {
+                result.Status = ConsoleStatus::ExecutionFailed;
+                result.Error(Workspace->Rig.Error);
+                return result;
+            }
+            result.Info("opened '" + args[0] + "'");
+            return result;
+        },
+    });
 }
 
 void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
@@ -183,8 +212,13 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
                 } });
     OfferAction(catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] {
                     Workspace->Sources.CancelEdits();
-                    if (Workspace->Rig.Navigation.Joint >= 0)
-                        Workspace->Rig.Navigation.Joint = -1;
+                    AnimationNavigation& navigation = Workspace->Rig.Navigation;
+                    if (navigation.Joint >= 0)
+                        navigation.Joint = -1;
+                    else if (ShowingLens(AnimationLens::Rules) && navigation.Rule >= 0)
+                        navigation.Rule = -1;
+                    else if (ShowingLens(AnimationLens::Events) && PickedEvent)
+                        PickedEvent.reset();
                     else
                         Subject = CardSubject::Stage;
                 } });
@@ -278,6 +312,41 @@ void AnimationWorkspace::DefineTransport(ActionCatalog& catalog)
           { .Invoke = [this] { Clock->ReturnToLive(); }, .Checked = [this] { return Clock->IsLive(); } });
 }
 
+namespace
+{
+struct LensRow
+{
+    AnimationLens Lens;
+    std::string_view Action;
+    std::string_view Label;
+    std::string_view Hint;
+};
+constexpr std::array<LensRow, 2> kLenses{ {
+    { AnimationLens::Rules, "animation.lens.rules", "Rules",
+      "Inspect a rule to see why it won or lost; the deck's lane shows what won the layer" },
+    { AnimationLens::Events, "animation.lens.events", "Events", "E adds an event at the playhead" },
+} };
+} // namespace
+
+void AnimationWorkspace::DefineLenses(ActionCatalog& catalog)
+{
+    for (const LensRow& lens : kLenses)
+        OfferAction(catalog, ActionHandlers,
+                    { .Id = std::string(lens.Action), .Label = std::string(lens.Label), .Category = "Lens" },
+                    { .Invoke = [this, which = lens.Lens] { ShowLens(which); },
+                      .Checked = [this, which = lens.Lens] { return ShownLens == which; } });
+}
+
+WorkspaceOperationFacet AnimationWorkspace::Operation()
+{
+    const auto shown = std::ranges::find(kLenses, ShownLens, &LensRow::Lens);
+    WorkspaceOperationFacet facet{ .Name = std::string(shown->Label), .Hint = std::string(shown->Hint) };
+    for (const LensRow& lens : kLenses)
+        facet.Choices.push_back(
+            { .Label = std::string(lens.Label), .Action = std::string(lens.Action), .Current = lens.Lens == ShownLens });
+    return facet;
+}
+
 void AnimationWorkspace::DefineEventActions(ActionCatalog& catalog)
 {
     const auto events = [this] { return !Clock->IsSimulation() && AuditionedEvents() != nullptr; };
@@ -296,7 +365,7 @@ void AnimationWorkspace::DefineEventActions(ActionCatalog& catalog)
                           event.Binding = "anim.event";
                       PickedEvent = document->Add(std::move(event));
                       Workspace->ClipEvents.Changed(*document);
-                      ShowCard(CardSubject::Events);
+                      ShowLens(AnimationLens::Events);
                   },
                   .Enabled = events });
     OfferAction(catalog, ActionHandlers, DeleteAction(),
@@ -308,7 +377,7 @@ void AnimationWorkspace::DefineEventActions(ActionCatalog& catalog)
                       PickedEvent.reset();
                       Workspace->ClipEvents.Changed(*document);
                   },
-                  .Enabled = [this] { return Subject == CardSubject::Events && PickedEvent.has_value(); } });
+                  .Enabled = [this] { return ShowingLens(AnimationLens::Events) && PickedEvent.has_value(); } });
 }
 
 AnimationClipEventsDocument* AnimationWorkspace::AuditionedEvents() const
@@ -335,6 +404,9 @@ void AnimationWorkspace::FollowAuditionedClip()
 WorkspaceTimelineFacet AnimationWorkspace::Timeline()
 {
     WorkspaceTimelineFacet facet = Clock->Facet();
+    if (ShownLens == AnimationLens::Rules && Clock->IsSimulation())
+        facet.Lanes.push_back(AnimationDecisionLane(Workspace->Rig.Simulation, Workspace->Rig.Navigation.Layer,
+                                                    Workspace->Rig.Navigation.Rule));
     const AnimationClipEventsDocument* document = Clock->IsSimulation() ? nullptr : AuditionedEvents();
     if (document == nullptr || facet.End <= 0.0)
         return facet;
@@ -349,13 +421,21 @@ WorkspaceTimelineFacet AnimationWorkspace::Timeline()
     return facet;
 }
 
-void AnimationWorkspace::PickMark(std::string_view key)
+void AnimationWorkspace::PickOnTimeline(std::string_view key)
 {
+    if (const std::optional<AnimationRulePick> pick = ParseDecisionSpanKey(key))
+    {
+        AnimationNavigation& navigation = Workspace->Rig.Navigation;
+        navigation.Layer = pick->Layer;
+        navigation.Rule = pick->Rule;
+        ShowLens(AnimationLens::Rules);
+        return;
+    }
     std::uint32_t event = 0;
     if (std::from_chars(key.data(), key.data() + key.size(), event).ec != std::errc{})
         return;
     PickedEvent = event;
-    ShowCard(CardSubject::Events);
+    ShowLens(AnimationLens::Events);
 }
 
 void AnimationWorkspace::MoveMark(std::string_view key, double time, TimelineDrag drag)
@@ -368,7 +448,7 @@ void AnimationWorkspace::MoveMark(std::string_view key, double time, TimelineDra
         return;
     if (drag == TimelineDrag::Begin)
     {
-        PickMark(key);
+        PickOnTimeline(key);
         Workspace->Sources.CancelEdits();
     }
     else if (document->EditingKey() != eventKey)
@@ -564,7 +644,7 @@ void AnimationWorkspace::ShowDocument(std::string_view key)
     if (key.starts_with("events:"))
     {
         PickedEvent.reset();
-        ShowCard(CardSubject::Events);
+        ShowLens(AnimationLens::Events);
         return;
     }
     if (const std::optional<std::size_t> index = Workspace->Documents.IndexOf(key))
@@ -576,6 +656,12 @@ void AnimationWorkspace::ShowCard(CardSubject subject)
 {
     Workspace->Rig.Navigation.Joint = -1;
     Subject = subject;
+}
+
+void AnimationWorkspace::ShowLens(AnimationLens lens)
+{
+    ShownLens = lens;
+    ShowCard(CardSubject::Lens);
 }
 
 void AnimationWorkspace::OpenDocument(const std::string& path)
@@ -629,7 +715,11 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         return { .Title = name.empty() ? std::string("Unnamed joint") : name,
                  .Sections = { { .Heading = {}, .Source = Bone.get() } } };
     }
-    if (Subject == CardSubject::Events && AuditionedEvents() != nullptr)
+    if (ShowingLens(AnimationLens::Rules))
+        return { .Title = RuleCard->Title(),
+                 .Sections = { { .Heading = {}, .Source = RuleCard.get() } },
+                 .Details = { { .Heading = "This tick", .Source = &RuleCard->Decisions() } } };
+    if (ShowingLens(AnimationLens::Events) && AuditionedEvents() != nullptr)
     {
         const AnimationClipEventsDocument& document = *AuditionedEvents();
         const AnimationClipEvent* event = PickedEvent ? document.Find(*PickedEvent) : nullptr;

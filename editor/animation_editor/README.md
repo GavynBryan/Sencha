@@ -138,28 +138,29 @@ kyusu --project test/fixtures/content/animation_preview.senchaproj +workspace.op
 With a rig open, each simulated tick runs the runtime's selection and content
 resolution and records why every rule did or did not win.
 
-- **Rules** lists the layer's flattened selector in evaluation order: band,
-  enter and stay (read from where each row was authored, however deeply it was
-  delegated), behavior, and this tick's verdict -- winner (entered or stayed),
-  a failed row with the value it read, cooldown, blocked by latch, blocked by
-  hold, or not reached. While paused, *Show next tick* explains the next tick
-  from disposable copies, so an edited fact or rule shows its effect before
-  time moves. With a selector document active, the same panel edits it: rules,
-  priority, behavior, hold and cooldown, and a typed predicate builder whose
-  rows pick facts, requests and parameters from the bound rig.
-- **Behavior** shows the selected behavior's policy (kind, blend, latch and
-  what may interrupt it, late join), the rules that select it and the rows that
-  resolve it.
-- **Slot map** shows the rig's merged rows -- priority, then stack order -- with
-  each row's source and which layer is playing it now. *Audition this clip*
-  switches the viewport to the clip without touching the simulation; the
-  viewport's Simulation/Audition switch goes back.
-- **Decisions** shows the live tick or, with Live unchecked, any recorded tick:
-  each layer's winner, latch, content and time, every rule's verdict, and the
-  decision records written on that tick. Inspecting history never changes the
-  live session.
+The **Rules** lens (the station at the bottom left; Events is the other lens)
+puts all of it on the card, `AnimationRuleProperties`:
 
-Picking a rule, behavior, row or clip in any of these moves one shared
+- With no rule picked, a layer's flattened selector in evaluation order, each
+  rule with its verdict on the inspected tick -- winner (entered or stayed), a
+  failed row with the value it read, cooldown, blocked by latch, blocked by
+  hold, or not reached. While paused, *Next tick* explains the next tick from
+  disposable copies, so an edited fact or rule shows its effect before time
+  moves.
+- *Inspect* on a rule shows its band, enter and stay (read from where each row
+  was authored, however deeply it was delegated), hold and cooldown, where it
+  was authored (*Edit* opens that selector as a sheet), the behavior it
+  selects with that behavior's policy (kind, blend, latch and what may
+  interrupt it, late join, entered and exited events), the slot rows that
+  resolve the behavior with which layer is playing each now (*Audition*,
+  *Edit*), and the other rules that select it. Escape goes back to the list.
+- The card's details are the inspected tick: each layer's winner, latch,
+  content and time, and the decision records written on it.
+- On the simulation clock the deck shows a lane for the layer: one span per
+  stretch a rule held, picked to inspect that rule. Inspecting history never
+  changes the live session.
+
+Picking a rule, a slot row or a span moves one shared
 navigation state and nothing else. Valid edits to any open animation document
 reach the running preview as soon as they are committed (and on undo or redo);
 an invalid working edit leaves the preview on the last valid version and says

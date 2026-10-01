@@ -4,6 +4,7 @@
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -38,6 +39,8 @@ public:
     // While a question stands over the window.
     void Hide() { Close(); }
     [[nodiscard]] bool IsShowing() const { return Screen.IsValid(); }
+    // The lanes under its ruler; what rises above the deck clears them too.
+    [[nodiscard]] std::size_t Lanes() const { return LaneCount; }
 
 private:
     void Open();
@@ -53,4 +56,5 @@ private:
     ActionContextStack& Actions;
     PresentationId Presentation;
     UiScreenHandle Screen;
+    std::size_t LaneCount = 0;
 };

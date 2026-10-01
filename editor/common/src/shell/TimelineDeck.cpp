@@ -18,8 +18,16 @@ const UiModelPropertyId kReadout = UiPropertyIdAt(1);
 const UiModelPropertyId kPlaying = UiPropertyIdAt(2);
 const UiModelPropertyId kLive = UiPropertyIdAt(3);
 const UiModelPropertyId kPlayhead = UiPropertyIdAt(4);
+const UiModelPropertyId kTrackHeight = UiPropertyIdAt(5);
+const UiModelPropertyId kLaned = UiPropertyIdAt(6);
 const UiModelRowsId kKeys = UiRowsIdAt(0);
 const UiModelRowsId kMarks = UiRowsIdAt(1);
+const UiModelRowsId kLanes = UiRowsIdAt(2);
+const UiModelRowsId kSpans = UiRowsIdAt(3);
+
+// The ruler's row, then one row per lane under it, in dp.
+constexpr int kRulerHeight = 24;
+constexpr int kLaneHeight = 16;
 
 const UiActionId kInvokeAction = UiActionIdAt(0);
 const UiActionId kScrubAction = UiActionIdAt(1);
@@ -60,8 +68,10 @@ UiScreenDesc Describe()
         UiModelProperty{ "playing", UiValue(false) },
         UiModelProperty{ "live", UiValue(true) },
         UiModelProperty{ "playhead", UiValue(std::string("0%")) },
+        UiModelProperty{ "track_height", UiValue(std::format("{}dp", kRulerHeight)) },
+        UiModelProperty{ "laned", UiValue(false) },
     };
-    desc.RowLists = { "keys", "marks" };
+    desc.RowLists = { "keys", "marks", "lanes", "spans" };
     desc.Actions = { "deck_invoke", "deck_scrub", "deck_mark", "deck_pick" };
     return desc;
 }
@@ -137,6 +147,7 @@ void TimelineDeck::Open()
 
 void TimelineDeck::Close()
 {
+    LaneCount = 0;
     if (!Screen.IsValid())
         return;
     Ui.CloseScreen(Screen);
@@ -164,7 +175,7 @@ void TimelineDeck::HandleActions(IWorkspace& workspace, const WorkspaceTimelineF
                 workspace.MoveMark(Text(action, 1), *time, *phase);
         }
         else if (action.Id == kPickAction)
-            workspace.PickMark(Text(action, 0));
+            workspace.PickOnTimeline(Text(action, 0));
     }
 }
 
@@ -215,4 +226,29 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
         marks.push_back(std::move(row));
     }
     (void)Ui.SetRows(Screen, kMarks, marks);
+
+    std::vector<UiRow> lanes;
+    std::vector<UiRow> spans;
+    for (std::size_t index = 0; const TimelineLane& lane : timeline.Lanes)
+    {
+        const std::string top = std::format("{}dp", kRulerHeight + kLaneHeight * static_cast<int>(index++));
+        UiRow row{ lane.Label, "", "" };
+        row.Parts = { top };
+        lanes.push_back(std::move(row));
+        for (const TimelineSpan& stretch : lane.Spans)
+        {
+            const double start = std::clamp(at(stretch.Start), 0.0, 1.0);
+            UiRow piece{ stretch.Label, "", "" };
+            piece.Key = stretch.Key;
+            piece.Selected = stretch.Selected;
+            piece.Parts = { Percent(start), Percent(std::clamp(at(stretch.End), start, 1.0) - start), top };
+            spans.push_back(std::move(piece));
+        }
+    }
+    LaneCount = lanes.size();
+    (void)Ui.SetRows(Screen, kLanes, lanes);
+    (void)Ui.SetRows(Screen, kSpans, spans);
+    (void)Ui.SetValue(Screen, kLaned, UiValue(LaneCount > 0));
+    (void)Ui.SetValue(Screen, kTrackHeight,
+                      UiValue(std::format("{}dp", kRulerHeight + kLaneHeight * static_cast<int>(LaneCount))));
 }

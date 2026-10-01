@@ -65,6 +65,7 @@ const UiModelPropertyId kExplorerLater = UiPropertyIdAt(42);
 const UiModelPropertyId kPopoverTop = UiPropertyIdAt(43);
 const UiModelPropertyId kSheet = UiPropertyIdAt(44);
 const UiModelPropertyId kDeck = UiPropertyIdAt(45);
+const UiModelPropertyId kDeckLanes = UiPropertyIdAt(46);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -157,6 +158,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "popover_top", UiValue(std::string("auto")) },
         UiModelProperty{ "sheet", UiValue(false) },
         UiModelProperty{ "deck", UiValue(false) },
+        UiModelProperty{ "deck_lanes", UiValue(0) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs" };
@@ -332,6 +334,7 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
     else
         Deck->Update();
     (void)Services.Ui.SetValue(Screen, kDeck, UiValue(Deck->IsShowing()));
+    (void)Services.Ui.SetValue(Screen, kDeckLanes, UiValue(static_cast<std::int64_t>(Deck->Lanes())));
     Publish(now);
     PublishCaption();
 }

@@ -9,7 +9,6 @@
 #include "ui/AnimationScenarioBatchPanels.h"
 #include "ui/AnimationRequestSchemaPanel.h"
 #include "ui/AnimationRootMotionPanels.h"
-#include "ui/AnimationSelectionPanels.h"
 #include "ui/AnimationSimulationPanels.h"
 #include "ui/WorkspaceView.h"
 
@@ -18,7 +17,6 @@
 void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     AddAnimationSimulationPanels(ui, workspace);
-    AddAnimationSelectionPanels(ui, workspace);
     AddAnimationEventPanels(ui, workspace);
     AddAnimationLayerPanels(ui, workspace);
     AddAnimationBlendPanels(ui, workspace.Rig, workspace.Takes, workspace.Viewport);

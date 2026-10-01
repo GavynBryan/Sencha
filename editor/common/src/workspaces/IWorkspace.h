@@ -80,7 +80,8 @@ public:
     virtual void Scrub(double /*time*/, TimelineDrag) {}
     // A movable mark dragged to `time`: one edit from Begin to End.
     virtual void MoveMark(std::string_view /*key*/, double /*time*/, TimelineDrag) {}
-    virtual void PickMark(std::string_view /*key*/) {}
+    // A mark or a lane's span picked, by its key.
+    virtual void PickOnTimeline(std::string_view /*key*/) {}
     [[nodiscard]] virtual std::vector<WorkspaceExplorerInfo> Explorers() const { return {}; }
     // Not const: picturing an item may start loading its image.
     [[nodiscard]] virtual ExplorerPage Explore(const ExplorerQuery&) { return {}; }

@@ -6,7 +6,8 @@
     <link type="text/rcss" href="icons.rcss"/>
     <link type="text/rcss" href="theme.rcss"/>
 </head>
-<body data-model="shell" data-class-moving="motion" data-class-deck="deck">
+<body data-model="shell" data-class-moving="motion" data-class-deck="deck" data-class-lanes1="deck_lanes == 1"
+      data-class-lanes2="deck_lanes >= 2">
     <!-- The rail: the window's caption and the one full-width piece of chrome.
          Left is identity (the hatch, which workspace, which document), right is
          consequence (problems, the transport, the window), and the middle is

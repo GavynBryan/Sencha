@@ -23,6 +23,7 @@ class AnimationClipEventsDocument;
 class AnimationEventProperties;
 class AnimationPreviewRenderFeature;
 class AnimationRigCreation;
+class AnimationRuleProperties;
 class AnimationScenarioProperties;
 class AnimationTimeline;
 class AnimationPreviewWorkspace;
@@ -35,6 +36,14 @@ class Engine;
 class Game;
 class PromptQueue;
 struct ProjectDescriptor;
+
+// What the card, the drawer and the deck's lanes are about when nothing more
+// particular is picked: one of the workspace's lenses.
+enum class AnimationLens : std::uint8_t
+{
+    Rules,
+    Events,
+};
 
 // The animation workspace: rigs, clips and their events authored against a
 // live preview. The rig turns on a stage that fills the window, its bones and
@@ -62,6 +71,7 @@ public:
     void RevealDocument(const DocumentRef& document) override;
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
+    [[nodiscard]] WorkspaceOperationFacet Operation() override;
     void ShowDocument(std::string_view key) override;
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
@@ -69,7 +79,7 @@ public:
     [[nodiscard]] WorkspaceTimelineFacet Timeline() override;
     void Scrub(double time, TimelineDrag drag) override;
     void MoveMark(std::string_view key, double time, TimelineDrag drag) override;
-    void PickMark(std::string_view key) override;
+    void PickOnTimeline(std::string_view key) override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
@@ -92,7 +102,7 @@ private:
         NewRig,
         Document,
         NewDocument,
-        Events,
+        Lens,
     };
 
     void RegisterCommands();
@@ -105,6 +115,9 @@ private:
     void PickJointAt(Vec2d windowPoint);
     // The card about `subject`, with no joint picked.
     void ShowCard(CardSubject subject);
+    void ShowLens(AnimationLens lens);
+    [[nodiscard]] bool ShowingLens(AnimationLens lens) const { return Subject == CardSubject::Lens && ShownLens == lens; }
+    void DefineLenses(ActionCatalog& catalog);
     void OpenDocument(const std::string& path);
     void DefineTransport(ActionCatalog& catalog);
     void DefineEventActions(ActionCatalog& catalog);
@@ -119,6 +132,7 @@ private:
     AnimationPreviewRenderFeature* Viewport = nullptr;
     std::unique_ptr<ContentPicture> Picture;
     std::unique_ptr<AnimationBoneProperties> Bone;
+    std::unique_ptr<AnimationRuleProperties> RuleCard;
     std::unique_ptr<AnimationTimeline> Clock;
     std::unique_ptr<AnimationEventProperties> EventCard;
     std::optional<std::uint32_t> PickedEvent;
@@ -130,6 +144,7 @@ private:
     std::unique_ptr<DataCreation> NewDocument;
     PromptQueue::Asker Prompts;
     CardSubject Subject = CardSubject::Stage;
+    AnimationLens ShownLens = AnimationLens::Rules;
     TreeOutline ContentOutline;
     TreeOutline RigOutline;
     TreeOutline SkeletonOutline;

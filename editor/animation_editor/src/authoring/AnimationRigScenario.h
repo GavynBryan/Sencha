@@ -31,6 +31,9 @@ public:
     bool Save();
     [[nodiscard]] const AnimRigData* Data() const;
     [[nodiscard]] const SkeletonData* Skeleton() const;
+    // The recorded tick being inspected, or the newest while live; null before
+    // the first tick.
+    [[nodiscard]] const AnimationPreviewTickRecord* Inspected() const;
 
     AnimationPreviewSession Simulation;
     AnimationNavigation Navigation;
