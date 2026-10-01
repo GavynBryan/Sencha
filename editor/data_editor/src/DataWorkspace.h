@@ -29,7 +29,8 @@ class DataWorkspace final : public IWorkspace
 {
 public:
     DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
-                  DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog, ProblemList& problems);
+                  DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog, ProblemList& problems,
+                  const DataSubtypeAuthoringSetup& authorings);
     ~DataWorkspace() override;
 
     DataWorkspace(const DataWorkspace&) = delete;

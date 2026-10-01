@@ -1,6 +1,5 @@
 #include "DataWorkspace.h"
 
-#include "SubtypeEditors.h"
 
 #include "actions/ActionOffer.h"
 #include "data/DataAssetFiles.h"
@@ -42,7 +41,7 @@ std::string LeafOf(std::string_view path)
 
 DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
                              DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog,
-                             ProblemList& problems)
+                             ProblemList& problems, const DataSubtypeAuthoringSetup& authorings)
     : EngineRef(engine)
     , Model(engine.Content().Assets(), project, sources, store)
     , Prompts(prompts.MakeAsker())
@@ -67,7 +66,7 @@ DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, D
                    });
                })
 {
-    RegisterBuiltInSubtypeAuthoring(Authoring);
+    authorings(Authoring);
     BuildUi();
     RegisterCommands();
     DefineActions(catalog);

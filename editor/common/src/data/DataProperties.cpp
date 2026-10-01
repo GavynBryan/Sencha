@@ -474,8 +474,17 @@ PropertyEditResult DataProperties::Act(std::string_view key, std::string_view ve
 {
     if (const DataDocument* document = Shown ? Shown() : nullptr)
         if (IDataSubtypeAuthoring* authoring = AuthoringOf(*document))
+        {
             if (const std::optional<PropertyEditResult> taken = authoring->Act(key, verb, *document))
                 return *taken;
+            JsonValue changed = document->Data() != nullptr ? *document->Data() : JsonValue();
+            if (const std::optional<bool> performed = authoring->Perform(key, verb, choice, changed))
+                return *performed ? Change(kDataPathRoot, [&](JsonValue& data, const DataFieldSchema&) {
+                    data = std::move(changed);
+                    return true;
+                }, true)
+                                  : PropertyEditResult::Refused;
+        }
     if (verb == "open")
     {
         const DataDocument* document = Shown ? Shown() : nullptr;

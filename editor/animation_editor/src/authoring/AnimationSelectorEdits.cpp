@@ -97,16 +97,21 @@ bool MoveAnimSelectorRule(JsonValue& root, std::size_t from, std::size_t to)
 bool SetAnimSelectorStay(JsonValue& root, std::size_t rule, bool present)
 {
     JsonValue* entry = Rule(root, rule);
-    if (entry == nullptr)
+    return entry != nullptr && SetAnimRuleStay(*entry, present);
+}
+
+bool SetAnimRuleStay(JsonValue& rule, bool present)
+{
+    if (!rule.IsObject())
         return false;
     if (!present)
     {
-        Erase(*entry, "stay");
+        Erase(rule, "stay");
         return true;
     }
-    if (entry->Find("stay") != nullptr)
+    if (rule.Find("stay") != nullptr)
         return false;
-    const JsonValue* enter = entry->Find("enter");
-    Set(*entry, "stay", enter != nullptr ? *enter : JsonValue(JsonValue::Array{}));
+    const JsonValue* enter = rule.Find("enter");
+    Set(rule, "stay", enter != nullptr ? *enter : JsonValue(JsonValue::Array{}));
     return true;
 }

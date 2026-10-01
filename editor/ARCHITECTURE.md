@@ -224,14 +224,22 @@ A new asset is a `DataCreation` card; files move by their path property
 (`properties/FilePathProperty`, shared with Materials). A subtype makes its
 documents read as what they are through `data/DataSubtypeAuthoring`: it
 reshapes the laid-out properties, takes the writes, candidates and verbs whose
-meaning it knows, claims platform events, and may add preview sections. The
+meaning it knows (`Perform` for a verb that changes the data, as one step),
+claims platform events, and may add preview sections. Kyusu composes every
+workspace library's authorings into one `DataSubtypeAuthoringSetup`, and each
+workspace that shows data documents fills its own registry from it, so an
+asset reads the same in Data as in Animation. The
 input action set and profile (`input/Input*Authoring`) are built this way:
 titled cards, actions chosen among the declared ones they can drive, a
 binding's shape setting its slots, and a slot picked or filled by pressing a
 control. The movement profile (`movement/MovementProfileAuthoring`) titles
 its rules and marks each live or off in a situation the author dials, with
 what that situation resolves to and how the profile feels as sections beside
-it (`MovementPreviewProperties`). A control whose value moved while its rows
+it (`MovementPreviewProperties`). Selectors and slot maps
+(`animation_editor` `authoring/AnimationPredicateAuthoring`) title each
+condition row as it reads, add tests of the facts and requests the project's
+schemas declare, widen a row with an "or", and choose facts, intents and
+parameters among the declared ones. A control whose value moved while its rows
 were laid out is not a change (`PropertySheet` settles for one presentation).
 
 Project workspace (`editor/project_browser/src/`, flat): `ProjectWorkspace`,

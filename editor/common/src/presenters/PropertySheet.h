@@ -81,6 +81,8 @@ private:
         // A slider's step: it reports where it snapped the value it was given,
         // which is no change of the value.
         double Snap = 0.0;
+        // What its control was laid out as: its key, verb and options.
+        std::string Layout = {};
     };
 
     void Append(const PropertyNode& node, int depth, std::size_t section, bool everything, std::vector<UiRow>& rows);
@@ -90,8 +92,9 @@ private:
 
     std::vector<Presented> Rows;
     std::size_t Held = kNothingHeld;
-    // Laid out anew: until it is presented unchanged once, what its controls
-    // report is them settling on their new values, not a person changing one.
+    // Laid out anew -- other rows, or a row's other options: until it is
+    // presented unchanged once, what its controls report is them settling on
+    // their new values, not a person changing one.
     std::vector<std::string> LaidOut;
     bool Settling = false;
 };

@@ -149,11 +149,17 @@ puts all of it on the card, `AnimationRuleProperties`:
   moves.
 - *Inspect* on a rule shows its band, enter and stay (read from where each row
   was authored, however deeply it was delegated), hold and cooldown, where it
-  was authored (*Edit* opens that selector as a sheet), the behavior it
+  was authored (*Edit* opens that selector as a sheet, below), the behavior it
   selects with that behavior's policy (kind, blend, latch and what may
   interrupt it, late join, entered and exited events), the slot rows that
   resolve the behavior with which layer is playing each now (*Audition*,
   *Edit*), and the other rules that select it. Escape goes back to the list.
+- A selector or slot map document is a sheet whose conditions read as they
+  do on the card ("Speed > 2.2"): *Add condition* adds a test of a fact or
+  request the project's schemas declare, or of time in behavior; *Or* widens a
+  row into an any-of group; a test's fact, intent and parameter are chosen
+  among the declared ones; and a rule's stay starts as a copy of its enter.
+  The Data workspace shows the same sheet.
 - The card's details are the inspected tick: each layer's winner, latch,
   content and time, and the decision records written on it.
 - On the simulation clock the deck shows a lane for the layer: one span per

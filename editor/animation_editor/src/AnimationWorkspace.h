@@ -3,6 +3,7 @@
 #include "authoring/AnimationJointPicking.h"
 
 #include "actions/ActionContext.h"
+#include "data/DataSubtypeAuthoring.h"
 #include "prompts/PromptQueue.h"
 #include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
@@ -55,7 +56,8 @@ class AnimationWorkspace final : public IWorkspace
 {
 public:
     AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module, DocumentSourceSet& sources,
-                       DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog);
+                       DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog,
+                       const DataSubtypeAuthoringSetup& authorings);
     ~AnimationWorkspace() override;
 
     AnimationWorkspace(const AnimationWorkspace&) = delete;
@@ -140,6 +142,8 @@ private:
     std::unique_ptr<AnimationAuditionProperties> Audition;
     std::unique_ptr<AnimationScenarioProperties> Scenario;
     std::unique_ptr<AnimationRigCreation> Creation;
+    // What animation subtypes add to their documents' sheets.
+    DataSubtypeAuthoringRegistry Authoring;
     std::unique_ptr<DataProperties> DocumentSheet;
     std::unique_ptr<DataCreation> NewDocument;
     PromptQueue::Asker Prompts;

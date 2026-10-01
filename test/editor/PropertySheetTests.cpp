@@ -133,3 +133,49 @@ TEST(PropertySheet, ControlsReportingAsTheyAreLaidOutChangeNothing)
     EXPECT_EQ(sheet.SetFromControl(settings, 2, UiValue(std::string("12"))), PropertyEditResult::Applied);
     EXPECT_EQ(settings.Values["segments"], "12");
 }
+
+namespace
+{
+class Names final : public IPropertySource
+{
+public:
+    std::vector<std::string> Offered = { "Speed" };
+    std::string Value = "Speed";
+    std::vector<std::string> Log;
+
+    std::vector<PropertyNode> Nodes() const override
+    {
+        PropertyNode fact = TextProperty("fact", "Fact", Value);
+        fact.Descriptor.Kind = PropertyKind::Choice;
+        fact.Descriptor.Choices = Offered;
+        return { fact };
+    }
+    bool BeginEdit(std::string_view) override { return true; }
+    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Applied; }
+    PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override
+    {
+        Log.push_back(std::string(key) + "=" + std::string(value));
+        Value = value;
+        return PropertyEditResult::Applied;
+    }
+    void CancelEdit(std::string_view) override {}
+};
+} // namespace
+
+// A drop-down offered other options under the same key settles on its value
+// anew: the option it reports while it does is not a person choosing one.
+TEST(PropertySheet, ADropDownWhoseOptionsChangedSettlesBeforeItEdits)
+{
+    Names names;
+    PropertySheet sheet;
+    (void)sheet.Present(names);
+    (void)sheet.Present(names);
+    names.Offered = { "Grounded", "Speed" };
+    (void)sheet.Present(names);
+    EXPECT_EQ(sheet.SetFromControl(names, 0, UiValue(std::string("Grounded"))), PropertyEditResult::Unchanged);
+    EXPECT_TRUE(names.Log.empty());
+
+    (void)sheet.Present(names);
+    EXPECT_EQ(sheet.SetFromControl(names, 0, UiValue(std::string("Grounded"))), PropertyEditResult::Applied);
+    EXPECT_EQ(names.Value, "Grounded");
+}

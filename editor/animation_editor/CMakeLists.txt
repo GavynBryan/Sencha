@@ -20,6 +20,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationJointPicking.cpp
     src/authoring/AnimationNameDeclarations.cpp
     src/authoring/AnimationFlowEdits.cpp
+    src/authoring/AnimationPredicateAuthoring.cpp
     src/authoring/AnimationPredicateEdits.cpp
     src/authoring/AnimationPredicateText.cpp
     src/authoring/AnimationPreviewSession.cpp

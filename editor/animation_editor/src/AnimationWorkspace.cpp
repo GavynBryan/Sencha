@@ -76,7 +76,7 @@ std::string_view LeafOf(std::string_view path)
 
 AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module,
                                        DocumentSourceSet& sources, DataDocumentStore& store, PromptQueue& prompts,
-                                       ActionCatalog& catalog)
+                                       ActionCatalog& catalog, const DataSubtypeAuthoringSetup& authorings)
     : EngineRef(engine)
     , Store(store)
     , Prompts(prompts.MakeAsker())
@@ -96,7 +96,9 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
     Scenario = std::make_unique<AnimationScenarioProperties>(*Workspace);
     Creation = std::make_unique<AnimationRigCreation>(*Workspace, [this] { Subject = CardSubject::Stage; });
-    DocumentSheet = std::make_unique<DataProperties>(Workspace->Documents, [this] { return Workspace->Documents.Active(); });
+    authorings(Authoring);
+    DocumentSheet = std::make_unique<DataProperties>(
+        Workspace->Documents, [this] { return Workspace->Documents.Active(); }, &Authoring);
     NewDocument = std::make_unique<DataCreation>(
         [this] { return Workspace->Documents.CreatableSubtypes(); },
         [this](const std::string& subtype, const std::string& path, std::string& error) {
@@ -473,6 +475,9 @@ void AnimationWorkspace::Tick(FrameUpdateContext& ctx)
     if (!Visible)
         return;
     FollowAuditionedClip();
+    if (const DataDocument* document = Workspace->Documents.Active(); document != nullptr && Subject == CardSubject::Document)
+        if (IDataSubtypeAuthoring* authoring = Authoring.Find(document->Subtype()))
+            authoring->Update(*document, Workspace->Documents);
     Workspace->Advance(ctx.WallDeltaSeconds);
     Workspace->ExtractViewport();
     if (Viewport != nullptr && FramedMesh != Workspace->Audition.MeshPath)

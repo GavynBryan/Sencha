@@ -6,7 +6,9 @@
 #include "DataWorkspace.h"
 #include "MaterialWorkspace.h"
 #include "ProjectWorkspace.h"
+#include "SubtypeEditors.h"
 #include "UiPreviewWorkspace.h"
+#include "authoring/AnimationPredicateAuthoring.h"
 
 #include <memory>
 
@@ -15,6 +17,11 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
                                                NoticeQueue& notices)
 {
     std::vector<WorkspaceKind> kinds;
+    // Every workspace that shows data documents reads them the same way.
+    const DataSubtypeAuthoringSetup authorings = [](DataSubtypeAuthoringRegistry& registry) {
+        RegisterBuiltInSubtypeAuthoring(registry);
+        RegisterAnimationSubtypeAuthoring(registry);
+    };
     kinds.push_back(WorkspaceKind{
         .Id = "level",
         .DisplayName = "Level",
@@ -38,18 +45,18 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
     kinds.push_back(WorkspaceKind{
         .Id = "data",
         .DisplayName = "Data",
-        .Create = [&engine, &session, &prompts, &actions, &problems] {
+        .Create = [&engine, &session, &prompts, &actions, &problems, authorings] {
             return std::make_unique<DataWorkspace>(engine, *session.Project(), session.Documents(),
-                                                   session.DataDocuments(), prompts, actions, problems);
+                                                   session.DataDocuments(), prompts, actions, problems, authorings);
         },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "animation",
         .DisplayName = "Animation",
-        .Create = [&engine, &session, &prompts, &actions] {
+        .Create = [&engine, &session, &prompts, &actions, authorings] {
             return std::make_unique<AnimationWorkspace>(engine, *session.Project(), session.Module(),
                                                         session.Documents(), session.DataDocuments(), prompts,
-                                                        actions);
+                                                        actions, authorings);
         },
     });
     kinds.push_back(WorkspaceKind{

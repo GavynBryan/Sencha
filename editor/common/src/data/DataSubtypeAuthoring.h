@@ -5,6 +5,7 @@
 
 #include <core/json/JsonValue.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -56,6 +57,13 @@ public:
     {
         return std::nullopt;
     }
+    // A verb it takes that changes the data, made to the document's data object
+    // as one step; nothing when the verb is not its to take, false when refused.
+    [[nodiscard]] virtual std::optional<bool> Perform(std::string_view /*key*/, std::string_view /*verb*/,
+                                                      std::string_view /*choice*/, JsonValue& /*data*/) const
+    {
+        return std::nullopt;
+    }
     // A verb it takes that changes no data, such as listening for a control.
     [[nodiscard]] virtual std::optional<PropertyEditResult> Act(std::string_view /*key*/, std::string_view /*verb*/,
                                                                 const DataDocument& /*document*/)
@@ -85,3 +93,8 @@ public:
 private:
     std::vector<std::unique_ptr<IDataSubtypeAuthoring>> Entries;
 };
+
+// Fills a registry with every subtype's authoring. The application composes
+// it from each workspace library's own, and each workspace that shows data
+// documents keeps a registry of its own filled by it.
+using DataSubtypeAuthoringSetup = std::function<void(DataSubtypeAuthoringRegistry&)>;

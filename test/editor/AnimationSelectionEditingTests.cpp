@@ -3,14 +3,17 @@
 // preview's winner and clip without writing to disk.
 
 #include "authoring/AnimationDecisionLane.h"
+#include "authoring/AnimationPredicateAuthoring.h"
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationPredicateText.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRuleProperties.h"
 #include "authoring/AnimationSelectorEdits.h"
+#include "data/DataProperties.h"
 
 #include <anim/AnimSelectorData.h>
+#include <anim/AnimSlotMapData.h>
 #include <anim/AnimationClipCache.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
@@ -20,6 +23,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -366,4 +370,72 @@ TEST(AnimationSelectionEditing, TheDecisionLaneSpansEachStretchARuleHeld)
     EXPECT_FALSE(ParseDecisionSpanKey("7").has_value());
     EXPECT_TRUE(AnimationDecisionLane(session, 3, -1).Spans.empty());
     session.Close();
+}
+
+// A selector's sheet reads its conditions as they read, adds a test of a fact
+// or request the project declares, widens a row with an "or", and starts a
+// stay as a copy of the enter, each one step.
+TEST(AnimationSelectionEditing, TheSelectorSheetAuthorsConditionsFromTheProjectsNames)
+{
+    Project project;
+    project.Write("hero.requests.sdata", R"({ "type": "animation.request_schema", "version": 1, "data": {
+        "intents": [ { "intent": "Anim.Reload", "params": [ { "name": "speed", "kind": "float" } ] } ] } })");
+    (void)ScanAssetsDirectory(project.Root.generic_string(), project.Assets->Registry, project.Assets->Assets.Kinds());
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
+    DataDocument* selector = workspace.Documents.OpenOrFocus("asset://anim/hero.selector.sdata", workspace.DocumentError);
+    ASSERT_NE(selector, nullptr) << workspace.DocumentError;
+    DataSubtypeAuthoringRegistry authorings;
+    RegisterAnimationSubtypeAuthoring(authorings);
+    IDataSubtypeAuthoring* authoring = authorings.Find(kAnimSelectorType);
+    ASSERT_NE(authoring, nullptr);
+    ASSERT_NE(authorings.Find(kAnimSlotMapType), nullptr);
+    DataProperties sheet(workspace.Documents, [&] { return selector; }, &authorings);
+
+    const AnimationPredicateVocabulary vocabulary = GatherAnimationPredicateVocabulary(workspace.Documents.Store());
+    ASSERT_EQ(vocabulary.Facts.size(), 1u);
+    EXPECT_EQ(vocabulary.Facts[0].Name, "Speed");
+    EXPECT_EQ(vocabulary.Facts[0].Kind, AnimFactKind::Float);
+    ASSERT_EQ(vocabulary.Intents.size(), 1u);
+    EXPECT_EQ(vocabulary.Intents[0].Params, std::vector<std::string>{ "speed" });
+
+    authoring->Update(*selector, workspace.Documents);
+    std::vector<PropertyNode> nodes = sheet.Nodes();
+    const PropertyNode* enter = NodeAt(nodes, "$.data.rules[0].enter");
+    ASSERT_NE(enter, nullptr);
+    const auto condition = std::ranges::find(enter->Descriptor.Verbs, "condition", &PropertyVerb::Id);
+    ASSERT_NE(condition, enter->Descriptor.Verbs.end());
+    EXPECT_EQ(condition->Choices,
+              (std::vector<std::string>{ "Fact: Speed", "Request: Anim.Reload", "Time in behavior" }));
+    EXPECT_EQ(std::ranges::find(enter->Descriptor.Verbs, "add", &PropertyVerb::Id), enter->Descriptor.Verbs.end())
+        << "an empty row is never added";
+    ASSERT_NE(NodeAt(nodes, "$.data.rules[0].enter[0]"), nullptr);
+    EXPECT_EQ(NodeAt(nodes, "$.data.rules[0].enter[0]")->Descriptor.Label, "Speed > 0.1");
+    EXPECT_EQ(NodeAt(nodes, "$.data.rules[0].enter[0]")->Descriptor.Verbs.front().Id, "or");
+    const PropertyNode* fact = NodeAt(nodes, "$.data.rules[0].enter[0].fact");
+    ASSERT_NE(fact, nullptr);
+    EXPECT_EQ(fact->Descriptor.Kind, PropertyKind::Choice);
+    EXPECT_EQ(fact->Descriptor.Choices, std::vector<std::string>{ "Speed" });
+
+    const auto rules = [&] { return selector->Data()->Find("rules")->AsArray(); };
+    EXPECT_EQ(sheet.Act("$.data.rules[1].enter", "condition", "Fact: Speed"), PropertyEditResult::Applied);
+    ASSERT_EQ(rules()[1].Find("enter")->AsArray().size(), 1u);
+    EXPECT_EQ(DescribeAnimPredicate(rules()[1].Find("enter")), "Speed > 0");
+    EXPECT_EQ(sheet.Act("$.data.rules[1].enter", "condition", "Request: Anim.Reload"), PropertyEditResult::Applied);
+    EXPECT_EQ(DescribeAnimPredicate(rules()[1].Find("enter")), "Speed > 0 and request Anim.Reload");
+    EXPECT_EQ(sheet.Act("$.data.rules[1].enter", "condition", "Nothing"), PropertyEditResult::Refused);
+
+    EXPECT_EQ(sheet.Act("$.data.rules[0].enter[0]", "or", ""), PropertyEditResult::Applied);
+    EXPECT_EQ(DescribeAnimPredicate(rules()[0].Find("enter")), "(Speed > 0.1 or Speed > 0.1)");
+
+    EXPECT_EQ(sheet.Act("$.data.rules[0]", "add", "Stay"), PropertyEditResult::Applied);
+    ASSERT_NE(rules()[0].Find("stay"), nullptr);
+    EXPECT_EQ(DescribeAnimPredicate(rules()[0].Find("stay")), DescribeAnimPredicate(rules()[0].Find("enter")))
+        << "a stay starts as the enter";
+
+    workspace.Sources.Undo();
+    EXPECT_EQ(rules()[0].Find("stay"), nullptr) << "each is one step";
+    workspace.Sources.Undo();
+    EXPECT_EQ(DescribeAnimPredicate(rules()[0].Find("enter")), "Speed > 0.1");
+    workspace.Sources.DiscardAll();
 }

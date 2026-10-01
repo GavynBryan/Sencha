@@ -62,12 +62,12 @@ std::vector<UiRow> PropertySheet::Present(const IPropertySource& source, bool ev
 
 void PropertySheet::Settle()
 {
-    std::vector<std::string> keys;
-    keys.reserve(Rows.size());
+    std::vector<std::string> layout;
+    layout.reserve(Rows.size());
     for (const Presented& row : Rows)
-        keys.push_back(row.Key + (row.Verb.empty() ? std::string{} : "#" + row.Verb));
-    Settling = keys != LaidOut;
-    LaidOut = std::move(keys);
+        layout.push_back(row.Layout);
+    Settling = layout != LaidOut;
+    LaidOut = std::move(layout);
 }
 
 std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> sections, bool everything,
@@ -89,7 +89,7 @@ std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> secti
             UiRow heading{ sections[section].Heading, "", "" };
             heading.Control = UiRowControl::Section;
             rows.push_back(std::move(heading));
-            Rows.push_back({ {}, {}, section });
+            Rows.push_back({ .Key = {}, .Value = {}, .Section = section });
         }
         for (const PropertyNode& node : nodes)
             Append(node, 0, section, everything, rows);
@@ -123,8 +123,12 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
         row.Step = descriptor.Step > 0.0 ? descriptor.Step : (descriptor.Max - descriptor.Min) / 100.0;
     }
     const double snap = row.Control == UiRowControl::Range ? row.Step : 0.0;
+    std::string layout = node.Key;
+    for (const std::string& choice : descriptor.Choices)
+        layout += "|" + choice;
     rows.push_back(std::move(row));
-    Rows.push_back({ .Key = node.Key, .Value = node.Value, .Section = section, .Snap = snap });
+    Rows.push_back(
+        { .Key = node.Key, .Value = node.Value, .Section = section, .Snap = snap, .Layout = std::move(layout) });
     for (const PropertyVerb& verb : descriptor.Verbs)
     {
         UiRow action{ verb.Label, "", "" };
@@ -133,7 +137,12 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
         action.Control = UiRowControl::Action;
         action.Choices = verb.Choices;
         rows.push_back(std::move(action));
-        Rows.push_back({ node.Key, {}, section, verb.Id, verb.Choices });
+        Rows.push_back({ .Key = node.Key,
+                         .Value = {},
+                         .Section = section,
+                         .Verb = verb.Id,
+                         .Choices = verb.Choices,
+                         .Layout = node.Key + "#" + verb.Id });
     }
 
     for (const PropertyNode& child : node.Children)
