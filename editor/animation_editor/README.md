@@ -372,14 +372,15 @@ wall stopping it, and movement as scenario state.
 
 ## Documents, undo and saving
 
-The **Document** panel shows each open document as a tab, drawn through the
-same tabs and schema-generated form Data Editor uses
-(`editor/common/src/ui/DataDocumentTabs.h`); closing a tab with unsaved changes
-asks Save, Discard or Cancel. Every field of a rig, behavior set, slot map,
-selector, flow, blendspace, blend overrides, fact or request schema, bindings
-file and tag declaration is editable here; the purpose-built panels above are
-the richer views of the same documents. **New asset** creates any of those
-types, and a reference field's Pick names it.
+An animation document opens from the **Rigs** explorer (R) onto the card, as
+the same schema-laid sheet the Data workspace shows (`data/DataProperties`),
+and every open document is on the document dial. Closing one with unsaved
+changes (Ctrl+W) asks Save, Discard or Cancel. Every field of a rig, behavior
+set, slot map, selector, flow, blendspace, blend overrides, fact or request
+schema, bindings file and tag declaration is editable there; the purpose-built
+views are the richer ones of the same documents. **New Animation Document**
+(Ctrl+N) creates any of those types through the same creation card Data uses
+(`data/DataCreation`).
 
 A name content introduces as a gameplay tag -- a new behavior, intent or
 layer -- fails the rig's binding until something declares it. The Problems tab

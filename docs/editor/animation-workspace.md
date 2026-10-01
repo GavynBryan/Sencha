@@ -129,11 +129,12 @@ implementation.
   - Imported trace: file and filter.
   - A/B takes.
 - **The Document panel goes.**
-  - `NewDataAssetForm` is replaced by `DataCreation`, and `DataDocumentTabs`
-    by the document dial.
-  - After that, `DataForm`, `SchemaWidgets`, `DataDocumentTabs` and
-    `NewDataAssetForm` have no users left and are deleted from
-    `editor/common`. That clears the last data UI out of the ImGui allowlist.
+  - `NewDataAssetForm` is replaced by `DataCreation` (moved into common data
+    code), and `DataDocumentTabs` by the document dial. Both are deleted in
+    M13a.
+  - `DataForm`'s neutral half (`FieldEdit`, `ApplyFieldEdit`) moves to
+    `data/DataFieldEdit`. Its ImGui drawing and `SchemaWidgets` go when their
+    last users, the Rules, Flow and Request panels, do in M13c-e.
 
 ## Decisions (accepted)
 
@@ -164,7 +165,7 @@ implementation.
   - The cartridge, the Content, Rigs and Skeleton explorers, and the document
     dial.
   - Animation documents as sheets.
-  - Delete the Document panel and the common data UI.
+  - Delete the Document panel, `NewDataAssetForm` and `DataDocumentTabs`.
 - **M13b:**
   - The timeline facet and the tape deck, with both clocks, history scrub,
     event marks with drag-retime, and the event card.

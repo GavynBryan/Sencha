@@ -1,7 +1,7 @@
 #pragma once
 
 #include "data/DataDocumentStore.h"
-#include "ui/DataForm.h"
+#include "data/DataFieldEdit.h"
 
 #include <cstddef>
 #include <filesystem>

@@ -10,7 +10,10 @@
 #include "ui/AnimationPreviewPanels.h"
 
 #include "actions/ActionOffer.h"
+#include "data/DataCreation.h"
 #include "data/DataDocumentStore.h"
+#include "data/DataProperties.h"
+#include "prompts/DocumentPrompts.h"
 #include "documents/DocumentSourceSet.h"
 #include "presenters/ContentPicture.h"
 #include "project/Project.h"
@@ -65,6 +68,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
                                        ActionCatalog& catalog)
     : EngineRef(engine)
     , Store(store)
+    , Prompts(prompts.MakeAsker())
 {
     std::function<void(World&)> vocabulary;
     if (module != nullptr)
@@ -77,6 +81,16 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
     Scenario = std::make_unique<AnimationScenarioProperties>(*Workspace);
     Creation = std::make_unique<AnimationRigCreation>(*Workspace, [this] { Subject = CardSubject::Stage; });
+    DocumentSheet = std::make_unique<DataProperties>(Workspace->Documents, [this] { return Workspace->Documents.Active(); });
+    NewDocument = std::make_unique<DataCreation>(
+        [this] { return Workspace->Documents.CreatableSubtypes(); },
+        [this](const std::string& subtype, const std::string& path, std::string& error) {
+            if (Workspace->Documents.Create(subtype, path, error) == nullptr)
+                return false;
+            Workspace->RefreshBrowser();
+            Subject = CardSubject::Document;
+            return true;
+        });
 
     Renderer& renderer = engine.Graphics().MainRenderer;
     Viewport = renderer.StageFeature(
@@ -95,7 +109,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
         if (const DataDocument* active = Workspace->Documents.Active())
             (void)sources.Save(Workspace->Documents.RefOf(*active));
     };
-    AddAnimationPreviewPanels(Surface, *Workspace, prompts);
+    AddAnimationPreviewPanels(Surface, *Workspace);
     DefineActions(catalog);
     RegisterCommands();
 }
@@ -108,6 +122,8 @@ AnimationWorkspace::~AnimationWorkspace()
     DetachRenderFeature(EngineRef, Viewport);
     Surface = WorkspaceView{};
     Picture.reset();
+    NewDocument.reset();
+    DocumentSheet.reset();
     Creation.reset();
     Scenario.reset();
     Audition.reset();
@@ -177,6 +193,20 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
     OfferAction(catalog, ActionHandlers,
                 { .Id = "animation.refresh", .Label = "Refresh Content", .Category = "Explore", .Icon = IconId::Refresh },
                 { .Invoke = [this] { Workspace->RefreshBrowser(); } });
+
+    const auto documentOpen = [this] { return Workspace->Documents.Active() != nullptr; };
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.document.new", .Label = "New Animation Document", .Category = "File",
+                  .DefaultChords = { { SDLK_N, { .Ctrl = true } } } },
+                { .Invoke = [this] {
+                    NewDocument->Clear();
+                    Workspace->Rig.Navigation.Joint = -1;
+                    Subject = CardSubject::NewDocument;
+                } });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.document.close", .Label = "Close Document", .Category = "File",
+                  .DefaultChords = { { SDLK_W, { .Ctrl = true } } } },
+                { .Invoke = [this] { CloseActiveDocument(); }, .Enabled = documentOpen });
 
     const auto rigOpen = [this] { return Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty(); };
     OfferAction(catalog, ActionHandlers, { .Id = "animation.rig.new", .Label = "New Rig", .Category = "Resource" },
@@ -380,6 +410,32 @@ void AnimationWorkspace::ShowDocument(std::string_view key)
 {
     if (const std::optional<std::size_t> index = Workspace->Documents.IndexOf(key))
         Workspace->Documents.SetActive(*index);
+    Workspace->Rig.Navigation.Joint = -1;
+    Subject = CardSubject::Document;
+}
+
+void AnimationWorkspace::OpenDocument(const std::string& path)
+{
+    if (Workspace->Documents.OpenOrFocus(path, Workspace->DocumentError) == nullptr)
+        return;
+    Workspace->Rig.Navigation.Joint = -1;
+    Subject = CardSubject::Document;
+}
+
+void AnimationWorkspace::CloseActiveDocument()
+{
+    const DataDocument* document = Workspace->Documents.Active();
+    if (document == nullptr)
+        return;
+    // By path: the documents may move while the question is open.
+    const std::string path = document->VirtualPath();
+    AskAboutChanges(Prompts, document->IsDirty() || document->IsEditing(), path,
+                    [this, path](DirtyDisposition disposition) {
+                        if (const std::optional<std::size_t> index = Workspace->Documents.IndexOf(path))
+                            (void)Workspace->Documents.Close(*index, disposition, Workspace->DocumentError);
+                        if (Workspace->Documents.Active() == nullptr && Subject == CardSubject::Document)
+                            Subject = CardSubject::Stage;
+                    });
 }
 
 WorkspaceViewFacet AnimationWorkspace::Viewing() const
@@ -412,6 +468,12 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
     }
     if (Subject == CardSubject::NewRig)
         return { .Title = "New rig", .Sections = { { .Heading = {}, .Source = Creation.get() } } };
+    if (Subject == CardSubject::NewDocument)
+        return { .Title = "New animation document", .Sections = { { .Heading = {}, .Source = NewDocument.get() } } };
+    if (const DataDocument* document = Workspace->Documents.Active(); Subject == CardSubject::Document && document)
+        return { .Title = std::string(LeafOf(document->VirtualPath())),
+                 .Actions = { "file.save", "animation.document.close" },
+                 .Sections = { { .Heading = {}, .Source = DocumentSheet.get() } } };
 
     const bool rigOpen = Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty();
     WorkspaceSelectionFacet stage;
@@ -488,7 +550,7 @@ void AnimationWorkspace::ChooseInExplorer(std::string_view explorer, std::string
         if (Workspace->OpenRig(item->Path))
             Subject = CardSubject::Stage;
         break;
-    case Kind::Document: (void)Workspace->Documents.OpenOrFocus(item->Path, Workspace->DocumentError); break;
+    case Kind::Document: OpenDocument(item->Path); break;
     case Kind::Joint:    Workspace->Rig.Navigation.Joint = item->Joint; break;
     case Kind::Group:    break;
     }

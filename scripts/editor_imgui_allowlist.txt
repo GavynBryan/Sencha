@@ -1,7 +1,6 @@
 # Files under editor/ that still use ImGui. Rule F of check_editor_layering.sh:
 # an entry leaves when its file stops using ImGui; nothing is ever added.
 editor/animation_editor/src/ui/AnimationBlendPanels.cpp
-editor/animation_editor/src/ui/AnimationDocumentPanels.cpp
 editor/animation_editor/src/ui/AnimationDocumentWidgets.cpp
 editor/animation_editor/src/ui/AnimationDocumentWidgets.h
 editor/animation_editor/src/ui/AnimationEventPanels.cpp
@@ -39,7 +38,6 @@ editor/common/src/ui/chrome/ChromeTile.cpp
 editor/common/src/ui/chrome/ChromeTile.h
 editor/common/src/ui/chrome/IconDraw.cpp
 editor/common/src/ui/chrome/IconDraw.h
-editor/common/src/ui/DataDocumentTabs.cpp
 editor/common/src/ui/DataForm.cpp
 editor/common/src/ui/DocumentSaveReportView.cpp
 editor/common/src/ui/EditorConsolePanel.cpp
@@ -53,7 +51,6 @@ editor/common/src/ui/ImGuiTextureBinding.cpp
 editor/common/src/ui/ImGuiTextureBinding.h
 editor/common/src/ui/ImGuiTextureOwner.cpp
 editor/common/src/ui/ImGuiVec.h
-editor/common/src/ui/NewDataAssetForm.cpp
 editor/common/src/ui/PanelVisibilitySettings.cpp
 editor/common/src/ui/SchemaWidgets.h
 editor/common/src/ui/ScopedPanel.cpp

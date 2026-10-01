@@ -5,7 +5,6 @@
 #include "ui/AnimationLabPanels.h"
 #include "ui/AnimationEventPanels.h"
 #include "ui/AnimationLayerPanels.h"
-#include "ui/AnimationDocumentPanels.h"
 #include "ui/AnimationMigrationPanels.h"
 #include "ui/AnimationScenarioBatchPanels.h"
 #include "ui/AnimationRequestSchemaPanel.h"
@@ -70,7 +69,7 @@ private:
 
 }
 
-void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace, PromptQueue& prompts)
+void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
     ui.AddPanel(std::make_unique<PreviewTransportPanel>(workspace.Audition.Session));
     AddAnimationSimulationPanels(ui, workspace);
@@ -80,7 +79,6 @@ void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& wor
     AddAnimationBlendPanels(ui, workspace.Rig, workspace.Takes, workspace.Viewport);
     AddAnimationLabPanels(ui, workspace.Lab, workspace.Rig);
     AddAnimationRootMotionPanels(ui, workspace.Rig, workspace.Clips());
-    AddAnimationDocumentPanels(ui, workspace.Documents, workspace.Sources, prompts);
     AddAnimationMigrationPanels(ui, workspace);
     AddAnimationScenarioBatchPanels(ui, workspace);
     auto requestSchema = std::make_unique<AnimationRequestSchemaPanel>(workspace.Documents, workspace.Sources);

@@ -4,7 +4,7 @@
 #include "authoring/AnimationNameDeclarations.h"
 #include "authoring/AnimationNewFiles.h"
 #include "data/DataAssetFiles.h"
-#include "ui/DataForm.h"
+#include "data/DataFieldEdit.h"
 
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>

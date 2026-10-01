@@ -4,7 +4,7 @@
 #include "authoring/AnimationNameDeclarations.h"
 #include "authoring/AnimationPreviewSession.h"
 #include "data/DataDocumentSet.h"
-#include "ui/DataForm.h"
+#include "data/DataFieldEdit.h"
 
 #include <authored/VerbRegistry.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>

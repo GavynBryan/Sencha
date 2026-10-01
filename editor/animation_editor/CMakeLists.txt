@@ -47,7 +47,6 @@ add_library(animation_editor STATIC
     src/ui/AnimationEventPanels.cpp
     src/ui/AnimationLabPanels.cpp
     src/ui/AnimationLayerPanels.cpp
-    src/ui/AnimationDocumentPanels.cpp
     src/ui/AnimationMigrationPanels.cpp
     src/ui/AnimationScenarioBatchPanels.cpp
     src/ui/AnimationRequestSchemaPanel.cpp

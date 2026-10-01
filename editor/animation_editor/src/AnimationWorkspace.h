@@ -3,6 +3,7 @@
 #include "authoring/AnimationJointPicking.h"
 
 #include "actions/ActionContext.h"
+#include "prompts/PromptQueue.h"
 #include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/TreeOutline.h"
@@ -22,6 +23,8 @@ class AnimationRigCreation;
 class AnimationScenarioProperties;
 class AnimationPreviewWorkspace;
 class ContentPicture;
+class DataCreation;
+class DataProperties;
 class DataDocumentStore;
 class DocumentSourceSet;
 class Engine;
@@ -79,6 +82,8 @@ private:
     {
         Stage,
         NewRig,
+        Document,
+        NewDocument,
     };
 
     void RegisterCommands();
@@ -89,6 +94,8 @@ private:
     // Per frame it is seen: the picture placed, the strokes and joints over it.
     void ShowStage();
     void PickJointAt(Vec2d windowPoint);
+    void OpenDocument(const std::string& path);
+    void CloseActiveDocument();
 
     Engine& EngineRef;
     DataDocumentStore& Store;
@@ -99,6 +106,9 @@ private:
     std::unique_ptr<AnimationAuditionProperties> Audition;
     std::unique_ptr<AnimationScenarioProperties> Scenario;
     std::unique_ptr<AnimationRigCreation> Creation;
+    std::unique_ptr<DataProperties> DocumentSheet;
+    std::unique_ptr<DataCreation> NewDocument;
+    PromptQueue::Asker Prompts;
     CardSubject Subject = CardSubject::Stage;
     TreeOutline ContentOutline;
     TreeOutline RigOutline;

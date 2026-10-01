@@ -4,7 +4,7 @@
 // document's root changed and applied as one undo step.
 
 #include "authoring/AnimationPreviewWorkspace.h"
-#include "ui/DataForm.h"
+#include "data/DataFieldEdit.h"
 
 #include <gtest/gtest.h>
 
