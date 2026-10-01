@@ -1,11 +1,11 @@
-# Animation workspace on the grammar (proposal)
+# Animation workspace on the grammar
 
-Status: **proposal for the owner's design review before M13.** Nothing here is
-built. It applies `docs/editor/interaction-grammar.md` to the Animation
+Status: **accepted on 2026-10-01**, with every decision below taken as proposed.
+Not yet built; it is M13's design. It applies `docs/editor/interaction-grammar.md` to the Animation
 workspace, whose 23 ImGui panels are the last large ImGui surface in `editor/`.
 `docs/plans/animation-authoring.md` §2 still describes a docked layout with
 Reset Animation Layout; the grammar has no docking and nothing to lay out, so
-if this proposal is accepted, that section is rewritten to point here.
+that section is to be rewritten to point here when M13 lands.
 
 ## What stays exactly as it is
 
@@ -135,7 +135,7 @@ implementation.
     `NewDataAssetForm` have no users left and are deleted from
     `editor/common`. That clears the last data UI out of the ImGui allowlist.
 
-## Decisions for the owner
+## Decisions (accepted)
 
 1. **One deck for both clocks?** The proposal is one deck with a source switch
    on it. The alternative is a deck per clock, which is clearer about which
@@ -156,7 +156,7 @@ implementation.
    - All rebindable. C is also Level's edge cut, which is fine: since
      1c1dc0ee a chord shared across workspaces reaches the one in use.
 
-## Stages (one commit each, if accepted)
+## Stages (one commit each)
 
 - **M13a:**
   - The stage as a host image, with orbit, zoom, frame and joint marks, and the
