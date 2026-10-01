@@ -67,7 +67,6 @@ DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, D
                    });
                })
 {
-    RegisterBuiltInSubtypeEditors(SubtypeEditors);
     RegisterBuiltInSubtypeAuthoring(Authoring);
     BuildUi();
     RegisterCommands();
@@ -84,11 +83,6 @@ DataWorkspace::~DataWorkspace()
 void DataWorkspace::BuildUi()
 {
     Surface.File.Save = [this] { SaveActive(); };
-    // Documents open and close at runtime, so a subtype's panel gates itself on
-    // the active subtype rather than appearing and disappearing.
-    for (const auto& editor : SubtypeEditors.Entries())
-        for (auto& panel : editor->CreatePanels(Model.Documents))
-            Surface.AddPanel(std::move(panel));
 }
 
 void DataWorkspace::RegisterCommands()
@@ -232,8 +226,6 @@ void DataWorkspace::Tick(FrameUpdateContext&)
         return;
     if (const DataDocument* document = Model.Documents.Active())
     {
-        if (IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype()))
-            editor->UpdateForFrame(*document, Model.Documents);
         if (IDataSubtypeAuthoring* authoring = Authoring.Find(document->Subtype()))
         {
             authoring->Update(*document, Model.Documents);
@@ -252,11 +244,10 @@ bool DataWorkspace::ClaimPlatformEvent(PlatformEventContext& ctx)
     const DataDocument* document = Model.Documents.Active();
     if (document == nullptr)
         return false;
-    if (IDataSubtypeAuthoring* authoring = Authoring.Find(document->Subtype());
-        authoring != nullptr && authoring->HandlePlatformEvent(ctx.Event))
-        return true;
-    IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype());
-    return editor != nullptr && editor->HandlePlatformEvent(ctx.Event);
+    // A control being listened for is claimed outright, or the same keystroke
+    // also lands in whatever has focus.
+    IDataSubtypeAuthoring* authoring = Authoring.Find(document->Subtype());
+    return authoring != nullptr && authoring->HandlePlatformEvent(ctx.Event);
 }
 
 bool DataWorkspace::OwnsDocument(const DocumentRef& document) const

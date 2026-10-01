@@ -228,9 +228,11 @@ meaning it knows, claims platform events, and may add preview sections. The
 input action set and profile (`input/Input*Authoring`) are built this way:
 titled cards, actions chosen among the declared ones they can drive, a
 binding's shape setting its slots, and a slot picked or filled by pressing a
-control. A control whose value moved while its rows were laid out is not a
-change (`PropertySheet` settles for one presentation). The movement subtype
-still draws its form and previews in ImGui (`IDataSubtypeEditor`).
+control. The movement profile (`movement/MovementProfileAuthoring`) titles
+its rules and marks each live or off in a situation the author dials, with
+what that situation resolves to and how the profile feels as sections beside
+it (`MovementPreviewProperties`). A control whose value moved while its rows
+were laid out is not a change (`PropertySheet` settles for one presentation).
 
 Project workspace (`editor/project_browser/src/`, flat): `ProjectWorkspace`,
 `ProjectCatalog` (recent projects JSON in the user config dir,

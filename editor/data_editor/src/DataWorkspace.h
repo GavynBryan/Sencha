@@ -9,7 +9,6 @@
 #include "data/DataSubtypeAuthoring.h"
 #include "prompts/PromptQueue.h"
 #include "properties/FilePathProperty.h"
-#include "ui/DataSubtypeEditorRegistry.h"
 #include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 
@@ -24,7 +23,8 @@ struct ProjectDescriptor;
 // The data workspace: every structured data asset in the project, the open
 // one presented whole as a sheet of its schema's fields (or as its source),
 // the project's data assets in an explorer, and every open one on the
-// document dial. Subtypes with purpose-built previews add them beside it.
+// document dial. A subtype reads its documents as what they are and may put
+// previews beside them.
 class DataWorkspace final : public IWorkspace
 {
 public:
@@ -82,8 +82,6 @@ private:
     CardSubject Subject = CardSubject::Document;
     // The active document shown as its source rather than as fields.
     bool ShowingSource = false;
-    // The purpose-built authoring surfaces; their panels never outlive them.
-    DataSubtypeEditorRegistry SubtypeEditors;
     bool Visible = false;
     std::string OperationError;
     // Declared last: its panels reference everything above.

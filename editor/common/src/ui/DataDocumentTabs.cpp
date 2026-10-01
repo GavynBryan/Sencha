@@ -3,7 +3,6 @@
 #include "data/DataDocumentSet.h"
 #include "prompts/DocumentPrompts.h"
 #include "ui/DataForm.h"
-#include "ui/DataSubtypeEditorRegistry.h"
 
 #include <core/metadata/DataSchema.h>
 
@@ -77,10 +76,7 @@ void DataDocumentTabs::DrawForm(DataDocument& document)
         return;
     }
     ImGui::PushID(document.VirtualPath().c_str());
-    IDataSubtypeEditor* editor = Editors != nullptr ? Editors->Find(document.Subtype()) : nullptr;
-    DataSubtypeFormContext context{ *data, *schema, document, Documents };
-    const FieldEdit edit = editor != nullptr ? editor->DrawForm(context)
-                                             : DrawDataField(*data, schema->Root, "$.data", Documents);
+    const FieldEdit edit = DrawDataField(*data, schema->Root, "$.data", Documents);
     ApplyFieldEdit(document, Documents, edit, std::move(root));
     ImGui::PopID();
 }
