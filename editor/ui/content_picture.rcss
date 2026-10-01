@@ -15,3 +15,4 @@ body
 .frame { display: block; position: absolute; border-width: 1dp; }
 .frame.active { border-width: 2dp; }
 .frame.faint { opacity: 0.45; }
+.dot { display: block; position: absolute; }

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "EditorImmediatePipeline.h"
+#include "render/EditorImmediatePipeline.h"
+#include "viewport/EditorViewport.h"
 
 #include <math/Vec.h>
 

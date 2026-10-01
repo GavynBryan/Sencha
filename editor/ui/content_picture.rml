@@ -7,7 +7,7 @@
 <body data-model="content_picture">
     <!-- The picture a workspace renders, where the window keeps its content.
          The pixels are the host's; the document only places them, and the
-         frames the host marks on them. Everything is in pixels from the
+         frames and dots the host marks on them. Everything is in pixels from the
          content's corner. -->
     <div id="content" data-style-left="left" data-style-top="top" data-style-width="width" data-style-height="height">
         <img id="picture" data-if="image != ''" data-attr-src="'host:' + image"
@@ -19,6 +19,12 @@
              data-class-caution="frame.detail == 'caution'" data-class-faint="frame.value == 'faint'"
              data-style-left="frame.parts[0]" data-style-top="frame.parts[1]"
              data-style-width="frame.parts[2]" data-style-height="frame.parts[3]"></div>
+        <!-- parts: left, top, diameter. -->
+        <div class="dot_slot" data-for="dot : dots">
+            <sector class="dot theme-dot" data-class-selected="dot.selected"
+                    data-style-left="dot.parts[0]" data-style-top="dot.parts[1]"
+                    data-style-width="dot.parts[2]" data-style-height="dot.parts[2]"></sector>
+        </div>
     </div>
 </body>
 </rml>

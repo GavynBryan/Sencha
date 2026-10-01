@@ -18,3 +18,9 @@ ActionDefinition StepBackAction()
 {
     return { .Id = "edit.escape", .Label = "Step Back", .Category = "Edit", .DefaultChords = { { SDLK_ESCAPE, {} } } };
 }
+
+ActionDefinition FrameAction()
+{
+    return { .Id = "view.frame_selection", .Label = "Frame Selection", .Category = "View",
+             .DefaultChords = { { SDLK_F, {} } } };
+}

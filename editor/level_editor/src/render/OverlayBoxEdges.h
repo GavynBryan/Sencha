@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EditorWideLinePipeline.h"
+#include "render/EditorWideLinePipeline.h"
 
 #include <math/geometry/3d/Aabb3d.h>
 

@@ -33,6 +33,8 @@ body { color: #d8dce4ff; }
 .theme-frame.active { border-color: #ffb347ff; }
 .theme-frame.hover  { border-color: #4c7fd0ff; }
 .theme-frame.caution { border-color: #d8a24aff; }
+.theme-dot          { fill-color: #4c7fd0ff; }
+.theme-dot.selected { fill-color: #ffb347ff; }
 .theme-marquee      { background-color: #4c7fd029; border-color: #6f9be0ff; }
 
 .theme-icon        { color: #8d95a5ff; }

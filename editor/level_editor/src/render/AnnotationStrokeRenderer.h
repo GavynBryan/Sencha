@@ -1,6 +1,7 @@
 #pragma once
 
-#include "EditorWideLinePipeline.h"
+#include "render/EditorWideLinePipeline.h"
+#include "viewport/EditorViewport.h"
 
 #include <vector>
 

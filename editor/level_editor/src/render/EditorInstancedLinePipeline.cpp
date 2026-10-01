@@ -37,7 +37,7 @@ void EditorInstancedLinePipeline::Submit(const FrameContext& frame,
                                          std::span<const EditorLineInstance> instances,
                                          bool onTop)
 {
-    Pipeline.SubmitInstanced(frame, viewport, camera, vertices,
+    Pipeline.SubmitInstanced(frame, viewport.Region(), camera, vertices,
                              std::as_bytes(instances),
                              static_cast<std::uint32_t>(instances.size()), onTop);
 }

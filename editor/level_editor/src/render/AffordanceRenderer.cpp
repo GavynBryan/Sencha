@@ -11,5 +11,5 @@ void AffordanceRenderer::DrawViewport(const FrameContext& frame,
     if (!output.FillTriangles.empty())
         Fills.Submit(frame, viewport, camera, output.FillTriangles, /*onTop*/ true);
     if (!output.Lines.empty())
-        Lines.Submit(frame, viewport, camera, output.Lines, /*onTop*/ true);
+        Lines.Submit(frame, viewport.Region(), camera, output.Lines, /*onTop*/ true);
 }

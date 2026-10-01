@@ -9,6 +9,7 @@
 #include <math/spatial/GridPlane.h>
 
 #include <math/Vec.h>
+#include <math/geometry/2d/Rect2d.h>
 
 struct EditorViewport
 {
@@ -31,6 +32,8 @@ struct EditorViewport
     [[nodiscard]] GridPlane GetGrid(const GridSettings& settings) const;
     [[nodiscard]] const char* GetDisplayLabel() const;
     [[nodiscard]] float AspectRatio() const;
+    // Where the view is in the window, in pixels.
+    [[nodiscard]] Rect2d Region() const { return Rect2d::FromMinMax(RegionMin, RegionMax); }
     // The camera as seen through the panel's screen rect, which is what the
     // input path projects against.
     [[nodiscard]] CameraRenderData BuildRenderData() const;

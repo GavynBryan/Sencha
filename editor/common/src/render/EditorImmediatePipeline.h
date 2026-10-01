@@ -1,6 +1,7 @@
 #pragma once
 
-#include "viewport/EditorViewport.h"
+#include <math/geometry/2d/Rect2d.h>
+#include <render/extract/Camera.h>
 
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
@@ -99,7 +100,7 @@ public:
     // The camera is the view's, handed in rather than rebuilt from the
     // viewport: one view renders through one camera, and a submission that
     // derived its own could disagree with the pass beside it.
-    void Submit(const FrameContext& frame, const EditorViewport& viewport,
+    void Submit(const FrameContext& frame, const Rect2d& region,
                 const CameraRenderData& camera,
                 std::span<const TVertex> vertices, bool onTop = false)
     {
@@ -111,8 +112,8 @@ public:
         if (pipeline == VK_NULL_HANDLE)
             return;
 
-        const float vpWidth = viewport.RegionMax.X - viewport.RegionMin.X;
-        const float vpHeight = viewport.RegionMax.Y - viewport.RegionMin.Y;
+        const float vpWidth = region.Max().X - region.Min().X;
+        const float vpHeight = region.Max().Y - region.Min().Y;
         if (vpWidth <= 1.0f || vpHeight <= 1.0f)
             return;
 
@@ -147,8 +148,8 @@ public:
         std::memcpy(allocation.Mapped, vertices.data(), static_cast<size_t>(byteCount));
 
         VkViewport vkViewport{};
-        vkViewport.x = viewport.RegionMin.X;
-        vkViewport.y = viewport.RegionMin.Y;
+        vkViewport.x = region.Min().X;
+        vkViewport.y = region.Min().Y;
         vkViewport.width = vpWidth;
         vkViewport.height = vpHeight;
         vkViewport.minDepth = 0.0f;
@@ -156,8 +157,8 @@ public:
 
         VkRect2D scissor{};
         scissor.offset = {
-            static_cast<int32_t>(viewport.RegionMin.X),
-            static_cast<int32_t>(viewport.RegionMin.Y),
+            static_cast<int32_t>(region.Min().X),
+            static_cast<int32_t>(region.Min().Y),
         };
         scissor.extent = { static_cast<uint32_t>(vpWidth), static_cast<uint32_t>(vpHeight) };
 
@@ -194,7 +195,7 @@ public:
     // Instanced form: `vertices` is drawn once per record in `instances`
     // (Config.InstanceStride bytes each), both uploaded to scratch. What the
     // brush wireframe uses to draw one mesh's edges at every placement.
-    void SubmitInstanced(const FrameContext& frame, const EditorViewport& viewport,
+    void SubmitInstanced(const FrameContext& frame, const Rect2d& region,
                          const CameraRenderData& camera,
                          std::span<const TVertex> vertices,
                          std::span<const std::byte> instances,
@@ -210,8 +211,8 @@ public:
         if (pipeline == VK_NULL_HANDLE)
             return;
 
-        const float vpWidth = viewport.RegionMax.X - viewport.RegionMin.X;
-        const float vpHeight = viewport.RegionMax.Y - viewport.RegionMin.Y;
+        const float vpWidth = region.Max().X - region.Min().X;
+        const float vpHeight = region.Max().Y - region.Min().Y;
         if (vpWidth <= 1.0f || vpHeight <= 1.0f)
             return;
 
@@ -235,15 +236,15 @@ public:
         std::memcpy(instanceAllocation.Mapped, instances.data(), static_cast<size_t>(instanceBytes));
 
         VkViewport vkViewport{};
-        vkViewport.x = viewport.RegionMin.X;
-        vkViewport.y = viewport.RegionMin.Y;
+        vkViewport.x = region.Min().X;
+        vkViewport.y = region.Min().Y;
         vkViewport.width = vpWidth;
         vkViewport.height = vpHeight;
         vkViewport.minDepth = 0.0f;
         vkViewport.maxDepth = 1.0f;
         VkRect2D scissor{};
-        scissor.offset = { static_cast<int32_t>(viewport.RegionMin.X),
-                           static_cast<int32_t>(viewport.RegionMin.Y) };
+        scissor.offset = { static_cast<int32_t>(region.Min().X),
+                           static_cast<int32_t>(region.Min().Y) };
         scissor.extent = { static_cast<uint32_t>(vpWidth), static_cast<uint32_t>(vpHeight) };
 
         const PushConstants push{

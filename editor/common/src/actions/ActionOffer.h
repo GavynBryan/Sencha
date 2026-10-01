@@ -13,3 +13,6 @@ void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinitio
 // Escape: whatever is open or in hand steps back one level. One action in every
 // workspace, so every one of them answers the same key.
 [[nodiscard]] ActionDefinition StepBackAction();
+
+// F: the view turns to what is selected, or to the subject when nothing is.
+[[nodiscard]] ActionDefinition FrameAction();

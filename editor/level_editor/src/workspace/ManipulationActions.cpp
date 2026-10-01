@@ -147,9 +147,9 @@ void OfferManipulationActions(ActionCatalog& catalog, ActionContext& context, Ed
     offer("grid.reset", "Reset Grid", "Grid", { { SDLK_G, { .Ctrl = true, .Shift = true } } }, IconId::GridFrame,
           { .Invoke = [w] { w->ResetGrid(); }, .Enabled = [w] { return w->Grid.HasCustomFrame(); } });
 
-    offer("view.frame_selection", "Frame Selection", "View", { { SDLK_F, {} } }, IconId::None,
-          { .Invoke = [w] { (void)w->FrameSelection(); },
-            .Enabled = [w] { return !w->Selection.GetSelection().empty(); } });
+    OfferAction(catalog, context, FrameAction(),
+                { .Invoke = [w] { (void)w->FrameSelection(); },
+                  .Enabled = [w] { return !w->Selection.GetSelection().empty(); } });
     // What the views show beyond the scene.
     offer("view.zone_bounds", "Zone Bounds", "View", {}, IconId::ZoneBounds,
           { .Invoke = [w] { w->WorldView.ShowZoneBounds = !w->WorldView.ShowZoneBounds; },

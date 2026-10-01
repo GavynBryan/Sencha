@@ -16,6 +16,7 @@ const UiModelPropertyId kPictureTop = UiPropertyIdAt(6);
 const UiModelPropertyId kPictureWidth = UiPropertyIdAt(7);
 const UiModelPropertyId kPictureHeight = UiPropertyIdAt(8);
 const UiModelRowsId kFrames = UiRowsIdAt(0);
+const UiModelRowsId kDots = UiRowsIdAt(1);
 
 UiModelProperty Pixels(const char* name)
 {
@@ -38,7 +39,7 @@ UiScreenDesc Describe()
         Pixels("picture_width"),
         Pixels("picture_height"),
     };
-    desc.RowLists = { "frames" };
+    desc.RowLists = { "frames", "dots" };
     return desc;
 }
 
@@ -121,6 +122,29 @@ void ContentPicture::PublishFrames()
     (void)Ui.SetRows(Screen, kFrames, rows);
 }
 
+void ContentPicture::MarkDots(std::span<const PictureDot> dots)
+{
+    Dots.assign(dots.begin(), dots.end());
+    PublishDots();
+}
+
+void ContentPicture::PublishDots()
+{
+    if (!Screen.IsValid())
+        return;
+    std::vector<UiRow> rows;
+    rows.reserve(Dots.size());
+    for (const PictureDot& dot : Dots)
+    {
+        const Vec2d corner = dot.Centre - Content.Position - Vec2d(dot.Radius, dot.Radius);
+        UiRow row{ "", "", "" };
+        row.Selected = dot.Selected;
+        row.Parts = { Px(corner.X), Px(corner.Y), Px(dot.Radius * 2.0f) };
+        rows.push_back(std::move(row));
+    }
+    (void)Ui.SetRows(Screen, kDots, rows);
+}
+
 void ContentPicture::Publish()
 {
     if (!Screen.IsValid())
@@ -144,6 +168,7 @@ void ContentPicture::Open()
     Screen = Ui.OpenScreen(Surface, Describe());
     Publish();
     PublishFrames();
+    PublishDots();
 }
 
 void ContentPicture::Close()

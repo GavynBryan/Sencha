@@ -96,7 +96,7 @@ void IrradianceVolumeRenderer::DrawViewport(const FrameContext& frame,
     }
 
     if (!segments.empty())
-        WideLines.Submit(frame, viewport, camera, segments, /*onTop*/ false,
+        WideLines.Submit(frame, viewport.Region(), camera, segments, /*onTop*/ false,
                          "IrradianceVolumeRenderer");
     if (!points.empty())
         Lines.Submit(frame, viewport, camera, points);

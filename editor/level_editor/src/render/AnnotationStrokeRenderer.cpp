@@ -54,5 +54,5 @@ void AnnotationStrokeRenderer::DrawViewport(const FrameContext& frame, const Edi
     }
 
     if (!Strokes.empty())
-        Lines.Submit(frame, viewport, camera, Strokes, /*onTop*/ true, "annotation_strokes");
+        Lines.Submit(frame, viewport.Region(), camera, Strokes, /*onTop*/ true, "annotation_strokes");
 }

@@ -1,7 +1,5 @@
 # Files under editor/ that still use ImGui. Rule F of check_editor_layering.sh:
 # an entry leaves when its file stops using ImGui; nothing is ever added.
-editor/animation_editor/src/render/AnimationPreviewRenderFeature.cpp
-editor/animation_editor/src/render/AnimationPreviewRenderFeature.h
 editor/animation_editor/src/ui/AnimationBlendPanels.cpp
 editor/animation_editor/src/ui/AnimationDocumentPanels.cpp
 editor/animation_editor/src/ui/AnimationDocumentWidgets.cpp
@@ -16,10 +14,6 @@ editor/animation_editor/src/ui/AnimationRootMotionPanels.cpp
 editor/animation_editor/src/ui/AnimationScenarioBatchPanels.cpp
 editor/animation_editor/src/ui/AnimationSelectionPanels.cpp
 editor/animation_editor/src/ui/AnimationSimulationPanels.cpp
-editor/common/src/render/DisplayedTargets.cpp
-editor/common/src/render/DisplayedTargets.h
-editor/common/src/render/ImGuiTargetPresenter.cpp
-editor/common/src/render/ImGuiTargetPresenter.h
 editor/common/src/ui/AuthoredThemeStyleSheet.cpp
 editor/common/src/ui/ButtonFlow.h
 editor/common/src/ui/chrome/ChromeBars.cpp

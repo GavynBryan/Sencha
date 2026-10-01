@@ -175,7 +175,7 @@ Shared shell (`editor/common/src/`):
 | `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/ui/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/ui/icons/` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `workspaces/` | The workspace model: `IWorkspace`, the `WorkspaceKind` row, `WorkspaceHost` (open, close, activate, window placement, requests at the frame boundary; headless-tested). | a row in `WorkspaceKinds.cpp` |
-| `render/` | ImGui presentation of offscreen targets (`ImGuiTargetPresenter`), display-driven target lifetime (`DisplayLedger`, `DisplayedTargets`), `DetachRenderFeature`. | -- |
+| `render/` | Display-driven offscreen target lifetime (`DisplayLedger`, `DisplayedTargets`), publishing a target as a host image (`TargetImagePublish`), the overlay pipelines every workspace draws with (`EditorImmediatePipeline`, `EditorWideLinePipeline` and its `EditorLineSegment`), `DetachRenderFeature`. | -- |
 | `viewport/` | `ViewportId`. | -- |
 | `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`). | -- |
 

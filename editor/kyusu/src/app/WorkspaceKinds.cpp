@@ -46,9 +46,10 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
     kinds.push_back(WorkspaceKind{
         .Id = "animation",
         .DisplayName = "Animation",
-        .Create = [&engine, &session, &prompts] {
+        .Create = [&engine, &session, &prompts, &actions] {
             return std::make_unique<AnimationWorkspace>(engine, *session.Project(), session.Module(),
-                                                        session.Documents(), session.DataDocuments(), prompts);
+                                                        session.Documents(), session.DataDocuments(), prompts,
+                                                        actions);
         },
     });
     kinds.push_back(WorkspaceKind{

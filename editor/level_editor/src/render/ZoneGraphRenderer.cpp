@@ -72,5 +72,5 @@ void ZoneGraphRenderer::DrawViewport(const FrameContext& frame, const EditorView
             AppendArrowhead(segments, edge.From, edge.To, color);
     }
     if (!segments.empty())
-        Lines.Submit(frame, viewport, camera, segments, /*onTop*/ true, "ZoneGraphRenderer");
+        Lines.Submit(frame, viewport.Region(), camera, segments, /*onTop*/ true, "ZoneGraphRenderer");
 }

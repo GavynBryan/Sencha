@@ -58,8 +58,6 @@ set(LEVEL_SHADERS
     "editor_line.vert.glsl|vert|kEditorLineVertSpv"
     "editor_line.frag.glsl|frag|kEditorLineFragSpv"
     "editor_line_instanced.vert.glsl|vert|kEditorLineInstancedVertSpv"
-    "editor_wideline.vert.glsl|vert|kEditorWideLineVertSpv"
-    "editor_wideline.frag.glsl|frag|kEditorWideLineFragSpv"
     "fullscreen.vert.glsl|vert|kFullscreenVertSpv"
     "bloom_brightpass.frag.glsl|frag|kBloomBrightpassFragSpv"
     "bloom_blur.frag.glsl|frag|kBloomBlurFragSpv"

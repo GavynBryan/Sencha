@@ -3,7 +3,7 @@
 #include "EditorFillPipeline.h"
 #include "BrushDrawSet.h"
 #include "BrushFaceHighlight.h"
-#include "EditorWideLinePipeline.h"
+#include "render/EditorWideLinePipeline.h"
 
 #include "editmodes/IManipulator.h"
 #include "document/EditorScene.h"

@@ -29,7 +29,7 @@ bool UiSurfaceTargetRenderFeature::Setup(const RenderFeatureServices& featureSer
     Services = *featureServices.Backend;
     // Linear, because the panel fits a full-resolution surface into whatever
     // space it has; nearest would shimmer at every non-integer ratio.
-    Targets.Setup(Services, Services.Samplers != nullptr ? Services.Samplers->GetLinearClamp() : VK_NULL_HANDLE);
+    Targets.Setup(Services);
     Ready = Pass.Setup(Services, Textures);
     return Ready;
 }
@@ -142,7 +142,7 @@ void UiSurfaceTargetRenderFeature::OnDraw(const RenderFrame& renderFrame)
     if (!Ready || renderFrame.Backend == nullptr)
         return;
     const FrameContext& frame = *renderFrame.Backend;
-    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
+    Targets.BeginFrame(frame.FrameInFlightIndex);
 
     for (Binding& binding : Bindings)
     {

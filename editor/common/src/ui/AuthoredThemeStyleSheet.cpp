@@ -92,6 +92,9 @@ constexpr Rule kRules[] = {
     // What the pointer is over, and a boundary to keep clear of.
     { ".theme-frame.hover", [] { return Edge(EditorUi::Accent); } },
     { ".theme-frame.caution", [] { return Edge(EditorUi::Warning); } },
+    // A point marked on a picture, and the one picked.
+    { ".theme-dot", [] { return ShapeFill(EditorUi::Accent); } },
+    { ".theme-dot.selected", [] { return ShapeFill(EditorUi::SelectedOutline); } },
     { ".theme-marquee", [] { return Fill(EditorUi::WithAlpha(EditorUi::Accent, 0.16f)) + Edge(EditorUi::AccentHover); } },
 
     // A bare clickable glyph -- a close cross, a disclosure arrow. No plate

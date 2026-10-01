@@ -29,6 +29,14 @@ struct PictureFrame
     bool Faint = false;
 };
 
+// A point marked on the picture, in window pixels: a joint, a handle.
+struct PictureDot
+{
+    Vec2d Centre = {};
+    float Radius = 3.0f;
+    bool Selected = false;
+};
+
 //=============================================================================
 // ContentPicture
 //
@@ -36,7 +44,7 @@ struct PictureFrame
 // offscreen, shown on the window's content surface where the window says the
 // content goes, and cut off at its edges. It names the image and places it,
 // filling the content or wherever the workspace puts it, with frames marked
-// over it; the workspace's renderer fills it at the size it asks for.
+// and dots over it; the workspace's renderer fills it at the size it asks for.
 //=============================================================================
 class ContentPicture
 {
@@ -54,6 +62,7 @@ public:
     void Place(const Rect2d& content) { Place(content, content); }
     void Place(const Rect2d& content, const Rect2d& picture);
     void Mark(std::span<const PictureFrame> frames);
+    void MarkDots(std::span<const PictureDot> dots);
 
     [[nodiscard]] UiHostImageId Image() const { return HostImage; }
     [[nodiscard]] const Rect2d& Placed() const { return Picture; }
@@ -63,6 +72,7 @@ private:
     void Close();
     void Publish();
     void PublishFrames();
+    void PublishDots();
 
     UiService& Ui;
     std::string Name;
@@ -72,5 +82,6 @@ private:
     Rect2d Content{};
     Rect2d Picture{};
     std::vector<PictureFrame> Frames;
+    std::vector<PictureDot> Dots;
     bool Shown = false;
 };
