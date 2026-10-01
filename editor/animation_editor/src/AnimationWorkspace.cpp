@@ -1,7 +1,10 @@
 #include "AnimationWorkspace.h"
 
 #include "authoring/AnimationBoneProperties.h"
+#include "authoring/AnimationExplorers.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRigCreation.h"
+#include "authoring/AnimationStageProperties.h"
 #include "authoring/AnimationStageStrokes.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "ui/AnimationPreviewPanels.h"
@@ -29,6 +32,7 @@
 #include <SDL3/SDL.h>
 
 #include <array>
+#include <optional>
 #include <cstdio>
 #include <functional>
 #include <span>
@@ -44,6 +48,16 @@ constexpr float kPickRadius = 8.0f;
 constexpr float kJointRadius = 3.0f;
 constexpr float kPickedJointRadius = 5.0f;
 constexpr float kOrbitPerPixel = 0.01f;
+
+constexpr std::string_view kContentExplorer = "anim_content";
+constexpr std::string_view kRigExplorer = "anim_rigs";
+constexpr std::string_view kSkeletonExplorer = "anim_skeleton";
+
+std::string_view LeafOf(std::string_view path)
+{
+    const std::size_t slash = path.find_last_of('/');
+    return slash == std::string_view::npos ? path : path.substr(slash + 1);
+}
 } // namespace
 
 AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module,
@@ -60,6 +74,9 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     Workspace = std::make_unique<AnimationPreviewWorkspace>(engine.Content().Assets(), sources, store,
                                                             std::move(vocabulary), authoringRoot);
     Bone = std::make_unique<AnimationBoneProperties>(*Workspace);
+    Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
+    Scenario = std::make_unique<AnimationScenarioProperties>(*Workspace);
+    Creation = std::make_unique<AnimationRigCreation>(*Workspace, [this] { Subject = CardSubject::Stage; });
 
     Renderer& renderer = engine.Graphics().MainRenderer;
     Viewport = renderer.StageFeature(
@@ -91,6 +108,9 @@ AnimationWorkspace::~AnimationWorkspace()
     DetachRenderFeature(EngineRef, Viewport);
     Surface = WorkspaceView{};
     Picture.reset();
+    Creation.reset();
+    Scenario.reset();
+    Audition.reset();
     Bone.reset();
     Workspace.reset();
 }
@@ -130,8 +150,47 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
                 } });
     OfferAction(catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] {
                     Workspace->Sources.CancelEdits();
-                    Workspace->Rig.Navigation.Joint = -1;
+                    if (Workspace->Rig.Navigation.Joint >= 0)
+                        Workspace->Rig.Navigation.Joint = -1;
+                    else
+                        Subject = CardSubject::Stage;
                 } });
+
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "explorer.anim_content", .Label = "Content", .Category = "Explore", .Icon = IconId::Folder,
+                  .DefaultChords = { { SDLK_C, {} } } },
+                {});
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "explorer.anim_rigs", .Label = "Rigs", .Category = "Explore", .Icon = IconId::Folder,
+                  .DefaultChords = { { SDLK_R, {} } } },
+                {});
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "explorer.anim_skeleton", .Label = "Skeleton", .Category = "Explore",
+                  .DefaultChords = { { SDLK_J, {} } } },
+                {});
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.bind_pose", .Label = "Bind Pose", .Category = "Explore" },
+                { .Invoke = [this] { (void)Workspace->AuditionClip({}); } });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.neutral_material", .Label = "Neutral Material", .Category = "Explore" },
+                { .Invoke = [this] { (void)Workspace->Audition.SelectMaterial({}); } });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.refresh", .Label = "Refresh Content", .Category = "Explore", .Icon = IconId::Refresh },
+                { .Invoke = [this] { Workspace->RefreshBrowser(); } });
+
+    const auto rigOpen = [this] { return Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty(); };
+    OfferAction(catalog, ActionHandlers, { .Id = "animation.rig.new", .Label = "New Rig", .Category = "Resource" },
+                { .Invoke = [this] {
+                    Workspace->Rig.Navigation.Joint = -1;
+                    Subject = CardSubject::NewRig;
+                } });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.scenario.save", .Label = "Save Scenario", .Category = "Resource" },
+                { .Invoke = [this] { (void)Workspace->Rig.Save(); }, .Enabled = rigOpen });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.scenario.revert", .Label = "Revert Scenario", .Category = "Resource" },
+                { .Invoke = [this] { (void)Workspace->ReloadScenario(); },
+                  .Enabled = [this, rigOpen] { return rigOpen() && Workspace->Rig.Simulation.ScenarioModified(); } });
     OfferAction(catalog, ActionHandlers, { .Id = "animation.view.joints", .Label = "Joints", .Category = "View" },
                 { .Invoke = [this] { ShowJoints = !ShowJoints; }, .Checked = [this] { return ShowJoints; } });
     OfferAction(catalog, ActionHandlers, { .Id = "animation.view.path", .Label = "Path", .Category = "View" },
@@ -303,10 +362,24 @@ void AnimationWorkspace::RevealDocument(const DocumentRef& document)
 
 WorkspaceDocumentFacet AnimationWorkspace::Document() const
 {
-    const DataDocument* active = Workspace->Documents.Active();
-    if (active == nullptr)
-        return {};
-    return { .Label = active->VirtualPath(), .Changed = active->IsDirty() };
+    WorkspaceDocumentFacet facet;
+    for (const DataDocument* document : Workspace->Documents.Documents())
+        facet.Open.push_back({ .Key = document->VirtualPath(),
+                               .Label = std::string(LeafOf(document->VirtualPath())),
+                               .Changed = document->IsDirty() });
+    if (const DataDocument* active = Workspace->Documents.Active())
+    {
+        facet.Label = std::string(LeafOf(active->VirtualPath()));
+        facet.Changed = active->IsDirty();
+        facet.Active = active->VirtualPath();
+    }
+    return facet;
+}
+
+void AnimationWorkspace::ShowDocument(std::string_view key)
+{
+    if (const std::optional<std::size_t> index = Workspace->Documents.IndexOf(key))
+        Workspace->Documents.SetActive(*index);
 }
 
 WorkspaceViewFacet AnimationWorkspace::Viewing() const
@@ -315,13 +388,108 @@ WorkspaceViewFacet AnimationWorkspace::Viewing() const
                                                                                             : "Audition" };
 }
 
+std::vector<WorkspaceResourceFacet> AnimationWorkspace::Resources()
+{
+    std::string label;
+    if (!Workspace->Rig.Path.empty())
+    {
+        label = std::string(LeafOf(Workspace->Rig.Path));
+        if (Workspace->Rig.Simulation.IsOpen())
+            label += " \xC2\xB7 " + Workspace->Rig.Simulation.Scenario().Name;
+    }
+    return { { .Role = "Rig", .Primary = true, .Explorer = std::string(kRigExplorer), .Active = { .Label = label } } };
+}
+
 WorkspaceSelectionFacet AnimationWorkspace::Selection()
 {
     const SkeletonData& skeleton = Workspace->Audition.Session.Skeleton();
     const int joint = Workspace->Rig.Navigation.Joint;
-    if (joint < 0 || static_cast<std::size_t>(joint) >= skeleton.Joints.size())
-        return {};
-    const std::string& name = skeleton.Joints[static_cast<std::size_t>(joint)].Name;
-    return { .Title = name.empty() ? std::string("Unnamed joint") : name,
-             .Sections = { { .Heading = {}, .Source = Bone.get() } } };
+    if (joint >= 0 && static_cast<std::size_t>(joint) < skeleton.Joints.size())
+    {
+        const std::string& name = skeleton.Joints[static_cast<std::size_t>(joint)].Name;
+        return { .Title = name.empty() ? std::string("Unnamed joint") : name,
+                 .Sections = { { .Heading = {}, .Source = Bone.get() } } };
+    }
+    if (Subject == CardSubject::NewRig)
+        return { .Title = "New rig", .Sections = { { .Heading = {}, .Source = Creation.get() } } };
+
+    const bool rigOpen = Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty();
+    WorkspaceSelectionFacet stage;
+    stage.Title = rigOpen                              ? std::string(LeafOf(Workspace->Rig.Path))
+                  : !Workspace->Audition.MeshPath.empty() ? std::string(LeafOf(Workspace->Audition.MeshPath))
+                                                      : std::string("Stage");
+    stage.Sections.push_back({ .Heading = "Audition", .Source = Audition.get() });
+    if (rigOpen)
+    {
+        stage.Sections.push_back({ .Heading = "Scenario", .Source = Scenario.get() });
+        stage.Actions = { "animation.scenario.save", "animation.scenario.revert" };
+    }
+    return stage;
+}
+
+std::vector<WorkspaceExplorerInfo> AnimationWorkspace::Explorers() const
+{
+    return { { .Id = std::string(kContentExplorer), .Title = "Content", .Shape = ExplorerShape::Outline,
+               .Action = "explorer.anim_content" },
+             { .Id = std::string(kRigExplorer), .Title = "Rigs", .Shape = ExplorerShape::Outline,
+               .Action = "explorer.anim_rigs" },
+             { .Id = std::string(kSkeletonExplorer), .Title = "Skeleton", .Shape = ExplorerShape::Outline,
+               .Action = "explorer.anim_skeleton" } };
+}
+
+ExplorerPage AnimationWorkspace::Explore(const ExplorerQuery& query)
+{
+    ExplorerPage page;
+    if (query.Explorer == kContentExplorer)
+    {
+        page = ContentOutline.Explore(AnimationContentNodes(*Workspace), query);
+        page.Actions = { "animation.bind_pose", "animation.neutral_material", "animation.refresh" };
+        page.Empty = "No meshes, skeletons, clips or materials hold that.";
+    }
+    else if (query.Explorer == kRigExplorer)
+    {
+        page = RigOutline.Explore(AnimationRigNodes(*Workspace), query);
+        page.Actions = { "animation.rig.new" };
+        page.Empty = "No rig or animation document holds that.";
+    }
+    else if (query.Explorer == kSkeletonExplorer)
+    {
+        page = SkeletonOutline.Explore(
+            AnimationSkeletonNodes(Workspace->Audition.Session.Skeleton(), Workspace->Rig.Navigation.Joint), query);
+        page.Empty = Workspace->Audition.Session.Skeleton().Joints.empty() ? "Nothing with a skeleton is auditioned."
+                                                                           : "No joint's name holds that.";
+    }
+    return page;
+}
+
+void AnimationWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
+                                          std::size_t)
+{
+    const std::optional<AnimationExplorerItem> item = ParseAnimationExplorerKey(key);
+    if (!item)
+        return;
+    using Kind = AnimationExplorerItem::Kind;
+    if (item->What == Kind::Group || (item->What == Kind::Joint && choice == ExplorerChoice::Open))
+    {
+        TreeOutline& outline = explorer == kContentExplorer ? ContentOutline
+                               : explorer == kRigExplorer   ? RigOutline
+                                                            : SkeletonOutline;
+        outline.Flip(key);
+        return;
+    }
+    AnimationAuditionSelection& audition = Workspace->Audition;
+    switch (item->What)
+    {
+    case Kind::Mesh:     (void)audition.SelectMesh(item->Path); break;
+    case Kind::Skeleton: (void)audition.SelectSkeleton(item->Path); break;
+    case Kind::Clip:     (void)Workspace->AuditionClip(item->Path); break;
+    case Kind::Material: (void)audition.SelectMaterial(item->Path); break;
+    case Kind::Rig:
+        if (Workspace->OpenRig(item->Path))
+            Subject = CardSubject::Stage;
+        break;
+    case Kind::Document: (void)Workspace->Documents.OpenOrFocus(item->Path, Workspace->DocumentError); break;
+    case Kind::Joint:    Workspace->Rig.Navigation.Joint = item->Joint; break;
+    case Kind::Group:    break;
+    }
 }

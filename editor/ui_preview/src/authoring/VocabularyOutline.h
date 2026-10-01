@@ -2,9 +2,9 @@
 
 #include "problems/ProblemList.h"
 #include "vocabulary/VocabularyCatalog.h"
+#include "workspaces/TreeOutline.h"
 #include "workspaces/WorkspaceFacets.h"
 
-#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -23,19 +23,18 @@ struct BindingAsset
 //
 // The vocabulary a project's documents author against, as an outline to read:
 // its verbs, queries and events, each with its label, provider and arity, and
-// every binding asset with its records under it. Each branch is open until
-// closed; with a filter, an entry stays when its name holds it.
+// every binding asset with its records under it.
 //=============================================================================
 class VocabularyOutline
 {
 public:
     [[nodiscard]] ExplorerPage Explore(const VocabularyCatalog& catalog, std::span<const BindingAsset> bindings,
-                                       const ExplorerQuery& query) const;
+                                       const ExplorerQuery& query);
     // Opens or closes the branch `key` names; false when it names an entry.
     bool Flip(std::string_view key);
 
 private:
-    std::set<std::string, std::less<>> Closed;
+    TreeOutline Outline;
 };
 
 // What is wrong with the vocabulary: the module's declarations that failed,

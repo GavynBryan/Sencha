@@ -5,6 +5,7 @@
 #include "actions/ActionContext.h"
 #include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
+#include "workspaces/TreeOutline.h"
 
 #include <math/geometry/2d/Rect2d.h>
 
@@ -14,8 +15,11 @@
 #include <vector>
 
 class ActionCatalog;
+class AnimationAuditionProperties;
 class AnimationBoneProperties;
 class AnimationPreviewRenderFeature;
+class AnimationRigCreation;
+class AnimationScenarioProperties;
 class AnimationPreviewWorkspace;
 class ContentPicture;
 class DataDocumentStore;
@@ -27,8 +31,10 @@ struct ProjectDescriptor;
 
 // The animation workspace: rigs, clips and their events authored against a
 // live preview. The rig turns on a stage that fills the window, its bones and
-// joints drawn over it and a picked joint on the card. The game module is used
-// only for its vocabulary; its game never runs here.
+// joints drawn over it; the card is the picked joint, or what is auditioned
+// and the open rig's scenario. Content, rigs and the skeleton are explorers,
+// and the rig is the cartridge. The game module is used only for its
+// vocabulary; its game never runs here.
 class AnimationWorkspace final : public IWorkspace
 {
 public:
@@ -49,8 +55,14 @@ public:
     void RevealDocument(const DocumentRef& document) override;
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
+    void ShowDocument(std::string_view key) override;
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
+    [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
+    [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
+    [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
+    void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
+                          std::size_t mark) override;
     WorkspaceView& View() override { return Surface; }
 
 private:
@@ -61,6 +73,12 @@ private:
         None,
         Pressed,
         Orbiting,
+    };
+    // What the card is about when no joint is picked.
+    enum class CardSubject : std::uint8_t
+    {
+        Stage,
+        NewRig,
     };
 
     void RegisterCommands();
@@ -78,6 +96,13 @@ private:
     AnimationPreviewRenderFeature* Viewport = nullptr;
     std::unique_ptr<ContentPicture> Picture;
     std::unique_ptr<AnimationBoneProperties> Bone;
+    std::unique_ptr<AnimationAuditionProperties> Audition;
+    std::unique_ptr<AnimationScenarioProperties> Scenario;
+    std::unique_ptr<AnimationRigCreation> Creation;
+    CardSubject Subject = CardSubject::Stage;
+    TreeOutline ContentOutline;
+    TreeOutline RigOutline;
+    TreeOutline SkeletonOutline;
     ActionContext ActionHandlers;
     std::string FramedMesh;
     Rect2d ContentRect{};

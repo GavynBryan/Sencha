@@ -14,6 +14,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationBoneProperties.cpp
     src/authoring/AnimationClipPreviewSession.cpp
     src/authoring/AnimationEventBindings.cpp
+    src/authoring/AnimationExplorers.cpp
     src/authoring/AnimationJointPicking.cpp
     src/authoring/AnimationNameDeclarations.cpp
     src/authoring/AnimationFlowEdits.cpp
@@ -22,12 +23,14 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationPreviewSession.cpp
     src/authoring/AnimationPreviewWorkspace.cpp
     src/authoring/AnimationRigEdits.cpp
+    src/authoring/AnimationRigCreation.cpp
     src/authoring/AnimationRigRecipe.cpp
     src/authoring/AnimationRigOutline.cpp
     src/authoring/AnimationScenario.cpp
     src/authoring/AnimationScenarioBatch.cpp
     src/authoring/AnimationSelectorEdits.cpp
     src/authoring/AnimationSessionLab.cpp
+    src/authoring/AnimationStageProperties.cpp
     src/authoring/AnimationStageStrokes.cpp)
 target_link_libraries(animation_authoring PUBLIC editor_common)
 target_include_directories(animation_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")

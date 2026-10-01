@@ -3,7 +3,6 @@
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigDocumentEdits.h"
 #include "ui/DocumentSaveReportView.h"
-#include "authoring/AnimationRigOutline.h"
 #include "authoring/AnimationTraceImport.h"
 #include "ui/WorkspaceView.h"
 #include "ui/IEditorPanel.h"
@@ -94,193 +93,6 @@ std::string IntentName(const AnimationPreviewSession& session, GameplayTagId int
     }
     return TagName(session, intent.Value);
 }
-
-class RigScenarioPanel final : public IEditorPanel
-{
-public:
-    explicit RigScenarioPanel(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
-    std::string_view GetTitle() const override { return "Rig and scenario"; }
-    PanelPersistence GetPersistence() const override { return { "animation.rig" }; }
-    DockSlot GetDockSlot() const override { return DockSlot::Left; }
-    void OnDraw() override
-    {
-        if (!IsVisible()) return;
-        ScopedPanel panel(GetWindowName(), &Visible);
-        if (!panel.IsOpen()) return;
-
-        if (ImGui::CollapsingHeader("Rigs", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            for (const std::string& path : Workspace.Content.OfSubtype(kAnimRigType))
-                if (ImGui::Selectable(path.c_str(), path == Workspace.Rig.Path)) Workspace.OpenRig(path);
-            if (Workspace.Content.OfSubtype(kAnimRigType).empty()) ImGui::TextDisabled("No animation.rig assets in the mounted project.");
-        }
-        if (ImGui::CollapsingHeader("New rig"))
-            DrawNewRig();
-        if (!Workspace.Rig.Error.empty())
-            ImGui::TextWrapped("%s", Workspace.Rig.Error.c_str());
-
-        AnimationPreviewSession& session = Workspace.Rig.Simulation;
-        if (!session.IsOpen() || Workspace.Rig.Path.empty()) return;
-
-        if (ImGui::CollapsingHeader("Scenario", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            const AnimationScenario& scenario = session.Scenario();
-            ImGui::TextWrapped("%s%s", scenario.Name.c_str(), session.ScenarioModified() ? " (unsaved)" : "");
-            ImGui::TextDisabled("%s", Workspace.Rig.ScenarioFile.c_str());
-            ImGui::Text("%u Hz, %zu actions", scenario.TickRate, scenario.Actions.size());
-            if (ImGui::Button("Save scenario")) Workspace.Rig.Save();
-            ImGui::SameLine();
-            if (ImGui::Button("Revert to saved")) Workspace.ReloadScenario();
-            ImGui::TextWrapped("Live edits are recorded into the scenario on the next tick. Saving is "
-                               "explicit and never writes the rig or its schemas.");
-
-            ImGui::SeparatorText("Participants");
-            for (const std::string& participant : scenario.Participants)
-                ImGui::BulletText("%s", participant.c_str());
-            if (SubmitText("Add participant", NewParticipant) && session.AddParticipant(NewParticipant))
-            {
-                NewParticipant.clear();
-                session.Restart();
-            }
-            ImGui::SeparatorText("Fixture tags");
-            ImGui::TextWrapped("Names a game module would declare, declared by this scenario instead; they exist "
-                               "only in the preview World. Changing them replays to the current tick.");
-            std::string removed;
-            for (const std::string& tag : scenario.DeclaredTags)
-            {
-                ImGui::PushID(tag.c_str());
-                ImGui::BulletText("%s", tag.c_str());
-                ImGui::SameLine();
-                if (ImGui::SmallButton("remove"))
-                    removed = tag;
-                ImGui::PopID();
-            }
-            if (!removed.empty())
-                (void)session.UndeclareTag(removed);
-            if (SubmitText("Declare tag", NewTag))
-            {
-                if (session.DeclareTag(NewTag, &TagError))
-                {
-                    NewTag.clear();
-                    TagError.clear();
-                }
-            }
-            if (!TagError.empty())
-                ImGui::TextWrapped("%s", TagError.c_str());
-        }
-
-        if (ImGui::CollapsingHeader("Dependencies", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            for (const AnimationRigDependency& row :
-                 DescribeAnimationRigDependencies(Workspace.DataCache(), Workspace.Rig.Path))
-            {
-                const char* status = "";
-                switch (row.Status)
-                {
-                case AnimationRigDependency::State::Resident: status = "loaded"; break;
-                case AnimationRigDependency::State::Missing: status = "MISSING"; break;
-                case AnimationRigDependency::State::WrongSubtype: status = "WRONG TYPE"; break;
-                case AnimationRigDependency::State::OtherKind: status = ""; break;
-                }
-                ImGui::Indent(static_cast<float>(row.Depth) * 12.0f);
-                ImGui::TextWrapped("%s: %s %s", row.Role.c_str(), row.Path.c_str(), status);
-                ImGui::Unindent(static_cast<float>(row.Depth) * 12.0f);
-            }
-        }
-
-    }
-private:
-    void DrawNewRig()
-    {
-        ImGui::TextWrapped("Writes a behavior set, slot map, request schema, selectors, rig and scenario into "
-                           "the project, then opens the rig ready to play.");
-        (void)SubmitText("Name", NewRigName);
-        static constexpr const char* kPresetHelp[] = {
-            "Prop: one layer, no selector. The first clip idles; every other clip plays while a request of its "
-            "name is held. Doors, machinery, pickups.",
-            "Simple: one layer chosen by rules over the engine's facts. The first clip idles, the second plays "
-            "while moving, and the rest are actions a request plays once through. Most enemies.",
-            "Character: Simple's idle and locomotion, and an upper-body layer from a chosen joint that plays the "
-            "actions over them. Players and anything that acts while it moves.",
-        };
-        int preset = static_cast<int>(NewRigPreset);
-        ImGui::SetNextItemWidth(160.0f);
-        if (ImGui::Combo("Tier", &preset, "Prop\0Simple\0Character\0"))
-            NewRigPreset = static_cast<AnimationRigPreset>(preset);
-        ImGui::TextDisabled("%s", kPresetHelp[preset]);
-        const AnimationClipCache& clips = Workspace.Clips();
-        const auto skeletonOf = [&](const std::string& path) {
-            const AnimationClipData* clip = clips.Get(clips.Find(path));
-            return clip != nullptr ? clip->SkeletonPath : std::string();
-        };
-        const std::string skeleton = NewRigClips.empty() ? std::string() : skeletonOf(NewRigClips.front());
-        if (ImGui::BeginChild("clips", ImVec2(0.0f, 140.0f), ImGuiChildFlags_Borders))
-        {
-            for (const std::string& path : Workspace.Content.Of(AssetType::AnimationClip))
-            {
-                const auto chosen = std::find(NewRigClips.begin(), NewRigClips.end(), path);
-                bool ticked = chosen != NewRigClips.end();
-                // One rig poses one skeleton.
-                ImGui::BeginDisabled(!ticked && !skeleton.empty() && skeletonOf(path) != skeleton);
-                const std::string label = ticked && chosen == NewRigClips.begin() ? path + "  (idle)" : path;
-                if (ImGui::Checkbox(label.c_str(), &ticked))
-                {
-                    if (ticked)
-                        NewRigClips.push_back(path);
-                    else
-                        NewRigClips.erase(chosen);
-                }
-                ImGui::EndDisabled();
-            }
-        }
-        ImGui::EndChild();
-        if (NewRigPreset == AnimationRigPreset::Character)
-        {
-            const SkeletonData* data = skeleton.empty()
-                ? nullptr
-                : Workspace.Skeletons().Get(Workspace.Skeletons().Find(skeleton));
-            ImGui::SetNextItemWidth(220.0f);
-            if (ImGui::BeginCombo("Upper body from", NewRigUpperJoint.empty() ? "(choose a joint)"
-                                                                               : NewRigUpperJoint.c_str()))
-            {
-                if (data != nullptr)
-                    for (const SkeletonJoint& joint : data->Joints)
-                        if (ImGui::Selectable(joint.Name.c_str(), joint.Name == NewRigUpperJoint))
-                            NewRigUpperJoint = joint.Name;
-                ImGui::EndCombo();
-            }
-            if (data == nullptr)
-                ImGui::TextDisabled("Choose clips first; the joints are their skeleton's.");
-        }
-        ImGui::BeginDisabled(NewRigName.empty() || NewRigClips.empty());
-        if (ImGui::Button("Create rig"))
-        {
-            if (Workspace.CreateRig({ .Name = NewRigName,
-                                      .Clips = NewRigClips,
-                                      .Preset = NewRigPreset,
-                                      .UpperBodyJoint = NewRigUpperJoint },
-                                    NewRigError))
-            {
-                NewRigName.clear();
-                NewRigClips.clear();
-                NewRigUpperJoint.clear();
-            }
-        }
-        ImGui::EndDisabled();
-        if (!NewRigError.empty())
-            ImGui::TextWrapped("%s", NewRigError.c_str());
-    }
-
-    AnimationPreviewWorkspace& Workspace;
-    std::string NewParticipant;
-    std::string NewTag;
-    std::string TagError;
-    std::string NewRigName;
-    std::vector<std::string> NewRigClips;
-    AnimationRigPreset NewRigPreset = AnimationRigPreset::Prop;
-    std::string NewRigUpperJoint;
-    std::string NewRigError;
-};
 
 class FactsPanel final : public IEditorPanel
 {
@@ -934,7 +746,6 @@ private:
 
 void AddAnimationSimulationPanels(WorkspaceView& ui, AnimationPreviewWorkspace& workspace)
 {
-    ui.AddPanel(std::make_unique<RigScenarioPanel>(workspace));
     ui.AddPanel(std::make_unique<FactsPanel>(workspace));
     ui.AddPanel(std::make_unique<RequestsPanel>(workspace));
     ui.AddPanel(std::make_unique<SimulationTransportPanel>(workspace));

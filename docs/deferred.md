@@ -125,6 +125,18 @@ do the work and delete the entry.
 - **Trigger:** the performance and cleanup ticket that follows, and before any
   scene with hundreds of rigged entities ships.
 
+## Level explorers walk their own trees
+
+- **What:** `TreeOutline` (`editor/common/src/workspaces/`) is the one outline
+  over preorder nodes, with closable branches, a filter that keeps ancestors,
+  and the current node revealed. UI Preview's and Animation's explorers use it.
+  Level's `WorldExplorer` and `PartitionOutline` still walk, filter and open
+  their own trees.
+- **Where:** `editor/level_editor/src/workspace/WorldExplorer.cpp`,
+  `PartitionOutline.cpp`.
+- **Trigger:** the next change to how either one pages, filters or opens
+  branches moves it onto `TreeOutline` in the same change.
+
 ## Hand-rolled generational pools
 
 - **What:** `HandlePool<Tag, T>` (`engine/include/core/handle/HandlePool.h`) is

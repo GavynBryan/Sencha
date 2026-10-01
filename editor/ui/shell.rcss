@@ -339,6 +339,12 @@ body
 #selection_title
 {
     display: block;
+    flex: 1 1 auto;
+    min-width: 0dp;
+    margin-right: 8dp;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     font-family: "Chakra Petch";
     font-weight: 600;
     font-size: 12dp;
