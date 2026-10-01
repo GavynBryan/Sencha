@@ -257,6 +257,39 @@ The RCSS features that need them are **out of contract**: `box-shadow`,
 `filter`/`backdrop-filter`, `mask-image`, and **gradient decorators**. Gradients
 are authored as textures until Tier 2 lands.
 
+**Vector shapes: `<sector>`.** A box cannot be a ring, a pie slice or a petal,
+and faking one with clip masks fails in two ways. Mask edges are not
+antialiased. Cutting holes by painting one shape over another lets every
+aliased edge show the colour underneath. So the runtime registers one element
+that draws the shape itself, as a mesh with a one-pixel fringe of falling
+coverage on every edge. That is how an immediate-mode vector painter
+antialiases without multisampling, and it goes through the ordinary geometry
+path with nothing new in the renderer (`engine/src/ui/rml/RmlSectorElement`,
+`engine/src/ui/SectorMesh`).
+
+```html
+<sector start="40" sweep="60" inner="0.35"></sector>
+```
+
+- **Shape:** an annular sector filling the element's box. The outer radius is
+  half the box's smaller side.
+  - `start`: degrees clockwise from straight up.
+  - `sweep`: degrees, up to a full turn, which makes a ring.
+  - `inner`: the inner radius as a fraction of the outer; 0 makes a disc or a
+    pie.
+- **Paint:** RCSS properties the runtime adds. `fill-color` paints the shape.
+  `stroke-width` of `stroke-color` is drawn inside its edge, with the fill
+  inset by the same amount and its flanks kept parallel. The element's own
+  background and border are a box's, as on any element, and are not used for
+  the shape.
+- **Data binding:** the attributes take `data-attr-*` like any other.
+- **Inside `data-for`:** give the element content (`<sector ...></sector>`)
+  or wrap it. A self-closing element has no inner markup for the loop to
+  repeat.
+
+The element costs nothing in a document that does not use it. A game's radial
+menu, cooldown ring or gauge uses it the same way the editor's wheels do.
+
 **Two guards, not one.** The runtime adapter overrides every optional method with
 a diagnostic stub that logs once per site and draws nothing, so an unsupported
 operation that actually reaches the renderer fails loudly. The `.sui` cooker
@@ -833,6 +866,22 @@ costs 0.078 ms. Retained layout is doing its job -- an update that applies what
 a host published and re-lays-out costs 0.03 ms, which is why publishing every
 frame is a reasonable thing for a host to do.
 
+**`<sector>` vector shapes.** The editor's tool wheel with a fan up (22 sectors
+and 9 glyph wells, at 1920x1080) was compared with the same document drawn as
+rounded boxes. It ran in `build-profile`, publishing through the wheel's row
+path, averaged over 2000 frames:
+
+| | sectors | boxes |
+|---|---|---|
+| held still: `Update` + `Extract` | 0.5 + 3.8 us | 0.5 + 2.8 us |
+| the hot petal changing every frame | 79.5 + 20.8 us | 85.7 + 36.4 us |
+| vertices / triangles | 4104 / 5990 | 1916 / 1862 |
+
+A sector rebuilds its mesh only when its attributes, paint or size change. So
+a held wheel costs a microsecond more than boxes would, and a changing one
+costs less, since it rebuilds only the sectors that changed. The price is
+about three times the triangles, which is nothing to a GPU at this count.
+
 **Take these from a Release build or not at all.** The same run under the `dev`
 preset reports `Ui/Extract` at 0.76 ms -- sixteen times higher, and enough to
 justify optimisation work that the shipping binary does not need. The `profile`
@@ -851,7 +900,13 @@ Kyusu's spatial interaction stays purpose-built: transform gizmos, resize
 handles, carve, clip planes and pins, face highlights, vertex/edge/face selection,
 measurement, snapping feedback, viewport annotations, the tool wheel. These
 operate on geometry and need viewport-aware hit testing, projection and
-manipulation. Expressing them as documents would weaken them.
+manipulation. Expressing their *interaction* as documents would weaken them.
+
+Their *presentation* is a document where it can be: a pure face model computed
+from the same layout the hit test uses, published as rows to a display-only
+surface. The radial wheels draw that way (`RadialMenuFace`,
+`editor/ui/wheel.rml`). Every plate, rim, petal and mark is one `<sector>`
+(§7), exactly its own shape, listed back to front.
 
 Dear ImGui keeps the work it is good at: the profiler, render statistics, ECS
 inspection, memory and networking diagnostics, experimental controls, and any

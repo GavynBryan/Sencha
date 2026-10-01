@@ -43,6 +43,17 @@ struct Rule
     return "border-color: " + Hex(color) + ";";
 }
 
+// A vector shape's paint: `<sector>` takes these rather than a box's.
+[[nodiscard]] std::string ShapeFill(const ImVec4& color)
+{
+    return "fill-color: " + Hex(color) + ";";
+}
+
+[[nodiscard]] std::string ShapeStroke(const ImVec4& color)
+{
+    return "stroke-color: " + Hex(color) + ";";
+}
+
 [[nodiscard]] std::string Tint(const ImVec4& color)
 {
     // White art takes the role's colour; the art's own shading survives.
@@ -121,6 +132,29 @@ constexpr Rule kRules[] = {
     { ".theme-key.destructive", [] { return Color(EditorUi::Danger); } },
     { ".theme-readout", [] { return Fill(EditorUi::ChassisBg) + Edge(EditorUi::Border) + Color(EditorUi::Accent); } },
     { ".theme-art", [] { return Tint(EditorUi::MetalHighlight); } },
+
+    // A radial menu, machined: the plate the petals are set into, the rim
+    // closing a ring, the petal a release would choose, the in-effect mark, the
+    // thin accent along the rim, and the recessed glyph wells. Its shapes are
+    // `<sector>`s, painted by fill and stroke.
+    { ".theme-wheel-plate", [] { return ShapeFill(EditorUi::MetalShadow); } },
+    { ".theme-wheel-rim", [] { return ShapeFill(EditorUi::MetalBase); } },
+    { ".theme-wheel-petal", [] { return ShapeFill(EditorUi::FrameBg); } },
+    { ".theme-wheel-hot", [] { return ShapeFill(EditorUi::Selected) + ShapeStroke(EditorUi::SelectedOutline); } },
+    { ".theme-wheel-mark", [] { return ShapeFill(EditorUi::SelectedOutline); } },
+    { ".theme-wheel-detail", [] { return ShapeFill(EditorUi::Accent); } },
+    { ".theme-wheel-hub", [] { return ShapeFill(EditorUi::ChassisBg); } },
+    { ".theme-wheel-well", [] {
+         return ShapeFill(EditorUi::ChassisBg) + ShapeStroke(EditorUi::MetalHighlight) + Color(EditorUi::Accent);
+     } },
+    { ".theme-wheel-well .icon", [] { return Tint(EditorUi::Accent); } },
+    { ".theme-wheel-well.active", [] { return Color(EditorUi::SelectedOutline); } },
+    { ".theme-wheel-well.active .icon", [] { return Tint(EditorUi::SelectedOutline); } },
+    { ".theme-wheel-well.lit", [] {
+         return ShapeFill(EditorUi::Darken(EditorUi::Selected, 0.35f)) + ShapeStroke(EditorUi::SelectedOutline)
+                + Color(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f));
+     } },
+    { ".theme-wheel-well.lit .icon", [] { return Tint(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f)); } },
     // One part of a readout that opens something: a seam between parts, lit
     // while its popover is open.
     { ".theme-segment", [] { return Edge(EditorUi::Border); } },

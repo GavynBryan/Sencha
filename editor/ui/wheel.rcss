@@ -14,27 +14,21 @@ body
     font-size: 11dp;
 }
 
-.plate, .hub, .caption, .key
+sector, .caption
 {
     display: block;
     position: absolute;
 }
 
-.plate { border-width: 2dp; }
-.hub { border-width: 1dp; }
-
-.key
-{
-    border-width: 1dp;
-    text-align: center;
-}
-.key.active { border-width: 2dp; }
-.key.variant { font-size: 10dp; }
-.key .icon { width: 60%; height: 60%; margin-top: 20%; }
-.key .initial
+/* The hot petal and a glyph's well are outlined, inside the shape's edge. */
+sector.theme-wheel-hot { stroke-width: 2dp; }
+sector.well { stroke-width: 1dp; text-align: center; }
+.well.variant { font-size: 10dp; }
+.well .icon { width: 70%; height: 70%; margin-top: 15%; }
+.well .initial
 {
     display: block;
-    margin-top: 30%;
+    margin-top: 22%;
     white-space: nowrap;
     overflow: hidden;
     font-family: "Chakra Petch";

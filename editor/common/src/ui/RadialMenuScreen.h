@@ -3,6 +3,8 @@
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
+#include <cstddef>
+
 class RadialMenuSession;
 class UiService;
 struct IRadialMenuModel;
@@ -10,9 +12,10 @@ struct IRadialMenuModel;
 //=============================================================================
 // RadialMenuScreen
 //
-// A radial menu drawn on an authored surface: a round plate, a key for each
-// entry at the slot the session lays it out at, the hot entry's variants on
-// the outer ring, and a caption naming what a release would choose. Display
+// A radial menu drawn on an authored surface: a plate with a petal for each
+// entry cut into it, a glyph in each petal at the slot the session lays it out
+// at, the hot entry's variants as a fan of petals beyond the rim, and a
+// caption naming what a release would choose. Display
 // only -- the session hit-tests the same layout -- and one screen for every
 // wheel a workspace has, since only one is ever open.
 //=============================================================================
@@ -41,4 +44,7 @@ private:
     UiSurfaceId Surface;
     UiScreenHandle Screen;
     bool Shown = false;
+    // The longest each row list has been while this screen is open.
+    std::size_t LongestSectors = 0;
+    std::size_t LongestKeys = 0;
 };

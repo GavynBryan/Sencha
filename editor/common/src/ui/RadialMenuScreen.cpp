@@ -5,17 +5,25 @@
 
 #include <ui/UiService.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
+#include <numbers>
 #include <string>
 #include <vector>
 
 namespace
 {
+constexpr float kDegrees = 180.0f / std::numbers::pi_v<float>;
+
 const UiModelPropertyId kOpen = UiPropertyIdAt(0);
 const UiModelPropertyId kCaption = UiPropertyIdAt(1);
 const UiModelPropertyId kCaptionDim = UiPropertyIdAt(2);
-const UiModelRowsId kDiscs = UiRowsIdAt(0);
+const UiModelPropertyId kCaptionLeft = UiPropertyIdAt(3);
+const UiModelPropertyId kCaptionTop = UiPropertyIdAt(4);
+const UiModelPropertyId kCaptionWidth = UiPropertyIdAt(5);
+const UiModelPropertyId kCaptionHeight = UiPropertyIdAt(6);
+const UiModelRowsId kSectors = UiRowsIdAt(0);
 const UiModelRowsId kKeys = UiRowsIdAt(1);
 
 UiScreenDesc Describe()
@@ -27,8 +35,12 @@ UiScreenDesc Describe()
         UiModelProperty{ "open", UiValue(false) },
         UiModelProperty{ "caption", UiValue(std::string{}) },
         UiModelProperty{ "caption_dim", UiValue(false) },
+        UiModelProperty{ "caption_left", UiValue(std::string("0px")) },
+        UiModelProperty{ "caption_top", UiValue(std::string("0px")) },
+        UiModelProperty{ "caption_width", UiValue(std::string("0px")) },
+        UiModelProperty{ "caption_height", UiValue(std::string("0px")) },
     };
-    desc.RowLists = { "discs", "keys" };
+    desc.RowLists = { "sectors", "keys" };
     return desc;
 }
 
@@ -37,20 +49,54 @@ std::string Px(float value)
     return std::format("{}px", static_cast<int>(std::lround(value)));
 }
 
-// A circle as the document places one: left, top, diameter, and the radius
-// its corners round by.
+// A circle as the document places one: left, top, diameter.
 std::vector<std::string> Circle(Vec2d centre, float radius)
 {
-    return { Px(centre.X - radius), Px(centre.Y - radius), Px(radius * 2.0f), Px(radius) };
+    return { Px(centre.X - radius), Px(centre.Y - radius), Px(radius * 2.0f) };
 }
 
-UiRow Disc(std::string kind, Vec2d centre, float radius)
+std::string_view PartName(RadialMenuPart part)
 {
-    UiRow row{ "", "", std::move(kind) };
-    row.Parts = Circle(centre, radius);
+    switch (part)
+    {
+    case RadialMenuPart::Plate:    return "plate";
+    case RadialMenuPart::Rim:      return "rim";
+    case RadialMenuPart::Petal:    return "petal";
+    case RadialMenuPart::HotPetal: return "hot";
+    case RadialMenuPart::Mark:     return "mark";
+    case RadialMenuPart::Detail:   return "detail";
+    case RadialMenuPart::Hub:      return "hub";
+    }
+    return "plate";
+}
+
+// parts: left, top and diameter of the outer circle, the angle the sector
+// begins at and how far it sweeps in degrees clockwise from straight up, and
+// its inner radius as a fraction of the outer.
+UiRow Sector(Vec2d centre, const RadialMenuSector& sector)
+{
+    UiRow row{ "", "", std::string(PartName(sector.Part)) };
+    row.Parts = { Px(centre.X - sector.Outer), Px(centre.Y - sector.Outer), Px(sector.Outer * 2.0f),
+                  std::format("{:.3f}", sector.Begin * kDegrees), std::format("{:.3f}", sector.Width * kDegrees),
+                  std::format("{:.4f}", sector.Outer > 0.0f ? sector.Inner / sector.Outer : 0.0f) };
     return row;
 }
 
+// A list grows to the longest it has been, rows that show nothing filling it
+// out: the document engine evaluates a shrinking list's departing rows once
+// against the shorter list and warns, every time a petal changes underfoot.
+void PadRows(std::vector<UiRow>& rows, std::size_t& longest, const UiRow& hidden)
+{
+    longest = std::max(longest, rows.size());
+    rows.resize(longest, hidden);
+}
+
+UiRow HiddenRow(std::vector<std::string> parts)
+{
+    UiRow row{ "", "none", "none" };
+    row.Parts = std::move(parts);
+    return row;
+}
 } // namespace
 
 RadialMenuScreen::RadialMenuScreen(UiService& ui)
@@ -94,6 +140,8 @@ void RadialMenuScreen::Close()
         return;
     Ui.CloseScreen(Screen);
     Screen = {};
+    LongestSectors = 0;
+    LongestKeys = 0;
 }
 
 void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenuModel* menu)
@@ -103,15 +151,17 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
     const RadialMenuFace face = wheel != nullptr && menu != nullptr ? FaceOf(*wheel, *menu) : RadialMenuFace{};
     (void)Ui.SetValue(Screen, kOpen, UiValue(face.Open));
 
-    std::vector<UiRow> discs;
+    std::vector<UiRow> sectors;
     std::vector<UiRow> keys;
     if (face.Open)
     {
-        discs = { Disc("plate", face.Centre, face.PlateRadius), Disc("hub", face.Centre, face.HubRadius) };
-        UiRow ledge{ "", "", "caption" };
+        for (const RadialMenuSector& sector : face.Sectors)
+            sectors.push_back(Sector(face.Centre, sector));
         const float width = face.PlateRadius * 2.0f;
-        ledge.Parts = { Px(face.Centre.X - width * 0.5f), Px(face.CaptionTop), Px(width), Px(face.CaptionHeight) };
-        discs.push_back(std::move(ledge));
+        (void)Ui.SetValue(Screen, kCaptionLeft, UiValue(Px(face.Centre.X - width * 0.5f)));
+        (void)Ui.SetValue(Screen, kCaptionTop, UiValue(Px(face.CaptionTop)));
+        (void)Ui.SetValue(Screen, kCaptionWidth, UiValue(Px(width)));
+        (void)Ui.SetValue(Screen, kCaptionHeight, UiValue(Px(face.CaptionHeight)));
 
         for (const RadialMenuKey& key : face.Keys)
         {
@@ -122,7 +172,9 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
             keys.push_back(std::move(row));
         }
     }
-    (void)Ui.SetRows(Screen, kDiscs, discs);
+    PadRows(sectors, LongestSectors, HiddenRow({ "0px", "0px", "0px", "0", "0", "0" }));
+    PadRows(keys, LongestKeys, HiddenRow({ "0px", "0px", "0px" }));
+    (void)Ui.SetRows(Screen, kSectors, sectors);
     (void)Ui.SetRows(Screen, kKeys, keys);
     (void)Ui.SetValue(Screen, kCaption, UiValue(face.Caption));
     (void)Ui.SetValue(Screen, kCaptionDim, UiValue(face.CaptionNamesCurrent));

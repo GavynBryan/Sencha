@@ -7,6 +7,7 @@
 
 #include "rml/RmlInputBridge.h"
 #include "rml/RmlRenderRecorder.h"
+#include "rml/RmlSectorElement.h"
 #include "rml/RmlPackageFileSource.h"
 #include "rml/RmlSystemBridge.h"
 
@@ -158,6 +159,7 @@ UiRuntime::UiRuntime(LoggingProvider& logging,
         g_RuntimeLive.store(false);
         return;
     }
+    RmlSectorElement::Register();
 
     Ready = true;
 }

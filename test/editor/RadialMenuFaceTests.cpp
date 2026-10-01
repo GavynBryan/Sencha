@@ -11,9 +11,9 @@
 #include <memory>
 #include <vector>
 
-// What an open wheel shows: keys where the session hit-tests, the one under
-// the pointer hot, the hot entry's variants on the outer ring, and nothing at
-// all once the key is let go.
+// What an open wheel shows: petals and glyphs where the session hit-tests, the
+// one under the pointer hot, the hot entry's variants as a fan beyond the rim,
+// and nothing at all once the key is let go.
 namespace
 {
 class Menu : public IRadialMenuModel
@@ -84,6 +84,26 @@ TEST_F(RadialMenuFaceTest, TheKeysSitWhereTheSessionHitTests)
     EXPECT_EQ(face.Caption, "Brush");
     EXPECT_FALSE(face.CaptionNamesCurrent);
     EXPECT_GT(face.CaptionTop, face.Centre.Y + face.PlateRadius) << "the caption sits under the wheel";
+
+    // A petal for each entry and each of the hot entry's variants, the hot
+    // ones filled and outlined, each inside the arc the session hit-tests.
+    const auto count = [&face](RadialMenuPart part) {
+        return std::ranges::count(face.Sectors, part, &RadialMenuSector::Part);
+    };
+    EXPECT_EQ(count(RadialMenuPart::Petal), 2 + 2) << "the two cold entries and both variants";
+    EXPECT_EQ(count(RadialMenuPart::HotPetal), 1) << "the hot entry; no variant is hot";
+    const auto hotPetal = std::ranges::find(face.Sectors, RadialMenuPart::HotPetal, &RadialMenuSector::Part);
+    const RadialMenu::Span brushSpan = RadialMenu::SectorSpan(1, layout.Count);
+    EXPECT_GT(hotPetal->Begin, brushSpan.Begin);
+    EXPECT_LT(hotPetal->Begin + hotPetal->Width, brushSpan.End) << "seams keep petals apart";
+    for (const RadialMenuSector& sector : face.Sectors)
+    {
+        if (sector.Part == RadialMenuPart::Petal || sector.Part == RadialMenuPart::HotPetal)
+        {
+            EXPECT_GT(sector.Inner, layout.Hub) << "a petal is its own band, not a slice the hub is painted over";
+        }
+    }
+    EXPECT_EQ(face.Sectors.back().Part, RadialMenuPart::Hub) << "the hub is on top";
 
     (void)Router.Route(KeyUpEvent{ .Key = SDLK_Q, .Modifiers = {}, .Pointer = brush });
     EXPECT_FALSE(FaceOf(*Wheel, Items).Open) << "letting the key go takes the wheel away";

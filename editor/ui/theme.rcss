@@ -60,6 +60,20 @@ body { color: #d8dce4ff; }
 .theme-key.disabled { background-color: #080b10ff; border-color: #24303cff; color: #6e8296ff; }
 .theme-key.destructive { color: #d86a5aff; }
 .theme-readout      { background-color: #05070aff; border-color: #24303cff; color: #2ed0eaff; }
+
+.theme-wheel-plate  { fill-color: #03050aff; }
+.theme-wheel-rim    { fill-color: #1a222cff; }
+.theme-wheel-petal  { fill-color: #12161dff; }
+.theme-wheel-hot    { fill-color: #4d330bff; stroke-color: #ffb347ff; }
+.theme-wheel-mark   { fill-color: #ffb347ff; }
+.theme-wheel-detail { fill-color: #2ed0eaff; }
+.theme-wheel-hub    { fill-color: #05070aff; }
+.theme-wheel-well   { fill-color: #05070aff; stroke-color: #3a4856ff; color: #2ed0eaff; }
+.theme-wheel-well .icon { image-color: #2ed0eaff; }
+.theme-wheel-well.active { color: #ffb347ff; }
+.theme-wheel-well.active .icon { image-color: #ffb347ff; }
+.theme-wheel-well.lit { fill-color: #2a1c06ff; stroke-color: #ffb347ff; color: #ffd08fff; }
+.theme-wheel-well.lit .icon { image-color: #ffd08fff; }
 .theme-art          { image-color: #3a4856ff; }
 .theme-segment      { border-color: #39414fff; }
 .theme-segment:hover { background-color: #1b2230ff; }

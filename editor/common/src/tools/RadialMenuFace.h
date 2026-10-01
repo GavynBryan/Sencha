@@ -4,13 +4,14 @@
 
 #include <math/Vec.h>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 class RadialMenuSession;
 struct IRadialMenuModel;
 
-// One key on a wheel's face: a round slot at `Centre`.
+// One glyph on a wheel's face, in a round recess at `Centre` within its petal.
 struct RadialMenuKey
 {
     Vec2d Centre = {};
@@ -22,6 +23,30 @@ struct RadialMenuKey
     bool Variant = false; // on the outer ring, one of the hot entry's variants
 };
 
+// What a sector of the wheel is cut from.
+enum class RadialMenuPart : std::uint8_t
+{
+    Plate,    // the dark body everything is set into
+    Rim,      // the metal band closing a ring
+    Petal,
+    HotPetal, // the petal a release would choose, outlined
+    Mark,     // the in-effect entry's arc on a rim
+    Detail,   // the thin accent arcs along the primary rim
+    Hub,      // the recess at the axle
+};
+
+// A band about the wheel's centre over `Width` radians clockwise from `Begin`
+// (clockwise from straight up); a full turn goes all the way round. Each is
+// exactly its own shape: nothing is painted over another to cut it.
+struct RadialMenuSector
+{
+    float Inner = 0.0f;
+    float Outer = 0.0f;
+    float Begin = 0.0f;
+    float Width = 0.0f;
+    RadialMenuPart Part = RadialMenuPart::Plate;
+};
+
 // What an open wheel shows, in window pixels, taken from the session's layout
 // -- the numbers it hit-tests -- and the model's entries. Closed is empty.
 struct RadialMenuFace
@@ -29,7 +54,8 @@ struct RadialMenuFace
     bool Open = false;
     Vec2d Centre = {};
     float PlateRadius = 0.0f;
-    float HubRadius = 0.0f;
+    // Back to front.
+    std::vector<RadialMenuSector> Sectors;
     // The caption's line: under everything the wheel can show, as wide as it.
     float CaptionTop = 0.0f;
     float CaptionHeight = 0.0f;

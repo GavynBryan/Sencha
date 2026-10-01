@@ -6,33 +6,29 @@
     <link type="text/rcss" href="theme.rcss"/>
 </head>
 <body data-model="wheel">
-    <!-- A radial menu, while its key is held: a rotary selector whose keys sit
-         where the session hit-tests them. Positions are window pixels. -->
+    <!-- A radial menu, while its key is held: a plate with petals set into
+         it, glyphs where the session hit-tests. Positions are window pixels. -->
     <div id="wheel" data-if="open">
-        <div class="disc_slot" data-for="disc : discs">
-            <div class="plate theme-plate" data-if="disc.detail == 'plate'"
-                 data-style-left="disc.parts[0]" data-style-top="disc.parts[1]"
-                 data-style-width="disc.parts[2]" data-style-height="disc.parts[2]"
-                 data-style-border-radius="disc.parts[3]"></div>
-            <div class="hub theme-readout" data-if="disc.detail == 'hub'"
-                 data-style-left="disc.parts[0]" data-style-top="disc.parts[1]"
-                 data-style-width="disc.parts[2]" data-style-height="disc.parts[2]"
-                 data-style-border-radius="disc.parts[3]"></div>
-            <div class="caption" data-if="disc.detail == 'caption'"
-                 data-style-left="disc.parts[0]" data-style-top="disc.parts[1]"
-                 data-style-width="disc.parts[2]" data-style-height="disc.parts[3]">
-                <span class="ledge theme-readout" data-class-dim="caption_dim">{{caption}}</span>
-            </div>
+        <!-- Back to front. parts: left, top and diameter of the outer circle,
+             start and sweep in degrees, the inner radius as a fraction. -->
+        <div class="sector_slot" data-for="s : sectors">
+            <sector data-attr-class="'theme-wheel-' + s.detail"
+                    data-style-left="s.parts[0]" data-style-top="s.parts[1]"
+                    data-style-width="s.parts[2]" data-style-height="s.parts[2]"
+                    data-attr-start="s.parts[3]" data-attr-sweep="s.parts[4]" data-attr-inner="s.parts[5]"></sector>
         </div>
-        <div class="key theme-key" data-for="key : keys"
-             data-class-lit="key.selected" data-class-active="key.value == 'active'"
-             data-class-variant="key.detail == 'variant'"
-             data-style-left="key.parts[0]" data-style-top="key.parts[1]"
-             data-style-width="key.parts[2]" data-style-height="key.parts[2]"
-             data-style-border-radius="key.parts[3]">
+        <div class="caption" data-style-left="caption_left" data-style-top="caption_top"
+             data-style-width="caption_width" data-style-height="caption_height">
+            <span class="ledge theme-readout" data-class-dim="caption_dim">{{caption}}</span>
+        </div>
+        <sector class="well theme-wheel-well" data-for="key : keys" data-if="key.value != 'none'"
+                data-class-lit="key.selected" data-class-active="key.value == 'active'"
+                data-class-variant="key.detail == 'variant'"
+                data-style-left="key.parts[0]" data-style-top="key.parts[1]"
+                data-style-width="key.parts[2]" data-style-height="key.parts[2]">
             <span data-if="key.icon != ''" data-attr-class="'icon icon-' + key.icon"></span>
             <span class="initial" data-if="key.icon == ''">{{key.label}}</span>
-        </div>
+        </sector>
     </div>
 </body>
 </rml>
