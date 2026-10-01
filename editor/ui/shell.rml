@@ -281,7 +281,7 @@
     <div id="cat_View" class="theme-plate" data-if="projection != ''"
          data-class-lit="popover == 'category:View'" data-event-click="shell_popover('category:View')">
         <span class="view_projection">{{projection}}</span>
-        <span class="view_count theme-accent">{{view_count}}&#9635;</span>
+        <span class="view_count theme-accent" data-if="view_count > 0">{{view_count}}&#9635;</span>
     </div>
 
     <!-- A popover: one decision, anchored under the instrument that opened it.

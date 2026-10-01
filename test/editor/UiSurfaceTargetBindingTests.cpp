@@ -47,12 +47,12 @@ TEST(UiSurfaceTargetBinding, ABindingIsMadeWithoutADeviceAndShowsNothingUntilItH
     const UiSurfaceTargetId binding = feature.Bind(surface, Vec3d{ 0.0f, 0.0f, 0.0f });
     ASSERT_TRUE(binding.IsValid()) << "a host binds while it wires its panels, before Setup";
     EXPECT_EQ(feature.BindingCount(), 1u);
-    EXPECT_EQ(feature.Display(binding), static_cast<ImTextureID>(0))
+    EXPECT_FALSE(feature.Show(binding, UiHostImageId{ 1 }))
         << "nothing has been drawn into it yet";
 
     feature.Unbind(binding);
     EXPECT_EQ(feature.BindingCount(), 0u);
-    EXPECT_EQ(feature.Display(binding), static_cast<ImTextureID>(0)) << "and a released binding stays gone";
+    EXPECT_FALSE(feature.Show(binding, UiHostImageId{ 1 })) << "and a released binding stays gone";
 }
 
 TEST(UiSurfaceTargetBinding, ABindingOutlivesTheDeviceStateItNames)
@@ -67,7 +67,7 @@ TEST(UiSurfaceTargetBinding, ABindingOutlivesTheDeviceStateItNames)
     // here would leave a host showing a hole with no way to notice.
     feature.Teardown();
     EXPECT_EQ(feature.BindingCount(), 1u);
-    EXPECT_EQ(feature.Display(binding), static_cast<ImTextureID>(0));
+    EXPECT_FALSE(feature.Show(binding, UiHostImageId{ 1 }));
 
     feature.Unbind(binding);
     EXPECT_EQ(feature.BindingCount(), 0u);

@@ -1,5 +1,5 @@
 /* A workspace's rendered content: display only, placed in window pixels by
-   the host. */
+   the host. What falls outside the content is cut off at its edge. */
 
 body
 {
@@ -9,4 +9,9 @@ body
     pointer-events: none;
 }
 
+#content { display: block; position: absolute; overflow: hidden; }
 #picture { display: block; position: absolute; }
+
+.frame { display: block; position: absolute; border-width: 1dp; }
+.frame.active { border-width: 2dp; }
+.frame.faint { opacity: 0.45; }

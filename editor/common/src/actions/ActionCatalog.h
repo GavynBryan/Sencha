@@ -41,10 +41,11 @@ struct ActionChordConflict
 // can run, and what it does, is answered by whichever ActionContext currently
 // claims it, so nothing here outlives the objects that perform the work.
 //
-// A chord belongs to one action. `edit.delete` is one action whether it deletes
-// a brush, an asset or an event; the context that claims it decides which.
-// Two actions answering one chord is a conflict, reported rather than resolved
-// by registration order.
+// `edit.delete` is one action whether it deletes a brush, an asset or an
+// event; the context that claims it decides which. A chord may still name
+// several actions that are never claimed together -- New Level and New
+// Material are both Ctrl+N -- and a window performs whichever of them its
+// innermost context claims. Conflicts lists every shared chord for review.
 //=============================================================================
 class ActionCatalog
 {
@@ -67,7 +68,8 @@ public:
     [[nodiscard]] std::span<const KeyChord> Chords(std::string_view id) const;
     // The first chord's text, empty for an action with none.
     [[nodiscard]] std::string ChordText(std::string_view id) const;
-    [[nodiscard]] const ActionDefinition* ForChord(const KeyChord& chord) const;
+    // Every action the chord names, in the order they were defined.
+    [[nodiscard]] std::vector<const ActionDefinition*> ForChord(const KeyChord& chord) const;
     [[nodiscard]] std::vector<ActionChordConflict> Conflicts() const;
 
     // Told of every action as it is first defined, so a host can give each a

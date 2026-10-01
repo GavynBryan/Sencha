@@ -1,6 +1,5 @@
 #include "app/KyusuApp.h"
 #include "ui/EditorUiStyle.h"
-#include <chrono>
 #include <ui/UiService.h>
 #include <render/feature/UiRenderFeature.h>
 
@@ -150,7 +149,7 @@ void KyusuApp::OnStart(GameStartupContext&)
     Session = std::make_unique<ProjectSession>(engine, std::move(ProjectPath));
     MainWindowActions = std::make_unique<WindowActions>();
     MainWindowActions->Application = MainWindowActions->Stack.Push(ApplicationActions, ActionRank::Application);
-    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts, Problems),
+    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts, Problems, Notices),
                                                  Session->Project() != nullptr, mainWindow);
 
     // Chrome theme (behavior from data), loaded before the UI feature applies
@@ -705,7 +704,7 @@ std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, Presentation
 
 void KyusuApp::UpdateShells()
 {
-    const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    const double now = NoticeClockNow();
     ShellPreferences preferences;
     const ConsoleRegistry& registry = GetEngine().Console().Registry();
     if (const CVarMetadata* var = registry.FindCVar("editor.ui.scale"))

@@ -135,17 +135,6 @@ do the work and delete the entry.
 - **Trigger:** the next change to how any of them allocates, resolves or frees
   a handle moves that owner onto `HandlePool` in the same change.
 
-## Authored UI in detached windows
-
-- **What:** the engine places authored surfaces on any window
-  (`UiService::SetSurfaceWindow`, per-window routing, capture and render
-  feature), but Kyusu still creates its surfaces for the primary window, so the
-  level's cook-profiles modal and inspector surface appear on the main window
-  when the Level workspace is detached.
-- **Where:** `LevelWorkspace`'s `AuthoredSurface`, sized from `PrimaryWindow`.
-- **Trigger:** the Shoji shell's per-window controller (`ShellWindow`), which
-  owns each window's surfaces; the Level workspace's surfaces move onto it.
-
 ## Detached window layout write-back
 
 - **What:** a detached window starts from the primary's in-memory layout

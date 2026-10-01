@@ -1,6 +1,11 @@
 #include <gtest/gtest.h>
 
+#include "authoring/ElementOutline.h"
+#include "authoring/ElementProperties.h"
+#include "authoring/PreviewReports.h"
+#include "authoring/SurfaceProperties.h"
 #include "authoring/UiPreviewSession.h"
+#include "properties/PropertyTree.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <assets/ui/UiPackage.h>
@@ -168,6 +173,77 @@ TEST(UiPreviewSession, PollIsTheOneDrainerAndKeepsHistories)
     session.Poll();
     ASSERT_FALSE(session.Actions().empty()) << "the click on #button raised nothing";
     EXPECT_EQ(session.Actions().back().Id, UiActionIdAt(0));
+    EXPECT_EQ(session.RaisedCount(), 1u);
+    EXPECT_EQ(DescribeRaisedAction(session.Actions().back(), session.Model()), "pressed")
+        << "named by its declaration";
+}
+
+TEST(UiPreviewSession, AMissingBindingIsAProblemWithThePreviewModel)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    f.Ui->Update();
+    const std::uint64_t before = session.DiagnosticsVersion();
+    session.Poll();
+    EXPECT_NE(session.DiagnosticsVersion(), before);
+
+    const std::vector<Problem> problems = PreviewProblems(session.Diagnostics(), session.Surface());
+    ASSERT_FALSE(problems.empty());
+    const auto missing = std::ranges::find_if(problems, [](const Problem& problem) {
+        return problem.Message.find("missing") != std::string::npos;
+    });
+    ASSERT_NE(missing, problems.end());
+    EXPECT_EQ(missing->Location, kPreviewModelLocation);
+
+    const std::uint64_t seen = session.DiagnosticsVersion();
+    session.ClearDiagnostics();
+    EXPECT_NE(session.DiagnosticsVersion(), seen) << "a clear is a change a reader must see";
+}
+
+TEST(UiPreviewSession, TheElementCardDescribesThePickedElement)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    f.Ui->Update();
+    const UiElementRef button = f.Ui->ElementAt(session.Surface(), Vec2d(50.0f, 20.0f));
+    ASSERT_TRUE(button.IsValid());
+
+    UiElementRef picked = button;
+    ElementProperties card(session, [&picked] { return picked; });
+    std::vector<PropertyNode> nodes = card.Nodes();
+    const std::optional<PropertyPlace> border = FindPropertyNode(nodes, "boxes.border");
+    ASSERT_TRUE(border.has_value());
+    EXPECT_NE(border->Node().Value.find("100 x 40 px"), std::string::npos) << border->Node().Value;
+    EXPECT_TRUE(FindPropertyNode(nodes, "notes.focus").has_value())
+        << "it raises an action and has no tab-index: a controller cannot reach it";
+    EXPECT_TRUE(FindPropertyNode(nodes, "attribute.data-event-click").has_value());
+    EXPECT_FALSE(card.BeginEdit("boxes.border")) << "the document is edited in its own file";
+
+    picked = {};
+    EXPECT_TRUE(card.Nodes().empty());
+}
+
+TEST(UiPreviewSession, TheSurfaceCardResizesLiveAndACancelPutsItBack)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    SurfaceProperties card(session, [] { return nullptr; }, nullptr);
+
+    ASSERT_TRUE(card.BeginEdit("width"));
+    EXPECT_EQ(card.PreviewEdit("width", "1280"), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Resolution().Width, 1280u);
+    card.CancelEdit("width");
+    EXPECT_EQ(session.Resolution(), (RenderExtent{ 1920, 1080 }));
+
+    ASSERT_TRUE(card.BeginEdit("scale"));
+    EXPECT_EQ(card.CommitEdit("scale", "1.5"), PropertyEditResult::Applied);
+    EXPECT_FLOAT_EQ(session.DisplayScale(), 1.5f);
+    ASSERT_TRUE(card.BeginEdit("height"));
+    EXPECT_EQ(card.CommitEdit("height", "1080"), PropertyEditResult::Unchanged);
+    EXPECT_EQ(card.CommitEdit("height", "tall"), PropertyEditResult::Refused);
 }
 
 TEST(UiPreviewSession, ReopenAppliesAnEditedModelAndCloseLeavesNothingOpen)

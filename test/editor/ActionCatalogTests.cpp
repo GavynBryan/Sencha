@@ -41,8 +41,8 @@ TEST(ActionCatalog, AnActionNamedForDataFollowsItsRename)
     ASSERT_TRUE(catalog.Define(Define("transport.profile.nightly", { kDelete })));
     EXPECT_TRUE(catalog.Relabel("transport.profile.nightly", "Cook with Nightly Build"));
     EXPECT_EQ(catalog.Find("transport.profile.nightly")->Label, "Cook with Nightly Build");
-    ASSERT_NE(catalog.ForChord(kDelete), nullptr);
-    EXPECT_EQ(catalog.ForChord(kDelete)->Id, "transport.profile.nightly") << "the chord stays with the action";
+    ASSERT_EQ(catalog.ForChord(kDelete).size(), 1u);
+    EXPECT_EQ(catalog.ForChord(kDelete)[0]->Id, "transport.profile.nightly") << "the chord stays with the action";
     EXPECT_FALSE(catalog.Relabel("transport.profile.gone", "Cook with Nothing"));
 }
 
@@ -50,11 +50,11 @@ TEST(ActionCatalog, AChordNamesItsActionAndReadsBackAsText)
 {
     ActionCatalog catalog;
     ASSERT_TRUE(catalog.Define(Define("edit.undo", { kCtrlZ })));
-    const ActionDefinition* found = catalog.ForChord(kCtrlZ);
-    ASSERT_NE(found, nullptr);
-    EXPECT_EQ(found->Id, "edit.undo");
+    const std::vector<const ActionDefinition*> found = catalog.ForChord(kCtrlZ);
+    ASSERT_EQ(found.size(), 1u);
+    EXPECT_EQ(found[0]->Id, "edit.undo");
     EXPECT_EQ(catalog.ChordText("edit.undo"), "Ctrl+Z");
-    EXPECT_EQ(catalog.ForChord(kDelete), nullptr);
+    EXPECT_TRUE(catalog.ForChord(kDelete).empty());
 }
 
 TEST(ActionCatalog, TheKeymapRebindsActionsDefinedBeforeAndAfterItIsRead)
@@ -68,7 +68,7 @@ TEST(ActionCatalog, TheKeymapRebindsActionsDefinedBeforeAndAfterItIsRead)
         catalog.ApplyKeymap({ { "edit.undo", ctrlU }, { "tool.brush", KeyChord{ SDLK_N, {} } } });
     EXPECT_EQ(unknown, std::vector<std::string>{ "tool.brush" });
     EXPECT_EQ(catalog.ChordText("edit.undo"), "Ctrl+U");
-    EXPECT_EQ(catalog.ForChord(kCtrlZ), nullptr) << "the default chord outlived its rebinding";
+    EXPECT_TRUE(catalog.ForChord(kCtrlZ).empty()) << "the default chord outlived its rebinding";
 
     ASSERT_TRUE(catalog.Define(Define("tool.brush", { KeyChord{ SDLK_B, {} } })));
     EXPECT_EQ(catalog.ChordText("tool.brush"), "N");
@@ -146,6 +146,32 @@ TEST(ActionContextStack, WithinOneRankTheNewestAnswers)
     const auto b = stack.Push(newer, ActionRank::Document);
     EXPECT_TRUE(stack.Invoke("file.save"));
     EXPECT_EQ(performed, "newer");
+}
+
+TEST(ActionContextStack, AChordSharedByActionsNeverClaimedTogetherReachesTheOneInPlay)
+{
+    // New Level was defined first, but in the materials workspace Ctrl+N is
+    // New Material.
+    ActionCatalog catalog;
+    const KeyChord ctrlN{ SDLK_N, { .Ctrl = true } };
+    ASSERT_TRUE(catalog.Define(Define("file.new", { ctrlN })));
+    ASSERT_TRUE(catalog.Define(Define("material.new", { ctrlN })));
+    ActionContextStack stack;
+    ActionContext application;
+    ActionContext materials;
+    std::string performed;
+    application.Claim("file.close", { .Invoke = [&] { performed = "close"; } });
+    materials.Claim("material.new", { .Invoke = [&] { performed = "material"; } });
+    const auto applicationLayer = stack.Push(application, ActionRank::Application);
+    const auto materialsLayer = stack.Push(materials, ActionRank::Workspace);
+    EXPECT_TRUE(stack.Dispatch(catalog, ctrlN));
+    EXPECT_EQ(performed, "material");
+
+    ActionContext surface;
+    surface.Claim("file.new", { .Invoke = [&] { performed = "file"; } });
+    const auto surfaceLayer = stack.Push(surface, ActionRank::Surface);
+    EXPECT_TRUE(stack.Dispatch(catalog, ctrlN));
+    EXPECT_EQ(performed, "file") << "the closer claim answers, whichever action it is";
 }
 
 TEST(ActionContextStack, ADisabledActionIsClaimedButNotPerformed)

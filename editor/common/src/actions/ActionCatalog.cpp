@@ -85,14 +85,15 @@ std::string ActionCatalog::ChordText(std::string_view id) const
     return chords.empty() ? std::string{} : FormatKeyChord(chords.front());
 }
 
-const ActionDefinition* ActionCatalog::ForChord(const KeyChord& chord) const
+std::vector<const ActionDefinition*> ActionCatalog::ForChord(const KeyChord& chord) const
 {
+    std::vector<const ActionDefinition*> named;
     for (const std::unique_ptr<Entry>& entry : Entries)
     {
         if (std::find(entry->Chords.begin(), entry->Chords.end(), chord) != entry->Chords.end())
-            return &entry->Definition;
+            named.push_back(&entry->Definition);
     }
-    return nullptr;
+    return named;
 }
 
 std::vector<ActionChordConflict> ActionCatalog::Conflicts() const

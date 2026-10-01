@@ -9,3 +9,7 @@
 // the operation still works under the existing definition. A handler with no
 // Invoke claims nothing -- the action is only named, as a held key is.
 void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinition definition, ActionHandler handler);
+
+// Escape: whatever is open or in hand steps back one level. One action in every
+// workspace, so every one of them answers the same key.
+[[nodiscard]] ActionDefinition StepBackAction();

@@ -94,6 +94,7 @@ void UiPreviewSession::Poll()
         if (DiagnosticHistory.size() >= kDiagnosticHistory)
             DiagnosticHistory.pop_front();
         DiagnosticHistory.push_back(std::move(d));
+        ++DiagnosticChanges;
     }
     if (!Screen.IsValid())
         return;
@@ -102,5 +103,6 @@ void UiPreviewSession::Poll()
         if (ActionHistory.size() >= kActionHistory)
             ActionHistory.pop_front();
         ActionHistory.push_back(std::move(a));
+        ++Raised;
     }
 }

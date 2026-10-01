@@ -78,6 +78,9 @@ constexpr Rule kRules[] = {
     // The edge around a view, and around the one being edited.
     { ".theme-frame", [] { return Edge(EditorUi::Border); } },
     { ".theme-frame.active", [] { return Edge(EditorUi::SelectedOutline); } },
+    // What the pointer is over, and a boundary to keep clear of.
+    { ".theme-frame.hover", [] { return Edge(EditorUi::Accent); } },
+    { ".theme-frame.caution", [] { return Edge(EditorUi::Warning); } },
     { ".theme-marquee", [] { return Fill(EditorUi::WithAlpha(EditorUi::Accent, 0.16f)) + Edge(EditorUi::AccentHover); } },
 
     // A bare clickable glyph -- a close cross, a disclosure arrow. No plate

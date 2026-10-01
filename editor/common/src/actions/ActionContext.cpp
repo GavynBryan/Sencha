@@ -59,23 +59,33 @@ ActionContextStack::Layer ActionContextStack::Push(const ActionContext& context,
     return Layer(*this, id);
 }
 
+bool ActionContextStack::Outranks(const Entry& entry, const Claim& other)
+{
+    return other.By == nullptr || entry.Rank > other.By->Rank
+           || (entry.Rank == other.By->Rank && entry.Id > other.By->Id);
+}
+
+ActionContextStack::Claim ActionContextStack::Find(std::string_view id) const
+{
+    Claim best;
+    for (const Entry& entry : Entries)
+        if (const ActionHandler* found = entry.Context->Find(id); found != nullptr && Outranks(entry, best))
+            best = Claim{ &entry, found };
+    return best;
+}
+
+bool ActionContextStack::Perform(const Claim& claim)
+{
+    if (claim.Handler == nullptr)
+        return false;
+    if ((!claim.Handler->Enabled || claim.Handler->Enabled()) && claim.Handler->Invoke)
+        claim.Handler->Invoke();
+    return true;
+}
+
 const ActionHandler* ActionContextStack::Resolve(std::string_view id) const
 {
-    const Entry* best = nullptr;
-    const ActionHandler* handler = nullptr;
-    for (const Entry& entry : Entries)
-    {
-        const ActionHandler* found = entry.Context->Find(id);
-        if (found == nullptr)
-            continue;
-        // Entries are in push order, so a later entry of equal rank is newer.
-        if (best == nullptr || entry.Rank >= best->Rank)
-        {
-            best = &entry;
-            handler = found;
-        }
-    }
-    return handler;
+    return Find(id).Handler;
 }
 
 ActionContextStack::State ActionContextStack::Query(std::string_view id) const
@@ -92,18 +102,16 @@ ActionContextStack::State ActionContextStack::Query(std::string_view id) const
 
 bool ActionContextStack::Invoke(std::string_view id) const
 {
-    const ActionHandler* handler = Resolve(id);
-    if (handler == nullptr)
-        return false;
-    if ((!handler->Enabled || handler->Enabled()) && handler->Invoke)
-        handler->Invoke();
-    return true;
+    return Perform(Find(id));
 }
 
 bool ActionContextStack::Dispatch(const ActionCatalog& catalog, const KeyChord& chord) const
 {
-    const ActionDefinition* definition = catalog.ForChord(chord);
-    return definition != nullptr && Invoke(definition->Id);
+    Claim best;
+    for (const ActionDefinition* definition : catalog.ForChord(chord))
+        if (const Claim claim = Find(definition->Id); claim.By != nullptr && Outranks(*claim.By, best))
+            best = claim;
+    return Perform(best);
 }
 
 void ActionContextStack::Remove(std::uint64_t id)

@@ -29,6 +29,9 @@ struct Notice
 // -- presentation seconds from whoever posts and reads -- so what is showing is
 // a function of the posts and the clock, and a test decides the clock.
 //=============================================================================
+// Seconds on the clock the editor posts and shows notices by.
+[[nodiscard]] double NoticeClockNow();
+
 class NoticeQueue
 {
 public:

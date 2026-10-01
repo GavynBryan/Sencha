@@ -260,7 +260,6 @@ void LevelWorkspace::BuildInput()
         { "edit.duplicate",        "Duplicate",                   "Edit",     { SDLK_D, { .Ctrl = true } },               [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } },
         { "edit.duplicate_instance", "Duplicate as Instance",     "Edit",     { SDLK_D, { .Alt = true } },                [this] { Workspace->Actions.Duplicate(/*asInstance*/ true); } },
         { "edit.repeat",           "Repeat Last",                 "Edit",     { SDLK_R, { .Ctrl = true } },               [this] { Workspace->Actions.RepeatLast(); } },
-        { "edit.escape",           "Step Back",                   "Edit",     { SDLK_ESCAPE, {} },                        [this] { Workspace->EscapeStep(); } },
         { "file.new",              "New Level",                   "File",     { SDLK_N, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->New(); }); } },
         { "file.open",             "Open...",                     "File",     { SDLK_O, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } },
         { "material.apply",        "Apply Material",              "Material", { SDLK_T, { .Shift = true } },              [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); } },
@@ -277,6 +276,7 @@ void LevelWorkspace::BuildInput()
     };
     for (const LevelAction& action : actions)
         offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
+    OfferAction(Catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] { Workspace->EscapeStep(); } });
     OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
     Verbs = std::make_unique<ElementVerbs>(*Workspace, [this] { ExportSelectionGlb(); });
     Verbs->Offer(Catalog, ActionHandlers);

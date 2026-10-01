@@ -110,7 +110,17 @@ private:
         const ActionContext* Context = nullptr;
         ActionRank Rank = ActionRank::Application;
     };
+    // Who answers an action, and with what; both null when nothing claims it.
+    struct Claim
+    {
+        const Entry* By = nullptr;
+        const ActionHandler* Handler = nullptr;
+    };
 
+    // The highest rank answers, and of equal rank the newest.
+    [[nodiscard]] static bool Outranks(const Entry& entry, const Claim& other);
+    [[nodiscard]] Claim Find(std::string_view id) const;
+    static bool Perform(const Claim& claim);
     void Remove(std::uint64_t id);
 
     std::vector<Entry> Entries;

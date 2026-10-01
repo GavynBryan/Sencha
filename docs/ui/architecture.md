@@ -607,7 +607,7 @@ and importer assembly is the engine's `SourceReloadRoots`
 (`engine/include/assets/hotreload/`), owned by `RuntimeContent`; the UI
 previewer (`editor/ui_preview/`) adds the project's roots, the engine's and the
 editor's own to it and shows the open document rebuilt on every save, with the
-diagnostics above beside it.
+diagnostics above among the editor's problems.
 
 ## 13. Rendering destinations
 

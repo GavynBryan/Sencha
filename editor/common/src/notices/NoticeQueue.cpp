@@ -1,6 +1,12 @@
 #include "notices/NoticeQueue.h"
 
 #include <algorithm>
+#include <chrono>
+
+double NoticeClockNow()
+{
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 void NoticeQueue::Post(std::string text, NoticeTone tone, double now)
 {

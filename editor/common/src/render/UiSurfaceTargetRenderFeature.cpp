@@ -1,5 +1,7 @@
 #include "render/UiSurfaceTargetRenderFeature.h"
 
+#include "render/TargetImagePublish.h"
+
 #include <graphics/vulkan/RenderScope.h>
 #include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
@@ -9,8 +11,8 @@
 namespace
 {
     // The swapchain's format, on purpose. The UI shaders write linear colour
-    // and rely on the attachment encoding it; sampled back by ImGui and
-    // written into the sRGB swapchain, the round trip is exact.
+    // and rely on the attachment encoding it; sampled back through a host
+    // image and written into the sRGB swapchain, the round trip is exact.
     constexpr VkFormat kTargetColorFormat = VK_FORMAT_B8G8R8A8_SRGB;
 }
 
@@ -90,7 +92,8 @@ void UiSurfaceTargetRenderFeature::EnsureTarget(Binding& binding)
     // pass clips rounded boundaries through the stencil, and a target without
     // it would preview a document clipping differently from the shipped game.
     desc.DepthFormat = Services.DepthFormat;
-    desc.Read = RenderTargetRead::Sampled;
+    desc.Read = RenderTargetRead::Bindless;
+    desc.Sampler = Services.Samplers != nullptr ? Services.Samplers->GetLinearClamp() : VK_NULL_HANDLE;
     desc.DebugName = "ui_surface_target";
     binding.Target = Targets.Create(desc);
 }
@@ -112,16 +115,18 @@ void UiSurfaceTargetRenderFeature::SetClearColor(UiSurfaceTargetId id, Vec3d cle
         binding->Clear = clearLinear;
 }
 
-ImTextureID UiSurfaceTargetRenderFeature::Display(UiSurfaceTargetId id)
+bool UiSurfaceTargetRenderFeature::Show(UiSurfaceTargetId id, UiHostImageId image)
 {
     Binding* binding = Resolve(id);
     if (binding == nullptr || !Ready)
-        return 0;
+        return false;
     EnsureTarget(*binding);
+    binding->Image = image;
     // The target follows the surface, so the recording's projection and the
     // target's viewport agree.
     const RenderExtent size = Ui.GetSurfaceSize(binding->Surface);
-    return Targets.Display(binding->Target, VkExtent2D{ size.Width, size.Height });
+    Targets.Show(binding->Target, VkExtent2D{ size.Width, size.Height });
+    return true;
 }
 
 std::size_t UiSurfaceTargetRenderFeature::BindingCount() const
@@ -145,7 +150,11 @@ void UiSurfaceTargetRenderFeature::OnDraw(const RenderFrame& renderFrame)
             continue;
         const std::optional<RenderTargetView> target = Targets.Acquire(binding.Target);
         if (!target)
+        {
+            if (binding.Image.has_value() && Services.UiTextures != nullptr)
+                Services.UiTextures->WithdrawHostImage(*binding.Image);
             continue;
+        }
 
         // Brackets the recording and commits the layout the store remembers.
         // The depth format decides the aspects the barrier names; a combined
@@ -183,5 +192,8 @@ void UiSurfaceTargetRenderFeature::OnDraw(const RenderFrame& renderFrame)
             if (const UiDrawFrame* ui = Ui.OffscreenFrame(binding.Surface))
                 Pass.Draw(rendering.Context(), *ui);
         }
+        session.End();
+        if (binding.Image.has_value() && Services.UiTextures != nullptr)
+            PublishTargetImage(*Services.UiTextures, *binding.Image, target->ColorLayout, target->BindlessIndex);
     }
 }

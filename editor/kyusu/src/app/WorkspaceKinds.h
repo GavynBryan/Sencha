@@ -6,6 +6,7 @@
 
 class ActionCatalog;
 class Engine;
+class NoticeQueue;
 class ProjectSession;
 class ProblemList;
 class PromptQueue;
@@ -15,4 +16,5 @@ class SdlWindow;
 // hands its workspace exactly the services it needs.
 [[nodiscard]] std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window,
                                                              ProjectSession& session, ActionCatalog& actions,
-                                                             PromptQueue& prompts, ProblemList& problems);
+                                                             PromptQueue& prompts, ProblemList& problems,
+                                                             NoticeQueue& notices);

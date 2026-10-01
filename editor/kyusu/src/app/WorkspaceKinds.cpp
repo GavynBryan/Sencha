@@ -11,7 +11,8 @@
 #include <memory>
 
 std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window, ProjectSession& session,
-                                               ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems)
+                                               ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems,
+                                               NoticeQueue& notices)
 {
     std::vector<WorkspaceKind> kinds;
     kinds.push_back(WorkspaceKind{
@@ -55,8 +56,9 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         .DisplayName = "UI Preview",
         // The engine's and the editor's own documents are there without one.
         .RequiresProject = false,
-        .Create = [&engine, &session] {
-            return std::make_unique<UiPreviewWorkspace>(engine, session.Project(), session.Module());
+        .Create = [&engine, &session, &actions, &problems, &notices] {
+            return std::make_unique<UiPreviewWorkspace>(engine, session.Project(), session.Module(), actions,
+                                                        problems, notices);
         },
     });
     kinds.push_back(WorkspaceKind{

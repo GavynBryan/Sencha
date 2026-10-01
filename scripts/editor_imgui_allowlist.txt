@@ -20,8 +20,6 @@ editor/common/src/render/DisplayedTargets.cpp
 editor/common/src/render/DisplayedTargets.h
 editor/common/src/render/ImGuiTargetPresenter.cpp
 editor/common/src/render/ImGuiTargetPresenter.h
-editor/common/src/render/UiSurfaceTargetRenderFeature.cpp
-editor/common/src/render/UiSurfaceTargetRenderFeature.h
 editor/common/src/ui/AuthoredThemeStyleSheet.cpp
 editor/common/src/ui/ButtonFlow.h
 editor/common/src/ui/chrome/ChromeBars.cpp
@@ -68,14 +66,5 @@ editor/common/src/ui/ScopedPanel.cpp
 editor/common/src/ui/ScopedPanel.h
 editor/common/src/ui/ThemePreferences.cpp
 editor/common/src/ui/ThemePreferences.h
-editor/ui_preview/src/ui/ActionLogPanel.cpp
-editor/ui_preview/src/ui/DiagnosticsPanel.cpp
-editor/ui_preview/src/ui/DocumentLibraryPanel.cpp
-editor/ui_preview/src/ui/ElementPanel.cpp
 editor/ui_preview/src/ui/ModelPanel.cpp
-editor/ui_preview/src/ui/OutlinePanel.cpp
-editor/ui_preview/src/ui/PreviewPanel.cpp
-editor/ui_preview/src/ui/PreviewPanel.h
-editor/ui_preview/src/UiPreviewWorkspace.cpp
-editor/ui_preview/src/ui/UiPreviewStatusBar.cpp
 editor/ui_preview/src/ui/VocabularyPanel.cpp
