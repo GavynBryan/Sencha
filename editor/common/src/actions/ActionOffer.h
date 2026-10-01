@@ -16,3 +16,6 @@ void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinitio
 
 // F: the view turns to what is selected, or to the subject when nothing is.
 [[nodiscard]] ActionDefinition FrameAction();
+
+// Delete: whatever is picked goes, as one step.
+[[nodiscard]] ActionDefinition DeleteAction();

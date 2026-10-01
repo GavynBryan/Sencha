@@ -12,12 +12,15 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 class ActionCatalog;
 class AnimationAuditionProperties;
 class AnimationBoneProperties;
+class AnimationClipEventsDocument;
+class AnimationEventProperties;
 class AnimationPreviewRenderFeature;
 class AnimationRigCreation;
 class AnimationScenarioProperties;
@@ -65,6 +68,8 @@ public:
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     [[nodiscard]] WorkspaceTimelineFacet Timeline() override;
     void Scrub(double time, TimelineDrag drag) override;
+    void MoveMark(std::string_view key, double time, TimelineDrag drag) override;
+    void PickMark(std::string_view key) override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
@@ -87,6 +92,7 @@ private:
         NewRig,
         Document,
         NewDocument,
+        Events,
     };
 
     void RegisterCommands();
@@ -97,8 +103,14 @@ private:
     // Per frame it is seen: the picture placed, the strokes and joints over it.
     void ShowStage();
     void PickJointAt(Vec2d windowPoint);
+    // The card about `subject`, with no joint picked.
+    void ShowCard(CardSubject subject);
     void OpenDocument(const std::string& path);
     void DefineTransport(ActionCatalog& catalog);
+    void DefineEventActions(ActionCatalog& catalog);
+    // The auditioned clip's events open as its clip changes.
+    void FollowAuditionedClip();
+    [[nodiscard]] AnimationClipEventsDocument* AuditionedEvents() const;
     void CloseActiveDocument();
 
     Engine& EngineRef;
@@ -108,6 +120,9 @@ private:
     std::unique_ptr<ContentPicture> Picture;
     std::unique_ptr<AnimationBoneProperties> Bone;
     std::unique_ptr<AnimationTimeline> Clock;
+    std::unique_ptr<AnimationEventProperties> EventCard;
+    std::optional<std::uint32_t> PickedEvent;
+    std::string FollowedClip;
     std::unique_ptr<AnimationAuditionProperties> Audition;
     std::unique_ptr<AnimationScenarioProperties> Scenario;
     std::unique_ptr<AnimationRigCreation> Creation;

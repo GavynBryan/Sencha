@@ -24,3 +24,8 @@ ActionDefinition FrameAction()
     return { .Id = "view.frame_selection", .Label = "Frame Selection", .Category = "View",
              .DefaultChords = { { SDLK_F, {} } } };
 }
+
+ActionDefinition DeleteAction()
+{
+    return { .Id = "edit.delete", .Label = "Delete", .Category = "Edit", .DefaultChords = { { SDLK_DELETE, {} } } };
+}

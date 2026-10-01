@@ -3,6 +3,7 @@
 // game, and nothing written to disk until saved.
 
 #include "authoring/AnimationEventBindings.h"
+#include "authoring/AnimationEventProperties.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigDocumentEdits.h"
@@ -340,5 +341,119 @@ TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
     EXPECT_TRUE(workspace.Sources.LastSave().WithStatus(DocumentSaveStatus::Conflict).empty());
     workspace.Sources.Undo();
     EXPECT_EQ(events->Events().size(), 1u) << "the author's events are one step away";
+    workspace.Sources.DiscardAll();
+}
+
+namespace
+{
+    const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
+    {
+        for (const PropertyNode& node : nodes)
+        {
+            if (node.Key == key)
+                return &node;
+            if (const PropertyNode* child = NodeAt(node.Children, key))
+                return child;
+        }
+        return nullptr;
+    }
+}
+
+// The card edits the picked event: each change one step, a dragged time live in
+// the preview and gone again on cancel.
+TEST(AnimationEventEditing, TheCardEditsThePickedEventOneStepAtATime)
+{
+    EventProject project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+    AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
+    ASSERT_NE(events, nullptr) << workspace.DocumentError;
+    AnimationClipEvent cosmetic = Footstep(0.25f);
+    cosmetic.MinWeight = 0.3f;
+    const std::uint32_t key = events->Add(cosmetic);
+    workspace.ClipEvents.Changed(*events);
+    std::optional<std::uint32_t> picked;
+    AnimationEventProperties card(workspace, [&] { return picked; });
+
+    EXPECT_EQ(NodeAt(card.Nodes(), "name"), nullptr) << "with nothing picked, the card is the clip's events";
+    EXPECT_NE(NodeAt(card.Nodes(), "sidecar"), nullptr);
+    picked = key;
+    ASSERT_NE(NodeAt(card.Nodes(), "weight"), nullptr);
+
+    EXPECT_EQ(card.CommitEdit("name", "left foot"), PropertyEditResult::Applied);
+    EXPECT_EQ(events->Find(key)->Name, "left foot");
+
+    const AnimationClipData* clip = project.Assets->AnimationClips.Get(project.Assets->AnimationClips.Find(kClip));
+    ASSERT_TRUE(card.BeginEdit("time"));
+    EXPECT_EQ(card.PreviewEdit("time", "0.6"), PropertyEditResult::Applied);
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.6f);
+    EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.25f) << "a preview never reaches the clip";
+    card.CancelEdit("time");
+    EXPECT_FALSE(events->IsEditing());
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.25f);
+
+    ASSERT_TRUE(card.BeginEdit("time"));
+    (void)card.PreviewEdit("time", "0.6");
+    EXPECT_EQ(card.CommitEdit("time", "0.7"), PropertyEditResult::Applied);
+    EXPECT_FALSE(events->IsEditing());
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.7f);
+    EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.7f);
+    EXPECT_EQ(card.CommitEdit("time", "late"), PropertyEditResult::Refused);
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.7f);
+
+    EXPECT_EQ(card.CommitEdit("scope", "Gameplay"), PropertyEditResult::Applied);
+    EXPECT_EQ(events->Find(key)->Scope, AnimEventScope::Gameplay);
+    EXPECT_FALSE(events->Find(key)->MinWeight.has_value()) << "a gameplay event has no weight threshold";
+    EXPECT_EQ(NodeAt(card.Nodes(), "own_weight"), nullptr);
+
+    workspace.Sources.Undo();
+    EXPECT_EQ(events->Find(key)->Scope, AnimEventScope::Cosmetic);
+    EXPECT_EQ(events->Find(key)->MinWeight, 0.3f);
+    workspace.Sources.Undo();
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.25f) << "the drag was one step";
+    workspace.Sources.Undo();
+    EXPECT_EQ(events->Find(key)->Name, "");
+    workspace.Sources.DiscardAll();
+}
+
+// Choosing another binding keeps the inputs it shares and starts the rest from
+// defaults; an input can be supplied, typed and taken away.
+TEST(AnimationEventEditing, TheCardBindsAndFeedsThePickedEvent)
+{
+    EventProject project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+    AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
+    ASSERT_NE(events, nullptr) << workspace.DocumentError;
+    const std::uint32_t key = events->Add(Footstep(0.25f));
+    workspace.ClipEvents.Changed(*events);
+    AnimationEventProperties card(workspace, [&] { return std::optional(key); });
+    ASSERT_NE(NodeAt(card.Nodes(), "inputs.surface"), nullptr);
+    ASSERT_NE(NodeAt(card.Nodes(), "contract"), nullptr);
+    EXPECT_EQ(NodeAt(card.Nodes(), "contract")->Value, "test.footstep(Surface tag, Volume float)");
+
+    EXPECT_EQ(card.CommitEdit("binding", "anim.count"), PropertyEditResult::Applied);
+    ASSERT_EQ(events->Find(key)->Inputs.size(), 1u);
+    EXPECT_EQ(events->Find(key)->Inputs[0].Key, "amount");
+    EXPECT_EQ(card.CommitEdit("inputs.amount", "3.6"), PropertyEditResult::Applied);
+    EXPECT_DOUBLE_EQ(events->Find(key)->Inputs[0].Literal.AsNumber(), 4.0) << "an int input takes whole numbers";
+    EXPECT_EQ(card.CommitEdit("inputs.amount", "lots"), PropertyEditResult::Refused);
+
+    EXPECT_EQ(card.Act("inputs.amount", "remove", ""), PropertyEditResult::Applied);
+    EXPECT_TRUE(events->Find(key)->Inputs.empty());
+    ASSERT_NE(NodeAt(card.Nodes(), "inputs.amount"), nullptr);
+    EXPECT_EQ(NodeAt(card.Nodes(), "inputs.amount")->Value, "Not supplied");
+    EXPECT_EQ(card.Act("inputs.amount", "supply", ""), PropertyEditResult::Applied);
+    ASSERT_EQ(events->Find(key)->Inputs.size(), 1u);
+    EXPECT_DOUBLE_EQ(events->Find(key)->Inputs[0].Literal.AsNumber(), 0.0);
+    EXPECT_EQ(card.Act("inputs.nothing", "supply", ""), PropertyEditResult::Refused);
+
+    EXPECT_EQ(card.CommitEdit("binding", "anim.footstep"), PropertyEditResult::Applied);
+    ASSERT_EQ(events->Find(key)->Inputs.size(), 2u);
+    EXPECT_EQ(events->Find(key)->Inputs[0].Source, VerbArgumentSource::Tag) << "a tag input starts as a tag";
+    EXPECT_EQ(card.CommitEdit("inputs.surface", "Surface.Grass"), PropertyEditResult::Applied);
+    EXPECT_EQ(events->Find(key)->Inputs[0].Text, "Surface.Grass");
     workspace.Sources.DiscardAll();
 }

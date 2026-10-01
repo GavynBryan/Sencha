@@ -186,19 +186,21 @@ from the source on every import; the cook copies them into `.sanim`. A clip's
 events document reads the whole sidecar, edits that clip's entry, and writes
 every other clip's entry back as it found it.
 
-- **Clip events** picks a clip the open rig plays (or the auditioned one) and
-  shows its track: circles are cosmetic events, diamonds gameplay events, and
-  the playhead follows whichever preview is playing the clip. Double-click to
-  add, drag to move, right-click to delete. A drag is one undo step, and the
-  preview plays the marker's new time once it is released; Escape, focus loss
-  or hiding the panel cancel it and put the marker back.
-- The inspector edits name, normalized time, scope and a cosmetic event's own
-  weight threshold, then the binding: search the rig's bindings, open the
-  file that declares one, or create one from any declared verb (each argument
-  becomes an input of its name, for you to narrow). Each input the binding
-  takes gets a field typed by the argument it fills, lists every argument it
-  fills, and is checked against all of them with the rig binding's own
-  conversion. The verb's contract is shown beside it.
+- The auditioned clip's events are marks on the tape deck: circles are
+  cosmetic events, diamonds gameplay events. **E** adds one at the playhead,
+  a click picks it, a drag moves it, Delete removes it. A drag is one undo
+  step and the preview plays the marker's new time once it is released;
+  Escape, focus loss or hiding the workspace cancel it and put the marker
+  back. The events document sits on the dial as "<clip> events", and Ctrl+S
+  saves it while its card is up.
+- The event card (`AnimationEventProperties`) edits name, normalized time,
+  scope and a cosmetic event's own weight threshold, then the binding: choose
+  one of the rig's bindings, open the file that declares it, or create one from
+  any declared verb (each argument becomes an input of its name, for you to
+  narrow). Each input the binding takes gets a field typed by the argument it
+  fills, names every argument it fills, and is checked against all of them
+  with the rig binding's own conversion; a missing one can be supplied and a
+  stray one removed. The verb's contract is shown beside it.
 - Valid working events reach the preview at once through the production rig
   binding; invalid ones leave it on the last valid events, and say why. Only
   Save writes the sidecar, and it refuses a sidecar changed on disk.

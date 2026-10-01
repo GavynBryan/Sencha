@@ -1,6 +1,7 @@
 #include "AnimationWorkspace.h"
 
 #include "authoring/AnimationBoneProperties.h"
+#include "authoring/AnimationEventProperties.h"
 #include "authoring/AnimationExplorers.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigCreation.h"
@@ -21,7 +22,9 @@
 #include "render/RenderFeatureDetach.h"
 #include "workspaces/WorkspaceWindow.h"
 
+#include <anim/AnimationClip.h>
 #include <anim/Skeleton.h>
+#include <assets/cook/MeshImportSettings.h>
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <app/GameContexts.h>
@@ -37,6 +40,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <deque>
 #include <format>
@@ -84,6 +88,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
                                                             std::move(vocabulary), authoringRoot);
     Bone = std::make_unique<AnimationBoneProperties>(*Workspace);
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
+    EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
     Scenario = std::make_unique<AnimationScenarioProperties>(*Workspace);
     Creation = std::make_unique<AnimationRigCreation>(*Workspace, [this] { Subject = CardSubject::Stage; });
@@ -112,12 +117,15 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
         Picture = std::make_unique<ContentPicture>(*ui, "animation_stage");
 
     Surface.File.Save = [this, &sources] {
-        if (const DataDocument* active = Workspace->Documents.Active())
+        if (AnimationClipEventsDocument* events = AuditionedEvents(); events != nullptr && Subject == CardSubject::Events)
+            (void)sources.Save(Workspace->ClipEvents.RefOf(*events));
+        else if (const DataDocument* active = Workspace->Documents.Active())
             (void)sources.Save(Workspace->Documents.RefOf(*active));
     };
     AddAnimationPreviewPanels(Surface, *Workspace);
     DefineActions(catalog);
     DefineTransport(catalog);
+    DefineEventActions(catalog);
     RegisterCommands();
 }
 
@@ -135,6 +143,7 @@ AnimationWorkspace::~AnimationWorkspace()
     Scenario.reset();
     Audition.reset();
     Bone.reset();
+    EventCard.reset();
     Clock.reset();
     Workspace.reset();
 }
@@ -208,8 +217,7 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
                   .DefaultChords = { { SDLK_N, { .Ctrl = true } } } },
                 { .Invoke = [this] {
                     NewDocument->Clear();
-                    Workspace->Rig.Navigation.Joint = -1;
-                    Subject = CardSubject::NewDocument;
+                    ShowCard(CardSubject::NewDocument);
                 } });
     OfferAction(catalog, ActionHandlers,
                 { .Id = "animation.document.close", .Label = "Close Document", .Category = "File",
@@ -219,8 +227,7 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
     const auto rigOpen = [this] { return Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty(); };
     OfferAction(catalog, ActionHandlers, { .Id = "animation.rig.new", .Label = "New Rig", .Category = "Resource" },
                 { .Invoke = [this] {
-                    Workspace->Rig.Navigation.Joint = -1;
-                    Subject = CardSubject::NewRig;
+                    ShowCard(CardSubject::NewRig);
                 } });
     OfferAction(catalog, ActionHandlers,
                 { .Id = "animation.scenario.save", .Label = "Save Scenario", .Category = "Resource" },
@@ -271,9 +278,107 @@ void AnimationWorkspace::DefineTransport(ActionCatalog& catalog)
           { .Invoke = [this] { Clock->ReturnToLive(); }, .Checked = [this] { return Clock->IsLive(); } });
 }
 
+void AnimationWorkspace::DefineEventActions(ActionCatalog& catalog)
+{
+    const auto events = [this] { return !Clock->IsSimulation() && AuditionedEvents() != nullptr; };
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.event.add", .Label = "Add Event at Playhead", .Category = "Edit",
+                  .DefaultChords = { { SDLK_E, {} } } },
+                { .Invoke = [this] {
+                      AnimationClipEventsDocument* document = AuditionedEvents();
+                      if (document == nullptr)
+                          return;
+                      AnimationClipEvent event;
+                      event.Time = static_cast<float>(std::clamp(Workspace->Audition.Session.NormalizedTime(), 0.0, 1.0));
+                      if (const AnimBoundRig* rig = Workspace->Rig.Simulation.Rig(); rig != nullptr && rig->Bindings.Size() > 0)
+                          event.Binding = rig->Bindings.All().front().KeyText;
+                      else
+                          event.Binding = "anim.event";
+                      PickedEvent = document->Add(std::move(event));
+                      Workspace->ClipEvents.Changed(*document);
+                      ShowCard(CardSubject::Events);
+                  },
+                  .Enabled = events });
+    OfferAction(catalog, ActionHandlers, DeleteAction(),
+                { .Invoke = [this] {
+                      AnimationClipEventsDocument* document = AuditionedEvents();
+                      if (document == nullptr || !PickedEvent)
+                          return;
+                      document->Remove(*PickedEvent);
+                      PickedEvent.reset();
+                      Workspace->ClipEvents.Changed(*document);
+                  },
+                  .Enabled = [this] { return Subject == CardSubject::Events && PickedEvent.has_value(); } });
+}
+
+AnimationClipEventsDocument* AnimationWorkspace::AuditionedEvents() const
+{
+    AnimationClipEventsDocument* document = Workspace->ClipEvents.Active();
+    return document != nullptr && document->ClipPath() == Workspace->Audition.ClipPath ? document : nullptr;
+}
+
+void AnimationWorkspace::FollowAuditionedClip()
+{
+    const std::string& clip = Workspace->Audition.ClipPath;
+    if (clip == FollowedClip)
+        return;
+    FollowedClip = clip;
+    PickedEvent.reset();
+    if (!clip.empty() && MeshClipSourceOf(clip).has_value())
+    {
+        Workspace->Sources.CancelEdits();
+        std::string error;
+        (void)Workspace->ClipEvents.OpenOrFocus(clip, error);
+    }
+}
+
 WorkspaceTimelineFacet AnimationWorkspace::Timeline()
 {
-    return Clock->Facet();
+    WorkspaceTimelineFacet facet = Clock->Facet();
+    const AnimationClipEventsDocument* document = Clock->IsSimulation() ? nullptr : AuditionedEvents();
+    if (document == nullptr || facet.End <= 0.0)
+        return facet;
+    for (const AnimationClipEvent& event : document->Events())
+        facet.Marks.push_back({ .Key = std::to_string(event.Key),
+                                .Time = static_cast<double>(event.Time) * facet.End,
+                                .Label = EventLabel(event),
+                                .Shape = event.Scope == AnimEventScope::Gameplay ? TimelineMarkShape::Diamond
+                                                                                  : TimelineMarkShape::Round,
+                                .Selected = PickedEvent == event.Key,
+                                .Movable = true });
+    return facet;
+}
+
+void AnimationWorkspace::PickMark(std::string_view key)
+{
+    std::uint32_t event = 0;
+    if (std::from_chars(key.data(), key.data() + key.size(), event).ec != std::errc{})
+        return;
+    PickedEvent = event;
+    ShowCard(CardSubject::Events);
+}
+
+void AnimationWorkspace::MoveMark(std::string_view key, double time, TimelineDrag drag)
+{
+    AnimationClipEventsDocument* document = AuditionedEvents();
+    const double duration = Workspace->Audition.Session.Duration();
+    std::uint32_t eventKey = 0;
+    if (document == nullptr || duration <= 0.0
+        || std::from_chars(key.data(), key.data() + key.size(), eventKey).ec != std::errc{})
+        return;
+    if (drag == TimelineDrag::Begin)
+    {
+        PickMark(key);
+        Workspace->Sources.CancelEdits();
+    }
+    else if (document->EditingKey() != eventKey)
+        return;
+    PreviewEventTime(Workspace->ClipEvents, *document, eventKey, time / duration);
+    if (drag == TimelineDrag::End && document->IsEditing())
+    {
+        document->CommitEdit();
+        Workspace->ClipEvents.Changed(*document);
+    }
 }
 
 void AnimationWorkspace::Scrub(double time, TimelineDrag)
@@ -287,6 +392,7 @@ void AnimationWorkspace::Tick(FrameUpdateContext& ctx)
     // place and resumes where it stopped.
     if (!Visible)
         return;
+    FollowAuditionedClip();
     Workspace->Advance(ctx.WallDeltaSeconds);
     Workspace->ExtractViewport();
     if (Viewport != nullptr && FramedMesh != Workspace->Audition.MeshPath)
@@ -436,6 +542,10 @@ void AnimationWorkspace::RevealDocument(const DocumentRef& document)
 WorkspaceDocumentFacet AnimationWorkspace::Document() const
 {
     WorkspaceDocumentFacet facet;
+    if (const AnimationClipEventsDocument* events = AuditionedEvents())
+        facet.Open.push_back({ .Key = "events:" + events->ClipPath(),
+                               .Label = std::string(LeafOf(events->ClipPath())) + " events",
+                               .Changed = events->IsDirty() });
     for (const DataDocument* document : Workspace->Documents.Documents())
         facet.Open.push_back({ .Key = document->VirtualPath(),
                                .Label = std::string(LeafOf(document->VirtualPath())),
@@ -451,18 +561,28 @@ WorkspaceDocumentFacet AnimationWorkspace::Document() const
 
 void AnimationWorkspace::ShowDocument(std::string_view key)
 {
+    if (key.starts_with("events:"))
+    {
+        PickedEvent.reset();
+        ShowCard(CardSubject::Events);
+        return;
+    }
     if (const std::optional<std::size_t> index = Workspace->Documents.IndexOf(key))
         Workspace->Documents.SetActive(*index);
+    ShowCard(CardSubject::Document);
+}
+
+void AnimationWorkspace::ShowCard(CardSubject subject)
+{
     Workspace->Rig.Navigation.Joint = -1;
-    Subject = CardSubject::Document;
+    Subject = subject;
 }
 
 void AnimationWorkspace::OpenDocument(const std::string& path)
 {
     if (Workspace->Documents.OpenOrFocus(path, Workspace->DocumentError) == nullptr)
         return;
-    Workspace->Rig.Navigation.Joint = -1;
-    Subject = CardSubject::Document;
+    ShowCard(CardSubject::Document);
 }
 
 void AnimationWorkspace::CloseActiveDocument()
@@ -508,6 +628,14 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         const std::string& name = skeleton.Joints[static_cast<std::size_t>(joint)].Name;
         return { .Title = name.empty() ? std::string("Unnamed joint") : name,
                  .Sections = { { .Heading = {}, .Source = Bone.get() } } };
+    }
+    if (Subject == CardSubject::Events && AuditionedEvents() != nullptr)
+    {
+        const AnimationClipEventsDocument& document = *AuditionedEvents();
+        const AnimationClipEvent* event = PickedEvent ? document.Find(*PickedEvent) : nullptr;
+        return { .Title = event == nullptr ? std::string(LeafOf(document.ClipPath())) + " events" : EventLabel(*event),
+                 .Actions = { "animation.event.add", "edit.delete", "file.save" },
+                 .Sections = { { .Heading = {}, .Source = EventCard.get() } } };
     }
     if (Subject == CardSubject::NewRig)
         return { .Title = "New rig", .Sections = { { .Heading = {}, .Source = Creation.get() } } };

@@ -254,7 +254,6 @@ void LevelWorkspace::BuildInput()
         std::function<void()> Invoke;
     };
     const LevelAction actions[] = {
-        { "edit.delete",           "Delete",                      "Edit",     { SDLK_DELETE, {} },                        [this] { Workspace->DeleteSelection(); } },
         { "edit.dissolve",         "Dissolve Edges",              "Edit",     { SDLK_BACKSPACE, {} },                     [this] { Workspace->DissolveSelectedEdges(); } },
         { "edit.select_all",       "Select All",                  "Edit",     { SDLK_A, { .Ctrl = true } },               [this] { Workspace->SelectAll(); } },
         { "edit.duplicate",        "Duplicate",                   "Edit",     { SDLK_D, { .Ctrl = true } },               [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } },
@@ -277,6 +276,7 @@ void LevelWorkspace::BuildInput()
     for (const LevelAction& action : actions)
         offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
     OfferAction(Catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] { Workspace->EscapeStep(); } });
+    OfferAction(Catalog, ActionHandlers, DeleteAction(), { .Invoke = [this] { Workspace->DeleteSelection(); } });
     OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
     Verbs = std::make_unique<ElementVerbs>(*Workspace, [this] { ExportSelectionGlb(); });
     Verbs->Offer(Catalog, ActionHandlers);
