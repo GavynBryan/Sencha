@@ -28,7 +28,7 @@ bool MaterialPreviewRenderFeature::Setup(const RenderFeatureServices& featureSer
 {
     const RendererServices& services = *featureServices.Backend;
     Services = services;
-    Targets.Setup(services, services.Samplers != nullptr ? services.Samplers->GetLinearClamp() : VK_NULL_HANDLE);
+    Targets.Setup(services);
     RenderTargetDesc scene{};
     scene.ColorFormat = kPreviewColorFormat;
     scene.DepthFormat = services.DepthFormat;
@@ -93,7 +93,7 @@ void MaterialPreviewRenderFeature::Show(VkExtent2D extent, UiHostImageId image)
 void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
 {
     const FrameContext& frame = *renderFrame.Backend;
-    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
+    Targets.BeginFrame(frame.FrameInFlightIndex);
     const std::optional<RenderTargetView> target = Targets.Acquire(SceneTarget);
     if (!target)
     {
