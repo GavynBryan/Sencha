@@ -5,6 +5,7 @@
 #include <core/json/JsonStringify.h>
 #include <ui/UiService.h>
 
+#include <algorithm>
 #include <fstream>
 
 namespace
@@ -356,4 +357,14 @@ bool UiPreviewModel::DeclaresAction(std::string_view name) const
         if (a == name)
             return true;
     return false;
+}
+
+bool UiPreviewModel::operator==(const UiPreviewModel& other) const
+{
+    const auto sameProperty = [](const UiModelProperty& a, const UiModelProperty& b) {
+        return a.Path == b.Path && a.Initial == b.Initial && a.Editable == b.Editable;
+    };
+    return ModelName == other.ModelName && Modal == other.Modal && Arrays == other.Arrays && Rows == other.Rows
+           && Actions == other.Actions
+           && std::ranges::equal(Properties, other.Properties, sameProperty);
 }

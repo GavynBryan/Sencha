@@ -288,8 +288,8 @@ body
 
 #instrument_row { display: flex; gap: 8dp; }
 
-/* Above the bottom instruments as a card; along the right edge, from the rail
-   down, as the drawer. */
+/* Above the bottom instruments as a card; along the right edge, from under the
+   view instrument down, as the drawer. */
 #selection_card
 {
     display: block;
@@ -310,7 +310,7 @@ body
 #selection_card.shut * { pointer-events: none; }
 .moving #selection_card { transition: opacity transform 0.14s cubic-out; }
 
-#selection_card.drawer { top: 42dp; width: 360dp; max-height: none; }
+#selection_card.drawer { top: 84dp; width: 360dp; max-height: none; }
 /* The work itself: a sheet down the middle of the window, each field's help
    in the margin beside it. */
 #selection_card.sheet { left: 50%; right: auto; top: 72dp; bottom: 60dp; width: 760dp; margin-left: -380dp; max-height: none; }

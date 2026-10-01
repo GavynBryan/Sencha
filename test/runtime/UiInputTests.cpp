@@ -284,6 +284,34 @@ TEST(UiInput, EventsAreOfferedToTheTopmostSurfaceFirst)
         << "the click went to the surface underneath the one on top";
 }
 
+TEST(UiInput, AWindowsOwnSurfaceIsAboveAnOffscreenOneShownBeneathIt)
+{
+    // An editor shows a previewed document under its own panels: the preview's
+    // offscreen surface is placed where its picture is, and was made after
+    // the window's surface, yet a click on the panel above it is the panel's.
+    TempAssetRoot root;
+    WritePackage(root, "ui/menu.sui");
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+
+    const UiSurfaceId window = ui.CreateSurface("window", RenderExtent{ 800, 600 });
+    const UiSurfaceId preview = ui.CreateSurface("preview", RenderExtent{ 800, 600 });
+    ui.SetSurfaceDestination(preview, UiSurfaceDestination::Offscreen);
+    ui.SetSurfacePlacement(preview, Rect2d(0.0f, 0.0f, 800.0f, 600.0f));
+    const UiScreenHandle windowScreen = ui.OpenScreen(window, MakeDesc());
+    const UiScreenHandle previewScreen = ui.OpenScreen(preview, MakeDesc());
+    ASSERT_TRUE(windowScreen.IsValid());
+    ASSERT_TRUE(previewScreen.IsValid());
+    ui.Update();
+
+    ClickAt(ui, 150.0f, 130.0f);
+    ui.Update();
+    const std::vector<UiAction> actions = ui.DrainActions();
+    ASSERT_EQ(actions.size(), 1u);
+    EXPECT_EQ(actions[0].Screen, windowScreen) << "the offscreen surface took a click aimed at the window's own";
+    EXPECT_FALSE(ui.IsPointerOver(preview)) << "the surface below was told the pointer is not over it";
+}
+
 TEST(UiInput, NavigationComesFromTheHostsActionsNotFromKeys)
 {
     // The point is the direction of the dependency: the host decides that some

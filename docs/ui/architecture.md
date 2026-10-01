@@ -652,26 +652,25 @@ swapchain in the `ApplicationUi` phase. `Offscreen` is published through
 host feature asked for it draws it into a target of its own with a `UiDrawPass`
 instance of its own. The engine learns only the split -- `ExtractRender` sorts
 recordings into two lists by destination. The target, its format and its
-presentation stay the host's, which is what `RenderTargetStore` and
-`ImGuiTargetPresenter` already said about editor viewports.
+presentation stay the host's, which is what `RenderTargetStore` and the host
+images already said about editor viewports.
 
 The editor family's consumer is `UiSurfaceTargetRenderFeature`
 (`editor/common/src/render/`): one `Offscreen`-phase feature, N surface-to-target
 bindings, each target sized from `GetSurfaceSize` every frame so the pass's
 projection (taken from the surface) and its viewport (taken from the target)
 agree. A binding is the host's declaration, not device state: it is made while
-the composition root is wiring panels -- before any feature has been set up --
-and the target behind it is created on the first frame it is drawn and remade
-after a teardown. A panel is therefore given its binding id when it is
-constructed, which is the only way it can be given a valid one. Three facts fix
-the details:
+the workspace is wiring itself -- before any feature has been set up -- and the
+target behind it is created on the first frame it is shown and remade after a
+teardown. Each frame the workspace names the host image to show it in
+(`Show(binding, image)`), and the feature publishes the target's bindless slot
+to that image once the frame's recording ends. Three facts fix the details:
 
 - the target is `B8G8R8A8_SRGB` like the swapchain: the shaders output linear and
-  rely on encode-on-write, and sampled by ImGui into an sRGB swapchain the round
-  trip is exact;
-- it is cleared opaque with the host's ground colour, because the pass blends
-  premultiplied and ImGui composites straight alpha -- a transparent target would
-  be alpha-multiplied twice at every anti-aliased edge;
+  rely on encode-on-write, and sampled back through a host image into an sRGB
+  swapchain the round trip is exact;
+- it is cleared opaque with the host's ground colour, so the document composites
+  the same whatever shows it;
 - it carries a stencil aspect when the device has one (`FormatHasStencil`), so a
   clip mask renders the same as on the swapchain instead of falling back to the
   rectangular clip the pass warns about.
@@ -688,6 +687,15 @@ may still ask `ElementAt` with a point it mapped itself), `Pointer` pointer and
 wheel, `Full` keys and text as well. A drag that started inside a placement keeps
 the pointer until the button comes up, wherever it comes up, so a slider survives
 an overshoot; leaving the placement sends the document one mouse-leave.
+
+**A window's own surfaces are above its offscreen ones.** Events are offered
+topmost first and stop at the first surface that consumes them. A window
+surface is drawn over everything its host composites, an offscreen surface's
+picture included, so window surfaces are asked first; within each kind,
+reverse creation order is the stacking. A previewed document placed under an
+editor's panels therefore never takes a click aimed at a panel, however late it
+was created. A surface under a consumed move is sent a mouse-leave, so nothing
+on it stays hovered.
 
 ### Inspection
 

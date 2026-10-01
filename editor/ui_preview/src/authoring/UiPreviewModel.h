@@ -39,6 +39,8 @@ struct UiPreviewModel
     {
         std::string Name;
         std::vector<std::string> Items;
+
+        bool operator==(const ArraySample&) const = default;
     };
     std::vector<ArraySample> Arrays;
 
@@ -46,6 +48,8 @@ struct UiPreviewModel
     {
         std::string Name;
         std::vector<UiRow> Items;
+
+        bool operator==(const RowsSample&) const = default;
     };
     std::vector<RowsSample> Rows;
 
@@ -71,4 +75,7 @@ struct UiPreviewModel
     [[nodiscard]] bool DeclaresArray(std::string_view name) const;
     [[nodiscard]] bool DeclaresRows(std::string_view name) const;
     [[nodiscard]] bool DeclaresAction(std::string_view name) const;
+
+    // The same declarations and samples, as a saved sidecar would compare.
+    [[nodiscard]] bool operator==(const UiPreviewModel& other) const;
 };

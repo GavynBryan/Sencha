@@ -4,6 +4,7 @@
 #include "authoring/PreviewFraming.h"
 #include "authoring/PreviewReports.h"
 #include "authoring/UiPreviewModel.h"
+#include "authoring/VocabularyOutline.h"
 
 #include <gtest/gtest.h>
 
@@ -38,7 +39,7 @@ std::vector<UiElementInfo> Tree()
     return tree;
 }
 
-ExplorerQuery Query(std::string filter = {})
+ExplorerQuery Page(std::string filter = {})
 {
     return { .Explorer = "outline", .Filter = std::move(filter), .First = 0, .Count = 50 };
 }
@@ -82,14 +83,14 @@ TEST(ElementOutline, ElementsSitUnderTheirParentsAndABranchCloses)
 {
     const std::vector<UiElementInfo> tree = Tree();
     ElementOutline outline;
-    EXPECT_EQ(Labels(outline.Explore(tree, {}, Query())),
+    EXPECT_EQ(Labels(outline.Explore(tree, {}, Page())),
               (std::vector<std::string>{ "body", " div#menu", "  button.play", "  button.quit", " span" }));
     outline.Flip(tree[1].Ref);
-    const ExplorerPage closed = outline.Explore(tree, {}, Query());
+    const ExplorerPage closed = outline.Explore(tree, {}, Page());
     EXPECT_EQ(Labels(closed), (std::vector<std::string>{ "body", " div#menu", " span" }));
     EXPECT_EQ(closed.Items[1].Branch, ExplorerBranch::Closed);
 
-    const ExplorerPage revealed = outline.Explore(tree, tree[3].Ref, Query());
+    const ExplorerPage revealed = outline.Explore(tree, tree[3].Ref, Page());
     EXPECT_EQ(revealed.Items.size(), 5u) << "picking an element opens the branches above it";
     EXPECT_TRUE(revealed.Items[3].Current);
 }
@@ -98,9 +99,9 @@ TEST(ElementOutline, AFilterKeepsWhatMatchesAndWhatHoldsIt)
 {
     const std::vector<UiElementInfo> tree = Tree();
     ElementOutline outline;
-    EXPECT_EQ(Labels(outline.Explore(tree, {}, Query("quit"))),
+    EXPECT_EQ(Labels(outline.Explore(tree, {}, Page("quit"))),
               (std::vector<std::string>{ "body", " div#menu", "  button.quit" }));
-    const std::optional<UiElementRef> quit = ElementOutline::Resolve(tree, outline.Explore(tree, {}, Query("quit")).Items[2].Key);
+    const std::optional<UiElementRef> quit = ElementOutline::Resolve(tree, outline.Explore(tree, {}, Page("quit")).Items[2].Key);
     ASSERT_TRUE(quit.has_value());
     EXPECT_EQ(*quit, tree[3].Ref);
     EXPECT_FALSE(ElementOutline::Resolve(tree, "9:1").has_value()) << "a rebuilt element resolves to nothing";
@@ -118,15 +119,15 @@ TEST(LibraryOutline, DocumentsAreListedUnderTheirLibrary)
     library.Rescan();
 
     LibraryOutline outline;
-    const ExplorerPage page = outline.Explore(library, "asset://ui/pause.rml", Query());
+    const ExplorerPage page = outline.Explore(library, "asset://ui/pause.rml", Page());
     ASSERT_EQ(page.Items.size(), 3u);
     EXPECT_EQ(page.Items[0].Label, "Project");
     EXPECT_EQ(page.Items[0].Branch, ExplorerBranch::Open);
     EXPECT_TRUE(page.Items[2].Current) << page.Items[2].Key;
-    EXPECT_EQ(Labels(outline.Explore(library, {}, Query("pause"))).size(), 2u);
+    EXPECT_EQ(Labels(outline.Explore(library, {}, Page("pause"))).size(), 2u);
 
     EXPECT_TRUE(outline.Flip(page.Items[0].Key));
-    EXPECT_EQ(outline.Explore(library, {}, Query()).Items.size(), 1u);
+    EXPECT_EQ(outline.Explore(library, {}, Page()).Items.size(), 1u);
     EXPECT_FALSE(outline.Flip(page.Items[1].Key)) << "a document is opened, not folded";
 
     std::error_code ec;
@@ -167,4 +168,41 @@ TEST(PreviewReports, ARaisedActionReadsAsItsNameAndArguments)
     action.Id = UiActionIdAt(5);
     action.Arguments.clear();
     EXPECT_EQ(DescribeRaisedAction(action, model), "action 6") << "undeclared, said by its number";
+}
+
+TEST(VocabularyOutline, TheVocabularyReadsAsBranchesAndAnUnresolvedRecordIsAProblem)
+{
+    const VocabularyCatalog catalog;
+    BindingAsset asset{ .Path = "asset://data/menu.bindings.sdata", .Records = {} };
+    VocabularyCatalog::BindingRow play;
+    play.Key = "play";
+    play.VerbName = "runtime.resume";
+    play.Resolved = true;
+    VocabularyCatalog::BindingRow nope;
+    nope.Key = "nope";
+    nope.VerbName = "no.such.verb";
+    nope.Error = "unknown verb";
+    asset.Records = { play, nope };
+    const std::vector<BindingAsset> bindings{ asset };
+
+    VocabularyOutline outline;
+    const ExplorerPage page = outline.Explore(catalog, bindings, Page());
+    ASSERT_FALSE(page.Items.empty());
+    EXPECT_EQ(page.Items.front().Label, "Verbs");
+    const auto bindingsBranch = std::ranges::find(page.Items, std::string("Bindings"), &ExplorerItem::Label);
+    ASSERT_NE(bindingsBranch, page.Items.end());
+    EXPECT_EQ(page.Items.back().Label, "nope > no.such.verb · does not resolve");
+
+    const ExplorerPage filtered = outline.Explore(catalog, bindings, Page("no.such"));
+    EXPECT_EQ(Labels(filtered), (std::vector<std::string>{ "Bindings", " asset://data/menu.bindings.sdata",
+                                                           "  nope > no.such.verb · does not resolve" }));
+
+    EXPECT_TRUE(outline.Flip(bindingsBranch->Key));
+    const ExplorerPage closed = outline.Explore(catalog, bindings, Page());
+    EXPECT_EQ(closed.Items.back().Label, "Bindings") << "a closed branch hides what is under it";
+
+    const std::vector<Problem> problems = VocabularyProblems(catalog, bindings);
+    ASSERT_EQ(problems.size(), 1u);
+    EXPECT_EQ(problems[0].Location, asset.Path);
+    EXPECT_NE(problems[0].Message.find("unknown verb"), std::string::npos);
 }

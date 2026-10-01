@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
+#include "authoring/BindingMissProperties.h"
 #include "authoring/ElementOutline.h"
 #include "authoring/ElementProperties.h"
+#include "authoring/PreviewModelProperties.h"
 #include "authoring/PreviewReports.h"
 #include "authoring/SurfaceProperties.h"
 #include "authoring/UiPreviewSession.h"
@@ -267,4 +269,69 @@ TEST(UiPreviewSession, ReopenAppliesAnEditedModelAndCloseLeavesNothingOpen)
     session.Close();
     EXPECT_FALSE(session.IsOpen());
     EXPECT_FALSE(f.Ui->IsScreenOpen(screen));
+}
+
+TEST(UiPreviewSession, TheModelCardPublishesSamplesAndRedeclaresDeclarations)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    UiPreviewModel model = Fixture::Model();
+    model.Arrays.push_back({ "entries", { "Resume", "Quit" } });
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", model));
+    PreviewModelProperties card(session);
+    card.MarkSaved();
+    EXPECT_FALSE(card.Changed());
+
+    const UiScreenHandle opened = session.OpenScreen();
+    ASSERT_TRUE(card.BeginEdit("lists.0.items.1"));
+    EXPECT_EQ(card.CommitEdit("lists.0.items.1", "Exit"), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Model().Arrays[0].Items[1], "Exit");
+    EXPECT_EQ(session.OpenScreen(), opened) << "a sample publishes to the open screen";
+    EXPECT_TRUE(card.Changed());
+
+    ASSERT_TRUE(card.BeginEdit("properties.0.name"));
+    EXPECT_EQ(card.CommitEdit("properties.0.name", "heading"), PropertyEditResult::Applied);
+    EXPECT_NE(session.OpenScreen(), opened) << "a declaration remakes the screen";
+    EXPECT_EQ(card.CommitEdit("properties.0.name", "heading"), PropertyEditResult::Unchanged);
+
+    ASSERT_TRUE(card.BeginEdit("properties.0.kind"));
+    EXPECT_EQ(card.CommitEdit("properties.0.kind", "int"), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Model().Properties[0].Initial, UiValue(std::int64_t{ 0 })) << "a new kind starts at its default";
+    EXPECT_EQ(card.CommitEdit("properties.0.sample", "seven"), PropertyEditResult::Refused);
+
+    ASSERT_TRUE(card.BeginEdit("model.name"));
+    EXPECT_EQ(card.PreviewEdit("model.name", "other"), PropertyEditResult::Applied);
+    card.CancelEdit("model.name");
+    EXPECT_EQ(session.Model().ModelName, "m") << "a cancel puts back what the edit found";
+
+    EXPECT_EQ(card.Act("actions", "add", {}), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Model().Actions.back(), "new_action");
+    EXPECT_EQ(card.Act("lists.0.items.0", "remove", {}), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Model().Arrays[0].Items, (std::vector<std::string>{ "Exit" }));
+    EXPECT_EQ(card.Act("lists.4", "remove", {}), PropertyEditResult::Gone);
+
+    card.MarkSaved();
+    EXPECT_FALSE(card.Changed());
+}
+
+TEST(UiPreviewSession, AMissingBindingIsDeclaredFromTheCard)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    f.Ui->Update();
+    session.Poll();
+    BindingMissProperties misses(session);
+    std::vector<PropertyNode> nodes = misses.Nodes();
+    const auto missing = std::ranges::find_if(nodes, [](const PropertyNode& node) { return node.Value == "missing"; });
+    ASSERT_NE(missing, nodes.end());
+    ASSERT_FALSE(missing->Descriptor.Verbs.empty());
+    EXPECT_EQ(missing->Descriptor.Verbs.front().Id, "property");
+
+    EXPECT_EQ(misses.Act(missing->Key, "property", {}), PropertyEditResult::Applied);
+    EXPECT_TRUE(session.Model().DeclaresProperty("missing"));
+    f.Ui->Update();
+    session.Poll();
+    for (const PropertyNode& node : misses.Nodes())
+        EXPECT_NE(node.Value, "missing") << "declared, so no longer missing";
 }

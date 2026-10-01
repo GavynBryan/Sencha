@@ -1158,14 +1158,14 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
     if (!Ready)
         return false;
 
-    // Topmost first, and the first surface to consume ends it. Surfaces are
-    // created bottom-up, so reverse creation order is the z-order a host would
-    // expect without having to state one. Only the event's window's surfaces
-    // are asked: another window's surface is not under this pointer at all.
+    // Topmost first, and the first surface to consume ends it. Only the event's
+    // window's surfaces are asked: another window's surface is not under this
+    // pointer at all.
     const std::uint32_t eventWindow = SdlEventWindowId(event);
-    for (auto it = Surfaces.rbegin(); it != Surfaces.rend(); ++it)
+    const std::vector<std::size_t> order = InputOrder();
+    for (auto it = order.begin(); it != order.end(); ++it)
     {
-        Surface& surface = *it;
+        Surface& surface = Surfaces[*it];
         if (!surface.Live || surface.Context == nullptr)
             continue;
         if (surface.InputPolicy == UiSurfaceInputPolicy::Disabled)
@@ -1206,7 +1206,21 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
             surface.PointerY = at.Y;
             surface.PointerInside = at.Inside;
             if (!context.ProcessMouseMove(at.X, at.Y, modifiers) || surface.PointerOwned)
+            {
+                // The surfaces below never see this move, so nothing on them
+                // stays hovered under a pointer that is no longer theirs.
+                for (auto below = std::next(it); below != order.end(); ++below)
+                {
+                    Surface& under = Surfaces[*below];
+                    if (under.Live && under.Context != nullptr && under.PointerInside && !under.PointerOwned
+                        && Hears(under, eventWindow))
+                    {
+                        under.PointerInside = false;
+                        (void)under.Context->ProcessMouseLeave();
+                    }
+                }
                 return true;
+            }
             break;
         }
 
@@ -1249,10 +1263,11 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
                 // the person has moved on here rather than left focused.
                 if (down)
                 {
-                    for (auto below = std::next(it); below != Surfaces.rend(); ++below)
+                    for (auto below = std::next(it); below != order.end(); ++below)
                     {
-                        if (below->Live && below->Context != nullptr && Hears(*below, eventWindow))
-                            DropFocus(*below->Context);
+                        Surface& under = Surfaces[*below];
+                        if (under.Live && under.Context != nullptr && Hears(under, eventWindow))
+                            DropFocus(*under.Context);
                     }
                 }
                 return true;
@@ -1316,6 +1331,21 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
     }
 
     return false;
+}
+
+std::vector<std::size_t> UiRuntime::InputOrder() const
+{
+    // A window's own surfaces are drawn over everything its host composites,
+    // an offscreen surface's picture included, so they are asked first. Within
+    // each, surfaces are created bottom-up, so reverse creation order is the
+    // z-order a host would expect without having to state one.
+    std::vector<std::size_t> order(Surfaces.size());
+    for (std::size_t i = 0; i < order.size(); ++i)
+        order[i] = order.size() - 1 - i;
+    std::stable_partition(order.begin(), order.end(), [this](std::size_t index) {
+        return Surfaces[index].Destination == UiSurfaceDestination::Window;
+    });
+    return order;
 }
 
 UiInputCapture UiRuntime::Capture() const

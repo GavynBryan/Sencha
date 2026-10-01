@@ -1,8 +1,6 @@
 #include "UiPreviewWorkspace.h"
 
 #include "authoring/PreviewReports.h"
-#include "ui/ModelPanel.h"
-#include "ui/VocabularyPanel.h"
 
 #include "EditorTheme.h"
 #include "actions/ActionOffer.h"
@@ -46,8 +44,10 @@ constexpr std::string_view kTargetFeatureId = "ui_surface_target";
 constexpr std::array<std::string_view, 1> kTargetDependsOn{ "editor_ui" };
 constexpr std::string_view kCommandOwner = "editor.ui_preview";
 constexpr std::string_view kProblemSource = "ui_preview";
+constexpr std::string_view kVocabularyProblemSource = "vocabulary";
 constexpr std::string_view kDocumentsExplorer = "ui_documents";
 constexpr std::string_view kOutlineExplorer = "ui_outline";
+constexpr std::string_view kVocabularyExplorer = "vocabulary";
 
 constexpr const char* kLibraryProject = "Project";
 constexpr const char* kLibraryEngine = "Engine";
@@ -139,6 +139,7 @@ UiPreviewWorkspace::~UiPreviewWorkspace()
 {
     EngineRef.Console().Registry().UnregisterOwner(kCommandOwner);
     Problems.Clear(kProblemSource);
+    Problems.Clear(kVocabularyProblemSource);
     // The session closes its screen before the feature that drew it goes, and
     // the feature goes while the caches it borrows are still alive.
     Surface = WorkspaceView{};
@@ -199,44 +200,33 @@ void UiPreviewWorkspace::BuildUi()
     if (Target != nullptr)
         Binding = Target->Bind(Session->Surface(), PreviewGroundLinear());
 
-    Surface.Layout = DockLayoutRatios{ .Bottom = 0.22f, .Left = 0.20f, .Right = 0.26f, .RightBottom = 0.45f };
+    ModelCard = std::make_unique<PreviewModelProperties>(*Session);
+    MissCard = std::make_unique<BindingMissProperties>(*Session);
     Surface.File.Save = [this] { std::string error; (void)SaveModel(&error); };
-    Surface.AddPanel(std::make_unique<ModelPanel>(
-        *Session, ViewState,
-        ModelPanel::Actions{
-            .Save = [this](std::string* error) { return SaveModel(error); },
-            .Reset = [this] {
-                if (Session && Session->IsOpen())
-                    OpenDocument(Session->PackagePath());
-            },
-        }));
-    Surface.AddPanel(std::make_unique<VocabularyPanel>(Vocabulary, [this] {
-        // Every structured-data asset in the mounted stack whose compiled
-        // value is a binding set, inspected against the metadata catalog. The
-        // path order is sorted so the panel reads the same way twice.
-        std::vector<VocabularyPanel::BindingAsset> found;
-        RuntimeAssets& stack = EngineRef.Content().Assets();
-        std::vector<std::string> paths;
-        for (const auto& [path, record] : stack.Registry.Records())
-        {
-            if (record.Type == AssetType::Data)
-                paths.push_back(path);
-        }
-        std::sort(paths.begin(), paths.end());
-        for (const std::string& path : paths)
-        {
-            const AssetLease lease = stack.Assets.LoadLease(path, AssetType::Data);
-            if (!lease.IsValid())
-                continue;
-            const auto* library = stack.DataAssets.TryGet<VerbBindingLibrary>(
-                DataAssetHandle::FromToken(lease.OpaqueToken()), kVerbBindingsTypeName);
-            if (library == nullptr)
-                continue;
-            found.push_back({ path, Vocabulary.Inspect(*library, &stack.Registry,
-                                                         &stack.DataAssets) });
-        }
-        return found;
-    }));
+    ScanVocabulary();
+}
+
+void UiPreviewWorkspace::ScanVocabulary()
+{
+    // The path order is sorted so the explorer reads the same way twice.
+    Bindings.clear();
+    RuntimeAssets& stack = EngineRef.Content().Assets();
+    std::vector<std::string> paths;
+    for (const auto& [path, record] : stack.Registry.Records())
+        if (record.Type == AssetType::Data)
+            paths.push_back(path);
+    std::sort(paths.begin(), paths.end());
+    for (const std::string& path : paths)
+    {
+        const AssetLease lease = stack.Assets.LoadLease(path, AssetType::Data);
+        if (!lease.IsValid())
+            continue;
+        const auto* library = stack.DataAssets.TryGet<VerbBindingLibrary>(
+            DataAssetHandle::FromToken(lease.OpaqueToken()), kVerbBindingsTypeName);
+        if (library != nullptr)
+            Bindings.push_back({ path, Vocabulary.Inspect(*library, &stack.Registry, &stack.DataAssets) });
+    }
+    Problems.Publish(kVocabularyProblemSource, VocabularyProblems(Vocabulary, Bindings));
 }
 
 void UiPreviewWorkspace::DefineActions(ActionCatalog& catalog)
@@ -253,7 +243,21 @@ void UiPreviewWorkspace::DefineActions(ActionCatalog& catalog)
     OfferAction(catalog, ActionHandlers,
                 { .Id = "ui_preview.rescan", .Label = "Rescan Documents", .Category = "Explore", .Icon = IconId::Refresh,
                   .DefaultChords = { { SDLK_R, { .Ctrl = true } } } },
-                { .Invoke = [this] { RescanLibrary(); } });
+                { .Invoke = [this] {
+                    RescanLibrary();
+                    ScanVocabulary();
+                } });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "explorer.vocabulary", .Label = "Vocabulary", .Category = "Explore",
+                  .DefaultChords = { { SDLK_V, {} } } },
+                {});
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "ui_preview.revert_model", .Label = "Revert Preview Model", .Category = "File" },
+                { .Invoke = [this] {
+                      if (Session && Session->IsOpen())
+                          OpenDocument(Session->PackagePath());
+                  },
+                  .Enabled = [this] { return ModelCard != nullptr && ModelCard->Changed(); } });
     OfferAction(catalog, ActionHandlers,
                 { .Id = "ui_preview.edit_source", .Label = "Edit Document Source", .Category = "File" },
                 { .Invoke = [this] {
@@ -555,6 +559,8 @@ void UiPreviewWorkspace::OpenDocument(const std::string& packagePath)
     Session->ClearActions();
     if (!Session->Open(packagePath, std::move(model)))
         std::fprintf(stderr, "[ui preview] '%s' did not open; see the problems\n", packagePath.c_str());
+    if (ModelCard != nullptr)
+        ModelCard->MarkSaved();
 }
 
 void UiPreviewWorkspace::RescanLibrary()
@@ -573,7 +579,14 @@ bool UiPreviewWorkspace::SaveModel(std::string* error)
     }
     const bool saved = Session->Model().Save(UiPreviewModel::SidecarFor(OpenSource), error);
     if (saved)
+    {
         Library.Rescan();
+        ModelCard->MarkSaved();
+        Notices.Post("Saved the preview model", NoticeTone::Done, NoticeClockNow());
+    }
+    else
+        Notices.Post("The preview model did not save: " + (error != nullptr ? *error : std::string{}),
+                     NoticeTone::Failed, NoticeClockNow());
     return saved;
 }
 
@@ -598,7 +611,8 @@ const DocumentEntry* UiPreviewWorkspace::OpenEntry() const
 
 WorkspaceDocumentFacet UiPreviewWorkspace::Document() const
 {
-    return { .Label = Session ? Session->PackagePath() : std::string{} };
+    return { .Label = Session ? Session->PackagePath() : std::string{},
+             .Changed = ModelCard != nullptr && ModelCard->Changed() };
 }
 
 WorkspaceOperationFacet UiPreviewWorkspace::Operation()
@@ -638,9 +652,13 @@ WorkspaceSelectionFacet UiPreviewWorkspace::Selection()
                  .Actions = { "ui_preview.edit_source" },
                  .Sections = { { .Heading = {}, .Source = ElementCard.get() } } };
     const std::string& package = Session->PackagePath();
-    return { .Title = package.substr(package.find_last_of('/') + 1),
-             .Actions = { "ui_preview.edit_source" },
-             .Sections = { { .Heading = "Surface", .Source = SurfaceCard.get() } } };
+    WorkspaceSelectionFacet surface{ .Title = package.substr(package.find_last_of('/') + 1),
+                                     .Actions = { "ui_preview.edit_source", "ui_preview.revert_model" },
+                                     .Sections = { { .Heading = "Surface", .Source = SurfaceCard.get() } },
+                                     .Details = { { .Heading = "Preview model", .Source = ModelCard.get() } } };
+    if (!MissCard->Nodes().empty())
+        surface.Sections.push_back({ .Heading = "Missing from the model", .Source = MissCard.get() });
+    return surface;
 }
 
 bool UiPreviewWorkspace::RevealProblem(const Problem& problem)
@@ -650,9 +668,10 @@ bool UiPreviewWorkspace::RevealProblem(const Problem& problem)
     });
     if (!ours || problem.Location.empty())
         return false;
+    // What the model misses is listed on the surface's card.
     if (problem.Location == kPreviewModelLocation)
     {
-        ViewState.ShowBindings = true;
+        Selected = {};
         return true;
     }
     const std::string path = problem.Location.substr(0, problem.Location.find(':'));
@@ -669,7 +688,9 @@ std::vector<WorkspaceExplorerInfo> UiPreviewWorkspace::Explorers() const
     return { { .Id = std::string(kDocumentsExplorer), .Title = "Documents", .Shape = ExplorerShape::Outline,
                .Action = "explorer.ui_documents" },
              { .Id = std::string(kOutlineExplorer), .Title = "Elements", .Shape = ExplorerShape::Outline,
-               .Action = "explorer.ui_outline" } };
+               .Action = "explorer.ui_outline" },
+             { .Id = std::string(kVocabularyExplorer), .Title = "Vocabulary", .Shape = ExplorerShape::Outline,
+               .Action = "explorer.vocabulary" } };
 }
 
 ExplorerPage UiPreviewWorkspace::Explore(const ExplorerQuery& query)
@@ -677,6 +698,8 @@ ExplorerPage UiPreviewWorkspace::Explore(const ExplorerQuery& query)
     if (query.Explorer == kDocumentsExplorer)
         return Libraries.Explore(Library, Session ? std::string_view(Session->PackagePath()) : std::string_view{},
                                  query);
+    if (query.Explorer == kVocabularyExplorer)
+        return VocabularyExplorer.Explore(Vocabulary, Bindings, query);
     if (query.Explorer != kOutlineExplorer)
         return {};
     if (!Session || !Session->IsOpen())
@@ -692,6 +715,11 @@ ExplorerPage UiPreviewWorkspace::Explore(const ExplorerQuery& query)
 void UiPreviewWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
                                           std::size_t)
 {
+    if (explorer == kVocabularyExplorer)
+    {
+        (void)VocabularyExplorer.Flip(key);
+        return;
+    }
     if (explorer == kDocumentsExplorer)
     {
         if (Libraries.Flip(key) || choice == ExplorerChoice::Open)

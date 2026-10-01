@@ -429,6 +429,8 @@ private:
     // Whether an event from `eventWindow` is the surface's to hear. A windowless
     // event (a device, a key with nothing focused) belongs to the primary.
     [[nodiscard]] bool Hears(const Surface& surface, std::uint32_t eventWindow) const;
+    // Indices into Surfaces, topmost first, the order events are offered in.
+    [[nodiscard]] std::vector<std::size_t> InputOrder() const;
     [[nodiscard]] SDL_Window* WindowOf(const Surface& surface) const;
     [[nodiscard]] UiInputCapture CaptureOver(std::optional<std::uint32_t> window) const;
     std::unique_ptr<RmlRenderRecorder> Recorder;

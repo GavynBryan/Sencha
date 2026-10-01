@@ -1,14 +1,16 @@
 #pragma once
 
+#include "authoring/BindingMissProperties.h"
 #include "authoring/DocumentLibrary.h"
 #include "authoring/ElementOutline.h"
 #include "authoring/ElementProperties.h"
 #include "authoring/LibraryOutline.h"
 #include "authoring/PreviewFraming.h"
+#include "authoring/PreviewModelProperties.h"
 #include "authoring/SurfaceProperties.h"
 #include "authoring/UiPreviewModel.h"
 #include "authoring/UiPreviewSession.h"
-#include "ui/PreviewViewState.h"
+#include "authoring/VocabularyOutline.h"
 
 #include "actions/ActionContext.h"
 #include "render/UiSurfaceTargetRenderFeature.h"
@@ -38,9 +40,11 @@ struct ProjectDescriptor;
 // pass at the resolution and scale the author chooses, filling the window and
 // re-cooked on every save. Interact hands it the pointer and keys; Inspect
 // picks its elements instead, each shown on the card with its boxes, computed
-// style and attributes. The document library and the element tree are
-// explorers, the layer's diagnostics are problems, and what the document
-// raises is a notice.
+// style and attributes. With nothing picked the card is the surface and what
+// the document asked its model for in vain, and the details are the preview
+// model itself, saved beside the document. The document library, the element
+// tree and the vocabulary are explorers, the layer's diagnostics are problems,
+// and what the document raises is a notice.
 class UiPreviewWorkspace final : public IWorkspace
 {
 public:
@@ -79,6 +83,9 @@ private:
     void OpenDocument(const std::string& packagePath);
     void RescanLibrary();
     bool SaveModel(std::string* error);
+    // Every binding asset in the mounted content, inspected against the
+    // vocabulary, and what is wrong with them reported.
+    void ScanVocabulary();
     void OpenInEditor(const DocumentEntry& entry);
     void SetPointerMode(UiPreviewSession::PointerMode mode);
     void SetZoom(PreviewZoom zoom);
@@ -120,6 +127,10 @@ private:
     LibraryOutline Libraries;
     std::unique_ptr<ElementProperties> ElementCard;
     std::unique_ptr<SurfaceProperties> SurfaceCard;
+    std::unique_ptr<PreviewModelProperties> ModelCard;
+    std::unique_ptr<BindingMissProperties> MissCard;
+    VocabularyOutline VocabularyExplorer;
+    std::vector<BindingAsset> Bindings;
 
     ActionContext ActionHandlers;
     // What was last reported, so a change is reported once.
@@ -127,7 +138,6 @@ private:
     std::uint64_t ReportedRaised = 0;
     std::vector<Problem> Reported;
 
-    PreviewViewState ViewState;
-    // Declared last: its panels reference everything above.
+    // Declared last: its handlers reference everything above.
     WorkspaceView Surface;
 };

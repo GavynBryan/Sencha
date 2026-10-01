@@ -66,5 +66,3 @@ editor/common/src/ui/ScopedPanel.cpp
 editor/common/src/ui/ScopedPanel.h
 editor/common/src/ui/ThemePreferences.cpp
 editor/common/src/ui/ThemePreferences.h
-editor/ui_preview/src/ui/ModelPanel.cpp
-editor/ui_preview/src/ui/VocabularyPanel.cpp
