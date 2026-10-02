@@ -21,6 +21,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationEventProperties.cpp
     src/authoring/AnimationExplorers.cpp
     src/authoring/AnimationJointPicking.cpp
+    src/authoring/AnimationLabProperties.cpp
     src/authoring/AnimationLayerChoice.cpp
     src/authoring/AnimationLayerProperties.cpp
     src/authoring/AnimationMigrationProperties.cpp
@@ -61,8 +62,6 @@ sencha_warnings(animation_authoring)
 # The animation workspace's shell, linked by the application that hosts it.
 add_library(animation_editor STATIC
     src/AnimationWorkspace.cpp
-    src/render/AnimationPreviewRenderFeature.cpp
-    src/ui/AnimationPreviewPanels.cpp
-    src/ui/AnimationLabPanels.cpp)
+    src/render/AnimationPreviewRenderFeature.cpp)
 target_link_libraries(animation_editor PUBLIC animation_authoring editor_common)
 sencha_warnings(animation_editor)

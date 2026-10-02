@@ -9,6 +9,7 @@
 #include "authoring/AnimationExplorers.h"
 #include "authoring/AnimationFactProperties.h"
 #include "authoring/AnimationFlowProperties.h"
+#include "authoring/AnimationLabProperties.h"
 #include "authoring/AnimationLayerProperties.h"
 #include "authoring/AnimationMigrationProperties.h"
 #include "authoring/AnimationPreviewStatus.h"
@@ -27,7 +28,6 @@
 #include "authoring/AnimationTraceProperties.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "problems/ProblemList.h"
-#include "ui/AnimationPreviewPanels.h"
 
 #include "actions/ActionOffer.h"
 #include "data/DataCreation.h"
@@ -128,6 +128,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     Batch = std::make_unique<AnimationScenarioBatchProperties>(*Workspace);
     Migration = std::make_unique<AnimationMigrationProperties>(*Workspace);
     Trace = std::make_unique<AnimationTraceProperties>(*Workspace);
+    LabSheet = std::make_unique<AnimationLabProperties>(*Workspace);
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
     EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
@@ -168,7 +169,6 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
         else if (const DataDocument* active = Workspace->Documents.Active())
             (void)sources.Save(Workspace->Documents.RefOf(*active));
     };
-    AddAnimationPreviewPanels(Surface, *Workspace);
     DefineActions(catalog);
     DefineTransport(catalog);
     DefineEventActions(catalog);
@@ -192,6 +192,7 @@ AnimationWorkspace::~AnimationWorkspace()
     Scenario.reset();
     Audition.reset();
     Problems.Clear(kProblemSource);
+    LabSheet.reset();
     Trace.reset();
     Migration.reset();
     Batch.reset();
@@ -348,6 +349,9 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
 void AnimationWorkspace::DefineTransport(ActionCatalog& catalog)
 {
     const auto offer = [&](std::string id, std::string label, std::vector<KeyChord> chords, ActionHandler handler) {
+        handler.Enabled = [this, enabled = std::move(handler.Enabled)] {
+            return !ShowingLabClock() && (!enabled || enabled());
+        };
         OfferAction(catalog, ActionHandlers,
                     { .Id = std::move(id), .Label = std::move(label), .Category = "Timeline",
                       .DefaultChords = std::move(chords) },
@@ -453,7 +457,8 @@ struct RunRow
 
 void AnimationWorkspace::DefineRuns(ActionCatalog& catalog)
 {
-    const std::array<std::pair<RunKind, RunRow>, 3> runs{ {
+    const std::array<std::pair<RunKind, RunRow>, 4> runs{ {
+        { RunKind::Lab, { "animation.run.lab", "Session Lab" } },
         { RunKind::Batch, { "animation.run.batch", "Scenario Batch" } },
         { RunKind::Migration, { "animation.run.migration", "Clip Player Migration" } },
         { RunKind::Trace, { "animation.run.trace", "Imported Trace" } },
@@ -549,8 +554,16 @@ void AnimationWorkspace::FollowAuditionedClip()
     }
 }
 
+bool AnimationWorkspace::ShowingLabClock() const
+{
+    return Subject == CardSubject::Run && ShownRun == RunKind::Lab && LabSheet->Timeline().has_value();
+}
+
 WorkspaceTimelineFacet AnimationWorkspace::Timeline()
 {
+    if (Subject == CardSubject::Run && ShownRun == RunKind::Lab)
+        if (std::optional<WorkspaceTimelineFacet> lab = LabSheet->Timeline())
+            return *lab;
     WorkspaceTimelineFacet facet = Clock->Facet();
     const AnimationNavigation& navigation = Workspace->Rig.Navigation;
     if (ShownLens == AnimationLens::Rules && Clock->IsSimulation())
@@ -590,6 +603,11 @@ void AnimationWorkspace::PickOnTimeline(std::string_view key)
 {
     if (const std::optional<AnimationLanePick> pick = ParseAnimationLaneKey(key))
     {
+        if (pick->Names == AnimationLanePick::What::LabTick)
+        {
+            LabSheet->InspectTick(static_cast<AnimTick>(std::max(pick->Index, 0)));
+            return;
+        }
         AnimationNavigation& navigation = Workspace->Rig.Navigation;
         navigation.Layer = pick->Layer;
         if (pick->Names == AnimationLanePick::What::Section)
@@ -643,7 +661,10 @@ void AnimationWorkspace::MoveMark(std::string_view key, double time, TimelineDra
 
 void AnimationWorkspace::Scrub(double time, TimelineDrag)
 {
-    Clock->Scrub(time);
+    if (ShowingLabClock())
+        LabSheet->InspectAt(time);
+    else
+        Clock->Scrub(time);
 }
 
 void AnimationWorkspace::Tick(FrameUpdateContext& ctx)
@@ -982,6 +1003,8 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
     if (Subject == CardSubject::Run)
         switch (ShownRun)
         {
+        case RunKind::Lab:
+            return { .Title = "Session lab", .Sections = { { .Heading = {}, .Source = LabSheet.get() } }, .Primary = true };
         case RunKind::Batch:
             return { .Title = "Scenario batch", .Sections = { { .Heading = {}, .Source = Batch.get() } }, .Primary = true };
         case RunKind::Migration:

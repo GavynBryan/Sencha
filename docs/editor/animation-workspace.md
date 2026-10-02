@@ -1,8 +1,12 @@
 # Animation workspace on the grammar
 
-Status: **accepted on 2026-10-01**, with every decision below taken as proposed.
-Not yet built; it is M13's design. It applies `docs/editor/interaction-grammar.md` to the Animation
-workspace, whose 23 ImGui panels are the last large ImGui surface in `editor/`.
+Status: **accepted on 2026-10-01**, with every decision below taken as proposed,
+and **built** in M13: the stage, explorers and cartridge, the tape deck with
+lanes and plots, the eight lenses, and the runs as sheets. Two choices differ
+from the text below: A/B takes sit on the Blends card's details rather than a
+sheet of their own, and the blendspace pad is drawn over the stage while Blends
+is the lens rather than inside the drawer. It applies `docs/editor/interaction-grammar.md` to the Animation
+workspace, whose 23 ImGui panels were the last large ImGui surface in `editor/`.
 `docs/plans/animation-authoring.md` §2 still describes a docked layout with
 Reset Animation Layout; the grammar has no docking and nothing to lay out, so
 that section is to be rewritten to point here when M13 lands.

@@ -2,6 +2,8 @@
 
 #include "workspaces/WorkspaceFacets.h"
 
+#include <anim/AnimTypes.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -9,9 +11,11 @@
 #include <vector>
 
 class AnimationPreviewSession;
+class AnimationSessionLab;
 
 // What a lane's span names when picked: a layer, and the rule that won it,
-// the flow section it played or the tick a blend began; -1 for none.
+// the flow section it played, the tick a blend began, a request's sequence,
+// or a lab run's tick; -1 for none.
 struct AnimationLanePick
 {
     enum class What : std::uint8_t
@@ -20,6 +24,7 @@ struct AnimationLanePick
         Section,
         Blend,
         Request,
+        LabTick,
     };
     What Names = What::Rule;
     std::size_t Layer = 0;
@@ -45,4 +50,8 @@ struct AnimationLanePick
 // Each request issued along the recorded ticks, a span from its start for as
 // long as it was live; the index a span names is the request's sequence.
 [[nodiscard]] TimelineLane AnimationRequestLane(const AnimationPreviewSession& session);
+// A session lab run along its own clock: where the client agreed with the
+// authority, span by span (each naming its first tick), with the stretch
+// holding `inspected` selected; and the client's pose residual, plotted.
+[[nodiscard]] std::vector<TimelineLane> AnimationLabLanes(const AnimationSessionLab& lab, AnimTick inspected);
 [[nodiscard]] std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key);

@@ -2,8 +2,13 @@
 // snapshot bytes over a delayed, lossy link. A client that joins late, loses
 // snapshots or mispredicts must converge on the authority and stay there.
 
+#include "EditorDocumentsFixture.h"
+#include "authoring/AnimationLabProperties.h"
+#include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationScenario.h"
 #include "authoring/AnimationSessionLab.h"
+
+#include "AnimationExampleContent.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
@@ -128,3 +133,64 @@ TEST(AnimationSessionLab, ARunRepeats)
     EXPECT_NE(lab.Session.Status().find("synthetic"), std::string::npos) << lab.Session.Status();
 }
 
+
+namespace
+{
+    const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
+    {
+        for (const PropertyNode& node : nodes)
+        {
+            if (node.Key == key)
+                return &node;
+            if (const PropertyNode* child = NodeAt(node.Children, key))
+                return child;
+        }
+        return nullptr;
+    }
+}
+
+// As a sheet: the link set and run, the result, both machines on a tick, and
+// the lab's own clock with agreement and residual lanes for the deck.
+TEST(AnimationSessionLab, TheSheetRunsTheLabAndRunsItsOwnClock)
+{
+    AnimationExampleContent content;
+    EditorDocuments documents(content.Assets);
+    AnimationPreviewWorkspace workspace(content.Assets, documents.Sources, documents.Store);
+    ASSERT_TRUE(workspace.OpenRig("asset://animation/examples/pump_reload.rig.sdata")) << workspace.Rig.Error;
+    AnimationLabProperties sheet(workspace);
+    EXPECT_FALSE(sheet.Timeline().has_value()) << "no clock before it runs";
+
+    ASSERT_TRUE(sheet.BeginEdit("link.join"));
+    EXPECT_EQ(sheet.CommitEdit("link.join", "100"), PropertyEditResult::Applied);
+    EXPECT_EQ(sheet.CommitEdit("link.latency", "3"), PropertyEditResult::Applied);
+    EXPECT_EQ(sheet.CommitEdit("link.loss", "95"), PropertyEditResult::Applied);
+    EXPECT_EQ(workspace.Lab.Settings.LossPercent, 90u) << "held to its range";
+    EXPECT_EQ(sheet.CommitEdit("link.run_to", "200"), PropertyEditResult::Applied);
+    EXPECT_EQ(sheet.Act("guesses", "add", ""), PropertyEditResult::Applied);
+    ASSERT_EQ(workspace.Lab.Injections.size(), 1u);
+    EXPECT_EQ(sheet.CommitEdit("guesses.0.intent", "Anim.Weapon.Fire"), PropertyEditResult::Applied);
+    EXPECT_EQ(workspace.Lab.Injections[0].Intent, "Anim.Weapon.Fire");
+    EXPECT_EQ(sheet.Act("guesses.0", "remove", ""), PropertyEditResult::Applied);
+    EXPECT_TRUE(workspace.Lab.Injections.empty());
+
+    EXPECT_EQ(sheet.Act("link", "run", ""), PropertyEditResult::Applied);
+    std::vector<PropertyNode> nodes = sheet.Nodes();
+    ASSERT_NE(NodeAt(nodes, "summary.snapshots"), nullptr);
+    EXPECT_NE(NodeAt(nodes, "joined.at"), nullptr);
+
+    const std::optional<WorkspaceTimelineFacet> clock = sheet.Timeline();
+    ASSERT_TRUE(clock.has_value());
+    EXPECT_EQ(clock->Clock, "Session lab");
+    ASSERT_EQ(clock->Lanes.size(), 2u);
+    EXPECT_EQ(clock->Lanes[0].Spans.front().Label, "not joined");
+    EXPECT_FALSE(clock->Lanes[1].Samples.empty());
+
+    sheet.InspectAt(clock->End * 0.75);
+    nodes = sheet.Nodes();
+    ASSERT_NE(NodeAt(nodes, "inspect"), nullptr);
+    EXPECT_EQ(NodeAt(nodes, "inspect")->Value, "150");
+    EXPECT_NE(NodeAt(nodes, "authority"), nullptr);
+    EXPECT_NE(NodeAt(nodes, "client"), nullptr);
+    workspace.Lab.Session->Close();
+    workspace.Rig.Simulation.Close();
+}

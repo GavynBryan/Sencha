@@ -52,27 +52,13 @@ their existing consumer and the Animation Editor wired in the same stage.
 
 ### Default screen
 
-Opening a rig restores its last workspace layout and preview scenario:
-
-```text
-Project / rig tabs     Mesh · Rig · Scenario     Play Pause Restart Step · Speed
-─────────────────────────────────────────────────────────────────────────────
-Rig & asset outline   │  3D rig viewport                  │ Selected item
-                      │  orbit / pan / frame / overlays   │ inspector
-Layers                │                                   │
-Behaviors             ├───────────────────────────────────┤───────────────────
-Selectors             │  Authoring workbench              │ Preview inputs
-Slot maps / overlays  │  Rules | Slots | Flow | Layers     │ Facts | Requests
-Content / bindings    │  Blends | Events | Root           │ Scenario controls
-─────────────────────────────────────────────────────────────────────────────
-Timeline: content, sections, requests, behavior changes, events, corrections
-─────────────────────────────────────────────────────────────────────────────
-Decision history / Problems / Event admissions / Changes
-```
-
-The bottom diagnostic drawer starts collapsed to a summary strip; the timeline
-remains visible. Panels are dockable; Reset Animation Layout restores this
-arrangement.
+The screen is the interaction grammar's, as
+[docs/editor/animation-workspace.md](../editor/animation-workspace.md)
+describes it: the rig on a full-bleed stage, a lens station (Rules, Layers,
+Flow, Blends, Root motion, Facts, Requests, Events) choosing what the card and
+the tape deck's lanes show, the rig and scenario as the cartridge, content,
+rigs and the skeleton as explorers, and the batch, migration, trace and session
+lab as sheets. There is no docked layout to restore.
 
 Three selections remain distinct: the **preview subject** (rig, mesh, skeleton,
 scenario, session), the **authoring selection** (a rule, behavior, row,

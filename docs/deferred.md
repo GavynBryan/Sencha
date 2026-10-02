@@ -43,14 +43,15 @@ do the work and delete the entry.
 
 ## Animation editor surfaces
 
-- **What:** purpose-built surfaces the animation editor still lacks. Every field
-  is editable today through the Document panel's schema form. Missing:
-  tag-set scenario inputs and the predicate text form; a behavior policy
-  inspector linked to the rules and rows that reach it; slot-map precedence, a
-  blendspace layout editor and fact derivations; lifecycle bindings in their
-  own inspector; event marks on the shared timeline; the take-A ghost drawn
-  where the character stood and a composed-motion view.
-- **Where:** `editor/animation_editor/src/ui/`.
+- **What:** the purpose-built surfaces the animation workspace still lacks
+  after its move to lenses, cards and sheets. Missing: tag-set scenario inputs
+  (the Facts card says a tag container is not driven); a slot-map precedence
+  view (the Rules card lists the rows resolving a behavior, not how rows of
+  several maps rank); a blendspace layout editor (the pad drives the axis
+  facts, the layout edits as the blendspace's sheet); the take-A ghost drawn
+  where the character stood rather than at the origin; a composed-motion view.
+- **Where:** `editor/animation_editor/src/authoring/` (the lens cards and the
+  pad's model), `editor/common/src/presenters/PlanePad`.
 - **Trigger:** the animation editor UX polish pass that follows the editor
   consolidation.
 

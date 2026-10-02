@@ -1,6 +1,7 @@
 #include "authoring/AnimationTimelineLanes.h"
 
 #include "authoring/AnimationPreviewSession.h"
+#include "authoring/AnimationSessionLab.h"
 
 #include <anim/AnimFacts.h>
 #include <anim/AnimRequests.h>
@@ -15,11 +16,12 @@
 
 namespace
 {
-constexpr std::array<std::pair<std::string_view, AnimationLanePick::What>, 4> kPrefixes{ {
+constexpr std::array<std::pair<std::string_view, AnimationLanePick::What>, 5> kPrefixes{ {
     { "rule:", AnimationLanePick::What::Rule },
     { "section:", AnimationLanePick::What::Section },
     { "blend:", AnimationLanePick::What::Blend },
     { "request:", AnimationLanePick::What::Request },
+    { "lab:", AnimationLanePick::What::LabTick },
 } };
 
 std::string TagName(const AnimationPreviewSession& session, GameplayTagId tag)
@@ -38,17 +40,17 @@ struct Held
     bool Selected = false;
 };
 
-template <typename Read>
-TimelineLane Runs(const AnimationPreviewSession& session, std::string label, Read read)
+// `records` in tick order, each with a Tick; spans end at `endTick`.
+template <typename Records, typename Read>
+TimelineLane Runs(const Records& records, double seconds, AnimTick endTick, std::string label, Read read)
 {
     TimelineLane lane{ .Label = std::move(label) };
-    const double seconds = session.TickSeconds();
     std::optional<std::string> held;
     const auto close = [&](double end) {
         if (held && !lane.Spans.empty())
             lane.Spans.back().End = std::max(end, lane.Spans.back().Start + seconds);
     };
-    for (const AnimationPreviewTickRecord& record : session.History())
+    for (const auto& record : records)
     {
         const double start = static_cast<double>(record.Tick) * seconds;
         std::optional<Held> now = read(record);
@@ -65,8 +67,14 @@ TimelineLane Runs(const AnimationPreviewSession& session, std::string label, Rea
                                .Selected = now->Selected });
         held = std::move(now->Identity);
     }
-    close(static_cast<double>(session.Tick()) * seconds);
+    close(static_cast<double>(endTick) * seconds);
     return lane;
+}
+
+template <typename Read>
+TimelineLane Runs(const AnimationPreviewSession& session, std::string label, Read read)
+{
+    return Runs(session.History(), session.TickSeconds(), session.Tick(), std::move(label), read);
 }
 
 std::string LaneKey(AnimationLanePick::What what, std::size_t layer, int index)
@@ -207,6 +215,27 @@ TimelineLane AnimationRequestLane(const AnimationPreviewSession& session)
                   .Label = intent != nullptr ? intent->Name : TagName(session, request.Intent) });
         }
     return lane;
+}
+
+std::vector<TimelineLane> AnimationLabLanes(const AnimationSessionLab& lab, AnimTick inspected)
+{
+    const std::vector<AnimationLabTick>& ticks = lab.Ticks();
+    if (ticks.empty())
+        return {};
+    const double seconds = lab.Authority().TickSeconds();
+    TimelineLane agreement = Runs(ticks, seconds, lab.Tick(), "Agreement", [&](const AnimationLabTick& tick) {
+        const std::string_view state = !tick.Joined ? "not joined" : tick.Agrees ? "agrees" : "disagrees";
+        return std::optional<Held>{ { .Identity = std::string(state),
+                                      .Key = LaneKey(AnimationLanePick::What::LabTick, 0, static_cast<int>(tick.Tick)),
+                                      .Label = std::string(state) } };
+    });
+    for (TimelineSpan& span : agreement.Spans)
+        span.Selected = static_cast<double>(inspected) * seconds >= span.Start
+                        && static_cast<double>(inspected) * seconds < span.End;
+    TimelineLane residual{ .Label = "Residual" };
+    for (const AnimationLabTick& tick : ticks)
+        residual.Samples.push_back({ .Time = static_cast<double>(tick.Tick) * seconds, .Value = tick.Pose.Position });
+    return { std::move(agreement), std::move(residual) };
 }
 
 std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key)

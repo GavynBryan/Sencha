@@ -336,12 +336,13 @@ per-layer ghosts.
 
 ## Two machines: the session lab
 
-**Session lab** runs the working scenario on an authority, and on a client
+**Session Lab** (`animation.run.lab`, a sheet: `AnimationLabProperties`) runs
+the working scenario on an authority, and on a client
 that gets the authority's requests only as snapshot bytes. Those bytes go
 through the production change store, snapshot writer and applier, request codec
 and prediction journal, across a link with a join tick, a latency in ticks and a
 loss rate. The loss rate drops a fixed pattern of snapshots, so a run repeats.
-The status line at the top always says which machine is which, and that facts
+The sheet's first line always says which machine is which, and that facts
 are synthetic scenario inputs on both.
 
 Both machines read the same scenario facts on the same ticks, standing in for
@@ -352,17 +353,19 @@ acknowledgements return at once.
 
 - **Client guesses** inject a request the client predicts on a tick, plus the
   tick the authority decides the command behind it, confirming or refusing it.
-- The strip marks each tick green where the client plays what the authority
-  does (behavior, content, time, flow section), red where it does not, and grey
-  before the client joined. A notch marks each lost snapshot. Below it is the
-  client's pose residual against the authority's.
+- While the sheet is up the deck runs the lab's clock instead of the
+  preview's: an Agreement lane marks where the client plays what the authority
+  does (behavior, content, time, flow section), where it does not, and before
+  the client joined, and a Residual lane plots the client's pose against the
+  authority's. The preview's transport rests meanwhile.
 - **What the joiner received** lists the requests of the client's first
-  snapshot with their anchors and tails. Clicking a tick sets the two machines'
-  layers, sections, requests (guesses marked) and decisions side by side.
+  snapshot with their anchors and tails. Scrubbing the deck, picking a span or
+  setting the tick lays the two machines' layers, sections, requests (guesses
+  marked) and decisions side by side.
 
 `AnimationSessionLab` is the headless model; `test/editor/AnimationSessionLabTests.cpp`
 covers a late join over a lossy link on the `pump_reload` example, a refused
-guess, and repeatability.
+guess, repeatability and the sheet.
 
 Not yet: the client's pose drawn as a ghost in the viewport.
 

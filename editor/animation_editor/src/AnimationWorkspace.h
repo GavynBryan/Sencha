@@ -24,6 +24,7 @@ class AnimationClipEventsDocument;
 class AnimationEventProperties;
 class AnimationPreviewRenderFeature;
 class AnimationRequestProperties;
+class AnimationLabProperties;
 class AnimationMigrationProperties;
 class AnimationRigCreation;
 class AnimationScenarioBatchProperties;
@@ -132,6 +133,7 @@ private:
     // A run the workspace does over the project or the rig, shown as a sheet.
     enum class RunKind : std::uint8_t
     {
+        Lab,
         Batch,
         Migration,
         Trace,
@@ -153,6 +155,8 @@ private:
     [[nodiscard]] bool ShowingLens(AnimationLens lens) const { return Subject == CardSubject::Lens && ShownLens == lens; }
     void DefineLenses(ActionCatalog& catalog);
     void DefineRuns(ActionCatalog& catalog);
+    // While the lab's sheet is up the deck runs the lab's clock, not the preview's.
+    [[nodiscard]] bool ShowingLabClock() const;
     void OpenDocument(const std::string& path);
     void DefineTransport(ActionCatalog& catalog);
     void DefineEventActions(ActionCatalog& catalog);
@@ -183,6 +187,7 @@ private:
     std::unique_ptr<AnimationScenarioBatchProperties> Batch;
     std::unique_ptr<AnimationMigrationProperties> Migration;
     std::unique_ptr<AnimationTraceProperties> Trace;
+    std::unique_ptr<AnimationLabProperties> LabSheet;
     RunKind ShownRun = RunKind::Batch;
     ProblemList& Problems;
     std::string ProblemSignature;
