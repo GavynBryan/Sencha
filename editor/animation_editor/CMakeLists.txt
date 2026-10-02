@@ -12,6 +12,8 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationClipPlayerMigration.cpp
     src/authoring/AnimationTraceImport.cpp
     src/authoring/AnimationBlendComparison.cpp
+    src/authoring/AnimationBlendProperties.cpp
+    src/authoring/AnimationBlendspacePad.cpp
     src/authoring/AnimationBoneProperties.cpp
     src/authoring/AnimationClipPreviewSession.cpp
     src/authoring/AnimationEventBindings.cpp
@@ -51,7 +53,6 @@ add_library(animation_editor STATIC
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
     src/ui/AnimationPreviewStatus.cpp
-    src/ui/AnimationBlendPanels.cpp
     src/ui/AnimationEventPanels.cpp
     src/ui/AnimationLabPanels.cpp
     src/ui/AnimationMigrationPanels.cpp

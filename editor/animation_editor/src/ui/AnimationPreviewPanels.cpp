@@ -1,7 +1,6 @@
 #include "AnimationPreviewPanels.h"
 
 #include "authoring/AnimationPreviewWorkspace.h"
-#include "ui/AnimationBlendPanels.h"
 #include "ui/AnimationLabPanels.h"
 #include "ui/AnimationEventPanels.h"
 #include "ui/AnimationMigrationPanels.h"
@@ -17,7 +16,6 @@ void AddAnimationPreviewPanels(WorkspaceView& ui, AnimationPreviewWorkspace& wor
 {
     AddAnimationSimulationPanels(ui, workspace);
     AddAnimationEventPanels(ui, workspace);
-    AddAnimationBlendPanels(ui, workspace.Rig, workspace.Takes, workspace.Viewport);
     AddAnimationLabPanels(ui, workspace.Lab, workspace.Rig);
     AddAnimationRootMotionPanels(ui, workspace.Rig, workspace.Clips());
     AddAnimationMigrationPanels(ui, workspace);

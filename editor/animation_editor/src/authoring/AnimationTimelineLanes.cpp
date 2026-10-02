@@ -12,10 +12,17 @@
 
 namespace
 {
-constexpr std::array<std::pair<std::string_view, AnimationLanePick::What>, 2> kPrefixes{ {
+constexpr std::array<std::pair<std::string_view, AnimationLanePick::What>, 3> kPrefixes{ {
     { "rule:", AnimationLanePick::What::Rule },
     { "section:", AnimationLanePick::What::Section },
+    { "blend:", AnimationLanePick::What::Blend },
 } };
+
+std::string TagName(const AnimationPreviewSession& session, GameplayTagId tag)
+{
+    const GameplayTagRegistry* tags = session.Tags();
+    return tag.IsValid() && tags != nullptr ? std::string(tags->GetName(tag)) : std::string("(none)");
+}
 
 // What held on one recorded tick: the same Identity on consecutive ticks is
 // one span.
@@ -111,6 +118,28 @@ TimelineLane AnimationFlowLane(const AnimationPreviewSession& session, std::size
               .Key = LaneKey(AnimationLanePick::What::Section, layer, static_cast<int>(section)),
               .Label = std::move(label) } };
     });
+}
+
+TimelineLane AnimationBlendLane(const AnimationPreviewSession& session, std::size_t layer)
+{
+    const AnimBoundRig* rig = session.Rig();
+    if (rig == nullptr || layer >= rig->Layers.size())
+        return {};
+    TimelineLane lane{ .Label = rig->Layers[layer].NameText + " blends" };
+    const double seconds = session.TickSeconds();
+    for (const AnimationPreviewTickRecord& record : session.History())
+        for (const AnimDecisionRecord& decision : record.Decisions)
+            if (decision.Cause == AnimDecisionCause::BlendApplied && decision.Layer == layer)
+            {
+                const double start = static_cast<double>(decision.Tick) * seconds;
+                lane.Spans.push_back(
+                    { .Key = LaneKey(AnimationLanePick::What::Blend, layer, static_cast<int>(decision.Tick)),
+                      .Start = start,
+                      .End = start + std::max(static_cast<double>(decision.BlendSeconds), seconds),
+                      .Label = std::format("{} \xE2\x86\x92 {}", TagName(session, decision.PreviousBehavior),
+                                           TagName(session, decision.Behavior)) });
+            }
+    return lane;
 }
 
 std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key)

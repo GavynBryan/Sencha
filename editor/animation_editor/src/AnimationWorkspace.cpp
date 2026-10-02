@@ -1,5 +1,7 @@
 #include "AnimationWorkspace.h"
 
+#include "authoring/AnimationBlendProperties.h"
+#include "authoring/AnimationBlendspacePad.h"
 #include "authoring/AnimationBoneProperties.h"
 #include "authoring/AnimationTimelineLanes.h"
 #include "authoring/AnimationEventProperties.h"
@@ -22,6 +24,7 @@
 #include "prompts/DocumentPrompts.h"
 #include "documents/DocumentSourceSet.h"
 #include "presenters/ContentPicture.h"
+#include "presenters/PlanePad.h"
 #include "project/Project.h"
 #include "render/RenderFeatureDetach.h"
 #include "workspaces/WorkspaceWindow.h"
@@ -62,6 +65,10 @@ constexpr std::string_view kCommandOwner = "editor.animation";
 constexpr float kPickSlop = 3.0f;
 constexpr float kPickRadius = 8.0f;
 constexpr float kJointRadius = 3.0f;
+// The blendspace pad, in window pixels from the stage's corner.
+constexpr float kPadMargin = 16.0f;
+constexpr float kPadSize = 240.0f;
+constexpr float kPadLineHeight = 64.0f;
 constexpr float kPickedJointRadius = 5.0f;
 constexpr float kOrbitPerPixel = 0.01f;
 
@@ -96,6 +103,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     LayerCard = std::make_unique<AnimationLayerProperties>(*Workspace);
     FlowCard = std::make_unique<AnimationFlowProperties>(*Workspace,
                                                          [this](const std::string& path) { OpenDocument(path); });
+    BlendCard = std::make_unique<AnimationBlendProperties>(*Workspace);
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
     EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
@@ -125,7 +133,10 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
         Viewport = nullptr;
     }
     if (UiService* ui = engine.TryUi(); ui != nullptr && ui->IsReady())
+    {
         Picture = std::make_unique<ContentPicture>(*ui, "animation_stage");
+        Pad = std::make_unique<PlanePad>(*ui);
+    }
 
     Surface.File.Save = [this, &sources] {
         if (AnimationClipEventsDocument* events = AuditionedEvents(); events != nullptr && ShowingLens(AnimationLens::Events))
@@ -148,12 +159,14 @@ AnimationWorkspace::~AnimationWorkspace()
     // The preview borrows the scene the workspace extracts into.
     DetachRenderFeature(EngineRef, Viewport);
     Surface = WorkspaceView{};
+    Pad.reset();
     Picture.reset();
     NewDocument.reset();
     DocumentSheet.reset();
     Creation.reset();
     Scenario.reset();
     Audition.reset();
+    BlendCard.reset();
     FlowCard.reset();
     LayerCard.reset();
     RuleCard.reset();
@@ -332,13 +345,15 @@ struct LensRow
     std::string_view Label;
     std::string_view Hint;
 };
-constexpr std::array<LensRow, 4> kLenses{ {
+constexpr std::array<LensRow, 5> kLenses{ {
     { AnimationLens::Rules, "animation.lens.rules", "Rules",
       "Inspect a rule to see why it won or lost; the deck's lane shows what won the layer" },
     { AnimationLens::Layers, "animation.lens.layers", "Layers",
       "Inspect a layer for its weight and mask; pick a joint to mask it" },
     { AnimationLens::Flow, "animation.lens.flow", "Flow",
       "The deck's lane shows the sections the layer played; Edit opens the flow as a sheet" },
+    { AnimationLens::Blends, "animation.lens.blends", "Blends",
+      "Drag the pad to move a blendspace; the deck's lane shows each blend as long as it ran" },
     { AnimationLens::Events, "animation.lens.events", "Events", "E adds an event at the playhead" },
 } };
 } // namespace
@@ -422,6 +437,8 @@ WorkspaceTimelineFacet AnimationWorkspace::Timeline()
     const AnimationNavigation& navigation = Workspace->Rig.Navigation;
     if (ShownLens == AnimationLens::Rules && Clock->IsSimulation())
         facet.Lanes.push_back(AnimationDecisionLane(Workspace->Rig.Simulation, navigation.Layer, navigation.Rule));
+    if (ShownLens == AnimationLens::Blends && Clock->IsSimulation())
+        facet.Lanes.push_back(AnimationBlendLane(Workspace->Rig.Simulation, navigation.Layer));
     if (ShownLens == AnimationLens::Flow && Clock->IsSimulation())
         facet.Lanes.push_back(AnimationFlowLane(Workspace->Rig.Simulation, navigation.Layer));
     // What won each layer, as many as the deck has lanes for.
@@ -453,6 +470,11 @@ void AnimationWorkspace::PickOnTimeline(std::string_view key)
         if (pick->Names == AnimationLanePick::What::Section)
         {
             ShowLens(AnimationLens::Flow);
+            return;
+        }
+        if (pick->Names == AnimationLanePick::What::Blend)
+        {
+            ShowLens(AnimationLens::Blends);
             return;
         }
         navigation.Rule = pick->Index;
@@ -547,6 +569,42 @@ void AnimationWorkspace::ShowStage()
                           ShownAnimationTick(Workspace->Rig.Simulation, Workspace->Rig.Navigation), strokes);
     Viewport->SetStrokes(std::move(strokes));
     Picture->MarkDots(dots);
+    ShowPad();
+}
+
+void AnimationWorkspace::ShowPad()
+{
+    const std::optional<AnimationBlendspaceView> space =
+        ShownLens == AnimationLens::Blends && Clock->IsSimulation()
+            ? AnimationBlendspaceOn(Workspace->Rig.Simulation, Workspace->Rig.Navigation.Layer)
+            : std::nullopt;
+    if (Pad == nullptr || !space)
+    {
+        if (Pad != nullptr)
+            Pad->Hide();
+        if (Drag == StageDrag::Pad)
+            Drag = StageDrag::None;
+        return;
+    }
+    std::vector<PlanePadMark> marks;
+    for (const AnimationBlendspaceMark& sample : space->Samples)
+        marks.push_back({ .At = Vec2d(static_cast<float>(sample.U), static_cast<float>(sample.V)),
+                          .Weight = sample.Weight,
+                          .Label = sample.Label });
+    const bool line = space->Axes < 2;
+    const Rect2d region(ContentRect.Position + Vec2d(kPadMargin, kPadMargin),
+                        Vec2d(kPadSize, line ? kPadLineHeight : kPadSize));
+    std::string caption = space->AxisFact[0];
+    if (!line)
+        caption += " Ã " + space->AxisFact[1];
+    Pad->Show(region, marks, Vec2d(static_cast<float>(space->U), static_cast<float>(space->V)), std::move(caption),
+              line);
+}
+
+void AnimationWorkspace::DragPadTo(Vec2d windowPoint)
+{
+    const Vec2d at = Pad->ValueAt(windowPoint);
+    (void)PlaceAnimationBlendspacePoint(Workspace->Rig.Simulation, Workspace->Rig.Navigation.Layer, at.X, at.Y);
 }
 
 void AnimationWorkspace::PickJointAt(Vec2d windowPoint)
@@ -568,6 +626,8 @@ void AnimationWorkspace::SetVisible(bool visible)
     Visible = visible;
     if (Picture != nullptr)
         Picture->SetShown(visible);
+    if (Pad != nullptr && !visible)
+        Pad->Hide();
     if (!visible)
         Interrupt();
 }
@@ -576,6 +636,8 @@ void AnimationWorkspace::MoveTo(const WorkspaceWindow& window)
 {
     if (Picture != nullptr)
         Picture->MoveTo(window.Content);
+    if (Pad != nullptr)
+        Pad->MoveTo(window.Content);
 }
 
 void AnimationWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
@@ -595,7 +657,15 @@ void AnimationWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
     switch (event.type)
     {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (event.button.button == SDL_BUTTON_LEFT && onStage(event.button.x, event.button.y, event.button.windowID))
+        if (event.button.button == SDL_BUTTON_LEFT && onStage(event.button.x, event.button.y, event.button.windowID)
+            && Pad != nullptr && Pad->Contains(Vec2d(event.button.x, event.button.y)))
+        {
+            Drag = StageDrag::Pad;
+            DragPadTo(Vec2d(event.button.x, event.button.y));
+            ctx.Handled = true;
+        }
+        else if (event.button.button == SDL_BUTTON_LEFT
+                 && onStage(event.button.x, event.button.y, event.button.windowID))
         {
             Drag = StageDrag::Pressed;
             PressedAt = Vec2d(event.button.x, event.button.y);
@@ -603,6 +673,11 @@ void AnimationWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
         }
         break;
     case SDL_EVENT_MOUSE_MOTION:
+        if (Drag == StageDrag::Pad)
+        {
+            DragPadTo(Vec2d(event.motion.x, event.motion.y));
+            ctx.Handled = true;
+        }
         if (Drag == StageDrag::Pressed)
         {
             const Vec2d moved = Vec2d(event.motion.x, event.motion.y) - PressedAt;
@@ -746,6 +821,10 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         return { .Title = name.empty() ? std::string("Unnamed joint") : name,
                  .Sections = { { .Heading = {}, .Source = Bone.get() } } };
     }
+    if (ShowingLens(AnimationLens::Blends))
+        return { .Title = "Blends",
+                 .Sections = { { .Heading = {}, .Source = BlendCard.get() } },
+                 .Details = { { .Heading = "Overrides and A/B", .Source = &BlendCard->Comparison() } } };
     if (ShowingLens(AnimationLens::Flow))
         return { .Title = FlowCard->Title(), .Sections = { { .Heading = {}, .Source = FlowCard.get() } } };
     if (ShowingLens(AnimationLens::Layers))

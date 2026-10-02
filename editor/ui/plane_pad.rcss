@@ -1,0 +1,18 @@
+/* A pad over the workspace's content: display only, placed by the host. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: "Chakra Petch";
+    font-size: 10dp;
+}
+
+#pad { display: block; position: absolute; border-width: 1dp; border-radius: 4dp; }
+#caption { display: block; position: absolute; left: 6dp; top: 2dp; white-space: nowrap; }
+.mark_slot { display: block; }
+.mark { display: block; position: absolute; }
+.mark_label { display: block; position: absolute; margin-left: 14dp; margin-top: -12dp; white-space: nowrap; }
+#point { display: block; position: absolute; width: 16px; height: 16px; stroke-width: 1dp; }

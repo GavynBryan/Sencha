@@ -5,6 +5,8 @@
 #include "authoring/AnimationPreviewSession.h"
 #include "authoring/AnimationScenario.h"
 
+#include "AnimationExampleContent.h"
+
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -19,21 +21,9 @@
 
 namespace
 {
-    struct Examples
+    struct Examples : AnimationExampleContent
     {
-        std::filesystem::path Repo{ SENCHA_REPO_ROOT };
-        LoggingProvider Logging;
-        ComponentSerializerRegistry Serializers;
-        RuntimeAssets Assets{ Logging, Serializers };
         std::vector<AssetLease> Leases;
-
-        Examples()
-        {
-            for (const std::filesystem::path& root : { Repo / "engine/assets", Repo / "engine/assets/.cooked",
-                                                      Repo / "test/fixtures/content/assets",
-                                                      Repo / "test/fixtures/content/assets/.cooked" })
-                (void)ScanAssetsDirectory(root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
-        }
 
         // What an example did by the tick it ran to.
         struct Outcome

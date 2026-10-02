@@ -300,22 +300,26 @@ decays to rest along a quintic, and a change mid-decay folds into it). A
 behavior whose blend carries phase starts where the one it replaces had got to
 in its sync group.
 
-- **Blends** shows each layer's blend in progress -- a crossfade's source and
-  progress, an inertialization's progress and remaining offset -- the recent
-  blend records (mode, duration, the offset it began from, whether an override
-  chose it) and the bound overrides against `anim.blend.override_cap`.
-- **A/B** in the same panel: *Record A* takes the simulation's pose on every
-  kept tick with the scenario as written. Edit a blend, then *Replay B against
-  A*: the scenario runs again from tick 0 with the same inputs, clock, seed and
-  start pose, and the two compare tick by tick -- the largest joint residual
-  plotted, and where the worst fell. A is drawn as an orange ghost. Takes of
-  different scenarios are refused rather than compared.
-- **Blendspace** draws the mix the selected layer plays: samples on their axes
-  sized by weight, the point the facts put it at, its phase, and which sample's
-  events play. Drag the point to set the axis facts for the next tick, as a
-  recorded live edit.
-- Inspecting a recorded tick (Decisions, Live unchecked) shows the pose the
-  pass made then.
+- The **Blends** lens's card (`AnimationBlendProperties`) shows each layer's
+  blend in progress -- a crossfade's source and progress, an
+  inertialization's progress and remaining offset -- the blendspace the
+  selected layer plays (where its axes' facts put it, its phase, each sample's
+  weight), and the recent blend records (mode, duration, the offset it began
+  from, whether an override chose it). On the simulation clock the deck's lane
+  shows each blend as long as it ran.
+- While Blends is the lens, the blendspace is a pad over the stage
+  (`presenters/PlanePad`): samples on their axes sized by weight, and the
+  point the facts put it at. Dragging the point sets the axes' facts for the
+  next tick, as a recorded live edit, never an asset change.
+- The card's details are the bound overrides against
+  `anim.blend.override_cap`, and **A/B**: *Record A* takes the simulation's
+  pose on every kept tick with the scenario as written. Edit a blend, then
+  *Replay B against A*: the scenario runs again from tick 0 with the same
+  inputs, clock, seed and start pose, and the two compare tick by tick, with
+  where the worst residual fell. A is drawn as a ghost. Takes of different
+  scenarios are refused rather than compared.
+- Inspecting a recorded tick (scrubbing the deck) shows the pose the pass
+  made then.
 
 The fixture examples include `moving`: a blendspace on Speed entered with
 carried phase and an inertialized change, and an override that crossfades back

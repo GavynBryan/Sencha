@@ -9,14 +9,15 @@
 
 class AnimationPreviewSession;
 
-// What a lane's span names when picked: a layer, and the rule that won it or
-// the flow section it played; -1 for neither.
+// What a lane's span names when picked: a layer, and the rule that won it,
+// the flow section it played or the tick a blend began; -1 for none.
 struct AnimationLanePick
 {
     enum class What : std::uint8_t
     {
         Rule,
         Section,
+        Blend,
     };
     What Names = What::Rule;
     std::size_t Layer = 0;
@@ -31,4 +32,7 @@ struct AnimationLanePick
 // The flow sections `layer` played along the recorded ticks: a span per pass
 // through a section, none while it plays no flow.
 [[nodiscard]] TimelineLane AnimationFlowLane(const AnimationPreviewSession& session, std::size_t layer);
+// The blends applied on `layer` along the recorded ticks, each a span as long
+// as it ran.
+[[nodiscard]] TimelineLane AnimationBlendLane(const AnimationPreviewSession& session, std::size_t layer);
 [[nodiscard]] std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key);

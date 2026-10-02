@@ -1,0 +1,25 @@
+<rml>
+<head>
+    <title>Plane Pad</title>
+    <link type="text/rcss" href="plane_pad.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="plane_pad">
+    <!-- A point over a plane of marks, placed in window pixels by the host,
+         which takes the pointer over it itself. -->
+    <div id="pad" class="theme-plate" data-style-left="left" data-style-top="top"
+         data-style-width="width" data-style-height="height">
+        <span id="caption" class="theme-dim">{{caption}}</span>
+        <!-- parts: left, top, diameter; selected when it weighs anything. -->
+        <div class="mark_slot" data-for="mark : marks">
+            <sector class="mark theme-dot" data-class-selected="mark.selected"
+                    data-style-left="mark.parts[0]" data-style-top="mark.parts[1]"
+                    data-style-width="mark.parts[2]" data-style-height="mark.parts[2]"></sector>
+            <span class="mark_label theme-dim" data-style-left="mark.parts[0]"
+                  data-style-top="mark.parts[1]">{{mark.label}}</span>
+        </div>
+        <sector id="point" class="theme-mark selected" inner="0.55"
+                data-style-left="point_left" data-style-top="point_top"></sector>
+    </div>
+</body>
+</rml>

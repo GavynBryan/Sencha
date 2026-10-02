@@ -24,6 +24,7 @@ class AnimationClipEventsDocument;
 class AnimationEventProperties;
 class AnimationPreviewRenderFeature;
 class AnimationRigCreation;
+class AnimationBlendProperties;
 class AnimationFlowProperties;
 class AnimationLayerProperties;
 class AnimationRuleProperties;
@@ -37,6 +38,7 @@ class DataDocumentStore;
 class DocumentSourceSet;
 class Engine;
 class Game;
+class PlanePad;
 class PromptQueue;
 struct ProjectDescriptor;
 
@@ -47,6 +49,7 @@ enum class AnimationLens : std::uint8_t
     Rules,
     Layers,
     Flow,
+    Blends,
     Events,
 };
 
@@ -94,12 +97,13 @@ public:
 
 private:
     // A press on the stage orbits once it moves; let go where it was pressed,
-    // it picks the joint under it.
+    // it picks the joint under it. A press on the pad drags its point.
     enum class StageDrag : std::uint8_t
     {
         None,
         Pressed,
         Orbiting,
+        Pad,
     };
     // What the card is about when no joint is picked.
     enum class CardSubject : std::uint8_t
@@ -119,6 +123,8 @@ private:
     // Per frame it is seen: the picture placed, the strokes and joints over it.
     void ShowStage();
     void PickJointAt(Vec2d windowPoint);
+    void ShowPad();
+    void DragPadTo(Vec2d windowPoint);
     // The card about `subject`, with no joint picked.
     void ShowCard(CardSubject subject);
     void ShowLens(AnimationLens lens);
@@ -137,10 +143,13 @@ private:
     std::unique_ptr<AnimationPreviewWorkspace> Workspace;
     AnimationPreviewRenderFeature* Viewport = nullptr;
     std::unique_ptr<ContentPicture> Picture;
+    // The blendspace the selected layer plays, over the stage while Blends is the lens.
+    std::unique_ptr<PlanePad> Pad;
     std::unique_ptr<AnimationBoneProperties> Bone;
     std::unique_ptr<AnimationRuleProperties> RuleCard;
     std::unique_ptr<AnimationLayerProperties> LayerCard;
     std::unique_ptr<AnimationFlowProperties> FlowCard;
+    std::unique_ptr<AnimationBlendProperties> BlendCard;
     std::unique_ptr<AnimationTimeline> Clock;
     std::unique_ptr<AnimationEventProperties> EventCard;
     std::optional<std::uint32_t> PickedEvent;

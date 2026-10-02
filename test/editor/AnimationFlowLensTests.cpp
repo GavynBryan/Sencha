@@ -9,14 +9,11 @@
 #include "authoring/AnimationTimelineLanes.h"
 #include "data/DataProperties.h"
 
+#include "AnimationExampleContent.h"
+
 #include <anim/AnimFlowData.h>
-#include <assets/runtime/RuntimeAssets.h>
-#include <core/assets/AssetRegistry.h>
-#include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <gtest/gtest.h>
-
-#include <filesystem>
 
 namespace
 {
@@ -25,21 +22,14 @@ constexpr const char* kFlow = "asset://animation/examples/pump_reload.flow.sdata
 
 struct FlowLens : testing::Test
 {
-    std::filesystem::path Repo{ SENCHA_REPO_ROOT };
-    LoggingProvider Logging;
-    ComponentSerializerRegistry Serializers;
-    RuntimeAssets Assets{ Logging, Serializers };
+    AnimationExampleContent Content;
     std::unique_ptr<EditorDocuments> Documents;
     std::unique_ptr<AnimationPreviewWorkspace> Workspace;
 
     void SetUp() override
     {
-        for (const std::filesystem::path& root : { Repo / "engine/assets", Repo / "engine/assets/.cooked",
-                                                  Repo / "test/fixtures/content/assets",
-                                                  Repo / "test/fixtures/content/assets/.cooked" })
-            (void)ScanAssetsDirectory(root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
-        Documents = std::make_unique<EditorDocuments>(Assets);
-        Workspace = std::make_unique<AnimationPreviewWorkspace>(Assets, Documents->Sources, Documents->Store);
+        Documents = std::make_unique<EditorDocuments>(Content.Assets);
+        Workspace = std::make_unique<AnimationPreviewWorkspace>(Content.Assets, Documents->Sources, Documents->Store);
     }
 
     void TearDown() override
