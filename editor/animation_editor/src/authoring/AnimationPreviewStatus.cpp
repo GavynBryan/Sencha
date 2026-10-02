@@ -1,4 +1,4 @@
-#include "ui/AnimationPreviewStatus.h"
+#include "authoring/AnimationPreviewStatus.h"
 
 #include "authoring/AnimationClipEventsSet.h"
 #include "data/DataResidentSync.h"

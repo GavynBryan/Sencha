@@ -5,6 +5,7 @@
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationScenarioBatch.h"
+#include "authoring/AnimationScenarioBatchProperties.h"
 
 #include "AnimationTestProject.h"
 
@@ -131,4 +132,27 @@ TEST(AnimationScenarioBatch, AScenarioRunsTwoSecondsPastItsLastAction)
     action.Tick = 100;
     scenario.Append(action);
     EXPECT_EQ(AnimationScenarioRunLength(scenario), 160u);
+}
+
+// As a sheet: run, a verdict per scenario, and the scenario's rig a verb away.
+TEST(AnimationScenarioBatch, TheSheetRunsTheBatchAndOpensARunsRig)
+{
+    Project project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
+    std::string error;
+    ASSERT_TRUE(workspace.CreateRig(Prop("waver", "asset://meshes/man.blend#anim:Wave"), error)) << error;
+    AnimationScenarioBatchProperties sheet(workspace);
+    std::vector<PropertyNode> nodes = sheet.Nodes();
+    ASSERT_EQ(nodes.size(), 2u);
+    EXPECT_EQ(nodes[1].Key, "runs.none");
+
+    EXPECT_EQ(sheet.Act("run", "all", ""), PropertyEditResult::Applied);
+    nodes = sheet.Nodes();
+    ASSERT_EQ(nodes.size(), 2u);
+    EXPECT_EQ(nodes[1].Descriptor.Label, "Passed: animation/waver/waver.rig.sanimscenario");
+    EXPECT_EQ(sheet.Act("runs.0", "open", ""), PropertyEditResult::Applied);
+    EXPECT_EQ(workspace.Rig.Path, "asset://animation/waver/waver.rig.sdata");
+    EXPECT_EQ(sheet.Act("runs.7", "open", ""), PropertyEditResult::Gone);
+    workspace.Rig.Simulation.Close();
 }

@@ -23,6 +23,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationJointPicking.cpp
     src/authoring/AnimationLayerChoice.cpp
     src/authoring/AnimationLayerProperties.cpp
+    src/authoring/AnimationMigrationProperties.cpp
     src/authoring/AnimationNameDeclarations.cpp
     src/authoring/AnimationFactProperties.cpp
     src/authoring/AnimationFlowAuthoring.cpp
@@ -32,6 +33,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationPredicateEdits.cpp
     src/authoring/AnimationPredicateText.cpp
     src/authoring/AnimationPreviewSession.cpp
+    src/authoring/AnimationPreviewStatus.cpp
     src/authoring/AnimationPreviewWorkspace.cpp
     src/authoring/AnimationRigEdits.cpp
     src/authoring/AnimationRequestProperties.cpp
@@ -45,11 +47,13 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationRuleProperties.cpp
     src/authoring/AnimationScenario.cpp
     src/authoring/AnimationScenarioBatch.cpp
+    src/authoring/AnimationScenarioBatchProperties.cpp
     src/authoring/AnimationSelectorEdits.cpp
     src/authoring/AnimationSessionLab.cpp
     src/authoring/AnimationStageProperties.cpp
     src/authoring/AnimationStageStrokes.cpp
-    src/authoring/AnimationTimeline.cpp)
+    src/authoring/AnimationTimeline.cpp
+    src/authoring/AnimationTraceProperties.cpp)
 target_link_libraries(animation_authoring PUBLIC editor_common)
 target_include_directories(animation_authoring PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 sencha_warnings(animation_authoring)
@@ -59,10 +63,6 @@ add_library(animation_editor STATIC
     src/AnimationWorkspace.cpp
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
-    src/ui/AnimationPreviewStatus.cpp
-    src/ui/AnimationLabPanels.cpp
-    src/ui/AnimationMigrationPanels.cpp
-    src/ui/AnimationScenarioBatchPanels.cpp
-    src/ui/AnimationSimulationPanels.cpp)
+    src/ui/AnimationLabPanels.cpp)
 target_link_libraries(animation_editor PUBLIC animation_authoring editor_common)
 sencha_warnings(animation_editor)

@@ -24,7 +24,10 @@ class AnimationClipEventsDocument;
 class AnimationEventProperties;
 class AnimationPreviewRenderFeature;
 class AnimationRequestProperties;
+class AnimationMigrationProperties;
 class AnimationRigCreation;
+class AnimationScenarioBatchProperties;
+class AnimationTraceProperties;
 class AnimationRigReportProperties;
 class AnimationRootMotionProperties;
 class AnimationAdmissionProperties;
@@ -124,6 +127,14 @@ private:
         Document,
         NewDocument,
         Lens,
+        Run,
+    };
+    // A run the workspace does over the project or the rig, shown as a sheet.
+    enum class RunKind : std::uint8_t
+    {
+        Batch,
+        Migration,
+        Trace,
     };
 
     void RegisterCommands();
@@ -141,6 +152,7 @@ private:
     void ShowLens(AnimationLens lens);
     [[nodiscard]] bool ShowingLens(AnimationLens lens) const { return Subject == CardSubject::Lens && ShownLens == lens; }
     void DefineLenses(ActionCatalog& catalog);
+    void DefineRuns(ActionCatalog& catalog);
     void OpenDocument(const std::string& path);
     void DefineTransport(ActionCatalog& catalog);
     void DefineEventActions(ActionCatalog& catalog);
@@ -168,6 +180,10 @@ private:
     std::unique_ptr<AnimationRequestProperties> RequestCard;
     std::unique_ptr<AnimationAdmissionProperties> Admissions;
     std::unique_ptr<AnimationRigReportProperties> RigReport;
+    std::unique_ptr<AnimationScenarioBatchProperties> Batch;
+    std::unique_ptr<AnimationMigrationProperties> Migration;
+    std::unique_ptr<AnimationTraceProperties> Trace;
+    RunKind ShownRun = RunKind::Batch;
     ProblemList& Problems;
     std::string ProblemSignature;
     // Names the rig's content uses that nothing declares, as of ProblemSignature.

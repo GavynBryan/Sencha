@@ -429,17 +429,22 @@ Data Editor uses; clip events join it as `AnimationClipEventsSet`.
 
 ## Qualification
 
-- **Scenario batch** runs every saved scenario in the project -- each under its
-  own rig, or all under the open rig -- twice from tick 0, in a session of its
-  own. A scenario fails on an error or a second run that differs from the
+- **Scenario Batch** (`animation.run.batch`, a sheet:
+  `AnimationScenarioBatchProperties`) runs every saved scenario in the project
+  -- each under its own rig, or all under the open rig -- twice from tick 0,
+  in a session of its own. A scenario fails on an error or a second run that differs from the
   first, and warns on a warning or a request no layer played.
-- **Migration** finds scenes that still name the retired clip player and turns
-  each into a one-layer rig that plays the clip as the player did.
+- **Clip Player Migration** (`animation.run.migration`, a sheet:
+  `AnimationMigrationProperties`) finds scenes that still name the retired
+  clip player and turns each into a one-layer rig that plays the clip as the
+  player did.
 - The stage card's details (`AnimationRigReportProperties`) show the open
   rig's risk measures, the previewed entity's footprint and its unplayed
   requests -- what `anim.risk` reports in a game.
-- **Imported trace** reads a trace written by `anim.trace.export` in a running
-  game: every decision record as logged, and what the trace did not capture.
+- **Imported Trace** (`animation.run.trace`, a sheet:
+  `AnimationTraceProperties`) reads a trace written by `anim.trace.export` in
+  a running game: every decision record as logged, filtered by cause, layer or
+  detail, and what the trace did not capture.
 
 The runtime side of these is described in
 [docs/gameplay/animation.md](../../docs/gameplay/animation.md).

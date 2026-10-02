@@ -3,6 +3,7 @@
 
 #include "authoring/AnimationClipPlayerMigration.h"
 #include "EditorDocumentsFixture.h"
+#include "authoring/AnimationMigrationProperties.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 
 #include "AnimationTestProject.h"
@@ -96,4 +97,25 @@ TEST(AnimationClipPlayerMigration, PlayersBecomeRigsThatPlayAsTheyDid)
 
     // Converting again finds nothing and writes nothing.
     EXPECT_TRUE(workspace.MigrateClipPlayers(error)) << error;
+}
+
+// As a sheet: the players a scan finds, and converting them.
+TEST(AnimationClipPlayerMigration, TheSheetScansAndConverts)
+{
+    Project project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
+    AnimationMigrationProperties sheet(workspace);
+    sheet.ScanOnce();
+    std::vector<PropertyNode> nodes = sheet.Nodes();
+    const auto uses = std::ranges::find(nodes, std::string("uses"), &PropertyNode::Key);
+    ASSERT_NE(uses, nodes.end());
+    EXPECT_EQ(uses->Children.size(), 3u);
+    EXPECT_EQ(uses->Children[0].Descriptor.Label, "01 in levels/old.sscene");
+
+    EXPECT_EQ(sheet.Act("scan", "convert", ""), PropertyEditResult::Applied);
+    EXPECT_EQ(sheet.Act("scan", "scan", ""), PropertyEditResult::Applied);
+    nodes = sheet.Nodes();
+    EXPECT_NE(std::ranges::find(nodes, std::string("uses.none"), &PropertyNode::Key), nodes.end())
+        << "the scenes name rigs now";
 }

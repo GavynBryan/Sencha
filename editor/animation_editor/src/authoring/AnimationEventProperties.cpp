@@ -1,6 +1,7 @@
 #include "authoring/AnimationEventProperties.h"
 
 #include "authoring/AnimationEventBindings.h"
+#include "authoring/AnimationPreviewStatus.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigDocumentEdits.h"
 
@@ -232,6 +233,9 @@ std::vector<PropertyNode> AnimationEventProperties::Nodes() const
         const std::vector<PropertyNode> binding = BindingNodes(*event);
         nodes.insert(nodes.end(), binding.begin(), binding.end());
     }
+    if (const std::string status = AnimationPreviewStatusText(Workspace.ClipEvents.PreviewStateOf(*document));
+        !status.empty())
+        nodes.push_back(NoteProperty("preview", "Preview", status));
     for (std::size_t i = 0; const std::string& problem : document->Problems())
         nodes.push_back(NoteProperty(std::format("problems.{}", i++), "Problem", problem));
     return nodes;

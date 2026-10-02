@@ -10,6 +10,8 @@
 #include "authoring/AnimationFactProperties.h"
 #include "authoring/AnimationFlowProperties.h"
 #include "authoring/AnimationLayerProperties.h"
+#include "authoring/AnimationMigrationProperties.h"
+#include "authoring/AnimationPreviewStatus.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRequestProperties.h"
 #include "authoring/AnimationRigCreation.h"
@@ -18,9 +20,11 @@
 #include "authoring/AnimationRigReportProperties.h"
 #include "authoring/AnimationRootMotionProperties.h"
 #include "authoring/AnimationRuleProperties.h"
+#include "authoring/AnimationScenarioBatchProperties.h"
 #include "authoring/AnimationStageProperties.h"
 #include "authoring/AnimationStageStrokes.h"
 #include "authoring/AnimationTimeline.h"
+#include "authoring/AnimationTraceProperties.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "problems/ProblemList.h"
 #include "ui/AnimationPreviewPanels.h"
@@ -121,6 +125,9 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     RequestCard = std::make_unique<AnimationRequestProperties>(*Workspace);
     Admissions = std::make_unique<AnimationAdmissionProperties>(*Workspace);
     RigReport = std::make_unique<AnimationRigReportProperties>(*Workspace);
+    Batch = std::make_unique<AnimationScenarioBatchProperties>(*Workspace);
+    Migration = std::make_unique<AnimationMigrationProperties>(*Workspace);
+    Trace = std::make_unique<AnimationTraceProperties>(*Workspace);
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
     EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
@@ -166,6 +173,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     DefineTransport(catalog);
     DefineEventActions(catalog);
     DefineLenses(catalog);
+    DefineRuns(catalog);
     RegisterCommands();
 }
 
@@ -184,6 +192,9 @@ AnimationWorkspace::~AnimationWorkspace()
     Scenario.reset();
     Audition.reset();
     Problems.Clear(kProblemSource);
+    Trace.reset();
+    Migration.reset();
+    Batch.reset();
     RigReport.reset();
     Admissions.reset();
     RequestCard.reset();
@@ -391,7 +402,18 @@ void AnimationWorkspace::PublishProblems()
 {
     std::vector<AnimDiagnostic> diagnostics = Workspace->Rig.Simulation.Problems();
     diagnostics.insert(diagnostics.end(), Workspace->Rig.LoadProblems.begin(), Workspace->Rig.LoadProblems.end());
+    // A working document the preview refused runs on its last valid version.
+    std::vector<Problem> kept;
+    for (const DataDocument* document : Workspace->Documents.Documents())
+        if (const DataResidentState* state = Workspace->Documents.Store().ResidentStateOf(*document);
+            state != nullptr && state->Status == DataResidentStatus::KeptLastValid)
+            kept.push_back({ .Severity = ProblemSeverity::Warning,
+                             .Message = std::format("{}: {}", LeafOf(document->VirtualPath()),
+                                                    AnimationPreviewStatusText(state)),
+                             .Document = Workspace->Documents.RefOf(*document) });
     std::string signature = DeclareError;
+    for (const Problem& problem : kept)
+        signature += problem.Message + "\n";
     for (const AnimDiagnostic& diagnostic : diagnostics)
         signature += diagnostic.AssetPath + diagnostic.FieldPath + diagnostic.Code + diagnostic.Message + "\n";
     if (signature == ProblemSignature)
@@ -401,6 +423,7 @@ void AnimationWorkspace::PublishProblems()
     Undeclared = UndeclaredAnimationNamesOf(Workspace->Rig.Simulation, Workspace->Documents);
 
     std::vector<Problem> problems = AnimationRigProblems(diagnostics, Undeclared, Workspace->Documents.Store());
+    problems.insert(problems.end(), std::make_move_iterator(kept.begin()), std::make_move_iterator(kept.end()));
     if (!DeclareError.empty())
         problems.push_back({ .Severity = ProblemSeverity::Error, .Message = DeclareError });
     Problems.Publish(kProblemSource, std::move(problems));
@@ -417,6 +440,31 @@ bool AnimationWorkspace::RevealProblem(const Problem& problem)
         return false;
     OpenDocument(problem.Document->Key);
     return true;
+}
+
+namespace
+{
+struct RunRow
+{
+    std::string_view Action;
+    std::string_view Label;
+};
+} // namespace
+
+void AnimationWorkspace::DefineRuns(ActionCatalog& catalog)
+{
+    const std::array<std::pair<RunKind, RunRow>, 3> runs{ {
+        { RunKind::Batch, { "animation.run.batch", "Scenario Batch" } },
+        { RunKind::Migration, { "animation.run.migration", "Clip Player Migration" } },
+        { RunKind::Trace, { "animation.run.trace", "Imported Trace" } },
+    } };
+    for (const auto& [kind, row] : runs)
+        OfferAction(catalog, ActionHandlers,
+                    { .Id = std::string(row.Action), .Label = std::string(row.Label), .Category = "Run" },
+                    { .Invoke = [this, which = kind] {
+                         ShownRun = which;
+                         ShowCard(CardSubject::Run);
+                     } });
 }
 
 void AnimationWorkspace::DefineLenses(ActionCatalog& catalog)
@@ -931,6 +979,19 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
                  .Sections = { { .Heading = {}, .Source = EventCard.get() } },
                  .Details = { { .Heading = "Admissions", .Source = Admissions.get() } } };
     }
+    if (Subject == CardSubject::Run)
+        switch (ShownRun)
+        {
+        case RunKind::Batch:
+            return { .Title = "Scenario batch", .Sections = { { .Heading = {}, .Source = Batch.get() } }, .Primary = true };
+        case RunKind::Migration:
+            Migration->ScanOnce();
+            return { .Title = "Clip player migration",
+                     .Sections = { { .Heading = {}, .Source = Migration.get() } },
+                     .Primary = true };
+        case RunKind::Trace:
+            return { .Title = "Imported trace", .Sections = { { .Heading = {}, .Source = Trace.get() } }, .Primary = true };
+        }
     if (Subject == CardSubject::NewRig)
         return { .Title = "New rig", .Sections = { { .Heading = {}, .Source = Creation.get() } } };
     if (Subject == CardSubject::NewDocument)
