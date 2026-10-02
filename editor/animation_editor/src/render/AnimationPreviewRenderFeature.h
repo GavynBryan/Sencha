@@ -29,7 +29,8 @@ public:
     void SetStrokes(std::vector<EditorLineSegment> strokes) { Strokes = std::move(strokes); }
     void Orbit(float yaw, float pitch);
     void Zoom(float delta);
-    void FrameSubject();
+    // False while there is nothing to frame.
+    bool FrameSubject();
     [[nodiscard]] CameraRenderData ViewCamera(float aspect) const { return Camera.BuildRenderData(aspect); }
 
 private:

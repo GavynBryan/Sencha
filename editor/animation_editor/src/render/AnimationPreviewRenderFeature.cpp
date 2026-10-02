@@ -67,12 +67,13 @@ void AnimationPreviewRenderFeature::Zoom(float delta)
     Camera.Zoom(delta);
 }
 
-void AnimationPreviewRenderFeature::FrameSubject()
+bool AnimationPreviewRenderFeature::FrameSubject()
 {
     if (!Scene.Bounds.IsValid())
-        return;
+        return false;
     Radius = std::max(0.01f, Scene.Bounds.HalfExtent().Magnitude());
     Camera.Frame(Scene.Bounds.Center(), Radius);
+    return true;
 }
 
 void AnimationPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)

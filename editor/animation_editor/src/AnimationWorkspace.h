@@ -156,7 +156,7 @@ private:
     TreeOutline RigOutline;
     TreeOutline SkeletonOutline;
     ActionContext ActionHandlers;
-    std::string FramedMesh;
+    std::string FramedSubject;
     Rect2d ContentRect{};
     bool Visible = false;
     bool ShowJoints = true;

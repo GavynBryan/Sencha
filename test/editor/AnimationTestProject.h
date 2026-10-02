@@ -58,6 +58,8 @@ struct AnimationTestProject
             SkeletonJoint joint;
             joint.Name = name;
             joint.ParentIndex = parent;
+            // Every joint binds at the origin, as a cooked skeleton would say.
+            joint.InverseBind = Mat4::Identity();
             data.Joints.push_back(joint);
         }
         EXPECT_TRUE(Assets->Registry.RegisterOrVerify(

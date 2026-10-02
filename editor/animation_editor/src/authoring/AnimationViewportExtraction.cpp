@@ -41,35 +41,46 @@ void AnimationViewportExtraction::Extract(AnimationAuditionSelection& audition, 
     Scene.Queue.Reset();
     Scene.Poses->Reset();
     Scene.Bounds = Aabb3d::Empty();
-    if (!audition.HasMesh())
+    ModelTransforms.clear();
+    const SkeletonData& shown = audition.Session.Skeleton();
+    if (shown.Joints.empty())
         return;
-    const SkinnedMeshHandle mesh = audition.Mesh();
-    const auto* geometry = Assets.SkinnedMeshes->Get(mesh);
-    if (!geometry)
-        return;
-    Scene.Bounds = geometry->LocalBounds;
     const std::vector<Mat4>* shownPalette = &Palette(audition, simulation, navigation);
-    Aabb3d drawBounds = geometry->LocalBounds;
     // Model space is the character's; its feet are half the capsule below the centre.
+    std::optional<Vec3d> feet;
     if (Source == AnimationViewportSource::Simulation)
         if (const Transform3f* subjectTransform = simulation.SubjectTransform())
         {
-            const Vec3d feet = subjectTransform->Position - Vec3d(0.0f, simulation.SubjectHeight() * 0.5f, 0.0f);
-            const Mat4 placed = Mat4::MakeTRS(feet, Vec3d::Zero(), Vec3d::One()) * subjectTransform->Rotation.ToMat4();
+            feet = subjectTransform->Position - Vec3d(0.0f, simulation.SubjectHeight() * 0.5f, 0.0f);
+            const Mat4 placed = Mat4::MakeTRS(*feet, Vec3d::Zero(), Vec3d::One()) * subjectTransform->Rotation.ToMat4();
             PlacedPalette.resize(shownPalette->size());
             for (std::size_t j = 0; j < PlacedPalette.size(); ++j)
                 PlacedPalette[j] = placed * (*shownPalette)[j];
             shownPalette = &PlacedPalette;
-            // Conservative bounds: the local box's radius around the moved centre.
-            const float reach = geometry->LocalBounds.HalfExtent().Magnitude();
-            drawBounds = Aabb3d::FromCenterHalfExtent(feet + geometry->LocalBounds.Center(), Vec3d(reach, reach, reach));
         }
     const auto& palette = *shownPalette;
     // A palette entry is model times inverse bind; picking needs the model part.
-    const SkeletonData& shown = audition.Session.Skeleton();
     ModelTransforms.resize(std::min(palette.size(), shown.Joints.size()));
     for (std::size_t j = 0; j < ModelTransforms.size(); ++j)
         ModelTransforms[j] = palette[j] * shown.Joints[j].InverseBind.Inverse();
+
+    const auto* geometry = audition.HasMesh() ? Assets.SkinnedMeshes->Get(audition.Mesh()) : nullptr;
+    if (!geometry)
+    {
+        // A skeleton alone is framed by its joints.
+        for (const Mat4& joint : ModelTransforms)
+            Scene.Bounds.ExpandToInclude(joint.TransformPoint(Vec3d::Zero()));
+        return;
+    }
+    const SkinnedMeshHandle mesh = audition.Mesh();
+    Scene.Bounds = geometry->LocalBounds;
+    Aabb3d drawBounds = geometry->LocalBounds;
+    if (feet)
+    {
+        // Conservative bounds: the local box's radius around the moved centre.
+        const float reach = geometry->LocalBounds.HalfExtent().Magnitude();
+        drawBounds = Aabb3d::FromCenterHalfExtent(*feet + geometry->LocalBounds.Center(), Vec3d(reach, reach, reach));
+    }
     // Scope is nonzero to keep this editor identity distinct from runtime entity namespaces.
     const auto slot = Scene.Poses->AppendInstance(mesh, RenderEntityKey{ .Scope = 1, .Entity = {} },
                                                  static_cast<std::uint32_t>(palette.size()));

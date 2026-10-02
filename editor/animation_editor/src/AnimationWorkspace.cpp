@@ -213,7 +213,7 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
 {
     OfferAction(catalog, ActionHandlers, FrameAction(), { .Invoke = [this] {
                     if (Viewport != nullptr)
-                        Viewport->FrameSubject();
+                        (void)Viewport->FrameSubject();
                 } });
     OfferAction(catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] {
                     Workspace->Sources.CancelEdits();
@@ -493,11 +493,11 @@ void AnimationWorkspace::Tick(FrameUpdateContext& ctx)
             authoring->Update(*document, Workspace->Documents);
     Workspace->Advance(ctx.WallDeltaSeconds);
     Workspace->ExtractViewport();
-    if (Viewport != nullptr && FramedMesh != Workspace->Audition.MeshPath)
-    {
-        Viewport->FrameSubject();
-        FramedMesh = Workspace->Audition.MeshPath;
-    }
+    // A new subject on the stage is framed once it can be: a mesh, or a skeleton alone.
+    const AnimationAuditionSelection& audition = Workspace->Audition;
+    const std::string& subject = audition.MeshPath.empty() ? audition.Session.SkeletonPath() : audition.MeshPath;
+    if (Viewport != nullptr && FramedSubject != subject && Viewport->FrameSubject())
+        FramedSubject = subject;
     ShowStage();
 }
 

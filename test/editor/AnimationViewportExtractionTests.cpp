@@ -48,3 +48,25 @@ TEST(AnimationViewportExtraction, ExtractingNeverMovesAClock)
     workspace.Advance(0.25);
     EXPECT_GT(workspace.Rig.Simulation.Tick(), before) << "Advance is what moves the clocks";
 }
+
+// A skeleton auditioned without a mesh still stands on the stage: its joints
+// are posed for the bones and picking, and their extent is what is framed.
+TEST(AnimationViewportExtraction, ASkeletonAloneIsPosedAndBounded)
+{
+    constexpr const char* kSkeleton = "asset://meshes/man.blend#skel:Man";
+    AnimationTestProject project{ "sencha_viewport_skeleton_alone" };
+    project.Skeleton(kSkeleton, { { "root", -1 }, { "spine", 0 }, { "arm", 1 } });
+    project.ScanEngineAssets();
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
+    workspace.ExtractViewport();
+    EXPECT_TRUE(workspace.Viewport.Model().empty()) << "nothing auditioned, nothing posed";
+    EXPECT_FALSE(workspace.Viewport.Scene.Bounds.IsValid());
+
+    ASSERT_TRUE(workspace.Audition.SelectSkeleton(kSkeleton)) << workspace.Audition.Error;
+    ASSERT_FALSE(workspace.Audition.HasMesh());
+    workspace.ExtractViewport();
+    EXPECT_EQ(workspace.Viewport.Model().size(), 3u);
+    EXPECT_TRUE(workspace.Viewport.Scene.Bounds.IsValid());
+    EXPECT_EQ(workspace.Viewport.Scene.Queue.Opaque().size(), 0u) << "no mesh is drawn";
+}
