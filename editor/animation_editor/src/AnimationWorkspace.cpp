@@ -10,6 +10,7 @@
 #include "authoring/AnimationLayerProperties.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigCreation.h"
+#include "authoring/AnimationRootMotionProperties.h"
 #include "authoring/AnimationRuleProperties.h"
 #include "authoring/AnimationStageProperties.h"
 #include "authoring/AnimationStageStrokes.h"
@@ -104,6 +105,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     FlowCard = std::make_unique<AnimationFlowProperties>(*Workspace,
                                                          [this](const std::string& path) { OpenDocument(path); });
     BlendCard = std::make_unique<AnimationBlendProperties>(*Workspace);
+    RootMotionCard = std::make_unique<AnimationRootMotionProperties>(*Workspace);
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
     EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
@@ -166,6 +168,7 @@ AnimationWorkspace::~AnimationWorkspace()
     Creation.reset();
     Scenario.reset();
     Audition.reset();
+    RootMotionCard.reset();
     BlendCard.reset();
     FlowCard.reset();
     LayerCard.reset();
@@ -345,7 +348,7 @@ struct LensRow
     std::string_view Label;
     std::string_view Hint;
 };
-constexpr std::array<LensRow, 5> kLenses{ {
+constexpr std::array<LensRow, 6> kLenses{ {
     { AnimationLens::Rules, "animation.lens.rules", "Rules",
       "Inspect a rule to see why it won or lost; the deck's lane shows what won the layer" },
     { AnimationLens::Layers, "animation.lens.layers", "Layers",
@@ -354,6 +357,8 @@ constexpr std::array<LensRow, 5> kLenses{ {
       "The deck's lane shows the sections the layer played; Edit opens the flow as a sheet" },
     { AnimationLens::Blends, "animation.lens.blends", "Blends",
       "Drag the pad to move a blendspace; the deck's lane shows each blend as long as it ran" },
+    { AnimationLens::RootMotion, "animation.lens.root_motion", "Root motion",
+      "Move the character to see how far its clips carry it; the deck plots carried against achieved" },
     { AnimationLens::Events, "animation.lens.events", "Events", "E adds an event at the playhead" },
 } };
 } // namespace
@@ -437,6 +442,9 @@ WorkspaceTimelineFacet AnimationWorkspace::Timeline()
     const AnimationNavigation& navigation = Workspace->Rig.Navigation;
     if (ShownLens == AnimationLens::Rules && Clock->IsSimulation())
         facet.Lanes.push_back(AnimationDecisionLane(Workspace->Rig.Simulation, navigation.Layer, navigation.Rule));
+    if (ShownLens == AnimationLens::RootMotion && Clock->IsSimulation())
+        for (TimelineLane& lane : AnimationTravelLanes(Workspace->Rig.Simulation))
+            facet.Lanes.push_back(std::move(lane));
     if (ShownLens == AnimationLens::Blends && Clock->IsSimulation())
         facet.Lanes.push_back(AnimationBlendLane(Workspace->Rig.Simulation, navigation.Layer));
     if (ShownLens == AnimationLens::Flow && Clock->IsSimulation())
@@ -821,6 +829,8 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         return { .Title = name.empty() ? std::string("Unnamed joint") : name,
                  .Sections = { { .Heading = {}, .Source = Bone.get() } } };
     }
+    if (ShowingLens(AnimationLens::RootMotion))
+        return { .Title = "Root motion", .Sections = { { .Heading = {}, .Source = RootMotionCard.get() } } };
     if (ShowingLens(AnimationLens::Blends))
         return { .Title = "Blends",
                  .Sections = { { .Heading = {}, .Source = BlendCard.get() } },

@@ -274,13 +274,22 @@ struct TimelineSpan
     bool Selected = false;
 };
 
-// A row under the ruler: what held along the clock, span by span. A deck has
-// room for kTimelineLaneLimit of them.
+// A value read at a moment on the clock, for a lane that plots.
+struct TimelineSample
+{
+    double Time = 0.0;
+    double Value = 0.0;
+};
+
+// A row under the ruler: what held along the clock, span by span, or a value
+// plotted along it, sample by sample, scaled to the largest. A deck has room
+// for kTimelineLaneLimit of them.
 inline constexpr std::size_t kTimelineLaneLimit = 4;
 struct TimelineLane
 {
     std::string Label;
     std::vector<TimelineSpan> Spans = {};
+    std::vector<TimelineSample> Samples = {};
 };
 
 struct WorkspaceTimelineFacet

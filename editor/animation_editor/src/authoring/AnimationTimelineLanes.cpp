@@ -142,6 +142,23 @@ TimelineLane AnimationBlendLane(const AnimationPreviewSession& session, std::siz
     return lane;
 }
 
+std::vector<TimelineLane> AnimationTravelLanes(const AnimationPreviewSession& session)
+{
+    if (!session.Scenario().Movement)
+        return {};
+    TimelineLane carried{ .Label = "Carried" };
+    TimelineLane achieved{ .Label = "Achieved" };
+    const double seconds = session.TickSeconds();
+    for (const AnimationPreviewTickRecord& record : session.History())
+        if (record.Movement && record.Movement->Carried)
+        {
+            const double time = static_cast<double>(record.Tick) * seconds;
+            carried.Samples.push_back({ .Time = time, .Value = record.Movement->Requested.Magnitude() });
+            achieved.Samples.push_back({ .Time = time, .Value = record.Movement->Achieved.Magnitude() });
+        }
+    return { std::move(carried), std::move(achieved) };
+}
+
 std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key)
 {
     for (const auto& [prefix, what] : kPrefixes)

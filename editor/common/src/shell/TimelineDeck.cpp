@@ -8,7 +8,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
+#include <span>
 #include <vector>
 
 namespace
@@ -24,10 +26,14 @@ const UiModelRowsId kKeys = UiRowsIdAt(0);
 const UiModelRowsId kMarks = UiRowsIdAt(1);
 const UiModelRowsId kLanes = UiRowsIdAt(2);
 const UiModelRowsId kSpans = UiRowsIdAt(3);
+const UiModelRowsId kBars = UiRowsIdAt(4);
 
 // The ruler's row, then one row per lane under it, in dp.
 constexpr int kRulerHeight = 24;
 constexpr int kLaneHeight = 16;
+// A plotted lane is drawn as this many bars, each the largest sample it covers.
+constexpr std::size_t kPlotBars = 96;
+constexpr double kBarHeight = 12.0;
 
 const UiActionId kInvokeAction = UiActionIdAt(0);
 const UiActionId kScrubAction = UiActionIdAt(1);
@@ -71,7 +77,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "track_height", UiValue(std::format("{}dp", kRulerHeight)) },
         UiModelProperty{ "laned", UiValue(false) },
     };
-    desc.RowLists = { "keys", "marks", "lanes", "spans" };
+    desc.RowLists = { "keys", "marks", "lanes", "spans", "bars" };
     desc.Actions = { "deck_invoke", "deck_scrub", "deck_mark", "deck_pick" };
     return desc;
 }
@@ -109,6 +115,26 @@ double Number(const UiAction& action, std::size_t index)
                                                : 0.0;
 }
 } // namespace
+
+std::vector<double> TimelinePlotPeaks(std::span<const TimelineSample> samples, double start, double end,
+                                      std::size_t bars)
+{
+    std::vector<double> peaks(bars, 0.0);
+    double largest = 0.0;
+    for (const TimelineSample& sample : samples)
+        largest = std::max(largest, std::abs(sample.Value));
+    if (largest <= 0.0 || end <= start || bars == 0)
+        return peaks;
+    for (const TimelineSample& sample : samples)
+    {
+        const double fraction = (sample.Time - start) / (end - start);
+        if (fraction < 0.0 || fraction > 1.0)
+            continue;
+        const std::size_t bar = std::min(bars - 1, static_cast<std::size_t>(fraction * static_cast<double>(bars)));
+        peaks[bar] = std::max(peaks[bar], std::abs(sample.Value) / largest);
+    }
+    return peaks;
+}
 
 TimelineDeck::TimelineDeck(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces,
                            ActionContextStack& actions, PresentationId presentation)
@@ -229,11 +255,13 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
 
     std::vector<UiRow> lanes;
     std::vector<UiRow> spans;
+    std::vector<UiRow> bars;
     for (std::size_t index = 0; const TimelineLane& lane : timeline.Lanes)
     {
         if (index == kTimelineLaneLimit)
             break;
-        const std::string top = std::format("{}dp", kRulerHeight + kLaneHeight * static_cast<int>(index++));
+        const int laneTop = kRulerHeight + kLaneHeight * static_cast<int>(index++);
+        const std::string top = std::format("{}dp", laneTop);
         UiRow row{ lane.Label, "", "" };
         row.Parts = { top };
         lanes.push_back(std::move(row));
@@ -246,10 +274,23 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
             piece.Parts = { Percent(start), Percent(std::clamp(at(stretch.End), start, 1.0) - start), top };
             spans.push_back(std::move(piece));
         }
+        const std::vector<double> peaks = TimelinePlotPeaks(lane.Samples, timeline.Start, timeline.End, kPlotBars);
+        for (std::size_t bar = 0; bar < peaks.size(); ++bar)
+        {
+            if (peaks[bar] <= 0.0)
+                continue;
+            const double height = std::max(1.0, kBarHeight * peaks[bar]);
+            UiRow column{ "", "", "" };
+            column.Parts = { Percent(static_cast<double>(bar) / kPlotBars), Percent(1.0 / kPlotBars),
+                             std::format("{:.1f}dp", laneTop + 1 + kBarHeight - height),
+                             std::format("{:.1f}dp", height) };
+            bars.push_back(std::move(column));
+        }
     }
     LaneCount = lanes.size();
     (void)Ui.SetRows(Screen, kLanes, lanes);
     (void)Ui.SetRows(Screen, kSpans, spans);
+    (void)Ui.SetRows(Screen, kBars, bars);
     (void)Ui.SetValue(Screen, kLaned, UiValue(LaneCount > 0));
     (void)Ui.SetValue(Screen, kTrackHeight,
                       UiValue(std::format("{}dp", kRulerHeight + kLaneHeight * static_cast<int>(LaneCount))));

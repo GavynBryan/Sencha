@@ -112,3 +112,6 @@ body
     text-overflow: ellipsis;
     pointer-events: auto;
 }
+
+.bar_slot { display: block; }
+.bar { display: block; position: absolute; pointer-events: none; }

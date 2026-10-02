@@ -39,6 +39,7 @@ body { color: #d8dce4ff; }
 .theme-mark         { fill-color: #8d95a5ff; }
 .theme-mark.gameplay { fill-color: #d8a24aff; }
 .theme-mark.selected { fill-color: #ffb347ff; stroke-color: #e8ecf4ff; }
+.theme-bar          { background-color: #4c7fd0ff; }
 .theme-span         { background-color: #2a3140ff; border-color: #39414fff; color: #e8ecf4ff; }
 .theme-span.selected { background-color: #2f6fb0ff; border-color: #ffb347ff; }
 .theme-marquee      { background-color: #4c7fd029; border-color: #6f9be0ff; }

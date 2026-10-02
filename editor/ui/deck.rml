@@ -32,6 +32,11 @@
                      data-style-width="span.parts[1]" data-style-top="span.parts[2]"
                      data-event-click="deck_pick(span.key)">{{span.label}}</div>
             </div>
+            <!-- parts: left, width, top, height: a plotted lane's bars. -->
+            <div class="bar_slot" data-for="bar : bars">
+                <div class="bar theme-bar" data-style-left="bar.parts[0]" data-style-width="bar.parts[1]"
+                     data-style-top="bar.parts[2]" data-style-height="bar.parts[3]"></div>
+            </div>
             <!-- parts: where along the ruler. A movable mark drags; any mark picks. -->
             <div class="mark_slot" data-for="mark : marks">
                 <div class="mark" data-class-movable="mark.value == 'movable'" data-style-left="mark.parts[0]"

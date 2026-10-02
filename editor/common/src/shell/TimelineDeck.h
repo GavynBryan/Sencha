@@ -6,14 +6,22 @@
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
+#include <vector>
 
 class ActionContextStack;
+struct TimelineSample;
 class IWorkspace;
 class UiService;
 class WorkspaceHost;
 struct UiAction;
 struct WorkspaceTimelineFacet;
+
+// A plotted lane as `bars` columns from `start` to `end`: each the largest
+// sample in its stretch, as a share of the largest of all.
+[[nodiscard]] std::vector<double> TimelinePlotPeaks(std::span<const TimelineSample> samples, double start, double end,
+                                                    std::size_t bars);
 
 //=============================================================================
 // TimelineDeck

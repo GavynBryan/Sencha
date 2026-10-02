@@ -368,18 +368,20 @@ with a `movement` block puts the character on a floor and runs the game's
 movement pipeline and mover after content resolves, so the clip carries it
 and a wall can stop it.
 
-- **Root motion** toggles *Move the character*, and edits the walls: add one
-  ahead, set its centre and half size, or remove it. Each change replays the
-  scenario to the current tick. It plots the playing clip's root curves --
-  right, back and turn over the clip -- with where the base layer is, and
-  totals the distance carried against the distance achieved, naming the ticks
-  a wall cut short.
-- **Path** in the viewport draws the character's path on the floor, each move
-  a collision cut short (red, where it would have gone), and the walls. The
+- The **Root motion** lens's card (`AnimationRootMotionProperties`) toggles
+  *Move the character* and edits the walls: add one ahead, set its centre and
+  half size, or remove it. Each change replays the scenario to the current
+  tick. It names the base layer's clip, whether it carries the character, and
+  where along its root curve it is (right, back, turn), and totals the
+  distance carried against the distance achieved, naming the ticks a wall cut
+  short. On the simulation clock the deck plots both per tick, carried above
+  achieved.
+- The stage's path draws the character's path on the floor, each move a
+  collision cut short (red, where it would have gone), and the walls. The
   character is drawn where it stands.
 
 `test/editor/AnimationRootMotionPreviewTests.cpp` covers a carried character, a
-wall stopping it, and movement as scenario state.
+wall stopping it, movement as scenario state, the travel lanes and the card.
 
 ## Documents, undo and saving
 

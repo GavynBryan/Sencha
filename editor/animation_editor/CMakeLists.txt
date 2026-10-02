@@ -35,6 +35,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationRigCreation.cpp
     src/authoring/AnimationRigRecipe.cpp
     src/authoring/AnimationRigOutline.cpp
+    src/authoring/AnimationRootMotionProperties.cpp
     src/authoring/AnimationRuleProperties.cpp
     src/authoring/AnimationScenario.cpp
     src/authoring/AnimationScenarioBatch.cpp
@@ -58,7 +59,6 @@ add_library(animation_editor STATIC
     src/ui/AnimationMigrationPanels.cpp
     src/ui/AnimationScenarioBatchPanels.cpp
     src/ui/AnimationRequestSchemaPanel.cpp
-    src/ui/AnimationRootMotionPanels.cpp
     src/ui/AnimationSimulationPanels.cpp)
 target_link_libraries(animation_editor PUBLIC animation_authoring editor_common)
 sencha_warnings(animation_editor)

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 class AnimationPreviewSession;
 
@@ -35,4 +36,7 @@ struct AnimationLanePick
 // The blends applied on `layer` along the recorded ticks, each a span as long
 // as it ran.
 [[nodiscard]] TimelineLane AnimationBlendLane(const AnimationPreviewSession& session, std::size_t layer);
+// How far root motion carried the character on each recorded tick, and how
+// far it got: two plotted lanes, none while it poses in place.
+[[nodiscard]] std::vector<TimelineLane> AnimationTravelLanes(const AnimationPreviewSession& session);
 [[nodiscard]] std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key);

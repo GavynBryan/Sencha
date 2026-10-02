@@ -102,6 +102,8 @@ constexpr Rule kRules[] = {
     { ".theme-mark.selected", [] {
          return ShapeFill(EditorUi::SelectedOutline) + ShapeStroke(EditorUi::TextPrimary);
      } },
+    // A value plotted along a clock's lane.
+    { ".theme-bar", [] { return Fill(EditorUi::Accent); } },
     // A stretch along a clock's lane, and the one picked.
     { ".theme-span", [] {
          return Fill(EditorUi::ButtonBg) + Edge(EditorUi::Border) + Color(EditorUi::TextPrimary);
