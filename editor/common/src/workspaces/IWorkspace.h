@@ -10,13 +10,12 @@ struct Problem;
 class ActionContext;
 struct FrameUpdateContext;
 struct PlatformEventContext;
-struct WorkspaceView;
 struct WorkspaceWindow;
-class EditorUiFeature;
 
-// One kind of editing offered in a tab, alive only while open. The first half
-// is toolkit-neutral; View and Place are what an ImGui window draws, and are
-// the half a host with another toolkit replaces (editor/ARCHITECTURE.md).
+// One kind of editing, alive only while open: what it is doing, which the shell
+// presents through its facets, and the actions it performs while in use. It
+// never draws the shell; its own content it shows on the window's surfaces
+// (editor/ARCHITECTURE.md).
 class IWorkspace
 {
 public:
@@ -91,8 +90,4 @@ public:
     {
     }
 
-    virtual WorkspaceView& View() = 0;
-    // The window this workspace now draws in: its UI capture, input gates and
-    // chrome surfaces.
-    virtual void Place(EditorUiFeature&) {}
 };

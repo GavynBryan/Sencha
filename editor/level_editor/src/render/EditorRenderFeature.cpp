@@ -667,7 +667,7 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         Annotations.DrawViewport(local, viewport, camera);
     }
 
-    // Sampled and committed, so the UI's ImGui::Image can read it -- and so
+    // Sampled and committed, so the view's host image can read it -- and so
     // bloom below starts from a target whose layout is what the store says.
     session.End();
 

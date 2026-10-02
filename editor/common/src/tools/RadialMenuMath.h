@@ -8,8 +8,8 @@
 #include <numbers>
 
 // Where a radial menu lands on screen and which sector a point is in.
-// Pure pixel math with no ImGui runtime, so the session that hit-tests the
-// wheel and the chrome that paints it go through one rule rather than two
+// Pure pixel math with no UI runtime, so the session that hit-tests the
+// wheel and the screen that draws it go through one rule rather than two
 // versions of it that drift apart.
 //
 // One layout rule, two uses: slots laid evenly over an angular range at a

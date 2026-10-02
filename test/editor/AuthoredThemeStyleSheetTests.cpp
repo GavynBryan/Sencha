@@ -39,7 +39,7 @@ public:
     ScopedPalette& operator=(const ScopedPalette&) = delete;
 
 private:
-    ImVec4 Saved{};
+    Vec4 Saved{};
 };
 
 // Every `theme-*` class named by any shipped authored document.
@@ -78,7 +78,7 @@ TEST(AuthoredThemeStyleSheet, ItCarriesTheActivePaletteRatherThanALiteral)
 
     float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
     ASSERT_TRUE(ParseThemeColor("#FF8800FF", r, g, b, a));
-    EditorUi::Accent = ImVec4(r, g, b, a);
+    EditorUi::Accent = Vec4(r, g, b, a);
 
     const std::string sheet = BuildAuthoredThemeStyleSheet();
     EXPECT_NE(sheet.find("#FF8800FF"), std::string::npos)
@@ -130,6 +130,6 @@ TEST(AuthoredThemeStyleSheet, ColoursAreWrittenInTheAuthoredSrgbEncoding)
 
     float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
     ASSERT_TRUE(ParseThemeColor("#2ED0EA", r, g, b, a));
-    EditorUi::Accent = ImVec4(r, g, b, a);
+    EditorUi::Accent = Vec4(r, g, b, a);
     EXPECT_EQ(ThemeColorHex(EditorUi::Accent), "#2ED0EAFF");
 }

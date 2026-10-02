@@ -24,9 +24,7 @@
 #include "render/EditorRenderFeature.h"
 #include "ui/CookProfilesModal.h"
 #include <ui/UiService.h>
-#include "ui/EditorUiFeature.h"
 #include "ui/EditorUiStyle.h"
-#include "ui/chrome/ChromeControls.h"
 #include "document/commands/SceneInstanceCommands.h"
 #include "render/RenderFeatureDetach.h"
 #include "documents/DocumentSourceSet.h"
@@ -93,12 +91,7 @@
 
 namespace
 {
-// The viewport feature's teardown frees ImGui descriptor sets through the
-// backend the window's UI feature owns, so it depends on it and tears down
-// first.
 constexpr std::string_view kEditorRenderFeatureId = "editor_render";
-constexpr std::string_view kEditorUiFeatureId = "editor_ui";
-constexpr std::array<std::string_view, 1> kEditorRenderDependsOn{ kEditorUiFeatureId };
 constexpr std::string_view kArrangementCVar = "editor.view.arrangement";
 constexpr std::string_view kDividerXCVar = "editor.view.divider_x";
 constexpr std::string_view kDividerYCVar = "editor.view.divider_y";
@@ -149,7 +142,6 @@ LevelWorkspace::~LevelWorkspace()
     Problems.Clear("lighting");
 
     // The panels and chrome first: they hold references into everything below.
-    Surface = WorkspaceView{};
 
     // The cook runtime and Files reference Workspace/Commands/Materials/Project;
     // tear them down before that state goes away.
@@ -175,9 +167,7 @@ LevelWorkspace::~LevelWorkspace()
     Commands.reset();
     Router.reset();
     Navigation.reset();
-    // The thumbnail bindings release texture refs through the asset stack and
-    // free ImGui descriptor sets (the panels referencing the cache never touch
-    // it in their destructors).
+    // The thumbnail bindings release texture refs through the asset stack.
     Thumbnails.reset();
 }
 
@@ -233,9 +223,7 @@ void LevelWorkspace::BuildInput()
         Workspace->Layout,
         [this](bool enabled)
         {
-            // Fly-look only: hide the cursor and switch to relative mouse. The ImGui
-            // mouse gate is driven by pointer capture (Router->SetCaptureChanged
-            // below), which also covers ortho-pan and tool drags.
+            // Fly-look only: hide the cursor and switch to relative mouse.
             if (Window != nullptr)
                 SetRelativeMouseMode(*Window, enabled);
         });
@@ -277,6 +265,10 @@ void LevelWorkspace::BuildInput()
         offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
     OfferAction(Catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] { Workspace->EscapeStep(); } });
     OfferAction(Catalog, ActionHandlers, DeleteAction(), { .Invoke = [this] { Workspace->DeleteSelection(); } });
+    OfferAction(Catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { Files->Save(); } });
+    offer("file.save_as", "Save As...", "File", {}, IconId::None, [this] { Files->RequestSaveAs(); });
+    offer("file.new_world", "New World", "File", {}, IconId::None,
+          [this] { AfterSettlingChanges([this] { Files->NewWorld(); }); });
     OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
     Verbs = std::make_unique<ElementVerbs>(*Workspace, [this] { ExportSelectionGlb(); });
     Verbs->Offer(Catalog, ActionHandlers);
@@ -463,21 +455,6 @@ void LevelWorkspace::BuildInput()
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Interaction.Dispatcher->OnInput(e, cap); });
 
-    // The pointer's owner drives the ImGui input gate: while a viewport gesture
-    // (fly-look, ortho-pan, or a tool drag) holds capture, ImGui ignores both mouse
-    // and keyboard, so the unowned/hidden cursor can't hover or click the UI and the
-    // fly camera's WASD/QE don't leak into a focused widget (the console input). A UI
-    // drag (kind != Viewport) keeps both on.
-    Router->SetCaptureChanged(
-        [this](std::optional<PointerCaptureKind> kind)
-        {
-            if (UiFeature != nullptr)
-            {
-                const bool uiOwnsInput = kind != PointerCaptureKind::Exclusive;
-                UiFeature->SetMouseInputEnabled(uiOwnsInput);
-                UiFeature->SetKeyboardInputEnabled(uiOwnsInput);
-            }
-        });
 }
 
 void LevelWorkspace::BuildViewportRendering()
@@ -601,8 +578,7 @@ void LevelWorkspace::BuildViewportRendering()
     Renderer& renderer = engine.Graphics().MainRenderer;
     RenderFeature = renderer.StageFeature(
         std::move(renderFeature),
-        FeatureRegistration{ .Id = kEditorRenderFeatureId,
-                             .DependsOn = kEditorRenderDependsOn });
+        FeatureRegistration{ .Id = kEditorRenderFeatureId });
     // Committed before any panel is built against it, so a feature that fails
     // to set up leaves nothing holding its caches.
     std::vector<std::string_view> failed;
@@ -618,14 +594,6 @@ void LevelWorkspace::BuildUi()
 {
     Engine& engine = *EnginePtr;
     ConsoleService& console = engine.Console();
-
-    Surface.File = WorkspaceFileActions{
-        .New = [this] { AfterSettlingChanges([this] { Files->New(); }); },
-        .NewWorld = [this] { AfterSettlingChanges([this] { Files->NewWorld(); }); },
-        .Open = [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); },
-        .Save = [this] { Files->Save(); },
-        .SaveAs = [this] { Files->RequestSaveAs(); },
-    };
 
 
     // The views show what the render feature draws, and staging hands back
@@ -791,16 +759,6 @@ void LevelWorkspace::Tick(FrameUpdateContext& ctx)
     ProcessFrame();
 }
 
-void LevelWorkspace::Place(EditorUiFeature& window)
-{
-    UiFeature = &window;
-    if (Window != nullptr && Window != &window.GetWindow())
-        SetRelativeMouseMode(*Window, false);
-    Window = &window.GetWindow();
-    if (Files != nullptr)
-        Files->SetWindow(*Window);
-}
-
 ViewportArrangementKind LevelWorkspace::Arrangement() const
 {
     std::int64_t value = 0;
@@ -855,6 +813,14 @@ void LevelWorkspace::ShowView(ViewportOrientation orientation)
 
 void LevelWorkspace::MoveTo(const WorkspaceWindow& window)
 {
+    if (window.Window != nullptr && window.Window != Window)
+    {
+        if (Window != nullptr)
+            SetRelativeMouseMode(*Window, false);
+        Window = window.Window;
+        if (Files != nullptr)
+            Files->SetWindow(*Window);
+    }
     if (ViewSurface != nullptr)
         ViewSurface->MoveTo(window.Content);
     if (WheelScreen != nullptr)
@@ -1191,9 +1157,8 @@ void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_vie
 
 UiInputCapture LevelWorkspace::WindowUiCapture() const
 {
-    const UiInputCapture legacy = UiFeature != nullptr ? UiFeature->GetInputCapture() : UiInputCapture{};
     UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
-    return CombineUiCapture(legacy, false, ui != nullptr ? ui->Capture() : UiInputCapture{});
+    return ui != nullptr ? ui->Capture() : UiInputCapture{};
 }
 
 void LevelWorkspace::PublishProblems()

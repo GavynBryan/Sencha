@@ -7,7 +7,7 @@
 #include <span>
 
 // Where a row of buttons pinned to some geometry lands on screen. Pure pixel
-// math with no ImGui runtime and no projection, so the panel that draws the
+// math with no UI runtime and no projection, so the marks that draw the
 // buttons and the tool that hit-tests them go through one rule rather than two
 // versions of it that drift apart.
 //

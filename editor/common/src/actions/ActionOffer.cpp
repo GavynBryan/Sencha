@@ -25,6 +25,11 @@ ActionDefinition FrameAction()
              .DefaultChords = { { SDLK_F, {} } } };
 }
 
+ActionDefinition SaveAction()
+{
+    return { .Id = "file.save", .Label = "Save", .Category = "File", .DefaultChords = { { SDLK_S, { .Ctrl = true } } } };
+}
+
 ActionDefinition DeleteAction()
 {
     return { .Id = "edit.delete", .Label = "Delete", .Category = "Edit", .DefaultChords = { { SDLK_DELETE, {} } } };

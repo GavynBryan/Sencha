@@ -72,7 +72,6 @@
 
 namespace
 {
-constexpr std::array<std::string_view, 1> kPreviewDependsOn{ "editor_ui" };
 constexpr std::string_view kCommandOwner = "editor.animation";
 constexpr std::string_view kProblemSource = "animation";
 constexpr std::string_view kDeclareAction = "animation.declare_names";
@@ -146,7 +145,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     Renderer& renderer = engine.Graphics().MainRenderer;
     Viewport = renderer.StageFeature(
         std::make_unique<AnimationPreviewRenderFeature>(engine.Content().Assets(), Workspace->Viewport.Scene),
-        FeatureRegistration{ .Id = "animation_preview", .DependsOn = kPreviewDependsOn });
+        FeatureRegistration{ .Id = "animation_preview" });
     std::vector<std::string_view> failed;
     if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
     {
@@ -159,12 +158,13 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
         Pad = std::make_unique<PlanePad>(*ui);
     }
 
-    Surface.File.Save = [this, &sources] {
-        if (AnimationClipEventsDocument* events = AuditionedEvents(); events != nullptr && ShowingLens(AnimationLens::Events))
-            (void)sources.Save(Workspace->ClipEvents.RefOf(*events));
-        else if (const DataDocument* active = Workspace->Documents.Active())
-            (void)sources.Save(Workspace->Documents.RefOf(*active));
-    };
+    OfferAction(catalog, ActionHandlers, SaveAction(), { .Invoke = [this, &sources] {
+                    if (AnimationClipEventsDocument* events = AuditionedEvents();
+                        events != nullptr && ShowingLens(AnimationLens::Events))
+                        (void)sources.Save(Workspace->ClipEvents.RefOf(*events));
+                    else if (const DataDocument* active = Workspace->Documents.Active())
+                        (void)sources.Save(Workspace->Documents.RefOf(*active));
+                } });
     DefineActions(catalog);
     DefineTransport(catalog);
     DefineEventActions(catalog);
@@ -179,7 +179,6 @@ AnimationWorkspace::~AnimationWorkspace()
     Workspace->Sources.CancelEdits();
     // The preview borrows the scene the workspace extracts into.
     DetachRenderFeature(EngineRef, Viewport);
-    Surface = WorkspaceView{};
     Pad.reset();
     Picture.reset();
     NewDocument.reset();

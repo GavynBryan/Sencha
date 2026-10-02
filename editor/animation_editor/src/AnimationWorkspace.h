@@ -5,7 +5,6 @@
 #include "actions/ActionContext.h"
 #include "data/DataSubtypeAuthoring.h"
 #include "prompts/PromptQueue.h"
-#include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/TreeOutline.h"
 
@@ -109,7 +108,6 @@ public:
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
                           std::size_t mark) override;
-    WorkspaceView& View() override { return Surface; }
 
 private:
     // A press on the stage orbits once it moves; let go where it was pressed,
@@ -239,6 +237,4 @@ private:
     // The joints where they were drawn last, for picking.
     std::vector<AnimationJointMarker> Joints;
 
-    // Declared last: its panels reference everything above.
-    WorkspaceView Surface;
 };

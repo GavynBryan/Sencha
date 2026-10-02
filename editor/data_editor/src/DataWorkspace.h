@@ -9,7 +9,6 @@
 #include "data/DataSubtypeAuthoring.h"
 #include "prompts/PromptQueue.h"
 #include "properties/FilePathProperty.h"
-#include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 
 #include <cstdint>
@@ -50,7 +49,6 @@ public:
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
                           std::size_t mark) override;
-    WorkspaceView& View() override { return Surface; }
 
 private:
     void BuildUi();
@@ -85,6 +83,4 @@ private:
     bool ShowingSource = false;
     bool Visible = false;
     std::string OperationError;
-    // Declared last: its panels reference everything above.
-    WorkspaceView Surface;
 };

@@ -11,8 +11,8 @@
 #include <span>
 
 // Where a rotation dial pinned to a face plane sits, and whether the cursor is
-// on it. Pure geometry with no ImGui runtime and no projection of its own, so
-// the panel that draws the dial and the tool that hit-tests it go through one
+// on it. Pure geometry with no UI runtime and no projection of its own, so
+// the strokes that draw the dial and the tool that hit-tests it go through one
 // rule rather than two that drift apart.
 //
 // Sizes are in design pixels and scaled at the call site, and the two functions

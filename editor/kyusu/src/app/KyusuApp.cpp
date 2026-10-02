@@ -10,8 +10,7 @@
 #include "render/RenderFeatureDetach.h"
 #include "input/KeymapFile.h"
 #include "input/SdlEventTranslation.h"
-#include "ui/EditorThemeStartup.h"
-#include "ui/EditorUiFeature.h"
+#include "ui/UiScaleChoice.h"
 #include "workspaces/WorkspaceHost.h"
 
 #include <app/Engine.h>
@@ -47,10 +46,9 @@
 
 namespace
 {
-constexpr std::string_view kEditorUiFeatureId = "editor_ui";
 constexpr std::string_view kContentUiFeatureId = "content_ui";
 constexpr std::string_view kMotionCVar = "editor.ui.motion";
-constexpr std::string_view kEditorUiDependsOn[] = { kContentUiFeatureId };
+constexpr std::string_view kScaleCVar = "editor.ui.scale";
 
 // Platform branding, not theme art: the icon is the product's and never
 // changes with a theme, so it is set once and forgotten. SDL copies the
@@ -117,9 +115,6 @@ void KyusuApp::OnConfigure(GameConfigureContext& ctx)
     // The editor draws its own caption; the window keeps the platform frame
     // only where client decorations are unavailable.
     ctx.Config.Window.ClientDecorations = true;
-    // The editor is its own ImGui host; a window holds only one ImGui context,
-    // so the engine's default debug overlay must not be created.
-    ctx.Config.Console.UiEnabled = false;
     // An editor is a tool, not an application a player sits in front of: no
     // pause shell, no options page, no Back action reading its Escape.
     ctx.Config.Runtime.ApplicationShell = false;
@@ -152,49 +147,30 @@ void KyusuApp::OnStart(GameStartupContext&)
     Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts, Problems, Notices),
                                                  Session->Project() != nullptr, mainWindow);
 
-    // Chrome theme (behavior from data), loaded before the UI feature applies
-    // the ImGui style.
-    ApplyEditorThemeFromConsole(engine.Console());
-    auto ui = std::make_unique<EditorUiFeature>(engine, *window, graphics.Instance, graphics.Frames,
-                                                "kyusu.imgui.ini");
-    ui->SetWorkspaceHost(*Workspaces, mainWindow);
-    ui->SetActionCatalog(&Catalog);
-    Renderer& renderer = graphics.MainRenderer;
-    // The window's content layer draws before the panels, which draw before
-    // the engine's own authored UI: content, then panels, then the shell.
-    std::span<const std::string_view> uiDependsOn;
+    Theme = std::make_unique<ThemeSheet>(engine.Console().Registry(), Problems, SENCHA_EDITOR_THEME_DIR);
+    // The window's content layer draws before the engine's own authored UI:
+    // content, then the shell.
     if (UiService* authored = engine.TryUi())
     {
+        Renderer& renderer = graphics.MainRenderer;
         (void)renderer.StageFeature(std::make_unique<UiRenderFeature>(*authored, engine.Content().Assets().Textures.get(),
                                                                       0, kContentUiLayer),
                                     FeatureRegistration{ .Id = kContentUiFeatureId });
-        uiDependsOn = kEditorUiDependsOn;
-    }
-    Ui = renderer.StageFeature(std::move(ui), FeatureRegistration{ .Id = kEditorUiFeatureId, .DependsOn = uiDependsOn });
-    std::vector<std::string_view> failed;
-    if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
-    {
-        std::fprintf(stderr, "[kyusu] the editor UI failed to set up; nothing can be drawn\n");
-        Ui = nullptr;
+        std::vector<std::string_view> failed;
+        if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
+            std::fprintf(stderr, "[kyusu] the content layer failed to set up; views will not show\n");
     }
 
     Workspaces->SetWindowOpener([this](const WorkspaceKind& kind) { return OpenDetachedWindow(kind); });
     Workspaces->SetPlacedListener([this](const WorkspaceKind& kind, IWorkspace& workspace) {
-        const PresentationId placedIn = Workspaces->WindowOf(kind.Id);
-        if (EditorUiFeature* shell = ShellFor(placedIn))
-            workspace.Place(*shell);
-        if (const ShellWindow* windowShell = WindowShellFor(placedIn))
+        if (const ShellWindow* windowShell = WindowShellFor(Workspaces->WindowOf(kind.Id)))
             workspace.MoveTo(windowShell->Binding());
     });
     Workspaces->SetWindowEmptiedListener([this](PresentationId emptied) { CloseDetachedWindow(emptied); });
 
     InstallDocumentActions();
     DefineApplicationActions();
-    if (Ui != nullptr)
-    {
-        Ui->DefineThemeActions();
-        MainWindowActions->View = MainWindowActions->Stack.Push(Ui->ViewActionContext(), ActionRank::Window);
-    }
+    Theme->DefineActions(Catalog, ApplicationActions);
     if (engine.TryUi() != nullptr)
         MainWindowShell = MakeShell(*window, mainWindow, *MainWindowActions, [&engine] { engine.RequestExit(); });
     RegisterWorkspaceCommands();
@@ -207,13 +183,14 @@ void KyusuApp::OnStart(GameStartupContext&)
 PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
 {
     Engine& engine = GetEngine();
-    if (Ui == nullptr)
-        return {};
     GraphicsServices& graphics = engine.Graphics();
     SdlWindowService& windows = engine.Platform().Windows;
+    const SdlWindow* primary = windows.GetPrimaryWindow();
+    if (primary == nullptr || engine.TryUi() == nullptr)
+        return {};
     WindowCreateInfo info;
     info.Title = "Kyusu - " + kind.DisplayName;
-    const WindowExtent extent = Ui->GetWindow().GetExtent();
+    const WindowExtent extent = primary->GetExtent();
     info.Width = extent.Width;
     info.Height = extent.Height;
     info.ClientDecorations = engine.Config().Window.ClientDecorations;
@@ -225,38 +202,21 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
     SdlWindow& window = graphics.Frames.FindPresentation(presentation)->Window();
     ApplyWindowIcon(window);
 
-    // Content, then panels, then the shell, as in the main window: features
-    // in one phase draw in the order they were added.
-    UiRenderFeature* contentFeature = nullptr;
-    if (UiService* ui = engine.TryUi())
-        contentFeature = graphics.MainRenderer.AddFeature(
-            std::make_unique<UiRenderFeature>(*ui, engine.Content().Assets().Textures.get(), window.GetId(),
-                                              kContentUiLayer),
-            RenderFeatureScope::For(presentation));
-    auto shell = std::make_unique<EditorUiFeature>(*Ui, window);
-    shell->SetWorkspaceHost(*Workspaces, presentation);
-    shell->SetActionCatalog(&Catalog);
-    EditorUiFeature* added = graphics.MainRenderer.AddFeature(std::move(shell), RenderFeatureScope::For(presentation));
-    if (added == nullptr)
-    {
-        if (contentFeature != nullptr)
-            DetachRenderFeature(engine, contentFeature);
-        (void)ClosePresentationWindow(graphics, windows, presentation);
-        return {};
-    }
+    // Content, then the shell, as in the main window: features in one phase
+    // draw in the order they were added.
+    UiService& ui = *engine.TryUi();
+    UiRenderFeature* contentFeature = graphics.MainRenderer.AddFeature(
+        std::make_unique<UiRenderFeature>(ui, engine.Content().Assets().Textures.get(), window.GetId(), kContentUiLayer),
+        RenderFeatureScope::For(presentation));
+    UiRenderFeature* uiFeature = graphics.MainRenderer.AddFeature(
+        std::make_unique<UiRenderFeature>(ui, engine.Content().Assets().Textures.get(), window.GetId()),
+        RenderFeatureScope::For(presentation));
     auto actions = std::make_unique<WindowActions>();
     actions->Application = actions->Stack.Push(ApplicationActions, ActionRank::Application);
-    actions->View = actions->Stack.Push(added->ViewActionContext(), ActionRank::Window);
-    // The window's own authored UI: its shell, drawn by a UI feature of its own.
-    UiRenderFeature* uiFeature = nullptr;
-    if (UiService* ui = engine.TryUi())
-        uiFeature = graphics.MainRenderer.AddFeature(
-            std::make_unique<UiRenderFeature>(*ui, engine.Content().Assets().Textures.get(), window.GetId()),
-            RenderFeatureScope::For(presentation));
     std::unique_ptr<ShellWindow> windowShell =
         MakeShell(window, presentation, *actions, [this, presentation] { WindowsToClose.push_back(presentation); });
-    Detached.push_back(DetachedWindow{ presentation, window.GetId(), added, std::move(actions),
-                                       std::move(windowShell), uiFeature, contentFeature });
+    Detached.push_back(DetachedWindow{ presentation, window.GetId(), std::move(actions), std::move(windowShell),
+                                       uiFeature, contentFeature });
     return presentation;
 }
 
@@ -271,7 +231,6 @@ void KyusuApp::CloseDetachedWindow(PresentationId window)
     // records into refuses to go.
     it->WindowShell.reset();
     it->Actions.reset();
-    DetachRenderFeature(engine, it->Shell);
     if (it->Ui != nullptr)
         DetachRenderFeature(engine, it->Ui);
     if (it->ContentUi != nullptr)
@@ -289,16 +248,6 @@ void KyusuApp::CloseRequestedWindows()
         Workspaces->Gather(window);
 }
 
-EditorUiFeature* KyusuApp::ShellFor(PresentationId window) const
-{
-    if (Workspaces != nullptr && window == Workspaces->MainWindow())
-        return Ui;
-    for (const DetachedWindow& entry : Detached)
-        if (entry.Presentation == window)
-            return entry.Shell;
-    return nullptr;
-}
-
 ShellWindow* KyusuApp::WindowShellFor(PresentationId window) const
 {
     if (Workspaces != nullptr && window == Workspaces->MainWindow())
@@ -309,12 +258,12 @@ ShellWindow* KyusuApp::WindowShellFor(PresentationId window) const
     return nullptr;
 }
 
-EditorUiFeature* KyusuApp::ShellForWindowId(std::uint32_t windowId) const
+PresentationId KyusuApp::WindowOf(std::uint32_t windowId) const
 {
     for (const DetachedWindow& entry : Detached)
         if (entry.WindowId == windowId)
-            return entry.Shell;
-    return Ui;
+            return entry.Presentation;
+    return Workspaces->MainWindow();
 }
 
 void KyusuApp::InstallDocumentActions()
@@ -412,19 +361,21 @@ void KyusuApp::DefineApplicationActions()
           { .Invoke = [this] { Undo(); }, .Enabled = [this] { return CanUndo(); } });
     offer("edit.redo", "Redo", { { SDLK_Z, { .Ctrl = true, .Shift = true } }, { SDLK_Y, { .Ctrl = true } } },
           { .Invoke = [&documents] { documents.Redo(); }, .Enabled = [&documents] { return documents.CanRedo(); } });
-    offer("file.save", "Save", { { SDLK_S, { .Ctrl = true } } },
-          { .Invoke = [this] {
-                IWorkspace* active = Workspaces->Active();
-                if (active != nullptr && active->View().File.Save)
-                    active->View().File.Save();
-            },
-            .Enabled = [this] {
-                IWorkspace* active = Workspaces->Active();
-                return active != nullptr && active->View().File.Save != nullptr;
-            } });
     offer("file.save_all", "Save All", { { SDLK_S, { .Ctrl = true, .Shift = true } } },
           { .Invoke = [&documents] { (void)documents.SaveAll(); } });
 
+    registry.RegisterCVar({
+        .Name = std::string(kScaleCVar),
+        .Owner = "editor",
+        .Type = CVarType::Double,
+        .DefaultValue = 0.0,
+        .CurrentValue = 0.0,
+        .Flags = CVarFlags::Archive,
+        .Help = "Editor UI scale. 0 follows each window's display scale.",
+        .Source = { "editor" },
+        .Min = 0.0,
+        .Max = 4.0,
+    });
     registry.RegisterCVar({
         .Name = std::string(kMotionCVar),
         .Owner = "editor",
@@ -600,12 +551,11 @@ void KyusuApp::OnRegisterSystems(SystemRegisterContext& ctx)
 
 void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
 {
-    if (Ui == nullptr || Workspaces == nullptr)
+    if (Workspaces == nullptr)
         return;
-    // Every window's events arrive here; each goes to the shell of its window
-    // and the workspace showing there.
-    EditorUiFeature* shell = ShellForWindowId(ctx.WindowId);
-    const PresentationId window = shell->ShownWindow();
+    // Every window's events arrive here; each goes to the workspace showing in
+    // its window.
+    const PresentationId window = WindowOf(ctx.WindowId);
     if (window != Workspaces->MainWindow())
     {
         if (ctx.Event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
@@ -619,25 +569,18 @@ void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
     if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
         if (const WorkspaceKind* kind = Workspaces->ActiveKindIn(window))
             Workspaces->Request({ WorkspaceAction::Activate, kind->Id });
-    if (ctx.Event.type == SDL_EVENT_KEY_DOWN && !ctx.Event.key.repeat
-        && ctx.Event.key.scancode == SDL_SCANCODE_GRAVE)
-    {
-        shell->ToggleConsole();
-        ctx.Handled = true;
-        return;
-    }
     IWorkspace* active = Workspaces->ActiveIn(window);
     if (active != nullptr && active->ClaimPlatformEvent(ctx))
     {
         ctx.Handled = true;
         return;
     }
-    shell->ProcessSdlEvent(ctx.Event);
     if (active != nullptr)
         active->HandlePlatformEvent(ctx);
     // Keys the active workspace left alone, unless a text field has them, are
     // the window's actions.
-    if (ctx.Handled || shell->GetInputCapture().Keyboard)
+    const UiService* ui = GetEngine().TryUi();
+    if (ctx.Handled || (ui != nullptr && ui->Capture(ctx.WindowId).Keyboard))
         return;
     const std::optional<InputEvent> event = TranslateSdlEvent(ctx.Event);
     const KeyDownEvent* key = event.has_value() ? std::get_if<KeyDownEvent>(&*event) : nullptr;
@@ -651,8 +594,8 @@ void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
 void KyusuApp::OnShutdown(GameShutdownContext&)
 {
     // Drain the GPU first. The frame loop returns without waiting, so the last
-    // frames it submitted may still be executing, and the workspaces free ImGui
-    // descriptor sets and render features as they close.
+    // frames it submitted may still be executing, and the workspaces free
+    // render features as they close.
     if (GraphicsServices* graphics = GetEngine().TryGraphics())
         graphics->WaitIdle();
 
@@ -669,12 +612,10 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
         if (MainWindowActions != nullptr)
         {
             MainWindowActions->Workspace.Reset();
-            MainWindowActions->View.Reset();
             MainWindowActions->Layered = nullptr;
         }
         Workspaces->CloseAll();
     }
-    DetachRenderFeature(GetEngine(), Ui);
     Workspaces.reset();
     // Both read the journal the session is about to take with it.
     CloseAsker = {};
@@ -707,30 +648,18 @@ void KyusuApp::UpdateShells()
     const double now = NoticeClockNow();
     ShellPreferences preferences;
     const ConsoleRegistry& registry = GetEngine().Console().Registry();
-    if (const CVarMetadata* var = registry.FindCVar("editor.ui.scale"))
+    if (const CVarMetadata* var = registry.FindCVar(kScaleCVar))
         if (const double* value = std::get_if<double>(&var->CurrentValue))
             preferences.Scale = *value;
     if (const CVarMetadata* var = registry.FindCVar(kMotionCVar))
         if (const bool* value = std::get_if<bool>(&var->CurrentValue))
             preferences.Motion = *value;
+    if (const SdlWindow* primary = GetEngine().Platform().Windows.GetPrimaryWindow())
+        EditorUi::UiScale = ChooseUiScale(preferences.Scale, primary->GetDisplayScale());
+    Theme->Update(GetEngine().TryUi());
     if (MainWindowShell != nullptr)
-    {
         MainWindowShell->Update(now, preferences);
-        if (Ui != nullptr)
-        {
-            Ui->SetContentTopInset(MainWindowShell->RailHeight());
-            Ui->SetContentBottomInset(MainWindowShell->StationBand());
-        }
-    }
     for (DetachedWindow& entry : Detached)
-    {
-        if (entry.WindowShell == nullptr)
-            continue;
-        entry.WindowShell->Update(now, preferences);
-        if (entry.Shell != nullptr)
-        {
-            entry.Shell->SetContentTopInset(entry.WindowShell->RailHeight());
-            entry.Shell->SetContentBottomInset(entry.WindowShell->StationBand());
-        }
-    }
+        if (entry.WindowShell != nullptr)
+            entry.WindowShell->Update(now, preferences);
 }

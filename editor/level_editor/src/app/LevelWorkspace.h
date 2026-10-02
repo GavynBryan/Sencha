@@ -22,14 +22,12 @@
 #include "viewport/ViewDividerDrag.h"
 #include "viewport/ViewportArrangement.h"
 #include "project/Project.h"
-#include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 
 #include <memory>
 #include <optional>
 #include <vector>
 
-class EditorUiFeature;
 class MaterialThumbnailCache;
 class LevelViewSurface;
 class RadialMenuScreen;
@@ -106,12 +104,9 @@ public:
     bool RevealProblem(const Problem& problem) override;
     // The world's validation, republished only when it changed.
     void PublishProblems();
-    // What the window's UI -- authored, or ImGui until it is gone -- wants of
-    // the pointer and keys now.
+    // What the window's UI wants of the pointer and keys now.
     [[nodiscard]] UiInputCapture WindowUiCapture() const;
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
-    WorkspaceView& View() override { return Surface; }
-    void Place(EditorUiFeature& window) override;
 
 private:
     void DefineTransportActions();
@@ -165,7 +160,6 @@ private:
     // Whichever wheel is open, over everything in the window.
     std::unique_ptr<RadialMenuScreen> WheelScreen;
     // The window this workspace is placed in; null until it is.
-    EditorUiFeature* UiFeature = nullptr;
     std::unique_ptr<EditorViewportCameraSystem> CameraSystem;
     Engine* EnginePtr = nullptr;
     // The window the workspace is placed in: its pointer, layout and dialogs.
@@ -214,7 +208,7 @@ private:
     // Thumbnail GPU residency for the browser and active-material previews.
     // Reset explicitly in the destructor after the render feature releases its
     // scene resources and before Assets goes away (the bindings inside release
-    // through the asset system and the live ImGui backend).
+    // through the asset system).
     std::unique_ptr<MaterialThumbnailCache> Thumbnails;
 
     // Component identities the module's registration added serializers for,
@@ -231,6 +225,4 @@ private:
     std::vector<std::string> OfferedProfiles;
     std::uint64_t OfferedProfilesRevision = 0;
     std::unique_ptr<DocumentFileActions> Files;
-    // Declared last: its panels and chrome reference everything above.
-    WorkspaceView Surface;
 };

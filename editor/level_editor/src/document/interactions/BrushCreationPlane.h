@@ -40,7 +40,7 @@ struct BrushCreationPlane
 };
 
 // Depth-axis placement (center, half-extent, rest side). Pure math, no
-// viewport/ImGui, so the three creation cases unit-test in brush_tests.
+// viewport, so the three creation cases unit-test in brush_tests.
 struct BrushDepthPlacement
 {
     float Center = 0.0f;

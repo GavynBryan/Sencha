@@ -10,6 +10,7 @@
 #include "prompts/DocumentPrompts.h"
 #include "prompts/PromptQueue.h"
 #include "shell/ShellWindow.h"
+#include "shell/ThemeSheet.h"
 
 #include <graphics/PresentationId.h>
 
@@ -19,7 +20,6 @@
 #include <string>
 #include <vector>
 
-class EditorUiFeature;
 class SdlWindow;
 class UiRenderFeature;
 class IWorkspace;
@@ -27,8 +27,8 @@ class ProjectSession;
 class WorkspaceHost;
 struct WorkspaceKind;
 
-// Kyusu's Game entry point: the project session, the window's UI and the
-// workspaces drawn in it, built in that order and torn down in reverse.
+// Kyusu's Game entry point: the project session, the windows' shells and the
+// workspaces shown in them, built in that order and torn down in reverse.
 class KyusuApp : public Game
 {
 public:
@@ -49,7 +49,7 @@ private:
     // a workspace with changes asking before it closes.
     void InstallDocumentActions();
     void AskBeforeClosing(const WorkspaceKind& kind, std::vector<DocumentRef> changed);
-    // The operations every workspace shares -- undo, redo, save, save all --
+    // The operations every workspace shares -- undo, redo, save all --
     // and the user's keymap. Every action defined from then on is also a
     // console command of the same id.
     void DefineApplicationActions();
@@ -57,8 +57,7 @@ private:
     // workspace's out once it is no longer the one in use.
     struct WindowActions;
     void SyncActionLayers();
-    // Each window's shell: act on and publish its rail, and give the docked
-    // content under it the room left.
+    // The theme, then each window's shell: act on and publish its rail.
     void UpdateShells();
     [[nodiscard]] std::unique_ptr<ShellWindow> MakeShell(SdlWindow& window, PresentationId presentation,
                                                          WindowActions& actions, std::function<void()> close);
@@ -72,9 +71,8 @@ private:
     // either cannot be made.
     PresentationId OpenDetachedWindow(const WorkspaceKind& kind);
     void CloseDetachedWindow(PresentationId window);
-    // The shell of the window an event names; the primary's for one naming none.
-    [[nodiscard]] EditorUiFeature* ShellForWindowId(std::uint32_t windowId) const;
-    [[nodiscard]] EditorUiFeature* ShellFor(PresentationId window) const;
+    // The window an event names; the primary for one naming none.
+    [[nodiscard]] PresentationId WindowOf(std::uint32_t windowId) const;
     [[nodiscard]] ShellWindow* WindowShellFor(PresentationId window) const;
     // Windows asked to close mid-frame, closed at the next frame boundary.
     void CloseRequestedWindows();
@@ -92,7 +90,6 @@ private:
     {
         ActionContextStack Stack;
         ActionContextStack::Layer Application;
-        ActionContextStack::Layer View;
         ActionContextStack::Layer Workspace;
         const IWorkspace* Layered = nullptr;
     };
@@ -107,18 +104,15 @@ private:
     std::unique_ptr<DocumentSaveFollowUp> SaveFollowUp;
     PromptQueue::Asker CloseAsker;
     std::unique_ptr<WorkspaceHost> Workspaces;
-    // Owned by the renderer.
-    EditorUiFeature* Ui = nullptr;
+    std::unique_ptr<ThemeSheet> Theme;
     struct DetachedWindow
     {
         PresentationId Presentation;
         std::uint32_t WindowId = 0;
-        // Owned by the renderer.
-        EditorUiFeature* Shell = nullptr;
         std::unique_ptr<WindowActions> Actions;
         std::unique_ptr<ShellWindow> WindowShell;
+        // Owned by the renderer: the window's shell, and its content under it.
         UiRenderFeature* Ui = nullptr;
-        // The content layer, drawn under the window's panels.
         UiRenderFeature* ContentUi = nullptr;
     };
     std::vector<DetachedWindow> Detached;

@@ -43,7 +43,6 @@
 namespace
 {
 constexpr std::string_view kTargetFeatureId = "ui_surface_target";
-constexpr std::array<std::string_view, 1> kTargetDependsOn{ "editor_ui" };
 constexpr std::string_view kCommandOwner = "editor.ui_preview";
 constexpr std::string_view kProblemSource = "ui_preview";
 constexpr std::string_view kVocabularyProblemSource = "vocabulary";
@@ -134,6 +133,10 @@ UiPreviewWorkspace::UiPreviewWorkspace(Engine& engine, const ProjectDescriptor* 
     BuildLibrary(project);
     BuildUi();
     DefineActions(catalog);
+    OfferAction(catalog, ActionHandlers, SaveAction(), { .Invoke = [this] {
+                    std::string error;
+                    (void)SaveModel(&error);
+                } });
     RegisterCommands();
 }
 
@@ -144,7 +147,6 @@ UiPreviewWorkspace::~UiPreviewWorkspace()
     Problems.Clear(kVocabularyProblemSource);
     // The session closes its screen before the feature that drew it goes, and
     // the feature goes while the caches it borrows are still alive.
-    Surface = WorkspaceView{};
     Picture.reset();
     Session.reset();
     DetachRenderFeature(EngineRef, Target);
@@ -192,7 +194,7 @@ void UiPreviewWorkspace::BuildUi()
     Renderer& renderer = EngineRef.Graphics().MainRenderer;
     Target = renderer.StageFeature(
         std::make_unique<UiSurfaceTargetRenderFeature>(*ui, EngineRef.Content().Assets().Textures.get()),
-        FeatureRegistration{ .Id = kTargetFeatureId, .DependsOn = kTargetDependsOn });
+        FeatureRegistration{ .Id = kTargetFeatureId });
     std::vector<std::string_view> failed;
     if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
     {
@@ -204,7 +206,6 @@ void UiPreviewWorkspace::BuildUi()
 
     ModelCard = std::make_unique<PreviewModelProperties>(*Session);
     MissCard = std::make_unique<BindingMissProperties>(*Session);
-    Surface.File.Save = [this] { std::string error; (void)SaveModel(&error); };
     ScanVocabulary();
 }
 

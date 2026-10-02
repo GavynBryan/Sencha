@@ -12,10 +12,10 @@ of editing it offers is a workspace library:
 
 | Tree | Target | What it is |
 | --- | --- | --- |
-| `editor/common/` | `editor_common` (static lib) | The shared editor shell: ImGui UI feature + theme/skin, generic input, commands/selection/tools/interaction abstractions, offscreen viewport targets, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
-| `editor/level_editor/` | `level_authoring` + `level_editor` (static libs) | The level editor. Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `level_editor` library is the shell over it (composition root, panels, render passes, SDL and window plumbing). Everything below is about its internals. |
+| `editor/common/` | `editor_common` (static lib) | What every workspace shares: the shell (rail, stations, cards, explorers, prompts, palette, presented through Shoji), the theme, actions, properties, generic input, commands/selection/tools/interaction abstractions, offscreen targets shown as host images, and the project layer (descriptor, argv resolution, content mounting, process spawning). |
+| `editor/level_editor/` | `level_authoring` + `level_editor` (static libs) | The level editor. Split in two: the authoring library (document, brush kernel, mesh edit, workspace, edit modes, viewport math, cook) is GUI- and Vulkan-free and is what the headless test targets link; the `level_editor` library is what needs a GPU and a window over it (composition root, the views and dialog surfaces, render passes, SDL and window plumbing). Everything below is about its internals. |
 | `editor/kyusu/` | `kyusu` | The Kyusu executable and composition root: `KyusuApp`, the `ProjectSession`, and the table of workspace kinds. The only tree that sees every workspace. |
-| `editor/data_editor/` | `data_editor` (static lib) | The Data workspace: schema-driven forms over typed `.sdata` documents. |
+| `editor/data_editor/` | `data_editor` (static lib) | The Data workspace: schema-laid sheets over typed `.sdata` documents. |
 | `editor/animation_editor/` | `animation_authoring` + `animation_editor` (static libs) | The Animation workspace: rig, selector and clip-event authoring over a live skinned preview and a scenario lab. |
 | `editor/material_editor/` | `material_editor` (static lib) | The Materials workspace: browse, edit and save `.smat` with a live MeshForwardPass preview. |
 | `editor/project_browser/` | `project_browser` (static lib) | The Project workspace: recent projects, create project, project settings. Opening a project starts Kyusu again on it and ends the choosing process. Kyusu opens on it when started without a project. |
@@ -32,7 +32,7 @@ The engine never depends on editor code (one-way dependency).
 ## Kyusu and its workspaces
 
 Kyusu (`editor/kyusu/`, `KyusuApp`) is the one `Game`. It owns the
-`ProjectSession`, each window's `ShellWindow` and `EditorUiFeature`, and a
+`ProjectSession`, each window's `ShellWindow`, the `ThemeSheet`, and a
 `WorkspaceHost` (`common/src/workspaces/`) built from the kinds table in
 `kyusu/src/app/WorkspaceKinds.cpp`. A workspace (`IWorkspace`) is built when
 first opened and destroyed when closed. Each window's `ShellWindow`
@@ -41,16 +41,21 @@ hatch listing every action in play, the workspace and document dials, the
 problems lamp, the transport and the window keys, all fed by the active
 workspace's facets (`WorkspaceFacets.h`) and actions. It also presents the
 command palette (Ctrl+K) and the prompt queue's front question; every window
-shows the same question, so it is answered wherever the person is. Under the rail the
-window's `EditorUiFeature` docks the active workspace's ImGui `WorkspaceView`
-panels until each workspace presents through the shell. Under the panels is
-the window's content surface (`WorkspaceWindow::Content`, drawn in
-`kContentUiLayer` by a `UiRenderFeature` ordered before the ImGui feature):
-the Level draws its views there as host images (`LevelViewSurface`), laid out
-by `ViewportArrangement` over the rect the shell hands the showing workspace
-(`IWorkspace::SetContentRect`: the window below the rail). A workspace with no
-ImGui panel showing gets no dock or chassis, so the Level's views run edge to
-edge under the instruments (`docs/editor/interaction-grammar.md`). The views meet at a divider the
+shows the same question, so it is answered wherever the person is. Under the
+shell is the window's content surface (`WorkspaceWindow::Content`, drawn in
+`kContentUiLayer` by a `UiRenderFeature` ordered before the shell's): the
+active workspace shows its content there full bleed over the rect the shell
+hands it (`IWorkspace::SetContentRect`: the window below the rail). The Level
+draws its views as host images (`LevelViewSurface`), laid out by
+`ViewportArrangement`; Materials, Animation and UI Preview show one
+`presenters/ContentPicture` each (`docs/editor/interaction-grammar.md`). Every
+surface a workspace or the shell shows is an authored document under
+`editor/ui/`; nothing in `editor/` draws with ImGui, and the only ImGui in a
+Kyusu window is the engine's diagnostics overlay (the console, on the backquote
+key). The theme (`editor.ui.theme`, `theme.use.*`) is colours only:
+`ThemeSheet` loads `editor/themes/<name>.json` into the palette and publishes
+it as the stylesheet every document imports (`ui/AuthoredThemeStyleSheet`),
+and `editor.ui.scale` sizes every document. The views meet at a divider the
 person drags (`ViewDividerDrag`, kept in the `editor.view.divider_x/_y`
 cvars); the shell's transitions follow `editor.ui.motion`.
 Opening, closing and switching are requests applied at the frame boundary by
@@ -58,8 +63,8 @@ the one `WorkspaceTickSystem`, since a workspace adds and removes render
 features as it comes and goes; each open workspace is ticked there too.
 
 Data documents live once per process in the session's `DataDocumentStore`;
-each workspace shows them through a `DataDocumentSet` view (its tabs, active
-document and selected field), so the Data and Animation workspaces showing one
+each workspace shows them through a `DataDocumentSet` view (its open documents,
+active document and selected field), so the Data and Animation workspaces showing one
 file edit one document, and the store closes it when its last view lets go.
 
 Documents share one journal, the session's `DocumentSourceSet`: every
@@ -74,28 +79,21 @@ does so deliberately. Cook and Play save every document first and stop on a
 conflict or a failure. Saving a document whose file changed on disk since it
 was read is a conflict the author settles, never an overwrite.
 
-Each panel is given a window identity `<kind>.<settings id>` and its
-remembered visibility is filed under `<kind>/<settings id>`, so two
-workspaces' panels never share a window or a setting. The host adds a console
-to every workspace it adopts.
-
 A workspace is placed in a window. The main window is the engine's primary
-presentation; `workspace.detach` (or a tab dragged off the strip, or its "Move
-to New Window") opens another through `OpenPresentationWindow` and draws the
-workspace there with a detached `EditorUiFeature`: its own ImGui context and
-backends over the primary's font atlas, style and layout, recorded into that
-presentation's swapchain scope. Each window shows the workspace most recently
-activated in it; closing a window, or `workspace.attach`, brings its
-workspaces back, and a window left empty closes. Every ImGui texture set is
-added and freed through the primary's backend (`ui/ImGuiTextureOwner`), since
-a preview shown in one window may be released from another. Platform events
-reach the shell and workspace of the window they name.
+presentation; `workspace.detach` (the workspace dial's "Move to New Window")
+opens another through `OpenPresentationWindow` with its own shell and the same
+two `UiRenderFeature`s (content, then shell) scoped to that presentation, and
+`IWorkspace::MoveTo` rebinds the workspace to the new `WorkspaceWindow`. UI
+surfaces name their window, so each window draws and hit-tests only its own.
+Each window shows the workspace most recently activated in it; closing a
+window, or `workspace.attach`, brings its workspaces back, and a window left
+empty closes. Platform events reach the shell and workspace of the window they
+name.
 
-Offscreen previews render only while a panel shows them: the UI marks what it
-displayed in a `DisplayLedger`, and the next frame renders and keeps only that
-(`render/DisplayedTargets`; the level viewports read the same ledger). A
-hidden workspace, a closed panel and a minimized window cost no target and no
-recording.
+Offscreen previews render only while something shows them: a workspace marks
+what it displayed in a `DisplayLedger`, and the next frame renders and keeps
+only that (`render/DisplayedTargets`; the level views read the same ledger). A
+hidden workspace and a minimized window cost no target and no recording.
 
 The level workspace (`level_editor/src/app/LevelWorkspace`) is the level
 editor's composition root. Its constructor is the bring-up sequence, split
@@ -125,7 +123,7 @@ shows up live. The assembly -- watcher, reloader, importer set, throttled poll
 
 ## Include convention
 
-Includes are src-root-relative (`ui/EditorUiFeature.h`, `brush/BrushMesh.h`).
+Includes are src-root-relative (`shell/ShellWindow.h`, `brush/BrushMesh.h`).
 Each application has its own `src/` and `editor_common`'s `src/` on the include
 path; application src dirs are never on `editor_common`'s path, so the shell
 cannot include an application header (enforced at compile time and by
@@ -143,14 +141,14 @@ Read the level editor bottom to top. Each layer depends only on layers below it.
 3. Authoring subsystems: `input/`, `editmodes/`, `meshedit/`, `viewport/`,
    `render/`, and the `document/` domain. Each owns one slice of authoring.
 4. Workspace aggregator: `workspace/`. `EditorWorkspace` composes the document
-   plus every layer-3 subsystem into the shared state panels and tools read, and
+   plus every layer-3 subsystem into the shared state the facets and tools read, and
    owns the mechanisms beside it: `WorkspaceInteractionRuntime` (the editing
    stack), `PendingBridgeEdit` and `PendingElementEdit` (staged previews),
    `SelectionActions` (verbs over the selection as a whole), `GridEditing`. It
    is the editor's central hub by design, so it has the widest fan-out; that
    breadth lives here, not scattered.
 5. App composition: `app/`. `LevelWorkspace` owns the authoring hub, input,
-   panels and play loop, and wires them into the engine.
+   views, explorers and play loop, and wires them into the engine.
 
 ## Subsystem map
 
@@ -168,11 +166,10 @@ Shared shell (`editor/common/src/`):
 | `resources/` | `ActiveResources`: what the person is holding, per asset kind, with a stash; changes reach the tool in hand through `ToolRegistry`. `ResourceActions` offers the stash as actions. | tools, workspaces |
 | `problems/`, `notices/` | `ProblemList` (every located problem, republished whole by each source) and `NoticeQueue` (brief word that something happened). | the shell |
 | `prompts/` | `PromptQueue` (questions that hold an operation, answered one at a time; an `Asker` withdraws its questions when it goes) and the document questions over it: `AskAboutChanges`, `DocumentExitHold` (exit waits on changed documents) and `DocumentSaveFollowUp` (a failed save is a problem, a conflict is a question). | workspaces, Kyusu |
-| `presenters/` | Neutral models as the rows a document shows: `PropertySheet` turns property nodes into rows and a row's edit back into its source. Used by the shell and by documents a workspace owns. | shell, workspaces |
-| `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `CommandPalette`, `PromptDialog` and `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of. Workspaces never include it. | Kyusu |
+| `presenters/` | Neutral models as what a document shows: `PropertySheet` turns property nodes into rows and a row's edit back into its source; `ContentPicture` shows a host image full bleed with picked marks and frames; `PlanePad` shows a 2D value as a pad the workspace drags. Used by the shell and by documents a workspace owns. | shell, workspaces |
+| `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `TimelineDeck`, `CommandPalette`, `PromptDialog`, `ThemeSheet` and `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of. Workspaces never include it. | Kyusu |
 | `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first). | Kyusu, workspaces |
-| `ui/` | ImGui shell (`EditorUiFeature`: context, docking, menu, chassis, per-app ini), theme (`EditorUiStyle`: palette, metrics, decor, scale, text roles; `EditorThemeFile`, `EditorThemeStartup`, `ThemePreferences`), console panel, `ScopedPanel` (the one hook a panel's chrome comes through). | `IEditorPanel` |
-| `ui/chrome/` | The workstation chrome, one mechanism per file: geometry, painters, panel frames (`PanelStyle`), chassis, headers, bars and modules (the bar chassis of rims, recessed channel, end caps and lane; themed channel surfaces; readout cells, dividers, module bays), controls (buttons, combo housing), tiles, selection scope and marks, ornaments, icons (baked from `editor/ui/icons/*.svg`), decor. Panels include only the panel-facing headers (rule D in `check_editor_layering.sh`). | edit an SVG in `editor/ui/icons/` |
+| `ui/` | The theme palette (`EditorUiStyle`, loaded from `editor/themes/*.json` by `EditorThemeFile`) and its stylesheet (`AuthoredThemeStyleSheet`), the display scale choice (`UiScaleChoice`), material thumbnails as host images, and the wheel's screen (`RadialMenuScreen`). | a palette entry; an SVG in `editor/ui/icons/` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `workspaces/` | The workspace model: `IWorkspace`, the `WorkspaceKind` row, `WorkspaceHost` (open, close, activate, window placement, requests at the frame boundary; headless-tested). | a row in `WorkspaceKinds.cpp` |
 | `render/` | Display-driven offscreen target lifetime (`DisplayLedger`, `DisplayedTargets`), publishing a target as a host image (`TargetImagePublish`), the overlay pipelines every workspace draws with (`EditorImmediatePipeline`, `EditorWideLinePipeline` and its `EditorLineSegment`), `DetachRenderFeature`. | -- |
@@ -185,7 +182,7 @@ Level editor (`editor/level_editor/src/`):
 | --- | --- | --- |
 | `app/` | The composition root (`LevelWorkspace`) and `EditorCookRuntime` (the cook session, the player it feeds, and the serials that hand one to the other). | -- |
 | `workspace/` | The per-document authoring hub (`EditorWorkspace`, `BrushManipulationSink`) plus the mechanisms it composes: `WorkspaceInteractionRuntime`, `PendingBridgeEdit`, `PendingElementEdit`, `SelectionActions`, `GridEditing`, `EscapePolicy`. | -- |
-| `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `ui`, `editmodes`, interactions, and the test suite. | -- |
+| `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `editmodes`, interactions, and the test suite. | -- |
 | `input/` | Viewport-coupled input (`ViewportNavigation`, `ViewportToolDispatcher`, `SdlEventTranslation`). | -- |
 | `editmodes/` | Transform gizmos and manipulator sessions (`TranslateManipulator`, `BoundsManipulator`, `EditSessionHost`). | manipulators |
 | `meshedit/` | Polygon mesh-editing verbs (`MeshEditService`). | `IMeshEditTarget` |
@@ -196,8 +193,8 @@ Level editor (`editor/level_editor/src/`):
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
 
 Materials workspace (`editor/material_editor/src/`, flat): `MaterialWorkspace`,
-`MaterialDocumentSet` (the open materials as journal documents, one tab and
-one undo history each, headless-tested), `MaterialEditSession`
+`MaterialDocumentSet` (the open materials as journal documents, one undo
+history each, headless-tested), `MaterialEditSession`
 (open/edit/save/duplicate, conflict detection by file baseline),
 `EditMaterialCommand`, `PreviewPrimitives` (procedural sphere/cube/plane),
 `MaterialPreviewRenderFeature` (MeshForwardPass into its own offscreen
@@ -211,8 +208,8 @@ sidecar and recooks, and the cook is read back). Every open material is on the
 shell's document dial (`WorkspaceDocumentFacet::Open`,
 `IWorkspace::ShowDocument`). Live preview pushes
 the working description into the resident material via `AssetSystem::Reload`;
-a watched `.smat` that changes on disk is taken by a clean tab and kept out of
-the stack while a tab holds its own changes (`DocumentSource::FileChangedOnDisk`
+a watched `.smat` that changes on disk is taken by a clean document and kept
+out of the stack while a document holds its own changes (`DocumentSource::FileChangedOnDisk`
 behind `SourceReloadRoots::SetReloadFilter`).
 
 Data workspace (`editor/data_editor/src/`): `DataWorkspace` presents the
@@ -293,23 +290,22 @@ format boundary; the editor's own types use document/scene vocabulary.
   policy, decides how it appears. A document a workspace owns outright (a
   dialog, a bench) presents properties through `common/src/presenters/`, which
   the shell uses too; restyling the grammar rewrites both.
-- ImGui is on its way out of the editor (`docs/editor/interaction-grammar.md`).
-  Geometry, input, tools and viewport math are written in engine vectors
-  (`Vec2d`); only files listed in `scripts/editor_imgui_allowlist.txt` may name
-  ImGui, and the list only shrinks. `ui/ImGuiVec.h` converts at the boundary.
+- No file under `editor/` names ImGui. Geometry, input, tools and viewport
+  math are written in engine vectors (`Vec2d`), and everything a person sees
+  is an authored document (`docs/editor/interaction-grammar.md`).
 
 Enforced by `scripts/check_editor_layering.sh` (a ctest) plus the include-path
-firewall above. One deliberate exception: a panel may include the narrow
-workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
-`SelectionActions`) rather than receive a bag of callbacks assembled for it.
-`EditorWorkspace` itself stays off-limits to `ui/`.
+firewall above.
 
 ## Where do I add ...
 
-- A panel: implement `IEditorPanel` (level editor panels in `level_editor/src/ui/`), register
-  it in the owning services' `BuildUi`. It declares a stable settings id and
-  whether its shown/hidden state is remembered across launches
-  (`GetPersistence`); the shell keeps that in the ImGui layout file.
+- Something a person reads or edits: a property source (`IPropertySource`)
+  the workspace's selection facet hands the shell as a section, which the
+  card and drawer present through `PropertySheet`. A data subtype that needs
+  more than its schema registers an `IDataSubtypeAuthoring`. A purpose-built
+  surface (a pad, a dialog) is an authored document under `editor/ui/` the
+  workspace asks the window for by role, presenting its rows through
+  `presenters/`. Nothing remembers where it was: settings are archived cvars.
 - A tool: implement `ITool` (built-ins live in `level_editor/src/document/tools/`) and
   register it in `WorkspaceInteractionRuntime::Rebuild`. That is the whole cost:
   a tool declares its settings as properties (`Parameters`, `SetParameter`),
@@ -366,17 +362,18 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
   index, resolved by the tool against whatever owns the mode (the select
   tool's is `MeshEditService`'s element kind, the brush tool's its own
   primitive). The tool wheel shows them as a fan outside its rim while the tool is
-  hot and the properties row draws them; neither learns the type behind them.
+  hot and the station shows the active one; neither learns the type behind them.
 - An undo-able edit: implement `ICommand` next to its domain, run it through the
   `CommandStack`.
 - An operation a person can invoke: define it in the `ActionCatalog` (its id,
   label, category and default chords -- data, no callback) and claim it in the
-  `ActionContext` of whatever performs it. The level workspace's table is in
-  `LevelWorkspace::BuildInput`; the operations every workspace shares (undo,
-  redo, save, save all) are Kyusu's, in `KyusuApp::DefineApplicationActions`.
-  Kyusu puts the active workspace's context in play in its window, so a chord,
-  a menu, the console (every action is a console command of its id) and later
-  the palette all reach one table, and a chord belongs to one action whoever
+  `ActionContext` of whatever performs it (`OfferAction` does both). The level
+  workspace's table is in `LevelWorkspace::BuildInput`; the operations every
+  workspace shares (undo, redo, save all) are Kyusu's, in
+  `KyusuApp::DefineApplicationActions`, and Save is each workspace's own
+  (`SaveAction()`). Kyusu puts the active workspace's context in play in its
+  window, so a chord, the hatch, the console (every action is a console
+  command of its id) and the palette all reach one table, and a chord belongs to one action whoever
   performs it. Tool activation is generated from the registry, under
   `tool.<id>`. Any action is rebindable from `keybinds.json`. A held key is
   owned by a `RadialMenuSession` rather than an action handler, which fires on
@@ -399,6 +396,12 @@ workspace mechanism it drives (`PendingBridgeEdit`, `PendingElementEdit`,
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in
   `BuildViewportRendering`).
 - A workspace: a library under `editor/<name>/` linking `editor_common`, with
-  an `IWorkspace` that builds its panels into a `WorkspaceView`, and one row in
+  an `IWorkspace` that exposes the facets it has (documents, operation,
+  selection, resources, explorers, timeline, view) and shows its content on
+  the window's content surface, and one row in
   `editor/kyusu/src/app/WorkspaceKinds.cpp` that constructs it with exactly
-  the services it needs. It never includes another workspace's headers.
+  the services it needs. It never includes another workspace's headers or the
+  shell.
+- An instrument or a placement rule: the shell's (`common/src/shell/` and
+  `editor/ui/shell.rml`), fed by a facet. A workspace never names a screen
+  position.

@@ -28,8 +28,7 @@ class LocomotionModeRegistry;
 // real (an attribute's base clamps to its registered range; a tag name that is
 // not yet registered is declared rather than dropped; every one of these
 // containers has a capacity), and a rule inside a widget is a rule that cannot
-// be tested without an ImGui context. An inspector row is a widget over one of
-// these calls.
+// be tested without a UI. A property row is a control over one of these calls.
 //=============================================================================
 
 // The outcome of an edit that can be refused. `Error` is empty unless it was,

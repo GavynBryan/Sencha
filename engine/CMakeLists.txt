@@ -631,9 +631,9 @@ target_link_libraries(sencha_engine PRIVATE sencha_navigation_thirdparty)
 # no device, and the headless UI tests are what keep that honest.
 #
 # STATIC and PRIVATE, which is the opposite of the imgui treatment below, for the
-# reason recorded there in reverse: imgui is an OBJECT library because the editors
-# link only sencha::engine yet call ImGui, so those symbols must reach the shared
-# library's export table. Nothing outside engine/src/ui/rml/ ever calls RmlUi --
+# reason recorded there in reverse: imgui is an OBJECT library because a game
+# module links only sencha::engine yet may call ImGui, so those symbols must
+# reach the shared library's export table. Nothing outside engine/src/ui/rml/ ever calls RmlUi --
 # cmake/CheckUiIsolation.cmake enforces exactly that -- so RmlUi must not be
 # re-exported, must not appear on the install interface, and must not oblige the
 # SDK to ship its headers. PIC comes from CMAKE_POSITION_INDEPENDENT_CODE at the
@@ -754,8 +754,8 @@ if(SENCHA_ENABLE_VULKAN)
         FetchContent_Declare(
             imgui
             GIT_REPOSITORY https://github.com/ocornut/imgui.git
-            # Docking-enabled, version-matched tag (adds DockSpace/DockBuilder; same
-            # backends). Editor docks its panels into a default layout.
+            # The docking branch's tag; nothing in the tree docks, so the plain
+            # release of the same version would serve.
             GIT_TAG        v1.91.9-docking
         )
         FetchContent_MakeAvailable(imgui)
@@ -786,12 +786,12 @@ if(SENCHA_ENABLE_VULKAN)
     )
     target_compile_features(sencha_imgui_support PUBLIC cxx_std_20)
 
-    # The engine is the single ImGui provider: the editors link only
-    # sencha::engine yet call ImGui, so the engine has to carry those symbols on
-    # its exported surface. Hence an OBJECT library rather than a static one.
+    # The engine is the single ImGui provider: a game module links only
+    # sencha::engine yet may call ImGui for its debug panels, so the engine has
+    # to carry those symbols on its exported surface. Hence an OBJECT library rather than a static one.
     # The Windows export table is generated from the shared library's own object
     # files, and symbols that arrive from a linked static library are not in it,
-    # which leaves every editor with unresolved ImGui symbols. A consumer needs
+    # which leaves every such module with unresolved ImGui symbols. A consumer needs
     # the imgui headers (leaked by public debug/ and serialization headers) but
     # not the objects, so only the header dirs go on the public interface.
     target_link_libraries(sencha_engine PRIVATE sencha_imgui_support)

@@ -10,7 +10,7 @@
 // What kind of owner currently holds the pointer. A UI drag (Ui) keeps the UI
 // live; an Exclusive gesture — fly-look, ortho-pan, a tool drag, or a modal
 // surface such as the tool wheel — owns the pointer and the keys outright, so
-// the app gates ImGui's mouse and keyboard off while one is held.
+// the shell yields both while one is held.
 enum class PointerCaptureKind
 {
     Ui,
@@ -67,10 +67,6 @@ public:
     [[nodiscard]] bool PointerCaptured() const { return CapturedIndex.has_value(); }
     [[nodiscard]] ViewportId CaptureViewport() const { return CaptureOrigin; }
 
-    // Notified when the capture owner changes: the new kind, or nullopt on release.
-    // Drives the ImGui input gate (off while an Exclusive capture is held).
-    void SetCaptureChanged(std::function<void(std::optional<PointerCaptureKind>)> callback);
-
 private:
     friend class PointerCapture;
     void AcquireFor(std::size_t index, PointerCaptureKind kind, ViewportId origin);
@@ -81,5 +77,4 @@ private:
     std::optional<std::size_t> CapturedIndex;
     PointerCaptureKind CapturedKind = PointerCaptureKind::Exclusive;
     ViewportId CaptureOrigin = {};
-    std::function<void(std::optional<PointerCaptureKind>)> CaptureChanged;
 };

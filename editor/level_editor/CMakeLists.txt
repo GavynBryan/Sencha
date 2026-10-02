@@ -8,7 +8,7 @@ file(GLOB_RECURSE LEVEL_HEADERS CONFIGURE_DEPENDS
 
 # The editor splits into an authoring library and the shell that hosts it. The
 # authoring half (document, brush kernel, mesh edit, workspace, edit modes,
-# viewport math, cook) touches neither ImGui's runtime nor Vulkan, so the
+# viewport math, cook) touches neither the UI runtime nor Vulkan, so the
 # headless test targets link it instead of each re-listing its sources; the
 # shell half (app entry, panels, render passes, SDL and window plumbing) is what
 # needs a GPU and a window. Anything under these paths is shell.
@@ -40,9 +40,8 @@ list(APPEND LEVEL_AUTHORING_SOURCES
 )
 
 # An authored workflow's controller is not shell. It presents through a document
-# rather than drawing one, so it has no GPU, window or ImGui dependency and is
-# testable headlessly -- which is most of the point of moving a workflow to
-# authored UI in the first place.
+# rather than drawing one, so it has no GPU or window dependency and is
+# testable headlessly.
 list(APPEND LEVEL_AUTHORING_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/CookProfilesModal.cpp"
 )

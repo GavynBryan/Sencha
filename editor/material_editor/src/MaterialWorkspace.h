@@ -7,7 +7,6 @@
 #include "actions/ActionContext.h"
 #include "project/TextureImportStore.h"
 #include "prompts/DocumentPrompts.h"
-#include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 
 #include <math/geometry/2d/Rect2d.h>
@@ -62,7 +61,6 @@ public:
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
                           std::size_t mark) override;
-    WorkspaceView& View() override { return Surface; }
 
 private:
     void BuildUi();
@@ -133,6 +131,4 @@ private:
     // A drag on the stage turns the material over until the button lets go.
     bool Orbiting = false;
 
-    // Declared last: its panels reference everything above.
-    WorkspaceView Surface;
 };

@@ -68,18 +68,17 @@ DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, D
     BuildUi();
     RegisterCommands();
     DefineActions(catalog);
+    OfferAction(catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { SaveActive(); } });
 }
 
 DataWorkspace::~DataWorkspace()
 {
     Problems.Clear(kProblemSource);
     EngineRef.Console().Registry().UnregisterOwner(kCommandOwner);
-    Surface = WorkspaceView{};
 }
 
 void DataWorkspace::BuildUi()
 {
-    Surface.File.Save = [this] { SaveActive(); };
 }
 
 void DataWorkspace::RegisterCommands()

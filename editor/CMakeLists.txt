@@ -3,9 +3,9 @@ if(NOT SENCHA_ENABLE_VULKAN)
     return()
 endif()
 
-# Editor application family. editor_common is the shared editor shell (ImGui
-# feature, theme/skin, input, commands, selection, tools, project descriptor);
-# each application links it and adds its own domain code.
+# Kyusu and its workspaces. editor_common is what every workspace shares (the
+# shell, actions, properties, input, commands, selection, tools, project
+# descriptor); each workspace library links it and adds its own domain code.
 add_subdirectory(common)
 add_subdirectory(level_editor)
 add_subdirectory(kyusu)

@@ -27,9 +27,7 @@
 // than of targets in general.
 //
 // The render side (Offscreen phase) calls BeginFrame then AcquireForRender per
-// viewport; the arrangement calls Show with each shown view's size. Scene
-// thumbnails, still drawn by an ImGui panel, call Display instead, which also
-// hands back the ImGui texture; it goes with that panel.
+// viewport; the arrangement calls Show with each shown view's size.
 class ViewportTargetCache
 {
 public:

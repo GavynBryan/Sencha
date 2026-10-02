@@ -21,22 +21,22 @@ struct Rule
     std::string (*Declarations)();
 };
 
-[[nodiscard]] std::string Hex(const ImVec4& color)
+[[nodiscard]] std::string Hex(const Vec4& color)
 {
     return ThemeColorHex(color);
 }
 
-[[nodiscard]] std::string Color(const ImVec4& color)
+[[nodiscard]] std::string Color(const Vec4& color)
 {
     return "color: " + Hex(color) + ";";
 }
 
-[[nodiscard]] std::string Fill(const ImVec4& color)
+[[nodiscard]] std::string Fill(const Vec4& color)
 {
     return "background-color: " + Hex(color) + ";";
 }
 
-[[nodiscard]] std::string Edge(const ImVec4& color)
+[[nodiscard]] std::string Edge(const Vec4& color)
 {
     // border-color, never border: a width is geometry, and the document owns
     // its own. A theme that set widths would relayout documents on a switch.
@@ -44,17 +44,17 @@ struct Rule
 }
 
 // A vector shape's paint: `<sector>` takes these rather than a box's.
-[[nodiscard]] std::string ShapeFill(const ImVec4& color)
+[[nodiscard]] std::string ShapeFill(const Vec4& color)
 {
     return "fill-color: " + Hex(color) + ";";
 }
 
-[[nodiscard]] std::string ShapeStroke(const ImVec4& color)
+[[nodiscard]] std::string ShapeStroke(const Vec4& color)
 {
     return "stroke-color: " + Hex(color) + ";";
 }
 
-[[nodiscard]] std::string Tint(const ImVec4& color)
+[[nodiscard]] std::string Tint(const Vec4& color)
 {
     // White art takes the role's colour; the art's own shading survives.
     return "image-color: " + Hex(color) + ";";

@@ -148,25 +148,17 @@ do the work and delete the entry.
 - **Trigger:** the next change to how any of them allocates, resolves or frees
   a handle moves that owner onto `HandlePool` in the same change.
 
-## Detached window layout write-back
+## Per-window scale of view handles
 
-- **What:** a detached window starts from the primary's in-memory layout
-  (`EditorUiFeature::InitImGui`), but dock changes made in it are not written
-  back, so a workspace rearranged while detached comes home in its old layout.
-- **Where:** `editor/common/src/ui/EditorUiFeature.cpp`, detached `InitImGui`
-  (`io.IniFilename = nullptr`).
-- **Trigger:** the first report of a lost detached arrangement, or the 3D
-  workspace manager, which will want placement to persist.
-
-## Per-window UI scale
-
-- **What:** the UI scale is resolved once from the primary window's display
-  and shared by every window's style and font atlas; a detached window on a
-  display of another scale draws at the primary's.
-- **Where:** `ResolveUiScale` and `EditorUi::UiScale` in
-  `editor/common/src/ui/EditorUiFeature.cpp` and `EditorUiStyle`.
-- **Trigger:** a mixed-DPI setup where a detached window reads at the wrong
-  size; the fix is an atlas per scale, since fonts bake at a size.
+- **What:** every authored surface takes its own window's scale, but the
+  Level's in-view handle sizes (dial knobs, hit radii, stroke widths) read one
+  process-wide `EditorUi::UiScale`, the primary window's; a Level detached to
+  a display of another scale sizes its handles for the primary's.
+- **Where:** `EditorUi::Px` in `editor/common/src/ui/EditorUiStyle.h`, read by
+  `FaceCarveTool`, `ClipTool` and `ViewportDialPlacement`; set in
+  `KyusuApp::UpdateShells`.
+- **Trigger:** a mixed-DPI setup where a detached Level's handles read at the
+  wrong size; the fix carries the window's scale on `ToolContext`.
 
 ## Frame scratch after the level closes
 

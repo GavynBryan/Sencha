@@ -4,15 +4,9 @@
 
 #include <cmath>
 
-namespace
-{
-Vec2d ToVec2(Vec2d v) { return Vec2d(v.X, v.Y); }
-Vec2d ToImVec2(Vec2d v) { return Vec2d{ v.X, v.Y }; }
-}
-
 ViewportProjection::ViewportProjection(const EditorViewport& viewport)
 {
-    Region = ViewportMath::Rect{ ToVec2(viewport.RegionMin), ToVec2(viewport.RegionMax) };
+    Region = ViewportMath::Rect{ viewport.RegionMin, viewport.RegionMax };
     ViewProjection = viewport.BuildRenderData().ViewProjection;
     InverseViewProjection = ViewProjection.Inverse();
 
@@ -28,7 +22,7 @@ ViewportProjection::ViewportProjection(const EditorViewport& viewport)
 
 Ray3d ViewportProjection::RayThroughPixel(Vec2d pixel) const
 {
-    return ViewportMath::RayThroughPixel(InverseViewProjection, Region, ToVec2(pixel));
+    return ViewportMath::RayThroughPixel(InverseViewProjection, Region, pixel);
 }
 
 std::optional<ProjectedPoint> ViewportProjection::WorldToPixel(Vec3d world) const
@@ -37,7 +31,7 @@ std::optional<ProjectedPoint> ViewportProjection::WorldToPixel(Vec3d world) cons
         ViewportMath::WorldToPixel(ViewProjection, Region, world);
     if (!p.has_value())
         return std::nullopt;
-    return ProjectedPoint{ .Pixel = ToImVec2(p->Pixel), .Depth = p->Depth };
+    return ProjectedPoint{ .Pixel = p->Pixel, .Depth = p->Depth };
 }
 
 float ViewportProjection::WorldSizeForPixels(Vec3d at, float pixels) const
@@ -57,5 +51,5 @@ float ViewportProjection::WorldSizeForPixels(Vec3d at, float pixels) const
 
 float ViewportProjection::DistancePointToSegment(Vec2d p, Vec2d a, Vec2d b)
 {
-    return ViewportMath::DistancePointToSegment(ToVec2(p), ToVec2(a), ToVec2(b));
+    return ViewportMath::DistancePointToSegment(p, a, b);
 }

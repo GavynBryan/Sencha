@@ -103,9 +103,9 @@ source split is real either way, which is what the two filters buy.
 
 RmlUi is pinned at **6.3** via `FetchContent`, built STATIC and linked PRIVATE.
 That is the opposite of the `imgui` treatment in the same file, for the reason
-recorded there in reverse: imgui is an OBJECT library because the editors link
-only `sencha::engine` yet call ImGui, so those symbols must reach the export
-table. Nothing outside `engine/src/ui/rml/` calls RmlUi, so it must not be
+recorded there in reverse: imgui is an OBJECT library because a game module
+links only `sencha::engine` yet may call ImGui for its own debug panels, so
+those symbols must reach the export table. Nothing outside `engine/src/ui/rml/` calls RmlUi, so it must not be
 re-exported. `RMLUI_DIR` substitutes a vendored copy.
 
 FreeType is RmlUi's font engine, found with `find_package(Freetype REQUIRED)`.
@@ -125,17 +125,14 @@ still the finished frame. UI pipelines disable depth test and write; the depth
 attachment stays bound, as it already was for ImGui.
 
 **ApplicationUi is authored, user-facing UI. DevelopmentOverlay is diagnostics.**
-The distinction is not stylistic, and it decides where an ImGui host belongs:
-
-| Feature | Phase | Why |
-|---|---|---|
-| `EditorUiFeature` (Kyusu's shell) | `ApplicationUi` | It is the editor's *application UI*, which happens to be built in ImGui. Retained surfaces record later in the same phase, so an authored panel draws **over** the ImGui panel it replaces. Putting it in `DevelopmentOverlay` would let the legacy shell paint over its own replacement and make incremental migration impossible. |
-| `ImGuiDebugOverlay` | `DevelopmentOverlay` | The console and timing panels, which must stay readable on top of whatever is underneath. |
+Kyusu's whole interface is `ApplicationUi`; `ImGuiDebugOverlay` (the console
+and timing panels) is `DevelopmentOverlay`, so it stays readable on top of
+whatever is underneath, in Kyusu as in any Sencha application.
 
 Order within `ApplicationUi` follows registration, and the engine fixes when
 it registers: `UiRenderFeature` is added after `Game::OnStart` returns, so any
-application-UI feature a host registers during `OnStart` (Kyusu's ImGui shell)
-records under it. It registers under `kUiRenderFeatureId`, so a feature that has
+application-UI feature a host registers during `OnStart` (Kyusu's content
+layer) records under it. It registers under `kUiRenderFeatureId`, so a feature that has
 to draw over authored UI declares that id as a dependency.
 
 GPU scopes `Phase/ApplicationUi` and `Phase/DevelopmentOverlay` report each
@@ -306,8 +303,8 @@ because depth precision is not a thing to trade for a stencil aspect. Verified
 against the golden images: the format change moved no pixel.
 
 The whole swapchain scope binds that stencil aspect, so **every pipeline
-recording into it declares the format** -- the mesh and sky passes, and both
-ImGui hosts. Dynamic rendering matches attachment formats, not intentions: a
+recording into it declares the format** -- the mesh and sky passes, and the
+ImGui overlay. Dynamic rendering matches attachment formats, not intentions: a
 pipeline that never touches the stencil still has to say so. Verified against
 the golden images, which did not move.
 
@@ -910,10 +907,10 @@ surface. The radial wheels draw that way (`RadialMenuFace`,
 
 Dear ImGui keeps the work it is good at: the profiler, render statistics, ECS
 inspection, memory and networking diagnostics, experimental controls, and any
-surface an engineer wants to exist ten minutes from now. It stops being the
-default substrate for surfaces meant to become part of Kyusu's designed
-experience, and those migrate one at a time -- the ImGui version staying until the
-replacement is better.
+surface an engineer wants to exist ten minutes from now. It is never the
+substrate for Kyusu's designed experience: no file under `editor/` names ImGui
+(rule F of `scripts/check_editor_layering.sh`), and the overlay is the only
+ImGui in a Kyusu window.
 
 ## 17. Related documents
 

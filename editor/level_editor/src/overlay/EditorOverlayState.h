@@ -88,12 +88,11 @@ struct ViewportButtonCaption
     int LastButton = 0;
 };
 
-// A row of buttons pinned to a world point, drawn over one viewport by the
-// panel and hit-tested by the tool that asked for them.
+// A row of buttons pinned to a world point, drawn over one view as marks and
+// hit-tested by the tool that asked for them.
 //
-// They are painted into the viewport's draw list rather than made into ImGui
-// items, so there is no click ownership to negotiate with the viewport's own
-// input: the tool tests the same rects in its own callbacks and consumes the
+// They are display-only marks rather than interactive UI elements, so there is
+// no click ownership to negotiate with the view's own input: the tool tests the same rects in its own callbacks and consumes the
 // press, exactly as it already does for its drag handles. Both sides place the
 // row with ViewportButtons::Layout, so neither can drift from the other.
 struct ViewportButtonRequest
@@ -110,8 +109,8 @@ struct ViewportButtonRequest
 // A rotation dial lying in a face's plane, drawn over one viewport by the panel
 // and hit-tested by the tool that asked for it.
 //
-// The same arrangement as the button row: painted into the viewport's draw list
-// rather than made an ImGui item, so there is no click ownership to negotiate.
+// The same arrangement as the button row: drawn, not interactive, so there is
+// no click ownership to negotiate.
 // This carries the dial's inputs rather than a finished radius, because the
 // radius depends on the camera; both sides resolve it through
 // ViewportDial::PlaceIn, which is what keeps the drawn circle and the

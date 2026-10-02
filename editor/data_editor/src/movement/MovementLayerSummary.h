@@ -10,7 +10,7 @@
 // Reads a compiled movement layer back as prose, so an ordered list of layers
 // presents as the ruleset the runtime actually evaluates rather than as JSON.
 //
-// Pure text synthesis: no ImGui, no document, no engine state. Everything here
+// Pure text synthesis: no UI, no document, no engine state. Everything here
 // is table-tested, which is also why the exact wording is deliberate — changing
 // a phrase is a test update, not an accident.
 //

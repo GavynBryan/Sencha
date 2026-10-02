@@ -47,10 +47,7 @@
 
 namespace
 {
-// The preview feature's teardown releases ImGui texture bindings through the
-// backend the window's UI feature owns.
 constexpr std::string_view kPreviewFeatureId = "material_preview";
-constexpr std::array<std::string_view, 1> kPreviewDependsOn{ "editor_ui" };
 
 struct PrimitiveRow
 {
@@ -118,6 +115,7 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
     MaterialThumbnailCache::RegisterBudget(engine.Console().Registry());
     BuildUi();
     DefineActions(catalog);
+    OfferAction(catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { SaveActiveMaterial(); } });
 }
 
 MaterialWorkspace::~MaterialWorkspace()
@@ -126,7 +124,6 @@ MaterialWorkspace::~MaterialWorkspace()
     // stack, and the textures panel's bindings free their sets through the
     // live UI backend; both go before the panels and the tabs.
     DetachRenderFeature(EngineRef, Preview);
-    Surface = WorkspaceView{};
     Picture.reset();
     Thumbnails.reset();
 }
@@ -135,8 +132,7 @@ void MaterialWorkspace::BuildUi()
 {
     Renderer& renderer = EngineRef.Graphics().MainRenderer;
     Preview = renderer.StageFeature(std::make_unique<MaterialPreviewRenderFeature>(Assets),
-                                    FeatureRegistration{ .Id = kPreviewFeatureId,
-                                                         .DependsOn = kPreviewDependsOn });
+                                    FeatureRegistration{ .Id = kPreviewFeatureId });
     std::vector<std::string_view> failed;
     if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
     {
@@ -152,7 +148,6 @@ void MaterialWorkspace::BuildUi()
             Assets.Registry, ui, &renderer.GetUiTextures(), "materials-workspace:");
     }
 
-    Surface.File.Save = [this] { SaveActiveMaterial(); };
 
 }
 

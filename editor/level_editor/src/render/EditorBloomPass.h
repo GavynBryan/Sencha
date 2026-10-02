@@ -28,7 +28,7 @@ public:
     void Setup(const RendererServices& services);
     // Adds bloom to target.ColorImage in place. Expects the scene color in
     // SHADER_READ_ONLY on entry (after the scene pass); leaves it SHADER_READ_ONLY with
-    // the glow composited on exit, ready for the UI's ImGui::Image.
+    // the glow composited on exit, ready to be shown as a host image.
     void Record(const FrameContext& frame,
                 const ViewportTargetCache::RenderView& target,
                 const BloomParams& params);

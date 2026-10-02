@@ -14,7 +14,6 @@
 
 #include "actions/ActionContext.h"
 #include "render/UiSurfaceTargetRenderFeature.h"
-#include "ui/WorkspaceView.h"
 #include "vocabulary/VocabularyCatalog.h"
 #include "workspaces/IWorkspace.h"
 
@@ -72,7 +71,6 @@ public:
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
                           std::size_t mark) override;
-    WorkspaceView& View() override { return Surface; }
 
 private:
     void BuildLibrary(const ProjectDescriptor* project);
@@ -138,6 +136,4 @@ private:
     std::uint64_t ReportedRaised = 0;
     std::vector<Problem> Reported;
 
-    // Declared last: its handlers reference everything above.
-    WorkspaceView Surface;
 };

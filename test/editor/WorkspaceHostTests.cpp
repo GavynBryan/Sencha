@@ -1,4 +1,3 @@
-#include "ui/WorkspaceView.h"
 #include "workspaces/WorkspaceHost.h"
 
 #include <gtest/gtest.h>
@@ -29,11 +28,9 @@ public:
     ~FakeWorkspace() override { Events.push_back(Kind + " destroyed"); }
 
     void SetVisible(bool visible) override { Events.push_back(Kind + (visible ? " shown" : " hidden")); }
-    WorkspaceView& View() override { return Surface; }
 
     std::string Kind;
     Log& Events;
-    WorkspaceView Surface;
 };
 
 WorkspaceKind Kind(std::string id, Log& log, bool requiresProject = true)

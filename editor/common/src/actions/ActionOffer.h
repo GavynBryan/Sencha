@@ -18,4 +18,7 @@ void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinitio
 [[nodiscard]] ActionDefinition FrameAction();
 
 // Delete: whatever is picked goes, as one step.
+// Ctrl+S: the document in hand is written, as the workspace showing it saves.
+[[nodiscard]] ActionDefinition SaveAction();
+
 [[nodiscard]] ActionDefinition DeleteAction();

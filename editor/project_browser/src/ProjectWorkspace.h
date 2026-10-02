@@ -4,7 +4,6 @@
 #include "ProjectCreation.h"
 #include "ProjectSettings.h"
 #include "actions/ActionContext.h"
-#include "ui/WorkspaceView.h"
 #include "workspaces/IWorkspace.h"
 
 #include <filesystem>
@@ -38,7 +37,6 @@ public:
     void MoveTo(const WorkspaceWindow& window) override;
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
-    WorkspaceView& View() override { return Surface; }
 
 private:
     void DefineActions(ActionCatalog& catalog);
@@ -73,5 +71,4 @@ private:
     std::mutex PendingMutex;
     std::vector<std::string> PendingBrowsedProjects;
 
-    WorkspaceView Surface;
 };
