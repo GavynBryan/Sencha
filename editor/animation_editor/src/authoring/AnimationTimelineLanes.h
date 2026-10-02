@@ -39,4 +39,6 @@ struct AnimationLanePick
 // How far root motion carried the character on each recorded tick, and how
 // far it got: two plotted lanes, none while it poses in place.
 [[nodiscard]] std::vector<TimelineLane> AnimationTravelLanes(const AnimationPreviewSession& session);
+// Fact `fact` on each recorded tick, plotted; empty when the rig has no such fact.
+[[nodiscard]] TimelineLane AnimationFactLane(const AnimationPreviewSession& session, std::string_view fact);
 [[nodiscard]] std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key);

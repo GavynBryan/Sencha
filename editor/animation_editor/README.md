@@ -64,25 +64,27 @@ transient and do not dirty documents.
 
 ## Rig simulation under a scenario
 
-Select an `animation.rig` in **Rig and scenario**. The rig is simulated in an
+Pick an `animation.rig` from the Rigs explorer (R), or the rig cartridge. The rig is simulated in an
 isolated preview World at the scenario's fixed tick rate, using the runtime's
 own binding, fact gathering, derivations and request lifecycle. The editor
 replaces only gameplay: each gathered fact reads a scenario-owned input, and
 named scenario participants issue requests through the normal request API.
 
-- **Facts** lists every slot of the bound layout. Gathered facts take typed
-  inputs (bool, float, int, tag by name); derived facts are read-only and show
-  their derivation, and the panel says whether derived facts are exact or still
-  warming up toward the rig's horizon. While paused, the Next tick column is a
-  disposable evaluation of the edits scheduled for the next tick. Select a fact
-  to plot its history.
+- The **Facts** lens's card (`AnimationFactProperties`) lists every slot of
+  the bound layout. Gathered facts take typed inputs (bool, float, int, tag by
+  name), each a recorded scenario edit on the next tick, and Clear; derived
+  facts are read-only and show their derivation, and the card says whether
+  derived facts are exact or still warming up toward the rig's horizon. While
+  paused, a fact's tooltip gives its value on the next tick, from a disposable
+  evaluation of the edits scheduled for it. *Plot* puts one fact's history
+  along the deck.
 - **Requests** issues from a form derived from the rig's request schema (source,
   intent, lifetime, layers, typed parameters) and lists the live records with
   age, primary-record status, cancel reason and retained tail. Capacity refusals,
   supersession and impulse deduplication are reported per tick.
-- **Simulation** plays, pauses, steps and restarts. Speed changes how quickly
-  fixed ticks are scheduled, never their length. Running to an earlier tick
-  replays the scenario from tick 0.
+- The tape deck plays, pauses, steps and restarts the simulation. Speed
+  changes how quickly fixed ticks are scheduled, never their length. Scrubbing
+  back inspects a recorded tick; Live returns to the running one.
 - **Problems and changes** shows the rig's bind diagnostics and the scenario's
   located problems, the entity's decision history, and what is unsaved.
 

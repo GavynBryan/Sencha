@@ -23,6 +23,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationLayerChoice.cpp
     src/authoring/AnimationLayerProperties.cpp
     src/authoring/AnimationNameDeclarations.cpp
+    src/authoring/AnimationFactProperties.cpp
     src/authoring/AnimationFlowAuthoring.cpp
     src/authoring/AnimationFlowEdits.cpp
     src/authoring/AnimationFlowProperties.cpp

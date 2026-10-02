@@ -26,6 +26,7 @@ class AnimationPreviewRenderFeature;
 class AnimationRigCreation;
 class AnimationRootMotionProperties;
 class AnimationBlendProperties;
+class AnimationFactProperties;
 class AnimationFlowProperties;
 class AnimationLayerProperties;
 class AnimationRuleProperties;
@@ -52,6 +53,7 @@ enum class AnimationLens : std::uint8_t
     Flow,
     Blends,
     RootMotion,
+    Facts,
     Events,
 };
 
@@ -153,6 +155,7 @@ private:
     std::unique_ptr<AnimationFlowProperties> FlowCard;
     std::unique_ptr<AnimationBlendProperties> BlendCard;
     std::unique_ptr<AnimationRootMotionProperties> RootMotionCard;
+    std::unique_ptr<AnimationFactProperties> FactCard;
     std::unique_ptr<AnimationTimeline> Clock;
     std::unique_ptr<AnimationEventProperties> EventCard;
     std::optional<std::uint32_t> PickedEvent;

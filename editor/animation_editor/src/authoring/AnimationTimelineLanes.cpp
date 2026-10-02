@@ -2,6 +2,7 @@
 
 #include "authoring/AnimationPreviewSession.h"
 
+#include <anim/AnimFacts.h>
 #include <anim/AnimRigBinding.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
@@ -157,6 +158,22 @@ std::vector<TimelineLane> AnimationTravelLanes(const AnimationPreviewSession& se
             achieved.Samples.push_back({ .Time = time, .Value = record.Movement->Achieved.Magnitude() });
         }
     return { std::move(carried), std::move(achieved) };
+}
+
+TimelineLane AnimationFactLane(const AnimationPreviewSession& session, std::string_view fact)
+{
+    const AnimBoundRig* rig = session.Rig();
+    const int slot = rig != nullptr ? rig->FindSlot(std::string(fact)) : -1;
+    if (slot < 0)
+        return {};
+    const AnimFactKind kind = rig->Slots[static_cast<std::size_t>(slot)].Kind;
+    TimelineLane lane{ .Label = std::string(fact) };
+    const double seconds = session.TickSeconds();
+    for (const AnimationPreviewTickRecord& record : session.History())
+        if (static_cast<std::size_t>(slot) < record.Facts.size())
+            lane.Samples.push_back({ .Time = static_cast<double>(record.Tick) * seconds,
+                                     .Value = AnimFactToNumber(kind, record.Facts[static_cast<std::size_t>(slot)]) });
+    return lane;
 }
 
 std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key)
