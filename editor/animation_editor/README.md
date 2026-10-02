@@ -254,25 +254,26 @@ a later section, and go to one cancel section at once or at the section's end.
   and removed. A branch can only be added to a later section, and a move that
   would turn one backward is refused, so control never goes back. Loop and
   branch conditions show as text and are edited in Data Editor.
-- **Layers** lists the rig's layers with mode, current weight (hover for the
-  weight rule that set it, or the rig's constant), mask size and what each
-  plays. Mute and solo change only what the viewport shows; the simulation, its
-  events and the rig are untouched. The viewport composes every shown layer:
-  override layers blend toward their pose over their mask, additive layers add
-  what their clip changed from its first frame, each at its weight.
-- **Skeleton and masks** shows the rig's skeleton as a tree with each layer's
-  coverage beside every joint (`#` covers, `.` does not), dimming joints the
-  selected layer leaves out. Right-click a joint to add it, or remove it, with
-  or without everything below; each is one undo step on the rig document. The
-  mask's steps are listed in order with their own remove buttons. The first
-  layer is always unmasked. Joints are named as the skeleton names them, so an
-  unknown or ambiguous joint is a located problem.
+- The **Layers** lens's card (`AnimationLayerProperties`) lists the rig's
+  layers with mode, weight on the inspected tick, mask size and what each
+  plays, with Mute and Solo, which change only what the stage shows; the
+  simulation, its events and the rig are untouched. The stage composes every
+  shown layer: override layers blend toward their pose over their mask,
+  additive layers add what their clip changed from its first frame, each at
+  its weight. *Inspect* adds where the weight came from (a weight rule, or the
+  rig's constant) and the mask's steps in order, each removable, with Clear
+  Mask; each is one undo step on the rig document. The first layer is always
+  unmasked. On the simulation clock the deck shows what won each layer, a
+  lane per layer.
+- A joint picked on the stage or in the Skeleton explorer (J) gets the bone
+  card: the layers covering it and the steps that add it to the selected
+  layer's mask or take it out, with or without everything below. Joints are
+  named as the skeleton names them, so an unknown or ambiguous joint is a
+  located problem.
 
 Loop and branch conditions edit in the Flow pane with the same predicate
 builder the rule table uses, and a count loop's intent and parameter are chosen
-from the rig's request schema. In the viewport, **Joints** draws the skeleton on
-screen: click a joint to select it (the skeleton tree follows), and right-click
-one for the same mask steps the tree offers.
+from the rig's request schema.
 
 A selector rule can result in a layer weight, a constant or a float fact,
 instead of a behavior; the first weight rule to pass weights its layer.

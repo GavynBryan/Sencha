@@ -24,6 +24,7 @@ class AnimationClipEventsDocument;
 class AnimationEventProperties;
 class AnimationPreviewRenderFeature;
 class AnimationRigCreation;
+class AnimationLayerProperties;
 class AnimationRuleProperties;
 class AnimationScenarioProperties;
 class AnimationTimeline;
@@ -43,6 +44,7 @@ struct ProjectDescriptor;
 enum class AnimationLens : std::uint8_t
 {
     Rules,
+    Layers,
     Events,
 };
 
@@ -135,6 +137,7 @@ private:
     std::unique_ptr<ContentPicture> Picture;
     std::unique_ptr<AnimationBoneProperties> Bone;
     std::unique_ptr<AnimationRuleProperties> RuleCard;
+    std::unique_ptr<AnimationLayerProperties> LayerCard;
     std::unique_ptr<AnimationTimeline> Clock;
     std::unique_ptr<AnimationEventProperties> EventCard;
     std::optional<std::uint32_t> PickedEvent;

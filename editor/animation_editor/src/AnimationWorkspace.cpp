@@ -4,6 +4,7 @@
 #include "authoring/AnimationDecisionLane.h"
 #include "authoring/AnimationEventProperties.h"
 #include "authoring/AnimationExplorers.h"
+#include "authoring/AnimationLayerProperties.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigCreation.h"
 #include "authoring/AnimationRuleProperties.h"
@@ -91,6 +92,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     Bone = std::make_unique<AnimationBoneProperties>(*Workspace);
     RuleCard = std::make_unique<AnimationRuleProperties>(*Workspace,
                                                          [this](const std::string& path) { OpenDocument(path); });
+    LayerCard = std::make_unique<AnimationLayerProperties>(*Workspace);
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
     EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
@@ -149,6 +151,7 @@ AnimationWorkspace::~AnimationWorkspace()
     Creation.reset();
     Scenario.reset();
     Audition.reset();
+    LayerCard.reset();
     RuleCard.reset();
     Bone.reset();
     EventCard.reset();
@@ -219,6 +222,8 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
                         navigation.Joint = -1;
                     else if (ShowingLens(AnimationLens::Rules) && navigation.Rule >= 0)
                         navigation.Rule = -1;
+                    else if (ShowingLens(AnimationLens::Layers) && LayerCard->StepBack())
+                        return;
                     else if (ShowingLens(AnimationLens::Events) && PickedEvent)
                         PickedEvent.reset();
                     else
@@ -323,9 +328,11 @@ struct LensRow
     std::string_view Label;
     std::string_view Hint;
 };
-constexpr std::array<LensRow, 2> kLenses{ {
+constexpr std::array<LensRow, 3> kLenses{ {
     { AnimationLens::Rules, "animation.lens.rules", "Rules",
       "Inspect a rule to see why it won or lost; the deck's lane shows what won the layer" },
+    { AnimationLens::Layers, "animation.lens.layers", "Layers",
+      "Inspect a layer for its weight and mask; pick a joint to mask it" },
     { AnimationLens::Events, "animation.lens.events", "Events", "E adds an event at the playhead" },
 } };
 } // namespace
@@ -406,9 +413,15 @@ void AnimationWorkspace::FollowAuditionedClip()
 WorkspaceTimelineFacet AnimationWorkspace::Timeline()
 {
     WorkspaceTimelineFacet facet = Clock->Facet();
+    const AnimationNavigation& navigation = Workspace->Rig.Navigation;
     if (ShownLens == AnimationLens::Rules && Clock->IsSimulation())
-        facet.Lanes.push_back(AnimationDecisionLane(Workspace->Rig.Simulation, Workspace->Rig.Navigation.Layer,
-                                                    Workspace->Rig.Navigation.Rule));
+        facet.Lanes.push_back(AnimationDecisionLane(Workspace->Rig.Simulation, navigation.Layer, navigation.Rule));
+    // What won each layer, as many as the deck has lanes for.
+    if (const AnimBoundRig* rig = Workspace->Rig.Simulation.Rig();
+        ShownLens == AnimationLens::Layers && Clock->IsSimulation() && rig != nullptr)
+        for (std::size_t layer = 0; layer < rig->Layers.size() && layer < kTimelineLaneLimit; ++layer)
+            facet.Lanes.push_back(AnimationDecisionLane(Workspace->Rig.Simulation, layer,
+                                                        layer == navigation.Layer ? navigation.Rule : -1));
     const AnimationClipEventsDocument* document = Clock->IsSimulation() ? nullptr : AuditionedEvents();
     if (document == nullptr || facet.End <= 0.0)
         return facet;
@@ -720,6 +733,8 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         return { .Title = name.empty() ? std::string("Unnamed joint") : name,
                  .Sections = { { .Heading = {}, .Source = Bone.get() } } };
     }
+    if (ShowingLens(AnimationLens::Layers))
+        return { .Title = LayerCard->Title(), .Sections = { { .Heading = {}, .Source = LayerCard.get() } } };
     if (ShowingLens(AnimationLens::Rules))
         return { .Title = RuleCard->Title(),
                  .Sections = { { .Heading = {}, .Source = RuleCard.get() } },

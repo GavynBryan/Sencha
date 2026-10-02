@@ -560,3 +560,5 @@ body
 .deck #explorer { bottom: 114dp; }
 .deck.lanes1 #selection_card, .deck.lanes1 #explorer { bottom: 130dp; }
 .deck.lanes2 #selection_card, .deck.lanes2 #explorer { bottom: 146dp; }
+.deck.lanes3 #selection_card, .deck.lanes3 #explorer { bottom: 162dp; }
+.deck.lanes4 #selection_card, .deck.lanes4 #explorer { bottom: 178dp; }

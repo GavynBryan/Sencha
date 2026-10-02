@@ -3,9 +3,12 @@
 #include "authoring/AnimationEventBindings.h"
 #include "authoring/AnimationNameDeclarations.h"
 #include "authoring/AnimationPreviewSession.h"
+#include "authoring/AnimationRigEdits.h"
 #include "data/DataDocumentSet.h"
 #include "data/DataFieldEdit.h"
 
+#include <anim/AnimRigData.h>
+#include <assets/data/DataAssetCache.h>
 #include <authored/VerbRegistry.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>
 
@@ -95,4 +98,33 @@ bool DeclareUndeclaredAnimationNames(DataDocumentSet& documents, const Animation
         ApplyFieldEdit(*document, documents, FieldEdit::Instant(), std::move(root));
     documents.SetActive(active);
     return true;
+}
+
+std::vector<AnimMaskOp> AnimationMaskSteps(DataDocumentSet& documents, const DataAssetCache& data,
+                                           const std::string& rigPath, std::size_t layer)
+{
+    std::vector<AnimMaskOp> steps;
+    if (const DataDocument* document = documents.Find(rigPath))
+    {
+        JsonValue root = document->CopyRoot();
+        const JsonValue::Array* layers = AnimRigLayers(root);
+        const JsonValue* mask = layers != nullptr && layer < layers->size() ? (*layers)[layer].Find("mask") : nullptr;
+        if (mask != nullptr && mask->IsArray())
+            for (const JsonValue& entry : mask->AsArray())
+            {
+                AnimMaskOp op;
+                if (const JsonValue* joint = entry.Find("joint"); joint != nullptr && joint->IsString())
+                    op.Joint = joint->AsString();
+                if (const JsonValue* exclude = entry.Find("exclude"); exclude != nullptr && exclude->IsBool())
+                    op.Exclude = exclude->AsBool();
+                if (const JsonValue* subtree = entry.Find("subtree"); subtree != nullptr && subtree->IsBool())
+                    op.Subtree = subtree->AsBool();
+                steps.push_back(std::move(op));
+            }
+        return steps;
+    }
+    if (const AnimRigData* rig = data.TryGet<AnimRigData>(data.Find(rigPath), kAnimRigType);
+        rig != nullptr && layer < rig->Layers.size())
+        steps = rig->Layers[layer].Mask;
+    return steps;
 }

@@ -18,6 +18,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationEventProperties.cpp
     src/authoring/AnimationExplorers.cpp
     src/authoring/AnimationJointPicking.cpp
+    src/authoring/AnimationLayerProperties.cpp
     src/authoring/AnimationNameDeclarations.cpp
     src/authoring/AnimationFlowEdits.cpp
     src/authoring/AnimationPredicateAuthoring.cpp

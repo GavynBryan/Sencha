@@ -231,6 +231,8 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
     std::vector<UiRow> spans;
     for (std::size_t index = 0; const TimelineLane& lane : timeline.Lanes)
     {
+        if (index == kTimelineLaneLimit)
+            break;
         const std::string top = std::format("{}dp", kRulerHeight + kLaneHeight * static_cast<int>(index++));
         UiRow row{ lane.Label, "", "" };
         row.Parts = { top };

@@ -274,7 +274,9 @@ struct TimelineSpan
     bool Selected = false;
 };
 
-// A row under the ruler: what held along the clock, span by span.
+// A row under the ruler: what held along the clock, span by span. A deck has
+// room for kTimelineLaneLimit of them.
+inline constexpr std::size_t kTimelineLaneLimit = 4;
 struct TimelineLane
 {
     std::string Label;
