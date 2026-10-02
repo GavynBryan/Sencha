@@ -23,6 +23,7 @@ class AnimationBoneProperties;
 class AnimationClipEventsDocument;
 class AnimationEventProperties;
 class AnimationPreviewRenderFeature;
+class AnimationRequestProperties;
 class AnimationRigCreation;
 class AnimationRootMotionProperties;
 class AnimationBlendProperties;
@@ -54,6 +55,7 @@ enum class AnimationLens : std::uint8_t
     Blends,
     RootMotion,
     Facts,
+    Requests,
     Events,
 };
 
@@ -156,6 +158,7 @@ private:
     std::unique_ptr<AnimationBlendProperties> BlendCard;
     std::unique_ptr<AnimationRootMotionProperties> RootMotionCard;
     std::unique_ptr<AnimationFactProperties> FactCard;
+    std::unique_ptr<AnimationRequestProperties> RequestCard;
     std::unique_ptr<AnimationTimeline> Clock;
     std::unique_ptr<AnimationEventProperties> EventCard;
     std::optional<std::uint32_t> PickedEvent;

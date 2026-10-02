@@ -324,4 +324,5 @@ void RegisterAnimationSubtypeAuthoring(DataSubtypeAuthoringRegistry& registry)
     (void)registry.Register(CreateAnimationSelectorAuthoring());
     (void)registry.Register(CreateAnimationSlotMapAuthoring());
     (void)registry.Register(CreateAnimationFlowAuthoring());
+    (void)registry.Register(CreateAnimationRequestSchemaAuthoring());
 }

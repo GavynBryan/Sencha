@@ -3,6 +3,7 @@
 #include "authoring/AnimationPreviewSession.h"
 
 #include <anim/AnimFacts.h>
+#include <anim/AnimRequests.h>
 #include <anim/AnimRigBinding.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
@@ -10,13 +11,15 @@
 #include <array>
 #include <charconv>
 #include <format>
+#include <map>
 
 namespace
 {
-constexpr std::array<std::pair<std::string_view, AnimationLanePick::What>, 3> kPrefixes{ {
+constexpr std::array<std::pair<std::string_view, AnimationLanePick::What>, 4> kPrefixes{ {
     { "rule:", AnimationLanePick::What::Rule },
     { "section:", AnimationLanePick::What::Section },
     { "blend:", AnimationLanePick::What::Blend },
+    { "request:", AnimationLanePick::What::Request },
 } };
 
 std::string TagName(const AnimationPreviewSession& session, GameplayTagId tag)
@@ -173,6 +176,36 @@ TimelineLane AnimationFactLane(const AnimationPreviewSession& session, std::stri
         if (static_cast<std::size_t>(slot) < record.Facts.size())
             lane.Samples.push_back({ .Time = static_cast<double>(record.Tick) * seconds,
                                      .Value = AnimFactToNumber(kind, record.Facts[static_cast<std::size_t>(slot)]) });
+    return lane;
+}
+
+TimelineLane AnimationRequestLane(const AnimationPreviewSession& session)
+{
+    if (session.Rig() == nullptr)
+        return {};
+    const AnimBoundRig& rig = *session.Rig();
+    TimelineLane lane{ .Label = "Requests" };
+    const double seconds = session.TickSeconds();
+    std::map<std::uint32_t, std::size_t> spans;
+    for (const AnimationPreviewTickRecord& record : session.History())
+        for (const AnimRequest& request : record.Requests)
+        {
+            if (!request.Occupied || !IsAnimRequestLive(request, record.Tick))
+                continue;
+            const double through = static_cast<double>(record.Tick + 1) * seconds;
+            if (const auto found = spans.find(request.Id.Sequence); found != spans.end())
+            {
+                lane.Spans[found->second].End = through;
+                continue;
+            }
+            const AnimBoundIntent* intent = rig.FindIntent(request.Intent);
+            spans.emplace(request.Id.Sequence, lane.Spans.size());
+            lane.Spans.push_back(
+                { .Key = LaneKey(AnimationLanePick::What::Request, 0, static_cast<int>(request.Id.Sequence)),
+                  .Start = static_cast<double>(request.StartTick) * seconds,
+                  .End = through,
+                  .Label = intent != nullptr ? intent->Name : TagName(session, request.Intent) });
+        }
     return lane;
 }
 

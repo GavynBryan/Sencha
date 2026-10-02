@@ -40,27 +40,25 @@ implemented. Refresh asset list enumerates the mounted registry, not the disk.
 
 ## Request schema authoring
 
-Open a request schema from the content browser to edit it alongside the animated
-preview. The fixture project includes `asset://animation/requests.sdata`.
-`animation.request_schema` is registered with the existing structured-data asset
-pipeline, so new schemas can also be created in Data Editor. Both editors use the
-same document transactions and validation implementation in editor-common.
+A request schema opens as a sheet from the Content explorer or the document
+dial, as every animation document does; the fixture project includes
+`asset://animation/requests.sdata`. `animation.request_schema` is registered
+with the structured-data asset pipeline, and the Data workspace shows the same
+sheet (`AnimationRequestSchemaAuthoring`): intent tags, and up to four named
+parameters of kind float, int, bool or tag, counted against that budget, which
+stops offering more once it is spent. Duplicates, invalid value kinds and
+capacity violations report their precise field paths. Names remain text in the
+asset; no runtime tag IDs are persisted. Unknown fields are retained and
+diagnosed, not silently discarded.
 
-The request pane edits intent tags and up to four named parameters of kind float,
-int, bool, or tag. Duplicates, invalid value kinds, and capacity violations report
-their precise field paths. Names remain text in the asset; no runtime tag IDs are
-persisted. Unknown fields are retained and diagnosed, not silently discarded.
+Each edit runs in the document's own transaction; Escape and focus loss cancel
+an unfinished one. Undo, redo and Save are the shell's. Open documents keep
+independent history, and choosing one does not change the preview subject or
+time. Closing with unsaved changes asks whether to save.
 
-Text edits coalesce into one undo operation. Escape and focus loss cancel an
-unfinished edit; switching documents commits it. Undo/redo and Save are available through the
-shell and pane. Open documents retain independent history; selecting one does not
-change the preview subject or time. Reload is explicit and refuses dirty documents;
-Save refuses externally modified files. Closing with unsaved changes offers Save
-all, Discard, or Keep editing.
-
-This pane edits the request contract only; issuing and cancelling requests against
-a rig happens in the simulation panels below. Preview clip selections remain
-transient and do not dirty documents.
+The schema is the request contract only; issuing and cancelling requests
+against a rig is the Requests lens. Preview clip selections remain transient
+and do not dirty documents.
 
 ## Rig simulation under a scenario
 
@@ -78,10 +76,13 @@ named scenario participants issue requests through the normal request API.
   paused, a fact's tooltip gives its value on the next tick, from a disposable
   evaluation of the edits scheduled for it. *Plot* puts one fact's history
   along the deck.
-- **Requests** issues from a form derived from the rig's request schema (source,
-  intent, lifetime, layers, typed parameters) and lists the live records with
-  age, primary-record status, cancel reason and retained tail. Capacity refusals,
-  supersession and impulse deduplication are reported per tick.
+- The **Requests** lens's card (`AnimationRequestProperties`) drafts a request
+  from the rig's request schema (source, intent, lifetime, layers, typed
+  parameters) and issues it on the next tick, lists the live records with age,
+  primary-record status, cancel reason and retained tail, each with Cancel for
+  a reason, and reports capacity refusals, supersession and impulse
+  deduplication on the last tick. On the simulation clock the deck's lane
+  shows each request for as long as it lived.
 - The tape deck plays, pauses, steps and restarts the simulation. Speed
   changes how quickly fixed ticks are scheduled, never their length. Scrubbing
   back inspects a recorded tick; Live returns to the running one.

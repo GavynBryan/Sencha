@@ -77,9 +77,11 @@ void ChooseAmong(PropertyNode& node, std::vector<std::string> names);
 
 // Selectors (enter and stay; a rule's stay starts as a copy of its enter),
 // slot maps (when) and flows (branch and loop conditions, and control that
-// only ever goes forward: AnimationFlowAuthoring.cpp).
+// only ever goes forward: AnimationFlowAuthoring.cpp); request schemas count
+// each intent's parameters against their budget.
 [[nodiscard]] std::unique_ptr<IDataSubtypeAuthoring> CreateAnimationSelectorAuthoring();
 [[nodiscard]] std::unique_ptr<IDataSubtypeAuthoring> CreateAnimationSlotMapAuthoring();
 [[nodiscard]] std::unique_ptr<IDataSubtypeAuthoring> CreateAnimationFlowAuthoring();
+[[nodiscard]] std::unique_ptr<IDataSubtypeAuthoring> CreateAnimationRequestSchemaAuthoring();
 
 void RegisterAnimationSubtypeAuthoring(DataSubtypeAuthoringRegistry& registry);

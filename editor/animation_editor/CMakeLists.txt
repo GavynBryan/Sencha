@@ -33,6 +33,8 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationPreviewSession.cpp
     src/authoring/AnimationPreviewWorkspace.cpp
     src/authoring/AnimationRigEdits.cpp
+    src/authoring/AnimationRequestProperties.cpp
+    src/authoring/AnimationRequestSchemaAuthoring.cpp
     src/authoring/AnimationRigCreation.cpp
     src/authoring/AnimationRigRecipe.cpp
     src/authoring/AnimationRigOutline.cpp
@@ -59,7 +61,6 @@ add_library(animation_editor STATIC
     src/ui/AnimationLabPanels.cpp
     src/ui/AnimationMigrationPanels.cpp
     src/ui/AnimationScenarioBatchPanels.cpp
-    src/ui/AnimationRequestSchemaPanel.cpp
     src/ui/AnimationSimulationPanels.cpp)
 target_link_libraries(animation_editor PUBLIC animation_authoring editor_common)
 sencha_warnings(animation_editor)

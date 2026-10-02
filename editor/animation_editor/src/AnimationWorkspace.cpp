@@ -10,6 +10,7 @@
 #include "authoring/AnimationFlowProperties.h"
 #include "authoring/AnimationLayerProperties.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRequestProperties.h"
 #include "authoring/AnimationRigCreation.h"
 #include "authoring/AnimationRootMotionProperties.h"
 #include "authoring/AnimationRuleProperties.h"
@@ -108,6 +109,7 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     BlendCard = std::make_unique<AnimationBlendProperties>(*Workspace);
     RootMotionCard = std::make_unique<AnimationRootMotionProperties>(*Workspace);
     FactCard = std::make_unique<AnimationFactProperties>(*Workspace);
+    RequestCard = std::make_unique<AnimationRequestProperties>(*Workspace);
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
     EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
@@ -170,6 +172,7 @@ AnimationWorkspace::~AnimationWorkspace()
     Creation.reset();
     Scenario.reset();
     Audition.reset();
+    RequestCard.reset();
     FactCard.reset();
     RootMotionCard.reset();
     BlendCard.reset();
@@ -351,7 +354,7 @@ struct LensRow
     std::string_view Label;
     std::string_view Hint;
 };
-constexpr std::array<LensRow, 7> kLenses{ {
+constexpr std::array<LensRow, 8> kLenses{ {
     { AnimationLens::Rules, "animation.lens.rules", "Rules",
       "Inspect a rule to see why it won or lost; the deck's lane shows what won the layer" },
     { AnimationLens::Layers, "animation.lens.layers", "Layers",
@@ -364,6 +367,8 @@ constexpr std::array<LensRow, 7> kLenses{ {
       "Move the character to see how far its clips carry it; the deck plots carried against achieved" },
     { AnimationLens::Facts, "animation.lens.facts", "Facts",
       "Drive an input fact for the next tick; Plot puts a fact along the deck" },
+    { AnimationLens::Requests, "animation.lens.requests", "Requests",
+      "Issue a request on the next tick, or cancel a live one; the deck's lane shows each as long as it lived" },
     { AnimationLens::Events, "animation.lens.events", "Events", "E adds an event at the playhead" },
 } };
 } // namespace
@@ -447,6 +452,8 @@ WorkspaceTimelineFacet AnimationWorkspace::Timeline()
     const AnimationNavigation& navigation = Workspace->Rig.Navigation;
     if (ShownLens == AnimationLens::Rules && Clock->IsSimulation())
         facet.Lanes.push_back(AnimationDecisionLane(Workspace->Rig.Simulation, navigation.Layer, navigation.Rule));
+    if (ShownLens == AnimationLens::Requests && Clock->IsSimulation())
+        facet.Lanes.push_back(AnimationRequestLane(Workspace->Rig.Simulation));
     if (ShownLens == AnimationLens::Facts && Clock->IsSimulation() && !FactCard->Plotted().empty())
         facet.Lanes.push_back(AnimationFactLane(Workspace->Rig.Simulation, FactCard->Plotted()));
     if (ShownLens == AnimationLens::RootMotion && Clock->IsSimulation())
@@ -490,6 +497,11 @@ void AnimationWorkspace::PickOnTimeline(std::string_view key)
         if (pick->Names == AnimationLanePick::What::Blend)
         {
             ShowLens(AnimationLens::Blends);
+            return;
+        }
+        if (pick->Names == AnimationLanePick::What::Request)
+        {
+            ShowLens(AnimationLens::Requests);
             return;
         }
         navigation.Rule = pick->Index;
@@ -836,6 +848,8 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         return { .Title = name.empty() ? std::string("Unnamed joint") : name,
                  .Sections = { { .Heading = {}, .Source = Bone.get() } } };
     }
+    if (ShowingLens(AnimationLens::Requests))
+        return { .Title = "Requests", .Sections = { { .Heading = {}, .Source = RequestCard.get() } } };
     if (ShowingLens(AnimationLens::Facts))
         return { .Title = "Facts", .Sections = { { .Heading = {}, .Source = FactCard.get() } } };
     if (ShowingLens(AnimationLens::RootMotion))

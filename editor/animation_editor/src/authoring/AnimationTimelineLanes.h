@@ -19,6 +19,7 @@ struct AnimationLanePick
         Rule,
         Section,
         Blend,
+        Request,
     };
     What Names = What::Rule;
     std::size_t Layer = 0;
@@ -41,4 +42,7 @@ struct AnimationLanePick
 [[nodiscard]] std::vector<TimelineLane> AnimationTravelLanes(const AnimationPreviewSession& session);
 // Fact `fact` on each recorded tick, plotted; empty when the rig has no such fact.
 [[nodiscard]] TimelineLane AnimationFactLane(const AnimationPreviewSession& session, std::string_view fact);
+// Each request issued along the recorded ticks, a span from its start for as
+// long as it was live; the index a span names is the request's sequence.
+[[nodiscard]] TimelineLane AnimationRequestLane(const AnimationPreviewSession& session);
 [[nodiscard]] std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key);
