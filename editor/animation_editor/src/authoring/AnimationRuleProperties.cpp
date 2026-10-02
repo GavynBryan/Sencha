@@ -22,6 +22,7 @@ namespace
 constexpr std::string_view kRules = "rules.";
 constexpr std::string_view kSlots = "slots.";
 constexpr std::string_view kSelectedBy = "selected_by.";
+constexpr std::size_t kLogShown = 40;
 
 std::string TagName(const AnimationPreviewSession& session, GameplayTagId tag)
 {
@@ -381,5 +382,26 @@ std::vector<PropertyNode> AnimationRuleProperties::TickSource::Nodes() const
                                       : std::string("Rig");
         tick.Children.push_back(NoteProperty(std::format("tick.decision.{}", d++), where, text));
     }
-    return { std::move(tick) };
+    std::vector<PropertyNode> nodes{ std::move(tick) };
+
+    // The entity's own log, newest first: what a game's decision trace keeps.
+    if (const AnimDecisionLog* log = session.DecisionLog(); log != nullptr && log->Size() > 0)
+    {
+        PropertyNode history = GroupProperty("log", "Decision log");
+        for (std::size_t i = log->Size(); i-- > 0 && history.Children.size() < kLogShown;)
+        {
+            const AnimDecisionRecord& logged = log->At(i);
+            std::string text = std::format("{} #{}", AnimDecisionCauseName(logged.Cause), logged.Request.Sequence);
+            if (logged.Intent.IsValid())
+                text += " " + TagName(session, logged.Intent);
+            if (logged.CancelReason != AnimCancelReason::None)
+                text += std::format(" ({})", AnimCancelReasonName(logged.CancelReason));
+            if (logged.RejectReason != AnimRejectReason::None)
+                text += std::format(" ({})", AnimRejectReasonName(logged.RejectReason));
+            history.Children.push_back(NoteProperty(std::format("log.{}", history.Children.size()),
+                                                    std::format("tick {}", logged.Tick), text));
+        }
+        nodes.push_back(std::move(history));
+    }
+    return nodes;
 }

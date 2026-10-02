@@ -7,6 +7,7 @@
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigDocumentEdits.h"
 #include "authoring/AnimationRigEdits.h"
+#include "authoring/AnimationRigProblems.h"
 #include "authoring/AnimationRigRecipe.h"
 #include "authoring/AnimationSelectorEdits.h"
 
@@ -115,6 +116,14 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
     std::ranges::sort(undeclared);
     EXPECT_EQ(undeclared, (std::vector<std::string>{ "Anim.Upper.Rest", "Anim.Weapon.Reload" }))
         << FirstProblem(workspace);
+    // As the editor's problems: each in the document it was found in, and the
+    // undeclared names as one more, pointing at the card that declares them.
+    const std::vector<AnimDiagnostic> diagnostics = workspace.Rig.Simulation.Problems();
+    const std::vector<Problem> problems = AnimationRigProblems(diagnostics, undeclared, workspace.Documents.Store());
+    ASSERT_EQ(problems.size(), diagnostics.size() + 1);
+    EXPECT_EQ(problems.back().Location, kUndeclaredAnimationNames);
+    EXPECT_NE(problems.back().Message.find("Anim.Upper.Rest"), std::string::npos);
+    EXPECT_TRUE(std::ranges::any_of(problems, [](const Problem& problem) { return problem.Document.has_value(); }));
     ASSERT_TRUE(DeclareUndeclaredAnimationNames(workspace.Documents, workspace.Rig.Simulation, workspace.Rig.Path, error)) << error;
     EXPECT_TRUE(UndeclaredAnimationNamesOf(workspace.Rig.Simulation, workspace.Documents).empty());
     const AnimBoundRig* rig = workspace.Rig.Simulation.Rig();

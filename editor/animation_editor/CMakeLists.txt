@@ -1,4 +1,5 @@
 add_library(animation_authoring STATIC
+    src/authoring/AnimationAdmissionProperties.cpp
     src/authoring/AnimationClipEventsDocument.cpp
     src/authoring/AnimationClipEventsSet.cpp
     src/authoring/AnimationContentLists.cpp
@@ -38,6 +39,8 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationRigCreation.cpp
     src/authoring/AnimationRigRecipe.cpp
     src/authoring/AnimationRigOutline.cpp
+    src/authoring/AnimationRigProblems.cpp
+    src/authoring/AnimationRigReportProperties.cpp
     src/authoring/AnimationRootMotionProperties.cpp
     src/authoring/AnimationRuleProperties.cpp
     src/authoring/AnimationScenario.cpp
@@ -57,7 +60,6 @@ add_library(animation_editor STATIC
     src/render/AnimationPreviewRenderFeature.cpp
     src/ui/AnimationPreviewPanels.cpp
     src/ui/AnimationPreviewStatus.cpp
-    src/ui/AnimationEventPanels.cpp
     src/ui/AnimationLabPanels.cpp
     src/ui/AnimationMigrationPanels.cpp
     src/ui/AnimationScenarioBatchPanels.cpp

@@ -25,7 +25,9 @@ class AnimationEventProperties;
 class AnimationPreviewRenderFeature;
 class AnimationRequestProperties;
 class AnimationRigCreation;
+class AnimationRigReportProperties;
 class AnimationRootMotionProperties;
+class AnimationAdmissionProperties;
 class AnimationBlendProperties;
 class AnimationFactProperties;
 class AnimationFlowProperties;
@@ -42,7 +44,9 @@ class DocumentSourceSet;
 class Engine;
 class Game;
 class PlanePad;
+class ProblemList;
 class PromptQueue;
+struct Problem;
 struct ProjectDescriptor;
 
 // What the card, the drawer and the deck's lanes are about when nothing more
@@ -70,7 +74,7 @@ class AnimationWorkspace final : public IWorkspace
 public:
     AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module, DocumentSourceSet& sources,
                        DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog,
-                       const DataSubtypeAuthoringSetup& authorings);
+                       ProblemList& problems, const DataSubtypeAuthoringSetup& authorings);
     ~AnimationWorkspace() override;
 
     AnimationWorkspace(const AnimationWorkspace&) = delete;
@@ -92,6 +96,7 @@ public:
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     [[nodiscard]] WorkspaceTimelineFacet Timeline() override;
+    bool RevealProblem(const Problem& problem) override;
     void Scrub(double time, TimelineDrag drag) override;
     void MoveMark(std::string_view key, double time, TimelineDrag drag) override;
     void PickOnTimeline(std::string_view key) override;
@@ -143,6 +148,8 @@ private:
     void FollowAuditionedClip();
     [[nodiscard]] AnimationClipEventsDocument* AuditionedEvents() const;
     void CloseActiveDocument();
+    // The rig's and the scenario's problems, republished when they change.
+    void PublishProblems();
 
     Engine& EngineRef;
     DataDocumentStore& Store;
@@ -159,6 +166,13 @@ private:
     std::unique_ptr<AnimationRootMotionProperties> RootMotionCard;
     std::unique_ptr<AnimationFactProperties> FactCard;
     std::unique_ptr<AnimationRequestProperties> RequestCard;
+    std::unique_ptr<AnimationAdmissionProperties> Admissions;
+    std::unique_ptr<AnimationRigReportProperties> RigReport;
+    ProblemList& Problems;
+    std::string ProblemSignature;
+    // Names the rig's content uses that nothing declares, as of ProblemSignature.
+    std::vector<std::string> Undeclared;
+    std::string DeclareError;
     std::unique_ptr<AnimationTimeline> Clock;
     std::unique_ptr<AnimationEventProperties> EventCard;
     std::optional<std::uint32_t> PickedEvent;

@@ -86,8 +86,10 @@ named scenario participants issue requests through the normal request API.
 - The tape deck plays, pauses, steps and restarts the simulation. Speed
   changes how quickly fixed ticks are scheduled, never their length. Scrubbing
   back inspects a recorded tick; Live returns to the running one.
-- **Problems and changes** shows the rig's bind diagnostics and the scenario's
-  located problems, the entity's decision history, and what is unsaved.
+- The rig's bind diagnostics and the scenario's located problems are the
+  shell's problems (`AnimationRigProblems`): each reveals the document it was
+  found in as a sheet. The entity's decision log is on the Rules card's
+  details, and what is unsaved is the document dial's and the cartridge's.
 
 Every live edit is recorded into the working scenario on the next tick, so the
 live session and a replay of the saved scenario run the same code on the same
@@ -214,8 +216,9 @@ every other clip's entry back as it found it.
 - Valid working events reach the preview at once through the production rig
   binding; invalid ones leave it on the last valid events, and say why. Only
   Save writes the sidecar, and it refuses a sidecar changed on disk.
-- **Event admissions** shows every crossing and lifecycle event the simulation
-  produced, with what its binding answered: accepted, unavailable, unresolved,
+- The Events card's details (`AnimationAdmissionProperties`) show the latest
+  crossings and lifecycle events the simulation produced, with what each
+  binding answered: accepted, unavailable, unresolved,
   invalid arguments, stale, or refused past capacity, and suppressed or
   skipped crossings that were never offered. The preview runs no game: a verb
   answers Unavailable unless a recorder stands behind it, and a recorder's
@@ -399,8 +402,9 @@ views are the richer ones of the same documents. **New Animation Document**
 (`data/DataCreation`).
 
 A name content introduces as a gameplay tag -- a new behavior, intent or
-layer -- fails the rig's binding until something declares it. The Problems tab
-lists those names and **Declare them beside the rig** adds them to the rig's
+layer -- fails the rig's binding until something declares it. One problem
+lists those names and reveals the stage card, where **Declare Names Beside the
+Rig** adds them to the rig's
 tag declarations as one undo step there; working declarations reach the
 preview before they are saved.
 
@@ -431,9 +435,9 @@ Data Editor uses; clip events join it as `AnimationClipEventsSet`.
   first, and warns on a warning or a request no layer played.
 - **Migration** finds scenes that still name the retired clip player and turns
   each into a one-layer rig that plays the clip as the player did.
-- **Content risk** (Problems and changes) shows the open rig's risk measures,
-  the previewed entity's footprint and its unplayed requests -- what `anim.risk`
-  reports in a game.
+- The stage card's details (`AnimationRigReportProperties`) show the open
+  rig's risk measures, the previewed entity's footprint and its unplayed
+  requests -- what `anim.risk` reports in a game.
 - **Imported trace** reads a trace written by `anim.trace.export` in a running
   game: every decision record as logged, and what the trace did not capture.
 

@@ -1,5 +1,6 @@
 #include "AnimationWorkspace.h"
 
+#include "authoring/AnimationAdmissionProperties.h"
 #include "authoring/AnimationBlendProperties.h"
 #include "authoring/AnimationBlendspacePad.h"
 #include "authoring/AnimationBoneProperties.h"
@@ -12,12 +13,16 @@
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRequestProperties.h"
 #include "authoring/AnimationRigCreation.h"
+#include "authoring/AnimationRigDocumentEdits.h"
+#include "authoring/AnimationRigProblems.h"
+#include "authoring/AnimationRigReportProperties.h"
 #include "authoring/AnimationRootMotionProperties.h"
 #include "authoring/AnimationRuleProperties.h"
 #include "authoring/AnimationStageProperties.h"
 #include "authoring/AnimationStageStrokes.h"
 #include "authoring/AnimationTimeline.h"
 #include "render/AnimationPreviewRenderFeature.h"
+#include "problems/ProblemList.h"
 #include "ui/AnimationPreviewPanels.h"
 
 #include "actions/ActionOffer.h"
@@ -64,6 +69,8 @@ namespace
 {
 constexpr std::array<std::string_view, 1> kPreviewDependsOn{ "editor_ui" };
 constexpr std::string_view kCommandOwner = "editor.animation";
+constexpr std::string_view kProblemSource = "animation";
+constexpr std::string_view kDeclareAction = "animation.declare_names";
 // How far a press may move and still pick rather than orbit, in pixels.
 constexpr float kPickSlop = 3.0f;
 constexpr float kPickRadius = 8.0f;
@@ -88,9 +95,11 @@ std::string_view LeafOf(std::string_view path)
 
 AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module,
                                        DocumentSourceSet& sources, DataDocumentStore& store, PromptQueue& prompts,
-                                       ActionCatalog& catalog, const DataSubtypeAuthoringSetup& authorings)
+                                       ActionCatalog& catalog, ProblemList& problems,
+                                       const DataSubtypeAuthoringSetup& authorings)
     : EngineRef(engine)
     , Store(store)
+    , Problems(problems)
     , Prompts(prompts.MakeAsker())
 {
     std::function<void(World&)> vocabulary;
@@ -110,6 +119,8 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
     RootMotionCard = std::make_unique<AnimationRootMotionProperties>(*Workspace);
     FactCard = std::make_unique<AnimationFactProperties>(*Workspace);
     RequestCard = std::make_unique<AnimationRequestProperties>(*Workspace);
+    Admissions = std::make_unique<AnimationAdmissionProperties>(*Workspace);
+    RigReport = std::make_unique<AnimationRigReportProperties>(*Workspace);
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
     EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
@@ -172,6 +183,9 @@ AnimationWorkspace::~AnimationWorkspace()
     Creation.reset();
     Scenario.reset();
     Audition.reset();
+    Problems.Clear(kProblemSource);
+    RigReport.reset();
+    Admissions.reset();
     RequestCard.reset();
     FactCard.reset();
     RootMotionCard.reset();
@@ -373,8 +387,49 @@ constexpr std::array<LensRow, 8> kLenses{ {
 } };
 } // namespace
 
+void AnimationWorkspace::PublishProblems()
+{
+    std::vector<AnimDiagnostic> diagnostics = Workspace->Rig.Simulation.Problems();
+    diagnostics.insert(diagnostics.end(), Workspace->Rig.LoadProblems.begin(), Workspace->Rig.LoadProblems.end());
+    std::string signature = DeclareError;
+    for (const AnimDiagnostic& diagnostic : diagnostics)
+        signature += diagnostic.AssetPath + diagnostic.FieldPath + diagnostic.Code + diagnostic.Message + "\n";
+    if (signature == ProblemSignature)
+        return;
+    ProblemSignature = std::move(signature);
+    // Reads documents, so only when the problems change.
+    Undeclared = UndeclaredAnimationNamesOf(Workspace->Rig.Simulation, Workspace->Documents);
+
+    std::vector<Problem> problems = AnimationRigProblems(diagnostics, Undeclared, Workspace->Documents.Store());
+    if (!DeclareError.empty())
+        problems.push_back({ .Severity = ProblemSeverity::Error, .Message = DeclareError });
+    Problems.Publish(kProblemSource, std::move(problems));
+}
+
+bool AnimationWorkspace::RevealProblem(const Problem& problem)
+{
+    if (problem.Location == kUndeclaredAnimationNames)
+    {
+        ShowCard(CardSubject::Stage);
+        return true;
+    }
+    if (!problem.Document || problem.Document->Source != &Workspace->Documents.Store())
+        return false;
+    OpenDocument(problem.Document->Key);
+    return true;
+}
+
 void AnimationWorkspace::DefineLenses(ActionCatalog& catalog)
 {
+    OfferAction(catalog, ActionHandlers,
+                { .Id = std::string(kDeclareAction), .Label = "Declare Names Beside the Rig", .Category = "Resource" },
+                { .Invoke = [this] {
+                      DeclareError.clear();
+                      (void)DeclareUndeclaredAnimationNames(Workspace->Documents, Workspace->Rig.Simulation,
+                                                            Workspace->Rig.Path, DeclareError);
+                      ProblemSignature.clear();
+                  },
+                  .Enabled = [this] { return !Undeclared.empty(); } });
     for (const LensRow& lens : kLenses)
         OfferAction(catalog, ActionHandlers,
                     { .Id = std::string(lens.Action), .Label = std::string(lens.Label), .Category = "Lens" },
@@ -550,6 +605,7 @@ void AnimationWorkspace::Tick(FrameUpdateContext& ctx)
     if (!Visible)
         return;
     FollowAuditionedClip();
+    PublishProblems();
     if (const DataDocument* document = Workspace->Documents.Active(); document != nullptr && Subject == CardSubject::Document)
         if (IDataSubtypeAuthoring* authoring = Authoring.Find(document->Subtype()))
             authoring->Update(*document, Workspace->Documents);
@@ -872,7 +928,8 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         const AnimationClipEvent* event = PickedEvent ? document.Find(*PickedEvent) : nullptr;
         return { .Title = event == nullptr ? std::string(LeafOf(document.ClipPath())) + " events" : EventLabel(*event),
                  .Actions = { "animation.event.add", "edit.delete", "file.save" },
-                 .Sections = { { .Heading = {}, .Source = EventCard.get() } } };
+                 .Sections = { { .Heading = {}, .Source = EventCard.get() } },
+                 .Details = { { .Heading = "Admissions", .Source = Admissions.get() } } };
     }
     if (Subject == CardSubject::NewRig)
         return { .Title = "New rig", .Sections = { { .Heading = {}, .Source = Creation.get() } } };
@@ -893,6 +950,9 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
     {
         stage.Sections.push_back({ .Heading = "Scenario", .Source = Scenario.get() });
         stage.Actions = { "animation.scenario.save", "animation.scenario.revert" };
+        if (!Undeclared.empty())
+            stage.Actions.push_back(std::string(kDeclareAction));
+        stage.Details.push_back({ .Heading = "Rig report", .Source = RigReport.get() });
     }
     return stage;
 }

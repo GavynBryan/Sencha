@@ -3,6 +3,7 @@
 // game, and nothing written to disk until saved.
 
 #include "authoring/AnimationEventBindings.h"
+#include "authoring/AnimationAdmissionProperties.h"
 #include "authoring/AnimationEventProperties.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
@@ -455,5 +456,44 @@ TEST(AnimationEventEditing, TheCardBindsAndFeedsThePickedEvent)
     EXPECT_EQ(events->Find(key)->Inputs[0].Source, VerbArgumentSource::Tag) << "a tag input starts as a tag";
     EXPECT_EQ(card.CommitEdit("inputs.surface", "Surface.Grass"), PropertyEditResult::Applied);
     EXPECT_EQ(events->Find(key)->Inputs[0].Text, "Surface.Grass");
+    workspace.Sources.DiscardAll();
+}
+
+// What the events met, on the Events card's details: the preview's role and
+// recorders as scenario state, and each crossing with what its binding answered.
+TEST(AnimationEventEditing, TheAdmissionsSayWhatEachCrossingWasAnswered)
+{
+    EventProject project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+    AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
+    ASSERT_NE(events, nullptr) << workspace.DocumentError;
+    (void)events->Add(Footstep(0.25f));
+    workspace.ClipEvents.Changed(*events);
+    AnimationAdmissionProperties card(workspace);
+
+    std::vector<PropertyNode> nodes = card.Nodes();
+    ASSERT_NE(NodeAt(nodes, "role"), nullptr);
+    EXPECT_EQ(NodeAt(nodes, "role")->Value, "Authority");
+    ASSERT_NE(NodeAt(nodes, "recorders.test.footstep"), nullptr);
+    EXPECT_EQ(NodeAt(nodes, "recorders.test.footstep")->Value, "true") << "the scenario records footsteps";
+    EXPECT_NE(NodeAt(nodes, "admitted.none"), nullptr);
+
+    workspace.Rig.Simulation.RunTo(30);
+    nodes = card.Nodes();
+    ASSERT_NE(NodeAt(nodes, "admitted.0"), nullptr);
+    bool accepted = false;
+    for (const PropertyNode& row : NodeAt(nodes, "admitted")->Children)
+        accepted = accepted || row.Value.find("accepted") != std::string::npos;
+    EXPECT_TRUE(accepted) << "a footstep crossed and was accepted";
+
+    ASSERT_TRUE(card.BeginEdit("recorders.test.count"));
+    EXPECT_EQ(card.CommitEdit("recorders.test.count", "true"), PropertyEditResult::Applied);
+    EXPECT_TRUE(workspace.Rig.Simulation.HasRecorder("test.count"));
+    ASSERT_TRUE(card.BeginEdit("role"));
+    EXPECT_EQ(card.CommitEdit("role", "Client"), PropertyEditResult::Applied);
+    EXPECT_EQ(workspace.Rig.Simulation.Scenario().Role, AnimationPreviewRole::Client);
+    EXPECT_EQ(card.CommitEdit("role", "Spectator"), PropertyEditResult::Refused);
     workspace.Sources.DiscardAll();
 }
