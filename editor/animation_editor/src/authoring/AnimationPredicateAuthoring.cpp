@@ -98,7 +98,46 @@ std::optional<std::pair<std::string_view, std::size_t>> RowOf(std::string_view k
     return std::pair{ key.substr(0, open), index };
 }
 
-void Choose(PropertyNode& node, std::vector<std::string> names)
+// One subtype whose documents hold conditions and nothing else of their own.
+class ConditionDocumentAuthoring final : public IDataSubtypeAuthoring
+{
+public:
+    ConditionDocumentAuthoring(std::string_view subtype, std::vector<std::string_view> predicates, bool stayCopiesEnter)
+        : Kind(subtype)
+        , Conditions(std::move(predicates))
+        , StayCopiesEnter(stayCopiesEnter)
+    {
+    }
+
+    [[nodiscard]] std::string_view Subtype() const override { return Kind; }
+    void Update(const DataDocument& document, DataDocumentSet& documents) override
+    {
+        Conditions.Update(document, documents);
+    }
+    void Refine(std::vector<PropertyNode>& nodes, const DataDocument& document, const DataSchema&) const override
+    {
+        if (const JsonValue* data = document.Data())
+            Conditions.Refine(nodes, *data);
+    }
+    [[nodiscard]] std::optional<bool> Perform(std::string_view key, std::string_view verb, std::string_view choice,
+                                              JsonValue& data) const override
+    {
+        if (StayCopiesEnter && verb == "add" && choice == "Stay")
+        {
+            JsonValue* rule = FindDataValue(data, key);
+            return rule != nullptr && SetAnimRuleStay(*rule, true);
+        }
+        return Conditions.Perform(key, verb, choice, data);
+    }
+
+private:
+    std::string Kind;
+    AnimationConditionAuthoring Conditions;
+    bool StayCopiesEnter = false;
+};
+} // namespace
+
+void ChooseAmong(PropertyNode& node, std::vector<std::string> names)
 {
     if (std::ranges::find(names, node.Value) == names.end())
         names.insert(names.begin(), node.Value);
@@ -106,163 +145,136 @@ void Choose(PropertyNode& node, std::vector<std::string> names)
     node.Descriptor.Choices = std::move(names);
 }
 
-class AnimationPredicateAuthoring final : public IDataSubtypeAuthoring
+std::vector<std::string> AnimationIntentParams(const AnimationPredicateVocabulary& names, std::string_view intent)
 {
-public:
-    AnimationPredicateAuthoring(std::string_view subtype, std::vector<std::string_view> predicates, bool stayCopiesEnter)
-        : Kind(subtype)
-        , Predicates(std::move(predicates))
-        , StayCopiesEnter(stayCopiesEnter)
+    const auto found = std::ranges::find(names.Intents, intent, &AnimationPredicateVocabulary::Intent::Name);
+    return found != names.Intents.end() ? found->Params : std::vector<std::string>{};
+}
+
+void AnimationConditionAuthoring::Update(const DataDocument& document, DataDocumentSet& documents)
+{
+    if (document.VirtualPath() == ReadFor && document.Revision() == ReadAt)
+        return;
+    ReadFor = document.VirtualPath();
+    ReadAt = document.Revision();
+    Vocabulary = GatherAnimationPredicateVocabulary(documents.Store());
+}
+
+void AnimationConditionAuthoring::Refine(std::vector<PropertyNode>& nodes, const JsonValue& data) const
+{
+    RefineAll(nodes, data);
+}
+
+std::optional<bool> AnimationConditionAuthoring::Perform(std::string_view key, std::string_view verb,
+                                                         std::string_view choice, JsonValue& data) const
+{
+    if (verb == "condition")
     {
+        JsonValue* rows = FindDataValue(data, key);
+        if (rows == nullptr || !rows->IsArray())
+            return false;
+        std::optional<JsonValue> test = TestFor(choice);
+        if (!test)
+            return false;
+        AddAnimPredicateRow(rows->AsArray(), std::move(*test));
+        return true;
     }
-
-    [[nodiscard]] std::string_view Subtype() const override { return Kind; }
-
-    void Update(const DataDocument& document, DataDocumentSet& documents) override
+    if (verb == "or")
     {
-        if (document.VirtualPath() == ReadFor && document.Revision() == ReadAt)
-            return;
-        ReadFor = document.VirtualPath();
-        ReadAt = document.Revision();
-        Vocabulary = GatherAnimationPredicateVocabulary(documents.Store());
+        const std::optional<std::pair<std::string_view, std::size_t>> row = RowOf(key);
+        JsonValue* rows = row ? FindDataValue(data, row->first) : nullptr;
+        if (rows == nullptr || !rows->IsArray() || row->second >= rows->AsArray().size())
+            return false;
+        const JsonValue& held = rows->AsArray()[row->second];
+        // The new alternative starts as a copy of the row's first test.
+        const JsonValue* any = held.Find("any");
+        JsonValue first = any != nullptr && any->IsArray() && !any->AsArray().empty() ? any->AsArray().front() : held;
+        return AddAnimPredicateAlternative(rows->AsArray(), row->second, std::move(first));
     }
+    return std::nullopt;
+}
 
-    void Refine(std::vector<PropertyNode>& nodes, const DataDocument& document, const DataSchema&) const override
-    {
-        if (const JsonValue* data = document.Data())
-            RefineAll(nodes, *data);
-    }
-
-    [[nodiscard]] std::optional<bool> Perform(std::string_view key, std::string_view verb, std::string_view choice,
-                                              JsonValue& data) const override
-    {
-        if (verb == "condition")
-        {
-            JsonValue* rows = FindDataValue(data, key);
-            if (rows == nullptr || !rows->IsArray())
-                return false;
-            std::optional<JsonValue> test = TestFor(choice);
-            if (!test)
-                return false;
-            AddAnimPredicateRow(rows->AsArray(), std::move(*test));
-            return true;
-        }
-        if (verb == "or")
-        {
-            const std::optional<std::pair<std::string_view, std::size_t>> row = RowOf(key);
-            JsonValue* rows = row ? FindDataValue(data, row->first) : nullptr;
-            if (rows == nullptr || !rows->IsArray() || row->second >= rows->AsArray().size())
-                return false;
-            const JsonValue& held = rows->AsArray()[row->second];
-            // The new alternative starts as a copy of the row's first test.
-            JsonValue first = held.Find("any") != nullptr && held.Find("any")->IsArray()
-                                      && !held.Find("any")->AsArray().empty()
-                                  ? held.Find("any")->AsArray().front()
-                                  : held;
-            return AddAnimPredicateAlternative(rows->AsArray(), row->second, std::move(first));
-        }
-        if (StayCopiesEnter && verb == "add" && choice == "Stay")
-        {
-            JsonValue* rule = FindDataValue(data, key);
-            return rule != nullptr && SetAnimRuleStay(*rule, true);
-        }
+std::optional<JsonValue> AnimationConditionAuthoring::TestFor(std::string_view choice) const
+{
+    if (choice == kElapsedChoice)
+        return MakeAnimElapsedTest(1.0);
+    if (choice.starts_with(kRequestChoice))
+        return MakeAnimRequestTest(std::string(choice.substr(kRequestChoice.size())));
+    if (!choice.starts_with(kFactChoice))
         return std::nullopt;
-    }
+    const std::string_view name = choice.substr(kFactChoice.size());
+    const auto fact = std::ranges::find(Vocabulary.Facts, name, &AnimationPredicateVocabulary::Fact::Name);
+    return MakeAnimFactTest(std::string(name), fact != Vocabulary.Facts.end() ? fact->Kind : AnimFactKind::Bool);
+}
 
-private:
-    [[nodiscard]] std::optional<JsonValue> TestFor(std::string_view choice) const
-    {
-        if (choice == kElapsedChoice)
-            return MakeAnimElapsedTest(1.0);
-        if (choice.starts_with(kRequestChoice))
-            return MakeAnimRequestTest(std::string(choice.substr(kRequestChoice.size())));
-        if (!choice.starts_with(kFactChoice))
-            return std::nullopt;
-        const std::string_view name = choice.substr(kFactChoice.size());
-        const auto fact = std::ranges::find(Vocabulary.Facts, name, &AnimationPredicateVocabulary::Fact::Name);
-        return MakeAnimFactTest(std::string(name), fact != Vocabulary.Facts.end() ? fact->Kind : AnimFactKind::Bool);
-    }
+std::vector<std::string> AnimationConditionAuthoring::ConditionChoices() const
+{
+    std::vector<std::string> choices;
+    for (const AnimationPredicateVocabulary::Fact& fact : Vocabulary.Facts)
+        choices.push_back(std::string(kFactChoice) + fact.Name);
+    for (const AnimationPredicateVocabulary::Intent& intent : Vocabulary.Intents)
+        choices.push_back(std::string(kRequestChoice) + intent.Name);
+    choices.emplace_back(kElapsedChoice);
+    return choices;
+}
 
-    [[nodiscard]] std::vector<std::string> ConditionChoices() const
+void AnimationConditionAuthoring::RefineAll(std::vector<PropertyNode>& nodes, const JsonValue& data) const
+{
+    for (PropertyNode& node : nodes)
     {
-        std::vector<std::string> choices;
-        for (const AnimationPredicateVocabulary::Fact& fact : Vocabulary.Facts)
-            choices.push_back(std::string(kFactChoice) + fact.Name);
-        for (const AnimationPredicateVocabulary::Intent& intent : Vocabulary.Intents)
-            choices.push_back(std::string(kRequestChoice) + intent.Name);
-        choices.emplace_back(kElapsedChoice);
-        return choices;
+        Refine(node, data);
+        RefineAll(node.Children, data);
     }
+}
 
-    void RefineAll(std::vector<PropertyNode>& nodes, const JsonValue& data) const
+void AnimationConditionAuthoring::Refine(PropertyNode& node, const JsonValue& data) const
+{
+    const PredicatePlace place = PlaceOf(node.Key, Predicates);
+    switch (place.What)
     {
-        for (PropertyNode& node : nodes)
+    case PredicatePlace::Part::None: return;
+    case PredicatePlace::Part::Rows:
+        for (PropertyVerb& verb : node.Descriptor.Verbs)
+            if (verb.Id == "add")
+                verb = { .Id = "condition", .Label = "Add condition", .Choices = ConditionChoices() };
+        if (const JsonValue* rows = FindDataValue(data, node.Key))
+            node.Descriptor.Tooltip = DescribeAnimPredicate(rows);
+        return;
+    case PredicatePlace::Part::Row:
+        if (const JsonValue* row = FindDataValue(data, node.Key))
         {
-            Refine(node, data);
-            RefineAll(node.Children, data);
+            const JsonValue rows(JsonValue::Array{ *row });
+            node.Descriptor.Label = DescribeAnimPredicate(&rows);
         }
-    }
-
-    void Refine(PropertyNode& node, const JsonValue& data) const
-    {
-        const PredicatePlace place = PlaceOf(node.Key, Predicates);
-        switch (place.What)
-        {
-        case PredicatePlace::Part::None: return;
-        case PredicatePlace::Part::Rows:
-            for (PropertyVerb& verb : node.Descriptor.Verbs)
-                if (verb.Id == "add")
-                    verb = { .Id = "condition", .Label = "Add condition", .Choices = ConditionChoices() };
-            if (const JsonValue* rows = FindDataValue(data, node.Key))
-                node.Descriptor.Tooltip = DescribeAnimPredicate(rows);
-            return;
-        case PredicatePlace::Part::Row:
-            if (const JsonValue* row = FindDataValue(data, node.Key))
-            {
-                const JsonValue rows(JsonValue::Array{ *row });
-                node.Descriptor.Label = DescribeAnimPredicate(&rows);
-            }
-            if (!node.Key.ends_with("]") || HolderOf(node.Key).ends_with(".any"))
-                return;
+        if (const auto row = RowOf(node.Key); row && !row->first.ends_with(".any"))
             node.Descriptor.Verbs.insert(node.Descriptor.Verbs.begin(), { .Id = "or", .Label = "Or" });
-            return;
-        case PredicatePlace::Part::Member:
-            if (place.Member == "fact")
-            {
-                std::vector<std::string> names;
-                for (const AnimationPredicateVocabulary::Fact& fact : Vocabulary.Facts)
-                    names.push_back(fact.Name);
-                Choose(node, std::move(names));
-            }
-            else if (place.Member == "request")
-            {
-                std::vector<std::string> names;
-                for (const AnimationPredicateVocabulary::Intent& intent : Vocabulary.Intents)
-                    names.push_back(intent.Name);
-                Choose(node, std::move(names));
-            }
-            else if (place.Member == "param")
-            {
-                const JsonValue* test = FindDataValue(data, HolderOf(node.Key));
-                const JsonValue* request = test != nullptr ? test->Find("request") : nullptr;
-                const auto intent = request != nullptr && request->IsString()
-                                        ? std::ranges::find(Vocabulary.Intents, request->AsString(),
-                                                            &AnimationPredicateVocabulary::Intent::Name)
-                                        : Vocabulary.Intents.end();
-                Choose(node, intent != Vocabulary.Intents.end() ? intent->Params : std::vector<std::string>{});
-            }
-            return;
+        return;
+    case PredicatePlace::Part::Member:
+        if (place.Member == "fact")
+        {
+            std::vector<std::string> names;
+            for (const AnimationPredicateVocabulary::Fact& fact : Vocabulary.Facts)
+                names.push_back(fact.Name);
+            ChooseAmong(node, std::move(names));
         }
+        else if (place.Member == "request")
+        {
+            std::vector<std::string> names;
+            for (const AnimationPredicateVocabulary::Intent& intent : Vocabulary.Intents)
+                names.push_back(intent.Name);
+            ChooseAmong(node, std::move(names));
+        }
+        else if (place.Member == "param")
+        {
+            const JsonValue* test = FindDataValue(data, HolderOf(node.Key));
+            const JsonValue* request = test != nullptr ? test->Find("request") : nullptr;
+            ChooseAmong(node, AnimationIntentParams(Vocabulary, request != nullptr && request->IsString()
+                                                                   ? std::string_view(request->AsString())
+                                                                   : std::string_view{}));
+        }
+        return;
     }
-
-    std::string Kind;
-    std::vector<std::string_view> Predicates;
-    bool StayCopiesEnter = false;
-    AnimationPredicateVocabulary Vocabulary;
-    std::string ReadFor;
-    std::uint64_t ReadAt = 0;
-};
-} // namespace
+}
 
 AnimationPredicateVocabulary GatherAnimationPredicateVocabulary(const DataDocumentStore& store)
 {
@@ -297,18 +309,19 @@ AnimationPredicateVocabulary GatherAnimationPredicateVocabulary(const DataDocume
 
 std::unique_ptr<IDataSubtypeAuthoring> CreateAnimationSelectorAuthoring()
 {
-    return std::make_unique<AnimationPredicateAuthoring>(kAnimSelectorType,
-                                                         std::vector<std::string_view>{ "enter", "stay" }, true);
+    return std::make_unique<ConditionDocumentAuthoring>(kAnimSelectorType,
+                                                        std::vector<std::string_view>{ "enter", "stay" }, true);
 }
 
 std::unique_ptr<IDataSubtypeAuthoring> CreateAnimationSlotMapAuthoring()
 {
-    return std::make_unique<AnimationPredicateAuthoring>(kAnimSlotMapType, std::vector<std::string_view>{ "when" },
-                                                         false);
+    return std::make_unique<ConditionDocumentAuthoring>(kAnimSlotMapType, std::vector<std::string_view>{ "when" },
+                                                        false);
 }
 
 void RegisterAnimationSubtypeAuthoring(DataSubtypeAuthoringRegistry& registry)
 {
     (void)registry.Register(CreateAnimationSelectorAuthoring());
     (void)registry.Register(CreateAnimationSlotMapAuthoring());
+    (void)registry.Register(CreateAnimationFlowAuthoring());
 }

@@ -1,5 +1,6 @@
 #include "authoring/AnimationRuleProperties.h"
 
+#include "authoring/AnimationLayerChoice.h"
 #include "authoring/AnimationPredicateText.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 
@@ -86,11 +87,7 @@ std::vector<PropertyNode> AnimationRuleProperties::Nodes() const
     const AnimationNavigation& navigation = Workspace.Rig.Navigation;
     const std::size_t layer = std::min(navigation.Layer, rig->Layers.size() - 1);
 
-    std::vector<PropertyNode> nodes;
-    std::vector<std::string_view> layers;
-    for (const AnimBoundLayer& bound : rig->Layers)
-        layers.push_back(bound.NameText);
-    nodes.push_back(ChoiceProperty("layer", "Layer", layers, layer));
+    std::vector<PropertyNode> nodes{ AnimationLayerChoice(*rig, layer) };
     const AnimBoundSelector* selector = SelectorOf(*rig, layer);
     if (selector == nullptr)
     {
@@ -280,10 +277,7 @@ PropertyEditResult AnimationRuleProperties::CommitEdit(std::string_view key, std
     }
     if (key != "layer")
         return PropertyEditResult::Gone;
-    std::vector<std::string_view> layers;
-    for (const AnimBoundLayer& layer : rig->Layers)
-        layers.push_back(layer.NameText);
-    const std::optional<std::size_t> layer = ParseChoice(value, layers);
+    const std::optional<std::size_t> layer = ParseAnimationLayerChoice(*rig, value);
     if (!layer)
         return PropertyEditResult::Refused;
     Workspace.Rig.Navigation.Layer = *layer;

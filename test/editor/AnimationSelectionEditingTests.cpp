@@ -2,7 +2,7 @@
 // predicates as panels read them, and rule edits that change the running
 // preview's winner and clip without writing to disk.
 
-#include "authoring/AnimationDecisionLane.h"
+#include "authoring/AnimationTimelineLanes.h"
 #include "authoring/AnimationPredicateAuthoring.h"
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationPredicateText.h"
@@ -363,11 +363,12 @@ TEST(AnimationSelectionEditing, TheDecisionLaneSpansEachStretchARuleHeld)
     EXPECT_DOUBLE_EQ(lane.Spans[0].End, lane.Spans[1].Start);
     EXPECT_DOUBLE_EQ(lane.Spans[1].End, static_cast<double>(session.Tick()) * session.TickSeconds());
 
-    const std::optional<AnimationRulePick> pick = ParseDecisionSpanKey(lane.Spans[1].Key);
+    const std::optional<AnimationLanePick> pick = ParseAnimationLaneKey(lane.Spans[1].Key);
     ASSERT_TRUE(pick.has_value());
+    EXPECT_EQ(pick->Names, AnimationLanePick::What::Rule);
     EXPECT_EQ(pick->Layer, 0u);
-    EXPECT_EQ(pick->Rule, 1);
-    EXPECT_FALSE(ParseDecisionSpanKey("7").has_value());
+    EXPECT_EQ(pick->Index, 1);
+    EXPECT_FALSE(ParseAnimationLaneKey("7").has_value());
     EXPECT_TRUE(AnimationDecisionLane(session, 3, -1).Spans.empty());
     session.Close();
 }

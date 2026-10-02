@@ -1,11 +1,8 @@
 # Files under editor/ that still use ImGui. Rule F of check_editor_layering.sh:
 # an entry leaves when its file stops using ImGui; nothing is ever added.
 editor/animation_editor/src/ui/AnimationBlendPanels.cpp
-editor/animation_editor/src/ui/AnimationDocumentWidgets.cpp
-editor/animation_editor/src/ui/AnimationDocumentWidgets.h
 editor/animation_editor/src/ui/AnimationEventPanels.cpp
 editor/animation_editor/src/ui/AnimationLabPanels.cpp
-editor/animation_editor/src/ui/AnimationLayerPanels.cpp
 editor/animation_editor/src/ui/AnimationMigrationPanels.cpp
 editor/animation_editor/src/ui/AnimationRequestSchemaPanel.cpp
 editor/animation_editor/src/ui/AnimationRootMotionPanels.cpp

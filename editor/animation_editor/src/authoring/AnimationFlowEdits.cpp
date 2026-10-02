@@ -24,9 +24,9 @@ namespace
         std::erase_if(object.AsObject(), [&](const auto& member) { return member.first == key; });
     }
 
-    JsonValue* Section(JsonValue& root, std::size_t section)
+    JsonValue* Section(JsonValue& data, std::size_t section)
     {
-        JsonValue::Array* sections = AnimFlowSections(root);
+        JsonValue::Array* sections = AnimFlowSections(data);
         return sections != nullptr && section < sections->size() && (*sections)[section].IsObject()
             ? &(*sections)[section]
             : nullptr;
@@ -56,23 +56,22 @@ namespace
     }
 }
 
-JsonValue::Array* AnimFlowSections(JsonValue& root)
+JsonValue::Array* AnimFlowSections(JsonValue& data)
 {
-    JsonValue* data = root.Find("data");
-    JsonValue* sections = data != nullptr ? data->Find("sections") : nullptr;
+    JsonValue* sections = data.IsObject() ? data.Find("sections") : nullptr;
     return sections != nullptr && sections->IsArray() ? &sections->AsArray() : nullptr;
 }
 
-void AddAnimFlowSection(JsonValue& root, std::string tag, std::string clip)
+void AddAnimFlowSection(JsonValue& data, std::string tag, std::string clip)
 {
-    if (JsonValue::Array* sections = AnimFlowSections(root))
+    if (JsonValue::Array* sections = AnimFlowSections(data))
         sections->emplace_back(JsonValue::Object{ { "tag", JsonValue(std::move(tag)) },
                                                   { "clip", JsonValue(std::move(clip)) } });
 }
 
-bool RemoveAnimFlowSection(JsonValue& root, std::size_t section)
+bool RemoveAnimFlowSection(JsonValue& data, std::size_t section)
 {
-    JsonValue::Array* sections = AnimFlowSections(root);
+    JsonValue::Array* sections = AnimFlowSections(data);
     if (sections == nullptr || section >= sections->size())
         return false;
     const std::string tag = Text((*sections)[section], "tag");
@@ -80,15 +79,14 @@ bool RemoveAnimFlowSection(JsonValue& root, std::size_t section)
     for (JsonValue& other : *sections)
         if (JsonValue* branches = other.Find("branches"); branches != nullptr && branches->IsArray())
             std::erase_if(branches->AsArray(), [&](const JsonValue& branch) { return Text(branch, "to") == tag; });
-    JsonValue* data = root.Find("data");
-    if (Text(*data, "cancel") == tag)
-        Erase(*data, "cancel");
+    if (Text(data, "cancel") == tag)
+        Erase(data, "cancel");
     return true;
 }
 
-bool MoveAnimFlowSection(JsonValue& root, std::size_t from, std::size_t to)
+bool MoveAnimFlowSection(JsonValue& data, std::size_t from, std::size_t to)
 {
-    JsonValue::Array* sections = AnimFlowSections(root);
+    JsonValue::Array* sections = AnimFlowSections(data);
     if (sections == nullptr || from >= sections->size() || to >= sections->size() || from == to)
         return false;
     JsonValue::Array moved = *sections;
@@ -101,9 +99,9 @@ bool MoveAnimFlowSection(JsonValue& root, std::size_t from, std::size_t to)
     return true;
 }
 
-bool SetAnimFlowLoop(JsonValue& root, std::size_t section, std::string_view loop)
+bool SetAnimFlowLoop(JsonValue& data, std::size_t section, std::string_view loop)
 {
-    JsonValue* entry = Section(root, section);
+    JsonValue* entry = Section(data, section);
     if (entry == nullptr || (loop != "once" && loop != "while" && loop != "count"))
         return false;
     if (loop == "once")
@@ -122,9 +120,9 @@ bool SetAnimFlowLoop(JsonValue& root, std::size_t section, std::string_view loop
     return true;
 }
 
-bool SetAnimFlowEnds(JsonValue& root, std::size_t section, bool ends)
+bool SetAnimFlowEnds(JsonValue& data, std::size_t section, bool ends)
 {
-    JsonValue* entry = Section(root, section);
+    JsonValue* entry = Section(data, section);
     if (entry == nullptr)
         return false;
     if (ends)
@@ -134,9 +132,9 @@ bool SetAnimFlowEnds(JsonValue& root, std::size_t section, bool ends)
     return true;
 }
 
-bool SetAnimFlowCancelImmediately(JsonValue& root, std::size_t section, bool immediately)
+bool SetAnimFlowCancelImmediately(JsonValue& data, std::size_t section, bool immediately)
 {
-    JsonValue* entry = Section(root, section);
+    JsonValue* entry = Section(data, section);
     if (entry == nullptr)
         return false;
     if (immediately)
@@ -146,22 +144,21 @@ bool SetAnimFlowCancelImmediately(JsonValue& root, std::size_t section, bool imm
     return true;
 }
 
-bool SetAnimFlowCancel(JsonValue& root, std::string_view tag)
+bool SetAnimFlowCancel(JsonValue& data, std::string_view tag)
 {
-    JsonValue::Array* sections = AnimFlowSections(root);
+    JsonValue::Array* sections = AnimFlowSections(data);
     if (sections == nullptr || (!tag.empty() && IndexOf(*sections, tag) < 0))
         return false;
-    JsonValue* data = root.Find("data");
     if (tag.empty())
-        Erase(*data, "cancel");
+        Erase(data, "cancel");
     else
-        Set(*data, "cancel", JsonValue(std::string(tag)));
+        Set(data, "cancel", JsonValue(std::string(tag)));
     return true;
 }
 
-bool AddAnimFlowBranch(JsonValue& root, std::size_t section, std::size_t to)
+bool AddAnimFlowBranch(JsonValue& data, std::size_t section, std::size_t to)
 {
-    JsonValue::Array* sections = AnimFlowSections(root);
+    JsonValue::Array* sections = AnimFlowSections(data);
     if (sections == nullptr || section >= sections->size() || to >= sections->size() || to <= section)
         return false;
     JsonValue& entry = (*sections)[section];
@@ -176,9 +173,9 @@ bool AddAnimFlowBranch(JsonValue& root, std::size_t section, std::size_t to)
     return true;
 }
 
-bool RemoveAnimFlowBranch(JsonValue& root, std::size_t section, std::size_t branch)
+bool RemoveAnimFlowBranch(JsonValue& data, std::size_t section, std::size_t branch)
 {
-    JsonValue* entry = Section(root, section);
+    JsonValue* entry = Section(data, section);
     JsonValue* branches = entry != nullptr ? entry->Find("branches") : nullptr;
     if (branches == nullptr || !branches->IsArray() || branch >= branches->AsArray().size())
         return false;
@@ -188,9 +185,9 @@ bool RemoveAnimFlowBranch(JsonValue& root, std::size_t section, std::size_t bran
     return true;
 }
 
-JsonValue::Array* AnimFlowLoopCondition(JsonValue& root, std::size_t section)
+JsonValue::Array* AnimFlowLoopCondition(JsonValue& data, std::size_t section)
 {
-    JsonValue* entry = Section(root, section);
+    JsonValue* entry = Section(data, section);
     if (entry == nullptr || Text(*entry, "loop") != "while")
         return nullptr;
     if (entry->Find("while") == nullptr)
@@ -199,9 +196,9 @@ JsonValue::Array* AnimFlowLoopCondition(JsonValue& root, std::size_t section)
     return rows->IsArray() ? &rows->AsArray() : nullptr;
 }
 
-JsonValue::Array* AnimFlowBranchCondition(JsonValue& root, std::size_t section, std::size_t branch)
+JsonValue::Array* AnimFlowBranchCondition(JsonValue& data, std::size_t section, std::size_t branch)
 {
-    JsonValue* entry = Section(root, section);
+    JsonValue* entry = Section(data, section);
     JsonValue* branches = entry != nullptr ? entry->Find("branches") : nullptr;
     if (branches == nullptr || !branches->IsArray() || branch >= branches->AsArray().size())
         return nullptr;

@@ -3,7 +3,7 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationClipEventsSet.cpp
     src/authoring/AnimationContentLists.cpp
     src/authoring/AnimationContentTags.cpp
-    src/authoring/AnimationDecisionLane.cpp
+    src/authoring/AnimationTimelineLanes.cpp
     src/authoring/AnimationAuditionSelection.cpp
     src/authoring/AnimationViewportExtraction.cpp
     src/authoring/AnimationRigScenario.cpp
@@ -18,9 +18,12 @@ add_library(animation_authoring STATIC
     src/authoring/AnimationEventProperties.cpp
     src/authoring/AnimationExplorers.cpp
     src/authoring/AnimationJointPicking.cpp
+    src/authoring/AnimationLayerChoice.cpp
     src/authoring/AnimationLayerProperties.cpp
     src/authoring/AnimationNameDeclarations.cpp
+    src/authoring/AnimationFlowAuthoring.cpp
     src/authoring/AnimationFlowEdits.cpp
+    src/authoring/AnimationFlowProperties.cpp
     src/authoring/AnimationPredicateAuthoring.cpp
     src/authoring/AnimationPredicateEdits.cpp
     src/authoring/AnimationPredicateText.cpp
@@ -49,10 +52,8 @@ add_library(animation_editor STATIC
     src/ui/AnimationPreviewPanels.cpp
     src/ui/AnimationPreviewStatus.cpp
     src/ui/AnimationBlendPanels.cpp
-    src/ui/AnimationDocumentWidgets.cpp
     src/ui/AnimationEventPanels.cpp
     src/ui/AnimationLabPanels.cpp
-    src/ui/AnimationLayerPanels.cpp
     src/ui/AnimationMigrationPanels.cpp
     src/ui/AnimationScenarioBatchPanels.cpp
     src/ui/AnimationRequestSchemaPanel.cpp

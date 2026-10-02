@@ -245,15 +245,16 @@ sections, each a clip or a slot resolved when the section is entered, that loop
 while a predicate holds or as many times as a request parameter says, branch to
 a later section, and go to one cancel section at once or at the section's end.
 
-- **Flow** draws the flow the selected layer plays as a strip of sections sized
-  by length, with the playing section lit, its progress, the loop pass, and the
-  cancel section in a lane beneath, and states how each section is left. With
-  the flow's document open (Edit, or Flows in the content browser) it edits the
-  structure: loop kind, whether a section ends the flow, whether a cancel
-  leaves it at once, branches, the cancel section, and sections added, moved
-  and removed. A branch can only be added to a later section, and a move that
-  would turn one backward is refused, so control never goes back. Loop and
-  branch conditions show as text and are edited in Data Editor.
+- The **Flow** lens's card (`AnimationFlowProperties`) shows the flow a layer
+  plays on the inspected tick, the section it is in and how far, the loop
+  pass, where a cancel goes, and how each section is left. On the simulation
+  clock the deck's lane runs the sections the layer played, one span per pass.
+  *Edit* opens the flow as a sheet (`AnimationFlowAuthoring`): its loop and
+  branch conditions read and add as every condition does, a branch names only
+  a later section, a count loop's intent and parameter are chosen among the
+  declared ones, a move that would turn a branch backward is refused, a removed
+  section takes its branches and the cancel with it, and changing a loop's
+  kind drops what the old kind needed. The Data workspace shows the same sheet.
 - The **Layers** lens's card (`AnimationLayerProperties`) lists the rig's
   layers with mode, weight on the inspected tick, mask size and what each
   plays, with Mute and Solo, which change only what the stage shows; the
@@ -270,10 +271,6 @@ a later section, and go to one cancel section at once or at the section's end.
   layer's mask or take it out, with or without everything below. Joints are
   named as the skeleton names them, so an unknown or ambiguous joint is a
   located problem.
-
-Loop and branch conditions edit in the Flow pane with the same predicate
-builder the rule table uses, and a count loop's intent and parameter are chosen
-from the rig's request schema.
 
 A selector rule can result in a layer weight, a constant or a float fact,
 instead of a behavior; the first weight rule to pass weights its layer.
