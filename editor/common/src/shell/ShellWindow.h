@@ -3,6 +3,7 @@
 #include "actions/ActionContext.h"
 #include "shell/CommandPalette.h"
 #include "shell/PromptDialog.h"
+#include "shell/SurfacePlacement.h"
 #include "shell/TimelineDeck.h"
 #include "presenters/PropertySheet.h"
 #include "shell/TransientSurfaces.h"
@@ -29,8 +30,7 @@ class WorkspaceHost;
 struct UiAction;
 struct UiRow;
 
-// The surface layer a window's content draws in: under the window's legacy
-// panels, which draw between it and the shell's own layer 0.
+// The surface layer a window's content draws in, under the shell's own layer 0.
 inline constexpr std::uint8_t kContentUiLayer = 1;
 
 // What a window's shell presents and acts through. The action stack is the
@@ -167,6 +167,15 @@ private:
     // window performs while that workspace is the one showing.
     void ClaimExplorers(const IWorkspace* workspace);
     void PublishExplorer(IWorkspace* workspace);
+    // The explorer and the selection, each where the person moved it, or in
+    // its default place made clear of the instruments it would cover.
+    void PlaceFloatingSurfaces();
+    // A floating surface pressed (brought to the front), its header taken
+    // hold of, dragged, let go or double-clicked back to its default place.
+    void HandleMoveAction(const UiAction& action);
+    // A surface's border box as laid out, and where a moved surface must stay.
+    [[nodiscard]] Rect2d MeasureBorder(std::string_view elementId) const;
+    [[nodiscard]] Rect2d FloatingBounds() const;
 
     ShellWindowServices Services;
     UiSurfaceId SurfaceId;
@@ -202,6 +211,20 @@ private:
     std::size_t ExplorerFirst = 0;
     TransientSurfaces::Id ExplorerTransient = 0;
     std::vector<std::string> ClaimedExplorers;
+    // Which shape of each floating surface is showing, as a move key ("" for
+    // none), and the clearance last given to it.
+    std::string ExplorerKey;
+    std::string SelectionKey;
+    SurfaceClearance ExplorerClearance;
+    SurfaceClearance SelectionClearance;
+    // The offsets last laid out, which every measurement of a surface includes.
+    Vec2d ExplorerOffset;
+    Vec2d SelectionOffset;
+    bool ToolCardUp = false;
+    SurfaceMoves Moves;
+    // Which floating surface is drawn over the other where they overlap: the
+    // one last opened, pressed or dragged.
+    std::string FrontSurface;
     // The row whose arrow or mark was pressed in this drain.
     std::string HandledInRow;
     // After the palette, so a question opens over it.

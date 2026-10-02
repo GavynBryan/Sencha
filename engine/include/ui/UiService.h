@@ -311,14 +311,14 @@ public:
 
     // -- inspection ----------------------------------------------------------
 
-    // The measured content box of an element, after layout. Nullopt when the
-    // screen is closed or no element carries that id.
+    // The measured box of an element, after layout and before any transform.
+    // Nullopt when the screen is closed or no element carries that id.
     //
     // Public because it is how a test asserts that a document laid out the way
     // it was authored to, without a window or a device -- the substrate's own
     // regression surface.
-    [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen,
-                                                            std::string_view elementId) const;
+    [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen, std::string_view elementId,
+                                                            UiBoxArea area = UiBoxArea::Content) const;
 
     // The element under a point, in surface pixels; invalid when nothing is
     // there. A host presenting the surface somewhere other than the window

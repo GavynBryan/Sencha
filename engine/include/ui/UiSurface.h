@@ -70,12 +70,21 @@ enum class UiNavigation : std::uint8_t
 };
 
 // The measured layout box of an element, in surface pixels, with the origin at
-// the surface's top left. Content area: what the element actually occupies,
-// excluding its own padding and border.
+// the surface's top left.
 struct UiElementBox
 {
     float X = 0.0f;
     float Y = 0.0f;
     float Width = 0.0f;
     float Height = 0.0f;
+};
+
+// Which of an element's boxes a measurement reports: Content excludes its own
+// padding and border, Border is the edge it is drawn to.
+enum class UiBoxArea : std::uint8_t
+{
+    Content,
+    Padding,
+    Border,
+    Margin,
 };

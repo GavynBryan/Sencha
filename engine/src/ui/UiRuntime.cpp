@@ -370,9 +370,8 @@ void UiRuntime::SetSurfaceScale(UiSurfaceId surface, float scale)
         return;
 
     slot->Scale = clamped;
-    // Every authored length re-resolves against this, which is the whole reason
-    // UI scale is live here and latched at startup for the ImGui shell: a
-    // retained document re-flows, a baked font atlas cannot.
+    // Every authored length re-resolves against this, which is why UI scale is
+    // live: a retained document re-flows.
     slot->Context->SetDensityIndependentPixelRatio(clamped);
 }
 
@@ -1802,8 +1801,30 @@ bool UiRuntime::ResolveResourceBytes(std::string_view source,
 
 // -- inspection --------------------------------------------------------------
 
-std::optional<UiElementBox> UiRuntime::MeasureElement(UiScreenHandle screen,
-                                                      std::string_view elementId) const
+namespace
+{
+    UiElementBox BoxOf(Rml::Element& element, Rml::BoxArea area)
+    {
+        const Rml::Vector2f offset = element.GetAbsoluteOffset(area);
+        const Rml::Vector2f size = element.GetBox().GetSize(area);
+        return UiElementBox{ offset.x, offset.y, size.x, size.y };
+    }
+
+    Rml::BoxArea RmlAreaOf(UiBoxArea area)
+    {
+        switch (area)
+        {
+        case UiBoxArea::Margin:  return Rml::BoxArea::Margin;
+        case UiBoxArea::Border:  return Rml::BoxArea::Border;
+        case UiBoxArea::Padding: return Rml::BoxArea::Padding;
+        case UiBoxArea::Content:
+        default:                 return Rml::BoxArea::Content;
+        }
+    }
+}
+
+std::optional<UiElementBox> UiRuntime::MeasureElement(UiScreenHandle screen, std::string_view elementId,
+                                                      UiBoxArea area) const
 {
     const Screen* slot = ResolveScreen(screen);
     if (slot == nullptr || slot->Document == nullptr)
@@ -1812,10 +1833,7 @@ std::optional<UiElementBox> UiRuntime::MeasureElement(UiScreenHandle screen,
     Rml::Element* element = slot->Document->GetElementById(std::string(elementId));
     if (element == nullptr)
         return std::nullopt;
-
-    const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Content);
-    const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Content);
-    return UiElementBox{ offset.x, offset.y, size.x, size.y };
+    return BoxOf(*element, RmlAreaOf(area));
 }
 
 // -- inspection ----------------------------------------------------------------
@@ -1823,13 +1841,6 @@ std::optional<UiElementBox> UiRuntime::MeasureElement(UiScreenHandle screen,
 namespace
 {
     constexpr std::size_t kMaxElementRefsPerScreen = 8192;
-
-    UiElementBox BoxOf(Rml::Element& element, Rml::BoxArea area)
-    {
-        const Rml::Vector2f offset = element.GetAbsoluteOffset(area);
-        const Rml::Vector2f size = element.GetBox().GetSize(area);
-        return UiElementBox{ offset.x, offset.y, size.x, size.y };
-    }
 
     std::vector<std::string> SplitClasses(const Rml::String& names)
     {

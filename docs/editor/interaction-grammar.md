@@ -16,8 +16,19 @@ person needs to act on something, and gets out of the way when they do not.
 Kyusu is *aesthetically maximalist and interaction-minimalist*. Its look — the
 Metalheart workstation: tactile machinery, readouts, lamps, physical-looking
 controls — is spent on a small number of instruments that persist, not on
-frames around content. There is no docking, no panel arrangement, no layout
-file and no UI whose job is resizing other UI.
+frames around content. There is no docking, no layout file and no UI whose
+job is resizing other UI.
+
+Surfaces that open over the content -- the selection card, drawer and sheet,
+the explorer tray and outline -- have a default place that keeps clear of the
+instruments they would cover (the tray narrows between the station and the
+card, the outline ends above the station, a sheet moves past an outline),
+but no smaller than it can still be used (a tray 420dp wide, an outline
+200dp tall, a sheet 260dp tall); past that it keeps its size and overlaps.
+Where two overlap, the one last opened, pressed or dragged is in front. Each
+can also be dragged by its header, and a double click on its title puts it
+back. `shell/SurfacePlacement` holds both
+rules, and `ShellWindow` measures the instruments for it.
 
 ## 2. The grammar is a presentation policy
 
@@ -214,7 +225,8 @@ motion, per-workspace view arrangement, pinned drawer, explorer view options,
 hints seen, and recent documents per project. They are archived cvars through
 the existing settings archive.
 
-No position, size or layout is persisted, because none can be chosen.
+No position, size or layout is persisted. Where a surface was dragged lasts
+for the session, per window.
 
 ## 10. Metalheart
 

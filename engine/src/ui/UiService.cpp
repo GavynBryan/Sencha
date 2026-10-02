@@ -184,10 +184,10 @@ const std::vector<UiDrawFrame>& UiService::Frames() const
     return Runtime->Frames();
 }
 
-std::optional<UiElementBox> UiService::MeasureElement(UiScreenHandle screen,
-                                                      std::string_view elementId) const
+std::optional<UiElementBox> UiService::MeasureElement(UiScreenHandle screen, std::string_view elementId,
+                                                      UiBoxArea area) const
 {
-    return Runtime->MeasureElement(screen, elementId);
+    return Runtime->MeasureElement(screen, elementId, area);
 }
 
 std::vector<UiDiagnostic> UiService::DrainDiagnostics()

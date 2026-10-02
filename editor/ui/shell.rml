@@ -152,10 +152,16 @@
          it now -- or, while an edit is previewed, applying or cancelling it.
          Looked at closely it becomes the drawer along the right edge, with
          every property it has. -->
+    <div class="floating" data-class-front="front == 'selection'" data-style-left="selection_x" data-style-top="selection_y">
     <div id="selection_card" class="theme-plate" data-class-open="selection_title != ''"
-         data-class-shut="selection_title == ''" data-class-drawer="drawer" data-class-sheet="sheet">
-        <div id="selection_head">
-            <span id="selection_title" class="theme-accent">{{selection_title}}</span>
+         data-class-shut="selection_title == ''" data-class-drawer="drawer" data-class-sheet="sheet"
+         data-style-margin-bottom="selection_margin_bottom" data-event-mousedown="shell_raise('selection')">
+        <div id="selection_head" class="grip"
+             data-event-mousedown="shell_grab('selection', ev.mouse_x, ev.mouse_y)"
+             data-event-drag="shell_drag('selection', ev.mouse_x, ev.mouse_y)"
+             data-event-dragend="shell_drop('selection')">
+            <span id="selection_title" class="theme-accent"
+                  data-event-dblclick="shell_unmove('selection')">{{selection_title}}</span>
             <div class="key theme-key" data-if="!sheet" data-class-lit="drawer" data-event-click="shell_drawer('toggle')">
                 <span data-if="!drawer">DETAILS</span><span data-if="drawer">CLOSE</span>
             </div>
@@ -211,14 +217,23 @@
                  data-event-click="shell_invoke(verb.key)">{{verb.label}}</div>
         </div>
     </div>
+    </div>
     <!-- An explorer: what the workspace lets a person browse, a page at a
          time. Pictures are a tray over the bottom of the content; an outline
          is a sheet down its left side. A click picks an item up, a double
-         click puts it to use. -->
+         click puts it to use. Like the selection, it is moved by its header,
+         and a double click on its title puts it back. -->
+    <div class="floating" data-class-front="front == 'explorer'" data-style-left="explorer_x" data-style-top="explorer_y">
     <div id="explorer" class="theme-plate" data-if="explorer_id != ''"
-         data-class-outline="explorer_shape == 'outline'">
-        <div id="explorer_head">
-            <span id="explorer_title" class="theme-accent">{{explorer_title}}</span>
+         data-class-outline="explorer_shape == 'outline'"
+         data-style-margin-left="explorer_margin_left" data-style-margin-right="explorer_margin_right"
+         data-style-margin-bottom="explorer_margin_bottom" data-event-mousedown="shell_raise('explorer')">
+        <div id="explorer_head" class="grip"
+             data-event-mousedown="shell_grab('explorer', ev.mouse_x, ev.mouse_y)"
+             data-event-drag="shell_drag('explorer', ev.mouse_x, ev.mouse_y)"
+             data-event-dragend="shell_drop('explorer')">
+            <span id="explorer_title" class="theme-accent"
+                  data-event-dblclick="shell_unmove('explorer')">{{explorer_title}}</span>
             <input type="text" id="explorer_filter" class="theme-field"
                    data-event-change="shell_explorer_filter(ev.value)"/>
             <span id="explorer_range" class="theme-dim">{{explorer_range}}</span>
@@ -250,6 +265,7 @@
             </div>
             <div id="explorer_empty" class="theme-dim" data-if="explorer_empty != ''">{{explorer_empty}}</div>
         </div>
+    </div>
     </div>
 
     <!-- Bottom right, what the hands hold: the cartridge the next operation

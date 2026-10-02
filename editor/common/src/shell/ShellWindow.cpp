@@ -66,6 +66,15 @@ const UiModelPropertyId kPopoverTop = UiPropertyIdAt(43);
 const UiModelPropertyId kSheet = UiPropertyIdAt(44);
 const UiModelPropertyId kDeck = UiPropertyIdAt(45);
 const UiModelPropertyId kDeckLanes = UiPropertyIdAt(46);
+const UiModelPropertyId kExplorerX = UiPropertyIdAt(47);
+const UiModelPropertyId kExplorerY = UiPropertyIdAt(48);
+const UiModelPropertyId kExplorerMarginLeft = UiPropertyIdAt(49);
+const UiModelPropertyId kExplorerMarginRight = UiPropertyIdAt(50);
+const UiModelPropertyId kExplorerMarginBottom = UiPropertyIdAt(51);
+const UiModelPropertyId kSelectionX = UiPropertyIdAt(52);
+const UiModelPropertyId kSelectionY = UiPropertyIdAt(53);
+const UiModelPropertyId kSelectionMarginBottom = UiPropertyIdAt(54);
+const UiModelPropertyId kFront = UiPropertyIdAt(55);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -99,6 +108,22 @@ const UiActionId kExplorerCommitAction = UiActionIdAt(15);
 const UiActionId kExplorerCloseAction = UiActionIdAt(16);
 const UiActionId kExplorerOpenAction = UiActionIdAt(17);
 const UiActionId kExplorerMarkAction = UiActionIdAt(18);
+const UiActionId kGrabAction = UiActionIdAt(19);
+const UiActionId kDragAction = UiActionIdAt(20);
+const UiActionId kDropAction = UiActionIdAt(21);
+const UiActionId kUnmoveAction = UiActionIdAt(22);
+const UiActionId kRaiseAction = UiActionIdAt(23);
+
+// The floating surfaces a header can move, as a document names them.
+constexpr std::string_view kExplorerSurface = "explorer";
+constexpr std::string_view kSelectionSurface = "selection";
+
+// How far a surface stays from an instrument it makes way for, and how small
+// giving way may make it before it overlaps instead, in dp.
+constexpr float kClearanceGapDp = 8.0f;
+constexpr float kTrayMinimumWidthDp = 420.0f;
+constexpr float kOutlineMinimumHeightDp = 200.0f;
+constexpr float kSheetMinimumHeightDp = 260.0f;
 
 // How many items an explorer shows at once, and asks its workspace for.
 constexpr std::size_t kExplorerPage = 40;
@@ -159,6 +184,15 @@ UiScreenDesc Describe()
         UiModelProperty{ "sheet", UiValue(false) },
         UiModelProperty{ "deck", UiValue(false) },
         UiModelProperty{ "deck_lanes", UiValue(0) },
+        UiModelProperty{ "explorer_x", UiValue(std::string("0px")) },
+        UiModelProperty{ "explorer_y", UiValue(std::string("0px")) },
+        UiModelProperty{ "explorer_margin_left", UiValue(std::string("0px")) },
+        UiModelProperty{ "explorer_margin_right", UiValue(std::string("0px")) },
+        UiModelProperty{ "explorer_margin_bottom", UiValue(std::string("0px")) },
+        UiModelProperty{ "selection_x", UiValue(std::string("0px")) },
+        UiModelProperty{ "selection_y", UiValue(std::string("0px")) },
+        UiModelProperty{ "selection_margin_bottom", UiValue(std::string("0px")) },
+        UiModelProperty{ "front", UiValue(std::string{}) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs" };
@@ -166,7 +200,8 @@ UiScreenDesc Describe()
                      "shell_sheet_flip", "shell_sheet_hold", "shell_sheet_release", "shell_sheet_act", "shell_drawer",
                      "shell_sheet_pick", "shell_explore", "shell_explorer_filter", "shell_explorer_page",
                      "shell_explorer_pick", "shell_explorer_commit", "shell_explorer_close",
-                     "shell_explorer_open", "shell_explorer_mark" };
+                     "shell_explorer_open", "shell_explorer_mark", "shell_grab", "shell_drag", "shell_drop",
+                     "shell_unmove", "shell_raise" };
     return desc;
 }
 
@@ -216,6 +251,16 @@ UiRow Heading(std::string label)
     UiRow row{ std::move(label), "", "" };
     row.Control = UiRowControl::Section;
     return row;
+}
+
+std::string Pixels(float value)
+{
+    return std::format("{}px", std::round(value));
+}
+
+Rect2d Moved(const Rect2d& rect, Vec2d offset)
+{
+    return Rect2d(rect.Position + offset, rect.Size);
 }
 } // namespace
 
@@ -457,6 +502,11 @@ void ShellWindow::HandleActions()
             else
                 ShowDrawer({});
         }
+        else if (action.Id == kGrabAction || action.Id == kDragAction || action.Id == kDropAction
+                 || action.Id == kUnmoveAction || action.Id == kRaiseAction)
+        {
+            HandleMoveAction(action);
+        }
         else if (action.Id == kWindowAction)
         {
             if (argument == "minimize")
@@ -614,6 +664,7 @@ void ShellWindow::ShowExplorer(std::string explorer)
         return;
     ExplorerShown = std::move(explorer);
     ExplorerFirst = 0;
+    FrontSurface = kExplorerSurface;
     ExplorerTransient = Transients.Open({ .Owner = "shell", .Dismiss = TransientDismiss::Explicit });
     TakeEscape();
 }
@@ -652,9 +703,12 @@ void ShellWindow::PublishExplorer(IWorkspace* workspace)
     const auto shown = std::ranges::find(explorers, ExplorerShown, &WorkspaceExplorerInfo::Id);
     if (shown == explorers.end() || workspace == nullptr)
     {
+        ExplorerKey.clear();
         (void)ui.SetValue(Screen, kExplorerId, UiValue(std::string{}));
         return;
     }
+    ExplorerKey = std::format("{}.{}", kExplorerSurface,
+                              shown->Shape == ExplorerShape::Outline ? "outline" : "pictures");
     ExplorerPage page = workspace->Explore({ .Explorer = ExplorerShown,
                                              .Filter = ExplorerFilter,
                                              .First = ExplorerFirst,
@@ -708,6 +762,120 @@ void ShellWindow::PublishExplorer(IWorkspace* workspace)
     (void)ui.SetRows(Screen, kExplorerVerbs, verbs);
 }
 
+Rect2d ShellWindow::MeasureBorder(std::string_view elementId) const
+{
+    const std::optional<UiElementBox> box = Services.Ui.MeasureElement(Screen, elementId, UiBoxArea::Border);
+    return box.has_value() ? Rect2d(box->X, box->Y, box->Width, box->Height) : Rect2d();
+}
+
+Rect2d ShellWindow::FloatingBounds() const
+{
+    const WindowExtent extent = Services.Window.GetExtent();
+    const float rail = RailHeight();
+    return Rect2d(0.0f, rail, static_cast<float>(extent.Width), std::max(0.0f, static_cast<float>(extent.Height) - rail));
+}
+
+void ShellWindow::HandleMoveAction(const UiAction& action)
+{
+    const std::string surface = ArgumentText(action);
+    const bool explorer = surface == kExplorerSurface;
+    if (!explorer && surface != kSelectionSurface)
+        return;
+    if (action.Id == kRaiseAction)
+    {
+        FrontSurface = surface;
+        return;
+    }
+    const std::string& key = explorer ? ExplorerKey : SelectionKey;
+    if (key.empty())
+        return;
+    const auto pointer = [&] {
+        return action.Arguments.size() >= 3 ? Vec2d(static_cast<float>(action.Arguments[1].AsFloat()),
+                                                    static_cast<float>(action.Arguments[2].AsFloat()))
+                                            : Vec2d();
+    };
+    const SurfaceClearance& clearance = explorer ? ExplorerClearance : SelectionClearance;
+    if (action.Id == kGrabAction)
+    {
+        Moves.Press(key, pointer(), clearance);
+        FrontSurface = surface;
+    }
+    else if (action.Id == kDragAction)
+    {
+        const Vec2d laidOut = explorer ? ExplorerOffset : SelectionOffset;
+        const Rect2d drawn = MeasureBorder(explorer ? "explorer" : "selection_card");
+        Moves.Drag(pointer(), Moved(drawn, Vec2d(clearance.ShiftX, 0.0f) - laidOut), FloatingBounds());
+    }
+    else if (action.Id == kDropAction)
+        Moves.Drop();
+    else
+        Moves.Reset(key);
+}
+
+void ShellWindow::PlaceFloatingSurfaces()
+{
+    UiService& ui = Services.Ui;
+    const float scale = ui.GetSurfaceScale(SurfaceId);
+    const float gap = kClearanceGapDp * scale;
+    const Rect2d bounds = FloatingBounds();
+    // A surface where the person put it keeps the clearance it had then; one
+    // in its default place makes way for what it would cover. Returns where
+    // it is drawn.
+    const auto place = [&](const std::string& key, std::string_view element, SurfaceClearance& clearance,
+                           std::span<const SurfaceObstacle> obstacles, SurfaceMinimum minimum, Vec2d& offset) {
+        const Rect2d drawn = key.empty() ? Rect2d() : MeasureBorder(element);
+        const Rect2d measured = Moved(drawn, Vec2d() - offset);
+        offset = Vec2d();
+        if (!measured.IsValid())
+            return Rect2d();
+        if (const SurfaceMove* move = Moves.Find(key))
+        {
+            clearance = move->Clearance;
+            offset = KeepInside(move->Offset, Moved(measured, Vec2d(clearance.ShiftX, 0.0f)), bounds);
+        }
+        else
+        {
+            clearance = ClearOf(NaturalPlace(measured, clearance), obstacles, gap, minimum);
+        }
+        offset = Vec2d(std::round(offset.X + clearance.ShiftX), std::round(offset.Y));
+        return Moved(measured, offset);
+    };
+
+    const Rect2d station = MeasureBorder(ToolCardUp ? "station_bay" : "station");
+    const bool selectionAside = SelectionKey.starts_with(std::format("{}.", kSelectionSurface))
+                                && !SelectionKey.ends_with(".sheet");
+    const Rect2d selectionDrawn = selectionAside ? MeasureBorder("selection_card") : Rect2d();
+
+    const bool outline = ExplorerKey.ends_with(".outline");
+    std::vector<SurfaceObstacle> explorerObstacles;
+    explorerObstacles.push_back({ station, outline ? SurfaceYield::ShrinkBottom : SurfaceYield::ShrinkLeft });
+    if (!outline)
+        explorerObstacles.push_back({ selectionDrawn, SurfaceYield::ShrinkRight });
+    const SurfaceMinimum explorerMinimum = outline ? SurfaceMinimum{ .Height = kOutlineMinimumHeightDp * scale }
+                                                   : SurfaceMinimum{ .Width = kTrayMinimumWidthDp * scale };
+    const Rect2d explorerDrawn =
+        place(ExplorerKey, "explorer", ExplorerClearance, explorerObstacles, explorerMinimum, ExplorerOffset);
+
+    std::vector<SurfaceObstacle> sheetObstacles;
+    if (!selectionAside)
+    {
+        sheetObstacles.push_back({ station, SurfaceYield::ShiftRight });
+        sheetObstacles.push_back({ explorerDrawn, outline ? SurfaceYield::ShiftRight : SurfaceYield::ShrinkBottom });
+    }
+    (void)place(SelectionKey, "selection_card", SelectionClearance, sheetObstacles,
+                SurfaceMinimum{ .Height = kSheetMinimumHeightDp * scale }, SelectionOffset);
+
+    (void)ui.SetValue(Screen, kExplorerX, UiValue(Pixels(ExplorerOffset.X)));
+    (void)ui.SetValue(Screen, kExplorerY, UiValue(Pixels(ExplorerOffset.Y)));
+    (void)ui.SetValue(Screen, kExplorerMarginLeft, UiValue(Pixels(ExplorerClearance.Left)));
+    (void)ui.SetValue(Screen, kExplorerMarginRight, UiValue(Pixels(ExplorerClearance.Right)));
+    (void)ui.SetValue(Screen, kExplorerMarginBottom, UiValue(Pixels(ExplorerClearance.Bottom)));
+    (void)ui.SetValue(Screen, kSelectionX, UiValue(Pixels(SelectionOffset.X)));
+    (void)ui.SetValue(Screen, kSelectionY, UiValue(Pixels(SelectionOffset.Y)));
+    (void)ui.SetValue(Screen, kSelectionMarginBottom, UiValue(Pixels(SelectionClearance.Bottom)));
+    (void)ui.SetValue(Screen, kFront, UiValue(FrontSurface));
+}
+
 void ShellWindow::ShowDrawer(std::string focus)
 {
     DrawerFocus = std::move(focus);
@@ -715,6 +883,7 @@ void ShellWindow::ShowDrawer(std::string focus)
     if (SelectionShown == SelectionView::Drawer)
         return;
     SelectionShown = SelectionView::Drawer;
+    FrontSurface = kSelectionSurface;
     DrawerTransient = Transients.Open({ .Owner = "shell", .Dismiss = TransientDismiss::Explicit });
     TakeEscape();
 }
@@ -803,6 +972,7 @@ void ShellWindow::Publish(double now)
     PublishHolding(workspace);
     PublishSelection(workspace);
     PublishExplorer(workspace);
+    PlaceFloatingSurfaces();
 
     std::vector<UiRow> notices;
     for (const Notice& notice : Services.Notices.Showing(now))
@@ -965,6 +1135,10 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
     const bool drawer = SelectionShown == SelectionView::Drawer;
     // Properties that are the work itself are shown whole, as a sheet.
     const bool sheet = selection.Primary;
+    if (SelectionKey.empty() && !selection.Title.empty())
+        FrontSurface = kSelectionSurface;
+    SelectionKey = selection.Title.empty() ? std::string{}
+                 : std::format("{}.{}", kSelectionSurface, sheet ? "sheet" : drawer ? "drawer" : "card");
     (void)ui.SetValue(Screen, kDrawer, UiValue(drawer));
     (void)ui.SetValue(Screen, kSheet, UiValue(sheet));
     (void)ui.SetValue(Screen, kDrawerFocus, UiValue(DrawerFocus));
@@ -1108,7 +1282,8 @@ void ShellWindow::PublishStation(IWorkspace* workspace)
     // or drafted work to apply or cancel.
     if (holding)
         return;
-    (void)ui.SetValue(Screen, kCardOpen, UiValue(!rows.empty() || operation.Draft != ToolDraft::None));
+    ToolCardUp = !rows.empty() || operation.Draft != ToolDraft::None;
+    (void)ui.SetValue(Screen, kCardOpen, UiValue(ToolCardUp));
     (void)ui.SetRows(Screen, kToolRows, rows);
 }
 

@@ -173,8 +173,8 @@ public:
     [[nodiscard]] bool ResolveResourceBytes(std::string_view source,
                                             const std::vector<std::byte>*& outBytes) override;
 
-    [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen,
-                                                             std::string_view elementId) const;
+    [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen, std::string_view elementId,
+                                                             UiBoxArea area) const;
 
     // Everything this layer and the document engine reported since the last
     // call. Destructive; one consumer per runtime.

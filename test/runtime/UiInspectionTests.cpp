@@ -195,6 +195,19 @@ TEST(UiInspection, DescriptionCarriesTheBoxModelTagIdClassesAndAttributes)
     EXPECT_LT(info->Boxes.Padding.X, info->Boxes.Content.X);
 }
 
+TEST(UiInspection, AMeasurementReportsTheBoxItIsAskedFor)
+{
+    Fixture f;
+    const auto info = f.Ui->DescribeElement(f.Find("panel"));
+    ASSERT_TRUE(info.has_value());
+    const auto border = f.Ui->MeasureElement(f.Screen, "panel", UiBoxArea::Border);
+    const auto margin = f.Ui->MeasureElement(f.Screen, "panel", UiBoxArea::Margin);
+    ASSERT_TRUE(border.has_value() && margin.has_value());
+    EXPECT_FLOAT_EQ(border->X, info->Boxes.Border.X);
+    EXPECT_FLOAT_EQ(border->Width, info->Boxes.Border.Width);
+    EXPECT_FLOAT_EQ(margin->Height, info->Boxes.Margin.Height);
+}
+
 TEST(UiInspection, TheTreeIsPreorderWithConsistentParents)
 {
     Fixture f;
