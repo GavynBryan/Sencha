@@ -12,6 +12,7 @@
 #include <math/geometry/2d/Rect2d.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -154,6 +155,21 @@ private:
     void ShowLens(AnimationLens lens);
     [[nodiscard]] bool ShowingLens(AnimationLens lens) const { return Subject == CardSubject::Lens && ShownLens == lens; }
     void DefineLenses(ActionCatalog& catalog);
+    // What a lens shows: its card when it is up (none to fall back to the
+    // stage's), the deck's lanes on the simulation clock, and a step back
+    // within its card before Escape leaves it.
+    struct LensView
+    {
+        AnimationLens Lens;
+        std::string_view Action;
+        std::string_view Label;
+        std::string_view Hint;
+        std::function<std::optional<WorkspaceSelectionFacet>()> Card;
+        std::function<void(std::vector<TimelineLane>&)> Lanes = {};
+        std::function<bool()> StepBack = {};
+    };
+    void DefineLensViews();
+    [[nodiscard]] const LensView& ViewOf(AnimationLens lens) const;
     void DefineRuns(ActionCatalog& catalog);
     // While the lab's sheet is up the deck runs the lab's clock, not the preview's.
     [[nodiscard]] bool ShowingLabClock() const;
@@ -208,6 +224,7 @@ private:
     PromptQueue::Asker Prompts;
     CardSubject Subject = CardSubject::Stage;
     AnimationLens ShownLens = AnimationLens::Rules;
+    std::vector<LensView> LensViews;
     TreeOutline ContentOutline;
     TreeOutline RigOutline;
     TreeOutline SkeletonOutline;

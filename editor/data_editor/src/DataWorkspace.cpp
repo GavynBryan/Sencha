@@ -1,5 +1,7 @@
 #include "DataWorkspace.h"
 
+#include "text/PathLeaf.h"
+
 
 #include "actions/ActionOffer.h"
 #include "data/DataAssetFiles.h"
@@ -33,10 +35,6 @@ std::string RootRelative(std::string_view path)
     return std::string(path.starts_with(kScheme) ? path.substr(kScheme.size()) : path);
 }
 
-std::string LeafOf(std::string_view path)
-{
-    return std::string(path.substr(path.rfind('/') + 1));
-}
 } // namespace
 
 DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
@@ -191,7 +189,7 @@ void DataWorkspace::PublishProblems()
     for (DataDocument* document : Model.Documents.Documents())
         for (const DataValidationError& error : document->ValidationErrors())
             problems.push_back({ .Severity = ProblemSeverity::Error,
-                                 .Message = std::format("{}: {}", LeafOf(document->VirtualPath()), error.Message),
+                                 .Message = std::format("{}: {}", PathLeaf(document->VirtualPath()), error.Message),
                                  .Location = error.Path,
                                  .Document = Model.Documents.RefOf(*document) });
     if (!OperationError.empty())
@@ -264,11 +262,11 @@ WorkspaceDocumentFacet DataWorkspace::Document() const
     WorkspaceDocumentFacet facet;
     for (const DataDocument* document : Model.Documents.Documents())
         facet.Open.push_back({ .Key = document->VirtualPath(),
-                               .Label = LeafOf(document->VirtualPath()),
+                               .Label = std::string(PathLeaf(document->VirtualPath())),
                                .Changed = document->IsDirty() });
     if (const DataDocument* active = Model.Documents.Active())
     {
-        facet.Label = LeafOf(active->VirtualPath());
+        facet.Label = std::string(PathLeaf(active->VirtualPath()));
         facet.Changed = active->IsDirty();
         facet.Active = active->VirtualPath();
     }
@@ -290,7 +288,7 @@ WorkspaceSelectionFacet DataWorkspace::Selection()
     if (document == nullptr)
         return {};
     WorkspaceSelectionFacet facet;
-    facet.Title = LeafOf(document->VirtualPath());
+    facet.Title = std::string(PathLeaf(document->VirtualPath()));
     facet.Actions = { "file.save", "data.view_source", "data.duplicate", "data.close", "data.delete" };
     facet.Sections.push_back({ .Heading = {}, .Source = &FilePath });
     facet.Sections.push_back({ .Heading = {}, .Source = ShowingSource ? static_cast<IPropertySource*>(&Source)

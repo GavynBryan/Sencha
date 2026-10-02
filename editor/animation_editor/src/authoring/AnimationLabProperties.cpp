@@ -4,25 +4,18 @@
 #include "authoring/AnimationSessionLab.h"
 #include "authoring/AnimationTimelineLanes.h"
 
+#include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
 #include <anim/AnimDecisionLog.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 #include <format>
 
 namespace
 {
 constexpr std::string_view kGuesses = "guesses.";
-
-std::string TagName(const AnimationPreviewSession& session, GameplayTagId tag)
-{
-    const GameplayTagRegistry* tags = session.Tags();
-    return tag.IsValid() && tags != nullptr ? std::string(tags->GetName(tag)) : std::string("(none)");
-}
 
 const AnimationPreviewTickRecord* RecordAt(const AnimationPreviewSession& session, AnimTick tick)
 {
@@ -34,7 +27,7 @@ const AnimationPreviewTickRecord* RecordAt(const AnimationPreviewSession& sessio
 
 std::string RequestText(const AnimationPreviewSession& session, const AnimRequest& request)
 {
-    std::string text = std::format("#{} {} from {}", request.Id.Sequence, TagName(session, request.Intent),
+    std::string text = std::format("#{} {} from {}", request.Id.Sequence, session.TagName(request.Intent),
                                    request.StartTick);
     if (request.AnchorSection != kAnimNoAnchorSection)
         text += std::format(", section {} from {}", request.AnchorSection, request.AnchorSectionStartTick);
@@ -52,7 +45,7 @@ PropertyNode Machine(std::string key, std::string label, const AnimationPreviewS
     for (std::size_t l = 0; l < record.Layers.size(); ++l)
     {
         const AnimationPreviewLayerRecord& layer = record.Layers[l];
-        std::string text = std::format("{}, {:.3f} s", TagName(session, layer.Behavior), layer.TimeSeconds);
+        std::string text = std::format("{}, {:.3f} s", session.TagName(layer.Behavior), layer.TimeSeconds);
         if (layer.Flow.Phase != AnimFlowPhase::None)
             text += std::format(", section {} from {}, loop {}", layer.Flow.Section, layer.Flow.SectionStartTick,
                                 layer.Flow.LoopCount);
@@ -68,21 +61,6 @@ PropertyNode Machine(std::string key, std::string label, const AnimationPreviewS
     return machine;
 }
 
-// "guesses.2.tick" as the guess and what of it.
-std::optional<std::pair<std::size_t, std::string_view>> GuessOf(std::string_view key)
-{
-    if (!key.starts_with(kGuesses))
-        return std::nullopt;
-    key.remove_prefix(kGuesses.size());
-    std::size_t index = 0;
-    const auto parsed = std::from_chars(key.data(), key.data() + key.size(), index);
-    if (parsed.ec != std::errc{})
-        return std::nullopt;
-    std::string_view rest = key.substr(static_cast<std::size_t>(parsed.ptr - key.data()));
-    if (rest.starts_with('.'))
-        rest.remove_prefix(1);
-    return std::pair{ index, rest };
-}
 } // namespace
 
 std::vector<PropertyNode> AnimationLabProperties::Nodes() const
@@ -204,15 +182,15 @@ bool AnimationLabProperties::BeginEdit(std::string_view key)
 PropertyEditResult AnimationLabProperties::CommitEdit(std::string_view key, std::string_view value)
 {
     AnimationLabRun& lab = Workspace.Lab;
-    if (const std::optional<std::pair<std::size_t, std::string_view>> guess = GuessOf(key);
-        guess && guess->first < lab.Injections.size())
+    if (const std::optional<PropertyKeyIndex> guess = ParsePropertyKeyIndex(key, kGuesses);
+        guess && guess->Index < lab.Injections.size())
     {
-        AnimationLabInjection& edited = lab.Injections[guess->first];
-        if (guess->second == "intent")
+        AnimationLabInjection& edited = lab.Injections[guess->Index];
+        if (guess->Rest == "intent")
             edited.Intent = value;
-        else if (guess->second == "by")
+        else if (guess->Rest == "by")
             edited.Participant = value;
-        else if (guess->second == "confirmed")
+        else if (guess->Rest == "confirmed")
         {
             const std::optional<bool> on = ParseToggle(value);
             if (!on)
@@ -224,7 +202,7 @@ PropertyEditResult AnimationLabProperties::CommitEdit(std::string_view key, std:
             const std::optional<double> tick = ParseNumber(value, 0.0, -1.0);
             if (!tick)
                 return PropertyEditResult::Refused;
-            (guess->second == "tick" ? edited.Tick : edited.AuthorityTick) = static_cast<AnimTick>(std::llround(*tick));
+            (guess->Rest == "tick" ? edited.Tick : edited.AuthorityTick) = static_cast<AnimTick>(std::llround(*tick));
         }
         return PropertyEditResult::Applied;
     }
@@ -266,10 +244,10 @@ PropertyEditResult AnimationLabProperties::Act(std::string_view key, std::string
         lab.Injections.push_back(std::move(guess));
         return PropertyEditResult::Applied;
     }
-    if (const std::optional<std::pair<std::size_t, std::string_view>> guess = GuessOf(key);
-        guess && guess->second.empty() && verb == "remove" && guess->first < lab.Injections.size())
+    if (const std::optional<PropertyKeyIndex> guess = ParsePropertyKeyIndex(key, kGuesses);
+        guess && guess->Rest.empty() && verb == "remove" && guess->Index < lab.Injections.size())
     {
-        lab.Injections.erase(lab.Injections.begin() + static_cast<std::ptrdiff_t>(guess->first));
+        lab.Injections.erase(lab.Injections.begin() + static_cast<std::ptrdiff_t>(guess->Index));
         return PropertyEditResult::Applied;
     }
     return PropertyEditResult::Gone;

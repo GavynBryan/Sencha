@@ -4,15 +4,14 @@
 #include "authoring/AnimationPredicateText.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 
+#include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimationClip.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
-#include <charconv>
 #include <format>
 #include <optional>
 #include <tuple>
@@ -23,12 +22,6 @@ constexpr std::string_view kRules = "rules.";
 constexpr std::string_view kSlots = "slots.";
 constexpr std::string_view kSelectedBy = "selected_by.";
 constexpr std::size_t kLogShown = 40;
-
-std::string TagName(const AnimationPreviewSession& session, GameplayTagId tag)
-{
-    const GameplayTagRegistry* tags = session.Tags();
-    return tag.IsValid() && tags != nullptr ? std::string(tags->GetName(tag)) : std::string("(none)");
-}
 
 std::string ContentPath(const AnimBoundRig& rig, int content)
 {
@@ -53,16 +46,6 @@ const AnimBoundRule* PickedRule(const AnimBoundRig& rig, const AnimationNavigati
 }
 
 // The index after `prefix` in `key`, or nothing.
-std::optional<std::size_t> IndexAfter(std::string_view key, std::string_view prefix)
-{
-    if (!key.starts_with(prefix))
-        return std::nullopt;
-    std::size_t index = 0;
-    const char* end = key.data() + key.size();
-    const auto parsed = std::from_chars(key.data() + prefix.size(), end, index);
-    return parsed.ec == std::errc{} ? std::optional(index) : std::nullopt;
-}
-
 std::string Milliseconds(float ms)
 {
     return std::format("{:g} ms", ms);
@@ -95,7 +78,7 @@ std::vector<PropertyNode> AnimationRuleProperties::Nodes() const
         nodes.push_back(NoteProperty("chosen_by", "Chosen by",
                                      std::format("Requests: the newest claiming the layer names its behavior; "
                                                  "otherwise it plays {}.",
-                                                 TagName(session, rig->Layers[layer].Idle))));
+                                                 session.TagName(rig->Layers[layer].Idle))));
         return nodes;
     }
     PropertyNode next = ToggleProperty("next", "Next tick", ShowNext && !session.IsPlaying(),
@@ -178,7 +161,7 @@ std::vector<PropertyNode> AnimationRuleProperties::BehaviorNodes() const
     const GameplayTagId tag = PickedRule(rig, navigation)->Behavior;
 
     std::vector<PropertyNode> nodes;
-    PropertyNode policy = GroupProperty("behavior", "Behavior " + TagName(session, tag));
+    PropertyNode policy = GroupProperty("behavior", "Behavior " + session.TagName(tag));
     if (const AnimBoundBehavior* behavior = rig.FindBehavior(tag))
     {
         const AnimBehaviorDecl& decl = behavior->Policy;
@@ -292,25 +275,23 @@ PropertyEditResult AnimationRuleProperties::Act(std::string_view key, std::strin
     if (rig == nullptr)
         return PropertyEditResult::Gone;
     AnimationNavigation& navigation = Workspace.Rig.Navigation;
-    if (const std::optional<std::size_t> rule = IndexAfter(key, kRules); rule && verb == "pick")
+    if (const std::optional<PropertyKeyIndex> rule = ParsePropertyKeyIndex(key, kRules);
+        rule && rule->Rest.empty() && verb == "pick")
     {
         const AnimBoundSelector* selector = SelectorOf(*rig, navigation.Layer);
-        if (selector == nullptr || *rule >= selector->Rules.size())
+        if (selector == nullptr || rule->Index >= selector->Rules.size())
             return PropertyEditResult::Gone;
-        navigation.Rule = static_cast<int>(*rule);
-        navigation.Behavior = selector->Rules[*rule].Behavior;
+        navigation.Rule = static_cast<int>(rule->Index);
+        navigation.Behavior = selector->Rules[rule->Index].Behavior;
         return PropertyEditResult::Applied;
     }
-    if (key.starts_with(kSelectedBy) && verb == "pick")
+    if (const std::optional<PropertyKeyIndex> other = ParsePropertyKeyIndex(key, kSelectedBy); other && verb == "pick")
     {
-        const std::string_view rest = key.substr(kSelectedBy.size());
-        const std::size_t dot = rest.find('.');
-        std::size_t layer = 0;
-        std::size_t rule = 0;
-        if (dot == std::string_view::npos
-            || std::from_chars(rest.data(), rest.data() + dot, layer).ec != std::errc{}
-            || std::from_chars(rest.data() + dot + 1, rest.data() + rest.size(), rule).ec != std::errc{})
+        const std::optional<PropertyKeyIndex> ruled = ParsePropertyKeyIndex(other->Rest, "");
+        if (!ruled || !ruled->Rest.empty())
             return PropertyEditResult::Gone;
+        const std::size_t layer = other->Index;
+        const std::size_t rule = ruled->Index;
         const AnimBoundSelector* selector = SelectorOf(*rig, layer);
         if (selector == nullptr || rule >= selector->Rules.size())
             return PropertyEditResult::Gone;
@@ -319,9 +300,10 @@ PropertyEditResult AnimationRuleProperties::Act(std::string_view key, std::strin
         navigation.Behavior = selector->Rules[rule].Behavior;
         return PropertyEditResult::Applied;
     }
-    if (const std::optional<std::size_t> slot = IndexAfter(key, kSlots); slot && *slot < rig->SlotRows.size())
+    if (const std::optional<PropertyKeyIndex> slot = ParsePropertyKeyIndex(key, kSlots);
+        slot && slot->Rest.empty() && slot->Index < rig->SlotRows.size())
     {
-        const AnimBoundSlotRow& row = rig->SlotRows[*slot];
+        const AnimBoundSlotRow& row = rig->SlotRows[slot->Index];
         if (verb == "audition")
             return Workspace.AuditionClip(ContentPath(*rig, row.Content)) ? PropertyEditResult::Applied
                                                                           : PropertyEditResult::Refused;
@@ -367,7 +349,7 @@ std::vector<PropertyNode> AnimationRuleProperties::TickSource::Nodes() const
                                                                  : std::string("(none)");
         tick.Children.push_back(NoteProperty(
             std::format("tick.layer.{}", l), rig->Layers[l].NameText,
-            std::format("{} \xE2\x86\x92 {}{}, {} at {:.2f}s{}", winner, TagName(session, layer.Behavior),
+            std::format("{} \xE2\x86\x92 {}{}, {} at {:.2f}s{}", winner, session.TagName(layer.Behavior),
                         kLatches[static_cast<int>(layer.Latch)], ContentPath(*rig, layer.Content), layer.TimeSeconds,
                         layer.ContentComplete ? ", complete" : "")));
     }
@@ -376,7 +358,7 @@ std::vector<PropertyNode> AnimationRuleProperties::TickSource::Nodes() const
         std::string text = std::format("{} ({})", AnimDecisionCauseName(decision.Cause),
                                        AnimChangeReasonName(decision.Reason));
         if (decision.Behavior.IsValid())
-            text += " " + TagName(session, decision.Behavior);
+            text += " " + session.TagName(decision.Behavior);
         const std::string where = decision.Layer != kAnimNoLayer && decision.Layer < rig->Layers.size()
                                       ? rig->Layers[decision.Layer].NameText
                                       : std::string("Rig");
@@ -393,7 +375,7 @@ std::vector<PropertyNode> AnimationRuleProperties::TickSource::Nodes() const
             const AnimDecisionRecord& logged = log->At(i);
             std::string text = std::format("{} #{}", AnimDecisionCauseName(logged.Cause), logged.Request.Sequence);
             if (logged.Intent.IsValid())
-                text += " " + TagName(session, logged.Intent);
+                text += " " + session.TagName(logged.Intent);
             if (logged.CancelReason != AnimCancelReason::None)
                 text += std::format(" ({})", AnimCancelReasonName(logged.CancelReason));
             if (logged.RejectReason != AnimRejectReason::None)

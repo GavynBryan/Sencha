@@ -28,6 +28,7 @@
 #include "authoring/AnimationTraceProperties.h"
 #include "render/AnimationPreviewRenderFeature.h"
 #include "problems/ProblemList.h"
+#include "text/PathLeaf.h"
 
 #include "actions/ActionOffer.h"
 #include "data/DataCreation.h"
@@ -90,11 +91,6 @@ constexpr std::string_view kContentExplorer = "anim_content";
 constexpr std::string_view kRigExplorer = "anim_rigs";
 constexpr std::string_view kSkeletonExplorer = "anim_skeleton";
 
-std::string_view LeafOf(std::string_view path)
-{
-    const std::size_t slash = path.find_last_of('/');
-    return slash == std::string_view::npos ? path : path.substr(slash + 1);
-}
 } // namespace
 
 AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module,
@@ -272,12 +268,9 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
                     AnimationNavigation& navigation = Workspace->Rig.Navigation;
                     if (navigation.Joint >= 0)
                         navigation.Joint = -1;
-                    else if (ShowingLens(AnimationLens::Rules) && navigation.Rule >= 0)
-                        navigation.Rule = -1;
-                    else if (ShowingLens(AnimationLens::Layers) && LayerCard->StepBack())
+                    else if (const LensView& lens = ViewOf(ShownLens);
+                             Subject == CardSubject::Lens && lens.StepBack && lens.StepBack())
                         return;
-                    else if (ShowingLens(AnimationLens::Events) && PickedEvent)
-                        PickedEvent.reset();
                     else
                         Subject = CardSubject::Stage;
                 } });
@@ -374,34 +367,6 @@ void AnimationWorkspace::DefineTransport(ActionCatalog& catalog)
           { .Invoke = [this] { Clock->ReturnToLive(); }, .Checked = [this] { return Clock->IsLive(); } });
 }
 
-namespace
-{
-struct LensRow
-{
-    AnimationLens Lens;
-    std::string_view Action;
-    std::string_view Label;
-    std::string_view Hint;
-};
-constexpr std::array<LensRow, 8> kLenses{ {
-    { AnimationLens::Rules, "animation.lens.rules", "Rules",
-      "Inspect a rule to see why it won or lost; the deck's lane shows what won the layer" },
-    { AnimationLens::Layers, "animation.lens.layers", "Layers",
-      "Inspect a layer for its weight and mask; pick a joint to mask it" },
-    { AnimationLens::Flow, "animation.lens.flow", "Flow",
-      "The deck's lane shows the sections the layer played; Edit opens the flow as a sheet" },
-    { AnimationLens::Blends, "animation.lens.blends", "Blends",
-      "Drag the pad to move a blendspace; the deck's lane shows each blend as long as it ran" },
-    { AnimationLens::RootMotion, "animation.lens.root_motion", "Root motion",
-      "Move the character to see how far its clips carry it; the deck plots carried against achieved" },
-    { AnimationLens::Facts, "animation.lens.facts", "Facts",
-      "Drive an input fact for the next tick; Plot puts a fact along the deck" },
-    { AnimationLens::Requests, "animation.lens.requests", "Requests",
-      "Issue a request on the next tick, or cancel a live one; the deck's lane shows each as long as it lived" },
-    { AnimationLens::Events, "animation.lens.events", "Events", "E adds an event at the playhead" },
-} };
-} // namespace
-
 void AnimationWorkspace::PublishProblems()
 {
     std::vector<AnimDiagnostic> diagnostics = Workspace->Rig.Simulation.Problems();
@@ -412,7 +377,7 @@ void AnimationWorkspace::PublishProblems()
         if (const DataResidentState* state = Workspace->Documents.Store().ResidentStateOf(*document);
             state != nullptr && state->Status == DataResidentStatus::KeptLastValid)
             kept.push_back({ .Severity = ProblemSeverity::Warning,
-                             .Message = std::format("{}: {}", LeafOf(document->VirtualPath()),
+                             .Message = std::format("{}: {}", PathLeaf(document->VirtualPath()),
                                                     AnimationPreviewStatusText(state)),
                              .Document = Workspace->Documents.RefOf(*document) });
     std::string signature = DeclareError;
@@ -483,18 +448,122 @@ void AnimationWorkspace::DefineLenses(ActionCatalog& catalog)
                       ProblemSignature.clear();
                   },
                   .Enabled = [this] { return !Undeclared.empty(); } });
-    for (const LensRow& lens : kLenses)
+    DefineLensViews();
+    for (const LensView& lens : LensViews)
         OfferAction(catalog, ActionHandlers,
                     { .Id = std::string(lens.Action), .Label = std::string(lens.Label), .Category = "Lens" },
                     { .Invoke = [this, which = lens.Lens] { ShowLens(which); },
                       .Checked = [this, which = lens.Lens] { return ShownLens == which; } });
 }
 
+void AnimationWorkspace::DefineLensViews()
+{
+    using Card = std::optional<WorkspaceSelectionFacet>;
+    const auto simulation = [this]() -> AnimationPreviewSession& { return Workspace->Rig.Simulation; };
+    const auto navigation = [this]() -> AnimationNavigation& { return Workspace->Rig.Navigation; };
+    LensViews = {
+        { .Lens = AnimationLens::Rules, .Action = "animation.lens.rules", .Label = "Rules",
+          .Hint = "Inspect a rule to see why it won or lost; the deck's lane shows what won the layer",
+          .Card = [this] {
+              return Card{ { .Title = RuleCard->Title(),
+                             .Sections = { { .Heading = {}, .Source = RuleCard.get() } },
+                             .Details = { { .Heading = "This tick", .Source = &RuleCard->Decisions() } } } };
+          },
+          .Lanes = [=](std::vector<TimelineLane>& lanes) {
+              lanes.push_back(AnimationDecisionLane(simulation(), navigation().Layer, navigation().Rule));
+          },
+          .StepBack = [=] {
+              if (navigation().Rule < 0)
+                  return false;
+              navigation().Rule = -1;
+              return true;
+          } },
+        { .Lens = AnimationLens::Layers, .Action = "animation.lens.layers", .Label = "Layers",
+          .Hint = "Inspect a layer for its weight and mask; pick a joint to mask it",
+          .Card = [this] {
+              return Card{ { .Title = LayerCard->Title(), .Sections = { { .Heading = {}, .Source = LayerCard.get() } } } };
+          },
+          // What won each layer, as many as the deck has lanes for.
+          .Lanes = [=](std::vector<TimelineLane>& lanes) {
+              const AnimBoundRig* rig = simulation().Rig();
+              for (std::size_t layer = 0; rig != nullptr && layer < rig->Layers.size() && layer < kTimelineLaneLimit;
+                   ++layer)
+                  lanes.push_back(AnimationDecisionLane(simulation(), layer,
+                                                        layer == navigation().Layer ? navigation().Rule : -1));
+          },
+          .StepBack = [this] { return LayerCard->StepBack(); } },
+        { .Lens = AnimationLens::Flow, .Action = "animation.lens.flow", .Label = "Flow",
+          .Hint = "The deck's lane shows the sections the layer played; Edit opens the flow as a sheet",
+          .Card = [this] {
+              return Card{ { .Title = FlowCard->Title(), .Sections = { { .Heading = {}, .Source = FlowCard.get() } } } };
+          },
+          .Lanes = [=](std::vector<TimelineLane>& lanes) {
+              lanes.push_back(AnimationFlowLane(simulation(), navigation().Layer));
+          } },
+        { .Lens = AnimationLens::Blends, .Action = "animation.lens.blends", .Label = "Blends",
+          .Hint = "Drag the pad to move a blendspace; the deck's lane shows each blend as long as it ran",
+          .Card = [this] {
+              return Card{ { .Title = "Blends",
+                             .Sections = { { .Heading = {}, .Source = BlendCard.get() } },
+                             .Details = { { .Heading = "Overrides and A/B", .Source = &BlendCard->Comparison() } } } };
+          },
+          .Lanes = [=](std::vector<TimelineLane>& lanes) {
+              lanes.push_back(AnimationBlendLane(simulation(), navigation().Layer));
+          } },
+        { .Lens = AnimationLens::RootMotion, .Action = "animation.lens.root_motion", .Label = "Root motion",
+          .Hint = "Move the character to see how far its clips carry it; the deck plots carried against achieved",
+          .Card = [this] {
+              return Card{ { .Title = "Root motion", .Sections = { { .Heading = {}, .Source = RootMotionCard.get() } } } };
+          },
+          .Lanes = [=](std::vector<TimelineLane>& lanes) {
+              for (TimelineLane& lane : AnimationTravelLanes(simulation()))
+                  lanes.push_back(std::move(lane));
+          } },
+        { .Lens = AnimationLens::Facts, .Action = "animation.lens.facts", .Label = "Facts",
+          .Hint = "Drive an input fact for the next tick; Plot puts a fact along the deck",
+          .Card = [this] { return Card{ { .Title = "Facts", .Sections = { { .Heading = {}, .Source = FactCard.get() } } } }; },
+          .Lanes = [this, simulation](std::vector<TimelineLane>& lanes) {
+              if (!FactCard->Plotted().empty())
+                  lanes.push_back(AnimationFactLane(simulation(), FactCard->Plotted()));
+          } },
+        { .Lens = AnimationLens::Requests, .Action = "animation.lens.requests", .Label = "Requests",
+          .Hint = "Issue a request on the next tick, or cancel a live one; the deck's lane shows each as long as it lived",
+          .Card = [this] {
+              return Card{ { .Title = "Requests", .Sections = { { .Heading = {}, .Source = RequestCard.get() } } } };
+          },
+          .Lanes = [=](std::vector<TimelineLane>& lanes) { lanes.push_back(AnimationRequestLane(simulation())); } },
+        { .Lens = AnimationLens::Events, .Action = "animation.lens.events", .Label = "Events",
+          .Hint = "E adds an event at the playhead",
+          .Card = [this]() -> Card {
+              const AnimationClipEventsDocument* document = AuditionedEvents();
+              if (document == nullptr)
+                  return std::nullopt;
+              const AnimationClipEvent* event = PickedEvent ? document->Find(*PickedEvent) : nullptr;
+              return WorkspaceSelectionFacet{
+                  .Title = event == nullptr ? std::string(PathLeaf(document->ClipPath())) + " events" : EventLabel(*event),
+                  .Actions = { "animation.event.add", "edit.delete", "file.save" },
+                  .Sections = { { .Heading = {}, .Source = EventCard.get() } },
+                  .Details = { { .Heading = "Admissions", .Source = Admissions.get() } } };
+          },
+          .StepBack = [this] {
+              if (!PickedEvent)
+                  return false;
+              PickedEvent.reset();
+              return true;
+          } },
+    };
+}
+
+const AnimationWorkspace::LensView& AnimationWorkspace::ViewOf(AnimationLens lens) const
+{
+    return *std::ranges::find(LensViews, lens, &LensView::Lens);
+}
+
 WorkspaceOperationFacet AnimationWorkspace::Operation()
 {
-    const auto shown = std::ranges::find(kLenses, ShownLens, &LensRow::Lens);
-    WorkspaceOperationFacet facet{ .Name = std::string(shown->Label), .Hint = std::string(shown->Hint) };
-    for (const LensRow& lens : kLenses)
+    const LensView& shown = ViewOf(ShownLens);
+    WorkspaceOperationFacet facet{ .Name = std::string(shown.Label), .Hint = std::string(shown.Hint) };
+    for (const LensView& lens : LensViews)
         facet.Choices.push_back(
             { .Label = std::string(lens.Label), .Action = std::string(lens.Action), .Current = lens.Lens == ShownLens });
     return facet;
@@ -565,26 +634,8 @@ WorkspaceTimelineFacet AnimationWorkspace::Timeline()
         if (std::optional<WorkspaceTimelineFacet> lab = LabSheet->Timeline())
             return *lab;
     WorkspaceTimelineFacet facet = Clock->Facet();
-    const AnimationNavigation& navigation = Workspace->Rig.Navigation;
-    if (ShownLens == AnimationLens::Rules && Clock->IsSimulation())
-        facet.Lanes.push_back(AnimationDecisionLane(Workspace->Rig.Simulation, navigation.Layer, navigation.Rule));
-    if (ShownLens == AnimationLens::Requests && Clock->IsSimulation())
-        facet.Lanes.push_back(AnimationRequestLane(Workspace->Rig.Simulation));
-    if (ShownLens == AnimationLens::Facts && Clock->IsSimulation() && !FactCard->Plotted().empty())
-        facet.Lanes.push_back(AnimationFactLane(Workspace->Rig.Simulation, FactCard->Plotted()));
-    if (ShownLens == AnimationLens::RootMotion && Clock->IsSimulation())
-        for (TimelineLane& lane : AnimationTravelLanes(Workspace->Rig.Simulation))
-            facet.Lanes.push_back(std::move(lane));
-    if (ShownLens == AnimationLens::Blends && Clock->IsSimulation())
-        facet.Lanes.push_back(AnimationBlendLane(Workspace->Rig.Simulation, navigation.Layer));
-    if (ShownLens == AnimationLens::Flow && Clock->IsSimulation())
-        facet.Lanes.push_back(AnimationFlowLane(Workspace->Rig.Simulation, navigation.Layer));
-    // What won each layer, as many as the deck has lanes for.
-    if (const AnimBoundRig* rig = Workspace->Rig.Simulation.Rig();
-        ShownLens == AnimationLens::Layers && Clock->IsSimulation() && rig != nullptr)
-        for (std::size_t layer = 0; layer < rig->Layers.size() && layer < kTimelineLaneLimit; ++layer)
-            facet.Lanes.push_back(AnimationDecisionLane(Workspace->Rig.Simulation, layer,
-                                                        layer == navigation.Layer ? navigation.Rule : -1));
+    if (const LensView& lens = ViewOf(ShownLens); lens.Lanes && Clock->IsSimulation())
+        lens.Lanes(facet.Lanes);
     const AnimationClipEventsDocument* document = Clock->IsSimulation() ? nullptr : AuditionedEvents();
     if (document == nullptr || facet.End <= 0.0)
         return facet;
@@ -882,15 +933,15 @@ WorkspaceDocumentFacet AnimationWorkspace::Document() const
     WorkspaceDocumentFacet facet;
     if (const AnimationClipEventsDocument* events = AuditionedEvents())
         facet.Open.push_back({ .Key = "events:" + events->ClipPath(),
-                               .Label = std::string(LeafOf(events->ClipPath())) + " events",
+                               .Label = std::string(PathLeaf(events->ClipPath())) + " events",
                                .Changed = events->IsDirty() });
     for (const DataDocument* document : Workspace->Documents.Documents())
         facet.Open.push_back({ .Key = document->VirtualPath(),
-                               .Label = std::string(LeafOf(document->VirtualPath())),
+                               .Label = std::string(PathLeaf(document->VirtualPath())),
                                .Changed = document->IsDirty() });
     if (const DataDocument* active = Workspace->Documents.Active())
     {
-        facet.Label = std::string(LeafOf(active->VirtualPath()));
+        facet.Label = std::string(PathLeaf(active->VirtualPath()));
         facet.Changed = active->IsDirty();
         facet.Active = active->VirtualPath();
     }
@@ -956,7 +1007,7 @@ std::vector<WorkspaceResourceFacet> AnimationWorkspace::Resources()
     std::string label;
     if (!Workspace->Rig.Path.empty())
     {
-        label = std::string(LeafOf(Workspace->Rig.Path));
+        label = std::string(PathLeaf(Workspace->Rig.Path));
         if (Workspace->Rig.Simulation.IsOpen())
             label += " \xC2\xB7 " + Workspace->Rig.Simulation.Scenario().Name;
     }
@@ -973,33 +1024,9 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         return { .Title = name.empty() ? std::string("Unnamed joint") : name,
                  .Sections = { { .Heading = {}, .Source = Bone.get() } } };
     }
-    if (ShowingLens(AnimationLens::Requests))
-        return { .Title = "Requests", .Sections = { { .Heading = {}, .Source = RequestCard.get() } } };
-    if (ShowingLens(AnimationLens::Facts))
-        return { .Title = "Facts", .Sections = { { .Heading = {}, .Source = FactCard.get() } } };
-    if (ShowingLens(AnimationLens::RootMotion))
-        return { .Title = "Root motion", .Sections = { { .Heading = {}, .Source = RootMotionCard.get() } } };
-    if (ShowingLens(AnimationLens::Blends))
-        return { .Title = "Blends",
-                 .Sections = { { .Heading = {}, .Source = BlendCard.get() } },
-                 .Details = { { .Heading = "Overrides and A/B", .Source = &BlendCard->Comparison() } } };
-    if (ShowingLens(AnimationLens::Flow))
-        return { .Title = FlowCard->Title(), .Sections = { { .Heading = {}, .Source = FlowCard.get() } } };
-    if (ShowingLens(AnimationLens::Layers))
-        return { .Title = LayerCard->Title(), .Sections = { { .Heading = {}, .Source = LayerCard.get() } } };
-    if (ShowingLens(AnimationLens::Rules))
-        return { .Title = RuleCard->Title(),
-                 .Sections = { { .Heading = {}, .Source = RuleCard.get() } },
-                 .Details = { { .Heading = "This tick", .Source = &RuleCard->Decisions() } } };
-    if (ShowingLens(AnimationLens::Events) && AuditionedEvents() != nullptr)
-    {
-        const AnimationClipEventsDocument& document = *AuditionedEvents();
-        const AnimationClipEvent* event = PickedEvent ? document.Find(*PickedEvent) : nullptr;
-        return { .Title = event == nullptr ? std::string(LeafOf(document.ClipPath())) + " events" : EventLabel(*event),
-                 .Actions = { "animation.event.add", "edit.delete", "file.save" },
-                 .Sections = { { .Heading = {}, .Source = EventCard.get() } },
-                 .Details = { { .Heading = "Admissions", .Source = Admissions.get() } } };
-    }
+    if (Subject == CardSubject::Lens)
+        if (std::optional<WorkspaceSelectionFacet> card = ViewOf(ShownLens).Card())
+            return *std::move(card);
     if (Subject == CardSubject::Run)
         switch (ShownRun)
         {
@@ -1020,14 +1047,14 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
     if (Subject == CardSubject::NewDocument)
         return { .Title = "New animation document", .Sections = { { .Heading = {}, .Source = NewDocument.get() } } };
     if (const DataDocument* document = Workspace->Documents.Active(); Subject == CardSubject::Document && document)
-        return { .Title = std::string(LeafOf(document->VirtualPath())),
+        return { .Title = std::string(PathLeaf(document->VirtualPath())),
                  .Actions = { "file.save", "animation.document.close" },
                  .Sections = { { .Heading = {}, .Source = DocumentSheet.get() } } };
 
     const bool rigOpen = Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty();
     WorkspaceSelectionFacet stage;
-    stage.Title = rigOpen                              ? std::string(LeafOf(Workspace->Rig.Path))
-                  : !Workspace->Audition.MeshPath.empty() ? std::string(LeafOf(Workspace->Audition.MeshPath))
+    stage.Title = rigOpen                              ? std::string(PathLeaf(Workspace->Rig.Path))
+                  : !Workspace->Audition.MeshPath.empty() ? std::string(PathLeaf(Workspace->Audition.MeshPath))
                                                       : std::string("Stage");
     stage.Sections.push_back({ .Heading = "Audition", .Source = Audition.get() });
     if (rigOpen)

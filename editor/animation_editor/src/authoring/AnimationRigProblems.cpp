@@ -1,17 +1,9 @@
 #include "authoring/AnimationRigProblems.h"
 
 #include "data/DataDocumentStore.h"
+#include "text/PathLeaf.h"
 
 #include <format>
-
-namespace
-{
-std::string_view LeafOf(std::string_view path)
-{
-    const std::size_t cut = path.find_last_of('/');
-    return cut == std::string_view::npos ? path : path.substr(cut + 1);
-}
-} // namespace
 
 std::vector<Problem> AnimationRigProblems(std::span<const AnimDiagnostic> diagnostics,
                                           std::span<const std::string> undeclared, DataDocumentStore& store)
@@ -23,7 +15,7 @@ std::vector<Problem> AnimationRigProblems(std::span<const AnimDiagnostic> diagno
                                                                                           : ProblemSeverity::Warning,
                          .Message = diagnostic.AssetPath.empty()
                                         ? diagnostic.Message
-                                        : std::format("{}: {}", LeafOf(diagnostic.AssetPath), diagnostic.Message),
+                                        : std::format("{}: {}", PathLeaf(diagnostic.AssetPath), diagnostic.Message),
                          .Location = diagnostic.FieldPath };
         if (store.IsRegistered(diagnostic.AssetPath))
             problem.Document = DocumentRef{ &store, diagnostic.AssetPath };

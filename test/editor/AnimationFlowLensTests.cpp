@@ -2,6 +2,7 @@
 // and how each section is left, the deck's lane runs its sections, and the
 // flow's sheet keeps control going forward.
 
+#include "properties/PropertyTree.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationFlowProperties.h"
 #include "authoring/AnimationPredicateAuthoring.h"
@@ -41,17 +42,6 @@ struct FlowLens : testing::Test
     }
 };
 
-const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
-{
-    for (const PropertyNode& node : nodes)
-    {
-        if (node.Key == key)
-            return &node;
-        if (const PropertyNode* child = NodeAt(node.Children, key))
-            return child;
-    }
-    return nullptr;
-}
 } // namespace
 
 TEST_F(FlowLens, TheCardAndTheLaneFollowTheFlowALayerPlays)
@@ -62,12 +52,12 @@ TEST_F(FlowLens, TheCardAndTheLaneFollowTheFlowALayerPlays)
     AnimationFlowProperties card(*Workspace, [&](const std::string& path) { opened.push_back(path); });
 
     const std::vector<PropertyNode> nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "flow"), nullptr) << "the reload issued at tick 10 plays a flow";
-    EXPECT_EQ(NodeAt(nodes, "flow")->Value, kFlow);
-    EXPECT_EQ(NodeAt(nodes, "cancel")->Value, "goes to Anim.Reload.Exit");
-    ASSERT_NE(NodeAt(nodes, "sections.1"), nullptr);
-    EXPECT_NE(NodeAt(nodes, "sections.1")->Value.find("repeats while"), std::string::npos);
-    EXPECT_NE(NodeAt(nodes, "sections.1")->Value.find("a cancel leaves at once"), std::string::npos);
+    ASSERT_NE(FindProperty(nodes, "flow"), nullptr) << "the reload issued at tick 10 plays a flow";
+    EXPECT_EQ(FindProperty(nodes, "flow")->Value, kFlow);
+    EXPECT_EQ(FindProperty(nodes, "cancel")->Value, "goes to Anim.Reload.Exit");
+    ASSERT_NE(FindProperty(nodes, "sections.1"), nullptr);
+    EXPECT_NE(FindProperty(nodes, "sections.1")->Value.find("repeats while"), std::string::npos);
+    EXPECT_NE(FindProperty(nodes, "sections.1")->Value.find("a cancel leaves at once"), std::string::npos);
     EXPECT_EQ(card.Act("flow", "open", ""), PropertyEditResult::Applied);
     EXPECT_EQ(opened, std::vector<std::string>{ kFlow });
 
@@ -94,17 +84,17 @@ TEST_F(FlowLens, TheSheetKeepsControlGoingForward)
     const auto sections = [&] { return flow->Data()->Find("sections")->AsArray(); };
 
     std::vector<PropertyNode> nodes = sheet.Nodes();
-    ASSERT_NE(NodeAt(nodes, "$.data.cancel"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "$.data.cancel")->Descriptor.Choices,
+    ASSERT_NE(FindProperty(nodes, "$.data.cancel"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "$.data.cancel")->Descriptor.Choices,
               (std::vector<std::string>{ "Anim.Reload.Enter", "Anim.Reload.Insert", "Anim.Reload.Exit" }));
-    ASSERT_NE(NodeAt(nodes, "$.data.sections[1].while[0]"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "$.data.sections[1].while[0]")->Descriptor.Label, "not AmmoFull");
+    ASSERT_NE(FindProperty(nodes, "$.data.sections[1].while[0]"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "$.data.sections[1].while[0]")->Descriptor.Label, "not AmmoFull");
 
     // A branch from the first section names only a later one.
     EXPECT_EQ(sheet.Act("$.data.sections[0].branches", "add", ""), PropertyEditResult::Applied);
     nodes = sheet.Nodes();
-    ASSERT_NE(NodeAt(nodes, "$.data.sections[0].branches[0].to"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "$.data.sections[0].branches[0].to")->Descriptor.Choices,
+    ASSERT_NE(FindProperty(nodes, "$.data.sections[0].branches[0].to"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "$.data.sections[0].branches[0].to")->Descriptor.Choices,
               (std::vector<std::string>{ "", "Anim.Reload.Insert", "Anim.Reload.Exit" }));
     ASSERT_TRUE(sheet.BeginEdit("$.data.sections[0].branches[0].to"));
     EXPECT_EQ(sheet.CommitEdit("$.data.sections[0].branches[0].to", "Anim.Reload.Exit"), PropertyEditResult::Applied);

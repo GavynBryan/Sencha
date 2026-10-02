@@ -1089,6 +1089,15 @@ const GameplayTagRegistry* AnimationPreviewSession::Tags() const
     return Preview != nullptr ? Preview->TryGetResource<GameplayTagRegistry>() : nullptr;
 }
 
+std::string AnimationPreviewSession::TagName(GameplayTagId tag) const
+{
+    if (!tag.IsValid())
+        return "(none)";
+    const GameplayTagRegistry* tags = Tags();
+    const std::string_view name = tags != nullptr ? tags->GetName(tag) : std::string_view{};
+    return name.empty() ? std::format("#{}", tag.Value) : std::string(name);
+}
+
 const VerbRegistry* AnimationPreviewSession::Verbs() const
 {
     return Preview != nullptr ? FindVerbRegistry(*Preview) : nullptr;

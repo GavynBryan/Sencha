@@ -2,6 +2,7 @@
 // pipeline after content: a root-motion clip carries it, a placed wall stops it,
 // and each tick records where the clip carried it against where it got.
 
+#include "properties/PropertyTree.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewSession.h"
 #include "authoring/AnimationPreviewWorkspace.h"
@@ -177,21 +178,6 @@ TEST(AnimationRootMotionPreview, MovementIsScenarioState)
     EXPECT_FALSE(session.History().back().Movement.has_value());
 }
 
-namespace
-{
-    const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
-    {
-        for (const PropertyNode& node : nodes)
-        {
-            if (node.Key == key)
-                return &node;
-            if (const PropertyNode* child = NodeAt(node.Children, key))
-                return child;
-        }
-        return nullptr;
-    }
-}
-
 // The deck plots how far the clip carried the character on each tick against
 // how far it got: against a wall the two part.
 TEST(AnimationRootMotionPreview, TheTravelLanesPlotCarriedAgainstAchieved)
@@ -234,11 +220,11 @@ TEST(AnimationRootMotionPreview, TheCardPlacesTheScenariosWalls)
     AnimationRootMotionProperties card(workspace);
 
     std::vector<PropertyNode> nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "moves"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "moves")->Value, "true");
-    ASSERT_NE(NodeAt(nodes, "clip.root"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "clip.root")->Value, "Carrying the character");
-    EXPECT_EQ(NodeAt(nodes, "walls.0"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "moves"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "moves")->Value, "true");
+    ASSERT_NE(FindProperty(nodes, "clip.root"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "clip.root")->Value, "Carrying the character");
+    EXPECT_EQ(FindProperty(nodes, "walls.0"), nullptr);
 
     EXPECT_EQ(card.Act("walls", "add", ""), PropertyEditResult::Applied);
     ASSERT_EQ(session.Scenario().Movement->Walls.size(), 1u);
@@ -254,7 +240,7 @@ TEST(AnimationRootMotionPreview, TheCardPlacesTheScenariosWalls)
     EXPECT_EQ(card.CommitEdit("moves", "false"), PropertyEditResult::Applied);
     EXPECT_FALSE(session.Scenario().Movement.has_value());
     nodes = card.Nodes();
-    EXPECT_EQ(NodeAt(nodes, "walls"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "travel"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "walls"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "travel"), nullptr);
     session.Close();
 }

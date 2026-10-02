@@ -2,14 +2,13 @@
 
 #include "authoring/AnimationPreviewWorkspace.h"
 
+#include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimRequests.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <array>
-#include <charconv>
 #include <format>
 
 namespace
@@ -25,17 +24,7 @@ std::string IntentName(const AnimationPreviewSession& session, GameplayTagId int
     if (const AnimBoundRig* rig = session.Rig())
         if (const AnimBoundIntent* bound = rig->FindIntent(intent))
             return bound->Name;
-    const GameplayTagRegistry* tags = session.Tags();
-    return intent.IsValid() && tags != nullptr ? std::string(tags->GetName(intent)) : std::string("(none)");
-}
-
-std::optional<std::size_t> IndexAfter(std::string_view key, std::string_view prefix)
-{
-    std::size_t index = 0;
-    if (!key.starts_with(prefix)
-        || std::from_chars(key.data() + prefix.size(), key.data() + key.size(), index).ec != std::errc{})
-        return std::nullopt;
-    return index;
+    return session.TagName(intent);
 }
 
 } // namespace
@@ -223,16 +212,18 @@ PropertyEditResult AnimationRequestProperties::CommitEdit(std::string_view key, 
         FixedTicks = static_cast<std::uint32_t>(std::max(1.0, *ticks));
         return PropertyEditResult::Applied;
     }
-    if (const std::optional<std::size_t> layer = IndexAfter(key, kLayers); layer && *layer < kAnimMaxLayers)
+    if (const std::optional<PropertyKeyIndex> layer = ParsePropertyKeyIndex(key, kLayers);
+        layer && layer->Rest.empty() && layer->Index < kAnimMaxLayers)
     {
         const std::optional<bool> on = ParseToggle(value);
         if (!on)
             return PropertyEditResult::Refused;
-        const auto bit = static_cast<std::uint8_t>(1u << *layer);
+        const auto bit = static_cast<std::uint8_t>(1u << layer->Index);
         Layers = *on ? static_cast<std::uint8_t>(Layers | bit) : static_cast<std::uint8_t>(Layers & ~bit);
         return PropertyEditResult::Applied;
     }
-    const std::optional<std::size_t> param = IndexAfter(key, kParams);
+    const std::optional<PropertyKeyIndex> parsed = ParsePropertyKeyIndex(key, kParams);
+    const std::optional<std::size_t> param = parsed && parsed->Rest.empty() ? std::optional(parsed->Index) : std::nullopt;
     const AnimBoundIntent* intent = rig->HasRequestSchema && Intent < rig->Intents.size() ? &rig->Intents[Intent] : nullptr;
     if (!param || intent == nullptr || *param >= intent->Params.size())
         return PropertyEditResult::Gone;
@@ -285,13 +276,13 @@ PropertyEditResult AnimationRequestProperties::Act(std::string_view key, std::st
         session.IssueRequest(std::move(action));
         return PropertyEditResult::Applied;
     }
-    const std::optional<std::size_t> sequence = IndexAfter(key, kLive);
+    const std::optional<PropertyKeyIndex> sequence = ParsePropertyKeyIndex(key, kLive);
     const std::optional<std::size_t> reason = ParseChoice(choice, kReasons);
     const AnimRequestSet* set = session.Requests();
     if (!sequence || verb != "cancel" || !reason || set == nullptr)
         return PropertyEditResult::Gone;
     for (const AnimRequest& request : set->Records)
-        if (request.Occupied && request.Id.Sequence == *sequence)
+        if (request.Occupied && request.Id.Sequence == sequence->Index)
         {
             session.CancelRequest(std::string(session.ParticipantName(request.Id.Source)),
                                   IntentName(session, request.Intent), static_cast<AnimCancelReason>(*reason + 1));

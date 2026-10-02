@@ -2,6 +2,7 @@
 // as a pad shows it and moves it, the card's account of blending, and the
 // deck's lane of blends.
 
+#include "properties/PropertyTree.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationBlendProperties.h"
 #include "authoring/AnimationBlendspacePad.h"
@@ -17,17 +18,6 @@ namespace
 {
 constexpr const char* kRig = "asset://animation/examples/moving.rig.sdata";
 
-const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
-{
-    for (const PropertyNode& node : nodes)
-    {
-        if (node.Key == key)
-            return &node;
-        if (const PropertyNode* child = NodeAt(node.Children, key))
-            return child;
-    }
-    return nullptr;
-}
 } // namespace
 
 TEST(PlanePad, APointMapsAcrossAndUpWithinTheInsetAndBack)
@@ -75,11 +65,11 @@ TEST(AnimationBlendLens, ThePadMovesTheBlendspaceAndTheCardAndLaneAccountForIt)
 
     AnimationBlendProperties card(workspace);
     const std::vector<PropertyNode> nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "now.0"), nullptr);
-    ASSERT_NE(NodeAt(nodes, "blendspace.at"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "blendspace.at")->Value, "Speed = 2.00");
-    ASSERT_NE(NodeAt(nodes, "recent.0"), nullptr) << "idle to moving blended";
-    EXPECT_NE(NodeAt(card.Comparison().Nodes(), "ab"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "now.0"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "blendspace.at"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "blendspace.at")->Value, "Speed = 2.00");
+    ASSERT_NE(FindProperty(nodes, "recent.0"), nullptr) << "idle to moving blended";
+    EXPECT_NE(FindProperty(card.Comparison().Nodes(), "ab"), nullptr);
 
     const TimelineLane lane = AnimationBlendLane(session, 0);
     ASSERT_FALSE(lane.Spans.empty());

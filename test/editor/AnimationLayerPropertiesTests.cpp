@@ -1,3 +1,4 @@
+#include "properties/PropertyTree.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationLayerProperties.h"
 #include "authoring/AnimationPreviewWorkspace.h"
@@ -15,17 +16,6 @@ namespace
 constexpr const char* kSkeleton = "asset://meshes/man.blend#skel:Man";
 constexpr const char* kRig = "asset://animation/layered/layered.rig.sdata";
 
-const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
-{
-    for (const PropertyNode& node : nodes)
-    {
-        if (node.Key == key)
-            return &node;
-        if (const PropertyNode* child = NodeAt(node.Children, key))
-            return child;
-    }
-    return nullptr;
-}
 } // namespace
 
 TEST(AnimationLayerProperties, LayersAreListedInspectedMutedAndUnmasked)
@@ -51,9 +41,9 @@ TEST(AnimationLayerProperties, LayersAreListedInspectedMutedAndUnmasked)
     AnimationLayerProperties card(workspace);
     EXPECT_EQ(card.Title(), "Layers");
     std::vector<PropertyNode> nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "layers.0"), nullptr);
-    ASSERT_NE(NodeAt(nodes, "layers.1"), nullptr);
-    EXPECT_NE(NodeAt(nodes, "layers.1")->Value.find("of 3 joints"), std::string::npos) << NodeAt(nodes, "layers.1")->Value;
+    ASSERT_NE(FindProperty(nodes, "layers.0"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "layers.1"), nullptr);
+    EXPECT_NE(FindProperty(nodes, "layers.1")->Value.find("of 3 joints"), std::string::npos) << FindProperty(nodes, "layers.1")->Value;
 
     // Muting changes the stage alone.
     EXPECT_EQ(card.Act("layers.1", "mute", ""), PropertyEditResult::Applied);
@@ -67,17 +57,17 @@ TEST(AnimationLayerProperties, LayersAreListedInspectedMutedAndUnmasked)
     EXPECT_EQ(workspace.Rig.Navigation.Layer, 1u);
     EXPECT_EQ(card.Title(), workspace.Rig.Simulation.Rig()->Layers[1].NameText);
     nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "muted"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "muted")->Value, "true");
+    ASSERT_NE(FindProperty(nodes, "muted"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "muted")->Value, "true");
     ASSERT_TRUE(card.BeginEdit("muted"));
     EXPECT_EQ(card.CommitEdit("muted", "false"), PropertyEditResult::Applied);
     EXPECT_EQ(workspace.Viewport.LayerDisplay.Muted, 0);
-    ASSERT_NE(NodeAt(nodes, "mask.0"), nullptr) << "the upper body is masked from the spine";
-    EXPECT_EQ(NodeAt(nodes, "mask.0")->Value, "spine and below");
+    ASSERT_NE(FindProperty(nodes, "mask.0"), nullptr) << "the upper body is masked from the spine";
+    EXPECT_EQ(FindProperty(nodes, "mask.0")->Value, "spine and below");
 
     EXPECT_EQ(card.Act("mask.0", "remove", ""), PropertyEditResult::Applied);
     nodes = card.Nodes();
-    EXPECT_NE(NodeAt(nodes, "mask.none"), nullptr);
+    EXPECT_NE(FindProperty(nodes, "mask.none"), nullptr);
     EXPECT_FALSE(workspace.Rig.Simulation.Rig()->Layers[1].Masked()) << "the preview follows the edit";
     workspace.Sources.Undo();
     EXPECT_TRUE(workspace.Rig.Simulation.Rig()->Layers[1].Masked());

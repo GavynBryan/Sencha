@@ -1,6 +1,7 @@
 // The Facts card over the fixture's hero rig: input facts driven as recorded
 // scenario edits and cleared, derived facts described, and one fact plotted.
 
+#include "properties/PropertyTree.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationFactProperties.h"
 #include "authoring/AnimationPreviewWorkspace.h"
@@ -11,17 +12,6 @@
 #include <anim/AnimFacts.h>
 
 #include <gtest/gtest.h>
-
-namespace
-{
-const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
-{
-    for (const PropertyNode& node : nodes)
-        if (node.Key == key)
-            return &node;
-    return nullptr;
-}
-} // namespace
 
 TEST(AnimationFactProperties, InputsAreDrivenDerivationsDescribedAndOneFactPlotted)
 {
@@ -34,13 +24,13 @@ TEST(AnimationFactProperties, InputsAreDrivenDerivationsDescribedAndOneFactPlott
     AnimationFactProperties card(workspace);
 
     std::vector<PropertyNode> nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "facts.Speed"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "facts.Speed")->Descriptor.Kind, PropertyKind::Number);
-    ASSERT_NE(NodeAt(nodes, "facts.Grounded"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "facts.Grounded")->Descriptor.Kind, PropertyKind::Toggle);
-    ASSERT_NE(NodeAt(nodes, "facts.JustLanded"), nullptr);
-    EXPECT_NE(NodeAt(nodes, "facts.JustLanded")->Value.find("edge("), std::string::npos)
-        << NodeAt(nodes, "facts.JustLanded")->Value;
+    ASSERT_NE(FindProperty(nodes, "facts.Speed"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "facts.Speed")->Descriptor.Kind, PropertyKind::Number);
+    ASSERT_NE(FindProperty(nodes, "facts.Grounded"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "facts.Grounded")->Descriptor.Kind, PropertyKind::Toggle);
+    ASSERT_NE(FindProperty(nodes, "facts.JustLanded"), nullptr);
+    EXPECT_NE(FindProperty(nodes, "facts.JustLanded")->Value.find("edge("), std::string::npos)
+        << FindProperty(nodes, "facts.JustLanded")->Value;
     EXPECT_FALSE(card.BeginEdit("facts.JustLanded")) << "a derived fact is not driven";
 
     ASSERT_TRUE(card.BeginEdit("facts.Speed"));
@@ -53,8 +43,8 @@ TEST(AnimationFactProperties, InputsAreDrivenDerivationsDescribedAndOneFactPlott
     EXPECT_FALSE(workspace.Sources.CanUndo()) << "a scenario edit, not a document's";
 
     nodes = card.Nodes();
-    const auto clear = std::ranges::find(NodeAt(nodes, "facts.Speed")->Descriptor.Verbs, "clear", &PropertyVerb::Id);
-    ASSERT_NE(clear, NodeAt(nodes, "facts.Speed")->Descriptor.Verbs.end());
+    const auto clear = std::ranges::find(FindProperty(nodes, "facts.Speed")->Descriptor.Verbs, "clear", &PropertyVerb::Id);
+    ASSERT_NE(clear, FindProperty(nodes, "facts.Speed")->Descriptor.Verbs.end());
     EXPECT_EQ(card.Act("facts.Speed", "clear", ""), PropertyEditResult::Applied);
     session.Step();
     EXPECT_EQ(session.Input("Speed"), nullptr);

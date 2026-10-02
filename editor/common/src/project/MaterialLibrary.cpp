@@ -1,5 +1,7 @@
 #include "MaterialLibrary.h"
 
+#include "text/PathLeaf.h"
+
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 
@@ -18,9 +20,7 @@ std::string MaterialDisplayName(std::string_view virtualPath)
 
 std::string MaterialLeafName(std::string_view virtualPath)
 {
-    const std::string display = MaterialDisplayName(virtualPath);
-    const std::size_t slash = display.find_last_of('/');
-    return slash == std::string::npos ? display : display.substr(slash + 1);
+    return std::string(PathLeaf(MaterialDisplayName(virtualPath)));
 }
 
 MaterialLibrary::MaterialLibrary(LoggingProvider& logging)

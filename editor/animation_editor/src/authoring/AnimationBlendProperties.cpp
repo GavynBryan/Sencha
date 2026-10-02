@@ -9,7 +9,6 @@
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimPoseEvaluation.h>
 #include <anim/Skeleton.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
 #include <format>
@@ -18,21 +17,15 @@ namespace
 {
 constexpr std::size_t kRecentBlends = 12;
 
-std::string TagName(const AnimationPreviewSession& session, GameplayTagId tag)
-{
-    const GameplayTagRegistry* tags = session.Tags();
-    return tag.IsValid() && tags != nullptr ? std::string(tags->GetName(tag)) : std::string("(none)");
-}
-
 std::string BlendingNow(const AnimationPreviewSession& session, const AnimPosePool::Slot& slot,
                         const AnimLayerPose& layer, std::size_t l)
 {
     const double dt = session.TickSeconds();
-    std::string text = TagName(session, layer.Playing.Behavior);
+    std::string text = session.TagName(layer.Playing.Behavior);
     if (layer.Fading)
     {
         const float elapsed = static_cast<float>(static_cast<double>(slot.Tick - layer.FadeStartTick) * dt);
-        text += std::format(", crossfading from {} {:.0f} / {:.0f} ms", TagName(session, layer.FadingOut.Behavior),
+        text += std::format(", crossfading from {} {:.0f} / {:.0f} ms", session.TagName(layer.FadingOut.Behavior),
                             elapsed * 1000.0f, std::max(layer.FadeInSeconds, layer.FadeOutSeconds) * 1000.0f);
     }
     if (layer.Offsetting)
@@ -97,8 +90,8 @@ std::vector<PropertyNode> AnimationBlendProperties::Nodes() const
                 continue;
             const std::string layer = record->Layer < rig->Layers.size() ? rig->Layers[record->Layer].NameText
                                                                         : std::format("layer {}", record->Layer);
-            std::string text = std::format("{} \xE2\x86\x92 {}, {} {:.0f} ms", TagName(session, record->PreviousBehavior),
-                                           TagName(session, record->Behavior), AnimBlendModeName(record->Blend),
+            std::string text = std::format("{} \xE2\x86\x92 {}, {} {:.0f} ms", session.TagName(record->PreviousBehavior),
+                                           session.TagName(record->Behavior), AnimBlendModeName(record->Blend),
                                            record->BlendSeconds * 1000.0f);
             if (record->Blend == AnimBlendMode::Inertialize)
                 text += std::format(", from {:.3f} away", record->BlendMagnitude);
@@ -142,7 +135,7 @@ std::vector<PropertyNode> AnimationBlendProperties::TakeSource::Nodes() const
         const AnimBoundBlendOverride& entry = rig->BlendOverrides[o];
         overrides.Children.push_back(NoteProperty(
             std::format("overrides.{}", o),
-            std::format("{} \xE2\x86\x92 {}", TagName(session, entry.From), TagName(session, entry.To)),
+            std::format("{} \xE2\x86\x92 {}", session.TagName(entry.From), session.TagName(entry.To)),
             std::format("{} {:.0f} ms, {}", AnimBlendModeName(entry.Policy.In), entry.Policy.InMs, entry.DeclaredIn)));
     }
     nodes.push_back(std::move(overrides));

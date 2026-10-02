@@ -2,6 +2,7 @@
 // snapshot bytes over a delayed, lossy link. A client that joins late, loses
 // snapshots or mispredicts must converge on the authority and stay there.
 
+#include "properties/PropertyTree.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationLabProperties.h"
 #include "authoring/AnimationPreviewWorkspace.h"
@@ -134,21 +135,6 @@ TEST(AnimationSessionLab, ARunRepeats)
 }
 
 
-namespace
-{
-    const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
-    {
-        for (const PropertyNode& node : nodes)
-        {
-            if (node.Key == key)
-                return &node;
-            if (const PropertyNode* child = NodeAt(node.Children, key))
-                return child;
-        }
-        return nullptr;
-    }
-}
-
 // As a sheet: the link set and run, the result, both machines on a tick, and
 // the lab's own clock with agreement and residual lanes for the deck.
 TEST(AnimationSessionLab, TheSheetRunsTheLabAndRunsItsOwnClock)
@@ -175,8 +161,8 @@ TEST(AnimationSessionLab, TheSheetRunsTheLabAndRunsItsOwnClock)
 
     EXPECT_EQ(sheet.Act("link", "run", ""), PropertyEditResult::Applied);
     std::vector<PropertyNode> nodes = sheet.Nodes();
-    ASSERT_NE(NodeAt(nodes, "summary.snapshots"), nullptr);
-    EXPECT_NE(NodeAt(nodes, "joined.at"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "summary.snapshots"), nullptr);
+    EXPECT_NE(FindProperty(nodes, "joined.at"), nullptr);
 
     const std::optional<WorkspaceTimelineFacet> clock = sheet.Timeline();
     ASSERT_TRUE(clock.has_value());
@@ -187,10 +173,10 @@ TEST(AnimationSessionLab, TheSheetRunsTheLabAndRunsItsOwnClock)
 
     sheet.InspectAt(clock->End * 0.75);
     nodes = sheet.Nodes();
-    ASSERT_NE(NodeAt(nodes, "inspect"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "inspect")->Value, "150");
-    EXPECT_NE(NodeAt(nodes, "authority"), nullptr);
-    EXPECT_NE(NodeAt(nodes, "client"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "inspect"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "inspect")->Value, "150");
+    EXPECT_NE(FindProperty(nodes, "authority"), nullptr);
+    EXPECT_NE(FindProperty(nodes, "client"), nullptr);
     workspace.Lab.Session->Close();
     workspace.Rig.Simulation.Close();
 }

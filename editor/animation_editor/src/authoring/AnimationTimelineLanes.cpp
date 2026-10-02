@@ -24,12 +24,6 @@ constexpr std::array<std::pair<std::string_view, AnimationLanePick::What>, 5> kP
     { "lab:", AnimationLanePick::What::LabTick },
 } };
 
-std::string TagName(const AnimationPreviewSession& session, GameplayTagId tag)
-{
-    const GameplayTagRegistry* tags = session.Tags();
-    return tag.IsValid() && tags != nullptr ? std::string(tags->GetName(tag)) : std::string("(none)");
-}
-
 // What held on one recorded tick: the same Identity on consecutive ticks is
 // one span.
 struct Held
@@ -148,8 +142,8 @@ TimelineLane AnimationBlendLane(const AnimationPreviewSession& session, std::siz
                     { .Key = LaneKey(AnimationLanePick::What::Blend, layer, static_cast<int>(decision.Tick)),
                       .Start = start,
                       .End = start + std::max(static_cast<double>(decision.BlendSeconds), seconds),
-                      .Label = std::format("{} \xE2\x86\x92 {}", TagName(session, decision.PreviousBehavior),
-                                           TagName(session, decision.Behavior)) });
+                      .Label = std::format("{} \xE2\x86\x92 {}", session.TagName(decision.PreviousBehavior),
+                                           session.TagName(decision.Behavior)) });
             }
     return lane;
 }
@@ -212,7 +206,7 @@ TimelineLane AnimationRequestLane(const AnimationPreviewSession& session)
                 { .Key = LaneKey(AnimationLanePick::What::Request, 0, static_cast<int>(request.Id.Sequence)),
                   .Start = static_cast<double>(request.StartTick) * seconds,
                   .End = through,
-                  .Label = intent != nullptr ? intent->Name : TagName(session, request.Intent) });
+                  .Label = intent != nullptr ? intent->Name : session.TagName(request.Intent) });
         }
     return lane;
 }

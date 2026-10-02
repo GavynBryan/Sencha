@@ -1,5 +1,7 @@
 #include "UiPreviewWorkspace.h"
 
+#include "text/PathLeaf.h"
+
 #include "authoring/PreviewReports.h"
 
 #include "EditorTheme.h"
@@ -652,7 +654,7 @@ WorkspaceSelectionFacet UiPreviewWorkspace::Selection()
                  .Actions = { "ui_preview.edit_source" },
                  .Sections = { { .Heading = {}, .Source = ElementCard.get() } } };
     const std::string& package = Session->PackagePath();
-    WorkspaceSelectionFacet surface{ .Title = package.substr(package.find_last_of('/') + 1),
+    WorkspaceSelectionFacet surface{ .Title = std::string(PathLeaf(package)),
                                      .Actions = { "ui_preview.edit_source", "ui_preview.revert_model" },
                                      .Sections = { { .Heading = "Surface", .Source = SurfaceCard.get() } },
                                      .Details = { { .Heading = "Preview model", .Source = ModelCard.get() } } };

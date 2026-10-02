@@ -4,13 +4,12 @@
 #include "authoring/AnimationRigDocumentEdits.h"
 #include "authoring/AnimationRigEdits.h"
 
+#include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
 #include <anim/AnimRigData.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <algorithm>
-#include <charconv>
 #include <format>
 
 namespace
@@ -18,24 +17,9 @@ namespace
 constexpr std::string_view kLayers = "layers.";
 constexpr std::string_view kMask = "mask.";
 
-std::string TagName(const AnimationPreviewSession& session, GameplayTagId tag)
-{
-    const GameplayTagRegistry* tags = session.Tags();
-    return tag.IsValid() && tags != nullptr ? std::string(tags->GetName(tag)) : std::string("(none)");
-}
-
 std::uint8_t Bit(std::size_t layer)
 {
     return static_cast<std::uint8_t>(1u << layer);
-}
-
-std::optional<std::size_t> IndexAfter(std::string_view key, std::string_view prefix)
-{
-    std::size_t index = 0;
-    if (!key.starts_with(prefix)
-        || std::from_chars(key.data() + prefix.size(), key.data() + key.size(), index).ec != std::errc{})
-        return std::nullopt;
-    return index;
 }
 
 std::string MaskSummary(const AnimBoundLayer& layer)
@@ -93,7 +77,7 @@ std::vector<PropertyNode> AnimationLayerProperties::Nodes() const
                                           layer.Mode == AnimLayerMode::Additive ? "additive" : "override",
                                           record != nullptr ? record->Weight : layer.Weight, MaskSummary(layer));
         if (record != nullptr)
-            summary += " \xC2\xB7 " + TagName(session, record->Behavior);
+            summary += " \xC2\xB7 " + session.TagName(record->Behavior);
         if (!display.Shows(l))
             summary += " \xC2\xB7 hidden";
         PropertyNode row = NoteProperty(std::format("{}{}", kLayers, l), layer.NameText, summary);
@@ -126,8 +110,8 @@ std::vector<PropertyNode> AnimationLayerProperties::LayerNodes() const
         nodes.push_back(NoteProperty(
             "playing", "Playing",
             record->Clip < rig.Contents.size()
-                ? std::format("{}, {}", TagName(session, record->Behavior), rig.Contents[record->Clip].Path)
-                : TagName(session, record->Behavior)));
+                ? std::format("{}, {}", session.TagName(record->Behavior), rig.Contents[record->Clip].Path)
+                : session.TagName(record->Behavior)));
     nodes.push_back(ToggleProperty("muted", "Muted", (display.Muted & Bit(l)) != 0, "The stage leaves it out"));
     nodes.push_back(ToggleProperty("soloed", "Soloed", (display.Soloed & Bit(l)) != 0,
                                    "The stage shows only soloed layers"));
@@ -174,19 +158,20 @@ PropertyEditResult AnimationLayerProperties::Act(std::string_view key, std::stri
     const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
     if (rig == nullptr)
         return PropertyEditResult::Gone;
-    if (const std::optional<std::size_t> l = IndexAfter(key, kLayers); l && *l < rig->Layers.size() && *l < kAnimMaxLayers)
+    if (const std::optional<PropertyKeyIndex> picked = ParsePropertyKeyIndex(key, kLayers);
+        picked && picked->Rest.empty() && picked->Index < rig->Layers.size() && picked->Index < kAnimMaxLayers)
     {
         AnimationLayerDisplay& display = Workspace.Viewport.LayerDisplay;
         if (verb == "inspect")
         {
-            Workspace.Rig.Navigation.Layer = *l;
+            Workspace.Rig.Navigation.Layer = picked->Index;
             Workspace.Rig.Navigation.Rule = -1;
             Inspecting = true;
         }
         else if (verb == "mute")
-            display.Muted = static_cast<std::uint8_t>(display.Muted ^ Bit(*l));
+            display.Muted = static_cast<std::uint8_t>(display.Muted ^ Bit(picked->Index));
         else if (verb == "solo")
-            display.Soloed = static_cast<std::uint8_t>(display.Soloed ^ Bit(*l));
+            display.Soloed = static_cast<std::uint8_t>(display.Soloed ^ Bit(picked->Index));
         else
             return PropertyEditResult::Gone;
         return PropertyEditResult::Applied;
@@ -199,7 +184,8 @@ PropertyEditResult AnimationLayerProperties::Act(std::string_view key, std::stri
     };
     if (key == "mask" && verb == "clear")
         return edit([&](JsonValue& root) { return ClearAnimMask(root, layer); });
-    if (const std::optional<std::size_t> step = IndexAfter(key, kMask); step && verb == "remove")
-        return edit([&](JsonValue& root) { return RemoveAnimMaskStep(root, layer, *step); });
+    if (const std::optional<PropertyKeyIndex> step = ParsePropertyKeyIndex(key, kMask);
+        step && step->Rest.empty() && verb == "remove")
+        return edit([&](JsonValue& root) { return RemoveAnimMaskStep(root, layer, step->Index); });
     return PropertyEditResult::Gone;
 }

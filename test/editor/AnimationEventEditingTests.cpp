@@ -2,6 +2,7 @@
 // and played through in the preview, the way the event panels do it -- no
 // game, and nothing written to disk until saved.
 
+#include "properties/PropertyTree.h"
 #include "authoring/AnimationEventBindings.h"
 #include "authoring/AnimationAdmissionProperties.h"
 #include "authoring/AnimationEventProperties.h"
@@ -345,21 +346,6 @@ TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
     workspace.Sources.DiscardAll();
 }
 
-namespace
-{
-    const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
-    {
-        for (const PropertyNode& node : nodes)
-        {
-            if (node.Key == key)
-                return &node;
-            if (const PropertyNode* child = NodeAt(node.Children, key))
-                return child;
-        }
-        return nullptr;
-    }
-}
-
 // The card edits the picked event: each change one step, a dragged time live in
 // the preview and gone again on cancel.
 TEST(AnimationEventEditing, TheCardEditsThePickedEventOneStepAtATime)
@@ -377,10 +363,10 @@ TEST(AnimationEventEditing, TheCardEditsThePickedEventOneStepAtATime)
     std::optional<std::uint32_t> picked;
     AnimationEventProperties card(workspace, [&] { return picked; });
 
-    EXPECT_EQ(NodeAt(card.Nodes(), "name"), nullptr) << "with nothing picked, the card is the clip's events";
-    EXPECT_NE(NodeAt(card.Nodes(), "sidecar"), nullptr);
+    EXPECT_EQ(FindProperty(card.Nodes(), "name"), nullptr) << "with nothing picked, the card is the clip's events";
+    EXPECT_NE(FindProperty(card.Nodes(), "sidecar"), nullptr);
     picked = key;
-    ASSERT_NE(NodeAt(card.Nodes(), "weight"), nullptr);
+    ASSERT_NE(FindProperty(card.Nodes(), "weight"), nullptr);
 
     EXPECT_EQ(card.CommitEdit("name", "left foot"), PropertyEditResult::Applied);
     EXPECT_EQ(events->Find(key)->Name, "left foot");
@@ -406,7 +392,7 @@ TEST(AnimationEventEditing, TheCardEditsThePickedEventOneStepAtATime)
     EXPECT_EQ(card.CommitEdit("scope", "Gameplay"), PropertyEditResult::Applied);
     EXPECT_EQ(events->Find(key)->Scope, AnimEventScope::Gameplay);
     EXPECT_FALSE(events->Find(key)->MinWeight.has_value()) << "a gameplay event has no weight threshold";
-    EXPECT_EQ(NodeAt(card.Nodes(), "own_weight"), nullptr);
+    EXPECT_EQ(FindProperty(card.Nodes(), "own_weight"), nullptr);
 
     workspace.Sources.Undo();
     EXPECT_EQ(events->Find(key)->Scope, AnimEventScope::Cosmetic);
@@ -431,9 +417,9 @@ TEST(AnimationEventEditing, TheCardBindsAndFeedsThePickedEvent)
     const std::uint32_t key = events->Add(Footstep(0.25f));
     workspace.ClipEvents.Changed(*events);
     AnimationEventProperties card(workspace, [&] { return std::optional(key); });
-    ASSERT_NE(NodeAt(card.Nodes(), "inputs.surface"), nullptr);
-    ASSERT_NE(NodeAt(card.Nodes(), "contract"), nullptr);
-    EXPECT_EQ(NodeAt(card.Nodes(), "contract")->Value, "test.footstep(Surface tag, Volume float)");
+    ASSERT_NE(FindProperty(card.Nodes(), "inputs.surface"), nullptr);
+    ASSERT_NE(FindProperty(card.Nodes(), "contract"), nullptr);
+    EXPECT_EQ(FindProperty(card.Nodes(), "contract")->Value, "test.footstep(Surface tag, Volume float)");
 
     EXPECT_EQ(card.CommitEdit("binding", "anim.count"), PropertyEditResult::Applied);
     ASSERT_EQ(events->Find(key)->Inputs.size(), 1u);
@@ -444,8 +430,8 @@ TEST(AnimationEventEditing, TheCardBindsAndFeedsThePickedEvent)
 
     EXPECT_EQ(card.Act("inputs.amount", "remove", ""), PropertyEditResult::Applied);
     EXPECT_TRUE(events->Find(key)->Inputs.empty());
-    ASSERT_NE(NodeAt(card.Nodes(), "inputs.amount"), nullptr);
-    EXPECT_EQ(NodeAt(card.Nodes(), "inputs.amount")->Value, "Not supplied");
+    ASSERT_NE(FindProperty(card.Nodes(), "inputs.amount"), nullptr);
+    EXPECT_EQ(FindProperty(card.Nodes(), "inputs.amount")->Value, "Not supplied");
     EXPECT_EQ(card.Act("inputs.amount", "supply", ""), PropertyEditResult::Applied);
     ASSERT_EQ(events->Find(key)->Inputs.size(), 1u);
     EXPECT_DOUBLE_EQ(events->Find(key)->Inputs[0].Literal.AsNumber(), 0.0);
@@ -474,17 +460,17 @@ TEST(AnimationEventEditing, TheAdmissionsSayWhatEachCrossingWasAnswered)
     AnimationAdmissionProperties card(workspace);
 
     std::vector<PropertyNode> nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "role"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "role")->Value, "Authority");
-    ASSERT_NE(NodeAt(nodes, "recorders.test.footstep"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "recorders.test.footstep")->Value, "true") << "the scenario records footsteps";
-    EXPECT_NE(NodeAt(nodes, "admitted.none"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "role"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "role")->Value, "Authority");
+    ASSERT_NE(FindProperty(nodes, "recorders.test.footstep"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "recorders.test.footstep")->Value, "true") << "the scenario records footsteps";
+    EXPECT_NE(FindProperty(nodes, "admitted.none"), nullptr);
 
     workspace.Rig.Simulation.RunTo(30);
     nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "admitted.0"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "admitted.0"), nullptr);
     bool accepted = false;
-    for (const PropertyNode& row : NodeAt(nodes, "admitted")->Children)
+    for (const PropertyNode& row : FindProperty(nodes, "admitted")->Children)
         accepted = accepted || row.Value.find("accepted") != std::string::npos;
     EXPECT_TRUE(accepted) << "a footstep crossed and was accepted";
 

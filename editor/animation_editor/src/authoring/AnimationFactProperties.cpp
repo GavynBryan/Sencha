@@ -6,7 +6,6 @@
 
 #include <anim/AnimFactEvaluation.h>
 #include <anim/AnimFacts.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <cmath>
 #include <format>
@@ -15,15 +14,6 @@ namespace
 {
 constexpr std::string_view kFacts = "facts.";
 
-std::string TagName(const AnimationPreviewSession& session, std::uint32_t bits)
-{
-    const GameplayTagRegistry* tags = session.Tags();
-    if (bits == 0 || tags == nullptr)
-        return "(none)";
-    const std::string_view name = tags->GetName(GameplayTagId{ bits });
-    return name.empty() ? std::format("#{}", bits) : std::string(name);
-}
-
 std::string FormatFact(const AnimationPreviewSession& session, AnimFactKind kind, std::uint32_t bits)
 {
     switch (kind)
@@ -31,7 +21,7 @@ std::string FormatFact(const AnimationPreviewSession& session, AnimFactKind kind
     case AnimFactKind::Bool:   return AnimFactToBool(bits) ? "true" : "false";
     case AnimFactKind::Float:  return std::format("{:.3f}", AnimFactToFloat(bits));
     case AnimFactKind::Int:    return std::format("{}", AnimFactToInt(bits));
-    case AnimFactKind::Tag:    return TagName(session, bits);
+    case AnimFactKind::Tag:    return session.TagName(GameplayTagId{ bits });
     case AnimFactKind::TagSet: return AnimFactToBool(bits) ? "has tags" : "no container";
     }
     return {};

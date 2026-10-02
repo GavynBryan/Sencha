@@ -2,6 +2,7 @@
 // and issued on the next tick, cancelled for a reason, laned along the deck,
 // and the request schema's sheet counting parameters against their budget.
 
+#include "properties/PropertyTree.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPredicateAuthoring.h"
 #include "authoring/AnimationPreviewWorkspace.h"
@@ -17,21 +18,10 @@
 
 namespace
 {
-const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
-{
-    for (const PropertyNode& node : nodes)
-    {
-        if (node.Key == key)
-            return &node;
-        if (const PropertyNode* child = NodeAt(node.Children, key))
-            return child;
-    }
-    return nullptr;
-}
 
 const PropertyNode* LiveRequest(const std::vector<PropertyNode>& nodes, std::string_view label)
 {
-    const PropertyNode* live = NodeAt(nodes, "live");
+    const PropertyNode* live = FindProperty(nodes, "live");
     if (live == nullptr)
         return nullptr;
     for (const PropertyNode& row : live->Children)
@@ -52,18 +42,18 @@ TEST(AnimationRequestProperties, ARequestIsDraftedIssuedCancelledAndLaned)
     AnimationRequestProperties card(workspace);
 
     std::vector<PropertyNode> nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "issue.source"), nullptr);
-    ASSERT_NE(NodeAt(nodes, "issue.intent"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "issue.intent")->Descriptor.Kind, PropertyKind::Choice);
+    ASSERT_NE(FindProperty(nodes, "issue.source"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "issue.intent"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "issue.intent")->Descriptor.Kind, PropertyKind::Choice);
     ASSERT_TRUE(card.BeginEdit("issue.intent"));
     EXPECT_EQ(card.CommitEdit("issue.intent", "Anim.Melee"), PropertyEditResult::Applied);
     nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "issue.params.0"), nullptr) << "the intent's parameter is drafted with it";
-    EXPECT_EQ(NodeAt(nodes, "issue.params.0")->Descriptor.Label, "combo");
+    ASSERT_NE(FindProperty(nodes, "issue.params.0"), nullptr) << "the intent's parameter is drafted with it";
+    EXPECT_EQ(FindProperty(nodes, "issue.params.0")->Descriptor.Label, "combo");
     EXPECT_EQ(card.CommitEdit("issue.params.0", "2"), PropertyEditResult::Applied);
     EXPECT_EQ(card.CommitEdit("issue.lifetime", "Fixed"), PropertyEditResult::Applied);
     nodes = card.Nodes();
-    EXPECT_NE(NodeAt(nodes, "issue.ticks"), nullptr) << "a fixed request says how long";
+    EXPECT_NE(FindProperty(nodes, "issue.ticks"), nullptr) << "a fixed request says how long";
     EXPECT_EQ(card.CommitEdit("issue.lifetime", "Held"), PropertyEditResult::Applied);
 
     EXPECT_EQ(card.Act("issue", "issue", ""), PropertyEditResult::Applied);
@@ -107,12 +97,12 @@ TEST(AnimationRequestProperties, TheSchemaSheetCountsParametersAgainstTheBudget)
     DataProperties sheet(workspace.Documents, [&] { return schema; }, &authorings);
 
     const std::vector<PropertyNode> before = sheet.Nodes();
-    ASSERT_NE(NodeAt(before, "$.data.intents[1].params"), nullptr);
-    EXPECT_EQ(NodeAt(before, "$.data.intents[1].params")->Descriptor.Label, "Parameters, 1 of 4");
+    ASSERT_NE(FindProperty(before, "$.data.intents[1].params"), nullptr);
+    EXPECT_EQ(FindProperty(before, "$.data.intents[1].params")->Descriptor.Label, "Parameters, 1 of 4");
     for (int added = 0; added < 3; ++added)
         EXPECT_EQ(sheet.Act("$.data.intents[1].params", "add", ""), PropertyEditResult::Applied);
     const std::vector<PropertyNode> nodes = sheet.Nodes();
-    const PropertyNode* full = NodeAt(nodes, "$.data.intents[1].params");
+    const PropertyNode* full = FindProperty(nodes, "$.data.intents[1].params");
     ASSERT_NE(full, nullptr);
     EXPECT_EQ(full->Descriptor.Label, "Parameters, 4 of 4");
     EXPECT_EQ(std::ranges::find(full->Descriptor.Verbs, "add", &PropertyVerb::Id), full->Descriptor.Verbs.end());

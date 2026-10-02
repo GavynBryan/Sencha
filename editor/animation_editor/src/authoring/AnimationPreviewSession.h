@@ -199,6 +199,9 @@ public:
     [[nodiscard]] EntityId ParticipantEntity(std::string_view name) const;
     [[nodiscard]] std::string_view ParticipantName(EntityId entity) const;
     [[nodiscard]] const GameplayTagRegistry* Tags() const;
+    // A tag as the preview World names it: "(none)" for no tag, "#7" for one
+    // it does not know.
+    [[nodiscard]] std::string TagName(GameplayTagId tag) const;
     // Rebuilt on every restart; null while closed.
     [[nodiscard]] World* SimulationWorld() { return Preview.get(); }
     [[nodiscard]] const World* SimulationWorld() const { return Preview.get(); }

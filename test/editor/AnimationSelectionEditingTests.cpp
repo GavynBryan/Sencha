@@ -2,6 +2,7 @@
 // predicates as panels read them, and rule edits that change the running
 // preview's winner and clip without writing to disk.
 
+#include "properties/PropertyTree.h"
 #include "authoring/AnimationTimelineLanes.h"
 #include "authoring/AnimationPredicateAuthoring.h"
 #include "authoring/AnimationPredicateEdits.h"
@@ -275,21 +276,6 @@ TEST(AnimationSelectionEditing, TheSessionRecordsWhyEveryRuleLost)
     workspace.Rig.Simulation.Close();
 }
 
-namespace
-{
-    const PropertyNode* NodeAt(const std::vector<PropertyNode>& nodes, std::string_view key)
-    {
-        for (const PropertyNode& node : nodes)
-        {
-            if (node.Key == key)
-                return &node;
-            if (const PropertyNode* child = NodeAt(node.Children, key))
-                return child;
-        }
-        return nullptr;
-    }
-}
-
 // The Rules card lists a layer's rules as they fared; inspecting one shows what
 // it reads, the behavior it selects and the content that behavior resolves to.
 TEST(AnimationSelectionEditing, TheRulesCardExplainsARuleAndWhatItSelects)
@@ -304,29 +290,29 @@ TEST(AnimationSelectionEditing, TheRulesCardExplainsARuleAndWhatItSelects)
 
     EXPECT_EQ(card.Title(), "Rules of anim.layer.base");
     std::vector<PropertyNode> nodes = card.Nodes();
-    ASSERT_NE(NodeAt(nodes, "rules.0"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "rules.0")->Descriptor.Label, "walk");
-    EXPECT_NE(NodeAt(nodes, "rules.1"), nullptr);
+    ASSERT_NE(FindProperty(nodes, "rules.0"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "rules.0")->Descriptor.Label, "walk");
+    EXPECT_NE(FindProperty(nodes, "rules.1"), nullptr);
 
     // Paused, the card can say how the next tick would go instead.
     workspace.Rig.Simulation.SetFact("Speed", AnimationScenarioValue::FromNumber(0.0));
-    const std::string now = NodeAt(nodes, "rules.0")->Value;
+    const std::string now = FindProperty(nodes, "rules.0")->Value;
     ASSERT_TRUE(card.BeginEdit("next"));
     EXPECT_EQ(card.CommitEdit("next", "true"), PropertyEditResult::Applied);
     nodes = card.Nodes();
-    EXPECT_NE(NodeAt(nodes, "rules.0")->Value, now);
+    EXPECT_NE(FindProperty(nodes, "rules.0")->Value, now);
     (void)card.CommitEdit("next", "false");
 
     EXPECT_EQ(card.Act("rules.0", "pick", ""), PropertyEditResult::Applied);
     EXPECT_EQ(card.Title(), "walk");
     nodes = card.Nodes();
-    EXPECT_EQ(NodeAt(nodes, "enter")->Value, "Speed > 0.1");
-    EXPECT_EQ(NodeAt(nodes, "stay")->Value, "as enter");
-    ASSERT_NE(NodeAt(nodes, "behavior.kind"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "behavior.kind")->Value, "cyclic");
-    ASSERT_NE(NodeAt(nodes, "slots.1"), nullptr) << "walk's slot row resolves it";
-    EXPECT_EQ(NodeAt(nodes, "slots.1")->Descriptor.Label, "asset://anim/walk.sanim");
-    EXPECT_EQ(NodeAt(nodes, "slots.0"), nullptr) << "idle's row resolves another behavior";
+    EXPECT_EQ(FindProperty(nodes, "enter")->Value, "Speed > 0.1");
+    EXPECT_EQ(FindProperty(nodes, "stay")->Value, "as enter");
+    ASSERT_NE(FindProperty(nodes, "behavior.kind"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "behavior.kind")->Value, "cyclic");
+    ASSERT_NE(FindProperty(nodes, "slots.1"), nullptr) << "walk's slot row resolves it";
+    EXPECT_EQ(FindProperty(nodes, "slots.1")->Descriptor.Label, "asset://anim/walk.sanim");
+    EXPECT_EQ(FindProperty(nodes, "slots.0"), nullptr) << "idle's row resolves another behavior";
 
     EXPECT_EQ(card.Act("source", "open", ""), PropertyEditResult::Applied);
     EXPECT_EQ(card.Act("slots.1", "open", ""), PropertyEditResult::Applied);
@@ -402,7 +388,7 @@ TEST(AnimationSelectionEditing, TheSelectorSheetAuthorsConditionsFromTheProjects
 
     authoring->Update(*selector, workspace.Documents);
     std::vector<PropertyNode> nodes = sheet.Nodes();
-    const PropertyNode* enter = NodeAt(nodes, "$.data.rules[0].enter");
+    const PropertyNode* enter = FindProperty(nodes, "$.data.rules[0].enter");
     ASSERT_NE(enter, nullptr);
     const auto condition = std::ranges::find(enter->Descriptor.Verbs, "condition", &PropertyVerb::Id);
     ASSERT_NE(condition, enter->Descriptor.Verbs.end());
@@ -410,10 +396,10 @@ TEST(AnimationSelectionEditing, TheSelectorSheetAuthorsConditionsFromTheProjects
               (std::vector<std::string>{ "Fact: Speed", "Request: Anim.Reload", "Time in behavior" }));
     EXPECT_EQ(std::ranges::find(enter->Descriptor.Verbs, "add", &PropertyVerb::Id), enter->Descriptor.Verbs.end())
         << "an empty row is never added";
-    ASSERT_NE(NodeAt(nodes, "$.data.rules[0].enter[0]"), nullptr);
-    EXPECT_EQ(NodeAt(nodes, "$.data.rules[0].enter[0]")->Descriptor.Label, "Speed > 0.1");
-    EXPECT_EQ(NodeAt(nodes, "$.data.rules[0].enter[0]")->Descriptor.Verbs.front().Id, "or");
-    const PropertyNode* fact = NodeAt(nodes, "$.data.rules[0].enter[0].fact");
+    ASSERT_NE(FindProperty(nodes, "$.data.rules[0].enter[0]"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "$.data.rules[0].enter[0]")->Descriptor.Label, "Speed > 0.1");
+    EXPECT_EQ(FindProperty(nodes, "$.data.rules[0].enter[0]")->Descriptor.Verbs.front().Id, "or");
+    const PropertyNode* fact = FindProperty(nodes, "$.data.rules[0].enter[0].fact");
     ASSERT_NE(fact, nullptr);
     EXPECT_EQ(fact->Descriptor.Kind, PropertyKind::Choice);
     EXPECT_EQ(fact->Descriptor.Choices, std::vector<std::string>{ "Speed" });

@@ -8,7 +8,6 @@
 #include <anim/AnimationClipCache.h>
 #include <authored/VerbInvocation.h>
 #include <authored/VerbRegistry.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <array>
 #include <format>
@@ -54,7 +53,6 @@ std::vector<PropertyNode> AnimationAdmissionProperties::Nodes() const
     nodes.push_back(std::move(recorders));
 
     PropertyNode admitted = GroupProperty("admitted", "Latest events");
-    const GameplayTagRegistry* tags = session.Tags();
     const auto& history = session.History();
     for (auto tick = history.rbegin(); tick != history.rend() && admitted.Children.size() < kShown; ++tick)
     {
@@ -64,9 +62,7 @@ std::vector<PropertyNode> AnimationAdmissionProperties::Nodes() const
             if (!event && record.Cause != AnimDecisionCause::BehaviorEntered
                 && record.Cause != AnimDecisionCause::BehaviorExited)
                 continue;
-            const std::string what = event ? EventName(Workspace, record)
-                                     : tags != nullptr ? std::string(tags->GetName(record.Behavior))
-                                                       : std::string("?");
+            const std::string what = event ? EventName(Workspace, record) : session.TagName(record.Behavior);
             admitted.Children.push_back(NoteProperty(
                 std::format("admitted.{}", admitted.Children.size()),
                 std::format("{} at {}", AnimDecisionCauseName(record.Cause), record.Tick),

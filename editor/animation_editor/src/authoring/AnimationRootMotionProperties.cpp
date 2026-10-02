@@ -2,6 +2,7 @@
 
 #include "authoring/AnimationPreviewWorkspace.h"
 
+#include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
 #include <anim/AnimRootMotion.h>
@@ -9,7 +10,6 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <format>
 
 namespace
@@ -17,28 +17,6 @@ namespace
 constexpr std::string_view kWalls = "walls.";
 constexpr std::size_t kBlockedShown = 12;
 constexpr float kDegrees = 57.29578f;
-
-// The wall a key names, and which of its sizes: "walls.2.centre".
-struct WallKey
-{
-    std::size_t Wall = 0;
-    std::string_view Part;
-};
-
-std::optional<WallKey> WallOf(std::string_view key)
-{
-    if (!key.starts_with(kWalls))
-        return std::nullopt;
-    key.remove_prefix(kWalls.size());
-    WallKey wall;
-    const auto parsed = std::from_chars(key.data(), key.data() + key.size(), wall.Wall);
-    if (parsed.ec != std::errc{})
-        return std::nullopt;
-    wall.Part = key.substr(static_cast<std::size_t>(parsed.ptr - key.data()));
-    if (wall.Part.starts_with('.'))
-        wall.Part.remove_prefix(1);
-    return wall;
-}
 
 PropertyNode Vector3(std::string key, std::string label, const Vec3d& value)
 {
@@ -139,7 +117,7 @@ std::vector<PropertyNode> AnimationRootMotionProperties::Nodes() const
 
 bool AnimationRootMotionProperties::BeginEdit(std::string_view key)
 {
-    return key == "moves" || WallOf(key).has_value();
+    return key == "moves" || ParsePropertyKeyIndex(key, kWalls).has_value();
 }
 
 PropertyEditResult AnimationRootMotionProperties::CommitEdit(std::string_view key, std::string_view value)
@@ -155,15 +133,15 @@ PropertyEditResult AnimationRootMotionProperties::CommitEdit(std::string_view ke
         return PropertyEditResult::Applied;
     }
     std::optional<AnimationScenarioMovement> movement = session.Scenario().Movement;
-    const std::optional<WallKey> wall = WallOf(key);
+    const std::optional<PropertyKeyIndex> wall = ParsePropertyKeyIndex(key, kWalls);
     const std::optional<std::vector<double>> parts = ParseVector(value, 3);
-    if (!movement || !wall || wall->Wall >= movement->Walls.size() || !parts)
+    if (!movement || !wall || wall->Index >= movement->Walls.size() || !parts)
         return PropertyEditResult::Refused;
     const Vec3d vector(static_cast<float>((*parts)[0]), static_cast<float>((*parts)[1]), static_cast<float>((*parts)[2]));
-    AnimationScenarioWall& edited = movement->Walls[wall->Wall];
-    if (wall->Part == "centre")
+    AnimationScenarioWall& edited = movement->Walls[wall->Index];
+    if (wall->Rest == "centre")
         edited.Center = vector;
-    else if (wall->Part == "half")
+    else if (wall->Rest == "half")
         edited.HalfExtents = Vec3d(std::max(vector.X, 0.01f), std::max(vector.Y, 0.01f), std::max(vector.Z, 0.01f));
     else
         return PropertyEditResult::Gone;
@@ -180,9 +158,9 @@ PropertyEditResult AnimationRootMotionProperties::Act(std::string_view key, std:
     if (key == "walls" && verb == "add")
         // Two metres ahead of the start position, facing the character.
         movement->Walls.push_back({ .Center = Vec3d(0.0f, 1.0f, -2.0f), .HalfExtents = Vec3d(2.0f, 1.0f, 0.25f) });
-    else if (const std::optional<WallKey> wall = WallOf(key);
-             wall && wall->Part.empty() && verb == "remove" && wall->Wall < movement->Walls.size())
-        movement->Walls.erase(movement->Walls.begin() + static_cast<std::ptrdiff_t>(wall->Wall));
+    else if (const std::optional<PropertyKeyIndex> wall = ParsePropertyKeyIndex(key, kWalls);
+             wall && wall->Rest.empty() && verb == "remove" && wall->Index < movement->Walls.size())
+        movement->Walls.erase(movement->Walls.begin() + static_cast<std::ptrdiff_t>(wall->Index));
     else
         return PropertyEditResult::Gone;
     session.SetMovement(std::move(movement));
