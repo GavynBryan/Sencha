@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -118,7 +119,21 @@ public:
     // take it after the last kind is registered.
     [[nodiscard]] AssetStoreTable Stores() const;
 
+    // Why a synchronous load of a path failed, kept until a load of that path
+    // succeeds: what a tool shows a person instead of a log line.
+    struct LoadFailure
+    {
+        std::string Path;
+        std::string Reason;
+    };
+    [[nodiscard]] std::span<const LoadFailure> LoadFailures() const { return Failures; }
+    // Changes whenever a failure is recorded or cleared.
+    [[nodiscard]] std::uint64_t LoadFailuresVersion() const { return FailuresVersion; }
+
 private:
+    void RecordFailure(std::string_view path, std::string reason);
+    void ClearFailure(std::string_view path);
+
     [[nodiscard]] IAssetStore* StoreFor(AssetType type, AssetArity arity = AssetArity::Single);
     [[nodiscard]] const IAssetStore* StoreFor(AssetType type,
                                               AssetArity arity = AssetArity::Single) const;
@@ -128,4 +143,8 @@ private:
     AssetRegistry& Registry;
     FileAssetSource Source;
     AssetKindRegistry KindRegistry;
+    std::vector<LoadFailure> Failures;
+    std::uint64_t FailuresVersion = 0;
+    std::uint64_t FailuresRecorded = 0;
+    std::string LastFailedPath;
 };

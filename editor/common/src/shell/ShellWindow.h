@@ -159,6 +159,7 @@ private:
     void ShowDrawer(std::string focus);
     // While anything transient is open, Escape takes it away one at a time.
     void TakeEscape();
+    void EscapeFront();
     // Asks the workspace a listed problem belongs to to show where it is.
     void RevealProblem(std::string_view index);
     // Opens the named explorer in place of any other; empty closes it.
@@ -167,14 +168,14 @@ private:
     // window performs while that workspace is the one showing.
     void ClaimExplorers(const IWorkspace* workspace);
     void PublishExplorer(IWorkspace* workspace);
-    // The explorer and the selection, each where the person moved it, or in
-    // its default place made clear of the instruments it would cover.
+    // The explorer and the selection, each where the person put it or where it
+    // opened: the selection at its own place, the explorer in free space.
     void PlaceFloatingSurfaces();
-    // A floating surface pressed (brought to the front), its header taken
-    // hold of, dragged, let go or double-clicked back to its default place.
+    // A floating surface pressed (brought to the front), its header or corner
+    // taken hold of, dragged, let go, or double-clicked back to where it opens.
     void HandleMoveAction(const UiAction& action);
     // A surface's border box as laid out, and where a moved surface must stay.
-    [[nodiscard]] Rect2d MeasureBorder(std::string_view elementId) const;
+    [[nodiscard]] std::optional<Rect2d> MeasureBorder(std::string_view elementId) const;
     [[nodiscard]] Rect2d FloatingBounds() const;
 
     ShellWindowServices Services;
@@ -211,17 +212,14 @@ private:
     std::size_t ExplorerFirst = 0;
     TransientSurfaces::Id ExplorerTransient = 0;
     std::vector<std::string> ClaimedExplorers;
-    // Which shape of each floating surface is showing, as a move key ("" for
-    // none), and the clearance last given to it.
+    // Which shape of each floating surface is showing ("" for none), and the
+    // shape last placed, which is let go when another shows instead.
     std::string ExplorerKey;
     std::string SelectionKey;
-    SurfaceClearance ExplorerClearance;
-    SurfaceClearance SelectionClearance;
-    // The offsets last laid out, which every measurement of a surface includes.
-    Vec2d ExplorerOffset;
-    Vec2d SelectionOffset;
+    std::string PlacedExplorerKey;
+    std::string PlacedSelectionKey;
     bool ToolCardUp = false;
-    SurfaceMoves Moves;
+    SurfaceLayout Layout;
     // Which floating surface is drawn over the other where they overlap: the
     // one last opened, pressed or dragged.
     std::string FrontSurface;

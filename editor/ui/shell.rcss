@@ -294,9 +294,7 @@ body
 {
     display: block;
     position: absolute;
-    right: 8dp;
-    bottom: 50dp;
-    width: 280dp;
+    box-sizing: border-box;
     max-height: 70%;
     overflow-y: auto;
     padding: 8dp 10dp;
@@ -310,10 +308,10 @@ body
 #selection_card.shut * { pointer-events: none; }
 .moving #selection_card { transition: opacity transform 0.14s cubic-out; }
 
-#selection_card.drawer { top: 84dp; width: 360dp; max-height: none; }
+#selection_card.drawer { max-height: none; }
 /* The work itself: a sheet down the middle of the window, each field's help
    in the margin beside it. */
-#selection_card.sheet { left: 50%; right: auto; top: 72dp; bottom: 60dp; width: 760dp; margin-left: -380dp; max-height: none; }
+#selection_card.sheet { max-height: none; }
 #selection_card.sheet .setting_label { width: 160dp; }
 .setting_help { display: block; width: 240dp; padding-left: 12dp; font-size: 10dp; }
 
@@ -470,51 +468,43 @@ body
     margin-top: 8dp;
 }
 
-/* The explorer and the selection each sit in a layer the size of the window,
-   laid out where the person moved it (never transformed, so it stays on whole
-   pixels and is hit where it is drawn); the one taken hold of last is in
-   front. Their headers are the grip, except what is pressed inside them. */
-.floating
-{
-    display: block;
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-}
-.floating.front { z-index: 1; }
+/* The explorer and the selection are placed and sized by the shell, laid out
+   rather than transformed so they stay on whole pixels; the one pressed last
+   is in front. A header moves its surface and the corner sizes it, except what
+   is pressed inside the header. */
+.front { z-index: 1; }
 .grip { drag: drag; cursor: move; }
 .grip .key, .grip input { drag: block; cursor: auto; }
-#dismiss, #popover { z-index: 2; }
-
-/* An explorer of pictures: a tray over the bottom of the content, above the
-   instruments. */
-#explorer
+.corner
 {
     display: block;
     position: absolute;
-    left: 8dp;
-    right: 8dp;
-    bottom: 50dp;
-    height: 272dp;
+    right: 0dp;
+    bottom: 0dp;
+    width: 14dp;
+    height: 14dp;
+    drag: drag;
+    cursor: nwse-resize;
+    pointer-events: auto;
+}
+#dismiss, #popover { z-index: 2; }
+
+/* An explorer: pictures in a grid, or names in an outline. */
+#explorer
+{
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    box-sizing: border-box;
     padding: 8dp 10dp;
     border-width: 1dp;
     border-radius: 4dp;
     pointer-events: auto;
 }
 
-/* An explorer of names: a sheet down the left of the content. */
-#explorer.outline
-{
-    right: auto;
-    top: 42dp;
-    height: auto;
-}
-
 #explorer_head
 {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 6dp;
@@ -534,13 +524,15 @@ body
 
 #explorer_items
 {
+    flex: 1 1 auto;
+    min-height: 0dp;
     display: flex;
     flex-wrap: wrap;
+    align-content: flex-start;
     gap: 8dp;
-    height: 222dp;
     overflow-y: auto;
 }
-#explorer.outline #explorer_items { display: block; position: absolute; top: 42dp; bottom: 8dp; left: 10dp; right: 10dp; height: auto; }
+#explorer.outline #explorer_items { display: block; }
 
 .explorer_item
 {
@@ -564,20 +556,9 @@ body
 }
 #explorer.outline .explorer_item { flex-direction: row; width: auto; height: 22dp; gap: 4dp; }
 #explorer.outline .explorer_item .item_label { flex: 1; width: auto; text-align: left; font-size: 11dp; }
-#explorer.outline { width: 340dp; }
 #explorer.outline #explorer_head { flex-wrap: wrap; height: auto; }
 #explorer.outline #explorer_filter { width: 96dp; }
-#explorer.outline #explorer_items { top: 70dp; }
 .branch { display: block; width: 12dp; text-align: center; pointer-events: auto; }
 .marks { display: flex; gap: 4dp; padding-right: 4dp; }
 .mark { display: block; width: 14dp; height: 14dp; opacity: 0.7; pointer-events: auto; }
 .mark:hover { opacity: 1; }
-
-/* The workspace's clock deck runs along the bottom edge above the instruments
-   (deck.rcss); what would cover it rises above it. */
-.deck #selection_card { bottom: 114dp; }
-.deck #explorer { bottom: 114dp; }
-.deck.lanes1 #selection_card, .deck.lanes1 #explorer { bottom: 130dp; }
-.deck.lanes2 #selection_card, .deck.lanes2 #explorer { bottom: 146dp; }
-.deck.lanes3 #selection_card, .deck.lanes3 #explorer { bottom: 162dp; }
-.deck.lanes4 #selection_card, .deck.lanes4 #explorer { bottom: 178dp; }

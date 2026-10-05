@@ -1,6 +1,7 @@
 #include "shell/SurfacePlacement.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace
 {
@@ -15,48 +16,37 @@ float AxisInside(float offset, float min, float max, float boundsMin, float boun
         return boundsMin - min;
     return std::clamp(offset, boundsMin - min, boundsMax - max);
 }
-} // namespace
 
-SurfaceClearance ClearOf(const Rect2d& natural, std::span<const SurfaceObstacle> obstacles, float gap,
-                         SurfaceMinimum minimum)
+bool Free(const Rect2d& rect, std::span<const Rect2d> taken)
 {
-    SurfaceClearance clearance;
-    for (const SurfaceObstacle& obstacle : obstacles)
-    {
-        if (!obstacle.Area.IsValid() || !Overlaps(natural, obstacle.Area))
-            continue;
-        switch (obstacle.Yield)
-        {
-        case SurfaceYield::ShrinkLeft:
-            clearance.Left = std::max(clearance.Left, obstacle.Area.Max().X + gap - natural.Min().X);
-            break;
-        case SurfaceYield::ShrinkRight:
-            clearance.Right = std::max(clearance.Right, natural.Max().X - (obstacle.Area.Min().X - gap));
-            break;
-        case SurfaceYield::ShrinkBottom:
-            clearance.Bottom = std::max(clearance.Bottom, natural.Max().Y - (obstacle.Area.Min().Y - gap));
-            break;
-        case SurfaceYield::ShiftRight:
-            clearance.ShiftX = std::max(clearance.ShiftX, obstacle.Area.Max().X + gap - natural.Min().X);
-            break;
-        }
-    }
-    // Both sides give way in proportion until the surface is at its minimum.
-    const float sides = clearance.Left + clearance.Right;
-    const float widthToGive = std::max(0.0f, natural.Width() - minimum.Width);
-    if (sides > widthToGive)
-    {
-        clearance.Left *= widthToGive / sides;
-        clearance.Right *= widthToGive / sides;
-    }
-    clearance.Bottom = std::min(clearance.Bottom, std::max(0.0f, natural.Height() - minimum.Height));
-    return clearance;
+    return std::ranges::none_of(taken, [&](const Rect2d& other) { return Overlaps(rect, other); });
 }
 
-Rect2d NaturalPlace(const Rect2d& measured, const SurfaceClearance& applied)
+Rect2d Inside(const Rect2d& rect, const Rect2d& bounds)
 {
-    return Rect2d::FromMinMax(Vec2d(measured.Min().X - applied.Left, measured.Min().Y),
-                              Vec2d(measured.Max().X + applied.Right, measured.Max().Y + applied.Bottom));
+    return Rect2d(rect.Position + KeepInside(Vec2d(), rect, bounds), rect.Size);
+}
+} // namespace
+
+Rect2d FindSpace(const Rect2d& home, std::span<const Rect2d> taken, const Rect2d& bounds, float step)
+{
+    const Rect2d start = Inside(home, bounds);
+    if (Free(start, taken))
+        return start;
+    Rect2d best = start;
+    float bestDistance = std::numeric_limits<float>::max();
+    for (float y = bounds.Min().Y; y + home.Height() <= bounds.Max().Y; y += step)
+        for (float x = bounds.Min().X; x + home.Width() <= bounds.Max().X; x += step)
+        {
+            const Rect2d candidate(Vec2d(x, y), home.Size);
+            const float distance = (candidate.Position - start.Position).Magnitude();
+            if (distance < bestDistance && Free(candidate, taken))
+            {
+                best = candidate;
+                bestDistance = distance;
+            }
+        }
+    return best;
 }
 
 Vec2d KeepInside(Vec2d offset, const Rect2d& placed, const Rect2d& bounds)
@@ -65,45 +55,98 @@ Vec2d KeepInside(Vec2d offset, const Rect2d& placed, const Rect2d& bounds)
                  AxisInside(offset.Y, placed.Min().Y, placed.Max().Y, bounds.Min().Y, bounds.Max().Y));
 }
 
-void SurfaceMoves::Press(std::string key, Vec2d pointer, const SurfaceClearance& clearance)
+Rect2d SurfaceLayout::Place(std::string_view key, SurfaceAnchor anchor, const Rect2d& home,
+                            std::span<const Rect2d> taken, const Rect2d& bounds, float step)
 {
-    Now = Phase::Pressed;
-    PressedKey = std::move(key);
-    PressedClearance = clearance;
-    PressedAt = pointer;
+    auto found = Entries.find(key);
+    if (found == Entries.end())
+        found = Entries.emplace(std::string(key), Entry{}).first;
+    Entry& entry = found->second;
+    if (!entry.Moved && anchor == SurfaceAnchor::Home)
+        entry.Rect.Position = home.Position;
+    else if (!entry.Moved && !entry.Showing)
+        entry.Rect = FindSpace(home, taken, bounds, step);
+    entry.Showing = true;
+    if (!entry.Resized)
+        entry.Rect.Size = home.Size;
+    entry.Rect = Inside(entry.Rect, bounds);
+    return entry.Rect;
 }
 
-void SurfaceMoves::Drag(Vec2d pointer, const Rect2d& placed, const Rect2d& bounds)
+void SurfaceLayout::Hide(std::string_view key)
 {
-    if (Now == Phase::Resting)
+    const auto found = Entries.find(key);
+    if (found == Entries.end())
         return;
-    if (Now == Phase::Pressed)
-    {
-        const auto [move, added] =
-            Moves.try_emplace(PressedKey, SurfaceMove{ .Offset = Vec2d(), .Clearance = PressedClearance });
-        (void)added;
-        OffsetAtPress = move->second.Offset;
-        Now = Phase::Dragging;
-    }
-    if (const auto held = Moves.find(PressedKey); held != Moves.end())
-        held->second.Offset = KeepInside(OffsetAtPress + (pointer - PressedAt), placed, bounds);
-}
-
-void SurfaceMoves::Drop()
-{
-    Now = Phase::Resting;
-}
-
-void SurfaceMoves::Reset(std::string_view key)
-{
-    if (const auto found = Moves.find(key); found != Moves.end())
-        Moves.erase(found);
+    if (found->second.Moved || found->second.Resized)
+        found->second.Showing = false;
+    else
+        Entries.erase(found);
     if (PressedKey == key)
         Now = Phase::Resting;
 }
 
-const SurfaceMove* SurfaceMoves::Find(std::string_view key) const
+void SurfaceLayout::PressHeader(std::string key, Vec2d pointer)
 {
-    const auto found = Moves.find(key);
-    return found != Moves.end() ? &found->second : nullptr;
+    if (!Entries.contains(key))
+        return;
+    Now = Phase::PressedHeader;
+    PressedKey = std::move(key);
+    PressedAt = pointer;
+}
+
+void SurfaceLayout::PressCorner(std::string key, Vec2d pointer)
+{
+    if (!Entries.contains(key))
+        return;
+    Now = Phase::PressedCorner;
+    PressedKey = std::move(key);
+    PressedAt = pointer;
+}
+
+void SurfaceLayout::Drag(Vec2d pointer, const Rect2d& bounds, Vec2d minimum)
+{
+    const auto found = Entries.find(PressedKey);
+    if (Now == Phase::Resting || found == Entries.end())
+        return;
+    Entry& entry = found->second;
+    if (Now == Phase::PressedHeader || Now == Phase::PressedCorner)
+    {
+        RectAtPress = entry.Rect;
+        Now = Now == Phase::PressedHeader ? Phase::Moving : Phase::Sizing;
+    }
+    const Vec2d travel = pointer - PressedAt;
+    if (Now == Phase::Moving)
+    {
+        entry.Rect = Rect2d(RectAtPress.Position + KeepInside(travel, RectAtPress, bounds), RectAtPress.Size);
+        entry.Moved = true;
+        return;
+    }
+    const Vec2d room = bounds.Max() - RectAtPress.Position;
+    entry.Rect.Size = Vec2d(std::clamp(RectAtPress.Width() + travel.X, minimum.X, std::max(minimum.X, room.X)),
+                            std::clamp(RectAtPress.Height() + travel.Y, minimum.Y, std::max(minimum.Y, room.Y)));
+    entry.Resized = true;
+}
+
+void SurfaceLayout::Drop()
+{
+    Now = Phase::Resting;
+}
+
+void SurfaceLayout::Reset(std::string_view key)
+{
+    const auto found = Entries.find(key);
+    if (found == Entries.end())
+        return;
+    found->second.Moved = false;
+    found->second.Resized = false;
+    found->second.Showing = false;
+    if (PressedKey == key)
+        Now = Phase::Resting;
+}
+
+bool SurfaceLayout::Sized(std::string_view key) const
+{
+    const auto found = Entries.find(key);
+    return found != Entries.end() && found->second.Resized;
 }

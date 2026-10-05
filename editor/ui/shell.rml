@@ -6,9 +6,7 @@
     <link type="text/rcss" href="icons.rcss"/>
     <link type="text/rcss" href="theme.rcss"/>
 </head>
-<body data-model="shell" data-class-moving="motion" data-class-deck="deck" data-class-lanes1="deck_lanes == 1"
-      data-class-lanes2="deck_lanes == 2"
-      data-class-lanes3="deck_lanes == 3" data-class-lanes4="deck_lanes >= 4">
+<body data-model="shell" data-class-moving="motion">
     <!-- The rail: the window's caption and the one full-width piece of chrome.
          Left is identity (the hatch, which workspace, which document), right is
          consequence (problems, the transport, the window), and the middle is
@@ -152,12 +150,14 @@
          it now -- or, while an edit is previewed, applying or cancelling it.
          Looked at closely it becomes the drawer along the right edge, with
          every property it has. -->
-    <div class="floating" data-class-front="front == 'selection'" data-style-left="selection_x" data-style-top="selection_y">
     <div id="selection_card" class="theme-plate" data-class-open="selection_title != ''"
          data-class-shut="selection_title == ''" data-class-drawer="drawer" data-class-sheet="sheet"
-         data-style-margin-bottom="selection_margin_bottom" data-event-mousedown="shell_raise('selection')">
+         data-class-front="front == 'selection'"
+         data-style-left="selection_left" data-style-top="selection_top"
+         data-style-width="selection_width" data-style-height="selection_height"
+         data-event-mousedown="shell_raise('selection')">
         <div id="selection_head" class="grip"
-             data-event-mousedown="shell_grab('selection', ev.mouse_x, ev.mouse_y)"
+             data-event-mousedown="shell_grab('selection', ev.mouse_x, ev.mouse_y, 'header')"
              data-event-drag="shell_drag('selection', ev.mouse_x, ev.mouse_y)"
              data-event-dragend="shell_drop('selection')">
             <span id="selection_title" class="theme-accent"
@@ -216,20 +216,22 @@
                  data-class-disabled="verb.disabled" data-class-lit="selection_staged &amp;&amp; it_index == 0"
                  data-event-click="shell_invoke(verb.key)">{{verb.label}}</div>
         </div>
-    </div>
+        <div class="corner" data-event-mousedown="shell_grab('selection', ev.mouse_x, ev.mouse_y, 'corner')"
+             data-event-drag="shell_drag('selection', ev.mouse_x, ev.mouse_y)"
+             data-event-dragend="shell_drop('selection')"></div>
     </div>
     <!-- An explorer: what the workspace lets a person browse, a page at a
-         time. Pictures are a tray over the bottom of the content; an outline
-         is a sheet down its left side. A click picks an item up, a double
-         click puts it to use. Like the selection, it is moved by its header,
-         and a double click on its title puts it back. -->
-    <div class="floating" data-class-front="front == 'explorer'" data-style-left="explorer_x" data-style-top="explorer_y">
+         time, as pictures or as an outline of names. A click picks an item
+         up, a double click puts it to use. Like the selection, it opens where
+         there is room, moves by its header and sizes by its corner; a double
+         click on its title puts it back. -->
     <div id="explorer" class="theme-plate" data-if="explorer_id != ''"
-         data-class-outline="explorer_shape == 'outline'"
-         data-style-margin-left="explorer_margin_left" data-style-margin-right="explorer_margin_right"
-         data-style-margin-bottom="explorer_margin_bottom" data-event-mousedown="shell_raise('explorer')">
+         data-class-outline="explorer_shape == 'outline'" data-class-front="front == 'explorer'"
+         data-style-left="explorer_left" data-style-top="explorer_top"
+         data-style-width="explorer_width" data-style-height="explorer_height"
+         data-event-mousedown="shell_raise('explorer')">
         <div id="explorer_head" class="grip"
-             data-event-mousedown="shell_grab('explorer', ev.mouse_x, ev.mouse_y)"
+             data-event-mousedown="shell_grab('explorer', ev.mouse_x, ev.mouse_y, 'header')"
              data-event-drag="shell_drag('explorer', ev.mouse_x, ev.mouse_y)"
              data-event-dragend="shell_drop('explorer')">
             <span id="explorer_title" class="theme-accent"
@@ -265,7 +267,9 @@
             </div>
             <div id="explorer_empty" class="theme-dim" data-if="explorer_empty != ''">{{explorer_empty}}</div>
         </div>
-    </div>
+        <div class="corner" data-event-mousedown="shell_grab('explorer', ev.mouse_x, ev.mouse_y, 'corner')"
+             data-event-drag="shell_drag('explorer', ev.mouse_x, ev.mouse_y)"
+             data-event-dragend="shell_drop('explorer')"></div>
     </div>
 
     <!-- Bottom right, what the hands hold: the cartridge the next operation

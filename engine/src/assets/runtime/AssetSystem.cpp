@@ -2,6 +2,8 @@
 
 #include <core/logging/LoggingProvider.h>
 
+#include <algorithm>
+#include <format>
 #include <utility>
 
 AssetSystem::AssetSystem(LoggingProvider& logging, AssetRegistry& registry)
@@ -65,31 +67,62 @@ AssetLease AssetSystem::LoadLease(std::string_view path, AssetType type)
     if (AssetLease resident = TryAcquireLease(record->Path, type); resident.IsValid())
         return resident;
 
+    const std::string recordPath = record->Path;
+    const auto fail = [&](std::string reason) {
+        Log.Error("AssetSystem: {}", reason);
+        RecordFailure(recordPath, std::move(reason));
+        return AssetLease{};
+    };
+
     // A procedural asset is put into its store by whoever built it; there are
     // no bytes to stage.
     if (record->SourceKind == AssetSourceKind::Procedural)
-    {
-        Log.Error("AssetSystem: no runtime resource registered for procedural {} '{}'",
-                  AssetTypeToString(type), record->Path);
-        return {};
-    }
+        return fail(std::format("no runtime resource registered for procedural {} '{}'", AssetTypeToString(type),
+                                recordPath));
 
     IAssetStager* stager = LoaderFor(type);
     if (stager == nullptr)
-    {
-        Log.Error("AssetSystem: no loader registered for {} '{}'",
-                  AssetTypeToString(type), record->Path);
-        return {};
-    }
+        return fail(std::format("no loader registered for {} '{}'", AssetTypeToString(type), recordPath));
 
     AssetStaging staged = stager->LoadStaged(*record, Source);
     if (!staged.IsValid())
-    {
-        Log.Error("AssetSystem: {}", staged.Error);
-        return {};
-    }
+        return fail(staged.Error);
 
-    return Commit(std::move(staged));
+    // A dependency the commit loads and fails records its own reason first;
+    // this one then names it.
+    const std::uint64_t beforeCommit = FailuresRecorded;
+    AssetLease lease = Commit(std::move(staged));
+    if (lease.IsValid())
+        ClearFailure(recordPath);
+    else if (FailuresRecorded != beforeCommit && LastFailedPath != recordPath)
+        RecordFailure(recordPath, std::format("'{}' depends on '{}', which did not load", recordPath, LastFailedPath));
+    else
+        RecordFailure(recordPath, std::format("'{}' was staged but could not be committed", recordPath));
+    return lease;
+}
+
+void AssetSystem::RecordFailure(std::string_view path, std::string reason)
+{
+    LastFailedPath = path;
+    ++FailuresRecorded;
+    const auto found = std::ranges::find(Failures, path, &LoadFailure::Path);
+    if (found != Failures.end())
+    {
+        if (found->Reason == reason)
+            return;
+        found->Reason = std::move(reason);
+    }
+    else
+    {
+        Failures.push_back({ std::string(path), std::move(reason) });
+    }
+    ++FailuresVersion;
+}
+
+void AssetSystem::ClearFailure(std::string_view path)
+{
+    if (std::erase_if(Failures, [&](const LoadFailure& failure) { return failure.Path == path; }) > 0)
+        ++FailuresVersion;
 }
 
 std::string_view AssetSystem::GetPathForLease(AssetType type,

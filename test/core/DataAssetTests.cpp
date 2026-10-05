@@ -324,6 +324,43 @@ TEST(DataAssetKind, RegisteringTheKindMakesItVisibleThroughTheFrontDoor)
     EXPECT_FALSE(assets.IsResident(file.Record().Path, AssetType::Data));
 }
 
+TEST(DataAssetKind, AFailedLoadKeepsItsReasonUntilTheAssetLoads)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    DataAssetCache cache;
+    ASSERT_TRUE(types.Register(MakeType()));
+    ASSERT_TRUE(schemas.Register(MakeSchema()));
+    DataAssetLoader loader(logging, &types, &schemas, &cache);
+    AssetSystem assets(logging, registry);
+    AssetKindRegistration kind = MakeBuiltinAssetKind(AssetType::Data);
+    kind.Stager = &loader;
+    kind.Store = &cache;
+    kind.Commit = [&](AssetStaging&& staged) -> AssetLease
+    {
+        const DataAssetHandle handle = loader.CommitTyped(std::move(staged));
+        return handle.IsValid() ? AssetLease::Adopt(AssetType::Data, cache, handle.ToToken()) : AssetLease{};
+    };
+    ASSERT_TRUE(assets.Kinds().Register(std::move(kind)));
+
+    TempDataFile file;
+    ASSERT_TRUE(registry.Register(file.Record()));
+    file.Write(R"({"type":"test.definition","version":1,"data":{"speed":200.0,"label":"invalid"}})");
+    const std::uint64_t before = assets.LoadFailuresVersion();
+    EXPECT_FALSE(assets.LoadLease(file.Record().Path, AssetType::Data).IsValid());
+    ASSERT_EQ(assets.LoadFailures().size(), 1u);
+    EXPECT_EQ(assets.LoadFailures()[0].Path, file.Record().Path);
+    EXPECT_NE(assets.LoadFailures()[0].Reason.find("$.speed"), std::string::npos);
+    EXPECT_NE(assets.LoadFailuresVersion(), before);
+
+    file.Write(R"({"type":"test.definition","version":1,"data":{"speed":3.0,"label":"fixed"}})");
+    AssetLease lease = assets.LoadLease(file.Record().Path, AssetType::Data);
+    EXPECT_TRUE(lease.IsValid());
+    EXPECT_TRUE(assets.LoadFailures().empty());
+}
+
 // The envelope peek: what a picker asks before an asset has been chosen, and
 // so before it can be loaded, validated, or made resident.
 TEST(DataAssetSubtype, ReadsTheDeclaredTypeAndNothingElse)

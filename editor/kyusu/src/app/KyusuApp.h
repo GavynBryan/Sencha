@@ -6,6 +6,7 @@
 #include "actions/ActionContext.h"
 #include "app/SynthesizedInput.h"
 #include "notices/NoticeQueue.h"
+#include "problems/AssetLoadProblems.h"
 #include "problems/ProblemList.h"
 #include "prompts/DocumentPrompts.h"
 #include "prompts/PromptQueue.h"
@@ -83,6 +84,7 @@ private:
     ActionCatalog Catalog;
     ActionContext ApplicationActions;
     ProblemList Problems;
+    AssetLoadProblems LoadProblems{ Problems };
     NoticeQueue Notices;
     // Before everything that asks, so every asker withdraws into a live queue.
     PromptQueue Prompts;

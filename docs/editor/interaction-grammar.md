@@ -19,16 +19,16 @@ controls — is spent on a small number of instruments that persist, not on
 frames around content. There is no docking, no layout file and no UI whose
 job is resizing other UI.
 
-Surfaces that open over the content -- the selection card, drawer and sheet,
-the explorer tray and outline -- have a default place that keeps clear of the
-instruments they would cover (the tray narrows between the station and the
-card, the outline ends above the station, a sheet moves past an outline),
-but no smaller than it can still be used (a tray 420dp wide, an outline
-200dp tall, a sheet 260dp tall); past that it keeps its size and overlaps.
-Where two overlap, the one last opened, pressed or dragged is in front. Each
-can also be dragged by its header, and a double click on its title puts it
-back. `shell/SurfacePlacement` holds both
-rules, and `ShellWindow` measures the instruments for it.
+Surfaces that open over the content -- the explorers, and the selection's
+card, drawer and sheet -- never resize themselves. A summoned explorer opens
+where it usually lives if that space is free of the instruments and the
+selection, otherwise in the nearest free space, and with no room at all it
+opens at home over whatever is there; it then stays where it opened. The
+selection keeps to its own place. Either moves by its header and sizes by its
+corner, and keeps what the person chose for the session; a double click on
+its title puts it back. The one pressed last is in front, and Escape closes
+the front one. `shell/SurfacePlacement` holds these rules, and `ShellWindow`
+measures the instruments for them.
 
 ## 2. The grammar is a presentation policy
 

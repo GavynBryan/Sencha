@@ -657,6 +657,7 @@ void KyusuApp::UpdateShells()
     if (const SdlWindow* primary = GetEngine().Platform().Windows.GetPrimaryWindow())
         EditorUi::UiScale = ChooseUiScale(preferences.Scale, primary->GetDisplayScale());
     Theme->Update(GetEngine().TryUi());
+    LoadProblems.Update(GetEngine().Content().Assets().Assets);
     if (MainWindowShell != nullptr)
         MainWindowShell->Update(now, preferences);
     for (DetachedWindow& entry : Detached)

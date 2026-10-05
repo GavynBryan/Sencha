@@ -47,8 +47,8 @@ public:
     // While a question stands over the window.
     void Hide() { Close(); }
     [[nodiscard]] bool IsShowing() const { return Screen.IsValid(); }
-    // The lanes under its ruler; what rises above the deck clears them too.
-    [[nodiscard]] std::size_t Lanes() const { return LaneCount; }
+    // Where the deck sits in the window, while it shows.
+    [[nodiscard]] std::optional<UiElementBox> Area() const;
 
 private:
     void Open();

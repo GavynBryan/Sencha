@@ -6,7 +6,9 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <format>
 
 AnimationRigScenario::AnimationRigScenario(RuntimeAssets& assets, std::function<void(World&)> vocabulary)
     : Simulation(assets.DataAssets, &assets.AnimationClips, std::move(vocabulary), &assets.Skeletons)
@@ -21,7 +23,10 @@ bool AnimationRigScenario::Open(const std::string& path)
     const DataAssetHandle handle = lease ? DataAssetHandle::FromToken(lease.OpaqueToken()) : DataAssetHandle{};
     if (record == nullptr || Assets.DataAssets.TryGet<AnimRigData>(handle, kAnimRigType) == nullptr)
     {
-        Error = "Select an animation.rig asset that loads.";
+        const std::span<const AssetSystem::LoadFailure> failures = Assets.Assets.LoadFailures();
+        const auto failure = std::ranges::find(failures, path, &AssetSystem::LoadFailure::Path);
+        Error = failure != failures.end() ? std::format("{} did not load: {}", path, failure->Reason)
+                                          : std::format("{} is not an animation.rig asset that loads.", path);
         return false;
     }
 

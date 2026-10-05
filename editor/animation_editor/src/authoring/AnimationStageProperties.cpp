@@ -47,7 +47,11 @@ std::vector<PropertyNode> AnimationScenarioProperties::Nodes() const
 {
     const AnimationPreviewSession& session = Workspace.Rig.Simulation;
     if (!session.IsOpen() || Workspace.Rig.Path.empty())
-        return {};
+    {
+        if (Workspace.Rig.Error.empty())
+            return {};
+        return { NoteProperty("error", "Rig refused", Workspace.Rig.Error) };
+    }
     const AnimationScenario& scenario = session.Scenario();
     std::vector<PropertyNode> nodes{
         NoteProperty("name", "Scenario", scenario.Name + (session.ScenarioModified() ? ", unsaved" : "")),

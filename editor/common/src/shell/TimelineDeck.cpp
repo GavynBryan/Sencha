@@ -295,3 +295,10 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
     (void)Ui.SetValue(Screen, kTrackHeight,
                       UiValue(std::format("{}dp", kRulerHeight + kLaneHeight * static_cast<int>(LaneCount))));
 }
+
+std::optional<UiElementBox> TimelineDeck::Area() const
+{
+    if (!Screen.IsValid())
+        return std::nullopt;
+    return Ui.MeasureElement(Screen, "deck", UiBoxArea::Border);
+}

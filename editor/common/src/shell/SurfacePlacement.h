@@ -10,103 +10,81 @@
 #include <string>
 #include <string_view>
 
-// How a floating surface makes way for an instrument it would cover: a
-// Shrink gives up that edge and keeps the others where they are anchored;
-// ShiftRight moves a surface of fixed width whole.
-enum class SurfaceYield : std::uint8_t
-{
-    ShrinkLeft,
-    ShrinkRight,
-    ShrinkBottom,
-    ShiftRight,
-};
-
-struct SurfaceObstacle
-{
-    Rect2d Area;
-    SurfaceYield Yield = SurfaceYield::ShrinkLeft;
-};
-
-// What a surface gives up from its default place, in surface pixels: margins
-// on three edges, and a shift right.
-struct SurfaceClearance
-{
-    float Left = 0.0f;
-    float Right = 0.0f;
-    float Bottom = 0.0f;
-    float ShiftX = 0.0f;
-
-    bool operator==(const SurfaceClearance&) const = default;
-};
-
-// The smallest a surface is made by giving way; past it, the surface keeps
-// this size and overlaps what it would cover.
-struct SurfaceMinimum
-{
-    float Width = 0.0f;
-    float Height = 0.0f;
-};
-
-// The clearance that keeps `natural`, a surface's default place, `gap` away
-// from every obstacle it overlaps, on the side each obstacle names, without
-// shrinking it below `minimum`.
-[[nodiscard]] SurfaceClearance ClearOf(const Rect2d& natural, std::span<const SurfaceObstacle> obstacles, float gap,
-                                       SurfaceMinimum minimum = {});
-
-// The default place of a surface measured at `measured` (untransformed) while
-// `applied` was in effect.
-[[nodiscard]] Rect2d NaturalPlace(const Rect2d& measured, const SurfaceClearance& applied);
+// Where a surface of `home`'s size opens: at `home` when nothing in `taken`
+// overlaps it, else at the free place nearest home on a `step` grid inside
+// `bounds`, else at home over whatever is there.
+[[nodiscard]] Rect2d FindSpace(const Rect2d& home, std::span<const Rect2d> taken, const Rect2d& bounds, float step);
 
 // The offset nearest `offset` that keeps `placed` moved by it inside `bounds`.
 // A surface larger than the bounds keeps its top left edge inside them.
 [[nodiscard]] Vec2d KeepInside(Vec2d offset, const Rect2d& placed, const Rect2d& bounds);
 
-// Where a surface the person moved sits: an offset from its default place,
-// and the clearance it had when it was first taken hold of, so it keeps its
-// size wherever it is put.
-struct SurfaceMove
+// How a surface finds its place until the person moves it: a summoned one opens
+// in free space and stays there; an anchored one keeps to its home as that
+// moves (a card whose height follows its content, a window that resizes).
+enum class SurfaceAnchor : std::uint8_t
 {
-    Vec2d Offset;
-    SurfaceClearance Clearance;
+    FreeSpace,
+    Home,
 };
 
 //=============================================================================
-// SurfaceMoves
+// SurfaceLayout
 //
-// The shell's floating surfaces that the person has dragged, by key -- one
-// key per surface and shape, so the tray and the outline, or the card and the
-// drawer, are moved separately. A surface with no move sits where the shell's
-// placement puts it.
+// Where the shell's floating surfaces are, by key -- one key per surface and
+// shape, so the tray and the outline are placed separately. A surface opens
+// in free space and stays where it opened; the person moves it by its header
+// and sizes it by its corner, and a surface they moved or sized keeps that for
+// the session. Nothing here ever resizes a surface on its own.
 //=============================================================================
-class SurfaceMoves
+class SurfaceLayout
 {
 public:
     enum class Phase : std::uint8_t
     {
         Resting,
-        // Pressed on a surface's grip; it moves once the pointer does.
-        Pressed,
-        Dragging,
+        // Pressed on a header or a corner; it changes once the pointer moves.
+        PressedHeader,
+        PressedCorner,
+        Moving,
+        Sizing,
     };
 
-    // The pointer went down on `key`'s grip at `pointer`. `clearance` is what
-    // the surface has given up where it sits now, kept while it is moved.
-    void Press(std::string key, Vec2d pointer, const SurfaceClearance& clearance);
-    // `placed` is the pressed surface's rect without its move; it stays in
-    // `bounds`. The pointer's whole travel since the press counts.
-    void Drag(Vec2d pointer, const Rect2d& placed, const Rect2d& bounds);
+    // Where `key` is while it shows, kept inside `bounds` and taking `home`'s
+    // size until the person sizes it. Until they move it, a FreeSpace surface
+    // opens in free space from `home` the first frame it shows and stays
+    // there; a Home surface sits at `home`.
+    Rect2d Place(std::string_view key, SurfaceAnchor anchor, const Rect2d& home, std::span<const Rect2d> taken,
+                 const Rect2d& bounds, float step);
+    // Not showing this frame: an opening the person never moved or sized is
+    // forgotten, so it finds space again next time.
+    void Hide(std::string_view key);
+
+    void PressHeader(std::string key, Vec2d pointer);
+    void PressCorner(std::string key, Vec2d pointer);
+    // The pressed surface follows the pointer's whole travel since the press,
+    // kept inside `bounds` and no smaller than `minimum`.
+    void Drag(Vec2d pointer, const Rect2d& bounds, Vec2d minimum);
     void Drop();
-    // Back to where the shell puts it.
+    // Back to where and how large the shell puts it.
     void Reset(std::string_view key);
 
-    [[nodiscard]] const SurfaceMove* Find(std::string_view key) const;
     [[nodiscard]] Phase State() const { return Now; }
+    // Whether the person chose this surface's size.
+    [[nodiscard]] bool Sized(std::string_view key) const;
 
 private:
-    std::map<std::string, SurfaceMove, std::less<>> Moves;
+    struct Entry
+    {
+        Rect2d Rect;
+        bool Moved = false;
+        bool Resized = false;
+        bool Showing = false;
+    };
+
+    std::map<std::string, Entry, std::less<>> Entries;
     Phase Now = Phase::Resting;
     std::string PressedKey;
-    SurfaceClearance PressedClearance;
     Vec2d PressedAt;
-    Vec2d OffsetAtPress;
+    Rect2d RectAtPress;
 };
