@@ -136,6 +136,30 @@ struct MarkerRequest
     bool Selected = false;
 };
 
+// A selected object's handles: the rings a size is measured by, the knobs that
+// change them -- small at rest, larger with the pointer near -- and the value
+// being changed, beside it. Only the property handles write it.
+struct PropertyKnobRequest
+{
+    Vec3d World = {};
+    bool Hot = false;
+    ViewportId Viewport = {};
+};
+
+struct PropertyHandleMarks
+{
+    std::vector<WorldSegmentRequest> Rings;
+    std::vector<PropertyKnobRequest> Knobs;
+    std::vector<LabelRequest> Values;
+
+    void Clear()
+    {
+        Rings.clear();
+        Knobs.clear();
+        Values.clear();
+    }
+};
+
 // The element under the cursor for the active element mode. The renderer glows it
 // to show it is selection-eligible; an edge also carries its length, drawn at
 // MeasureAnchor. Element is invalid when nothing is hovered.
@@ -158,6 +182,7 @@ struct EditorOverlayState
     std::vector<ViewportButtonRequest> ViewportButtons;
     std::vector<ViewportDialRequest> ViewportDials;
     std::vector<MarkerRequest> Markers;
+    PropertyHandleMarks Handles;
     DragReadout Readout;
     ElementHoverState Hover;
     // A whole brush to highlight as a selected body while hovering, even when it is

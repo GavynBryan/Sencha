@@ -400,6 +400,12 @@ firewall above.
   full sheet), with its values read out in the hub (`IRadialMenuModel::Summary`).
   A wheel of words is sized by `RadialMenu::Proportions`. An open wheel is
   modal, which is what keeps the others closed.
+- A handle on the object: a row in `workspace/PropertyHandles`'s rule table
+  (component, field, kind). A Radius is a ring facing each view with a knob to
+  drag; a Scroll changes its number while the wheel turns over the object.
+  Both edit through the component property source, so a drag previews live and
+  commits as one step and every interruption cancels it; the marks go in the
+  overlay's `Handles` layer, which no tool writes.
 - A viewport visual: a render feature/pass in `level_editor/src/render/`, added in
   `LevelWorkspace::BuildViewportRendering`. A tool's world strokes go through
   `EditorOverlayState` (segments, dials, the drag readout), drawn into each view

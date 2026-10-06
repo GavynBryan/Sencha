@@ -52,6 +52,7 @@ class ProblemList;
 class LightingDiagnostics;
 class HierarchyOutline;
 class PartitionOutline;
+class PropertyHandles;
 class EntityVerbs;
 class WorldExplorer;
 class FaceUvSource;
@@ -207,6 +208,7 @@ private:
     std::unique_ptr<ElementVerbs> Verbs;
     std::unique_ptr<FaceUvSource> Uv;
     std::unique_ptr<ComponentPropertySource> Components;
+    std::unique_ptr<PropertyHandles> Handles;
     std::unique_ptr<MaterialExplorer> MaterialsExplorer;
     std::unique_ptr<PrefabExplorer> PrefabsExplorer;
     std::unique_ptr<EntityVerbs> Entities;

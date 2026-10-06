@@ -44,6 +44,7 @@
 #include "document/EntityLabel.h"
 #include "workspace/HierarchyOutline.h"
 #include "workspace/PartitionOutline.h"
+#include "workspace/PropertyHandles.h"
 #include "workspace/WorldExplorer.h"
 #include "scene_source/SceneSourcePaths.h"
 #include "workspace/SelectionSummary.h"
@@ -280,6 +281,7 @@ void LevelWorkspace::BuildInput()
     Uv->Offer(Catalog, ActionHandlers);
     Components = std::make_unique<ComponentPropertySource>(Workspace->World, Workspace->Selection, *Commands,
                                                            Workspace->Affordances->Registry());
+    Handles = std::make_unique<PropertyHandles>(*Workspace, *Components);
     Entities = std::make_unique<EntityVerbs>(*Workspace, [this](const std::string& source) {
         return Files != nullptr && Files->OpenSceneSource(source);
     });
@@ -463,6 +465,9 @@ void LevelWorkspace::BuildInput()
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return ToolWheel->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return GizmoWheel->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return ContextWheel->OnInput(e, cap); });
+    // A selected object's handles are taken before the tools, so a knob is
+    // dragged rather than a brush drawn over it.
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Handles->OnInput(e, cap); });
     DividerDrag = std::make_unique<ViewDividerDrag>(
         [this] {
             return ViewDividerDrag::Arrangement{ .Kind = Arrangement(),
@@ -968,6 +973,7 @@ void LevelWorkspace::ProcessFrame()
     if (ViewSurface != nullptr)
         ViewSurface->Arrange(Visible ? ContentRect : Rect2d{}, Arrangement(),
                              Divider(), EditorUi::UiScale);
+    Handles->Publish();
     // Only one wheel is ever open: each yields its key to the other.
     if (WheelScreen != nullptr)
     {

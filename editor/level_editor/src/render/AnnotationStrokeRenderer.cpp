@@ -23,9 +23,10 @@ void AnnotationStrokeRenderer::DrawViewport(const FrameContext& frame, const Edi
                                             const CameraRenderData& camera)
 {
     Strokes.clear();
-    for (const WorldSegmentRequest& segment : Overlay.Segments)
-        if (ShownIn(segment.Viewport, viewport))
-            Strokes.push_back({ segment.From, segment.To, segment.Color, segment.Thickness });
+    for (const std::vector<WorldSegmentRequest>* segments : { &Overlay.Segments, &Overlay.Handles.Rings })
+        for (const WorldSegmentRequest& segment : *segments)
+            if (ShownIn(segment.Viewport, viewport))
+                Strokes.push_back({ segment.From, segment.To, segment.Color, segment.Thickness });
 
     if (Overlay.Readout.Active() && Overlay.Readout.Viewport == viewport.Id)
         Strokes.push_back({ *Overlay.Readout.From, *Overlay.Readout.To, EditorTheme::Readout, kReadoutWidthPx });

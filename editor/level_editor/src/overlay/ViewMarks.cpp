@@ -70,6 +70,8 @@ void AppendViewMarks(const EditorOverlayState& overlay, const MarqueeState& marq
     for (const LabelRequest& request : overlay.Labels)
         if (hiddenAxis < 0 || request.Axis != hiddenAxis)
             label(request.World, request.Text, request.Color);
+    for (const LabelRequest& request : overlay.Handles.Values)
+        label(request.World, request.Text, request.Color);
 
     if (!overlay.Hover.Measure.empty())
         label(overlay.Hover.MeasureAnchor, overlay.Hover.Measure, EditorTheme::HoverEligible);
@@ -95,6 +97,16 @@ void AppendViewMarks(const EditorOverlayState& overlay, const MarqueeState& marq
                             .Rect = Centred(p->Pixel, std::max(4.0f, handle.SizePixels)),
                             .Color = handle.Fill,
                             .Border = handle.Border });
+    }
+
+    for (const PropertyKnobRequest& knob : overlay.Handles.Knobs)
+    {
+        if (!ShownIn(knob.Viewport, viewport))
+            continue;
+        if (const std::optional<ProjectedPoint> p = projection.WorldToPixel(knob.World); p.has_value() && inRegion(p->Pixel))
+            out.push_back({ .Kind = ViewMarkKind::Knob,
+                            .Rect = Centred(p->Pixel, kKnobPixels * scale * (knob.Hot ? 1.5f : 0.75f)),
+                            .Hot = knob.Hot });
     }
 
     for (const ViewportDialRequest& request : overlay.ViewportDials)
