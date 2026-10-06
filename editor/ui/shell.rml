@@ -81,6 +81,7 @@
         <div class="crumb theme-segment" data-for="crumb : crumbs" data-class-lit="crumb.selected"
              data-event-click="shell_crumb(it_index)">
             <span class="crumb_sep glyph theme-dim" data-if="it_index > 0">&#xf054;</span><span>{{crumb.label}}</span>
+            <span class="crumb_open glyph" data-if="crumb.selected"><span data-if="!crumb.expanded">&#xf0da;</span><span data-if="crumb.expanded">&#xf0d7;</span></span>
         </div>
         <div class="crumb_hint theme-dim" data-if="hierarchy_chord != ''">
             <span class="chord">{{hierarchy_chord}}</span><span>hierarchy</span>
@@ -130,10 +131,12 @@
                      data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('tool', ri)">
                     <span data-if="row.value != ''">{{row.value}}</span><span data-if="row.value == ''">NONE</span>
                 </div>
-                <div class="key theme-key row_verb" data-for="verb : row.verbs" data-if="!verb.removes"
-                     data-event-click="shell_sheet_act('tool', ri, verb.key, '')">{{verb.label}}</div>
                 <div class="remove glyph theme-remove" data-for="verb : row.verbs" data-if="verb.removes"
                      data-event-click="shell_sheet_act('tool', ri, verb.key, '')">&#xf00d;</div>
+                <div class="row_verbs" data-if="row.verbs.size > 0">
+                    <div class="key theme-key" data-for="verb : row.verbs" data-if="!verb.removes"
+                         data-event-click="shell_sheet_act('tool', ri, verb.key, '')">{{verb.label}}</div>
+                </div>
             </div>
             <div id="tool_hint" class="theme-dim" data-if="station_hint != ''">{{station_hint}}</div>
             <div id="tool_keys" data-if="draft != 'none'">
@@ -250,10 +253,12 @@
                     <span data-if="row.value != ''">{{row.value}}</span><span data-if="row.value == ''">NONE</span>
                 </div>
                 <span class="setting_help theme-dim" data-if="sheet &amp;&amp; row.detail != ''">{{row.detail}}</span>
-                <div class="key theme-key row_verb" data-for="verb : row.verbs" data-if="!verb.removes"
-                     data-event-click="shell_sheet_act('selection', ri, verb.key, '')">{{verb.label}}</div>
                 <div class="remove glyph theme-remove" data-for="verb : row.verbs" data-if="verb.removes"
                      data-event-click="shell_sheet_act('selection', ri, verb.key, '')">&#xf00d;</div>
+                <div class="row_verbs" data-if="row.verbs.size > 0">
+                    <div class="key theme-key" data-for="verb : row.verbs" data-if="!verb.removes"
+                         data-event-click="shell_sheet_act('selection', ri, verb.key, '')">{{verb.label}}</div>
+                </div>
             </div>
         <div id="selection_verbs">
             <div class="key theme-key" data-for="verb : selection_verbs"

@@ -346,6 +346,9 @@ body
     margin-bottom: 6dp;
 }
 
+/* The selection's part says whether its sheet is open. */
+.crumb_open { margin-left: 6dp; font-size: 10dp; }
+
 /* How a named selection is known besides its name, where its title would be;
    the name itself, typed over to rename, under it. */
 #selection_known, #selection_subtitle

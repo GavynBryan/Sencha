@@ -961,6 +961,7 @@ void ShellWindow::PublishLocation(const IWorkspace* workspace)
         UiRow crumb{ part.Label, "", "" };
         crumb.Key = part.Key;
         crumb.Selected = part.Selection;
+        crumb.Expanded = part.Selection && SelectionShown == SelectionView::Drawer;
         crumbs.push_back(std::move(crumb));
     }
     (void)Services.Ui.SetRows(Screen, kCrumbs, crumbs);
@@ -984,7 +985,19 @@ void ShellWindow::RevealLocation(std::int64_t index)
     if (workspace == nullptr || index < 0)
         return;
     const WorkspaceLocationFacet location = workspace->Location();
-    if (location.Hierarchy.empty() || static_cast<std::size_t>(index) >= location.Parts.size())
+    if (static_cast<std::size_t>(index) >= location.Parts.size())
+        return;
+    // The selection's own part opens what is selected; the parts before it
+    // are places, and open the hierarchy there.
+    if (location.Parts[static_cast<std::size_t>(index)].Selection)
+    {
+        if (SelectionShown == SelectionView::Drawer)
+            Transients.Close(DrawerTransient);
+        else
+            (void)Services.Actions.Invoke("selection.details");
+        return;
+    }
+    if (location.Hierarchy.empty())
         return;
     if (ExplorerShown != location.Hierarchy || ExplorerTransient == 0)
         ShowExplorer(location.Hierarchy);

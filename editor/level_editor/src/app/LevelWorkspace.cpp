@@ -1304,8 +1304,10 @@ WorkspaceLocationFacet LevelWorkspace::Location() const
     }
     const SelectableRef primary = Workspace->Selection.GetPrimarySelection();
     const EditorDocument& document = world.FocusDocument();
+    const auto objects = std::ranges::count_if(Workspace->Selection.GetSelection(), &SelectableRef::IsEntity);
     if (primary.IsEntity() && document.GetScene().HasEntity(primary.Entity))
-        facet.Parts.push_back({ .Label = EntityLabel(document, primary.Entity),
+        facet.Parts.push_back({ .Label = objects > 1 ? std::format("{} objects", objects)
+                                                     : EntityLabel(document, primary.Entity),
                                 .Key = HierarchyOutline::EntityKey(WorldExplorer::KeyOf(primary.Entity)),
                                 .Selection = true });
     return facet;

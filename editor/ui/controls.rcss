@@ -41,6 +41,7 @@
 .setting
 {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     min-height: 26dp;
     gap: 8dp;
@@ -69,11 +70,13 @@
     font-weight: 600;
     letter-spacing: 1dp;
 }
-.setting.heading .setting_label { width: auto; flex: 1; font-size: 11dp; }
+.setting.heading .setting_label { width: auto; flex: 1 0 auto; font-size: 11dp; }
 /* A group's arrow, what can be done about a row beside it, and the cross that
    takes the row away -- dim until the pointer is on it. */
 .fold { display: block; width: 10dp; font-size: 10dp; }
-.row_verb { flex: 0 0 auto; }
+/* What can be done about a row runs along a line of its own under it, so a
+   long label never squeezes the row it belongs to. */
+.row_verbs { display: flex; flex-wrap: wrap; width: 100%; gap: 4dp; }
 .remove
 {
     display: block;
