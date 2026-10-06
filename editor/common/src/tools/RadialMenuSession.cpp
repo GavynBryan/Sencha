@@ -7,11 +7,12 @@
 
 RadialMenuSession::RadialMenuSession(IRadialMenuModel& menu, KeyChord key,
                                      std::function<RadialMenu::Frame()> frame,
-                                     std::function<bool(Vec2d)> pointerOnScene)
+                                     std::function<bool(Vec2d)> pointerOnScene, RadialMenu::Proportions proportions)
     : Menu(menu)
     , Key(key)
     , FrameProvider(std::move(frame))
     , PointerOnScene(std::move(pointerOnScene))
+    , Sizes(proportions)
 {
 }
 
@@ -55,6 +56,9 @@ InputConsumed RadialMenuSession::OnKeyDown(const KeyDownEvent& event, PointerCap
         // capture, and nothing behind gets to act on it either.
         if (!PointerOnScene || !PointerOnScene(event.Pointer))
             return InputConsumed::Yes;
+        Menu.Opening(event.Pointer);
+        if (Menu.Count() == 0)
+            return InputConsumed::Yes;
         Open(event.Pointer, capture);
         return InputConsumed::Yes;
 
@@ -90,7 +94,7 @@ void RadialMenuSession::Open(Vec2d pointer, PointerCapture& capture)
     int maxVariants = 0;
     for (int i = 0; i < count; ++i)
         maxVariants = std::max(maxVariants, VariantCount(i));
-    Layout = RadialMenu::Place(FrameProvider ? FrameProvider() : RadialMenu::Frame{}, pointer, count, maxVariants);
+    Layout = RadialMenu::Place(FrameProvider ? FrameProvider() : RadialMenu::Frame{}, pointer, count, maxVariants, Sizes);
     Hot = -1;
     HotVariant = -1;
     Phase = RadialMenuPhase::Open;

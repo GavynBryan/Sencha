@@ -43,6 +43,15 @@ struct Frame
     Vec2d Max = {};
 };
 
+// A wheel's sizes in design pixels: a wheel of glyphs is compact, one whose
+// entries are words and whose hub reads out values is roomier.
+struct Proportions
+{
+    float Radius = kRadius;
+    float Hub = kHub;
+    float Button = kButton;
+};
+
 struct Layout
 {
     Vec2d Center = {};
@@ -149,12 +158,13 @@ struct Range
 // A wheel of `count` slots opened at `pointer`, shifted -- never clipped -- so
 // the whole of it (both rings, slots, caption) lies inside the frame. A frame
 // too small on an axis centres the wheel on that axis instead.
-[[nodiscard]] inline Layout Place(const Frame& frame, Vec2d pointer, int count, int maxVariants = 0)
+[[nodiscard]] inline Layout Place(const Frame& frame, Vec2d pointer, int count, int maxVariants = 0,
+                                  Proportions proportions = {})
 {
     Layout layout;
-    layout.Radius = kRadius * frame.Scale;
-    layout.Hub = kHub * frame.Scale;
-    layout.Button = kButton * frame.Scale;
+    layout.Radius = proportions.Radius * frame.Scale;
+    layout.Hub = proportions.Hub * frame.Scale;
+    layout.Button = proportions.Button * frame.Scale;
     layout.Seam = kSeam * frame.Scale;
     layout.Rim = kRim * frame.Scale;
     layout.CaptionGap = kCaptionGap * frame.Scale;

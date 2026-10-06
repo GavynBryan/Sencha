@@ -310,6 +310,9 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         OpenPopover(Popover::None);
         Palette->Open();
     } });
+    (void)Services.Catalog.Define({ .Id = "selection.details", .Label = "All Properties", .Category = "Edit" });
+    WindowActions.Claim("selection.details", ActionHandler{ .Invoke = [this] { ShowDrawer({}); },
+                                                            .Enabled = [this] { return !ShownSelection.empty(); } });
     WindowLayer = Services.Actions.Push(WindowActions, ActionRank::Window);
     Deck = std::make_unique<TimelineDeck>(Services.Ui, SurfaceId, Services.Workspaces, Services.Actions,
                                           Services.Presentation);
@@ -339,7 +342,8 @@ WorkspaceWindow ShellWindow::Binding() const
              .Presentation = Services.Presentation,
              .Content = ContentSurfaceId,
              .Overlay = OverlaySurfaceId,
-             .Interactive = SurfaceId };
+             .Interactive = SurfaceId,
+             .Actions = &Services.Actions };
 }
 
 void ShellWindow::Update(double now, const ShellPreferences& preferences)

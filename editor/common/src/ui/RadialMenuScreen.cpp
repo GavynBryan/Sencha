@@ -23,8 +23,13 @@ const UiModelPropertyId kCaptionLeft = UiPropertyIdAt(3);
 const UiModelPropertyId kCaptionTop = UiPropertyIdAt(4);
 const UiModelPropertyId kCaptionWidth = UiPropertyIdAt(5);
 const UiModelPropertyId kCaptionHeight = UiPropertyIdAt(6);
+const UiModelPropertyId kHubLeft = UiPropertyIdAt(7);
+const UiModelPropertyId kHubTop = UiPropertyIdAt(8);
+const UiModelPropertyId kHubSize = UiPropertyIdAt(9);
 const UiModelRowsId kSectors = UiRowsIdAt(0);
 const UiModelRowsId kKeys = UiRowsIdAt(1);
+const UiModelRowsId kWords = UiRowsIdAt(2);
+const UiModelRowsId kSummary = UiRowsIdAt(3);
 
 UiScreenDesc Describe()
 {
@@ -39,8 +44,11 @@ UiScreenDesc Describe()
         UiModelProperty{ "caption_top", UiValue(std::string("0px")) },
         UiModelProperty{ "caption_width", UiValue(std::string("0px")) },
         UiModelProperty{ "caption_height", UiValue(std::string("0px")) },
+        UiModelProperty{ "hub_left", UiValue(std::string("0px")) },
+        UiModelProperty{ "hub_top", UiValue(std::string("0px")) },
+        UiModelProperty{ "hub_size", UiValue(std::string("0px")) },
     };
-    desc.RowLists = { "sectors", "keys" };
+    desc.RowLists = { "sectors", "keys", "words", "summary" };
     return desc;
 }
 
@@ -142,6 +150,8 @@ void RadialMenuScreen::Close()
     Screen = {};
     LongestSectors = 0;
     LongestKeys = 0;
+    LongestWords = 0;
+    LongestSummary = 0;
 }
 
 void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenuModel* menu)
@@ -153,6 +163,8 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
 
     std::vector<UiRow> sectors;
     std::vector<UiRow> keys;
+    std::vector<UiRow> words;
+    std::vector<UiRow> summary;
     if (face.Open)
     {
         for (const RadialMenuSector& sector : face.Sectors)
@@ -168,14 +180,35 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
             UiRow row{ key.Label, key.Active ? "active" : "", key.Variant ? "variant" : "entry" };
             row.Icon = std::string(IconName(key.Icon));
             row.Selected = key.Hot;
+            if (key.Word)
+            {
+                // A word takes the width of its petal rather than its glyph's well.
+                const float wordWidth = key.Radius * 3.4f;
+                const float wordHeight = key.Radius * 1.8f;
+                row.Parts = { Px(key.Centre.X - wordWidth * 0.5f), Px(key.Centre.Y - wordHeight * 0.5f), Px(wordWidth),
+                              Px(wordHeight) };
+                words.push_back(std::move(row));
+                continue;
+            }
             row.Parts = Circle(key.Centre, key.Radius);
             keys.push_back(std::move(row));
         }
+        // The hub's readout sits in the square inside its circle.
+        const float side = face.HubRadius * 1.5f;
+        (void)Ui.SetValue(Screen, kHubLeft, UiValue(Px(face.Centre.X - side * 0.5f)));
+        (void)Ui.SetValue(Screen, kHubTop, UiValue(Px(face.Centre.Y - side * 0.5f)));
+        (void)Ui.SetValue(Screen, kHubSize, UiValue(Px(side)));
+        for (const std::string& line : face.Summary)
+            summary.push_back(UiRow{ line, "", "" });
     }
     PadRows(sectors, LongestSectors, HiddenRow({ "0px", "0px", "0px", "0", "0", "0" }));
     PadRows(keys, LongestKeys, HiddenRow({ "0px", "0px", "0px" }));
+    PadRows(words, LongestWords, HiddenRow({ "0px", "0px", "0px", "0px" }));
+    PadRows(summary, LongestSummary, HiddenRow({}));
     (void)Ui.SetRows(Screen, kSectors, sectors);
     (void)Ui.SetRows(Screen, kKeys, keys);
+    (void)Ui.SetRows(Screen, kWords, words);
+    (void)Ui.SetRows(Screen, kSummary, summary);
     (void)Ui.SetValue(Screen, kCaption, UiValue(face.Caption));
     (void)Ui.SetValue(Screen, kCaptionDim, UiValue(face.CaptionNamesCurrent));
 }

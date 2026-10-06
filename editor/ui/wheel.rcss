@@ -49,3 +49,47 @@ sector.well { stroke-width: 1dp; text-align: center; }
     text-transform: uppercase;
 }
 .ledge.dim { opacity: 0.6; }
+
+/* An entry with no glyph is its word, across its petal. */
+.word
+{
+    display: flex;
+    position: absolute;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 11dp;
+    letter-spacing: 0.5dp;
+    text-transform: uppercase;
+}
+.word.variant { font-size: 10dp; }
+
+/* What the wheel is about, read out in the hub. */
+.readout
+{
+    display: flex;
+    position: absolute;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+.readout_line
+{
+    display: block;
+    width: 100%;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    font-family: Inter;
+    font-size: 10dp;
+    line-height: 13dp;
+}
+.readout_line.first
+{
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 11dp;
+}

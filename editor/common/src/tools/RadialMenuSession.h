@@ -58,7 +58,7 @@ public:
     // is placed against, which is what keeps hit-testing and painting on one
     // set of numbers.
     RadialMenuSession(IRadialMenuModel& menu, KeyChord key, std::function<RadialMenu::Frame()> frame,
-                      std::function<bool(Vec2d pointer)> pointerOnScene);
+                      std::function<bool(Vec2d pointer)> pointerOnScene, RadialMenu::Proportions proportions = {});
 
     InputConsumed OnInput(const InputEvent& event, PointerCapture& capture);
 
@@ -84,6 +84,7 @@ private:
     KeyChord Key;
     std::function<RadialMenu::Frame()> FrameProvider;
     std::function<bool(Vec2d)> PointerOnScene;
+    RadialMenu::Proportions Sizes;
     RadialMenuPhase Phase = RadialMenuPhase::Closed;
     RadialMenu::Layout Layout{};
     int Hot = -1;

@@ -3,6 +3,7 @@
 #include <graphics/PresentationId.h>
 #include <ui/UiSurface.h>
 
+class ActionContextStack;
 class SdlWindow;
 
 // The window a workspace shows in, as much of it as a workspace needs: the
@@ -18,4 +19,7 @@ struct WorkspaceWindow
     UiSurfaceId Content;
     UiSurfaceId Overlay;
     UiSurfaceId Interactive;
+    // Everything the window can perform, closest first: what an action the
+    // workspace names resolves through, whoever claims it.
+    const ActionContextStack* Actions = nullptr;
 };

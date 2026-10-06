@@ -47,4 +47,6 @@ private:
     // The longest each row list has been while this screen is open.
     std::size_t LongestSectors = 0;
     std::size_t LongestKeys = 0;
+    std::size_t LongestWords = 0;
+    std::size_t LongestSummary = 0;
 };

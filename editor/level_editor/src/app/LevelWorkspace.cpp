@@ -31,6 +31,8 @@
 #include "ui/MaterialThumbnailCache.h"
 #include "render/SceneThumbnailCache.h"
 #include "actions/ActionOffer.h"
+#include "actions/ContextMenuModel.h"
+#include "selection/commands/SelectCommand.h"
 #include "resources/ResourceActions.h"
 #include "authoring/ComponentPropertySource.h"
 #include "workspace/ElementVerbs.h"
@@ -381,6 +383,7 @@ void LevelWorkspace::BuildInput()
     // keymap, hints and palette name it like any other.
     offer("tool.wheel", "Tool Wheel", "Tool", { KeyChord{ SDLK_Q, {} } }, IconId::None, {});
     offer("gizmo.wheel", "Transform Wheel", "Transform", { KeyChord{ SDLK_Z, {} } }, IconId::None, {});
+    offer("context.wheel", "Context Wheel", "Edit", { KeyChord{ SDLK_SPACE, {} } }, IconId::None, {});
 
     // A drafted operation's Apply and Cancel, for whatever presents them. The
     // tools take Enter and Escape themselves, so these carry no chord.
@@ -430,6 +433,17 @@ void LevelWorkspace::BuildInput()
         ToolWheel = std::make_unique<RadialMenuSession>(*ToolMenu, chordFor("tool.wheel", SDLK_Q), frame, pointerOnScene);
         GizmoMenu = std::make_unique<TransformModeMenuModel>([this] { return Workspace->Interaction.Manipulators; });
         GizmoWheel = std::make_unique<RadialMenuSession>(*GizmoMenu, chordFor("gizmo.wheel", SDLK_Z), frame, pointerOnScene);
+        ContextMenu = std::make_unique<ContextMenuModel>(
+            ContextMenuModel::Hooks{ .Aim = [this](Vec2d pointer) { AimAt(pointer); },
+                                     .Selection = [this] { return Selection(); },
+                                     .Actions = [this] { return WindowActions; },
+                                     .Details = "selection.details" },
+            Catalog);
+        // Its entries are words and its hub reads out values: a roomier wheel.
+        ContextWheel = std::make_unique<RadialMenuSession>(*ContextMenu, chordFor("context.wheel", SDLK_SPACE), frame,
+                                                           pointerOnScene,
+                                                           RadialMenu::Proportions{ .Radius = 112.0f, .Hub = 60.0f,
+                                                                                    .Button = 44.0f });
     }
 
     Router = std::make_unique<InputRouter>();
@@ -443,6 +457,7 @@ void LevelWorkspace::BuildInput()
     // to any gesture already holding the pointer.
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return ToolWheel->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return GizmoWheel->OnInput(e, cap); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return ContextWheel->OnInput(e, cap); });
     DividerDrag = std::make_unique<ViewDividerDrag>(
         [this] {
             return ViewDividerDrag::Arrangement{ .Kind = Arrangement(),
@@ -810,8 +825,27 @@ void LevelWorkspace::ShowView(ViewportOrientation orientation)
     }
 }
 
+void LevelWorkspace::AimAt(Vec2d pointer)
+{
+    const EditorViewport* viewport = Workspace->Layout.Find(Workspace->Layout.ResolveAt(pointer));
+    if (viewport == nullptr)
+        return;
+    const SelectableRef picked =
+        Workspace->Picking.Pick(*viewport, pointer, Workspace->World.FocusDocument().GetScene(),
+                                BrushPickRequest{ .Mode = PickModeForElementKind(Workspace->MeshEdit.GetElementKind()) });
+    // Nothing there, or something already selected: the wheel is about the selection.
+    const std::span<const SelectableRef> selected = Workspace->Selection.GetSelection();
+    if (!picked.IsValid() || std::ranges::find(selected, picked) != selected.end())
+        return;
+    SelectionSnapshot only;
+    only.Primary = picked;
+    only.Items.push_back(picked);
+    Workspace->Commands.Execute(std::make_unique<SelectCommand>(Workspace->Selection, std::move(only)));
+}
+
 void LevelWorkspace::MoveTo(const WorkspaceWindow& window)
 {
+    WindowActions = window.Actions;
     if (window.Window != nullptr && window.Window != Window)
     {
         if (Window != nullptr)
@@ -919,6 +953,8 @@ void LevelWorkspace::ProcessFrame()
             WheelScreen->Present(ToolWheel.get(), ToolMenu.get());
         else if (GizmoWheel->GetPhase() == RadialMenuPhase::Open)
             WheelScreen->Present(GizmoWheel.get(), GizmoMenu.get());
+        else if (ContextWheel->GetPhase() == RadialMenuPhase::Open)
+            WheelScreen->Present(ContextWheel.get(), ContextMenu.get());
         else
             WheelScreen->Present(nullptr, nullptr);
     }

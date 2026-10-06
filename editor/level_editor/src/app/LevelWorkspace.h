@@ -30,6 +30,8 @@
 
 class MaterialThumbnailCache;
 class LevelViewSurface;
+class ActionContextStack;
+class ContextMenuModel;
 class RadialMenuScreen;
 class ToolParameterSource;
 class EditorRenderFeature;
@@ -95,6 +97,8 @@ public:
     [[nodiscard]] WorkspaceManipulationFacet Manipulation() const override;
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] WorkspaceLocationFacet Location() const override;
+    // Selects what is under `pointer` for the context wheel, unless it already is.
+    void AimAt(Vec2d pointer);
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
@@ -190,6 +194,10 @@ private:
     std::unique_ptr<RadialMenuSession> ToolWheel;
     std::unique_ptr<TransformModeMenuModel> GizmoMenu;
     std::unique_ptr<RadialMenuSession> GizmoWheel;
+    std::unique_ptr<ContextMenuModel> ContextMenu;
+    std::unique_ptr<RadialMenuSession> ContextWheel;
+    // The window's actions, which the context wheel's entries resolve through.
+    const ActionContextStack* WindowActions = nullptr;
     std::unique_ptr<InputRouter> Router;
     std::unique_ptr<ViewportNavigation> Navigation;
     std::unique_ptr<ViewDividerDrag> DividerDrag;

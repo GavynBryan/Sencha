@@ -21,6 +21,7 @@ struct RadialMenuKey
     bool Hot = false;     // under the pointer: what a release would choose
     bool Active = false;  // the entry, or the variant, in effect now
     bool Variant = false; // on the outer ring, one of the hot entry's variants
+    bool Word = false;    // no glyph: the entry is its label, set across the petal
 };
 
 // What a sector of the wheel is cut from.
@@ -62,6 +63,9 @@ struct RadialMenuFace
     std::string Caption;
     bool CaptionNamesCurrent = false; // nothing is hot: it names what is already on
     std::vector<RadialMenuKey> Keys;
+    // What the hub reads out, a line each, within HubRadius of the centre.
+    std::vector<std::string> Summary;
+    float HubRadius = 0.0f;
 };
 
 [[nodiscard]] RadialMenuFace FaceOf(const RadialMenuSession& wheel, const IRadialMenuModel& menu);

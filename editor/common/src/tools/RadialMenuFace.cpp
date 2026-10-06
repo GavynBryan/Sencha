@@ -54,6 +54,8 @@ RadialMenuFace FaceOf(const RadialMenuSession& wheel, const IRadialMenuModel& me
     face.CaptionTop = layout.CaptionY();
     face.CaptionHeight = layout.CaptionHeight;
     face.CaptionNamesCurrent = hot < 0;
+    face.Summary = menu.Summary();
+    face.HubRadius = layout.Hub;
     std::vector<RadialMenuSector>& sectors = face.Sectors;
 
     for (int index = 0; index < count; ++index)
@@ -64,7 +66,8 @@ RadialMenuFace FaceOf(const RadialMenuSession& wheel, const IRadialMenuModel& me
                               .Label = std::string(item.Label),
                               .Icon = item.Icon,
                               .Hot = index == hot,
-                              .Active = index == active });
+                              .Active = index == active,
+                              .Word = item.Icon == IconId::None });
         if (index == hot || (hot < 0 && index == active))
             face.Caption = item.Label;
     }
@@ -100,7 +103,8 @@ RadialMenuFace FaceOf(const RadialMenuSession& wheel, const IRadialMenuModel& me
                                   .Icon = choice.Icon,
                                   .Hot = v == hotVariant,
                                   .Active = v == current,
-                                  .Variant = true });
+                                  .Variant = true,
+                                  .Word = choice.Icon == IconId::None });
         }
         if (hotVariant >= 0 && hotVariant < choiceCount)
             face.Caption += std::string(" \xC2\xB7 ") + std::string(choices[static_cast<std::size_t>(hotVariant)].Label);

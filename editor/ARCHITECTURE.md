@@ -388,8 +388,14 @@ firewall above.
   window's overlay surface) over `IRadialMenuModel`; the tools are one model
   (`tool.wheel`, `ToolRegistryMenuModel`), the gizmo modes another
   (`gizmo.wheel`, `TransformModeMenuModel` over the `TransformModeItems`
-  table the Transform actions read too). An open wheel is modal, which is what
-  keeps the other closed.
+  table the Transform actions read too), and what the pointer is on a third
+  (`context.wheel`, Space, `actions/ContextMenuModel`): as it opens the
+  workspace aims at what is under the pointer (`LevelWorkspace::AimAt` selects
+  it), and the wheel offers that selection's choices as fans with the one in
+  effect marked, its enabled actions, and More... (`selection.details`, the
+  full sheet), with its values read out in the hub (`IRadialMenuModel::Summary`).
+  A wheel of words is sized by `RadialMenu::Proportions`. An open wheel is
+  modal, which is what keeps the others closed.
 - A viewport visual: a render feature/pass in `level_editor/src/render/`, added in
   `LevelWorkspace::BuildViewportRendering`. A tool's world strokes go through
   `EditorOverlayState` (segments, dials, the drag readout), drawn into each view

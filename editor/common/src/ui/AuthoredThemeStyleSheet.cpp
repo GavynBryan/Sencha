@@ -172,6 +172,11 @@ constexpr Rule kRules[] = {
                 + Color(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f));
      } },
     { ".theme-wheel-well.lit .icon", [] { return Tint(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f)); } },
+    { ".theme-wheel-word", [] { return Color(EditorUi::TextPrimary); } },
+    { ".theme-wheel-word.active", [] { return Color(EditorUi::SelectedOutline); } },
+    { ".theme-wheel-word.lit", [] { return Color(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f)); } },
+    { ".theme-wheel-readout", [] { return Color(EditorUi::TextDim); } },
+    { ".theme-wheel-readout.first", [] { return Color(EditorUi::Accent); } },
     // One part of a readout that opens something: a seam between parts, lit
     // while its popover is open.
     { ".theme-segment", [] { return Edge(EditorUi::Border); } },
