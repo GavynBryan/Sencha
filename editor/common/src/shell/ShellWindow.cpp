@@ -752,13 +752,14 @@ void ShellWindow::PublishExplorer(IWorkspace* workspace)
     }
     (void)ui.SetRows(Screen, kExplorerItems, items);
 
+    // What cannot be done now is not offered, rather than shown greyed.
     std::vector<UiRow> verbs;
     for (const std::string& id : page.Actions)
-        if (const ActionDefinition* definition = Services.Catalog.Find(id))
+        if (const ActionDefinition* definition = Services.Catalog.Find(id);
+            definition != nullptr && Services.Actions.Query(id).Enabled)
         {
             UiRow verb{ definition->Label, "", "" };
             verb.Key = id;
-            verb.Disabled = !Services.Actions.Query(id).Enabled;
             verbs.push_back(std::move(verb));
         }
     (void)ui.SetRows(Screen, kExplorerVerbs, verbs);
@@ -1096,12 +1097,11 @@ std::vector<UiRow> ShellWindow::CategoryEntries(std::string_view category) const
         if (action->Category != category)
             continue;
         const ActionContextStack::State state = Services.Actions.Query(action->Id);
-        if (!state.Claimed)
+        if (!state.Claimed || !state.Enabled)
             continue;
         UiRow row{ action->Label, Services.Catalog.ChordText(action->Id), "" };
         row.Key = action->Id;
         row.Icon = std::string(IconName(action->Icon));
-        row.Disabled = !state.Enabled;
         row.Selected = state.Checked;
         rows.push_back(std::move(row));
     }
@@ -1191,11 +1191,10 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
     {
         const ActionDefinition* definition = Services.Catalog.Find(id);
         const ActionContextStack::State state = Services.Actions.Query(id);
-        if (definition == nullptr || !state.Claimed)
+        if (definition == nullptr || !state.Claimed || !state.Enabled)
             continue;
         UiRow verb{ definition->Label, Services.Catalog.ChordText(id), "" };
         verb.Key = id;
-        verb.Disabled = !state.Enabled;
         verbs.push_back(std::move(verb));
     }
     (void)ui.SetRows(Screen, kSelectionVerbs, verbs);

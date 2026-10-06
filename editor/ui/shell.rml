@@ -213,7 +213,7 @@
         </div>
         <div id="selection_verbs">
             <div class="key theme-key" data-for="verb : selection_verbs"
-                 data-class-disabled="verb.disabled" data-class-lit="selection_staged &amp;&amp; it_index == 0"
+                 data-class-lit="selection_staged &amp;&amp; it_index == 0"
                  data-event-click="shell_invoke(verb.key)">{{verb.label}}</div>
         </div>
         <div class="corner" data-event-mousedown="shell_grab('selection', ev.mouse_x, ev.mouse_y, 'corner')"
@@ -243,7 +243,7 @@
                  data-event-click="shell_explorer_page(-1)"><span class="glyph">&#xf053;</span></div>
             <div class="key theme-key" data-if="explorer_earlier || explorer_later" data-class-disabled="!explorer_later"
                  data-event-click="shell_explorer_page(1)"><span class="glyph">&#xf054;</span></div>
-            <div class="key theme-key" data-for="verb : explorer_verbs" data-class-disabled="verb.disabled"
+            <div class="key theme-key" data-for="verb : explorer_verbs"
                  data-event-click="shell_invoke(verb.key)">{{verb.label}}</div>
             <div class="key theme-key" data-event-click="shell_explorer_close()"><span class="glyph">&#xf00d;</span></div>
         </div>

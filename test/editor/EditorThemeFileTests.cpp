@@ -3,9 +3,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <utility>
 
 namespace
 {
@@ -132,6 +134,41 @@ TEST(EditorThemeFile, BundledThemesLoadWithoutProblems)
         std::string error;
         EXPECT_TRUE(LoadEditorTheme(path, &error)) << error;
         EXPECT_TRUE(error.empty()) << error;
+    }
+    ResetEditorTheme();
+}
+
+namespace
+{
+float Luminance(const Vec4& linear)
+{
+    return 0.2126f * linear.X + 0.7152f * linear.Y + 0.0722f * linear.Z;
+}
+
+float Contrast(const Vec4& a, const Vec4& b)
+{
+    const float la = Luminance(a);
+    const float lb = Luminance(b);
+    return (std::max(la, lb) + 0.05f) / (std::min(la, lb) + 0.05f);
+}
+} // namespace
+
+TEST(EditorThemeFile, EveryBundledThemesTextReadsOnEverySurfaceTextSitsOn)
+{
+    // 4.5:1 is the floor for small text; the editor's text is all small.
+    for (const char* name : { "workstation.json", "dark_teal.json", "Shudei.json" })
+    {
+        const std::filesystem::path path = std::filesystem::path(SENCHA_EDITOR_THEME_DIR) / name;
+        ASSERT_TRUE(LoadEditorTheme(path, nullptr)) << name;
+        const std::pair<const char*, Vec4> surfaces[] = {
+            { "window", EditorUi::WindowBg }, { "panel", EditorUi::PanelBg },   { "header", EditorUi::HeaderBg },
+            { "button", EditorUi::ButtonBg }, { "plate", EditorUi::MetalBase },
+        };
+        for (const auto& [surface, color] : surfaces)
+        {
+            EXPECT_GE(Contrast(EditorUi::TextPrimary, color), 4.5f) << name << ": primary text on " << surface;
+            EXPECT_GE(Contrast(EditorUi::TextDim, color), 4.5f) << name << ": secondary text on " << surface;
+        }
     }
     ResetEditorTheme();
 }

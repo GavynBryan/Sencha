@@ -51,7 +51,7 @@ inline Vec4 Danger         = detail::Hex(0xE0473C);                 // #E0473C r
 inline Vec4 Critical       = detail::Hex(0xF0508C);                 // #F0508C magenta
 inline Vec4 Success        = detail::Hex(0x2ED0EA);                 // cyan (use accent)
 inline Vec4 TextPrimary    = detail::Hex(0xD6E4F0);                 // #D6E4F0 pale blue-white
-inline Vec4 TextDim        = detail::Hex(0x6E8296);                 // #6E8296 desaturated blue-gray
+inline Vec4 TextDim        = detail::Hex(0xA9BBCC);                 // #A9BBCC secondary text, readable on plates
 
 // Workstation chassis layers, consumed by the chrome primitives: the darkest
 // ground the whole shell sits on, the metal a frame is milled from, and the two

@@ -1,5 +1,5 @@
 {
-  "comment": "The built-in workstation look, recorded as a theme so a custom theme can start from it. Colors are authored sRGB hex (#RRGGBB or #RRGGBBAA); the editor linearizes them for its sRGB swapchain. Metrics are design pixels, scaled by editor.ui.scale. Point the editor.ui.theme cvar at a copy of this file and edit away.",
+  "comment": "The built-in workstation look, recorded as a theme so a custom theme can start from it. Colors are authored sRGB hex (#RRGGBB or #RRGGBBAA); the editor linearizes them for its sRGB swapchain. Point the editor.ui.theme cvar at a copy of this file and edit away.",
   "colors": {
     "window_bg": "#080B10",
     "panel_bg": "#0B0F15",
@@ -23,7 +23,7 @@
     "critical": "#F0508C",
     "success": "#2ED0EA",
     "text_primary": "#D6E4F0",
-    "text_dim": "#6E8296",
+    "text_dim": "#A9BBCC",
     "chassis_bg": "#05070A",
     "metal_base": "#1A222C",
     "metal_highlight": "#3A4856",
