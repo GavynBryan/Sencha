@@ -74,4 +74,8 @@ struct PropertyNode
     PropertyDescriptor Descriptor;
     std::string Value = {};
     std::vector<PropertyNode> Children = {};
+    // Stands for several values that differ -- the same field of several
+    // selected objects -- so Value is empty: setting it sets them all alike,
+    // and moving it by an amount moves each from where it is.
+    bool Mixed = false;
 };

@@ -19,12 +19,30 @@ PropertyEditResult PropertyEditSession::Preview(std::string_view value)
     return Source->PreviewEdit(EditingKey, value);
 }
 
+PropertyEditResult PropertyEditSession::PreviewBy(double delta)
+{
+    if (Source == nullptr)
+        return PropertyEditResult::Gone;
+    return Source->PreviewEditBy(EditingKey, delta);
+}
+
 PropertyEditResult PropertyEditSession::Commit(std::string_view value)
+{
+    return Finish([value](IPropertySource& source, std::string_view key) { return source.CommitEdit(key, value); });
+}
+
+PropertyEditResult PropertyEditSession::CommitBy(double delta)
+{
+    return Finish([delta](IPropertySource& source, std::string_view key) { return source.CommitEditBy(key, delta); });
+}
+
+PropertyEditResult PropertyEditSession::Finish(
+    const std::function<PropertyEditResult(IPropertySource&, std::string_view)>& commit)
 {
     if (Source == nullptr)
         return PropertyEditResult::Gone;
     IPropertySource* source = std::exchange(Source, nullptr);
-    const PropertyEditResult result = source->CommitEdit(EditingKey, value);
+    const PropertyEditResult result = commit(*source, EditingKey);
     if (result != PropertyEditResult::Applied)
         source->CancelEdit(EditingKey);
     EditingKey.clear();

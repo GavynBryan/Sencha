@@ -154,6 +154,45 @@ TEST(RuntimeFieldText, DegreesAreShownAndTakenInDegreesAndStoredInRadians)
     EXPECT_NEAR(sample.Angle, std::numbers::pi_v<float>, 1e-5f);
 }
 
+TEST(RuntimeFieldText, OneNumberOfAVectorIsReadAndWrittenAlone)
+{
+    Sample sample{};
+    sample.Position[0] = 1.0f;
+    sample.Position[1] = 2.0f;
+    sample.Position[2] = 3.0f;
+    const RuntimeField field = Vector3Field();
+    EXPECT_EQ(FormatRuntimeFieldElement(field, &sample, 1), "2");
+    EXPECT_TRUE(FormatRuntimeFieldElement(field, &sample, 3).empty());
+
+    ASSERT_TRUE(ParseRuntimeFieldElement(field, 1, "7.5", &sample));
+    EXPECT_FLOAT_EQ(sample.Position[0], 1.0f);
+    EXPECT_FLOAT_EQ(sample.Position[1], 7.5f);
+    EXPECT_FLOAT_EQ(sample.Position[2], 3.0f);
+    EXPECT_FALSE(ParseRuntimeFieldElement(field, 1, "nonsense", &sample));
+    EXPECT_FLOAT_EQ(sample.Position[1], 7.5f) << "a refused number leaves it as it was";
+
+    ASSERT_TRUE(OffsetRuntimeFieldElement(field, 2, -0.5, &sample));
+    EXPECT_FLOAT_EQ(sample.Position[2], 2.5f);
+}
+
+TEST(RuntimeFieldText, AMovedNumberMovesInTheUnitsItIsShownInAndKeepsItsKind)
+{
+    Sample sample{};
+    sample.Angle = 0.0f;
+    ASSERT_TRUE(OffsetRuntimeFieldElement(AngleField(), 0, 90.0, &sample));
+    EXPECT_NEAR(sample.Angle, std::numbers::pi_v<float> * 0.5f, 1e-5f) << "ninety degrees, stored in radians";
+
+    RuntimeField count;
+    count.Name = "count";
+    count.Offset = offsetof(Sample, Count);
+    count.Size = sizeof(std::int32_t);
+    count.Scalar = FieldScalar::Int32;
+    sample.Count = 3;
+    ASSERT_TRUE(OffsetRuntimeFieldElement(count, 0, 1.6, &sample));
+    EXPECT_EQ(sample.Count, 5) << "a whole number moved stays whole";
+    EXPECT_FALSE(OffsetRuntimeFieldElement(BoolField(), 0, 1.0, &sample)) << "a switch has no amount";
+}
+
 TEST(RuntimeFieldText, ABoolTakesTheWordsAndTheDigitsAndNothingElse)
 {
     Sample sample{};

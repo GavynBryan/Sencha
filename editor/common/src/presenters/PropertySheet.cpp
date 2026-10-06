@@ -129,6 +129,7 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     row.Editable = !descriptor.ReadOnly && descriptor.Kind != PropertyKind::Group
                 && descriptor.Kind != PropertyKind::Unsupported;
     row.Choices = descriptor.Choices;
+    row.Mixed = node.Mixed;
     if (row.Control == UiRowControl::Color)
         row.Parts = { SwatchOf(node.Value) };
     if (row.Control == UiRowControl::Range)
@@ -176,7 +177,8 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
                      .Folded = folded,
                      .Snap = rows.back().Control == UiRowControl::Range ? rows.back().Step : 0.0,
                      .Layout = std::move(layout) });
-    if (folded)
+    // A vector's numbers are its own row, not rows under it.
+    if (folded || descriptor.Kind == PropertyKind::Vector)
         return;
     for (const PropertyNode& child : node.Children)
         Append(child, depth + 1, section, everything, rows);

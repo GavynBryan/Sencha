@@ -2,6 +2,7 @@
 
 #include "properties/PropertySource.h"
 
+#include <functional>
 #include <string>
 #include <string_view>
 
@@ -20,8 +21,10 @@ public:
 
     bool Begin(IPropertySource& source, std::string key);
     PropertyEditResult Preview(std::string_view value);
+    PropertyEditResult PreviewBy(double delta);
     // Ends the session whatever the answer.
     PropertyEditResult Commit(std::string_view value);
+    PropertyEditResult CommitBy(double delta);
     void Cancel();
 
     // A value set in one go, with no preview: a field typed and entered, a
@@ -32,6 +35,8 @@ public:
     [[nodiscard]] const std::string& Key() const { return EditingKey; }
 
 private:
+    PropertyEditResult Finish(const std::function<PropertyEditResult(IPropertySource&, std::string_view)>& commit);
+
     IPropertySource* Source = nullptr;
     std::string EditingKey;
 };

@@ -3,6 +3,7 @@
 #include "authoring/EditorComponentAdapter.h"
 #include "authoring/RuntimeFieldText.h"
 #include "commands/CommandStack.h"
+#include "commands/CompositeCommand.h"
 #include "document/AssetFieldIo.h"
 #include "document/DerivedComponents.h"
 #include "document/DocumentSerialization.h"
@@ -12,6 +13,7 @@
 #include "document/commands/RawComponentAddCommand.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/RawComponentRemoveCommand.h"
+#include "properties/SettingProperties.h"
 #include "selection/SelectionService.h"
 
 #include <assets/runtime/AssetSystem.h>
@@ -20,10 +22,12 @@
 #include <world/serialization/IComponentSerializer.h>
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cstring>
 #include <format>
 #include <memory>
+#include <unordered_set>
 #include <utility>
 
 namespace
@@ -86,6 +90,71 @@ bool Overridden(const RuntimeField& field, const std::byte* live, const std::vec
         return false;
     return std::memcmp(live + field.Offset, baseline.data() + field.Offset, span) != 0;
 }
+
+// The node shows the holders' value where they agree, and stands for all of
+// them where they do not.
+void Agree(PropertyNode& node, const std::vector<std::string>& values)
+{
+    if (values.empty())
+        return;
+    node.Mixed = std::ranges::any_of(values, [&](const std::string& value) { return value != values.front(); });
+    node.Value = node.Mixed ? std::string{} : values.front();
+}
+
+// Whether every holder reads as the first does, for the whole field or one of
+// its numbers. Equal bytes read alike; bytes that differ may still read alike
+// (0 and -0), so only those are read, stopping at the first that differs.
+bool ReadAlike(const RuntimeField& field, const std::vector<const std::byte*>& bytes,
+               std::optional<std::size_t> element)
+{
+    const std::size_t offset = field.Offset + element.value_or(0) * field.Size;
+    const std::size_t span = element.has_value() ? field.Size : field.Size * field.Count;
+    const auto read = [&](const std::byte* held) {
+        return element.has_value() ? FormatRuntimeFieldElement(field, held, *element) : FormatRuntimeField(field, held);
+    };
+    std::optional<std::string> first;
+    for (std::size_t i = 1; i < bytes.size(); ++i)
+    {
+        if (std::memcmp(bytes[i] + offset, bytes.front() + offset, span) == 0)
+            continue;
+        if (!first.has_value())
+            first = read(bytes.front());
+        if (read(bytes[i]) != *first)
+            return false;
+    }
+    return true;
+}
+
+// The node shows what the holders read as where they agree, and stands for
+// all of them where they do not.
+void Show(PropertyNode& node, const RuntimeField& field, const std::vector<const std::byte*>& bytes,
+          std::optional<std::size_t> element)
+{
+    node.Mixed = !ReadAlike(field, bytes, element);
+    if (!node.Mixed)
+        node.Value = element.has_value() ? FormatRuntimeFieldElement(field, bytes.front(), *element)
+                                         : FormatRuntimeField(field, bytes.front());
+}
+
+std::string ElementLabel(std::size_t index, std::size_t count)
+{
+    static constexpr std::array<std::string_view, 4> kAxes = { "X", "Y", "Z", "W" };
+    return count <= kAxes.size() ? std::string(kAxes[index]) : std::to_string(index);
+}
+
+bool WriteValue(const RuntimeField& leaf, std::optional<std::size_t> element, std::string_view value, std::byte* bytes)
+{
+    return element.has_value() ? ParseRuntimeFieldElement(leaf, *element, value, bytes)
+                               : ParseRuntimeField(leaf, value, bytes);
+}
+
+bool WriteOffset(const RuntimeField& leaf, std::optional<std::size_t> element, double delta, std::byte* bytes)
+{
+    // A whole vector has no one number to move.
+    if (!element.has_value() && leaf.Count > 1)
+        return false;
+    return OffsetRuntimeFieldElement(leaf, element.value_or(0), delta, bytes);
+}
 } // namespace
 
 ComponentPropertySource::ComponentPropertySource(WorldDocument& world,
@@ -113,6 +182,21 @@ EntityId ComponentPropertySource::Entity() const
     return selection.Entity;
 }
 
+std::vector<EntityId> ComponentPropertySource::Entities() const
+{
+    std::vector<EntityId> entities;
+    const EntityId primary = Entity();
+    if (!primary.IsValid())
+        return entities;
+    entities.push_back(primary);
+    const EditorScene& scene = WorldDoc.FocusDocument().GetScene();
+    std::unordered_set<EntityId, EntityIdHash> seen{ primary };
+    for (const SelectableRef& ref : Selection.GetSelection())
+        if (ref.IsEntity() && scene.HasEntity(ref.Entity) && seen.insert(ref.Entity).second)
+            entities.push_back(ref.Entity);
+    return entities;
+}
+
 void ComponentPropertySource::ShowElsewhere(std::vector<ComponentTypeId> types)
 {
     ShownElsewhere = std::move(types);
@@ -132,15 +216,19 @@ std::string ComponentPropertySource::KeyOf(ComponentTypeId type, std::string_vie
 std::vector<PropertyNode> ComponentPropertySource::Nodes() const
 {
     std::vector<PropertyNode> nodes;
-    const EntityId entity = Entity();
-    if (!entity.IsValid())
+    const std::vector<EntityId> entities = Entities();
+    if (entities.empty())
         return nodes;
 
     EditorDocument& document = WorldDoc.FocusDocument();
     const World& world = std::as_const(document.GetScene().GetRegistry()).Components;
     AssetSystem* assets = document.GetAssetSystem();
+    if (BaselinesFor != entities)
+    {
+        Baselines.clear();
+        BaselinesFor = entities;
+    }
 
-    const bool member = document.IsSceneInstanceMember(entity);
     std::vector<std::string> addable;
     std::vector<std::string> addableNotes;
     for (const auto& serializer : EditorSceneSerializers().Entries())
@@ -149,10 +237,14 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         if (id == InvalidComponentId)
             continue;
         const std::string key(serializer->JsonKey());
+        std::vector<EntityId> holders;
+        for (const EntityId entity : entities)
+            if (world.HasComponent(entity, id))
+                holders.push_back(entity);
         const bool elsewhere = std::ranges::find(ShownElsewhere, serializer->TypeId()) != ShownElsewhere.end();
-        if (elsewhere && world.HasComponent(entity, id))
+        if (elsewhere && !holders.empty())
             continue;
-        if (!world.HasComponent(entity, id))
+        if (holders.empty())
         {
             // A component the document owns (one that may not be removed) is
             // not the editor's to add either: its managed state would never be
@@ -160,23 +252,40 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
             if (serializer->IsRemovable())
             {
                 addable.push_back(HumanizeSchemaName(key));
-                addableNotes.push_back(BroughtWith(world, entity, id));
+                addableNotes.push_back(BroughtWith(world, entities.front(), id));
             }
             continue;
         }
 
+        const std::size_t lacking = entities.size() - holders.size();
         PropertyNode group{ .Key = key,
-                            .Descriptor = { .Kind = PropertyKind::Group, .Label = HumanizeSchemaName(key) } };
+                            .Descriptor = { .Kind = PropertyKind::Group,
+                                            .Label = lacking == 0 ? HumanizeSchemaName(key)
+                                                                  : std::format("{} \xC2\xB7 on {} of {}",
+                                                                                HumanizeSchemaName(key),
+                                                                                holders.size(), entities.size()) } };
         if (serializer->IsRemovable())
+        {
             group.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove Component", .Removes = true });
+            if (lacking > 0)
+                group.Descriptor.Verbs.push_back({ .Id = "spread", .Label = std::format("Add to the other {}", lacking) });
+        }
 
         const IEditorComponentAdapter* adapter = Adapters.Find(serializer->TypeId());
         if (adapter != nullptr)
             group.Descriptor.Actions.assign(adapter->Actions().begin(), adapter->Actions().end());
         if (adapter != nullptr && adapter->AuthorsInspectorRows())
         {
-            group.Children = adapter->InspectorNodes(InspectorContext(entity));
-            PrefixKeys(group.Children, key + kAdapterSeparator);
+            // An adapter's rows describe one object; several together have no
+            // one stack or list to show.
+            if (holders.size() == 1)
+            {
+                group.Children = adapter->InspectorNodes(InspectorContext(holders.front()));
+                PrefixKeys(group.Children, key + kAdapterSeparator);
+            }
+            else
+                group.Children.push_back(NoteProperty(key + kAdapterSeparator + "together", "",
+                                                      "Each object's own: select one to change it."));
             nodes.push_back(std::move(group));
             continue;
         }
@@ -184,11 +293,17 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         const std::span<const RuntimeField> fields = serializer->RuntimeFields();
         // A zero-size tag has no storage, so bytes are asked for only when there
         // is a leaf to read; the group still appears, fields or not.
-        const void* bytes = fields.empty() ? nullptr : world.GetComponentRaw(entity, id);
-        if (!fields.empty() && bytes == nullptr)
+        std::vector<const std::byte*> bytes;
+        std::vector<const std::vector<std::byte>*> baselines;
+        for (const EntityId holder : holders)
+        {
+            bytes.push_back(fields.empty() ? nullptr
+                                           : static_cast<const std::byte*>(world.GetComponentRaw(holder, id)));
+            baselines.push_back(document.IsSceneInstanceMember(holder) ? &Baseline(holder, *serializer, id) : nullptr);
+        }
+        if (!fields.empty() && std::ranges::find(bytes, nullptr) != bytes.end())
             continue;
-        const std::vector<std::byte>* baseline = member ? &Baseline(entity, *serializer, id) : nullptr;
-        if (baseline != nullptr && baseline->empty())
+        if (holders.size() == 1 && baselines.front() != nullptr && baselines.front()->empty())
             group.Descriptor.Tooltip = "Added to this instance; the source has no such component.";
         bool overridden = false;
         bool holdsAssets = false;
@@ -210,8 +325,22 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
             if (field.Asset == AssetType::Unknown)
             {
                 if (node.Descriptor.Kind != PropertyKind::Unsupported)
-                    node.Value = FormatRuntimeField(field, bytes);
-                if (baseline != nullptr && Overridden(field, static_cast<const std::byte*>(bytes), *baseline))
+                    Show(node, field, bytes, std::nullopt);
+                // A vector's numbers are its children, so one can change on its own.
+                if (node.Descriptor.Kind == PropertyKind::Vector)
+                    for (std::size_t element = 0; element < field.Count; ++element)
+                    {
+                        PropertyNode part{ .Key = std::format("{}[{}]", node.Key, element),
+                                           .Descriptor = { .Kind = PropertyKind::Number,
+                                                           .Label = ElementLabel(element, field.Count),
+                                                           .ReadOnly = node.Descriptor.ReadOnly } };
+                        Show(part, field, bytes, element);
+                        node.Children.push_back(std::move(part));
+                    }
+                bool differs = false;
+                for (std::size_t i = 0; i < holders.size(); ++i)
+                    differs |= baselines[i] != nullptr && Overridden(field, bytes[i], *baselines[i]);
+                if (differs)
                 {
                     node.Descriptor.Verbs.push_back({ .Id = "reset", .Label = "Reset to Source" });
                     overridden = true;
@@ -228,23 +357,37 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
                 group.Children.push_back(std::move(node));
                 continue;
             }
-            const AssetFieldValue value = ReadAssetField(
-                *assets, field.Asset, field.Arity, static_cast<const std::byte*>(bytes) + field.Offset);
+            std::vector<std::vector<std::string>> lists;
+            for (const std::byte* held : bytes)
+            {
+                std::vector<std::string> paths;
+                for (const AssetFieldRef& ref : ReadAssetField(*assets, field.Asset, field.Arity, held + field.Offset).Refs)
+                    paths.push_back(ref.Path);
+                lists.push_back(std::move(paths));
+            }
             if (field.Arity != AssetArity::List)
             {
-                node.Value = value.Refs.empty() ? std::string{} : value.Refs.front().Path;
+                std::vector<std::string> values;
+                for (const std::vector<std::string>& paths : lists)
+                    values.push_back(paths.empty() ? std::string{} : paths.front());
+                Agree(node, values);
                 group.Children.push_back(std::move(node));
                 continue;
             }
+            // Lists that differ have no slots in common to show: the first
+            // stands for them, and choosing it sets each one's first.
+            const bool sameLists = std::ranges::all_of(lists, [&](const auto& paths) { return paths == lists.front(); });
+            const std::vector<std::string>& shown = lists.front();
             // A list with no slots still offers one, so an empty field can be filled.
-            const std::size_t slots = std::max<std::size_t>(value.Refs.size(), 1);
+            const std::size_t slots = sameLists ? std::max<std::size_t>(shown.size(), 1) : 1;
             for (std::size_t slot = 0; slot < slots; ++slot)
             {
                 PropertyNode slotNode = node;
                 slotNode.Key += "#" + std::to_string(slot);
-                if (!value.Refs.empty())
+                if (!shown.empty())
                     slotNode.Descriptor.Label += " " + std::to_string(slot);
-                slotNode.Value = slot < value.Refs.size() ? value.Refs[slot].Path : std::string{};
+                slotNode.Mixed = !sameLists;
+                slotNode.Value = sameLists && slot < shown.size() ? shown[slot] : std::string{};
                 group.Children.push_back(std::move(slotNode));
             }
         }
@@ -263,34 +406,40 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
                                                 .ChoiceNotes = std::move(addableNotes) });
     nodes.insert(nodes.begin(), std::move(components));
 
-    // What the engine put on the entity because of what was authored: always
-    // there to read, closed until opened, under what each came from.
-    const std::vector<DerivedComponentRow> derived = DerivedComponentsOn(world, EditorSceneSerializers(), entity);
-    if (!derived.empty())
-    {
-        PropertyNode group{ .Key = "derived",
-                            .Descriptor = { .Kind = PropertyKind::Group,
-                                            .Label = std::format("Derived \xC2\xB7 {}", derived.size()),
-                                            .Tooltip = "On the entity, not in the scene file: systems keep these, "
-                                                       "and each goes when what it came from does.",
-                                            .Folded = true } };
-        for (const DerivedComponentRow& row : derived)
+    // What the engine put on the entities because of what was authored:
+    // always there to read, closed until opened, under what each came from.
+    PropertyNode derived{ .Key = "derived",
+                          .Descriptor = { .Kind = PropertyKind::Group,
+                                          .Label = {},
+                                          .Tooltip = "On the entity, not in the scene file: systems keep these, "
+                                                     "and each goes when what it came from does.",
+                                          .Folded = true } };
+    std::size_t derivedCount = 0;
+    for (const EntityId entity : entities)
+        for (const DerivedComponentRow& row : DerivedComponentsOn(world, EditorSceneSerializers(), entity))
         {
             const ComponentMeta* owner = row.ProvidedBy == InvalidComponentId ? nullptr : world.GetMeta(row.ProvidedBy);
             const std::string source = owner != nullptr ? HumanizeSchemaName(owner->Name) : std::string("the engine");
             const std::string sourceKey = "derived/" + source;
-            auto from = std::ranges::find(group.Children, sourceKey, &PropertyNode::Key);
-            if (from == group.Children.end())
-                from = group.Children.insert(group.Children.end(),
-                                             PropertyNode{ .Key = sourceKey,
-                                                           .Descriptor = { .Kind = PropertyKind::Group,
-                                                                           .Label = "from " + source } });
+            auto from = std::ranges::find(derived.Children, sourceKey, &PropertyNode::Key);
+            if (from == derived.Children.end())
+                from = derived.Children.insert(derived.Children.end(),
+                                               PropertyNode{ .Key = sourceKey,
+                                                             .Descriptor = { .Kind = PropertyKind::Group,
+                                                                             .Label = "from " + source } });
+            const std::string rowKey = "derived/" + std::string(row.Name);
+            if (std::ranges::find(from->Children, rowKey, &PropertyNode::Key) != from->Children.end())
+                continue;
             from->Children.push_back(PropertyNode{
-                .Key = "derived/" + std::string(row.Name),
+                .Key = rowKey,
                 .Descriptor = { .Kind = PropertyKind::Text, .Label = HumanizeSchemaName(row.Name),
                                 .Tooltip = std::string(row.Name), .ReadOnly = true } });
+            ++derivedCount;
         }
-        nodes.push_back(std::move(group));
+    if (derivedCount > 0)
+    {
+        derived.Descriptor.Label = std::format("Derived \xC2\xB7 {}", derivedCount);
+        nodes.push_back(std::move(derived));
     }
     return nodes;
 }
@@ -306,18 +455,36 @@ EditorComponentInspectorContext ComponentPropertySource::InspectorContext(Entity
                                             .Entity = entity };
 }
 
+EntityId ComponentPropertySource::SoleHolder(std::string_view adapterKey) const
+{
+    const IComponentSerializer* serializer =
+        EditorSceneSerializers().FindByJsonKey(adapterKey.substr(0, adapterKey.find(kAdapterSeparator)));
+    if (serializer == nullptr)
+        return {};
+    const World& world = std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
+    const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
+    EntityId holder{};
+    for (const EntityId entity : Entities())
+        if (id != InvalidComponentId && world.HasComponent(entity, id))
+        {
+            if (holder.IsValid())
+                return {};
+            holder = entity;
+        }
+    return holder;
+}
+
 const std::vector<std::byte>& ComponentPropertySource::Baseline(EntityId entity, IComponentSerializer& serializer,
                                                                 ComponentId component) const
 {
-    if (BaselineEntity != entity)
-    {
-        Baselines.clear();
-        BaselineEntity = entity;
-    }
-    auto found = Baselines.find(component);
-    if (found == Baselines.end())
-        found = Baselines.emplace(component, WorldDoc.FocusDocument().BaselineComponentBytes(entity, serializer)).first;
-    return found->second;
+    const auto found = std::ranges::find_if(Baselines, [&](const BaselineBytes& baseline) {
+        return baseline.Entity == entity && baseline.Component == component;
+    });
+    if (found != Baselines.end())
+        return found->Bytes;
+    return Baselines
+        .emplace_back(BaselineBytes{ entity, component, WorldDoc.FocusDocument().BaselineComponentBytes(entity, serializer) })
+        .Bytes;
 }
 
 std::optional<ComponentPropertySource::Field> ComponentPropertySource::Resolve(std::string_view key) const
@@ -335,6 +502,18 @@ std::optional<ComponentPropertySource::Field> ComponentPropertySource::Resolve(s
             return std::nullopt;
         leaf = leaf.substr(0, hash);
     }
+    std::optional<std::size_t> element;
+    if (leaf.ends_with(']'))
+    {
+        const std::size_t open = leaf.rfind('[');
+        std::size_t index = 0;
+        const std::string_view digits = leaf.substr(open + 1, leaf.size() - open - 2);
+        if (open == std::string_view::npos
+            || std::from_chars(digits.data(), digits.data() + digits.size(), index).ec != std::errc{})
+            return std::nullopt;
+        element = index;
+        leaf = leaf.substr(0, open);
+    }
 
     const World& world = std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
     for (const auto& serializer : EditorSceneSerializers().Entries())
@@ -346,7 +525,11 @@ std::optional<ComponentPropertySource::Field> ComponentPropertySource::Resolve(s
             return std::nullopt;
         for (const RuntimeField& field : serializer->RuntimeFields())
             if (field.Name == leaf)
-                return Field{ serializer.get(), id, &field, slot };
+            {
+                if (element.has_value() && *element >= field.Count)
+                    return std::nullopt;
+                return Field{ serializer.get(), id, &field, slot, element };
+            }
         return std::nullopt;
     }
     return std::nullopt;
@@ -357,29 +540,33 @@ bool ComponentPropertySource::BeginEdit(std::string_view key)
     // An adapter's property is set in one command when it commits; there are
     // no bytes to hold open.
     if (key.find(kAdapterSeparator) != std::string_view::npos)
-        return Entity().IsValid();
+        return SoleHolder(key).IsValid();
     if (Phase != EditPhase::Idle)
         CancelEdit(EditingKey);
     const std::optional<Field> field = Resolve(key);
-    const EntityId entity = Entity();
-    if (!field.has_value() || !entity.IsValid())
+    if (!field.has_value())
         return false;
     const World& world = std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
     const ComponentMeta* meta = world.GetMeta(field->Component);
-    const void* live = world.GetComponentRaw(entity, field->Component);
-    if (meta == nullptr || live == nullptr || meta->Size == 0)
+    if (meta == nullptr || meta->Size == 0)
         return false;
 
-    Before.resize(meta->Size);
-    std::memcpy(Before.data(), live, meta->Size);
+    Holding.clear();
+    for (const EntityId entity : Entities())
+        if (const void* live = world.GetComponentRaw(entity, field->Component); live != nullptr)
+        {
+            Held& held = Holding.emplace_back(Held{ entity, std::vector<std::byte>(meta->Size) });
+            std::memcpy(held.Before.data(), live, meta->Size);
+        }
+    if (Holding.empty())
+        return false;
     EditingKey = std::string(key);
-    EditingEntity = entity;
     EditingComponent = field->Component;
     Phase = EditPhase::Armed;
     return true;
 }
 
-PropertyEditResult ComponentPropertySource::PreviewEdit(std::string_view key, std::string_view value)
+PropertyEditResult ComponentPropertySource::Stage(std::string_view key, const Writer& write)
 {
     if (key.find(kAdapterSeparator) != std::string_view::npos)
         return PropertyEditResult::Unchanged;
@@ -389,14 +576,15 @@ PropertyEditResult ComponentPropertySource::PreviewEdit(std::string_view key, st
     if (!field.has_value() || field->Leaf->Asset != AssetType::Unknown)
         return PropertyEditResult::Gone;
 
-    std::vector<std::byte> working = Before;
-    if (!ParseRuntimeField(*field->Leaf, value, working.data()))
-        return PropertyEditResult::Refused;
-
-    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
-    void* live = world.GetComponentRaw(EditingEntity, EditingComponent);
-    if (live == nullptr)
-        return PropertyEditResult::Gone;
+    // Every holder written, or none: a value one of them cannot hold changes nothing.
+    std::vector<std::vector<std::byte>> staged;
+    for (const Held& held : Holding)
+    {
+        std::vector<std::byte> working = held.Before;
+        if (!write(*field, working.data()))
+            return PropertyEditResult::Refused;
+        staged.push_back(std::move(working));
+    }
     if (Phase == EditPhase::Armed)
     {
         // Held in the command stack's one pending-edit scope from the first
@@ -404,47 +592,32 @@ PropertyEditResult ComponentPropertySource::PreviewEdit(std::string_view key, st
         Commands.OpenPendingEdit([this] { RestoreBefore(); });
         Phase = EditPhase::Previewing;
     }
-    std::memcpy(live, working.data(), working.size());
+    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
+    for (std::size_t i = 0; i < Holding.size(); ++i)
+        if (void* live = world.GetComponentRaw(Holding[i].Entity, EditingComponent); live != nullptr)
+            std::memcpy(live, staged[i].data(), staged[i].size());
     return PropertyEditResult::Applied;
 }
 
-PropertyEditResult ComponentPropertySource::CommitEdit(std::string_view key, std::string_view value)
+PropertyEditResult ComponentPropertySource::Finish(std::string_view key, const Writer& write)
 {
-    if (const std::size_t separator = key.find(kAdapterSeparator); separator != std::string_view::npos)
-    {
-        const EntityId entity = Entity();
-        const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(key.substr(0, separator));
-        const IEditorComponentAdapter* adapter = serializer != nullptr ? Adapters.Find(serializer->TypeId()) : nullptr;
-        if (!entity.IsValid() || adapter == nullptr)
-            return PropertyEditResult::Gone;
-        EditorComponentInspectorContext context = InspectorContext(entity);
-        return adapter->SetInspectorValue(context, key.substr(separator + 1), value);
-    }
-    if (Phase == EditPhase::Idle || key != EditingKey)
-    {
-        if (!BeginEdit(key))
-            return PropertyEditResult::Gone;
-    }
+    if ((Phase == EditPhase::Idle || key != EditingKey) && !BeginEdit(key))
+        return PropertyEditResult::Gone;
     const std::optional<Field> field = Resolve(key);
     if (!field.has_value())
     {
         CancelEdit(key);
         return PropertyEditResult::Gone;
     }
-    if (field->Leaf->Asset != AssetType::Unknown)
+    std::vector<std::vector<std::byte>> afters;
+    for (const Held& held : Holding)
     {
-        CancelEdit(key);
-        return CommitAsset(*field, value);
+        std::vector<std::byte> after = held.Before;
+        if (!write(*field, after.data()))
+            return PropertyEditResult::Refused;
+        afters.push_back(std::move(after));
     }
 
-    std::vector<std::byte> after = Before;
-    if (!ParseRuntimeField(*field->Leaf, value, after.data()))
-        return PropertyEditResult::Refused;
-
-    std::vector<std::byte> before = Before;
-    const EntityId entity = EditingEntity;
-    const ComponentId component = EditingComponent;
-    const bool unchanged = after == before;
     if (Phase == EditPhase::Previewing)
     {
         RestoreBefore();
@@ -452,13 +625,73 @@ PropertyEditResult ComponentPropertySource::CommitEdit(std::string_view key, std
     }
     Phase = EditPhase::Idle;
     EditingKey.clear();
-    if (unchanged)
-        return PropertyEditResult::Unchanged;
+    std::vector<Held> held = std::exchange(Holding, {});
 
     EditorDocument& document = WorldDoc.FocusDocument();
-    Commands.Execute(std::make_unique<RawComponentEditCommand>(
-        entity, component, std::move(before), std::move(after), document.GetScene(), document));
+    std::vector<std::unique_ptr<ICommand>> commands;
+    for (std::size_t i = 0; i < held.size(); ++i)
+        if (afters[i] != held[i].Before)
+            commands.push_back(std::make_unique<RawComponentEditCommand>(held[i].Entity, EditingComponent,
+                                                                         std::move(held[i].Before),
+                                                                         std::move(afters[i]),
+                                                                         document.GetScene(), document));
+    return Run(std::move(commands));
+}
+
+PropertyEditResult ComponentPropertySource::Run(std::vector<std::unique_ptr<ICommand>> commands)
+{
+    if (commands.empty())
+        return PropertyEditResult::Unchanged;
+    if (commands.size() == 1)
+        Commands.Execute(std::move(commands.front()));
+    else
+        Commands.Execute(std::make_unique<CompositeCommand>(std::move(commands)));
     return PropertyEditResult::Applied;
+}
+
+PropertyEditResult ComponentPropertySource::PreviewEdit(std::string_view key, std::string_view value)
+{
+    return Stage(key, [value](const Field& field, std::byte* bytes) {
+        return WriteValue(*field.Leaf, field.Element, value, bytes);
+    });
+}
+
+PropertyEditResult ComponentPropertySource::PreviewEditBy(std::string_view key, double delta)
+{
+    return Stage(key, [delta](const Field& field, std::byte* bytes) {
+        return WriteOffset(*field.Leaf, field.Element, delta, bytes);
+    });
+}
+
+PropertyEditResult ComponentPropertySource::CommitEdit(std::string_view key, std::string_view value)
+{
+    if (const std::size_t separator = key.find(kAdapterSeparator); separator != std::string_view::npos)
+    {
+        const EntityId holder = SoleHolder(key);
+        const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(key.substr(0, separator));
+        const IEditorComponentAdapter* adapter = serializer != nullptr ? Adapters.Find(serializer->TypeId()) : nullptr;
+        if (!holder.IsValid() || adapter == nullptr)
+            return PropertyEditResult::Gone;
+        EditorComponentInspectorContext context = InspectorContext(holder);
+        return adapter->SetInspectorValue(context, key.substr(separator + 1), value);
+    }
+    if (const std::optional<Field> field = Resolve(key); field.has_value() && field->Leaf->Asset != AssetType::Unknown)
+    {
+        CancelEdit(key);
+        return CommitAsset(*field, value);
+    }
+    return Finish(key, [value](const Field& field, std::byte* bytes) {
+        return WriteValue(*field.Leaf, field.Element, value, bytes);
+    });
+}
+
+PropertyEditResult ComponentPropertySource::CommitEditBy(std::string_view key, double delta)
+{
+    if (key.find(kAdapterSeparator) != std::string_view::npos)
+        return PropertyEditResult::Refused;
+    return Finish(key, [delta](const Field& field, std::byte* bytes) {
+        return WriteOffset(*field.Leaf, field.Element, delta, bytes);
+    });
 }
 
 void ComponentPropertySource::CancelEdit(std::string_view key)
@@ -472,12 +705,13 @@ void ComponentPropertySource::CancelEdit(std::string_view key)
     }
     Phase = EditPhase::Idle;
     EditingKey.clear();
+    Holding.clear();
 }
 
 PropertyEditResult ComponentPropertySource::Act(std::string_view key, std::string_view verb, std::string_view choice)
 {
-    const EntityId entity = Entity();
-    if (!entity.IsValid())
+    const std::vector<EntityId> entities = Entities();
+    if (entities.empty())
         return PropertyEditResult::Gone;
     // A verb changes structure or bytes outright, so a byte edit left open
     // would restore over it.
@@ -485,21 +719,32 @@ PropertyEditResult ComponentPropertySource::Act(std::string_view key, std::strin
         CancelEdit(EditingKey);
     if (const std::size_t separator = key.find(kAdapterSeparator); separator != std::string_view::npos)
     {
+        const EntityId holder = SoleHolder(key);
         const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(key.substr(0, separator));
         const IEditorComponentAdapter* adapter = serializer != nullptr ? Adapters.Find(serializer->TypeId()) : nullptr;
         if (adapter == nullptr)
             return PropertyEditResult::Gone;
-        EditorComponentInspectorContext context = InspectorContext(entity);
+        if (!holder.IsValid())
+            return PropertyEditResult::Refused;
+        EditorComponentInspectorContext context = InspectorContext(holder);
         return adapter->ActInspector(context, key.substr(separator + 1), verb, choice);
     }
-    return ActOnComponent(entity, key, verb, choice);
+    return ActOnComponents(entities, key, verb, choice);
 }
 
-PropertyEditResult ComponentPropertySource::ActOnComponent(EntityId entity, std::string_view key,
-                                                           std::string_view verb, std::string_view choice)
+PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<EntityId>& entities,
+                                                            std::string_view key, std::string_view verb,
+                                                            std::string_view choice)
 {
     EditorDocument& document = WorldDoc.FocusDocument();
     World& world = document.GetScene().GetRegistry().Components;
+    std::vector<std::unique_ptr<ICommand>> commands;
+    const auto addTo = [&](const IComponentSerializer& serializer, ComponentId id) {
+        for (const EntityId entity : entities)
+            if (!world.HasComponent(entity, id))
+                commands.push_back(std::make_unique<RawComponentAddCommand>(entity, id, serializer.DefaultBytes(),
+                                                                            document.GetScene(), document));
+    };
     if (key == "components" && verb == "add")
     {
         for (const auto& serializer : EditorSceneSerializers().Entries())
@@ -507,11 +752,10 @@ PropertyEditResult ComponentPropertySource::ActOnComponent(EntityId entity, std:
             if (!serializer->IsRemovable() || HumanizeSchemaName(serializer->JsonKey()) != choice)
                 continue;
             const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
-            if (id == InvalidComponentId || world.HasComponent(entity, id))
+            if (id == InvalidComponentId)
                 return PropertyEditResult::Refused;
-            Commands.Execute(std::make_unique<RawComponentAddCommand>(entity, id, serializer->DefaultBytes(),
-                                                                      document.GetScene(), document));
-            return PropertyEditResult::Applied;
+            addTo(*serializer, id);
+            return commands.empty() ? PropertyEditResult::Refused : Run(std::move(commands));
         }
         return PropertyEditResult::Refused;
     }
@@ -519,50 +763,64 @@ PropertyEditResult ComponentPropertySource::ActOnComponent(EntityId entity, std:
     const std::size_t slash = key.find('/');
     IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(key.substr(0, slash));
     const ComponentId id = serializer != nullptr ? world.GetComponentIdByType(serializer->TypeId()) : InvalidComponentId;
-    if (id == InvalidComponentId || !world.HasComponent(entity, id))
+    std::vector<EntityId> holders;
+    for (const EntityId entity : entities)
+        if (id != InvalidComponentId && world.HasComponent(entity, id))
+            holders.push_back(entity);
+    if (holders.empty())
         return PropertyEditResult::Gone;
 
-    if (slash == std::string_view::npos && verb == "remove")
+    if (slash == std::string_view::npos && (verb == "remove" || verb == "spread"))
     {
         if (!serializer->IsRemovable())
             return PropertyEditResult::Refused;
-        Commands.Execute(std::make_unique<RawComponentRemoveCommand>(entity, *serializer, document.GetScene(), document));
-        return PropertyEditResult::Applied;
+        if (verb == "spread")
+            addTo(*serializer, id);
+        else
+            for (const EntityId holder : holders)
+                commands.push_back(std::make_unique<RawComponentRemoveCommand>(holder, *serializer,
+                                                                               document.GetScene(), document));
+        return Run(std::move(commands));
     }
     if (verb != "reset")
         return PropertyEditResult::Gone;
 
+    const std::optional<Field> field = slash != std::string_view::npos ? Resolve(key) : std::nullopt;
+    if (slash != std::string_view::npos && !field.has_value())
+        return PropertyEditResult::Gone;
     const ComponentMeta* meta = world.GetMeta(id);
-    const std::vector<std::byte>& baseline = Baseline(entity, *serializer, id);
-    const void* live = std::as_const(world).GetComponentRaw(entity, id);
-    if (meta == nullptr || live == nullptr || baseline.size() != meta->Size)
-        return PropertyEditResult::Refused;
-    std::vector<std::byte> current(meta->Size);
-    std::memcpy(current.data(), live, meta->Size);
-    std::vector<std::byte> reset = baseline;
-    if (slash != std::string_view::npos)
+    for (const EntityId holder : holders)
     {
-        const std::optional<Field> field = Resolve(key);
-        if (!field.has_value())
-            return PropertyEditResult::Gone;
-        const std::size_t span = field->Leaf->Size * field->Leaf->Count;
-        if (field->Leaf->Offset + span > current.size())
-            return PropertyEditResult::Refused;
-        reset = current;
-        std::memcpy(reset.data() + field->Leaf->Offset, baseline.data() + field->Leaf->Offset, span);
+        if (!document.IsSceneInstanceMember(holder))
+            continue;
+        const std::vector<std::byte>& baseline = Baseline(holder, *serializer, id);
+        const void* live = std::as_const(world).GetComponentRaw(holder, id);
+        if (meta == nullptr || live == nullptr || baseline.size() != meta->Size)
+            continue;
+        std::vector<std::byte> current(meta->Size);
+        std::memcpy(current.data(), live, meta->Size);
+        std::vector<std::byte> reset = baseline;
+        if (field.has_value())
+        {
+            const std::size_t span = field->Leaf->Size * field->Leaf->Count;
+            if (field->Leaf->Offset + span > current.size())
+                continue;
+            reset = current;
+            std::memcpy(reset.data() + field->Leaf->Offset, baseline.data() + field->Leaf->Offset, span);
+        }
+        if (reset != current)
+            commands.push_back(std::make_unique<RawComponentEditCommand>(holder, id, std::move(current), std::move(reset),
+                                                                         document.GetScene(), document));
     }
-    if (reset == current)
-        return PropertyEditResult::Unchanged;
-    Commands.Execute(std::make_unique<RawComponentEditCommand>(entity, id, std::move(current), std::move(reset),
-                                                               document.GetScene(), document));
-    return PropertyEditResult::Applied;
+    return Run(std::move(commands));
 }
 
 void ComponentPropertySource::RestoreBefore()
 {
     World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
-    if (void* live = world.GetComponentRaw(EditingEntity, EditingComponent); live != nullptr)
-        std::memcpy(live, Before.data(), Before.size());
+    for (const Held& held : Holding)
+        if (void* live = world.GetComponentRaw(held.Entity, EditingComponent); live != nullptr)
+            std::memcpy(live, held.Before.data(), held.Before.size());
     // Reached as the pending scope's cancel too, which leaves nothing staged.
     if (Phase == EditPhase::Previewing)
         Phase = EditPhase::Armed;
@@ -570,21 +828,13 @@ void ComponentPropertySource::RestoreBefore()
 
 PropertyEditResult ComponentPropertySource::CommitAsset(const Field& field, std::string_view path)
 {
-    const EntityId entity = Entity();
     EditorDocument& document = WorldDoc.FocusDocument();
     AssetSystem* assets = document.GetAssetSystem();
     const AssetRegistry* catalog = document.GetAssetCatalog();
-    if (!entity.IsValid() || assets == nullptr)
+    if (assets == nullptr)
         return PropertyEditResult::Gone;
 
-    World& world = document.GetScene().GetRegistry().Components;
-    const void* base = std::as_const(world).GetComponentRaw(entity, field.Component);
-    if (base == nullptr)
-        return PropertyEditResult::Gone;
     const RuntimeField& leaf = *field.Leaf;
-    const AssetFieldValue current =
-        ReadAssetField(*assets, leaf.Asset, leaf.Arity, static_cast<const std::byte*>(base) + leaf.Offset);
-
     AssetFieldRef picked;
     if (!path.empty())
     {
@@ -594,40 +844,46 @@ PropertyEditResult ComponentPropertySource::CommitAsset(const Field& field, std:
         picked = AssetFieldRef{ record->Id, record->Path };
     }
 
-    // One edit is one whole before/after value through the refcount-balanced
-    // command: a handle retained and released in halves does not come back
-    // from an undo.
-    AssetFieldValue next = current;
-    if (leaf.Arity == AssetArity::List)
+    World& world = document.GetScene().GetRegistry().Components;
+    std::vector<std::unique_ptr<ICommand>> commands;
+    for (const EntityId entity : Entities())
     {
-        if (field.Slot == next.Refs.size())
+        const void* base = std::as_const(world).GetComponentRaw(entity, field.Component);
+        if (base == nullptr)
+            continue;
+        const AssetFieldValue current =
+            ReadAssetField(*assets, leaf.Asset, leaf.Arity, static_cast<const std::byte*>(base) + leaf.Offset);
+
+        // One edit is one whole before/after value through the refcount-balanced
+        // command: a handle retained and released in halves does not come back
+        // from an undo.
+        AssetFieldValue next = current;
+        if (leaf.Arity == AssetArity::List)
         {
-            // Choosing on the empty slot a list always offers appends it;
-            // choosing nothing there asks for nothing.
-            if (picked.Path.empty())
-                return PropertyEditResult::Unchanged;
-            next.Refs.push_back(std::move(picked));
-        }
-        else if (field.Slot < next.Refs.size())
-        {
-            next.Refs[field.Slot] = std::move(picked);
+            if (field.Slot == next.Refs.size())
+            {
+                // Choosing on the empty slot a list always offers appends it;
+                // choosing nothing there asks for nothing.
+                if (picked.Path.empty())
+                    continue;
+                next.Refs.push_back(picked);
+            }
+            else if (field.Slot < next.Refs.size())
+                next.Refs[field.Slot] = picked;
+            else
+                continue;
         }
         else
         {
-            return PropertyEditResult::Gone;
+            next.Refs.clear();
+            if (!picked.Path.empty())
+                next.Refs.push_back(picked);
         }
+        commands.push_back(std::make_unique<AssetFieldEditCommand>(entity, field.Component, leaf.Offset, leaf.Asset,
+                                                                   leaf.Arity, current, std::move(next),
+                                                                   document.GetScene(), document, *assets));
     }
-    else
-    {
-        next.Refs.clear();
-        if (!picked.Path.empty())
-            next.Refs.push_back(std::move(picked));
-    }
-
-    Commands.Execute(std::make_unique<AssetFieldEditCommand>(
-        entity, field.Component, leaf.Offset, leaf.Asset, leaf.Arity, current, std::move(next),
-        document.GetScene(), document, *assets));
-    return PropertyEditResult::Applied;
+    return Run(std::move(commands));
 }
 
 std::vector<AssetFieldCandidate> ComponentPropertySource::AssetChoices(std::string_view key) const

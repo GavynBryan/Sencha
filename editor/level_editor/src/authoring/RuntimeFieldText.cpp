@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <format>
 #include <numbers>
 #include <vector>
 
@@ -433,4 +434,57 @@ bool ParseRuntimeField(const RuntimeField& field, std::string_view text,
             WriteInteger(scalar, field, integral[i]);
     }
     return true;
+}
+
+namespace
+{
+// A numeric leaf's numbers as the texts it is shown as, in schema order.
+std::vector<std::string> ElementsOf(const RuntimeField& field, const void* componentBytes)
+{
+    std::vector<std::string> elements;
+    if (!IsScalarKind(field) || !field.Enum.empty() || field.Scalar == FieldScalar::Bool || field.InlineText)
+        return elements;
+    const std::string text = FormatRuntimeField(field, componentBytes);
+    std::size_t start = 0;
+    while (start <= text.size())
+    {
+        const std::size_t comma = text.find(',', start);
+        elements.emplace_back(Trim(std::string_view(text).substr(start, comma - start)));
+        if (comma == std::string::npos)
+            break;
+        start = comma + 1;
+    }
+    return elements;
+}
+} // namespace
+
+std::string FormatRuntimeFieldElement(const RuntimeField& field, const void* componentBytes, std::size_t index)
+{
+    std::vector<std::string> elements = ElementsOf(field, componentBytes);
+    return index < elements.size() ? std::move(elements[index]) : std::string{};
+}
+
+bool ParseRuntimeFieldElement(const RuntimeField& field, std::size_t index, std::string_view text,
+                              void* componentBytes)
+{
+    std::vector<std::string> elements = ElementsOf(field, componentBytes);
+    if (index >= elements.size())
+        return false;
+    elements[index] = std::string(Trim(text));
+    std::string joined;
+    for (const std::string& element : elements)
+        joined += (joined.empty() ? "" : ", ") + element;
+    return ParseRuntimeField(field, joined, componentBytes);
+}
+
+bool OffsetRuntimeFieldElement(const RuntimeField& field, std::size_t index, double delta, void* componentBytes)
+{
+    double value = 0.0;
+    if (!ParseFloating(FormatRuntimeFieldElement(field, componentBytes, index), value))
+        return false;
+    const double moved = value + delta;
+    return ParseRuntimeFieldElement(field, index,
+                                    IsFloatingKind(field.Scalar) ? std::format("{}", moved)
+                                                                 : std::format("{}", std::llround(moved)),
+                                    componentBytes);
 }

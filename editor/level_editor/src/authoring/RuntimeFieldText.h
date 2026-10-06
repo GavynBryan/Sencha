@@ -54,3 +54,20 @@
 [[nodiscard]] bool ParseRuntimeField(const RuntimeField& field,
                                      std::string_view text,
                                      void* componentBytes);
+
+// One number of a numeric leaf -- a position's Y, or a plain number as index
+// 0 -- read as text and written alone, the others keeping what they hold.
+// Empty, or refused, for an index the leaf does not have or a leaf that is not
+// numbers.
+[[nodiscard]] std::string FormatRuntimeFieldElement(const RuntimeField& field,
+                                                    const void* componentBytes,
+                                                    std::size_t index);
+[[nodiscard]] bool ParseRuntimeFieldElement(const RuntimeField& field,
+                                            std::size_t index,
+                                            std::string_view text,
+                                            void* componentBytes);
+// The number at `index` moved by `delta`, in the units it is shown in.
+[[nodiscard]] bool OffsetRuntimeFieldElement(const RuntimeField& field,
+                                             std::size_t index,
+                                             double delta,
+                                             void* componentBytes);

@@ -102,8 +102,8 @@ WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& ve
                                         .Key = components.KeyOf(ResolveComponentTypeId<EntityNameComponent>(), "value") };
             if (!lighting.Nodes().empty())
                 facet.Sections.push_back({ .Heading = "Lighting", .Source = &lighting });
-            facet.Details.push_back({ .Heading = {}, .Source = &components });
         }
+        facet.Details.push_back({ .Heading = {}, .Source = &components });
         if (!facet.Staged)
             for (std::string& verb : entityVerbs.Relevant())
                 facet.Actions.push_back(std::move(verb));

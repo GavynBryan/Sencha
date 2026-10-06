@@ -215,16 +215,19 @@ do the work and delete the entry.
   `OnRequest` and moves its actions there, or a component of those cards
   naming its own actions the way the Level's components do.
 
-## Common properties across a multi-selection
+## Adapter-drawn components across a multi-selection
 
-- **What:** the selection card for several objects names them and offers the
-  verbs that apply to all of them, but shows no properties: fields they share,
-  with mixed values marked, are not presented.
-- **Where:** `editor/level_editor/src/workspace/SelectionSummary.cpp` offers
-  details for one object only; `ComponentPropertySource` reads the primary
-  selection.
-- **Trigger:** a designer editing the same field on several selected objects
-  at once.
+- **What:** several selected objects are edited as one, except a component
+  whose adapter draws its own rows (a brush's modifier stack, the world dock
+  and gate adapters): across two or more holders it shows a note and is
+  edited one object at a time, because two stacks or lists have no one stack
+  to show.
+- **Where:** `ComponentPropertySource::Nodes` and `SoleHolder` in
+  `editor/level_editor/src/authoring/ComponentPropertySource.cpp`;
+  `IEditorComponentAdapter` in `EditorComponentAdapter.h`.
+- **Trigger:** an adapter whose rows mean the same thing on every holder --
+  a single setting rather than a list -- which would then say it presents
+  several together, or a designer asking to apply one stack to many brushes.
 
 ## Previewing a material on the selected faces
 

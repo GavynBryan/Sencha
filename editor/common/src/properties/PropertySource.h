@@ -39,6 +39,18 @@ public:
     virtual PropertyEditResult CommitEdit(std::string_view key, std::string_view value) = 0;
     // Puts back what BeginEdit found.
     virtual void CancelEdit(std::string_view key) = 0;
+    // A number moved by `delta` from what BeginEdit found, rather than set: a
+    // property standing for several values moves each from its own. Previewed,
+    // or committed as one step, like a value; a source whose properties each
+    // hold one value need not offer it.
+    virtual PropertyEditResult PreviewEditBy(std::string_view /*key*/, double /*delta*/)
+    {
+        return PropertyEditResult::Refused;
+    }
+    virtual PropertyEditResult CommitEditBy(std::string_view /*key*/, double /*delta*/)
+    {
+        return PropertyEditResult::Refused;
+    }
     // What an asset property may be set to, as the values an edit takes. Asked
     // when a picker opens, never per frame: it may scan the project.
     [[nodiscard]] virtual std::vector<std::string> Candidates(std::string_view /*key*/) const { return {}; }
