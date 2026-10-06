@@ -172,6 +172,20 @@ constexpr Rule kRules[] = {
                 + Color(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f));
      } },
     { ".theme-wheel-well.lit .icon", [] { return Tint(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f)); } },
+    // The world map: a dimmed ground over the views, zones as plates, the
+    // ways between them as bars.
+    { ".theme-map-ground", [] { return Fill(EditorUi::WithAlpha(EditorUi::ChassisBg, 0.92f)); } },
+    { ".theme-map-zone", [] { return Fill(EditorUi::MetalBase) + Edge(EditorUi::MetalHighlight) + Color(EditorUi::TextPrimary); } },
+    { ".theme-map-zone.closed", [] { return Fill(EditorUi::PanelBg) + Color(EditorUi::TextDim); } },
+    { ".theme-map-zone.focus", [] { return Edge(EditorUi::SelectedOutline); } },
+    { ".theme-map-zone.problem", [] { return Edge(EditorUi::Danger); } },
+    { ".theme-map-zone .problems", [] { return Color(EditorUi::Warning); } },
+    { ".theme-map-zone.hot", [] { return Fill(EditorUi::FrameBgActive) + Edge(EditorUi::Accent); } },
+    { ".theme-map-link", [] { return Fill(EditorUi::MetalHighlight) + Color(EditorUi::MetalHighlight); } },
+    { ".theme-map-link.oneway", [] { return Fill(EditorUi::Accent) + Color(EditorUi::Accent); } },
+    { ".theme-map-link.warned", [] { return Fill(EditorUi::Warning) + Color(EditorUi::Warning); } },
+    { ".theme-map-link.failed", [] { return Fill(EditorUi::Danger) + Color(EditorUi::Danger); } },
+    { ".theme-map-camera", [] { return Fill(EditorUi::SelectedOutline); } },
     { ".theme-wheel-word", [] { return Color(EditorUi::TextPrimary); } },
     { ".theme-wheel-word.active", [] { return Color(EditorUi::SelectedOutline); } },
     { ".theme-wheel-word.lit", [] { return Color(EditorUi::Lighten(EditorUi::SelectedOutline, 0.35f)); } },

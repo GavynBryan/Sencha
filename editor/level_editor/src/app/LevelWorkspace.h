@@ -1,6 +1,7 @@
 #pragma once
 
 #include "actions/ContextMenuModel.h"
+#include "document/WorldMap.h"
 
 #include <app/GameContexts.h>
 #include <assets/runtime/RuntimeAssets.h>
@@ -32,6 +33,7 @@
 
 class MaterialThumbnailCache;
 class LevelViewSurface;
+class WorldMapSurface;
 class ActionContextStack;
 class RadialMenuScreen;
 class ToolParameterSource;
@@ -101,6 +103,12 @@ public:
     [[nodiscard]] WorkspaceLocationFacet Location() const override;
     // Selects what is under `pointer` for the context wheel, unless it already is.
     void AimAt(Vec2d pointer);
+    // The world map in place of the views: laid out from the world each frame
+    // it shows, hit-tested by the pointer, and left by going somewhere or Escape.
+    void PresentMap();
+    InputConsumed OnMapInput(const InputEvent& event);
+    // Edits `zone` with the camera on it.
+    void Travel(ZoneId zone);
     // The assets of a kind to hand: the one in use, then the ones put by.
     [[nodiscard]] std::vector<ContextMenuModel::AssetChoice> AssetsToHand(AssetType type);
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
@@ -167,6 +175,17 @@ private:
     EditorRenderFeature* RenderFeature = nullptr;
     // The views on the window's content surface; gone before RenderFeature.
     std::unique_ptr<LevelViewSurface> ViewSurface;
+    std::unique_ptr<WorldMapSurface> MapSurface;
+    // What fills the content: the views, or the world map over them.
+    enum class LevelContent : std::uint8_t
+    {
+        Views,
+        Map,
+    };
+    static constexpr std::string_view kMapAction = "view.map";
+    LevelContent Showing = LevelContent::Views;
+    WorldMap Map;
+    std::optional<ZoneId> MapHot;
     // Whichever wheel is open, over everything in the window.
     std::unique_ptr<RadialMenuScreen> WheelScreen;
     // The window this workspace is placed in; null until it is.

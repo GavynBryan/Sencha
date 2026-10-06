@@ -75,6 +75,7 @@ const UiModelPropertyId kSelectionHeight = UiPropertyIdAt(52);
 const UiModelPropertyId kFront = UiPropertyIdAt(53);
 const UiModelPropertyId kHierarchyChord = UiPropertyIdAt(54);
 const UiModelPropertyId kSelectionShown = UiPropertyIdAt(55);
+const UiModelPropertyId kMapAction = UiPropertyIdAt(56);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -195,6 +196,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "front", UiValue(std::string{}) },
         UiModelProperty{ "hierarchy_chord", UiValue(std::string{}) },
         UiModelProperty{ "selection_shown", UiValue(false) },
+        UiModelProperty{ "map_action", UiValue(std::string{}) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs",
@@ -930,6 +932,7 @@ void ShellWindow::PublishLocation(const IWorkspace* workspace)
         crumbs.push_back(std::move(crumb));
     }
     (void)Services.Ui.SetRows(Screen, kCrumbs, crumbs);
+    (void)Services.Ui.SetValue(Screen, kMapAction, UiValue(location.MapAction));
     const std::string chord =
         location.Hierarchy.empty() ? std::string{} : Services.Catalog.ChordText(HierarchyAction(*workspace, location));
     (void)Services.Ui.SetValue(Screen, kHierarchyChord, UiValue(chord));

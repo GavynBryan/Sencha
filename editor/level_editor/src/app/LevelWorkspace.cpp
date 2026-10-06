@@ -45,6 +45,8 @@
 #include "workspace/HierarchyOutline.h"
 #include "workspace/PartitionOutline.h"
 #include "workspace/PropertyHandles.h"
+#include "ui/WorldMapSurface.h"
+#include "viewport/CameraFraming.h"
 #include "workspace/WorldExplorer.h"
 #include "scene_source/SceneSourcePaths.h"
 #include "workspace/SelectionSummary.h"
@@ -386,6 +388,10 @@ void LevelWorkspace::BuildInput()
     offer("tool.wheel", "Tool Wheel", "Tool", { KeyChord{ SDLK_Q, {} } }, IconId::None, {});
     offer("gizmo.wheel", "Transform Wheel", "Transform", { KeyChord{ SDLK_Z, {} } }, IconId::None, {});
     offer("context.wheel", "Context Wheel", "Edit", { KeyChord{ SDLK_SPACE, {} } }, IconId::None, {});
+    OfferAction(Catalog, ActionHandlers, { .Id = std::string(kMapAction), .Label = "World Map", .Category = "View" },
+                { .Invoke = [this] { Showing = Showing == LevelContent::Map ? LevelContent::Views : LevelContent::Map; },
+                  .Enabled = [this] { return Workspace->World.IsWorld(); },
+                  .Checked = [this] { return Showing == LevelContent::Map; } });
 
     // A drafted operation's Apply and Cancel, for whatever presents them. The
     // tools take Enter and Escape themselves, so these carry no chord.
@@ -429,7 +435,8 @@ void LevelWorkspace::BuildInput()
             // The view whose rect holds the pointer, with nothing of the
             // window's UI over it. Which view is active or was focused last
             // plays no part.
-            return Workspace->Layout.ResolveAt(pointer).IsValid() && !WindowUiCapture().Mouse;
+            return Showing == LevelContent::Views && Workspace->Layout.ResolveAt(pointer).IsValid()
+                && !WindowUiCapture().Mouse;
         };
         ToolMenu = std::make_unique<ToolRegistryMenuModel>(*Workspace->Interaction.Tools);
         ToolWheel = std::make_unique<RadialMenuSession>(*ToolMenu, chordFor("tool.wheel", SDLK_Q), frame, pointerOnScene);
@@ -458,6 +465,9 @@ void LevelWorkspace::BuildInput()
     // consumed here before navigation, tools, or shortcuts can act on them.
     // (The guard adds pointer capture so drags survive crossing the UI.)
     Router->AddHandler(MakeUiInputGuard([this] { return WindowUiCapture(); }));
+    // The map, while it shows, takes the pointer and Escape from everything
+    // under it.
+    Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return OnMapInput(e); });
     // The wheels sit under the guard (a focused text field keeps its letters)
     // and above everything else: an open wheel owns the pointer and the keys,
     // which is also what keeps the other wheel closed, and each yields its key
@@ -630,6 +640,8 @@ void LevelWorkspace::BuildUi()
                                                              Workspace->Interaction.Marquee, RenderFeature);
         if (UiService* ui = EnginePtr->TryUi(); ui != nullptr && ui->IsReady())
             WheelScreen = std::make_unique<RadialMenuScreen>(*ui);
+        if (UiService* ui = EnginePtr->TryUi(); ui != nullptr && ui->IsReady())
+            MapSurface = std::make_unique<WorldMapSurface>(*ui);
     }
     else
     {
@@ -835,6 +847,79 @@ void LevelWorkspace::ShowView(ViewportOrientation orientation)
     }
 }
 
+void LevelWorkspace::PresentMap()
+{
+    if (Showing == LevelContent::Map && !Workspace->World.IsWorld())
+        Showing = LevelContent::Views;
+    if (MapSurface == nullptr)
+        return;
+    if (Showing != LevelContent::Map || !Visible)
+    {
+        MapSurface->Present(nullptr, {}, {}, {});
+        return;
+    }
+    // The plates stay clear of the breadcrumb and view instrument above and
+    // the stations below.
+    const float scale = EditorUi::UiScale;
+    const Rect2d area = Rect2d::FromMinMax(ContentRect.Min() + Vec2d(24.0f, 48.0f) * scale,
+                                           ContentRect.Max() - Vec2d(24.0f, 96.0f) * scale);
+    std::vector<ZoneId> problems;
+    if (Partition != nullptr && LevelDocument != nullptr)
+        for (const Problem& problem : Partition->Problems(LevelDocument->Ref()))
+            if (problem.Location.starts_with("zone:"))
+                if (const std::optional<ZoneId> zone = ZoneIdFromString(problem.Location.substr(5)))
+                    problems.push_back(*zone);
+    const EditorViewport* view = Workspace->Layout.Active();
+    const std::vector<ZoneGraphEdge> edges = ZoneGraphEdges(Workspace->World);
+    Map = LayOutWorldMap(Workspace->World, edges,
+                         { .Area = area,
+                           .Margin = 0.0f,
+                           .MinimumPlate = 18.0f * scale,
+                           .Camera = view != nullptr ? std::optional<Vec3d>(view->Camera.Position) : std::nullopt,
+                           .Problems = problems });
+    const std::string& name = Workspace->World.Manifest().Name;
+    MapSurface->Present(&Map, ContentRect, name.empty() ? std::string("World") : name, MapHot);
+}
+
+InputConsumed LevelWorkspace::OnMapInput(const InputEvent& event)
+{
+    if (Showing != LevelContent::Map)
+        return InputConsumed::No;
+    if (const auto* move = std::get_if<PointerMoveEvent>(&event))
+    {
+        MapHot = ZoneAt(Map, move->Position);
+        return InputConsumed::Yes;
+    }
+    if (const auto* down = std::get_if<PointerDownEvent>(&event))
+    {
+        if (down->Button == MouseButton::Left)
+            if (const std::optional<ZoneId> zone = ZoneAt(Map, down->Position))
+                Travel(*zone);
+        return InputConsumed::Yes;
+    }
+    if (const auto* key = std::get_if<KeyDownEvent>(&event); key != nullptr && key->Key == SDLK_ESCAPE)
+    {
+        Showing = LevelContent::Views;
+        return InputConsumed::Yes;
+    }
+    return std::holds_alternative<PointerUpEvent>(event) || std::holds_alternative<WheelEvent>(event)
+        ? InputConsumed::Yes
+        : InputConsumed::No;
+}
+
+void LevelWorkspace::Travel(ZoneId zone)
+{
+    WorldDocument& world = Workspace->World;
+    if (zone != world.FocusZone() && !world.SetFocusZone(zone))
+        return;
+    for (const ZoneHeader& header : world.Manifest().Zones)
+        if (header.Id == zone && header.Bounds.IsValid())
+            if (EditorViewport* view = Workspace->Layout.Active())
+                FrameBounds(view->Camera, header.Bounds);
+    Showing = LevelContent::Views;
+    MapHot.reset();
+}
+
 std::vector<ContextMenuModel::AssetChoice> LevelWorkspace::AssetsToHand(AssetType type)
 {
     std::vector<ContextMenuModel::AssetChoice> choices;
@@ -883,6 +968,8 @@ void LevelWorkspace::MoveTo(const WorkspaceWindow& window)
     }
     if (ViewSurface != nullptr)
         ViewSurface->MoveTo(window.Content);
+    if (MapSurface != nullptr)
+        MapSurface->MoveTo(window.Content);
     if (WheelScreen != nullptr)
         WheelScreen->MoveTo(window.Overlay);
     if (ProfilesModal != nullptr)
@@ -974,6 +1061,7 @@ void LevelWorkspace::ProcessFrame()
         ViewSurface->Arrange(Visible ? ContentRect : Rect2d{}, Arrangement(),
                              Divider(), EditorUi::UiScale);
     Handles->Publish();
+    PresentMap();
     // Only one wheel is ever open: each yields its key to the other.
     if (WheelScreen != nullptr)
     {
@@ -1171,7 +1259,9 @@ WorkspaceViewFacet LevelWorkspace::Viewing() const
 
 WorkspaceLocationFacet LevelWorkspace::Location() const
 {
-    WorkspaceLocationFacet facet{ .Parts = {}, .Hierarchy = std::string(HierarchyOutline::kId) };
+    WorkspaceLocationFacet facet{ .Parts = {},
+                                  .Hierarchy = std::string(HierarchyOutline::kId),
+                                  .MapAction = Workspace->World.IsWorld() ? std::string(kMapAction) : std::string{} };
     const WorldDocument& world = Workspace->World;
     if (world.IsWorld())
     {

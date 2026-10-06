@@ -73,6 +73,9 @@
     <!-- Where the work is, outermost first; each part opens the hierarchy
          showing it. -->
     <div id="crumbs" class="theme-plate" data-if="crumbs.size > 0">
+        <div class="crumb crumb_map theme-segment" data-if="map_action != ''" data-event-click="shell_invoke(map_action)">
+            <span class="theme-accent">MAP</span>
+        </div>
         <div class="crumb theme-segment" data-for="crumb : crumbs" data-class-lit="crumb.selected"
              data-event-click="shell_crumb(it_index)">
             <span class="crumb_sep glyph theme-dim" data-if="it_index > 0">&#xf054;</span><span>{{crumb.label}}</span>

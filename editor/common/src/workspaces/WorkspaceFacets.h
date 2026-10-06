@@ -264,6 +264,9 @@ struct WorkspaceLocationFacet
 {
     std::vector<WorkspaceLocationPart> Parts;
     std::string Hierarchy;
+    // The action that shows the whole of where the work is from above; empty
+    // where there is no such view.
+    std::string MapAction = {};
 };
 
 // What a workspace whose work runs over time has on its clock, for a deck to

@@ -352,7 +352,12 @@ firewall above.
   the problem's zone or graph. `IWorkspace::Location` says where the work is
   -- the world, the graph and zone the camera is in, and the selection -- and
   the shell shows it as a breadcrumb whose parts reveal their rows in the
-  hierarchy (`ExplorerChoice::Reveal`).
+  hierarchy (`ExplorerChoice::Reveal`). Its MAP part (`view.map`) shows the world
+  from above in place of the views (`document/WorldMap` lays the zones out
+  as plates at their footprint with the docks and links between them;
+  `ui/WorldMapSurface` shows it): the zone being edited, the open ones, the
+  one the camera is in and the ones with problems are marked, and a click on
+  a zone edits it with the camera framed on it.
   `workspace/LightingDiagnostics` says how the lighting is doing where it
   applies: a selected light's shadow tier, slot and pool on its card, what a
   baked light or probe volume became at the last cook, unshadowed lights and
