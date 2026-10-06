@@ -15,6 +15,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -242,4 +243,54 @@ TEST(ComponentPropertySource, AnEntitysNameIsEditedAndOneTooLongIsRefused)
     ASSERT_TRUE(f.Source.BeginEdit(key));
     EXPECT_EQ(f.Source.CommitEdit(key, std::string(200, 'x')), PropertyEditResult::Refused);
     EXPECT_EQ(FindNode(f.Source.Nodes(), key)->Value, "Crate");
+}
+
+// The sheet's order is the order of attention: what can be added first, the
+// components, and last -- closed, grouped by what each came from -- what the
+// engine put on the entity because of them. A component's own actions travel
+// with it, and taking one away is marked as such.
+namespace
+{
+class ActingNameAdapter final : public IEditorComponentAdapter
+{
+public:
+    [[nodiscard]] ComponentTypeId Type() const override { return ResolveComponentTypeId<EntityNameComponent>(); }
+    [[nodiscard]] std::span<const std::string_view> Actions() const override
+    {
+        static constexpr std::array<std::string_view, 1> kActions = { "name.shout" };
+        return kActions;
+    }
+};
+} // namespace
+
+TEST(ComponentPropertySource, AddingComesFirstAndDerivedComponentsLastClosedUnderTheirSource)
+{
+    Fixture f;
+    ASSERT_EQ(f.Source.Act("components", "add", "CharacterMovement"), PropertyEditResult::Applied);
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    ASSERT_FALSE(nodes.empty());
+    EXPECT_EQ(nodes.front().Key, "components");
+
+    const PropertyNode& derived = nodes.back();
+    ASSERT_EQ(derived.Key, "derived");
+    EXPECT_TRUE(derived.Descriptor.Folded);
+    EXPECT_FALSE(derived.Descriptor.Advanced) << "always there to read";
+    ASSERT_FALSE(derived.Children.empty());
+    const PropertyNode& from = derived.Children.front();
+    EXPECT_EQ(from.Descriptor.Kind, PropertyKind::Group);
+    EXPECT_EQ(from.Descriptor.Label, "from Character Movement");
+    EXPECT_GT(from.Children.size(), 5u) << "what character movement owes";
+}
+
+TEST(ComponentPropertySource, RemovalIsMarkedAndAComponentsActionsTravelWithIt)
+{
+    Fixture f;
+    ASSERT_TRUE(f.Adapters.Register(std::make_unique<ActingNameAdapter>()));
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    const PropertyNode* name = FindNode(nodes, "name");
+    ASSERT_NE(name, nullptr);
+    const auto remove = std::ranges::find(name->Descriptor.Verbs, "remove", &PropertyVerb::Id);
+    ASSERT_NE(remove, name->Descriptor.Verbs.end());
+    EXPECT_TRUE(remove->Removes);
+    EXPECT_EQ(name->Descriptor.Actions, (std::vector<std::string>{ "name.shout" }));
 }

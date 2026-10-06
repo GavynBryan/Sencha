@@ -1,5 +1,8 @@
 #include "presenters/PropertySheet.h"
 
+#include "actions/ActionCatalog.h"
+#include "actions/ActionContext.h"
+
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -7,6 +10,10 @@
 
 namespace
 {
+// Beside a heading there is room for this many actions; the rest are on the
+// context wheel and in the palette.
+constexpr std::size_t kActionsBeside = 3;
+
 UiRowControl ControlFor(const PropertyDescriptor& descriptor)
 {
     switch (descriptor.Kind)
@@ -98,6 +105,18 @@ std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> secti
     return rows;
 }
 
+void PropertySheet::OfferActions(const ActionCatalog& catalog, const ActionContextStack& actions)
+{
+    Catalog = &catalog;
+    Actions = &actions;
+}
+
+bool PropertySheet::FoldedNow(const PropertyNode& node) const
+{
+    const auto folded = Folds.find(node.Key);
+    return folded != Folds.end() ? folded->second : node.Descriptor.Folded;
+}
+
 void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t section, bool everything,
                            std::vector<UiRow>& rows)
 {
@@ -122,31 +141,55 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
         row.Max = descriptor.Max;
         row.Step = descriptor.Step > 0.0 ? descriptor.Step : (descriptor.Max - descriptor.Min) / 100.0;
     }
-    const double snap = row.Control == UiRowControl::Range ? row.Step : 0.0;
+    // A group that holds something says whether it shows it, the way an
+    // outline's branch does.
+    const bool foldable = descriptor.Kind == PropertyKind::Group && !node.Children.empty();
+    const bool folded = foldable && FoldedNow(node);
+    row.Expanded = foldable && !folded;
+    if (foldable)
+        row.Value = folded ? "closed" : "open";
+
     std::string layout = node.Key;
     for (const std::string& choice : descriptor.Choices)
         layout += "|" + choice;
-    rows.push_back(std::move(row));
-    Rows.push_back(
-        { .Key = node.Key, .Value = node.Value, .Section = section, .Snap = snap, .Layout = std::move(layout) });
+    std::vector<std::string> actions;
+    if (Catalog != nullptr && Actions != nullptr)
+        for (const std::string& id : descriptor.Actions)
+        {
+            const ActionDefinition* definition = Catalog->Find(id);
+            const ActionContextStack::State state = Actions->Query(id);
+            if (definition == nullptr || !state.Claimed || !state.Enabled || actions.size() == kActionsBeside)
+                continue;
+            row.Verbs.push_back({ .Key = id, .Label = definition->Label });
+            actions.push_back(id);
+        }
     for (const PropertyVerb& verb : descriptor.Verbs)
     {
-        UiRow action{ verb.Label, "", "" };
-        action.Key = verb.Id;
-        action.Depth = depth;
-        action.Control = UiRowControl::Action;
-        action.Choices = verb.Choices;
-        rows.push_back(std::move(action));
-        Rows.push_back({ .Key = node.Key,
-                         .Value = {},
-                         .Section = section,
-                         .Verb = verb.Id,
-                         .Choices = verb.Choices,
-                         .Layout = node.Key + "#" + verb.Id });
+        row.Verbs.push_back({ .Key = verb.Id, .Label = verb.Label, .Removes = verb.Removes });
+        layout += "#" + verb.Id;
     }
-
+    rows.push_back(std::move(row));
+    Rows.push_back({ .Key = node.Key,
+                     .Value = node.Value,
+                     .Section = section,
+                     .Label = descriptor.Label,
+                     .Verbs = descriptor.Verbs,
+                     .Actions = std::move(actions),
+                     .Foldable = foldable,
+                     .Folded = folded,
+                     .Snap = rows.back().Control == UiRowControl::Range ? rows.back().Step : 0.0,
+                     .Layout = std::move(layout) });
+    if (folded)
+        return;
     for (const PropertyNode& child : node.Children)
         Append(child, depth + 1, section, everything, rows);
+}
+
+void PropertySheet::Fold(std::size_t index)
+{
+    if (index >= Rows.size() || !Rows[index].Foldable)
+        return;
+    Folds[Rows[index].Key] = !Rows[index].Folded;
 }
 
 IPropertySource* PropertySheet::SourceOf(std::span<const PropertySection> sections, std::size_t index) const
@@ -158,7 +201,7 @@ IPropertySource* PropertySheet::SourceOf(std::span<const PropertySection> sectio
 
 PropertyEditResult PropertySheet::Set(IPropertySource& source, std::size_t index, std::string_view value)
 {
-    if (index >= Rows.size() || Rows[index].Key.empty() || !Rows[index].Verb.empty())
+    if (index >= Rows.size() || Rows[index].Key.empty())
         return PropertyEditResult::Gone;
     const Presented& row = Rows[index];
     if (value == row.Value)
@@ -245,23 +288,45 @@ PropertyEditResult PropertySheet::Flip(std::span<const PropertySection> sections
     return source != nullptr ? Flip(*source, index) : PropertyEditResult::Gone;
 }
 
-PropertyEditResult PropertySheet::Act(IPropertySource& source, std::size_t index, std::string_view choice)
+PropertyEditResult PropertySheet::Act(IPropertySource& source, std::size_t index, std::string_view verb,
+                                      std::string_view choice)
 {
-    if (index >= Rows.size() || Rows[index].Verb.empty())
+    if (index >= Rows.size())
         return PropertyEditResult::Gone;
-    return source.Act(Rows[index].Key, Rows[index].Verb, choice);
+    const Presented& row = Rows[index];
+    if (std::ranges::find(row.Actions, verb) != row.Actions.end())
+        return Actions != nullptr && Actions->Invoke(verb) ? PropertyEditResult::Applied : PropertyEditResult::Gone;
+    if (std::ranges::find(row.Verbs, verb, &PropertyVerb::Id) == row.Verbs.end())
+        return PropertyEditResult::Gone;
+    return source.Act(row.Key, verb, choice);
 }
 
 PropertyEditResult PropertySheet::Act(std::span<const PropertySection> sections, std::size_t index,
-                                      std::string_view choice)
+                                      std::string_view verb, std::string_view choice)
 {
     IPropertySource* source = SourceOf(sections, index);
-    return source != nullptr ? Act(*source, index, choice) : PropertyEditResult::Gone;
+    return source != nullptr ? Act(*source, index, verb, choice) : PropertyEditResult::Gone;
 }
 
-std::vector<std::string> PropertySheet::ChoicesOf(std::size_t index) const
+std::vector<std::string> PropertySheet::ChoicesOf(std::size_t index, std::string_view verb) const
 {
-    return index < Rows.size() ? Rows[index].Choices : std::vector<std::string>{};
+    if (index >= Rows.size())
+        return {};
+    const auto found = std::ranges::find(Rows[index].Verbs, verb, &PropertyVerb::Id);
+    return found != Rows[index].Verbs.end() ? found->Choices : std::vector<std::string>{};
+}
+
+bool PropertySheet::Removes(std::size_t index, std::string_view verb) const
+{
+    if (index >= Rows.size())
+        return false;
+    const auto found = std::ranges::find(Rows[index].Verbs, verb, &PropertyVerb::Id);
+    return found != Rows[index].Verbs.end() && found->Removes;
+}
+
+std::string PropertySheet::LabelOf(std::size_t index) const
+{
+    return index < Rows.size() ? Rows[index].Label : std::string{};
 }
 
 std::vector<std::string> PropertySheet::CandidatesOf(std::span<const PropertySection> sections,

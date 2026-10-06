@@ -567,6 +567,13 @@ void UiRuntime::DeclareModelTypes(Rml::DataModelConstructor& constructor, Surfac
             out = Rml::String(UiRowControlName(control));
         });
     (void)constructor.RegisterArray<std::vector<std::string>>();
+    if (auto verb = constructor.RegisterStruct<UiRowVerb>())
+    {
+        (void)verb.RegisterMember("key", &UiRowVerb::Key);
+        (void)verb.RegisterMember("label", &UiRowVerb::Label);
+        (void)verb.RegisterMember("removes", &UiRowVerb::Removes);
+    }
+    (void)constructor.RegisterArray<std::vector<UiRowVerb>>();
 
     // Members bound by pointer-to-member, which makes each one read-write.
     // That is what lets a control inside a repeated row edit its value without
@@ -592,6 +599,7 @@ void UiRuntime::DeclareModelTypes(Rml::DataModelConstructor& constructor, Surfac
         (void)row.RegisterMember("mixed", &UiRow::Mixed);
         (void)row.RegisterMember("disabled", &UiRow::Disabled);
         (void)row.RegisterMember("parts", &UiRow::Parts);
+        (void)row.RegisterMember("verbs", &UiRow::Verbs);
     }
     (void)constructor.RegisterArray<std::vector<UiRow>>();
 }

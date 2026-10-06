@@ -10,7 +10,11 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
+
+class ActionCatalog;
+class ActionContextStack;
 
 //=============================================================================
 // PropertySheet
@@ -19,8 +23,10 @@
 // back into the source it came from, by the row's index. A group becomes a
 // section row over its children, as does each titled section of several
 // sources; what a property is decides the control -- a choice a drop-down, a
-// bounded number a slider, a switch a toggle, anything else a field -- and each
-// of its verbs is an action row after it.
+// bounded number a slider, a switch a toggle, anything else a field. Its verbs,
+// and the catalog actions it names that can run now, are offered beside it. A
+// folded group shows its heading alone, and stays as it was left for as long
+// as the sheet lives.
 //
 // A field is typed into over many frames and edited once, when it lets go of
 // focus: Hold stops the rows from changing under it, and Release commits what
@@ -30,6 +36,10 @@
 class PropertySheet
 {
 public:
+    // Where the actions a property names are labelled and run; without them
+    // a property's actions are not offered.
+    void OfferActions(const ActionCatalog& catalog, const ActionContextStack& actions);
+
     // `everything` includes properties marked advanced.
     [[nodiscard]] std::vector<UiRow> Present(const IPropertySource& source, bool everything = false);
     // `only` narrows every section to its top-level property of that key.
@@ -44,11 +54,18 @@ public:
     PropertyEditResult SetFromControl(IPropertySource& source, std::size_t index, const UiValue& reported);
     PropertyEditResult SetFromControl(std::span<const PropertySection> sections, std::size_t index,
                                       const UiValue& reported);
-    // An action row's verb, with `choice` when the verb asks for one.
-    PropertyEditResult Act(IPropertySource& source, std::size_t index, std::string_view choice = {});
-    PropertyEditResult Act(std::span<const PropertySection> sections, std::size_t index, std::string_view choice = {});
-    // What an action row's verb asks to be chosen first; empty for none.
-    [[nodiscard]] std::vector<std::string> ChoicesOf(std::size_t index) const;
+    // Row `index`'s verb or action `verb`, with `choice` when the verb asks for one.
+    PropertyEditResult Act(IPropertySource& source, std::size_t index, std::string_view verb,
+                           std::string_view choice = {});
+    PropertyEditResult Act(std::span<const PropertySection> sections, std::size_t index, std::string_view verb,
+                           std::string_view choice = {});
+    // What row `index`'s verb asks to be chosen first; empty for none.
+    [[nodiscard]] std::vector<std::string> ChoicesOf(std::size_t index, std::string_view verb) const;
+    // Whether row `index`'s verb takes the row's property away.
+    [[nodiscard]] bool Removes(std::size_t index, std::string_view verb) const;
+    [[nodiscard]] std::string LabelOf(std::size_t index) const;
+    // A group row opened or closed.
+    void Fold(std::size_t index);
     // What an asset row may be set to.
     [[nodiscard]] std::vector<std::string> CandidatesOf(std::span<const PropertySection> sections,
                                                         std::size_t index) const;
@@ -70,14 +87,16 @@ public:
 private:
     static constexpr std::size_t kNothingHeld = std::numeric_limits<std::size_t>::max();
 
-    // A value row, or the verb of an action row beside it.
     struct Presented
     {
         std::string Key;
         std::string Value;
         std::size_t Section = 0;
-        std::string Verb = {};
-        std::vector<std::string> Choices = {};
+        std::string Label = {};
+        std::vector<PropertyVerb> Verbs = {};
+        std::vector<std::string> Actions = {};
+        bool Foldable = false;
+        bool Folded = false;
         // A slider's step: it reports where it snapped the value it was given,
         // which is no change of the value.
         double Snap = 0.0;
@@ -90,8 +109,14 @@ private:
     void Settle();
     [[nodiscard]] IPropertySource* SourceOf(std::span<const PropertySection> sections, std::size_t index) const;
 
+    [[nodiscard]] bool FoldedNow(const PropertyNode& node) const;
+
     std::vector<Presented> Rows;
     std::size_t Held = kNothingHeld;
+    const ActionCatalog* Catalog = nullptr;
+    const ActionContextStack* Actions = nullptr;
+    // Groups opened or closed by hand, by key, against how each starts.
+    std::unordered_map<std::string, bool> Folds;
     // Laid out anew -- other rows, or a row's other options: until it is
     // presented unchanged once, what its controls report is them settling on
     // their new values, not a person changing one.

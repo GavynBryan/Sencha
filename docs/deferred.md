@@ -201,6 +201,20 @@ do the work and delete the entry.
 - **Trigger:** the owner's walkthrough at the explorers checkpoint, or the
   first report that tuning an inset from the card is slower than dragging it.
 
+## Selection actions listed under cards outside the Level
+
+- **What:** a selection looked at through the context wheel has its actions on
+  the wheel and the palette, never in a pile under its sheet. Only the Level
+  has the wheel, so the other workspaces' cards (Animation's lens and document
+  cards, Data's asset sheet, the material and texture explorers' pages) still
+  list `WorkspaceSelectionFacet::Actions` under their rows.
+- **Where:** `ShellWindow::PublishSelection` lists them unless the facet is
+  `OnRequest`; the context wheel is `actions/ContextMenuModel`, opened by
+  `LevelWorkspace` on Space.
+- **Trigger:** any other workspace taking the context wheel, which then sets
+  `OnRequest` and moves its actions there, or a component of those cards
+  naming its own actions the way the Level's components do.
+
 ## Common properties across a multi-selection
 
 - **What:** the selection card for several objects names them and offers the

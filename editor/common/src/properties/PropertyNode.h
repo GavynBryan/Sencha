@@ -30,6 +30,8 @@ struct PropertyVerb
     std::string Id;
     std::string Label;
     std::vector<std::string> Choices = {};
+    // Doing it takes the property away: a component removed, a list entry dropped.
+    bool Removes = false;
 };
 
 struct PropertyDescriptor
@@ -48,10 +50,16 @@ struct PropertyDescriptor
     bool Multiline = false;
     // Kept out of a compact presentation until someone asks for everything.
     bool Advanced = false;
+    // A group whose children are worth knowing about but not worth reading
+    // every time: presented closed until opened.
+    bool Folded = false;
     // Names a purpose-built editor that presents this property instead of the
     // generic one; empty for the generic one.
     std::string PresentationHint = {};
     std::vector<PropertyVerb> Verbs = {};
+    // Catalog actions about what this property stands for -- a brush's bake and
+    // export -- offered beside it, invoked through whatever claims them.
+    std::vector<std::string> Actions = {};
 };
 
 // One property of whatever is being edited: a component field, a data field, a

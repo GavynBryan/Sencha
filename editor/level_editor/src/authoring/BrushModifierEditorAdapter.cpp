@@ -244,6 +244,13 @@ namespace
 
         bool AuthorsInspectorRows() const override { return true; }
 
+        std::span<const std::string_view> Actions() const override
+        {
+            static constexpr std::array<std::string_view, 3> kActions = { "brush.bake", "brush.export",
+                                                                         "brush.normals" };
+            return kActions;
+        }
+
         std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
         {
             const BrushComponent* brush = context.Scene.TryGetBrush(context.Entity);
@@ -281,7 +288,7 @@ namespace
                     row.Descriptor.Verbs.push_back({ .Id = "up", .Label = "Up" });
                 if (i + 1 < stack->size())
                     row.Descriptor.Verbs.push_back({ .Id = "down", .Label = "Down" });
-                row.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove" });
+                row.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove", .Removes = true });
                 row.Children = ModifierFields(prefix, modifier);
                 if (failed == i)
                     row.Children.push_back(NoteProperty(prefix + ".failed", "Not shown",
@@ -289,7 +296,7 @@ namespace
                                                               : "Exceeds the preview piece budget."));
                 modifiers.Children.push_back(std::move(row));
             }
-            return { NoteProperty("brush", "Brush", std::to_string(brush->Id.Value)), std::move(modifiers) };
+            return { std::move(modifiers) };
         }
 
         PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,

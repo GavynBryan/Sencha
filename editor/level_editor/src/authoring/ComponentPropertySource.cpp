@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cstring>
+#include <format>
 #include <memory>
 #include <utility>
 
@@ -128,10 +129,12 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         PropertyNode group{ .Key = key,
                             .Descriptor = { .Kind = PropertyKind::Group, .Label = HumanizeSchemaName(key) } };
         if (serializer->IsRemovable())
-            group.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove Component" });
+            group.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove Component", .Removes = true });
 
-        if (const IEditorComponentAdapter* adapter = Adapters.Find(serializer->TypeId());
-            adapter != nullptr && adapter->AuthorsInspectorRows())
+        const IEditorComponentAdapter* adapter = Adapters.Find(serializer->TypeId());
+        if (adapter != nullptr)
+            group.Descriptor.Actions.assign(adapter->Actions().begin(), adapter->Actions().end());
+        if (adapter != nullptr && adapter->AuthorsInspectorRows())
         {
             group.Children = adapter->InspectorNodes(InspectorContext(entity));
             PrefixKeys(group.Children, key + kAdapterSeparator);
@@ -213,31 +216,40 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         nodes.push_back(std::move(group));
     }
 
+    PropertyNode components{ .Key = "components", .Descriptor = { .Kind = PropertyKind::Group, .Label = "Components" } };
+    if (!addable.empty())
+        components.Descriptor.Verbs.push_back({ .Id = "add", .Label = "Add Component", .Choices = std::move(addable) });
+    nodes.insert(nodes.begin(), std::move(components));
+
+    // What the engine put on the entity because of what was authored: always
+    // there to read, closed until opened, under what each came from.
     const std::vector<DerivedComponentRow> derived = DerivedComponentsOn(world, EditorSceneSerializers(), entity);
     if (!derived.empty())
     {
         PropertyNode group{ .Key = "derived",
                             .Descriptor = { .Kind = PropertyKind::Group,
-                                            .Label = "Derived Components",
+                                            .Label = std::format("Derived \xC2\xB7 {}", derived.size()),
                                             .Tooltip = "On the entity, not in the scene file: systems keep these, "
-                                                       "and nothing here is authored or saved.",
-                                            .Advanced = true } };
+                                                       "and each goes when what it came from does.",
+                                            .Folded = true } };
         for (const DerivedComponentRow& row : derived)
         {
             const ComponentMeta* owner = row.ProvidedBy == InvalidComponentId ? nullptr : world.GetMeta(row.ProvidedBy);
-            group.Children.push_back(PropertyNode{
+            const std::string source = owner != nullptr ? HumanizeSchemaName(owner->Name) : std::string("the engine");
+            const std::string sourceKey = "derived/" + source;
+            auto from = std::ranges::find(group.Children, sourceKey, &PropertyNode::Key);
+            if (from == group.Children.end())
+                from = group.Children.insert(group.Children.end(),
+                                             PropertyNode{ .Key = sourceKey,
+                                                           .Descriptor = { .Kind = PropertyKind::Group,
+                                                                           .Label = "from " + source } });
+            from->Children.push_back(PropertyNode{
                 .Key = "derived/" + std::string(row.Name),
                 .Descriptor = { .Kind = PropertyKind::Text, .Label = HumanizeSchemaName(row.Name),
-                                .Tooltip = std::string(row.Name), .ReadOnly = true, .Advanced = true },
-                .Value = owner != nullptr ? "from " + HumanizeSchemaName(owner->Name) : std::string{} });
+                                .Tooltip = std::string(row.Name), .ReadOnly = true } });
         }
         nodes.push_back(std::move(group));
     }
-
-    PropertyNode components{ .Key = "components", .Descriptor = { .Kind = PropertyKind::Group, .Label = "Components" } };
-    if (!addable.empty())
-        components.Descriptor.Verbs.push_back({ .Id = "add", .Label = "Add Component", .Choices = std::move(addable) });
-    nodes.push_back(std::move(components));
     return nodes;
 }
 

@@ -90,6 +90,19 @@ enum class UiRowControl : std::uint8_t
 [[nodiscard]] std::string_view UiRowControlName(UiRowControl control);
 [[nodiscard]] std::optional<UiRowControl> ParseUiRowControl(std::string_view name);
 
+// Something to do about a row, offered beside it rather than as a row of its
+// own: a command on what the row stands for, or taking the row away. An action
+// raised from it carries Key; Removes lets a document draw removal apart from
+// everything else.
+struct UiRowVerb
+{
+    std::string Key;
+    std::string Label;
+    bool Removes = false;
+
+    friend bool operator==(const UiRowVerb&, const UiRowVerb&) = default;
+};
+
 // One row of a presented list.
 //
 // Strings, and only strings, for the same reason a list is: presentation is
@@ -164,6 +177,8 @@ struct UiRow
     // A value made of parts edited side by side -- a vector's components --
     // each as text, the same rule as Value. Empty for a single value.
     std::vector<std::string> Parts = {};
+
+    std::vector<UiRowVerb> Verbs = {};
 
     friend bool operator==(const UiRow&, const UiRow&) = default;
 };

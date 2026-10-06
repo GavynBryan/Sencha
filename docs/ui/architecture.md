@@ -493,8 +493,11 @@ entity id) and is what an action about a row should carry, never its position;
 `Depth` nests it under the rows before it; `Icon` names an icon; `Selected`,
 `Expanded`, `Mixed` and `Disabled` are its standing; `Parts` holds a vector's
 components as text, edited side by side. `Control` adds `toggle`, `asset`,
-`color` and `section`, the last being a heading rather than a value. All of it
-stays presentation: the host still decides what a value read back means.
+`color` and `section`, the last being a heading rather than a value. `Verbs`
+are things to do about the row, offered beside it rather than as rows of their
+own -- a section's commands, the cross that takes it away (`Removes`) -- each a
+key the document raises back. All of it stays presentation: the host still
+decides what a value read back means.
 
 Arbitrary value structs are still not here. Rows cover what surfaces have asked
 for; a shape rows cannot express is a design question when it turns up.

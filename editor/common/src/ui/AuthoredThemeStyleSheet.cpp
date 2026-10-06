@@ -117,6 +117,11 @@ constexpr Rule kRules[] = {
     { ".theme-icon:hover",
       [] { return Color(EditorUi::TextPrimary) + Fill(EditorUi::ButtonHovered); } },
 
+    // The cross that takes something away: quiet at rest, unmistakable under
+    // the pointer.
+    { ".theme-remove", [] { return Color(EditorUi::TextDim); } },
+    { ".theme-remove:hover", [] { return Color(EditorUi::TextPrimary) + Fill(EditorUi::Danger); } },
+
     { ".theme-button", [] {
          return Fill(EditorUi::ButtonBg) + Edge(EditorUi::Border) + Color(EditorUi::TextPrimary);
      } },

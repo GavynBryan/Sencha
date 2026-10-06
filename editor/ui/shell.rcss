@@ -349,8 +349,6 @@ body
     margin-bottom: 6dp;
 }
 
-/* A field's verbs run along one line under it rather than a line each. */
-.setting.verb { display: inline-flex; min-height: 24dp; margin-right: 6dp; }
 
 #selection_title
 {

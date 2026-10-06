@@ -115,6 +115,7 @@ const UiActionId kRaiseAction = UiActionIdAt(23);
 const UiActionId kCrumbAction = UiActionIdAt(24);
 const UiActionId kTabAction = UiActionIdAt(25);
 const UiActionId kTabDropAction = UiActionIdAt(26);
+const UiActionId kSheetFoldAction = UiActionIdAt(27);
 
 // The floating surfaces a header can move, as a document names them.
 constexpr std::string_view kExplorerSurface = "explorer";
@@ -202,7 +203,8 @@ UiScreenDesc Describe()
                      "shell_sheet_pick", "shell_explore", "shell_explorer_filter", "shell_explorer_page",
                      "shell_explorer_pick", "shell_explorer_commit", "shell_explorer_close",
                      "shell_explorer_open", "shell_explorer_mark", "shell_grab", "shell_drag", "shell_drop",
-                     "shell_unmove", "shell_raise", "shell_crumb", "shell_tab", "shell_tab_drop" };
+                     "shell_unmove", "shell_raise", "shell_crumb", "shell_tab", "shell_tab_drop",
+                     "shell_sheet_fold" };
     return desc;
 }
 
@@ -299,6 +301,8 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         if (Transients.OpenIds().empty())
             EscapeLayer.Reset();
     });
+    ToolSheet.OfferActions(Services.Catalog, Services.Actions);
+    SelectionSheet.OfferActions(Services.Catalog, Services.Actions);
     // Escape belongs to what is open while anything is.
     EscapeActions.Claim("edit.escape", ActionHandler{ .Invoke = [this] { EscapeFront(); } });
 
@@ -413,7 +417,8 @@ void ShellWindow::HandleActions()
             (void)Services.Actions.Invoke(argument);
         }
         else if (action.Id == kSheetSetAction || action.Id == kSheetFlipAction || action.Id == kSheetHoldAction
-                 || action.Id == kSheetReleaseAction || action.Id == kSheetActAction || action.Id == kSheetPickAction)
+                 || action.Id == kSheetReleaseAction || action.Id == kSheetActAction || action.Id == kSheetPickAction
+                 || action.Id == kSheetFoldAction)
         {
             HandleSheetAction(action);
         }
@@ -537,24 +542,40 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     }
     else if (action.Id == kSheetFlipAction)
         (void)sheet.Flip(sections, index);
-    else if (action.Id == kSheetActAction)
+    else if (action.Id == kSheetActAction && action.Arguments.size() > 2)
     {
         // A verb that asks for a choice first opens its choices under it.
-        const std::vector<std::string> choices = sheet.ChoicesOf(index);
-        const std::string chosen = action.Arguments.size() > 2 ? std::string(action.Arguments[2].AsString()) : std::string{};
+        const std::string verb(action.Arguments[2].AsString());
+        const std::vector<std::string> choices = sheet.ChoicesOf(index, verb);
+        const std::string chosen = action.Arguments.size() > 3 ? std::string(action.Arguments[3].AsString()) : std::string{};
         if (!choices.empty() && chosen.empty())
-            OpenChoices(tool ? "tool" : "selection", index, ChoiceFor::Verb, choices);
+            OpenChoices(tool ? "tool" : "selection", index, verb, choices);
         else
-            (void)sheet.Act(sections, index, chosen);
+            ActOnSheet(sheet, sections, index, verb, chosen);
     }
+    else if (action.Id == kSheetFoldAction)
+        sheet.Fold(index);
     else if (action.Id == kSheetPickAction)
     {
         std::vector<std::string> candidates = sheet.CandidatesOf(sections, index);
         candidates.insert(candidates.begin(), std::string{});
-        OpenChoices(tool ? "tool" : "selection", index, ChoiceFor::Value, std::move(candidates));
+        OpenChoices(tool ? "tool" : "selection", index, {}, std::move(candidates));
     }
     else if (action.Arguments.size() > 2)
         (void)sheet.SetFromControl(sections, index, action.Arguments[2]);
+}
+
+void ShellWindow::ActOnSheet(PropertySheet& sheet, std::span<const PropertySection> sections, std::size_t index,
+                             std::string_view verb, std::string_view choice)
+{
+    const bool removes = sheet.Removes(index, verb);
+    const std::string label = sheet.LabelOf(index);
+    if (sheet.Act(sections, index, verb, choice) != PropertyEditResult::Applied || !removes)
+        return;
+    const std::string undo = Services.Catalog.ChordText("edit.undo");
+    Services.Notices.Post(undo.empty() ? std::format("Removed {}", label)
+                                       : std::format("Removed {} \xC2\xB7 {} puts it back", label, undo),
+                          NoticeTone::Info, NoticeClockNow());
 }
 
 void ShellWindow::YieldPointerToContent()
@@ -601,12 +622,12 @@ std::string ShellWindow::PopoverName() const
     }
 }
 
-void ShellWindow::OpenChoices(std::string sheet, std::size_t row, ChoiceFor kind, std::vector<std::string> choices)
+void ShellWindow::OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices)
 {
     OpenPopover(Popover::Choices);
     ChoicesSheet = std::move(sheet);
     ChoicesRow = row;
-    ChoicesFor = kind;
+    ChoicesVerb = std::move(verb);
     ChoicesListed = std::move(choices);
 }
 
@@ -976,8 +997,8 @@ void ShellWindow::Choose(const std::string& key)
         {
             PropertySheet& sheet = ChoicesSheet == "tool" ? ToolSheet : SelectionSheet;
             const std::vector<PropertySection> sections = SheetSections(ChoicesSheet, *workspace);
-            if (ChoicesFor == ChoiceFor::Verb)
-                (void)sheet.Act(sections, ChoicesRow, key);
+            if (!ChoicesVerb.empty())
+                ActOnSheet(sheet, sections, ChoicesRow, ChoicesVerb, key);
             else
                 (void)sheet.Set(sections, ChoicesRow, key);
         }
@@ -1238,8 +1259,11 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
                 }
     (void)ui.SetRows(Screen, kSelectionChips, chips);
 
+    // A selection looked at through the context wheel has its actions there;
+    // the sheet keeps only what applies or cancels a staged edit.
     std::vector<UiRow> verbs;
-    for (const std::string& id : selection.Actions)
+    for (const std::string& id : !selection.OnRequest || selection.Staged ? selection.Actions
+                                                                          : std::vector<std::string>{})
     {
         const ActionDefinition* definition = Services.Catalog.Find(id);
         const ActionContextStack::State state = Services.Actions.Query(id);

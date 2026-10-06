@@ -1,3 +1,5 @@
+#include "actions/ActionCatalog.h"
+#include "actions/ActionContext.h"
 #include "properties/SettingProperties.h"
 #include "presenters/PropertySheet.h"
 
@@ -178,4 +180,114 @@ TEST(PropertySheet, ADropDownWhoseOptionsChangedSettlesBeforeItEdits)
     (void)sheet.Present(names);
     EXPECT_EQ(sheet.SetFromControl(names, 0, UiValue(std::string("Grounded"))), PropertyEditResult::Applied);
     EXPECT_EQ(names.Value, "Grounded");
+}
+
+// What can be done about a property is offered beside it, never as a pile of
+// rows after it: its verbs, the cross that takes it away, and the catalog
+// actions it names that can run now. A group worth knowing about but not worth
+// reading every time starts closed and stays as it was left.
+namespace
+{
+class Body final : public IPropertySource
+{
+public:
+    std::vector<std::string> Log;
+    bool Folded = false;
+
+    std::vector<PropertyNode> Nodes() const override
+    {
+        PropertyNode body{ .Key = "body", .Descriptor = { .Kind = PropertyKind::Group, .Label = "Body" } };
+        body.Descriptor.Verbs = { { .Id = "reset", .Label = "Reset" },
+                                  { .Id = "remove", .Label = "Remove", .Removes = true } };
+        body.Descriptor.Actions = { "body.bake", "body.export", "body.weld", "body.split", "body.locked" };
+        body.Descriptor.Folded = Folded;
+        body.Children = { NumberProperty("body/mass", "Mass", 2.0, 0.0, -1.0, 0.1) };
+        return { body };
+    }
+    bool BeginEdit(std::string_view) override { return true; }
+    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Applied; }
+    PropertyEditResult CommitEdit(std::string_view, std::string_view) override { return PropertyEditResult::Applied; }
+    void CancelEdit(std::string_view) override {}
+    PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view) override
+    {
+        Log.push_back(std::string(verb) + " " + std::string(key));
+        return PropertyEditResult::Applied;
+    }
+};
+
+class Actions
+{
+public:
+    Actions()
+    {
+        for (const char* id : { "body.bake", "body.export", "body.weld", "body.split", "body.locked" })
+            (void)Catalog.Define({ .Id = id, .Label = std::string("Do ") + id, .Category = "Body" });
+        for (const char* id : { "body.export", "body.weld", "body.split" })
+            Context.Claim(id, { .Invoke = [this, id] { Ran.push_back(id); } });
+        Context.Claim("body.locked", { .Invoke = [] {}, .Enabled = [] { return false; } });
+        Layer = Stack.Push(Context, ActionRank::Workspace);
+    }
+
+    ActionCatalog Catalog;
+    ActionContext Context;
+    ActionContextStack Stack;
+    ActionContextStack::Layer Layer;
+    std::vector<std::string> Ran;
+};
+} // namespace
+
+TEST(PropertySheet, WhatCanBeDoneAboutAGroupIsBesideItsHeadingAndRemovalIsMarked)
+{
+    Body body;
+    PropertySheet sheet;
+    const std::vector<UiRow> rows = sheet.Present(body);
+    ASSERT_EQ(rows.size(), 2u) << "the heading and its field; no rows of verbs";
+    ASSERT_EQ(rows[0].Verbs.size(), 2u) << "without a catalog, no actions are offered";
+    EXPECT_FALSE(rows[0].Verbs[0].Removes);
+    EXPECT_TRUE(rows[0].Verbs[1].Removes);
+    EXPECT_TRUE(sheet.Removes(0, "remove"));
+    EXPECT_EQ(sheet.LabelOf(0), "Body");
+
+    EXPECT_EQ(sheet.Act(body, 0, "remove"), PropertyEditResult::Applied);
+    EXPECT_EQ(sheet.Act(body, 0, "explode"), PropertyEditResult::Gone) << "a verb the row does not offer";
+    EXPECT_EQ(body.Log, (std::vector<std::string>{ "remove body" }));
+}
+
+TEST(PropertySheet, AGroupsActionsAreOfferedOnlyWhileTheyCanRunAndAtMostThree)
+{
+    Body body;
+    Actions actions;
+    PropertySheet sheet;
+    sheet.OfferActions(actions.Catalog, actions.Stack);
+    const std::vector<UiRow> rows = sheet.Present(body);
+    std::vector<std::string> offered;
+    for (const UiRowVerb& verb : rows[0].Verbs)
+        offered.push_back(verb.Key);
+    EXPECT_EQ(offered, (std::vector<std::string>{ "body.export", "body.weld", "body.split", "reset", "remove" }))
+        << "unclaimed and disabled actions are not offered, and three is all there is room for";
+    EXPECT_EQ(rows[0].Verbs[0].Label, "Do body.export");
+
+    EXPECT_EQ(sheet.Act(body, 0, "body.weld"), PropertyEditResult::Applied);
+    EXPECT_EQ(actions.Ran, (std::vector<std::string>{ "body.weld" }));
+    EXPECT_TRUE(body.Log.empty()) << "an action is the catalog's to run, not the source's";
+}
+
+TEST(PropertySheet, AFoldedGroupShowsItsHeadingAloneAndStaysAsItWasLeft)
+{
+    Body body;
+    body.Folded = true;
+    PropertySheet sheet;
+    std::vector<UiRow> rows = sheet.Present(body);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].Value, "closed");
+    EXPECT_FALSE(rows[0].Expanded);
+
+    sheet.Fold(0);
+    rows = sheet.Present(body);
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].Value, "open");
+    EXPECT_EQ(sheet.Present(body).size(), 2u) << "opened by hand, it stays open";
+
+    sheet.Fold(1);
+    EXPECT_EQ(sheet.Present(body).size(), 2u) << "a field does not fold";
 }

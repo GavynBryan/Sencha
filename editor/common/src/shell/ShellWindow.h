@@ -111,7 +111,6 @@ private:
     // asset row's candidates -- for the row ChoicesRow of the sheet
     // ChoicesSheet names, listed once as it opens.
     enum class Popover : std::uint8_t { None, Hatch, Workspaces, Tools, Category, Choices, Problems };
-    enum class ChoiceFor : std::uint8_t { Verb, Value };
 
     void HandleActions();
     void Publish(double now);
@@ -121,7 +120,12 @@ private:
     // released over the rail still ends where it began.
     void YieldPointerToContent();
     void OpenPopover(Popover popover, std::string category = {});
-    void OpenChoices(std::string sheet, std::size_t row, ChoiceFor kind, std::vector<std::string> choices);
+    // `verb` empty: the choices are values for the row; otherwise they are
+    // what the row's verb asks to be chosen first.
+    void OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices);
+    // A sheet's verb done; one that takes something away says how to bring it back.
+    void ActOnSheet(PropertySheet& sheet, std::span<const PropertySection> sections, std::size_t index,
+                    std::string_view verb, std::string_view choice);
     // A popover as a document or a script names it: "hatch", "tools",
     // "category:Grid", or anything else for none.
     void OpenNamedPopover(std::string_view name);
@@ -196,7 +200,7 @@ private:
     std::string PopoverCategory;
     std::string ChoicesSheet;
     std::size_t ChoicesRow = 0;
-    ChoiceFor ChoicesFor = ChoiceFor::Verb;
+    std::string ChoicesVerb;
     std::vector<std::string> ChoicesListed;
     TransientSurfaces Transients;
     TransientSurfaces::Id PopoverTransient = 0;

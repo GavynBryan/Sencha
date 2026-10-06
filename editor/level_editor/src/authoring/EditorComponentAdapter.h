@@ -158,6 +158,9 @@ public:
     {
         return PropertyEditResult::Gone;
     }
+    // Catalog actions about what this component makes of its entity, offered
+    // on the component's heading: a brush's bake and export.
+    [[nodiscard]] virtual std::span<const std::string_view> Actions() const { return {}; }
     [[nodiscard]] virtual bool AllowEntityScale() const { return true; }
     virtual ~IEditorComponentAdapter() = default;
 };
