@@ -136,8 +136,8 @@ struct MarkerRequest
     bool Selected = false;
 };
 
-// A selected object's handles: the rings a size is measured by, the knobs that
-// change them -- small at rest, larger with the pointer near -- and the value
+// A selected object's handles: the rings and cone edges a value is measured
+// by, the knobs that change them -- small at rest, larger with the pointer near -- and the value
 // being changed, beside it. Only the property handles write it.
 struct PropertyKnobRequest
 {
@@ -148,13 +148,13 @@ struct PropertyKnobRequest
 
 struct PropertyHandleMarks
 {
-    std::vector<WorldSegmentRequest> Rings;
+    std::vector<WorldSegmentRequest> Strokes;
     std::vector<PropertyKnobRequest> Knobs;
     std::vector<LabelRequest> Values;
 
     void Clear()
     {
-        Rings.clear();
+        Strokes.clear();
         Knobs.clear();
         Values.clear();
     }

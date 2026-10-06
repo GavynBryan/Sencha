@@ -138,7 +138,9 @@ are never offered.
 
 **Handles** put a selected object's spatial values on it: a size is a ring
 facing each view with a knob to drag, small at rest and larger with the pointer
-near; a number with no place of its own changes by scrolling over the object.
+near; an angle — a spot light's cone, a camera's field of view — is the pair of
+edges it opens about the object's forward axis, with a knob on one edge; a
+number with no place of its own changes by scrolling over the object.
 The value shows beside the handle only while it changes (`PropertyHandles`).
 
 A workspace whose properties *are* its content (a data asset, a material, an
@@ -226,6 +228,5 @@ Level Design's flows are in `docs/editor/level-design.md`; Animation's in
 
 ### Not built yet
 
-- Angle handles (a spot light's cone, a camera's field of view).
 - A tab's own close key; closing goes through Ctrl+W or the hatch.
 - Hovering a material in its explorer previewing it on the selected faces.

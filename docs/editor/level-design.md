@@ -95,8 +95,10 @@ full sheet.
 | Vertices | weld, snap to grid |
 
 **Values with a place in the world are handles on the object.** A selected
-light's range is a ring with a knob to drag; its intensity changes by
-scrolling over it. The value shows beside the handle while it changes.
+light's range is a ring with a knob to drag; a spot light's inner and outer
+cone, and a camera's field of view, are edges with a knob at the end of one;
+a light's intensity changes by scrolling over it. The value shows beside the
+handle while it changes.
 
 **Parametric verbs** (inset, bevel) stage a preview that applies or cancels;
 while one is staged the selection's sheet shows to apply it.

@@ -18,24 +18,46 @@ constexpr PropertyHandleRule kRules[] = {
     { "PointLight", "range", PropertyHandleKind::Radius },
     { "PointLight", "intensity", PropertyHandleKind::Scroll },
     { "SpotLight", "range", PropertyHandleKind::Radius },
+    { "SpotLight", "outer_angle_degrees", PropertyHandleKind::Cone, "range" },
+    { "SpotLight", "inner_angle_degrees", PropertyHandleKind::Cone, "range" },
     { "SpotLight", "intensity", PropertyHandleKind::Scroll },
+    { "Camera", "fov_y_radians", PropertyHandleKind::Spread },
 };
 
 // Frames without a wheel turn after which a scroll is one step.
 constexpr int kRestFrames = 20;
 constexpr int kRingSegments = 64;
+constexpr int kArcSegments = 16;
 // How near the pointer must be, in design pixels, to take a knob or to scroll
 // over the object.
 constexpr float kKnobReachDp = 12.0f;
 constexpr float kObjectReachDp = 24.0f;
+// How far an angle with no reach of its own draws its edges, and where its arc
+// sits along them.
+constexpr float kEdgeDp = 96.0f;
+constexpr float kArcAlongEdge = 0.35f;
+constexpr float kRadiansPerDegree = std::numbers::pi_v<float> / 180.0f;
 
-std::optional<PropertyHandleKind> KindOf(std::string_view key)
+const PropertyHandleRule* RuleOf(std::string_view key)
 {
     for (const PropertyHandleRule& rule : kRules)
         if (key.size() == rule.Component.size() + 1 + rule.Field.size() && key.starts_with(rule.Component)
             && key[rule.Component.size()] == '/' && key.ends_with(rule.Field))
-            return rule.Kind;
-    return std::nullopt;
+            return &rule;
+    return nullptr;
+}
+
+bool IsAngle(PropertyHandleKind kind)
+{
+    return kind == PropertyHandleKind::Cone || kind == PropertyHandleKind::Spread;
+}
+
+std::optional<float> Number(std::string_view text)
+{
+    float value = 0.0f;
+    if (std::from_chars(text.data(), text.data() + text.size(), value).ec != std::errc{})
+        return std::nullopt;
+    return value;
 }
 
 // Screen right and up as world directions, for a ring that faces the view.
@@ -49,6 +71,53 @@ std::pair<Vec3d, Vec3d> Facing(const EditorViewport& viewport)
     return { right, right.Cross(forward).Normalized() };
 }
 
+// An angle about an axis, laid in one plane: its edges leave the apex either
+// side of the axis and end at its rim.
+struct AngleFan
+{
+    Vec3d Apex;
+    Vec3d Axis;
+    Vec3d Across;
+    float HalfRadians = 0.0f;
+    float Length = 0.0f;
+
+    [[nodiscard]] Vec3d At(float radians, float length) const
+    {
+        return Apex + (Axis * std::cos(radians) + Across * std::sin(radians)) * length;
+    }
+    [[nodiscard]] Vec3d Rim(float side) const { return At(HalfRadians * side, Length); }
+};
+
+AngleFan FanOf(PropertyHandleKind kind, float degrees, float reach, Vec3d centre, Vec3d forward, Vec3d up,
+               const EditorViewport& viewport)
+{
+    const Vec3d axis = forward.Normalized();
+    Vec3d across = kind == PropertyHandleKind::Spread ? up - axis * axis.Dot(up)
+                                                      : axis.Cross(viewport.Camera.GetForwardVector());
+    if (across.SqrMagnitude() < 1e-6f)
+        across = Facing(viewport).first;
+    const float half = (kind == PropertyHandleKind::Spread ? degrees * 0.5f : degrees) * kRadiansPerDegree;
+    const float length = reach > 0.0f ? reach
+                                      : ViewportProjection(viewport).WorldSizeForPixels(centre, EditorUi::Px(kEdgeDp));
+    return { .Apex = centre, .Axis = axis, .Across = across.Normalized(), .HalfRadians = half, .Length = length };
+}
+
+// The angle, in the handle's degrees, of where `ray` crosses the fan's plane.
+std::optional<float> DegreesAt(PropertyHandleKind kind, const AngleFan& fan, const Ray3d& ray)
+{
+    const Vec3d normal = fan.Axis.Cross(fan.Across);
+    const float facing = ray.Direction.Dot(normal);
+    if (std::abs(facing) < 1e-4f)
+        return std::nullopt;
+    const float along = (fan.Apex - ray.Origin).Dot(normal) / facing;
+    if (along < 0.0f)
+        return std::nullopt;
+    const Vec3d offset = ray.Origin + ray.Direction * along - fan.Apex;
+    const float degrees = std::atan2(std::abs(offset.Dot(fan.Across)), offset.Dot(fan.Axis)) / kRadiansPerDegree;
+    return kind == PropertyHandleKind::Spread ? std::clamp(degrees * 2.0f, 1.0f, 179.0f)
+                                              : std::clamp(degrees, 1.0f, 89.0f);
+}
+
 bool Shown(const EditorViewport& viewport)
 {
     return viewport.RegionMax.X > viewport.RegionMin.X && viewport.RegionMax.Y > viewport.RegionMin.Y;
@@ -57,6 +126,11 @@ bool Shown(const EditorViewport& viewport)
 std::string Text(float value)
 {
     return std::format("{:.2f}", value);
+}
+
+std::string Readout(std::string_view label, PropertyHandleKind kind, float value)
+{
+    return IsAngle(kind) ? std::format("{}  {:.1f}\xC2\xB0", label, value) : std::format("{}  {:.2f}", label, value);
 }
 } // namespace
 
@@ -72,36 +146,61 @@ std::vector<PropertyHandles::Handle> PropertyHandles::Handles() const
     if (Workspace.Selection.GetSelection().size() != 1 || !Components.Entity().IsValid())
         return handles;
     for (const PropertyNode& component : Components.Nodes())
+    {
+        float side = 1.0f;
         for (const PropertyNode& field : component.Children)
         {
-            const std::optional<PropertyHandleKind> kind = KindOf(field.Key);
-            float value = 0.0f;
-            if (!kind.has_value() || field.Descriptor.ReadOnly
-                || std::from_chars(field.Value.data(), field.Value.data() + field.Value.size(), value).ec != std::errc{})
+            const PropertyHandleRule* rule = RuleOf(field.Key);
+            const std::optional<float> value = Number(field.Value);
+            if (rule == nullptr || field.Descriptor.ReadOnly || !value.has_value())
                 continue;
-            handles.push_back({ .Key = field.Key, .Label = field.Descriptor.Label, .Kind = *kind, .Value = value });
+            Handle handle{ .Key = field.Key, .Label = field.Descriptor.Label, .Kind = rule->Kind, .Value = *value };
+            if (IsAngle(rule->Kind))
+            {
+                handle.Side = side;
+                side = -side;
+            }
+            if (!rule->Reach.empty())
+                for (const PropertyNode& sibling : component.Children)
+                    if (sibling.Key.ends_with(rule->Reach) && sibling.Key.size() > rule->Reach.size()
+                        && sibling.Key[sibling.Key.size() - rule->Reach.size() - 1] == '/')
+                        handle.Reach = Number(sibling.Value).value_or(0.0f);
+            handles.push_back(std::move(handle));
         }
+    }
     return handles;
 }
 
-std::optional<Vec3d> PropertyHandles::Centre() const
+std::optional<PropertyHandles::Frame> PropertyHandles::ObjectFrame() const
 {
     const Transform3f* transform = Workspace.World.FocusDocument().GetScene().TryGetWorldTransform(Components.Entity());
-    return transform != nullptr ? std::optional<Vec3d>(transform->Position) : std::nullopt;
+    if (transform == nullptr)
+        return std::nullopt;
+    return Frame{ .Centre = transform->Position, .Forward = transform->Forward(), .Up = transform->Up() };
+}
+
+std::optional<Vec3d> PropertyHandles::KnobOf(const Handle& handle, const Frame& frame,
+                                             const EditorViewport& viewport)
+{
+    if (handle.Kind == PropertyHandleKind::Radius)
+        return frame.Centre + Facing(viewport).first * handle.Value;
+    if (IsAngle(handle.Kind))
+        return FanOf(handle.Kind, handle.Value, handle.Reach, frame.Centre, frame.Forward, frame.Up, viewport)
+            .Rim(handle.Side);
+    return std::nullopt;
 }
 
 std::optional<PropertyHandles::Handle> PropertyHandles::KnobAt(Vec2d pointer, ViewportId id) const
 {
     const EditorViewport* viewport = Workspace.Layout.Find(id);
-    const std::optional<Vec3d> centre = Centre();
-    if (viewport == nullptr || !centre.has_value())
+    const std::optional<Frame> frame = ObjectFrame();
+    if (viewport == nullptr || !frame.has_value())
         return std::nullopt;
     const ViewportProjection projection(*viewport);
-    const Vec3d right = Facing(*viewport).first;
     for (const Handle& handle : Handles())
-        if (handle.Kind == PropertyHandleKind::Radius)
-            if (const std::optional<ProjectedPoint> knob = projection.WorldToPixel(*centre + right * handle.Value);
-                knob.has_value() && (knob->Pixel - pointer).Magnitude() <= EditorUi::Px(kKnobReachDp))
+        if (const std::optional<Vec3d> knob = KnobOf(handle, *frame, *viewport))
+            if (const std::optional<ProjectedPoint> at = projection.WorldToPixel(*knob);
+                at.has_value() && (at->Pixel - pointer).Magnitude() <= EditorUi::Px(kKnobReachDp))
                 return handle;
     return std::nullopt;
 }
@@ -109,11 +208,25 @@ std::optional<PropertyHandles::Handle> PropertyHandles::KnobAt(Vec2d pointer, Vi
 bool PropertyHandles::OverObject(Vec2d pointer, ViewportId id) const
 {
     const EditorViewport* viewport = Workspace.Layout.Find(id);
-    const std::optional<Vec3d> centre = Centre();
-    if (viewport == nullptr || !centre.has_value())
+    const std::optional<Frame> frame = ObjectFrame();
+    if (viewport == nullptr || !frame.has_value())
         return false;
-    const std::optional<ProjectedPoint> at = ViewportProjection(*viewport).WorldToPixel(*centre);
+    const std::optional<ProjectedPoint> at = ViewportProjection(*viewport).WorldToPixel(frame->Centre);
     return at.has_value() && (at->Pixel - pointer).Magnitude() <= EditorUi::Px(kObjectReachDp);
+}
+
+std::optional<float> PropertyHandles::ValueAt(const Handle& handle, const Frame& frame,
+                                              const EditorViewport& viewport, Vec2d pointer)
+{
+    const ViewportProjection projection(viewport);
+    if (IsAngle(handle.Kind))
+        return DegreesAt(handle.Kind,
+                         FanOf(handle.Kind, handle.Value, handle.Reach, frame.Centre, frame.Forward, frame.Up, viewport),
+                         projection.RayThroughPixel(pointer));
+    const std::optional<ProjectedPoint> at = projection.WorldToPixel(frame.Centre);
+    if (!at.has_value())
+        return std::nullopt;
+    return (pointer - at->Pixel).Magnitude() * projection.WorldSizeForPixels(frame.Centre, 1.0f);
 }
 
 void PropertyHandles::Publish()
@@ -123,11 +236,11 @@ void PropertyHandles::Publish()
     if (Now == Phase::Scrolling && ++RestingFrames >= kRestFrames)
         Finish();
     const std::vector<Handle> handles = Handles();
-    const std::optional<Vec3d> centre = Centre();
+    const std::optional<Frame> frame = ObjectFrame();
     // What was being changed went away under it: nothing to keep.
-    if (Now != Phase::Resting && (Components.Entity() != Editing || !centre.has_value()))
+    if (Now != Phase::Resting && (Components.Entity() != Editing || !frame.has_value()))
         Cancel(nullptr);
-    if (handles.empty() || !centre.has_value())
+    if (handles.empty() || !frame.has_value())
         return;
 
     const std::optional<Handle> hot = Now == Phase::Resting ? KnobAt(Pointer, PointerView) : std::nullopt;
@@ -138,29 +251,52 @@ void PropertyHandles::Publish()
         const auto [right, up] = Facing(*viewport);
         for (const Handle& handle : handles)
         {
-            if (handle.Kind != PropertyHandleKind::Radius)
+            const std::optional<Vec3d> knob = KnobOf(handle, *frame, *viewport);
+            if (!knob.has_value())
                 continue;
-            const bool active = (Now == Phase::Dragging && handle.Key == ActiveKey)
+            const bool active = (Now == Phase::Dragging && handle.Key == Active.Key)
                              || (hot.has_value() && hot->Key == handle.Key && PointerView == viewport->Id);
             const Vec4 colour = active ? EditorTheme::DialRimHot : EditorTheme::DialRim;
-            Vec3d previous = *centre + right * handle.Value;
-            for (int i = 1; i <= kRingSegments; ++i)
+            const auto stroke = [&](Vec3d from, Vec3d to) {
+                marks.Strokes.push_back(
+                    { .From = from, .To = to, .Color = colour, .Thickness = 1.0f, .Viewport = viewport->Id });
+            };
+            if (handle.Kind == PropertyHandleKind::Radius)
             {
-                const float angle = 2.0f * std::numbers::pi_v<float> * static_cast<float>(i) / kRingSegments;
-                const Vec3d next = *centre + (right * std::cos(angle) + up * std::sin(angle)) * handle.Value;
-                marks.Rings.push_back({ .From = previous, .To = next, .Color = colour, .Thickness = 1.0f,
-                                        .Viewport = viewport->Id });
-                previous = next;
+                Vec3d previous = *knob;
+                for (int i = 1; i <= kRingSegments; ++i)
+                {
+                    const float angle = 2.0f * std::numbers::pi_v<float> * static_cast<float>(i) / kRingSegments;
+                    const Vec3d next = frame->Centre + (right * std::cos(angle) + up * std::sin(angle)) * handle.Value;
+                    stroke(previous, next);
+                    previous = next;
+                }
             }
-            marks.Knobs.push_back({ .World = *centre + right * handle.Value, .Hot = active, .Viewport = viewport->Id });
+            else
+            {
+                const AngleFan fan =
+                    FanOf(handle.Kind, handle.Value, handle.Reach, frame->Centre, frame->Forward, frame->Up, *viewport);
+                stroke(fan.Apex, fan.Rim(1.0f));
+                stroke(fan.Apex, fan.Rim(-1.0f));
+                const float arc = fan.Length * kArcAlongEdge;
+                Vec3d previous = fan.At(-fan.HalfRadians, arc);
+                for (int i = 1; i <= kArcSegments; ++i)
+                {
+                    const Vec3d next =
+                        fan.At(fan.HalfRadians * (2.0f * static_cast<float>(i) / kArcSegments - 1.0f), arc);
+                    stroke(previous, next);
+                    previous = next;
+                }
+            }
+            marks.Knobs.push_back({ .World = *knob, .Hot = active, .Viewport = viewport->Id });
             if (active)
-                marks.Values.push_back({ .World = *centre + right * handle.Value, .Color = EditorTheme::DialRimHot,
-                                         .Text = handle.Label + "  " + Text(handle.Value) });
+                marks.Values.push_back(
+                    { .World = *knob, .Color = EditorTheme::DialRimHot, .Text = Readout(handle.Label, handle.Kind, handle.Value) });
         }
     }
     if (Now == Phase::Scrolling)
-        marks.Values.push_back({ .World = *centre, .Color = EditorTheme::DialRimHot,
-                                 .Text = ActiveLabel + "  " + Text(ActiveValue) });
+        marks.Values.push_back({ .World = frame->Centre, .Color = EditorTheme::DialRimHot,
+                                 .Text = Readout(Active.Label, Active.Kind, Active.Value) });
 }
 
 InputConsumed PropertyHandles::OnInput(const InputEvent& event, PointerCapture& capture)
@@ -172,14 +308,13 @@ InputConsumed PropertyHandles::OnInput(const InputEvent& event, PointerCapture& 
         if (Now != Phase::Dragging)
             return InputConsumed::No;
         const EditorViewport* viewport = Workspace.Layout.Find(PointerView);
-        const std::optional<Vec3d> centre = Centre();
-        if (viewport == nullptr || !centre.has_value())
+        const std::optional<Frame> frame = ObjectFrame();
+        if (viewport == nullptr || !frame.has_value())
             return InputConsumed::Yes;
-        const ViewportProjection projection(*viewport);
-        if (const std::optional<ProjectedPoint> at = projection.WorldToPixel(*centre))
+        if (const std::optional<float> value = ValueAt(Active, *frame, *viewport, Pointer))
         {
-            ActiveValue = (Pointer - at->Pixel).Magnitude() * projection.WorldSizeForPixels(*centre, 1.0f);
-            (void)Session.Preview(Text(ActiveValue));
+            Active.Value = *value;
+            (void)Session.Preview(Text(Active.Value));
         }
         return InputConsumed::Yes;
     }
@@ -195,9 +330,7 @@ InputConsumed PropertyHandles::OnInput(const InputEvent& event, PointerCapture& 
             return InputConsumed::No;
         Now = Phase::Dragging;
         Editing = Components.Entity();
-        ActiveKey = knob->Key;
-        ActiveLabel = knob->Label;
-        ActiveValue = knob->Value;
+        Active = *knob;
         PointerView = view;
         capture.Acquire(PointerCaptureKind::Exclusive, view);
         return InputConsumed::Yes;
@@ -249,20 +382,18 @@ void PropertyHandles::Scroll(float notches, bool fine)
             return;
         Now = Phase::Scrolling;
         Editing = Components.Entity();
-        ActiveKey = scroll->Key;
-        ActiveLabel = scroll->Label;
-        ActiveValue = scroll->Value;
+        Active = *scroll;
     }
-    const float step = std::max(std::abs(ActiveValue) * (fine ? 0.01f : 0.1f), fine ? 0.001f : 0.01f);
-    ActiveValue = std::max(0.0f, ActiveValue + notches * step);
-    (void)Session.Preview(Text(ActiveValue));
+    const float step = std::max(std::abs(Active.Value) * (fine ? 0.01f : 0.1f), fine ? 0.001f : 0.01f);
+    Active.Value = std::max(0.0f, Active.Value + notches * step);
+    (void)Session.Preview(Text(Active.Value));
     RestingFrames = 0;
 }
 
 void PropertyHandles::Finish()
 {
     if (Session.IsOpen())
-        (void)Session.Commit(Text(ActiveValue));
+        (void)Session.Commit(Text(Active.Value));
     Now = Phase::Resting;
 }
 
