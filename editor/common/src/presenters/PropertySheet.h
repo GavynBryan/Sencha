@@ -54,6 +54,9 @@ public:
     // The key an edit of row `index`, or of one of its numbers, is made by:
     // empty for a number its source has no key for.
     [[nodiscard]] std::string EditKeyOf(std::size_t index, std::optional<std::size_t> element = {}) const;
+    // The bounds and step of row `index`, or of one of its numbers, as its
+    // property describes them.
+    [[nodiscard]] PropertyDescriptor BoundsOf(std::size_t index, std::optional<std::size_t> element = {}) const;
     [[nodiscard]] IPropertySource* SourceOf(std::span<const PropertySection> sections, std::size_t index) const;
     // Row `index` set to what its control reported: a drop-down's option, a
     // field's text.
@@ -109,6 +112,8 @@ private:
         bool Folded = false;
         // A vector's numbers' own keys, where its source has them.
         std::vector<std::string> ElementKeys = {};
+        PropertyDescriptor Bounds = {};
+        PropertyDescriptor ElementBounds = {};
         // What its control was laid out as: its key, verb and options.
         std::string Layout = {};
     };

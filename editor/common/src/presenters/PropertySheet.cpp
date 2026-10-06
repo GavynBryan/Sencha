@@ -222,6 +222,10 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
                      .Foldable = foldable,
                      .Folded = folded,
                      .ElementKeys = std::move(elementKeys),
+                     .Bounds = descriptor,
+                     .ElementBounds = descriptor.Kind == PropertyKind::Vector && !node.Children.empty()
+                                          ? node.Children.front().Descriptor
+                                          : descriptor,
                      .Layout = std::move(layout) });
     // A vector's numbers are its own row, not rows under it.
     if (folded || descriptor.Kind == PropertyKind::Vector)
@@ -290,6 +294,13 @@ std::string PropertySheet::EditKeyOf(std::size_t index, std::optional<std::size_
     if (element.has_value())
         return *element < Rows[index].ElementKeys.size() ? Rows[index].ElementKeys[*element] : std::string{};
     return Rows[index].Key;
+}
+
+PropertyDescriptor PropertySheet::BoundsOf(std::size_t index, std::optional<std::size_t> element) const
+{
+    if (index >= Rows.size())
+        return {};
+    return element.has_value() ? Rows[index].ElementBounds : Rows[index].Bounds;
 }
 
 PropertyEditResult PropertySheet::Set(std::span<const PropertySection> sections, std::size_t index,

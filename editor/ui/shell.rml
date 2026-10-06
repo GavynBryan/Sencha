@@ -107,7 +107,7 @@
                        data-event-blur="shell_sheet_release('tool', ri)"/>
                 <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
                 <div class="numbox theme-field" data-if="row.control == 'number' &amp;&amp; sheet_typing != 'tool:' + ri + ':-1'"
-                     data-class-locked="!row.editable" data-event-click="shell_sheet_type('tool', ri, -1)">
+                     data-class-locked="!row.editable" data-event-mousedown="shell_scrub_press('tool', ri, -1)">
                     <span class="numfill theme-fill" data-if="row.max > row.min"
                           data-style-width="(row.max > row.min ? (row.number - row.min) / (row.max - row.min) * 100 : 0) + '%'"></span>
                     <span class="numtext" data-if="!row.mixed">{{row.value}}</span>
@@ -122,7 +122,7 @@
                     <div class="vecpart theme-field" data-for="part, pi : row.parts" data-class-locked="!row.editable">
                         <span data-attr-class="'axis theme-axis-' + pi">{{row.choices[pi]}}</span>
                         <div class="numtext" data-if="sheet_typing != 'tool:' + ri + ':' + pi"
-                             data-event-click="shell_sheet_type('tool', ri, pi)">
+                             data-event-mousedown="shell_scrub_press('tool', ri, pi)">
                             <span data-if="part != ''">{{part}}</span><span class="theme-dim" data-if="part == ''">&#x2014;</span>
                         </div>
                         <input style="tab-index: none;" type="text" class="partinput" autofocus=""
@@ -250,7 +250,7 @@
                        data-event-blur="shell_sheet_release('selection', ri)"/>
                 <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
                 <div class="numbox theme-field" data-if="row.control == 'number' &amp;&amp; sheet_typing != 'selection:' + ri + ':-1'"
-                     data-class-locked="!row.editable" data-event-click="shell_sheet_type('selection', ri, -1)">
+                     data-class-locked="!row.editable" data-event-mousedown="shell_scrub_press('selection', ri, -1)">
                     <span class="numfill theme-fill" data-if="row.max > row.min"
                           data-style-width="(row.max > row.min ? (row.number - row.min) / (row.max - row.min) * 100 : 0) + '%'"></span>
                     <span class="numtext" data-if="!row.mixed">{{row.value}}</span>
@@ -265,7 +265,7 @@
                     <div class="vecpart theme-field" data-for="part, pi : row.parts" data-class-locked="!row.editable">
                         <span data-attr-class="'axis theme-axis-' + pi">{{row.choices[pi]}}</span>
                         <div class="numtext" data-if="sheet_typing != 'selection:' + ri + ':' + pi"
-                             data-event-click="shell_sheet_type('selection', ri, pi)">
+                             data-event-mousedown="shell_scrub_press('selection', ri, pi)">
                             <span data-if="part != ''">{{part}}</span><span class="theme-dim" data-if="part == ''">&#x2014;</span>
                         </div>
                         <input style="tab-index: none;" type="text" class="partinput" autofocus=""

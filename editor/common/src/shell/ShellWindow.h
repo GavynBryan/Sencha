@@ -6,7 +6,10 @@
 #include "shell/PromptDialog.h"
 #include "shell/SurfacePlacement.h"
 #include "shell/TimelineDeck.h"
+#include "input/InputEvent.h"
 #include "presenters/PropertySheet.h"
+#include "properties/PropertyEditSession.h"
+#include "shell/ScrubGesture.h"
 #include "shell/TransientSurfaces.h"
 #include "workspaces/WorkspaceWindow.h"
 
@@ -90,6 +93,11 @@ public:
     // Per frame, before the UI updates: act on what the rail asked for, then
     // publish what it should show. `now` is presentation seconds, for notices.
     void Update(double now, const ShellPreferences& preferences);
+    // A number in a sheet is pressed or being dragged: the pointer and Escape
+    // are its until let go, before the workspace sees them.
+    [[nodiscard]] bool Scrubbing() const { return Scrub != ScrubPhase::Resting; }
+    // Whether the shell took `event` for the number being dragged.
+    bool TakeScrubInput(const InputEvent& event);
 
     // How much of the top of the window the rail covers, in window points:
     // where content under it has to start.
@@ -226,6 +234,32 @@ private:
     enum class SelectionView : std::uint8_t { Card, Drawer };
     SelectionView SelectionShown = SelectionView::Card;
     bool TitleHeld = false;
+
+    // A number pressed in a sheet: dragged across it moves, released where it
+    // was pressed it types. Every drag is one edit session, previewed live.
+    enum class ScrubPhase : std::uint8_t { Resting, Pressed, Dragging };
+    void PressNumber(std::string sheet, std::size_t row, std::int64_t element);
+    void PreviewScrub(bool coarse);
+    // What the drag writes now: the number, or its vector with the number in it.
+    [[nodiscard]] std::string ScrubbedText() const;
+    void EndScrub(bool commit);
+    ScrubPhase Scrub = ScrubPhase::Resting;
+    std::string ScrubSheet;
+    std::size_t ScrubRow = 0;
+    std::int64_t ScrubElement = -1;
+    ScrubGesture ScrubMotion{ ScrubScale{} };
+    PropertyEditSession ScrubSession;
+    // A number its source names no key for is written by setting its vector
+    // whole, the others as they began.
+    enum class ScrubTarget : std::uint8_t { Number, WholeVector };
+    ScrubTarget ScrubWrites = ScrubTarget::Number;
+    // Where the number began, or that it stands for several and moves each by
+    // the amount.
+    double ScrubStart = 0.0;
+    bool ScrubMixed = false;
+    std::vector<std::string> ScrubParts;
+    double ScrubAmount = 0.0;
+
     // The number being typed into instead of dragged, or empty.
     std::string SheetTyping;
     TransientSurfaces::Id DrawerTransient = 0;

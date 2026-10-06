@@ -569,6 +569,14 @@ void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
     if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
         if (const WorkspaceKind* kind = Workspaces->ActiveKindIn(window))
             Workspaces->Request({ WorkspaceAction::Activate, kind->Id });
+    // A number being dragged in a sheet holds the pointer until it is let go.
+    if (ShellWindow* shell = WindowShellFor(window); shell != nullptr && shell->Scrubbing())
+        if (const std::optional<InputEvent> event = TranslateSdlEvent(ctx.Event);
+            event.has_value() && shell->TakeScrubInput(*event))
+        {
+            ctx.Handled = true;
+            return;
+        }
     IWorkspace* active = Workspaces->ActiveIn(window);
     if (active != nullptr && active->ClaimPlatformEvent(ctx))
     {

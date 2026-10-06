@@ -3,6 +3,7 @@
 #include "shell/AssetTabs.h"
 
 #include "actions/ActionCatalog.h"
+#include "input/SdlEventTranslation.h"
 #include "notices/NoticeQueue.h"
 #include "icons/IconNames.h"
 #include "problems/ProblemList.h"
@@ -124,7 +125,7 @@ const UiActionId kSheetFoldAction = UiActionIdAt(27);
 const UiActionId kPopoverFilterAction = UiActionIdAt(28);
 const UiActionId kTitleHoldAction = UiActionIdAt(29);
 const UiActionId kTitleReleaseAction = UiActionIdAt(30);
-const UiActionId kSheetTypeAction = UiActionIdAt(31);
+const UiActionId kScrubPressAction = UiActionIdAt(31);
 const UiActionId kSheetReleasePartAction = UiActionIdAt(32);
 const UiActionId kSheetKeyAction = UiActionIdAt(33);
 
@@ -222,7 +223,7 @@ UiScreenDesc Describe()
                      "shell_explorer_open", "shell_explorer_mark", "shell_grab", "shell_drag", "shell_drop",
                      "shell_unmove", "shell_raise", "shell_crumb", "shell_tab", "shell_tab_drop",
                      "shell_sheet_fold", "shell_popover_filter", "shell_title_hold", "shell_title_release",
-                     "shell_sheet_type", "shell_sheet_release_part", "shell_sheet_key" };
+                     "shell_scrub_press", "shell_sheet_release_part", "shell_sheet_key" };
     return desc;
 }
 
@@ -435,7 +436,7 @@ void ShellWindow::HandleActions()
         }
         else if (action.Id == kSheetSetAction || action.Id == kSheetFlipAction || action.Id == kSheetHoldAction
                  || action.Id == kSheetReleaseAction || action.Id == kSheetActAction || action.Id == kSheetPickAction
-                 || action.Id == kSheetFoldAction || action.Id == kSheetTypeAction
+                 || action.Id == kSheetFoldAction || action.Id == kScrubPressAction
                  || action.Id == kSheetReleasePartAction || action.Id == kSheetKeyAction)
         {
             HandleSheetAction(action);
@@ -584,8 +585,8 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     }
     else if (action.Id == kSheetFoldAction)
         sheet.Fold(index);
-    else if (action.Id == kSheetTypeAction && action.Arguments.size() > 2)
-        SheetTyping = TypingKey(tool ? "tool" : "selection", index, action.Arguments[2].AsInt());
+    else if (action.Id == kScrubPressAction && action.Arguments.size() > 2)
+        PressNumber(tool ? "tool" : "selection", index, action.Arguments[2].AsInt());
     else if (action.Id == kSheetReleasePartAction && action.Arguments.size() > 2)
     {
         // Let go of after Enter, Tab or Escape already ended it: nothing more.
@@ -618,6 +619,135 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     }
     else if (action.Arguments.size() > 2)
         (void)sheet.SetFromControl(sections, index, action.Arguments[2]);
+}
+
+namespace
+{
+std::optional<double> NumberIn(std::string_view text)
+{
+    double value = 0.0;
+    while (!text.empty() && text.front() == ' ')
+        text.remove_prefix(1);
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (parsed.ec != std::errc{} || text.empty())
+        return std::nullopt;
+    return value;
+}
+
+std::string NumberText(double value)
+{
+    return std::format("{:.6g}", value);
+}
+} // namespace
+
+void ShellWindow::PressNumber(std::string sheet, std::size_t row, std::int64_t element)
+{
+    PropertySheet& presented = sheet == "tool" ? ToolSheet : SelectionSheet;
+    const std::vector<UiRow> shown = Services.Ui.GetRows(Screen, sheet == "tool" ? kToolRows : kSelectionRows);
+    if (row >= shown.size() || !shown[row].Editable)
+        return;
+    const std::optional<std::size_t> part =
+        element >= 0 ? std::optional<std::size_t>(static_cast<std::size_t>(element)) : std::nullopt;
+    const std::string text = part.has_value() ? (*part < shown[row].Parts.size() ? shown[row].Parts[*part] : "")
+                                              : shown[row].Value;
+    const std::optional<double> start = NumberIn(text);
+    ScrubSheet = std::move(sheet);
+    ScrubRow = row;
+    ScrubElement = element;
+    ScrubMotion = ScrubGesture(ScrubScaleFor(presented.BoundsOf(row, part)));
+    ScrubMixed = !start.has_value();
+    ScrubStart = start.value_or(0.0);
+    ScrubParts = shown[row].Parts;
+    ScrubAmount = 0.0;
+    Scrub = ScrubPhase::Pressed;
+}
+
+bool ShellWindow::TakeScrubInput(const InputEvent& event)
+{
+    if (Scrub == ScrubPhase::Resting)
+        return false;
+    if (const auto* move = std::get_if<PointerMoveEvent>(&event))
+    {
+        const bool began = Scrub == ScrubPhase::Pressed;
+        if (!ScrubMotion.Move(move->Delta.X, move->Modifiers.Shift))
+            return true;
+        if (began)
+        {
+            IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+            PropertySheet& sheet = ScrubSheet == "tool" ? ToolSheet : SelectionSheet;
+            const std::vector<PropertySection> sections =
+                workspace != nullptr ? SheetSections(ScrubSheet, *workspace) : std::vector<PropertySection>{};
+            IPropertySource* source = sheet.SourceOf(sections, ScrubRow);
+            const std::optional<std::size_t> part =
+                ScrubElement >= 0 ? std::optional<std::size_t>(static_cast<std::size_t>(ScrubElement)) : std::nullopt;
+            std::string key = sheet.EditKeyOf(ScrubRow, part);
+            // A number its source names no key for is moved by setting its vector whole.
+            if (key.empty())
+                key = sheet.EditKeyOf(ScrubRow);
+            if (source == nullptr || key.empty() || !ScrubSession.Begin(*source, key))
+            {
+                Scrub = ScrubPhase::Resting;
+                return false;
+            }
+            ScrubWrites = part.has_value() && key == sheet.EditKeyOf(ScrubRow) ? ScrubTarget::WholeVector
+                                                                               : ScrubTarget::Number;
+            Scrub = ScrubPhase::Dragging;
+            SetRelativeMouseMode(Services.Window, true);
+        }
+        PreviewScrub(move->Modifiers.Ctrl);
+        return true;
+    }
+    if (const auto* up = std::get_if<PointerUpEvent>(&event); up != nullptr && up->Button == MouseButton::Left)
+    {
+        // Let go where it was pressed: a click, which types into the number instead.
+        if (Scrub == ScrubPhase::Pressed)
+            SheetTyping = TypingKey(ScrubSheet, ScrubRow, ScrubElement);
+        EndScrub(true);
+        return true;
+    }
+    if (const auto* key = std::get_if<KeyDownEvent>(&event); key != nullptr && key->Key == SDLK_ESCAPE)
+    {
+        EndScrub(false);
+        return true;
+    }
+    if (std::holds_alternative<FocusLostEvent>(event))
+        EndScrub(false);
+    return false;
+}
+
+std::string ShellWindow::ScrubbedText() const
+{
+    const std::string moved = NumberText(ScrubStart + ScrubAmount);
+    if (ScrubWrites == ScrubTarget::Number)
+        return moved;
+    std::string joined;
+    for (std::size_t i = 0; i < ScrubParts.size(); ++i)
+        joined += (i == 0 ? "" : ", ") + (static_cast<std::int64_t>(i) == ScrubElement ? moved : ScrubParts[i]);
+    return joined;
+}
+
+void ShellWindow::PreviewScrub(bool coarse)
+{
+    ScrubAmount = ScrubMotion.Amount(ScrubMixed ? 0.0 : ScrubStart, coarse);
+    if (ScrubMixed)
+        (void)ScrubSession.PreviewBy(ScrubAmount);
+    else
+        (void)ScrubSession.Preview(ScrubbedText());
+}
+
+void ShellWindow::EndScrub(bool commit)
+{
+    if (Scrub == ScrubPhase::Dragging)
+    {
+        if (!commit)
+            ScrubSession.Cancel();
+        else if (ScrubMixed)
+            (void)ScrubSession.CommitBy(ScrubAmount);
+        else
+            (void)ScrubSession.Commit(ScrubbedText());
+        SetRelativeMouseMode(Services.Window, false);
+    }
+    Scrub = ScrubPhase::Resting;
 }
 
 std::string ShellWindow::TypingKey(std::string_view sheet, std::size_t row, std::int64_t element)
@@ -659,9 +789,12 @@ void ShellWindow::ActOnSheet(PropertySheet& sheet, std::span<const PropertySecti
 
 void ShellWindow::YieldPointerToContent()
 {
+    // A number pressed in a sheet holds the pointer too: what it does next is
+    // the shell's to read, not the document's.
     const IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation);
-    const UiSurfaceInputPolicy policy = active != nullptr && active->HoldsPointer() ? UiSurfaceInputPolicy::Disabled
-                                                                                   : UiSurfaceInputPolicy::Full;
+    const UiSurfaceInputPolicy policy = (active != nullptr && active->HoldsPointer()) || Scrubbing()
+                                            ? UiSurfaceInputPolicy::Disabled
+                                            : UiSurfaceInputPolicy::Full;
     if (policy == InputPolicy)
         return;
     Services.Ui.SetSurfaceInputPolicy(SurfaceId, policy);
