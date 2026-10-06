@@ -1,5 +1,7 @@
 #include "shell/ShellWindow.h"
 
+#include "shell/AssetTabs.h"
+
 #include "actions/ActionCatalog.h"
 #include "notices/NoticeQueue.h"
 #include "icons/IconNames.h"
@@ -19,63 +21,60 @@
 
 namespace
 {
-const UiModelPropertyId kWorkspaceLabel = UiPropertyIdAt(0);
-const UiModelPropertyId kDocumentLabel = UiPropertyIdAt(1);
-const UiModelPropertyId kDocumentChanged = UiPropertyIdAt(2);
-const UiModelPropertyId kProblemCount = UiPropertyIdAt(3);
-const UiModelPropertyId kProblemErrors = UiPropertyIdAt(4);
-const UiModelPropertyId kTransportState = UiPropertyIdAt(5);
-const UiModelPropertyId kTransportText = UiPropertyIdAt(6);
-const UiModelPropertyId kCookEnabled = UiPropertyIdAt(7);
-const UiModelPropertyId kPlayEnabled = UiPropertyIdAt(8);
-const UiModelPropertyId kStopEnabled = UiPropertyIdAt(9);
-const UiModelPropertyId kPopover = UiPropertyIdAt(10);
-const UiModelPropertyId kPopoverX = UiPropertyIdAt(11);
-const UiModelPropertyId kPopoverRises = UiPropertyIdAt(12);
-const UiModelPropertyId kStationName = UiPropertyIdAt(13);
-const UiModelPropertyId kStationVariant = UiPropertyIdAt(14);
-const UiModelPropertyId kStationIcon = UiPropertyIdAt(15);
-const UiModelPropertyId kStationHint = UiPropertyIdAt(16);
-const UiModelPropertyId kDraft = UiPropertyIdAt(17);
-const UiModelPropertyId kCardOpen = UiPropertyIdAt(18);
-const UiModelPropertyId kElement = UiPropertyIdAt(19);
-const UiModelPropertyId kGizmoMode = UiPropertyIdAt(20);
-const UiModelPropertyId kGizmoSpace = UiPropertyIdAt(21);
-const UiModelPropertyId kGrid = UiPropertyIdAt(22);
-const UiModelPropertyId kSnap = UiPropertyIdAt(23);
-const UiModelPropertyId kPivot = UiPropertyIdAt(24);
-const UiModelPropertyId kProjection = UiPropertyIdAt(25);
-const UiModelPropertyId kViewCount = UiPropertyIdAt(26);
-const UiModelPropertyId kHoldingRole = UiPropertyIdAt(27);
-const UiModelPropertyId kHoldingLabel = UiPropertyIdAt(28);
-const UiModelPropertyId kHoldingImage = UiPropertyIdAt(29);
-const UiModelPropertyId kMotion = UiPropertyIdAt(30);
-const UiModelPropertyId kSelectionTitle = UiPropertyIdAt(31);
-const UiModelPropertyId kSelectionStaged = UiPropertyIdAt(32);
-const UiModelPropertyId kDrawer = UiPropertyIdAt(33);
-const UiModelPropertyId kDrawerFocus = UiPropertyIdAt(34);
-const UiModelPropertyId kHoldingExplorer = UiPropertyIdAt(35);
-const UiModelPropertyId kExplorerId = UiPropertyIdAt(36);
-const UiModelPropertyId kExplorerTitle = UiPropertyIdAt(37);
-const UiModelPropertyId kExplorerShape = UiPropertyIdAt(38);
-const UiModelPropertyId kExplorerRange = UiPropertyIdAt(39);
-const UiModelPropertyId kExplorerEmpty = UiPropertyIdAt(40);
-const UiModelPropertyId kExplorerEarlier = UiPropertyIdAt(41);
-const UiModelPropertyId kExplorerLater = UiPropertyIdAt(42);
-const UiModelPropertyId kPopoverTop = UiPropertyIdAt(43);
-const UiModelPropertyId kSheet = UiPropertyIdAt(44);
-const UiModelPropertyId kExplorerLeft = UiPropertyIdAt(45);
-const UiModelPropertyId kExplorerTop = UiPropertyIdAt(46);
-const UiModelPropertyId kExplorerWidth = UiPropertyIdAt(47);
-const UiModelPropertyId kExplorerHeight = UiPropertyIdAt(48);
-const UiModelPropertyId kSelectionLeft = UiPropertyIdAt(49);
-const UiModelPropertyId kSelectionTop = UiPropertyIdAt(50);
-const UiModelPropertyId kSelectionWidth = UiPropertyIdAt(51);
-const UiModelPropertyId kSelectionHeight = UiPropertyIdAt(52);
-const UiModelPropertyId kFront = UiPropertyIdAt(53);
-const UiModelPropertyId kHierarchyChord = UiPropertyIdAt(54);
-const UiModelPropertyId kSelectionShown = UiPropertyIdAt(55);
-const UiModelPropertyId kMapAction = UiPropertyIdAt(56);
+const UiModelPropertyId kProblemCount = UiPropertyIdAt(0);
+const UiModelPropertyId kProblemErrors = UiPropertyIdAt(1);
+const UiModelPropertyId kTransportState = UiPropertyIdAt(2);
+const UiModelPropertyId kTransportText = UiPropertyIdAt(3);
+const UiModelPropertyId kCookEnabled = UiPropertyIdAt(4);
+const UiModelPropertyId kPlayEnabled = UiPropertyIdAt(5);
+const UiModelPropertyId kStopEnabled = UiPropertyIdAt(6);
+const UiModelPropertyId kPopover = UiPropertyIdAt(7);
+const UiModelPropertyId kPopoverX = UiPropertyIdAt(8);
+const UiModelPropertyId kPopoverRises = UiPropertyIdAt(9);
+const UiModelPropertyId kStationName = UiPropertyIdAt(10);
+const UiModelPropertyId kStationVariant = UiPropertyIdAt(11);
+const UiModelPropertyId kStationIcon = UiPropertyIdAt(12);
+const UiModelPropertyId kStationHint = UiPropertyIdAt(13);
+const UiModelPropertyId kDraft = UiPropertyIdAt(14);
+const UiModelPropertyId kCardOpen = UiPropertyIdAt(15);
+const UiModelPropertyId kElement = UiPropertyIdAt(16);
+const UiModelPropertyId kGizmoMode = UiPropertyIdAt(17);
+const UiModelPropertyId kGizmoSpace = UiPropertyIdAt(18);
+const UiModelPropertyId kGrid = UiPropertyIdAt(19);
+const UiModelPropertyId kSnap = UiPropertyIdAt(20);
+const UiModelPropertyId kPivot = UiPropertyIdAt(21);
+const UiModelPropertyId kProjection = UiPropertyIdAt(22);
+const UiModelPropertyId kViewCount = UiPropertyIdAt(23);
+const UiModelPropertyId kHoldingRole = UiPropertyIdAt(24);
+const UiModelPropertyId kHoldingLabel = UiPropertyIdAt(25);
+const UiModelPropertyId kHoldingImage = UiPropertyIdAt(26);
+const UiModelPropertyId kMotion = UiPropertyIdAt(27);
+const UiModelPropertyId kSelectionTitle = UiPropertyIdAt(28);
+const UiModelPropertyId kSelectionStaged = UiPropertyIdAt(29);
+const UiModelPropertyId kDrawer = UiPropertyIdAt(30);
+const UiModelPropertyId kDrawerFocus = UiPropertyIdAt(31);
+const UiModelPropertyId kHoldingExplorer = UiPropertyIdAt(32);
+const UiModelPropertyId kExplorerId = UiPropertyIdAt(33);
+const UiModelPropertyId kExplorerTitle = UiPropertyIdAt(34);
+const UiModelPropertyId kExplorerShape = UiPropertyIdAt(35);
+const UiModelPropertyId kExplorerRange = UiPropertyIdAt(36);
+const UiModelPropertyId kExplorerEmpty = UiPropertyIdAt(37);
+const UiModelPropertyId kExplorerEarlier = UiPropertyIdAt(38);
+const UiModelPropertyId kExplorerLater = UiPropertyIdAt(39);
+const UiModelPropertyId kPopoverTop = UiPropertyIdAt(40);
+const UiModelPropertyId kSheet = UiPropertyIdAt(41);
+const UiModelPropertyId kExplorerLeft = UiPropertyIdAt(42);
+const UiModelPropertyId kExplorerTop = UiPropertyIdAt(43);
+const UiModelPropertyId kExplorerWidth = UiPropertyIdAt(44);
+const UiModelPropertyId kExplorerHeight = UiPropertyIdAt(45);
+const UiModelPropertyId kSelectionLeft = UiPropertyIdAt(46);
+const UiModelPropertyId kSelectionTop = UiPropertyIdAt(47);
+const UiModelPropertyId kSelectionWidth = UiPropertyIdAt(48);
+const UiModelPropertyId kSelectionHeight = UiPropertyIdAt(49);
+const UiModelPropertyId kFront = UiPropertyIdAt(50);
+const UiModelPropertyId kHierarchyChord = UiPropertyIdAt(51);
+const UiModelPropertyId kSelectionShown = UiPropertyIdAt(52);
+const UiModelPropertyId kMapAction = UiPropertyIdAt(53);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -87,9 +86,7 @@ const UiModelRowsId kSelectionChips = UiRowsIdAt(6);
 const UiModelRowsId kExplorerItems = UiRowsIdAt(7);
 const UiModelRowsId kExplorerVerbs = UiRowsIdAt(8);
 const UiModelRowsId kCrumbs = UiRowsIdAt(9);
-
-// A document popover entry naming an open document rather than an action.
-constexpr std::string_view kOpenDocumentKey = "document:";
+const UiModelRowsId kTabs = UiRowsIdAt(10);
 
 const UiActionId kPopoverAction = UiActionIdAt(0);
 const UiActionId kChooseAction = UiActionIdAt(1);
@@ -116,6 +113,8 @@ const UiActionId kDropAction = UiActionIdAt(21);
 const UiActionId kUnmoveAction = UiActionIdAt(22);
 const UiActionId kRaiseAction = UiActionIdAt(23);
 const UiActionId kCrumbAction = UiActionIdAt(24);
+const UiActionId kTabAction = UiActionIdAt(25);
+const UiActionId kTabDropAction = UiActionIdAt(26);
 
 // The floating surfaces a header can move, as a document names them.
 constexpr std::string_view kExplorerSurface = "explorer";
@@ -140,9 +139,6 @@ UiScreenDesc Describe()
     desc.PackagePath = "asset://shell.rml";
     desc.ModelName = "shell";
     desc.Properties = {
-        UiModelProperty{ "workspace_label", UiValue(std::string{}) },
-        UiModelProperty{ "document_label", UiValue(std::string{}) },
-        UiModelProperty{ "document_changed", UiValue(false) },
         UiModelProperty{ "problem_count", UiValue(std::int64_t{ 0 }) },
         UiModelProperty{ "problem_errors", UiValue(false) },
         UiModelProperty{ "transport_state", UiValue(std::string("none")) },
@@ -200,13 +196,13 @@ UiScreenDesc Describe()
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs",
-                      "crumbs" };
+                      "crumbs", "tabs" };
     desc.Actions = { "shell_popover",   "shell_choose",     "shell_invoke",     "shell_window",       "shell_sheet_set",
                      "shell_sheet_flip", "shell_sheet_hold", "shell_sheet_release", "shell_sheet_act", "shell_drawer",
                      "shell_sheet_pick", "shell_explore", "shell_explorer_filter", "shell_explorer_page",
                      "shell_explorer_pick", "shell_explorer_commit", "shell_explorer_close",
                      "shell_explorer_open", "shell_explorer_mark", "shell_grab", "shell_drag", "shell_drop",
-                     "shell_unmove", "shell_raise", "shell_crumb" };
+                     "shell_unmove", "shell_raise", "shell_crumb", "shell_tab", "shell_tab_drop" };
     return desc;
 }
 
@@ -510,6 +506,10 @@ void ShellWindow::HandleActions()
         {
             HandleMoveAction(action);
         }
+        else if (action.Id == kTabAction || action.Id == kTabDropAction)
+        {
+            HandleTabAction(action);
+        }
         else if (action.Id == kCrumbAction)
         {
             RevealLocation(action.Arguments.empty() ? -1 : action.Arguments[0].AsInt());
@@ -592,7 +592,6 @@ void ShellWindow::OpenNamedPopover(std::string_view name)
     else
         OpenPopover(name == "hatch"        ? Popover::Hatch
                     : name == "workspaces" ? Popover::Workspaces
-                    : name == "document"   ? Popover::Document
                     : name == "tools"      ? Popover::Tools
                     : name == "problems"   ? Popover::Problems
                                            : Popover::None);
@@ -604,7 +603,6 @@ std::string ShellWindow::PopoverName() const
     {
     case Popover::Hatch:      return "hatch";
     case Popover::Workspaces: return "workspaces";
-    case Popover::Document:   return "document";
     case Popover::Tools:      return "tools";
     case Popover::Category:   return "category:" + PopoverCategory;
     case Popover::Choices:    return "choices";
@@ -983,12 +981,6 @@ void ShellWindow::Choose(const std::string& key)
         RevealProblem(key);
         return;
     }
-    if (chosenFrom == Popover::Document && key.starts_with(kOpenDocumentKey))
-    {
-        if (IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation))
-            workspace->ShowDocument(std::string_view(key).substr(kOpenDocumentKey.size()));
-        return;
-    }
     if (chosenFrom == Popover::Choices)
     {
         if (IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation))
@@ -1026,10 +1018,8 @@ void ShellWindow::Publish(double now)
     UiService& ui = Services.Ui;
     const WorkspaceKind* kind = Services.Workspaces.ActiveKindIn(Services.Presentation);
     IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
-    (void)ui.SetValue(Screen, kWorkspaceLabel, UiValue(kind != nullptr ? kind->DisplayName : std::string("KYUSU")));
 
     const WorkspaceDocumentFacet document = workspace != nullptr ? workspace->Document() : WorkspaceDocumentFacet{};
-    (void)ui.SetValue(Screen, kDocumentLabel, UiValue(document.Label));
     std::string title = Services.Title;
     if (kind != nullptr)
         title += " - " + kind->DisplayName;
@@ -1040,7 +1030,7 @@ void ShellWindow::Publish(double now)
         Services.Window.SetTitle(title);
         ShownTitle = std::move(title);
     }
-    (void)ui.SetValue(Screen, kDocumentChanged, UiValue(document.Changed));
+    PublishTabs();
 
     (void)ui.SetValue(Screen, kProblemCount,
                       UiValue(static_cast<std::int64_t>(Services.Problems.Count(ProblemSeverity::Warning))));
@@ -1077,8 +1067,7 @@ void ShellWindow::PublishEntries()
     switch (Showing)
     {
     case Popover::Hatch:      anchor = "hatch";          entries = HatchEntries();                   break;
-    case Popover::Workspaces: anchor = "workspace_dial"; entries = WorkspaceEntries();               break;
-    case Popover::Document:   anchor = "document_dial";  entries = DocumentEntries();                break;
+    case Popover::Workspaces: anchor = "tab_new";        entries = WorkspaceEntries();               break;
     case Popover::Tools:      anchor = "station";        entries = ToolEntries();                    break;
     case Popover::Category:   anchor = "cat_" + PopoverCategory; entries = CategoryEntries(PopoverCategory); break;
     case Popover::Problems:
@@ -1127,27 +1116,37 @@ void ShellWindow::PublishEntries()
     (void)ui.SetRows(Screen, kEntries, entries);
 }
 
-std::vector<UiRow> ShellWindow::DocumentEntries() const
+void ShellWindow::PublishTabs()
 {
+    ShownTabs = AssetTabsIn(Services.Workspaces, Services.Presentation);
     std::vector<UiRow> rows;
-    const IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
-    const WorkspaceDocumentFacet facet = workspace != nullptr ? workspace->Document() : WorkspaceDocumentFacet{};
-    for (const WorkspaceOpenDocument& document : facet.Open)
+    for (const AssetTab& tab : ShownTabs)
     {
-        UiRow row{ document.Label, document.Changed ? std::string("\xE2\x97\x8F") : std::string{}, "" };
-        row.Key = std::string(kOpenDocumentKey) + document.Key;
-        row.Selected = document.Key == facet.Active;
+        UiRow row{ tab.Label, tab.KindLabel, tab.Changed ? "changed" : "" };
+        row.Selected = tab.Current;
         rows.push_back(std::move(row));
     }
-    std::vector<UiRow> file = CategoryEntries("File");
-    if (!rows.empty() && !file.empty())
+    (void)Services.Ui.SetRows(Screen, kTabs, rows);
+}
+
+void ShellWindow::HandleTabAction(const UiAction& action)
+{
+    const std::int64_t index = action.Arguments.empty() ? -1 : action.Arguments[0].AsInt();
+    if (index < 0 || static_cast<std::size_t>(index) >= ShownTabs.size())
+        return;
+    const AssetTab tab = ShownTabs[static_cast<std::size_t>(index)];
+    if (action.Id == kTabDropAction)
     {
-        UiRow heading{ "FILE", "", "" };
-        heading.Control = UiRowControl::Section;
-        rows.push_back(std::move(heading));
+        // Let go well below the rail, the tab's editor takes a window of its own.
+        const float y = action.Arguments.size() >= 3 ? static_cast<float>(action.Arguments[2].AsFloat()) : 0.0f;
+        if (y > RailHeight() * 3.0f)
+            Services.Workspaces.Request({ WorkspaceAction::Detach, tab.Kind });
+        return;
     }
-    rows.insert(rows.end(), std::make_move_iterator(file.begin()), std::make_move_iterator(file.end()));
-    return rows;
+    Services.Workspaces.Request({ WorkspaceAction::Activate, tab.Kind });
+    if (!tab.Document.empty())
+        if (IWorkspace* workspace = Services.Workspaces.Find(tab.Kind))
+            workspace->ShowDocument(tab.Document);
 }
 
 std::vector<UiRow> ShellWindow::CategoryEntries(std::string_view category) const

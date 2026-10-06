@@ -78,36 +78,6 @@ body
     font-size: 11dp;
 }
 
-.dial
-{
-    display: flex;
-    align-items: center;
-    height: 24dp;
-    padding: 0dp 10dp 0dp 3dp;
-    gap: 7dp;
-    border-width: 1dp;
-    border-radius: 12dp;
-    pointer-events: auto;
-}
-
-.knob
-{
-    display: block;
-    width: 18dp;
-    height: 18dp;
-    border-width: 1dp;
-    border-radius: 9dp;
-}
-
-.dial_label
-{
-    display: block;
-    font-family: "Chakra Petch";
-    font-weight: 600;
-    font-size: 12dp;
-    letter-spacing: 1dp;
-}
-
 .lamp
 {
     display: block;
@@ -231,10 +201,27 @@ body
     font-size: 11dp;
 }
 
+/* An open asset's tab on the rail. */
+.tab
+{
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    height: 24dp;
+    max-width: 220dp;
+    padding: 0dp 10dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    drag: drag;
+    pointer-events: auto;
+}
+.tab_kind { font-family: "Chakra Petch"; font-weight: 600; font-size: 9dp; letter-spacing: 1dp; text-transform: uppercase; }
+.tab_label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12dp; }
+
 /* Tab belongs to the editor (the hierarchy), never to moving focus between
    controls; a form control sets its own tab stop, so each one in the shell
    document turns it off inline. */
-.key, .dial { tab-index: none; }
+.key, .tab { tab-index: none; }
 
 /* Where the work is, top left under the rail. */
 #crumbs
@@ -318,7 +305,6 @@ body
     border-right-width: 1dp;
 }
 .segment .lamp { width: 8dp; height: 8dp; border-width: 1dp; border-radius: 4dp; }
-
 
 /* Above the bottom instruments as a card; along the right edge, from under the
    view instrument down, as the drawer. */

@@ -15,16 +15,18 @@
         <div id="rail_left">
             <div id="hatch" class="key theme-key" data-class-lit="popover == 'hatch'"
                  data-event-click="shell_popover('hatch')"><span class="glyph">&#xf0c9;</span></div>
-            <div id="workspace_dial" class="dial theme-plate" data-class-lit="popover == 'workspaces'"
-                 data-event-click="shell_popover('workspaces')">
-                <div class="knob theme-key"></div>
-                <span class="dial_label">{{workspace_label}}</span>
+            <!-- A tab per asset open, its editor named small beside it: choosing
+                 one shows it, dragging one down out of the rail gives its
+                 editor a window of its own. -->
+            <div class="tab theme-key" data-for="tab : tabs" data-class-lit="tab.selected"
+                 data-event-click="shell_tab(it_index)"
+                 data-event-dragend="shell_tab_drop(it_index, ev.mouse_x, ev.mouse_y)">
+                <span class="tab_kind theme-accent">{{tab.value}}</span>
+                <span class="tab_label">{{tab.label}}</span>
+                <div class="lamp theme-lamp lit" data-if="tab.detail == 'changed'"></div>
             </div>
-            <div id="document_dial" class="dial theme-plate" data-if="document_label != ''"
-                 data-event-click="shell_popover('document')">
-                <div class="lamp theme-lamp" data-class-lit="document_changed"></div>
-                <span class="dial_label">{{document_label}}</span>
-            </div>
+            <div id="tab_new" class="key theme-key" data-class-lit="popover == 'workspaces'"
+                 data-event-click="shell_popover('workspaces')"><span class="glyph">&#x2b;</span></div>
         </div>
 
         <div id="notices">

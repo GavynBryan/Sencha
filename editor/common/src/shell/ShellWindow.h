@@ -2,6 +2,7 @@
 
 #include "actions/ActionContext.h"
 #include "shell/CommandPalette.h"
+#include "shell/AssetTabs.h"
 #include "shell/PromptDialog.h"
 #include "shell/SurfacePlacement.h"
 #include "shell/TimelineDeck.h"
@@ -102,8 +103,8 @@ public:
     // What a workspace placed in this window is handed.
     [[nodiscard]] WorkspaceWindow Binding() const;
 
-    // Opens one of the rail's popovers by name ("hatch", "workspaces",
-    // "document"), or closes it with anything else: what a script or a test
+    // Opens one of the rail's popovers by name ("hatch", "workspaces"), or
+    // closes it with anything else: what a script or a test
     // drives instead of a click.
     void ShowPopover(std::string_view name);
 
@@ -113,7 +114,7 @@ private:
     // Choices: what a sheet's row asks to be chosen -- a verb's choices, or an
     // asset row's candidates -- for the row ChoicesRow of the sheet
     // ChoicesSheet names, listed once as it opens.
-    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Document, Tools, Category, Choices, Problems };
+    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Tools, Category, Choices, Problems };
     enum class ChoiceFor : std::uint8_t { Verb, Value };
 
     void HandleActions();
@@ -134,8 +135,11 @@ private:
     [[nodiscard]] std::vector<UiRow> HatchEntries() const;
     [[nodiscard]] std::vector<UiRow> WorkspaceEntries() const;
     [[nodiscard]] std::vector<UiRow> CategoryEntries(std::string_view category) const;
-    // The workspace's open documents, then its File actions.
-    [[nodiscard]] std::vector<UiRow> DocumentEntries() const;
+    // A tab per asset open in an editor this window shows; choosing one shows
+    // its editor and the asset, and dragging one well below the rail moves its
+    // editor into a window of its own.
+    void PublishTabs();
+    void HandleTabAction(const UiAction& action);
     [[nodiscard]] std::vector<UiRow> ToolEntries();
     // The operation in hand, bottom left, and its card.
     void PublishStation(IWorkspace* workspace);
@@ -218,6 +222,7 @@ private:
     std::size_t ExplorerFirst = 0;
     TransientSurfaces::Id ExplorerTransient = 0;
     std::vector<std::string> ClaimedExplorers;
+    std::vector<AssetTab> ShownTabs;
     // Which shape of each floating surface is showing ("" for none), and the
     // shape last placed, which is let go when another shows instead.
     std::string ExplorerKey;

@@ -37,7 +37,9 @@ Kyusu (`editor/kyusu/`, `KyusuApp`) is the one `Game`. It owns the
 `kyusu/src/app/WorkspaceKinds.cpp`. A workspace (`IWorkspace`) is built when
 first opened and destroyed when closed. Each window's `ShellWindow`
 (`common/src/shell/`, authored UI, `editor/ui/shell.rml`) is its rail: the
-hatch listing every action in play, the workspace and document dials, the
+hatch listing every action in play, a tab per asset open in the editors placed
+in the window (`shell/AssetTabs`: choosing one shows its editor and the asset;
+an editor with nothing open is a tab of its own; "+" opens another editor), the
 problems lamp, the transport and the window keys, all fed by the active
 workspace's facets (`WorkspaceFacets.h`) and actions. It also presents the
 command palette (Ctrl+K) and the prompt queue's front question; every window
@@ -80,7 +82,7 @@ conflict or a failure. Saving a document whose file changed on disk since it
 was read is a conflict the author settles, never an overwrite.
 
 A workspace is placed in a window. The main window is the engine's primary
-presentation; `workspace.detach` (the workspace dial's "Move to New Window")
+presentation; `workspace.detach` (or a tab dragged down out of the rail)
 opens another through `OpenPresentationWindow` with its own shell and the same
 two `UiRenderFeature`s (content, then shell) scoped to that presentation, and
 `IWorkspace::MoveTo` rebinds the workspace to the new `WorkspaceWindow`. UI
@@ -205,7 +207,7 @@ one step), the shared material explorer (`project/MaterialLibraryExplorer`,
 also the Level's), and a texture explorer whose pick puts that texture's
 import settings on the card (`TextureImportProperties`: each change saves the
 sidecar and recooks, and the cook is read back). Every open material is on the
-shell's document dial (`WorkspaceDocumentFacet::Open`,
+shell's tabs (`WorkspaceDocumentFacet::Open`,
 `IWorkspace::ShowDocument`). Live preview pushes
 the working description into the resident material via `AssetSystem::Reload`;
 a watched `.smat` that changes on disk is taken by a clean document and kept
