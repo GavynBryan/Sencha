@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <concepts>
@@ -228,6 +229,29 @@ struct Quat
 			normalizedAxis.Z * s,
 			c
 		};
+	}
+
+	// A turn as a person states it with Y up, in radians: roll about Z first,
+	// then pitch about X, then yaw about Y.
+	static Quat FromPitchYawRoll(T pitch, T yaw, T roll)
+		requires std::floating_point<T>
+	{
+		return FromAxisAngle(Vec<3, T>(T{0}, T{1}, T{0}), yaw) * FromAxisAngle(Vec<3, T>(T{1}, T{0}, T{0}), pitch)
+			* FromAxisAngle(Vec<3, T>(T{0}, T{0}, T{1}), roll);
+	}
+
+	// The inverse of FromPitchYawRoll, as (pitch, yaw, roll): pitch within
+	// [-pi/2, pi/2], yaw and roll within [-pi, pi]. Straight up or down, roll
+	// is zero and the turn is all yaw.
+	Vec<3, T> ToPitchYawRoll() const
+		requires std::floating_point<T>
+	{
+		const Mat<3, 3, T> m = ToMat3();
+		const T sinPitch = std::clamp(-m.Data[1][2], T{-1}, T{1});
+		const T pitch = std::asin(sinPitch);
+		if (std::abs(sinPitch) > T{1} - T{1e-6})
+			return Vec<3, T>(pitch, std::atan2(-m.Data[2][0], m.Data[0][0]), T{0});
+		return Vec<3, T>(pitch, std::atan2(m.Data[0][2], m.Data[2][2]), std::atan2(m.Data[1][0], m.Data[1][1]));
 	}
 
 	// Rotation mapping local X/Y/Z onto the given orthonormal right-handed basis

@@ -107,8 +107,11 @@ void Agree(PropertyNode& node, const std::vector<std::string>& values)
 bool ReadAlike(const RuntimeField& field, const std::vector<const std::byte*>& bytes,
                std::optional<std::size_t> element)
 {
-    const std::size_t offset = field.Offset + element.value_or(0) * field.Size;
-    const std::size_t span = element.has_value() ? field.Size : field.Size * field.Count;
+    // An angle of a rotation is not one of its bytes' scalars: only the whole
+    // quaternion compares.
+    const bool whole = !element.has_value() || field.DisplayAngles;
+    const std::size_t offset = field.Offset + (whole ? 0 : *element * field.Size);
+    const std::size_t span = whole ? field.Size * field.Count : field.Size;
     const auto read = [&](const std::byte* held) {
         return element.has_value() ? FormatRuntimeFieldElement(field, held, *element) : FormatRuntimeField(field, held);
     };
@@ -136,10 +139,16 @@ void Show(PropertyNode& node, const RuntimeField& field, const std::vector<const
                                          : FormatRuntimeField(field, bytes.front());
 }
 
-std::string ElementLabel(std::size_t index, std::size_t count)
+// A vector's numbers, named: axes, or the pitch, yaw and roll of a rotation.
+std::vector<std::string> ElementLabels(const RuntimeField& field)
 {
+    if (field.DisplayAngles)
+        return { "P", "Y", "R" };
     static constexpr std::array<std::string_view, 4> kAxes = { "X", "Y", "Z", "W" };
-    return count <= kAxes.size() ? std::string(kAxes[index]) : std::to_string(index);
+    std::vector<std::string> labels;
+    for (std::size_t i = 0; i < field.Count; ++i)
+        labels.push_back(field.Count <= kAxes.size() ? std::string(kAxes[i]) : std::to_string(i));
+    return labels;
 }
 
 bool WriteValue(const RuntimeField& leaf, std::optional<std::size_t> element, std::string_view value, std::byte* bytes)
@@ -316,6 +325,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
                                 .Label = RuntimeFieldLabel(field),
                                 .Tooltip = std::string(field.Tooltip),
                                 .Asset = field.Asset,
+                                .Step = field.DisplayDegrees ? 1.0 : 0.0,
                                 .ReadOnly = field.ReadOnly || !IsRuntimeFieldEditable(field) },
             };
             for (const EnumOption& option : field.Enum)
@@ -328,15 +338,19 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
                     Show(node, field, bytes, std::nullopt);
                 // A vector's numbers are its children, so one can change on its own.
                 if (node.Descriptor.Kind == PropertyKind::Vector)
-                    for (std::size_t element = 0; element < field.Count; ++element)
+                {
+                    const std::vector<std::string> labels = ElementLabels(field);
+                    for (std::size_t element = 0; element < labels.size(); ++element)
                     {
                         PropertyNode part{ .Key = std::format("{}[{}]", node.Key, element),
                                            .Descriptor = { .Kind = PropertyKind::Number,
-                                                           .Label = ElementLabel(element, field.Count),
+                                                           .Label = labels[element],
+                                                           .Step = field.DisplayAngles ? 1.0 : 0.0,
                                                            .ReadOnly = node.Descriptor.ReadOnly } };
                         Show(part, field, bytes, element);
                         node.Children.push_back(std::move(part));
                     }
+                }
                 bool differs = false;
                 for (std::size_t i = 0; i < holders.size(); ++i)
                     differs |= baselines[i] != nullptr && Overridden(field, bytes[i], *baselines[i]);

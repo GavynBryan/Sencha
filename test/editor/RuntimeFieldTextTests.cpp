@@ -3,6 +3,7 @@
 #include "authoring/RuntimeFieldText.h"
 
 #include <core/text/InlineString.h>
+#include <math/Quat.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -368,4 +369,43 @@ TEST(RuntimeFieldText, AShorterNameZeroesWhatTheLongerOneLeft)
     ASSERT_TRUE(ParseRuntimeField(field, "seven77", &sample));
     ASSERT_TRUE(ParseRuntimeField(field, "ab", &sample));
     EXPECT_EQ(sample.Short, InlineString<8>("ab"));
+}
+
+// A rotation is a quaternion in its bytes and pitch, yaw and roll in degrees
+// to a person; one angle moves alone, from what the others were.
+namespace
+{
+struct Turned
+{
+    float Rotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+};
+
+[[nodiscard]] RuntimeField RotationField()
+{
+    RuntimeField field;
+    field.Name = "rotation";
+    field.Offset = offsetof(Turned, Rotation);
+    field.Size = sizeof(float);
+    field.Scalar = FieldScalar::Float;
+    field.Count = 4;
+    field.DisplayAngles = true;
+    return field;
+}
+} // namespace
+
+TEST(RuntimeFieldText, ARotationReadsAndWritesAsPitchYawRollInDegrees)
+{
+    Turned turned;
+    const RuntimeField field = RotationField();
+    EXPECT_EQ(FormatRuntimeField(field, &turned), "0, 0, 0");
+
+    ASSERT_TRUE(ParseRuntimeField(field, "10, 90, -20", &turned));
+    const Quatf stored(turned.Rotation[0], turned.Rotation[1], turned.Rotation[2], turned.Rotation[3]);
+    const float degree = std::numbers::pi_v<float> / 180.0f;
+    EXPECT_NEAR(std::abs(stored.Dot(Quatf::FromPitchYawRoll(10 * degree, 90 * degree, -20 * degree))), 1.0f, 1e-5f);
+    EXPECT_EQ(FormatRuntimeFieldElement(field, &turned, 1), "90");
+
+    ASSERT_TRUE(OffsetRuntimeFieldElement(field, 1, 15.0, &turned));
+    EXPECT_EQ(FormatRuntimeField(field, &turned), "10, 105, -20") << "yaw moved, pitch and roll kept";
+    EXPECT_FALSE(ParseRuntimeField(field, "10, 20", &turned)) << "three angles, no fewer";
 }

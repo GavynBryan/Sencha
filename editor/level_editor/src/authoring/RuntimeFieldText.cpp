@@ -1,5 +1,7 @@
 #include "RuntimeFieldText.h"
 
+#include <math/Quat.h>
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -229,6 +231,41 @@ struct ScalarRun
         return { 3, sizeof(float) };
     return { std::max<std::size_t>(1, field.Count), field.Size };
 }
+
+// A quaternion shown as angles: its pitch, yaw and roll in degrees.
+[[nodiscard]] bool ShownAsAngles(const RuntimeField& field)
+{
+    return field.DisplayAngles && field.Count == 4 && IsFloatingKind(field.Scalar);
+}
+
+[[nodiscard]] std::string FormatAngles(const RuntimeField& field, const std::byte* base)
+{
+    const ScalarRun run = RunOf(field);
+    const Quat<double> turn(ReadFloating(base, field), ReadFloating(base + run.Stride, field),
+                            ReadFloating(base + 2 * run.Stride, field), ReadFloating(base + 3 * run.Stride, field));
+    const Vec<3, double> angles = turn.ToPitchYawRoll();
+    return FormatScalar(angles.X * kRadiansToDegrees) + ", " + FormatScalar(angles.Y * kRadiansToDegrees) + ", "
+         + FormatScalar(angles.Z * kRadiansToDegrees);
+}
+
+[[nodiscard]] bool ParseAngles(const RuntimeField& field, std::string_view text, std::byte* base)
+{
+    std::array<std::string_view, kMaxScalars> pieces{};
+    std::array<double, 3> degrees{};
+    if (!SplitScalars(text, 3, pieces))
+        return false;
+    for (std::size_t i = 0; i < 3; ++i)
+        if (!ParseFloating(pieces[i], degrees[i]))
+            return false;
+    const Quat<double> turn = Quat<double>::FromPitchYawRoll(
+        degrees[0] / kRadiansToDegrees, degrees[1] / kRadiansToDegrees, degrees[2] / kRadiansToDegrees);
+    const ScalarRun run = RunOf(field);
+    WriteFloating(base, field, turn.X);
+    WriteFloating(base + run.Stride, field, turn.Y);
+    WriteFloating(base + 2 * run.Stride, field, turn.Z);
+    WriteFloating(base + 3 * run.Stride, field, turn.W);
+    return true;
+}
 } // namespace
 
 std::string HumanizeSchemaName(std::string_view dotted)
@@ -304,6 +341,9 @@ std::string FormatRuntimeField(const RuntimeField& field, const void* componentB
 
     if (field.Scalar == FieldScalar::Bool)
         return *reinterpret_cast<const bool*>(base) ? "true" : "false";
+
+    if (ShownAsAngles(field))
+        return FormatAngles(field, base);
 
     const ScalarRun run = RunOf(field);
     std::string out;
@@ -395,6 +435,9 @@ bool ParseRuntimeField(const RuntimeField& field, std::string_view text,
         std::memcpy(base, &result, sizeof(result));
         return true;
     }
+
+    if (ShownAsAngles(field))
+        return ParseAngles(field, text, base);
 
     const ScalarRun run = RunOf(field);
     const std::size_t count = run.Count;

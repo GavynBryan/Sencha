@@ -20,3 +20,12 @@ struct PackedScalarGroup
 {
     static constexpr std::size_t Count = 0;
 };
+
+// Whether a packed group is a rotation -- a unit quaternion -- which an
+// authoring surface shows as angles rather than as its components. Display
+// only; specialize beside the type's PackedScalarGroup.
+template <typename T>
+struct PackedScalarRotation
+{
+    static constexpr bool Value = false;
+};

@@ -71,6 +71,10 @@ struct RuntimeField
     // Display metadata, like Label: the bytes at Offset stay radians, so it
     // stays out of ComponentSchemaFingerprint.
     bool         DisplayDegrees = false;
+    // A packed quaternion an authoring surface shows as pitch, yaw and roll in
+    // degrees (Quat::ToPitchYawRoll). Display metadata, like DisplayDegrees:
+    // the bytes stay the quaternion, so it stays out of ComponentSchemaFingerprint.
+    bool         DisplayAngles = false;
     // True for an InlineString member: Size bytes at Offset holding a
     // null-terminated, tail-zeroed buffer, so an authoring surface can read and
     // write it as text. Scalar stays Unsupported, the same way an asset handle's
@@ -268,6 +272,7 @@ namespace RuntimeSchemaDetail
                 using Comp = typename PackedScalarGroup<MemberType>::Component;
                 RuntimeField f{ std::move(name), offset, sizeof(Comp), ScalarKindOf<Comp>() };
                 f.Count = static_cast<std::uint8_t>(PackedScalarGroup<MemberType>::Count);
+                f.DisplayAngles = PackedScalarRotation<MemberType>::Value;
                 annotate(f);
                 Out.push_back(std::move(f));
                 return;
