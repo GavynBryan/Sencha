@@ -24,9 +24,9 @@ struct BrushModifier
 using BrushModifierStack = std::vector<BrushModifier>;
 
 // What the kernel and serializer know about a kind: its identity on disk and
-// its authoring default. Indexed like the variant. Display labels are editor
-// chrome and live with the inspector. Adding a kind is a variant alternative
-// and one row here.
+// its authoring default. Indexed like the variant. How a kind reads and is
+// edited is editor chrome, in its own file beside authoring/BrushModifierRows.h.
+// Adding a kind is a variant alternative, one row here, and that file.
 struct BrushModifierKindInfo
 {
     const char* JsonKey;
