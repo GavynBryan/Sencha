@@ -168,6 +168,12 @@ private:
     // window performs while that workspace is the one showing.
     void ClaimExplorers(const IWorkspace* workspace);
     void PublishExplorer(IWorkspace* workspace);
+    // Where the work is, along the top: each part opens the workspace's
+    // hierarchy explorer showing it.
+    void PublishLocation(const IWorkspace* workspace);
+    void RevealLocation(std::int64_t index);
+    [[nodiscard]] std::string HierarchyAction(const IWorkspace& workspace,
+                                              const WorkspaceLocationFacet& location) const;
     // The explorer and the selection, each where the person put it or where it
     // opened: the selection at its own place, the explorer in free space.
     void PlaceFloatingSurfaces();

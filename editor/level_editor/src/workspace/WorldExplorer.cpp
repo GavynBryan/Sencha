@@ -19,19 +19,11 @@ std::uint64_t PersistentOf(const EditorScene& scene, EntityId entity)
     const auto* id = scene.GetRegistry().Components.TryGet<PersistentIdComponent>(entity);
     return id != nullptr ? id->Id.Value : 0;
 }
-
-// "12:3" -- index and generation, so a stale key names nothing rather than a
-// successor in the same slot.
-std::string KeyOf(EntityId entity)
-{
-    return std::to_string(entity.Index) + ":" + std::to_string(entity.Generation);
-}
 } // namespace
 
-WorkspaceExplorerInfo WorldExplorer::Info()
+std::string WorldExplorer::KeyOf(EntityId entity)
 {
-    return { .Id = std::string(kId), .Title = "World", .Shape = ExplorerShape::Outline,
-             .Action = "explorer.world" };
+    return std::to_string(entity.Index) + ":" + std::to_string(entity.Generation);
 }
 
 bool WorldExplorer::IsOpen(EntityId entity) const
@@ -212,6 +204,10 @@ void WorldExplorer::Choose(std::string_view key, ExplorerChoice choice, std::siz
     {
     case ExplorerChoice::Open:
         SetOpen(entity, !IsOpen(entity));
+        return;
+    case ExplorerChoice::Reveal:
+        for (EntityId ancestor = scene.GetParent(entity); ancestor.IsValid(); ancestor = scene.GetParent(ancestor))
+            SetOpen(ancestor, true);
         return;
     case ExplorerChoice::Mark:
     {

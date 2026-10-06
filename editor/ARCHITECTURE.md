@@ -336,14 +336,19 @@ firewall above.
   `workspace/MaterialExplorer`, which the shell shows as a tray and opens from
   its `explorer.materials` action or the cartridge; its prefabs are
   `workspace/PrefabExplorer` (Shift+P), whose choice takes up the Place tool,
-  and its scene is `workspace/WorldExplorer` (O), an outline the shell shows
-  as a sheet, with the structural verbs (parent, hide, lock, move to a zone,
-  a placement's source) in `workspace/EntityVerbs`. An open world adds
-  `workspace/PartitionOutline` (Shift+O): the world, its graphs and zones as
-  an outline whose pick is the selection card when no entity is selected
-  (manifest edits, zone load and focus, streaming preview). It also turns the
-  world's validation into problems, and `IWorkspace::RevealProblem` answers
-  the shell's problems popover by picking the problem's zone or graph.
+  and its structure is one outline, `workspace/HierarchyOutline` (Tab): the
+  world, its graphs and zones (`workspace/PartitionOutline`) with the edited
+  zone's entities (`workspace/WorldExplorer`) under it, and a level that is
+  not a world is its entities alone. The structural verbs (parent, hide, lock,
+  move to a zone, a placement's source) are `workspace/EntityVerbs`; a picked
+  zone, graph or world is the selection card when no entity is selected
+  (manifest edits, zone load and focus, streaming preview). The partition
+  also turns the world's validation into problems, and
+  `IWorkspace::RevealProblem` answers the shell's problems popover by picking
+  the problem's zone or graph. `IWorkspace::Location` says where the work is
+  -- the world, the graph and zone the camera is in, and the selection -- and
+  the shell shows it as a breadcrumb whose parts reveal their rows in the
+  hierarchy (`ExplorerChoice::Reveal`).
   `workspace/LightingDiagnostics` says how the lighting is doing where it
   applies: a selected light's shadow tier, slot and pool on its card, what a
   baked light or probe volume became at the last cook, unshadowed lights and

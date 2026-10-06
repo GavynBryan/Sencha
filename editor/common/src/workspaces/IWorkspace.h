@@ -64,6 +64,7 @@ public:
     [[nodiscard]] virtual WorkspaceOperationFacet Operation() { return {}; }
     [[nodiscard]] virtual WorkspaceManipulationFacet Manipulation() const { return {}; }
     [[nodiscard]] virtual WorkspaceViewFacet Viewing() const { return {}; }
+    [[nodiscard]] virtual WorkspaceLocationFacet Location() const { return {}; }
     // Non-const: naming a resource's picture may start loading it.
     [[nodiscard]] virtual std::vector<WorkspaceResourceFacet> Resources() { return {}; }
     // Not const: the property sources it hands out are the workspace's to edit.

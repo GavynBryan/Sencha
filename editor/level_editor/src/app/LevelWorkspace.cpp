@@ -39,6 +39,8 @@
 #include "workspace/PrefabExplorer.h"
 #include "workspace/EntityVerbs.h"
 #include "workspace/LightingDiagnostics.h"
+#include "document/EntityLabel.h"
+#include "workspace/HierarchyOutline.h"
 #include "workspace/PartitionOutline.h"
 #include "workspace/WorldExplorer.h"
 #include "scene_source/SceneSourcePaths.h"
@@ -283,13 +285,10 @@ void LevelWorkspace::BuildInput()
     Entities->OfferZoneMoves(Catalog, ActionHandlers);
     WorldOutline = std::make_unique<WorldExplorer>(*Workspace);
     Partition = std::make_unique<PartitionOutline>(*Workspace);
+    Hierarchy = std::make_unique<HierarchyOutline>(*Workspace, *WorldOutline, *Partition);
     OfferAction(Catalog, ActionHandlers,
-                { .Id = "explorer.zones", .Label = "Zones", .Category = "Explore",
-                  .DefaultChords = { { SDLK_O, { .Shift = true } } } },
-                {});
-    OfferAction(Catalog, ActionHandlers,
-                { .Id = "explorer.world", .Label = "World", .Category = "Explore",
-                  .DefaultChords = { { SDLK_O, {} } } },
+                { .Id = "explorer.hierarchy", .Label = "Hierarchy", .Category = "Explore",
+                  .DefaultChords = { { SDLK_TAB, {} } } },
                 {});
     // The explorers: defined here, opened by whichever shell shows the workspace.
     OfferAction(Catalog, ActionHandlers, MaterialExplorerAction(), {});
@@ -1106,6 +1105,53 @@ WorkspaceViewFacet LevelWorkspace::Viewing() const
              .Views = static_cast<int>(TileCount(Arrangement())) };
 }
 
+WorkspaceLocationFacet LevelWorkspace::Location() const
+{
+    WorkspaceLocationFacet facet{ .Parts = {}, .Hierarchy = std::string(HierarchyOutline::kId) };
+    const WorldDocument& world = Workspace->World;
+    if (world.IsWorld())
+    {
+        const WorldPartitionManifest& manifest = world.Manifest();
+        facet.Parts.push_back({ .Label = manifest.Name.empty() ? std::string("World") : manifest.Name, .Key = "world" });
+        // The zone the camera is in -- the smallest, where zones overlap --
+        // or, outside every zone, the one being edited.
+        const auto volume = [](const Aabb3d& bounds) {
+            const Vec3d size = bounds.Size();
+            return size.X * size.Y * size.Z;
+        };
+        const ZoneHeader* here = nullptr;
+        if (const EditorViewport* view = Workspace->Layout.Active())
+            for (const ZoneHeader& zone : manifest.Zones)
+                if (zone.Bounds.Contains(view->Camera.Position)
+                    && (here == nullptr || volume(zone.Bounds) < volume(here->Bounds)))
+                    here = &zone;
+        if (here == nullptr)
+            for (const ZoneHeader& zone : manifest.Zones)
+                if (zone.Id == world.FocusZone())
+                    here = &zone;
+        if (here != nullptr)
+        {
+            for (const GraphRecord& graph : manifest.Graphs)
+                if (graph.Id == here->Graph)
+                    facet.Parts.push_back({ .Label = graph.Name.empty() ? GraphIdToString(graph.Id) : graph.Name,
+                                            .Key = "graph:" + GraphIdToString(graph.Id) });
+            facet.Parts.push_back({ .Label = here->Name.empty() ? ZoneIdToString(here->Id) : here->Name,
+                                    .Key = "zone:" + ZoneIdToString(here->Id) });
+        }
+    }
+    else if (Files != nullptr)
+    {
+        facet.Parts.push_back({ .Label = Files->DocumentLabel(), .Key = {} });
+    }
+    const SelectableRef primary = Workspace->Selection.GetPrimarySelection();
+    const EditorDocument& document = world.FocusDocument();
+    if (primary.IsEntity() && document.GetScene().HasEntity(primary.Entity))
+        facet.Parts.push_back({ .Label = EntityLabel(document, primary.Entity),
+                                .Key = HierarchyOutline::EntityKey(WorldExplorer::KeyOf(primary.Entity)),
+                                .Selection = true });
+    return facet;
+}
+
 WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
 {
     return ManipulationOf(*Workspace);
@@ -1121,9 +1167,7 @@ WorkspaceSelectionFacet LevelWorkspace::Selection()
 
 std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const
 {
-    std::vector<WorkspaceExplorerInfo> explorers{ WorldExplorer::Info() };
-    if (Workspace->World.IsWorld())
-        explorers.push_back(PartitionOutline::Info());
+    std::vector<WorkspaceExplorerInfo> explorers{ HierarchyOutline::Info() };
     explorers.push_back(MaterialExplorerInfo());
     explorers.push_back(PrefabExplorer::Info());
     return explorers;
@@ -1135,10 +1179,8 @@ ExplorerPage LevelWorkspace::Explore(const ExplorerQuery& query)
         return MaterialsExplorer->Explore(query);
     if (query.Explorer == PrefabExplorer::kId && PrefabsExplorer != nullptr)
         return PrefabsExplorer->Explore(query);
-    if (query.Explorer == WorldExplorer::kId && WorldOutline != nullptr)
-        return WorldOutline->Explore(query);
-    if (query.Explorer == PartitionOutline::kId && Partition != nullptr)
-        return Partition->Explore(query);
+    if (query.Explorer == HierarchyOutline::kId && Hierarchy != nullptr)
+        return Hierarchy->Explore(query);
     return {};
 }
 
@@ -1149,10 +1191,8 @@ void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_vie
         MaterialsExplorer->Choose(key, choice);
     else if (explorer == PrefabExplorer::kId && PrefabsExplorer != nullptr)
         PrefabsExplorer->Choose(key, choice);
-    else if (explorer == WorldExplorer::kId && WorldOutline != nullptr)
-        WorldOutline->Choose(key, choice, mark);
-    else if (explorer == PartitionOutline::kId && Partition != nullptr)
-        Partition->Choose(key, choice, mark);
+    else if (explorer == HierarchyOutline::kId && Hierarchy != nullptr)
+        Hierarchy->Choose(key, choice, mark);
 }
 
 UiInputCapture LevelWorkspace::WindowUiCapture() const

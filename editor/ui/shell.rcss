@@ -88,7 +88,6 @@ body
     border-width: 1dp;
     border-radius: 12dp;
     pointer-events: auto;
-    tab-index: auto;
 }
 
 .knob
@@ -231,6 +230,48 @@ body
     font-family: "JetBrains Mono";
     font-size: 11dp;
 }
+
+/* Tab belongs to the editor (the hierarchy), never to moving focus between
+   controls; a form control sets its own tab stop, so each one in the shell
+   document turns it off inline. */
+.key, .dial { tab-index: none; }
+
+/* Where the work is, top left under the rail. */
+#crumbs
+{
+    display: flex;
+    position: absolute;
+    left: 8dp;
+    top: 42dp;
+    height: 30dp;
+    align-items: center;
+    padding: 0dp 4dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    font-size: 13dp;
+    pointer-events: auto;
+}
+.crumb
+{
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    height: 24dp;
+    padding: 0dp 6dp;
+    border-radius: 3dp;
+    white-space: nowrap;
+}
+.crumb_sep { font-size: 10dp; }
+.crumb_hint
+{
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    margin-left: 10dp;
+    font-size: 11dp;
+    white-space: nowrap;
+}
+.crumb_hint .chord { font-family: "JetBrains Mono"; }
 
 /* The station and its card, bottom left: the operation in hand and what it
    is set to. */

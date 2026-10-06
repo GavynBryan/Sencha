@@ -25,13 +25,14 @@ class EditorWorkspace;
 class WorldExplorer
 {
 public:
-    static constexpr std::string_view kId = "world";
-
     explicit WorldExplorer(EditorWorkspace& workspace) : Workspace(workspace) {}
 
-    [[nodiscard]] static WorkspaceExplorerInfo Info();
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query);
     void Choose(std::string_view key, ExplorerChoice choice, std::size_t mark);
+
+    // "12:3" -- index and generation, so a stale key names nothing rather
+    // than a successor in the same slot.
+    [[nodiscard]] static std::string KeyOf(EntityId entity);
 
 private:
     struct Row

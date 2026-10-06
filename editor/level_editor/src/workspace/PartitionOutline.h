@@ -29,11 +29,8 @@ class EditorWorkspace;
 class PartitionOutline final : public IPropertySource
 {
 public:
-    static constexpr std::string_view kId = "zones";
-
     explicit PartitionOutline(EditorWorkspace& workspace) : Workspace(workspace) {}
 
-    [[nodiscard]] static WorkspaceExplorerInfo Info();
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) const;
     void Choose(std::string_view key, ExplorerChoice choice, std::size_t mark);
 

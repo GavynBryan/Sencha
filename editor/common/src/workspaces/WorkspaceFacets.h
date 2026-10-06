@@ -239,6 +239,27 @@ enum class ExplorerChoice : std::uint8_t
     Toggle,
     Open,
     Mark,
+    // Shows the item -- its ancestors opened -- and chooses nothing.
+    Reveal,
+};
+
+// One part of where the work is, and the item it reveals in the workspace's
+// hierarchy explorer.
+struct WorkspaceLocationPart
+{
+    std::string Label;
+    std::string Key;
+    // The part naming what is selected, rather than where.
+    bool Selection = false;
+};
+
+// Where the work is, outermost first: for a world, the world, the graph and
+// zone the camera is in, and what is selected. `Hierarchy` is the explorer
+// the parts reveal items in, and the one Tab opens.
+struct WorkspaceLocationFacet
+{
+    std::vector<WorkspaceLocationPart> Parts;
+    std::string Hierarchy;
 };
 
 // What a workspace whose work runs over time has on its clock, for a deck to

@@ -67,11 +67,6 @@ PropertyNode Inheritable(std::string key, std::string label, std::string resolve
 }
 } // namespace
 
-WorkspaceExplorerInfo PartitionOutline::Info()
-{
-    return { .Id = std::string(kId), .Title = "Zones", .Shape = ExplorerShape::Outline, .Action = "explorer.zones" };
-}
-
 PartitionOutline::Picked PartitionOutline::What() const
 {
     if (!Workspace.World.IsWorld())
@@ -145,7 +140,8 @@ ExplorerPage PartitionOutline::Explore(const ExplorerQuery& query) const
 void PartitionOutline::Choose(std::string_view key, ExplorerChoice choice, std::size_t)
 {
     WorldDocument& world = Workspace.World;
-    if (!world.IsWorld())
+    // Its rows are always shown, and revealing one picks nothing.
+    if (!world.IsWorld() || choice == ExplorerChoice::Reveal)
         return;
     if (key == "world")
     {

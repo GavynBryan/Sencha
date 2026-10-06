@@ -73,6 +73,7 @@ const UiModelPropertyId kSelectionTop = UiPropertyIdAt(50);
 const UiModelPropertyId kSelectionWidth = UiPropertyIdAt(51);
 const UiModelPropertyId kSelectionHeight = UiPropertyIdAt(52);
 const UiModelPropertyId kFront = UiPropertyIdAt(53);
+const UiModelPropertyId kHierarchyChord = UiPropertyIdAt(54);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -83,6 +84,7 @@ const UiModelRowsId kSelectionVerbs = UiRowsIdAt(5);
 const UiModelRowsId kSelectionChips = UiRowsIdAt(6);
 const UiModelRowsId kExplorerItems = UiRowsIdAt(7);
 const UiModelRowsId kExplorerVerbs = UiRowsIdAt(8);
+const UiModelRowsId kCrumbs = UiRowsIdAt(9);
 
 // A document popover entry naming an open document rather than an action.
 constexpr std::string_view kOpenDocumentKey = "document:";
@@ -111,6 +113,7 @@ const UiActionId kDragAction = UiActionIdAt(20);
 const UiActionId kDropAction = UiActionIdAt(21);
 const UiActionId kUnmoveAction = UiActionIdAt(22);
 const UiActionId kRaiseAction = UiActionIdAt(23);
+const UiActionId kCrumbAction = UiActionIdAt(24);
 
 // The floating surfaces a header can move, as a document names them.
 constexpr std::string_view kExplorerSurface = "explorer";
@@ -189,15 +192,17 @@ UiScreenDesc Describe()
         UiModelProperty{ "selection_width", UiValue(std::string("auto")) },
         UiModelProperty{ "selection_height", UiValue(std::string("auto")) },
         UiModelProperty{ "front", UiValue(std::string{}) },
+        UiModelProperty{ "hierarchy_chord", UiValue(std::string{}) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
-                      "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs" };
+                      "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs",
+                      "crumbs" };
     desc.Actions = { "shell_popover",   "shell_choose",     "shell_invoke",     "shell_window",       "shell_sheet_set",
                      "shell_sheet_flip", "shell_sheet_hold", "shell_sheet_release", "shell_sheet_act", "shell_drawer",
                      "shell_sheet_pick", "shell_explore", "shell_explorer_filter", "shell_explorer_page",
                      "shell_explorer_pick", "shell_explorer_commit", "shell_explorer_close",
                      "shell_explorer_open", "shell_explorer_mark", "shell_grab", "shell_drag", "shell_drop",
-                     "shell_unmove", "shell_raise" };
+                     "shell_unmove", "shell_raise", "shell_crumb" };
     return desc;
 }
 
@@ -496,6 +501,10 @@ void ShellWindow::HandleActions()
                  || action.Id == kUnmoveAction || action.Id == kRaiseAction)
         {
             HandleMoveAction(action);
+        }
+        else if (action.Id == kCrumbAction)
+        {
+            RevealLocation(action.Arguments.empty() ? -1 : action.Arguments[0].AsInt());
         }
         else if (action.Id == kWindowAction)
         {
@@ -832,8 +841,9 @@ void ShellWindow::PlaceFloatingSurfaces()
     const std::optional<Rect2d> station = MeasureBorder(ToolCardUp ? "station_bay" : "station");
     const std::optional<Rect2d> holding = MeasureBorder("instruments_right");
     const std::optional<Rect2d> view = MeasureBorder("cat_View");
+    const std::optional<Rect2d> crumbs = MeasureBorder("crumbs");
     std::vector<Rect2d> instruments;
-    for (const std::optional<Rect2d>& instrument : { station, MeasureBorder("readout"), holding, view })
+    for (const std::optional<Rect2d>& instrument : { station, MeasureBorder("readout"), holding, view, crumbs })
         if (instrument.has_value())
             instruments.push_back(*instrument);
     if (const std::optional<UiElementBox> deck = Deck->Area())
@@ -892,7 +902,7 @@ void ShellWindow::PlaceFloatingSurfaces()
         std::vector<Rect2d> taken = instruments;
         if (selection.has_value())
             taken.push_back(*selection);
-        const float top = bounds.Min().Y;
+        const float top = crumbs.has_value() ? crumbs->Max().Y + gap : bounds.Min().Y;
         const Rect2d home = ExplorerKey.ends_with(".outline")
             ? Rect2d(bounds.Min().X, top, 340.0f * dp, std::max(0.0f, std::min(600.0f * dp, floor - top)))
             : Rect2d(bounds.Min().X, floor - 300.0f * dp, std::min(640.0f * dp, bounds.Width()), 300.0f * dp);
@@ -900,6 +910,47 @@ void ShellWindow::PlaceFloatingSurfaces()
         publish(placed, false, kExplorerLeft, kExplorerTop, kExplorerWidth, kExplorerHeight);
     }
     (void)ui.SetValue(Screen, kFront, UiValue(FrontSurface));
+}
+
+void ShellWindow::PublishLocation(const IWorkspace* workspace)
+{
+    const WorkspaceLocationFacet location = workspace != nullptr ? workspace->Location() : WorkspaceLocationFacet{};
+    std::vector<UiRow> crumbs;
+    for (const WorkspaceLocationPart& part : location.Parts)
+    {
+        UiRow crumb{ part.Label, "", "" };
+        crumb.Key = part.Key;
+        crumb.Selected = part.Selection;
+        crumbs.push_back(std::move(crumb));
+    }
+    (void)Services.Ui.SetRows(Screen, kCrumbs, crumbs);
+    const std::string chord =
+        location.Hierarchy.empty() ? std::string{} : Services.Catalog.ChordText(HierarchyAction(*workspace, location));
+    (void)Services.Ui.SetValue(Screen, kHierarchyChord, UiValue(chord));
+}
+
+std::string ShellWindow::HierarchyAction(const IWorkspace& workspace, const WorkspaceLocationFacet& location) const
+{
+    for (const WorkspaceExplorerInfo& explorer : workspace.Explorers())
+        if (explorer.Id == location.Hierarchy)
+            return explorer.Action;
+    return {};
+}
+
+void ShellWindow::RevealLocation(std::int64_t index)
+{
+    IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+    if (workspace == nullptr || index < 0)
+        return;
+    const WorkspaceLocationFacet location = workspace->Location();
+    if (location.Hierarchy.empty() || static_cast<std::size_t>(index) >= location.Parts.size())
+        return;
+    if (ExplorerShown != location.Hierarchy || ExplorerTransient == 0)
+        ShowExplorer(location.Hierarchy);
+    FrontSurface = kExplorerSurface;
+    const std::string& key = location.Parts[static_cast<std::size_t>(index)].Key;
+    if (!key.empty())
+        workspace->ChooseInExplorer(location.Hierarchy, key, ExplorerChoice::Reveal, 0);
 }
 
 void ShellWindow::ShowDrawer(std::string focus)
@@ -997,6 +1048,7 @@ void ShellWindow::Publish(double now)
     PublishReadouts(workspace);
     PublishHolding(workspace);
     PublishSelection(workspace);
+    PublishLocation(workspace);
     PublishExplorer(workspace);
     PlaceFloatingSurfaces();
 

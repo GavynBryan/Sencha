@@ -70,6 +70,18 @@
         </div>
     </div>
 
+    <!-- Where the work is, outermost first; each part opens the hierarchy
+         showing it. -->
+    <div id="crumbs" class="theme-plate" data-if="crumbs.size > 0">
+        <div class="crumb theme-segment" data-for="crumb : crumbs" data-class-lit="crumb.selected"
+             data-event-click="shell_crumb(it_index)">
+            <span class="crumb_sep glyph theme-dim" data-if="it_index > 0">&#xf054;</span><span>{{crumb.label}}</span>
+        </div>
+        <div class="crumb_hint theme-dim" data-if="hierarchy_chord != ''">
+            <span class="chord">{{hierarchy_chord}}</span><span>hierarchy</span>
+        </div>
+    </div>
+
     <!-- Bottom left, what the hands are doing: the station (and over it, while
          the operation has settings or drafted work, its card), then how they
          act -- element, gizmo, grid -- each segment opening its category. -->
@@ -81,16 +93,16 @@
                  data-class-heading="row.control == 'section'" data-class-verb="row.control == 'action'"
                  data-class-locked="!row.editable &amp;&amp; row.control != 'section' &amp;&amp; row.control != 'action'">
                 <span class="setting_label" data-if="row.control != 'action'">{{row.label}}</span>
-                <input type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
+                <input style="tab-index: none;" type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
                        data-value="row.value"
                        data-event-focus="shell_sheet_hold('tool', it_index)"
                        data-event-blur="shell_sheet_release('tool', it_index)"/>
                 <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
-                <input type="range" class="setting_control" data-if="row.control == 'range'"
+                <input style="tab-index: none;" type="range" class="setting_control" data-if="row.control == 'range'"
                        data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
                        data-value="row.number" data-event-change="shell_sheet_set('tool', it_index, ev.value)"/>
                 <span class="setting_number theme-readout" data-if="row.control == 'range'">{{row.value}}</span>
-                <select class="setting_control theme-field" data-if="row.control == 'choice'"
+                <select style="tab-index: none;" class="setting_control theme-field" data-if="row.control == 'choice'"
                         data-value="row.value" data-event-change="shell_sheet_set('tool', it_index, ev.value)">
                     <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
                 </select>
@@ -100,15 +112,15 @@
                 </div>
                 <div class="key theme-key" data-if="row.control == 'action'"
                      data-event-click="shell_sheet_act('tool', it_index, '')">{{row.label}}</div>
-                <textarea class="setting_control setting_long theme-field" data-if="row.control == 'longtext'" rows="5"
+                <textarea style="tab-index: none;" class="setting_control setting_long theme-field" data-if="row.control == 'longtext'" rows="5"
                           data-value="row.value" data-event-focus="shell_sheet_hold('tool', it_index)"
                           data-event-blur="shell_sheet_release('tool', it_index)"></textarea>
-                <textarea class="setting_control setting_long theme-field" data-if="row.control == 'longtext'" rows="5"
+                <textarea style="tab-index: none;" class="setting_control setting_long theme-field" data-if="row.control == 'longtext'" rows="5"
                       data-value="row.value" data-event-focus="shell_sheet_hold('selection', it_index)"
                       data-event-blur="shell_sheet_release('selection', it_index)"></textarea>
             <div class="setting_color" data-if="row.control == 'color'">
                     <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"></div>
-                    <input type="text" class="setting_control theme-field" data-value="row.value"
+                    <input style="tab-index: none;" type="text" class="setting_control theme-field" data-value="row.value"
                            data-event-focus="shell_sheet_hold('tool', it_index)"
                            data-event-blur="shell_sheet_release('tool', it_index)"/>
                 </div>
@@ -180,16 +192,16 @@
              data-class-heading="row.control == 'section'" data-class-verb="row.control == 'action'"
              data-class-locked="!row.editable &amp;&amp; row.control != 'section' &amp;&amp; row.control != 'action'">
             <span class="setting_label" data-if="row.control != 'action'">{{row.label}}</span>
-            <input type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
+            <input style="tab-index: none;" type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
                    data-value="row.value"
                    data-event-focus="shell_sheet_hold('selection', it_index)"
                    data-event-blur="shell_sheet_release('selection', it_index)"/>
             <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
-            <input type="range" class="setting_control" data-if="row.control == 'range'"
+            <input style="tab-index: none;" type="range" class="setting_control" data-if="row.control == 'range'"
                    data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
                    data-value="row.number" data-event-change="shell_sheet_set('selection', it_index, ev.value)"/>
             <span class="setting_number theme-readout" data-if="row.control == 'range'">{{row.value}}</span>
-            <select class="setting_control theme-field" data-if="row.control == 'choice'"
+            <select style="tab-index: none;" class="setting_control theme-field" data-if="row.control == 'choice'"
                     data-value="row.value" data-event-change="shell_sheet_set('selection', it_index, ev.value)">
                 <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
             </select>
@@ -201,7 +213,7 @@
                  data-event-click="shell_sheet_act('selection', it_index, '')">{{row.label}}</div>
             <div class="setting_color" data-if="row.control == 'color'">
                 <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"></div>
-                <input type="text" class="setting_control theme-field" data-value="row.value"
+                <input style="tab-index: none;" type="text" class="setting_control theme-field" data-value="row.value"
                        data-event-focus="shell_sheet_hold('selection', it_index)"
                        data-event-blur="shell_sheet_release('selection', it_index)"/>
             </div>
@@ -236,7 +248,7 @@
              data-event-dragend="shell_drop('explorer')">
             <span id="explorer_title" class="theme-accent"
                   data-event-dblclick="shell_unmove('explorer')">{{explorer_title}}</span>
-            <input type="text" id="explorer_filter" class="theme-field"
+            <input style="tab-index: none;" type="text" id="explorer_filter" class="theme-field"
                    data-event-change="shell_explorer_filter(ev.value)"/>
             <span id="explorer_range" class="theme-dim">{{explorer_range}}</span>
             <div class="key theme-key" data-if="explorer_earlier || explorer_later" data-class-disabled="!explorer_earlier"

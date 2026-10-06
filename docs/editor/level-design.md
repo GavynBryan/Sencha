@@ -115,7 +115,9 @@ surface under the cursor, snapped to the grid; click stamps an instance, Esc
 leaves. Pressing a tile and dragging into the world is the same gesture — the
 tray tucks away and the world takes the pointer.
 
-**World** (O): a sheet on the left edge. Zones and their entities as a tree,
+**Hierarchy** (Tab, or a part of the breadcrumb): a sheet on the left edge,
+opened where there is room. The world, its graphs and zones, and the edited
+zone's entities as one tree,
 with visibility and lock, rename, reparent by dragging within the tree, move to
 zone, zone manifest edits, streaming preview policy, and a map view of the zone
 graph. Selecting a row selects the entity; F frames it.

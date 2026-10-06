@@ -47,6 +47,7 @@ class MaterialExplorer;
 class PrefabExplorer;
 class ProblemList;
 class LightingDiagnostics;
+class HierarchyOutline;
 class PartitionOutline;
 class EntityVerbs;
 class WorldExplorer;
@@ -93,6 +94,7 @@ public:
     [[nodiscard]] WorkspaceOperationFacet Operation() override;
     [[nodiscard]] WorkspaceManipulationFacet Manipulation() const override;
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
+    [[nodiscard]] WorkspaceLocationFacet Location() const override;
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
@@ -199,6 +201,7 @@ private:
     std::unique_ptr<EntityVerbs> Entities;
     std::unique_ptr<WorldExplorer> WorldOutline;
     std::unique_ptr<PartitionOutline> Partition;
+    std::unique_ptr<HierarchyOutline> Hierarchy;
     std::unique_ptr<LightingDiagnostics> Lighting;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
