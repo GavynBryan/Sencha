@@ -391,17 +391,6 @@ float ShellWindow::RailHeight() const
     return kRailHeightDp * Services.Ui.GetSurfaceScale(SurfaceId);
 }
 
-float ShellWindow::StationBand() const
-{
-    if (!Screen.IsValid())
-        return 0.0f;
-    const std::optional<UiElementBox> station = Services.Ui.MeasureElement(Screen, "station");
-    if (!station.has_value() || station->Height <= 0.0f)
-        return 0.0f;
-    const WindowExtent extent = Services.Window.GetExtent();
-    return std::max(0.0f, static_cast<float>(extent.Height) - station->Y);
-}
-
 void ShellWindow::HandleActions()
 {
     for (const UiAction& action : Services.Ui.DrainActions(Screen))

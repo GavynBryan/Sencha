@@ -94,10 +94,6 @@ public:
     // How much of the top of the window the rail covers, in window points:
     // where content under it has to start.
     [[nodiscard]] float RailHeight() const;
-    // How much of the bottom of the window the stations take, in window
-    // points: where docked content has to end while the stations sit in a
-    // band of their own.
-    [[nodiscard]] float StationBand() const;
 
     [[nodiscard]] UiSurfaceId Surface() const { return SurfaceId; }
     // What a workspace placed in this window is handed.

@@ -3,40 +3,38 @@
 How a person operates Kyusu, independent of any one workspace, and how the code
 is split so that this grammar can be replaced without rewriting the workspaces.
 
-**Status:** design of record for the Shoji migration. The shell described here
-is being built in stages (plan: the Kyusu-on-Shoji epic). Today's Kyusu is still
-the ImGui dock shell described in `editor/ARCHITECTURE.md`; where this document
-and the code disagree about *current* behaviour, the code wins.
+**Status:** describes the shell as built. Where this document and the code
+disagree about current behaviour, the code wins and this document is fixed.
 
 ## 1. The principle
 
-The content being authored dominates the window. Interface appears when the
-person needs to act on something, and gets out of the way when they do not.
+Two priorities decide every choice:
 
-Kyusu is *aesthetically maximalist and interaction-minimalist*. Its look — the
-Metalheart workstation: tactile machinery, readouts, lamps, physical-looking
-controls — is spent on a small number of instruments that persist, not on
-frames around content. There is no docking, no layout file and no UI whose
-job is resizing other UI.
+- **Least travel.** The left hand stays on WASD and the mouse stays on the
+  work. What is done often is a held key under the left hand or the thumb, or
+  a gesture on the object, never a trip to an edge of the window.
+- **Total clarity.** The person always knows where they are, what is selected
+  and what a change will do, and text reads against what is behind it.
 
-Surfaces that open over the content -- the explorers, and the selection's
-card, drawer and sheet -- never resize themselves. A summoned explorer opens
-where it usually lives if that space is free of the instruments and the
-selection, otherwise in the nearest free space, and with no room at all it
-opens at home over whatever is there; it then stays where it opened. The
-selection keeps to its own place. Either moves by its header and sizes by its
-corner, and keeps what the person chose for the session; a double click on
-its title puts it back. The one pressed last is in front, and Escape closes
-the front one. `shell/SurfacePlacement` holds these rules, and `ShellWindow`
-measures the instruments for them.
+Interface appears when the person asks for it and goes away when they are done
+with it. It activates when wanted and never when not, and it does not make an
+accident easy. Kyusu is *aesthetically maximalist and interaction-minimalist*:
+its look — the Metalheart workstation of plates, lamps and readouts — is spent
+on a few instruments that persist, not on frames around content.
+
+Surfaces never resize themselves. A summoned explorer opens where it usually
+lives if that space is free of the instruments and the selection, otherwise in
+the nearest free space, and with no room at all it opens at home over whatever
+is there; then it stays where it opened. The selection's sheet keeps to its own
+place. Either moves by its header and sizes by its corner, and keeps what the
+person chose for the session; a double click on its title puts it back. The one
+pressed last is in front, and Escape closes the front one (`shell/SurfacePlacement`).
 
 ## 2. The grammar is a presentation policy
 
-Everything in this document from §3 onward is **policy**: where things appear,
-how they look, which gestures summon them. It is deliberately replaceable. The
-code is split so that a different grammar — a radial-only interface, a
-late-90s scientific workstation, even a paneled editor — means rewriting the
-shell and its documents, not the workspaces.
+Everything from §3 onward is **policy**: where things appear, how they look,
+which gestures summon them. It is replaceable: a different grammar means
+rewriting the shell and its documents, not the workspaces.
 
 What survives any grammar:
 
@@ -48,215 +46,186 @@ What survives any grammar:
 | Selection, tools, picking, manipulation | `common/src/selection`, `tools`, workspace libraries |
 | Active resources | `common/src/resources` |
 | Problems and notices | `common/src/problems`, `notices` |
-| Workspace facets | `common/src/workspaces/facets` |
+| Workspace facets | `common/src/workspaces/WorkspaceFacets.h` |
 | Shoji surfaces, host images, rows | `engine/include/ui` |
 
 What a grammar change rewrites: `common/src/shell/` (the window controller,
-placement policy and presenters) and the documents in `editor/ui/shell`,
-`editor/ui/kit` and `editor/ui/art`.
+placement and presenters) and the documents in `editor/ui/`.
 
 ### Workspaces expose semantics, never positions
 
-A workspace does not know that its active resource is drawn as a cartridge in
-the lower-right corner. It says *my active tool consumes a material, and it is
-this one*. It exposes **facets** — small read models plus action handlers:
+A workspace says what it has — *my tool consumes a material, and it is this
+one*; *this is selected, these are its properties and actions*; *the work is in
+this world, this zone* — through **facets**: small read models plus action
+handlers.
 
-| Facet | Says | Workspaces |
-| --- | --- | --- |
-| Documents | what is open, which is active, what is dirty, how to save | all |
-| Operation | the current tool or mode and its variants | Level, Animation, UI Preview, Materials |
-| Manipulation | transform mode, space, pivot, snap, grid | Level |
-| Resources | resource roles the operation consumes, and their values | Level, Materials, Animation |
-| Selection | what is selected, as property sources and relevant verbs | Level, UI Preview, Animation |
-| Transport | cook / play / stop state | Level |
-| Timeline | time, range, playing, marks | Animation |
-| View | arrangement, projection, display modes | Level, Materials, Animation |
+| Facet | Says |
+| --- | --- |
+| Documents | what is open, which is active, what has changed |
+| Operation | the current tool or mode and its variants |
+| Manipulation | transform mode, space, pivot, snap, grid |
+| Resources | what the operation consumes, and what is to hand |
+| Selection | what is selected, as property sources and actions; shown always or only on request |
+| Location | where the work is (world, graph, zone, selection), the hierarchy that reveals it, and the map |
+| Explorers | what can be browsed, a page at a time |
+| Transport | cook / play / stop state |
+| Timeline | time, range, playing, marks, lanes |
+| View | arrangement, projection, display modes |
 
-Documents that genuinely belong to one workspace (the World explorer's tree,
-the rules drawer, the data sheet) are requested by **role** — `Content`,
-`Explorer`, `ContextDetail`, `Bench` — and the shell's placement policy
-decides where a role goes, how it is anchored, how it animates and how it is
-dismissed. A workspace receives a narrow `WorkspaceWindow` (pointer capture,
-relative mouse, dialog parent, content rect, role documents, action context)
-and nothing that names chrome.
-
-A layering rule keeps this honest: workspace libraries may not include the
-shell's presenters or policy, and a headless fake shell drives the real
-workspaces through facets alone.
+A workspace receives a narrow `WorkspaceWindow` — the platform window, its
+surfaces by role, the window's action stack — and nothing that names chrome. A
+layering rule keeps this honest: workspace libraries may not include the
+shell.
 
 ### Shoji learns nothing about this grammar
 
 Shoji is the runtime UI for games as well. It gains generic primitives only —
-surfaces on any window, images the host supplies, richer rows — and never
-concepts such as "drawer" or "explorer". The grammar is an RCSS kit plus editor
-controllers; a game may author the same patterns from the same kit.
+surfaces on any window, images the host supplies, richer rows, antialiased
+sectors — and never concepts such as "tab" or "explorer".
 
 ## 3. Anatomy of a window
 
 ```
-┌─[≡][ LEVEL ◉ ][ glass.sscene ● ]──────── notices ────────[⚠2][COOK ▸ PLAY ■][_ □ ×]┐ rail
-│                                                              [PERSP · LIT · 1▢] │ view
-│                                                                                   │
-│                          CONTENT — full bleed                        ┌ card ────┐ │ context
-│                                                                      └──────────┘ │
-│ [▣ CARVE · Quad ][ MOVE · WORLD · 16u ◌]             [▦ Concrete_01 ][▫][▫][▫]    │ stations
-└───────────────────────────────────────────────────────────────────────────────────┘
+┌─[≡][LEVEL traversal3 ●][MATERIALS brick][+]────── notices ──────[⚠2][COOK ▸ PLAY ■][_ □ ×]┐ rail
+│ [MAP  traversal3 ▸ Graph 1 ▸ Room 3 ▸ Brush   Tab hierarchy]          [PERSP · LIT · 1▢]  │ where · view
+│                                                                                            │
+│                               CONTENT — full bleed                                         │
+│                                                                                            │
+│ [▣ CARVE · Quad ][ MOVE · WORLD · 16u ◌][▦ concrete ][▫][▫][▫]                              │ hands
+└────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-The same place means the same thing in every workspace:
 
 | Place | Meaning | Contents |
 | --- | --- | --- |
-| Rail, left | identity | hatch (≡), workspace dial, document dial with dirty lamp |
+| Rail, left | what is open | hatch (≡); a tab per open asset, its editor named small beside it, a lamp when changed; + to open another editor |
 | Rail, right | consequences | problems lamp, transport where it applies, window buttons |
+| Under the rail, left | where the work is | breadcrumb: MAP, then world ▸ graph ▸ zone (the one the camera is in) ▸ selection; each part opens the hierarchy at it |
 | Content, top-right | how I am seeing | view instrument |
-| Bottom-left | what my hands are doing | operation station (the Q wheel's face) and manipulation readout (the Z wheel's face) |
-| Bottom-right | what I am holding | the primary active resource, plus stash |
-| Right edge | what I am looking at | selection card, expanding to the details drawer |
-| Bottom edge | the work's axis, when it has one | e.g. Animation's timeline; empty otherwise |
+| Bottom-left | what my hands are doing and holding | operation station (the Q wheel's face), manipulation readout (the Z wheel's face), the resource cartridge and stash |
+| Bottom edge | the work's axis, when it has one | Animation's tape deck |
 | Top-centre | what just happened | transient notices |
 
-The rail is also the window caption (client decorations): it is where the
-window is dragged from. It is the only full-width chrome.
+A tab is an open asset; its type picks the editor. Choosing a tab shows its
+editor and the asset; dragging a tab down out of the rail gives its editor a
+window of its own (`shell/AssetTabs`). There are no workspaces to switch
+between apart from the assets they hold.
 
-Every persistent instrument is **a readout that is also a button**. The
-operation station shows the current tool and opens the tool wheel when clicked;
-the resource cartridge shows the active material and opens its explorer. Nothing
-persistent exists only to advertise operations.
+The rail is also the window caption (client decorations) and the only
+full-width chrome. Every persistent instrument is **a readout that is also a
+button**: the station shows the tool and opens its wheel, the cartridge shows
+what is held and opens its explorer.
 
-## 4. Depth
+## 4. Getting to things
 
-Interface comes in increasing commitment to a task. The rungs measure *scope* —
-a choice, a value, an object, a library, a domain — not size:
+Interface comes in increasing commitment to a task:
 
 | Rung | Holds | Summoned by | Leaves by |
 | --- | --- | --- | --- |
-| Quasimode | a choice among tools or modes | holding Q / Z, or clicking a station | releasing (commits), Esc |
+| Wheel | a choice: a tool (Q), a transform (Z), what to do to *this* (Space) | holding the key, or clicking a station | releasing (commits; in the middle, nothing), Esc |
+| Handle | a value with a place on the object | being on the selected object | letting go (commits), Esc |
 | Popover | one decision | clicking an instrument | choosing, clicking elsewhere, Esc |
-| Card | the primary fields and verbs of the current object | selecting it, or a tool with parameters | deselecting |
-| Drawer | everything about the object | expanding the card | collapsing, Esc; a pinned drawer stays |
-| Explorer | a library: materials, prefabs, world structure, assets | a slot, a key, the palette | committing a pick, Esc |
-| Workspace | a whole authoring domain | "Edit in Materials…" and similar | the rail's return path |
+| Sheet | everything about the selection | More… on the Space wheel, or the palette | Esc |
+| Explorer | a library, the hierarchy | a slot, a key (Tab for the hierarchy), the breadcrumb, the palette | committing a pick, Esc |
+| Map | the world from above | MAP in the breadcrumb | clicking a zone (goes there), Esc |
 
-Rules:
+**The Space wheel** is about what is under the pointer, or the selection when
+nothing is (`actions/ContextMenuModel`). Its hub reads out what the thing is and
+its values, so holding Space and letting go in the middle only looks. Its
+petals are the thing's choices — each a fan of options with the one in effect
+marked; an asset's fan is what is to hand, pictured, then Browse… — its
+actions that can be done now, and More… for the full sheet. Disabled actions
+are never offered.
 
-- **Esc steps down exactly one rung.** It dismisses the most recent dismissible
-  transient; with none open, the workspace's own escape policy runs (cancel an
-  interaction, then deselect).
-- **Cards are a projection of selection**, not windows. They exist while the
-  selection does.
-- **Explorers keep the world visible** and preview live against it: hovering a
-  material previews it on the selected faces, as a pending edit that leaving
-  cancels.
-- **Escalating to another workspace leaves a way back.** The rail shows a
-  return path ("◂ Level"), and the originating workspace keeps its state.
-- **Pinning is the only persistent-surface concession.** A pinned drawer is a
-  per-workspace setting, not a layout.
+**Handles** put a selected object's spatial values on it: a size is a ring
+facing each view with a knob to drag, small at rest and larger with the pointer
+near; a number with no place of its own changes by scrolling over the object.
+The value shows beside the handle only while it changes (`PropertyHandles`).
 
-In code the ladder is not a type hierarchy. Transient surfaces are generic
-entries — owner, parent, dismiss policy, whether Esc reaches it, priority,
-persistence — and "popover", "drawer" and "explorer" are presets of those
-fields. A nested explorer, two cards or a comparison surface needs no new
-mechanism.
+A workspace whose properties *are* its content (a data asset, a material, an
+animation lens) shows its card whenever something is selected. The Level's
+selection is shown only on request, so the view stays clear.
+
+**Esc steps down one rung**: an open popover, then the surface in front, then
+the workspace's own escape policy (cancel an interaction, then deselect).
+
+In code the rungs are not a type hierarchy. Transient surfaces are generic
+entries — owner, dismiss policy, whether Esc reaches it — and "popover" and
+"explorer" are presets of those fields.
 
 ## 5. Finding things without knowing the shortcuts
 
-Expert operation should be one chord away; nothing should *require* a chord.
+Expert operation is one chord away; nothing *requires* a chord.
 
+- The breadcrumb always says where the camera and the selection are, and each
+  part opens the hierarchy showing it; its hint names the hierarchy's chord.
 - Every instrument shows its chord on hover. Chords are read from the action
   catalog, never written into a document, so a rebinding shows up everywhere.
-- Clicking a station opens the same wheel its key opens, in click mode, so a
-  pointer user learns the wheel's geometry and graduates to the key.
-- The hatch lists every action by category, with chords: a menu with no
-  menu bar.
+- Clicking a station opens the same wheel its key opens, in click mode.
+- The hatch lists every action by category, with chords.
 - The command palette (Ctrl+K) searches actions, workspaces and explorers.
-- A one-line hint ("hold Q for tools") shows until the wheel has been used.
 
 ## 6. Actions
 
 An action is a *definition* (id, label, category, icon, default chord) and, at
 any moment, possibly a *handler* (enabled, checked, invoke) supplied by
-whichever context currently claims it. Each window resolves an action through
-a stack of contexts, innermost first:
-
-1. the focused shell surface (an explorer claims `edit.delete` for assets),
-2. the active tool or element mode,
-3. the active document,
-4. the active workspace,
-5. the window,
-6. the application.
-
-A focused text field sits ahead of the stack, so Delete in a field edits text.
-The catalog never holds callbacks: handlers are registered by their context and
-disappear with it. Every definition is also a console command of the same id,
-so scripts, startup `+commands`, keymaps and the palette reach one table.
+whichever context claims it. Each window resolves an action through a stack of
+contexts, innermost first: the focused shell surface, the active tool or
+element mode, the active workspace, the window, the application. A focused text
+field sits ahead of the stack, so Delete in a field edits text; the shell's
+controls take no part in Tab traversal, so Tab is always the editor's. The
+catalog never holds callbacks, and every definition is also a console command
+of the same id.
 
 ## 7. Properties
 
 Authoring state is edited through one lifecycle — begin, preview, commit,
-cancel — keyed by a stable property path, against whichever document owns it
-(component bytes, a data document, a tool's parameters). Every interruption
-ends the session: Esc, focus loss, a tool switch, hiding the workspace, closing
-the document.
-
-The neutral model is a tree of *properties* (identity, descriptor, value,
-children, capabilities, a presentation hint). It has no notion of a row. The
-card and the drawer are two presentations of the same tree at different
-relevance; a purpose-built editor (a modifier stack, a blendspace, a colour
-instrument) is a third, and still commits only through the same sessions or
-commands. Which fields a compact card shows is editor data — a card profile per
-component — not schema.
+cancel — keyed by a stable property path, against whichever document owns it.
+Every interruption ends the session: Esc, focus loss, a tool switch, hiding the
+workspace, the selection moving on. A wheel fan, a handle and the full sheet are
+three presentations of the same properties, and each commits only through the
+same sessions or commands.
 
 ## 8. Motion
 
-Transitions animate transform and opacity only, never layout, so they cost no
-relayout and never move what the person is aiming at. They last 90–160 ms, are
-interruptible, and never gate input: acting mid-transition acts. They express
-mechanism — a card slides out of its station, a dial label rolls, a cartridge
-seats — not decoration.
-
-`editor.ui.motion 0` removes motion. It is an accessibility setting, and it is
-also how golden images stay deterministic (the UI clock is host-driven).
+Transitions animate transform and opacity only, never layout, are interruptible
+and never gate input. A surface being moved is laid out, not transformed, so it
+stays on whole pixels and is hit where it is drawn. `editor.ui.motion 0` removes
+motion.
 
 ## 9. What persists
 
 Only settings a person would recognise as settings: theme, UI scale, keybinds,
-motion, per-workspace view arrangement, pinned drawer, explorer view options,
-hints seen, and recent documents per project. They are archived cvars through
-the existing settings archive.
+motion, per-workspace view arrangement, and recent documents per project. They
+are archived cvars. Where a surface was moved or how it was sized lasts for the
+session, per window.
 
-No position, size or layout is persisted. Where a surface was dragged lasts
-for the session, per window.
+## 10. Metalheart and contrast
 
-## 10. Metalheart
+The look is RCSS-composed machinery in shared documents plus a small hand-drawn
+SVG set, tinted per theme role; no artwork is generated by code. The theme sets
+colours and nothing else, so a theme change restyles without relayout.
 
-The look is built from two materials, both themeable:
-
-- **RCSS-composed machinery** — plates, bezels, seams, keys that depress, lamps
-  with off/idle/active/warn/fault states, segmented readouts, dials, cartridges,
-  trays — in a shared kit (`editor/ui/kit/`).
-- **A small hand-drawn SVG set** (`editor/ui/art/`) for what boxes and borders
-  cannot make: screw heads, vents, dial faces, cartridge shells, bezel corners.
-  White artwork, cooked to textures, tinted per theme role with `image-color`.
-  No artwork is generated by code.
-
-The theme sets colours and nothing else (`docs/ui/architecture.md` §14), so a
-theme change restyles without relayout. Geometry belongs to the documents.
-
-Gradients, shadows and filters are outside Shoji's current render contract;
-glow and depth come from art and layered boxes. "Metalheart" names the
-aesthetic in documents and themes; it is never an identifier.
+Text must read: primary and secondary text reach at least 4.5:1 against every
+surface they sit on, in every bundled theme, which a test enforces. Gradients,
+shadows and filters are outside Shoji's render contract; "Metalheart" names the
+aesthetic, never an identifier.
 
 ## 11. Workspaces on the grammar
 
-| Workspace | Content | Operation | Holding | Looking at | Explorers | Axis |
+| Workspace | Content | Operation | Holding | Selection | Explorers | Axis |
 | --- | --- | --- | --- | --- | --- | --- |
-| Level Design | the world | tools (Q), manipulation (Z) | material / prefab | object, brush, elements | materials, prefabs, world | — |
-| Materials | the lit preview stage | preview primitive | texture for the focused slot | parameters (drawer, pinned by default) | textures, material files | — |
-| Data | the asset, typeset as a sheet | subtype lens | — | field help beside the focused field | data assets | — |
-| UI Preview | the previewed surface | interact / inspect | model preset | picked element | documents, vocabulary | — |
-| Animation | the rig on a stage | lenses (selection, layers, blends, events, root motion, requests, facts) | rig and scenario | bone, event mark, rule | content, rigs and scenarios; benches for lab, batch, migration | timeline |
-| Project | the project rack | — | — | project | create project | — |
+| Level Design | the world, or the map | tools (Q), manipulation (Z) | material / prefab | on request: Space wheel, handles, sheet | hierarchy (Tab), materials, prefabs | — |
+| Materials | the lit preview stage | preview primitive | — | parameters, shown | textures, material files | — |
+| Data | the asset, typeset as a sheet | subtype lens | — | the sheet | data assets | — |
+| UI Preview | the previewed surface | interact / inspect | — | picked element, shown | documents, elements, vocabulary | — |
+| Animation | the rig on a stage | lenses | rig and scenario | lens cards, shown | content, rigs, skeleton | tape deck |
+| Project | the project rack | — | — | project | — | — |
 
-Level Design's flows are specified in `docs/editor/level-design.md`.
-Animation's layout is a proposal pending its own design review.
+Level Design's flows are in `docs/editor/level-design.md`; Animation's in
+`docs/editor/animation-workspace.md`.
+
+### Not built yet
+
+- Angle handles (a spot light's cone, a camera's field of view).
+- A tab's own close key; closing goes through Ctrl+W or the hatch.
+- Hovering a material in its explorer previewing it on the selected faces.

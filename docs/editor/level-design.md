@@ -44,15 +44,14 @@ origin, grid size and snap. The Z wheel gains a variant fan per mode for
 space, so mode and space are one gesture. Existing chords stay:
 Shift+Q/W/E/R, Ctrl+G, `[` / `]`, Shift+G, Alt+G, Ctrl+Shift+G.
 
-### Resource cartridge (bottom-right)
+### Resource cartridge (bottom-left, beside the station)
 
 The resource the active tool consumes — the active material for brush,
 texturing and select-with-faces; the active prefab for Place — as a cartridge
 with thumbnail and name, plus three stash cartridges. Clicking the cartridge
 opens its explorer; clicking a stash cartridge swaps it in. Shift+RMB samples a
-face's material into it; Shift+T applies it to selected faces. "Edit
-material…" on the cartridge opens the Materials workspace on that material,
-with a return path.
+face's material into it; Shift+T applies it to selected faces. The same
+materials are the Space wheel's material fan on a face.
 
 ### View instrument (content, top-right)
 
@@ -73,7 +72,8 @@ with a return path.
 
 Cook, Play and Stop sit in the rail's transport with a state lamp (idle,
 cooking, playing, failed). Play saves every document, cooks if needed and
-launches; a save conflict opens the save report as a card instead of launching.
+launches; a save conflict is a question to settle, and a failed save a
+problem, instead of launching.
 The transport popover holds the cook profile, lighting bake and hosted play.
 
 ## Selection and context
@@ -81,24 +81,31 @@ The transport popover holds the cook profile, lighting bake and hosted play.
 Lights, cameras and plain entities are pickable in the world through icon pick
 proxies, so every selectable thing can be selected where it is.
 
-| Selection | Card shows |
+Nothing about the selection sits on the view by default. **Hold Space** over
+it — or over anything, which selects it first — for its wheel: the hub reads out
+what it is and its values; the petals are its choices (a face's material, a
+light's shadow settings), its actions that can be done now, and More… for the
+full sheet.
+
+| Selection | The Space wheel offers |
 | --- | --- |
-| Entity | name, kind, zone, prefab-source badge; compact transform; the fields its card profile names (a light: colour, intensity, range, shadows); component chips |
-| Brush | dimensions, material, modifier stack summary |
-| Faces | material, UV projection; inset, extrude, flip, separate, delete, apply material |
+| Entity | its components' choices and toggles; duplicate, delete, hide, lock, move to a zone, and the rest |
+| Faces | material (what is to hand, then Browse…), texture alignment; inset, extrude, flip, separate, delete, fit and center texture |
 | Edges | bevel, bridge, soften / harden, dissolve |
 | Vertices | weld, snap to grid |
-| Several | count, shared fields with mixed values, bulk verbs |
 
-**Parametric verbs are world gestures.** Inset and bevel open an operator:
-drag in the world to set the distance, scroll for segments, click to commit,
-Esc to cancel; the card shows the values for typed entry.
+**Values with a place in the world are handles on the object.** A selected
+light's range is a ring with a knob to drag; its intensity changes by
+scrolling over it. The value shows beside the handle while it changes.
 
-**Expanding** the card opens the drawer: every component and field,
-add and remove component, instance overrides with reset, advanced fields.
-Pinning keeps the drawer open across selections.
+**Parametric verbs** (inset, bevel) stage a preview that applies or cancels;
+while one is staged the selection's sheet shows to apply it.
 
-Every edit from a card or drawer runs begin / preview / commit / cancel inside
+The **full sheet** (More…, or "All Properties" in the palette) shows every
+component and field, adding and removing components, and instance overrides
+with reset.
+
+Every edit from the wheel, a handle or the sheet runs begin / preview / commit / cancel inside
 the document's transaction, so undo, Esc and interruptions behave like a
 viewport drag.
 
@@ -133,11 +140,14 @@ graph. Selecting a row selects the entity; F frames it.
 | Choose material | cartridge → tray | M, Shift+RMB sample |
 | Apply material | tray (Enter / double-click) | Shift+T |
 | Place prefab | cartridge → tray → click world | P |
-| Edit properties | select → card → expand | palette: "Expand selection" |
-| Deep property | drawer → Advanced | palette: "Show advanced" |
-| Frame selection | World explorer row | F |
+| A choice or action on it | — | Space (hold over it, release on a petal) |
+| A value in the world | drag its handle, scroll over it | — |
+| Every property | Space → More… | palette: "All Properties" |
+| Hierarchy | breadcrumb part | Tab |
+| World map, travel | MAP in the breadcrumb → click a zone | — |
+| Frame selection | hierarchy row | F |
 | Play | rail transport | palette: "Play" |
-| Switch workspace | workspace dial | Ctrl+1…6 |
+| Switch asset | its tab | — |
 | Anything | hatch | Ctrl+K palette |
 
 New chords are defaults in the action catalog and rebindable through
