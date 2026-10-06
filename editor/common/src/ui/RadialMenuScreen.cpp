@@ -186,7 +186,7 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
                 const float wordWidth = key.Radius * 3.4f;
                 const float wordHeight = key.Radius * 1.8f;
                 row.Parts = { Px(key.Centre.X - wordWidth * 0.5f), Px(key.Centre.Y - wordHeight * 0.5f), Px(wordWidth),
-                              Px(wordHeight) };
+                              Px(wordHeight), key.Image };
                 words.push_back(std::move(row));
                 continue;
             }
@@ -203,7 +203,7 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
     }
     PadRows(sectors, LongestSectors, HiddenRow({ "0px", "0px", "0px", "0", "0", "0" }));
     PadRows(keys, LongestKeys, HiddenRow({ "0px", "0px", "0px" }));
-    PadRows(words, LongestWords, HiddenRow({ "0px", "0px", "0px", "0px" }));
+    PadRows(words, LongestWords, HiddenRow({ "0px", "0px", "0px", "0px", "" }));
     PadRows(summary, LongestSummary, HiddenRow({}));
     (void)Ui.SetRows(Screen, kSectors, sectors);
     (void)Ui.SetRows(Screen, kKeys, keys);

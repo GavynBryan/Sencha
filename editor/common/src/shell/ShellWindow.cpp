@@ -74,6 +74,7 @@ const UiModelPropertyId kSelectionWidth = UiPropertyIdAt(51);
 const UiModelPropertyId kSelectionHeight = UiPropertyIdAt(52);
 const UiModelPropertyId kFront = UiPropertyIdAt(53);
 const UiModelPropertyId kHierarchyChord = UiPropertyIdAt(54);
+const UiModelPropertyId kSelectionShown = UiPropertyIdAt(55);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -193,6 +194,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "selection_height", UiValue(std::string("auto")) },
         UiModelProperty{ "front", UiValue(std::string{}) },
         UiModelProperty{ "hierarchy_chord", UiValue(std::string{}) },
+        UiModelProperty{ "selection_shown", UiValue(false) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs",
@@ -843,7 +845,7 @@ void ShellWindow::PlaceFloatingSurfaces()
     const Rect2d bounds = Rect2d::FromMinMax(window.Min() + Vec2d(gap, gap), window.Max() - Vec2d(gap, gap));
 
     const std::optional<Rect2d> station = MeasureBorder(ToolCardUp ? "station_bay" : "station");
-    const std::optional<Rect2d> holding = MeasureBorder("instruments_right");
+    const std::optional<Rect2d> holding = MeasureBorder("holding");
     const std::optional<Rect2d> view = MeasureBorder("cat_View");
     const std::optional<Rect2d> crumbs = MeasureBorder("crumbs");
     std::vector<Rect2d> instruments;
@@ -1216,9 +1218,12 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
     const bool drawer = SelectionShown == SelectionView::Drawer;
     // Properties that are the work itself are shown whole, as a sheet.
     const bool sheet = selection.Primary;
-    if (SelectionKey.empty() && !selection.Title.empty())
+    const bool shown =
+        !selection.Title.empty() && (!selection.OnRequest || drawer || sheet || selection.Staged);
+    (void)ui.SetValue(Screen, kSelectionShown, UiValue(shown));
+    if (SelectionKey.empty() && shown)
         FrontSurface = kSelectionSurface;
-    SelectionKey = selection.Title.empty() ? std::string{}
+    SelectionKey = !shown ? std::string{}
                  : std::format("{}.{}", kSelectionSurface, sheet ? "sheet" : drawer ? "drawer" : "card");
     (void)ui.SetValue(Screen, kDrawer, UiValue(drawer));
     (void)ui.SetValue(Screen, kSheet, UiValue(sheet));

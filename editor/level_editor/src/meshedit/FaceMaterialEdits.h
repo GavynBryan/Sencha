@@ -38,11 +38,12 @@ void ApplyMaterialToSelectedFaces(IMeshEditTarget& target,
                                   CommandStack& commands,
                                   const AssetRef& material);
 
-// The UV projection of the first selected face, by value — drives displayed
-// values. Returned by value (not a pointer into the brush store): applying a
-// material rebuilds that mesh mid-frame, so a held pointer would dangle.
-[[nodiscard]] std::optional<UvProjection> RepresentativeFaceUv(const IMeshEditTarget& target,
-                                                               const SelectionService& selection);
+// The material and projection of the first selected face, by value — drives
+// displayed values. Returned by value (not a pointer into the brush store):
+// applying a material rebuilds that mesh mid-frame, so a held pointer would
+// dangle.
+[[nodiscard]] std::optional<FaceMaterial> RepresentativeFaceMaterial(const IMeshEditTarget& target,
+                                                                     const SelectionService& selection);
 
 // A face's material + projection expressed in world space, so it can be pasted
 // onto faces of differently-transformed brushes and the texture lands

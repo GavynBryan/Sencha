@@ -25,10 +25,14 @@ public:
                               .Value = Values.at("shadows") };
         PropertyNode range{ .Key = "range", .Descriptor = { .Kind = PropertyKind::Number, .Label = "Range" },
                             .Value = "8" };
+        PropertyNode material{ .Key = "material",
+                               .Descriptor = { .Kind = PropertyKind::Asset, .Label = "Material",
+                                               .Asset = AssetType::Material },
+                               .Value = Values.at("material") };
         PropertyNode hidden{ .Key = "bake", .Descriptor = { .Kind = PropertyKind::Choice, .Label = "Bake",
                                                             .Choices = { "a", "b" }, .Advanced = true },
                              .Value = "a" };
-        return { type, shadows, range, hidden };
+        return { type, shadows, range, material, hidden };
     }
     bool BeginEdit(std::string_view key) override { return Values.contains(std::string(key)); }
     PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Applied; }
@@ -40,7 +44,8 @@ public:
     }
     void CancelEdit(std::string_view) override {}
 
-    std::map<std::string, std::string> Values{ { "type", "Spot" }, { "shadows", "true" } };
+    std::map<std::string, std::string> Values{ { "type", "Spot" }, { "shadows", "true" },
+                                               { "material", "asset://materials/old.smat" } };
     int Commits = 0;
 };
 
@@ -49,9 +54,9 @@ class ContextMenuModelTest : public ::testing::Test
 protected:
     ContextMenuModelTest()
     {
-        for (const char* id : { "a.one", "a.two", "a.three", "a.four", "a.five", "a.off", "details" })
+        for (const char* id : { "a.one", "a.two", "a.three", "a.four", "a.five", "a.off", "details", "browse" })
             (void)Catalog.Define({ .Id = id, .Label = id, .Category = "Test" });
-        for (const char* id : { "a.one", "a.two", "a.three", "a.four", "a.five", "details" })
+        for (const char* id : { "a.one", "a.two", "a.three", "a.four", "a.five", "details", "browse" })
             Context.Claim(id, { .Invoke = [this, id] { Invoked.push_back(id); } });
         Context.Claim("a.off", { .Invoke = [] {}, .Enabled = [] { return false; } });
         Layer = Stack.Push(Context, ActionRank::Workspace);
@@ -86,7 +91,14 @@ protected:
     ContextMenuModel Model{ { .Aim = [this](Vec2d pointer) { AimedAt = pointer; },
                               .Selection = [this] { return Selected(); },
                               .Actions = [this] { return &Stack; },
-                              .Details = "details" },
+                              .Details = "details",
+                              .Recent =
+                                  [](AssetType) {
+                                      return std::vector<ContextMenuModel::AssetChoice>{
+                                          { .Path = "asset://materials/brick.smat", .Label = "brick", .Image = "swatch:brick" },
+                                          { .Path = "asset://materials/tile.smat", .Label = "tile" } };
+                                  },
+                              .Browse = [](AssetType) { return std::string("browse"); } },
                             Catalog };
 };
 } // namespace
@@ -149,4 +161,29 @@ TEST_F(ContextMenuModelTest, NothingSelectedLeavesTheWheelShut)
     Model.Opening({});
     EXPECT_EQ(Model.Count(), 0);
     EXPECT_TRUE(Model.Summary().empty());
+}
+
+TEST_F(ContextMenuModelTest, AnAssetIsChosenFromWhatIsToHandOrBrowsedFor)
+{
+    Model.Opening({});
+    const int material = IndexOf(Model, "Material");
+    ASSERT_GE(material, 0);
+    const std::span<const IRadialMenuModel::MenuItem> fan = Model.Variants(material);
+    ASSERT_EQ(fan.size(), 4u) << "what is on it now, what is to hand, and browsing";
+    EXPECT_EQ(Model.ActiveVariant(material), 0) << "what is on it now, though not to hand, is marked";
+    EXPECT_EQ(fan[1].Label, "brick");
+    EXPECT_EQ(fan[1].Image, "swatch:brick");
+    EXPECT_EQ(fan[3].Label, "Browse\u2026");
+
+    Model.Select(material, 1);
+    EXPECT_EQ(Light.Values["material"], "asset://materials/brick.smat");
+
+    // Now on the face and to hand, it is offered once.
+    Model.Opening({});
+    const int again = IndexOf(Model, "Material");
+    ASSERT_EQ(Model.Variants(again).size(), 3u);
+    EXPECT_EQ(Model.ActiveVariant(again), 0);
+    Model.Select(again, 2);
+    EXPECT_EQ(Invoked, (std::vector<std::string>{ "browse" }));
+    EXPECT_EQ(Light.Values["material"], "asset://materials/brick.smat");
 }

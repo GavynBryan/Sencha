@@ -3,6 +3,8 @@
 #include "tools/RadialMenuModel.h"
 #include "workspaces/WorkspaceFacets.h"
 
+#include <core/assets/AssetRef.h>
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -28,6 +30,14 @@ class ActionContextStack;
 class ContextMenuModel final : public IRadialMenuModel
 {
 public:
+    // An asset a fan offers: the value it sets, what to call it, its picture.
+    struct AssetChoice
+    {
+        std::string Path;
+        std::string Label;
+        std::string Image = {};
+    };
+
     struct Hooks
     {
         // Points the selection at what is under `pointer`, or leaves it.
@@ -37,6 +47,11 @@ public:
         std::function<const ActionContextStack*()> Actions;
         // The action that shows everything about the selection.
         std::string Details;
+        // The assets of a kind a person has to hand -- the one in use and the
+        // ones put by -- and the action that browses every one; an asset
+        // property is offered only with both.
+        std::function<std::vector<AssetChoice>(AssetType)> Recent = {};
+        std::function<std::string(AssetType)> Browse = {};
     };
 
     ContextMenuModel(Hooks hooks, const ActionCatalog& catalog);
@@ -54,6 +69,7 @@ private:
     enum class EntryKind : std::uint8_t
     {
         Choice,
+        Asset,
         Action,
         Actions,
     };
@@ -64,6 +80,9 @@ private:
         // A choice's values, or the actions in a fan.
         std::vector<std::string> Options = {};
         std::vector<std::string> OptionLabels = {};
+        std::vector<std::string> OptionImages = {};
+        // An asset fan's last option, which browses every asset of its kind.
+        std::string BrowseAction = {};
         int Current = -1;
         // Where a choice is: the section list it is in, the section, its key.
         bool InDetails = false;

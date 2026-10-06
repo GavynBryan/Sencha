@@ -3,10 +3,12 @@
 #include "actions/ActionOffer.h"
 #include "brush/BrushMesh.h"
 #include "meshedit/FaceMaterialEdits.h"
+#include "project/MaterialLibrary.h"
 #include "properties/SettingProperties.h"
 #include "workspace/BrushManipulationSink.h"
 #include "workspace/EditorWorkspace.h"
 
+#include <algorithm>
 #include <array>
 
 namespace
@@ -25,7 +27,7 @@ void Realign(IMeshEditTarget& target, const SelectionService& selection, Command
 bool FaceUvSource::HasFaces() const
 {
     return Workspace.Interaction.Sink != nullptr
-        && RepresentativeFaceUv(*Workspace.Interaction.Sink, Workspace.Selection).has_value();
+        && RepresentativeFaceMaterial(*Workspace.Interaction.Sink, Workspace.Selection).has_value();
 }
 
 void FaceUvSource::Justify(bool fit)
@@ -64,12 +66,20 @@ std::vector<PropertyNode> FaceUvSource::Nodes() const
 {
     if (Workspace.Interaction.Sink == nullptr)
         return {};
-    const std::optional<UvProjection> uv = RepresentativeFaceUv(*Workspace.Interaction.Sink, Workspace.Selection);
-    if (!uv.has_value())
+    const std::optional<FaceMaterial> face = RepresentativeFaceMaterial(*Workspace.Interaction.Sink, Workspace.Selection);
+    if (!face.has_value())
         return {};
+    const UvProjection* uv = &face->Uv;
     const std::array<double, 2> scale{ uv->Scale.X, uv->Scale.Y };
     const std::array<double, 2> shift{ uv->Offset.X, uv->Offset.Y };
+    PropertyNode material{ .Key = "material",
+                           .Descriptor = { .Kind = PropertyKind::Asset,
+                                           .Label = "Material",
+                                           .Tooltip = "Empty paints with the level's default material",
+                                           .Asset = AssetType::Material },
+                           .Value = face->Material.Path };
     return {
+        std::move(material),
         ChoiceProperty("align", "Align", kAlignments, uv->WorldAligned ? 0 : 1,
                        "World pins the texture as the brush is resized; Face locks it to the face as it deforms"),
         VectorProperty("scale", "Scale", scale, "World units per texture tile"),
@@ -90,7 +100,17 @@ std::string FaceUvSource::ValueOf(std::string_view key) const
 
 bool FaceUvSource::BeginEdit(std::string_view key)
 {
-    return !ValueOf(key).empty();
+    const std::vector<PropertyNode> nodes = Nodes();
+    return std::ranges::any_of(nodes, [&](const PropertyNode& node) { return node.Key == key; });
+}
+
+std::vector<std::string> FaceUvSource::Candidates(std::string_view key) const
+{
+    std::vector<std::string> paths;
+    if (key == "material" && Library != nullptr)
+        for (const MaterialAsset& material : Library->Materials())
+            paths.push_back(material.Path);
+    return paths;
 }
 
 PropertyEditResult FaceUvSource::PreviewEdit(std::string_view, std::string_view)
@@ -119,7 +139,12 @@ PropertyEditResult FaceUvSource::Set(std::string_view key, std::string_view valu
         EditSelectedFaces(*target, Workspace.Selection, Workspace.Commands,
                           [&](const BrushMesh&, const Transform3f&, BrushFace& face) { mutate(face.Material.Uv); });
     };
-    if (key == "align")
+    if (key == "material")
+    {
+        ApplyMaterialToSelectedFaces(*target, Workspace.Selection, Workspace.Commands,
+                                     AssetRef{ AssetType::Material, std::string(value) });
+    }
+    else if (key == "align")
     {
         const std::optional<std::size_t> choice = ParseChoice(value, kAlignments);
         if (!choice.has_value())

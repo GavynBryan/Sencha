@@ -97,8 +97,8 @@ void ApplyMaterialToSelectedFaces(IMeshEditTarget& target,
                       });
 }
 
-std::optional<UvProjection> RepresentativeFaceUv(const IMeshEditTarget& target,
-                                                 const SelectionService& selection)
+std::optional<FaceMaterial> RepresentativeFaceMaterial(const IMeshEditTarget& target,
+                                                       const SelectionService& selection)
 {
     for (const SelectableRef& ref : selection.GetSelection())
     {
@@ -106,7 +106,7 @@ std::optional<UvProjection> RepresentativeFaceUv(const IMeshEditTarget& target,
             continue;
         const std::optional<MeshEditTargetMesh> resolved = target.Resolve(ref.Entity);
         if (resolved && resolved->Mesh && ref.ElementId < resolved->Mesh->Faces.size())
-            return resolved->Mesh->Faces[ref.ElementId].Material.Uv;
+            return resolved->Mesh->Faces[ref.ElementId].Material;
     }
     return std::nullopt;
 }
@@ -188,8 +188,8 @@ void JustifySelectedFacesAsOne(IMeshEditTarget& target,
     WorldUvProjection world;
     world.AxisU = axes.AxisU;
     world.AxisV = axes.AxisV;
-    if (const std::optional<UvProjection> representative = RepresentativeFaceUv(target, selection))
-        world.Scale = representative->Scale;
+    if (const std::optional<FaceMaterial> representative = RepresentativeFaceMaterial(target, selection))
+        world.Scale = representative->Uv.Scale;
     world = fit ? WorldUvProjectionFit(world, worldPositions)
                 : WorldUvProjectionCenter(world, worldPositions);
 

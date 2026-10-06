@@ -11,4 +11,6 @@ struct CommandChoice
 {
     std::string_view Label;
     IconId Icon = IconId::None;
+    // A host image picturing it, such as a material's swatch; empty for none.
+    std::string_view Image = {};
 };

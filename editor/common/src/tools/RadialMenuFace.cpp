@@ -104,7 +104,8 @@ RadialMenuFace FaceOf(const RadialMenuSession& wheel, const IRadialMenuModel& me
                                   .Hot = v == hotVariant,
                                   .Active = v == current,
                                   .Variant = true,
-                                  .Word = choice.Icon == IconId::None });
+                                  .Word = choice.Icon == IconId::None,
+                                  .Image = std::string(choice.Image) });
         }
         if (hotVariant >= 0 && hotVariant < choiceCount)
             face.Caption += std::string(" \xC2\xB7 ") + std::string(choices[static_cast<std::size_t>(hotVariant)].Label);

@@ -42,7 +42,7 @@ protected:
     }
 
     ElementVerbs Verbs{ Workspace, {} };
-    FaceUvSource Uv{ Workspace };
+    FaceUvSource Uv{ Workspace, nullptr };
     EntityVerbs Entities{ Workspace, {} };
     PartitionOutline Partition{ Workspace };
     LightingDiagnostics Lighting{ Workspace, Commands, {} };

@@ -156,14 +156,35 @@
             <div class="lamp theme-lamp" data-class-on="snap"></div><span>{{grid}}u</span>
         </div>
     </div>
+    <!-- What the hands hold, beside what they do: the cartridge the next
+         operation consumes, which opens what can be done with it, and the
+         stash beside it, where a click trades a slot with the cartridge. -->
+    <div id="holding" class="theme-plate" data-if="holding_role != ''">
+        <div id="cat_Resource" class="cartridge theme-segment" data-class-lit="explorer_id == holding_explorer"
+             data-event-click="shell_explore(holding_explorer)">
+            <div class="picture_well theme-field">
+                <img class="picture" data-if="holding_image != ''" data-attr-src="'host:' + holding_image"/>
+            </div>
+            <span class="cartridge_label" data-if="holding_label != ''">{{holding_label}}</span>
+            <span class="cartridge_label empty theme-dim" data-if="holding_label == ''">No {{holding_role}}</span>
+        </div>
+        <div class="key theme-key" data-class-lit="popover == 'category:Resource'"
+             data-event-click="shell_popover('category:Resource')"><span class="glyph">&#xf078;</span></div>
+        <div id="stash">
+            <div class="picture_well stash_slot theme-field" data-for="slot : stash"
+                 data-class-filled="slot.label != ''" data-event-click="shell_invoke(slot.key)">
+                <img class="picture" data-if="slot.value != ''" data-attr-src="'host:' + slot.value"/>
+            </div>
+        </div>
+    </div>
     </div>
 
     <!-- What is selected: its name, its settings, and what can be done to
          it now -- or, while an edit is previewed, applying or cancelling it.
          Looked at closely it becomes the drawer along the right edge, with
          every property it has. -->
-    <div id="selection_card" class="theme-plate" data-class-open="selection_title != ''"
-         data-class-shut="selection_title == ''" data-class-drawer="drawer" data-class-sheet="sheet"
+    <div id="selection_card" class="theme-plate" data-class-open="selection_shown"
+         data-class-shut="!selection_shown" data-class-drawer="drawer" data-class-sheet="sheet"
          data-class-front="front == 'selection'"
          data-style-left="selection_left" data-style-top="selection_top"
          data-style-width="selection_width" data-style-height="selection_height"
@@ -284,31 +305,6 @@
              data-event-dragend="shell_drop('explorer')"></div>
     </div>
 
-    <!-- Bottom right, what the hands hold: the cartridge the next operation
-         consumes, which opens what can be done with it, and the stash beside
-         it, where a click trades a slot with the cartridge. -->
-    <div id="instruments_right">
-        <div id="instrument_row">
-        <div id="holding" class="theme-plate" data-if="holding_role != ''">
-            <div id="cat_Resource" class="cartridge theme-segment" data-class-lit="explorer_id == holding_explorer"
-                 data-event-click="shell_explore(holding_explorer)">
-                <div class="picture_well theme-field">
-                    <img class="picture" data-if="holding_image != ''" data-attr-src="'host:' + holding_image"/>
-                </div>
-                <span class="cartridge_label" data-if="holding_label != ''">{{holding_label}}</span>
-                <span class="cartridge_label empty theme-dim" data-if="holding_label == ''">No {{holding_role}}</span>
-            </div>
-            <div class="key theme-key" data-class-lit="popover == 'category:Resource'"
-                 data-event-click="shell_popover('category:Resource')"><span class="glyph">&#xf078;</span></div>
-            <div id="stash">
-                <div class="picture_well stash_slot theme-field" data-for="slot : stash"
-                     data-class-filled="slot.label != ''" data-event-click="shell_invoke(slot.key)">
-                    <img class="picture" data-if="slot.value != ''" data-attr-src="'host:' + slot.value"/>
-                </div>
-            </div>
-        </div>
-        </div>
-    </div>
 
     <!-- Top right of the content, how the work is seen: which view, and how
          many share the content. -->

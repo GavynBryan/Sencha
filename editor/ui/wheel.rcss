@@ -65,6 +65,8 @@ sector.well { stroke-width: 1dp; text-align: center; }
     text-transform: uppercase;
 }
 .word.variant { font-size: 10dp; }
+.word { flex-direction: column; gap: 2dp; }
+.word .swatch { display: block; width: 26dp; height: 26dp; border-radius: 3dp; }
 
 /* What the wheel is about, read out in the hub. */
 .readout

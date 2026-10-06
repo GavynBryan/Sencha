@@ -22,6 +22,7 @@ struct RadialMenuKey
     bool Active = false;  // the entry, or the variant, in effect now
     bool Variant = false; // on the outer ring, one of the hot entry's variants
     bool Word = false;    // no glyph: the entry is its label, set across the petal
+    std::string Image = {}; // a host image over the word, such as a swatch
 };
 
 // What a sector of the wheel is cut from.

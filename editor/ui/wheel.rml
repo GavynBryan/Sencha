@@ -25,7 +25,10 @@
              data-class-lit="word.selected" data-class-active="word.value == 'active'"
              data-class-variant="word.detail == 'variant'"
              data-style-left="word.parts[0]" data-style-top="word.parts[1]"
-             data-style-width="word.parts[2]" data-style-height="word.parts[3]"><span>{{word.label}}</span></div>
+             data-style-width="word.parts[2]" data-style-height="word.parts[3]">
+            <img class="swatch" data-if="word.parts[4] != ''" data-attr-src="'host:' + word.parts[4]"/>
+            <span>{{word.label}}</span>
+        </div>
         <div class="readout" data-if="summary.size > 0" data-style-left="hub_left" data-style-top="hub_top"
              data-style-width="hub_size" data-style-height="hub_size">
             <div class="readout_line theme-wheel-readout" data-for="line : summary" data-if="line.value != 'none'"

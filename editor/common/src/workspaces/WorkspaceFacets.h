@@ -153,6 +153,10 @@ struct WorkspaceSelectionFacet
     // The properties are the work itself rather than a note about something in
     // the content: a data asset is its fields.
     bool Primary = false;
+    // Looked at only when asked for -- the context wheel's More..., or the
+    // palette -- rather than shown whenever something is selected; an edit
+    // being staged still shows it, since that is how it applies.
+    bool OnRequest = false;
 };
 
 // Something the workspace lets a person browse and pick from: its materials,

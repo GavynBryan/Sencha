@@ -1,5 +1,7 @@
 #pragma once
 
+#include "actions/ContextMenuModel.h"
+
 #include <app/GameContexts.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <ecs/ComponentTypeId.h>
@@ -31,7 +33,6 @@
 class MaterialThumbnailCache;
 class LevelViewSurface;
 class ActionContextStack;
-class ContextMenuModel;
 class RadialMenuScreen;
 class ToolParameterSource;
 class EditorRenderFeature;
@@ -99,6 +100,8 @@ public:
     [[nodiscard]] WorkspaceLocationFacet Location() const override;
     // Selects what is under `pointer` for the context wheel, unless it already is.
     void AimAt(Vec2d pointer);
+    // The assets of a kind to hand: the one in use, then the ones put by.
+    [[nodiscard]] std::vector<ContextMenuModel::AssetChoice> AssetsToHand(AssetType type);
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;

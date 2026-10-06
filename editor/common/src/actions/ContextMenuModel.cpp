@@ -12,12 +12,13 @@ constexpr std::size_t kChoiceLimit = 4;
 constexpr std::size_t kActionLimit = 3;
 constexpr std::size_t kSummaryLimit = 4;
 
-bool Offered(const PropertyNode& node)
+bool Offered(const PropertyNode& node, bool assets)
 {
     const PropertyDescriptor& d = node.Descriptor;
     if (d.ReadOnly || d.Advanced)
         return false;
-    return (d.Kind == PropertyKind::Choice && d.Choices.size() > 1) || d.Kind == PropertyKind::Toggle;
+    return (d.Kind == PropertyKind::Choice && d.Choices.size() > 1) || d.Kind == PropertyKind::Toggle
+        || (d.Kind == PropertyKind::Asset && assets);
 }
 
 bool ReadsOut(const PropertyNode& node)
@@ -67,6 +68,7 @@ void ContextMenuModel::Build(const WorkspaceSelectionFacet& selection)
     Lines.push_back(selection.Title);
 
     std::size_t choices = 0;
+    const bool assets = Callbacks.Recent && Callbacks.Browse;
     const auto gather = [&](const std::vector<PropertySection>& sections, bool details) {
         for (std::size_t section = 0; section < sections.size(); ++section)
         {
@@ -75,11 +77,31 @@ void ContextMenuModel::Build(const WorkspaceSelectionFacet& selection)
             Walk(sections[section].Source->Nodes(), [&](const PropertyNode& node) {
                 if (Lines.size() <= kSummaryLimit && ReadsOut(node) && !details)
                     Lines.push_back(node.Descriptor.Label + "  " + node.Value);
-                if (choices >= kChoiceLimit || !Offered(node))
+                if (choices >= kChoiceLimit || !Offered(node, assets))
                     return;
                 Entry entry{ .Kind = EntryKind::Choice, .Label = node.Descriptor.Label, .InDetails = details,
                              .Section = section, .Key = node.Key };
-                if (node.Descriptor.Kind == PropertyKind::Toggle)
+                if (node.Descriptor.Kind == PropertyKind::Asset)
+                {
+                    entry.Kind = EntryKind::Asset;
+                    std::vector<AssetChoice> offered = Callbacks.Recent(node.Descriptor.Asset);
+                    if (std::ranges::none_of(offered, [&](const AssetChoice& c) { return c.Path == node.Value; }))
+                        offered.insert(offered.begin(),
+                                       { .Path = node.Value, .Label = node.Value.empty() ? "Default" : node.Value });
+                    for (AssetChoice& choice : offered)
+                    {
+                        entry.Options.push_back(std::move(choice.Path));
+                        entry.OptionLabels.push_back(std::move(choice.Label));
+                        entry.OptionImages.push_back(std::move(choice.Image));
+                    }
+                    entry.BrowseAction = Callbacks.Browse(node.Descriptor.Asset);
+                    if (!entry.BrowseAction.empty())
+                    {
+                        entry.OptionLabels.push_back("Browse\u2026");
+                        entry.OptionImages.emplace_back();
+                    }
+                }
+                else if (node.Descriptor.Kind == PropertyKind::Toggle)
                 {
                     entry.Options = { "true", "false" };
                     entry.OptionLabels = { "On", "Off" };
@@ -134,8 +156,10 @@ void ContextMenuModel::Build(const WorkspaceSelectionFacet& selection)
     for (const Entry& entry : Entries)
     {
         std::vector<MenuItem>& fan = Fans.emplace_back();
-        for (const std::string& label : entry.OptionLabels)
-            fan.push_back({ .Label = label });
+        for (std::size_t i = 0; i < entry.OptionLabels.size(); ++i)
+            fan.push_back({ .Label = entry.OptionLabels[i],
+                            .Image = i < entry.OptionImages.size() ? std::string_view(entry.OptionImages[i])
+                                                                   : std::string_view{} });
     }
 }
 
@@ -174,6 +198,12 @@ void ContextMenuModel::Select(int index, int variant)
     case EntryKind::Choice:
         if (chosen && variant != entry.Current)
             Choose(entry, entry.Options[static_cast<std::size_t>(variant)]);
+        return;
+    case EntryKind::Asset:
+        if (chosen && variant != entry.Current)
+            Choose(entry, entry.Options[static_cast<std::size_t>(variant)]);
+        else if (!entry.BrowseAction.empty() && static_cast<std::size_t>(variant) == entry.Options.size())
+            Invoke(entry.BrowseAction);
         return;
     }
 }

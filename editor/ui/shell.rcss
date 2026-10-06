@@ -318,16 +318,6 @@ body
 }
 .segment .lamp { width: 8dp; height: 8dp; border-width: 1dp; border-radius: 4dp; }
 
-#instruments_right
-{
-    display: flex;
-    position: absolute;
-    right: 8dp;
-    bottom: 8dp;
-    pointer-events: none;
-}
-
-#instrument_row { display: flex; gap: 8dp; }
 
 /* Above the bottom instruments as a card; along the right edge, from under the
    view instrument down, as the drawer. */

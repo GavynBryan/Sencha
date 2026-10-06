@@ -276,7 +276,7 @@ void LevelWorkspace::BuildInput()
     OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
     Verbs = std::make_unique<ElementVerbs>(*Workspace, [this] { ExportSelectionGlb(); });
     Verbs->Offer(Catalog, ActionHandlers);
-    Uv = std::make_unique<FaceUvSource>(*Workspace);
+    Uv = std::make_unique<FaceUvSource>(*Workspace, Materials);
     Uv->Offer(Catalog, ActionHandlers);
     Components = std::make_unique<ComponentPropertySource>(Workspace->World, Workspace->Selection, *Commands,
                                                            Workspace->Affordances->Registry());
@@ -437,7 +437,12 @@ void LevelWorkspace::BuildInput()
             ContextMenuModel::Hooks{ .Aim = [this](Vec2d pointer) { AimAt(pointer); },
                                      .Selection = [this] { return Selection(); },
                                      .Actions = [this] { return WindowActions; },
-                                     .Details = "selection.details" },
+                                     .Details = "selection.details",
+                                     .Recent = [this](AssetType type) { return AssetsToHand(type); },
+                                     .Browse = [](AssetType type) {
+                                         return type == AssetType::Material ? MaterialExplorerAction().Id
+                                                                            : std::string{};
+                                     } },
             Catalog);
         // Its entries are words and its hub reads out values: a roomier wheel.
         ContextWheel = std::make_unique<RadialMenuSession>(*ContextMenu, chordFor("context.wheel", SDLK_SPACE), frame,
@@ -825,6 +830,23 @@ void LevelWorkspace::ShowView(ViewportOrientation orientation)
     }
 }
 
+std::vector<ContextMenuModel::AssetChoice> LevelWorkspace::AssetsToHand(AssetType type)
+{
+    std::vector<ContextMenuModel::AssetChoice> choices;
+    const auto add = [&](const AssetRef& ref) {
+        if (ref.Path.empty() || std::ranges::any_of(choices, [&](const auto& c) { return c.Path == ref.Path; }))
+            return;
+        choices.push_back({ .Path = ref.Path,
+                            .Label = MaterialLeafName(ref.Path),
+                            .Image = type == AssetType::Material && Thumbnails != nullptr ? Thumbnails->ImageName(ref.Path)
+                                                                                          : std::string{} });
+    };
+    add(Workspace->Resources.Active(type));
+    for (const AssetRef& stashed : Workspace->Resources.Stash(type))
+        add(stashed);
+    return choices;
+}
+
 void LevelWorkspace::AimAt(Vec2d pointer)
 {
     const EditorViewport* viewport = Workspace->Layout.Find(Workspace->Layout.ResolveAt(pointer));
@@ -1198,7 +1220,11 @@ WorkspaceSelectionFacet LevelWorkspace::Selection()
     if (Verbs == nullptr || Entities == nullptr || Uv == nullptr || Components == nullptr || Partition == nullptr
         || Lighting == nullptr)
         return {};
-    return SelectionOf(*Workspace, *Verbs, *Entities, *Uv, *Components, *Partition, *Lighting);
+    WorkspaceSelectionFacet selection = SelectionOf(*Workspace, *Verbs, *Entities, *Uv, *Components, *Partition, *Lighting);
+    // The view stays clear: what is selected is looked at through the context
+    // wheel, and in full when asked for.
+    selection.OnRequest = true;
+    return selection;
 }
 
 std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const

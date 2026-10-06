@@ -329,8 +329,12 @@ firewall above.
   `SelectionSummary`, with one object's components as its details
   (`authoring/ComponentPropertySource`; a component adapter contributes its own
   properties and verbs through `InspectorNodes`/`SetInspectorValue`/
-  `ActInspector`). The shell's selection card presents it, and turns into the
-  drawer that shows every property. What a workspace lets a person browse is
+  `ActInspector`). The Level's selection is `OnRequest`: it is worked through
+  the context wheel (Space) -- a face's material is an asset property there,
+  offered from what is to hand -- and the shell shows it in full only when
+  asked for (`selection.details`) or while an edit is staged. A workspace
+  whose properties are its content keeps the card shown while something is
+  selected. What a workspace lets a person browse is
   an explorer (`WorkspaceExplorerInfo`, paged through `Explore` and chosen
   from with `ChooseInExplorer`); the Level's materials are
   `workspace/MaterialExplorer`, which the shell shows as a tray and opens from
