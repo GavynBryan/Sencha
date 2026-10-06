@@ -244,6 +244,14 @@ TEST(RuntimeFieldText, ALabelComesFromTheFieldOrItsName)
     EXPECT_EQ(RuntimeFieldLabel(field), "Start Playing");
 }
 
+TEST(RuntimeFieldText, ANameRunTogetherReadsAsItsWords)
+{
+    EXPECT_EQ(HumanizeSchemaName("CharacterMovement"), "Character Movement");
+    EXPECT_EQ(HumanizeSchemaName("sencha.world_transform"), "World Transform");
+    EXPECT_EQ(HumanizeSchemaName("Lod2Mesh"), "Lod2 Mesh");
+    EXPECT_EQ(HumanizeSchemaName("AABB"), "AABB") << "an acronym stays one word";
+}
+
 // InlineString members: the one string form a component may hold, because
 // archetype storage relocates with memcpy. They are bytes at an offset like
 // everything else, so they read and write here rather than needing a component

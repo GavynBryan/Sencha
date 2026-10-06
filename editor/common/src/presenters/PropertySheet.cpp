@@ -77,8 +77,7 @@ void PropertySheet::Settle()
     LaidOut = std::move(layout);
 }
 
-std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> sections, bool everything,
-                                          std::string_view only)
+std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> sections, bool everything)
 {
     Rows.clear();
     std::vector<UiRow> rows;
@@ -86,9 +85,7 @@ std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> secti
     {
         if (sections[section].Source == nullptr)
             continue;
-        std::vector<PropertyNode> nodes = sections[section].Source->Nodes();
-        if (!only.empty())
-            std::erase_if(nodes, [only](const PropertyNode& node) { return node.Key != only; });
+        const std::vector<PropertyNode> nodes = sections[section].Source->Nodes();
         if (nodes.empty())
             continue;
         if (!sections[section].Heading.empty())
@@ -314,6 +311,14 @@ std::vector<std::string> PropertySheet::ChoicesOf(std::size_t index, std::string
         return {};
     const auto found = std::ranges::find(Rows[index].Verbs, verb, &PropertyVerb::Id);
     return found != Rows[index].Verbs.end() ? found->Choices : std::vector<std::string>{};
+}
+
+std::vector<std::string> PropertySheet::NotesOf(std::size_t index, std::string_view verb) const
+{
+    if (index >= Rows.size())
+        return {};
+    const auto found = std::ranges::find(Rows[index].Verbs, verb, &PropertyVerb::Id);
+    return found != Rows[index].Verbs.end() ? found->ChoiceNotes : std::vector<std::string>{};
 }
 
 bool PropertySheet::Removes(std::size_t index, std::string_view verb) const

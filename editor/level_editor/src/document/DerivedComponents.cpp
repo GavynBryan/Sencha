@@ -51,3 +51,24 @@ std::vector<DerivedComponentRow> DerivedComponentsOn(
     }
     return rows;
 }
+
+std::vector<ComponentId> DerivedClosureOf(const World& world, ComponentId id)
+{
+    std::vector<ComponentId> closure;
+    std::vector<ComponentId> pending{ id };
+    while (!pending.empty())
+    {
+        const ComponentId next = pending.back();
+        pending.pop_back();
+        for (const ComponentTypeId type : world.DeclaredOwedComponents(next))
+        {
+            const ComponentId owed = world.GetComponentIdByType(type);
+            if (owed == InvalidComponentId || owed == id
+                || std::find(closure.begin(), closure.end(), owed) != closure.end())
+                continue;
+            closure.push_back(owed);
+            pending.push_back(owed);
+        }
+    }
+    return closure;
+}

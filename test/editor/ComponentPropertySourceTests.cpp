@@ -266,7 +266,7 @@ public:
 TEST(ComponentPropertySource, AddingComesFirstAndDerivedComponentsLastClosedUnderTheirSource)
 {
     Fixture f;
-    ASSERT_EQ(f.Source.Act("components", "add", "CharacterMovement"), PropertyEditResult::Applied);
+    ASSERT_EQ(f.Source.Act("components", "add", "Character Movement"), PropertyEditResult::Applied);
     const std::vector<PropertyNode> nodes = f.Source.Nodes();
     ASSERT_FALSE(nodes.empty());
     EXPECT_EQ(nodes.front().Key, "components");
@@ -293,4 +293,17 @@ TEST(ComponentPropertySource, RemovalIsMarkedAndAComponentsActionsTravelWithIt)
     ASSERT_NE(remove, name->Descriptor.Verbs.end());
     EXPECT_TRUE(remove->Removes);
     EXPECT_EQ(name->Descriptor.Actions, (std::vector<std::string>{ "name.shout" }));
+}
+
+TEST(ComponentPropertySource, AComponentOnOfferSaysWhatAddingItBringsWithIt)
+{
+    Fixture f;
+    const std::vector<PropertyNode> nodes = f.Source.Nodes();
+    const PropertyVerb& add = nodes.front().Descriptor.Verbs.front();
+    ASSERT_EQ(add.ChoiceNotes.size(), add.Choices.size());
+    const auto movement = std::ranges::find(add.Choices, "Character Movement");
+    ASSERT_NE(movement, add.Choices.end());
+    const std::string& note = add.ChoiceNotes[static_cast<std::size_t>(movement - add.Choices.begin())];
+    EXPECT_TRUE(note.starts_with("Also adds ")) << note;
+    EXPECT_NE(note.find("Jump State"), std::string::npos) << note;
 }

@@ -12,7 +12,7 @@ std::string EntityLabel(const EditorDocument& document, EntityId entity)
     if (const auto* named = world.TryGet<EntityNameComponent>(entity); named != nullptr && !named->Value.Empty())
         return std::string(named->Value.View());
     if (document.IsSceneInstanceRoot(entity))
-        if (const std::string_view stem = SceneSourceStem(document.SceneInstanceSourceOf(entity)); !stem.empty())
-            return std::string(stem);
+        if (const std::string source = document.SceneInstanceSourceOf(entity); !SceneSourceStem(source).empty())
+            return std::string(SceneSourceStem(source));
     return "Entity " + std::to_string(entity.Index);
 }

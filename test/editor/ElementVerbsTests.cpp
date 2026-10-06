@@ -4,6 +4,8 @@
 #include "actions/ActionContext.h"
 #include "authoring/ComponentPropertySource.h"
 #include "brush/BrushMesh.h"
+#include "document/EntityNameComponent.h"
+#include "properties/PropertyEditSession.h"
 #include "workspace/ElementVerbs.h"
 #include "workspace/EntityVerbs.h"
 #include "workspace/FaceUvSource.h"
@@ -12,6 +14,8 @@
 #include "workspace/SelectionSummary.h"
 
 #include <gtest/gtest.h>
+
+#include <world/identity/PersistentIdComponent.h>
 
 #include <algorithm>
 
@@ -133,4 +137,30 @@ TEST_F(ElementVerbsTest, TheFacesTextureIsEditedAsOneStep)
     ASSERT_TRUE(Commands.CanUndo());
     Commands.Undo();
     EXPECT_FLOAT_EQ(Scene().TryGetBrushMesh(brush)->Faces[0].Material.Uv.Scale.X, 2.0f);
+}
+
+// One object's title is its name, renamed by typing over it, and the line
+// under it says how else it is known; the name and the id are not repeated in
+// the list below.
+TEST_F(ElementVerbsTest, OneObjectIsTitledByItsNameAndKnownByItsId)
+{
+    Components.ShowElsewhere({ ResolveComponentTypeId<EntityNameComponent>(),
+                               ResolveComponentTypeId<PersistentIdComponent>() });
+    const EntityId entity = Scene().CreateEntity({ 0, 2, 0 });
+    SelectEntity(entity);
+    const WorkspaceSelectionFacet facet = SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting);
+    EXPECT_NE(facet.Subtitle.find("id "), std::string::npos) << facet.Subtitle;
+    ASSERT_EQ(facet.TitleProperty.Source, &Components);
+    ASSERT_FALSE(facet.TitleProperty.Key.empty());
+
+    for (const PropertyNode& node : Components.Nodes())
+    {
+        EXPECT_NE(node.Key, "name") << "the name is the title";
+        EXPECT_NE(node.Key, "persistent_id") << "the id is the subtitle";
+    }
+
+    EXPECT_EQ(PropertyEditSession{}.Set(Components, facet.TitleProperty.Key, "Gate"), PropertyEditResult::Applied);
+    EXPECT_EQ(SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting).Title, "Gate");
+    Commands.Undo();
+    EXPECT_NE(SelectionOf(Workspace, Verbs, Entities, Uv, Components, Partition, Lighting).Title, "Gate");
 }

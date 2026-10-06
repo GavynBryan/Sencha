@@ -233,19 +233,27 @@ struct ScalarRun
 std::string HumanizeSchemaName(std::string_view dotted)
 {
     const std::size_t dot = dotted.find_last_of('.');
-    std::string out(dot == std::string_view::npos ? dotted : dotted.substr(dot + 1));
+    const std::string_view name = dot == std::string_view::npos ? dotted : dotted.substr(dot + 1);
+    std::string out;
+    out.reserve(name.size() + 4);
     bool boundary = true;
-    for (char& ch : out)
+    char previous = '\0';
+    for (const char ch : name)
     {
         if (ch == '_')
         {
-            ch = ' ';
+            out += ' ';
             boundary = true;
+            previous = ch;
             continue;
         }
-        if (boundary && ch >= 'a' && ch <= 'z')
-            ch = static_cast<char>(ch - 'a' + 'A');
+        // "CharacterMovement" reads as two words, the way "character_movement" does.
+        const bool upper = ch >= 'A' && ch <= 'Z';
+        if (upper && ((previous >= 'a' && previous <= 'z') || (previous >= '0' && previous <= '9')))
+            out += ' ';
+        out += boundary && ch >= 'a' && ch <= 'z' ? static_cast<char>(ch - 'a' + 'A') : ch;
         boundary = false;
+        previous = ch;
     }
     return out;
 }

@@ -6,6 +6,8 @@
 #include "notices/NoticeQueue.h"
 #include "icons/IconNames.h"
 #include "problems/ProblemList.h"
+#include "properties/PropertyEditSession.h"
+#include "text/TextFilterMatch.h"
 #include "ui/UiScaleChoice.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/WorkspaceHost.h"
@@ -52,7 +54,7 @@ const UiModelPropertyId kMotion = UiPropertyIdAt(27);
 const UiModelPropertyId kSelectionTitle = UiPropertyIdAt(28);
 const UiModelPropertyId kSelectionStaged = UiPropertyIdAt(29);
 const UiModelPropertyId kDrawer = UiPropertyIdAt(30);
-const UiModelPropertyId kDrawerFocus = UiPropertyIdAt(31);
+const UiModelPropertyId kSelectionSubtitle = UiPropertyIdAt(31);
 const UiModelPropertyId kHoldingExplorer = UiPropertyIdAt(32);
 const UiModelPropertyId kExplorerId = UiPropertyIdAt(33);
 const UiModelPropertyId kExplorerTitle = UiPropertyIdAt(34);
@@ -75,6 +77,8 @@ const UiModelPropertyId kFront = UiPropertyIdAt(50);
 const UiModelPropertyId kHierarchyChord = UiPropertyIdAt(51);
 const UiModelPropertyId kSelectionShown = UiPropertyIdAt(52);
 const UiModelPropertyId kMapAction = UiPropertyIdAt(53);
+const UiModelPropertyId kPopoverFilters = UiPropertyIdAt(54);
+const UiModelPropertyId kSelectionNamed = UiPropertyIdAt(55);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -82,11 +86,10 @@ const UiModelRowsId kToolRows = UiRowsIdAt(2);
 const UiModelRowsId kStash = UiRowsIdAt(3);
 const UiModelRowsId kSelectionRows = UiRowsIdAt(4);
 const UiModelRowsId kSelectionVerbs = UiRowsIdAt(5);
-const UiModelRowsId kSelectionChips = UiRowsIdAt(6);
-const UiModelRowsId kExplorerItems = UiRowsIdAt(7);
-const UiModelRowsId kExplorerVerbs = UiRowsIdAt(8);
-const UiModelRowsId kCrumbs = UiRowsIdAt(9);
-const UiModelRowsId kTabs = UiRowsIdAt(10);
+const UiModelRowsId kExplorerItems = UiRowsIdAt(6);
+const UiModelRowsId kExplorerVerbs = UiRowsIdAt(7);
+const UiModelRowsId kCrumbs = UiRowsIdAt(8);
+const UiModelRowsId kTabs = UiRowsIdAt(9);
 
 const UiActionId kPopoverAction = UiActionIdAt(0);
 const UiActionId kChooseAction = UiActionIdAt(1);
@@ -116,6 +119,9 @@ const UiActionId kCrumbAction = UiActionIdAt(24);
 const UiActionId kTabAction = UiActionIdAt(25);
 const UiActionId kTabDropAction = UiActionIdAt(26);
 const UiActionId kSheetFoldAction = UiActionIdAt(27);
+const UiActionId kPopoverFilterAction = UiActionIdAt(28);
+const UiActionId kTitleHoldAction = UiActionIdAt(29);
+const UiActionId kTitleReleaseAction = UiActionIdAt(30);
 
 // The floating surfaces a header can move, as a document names them.
 constexpr std::string_view kExplorerSurface = "explorer";
@@ -127,6 +133,9 @@ constexpr float kSurfaceGapDp = 8.0f;
 constexpr float kSpaceStepDp = 16.0f;
 constexpr float kSurfaceMinimumWidthDp = 220.0f;
 constexpr float kSurfaceMinimumHeightDp = 140.0f;
+
+// Choices beyond this many are worth narrowing by typing.
+constexpr std::size_t kChoicesUnfiltered = 6;
 
 // How many items an explorer shows at once, and asks its workspace for.
 constexpr std::size_t kExplorerPage = 40;
@@ -171,7 +180,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "selection_title", UiValue(std::string{}) },
         UiModelProperty{ "selection_staged", UiValue(false) },
         UiModelProperty{ "drawer", UiValue(false) },
-        UiModelProperty{ "drawer_focus", UiValue(std::string{}) },
+        UiModelProperty{ "selection_subtitle", UiValue(std::string{}) },
         UiModelProperty{ "holding_explorer", UiValue(std::string{}) },
         UiModelProperty{ "explorer_id", UiValue(std::string{}) },
         UiModelProperty{ "explorer_title", UiValue(std::string{}) },
@@ -194,9 +203,11 @@ UiScreenDesc Describe()
         UiModelProperty{ "hierarchy_chord", UiValue(std::string{}) },
         UiModelProperty{ "selection_shown", UiValue(false) },
         UiModelProperty{ "map_action", UiValue(std::string{}) },
+        UiModelProperty{ "popover_filters", UiValue(false) },
+        UiModelProperty{ "selection_named", UiValue(false) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
-                      "selection_rows", "selection_verbs", "selection_chips", "explorer_items", "explorer_verbs",
+                      "selection_rows", "selection_verbs", "explorer_items", "explorer_verbs",
                       "crumbs", "tabs" };
     desc.Actions = { "shell_popover",   "shell_choose",     "shell_invoke",     "shell_window",       "shell_sheet_set",
                      "shell_sheet_flip", "shell_sheet_hold", "shell_sheet_release", "shell_sheet_act", "shell_drawer",
@@ -204,7 +215,7 @@ UiScreenDesc Describe()
                      "shell_explorer_pick", "shell_explorer_commit", "shell_explorer_close",
                      "shell_explorer_open", "shell_explorer_mark", "shell_grab", "shell_drag", "shell_drop",
                      "shell_unmove", "shell_raise", "shell_crumb", "shell_tab", "shell_tab_drop",
-                     "shell_sheet_fold" };
+                     "shell_sheet_fold", "shell_popover_filter", "shell_title_hold", "shell_title_release" };
     return desc;
 }
 
@@ -296,7 +307,6 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         {
             DrawerTransient = 0;
             SelectionShown = SelectionView::Card;
-            DrawerFocus.clear();
         }
         if (Transients.OpenIds().empty())
             EscapeLayer.Reset();
@@ -315,7 +325,7 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         Palette->Open();
     } });
     (void)Services.Catalog.Define({ .Id = "selection.details", .Label = "All Properties", .Category = "Edit" });
-    WindowActions.Claim("selection.details", ActionHandler{ .Invoke = [this] { ShowDrawer({}); },
+    WindowActions.Claim("selection.details", ActionHandler{ .Invoke = [this] { ShowDrawer(); },
                                                             .Enabled = [this] { return !ShownSelection.empty(); } });
     WindowLayer = Services.Actions.Push(WindowActions, ActionRank::Window);
     Deck = std::make_unique<TimelineDeck>(Services.Ui, SurfaceId, Services.Workspaces, Services.Actions,
@@ -429,6 +439,10 @@ void ShellWindow::HandleActions()
             else
                 ShowExplorer(argument);
         }
+        else if (action.Id == kPopoverFilterAction)
+        {
+            ChoicesFilter = argument;
+        }
         else if (action.Id == kExplorerFilterAction)
         {
             ExplorerFilter = argument;
@@ -488,12 +502,19 @@ void ShellWindow::HandleActions()
         }
         else if (action.Id == kDrawerAction)
         {
-            if (argument != "toggle")
-                ShowDrawer(argument);
-            else if (SelectionShown == SelectionView::Drawer)
+            if (SelectionShown == SelectionView::Drawer)
                 Transients.Close(DrawerTransient);
             else
-                ShowDrawer({});
+                ShowDrawer();
+        }
+        else if (action.Id == kTitleHoldAction)
+        {
+            TitleHeld = true;
+        }
+        else if (action.Id == kTitleReleaseAction)
+        {
+            TitleHeld = false;
+            RenameSelection();
         }
         else if (action.Id == kGrabAction || action.Id == kDragAction || action.Id == kDropAction
                  || action.Id == kUnmoveAction || action.Id == kRaiseAction)
@@ -549,7 +570,7 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
         const std::vector<std::string> choices = sheet.ChoicesOf(index, verb);
         const std::string chosen = action.Arguments.size() > 3 ? std::string(action.Arguments[3].AsString()) : std::string{};
         if (!choices.empty() && chosen.empty())
-            OpenChoices(tool ? "tool" : "selection", index, verb, choices);
+            OpenChoices(tool ? "tool" : "selection", index, verb, choices, sheet.NotesOf(index, verb));
         else
             ActOnSheet(sheet, sections, index, verb, chosen);
     }
@@ -622,13 +643,16 @@ std::string ShellWindow::PopoverName() const
     }
 }
 
-void ShellWindow::OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices)
+void ShellWindow::OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices,
+                              std::vector<std::string> notes)
 {
     OpenPopover(Popover::Choices);
     ChoicesSheet = std::move(sheet);
     ChoicesRow = row;
     ChoicesVerb = std::move(verb);
     ChoicesListed = std::move(choices);
+    ChoicesNotes = std::move(notes);
+    ChoicesFilter.clear();
 }
 
 void ShellWindow::OpenPopover(Popover popover, std::string category)
@@ -970,9 +994,8 @@ void ShellWindow::RevealLocation(std::int64_t index)
         workspace->ChooseInExplorer(location.Hierarchy, key, ExplorerChoice::Reveal, 0);
 }
 
-void ShellWindow::ShowDrawer(std::string focus)
+void ShellWindow::ShowDrawer()
 {
-    DrawerFocus = std::move(focus);
     SelectionSheet.Drop();
     if (SelectionShown == SelectionView::Drawer)
         return;
@@ -1091,9 +1114,13 @@ void ShellWindow::PublishEntries()
         break;
     case Popover::Choices:
         anchor = ChoicesSheet == "tool" ? "tool_card" : "selection_card";
-        for (const std::string& choice : ChoicesListed)
+        for (std::size_t i = 0; i < ChoicesListed.size(); ++i)
         {
-            UiRow entry{ choice.empty() ? std::string("None") : choice, "", "" };
+            const std::string& choice = ChoicesListed[i];
+            if (!TextFilterMatch(choice, ChoicesFilter))
+                continue;
+            UiRow entry{ choice.empty() ? std::string("None") : choice, "",
+                         i < ChoicesNotes.size() ? ChoicesNotes[i] : std::string{} };
             entry.Key = choice;
             entries.push_back(std::move(entry));
         }
@@ -1101,6 +1128,7 @@ void ShellWindow::PublishEntries()
     case Popover::None:       break;
     }
     (void)ui.SetValue(Screen, kPopover, UiValue(PopoverName()));
+    (void)ui.SetValue(Screen, kPopoverFilters, UiValue(Showing == Popover::Choices && ChoicesListed.size() > kChoicesUnfiltered));
     double x = 0.0;
     bool rises = false;
     std::string top = "auto";
@@ -1225,7 +1253,12 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
         if (selection.Title.empty() && DrawerTransient != 0)
             Transients.Close(DrawerTransient);
     }
-    (void)ui.SetValue(Screen, kSelectionTitle, UiValue(selection.Title));
+    // While the title is being typed into, what it shows is what is typed.
+    if (!TitleHeld)
+        (void)ui.SetValue(Screen, kSelectionTitle, UiValue(selection.Title));
+    (void)ui.SetValue(Screen, kSelectionSubtitle, UiValue(selection.Subtitle));
+    (void)ui.SetValue(Screen, kSelectionNamed, UiValue(selection.TitleProperty.Source != nullptr
+                                                       && !selection.TitleProperty.Key.empty()));
     (void)ui.SetValue(Screen, kSelectionStaged, UiValue(selection.Staged));
     const bool drawer = SelectionShown == SelectionView::Drawer;
     // Properties that are the work itself are shown whole, as a sheet.
@@ -1239,25 +1272,8 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
                  : std::format("{}.{}", kSelectionSurface, sheet ? "sheet" : drawer ? "drawer" : "card");
     (void)ui.SetValue(Screen, kDrawer, UiValue(drawer));
     (void)ui.SetValue(Screen, kSheet, UiValue(sheet));
-    (void)ui.SetValue(Screen, kDrawerFocus, UiValue(DrawerFocus));
     if (!SelectionSheet.Holding())
-        (void)ui.SetRows(Screen, kSelectionRows,
-                         SelectionSheet.Present(SelectionSections(selection), drawer || sheet,
-                                                drawer ? DrawerFocus : ""));
-
-    // What else there is to look at closely, one key each.
-    std::vector<UiRow> chips;
-    for (const PropertySection& section : selection.Details)
-        if (section.Source != nullptr)
-            for (const PropertyNode& node : section.Source->Nodes())
-                if (node.Descriptor.Kind == PropertyKind::Group && !node.Children.empty())
-                {
-                    UiRow chip{ node.Descriptor.Label, "", "" };
-                    chip.Key = node.Key;
-                    chip.Selected = drawer && DrawerFocus == node.Key;
-                    chips.push_back(std::move(chip));
-                }
-    (void)ui.SetRows(Screen, kSelectionChips, chips);
+        (void)ui.SetRows(Screen, kSelectionRows, SelectionSheet.Present(SelectionSections(selection), drawer || sheet));
 
     // A selection looked at through the context wheel has its actions there;
     // the sheet keeps only what applies or cancels a staged edit.
@@ -1274,6 +1290,18 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
         verbs.push_back(std::move(verb));
     }
     (void)ui.SetRows(Screen, kSelectionVerbs, verbs);
+}
+
+void ShellWindow::RenameSelection()
+{
+    IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+    if (workspace == nullptr)
+        return;
+    const PropertyRef name = workspace->Selection().TitleProperty;
+    const UiValue typed = Services.Ui.GetValue(Screen, kSelectionTitle);
+    if (name.Source == nullptr || typed.Kind() != UiValueKind::String)
+        return;
+    (void)PropertyEditSession{}.Set(*name.Source, name.Key, typed.AsString());
 }
 
 void ShellWindow::PublishHolding(IWorkspace* workspace)

@@ -4,6 +4,7 @@
 #include "properties/PropertySource.h"
 
 #include <ecs/ComponentId.h>
+#include <ecs/ComponentTypeId.h>
 #include <ecs/EntityId.h>
 
 #include <cstddef>
@@ -59,6 +60,13 @@ public:
     // The entity whose components these are; invalid with nothing selected.
     [[nodiscard]] EntityId Entity() const;
 
+    // Components presented somewhere other than this list -- an identity in a
+    // title -- left out of it; still edited here by key.
+    void ShowElsewhere(std::vector<ComponentTypeId> types);
+    // The key a field of a component is edited by, or empty if no registered
+    // component has it.
+    [[nodiscard]] std::string KeyOf(ComponentTypeId type, std::string_view field) const;
+
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
     bool BeginEdit(std::string_view key) override;
     PropertyEditResult PreviewEdit(std::string_view key, std::string_view value) override;
@@ -103,6 +111,8 @@ private:
     SelectionService& Selection;
     CommandStack& Commands;
     const EditorComponentAdapterRegistry& Adapters;
+
+    std::vector<ComponentTypeId> ShownElsewhere;
 
     EditPhase Phase = EditPhase::Idle;
     std::string EditingKey;

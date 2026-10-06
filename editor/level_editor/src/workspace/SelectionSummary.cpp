@@ -1,12 +1,18 @@
 #include "workspace/SelectionSummary.h"
 
+#include "authoring/ComponentPropertySource.h"
 #include "document/EntityLabel.h"
+#include "document/EntityNameComponent.h"
+#include "document/EditorDocument.h"
+#include "scene_source/SceneSourcePaths.h"
 #include "workspace/EditorWorkspace.h"
 #include "workspace/ElementVerbs.h"
 #include "workspace/EntityVerbs.h"
 #include "workspace/FaceUvSource.h"
 #include "workspace/LightingDiagnostics.h"
 #include "workspace/PartitionOutline.h"
+
+#include <world/identity/PersistentIdComponent.h>
 
 #include <algorithm>
 #include <format>
@@ -17,10 +23,24 @@ std::string Counted(std::size_t count, std::string_view one, std::string_view ma
 {
     return std::format("{} {}", count, count == 1 ? one : many);
 }
+
+// How one object is known besides its name: the prefab it is an instance of,
+// and the id its scene file and the console name it by.
+std::string KnownAs(const EditorDocument& document, EntityId entity)
+{
+    std::string line;
+    if (document.IsSceneInstanceMember(entity))
+        if (const std::string source = document.SceneInstanceSourceOf(entity); !SceneSourceStem(source).empty())
+            line = std::format("instance of {}", SceneSourceStem(source));
+    const World& world = document.GetScene().GetRegistry().Components;
+    if (const auto* id = world.TryGet<PersistentIdComponent>(entity); id != nullptr && id->Id.IsValid())
+        line += std::format("{}id {:016x}", line.empty() ? "" : " \xC2\xB7 ", id->Id.Value);
+    return line;
+}
 } // namespace
 
 WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& verbs,
-                                    const EntityVerbs& entityVerbs, FaceUvSource& uv, IPropertySource& components,
+                                    const EntityVerbs& entityVerbs, FaceUvSource& uv, ComponentPropertySource& components,
                                     PartitionOutline& partition, LightingDiagnostics& lighting)
 {
     const std::span<const SelectableRef> selected = workspace.Selection.GetSelection();
@@ -75,6 +95,11 @@ WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& ve
             : Counted(objects, "object", "objects");
         if (objects == 1)
         {
+            const EditorDocument& document = workspace.World.FocusDocument();
+            facet.Subtitle = KnownAs(document, one->Entity);
+            if (document.GetScene().GetRegistry().Components.HasComponent<EntityNameComponent>(one->Entity))
+                facet.TitleProperty = { .Source = &components,
+                                        .Key = components.KeyOf(ResolveComponentTypeId<EntityNameComponent>(), "value") };
             if (!lighting.Nodes().empty())
                 facet.Sections.push_back({ .Heading = "Lighting", .Source = &lighting });
             facet.Details.push_back({ .Heading = {}, .Source = &components });

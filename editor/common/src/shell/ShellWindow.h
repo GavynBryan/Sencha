@@ -122,7 +122,8 @@ private:
     void OpenPopover(Popover popover, std::string category = {});
     // `verb` empty: the choices are values for the row; otherwise they are
     // what the row's verb asks to be chosen first.
-    void OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices);
+    void OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices,
+                     std::vector<std::string> notes = {});
     // A sheet's verb done; one that takes something away says how to bring it back.
     void ActOnSheet(PropertySheet& sheet, std::span<const PropertySection> sections, std::size_t index,
                     std::string_view verb, std::string_view choice);
@@ -156,11 +157,11 @@ private:
     // may have moved on since they were presented.
     [[nodiscard]] std::vector<PropertySection> SheetSections(std::string_view sheet, IWorkspace& workspace);
     // The selection's rows as its view shows them: the card's settings, or in
-    // the drawer everything, narrowed to one component when one was chosen.
+    // the drawer everything.
     [[nodiscard]] std::vector<PropertySection> SelectionSections(const WorkspaceSelectionFacet& selection) const;
-    // Opens the selection's drawer, or turns the open one to `focus` (a
-    // top-level property's key, or empty for all of it).
-    void ShowDrawer(std::string focus);
+    void ShowDrawer();
+    // The selection's title let go of: what it holds is the selection's new name.
+    void RenameSelection();
     // While anything transient is open, Escape takes it away one at a time.
     void TakeEscape();
     void EscapeFront();
@@ -202,6 +203,9 @@ private:
     std::size_t ChoicesRow = 0;
     std::string ChoicesVerb;
     std::vector<std::string> ChoicesListed;
+    std::vector<std::string> ChoicesNotes;
+    // What has been typed to narrow the choices.
+    std::string ChoicesFilter;
     TransientSurfaces Transients;
     TransientSurfaces::Id PopoverTransient = 0;
     std::string ShownTitle;
@@ -215,7 +219,7 @@ private:
     // The selection as a card, or turned into the drawer that shows all of it.
     enum class SelectionView : std::uint8_t { Card, Drawer };
     SelectionView SelectionShown = SelectionView::Card;
-    std::string DrawerFocus;
+    bool TitleHeld = false;
     TransientSurfaces::Id DrawerTransient = 0;
     std::string ExplorerShown;
     std::string ExplorerFilter;

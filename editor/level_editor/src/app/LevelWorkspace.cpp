@@ -24,6 +24,7 @@
 #include "render/EditorRenderFeature.h"
 #include "ui/CookProfilesModal.h"
 #include <ui/UiService.h>
+#include <world/identity/PersistentIdComponent.h>
 #include "ui/EditorUiStyle.h"
 #include "document/commands/SceneInstanceCommands.h"
 #include "render/RenderFeatureDetach.h"
@@ -49,6 +50,7 @@
 #include "viewport/CameraFraming.h"
 #include "workspace/WorldExplorer.h"
 #include "scene_source/SceneSourcePaths.h"
+#include "document/EntityNameComponent.h"
 #include "workspace/SelectionSummary.h"
 #include "workspace/ManipulationActions.h"
 #include "tools/ToolParameterSource.h"
@@ -283,6 +285,9 @@ void LevelWorkspace::BuildInput()
     Uv->Offer(Catalog, ActionHandlers);
     Components = std::make_unique<ComponentPropertySource>(Workspace->World, Workspace->Selection, *Commands,
                                                            Workspace->Affordances->Registry());
+    // The sheet's title is the name and its subtitle the id.
+    Components->ShowElsewhere({ ResolveComponentTypeId<EntityNameComponent>(),
+                                ResolveComponentTypeId<PersistentIdComponent>() });
     Handles = std::make_unique<PropertyHandles>(*Workspace, *Components);
     Entities = std::make_unique<EntityVerbs>(*Workspace, [this](const std::string& source) {
         return Files != nullptr && Files->OpenSceneSource(source);

@@ -136,6 +136,13 @@ struct PropertySection
     IPropertySource* Source = nullptr;
 };
 
+// One property of a source, named where something other than a sheet edits it.
+struct PropertyRef
+{
+    IPropertySource* Source = nullptr;
+    std::string Key = {};
+};
+
 // What is selected, as the shell presents it: what to call it, the actions
 // that apply to it now, and its properties in sections. While an edit is
 // staged (a previewed inset, bevel or bridge) the actions are how it applies
@@ -144,6 +151,11 @@ struct WorkspaceSelectionFacet
 {
     // Empty when nothing is selected.
     std::string Title = {};
+    // A line under it: how the selection is known, where it came from.
+    std::string Subtitle = {};
+    // The property the title is, when renaming it is an edit; empty when the
+    // title only describes (three objects, five faces).
+    PropertyRef TitleProperty = {};
     std::vector<std::string> Actions = {};
     std::vector<PropertySection> Sections = {};
     // Everything else about it, for when it is looked at closely: an object's

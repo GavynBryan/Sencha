@@ -45,3 +45,10 @@ struct DerivedComponentRow
     const World& world,
     const ComponentSerializerRegistry& serializers,
     EntityId entity);
+
+// What adding `id` to an entity would bring with it: everything it owes, and
+// everything that owes in turn, as this World registered it -- the closure the
+// World provisions, read before the add rather than after. Each once, in the
+// order provisioning reaches them; `id` itself is not in it. What an entity
+// already carries is still listed: the caller subtracts what it has.
+[[nodiscard]] std::vector<ComponentId> DerivedClosureOf(const World& world, ComponentId id);

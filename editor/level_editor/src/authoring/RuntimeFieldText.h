@@ -19,8 +19,9 @@
 //=============================================================================
 
 // A schema name as a row label: the last dotted segment, underscores as spaces,
-// each word capitalized ("local.position" -> "Position", "play_on_active" ->
-// "Play On Active"). Display only -- the widget id, the serialization and the
+// each word capitalized and run-together words apart ("local.position" ->
+// "Position", "play_on_active" -> "Play On Active", "PointLight" -> "Point
+// Light"). Display only -- the widget id, the serialization and the
 // binding all keep the raw name.
 [[nodiscard]] std::string HumanizeSchemaName(std::string_view dotted);
 

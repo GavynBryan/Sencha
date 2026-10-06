@@ -28,6 +28,22 @@
 
 namespace
 {
+// What adding `component` to `entity` would put there besides itself, as a
+// person reads it: nothing, or how many and which.
+std::string BroughtWith(const World& world, EntityId entity, ComponentId component)
+{
+    std::vector<std::string> names;
+    for (const ComponentId owed : DerivedClosureOf(world, component))
+        if (const ComponentMeta* meta = world.GetMeta(owed); meta != nullptr && !world.HasComponent(entity, owed))
+            names.push_back(HumanizeSchemaName(meta->Name));
+    if (names.empty())
+        return {};
+    std::string note = std::format("Also adds {}: ", names.size());
+    for (std::size_t i = 0; i < names.size(); ++i)
+        note += (i == 0 ? "" : ", ") + names[i];
+    return note;
+}
+
 PropertyKind KindOf(const RuntimeField& field)
 {
     if (field.Asset != AssetType::Unknown)
@@ -97,6 +113,22 @@ EntityId ComponentPropertySource::Entity() const
     return selection.Entity;
 }
 
+void ComponentPropertySource::ShowElsewhere(std::vector<ComponentTypeId> types)
+{
+    ShownElsewhere = std::move(types);
+}
+
+std::string ComponentPropertySource::KeyOf(ComponentTypeId type, std::string_view field) const
+{
+    const IComponentSerializer* serializer = EditorSceneSerializers().FindByType(type);
+    if (serializer == nullptr)
+        return {};
+    for (const RuntimeField& leaf : serializer->RuntimeFields())
+        if (leaf.Name == field)
+            return FieldKey(serializer->JsonKey(), leaf);
+    return {};
+}
+
 std::vector<PropertyNode> ComponentPropertySource::Nodes() const
 {
     std::vector<PropertyNode> nodes;
@@ -110,19 +142,26 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
 
     const bool member = document.IsSceneInstanceMember(entity);
     std::vector<std::string> addable;
+    std::vector<std::string> addableNotes;
     for (const auto& serializer : EditorSceneSerializers().Entries())
     {
         const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
         if (id == InvalidComponentId)
             continue;
         const std::string key(serializer->JsonKey());
+        const bool elsewhere = std::ranges::find(ShownElsewhere, serializer->TypeId()) != ShownElsewhere.end();
+        if (elsewhere && world.HasComponent(entity, id))
+            continue;
         if (!world.HasComponent(entity, id))
         {
             // A component the document owns (one that may not be removed) is
             // not the editor's to add either: its managed state would never be
             // minted.
             if (serializer->IsRemovable())
+            {
                 addable.push_back(HumanizeSchemaName(key));
+                addableNotes.push_back(BroughtWith(world, entity, id));
+            }
             continue;
         }
 
@@ -218,7 +257,10 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
 
     PropertyNode components{ .Key = "components", .Descriptor = { .Kind = PropertyKind::Group, .Label = "Components" } };
     if (!addable.empty())
-        components.Descriptor.Verbs.push_back({ .Id = "add", .Label = "Add Component", .Choices = std::move(addable) });
+        components.Descriptor.Verbs.push_back({ .Id = "add",
+                                                .Label = "Add Component",
+                                                .Choices = std::move(addable),
+                                                .ChoiceNotes = std::move(addableNotes) });
     nodes.insert(nodes.begin(), std::move(components));
 
     // What the engine put on the entity because of what was authored: always

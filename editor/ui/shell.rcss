@@ -191,6 +191,11 @@ body
     pointer-events: none;
 }
 
+/* A choice that brings more with it says so on a line of its own. */
+.entry.noted { flex-wrap: wrap; height: auto; padding-bottom: 4dp; }
+.entry_note { display: block; width: 100%; line-height: 14dp; font-size: 10dp; }
+#popover_filter { display: block; height: 22dp; margin: 2dp 8dp 4dp 8dp; padding: 0dp 6dp; }
+
 .entry_icon { width: 16dp; height: 16dp; margin: 4dp 8dp 0dp 0dp; }
 .entry_label { display: block; flex: 1; }
 
@@ -341,12 +346,30 @@ body
     margin-bottom: 6dp;
 }
 
-#selection_chips, #drawer_chips
+/* How a named selection is known besides its name, where its title would be;
+   the name itself, typed over to rename, under it. */
+#selection_known, #selection_subtitle
 {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4dp;
-    margin-bottom: 6dp;
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0dp;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-family: "JetBrains Mono";
+    font-size: 10dp;
+}
+#selection_subtitle { margin-bottom: 6dp; }
+#selection_name
+{
+    display: block;
+    height: 24dp;
+    margin-bottom: 8dp;
+    padding: 0dp 4dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 16dp;
+    letter-spacing: 1dp;
 }
 
 

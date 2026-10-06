@@ -42,9 +42,7 @@ public:
 
     // `everything` includes properties marked advanced.
     [[nodiscard]] std::vector<UiRow> Present(const IPropertySource& source, bool everything = false);
-    // `only` narrows every section to its top-level property of that key.
-    [[nodiscard]] std::vector<UiRow> Present(std::span<const PropertySection> sections, bool everything = false,
-                                             std::string_view only = {});
+    [[nodiscard]] std::vector<UiRow> Present(std::span<const PropertySection> sections, bool everything = false);
 
     // Row `index` set to `value` as one step.
     PropertyEditResult Set(IPropertySource& source, std::size_t index, std::string_view value);
@@ -61,6 +59,8 @@ public:
                            std::string_view choice = {});
     // What row `index`'s verb asks to be chosen first; empty for none.
     [[nodiscard]] std::vector<std::string> ChoicesOf(std::size_t index, std::string_view verb) const;
+    // Beside each of those choices, what choosing it brings with it; may be empty.
+    [[nodiscard]] std::vector<std::string> NotesOf(std::size_t index, std::string_view verb) const;
     // Whether row `index`'s verb takes the row's property away.
     [[nodiscard]] bool Removes(std::size_t index, std::string_view verb) const;
     [[nodiscard]] std::string LabelOf(std::size_t index) const;

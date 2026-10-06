@@ -32,6 +32,8 @@ struct PropertyVerb
     std::vector<std::string> Choices = {};
     // Doing it takes the property away: a component removed, a list entry dropped.
     bool Removes = false;
+    // Beside each choice, what choosing it brings with it; empty, or one per choice.
+    std::vector<std::string> ChoiceNotes = {};
 };
 
 struct PropertyDescriptor
