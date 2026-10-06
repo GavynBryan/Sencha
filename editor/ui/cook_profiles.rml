@@ -25,7 +25,7 @@
                 <div class="setting" data-for="row : settings"
                      data-class-heading="row.control == 'section'" data-class-locked="!row.editable">
                     <span class="setting_label">{{row.label}}</span>
-                    <input type="text" class="setting_control theme-field" data-if="row.control == 'text'"
+                    <input type="text" class="setting_control theme-field" data-if="row.control == 'text' || row.control == 'number'"
                            data-value="row.value" data-event-focus="profiles_hold(it_index)"
                            data-event-blur="profiles_release(it_index)"/>
                     <select class="setting_control theme-field" data-if="row.control == 'choice'"

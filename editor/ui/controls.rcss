@@ -59,6 +59,56 @@
     font-family: "JetBrains Mono";
     font-size: 11dp;
 }
+/* A number is a box: dragged across to change it, clicked to type into it,
+   filled behind its value as far as it is between its bounds. */
+.numbox
+{
+    display: block;
+    position: relative;
+    flex: 1;
+    height: 20dp;
+    border-width: 1dp;
+    border-radius: 2dp;
+    overflow: hidden;
+    cursor: ew-resize;
+}
+.numfill { display: block; position: absolute; left: 0dp; top: 0dp; bottom: 0dp; }
+.numtext
+{
+    display: block;
+    position: relative;
+    padding: 0dp 6dp;
+    line-height: 20dp;
+    text-align: right;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+    white-space: nowrap;
+    overflow: hidden;
+}
+/* A vector's numbers side by side, each named by its axis in the gizmo's colour. */
+.vector { display: flex; flex: 1; gap: 4dp; }
+.vecpart
+{
+    display: flex;
+    flex: 1 1 0dp;
+    min-width: 0dp;
+    height: 20dp;
+    border-width: 1dp;
+    border-radius: 2dp;
+    overflow: hidden;
+    cursor: ew-resize;
+}
+.vecpart .numtext { flex: 1; }
+.axis
+{
+    display: block;
+    width: 14dp;
+    line-height: 20dp;
+    text-align: center;
+    font-family: "JetBrains Mono";
+    font-size: 9dp;
+}
+.partinput { display: block; flex: 1; height: 20dp; padding: 0dp 4dp; font-family: "JetBrains Mono"; font-size: 11dp; }
 .setting_toggle { flex: 0; }
 .setting_long { height: 80dp; }
 .setting_color { display: flex; flex: 1; align-items: center; gap: 6dp; }

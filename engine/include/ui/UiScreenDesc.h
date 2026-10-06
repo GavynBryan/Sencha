@@ -84,6 +84,8 @@ enum class UiRowControl : std::uint8_t
     Section,  // not a value at all: a heading the rows after it sit under
     Action,   // not a value either: something to do, named by its label, raised by its key
     LongText, // text that runs over several lines
+    Number,   // a number typed or dragged: Value as text; Number, Min and Max when it has bounds
+    Vector,   // numbers side by side: Parts as text (empty for one standing for several), Choices naming each
 };
 
 // What a document reads `row.control` as ("text", "range", ...), and back.

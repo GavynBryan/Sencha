@@ -14,6 +14,7 @@
 
 #include <platform/SdlWindow.h>
 #include <platform/WindowFrameHit.h>
+#include <ui/UiKeys.h>
 #include <ui/UiService.h>
 
 #include <algorithm>
@@ -79,6 +80,7 @@ const UiModelPropertyId kSelectionShown = UiPropertyIdAt(52);
 const UiModelPropertyId kMapAction = UiPropertyIdAt(53);
 const UiModelPropertyId kPopoverFilters = UiPropertyIdAt(54);
 const UiModelPropertyId kSelectionNamed = UiPropertyIdAt(55);
+const UiModelPropertyId kSheetTyping = UiPropertyIdAt(56);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -122,6 +124,9 @@ const UiActionId kSheetFoldAction = UiActionIdAt(27);
 const UiActionId kPopoverFilterAction = UiActionIdAt(28);
 const UiActionId kTitleHoldAction = UiActionIdAt(29);
 const UiActionId kTitleReleaseAction = UiActionIdAt(30);
+const UiActionId kSheetTypeAction = UiActionIdAt(31);
+const UiActionId kSheetReleasePartAction = UiActionIdAt(32);
+const UiActionId kSheetKeyAction = UiActionIdAt(33);
 
 // The floating surfaces a header can move, as a document names them.
 constexpr std::string_view kExplorerSurface = "explorer";
@@ -205,6 +210,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "map_action", UiValue(std::string{}) },
         UiModelProperty{ "popover_filters", UiValue(false) },
         UiModelProperty{ "selection_named", UiValue(false) },
+        UiModelProperty{ "sheet_typing", UiValue(std::string{}) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "explorer_items", "explorer_verbs",
@@ -215,7 +221,8 @@ UiScreenDesc Describe()
                      "shell_explorer_pick", "shell_explorer_commit", "shell_explorer_close",
                      "shell_explorer_open", "shell_explorer_mark", "shell_grab", "shell_drag", "shell_drop",
                      "shell_unmove", "shell_raise", "shell_crumb", "shell_tab", "shell_tab_drop",
-                     "shell_sheet_fold", "shell_popover_filter", "shell_title_hold", "shell_title_release" };
+                     "shell_sheet_fold", "shell_popover_filter", "shell_title_hold", "shell_title_release",
+                     "shell_sheet_type", "shell_sheet_release_part", "shell_sheet_key" };
     return desc;
 }
 
@@ -428,7 +435,8 @@ void ShellWindow::HandleActions()
         }
         else if (action.Id == kSheetSetAction || action.Id == kSheetFlipAction || action.Id == kSheetHoldAction
                  || action.Id == kSheetReleaseAction || action.Id == kSheetActAction || action.Id == kSheetPickAction
-                 || action.Id == kSheetFoldAction)
+                 || action.Id == kSheetFoldAction || action.Id == kSheetTypeAction
+                 || action.Id == kSheetReleasePartAction || action.Id == kSheetKeyAction)
         {
             HandleSheetAction(action);
         }
@@ -576,6 +584,32 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     }
     else if (action.Id == kSheetFoldAction)
         sheet.Fold(index);
+    else if (action.Id == kSheetTypeAction && action.Arguments.size() > 2)
+        SheetTyping = TypingKey(tool ? "tool" : "selection", index, action.Arguments[2].AsInt());
+    else if (action.Id == kSheetReleasePartAction && action.Arguments.size() > 2)
+    {
+        // Let go of after Enter, Tab or Escape already ended it: nothing more.
+        const std::int64_t element = action.Arguments[2].AsInt();
+        if (SheetTyping == TypingKey(tool ? "tool" : "selection", index, element))
+            FinishTyping(sheet, sections, tool, index, element);
+    }
+    else if (action.Id == kSheetKeyAction && action.Arguments.size() > 3)
+    {
+        const std::int64_t element = action.Arguments[2].AsInt();
+        const std::optional<UiKey> key = UiKeyFromEvent(action.Arguments[3].AsInt());
+        if (key == UiKey::Escape)
+        {
+            sheet.Drop();
+            SheetTyping.clear();
+        }
+        else if (key == UiKey::Return || key == UiKey::Tab)
+        {
+            const std::size_t parts = FinishTyping(sheet, sections, tool, index, element);
+            // Tab goes on to the next number of the same vector.
+            if (key == UiKey::Tab && element >= 0 && static_cast<std::size_t>(element) + 1 < parts)
+                SheetTyping = TypingKey(tool ? "tool" : "selection", index, element + 1);
+        }
+    }
     else if (action.Id == kSheetPickAction)
     {
         std::vector<std::string> candidates = sheet.CandidatesOf(sections, index);
@@ -584,6 +618,30 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     }
     else if (action.Arguments.size() > 2)
         (void)sheet.SetFromControl(sections, index, action.Arguments[2]);
+}
+
+std::string ShellWindow::TypingKey(std::string_view sheet, std::size_t row, std::int64_t element)
+{
+    return std::format("{}:{}:{}", sheet, row, element);
+}
+
+std::size_t ShellWindow::FinishTyping(PropertySheet& sheet, std::span<const PropertySection> sections, bool tool,
+                                      std::size_t index, std::int64_t element)
+{
+    SheetTyping.clear();
+    const std::vector<UiRow> shown = Services.Ui.GetRows(Screen, tool ? kToolRows : kSelectionRows);
+    if (index >= shown.size())
+    {
+        sheet.Drop();
+        return 0;
+    }
+    const UiRow& row = shown[index];
+    if (element < 0)
+        (void)sheet.Release(sections, index, row.Value);
+    else if (static_cast<std::size_t>(element) < row.Parts.size())
+        (void)sheet.ReleaseElement(sections, index, static_cast<std::size_t>(element),
+                                   row.Parts[static_cast<std::size_t>(element)]);
+    return row.Parts.size();
 }
 
 void ShellWindow::ActOnSheet(PropertySheet& sheet, std::span<const PropertySection> sections, std::size_t index,
@@ -1261,6 +1319,7 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
     if (selection.Title != ShownSelection)
     {
         SelectionSheet.Drop();
+        SheetTyping.clear();
         ShownSelection = selection.Title;
         // A drawer is about what was selected: nothing selected, nothing to show.
         if (selection.Title.empty() && DrawerTransient != 0)
@@ -1273,6 +1332,7 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
     (void)ui.SetValue(Screen, kSelectionNamed, UiValue(selection.TitleProperty.Source != nullptr
                                                        && !selection.TitleProperty.Key.empty()));
     (void)ui.SetValue(Screen, kSelectionStaged, UiValue(selection.Staged));
+    (void)ui.SetValue(Screen, kSheetTyping, UiValue(SheetTyping));
     const bool drawer = SelectionShown == SelectionView::Drawer;
     // Properties that are the work itself are shown whole, as a sheet.
     const bool sheet = selection.Primary;

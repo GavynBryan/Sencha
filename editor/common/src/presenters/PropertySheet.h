@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -23,10 +24,10 @@ class ActionContextStack;
 // back into the source it came from, by the row's index. A group becomes a
 // section row over its children, as does each titled section of several
 // sources; what a property is decides the control -- a choice a drop-down, a
-// bounded number a slider, a switch a toggle, anything else a field. Its verbs,
-// and the catalog actions it names that can run now, are offered beside it. A
-// folded group shows its heading alone, and stays as it was left for as long
-// as the sheet lives.
+// number a box to type or drag, a vector its numbers side by side, a switch a
+// toggle, anything else a field. Its verbs, and the catalog actions it names
+// that can run now, are offered beside it. A folded group shows its heading
+// alone, and stays as it was left for as long as the sheet lives.
 //
 // A field is typed into over many frames and edited once, when it lets go of
 // focus: Hold stops the rows from changing under it, and Release commits what
@@ -47,8 +48,15 @@ public:
     // Row `index` set to `value` as one step.
     PropertyEditResult Set(IPropertySource& source, std::size_t index, std::string_view value);
     PropertyEditResult Set(std::span<const PropertySection> sections, std::size_t index, std::string_view value);
-    // Row `index` set to what its control reported: a slider's number, a
-    // drop-down's option, a field's text.
+    // One number of a vector row set, the others keeping theirs.
+    PropertyEditResult SetElement(std::span<const PropertySection> sections, std::size_t index, std::size_t element,
+                                  std::string_view value);
+    // The key an edit of row `index`, or of one of its numbers, is made by:
+    // empty for a number its source has no key for.
+    [[nodiscard]] std::string EditKeyOf(std::size_t index, std::optional<std::size_t> element = {}) const;
+    [[nodiscard]] IPropertySource* SourceOf(std::span<const PropertySection> sections, std::size_t index) const;
+    // Row `index` set to what its control reported: a drop-down's option, a
+    // field's text.
     PropertyEditResult SetFromControl(IPropertySource& source, std::size_t index, const UiValue& reported);
     PropertyEditResult SetFromControl(std::span<const PropertySection> sections, std::size_t index,
                                       const UiValue& reported);
@@ -80,6 +88,8 @@ public:
     // The held field let go of focus holding `value`.
     PropertyEditResult Release(IPropertySource& source, std::size_t index, std::string_view value);
     PropertyEditResult Release(std::span<const PropertySection> sections, std::size_t index, std::string_view value);
+    PropertyEditResult ReleaseElement(std::span<const PropertySection> sections, std::size_t index,
+                                      std::size_t element, std::string_view value);
     // The held field went away without letting go -- its document closed, or
     // what it described did: nothing is committed.
     void Drop() { Held = kNothingHeld; }
@@ -97,9 +107,8 @@ private:
         std::vector<std::string> Actions = {};
         bool Foldable = false;
         bool Folded = false;
-        // A slider's step: it reports where it snapped the value it was given,
-        // which is no change of the value.
-        double Snap = 0.0;
+        // A vector's numbers' own keys, where its source has them.
+        std::vector<std::string> ElementKeys = {};
         // What its control was laid out as: its key, verb and options.
         std::string Layout = {};
     };
@@ -107,7 +116,6 @@ private:
     void Append(const PropertyNode& node, int depth, std::size_t section, bool everything, std::vector<UiRow>& rows);
     // Notes whether this presentation laid out other properties than the last.
     void Settle();
-    [[nodiscard]] IPropertySource* SourceOf(std::span<const PropertySection> sections, std::size_t index) const;
 
     [[nodiscard]] bool FoldedNow(const PropertyNode& node) const;
 

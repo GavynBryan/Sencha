@@ -5,7 +5,7 @@
 
 namespace
 {
-constexpr std::array<std::pair<UiRowControl, std::string_view>, 9> kNames{ {
+constexpr std::array<std::pair<UiRowControl, std::string_view>, 11> kNames{ {
     { UiRowControl::Text, "text" },
     { UiRowControl::Range, "range" },
     { UiRowControl::Choice, "choice" },
@@ -15,6 +15,8 @@ constexpr std::array<std::pair<UiRowControl, std::string_view>, 9> kNames{ {
     { UiRowControl::Section, "section" },
     { UiRowControl::Action, "action" },
     { UiRowControl::LongText, "longtext" },
+    { UiRowControl::Number, "number" },
+    { UiRowControl::Vector, "vector" },
 } };
 } // namespace
 

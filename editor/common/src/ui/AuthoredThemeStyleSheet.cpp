@@ -1,5 +1,6 @@
 #include "AuthoredThemeStyleSheet.h"
 
+#include "EditorTheme.h"
 #include "EditorThemeFile.h"
 #include "EditorUiStyle.h"
 
@@ -116,6 +117,14 @@ constexpr Rule kRules[] = {
     { ".theme-icon", [] { return Color(EditorUi::TextDim); } },
     { ".theme-icon:hover",
       [] { return Color(EditorUi::TextPrimary) + Fill(EditorUi::ButtonHovered); } },
+
+    // How far a bounded number is between its bounds, behind its value; and a
+    // vector's axes in the gizmo's colours.
+    { ".theme-fill", [] { return Fill(EditorUi::AccentDim); } },
+    { ".theme-axis-0", [] { return Fill(EditorTheme::AxisX) + Color(EditorUi::ChassisBg); } },
+    { ".theme-axis-1", [] { return Fill(EditorTheme::AxisY) + Color(EditorUi::ChassisBg); } },
+    { ".theme-axis-2", [] { return Fill(EditorTheme::AxisZ) + Color(EditorUi::ChassisBg); } },
+    { ".theme-axis-3", [] { return Fill(EditorUi::TextDim) + Color(EditorUi::ChassisBg); } },
 
     // The cross that takes something away: quiet at rest, unmistakable under
     // the pointer.

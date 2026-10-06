@@ -61,7 +61,7 @@ TEST(PropertySheet, WhatAPropertyIsDecidesItsControl)
     EXPECT_EQ(rows[1].Control, UiRowControl::Choice);
     EXPECT_EQ(rows[1].Choices, (std::vector<std::string>{ "Rectangle", "Arch" }));
     EXPECT_EQ(rows[1].Depth, 1);
-    EXPECT_EQ(rows[2].Control, UiRowControl::Range);
+    EXPECT_EQ(rows[2].Control, UiRowControl::Number) << "a number is a box, filled as far as it is between its bounds";
     EXPECT_EQ(rows[2].Number, 6.0);
     EXPECT_EQ(rows[2].Min, 2.0);
     EXPECT_EQ(rows[2].Max, 64.0);
@@ -124,16 +124,13 @@ TEST(PropertySheet, ControlsReportingAsTheyAreLaidOutChangeNothing)
     Settings settings;
     PropertySheet sheet;
     (void)sheet.Present(settings);
-    // A slider made this frame reports where it started, before its value bound.
-    EXPECT_EQ(sheet.SetFromControl(settings, 2, UiValue(std::string("2"))), PropertyEditResult::Unchanged);
-    EXPECT_EQ(settings.Values["segments"], "6");
+    // A control made this frame reports where it started, before its value bound.
+    EXPECT_EQ(sheet.SetFromControl(settings, 1, UiValue(std::string("Rectangle"))), PropertyEditResult::Unchanged);
+    EXPECT_EQ(settings.Values["shape"], "Arch");
 
     (void)sheet.Present(settings);
-    // Laid out the same again: a slider reporting where it snapped the value
-    // it was given changes nothing either, and a person's drag does.
-    EXPECT_EQ(sheet.SetFromControl(settings, 2, UiValue(std::string("6.4"))), PropertyEditResult::Unchanged);
-    EXPECT_EQ(sheet.SetFromControl(settings, 2, UiValue(std::string("12"))), PropertyEditResult::Applied);
-    EXPECT_EQ(settings.Values["segments"], "12");
+    EXPECT_EQ(sheet.SetFromControl(settings, 1, UiValue(std::string("Rectangle"))), PropertyEditResult::Applied);
+    EXPECT_EQ(settings.Values["shape"], "Rectangle");
 }
 
 namespace
@@ -290,4 +287,63 @@ TEST(PropertySheet, AFoldedGroupShowsItsHeadingAloneAndStaysAsItWasLeft)
 
     sheet.Fold(1);
     EXPECT_EQ(sheet.Present(body).size(), 2u) << "a field does not fold";
+}
+
+// A vector is its numbers side by side, each named; one standing for several
+// shows nothing; and one number set keeps the others -- through its own key
+// where the source has one, or the whole vector where it does not.
+namespace
+{
+class Places final : public IPropertySource
+{
+public:
+    bool Keyed = true;
+    std::string Offset = "1, 2, 3";
+    std::vector<std::string> Log;
+
+    std::vector<PropertyNode> Nodes() const override
+    {
+        static constexpr double kOffset[] = { 1, 2, 3 };
+        PropertyNode offset = VectorProperty("offset", "Offset", kOffset);
+        offset.Value = Offset;
+        if (Keyed)
+            for (std::size_t i = 0; i < 3; ++i)
+                offset.Children.push_back({ .Key = "offset[" + std::to_string(i) + "]",
+                                            .Descriptor = { .Kind = PropertyKind::Number,
+                                                            .Label = std::string(1, static_cast<char>('A' + i)) },
+                                            .Value = i == 1 ? "" : std::to_string(i + 1),
+                                            .Mixed = i == 1 });
+        return { offset };
+    }
+    bool BeginEdit(std::string_view) override { return true; }
+    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Applied; }
+    PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override
+    {
+        Log.push_back(std::string(key) + "=" + std::string(value));
+        return PropertyEditResult::Applied;
+    }
+    void CancelEdit(std::string_view) override {}
+};
+} // namespace
+
+TEST(PropertySheet, AVectorIsItsNumbersSideBySideEachSetOnItsOwn)
+{
+    Places places;
+    const PropertySection sections[] = { { .Heading = {}, .Source = &places } };
+    PropertySheet sheet;
+    std::vector<UiRow> rows = sheet.Present(sections);
+    ASSERT_EQ(rows.size(), 1u) << "its numbers are not rows of their own";
+    EXPECT_EQ(rows[0].Control, UiRowControl::Vector);
+    EXPECT_EQ(rows[0].Choices, (std::vector<std::string>{ "A", "B", "C" }));
+    EXPECT_EQ(rows[0].Parts, (std::vector<std::string>{ "1", "", "3" })) << "the one standing for several shows nothing";
+    EXPECT_EQ(sheet.EditKeyOf(0, 1), "offset[1]");
+    EXPECT_EQ(sheet.SetElement(sections, 0, 1, "7"), PropertyEditResult::Applied);
+
+    places.Keyed = false;
+    rows = sheet.Present(sections);
+    EXPECT_EQ(rows[0].Choices, (std::vector<std::string>{ "X", "Y", "Z" }));
+    EXPECT_EQ(rows[0].Parts, (std::vector<std::string>{ "1", "2", "3" }));
+    EXPECT_TRUE(sheet.EditKeyOf(0, 1).empty());
+    EXPECT_EQ(sheet.SetElement(sections, 0, 2, "9"), PropertyEditResult::Applied);
+    EXPECT_EQ(places.Log, (std::vector<std::string>{ "offset[1]=7", "offset=1, 2, 9" }));
 }

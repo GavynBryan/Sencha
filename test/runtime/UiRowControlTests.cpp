@@ -8,7 +8,8 @@ TEST(UiRowControl, EveryControlsNameReadsBackAsIt)
 {
     for (const UiRowControl control :
          { UiRowControl::Text, UiRowControl::Range, UiRowControl::Choice, UiRowControl::Toggle, UiRowControl::Asset,
-           UiRowControl::Color, UiRowControl::Section, UiRowControl::Action, UiRowControl::LongText })
+           UiRowControl::Color, UiRowControl::Section, UiRowControl::Action, UiRowControl::LongText,
+           UiRowControl::Number, UiRowControl::Vector })
     {
         const std::optional<UiRowControl> read = ParseUiRowControl(UiRowControlName(control));
         ASSERT_TRUE(read.has_value()) << UiRowControlName(control);

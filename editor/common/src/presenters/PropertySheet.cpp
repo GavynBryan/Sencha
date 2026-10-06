@@ -2,6 +2,7 @@
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "properties/PropertyEditSession.h"
 
 #include <algorithm>
 #include <charconv>
@@ -23,13 +24,38 @@ UiRowControl ControlFor(const PropertyDescriptor& descriptor)
     case PropertyKind::Toggle: return UiRowControl::Toggle;
     case PropertyKind::Asset:  return UiRowControl::Asset;
     case PropertyKind::Color:  return UiRowControl::Color;
-    // A number with a range is a slider; without one it is typed.
-    case PropertyKind::Number: return descriptor.Max >= descriptor.Min ? UiRowControl::Range : UiRowControl::Text;
+    case PropertyKind::Number: return UiRowControl::Number;
+    case PropertyKind::Vector: return UiRowControl::Vector;
     case PropertyKind::Text:
-    case PropertyKind::Vector:
     case PropertyKind::Unsupported:
     default:                   return UiRowControl::Text;
     }
+}
+
+// A vector's numbers as the texts they are shown as.
+std::vector<std::string> PartsOf(std::string_view text)
+{
+    std::vector<std::string> parts;
+    while (!text.empty())
+    {
+        const std::size_t comma = text.find(',');
+        std::string_view part = text.substr(0, comma);
+        while (!part.empty() && part.front() == ' ')
+            part.remove_prefix(1);
+        while (!part.empty() && part.back() == ' ')
+            part.remove_suffix(1);
+        parts.emplace_back(part);
+        if (comma == std::string_view::npos)
+            break;
+        text.remove_prefix(comma + 1);
+    }
+    return parts;
+}
+
+std::string AxisName(std::size_t index, std::size_t count)
+{
+    static constexpr std::string_view kAxes[] = { "X", "Y", "Z", "W" };
+    return count <= std::size(kAxes) ? std::string(kAxes[index]) : std::to_string(index);
 }
 
 double NumberOf(std::string_view text)
@@ -132,12 +158,32 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     row.Mixed = node.Mixed;
     if (row.Control == UiRowControl::Color)
         row.Parts = { SwatchOf(node.Value) };
-    if (row.Control == UiRowControl::Range)
+    if (row.Control == UiRowControl::Number)
     {
         row.Number = NumberOf(node.Value);
         row.Min = descriptor.Min;
         row.Max = descriptor.Max;
-        row.Step = descriptor.Step > 0.0 ? descriptor.Step : (descriptor.Max - descriptor.Min) / 100.0;
+        row.Step = descriptor.Step;
+    }
+    // A vector's numbers each with its name; one standing for several shows nothing.
+    std::vector<std::string> elementKeys;
+    if (row.Control == UiRowControl::Vector)
+    {
+        row.Parts.clear();
+        row.Choices.clear();
+        if (!node.Children.empty())
+            for (const PropertyNode& element : node.Children)
+            {
+                row.Parts.push_back(element.Mixed ? std::string{} : element.Value);
+                row.Choices.push_back(element.Descriptor.Label);
+                elementKeys.push_back(element.Key);
+            }
+        else
+        {
+            row.Parts = PartsOf(node.Value);
+            for (std::size_t i = 0; i < row.Parts.size(); ++i)
+                row.Choices.push_back(AxisName(i, row.Parts.size()));
+        }
     }
     // A group that holds something says whether it shows it, the way an
     // outline's branch does.
@@ -175,7 +221,7 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
                      .Actions = std::move(actions),
                      .Foldable = foldable,
                      .Folded = folded,
-                     .Snap = rows.back().Control == UiRowControl::Range ? rows.back().Step : 0.0,
+                     .ElementKeys = std::move(elementKeys),
                      .Layout = std::move(layout) });
     // A vector's numbers are its own row, not rows under it.
     if (folded || descriptor.Kind == PropertyKind::Vector)
@@ -210,6 +256,42 @@ PropertyEditResult PropertySheet::Set(IPropertySource& source, std::size_t index
     return source.CommitEdit(row.Key, value);
 }
 
+PropertyEditResult PropertySheet::SetElement(std::span<const PropertySection> sections, std::size_t index,
+                                             std::size_t element, std::string_view value)
+{
+    IPropertySource* source = SourceOf(sections, index);
+    if (source == nullptr)
+        return PropertyEditResult::Gone;
+    const Presented& row = Rows[index];
+    if (element < row.ElementKeys.size())
+        return PropertyEditSession{}.Set(*source, row.ElementKeys[element], value);
+    // A vector without a key per number is set whole, the others as they were.
+    std::vector<std::string> parts = PartsOf(row.Value);
+    if (element >= parts.size())
+        return PropertyEditResult::Gone;
+    parts[element] = std::string(value);
+    std::string joined;
+    for (const std::string& part : parts)
+        joined += (joined.empty() ? "" : ", ") + part;
+    return Set(*source, index, joined);
+}
+
+PropertyEditResult PropertySheet::ReleaseElement(std::span<const PropertySection> sections, std::size_t index,
+                                                 std::size_t element, std::string_view value)
+{
+    Held = kNothingHeld;
+    return SetElement(sections, index, element, value);
+}
+
+std::string PropertySheet::EditKeyOf(std::size_t index, std::optional<std::size_t> element) const
+{
+    if (index >= Rows.size())
+        return {};
+    if (element.has_value())
+        return *element < Rows[index].ElementKeys.size() ? Rows[index].ElementKeys[*element] : std::string{};
+    return Rows[index].Key;
+}
+
 PropertyEditResult PropertySheet::Set(std::span<const PropertySection> sections, std::size_t index,
                                       std::string_view value)
 {
@@ -231,35 +313,10 @@ std::string ReportedText(const UiValue& reported)
 }
 } // namespace
 
-namespace
-{
-bool WithinSnap(const UiValue& reported, std::string_view presented, double snap)
-{
-    if (snap <= 0.0)
-        return false;
-    double value = 0.0;
-    switch (reported.Kind())
-    {
-    case UiValueKind::Float:  value = reported.AsFloat(); break;
-    case UiValueKind::Int:    value = static_cast<double>(reported.AsInt()); break;
-    case UiValueKind::String:
-    {
-        const std::string_view text = reported.AsString();
-        if (std::from_chars(text.data(), text.data() + text.size(), value).ec != std::errc{})
-            return false;
-        break;
-    }
-    default: return false;
-    }
-    return std::abs(value - NumberOf(presented)) <= snap * 0.5;
-}
-} // namespace
 
 PropertyEditResult PropertySheet::SetFromControl(IPropertySource& source, std::size_t index, const UiValue& reported)
 {
     if (Settling)
-        return PropertyEditResult::Unchanged;
-    if (index < Rows.size() && WithinSnap(reported, Rows[index].Value, Rows[index].Snap))
         return PropertyEditResult::Unchanged;
     return Set(source, index, ReportedText(reported));
 }
@@ -268,8 +325,6 @@ PropertyEditResult PropertySheet::SetFromControl(std::span<const PropertySection
                                                  const UiValue& reported)
 {
     if (Settling)
-        return PropertyEditResult::Unchanged;
-    if (index < Rows.size() && WithinSnap(reported, Rows[index].Value, Rows[index].Snap))
         return PropertyEditResult::Unchanged;
     return Set(sections, index, ReportedText(reported));
 }

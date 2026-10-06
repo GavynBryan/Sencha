@@ -106,10 +106,32 @@
                        data-event-focus="shell_sheet_hold('tool', ri)"
                        data-event-blur="shell_sheet_release('tool', ri)"/>
                 <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
-                <input style="tab-index: none;" type="range" class="setting_control" data-if="row.control == 'range'"
-                       data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
-                       data-value="row.number" data-event-change="shell_sheet_set('tool', ri, ev.value)"/>
-                <span class="setting_number theme-readout" data-if="row.control == 'range'">{{row.value}}</span>
+                <div class="numbox theme-field" data-if="row.control == 'number' &amp;&amp; sheet_typing != 'tool:' + ri + ':-1'"
+                     data-class-locked="!row.editable" data-event-click="shell_sheet_type('tool', ri, -1)">
+                    <span class="numfill theme-fill" data-if="row.max > row.min"
+                          data-style-width="(row.max > row.min ? (row.number - row.min) / (row.max - row.min) * 100 : 0) + '%'"></span>
+                    <span class="numtext" data-if="!row.mixed">{{row.value}}</span>
+                    <span class="numtext theme-dim" data-if="row.mixed">&#x2014; differs</span>
+                </div>
+                <input style="tab-index: none;" type="text" class="setting_control theme-field" autofocus=""
+                       data-if="row.control == 'number' &amp;&amp; sheet_typing == 'tool:' + ri + ':-1'"
+                       data-value="row.value" data-event-focus="shell_sheet_hold('tool', ri)"
+                       data-event-keydown="shell_sheet_key('tool', ri, -1, ev.key_identifier)"
+                       data-event-blur="shell_sheet_release_part('tool', ri, -1)"/>
+                <div class="vector" data-if="row.control == 'vector'">
+                    <div class="vecpart theme-field" data-for="part, pi : row.parts" data-class-locked="!row.editable">
+                        <span data-attr-class="'axis theme-axis-' + pi">{{row.choices[pi]}}</span>
+                        <div class="numtext" data-if="sheet_typing != 'tool:' + ri + ':' + pi"
+                             data-event-click="shell_sheet_type('tool', ri, pi)">
+                            <span data-if="part != ''">{{part}}</span><span class="theme-dim" data-if="part == ''">&#x2014;</span>
+                        </div>
+                        <input style="tab-index: none;" type="text" class="partinput" autofocus=""
+                               data-if="sheet_typing == 'tool:' + ri + ':' + pi"
+                               data-value="part" data-event-focus="shell_sheet_hold('tool', ri)"
+                               data-event-keydown="shell_sheet_key('tool', ri, pi, ev.key_identifier)"
+                               data-event-blur="shell_sheet_release_part('tool', ri, pi)"/>
+                    </div>
+                </div>
                 <select style="tab-index: none;" class="setting_control theme-field" data-if="row.control == 'choice'"
                         data-value="row.value" data-event-change="shell_sheet_set('tool', ri, ev.value)">
                     <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
@@ -227,10 +249,32 @@
                        data-event-focus="shell_sheet_hold('selection', ri)"
                        data-event-blur="shell_sheet_release('selection', ri)"/>
                 <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
-                <input style="tab-index: none;" type="range" class="setting_control" data-if="row.control == 'range'"
-                       data-attr-min="row.min" data-attr-max="row.max" data-attr-step="row.step"
-                       data-value="row.number" data-event-change="shell_sheet_set('selection', ri, ev.value)"/>
-                <span class="setting_number theme-readout" data-if="row.control == 'range'">{{row.value}}</span>
+                <div class="numbox theme-field" data-if="row.control == 'number' &amp;&amp; sheet_typing != 'selection:' + ri + ':-1'"
+                     data-class-locked="!row.editable" data-event-click="shell_sheet_type('selection', ri, -1)">
+                    <span class="numfill theme-fill" data-if="row.max > row.min"
+                          data-style-width="(row.max > row.min ? (row.number - row.min) / (row.max - row.min) * 100 : 0) + '%'"></span>
+                    <span class="numtext" data-if="!row.mixed">{{row.value}}</span>
+                    <span class="numtext theme-dim" data-if="row.mixed">&#x2014; differs</span>
+                </div>
+                <input style="tab-index: none;" type="text" class="setting_control theme-field" autofocus=""
+                       data-if="row.control == 'number' &amp;&amp; sheet_typing == 'selection:' + ri + ':-1'"
+                       data-value="row.value" data-event-focus="shell_sheet_hold('selection', ri)"
+                       data-event-keydown="shell_sheet_key('selection', ri, -1, ev.key_identifier)"
+                       data-event-blur="shell_sheet_release_part('selection', ri, -1)"/>
+                <div class="vector" data-if="row.control == 'vector'">
+                    <div class="vecpart theme-field" data-for="part, pi : row.parts" data-class-locked="!row.editable">
+                        <span data-attr-class="'axis theme-axis-' + pi">{{row.choices[pi]}}</span>
+                        <div class="numtext" data-if="sheet_typing != 'selection:' + ri + ':' + pi"
+                             data-event-click="shell_sheet_type('selection', ri, pi)">
+                            <span data-if="part != ''">{{part}}</span><span class="theme-dim" data-if="part == ''">&#x2014;</span>
+                        </div>
+                        <input style="tab-index: none;" type="text" class="partinput" autofocus=""
+                               data-if="sheet_typing == 'selection:' + ri + ':' + pi"
+                               data-value="part" data-event-focus="shell_sheet_hold('selection', ri)"
+                               data-event-keydown="shell_sheet_key('selection', ri, pi, ev.key_identifier)"
+                               data-event-blur="shell_sheet_release_part('selection', ri, pi)"/>
+                    </div>
+                </div>
                 <select style="tab-index: none;" class="setting_control theme-field" data-if="row.control == 'choice'"
                         data-value="row.value" data-event-change="shell_sheet_set('selection', ri, ev.value)">
                     <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>

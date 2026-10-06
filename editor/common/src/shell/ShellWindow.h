@@ -124,6 +124,12 @@ private:
     // what the row's verb asks to be chosen first.
     void OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices,
                      std::vector<std::string> notes = {});
+    // Which number of which row is being typed into, as the document names it.
+    [[nodiscard]] static std::string TypingKey(std::string_view sheet, std::size_t row, std::int64_t element);
+    // What was typed into a row's number, or one of a vector's, set as one
+    // step; how many numbers the row has.
+    std::size_t FinishTyping(PropertySheet& sheet, std::span<const PropertySection> sections, bool tool,
+                             std::size_t index, std::int64_t element);
     // A sheet's verb done; one that takes something away says how to bring it back.
     void ActOnSheet(PropertySheet& sheet, std::span<const PropertySection> sections, std::size_t index,
                     std::string_view verb, std::string_view choice);
@@ -220,6 +226,8 @@ private:
     enum class SelectionView : std::uint8_t { Card, Drawer };
     SelectionView SelectionShown = SelectionView::Card;
     bool TitleHeld = false;
+    // The number being typed into instead of dragged, or empty.
+    std::string SheetTyping;
     TransientSurfaces::Id DrawerTransient = 0;
     std::string ExplorerShown;
     std::string ExplorerFilter;

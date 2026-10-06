@@ -493,7 +493,10 @@ entity id) and is what an action about a row should carry, never its position;
 `Depth` nests it under the rows before it; `Icon` names an icon; `Selected`,
 `Expanded`, `Mixed` and `Disabled` are its standing; `Parts` holds a vector's
 components as text, edited side by side. `Control` adds `toggle`, `asset`,
-`color` and `section`, the last being a heading rather than a value. `Verbs`
+`color` and `section`, the last being a heading rather than a value, and
+`number` and `vector`: a number typed or dragged, with `Number`/`Min`/`Max`
+when it is bounded, and numbers side by side in `Parts`, each named by the
+`Choices` at its index and empty where it stands for several values. `Verbs`
 are things to do about the row, offered beside it rather than as rows of their
 own -- a section's commands, the cross that takes it away (`Removes`) -- each a
 key the document raises back. All of it stays presentation: the host still
