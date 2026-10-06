@@ -99,7 +99,7 @@ sectors — and never concepts such as "tab" or "explorer".
 | --- | --- | --- |
 | Rail, left | what is open | hatch (≡); a tab per open asset, its editor named small beside it, a lamp when changed; + to open another editor |
 | Rail, right | consequences | problems lamp, transport where it applies, window buttons |
-| Under the rail, left | where the work is | breadcrumb: MAP, then world ▸ graph ▸ zone (the one the camera is in) ▸ selection; each part opens the hierarchy at it |
+| Under the rail, left | where the work is | breadcrumb: MAP, then world ▸ graph ▸ zone (the one the camera is in) ▸ selection; a place opens the hierarchy at it, the selection opens its sheet |
 | Content, top-right | how I am seeing | view instrument |
 | Bottom-left | what my hands are doing and holding | operation station (the Q wheel's face), manipulation readout (the Z wheel's face), the resource cartridge and stash |
 | Bottom edge | the work's axis, when it has one | Animation's tape deck |
@@ -124,7 +124,7 @@ Interface comes in increasing commitment to a task:
 | Wheel | a choice: a tool (Q), a transform (Z), what to do to *this* (Space) | holding the key, or clicking a station | releasing (commits; in the middle, nothing), Esc |
 | Handle | a value with a place on the object | being on the selected object | letting go (commits), Esc |
 | Popover | one decision | clicking an instrument | choosing, clicking elsewhere, Esc |
-| Sheet | everything about the selection | More… on the Space wheel, or the palette | Esc |
+| Sheet | everything about the selection | the selection's part of the breadcrumb, More… on the Space wheel, or the palette | Esc, or its part again |
 | Explorer | a library, the hierarchy | a slot, a key (Tab for the hierarchy), the breadcrumb, the palette | committing a pick, Esc |
 | Map | the world from above | MAP in the breadcrumb | clicking a zone (goes there), Esc |
 
@@ -158,8 +158,9 @@ entries — owner, dismiss policy, whether Esc reaches it — and "popover" and
 
 Expert operation is one chord away; nothing *requires* a chord.
 
-- The breadcrumb always says where the camera and the selection are, and each
-  part opens the hierarchy showing it; its hint names the hierarchy's chord.
+- The breadcrumb always says where the camera and the selection are; each
+  place in it opens the hierarchy showing it, and the selection opens its
+  sheet. Its hint names the hierarchy's chord.
 - Every instrument shows its chord on hover. Chords are read from the action
   catalog, never written into a document, so a rebinding shows up everywhere.
 - Clicking a station opens the same wheel its key opens, in click mode.
@@ -186,6 +187,32 @@ Every interruption ends the session: Esc, focus loss, a tool switch, hiding the
 workspace, the selection moving on. A wheel fan, a handle and the full sheet are
 three presentations of the same properties, and each commits only through the
 same sessions or commands.
+
+**The sheet.** Its title is the selection's name, typed over to rename, with
+how else it is known beneath (its id; the prefab it is an instance of). Adding
+a component comes first, each one offered saying what it would also add.
+Components follow, each heading carrying what can be done about it: its own
+actions (a brush's bake and export), its verbs, and a cross that removes it —
+quiet until the pointer is on it, and undone by the chord the notice names.
+Groups fold. Last, closed until opened, are the components the engine put on
+the entity because of the authored ones, under what each came from. Nothing
+piles up at the bottom: what can be done to the selection as a whole is on the
+Space wheel and in the palette.
+
+**Numbers.** A number is a box, filled behind its value as far as it is
+between its bounds; a vector is its numbers side by side, each named in the
+gizmo's colours; a rotation is its pitch, yaw and roll in degrees. Dragged
+across, a box changes with the pointer held still and hidden — Shift for fine
+steps, Ctrl for coarse ones — and the whole drag is one step that Esc puts
+back. Let go where it was pressed, it types instead: Enter or Tab keeps what
+was typed, Tab moving on to the next number, and Esc drops it.
+
+**Several at once.** Several selected objects are one sheet: every component
+any of them holds, one only some hold saying how many and offering itself to
+the rest, and a field they disagree on reading "— differs". Typing sets every
+one alike; dragging moves each from its own value. Whatever an edit touches is
+one step. A component that draws its own rows — a brush's modifier stack — is
+edited one object at a time.
 
 ## 8. Motion
 

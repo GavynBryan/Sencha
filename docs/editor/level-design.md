@@ -103,9 +103,12 @@ handle while it changes.
 **Parametric verbs** (inset, bevel) stage a preview that applies or cancels;
 while one is staged the selection's sheet shows to apply it.
 
-The **full sheet** (More…, or "All Properties" in the palette) shows every
-component and field, adding and removing components, and instance overrides
-with reset.
+The **full sheet** (the selection's part of the breadcrumb, More…, or "All
+Properties" in the palette) shows every component and field, adding and
+removing components, instance overrides with reset, and the components derived
+from them; several selected objects share one sheet
+(`docs/editor/interaction-grammar.md` §7). A brush's modifiers are added from a
+menu of every kind there is, each saying what it does.
 
 Every edit from the wheel, a handle or the sheet runs begin / preview / commit / cancel inside
 the document's transaction, so undo, Esc and interruptions behave like a
