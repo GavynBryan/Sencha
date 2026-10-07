@@ -67,9 +67,15 @@ TEST(AssetIdentity, AMaterialKeepsItsIdThroughASave)
 {
     MaterialDescription description;
     description.Id = kId;
+    description.BaseColorTexture = AssetRef{ AssetType::Texture, "asset://textures/stone.png", AssetId{ 0x5 } };
+    description.NormalTexture = AssetRef{ AssetType::Texture, "asset://textures/stone_n.png" };
     MaterialDescription read;
     ASSERT_TRUE(ParseMaterialJson(WriteMaterialJson(description), read));
     EXPECT_EQ(read.Id, kId);
+    EXPECT_EQ(read.BaseColorTexture.Id, AssetId{ 0x5 }) << "a texture is named by its id";
+    EXPECT_EQ(read.BaseColorTexture.Path, "asset://textures/stone.png");
+    EXPECT_EQ(read.BaseColorTexture.Type, AssetType::Texture);
+    EXPECT_EQ(read.NormalTexture.Path, "asset://textures/stone_n.png") << "or by its path alone";
 
     std::optional<JsonValue> malformed = JsonParse(R"({"id": "C0FFEE", "version": 2})");
     ASSERT_TRUE(malformed.has_value());

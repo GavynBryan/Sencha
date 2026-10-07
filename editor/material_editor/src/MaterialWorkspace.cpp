@@ -571,7 +571,7 @@ void MaterialWorkspace::CreateMaterialFromTexture(const std::string& textureVirt
     else
     {
         MaterialDescription description;
-        description.BaseColorTexture = AssetRef{ AssetType::Texture, textureVirtualPath };
+        description.BaseColorTexture = Assets.Registry.Current(AssetRef{ AssetType::Texture, textureVirtualPath });
         std::string error;
         if (!SaveMaterialFile(file.string(), description, &error))
         {

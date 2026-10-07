@@ -217,19 +217,23 @@ void AssetPreloader::OnAssetStaged(AssetType type,
     std::vector<std::string> edges;
     std::unordered_set<std::string> unique;
 
-    for (const AssetRef& dependency : staging.Dependencies)
+    for (const AssetRef& declared : staging.Dependencies)
     {
-        if (!dependency.IsValid() || !unique.insert(dependency.Path).second)
+        if (!declared.IsValid())
             continue;
 
-        const AssetRecord* record = Registry.FindByPath(dependency.Path);
-        if (record == nullptr || record->Type != dependency.Type)
+        const AssetRecord* record = Registry.Find(declared);
+        if (record == nullptr || record->Type != declared.Type)
         {
             Log.Error("AssetPreloader: '{}' declares unresolvable dependency '{}'",
-                      path, dependency.Path);
+                      path, declared.Path);
             CompleteLoad(type, path, /*failed*/ true);
             return;
         }
+        // Where the asset is now, which a reference by id may not have said.
+        const AssetRef dependency{ declared.Type, record->Path, record->Id };
+        if (!unique.insert(dependency.Path).second)
+            continue;
 
         // Checked before the edge is recorded: a cycle would otherwise leave
         // both payloads waiting on each other forever.

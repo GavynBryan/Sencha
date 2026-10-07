@@ -1,6 +1,7 @@
 #include <assets/material/MaterialLoader.h>
 
 #include <core/assets/AssetIdentity.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
@@ -58,13 +59,12 @@ namespace
     bool ReadTextureRef(const JsonValue& value, std::string_view key,
                         AssetRef& out, MaterialParseError* error)
     {
-        if (!value.IsString())
-            return Fail(error, std::format("'{}' must be an asset path string", key));
-        if (!IsValidAssetPath(value.AsString()))
-            return Fail(error, std::format("'{}' is not a valid asset path: '{}'", key, value.AsString()));
+        std::optional<AssetRef> ref = AssetRefFromJson(value);
+        if (!ref.has_value())
+            return Fail(error, std::format("'{}' must be an asset path or an {{id, path}} reference", key));
 
+        out = std::move(*ref);
         out.Type = AssetType::Texture;
-        out.Path = value.AsString();
         return true;
     }
 

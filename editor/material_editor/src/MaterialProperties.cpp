@@ -203,6 +203,9 @@ PropertyEditResult MaterialProperties::PreviewEdit(std::string_view key, std::st
     MaterialDescription edited = tab->Session.Working();
     if (!field->Write(edited, value))
         return PropertyEditResult::Refused;
+    // A texture chosen by its path is named by its id too.
+    for (AssetRef* slot : { &edited.BaseColorTexture, &edited.NormalTexture, &edited.OrmTexture, &edited.EmissiveTexture })
+        *slot = Registry.Current(std::move(*slot));
     if (SameMaterialDescription(edited, tab->Session.Working()))
         return PropertyEditResult::Unchanged;
     tab->Session.SetWorking(edited);

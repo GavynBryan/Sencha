@@ -193,6 +193,13 @@ const AssetRecord* AssetRegistry::FindById(AssetId id) const
     return it == RecordsById.end() ? nullptr : it->second;
 }
 
+const AssetRecord* AssetRegistry::Find(const AssetRef& ref) const
+{
+    if (const AssetRecord* byId = ref.Id.IsValid() ? FindById(ref.Id) : nullptr)
+        return byId;
+    return ref.Path.empty() ? nullptr : FindByPath(ref.Path);
+}
+
 AssetRef AssetRegistry::Current(AssetRef ref) const
 {
     if (const AssetRecord* byId = ref.Id.IsValid() ? FindById(ref.Id) : nullptr)

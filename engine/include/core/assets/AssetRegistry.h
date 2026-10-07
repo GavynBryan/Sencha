@@ -49,6 +49,8 @@ public:
 
     [[nodiscard]] const AssetRecord* FindByPath(std::string_view path) const;
     [[nodiscard]] const AssetRecord* FindById(AssetId id) const;
+    // The record `ref` names: by its id when the id is known, else by its path.
+    [[nodiscard]] const AssetRecord* Find(const AssetRef& ref) const;
     // `ref` as the registry knows its asset now: the asset's path when its id
     // is known, else its id when its path is. Anything unknown stays as it was.
     [[nodiscard]] AssetRef Current(AssetRef ref) const;

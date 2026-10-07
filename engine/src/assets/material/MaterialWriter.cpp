@@ -1,6 +1,7 @@
 #include <assets/material/MaterialWriter.h>
 
 #include <core/assets/AssetIdentity.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
 
@@ -59,16 +60,16 @@ JsonValue WriteMaterialJson(const MaterialDescription& description)
 
     if (!SameVec4(description.BaseColorFactor, defaults.BaseColorFactor))
         root.emplace_back("base_color_factor", FactorArray(description.BaseColorFactor, 4));
-    if (!description.BaseColorTexture.Path.empty())
-        root.emplace_back("base_color_texture", JsonValue(description.BaseColorTexture.Path));
+    if (!description.BaseColorTexture.Path.empty() || description.BaseColorTexture.Id.IsValid())
+        root.emplace_back("base_color_texture", AssetRefToJson(description.BaseColorTexture));
 
-    if (!description.NormalTexture.Path.empty())
-        root.emplace_back("normal_texture", JsonValue(description.NormalTexture.Path));
+    if (!description.NormalTexture.Path.empty() || description.NormalTexture.Id.IsValid())
+        root.emplace_back("normal_texture", AssetRefToJson(description.NormalTexture));
     if (description.NormalScale != defaults.NormalScale)
         root.emplace_back("normal_scale", JsonValue(static_cast<double>(description.NormalScale)));
 
-    if (!description.OrmTexture.Path.empty())
-        root.emplace_back("orm_texture", JsonValue(description.OrmTexture.Path));
+    if (!description.OrmTexture.Path.empty() || description.OrmTexture.Id.IsValid())
+        root.emplace_back("orm_texture", AssetRefToJson(description.OrmTexture));
     if (description.RoughnessFactor != defaults.RoughnessFactor)
         root.emplace_back("roughness_factor", JsonValue(static_cast<double>(description.RoughnessFactor)));
     if (description.MetallicFactor != defaults.MetallicFactor)
@@ -78,8 +79,8 @@ JsonValue WriteMaterialJson(const MaterialDescription& description)
 
     if (!SameVec4(description.EmissiveFactor, defaults.EmissiveFactor))
         root.emplace_back("emissive_factor", FactorArray(description.EmissiveFactor, 3));
-    if (!description.EmissiveTexture.Path.empty())
-        root.emplace_back("emissive_texture", JsonValue(description.EmissiveTexture.Path));
+    if (!description.EmissiveTexture.Path.empty() || description.EmissiveTexture.Id.IsValid())
+        root.emplace_back("emissive_texture", AssetRefToJson(description.EmissiveTexture));
     if (description.EmissiveStrength != defaults.EmissiveStrength)
         root.emplace_back("emissive_strength", JsonValue(static_cast<double>(description.EmissiveStrength)));
 

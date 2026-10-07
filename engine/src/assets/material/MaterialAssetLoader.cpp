@@ -178,7 +178,8 @@ void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
     if (!Textures)
         return;
 
-    TextureHandle handle = LoadTexture(ref.Path, srgb, assets);
+    const std::string path(assets.ResolveRefPath(ref.Id, ref.Path, AssetType::Texture));
+    TextureHandle handle = LoadTexture(path, srgb, assets);
     if (!handle.IsValid())
     {
         Log.Error("MaterialAssetLoader: failed to resolve texture '{}'; using neutral default",

@@ -400,3 +400,18 @@ TEST(AssetIdStamping, AReferenceThatNamesItsIdIsLeftWhole)
     EXPECT_EQ(mesh->Find("id")->AsString(), "00000000000000aa");
     EXPECT_TRUE(mesh->Find("path")->IsString());
 }
+
+// A dependency named by id is found where its asset now is.
+TEST(AssetRegistryIds, AReferenceFindsItsAssetByIdBeforePath)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://moved.smesh")));
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://other.smesh")));
+    const AssetId moved = registry.FindByPath("asset://moved.smesh")->Id;
+
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://other.smesh", moved })->Path,
+              "asset://moved.smesh") << "the id decides";
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://other.smesh" })->Path, "asset://other.smesh");
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://gone.smesh", AssetId{ 7 } }), nullptr);
+}
