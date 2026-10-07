@@ -4,6 +4,7 @@
 #include "documents/DocumentSourceSet.h"
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
+#include "project/ReferenceIndex.h"
 #include "thumbnails/AssetPictures.h"
 
 #include <app/GameModuleLoader.h>
@@ -46,6 +47,8 @@ public:
     // Once a frame: makes the material and texture pictures once authored UI
     // is ready, and keeps how many are resident within budget.
     void UpdatePictures();
+    // Which of the project's files name which, as last read by a shelf.
+    [[nodiscard]] ReferenceIndex& References() { return ContentReferences; }
 
 private:
     void LoadModule(const std::string& modulePath);
@@ -60,6 +63,7 @@ private:
     DocumentSourceSet Journal;
     DataDocumentStore DataDocumentFiles;
     AssetPictures PictureSources;
+    ReferenceIndex ContentReferences;
     std::unique_ptr<MaterialThumbnailCache> MaterialPictures;
     AssetPictures::Registration MaterialPictureFiles;
     AssetPictures::Registration TexturePictureFiles;

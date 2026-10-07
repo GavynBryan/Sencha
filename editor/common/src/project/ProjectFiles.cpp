@@ -1,6 +1,7 @@
 #include "project/ProjectFiles.h"
 
 #include <assets/data/DataAssetSubtype.h>
+#include <core/io/FileBytes.h>
 
 #include <algorithm>
 #include <cctype>
@@ -84,4 +85,12 @@ std::optional<ProjectFile> FindProjectFile(std::span<const std::filesystem::path
             return Describe(root, file);
     }
     return std::nullopt;
+}
+
+std::optional<std::string> ReadProjectFileText(const std::filesystem::path& file)
+{
+    std::vector<std::byte> bytes;
+    if (!ReadFileBytes(file, bytes))
+        return std::nullopt;
+    return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }

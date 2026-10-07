@@ -16,6 +16,7 @@
 
 #include <app/Engine.h>
 #include <app/EngineSchedule.h>
+#include <app/RuntimeContent.h>
 #include <assets/texture/Image.h>
 #include <assets/texture/ImageLoader.h>
 #include <core/console/ConsoleRegistry.h>
@@ -255,6 +256,21 @@ std::vector<std::filesystem::path> KyusuApp::ContentRoots() const
     if (const ProjectDescriptor* project = Session != nullptr ? Session->Project() : nullptr)
         roots.assign(project->ContentRoots.begin(), project->ContentRoots.end());
     return roots;
+}
+
+std::vector<std::filesystem::path> KyusuApp::OtherContentRoots() const
+{
+    const std::vector<std::filesystem::path> project = ContentRoots();
+    std::vector<std::filesystem::path> others;
+    for (const ContentRootPaths& root : GetEngine().Content().Roots())
+    {
+        std::error_code ec;
+        if (std::ranges::none_of(project, [&](const std::filesystem::path& own) {
+                return std::filesystem::equivalent(root.Authored, own, ec);
+            }))
+            others.push_back(root.Authored);
+    }
+    return others;
 }
 
 ShellWindow* KyusuApp::WindowShellFor(PresentationId window) const
@@ -676,8 +692,10 @@ std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, Presentation
         .Presentation = presentation,
         .CloseWindow = std::move(close),
         .Title = "Kyusu",
-        .ContentRoots = ContentRoots(),
-        .Pictures = Session != nullptr ? &Session->Pictures() : nullptr,
+        .Content = { .ContentRoots = ContentRoots(),
+                     .OtherRoots = OtherContentRoots(),
+                     .Pictures = Session != nullptr ? &Session->Pictures() : nullptr,
+                     .References = Session != nullptr ? &Session->References() : nullptr },
     });
 }
 

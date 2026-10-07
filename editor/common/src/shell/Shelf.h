@@ -16,6 +16,7 @@
 #include <vector>
 
 class AssetPictures;
+class ReferenceIndex;
 class UiService;
 class WorkspaceHost;
 struct UiAction;
@@ -39,6 +40,20 @@ struct ShelfPick
     [[nodiscard]] bool Offers(const ProjectFile& file) const;
 };
 
+// Where a shelf finds the project's content, and what it is told about it.
+struct ShelfSources
+{
+    // Where the open project's content is on disk; none without a project.
+    std::vector<std::filesystem::path> ContentRoots = {};
+    // Content mounted beside the project (the engine's), which the project's
+    // files may name but the shelf does not show.
+    std::vector<std::filesystem::path> OtherRoots = {};
+    // Without pictures, every file is shown by its kind's icon.
+    AssetPictures* Pictures = nullptr;
+    // Without references, nothing is said of what uses what.
+    ReferenceIndex* References = nullptr;
+};
+
 //=============================================================================
 // Shelf
 //
@@ -55,9 +70,8 @@ struct ShelfPick
 class Shelf
 {
 public:
-    // Without `pictures`, every file is shown by its kind's icon.
     Shelf(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces, PresentationId presentation,
-          std::vector<std::filesystem::path> contentRoots, AssetPictures* pictures);
+          ShelfSources sources);
     ~Shelf();
 
     Shelf(const Shelf&) = delete;
@@ -70,6 +84,8 @@ public:
     void Toggle();
     // Raised to choose for `pick`, in place of opening.
     void Pick(ShelfPick pick);
+    // Raised with `assetPath` chosen and nothing narrowing it out of sight.
+    void Reveal(const std::string& assetPath);
     // What it is choosing for now; empty while it opens what is chosen.
     [[nodiscard]] const std::string& Choosing() const { return Picking.Title; }
     [[nodiscard]] bool IsRaised() const { return State == Placement::Raised; }
@@ -84,7 +100,7 @@ public:
 
 private:
     enum class Placement : std::uint8_t { Down, Raised, Pinned };
-    enum class Listing : std::uint8_t { Everything, Recent, Open, Changed };
+    enum class Listing : std::uint8_t { Everything, Recent, Open, Changed, Unused, Problems };
     enum class Look : std::uint8_t { Tiles, List };
     enum class Edge : std::uint8_t { Resting, Sizing };
     enum class Purpose : std::uint8_t { Opening, Choosing };
@@ -95,8 +111,12 @@ private:
     // Opens the file, or commits to it while choosing.
     void Open(const std::string& assetPath);
     [[nodiscard]] bool Offers(const ProjectFile& file) const;
+    [[nodiscard]] bool Listed(const ProjectFile& file) const;
+    // Shows a file the chosen one names or is named by, leaving the way back.
+    void Follow(const std::string& assetPath);
     void Move(int by);
     void Publish();
+    void PublishReferences(const ProjectFile* chosen);
     [[nodiscard]] std::vector<const ProjectFile*> Shown() const;
     [[nodiscard]] const ProjectFile* FileAt(const std::string& assetPath) const;
     [[nodiscard]] int Columns() const;
@@ -105,8 +125,7 @@ private:
     UiSurfaceId Surface;
     WorkspaceHost& Workspaces;
     PresentationId Presentation;
-    std::vector<std::filesystem::path> Roots;
-    AssetPictures* Pictures;
+    ShelfSources Sources;
     UiScreenHandle Screen;
 
     Placement State = Placement::Down;
@@ -120,6 +139,8 @@ private:
     std::set<std::string> OpenFolders;
     // Most recent first: what this window has shown, opened from here or not.
     std::vector<std::string> Recent;
+    // The files followed from, the latest last; the back key returns to it.
+    std::vector<std::string> Trail;
 
     float Dp = 1.0f;
     float HeightDp = 300.0f;

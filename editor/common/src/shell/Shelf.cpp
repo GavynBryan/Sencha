@@ -2,7 +2,9 @@
 
 #include "icons/IconNames.h"
 #include "project/AssetKinds.h"
+#include "project/ReferenceIndex.h"
 #include "shell/AssetTabs.h"
+#include "text/PathLeaf.h"
 #include "thumbnails/AssetPictures.h"
 #include "workspaces/WorkspaceHost.h"
 
@@ -37,12 +39,16 @@ const UiModelPropertyId kPicture = UiPropertyIdAt(14);
 const UiModelPropertyId kTile = UiPropertyIdAt(15);
 const UiModelPropertyId kChoosing = UiPropertyIdAt(16);
 const UiModelPropertyId kOffersNone = UiPropertyIdAt(17);
+const UiModelPropertyId kCanGoBack = UiPropertyIdAt(18);
 
 const UiModelRowsId kCrumbs = UiRowsIdAt(0);
 const UiModelRowsId kChips = UiRowsIdAt(1);
 const UiModelRowsId kLists = UiRowsIdAt(2);
 const UiModelRowsId kFolders = UiRowsIdAt(3);
 const UiModelRowsId kItems = UiRowsIdAt(4);
+const UiModelRowsId kUses = UiRowsIdAt(5);
+const UiModelRowsId kUsedBy = UiRowsIdAt(6);
+const UiModelRowsId kMissing = UiRowsIdAt(7);
 
 const UiActionId kGrab = UiActionIdAt(0);
 const UiActionId kDrag = UiActionIdAt(1);
@@ -60,6 +66,8 @@ const UiActionId kPin = UiActionIdAt(12);
 const UiActionId kClose = UiActionIdAt(13);
 const UiActionId kZoom = UiActionIdAt(14);
 const UiActionId kNone = UiActionIdAt(15);
+const UiActionId kFollow = UiActionIdAt(16);
+const UiActionId kBack = UiActionIdAt(17);
 
 // How much wider a tile is than its picture, and the gap after it, in dp.
 constexpr float kTileMarginDp = 24.0f;
@@ -71,6 +79,7 @@ constexpr float kMostOfTheWindow = 0.75f;
 // Past this many, the rest are found by narrowing.
 constexpr std::size_t kMostShown = 240;
 constexpr std::size_t kMostRecent = 30;
+constexpr std::size_t kMostReferencesShown = 8;
 
 UiScreenDesc Describe()
 {
@@ -96,11 +105,13 @@ UiScreenDesc Describe()
         UiModelProperty{ "tile", UiValue(std::string("96dp")) },
         UiModelProperty{ "choosing", UiValue(std::string{}) },
         UiModelProperty{ "offers_none", UiValue(false) },
+        UiModelProperty{ "can_go_back", UiValue(false) },
     };
-    desc.RowLists = { "crumbs", "chips", "lists", "folders", "items" };
+    desc.RowLists = { "crumbs", "chips", "lists", "folders", "items", "uses", "used_by", "missing" };
     desc.Actions = { "shelf_grab",   "shelf_drag",   "shelf_drop", "shelf_query", "shelf_key",
                      "shelf_category", "shelf_list", "shelf_folder", "shelf_branch", "shelf_pick",
-                     "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom", "shelf_none" };
+                     "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom", "shelf_none",
+                     "shelf_follow", "shelf_back" };
     return desc;
 }
 
@@ -152,13 +163,12 @@ std::string_view FolderName(std::string_view folder)
 } // namespace
 
 Shelf::Shelf(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces, PresentationId presentation,
-             std::vector<std::filesystem::path> contentRoots, AssetPictures* pictures)
+             ShelfSources sources)
     : Ui(ui)
     , Surface(surface)
     , Workspaces(workspaces)
     , Presentation(presentation)
-    , Roots(std::move(contentRoots))
-    , Pictures(pictures)
+    , Sources(std::move(sources))
 {
 }
 
@@ -201,6 +211,25 @@ void Shelf::Pick(ShelfPick pick)
     Query.Category.clear();
 }
 
+void Shelf::Reveal(const std::string& assetPath)
+{
+    Show();
+    Query = {};
+    List = Listing::Everything;
+    Selected = assetPath;
+    Trail.clear();
+}
+
+void Shelf::Follow(const std::string& assetPath)
+{
+    if (assetPath.empty() || FileAt(assetPath) == nullptr || assetPath == Selected)
+        return;
+    Trail.push_back(Selected);
+    Query = {};
+    List = Listing::Everything;
+    Selected = assetPath;
+}
+
 bool ShelfPick::Offers(const ProjectFile& file) const
 {
     if (std::ranges::any_of(Withheld, [&](const std::string& withheld) {
@@ -234,7 +263,9 @@ float Shelf::Reach() const
 
 void Shelf::Rescan()
 {
-    Files = ScanProjectFiles(Roots);
+    Files = ScanProjectFiles(Sources.ContentRoots);
+    if (Sources.References != nullptr)
+        Sources.References->Refresh(Files, ScanProjectFiles(Sources.OtherRoots), ReadProjectFileText);
 }
 
 const ProjectFile* Shelf::FileAt(const std::string& assetPath) const
@@ -258,12 +289,23 @@ void Shelf::Remember()
         }
 }
 
+bool Shelf::Listed(const ProjectFile& file) const
+{
+    const ReferenceIndex* references = Sources.References;
+    switch (List)
+    {
+    case Listing::Unused:   return references != nullptr && references->IsUnused(file.AssetPath);
+    case Listing::Problems: return references != nullptr && !references->Missing(file.AssetPath).empty();
+    default:                return true;
+    }
+}
+
 std::vector<const ProjectFile*> Shelf::Shown() const
 {
-    if (List == Listing::Everything)
+    if (List == Listing::Everything || List == Listing::Unused || List == Listing::Problems)
     {
         std::vector<const ProjectFile*> found = FindAssets(Files, Query);
-        std::erase_if(found, [&](const ProjectFile* file) { return !Offers(*file); });
+        std::erase_if(found, [&](const ProjectFile* file) { return !Offers(*file) || !Listed(*file); });
         return found;
     }
     std::vector<std::string> keys;
@@ -369,8 +411,12 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
     else if (action.Id == kList)
     {
         const std::string list = Text(action);
-        List = list == "recent" ? Listing::Recent : list == "open" ? Listing::Open
-             : list == "changed" ? Listing::Changed : Listing::Everything;
+        List = list == "recent"    ? Listing::Recent
+             : list == "open"      ? Listing::Open
+             : list == "changed"   ? Listing::Changed
+             : list == "unused"    ? Listing::Unused
+             : list == "problems"  ? Listing::Problems
+                                   : Listing::Everything;
     }
     else if (action.Id == kFolder)
         Query.Folder = Text(action);
@@ -395,6 +441,15 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
     }
     else if (action.Id == kOpen)
         Open(Text(action));
+    else if (action.Id == kFollow)
+        Follow(Text(action));
+    else if (action.Id == kBack && !Trail.empty())
+    {
+        Query = {};
+        List = Listing::Everything;
+        Selected = Trail.back();
+        Trail.pop_back();
+    }
     else if (action.Id == kViewAction)
         View = View == Look::Tiles ? Look::List : Look::Tiles;
     else if (action.Id == kPin)
@@ -487,6 +542,19 @@ void Shelf::Publish()
     list("Recent", "recent", static_cast<std::size_t>(std::ranges::count_if(Recent, offered)), Listing::Recent);
     list("Open", "open", static_cast<std::size_t>(counted(false)), Listing::Open);
     list("Changed", "changed", static_cast<std::size_t>(counted(true)), Listing::Changed);
+    if (const ReferenceIndex* references = Sources.References)
+    {
+        const auto countWhere = [&](auto&& holds) {
+            return static_cast<std::size_t>(std::ranges::count_if(Files, [&](const ProjectFile& file) {
+                return Offers(file) && holds(file.AssetPath);
+            }));
+        };
+        list("Unused", "unused", countWhere([&](const std::string& path) { return references->IsUnused(path); }),
+             Listing::Unused);
+        list("Problems", "problems",
+             countWhere([&](const std::string& path) { return !references->Missing(path).empty(); }),
+             Listing::Problems);
+    }
     (void)Ui.SetRows(Screen, kLists, lists);
 
     std::vector<UiRow> folders;
@@ -533,7 +601,7 @@ void Shelf::Publish()
         item.Icon = IconName(kind.Icon);
         // Only a tile drawn as one is asked for its picture: tiles past what is
         // shown never load theirs.
-        const AssetPicture picture = Pictures != nullptr && View == Look::Tiles ? Pictures->PictureOf(file->AssetPath)
+        const AssetPicture picture = Sources.Pictures != nullptr && View == Look::Tiles ? Sources.Pictures->PictureOf(file->AssetPath)
                                                                                 : AssetPicture{};
         item.Parts = { picture.Image, picture.Color };
         item.Selected = file->AssetPath == Selected;
@@ -556,10 +624,41 @@ void Shelf::Publish()
                       UiValue(chosen != nullptr ? SizeText(chosen->Size) + " \xC2\xB7 " + AgeText(chosen->Modified)
                                                 : std::string{}));
     (void)Ui.SetValue(Screen, kPreviewIcon, UiValue(std::string(IconName(kind.Icon))));
-    const AssetPicture picture = chosen != nullptr && Pictures != nullptr ? Pictures->PictureOf(chosen->AssetPath)
+    const AssetPicture picture = chosen != nullptr && Sources.Pictures != nullptr ? Sources.Pictures->PictureOf(chosen->AssetPath)
                                                                           : AssetPicture{};
     (void)Ui.SetValue(Screen, kPreviewImage, UiValue(picture.Image));
     (void)Ui.SetValue(Screen, kPreviewColor, UiValue(picture.Color));
+    PublishReferences(chosen);
+    (void)Ui.SetValue(Screen, kCanGoBack, UiValue(!Trail.empty()));
     (void)Ui.SetValue(Screen, kPreviewOpens, UiValue(chosen != nullptr && (Use == Purpose::Choosing
                                                                              || Workspaces.KindOpening(*chosen) != nullptr)));
+}
+
+void Shelf::PublishReferences(const ProjectFile* chosen)
+{
+    const ReferenceIndex* references = chosen != nullptr ? Sources.References : nullptr;
+    const auto rows = [&](std::span<const std::string> paths, bool followable) {
+        std::vector<UiRow> out;
+        for (const std::string& path : paths)
+        {
+            if (out.size() == kMostReferencesShown)
+            {
+                out.push_back(UiRow{ std::format("and {} more", paths.size() - kMostReferencesShown), "", "" });
+                break;
+            }
+            const ProjectFile* file = followable ? FileAt(path) : nullptr;
+            // What is missing is said as it was written, to be found and mended.
+            UiRow row{ file != nullptr ? std::string(NameOf(*file)) : followable ? std::string(PathLeaf(path)) : path, "",
+                       file != nullptr ? KindOf(*file).Label : std::string{} };
+            row.Key = file != nullptr ? path : std::string{};
+            out.push_back(std::move(row));
+        }
+        return out;
+    };
+    (void)Ui.SetRows(Screen, kUses, rows(references != nullptr ? references->Uses(chosen->AssetPath)
+                                                               : std::span<const std::string>{}, true));
+    (void)Ui.SetRows(Screen, kUsedBy, rows(references != nullptr ? references->UsedBy(chosen->AssetPath)
+                                                                 : std::span<const std::string>{}, true));
+    (void)Ui.SetRows(Screen, kMissing, rows(references != nullptr ? references->Missing(chosen->AssetPath)
+                                                                  : std::span<const std::string>{}, false));
 }

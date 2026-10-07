@@ -32,3 +32,6 @@ struct ProjectFile
 // read it; nullopt when no root holds it.
 [[nodiscard]] std::optional<ProjectFile> FindProjectFile(std::span<const std::filesystem::path> roots,
                                                          std::string_view assetPath);
+
+// A content file's text, read whole; nullopt when it cannot be read.
+[[nodiscard]] std::optional<std::string> ReadProjectFileText(const std::filesystem::path& file);

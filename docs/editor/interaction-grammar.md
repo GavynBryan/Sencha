@@ -135,6 +135,18 @@ and lowers it; NONE clears a field. A workspace declares such an explorer as
 `ExplorerShape::Files` with the kinds it accepts and is handed the choice; it
 never lists files itself.
 
+The Shelf knows what names what (`project/ReferenceIndex`, one per project,
+read from the documents themselves — every `asset://` path in a material,
+scene or data asset, a part of a file as the file, a cooked scene as its
+source). The chosen file's preview lists what it uses and what uses it; a
+click follows to that file and the back key in the bar returns. What a file
+names that is nowhere — in the project or in the engine's content mounted
+beside it — is listed under it, and such files are the **Problems** list;
+**Unused** lists what nothing names (a level is opened rather than named, so
+levels sit there until a game's settings name them). Ctrl+click on an asset
+field shows its file on the Shelf. The index is read again as the Shelf
+rises, only documents whose size or time changed.
+
 The rail is also the window caption (client decorations) and the only
 full-width chrome. Every persistent instrument is **a readout that is also a
 button**: the station shows the tool and opens its wheel, the cartridge shows

@@ -124,8 +124,15 @@ body
 #shelf_items.list .tile_kind { width: 160dp; text-align: left; font-size: 10dp; }
 #shelf_empty { display: block; padding: 12dp; }
 
-#shelf_preview { flex: 0 0 220dp; display: flex; flex-direction: column; gap: 4dp; overflow: hidden; }
+#shelf_preview { flex: 0 0 220dp; display: flex; flex-direction: column; gap: 4dp; overflow-y: auto; }
 .preview_well { display: block; position: relative; width: 140dp; height: 140dp; border-width: 1dp; border-radius: 3dp; }
 #preview_name { display: block; font-family: "Chakra Petch"; font-weight: 600; font-size: 14dp; word-break: break-word; }
 .fact { display: block; font-size: 10dp; word-break: break-word; }
 .fact.path { font-family: "JetBrains Mono"; }
+
+/* What the chosen file names and what names it; a row follows to that file. */
+.refs_heading { display: block; margin-top: 6dp; font-size: 9dp; letter-spacing: 1dp; }
+.ref { display: flex; align-items: center; gap: 6dp; height: 18dp; padding: 0dp 4dp; border-radius: 2dp; }
+.ref_name { display: block; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref_kind { display: block; font-size: 9dp; white-space: nowrap; }
+.ref.missing { font-family: "JetBrains Mono"; font-size: 10dp; }

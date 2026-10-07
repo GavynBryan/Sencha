@@ -351,7 +351,7 @@ ShellWindow::ShellWindow(ShellWindowServices services)
     Deck = std::make_unique<TimelineDeck>(Services.Ui, SurfaceId, Services.Workspaces, Services.Actions,
                                           Services.Presentation);
     AssetShelf = std::make_unique<Shelf>(Services.Ui, SurfaceId, Services.Workspaces, Services.Presentation,
-                                         Services.ContentRoots, Services.Pictures);
+                                         Services.Content);
     (void)Services.Catalog.Define({ .Id = "shelf.toggle", .Label = "Asset Shelf", .Category = "View",
                                     .Icon = IconId::Folder,
                                     .DefaultChords = { KeyChord{ SDLK_SPACE, { .Shift = true } } } });
@@ -637,8 +637,16 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     }
     else if (action.Id == kSheetPickAction)
     {
-        // An asset is chosen from the shelf, among what the field can hold.
+        // An asset is chosen from the shelf, among what the field can hold;
+        // with Ctrl, the shelf shows the one it holds.
         const std::vector<UiRow> shown = Services.Ui.GetRows(Screen, tool ? kToolRows : kSelectionRows);
+        const bool follows = action.Arguments.size() > 2 && action.Arguments[2].Kind() == UiValueKind::Bool
+                          && action.Arguments[2].AsBool();
+        if (follows && index < shown.size() && !shown[index].Value.empty())
+        {
+            AssetShelf->Reveal(shown[index].Value);
+            return;
+        }
         AssetShelf->Pick({ .Title = sheet.LabelOf(index),
                            .Only = sheet.CandidatesOf(sections, index),
                            .Current = index < shown.size() ? shown[index].Value : std::string{},

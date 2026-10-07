@@ -318,3 +318,19 @@ do the work and delete the entry.
   designer opening engine content from the Shelf. The Shelf would then take
   read-only roots, shown as their own top-level folders, and the UI Preview
   library would fold into it.
+
+## References kept current while the Shelf is up
+
+- **What:** the reference index reads the project's documents again only as
+  the Shelf rises (changed ones only: 0.2 ms after the first read, which took
+  47 ms for 242 files in a debug build). A file saved while the Shelf stays up
+  or pinned shows its old uses until the Shelf rises again. UI documents
+  (`.rml`, `.rcss`) and legacy `.sworld` files name what they use by relative
+  path, not `asset://`, and are not read.
+- **Where:** `editor/common/src/project/ReferenceIndex.cpp` (`Refresh`), called
+  by `Shelf::Rescan`; `ScanUiSource` (cook layer) already reads UI documents'
+  references.
+- **Trigger:** a pinned Shelf showing stale uses after an edit, a project whose
+  first read is a felt hitch on raising the Shelf (then the first read moves to
+  `AsyncTaskQueue` and commits at the frame boundary), or a person looking
+  for what uses a stylesheet.
