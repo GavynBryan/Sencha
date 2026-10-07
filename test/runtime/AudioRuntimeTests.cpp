@@ -1,3 +1,4 @@
+#include <core/assets/AssetRefCodec.h>
 #include <gtest/gtest.h>
 
 #include <audio/AudioCaptionComponent.h>
@@ -106,7 +107,7 @@ void SetupAudioWorld(
 }
 } // namespace
 
-TEST(AudioClipCodec, SaveWritesPathString)
+TEST(AudioClipCodec, SaveWritesTheIdAndPath)
 {
     LoggingProvider logging;
     AssetRegistry registry(logging);
@@ -129,8 +130,10 @@ TEST(AudioClipCodec, SaveWritesPathString)
         context));
 
     const JsonValue json = archive.TakeValue();
-    ASSERT_TRUE(json.IsString());
-    EXPECT_EQ(json.AsString(), "asset://audio/boop.wav");
+const std::optional<AssetRef> written = AssetRefFromJson(json);
+    ASSERT_TRUE(written.has_value());
+    EXPECT_EQ(written->Path, "asset://audio/boop.wav");
+    EXPECT_TRUE(written->Id.IsValid()) << "a registered asset is written by its id too";
 }
 
 TEST(AudioClipCodec, LoadResolvesPathString)

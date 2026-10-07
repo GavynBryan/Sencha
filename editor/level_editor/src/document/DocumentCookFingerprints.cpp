@@ -220,7 +220,7 @@ DocumentCookFingerprints ComputeDocumentCookFingerprints(
     AddVec3(probeIdentity, "ground", lightmapParams.Probe.GroundColor);
     fp.Probe = probeIdentity.Value();
 
-    CookFingerprint documentFingerprint("document_cook", 9);
+    CookFingerprint documentFingerprint("document_cook", 10);
     documentFingerprint.AddDependency("brush_cells", fp.Brush)
         .AddDependency("placements", fp.Placements)
         .AddDependency("direct_lights", HashDirectLights(bakeLights))

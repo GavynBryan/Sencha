@@ -98,7 +98,7 @@ namespace
         for (const std::uint64_t member : members)
         {
             // Key is ignored inside an array scope; the element is appended.
-            if (!WriteSceneAssetRef(archive, key, context.Assets->GetPathForLease(type, member), context))
+            if (!WriteSceneAssetRef(archive, key, type, context.Assets->GetPathForLease(type, member), context))
             {
                 archive.End();
                 return false;
@@ -212,6 +212,7 @@ bool ReadSceneAssetRef(IReadArchive& archive,
 
 bool WriteSceneAssetRef(IWriteArchive& archive,
                         std::string_view key,
+                        AssetType type,
                         std::string_view path,
                         SceneSerializationContext& context)
 {
@@ -222,7 +223,11 @@ bool WriteSceneAssetRef(IWriteArchive& archive,
         return false;
     }
 
-    archive.Field(key, path);
+    AssetRef ref{ type, std::string(path) };
+    if (context.Assets != nullptr)
+        if (const AssetRecord* record = context.Assets->Resolve(path, type))
+            ref.Id = record->Id;
+    WriteAssetRef(archive, key, ref);
     return archive.Ok();
 }
 
@@ -242,7 +247,7 @@ bool SaveAssetField(IWriteArchive& archive,
     if (arity == AssetArity::List)
         return SaveAssetList(archive, key, token, type, context);
 
-    return WriteSceneAssetRef(archive, key, context.Assets->GetPathForLease(type, token), context);
+    return WriteSceneAssetRef(archive, key, type, context.Assets->GetPathForLease(type, token), context);
 }
 
 bool LoadAssetField(IReadArchive& archive,

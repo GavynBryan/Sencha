@@ -3,6 +3,7 @@
 // are the case that exercises every branch: they serialize as a path, may carry
 // a stamped id, and must resolve back through the asset registry on load.
 
+#include <core/assets/AssetRefCodec.h>
 #include <gtest/gtest.h>
 #include <render/PointLightComponent.h>
 #include <world/transform/TransformComponents.h>
@@ -99,7 +100,7 @@ struct TypeSchema<SceneCodecTagComponent>
     static auto Fields() { return std::tuple{}; }
 };
 
-TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleAsPathString)
+TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleByIdAndPath)
 {
     ComponentSerializerRegistry serializers;
     RegisterComponent<SceneCodecMaterialComponent>(serializers);
@@ -134,11 +135,13 @@ TEST(SceneFieldCodec, GenericComponentSerializerWritesTypedMaterialHandleAsPathS
     ASSERT_NE(component, nullptr);
     const JsonValue* materialJson = component->Find("material");
     ASSERT_NE(materialJson, nullptr);
-    ASSERT_TRUE(materialJson->IsString());
-    EXPECT_EQ(materialJson->AsString(), "asset://materials/dev/red.smat");
+const std::optional<AssetRef> written = AssetRefFromJson(*materialJson);
+    ASSERT_TRUE(written.has_value());
+    EXPECT_EQ(written->Path, "asset://materials/dev/red.smat");
+    EXPECT_TRUE(written->Id.IsValid()) << "a registered asset is written by its id too";
 }
 
-TEST(SceneFieldCodec, MaterialHandleWritesPathString)
+TEST(SceneFieldCodec, MaterialHandleWritesTheIdAndPath)
 {
     LoggingProvider logging;
     AssetRegistry registry(logging);
@@ -156,8 +159,10 @@ TEST(SceneFieldCodec, MaterialHandleWritesPathString)
     ASSERT_TRUE(SaveHandleField<MaterialHandle>(AssetType::Material, archive, "material", handle, context));
 
     JsonValue json = archive.TakeValue();
-    ASSERT_TRUE(json.IsString());
-    EXPECT_EQ(json.AsString(), "asset://materials/dev/red.smat");
+const std::optional<AssetRef> written = AssetRefFromJson(json);
+    ASSERT_TRUE(written.has_value());
+    EXPECT_EQ(written->Path, "asset://materials/dev/red.smat");
+    EXPECT_TRUE(written->Id.IsValid()) << "a registered asset is written by its id too";
 }
 
 TEST(SceneFieldCodec, MaterialHandleLoadsPathString)

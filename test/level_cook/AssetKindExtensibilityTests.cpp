@@ -6,6 +6,7 @@
 
 #include "document/AssetFieldIo.h"
 
+#include <core/assets/AssetRefCodec.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/assets/AssetCache.h>
 #include <core/assets/AssetKindRegistry.h>
@@ -243,7 +244,9 @@ TEST_F(AssetKindExtensibility, ASavedSceneNamesTheScriptBack)
     const JsonValue* binding = saved.Find("entities")->AsArray().at(0)
         .Find("components")->Find("test.script_binding");
     ASSERT_NE(binding, nullptr);
-    EXPECT_EQ(binding->Find("script")->AsString(), kPatrol);
+    const std::optional<AssetRef> written = AssetRefFromJson(*binding->Find("script"));
+    ASSERT_TRUE(written.has_value());
+    EXPECT_EQ(written->Path, kPatrol);
 }
 
 TEST_F(AssetKindExtensibility, TheEditorEditsTheFieldLikeAnyOther)

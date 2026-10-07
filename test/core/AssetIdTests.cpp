@@ -362,3 +362,41 @@ TEST(AssetIdStamping, StampsKnownRefsAndLeavesTheRestAlone)
     EXPECT_TRUE(pathSet.contains("asset://meshes/dev/cube.smesh"));
     EXPECT_TRUE(pathSet.contains("asset://materials/dev/unmapped.smat"));
 }
+
+// A reference follows its asset: a known id gives the current path, a known
+// path gives the id, and what the registry does not know stays as written.
+TEST(AssetRegistryIds, AReferenceIsMadeCurrentByItsIdOrItsPath)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://moved.smesh")));
+    const AssetId id = registry.FindByPath("asset://moved.smesh")->Id;
+
+    const AssetRef stale = registry.Current(AssetRef{ AssetType::StaticMesh, "asset://old.smesh", id });
+    EXPECT_EQ(stale.Path, "asset://moved.smesh");
+
+    const AssetRef bare = registry.Current(AssetRef{ AssetType::StaticMesh, "asset://moved.smesh" });
+    EXPECT_EQ(bare.Id, id);
+
+    const AssetRef unknown = registry.Current(AssetRef{ AssetType::StaticMesh, "asset://gone.smesh", AssetId{ 9 } });
+    EXPECT_EQ(unknown.Path, "asset://gone.smesh");
+    EXPECT_EQ(unknown.Id, AssetId{ 9 });
+}
+
+// A reference that already names its id is left whole: its id is the asset's
+// own word, and stamping its path would nest a reference inside a reference.
+TEST(AssetIdStamping, AReferenceThatNamesItsIdIsLeftWhole)
+{
+    AssetIdMap map;
+    (void)map.EnsureId("asset://meshes/dev/cube.smesh", 0x1);
+
+    const std::optional<JsonValue> scene =
+        JsonParse(R"({ "mesh": { "id": "00000000000000aa", "path": "asset://meshes/dev/cube.smesh" } })");
+    ASSERT_TRUE(scene.has_value());
+
+    const JsonValue stamped = StampAssetRefIds(*scene, map);
+    const JsonValue* mesh = stamped.Find("mesh");
+    ASSERT_NE(mesh, nullptr);
+    EXPECT_EQ(mesh->Find("id")->AsString(), "00000000000000aa");
+    EXPECT_TRUE(mesh->Find("path")->IsString());
+}

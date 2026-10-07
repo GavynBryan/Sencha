@@ -1,5 +1,7 @@
 #include <core/assets/AssetIdMap.h>
 
+#include <core/assets/AssetIdentity.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/hash/ContentHash.h>
 #include <core/json/JsonParser.h>
@@ -251,6 +253,9 @@ JsonValue StampAssetRefIds(const JsonValue& root, const AssetIdMap& map)
 
     if (root.IsObject())
     {
+        // A reference that already names its id is the asset's own word.
+        if (root.Find(kAssetIdKey) != nullptr && AssetRefFromJson(root).has_value())
+            return root;
         JsonValue::Object fields;
         fields.reserve(root.Size());
         for (const auto& [key, item] : root.AsObject())

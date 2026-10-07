@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <string_view>
+#include <vector>
 
 class JsonValue;
 struct IReadArchive;
@@ -26,4 +27,9 @@ struct IWriteArchive;
 void WriteAssetRef(IWriteArchive& archive, std::string_view key, const AssetRef& ref);
 
 [[nodiscard]] std::optional<AssetRef> AssetRefFromJson(const JsonValue& value);
+
+// Every reference anywhere in `root`, in either form, in the order met: the
+// schema-agnostic walk, for a reader that does not know which fields name
+// assets. An object that is a reference is not searched further.
+[[nodiscard]] std::vector<AssetRef> CollectAssetRefs(const JsonValue& root);
 [[nodiscard]] JsonValue AssetRefToJson(const AssetRef& ref);

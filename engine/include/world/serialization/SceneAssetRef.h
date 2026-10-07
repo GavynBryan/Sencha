@@ -32,9 +32,11 @@ struct SceneSerializationContext;
                                      std::string& outPath,
                                      SceneSerializationContext& context);
 
-// Writes the bare-path form. An empty path is refused: a field that names an
-// asset the process cannot name back is a reference about to be lost.
+// Writes the asset at `path` by its id and path when the registry knows it, by
+// path alone otherwise. An empty path is refused: a field that names an asset
+// the process cannot name back is a reference about to be lost.
 [[nodiscard]] bool WriteSceneAssetRef(IWriteArchive& archive,
                                       std::string_view key,
+                                      AssetType type,
                                       std::string_view path,
                                       SceneSerializationContext& context);

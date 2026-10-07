@@ -244,6 +244,11 @@ private:
     // retained source's trivia and unknowns. ToSceneText renders it; Save also
     // scans it for unresolved asset references before writing.
     [[nodiscard]] SceneSourceDocument BuildSceneSource() const;
+    // A reference as the catalog knows its asset now (AssetRegistry::Current):
+    // saved with its id, loaded at the asset's current path.
+    [[nodiscard]] AssetRef Current(AssetRef ref) const;
+    [[nodiscard]] BrushRecord CurrentMaterials(BrushRecord record) const;
+    void ReportUnresolvedRefs(const std::vector<SceneSourceEntity>& entities, std::string_view when) const;
 
     std::string FilePath;
     FileBaseline Baseline;

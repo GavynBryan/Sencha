@@ -93,6 +93,39 @@ std::optional<AssetRef> AssetRefFromJson(const JsonValue& value)
                   path != nullptr ? path->AsString() : std::string{});
 }
 
+namespace
+{
+void Collect(const JsonValue& value, std::vector<AssetRef>& out)
+{
+    if (value.IsString())
+    {
+        if (IsValidAssetPath(value.AsString()))
+            out.push_back(AssetRef{ .Path = value.AsString() });
+    }
+    else if (value.IsObject())
+    {
+        if (value.Find(kIdKey) != nullptr)
+            if (std::optional<AssetRef> ref = AssetRefFromJson(value))
+            {
+                out.push_back(std::move(*ref));
+                return;
+            }
+        for (const auto& [key, member] : value.AsObject())
+            Collect(member, out);
+    }
+    else if (value.IsArray())
+        for (const JsonValue& element : value.AsArray())
+            Collect(element, out);
+}
+} // namespace
+
+std::vector<AssetRef> CollectAssetRefs(const JsonValue& root)
+{
+    std::vector<AssetRef> refs;
+    Collect(root, refs);
+    return refs;
+}
+
 JsonValue AssetRefToJson(const AssetRef& ref)
 {
     if (!ref.Id.IsValid())
