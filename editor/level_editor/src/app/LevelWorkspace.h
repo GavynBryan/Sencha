@@ -120,6 +120,7 @@ public:
     // The kind of resource the hands hold now: what the tool in hand consumes.
     [[nodiscard]] AssetType HeldType() const;
     bool RevealProblem(const Problem& problem) override;
+    bool OpenAsset(const ProjectFile& file) override;
     // The world's validation, republished only when it changed.
     void PublishProblems();
     // What the window's UI wants of the pointer and keys now.

@@ -4,7 +4,6 @@
 #include "authoring/AnimationBlendProperties.h"
 #include "authoring/AnimationBlendspacePad.h"
 #include "authoring/AnimationBoneProperties.h"
-#include "authoring/AnimationTimelineLanes.h"
 #include "authoring/AnimationEventProperties.h"
 #include "authoring/AnimationExplorers.h"
 #include "authoring/AnimationFactProperties.h"
@@ -25,9 +24,11 @@
 #include "authoring/AnimationStageProperties.h"
 #include "authoring/AnimationStageStrokes.h"
 #include "authoring/AnimationTimeline.h"
+#include "authoring/AnimationTimelineLanes.h"
 #include "authoring/AnimationTraceProperties.h"
-#include "render/AnimationPreviewRenderFeature.h"
 #include "problems/ProblemList.h"
+#include "project/ProjectFiles.h"
+#include "render/AnimationPreviewRenderFeature.h"
 #include "text/PathLeaf.h"
 
 #include "actions/ActionOffer.h"
@@ -970,6 +971,19 @@ void AnimationWorkspace::ShowLens(AnimationLens lens)
 {
     ShownLens = lens;
     ShowCard(CardSubject::Lens);
+}
+
+bool AnimationWorkspace::OpenAsset(const ProjectFile& file)
+{
+    if (file.Subtype == "animation.rig")
+    {
+        if (!Workspace->OpenRig(file.AssetPath))
+            return false;
+        Subject = CardSubject::Stage;
+        return true;
+    }
+    OpenDocument(file.AssetPath);
+    return true;
 }
 
 void AnimationWorkspace::OpenDocument(const std::string& path)

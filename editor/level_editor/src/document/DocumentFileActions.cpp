@@ -253,6 +253,11 @@ bool DocumentFileActions::OpenSceneSource(std::string_view assetPath)
     return true;
 }
 
+void DocumentFileActions::OpenFile(std::string path)
+{
+    EnqueueFileAction(FileActionKind::Open, std::move(path));
+}
+
 void DocumentFileActions::RequestOpen()
 {
     if (Window->GetHandle() == nullptr)

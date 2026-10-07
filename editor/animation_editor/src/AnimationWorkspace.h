@@ -96,6 +96,7 @@ public:
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     [[nodiscard]] WorkspaceOperationFacet Operation() override;
     void ShowDocument(std::string_view key) override;
+    bool OpenAsset(const ProjectFile& file) override;
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;

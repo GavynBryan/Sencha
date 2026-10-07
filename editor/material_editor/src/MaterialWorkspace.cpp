@@ -1,6 +1,7 @@
 #include "MaterialWorkspace.h"
 
 #include "MaterialPreviewRenderFeature.h"
+#include "project/ProjectFiles.h"
 
 #include "actions/ActionOffer.h"
 #include "presenters/ContentPicture.h"
@@ -735,6 +736,18 @@ ExplorerPage MaterialWorkspace::Explore(const ExplorerQuery& query)
         [this](const std::string& path) { return Thumbnails != nullptr ? Thumbnails->ImageName(path) : std::string{}; });
     page.Actions.insert(page.Actions.begin(), "material.new");
     return page;
+}
+
+bool MaterialWorkspace::OpenAsset(const ProjectFile& file)
+{
+    if (file.Extension == ".smat")
+    {
+        OpenMaterial(file.AssetPath);
+        ShowMaterial();
+        return true;
+    }
+    PickTexture(file.AssetPath);
+    return true;
 }
 
 void MaterialWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice, std::size_t)

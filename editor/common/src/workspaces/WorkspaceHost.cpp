@@ -216,11 +216,48 @@ void WorkspaceHost::CloseAll()
         (void)Destroy(Opened.back().Kind->Id);
 }
 
+const WorkspaceKind* WorkspaceHost::KindOpening(const ProjectFile& file) const
+{
+    const WorkspaceKind* best = nullptr;
+    bool bestNamesSubtype = false;
+    for (const WorkspaceKind& kind : Table)
+    {
+        if (!IsOffered(kind.Id))
+            continue;
+        for (const WorkspaceOpens& rule : kind.Opens)
+        {
+            if (rule.Extension != file.Extension || (!rule.Subtype.empty() && rule.Subtype != file.Subtype))
+                continue;
+            const bool namesSubtype = !rule.Subtype.empty();
+            if (best == nullptr || (namesSubtype && !bestNamesSubtype))
+            {
+                best = &kind;
+                bestNamesSubtype = namesSubtype;
+            }
+        }
+    }
+    return best;
+}
+
+bool WorkspaceHost::RequestOpen(ProjectFile file)
+{
+    if (KindOpening(file) == nullptr)
+        return false;
+    PendingAssets.push_back({ std::move(file) });
+    return true;
+}
+
 void WorkspaceHost::ApplyRequests()
 {
     // Taken first: a workspace opening may itself request something.
     std::vector<WorkspaceRequest> requests = std::move(Pending);
     Pending.clear();
+    std::vector<AssetOpenRequest> assets = std::move(PendingAssets);
+    PendingAssets.clear();
+    for (const AssetOpenRequest& asset : assets)
+        if (const WorkspaceKind* kind = KindOpening(asset.File))
+            if (IWorkspace* workspace = Open(kind->Id))
+                (void)workspace->OpenAsset(asset.File);
     for (const WorkspaceRequest& request : requests)
     {
         switch (request.Action)

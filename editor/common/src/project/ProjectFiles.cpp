@@ -1,0 +1,87 @@
+#include "project/ProjectFiles.h"
+
+#include <assets/data/DataAssetSubtype.h>
+
+#include <algorithm>
+#include <cctype>
+#include <fstream>
+#include <iterator>
+
+namespace
+{
+constexpr std::string_view kAssetScheme = "asset://";
+
+std::string Lowered(std::string text)
+{
+    std::ranges::transform(text, text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return text;
+}
+
+// The project's bookkeeping beside its content, rather than content.
+bool IsBookkeeping(const std::filesystem::path& file)
+{
+    const std::string name = file.filename().string();
+    return name == "asset_ids.json" || name.ends_with(".user.json") || file.extension() == ".meta";
+}
+
+std::string SubtypeOf(const std::filesystem::path& file)
+{
+    std::ifstream stream(file, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    return PeekDataAssetSubtype(text);
+}
+
+ProjectFile Describe(const std::filesystem::path& root, const std::filesystem::path& file)
+{
+    std::error_code ec;
+    ProjectFile described;
+    described.FilePath = file;
+    described.AssetPath = std::string(kAssetScheme) + std::filesystem::relative(file, root, ec).generic_string();
+    described.Extension = Lowered(file.extension().string());
+    described.Size = std::filesystem::file_size(file, ec);
+    described.Modified = std::filesystem::last_write_time(file, ec);
+    if (described.Extension == ".sdata")
+        described.Subtype = SubtypeOf(file);
+    return described;
+}
+} // namespace
+
+std::vector<ProjectFile> ScanProjectFiles(std::span<const std::filesystem::path> roots)
+{
+    std::vector<ProjectFile> files;
+    for (const std::filesystem::path& root : roots)
+    {
+        std::error_code ec;
+        if (!std::filesystem::is_directory(root, ec))
+            continue;
+        for (std::filesystem::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec))
+        {
+            const std::string name = it->path().filename().string();
+            if (name.starts_with('.'))
+            {
+                if (it->is_directory(ec))
+                    it.disable_recursion_pending();
+                continue;
+            }
+            if (it->is_regular_file(ec) && !IsBookkeeping(it->path()))
+                files.push_back(Describe(root, it->path()));
+        }
+    }
+    std::ranges::sort(files, {}, &ProjectFile::AssetPath);
+    return files;
+}
+
+std::optional<ProjectFile> FindProjectFile(std::span<const std::filesystem::path> roots, std::string_view assetPath)
+{
+    if (!assetPath.starts_with(kAssetScheme))
+        return std::nullopt;
+    const std::filesystem::path relative(assetPath.substr(kAssetScheme.size()));
+    for (const std::filesystem::path& root : roots)
+    {
+        std::error_code ec;
+        const std::filesystem::path file = root / relative;
+        if (std::filesystem::is_regular_file(file, ec))
+            return Describe(root, file);
+    }
+    return std::nullopt;
+}

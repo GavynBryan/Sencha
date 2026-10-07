@@ -16,6 +16,8 @@ struct WorkspaceWindow;
 // presents through its facets, and the actions it performs while in use. It
 // never draws the shell; its own content it shows on the window's surfaces
 // (editor/ARCHITECTURE.md).
+struct ProjectFile;
+
 class IWorkspace
 {
 public:
@@ -72,6 +74,9 @@ public:
     // Makes one of the open documents (WorkspaceDocumentFacet::Open) the one
     // being edited.
     virtual void ShowDocument(std::string_view /*key*/) {}
+    // Opens a content file of a kind its WorkspaceKind::Opens names, or brings
+    // it forward if it is open; false when it could not.
+    virtual bool OpenAsset(const ProjectFile&) { return false; }
     // Shows where a problem in one of its documents is; false when it cannot.
     virtual bool RevealProblem(const Problem&) { return false; }
     // Not const: a clock reads what it is showing, which may settle it.

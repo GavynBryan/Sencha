@@ -4,6 +4,7 @@
 #include <render/feature/UiRenderFeature.h>
 
 #include "app/ProjectSession.h"
+#include "project/ProjectFiles.h"
 #include "actions/ActionOffer.h"
 #include "app/SynthesizedInput.h"
 #include "app/WorkspaceKinds.h"
@@ -246,6 +247,14 @@ void KyusuApp::CloseRequestedWindows()
     // Closing a window brings its workspaces back, which empties and closes it.
     for (const PresentationId window : closing)
         Workspaces->Gather(window);
+}
+
+std::vector<std::filesystem::path> KyusuApp::ContentRoots() const
+{
+    std::vector<std::filesystem::path> roots;
+    if (const ProjectDescriptor* project = Session != nullptr ? Session->Project() : nullptr)
+        roots.assign(project->ContentRoots.begin(), project->ContentRoots.end());
+    return roots;
 }
 
 ShellWindow* KyusuApp::WindowShellFor(PresentationId window) const
@@ -514,6 +523,25 @@ void KyusuApp::RegisterWorkspaceCommands()
     registerAction("workspace.detach", WorkspaceAction::Detach, "Move an open workspace into a window of its own.");
     registerAction("workspace.attach", WorkspaceAction::Attach, "Move a workspace back into the main window.");
 
+    registry.RegisterCommand({
+        .Name = "editor.open_asset",
+        .Owner = "editor",
+        .Usage = "editor.open_asset <asset path>",
+        .Help = "Open a content file in the workspace that opens its kind, or bring it forward if open.",
+        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            const std::optional<ProjectFile> file =
+                args.size() == 1 ? FindProjectFile(ContentRoots(), args[0]) : std::nullopt;
+            if (!file.has_value() || !Workspaces->RequestOpen(*file))
+            {
+                result.Status = ConsoleStatus::InvalidArguments;
+                result.Error("expected a content file some workspace opens");
+                return result;
+            }
+            result.Info("opening '" + args[0] + "'");
+            return result;
+        },
+    });
     registry.RegisterCommand({
         .Name = "editor.window.screenshot",
         .Owner = "editor",

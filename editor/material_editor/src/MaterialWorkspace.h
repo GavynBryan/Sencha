@@ -55,6 +55,7 @@ public:
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     void ShowDocument(std::string_view key) override;
+    bool OpenAsset(const ProjectFile& file) override;
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;

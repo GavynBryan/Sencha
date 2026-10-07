@@ -1,6 +1,7 @@
 #pragma once
 
 #include "workspaces/IWorkspace.h"
+#include "project/ProjectFiles.h"
 #include "workspaces/WorkspaceKind.h"
 
 #include <graphics/PresentationId.h>
@@ -28,6 +29,13 @@ struct WorkspaceRequest
 {
     WorkspaceAction Action = WorkspaceAction::Open;
     std::string Kind;
+};
+
+// A content file to open in whichever workspace opens its kind, at the next
+// frame boundary, in that workspace's window.
+struct AssetOpenRequest
+{
+    ProjectFile File;
 };
 
 // The workspaces an application has open, at most one per kind, and the
@@ -89,6 +97,12 @@ public:
     void CloseAll();
 
     void Request(WorkspaceRequest request) { Pending.push_back(std::move(request)); }
+    // The workspace kind that opens `file`: the one whose rule names its
+    // subtype before one that takes every subtype; null when none opens it.
+    [[nodiscard]] const WorkspaceKind* KindOpening(const ProjectFile& file) const;
+    // Opens `file` in its workspace at the next frame boundary; false when no
+    // offered workspace opens it.
+    bool RequestOpen(ProjectFile file);
     void ApplyRequests();
 
     // Applies what was requested since the last frame, then ticks every open
@@ -123,6 +137,7 @@ private:
     // closing the one showing falls back to the one used there before it.
     std::vector<const WorkspaceKind*> RecentlyActive;
     std::vector<WorkspaceRequest> Pending;
+    std::vector<AssetOpenRequest> PendingAssets;
     Listener OnOpened;
     Listener OnClosing;
     Listener OnPlaced;

@@ -67,6 +67,7 @@ public:
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     bool RevealProblem(const Problem& problem) override;
+    bool OpenAsset(const ProjectFile& file) override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,

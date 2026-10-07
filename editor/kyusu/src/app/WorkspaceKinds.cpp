@@ -33,6 +33,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
                                                     session.Materials(), session.Documents(), actions, prompts,
                                                     problems);
         },
+        .Opens = { { ".sscene" }, { ".sworld" } },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "materials",
@@ -41,6 +42,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
             return std::make_unique<MaterialWorkspace>(engine, session.Project(), session.Materials(),
                                                        session.Documents(), prompts, actions);
         },
+        .Opens = { { ".smat" }, { ".png" } },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "data",
@@ -49,6 +51,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
             return std::make_unique<DataWorkspace>(engine, *session.Project(), session.Documents(),
                                                    session.DataDocuments(), prompts, actions, problems, authorings);
         },
+        .Opens = { { ".sdata" } },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "animation",
@@ -58,6 +61,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
                                                         session.Documents(), session.DataDocuments(), prompts,
                                                         actions, problems, authorings);
         },
+        .Opens = { { ".sdata", "animation.rig" } },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "ui_preview",
@@ -68,6 +72,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
             return std::make_unique<UiPreviewWorkspace>(engine, session.Project(), session.Module(), actions,
                                                         problems, notices);
         },
+        .Opens = { { ".rml" } },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "project",

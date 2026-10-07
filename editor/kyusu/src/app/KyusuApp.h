@@ -16,6 +16,7 @@
 #include <graphics/PresentationId.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -75,6 +76,8 @@ private:
     // The window an event names; the primary for one naming none.
     [[nodiscard]] PresentationId WindowOf(std::uint32_t windowId) const;
     [[nodiscard]] ShellWindow* WindowShellFor(PresentationId window) const;
+    // Where the open project's content is on disk; none without a project.
+    [[nodiscard]] std::vector<std::filesystem::path> ContentRoots() const;
     // Windows asked to close mid-frame, closed at the next frame boundary.
     void CloseRequestedWindows();
 

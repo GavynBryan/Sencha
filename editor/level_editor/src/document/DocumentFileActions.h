@@ -48,6 +48,8 @@ public:
     // queue as the dialogs (the caller sits inside a frame walking the
     // document the open replaces). False when no content root holds it.
     bool OpenSceneSource(std::string_view assetPath);
+    // Opens the level or world document at `path` on disk, at the next frame.
+    void OpenFile(std::string path);
     void Save();
     void RequestOpen();
     void RequestSaveAs();

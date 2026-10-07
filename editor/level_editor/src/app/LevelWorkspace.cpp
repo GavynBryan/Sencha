@@ -1,6 +1,7 @@
 #include "LevelWorkspace.h"
 
 #include "actions/ActionCatalog.h"
+#include "project/ProjectFiles.h"
 
 #include "viewport/EditorViewportCameraSystem.h"
 #include "editmodes/ManipulatorSession.h"
@@ -1375,6 +1376,18 @@ void LevelWorkspace::PublishProblems()
         Problems.Publish("world", Partition->Problems(document));
     if (Lighting != nullptr)
         Problems.Publish("lighting", Lighting->Problems(document));
+}
+
+bool LevelWorkspace::OpenAsset(const ProjectFile& file)
+{
+    if (Files == nullptr)
+        return false;
+    if (file.Extension == ".sworld")
+    {
+        Files->OpenFile(file.FilePath.string());
+        return true;
+    }
+    return Files->OpenSceneSource(file.AssetPath);
 }
 
 bool LevelWorkspace::RevealProblem(const Problem& problem)

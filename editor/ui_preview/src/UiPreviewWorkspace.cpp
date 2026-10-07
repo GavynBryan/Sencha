@@ -1,5 +1,6 @@
 #include "UiPreviewWorkspace.h"
 
+#include "project/ProjectFiles.h"
 #include "text/PathLeaf.h"
 
 #include "authoring/PreviewReports.h"
@@ -528,6 +529,12 @@ void UiPreviewWorkspace::SetZoom(PreviewZoom zoom)
 {
     Zoom = zoom;
     Pan = Vec2d(0.0f, 0.0f);
+}
+
+bool UiPreviewWorkspace::OpenAsset(const ProjectFile& file)
+{
+    OpenDocument(file.AssetPath);
+    return Library.Find(file.AssetPath) != nullptr;
 }
 
 void UiPreviewWorkspace::OpenDocument(const std::string& packagePath)

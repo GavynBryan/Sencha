@@ -43,6 +43,7 @@ public:
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     void ShowDocument(std::string_view key) override;
+    bool OpenAsset(const ProjectFile& file) override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     bool RevealProblem(const Problem& problem) override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
@@ -51,6 +52,8 @@ public:
                           std::size_t mark) override;
 
 private:
+    // Opens the data asset at `assetPath`, or brings it forward, as the card.
+    bool OpenPath(std::string_view assetPath);
     void BuildUi();
     void RegisterCommands();
     void DefineActions(ActionCatalog& catalog);

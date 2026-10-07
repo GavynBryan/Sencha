@@ -1,3 +1,4 @@
+#include "workspaces/IWorkspace.h"
 #include "workspaces/WorkspaceHost.h"
 
 #include <gtest/gtest.h>
@@ -28,6 +29,11 @@ public:
     ~FakeWorkspace() override { Events.push_back(Kind + " destroyed"); }
 
     void SetVisible(bool visible) override { Events.push_back(Kind + (visible ? " shown" : " hidden")); }
+    bool OpenAsset(const ProjectFile& file) override
+    {
+        Events.push_back(Kind + " opens " + file.AssetPath);
+        return true;
+    }
 
     std::string Kind;
     Log& Events;
@@ -275,4 +281,35 @@ TEST(WorkspaceHost, APlacedWorkspaceIsReboundBeforeItShows)
     EXPECT_EQ((Log{ "level hidden", "placed level", "level shown", "level hidden", "placed level", "level shown" }),
               log);
     EXPECT_EQ(host.WindowOf("level"), kMain);
+}
+
+// A content file opens in the workspace whose kind opens it -- the one naming
+// its subtype ahead of one taking every subtype -- built if it has to be, at
+// the frame's boundary.
+TEST(WorkspaceHost, AFileOpensInTheWorkspaceThatOpensItsKind)
+{
+    Log log;
+    std::vector<WorkspaceKind> table = Table(log);
+    table.push_back(Kind("data", log));
+    table.push_back(Kind("animation", log));
+    table[1].Opens = { { ".smat" } };
+    table[3].Opens = { { ".sdata" } };
+    table[4].Opens = { { ".sdata", "animation.rig" } };
+    WorkspaceHost host(std::move(table), /*hasProject*/ true, kMain);
+
+    const ProjectFile rig{ .AssetPath = "asset://rigs/hero.sdata", .Extension = ".sdata", .Subtype = "animation.rig" };
+    const ProjectFile profile{ .AssetPath = "asset://movement.sdata", .Extension = ".sdata", .Subtype = "movement.profile" };
+    const ProjectFile mesh{ .AssetPath = "asset://rock.glb", .Extension = ".glb" };
+    ASSERT_NE(host.KindOpening(rig), nullptr);
+    EXPECT_EQ(host.KindOpening(rig)->Id, "animation") << "the rule naming its subtype";
+    EXPECT_EQ(host.KindOpening(profile)->Id, "data");
+    EXPECT_EQ(host.KindOpening(mesh), nullptr);
+    EXPECT_FALSE(host.RequestOpen(mesh));
+
+    ASSERT_TRUE(host.RequestOpen(rig));
+    EXPECT_EQ(host.Find("animation"), nullptr) << "nothing happens until the frame's boundary";
+    host.ApplyRequests();
+    ASSERT_NE(host.Find("animation"), nullptr);
+    EXPECT_NE(std::ranges::find(log, "animation opens asset://rigs/hero.sdata"), log.end());
+    EXPECT_EQ(host.ActiveKind()->Id, "animation");
 }

@@ -1,5 +1,6 @@
 #include "DataWorkspace.h"
 
+#include "project/ProjectFiles.h"
 #include "text/PathLeaf.h"
 
 
@@ -326,12 +327,21 @@ ExplorerPage DataWorkspace::Explore(const ExplorerQuery& query)
 
 void DataWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice, std::size_t)
 {
-    if (explorer != kExplorerId)
-        return;
+    if (explorer == kExplorerId)
+        (void)OpenPath(key);
+}
+
+bool DataWorkspace::OpenAsset(const ProjectFile& file)
+{
+    return OpenPath(file.AssetPath);
+}
+
+bool DataWorkspace::OpenPath(std::string_view assetPath)
+{
     OperationError.clear();
-    if (Model.Documents.OpenOrFocus(key, OperationError) != nullptr)
-    {
-        Subject = CardSubject::Document;
-        ShowingSource = false;
-    }
+    if (Model.Documents.OpenOrFocus(assetPath, OperationError) == nullptr)
+        return false;
+    Subject = CardSubject::Document;
+    ShowingSource = false;
+    return true;
 }
