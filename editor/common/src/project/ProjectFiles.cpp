@@ -30,14 +30,7 @@ bool IsBookkeeping(const std::filesystem::path& file)
     return name == "asset_ids.json" || name.ends_with(".user.json") || file.extension() == kAssetSidecarSuffix;
 }
 
-// Read as JSON5, which scene sources are written in and which every other
-// statement also is.
-std::optional<AssetId> ReadStatedId(const std::filesystem::path& file)
-{
-    const std::optional<std::string> text = ReadProjectFileText(IdStatementOf(file));
-    const std::optional<Json5Value> root = text.has_value() ? Json5Parse(*text) : std::nullopt;
-    return root.has_value() ? StatedAssetId(Json5ToJson(*root)) : std::nullopt;
-}
+
 
 std::string SubtypeOf(const std::filesystem::path& file)
 {
@@ -61,6 +54,13 @@ ProjectFile Describe(const std::filesystem::path& root, const std::filesystem::p
     return described;
 }
 } // namespace
+
+std::optional<AssetId> ReadStatedId(const std::filesystem::path& file)
+{
+    const std::optional<std::string> text = ReadProjectFileText(IdStatementOf(file));
+    const std::optional<Json5Value> root = text.has_value() ? Json5Parse(*text) : std::nullopt;
+    return root.has_value() ? StatedAssetId(Json5ToJson(*root)) : std::nullopt;
+}
 
 AssetId AssetIdOf(const ProjectFile& file)
 {

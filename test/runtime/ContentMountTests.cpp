@@ -154,6 +154,30 @@ TEST(ContentMount, CookedRegistrationAddsTheIndexEntriesAndStampsIds)
     EXPECT_EQ(record->Id, root.Id());
 }
 
+// A cooked artifact goes by the id its index names, whether the scan or the
+// index registered it.
+TEST(ContentMount, CookedArtifactsGoByTheIdsTheIndexNames)
+{
+    const ContentRoot root("cookedids");
+    WriteFile(root.Paths().Cooked / "index.json", R"({
+      "sources": [
+        { "artifacts": [
+          { "path": "asset://textures/wall.png", "id": "00000000000000c1",
+            "file": ".cooked/textures/wall.stex", "type": "Texture" },
+          { "path": "asset://meshes/box.smesh", "id": "00000000000000c2",
+            "file": ".cooked/meshes/box.smesh", "type": "StaticMesh" }
+        ] }
+      ]
+    })");
+    std::filesystem::remove(root.Paths().Authored / kAssetIdMapFileName);
+    HeadlessStack stack;
+
+    MountContentRoot(root.Paths(), stack.Assets, stack.Log());
+
+    EXPECT_EQ(stack.Assets.Registry.FindByPath(std::string(kIndexOnlyPath))->Id, AssetId{ 0xc1 });
+    EXPECT_EQ(stack.Assets.Registry.FindByPath(std::string(kCookedScannedPath))->Id, AssetId{ 0xc2 });
+}
+
 // The editor runs the two steps with an import between them; a runtime host
 // runs them back to back. With nothing to import they must agree, or the
 // viewport the editor calls WYSIWYG is resolving against a different registry

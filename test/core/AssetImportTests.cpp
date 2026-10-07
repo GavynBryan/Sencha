@@ -184,6 +184,38 @@ TEST(CookedCacheIndex, JsonRoundTripPreservesEntries)
     EXPECT_EQ(found->Artifacts[1].ContentHash, 0u);
 }
 
+// An artifact goes by its source's id when it is the source cooked, and by a
+// part of it otherwise; the index keeps both through a save.
+TEST(CookedCacheIndex, PutNamesEveryArtifactsIdAndTheIndexKeepsThem)
+{
+    const AssetId source{ 0x0000000000123456ull };
+    EXPECT_EQ(CookedArtifactId("asset://t/a.png", source, "asset://t/a.png"), source);
+    EXPECT_EQ(CookedArtifactId("asset://levels/hub.sscene", source, "asset://levels/hub.smap"), source);
+    EXPECT_EQ(CookedArtifactId("asset://m/hero.blend", source, "asset://m/hero.blend#anim:Walk"),
+              AssetIdOfPart(source, "anim:Walk"));
+    EXPECT_EQ(CookedArtifactId("asset://levels/hub.sscene", source, "asset://levels/hub/cell_3.smesh"),
+              AssetIdOfPart(source, "asset://levels/hub/cell_3.smesh"));
+
+    CookedSourceEntry stated;
+    stated.SourceRelPath = "m/hero.blend";
+    stated.SourceId = source;
+    stated.Artifacts = { { "asset://m/hero.blend#model:Hero", ".cooked/m/hero.skmesh", AssetType::SkinnedMesh } };
+    CookedSourceEntry unstated;
+    unstated.SourceRelPath = "t/a.png";
+    unstated.Artifacts = { { "asset://t/a.png", ".cooked/t/a.stex", AssetType::Texture } };
+    CookedCacheIndex index;
+    index.Put(stated);
+    index.Put(unstated);
+
+    CookedCacheIndex parsed;
+    std::string error;
+    ASSERT_TRUE(CookedCacheIndex::FromJson(index.ToJson(), parsed, &error)) << error;
+    EXPECT_EQ(parsed.Find("m/hero.blend")->SourceId, source);
+    EXPECT_EQ(parsed.Find("m/hero.blend")->Artifacts[0].Id, AssetIdOfPart(source, "model:Hero"));
+    EXPECT_EQ(parsed.Find("t/a.png")->SourceId, AssetIdOfPath("asset://t/a.png"));
+    EXPECT_EQ(parsed.Find("t/a.png")->Artifacts[0].Id, AssetIdOfPath("asset://t/a.png"));
+}
+
 TEST(CookedCacheIndex, PutReplacesEntryForSameSource)
 {
     CookedCacheIndex index;
@@ -698,6 +730,30 @@ TEST(ImportRegister, BindsProducedRecordsIntoRegistry)
     EXPECT_EQ(record->Type, AssetType::StaticMesh);
     EXPECT_TRUE(record->FilePath.ends_with(".cooked/meshes/rock.smesh"));
     EXPECT_NE(record->ContentHash, 0u);
+}
+
+// An imported source goes by the id its sidecar states, cold or warm.
+TEST(ImportOnDemand, AnImportedAssetGoesByTheIdItsSidecarStates)
+{
+    TempAssetRoot root;
+    root.WriteFile("meshes/rock.src", "rock source bytes");
+    root.WriteFile("meshes/rock.src.meta", R"({"id": "00000000000a11ce", "version": 1})");
+    root.WriteFile("meshes/pebble.src", "pebble source bytes");
+
+    FakeImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    LoggingProvider logging;
+    for (int run = 0; run < 2; ++run)
+    {
+        AssetRegistry registry(logging);
+        ASSERT_TRUE(ImportAssetsOnDemand(root.PathString(), importers, registry, logging));
+        ASSERT_NE(registry.FindByPath("asset://meshes/rock.smesh"), nullptr) << run;
+        EXPECT_EQ(registry.FindByPath("asset://meshes/rock.smesh")->Id, AssetId{ 0xa11ce }) << run;
+        EXPECT_EQ(registry.FindByPath("asset://meshes/pebble.smesh")->Id, AssetIdOfPath("asset://meshes/pebble.src"))
+            << run;
+    }
+    EXPECT_EQ(importer.ImportCount, 2) << "the second run was warm";
 }
 
 #endif // SENCHA_ENABLE_COOK

@@ -44,12 +44,16 @@ void ForgetStatedAssetId(JsonValue& root)
         std::erase_if(root.AsObject(), [](const auto& member) { return member.first == kAssetIdKey; });
 }
 
+std::optional<AssetId> StatedAssetIdIn(std::string_view text)
+{
+    const std::optional<JsonValue> root = JsonParse(text);
+    return root.has_value() ? StatedAssetId(*root) : std::nullopt;
+}
+
 std::optional<AssetId> ReadStatedAssetId(const std::filesystem::path& file)
 {
     std::vector<std::byte> bytes;
     if (!ReadFileBytes(IdStatementOf(file), bytes))
         return std::nullopt;
-    const std::optional<JsonValue> root =
-        JsonParse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
-    return root.has_value() ? StatedAssetId(*root) : std::nullopt;
+    return StatedAssetIdIn(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
 }

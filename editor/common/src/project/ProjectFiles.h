@@ -29,6 +29,9 @@ struct ProjectFile
 };
 
 [[nodiscard]] AssetId AssetIdOf(const ProjectFile& file);
+// The id `file` states, in itself or its sidecar, read as JSON5 -- scene
+// sources are written in it, and every other statement is JSON besides.
+[[nodiscard]] std::optional<AssetId> ReadStatedId(const std::filesystem::path& file);
 
 // Every content file under `roots`, sorted by asset path. Cooked output,
 // hidden folders and the project's own bookkeeping (asset id maps, per-user

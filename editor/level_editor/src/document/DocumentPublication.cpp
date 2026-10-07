@@ -8,6 +8,7 @@
 #include "DocumentArtifactCatalog.h"
 #include "DocumentCookReuse.h"
 #include "DocumentImportPublisher.h"
+#include "project/ProjectFiles.h"
 
 #include <core/hash/ContentHash.h>
 
@@ -74,6 +75,7 @@ bool StageDocumentIndex(const DocumentCookContext& ctx, std::string_view sourceR
     }
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRel);
+    entry.SourceId = ReadStatedId(assetsRoot / std::string(sourceRel)).value_or(AssetId{});
     entry.InputFingerprint = documentHash;
     for (CookedArtifact& artifact : catalog.Artifacts())
     {

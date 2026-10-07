@@ -85,7 +85,7 @@ bool ScanAssetsDirectory(std::string_view rootDirectory,
                          const AssetKindRegistry& kinds);
 
 // Registers cooked artifacts listed in <assetsRoot>/.cooked/index.json under
-// their cook-time virtual paths. The path-keyed companion to the physical scan:
+// their cook-time virtual paths and the ids the index names for them. The path-keyed companion to the physical scan:
 // ScanAssetsDirectory keys a cooked runtime file by its location (so .smesh
 // resolves), but a cooked texture keeps its source virtual path (asset://...png
 // serves cooked .stex bytes), which physical layout cannot express. A COOK=OFF

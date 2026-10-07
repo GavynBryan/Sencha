@@ -122,7 +122,7 @@ bool AssetRegistry::RegisterOrVerify(const AssetRecord& record)
         return false;
     }
 
-    return true;
+    return !record.Id.IsValid() || AssignId(record.Path, record.Id);
 }
 
 bool AssetRegistry::Unregister(std::string_view path)
@@ -310,9 +310,15 @@ int RegisterCookedAssets(std::string_view assetsRoot, AssetRegistry& registry)
                 continue;
 
             // The physical scan already keyed cooked runtime files (.smesh, ...)
-            // by location; this only needs to add the ones it cannot key.
+            // by location; this only needs to add the ones it cannot key, and
+            // give every one the id its source states.
+            const AssetId id = StatedAssetId(artifact).value_or(AssetId{});
             if (registry.Contains(path->AsString()))
+            {
+                if (id.IsValid())
+                    (void)registry.AssignId(path->AsString(), id);
                 continue;
+            }
 
             AssetType type = AssetType::Unknown;
             if (!AssetTypeFromString(typeName->AsString(), type))
@@ -322,6 +328,7 @@ int RegisterCookedAssets(std::string_view assetsRoot, AssetRegistry& registry)
             record.Type = type;
             record.SourceKind = AssetSourceKind::File;
             record.Path = path->AsString();
+            record.Id = id;
             record.FilePath =
                 (std::filesystem::path(std::string(assetsRoot)) / fileRel->AsString()).generic_string();
             if (registry.Register(record))

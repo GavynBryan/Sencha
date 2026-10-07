@@ -29,6 +29,8 @@ inline constexpr std::string_view kAssetIdKey = "id";
 
 // The id `root` states, when it is an object stating a well-formed one.
 [[nodiscard]] std::optional<AssetId> StatedAssetId(const JsonValue& root);
+// The same, of JSON text: a document's or a sidecar's.
+[[nodiscard]] std::optional<AssetId> StatedAssetIdIn(std::string_view text);
 // A copy of a document is a new asset: it states no id until it is given one.
 void ForgetStatedAssetId(JsonValue& root);
 

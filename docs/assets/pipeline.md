@@ -340,6 +340,7 @@ source recooks.
 | 6 | Lightmap atlases moved from RGBM RGBA8 to RGB9E5; the shader no longer applies a multiplier, so older atlases would render wrong. |
 | 8 | Entries record the additional sources a cook read, so a multi-file source recooks when one of its inputs changes. |
 | 9 | Entries record the importer's cook identity, so an importer change recooks what it produced. |
+| 10 | Entries record their source's id and every artifact's (Decision A), so a cooked-only registry goes by the ids the sources state. |
 
 ### C. The staged-load contract — `IAssetStager` work/commit split
 

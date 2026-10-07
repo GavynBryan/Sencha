@@ -75,6 +75,11 @@ namespace
         std::unordered_map<std::string, uint64_t> WrittenHashes;
     };
 
+    std::string_view AsText(std::span<const std::byte> bytes)
+    {
+        return { reinterpret_cast<const char*>(bytes.data()), bytes.size() };
+    }
+
     // Records the hash each artifact was written with, so registration and
     // future launches never have to read the artifact back.
     void StampArtifactHashes(const FileCookOutputWriter& writer,
@@ -493,6 +498,7 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
 
         CookedSourceEntry entry;
         entry.SourceRelPath = sourceRel;
+        entry.SourceId = StatedAssetIdIn(AsText(metaBytes)).value_or(AssetId{});
         entry.AdditionalSources = StampAdditionalSources(result.AdditionalSources, assetsRoot);
         // The fingerprint covers every input the import actually consumed, which
         // is what makes editing one of them recook this source.
@@ -501,8 +507,9 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
         entry.CookIdentity = cookIdentity;
         StampSourceStats(entry, sourceStat, metaStat);
         entry.Artifacts = result.Artifacts;
+        NameCookedIds(entry);
 
-        for (const CookedArtifact& artifact : result.Artifacts)
+        for (const CookedArtifact& artifact : entry.Artifacts)
         {
             out.Artifacts.push_back(PreparedCookedArtifact{
                 artifact, out.TempRoot / artifact.FileRelPath });
@@ -561,6 +568,7 @@ bool RegisterImportedAssets(std::span<const CookedArtifact> records,
         record.Type = artifact.Type;
         record.SourceKind = AssetSourceKind::File;
         record.Path = artifact.Path;
+        record.Id = artifact.Id;
         record.FilePath = (assetsRoot / artifact.FileRelPath).generic_string();
         record.ContentHash = artifact.ContentHash;
         // Preparation resolves hashes up front; a zero here means a file could
@@ -710,6 +718,7 @@ bool ReimportOneSource(std::string_view rootDirectory,
     }
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRelPath);
+    entry.SourceId = StatedAssetIdIn(AsText(metaBytes)).value_or(AssetId{});
     entry.AdditionalSources = StampAdditionalSources(result.AdditionalSources, root);
     entry.InputFingerprint =
         CombineAdditionalSourceHashes(sourceHash, entry.AdditionalSources, root);
