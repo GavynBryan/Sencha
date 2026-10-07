@@ -55,11 +55,19 @@
                     <span class="side_label">{{folder.label}}</span>
                 </div>
             </div>
-            <div id="shelf_items" data-class-list="view == 'list'">
+            <div id="shelf_items" data-class-list="view == 'list'"
+                 data-event-mousescroll="shelf_zoom(ev.wheel_delta_y, ev.ctrl_key)">
                 <div class="tile theme-row" data-for="item : items" data-class-selected="item.selected"
+                     data-style-width="view == 'list' ? 'auto' : tile"
                      data-event-click="shelf_pick(item.key)" data-event-dblclick="shelf_open(item.key)">
-                    <div class="well theme-field">
-                        <span data-attr-class="'kind icon icon-' + item.icon"></span>
+                    <div class="well theme-field" data-style-width="view == 'list' ? '16dp' : picture"
+                         data-style-height="view == 'list' ? '16dp' : picture">
+                        <img class="picture" data-if="item.parts[0] != ''" data-attr-src="'host:' + item.parts[0]"
+                             data-style-image-color="item.parts[1] != '' ? item.parts[1] : 'white'"/>
+                        <span class="swatch" data-if="item.parts[0] == '' &amp;&amp; item.parts[1] != ''"
+                              data-style-background-color="item.parts[1] != '' ? item.parts[1] : 'transparent'"></span>
+                        <span data-if="item.parts[0] == '' &amp;&amp; item.parts[1] == ''"
+                              data-attr-class="'kind icon icon-' + item.icon"></span>
                         <span class="lamp theme-lamp" data-if="item.value != ''" data-class-on="item.value == 'open'"
                               data-class-warn="item.value == 'changed'"></span>
                     </div>
@@ -70,7 +78,12 @@
             </div>
             <div id="shelf_preview" data-if="preview_name != ''">
                 <div class="preview_well theme-field">
-                    <span data-attr-class="'kind icon icon-' + preview_icon"></span>
+                    <img class="picture" data-if="preview_image != ''" data-attr-src="'host:' + preview_image"
+                         data-style-image-color="preview_color != '' ? preview_color : 'white'"/>
+                    <span class="swatch" data-if="preview_image == '' &amp;&amp; preview_color != ''"
+                          data-style-background-color="preview_color != '' ? preview_color : 'transparent'"></span>
+                    <span data-if="preview_image == '' &amp;&amp; preview_color == ''"
+                          data-attr-class="'kind icon icon-' + preview_icon"></span>
                 </div>
                 <div id="preview_name" class="theme-accent">{{preview_name}}</div>
                 <div class="fact theme-dim">{{preview_kind}}</div>

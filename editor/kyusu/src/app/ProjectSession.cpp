@@ -1,6 +1,7 @@
 #include "app/ProjectSession.h"
 
 #include "project/ProjectContentMount.h"
+#include "ui/MaterialThumbnailCache.h"
 
 #include <app/Engine.h>
 #include <app/Game.h>
@@ -8,6 +9,9 @@
 #include <app/RuntimeContent.h>
 #include <assets/hotreload/SourceReloadRoots.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <core/console/ConsoleService.h>
+#include <graphics/vulkan/GraphicsServices.h>
+#include <ui/UiService.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -56,6 +60,25 @@ ProjectSession::~ProjectSession()
         return;
     UnregisterGameDataAssets(*GameModule.Instance, Assets());
     ModuleLoader.Unload(GameModule);
+}
+
+void ProjectSession::UpdatePictures()
+{
+    if (MaterialPictures == nullptr)
+    {
+        UiService* ui = Host.TryUi();
+        GraphicsServices* graphics = Host.TryGraphics();
+        if (ui == nullptr || !ui->IsReady() || graphics == nullptr)
+            return;
+        MaterialThumbnailCache::RegisterBudget(Host.Console().Registry());
+        RuntimeAssets& assets = Assets();
+        MaterialPictures = std::make_unique<MaterialThumbnailCache>(assets.Assets, *assets.Textures, assets.Registry,
+                                                                    ui, &graphics->MainRenderer.GetUiTextures(),
+                                                                    "picture:");
+        MaterialPictureFiles = PictureSources.Provide(".smat", *MaterialPictures);
+        TexturePictureFiles = PictureSources.Provide(".png", *MaterialPictures);
+    }
+    MaterialPictures->UpdateFrame(Host);
 }
 
 RuntimeAssets& ProjectSession::Assets() const

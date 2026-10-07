@@ -1,5 +1,7 @@
 #pragma once
 
+#include "thumbnails/AssetPictures.h"
+
 #include "MaterialDocumentSet.h"
 #include "MaterialProperties.h"
 #include "TextureImportProperties.h"
@@ -39,7 +41,8 @@ public:
                       MaterialLibrary& materials,
                       DocumentSourceSet& documents,
                       PromptQueue& prompts,
-                      ActionCatalog& catalog);
+                      ActionCatalog& catalog,
+                      AssetPictures& pictures);
     ~MaterialWorkspace() override;
 
     MaterialWorkspace(const MaterialWorkspace&) = delete;
@@ -125,8 +128,8 @@ private:
     // The open material's file, as the one property naming where it lives.
     std::unique_ptr<IPropertySource> FilePath;
     std::unique_ptr<ContentPicture> Picture;
-    // Pictures for the material explorer; its own, so its host images are too.
-    std::unique_ptr<MaterialThumbnailCache> Thumbnails;
+    // Pictures of materials and textures, shared with every workspace.
+    AssetPictures& Pictures;
     Rect2d ContentRect{};
     bool Visible = false;
     // A drag on the stage turns the material over until the button lets go.

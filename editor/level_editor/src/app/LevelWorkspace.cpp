@@ -113,13 +113,15 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
                                Game* module,
                                MaterialLibrary& materials,
                                DocumentSourceSet& documents,
-                               ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems)
+                               ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems,
+                               AssetPictures& pictures)
     : Documents(documents)
     , Prompts(prompts.MakeAsker())
     , Problems(problems)
     , Catalog(actions)
     , Materials(&materials)
     , Project(project)
+    , Pictures(pictures)
 {
     EnginePtr = &engine;
     Window = &window;
@@ -145,6 +147,8 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
 
 LevelWorkspace::~LevelWorkspace()
 {
+    // Before the render feature that owns the studio goes.
+    ScenePictures = {};
     if (Window != nullptr)
         SetRelativeMouseMode(*Window, false);
     // Its problems go with it.
@@ -177,8 +181,6 @@ LevelWorkspace::~LevelWorkspace()
     Commands.reset();
     Router.reset();
     Navigation.reset();
-    // The thumbnail bindings release texture refs through the asset stack.
-    Thumbnails.reset();
 }
 
 void LevelWorkspace::BuildDocument()
@@ -325,8 +327,7 @@ void LevelWorkspace::BuildInput()
                         return;
                     Materials->Rescan(Materials->Roots());
                     // A rescan may follow a save that re-pointed a material's textures.
-                    if (Thumbnails != nullptr)
-                        Thumbnails->Clear();
+                    Pictures.Forget();
                 } });
     OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [this] { return HeldType(); });
 
@@ -633,7 +634,6 @@ void LevelWorkspace::BuildViewportRendering()
 void LevelWorkspace::BuildUi()
 {
     Engine& engine = *EnginePtr;
-    ConsoleService& console = engine.Console();
 
 
     // The views show what the render feature draws, and staging hands back
@@ -663,6 +663,7 @@ void LevelWorkspace::BuildUi()
             UiService* ui = engine.TryUi();
             cache->SetContentRoots(sceneRoots);
             cache->SetUi(ui != nullptr && ui->IsReady() ? ui : nullptr);
+            ScenePictures = Pictures.Provide(".sscene", *cache);
         }
         PrefabsExplorer = std::make_unique<PrefabExplorer>(*Workspace, [this](const std::string& path) {
             SceneThumbnailCache* cache = RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr;
@@ -707,17 +708,8 @@ void LevelWorkspace::BuildUi()
     };
     Lighting = std::make_unique<LightingDiagnostics>(*Workspace, *Commands, std::move(lighting));
     Lighting->Offer(Catalog, ActionHandlers);
-    // Material picking surfaces: thumbnail residency for both panels, bounded
-    // by the budget cvar so a large library never pins every base color
-    // texture on the GPU.
-    MaterialThumbnailCache::RegisterBudget(console.Registry());
-    UiService* ui = engine.TryUi();
-    Thumbnails = std::make_unique<MaterialThumbnailCache>(
-        Assets->Assets, *Assets->Textures,
-        Assets->Registry, ui != nullptr && ui->IsReady() ? ui : nullptr,
-        &engine.Graphics().MainRenderer.GetUiTextures());
     MaterialsExplorer = std::make_unique<MaterialExplorer>(
-        *Materials, *Workspace, [this](const std::string& path) { return Thumbnails->ImageName(path); });
+        *Materials, *Workspace, [this](const std::string& path) { return Pictures.PictureOf(path).Image; });
 
 }
 
@@ -934,8 +926,8 @@ std::vector<ContextMenuModel::AssetChoice> LevelWorkspace::AssetsToHand(AssetTyp
             return;
         choices.push_back({ .Path = ref.Path,
                             .Label = MaterialLeafName(ref.Path),
-                            .Image = type == AssetType::Material && Thumbnails != nullptr ? Thumbnails->ImageName(ref.Path)
-                                                                                          : std::string{} });
+                            .Image = type == AssetType::Material ? Pictures.PictureOf(ref.Path).Image
+                                                                 : std::string{} });
     };
     add(Workspace->Resources.Active(type));
     for (const AssetRef& stashed : Workspace->Resources.Stash(type))
@@ -1080,10 +1072,6 @@ void LevelWorkspace::ProcessFrame()
         else
             WheelScreen->Present(nullptr, nullptr);
     }
-
-    // Only what an explorer showed recently stays on the GPU.
-    if (Thumbnails)
-        Thumbnails->UpdateFrame(*EnginePtr);
 }
 
 namespace
@@ -1421,7 +1409,7 @@ std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()
             return { .Label = std::string(SceneSourceStem(ref.Path)),
                      .Image = scenes != nullptr ? scenes->ImageName(ref.Path) : std::string{} };
         return { .Label = MaterialLeafName(ref.Path),
-                 .Image = Thumbnails != nullptr ? Thumbnails->ImageName(ref.Path) : std::string{} };
+                 .Image = Pictures.PictureOf(ref.Path).Image };
     };
     WorkspaceResourceFacet facet{ .Role = prefab ? "Prefab" : "Material",
                                   .Primary = true,

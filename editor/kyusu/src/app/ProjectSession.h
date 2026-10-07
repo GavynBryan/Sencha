@@ -4,14 +4,17 @@
 #include "documents/DocumentSourceSet.h"
 #include "project/MaterialLibrary.h"
 #include "project/Project.h"
+#include "thumbnails/AssetPictures.h"
 
 #include <app/GameModuleLoader.h>
 
+#include <memory>
 #include <optional>
 #include <string>
 
 class Engine;
 class Game;
+class MaterialThumbnailCache;
 struct RuntimeAssets;
 
 // The project a Kyusu process edits, held once for every workspace. Built
@@ -37,6 +40,12 @@ public:
     [[nodiscard]] DocumentSourceSet& Documents() { return Journal; }
     // One document per data file, however many workspaces show it.
     [[nodiscard]] DataDocumentStore& DataDocuments() { return DataDocumentFiles; }
+    // Pictures of content files, for every workspace and the shelf: materials
+    // and textures from one texture cache, other kinds as workspaces provide.
+    [[nodiscard]] AssetPictures& Pictures() { return PictureSources; }
+    // Once a frame: makes the material and texture pictures once authored UI
+    // is ready, and keeps how many are resident within budget.
+    void UpdatePictures();
 
 private:
     void LoadModule(const std::string& modulePath);
@@ -50,4 +59,8 @@ private:
     MaterialLibrary MaterialList;
     DocumentSourceSet Journal;
     DataDocumentStore DataDocumentFiles;
+    AssetPictures PictureSources;
+    std::unique_ptr<MaterialThumbnailCache> MaterialPictures;
+    AssetPictures::Registration MaterialPictureFiles;
+    AssetPictures::Registration TexturePictureFiles;
 };

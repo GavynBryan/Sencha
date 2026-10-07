@@ -41,6 +41,8 @@ inline constexpr std::uint8_t kContentUiLayer = 1;
 // What a window's shell presents and acts through. The action stack is the
 // window's own: everything the rail does goes through it, so a key on the rail
 // and a chord on the keyboard perform the same thing.
+class AssetPictures;
+
 struct ShellWindowServices
 {
     UiService& Ui;
@@ -59,6 +61,7 @@ struct ShellWindowServices
     std::string Title;
     // Where the open project's content is on disk; none without a project.
     std::vector<std::filesystem::path> ContentRoots = {};
+    AssetPictures* Pictures = nullptr;
 };
 
 // What the person has chosen about how every shell looks and moves.

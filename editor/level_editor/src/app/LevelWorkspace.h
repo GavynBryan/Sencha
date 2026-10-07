@@ -1,5 +1,7 @@
 #pragma once
 
+#include "thumbnails/AssetPictures.h"
+
 #include "actions/ContextMenuModel.h"
 #include "document/WorldMap.h"
 
@@ -79,7 +81,8 @@ public:
                    DocumentSourceSet& documents,
                    ActionCatalog& actions,
                    PromptQueue& prompts,
-                   ProblemList& problems);
+                   ProblemList& problems,
+                   AssetPictures& pictures);
     ~LevelWorkspace() override;
 
     LevelWorkspace(const LevelWorkspace&) = delete;
@@ -241,17 +244,15 @@ private:
     // The tool in hand's settings, as the operation facet hands them out.
     std::unique_ptr<ToolParameterSource> ToolParameters;
     MaterialLibrary* Materials = nullptr;
-    // Thumbnail GPU residency for the browser and active-material previews.
-    // Reset explicitly in the destructor after the render feature releases its
-    // scene resources and before Assets goes away (the bindings inside release
-    // through the asset system).
-    std::unique_ptr<MaterialThumbnailCache> Thumbnails;
-
     // Component identities the module's registration added serializers for,
     // so retraction removes exactly those.
     std::vector<ComponentTypeId> GameModuleSerializerTypes;
 
     ProjectDescriptor* Project = nullptr;
+    // Pictures of content files, shared with every workspace.
+    AssetPictures& Pictures;
+    // Its studio pictures scenes for everyone while it is open.
+    AssetPictures::Registration ScenePictures;
 
     // Declared last so they are torn down before the state they reference.
     // Cooking, the player it feeds, and the serials that hand one to the other.

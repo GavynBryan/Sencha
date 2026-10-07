@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ThumbnailEviction.h"
+#include "thumbnails/AssetPictures.h"
 
 #include <core/assets/AssetLease.h>
 #include <graphics/GpuFrameRetirement.h>
@@ -31,7 +32,7 @@ class UiTextureResidency;
 // samples the full texture (there is no thumbnail-sized cooked artifact yet;
 // producing one would slot into the base-color resolve step).
 //=============================================================================
-class MaterialThumbnailCache
+class MaterialThumbnailCache final : public IAssetPictureSource
 {
 public:
     // Host image names start with `imagePrefix`, so two caches never share one.
@@ -57,6 +58,10 @@ public:
     [[nodiscard]] std::string ImageName(const std::string& materialPath);
     // The same, for a texture pictured by itself.
     [[nodiscard]] std::string TextureImageName(const std::string& texturePath);
+    // A material by its base color texture tinted by its base color, or by the
+    // color alone when it has no texture; a texture by itself.
+    [[nodiscard]] AssetPicture PictureOf(std::string_view assetPath) override;
+    void Forget() override { Clear(); }
 
     // Evicts least-recently-used pictures until at most `budget` remain
     // (entries shown this frame are kept regardless).
@@ -76,6 +81,8 @@ private:
         // failed to parse); the negative result is cached so scrolling does not
         // re-parse the .smat every frame.
         std::string TexturePath;
+        // A material's base color, as a document fills with it.
+        std::string Swatch;
         AssetLease Texture;
         UiHostImageId Image = kInvalidUiHostImage;
         std::uint64_t LastUsedFrame = 0;
@@ -89,13 +96,12 @@ private:
         std::uint64_t Stamp = 0;
     };
 
-    // The material's base color texture path; empty when the material has none
-    // or the .smat does not resolve/parse.
-    [[nodiscard]] std::string ResolveBaseColor(const std::string& materialPath) const;
+    // Fills `entry` with the material's base color texture and its swatch.
+    void ResolveBaseColor(const std::string& materialPath, Entry& entry) const;
 
-    // The entry under `key`, made with `texturePath` the first time it is asked for.
-    template <typename TexturePath>
-    Entry& Find(const std::string& key, TexturePath&& texturePath);
+    // The entry under `key`, filled by `resolve` the first time it is asked for.
+    template <typename Resolve>
+    Entry& Find(const std::string& key, Resolve&& resolve);
     std::string Publish(const std::string& key, Entry& entry);
     // Withdraws the entry's image and moves what it holds into the retire
     // list; the caller then erases the entry.

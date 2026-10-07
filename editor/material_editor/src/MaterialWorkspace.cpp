@@ -71,7 +71,8 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
                                      MaterialLibrary& materials,
                                      DocumentSourceSet& documents,
                                      PromptQueue& prompts,
-                                     ActionCatalog& catalog)
+                                     ActionCatalog& catalog,
+                                     AssetPictures& pictures)
     : EngineRef(engine)
     , Project(project)
     , Assets(engine.Content().Assets())
@@ -102,6 +103,7 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
               CreateMaterialFromTexture(texture);
               ShowMaterial();
           })
+    , Pictures(pictures)
 {
     FilePath = std::make_unique<FilePathProperty>(
         [this] {
@@ -126,7 +128,6 @@ MaterialWorkspace::~MaterialWorkspace()
     // live UI backend; both go before the panels and the tabs.
     DetachRenderFeature(EngineRef, Preview);
     Picture.reset();
-    Thumbnails.reset();
 }
 
 void MaterialWorkspace::BuildUi()
@@ -144,9 +145,6 @@ void MaterialWorkspace::BuildUi()
     if (UiService* ui = EngineRef.TryUi(); ui != nullptr && ui->IsReady())
     {
         Picture = std::make_unique<ContentPicture>(*ui, "material_preview");
-        Thumbnails = std::make_unique<MaterialThumbnailCache>(
-            Assets.Assets, *Assets.Textures,
-            Assets.Registry, ui, &renderer.GetUiTextures(), "materials-workspace:");
     }
 
 
@@ -182,8 +180,7 @@ void MaterialWorkspace::DefineActions(ActionCatalog& catalog)
                 {});
     OfferAction(catalog, ActionHandlers, MaterialRescanAction(), { .Invoke = [this] {
                     RescanMaterials();
-                    if (Thumbnails != nullptr)
-                        Thumbnails->Clear();
+                    Pictures.Forget();
                 } });
     for (const PrimitiveRow& row : kPrimitives)
         OfferAction(catalog, ActionHandlers, { .Id = row.Id, .Label = row.Label, .Category = "View" },
@@ -309,8 +306,6 @@ void MaterialWorkspace::Tick(FrameUpdateContext&)
                                       static_cast<std::uint32_t>(content.Height()) },
                           Picture->Image());
     }
-    if (Thumbnails != nullptr)
-        Thumbnails->UpdateFrame(EngineRef);
 }
 
 void MaterialWorkspace::SetVisible(bool visible)
@@ -722,8 +717,7 @@ ExplorerPage MaterialWorkspace::Explore(const ExplorerQuery& query)
                 continue;
             page.Items.push_back({ .Key = record.Path,
                                    .Label = record.Path.substr(record.Path.rfind('/') + 1),
-                                   .Image = Thumbnails != nullptr ? Thumbnails->TextureImageName(record.Path)
-                                                                  : std::string{},
+                                   .Image = Pictures.PictureOf(record.Path).Image,
                                    .Current = Subject == CardSubject::Texture && TextureImport.Texture() == record.Path });
         }
         return page;
@@ -733,7 +727,7 @@ ExplorerPage MaterialWorkspace::Explore(const ExplorerQuery& query)
     const MaterialEditTab* active = Tabs.Active();
     ExplorerPage page = MaterialLibraryPage(
         Materials, query, active != nullptr ? std::string_view(active->Session.VirtualPath()) : std::string_view{},
-        [this](const std::string& path) { return Thumbnails != nullptr ? Thumbnails->ImageName(path) : std::string{}; });
+        [this](const std::string& path) { return Pictures.PictureOf(path).Image; });
     page.Actions.insert(page.Actions.begin(), "material.new");
     return page;
 }

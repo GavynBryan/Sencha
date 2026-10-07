@@ -78,7 +78,6 @@ body
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 96dp;
     padding: 4dp 0dp;
     gap: 2dp;
     border-radius: 3dp;
@@ -87,17 +86,26 @@ body
 {
     display: block;
     position: relative;
-    width: 72dp;
-    height: 72dp;
     border-width: 1dp;
     border-radius: 3dp;
 }
-.well .kind { display: block; position: absolute; left: 22dp; top: 22dp; width: 28dp; height: 28dp; }
+.well .kind, .preview_well .kind
+{
+    display: block;
+    position: absolute;
+    left: 30%;
+    top: 30%;
+    width: 40%;
+    height: 40%;
+}
+/* A picture fills its well; a colour does where there is no picture. */
+.picture, .swatch { display: block; position: absolute; left: 0dp; top: 0dp; width: 100%; height: 100%; }
+.swatch { border-radius: 2dp; }
 .lamp { display: block; position: absolute; right: 4dp; top: 4dp; width: 8dp; height: 8dp; border-radius: 4dp; }
 .tile_name, .tile_kind
 {
     display: block;
-    width: 92dp;
+    width: 100%;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
@@ -108,8 +116,8 @@ body
 /* The list: a row a file, its kind beside its name. */
 #shelf_items.list { display: block; }
 #shelf_items.list .tile { flex-direction: row; width: auto; height: 22dp; padding: 0dp 6dp; gap: 8dp; }
-#shelf_items.list .well { width: 16dp; height: 16dp; border-width: 0dp; }
-#shelf_items.list .well .kind { left: 0dp; top: 0dp; width: 16dp; height: 16dp; }
+#shelf_items.list .well { border-width: 0dp; }
+#shelf_items.list .well .kind { left: 0dp; top: 0dp; width: 100%; height: 100%; }
 #shelf_items.list .lamp { right: -2dp; top: -2dp; width: 6dp; height: 6dp; }
 #shelf_items.list .tile_name { flex: 1; width: auto; text-align: left; }
 #shelf_items.list .tile_kind { width: 160dp; text-align: left; font-size: 10dp; }
@@ -117,7 +125,6 @@ body
 
 #shelf_preview { flex: 0 0 220dp; display: flex; flex-direction: column; gap: 4dp; overflow: hidden; }
 .preview_well { display: block; position: relative; width: 140dp; height: 140dp; border-width: 1dp; border-radius: 3dp; }
-.preview_well .kind { display: block; position: absolute; left: 46dp; top: 46dp; width: 48dp; height: 48dp; }
 #preview_name { display: block; font-family: "Chakra Petch"; font-weight: 600; font-size: 14dp; word-break: break-word; }
 .fact { display: block; font-size: 10dp; word-break: break-word; }
 .fact.path { font-family: "JetBrains Mono"; }

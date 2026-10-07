@@ -3,6 +3,7 @@
 #include "icons/IconNames.h"
 #include "project/AssetKinds.h"
 #include "shell/AssetTabs.h"
+#include "thumbnails/AssetPictures.h"
 #include "workspaces/WorkspaceHost.h"
 
 #include <ui/UiKeys.h>
@@ -28,6 +29,10 @@ const UiModelPropertyId kPreviewPath = UiPropertyIdAt(9);
 const UiModelPropertyId kPreviewFacts = UiPropertyIdAt(10);
 const UiModelPropertyId kPreviewIcon = UiPropertyIdAt(11);
 const UiModelPropertyId kPreviewOpens = UiPropertyIdAt(12);
+const UiModelPropertyId kPreviewImage = UiPropertyIdAt(13);
+const UiModelPropertyId kPreviewColor = UiPropertyIdAt(14);
+const UiModelPropertyId kPicture = UiPropertyIdAt(15);
+const UiModelPropertyId kTile = UiPropertyIdAt(16);
 
 const UiModelRowsId kCrumbs = UiRowsIdAt(0);
 const UiModelRowsId kChips = UiRowsIdAt(1);
@@ -49,9 +54,13 @@ const UiActionId kOpen = UiActionIdAt(10);
 const UiActionId kViewAction = UiActionIdAt(11);
 const UiActionId kPin = UiActionIdAt(12);
 const UiActionId kClose = UiActionIdAt(13);
+const UiActionId kZoom = UiActionIdAt(14);
 
-// A tile's width and the gap after it, in dp, as shelf.rcss lays them out.
-constexpr float kTileStrideDp = 104.0f;
+// How much wider a tile is than its picture, and the gap after it, in dp.
+constexpr float kTileMarginDp = 24.0f;
+constexpr float kTileGapDp = 8.0f;
+constexpr float kSmallestPictureDp = 40.0f;
+constexpr float kLargestPictureDp = 200.0f;
 constexpr float kMinimumHeightDp = 180.0f;
 constexpr float kMostOfTheWindow = 0.75f;
 // Past this many, the rest are found by narrowing.
@@ -77,11 +86,15 @@ UiScreenDesc Describe()
         UiModelProperty{ "preview_facts", UiValue(std::string{}) },
         UiModelProperty{ "preview_icon", UiValue(std::string{}) },
         UiModelProperty{ "preview_opens", UiValue(false) },
+        UiModelProperty{ "preview_image", UiValue(std::string{}) },
+        UiModelProperty{ "preview_color", UiValue(std::string{}) },
+        UiModelProperty{ "picture", UiValue(std::string("72dp")) },
+        UiModelProperty{ "tile", UiValue(std::string("96dp")) },
     };
     desc.RowLists = { "crumbs", "chips", "lists", "folders", "items" };
     desc.Actions = { "shelf_grab",   "shelf_drag",   "shelf_drop", "shelf_query", "shelf_key",
                      "shelf_category", "shelf_list", "shelf_folder", "shelf_branch", "shelf_pick",
-                     "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close" };
+                     "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom" };
     return desc;
 }
 
@@ -133,12 +146,13 @@ std::string_view FolderName(std::string_view folder)
 } // namespace
 
 Shelf::Shelf(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces, PresentationId presentation,
-             std::vector<std::filesystem::path> contentRoots)
+             std::vector<std::filesystem::path> contentRoots, AssetPictures* pictures)
     : Ui(ui)
     , Surface(surface)
     , Workspaces(workspaces)
     , Presentation(presentation)
     , Roots(std::move(contentRoots))
+    , Pictures(pictures)
 {
     if (Surface.IsValid())
         Screen = Ui.OpenScreen(Surface, Describe());
@@ -246,7 +260,8 @@ int Shelf::Columns() const
     const std::optional<UiElementBox> items = Ui.MeasureElement(Screen, "shelf_items");
     if (!items.has_value() || items->Width <= 0.0f)
         return 1;
-    return std::max(1, static_cast<int>(std::floor(items->Width / (kTileStrideDp * Dp))));
+    const float stride = (PictureDp + kTileMarginDp + kTileGapDp) * Dp;
+    return std::max(1, static_cast<int>(std::floor(items->Width / stride)));
 }
 
 void Shelf::Move(int by)
@@ -318,6 +333,10 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
         State = State == Placement::Pinned ? Placement::Raised : Placement::Pinned;
     else if (action.Id == kClose)
         Hide();
+    else if (action.Id == kZoom && action.Arguments.size() > 1 && action.Arguments[1].Kind() == UiValueKind::Bool
+             && action.Arguments[1].AsBool())
+        PictureDp = std::clamp(PictureDp - static_cast<float>(Number(action)) * 8.0f, kSmallestPictureDp,
+                               kLargestPictureDp);
 }
 
 void Shelf::Update(float dp, float windowHeight)
@@ -339,6 +358,8 @@ void Shelf::Publish()
     (void)Ui.SetValue(Screen, kHeight, UiValue(std::format("{:.0f}px", HeightDp * Dp)));
     (void)Ui.SetValue(Screen, kView, UiValue(std::string(View == Look::List ? "list" : "tiles")));
     (void)Ui.SetValue(Screen, kPinned, UiValue(State == Placement::Pinned));
+    (void)Ui.SetValue(Screen, kPicture, UiValue(std::format("{:.0f}dp", PictureDp)));
+    (void)Ui.SetValue(Screen, kTile, UiValue(std::format("{:.0f}dp", PictureDp + kTileMarginDp)));
 
     std::vector<UiRow> crumbs;
     UiRow everywhere{ "Content", "", "" };
@@ -426,6 +447,11 @@ void Shelf::Publish()
                     tab == tabs.end() ? "" : tab->Changed ? "changed" : "open", kind.Label };
         item.Key = file->AssetPath;
         item.Icon = IconName(kind.Icon);
+        // Only a tile drawn as one is asked for its picture: tiles past what is
+        // shown never load theirs.
+        const AssetPicture picture = Pictures != nullptr && View == Look::Tiles ? Pictures->PictureOf(file->AssetPath)
+                                                                                : AssetPicture{};
+        item.Parts = { picture.Image, picture.Color };
         item.Selected = file->AssetPath == Selected;
         items.push_back(std::move(item));
     }
@@ -446,5 +472,9 @@ void Shelf::Publish()
                       UiValue(chosen != nullptr ? SizeText(chosen->Size) + " \xC2\xB7 " + AgeText(chosen->Modified)
                                                 : std::string{}));
     (void)Ui.SetValue(Screen, kPreviewIcon, UiValue(std::string(IconName(kind.Icon))));
+    const AssetPicture picture = chosen != nullptr && Pictures != nullptr ? Pictures->PictureOf(chosen->AssetPath)
+                                                                          : AssetPicture{};
+    (void)Ui.SetValue(Screen, kPreviewImage, UiValue(picture.Image));
+    (void)Ui.SetValue(Screen, kPreviewColor, UiValue(picture.Color));
     (void)Ui.SetValue(Screen, kPreviewOpens, UiValue(chosen != nullptr && Workspaces.KindOpening(*chosen) != nullptr));
 }

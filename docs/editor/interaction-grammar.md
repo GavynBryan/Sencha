@@ -118,7 +118,12 @@ narrow it; the chosen file's facts sit beside the tiles; Enter or OPEN opens it
 in the editor that opens its kind (`WorkspaceKind::Opens`), and an editor with
 nothing open raises the Shelf narrowed to what it opens. Raised, it lies over
 the work and goes when something opens; pinned, it stays and the work ends
-above it; its top edge sizes it (`shell/Shelf`, `project/AssetQuery`).
+above it; its top edge sizes it (`shell/Shelf`, `project/AssetQuery`). Files
+are pictured through one registry every workspace shares
+(`thumbnails/AssetPictures`): a material by its base color texture tinted by
+its base color, a texture by itself, a scene by the level editor's studio while
+the level editor is open; anything else by its kind's icon. Ctrl and the wheel
+over the tiles size them.
 
 The rail is also the window caption (client decorations) and the only
 full-width chrome. Every persistent instrument is **a readout that is also a

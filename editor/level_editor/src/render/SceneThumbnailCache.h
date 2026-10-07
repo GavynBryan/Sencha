@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ThumbnailStudio.h"
+#include "thumbnails/AssetPictures.h"
 
 #include <render/ui/UiDrawFrame.h>
 
@@ -32,7 +33,7 @@ struct RuntimeAssets;
 // recorded passes may still be in flight; once every slot holds the image,
 // the payload is released and the entry keeps nothing but its target.
 //=============================================================================
-class SceneThumbnailCache
+class SceneThumbnailCache final : public IAssetPictureSource
 {
 public:
     SceneThumbnailCache(ThumbnailStudio& studio,
@@ -52,6 +53,11 @@ public:
     // `host:NAME`; empty without authored UI. Requests it if new and marks it
     // used this frame.
     [[nodiscard]] std::string ImageName(const std::string& assetPath);
+    [[nodiscard]] AssetPicture PictureOf(std::string_view assetPath) override
+    {
+        return { .Image = ImageName(std::string(assetPath)) };
+    }
+    void Forget() override { Clear(); }
     // Render side, once this frame's passes are recorded: publishes every
     // finished preview's image and withdraws the ones that went.
     void PublishImages(UiTextureResidency& textures);

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+class AssetPictures;
 class UiService;
 class WorkspaceHost;
 struct UiAction;
@@ -33,8 +34,9 @@ struct UiAction;
 class Shelf
 {
 public:
+    // Without `pictures`, every file is shown by its kind's icon.
     Shelf(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces, PresentationId presentation,
-          std::vector<std::filesystem::path> contentRoots);
+          std::vector<std::filesystem::path> contentRoots, AssetPictures* pictures);
     ~Shelf();
 
     Shelf(const Shelf&) = delete;
@@ -76,6 +78,7 @@ private:
     WorkspaceHost& Workspaces;
     PresentationId Presentation;
     std::vector<std::filesystem::path> Roots;
+    AssetPictures* Pictures;
     UiScreenHandle Screen;
 
     Placement State = Placement::Down;
@@ -90,6 +93,8 @@ private:
 
     float Dp = 1.0f;
     float HeightDp = 300.0f;
+    // The side of a tile's picture; Ctrl and the wheel over the tiles size it.
+    float PictureDp = 72.0f;
     // The top edge being dragged: where the pointer and the edge began.
     Edge TopEdge = Edge::Resting;
     float GrabbedAt = 0.0f;

@@ -31,7 +31,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         .Create = [&engine, &window, &session, &actions, &prompts, &problems] {
             return std::make_unique<LevelWorkspace>(engine, window, session.Project(), session.Module(),
                                                     session.Materials(), session.Documents(), actions, prompts,
-                                                    problems);
+                                                    problems, session.Pictures());
         },
         .Opens = { { ".sscene" }, { ".sworld" } },
     });
@@ -40,7 +40,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         .DisplayName = "Materials",
         .Create = [&engine, &session, &prompts, &actions] {
             return std::make_unique<MaterialWorkspace>(engine, session.Project(), session.Materials(),
-                                                       session.Documents(), prompts, actions);
+                                                       session.Documents(), prompts, actions, session.Pictures());
         },
         .Opens = { { ".smat" }, { ".png" } },
     });

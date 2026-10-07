@@ -12,6 +12,7 @@
 #include <ui/UiService.h>
 
 #include <algorithm>
+#include <format>
 #include <utility>
 #include <vector>
 
@@ -88,25 +89,26 @@ void MaterialThumbnailCache::Retire(Entry& entry)
         RetireList.push_back(Retiring{ std::move(entry.Texture), Retirement.Stamp() });
 }
 
-std::string MaterialThumbnailCache::ResolveBaseColor(const std::string& materialPath) const
+void MaterialThumbnailCache::ResolveBaseColor(const std::string& materialPath, Entry& entry) const
 {
     const AssetRecord* record = Registry.FindByPath(materialPath);
-    if (record == nullptr || record->FilePath.empty())
-        return {};
     MaterialDescription description;
-    if (!LoadMaterialFromFile(record->FilePath, description))
-        return {};
-    return description.BaseColorTexture.Path;
+    if (record == nullptr || record->FilePath.empty() || !LoadMaterialFromFile(record->FilePath, description))
+        return;
+    entry.TexturePath = description.BaseColorTexture.Path;
+    const Vec4& color = description.BaseColorFactor;
+    const auto channel = [](float value) { return static_cast<int>(std::clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f); };
+    entry.Swatch = std::format("rgba({}, {}, {}, 255)", channel(color.X), channel(color.Y), channel(color.Z));
 }
 
-template <typename TexturePath>
-MaterialThumbnailCache::Entry& MaterialThumbnailCache::Find(const std::string& key, TexturePath&& texturePath)
+template <typename Resolve>
+MaterialThumbnailCache::Entry& MaterialThumbnailCache::Find(const std::string& key, Resolve&& resolve)
 {
     auto it = Entries.find(key);
     if (it == Entries.end())
     {
         Entry entry;
-        entry.TexturePath = texturePath();
+        resolve(entry);
         it = Entries.emplace(key, std::move(entry)).first;
     }
     it->second.LastUsedFrame = Frame;
@@ -115,13 +117,21 @@ MaterialThumbnailCache::Entry& MaterialThumbnailCache::Find(const std::string& k
 
 std::string MaterialThumbnailCache::ImageName(const std::string& materialPath)
 {
-    return Publish(materialPath, Find(materialPath, [&] { return ResolveBaseColor(materialPath); }));
+    return Publish(materialPath, Find(materialPath, [&](Entry& entry) { ResolveBaseColor(materialPath, entry); }));
 }
 
 std::string MaterialThumbnailCache::TextureImageName(const std::string& texturePath)
 {
     const std::string key = "texture:" + texturePath;
-    return Publish(key, Find(key, [&] { return texturePath; }));
+    return Publish(key, Find(key, [&](Entry& entry) { entry.TexturePath = texturePath; }));
+}
+
+AssetPicture MaterialThumbnailCache::PictureOf(std::string_view assetPath)
+{
+    const std::string path(assetPath);
+    if (!path.ends_with(".smat"))
+        return { .Image = TextureImageName(path) };
+    return { .Image = ImageName(path), .Color = Entries.at(path).Swatch };
 }
 
 std::string MaterialThumbnailCache::Publish(const std::string& key, Entry& entry)
