@@ -4,6 +4,7 @@
 #include <core/json/JsonValue.h>
 #include <core/serialization/Archive.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace
@@ -83,7 +84,9 @@ std::optional<AssetRef> AssetRefFromJson(const JsonValue& value)
 {
     if (value.IsString())
         return value.AsString().empty() ? std::nullopt : Accept({}, false, value.AsString());
-    if (!value.IsObject())
+    if (!value.IsObject() || std::ranges::any_of(value.AsObject(), [](const auto& member) {
+            return member.first != kIdKey && member.first != kPathKey;
+        }))
         return std::nullopt;
     const JsonValue* id = value.Find(kIdKey);
     const JsonValue* path = value.Find(kPathKey);
@@ -95,6 +98,13 @@ std::optional<AssetRef> AssetRefFromJson(const JsonValue& value)
 
 namespace
 {
+// An object found while walking unknown JSON is a reference only in the form a
+// writer produces for one: naming its id.
+std::optional<AssetRef> IdForm(const JsonValue& value)
+{
+    return value.IsObject() && value.Find(kIdKey) != nullptr ? AssetRefFromJson(value) : std::nullopt;
+}
+
 void Collect(const JsonValue& value, std::vector<AssetRef>& out)
 {
     if (value.IsString())
@@ -104,12 +114,11 @@ void Collect(const JsonValue& value, std::vector<AssetRef>& out)
     }
     else if (value.IsObject())
     {
-        if (value.Find(kIdKey) != nullptr)
-            if (std::optional<AssetRef> ref = AssetRefFromJson(value))
-            {
-                out.push_back(std::move(*ref));
-                return;
-            }
+        if (std::optional<AssetRef> ref = IdForm(value))
+        {
+            out.push_back(std::move(*ref));
+            return;
+        }
         for (const auto& [key, member] : value.AsObject())
             Collect(member, out);
     }
@@ -124,6 +133,32 @@ std::vector<AssetRef> CollectAssetRefs(const JsonValue& root)
     std::vector<AssetRef> refs;
     Collect(root, refs);
     return refs;
+}
+
+JsonValue ResolveAssetRefs(const JsonValue& root, const AssetPathsById& current)
+{
+    if (root.IsObject())
+    {
+        if (std::optional<AssetRef> ref = IdForm(root))
+        {
+            const auto found = ref->Id.IsValid() ? current.find(ref->Id) : current.end();
+            return JsonValue(found != current.end() ? found->second : ref->Path);
+        }
+        JsonValue::Object members;
+        members.reserve(root.Size());
+        for (const auto& [key, member] : root.AsObject())
+            members.emplace_back(key, ResolveAssetRefs(member, current));
+        return JsonValue(std::move(members));
+    }
+    if (root.IsArray())
+    {
+        JsonValue::Array elements;
+        elements.reserve(root.Size());
+        for (const JsonValue& element : root.AsArray())
+            elements.push_back(ResolveAssetRefs(element, current));
+        return JsonValue(std::move(elements));
+    }
+    return root;
 }
 
 JsonValue AssetRefToJson(const AssetRef& ref)

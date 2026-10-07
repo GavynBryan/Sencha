@@ -43,7 +43,7 @@ public:
 
     void Update(const DataDocument& document, DataDocumentSet& documents) override
     {
-        Preview.Update(document, documents.Store().Types());
+        Preview.Update(document, documents.Store().Types(), *documents.Store().PathsById());
         if (const DataSchema* schema = documents.Store().SchemaOf(document))
         {
             Labels = MovementCoefficientLabels(*schema);

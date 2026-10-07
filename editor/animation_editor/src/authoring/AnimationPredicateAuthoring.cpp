@@ -38,7 +38,7 @@ std::shared_ptr<const T> Compiled(const DataDocumentStore& store, std::string_vi
     std::vector<DataValidationError> errors;
     if (data == nullptr || compiler == nullptr || schema == nullptr || !ValidateDataAgainstSchema(*data, *schema, errors))
         return nullptr;
-    const DataAssetCompileResult result = compiler->Compile(*data);
+    const DataAssetCompileResult result = CompileDataAsset(*compiler, *data, *store.PathsById());
     return result.IsValid() ? std::static_pointer_cast<const T>(result.Value) : nullptr;
 }
 

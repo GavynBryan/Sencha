@@ -215,6 +215,41 @@ TEST(DataAsset, LoadsTypedValueAndReportsDependencies)
     EXPECT_FALSE(cache.Find(file.Record().Path).IsValid());
 }
 
+// A data asset that names another by id compiles with the path that asset is at
+// now, read from the snapshot the owner took; without the id known, the hint.
+TEST(DataAsset, AReferenceByIdCompilesAtItsAssetsCurrentPath)
+{
+    LoggingProvider logging;
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    DataAssetCache cache;
+    ASSERT_TRUE(types.Register(MakeType()));
+    ASSERT_TRUE(schemas.Register(MakeSchema()));
+
+    DataAssetLoader loader(logging, &types, &schemas, &cache);
+    FileAssetSource source;
+    TempDataFile file;
+    file.Write(R"({
+        "type": "test.definition",
+        "version": 1,
+        "data": {
+            "speed": 1,
+            "label": "runner",
+            "dependency": { "id": "00000000000000d1", "path": "asset://materials/old.smat" }
+        }
+    })");
+
+    const AssetPathsById current{ { AssetId{ 0xd1 }, "asset://materials/new.smat" } };
+    const AssetStaging moved = loader.LoadStagedResolving(file.Record(), source, current);
+    ASSERT_TRUE(moved.IsValid()) << moved.Error;
+    ASSERT_EQ(moved.Dependencies.size(), 1u);
+    EXPECT_EQ(moved.Dependencies[0].Path, "asset://materials/new.smat");
+
+    const AssetStaging unknown = loader.LoadStaged(file.Record(), source);
+    ASSERT_TRUE(unknown.IsValid()) << unknown.Error;
+    EXPECT_EQ(unknown.Dependencies[0].Path, "asset://materials/old.smat");
+}
+
 TEST(DataAsset, HotReloadPreservesHandleAndIncrementsVersion)
 {
     LoggingProvider logging;

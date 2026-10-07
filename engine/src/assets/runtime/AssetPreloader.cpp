@@ -189,10 +189,10 @@ void AssetPreloader::SubmitStagedLoad(const AssetRecord& record)
 
     Tasks.Submit<AssetStaging>(
         // Work, task thread: pure decode against the byte seam. The record
-        // is captured by value — plain data, no shared state.
-        [stager, source, record]() -> AssetStaging
+        // and the id snapshot are captured by value -- neither ever changes.
+        [stager, source, record, current = Registry.PathsById()]() -> AssetStaging
         {
-            return stager->LoadStaged(record, *source);
+            return stager->LoadStagedResolving(record, *source, *current);
         },
         // Commit, owner thread at the drain point.
         [this, type = record.Type, path = record.Path](AssetStaging staging)

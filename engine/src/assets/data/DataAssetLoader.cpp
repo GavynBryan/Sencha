@@ -23,6 +23,12 @@ DataAssetLoader::DataAssetLoader(LoggingProvider& logging,
 
 AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
 {
+    return LoadStagedResolving(record, source, AssetPathsById{});
+}
+
+AssetStaging DataAssetLoader::LoadStagedResolving(const AssetRecord& record, IAssetSource& source,
+                                                  const AssetPathsById& current)
+{
     AssetStaging staging;
     staging.Record = record;
 
@@ -42,10 +48,11 @@ AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource
                                     jsonError.Position, jsonError.Message);
         return staging;
     }
-    return StageRoot(record, *root);
+    return StageRoot(record, *root, current);
 }
 
-AssetStaging DataAssetLoader::StageRoot(const AssetRecord& record, const JsonValue& root)
+AssetStaging DataAssetLoader::StageRoot(const AssetRecord& record, const JsonValue& root,
+                                        const AssetPathsById& current)
 {
     AssetStaging staging;
     staging.Record = record;
@@ -110,7 +117,7 @@ AssetStaging DataAssetLoader::StageRoot(const AssetRecord& record, const JsonVal
         }
     }
 
-    DataAssetCompileResult compiled = registration->Compile(*dataValue);
+    DataAssetCompileResult compiled = CompileDataAsset(*registration, *dataValue, current);
     if (!compiled.IsValid())
     {
         staging.Error = compiled.Error.empty()

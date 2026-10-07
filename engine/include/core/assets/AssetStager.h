@@ -67,4 +67,16 @@ public:
     // Task-thread half. `source` is the byte seam (Decision I).
     [[nodiscard]] virtual AssetStaging LoadStaged(const AssetRecord& record,
                                                   IAssetSource& source) = 0;
+
+    // The same, for a loader whose content names other assets by id: `current`
+    // is where those are now, a snapshot the owner took when it asked for the
+    // stage, so a reference to a moved asset reads at its new path. A loader
+    // whose content names none leaves this as it is.
+    [[nodiscard]] virtual AssetStaging LoadStagedResolving(const AssetRecord& record,
+                                                           IAssetSource& source,
+                                                           const AssetPathsById& current)
+    {
+        (void)current;
+        return LoadStaged(record, source);
+    }
 };

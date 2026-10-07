@@ -396,7 +396,9 @@ void DataDocument::Validate(const DataAssetTypeRegistry& types,
     if (!schemaValid)
         return;
 
-    DataAssetCompileResult compiled = type->Compile(*dataValue);
+    // Checking a document asks what shape its references have, not where their
+    // assets now are.
+    DataAssetCompileResult compiled = CompileDataAsset(*type, *dataValue, AssetPathsById{});
     if (!compiled.IsValid())
     {
         Errors.push_back(compiled.Error.empty()

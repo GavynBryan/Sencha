@@ -134,6 +134,7 @@ bool AssetRegistry::Unregister(std::string_view path)
     if (it->second.Id.IsValid())
         RecordsById.erase(it->second.Id);
     RecordsByPath.erase(it);
+    PathsSnapshot.reset();
     return true;
 }
 
@@ -165,11 +166,13 @@ bool AssetRegistry::AssignId(std::string_view path, AssetId id)
     RecordsById.erase(it->second.Id);
     it->second.Id = id;
     RecordsById.emplace(id, &it->second);
+    PathsSnapshot.reset();
     return true;
 }
 
 void AssetRegistry::BindId(AssetRecord& record)
 {
+    PathsSnapshot.reset();
     const AssetId stated = record.Id;
     if (!record.Id.IsValid())
         record.Id = AssetIdOfPath(record.Path);
@@ -198,6 +201,19 @@ const AssetRecord* AssetRegistry::Find(const AssetRef& ref) const
     if (const AssetRecord* byId = ref.Id.IsValid() ? FindById(ref.Id) : nullptr)
         return byId;
     return ref.Path.empty() ? nullptr : FindByPath(ref.Path);
+}
+
+std::shared_ptr<const AssetPathsById> AssetRegistry::PathsById() const
+{
+    if (PathsSnapshot == nullptr)
+    {
+        auto paths = std::make_shared<AssetPathsById>();
+        paths->reserve(RecordsById.size());
+        for (const auto& [id, record] : RecordsById)
+            paths->emplace(id, record->Path);
+        PathsSnapshot = std::move(paths);
+    }
+    return PathsSnapshot;
 }
 
 AssetRef AssetRegistry::Current(AssetRef ref) const

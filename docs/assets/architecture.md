@@ -345,6 +345,13 @@ Resolution order (id-first with path fallback): if the ref has an id and the
 registry knows it, use the registry record's current path (survives renames).
 Otherwise fall back to the path in the ref.
 
+The registry belongs to the owner thread, so a stage that reads references
+(a data asset, before its compiler runs) resolves them against
+`AssetRegistry::PathsById()`: an immutable id-to-path snapshot the owner takes
+when it submits the stage (`IAssetStager::LoadStagedResolving`). Every host
+compiles a data asset through `CompileDataAsset`, which hands the compiler paths
+only.
+
 ---
 
 ## Dev-only systems

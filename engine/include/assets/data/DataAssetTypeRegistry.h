@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/assets/AssetRef.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/json/JsonValue.h>
 
 #include <cstdint>
@@ -43,6 +44,13 @@ struct DataAssetTypeRegistration
     uint32_t CurrentVersion = 1;
     CompileDataAssetFn Compile;
 };
+
+// Compiles `data` with every asset reference in it read as the path its asset
+// is now at (`current`), so a compiler only ever sees paths. The one way any
+// host compiles a data asset.
+[[nodiscard]] DataAssetCompileResult CompileDataAsset(const DataAssetTypeRegistration& registration,
+                                                      const JsonValue& data,
+                                                      const AssetPathsById& current);
 
 class DataAssetTypeRegistry
 {

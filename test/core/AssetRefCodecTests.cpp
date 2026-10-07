@@ -108,3 +108,29 @@ TEST(AssetIdMinting, APartIsNamedByItsFileAndItsName)
     EXPECT_NE(AssetIdOfPart(hero, "anim:Walk"), AssetIdOfPart(other, "anim:Walk"));
     EXPECT_NE(AssetIdOfPart(hero, "anim:Walk"), hero);
 }
+
+// A document stating its own id is not a reference, though it names an id:
+// only an object made of an id and a path is one.
+TEST(AssetRefCodec, ADocumentStatingItsIdIsNotAReference)
+{
+    const JsonValue material = Parse(R"({"id": "00000000000abcde", "version": 2,
+                                          "base_color_texture": {"id": "00000000000000aa", "path": "asset://t/a.png"}})");
+    EXPECT_FALSE(AssetRefFromJson(material).has_value());
+    const std::vector<AssetRef> refs = CollectAssetRefs(material);
+    ASSERT_EQ(refs.size(), 1u) << "the walk reads into the document";
+    EXPECT_EQ(refs[0].Path, "asset://t/a.png");
+}
+
+TEST(AssetRefCodec, ResolvingMakesEveryIdReferenceItsAssetsCurrentPath)
+{
+    const JsonValue data = Parse(R"({"id": "00000000000abcde", "moved": {"id": "00000000000000aa", "path": "asset://t/old.png"},
+                                      "unknown": {"id": "00000000000000bb", "path": "asset://t/hint.png"},
+                                      "bare": "asset://t/bare.png", "shape": {"path": "asset://not/a/ref"}})");
+    const AssetPathsById current{ { AssetId{ 0xaa }, "asset://t/new.png" } };
+    const JsonValue resolved = ResolveAssetRefs(data, current);
+    EXPECT_EQ(resolved.Find("moved")->AsString(), "asset://t/new.png");
+    EXPECT_EQ(resolved.Find("unknown")->AsString(), "asset://t/hint.png");
+    EXPECT_EQ(resolved.Find("bare")->AsString(), "asset://t/bare.png");
+    EXPECT_TRUE(resolved.Find("shape")->IsObject()) << "only an object naming an id is read as one";
+    EXPECT_TRUE(resolved.Find("id")->IsString()) << "a document's own id stays as it is";
+}

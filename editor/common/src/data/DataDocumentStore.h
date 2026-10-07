@@ -52,6 +52,10 @@ public:
     [[nodiscard]] const DataSchema* SchemaOf(const DataDocument& document) const;
     [[nodiscard]] const DataSchema* SchemaOf(std::string_view subtype) const;
     [[nodiscard]] const DataAssetTypeRegistry& Types() const;
+    // Where assets named by id now are, for compiling a document's references.
+    [[nodiscard]] std::shared_ptr<const AssetPathsById> PathsById() const;
+    // A reference as the catalog knows its asset now (AssetRegistry::Current).
+    [[nodiscard]] AssetRef Current(AssetRef ref) const;
     [[nodiscard]] bool IsRegistered(std::string_view virtualPath) const;
     // An open document's working subtype or root wins over the file's.
     [[nodiscard]] std::string SubtypeOf(std::string_view virtualPath) const;

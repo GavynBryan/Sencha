@@ -169,6 +169,16 @@ const DataAssetTypeRegistry& DataDocumentStore::Types() const
     return Assets.DataTypes;
 }
 
+std::shared_ptr<const AssetPathsById> DataDocumentStore::PathsById() const
+{
+    return Assets.Registry.PathsById();
+}
+
+AssetRef DataDocumentStore::Current(AssetRef ref) const
+{
+    return Assets.Registry.Current(std::move(ref));
+}
+
 bool DataDocumentStore::IsRegistered(std::string_view virtualPath) const
 {
     return Assets.Registry.Contains(virtualPath);

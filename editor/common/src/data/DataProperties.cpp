@@ -6,6 +6,7 @@
 #include "data/DataSubtypeAuthoring.h"
 #include "properties/SettingProperties.h"
 
+#include <core/assets/AssetRefCodec.h>
 #include <core/metadata/DataSchema.h>
 
 #include <algorithm>
@@ -120,6 +121,12 @@ std::string Text(const JsonValue& value, const DataFieldSchema& field)
 {
     switch (field.Kind)
     {
+    case DataFieldKind::AssetRef:
+    case DataFieldKind::DataAssetRef:
+    {
+        const std::optional<AssetRef> ref = AssetRefFromJson(value);
+        return ref.has_value() ? ref->Path : std::string{};
+    }
     case DataFieldKind::Bool:
         return value.IsBool() && value.AsBool() ? "true" : "false";
     case DataFieldKind::Int:
@@ -419,10 +426,14 @@ PropertyEditResult DataProperties::PreviewEdit(std::string_view key, std::string
             held = *on ? CreateDefaultDataValue(*child) : JsonValue();
             return true;
         }, false);
-    return Change(key, [value](JsonValue& held, const DataFieldSchema& field) {
+    return Change(key, [this, value](JsonValue& held, const DataFieldSchema& field) {
         std::optional<JsonValue> parsed = Parse(value, Unwrapped(field));
         if (!parsed.has_value())
             return false;
+        const DataFieldKind kind = Unwrapped(field).Kind;
+        // A reference chosen by its path is written with its asset's id.
+        if ((kind == DataFieldKind::AssetRef || kind == DataFieldKind::DataAssetRef) && !value.empty())
+            parsed = AssetRefToJson(Documents.Store().Current(AssetRef{ .Path = std::string(value) }));
         held = std::move(*parsed);
         return true;
     }, false);

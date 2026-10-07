@@ -3,10 +3,12 @@
 #include <core/assets/AssetId.h>
 #include <core/assets/AssetPath.h> // re-exports IsValidAssetPath for registry callers
 #include <core/assets/AssetRef.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -51,6 +53,10 @@ public:
     [[nodiscard]] const AssetRecord* FindById(AssetId id) const;
     // The record `ref` names: by its id when the id is known, else by its path.
     [[nodiscard]] const AssetRecord* Find(const AssetRef& ref) const;
+    // Where every asset named by id is now, as a snapshot that never changes and
+    // so may be read on any thread. Built when asked for after the registry
+    // changed; until then, the same snapshot again.
+    [[nodiscard]] std::shared_ptr<const AssetPathsById> PathsById() const;
     // `ref` as the registry knows its asset now: the asset's path when its id
     // is known, else its id when its path is. Anything unknown stays as it was.
     [[nodiscard]] AssetRef Current(AssetRef ref) const;
@@ -75,6 +81,7 @@ private:
 
     Logger& Log;
     std::unordered_map<std::string, AssetRecord> RecordsByPath;
+    mutable std::shared_ptr<const AssetPathsById> PathsSnapshot;
     std::unordered_map<AssetId, const AssetRecord*> RecordsById;
 };
 

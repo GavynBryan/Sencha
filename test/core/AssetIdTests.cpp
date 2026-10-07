@@ -415,3 +415,22 @@ TEST(AssetRegistryIds, AReferenceFindsItsAssetByIdBeforePath)
     EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://other.smesh" })->Path, "asset://other.smesh");
     EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://gone.smesh", AssetId{ 7 } }), nullptr);
 }
+
+// The snapshot a stage reads is the registry as it was asked for, and asking
+// again after a change gives the change.
+TEST(AssetRegistryIds, TheIdSnapshotIsTakenAfterEachChange)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://a.smesh")));
+    const std::shared_ptr<const AssetPathsById> first = registry.PathsById();
+    EXPECT_EQ(registry.PathsById(), first) << "unchanged, the same snapshot";
+    EXPECT_EQ(first->at(AssetIdOfPath("asset://a.smesh")), "asset://a.smesh");
+
+    ASSERT_TRUE(registry.AssignId("asset://a.smesh", AssetId{ 0x42 }));
+    const std::shared_ptr<const AssetPathsById> second = registry.PathsById();
+    EXPECT_NE(second, first);
+    EXPECT_EQ(second->at(AssetId{ 0x42 }), "asset://a.smesh");
+    EXPECT_FALSE(second->contains(AssetIdOfPath("asset://a.smesh")));
+    EXPECT_EQ(first->size(), 1u) << "a snapshot already taken never changes";
+}

@@ -26,7 +26,8 @@ namespace
 }
 
 void MovementResolvePreview::Update(const DataDocument& document,
-                                    const DataAssetTypeRegistry& types)
+                                    const DataAssetTypeRegistry& types,
+                                    const AssetPathsById& current)
 {
     const bool sameSource = HasSource && SourcePath == document.VirtualPath();
     if (sameSource && SourceRevision == document.Revision())
@@ -35,11 +36,12 @@ void MovementResolvePreview::Update(const DataDocument& document,
     SourcePath = document.VirtualPath();
     SourceRevision = document.Revision();
     HasSource = true;
-    Rebuild(document, types);
+    Rebuild(document, types, current);
 }
 
 void MovementResolvePreview::Rebuild(const DataDocument& document,
-                                     const DataAssetTypeRegistry& types)
+                                     const DataAssetTypeRegistry& types,
+                                     const AssetPathsById& current)
 {
     Profile.reset();
     Bound.reset();
@@ -53,7 +55,7 @@ void MovementResolvePreview::Rebuild(const DataDocument& document,
         return;
     }
 
-    DataAssetCompileResult compiled = type->Compile(*data);
+    DataAssetCompileResult compiled = CompileDataAsset(*type, *data, current);
     if (!compiled.IsValid())
     {
         BindError = compiled.Error.empty() ? "the document does not compile" : compiled.Error;

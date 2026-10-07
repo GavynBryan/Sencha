@@ -33,10 +33,15 @@ public:
                     DataSchemaRegistry* schemas,
                     DataAssetCache* cache);
 
+    // Without where assets now are, a reference reads at the path it names.
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source) override;
+    [[nodiscard]] AssetStaging LoadStagedResolving(const AssetRecord& record,
+                                                   IAssetSource& source,
+                                                   const AssetPathsById& current) override;
     // Stages an envelope already in memory, such as an editor's working copy.
-    [[nodiscard]] AssetStaging StageRoot(const AssetRecord& record, const JsonValue& root);
+    [[nodiscard]] AssetStaging StageRoot(const AssetRecord& record, const JsonValue& root,
+                                         const AssetPathsById& current);
 
     // Loads the value's declared dependencies and has the entry hold them; one
     // that cannot load fails the commit.

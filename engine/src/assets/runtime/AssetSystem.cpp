@@ -84,7 +84,7 @@ AssetLease AssetSystem::LoadLease(std::string_view path, AssetType type)
     if (stager == nullptr)
         return fail(std::format("no loader registered for {} '{}'", AssetTypeToString(type), recordPath));
 
-    AssetStaging staged = stager->LoadStaged(*record, Source);
+    AssetStaging staged = stager->LoadStagedResolving(*record, Source, *Registry.PathsById());
     if (!staged.IsValid())
         return fail(staged.Error);
 
