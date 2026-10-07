@@ -3,6 +3,7 @@
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
 #include "properties/PropertyEditSession.h"
+#include "text/PathLeaf.h"
 
 #include <algorithm>
 #include <charconv>
@@ -158,6 +159,8 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     row.Mixed = node.Mixed;
     if (row.Control == UiRowControl::Color)
         row.Parts = { SwatchOf(node.Value) };
+    if (row.Control == UiRowControl::Asset && !node.Value.empty())
+        row.Parts = { std::string(PathLeaf(node.Value)) };
     if (row.Control == UiRowControl::Number)
     {
         row.Number = NumberOf(node.Value);
@@ -395,6 +398,14 @@ bool PropertySheet::Removes(std::size_t index, std::string_view verb) const
         return false;
     const auto found = std::ranges::find(Rows[index].Verbs, verb, &PropertyVerb::Id);
     return found != Rows[index].Verbs.end() && found->Removes;
+}
+
+std::optional<std::size_t> PropertySheet::IndexOf(std::string_view key) const
+{
+    const auto found = std::ranges::find(Rows, key, &Presented::Key);
+    if (found == Rows.end())
+        return std::nullopt;
+    return static_cast<std::size_t>(found - Rows.begin());
 }
 
 std::string PropertySheet::LabelOf(std::size_t index) const

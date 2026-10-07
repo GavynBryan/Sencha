@@ -209,7 +209,7 @@ TEST(WorkspaceHost, EachWindowShowsItsOwnMostRecentWorkspace)
     EXPECT_EQ(host.ActiveKind()->Id, "level");
 }
 
-TEST(WorkspaceHost, ANewWorkspaceOpensInTheMainWindow)
+TEST(WorkspaceHost, ANewContentKindInTheMainWindow)
 {
     Log log;
     WorkspaceHost host(Table(log), true, kMain);

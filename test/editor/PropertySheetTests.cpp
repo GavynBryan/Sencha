@@ -347,3 +347,33 @@ TEST(PropertySheet, AVectorIsItsNumbersSideBySideEachSetOnItsOwn)
     EXPECT_EQ(sheet.SetElement(sections, 0, 2, "9"), PropertyEditResult::Applied);
     EXPECT_EQ(places.Log, (std::vector<std::string>{ "offset[1]=7", "offset=1, 2, 9" }));
 }
+
+namespace
+{
+class Holdings final : public IPropertySource
+{
+public:
+    std::vector<PropertyNode> Nodes() const override
+    {
+        return { { .Key = "mesh", .Descriptor = { .Kind = PropertyKind::Asset, .Label = "Mesh" },
+                   .Value = "asset://meshes/baked/brush_14_fd676.smesh" },
+                 { .Key = "material", .Descriptor = { .Kind = PropertyKind::Asset, .Label = "Material" } } };
+    }
+    bool BeginEdit(std::string_view) override { return true; }
+    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Applied; }
+    PropertyEditResult CommitEdit(std::string_view, std::string_view) override { return PropertyEditResult::Applied; }
+    void CancelEdit(std::string_view) override {}
+};
+} // namespace
+
+TEST(PropertySheet, AnAssetReadsAsItsFileNameAndKeepsItsPath)
+{
+    Holdings holdings;
+    PropertySheet sheet;
+    const std::vector<UiRow> rows = sheet.Present(holdings);
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].Control, UiRowControl::Asset);
+    EXPECT_EQ(rows[0].Value, "asset://meshes/baked/brush_14_fd676.smesh") << "the path is what a pick compares";
+    EXPECT_EQ(rows[0].Parts, (std::vector<std::string>{ "brush_14_fd676.smesh" }));
+    EXPECT_TRUE(rows[1].Parts.empty()) << "nothing held reads as none";
+}

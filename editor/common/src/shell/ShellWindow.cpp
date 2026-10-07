@@ -85,6 +85,7 @@ const UiModelPropertyId kPopoverFilters = UiPropertyIdAt(54);
 const UiModelPropertyId kSelectionNamed = UiPropertyIdAt(55);
 const UiModelPropertyId kSheetTyping = UiPropertyIdAt(56);
 const UiModelPropertyId kInstrumentsLift = UiPropertyIdAt(57);
+const UiModelPropertyId kPopoverTallest = UiPropertyIdAt(58);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -216,6 +217,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "selection_named", UiValue(false) },
         UiModelProperty{ "sheet_typing", UiValue(std::string{}) },
         UiModelProperty{ "instruments_lift", UiValue(std::string("8dp")) },
+        UiModelProperty{ "popover_tallest", UiValue(std::string("none")) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "explorer_items", "explorer_verbs",
@@ -635,9 +637,20 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     }
     else if (action.Id == kSheetPickAction)
     {
-        std::vector<std::string> candidates = sheet.CandidatesOf(sections, index);
-        candidates.insert(candidates.begin(), std::string{});
-        OpenChoices(tool ? "tool" : "selection", index, {}, std::move(candidates));
+        // An asset is chosen from the shelf, among what the field can hold.
+        const std::vector<UiRow> shown = Services.Ui.GetRows(Screen, tool ? kToolRows : kSelectionRows);
+        AssetShelf->Pick({ .Title = sheet.LabelOf(index),
+                           .Only = sheet.CandidatesOf(sections, index),
+                           .Current = index < shown.size() ? shown[index].Value : std::string{},
+                           .OffersNone = true,
+                           .Choose = [this, tool, key = sheet.EditKeyOf(index)](const std::string& path, bool commit) {
+                               IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation);
+                               PropertySheet& chosenSheet = tool ? ToolSheet : SelectionSheet;
+                               const std::optional<std::size_t> at = chosenSheet.IndexOf(key);
+                               if (!commit || active == nullptr || !at.has_value())
+                                   return;
+                               (void)chosenSheet.Set(SheetSections(tool ? "tool" : "selection", *active), *at, path);
+                           } });
     }
     else if (action.Arguments.size() > 2)
         (void)sheet.SetFromControl(sections, index, action.Arguments[2]);
@@ -953,6 +966,23 @@ void ShellWindow::ShowExplorer(std::string explorer)
         Transients.Close(ExplorerTransient);
     if (explorer.empty())
         return;
+    // The project's files are chosen from the shelf rather than a tray.
+    if (IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation))
+        for (const WorkspaceExplorerInfo& info : active->Explorers())
+            if (info.Id == explorer && info.Shape == ExplorerShape::Files)
+            {
+                ChoosingFor = explorer;
+                AssetShelf->Pick({ .Title = info.Title,
+                                   .Accepts = info.Accepts,
+                                   .Current = info.Current,
+                                   .Withheld = info.Withheld,
+                                   .Choose = [this, id = std::move(explorer)](const std::string& path, bool commit) {
+                                       if (IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation))
+                                           workspace->ChooseInExplorer(
+                                               id, path, commit ? ExplorerChoice::Commit : ExplorerChoice::Pick, 0);
+                                   } });
+                return;
+            }
     ExplorerShown = std::move(explorer);
     ExplorerFirst = 0;
     FrontSurface = kExplorerSurface;
@@ -975,6 +1005,8 @@ void ShellWindow::ClaimExplorers(const IWorkspace* workspace)
         WindowActions.Claim(explorer.Action, ActionHandler{ .Invoke = [this, id = explorer.Id] {
                                 if (id == ExplorerShown)
                                     Transients.Close(ExplorerTransient);
+                                else if (!AssetShelf->Choosing().empty() && id == ChoosingFor)
+                                    AssetShelf->Hide();
                                 else
                                     ShowExplorer(id);
                             } });
@@ -1273,10 +1305,7 @@ void ShellWindow::Choose(const std::string& key)
         {
             PropertySheet& sheet = ChoicesSheet == "tool" ? ToolSheet : SelectionSheet;
             const std::vector<PropertySection> sections = SheetSections(ChoicesSheet, *workspace);
-            if (!ChoicesVerb.empty())
-                ActOnSheet(sheet, sections, ChoicesRow, ChoicesVerb, key);
-            else
-                (void)sheet.Set(sections, ChoicesRow, key);
+            ActOnSheet(sheet, sections, ChoicesRow, ChoicesVerb, key);
         }
         return;
     }
@@ -1365,7 +1394,7 @@ void ShellWindow::PublishEntries()
         }
         break;
     case Popover::Choices:
-        anchor = ChoicesSheet == "tool" ? "tool_card" : "selection_card";
+        anchor = std::format("{}_row_{}", ChoicesSheet, ChoicesRow);
         for (std::size_t i = 0; i < ChoicesListed.size(); ++i)
         {
             const std::string& choice = ChoicesListed[i];
@@ -1384,18 +1413,23 @@ void ShellWindow::PublishEntries()
     double x = 0.0;
     bool rises = false;
     std::string top = "auto";
+    std::string tallest = "none";
+    const float windowHeight = static_cast<float>(Services.Window.GetExtent().Height);
     if (!anchor.empty())
         if (const std::optional<UiElementBox> box = ui.MeasureElement(Screen, anchor))
         {
             x = std::floor(box->X);
             // From an instrument in the lower half, a popover rises instead of
-            // hanging below it.
-            rises = box->Y > static_cast<float>(Services.Window.GetExtent().Height) / 2.0f;
+            // hanging below it; either way it ends inside the window.
+            rises = box->Y > windowHeight / 2.0f;
+            const float hangsFrom = std::floor(box->Y + box->Height) + 4.0f;
             if (!rises)
-                top = std::format("{}px", std::floor(box->Y + box->Height) + 4.0f);
+                top = std::format("{}px", hangsFrom);
+            tallest = std::format("{}px", std::floor(rises ? box->Y - 8.0f : windowHeight - hangsFrom - 8.0f));
         }
     (void)ui.SetValue(Screen, kPopoverRises, UiValue(rises));
     (void)ui.SetValue(Screen, kPopoverTop, UiValue(top));
+    (void)ui.SetValue(Screen, kPopoverTallest, UiValue(tallest));
     // Kept inside the window: an instrument at the right edge opens leftward.
     if (const std::optional<UiElementBox> popover = ui.MeasureElement(Screen, "popover"))
     {

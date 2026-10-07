@@ -67,7 +67,7 @@ handlers.
 | Resources | what the operation consumes, and what is to hand |
 | Selection | what is selected, as property sources and actions; shown always or only on request |
 | Location | where the work is (world, graph, zone, selection), the hierarchy that reveals it, and the map |
-| Explorers | what can be browsed, a page at a time |
+| Explorers | what can be browsed: a hierarchy a page at a time, or files the Shelf chooses among |
 | Transport | cook / play / stop state |
 | Timeline | time, range, playing, marks, lanes |
 | View | arrangement, projection, display modes |
@@ -125,6 +125,16 @@ its base color, a texture by itself, a scene by the level editor's studio while
 the level editor is open; anything else by its kind's icon. Ctrl and the wheel
 over the tiles size them.
 
+The Shelf is also where a file is chosen *for* something (`ShelfPick`): the
+material in hand (M), the prefab to place (P), an asset field on the sheet.
+Raised to choose, it says what it is choosing for, offers only the kinds the
+chooser accepts (or exactly the files a field allows), never the level being
+edited as a prefab of itself, and lights the one in use. A click picks — the
+material goes in hand at once — and Enter, a double click or CHOOSE commits
+and lowers it; NONE clears a field. A workspace declares such an explorer as
+`ExplorerShape::Files` with the kinds it accepts and is handed the choice; it
+never lists files itself.
+
 The rail is also the window caption (client decorations) and the only
 full-width chrome. Every persistent instrument is **a readout that is also a
 button**: the station shows the tool and opens its wheel, the cartridge shows
@@ -140,7 +150,7 @@ Interface comes in increasing commitment to a task:
 | Handle | a value with a place on the object | being on the selected object | letting go (commits), Esc |
 | Popover | one decision | clicking an instrument | choosing, clicking elsewhere, Esc |
 | Sheet | everything about the selection | the selection's part of the breadcrumb, More… on the Space wheel, or the palette | Esc, or its part again |
-| Explorer | a library, the hierarchy | a slot, a key (Tab for the hierarchy), the breadcrumb, the palette | committing a pick, Esc |
+| Explorer | the hierarchy; a library is the Shelf choosing | a slot, a key (Tab for the hierarchy), the breadcrumb, the palette | committing a pick, Esc |
 | Shelf | the project's content | Shift+Space, + on the rail, an editor with nothing open | opening something, Esc; pinned, it stays |
 | Map | the world from above | MAP in the breadcrumb | clicking a zone (goes there), Esc |
 
@@ -259,9 +269,9 @@ aesthetic, never an identifier.
 
 | Workspace | Content | Operation | Holding | Selection | Explorers | Axis |
 | --- | --- | --- | --- | --- | --- | --- |
-| Level Design | the world, or the map | tools (Q), manipulation (Z) | material / prefab | on request: Space wheel, handles, sheet | hierarchy (Tab), materials, prefabs | — |
-| Materials | the lit preview stage | preview primitive | — | parameters, shown | textures, material files | — |
-| Data | the asset, typeset as a sheet | subtype lens | — | the sheet | data assets | — |
+| Level Design | the world, or the map | tools (Q), manipulation (Z) | material / prefab | on request: Space wheel, handles, sheet | hierarchy (Tab); materials and prefabs on the Shelf | — |
+| Materials | the lit preview stage | preview primitive | — | parameters, shown | the Shelf | — |
+| Data | the asset, typeset as a sheet | subtype lens | — | the sheet | the Shelf | — |
 | UI Preview | the previewed surface | interact / inspect | — | picked element, shown | documents, elements, vocabulary | — |
 | Animation | the rig on a stage | lenses | rig and scenario | lens cards, shown | content, rigs, skeleton | tape deck |
 | Project | the project rack | — | — | project | — | — |
@@ -272,4 +282,4 @@ Level Design's flows are in `docs/editor/level-design.md`; Animation's in
 ### Not built yet
 
 - A tab's own close key; closing goes through Ctrl+W or the hatch.
-- Hovering a material in its explorer previewing it on the selected faces.
+- Hovering a material on the Shelf previewing it on the selected faces.

@@ -5,7 +5,7 @@
 
 #include "actions/ActionOffer.h"
 #include "presenters/ContentPicture.h"
-#include "project/MaterialLibraryExplorer.h"
+#include "project/MaterialLibraryActions.h"
 #include "properties/FilePathProperty.h"
 #include "properties/SettingProperties.h"
 #include "text/TextFilterMatch.h"
@@ -62,7 +62,6 @@ constexpr std::array<PrimitiveRow, 3> kPrimitives = { {
     { PreviewPrimitive::Plane, "preview.plane", "Plane" },
 } };
 
-constexpr std::string_view kTextureExplorerId = "textures";
 
 } // namespace
 
@@ -173,11 +172,6 @@ void MaterialWorkspace::DefineActions(ActionCatalog& catalog)
                 { .Id = "material.close", .Label = "Close Material", .Category = "File",
                   .DefaultChords = { { SDLK_W, { .Ctrl = true } } } },
                 { .Invoke = [this] { CloseTab(Tabs.ActiveIndex()); }, .Enabled = open });
-    OfferAction(catalog, ActionHandlers, MaterialExplorerAction(), {});
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "explorer.textures", .Label = "Textures", .Category = "Explore", .Icon = IconId::Folder,
-                  .DefaultChords = { { SDLK_T, {} } } },
-                {});
     OfferAction(catalog, ActionHandlers, MaterialRescanAction(), { .Invoke = [this] {
                     RescanMaterials();
                     Pictures.Forget();
@@ -699,39 +693,6 @@ WorkspaceSelectionFacet MaterialWorkspace::Selection()
     return facet;
 }
 
-std::vector<WorkspaceExplorerInfo> MaterialWorkspace::Explorers() const
-{
-    return { MaterialExplorerInfo(), { .Id = std::string(kTextureExplorerId), .Title = "Textures",
-                                       .Shape = ExplorerShape::Pictures, .Action = "explorer.textures" } };
-}
-
-ExplorerPage MaterialWorkspace::Explore(const ExplorerQuery& query)
-{
-    if (query.Explorer == kTextureExplorerId)
-    {
-        ExplorerPage page;
-        page.Empty = "No source texture's name holds that.";
-        for (const auto& [path, record] : Assets.Registry.Records())
-        {
-            if (!IsSourceTexture(record) || !TextFilterMatch(record.Path, query.Filter) || !CountOnPage(page, query))
-                continue;
-            page.Items.push_back({ .Key = record.Path,
-                                   .Label = record.Path.substr(record.Path.rfind('/') + 1),
-                                   .Image = Pictures.PictureOf(record.Path).Image,
-                                   .Current = Subject == CardSubject::Texture && TextureImport.Texture() == record.Path });
-        }
-        return page;
-    }
-    if (query.Explorer != kMaterialExplorerId)
-        return {};
-    const MaterialEditTab* active = Tabs.Active();
-    ExplorerPage page = MaterialLibraryPage(
-        Materials, query, active != nullptr ? std::string_view(active->Session.VirtualPath()) : std::string_view{},
-        [this](const std::string& path) { return Pictures.PictureOf(path).Image; });
-    page.Actions.insert(page.Actions.begin(), "material.new");
-    return page;
-}
-
 bool MaterialWorkspace::OpenAsset(const ProjectFile& file)
 {
     if (file.Extension == ".smat")
@@ -742,15 +703,4 @@ bool MaterialWorkspace::OpenAsset(const ProjectFile& file)
     }
     PickTexture(file.AssetPath);
     return true;
-}
-
-void MaterialWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice, std::size_t)
-{
-    if (explorer == kMaterialExplorerId)
-    {
-        OpenMaterial(std::string(key));
-        ShowMaterial();
-    }
-    else if (explorer == kTextureExplorerId)
-        PickTexture(std::string(key));
 }

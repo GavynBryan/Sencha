@@ -224,7 +224,7 @@ const WorkspaceKind* WorkspaceHost::KindOpening(const ProjectFile& file) const
     {
         if (!IsOffered(kind.Id))
             continue;
-        for (const WorkspaceOpens& rule : kind.Opens)
+        for (const ContentKind& rule : kind.Opens)
         {
             if (rule.Extension != file.Extension || (!rule.Subtype.empty() && rule.Subtype != file.Subtype))
                 continue;

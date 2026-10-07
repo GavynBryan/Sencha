@@ -2,6 +2,7 @@
 
 #include "icons/IconId.h"
 #include "tools/ToolDraft.h"
+#include "workspaces/WorkspaceKind.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -179,6 +180,7 @@ enum class ExplorerShape : std::uint8_t
 {
     Pictures, // items are recognised by their picture: a grid of tiles
     Outline,  // items are recognised by their name and place in a tree
+    Files,    // the project's content files of the kinds it accepts, chosen from the shelf
 };
 
 struct WorkspaceExplorerInfo
@@ -188,6 +190,12 @@ struct WorkspaceExplorerInfo
     ExplorerShape Shape = ExplorerShape::Pictures;
     // The action that opens it; the workspace defines it, the shell performs it.
     std::string Action;
+    // For Files: the kinds it offers, the one in use, and any it must not
+    // offer by asset path or path on disk (the level being edited, as a
+    // prefab of itself).
+    std::vector<ContentKind> Accepts = {};
+    std::string Current = {};
+    std::vector<std::string> Withheld = {};
 };
 
 struct ExplorerQuery

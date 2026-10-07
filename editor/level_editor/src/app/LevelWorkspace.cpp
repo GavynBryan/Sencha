@@ -1,6 +1,7 @@
 #include "LevelWorkspace.h"
 
 #include "actions/ActionCatalog.h"
+#include "project/MaterialLibraryActions.h"
 #include "project/ProjectFiles.h"
 
 #include "viewport/EditorViewportCameraSystem.h"
@@ -310,18 +311,6 @@ void LevelWorkspace::BuildInput()
                 { .Id = "explorer.prefabs", .Label = "Prefabs", .Category = "Explore",
                   .Icon = IconId::Box, .DefaultChords = { { SDLK_P, { .Shift = true } } } },
                 {});
-    offer("prefabs.rescan", "Rescan Prefabs", "Explore", {}, IconId::Refresh, [this] {
-        if (PrefabsExplorer == nullptr)
-            return;
-        std::vector<std::filesystem::path> roots;
-        if (Project)
-            for (const std::string& root : Project->ContentRoots)
-                roots.emplace_back(root);
-        PrefabsExplorer->Rescan(roots);
-        // A saved scene may have changed: its old picture is stale.
-        if (SceneThumbnailCache* cache = RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr)
-            cache->Clear();
-    });
     OfferAction(Catalog, ActionHandlers, MaterialRescanAction(), { .Invoke = [this] {
                     if (Materials == nullptr)
                         return;
@@ -665,11 +654,7 @@ void LevelWorkspace::BuildUi()
             cache->SetUi(ui != nullptr && ui->IsReady() ? ui : nullptr);
             ScenePictures = Pictures.Provide(".sscene", *cache);
         }
-        PrefabsExplorer = std::make_unique<PrefabExplorer>(*Workspace, [this](const std::string& path) {
-            SceneThumbnailCache* cache = RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr;
-            return cache != nullptr ? cache->ImageName(path) : std::string{};
-        });
-        PrefabsExplorer->Rescan(sceneRoots);
+        PrefabsExplorer = std::make_unique<PrefabExplorer>(*Workspace);
     }
     const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
         return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
@@ -708,8 +693,7 @@ void LevelWorkspace::BuildUi()
     };
     Lighting = std::make_unique<LightingDiagnostics>(*Workspace, *Commands, std::move(lighting));
     Lighting->Offer(Catalog, ActionHandlers);
-    MaterialsExplorer = std::make_unique<MaterialExplorer>(
-        *Materials, *Workspace, [this](const std::string& path) { return Pictures.PictureOf(path).Image; });
+    MaterialsExplorer = std::make_unique<MaterialExplorer>(*Workspace);
 
 }
 
@@ -1322,17 +1306,15 @@ WorkspaceSelectionFacet LevelWorkspace::Selection()
 std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const
 {
     std::vector<WorkspaceExplorerInfo> explorers{ HierarchyOutline::Info() };
-    explorers.push_back(MaterialExplorerInfo());
-    explorers.push_back(PrefabExplorer::Info());
+    if (MaterialsExplorer != nullptr)
+        explorers.push_back(MaterialsExplorer->Info());
+    if (PrefabsExplorer != nullptr)
+        explorers.push_back(PrefabsExplorer->Info());
     return explorers;
 }
 
 ExplorerPage LevelWorkspace::Explore(const ExplorerQuery& query)
 {
-    if (query.Explorer == MaterialExplorer::kId && MaterialsExplorer != nullptr)
-        return MaterialsExplorer->Explore(query);
-    if (query.Explorer == PrefabExplorer::kId && PrefabsExplorer != nullptr)
-        return PrefabsExplorer->Explore(query);
     if (query.Explorer == HierarchyOutline::kId && Hierarchy != nullptr)
         return Hierarchy->Explore(query);
     return {};
@@ -1401,14 +1383,10 @@ std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()
 {
     const AssetType type = HeldType();
     const bool prefab = type == AssetType::Scene;
-    SceneThumbnailCache* scenes = RenderFeature != nullptr ? RenderFeature->SceneThumbnails() : nullptr;
     const auto held = [&](const AssetRef& ref) -> HeldResource {
         if (!ref.IsValid())
             return {};
-        if (prefab)
-            return { .Label = std::string(SceneSourceStem(ref.Path)),
-                     .Image = scenes != nullptr ? scenes->ImageName(ref.Path) : std::string{} };
-        return { .Label = MaterialLeafName(ref.Path),
+        return { .Label = prefab ? std::string(SceneSourceStem(ref.Path)) : MaterialLeafName(ref.Path),
                  .Image = Pictures.PictureOf(ref.Path).Image };
     };
     WorkspaceResourceFacet facet{ .Role = prefab ? "Prefab" : "Material",

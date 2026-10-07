@@ -75,6 +75,8 @@ public:
     // Whether row `index`'s verb takes the row's property away.
     [[nodiscard]] bool Removes(std::size_t index, std::string_view verb) const;
     [[nodiscard]] std::string LabelOf(std::size_t index) const;
+    // The row presenting the property `key`, as last presented.
+    [[nodiscard]] std::optional<std::size_t> IndexOf(std::string_view key) const;
     // A group row opened or closed.
     void Fold(std::size_t index);
     // What an asset row may be set to.

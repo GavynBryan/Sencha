@@ -7,66 +7,47 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
-#include <fstream>
 #include <random>
 #include <string>
-#include <vector>
 
-// The project's scene sources as prefabs to place: found under the content
-// roots, pictured only as far as a page goes, and choosing one puts it in hand
-// with the Place tool taken up.
+// The project's scene sources as prefabs the shelf offers: scene files, never
+// the level being edited, and choosing one puts it in hand with the Place tool
+// taken up.
 namespace
 {
 class PrefabExplorerTest : public WorkspaceTest
 {
 protected:
-    void SetUp() override
-    {
-        WorkspaceTest::SetUp();
-        Root = std::filesystem::temp_directory_path() / ("sencha_prefab_explorer_" + std::to_string(std::random_device{}()));
-        for (const char* path : { "props/crate.sscene", "props/door.sscene", "levels/hub.sscene" })
-        {
-            const std::filesystem::path file = Root / path;
-            std::filesystem::create_directories(file.parent_path());
-            std::ofstream(file) << "{}";
-        }
-        std::ofstream(Root / "props/notes.txt") << "not a scene";
-        Explorer.Rescan({ Root });
-    }
-
-    void TearDown() override
-    {
-        std::error_code ec;
-        std::filesystem::remove_all(Root, ec);
-    }
-
-    std::filesystem::path Root;
-    std::vector<std::string> Pictured;
-    PrefabExplorer Explorer{ Workspace, [this](const std::string& path) {
-                                Pictured.push_back(path);
-                                return "picture:" + path;
-                            } };
+    PrefabExplorer Explorer{ Workspace };
 };
 } // namespace
 
-TEST_F(PrefabExplorerTest, EverySceneSourceIsAPrefabNamedForItsFile)
+TEST_F(PrefabExplorerTest, OffersSceneSourcesButNotTheLevelBeingEdited)
 {
-    const ExplorerPage page = Explorer.Explore({ .Explorer = "prefabs", .Count = 10 });
-    ASSERT_EQ(page.Total, 3u);
-    EXPECT_EQ(page.Items[0].Key, "asset://levels/hub.sscene");
-    EXPECT_EQ(page.Items[0].Label, "hub");
-    EXPECT_EQ(Explorer.Explore({ .Explorer = "prefabs", .Filter = "door", .Count = 10 }).Total, 1u);
-    EXPECT_EQ(Pictured.size(), 4u) << "each item shown was pictured once per page, and no more";
+    WorkspaceExplorerInfo info = Explorer.Info();
+    EXPECT_EQ(info.Shape, ExplorerShape::Files);
+    ASSERT_EQ(info.Accepts.size(), 1u);
+    EXPECT_EQ(info.Accepts.front().Extension, ".sscene");
+    EXPECT_TRUE(info.Withheld.empty()) << "an unsaved level is no file to withhold";
+
+    const std::filesystem::path level = std::filesystem::temp_directory_path() /
+                                        ("sencha_prefab_explorer_" + std::to_string(std::random_device{}()) + ".sscene");
+    ASSERT_TRUE(Workspace.World.FocusDocument().SaveAs(level.string()));
+    info = Explorer.Info();
+    ASSERT_EQ(info.Withheld.size(), 1u);
+    EXPECT_EQ(std::filesystem::path(info.Withheld.front()), level);
+    std::error_code ec;
+    std::filesystem::remove(level, ec);
 }
 
 TEST_F(PrefabExplorerTest, ChoosingOnePutsItInHandAndTakesUpPlace)
 {
-    const std::string door = Explorer.Explore({ .Explorer = "prefabs", .Filter = "door", .Count = 1 }).Items.front().Key;
+    const std::string door = "asset://props/door.sscene";
     Explorer.Choose(door, ExplorerChoice::Pick);
     EXPECT_EQ(Workspace.Resources.Active(AssetType::Scene).Path, door);
     ASSERT_NE(Workspace.Interaction.Tools->GetActiveTool(), nullptr);
     EXPECT_EQ(Workspace.Interaction.Tools->GetActiveTool()->GetId(), "place");
-    EXPECT_TRUE(Explorer.Explore({ .Explorer = "prefabs", .Filter = "door", .Count = 1 }).Items.front().Current);
+    EXPECT_EQ(Explorer.Info().Current, door);
 }
 
 TEST_F(PrefabExplorerTest, PlaceConsumesAPrefabAndTurnsItByItsYaw)

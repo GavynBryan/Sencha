@@ -203,10 +203,11 @@ history each, headless-tested), `MaterialEditSession`
 target, shown full-bleed by a `presenters/ContentPicture` host image and
 turned over by a drag on it), `MaterialProperties` (the open material's
 parameters as a property source on the card: a drag previews, letting go is
-one step), the shared material explorer (`project/MaterialLibraryExplorer`,
-also the Level's), and a texture explorer whose pick puts that texture's
-import settings on the card (`TextureImportProperties`: each change saves the
-sidecar and recooks, and the cook is read back). Every open material is on the
+one step), and a texture opened from the Shelf, which puts its import
+settings on the card (`TextureImportProperties`: each change saves the sidecar
+and recooks, and the cook is read back). Materials and textures are found on
+the Shelf; `project/MaterialLibraryActions` holds the M and rescan actions the
+Level shares. Every open material is on the
 shell's tabs (`WorkspaceDocumentFacet::Open`,
 `IWorkspace::ShowDocument`). Live preview pushes
 the working description into the resident material via `AssetSystem::Reload`;

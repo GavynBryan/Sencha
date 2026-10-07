@@ -7,9 +7,9 @@
 
 class IWorkspace;
 
-// A kind of content file a workspace opens: its extension, and for a data
-// asset its subtype, empty for every subtype.
-struct WorkspaceOpens
+// A kind of content file -- one a workspace opens, one an explorer offers --
+// by its extension, and for a data asset its subtype, empty for every subtype.
+struct ContentKind
 {
     std::string Extension;
     std::string Subtype = {};
@@ -27,5 +27,5 @@ struct WorkspaceKind
     // A kind that edits project content is not offered without a project.
     bool RequiresProject = true;
     std::function<std::unique_ptr<IWorkspace>()> Create;
-    std::vector<WorkspaceOpens> Opens = {};
+    std::vector<ContentKind> Opens = {};
 };

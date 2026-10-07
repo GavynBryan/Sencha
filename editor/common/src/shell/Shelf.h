@@ -2,6 +2,7 @@
 
 #include "project/AssetQuery.h"
 #include "project/ProjectFiles.h"
+#include "workspaces/WorkspaceKind.h"
 
 #include <graphics/PresentationId.h>
 #include <ui/UiScreenHandle.h>
@@ -9,6 +10,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <set>
 #include <string>
 #include <vector>
@@ -17,6 +19,25 @@ class AssetPictures;
 class UiService;
 class WorkspaceHost;
 struct UiAction;
+
+// A shelf raised to choose one file for something rather than to open one:
+// only the files it offers, the one in use marked, and the choice handed back.
+// A click picks; Enter, a double click or CHOOSE commits, and it goes.
+struct ShelfPick
+{
+    std::string Title;
+    std::vector<ContentKind> Accepts = {};
+    // Exactly these files, when given, whatever their kind.
+    std::vector<std::string> Only = {};
+    std::string Current = {};
+    std::vector<std::string> Withheld = {};
+    // Choosing nothing is a choice: a field cleared.
+    bool OffersNone = false;
+    // `assetPath`, empty for none, picked or committed to.
+    std::function<void(const std::string& assetPath, bool commit)> Choose = {};
+
+    [[nodiscard]] bool Offers(const ProjectFile& file) const;
+};
 
 //=============================================================================
 // Shelf
@@ -47,6 +68,10 @@ public:
     void Show(std::string category = {});
     void Hide();
     void Toggle();
+    // Raised to choose for `pick`, in place of opening.
+    void Pick(ShelfPick pick);
+    // What it is choosing for now; empty while it opens what is chosen.
+    [[nodiscard]] const std::string& Choosing() const { return Picking.Title; }
     [[nodiscard]] bool IsRaised() const { return State == Placement::Raised; }
     [[nodiscard]] bool IsPinned() const { return State == Placement::Pinned; }
 
@@ -62,11 +87,14 @@ private:
     enum class Listing : std::uint8_t { Everything, Recent, Open, Changed };
     enum class Look : std::uint8_t { Tiles, List };
     enum class Edge : std::uint8_t { Resting, Sizing };
+    enum class Purpose : std::uint8_t { Opening, Choosing };
 
     void HandleAction(const UiAction& action, float windowHeight);
     void Rescan();
     void Remember();
+    // Opens the file, or commits to it while choosing.
     void Open(const std::string& assetPath);
+    [[nodiscard]] bool Offers(const ProjectFile& file) const;
     void Move(int by);
     void Publish();
     [[nodiscard]] std::vector<const ProjectFile*> Shown() const;
@@ -82,6 +110,8 @@ private:
     UiScreenHandle Screen;
 
     Placement State = Placement::Down;
+    Purpose Use = Purpose::Opening;
+    ShelfPick Picking;
     Listing List = Listing::Everything;
     Look View = Look::Tiles;
     AssetQuery Query;

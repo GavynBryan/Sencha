@@ -2,17 +2,19 @@
 
 #include "workspace/EditorWorkspace.h"
 
-MaterialExplorer::MaterialExplorer(MaterialLibrary& materials, EditorWorkspace& workspace,
-                                   std::function<std::string(const std::string&)> picture)
-    : Materials(materials)
-    , Workspace(workspace)
-    , Picture(std::move(picture))
+MaterialExplorer::MaterialExplorer(EditorWorkspace& workspace)
+    : Workspace(workspace)
 {
 }
 
-ExplorerPage MaterialExplorer::Explore(const ExplorerQuery& query) const
+WorkspaceExplorerInfo MaterialExplorer::Info() const
 {
-    return MaterialLibraryPage(Materials, query, Workspace.Resources.Active(AssetType::Material).Path, Picture);
+    return { .Id = std::string(kId),
+             .Title = "Materials",
+             .Shape = ExplorerShape::Files,
+             .Action = "explorer.materials",
+             .Accepts = { { ".smat" } },
+             .Current = Workspace.Resources.Active(AssetType::Material).Path };
 }
 
 void MaterialExplorer::Choose(std::string_view key, ExplorerChoice choice)

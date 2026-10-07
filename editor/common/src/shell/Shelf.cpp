@@ -12,27 +12,31 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <format>
+#include <iterator>
+#include <utility>
 
 namespace
 {
-const UiModelPropertyId kShown = UiPropertyIdAt(0);
-const UiModelPropertyId kHeight = UiPropertyIdAt(1);
-const UiModelPropertyId kQuery = UiPropertyIdAt(2);
-const UiModelPropertyId kView = UiPropertyIdAt(3);
-const UiModelPropertyId kPinned = UiPropertyIdAt(4);
-const UiModelPropertyId kCount = UiPropertyIdAt(5);
-const UiModelPropertyId kEmpty = UiPropertyIdAt(6);
-const UiModelPropertyId kPreviewName = UiPropertyIdAt(7);
-const UiModelPropertyId kPreviewKind = UiPropertyIdAt(8);
-const UiModelPropertyId kPreviewPath = UiPropertyIdAt(9);
-const UiModelPropertyId kPreviewFacts = UiPropertyIdAt(10);
-const UiModelPropertyId kPreviewIcon = UiPropertyIdAt(11);
-const UiModelPropertyId kPreviewOpens = UiPropertyIdAt(12);
-const UiModelPropertyId kPreviewImage = UiPropertyIdAt(13);
-const UiModelPropertyId kPreviewColor = UiPropertyIdAt(14);
-const UiModelPropertyId kPicture = UiPropertyIdAt(15);
-const UiModelPropertyId kTile = UiPropertyIdAt(16);
+const UiModelPropertyId kHeight = UiPropertyIdAt(0);
+const UiModelPropertyId kQuery = UiPropertyIdAt(1);
+const UiModelPropertyId kView = UiPropertyIdAt(2);
+const UiModelPropertyId kPinned = UiPropertyIdAt(3);
+const UiModelPropertyId kCount = UiPropertyIdAt(4);
+const UiModelPropertyId kEmpty = UiPropertyIdAt(5);
+const UiModelPropertyId kPreviewName = UiPropertyIdAt(6);
+const UiModelPropertyId kPreviewKind = UiPropertyIdAt(7);
+const UiModelPropertyId kPreviewPath = UiPropertyIdAt(8);
+const UiModelPropertyId kPreviewFacts = UiPropertyIdAt(9);
+const UiModelPropertyId kPreviewIcon = UiPropertyIdAt(10);
+const UiModelPropertyId kPreviewOpens = UiPropertyIdAt(11);
+const UiModelPropertyId kPreviewImage = UiPropertyIdAt(12);
+const UiModelPropertyId kPreviewColor = UiPropertyIdAt(13);
+const UiModelPropertyId kPicture = UiPropertyIdAt(14);
+const UiModelPropertyId kTile = UiPropertyIdAt(15);
+const UiModelPropertyId kChoosing = UiPropertyIdAt(16);
+const UiModelPropertyId kOffersNone = UiPropertyIdAt(17);
 
 const UiModelRowsId kCrumbs = UiRowsIdAt(0);
 const UiModelRowsId kChips = UiRowsIdAt(1);
@@ -55,6 +59,7 @@ const UiActionId kViewAction = UiActionIdAt(11);
 const UiActionId kPin = UiActionIdAt(12);
 const UiActionId kClose = UiActionIdAt(13);
 const UiActionId kZoom = UiActionIdAt(14);
+const UiActionId kNone = UiActionIdAt(15);
 
 // How much wider a tile is than its picture, and the gap after it, in dp.
 constexpr float kTileMarginDp = 24.0f;
@@ -73,7 +78,6 @@ UiScreenDesc Describe()
     desc.PackagePath = "asset://shelf.rml";
     desc.ModelName = "shelf";
     desc.Properties = {
-        UiModelProperty{ "shown", UiValue(false) },
         UiModelProperty{ "height", UiValue(std::string("300px")) },
         UiModelProperty{ "query", UiValue(std::string{}) },
         UiModelProperty{ "view", UiValue(std::string("tiles")) },
@@ -90,11 +94,13 @@ UiScreenDesc Describe()
         UiModelProperty{ "preview_color", UiValue(std::string{}) },
         UiModelProperty{ "picture", UiValue(std::string("72dp")) },
         UiModelProperty{ "tile", UiValue(std::string("96dp")) },
+        UiModelProperty{ "choosing", UiValue(std::string{}) },
+        UiModelProperty{ "offers_none", UiValue(false) },
     };
     desc.RowLists = { "crumbs", "chips", "lists", "folders", "items" };
     desc.Actions = { "shelf_grab",   "shelf_drag",   "shelf_drop", "shelf_query", "shelf_key",
                      "shelf_category", "shelf_list", "shelf_folder", "shelf_branch", "shelf_pick",
-                     "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom" };
+                     "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom", "shelf_none" };
     return desc;
 }
 
@@ -154,8 +160,6 @@ Shelf::Shelf(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces, Pres
     , Roots(std::move(contentRoots))
     , Pictures(pictures)
 {
-    if (Surface.IsValid())
-        Screen = Ui.OpenScreen(Surface, Describe());
 }
 
 Shelf::~Shelf()
@@ -171,12 +175,48 @@ void Shelf::Show(std::string category)
         Query.Category = std::move(category);
     if (State == Placement::Down)
         State = Placement::Raised;
+    // Opened as it rises, so its search field takes the keys.
+    if (!Screen.IsValid() && Surface.IsValid())
+        Screen = Ui.OpenScreen(Surface, Describe());
 }
 
 void Shelf::Hide()
 {
     State = Placement::Down;
     TopEdge = Edge::Resting;
+    Use = Purpose::Opening;
+    Picking = {};
+    if (Screen.IsValid())
+        Ui.CloseScreen(Screen);
+    Screen = {};
+}
+
+void Shelf::Pick(ShelfPick pick)
+{
+    Show();
+    Use = Purpose::Choosing;
+    Picking = std::move(pick);
+    Selected = Picking.Current;
+    // What it offers is the chooser's; a kind narrowed to while browsing would hide it.
+    Query.Category.clear();
+}
+
+bool ShelfPick::Offers(const ProjectFile& file) const
+{
+    if (std::ranges::any_of(Withheld, [&](const std::string& withheld) {
+            return withheld == file.AssetPath || std::filesystem::path(withheld) == file.FilePath;
+        }))
+        return false;
+    if (!Only.empty())
+        return std::ranges::find(Only, file.AssetPath) != Only.end();
+    return Accepts.empty() || std::ranges::any_of(Accepts, [&](const ContentKind& kind) {
+               return kind.Extension == file.Extension && (kind.Subtype.empty() || kind.Subtype == file.Subtype);
+           });
+}
+
+bool Shelf::Offers(const ProjectFile& file) const
+{
+    return Use == Purpose::Opening || Picking.Offers(file);
 }
 
 void Shelf::Toggle()
@@ -221,7 +261,11 @@ void Shelf::Remember()
 std::vector<const ProjectFile*> Shelf::Shown() const
 {
     if (List == Listing::Everything)
-        return FindAssets(Files, Query);
+    {
+        std::vector<const ProjectFile*> found = FindAssets(Files, Query);
+        std::erase_if(found, [&](const ProjectFile* file) { return !Offers(*file); });
+        return found;
+    }
     std::vector<std::string> keys;
     if (List == Listing::Recent)
         keys = Recent;
@@ -237,7 +281,7 @@ std::vector<const ProjectFile*> Shelf::Shown() const
     query.KeepOrder = true;
     std::vector<const ProjectFile*> found;
     for (const ProjectFile* file : FindAssets(listed, query))
-        if (const ProjectFile* own = FileAt(file->AssetPath))
+        if (const ProjectFile* own = FileAt(file->AssetPath); own != nullptr && Offers(*own))
             found.push_back(own);
     return found;
 }
@@ -245,6 +289,19 @@ std::vector<const ProjectFile*> Shelf::Shown() const
 void Shelf::Open(const std::string& assetPath)
 {
     const ProjectFile* file = FileAt(assetPath);
+    if (Use == Purpose::Choosing)
+    {
+        if (file == nullptr || !Offers(*file))
+            return;
+        // Taken before it is handed over: a choice may raise the shelf again.
+        const ShelfPick pick = std::exchange(Picking, {});
+        Use = Purpose::Opening;
+        if (State == Placement::Raised)
+            Hide();
+        if (pick.Choose)
+            pick.Choose(assetPath, true);
+        return;
+    }
     if (file == nullptr || !Workspaces.RequestOpen(*file))
         return;
     std::erase(Recent, assetPath);
@@ -324,7 +381,18 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
             OpenFolders.insert(folder);
     }
     else if (action.Id == kPick)
+    {
         Selected = Text(action);
+        if (Use == Purpose::Choosing && Picking.Choose)
+            Picking.Choose(Selected, false);
+    }
+    else if (action.Id == kNone && Use == Purpose::Choosing && Picking.OffersNone)
+    {
+        const ShelfPick pick = std::exchange(Picking, {});
+        Hide();
+        if (pick.Choose)
+            pick.Choose({}, true);
+    }
     else if (action.Id == kOpen)
         Open(Text(action));
     else if (action.Id == kViewAction)
@@ -342,24 +410,23 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
 void Shelf::Update(float dp, float windowHeight)
 {
     Dp = dp > 0.0f ? dp : 1.0f;
-    if (!Screen.IsValid())
-        return;
-    for (const UiAction& action : Ui.DrainActions(Screen))
-        HandleAction(action, windowHeight);
+    if (Screen.IsValid())
+        for (const UiAction& action : Ui.DrainActions(Screen))
+            HandleAction(action, windowHeight);
     Remember();
-    Publish();
+    if (Screen.IsValid())
+        Publish();
 }
 
 void Shelf::Publish()
 {
-    (void)Ui.SetValue(Screen, kShown, UiValue(State != Placement::Down));
-    if (State == Placement::Down)
-        return;
     (void)Ui.SetValue(Screen, kHeight, UiValue(std::format("{:.0f}px", HeightDp * Dp)));
     (void)Ui.SetValue(Screen, kView, UiValue(std::string(View == Look::List ? "list" : "tiles")));
     (void)Ui.SetValue(Screen, kPinned, UiValue(State == Placement::Pinned));
     (void)Ui.SetValue(Screen, kPicture, UiValue(std::format("{:.0f}dp", PictureDp)));
     (void)Ui.SetValue(Screen, kTile, UiValue(std::format("{:.0f}dp", PictureDp + kTileMarginDp)));
+    (void)Ui.SetValue(Screen, kChoosing, UiValue(Picking.Title));
+    (void)Ui.SetValue(Screen, kOffersNone, UiValue(Use == Purpose::Choosing && Picking.OffersNone));
 
     std::vector<UiRow> crumbs;
     UiRow everywhere{ "Content", "", "" };
@@ -377,24 +444,36 @@ void Shelf::Publish()
     }
     (void)Ui.SetRows(Screen, kCrumbs, crumbs);
 
+    const auto offered = [&](const std::string& assetPath) {
+        const ProjectFile* file = FileAt(assetPath);
+        return file != nullptr && Offers(*file);
+    };
+    const std::size_t offeredCount =
+        static_cast<std::size_t>(std::ranges::count_if(Files, [&](const ProjectFile& file) { return Offers(file); }));
+
+    // A chip shows only where it would narrow: among two kinds or more.
     std::vector<UiRow> chips;
     UiRow all{ "All", "", "" };
     all.Selected = Query.Category.empty();
     chips.push_back(std::move(all));
     for (const std::string_view category : AssetCategories())
-        if (std::ranges::any_of(Files, [&](const ProjectFile& file) { return KindOf(file).Category == category; }))
+        if (std::ranges::any_of(Files, [&](const ProjectFile& file) {
+                return KindOf(file).Category == category && Offers(file);
+            }))
         {
             UiRow chip{ std::string(category), "", "" };
             chip.Key = category;
             chip.Selected = Query.Category == category;
             chips.push_back(std::move(chip));
         }
+    if (chips.size() < 3)
+        chips.clear();
     (void)Ui.SetRows(Screen, kChips, chips);
 
     const std::vector<AssetTab> tabs = AssetTabsIn(Workspaces, Presentation);
     const auto counted = [&](bool changedOnly) {
         return std::ranges::count_if(tabs, [&](const AssetTab& tab) {
-            return !tab.Document.empty() && FileAt(tab.Document) != nullptr && (!changedOnly || tab.Changed);
+            return !tab.Document.empty() && offered(tab.Document) && (!changedOnly || tab.Changed);
         });
     };
     std::vector<UiRow> lists;
@@ -404,14 +483,17 @@ void Shelf::Publish()
         row.Selected = List == which;
         lists.push_back(std::move(row));
     };
-    list("Everything", "everything", Files.size(), Listing::Everything);
-    list("Recent", "recent", Recent.size(), Listing::Recent);
+    list("Everything", "everything", offeredCount, Listing::Everything);
+    list("Recent", "recent", static_cast<std::size_t>(std::ranges::count_if(Recent, offered)), Listing::Recent);
     list("Open", "open", static_cast<std::size_t>(counted(false)), Listing::Open);
     list("Changed", "changed", static_cast<std::size_t>(counted(true)), Listing::Changed);
     (void)Ui.SetRows(Screen, kLists, lists);
 
     std::vector<UiRow> folders;
-    const std::vector<std::string> known = FoldersOf(Files);
+    std::vector<ProjectFile> offeredFiles;
+    if (Use == Purpose::Choosing)
+        std::ranges::copy_if(Files, std::back_inserter(offeredFiles), [&](const ProjectFile& file) { return Offers(file); });
+    const std::vector<std::string> known = FoldersOf(Use == Purpose::Choosing ? offeredFiles : Files);
     for (const std::string& folder : known)
     {
         // Shown when every folder above it is open.
@@ -443,8 +525,10 @@ void Shelf::Publish()
             break;
         const AssetKind kind = KindOf(*file);
         const auto tab = std::ranges::find(tabs, file->AssetPath, &AssetTab::Document);
-        UiRow item{ std::string(NameOf(*file)),
-                    tab == tabs.end() ? "" : tab->Changed ? "changed" : "open", kind.Label };
+        const std::string_view state = tab != tabs.end()        ? (tab->Changed ? "changed" : "open")
+                                       : file->AssetPath == Picking.Current ? "current"
+                                                                            : "";
+        UiRow item{ std::string(NameOf(*file)), std::string(state), kind.Label };
         item.Key = file->AssetPath;
         item.Icon = IconName(kind.Icon);
         // Only a tile drawn as one is asked for its picture: tiles past what is
@@ -459,7 +543,7 @@ void Shelf::Publish()
     (void)Ui.SetValue(Screen, kCount, UiValue(shown.size() > kMostShown
                                                   ? std::format("{} of {} shown: type to narrow", kMostShown,
                                                                 shown.size())
-                                                  : std::format("{} of {}", shown.size(), Files.size())));
+                                                  : std::format("{} of {}", shown.size(), offeredCount)));
     (void)Ui.SetValue(Screen, kEmpty, UiValue(std::string(Query.Text.empty() ? "Nothing here."
                                                                             : "Nothing holds that.")));
 
@@ -476,5 +560,6 @@ void Shelf::Publish()
                                                                           : AssetPicture{};
     (void)Ui.SetValue(Screen, kPreviewImage, UiValue(picture.Image));
     (void)Ui.SetValue(Screen, kPreviewColor, UiValue(picture.Color));
-    (void)Ui.SetValue(Screen, kPreviewOpens, UiValue(chosen != nullptr && Workspaces.KindOpening(*chosen) != nullptr));
+    (void)Ui.SetValue(Screen, kPreviewOpens, UiValue(chosen != nullptr && (Use == Purpose::Choosing
+                                                                             || Workspaces.KindOpening(*chosen) != nullptr)));
 }

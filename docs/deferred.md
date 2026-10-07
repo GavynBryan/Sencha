@@ -206,7 +206,7 @@ do the work and delete the entry.
 - **What:** a selection looked at through the context wheel has its actions on
   the wheel and the palette, never in a pile under its sheet. Only the Level
   has the wheel, so the other workspaces' cards (Animation's lens and document
-  cards, Data's asset sheet, the material and texture explorers' pages) still
+  cards, Data's asset sheet, the Materials texture card) still
   list `WorkspaceSelectionFacet::Actions` under their rows.
 - **Where:** `ShellWindow::PublishSelection` lists them unless the facet is
   `OnRequest`; the context wheel is `actions/ContextMenuModel`, opened by
@@ -231,24 +231,24 @@ do the work and delete the entry.
 
 ## Previewing a material on the selected faces
 
-- **What:** hovering a tile in the material explorer does not show that
-  material on the selected faces; picking puts it in hand and putting it to
-  use (a double click) applies it as one step.
-- **Where:** `editor/level_editor/src/workspace/MaterialExplorer.cpp`; a
-  preview would be a pending edit through the command stack's pending scope,
-  cancelled when the pointer leaves the tile or the explorer closes.
+- **What:** picking a material on the Shelf (M) does not show it on the
+  selected faces before committing; a click puts it in hand and Enter, a double
+  click or CHOOSE applies it as one step.
+- **Where:** `editor/level_editor/src/workspace/MaterialExplorer.cpp` is handed
+  each pick; a preview would be a pending edit through the command stack's
+  pending scope, cancelled by the next pick or when the Shelf goes.
 - **Trigger:** the owner's walkthrough at the explorers checkpoint, or a report
   that choosing a material takes trial applications and undos.
 
 ## Dragging a prefab into the view
 
-- **What:** a prefab is placed by choosing it in the explorer, which takes up
+- **What:** a prefab is placed by choosing it on the Shelf (P), which takes up
   the Place tool, then clicking in the view. Pressing on a tile and dragging it
   into the view as the same gesture is not built, and the Place tool turns a
   placement by its yaw setting rather than by a key while hovering.
-- **Where:** `editor/level_editor/src/document/tools/PlaceTool.cpp`; the shell's
-  explorer tray (`editor/common/src/shell/ShellWindow.cpp`) would hand the
-  press over to the view's input router.
+- **Where:** `editor/level_editor/src/document/tools/PlaceTool.cpp`; the Shelf
+  (`editor/common/src/shell/Shelf.cpp`) would hand the press over to the
+  view's input router.
 - **Trigger:** the owner's walkthrough at the explorers checkpoint.
 
 ## Reordering and reparenting by dragging in the outline
@@ -278,10 +278,10 @@ do the work and delete the entry.
 ## A texture cartridge for the slot in hand
 
 - **What:** the Materials workspace sets a texture slot by choosing among the
-  source textures on the card, and inspects a texture by picking it in the
-  texture explorer. The plan's cartridge -- the texture the focused slot holds,
-  in the lower right, with the explorer a click away and a pick loading it into
-  that slot -- is not built.
+  source textures on the Shelf from the card's field, and inspects a texture by
+  opening it from the Shelf. The plan's cartridge -- the texture the focused
+  slot holds, in the lower right, with the Shelf a click away and a pick
+  loading it into that slot -- is not built.
 - **Where:** `editor/material_editor/src/MaterialWorkspace.cpp` would offer a
   resources facet (`WorkspaceResourceFacet`, the Level's cartridge) for the
   focused texture slot of `MaterialProperties`; the shell already presents it.
@@ -301,3 +301,20 @@ do the work and delete the entry.
   row the sheet draws as a polyline.
 - **Trigger:** tuning a jump's shape rather than its height and hang time, or
   the Animation workspace's fact plots (M13), which need the same drawing.
+
+## Engine content on the Shelf
+
+- **What:** the Shelf lists the project's content roots only. An asset field
+  whose candidates include engine-provided content (the engine's authored
+  assets mounted beside the project) offers those candidates nowhere: the
+  pick shows the project's files among them and NONE. The UI Preview's
+  document library stays its own outline (D) for the same reason -- most of
+  what it previews is the engine's and the editor's own UI.
+- **Where:** `ShellWindowServices::ContentRoots` (from `KyusuApp::ContentRoots`)
+  feeds `Shelf::Rescan`; `ShellWindow`'s sheet pick hands the field's
+  candidates to `ShelfPick::Only`; `UiPreviewWorkspace::BuildLibrary` adds the
+  editor and engine roots.
+- **Trigger:** a field whose only sensible choice is an engine asset, or a
+  designer opening engine content from the Shelf. The Shelf would then take
+  read-only roots, shown as their own top-level folders, and the UI Preview
+  library would fold into it.

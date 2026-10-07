@@ -11,10 +11,12 @@
          typing, narrowed by kind and folder, and opened in its editor. Its
          top edge is dragged to size it; pinned, it stays and the work ends
          above it. -->
-    <div id="shelf" class="theme-plate" data-if="shown" data-style-height="height">
+    <div id="shelf" class="theme-plate" data-style-height="height">
         <div id="shelf_grip" data-event-mousedown="shelf_grab(ev.mouse_y)"
              data-event-drag="shelf_drag(ev.mouse_y)" data-event-dragend="shelf_drop()"></div>
         <div id="shelf_bar">
+            <div id="shelf_choosing" class="theme-readout" data-if="choosing != ''">CHOOSING &#xB7; {{choosing}}</div>
+            <div class="key theme-key" data-if="offers_none" data-event-click="shelf_none()">NONE</div>
             <div id="shelf_path">
                 <div class="crumb theme-segment" data-for="crumb, ci : crumbs" data-class-lit="crumb.selected"
                      data-event-click="shelf_folder(crumb.key)">
@@ -23,7 +25,7 @@
             </div>
             <div id="shelf_search_well" class="theme-field">
                 <span class="icon icon-search search_icon"></span>
-                <input style="tab-index: none;" id="shelf_search" type="text" autofocus=""
+                <input id="shelf_search" type="text" autofocus=""
                        placeholder="Find anything: a name, t:material, in:dev"
                        data-value="query" data-event-change="shelf_query(ev.value)"
                        data-event-keydown="shelf_key(ev.key_identifier)"/>
@@ -69,7 +71,7 @@
                         <span data-if="item.parts[0] == '' &amp;&amp; item.parts[1] == ''"
                               data-attr-class="'kind icon icon-' + item.icon"></span>
                         <span class="lamp theme-lamp" data-if="item.value != ''" data-class-on="item.value == 'open'"
-                              data-class-warn="item.value == 'changed'"></span>
+                              data-class-warn="item.value == 'changed'" data-class-lit="item.value == 'current'"></span>
                     </div>
                     <span class="tile_name">{{item.label}}</span>
                     <span class="tile_kind theme-dim">{{item.detail}}</span>
@@ -89,7 +91,9 @@
                 <div class="fact theme-dim">{{preview_kind}}</div>
                 <div class="fact path">{{preview_path}}</div>
                 <div class="fact theme-dim">{{preview_facts}}</div>
-                <div class="key theme-key" data-if="preview_opens" data-event-click="shelf_open(preview_path)">OPEN</div>
+                <div class="key theme-key" data-if="preview_opens" data-event-click="shelf_open(preview_path)">
+                    <span data-if="choosing == ''">OPEN</span><span data-if="choosing != ''">CHOOSE</span>
+                </div>
                 <div class="fact theme-dim" data-if="!preview_opens">No editor opens this kind.</div>
             </div>
         </div>

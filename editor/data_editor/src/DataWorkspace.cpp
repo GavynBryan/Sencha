@@ -27,7 +27,6 @@
 namespace
 {
 constexpr std::string_view kCommandOwner = "editor.data";
-constexpr std::string_view kExplorerId = "data";
 constexpr std::string_view kProblemSource = "data";
 constexpr std::string_view kScheme = "asset://";
 
@@ -142,10 +141,6 @@ void DataWorkspace::DefineActions(ActionCatalog& catalog)
                 { .Invoke = [this] { ShowingSource = !ShowingSource; },
                   .Enabled = active,
                   .Checked = [this] { return ShowingSource; } });
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "explorer.data", .Label = "Data Assets", .Category = "Explore", .Icon = IconId::Folder,
-                  .DefaultChords = { { SDLK_D, {} } } },
-                {});
 }
 
 void DataWorkspace::AfterSettling(std::function<void(const std::string& path, DirtyDisposition disposition)> then)
@@ -298,37 +293,6 @@ WorkspaceSelectionFacet DataWorkspace::Selection()
             facet.Sections.push_back(section);
     facet.Primary = true;
     return facet;
-}
-
-std::vector<WorkspaceExplorerInfo> DataWorkspace::Explorers() const
-{
-    return { { .Id = std::string(kExplorerId), .Title = "Data Assets", .Shape = ExplorerShape::Outline,
-               .Action = "explorer.data" } };
-}
-
-ExplorerPage DataWorkspace::Explore(const ExplorerQuery& query)
-{
-    ExplorerPage page;
-    if (query.Explorer != kExplorerId)
-        return page;
-    page.Actions = { "data.new" };
-    page.Empty = "No data asset's path holds that.";
-    const DataDocument* active = Model.Documents.Active();
-    for (const AssetRecord* record : Model.DataAssets())
-    {
-        if (!TextFilterMatch(record->Path, query.Filter) || !CountOnPage(page, query))
-            continue;
-        page.Items.push_back({ .Key = record->Path,
-                               .Label = RootRelative(record->Path),
-                               .Current = active != nullptr && active->VirtualPath() == record->Path });
-    }
-    return page;
-}
-
-void DataWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice, std::size_t)
-{
-    if (explorer == kExplorerId)
-        (void)OpenPath(key);
 }
 
 bool DataWorkspace::OpenAsset(const ProjectFile& file)

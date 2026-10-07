@@ -46,11 +46,6 @@ public:
     bool OpenAsset(const ProjectFile& file) override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     bool RevealProblem(const Problem& problem) override;
-    [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
-    [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
-    void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
-                          std::size_t mark) override;
-
 private:
     // Opens the data asset at `assetPath`, or brings it forward, as the card.
     bool OpenPath(std::string_view assetPath);

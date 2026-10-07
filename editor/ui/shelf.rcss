@@ -37,6 +37,7 @@ body
     height: 28dp;
     margin-bottom: 6dp;
 }
+#shelf_choosing { display: block; padding: 3dp 8dp; border-width: 1dp; border-radius: 3dp; white-space: nowrap; }
 #shelf_path { display: flex; align-items: center; gap: 2dp; flex: 0 1 auto; min-width: 0dp; }
 #shelf_search_well
 {

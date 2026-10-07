@@ -134,8 +134,7 @@ private:
     // released over the rail still ends where it began.
     void YieldPointerToContent();
     void OpenPopover(Popover popover, std::string category = {});
-    // `verb` empty: the choices are values for the row; otherwise they are
-    // what the row's verb asks to be chosen first.
+    // What the row's verb asks to be chosen first.
     void OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices,
                      std::vector<std::string> notes = {});
     // Which number of which row is being typed into, as the document names it.
@@ -245,6 +244,8 @@ private:
     TransientSurfaces::Id ShelfTransient = 0;
     // The workspace the shelf was last raised for because it had nothing open.
     std::string ShelvedFor;
+    // The workspace's explorer the shelf is choosing for, while it is.
+    std::string ChoosingFor;
     // Keeps the shelf's place among the window's open surfaces, and raises it
     // for a workspace showing nothing.
     void FollowShelf();

@@ -79,7 +79,7 @@ enum class UiRowControl : std::uint8_t
     Range,
     Choice,
     Toggle,   // Value is "true" or "false"
-    Asset,    // Value names an asset; the document offers a way to pick another
+    Asset,    // Value names an asset; Parts[0], when set, is how it reads; the document offers a way to pick another
     Color,    // Value is the colour as the host writes it; Parts[0], when set, is a CSS colour to swatch it with
     Section,  // not a value at all: a heading the rows after it sit under
     Action,   // not a value either: something to do, named by its label, raised by its key

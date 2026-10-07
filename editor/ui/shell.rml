@@ -93,7 +93,7 @@
     <div id="instruments_left" data-style-bottom="instruments_lift">
     <div id="station_bay" data-if="station_name != ''">
         <div id="tool_card" class="theme-plate" data-class-open="card_open" data-class-shut="!card_open">
-            <div class="setting" data-for="row, ri : tool_rows"
+            <div class="setting" data-for="row, ri : tool_rows" data-attr-id="'tool_row_' + ri"
                  data-style-margin-left="(row.depth * 8) + 'dp'"
                  data-class-heading="row.control == 'section'"
                  data-class-locked="!row.editable &amp;&amp; row.control != 'section'">
@@ -150,7 +150,7 @@
                 </div>
                 <div class="setting_control key theme-key" data-if="row.control == 'asset'"
                      data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('tool', ri)">
-                    <span data-if="row.value != ''">{{row.value}}</span><span data-if="row.value == ''">NONE</span>
+                    <span class="asset_name" data-if="row.value != ''">{{row.parts.size > 0 ? row.parts[0] : row.value}}</span><span data-if="row.value == ''">NONE</span>
                 </div>
                 <div class="remove glyph theme-remove" data-for="verb : row.verbs" data-if="verb.removes"
                      data-event-click="shell_sheet_act('tool', ri, verb.key, '')">&#xf00d;</div>
@@ -236,7 +236,7 @@
                data-value="selection_title" data-event-focus="shell_title_hold()"
                data-event-blur="shell_title_release()"/>
         <div id="selection_subtitle" class="theme-dim" data-if="!selection_named &amp;&amp; selection_subtitle != ''">{{selection_subtitle}}</div>
-        <div class="setting" data-for="row, ri : selection_rows"
+        <div class="setting" data-for="row, ri : selection_rows" data-attr-id="'selection_row_' + ri"
                  data-style-margin-left="(row.depth * 8) + 'dp'"
                  data-class-heading="row.control == 'section'"
                  data-class-locked="!row.editable &amp;&amp; row.control != 'section'">
@@ -293,7 +293,7 @@
                 </div>
                 <div class="setting_control key theme-key" data-if="row.control == 'asset'"
                      data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('selection', ri)">
-                    <span data-if="row.value != ''">{{row.value}}</span><span data-if="row.value == ''">NONE</span>
+                    <span class="asset_name" data-if="row.value != ''">{{row.parts.size > 0 ? row.parts[0] : row.value}}</span><span data-if="row.value == ''">NONE</span>
                 </div>
                 <span class="setting_help theme-dim" data-if="sheet &amp;&amp; row.detail != ''">{{row.detail}}</span>
                 <div class="remove glyph theme-remove" data-for="verb : row.verbs" data-if="verb.removes"
@@ -378,7 +378,8 @@
     <div id="dismiss" data-if="popover != ''" data-event-click="shell_popover('')"></div>
     <div id="popover" class="theme-surface" data-if="popover != ''" data-class-rising="popover_rises"
          data-class-problems="popover == 'problems'"
-         data-style-left="popover_x + 'px'" data-style-top="popover_top">
+         data-style-left="popover_x + 'px'" data-style-top="popover_top"
+         data-style-max-height="popover_tallest">
         <input style="tab-index: none;" type="text" id="popover_filter" class="theme-field" data-if="popover_filters"
                autofocus="" placeholder="Type to narrow" data-event-change="shell_popover_filter(ev.value)"/>
         <div class="entry theme-row" data-for="entry : entries"
