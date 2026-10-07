@@ -243,17 +243,6 @@ body
     font-size: 13dp;
     pointer-events: auto;
 }
-.crumb
-{
-    display: flex;
-    align-items: center;
-    gap: 6dp;
-    height: 24dp;
-    padding: 0dp 6dp;
-    border-radius: 3dp;
-    white-space: nowrap;
-}
-.crumb_sep { font-size: 10dp; }
 .crumb_map { font-family: "Chakra Petch"; font-weight: 600; font-size: 11dp; letter-spacing: 1dp; }
 .crumb_hint
 {

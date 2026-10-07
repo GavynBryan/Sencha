@@ -46,6 +46,9 @@ public:
     void Update();
     // While a question stands over the window.
     void Hide() { Close(); }
+    // Raised by `pixels` above where it sits, to stay clear of what lies along
+    // the bottom of the window under it.
+    void Lift(float pixels);
     [[nodiscard]] bool IsShowing() const { return Screen.IsValid(); }
     // Where the deck sits in the window, while it shows.
     [[nodiscard]] std::optional<UiElementBox> Area() const;

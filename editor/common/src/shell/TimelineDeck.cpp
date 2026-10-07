@@ -22,6 +22,7 @@ const UiModelPropertyId kLive = UiPropertyIdAt(3);
 const UiModelPropertyId kPlayhead = UiPropertyIdAt(4);
 const UiModelPropertyId kTrackHeight = UiPropertyIdAt(5);
 const UiModelPropertyId kLaned = UiPropertyIdAt(6);
+const UiModelPropertyId kBottom = UiPropertyIdAt(7);
 const UiModelRowsId kKeys = UiRowsIdAt(0);
 const UiModelRowsId kMarks = UiRowsIdAt(1);
 const UiModelRowsId kLanes = UiRowsIdAt(2);
@@ -31,6 +32,8 @@ const UiModelRowsId kBars = UiRowsIdAt(4);
 // The ruler's row, then one row per lane under it, in dp.
 constexpr int kRulerHeight = 24;
 constexpr int kLaneHeight = 16;
+// Where it sits above the window's bottom edge, clear of the stations, in dp.
+constexpr int kDeckBottomDp = 50;
 // A plotted lane is drawn as this many bars, each the largest sample it covers.
 constexpr std::size_t kPlotBars = 96;
 constexpr double kBarHeight = 12.0;
@@ -76,6 +79,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "playhead", UiValue(std::string("0%")) },
         UiModelProperty{ "track_height", UiValue(std::format("{}dp", kRulerHeight)) },
         UiModelProperty{ "laned", UiValue(false) },
+        UiModelProperty{ "bottom", UiValue(std::format("{}dp", kDeckBottomDp)) },
     };
     desc.RowLists = { "keys", "marks", "lanes", "spans", "bars" };
     desc.Actions = { "deck_invoke", "deck_scrub", "deck_mark", "deck_pick" };
@@ -294,6 +298,13 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
     (void)Ui.SetValue(Screen, kLaned, UiValue(LaneCount > 0));
     (void)Ui.SetValue(Screen, kTrackHeight,
                       UiValue(std::format("{}dp", kRulerHeight + kLaneHeight * static_cast<int>(LaneCount))));
+}
+
+void TimelineDeck::Lift(float pixels)
+{
+    if (Screen.IsValid())
+        (void)Ui.SetValue(Screen, kBottom,
+                          UiValue(std::format("{:.0f}px", pixels + kDeckBottomDp * Ui.GetSurfaceScale(Surface))));
 }
 
 std::optional<UiElementBox> TimelineDeck::Area() const

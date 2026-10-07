@@ -1112,5 +1112,7 @@ TEST(UiControls, AKeyADocumentReportsIsReadBackAsAUiKey)
     };
     EXPECT_EQ(pressed(SDL_SCANCODE_ESCAPE), UiKey::Escape);
     EXPECT_EQ(pressed(SDL_SCANCODE_DOWN), UiKey::Down);
+    EXPECT_EQ(pressed(SDL_SCANCODE_LEFT), UiKey::Left);
+    EXPECT_EQ(pressed(SDL_SCANCODE_RIGHT), UiKey::Right);
     EXPECT_EQ(pressed(SDL_SCANCODE_A), std::nullopt) << "a key outside the vocabulary reads as none";
 }

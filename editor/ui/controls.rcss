@@ -178,3 +178,16 @@ selectvalue { display: block; padding: 2dp 6dp; pointer-events: auto; }
 selectarrow { display: block; width: 16dp; height: 100%; pointer-events: auto; }
 selectbox { display: block; border-width: 1dp; border-radius: 3dp; pointer-events: auto; }
 selectbox option { display: block; padding: 4dp 6dp; pointer-events: auto; }
+
+/* A part of a path, one step of a breadcrumb or a folder trail. */
+.crumb
+{
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    height: 24dp;
+    padding: 0dp 6dp;
+    border-radius: 3dp;
+    white-space: nowrap;
+}
+.crumb_sep { font-size: 10dp; }

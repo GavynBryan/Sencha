@@ -97,18 +97,28 @@ sectors — and never concepts such as "tab" or "explorer".
 
 | Place | Meaning | Contents |
 | --- | --- | --- |
-| Rail, left | what is open | hatch (≡); a tab per open asset, its editor named small beside it, a lamp when changed; + to open another editor |
+| Rail, left | what is open | hatch (≡); a tab per open asset, its editor named small beside it, a lamp when changed; + to raise the Shelf |
 | Rail, right | consequences | problems lamp, transport where it applies, window buttons |
 | Under the rail, left | where the work is | breadcrumb: MAP, then world ▸ graph ▸ zone (the one the camera is in) ▸ selection; a place opens the hierarchy at it, the selection opens its sheet |
 | Content, top-right | how I am seeing | view instrument |
 | Bottom-left | what my hands are doing and holding | operation station (the Q wheel's face), manipulation readout (the Z wheel's face), the resource cartridge and stash |
-| Bottom edge | the work's axis, when it has one | Animation's tape deck |
+| Bottom edge | the work's axis, when it has one; the project's content | Animation's tape deck; the Shelf, which the instruments and the deck ride on |
 | Top-centre | what just happened | transient notices |
 
 A tab is an open asset; its type picks the editor. Choosing a tab shows its
 editor and the asset; dragging a tab down out of the rail gives its editor a
 window of its own (`shell/AssetTabs`). There are no workspaces to switch
 between apart from the assets they hold.
+
+**The Shelf** is the project's content along the bottom edge, and it belongs to
+the window, not to a tab: what it was showing is still there when it comes
+back. Typing finds anything — a name, `t:material`, `in:dev` — ranked by how
+well the name holds it; kinds, folders and lists (recent, open, changed)
+narrow it; the chosen file's facts sit beside the tiles; Enter or OPEN opens it
+in the editor that opens its kind (`WorkspaceKind::Opens`), and an editor with
+nothing open raises the Shelf narrowed to what it opens. Raised, it lies over
+the work and goes when something opens; pinned, it stays and the work ends
+above it; its top edge sizes it (`shell/Shelf`, `project/AssetQuery`).
 
 The rail is also the window caption (client decorations) and the only
 full-width chrome. Every persistent instrument is **a readout that is also a
@@ -126,6 +136,7 @@ Interface comes in increasing commitment to a task:
 | Popover | one decision | clicking an instrument | choosing, clicking elsewhere, Esc |
 | Sheet | everything about the selection | the selection's part of the breadcrumb, More… on the Space wheel, or the palette | Esc, or its part again |
 | Explorer | a library, the hierarchy | a slot, a key (Tab for the hierarchy), the breadcrumb, the palette | committing a pick, Esc |
+| Shelf | the project's content | Shift+Space, + on the rail, an editor with nothing open | opening something, Esc; pinned, it stays |
 | Map | the world from above | MAP in the breadcrumb | clicking a zone (goes there), Esc |
 
 **The Space wheel** is about what is under the pointer, or the selection when

@@ -25,8 +25,7 @@
                 <span class="tab_label">{{tab.label}}</span>
                 <div class="lamp theme-lamp lit" data-if="tab.detail == 'changed'"></div>
             </div>
-            <div id="tab_new" class="key theme-key" data-class-lit="popover == 'workspaces'"
-                 data-event-click="shell_popover('workspaces')"><span class="glyph">&#x2b;</span></div>
+            <div id="tab_new" class="key theme-key" data-event-click="shell_invoke('shelf.toggle')"><span class="glyph">&#x2b;</span></div>
         </div>
 
         <div id="notices">
@@ -91,7 +90,7 @@
     <!-- Bottom left, what the hands are doing: the station (and over it, while
          the operation has settings or drafted work, its card), then how they
          act -- element, gizmo, grid -- each segment opening its category. -->
-    <div id="instruments_left">
+    <div id="instruments_left" data-style-bottom="instruments_lift">
     <div id="station_bay" data-if="station_name != ''">
         <div id="tool_card" class="theme-plate" data-class-open="card_open" data-class-shut="!card_open">
             <div class="setting" data-for="row, ri : tool_rows"

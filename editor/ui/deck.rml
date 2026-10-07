@@ -8,7 +8,7 @@
 <body data-model="deck">
     <!-- The workspace's clock along the bottom edge: the transport, the
          readout, and a ruler to scrub with the playhead and the marks on it. -->
-    <div id="deck" class="theme-plate" data-class-laned="laned">
+    <div id="deck" class="theme-plate" data-class-laned="laned" data-style-bottom="bottom">
         <div id="transport">
             <div class="key_slot" data-for="key : keys">
                 <div class="key theme-key" data-class-lit="key.selected" data-class-disabled="key.disabled"

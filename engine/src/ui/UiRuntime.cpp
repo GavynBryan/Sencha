@@ -2076,6 +2076,8 @@ std::optional<UiKey> UiKeyFromEvent(std::int64_t keyIdentifier)
     case Rml::Input::KI_RETURN: return UiKey::Return;
     case Rml::Input::KI_ESCAPE: return UiKey::Escape;
     case Rml::Input::KI_UP:     return UiKey::Up;
+    case Rml::Input::KI_LEFT:   return UiKey::Left;
+    case Rml::Input::KI_RIGHT:  return UiKey::Right;
     case Rml::Input::KI_DOWN:   return UiKey::Down;
     default:                    return std::nullopt;
     }

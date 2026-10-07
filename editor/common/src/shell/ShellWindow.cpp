@@ -2,6 +2,8 @@
 
 #include "shell/AssetTabs.h"
 
+#include "project/AssetKinds.h"
+
 #include "actions/ActionCatalog.h"
 #include "input/SdlEventTranslation.h"
 #include "notices/NoticeQueue.h"
@@ -82,6 +84,7 @@ const UiModelPropertyId kMapAction = UiPropertyIdAt(53);
 const UiModelPropertyId kPopoverFilters = UiPropertyIdAt(54);
 const UiModelPropertyId kSelectionNamed = UiPropertyIdAt(55);
 const UiModelPropertyId kSheetTyping = UiPropertyIdAt(56);
+const UiModelPropertyId kInstrumentsLift = UiPropertyIdAt(57);
 
 const UiModelRowsId kNotices = UiRowsIdAt(0);
 const UiModelRowsId kEntries = UiRowsIdAt(1);
@@ -212,6 +215,7 @@ UiScreenDesc Describe()
         UiModelProperty{ "popover_filters", UiValue(false) },
         UiModelProperty{ "selection_named", UiValue(false) },
         UiModelProperty{ "sheet_typing", UiValue(std::string{}) },
+        UiModelProperty{ "instruments_lift", UiValue(std::string("8dp")) },
     };
     desc.RowLists = { "notices",        "entries",         "tool_rows",       "stash",
                       "selection_rows", "selection_verbs", "explorer_items", "explorer_verbs",
@@ -316,6 +320,12 @@ ShellWindow::ShellWindow(ShellWindowServices services)
             DrawerTransient = 0;
             SelectionShown = SelectionView::Card;
         }
+        else if (id == ShelfTransient)
+        {
+            ShelfTransient = 0;
+            if (AssetShelf != nullptr && AssetShelf->IsRaised())
+                AssetShelf->Hide();
+        }
         if (Transients.OpenIds().empty())
             EscapeLayer.Reset();
     });
@@ -338,6 +348,12 @@ ShellWindow::ShellWindow(ShellWindowServices services)
     WindowLayer = Services.Actions.Push(WindowActions, ActionRank::Window);
     Deck = std::make_unique<TimelineDeck>(Services.Ui, SurfaceId, Services.Workspaces, Services.Actions,
                                           Services.Presentation);
+    AssetShelf = std::make_unique<Shelf>(Services.Ui, SurfaceId, Services.Workspaces, Services.Presentation,
+                                         Services.ContentRoots);
+    (void)Services.Catalog.Define({ .Id = "shelf.toggle", .Label = "Asset Shelf", .Category = "View",
+                                    .Icon = IconId::Folder,
+                                    .DefaultChords = { KeyChord{ SDLK_SPACE, { .Shift = true } } } });
+    WindowActions.Claim("shelf.toggle", ActionHandler{ .Invoke = [this] { AssetShelf->Toggle(); } });
     Prompt = std::make_unique<PromptDialog>(Services.Ui, SurfaceId, Services.Prompts, Services.Actions);
 }
 
@@ -346,6 +362,7 @@ ShellWindow::~ShellWindow()
     WindowLayer.Reset();
     EscapeLayer.Reset();
     Prompt.reset();
+    AssetShelf.reset();
     Deck.reset();
     Palette.reset();
     if (Screen.IsValid())
@@ -383,9 +400,12 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
 
     if (IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation))
     {
+        // Pinned, the shelf takes the bottom of the window; raised, it lies over the work.
         const float rail = RailHeight();
-        active->SetContentRect(Rect2d(Vec2d(0.0f, rail), Vec2d(static_cast<float>(extent.Width),
-                                                               std::max(0.0f, static_cast<float>(extent.Height) - rail))));
+        const float shelf = AssetShelf->IsPinned() ? AssetShelf->Reach() : 0.0f;
+        active->SetContentRect(Rect2d(Vec2d(0.0f, rail),
+                                      Vec2d(static_cast<float>(extent.Width),
+                                            std::max(0.0f, static_cast<float>(extent.Height) - rail - shelf))));
     }
     YieldPointerToContent();
     HandleActions();
@@ -397,6 +417,8 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
         Palette->Close();
     }
     Palette->Update();
+    AssetShelf->Update(Services.Ui.GetSurfaceScale(SurfaceId), static_cast<float>(extent.Height));
+    FollowShelf();
     if (Prompt->IsShowing())
         Deck->Hide();
     else
@@ -750,6 +772,35 @@ void ShellWindow::EndScrub(bool commit)
     Scrub = ScrubPhase::Resting;
 }
 
+void ShellWindow::FollowShelf()
+{
+    // A workspace showing nothing is shown what it could open.
+    const WorkspaceKind* kind = Services.Workspaces.ActiveKindIn(Services.Presentation);
+    IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+    const std::string activeKind = kind != nullptr ? kind->Id : std::string{};
+    if (activeKind != ShelvedFor)
+    {
+        ShelvedFor = activeKind;
+        const WorkspaceDocumentFacet document = workspace != nullptr ? workspace->Document() : WorkspaceDocumentFacet{};
+        if (kind != nullptr && !kind->Opens.empty() && document.Label.empty() && document.Open.empty())
+            AssetShelf->Show(std::string(KindOf(ProjectFile{ .Extension = kind->Opens.front().Extension }).Category));
+    }
+
+    // Raised, Escape takes it away; pinned, it stays put.
+    if (AssetShelf->IsRaised() && ShelfTransient == 0)
+    {
+        ShelfTransient = Transients.Open({ .Owner = "shell", .Dismiss = TransientDismiss::Explicit });
+        TakeEscape();
+    }
+    else if (!AssetShelf->IsRaised() && ShelfTransient != 0)
+        Transients.Close(ShelfTransient);
+
+    const float dp = Services.Ui.GetSurfaceScale(SurfaceId);
+    (void)Services.Ui.SetValue(Screen, kInstrumentsLift,
+                               UiValue(Pixels(AssetShelf->Reach() + kSurfaceGapDp * dp)));
+    Deck->Lift(AssetShelf->Reach());
+}
+
 std::string ShellWindow::TypingKey(std::string_view sheet, std::size_t row, std::int64_t element)
 {
     return std::format("{}:{}:{}", sheet, row, element);
@@ -813,7 +864,6 @@ void ShellWindow::OpenNamedPopover(std::string_view name)
         OpenPopover(Popover::Category, std::string(name.substr(kCategory.size())));
     else
         OpenPopover(name == "hatch"        ? Popover::Hatch
-                    : name == "workspaces" ? Popover::Workspaces
                     : name == "tools"      ? Popover::Tools
                     : name == "problems"   ? Popover::Problems
                                            : Popover::None);
@@ -824,7 +874,6 @@ std::string ShellWindow::PopoverName() const
     switch (Showing)
     {
     case Popover::Hatch:      return "hatch";
-    case Popover::Workspaces: return "workspaces";
     case Popover::Tools:      return "tools";
     case Popover::Category:   return "category:" + PopoverCategory;
     case Popover::Choices:    return "choices";
@@ -1080,7 +1129,7 @@ void ShellWindow::PlaceFloatingSurfaces()
     if (const std::optional<UiElementBox> deck = Deck->Area())
         instruments.emplace_back(deck->X, deck->Y, deck->Width, deck->Height);
     // The lowest a surface reaches: above the stations along the bottom.
-    float floor = bounds.Max().Y;
+    float floor = bounds.Max().Y - AssetShelf->Reach();
     for (const std::optional<Rect2d>& instrument : { station, holding })
         if (instrument.has_value())
             floor = std::min(floor, instrument->Min().Y - gap);
@@ -1304,7 +1353,6 @@ void ShellWindow::PublishEntries()
     switch (Showing)
     {
     case Popover::Hatch:      anchor = "hatch";          entries = HatchEntries();                   break;
-    case Popover::Workspaces: anchor = "tab_new";        entries = WorkspaceEntries();               break;
     case Popover::Tools:      anchor = "station";        entries = ToolEntries();                    break;
     case Popover::Category:   anchor = "cat_" + PopoverCategory; entries = CategoryEntries(PopoverCategory); break;
     case Popover::Problems:
@@ -1552,6 +1600,11 @@ std::vector<UiRow> ShellWindow::HatchEntries() const
         for (UiRow& entry : entries)
             rows.push_back(std::move(entry));
     }
+    // Editors are opened by opening what they edit, from the shelf; these are
+    // the editors themselves, for one without a file of its own.
+    rows.push_back(Heading("Editors"));
+    for (UiRow& entry : WorkspaceEntries())
+        rows.push_back(std::move(entry));
     return rows;
 }
 

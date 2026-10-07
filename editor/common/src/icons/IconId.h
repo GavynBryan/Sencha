@@ -61,6 +61,14 @@ enum class IconId : std::uint8_t
     ClipSplit, // keep both, as two brushes
     ClipCap,   // close the cut with a face
 
+    // Kinds of content file
+    Material,
+    Texture,
+    Data,
+    Model,
+    Document,
+    File,
+
     // Mesh element modes
     ModeObject,
     ModeVertex,

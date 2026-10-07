@@ -1,0 +1,85 @@
+<rml>
+<head>
+    <title>Shelf</title>
+    <link type="text/rcss" href="shelf.rcss"/>
+    <link type="text/rcss" href="controls.rcss"/>
+    <link type="text/rcss" href="icons.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="shelf">
+    <!-- The project's content along the bottom edge: what is in it, found by
+         typing, narrowed by kind and folder, and opened in its editor. Its
+         top edge is dragged to size it; pinned, it stays and the work ends
+         above it. -->
+    <div id="shelf" class="theme-plate" data-if="shown" data-style-height="height">
+        <div id="shelf_grip" data-event-mousedown="shelf_grab(ev.mouse_y)"
+             data-event-drag="shelf_drag(ev.mouse_y)" data-event-dragend="shelf_drop()"></div>
+        <div id="shelf_bar">
+            <div id="shelf_path">
+                <div class="crumb theme-segment" data-for="crumb, ci : crumbs" data-class-lit="crumb.selected"
+                     data-event-click="shelf_folder(crumb.key)">
+                    <span class="crumb_sep glyph theme-dim" data-if="ci > 0">&#xf054;</span><span>{{crumb.label}}</span>
+                </div>
+            </div>
+            <div id="shelf_search_well" class="theme-field">
+                <span class="icon icon-search search_icon"></span>
+                <input style="tab-index: none;" id="shelf_search" type="text" autofocus=""
+                       placeholder="Find anything: a name, t:material, in:dev"
+                       data-value="query" data-event-change="shelf_query(ev.value)"
+                       data-event-keydown="shelf_key(ev.key_identifier)"/>
+            </div>
+            <div id="shelf_chips">
+                <div class="key theme-key" data-for="chip : chips" data-class-lit="chip.selected"
+                     data-event-click="shelf_category(chip.key)">{{chip.label}}</div>
+            </div>
+            <span id="shelf_count" class="theme-dim">{{count}}</span>
+            <div class="key theme-key glyph" data-class-lit="view == 'list'" data-event-click="shelf_view()"
+                 title="Tiles or a list">&#xf03a;</div>
+            <div class="key theme-key glyph" data-class-lit="pinned" data-event-click="shelf_pin()"
+                 title="Pinned, it stays and the work ends above it">&#xf08d;</div>
+            <div class="key theme-key glyph" data-event-click="shelf_close()">&#xf00d;</div>
+        </div>
+        <div id="shelf_body">
+            <div id="shelf_side">
+                <div class="side_row theme-row" data-for="list : lists" data-class-selected="list.selected"
+                     data-event-click="shelf_list(list.key)">
+                    <span class="side_label">{{list.label}}</span><span class="side_count theme-dim">{{list.value}}</span>
+                </div>
+                <div class="side_gap"></div>
+                <div class="side_row theme-row" data-for="folder : folders" data-class-selected="folder.selected"
+                     data-style-padding-left="(folder.depth * 12 + 4) + 'dp'"
+                     data-event-click="shelf_folder(folder.key)">
+                    <span class="branch glyph theme-dim" data-event-click="shelf_branch(folder.key)">
+                        <span data-if="folder.value == 'closed'">&#xf0da;</span><span data-if="folder.value == 'open'">&#xf0d7;</span>
+                    </span>
+                    <span class="side_label">{{folder.label}}</span>
+                </div>
+            </div>
+            <div id="shelf_items" data-class-list="view == 'list'">
+                <div class="tile theme-row" data-for="item : items" data-class-selected="item.selected"
+                     data-event-click="shelf_pick(item.key)" data-event-dblclick="shelf_open(item.key)">
+                    <div class="well theme-field">
+                        <span data-attr-class="'kind icon icon-' + item.icon"></span>
+                        <span class="lamp theme-lamp" data-if="item.value != ''" data-class-on="item.value == 'open'"
+                              data-class-warn="item.value == 'changed'"></span>
+                    </div>
+                    <span class="tile_name">{{item.label}}</span>
+                    <span class="tile_kind theme-dim">{{item.detail}}</span>
+                </div>
+                <div id="shelf_empty" class="theme-dim" data-if="items.size == 0">{{empty}}</div>
+            </div>
+            <div id="shelf_preview" data-if="preview_name != ''">
+                <div class="preview_well theme-field">
+                    <span data-attr-class="'kind icon icon-' + preview_icon"></span>
+                </div>
+                <div id="preview_name" class="theme-accent">{{preview_name}}</div>
+                <div class="fact theme-dim">{{preview_kind}}</div>
+                <div class="fact path">{{preview_path}}</div>
+                <div class="fact theme-dim">{{preview_facts}}</div>
+                <div class="key theme-key" data-if="preview_opens" data-event-click="shelf_open(preview_path)">OPEN</div>
+                <div class="fact theme-dim" data-if="!preview_opens">No editor opens this kind.</div>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

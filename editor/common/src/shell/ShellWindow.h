@@ -10,6 +10,7 @@
 #include "presenters/PropertySheet.h"
 #include "properties/PropertyEditSession.h"
 #include "shell/ScrubGesture.h"
+#include "shell/Shelf.h"
 #include "shell/TransientSurfaces.h"
 #include "workspaces/WorkspaceWindow.h"
 
@@ -56,6 +57,8 @@ struct ShellWindowServices
     std::function<void()> CloseWindow;
     // The application's name, which the window's title leads with.
     std::string Title;
+    // Where the open project's content is on disk; none without a project.
+    std::vector<std::filesystem::path> ContentRoots = {};
 };
 
 // What the person has chosen about how every shell looks and moves.
@@ -107,7 +110,7 @@ public:
     // What a workspace placed in this window is handed.
     [[nodiscard]] WorkspaceWindow Binding() const;
 
-    // Opens one of the rail's popovers by name ("hatch", "workspaces"), or
+    // Opens one of the rail's popovers by name ("hatch", "tools"), or
     // closes it with anything else: what a script or a test
     // drives instead of a click.
     void ShowPopover(std::string_view name);
@@ -118,7 +121,7 @@ private:
     // Choices: what a sheet's row asks to be chosen -- a verb's choices, or an
     // asset row's candidates -- for the row ChoicesRow of the sheet
     // ChoicesSheet names, listed once as it opens.
-    enum class Popover : std::uint8_t { None, Hatch, Workspaces, Tools, Category, Choices, Problems };
+    enum class Popover : std::uint8_t { None, Hatch, Tools, Category, Choices, Problems };
 
     void HandleActions();
     void Publish(double now);
@@ -234,6 +237,14 @@ private:
     enum class SelectionView : std::uint8_t { Card, Drawer };
     SelectionView SelectionShown = SelectionView::Card;
     bool TitleHeld = false;
+
+    std::unique_ptr<Shelf> AssetShelf;
+    TransientSurfaces::Id ShelfTransient = 0;
+    // The workspace the shelf was last raised for because it had nothing open.
+    std::string ShelvedFor;
+    // Keeps the shelf's place among the window's open surfaces, and raises it
+    // for a workspace showing nothing.
+    void FollowShelf();
 
     // A number pressed in a sheet: dragged across it moves, released where it
     // was pressed it types. Every drag is one edit session, previewed live.

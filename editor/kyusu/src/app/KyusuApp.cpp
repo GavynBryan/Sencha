@@ -676,6 +676,7 @@ std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, Presentation
         .Presentation = presentation,
         .CloseWindow = std::move(close),
         .Title = "Kyusu",
+        .ContentRoots = ContentRoots(),
     });
 }
 

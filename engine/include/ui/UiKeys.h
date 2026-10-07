@@ -15,6 +15,8 @@ enum class UiKey : std::uint8_t
     Escape,
     Up,
     Down,
+    Left,
+    Right,
 };
 
 // The key a document reported, or nullopt for one outside this vocabulary.

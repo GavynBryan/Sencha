@@ -44,6 +44,12 @@ std::string_view IconName(IconId id)
     case IconId::ClipBack: return "clip-back";
     case IconId::ClipSplit: return "clip-split";
     case IconId::ClipCap: return "clip-cap";
+    case IconId::Material: return "material";
+    case IconId::Texture: return "texture";
+    case IconId::Data: return "data";
+    case IconId::Model: return "model";
+    case IconId::Document: return "document";
+    case IconId::File: return "file";
     case IconId::ModeObject: return "mode-object";
     case IconId::ModeVertex: return "mode-vertex";
     case IconId::ModeEdge: return "mode-edge";

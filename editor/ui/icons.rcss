@@ -58,3 +58,9 @@
 .icon-window-restore { decorator: image(icons/window-restore.svg contain); }
 .icon-world { decorator: image(icons/world.svg contain); }
 .icon-zone-bounds { decorator: image(icons/zone-bounds.svg contain); }
+.icon-material { decorator: image(icons/material.svg contain); }
+.icon-texture { decorator: image(icons/texture.svg contain); }
+.icon-data { decorator: image(icons/data.svg contain); }
+.icon-model { decorator: image(icons/model.svg contain); }
+.icon-document { decorator: image(icons/document.svg contain); }
+.icon-file { decorator: image(icons/file.svg contain); }
