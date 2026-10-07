@@ -333,11 +333,12 @@ requests so two zones that share an asset don't double-load it.
 
 | Class | Role |
 |-------|------|
-| `AssetRef` | What gets serialized in scenes: a `Type` enum + a virtual path (`asset://...`). |
-| `AssetId` | 64-bit stable identity. Survives renames. Assigned by the cook step, persisted in `asset_ids.json`. |
+| `AssetRef` | A reference in authored or cooked data: a `Type`, the asset's `Id`, and the virtual path (`asset://...`) it was last known by. |
+| `AssetRefCodec` | The one text form of a reference: a bare path, or `{"id", "path"}`. Archive and JSON front ends. |
+| `AssetId` | 64-bit stable identity, carried by the asset (document header or `.meta` sidecar) and minted once from the path it first appeared at (`AssetIdOfPath`; parts by `AssetIdOfPart`). |
 | `AssetRecord` | Registry entry: type, path, file path, id, content hash, version. |
 | `AssetRegistry` | Path-to-record and id-to-record maps. Populated by scanning the assets directory. |
-| `AssetIdMap` | Persisted `path -> (id, content_hash)` map that the cook maintains and runtime reads. |
+| `AssetIdMap` | The June design's persisted `path -> (id, content_hash)` map, still read and written until the migration (pipeline Decision A, stage I5) deletes it. |
 
 Resolution order (id-first with path fallback): if the ref has an id and the
 registry knows it, use the registry record's current path (survives renames).

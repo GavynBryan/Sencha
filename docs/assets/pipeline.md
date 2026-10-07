@@ -89,7 +89,55 @@ this plan. These are constraints, not options:
 
 ## Decisions
 
-### A. Asset identity — paths now, content hash for integrity, IDs in Stage 4
+### A. Asset identity — the id travels with the asset
+
+**Accepted 2026-10-07, superseding the June design** (below, kept as history).
+
+An asset's identity is a 64-bit `AssetId` carried by the asset itself, and a
+reference names the id first and the path second.
+
+- **Where an id lives.** Our own documents (`.smat`, `.sscene`, `.sdata`,
+  `.sworld`, `.sanimscenario`) carry an `"id"` member at their root. Every
+  other source (`.png`, `.blend`, `.glb`, `.wav`, `.ttf`, `.rml`, ...) keeps its
+  id in its `.meta` sidecar, the file that already holds import settings, which
+  every such source now has.
+- **How an id is born.** Once, from the path the asset first appears at:
+  `AssetIdOfPath` (XXH64 of the path, nonzero). Two branches adding the same
+  file mint the same id, and a file whose id was never written down still has
+  one — the hash of where it is — so content written before ids loads
+  unchanged. A part of a file (`hero.blend#anim:Walk`) is `AssetIdOfPart` of
+  the file's id and the part's name, so it follows the file.
+- **How a reference is written.** `AssetRefCodec`: `{"id": "<16 hex>",
+  "path": "asset://..."}`. The id decides; the path is what people read and
+  the fallback when the id is unknown. A bare `"asset://..."` string is still a
+  reference — hand-written content and C++ code name assets that way, and they
+  resolve by path — and an editor writes the id form when it saves.
+- **How it resolves.** Id first, path second (`AssetSystem::ResolveRefPath`).
+  The registry learns ids from the sources it scans and, in a shipped build,
+  from the cooked index, which records every asset's id.
+- **What a move costs.** Nothing outside the moved file and its sidecar.
+  References keep their id; their path hints go stale and an editor refreshes
+  them when it next saves the referring document.
+- **Who keeps it honest.** Kyusu, when it opens a project: it writes ids into
+  new files, gives a copy made outside it a new id (the copy is the one whose
+  path the references do not name), and re-pairs a sidecar left behind by a
+  move outside it with its file by content hash. What it cannot resolve is a
+  problem, not a silent fallback.
+- **What it replaces.** The central `asset_ids.json` (`AssetIdMap`), whose
+  ids lived beside the content rather than in it, guessed renames from content
+  hashes, existed only for assets a cooked scene named, and was committed only
+  for CubeDemo; and the cook's `StampAssetRefIds`, which authored references
+  no longer need.
+- **The known limit.** An asset named by C++ code resolves by path; moving it
+  needs the code changed.
+
+Built in stages on the Kyusu branch: I1 the reference type and codec
+(`AssetRef::Id`, `AssetRefCodec`, `AssetIdOfPath`/`AssetIdOfPart`); I2 ids on
+assets and in the scans and cooked index; I3 every reference writer and reader
+on the codec; I4 Kyusu's adoption and integrity pass; I5 the content migrated
+and the central map deleted.
+
+#### The June design (superseded)
 
 **Proposed; revised after product input (2026-06-11).**
 
