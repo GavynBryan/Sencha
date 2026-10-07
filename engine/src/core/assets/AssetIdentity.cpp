@@ -57,3 +57,29 @@ std::optional<AssetId> ReadStatedAssetId(const std::filesystem::path& file)
         return std::nullopt;
     return StatedAssetIdIn(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
 }
+
+std::optional<std::string> StatingAssetId(std::string_view text, AssetId id)
+{
+    const std::string member = std::string("\"") + std::string(kAssetIdKey) + "\": \"" + AssetIdToString(id) + "\"";
+    if (text.find_first_not_of(" \t\r\n") == std::string_view::npos)
+        return "{\n  " + member + "\n}\n";
+    const std::size_t open = text.find_first_not_of(" \t\r\n");
+    if (text[open] != '{')
+        return std::nullopt;
+    const std::size_t next = text.find_first_not_of(" \t\r\n", open + 1);
+    if (next == std::string_view::npos)
+        return std::nullopt;
+    std::string stated(text.substr(0, open + 1));
+    if (text[next] == '}')
+        stated += " " + member + " ";
+    else
+    {
+        // The next member's line, so the id sits indented as its siblings are.
+        const std::size_t lineStart = text.rfind('\n', next);
+        const bool ownLine = lineStart != std::string_view::npos && lineStart > open;
+        const std::string_view indent = ownLine ? text.substr(lineStart + 1, next - lineStart - 1) : std::string_view(" ");
+        stated += (ownLine ? "\n" : "") + std::string(indent) + member + ",";
+    }
+    stated += text.substr(open + 1);
+    return stated;
+}

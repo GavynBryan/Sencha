@@ -34,6 +34,11 @@ inline constexpr std::string_view kAssetIdKey = "id";
 // A copy of a document is a new asset: it states no id until it is given one.
 void ForgetStatedAssetId(JsonValue& root);
 
+// `text` -- a JSON or JSON5 object, a document's or a sidecar's -- stating `id`
+// as its first member, everything else exactly as it was written; nullopt when
+// it is not an object. An empty `text` is a new sidecar stating only the id.
+[[nodiscard]] std::optional<std::string> StatingAssetId(std::string_view text, AssetId id);
+
 // Reads the id `file` states, inside or in its sidecar. Nullopt when it states
 // none, or when what would state it is missing or is not JSON.
 [[nodiscard]] std::optional<AssetId> ReadStatedAssetId(const std::filesystem::path& file);

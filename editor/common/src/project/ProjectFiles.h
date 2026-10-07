@@ -45,6 +45,10 @@ struct ProjectFile
 // which only a stale hint costs. Anything unknown stays as written.
 [[nodiscard]] AssetRef CurrentInProject(std::span<const std::filesystem::path> roots, AssetRef ref);
 
+// Every sidecar under `roots` whose file is gone -- moved or renamed without
+// it -- sorted.
+[[nodiscard]] std::vector<std::filesystem::path> ScanOrphanedSidecars(std::span<const std::filesystem::path> roots);
+
 // The content file `assetPath` names under one of `roots`, as a scan would
 // read it; nullopt when no root holds it.
 [[nodiscard]] std::optional<ProjectFile> FindProjectFile(std::span<const std::filesystem::path> roots,

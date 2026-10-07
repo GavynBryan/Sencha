@@ -27,7 +27,7 @@ std::string Lowered(std::string text)
 bool IsBookkeeping(const std::filesystem::path& file)
 {
     const std::string name = file.filename().string();
-    return name == "asset_ids.json" || name.ends_with(".user.json") || file.extension() == kAssetSidecarSuffix;
+    return name.ends_with(".user.json") || file.extension() == kAssetSidecarSuffix;
 }
 
 
@@ -67,9 +67,12 @@ AssetId AssetIdOf(const ProjectFile& file)
     return file.StatedId.value_or(AssetIdOfPath(file.AssetPath));
 }
 
-std::vector<ProjectFile> ScanProjectFiles(std::span<const std::filesystem::path> roots)
+namespace
 {
-    std::vector<ProjectFile> files;
+// Every regular file under `roots` outside hidden folders, with the root it is under.
+template <typename Visit>
+void ForEachFile(std::span<const std::filesystem::path> roots, Visit&& visit)
+{
     for (const std::filesystem::path& root : roots)
     {
         std::error_code ec;
@@ -84,12 +87,34 @@ std::vector<ProjectFile> ScanProjectFiles(std::span<const std::filesystem::path>
                     it.disable_recursion_pending();
                 continue;
             }
-            if (it->is_regular_file(ec) && !IsBookkeeping(it->path()))
-                files.push_back(Describe(root, it->path()));
+            if (it->is_regular_file(ec))
+                visit(root, it->path());
         }
     }
+}
+} // namespace
+
+std::vector<ProjectFile> ScanProjectFiles(std::span<const std::filesystem::path> roots)
+{
+    std::vector<ProjectFile> files;
+    ForEachFile(roots, [&](const std::filesystem::path& root, const std::filesystem::path& file) {
+        if (!IsBookkeeping(file))
+            files.push_back(Describe(root, file));
+    });
     std::ranges::sort(files, {}, &ProjectFile::AssetPath);
     return files;
+}
+
+std::vector<std::filesystem::path> ScanOrphanedSidecars(std::span<const std::filesystem::path> roots)
+{
+    std::vector<std::filesystem::path> orphans;
+    ForEachFile(roots, [&](const std::filesystem::path&, const std::filesystem::path& file) {
+        std::error_code ec;
+        if (file.extension() == kAssetSidecarSuffix && !std::filesystem::exists(std::filesystem::path(file).replace_extension(), ec))
+            orphans.push_back(file);
+    });
+    std::ranges::sort(orphans);
+    return orphans;
 }
 
 std::optional<ProjectFile> FindProjectFile(std::span<const std::filesystem::path> roots, std::string_view assetPath)

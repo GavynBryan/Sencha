@@ -36,7 +36,6 @@ namespace
             // Local state a working copy carries and a new project must not.
             Write(Template / "build" / "game.so", "binary");
             Write(Template / "assets" / ".cooked" / "levels" / "room.smap", "cooked");
-            Write(Template / "assets" / "asset_ids.json", "{}");
             Write(Template / "assets" / "levels" / "room.sworld.user.json", "{}");
         }
 
@@ -90,7 +89,6 @@ TEST(ProjectTemplate, LeavesLocalStateBehind)
 
     EXPECT_FALSE(std::filesystem::exists(target / "build"));
     EXPECT_FALSE(std::filesystem::exists(target / "assets" / ".cooked"));
-    EXPECT_FALSE(std::filesystem::exists(target / "assets" / "asset_ids.json"));
     EXPECT_FALSE(std::filesystem::exists(target / "assets" / "levels" / "room.sworld.user.json"));
     EXPECT_EQ(descriptor.Name, "clean") << "no name given: the directory names the project";
 }

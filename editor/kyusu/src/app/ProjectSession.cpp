@@ -1,5 +1,6 @@
 #include "app/ProjectSession.h"
 
+#include "project/AssetAdoption.h"
 #include "project/ProjectContentMount.h"
 #include "ui/MaterialThumbnailCache.h"
 
@@ -7,6 +8,7 @@
 #include <app/Game.h>
 #include <app/GameDataAssets.h>
 #include <app/RuntimeContent.h>
+#include <assets/cook/ContentImporters.h>
 #include <assets/hotreload/SourceReloadRoots.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleService.h>
@@ -111,7 +113,16 @@ void ProjectSession::MountContent()
     // workspace and the authored UI see each asset once.
     RuntimeAssets& assets = Assets();
     if (Descriptor)
+    {
+        // Before the scan, so the registry reads the ids the files now state.
+        const std::vector<std::filesystem::path> roots(Descriptor->ContentRoots.begin(), Descriptor->ContentRoots.end());
+        const ContentImporterSet importers;
+        const auto isAsset = [&](const ProjectFile& file) {
+            return IsAssetFile(file, assets.Assets.Kinds(), importers.Registry());
+        };
+        Adoption_ = AdoptAssetIds(roots, isAsset, AdoptionErrors_);
         MountProjectContent(*Descriptor, assets, Host.Logging(), &Host.Jobs());
+    }
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)
     MountEditorContent(SENCHA_EDITOR_UI_DIR, assets, Host.Logging(), &Host.Jobs());
 #endif

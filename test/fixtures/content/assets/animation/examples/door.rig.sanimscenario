@@ -1,4 +1,5 @@
 {
+    "id": "048d95184c27ea75",
     "type": "animation.preview_scenario",
     "version": 1,
     "name": "a fixed request swings the door; the fact holds it open",

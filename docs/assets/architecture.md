@@ -328,7 +328,7 @@ requests so two zones that share an asset don't double-load it.
 
 ## Identity and resolution
 
-**Files:** `core/assets/AssetRef.h`, `AssetId.h`, `AssetIdMap.h`,
+**Files:** `core/assets/AssetRef.h`, `AssetId.h`, `AssetIdentity.h`, `AssetRefCodec.h`,
 `AssetRegistry.h`, `AssetPath.h`
 
 | Class | Role |
@@ -339,7 +339,6 @@ requests so two zones that share an asset don't double-load it.
 | `AssetIdentity` | Where an asset states its id: a document at its root, any other file in its `.meta` sidecar beside its import settings. |
 | `AssetRecord` | Registry entry: type, path, file path, id (stated, else its path's, bound when it registers), content hash, version. |
 | `AssetRegistry` | Path-to-record and id-to-record maps. Populated by scanning the assets directory. |
-| `AssetIdMap` | The June design's persisted `path -> (id, content_hash)` map, still read and written until the migration (pipeline Decision A, stage I5) deletes it. |
 
 Resolution order (id-first with path fallback): if the ref has an id and the
 registry knows it, use the registry record's current path (survives renames).

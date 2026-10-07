@@ -3,10 +3,11 @@
 #include "scene_source/Json5Convert.h"
 #include "scene_source/Json5Parser.h"
 
-#include <core/assets/AssetManifest.h>
+#include <core/assets/AssetRefCodec.h>
 
 #include <algorithm>
 #include <array>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace
@@ -34,10 +35,10 @@ std::string ReferencedFile(std::string_view reference)
     return std::string(reference);
 }
 
-std::vector<std::string> ReferencesIn(std::string_view text)
+std::vector<AssetRef> ReferencesIn(std::string_view text)
 {
     const std::optional<Json5Value> document = Json5Parse(text);
-    return document.has_value() ? CollectAssetPaths(Json5ToJson(*document)) : std::vector<std::string>{};
+    return document.has_value() ? CollectAssetRefs(Json5ToJson(*document)) : std::vector<AssetRef>{};
 }
 
 void ReferenceIndex::Refresh(std::span<const ProjectFile> files, std::span<const ProjectFile> elsewhere,
@@ -55,23 +56,34 @@ void ReferenceIndex::Refresh(std::span<const ProjectFile> files, std::span<const
         const std::optional<std::string> text = read(file.FilePath);
         Documents[file.AssetPath] = { .Size = file.Size,
                                       .Modified = file.Modified,
-                                      .References = text.has_value() ? ReferencesIn(*text) : std::vector<std::string>{} };
+                                      .References = text.has_value() ? ReferencesIn(*text) : std::vector<AssetRef>{} };
     }
     std::erase_if(Documents, [&](const auto& entry) { return !present.contains(entry.first); });
 
     std::unordered_set<std::string_view> found = present;
-    for (const ProjectFile& file : elsewhere)
-        found.insert(file.AssetPath);
+    std::unordered_map<AssetId, std::string_view> byId;
+    for (const std::span<const ProjectFile> set : { files, elsewhere })
+        for (const ProjectFile& file : set)
+        {
+            found.insert(file.AssetPath);
+            byId.emplace(AssetIdOf(file), file.AssetPath);
+        }
+    const auto fileNamed = [&](const AssetRef& reference) -> std::string {
+        if (const auto known = reference.Id.IsValid() ? byId.find(reference.Id) : byId.end(); known != byId.end())
+            return std::string(known->second);
+        std::string byPath = ReferencedFile(reference.Path);
+        return found.contains(byPath) ? byPath : std::string{};
+    };
 
     UsesOf.clear();
     UsersOf.clear();
     MissingOf.clear();
     for (const auto& [user, document] : Documents)
-        for (const std::string& reference : document.References)
+        for (const AssetRef& reference : document.References)
         {
-            std::string named = ReferencedFile(reference);
-            if (!found.contains(named))
-                MissingOf[user].push_back(reference);
+            std::string named = fileNamed(reference);
+            if (named.empty())
+                MissingOf[user].push_back(reference.Path.empty() ? AssetIdToString(reference.Id) : reference.Path);
             else if (named != user)
             {
                 UsersOf[named].push_back(user);

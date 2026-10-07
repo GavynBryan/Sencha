@@ -5,7 +5,6 @@
 
 #include <assets/cook/CookPrune.h>
 #include <assets/cook/CookedCache.h>
-#include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetManifest.h>
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
@@ -226,28 +225,17 @@ TEST_F(LevelCookTest, CookedSceneFullyResolvesAgainstScannedRegistry)
     ScanAssetsDirectory((Root / ".cooked").generic_string(), registry,
                         BuiltinAssetKindRegistry());
 
-    AssetIdMap idMap;
-    ASSERT_TRUE(AssetIdMap::LoadFromFile((Root / kAssetIdMapFileName).generic_string(), idMap));
-    ApplyAssetIds(idMap, registry);
-
-    // Every asset:// the cooked scene references must resolve to a registered
-    // record carrying the id the cook assigned. This is the headless proof that a
+    // Every asset the cooked scene depends on must resolve to a registered record
+    // going by the id the scene names it by. This is the headless proof that a
     // host can find everything a cooked level points at (the registration gate),
     // independent of GPU-backed mesh/material residency.
     const SmapContents cooked = ReadCookedScene(Root / ".cooked/levels/test.smap");
-    JsonValue::Array payloads;
-    for (const SmapEntityRecord& entity : cooked.Entities)
-        for (const auto& [type, payload] : entity.Components)
-            payloads.push_back(payload);
-    const std::vector<std::string> refs = CollectAssetPaths(JsonValue(std::move(payloads)));
-    ASSERT_FALSE(refs.empty());
-
-    for (const std::string& ref : refs)
+    ASSERT_FALSE(cooked.Dependencies.empty());
+    for (const SmapDependency& dependency : cooked.Dependencies)
     {
-        const AssetRecord* record = registry.FindByPath(ref);
-        ASSERT_NE(record, nullptr) << "unresolved ref: " << ref;
-        EXPECT_TRUE(record->Id.IsValid()) << ref;
-        EXPECT_EQ(record->Id, idMap.FindId(ref)) << ref;
+        const AssetRecord* record = registry.FindByPath(dependency.Path);
+        ASSERT_NE(record, nullptr) << "unresolved ref: " << dependency.Path;
+        EXPECT_EQ(record->Id, dependency.Id) << dependency.Path;
     }
 
     // The generated cell meshes specifically are discovered from the overlay.
@@ -259,19 +247,20 @@ TEST_F(LevelCookTest, RecookKeepsStableIds)
 {
     const fs::path levelPath = AuthorTwoBrushLevel();
 
+    const auto idsOf = [&] {
+        std::vector<std::pair<std::string, AssetId>> ids;
+        for (const SmapDependency& dependency : ReadCookedScene(Root / ".cooked/levels/test.smap").Dependencies)
+            ids.emplace_back(dependency.Path, dependency.Id);
+        std::ranges::sort(ids);
+        return ids;
+    };
     ASSERT_TRUE(CookDocument(levelPath, Root, 16.0).Success);
-    AssetIdMap first;
-    ASSERT_TRUE(AssetIdMap::LoadFromFile((Root / kAssetIdMapFileName).generic_string(), first));
-
+    const auto first = idsOf();
     ASSERT_TRUE(CookDocument(levelPath, Root, 16.0).Success);
-    AssetIdMap second;
-    ASSERT_TRUE(AssetIdMap::LoadFromFile((Root / kAssetIdMapFileName).generic_string(), second));
-
-    const std::string meshPath = "asset://levels/test/cell_0_0_0.smesh";
-    EXPECT_TRUE(first.FindId(meshPath).IsValid());
-    EXPECT_EQ(first.FindId(meshPath), second.FindId(meshPath));
-    EXPECT_EQ(first.FindId("asset://materials/dev/gray.smat"),
-              second.FindId("asset://materials/dev/gray.smat"));
+    EXPECT_EQ(idsOf(), first);
+    EXPECT_NE(std::ranges::find(first, std::string("asset://levels/test/cell_0_0_0.smesh"),
+                                &std::pair<std::string, AssetId>::first),
+              first.end());
 }
 
 TEST_F(LevelCookTest, PruneRemovesArtifactsWhenLevelDeleted)

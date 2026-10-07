@@ -98,9 +98,11 @@ reference names the id first and the path second.
 
 - **Where an id lives.** Our own documents (`.smat`, `.sscene`, `.sdata`,
   `.sworld`, `.sanimscenario`) carry an `"id"` member at their root. Every
-  other source (`.png`, `.blend`, `.glb`, `.wav`, `.ttf`, `.rml`, ...) keeps its
-  id in its `.meta` sidecar, the file that already holds import settings, which
-  every such source now has.
+  other asset (`.png`, `.blend`, `.glb`, `.ttf`, `.rml`, a cooked `.smesh` ...)
+  keeps its id in its `.meta` sidecar, the file that already holds import
+  settings. What is not an asset -- a stylesheet a document imports, a licence
+  -- has no id: an asset is a kind the runtime loads, a source an importer
+  cooks, or one of the documents above (`IsAssetFile`).
 - **How an id is born.** Once, from the path the asset first appears at:
   `AssetIdOfPath` (XXH64 of the path, nonzero). Two branches adding the same
   file mint the same id, and a file whose id was never written down still has
@@ -118,10 +120,13 @@ reference names the id first and the path second.
 - **What a move costs.** Nothing outside the moved file and its sidecar.
   References keep their id; their path hints go stale and an editor refreshes
   them when it next saves the referring document.
-- **Who keeps it honest.** Kyusu, when it opens a project: it writes ids into
-  new files, gives a copy made outside it a new id (the copy is the one whose
-  path the references do not name), and re-pairs a sidecar left behind by a
-  move outside it with its file by content hash. What it cannot resolve is a
+- **Who keeps it honest.** Kyusu, when it opens a project, before it scans
+  (`project/AssetAdoption`): a file stating no id is given its path's; of files
+  stating one id, the one born with it -- the id is its path's -- keeps it,
+  else the earliest modified, and each other is a copy and is given its own; a
+  sidecar left behind by a move outside Kyusu goes back beside the one file of
+  its name that states nothing. An id is written as one line inserted after the
+  opening brace, so nothing a person wrote moves. A sidecar it cannot pair is a
   problem, not a silent fallback.
 - **What it replaces.** The central `asset_ids.json` (`AssetIdMap`), whose
   ids lived beside the content rather than in it, guessed renames from content
@@ -139,8 +144,9 @@ reference names the id first and the path second.
 Built in stages on the Kyusu branch: I1 the reference type and codec
 (`AssetRef::Id`, `AssetRefCodec`, `AssetIdOfPath`/`AssetIdOfPart`); I2 ids on
 assets and in the scans and cooked index; I3 every reference writer and reader
-on the codec; I4 Kyusu's adoption and integrity pass; I5 the content migrated
-and the central map deleted.
+on the codec; I4 Kyusu's adoption pass and a reference index keyed by id; I5
+every project's files stating their ids (references inside them stay bare
+paths until an editor saves them) and the central map deleted.
 
 #### The June design (superseded)
 

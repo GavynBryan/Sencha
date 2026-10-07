@@ -78,6 +78,8 @@ private:
     [[nodiscard]] ShellWindow* WindowShellFor(PresentationId window) const;
     // Where the open project's content is on disk; none without a project.
     [[nodiscard]] std::vector<std::filesystem::path> ContentRoots() const;
+    // What opening the project could not do to give every file its own id.
+    void PublishAdoptionProblems();
     // Content mounted beside the project's: the engine's and the editor's.
     [[nodiscard]] std::vector<std::filesystem::path> OtherContentRoots() const;
     // Windows asked to close mid-frame, closed at the next frame boundary.

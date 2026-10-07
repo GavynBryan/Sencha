@@ -194,7 +194,7 @@ TEST(CookedCacheIndex, PutNamesEveryArtifactsIdAndTheIndexKeepsThem)
     EXPECT_EQ(CookedArtifactId("asset://m/hero.blend", source, "asset://m/hero.blend#anim:Walk"),
               AssetIdOfPart(source, "anim:Walk"));
     EXPECT_EQ(CookedArtifactId("asset://levels/hub.sscene", source, "asset://levels/hub/cell_3.smesh"),
-              AssetIdOfPart(source, "asset://levels/hub/cell_3.smesh"));
+              AssetIdOfPath("asset://levels/hub/cell_3.smesh"));
 
     CookedSourceEntry stated;
     stated.SourceRelPath = "m/hero.blend";

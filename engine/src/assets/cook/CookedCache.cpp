@@ -107,7 +107,7 @@ AssetId CookedArtifactId(std::string_view sourcePath, AssetId source, std::strin
         return source;
     if (artifactPath.starts_with(sourcePath) && artifactPath.substr(sourcePath.size()).starts_with('#'))
         return AssetIdOfPart(source, artifactPath.substr(sourcePath.size() + 1));
-    return AssetIdOfPart(source, artifactPath);
+    return AssetIdOfPath(artifactPath);
 }
 
 void NameCookedIds(CookedSourceEntry& entry)

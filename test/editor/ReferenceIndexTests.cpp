@@ -45,13 +45,36 @@ TEST(ReferencedFile, APartIsItsFileAndACookedSceneItsSource)
     EXPECT_EQ(ReferencedFile("asset://materials/stone.smat"), "asset://materials/stone.smat");
 }
 
-TEST(ReferencesIn, ReadsJsonAndJson5AndNothingElse)
+TEST(ReferencesIn, ReadsJsonAndJson5InEitherFormAndNothingElse)
 {
-    EXPECT_EQ(ReferencesIn(R"({"base_color_texture": "asset://textures/stone.png", "again": "asset://textures/stone.png"})"),
-              (std::vector<std::string>{ "asset://textures/stone.png" }));
-    EXPECT_EQ(ReferencesIn(R"({ settings: { default_material: "asset://materials/stone.smat" } })"),
-              (std::vector<std::string>{ "asset://materials/stone.smat" }));
+    const std::vector<AssetRef> json = ReferencesIn(R"({"base_color_texture": "asset://textures/stone.png"})");
+    ASSERT_EQ(json.size(), 1u);
+    EXPECT_EQ(json[0].Path, "asset://textures/stone.png");
+    const std::vector<AssetRef> json5 =
+        ReferencesIn(R"({ settings: { default_material: { id: "00000000000000a1", path: "asset://materials/stone.smat" } } })");
+    ASSERT_EQ(json5.size(), 1u);
+    EXPECT_EQ(json5[0].Id, AssetId{ 0xa1 });
+    EXPECT_EQ(json5[0].Path, "asset://materials/stone.smat");
     EXPECT_TRUE(ReferencesIn("not a document asset://textures/stone.png").empty());
+}
+
+// A reference by id finds its file wherever it went; its stale path is only
+// what it was last known by.
+TEST(ReferenceIndex, AMovedFileIsStillUsedByWhatNamesItsId)
+{
+    Disk disk;
+    disk.Text["/project/levels/hub.sscene"] =
+        R"({ settings: { default_material: { id: "00000000000000a1", path: "asset://materials/old.smat" } } })";
+    ProjectFile moved = File("materials/new/stone.smat");
+    moved.StatedId = AssetId{ 0xa1 };
+    const std::vector<ProjectFile> files = { File("levels/hub.sscene"), moved };
+    ReferenceIndex index;
+    index.Refresh(files, {}, disk.Reader());
+
+    ASSERT_EQ(index.Uses("asset://levels/hub.sscene").size(), 1u);
+    EXPECT_EQ(index.Uses("asset://levels/hub.sscene")[0], "asset://materials/new/stone.smat");
+    EXPECT_TRUE(index.Missing("asset://levels/hub.sscene").empty());
+    EXPECT_FALSE(index.IsUnused("asset://materials/new/stone.smat"));
 }
 
 TEST(ReferenceIndex, AFileUsesWhatItNamesAndIsUsedByWhatNamesIt)

@@ -22,7 +22,6 @@ public:
         Write("data/run.sdata", R"({ "type": "movement.profile", "version": 1, "data": {} })");
         Write("textures/Checker.PNG", "png");
         Write("textures/Checker.PNG.meta", "{}");
-        Write("asset_ids.json", "{}");
         Write("levels/hub.sworld.user.json", "{}");
         Write(".cooked/glass.smat", "{}");
         Write("levels/.trash/old.sscene", "{}");

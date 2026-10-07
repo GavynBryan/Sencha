@@ -1,8 +1,7 @@
 #include <assets/cook/SceneCookOutput.h>
 
-#include <core/assets/AssetIdMap.h>
-#include <core/assets/AssetManifest.h>
-#include <core/hash/ContentHash.h>
+#include <core/assets/AssetIdentity.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/identity/Id.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
@@ -137,114 +136,70 @@ namespace
     }
 } // namespace
 
+AssetId CookedDependencyId(const AssetRef& ref,
+                           const std::function<std::filesystem::path(std::string_view)>& physicalPathFor)
+{
+    if (ref.Id.IsValid())
+        return ref.Id;
+    const std::size_t part = ref.Path.find('#');
+    const std::string file = ref.Path.substr(0, part);
+    const AssetId fileId = ReadStatedAssetId(physicalPathFor(file)).value_or(AssetIdOfPath(file));
+    return part == std::string::npos ? fileId : AssetIdOfPart(fileId, std::string_view(ref.Path).substr(part + 1));
+}
+
 bool WriteCookedScene(
     const JsonValue& cookedScene,
     std::span<const std::string> extraRefs,
     std::span<const SmapCollisionCell> collisionCells,
     const ComponentSerializerRegistry& serializers,
     const std::function<std::filesystem::path(std::string_view)>& physicalPathFor,
-    const std::filesystem::path& idMapPath,
     const std::filesystem::path& cookedScenePath,
-    std::string_view sceneAssetPath,
     std::string* error)
 {
     // Scene refs first (encounter order), then the caller's extra refs, then one
     // level of .smat texture indirection. A single seen-set keeps the dependency
     // table free of duplicates while preserving first-seen order.
-    std::vector<std::string> paths = CollectAssetPaths(cookedScene);
-    std::unordered_set<std::string> seen(paths.begin(), paths.end());
-
-    for (const std::string& ref : extraRefs)
-    {
-        if (seen.insert(ref).second)
-            paths.push_back(ref);
-    }
+    std::vector<AssetRef> refs = CollectAssetRefs(cookedScene);
+    std::unordered_set<std::string> seen;
+    std::erase_if(refs, [&](const AssetRef& ref) { return ref.Path.empty() || !seen.insert(ref.Path).second; });
+    for (const std::string& path : extraRefs)
+        if (seen.insert(path).second)
+            refs.push_back(AssetRef{ .Path = path });
 
     // Walk .smat indirection over a growing list: a material pulled in by an
-    // extra ref still gets its textures collected. Index-based because `paths`
+    // extra ref still gets its textures collected. Index-based because `refs`
     // grows inside the loop.
-    for (std::size_t i = 0; i < paths.size(); ++i)
+    for (std::size_t i = 0; i < refs.size(); ++i)
     {
-        if (!paths[i].ends_with(".smat"))
+        if (!refs[i].Path.ends_with(".smat"))
             continue;
 
         std::string parseError;
-        std::optional<JsonValue> smatJson =
-            JsonParseFile(physicalPathFor(paths[i]), &parseError);
+        std::optional<JsonValue> smatJson = JsonParseFile(physicalPathFor(refs[i].Path), &parseError);
         if (!smatJson)
         {
             if (error)
                 *error = "WriteCookedScene: " + parseError;
             return false;
         }
-
-        for (std::string& ref : CollectAssetPaths(*smatJson))
-        {
-            if (seen.insert(ref).second)
-                paths.push_back(std::move(ref));
-        }
+        for (AssetRef& ref : CollectAssetRefs(*smatJson))
+            if (!ref.Path.empty() && seen.insert(ref.Path).second)
+                refs.push_back(std::move(ref));
     }
-
-    // A broken id map must never silently re-mint ids: renames would lose their
-    // history. Fail; the committed map is the fix.
-    AssetIdMap idMap;
-    std::string idMapError;
-    if (std::filesystem::exists(idMapPath)
-        && !AssetIdMap::LoadFromFile(idMapPath.generic_string(), idMap, &idMapError))
-    {
-        if (error)
-            *error = "WriteCookedScene: bad id map: " + idMapError;
-        return false;
-    }
-
-    const auto pathIsLive = [&physicalPathFor](std::string_view assetPath) {
-        std::error_code existsEc;
-        return std::filesystem::exists(physicalPathFor(assetPath), existsEc);
-    };
 
     SmapContents contents;
-    contents.Dependencies.reserve(paths.size());
-    for (const std::string& path : paths)
+    contents.Dependencies.reserve(refs.size());
+    for (const AssetRef& ref : refs)
     {
-        uint64_t contentHash = 0;
-        (void)HashFileContents(physicalPathFor(path).generic_string(), contentHash);
-        const AssetId id = idMap.EnsureId(path, contentHash, pathIsLive);
-
-        // Authored scene sources (scene_instance provenance) earn stable ids
-        // and stamp like every ref, but stay out of the dependency table: the
-        // table is what a runtime preload warms, and a .sscene is authoring
-        // data no runtime registry ever resolves.
-        if (path.ends_with(".sscene"))
+        // Authored scene sources (scene_instance provenance) stay out of the
+        // dependency table: the table is what a runtime preload warms, and a
+        // .sscene is authoring data no runtime registry ever resolves.
+        if (ref.Path.ends_with(".sscene"))
             continue;
-        contents.Dependencies.push_back(SmapDependency{ id, path });
+        contents.Dependencies.push_back(SmapDependency{ CookedDependencyId(ref, physicalPathFor), ref.Path });
     }
 
-    // The scene's own id. Every other cooked artifact earns one by being some
-    // scene's dependency; a scene is nobody's, so without this it is the one
-    // kind of content nothing can name -- which is exactly what a replicated
-    // spawn has to do to say what it built. Minted from the virtual path like
-    // any other, so two machines cooking the same content agree.
-    if (!sceneAssetPath.empty())
-        (void)idMap.EnsureId(sceneAssetPath, /*contentHash*/ 0, pathIsLive);
-
-    // Written when dirty, and also when the staged file does not exist yet:
-    // the transaction registered it at Seed, and a registered-but-unwritten
-    // artifact fails the commit. A scene with no asset refs otherwise leaves
-    // exactly that hole.
-    std::error_code idMapExistsEc;
-    if ((idMap.IsDirty() || !std::filesystem::exists(idMapPath, idMapExistsEc))
-        && !idMap.SaveToFile(idMapPath.generic_string()))
-    {
-        if (error)
-            *error = "WriteCookedScene: could not write '" + idMapPath.generic_string() + "'";
-        return false;
-    }
-
-    // Refs the map knows become {"id","path"} objects before compilation; refs
-    // it does not know stay plain paths, so the cooked output is never less
-    // resolvable than its input.
-    if (!CompileSceneEntities(StampAssetRefIds(cookedScene, idMap), serializers,
-                              contents, error))
+    if (!CompileSceneEntities(cookedScene, serializers, contents, error))
         return false;
 
     contents.Collision.assign(collisionCells.begin(), collisionCells.end());

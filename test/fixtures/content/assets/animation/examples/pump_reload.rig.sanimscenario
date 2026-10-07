@@ -1,4 +1,5 @@
 {
+    "id": "9f43e1802824aee2",
     "type": "animation.preview_scenario",
     "version": 1,
     "name": "insert until fire interrupts with an immediate cancel",

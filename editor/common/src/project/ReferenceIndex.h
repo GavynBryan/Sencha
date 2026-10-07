@@ -15,17 +15,18 @@
 // file, and a cooked scene (.smap) is the scene source cooked under its stem.
 [[nodiscard]] std::string ReferencedFile(std::string_view reference);
 
-// Every asset path a content document names, once each, as written; none when
-// the text is not JSON or JSON5.
-[[nodiscard]] std::vector<std::string> ReferencesIn(std::string_view text);
+// Every reference a content document makes, in either form (AssetRefCodec), in
+// the order written; none when the text is not JSON or JSON5.
+[[nodiscard]] std::vector<AssetRef> ReferencesIn(std::string_view text);
 
 //=============================================================================
 // ReferenceIndex
 //
 // Which of the project's content files name which: what a file uses, what
 // uses it, and what it names that is nowhere -- in the project or in content
-// mounted beside it (the engine's). A refresh reads again only the documents
-// whose size or time changed since they were read.
+// mounted beside it (the engine's). A reference finds its file by the id it
+// names, else by its path. A refresh reads again only the documents whose size
+// or time changed since they were read.
 //=============================================================================
 class ReferenceIndex
 {
@@ -37,7 +38,8 @@ public:
     // Each sorted by asset path.
     [[nodiscard]] std::span<const std::string> Uses(std::string_view assetPath) const;
     [[nodiscard]] std::span<const std::string> UsedBy(std::string_view assetPath) const;
-    // References as written whose file is nowhere.
+    // References whose file is nowhere, by the path they name (by id when they
+    // name none).
     [[nodiscard]] std::span<const std::string> Missing(std::string_view assetPath) const;
     [[nodiscard]] bool IsUnused(std::string_view assetPath) const { return UsedBy(assetPath).empty(); }
 
@@ -54,7 +56,7 @@ private:
     {
         std::uintmax_t Size = 0;
         std::filesystem::file_time_type Modified{};
-        std::vector<std::string> References;
+        std::vector<AssetRef> References;
     };
 
     [[nodiscard]] static std::span<const std::string> Find(const ByName<std::vector<std::string>>& table,

@@ -144,6 +144,7 @@ void KyusuApp::OnStart(GameStartupContext&)
     GraphicsServices& graphics = engine.Graphics();
     const PresentationId mainWindow = graphics.MainRenderer.PrimaryPresentation();
     Session = std::make_unique<ProjectSession>(engine, std::move(ProjectPath));
+    PublishAdoptionProblems();
     MainWindowActions = std::make_unique<WindowActions>();
     MainWindowActions->Application = MainWindowActions->Stack.Push(ApplicationActions, ActionRank::Application);
     Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts, Problems, Notices),
@@ -256,6 +257,18 @@ std::vector<std::filesystem::path> KyusuApp::ContentRoots() const
     if (const ProjectDescriptor* project = Session != nullptr ? Session->Project() : nullptr)
         roots.assign(project->ContentRoots.begin(), project->ContentRoots.end());
     return roots;
+}
+
+void KyusuApp::PublishAdoptionProblems()
+{
+    std::vector<Problem> problems;
+    for (const std::string& error : Session->AdoptionErrors())
+        problems.push_back({ .Severity = ProblemSeverity::Error, .Message = error });
+    for (const std::filesystem::path& sidecar : Session->Adoption().Unpaired)
+        problems.push_back({ .Message = sidecar.filename().string()
+                                        + " was left behind by a file that moved, and no one file of its name can be it",
+                             .Location = sidecar.generic_string() });
+    Problems.Publish("assets", std::move(problems));
 }
 
 std::vector<std::filesystem::path> KyusuApp::OtherContentRoots() const

@@ -14,7 +14,6 @@
 #include <audio/AudioService.h>
 #include <audio/AudioSourceComponent.h>
 #include <audio/CaptionRuntime.h>
-#include <core/assets/AssetIdMap.h>
 #include <world/scene/SmapFormat.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/console/ConsoleService.h>
@@ -261,25 +260,6 @@ void CubeDemoGame::OnStart(GameStartupContext&)
 #endif
 
     ScanAssetsDirectory("assets", runtimeAssets.Registry, runtimeAssets.Assets.Kinds());
-
-    AssetIdMap idMap;
-    std::string idMapError;
-    const std::string idMapPath =
-        std::string("assets/")
-        + std::string(kAssetIdMapFileName);
-    if (AssetIdMap::LoadFromFile(
-            idMapPath,
-            idMap,
-            &idMapError))
-    {
-        ApplyAssetIds(idMap, runtimeAssets.Registry);
-    }
-    else
-    {
-        logging.GetLogger<CubeDemoGame>().Warn(
-            "CubeDemo: no asset id map ({}); refs resolve by path only",
-            idMapError);
-    }
 
 #ifdef SENCHA_ENABLE_COOK
     HotReloadImporters.Register(HotReloadPngImporter);

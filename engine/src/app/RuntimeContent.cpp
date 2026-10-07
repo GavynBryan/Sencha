@@ -97,7 +97,7 @@ void RuntimeContent::Mount()
     for (const std::string& root : Host.Config().Runtime.ContentRoots)
     {
         const ContentRootPaths paths = ResolveContentRoot(root);
-        MountContentRoot(paths, *Assets_, Log);
+        MountContentRoot(paths, *Assets_);
         MountedRoots.push_back(paths);
     }
 

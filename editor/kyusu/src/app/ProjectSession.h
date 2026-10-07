@@ -3,6 +3,7 @@
 #include "data/DataDocumentStore.h"
 #include "documents/DocumentSourceSet.h"
 #include "project/MaterialLibrary.h"
+#include "project/AssetAdoption.h"
 #include "project/Project.h"
 #include "project/ReferenceIndex.h"
 #include "thumbnails/AssetPictures.h"
@@ -10,6 +11,7 @@
 #include <app/GameModuleLoader.h>
 
 #include <memory>
+#include <span>
 #include <optional>
 #include <string>
 
@@ -49,6 +51,10 @@ public:
     void UpdatePictures();
     // Which of the project's files name which, as last read by a shelf.
     [[nodiscard]] ReferenceIndex& References() { return ContentReferences; }
+    // What opening the project did to leave every file stating its own id,
+    // and what it could not do.
+    [[nodiscard]] const AssetAdoption& Adoption() const { return Adoption_; }
+    [[nodiscard]] std::span<const std::string> AdoptionErrors() const { return AdoptionErrors_; }
 
 private:
     void LoadModule(const std::string& modulePath);
@@ -64,6 +70,8 @@ private:
     DataDocumentStore DataDocumentFiles;
     AssetPictures PictureSources;
     ReferenceIndex ContentReferences;
+    AssetAdoption Adoption_;
+    std::vector<std::string> AdoptionErrors_;
     std::unique_ptr<MaterialThumbnailCache> MaterialPictures;
     AssetPictures::Registration MaterialPictureFiles;
     AssetPictures::Registration TexturePictureFiles;

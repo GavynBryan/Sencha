@@ -940,7 +940,6 @@ foreach(_template IN LISTS _sencha_template_dirs)
             DESTINATION "${CMAKE_INSTALL_DATADIR}/sencha/templates/${_template}"
             PATTERN "build" EXCLUDE
             PATTERN ".cooked" EXCLUDE
-            PATTERN "asset_ids.json" EXCLUDE
             PATTERN "*.sworld.user.json" EXCLUDE)
     endif()
 endforeach()
