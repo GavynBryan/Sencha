@@ -4,6 +4,7 @@
 #include "brush/BrushModifierSerialization.h"
 #include "EntityNameComponent.h"
 
+#include "project/ProjectFiles.h"
 #include "scene_source/Json5Convert.h"
 
 #include <app/EngineVerbs.h>
@@ -191,6 +192,23 @@ AssetRef EditorDocument::Current(AssetRef ref) const
     return Catalog != nullptr ? Catalog->Current(std::move(ref)) : ref;
 }
 
+void EditorDocument::SettleSources(std::vector<SceneInstanceRecord>& instances) const
+{
+    // Many placements of one source settle it once.
+    std::unordered_map<std::string, AssetRef> settled;
+    for (SceneInstanceRecord& instance : instances)
+    {
+        const std::string key = AssetIdToString(instance.SourceId) + instance.Source;
+        auto found = settled.find(key);
+        if (found == settled.end())
+            found = settled.emplace(key, CurrentInProject(Projection.ContentRoots(),
+                                                          AssetRef{ AssetType::Scene, instance.Source, instance.SourceId }))
+                        .first;
+        instance.Source = found->second.Path;
+        instance.SourceId = found->second.Id;
+    }
+}
+
 void EditorDocument::ReportUnresolvedRefs(const std::vector<SceneSourceEntity>& entities, std::string_view when) const
 {
     if (Catalog == nullptr)
@@ -220,6 +238,7 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
 {
     SceneSourceDocument out;
     out.Instances = Retained_.Instances;
+    SettleSources(out.Instances);
     out.UnknownRoot = Retained_.UnknownRoot;
     out.LeadingComments = Retained_.LeadingComments;
     out.TrailingComments = Retained_.TrailingComments;
@@ -406,6 +425,7 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
     if (std::string identityError; !Scene.ValidateIdentities(&identityError))
         return fail("scene identity is invalid: " + identityError);
 
+    SettleSources(parsed->Instances);
     Retained_ = std::move(*parsed);
 
     // Expand the instance records into derived entities. Not an authored

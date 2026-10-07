@@ -44,11 +44,13 @@ bool AnimationRigScenario::Open(const std::string& path)
         }
         scenario = std::move(*loaded);
         scenario.RigPath = path;
+        scenario.RigId = record->Id;
     }
     else
     {
         scenario.Name = sidecar.stem().string();
         scenario.RigPath = path;
+        scenario.RigId = record->Id;
         scenario.Participants = { "player" };
     }
 

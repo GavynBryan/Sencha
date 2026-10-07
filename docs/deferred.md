@@ -334,3 +334,15 @@ do the work and delete the entry.
   first read is a felt hitch on raising the Shelf (then the first read moves to
   `AsyncTaskQueue` and commits at the frame boundary), or a person looking
   for what uses a stylesheet.
+
+## Moving one zone scene of a world on its own
+
+- **What:** a world document names its zone scenes by paths relative to
+  itself, not by id (pipeline Decision A): they are the world's parts. Moving
+  the world's folder keeps them; moving one zone scene by itself would leave
+  the world naming a file that is gone.
+- **Where:** `WorldDocument::ResolveScenePath` and `ZoneHeader::SceneRef`
+  (`engine/include/zone/WorldPartitionManifest.h`); the Shelf's file moves
+  (plan stage B6).
+- **Trigger:** the Shelf's move, which must then refuse a world's zone scene
+  or move it through the world document that owns it.

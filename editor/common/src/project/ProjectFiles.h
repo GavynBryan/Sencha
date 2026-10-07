@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/assets/AssetId.h>
+#include <core/assets/AssetRef.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -37,6 +38,12 @@ struct ProjectFile
 // hidden folders and the project's own bookkeeping (asset id maps, per-user
 // state, import sidecars) are not content and are left out.
 [[nodiscard]] std::vector<ProjectFile> ScanProjectFiles(std::span<const std::filesystem::path> roots);
+
+// `ref` as the project's files know its asset now: at its hint when the file
+// there is the asset it names (by id, or by path when it names none), and
+// otherwise wherever a file states its id -- found by reading the project,
+// which only a stale hint costs. Anything unknown stays as written.
+[[nodiscard]] AssetRef CurrentInProject(std::span<const std::filesystem::path> roots, AssetRef ref);
 
 // The content file `assetPath` names under one of `roots`, as a scan would
 // read it; nullopt when no root holds it.

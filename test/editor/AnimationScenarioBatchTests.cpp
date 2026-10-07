@@ -156,3 +156,18 @@ TEST(AnimationScenarioBatch, TheSheetRunsTheBatchAndOpensARunsRig)
     EXPECT_EQ(sheet.Act("runs.7", "open", ""), PropertyEditResult::Gone);
     workspace.Rig.Simulation.Close();
 }
+
+// A scenario names its rig by id and path, so a moved rig is still its rig.
+TEST(AnimationScenarioFile, TheRigIsNamedByItsIdAndPath)
+{
+    AnimationScenario scenario;
+    scenario.Name = "walk";
+    scenario.RigPath = "asset://rigs/hero.sdata";
+    scenario.RigId = AssetId{ 0x0be };
+    std::vector<AnimDiagnostic> problems;
+    const std::optional<AnimationScenario> read =
+        ReadAnimationScenario(WriteAnimationScenario(scenario), "walk.sanimscenario", problems);
+    ASSERT_TRUE(read.has_value());
+    EXPECT_EQ(read->RigPath, "asset://rigs/hero.sdata");
+    EXPECT_EQ(read->RigId, AssetId{ 0x0be });
+}

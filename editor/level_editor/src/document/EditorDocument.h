@@ -248,6 +248,9 @@ private:
     // saved with its id, loaded at the asset's current path.
     [[nodiscard]] AssetRef Current(AssetRef ref) const;
     [[nodiscard]] BrushRecord CurrentMaterials(BrushRecord record) const;
+    // Instances' sources as the project's files know them now: named by their
+    // ids on save, found by them on load.
+    void SettleSources(std::vector<SceneInstanceRecord>& instances) const;
     void ReportUnresolvedRefs(const std::vector<SceneSourceEntity>& entities, std::string_view when) const;
 
     std::string FilePath;

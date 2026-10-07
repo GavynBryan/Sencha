@@ -130,6 +130,11 @@ reference names the id first and the path second.
   no longer need.
 - **The known limit.** An asset named by C++ code resolves by path; moving it
   needs the code changed.
+- **What is not a reference.** A world document's zone scenes, named by paths
+  relative to the world: the world creates, names and saves them as its own
+  parts, and they move with it. And a cooked artifact's paths to its siblings
+  (a mesh's skeleton, a clip's skeleton, a UI package's resources): the cook
+  writes them afresh from the source every time, so they are never stale.
 
 Built in stages on the Kyusu branch: I1 the reference type and codec
 (`AssetRef::Id`, `AssetRefCodec`, `AssetIdOfPath`/`AssetIdOfPart`); I2 ids on

@@ -120,6 +120,8 @@ std::vector<AnimationScenarioRun> RunAnimationScenarios(AnimationPreviewSession&
         {
             if (!rigOverride.empty())
                 scenario->RigPath = rigOverride;
+            else
+                scenario->RigPath = std::string(assets.ResolveRefPath(scenario->RigId, scenario->RigPath, AssetType::Data));
             const AssetLease rig = assets.LoadLease(scenario->RigPath, AssetType::Data);
             run = RunAnimationScenario(session, std::move(*scenario), std::move(problems));
         }

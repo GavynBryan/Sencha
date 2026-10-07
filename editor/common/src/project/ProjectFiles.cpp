@@ -114,3 +114,21 @@ std::optional<std::string> ReadProjectFileText(const std::filesystem::path& file
         return std::nullopt;
     return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
+
+AssetRef CurrentInProject(std::span<const std::filesystem::path> roots, AssetRef ref)
+{
+    if (const std::optional<ProjectFile> hinted = ref.Path.empty() ? std::nullopt : FindProjectFile(roots, ref.Path))
+        if (!ref.Id.IsValid() || AssetIdOf(*hinted) == ref.Id)
+        {
+            ref.Id = AssetIdOf(*hinted);
+            return ref;
+        }
+    if (ref.Id.IsValid())
+        for (const ProjectFile& file : ScanProjectFiles(roots))
+            if (AssetIdOf(file) == ref.Id)
+            {
+                ref.Path = file.AssetPath;
+                return ref;
+            }
+    return ref;
+}

@@ -35,7 +35,6 @@ public:
 
     std::filesystem::path Root;
 
-private:
     void Write(const char* relative, const char* text) const
     {
         std::filesystem::create_directories((Root / relative).parent_path());
@@ -70,4 +69,23 @@ TEST(ProjectFiles, OneFileIsFoundByItsAssetPath)
     EXPECT_EQ(found->FilePath, content.Root / "data/run.sdata");
     EXPECT_FALSE(FindProjectFile(roots, "asset://data/missing.sdata").has_value());
     EXPECT_FALSE(FindProjectFile(roots, "data/run.sdata").has_value()) << "an asset path, not a file path";
+}
+
+// A file outside the registry is found by the id it states once its hint goes
+// stale; a hint that still holds keeps its path and gains the id.
+TEST(ProjectFiles, AReferenceIsMadeCurrentFromTheProjectsFiles)
+{
+    ContentRoot content;
+    content.Write("prefabs/moved/door.sscene", R"({ id: "00000000000000d0", format_version: 1 })");
+    const std::vector<std::filesystem::path> roots{ content.Root };
+
+    const AssetRef stale = CurrentInProject(roots, AssetRef{ AssetType::Scene, "asset://prefabs/door.sscene", AssetId{ 0xd0 } });
+    EXPECT_EQ(stale.Path, "asset://prefabs/moved/door.sscene");
+
+    const AssetRef bare = CurrentInProject(roots, AssetRef{ AssetType::Material, "asset://materials/dev/glass.smat" });
+    EXPECT_EQ(bare.Id, AssetIdOfPath("asset://materials/dev/glass.smat")) << "it states none, so it has its path's";
+
+    const AssetRef gone = CurrentInProject(roots, AssetRef{ AssetType::Scene, "asset://prefabs/gone.sscene", AssetId{ 0xee } });
+    EXPECT_EQ(gone.Path, "asset://prefabs/gone.sscene");
+    EXPECT_EQ(gone.Id, AssetId{ 0xee });
 }

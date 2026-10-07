@@ -96,6 +96,8 @@ struct AnimationScenario
 {
     std::string Name;
     std::string RigPath;
+    // The rig's id, when known: it finds the rig wherever RigPath went stale.
+    AssetId RigId{};
     std::uint32_t TickRate = 60;
     std::uint64_t Seed = 0;
     std::vector<std::string> Participants;

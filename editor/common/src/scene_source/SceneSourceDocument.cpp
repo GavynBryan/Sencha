@@ -1,7 +1,10 @@
 #include "scene_source/SceneSourceDocument.h"
 
+#include "scene_source/Json5Convert.h"
 #include "scene_source/Json5Parser.h"
 #include "scene_source/Json5Writer.h"
+
+#include <core/assets/AssetRefCodec.h>
 
 #include <algorithm>
 #include <unordered_map>
@@ -113,9 +116,14 @@ namespace
         out.Parent = PersistentEntityId{ parent };
 
         const Json5Value* source = record.Find("source");
-        if (source == nullptr || !source->IsString())
+        const std::optional<AssetRef> sourceRef =
+            source != nullptr ? AssetRefFromJson(Json5ToJson(*source)) : std::nullopt;
+        if (source == nullptr)
             return Fail(error, what + ": missing 'source'");
-        out.Source = source->Text;
+        if (!sourceRef.has_value())
+            return Fail(error, what + ": source must be an asset://...sscene reference");
+        out.Source = sourceRef->Path;
+        out.SourceId = sourceRef->Id;
         if (const Json5Value* name = record.Find("name"); name != nullptr && name->IsString())
             out.Name = name->Text;
         if (out.Source.rfind("asset://", 0) != 0 || !out.Source.ends_with(".sscene"))
@@ -551,7 +559,8 @@ std::string WriteSceneSource(const SceneSourceDocument& document)
             if (instance.Parent.IsValid())
                 record.Members.emplace_back("parent",
                     Json5Value(SceneIdText(instance.Parent.Value)));
-            record.Members.emplace_back("source", Json5Value(instance.Source));
+            record.Members.emplace_back(
+                "source", Json5FromJson(AssetRefToJson(AssetRef{ AssetType::Scene, instance.Source, instance.SourceId })));
             if (!instance.Name.empty())
                 record.Members.emplace_back("name", Json5Value(instance.Name));
             record.Members.emplace_back("transform", TransformToJson5(instance.Placement));
