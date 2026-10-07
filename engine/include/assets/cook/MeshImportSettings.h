@@ -1,7 +1,7 @@
 #pragma once
 
 #include <anim/AnimationClip.h>
-#include <assets/cook/AssetImporter.h> // kImportSettingsSuffix
+#include <core/assets/AssetIdentity.h> // kAssetSidecarSuffix
 
 #include <cstddef>
 #include <map>
@@ -48,5 +48,6 @@ struct MeshClipSource
                                            MeshImportSettings& out,
                                            std::string* error = nullptr);
 
-// Round-trips through ParseMeshImportSettings unchanged.
-[[nodiscard]] std::string WriteMeshImportSettings(const MeshImportSettings& settings);
+// Round-trips through ParseMeshImportSettings unchanged; states `id` beside the
+// settings when it is valid.
+[[nodiscard]] std::string WriteMeshImportSettings(const MeshImportSettings& settings, AssetId id);

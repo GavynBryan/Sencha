@@ -1,5 +1,6 @@
 #include <zone/WorldPartitionManifest.h>
 
+#include <core/assets/AssetIdentity.h>
 #include <core/json/JsonValue.h>
 
 #include <algorithm>
@@ -314,6 +315,16 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
 
     WorldPartitionManifest manifest;
 
+    if (root.Find(kAssetIdKey) != nullptr)
+    {
+        const std::optional<AssetId> id = StatedAssetId(root);
+        if (!id.has_value())
+        {
+            SetError(error, "id must be 16 lowercase hex digits");
+            return std::nullopt;
+        }
+        manifest.Id = *id;
+    }
     if (!ReadOptionalString(root, "name", manifest.Name, error, "name"))
         return std::nullopt;
     if (!ReadOptionalId(root, "start_zone", ZoneIdFromString, manifest.StartZone, error, "start_zone"))
@@ -588,6 +599,8 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error)
 JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
 {
     JsonValue::Object root;
+    if (manifest.Id.IsValid())
+        root.emplace_back(std::string(kAssetIdKey), JsonValue{ AssetIdToString(manifest.Id) });
     root.emplace_back("format_version", JsonValue{ 4 });
     root.emplace_back("name", JsonValue{ manifest.Name });
     if (manifest.StartZone.IsValid())

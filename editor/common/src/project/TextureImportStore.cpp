@@ -21,7 +21,7 @@ std::string TextureSourceLocation::SourceFile() const
 
 std::string TextureSourceLocation::MetaFile() const
 {
-    return SourceFile() + std::string(kImportSettingsSuffix);
+    return SourceFile() + std::string(kAssetSidecarSuffix);
 }
 
 std::string TextureSourceLocation::CookedFile() const
@@ -68,7 +68,8 @@ bool SaveTextureImportSettingsFor(const TextureSourceLocation& source,
                                   const TextureImportSettings& settings,
                                   std::string* error)
 {
-    return SaveTextureImportSettingsFile(source.MetaFile(), settings, error);
+    return SaveTextureImportSettingsFile(source.MetaFile(), settings,
+                                         ReadStatedAssetId(source.SourceFile()).value_or(AssetId{}), error);
 }
 
 CookedTextureState ReadCookedTextureState(const TextureSourceLocation& source)

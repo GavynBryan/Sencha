@@ -66,6 +66,10 @@ bool ParseTextureImportSettings(std::span<const std::byte> bytes,
             if (!value.IsNumber() || static_cast<int>(value.AsNumber()) != 1)
                 return Fail(error, "unsupported import settings version");
         }
+        else if (key == kAssetIdKey)
+        {
+            continue;
+        }
         else if (key == "usage")
         {
             if (!value.IsString() || !TextureUsageFromName(value.AsString(), out.Usage))
@@ -105,9 +109,12 @@ bool ParseTextureImportSettings(std::span<const std::byte> bytes,
 
 bool SaveTextureImportSettingsFile(std::string_view path,
                                    const TextureImportSettings& settings,
+                                   AssetId id,
                                    std::string* error)
 {
     JsonValue::Object root;
+    if (id.IsValid())
+        root.emplace_back(std::string(kAssetIdKey), JsonValue(AssetIdToString(id)));
     root.emplace_back("version", JsonValue(1));
     if (settings.Usage != TextureUsage::Unknown)
         root.emplace_back("usage", JsonValue(std::string(TextureUsageName(settings.Usage))));

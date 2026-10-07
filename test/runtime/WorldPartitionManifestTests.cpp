@@ -354,3 +354,20 @@ TEST(WorldPartitionManifest, ReadRejectsMalformedGraphStreaming)
     EXPECT_FALSE(manifest.has_value());
     EXPECT_EQ(error, "regions[0].streaming.hop_count must be a 32-bit integer");
 }
+
+// A world document states its own id, and keeps it through a save.
+TEST(WorldPartitionManifest, TheIdAWorldStatesSurvivesASave)
+{
+    WorldPartitionManifest first = ParseFixture(CanonicalFixture);
+    first.Transitions.clear();
+    first.Id = AssetId{ 0x5eedull };
+
+    std::string error;
+    const auto second = ReadWorldPartitionManifest(WriteWorldPartitionManifest(first), &error);
+    ASSERT_TRUE(second.has_value()) << error;
+    EXPECT_EQ(second->Id, first.Id);
+
+    auto malformed = JsonParse(R"({"format_version": 4, "id": "5EED"})");
+    ASSERT_TRUE(malformed.has_value());
+    EXPECT_FALSE(ReadWorldPartitionManifest(*malformed, &error).has_value());
+}

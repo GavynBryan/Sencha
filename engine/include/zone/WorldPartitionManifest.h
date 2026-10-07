@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include <core/assets/AssetId.h>
 #include <math/geometry/3d/Aabb3d.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneId.h>
@@ -133,6 +134,9 @@ struct TransitionRecord
 
 struct WorldPartitionManifest
 {
+    // The world document's own id, as it states it (docs/assets/pipeline.md,
+    // Decision A); invalid when it states none.
+    AssetId     Id{};
     std::string Name;
     ZoneId      StartZone;   // optional; invalid means "not designated" (validation warns)
     // The world scene: authored global content loaded once at world start and

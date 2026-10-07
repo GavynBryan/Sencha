@@ -3,7 +3,16 @@
 #include "data/DataAssetFiles.h"
 #include "project/Project.h"
 
+#include <core/assets/AssetIdentity.h>
+#include <core/io/FileBytes.h>
+#include <core/json/JsonFormat.h>
+#include <core/json/JsonParser.h>
+#include <core/json/JsonValue.h>
+
 #include <algorithm>
+#include <vector>
+#include <optional>
+#include <fstream>
 
 namespace
 {
@@ -40,13 +49,30 @@ bool DataEditorWorkspace::Duplicate(std::string_view virtualPath, std::string_vi
         return false;
     }
 
+    std::vector<std::byte> bytes;
+    std::optional<JsonValue> copy;
+    if (ReadFileBytes(source->FilePath, bytes))
+        copy = JsonParse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+    if (!copy.has_value())
+    {
+        error = "source data asset could not be read";
+        return false;
+    }
+    ForgetStatedAssetId(*copy);
+
     std::error_code ec;
     std::filesystem::create_directories(destination.parent_path(), ec);
-    if (!ec)
-        std::filesystem::copy_file(source->FilePath, destination, std::filesystem::copy_options::none, ec);
     if (ec)
     {
         error = ec.message();
+        return false;
+    }
+    std::ofstream output(destination, std::ios::trunc);
+    output << JsonFormat(*copy);
+    output.close();
+    if (!output.good())
+    {
+        error = "could not write the copy";
         return false;
     }
     RegisterDataAssetFile(Assets.Registry, destinationVirtual, destination);

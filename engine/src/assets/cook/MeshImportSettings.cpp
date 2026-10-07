@@ -184,6 +184,8 @@ bool ParseMeshImportSettings(std::span<const std::byte> bytes, MeshImportSetting
                 return Fail(error, "unsupported import settings version");
             continue;
         }
+        if (key == kAssetIdKey)
+            continue;
         if (key != "clips")
             return Fail(error, std::format("'{}' is not a mesh import setting", key));
         if (!value.IsObject())
@@ -224,9 +226,11 @@ bool ParseMeshImportSettings(std::span<const std::byte> bytes, MeshImportSetting
     return true;
 }
 
-std::string WriteMeshImportSettings(const MeshImportSettings& settings)
+std::string WriteMeshImportSettings(const MeshImportSettings& settings, AssetId id)
 {
     JsonValue::Object root;
+    if (id.IsValid())
+        root.emplace_back(std::string(kAssetIdKey), JsonValue(AssetIdToString(id)));
     root.emplace_back("version", JsonValue(1.0));
     JsonValue::Object clips;
     for (const auto& [clip, clipSettings] : settings.Clips)

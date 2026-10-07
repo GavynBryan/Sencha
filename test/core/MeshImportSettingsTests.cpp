@@ -73,10 +73,10 @@ TEST(MeshImportSettings, WhatIsWrittenParsesBackUnchanged)
     std::string error;
     ASSERT_TRUE(ParseMeshImportSettings(AsBytes(std::string(kSidecar)), original, &error)) << error;
 
-    const std::string written = WriteMeshImportSettings(original);
+    const std::string written = WriteMeshImportSettings(original, AssetId{});
     MeshImportSettings reread;
     ASSERT_TRUE(ParseMeshImportSettings(AsBytes(written), reread, &error)) << error << "\n" << written;
-    EXPECT_EQ(WriteMeshImportSettings(reread), written);
+    EXPECT_EQ(WriteMeshImportSettings(reread, AssetId{}), written);
     ASSERT_EQ(reread.Clips.at("Walk").Events.size(), 2u);
     EXPECT_EQ(reread.Clips.at("Walk").Events[1].Inputs[1].Literal.AsNumber(), 0.8);
 }
@@ -97,7 +97,7 @@ TEST(MeshImportSettings, RootMotionIsAClipSetting)
     EXPECT_EQ(settings.Clips.at("Swing").Events.size(), 1u);
     EXPECT_FALSE(settings.Clips.at("Idle").ExtractRootMotion);
 
-    const std::string written = WriteMeshImportSettings(settings);
+    const std::string written = WriteMeshImportSettings(settings, AssetId{});
     MeshImportSettings reread;
     ASSERT_TRUE(ParseMeshImportSettings(AsBytes(written), reread, &error)) << error;
     EXPECT_TRUE(reread.Clips.at("Mantle").ExtractRootMotion);

@@ -151,7 +151,7 @@ namespace
         uint64_t hash = HashBytes64(sourceBytes);
 
         std::filesystem::path metaPath = sourcePath;
-        metaPath += std::string(kImportSettingsSuffix);
+        metaPath += std::string(kAssetSidecarSuffix);
         std::error_code ec;
         if (std::filesystem::exists(metaPath, ec) && ReadFileBytes(metaPath, outMetaBytes)
             && !outMetaBytes.empty())
@@ -405,7 +405,7 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
             std::filesystem::relative(it->path(), assetsRoot).generic_string();
 
         std::filesystem::path metaPath = it->path();
-        metaPath += std::string(kImportSettingsSuffix);
+        metaPath += std::string(kAssetSidecarSuffix);
         const FileStat sourceStat = StatFile(it->path());
         const FileStat metaStat = StatFile(metaPath);
 
@@ -715,7 +715,7 @@ bool ReimportOneSource(std::string_view rootDirectory,
         CombineAdditionalSourceHashes(sourceHash, entry.AdditionalSources, root);
     entry.CookIdentity = importer->CookIdentity();
     std::filesystem::path metaPath = sourcePath;
-    metaPath += std::string(kImportSettingsSuffix);
+    metaPath += std::string(kAssetSidecarSuffix);
     StampSourceStats(entry, StatFile(sourcePath), StatFile(metaPath));
     entry.Artifacts = std::move(result.Artifacts);
     index.Put(std::move(entry));

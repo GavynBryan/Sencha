@@ -250,7 +250,7 @@ TEST(AssetRegistryIds, AssignAndFindById)
     EXPECT_EQ(registry.FindByPath("asset://meshes/cube.smesh")->Id, id);
 }
 
-TEST(AssetRegistryIds, AssignRejectsConflicts)
+TEST(AssetRegistryIds, AssignRebindsButNeverTakesAnotherAssetsId)
 {
     LoggingProvider logging;
     AssetRegistry registry(logging);
@@ -261,9 +261,24 @@ TEST(AssetRegistryIds, AssignRejectsConflicts)
     EXPECT_FALSE(registry.AssignId("asset://missing.smesh", AssetId{ 1 }));   // unknown path
 
     ASSERT_TRUE(registry.AssignId("asset://a.smesh", AssetId{ 1 }));
-    EXPECT_FALSE(registry.AssignId("asset://a.smesh", AssetId{ 2 }));  // reassignment
-    EXPECT_FALSE(registry.AssignId("asset://b.smesh", AssetId{ 1 }));  // id already bound
-    EXPECT_EQ(registry.FindById(AssetId{ 1 })->Path, "asset://a.smesh");
+    ASSERT_TRUE(registry.AssignId("asset://a.smesh", AssetId{ 2 }));   // rebinding
+    EXPECT_EQ(registry.FindById(AssetId{ 1 }), nullptr);
+    EXPECT_FALSE(registry.AssignId("asset://b.smesh", AssetId{ 2 }));  // id already bound
+    EXPECT_EQ(registry.FindById(AssetId{ 2 })->Path, "asset://a.smesh");
+}
+
+TEST(AssetRegistryIds, ARecordThatStatesNoIdHasItsPathsAndATakenOneIsNotShared)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://a.smesh")));
+    EXPECT_EQ(registry.FindByPath("asset://a.smesh")->Id, AssetIdOfPath("asset://a.smesh"));
+
+    AssetRecord copy = MakeRecord("asset://copy.smesh");
+    copy.Id = AssetIdOfPath("asset://a.smesh");
+    ASSERT_TRUE(registry.Register(copy));
+    EXPECT_EQ(registry.FindById(copy.Id)->Path, "asset://a.smesh") << "the first holder keeps it";
+    EXPECT_NE(registry.FindByPath("asset://copy.smesh")->Id, copy.Id);
 }
 
 TEST(AssetRegistryIds, ApplyAssetIdsFillsRegisteredPathsOnly)

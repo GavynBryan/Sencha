@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/assets/AssetId.h>
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -9,11 +11,14 @@
 #include <vector>
 
 // A file of a project's content as the editor knows it: the asset path content
-// names it by, where it is on disk, what kind of file it is -- its extension,
-// and a data asset's subtype -- and how big and how old it is.
+// names it by, the id it states, where it is on disk, what kind of file it is --
+// its extension, and a data asset's subtype -- and how big and how old it is.
 struct ProjectFile
 {
     std::string AssetPath = {};
+    // As the file states it, in itself or its sidecar; none until it is given
+    // one, when it goes by the id of its path (AssetIdOf).
+    std::optional<AssetId> StatedId = {};
     std::filesystem::path FilePath = {};
     // Lower case, with its dot: ".smat".
     std::string Extension = {};
@@ -22,6 +27,8 @@ struct ProjectFile
     std::uintmax_t Size = 0;
     std::filesystem::file_time_type Modified{};
 };
+
+[[nodiscard]] AssetId AssetIdOf(const ProjectFile& file);
 
 // Every content file under `roots`, sorted by asset path. Cooked output,
 // hidden folders and the project's own bookkeeping (asset id maps, per-user

@@ -113,7 +113,10 @@ bool MaterialEditSession::ReloadFromFile(std::string* error)
 
 bool MaterialEditSession::SaveTo(const std::string& filePath, std::string* error) const
 {
-    return SaveMaterialFile(filePath, WorkingState, error);
+    // A copy is a new asset, born with the id of where it is written.
+    MaterialDescription copy = WorkingState;
+    copy.Id = {};
+    return SaveMaterialFile(filePath, copy, error);
 }
 
 bool MaterialEditSession::CreateNew(const std::string& filePath, std::string* error)

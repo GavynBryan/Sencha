@@ -2,6 +2,7 @@
 
 #include <core/assets/AssetKindRegistry.h>
 
+#include <core/assets/AssetIdentity.h>
 #include <core/hash/ContentHash.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
@@ -75,6 +76,7 @@ bool AssetRegistry::Register(const AssetRecord& record)
         return false;
     }
 
+    BindId(it->second);
     Log.Debug("AssetRegistry: registered {} '{}'", type, path);
     return inserted;
 }
@@ -108,7 +110,7 @@ bool AssetRegistry::RegisterOrVerify(const AssetRecord& record)
     auto it = RecordsByPath.find(record.Path);
     if (it == RecordsByPath.end())
     {
-        RecordsByPath.emplace(record.Path, record);
+        BindId(RecordsByPath.emplace(record.Path, record).first->second);
         Log.Debug("AssetRegistry: registered {} '{}'",
             std::string(AssetTypeToString(record.Type)), record.Path);
         return true;
@@ -153,13 +155,6 @@ bool AssetRegistry::AssignId(std::string_view path, AssetId id)
     if (it->second.Id == id)
         return true;
 
-    if (it->second.Id.IsValid())
-    {
-        Log.Warn("AssetRegistry: '{}' already has id {}; rejected reassignment to {}",
-            path, AssetIdToString(it->second.Id), AssetIdToString(id));
-        return false;
-    }
-
     if (auto bound = RecordsById.find(id); bound != RecordsById.end())
     {
         Log.Warn("AssetRegistry: id {} is already bound to '{}'; rejected for '{}'",
@@ -167,9 +162,23 @@ bool AssetRegistry::AssignId(std::string_view path, AssetId id)
         return false;
     }
 
+    RecordsById.erase(it->second.Id);
     it->second.Id = id;
     RecordsById.emplace(id, &it->second);
     return true;
+}
+
+void AssetRegistry::BindId(AssetRecord& record)
+{
+    const AssetId stated = record.Id;
+    if (!record.Id.IsValid())
+        record.Id = AssetIdOfPath(record.Path);
+    for (uint64_t salt = 1; RecordsById.contains(record.Id); ++salt)
+        record.Id = AssetIdOfPath(record.Path, salt);
+    if (stated.IsValid() && record.Id != stated)
+        Log.Warn("AssetRegistry: '{}' states id {}, which '{}' already holds; it goes by {}", record.Path,
+            AssetIdToString(stated), RecordsById.at(stated)->Path, AssetIdToString(record.Id));
+    RecordsById.emplace(record.Id, &record);
 }
 
 const AssetRecord* AssetRegistry::FindByPath(std::string_view path) const
@@ -243,6 +252,7 @@ bool ScanAssetsDirectory(std::string_view rootDirectory,
         record.SourceKind = AssetSourceKind::File;
         record.Path = MakeVirtualAssetPath(root, it->path());
         record.FilePath = it->path().generic_string();
+        record.Id = ReadStatedAssetId(it->path()).value_or(AssetId{});
         if (!HashFileContents(record.FilePath, record.ContentHash))
         {
             registry.Log.Warn("AssetRegistry: could not hash '{}'; registered with no content hash",

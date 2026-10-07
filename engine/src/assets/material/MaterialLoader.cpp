@@ -1,5 +1,6 @@
 #include <assets/material/MaterialLoader.h>
 
+#include <core/assets/AssetIdentity.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
@@ -113,6 +114,13 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
         bool ok = true;
         if (key == "version")
             continue;
+        else if (key == kAssetIdKey)
+        {
+            const std::optional<AssetId> id = StatedAssetId(root);
+            if (!id.has_value())
+                return Fail(error, "'id' must be 16 lowercase hex digits");
+            desc.Id = *id;
+        }
         else if (key == "shading")
             ok = ReadShading(value, desc.Shading, error);
         else if (key == "base_color_factor")

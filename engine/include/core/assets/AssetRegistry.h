@@ -21,9 +21,9 @@ struct AssetRecord
     std::string Path{};
     std::string FilePath{};
 
-    // Stable identity from the cook's persisted id map (Decision A / Stage
-    // 4e). Invalid until ApplyAssetIds runs after import + scan; records
-    // register id-less and ids never participate in equivalence checks.
+    // Stable identity (docs/assets/pipeline.md, Decision A): the id the
+    // asset states, or else the id of its path, bound when it registers.
+    // Ids never participate in equivalence checks.
     AssetId Id{};
 
     uint64_t ContentHash = 0;
@@ -42,10 +42,9 @@ public:
     // renamed the file behind it; the runtime never unregisters.
     bool Unregister(std::string_view path);
 
-    // Binds a stable id to an already-registered path (the ApplyAssetIds
-    // pass). Idempotent for the same pair; a record that already carries a
-    // different id, or an id already bound to another path, is a conflict
-    // and is rejected with a warning.
+    // Rebinds a registered path to `id`. Idempotent for the same pair; an id
+    // already bound to another path is a conflict and is rejected with a
+    // warning.
     bool AssignId(std::string_view path, AssetId id);
 
     [[nodiscard]] const AssetRecord* FindByPath(std::string_view path) const;
@@ -64,6 +63,10 @@ private:
     friend bool ScanAssetsDirectory(std::string_view rootDirectory,
                                     AssetRegistry& registry,
                                     const AssetKindRegistry& kinds);
+
+    // Binds a newly registered record's id: the one it states, or its path's;
+    // a taken id leaves it with its path's next free one, and says so.
+    void BindId(AssetRecord& record);
 
     Logger& Log;
     std::unordered_map<std::string, AssetRecord> RecordsByPath;

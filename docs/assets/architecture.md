@@ -336,7 +336,8 @@ requests so two zones that share an asset don't double-load it.
 | `AssetRef` | A reference in authored or cooked data: a `Type`, the asset's `Id`, and the virtual path (`asset://...`) it was last known by. |
 | `AssetRefCodec` | The one text form of a reference: a bare path, or `{"id", "path"}`. Archive and JSON front ends. |
 | `AssetId` | 64-bit stable identity, carried by the asset (document header or `.meta` sidecar) and minted once from the path it first appeared at (`AssetIdOfPath`; parts by `AssetIdOfPart`). |
-| `AssetRecord` | Registry entry: type, path, file path, id, content hash, version. |
+| `AssetIdentity` | Where an asset states its id: a document at its root, any other file in its `.meta` sidecar beside its import settings. |
+| `AssetRecord` | Registry entry: type, path, file path, id (stated, else its path's, bound when it registers), content hash, version. |
 | `AssetRegistry` | Path-to-record and id-to-record maps. Populated by scanning the assets directory. |
 | `AssetIdMap` | The June design's persisted `path -> (id, content_hash)` map, still read and written until the migration (pipeline Decision A, stage I5) deletes it. |
 

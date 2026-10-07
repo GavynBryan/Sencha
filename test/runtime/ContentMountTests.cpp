@@ -113,11 +113,29 @@ TEST(ContentMount, ScanRegistersAuthoredAndCookedFilesButNotTheIndex)
     EXPECT_TRUE(stack.Assets.Registry.Contains(std::string(kCookedScannedPath)));
     EXPECT_FALSE(stack.Assets.Registry.Contains(std::string(kIndexOnlyPath)));
 
-    // No id map has been applied, so the authored record resolves by path only.
+    // The asset states no id, so it has the id of where it is.
     const AssetRecord* record =
         stack.Assets.Registry.FindByPath(std::string(kAuthoredPath));
     ASSERT_NE(record, nullptr);
-    EXPECT_FALSE(record->Id.IsValid());
+    EXPECT_EQ(record->Id, AssetIdOfPath(kAuthoredPath));
+}
+
+// An asset that states its id keeps it wherever it now is: a document at its
+// root, any other file in its sidecar.
+TEST(ContentMount, AnAssetGoesByTheIdItStates)
+{
+    const ContentRoot root("stated");
+    WriteFile(root.Paths().Authored / "materials" / "moved.smat", R"({"id": "00000000000000aa", "version": 2})");
+    WriteFile(root.Paths().Authored / "meshes" / "baked.smesh", "");
+    WriteFile(root.Paths().Authored / "meshes" / "baked.smesh.meta", R"({"id": "00000000000000bb"})");
+    HeadlessStack stack;
+
+    ScanContentRoot(root.Paths(), stack.Assets);
+
+    ASSERT_NE(stack.Assets.Registry.FindById(AssetId{ 0xaa }), nullptr);
+    EXPECT_EQ(stack.Assets.Registry.FindById(AssetId{ 0xaa })->Path, "asset://materials/moved.smat");
+    ASSERT_NE(stack.Assets.Registry.FindById(AssetId{ 0xbb }), nullptr);
+    EXPECT_EQ(stack.Assets.Registry.FindById(AssetId{ 0xbb })->Path, "asset://meshes/baked.smesh");
 }
 
 TEST(ContentMount, CookedRegistrationAddsTheIndexEntriesAndStampsIds)
@@ -163,8 +181,8 @@ TEST(ContentMount, MountEqualsScanThenRegister)
 }
 
 // A root that has never been cooked has no id map. That is the first-run state
-// of a new project, not a failure: everything still resolves by path.
-TEST(ContentMount, AMissingIdMapLeavesThePathsResolvable)
+// of a new project, not a failure: every asset has the id of where it is.
+TEST(ContentMount, WithoutAnIdMapEveryAssetHasTheIdOfItsPath)
 {
     const ContentRoot root("nomap");
     HeadlessStack stack;
@@ -175,5 +193,5 @@ TEST(ContentMount, AMissingIdMapLeavesThePathsResolvable)
     const AssetRecord* record =
         stack.Assets.Registry.FindByPath(std::string(kAuthoredPath));
     ASSERT_NE(record, nullptr);
-    EXPECT_FALSE(record->Id.IsValid());
+    EXPECT_EQ(record->Id, AssetIdOfPath(kAuthoredPath));
 }

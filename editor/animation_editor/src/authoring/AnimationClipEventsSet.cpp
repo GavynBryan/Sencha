@@ -49,7 +49,7 @@ AnimationClipEventsDocument* AnimationClipEventsSet::OpenOrFocus(const std::stri
         return nullptr;
     }
     std::unique_ptr<AnimationClipEventsDocument> document = AnimationClipEventsDocument::Open(
-        clipPath, root / (source->SourceRelPath + std::string(kImportSettingsSuffix)), &error);
+        clipPath, root / (source->SourceRelPath + std::string(kAssetSidecarSuffix)), &error);
     if (document == nullptr)
         return nullptr;
     document->ObserveSteps([this, clipPath] { Sources.Record({ this, clipPath }); });

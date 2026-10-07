@@ -1,7 +1,12 @@
 #include "project/ProjectFiles.h"
 
+#include "scene_source/Json5Convert.h"
+#include "scene_source/Json5Parser.h"
+
 #include <assets/data/DataAssetSubtype.h>
+#include <core/assets/AssetIdentity.h>
 #include <core/io/FileBytes.h>
+#include <core/json/JsonValue.h>
 
 #include <algorithm>
 #include <cctype>
@@ -22,7 +27,16 @@ std::string Lowered(std::string text)
 bool IsBookkeeping(const std::filesystem::path& file)
 {
     const std::string name = file.filename().string();
-    return name == "asset_ids.json" || name.ends_with(".user.json") || file.extension() == ".meta";
+    return name == "asset_ids.json" || name.ends_with(".user.json") || file.extension() == kAssetSidecarSuffix;
+}
+
+// Read as JSON5, which scene sources are written in and which every other
+// statement also is.
+std::optional<AssetId> ReadStatedId(const std::filesystem::path& file)
+{
+    const std::optional<std::string> text = ReadProjectFileText(IdStatementOf(file));
+    const std::optional<Json5Value> root = text.has_value() ? Json5Parse(*text) : std::nullopt;
+    return root.has_value() ? StatedAssetId(Json5ToJson(*root)) : std::nullopt;
 }
 
 std::string SubtypeOf(const std::filesystem::path& file)
@@ -43,9 +57,15 @@ ProjectFile Describe(const std::filesystem::path& root, const std::filesystem::p
     described.Modified = std::filesystem::last_write_time(file, ec);
     if (described.Extension == ".sdata")
         described.Subtype = SubtypeOf(file);
+    described.StatedId = ReadStatedId(file);
     return described;
 }
 } // namespace
+
+AssetId AssetIdOf(const ProjectFile& file)
+{
+    return file.StatedId.value_or(AssetIdOfPath(file.AssetPath));
+}
 
 std::vector<ProjectFile> ScanProjectFiles(std::span<const std::filesystem::path> roots)
 {

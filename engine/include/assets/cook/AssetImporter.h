@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/assets/AssetIdentity.h>
+
 #include <assets/cook/CookedCache.h>
 
 #include <cstddef>
@@ -29,10 +31,9 @@
 //     cache source → set of outputs from day one).
 //=============================================================================
 
-// Import-settings sidecar naming: "<source>.meta" beside the source file.
-// Driver-level (any importer may have one); the schema belongs to the
-// importer (textures: TextureImportSettings).
-inline constexpr std::string_view kImportSettingsSuffix = ".meta";
+// A source's import settings live in its sidecar (kAssetSidecarSuffix,
+// core/assets/AssetIdentity.h) beside its id; the settings' schema belongs to
+// the importer (textures: TextureImportSettings).
 
 // Where an importer reads sources its root file references: a document's
 // stylesheets, a shader's includes. The mirror of ICookOutputWriter, and there

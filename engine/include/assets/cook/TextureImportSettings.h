@@ -1,6 +1,6 @@
 #pragma once
 
-#include <assets/cook/AssetImporter.h> // kImportSettingsSuffix
+#include <core/assets/AssetIdentity.h> // kAssetSidecarSuffix
 #include <assets/texture/TextureData.h>
 
 #include <cstddef>
@@ -48,9 +48,11 @@ struct TextureImportSettings
                                               TextureImportSettings& out,
                                               std::string* error = nullptr);
 
-// Writes the sidecar next to the source (pretty JSON, all fields explicit).
+// Writes the sidecar next to the source (pretty JSON, all fields explicit),
+// stating `id` beside the settings when it is valid.
 [[nodiscard]] bool SaveTextureImportSettingsFile(std::string_view path,
                                                  const TextureImportSettings& settings,
+                                                 AssetId id,
                                                  std::string* error = nullptr);
 
 // Name helpers shared by the JSON forms and editor UI.

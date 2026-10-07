@@ -1,5 +1,6 @@
 #include <assets/material/MaterialWriter.h>
 
+#include <core/assets/AssetIdentity.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
 
@@ -49,6 +50,8 @@ JsonValue WriteMaterialJson(const MaterialDescription& description)
 {
     const MaterialDescription defaults;
     JsonValue::Object root;
+    if (description.Id.IsValid())
+        root.emplace_back(std::string(kAssetIdKey), JsonValue(AssetIdToString(description.Id)));
     root.emplace_back("version", JsonValue(static_cast<int>(kSmatVersion)));
 
     if (description.Shading != defaults.Shading)

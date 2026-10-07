@@ -648,7 +648,7 @@ TEST(TextureImportSettings, SaveFileRoundTrips)
     const std::filesystem::path path =
         std::filesystem::temp_directory_path() / "sencha_import_settings_roundtrip.meta";
     std::string error;
-    ASSERT_TRUE(SaveTextureImportSettingsFile(path.string(), settings, &error)) << error;
+    ASSERT_TRUE(SaveTextureImportSettingsFile(path.string(), settings, AssetId{}, &error)) << error;
 
     std::ifstream file(path, std::ios::binary);
     const std::string text((std::istreambuf_iterator<char>(file)), {});
