@@ -330,6 +330,11 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/serialization/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/metadata/*.h"
+    # An asset reference crosses into a module inside authored values and data
+    # schemas, so its layout and its id's are layout the module compiled.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetRef.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetId.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/core/identity/StrongId.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/console/*.h"
     # EngineConfig reaches a game module through GameConfigureContext, so its
     # sections are layout the module compiled against.

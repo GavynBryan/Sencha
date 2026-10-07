@@ -141,5 +141,7 @@
 // Action, with the names documents read exported (UiRowControlName), so rows can
 // present trees, grouped property sheets and the verbs beside them. A surface names the
 // layer it draws in (UiService::SetSurfaceLayer) and its frames carry it, so a
-// host can draw its own UI between two authored layers.
+// host can draw its own UI between two authored layers. AssetRef carries the
+// asset's Id beside its path, and AssetRef, AssetId and StrongId join the
+// fingerprint, since a reference reaches a module inside authored values.
 #define SENCHA_GAME_ABI_VERSION 25u

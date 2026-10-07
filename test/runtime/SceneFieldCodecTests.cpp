@@ -183,7 +183,7 @@ TEST(SceneFieldCodec, MaterialHandleLoadsPathString)
     EXPECT_EQ(loaded, registered);
 }
 
-TEST(SceneFieldCodec, MaterialHandleLoadsLegacyAssetRefObject)
+TEST(SceneFieldCodec, MaterialHandleLoadsAReferenceThatOnlyNamesItsPath)
 {
     LoggingProvider logging;
     AssetRegistry registry(logging);
@@ -196,7 +196,7 @@ TEST(SceneFieldCodec, MaterialHandleLoadsLegacyAssetRefObject)
     AssetSystem assets(logging, registry);
     RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
 
-    auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://materials/dev/red.smat" })");
+    auto parsed = JsonParse(R"({ "path": "asset://materials/dev/red.smat" })");
     ASSERT_TRUE(parsed.has_value());
 
     SceneSerializationContext context(logging, &assets);
@@ -338,19 +338,6 @@ TEST(SceneFieldCodec, MaterialHandleRejectsRegistryTypeMismatch)
     EXPECT_FALSE(archive.Ok());
 }
 
-TEST(SceneFieldCodec, StaticMeshHandleRejectsWrongLegacyObjectType)
-{
-    LoggingProvider logging;
-    auto wrongType = JsonParse(R"({ "type": "Material", "path": "asset://meshes/dev/cube.smesh" })");
-    ASSERT_TRUE(wrongType.has_value());
-
-    SceneSerializationContext context(logging);
-    JsonReadArchive archive(*wrongType);
-    StaticMeshHandle loaded;
-    EXPECT_FALSE(LoadHandleField<StaticMeshHandle>(AssetType::StaticMesh, archive, "", loaded, context));
-    EXPECT_FALSE(archive.Ok());
-}
-
 // A scene names the content it is made of, not the processes that read it. A
 // dedicated host has no cache that can hold a mesh, so a mesh reference is
 // something it declines rather than something it fails on -- and it must
@@ -422,7 +409,7 @@ TEST(SceneFieldCodec, CapabilityAbsenceDoesNotExcuseAMalformedRef)
     RegisterAssetKind(assets, AssetType::Material, materialLoader, &materials);
     ASSERT_FALSE(assets.HasStore(AssetType::StaticMesh));
 
-    auto parsed = JsonParse(R"({ "type": "Material", "path": "asset://meshes/dev/cube.smesh" })");
+    auto parsed = JsonParse(R"({ "id": "not-an-id", "path": "asset://meshes/dev/cube.smesh" })");
     ASSERT_TRUE(parsed.has_value());
 
     SceneSerializationContext context(logging, &assets);

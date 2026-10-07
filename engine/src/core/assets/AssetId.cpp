@@ -1,5 +1,7 @@
 #include <core/assets/AssetId.h>
 
+#include <core/hash/ContentHash.h>
+
 #include <charconv>
 #include <format>
 
@@ -24,5 +26,21 @@ std::optional<AssetId> AssetIdFromString(std::string_view text)
     AssetId id{ value };
     if (!id.IsValid() || AssetIdToString(id) != text)
         return std::nullopt;
+    return id;
+}
+
+AssetId AssetIdOfPath(std::string_view path, uint64_t salt)
+{
+    AssetId id{ HashBytes64(path, salt) };
+    while (!id.IsValid())
+        id.Value = HashBytes64(path, ++salt);
+    return id;
+}
+
+AssetId AssetIdOfPart(AssetId file, std::string_view part)
+{
+    AssetId id{ HashBytes64(part, file.Value) };
+    for (uint64_t salt = file.Value + 1; !id.IsValid(); ++salt)
+        id.Value = HashBytes64(part, salt);
     return id;
 }

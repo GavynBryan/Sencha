@@ -17,11 +17,8 @@ struct SceneSerializationContext;
 // through it, and a component whose persisted form is hand-written resolves its
 // own the same way.
 //
-// A reference reads in three shapes and writes in one. Authoring writes a bare
-// path string and that is what a hand-edited scene contains. The cook rewrites
-// it as {"id": "<hex>", "path": "..."} so a stamped reference survives a rename
-// the path predates; the id wins where the registry knows it, and the path is
-// the fallback. A third, older {"type": ..., "path": ...} form still reads.
+// A reference is read in AssetRefCodec's form: a bare path, or {"id", "path"}
+// where the id wins when the registry knows it and the path is the fallback.
 //
 // Reading is strict: an unresolvable reference is a scene that refuses to load
 // rather than an entity quietly missing what it names.

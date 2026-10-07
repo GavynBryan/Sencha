@@ -375,7 +375,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
             for (const std::byte* held : bytes)
             {
                 std::vector<std::string> paths;
-                for (const AssetFieldRef& ref : ReadAssetField(*assets, field.Asset, field.Arity, held + field.Offset).Refs)
+                for (const AssetRef& ref : ReadAssetField(*assets, field.Asset, field.Arity, held + field.Offset).Refs)
                     paths.push_back(ref.Path);
                 lists.push_back(std::move(paths));
             }
@@ -849,13 +849,13 @@ PropertyEditResult ComponentPropertySource::CommitAsset(const Field& field, std:
         return PropertyEditResult::Gone;
 
     const RuntimeField& leaf = *field.Leaf;
-    AssetFieldRef picked;
+    AssetRef picked{ .Type = leaf.Asset };
     if (!path.empty())
     {
         const AssetRecord* record = catalog != nullptr ? catalog->FindByPath(path) : nullptr;
         if (record == nullptr || record->Type != leaf.Asset)
             return PropertyEditResult::Refused;
-        picked = AssetFieldRef{ record->Id, record->Path };
+        picked = AssetRef{ .Type = leaf.Asset, .Path = record->Path, .Id = record->Id };
     }
 
     World& world = document.GetScene().GetRegistry().Components;

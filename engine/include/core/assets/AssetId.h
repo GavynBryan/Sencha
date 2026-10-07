@@ -10,10 +10,10 @@
 //=============================================================================
 // AssetId (docs/assets/pipeline.md, Decision A)
 //
-// Stable 64-bit asset identity, assigned by the cook step and persisted in
-// the id map (AssetIdMap). Ids survive renames — the map keeps the original
-// id when a source moves — while paths remain the human-facing alias and
-// the dev-build fallback resolver.
+// Stable 64-bit asset identity, carried by the asset itself: minted once from
+// the path the asset first appears at and kept through every move, so a
+// reference holding it survives renames. Paths remain the human-facing alias
+// and the fallback resolver.
 //
 // AssetId is a StrongId<Tag, uint64_t> — the engine's single id vocabulary —
 // so equality, ordering, hashing, and binary serialization come from there.
@@ -32,3 +32,12 @@ using AssetId = StrongId<struct AssetIdTag, uint64_t>;
 // Anything else — wrong length, stray characters, the invalid id — is
 // nullopt; a malformed id in content should fail loudly at parse time.
 [[nodiscard]] std::optional<AssetId> AssetIdFromString(std::string_view text);
+
+// The id an asset at `path` is born with: the same on every machine and branch
+// that sees it there first. A nonzero `salt` mints another, for the rare path
+// whose id is already taken.
+[[nodiscard]] AssetId AssetIdOfPath(std::string_view path, uint64_t salt = 0);
+
+// The id of a part of a file (`file#anim:Walk`), derived from the file's id so
+// it follows the file through a move.
+[[nodiscard]] AssetId AssetIdOfPart(AssetId file, std::string_view part);

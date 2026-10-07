@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/assets/AssetId.h>
+
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -123,23 +125,20 @@ inline std::string_view AssetSourceKindToString(AssetSourceKind kind)
 //=============================================================================
 // AssetRef
 //
-// Stable, serializable reference to an asset. Used in scene files and editor
-// data; never stored in runtime components (those use cache handles).
-//
-// Fields:
-//   Type  - expected asset type; validated on resolve.
-//   Path  - virtual asset path, e.g. "asset://meshes/dev/cube.smesh".
-//           The primary identity in authored data. Cooked scenes and
-//           manifests pair it with the stable AssetId (core/assets/
-//           AssetId.h), which resolves first with the path as fallback.
+// Stable, serializable reference to an asset. Used in authored and cooked data
+// and in editors; never stored in runtime components (those use cache
+// handles). The id decides which asset is meant; the path is where it was
+// last known to be, read by people and used when the id is unknown
+// (docs/assets/pipeline.md, Decision A). Either may be absent, not both.
 //=============================================================================
 struct AssetRef
 {
     AssetType   Type = AssetType::Unknown;
-    std::string Path;
+    std::string Path = {};
+    AssetId     Id = {};
 
     bool IsValid() const
     {
-        return Type != AssetType::Unknown && !Path.empty();
+        return Type != AssetType::Unknown && (Id.IsValid() || !Path.empty());
     }
 };

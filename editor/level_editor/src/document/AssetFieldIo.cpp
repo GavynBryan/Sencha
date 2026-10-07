@@ -29,11 +29,11 @@ namespace
     }
 
     // A path back to a reference: the id looked up through the catalog (invalid
-    // when the asset has no stamped id, which ResolveRefPath then treats as
+    // when the registry knows none, which ResolveRefPath then treats as
     // path-only). An empty path stays an empty (unset) ref.
-    AssetFieldRef RefFromPath(AssetSystem& assets, std::string path, AssetType type)
+    AssetRef RefFromPath(AssetSystem& assets, std::string path, AssetType type)
     {
-        AssetFieldRef ref;
+        AssetRef ref{ .Type = type };
         if (!path.empty())
             if (const AssetRecord* record = assets.Resolve(path, type); record != nullptr)
                 ref.Id = record->Id;
@@ -41,10 +41,10 @@ namespace
         return ref;
     }
 
-    std::string ResolvePath(AssetSystem& assets, const AssetFieldRef& ref, AssetType type)
+    std::string ResolvePath(AssetSystem& assets, const AssetRef& ref, AssetType type)
     {
-        return ref.Path.empty() ? std::string{}
-                                : std::string(assets.ResolveRefPath(ref.Id, ref.Path, type));
+        return !ref.Id.IsValid() && ref.Path.empty() ? std::string{}
+                                                     : std::string(assets.ResolveRefPath(ref.Id, ref.Path, type));
     }
 
     // A list's slots are positional (index binds to a mesh section), so an
@@ -66,7 +66,7 @@ namespace
         // shared between an edited and an unedited slot never reaches zero.
         std::vector<AssetLease> members;
         std::vector<std::uint64_t> tokens;
-        for (const AssetFieldRef& ref : value.Refs)
+        for (const AssetRef& ref : value.Refs)
         {
             const std::string path = ResolvePath(assets, ref, type);
             AssetLease member = path.empty() ? AssetLease{} : assets.LoadLease(path, type);

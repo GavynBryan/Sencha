@@ -14,6 +14,9 @@ class JsonValue;
 //=============================================================================
 // AssetIdMap (docs/assets/pipeline.md, Decision A / Stage 4e)
 //
+// Superseded: ids move into the assets themselves, and this map is deleted
+// once the content is migrated (Decision A, stage I5).
+//
 // The persisted id map the cook step maintains: virtual asset path →
 // (stable id, last-seen content hash). New assets get an id at first sight;
 // renames keep theirs because the cook matches a vanished path's content

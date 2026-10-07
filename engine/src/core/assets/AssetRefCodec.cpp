@@ -1,0 +1,104 @@
+#include <core/assets/AssetRefCodec.h>
+
+#include <core/assets/AssetPath.h>
+#include <core/json/JsonValue.h>
+#include <core/serialization/Archive.h>
+
+#include <utility>
+
+namespace
+{
+constexpr std::string_view kIdKey = "id";
+constexpr std::string_view kPathKey = "path";
+
+// Both parts as read, before either is trusted.
+std::optional<AssetRef> Accept(std::string_view idText, bool hasId, std::string path)
+{
+    AssetRef ref;
+    if (hasId)
+    {
+        const std::optional<AssetId> id = AssetIdFromString(idText);
+        if (!id.has_value())
+            return std::nullopt;
+        ref.Id = *id;
+    }
+    if (!path.empty() && !IsValidAssetPath(path))
+        return std::nullopt;
+    ref.Path = std::move(path);
+    if (!ref.Id.IsValid() && ref.Path.empty())
+        return std::nullopt;
+    return ref;
+}
+} // namespace
+
+bool ReadAssetRef(IReadArchive& archive, std::string_view key, AssetRef& out)
+{
+    std::optional<AssetRef> read;
+    if (archive.IsString(key))
+    {
+        std::string path;
+        archive.Field(key, path);
+        if (archive.Ok() && !path.empty())
+            read = Accept({}, false, std::move(path));
+    }
+    else if (archive.IsObject(key))
+    {
+        archive.BeginObject(key);
+        std::string idText;
+        std::string path;
+        const bool hasId = archive.HasField(kIdKey);
+        if (hasId)
+            archive.Field(kIdKey, idText);
+        if (archive.HasField(kPathKey))
+            archive.Field(kPathKey, path);
+        archive.End();
+        if (archive.Ok())
+            read = Accept(idText, hasId, std::move(path));
+    }
+    if (!read.has_value())
+    {
+        archive.MarkInvalidField(key);
+        return false;
+    }
+    out.Id = read->Id;
+    out.Path = std::move(read->Path);
+    return true;
+}
+
+void WriteAssetRef(IWriteArchive& archive, std::string_view key, const AssetRef& ref)
+{
+    if (!ref.Id.IsValid())
+    {
+        archive.Field(key, std::string_view(ref.Path));
+        return;
+    }
+    archive.BeginObject(key);
+    archive.Field(kIdKey, std::string_view(AssetIdToString(ref.Id)));
+    if (!ref.Path.empty())
+        archive.Field(kPathKey, std::string_view(ref.Path));
+    archive.End();
+}
+
+std::optional<AssetRef> AssetRefFromJson(const JsonValue& value)
+{
+    if (value.IsString())
+        return value.AsString().empty() ? std::nullopt : Accept({}, false, value.AsString());
+    if (!value.IsObject())
+        return std::nullopt;
+    const JsonValue* id = value.Find(kIdKey);
+    const JsonValue* path = value.Find(kPathKey);
+    if ((id != nullptr && !id->IsString()) || (path != nullptr && !path->IsString()))
+        return std::nullopt;
+    return Accept(id != nullptr ? std::string_view(id->AsString()) : std::string_view{}, id != nullptr,
+                  path != nullptr ? path->AsString() : std::string{});
+}
+
+JsonValue AssetRefToJson(const AssetRef& ref)
+{
+    if (!ref.Id.IsValid())
+        return JsonValue(ref.Path);
+    JsonValue::Object object{ { std::string(kIdKey), JsonValue(AssetIdToString(ref.Id)) } };
+    if (!ref.Path.empty())
+        object.emplace_back(std::string(kPathKey), JsonValue(ref.Path));
+    return JsonValue(std::move(object));
+}

@@ -109,7 +109,7 @@ namespace
     AssetFieldValue Value(std::string_view path)
     {
         AssetFieldValue value;
-        value.Refs.push_back(AssetFieldRef{ {}, std::string(path) });
+        value.Refs.push_back(AssetRef{ .Type = AssetType::Script, .Path = std::string(path) });
         return value;
     }
 }

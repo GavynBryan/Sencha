@@ -86,9 +86,9 @@ AssetId AssetIdMap::EnsureId(std::string_view path,
     // First sight: mint from the path so independent checkouts and branches
     // agree, probing past the (astronomically unlikely) collision with an
     // id already bound to a different path.
-    AssetId minted{ HashBytes64(path) };
-    for (uint64_t salt = 1; !minted.IsValid() || PathsById.contains(minted); ++salt)
-        minted.Value = HashBytes64(path, salt);
+    AssetId minted = AssetIdOfPath(path);
+    for (uint64_t salt = 1; PathsById.contains(minted); ++salt)
+        minted = AssetIdOfPath(path, salt);
 
     PathsById.emplace(minted, key);
     EntriesByPath.emplace(key, AssetIdMapEntry{ minted, contentHash });
