@@ -53,7 +53,8 @@ AnimationClipEventsDocument* AnimationClipEventsSet::OpenOrFocus(const std::stri
         clipPath, root / (source->SourceRelPath + std::string(kAssetSidecarSuffix)), &error);
     if (document == nullptr)
         return nullptr;
-    document->ObserveSteps([this, clipPath] { Sources.Record({ this, clipPath }); });
+    // Its path read when it steps: its source may have moved since.
+    document->ObserveSteps([this, held = document.get()] { Sources.Record(RefOf(*held)); });
     Open.push_back(std::move(document));
     ActiveClipPath = clipPath;
     return Open.back().get();
@@ -218,4 +219,20 @@ bool AnimationClipEventsSet::HoldsFile(const std::filesystem::path& file) const
         const std::filesystem::path held = std::filesystem::weakly_canonical(document->SidecarPath(), ec);
         return held == sidecar || held == std::filesystem::weakly_canonical(file, ec);
     });
+}
+
+void AnimationClipEventsSet::FileMoved(const MovedFile& moved)
+{
+    const std::string parts = moved.FromAsset + "#";
+    for (const std::unique_ptr<AnimationClipEventsDocument>& document : Open)
+    {
+        if (!document->ClipPath().starts_with(parts))
+            continue;
+        const std::string from = document->ClipPath();
+        std::string to = moved.ToAsset + from.substr(moved.FromAsset.size());
+        document->MoveTo(to, SidecarOf(moved.To));
+        if (ActiveClipPath == from)
+            ActiveClipPath = to;
+        Sources.Rekey({ this, from }, std::move(to));
+    }
 }

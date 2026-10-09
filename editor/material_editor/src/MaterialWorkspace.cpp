@@ -1,6 +1,7 @@
 #include "MaterialWorkspace.h"
 
 #include "MaterialPreviewRenderFeature.h"
+#include "project/ProjectFileSteps.h"
 #include "project/ProjectFiles.h"
 
 #include "actions/ActionOffer.h"
@@ -69,6 +70,7 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
                                      const ProjectDescriptor* project,
                                      MaterialLibrary& materials,
                                      DocumentSourceSet& documents,
+                                     ProjectFileSteps* files,
                                      PromptQueue& prompts,
                                      ActionCatalog& catalog,
                                      AssetPictures& pictures)
@@ -77,6 +79,7 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
     , Assets(engine.Content().Assets())
     , Materials(materials)
     , Documents(documents)
+    , Files(files)
     , Tabs(documents, [this](MaterialEditTab& tab, const MaterialDescription& description) {
         PushToResident(tab, description);
     })
@@ -110,8 +113,12 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
             return tab != nullptr && tab->Session.HasOpen() ? tab->Session.VirtualPath() : std::string{};
         },
         [this](const std::string& path) {
-            if (const MaterialEditTab* tab = Tabs.Active())
-                RenameMaterial(tab->Session.VirtualPath(), path);
+            // The open tab follows its file, changes and history and all.
+            const MaterialEditTab* tab = Tabs.Active();
+            if (tab == nullptr || Files == nullptr)
+                return;
+            if (const std::string refused = Files->Move(tab->Session.VirtualPath(), path); !refused.empty())
+                std::fprintf(stderr, "[materials] %s\n", refused.c_str());
         });
     RegisterPreviewBackdropCVars();
     MaterialThumbnailCache::RegisterBudget(engine.Console().Registry());
@@ -159,15 +166,10 @@ void MaterialWorkspace::DefineActions(ActionCatalog& catalog)
     OfferAction(catalog, ActionHandlers,
                 { .Id = "material.new", .Label = "New Material", .Category = "File",
                   .DefaultChords = { { SDLK_N, { .Ctrl = true } } } },
-                { .Invoke = [this] { CreateMaterial(UnusedMaterialName("NewMaterial"), false); },
+                { .Invoke = [this] { CreateMaterial(UnusedMaterialName("NewMaterial")); },
                   .Enabled = [canCreate] { return canCreate; } });
     OfferAction(catalog, ActionHandlers, { .Id = "material.duplicate", .Label = "Duplicate Material", .Category = "File" },
-                { .Invoke = [this] {
-                      if (const MaterialEditTab* tab = Tabs.Active())
-                          CreateMaterial(UnusedMaterialName(std::string(MaterialLeafName(tab->Session.VirtualPath())) + "_copy"),
-                                         true);
-                  },
-                  .Enabled = [open, canCreate] { return canCreate && open(); } });
+                { .Invoke = [this] { DuplicateActive(); }, .Enabled = [this, open] { return Files != nullptr && open(); } });
     OfferAction(catalog, ActionHandlers,
                 { .Id = "material.close", .Label = "Close Material", .Category = "File",
                   .DefaultChords = { { SDLK_W, { .Ctrl = true } } } },
@@ -431,12 +433,9 @@ void MaterialWorkspace::SaveActiveMaterial()
         std::fprintf(stderr, "[materials] save failed: %s\n", result.Error.c_str());
 }
 
-void MaterialWorkspace::CreateMaterial(const std::string& name, bool duplicateOpen)
+void MaterialWorkspace::CreateMaterial(const std::string& name)
 {
     if (Project == nullptr || Project->ContentRoots.empty() || name.empty())
-        return;
-    MaterialEditTab* active = Tabs.Active();
-    if (duplicateOpen && (active == nullptr || !active->Session.HasOpen()))
         return;
 
     const std::filesystem::path root(Project->ContentRoots.front());
@@ -450,9 +449,7 @@ void MaterialWorkspace::CreateMaterial(const std::string& name, bool duplicateOp
     }
 
     std::string error;
-    const bool written = duplicateOpen ? active->Session.SaveTo(file.string(), &error)
-                                       : MaterialEditSession::CreateNew(file.string(), &error);
-    if (!written)
+    if (!MaterialEditSession::CreateNew(file.string(), &error))
     {
         std::fprintf(stderr, "[materials] create failed: %s\n", error.c_str());
         return;
@@ -462,76 +459,19 @@ void MaterialWorkspace::CreateMaterial(const std::string& name, bool duplicateOp
     OpenMaterial("asset://materials/" + name + ".smat");
 }
 
-void MaterialWorkspace::RenameMaterial(const std::string& virtualPath,
-                                            const std::string& newRelPath)
+void MaterialWorkspace::DuplicateActive()
 {
-    if (Project == nullptr || newRelPath.empty())
+    const MaterialEditTab* tab = Tabs.Active();
+    if (tab == nullptr || !tab->Session.HasOpen() || Files == nullptr)
         return;
-    const AssetRecord* record = Assets.Registry.FindByPath(virtualPath);
-    if (record == nullptr || record->FilePath.empty())
+    const std::string copy = CopyPath(tab->Session.VirtualPath(),
+                                      [this](const std::string& path) { return Assets.Registry.Contains(path); });
+    if (const std::string refused = Files->Duplicate(tab->Session.VirtualPath(), copy); !refused.empty())
     {
-        std::fprintf(stderr, "[materials] '%s' is not a renameable material file\n", virtualPath.c_str());
-        return;
-    }
-
-    // The move stays inside the content root that owns the file, so the new
-    // asset:// path is the new root-relative path.
-    const std::filesystem::path oldFile(record->FilePath);
-    std::filesystem::path owningRoot;
-    for (const std::string& root : Project->ContentRoots)
-    {
-        const auto rel = oldFile.lexically_relative(root);
-        if (!rel.empty() && *rel.begin() != "..")
-        {
-            owningRoot = root;
-            break;
-        }
-    }
-    if (owningRoot.empty())
-    {
-        std::fprintf(stderr, "[materials] '%s' is outside every content root\n", record->FilePath.c_str());
+        std::fprintf(stderr, "[materials] %s\n", refused.c_str());
         return;
     }
-
-    std::string rel = newRelPath;
-    if (rel.size() < 5 || rel.substr(rel.size() - 5) != ".smat")
-        rel += ".smat";
-    const std::filesystem::path newFile = (owningRoot / rel).lexically_normal();
-
-    std::error_code ec;
-    if (std::filesystem::exists(newFile, ec))
-    {
-        std::fprintf(stderr, "[materials] '%s' already exists\n", newFile.string().c_str());
-        return;
-    }
-    std::filesystem::create_directories(newFile.parent_path(), ec);
-    std::filesystem::rename(oldFile, newFile, ec);
-    if (ec)
-    {
-        std::fprintf(stderr, "[materials] rename failed: %s\n", ec.message().c_str());
-        return;
-    }
-
-    const std::string newVirtual = "asset://" + rel;
-    // Levels referencing the old path are not rewritten; those faces render
-    // as the level default until reassigned. Same policy as deleting a file.
-    std::fprintf(stderr, "[materials] renamed '%s' -> '%s' (level refs are not rewritten)\n",
-                 virtualPath.c_str(), newVirtual.c_str());
-
-    if (MaterialEditTab* tab = Tabs.Find(virtualPath))
-    {
-        Tabs.Renamed(*tab, newVirtual, newFile.string());
-        tab->Resident.Reset();
-    }
-
-    RescanMaterials();
-
-    if (MaterialEditTab* tab = Tabs.Find(newVirtual); tab != nullptr && !tab->Resident.IsValid())
-    {
-        tab->Resident = Assets.Assets.LoadLease(newVirtual, AssetType::Material);
-        // Force a re-apply so an unsaved working state survives the move.
-        tab->AppliedVersion = 0;
-    }
+    OpenMaterial(copy);
 }
 
 void MaterialWorkspace::CreateMaterialFromTexture(const std::string& textureVirtualPath)

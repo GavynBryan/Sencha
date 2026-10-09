@@ -213,16 +213,6 @@ std::string RenamedPath(std::string_view from, std::string_view written)
            + std::filesystem::path(from).extension().string();
 }
 
-std::string CopyPath(std::string_view from, const std::function<bool(const std::string&)>& taken)
-{
-    const std::filesystem::path path(from.substr(kAssetScheme.size()));
-    const std::string stem = (path.parent_path() / path.stem()).generic_string();
-    const std::string extension = path.extension().string();
-    std::string copy;
-    for (int n = 1; copy.empty() || taken(copy); ++n)
-        copy = std::string(kAssetScheme) + stem + (n == 1 ? " copy" : std::format(" copy {}", n)) + extension;
-    return copy;
-}
 
 Shelf::Shelf(const ShellWindowServices& services, UiSurfaceId surface)
     : Ui(services.Ui)

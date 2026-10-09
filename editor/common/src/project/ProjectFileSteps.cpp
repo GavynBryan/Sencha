@@ -140,6 +140,18 @@ std::optional<std::string> NamingMovedAsset(std::string_view text, std::string_v
     return out;
 }
 
+std::string CopyPath(std::string_view from, const std::function<bool(const std::string&)>& taken)
+{
+    const std::size_t leaf = from.rfind('/') + 1;
+    const std::size_t dot = from.find('.', leaf);
+    const std::string_view stem = from.substr(0, dot);
+    const std::string_view extension = dot == std::string_view::npos ? std::string_view{} : from.substr(dot);
+    std::string copy;
+    for (int n = 1; copy.empty() || taken(copy); ++n)
+        copy = std::format("{}{}{}", stem, n == 1 ? std::string(" copy") : std::format(" copy {}", n), extension);
+    return copy;
+}
+
 ProjectFileSteps::ProjectFileSteps(std::vector<std::filesystem::path> roots, DocumentSourceSet& journal,
                                    ProjectFileHooks hooks)
     : Roots(std::move(roots))
@@ -154,12 +166,13 @@ ProjectFileSteps::~ProjectFileSteps()
     Journal.RemoveSource(*this);
 }
 
-std::string ProjectFileSteps::Refusal(std::string_view assetPath, std::optional<ProjectFile>& file) const
+std::string ProjectFileSteps::Refusal(std::string_view assetPath, OpenFiles open,
+                                      std::optional<ProjectFile>& file) const
 {
     file = FindProjectFile(Roots, assetPath);
     if (!file.has_value())
         return std::format("{} is not one of the project's files.", assetPath);
-    if (Hooks.IsOpen && Hooks.IsOpen(*file))
+    if (open == OpenFiles::Refuse && Hooks.IsOpen && Hooks.IsOpen(*file))
         return std::format("{} is open; close it first.", PathLeaf(assetPath));
     if (file->Extension == kSceneSource)
         for (const ProjectFile& world : ScanProjectFiles(Roots))
@@ -191,7 +204,7 @@ std::filesystem::path ProjectFileSteps::FileAt(const ProjectFile& source, std::s
 std::string ProjectFileSteps::Move(std::string_view assetPath, std::string_view toAssetPath)
 {
     std::optional<ProjectFile> source;
-    if (std::string refused = Refusal(assetPath, source); !refused.empty())
+    if (std::string refused = Refusal(assetPath, OpenFiles::Follow, source); !refused.empty())
         return refused;
     if (!toAssetPath.starts_with("asset://") || toAssetPath == assetPath)
         return "Name it somewhere else in the project.";
@@ -220,6 +233,9 @@ std::string ProjectFileSteps::Move(std::string_view assetPath, std::string_view 
     // A file that states its id beside itself has a sidecar by now: it goes too.
     if (asset && !StatesIdInside(source->Extension))
         step.Renames.push_back({ statement, SidecarOf(target) });
+    const std::filesystem::path userState = source->FilePath.string() + std::string(kUserStateSuffix);
+    if (std::filesystem::exists(userState, ec))
+        step.Renames.push_back({ userState, target.string() + std::string(kUserStateSuffix) });
 
     for (const ProjectFile& document : asset ? ScanProjectFiles(Roots) : std::vector<ProjectFile>{})
     {
@@ -239,6 +255,7 @@ std::string ProjectFileSteps::Move(std::string_view assetPath, std::string_view 
     const std::filesystem::path root = RootOf(source->FilePath);
     step.Changes = { { ProjectFileChange::Kind::Gone, std::string(assetPath), source->FilePath, root },
                      { ProjectFileChange::Kind::Appeared, std::string(toAssetPath), target, root } };
+    step.Moved = MovedFile{ std::string(assetPath), std::string(toAssetPath), source->FilePath, target };
     Take(step, DocumentStep::Redo);
     Record(std::move(step));
     return {};
@@ -298,7 +315,7 @@ std::string ProjectFileSteps::Duplicate(std::string_view assetPath, std::string_
 std::string ProjectFileSteps::Trash(std::string_view assetPath)
 {
     std::optional<ProjectFile> source;
-    if (std::string refused = Refusal(assetPath, source); !refused.empty())
+    if (std::string refused = Refusal(assetPath, OpenFiles::Refuse, source); !refused.empty())
         return refused;
     const std::filesystem::path root = RootOf(source->FilePath);
     const std::filesystem::path relative = std::filesystem::relative(source->FilePath, root);
@@ -355,19 +372,24 @@ void ProjectFileSteps::Take(const Step& step, DocumentStep direction)
         write(step.Before);
     }
     ++Taken;
-    if (!Hooks.Changed)
-        return;
-    if (redo)
-        for (const ProjectFileChange& change : step.Changes)
-            Hooks.Changed(change);
-    else
-        for (auto it = step.Changes.rbegin(); it != step.Changes.rend(); ++it)
-        {
-            ProjectFileChange undone = *it;
-            undone.What = undone.What == ProjectFileChange::Kind::Gone ? ProjectFileChange::Kind::Appeared
-                                                                        : ProjectFileChange::Kind::Gone;
-            Hooks.Changed(undone);
-        }
+    if (Hooks.Changed)
+    {
+        if (redo)
+            for (const ProjectFileChange& change : step.Changes)
+                Hooks.Changed(change);
+        else
+            for (auto it = step.Changes.rbegin(); it != step.Changes.rend(); ++it)
+            {
+                ProjectFileChange undone = *it;
+                undone.What = undone.What == ProjectFileChange::Kind::Gone ? ProjectFileChange::Kind::Appeared
+                                                                            : ProjectFileChange::Kind::Gone;
+                Hooks.Changed(undone);
+            }
+    }
+    if (step.Moved.has_value())
+        Journal.FileMoved(redo ? *step.Moved
+                               : MovedFile{ step.Moved->ToAsset, step.Moved->FromAsset, step.Moved->To,
+                                            step.Moved->From });
 }
 
 void ProjectFileSteps::Record(Step step)

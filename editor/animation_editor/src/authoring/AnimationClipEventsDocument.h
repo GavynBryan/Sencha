@@ -26,6 +26,12 @@ public:
     [[nodiscard]] const std::string& ClipPath() const { return Clip; }
     [[nodiscard]] const std::string& ClipName() const { return Name; }
     [[nodiscard]] const std::filesystem::path& SidecarPath() const { return Sidecar; }
+    // Its source moved, and the sidecar with it.
+    void MoveTo(std::string clipPath, std::filesystem::path sidecarFile)
+    {
+        Clip = std::move(clipPath);
+        Sidecar = std::move(sidecarFile);
+    }
 
     // In authored order.
     [[nodiscard]] const std::vector<AnimationClipEvent>& Events() const { return Working; }

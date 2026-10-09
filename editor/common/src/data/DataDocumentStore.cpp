@@ -372,9 +372,24 @@ bool DataDocumentStore::HoldsFile(const std::filesystem::path& file) const
     });
 }
 
+void DataDocumentStore::FileMoved(const MovedFile& moved)
+{
+    for (const Entry& entry : Open_)
+    {
+        DataDocument& document = *entry.Document;
+        if (document.VirtualPath() != moved.FromAsset)
+            continue;
+        document.MoveTo(moved.To, moved.ToAsset);
+        Sources.Rekey({ this, moved.FromAsset }, moved.ToAsset);
+        Changed(document);
+        return;
+    }
+}
+
 DataDocument* DataDocumentStore::Adopt(std::unique_ptr<DataDocument> document)
 {
-    document->ObserveSteps([this, key = document->VirtualPath()] { Sources.Record({ this, key }); });
+    // Its path read when it steps: the file may have moved since.
+    document->ObserveSteps([this, held = document.get()] { Sources.Record({ this, held->VirtualPath() }); });
     Open_.push_back(Entry{ std::move(document), 0 });
     return Open_.back().Document.get();
 }

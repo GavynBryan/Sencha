@@ -35,6 +35,10 @@ public:
     void Record(DocumentRef document);
     // The document's history is gone: it closed, reloaded or took the file's version.
     void ForgetDocument(const DocumentRef& document);
+    // The document goes by `key` now: the steps taken in it are its still.
+    void Rekey(const DocumentRef& document, std::string key);
+    // Every source follows a file that moved.
+    void FileMoved(const MovedFile& moved);
 
     // Open edits are cancelled before the newest step is retaken.
     void Undo();

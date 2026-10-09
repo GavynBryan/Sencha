@@ -27,7 +27,7 @@ std::string Lowered(std::string text)
 bool IsBookkeeping(const std::filesystem::path& file)
 {
     const std::string name = file.filename().string();
-    return name.ends_with(".user.json") || file.extension() == kAssetSidecarSuffix;
+    return name.ends_with(kUserStateSuffix) || file.extension() == kAssetSidecarSuffix;
 }
 
 

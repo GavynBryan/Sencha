@@ -1,6 +1,7 @@
 #include "WorldDocument.h"
 
 #include "ZoneBounds.h"
+#include "project/ProjectFiles.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -629,6 +630,24 @@ bool WorldDocument::HoldsFile(const std::filesystem::path& file) const
         return holds(LegacyDocument_.get());
     return (!WorldPath_.empty() && std::filesystem::equivalent(WorldPath_, file, ec)) || holds(WorldScene_.get())
            || std::ranges::any_of(OpenZones_, [&](const auto& open) { return holds(open.second.Document.get()); });
+}
+
+void WorldDocument::FileMoved(const std::filesystem::path& from, const std::filesystem::path& to)
+{
+    // Compared by where they would be: the file is no longer at `from`.
+    std::error_code ec;
+    const std::filesystem::path moved = std::filesystem::weakly_canonical(from, ec);
+    const auto was = [&](const std::filesystem::path& path) {
+        return std::filesystem::weakly_canonical(path, ec) == moved;
+    };
+    if (!WorldMode_)
+    {
+        if (LegacyDocument_->HasFilePath() && was(std::filesystem::path(LegacyDocument_->GetDisplayName())))
+            LegacyDocument_->MoveTo(to.string());
+        return;
+    }
+    if (!WorldPath_.empty() && was(WorldPath_))
+        WorldPath_ = to.string();
 }
 
 bool WorldDocument::IsExternallyModified() const
@@ -1379,7 +1398,7 @@ void WorldDocument::CreateWorldSceneDocument()
 
 std::string WorldDocument::UserSidecarPath() const
 {
-    return WorldPath_ + ".user.json";
+    return WorldPath_ + std::string(kUserStateSuffix);
 }
 
 void WorldDocument::WriteUserSidecar() const

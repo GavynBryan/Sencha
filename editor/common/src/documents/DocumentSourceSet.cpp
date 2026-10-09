@@ -37,6 +37,21 @@ void DocumentSourceSet::ForgetDocument(const DocumentRef& document)
     ReportObservers.Notify(nullptr);
 }
 
+void DocumentSourceSet::Rekey(const DocumentRef& document, std::string key)
+{
+    for (DocumentRef& step : Steps)
+        if (step == document)
+            step.Key = key;
+    Report.Remove(document);
+    ReportObservers.Notify(nullptr);
+}
+
+void DocumentSourceSet::FileMoved(const MovedFile& moved)
+{
+    for (DocumentSource* source : Sources)
+        source->FileMoved(moved);
+}
+
 void DocumentSourceSet::Undo()
 {
     CancelEdits();

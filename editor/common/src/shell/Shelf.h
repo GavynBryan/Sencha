@@ -54,8 +54,6 @@ struct ShelfPick
 // Where `written` -- a place in the project without its scheme or extension,
 // as a rename asks for it -- puts the file at `from`; empty for nowhere.
 [[nodiscard]] std::string RenamedPath(std::string_view from, std::string_view written);
-// The first free "<name> copy", "<name> copy 2"... beside the file at `from`.
-[[nodiscard]] std::string CopyPath(std::string_view from, const std::function<bool(const std::string&)>& taken);
 
 // Where a shelf finds the project's content, and what it is told about it.
 struct ShelfSources

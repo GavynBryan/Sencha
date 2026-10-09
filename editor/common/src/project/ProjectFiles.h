@@ -29,6 +29,9 @@ struct ProjectFile
     std::filesystem::file_time_type Modified{};
 };
 
+// Beside a file, one person's state about it (a world's view), never content.
+inline constexpr std::string_view kUserStateSuffix = ".user.json";
+
 [[nodiscard]] AssetId AssetIdOf(const ProjectFile& file);
 // The id `file` states, in itself or its sidecar, read as JSON5 -- scene
 // sources are written in it, and every other statement is JSON besides.

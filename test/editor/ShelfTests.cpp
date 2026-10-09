@@ -69,11 +69,3 @@ TEST(ShelfFileNames, ARenameKeepsTheKindAndASlashMovesIt)
     EXPECT_EQ(RenamedPath("asset://materials/stone.smat", " walls/stone/ "), "asset://walls/stone.smat");
     EXPECT_EQ(RenamedPath("asset://materials/stone.smat", " / "), "");
 }
-
-TEST(ShelfFileNames, ACopyTakesTheFirstFreeName)
-{
-    const std::set<std::string> taken{ "asset://m/stone copy.smat", "asset://m/stone copy 2.smat" };
-    EXPECT_EQ(CopyPath("asset://m/stone.smat", [&](const std::string& path) { return taken.contains(path); }),
-              "asset://m/stone copy 3.smat");
-    EXPECT_EQ(CopyPath("asset://hero.blend", [](const std::string&) { return false; }), "asset://hero copy.blend");
-}

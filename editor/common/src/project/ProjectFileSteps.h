@@ -23,6 +23,11 @@ class DocumentSourceSet;
 [[nodiscard]] std::optional<std::string> NamingMovedAsset(std::string_view text, std::string_view from,
                                                           std::string_view to, AssetId id);
 
+// The first free "<name> copy", "<name> copy 2"... beside the file at `from`,
+// inserted before the first dot of its name, so "move.profile.sdata" copies to
+// "move copy.profile.sdata".
+[[nodiscard]] std::string CopyPath(std::string_view from, const std::function<bool(const std::string&)>& taken);
+
 // What a file step did to the project's files, for whoever keeps a view of them
 // (the registry, the cook's cache, open documents, the shelf).
 struct ProjectFileChange
@@ -43,8 +48,9 @@ struct ProjectFileChange
 // What file steps ask of whoever owns the project's files.
 struct ProjectFileHooks
 {
-    // Whether an editor holds the file open. It is not moved or trashed, nor
-    // is a file moved that an open one names: the editor owns what it holds.
+    // Whether an editor holds the file open. A file it holds follows a move
+    // (DocumentSource::FileMoved), but is not trashed; nor is a file moved
+    // that an open one names, which holds its old path.
     std::function<bool(const ProjectFile&)> IsOpen = {};
     // Whether the file is an asset (IsAssetFile), and so goes by an id.
     std::function<bool(const ProjectFile&)> IsAsset = {};
@@ -58,8 +64,9 @@ struct ProjectFileHooks
 // one step in the journal every document shares, so Ctrl+Z puts a file back as
 // it puts back an edit. A file moves with its sidecar and keeps the id it
 // states (it is given one first, if it states none); every document that still
-// names it by its old path is made to name it by its id and new path. Trashed
-// files go to `.trash` under their root, which no walk over content enters.
+// names it by its old path is made to name it by its id and new path, and an
+// open document living in it follows it. Trashed files go to `.trash` under
+// their root, which no walk over content enters.
 //=============================================================================
 class ProjectFileSteps final : public DocumentSource
 {
@@ -111,9 +118,17 @@ private:
         std::vector<Rename> Renames;
         std::vector<Rewrite> After;
         std::vector<ProjectFileChange> Changes;
+        // A move: what open documents follow, after the changes are known.
+        std::optional<MovedFile> Moved;
     };
 
-    [[nodiscard]] std::string Refusal(std::string_view assetPath, std::optional<ProjectFile>& file) const;
+    enum class OpenFiles : std::uint8_t
+    {
+        Follow,
+        Refuse,
+    };
+    [[nodiscard]] std::string Refusal(std::string_view assetPath, OpenFiles open,
+                                      std::optional<ProjectFile>& file) const;
     [[nodiscard]] std::filesystem::path RootOf(const std::filesystem::path& file) const;
     [[nodiscard]] std::filesystem::path FileAt(const ProjectFile& source, std::string_view assetPath) const;
     void Take(const Step& step, DocumentStep direction);

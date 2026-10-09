@@ -193,7 +193,7 @@ TEST(ProjectFileSteps, AStepThatCannotBeTakenSaysWhy)
 
     EXPECT_NE(files.Steps.Move("asset://m/stone.smat", "asset://m/brick.smat"), "") << "taken";
     EXPECT_NE(files.Steps.Move("asset://m/stone.smat", "asset://m/stone.png"), "") << "a kind is kept";
-    EXPECT_NE(files.Steps.Move("asset://m/brick.smat", "asset://m/wall.smat"), "") << "open in an editor";
+    EXPECT_NE(files.Steps.Trash("asset://m/brick.smat"), "") << "open in an editor";
     EXPECT_NE(files.Steps.Trash("asset://m/gone.smat"), "");
     EXPECT_FALSE(files.Journal.CanUndo());
 }
@@ -295,4 +295,13 @@ TEST(ProjectFileSteps, TheAssetStackFollowsAStep)
     ASSERT_NE(assets.Registry.FindByPath("asset://t/checker.png"), nullptr);
     EXPECT_EQ(assets.Registry.FindByPath("asset://t/checker.png")->Id, AssetIdOfPath("asset://t/checker.png"));
     EXPECT_TRUE(indexed("t/checker.png"));
+}
+
+TEST(CopyPath, TheFirstFreeNameBesideIt)
+{
+    const std::set<std::string> taken{ "asset://m/stone copy.smat", "asset://m/stone copy 2.smat" };
+    EXPECT_EQ(CopyPath("asset://m/stone.smat", [&](const std::string& path) { return taken.contains(path); }),
+              "asset://m/stone copy 3.smat");
+    EXPECT_EQ(CopyPath("asset://input/move.profile.sdata", [](const std::string&) { return false; }),
+              "asset://input/move copy.profile.sdata");
 }

@@ -362,15 +362,15 @@ do the work and delete the entry.
 
 ## Moving a file an open document names
 
-- **What:** the Shelf refuses to move a file that an open document names, or
-  to move or trash a file an editor holds (`DocumentSource::HoldsFile`). An open
-  document keeps its references in memory, and a bare path in it would be saved
-  back naming the file where it was.
-- **Where:** `ProjectFileSteps::Move` and `Refusal`; the document sources
-  (`MaterialDocumentSet`, `DataDocumentStore`, `LevelDocumentSource`,
-  `AnimationClipEventsSet`).
-- **Trigger:** the Shelf plan's stage B6c, which re-points open documents
-  (Materials' and Data's own rename and duplicate move onto file steps).
+- **What:** the Shelf refuses to move a file that an open document names. The
+  document holds the old path in memory: a level would still resolve it by id,
+  but a material or data document writes its references back as it read them,
+  and would save the old path over the file step's rewrite.
+- **Where:** `ProjectFileSteps::Move`; the document sources
+  (`MaterialDocumentSet`, `DataDocumentStore`, `LevelDocumentSource`).
+- **Trigger:** the Shelf plan's stage B6c-2: the registry remembers the
+  session's moves, a source whose saves settle every name through it (the
+  level) takes a referrer rewrite as read, and only the others refuse.
 
 ## The previewed UI document is not held
 

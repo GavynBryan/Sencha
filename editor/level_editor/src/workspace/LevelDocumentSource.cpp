@@ -98,3 +98,8 @@ bool LevelDocumentSource::HoldsFile(const std::filesystem::path& file) const
 {
     return Workspace.World.HoldsFile(file);
 }
+
+void LevelDocumentSource::FileMoved(const MovedFile& moved)
+{
+    Workspace.World.FileMoved(moved.From, moved.To);
+}

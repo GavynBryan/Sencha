@@ -25,6 +25,7 @@ class Engine;
 class MaterialLibrary;
 class MaterialThumbnailCache;
 class MaterialPreviewRenderFeature;
+class ProjectFileSteps;
 struct ProjectDescriptor;
 struct RuntimeAssets;
 
@@ -40,6 +41,7 @@ public:
                       const ProjectDescriptor* project,
                       MaterialLibrary& materials,
                       DocumentSourceSet& documents,
+                      ProjectFileSteps* files,
                       PromptQueue& prompts,
                       ActionCatalog& catalog,
                       AssetPictures& pictures);
@@ -67,16 +69,14 @@ private:
     // A name under materials/ that no file has yet, from `stem`.
     [[nodiscard]] std::string UnusedMaterialName(const std::string& stem) const;
 
-    // Browser/tab actions. New/Duplicate write materials/<name>.smat under the
-    // first content root, re-register it, and open it.
+    // Browser/tab actions. New writes materials/<name>.smat under the first
+    // content root, re-registers it, and opens it.
     void OpenMaterial(const std::string& virtualPath);
     void CloseTab(std::size_t index);
     void SaveActiveMaterial();
-    void CreateMaterial(const std::string& name, bool duplicateOpen);
-    // Moves the .smat on disk to content-root-relative newRelPath (".smat"
-    // appended when missing) and re-points any open tab. Refs in levels are
-    // not rewritten; they fall back to the level default until reassigned.
-    void RenameMaterial(const std::string& virtualPath, const std::string& newRelPath);
+    void CreateMaterial(const std::string& name);
+    // The active material's file copied beside it, as saved, and opened.
+    void DuplicateActive();
     void RescanMaterials();
     void PickTexture(const std::string& texturePath);
     // The card goes back to the open material.
@@ -105,6 +105,7 @@ private:
     RuntimeAssets& Assets;
     MaterialLibrary& Materials;
     DocumentSourceSet& Documents;
+    ProjectFileSteps* Files;
     MaterialDocumentSet Tabs;
     PromptQueue::Asker Prompts;
 

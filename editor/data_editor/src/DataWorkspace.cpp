@@ -1,11 +1,10 @@
 #include "DataWorkspace.h"
 
+#include "project/ProjectFileSteps.h"
 #include "project/ProjectFiles.h"
 #include "text/PathLeaf.h"
 
-
 #include "actions/ActionOffer.h"
-#include "data/DataAssetFiles.h"
 #include "problems/ProblemList.h"
 #include "prompts/DocumentPrompts.h"
 #include "text/TextFilterMatch.h"
@@ -28,20 +27,14 @@ namespace
 {
 constexpr std::string_view kCommandOwner = "editor.data";
 constexpr std::string_view kProblemSource = "data";
-constexpr std::string_view kScheme = "asset://";
-
-std::string RootRelative(std::string_view path)
-{
-    return std::string(path.starts_with(kScheme) ? path.substr(kScheme.size()) : path);
-}
-
 } // namespace
 
 DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
-                             DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog,
-                             ProblemList& problems, const DataSubtypeAuthoringSetup& authorings)
+                             DataDocumentStore& store, ProjectFileSteps* files, PromptQueue& prompts,
+                             ActionCatalog& catalog, ProblemList& problems, const DataSubtypeAuthoringSetup& authorings)
     : EngineRef(engine)
     , Model(engine.Content().Assets(), project, sources, store)
+    , Files(files)
     , Prompts(prompts.MakeAsker())
     , Problems(problems)
     , Properties(Model.Documents, [this] { return Model.Documents.Active(); }, &Authoring)
@@ -58,10 +51,10 @@ DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, D
                    return document != nullptr ? document->VirtualPath() : std::string{};
                },
                [this](const std::string& to) {
-                   AfterSettling([this, to](const std::string& from, DirtyDisposition disposition) {
-                       OperationError.clear();
-                       (void)Model.Rename(from, to, disposition, OperationError);
-                   });
+                   // The open document follows its file, changes and history and all.
+                   const DataDocument* document = Model.Documents.Active();
+                   if (document != nullptr && Files != nullptr)
+                       OperationError = Files->Move(document->VirtualPath(), to);
                })
 {
     authorings(Authoring);
@@ -113,17 +106,12 @@ void DataWorkspace::DefineActions(ActionCatalog& catalog)
                     Creation.Clear();
                     Subject = CardSubject::Creating;
                 } });
+    const auto changesFiles = [this, active] { return Files != nullptr && active(); };
     OfferAction(catalog, ActionHandlers, { .Id = "data.duplicate", .Label = "Duplicate", .Category = "File" },
-                { .Invoke = [this] { DuplicateActive(); }, .Enabled = active });
+                { .Invoke = [this] { DuplicateActive(); }, .Enabled = changesFiles });
     OfferAction(catalog, ActionHandlers,
-                { .Id = "data.delete", .Label = "Delete File", .Category = "File", .Tone = ActionTone::Destructive },
-                { .Invoke = [this] {
-                      AfterSettling([this](const std::string& path, DirtyDisposition disposition) {
-                          OperationError.clear();
-                          (void)Model.Delete(path, disposition, OperationError);
-                      });
-                  },
-                  .Enabled = active });
+                { .Id = "data.delete", .Label = "Trash File", .Category = "File", .Tone = ActionTone::Destructive },
+                { .Invoke = [this] { TrashActive(); }, .Enabled = changesFiles });
     OfferAction(catalog, ActionHandlers,
                 { .Id = "data.close", .Label = "Close", .Category = "File",
                   .DefaultChords = { { SDLK_W, { .Ctrl = true } } } },
@@ -157,25 +145,28 @@ void DataWorkspace::AfterSettling(std::function<void(const std::string& path, Di
 void DataWorkspace::DuplicateActive()
 {
     const DataDocument* document = Model.Documents.Active();
-    if (document == nullptr)
+    if (document == nullptr || Files == nullptr)
         return;
-    // "input/player.profile.sdata" -> "input/player_copy.profile.sdata", then _copy2...
-    const std::string relative = RootRelative(document->VirtualPath());
-    const std::size_t slash = relative.rfind('/');
-    const std::size_t dot = relative.find('.', slash == std::string::npos ? 0 : slash + 1);
-    const std::string stem = relative.substr(0, dot);
-    const std::string extension = dot == std::string::npos ? std::string{} : relative.substr(dot);
-    for (int n = 1; n < 100; ++n)
-    {
-        const std::string candidate = stem + (n == 1 ? std::string("_copy") : "_copy" + std::to_string(n)) + extension;
-        std::string error;
-        if (Model.Duplicate(document->VirtualPath(), candidate, error))
-        {
-            (void)Model.Documents.OpenOrFocus(DataAssetVirtualPath(candidate), OperationError);
+    // What is saved is copied; unsaved changes stay with the original.
+    const AssetRegistry& registry = EngineRef.Content().Assets().Registry;
+    const std::string copy =
+        CopyPath(document->VirtualPath(), [&](const std::string& path) { return registry.Contains(path); });
+    OperationError = Files->Duplicate(document->VirtualPath(), copy);
+    if (OperationError.empty())
+        (void)Model.Documents.OpenOrFocus(copy, OperationError);
+}
+
+void DataWorkspace::TrashActive()
+{
+    // Closed first, its changes settled: a file an editor holds is not trashed.
+    AfterSettling([this](const std::string& path, DirtyDisposition disposition) {
+        OperationError.clear();
+        if (const std::optional<std::size_t> index = Model.Documents.IndexOf(path);
+            index.has_value() && !Model.Documents.Close(*index, disposition, OperationError))
             return;
-        }
-    }
-    OperationError = "No free name for a copy beside it";
+        if (Files != nullptr)
+            OperationError = Files->Trash(path);
+    });
 }
 
 void DataWorkspace::PublishProblems()

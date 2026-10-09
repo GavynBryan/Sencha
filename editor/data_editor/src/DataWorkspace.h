@@ -17,6 +17,7 @@
 class ActionCatalog;
 class Engine;
 class ProblemList;
+class ProjectFileSteps;
 struct ProjectDescriptor;
 
 // The data workspace: every structured data asset in the project, the open
@@ -27,9 +28,10 @@ struct ProjectDescriptor;
 class DataWorkspace final : public IWorkspace
 {
 public:
+    // Without `files`, documents are not moved, copied or trashed.
     DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
-                  DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog, ProblemList& problems,
-                  const DataSubtypeAuthoringSetup& authorings);
+                  DataDocumentStore& store, ProjectFileSteps* files, PromptQueue& prompts, ActionCatalog& catalog,
+                  ProblemList& problems, const DataSubtypeAuthoringSetup& authorings);
     ~DataWorkspace() override;
 
     DataWorkspace(const DataWorkspace&) = delete;
@@ -54,12 +56,14 @@ private:
     void DefineActions(ActionCatalog& catalog);
     void SaveActive();
     void DuplicateActive();
+    void TrashActive();
     // Settles the active document's changes as the person says, then runs `then`.
     void AfterSettling(std::function<void(const std::string& path, DirtyDisposition disposition)> then);
     void PublishProblems();
 
     Engine& EngineRef;
     DataEditorWorkspace Model;
+    ProjectFileSteps* Files;
     PromptQueue::Asker Prompts;
     ProblemList& Problems;
     ActionContext ActionHandlers;

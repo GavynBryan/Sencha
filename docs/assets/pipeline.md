@@ -141,9 +141,12 @@ reference names the id first and the path second.
   and all else as written; a part (`#anim:Walk`) and a scene's cooked form
   (`.smap`) follow their file. A copy is a new asset with its new path's id.
   Trash is `<root>/.trash/<step>/`, a hidden folder no scan, import or watcher
-  enters. A file an editor holds open is not moved or trashed, nor is a file
-  moved that an open document names (`DocumentSource::HoldsFile`): the editor
-  owns what it holds. The asset stack follows each step as a fresh mount would
+  enters. A document open in a moved file follows it, its unsaved changes and
+  its undo steps with it (`DocumentSource::FileMoved`, `DocumentSourceSet::
+  Rekey`), and so does a world's per-user state beside it. A file an editor
+  holds is not trashed, and a file an open document names is not moved, since
+  the document holds the old path (`DocumentSource::HoldsFile`). Materials'
+  and Data's own rename, duplicate and delete are these steps. The asset stack follows each step as a fresh mount would
   have found the files (`MountProjectFileChange`): a file gone loses its record
   and its cooked index entry (`ForgetImportedSource`), whose artifact bytes
   stay for content-hash dedup; a file appeared is registered, and imported when

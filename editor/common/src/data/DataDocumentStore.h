@@ -88,6 +88,7 @@ public:
     void DiscardDocument(std::string_view key) override;
     [[nodiscard]] ExternalChange FileChangedOnDisk(const std::filesystem::path& file) override;
     [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const override;
+    void FileMoved(const MovedFile& moved) override;
 
 private:
     struct Entry

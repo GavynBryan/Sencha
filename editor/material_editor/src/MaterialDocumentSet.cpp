@@ -172,6 +172,15 @@ void MaterialDocumentSet::DiscardDocument(std::string_view key)
         (void)Close(index, DirtyDisposition::Discard, error);
 }
 
+void MaterialDocumentSet::FileMoved(const MovedFile& moved)
+{
+    MaterialEditTab* tab = Find(moved.FromAsset);
+    if (tab == nullptr)
+        return;
+    tab->Session.RenameTo(moved.ToAsset, moved.To.string());
+    Sources.Rekey({ this, moved.FromAsset }, moved.ToAsset);
+}
+
 bool MaterialDocumentSet::HoldsFile(const std::filesystem::path& file) const
 {
     std::error_code ec;

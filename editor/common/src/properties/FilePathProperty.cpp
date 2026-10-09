@@ -2,6 +2,8 @@
 
 #include "properties/SettingProperties.h"
 
+#include <filesystem>
+
 namespace
 {
 constexpr std::string_view kScheme = "://";
@@ -31,8 +33,12 @@ PropertyEditResult FilePathProperty::CommitEdit(std::string_view key, std::strin
 {
     if (key != "path" || value.empty() || !Move)
         return PropertyEditResult::Refused;
-    if (value == RootRelative(Path()))
+    const std::string from = Path();
+    if (value == RootRelative(from))
         return PropertyEditResult::Unchanged;
-    Move(std::string(value));
+    std::string to = from.substr(0, from.size() - RootRelative(from).size()) + std::string(value);
+    if (std::filesystem::path(to).extension().empty())
+        to += std::filesystem::path(from).extension().string();
+    Move(to);
     return PropertyEditResult::Applied;
 }
