@@ -77,6 +77,7 @@ const UiActionId kZoom = UiActionIdAt(14);
 const UiActionId kNone = UiActionIdAt(15);
 const UiActionId kFollow = UiActionIdAt(16);
 const UiActionId kBack = UiActionIdAt(17);
+const UiActionId kPress = UiActionIdAt(18);
 
 // How much wider a tile is than its picture, and the gap after it, in dp.
 constexpr float kTileMarginDp = 24.0f;
@@ -120,7 +121,7 @@ UiScreenDesc Describe()
     desc.Actions = { "shelf_grab",   "shelf_drag",   "shelf_drop", "shelf_query", "shelf_key",
                      "shelf_category", "shelf_list", "shelf_folder", "shelf_branch", "shelf_pick",
                      "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom", "shelf_none",
-                     "shelf_follow", "shelf_back" };
+                     "shelf_follow", "shelf_back", "shelf_press" };
     return desc;
 }
 
@@ -223,6 +224,7 @@ Shelf::Shelf(const ShellWindowServices& services, UiSurfaceId surface)
     , Catalog(services.Catalog)
     , Actions(services.Actions)
     , Notices(services.Notices)
+    , FileWheelModel(services.Catalog, FileActions, { "asset.open", "edit.rename", "edit.duplicate", "edit.delete" })
     , Asker(services.Prompts.MakeAsker())
 {
     OfferFileActions();
@@ -502,6 +504,11 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
     }
     else if (action.Id == kOpen)
         Open(Text(action));
+    else if (action.Id == kPress && Number(action, 1) == 1.0)
+    {
+        Selected = Text(action);
+        WheelAt = Vec2d{ static_cast<float>(Number(action, 2)), static_cast<float>(Number(action, 3)) };
+    }
     else if (action.Id == kFollow)
         Follow(Text(action));
     else if (action.Id == kBack && !Trail.empty())
@@ -545,6 +552,14 @@ void Shelf::PassOn(const UiAction& action)
 void Shelf::OfferFileActions()
 {
     const auto enabled = [this] { return CanChangeFiles(); };
+    OfferAction(Catalog, FileActions,
+                { .Id = "asset.open", .Label = "Open", .Category = "File", .Icon = IconId::File },
+                { .Invoke = [this] { Open(Selected); },
+                  .Enabled = [this] {
+                      const ProjectFile* file = FileAt(Selected);
+                      return file != nullptr
+                             && (Use == Purpose::Choosing ? Offers(*file) : Workspaces.KindOpening(*file) != nullptr);
+                  } });
     OfferAction(Catalog, FileActions, RenameAction(), { .Invoke = [this] { AskRename(); }, .Enabled = enabled });
     OfferAction(Catalog, FileActions, DuplicateAction(),
                 { .Invoke = [this] { DuplicateChosen(); }, .Enabled = enabled });

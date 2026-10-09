@@ -7,11 +7,13 @@
 #include "shell/SurfacePlacement.h"
 #include "shell/TimelineDeck.h"
 #include "input/InputEvent.h"
+#include "input/InputRouter.h"
 #include "presenters/PropertySheet.h"
 #include "properties/PropertyEditSession.h"
 #include "shell/ScrubGesture.h"
 #include "shell/Shelf.h"
 #include "shell/TransientSurfaces.h"
+#include "tools/RadialMenuSession.h"
 #include "workspaces/WorkspaceWindow.h"
 
 #include <graphics/PresentationId.h>
@@ -28,6 +30,7 @@ class ActionCatalog;
 class NoticeQueue;
 class ProblemList;
 class PromptQueue;
+class RadialMenuScreen;
 class SdlWindow;
 class UiService;
 class IWorkspace;
@@ -96,11 +99,11 @@ public:
     // Per frame, before the UI updates: act on what the rail asked for, then
     // publish what it should show. `now` is presentation seconds, for notices.
     void Update(double now, const ShellPreferences& preferences);
-    // A number in a sheet is pressed or being dragged: the pointer and Escape
-    // are its until let go, before the workspace sees them.
-    [[nodiscard]] bool Scrubbing() const { return Scrub != ScrubPhase::Resting; }
-    // Whether the shell took `event` for the number being dragged.
-    bool TakeScrubInput(const InputEvent& event);
+    // The pointer and the keys are the shell's, before the workspace sees
+    // them: a number in a sheet pressed or being dragged, or a wheel up.
+    [[nodiscard]] bool HoldsInput() const { return Scrubbing() || WheelUp(); }
+    // Whether the shell took `event` for what holds it.
+    bool TakeHeldInput(const InputEvent& event);
 
     // How much of the top of the window the rail covers, in window points:
     // where content under it has to start.
@@ -129,6 +132,13 @@ private:
     void PublishCaption();
     // The rail yields the pointer while the content holds it, so a drag
     // released over the rail still ends where it began.
+    [[nodiscard]] bool Scrubbing() const { return Scrub != ScrubPhase::Resting; }
+    bool TakeScrubInput(const InputEvent& event);
+    [[nodiscard]] bool WheelUp() const
+    {
+        return FileWheel != nullptr && FileWheel->GetPhase() == RadialMenuPhase::Open;
+    }
+    [[nodiscard]] RadialMenu::Frame WheelFrame() const;
     void YieldPointerToContent();
     void OpenPopover(Popover popover, std::string category = {});
     // What the row's verb asks to be chosen first.
@@ -238,6 +248,10 @@ private:
     bool TitleHeld = false;
 
     std::unique_ptr<Shelf> AssetShelf;
+    // The wheel a right press on a shelf tile opens, chosen from by a click.
+    std::unique_ptr<RadialMenuSession> FileWheel;
+    InputRouter WheelInput;
+    std::unique_ptr<RadialMenuScreen> WheelScreen;
     TransientSurfaces::Id ShelfTransient = 0;
     // The workspace the shelf was last raised for because it had nothing open.
     std::string ShelvedFor;

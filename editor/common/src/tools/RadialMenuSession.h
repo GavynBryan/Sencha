@@ -23,6 +23,15 @@ enum class RadialMenuPhase : std::uint8_t
     Dismissed,
 };
 
+// What opened the wheel, and so what closes it: the key held, whose release
+// chooses; or a click, after which the next click chooses -- or, off every
+// entry, closes it -- and the key plays no part.
+enum class RadialMenuGesture : std::uint8_t
+{
+    Held,
+    Clicked,
+};
+
 // The hold-to-choose radial menu: press the key and a wheel of the model's
 // entries opens at the pointer; moving picks a sector by direction; releasing
 // the key selects that sector's entry on the model. What the entries are (the
@@ -61,8 +70,12 @@ public:
                       std::function<bool(Vec2d pointer)> pointerOnScene, RadialMenu::Proportions proportions = {});
 
     InputConsumed OnInput(const InputEvent& event, PointerCapture& capture);
+    // Opens it at `pointer` for a click to choose from, whatever the key is
+    // doing; nothing when the model offers nothing.
+    void OpenClicked(Vec2d pointer, PointerCapture& capture);
 
     [[nodiscard]] RadialMenuPhase GetPhase() const { return Phase; }
+    [[nodiscard]] RadialMenuGesture GetGesture() const { return Gesture; }
     // Meaningful while Open.
     [[nodiscard]] const RadialMenu::Layout& GetLayout() const { return Layout; }
     // The sector under the pointer, or -1 (the hub, or no motion yet).
@@ -86,6 +99,7 @@ private:
     std::function<bool(Vec2d)> PointerOnScene;
     RadialMenu::Proportions Sizes;
     RadialMenuPhase Phase = RadialMenuPhase::Closed;
+    RadialMenuGesture Gesture = RadialMenuGesture::Held;
     RadialMenu::Layout Layout{};
     int Hot = -1;
     int HotVariant = -1;

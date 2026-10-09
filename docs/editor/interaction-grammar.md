@@ -154,7 +154,10 @@ back (`project/ProjectFileSteps`, pipeline Decision A). A trash asks first
 only when other files use it, and lists them. The Shelf claims these actions
 while raised; its search field keeps the keys it edits with and passes every
 other chord on, so F2, Ctrl+D, Ctrl+Z, and Delete in an empty field all
-reach them while typing.
+reach them while typing. A right press on a tile opens its wheel -- Open,
+Rename, Duplicate, Trash, whichever can be done now (`actions/
+ActionWheelModel`) -- and the next click chooses, or closes it off every
+entry; while it is up the shell has the pointer and the keys.
 
 The rail is also the window caption (client decorations) and the only
 full-width chrome. Every persistent instrument is **a readout that is also a

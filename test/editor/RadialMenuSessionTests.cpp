@@ -402,3 +402,44 @@ TEST_F(RadialMenuSessionTest, EscapeAndFocusLossDropTheHotVariantWithoutSelectin
     EXPECT_EQ(Wheel->GetHotVariant(), -1);
     EXPECT_TRUE(Menu.Selected.empty());
 }
+
+// Opened by a click for a click to choose from: the key plays no part, a press
+// on an entry chooses it, and a press off every entry or Escape closes it.
+TEST_F(RadialMenuSessionTest, AClickedWheelIsChosenFromByTheNextClick)
+{
+    InputRouter clicks;
+    clicks.AddHandler([this](const InputEvent& e, PointerCapture& cap) {
+        const auto* press = std::get_if<PointerDownEvent>(&e);
+        if (Wheel->GetPhase() != RadialMenuPhase::Open && press != nullptr)
+        {
+            Wheel->OpenClicked(press->Position, cap);
+            return InputConsumed::Yes;
+        }
+        return Wheel->OnInput(e, cap);
+    });
+    const auto click = [&](Vec2d at) {
+        return clicks.Route(PointerDownEvent{ .Position = at, .Button = MouseButton::Right, .Modifiers = {} });
+    };
+
+    click({ 400.0f, 400.0f });
+    ASSERT_EQ(Wheel->GetPhase(), RadialMenuPhase::Open);
+    EXPECT_EQ(Wheel->GetGesture(), RadialMenuGesture::Clicked);
+    EXPECT_TRUE(clicks.PointerCaptured());
+    EXPECT_EQ(clicks.Route(KeyUpEvent{ .Key = SDLK_Q, .Modifiers = {}, .Pointer = { 400.0f, 400.0f } }),
+              InputConsumed::No)
+        << "no key holds it";
+    EXPECT_EQ(Wheel->GetPhase(), RadialMenuPhase::Open);
+    click(InSector(2));
+    EXPECT_EQ(Menu.Selected, (std::vector<std::pair<int, int>>{ { 2, -1 } }));
+    EXPECT_EQ(Wheel->GetPhase(), RadialMenuPhase::Closed);
+    EXPECT_FALSE(clicks.PointerCaptured());
+
+    click({ 400.0f, 400.0f });
+    click({ 400.0f, 400.0f });
+    EXPECT_EQ(Wheel->GetPhase(), RadialMenuPhase::Closed) << "a press on the hub closes it";
+    EXPECT_EQ(Menu.Selected.size(), 1u);
+
+    click({ 400.0f, 400.0f });
+    clicks.Route(KeyDownEvent{ .Key = SDLK_ESCAPE, .Modifiers = {}, .Pointer = { 400.0f, 400.0f } });
+    EXPECT_EQ(Wheel->GetPhase(), RadialMenuPhase::Closed) << "no key to wait out";
+}

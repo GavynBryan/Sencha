@@ -63,7 +63,8 @@
                  data-event-mousescroll="shelf_zoom(ev.wheel_delta_y, ev.ctrl_key)">
                 <div class="tile theme-row" data-for="item : items" data-class-selected="item.selected"
                      data-style-width="view == 'list' ? 'auto' : tile"
-                     data-event-click="shelf_pick(item.key)" data-event-dblclick="shelf_open(item.key)">
+                     data-event-click="shelf_pick(item.key)" data-event-dblclick="shelf_open(item.key)"
+                     data-event-mousedown="shelf_press(item.key, ev.button, ev.mouse_x, ev.mouse_y)">
                     <div class="well theme-field" data-style-width="view == 'list' ? '16dp' : picture"
                          data-style-height="view == 'list' ? '16dp' : picture">
                         <img class="picture" data-if="item.parts[0] != ''" data-attr-src="'host:' + item.parts[0]"

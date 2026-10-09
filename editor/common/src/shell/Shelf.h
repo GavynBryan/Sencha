@@ -1,6 +1,7 @@
 #pragma once
 
 #include "actions/ActionContext.h"
+#include "actions/ActionWheelModel.h"
 #include "project/AssetQuery.h"
 #include "project/ProjectFiles.h"
 #include "prompts/PromptQueue.h"
@@ -13,9 +14,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 class AssetPictures;
@@ -115,6 +118,10 @@ public:
     // How far up from the window's bottom edge it reaches, in window pixels;
     // nothing while it is down.
     [[nodiscard]] float Reach() const;
+    // The chosen file's actions as a wheel, and where in the window a right
+    // press on a tile asked for it, taken once.
+    [[nodiscard]] IRadialMenuModel& FileWheel() { return FileWheelModel; }
+    [[nodiscard]] std::optional<Vec2d> TakeWheelRequest() { return std::exchange(WheelAt, std::nullopt); }
 
 private:
     enum class Placement : std::uint8_t { Down, Raised, Pinned };
@@ -159,7 +166,9 @@ private:
     NoticeQueue& Notices;
     UiScreenHandle Screen;
     ActionContext FileActions;
+    ActionWheelModel FileWheelModel;
     ActionContextStack::Layer FileLayer;
+    std::optional<Vec2d> WheelAt;
     PromptQueue::Asker Asker;
 
     Placement State = Placement::Down;

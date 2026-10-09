@@ -1,5 +1,7 @@
 #include "shell/ShellWindow.h"
 
+#include "ui/RadialMenuScreen.h"
+
 #include "shell/AssetTabs.h"
 
 #include "project/AssetKinds.h"
@@ -355,6 +357,23 @@ ShellWindow::ShellWindow(ShellWindowServices services)
                                     .Icon = IconId::Folder,
                                     .DefaultChords = { KeyChord{ SDLK_SPACE, { .Shift = true } } } });
     WindowActions.Claim("shelf.toggle", ActionHandler{ .Invoke = [this] { AssetShelf->Toggle(); } });
+    // Its entries are words: a roomier wheel, as the context wheel is.
+    FileWheel = std::make_unique<RadialMenuSession>(
+        AssetShelf->FileWheel(), KeyChord{}, [this] { return WheelFrame(); }, [](Vec2d) { return true; },
+        RadialMenu::Proportions{ .Radius = 112.0f, .Hub = 60.0f, .Button = 44.0f });
+    WheelInput.AddHandler([this](const InputEvent& event, PointerCapture& capture) {
+        // The right press the shelf passed on opens it; once up, it has the pointer.
+        const auto* press = std::get_if<PointerDownEvent>(&event);
+        if (!WheelUp() && press != nullptr && press->Button == MouseButton::Right)
+        {
+            FileWheel->OpenClicked(press->Position, capture);
+            return InputConsumed::Yes;
+        }
+        return FileWheel->OnInput(event, capture);
+    });
+    WheelScreen = std::make_unique<RadialMenuScreen>(Services.Ui);
+    WheelScreen->MoveTo(OverlaySurfaceId);
+    WheelScreen->SetShown(true);
     Prompt = std::make_unique<PromptDialog>(Services.Ui, SurfaceId, Services.Prompts, Services.Actions);
 }
 
@@ -363,6 +382,8 @@ ShellWindow::~ShellWindow()
     WindowLayer.Reset();
     EscapeLayer.Reset();
     Prompt.reset();
+    WheelScreen.reset();
+    FileWheel.reset();
     AssetShelf.reset();
     Deck.reset();
     Palette.reset();
@@ -419,6 +440,9 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
     }
     Palette->Update();
     AssetShelf->Update(Services.Ui.GetSurfaceScale(SurfaceId), static_cast<float>(extent.Height));
+    if (const std::optional<Vec2d> at = AssetShelf->TakeWheelRequest())
+        (void)WheelInput.Route(PointerDownEvent{ .Position = *at, .Button = MouseButton::Right, .Modifiers = {} });
+    WheelScreen->Present(WheelUp() ? FileWheel.get() : nullptr, &AssetShelf->FileWheel());
     FollowShelf();
     if (Prompt->IsShowing())
         Deck->Hide();
@@ -704,6 +728,21 @@ void ShellWindow::PressNumber(std::string sheet, std::size_t row, std::int64_t e
     Scrub = ScrubPhase::Pressed;
 }
 
+bool ShellWindow::TakeHeldInput(const InputEvent& event)
+{
+    if (WheelUp())
+        return WheelInput.Route(event) == InputConsumed::Yes;
+    return TakeScrubInput(event);
+}
+
+RadialMenu::Frame ShellWindow::WheelFrame() const
+{
+    const WindowExtent extent = Services.Window.GetExtent();
+    return { .Scale = Services.Ui.GetSurfaceScale(SurfaceId),
+             .Min = {},
+             .Max = { static_cast<float>(extent.Width), static_cast<float>(extent.Height) } };
+}
+
 bool ShellWindow::TakeScrubInput(const InputEvent& event)
 {
     if (Scrub == ScrubPhase::Resting)
@@ -863,7 +902,7 @@ void ShellWindow::YieldPointerToContent()
     // A number pressed in a sheet holds the pointer too: what it does next is
     // the shell's to read, not the document's.
     const IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation);
-    const UiSurfaceInputPolicy policy = (active != nullptr && active->HoldsPointer()) || Scrubbing()
+    const UiSurfaceInputPolicy policy = (active != nullptr && active->HoldsPointer()) || HoldsInput()
                                             ? UiSurfaceInputPolicy::Disabled
                                             : UiSurfaceInputPolicy::Full;
     if (policy == InputPolicy)
