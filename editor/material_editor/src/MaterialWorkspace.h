@@ -6,6 +6,7 @@
 #include "MaterialProperties.h"
 #include "TextureImportProperties.h"
 
+#include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
 #include "project/TextureImportStore.h"
 #include "prompts/DocumentPrompts.h"
@@ -28,6 +29,9 @@ class MaterialPreviewRenderFeature;
 class ProjectFileSteps;
 struct ProjectDescriptor;
 struct RuntimeAssets;
+
+// Ctrl+N: a new material, opened.
+[[nodiscard]] ActionDefinition NewMaterialAction();
 
 // The materials workspace: the open material turned on a lit stage that fills
 // the window, its parameters on the card, the project's materials in an

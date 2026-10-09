@@ -66,6 +66,12 @@ constexpr std::array<PrimitiveRow, 3> kPrimitives = { {
 
 } // namespace
 
+ActionDefinition NewMaterialAction()
+{
+    return { .Id = "material.new", .Label = "New Material", .Category = "File",
+             .DefaultChords = { { SDLK_N, { .Ctrl = true } } } };
+}
+
 MaterialWorkspace::MaterialWorkspace(Engine& engine,
                                      const ProjectDescriptor* project,
                                      MaterialLibrary& materials,
@@ -163,9 +169,7 @@ void MaterialWorkspace::DefineActions(ActionCatalog& catalog)
         return tab != nullptr && tab->Session.HasOpen();
     };
     const bool canCreate = Project != nullptr && !Project->ContentRoots.empty();
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "material.new", .Label = "New Material", .Category = "File",
-                  .DefaultChords = { { SDLK_N, { .Ctrl = true } } } },
+    OfferAction(catalog, ActionHandlers, NewMaterialAction(),
                 { .Invoke = [this] { CreateMaterial(UnusedMaterialName("NewMaterial")); },
                   .Enabled = [canCreate] { return canCreate; } });
     OfferAction(catalog, ActionHandlers, { .Id = "material.duplicate", .Label = "Duplicate Material", .Category = "File" },

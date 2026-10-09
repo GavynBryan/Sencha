@@ -14,6 +14,7 @@
 
 #include "commands/CommandStack.h"
 #include "input/InputRouter.h"
+#include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
 #include "input/ViewportNavigation.h"
 #include "tools/RadialMenuModel.h"
@@ -62,6 +63,10 @@ class WorldExplorer;
 class FaceUvSource;
 class EditorCookRuntime;
 class DocumentFileActions;
+
+// Ctrl+N: a new level; and a new world of zones.
+[[nodiscard]] ActionDefinition NewLevelAction();
+[[nodiscard]] ActionDefinition NewWorldAction();
 
 // The level editor as a workspace. The constructor is the bring-up sequence;
 // member order is teardown order, and the destructor spells out the

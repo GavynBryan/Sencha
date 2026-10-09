@@ -134,10 +134,19 @@ private:
     // released over the rail still ends where it began.
     [[nodiscard]] bool Scrubbing() const { return Scrub != ScrubPhase::Resting; }
     bool TakeScrubInput(const InputEvent& event);
-    [[nodiscard]] bool WheelUp() const
+    // The wheels the shelf opens -- a tile's actions, what can be made new --
+    // each chosen from by a click, each on a router of its own for the pointer
+    // capture it takes.
+    struct ClickWheel
     {
-        return FileWheel != nullptr && FileWheel->GetPhase() == RadialMenuPhase::Open;
-    }
+        std::unique_ptr<RadialMenuSession> Session;
+        InputRouter Input;
+    };
+    // The click wheel up, if one is.
+    [[nodiscard]] ClickWheel* OpenWheel();
+    [[nodiscard]] const ClickWheel* OpenWheel() const { return const_cast<ShellWindow*>(this)->OpenWheel(); }
+    [[nodiscard]] bool WheelUp() const { return OpenWheel() != nullptr; }
+    void MakeClickWheel(ClickWheel& wheel, IRadialMenuModel& model);
     [[nodiscard]] RadialMenu::Frame WheelFrame() const;
     void YieldPointerToContent();
     void OpenPopover(Popover popover, std::string category = {});
@@ -248,9 +257,8 @@ private:
     bool TitleHeld = false;
 
     std::unique_ptr<Shelf> AssetShelf;
-    // The wheel a right press on a shelf tile opens, chosen from by a click.
-    std::unique_ptr<RadialMenuSession> FileWheel;
-    InputRouter WheelInput;
+    ClickWheel FileWheel;
+    ClickWheel NewWheel;
     std::unique_ptr<RadialMenuScreen> WheelScreen;
     TransientSurfaces::Id ShelfTransient = 0;
     // The workspace the shelf was last raised for because it had nothing open.

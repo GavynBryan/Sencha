@@ -357,20 +357,8 @@ ShellWindow::ShellWindow(ShellWindowServices services)
                                     .Icon = IconId::Folder,
                                     .DefaultChords = { KeyChord{ SDLK_SPACE, { .Shift = true } } } });
     WindowActions.Claim("shelf.toggle", ActionHandler{ .Invoke = [this] { AssetShelf->Toggle(); } });
-    // Its entries are words: a roomier wheel, as the context wheel is.
-    FileWheel = std::make_unique<RadialMenuSession>(
-        AssetShelf->FileWheel(), KeyChord{}, [this] { return WheelFrame(); }, [](Vec2d) { return true; },
-        RadialMenu::Proportions{ .Radius = 112.0f, .Hub = 60.0f, .Button = 44.0f });
-    WheelInput.AddHandler([this](const InputEvent& event, PointerCapture& capture) {
-        // The right press the shelf passed on opens it; once up, it has the pointer.
-        const auto* press = std::get_if<PointerDownEvent>(&event);
-        if (!WheelUp() && press != nullptr && press->Button == MouseButton::Right)
-        {
-            FileWheel->OpenClicked(press->Position, capture);
-            return InputConsumed::Yes;
-        }
-        return FileWheel->OnInput(event, capture);
-    });
+    MakeClickWheel(FileWheel, AssetShelf->FileWheel());
+    MakeClickWheel(NewWheel, AssetShelf->NewWheel());
     WheelScreen = std::make_unique<RadialMenuScreen>(Services.Ui);
     WheelScreen->MoveTo(OverlaySurfaceId);
     WheelScreen->SetShown(true);
@@ -383,7 +371,8 @@ ShellWindow::~ShellWindow()
     EscapeLayer.Reset();
     Prompt.reset();
     WheelScreen.reset();
-    FileWheel.reset();
+    FileWheel.Session.reset();
+    NewWheel.Session.reset();
     AssetShelf.reset();
     Deck.reset();
     Palette.reset();
@@ -440,9 +429,12 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
     }
     Palette->Update();
     AssetShelf->Update(Services.Ui.GetSurfaceScale(SurfaceId), static_cast<float>(extent.Height));
-    if (const std::optional<Vec2d> at = AssetShelf->TakeWheelRequest())
-        (void)WheelInput.Route(PointerDownEvent{ .Position = *at, .Button = MouseButton::Right, .Modifiers = {} });
-    WheelScreen->Present(WheelUp() ? FileWheel.get() : nullptr, &AssetShelf->FileWheel());
+    if (const std::optional<ShelfWheelRequest> wanted = AssetShelf->TakeWheelRequest(); wanted && !WheelUp())
+        (void)(wanted->Wheel == ShelfWheel::File ? FileWheel : NewWheel)
+            .Input.Route(PointerDownEvent{ .Position = wanted->At, .Button = MouseButton::Right, .Modifiers = {} });
+    const ClickWheel* up = OpenWheel();
+    WheelScreen->Present(up != nullptr ? up->Session.get() : nullptr,
+                         up == &NewWheel ? &AssetShelf->NewWheel() : &AssetShelf->FileWheel());
     FollowShelf();
     if (Prompt->IsShowing())
         Deck->Hide();
@@ -730,9 +722,36 @@ void ShellWindow::PressNumber(std::string sheet, std::size_t row, std::int64_t e
 
 bool ShellWindow::TakeHeldInput(const InputEvent& event)
 {
-    if (WheelUp())
-        return WheelInput.Route(event) == InputConsumed::Yes;
+    if (ClickWheel* wheel = OpenWheel())
+        return wheel->Input.Route(event) == InputConsumed::Yes;
     return TakeScrubInput(event);
+}
+
+ShellWindow::ClickWheel* ShellWindow::OpenWheel()
+{
+    for (ClickWheel* wheel : { &FileWheel, &NewWheel })
+        if (wheel->Session != nullptr && wheel->Session->GetPhase() == RadialMenuPhase::Open)
+            return wheel;
+    return nullptr;
+}
+
+void ShellWindow::MakeClickWheel(ClickWheel& wheel, IRadialMenuModel& model)
+{
+    // Its entries are words: a roomier wheel, as the context wheel is.
+    wheel.Session = std::make_unique<RadialMenuSession>(
+        model, KeyChord{}, [this] { return WheelFrame(); }, [](Vec2d) { return true; },
+        RadialMenu::Proportions{ .Radius = 112.0f, .Hub = 60.0f, .Button = 44.0f });
+    RadialMenuSession* session = wheel.Session.get();
+    wheel.Input.AddHandler([session](const InputEvent& event, PointerCapture& capture) {
+        // The press the shelf passed on opens it; once up, it has the pointer.
+        const auto* press = std::get_if<PointerDownEvent>(&event);
+        if (session->GetPhase() != RadialMenuPhase::Open && press != nullptr)
+        {
+            session->OpenClicked(press->Position, capture);
+            return InputConsumed::Yes;
+        }
+        return session->OnInput(event, capture);
+    });
 }
 
 RadialMenu::Frame ShellWindow::WheelFrame() const

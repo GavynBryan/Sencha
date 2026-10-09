@@ -1,3 +1,4 @@
+#include "actions/ActionContext.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/WorkspaceHost.h"
 
@@ -25,6 +26,7 @@ public:
         , Events(log)
     {
         Events.push_back(Kind + " built");
+        Handlers.Claim(Kind + ".new", { .Invoke = [this] { Events.push_back(Kind + " makes a new file"); } });
     }
     ~FakeWorkspace() override { Events.push_back(Kind + " destroyed"); }
 
@@ -35,8 +37,11 @@ public:
         return true;
     }
 
+    [[nodiscard]] ActionContext* Actions() override { return &Handlers; }
+
     std::string Kind;
     Log& Events;
+    ActionContext Handlers;
 };
 
 WorkspaceKind Kind(std::string id, Log& log, bool requiresProject = true)
@@ -46,6 +51,7 @@ WorkspaceKind Kind(std::string id, Log& log, bool requiresProject = true)
         .DisplayName = id,
         .RequiresProject = requiresProject,
         .Create = [id, &log] { return std::make_unique<FakeWorkspace>(id, log); },
+        .Creates = { { .Id = id + ".new", .Label = "New", .Category = "File" } },
     };
 }
 
@@ -312,4 +318,18 @@ TEST(WorkspaceHost, AFileOpensInTheWorkspaceThatOpensItsKind)
     ASSERT_NE(host.Find("animation"), nullptr);
     EXPECT_NE(std::ranges::find(log, "animation opens asset://rigs/hero.sdata"), log.end());
     EXPECT_EQ(host.ActiveKind()->Id, "animation");
+}
+
+// New content is made by the workspace that opens its kind, brought forward
+// first, at the frame boundary; an action the kind does not create with is refused.
+TEST(WorkspaceHost, ACreateIsPerformedByItsKindsWorkspaceOnceItShows)
+{
+    Log log;
+    WorkspaceHost host(Table(log), true, kMain);
+    EXPECT_FALSE(host.RequestCreate("materials", "level.new"));
+    ASSERT_TRUE(host.RequestCreate("materials", "materials.new"));
+    EXPECT_TRUE(log.empty());
+
+    host.ApplyRequests();
+    EXPECT_EQ((Log{ "materials built", "materials shown", "materials makes a new file" }), log);
 }

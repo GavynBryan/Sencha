@@ -157,7 +157,11 @@ other chord on, so F2, Ctrl+D, Ctrl+Z, and Delete in an empty field all
 reach them while typing. A right press on a tile opens its wheel -- Open,
 Rename, Duplicate, Trash, whichever can be done now (`actions/
 ActionWheelModel`) -- and the next click chooses, or closes it off every
-entry; while it is up the shell has the pointer and the keys.
+entry; while it is up the shell has the pointer and the keys. NEW at the
+front of its bar opens the same kind of wheel over what can be made: each
+workspace kind names its create actions (`WorkspaceKind::Creates`), and the
+choice is performed in that kind's workspace, opened and brought forward
+(`WorkspaceHost::RequestCreate`).
 
 The rail is also the window caption (client decorations) and the only
 full-width chrome. Every persistent instrument is **a readout that is also a

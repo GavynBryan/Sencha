@@ -4,6 +4,7 @@
 #include "DataEditorWorkspace.h"
 #include "DataSourceText.h"
 
+#include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
 #include "data/DataProperties.h"
 #include "data/DataSubtypeAuthoring.h"
@@ -19,6 +20,9 @@ class Engine;
 class ProblemList;
 class ProjectFileSteps;
 struct ProjectDescriptor;
+
+// Ctrl+N: a new data asset, its subtype and place asked for first.
+[[nodiscard]] ActionDefinition NewDataAssetAction();
 
 // The data workspace: every structured data asset in the project, the open
 // one presented whole as a sheet of its schema's fields (or as its source),

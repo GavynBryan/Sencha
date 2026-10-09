@@ -108,6 +108,17 @@ constexpr std::string_view kDividerXCVar = "editor.view.divider_x";
 constexpr std::string_view kDividerYCVar = "editor.view.divider_y";
 } // namespace
 
+ActionDefinition NewLevelAction()
+{
+    return { .Id = "file.new", .Label = "New Level", .Category = "File",
+             .DefaultChords = { { SDLK_N, { .Ctrl = true } } } };
+}
+
+ActionDefinition NewWorldAction()
+{
+    return { .Id = "file.new_world", .Label = "New World", .Category = "File" };
+}
+
 LevelWorkspace::LevelWorkspace(Engine& engine,
                                SdlWindow& window,
                                ProjectDescriptor* project,
@@ -259,7 +270,6 @@ void LevelWorkspace::BuildInput()
         { "edit.select_all",       "Select All",                  "Edit",     { SDLK_A, { .Ctrl = true } },               [this] { Workspace->SelectAll(); } },
         { "edit.duplicate_instance", "Duplicate as Instance",     "Edit",     { SDLK_D, { .Alt = true } },                [this] { Workspace->Actions.Duplicate(/*asInstance*/ true); } },
         { "edit.repeat",           "Repeat Last",                 "Edit",     { SDLK_R, { .Ctrl = true } },               [this] { Workspace->Actions.RepeatLast(); } },
-        { "file.new",              "New Level",                   "File",     { SDLK_N, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->New(); }); } },
         { "file.open",             "Open...",                     "File",     { SDLK_O, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } },
         { "material.apply",        "Apply Material",              "Material", { SDLK_T, { .Shift = true } },              [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); } },
         { "material.copy_proj",    "Copy Face Projection",        "Material", { SDLK_C, { .Ctrl = true, .Shift = true } }, [this] { Workspace->CopySelectedFaceProjection(); } },
@@ -281,8 +291,10 @@ void LevelWorkspace::BuildInput()
                 { .Invoke = [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } });
     OfferAction(Catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { Files->Save(); } });
     offer("file.save_as", "Save As...", "File", {}, IconId::None, [this] { Files->RequestSaveAs(); });
-    offer("file.new_world", "New World", "File", {}, IconId::None,
-          [this] { AfterSettlingChanges([this] { Files->NewWorld(); }); });
+    OfferAction(Catalog, ActionHandlers, NewLevelAction(),
+                { .Invoke = [this] { AfterSettlingChanges([this] { Files->New(); }); } });
+    OfferAction(Catalog, ActionHandlers, NewWorldAction(),
+                { .Invoke = [this] { AfterSettlingChanges([this] { Files->NewWorld(); }); } });
     OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
     Verbs = std::make_unique<ElementVerbs>(*Workspace, [this] { ExportSelectionGlb(); });
     Verbs->Offer(Catalog, ActionHandlers);

@@ -5,6 +5,7 @@
 #include "project/AssetQuery.h"
 #include "project/ProjectFiles.h"
 #include "prompts/PromptQueue.h"
+#include "shell/NewContentWheel.h"
 #include "workspaces/WorkspaceKind.h"
 
 #include <graphics/PresentationId.h>
@@ -57,6 +58,20 @@ struct ShelfPick
 // Where `written` -- a place in the project without its scheme or extension,
 // as a rename asks for it -- puts the file at `from`; empty for nowhere.
 [[nodiscard]] std::string RenamedPath(std::string_view from, std::string_view written);
+
+// A wheel the shelf asks its window for, and where in the window: the chosen
+// file's actions, or what can be made new.
+enum class ShelfWheel : std::uint8_t
+{
+    File,
+    NewContent,
+};
+
+struct ShelfWheelRequest
+{
+    ShelfWheel Wheel = ShelfWheel::File;
+    Vec2d At = {};
+};
 
 // Where a shelf finds the project's content, and what it is told about it.
 struct ShelfSources
@@ -118,10 +133,11 @@ public:
     // How far up from the window's bottom edge it reaches, in window pixels;
     // nothing while it is down.
     [[nodiscard]] float Reach() const;
-    // The chosen file's actions as a wheel, and where in the window a right
-    // press on a tile asked for it, taken once.
+    // The chosen file's actions and what can be made new, as wheels, and the
+    // one a right press on a tile or the NEW key asked for, taken once.
     [[nodiscard]] IRadialMenuModel& FileWheel() { return FileWheelModel; }
-    [[nodiscard]] std::optional<Vec2d> TakeWheelRequest() { return std::exchange(WheelAt, std::nullopt); }
+    [[nodiscard]] IRadialMenuModel& NewWheel() { return NewWheelModel; }
+    [[nodiscard]] std::optional<ShelfWheelRequest> TakeWheelRequest() { return std::exchange(Wanted, std::nullopt); }
 
 private:
     enum class Placement : std::uint8_t { Down, Raised, Pinned };
@@ -167,8 +183,9 @@ private:
     UiScreenHandle Screen;
     ActionContext FileActions;
     ActionWheelModel FileWheelModel;
+    NewContentWheel NewWheelModel;
     ActionContextStack::Layer FileLayer;
-    std::optional<Vec2d> WheelAt;
+    std::optional<ShelfWheelRequest> Wanted;
     PromptQueue::Asker Asker;
 
     Placement State = Placement::Down;

@@ -2,6 +2,7 @@
 
 #include "authoring/AnimationJointPicking.h"
 
+#include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
 #include "data/DataSubtypeAuthoring.h"
 #include "prompts/PromptQueue.h"
@@ -66,6 +67,9 @@ enum class AnimationLens : std::uint8_t
     Requests,
     Events,
 };
+
+// A new rig, its parts asked for first.
+[[nodiscard]] ActionDefinition NewRigAction();
 
 // The animation workspace: rigs, clips and their events authored against a
 // live preview. The rig turns on a stage that fills the window, its bones and

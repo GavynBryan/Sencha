@@ -1,5 +1,7 @@
 #pragma once
 
+#include "actions/ActionCatalog.h"
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -28,4 +30,7 @@ struct WorkspaceKind
     bool RequiresProject = true;
     std::function<std::unique_ptr<IWorkspace>()> Create;
     std::vector<ContentKind> Opens = {};
+    // The actions its workspace offers to make a new file of a kind it opens,
+    // offered wherever new content is made, before the workspace exists.
+    std::vector<ActionDefinition> Creates = {};
 };

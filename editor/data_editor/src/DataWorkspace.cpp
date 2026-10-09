@@ -29,6 +29,12 @@ constexpr std::string_view kCommandOwner = "editor.data";
 constexpr std::string_view kProblemSource = "data";
 } // namespace
 
+ActionDefinition NewDataAssetAction()
+{
+    return { .Id = "data.new", .Label = "New Data Asset", .Category = "File",
+             .DefaultChords = { { SDLK_N, { .Ctrl = true } } } };
+}
+
 DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
                              DataDocumentStore& store, ProjectFileSteps* files, PromptQueue& prompts,
                              ActionCatalog& catalog, ProblemList& problems, const DataSubtypeAuthoringSetup& authorings)
@@ -99,9 +105,7 @@ void DataWorkspace::RegisterCommands()
 void DataWorkspace::DefineActions(ActionCatalog& catalog)
 {
     const auto active = [this] { return Model.Documents.Active() != nullptr; };
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "data.new", .Label = "New Data Asset", .Category = "File",
-                  .DefaultChords = { { SDLK_N, { .Ctrl = true } } } },
+    OfferAction(catalog, ActionHandlers, NewDataAssetAction(),
                 { .Invoke = [this] {
                     Creation.Clear();
                     Subject = CardSubject::Creating;

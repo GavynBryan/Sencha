@@ -38,6 +38,14 @@ struct AssetOpenRequest
     ProjectFile File;
 };
 
+// One of a kind's create actions, performed by its workspace once it is open
+// and showing, at the next frame boundary.
+struct AssetCreateRequest
+{
+    std::string Kind;
+    std::string Action;
+};
+
 // The workspaces an application has open, at most one per kind, and the
 // window each is placed in, which shows the one most recently activated there.
 // Headless: a window is the presentation that shows it, and the application
@@ -103,6 +111,9 @@ public:
     // Opens `file` in its workspace at the next frame boundary; false when no
     // offered workspace opens it.
     bool RequestOpen(ProjectFile file);
+    // Performs one of `kind`'s create actions in its workspace at the next
+    // frame boundary; false when the kind is not offered or does not create so.
+    bool RequestCreate(std::string_view kind, std::string_view action);
     void ApplyRequests();
 
     // Applies what was requested since the last frame, then ticks every open
@@ -138,6 +149,7 @@ private:
     std::vector<const WorkspaceKind*> RecentlyActive;
     std::vector<WorkspaceRequest> Pending;
     std::vector<AssetOpenRequest> PendingAssets;
+    std::vector<AssetCreateRequest> PendingCreates;
     Listener OnOpened;
     Listener OnClosing;
     Listener OnPlaced;

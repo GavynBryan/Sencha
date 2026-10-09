@@ -93,6 +93,11 @@ constexpr std::string_view kSkeletonExplorer = "anim_skeleton";
 
 } // namespace
 
+ActionDefinition NewRigAction()
+{
+    return { .Id = "animation.rig.new", .Label = "New Rig", .Category = "Resource" };
+}
+
 AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module,
                                        DocumentSourceSet& sources, DataDocumentStore& store, PromptQueue& prompts,
                                        ActionCatalog& catalog, ProblemList& problems,
@@ -311,7 +316,7 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
                 { .Invoke = [this] { CloseActiveDocument(); }, .Enabled = documentOpen });
 
     const auto rigOpen = [this] { return Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty(); };
-    OfferAction(catalog, ActionHandlers, { .Id = "animation.rig.new", .Label = "New Rig", .Category = "Resource" },
+    OfferAction(catalog, ActionHandlers, NewRigAction(),
                 { .Invoke = [this] {
                     ShowCard(CardSubject::NewRig);
                 } });

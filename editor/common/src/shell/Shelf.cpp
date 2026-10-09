@@ -78,6 +78,7 @@ const UiActionId kNone = UiActionIdAt(15);
 const UiActionId kFollow = UiActionIdAt(16);
 const UiActionId kBack = UiActionIdAt(17);
 const UiActionId kPress = UiActionIdAt(18);
+const UiActionId kNew = UiActionIdAt(19);
 
 // How much wider a tile is than its picture, and the gap after it, in dp.
 constexpr float kTileMarginDp = 24.0f;
@@ -121,7 +122,7 @@ UiScreenDesc Describe()
     desc.Actions = { "shelf_grab",   "shelf_drag",   "shelf_drop", "shelf_query", "shelf_key",
                      "shelf_category", "shelf_list", "shelf_folder", "shelf_branch", "shelf_pick",
                      "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom", "shelf_none",
-                     "shelf_follow", "shelf_back", "shelf_press" };
+                     "shelf_follow", "shelf_back", "shelf_press", "shelf_new" };
     return desc;
 }
 
@@ -225,6 +226,12 @@ Shelf::Shelf(const ShellWindowServices& services, UiSurfaceId surface)
     , Actions(services.Actions)
     , Notices(services.Notices)
     , FileWheelModel(services.Catalog, FileActions, { "asset.open", "edit.rename", "edit.duplicate", "edit.delete" })
+    , NewWheelModel(services.Workspaces, [this] {
+        // What is being made is the work now; a raised shelf goes, as it does
+        // once something is opened.
+        if (State == Placement::Raised)
+            Hide();
+    })
     , Asker(services.Prompts.MakeAsker())
 {
     OfferFileActions();
@@ -507,8 +514,12 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
     else if (action.Id == kPress && Number(action, 1) == 1.0)
     {
         Selected = Text(action);
-        WheelAt = Vec2d{ static_cast<float>(Number(action, 2)), static_cast<float>(Number(action, 3)) };
+        Wanted = ShelfWheelRequest{ ShelfWheel::File,
+                                    { static_cast<float>(Number(action, 2)), static_cast<float>(Number(action, 3)) } };
     }
+    else if (action.Id == kNew)
+        Wanted = ShelfWheelRequest{ ShelfWheel::NewContent,
+                                    { static_cast<float>(Number(action, 0)), static_cast<float>(Number(action, 1)) } };
     else if (action.Id == kFollow)
         Follow(Text(action));
     else if (action.Id == kBack && !Trail.empty())

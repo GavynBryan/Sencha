@@ -34,6 +34,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
                                                     problems, session.Pictures());
         },
         .Opens = { { ".sscene" }, { ".sworld" } },
+        .Creates = { NewLevelAction(), NewWorldAction() },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "materials",
@@ -44,6 +45,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
                                                        session.Pictures());
         },
         .Opens = { { ".smat" }, { ".png" } },
+        .Creates = { NewMaterialAction() },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "data",
@@ -54,6 +56,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
                                                    problems, authorings);
         },
         .Opens = { { ".sdata" } },
+        .Creates = { NewDataAssetAction() },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "animation",
@@ -64,6 +67,7 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
                                                         actions, problems, authorings);
         },
         .Opens = { { ".sdata", "animation.rig" } },
+        .Creates = { NewRigAction() },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "ui_preview",

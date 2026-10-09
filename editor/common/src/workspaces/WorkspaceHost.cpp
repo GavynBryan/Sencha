@@ -1,5 +1,7 @@
 #include "workspaces/WorkspaceHost.h"
 
+#include "actions/ActionContext.h"
+
 #include <algorithm>
 #include <utility>
 
@@ -247,6 +249,16 @@ bool WorkspaceHost::RequestOpen(ProjectFile file)
     return true;
 }
 
+bool WorkspaceHost::RequestCreate(std::string_view kind, std::string_view action)
+{
+    const WorkspaceKind* row = FindKind(kind);
+    if (row == nullptr || !IsOffered(kind)
+        || std::ranges::find(row->Creates, action, &ActionDefinition::Id) == row->Creates.end())
+        return false;
+    PendingCreates.push_back({ std::string(kind), std::string(action) });
+    return true;
+}
+
 void WorkspaceHost::ApplyRequests()
 {
     // Taken first: a workspace opening may itself request something.
@@ -254,10 +266,18 @@ void WorkspaceHost::ApplyRequests()
     Pending.clear();
     std::vector<AssetOpenRequest> assets = std::move(PendingAssets);
     PendingAssets.clear();
+    std::vector<AssetCreateRequest> creates = std::move(PendingCreates);
+    PendingCreates.clear();
     for (const AssetOpenRequest& asset : assets)
         if (const WorkspaceKind* kind = KindOpening(asset.File))
             if (IWorkspace* workspace = Open(kind->Id))
                 (void)workspace->OpenAsset(asset.File);
+    for (const AssetCreateRequest& create : creates)
+        if (IWorkspace* workspace = Open(create.Kind))
+            if (const ActionContext* actions = workspace->Actions())
+                if (const ActionHandler* handler = actions->Find(create.Action);
+                    handler != nullptr && handler->Invoke && (!handler->Enabled || handler->Enabled()))
+                    handler->Invoke();
     for (const WorkspaceRequest& request : requests)
     {
         switch (request.Action)
