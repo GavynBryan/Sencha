@@ -147,6 +147,15 @@ levels sit there until a game's settings name them). Ctrl+click on an asset
 field shows its file on the Shelf. The index is read again as the Shelf
 rises, only documents whose size or time changed.
 
+The chosen file is renamed (F2, asked as where it is in the project, so a
+slash moves it to another folder), duplicated beside itself (Ctrl+D) and
+trashed (Delete) through the edit actions, each one step that Ctrl+Z takes
+back (`project/ProjectFileSteps`, pipeline Decision A). A trash asks first
+only when other files use it, and lists them. The Shelf claims these actions
+while raised; its search field keeps the keys it edits with and passes every
+other chord on, so F2, Ctrl+D, Ctrl+Z, and Delete in an empty field all
+reach them while typing.
+
 The rail is also the window caption (client decorations) and the only
 full-width chrome. Every persistent instrument is **a readout that is also a
 button**: the station shows the tool and opens its wheel, the cartridge shows

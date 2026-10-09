@@ -48,6 +48,20 @@ body
 
 #message { display: block; margin-top: 8dp; }
 
+#field
+{
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: 10dp;
+    height: 24dp;
+    padding: 0dp 6dp;
+    border-width: 1dp;
+    border-radius: 3dp;
+    font-family: "JetBrains Mono";
+    font-size: 12dp;
+}
+
 #items { display: block; margin-top: 6dp; }
 .item { display: block; padding-left: 12dp; line-height: 20dp; }
 

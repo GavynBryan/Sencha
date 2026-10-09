@@ -1115,4 +1115,20 @@ TEST(UiControls, AKeyADocumentReportsIsReadBackAsAUiKey)
     EXPECT_EQ(pressed(SDL_SCANCODE_LEFT), UiKey::Left);
     EXPECT_EQ(pressed(SDL_SCANCODE_RIGHT), UiKey::Right);
     EXPECT_EQ(pressed(SDL_SCANCODE_A), std::nullopt) << "a key outside the vocabulary reads as none";
+
+    // Any key a document reports reads back as the platform's, for a host
+    // matching a chord the field held against its own bindings.
+    const auto code = [&](SDL_Scancode scancode) {
+        SDL_Event down{};
+        down.type = SDL_EVENT_KEY_DOWN;
+        down.key.scancode = scancode;
+        (void)ui.ProcessPlatformEvent(down);
+        ui.Update();
+        const std::vector<UiAction> actions = ui.DrainActions(screen);
+        return actions.empty() || actions[0].Arguments.empty() ? 0u : UiKeyCodeFromEvent(actions[0].Arguments[0].AsInt());
+    };
+    EXPECT_EQ(code(SDL_SCANCODE_D), static_cast<std::uint32_t>(SDLK_D));
+    EXPECT_EQ(code(SDL_SCANCODE_F2), static_cast<std::uint32_t>(SDLK_F2));
+    EXPECT_EQ(code(SDL_SCANCODE_DELETE), static_cast<std::uint32_t>(SDLK_DELETE));
+    EXPECT_EQ(code(SDL_SCANCODE_7), static_cast<std::uint32_t>(SDLK_7));
 }

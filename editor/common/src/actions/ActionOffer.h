@@ -17,8 +17,14 @@ void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinitio
 // F: the view turns to what is selected, or to the subject when nothing is.
 [[nodiscard]] ActionDefinition FrameAction();
 
-// Delete: whatever is picked goes, as one step.
 // Ctrl+S: the document in hand is written, as the workspace showing it saves.
 [[nodiscard]] ActionDefinition SaveAction();
 
+// Delete: whatever is picked goes, as one step.
 [[nodiscard]] ActionDefinition DeleteAction();
+
+// Ctrl+D: whatever is picked is copied beside itself, as one step.
+[[nodiscard]] ActionDefinition DuplicateAction();
+
+// F2: what is picked is given a new name.
+[[nodiscard]] ActionDefinition RenameAction();

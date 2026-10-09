@@ -30,7 +30,7 @@
                 <input id="shelf_search" type="text" autofocus=""
                        placeholder="Find anything: a name, t:material, in:dev"
                        data-value="query" data-event-change="shelf_query(ev.value)"
-                       data-event-keydown="shelf_key(ev.key_identifier)"/>
+                       data-event-keydown="shelf_key(ev.key_identifier, ev.ctrl_key, ev.shift_key, ev.alt_key)"/>
             </div>
             <div id="shelf_chips">
                 <div class="key theme-key" data-for="chip : chips" data-class-lit="chip.selected"

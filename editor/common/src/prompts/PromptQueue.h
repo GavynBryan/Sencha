@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -25,9 +26,12 @@ struct PromptRequest
     std::string Message;
     std::vector<std::string> Items = {};
     std::vector<PromptChoice> Choices = {};
-    // Told the key of the choice made. The choice keyed "cancel", when there is
-    // one, is also what dismissing the prompt answers.
-    std::function<void(std::string_view)> Answer = {};
+    // A line the person writes, starting as this; none when the answer is only
+    // chosen. The first choice is what Return answers with it.
+    std::optional<std::string> Field = {};
+    // Told the key of the choice made, and what was written. The choice keyed
+    // "cancel", when there is one, is also what dismissing the prompt answers.
+    std::function<void(std::string_view key, std::string_view written)> Answer = {};
 };
 
 //=============================================================================
@@ -70,9 +74,11 @@ public:
     [[nodiscard]] Asker MakeAsker() { return Asker(*this, ++LastAsker); }
 
     [[nodiscard]] const PromptRequest* Front() const { return Pending.empty() ? nullptr : &Pending.front().Request; }
+    // Which question is in front: a new one has a new number.
+    [[nodiscard]] std::uint64_t FrontNumber() const { return Pending.empty() ? 0 : Pending.front().Number; }
     // Takes the front prompt away and tells its asker. A key the prompt does
     // not offer is refused, and the prompt stays.
-    bool Answer(std::string_view key);
+    bool Answer(std::string_view key, std::string_view written = {});
     // Answers the front prompt's "cancel", when it has one.
     bool Dismiss() { return Answer("cancel"); }
 
@@ -80,6 +86,7 @@ private:
     struct Entry
     {
         std::uint32_t Asker;
+        std::uint64_t Number;
         PromptRequest Request;
     };
 
@@ -87,4 +94,5 @@ private:
 
     std::deque<Entry> Pending;
     std::uint32_t LastAsker = 0;
+    std::uint64_t Asked = 0;
 };

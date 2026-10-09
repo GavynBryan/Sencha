@@ -14,6 +14,7 @@
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/Factory.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_video.h>
 #include <RmlUi/Core/DataModelHandle.h>
 
@@ -2066,6 +2067,12 @@ const UiRuntime::Screen* UiRuntime::ResolveScreen(UiScreenHandle screen) const
     if (!slot.Live || slot.Generation != screen.Generation)
         return nullptr;
     return &slot;
+}
+
+std::uint32_t UiKeyCodeFromEvent(std::int64_t keyIdentifier)
+{
+    const SDL_Scancode scancode = FromRmlKey(static_cast<Rml::Input::KeyIdentifier>(keyIdentifier));
+    return scancode == SDL_SCANCODE_UNKNOWN ? 0 : SDL_GetKeyFromScancode(scancode, SDL_KMOD_NONE, false);
 }
 
 std::optional<UiKey> UiKeyFromEvent(std::int64_t keyIdentifier)

@@ -12,7 +12,7 @@ PromptRequest Question(std::string title, std::vector<std::string>& answers)
     return { .Title = std::move(title),
              .Message = {},
              .Choices = { { "yes", "Yes" }, { "cancel", "Cancel" } },
-             .Answer = [&answers](std::string_view key) { answers.emplace_back(key); } };
+             .Answer = [&answers](std::string_view key, std::string_view) { answers.emplace_back(key); } };
 }
 } // namespace
 
@@ -44,7 +44,7 @@ TEST(PromptQueue, AnAnswerThatAsksAgainWaitsBehindTheRest)
     asker.Ask({ .Title = "first",
                 .Message = {},
                 .Choices = { { "again", "Again" } },
-                .Answer = [&](std::string_view) { asker.Ask(Question("follow-up", answers)); } });
+                .Answer = [&](std::string_view, std::string_view) { asker.Ask(Question("follow-up", answers)); } });
     asker.Ask(Question("second", answers));
 
     EXPECT_TRUE(queue.Answer("again"));
@@ -73,4 +73,23 @@ TEST(PromptQueue, AnAskerThatGoesTakesItsQuestionsUnanswered)
     PromptQueue::Asker target = std::move(moved);
     EXPECT_FALSE(moved.IsAsking());
     EXPECT_TRUE(target.IsAsking()) << "moving an asker keeps its questions";
+}
+
+TEST(PromptQueue, AWrittenAnswerReachesTheAsker)
+{
+    PromptQueue queue;
+    PromptQueue::Asker asker = queue.MakeAsker();
+    std::string written;
+    asker.Ask({ .Title = "Rename",
+                .Message = {},
+                .Choices = { { "rename", "Rename" }, { "cancel", "Cancel" } },
+                .Field = "materials/stone",
+                .Answer = [&](std::string_view, std::string_view text) { written = text; } });
+    const std::uint64_t first = queue.FrontNumber();
+    std::vector<std::string> answers;
+    asker.Ask(Question("next", answers));
+
+    EXPECT_TRUE(queue.Answer("rename", "materials/rock"));
+    EXPECT_EQ(written, "materials/rock");
+    EXPECT_NE(queue.FrontNumber(), first) << "the next question is a new one";
 }

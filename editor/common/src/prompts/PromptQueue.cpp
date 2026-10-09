@@ -30,7 +30,7 @@ PromptQueue::Asker& PromptQueue::Asker::operator=(Asker&& other) noexcept
 void PromptQueue::Asker::Ask(PromptRequest request)
 {
     if (Queue != nullptr)
-        Queue->Pending.push_back({ Id, std::move(request) });
+        Queue->Pending.push_back({ Id, ++Queue->Asked, std::move(request) });
 }
 
 bool PromptQueue::Asker::IsAsking() const
@@ -39,7 +39,7 @@ bool PromptQueue::Asker::IsAsking() const
         && std::ranges::any_of(Queue->Pending, [&](const Entry& entry) { return entry.Asker == Id; });
 }
 
-bool PromptQueue::Answer(std::string_view key)
+bool PromptQueue::Answer(std::string_view key, std::string_view written)
 {
     if (Pending.empty())
         return false;
@@ -51,7 +51,7 @@ bool PromptQueue::Answer(std::string_view key)
     PromptRequest answered = std::move(Pending.front().Request);
     Pending.pop_front();
     if (answered.Answer)
-        answered.Answer(key);
+        answered.Answer(key, written);
     return true;
 }
 

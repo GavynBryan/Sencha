@@ -257,7 +257,6 @@ void LevelWorkspace::BuildInput()
     const LevelAction actions[] = {
         { "edit.dissolve",         "Dissolve Edges",              "Edit",     { SDLK_BACKSPACE, {} },                     [this] { Workspace->DissolveSelectedEdges(); } },
         { "edit.select_all",       "Select All",                  "Edit",     { SDLK_A, { .Ctrl = true } },               [this] { Workspace->SelectAll(); } },
-        { "edit.duplicate",        "Duplicate",                   "Edit",     { SDLK_D, { .Ctrl = true } },               [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } },
         { "edit.duplicate_instance", "Duplicate as Instance",     "Edit",     { SDLK_D, { .Alt = true } },                [this] { Workspace->Actions.Duplicate(/*asInstance*/ true); } },
         { "edit.repeat",           "Repeat Last",                 "Edit",     { SDLK_R, { .Ctrl = true } },               [this] { Workspace->Actions.RepeatLast(); } },
         { "file.new",              "New Level",                   "File",     { SDLK_N, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->New(); }); } },
@@ -278,6 +277,8 @@ void LevelWorkspace::BuildInput()
         offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
     OfferAction(Catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] { Workspace->EscapeStep(); } });
     OfferAction(Catalog, ActionHandlers, DeleteAction(), { .Invoke = [this] { Workspace->DeleteSelection(); } });
+    OfferAction(Catalog, ActionHandlers, DuplicateAction(),
+                { .Invoke = [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } });
     OfferAction(Catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { Files->Save(); } });
     offer("file.save_as", "Save As...", "File", {}, IconId::None, [this] { Files->RequestSaveAs(); });
     offer("file.new_world", "New World", "File", {}, IconId::None,

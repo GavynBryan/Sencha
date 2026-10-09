@@ -43,7 +43,7 @@ void AskAboutChanges(PromptQueue::Asker& asker, bool hasChanges, const std::stri
         .Message = std::format("{} has unsaved changes.", documentName),
         .Choices = { { "save", "Save" }, { "discard", "Discard", ActionTone::Destructive }, { "cancel", "Cancel" } },
         .Answer =
-            [proceed = std::move(proceed)](std::string_view key) {
+            [proceed = std::move(proceed)](std::string_view key, std::string_view) {
                 if (key == "save")
                     proceed(DirtyDisposition::Save);
                 else if (key == "discard")
@@ -84,7 +84,7 @@ void DocumentExitHold::Ask()
                      { "discard", "Discard and close", ActionTone::Destructive },
                      { "cancel", "Keep editing" } },
         .Answer =
-            [this](std::string_view key) {
+            [this](std::string_view key, std::string_view) {
                 if (key == "save")
                     (void)Sources.SaveAll();
                 else if (key == "discard")
@@ -161,7 +161,7 @@ void DocumentSaveFollowUp::AskToSettle(const DocumentRef& document)
                      { "take", "Take the file's", ActionTone::Destructive },
                      { "cancel", "Decide later" } },
         .Answer =
-            [this, document](std::string_view key) {
+            [this, document](std::string_view key, std::string_view) {
                 std::erase(Asking, document);
                 if (key == "cancel")
                     return;

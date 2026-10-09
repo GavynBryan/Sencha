@@ -350,8 +350,7 @@ ShellWindow::ShellWindow(ShellWindowServices services)
     WindowLayer = Services.Actions.Push(WindowActions, ActionRank::Window);
     Deck = std::make_unique<TimelineDeck>(Services.Ui, SurfaceId, Services.Workspaces, Services.Actions,
                                           Services.Presentation);
-    AssetShelf = std::make_unique<Shelf>(Services.Ui, SurfaceId, Services.Workspaces, Services.Presentation,
-                                         Services.Content);
+    AssetShelf = std::make_unique<Shelf>(Services, SurfaceId);
     (void)Services.Catalog.Define({ .Id = "shelf.toggle", .Label = "Asset Shelf", .Category = "View",
                                     .Icon = IconId::Folder,
                                     .DefaultChords = { KeyChord{ SDLK_SPACE, { .Shift = true } } } });

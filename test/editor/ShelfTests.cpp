@@ -2,6 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <SDL3/SDL_keycode.h>
+
+#include <set>
 #include <string>
 
 // What the shelf offers when raised to choose a file for something: the kinds
@@ -44,4 +47,33 @@ TEST(ShelfPick, AWithheldFileIsNotOfferedByEitherName)
     EXPECT_FALSE(byAsset.Offers(hub));
     EXPECT_FALSE(byDisk.Offers(hub));
     EXPECT_TRUE(byDisk.Offers(File("asset://props/crate.sscene", ".sscene")));
+}
+
+// The search field has the keys while the shelf is up; what it does not edit
+// with still reaches the window's actions, the shelf's own verbs among them.
+TEST(SearchFieldKeeps, WhatItEditsWithAndNothingElse)
+{
+    EXPECT_TRUE(SearchFieldKeeps({ SDLK_D, {} }, true)) << "a letter is typed";
+    EXPECT_TRUE(SearchFieldKeeps({ SDLK_V, { .Ctrl = true } }, false)) << "pasted";
+    EXPECT_TRUE(SearchFieldKeeps({ SDLK_DELETE, {} }, false)) << "a character is deleted";
+    EXPECT_FALSE(SearchFieldKeeps({ SDLK_DELETE, {} }, true)) << "nothing to delete: the chosen file's";
+    EXPECT_FALSE(SearchFieldKeeps({ SDLK_D, { .Ctrl = true } }, false));
+    EXPECT_FALSE(SearchFieldKeeps({ SDLK_Z, { .Ctrl = true } }, false)) << "the field has no undo of its own";
+    EXPECT_FALSE(SearchFieldKeeps({ SDLK_F2, {} }, false));
+    EXPECT_FALSE(SearchFieldKeeps({ SDLK_1, { .Alt = true } }, false));
+}
+
+TEST(ShelfFileNames, ARenameKeepsTheKindAndASlashMovesIt)
+{
+    EXPECT_EQ(RenamedPath("asset://materials/stone.smat", "materials/rock"), "asset://materials/rock.smat");
+    EXPECT_EQ(RenamedPath("asset://materials/stone.smat", " walls/stone/ "), "asset://walls/stone.smat");
+    EXPECT_EQ(RenamedPath("asset://materials/stone.smat", " / "), "");
+}
+
+TEST(ShelfFileNames, ACopyTakesTheFirstFreeName)
+{
+    const std::set<std::string> taken{ "asset://m/stone copy.smat", "asset://m/stone copy 2.smat" };
+    EXPECT_EQ(CopyPath("asset://m/stone.smat", [&](const std::string& path) { return taken.contains(path); }),
+              "asset://m/stone copy 3.smat");
+    EXPECT_EQ(CopyPath("asset://hero.blend", [](const std::string&) { return false; }), "asset://hero copy.blend");
 }

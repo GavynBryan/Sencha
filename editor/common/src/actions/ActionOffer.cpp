@@ -34,3 +34,14 @@ ActionDefinition DeleteAction()
 {
     return { .Id = "edit.delete", .Label = "Delete", .Category = "Edit", .DefaultChords = { { SDLK_DELETE, {} } } };
 }
+
+ActionDefinition DuplicateAction()
+{
+    return { .Id = "edit.duplicate", .Label = "Duplicate", .Category = "Edit",
+             .DefaultChords = { { SDLK_D, { .Ctrl = true } } } };
+}
+
+ActionDefinition RenameAction()
+{
+    return { .Id = "edit.rename", .Label = "Rename", .Category = "Edit", .DefaultChords = { { SDLK_F2, {} } } };
+}

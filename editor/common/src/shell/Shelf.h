@@ -1,7 +1,9 @@
 #pragma once
 
+#include "actions/ActionContext.h"
 #include "project/AssetQuery.h"
 #include "project/ProjectFiles.h"
+#include "prompts/PromptQueue.h"
 #include "workspaces/WorkspaceKind.h"
 
 #include <graphics/PresentationId.h>
@@ -13,13 +15,16 @@
 #include <functional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class AssetPictures;
+class NoticeQueue;
 class ProjectFileSteps;
 class ReferenceIndex;
 class UiService;
 class WorkspaceHost;
+struct ShellWindowServices;
 struct UiAction;
 
 // A shelf raised to choose one file for something rather than to open one:
@@ -40,6 +45,17 @@ struct ShelfPick
 
     [[nodiscard]] bool Offers(const ProjectFile& file) const;
 };
+
+// Whether the shelf's search field edits with `chord`, and so keeps it rather
+// than letting the window's actions have it: every plain key but the function
+// keys (and Delete, when there is nothing to delete), and with Ctrl only
+// selecting, the clipboard and moving or deleting by word.
+[[nodiscard]] bool SearchFieldKeeps(const KeyChord& chord, bool empty);
+// Where `written` -- a place in the project without its scheme or extension,
+// as a rename asks for it -- puts the file at `from`; empty for nowhere.
+[[nodiscard]] std::string RenamedPath(std::string_view from, std::string_view written);
+// The first free "<name> copy", "<name> copy 2"... beside the file at `from`.
+[[nodiscard]] std::string CopyPath(std::string_view from, const std::function<bool(const std::string&)>& taken);
 
 // Where a shelf finds the project's content, and what it is told about it.
 struct ShelfSources
@@ -68,13 +84,14 @@ struct ShelfSources
 //
 // Raised, it lies over the work and goes once something is opened or Escape
 // is pressed; pinned, it stays and the work ends above it. Its top edge sizes
-// it.
+// it. The chosen file is renamed, duplicated and trashed through the edit
+// actions, which it claims while raised and answers from its search field
+// whenever it has the keys.
 //=============================================================================
 class Shelf
 {
 public:
-    Shelf(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces, PresentationId presentation,
-          ShelfSources sources);
+    Shelf(const ShellWindowServices& services, UiSurfaceId surface);
     ~Shelf();
 
     Shelf(const Shelf&) = delete;
@@ -109,6 +126,16 @@ private:
     enum class Purpose : std::uint8_t { Opening, Choosing };
 
     void HandleAction(const UiAction& action, float windowHeight);
+    // A chord the search field had no use for, answered as the window would.
+    void PassOn(const UiAction& action);
+    void OfferFileActions();
+    [[nodiscard]] bool CanChangeFiles() const;
+    void AskRename();
+    void Rename(const std::string& from, std::string_view written);
+    void DuplicateChosen();
+    void AskTrash();
+    void Trash(const std::string& assetPath);
+    void Tell(std::string text, bool failed);
     void Rescan();
     void Remember();
     // Opens the file, or commits to it while choosing.
@@ -129,7 +156,13 @@ private:
     WorkspaceHost& Workspaces;
     PresentationId Presentation;
     ShelfSources Sources;
+    ActionCatalog& Catalog;
+    ActionContextStack& Actions;
+    NoticeQueue& Notices;
     UiScreenHandle Screen;
+    ActionContext FileActions;
+    ActionContextStack::Layer FileLayer;
+    PromptQueue::Asker Asker;
 
     Placement State = Placement::Down;
     Purpose Use = Purpose::Opening;

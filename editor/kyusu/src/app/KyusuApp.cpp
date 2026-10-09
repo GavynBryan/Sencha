@@ -477,7 +477,7 @@ void KyusuApp::AskBeforeClosing(const WorkspaceKind& kind, std::vector<DocumentR
                      { "discard", "Discard and close", ActionTone::Destructive },
                      { "cancel", "Keep editing" } },
         .Answer =
-            [this, id = kind.Id, changed = std::move(changed)](std::string_view key) {
+            [this, id = kind.Id, changed = std::move(changed)](std::string_view key, std::string_view) {
                 if (key == "cancel")
                     return;
                 DocumentSourceSet& documents = Session->Documents();

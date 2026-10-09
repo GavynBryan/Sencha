@@ -5,6 +5,7 @@
 #include <ui/UiKeys.h>
 #include <ui/UiService.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,10 +13,13 @@ namespace
 {
 const UiModelPropertyId kTitle = UiPropertyIdAt(0);
 const UiModelPropertyId kMessage = UiPropertyIdAt(1);
+const UiModelPropertyId kHasField = UiPropertyIdAt(2);
+const UiModelPropertyId kField = UiPropertyIdAt(3);
 const UiModelRowsId kItems = UiRowsIdAt(0);
 const UiModelRowsId kChoices = UiRowsIdAt(1);
 const UiActionId kChooseAction = UiActionIdAt(0);
 const UiActionId kKeyAction = UiActionIdAt(1);
+const UiActionId kWriteAction = UiActionIdAt(2);
 
 UiScreenDesc Describe()
 {
@@ -26,9 +30,11 @@ UiScreenDesc Describe()
     desc.Properties = {
         UiModelProperty{ "title", UiValue(std::string{}) },
         UiModelProperty{ "message", UiValue(std::string{}) },
+        UiModelProperty{ "has_field", UiValue(false) },
+        UiModelProperty{ "field", UiValue(std::string{}) },
     };
     desc.RowLists = { "items", "choices" };
-    desc.Actions = { "prompt_choose", "prompt_key" };
+    desc.Actions = { "prompt_choose", "prompt_key", "prompt_write" };
     return desc;
 }
 
@@ -64,12 +70,18 @@ void PromptDialog::Update()
     {
         for (const UiAction& action : Ui.DrainActions(Screen))
         {
-            const bool escape = action.Id == kKeyAction && !action.Arguments.empty()
-                             && UiKeyFromEvent(action.Arguments[0].AsInt()) == UiKey::Escape;
-            if (escape)
+            const std::optional<UiKey> key = action.Id == kKeyAction && !action.Arguments.empty()
+                                               ? UiKeyFromEvent(action.Arguments[0].AsInt())
+                                               : std::nullopt;
+            const PromptRequest* front = Prompts.Front();
+            if (key == UiKey::Escape)
                 (void)Prompts.Dismiss();
+            else if (key == UiKey::Return && front != nullptr && front->Field.has_value() && !front->Choices.empty())
+                (void)Prompts.Answer(front->Choices.front().Key, Written);
+            else if (action.Id == kWriteAction && !action.Arguments.empty())
+                Written = action.Arguments[0].AsString();
             else if (action.Id == kChooseAction && !action.Arguments.empty())
-                (void)Prompts.Answer(action.Arguments[0].AsString());
+                (void)Prompts.Answer(action.Arguments[0].AsString(), Written);
         }
     }
     if (Prompts.Front() == nullptr)
@@ -77,6 +89,9 @@ void PromptDialog::Update()
         Hide();
         return;
     }
+    // Opened afresh for each question, so a field it asks for takes the keys.
+    if (Prompts.FrontNumber() != Showing)
+        Hide();
     Show();
     Publish();
 }
@@ -87,11 +102,16 @@ void PromptDialog::Show()
         return;
     Screen = Ui.OpenScreen(Surface, Describe());
     EscapeLayer = Actions.Push(EscapeActions, ActionRank::Surface);
+    Showing = Prompts.FrontNumber();
+    Written = Prompts.Front()->Field.value_or(std::string{});
+    (void)Ui.SetValue(Screen, kHasField, UiValue(Prompts.Front()->Field.has_value()));
+    (void)Ui.SetValue(Screen, kField, UiValue(Written));
 }
 
 void PromptDialog::Hide()
 {
     EscapeLayer.Reset();
+    Showing = 0;
     if (!Screen.IsValid())
         return;
     Ui.CloseScreen(Screen);

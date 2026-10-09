@@ -87,6 +87,24 @@ Rml::Input::KeyIdentifier ToRmlKey(SDL_Scancode scancode)
     return Rml::Input::KI_UNKNOWN;
 }
 
+SDL_Scancode FromRmlKey(KeyIdentifier key)
+{
+    if (key >= Rml::Input::KI_A && key <= Rml::Input::KI_Z)
+        return static_cast<SDL_Scancode>(SDL_SCANCODE_A + (key - Rml::Input::KI_A));
+    if (key >= Rml::Input::KI_1 && key <= Rml::Input::KI_9)
+        return static_cast<SDL_Scancode>(SDL_SCANCODE_1 + (key - Rml::Input::KI_1));
+    if (key == Rml::Input::KI_0)
+        return SDL_SCANCODE_0;
+    if (key >= Rml::Input::KI_F1 && key <= Rml::Input::KI_F12)
+        return static_cast<SDL_Scancode>(SDL_SCANCODE_F1 + (key - Rml::Input::KI_F1));
+    for (const KeyMapping& mapping : kKeyMap)
+    {
+        if (mapping.Key == key)
+            return mapping.Scancode;
+    }
+    return SDL_SCANCODE_UNKNOWN;
+}
+
 int ToRmlKeyModifiers(SDL_Keymod modifiers)
 {
     int out = 0;

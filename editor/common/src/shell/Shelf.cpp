@@ -1,10 +1,14 @@
 #include "shell/Shelf.h"
 
+#include "actions/ActionCatalog.h"
+#include "actions/ActionOffer.h"
 #include "icons/IconNames.h"
+#include "notices/NoticeQueue.h"
 #include "project/AssetKinds.h"
 #include "project/ProjectFileSteps.h"
 #include "project/ReferenceIndex.h"
 #include "shell/AssetTabs.h"
+#include "shell/ShellWindow.h"
 #include "text/PathLeaf.h"
 #include "thumbnails/AssetPictures.h"
 #include "workspaces/WorkspaceHost.h"
@@ -12,12 +16,16 @@
 #include <ui/UiKeys.h>
 #include <ui/UiService.h>
 
+#include <SDL3/SDL_keycode.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <format>
 #include <iterator>
+#include <ranges>
+#include <span>
 #include <utility>
 
 namespace
@@ -133,6 +141,13 @@ double Number(const UiAction& action, std::size_t index = 0)
                                                : 0.0;
 }
 
+bool Flag(const UiAction& action, std::size_t index)
+{
+    return index < action.Arguments.size()
+           && (action.Arguments[index].Kind() == UiValueKind::Bool ? action.Arguments[index].AsBool()
+                                                                   : Number(action, index) != 0.0);
+}
+
 std::string SizeText(std::uintmax_t bytes)
 {
     if (bytes < 1024)
@@ -161,16 +176,66 @@ std::string_view FolderName(std::string_view folder)
     const std::size_t slash = folder.rfind('/');
     return slash == std::string_view::npos ? folder : folder.substr(slash + 1);
 }
+
+constexpr std::string_view kAssetScheme = "asset://";
 } // namespace
 
-Shelf::Shelf(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces, PresentationId presentation,
-             ShelfSources sources)
-    : Ui(ui)
-    , Surface(surface)
-    , Workspaces(workspaces)
-    , Presentation(presentation)
-    , Sources(std::move(sources))
+bool SearchFieldKeeps(const KeyChord& chord, bool empty)
 {
+    const SDL_Keycode key = chord.Key;
+    if ((key >= SDLK_F1 && key <= SDLK_F12) || chord.Mods.Alt)
+        return false;
+    if (!chord.Mods.Ctrl)
+        return !(key == SDLK_DELETE && empty);
+    switch (key)
+    {
+    case SDLK_A:
+    case SDLK_C:
+    case SDLK_X:
+    case SDLK_V:
+    case SDLK_LEFT:
+    case SDLK_RIGHT:
+    case SDLK_HOME:
+    case SDLK_END:
+    case SDLK_BACKSPACE:
+    case SDLK_DELETE: return true;
+    default:          return false;
+    }
+}
+
+std::string RenamedPath(std::string_view from, std::string_view written)
+{
+    const std::size_t first = written.find_first_not_of(" /");
+    if (first == std::string_view::npos)
+        return {};
+    const std::size_t last = written.find_last_not_of(" /");
+    return std::string(kAssetScheme) + std::string(written.substr(first, last - first + 1))
+           + std::filesystem::path(from).extension().string();
+}
+
+std::string CopyPath(std::string_view from, const std::function<bool(const std::string&)>& taken)
+{
+    const std::filesystem::path path(from.substr(kAssetScheme.size()));
+    const std::string stem = (path.parent_path() / path.stem()).generic_string();
+    const std::string extension = path.extension().string();
+    std::string copy;
+    for (int n = 1; copy.empty() || taken(copy); ++n)
+        copy = std::string(kAssetScheme) + stem + (n == 1 ? " copy" : std::format(" copy {}", n)) + extension;
+    return copy;
+}
+
+Shelf::Shelf(const ShellWindowServices& services, UiSurfaceId surface)
+    : Ui(services.Ui)
+    , Surface(surface)
+    , Workspaces(services.Workspaces)
+    , Presentation(services.Presentation)
+    , Sources(services.Content)
+    , Catalog(services.Catalog)
+    , Actions(services.Actions)
+    , Notices(services.Notices)
+    , Asker(services.Prompts.MakeAsker())
+{
+    OfferFileActions();
 }
 
 Shelf::~Shelf()
@@ -394,8 +459,12 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
         Query.Text = Text(action);
     else if (action.Id == kKey)
     {
-        const std::optional<UiKey> key = UiKeyFromEvent(static_cast<std::int64_t>(Number(action)));
-        if (key == UiKey::Escape)
+        const bool plain = !Flag(action, 1) && !Flag(action, 3);
+        const std::optional<UiKey> key =
+            plain ? UiKeyFromEvent(static_cast<std::int64_t>(Number(action))) : std::nullopt;
+        if (!key.has_value())
+            PassOn(action);
+        else if (key == UiKey::Escape)
             Hide();
         else if (key == UiKey::Return)
             Open(Selected);
@@ -458,14 +527,143 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
         State = State == Placement::Pinned ? Placement::Raised : Placement::Pinned;
     else if (action.Id == kClose)
         Hide();
-    else if (action.Id == kZoom && action.Arguments.size() > 1 && action.Arguments[1].Kind() == UiValueKind::Bool
-             && action.Arguments[1].AsBool())
+    else if (action.Id == kZoom && Flag(action, 1))
         PictureDp = std::clamp(PictureDp - static_cast<float>(Number(action)) * 8.0f, kSmallestPictureDp,
                                kLargestPictureDp);
 }
 
+void Shelf::PassOn(const UiAction& action)
+{
+    const auto key = static_cast<SDL_Keycode>(UiKeyCodeFromEvent(static_cast<std::int64_t>(Number(action))));
+    const bool ctrl = Flag(action, 1);
+    const bool shift = Flag(action, 2);
+    const bool alt = Flag(action, 3);
+    const KeyChord chord{ key, { .Ctrl = ctrl, .Shift = shift, .Alt = alt } };
+    if (key == SDLK_UNKNOWN || SearchFieldKeeps(chord, Query.Text.empty()))
+        return;
+    // Its own verbs first: a pinned shelf has them only while it has the keys.
+    for (const ActionDefinition* definition : Catalog.ForChord(chord))
+        if (const ActionHandler* own = FileActions.Find(definition->Id);
+            own != nullptr && (!own->Enabled || own->Enabled()))
+        {
+            own->Invoke();
+            return;
+        }
+    (void)Actions.Dispatch(Catalog, chord);
+}
+
+void Shelf::OfferFileActions()
+{
+    const auto enabled = [this] { return CanChangeFiles(); };
+    OfferAction(Catalog, FileActions, RenameAction(), { .Invoke = [this] { AskRename(); }, .Enabled = enabled });
+    OfferAction(Catalog, FileActions, DuplicateAction(),
+                { .Invoke = [this] { DuplicateChosen(); }, .Enabled = enabled });
+    OfferAction(Catalog, FileActions, DeleteAction(), { .Invoke = [this] { AskTrash(); }, .Enabled = enabled });
+}
+
+bool Shelf::CanChangeFiles() const
+{
+    return Sources.Files != nullptr && Use == Purpose::Opening && FileAt(Selected) != nullptr;
+}
+
+void Shelf::AskRename()
+{
+    const ProjectFile* file = FileAt(Selected);
+    if (file == nullptr)
+        return;
+    // Written without its scheme and extension, which a rename keeps.
+    const std::string extension = std::filesystem::path(file->AssetPath).extension().string();
+    std::string where = file->AssetPath.substr(kAssetScheme.size());
+    where.resize(where.size() - extension.size());
+    Asker.Ask({ .Title = "Rename " + std::string(PathLeaf(file->AssetPath)),
+                .Message = "Where it is in the project: a slash puts it in another folder.",
+                .Choices = { { "rename", "Rename" }, { "cancel", "Cancel" } },
+                .Field = std::move(where),
+                .Answer = [this, from = file->AssetPath](std::string_view key, std::string_view written) {
+                    if (key == "rename")
+                        Rename(from, written);
+                } });
+}
+
+void Shelf::Rename(const std::string& from, std::string_view written)
+{
+    const std::string to = RenamedPath(from, written);
+    if (to.empty() || to == from || Sources.Files == nullptr)
+        return;
+    if (std::string refused = Sources.Files->Move(from, to); !refused.empty())
+        return Tell(std::move(refused), true);
+    Selected = to;
+    Tell(std::format("Moved {} to {}", PathLeaf(from), to.substr(kAssetScheme.size())), false);
+}
+
+void Shelf::DuplicateChosen()
+{
+    const ProjectFile* file = FileAt(Selected);
+    if (file == nullptr || Sources.Files == nullptr)
+        return;
+    const std::string copy =
+        CopyPath(file->AssetPath, [this](const std::string& path) { return FileAt(path) != nullptr; });
+    if (std::string refused = Sources.Files->Duplicate(file->AssetPath, copy); !refused.empty())
+        return Tell(std::move(refused), true);
+    Selected = copy;
+    Tell(std::format("Duplicated as {}", PathLeaf(copy)), false);
+}
+
+void Shelf::AskTrash()
+{
+    const ProjectFile* file = FileAt(Selected);
+    if (file == nullptr)
+        return;
+    const std::span<const std::string> users =
+        Sources.References != nullptr ? Sources.References->UsedBy(file->AssetPath) : std::span<const std::string>{};
+    if (users.empty())
+        return Trash(file->AssetPath);
+    std::vector<std::string> items;
+    for (const std::string& user : users | std::views::take(kMostReferencesShown))
+        items.emplace_back(PathLeaf(user));
+    if (users.size() > kMostReferencesShown)
+        items.push_back(std::format("and {} more", users.size() - kMostReferencesShown));
+    Asker.Ask({ .Title = "Trash " + std::string(PathLeaf(file->AssetPath)),
+                .Message = users.size() == 1 ? "One file uses it, and will name a file that is not there."
+                                             : std::format("{} files use it, and will name a file that is not there.",
+                                                           users.size()),
+                .Items = std::move(items),
+                .Choices = { { "trash", "Trash it", ActionTone::Destructive }, { "cancel", "Keep it" } },
+                .Answer = [this, path = file->AssetPath](std::string_view key, std::string_view) {
+                    if (key == "trash")
+                        Trash(path);
+                } });
+}
+
+void Shelf::Trash(const std::string& assetPath)
+{
+    if (Sources.Files == nullptr)
+        return;
+    if (std::string refused = Sources.Files->Trash(assetPath); !refused.empty())
+        return Tell(std::move(refused), true);
+    if (Selected == assetPath)
+        Selected.clear();
+    const std::string undo = Catalog.ChordText("edit.undo");
+    Tell(undo.empty() ? std::format("Trashed {}", PathLeaf(assetPath))
+                      : std::format("Trashed {}; {} puts it back", PathLeaf(assetPath), undo),
+         false);
+}
+
+void Shelf::Tell(std::string text, bool failed)
+{
+    Notices.Post(std::move(text), failed ? NoticeTone::Warning : NoticeTone::Done, NoticeClockNow());
+}
+
 void Shelf::Update(float dp, float windowHeight)
 {
+    // Raised, it is in front of the work, and Delete is the chosen file's.
+    if ((State == Placement::Raised) != FileLayer.IsActive())
+    {
+        if (State == Placement::Raised)
+            FileLayer = Actions.Push(FileActions, ActionRank::Surface);
+        else
+            FileLayer.Reset();
+    }
     Dp = dp > 0.0f ? dp : 1.0f;
     if (Screen.IsValid())
         for (const UiAction& action : Ui.DrainActions(Screen))

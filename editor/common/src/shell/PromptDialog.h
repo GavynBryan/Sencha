@@ -5,6 +5,9 @@
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
+#include <cstdint>
+#include <string>
+
 class PromptQueue;
 class UiService;
 
@@ -12,8 +15,10 @@ class UiService;
 // PromptDialog
 //
 // The prompt queue's front question, over the whole window until it is
-// answered: its choices as keys, Escape as its "cancel". Every window shows the
-// same question, so it is answered wherever the person is looking.
+// answered: its choices as keys, Escape as its "cancel", and a line to write
+// when it asks for one, which Return answers with its first choice. Every
+// window shows the same question, so it is answered wherever the person is
+// looking.
 //=============================================================================
 class PromptDialog
 {
@@ -39,6 +44,9 @@ private:
     ActionContextStack& Actions;
 
     UiScreenHandle Screen;
+    // The question shown, and what has been written in its field.
+    std::uint64_t Showing = 0;
+    std::string Written;
     // Escape belongs to the question while one is showing.
     ActionContext EscapeActions;
     ActionContextStack::Layer EscapeLayer;
