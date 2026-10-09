@@ -335,14 +335,49 @@ do the work and delete the entry.
   `AsyncTaskQueue` and commits at the frame boundary), or a person looking
   for what uses a stylesheet.
 
-## Moving one zone scene of a world on its own
+## Emptying the project's trash
 
-- **What:** a world document names its zone scenes by paths relative to
-  itself, not by id (pipeline Decision A): they are the world's parts. Moving
-  the world's folder keeps them; moving one zone scene by itself would leave
-  the world naming a file that is gone.
-- **Where:** `WorldDocument::ResolveScenePath` and `ZoneHeader::SceneRef`
-  (`engine/include/zone/WorldPartitionManifest.h`); the Shelf's file moves
-  (plan stage B6).
-- **Trigger:** the Shelf's move, which must then refuse a world's zone scene
-  or move it through the world document that owns it.
+- **What:** a file trashed from the Shelf goes to `<root>/.trash/<step>/` so
+  Ctrl+Z can bring it back, and nothing ever empties that folder. Leaving the
+  journal (closing Kyusu) leaves the files there for good.
+- **Where:** `editor/common/src/project/ProjectFileSteps.cpp` (`Trash`);
+  `.trash` is a hidden folder (`IsHiddenContentFolder`), so no scan, import or
+  watcher sees it.
+- **Trigger:** a project whose trash is a felt size, or a person asking where
+  trashed files went. Then the trash empties what no journal step can reach
+  any more (on exit, or a Shelf verb), or hands files to the OS trash.
+
+## Cooked artifacts a move or trash leaves behind
+
+- **What:** moving or trashing an imported source drops its cooked index entry
+  and registry records (`ForgetImportedSource`), but its artifact bytes stay
+  under `.cooked/`: content-hash dedup may share them with another source, so
+  they are never deleted by hand.
+- **Where:** `engine/src/assets/cook/ImportOnDemand.cpp`
+  (`ForgetImportedSource`); `PruneOrphanedGeneratedArtifacts`
+  (`assets/cook/CookPrune.h`) is the prune that knows which bytes no entry
+  names, run only by tests today.
+- **Trigger:** a project's `.cooked/` growing visibly from moves, or the batch
+  cook gaining a prune pass; then the prune runs over every root's index.
+
+## Moving a file an open document names
+
+- **What:** the Shelf refuses to move a file that an open document names, or
+  to move or trash a file an editor holds (`DocumentSource::HoldsFile`). An open
+  document keeps its references in memory, and a bare path in it would be saved
+  back naming the file where it was.
+- **Where:** `ProjectFileSteps::Move` and `Refusal`; the document sources
+  (`MaterialDocumentSet`, `DataDocumentStore`, `LevelDocumentSource`,
+  `AnimationClipEventsSet`).
+- **Trigger:** the Shelf plan's stage B6c, which re-points open documents
+  (Materials' and Data's own rename and duplicate move onto file steps).
+
+## The previewed UI document is not held
+
+- **What:** UI Preview's open document is not a journal document source, so
+  the Shelf will move or trash the `.rml` being previewed; the preview then
+  shows the file it last read and does not follow it.
+- **Where:** `editor/ui_preview/src/UiPreviewSession.cpp`;
+  `ProjectSession`'s `IsOpen` hook asks only the journal.
+- **Trigger:** the preview's model card joining the journal as a document
+  source, or a person moving a previewed document.

@@ -708,7 +708,8 @@ std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, Presentation
         .Content = { .ContentRoots = ContentRoots(),
                      .OtherRoots = OtherContentRoots(),
                      .Pictures = Session != nullptr ? &Session->Pictures() : nullptr,
-                     .References = Session != nullptr ? &Session->References() : nullptr },
+                     .References = Session != nullptr ? &Session->References() : nullptr,
+                     .Files = Session != nullptr ? Session->Files() : nullptr },
     });
 }
 

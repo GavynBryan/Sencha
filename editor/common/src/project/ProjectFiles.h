@@ -35,8 +35,8 @@ struct ProjectFile
 [[nodiscard]] std::optional<AssetId> ReadStatedId(const std::filesystem::path& file);
 
 // Every content file under `roots`, sorted by asset path. Cooked output,
-// hidden folders and the project's own bookkeeping (asset id maps, per-user
-// state, import sidecars) are not content and are left out.
+// hidden folders and the project's own bookkeeping (per-user state, sidecars)
+// are not content and are left out.
 [[nodiscard]] std::vector<ProjectFile> ScanProjectFiles(std::span<const std::filesystem::path> roots);
 
 // `ref` as the project's files know its asset now: at its hint when the file

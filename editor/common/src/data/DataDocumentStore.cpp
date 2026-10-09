@@ -69,7 +69,7 @@ DataDocument* DataDocumentStore::Create(std::string_view subtype, const std::fil
     Validate(*document);
     if (!document->Save(&error))
         return nullptr;
-    RegisterDataAssetFile(Assets.Registry, virtualPath, file);
+    (void)RegisterAssetFile(virtualPath, file, Assets.Registry, Assets.Assets.Kinds());
     return Adopt(std::move(document));
 }
 
@@ -300,7 +300,7 @@ DocumentSaveResult DataDocumentStore::SaveDocument(std::string_view key)
     if (!saved)
         return { {}, document->IsExternallyModified() ? DocumentSaveStatus::Conflict : DocumentSaveStatus::Failed,
                  std::move(error) };
-    RegisterDataAssetFile(Assets.Registry, document->VirtualPath(), document->FilePath());
+    (void)RegisterAssetFile(document->VirtualPath(), document->FilePath(), Assets.Registry, Assets.Assets.Kinds());
     return { {}, document->IsSemanticallyValid() ? DocumentSaveStatus::Saved : DocumentSaveStatus::SavedWithProblems,
              {} };
 }
@@ -362,6 +362,14 @@ ExternalChange DataDocumentStore::FileChangedOnDisk(const std::filesystem::path&
         return ExternalChange::Adopted;
     }
     return ExternalChange::NotOpen;
+}
+
+bool DataDocumentStore::HoldsFile(const std::filesystem::path& file) const
+{
+    std::error_code ec;
+    return std::ranges::any_of(Open_, [&](const Entry& entry) {
+        return std::filesystem::equivalent(entry.Document->FilePath(), file, ec);
+    });
 }
 
 DataDocument* DataDocumentStore::Adopt(std::unique_ptr<DataDocument> document)

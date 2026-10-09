@@ -172,6 +172,14 @@ void MaterialDocumentSet::DiscardDocument(std::string_view key)
         (void)Close(index, DirtyDisposition::Discard, error);
 }
 
+bool MaterialDocumentSet::HoldsFile(const std::filesystem::path& file) const
+{
+    std::error_code ec;
+    return std::ranges::any_of(List, [&](const auto& tab) {
+        return std::filesystem::equivalent(tab->Session.FilePath(), file, ec);
+    });
+}
+
 ExternalChange MaterialDocumentSet::FileChangedOnDisk(const std::filesystem::path& file)
 {
     std::error_code ec;

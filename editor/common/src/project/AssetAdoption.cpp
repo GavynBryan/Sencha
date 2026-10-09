@@ -28,9 +28,16 @@ AssetId FreeIdFor(std::string_view assetPath, const std::unordered_set<AssetId>&
     return id;
 }
 
-// `text` with the id it states removed, written back as its kind is written:
-// a scene source as JSON5 (comments kept), everything else as JSON.
-std::optional<std::string> Unstated(std::string_view text, bool json5)
+bool WriteText(const std::filesystem::path& file, const std::string& text)
+{
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);
+    out << text;
+    out.close();
+    return out.good();
+}
+} // namespace
+
+std::optional<std::string> WithoutStatedId(std::string_view text, bool json5)
 {
     if (json5)
     {
@@ -47,15 +54,6 @@ std::optional<std::string> Unstated(std::string_view text, bool json5)
     ForgetStatedAssetId(*root);
     return JsonFormat(*root);
 }
-
-bool WriteText(const std::filesystem::path& file, const std::string& text)
-{
-    std::ofstream out(file, std::ios::binary | std::ios::trunc);
-    out << text;
-    out.close();
-    return out.good();
-}
-} // namespace
 
 AssetAdoption PlanAdoption(std::span<const ProjectFile> files,
                            std::span<const std::pair<std::filesystem::path, AssetId>> orphans,
@@ -153,7 +151,7 @@ void ApplyAdoption(const AssetAdoption& adoption, std::vector<std::string>& erro
         const std::filesystem::path statement = IdStatementOf(step.File.FilePath);
         std::optional<std::string> text = ReadProjectFileText(statement);
         if (step.What == AdoptionStep::Kind::Restate && text.has_value())
-            text = Unstated(*text, step.File.Extension == kSceneSource);
+            text = WithoutStatedId(*text, step.File.Extension == kSceneSource);
         const std::optional<std::string> stated = StatingAssetId(text.value_or(std::string{}), step.Id);
         if (!stated.has_value() || !WriteText(statement, *stated))
             errors.push_back(statement.generic_string() + ": could not state its id");

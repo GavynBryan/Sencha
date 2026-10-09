@@ -59,6 +59,7 @@ public:
     [[nodiscard]] std::vector<DocumentRef> ChangedDocuments() const;
     // Offered to every source until one has the file open.
     [[nodiscard]] ExternalChange FileChangedOnDisk(const std::filesystem::path& file);
+    [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const;
 
 private:
     void Step(DocumentStep step);

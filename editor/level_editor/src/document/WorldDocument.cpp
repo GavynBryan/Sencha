@@ -618,6 +618,19 @@ const EditorDocument& WorldDocument::FocusDocument() const
     return *it->second.Document;
 }
 
+bool WorldDocument::HoldsFile(const std::filesystem::path& file) const
+{
+    std::error_code ec;
+    const auto holds = [&](const EditorDocument* document) {
+        return document != nullptr && document->HasFilePath()
+               && std::filesystem::equivalent(std::filesystem::path(document->GetDisplayName()), file, ec);
+    };
+    if (!WorldMode_)
+        return holds(LegacyDocument_.get());
+    return (!WorldPath_.empty() && std::filesystem::equivalent(WorldPath_, file, ec)) || holds(WorldScene_.get())
+           || std::ranges::any_of(OpenZones_, [&](const auto& open) { return holds(open.second.Document.get()); });
+}
+
 bool WorldDocument::IsExternallyModified() const
 {
     if (!WorldMode_)

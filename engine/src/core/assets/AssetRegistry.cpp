@@ -230,6 +230,43 @@ bool AssetRegistry::Contains(std::string_view path) const
     return FindByPath(path) != nullptr;
 }
 
+bool IsHiddenContentFolder(const std::filesystem::path& folder)
+{
+    return folder.filename().string().starts_with('.');
+}
+
+namespace
+{
+    // A file as the registry records it: its kind's type by extension, the id it
+    // states, its bytes' hash (zero when they cannot be read).
+    std::optional<AssetRecord> DescribeAssetFile(std::string assetPath,
+                                                 const std::filesystem::path& file,
+                                                 const AssetKindRegistry& kinds)
+    {
+        const AssetType type = kinds.FindTypeByExtension(file.extension().generic_string());
+        if (type == AssetType::Unknown)
+            return std::nullopt;
+        AssetRecord record;
+        record.Type = type;
+        record.SourceKind = AssetSourceKind::File;
+        record.Path = std::move(assetPath);
+        record.FilePath = file.generic_string();
+        record.Id = ReadStatedAssetId(file).value_or(AssetId{});
+        if (!HashFileContents(record.FilePath, record.ContentHash))
+            record.ContentHash = 0;
+        return record;
+    }
+}
+
+bool RegisterAssetFile(std::string_view assetPath,
+                       const std::filesystem::path& file,
+                       AssetRegistry& registry,
+                       const AssetKindRegistry& kinds)
+{
+    std::optional<AssetRecord> record = DescribeAssetFile(std::string(assetPath), file, kinds);
+    return record.has_value() && registry.RegisterOrVerify(*record);
+}
+
 bool ScanAssetsDirectory(std::string_view rootDirectory,
                          AssetRegistry& registry,
                          const AssetKindRegistry& kinds)
@@ -266,7 +303,7 @@ bool ScanAssetsDirectory(std::string_view rootDirectory,
             // Never descend into the cooked cache: its artifacts carry
             // virtual paths assigned at cook time, not derived from their
             // physical location (docs/assets/pipeline.md, Decision B).
-            if (it->path().filename() == kCookedCacheDirName)
+            if (IsHiddenContentFolder(it->path()))
                 it.disable_recursion_pending();
             continue;
         }
@@ -274,24 +311,17 @@ bool ScanAssetsDirectory(std::string_view rootDirectory,
         // Source formats (.png, .gltf, ...) match no registered kind: they reach
         // the registry through import-on-demand, registered under their virtual
         // path against the cooked artifact (Decision B).
-        const AssetType type =
-            kinds.FindTypeByExtension(it->path().extension().generic_string());
-        if (type == AssetType::Unknown)
+        std::optional<AssetRecord> record =
+            DescribeAssetFile(MakeVirtualAssetPath(root, it->path()), it->path(), kinds);
+        if (!record.has_value())
             continue;
-
-        AssetRecord record;
-        record.Type = type;
-        record.SourceKind = AssetSourceKind::File;
-        record.Path = MakeVirtualAssetPath(root, it->path());
-        record.FilePath = it->path().generic_string();
-        record.Id = ReadStatedAssetId(it->path()).value_or(AssetId{});
-        if (!HashFileContents(record.FilePath, record.ContentHash))
+        if (record->ContentHash == 0)
         {
             registry.Log.Warn("AssetRegistry: could not hash '{}'; registered with no content hash",
-                record.FilePath);
+                record->FilePath);
             ok = false;
         }
-        const bool inserted = registry.Register(record);
+        const bool inserted = registry.Register(*record);
         if (inserted)
             ++registered;
         ok = inserted && ok;

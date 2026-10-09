@@ -16,6 +16,7 @@
 #include <vector>
 
 class AssetPictures;
+class ProjectFileSteps;
 class ReferenceIndex;
 class UiService;
 class WorkspaceHost;
@@ -52,6 +53,8 @@ struct ShelfSources
     AssetPictures* Pictures = nullptr;
     // Without references, nothing is said of what uses what.
     ReferenceIndex* References = nullptr;
+    // Without file steps, nothing is moved, copied or trashed from it.
+    ProjectFileSteps* Files = nullptr;
 };
 
 //=============================================================================
@@ -135,6 +138,8 @@ private:
     Look View = Look::Tiles;
     AssetQuery Query;
     std::vector<ProjectFile> Files;
+    // The file steps' version the files were read at.
+    std::uint64_t FilesVersion = 0;
     std::string Selected;
     std::set<std::string> OpenFolders;
     // Most recent first: what this window has shown, opened from here or not.

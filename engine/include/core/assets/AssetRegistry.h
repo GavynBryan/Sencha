@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -88,6 +89,14 @@ private:
 // IsValidAssetPath lives in <core/assets/AssetPath.h> (included above) so
 // low-level data validators can use it without depending on this header.
 
+// Registers the one file at `file` under `assetPath`, as the scan would: by its
+// extension's kind, under the id it states. False when no kind claims it or
+// the registry refuses it.
+bool RegisterAssetFile(std::string_view assetPath,
+                       const std::filesystem::path& file,
+                       AssetRegistry& registry,
+                       const AssetKindRegistry& kinds);
+
 // Registers every file under `rootDirectory` whose extension a registered kind
 // claims. `kinds` is the only extension table: a kind that is scanned but not
 // loadable (Scene) still registers its extension, so classification and
@@ -111,3 +120,7 @@ int RegisterCookedAssets(std::string_view assetsRoot, AssetRegistry& registry);
 // cooked artifacts are registered by the import-on-demand driver under
 // their intended virtual paths, never discovered by extension.
 inline constexpr std::string_view kCookedCacheDirName = ".cooked";
+
+// A folder whose name begins with a dot holds no content -- the cook's cache,
+// the project's trash, version control -- and no walk over content enters it.
+[[nodiscard]] bool IsHiddenContentFolder(const std::filesystem::path& folder);

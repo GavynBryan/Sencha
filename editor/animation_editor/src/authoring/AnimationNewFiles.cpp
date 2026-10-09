@@ -2,6 +2,7 @@
 
 #include "data/DataAssetFiles.h"
 
+#include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonFormat.h>
 
@@ -21,7 +22,8 @@ bool WriteAnimationNewDocuments(const std::filesystem::path& root, AssetRegistry
     {
         if (!WriteAnimationNewFile(root, document, 4, error))
             return false;
-        RegisterDataAssetFile(registry, "asset://" + document.RelativePath, root / document.RelativePath);
+        (void)RegisterAssetFile("asset://" + document.RelativePath, root / document.RelativePath, registry,
+                                BuiltinAssetKindRegistry());
     }
     return true;
 }

@@ -11,4 +11,3 @@ class AssetRegistry;
 [[nodiscard]] std::string DataAssetVirtualPath(std::string_view relativePath);
 [[nodiscard]] bool DataAssetPathTaken(const AssetRegistry& registry, const std::filesystem::path& file,
                                       std::string_view virtualPath);
-void RegisterDataAssetFile(AssetRegistry& registry, std::string_view virtualPath, const std::filesystem::path& file);

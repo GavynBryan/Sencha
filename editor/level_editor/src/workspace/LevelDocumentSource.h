@@ -29,6 +29,7 @@ public:
     void CancelDocumentEdits() override;
     void DiscardDocument(std::string_view key) override;
     [[nodiscard]] std::string DocumentLabel(std::string_view key) const override;
+    [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const override;
 
 private:
     [[nodiscard]] bool WriteFiles();

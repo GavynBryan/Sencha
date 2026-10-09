@@ -93,3 +93,8 @@ std::string LevelDocumentSource::DocumentLabel(std::string_view) const
     const WorldDocument& world = Workspace.World;
     return world.IsWorld() ? std::string(world.WorldPath()) : std::string(world.FocusDocument().GetDisplayName());
 }
+
+bool LevelDocumentSource::HoldsFile(const std::filesystem::path& file) const
+{
+    return Workspace.World.HoldsFile(file);
+}

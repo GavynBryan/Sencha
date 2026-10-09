@@ -3,6 +3,7 @@
 #include <assets/cook/AssetImporter.h>
 #include <assets/cook/MeshImportSettings.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <core/assets/AssetIdentity.h>
 #include <core/assets/AssetRegistry.h>
 
 #include <algorithm>
@@ -206,4 +207,15 @@ bool AnimationClipEventsSet::Push(AnimationClipEventsDocument& document)
     }
     state = { ClipEventsPreviewStatus::Current, {} };
     return true;
+}
+
+bool AnimationClipEventsSet::HoldsFile(const std::filesystem::path& file) const
+{
+    // The sidecar need not exist yet, so it is compared by where it would be.
+    std::error_code ec;
+    const std::filesystem::path sidecar = std::filesystem::weakly_canonical(SidecarOf(file), ec);
+    return std::ranges::any_of(Open, [&](const auto& document) {
+        const std::filesystem::path held = std::filesystem::weakly_canonical(document->SidecarPath(), ec);
+        return held == sidecar || held == std::filesystem::weakly_canonical(file, ec);
+    });
 }

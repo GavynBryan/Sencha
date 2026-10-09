@@ -75,7 +75,7 @@ bool DataEditorWorkspace::Duplicate(std::string_view virtualPath, std::string_vi
         error = "could not write the copy";
         return false;
     }
-    RegisterDataAssetFile(Assets.Registry, destinationVirtual, destination);
+    (void)RegisterAssetFile(destinationVirtual, destination, Assets.Registry, Assets.Assets.Kinds());
     return Documents.OpenOrFocus(destinationVirtual, error) != nullptr;
 }
 
@@ -110,7 +110,7 @@ bool DataEditorWorkspace::Rename(std::string_view virtualPath, std::string_view 
         return false;
     }
     (void)Assets.Registry.Unregister(virtualPath);
-    RegisterDataAssetFile(Assets.Registry, destinationVirtual, destination);
+    (void)RegisterAssetFile(destinationVirtual, destination, Assets.Registry, Assets.Assets.Kinds());
     return Documents.OpenOrFocus(destinationVirtual, error) != nullptr;
 }
 

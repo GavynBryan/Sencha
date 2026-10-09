@@ -133,11 +133,27 @@ reference names the id first and the path second.
   hashes, existed only for assets a cooked scene named, and was committed only
   for CubeDemo; and the cook's `StampAssetRefIds`, which authored references
   no longer need.
+- **Moving a file in Kyusu** (`project/ProjectFileSteps`). Moving, copying
+  and trashing a project file are steps in the one journal, so Ctrl+Z puts the
+  file and every byte the step wrote back. A move takes the file's sidecar,
+  states the id where the file was if it stated none, and rewrites every
+  document that names the old path to name the id and the new path, comments
+  and all else as written; a part (`#anim:Walk`) and a scene's cooked form
+  (`.smap`) follow their file. A copy is a new asset with its new path's id.
+  Trash is `<root>/.trash/<step>/`, a hidden folder no scan, import or watcher
+  enters. A file an editor holds open is not moved or trashed, nor is a file
+  moved that an open document names (`DocumentSource::HoldsFile`): the editor
+  owns what it holds. The asset stack follows each step as a fresh mount would
+  have found the files (`MountProjectFileChange`): a file gone loses its record
+  and its cooked index entry (`ForgetImportedSource`), whose artifact bytes
+  stay for content-hash dedup; a file appeared is registered, and imported when
+  an importer claims it.
 - **The known limit.** An asset named by C++ code resolves by path; moving it
   needs the code changed.
 - **What is not a reference.** A world document's zone scenes, named by paths
   relative to the world: the world creates, names and saves them as its own
-  parts, and they move with it. And a cooked artifact's paths to its siblings
+  parts, and they move with it; Kyusu refuses to move or trash one alone, and
+  renames a world only in its own folder. And a cooked artifact's paths to its siblings
   (a mesh's skeleton, a clip's skeleton, a UI package's resources): the cook
   writes them afresh from the source every time, so they are never stale.
 

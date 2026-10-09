@@ -63,4 +63,6 @@ public:
 
     // What a person reading a prompt or a save report calls the document.
     [[nodiscard]] virtual std::string DocumentLabel(std::string_view key) const { return std::string(key); }
+    // Whether an open document lives in `file`, or is kept beside it.
+    [[nodiscard]] virtual bool HoldsFile(const std::filesystem::path&) const { return false; }
 };

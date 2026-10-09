@@ -2,6 +2,7 @@
 
 #include "icons/IconNames.h"
 #include "project/AssetKinds.h"
+#include "project/ProjectFileSteps.h"
 #include "project/ReferenceIndex.h"
 #include "shell/AssetTabs.h"
 #include "text/PathLeaf.h"
@@ -264,6 +265,7 @@ float Shelf::Reach() const
 void Shelf::Rescan()
 {
     Files = ScanProjectFiles(Sources.ContentRoots);
+    FilesVersion = Sources.Files != nullptr ? Sources.Files->Version() : 0;
     if (Sources.References != nullptr)
         Sources.References->Refresh(Files, ScanProjectFiles(Sources.OtherRoots), ReadProjectFileText);
 }
@@ -469,6 +471,8 @@ void Shelf::Update(float dp, float windowHeight)
         for (const UiAction& action : Ui.DrainActions(Screen))
             HandleAction(action, windowHeight);
     Remember();
+    if (State != Placement::Down && Sources.Files != nullptr && Sources.Files->Version() != FilesVersion)
+        Rescan();
     if (Screen.IsValid())
         Publish();
 }

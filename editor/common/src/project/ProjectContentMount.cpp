@@ -1,6 +1,7 @@
 #include "project/ProjectContentMount.h"
 
 #include "project/Project.h"
+#include "project/ProjectFileSteps.h"
 
 #include <app/EngineContentRoot.h>
 #include <assets/cook/ContentImporters.h>
@@ -60,4 +61,22 @@ void MountEditorContent(std::string_view root,
     const std::string rootPath(root);
     MountSourceRoot(rootPath, assets, logging, jobs);
     log.Info("assets: mounted editor UI content at '{}'", rootPath);
+}
+
+void MountProjectFileChange(const ProjectFileChange& change,
+                            RuntimeAssets& assets,
+                            const AssetImporterRegistry& importers,
+                            LoggingProvider& logging)
+{
+    const std::string root = change.Root.string();
+    if (change.What == ProjectFileChange::Kind::Gone)
+    {
+        (void)ForgetImportedSource(root, change.File.lexically_relative(change.Root).generic_string(),
+                                   assets.Registry);
+        (void)assets.Registry.Unregister(change.AssetPath);
+        return;
+    }
+    (void)RegisterAssetFile(change.AssetPath, change.File, assets.Registry, assets.Assets.Kinds());
+    if (importers.FindByExtension(change.File.extension().generic_string()) != nullptr)
+        (void)ImportAssetsOnDemand(root, importers, assets.Registry, logging);
 }

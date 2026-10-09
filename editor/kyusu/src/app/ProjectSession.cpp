@@ -2,6 +2,7 @@
 
 #include "project/AssetAdoption.h"
 #include "project/ProjectContentMount.h"
+#include "project/ProjectFileSteps.h"
 #include "ui/MaterialThumbnailCache.h"
 
 #include <app/Engine.h>
@@ -21,6 +22,7 @@
 
 ProjectSession::ProjectSession(Engine& engine, std::optional<std::string> projectPath)
     : Host(engine)
+    , Importers(&engine.Jobs())
     , MaterialList(engine.Logging())
     , DataDocumentFiles(engine.Content().Assets(), Journal)
 {
@@ -50,8 +52,16 @@ ProjectSession::ProjectSession(Engine& engine, std::optional<std::string> projec
     // The module's data asset types before the content that holds them is scanned.
     LoadModule(modulePath);
     MountContent();
-    if (Descriptor)
-        MaterialList.Rescan(Descriptor->ContentRoots);
+    if (!Descriptor)
+        return;
+    MaterialList.Rescan(Descriptor->ContentRoots);
+    FileSteps = std::make_unique<ProjectFileSteps>(
+        std::vector<std::filesystem::path>(Descriptor->ContentRoots.begin(), Descriptor->ContentRoots.end()), Journal,
+        ProjectFileHooks{
+            .IsOpen = [this](const ProjectFile& file) { return Journal.HoldsFile(file.FilePath); },
+            .IsAsset = [this](const ProjectFile& file) { return IsAsset(file); },
+            .Changed = [this](const ProjectFileChange& change) { FileChanged(change); },
+        });
 }
 
 ProjectSession::~ProjectSession()
@@ -81,6 +91,19 @@ void ProjectSession::UpdatePictures()
         TexturePictureFiles = PictureSources.Provide(".png", *MaterialPictures);
     }
     MaterialPictures->UpdateFrame(Host);
+}
+
+bool ProjectSession::IsAsset(const ProjectFile& file) const
+{
+    return IsAssetFile(file, Assets().Assets.Kinds(), Importers.Registry());
+}
+
+void ProjectSession::FileChanged(const ProjectFileChange& change)
+{
+    MountProjectFileChange(change, Assets(), Importers.Registry(), Host.Logging());
+    if (Descriptor)
+        MaterialList.Rescan(Descriptor->ContentRoots);
+    PictureSources.Forget();
 }
 
 RuntimeAssets& ProjectSession::Assets() const
@@ -116,11 +139,7 @@ void ProjectSession::MountContent()
     {
         // Before the scan, so the registry reads the ids the files now state.
         const std::vector<std::filesystem::path> roots(Descriptor->ContentRoots.begin(), Descriptor->ContentRoots.end());
-        const ContentImporterSet importers;
-        const auto isAsset = [&](const ProjectFile& file) {
-            return IsAssetFile(file, assets.Assets.Kinds(), importers.Registry());
-        };
-        Adoption_ = AdoptAssetIds(roots, isAsset, AdoptionErrors_);
+        Adoption_ = AdoptAssetIds(roots, [this](const ProjectFile& file) { return IsAsset(file); }, AdoptionErrors_);
         MountProjectContent(*Descriptor, assets, Host.Logging(), &Host.Jobs());
     }
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)

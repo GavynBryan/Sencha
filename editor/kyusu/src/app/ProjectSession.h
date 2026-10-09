@@ -9,6 +9,7 @@
 #include "thumbnails/AssetPictures.h"
 
 #include <app/GameModuleLoader.h>
+#include <assets/cook/ContentImporters.h>
 
 #include <memory>
 #include <span>
@@ -18,6 +19,8 @@
 class Engine;
 class Game;
 class MaterialThumbnailCache;
+class ProjectFileSteps;
+struct ProjectFileChange;
 struct RuntimeAssets;
 
 // The project a Kyusu process edits, held once for every workspace. Built
@@ -55,14 +58,23 @@ public:
     // and what it could not do.
     [[nodiscard]] const AssetAdoption& Adoption() const { return Adoption_; }
     [[nodiscard]] std::span<const std::string> AdoptionErrors() const { return AdoptionErrors_; }
+    // Whether `file` is an asset, and so goes by an id (IsAssetFile).
+    [[nodiscard]] bool IsAsset(const ProjectFile& file) const;
+    // Moving, copying and trashing the project's files as journal steps; null
+    // without a project.
+    [[nodiscard]] ProjectFileSteps* Files() { return FileSteps.get(); }
 
 private:
     void LoadModule(const std::string& modulePath);
     void MountContent();
     void WatchSources();
+    // A file step moved, copied or trashed a file: the asset stack and every
+    // view of the project's files are told.
+    void FileChanged(const ProjectFileChange& change);
 
     Engine& Host;
     std::optional<ProjectDescriptor> Descriptor;
+    ContentImporterSet Importers;
     GameModuleLoader ModuleLoader;
     LoadedModule GameModule;
     MaterialLibrary MaterialList;
@@ -75,4 +87,6 @@ private:
     std::unique_ptr<MaterialThumbnailCache> MaterialPictures;
     AssetPictures::Registration MaterialPictureFiles;
     AssetPictures::Registration TexturePictureFiles;
+    // Last: its steps reach the journal, the asset stack and the pictures.
+    std::unique_ptr<ProjectFileSteps> FileSteps;
 };

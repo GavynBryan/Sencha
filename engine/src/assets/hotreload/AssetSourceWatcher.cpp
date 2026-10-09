@@ -1,6 +1,6 @@
 #include <assets/hotreload/AssetSourceWatcher.h>
 
-#include <core/assets/AssetRegistry.h> // kCookedCacheDirName
+#include <core/assets/AssetRegistry.h> // IsHiddenContentFolder
 #include <core/hash/ContentHash.h>
 #include <core/logging/LoggingProvider.h>
 
@@ -42,7 +42,7 @@ void AssetSourceWatcher::Initialize()
 
         if (!it->is_regular_file(ec))
         {
-            if (it->path().filename() == kCookedCacheDirName)
+            if (IsHiddenContentFolder(it->path()))
                 it.disable_recursion_pending();
             continue;
         }

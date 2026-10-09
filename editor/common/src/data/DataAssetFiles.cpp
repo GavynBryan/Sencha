@@ -19,13 +19,3 @@ bool DataAssetPathTaken(const AssetRegistry& registry, const std::filesystem::pa
 {
     return std::filesystem::exists(file) || registry.Contains(virtualPath);
 }
-
-void RegisterDataAssetFile(AssetRegistry& registry, std::string_view virtualPath, const std::filesystem::path& file)
-{
-    AssetRecord record;
-    record.Type = AssetType::Data;
-    record.SourceKind = AssetSourceKind::File;
-    record.Path = std::string(virtualPath);
-    record.FilePath = file.generic_string();
-    (void)registry.RegisterOrVerify(record);
-}

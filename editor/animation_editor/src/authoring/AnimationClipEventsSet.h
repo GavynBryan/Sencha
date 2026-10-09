@@ -68,6 +68,7 @@ public:
     void StepDocument(std::string_view key, DocumentStep step) override;
     void CancelDocumentEdits() override;
     void DiscardDocument(std::string_view key) override;
+    [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const override;
 
 private:
     [[nodiscard]] bool Push(AnimationClipEventsDocument& document);

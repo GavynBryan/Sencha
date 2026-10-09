@@ -395,7 +395,7 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
 
         if (!it->is_regular_file(ec))
         {
-            if (it->path().filename() == kCookedCacheDirName)
+            if (IsHiddenContentFolder(it->path()))
                 it.disable_recursion_pending();
             continue;
         }
@@ -733,4 +733,21 @@ bool ReimportOneSource(std::string_view rootDirectory,
         log.Warn("ReimportOneSource: could not update cooked index after reimporting '{}'", sourceRelPath);
 
     return true;
+}
+
+bool ForgetImportedSource(std::string_view rootDirectory, std::string_view sourceRelPath, AssetRegistry& registry)
+{
+    const std::filesystem::path indexPath =
+        std::filesystem::path(rootDirectory) / kCookedCacheDirName / kIndexFileName;
+    CookedCacheIndex index;
+    std::error_code ec;
+    if (!std::filesystem::exists(indexPath, ec) || !CookedCacheIndex::LoadFromFile(indexPath.generic_string(), index))
+        return false;
+    const CookedSourceEntry* entry = index.Find(sourceRelPath);
+    if (entry == nullptr)
+        return false;
+    for (const CookedArtifact& artifact : entry->Artifacts)
+        (void)registry.Unregister(artifact.Path);
+    index.Erase(sourceRelPath);
+    return index.SaveToFile(indexPath.generic_string());
 }

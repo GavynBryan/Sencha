@@ -8,8 +8,10 @@ class AssetKindRegistry;
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -54,6 +56,11 @@ struct AssetAdoption
 // Writes the plan: each statement in place, everything else in the file as it
 // was; each sidecar back beside its file. Each failure is named in `errors`.
 void ApplyAdoption(const AssetAdoption& adoption, std::vector<std::string>& errors);
+
+// `text` -- a document, or a sidecar -- with the id it states removed, written
+// back as its kind is written: a scene source (`json5`) as JSON5, comments
+// kept, everything else as JSON. Nullopt when it is not an object.
+[[nodiscard]] std::optional<std::string> WithoutStatedId(std::string_view text, bool json5);
 
 // Whether a file is an asset -- a document stating its own id, a kind the
 // runtime loads, or a source an importer cooks -- rather than a note beside one.

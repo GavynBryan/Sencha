@@ -173,6 +173,9 @@ public:
     }
 
     [[nodiscard]] bool IsDirty() const;   // any zone document dirty, or the manifest edited
+    // Whether `file` is the world file, the world scene, an open zone's scene,
+    // or the legacy document's.
+    [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const;
     // Any file this world last read or wrote changed on disk since: the world
     // file, the world scene, an open zone's scene, or the legacy document's.
     [[nodiscard]] bool IsExternallyModified() const;

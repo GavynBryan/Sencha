@@ -110,6 +110,11 @@ ExternalChange DocumentSourceSet::FileChangedOnDisk(const std::filesystem::path&
     return ExternalChange::NotOpen;
 }
 
+bool DocumentSourceSet::HoldsFile(const std::filesystem::path& file) const
+{
+    return std::ranges::any_of(Sources, [&](const DocumentSource* source) { return source->HoldsFile(file); });
+}
+
 void DocumentSourceSet::Step(DocumentStep step)
 {
     // A copy: the observer may bring another workspace forward, and nothing it

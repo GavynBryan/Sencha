@@ -2,15 +2,17 @@
 
 #include <string_view>
 
+class AssetImporterRegistry;
 class JobSystem;
 class LoggingProvider;
 struct ProjectDescriptor;
+struct ProjectFileChange;
 struct RuntimeAssets;
 
 // Mounts every content root of the project into the asset system: authored
-// scan, .cooked overlay, on-demand texture cook (.png to .stex), and the
-// root's asset id map. This is the same resolution the runtime uses, so a ref
-// an editor resolves is the one the cook stamps and the runtime loads.
+// scan, on-demand import (.png to .stex), then the .cooked overlay. This is the
+// same resolution the runtime uses, so a ref an editor resolves is the one the
+// cook stamps and the runtime loads.
 // `jobs` accelerates any texture cooks the mount performs; null cooks serial.
 void MountProjectContent(const ProjectDescriptor& project,
                          RuntimeAssets& assets,
@@ -29,3 +31,11 @@ void MountEditorContent(std::string_view root,
                         RuntimeAssets& assets,
                         LoggingProvider& logging,
                         JobSystem* jobs);
+
+// One file a step moved, copied or trashed, mounted as the mount would have
+// found it: a file gone loses its record and whatever the cook made of it; a
+// file appeared is registered, and imported when an importer claims it.
+void MountProjectFileChange(const ProjectFileChange& change,
+                            RuntimeAssets& assets,
+                            const AssetImporterRegistry& importers,
+                            LoggingProvider& logging);
