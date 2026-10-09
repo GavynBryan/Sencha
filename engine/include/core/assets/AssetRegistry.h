@@ -42,7 +42,9 @@ public:
     bool RegisterOrVerify(const AssetRecord& record);
 
     // Drops a record and any id bound to it. For an editor that deleted or
-    // renamed the file behind it; the runtime never unregisters.
+    // renamed the file behind it; the runtime never unregisters. The path still
+    // answers by the id it went by (Find, Current) wherever that id is
+    // registered next, so what was read before a move keeps resolving.
     bool Unregister(std::string_view path);
 
     // Rebinds a registered path to `id`. Idempotent for the same pair; an id
@@ -84,6 +86,8 @@ private:
     std::unordered_map<std::string, AssetRecord> RecordsByPath;
     mutable std::shared_ptr<const AssetPathsById> PathsSnapshot;
     std::unordered_map<AssetId, const AssetRecord*> RecordsById;
+    // Paths unregistered this session, and the ids they went by.
+    std::unordered_map<std::string, AssetId> FormerIds;
 };
 
 // IsValidAssetPath lives in <core/assets/AssetPath.h> (included above) so

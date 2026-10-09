@@ -650,6 +650,23 @@ void WorldDocument::FileMoved(const std::filesystem::path& from, const std::file
         WorldPath_ = to.string();
 }
 
+void WorldDocument::TakeFileAsRead(const std::filesystem::path& file)
+{
+    std::error_code ec;
+    const auto is = [&](const std::filesystem::path& path) { return std::filesystem::equivalent(path, file, ec); };
+    const auto take = [&](EditorDocument* document) {
+        if (document != nullptr && document->HasFilePath() && is(std::filesystem::path(document->GetDisplayName())))
+            document->TakeFileAsRead();
+    };
+    if (!WorldMode_)
+        return take(LegacyDocument_.get());
+    if (!WorldPath_.empty() && is(WorldPath_))
+        WorldBaseline_.Record(WorldPath_);
+    take(WorldScene_.get());
+    for (const auto& [zone, open] : OpenZones_)
+        take(open.Document.get());
+}
+
 bool WorldDocument::IsExternallyModified() const
 {
     if (!WorldMode_)

@@ -31,6 +31,10 @@ public:
     [[nodiscard]] std::string DocumentLabel(std::string_view key) const override;
     [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const override;
     void FileMoved(const MovedFile& moved) override;
+    // Its saves settle every asset it names through the registry, which knows
+    // where a moved one is now.
+    [[nodiscard]] bool KeepsNamesAsRead(const std::filesystem::path&) const override { return false; }
+    void NamesRewritten(const std::filesystem::path& file) override;
 
 private:
     [[nodiscard]] bool WriteFiles();

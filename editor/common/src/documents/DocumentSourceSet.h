@@ -64,6 +64,8 @@ public:
     // Offered to every source until one has the file open.
     [[nodiscard]] ExternalChange FileChangedOnDisk(const std::filesystem::path& file);
     [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const;
+    [[nodiscard]] bool KeepsNamesAsRead(const std::filesystem::path& file) const;
+    void NamesRewritten(const std::filesystem::path& file);
 
 private:
     void Step(DocumentStep step);

@@ -248,7 +248,7 @@ std::string ProjectFileSteps::Move(std::string_view assetPath, std::string_view 
         std::optional<std::string> named = NamingMovedAsset(*text, assetPath, toAssetPath, id);
         if (!named.has_value())
             continue;
-        if (Hooks.IsOpen && Hooks.IsOpen(document))
+        if (Hooks.KeepsNames && Hooks.KeepsNames(document))
             return std::format("{} names it and is open; close it first.", PathLeaf(document.AssetPath));
         step.After.push_back({ document.FilePath, text, std::move(named) });
     }
@@ -337,13 +337,21 @@ std::string ProjectFileSteps::Trash(std::string_view assetPath)
 void ProjectFileSteps::Take(const Step& step, DocumentStep direction)
 {
     const bool redo = direction == DocumentStep::Redo;
+    // A document open in a rewritten file says the same as before it: it
+    // takes the new bytes as read.
     const auto write = [&](const std::vector<Rewrite>& rewrites) {
         if (redo)
             for (const Rewrite& rewrite : rewrites)
+            {
                 (void)WriteFileText(rewrite.File, rewrite.After);
+                Journal.NamesRewritten(rewrite.File);
+            }
         else
             for (auto it = rewrites.rbegin(); it != rewrites.rend(); ++it)
+            {
                 (void)WriteFileText(it->File, it->Before);
+                Journal.NamesRewritten(it->File);
+            }
     };
     const auto rename = [&] {
         const auto move = [](const std::filesystem::path& from, const std::filesystem::path& to) {
@@ -359,16 +367,24 @@ void ProjectFileSteps::Take(const Step& step, DocumentStep direction)
                 move(it->To, it->From);
     };
 
+    const auto follow = [&] {
+        if (step.Moved.has_value())
+            Journal.FileMoved(redo ? *step.Moved
+                                   : MovedFile{ step.Moved->ToAsset, step.Moved->FromAsset, step.Moved->To,
+                                                step.Moved->From });
+    };
     if (redo)
     {
         write(step.Before);
         rename();
+        follow();
         write(step.After);
     }
     else
     {
         write(step.After);
         rename();
+        follow();
         write(step.Before);
     }
     ++Taken;
@@ -386,10 +402,6 @@ void ProjectFileSteps::Take(const Step& step, DocumentStep direction)
                 Hooks.Changed(undone);
             }
     }
-    if (step.Moved.has_value())
-        Journal.FileMoved(redo ? *step.Moved
-                               : MovedFile{ step.Moved->ToAsset, step.Moved->FromAsset, step.Moved->To,
-                                            step.Moved->From });
 }
 
 void ProjectFileSteps::Record(Step step)

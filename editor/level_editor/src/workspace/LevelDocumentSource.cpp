@@ -103,3 +103,8 @@ void LevelDocumentSource::FileMoved(const MovedFile& moved)
 {
     Workspace.World.FileMoved(moved.From, moved.To);
 }
+
+void LevelDocumentSource::NamesRewritten(const std::filesystem::path& file)
+{
+    Workspace.World.TakeFileAsRead(file);
+}

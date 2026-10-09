@@ -130,6 +130,17 @@ bool DocumentSourceSet::HoldsFile(const std::filesystem::path& file) const
     return std::ranges::any_of(Sources, [&](const DocumentSource* source) { return source->HoldsFile(file); });
 }
 
+bool DocumentSourceSet::KeepsNamesAsRead(const std::filesystem::path& file) const
+{
+    return std::ranges::any_of(Sources, [&](const DocumentSource* source) { return source->KeepsNamesAsRead(file); });
+}
+
+void DocumentSourceSet::NamesRewritten(const std::filesystem::path& file)
+{
+    for (DocumentSource* source : Sources)
+        source->NamesRewritten(file);
+}
+
 void DocumentSourceSet::Step(DocumentStep step)
 {
     // A copy: the observer may bring another workspace forward, and nothing it

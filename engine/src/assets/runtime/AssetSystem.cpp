@@ -191,7 +191,8 @@ const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expecte
         return nullptr;
     }
 
-    const AssetRecord* record = Registry.FindByPath(path);
+    // By where it was, too: a document read before a move names it there.
+    const AssetRecord* record = Registry.Find(AssetRef{ .Path = std::string(path) });
     if (!record)
     {
         Log.Error("AssetSystem: failed to resolve asset '{}'", path);

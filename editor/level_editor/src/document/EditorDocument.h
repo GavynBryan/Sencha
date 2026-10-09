@@ -227,6 +227,8 @@ public:
     [[nodiscard]] bool HasFilePath() const;
     // Its file moved, unchanged: it lives there now.
     void MoveTo(std::string path) { FilePath = std::move(path); }
+    // Its file was rewritten to say the same: what is there now is what it read.
+    void TakeFileAsRead() { Baseline.Record(FilePath); }
 
     void MarkDirty(bool dirty = true);
     // Owner hook for derived editor state (world validation). It is invoked only

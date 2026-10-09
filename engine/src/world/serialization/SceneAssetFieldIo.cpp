@@ -226,7 +226,7 @@ bool WriteSceneAssetRef(IWriteArchive& archive,
     AssetRef ref{ type, std::string(path) };
     if (context.Assets != nullptr)
         if (const AssetRecord* record = context.Assets->Resolve(path, type))
-            ref.Id = record->Id;
+            ref = AssetRef{ type, record->Path, record->Id };
     WriteAssetRef(archive, key, ref);
     return archive.Ok();
 }

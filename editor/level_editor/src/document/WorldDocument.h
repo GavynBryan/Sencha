@@ -179,6 +179,8 @@ public:
     // The legacy document's file, or the world file within its own folder,
     // moved: it lives there now. A zone's scene is the world's to move.
     void FileMoved(const std::filesystem::path& from, const std::filesystem::path& to);
+    // `file`, one of its own, was rewritten to say the same: it is taken as read.
+    void TakeFileAsRead(const std::filesystem::path& file);
     // Any file this world last read or wrote changed on disk since: the world
     // file, the world scene, an open zone's scene, or the legacy document's.
     [[nodiscard]] bool IsExternallyModified() const;

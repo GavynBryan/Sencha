@@ -132,7 +132,10 @@ bool AssetRegistry::Unregister(std::string_view path)
         return false;
 
     if (it->second.Id.IsValid())
+    {
         RecordsById.erase(it->second.Id);
+        FormerIds.insert_or_assign(it->first, it->second.Id);
+    }
     RecordsByPath.erase(it);
     PathsSnapshot.reset();
     return true;
@@ -200,7 +203,12 @@ const AssetRecord* AssetRegistry::Find(const AssetRef& ref) const
 {
     if (const AssetRecord* byId = ref.Id.IsValid() ? FindById(ref.Id) : nullptr)
         return byId;
-    return ref.Path.empty() ? nullptr : FindByPath(ref.Path);
+    if (ref.Path.empty())
+        return nullptr;
+    if (const AssetRecord* byPath = FindByPath(ref.Path))
+        return byPath;
+    const auto former = FormerIds.find(ref.Path);
+    return former != FormerIds.end() ? FindById(former->second) : nullptr;
 }
 
 std::shared_ptr<const AssetPathsById> AssetRegistry::PathsById() const
@@ -218,10 +226,11 @@ std::shared_ptr<const AssetPathsById> AssetRegistry::PathsById() const
 
 AssetRef AssetRegistry::Current(AssetRef ref) const
 {
-    if (const AssetRecord* byId = ref.Id.IsValid() ? FindById(ref.Id) : nullptr)
-        ref.Path = byId->Path;
-    else if (const AssetRecord* byPath = ref.Path.empty() ? nullptr : FindByPath(ref.Path))
-        ref.Id = byPath->Id;
+    if (const AssetRecord* found = Find(ref))
+    {
+        ref.Path = found->Path;
+        ref.Id = found->Id;
+    }
     return ref;
 }
 

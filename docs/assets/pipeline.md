@@ -144,9 +144,14 @@ reference names the id first and the path second.
   enters. A document open in a moved file follows it, its unsaved changes and
   its undo steps with it (`DocumentSource::FileMoved`, `DocumentSourceSet::
   Rekey`), and so does a world's per-user state beside it. A file an editor
-  holds is not trashed, and a file an open document names is not moved, since
-  the document holds the old path (`DocumentSource::HoldsFile`). Materials'
-  and Data's own rename, duplicate and delete are these steps. The asset stack follows each step as a fresh mount would
+  holds is not trashed (`DocumentSource::HoldsFile`). The registry still
+  answers a path an asset left by the id it went by (`AssetRegistry::
+  Unregister`), so what an open level read before a move keeps resolving, and
+  its save names the asset where it is now; it takes the step's rewrite of
+  its own file as read. A material or data document writes back the names it
+  read, so a file one of them names is not moved while it is open
+  (`DocumentSource::KeepsNamesAsRead`). Materials' and Data's own rename,
+  duplicate and delete are these steps. The asset stack follows each step as a fresh mount would
   have found the files (`MountProjectFileChange`): a file gone loses its record
   and its cooked index entry (`ForgetImportedSource`), whose artifact bytes
   stay for content-hash dedup; a file appeared is registered, and imported when

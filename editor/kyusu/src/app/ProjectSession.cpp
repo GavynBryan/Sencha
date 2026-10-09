@@ -59,6 +59,7 @@ ProjectSession::ProjectSession(Engine& engine, std::optional<std::string> projec
         std::vector<std::filesystem::path>(Descriptor->ContentRoots.begin(), Descriptor->ContentRoots.end()), Journal,
         ProjectFileHooks{
             .IsOpen = [this](const ProjectFile& file) { return Journal.HoldsFile(file.FilePath); },
+            .KeepsNames = [this](const ProjectFile& file) { return Journal.KeepsNamesAsRead(file.FilePath); },
             .IsAsset = [this](const ProjectFile& file) { return IsAsset(file); },
             .Changed = [this](const ProjectFileChange& change) { FileChanged(change); },
         });

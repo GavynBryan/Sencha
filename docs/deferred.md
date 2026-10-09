@@ -360,17 +360,18 @@ do the work and delete the entry.
 - **Trigger:** a project's `.cooked/` growing visibly from moves, or the batch
   cook gaining a prune pass; then the prune runs over every root's index.
 
-## Moving a file an open document names
+## Moving a file an open material or data document names
 
-- **What:** the Shelf refuses to move a file that an open document names. The
-  document holds the old path in memory: a level would still resolve it by id,
-  but a material or data document writes its references back as it read them,
-  and would save the old path over the file step's rewrite.
-- **Where:** `ProjectFileSteps::Move`; the document sources
-  (`MaterialDocumentSet`, `DataDocumentStore`, `LevelDocumentSource`).
-- **Trigger:** the Shelf plan's stage B6c-2: the registry remembers the
-  session's moves, a source whose saves settle every name through it (the
-  level) takes a referrer rewrite as read, and only the others refuse.
+- **What:** a material or data document writes the references it read back as
+  it read them, so the Shelf refuses to move a file one of them names while it
+  is open: saved after the move, it would name the file where it was. A level
+  settles every name through the registry when it saves, and moves freely.
+- **Where:** `MaterialWriter` (texture slots) and `DataDocument::Write` (the
+  working root as read); `DocumentSource::KeepsNamesAsRead`, which
+  `MaterialDocumentSet` and `DataDocumentStore` answer by default.
+- **Trigger:** a person stopped by the refusal with a material or rig open, or
+  either writer settling its references (`AssetRegistry::Current`) for another
+  reason; then their sources stop keeping names as read.
 
 ## The previewed UI document is not held
 

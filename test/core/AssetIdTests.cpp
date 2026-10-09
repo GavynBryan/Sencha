@@ -154,6 +154,29 @@ TEST(AssetRegistryIds, AReferenceIsMadeCurrentByItsIdOrItsPath)
     EXPECT_EQ(unknown.Id, AssetId{ 9 });
 }
 
+// What was read before a move still finds the asset by the path it was at.
+TEST(AssetRegistryIds, APathAnAssetMovedFromStillFindsIt)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://old.smesh")));
+    const AssetId id = registry.FindByPath("asset://old.smesh")->Id;
+    ASSERT_TRUE(registry.Unregister("asset://old.smesh"));
+    AssetRecord moved = MakeRecord("asset://new.smesh");
+    moved.Id = id;
+    ASSERT_TRUE(registry.Register(moved));
+
+    ASSERT_NE(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://old.smesh" }), nullptr);
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://old.smesh" })->Path, "asset://new.smesh");
+    const AssetRef current = registry.Current(AssetRef{ AssetType::StaticMesh, "asset://old.smesh" });
+    EXPECT_EQ(current.Path, "asset://new.smesh");
+    EXPECT_EQ(current.Id, id);
+    EXPECT_FALSE(registry.Contains("asset://old.smesh")) << "nothing is at the old path";
+
+    ASSERT_TRUE(registry.Unregister("asset://new.smesh"));
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://old.smesh" }), nullptr) << "gone is gone";
+}
+
 // A dependency named by id is found where its asset now is.
 TEST(AssetRegistryIds, AReferenceFindsItsAssetByIdBeforePath)
 {

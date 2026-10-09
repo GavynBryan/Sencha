@@ -49,9 +49,12 @@ struct ProjectFileChange
 struct ProjectFileHooks
 {
     // Whether an editor holds the file open. A file it holds follows a move
-    // (DocumentSource::FileMoved), but is not trashed; nor is a file moved
-    // that an open one names, which holds its old path.
+    // (DocumentSource::FileMoved), but is not trashed.
     std::function<bool(const ProjectFile&)> IsOpen = {};
+    // Whether an editor holds the file and writes the assets it names back as
+    // it read them: a file it names is not moved, since it would be saved
+    // naming where it was (DocumentSource::KeepsNamesAsRead).
+    std::function<bool(const ProjectFile&)> KeepsNames = {};
     // Whether the file is an asset (IsAssetFile), and so goes by an id.
     std::function<bool(const ProjectFile&)> IsAsset = {};
     std::function<void(const ProjectFileChange&)> Changed = {};

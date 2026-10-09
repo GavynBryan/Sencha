@@ -54,11 +54,42 @@ public:
     std::filesystem::path Root;
 };
 
+// A document source holding some of the project's files open; a level takes
+// a rewrite of what it names as read, everything else keeps names as read.
+class OpenFiles final : public DocumentSource
+{
+public:
+    explicit OpenFiles(DocumentSourceSet& journal) : Journal(journal) { Journal.AddSource(*this); }
+    ~OpenFiles() override { Journal.RemoveSource(*this); }
+
+    void AppendChangedDocuments(std::vector<DocumentRef>&) override {}
+    [[nodiscard]] DocumentSaveResult SaveDocument(std::string_view) override { return {}; }
+    [[nodiscard]] bool SettleDocument(std::string_view, ConflictChoice, std::string&) override { return true; }
+    void StepDocument(std::string_view, DocumentStep) override {}
+    void CancelDocumentEdits() override {}
+    void DiscardDocument(std::string_view) override {}
+    [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const override
+    {
+        return Held.contains(file.filename().string());
+    }
+    [[nodiscard]] bool KeepsNamesAsRead(const std::filesystem::path& file) const override
+    {
+        return HoldsFile(file) && !file.filename().string().ends_with(".sscene");
+    }
+    void NamesRewritten(const std::filesystem::path& file) override { Rewritten.push_back(file.filename().string()); }
+
+    DocumentSourceSet& Journal;
+    std::set<std::string> Held;
+    std::vector<std::string> Rewritten;
+};
+
 struct Fixture
 {
     explicit Fixture(const Project& project)
-        : Steps({ project.Root }, Journal,
+        : Open(Journal)
+        , Steps({ project.Root }, Journal,
                 { .IsOpen = [this](const ProjectFile& file) { return OpenPaths.contains(file.AssetPath); },
+                  .KeepsNames = [this](const ProjectFile& file) { return Journal.KeepsNamesAsRead(file.FilePath); },
                   .IsAsset = [](const ProjectFile& file) { return file.Extension != ".txt"; },
                   .Changed =
                       [this](const ProjectFileChange& change) {
@@ -69,6 +100,7 @@ struct Fixture
     }
 
     DocumentSourceSet Journal;
+    OpenFiles Open;
     std::set<std::string> OpenPaths;
     std::vector<std::string> Changes;
     ProjectFileSteps Steps;
@@ -198,19 +230,34 @@ TEST(ProjectFileSteps, AStepThatCannotBeTakenSaysWhy)
     EXPECT_FALSE(files.Journal.CanUndo());
 }
 
-TEST(ProjectFileSteps, AFileNamedByAnOpenOneStaysWhereItIs)
+TEST(ProjectFileSteps, AFileNamedByAnOpenDocumentThatKeepsNamesStaysWhereItIs)
 {
     Project project;
-    const std::string level = R"({ "m": "asset://m/stone.smat" })";
-    project.Write("levels/hub.sscene", level);
+    const std::string material = R"({ "base_color_texture": "asset://t/grit.png" })";
+    project.Write("m/stone.smat", material);
+    project.Write("t/grit.png", "png");
+    Fixture files(project);
+    files.Open.Held.insert("stone.smat");
+
+    EXPECT_NE(files.Steps.Move("asset://t/grit.png", "asset://t/sand.png"), "");
+    EXPECT_TRUE(project.Exists("t/grit.png"));
+    EXPECT_EQ(project.Read("m/stone.smat"), material);
+    EXPECT_FALSE(project.Exists("t/grit.png.meta")) << "nothing was stated for a step not taken";
+}
+
+TEST(ProjectFileSteps, AnOpenLevelTakesTheNamesRewrittenInItAsRead)
+{
+    Project project;
+    project.Write("levels/hub.sscene", R"({ "m": "asset://m/stone.smat" })");
     project.Write("m/stone.smat", "{}");
     Fixture files(project);
-    files.OpenPaths.insert("asset://levels/hub.sscene");
+    files.Open.Held.insert("hub.sscene");
 
-    EXPECT_NE(files.Steps.Move("asset://m/stone.smat", "asset://m/rock.smat"), "");
-    EXPECT_TRUE(project.Exists("m/stone.smat"));
-    EXPECT_EQ(project.Read("levels/hub.sscene"), level);
-    EXPECT_EQ(project.Read("m/stone.smat"), "{}") << "nothing was stated for a step not taken";
+    ASSERT_EQ(files.Steps.Move("asset://m/stone.smat", "asset://m/rock.smat"), "");
+    EXPECT_NE(project.Read("levels/hub.sscene").find("asset://m/rock.smat"), std::string::npos);
+    EXPECT_EQ(std::ranges::count(files.Open.Rewritten, std::string("hub.sscene")), 1);
+    files.Journal.Undo();
+    EXPECT_EQ(std::ranges::count(files.Open.Rewritten, std::string("hub.sscene")), 2) << "and its undoing";
 }
 
 TEST(ProjectFileSteps, AWorldsZonesGoWhereTheWorldGoes)

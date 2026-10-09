@@ -77,4 +77,11 @@ public:
     // The file an open document lives in, or is kept beside, moved: the
     // document follows it, and its steps with it (DocumentSourceSet::Rekey).
     virtual void FileMoved(const MovedFile&) {}
+    // Whether a document open in `file` writes the assets it names back as it
+    // read them, rather than as the registry knows them now: then an asset it
+    // names cannot move while it is open.
+    [[nodiscard]] virtual bool KeepsNamesAsRead(const std::filesystem::path& file) const { return HoldsFile(file); }
+    // A file step renamed, in `file`, an asset it names: it says the same, so a
+    // document open in it takes the new bytes as what it last read.
+    virtual void NamesRewritten(const std::filesystem::path&) {}
 };
