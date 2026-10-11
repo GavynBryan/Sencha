@@ -441,6 +441,9 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
     Projection.Reset();
     Projection.Rebuild();
 
+    // A cook or a script can read world placements before any frame draws.
+    Scene.RefreshDerivedTransforms();
+
     // The document was replaced wholesale, so whatever divergence the previous
     // contents had from disk went with them. Written directly because OnEdited
     // is for authored mutations, never loads.
