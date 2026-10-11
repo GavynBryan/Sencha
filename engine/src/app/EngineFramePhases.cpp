@@ -980,29 +980,36 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         if (gamepads != nullptr && !ctx.Input->GamepadConnected && gamepads->OpenCount() == 0)
             gamepads->OpenConnected(*ctx.Input);
 
-        SDL_Event event;
-        while (SDL_PollEvent(&event))
-        {
-            windows.HandleEvent(event);
-
-            // Router order is surface z-order, and the fold into the InputFrame
-            // happens inside Route() before any of them is asked. See
-            // PlatformEventRouter's header for why that order is not negotiable.
+        // Router order is surface z-order, and the fold into the InputFrame
+        // happens inside Route() before any of them is asked. See
+        // PlatformEventRouter's header for why that order is not negotiable.
+        const auto dispatch = [&](SDL_Event& event) {
             PlatformEventContext eventCtx{
                 .Config = config,
                 .Event = event,
                 .WindowId = SdlEventWindowId(event),
             };
             if (engine.PlatformEvents().Route(event, *ctx.Input, gamepads))
+                return true;
+            game.OnPlatformEvent(eventCtx);
+            return eventCtx.Handled;
+        };
+
+        SDL_Event event;
+        while (SDL_PollEvent(&event))
+        {
+            windows.HandleEvent(event);
+
+            for (SDL_Event release : engine.PlatformEvents().ReleasesMissedBefore(event))
+                (void)dispatch(release);
+            if (dispatch(event))
                 continue;
 
-            game.OnPlatformEvent(eventCtx);
-            if (eventCtx.Handled)
-                continue;
+            const std::uint32_t eventWindow = SdlEventWindowId(event);
 
             // The frame's lifecycle follows the primary; another window's
             // minimize or focus is its own presentation's business.
-            if (eventCtx.WindowId != 0 && eventCtx.WindowId != windowId)
+            if (eventWindow != 0 && eventWindow != windowId)
                 continue;
 
             if (event.type == SDL_EVENT_WINDOW_MINIMIZED)

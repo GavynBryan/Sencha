@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-union SDL_Event;
+#include <SDL3/SDL_events.h>
 
 class SdlGamepadCapture;
 
@@ -52,6 +52,11 @@ public:
     // The rest of the gesture in `window`, release included, is the
     // application's; its consumer is told it ended. False when none is open.
     bool HandGestureToApplication(std::uint32_t window);
+
+    // The releases a motion shows were missed: buttons the window's gesture
+    // holds that the platform no longer reports down. Deliver them, in order,
+    // before the motion itself.
+    [[nodiscard]] std::vector<SDL_Event> ReleasesMissedBefore(const SDL_Event& event) const;
 
     [[nodiscard]] bool HasGesture(std::uint32_t window) const;
     [[nodiscard]] bool ApplicationHasGesture(std::uint32_t window) const;

@@ -183,12 +183,13 @@ void SynthesizedInput::Advance()
             continue;
         }
         SDL_Event event = it->Event;
-        // A button lands where the pointer is, and a move says how far it went,
-        // as a real one does.
+        // A button lands where the pointer is, and a move says how far it went
+        // and which buttons are held, as a real one does.
         if (event.type == SDL_EVENT_MOUSE_MOTION)
         {
             event.motion.xrel = event.motion.x - PointerX;
             event.motion.yrel = event.motion.y - PointerY;
+            event.motion.state = Buttons;
             PointerX = event.motion.x;
             PointerY = event.motion.y;
         }
@@ -196,6 +197,10 @@ void SynthesizedInput::Advance()
         {
             event.button.x = PointerX;
             event.button.y = PointerY;
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+                Buttons |= SDL_BUTTON_MASK(event.button.button);
+            else
+                Buttons &= ~SDL_BUTTON_MASK(event.button.button);
         }
         else if (event.type == SDL_EVENT_MOUSE_WHEEL)
         {

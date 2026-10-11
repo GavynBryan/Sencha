@@ -324,3 +324,43 @@ TEST(PlatformEventRouter, AHandedGestureIsTheApplicationsToTheEnd)
     EXPECT_EQ(menu.Heard, 0);
     EXPECT_FALSE(router.HasGesture(1));
 }
+
+TEST(PlatformEventRouter, AMoveWithoutTheGesturesButtonShowsItsReleaseWasMissed)
+{
+    // The platform reports which buttons are down with every move. A gesture
+    // whose button a move no longer reports was let go somewhere its release
+    // never reached, and its owner is owed that release before the move.
+    PlatformEventRouter router;
+    InputFrame frame;
+    (void)router.Route(Pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, 1, SDL_BUTTON_LEFT), frame, nullptr);
+    (void)router.Route(Pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, 1, SDL_BUTTON_RIGHT), frame, nullptr);
+
+    SDL_Event held = Pointer(SDL_EVENT_MOUSE_MOTION);
+    held.motion.state = SDL_BUTTON_LMASK | SDL_BUTTON_RMASK;
+    EXPECT_TRUE(router.ReleasesMissedBefore(held).empty()) << "a release was made up for buttons still held";
+
+    SDL_Event leftLetGo = Pointer(SDL_EVENT_MOUSE_MOTION);
+    leftLetGo.motion.state = SDL_BUTTON_RMASK;
+    leftLetGo.motion.x = 40.0f;
+    leftLetGo.motion.y = 30.0f;
+    const std::vector<SDL_Event> missed = router.ReleasesMissedBefore(leftLetGo);
+    ASSERT_EQ(missed.size(), 1u);
+    EXPECT_EQ(missed[0].type, SDL_EVENT_MOUSE_BUTTON_UP);
+    EXPECT_EQ(missed[0].button.button, SDL_BUTTON_LEFT);
+    EXPECT_EQ(missed[0].button.windowID, 1u);
+    EXPECT_EQ(missed[0].button.x, 40.0f) << "the release is placed where the pointer was found";
+
+    for (const SDL_Event& release : missed)
+        (void)router.Route(release, frame, nullptr);
+    EXPECT_TRUE(router.HasGesture(1)) << "the right button is still held";
+    EXPECT_FALSE(frame.IsMouseButtonDown(SDL_BUTTON_LEFT)) << "the snapshot still holds the missed button";
+}
+
+TEST(PlatformEventRouter, OnlyAMoveInTheGesturesWindowSpeaksForIt)
+{
+    PlatformEventRouter router;
+    InputFrame frame;
+    (void)router.Route(Pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, 1), frame, nullptr);
+    EXPECT_TRUE(router.ReleasesMissedBefore(Pointer(SDL_EVENT_MOUSE_MOTION, 2)).empty());
+    EXPECT_TRUE(router.ReleasesMissedBefore(Pointer(SDL_EVENT_MOUSE_BUTTON_UP, 1)).empty());
+}

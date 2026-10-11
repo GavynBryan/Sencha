@@ -130,6 +130,33 @@ bool PlatformEventRouter::HandGestureToApplication(std::uint32_t window)
     return true;
 }
 
+std::vector<SDL_Event> PlatformEventRouter::ReleasesMissedBefore(const SDL_Event& event) const
+{
+    std::vector<SDL_Event> releases;
+    if (event.type != SDL_EVENT_MOUSE_MOTION)
+        return releases;
+    const Gesture* gesture = Find(event.motion.windowID);
+    if (gesture == nullptr)
+        return releases;
+    const std::uint32_t missed = gesture->Buttons & ~event.motion.state;
+    for (std::uint8_t button = SDL_BUTTON_LEFT; button <= SDL_BUTTON_X2; ++button)
+    {
+        if ((missed & SDL_BUTTON_MASK(button)) == 0)
+            continue;
+        SDL_Event release{};
+        release.type = SDL_EVENT_MOUSE_BUTTON_UP;
+        release.button.timestamp = event.motion.timestamp;
+        release.button.windowID = event.motion.windowID;
+        release.button.which = event.motion.which;
+        release.button.button = button;
+        release.button.clicks = 1;
+        release.button.x = event.motion.x;
+        release.button.y = event.motion.y;
+        releases.push_back(release);
+    }
+    return releases;
+}
+
 bool PlatformEventRouter::HasGesture(std::uint32_t window) const
 {
     return Find(window) != nullptr;

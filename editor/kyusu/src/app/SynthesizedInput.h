@@ -42,4 +42,5 @@ private:
     float PointerX = 0.0f;
     float PointerY = 0.0f;
     SDL_Keymod Modifiers = SDL_KMOD_NONE;
+    SDL_MouseButtonFlags Buttons = 0;
 };
