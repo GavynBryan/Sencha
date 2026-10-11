@@ -26,40 +26,47 @@ namespace
         return std::string(parent) + "." + std::string(key);
     }
 
-    bool ValidateNumber(double value,
-                        const DataFieldSchema& field,
-                        std::string_view path,
-                        std::vector<DataValidationError>& errors)
+    // JSON numbers are doubles. An identity, a count, or a frame budget that
+    // arrived as 2^53 + 1 would silently become something else, so an integer
+    // a double cannot hold exactly is refused rather than rounded.
+    bool IsExactInteger(double value)
     {
-        bool valid = true;
+        constexpr double kMaxExact = 9007199254740992.0; // 2^53
+        return std::isfinite(value) && std::floor(value) == value
+            && value <= kMaxExact && value >= -kMaxExact;
+    }
+
+    bool CheckNumber(double value,
+                     const DataFieldSchema& field,
+                     std::string_view path,
+                     std::vector<DataValidationError>& errors)
+    {
         if (!std::isfinite(value))
         {
             AddError(errors, path, "value must be finite");
             return false;
         }
-
+        bool valid = true;
         if (field.Numeric.Minimum && value < *field.Numeric.Minimum)
         {
             AddError(errors, path,
-                     std::format("value {} is below minimum {}", value,
-                                 *field.Numeric.Minimum));
+                     std::format("value {} is below minimum {}", value, *field.Numeric.Minimum));
             valid = false;
         }
         if (field.Numeric.Maximum && value > *field.Numeric.Maximum)
         {
             AddError(errors, path,
-                     std::format("value {} is above maximum {}", value,
-                                 *field.Numeric.Maximum));
+                     std::format("value {} is above maximum {}", value, *field.Numeric.Maximum));
             valid = false;
         }
         return valid;
     }
 
     // An array of records whose elements carry a StableKey: no two may share one.
-    bool ValidateKeysUnique(const JsonValue& array,
-                            const DataFieldSchema& element,
-                            std::string_view path,
-                            std::vector<DataValidationError>& errors)
+    bool KeysUnique(const JsonValue& array,
+                    const DataFieldSchema& element,
+                    std::string_view path,
+                    std::vector<DataValidationError>& errors)
     {
         if (element.Kind != DataFieldKind::Record)
             return true;
@@ -90,235 +97,273 @@ namespace
         return valid;
     }
 
-    bool ValidateField(const JsonValue& value,
-                       const DataFieldSchema& field,
-                       std::string_view path,
-                       bool allowUnknownFields,
-                       std::vector<DataValidationError>& errors)
+    std::string CheckReferenceText(const JsonValue& value, const DataFieldSchema& field)
     {
         switch (field.Kind)
         {
-        case DataFieldKind::Bool:
-            if (!value.IsBool())
-            {
-                AddError(errors, path, "expected boolean");
-                return false;
-            }
-            return true;
-
-        case DataFieldKind::Int:
-            if (!value.IsNumber())
-            {
-                AddError(errors, path, "expected integer");
-                return false;
-            }
-            if (std::floor(value.AsNumber()) != value.AsNumber())
-            {
-                AddError(errors, path, "expected integer without a fractional part");
-                return false;
-            }
-            return ValidateNumber(value.AsNumber(), field, path, errors);
-
-        case DataFieldKind::Float:
-            if (!value.IsNumber())
-            {
-                AddError(errors, path, "expected number");
-                return false;
-            }
-            return ValidateNumber(value.AsNumber(), field, path, errors);
-
-        case DataFieldKind::String:
-            if (!value.IsString())
-            {
-                AddError(errors, path, "expected string");
-                return false;
-            }
-            return true;
-
-        case DataFieldKind::Enum:
-        {
-            if (!value.IsString())
-            {
-                AddError(errors, path, "expected enum string");
-                return false;
-            }
-
-            const auto it = std::find_if(field.EnumChoices.begin(), field.EnumChoices.end(),
-                [&value](const DataEnumChoice& choice)
-                {
-                    return choice.Value == value.AsString();
-                });
-            if (it == field.EnumChoices.end())
-            {
-                AddError(errors, path,
-                         std::format("unknown enum value '{}'", value.AsString()));
-                return false;
-            }
-            return true;
-        }
-
-        case DataFieldKind::Vector:
-        {
-            if (!value.IsArray())
-            {
-                AddError(errors, path, "expected numeric array");
-                return false;
-            }
-            if (value.Size() != field.VectorLength)
-            {
-                AddError(errors, path,
-                         std::format("expected {} vector elements", field.VectorLength));
-                return false;
-            }
-
-            bool valid = true;
-            for (size_t index = 0; index < value.AsArray().size(); ++index)
-            {
-                const JsonValue& element = value.AsArray()[index];
-                const std::string elementPath =
-                    std::format("{}[{}]", path, index);
-                if (!element.IsNumber())
-                {
-                    AddError(errors, elementPath, "expected number");
-                    valid = false;
-                    continue;
-                }
-                valid = ValidateNumber(element.AsNumber(), field, elementPath, errors) && valid;
-            }
-            return valid;
-        }
-
-        case DataFieldKind::Record:
-        {
-            if (!value.IsObject())
-            {
-                AddError(errors, path, "expected object");
-                return false;
-            }
-
-            bool valid = true;
-            for (const DataFieldSchema& child : field.Children)
-            {
-                const JsonValue* childValue = value.Find(child.Key);
-                const std::string childPath = ChildPath(path, child.Key);
-                if (childValue == nullptr)
-                {
-                    if (child.Required)
-                    {
-                        AddError(errors, childPath, "required field is missing");
-                        valid = false;
-                    }
-                    continue;
-                }
-                valid = ValidateField(*childValue, child, childPath,
-                                      allowUnknownFields, errors) && valid;
-            }
-
-            if (!allowUnknownFields)
-            {
-                for (const auto& [key, unused] : value.AsObject())
-                {
-                    (void)unused;
-                    const auto it = std::find_if(field.Children.begin(), field.Children.end(),
-                        [&key](const DataFieldSchema& child)
-                        {
-                            return child.Key == key;
-                        });
-                    if (it == field.Children.end())
-                    {
-                        AddError(errors, ChildPath(path, key), "unknown field");
-                        valid = false;
-                    }
-                }
-            }
-            return valid;
-        }
-
-        case DataFieldKind::Array:
-        {
-            if (!value.IsArray())
-            {
-                AddError(errors, path, "expected array");
-                return false;
-            }
-            if (field.Children.size() != 1)
-            {
-                AddError(errors, path, "array schema must define exactly one element schema");
-                return false;
-            }
-
-            bool valid = true;
-            for (size_t index = 0; index < value.AsArray().size(); ++index)
-            {
-                const std::string elementPath = std::format("{}[{}]", path, index);
-                valid = ValidateField(value.AsArray()[index], field.Children.front(),
-                                      elementPath, allowUnknownFields, errors) && valid;
-            }
-            return ValidateKeysUnique(value, field.Children.front(), path, errors) && valid;
-        }
-
-        case DataFieldKind::Optional:
-            if (value.IsNull())
-                return true;
-            if (field.Children.size() != 1)
-            {
-                AddError(errors, path, "optional schema must define exactly one value schema");
-                return false;
-            }
-            return ValidateField(value, field.Children.front(), path,
-                                 allowUnknownFields, errors);
-
         case DataFieldKind::AssetRef:
         case DataFieldKind::DataAssetRef:
-            if (!AssetRefFromJson(value).has_value())
-            {
-                AddError(errors, path, "expected an asset path or an {id, path} reference");
-                return false;
-            }
-            return true;
-
+            return AssetRefFromJson(value).has_value()
+                ? std::string{}
+                : "expected an asset path or an {id, path} reference";
         case DataFieldKind::GameplayTag:
             if (!value.IsString())
-            {
-                AddError(errors, path, "expected gameplay tag string");
-                return false;
-            }
-            if (value.AsString().empty())
-            {
-                AddError(errors, path, "gameplay tag cannot be empty");
-                return false;
-            }
-            return true;
-
-        case DataFieldKind::StableKey:
-            if (!value.IsString() || !IsValidStableKey(value.AsString()))
-            {
-                AddError(errors, path, "expected a key of up to 64 letters, digits, '_' or '-'");
-                return false;
-            }
-            return true;
-
+                return "expected gameplay tag string";
+            return value.AsString().empty() ? "gameplay tag cannot be empty" : std::string{};
         case DataFieldKind::Entity:
             if (!value.IsString())
-            {
-                AddError(errors, path, "expected persistent entity id string");
-                return false;
-            }
+                return "expected persistent entity id string";
             // Strict, like PersistentEntityIdFromString: a malformed identity
             // that parsed leniently would resolve to nothing at load and read
             // as a missing entity rather than as the typo it is.
-            if (!PersistentEntityIdFromString(value.AsString()).has_value())
-            {
-                AddError(errors, path,
-                         "expected 16 lowercase hex digits naming a persistent entity");
-                return false;
-            }
-            return true;
+            return PersistentEntityIdFromString(value.AsString()).has_value()
+                ? std::string{}
+                : "expected 16 lowercase hex digits naming a persistent entity";
+        default:
+            return "not a reference field";
         }
+    }
 
+    JsonValue DefaultAsJson(const DataDefaultValue& value)
+    {
+        if (const bool* flag = std::get_if<bool>(&value))
+            return JsonValue(*flag);
+        if (const int64_t* whole = std::get_if<int64_t>(&value))
+            return JsonValue(static_cast<double>(*whole));
+        if (const double* number = std::get_if<double>(&value))
+            return JsonValue(*number);
+        if (const std::string* text = std::get_if<std::string>(&value))
+            return JsonValue(*text);
+        return JsonValue{};
+    }
+}
+
+bool NormalizeDataValue(const JsonValue* value,
+                        const DataFieldSchema& field,
+                        std::string_view path,
+                        const DataValueRules& rules,
+                        JsonValue* out,
+                        std::vector<DataValidationError>& errors)
+{
+    if (value == nullptr)
+    {
+        if (rules.FillDefaults && !std::holds_alternative<std::monostate>(field.Default))
+        {
+            const JsonValue fallback = DefaultAsJson(field.Default);
+            return NormalizeDataValue(&fallback, field, path, rules, out, errors);
+        }
+        if (field.Required)
+        {
+            AddError(errors, path, "required field is missing");
+            return false;
+        }
+        if (out != nullptr)
+            *out = JsonValue{};
+        return true;
+    }
+
+    switch (field.Kind)
+    {
+    case DataFieldKind::Bool:
+        if (!value->IsBool())
+        {
+            AddError(errors, path, "expected boolean");
+            return false;
+        }
+        break;
+
+    case DataFieldKind::Int:
+        if (!value->IsNumber() || !IsExactInteger(value->AsNumber()))
+        {
+            AddError(errors, path, "expected an integer a 64-bit value can hold exactly");
+            return false;
+        }
+        if (!CheckNumber(value->AsNumber(), field, path, errors))
+            return false;
+        break;
+
+    case DataFieldKind::Float:
+        if (!value->IsNumber())
+        {
+            AddError(errors, path, "expected number");
+            return false;
+        }
+        if (!CheckNumber(value->AsNumber(), field, path, errors))
+            return false;
+        break;
+
+    case DataFieldKind::String:
+        if (!value->IsString())
+        {
+            AddError(errors, path, "expected string");
+            return false;
+        }
+        break;
+
+    case DataFieldKind::Enum:
+    {
+        if (!value->IsString())
+        {
+            AddError(errors, path, "expected enum string");
+            return false;
+        }
+        const bool known = std::any_of(field.EnumChoices.begin(), field.EnumChoices.end(),
+            [value](const DataEnumChoice& choice) { return choice.Value == value->AsString(); });
+        if (!known)
+        {
+            AddError(errors, path, std::format("unknown enum value '{}'", value->AsString()));
+            return false;
+        }
+        break;
+    }
+
+    case DataFieldKind::Vector:
+    {
+        if (!value->IsArray())
+        {
+            AddError(errors, path, "expected numeric array");
+            return false;
+        }
+        if (value->Size() != field.VectorLength)
+        {
+            AddError(errors, path, std::format("expected {} vector elements", field.VectorLength));
+            return false;
+        }
+        bool valid = true;
+        for (size_t index = 0; index < value->AsArray().size(); ++index)
+        {
+            const JsonValue& element = value->AsArray()[index];
+            const std::string elementPath = std::format("{}[{}]", path, index);
+            if (!element.IsNumber())
+            {
+                AddError(errors, elementPath, "expected number");
+                valid = false;
+                continue;
+            }
+            valid = CheckNumber(element.AsNumber(), field, elementPath, errors) && valid;
+        }
+        if (!valid)
+            return false;
+        break;
+    }
+
+    case DataFieldKind::Record:
+    {
+        if (!value->IsObject())
+        {
+            AddError(errors, path, "expected object");
+            return false;
+        }
+        bool valid = true;
+        JsonValue::Object members;
+        for (const DataFieldSchema& child : field.Children)
+        {
+            JsonValue member;
+            const JsonValue* authored = value->Find(child.Key);
+            if (authored == nullptr && !rules.FillDefaults && !child.Required)
+                continue;
+            valid = NormalizeDataValue(authored, child, ChildPath(path, child.Key), rules,
+                                       out != nullptr ? &member : nullptr, errors)
+                && valid;
+            if (out != nullptr)
+                members.emplace_back(child.Key, std::move(member));
+        }
+        if (!rules.AllowUnknownFields)
+        {
+            for (const auto& [key, unused] : value->AsObject())
+            {
+                (void)unused;
+                if (FindChild(field, key) == nullptr)
+                {
+                    AddError(errors, ChildPath(path, key), "unknown field");
+                    valid = false;
+                }
+            }
+        }
+        if (!valid)
+            return false;
+        if (out != nullptr)
+            *out = JsonValue(std::move(members));
+        return true;
+    }
+
+    case DataFieldKind::Array:
+    {
+        if (!value->IsArray())
+        {
+            AddError(errors, path, "expected array");
+            return false;
+        }
+        if (field.Children.size() != 1)
+        {
+            AddError(errors, path, "array schema must define exactly one element schema");
+            return false;
+        }
+        bool valid = true;
+        JsonValue::Array elements;
+        for (size_t index = 0; index < value->AsArray().size(); ++index)
+        {
+            JsonValue element;
+            valid = NormalizeDataValue(&value->AsArray()[index], field.Children.front(),
+                                       std::format("{}[{}]", path, index), rules,
+                                       out != nullptr ? &element : nullptr, errors)
+                && valid;
+            if (out != nullptr)
+                elements.push_back(std::move(element));
+        }
+        valid = KeysUnique(*value, field.Children.front(), path, errors) && valid;
+        if (!valid)
+            return false;
+        if (out != nullptr)
+            *out = JsonValue(std::move(elements));
+        return true;
+    }
+
+    case DataFieldKind::Optional:
+        // An explicit null is a value: the author said "nothing here". It is
+        // not the same as leaving the member out, which takes the default.
+        if (value->IsNull())
+            break;
+        if (field.Children.size() != 1)
+        {
+            AddError(errors, path, "optional schema must define exactly one value schema");
+            return false;
+        }
+        return NormalizeDataValue(value, field.Children.front(), path, rules, out, errors);
+
+    case DataFieldKind::AssetRef:
+    case DataFieldKind::DataAssetRef:
+    case DataFieldKind::GameplayTag:
+    case DataFieldKind::Entity:
+    {
+        const std::string refusal = rules.CheckReference
+            ? rules.CheckReference(*value, field)
+            : CheckReferenceText(*value, field);
+        if (!refusal.empty())
+        {
+            AddError(errors, path, refusal);
+            return false;
+        }
+        break;
+    }
+
+    case DataFieldKind::StableKey:
+        if (!value->IsString() || !IsValidStableKey(value->AsString()))
+        {
+            AddError(errors, path, "expected a key of up to 64 letters, digits, '_' or '-'");
+            return false;
+        }
+        break;
+
+    default:
         AddError(errors, path, "unsupported schema field kind");
         return false;
     }
+
+    if (out != nullptr)
+        *out = *value;
+    return true;
+
 }
 
 DataFieldSchema MakeDataField(DataFieldKind kind, std::string key, std::string displayName,
@@ -347,8 +392,9 @@ bool ValidateDataAgainstSchema(const JsonValue& value,
                                std::vector<DataValidationError>& errors)
 {
     const size_t errorCount = errors.size();
-    const bool valid = ValidateField(value, schema.Root, "$", schema.AllowUnknownFields,
-                                     errors);
+    DataValueRules rules;
+    rules.AllowUnknownFields = schema.AllowUnknownFields;
+    const bool valid = NormalizeDataValue(&value, schema.Root, "$", rules, nullptr, errors);
     return valid && errors.size() == errorCount;
 }
 
