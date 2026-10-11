@@ -10,12 +10,15 @@
 #include "operations/LevelQueries.h"
 #include "operations/LevelSubjects.h"
 
+#include <assets/texture/ImageLoader.h>
+#include <core/io/FileBytes.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -163,6 +166,47 @@ namespace
 
         const JsonValue boxed = Call("query.box", R"({"min": [2, -1, -1], "max": [4, 1, 1]})");
         EXPECT_EQ(Data(boxed).Find("entities")->AsArray().size(), 1u);
+    }
+
+    TEST_F(LevelQueriesTest, PlanSectionCutsTheBrushesItMeetsAndDrawsThemNorthUp)
+    {
+        const EntityId wall = Brush({ 0, 1, 0 }, { 4, 1, 0.25f }, "North Wall");
+        (void)Brush({ 0, -0.25f, 0 }, { 6, 0.25f, 6 }, "Floor");
+        const EntityId spawn = World.FocusDocument().GetScene().CreateEntity(Vec3d{ 0, 0, 3 });
+
+        const std::filesystem::path image =
+            std::filesystem::temp_directory_path() / "sencha_plan_section.png";
+        std::filesystem::remove(image);
+        const JsonValue answer = Call("plan.section",
+            R"({"height": 1, "pixels_per_metre": 8, "image": ")" + image.generic_string() + R"("})");
+        ASSERT_EQ(Text(answer, "status"), "ok") << JsonStringify(answer);
+        const JsonValue& data = Data(answer);
+
+        // The cut at one metre meets the wall, not the floor below it.
+        const JsonValue::Array& brushes = data.Find("brushes")->AsArray();
+        ASSERT_EQ(brushes.size(), 1u);
+        EXPECT_EQ(Text(brushes.front(), "id"), Id(wall));
+        const JsonValue& contour = brushes.front().Find("contours")->AsArray().front();
+        EXPECT_TRUE(contour.Find("closed")->AsBool());
+        EXPECT_EQ(contour.Find("points")->AsArray().size(), 4u);
+
+        const JsonValue::Array& points = data.Find("points")->AsArray();
+        ASSERT_EQ(points.size(), 1u);
+        EXPECT_EQ(Text(points.front(), "id"), Id(spawn));
+        EXPECT_DOUBLE_EQ(points.front().Find("position")->AsArray()[1].AsNumber(), 3.0);
+
+        // Wall 8 m by 0.5 m and the spawn 3 m south, with a metre of margin.
+        const JsonValue* written = data.Find("image");
+        ASSERT_TRUE(written != nullptr && written->IsObject());
+        std::vector<std::byte> png;
+        ASSERT_TRUE(ReadFileBytes(image, png));
+        const std::optional<Image> decoded = LoadImageFromMemory(
+            reinterpret_cast<const std::uint8_t*>(png.data()), static_cast<int>(png.size()), false);
+        ASSERT_TRUE(decoded.has_value());
+        EXPECT_EQ(decoded->Width, static_cast<std::uint32_t>(written->Find("width")->AsNumber()));
+        EXPECT_EQ(decoded->Width, 80u);
+        EXPECT_EQ(decoded->Height, 42u);
+        std::filesystem::remove(image);
     }
 
     TEST_F(LevelQueriesTest, NearIsNearestFirstWithACompassBearing)

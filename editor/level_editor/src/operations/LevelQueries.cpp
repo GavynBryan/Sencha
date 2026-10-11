@@ -1,5 +1,6 @@
 #include "LevelQueries.h"
 
+#include "FloorPlan.h"
 #include "LevelSubjects.h"
 
 #include "brush/BrushMeshStore.h"
@@ -8,6 +9,8 @@
 #include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 
+#include <assets/texture/PngEncoding.h>
+#include <core/io/FileBytes.h>
 #include <core/json/JsonStringify.h>
 #include <core/metadata/DataSchemaFields.h>
 #include <math/geometry/3d/Aabb3d.h>
@@ -70,11 +73,21 @@ namespace
 
     // Values -----------------------------------------------------------------
 
+    // Millimetres: finer than any authored position, and free of the float
+    // noise (0.10000000149) a client would pay to read.
+    JsonValue Metres(double value)
+    {
+        return JsonValue(std::round(value * 1000.0) / 1000.0);
+    }
+
     JsonValue VectorJson(const Vec3d& v)
     {
-        return JsonValue(JsonValue::Array{ JsonValue(static_cast<double>(v.X)),
-                                           JsonValue(static_cast<double>(v.Y)),
-                                           JsonValue(static_cast<double>(v.Z)) });
+        return JsonValue(JsonValue::Array{ Metres(v.X), Metres(v.Y), Metres(v.Z) });
+    }
+
+    JsonValue GroundJson(const Vec2d& v)
+    {
+        return JsonValue(JsonValue::Array{ Metres(v.X), Metres(v.Y) });
     }
 
     Vec3d VectorFrom(const JsonValue& value)
@@ -370,12 +383,143 @@ namespace
             for (std::size_t index = 0; index < hits.size() && index < limit; ++index)
                 entities.push_back(JsonValue(JsonValue::Object{
                     { "entity", EntityJson(document, hits[index].Entity) },
-                    { "distance", JsonValue(static_cast<double>(hits[index].Distance)) },
+                    { "distance", Metres(hits[index].Distance) },
                     { "bearing", JsonValue(std::string(Bearing(point, hits[index].Center))) },
                 }));
             return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
                 { "entities", JsonValue(std::move(entities)) },
                 { "truncated", JsonValue(hits.size() > limit) },
+            }));
+        };
+        return entry;
+    }
+
+    EditorOperationEntry PlanSection(const WorldDocument& world)
+    {
+        EditorOperationEntry entry;
+        entry.Definition.Name = "plan.section";
+        entry.Definition.Category = "Level";
+        entry.Definition.Description =
+            "A floor plan: every brush cut by a horizontal plane, as outlines of [x, z] points "
+            "(north is -z), plus the entities with a place but no extent. Optionally written as a "
+            "north-up PNG with a metre grid. Cut off floor and ceiling planes, e.g. at eye height.";
+        DataFieldSchema height = DataField::Field("height", DataFieldKind::Float, {},
+                                                  "world height of the cut, metres");
+        height.Default = 1.5;
+        DataFieldSchema scale = DataField::Field("pixels_per_metre", DataFieldKind::Float, {}, {});
+        scale.Default = 16.0;
+        scale.Numeric.Minimum = 1.0;
+        scale.Numeric.Maximum = 256.0;
+        DataFieldSchema side = DataField::Field("max_side", DataFieldKind::Int, {},
+                                                "longest image side in pixels");
+        side.Default = std::int64_t{ 2048 };
+        side.Numeric.Minimum = 64.0;
+        side.Numeric.Maximum = 8192.0;
+        entry.Definition.Parameters = Root({
+            height,
+            DataField::Optional("image", {}, "a path to write the plan to as PNG",
+                                DataField::Field({}, DataFieldKind::String, {}, {})),
+            scale,
+            side,
+        });
+
+        const DataFieldSchema ground = DataField::Vector({}, {}, "[x, z]", 2);
+        const DataFieldSchema identity = DataField::Record({}, {}, {}, {
+            DataField::Field("id", DataFieldKind::Entity, {}, {}),
+            DataField::Field("name", DataFieldKind::String, {}, {}),
+        });
+        DataFieldSchema brush = identity;
+        brush.Children.push_back(DataField::ArrayOf(
+            "contours", {}, {},
+            DataField::Record({}, {}, {}, {
+                DataField::Field("closed", DataFieldKind::Bool, {}, {}),
+                DataField::ArrayOf("points", {}, {}, ground, true),
+            }),
+            true));
+        DataFieldSchema point = identity;
+        point.Children.push_back(DataField::Vector("position", {}, "[x, z]", 2));
+        entry.Definition.Result = Root({
+            DataField::Field("height", DataFieldKind::Float, {}, {}),
+            DataField::ArrayOf("brushes", {}, {}, brush, true),
+            DataField::ArrayOf("points", {}, {}, point, true),
+            DataField::Optional("min", {}, {}, ground, true),
+            DataField::Optional("max", {}, {}, ground, true),
+            DataField::Optional("image", {}, {},
+                DataField::Record({}, {}, {}, {
+                    DataField::Field("path", DataFieldKind::String, {}, {}),
+                    DataField::Field("width", DataFieldKind::Int, {}, {}),
+                    DataField::Field("height", DataFieldKind::Int, {}, {}),
+                    DataField::Vector("origin", {}, "[x, z] of the top-left corner", 2),
+                    DataField::Field("pixels_per_metre", DataFieldKind::Float, {}, {}),
+                }),
+                true),
+        });
+
+        entry.Execute = [&world](const JsonValue& arguments) {
+            const EditorDocument& document = world.FocusDocument();
+            const float cut = static_cast<float>(arguments.Find("height")->AsNumber());
+            const FloorPlan plan = SectionLevel(document, cut);
+
+            JsonValue::Array brushes;
+            for (const FloorPlan::Brush& cutBrush : plan.Brushes)
+            {
+                JsonValue::Array contours;
+                for (const BrushSectionContour& contour : cutBrush.Contours)
+                {
+                    JsonValue::Array points;
+                    for (const Vec2d& p : contour.Points)
+                        points.push_back(GroundJson(p));
+                    contours.push_back(JsonValue(JsonValue::Object{
+                        { "closed", JsonValue(contour.Closed) },
+                        { "points", JsonValue(std::move(points)) },
+                    }));
+                }
+                brushes.push_back(JsonValue(JsonValue::Object{
+                    { "id", JsonValue(PersistentIdText(document, cutBrush.Entity)) },
+                    { "name", JsonValue(EntityNameText(document, cutBrush.Entity)) },
+                    { "contours", JsonValue(std::move(contours)) },
+                }));
+            }
+            JsonValue::Array points;
+            for (const FloorPlan::Point& p : plan.Points)
+                points.push_back(JsonValue(JsonValue::Object{
+                    { "id", JsonValue(PersistentIdText(document, p.Entity)) },
+                    { "name", JsonValue(EntityNameText(document, p.Entity)) },
+                    { "position", GroundJson(p.Position) },
+                }));
+
+            JsonValue image;
+            const JsonValue* imagePath = arguments.Find("image");
+            if (imagePath != nullptr && imagePath->IsString())
+            {
+                const std::optional<FloorPlanImage> raster = RasterizeFloorPlan(
+                    plan, static_cast<float>(arguments.Find("pixels_per_metre")->AsNumber()),
+                    static_cast<std::uint32_t>(arguments.Find("max_side")->AsNumber()));
+                if (raster)
+                {
+                    const std::vector<std::byte> png =
+                        EncodePngRgba8(raster->Width, raster->Height, raster->Rgba);
+                    if (png.empty() || !WriteFileBytes(imagePath->AsString(), png))
+                        return EditorOperationOutcome::Refused(
+                            "plan.image_not_written",
+                            "the plan could not be written to " + imagePath->AsString());
+                    image = JsonValue(JsonValue::Object{
+                        { "path", JsonValue(imagePath->AsString()) },
+                        { "width", JsonValue(static_cast<double>(raster->Width)) },
+                        { "height", JsonValue(static_cast<double>(raster->Height)) },
+                        { "origin", GroundJson(raster->Origin) },
+                        { "pixels_per_metre", Metres(raster->Scale) },
+                    });
+                }
+            }
+
+            return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
+                { "height", Metres(cut) },
+                { "brushes", JsonValue(std::move(brushes)) },
+                { "points", JsonValue(std::move(points)) },
+                { "min", plan.Empty ? JsonValue{} : GroundJson(plan.Min) },
+                { "max", plan.Empty ? JsonValue{} : GroundJson(plan.Max) },
+                { "image", std::move(image) },
             }));
         };
         return entry;
@@ -389,5 +533,6 @@ std::vector<EditorOperationEntry> LevelQueryOperations(const WorldDocument& worl
     entries.push_back(Describe(world));
     entries.push_back(Box(world));
     entries.push_back(Near(world));
+    entries.push_back(PlanSection(world));
     return entries;
 }
