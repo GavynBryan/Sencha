@@ -1,0 +1,85 @@
+@font-face { src: "fonts/Inter-Regular.ttf"; }
+@font-face { src: "fonts/JetBrainsMono-Regular.ttf"; }
+
+/* A colour property's picker, beside the field it opened from. Geometry only;
+   colours are theme roles, and each cell's own colour is the data's. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: Inter;
+    font-size: 11dp;
+}
+
+#catch
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+}
+
+#picker
+{
+    display: block;
+    position: absolute;
+    width: 216dp;
+    padding: 8dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+#head { display: flex; align-items: center; justify-content: space-between; height: 20dp; margin-bottom: 6dp; }
+#swatch { display: block; width: 28dp; height: 14dp; border-width: 1dp; border-radius: 2dp; }
+
+#body { display: flex; gap: 10dp; }
+
+/* The drag is the container's: the cells and the mark take no pointer, so a
+   press anywhere on the square is a press on the wheel. */
+#color_wheel { display: block; position: relative; width: 168dp; height: 168dp; drag: drag; cursor: crosshair; }
+.cell_slot { display: block; }
+sector.cell { display: block; position: absolute; pointer-events: none; }
+#mark
+{
+    display: block;
+    position: absolute;
+    width: 12dp;
+    height: 12dp;
+    margin-left: -6dp;
+    margin-top: -6dp;
+    stroke-width: 1dp;
+    pointer-events: none;
+}
+
+#color_value { display: flex; flex-direction: column; position: relative; width: 18dp; height: 168dp; drag: drag; cursor: ns-resize; }
+.step { display: block; flex: 1 1 0dp; pointer-events: none; }
+#value_mark
+{
+    display: block;
+    position: absolute;
+    left: -3dp;
+    width: 24dp;
+    height: 0dp;
+    border-width: 2dp 0dp 0dp 0dp;
+    pointer-events: none;
+}
+
+#text
+{
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 24dp;
+    margin-top: 8dp;
+    padding: 0dp 6dp;
+    border-width: 1dp;
+    font-family: "JetBrains Mono";
+    tab-index: auto;
+}

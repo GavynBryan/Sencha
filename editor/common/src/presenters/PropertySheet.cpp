@@ -2,6 +2,7 @@
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "properties/ColorValue.h"
 #include "properties/PropertyEditSession.h"
 #include "text/PathLeaf.h"
 
@@ -64,23 +65,6 @@ double NumberOf(std::string_view text)
     double value = 0.0;
     (void)std::from_chars(text.data(), text.data() + text.size(), value);
     return value;
-}
-
-// "r, g, b" in 0..1, as a colour a document can paint a swatch with; HDR
-// channels show at full.
-std::string SwatchOf(std::string_view text)
-{
-    int channels[3] = { 0, 0, 0 };
-    for (int& channel : channels)
-    {
-        while (!text.empty() && (text.front() == ' ' || text.front() == ','))
-            text.remove_prefix(1);
-        double value = 0.0;
-        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
-        text.remove_prefix(static_cast<std::size_t>(parsed.ptr - text.data()));
-        channel = static_cast<int>(std::clamp(value, 0.0, 1.0) * 255.0 + 0.5);
-    }
-    return std::format("rgba({}, {}, {}, 255)", channels[0], channels[1], channels[2]);
 }
 } // namespace
 
@@ -158,7 +142,7 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     row.Choices = descriptor.Choices;
     row.Mixed = node.Mixed;
     if (row.Control == UiRowControl::Color)
-        row.Parts = { SwatchOf(node.Value) };
+        row.Parts = { ColorSwatch(ParseColorValue(node.Value).value_or(ColorValue{}).Color) };
     if (row.Control == UiRowControl::Asset && !node.Value.empty())
         row.Parts = { std::string(PathLeaf(node.Value)) };
     if (row.Control == UiRowControl::Number)

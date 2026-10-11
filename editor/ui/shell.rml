@@ -96,7 +96,8 @@
             <div class="setting" data-for="row, ri : tool_rows" data-attr-id="'tool_row_' + ri"
                  data-style-margin-left="(row.depth * 8) + 'dp'"
                  data-class-heading="row.control == 'section'"
-                 data-class-locked="!row.editable &amp;&amp; row.control != 'section'">
+                 data-class-locked="!row.editable &amp;&amp; row.control != 'section'"
+                 data-class-theme-muted="!row.editable &amp;&amp; row.control != 'section'">
                 <span class="fold glyph theme-dim" data-if="row.control == 'section' &amp;&amp; row.value != ''"
                       data-event-click="shell_sheet_fold('tool', ri)"><span data-if="row.value == 'closed'">&#xf0da;</span><span data-if="row.value == 'open'">&#xf0d7;</span></span>
                 <span class="setting_label" data-event-click="shell_sheet_fold('tool', ri)">{{row.label}}</span>
@@ -143,7 +144,8 @@
                           data-value="row.value" data-event-focus="shell_sheet_hold('tool', ri)"
                           data-event-blur="shell_sheet_release('tool', ri)"></textarea>
                 <div class="setting_color" data-if="row.control == 'color'">
-                    <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"></div>
+                    <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"
+                         data-event-click="shell_sheet_color('tool', ri)"></div>
                     <input style="tab-index: none;" type="text" class="setting_control theme-field" data-value="row.value"
                            data-event-focus="shell_sheet_hold('tool', ri)"
                            data-event-blur="shell_sheet_release('tool', ri)"/>
@@ -240,7 +242,8 @@
         <div class="setting" data-for="row, ri : selection_rows" data-attr-id="'selection_row_' + ri"
                  data-style-margin-left="(row.depth * 8) + 'dp'"
                  data-class-heading="row.control == 'section'"
-                 data-class-locked="!row.editable &amp;&amp; row.control != 'section'">
+                 data-class-locked="!row.editable &amp;&amp; row.control != 'section'"
+                 data-class-theme-muted="!row.editable &amp;&amp; row.control != 'section'">
                 <span class="fold glyph theme-dim" data-if="row.control == 'section' &amp;&amp; row.value != ''"
                       data-event-click="shell_sheet_fold('selection', ri)"><span data-if="row.value == 'closed'">&#xf0da;</span><span data-if="row.value == 'open'">&#xf0d7;</span></span>
                 <span class="setting_label" data-event-click="shell_sheet_fold('selection', ri)">{{row.label}}</span>
@@ -287,7 +290,8 @@
                           data-value="row.value" data-event-focus="shell_sheet_hold('selection', ri)"
                           data-event-blur="shell_sheet_release('selection', ri)"></textarea>
                 <div class="setting_color" data-if="row.control == 'color'">
-                    <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"></div>
+                    <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"
+                         data-event-click="shell_sheet_color('selection', ri)"></div>
                     <input style="tab-index: none;" type="text" class="setting_control theme-field" data-value="row.value"
                            data-event-focus="shell_sheet_hold('selection', ri)"
                            data-event-blur="shell_sheet_release('selection', ri)"/>

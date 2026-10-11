@@ -27,6 +27,7 @@
 #include <vector>
 
 class ActionCatalog;
+class ColorPicker;
 class NoticeQueue;
 class ProblemList;
 class PromptQueue;
@@ -137,14 +138,12 @@ private:
     // Choices: what a sheet's row asks to be chosen -- a verb's choices, or an
     // asset row's candidates -- for the row ChoicesRow of the sheet
     // ChoicesSheet names, listed once as it opens.
-    enum class Popover : std::uint8_t { None, Hatch, Tools, Category, Choices, Problems };
+    enum class Popover : std::uint8_t { None, Hatch, Tools, Category, Choices, Problems, Color };
 
     void HandleActions();
     void Publish(double now);
     void PublishEntries();
     void PublishCaption();
-    // The rail yields the pointer while the content holds it, so a drag
-    // released over the rail still ends where it began.
     [[nodiscard]] bool Scrubbing() const { return Scrub != ScrubPhase::Resting; }
     bool TakeScrubInput(const InputEvent& event);
     // The wheels the shelf opens -- a tile's actions, what can be made new --
@@ -163,6 +162,7 @@ private:
     [[nodiscard]] RadialMenu::Frame WheelFrame() const;
     void YieldPointerToWheel();
     void OpenPopover(Popover popover, std::string category = {});
+    void OpenColor(std::string sheet, std::size_t row);
     // What the row's verb asks to be chosen first.
     void OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices,
                      std::vector<std::string> notes = {});
@@ -261,6 +261,7 @@ private:
     ActionContext EscapeActions;
     ActionContextStack::Layer EscapeLayer;
     std::unique_ptr<CommandPalette> Palette;
+    std::unique_ptr<ColorPicker> ColorPick;
     PropertySheet ToolSheet;
     PropertySheet SelectionSheet;
     std::string ShownSelection;

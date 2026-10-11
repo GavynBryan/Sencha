@@ -8,6 +8,7 @@
 #include "project/AssetKinds.h"
 
 #include "actions/ActionCatalog.h"
+#include "presenters/ColorPicker.h"
 #include "input/SdlEventTranslation.h"
 #include "notices/NoticeQueue.h"
 #include "icons/IconNames.h"
@@ -137,6 +138,7 @@ const UiActionId kScrubPressAction = UiActionIdAt(31);
 const UiActionId kSheetReleasePartAction = UiActionIdAt(32);
 const UiActionId kSheetKeyAction = UiActionIdAt(33);
 const UiActionId kSheetDropAction = UiActionIdAt(34);
+const UiActionId kSheetColorAction = UiActionIdAt(35);
 
 // The floating surfaces a header can move, as a document names them.
 constexpr std::string_view kExplorerSurface = "explorer";
@@ -234,7 +236,8 @@ UiScreenDesc Describe()
                      "shell_explorer_open", "shell_explorer_mark", "shell_grab", "shell_drag", "shell_drop",
                      "shell_unmove", "shell_raise", "shell_crumb", "shell_tab", "shell_tab_drop",
                      "shell_sheet_fold", "shell_popover_filter", "shell_title_hold", "shell_title_release",
-                     "shell_scrub_press", "shell_sheet_release_part", "shell_sheet_key", "shell_sheet_drop" };
+                     "shell_scrub_press", "shell_sheet_release_part", "shell_sheet_key", "shell_sheet_drop",
+                     "shell_sheet_color" };
     return desc;
 }
 
@@ -316,6 +319,7 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         {
             PopoverTransient = 0;
             Showing = Popover::None;
+            ColorPick->Close();
         }
         else if (id == ExplorerTransient)
         {
@@ -341,6 +345,7 @@ ShellWindow::ShellWindow(ShellWindowServices services)
     // Escape belongs to what is open while anything is.
     EscapeActions.Claim("edit.escape", ActionHandler{ .Invoke = [this] { EscapeFront(); } });
 
+    ColorPick = std::make_unique<ColorPicker>(Services.Ui, SurfaceId);
     Palette = std::make_unique<CommandPalette>(Services.Ui, SurfaceId, Services.Catalog, Services.Actions,
                                                Services.Workspaces);
     (void)Services.Catalog.Define({ .Id = "shell.palette", .Label = "Command Palette", .Category = "View",
@@ -378,6 +383,7 @@ ShellWindow::~ShellWindow()
     NewWheel.Session.reset();
     AssetShelf.reset();
     Deck.reset();
+    ColorPick.reset();
     Palette.reset();
     if (Screen.IsValid())
         Services.Ui.CloseScreen(Screen);
@@ -431,6 +437,8 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
         Palette->Close();
     }
     Palette->Update();
+    if (ColorPick->IsOpen() && !ColorPick->Update() && Showing == Popover::Color)
+        OpenPopover(Popover::None);
     if (Services.Role == ShellRole::Shelf)
         AssetShelf->Fill(static_cast<float>(extent.Height) - RailHeight());
     AssetShelf->Update(Services.Ui.GetSurfaceScale(SurfaceId), static_cast<float>(extent.Height));
@@ -489,7 +497,7 @@ void ShellWindow::HandleActions()
                  || action.Id == kSheetReleaseAction || action.Id == kSheetActAction || action.Id == kSheetPickAction
                  || action.Id == kSheetFoldAction || action.Id == kScrubPressAction
                  || action.Id == kSheetReleasePartAction || action.Id == kSheetKeyAction
-                 || action.Id == kSheetDropAction)
+                 || action.Id == kSheetDropAction || action.Id == kSheetColorAction)
         {
             HandleSheetAction(action);
         }
@@ -615,7 +623,9 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
     const std::vector<PropertySection> sections = SheetSections(tool ? "tool" : "selection", *workspace);
     PropertySheet& sheet = tool ? ToolSheet : SelectionSheet;
 
-    if (action.Id == kSheetHoldAction)
+    if (action.Id == kSheetColorAction)
+        OpenColor(tool ? "tool" : "selection", index);
+    else if (action.Id == kSheetHoldAction)
         sheet.Hold(index);
     else if (action.Id == kSheetReleaseAction)
     {
@@ -1001,6 +1011,27 @@ void ShellWindow::OpenChoices(std::string sheet, std::size_t row, std::string ve
     ChoicesListed = std::move(choices);
     ChoicesNotes = std::move(notes);
     ChoicesFilter.clear();
+}
+
+void ShellWindow::OpenColor(std::string sheet, std::size_t row)
+{
+    PropertySheet& presented = sheet == "tool" ? ToolSheet : SelectionSheet;
+    const std::vector<UiRow> shown = Services.Ui.GetRows(Screen, sheet == "tool" ? kToolRows : kSelectionRows);
+    const std::optional<UiElementBox> anchor =
+        Services.Ui.MeasureElement(Screen, std::format("{}_row_{}", sheet, row), UiBoxArea::Border);
+    if (row >= shown.size() || !shown[row].Editable || !anchor.has_value())
+        return;
+    OpenPopover(Popover::Color);
+    ColorPick->Open({ .Source = [this, sheet, row]() -> IPropertySource* {
+                          IWorkspace* workspace = Services.Workspaces.ActiveIn(Services.Presentation);
+                          if (workspace == nullptr)
+                              return nullptr;
+                          PropertySheet& owner = sheet == "tool" ? ToolSheet : SelectionSheet;
+                          return owner.SourceOf(SheetSections(sheet, *workspace), row);
+                      },
+                      .Key = presented.EditKeyOf(row),
+                      .Label = presented.LabelOf(row) },
+                    shown[row].Value, *anchor);
 }
 
 void ShellWindow::OpenPopover(Popover popover, std::string category)
@@ -1501,6 +1532,7 @@ void ShellWindow::PublishEntries()
             entries.push_back(std::move(entry));
         }
         break;
+    case Popover::Color:
     case Popover::None:       break;
     }
     (void)ui.SetValue(Screen, kPopover, UiValue(PopoverName()));
@@ -1631,6 +1663,8 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
         SelectionSheet.Drop();
         SheetTyping.clear();
         ShownSelection = selection.Title;
+        if (Showing == Popover::Color)
+            OpenPopover(Popover::None);
         // A drawer is about what was selected: nothing selected, nothing to show.
         if (selection.Title.empty() && DrawerTransient != 0)
             Transients.Close(DrawerTransient);
