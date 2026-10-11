@@ -92,8 +92,6 @@ constexpr float kSmallestPictureDp = 40.0f;
 constexpr float kLargestPictureDp = 200.0f;
 constexpr float kMinimumHeightDp = 180.0f;
 constexpr float kMostOfTheWindow = 0.75f;
-// Past this many, the rest are found by narrowing.
-constexpr std::size_t kMostShown = 240;
 constexpr std::size_t kMostRecent = 30;
 constexpr std::size_t kMostReferencesShown = 8;
 
@@ -441,6 +439,22 @@ void Shelf::Open(const std::string& assetPath)
         Hide();
 }
 
+std::pair<std::size_t, std::size_t> Shelf::InView(std::size_t count) const
+{
+    const auto columns = static_cast<std::size_t>(Columns());
+    const std::size_t rows = (count + columns - 1) / columns;
+    const std::optional<UiScrollBox> scroll = Ui.MeasureScroll(Screen, "shelf_items");
+    // Before the tiles are laid out, the first few rows are what shows.
+    if (!scroll.has_value() || rows == 0 || scroll->ScrollHeight <= 0.0f)
+        return { 0, std::min(count, columns * 4) };
+    const float rowHeight = scroll->ScrollHeight / static_cast<float>(rows);
+    const auto top = static_cast<std::size_t>(std::max(0.0f, std::floor(scroll->Top / rowHeight)));
+    const auto bottom = static_cast<std::size_t>(std::ceil((scroll->Top + scroll->ClientHeight) / rowHeight));
+    // A row either side, so a picture is ready as it scrolls in.
+    const std::size_t first = top > 0 ? top - 1 : 0;
+    return { std::min(count, first * columns), std::min(count, (bottom + 1) * columns) };
+}
+
 int Shelf::Columns() const
 {
     if (View == Look::List || !Screen.IsValid())
@@ -779,7 +793,12 @@ void Shelf::Update(float dp, float windowHeight)
     if (State != Placement::Down && Sources.Files != nullptr && Sources.Files->Version() != FilesVersion)
         Rescan();
     if (Screen.IsValid())
+    {
         Publish();
+        // Once its tile is laid out, a file chosen by any means is in view.
+        if (Selected != ScrolledTo && Ui.ScrollIntoView(Screen, "tile:" + Selected))
+            ScrolledTo = Selected;
+    }
 }
 
 void Shelf::Publish()
@@ -897,10 +916,9 @@ void Shelf::Publish()
         && !shown.empty())
         Selected = shown.front()->AssetPath;
     std::vector<UiRow> items;
+    const auto [firstPictured, pastPictured] = InView(shown.size());
     for (const ProjectFile* file : shown)
     {
-        if (items.size() == kMostShown)
-            break;
         const AssetKind kind = KindOf(*file);
         const auto tab = std::ranges::find(tabs, file->AssetPath, &AssetTab::Document);
         const std::string_view state = tab != tabs.end()        ? (tab->Changed ? "changed" : "open")
@@ -909,19 +927,18 @@ void Shelf::Publish()
         UiRow item{ std::string(NameOf(*file)), std::string(state), kind.Label };
         item.Key = file->AssetPath;
         item.Icon = IconName(kind.Icon);
-        // Only a tile drawn as one is asked for its picture: tiles past what is
-        // shown never load theirs.
-        const AssetPicture picture = Sources.Pictures != nullptr && View == Look::Tiles ? Sources.Pictures->PictureOf(file->AssetPath)
-                                                                                : AssetPicture{};
+        // Only a tile in view is asked for its picture: those scrolled away
+        // never load theirs.
+        const bool inView = items.size() >= firstPictured && items.size() < pastPictured;
+        const AssetPicture picture = Sources.Pictures != nullptr && View == Look::Tiles && inView
+                                         ? Sources.Pictures->PictureOf(file->AssetPath)
+                                         : AssetPicture{};
         item.Parts = { picture.Image, picture.Color };
         item.Selected = file->AssetPath == Selected;
         items.push_back(std::move(item));
     }
     (void)Ui.SetRows(Screen, kItems, items);
-    (void)Ui.SetValue(Screen, kCount, UiValue(shown.size() > kMostShown
-                                                  ? std::format("{} of {} shown: type to narrow", kMostShown,
-                                                                shown.size())
-                                                  : std::format("{} of {}", shown.size(), offeredCount)));
+    (void)Ui.SetValue(Screen, kCount, UiValue(std::format("{} of {}", shown.size(), offeredCount)));
     (void)Ui.SetValue(Screen, kEmpty, UiValue(std::string(Query.Text.empty() ? "Nothing here."
                                                                             : "Nothing holds that.")));
 

@@ -190,6 +190,16 @@ std::optional<UiElementBox> UiService::MeasureElement(UiScreenHandle screen, std
     return Runtime->MeasureElement(screen, elementId, area);
 }
 
+std::optional<UiScrollBox> UiService::MeasureScroll(UiScreenHandle screen, std::string_view elementId) const
+{
+    return Runtime->MeasureScroll(screen, elementId);
+}
+
+bool UiService::ScrollIntoView(UiScreenHandle screen, std::string_view elementId)
+{
+    return Runtime->ScrollIntoView(screen, elementId);
+}
+
 std::vector<UiDiagnostic> UiService::DrainDiagnostics()
 {
     return Runtime->DrainDiagnostics();

@@ -66,6 +66,7 @@
             <div id="shelf_items" data-class-list="view == 'list'"
                  data-event-mousescroll="shelf_zoom(ev.wheel_delta_y, ev.ctrl_key)">
                 <div class="tile theme-row" data-for="item : items" data-class-selected="item.selected"
+                     data-attr-id="'tile:' + item.key"
                      data-style-width="view == 'list' ? 'auto' : tile"
                      data-event-click="shelf_pick(item.key)" data-event-dblclick="shelf_open(item.key)"
                      data-event-mousedown="shelf_press(item.key, ev.button, ev.mouse_x, ev.mouse_y)"

@@ -13,6 +13,8 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
@@ -90,7 +92,8 @@ body { display: block; width: 100%; height: 100%; pointer-events: none; }
         pointer-events: auto; tab-index: auto; }
 )";
 
-UiPackage MakePackage(std::string_view rootName = "menu.rml")
+UiPackage MakePackage(std::string_view rootName = "menu.rml", std::string_view markup = kMarkup,
+                      std::string_view style = kStyle)
 {
     UiPackage package;
     package.RootDocumentName = std::string(rootName);
@@ -99,14 +102,14 @@ UiPackage MakePackage(std::string_view rootName = "menu.rml")
     root.VirtualName = std::string(rootName);
     root.SourcePath = "ui/" + std::string(rootName);
     root.Kind = UiBlobKind::Document;
-    root.Bytes = BytesOf(kMarkup);
+    root.Bytes = BytesOf(markup);
     package.Blobs.push_back(std::move(root));
 
     UiPackageBlob sheet;
     sheet.VirtualName = "menu.rcss";
     sheet.SourcePath = "ui/menu.rcss";
     sheet.Kind = UiBlobKind::StyleSheet;
-    sheet.Bytes = BytesOf(kStyle);
+    sheet.Bytes = BytesOf(style);
     package.Blobs.push_back(std::move(sheet));
     return package;
 }
@@ -169,10 +172,11 @@ void ClickAt(UiService& ui, float x, float y)
 }
 
 void WritePackage(const TempAssetRoot& root, std::string_view relPath,
-                  std::string_view rootName = "menu.rml")
+                  std::string_view rootName = "menu.rml", std::string_view markup = kMarkup,
+                  std::string_view style = kStyle)
 {
     std::vector<std::byte> bytes;
-    ASSERT_TRUE(WriteSuiToBytes(MakePackage(rootName), bytes));
+    ASSERT_TRUE(WriteSuiToBytes(MakePackage(rootName, markup, style), bytes));
     root.WriteBytes(relPath, bytes);
 }
 } // namespace
@@ -519,4 +523,123 @@ TEST(UiInput, AFrameNamesItsWindow)
     ASSERT_EQ(ui.Frames().size(), 1u);
     EXPECT_EQ(ui.Frames().front().WindowId, 7u)
         << "the primary's render feature would draw another window's surface";
+}
+
+namespace
+{
+// A list that holds more rows than it shows, beside a panel that scrolls
+// nothing, over a root the pointer passes through.
+std::string ScrollingMarkup()
+{
+    std::string rows;
+    for (int i = 0; i < 20; ++i)
+        rows += "<div class=\"row\" id=\"row" + std::to_string(i) + "\"/>";
+    return R"(<rml>
+<head><link type="text/rcss" href="menu.rcss"/></head>
+<body data-model="menu">
+    <div id="list" data-event-mousescroll="menu_quit">)" + rows + R"(</div>
+    <div id="panel"/>
+</body>
+</rml>)";
+}
+
+constexpr std::string_view kScrollingStyle = R"(
+body { display: block; width: 100%; height: 100%; pointer-events: none; }
+#list { display: block; position: absolute; left: 0px; top: 0px; width: 200px; height: 100px;
+        overflow-y: auto; pointer-events: auto; }
+#list scrollbarvertical { width: 8px; }
+#list scrollbarvertical sliderbar { min-height: 8px; }
+.row { display: block; height: 40px; }
+#panel { display: block; position: absolute; left: 300px; top: 0px; width: 100px; height: 100px;
+         pointer-events: auto; }
+)";
+
+SDL_Event Wheel(float x, float y, float notches)
+{
+    SDL_Event event{};
+    event.type = SDL_EVENT_MOUSE_WHEEL;
+    event.wheel.mouse_x = x;
+    event.wheel.mouse_y = y;
+    event.wheel.y = notches;
+    event.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+    return event;
+}
+
+struct ScrollingScreen
+{
+    TempAssetRoot Root;
+    std::unique_ptr<UiTestHost> Host;
+    UiScreenHandle Screen;
+
+    ScrollingScreen()
+    {
+        WritePackage(Root, "ui/menu.sui", "menu.rml", ScrollingMarkup(), kScrollingStyle);
+        Host = std::make_unique<UiTestHost>(Root);
+        UiService& ui = Host->Service();
+        const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+        Screen = ui.OpenScreen(surface, MakeDesc());
+        ui.Update();
+    }
+};
+} // namespace
+
+TEST(UiInput, TheWheelOverTheDocumentIsTheDocumentsWhetherOrNotAnythingScrolls)
+{
+    // A panel with nothing to scroll still sits over the world; a wheel turned
+    // over it must not zoom the camera behind it.
+    ScrollingScreen fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    UiService& ui = fixture.Host->Service();
+
+    (void)ui.ProcessPlatformEvent(MouseMove(350.0f, 50.0f));
+    EXPECT_TRUE(ui.ProcessPlatformEvent(Wheel(350.0f, 50.0f, -1.0f)))
+        << "a wheel over a panel with nothing to scroll fell through to what is beneath";
+
+    (void)ui.ProcessPlatformEvent(MouseMove(100.0f, 50.0f));
+    EXPECT_TRUE(ui.ProcessPlatformEvent(Wheel(100.0f, 50.0f, -1.0f)));
+
+    (void)ui.ProcessPlatformEvent(MouseMove(600.0f, 400.0f));
+    EXPECT_FALSE(ui.ProcessPlatformEvent(Wheel(600.0f, 400.0f, -1.0f)))
+        << "a wheel over the pass-through root was kept from what is beneath";
+}
+
+TEST(UiInput, CtrlAndTheWheelReachOnlyTheDocumentsListener)
+{
+    ScrollingScreen fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    UiService& ui = fixture.Host->Service();
+
+    (void)ui.ProcessPlatformEvent(MouseMove(100.0f, 50.0f));
+    SDL_SetModState(SDL_KMOD_LCTRL);
+    const bool consumed = ui.ProcessPlatformEvent(Wheel(100.0f, 50.0f, -3.0f));
+    SDL_SetModState(SDL_KMOD_NONE);
+    ui.Update();
+
+    EXPECT_TRUE(consumed);
+    EXPECT_EQ(ui.DrainActions().size(), 1u) << "the listener did not hear Ctrl and the wheel";
+    const std::optional<UiScrollBox> box = ui.MeasureScroll(fixture.Screen, "list");
+    ASSERT_TRUE(box.has_value());
+    EXPECT_EQ(box->Top, 0.0f) << "Ctrl and the wheel scrolled as well as zooming";
+}
+
+TEST(UiInput, ScrollingIntoViewBringsAFarRowWithinTheList)
+{
+    ScrollingScreen fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    UiService& ui = fixture.Host->Service();
+
+    const std::optional<UiScrollBox> before = ui.MeasureScroll(fixture.Screen, "list");
+    ASSERT_TRUE(before.has_value());
+    EXPECT_EQ(before->Top, 0.0f);
+    EXPECT_EQ(before->ClientHeight, 100.0f);
+    EXPECT_EQ(before->ScrollHeight, 800.0f) << "the list did not hold its rows' height";
+
+    ASSERT_TRUE(ui.ScrollIntoView(fixture.Screen, "row10"));
+    const std::optional<UiScrollBox> after = ui.MeasureScroll(fixture.Screen, "list");
+    ASSERT_TRUE(after.has_value());
+    // Nearest: the row's bottom edge meets the list's.
+    EXPECT_EQ(after->Top, 10.0f * 40.0f + 40.0f - 100.0f);
+
+    EXPECT_FALSE(ui.ScrollIntoView(fixture.Screen, "no_such_row"));
+    EXPECT_FALSE(ui.MeasureScroll(fixture.Screen, "no_such_row").has_value());
 }

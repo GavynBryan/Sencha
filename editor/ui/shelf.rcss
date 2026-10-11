@@ -38,7 +38,7 @@ body
     margin-bottom: 6dp;
 }
 #shelf_choosing { display: block; padding: 3dp 8dp; border-width: 1dp; border-radius: 3dp; white-space: nowrap; }
-#shelf_path { display: flex; align-items: center; gap: 2dp; flex: 0 1 auto; min-width: 0dp; }
+#shelf_path { display: flex; align-items: center; gap: 2dp; flex: 0 1 auto; overflow: hidden; }
 #shelf_search_well
 {
     display: flex;
@@ -55,7 +55,9 @@ body
 #shelf_count { display: block; flex: 1 1 auto; text-align: right; white-space: nowrap; }
 .key.glyph { font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: 10dp; }
 
-#shelf_body { flex: 1 1 auto; display: flex; gap: 10dp; min-height: 0dp; }
+/* A zero basis: an auto one would grow to every tile (RmlUi gives an auto-based
+   flex item its content's height as a minimum), leaving nothing to scroll. */
+#shelf_body { flex: 1 1 0dp; display: flex; gap: 10dp; }
 
 #shelf_side { flex: 0 0 188dp; overflow-y: auto; }
 .side_row { display: flex; align-items: center; height: 22dp; padding-right: 6dp; border-radius: 3dp; }
@@ -67,7 +69,6 @@ body
 #shelf_items
 {
     flex: 1 1 auto;
-    min-width: 0dp;
     display: flex;
     flex-wrap: wrap;
     align-content: flex-start;
@@ -127,6 +128,8 @@ body
 #shelf_empty { display: block; padding: 12dp; }
 
 #shelf_preview { flex: 0 0 220dp; display: flex; flex-direction: column; gap: 4dp; overflow-y: auto; }
+/* It scrolls rather than squeezing what it holds. */
+#shelf_preview > * { flex-shrink: 0; }
 .preview_well { display: block; position: relative; width: 140dp; height: 140dp; border-width: 1dp; border-radius: 3dp; }
 #preview_name { display: block; font-family: "Chakra Petch"; font-weight: 600; font-size: 14dp; word-break: break-word; }
 .fact { display: block; font-size: 10dp; word-break: break-word; }

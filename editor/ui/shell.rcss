@@ -345,7 +345,6 @@ body
 {
     display: block;
     flex: 1 1 auto;
-    min-width: 0dp;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -370,7 +369,6 @@ body
 {
     display: block;
     flex: 1 1 auto;
-    min-width: 0dp;
     margin-right: 8dp;
     overflow: hidden;
     white-space: nowrap;
@@ -557,7 +555,6 @@ body
 #explorer_items
 {
     flex: 1 1 auto;
-    min-height: 0dp;
     display: flex;
     flex-wrap: wrap;
     align-content: flex-start;

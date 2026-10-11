@@ -197,6 +197,18 @@ surface losing `Full` input. Otherwise a field typed into and then clicked
 away from keeps text input, and the next key meant for the world types into it
 (`UiControlTests`).
 
+**The wheel over a document is the document's.** Over any element that takes
+the pointer, the wheel is consumed whether or not anything there scrolls; only
+over a pass-through region does it reach the application. Deciding by whether
+something scrolled made a full list or a short panel leak the wheel to the
+camera behind it. Ctrl with the wheel is a zoom gesture: it raises `mousescroll`
+on the element under the pointer (with `ctrl_key` set) and never scrolls, so a
+document that zooms on it is not scrolled at the same time.
+
+Hosts that keep a chosen row in view use `UiService::ScrollIntoView` (instant,
+nearest edge, closest scrolling ancestor) and read the scroll state with
+`MeasureScroll`, for example to request pictures only for rows in view.
+
 ### Navigation
 
 `UiService::Navigate(surface, UiNavigation::…)` — Up, Down, Left, Right, Next,
@@ -206,7 +218,7 @@ already implements. No document names a key or a gamepad button anywhere in that
 path, so remapping, controller profiles and accessibility settings keep working
 without knowing a document exists.
 
-### Two authoring contracts worth knowing before they bite
+### Authoring contracts worth knowing before they bite
 
 **`pointer-events: none` on a full-screen root.** A document's `body` is
 interactive by default, so a HUD covering the window counts as "the pointer is
@@ -217,8 +229,17 @@ back in with `pointer-events: auto`.
 order, so navigation cannot reach it -- which means a controller and a keyboard
 cannot either, however well the rest is wired.
 
-Both are silent when missed, which is why they are written down here and
+The first two are silent when missed, which is why they are written down here and
 exercised in `UiInputTests.cpp`.
+
+**A scrolling region inside a flex column needs a zero basis.** The document
+engine gives an auto-based flex item that is not itself a scroll container its
+content's size as a minimum, and `min-height: 0` (already the initial value)
+cannot lift it. A body between a bar and an edge declared `flex: 1 1 auto` grows
+to hold every row, so its scrolling child has nothing to scroll. Declare it
+`flex: 1 1 0` (the Shelf's `#shelf_body`), or make the item itself the scroll
+container. Items that should keep their size inside a scrolling column say
+`flex-shrink: 0`.
 
 ## 7. Rendering capability profile
 

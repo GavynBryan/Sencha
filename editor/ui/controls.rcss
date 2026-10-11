@@ -92,7 +92,6 @@
 {
     display: flex;
     flex: 1 1 0dp;
-    min-width: 0dp;
     height: 20dp;
     border-width: 1dp;
     border-radius: 2dp;

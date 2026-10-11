@@ -175,6 +175,8 @@ public:
 
     [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen, std::string_view elementId,
                                                              UiBoxArea area) const;
+    [[nodiscard]] std::optional<UiScrollBox> MeasureScroll(UiScreenHandle screen, std::string_view elementId) const;
+    bool ScrollIntoView(UiScreenHandle screen, std::string_view elementId);
 
     // Everything this layer and the document engine reported since the last
     // call. Destructive; one consumer per runtime.

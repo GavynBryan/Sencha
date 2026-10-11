@@ -69,6 +69,30 @@ void SynthesizedInput::Register(ConsoleRegistry& registry, std::function<std::ui
         },
     });
     registry.RegisterCommand({
+        .Name = "input.wheel",
+        .Owner = "editor",
+        .Usage = "input.wheel <dy> [frame]",
+        .Help = "Turn the mouse wheel by <dy> notches (positive away from the person) where the pointer last "
+                "moved on the main window. With a frame number, waits until that frame.",
+        .Callback = [this, window](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            float notches = 0.0f;
+            std::uint64_t frame = Frame;
+            if (args.empty() || !ParseNumber(args[0], notches) || !ParseFrame(args, 1, frame))
+            {
+                result.Error("usage: input.wheel <dy> [frame]");
+                return result;
+            }
+            SDL_Event event{};
+            event.type = SDL_EVENT_MOUSE_WHEEL;
+            event.wheel.windowID = window();
+            event.wheel.y = notches;
+            event.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+            Queue.push_back({ frame, event });
+            return result;
+        },
+    });
+    registry.RegisterCommand({
         .Name = "input.drop",
         .Owner = "editor",
         .Usage = "input.drop <file> [frame]",
@@ -172,6 +196,11 @@ void SynthesizedInput::Advance()
         {
             event.button.x = PointerX;
             event.button.y = PointerY;
+        }
+        else if (event.type == SDL_EVENT_MOUSE_WHEEL)
+        {
+            event.wheel.mouse_x = PointerX;
+            event.wheel.mouse_y = PointerY;
         }
         else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
         {

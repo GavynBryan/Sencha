@@ -1291,11 +1291,30 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
                                               event.wheel.mouse_x, event.wheel.mouse_y);
             if (!at.Inside)
                 break;
-            if (!context.ProcessMouseWheel(
-                    Rml::Vector2f(-event.wheel.x, -event.wheel.y), modifiers))
+            const Rml::Vector2f delta(-event.wheel.x, -event.wheel.y);
+            // Ctrl and the wheel zoom what is under the pointer; they never
+            // scroll, so only the document's own listeners hear them.
+            if ((modifiers & Rml::Input::KM_CTRL) != 0)
             {
+                Rml::Element* hover = context.GetHoverElement();
+                if (hover == nullptr || hover == context.GetRootElement())
+                    break;
+                Rml::Dictionary parameters;
+                parameters["mouse_x"] = static_cast<int>(at.X);
+                parameters["mouse_y"] = static_cast<int>(at.Y);
+                parameters["wheel_delta_x"] = delta.x;
+                parameters["wheel_delta_y"] = delta.y;
+                parameters["ctrl_key"] = 1;
+                parameters["shift_key"] = (modifiers & Rml::Input::KM_SHIFT) != 0 ? 1 : 0;
+                parameters["alt_key"] = (modifiers & Rml::Input::KM_ALT) != 0 ? 1 : 0;
+                (void)hover->DispatchEvent(Rml::EventId::Mousescroll, parameters);
                 return true;
             }
+            // Over the document's own elements the wheel is the document's,
+            // whether or not anything there scrolls; only over its
+            // pass-through regions does it reach what is beneath.
+            if (!context.ProcessMouseWheel(delta, modifiers) || context.IsMouseInteracting())
+                return true;
             break;
         }
 
@@ -1830,6 +1849,33 @@ namespace
         default:                 return Rml::BoxArea::Content;
         }
     }
+}
+
+std::optional<UiScrollBox> UiRuntime::MeasureScroll(UiScreenHandle screen, std::string_view elementId) const
+{
+    const Screen* slot = ResolveScreen(screen);
+    Rml::Element* element =
+        slot != nullptr && slot->Document != nullptr ? slot->Document->GetElementById(std::string(elementId)) : nullptr;
+    if (element == nullptr)
+        return std::nullopt;
+    return UiScrollBox{ .Left = element->GetScrollLeft(),
+                        .Top = element->GetScrollTop(),
+                        .ClientWidth = element->GetClientWidth(),
+                        .ClientHeight = element->GetClientHeight(),
+                        .ScrollWidth = element->GetScrollWidth(),
+                        .ScrollHeight = element->GetScrollHeight() };
+}
+
+bool UiRuntime::ScrollIntoView(UiScreenHandle screen, std::string_view elementId)
+{
+    Screen* slot = ResolveScreen(screen);
+    Rml::Element* element =
+        slot != nullptr && slot->Document != nullptr ? slot->Document->GetElementById(std::string(elementId)) : nullptr;
+    if (element == nullptr)
+        return false;
+    element->ScrollIntoView(Rml::ScrollIntoViewOptions(Rml::ScrollAlignment::Nearest, Rml::ScrollAlignment::Nearest,
+                                                       Rml::ScrollBehavior::Instant, Rml::ScrollParentage::Closest));
+    return true;
 }
 
 std::optional<UiElementBox> UiRuntime::MeasureElement(UiScreenHandle screen, std::string_view elementId,

@@ -195,6 +195,8 @@ private:
     [[nodiscard]] std::vector<const ProjectFile*> Shown() const;
     [[nodiscard]] const ProjectFile* FileAt(const std::string& assetPath) const;
     [[nodiscard]] int Columns() const;
+    // The tiles in view, as indices into what is shown, a row either side.
+    [[nodiscard]] std::pair<std::size_t, std::size_t> InView(std::size_t count) const;
 
     UiService& Ui;
     UiSurfaceId Surface;
@@ -226,6 +228,8 @@ private:
     // The file steps' version the files were read at.
     std::uint64_t FilesVersion = 0;
     std::string Selected;
+    // The chosen file whose tile was last scrolled into view.
+    std::string ScrolledTo;
     std::set<std::string> OpenFolders;
     // Most recent first: what this window has shown, opened from here or not.
     std::vector<std::string> Recent;

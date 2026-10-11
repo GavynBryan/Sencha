@@ -320,6 +320,16 @@ public:
     [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen, std::string_view elementId,
                                                             UiBoxArea area = UiBoxArea::Content) const;
 
+    // How far an element is scrolled, as laid out at the last update: what a
+    // host showing a long list asks for what is in view. Nullopt when the
+    // screen is closed or no element carries that id.
+    [[nodiscard]] std::optional<UiScrollBox> MeasureScroll(UiScreenHandle screen, std::string_view elementId) const;
+
+    // Scrolls the containers around an element as little as brings it into
+    // view, as laid out at the last update. False when the screen is closed or
+    // no element carries that id.
+    bool ScrollIntoView(UiScreenHandle screen, std::string_view elementId);
+
     // The element under a point, in surface pixels; invalid when nothing is
     // there. A host presenting the surface somewhere other than the window
     // maps its pointer into surface pixels first (UiSurfacePlacement.h).
