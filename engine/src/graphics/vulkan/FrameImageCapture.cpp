@@ -5,10 +5,8 @@
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanPhysicalDeviceService.h>
 
-// The only translation unit that needs the writer, so it carries the
-// implementation, matching how ImageLoader.cpp carries the reader's.
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <stb_image_write.h>
+#include <assets/texture/PngEncoding.h>
+#include <core/io/FileBytes.h>
 
 #include <vector>
 
@@ -218,12 +216,11 @@ void FrameImageCapture::Write()
     }
     vkUnmapMemory(Device, Memory);
 
-    const int written = stbi_write_png(WritePath.c_str(), static_cast<int>(Width),
-                                       static_cast<int>(Height), 4, pixels.data(),
-                                       static_cast<int>(Width) * 4);
+    const std::vector<std::byte> png = EncodePngRgba8(Width, Height, pixels);
+    const bool written = !png.empty() && WriteFileBytes(WritePath, png);
     if (log != nullptr)
     {
-        if (written != 0)
+        if (written)
             log->Info("capture: wrote {}x{} to {}", Width, Height, WritePath);
         else
             log->Error("capture: writing {} failed", WritePath);

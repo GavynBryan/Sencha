@@ -21,3 +21,14 @@ bool ReadFileBytes(const std::filesystem::path& path, std::vector<std::byte>& ou
                   static_cast<std::streamsize>(size));
     return file.good() || out.empty();
 }
+
+bool WriteFileBytes(const std::filesystem::path& path, std::span<const std::byte> bytes)
+{
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file.is_open())
+        return false;
+    if (!bytes.empty())
+        file.write(reinterpret_cast<const char*>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()));
+    return file.good();
+}
