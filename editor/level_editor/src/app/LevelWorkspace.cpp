@@ -29,6 +29,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include "ui/EditorUiStyle.h"
 #include "document/commands/SceneInstanceCommands.h"
+#include "meshedit/FaceMaterialEdits.h"
 #include "render/RenderFeatureDetach.h"
 #include "documents/DocumentSourceSet.h"
 #include "ui/MaterialThumbnailCache.h"
@@ -1371,6 +1372,52 @@ bool LevelWorkspace::OpenAsset(const ProjectFile& file)
         return true;
     }
     return Files->OpenSceneSource(file.AssetPath);
+}
+
+bool LevelWorkspace::DropAsset(const ProjectFile& file, Vec2d point)
+{
+    const EditorViewport* viewport = Workspace->Layout.Find(Workspace->Layout.ResolveAt(point));
+    if (viewport == nullptr || Showing != LevelContent::Views)
+        return false;
+    EditorDocument& document = Workspace->ActiveDocument();
+    const AssetRef ref{ file.Extension == ".smat" ? AssetType::Material : AssetType::Scene, file.AssetPath,
+                        AssetIdOf(file) };
+    if (file.Extension == ".smat")
+    {
+        // On the face under it -- on every selected face, when that is one of them.
+        const SelectableRef face = Workspace->Picking.Pick(*viewport, point, document.GetScene(),
+                                                           BrushPickRequest{ .Mode = BrushPickMode::FaceOnly });
+        if (!face.IsFace() || Workspace->Interaction.Sink == nullptr)
+            return false;
+        const std::span<const SelectableRef> selected = Workspace->Selection.GetSelection();
+        if (std::ranges::find(selected, face) != selected.end())
+            ApplyMaterialToSelectedFaces(*Workspace->Interaction.Sink, Workspace->Selection, Workspace->Commands, ref);
+        else
+            ApplyMaterialToFaces(*Workspace->Interaction.Sink, { &face, 1 }, Workspace->Commands, ref);
+        Workspace->Resources.SetActive(ref);
+        return true;
+    }
+    if (file.Extension != ".sscene")
+        return false;
+    // A level is not placed inside itself.
+    std::error_code ec;
+    if (document.HasFilePath()
+        && std::filesystem::equivalent(std::filesystem::path(document.GetDisplayName()), file.FilePath, ec))
+        return false;
+    // Where the Place tool would put it: on the surface under it, else on the grid.
+    std::optional<Vec3d> at;
+    if (const std::optional<SurfaceHit> hit = Workspace->Picking.PickSurface(*viewport, point, document.GetScene()))
+        at = hit->Point;
+    else
+        at = Workspace->Picking.ProjectPointToGrid(*viewport, point, Workspace->Grid);
+    if (!at.has_value())
+        return false;
+    Transform3f placement = Transform3f::Identity();
+    placement.Position = *at;
+    Workspace->Commands.Execute(
+        std::make_unique<PlaceSceneInstanceCommand>(file.AssetPath, placement, document, Workspace->Selection));
+    Workspace->Resources.SetActive(ref);
+    return true;
 }
 
 bool LevelWorkspace::RevealProblem(const Problem& problem)

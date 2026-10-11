@@ -151,7 +151,8 @@ reference names the id first and the path second.
   its own file as read. A material or data document writes back the names it
   read, so a file one of them names is not moved while it is open
   (`DocumentSource::KeepsNamesAsRead`). Materials' and Data's own rename,
-  duplicate and delete are these steps. The asset stack follows each step as a fresh mount would
+  duplicate and delete are these steps. A file imported from outside is a
+  copy too: it states its new path's id, never one it came with. The asset stack follows each step as a fresh mount would
   have found the files (`MountProjectFileChange`): a file gone loses its record
   and its cooked index entry (`ForgetImportedSource`), whose artifact bytes
   stay for content-hash dedup; a file appeared is registered, and imported when

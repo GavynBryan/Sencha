@@ -163,6 +163,16 @@ workspace kind names its create actions (`WorkspaceKind::Creates`), and the
 choice is performed in that kind's workspace, opened and brought forward
 (`WorkspaceHost::RequestCreate`).
 
+A tile is carried by dragging it, a ghost of it under the pointer. Let go on
+a folder or a crumb of the path, it moves there; on an asset field of a card
+or a drawer, the field takes it when it can hold it, and a notice says so
+when it cannot; anywhere else above the Shelf, the workspace showing decides
+what it means there (`IWorkspace::DropAsset`): the Level puts a prefab on the
+surface under the pointer, or on the grid, and a material on the face under
+it, or on every selected face when that is one of them, and holds what was
+dropped. Files dropped on a window from outside are imported into the folder
+in view, each one step, and shown.
+
 The rail is also the window caption (client decorations) and the only
 full-width chrome. Every persistent instrument is **a readout that is also a
 button**: the station shows the tool and opens its wheel, the cartridge shows

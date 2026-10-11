@@ -23,7 +23,7 @@
             <div class="key theme-key" data-if="offers_none" data-event-click="shelf_none()">NONE</div>
             <div id="shelf_path">
                 <div class="crumb theme-segment" data-for="crumb, ci : crumbs" data-class-lit="crumb.selected"
-                     data-event-click="shelf_folder(crumb.key)">
+                     data-event-click="shelf_folder(crumb.key)" data-event-dragdrop="shelf_into(crumb.key)">
                     <span class="crumb_sep glyph theme-dim" data-if="ci > 0">&#xf054;</span><span>{{crumb.label}}</span>
                 </div>
             </div>
@@ -54,7 +54,7 @@
                 <div class="side_gap"></div>
                 <div class="side_row theme-row" data-for="folder : folders" data-class-selected="folder.selected"
                      data-style-padding-left="(folder.depth * 12 + 4) + 'dp'"
-                     data-event-click="shelf_folder(folder.key)">
+                     data-event-click="shelf_folder(folder.key)" data-event-dragdrop="shelf_into(folder.key)">
                     <span class="branch glyph theme-dim" data-event-click="shelf_branch(folder.key)">
                         <span data-if="folder.value == 'closed'">&#xf0da;</span><span data-if="folder.value == 'open'">&#xf0d7;</span>
                     </span>
@@ -66,7 +66,9 @@
                 <div class="tile theme-row" data-for="item : items" data-class-selected="item.selected"
                      data-style-width="view == 'list' ? 'auto' : tile"
                      data-event-click="shelf_pick(item.key)" data-event-dblclick="shelf_open(item.key)"
-                     data-event-mousedown="shelf_press(item.key, ev.button, ev.mouse_x, ev.mouse_y)">
+                     data-event-mousedown="shelf_press(item.key, ev.button, ev.mouse_x, ev.mouse_y)"
+                     data-event-dragstart="shelf_carry(item.key)"
+                     data-event-dragend="shelf_put(ev.mouse_x, ev.mouse_y)">
                     <div class="well theme-field" data-style-width="view == 'list' ? '16dp' : picture"
                          data-style-height="view == 'list' ? '16dp' : picture">
                         <img class="picture" data-if="item.parts[0] != ''" data-attr-src="'host:' + item.parts[0]"

@@ -3,6 +3,7 @@
 #include "documents/DocumentRef.h"
 #include "workspaces/WorkspaceFacets.h"
 
+#include <math/Vec.h>
 #include <math/geometry/2d/Rect2d.h>
 
 struct Problem;
@@ -77,6 +78,10 @@ public:
     // Opens a content file of a kind its WorkspaceKind::Opens names, or brings
     // it forward if it is open; false when it could not.
     virtual bool OpenAsset(const ProjectFile&) { return false; }
+    // A content file carried from the shelf and let go over the content at
+    // `point`, in window pixels: what that means is the workspace's -- a prefab
+    // placed there, a material put on the face there. False when it means nothing.
+    virtual bool DropAsset(const ProjectFile&, Vec2d /*point*/) { return false; }
     // Shows where a problem in one of its documents is; false when it cannot.
     virtual bool RevealProblem(const Problem&) { return false; }
     // Not const: a clock reads what it is showing, which may settle it.

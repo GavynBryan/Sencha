@@ -74,8 +74,10 @@ body
     gap: 8dp;
     overflow-y: auto;
 }
+/* Carried by dragging: a ghost of it follows the pointer to where it goes. */
 .tile
 {
+    drag: clone;
     display: flex;
     flex-direction: column;
     align-items: center;

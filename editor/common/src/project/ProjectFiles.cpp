@@ -17,12 +17,6 @@ namespace
 {
 constexpr std::string_view kAssetScheme = "asset://";
 
-std::string Lowered(std::string text)
-{
-    std::ranges::transform(text, text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return text;
-}
-
 // The project's bookkeeping beside its content, rather than content.
 bool IsBookkeeping(const std::filesystem::path& file)
 {
@@ -45,7 +39,7 @@ ProjectFile Describe(const std::filesystem::path& root, const std::filesystem::p
     ProjectFile described;
     described.FilePath = file;
     described.AssetPath = std::string(kAssetScheme) + std::filesystem::relative(file, root, ec).generic_string();
-    described.Extension = Lowered(file.extension().string());
+    described.Extension = ExtensionOf(file);
     described.Size = std::filesystem::file_size(file, ec);
     described.Modified = std::filesystem::last_write_time(file, ec);
     if (described.Extension == ".sdata")
@@ -60,6 +54,14 @@ std::optional<AssetId> ReadStatedId(const std::filesystem::path& file)
     const std::optional<std::string> text = ReadProjectFileText(IdStatementOf(file));
     const std::optional<Json5Value> root = text.has_value() ? Json5Parse(*text) : std::nullopt;
     return root.has_value() ? StatedAssetId(Json5ToJson(*root)) : std::nullopt;
+}
+
+std::string ExtensionOf(const std::filesystem::path& file)
+{
+    std::string extension = file.extension().string();
+    std::ranges::transform(extension, extension.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return extension;
 }
 
 AssetId AssetIdOf(const ProjectFile& file)

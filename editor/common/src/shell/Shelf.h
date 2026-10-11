@@ -17,6 +17,7 @@
 #include <functional>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -73,6 +74,14 @@ struct ShelfWheelRequest
     Vec2d At = {};
 };
 
+// A file carried off the shelf and let go where nothing on the shelf or a
+// sheet took it, at a point in the window.
+struct ShelfDrop
+{
+    ProjectFile File;
+    Vec2d At = {};
+};
+
 // Where a shelf finds the project's content, and what it is told about it.
 struct ShelfSources
 {
@@ -120,7 +129,8 @@ public:
     void Toggle();
     // Raised to choose for `pick`, in place of opening.
     void Pick(ShelfPick pick);
-    // Raised with `assetPath` chosen and nothing narrowing it out of sight.
+    // Raised in the folder of `assetPath`, with it chosen and nothing else
+    // narrowing it out of sight.
     void Reveal(const std::string& assetPath);
     // What it is choosing for now; empty while it opens what is chosen.
     [[nodiscard]] const std::string& Choosing() const { return Picking.Title; }
@@ -138,6 +148,14 @@ public:
     [[nodiscard]] IRadialMenuModel& FileWheel() { return FileWheelModel; }
     [[nodiscard]] IRadialMenuModel& NewWheel() { return NewWheelModel; }
     [[nodiscard]] std::optional<ShelfWheelRequest> TakeWheelRequest() { return std::exchange(Wanted, std::nullopt); }
+    // The file being dragged from a tile, taken by whatever it is dropped on;
+    // empty when none is or it has been taken.
+    [[nodiscard]] std::string TakeCarried();
+    // A carried file let go off the shelf, for the content under it, taken once.
+    [[nodiscard]] std::optional<ShelfDrop> TakeDrop() { return std::exchange(Dropped, std::nullopt); }
+    // Files from outside the project, dropped on the window: each copied into
+    // the folder in view as a new asset, then shown.
+    void Import(std::span<const std::filesystem::path> files);
 
 private:
     enum class Placement : std::uint8_t { Down, Raised, Pinned };
@@ -145,6 +163,7 @@ private:
     enum class Look : std::uint8_t { Tiles, List };
     enum class Edge : std::uint8_t { Resting, Sizing };
     enum class Purpose : std::uint8_t { Opening, Choosing };
+    enum class Carry : std::uint8_t { None, Carrying };
 
     void HandleAction(const UiAction& action, float windowHeight);
     // A chord the search field had no use for, answered as the window would.
@@ -157,6 +176,8 @@ private:
     void AskTrash();
     void Trash(const std::string& assetPath);
     void Tell(std::string text, bool failed);
+    // The carried file moved into `folder` (root-relative, empty for the root).
+    void Into(const std::string& folder);
     void Rescan();
     void Remember();
     // Opens the file, or commits to it while choosing.
@@ -186,6 +207,9 @@ private:
     NewContentWheel NewWheelModel;
     ActionContextStack::Layer FileLayer;
     std::optional<ShelfWheelRequest> Wanted;
+    Carry Carrying = Carry::None;
+    std::string Carried;
+    std::optional<ShelfDrop> Dropped;
     PromptQueue::Asker Asker;
 
     Placement State = Placement::Down;

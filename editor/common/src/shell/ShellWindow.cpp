@@ -3,6 +3,7 @@
 #include "ui/RadialMenuScreen.h"
 
 #include "shell/AssetTabs.h"
+#include "text/PathLeaf.h"
 
 #include "project/AssetKinds.h"
 
@@ -134,6 +135,7 @@ const UiActionId kTitleReleaseAction = UiActionIdAt(30);
 const UiActionId kScrubPressAction = UiActionIdAt(31);
 const UiActionId kSheetReleasePartAction = UiActionIdAt(32);
 const UiActionId kSheetKeyAction = UiActionIdAt(33);
+const UiActionId kSheetDropAction = UiActionIdAt(34);
 
 // The floating surfaces a header can move, as a document names them.
 constexpr std::string_view kExplorerSurface = "explorer";
@@ -231,7 +233,7 @@ UiScreenDesc Describe()
                      "shell_explorer_open", "shell_explorer_mark", "shell_grab", "shell_drag", "shell_drop",
                      "shell_unmove", "shell_raise", "shell_crumb", "shell_tab", "shell_tab_drop",
                      "shell_sheet_fold", "shell_popover_filter", "shell_title_hold", "shell_title_release",
-                     "shell_scrub_press", "shell_sheet_release_part", "shell_sheet_key" };
+                     "shell_scrub_press", "shell_sheet_release_part", "shell_sheet_key", "shell_sheet_drop" };
     return desc;
 }
 
@@ -429,6 +431,13 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
     }
     Palette->Update();
     AssetShelf->Update(Services.Ui.GetSurfaceScale(SurfaceId), static_cast<float>(extent.Height));
+    if (const std::optional<ShelfDrop> drop = AssetShelf->TakeDrop())
+    {
+        IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation);
+        if (active == nullptr || !active->DropAsset(drop->File, drop->At))
+            Services.Notices.Post(std::format("Nothing here takes {}", NameOf(drop->File)), NoticeTone::Warning,
+                                  NoticeClockNow());
+    }
     if (const std::optional<ShelfWheelRequest> wanted = AssetShelf->TakeWheelRequest(); wanted && !WheelUp())
         (void)(wanted->Wheel == ShelfWheel::File ? FileWheel : NewWheel)
             .Input.Route(PointerDownEvent{ .Position = wanted->At, .Button = MouseButton::Right, .Modifiers = {} });
@@ -476,7 +485,8 @@ void ShellWindow::HandleActions()
         else if (action.Id == kSheetSetAction || action.Id == kSheetFlipAction || action.Id == kSheetHoldAction
                  || action.Id == kSheetReleaseAction || action.Id == kSheetActAction || action.Id == kSheetPickAction
                  || action.Id == kSheetFoldAction || action.Id == kScrubPressAction
-                 || action.Id == kSheetReleasePartAction || action.Id == kSheetKeyAction)
+                 || action.Id == kSheetReleasePartAction || action.Id == kSheetKeyAction
+                 || action.Id == kSheetDropAction)
         {
             HandleSheetAction(action);
         }
@@ -649,6 +659,19 @@ void ShellWindow::HandleSheetAction(const UiAction& action)
             if (key == UiKey::Tab && element >= 0 && static_cast<std::size_t>(element) + 1 < parts)
                 SheetTyping = TypingKey(tool ? "tool" : "selection", index, element + 1);
         }
+    }
+    else if (action.Id == kSheetDropAction)
+    {
+        // A file carried from the shelf, put on a field that can hold it.
+        const std::string carried = AssetShelf->TakeCarried();
+        if (carried.empty())
+            return;
+        const std::vector<std::string> fits = sheet.CandidatesOf(sections, index);
+        if (std::ranges::find(fits, carried) == fits.end())
+            Services.Notices.Post(std::format("{} cannot go in {}", PathLeaf(carried), sheet.LabelOf(index)),
+                                  NoticeTone::Warning, NoticeClockNow());
+        else
+            (void)sheet.Set(sections, index, carried);
     }
     else if (action.Id == kSheetPickAction)
     {

@@ -626,6 +626,15 @@ void KyusuApp::OnPlatformEvent(PlatformEventContext& ctx)
     if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)
         if (const WorkspaceKind* kind = Workspaces->ActiveKindIn(window))
             Workspaces->Request({ WorkspaceAction::Activate, kind->Id });
+    // A file from outside dropped on a window joins the project there.
+    if (ctx.Event.type == SDL_EVENT_DROP_FILE && ctx.Event.drop.data != nullptr)
+        if (ShellWindow* shell = WindowShellFor(window))
+        {
+            const std::filesystem::path dropped(ctx.Event.drop.data);
+            shell->Import({ &dropped, 1 });
+            ctx.Handled = true;
+            return;
+        }
     // A number being dragged in a sheet, or a wheel the shell has up, holds the
     // pointer and the keys until let go.
     if (ShellWindow* shell = WindowShellFor(window); shell != nullptr && shell->HoldsInput())

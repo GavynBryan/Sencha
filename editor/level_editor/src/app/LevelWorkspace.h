@@ -129,6 +129,7 @@ public:
     [[nodiscard]] AssetType HeldType() const;
     bool RevealProblem(const Problem& problem) override;
     bool OpenAsset(const ProjectFile& file) override;
+    bool DropAsset(const ProjectFile& file, Vec2d point) override;
     // The world's validation, republished only when it changed.
     void PublishProblems();
     // What the window's UI wants of the pointer and keys now.

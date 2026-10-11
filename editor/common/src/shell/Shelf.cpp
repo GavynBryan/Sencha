@@ -79,6 +79,9 @@ const UiActionId kFollow = UiActionIdAt(16);
 const UiActionId kBack = UiActionIdAt(17);
 const UiActionId kPress = UiActionIdAt(18);
 const UiActionId kNew = UiActionIdAt(19);
+const UiActionId kCarry = UiActionIdAt(20);
+const UiActionId kInto = UiActionIdAt(21);
+const UiActionId kPut = UiActionIdAt(22);
 
 // How much wider a tile is than its picture, and the gap after it, in dp.
 constexpr float kTileMarginDp = 24.0f;
@@ -122,7 +125,8 @@ UiScreenDesc Describe()
     desc.Actions = { "shelf_grab",   "shelf_drag",   "shelf_drop", "shelf_query", "shelf_key",
                      "shelf_category", "shelf_list", "shelf_folder", "shelf_branch", "shelf_pick",
                      "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom", "shelf_none",
-                     "shelf_follow", "shelf_back", "shelf_press", "shelf_new" };
+                     "shelf_follow", "shelf_back", "shelf_press", "shelf_new",
+                     "shelf_carry", "shelf_into", "shelf_put" };
     return desc;
 }
 
@@ -279,7 +283,9 @@ void Shelf::Pick(ShelfPick pick)
 void Shelf::Reveal(const std::string& assetPath)
 {
     Show();
+    // In its own folder, so a project of more files than are shown still shows it.
     Query = {};
+    Query.Folder = FolderOf(ProjectFile{ .AssetPath = assetPath });
     List = Listing::Everything;
     Selected = assetPath;
     Trail.clear();
@@ -517,6 +523,22 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
         Wanted = ShelfWheelRequest{ ShelfWheel::File,
                                     { static_cast<float>(Number(action, 2)), static_cast<float>(Number(action, 3)) } };
     }
+    else if (action.Id == kCarry && Use == Purpose::Opening)
+    {
+        Carrying = Carry::Carrying;
+        Carried = Text(action);
+        Selected = Carried;
+    }
+    else if (action.Id == kInto && Carrying == Carry::Carrying)
+        Into(Text(action));
+    // Let go where nothing took it: above the shelf, it is the content's.
+    else if (action.Id == kPut)
+    {
+        const std::string carried = TakeCarried();
+        const Vec2d at{ static_cast<float>(Number(action, 0)), static_cast<float>(Number(action, 1)) };
+        if (const ProjectFile* file = FileAt(carried); file != nullptr && at.Y < windowHeight - Reach())
+            Dropped = ShelfDrop{ *file, at };
+    }
     else if (action.Id == kNew)
         Wanted = ShelfWheelRequest{ ShelfWheel::NewContent,
                                     { static_cast<float>(Number(action, 0)), static_cast<float>(Number(action, 1)) } };
@@ -663,6 +685,49 @@ void Shelf::Trash(const std::string& assetPath)
     Tell(undo.empty() ? std::format("Trashed {}", PathLeaf(assetPath))
                       : std::format("Trashed {}; {} puts it back", PathLeaf(assetPath), undo),
          false);
+}
+
+std::string Shelf::TakeCarried()
+{
+    if (Carrying != Carry::Carrying)
+        return {};
+    Carrying = Carry::None;
+    return std::exchange(Carried, std::string{});
+}
+
+void Shelf::Into(const std::string& folder)
+{
+    const std::string from = TakeCarried();
+    const std::string to = std::string(kAssetScheme) + (folder.empty() ? std::string{} : folder + "/")
+                         + std::string(PathLeaf(from));
+    if (from.empty() || to == from || Sources.Files == nullptr)
+        return;
+    if (std::string refused = Sources.Files->Move(from, to); !refused.empty())
+        return Tell(std::move(refused), true);
+    Selected = to;
+    Tell(std::format("Moved {} to {}", PathLeaf(from), folder.empty() ? std::string("the top") : folder), false);
+}
+
+void Shelf::Import(std::span<const std::filesystem::path> files)
+{
+    if (Sources.Files == nullptr || files.empty())
+        return;
+    const std::string folder = Query.Folder;
+    std::string arrived;
+    for (const std::filesystem::path& file : files)
+    {
+        const std::string to = std::string(kAssetScheme) + (folder.empty() ? std::string{} : folder + "/")
+                             + file.filename().string();
+        if (std::string refused = Sources.Files->Import(file, to); !refused.empty())
+        {
+            Tell(std::move(refused), true);
+            continue;
+        }
+        arrived = to;
+        Tell(std::format("Imported {}", file.filename().string()), false);
+    }
+    if (!arrived.empty())
+        Reveal(arrived);
 }
 
 void Shelf::Tell(std::string text, bool failed)

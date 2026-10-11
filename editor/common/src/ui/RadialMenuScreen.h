@@ -17,7 +17,8 @@ struct IRadialMenuModel;
 // at, the hot entry's variants as a fan of petals beyond the rim, and a
 // caption naming what a release would choose. Display
 // only -- the session hit-tests the same layout -- and one screen for every
-// wheel a workspace has, since only one is ever open.
+// wheel a workspace has, since only one is ever open; its document is open
+// only while one is.
 //=============================================================================
 class RadialMenuScreen
 {

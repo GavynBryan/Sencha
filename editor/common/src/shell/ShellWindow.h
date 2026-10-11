@@ -104,6 +104,8 @@ public:
     [[nodiscard]] bool HoldsInput() const { return Scrubbing() || WheelUp(); }
     // Whether the shell took `event` for what holds it.
     bool TakeHeldInput(const InputEvent& event);
+    // Files from outside the project dropped on the window, imported onto the shelf.
+    void Import(std::span<const std::filesystem::path> files) { AssetShelf->Import(files); }
 
     // How much of the top of the window the rail covers, in window points:
     // where content under it has to start.

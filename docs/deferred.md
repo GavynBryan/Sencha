@@ -240,16 +240,15 @@ do the work and delete the entry.
 - **Trigger:** the owner's walkthrough at the explorers checkpoint, or a report
   that choosing a material takes trial applications and undos.
 
-## Dragging a prefab into the view
+## Turning a placement by a key while it is placed
 
-- **What:** a prefab is placed by choosing it on the Shelf (P), which takes up
-  the Place tool, then clicking in the view. Pressing on a tile and dragging it
-  into the view as the same gesture is not built, and the Place tool turns a
-  placement by its yaw setting rather than by a key while hovering.
-- **Where:** `editor/level_editor/src/document/tools/PlaceTool.cpp`; the Shelf
-  (`editor/common/src/shell/Shelf.cpp`) would hand the press over to the
-  view's input router.
-- **Trigger:** the owner's walkthrough at the explorers checkpoint.
+- **What:** a prefab placed with the Place tool turns by its yaw setting (the
+  tool card's 0/90/180/270), not by a key while the ghost hovers; one dragged
+  from the Shelf into the view lands unturned.
+- **Where:** `editor/level_editor/src/document/tools/PlaceTool.cpp`;
+  `LevelWorkspace::DropAsset`.
+- **Trigger:** the owner's walkthrough at the explorers checkpoint, or a
+  designer placing many turned props.
 
 ## Reordering and reparenting by dragging in the outline
 

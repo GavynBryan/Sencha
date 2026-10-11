@@ -273,42 +273,71 @@ std::string ProjectFileSteps::Duplicate(std::string_view assetPath, std::string_
     if (std::filesystem::exists(target, ec))
         return std::format("{} already exists.", toAssetPath);
 
-    // A copy is a new asset: it states the id it is born with, not its source's.
-    const AssetId id = AssetIdOfPath(toAssetPath);
-    const bool inside = StatesIdInside(source->Extension);
-    const std::optional<std::string> bytes = ReadProjectFileText(source->FilePath);
-    if (!bytes.has_value())
-        return std::format("{} could not be read.", assetPath);
     Step step;
     step.Label = std::format("Duplicate {} as {}", PathLeaf(assetPath), PathLeaf(toAssetPath));
     step.Changes = { { ProjectFileChange::Kind::Appeared, std::string(toAssetPath), target, RootOf(source->FilePath) } };
-    if (Hooks.IsAsset && !Hooks.IsAsset(*source))
+    if (std::string refused = ArriveAsNew(step, source->FilePath, target, toAssetPath, !Hooks.IsAsset || Hooks.IsAsset(*source));
+        !refused.empty())
+        return refused;
+    Take(step, DocumentStep::Redo);
+    Record(std::move(step));
+    return {};
+}
+
+std::string ProjectFileSteps::Import(const std::filesystem::path& external, std::string_view toAssetPath)
+{
+    if (Roots.empty() || !toAssetPath.starts_with("asset://"))
+        return "Name it somewhere in the project.";
+    ProjectFile arriving;
+    arriving.AssetPath = std::string(toAssetPath);
+    arriving.FilePath = (Roots.front() / std::string(toAssetPath.substr(std::string_view("asset://").size())))
+                            .lexically_normal();
+    arriving.Extension = ExtensionOf(arriving.FilePath);
+    std::error_code ec;
+    if (std::filesystem::exists(arriving.FilePath, ec))
+        return std::format("{} already exists.", toAssetPath);
+
+    Step step;
+    step.Label = std::format("Import {}", PathLeaf(toAssetPath));
+    step.Changes = { { ProjectFileChange::Kind::Appeared, std::string(toAssetPath), arriving.FilePath, Roots.front() } };
+    if (std::string refused = ArriveAsNew(step, external, arriving.FilePath, toAssetPath,
+                                          !Hooks.IsAsset || Hooks.IsAsset(arriving));
+        !refused.empty())
+        return refused;
+    Take(step, DocumentStep::Redo);
+    Record(std::move(step));
+    return {};
+}
+
+std::string ProjectFileSteps::ArriveAsNew(Step& step, const std::filesystem::path& from,
+                                          const std::filesystem::path& target, std::string_view toAssetPath,
+                                          bool asset) const
+{
+    const std::optional<std::string> bytes = ReadProjectFileText(from);
+    if (!bytes.has_value())
+        return std::format("{} could not be read.", PathLeaf(from.generic_string()));
+    if (!asset)
     {
         step.After.push_back({ target, std::nullopt, bytes });
-        Take(step, DocumentStep::Redo);
-        Record(std::move(step));
         return {};
     }
+    // A new asset: it states the id it is born with, never one it came with.
+    const AssetId id = AssetIdOfPath(toAssetPath);
+    const std::string extension = ExtensionOf(target);
     const auto stated = [&](const std::string& text) {
-        const std::optional<std::string> bare =
-            source->StatedId.has_value() ? WithoutStatedId(text, source->Extension == kSceneSource) : text;
-        return StatingAssetId(bare.value_or(text), id);
+        return StatingAssetId(WithoutStatedId(text, extension == kSceneSource).value_or(text), id);
     };
-    if (inside)
+    if (StatesIdInside(extension))
     {
         const std::optional<std::string> copy = stated(*bytes);
         if (!copy.has_value())
-            return std::format("{} is not a document that can be copied.", assetPath);
+            return std::format("{} is not a document that can be copied.", PathLeaf(from.generic_string()));
         step.After.push_back({ target, std::nullopt, copy });
+        return {};
     }
-    else
-    {
-        step.After.push_back({ target, std::nullopt, bytes });
-        const std::optional<std::string> sidecar = ReadProjectFileText(SidecarOf(source->FilePath));
-        step.After.push_back({ SidecarOf(target), std::nullopt, stated(sidecar.value_or(std::string{})) });
-    }
-    Take(step, DocumentStep::Redo);
-    Record(std::move(step));
+    step.After.push_back({ target, std::nullopt, bytes });
+    const std::optional<std::string> sidecar = ReadProjectFileText(SidecarOf(from));
+    step.After.push_back({ SidecarOf(target), std::nullopt, stated(sidecar.value_or(std::string{})) });
     return {};
 }
 

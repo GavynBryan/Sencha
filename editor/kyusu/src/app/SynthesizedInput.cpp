@@ -69,6 +69,29 @@ void SynthesizedInput::Register(ConsoleRegistry& registry, std::function<std::ui
         },
     });
     registry.RegisterCommand({
+        .Name = "input.drop",
+        .Owner = "editor",
+        .Usage = "input.drop <file> [frame]",
+        .Help = "Drop a file from outside on the main window where the pointer last moved, as the platform "
+                "would report it. With a frame number, waits until that frame.",
+        .Callback = [this, window](ConsoleExecutionContext&, std::span<const std::string> args) {
+            ConsoleResult result;
+            std::uint64_t frame = Frame;
+            if (args.empty() || !ParseFrame(args, 1, frame))
+            {
+                result.Error("usage: input.drop <file> [frame]");
+                return result;
+            }
+            DroppedPaths.push_back(args[0]);
+            SDL_Event event{};
+            event.type = SDL_EVENT_DROP_FILE;
+            event.drop.windowID = window();
+            event.drop.data = DroppedPaths.back().c_str();
+            Queue.push_back({ frame, event });
+            return result;
+        },
+    });
+    registry.RegisterCommand({
         .Name = "input.pointer",
         .Owner = "editor",
         .Usage = "input.pointer <x> <y> [frame]",

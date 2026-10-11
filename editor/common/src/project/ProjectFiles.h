@@ -33,6 +33,8 @@ struct ProjectFile
 inline constexpr std::string_view kUserStateSuffix = ".user.json";
 
 [[nodiscard]] AssetId AssetIdOf(const ProjectFile& file);
+// As ProjectFile::Extension holds it: lower case, with its dot.
+[[nodiscard]] std::string ExtensionOf(const std::filesystem::path& file);
 // The id `file` states, in itself or its sidecar, read as JSON5 -- scene
 // sources are written in it, and every other statement is JSON besides.
 [[nodiscard]] std::optional<AssetId> ReadStatedId(const std::filesystem::path& file);

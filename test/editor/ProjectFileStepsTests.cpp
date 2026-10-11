@@ -352,3 +352,24 @@ TEST(CopyPath, TheFirstFreeNameBesideIt)
     EXPECT_EQ(CopyPath("asset://input/move.profile.sdata", [](const std::string&) { return false; }),
               "asset://input/move copy.profile.sdata");
 }
+
+TEST(ProjectFileSteps, AFileFromOutsideArrivesAsANewAssetAndUndoTakesItAway)
+{
+    Project outside;
+    outside.Write("Grit.PNG", "png");
+    outside.Write("Grit.PNG.meta", "{ \"id\": \"00000000000000c3\", \"mips\": false }");
+    Project project;
+    Fixture files(project);
+
+    ASSERT_EQ(files.Steps.Import(outside.Root / "Grit.PNG", "asset://t/Grit.PNG"), "");
+    EXPECT_EQ(project.Read("t/Grit.PNG"), "png");
+    EXPECT_EQ(ReadStatedAssetId(project.Root / "t/Grit.PNG"), AssetIdOfPath("asset://t/Grit.PNG"))
+        << "it is new here, whatever it was elsewhere";
+    EXPECT_NE(project.Read("t/Grit.PNG.meta").find("\"mips\": false"), std::string::npos);
+    EXPECT_EQ(files.Changes, (std::vector<std::string>{ "+asset://t/Grit.PNG" }));
+    EXPECT_NE(files.Steps.Import(outside.Root / "Grit.PNG", "asset://t/Grit.PNG"), "") << "taken";
+
+    files.Journal.Undo();
+    EXPECT_FALSE(project.Exists("t/Grit.PNG"));
+    EXPECT_FALSE(project.Exists("t/Grit.PNG.meta"));
+}

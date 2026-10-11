@@ -123,16 +123,12 @@ void RadialMenuScreen::MoveTo(UiSurfaceId overlay)
         return;
     Close();
     Surface = overlay;
-    if (Shown)
-        Open();
 }
 
 void RadialMenuScreen::SetShown(bool shown)
 {
     Shown = shown;
-    if (shown)
-        Open();
-    else
+    if (!shown)
         Close();
 }
 
@@ -156,9 +152,17 @@ void RadialMenuScreen::Close()
 
 void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenuModel* menu)
 {
+    const RadialMenuFace face = wheel != nullptr && menu != nullptr ? FaceOf(*wheel, *menu) : RadialMenuFace{};
+    // Open only while a wheel is: the shell and the workspace each have a
+    // screen on the window's overlay, and one document model each would clash.
+    if (!face.Open || !Shown)
+    {
+        Close();
+        return;
+    }
+    Open();
     if (!Screen.IsValid())
         return;
-    const RadialMenuFace face = wheel != nullptr && menu != nullptr ? FaceOf(*wheel, *menu) : RadialMenuFace{};
     (void)Ui.SetValue(Screen, kOpen, UiValue(face.Open));
 
     std::vector<UiRow> sectors;

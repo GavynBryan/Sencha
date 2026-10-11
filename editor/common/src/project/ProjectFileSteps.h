@@ -89,6 +89,9 @@ public:
     [[nodiscard]] std::string Move(std::string_view assetPath, std::string_view toAssetPath);
     [[nodiscard]] std::string Duplicate(std::string_view assetPath, std::string_view toAssetPath);
     [[nodiscard]] std::string Trash(std::string_view assetPath);
+    // A file from outside the project copied in as a new asset, its sidecar
+    // (import settings) with it, into the first content root.
+    [[nodiscard]] std::string Import(const std::filesystem::path& external, std::string_view toAssetPath);
 
     // DocumentSource: a file step has no unsaved state of its own.
     void AppendChangedDocuments(std::vector<DocumentRef>&) override {}
@@ -134,6 +137,11 @@ private:
                                       std::optional<ProjectFile>& file) const;
     [[nodiscard]] std::filesystem::path RootOf(const std::filesystem::path& file) const;
     [[nodiscard]] std::filesystem::path FileAt(const ProjectFile& source, std::string_view assetPath) const;
+    // Adds to `step` the writes that put a copy of `from` at `target` as a new
+    // asset stating the id it is born with; why it cannot, or empty.
+    [[nodiscard]] std::string ArriveAsNew(Step& step, const std::filesystem::path& from,
+                                          const std::filesystem::path& target, std::string_view toAssetPath,
+                                          bool asset) const;
     void Take(const Step& step, DocumentStep direction);
     void Record(Step step);
 

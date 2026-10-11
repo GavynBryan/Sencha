@@ -127,6 +127,21 @@ TEST_F(FaceMaterialEditsTest, ApplyGroupsOneCommandPerBrush)
     EXPECT_EQ(Target.MeshOf(b).Faces[1].Material.Material.Path, material.Path);
 }
 
+// A material dropped on a face goes on that face, whatever is selected.
+TEST_F(FaceMaterialEditsTest, ApplyToFacesLeavesTheSelectionAlone)
+{
+    const EntityId a = Target.AddBrush(BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }), Transform3f::Identity());
+    SelectFaces({ { a, 0 } });
+
+    const SelectableRef dropped = SelectableRef::FaceSelection(RegistryId::Global(), a, 3);
+    ApplyMaterialToFaces(Target, { &dropped, 1 }, Commands,
+                         AssetRef{ AssetType::Material, "asset://materials/dev/gray.smat" });
+
+    EXPECT_EQ(Target.MeshOf(a).Faces[3].Material.Material.Path, "asset://materials/dev/gray.smat");
+    EXPECT_TRUE(Target.MeshOf(a).Faces[0].Material.Material.Path.empty());
+    EXPECT_EQ(Selection.GetSelection().size(), 1u);
+}
+
 TEST_F(FaceMaterialEditsTest, UndoRestoresTheBeforeMesh)
 {
     const EntityId a = Target.AddBrush(BrushOps::MakeBox({ 1.0f, 1.0f, 1.0f }), Transform3f::Identity());
