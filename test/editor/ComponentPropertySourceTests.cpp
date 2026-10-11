@@ -293,6 +293,7 @@ TEST(ComponentPropertySource, RemovalIsMarkedAndAComponentsActionsTravelWithIt)
     ASSERT_NE(remove, name->Descriptor.Verbs.end());
     EXPECT_TRUE(remove->Removes);
     EXPECT_EQ(name->Descriptor.Actions, (std::vector<std::string>{ "name.shout" }));
+    EXPECT_TRUE(name->Descriptor.Folded) << "a component starts closed, its actions and fields inside it";
 }
 
 TEST(ComponentPropertySource, AComponentOnOfferSaysWhatAddingItBringsWithIt)

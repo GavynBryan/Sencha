@@ -250,23 +250,39 @@ TEST(PropertySheet, WhatCanBeDoneAboutAGroupIsBesideItsHeadingAndRemovalIsMarked
     EXPECT_EQ(body.Log, (std::vector<std::string>{ "remove body" }));
 }
 
-TEST(PropertySheet, AGroupsActionsAreOfferedOnlyWhileTheyCanRunAndAtMostThree)
+TEST(PropertySheet, AGroupsActionsAreARowInsideItOfferedOnlyWhileTheyCanRunAndAtMostThree)
 {
     Body body;
     Actions actions;
     PropertySheet sheet;
     sheet.OfferActions(actions.Catalog, actions.Stack);
-    const std::vector<UiRow> rows = sheet.Present(body);
+    std::vector<UiRow> rows = sheet.Present(body);
+    ASSERT_EQ(rows.size(), 3u) << "the heading, its actions, its field";
     std::vector<std::string> offered;
     for (const UiRowVerb& verb : rows[0].Verbs)
         offered.push_back(verb.Key);
-    EXPECT_EQ(offered, (std::vector<std::string>{ "body.export", "body.weld", "body.split", "reset", "remove" }))
-        << "unclaimed and disabled actions are not offered, and three is all there is room for";
-    EXPECT_EQ(rows[0].Verbs[0].Label, "Do body.export");
+    EXPECT_EQ(offered, (std::vector<std::string>{ "reset", "remove" })) << "the heading keeps its own verbs alone";
 
-    EXPECT_EQ(sheet.Act(body, 0, "body.weld"), PropertyEditResult::Applied);
+    offered.clear();
+    for (const UiRowVerb& verb : rows[1].Verbs)
+        offered.push_back(verb.Key);
+    EXPECT_EQ(offered, (std::vector<std::string>{ "body.export", "body.weld", "body.split" }))
+        << "unclaimed and disabled actions are not offered, and three is all there is room for";
+    EXPECT_EQ(rows[1].Control, UiRowControl::Action);
+    EXPECT_EQ(rows[1].Depth, 1);
+    EXPECT_EQ(rows[1].Verbs[0].Label, "Do body.export");
+    EXPECT_NE(rows[1].Key, rows[0].Key);
+
+    EXPECT_EQ(sheet.Act(body, 1, "body.weld"), PropertyEditResult::Applied);
     EXPECT_EQ(actions.Ran, (std::vector<std::string>{ "body.weld" }));
     EXPECT_TRUE(body.Log.empty()) << "an action is the catalog's to run, not the source's";
+    EXPECT_EQ(sheet.Set(body, 1, "anything"), PropertyEditResult::Gone) << "the actions are no value to set";
+    EXPECT_EQ(sheet.IndexOf("body"), 0u);
+
+    sheet.Fold(0);
+    rows = sheet.Present(body);
+    ASSERT_EQ(rows.size(), 1u) << "closed, the group shows neither its actions nor its fields";
+    EXPECT_EQ(rows[0].Verbs.size(), 2u);
 }
 
 TEST(PropertySheet, AFoldedGroupShowsItsHeadingAloneAndStaysAsItWasLeft)

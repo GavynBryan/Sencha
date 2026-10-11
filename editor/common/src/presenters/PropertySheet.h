@@ -25,9 +25,10 @@ class ActionContextStack;
 // section row over its children, as does each titled section of several
 // sources; what a property is decides the control -- a choice a drop-down, a
 // number a box to type or drag, a vector its numbers side by side, a switch a
-// toggle, anything else a field. Its verbs, and the catalog actions it names
-// that can run now, are offered beside it. A folded group shows its heading
-// alone, and stays as it was left for as long as the sheet lives.
+// toggle, anything else a field. Its verbs are offered beside it, and the
+// catalog actions it names that can run now on a row of their own inside it.
+// A folded group shows its heading alone, and stays as it was left for as long
+// as the sheet lives.
 //
 // A field is typed into over many frames and edited once, when it lets go of
 // focus: Hold stops the rows from changing under it, and Release commits what
@@ -121,6 +122,7 @@ private:
     };
 
     void Append(const PropertyNode& node, int depth, std::size_t section, bool everything, std::vector<UiRow>& rows);
+    void AppendActions(const PropertyNode& node, int depth, std::size_t section, std::vector<UiRow>& rows);
     // Notes whether this presentation laid out other properties than the last.
     void Settle();
 

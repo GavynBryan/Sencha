@@ -100,7 +100,7 @@
                  data-class-theme-muted="!row.editable &amp;&amp; row.control != 'section'">
                 <span class="fold glyph theme-dim" data-if="row.control == 'section' &amp;&amp; row.value != ''"
                       data-event-click="shell_sheet_fold('tool', ri)"><span data-if="row.value == 'closed'">&#xf0da;</span><span data-if="row.value == 'open'">&#xf0d7;</span></span>
-                <span class="setting_label" data-event-click="shell_sheet_fold('tool', ri)">{{row.label}}</span>
+                <span class="setting_label" data-if="row.control != 'action'" data-event-click="shell_sheet_fold('tool', ri)">{{row.label}}</span>
                 <input style="tab-index: none;" type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
                        data-value="row.value"
                        data-event-focus="shell_sheet_hold('tool', ri)"
@@ -246,7 +246,7 @@
                  data-class-theme-muted="!row.editable &amp;&amp; row.control != 'section'">
                 <span class="fold glyph theme-dim" data-if="row.control == 'section' &amp;&amp; row.value != ''"
                       data-event-click="shell_sheet_fold('selection', ri)"><span data-if="row.value == 'closed'">&#xf0da;</span><span data-if="row.value == 'open'">&#xf0d7;</span></span>
-                <span class="setting_label" data-event-click="shell_sheet_fold('selection', ri)">{{row.label}}</span>
+                <span class="setting_label" data-if="row.control != 'action'" data-event-click="shell_sheet_fold('selection', ri)">{{row.label}}</span>
                 <input style="tab-index: none;" type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
                        data-value="row.value"
                        data-event-focus="shell_sheet_hold('selection', ri)"

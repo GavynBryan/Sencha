@@ -267,12 +267,14 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         }
 
         const std::size_t lacking = entities.size() - holders.size();
+        // Closed until opened: a component's fields are read when it is the one being worked on.
         PropertyNode group{ .Key = key,
                             .Descriptor = { .Kind = PropertyKind::Group,
                                             .Label = lacking == 0 ? HumanizeSchemaName(key)
                                                                   : std::format("{} \xC2\xB7 on {} of {}",
                                                                                 HumanizeSchemaName(key),
-                                                                                holders.size(), entities.size()) } };
+                                                                                holders.size(), entities.size()),
+                                            .Folded = true } };
         if (serializer->IsRemovable())
         {
             group.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove Component", .Removes = true });

@@ -13,9 +13,9 @@
 
 namespace
 {
-// Beside a heading there is room for this many actions; the rest are on the
+// Inside a group there is room for this many actions; the rest are on the
 // context wheel and in the palette.
-constexpr std::size_t kActionsBeside = 3;
+constexpr std::size_t kActionsInside = 3;
 
 UiRowControl ControlFor(const PropertyDescriptor& descriptor)
 {
@@ -183,17 +183,6 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     std::string layout = node.Key;
     for (const std::string& choice : descriptor.Choices)
         layout += "|" + choice;
-    std::vector<std::string> actions;
-    if (Catalog != nullptr && Actions != nullptr)
-        for (const std::string& id : descriptor.Actions)
-        {
-            const ActionDefinition* definition = Catalog->Find(id);
-            const ActionContextStack::State state = Actions->Query(id);
-            if (definition == nullptr || !state.Claimed || !state.Enabled || actions.size() == kActionsBeside)
-                continue;
-            row.Verbs.push_back({ .Key = id, .Label = definition->Label });
-            actions.push_back(id);
-        }
     for (const PropertyVerb& verb : descriptor.Verbs)
     {
         row.Verbs.push_back({ .Key = verb.Id, .Label = verb.Label, .Removes = verb.Removes });
@@ -205,7 +194,6 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
                      .Section = section,
                      .Label = descriptor.Label,
                      .Verbs = descriptor.Verbs,
-                     .Actions = std::move(actions),
                      .Foldable = foldable,
                      .Folded = folded,
                      .ElementKeys = std::move(elementKeys),
@@ -214,11 +202,42 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
                                           ? node.Children.front().Descriptor
                                           : descriptor,
                      .Layout = std::move(layout) });
+    if (folded)
+        return;
+    AppendActions(node, depth + 1, section, rows);
     // A vector's numbers are its own row, not rows under it.
-    if (folded || descriptor.Kind == PropertyKind::Vector)
+    if (descriptor.Kind == PropertyKind::Vector)
         return;
     for (const PropertyNode& child : node.Children)
         Append(child, depth + 1, section, everything, rows);
+}
+
+void PropertySheet::AppendActions(const PropertyNode& node, int depth, std::size_t section, std::vector<UiRow>& rows)
+{
+    if (Catalog == nullptr || Actions == nullptr)
+        return;
+    UiRow row{ "", "", "" };
+    row.Key = node.Key + "!actions";
+    row.Depth = depth;
+    row.Control = UiRowControl::Action;
+    row.Editable = true;
+    std::vector<std::string> actions;
+    std::string layout = row.Key;
+    for (const std::string& id : node.Descriptor.Actions)
+    {
+        const ActionDefinition* definition = Catalog->Find(id);
+        const ActionContextStack::State state = Actions->Query(id);
+        if (definition == nullptr || !state.Claimed || !state.Enabled || actions.size() == kActionsInside)
+            continue;
+        row.Verbs.push_back({ .Key = id, .Label = definition->Label });
+        actions.push_back(id);
+        layout += "#" + id;
+    }
+    if (actions.empty())
+        return;
+    rows.push_back(std::move(row));
+    Rows.push_back({ .Key = {}, .Value = {}, .Section = section, .Actions = std::move(actions),
+                     .Layout = std::move(layout) });
 }
 
 void PropertySheet::Fold(std::size_t index)
