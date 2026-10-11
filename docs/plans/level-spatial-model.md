@@ -232,14 +232,20 @@ hard-coded list (section 9, item 5).
 
 ### 4.1 Operation contract
 
-An operation is a registered descriptor:
+An operation is a definition in an `AuthoredCatalog<EditorOperationTraits>`
+([exists] `engine/include/authored/AuthoredCatalog.h`: name grammar, atomic
+per-provider registration, provider retirement, contract revisions and
+handles). The catalog is generic, so the editor instantiates it with its own
+traits and the engine is unchanged. Each definition holds:
 
 - **id**: dotted and mechanical, e.g. `brush.box`, `space.create`,
   `query.near`.
 - **kind**: `query` or `mutation`.
-- **parameter schema and result schema**: `DataSchema` ([exists]
-  `engine/include/core/metadata/DataSchema.h`), which provides constraints,
-  enum choices, units, descriptions and validation.
+- **parameter schema and result schema**: `DataFieldSchema` records ([exists]
+  `engine/include/core/metadata/DataSchema.h`), which provide constraints,
+  enum choices, units and descriptions. Arguments are checked and their
+  defaults filled by `NormalizeDataValue`, the one JSON-against-schema check
+  that data assets and verb bindings also use.
 - **executor**:
   - a query reads a document view and returns a result value;
   - a mutation writes through a change recorder and returns a result value.
@@ -296,9 +302,10 @@ result:
 - **`derived`** lists the generated outputs whose inputs the change touched,
   read from the evaluator's dependency sets (5.6). It is deliberately not a
   transitive impact analysis. A client that wants more asks `deps`.
-- **The console** renders results compactly, one line per item. **The socket
-  and the headless host** return JSON5. `ConsoleResult` gains an optional
-  structured payload, and its text entries stay as the human rendering.
+- **The console** prints each result as one line of JSON. **The socket and the
+  headless host** pass the same JSON through. `ConsoleResult` keeps its
+  layout: game modules register console commands, so it crosses the module
+  boundary.
 
 ### 4.4 Change sets, revisions and preconditions
 
@@ -744,10 +751,11 @@ and gets structured, verifiable answers.
 **Work:**
 - Defect fixes (section 9).
 - The editor-only declaration replacing the cook's strip list.
-- Command labels.
-- Document revision and record digests.
-- Operation registry core: descriptors, `DataSchema` parameters and results,
-  subject resolver, structured results, console adapter.
+- One JSON-against-schema check (`NormalizeDataValue`) shared by data assets,
+  verb bindings and operations.
+- Operation registry core: an `AuthoredCatalog` of editor operations,
+  parameter and result contracts, subject resolver, structured results,
+  console adapter.
 - The headless host.
 - Queries: `level.summary`, `query.box`, `query.near`, `entity.describe`,
   `deps`, `plan.section` (text and PNG), `measure.clearance`, `nav.reachable`
@@ -775,6 +783,8 @@ and gets structured, verifiable answers.
 of the real model, with spaces included from the start.
 
 **Work:**
+- Command labels and document revision with record digests. Their consumers
+  (the labelled accept and the precondition check) arrive here, so they do too.
 - Volume brushes; `space`, `shell`, `opening`.
 - Shell generation: join rules, open faces, the gap rule (shared faces convex
   in version 1, using [exists] `ClipPolygonToConvex2D`), openings through
@@ -900,7 +910,6 @@ The approach is known; it is just work.
 - The socket on Windows (AF_UNIX on Windows 10 and later, or a named pipe).
 - Id minting injected per transaction.
 - `LevelWorkspace` to `DataDocumentStore` plumbing.
-- A structured payload on `ConsoleResult`.
 - Navigation buffer limits for whole-zone floods (`NavReachableBuffer` 256,
   `MaxNodes` 2048).
 - Moving `SimulateJumpArc` out of `data_editor` if jump checks are wanted
