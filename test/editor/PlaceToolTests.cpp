@@ -1,7 +1,7 @@
 #include "WorkspaceFixture.h"
 
 #include "document/EntityNameComponent.h"
-#include "document/commands/PlaceComponentEntityCommand.h"
+#include "document/commands/PlaceEntityCommand.h"
 #include "document/tools/PlaceTool.h"
 #include "tools/ToolRegistry.h"
 
@@ -16,8 +16,9 @@
 #include <string>
 #include <vector>
 
-// Place puts down the prefab in hand or a new entity carrying one component
-// that declares itself placeable, as one step with it selected.
+// The Entity tool puts down the prefab in hand, an empty entity, or a new
+// entity carrying one component that declares itself placeable, as one step
+// with it selected.
 
 namespace
 {
@@ -47,15 +48,22 @@ protected:
 };
 } // namespace
 
-TEST_F(PlaceToolTest, ItsVariantsAreThePrefabInHandAndEveryPlaceableComponent)
+TEST_F(PlaceToolTest, ItsVariantsAreThePrefabInHandAnEmptyAndEveryPlaceableComponent)
 {
     const PlaceTool place;
     const std::vector<std::string> labels = VariantLabels(place);
-    ASSERT_FALSE(labels.empty());
-    EXPECT_EQ(labels.front(), "Prefab");
-    EXPECT_NE(std::ranges::find(labels, "Point Light"), labels.end());
-    EXPECT_NE(std::ranges::find(labels, "Spot Light"), labels.end());
-    EXPECT_TRUE(std::is_sorted(labels.begin() + 1, labels.end())) << "the wheel's order depends on load order";
+    ASSERT_GE(labels.size(), 4u);
+    EXPECT_EQ(labels[0], "Prefab");
+    EXPECT_EQ(labels[1], "Empty");
+    EXPECT_TRUE(std::is_sorted(labels.begin() + 2, labels.end())) << "the wheel's order depends on load order";
+
+    // Each pictured, by the art its component names where it is one.
+    const auto variants = place.GetVariants();
+    EXPECT_EQ(variants[1].Icon, IconId::Empty);
+    EXPECT_EQ(variants[IndexOf(place, "Point Light")].Icon, IconId::LightBulb);
+    EXPECT_EQ(variants[IndexOf(place, "Spot Light")].Icon, IconId::LightSpot);
+    for (const ITool::Variant& variant : variants)
+        EXPECT_NE(variant.Icon, IconId::None) << variant.Label;
 }
 
 TEST_F(PlaceToolTest, AComponentVariantNeedsNoPrefabInHand)
@@ -75,7 +83,7 @@ TEST_F(PlaceToolTest, APlacedComponentIsOneStepNamedAndSelected)
 {
     World& world = Scene().GetRegistry().Components;
     const std::size_t before = Scene().GetAllEntities().size();
-    Workspace.Commands.Execute(std::make_unique<PlaceComponentEntityCommand>(
+    Workspace.Commands.Execute(std::make_unique<PlaceEntityCommand>(
         "PointLight", At({ 2.0f, 1.0f, -3.0f }), Workspace.ActiveDocument(), Workspace.Selection));
 
     ASSERT_EQ(Scene().GetAllEntities().size(), before + 1);
@@ -94,9 +102,36 @@ TEST_F(PlaceToolTest, APlacedComponentIsOneStepNamedAndSelected)
     EXPECT_TRUE(Workspace.Selection.GetSelection().empty());
 }
 
+TEST_F(PlaceToolTest, AnEmptyIsOneStepNamedAndSelected)
+{
+    PlaceTool place;
+    ToolContext& ctx = Workspace.Interaction.Tools->GetContext();
+    place.SelectVariant(ctx, IndexOf(place, "Empty"));
+    EXPECT_TRUE(place.Resources().empty()) << "an empty was asked to be placed and a prefab cartridge offered";
+    EXPECT_EQ(place.Hint(ctx), "Click to place an Empty");
+
+    World& world = Scene().GetRegistry().Components;
+    const std::size_t before = Scene().GetAllEntities().size();
+    Workspace.Commands.Execute(
+        std::make_unique<PlaceEntityCommand>("", At({ 1.0f, 0.0f, 4.0f }), Workspace.ActiveDocument(), Workspace.Selection));
+
+    ASSERT_EQ(Scene().GetAllEntities().size(), before + 1);
+    const EntityId empty = Scene().GetAllEntities().back();
+    ASSERT_NE(world.TryGet<LocalTransform>(empty), nullptr);
+    EXPECT_EQ(world.TryGet<LocalTransform>(empty)->Value.Position.Z, 4.0f);
+    ASSERT_NE(world.TryGet<EntityNameComponent>(empty), nullptr);
+    EXPECT_EQ(std::string(world.TryGet<EntityNameComponent>(empty)->Value.View()), "Entity");
+    EXPECT_NE(world.TryGet<PersistentIdComponent>(empty), nullptr);
+    EXPECT_EQ(world.TryGet<PointLightComponent>(empty), nullptr);
+    EXPECT_EQ(Workspace.Selection.GetPrimarySelection().Entity, empty);
+
+    Workspace.Commands.Undo();
+    EXPECT_EQ(Scene().GetAllEntities().size(), before);
+}
+
 TEST_F(PlaceToolTest, ARedoPlacesTheSameEntityAgain)
 {
-    Workspace.Commands.Execute(std::make_unique<PlaceComponentEntityCommand>(
+    Workspace.Commands.Execute(std::make_unique<PlaceEntityCommand>(
         "SpotLight", At({}), Workspace.ActiveDocument(), Workspace.Selection));
     World& world = Scene().GetRegistry().Components;
     const PersistentIdComponent placed = *world.TryGet<PersistentIdComponent>(Scene().GetAllEntities().back());
@@ -112,7 +147,7 @@ TEST_F(PlaceToolTest, ARedoPlacesTheSameEntityAgain)
 TEST_F(PlaceToolTest, AComponentThatIsNotPlaceableIsRefused)
 {
     const std::size_t before = Scene().GetAllEntities().size();
-    Workspace.Commands.Execute(std::make_unique<PlaceComponentEntityCommand>(
+    Workspace.Commands.Execute(std::make_unique<PlaceEntityCommand>(
         "Transform", At({}), Workspace.ActiveDocument(), Workspace.Selection));
     EXPECT_EQ(Scene().GetAllEntities().size(), before);
 }

@@ -31,7 +31,7 @@ A tool with parameters raises a **tool card** from the station:
 | Face carve | mode, shape, turn, rise and segments (arch), pierce, Apply / Cancel |
 | Clip | keep front / back / split, cap, Apply / Cancel |
 | Edge cut | single / loop |
-| Place | align to surface, rotation step |
+| Entity | align to surface, rotation step |
 
 The world-pinned Apply/Cancel buttons, the carve dial and the rise/segment
 handles stay in the world; the card mirrors them for typed entry.
@@ -121,17 +121,19 @@ thumbnail grid, search, filters. Hovering a tile previews it on the selected
 faces; leaving cancels the preview. Clicking loads the cartridge. With faces
 selected, Enter or double-click applies to them.
 
-**Prefabs** (P for the Place tool, or the cartridge): a tray of scene
-thumbnails. Picking one loads the cartridge and arms Place: a ghost follows the
+**Prefabs** (P for the Entity tool, or the cartridge): a tray of scene
+thumbnails. Picking one loads the cartridge and arms the Entity tool: a ghost follows the
 surface under the cursor, snapped to the grid; click stamps an instance, Esc
 leaves. Pressing a tile and dragging into the world is the same gesture — the
 tray tucks away and the world takes the pointer.
 
-Place's fan on the tool wheel holds, besides **Prefab**, every component that
-declares itself placeable (`SENCHA_PLACEABLE`): the engine's **Point Light**
-and **Spot Light**, and whatever a game adds, such as the template's **Player
-Start**. Those place a new entity carrying just that component at its defaults,
-named after it and selected, as one step; no prefab is in hand for them.
+The Entity tool's fan on the tool wheel holds **Prefab**, **Empty** (a bare
+entity named Entity: a transform, an identity and a name), and every component that
+declares itself placeable (`SENCHA_PLACEABLE`, pictured by `SENCHA_PLACE_ICON`):
+the engine's **Point Light** and **Spot Light**, and whatever a game adds, such
+as the template's **Player Start**. Those place a new entity carrying just that
+component at its defaults, named after it and selected, as one step; no prefab
+is in hand for them.
 
 **Hierarchy** (Tab, or a part of the breadcrumb): a sheet on the left edge,
 opened where there is room. The world, its graphs and zones, and the edited

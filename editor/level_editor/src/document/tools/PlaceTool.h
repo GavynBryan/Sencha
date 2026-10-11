@@ -5,6 +5,7 @@
 
 #include <math/Vec.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,8 +15,8 @@
 //
 // Stamps what it places where the pointer points: on the nearest surface, or on
 // the working grid where the ray misses everything. Its variants are the prefab
-// in hand, and every component that declares itself placeable (a light, a
-// player start), which is placed as a new entity carrying just that component.
+// in hand, an empty entity, and every component that declares itself placeable
+// (a light, a player start), placed as a new entity carrying just that component.
 // While it hovers, a cross marks the spot; each click places one, turned by the
 // tool's yaw, as one undoable step with it selected.
 //=============================================================================
@@ -23,8 +24,8 @@ class PlaceTool final : public ITool
 {
 public:
     [[nodiscard]] std::string_view GetId() const override { return "place"; }
-    [[nodiscard]] std::string_view GetDisplayName() const override { return "Place"; }
-    [[nodiscard]] IconId GetIcon() const override { return IconId::Box; }
+    [[nodiscard]] std::string_view GetDisplayName() const override { return "Entity"; }
+    [[nodiscard]] IconId GetIcon() const override { return IconId::Pawn; }
     [[nodiscard]] Shortcut GetShortcut() const override;
     [[nodiscard]] bool UsesTransformGizmo() const override { return false; }
     [[nodiscard]] std::span<const ResourceRole> Resources() const override;
@@ -48,14 +49,26 @@ private:
     void RefreshKinds() const;
     [[nodiscard]] const std::string* ChosenLabel() const;
 
-    // The prefab in hand has no component key.
+    enum class PlaceSource : std::uint8_t
+    {
+        Prefab,
+        Empty,
+        Component,
+    };
+    struct PlaceChoice
+    {
+        PlaceSource Source = PlaceSource::Prefab;
+        std::string ComponentKey = {};
+        bool operator==(const PlaceChoice&) const = default;
+    };
     struct PlaceKind
     {
         std::string Label;
-        std::string ComponentKey;
+        PlaceChoice What;
+        IconId Icon = IconId::None;
     };
     mutable std::vector<PlaceKind> Kinds;
     mutable std::vector<Variant> KindChoices;
-    std::string Chosen;
+    PlaceChoice Chosen;
     int YawDegrees = 0;
 };

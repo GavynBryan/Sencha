@@ -119,6 +119,7 @@ struct ComponentFacts
     std::string SceneChunk;
     std::string VisualMesh;
     std::string Placeable;
+    std::string PlaceIcon;
     bool Replicated = false;
     bool Predicted = false;
     bool NonRemovable = false;
@@ -275,6 +276,7 @@ public:
             else if (Split(text, "sencha.scene_chunk=", value))   facts.SceneChunk = value;
             else if (Split(text, "sencha.visual_mesh=", value))   facts.VisualMesh = value;
             else if (Split(text, "sencha.placeable=", value))     facts.Placeable = value;
+            else if (Split(text, "sencha.place_icon=", value))    facts.PlaceIcon = value;
             else if (text == "sencha.replicated")                 facts.Replicated = true;
             else if (text == "sencha.predicted")                  facts.Predicted = true;
             else if (text == "sencha.non_removable")              facts.NonRemovable = true;
@@ -1390,6 +1392,8 @@ bool WriteCompanion(const std::string& path,
             out << "    static constexpr std::string_view VisualMeshAsset = " << Quoted(component.VisualMesh) << ";\n";
         if (!component.Placeable.empty())
             out << "    static constexpr std::string_view PlaceableLabel = " << Quoted(component.Placeable) << ";\n";
+        if (!component.PlaceIcon.empty())
+            out << "    static constexpr std::string_view PlaceableIcon = " << Quoted(component.PlaceIcon) << ";\n";
 
         if (!component.SchemaName.empty())
             EmitFields(out, component);

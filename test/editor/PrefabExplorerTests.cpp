@@ -11,7 +11,7 @@
 #include <string>
 
 // The project's scene sources as prefabs the shelf offers: scene files, never
-// the level being edited, and choosing one puts it in hand with the Place tool
+// the level being edited, and choosing one puts it in hand with the Entity tool
 // taken up.
 namespace
 {

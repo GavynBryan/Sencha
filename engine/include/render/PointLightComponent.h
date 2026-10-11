@@ -10,6 +10,7 @@ struct SENCHA_COMPONENT("PointLight")
        SENCHA_SCHEMA("PointLight")
        SENCHA_SCENE_CHUNK("PLGT")
        SENCHA_PLACEABLE("Point Light")
+       SENCHA_PLACE_ICON("light-bulb")
 PointLightComponent
 {
     SENCHA_FIELD("color")

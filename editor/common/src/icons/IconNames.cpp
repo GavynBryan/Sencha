@@ -15,6 +15,11 @@ std::string_view IconName(IconId id)
     case IconId::Plane: return "plane";
     case IconId::Cylinder: return "cylinder";
     case IconId::Light: return "light";
+    case IconId::LightBulb: return "light-bulb";
+    case IconId::LightSpot: return "light-spot";
+    case IconId::Flag: return "flag";
+    case IconId::Pawn: return "pawn";
+    case IconId::Empty: return "empty";
     case IconId::Camera: return "camera";
     case IconId::World: return "world";
     case IconId::Local: return "local";
@@ -63,4 +68,12 @@ std::string_view IconName(IconId id)
         break;
     }
     return {};
+}
+
+IconId IconByName(std::string_view name)
+{
+    for (int id = 1; id < static_cast<int>(IconId::Count); ++id)
+        if (!name.empty() && IconName(static_cast<IconId>(id)) == name)
+            return static_cast<IconId>(id);
+    return IconId::None;
 }

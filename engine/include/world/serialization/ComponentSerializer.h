@@ -189,9 +189,9 @@ public:
         return ComponentRemovable<Component>::Value;
     }
 
-    std::string_view PlacementLabel() const override
+    ComponentPlacementFacts Placement() const override
     {
-        return ComponentPlacement<Component>::Label;
+        return ComponentPlacement<Component>::Value;
     }
 
     std::vector<std::byte> DefaultBytes() const override

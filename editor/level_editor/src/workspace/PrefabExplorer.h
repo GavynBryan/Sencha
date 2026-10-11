@@ -10,7 +10,7 @@ class EditorWorkspace;
 // PrefabExplorer
 //
 // The project's scene sources as prefabs to place, chosen from the shelf.
-// Choosing one puts it in hand and takes up the Place tool. The level being
+// Choosing one puts it in hand and takes up the Entity tool. The level being
 // edited is never offered as a prefab of itself.
 //=============================================================================
 class PrefabExplorer

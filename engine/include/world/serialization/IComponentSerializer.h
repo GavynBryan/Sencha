@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/EditorVisual.h>
 #include <core/metadata/RuntimeSchema.h>
 #include <core/serialization/Archive.h>
@@ -74,10 +75,10 @@ struct IComponentSerializer
     // than shifting existing ones. (core/metadata/ComponentRemovable.h)
     virtual bool IsRemovable() const { return true; }
 
-    // What a tool may place an entity carrying just this component as; empty
-    // when it is not a thing of its own. Pure tooling metadata. Declared last
-    // so adding it appends a vtable slot. (core/metadata/ComponentPlacement.h)
-    virtual std::string_view PlacementLabel() const { return {}; }
+    // What a tool may place an entity carrying just this component as; an
+    // empty label when it is not a thing of its own. Pure tooling metadata.
+    // Declared last so adding it appends a vtable slot.
+    virtual ComponentPlacementFacts Placement() const { return {}; }
 
     virtual ~IComponentSerializer() = default;
 };

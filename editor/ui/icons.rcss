@@ -26,13 +26,17 @@
 .icon-cut { decorator: image(icons/cut.svg contain); }
 .icon-cylinder { decorator: image(icons/cylinder.svg contain); }
 .icon-delete { decorator: image(icons/delete.svg contain); }
+.icon-empty { decorator: image(icons/empty.svg contain); }
 .icon-eye-off { decorator: image(icons/eye-off.svg contain); }
 .icon-eye { decorator: image(icons/eye.svg contain); }
+.icon-flag { decorator: image(icons/flag.svg contain); }
 .icon-folder { decorator: image(icons/folder.svg contain); }
 .icon-grid-frame { decorator: image(icons/grid-frame.svg contain); }
 .icon-grid { decorator: image(icons/grid.svg contain); }
 .icon-hammer { decorator: image(icons/hammer.svg contain); }
 .icon-light { decorator: image(icons/light.svg contain); }
+.icon-light-bulb { decorator: image(icons/light-bulb.svg contain); }
+.icon-light-spot { decorator: image(icons/light-spot.svg contain); }
 .icon-lock { decorator: image(icons/lock.svg contain); }
 .icon-local { decorator: image(icons/local.svg contain); }
 .icon-mode-edge { decorator: image(icons/mode-edge.svg contain); }
@@ -40,6 +44,7 @@
 .icon-mode-object { decorator: image(icons/mode-object.svg contain); }
 .icon-mode-vertex { decorator: image(icons/mode-vertex.svg contain); }
 .icon-move { decorator: image(icons/move.svg contain); }
+.icon-pawn { decorator: image(icons/pawn.svg contain); }
 .icon-pivot { decorator: image(icons/pivot.svg contain); }
 .icon-plane { decorator: image(icons/plane.svg contain); }
 .icon-play { decorator: image(icons/play.svg contain); }

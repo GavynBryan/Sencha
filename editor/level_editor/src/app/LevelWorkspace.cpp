@@ -1394,7 +1394,7 @@ bool LevelWorkspace::DropAsset(const ProjectFile& file, Vec2d point)
     if (document.HasFilePath()
         && std::filesystem::equivalent(std::filesystem::path(document.GetDisplayName()), file.FilePath, ec))
         return false;
-    // Where the Place tool would put it: on the surface under it, else on the grid.
+    // Where the Entity tool would put it: on the surface under it, else on the grid.
     std::optional<Vec3d> at;
     if (const std::optional<SurfaceHit> hit = Workspace->Picking.PickSurface(*viewport, point, document.GetScene()))
         at = hit->Point;

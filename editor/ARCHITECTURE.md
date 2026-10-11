@@ -348,7 +348,7 @@ firewall above.
   from with `ChooseInExplorer`); the Level's materials are
   `workspace/MaterialExplorer`, which the shell shows as a tray and opens from
   its `explorer.materials` action or the cartridge; its prefabs are
-  `workspace/PrefabExplorer` (Shift+P), whose choice takes up the Place tool,
+  `workspace/PrefabExplorer` (Shift+P), whose choice takes up the Entity tool,
   and its structure is one outline, `workspace/HierarchyOutline` (Tab): the
   world, its graphs and zones (`workspace/PartitionOutline`) with the edited
   zone's entities (`workspace/WorldExplorer`) under it, and a level that is

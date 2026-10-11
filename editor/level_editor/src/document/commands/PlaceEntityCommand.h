@@ -13,16 +13,18 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
-// Places a new entity carrying one placeable component at its defaults -- a
-// light, a player start -- named after it and selected, as one step. The first
-// execute builds it; a redo restores what that built, its identity included.
-class PlaceComponentEntityCommand final : public ICommand
+// Places a new entity, named and selected, as one step: carrying one placeable
+// component at its defaults (a light, a player start) and named after it, or,
+// with no component key, empty and named Entity. The first execute builds it; a redo restores
+// what that built, its identity included.
+class PlaceEntityCommand final : public ICommand
 {
 public:
-    PlaceComponentEntityCommand(std::string componentKey, Transform3f placement, EditorDocument& document,
-                                SelectionService& selection)
+    PlaceEntityCommand(std::string componentKey, Transform3f placement, EditorDocument& document,
+                       SelectionService& selection)
         : ComponentKey(std::move(componentKey))
         , Placement(placement)
         , Document(document)
@@ -56,10 +58,12 @@ public:
 private:
     [[nodiscard]] EntityId Build()
     {
-        IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(ComponentKey);
-        if (serializer == nullptr || serializer->PlacementLabel().empty())
-            return {};
         EditorScene& scene = Document.GetScene();
+        if (ComponentKey.empty())
+            return Create(scene, "Entity");
+        IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(ComponentKey);
+        if (serializer == nullptr || serializer->Placement().Label.empty())
+            return {};
         World& world = scene.GetRegistry().Components;
         serializer->RegisterStorage(scene.GetRegistry());
         const ComponentId component = world.GetComponentIdByType(serializer->TypeId());
@@ -67,13 +71,19 @@ private:
         if (meta == nullptr)
             return {};
 
-        const std::string name = scene.NextEntityName(serializer->PlacementLabel());
-        const EntityId entity = scene.CreateEntity(Placement.Position);
-        scene.SetTransform(entity, Placement);
-        scene.SetComponent(entity, EntityNameComponent{ InlineString<64>(name) });
+        const EntityId entity = Create(scene, serializer->Placement().Label);
         const std::vector<std::byte> defaults = serializer->DefaultBytes();
         world.AddComponentRaw(entity, component, defaults.size() == meta->Size ? defaults.data() : nullptr,
                               meta->Size, meta->Alignment);
+        return entity;
+    }
+
+    [[nodiscard]] EntityId Create(EditorScene& scene, std::string_view name) const
+    {
+        const std::string unique = scene.NextEntityName(name);
+        const EntityId entity = scene.CreateEntity(Placement.Position);
+        scene.SetTransform(entity, Placement);
+        scene.SetComponent(entity, EntityNameComponent{ InlineString<64>(unique) });
         return entity;
     }
 

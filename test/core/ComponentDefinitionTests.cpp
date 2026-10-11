@@ -49,6 +49,7 @@ struct ComponentDefinition<DefinedFull>
     static constexpr bool Removable  = false;
     static constexpr std::string_view VisualMeshAsset = "camera.glb";
     static constexpr std::string_view PlaceableLabel = "Full Thing";
+    static constexpr std::string_view PlaceableIcon = "box";
 
     static auto Fields()
     {
@@ -225,9 +226,11 @@ TEST(ComponentSetTest, OwnershipIsCheckedAcrossTheCollection)
 
 TEST(ComponentDefinitionProjection, APlaceableComponentOffersItselfUnderItsLabel)
 {
-    EXPECT_EQ(ComponentPlacement<DefinedFull>::Label, "Full Thing");
-    EXPECT_TRUE(ComponentPlacement<DefinedIdentityOnly>::Label.empty()) << "a component is placeable only by saying so";
+    EXPECT_EQ(ComponentPlacement<DefinedFull>::Value.Label, "Full Thing");
+    EXPECT_EQ(ComponentPlacement<DefinedFull>::Value.Icon, "box");
+    EXPECT_TRUE(ComponentPlacement<DefinedIdentityOnly>::Value.Label.empty())
+        << "a component is placeable only by saying so";
 
     const ComponentSerializer<DefinedFull> serializer;
-    EXPECT_EQ(serializer.PlacementLabel(), "Full Thing") << "a tool reads the label without naming the type";
+    EXPECT_EQ(serializer.Placement().Label, "Full Thing") << "a tool reads the facts without naming the type";
 }

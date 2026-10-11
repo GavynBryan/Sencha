@@ -27,6 +27,11 @@ enum class IconId : std::uint8_t
     Plane,
     Cylinder,
     Light,
+    LightBulb,
+    LightSpot,
+    Flag,
+    Pawn,
+    Empty,
     Camera,
 
     // Grid and snapping

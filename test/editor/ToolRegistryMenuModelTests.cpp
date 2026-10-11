@@ -125,3 +125,16 @@ TEST_F(ToolRegistryMenuModelTest, AChoiceWithAVariantGoesThroughTheRegistrysVari
     EXPECT_EQ(Tools().GetActiveTool()->GetId(), "select");
     EXPECT_EQ(Workspace.MeshEdit.GetElementKind(), MeshElementKind::Face);
 }
+
+// The wheel's keys are pictures and its caption the words, so an entry without
+// an icon would be a key with nothing on it but its name.
+TEST_F(ToolRegistryMenuModelTest, EveryToolAndVariantIsPictured)
+{
+    ToolRegistryMenuModel menu(Tools());
+    for (int i = 0; i < menu.Count(); ++i)
+    {
+        EXPECT_NE(menu.Item(i).Icon, IconId::None) << menu.Item(i).Label;
+        for (const IRadialMenuModel::MenuItem& variant : menu.Variants(i))
+            EXPECT_NE(variant.Icon, IconId::None) << menu.Item(i).Label << " / " << variant.Label;
+    }
+}
