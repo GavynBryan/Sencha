@@ -280,6 +280,18 @@ if(EDITOR_TEST_SOURCES AND TARGET level_authoring)
     list(APPEND SENCHA_TEST_TARGETS editor_tests)
 endif()
 
+# The headless operations host end to end: a fixture level in, one line of JSON
+# per script line out, and no answer an error.
+if(TARGET kyusu_batch)
+    add_test(NAME kyusu_batch.AnswersAFixtureLevel
+        COMMAND kyusu_batch
+            --level "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/assets/levels/box.sscene"
+            --script "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/operations/level_queries.txt")
+    set_tests_properties(kyusu_batch.AnswersAFixtureLevel PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"operation\":\"query.near\",\"status\":\"ok\""
+        FAIL_REGULAR_EXPRESSION "\"status\":\"error\"")
+endif()
+
 # The transport, protocol, and channel layers. Their own target because they
 # need no world, no graphics, and no content: the fuzz and impairment suites run
 # in a fraction of a second and are the ones worth running on every change.

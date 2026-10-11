@@ -3,13 +3,16 @@
 
 #include "operations/EditorOperations.h"
 #include "operations/OperationArguments.h"
+#include "operations/OperationScript.h"
 
 #include <core/console/ConsoleService.h>
 #include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -178,43 +181,77 @@ TEST(EditorOperations, ConsoleCommandsFollowTheirProvider)
     EXPECT_EQ(console.ExecuteLine("measure.echo label=hall").Status, ConsoleStatus::UnknownCommand);
 }
 
-TEST(OperationArguments, TokensBecomeOneArgumentObject)
+TEST(OperationArguments, TextBecomesOneArgumentObject)
 {
     struct Case
     {
-        std::vector<std::string> Tokens;
+        const char* Text;
         const char* Expected;
     };
     const Case cases[] = {
-        { {}, "{}" },
-        { { R"({point: [0, 1, 0], radius: 8})" }, R"({"point":[0,1,0],"radius":8})" },
-        { { "radius=8", "point=[0,1,0]", "label=east hall" },
-          R"({"radius":8,"point":[0,1,0],"label":"east hall"})" },
-        { { "flag=true", "name=\"8\"" }, R"({"flag":true,"name":"8"})" },
+        { "", "{}" },
+        { "  {point: [0, 1, 0], radius: 8, label: 'east hall'}", R"({"point":[0,1,0],"radius":8,"label":"east hall"})" },
+        { "radius=8 point=[0, 1, 0] label='east hall'", R"({"radius":8,"point":[0,1,0],"label":"east hall"})" },
+        { "subject=0123456789abcdef flag=true name=\"8\"", R"({"subject":"0123456789abcdef","flag":true,"name":"8"})" },
+        { "subject=@Hall shape={w: 1, h: 2}", R"({"subject":"@Hall","shape":{"w":1,"h":2}})" },
     };
     for (const Case& c : cases)
     {
         std::string error;
-        const std::optional<JsonValue> arguments = OperationArgumentsFromTokens(c.Tokens, error);
-        ASSERT_TRUE(arguments.has_value()) << error;
-        const JsonValue expected = Parse(c.Expected);
-        for (const auto& [key, value] : expected.AsObject())
-        {
-            const JsonValue* actual = arguments->Find(key);
-            ASSERT_NE(actual, nullptr) << key;
-            EXPECT_EQ(actual->IsString(), value.IsString()) << key;
-        }
-        EXPECT_EQ(arguments->AsObject().size(), expected.AsObject().size());
+        const std::optional<JsonValue> arguments = OperationArgumentsFromText(c.Text, error);
+        ASSERT_TRUE(arguments.has_value()) << c.Text << ": " << error;
+        EXPECT_EQ(JsonStringify(*arguments), JsonStringify(Parse(c.Expected))) << c.Text;
     }
 }
 
-TEST(OperationArguments, MalformedTokensAreRefused)
+TEST(OperationArguments, MalformedTextIsRefused)
 {
-    for (const std::vector<std::string>& tokens : std::vector<std::vector<std::string>>{
-             { "radius" }, { "=8" }, { "radius=1", "radius=2" }, { "{radius: }" } })
+    for (const char* text : { "radius", "=8", "radius=1 radius=2", "{radius: }",
+                              "label='open", "point=[0, 1" })
     {
         std::string error;
-        EXPECT_FALSE(OperationArgumentsFromTokens(tokens, error).has_value()) << tokens.front();
-        EXPECT_FALSE(error.empty());
+        EXPECT_FALSE(OperationArgumentsFromText(text, error).has_value()) << text;
+        EXPECT_FALSE(error.empty()) << text;
     }
+}
+
+TEST(EditorOperations, ConsoleArgumentsSurviveTheConsoleTokenizer)
+{
+    ConsoleService console;
+    EditorOperations operations;
+    operations.ExposeTo(console.Registry());
+    std::vector<std::string> errors;
+    ASSERT_TRUE(operations.Register("test", One(Echo()), errors));
+
+    const ConsoleResult called = console.ExecuteLine("measure.echo {label: 'east hall', length: 3}");
+    ASSERT_TRUE(called.Succeeded());
+    const JsonValue answer = Parse(called.Output.back().Text);
+    EXPECT_EQ(answer.Find("data")->Find("label")->AsString(), "east hall");
+}
+
+TEST(OperationScript, AnswersEveryLineInOrderAndCountsErrors)
+{
+    EditorOperations operations;
+    std::vector<std::string> errors;
+    ASSERT_TRUE(operations.Register("test", One(Echo()), errors));
+
+    std::istringstream script("# a comment\n"
+                              "\n"
+                              "measure.echo label='east hall'\n"
+                              "measure.nothing\n"
+                              "measure.echo {length: 4, label: 'x'}\n"
+                              "measure.echo label='open\n");
+    std::ostringstream answers;
+    EXPECT_EQ(RunOperationScript(script, answers, operations), 2u);
+
+    std::istringstream lines(answers.str());
+    std::vector<JsonValue> parsed;
+    for (std::string line; std::getline(lines, line);)
+        parsed.push_back(Parse(line));
+    ASSERT_EQ(parsed.size(), 4u);
+    EXPECT_EQ(Status(parsed[0]), "ok");
+    EXPECT_EQ(parsed[0].Find("data")->Find("label")->AsString(), "east hall");
+    EXPECT_EQ(Code(parsed[1]), "operation.unknown");
+    EXPECT_DOUBLE_EQ(parsed[2].Find("data")->Find("length")->AsNumber(), 4.0);
+    EXPECT_EQ(Code(parsed[3]), "script.malformed");
 }

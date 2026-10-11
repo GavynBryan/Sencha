@@ -177,13 +177,18 @@ void EditorOperations::RegisterCommand(EditorOperationId id)
     (void)Console->RegisterCommand({
         .Name = definition.Name,
         .Owner = CommandOwner(Catalog_.Provider(id)),
-        .Usage = definition.Name + " [{json5 arguments} | name=value ...]",
+        .Usage = definition.Name + " [{json5 arguments} | name=value ...]  (quote text with ')",
         .Help = definition.Description,
         .Callback = [this, name = definition.Name](ConsoleExecutionContext&,
                                                    std::span<const std::string> tokens) {
             ConsoleResult result;
+            // The console has already split and unquoted the line, so the tokens
+            // are rejoined; strings with spaces are written in single quotes.
+            std::string text;
+            for (const std::string& token : tokens)
+                text.append(text.empty() ? "" : " ").append(token);
             std::string error;
-            const std::optional<JsonValue> arguments = OperationArgumentsFromTokens(tokens, error);
+            const std::optional<JsonValue> arguments = OperationArgumentsFromText(text, error);
             if (!arguments)
             {
                 result.Status = ConsoleStatus::InvalidArguments;
