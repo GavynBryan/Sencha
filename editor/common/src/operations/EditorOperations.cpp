@@ -48,7 +48,8 @@ namespace
                      std::string_view code,
                      std::string_view message,
                      std::span<const DataValidationError> problems,
-                     JsonValue data)
+                     JsonValue data,
+                     JsonValue detail = {})
     {
         JsonValue::Object answer{
             { "operation", JsonValue(std::string(operation)) },
@@ -60,6 +61,8 @@ namespace
             answer.emplace_back("message", JsonValue(std::string(message)));
         if (!problems.empty())
             answer.emplace_back("problems", Problems(problems));
+        if (!detail.IsNull())
+            answer.emplace_back("detail", std::move(detail));
         if (status == EditorOperationStatus::Ok)
             answer.emplace_back("data", std::move(data));
         return JsonValue(std::move(answer));
@@ -73,12 +76,14 @@ EditorOperationOutcome EditorOperationOutcome::Ok(JsonValue data)
     return outcome;
 }
 
-EditorOperationOutcome EditorOperationOutcome::Refused(std::string code, std::string message)
+EditorOperationOutcome EditorOperationOutcome::Refused(std::string code, std::string message,
+                                                       JsonValue detail)
 {
     EditorOperationOutcome outcome;
     outcome.Status = EditorOperationStatus::Refused;
     outcome.Code = std::move(code);
     outcome.Message = std::move(message);
+    outcome.Detail = std::move(detail);
     return outcome;
 }
 
@@ -144,7 +149,8 @@ JsonValue EditorOperations::Invoke(std::string_view name, const JsonValue& argum
 
     EditorOperationOutcome outcome = Executors[EditorOperationCatalog::IndexOf(id)](checked);
     if (outcome.Status != EditorOperationStatus::Ok)
-        return Answer(name, outcome.Status, outcome.Code, outcome.Message, {}, {});
+        return Answer(name, outcome.Status, outcome.Code, outcome.Message, {}, {},
+                      std::move(outcome.Detail));
 
     // A client reads answers by their declared shape; an answer off it is the
     // operation's defect, reported as such rather than handed on.

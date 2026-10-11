@@ -26,9 +26,13 @@ struct EditorOperationOutcome
     std::string Code;
     std::string Message;
     JsonValue Data;
+    // With a refusal, what a client needs to retry, e.g. the candidates of an
+    // ambiguous name.
+    JsonValue Detail;
 
     [[nodiscard]] static EditorOperationOutcome Ok(JsonValue data);
-    [[nodiscard]] static EditorOperationOutcome Refused(std::string code, std::string message);
+    [[nodiscard]] static EditorOperationOutcome Refused(std::string code, std::string message,
+                                                        JsonValue detail = {});
 };
 
 // Receives the arguments already checked against the operation's parameters,
@@ -44,7 +48,7 @@ struct EditorOperationEntry
 // The operation catalog and the executors bound to it. Every result, whatever
 // went wrong, is one JSON object:
 //   { operation, status: "ok" | "refused" | "error", code?, message?,
-//     problems?: [{path, message}], data? }
+//     problems?: [{path, message}], detail?, data? }
 class EditorOperations
 {
 public:
