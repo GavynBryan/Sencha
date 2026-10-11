@@ -5,6 +5,7 @@
 #include <ecs/EntityId.h>
 
 #include <functional>
+#include <string_view>
 
 class ComponentSerializerRegistry;
 class Registry;
@@ -26,6 +27,10 @@ struct SceneSerializationContext;
 // Populates EditorSceneSerializers(). Idempotent; call once at editor startup
 // before any save or load.
 void RegisterDocumentSerializers();
+
+// Whether a component key names authoring data no cooked scene carries: the
+// editor-only components RegisterDocumentSerializers declares as such.
+[[nodiscard]] bool IsEditorOnlyComponent(std::string_view jsonKey);
 
 // The loaded game module's gameplay vocabulary -- its tags, attributes,
 // abilities, and locomotion modes -- as something every authoring document can

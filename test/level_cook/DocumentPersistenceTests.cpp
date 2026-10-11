@@ -196,12 +196,23 @@ namespace
             for (const auto& [key, value] : components->AsObject())
             {
                 EXPECT_NE(key, "name") << "authored names must not reach the cook";
-                EXPECT_NE(key, "baked_brush");
+                EXPECT_FALSE(IsEditorOnlyComponent(key)) << key;
             }
         }
 
         std::error_code ec;
         fs::remove_all(root, ec);
+    }
+
+    // The cook strips by declaration, so the declaration is the contract: the
+    // authoring-only components are declared, and runtime components are not --
+    // including Nav Link, which reaches the runtime through the navigation file.
+    TEST_F(DocumentPersistenceTest, EditorOnlyComponentsAreDeclaredAtRegistration)
+    {
+        for (std::string_view key : { "name", "brush", "baked_brush" })
+            EXPECT_TRUE(IsEditorOnlyComponent(key)) << key;
+        for (std::string_view key : { "Transform", "Nav Link", "player_start", "unknown" })
+            EXPECT_FALSE(IsEditorOnlyComponent(key)) << key;
     }
 } // namespace
 

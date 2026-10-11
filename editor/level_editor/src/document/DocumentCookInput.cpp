@@ -335,17 +335,15 @@ JsonValue BuildPassthroughScene(const EditorDocument& document,
         if (JsonValue* components = FindMutable(entityJson, "components");
             components != nullptr && components->IsObject())
         {
-            // Editor-only annotations: the bake linkage and the authored
-            // display name. Neither exists in the runtime schema, and an
-            // unknown component key fails the zone import by design.
+            // Editor-only components are absent from the runtime schema, and
+            // an unknown component key fails the zone import by design.
             std::erase_if(components->AsObject(),
-                [](const auto& field)
-                { return field.first == "baked_brush" || field.first == "name"; });
+                [](const auto& field) { return IsEditorOnlyComponent(field.first); });
 
             // Navigation links are cooked into the zone's navigation file;
             // the runtime reads them from there, never from the scene.
             std::erase_if(components->AsObject(),
-                [](const auto& field) { return field.first == "Nav Link"; });
+                [](const auto& field) { return field.first == TypeSchema<NavLink>::Name; });
 
             // Expanded placement members carry their instance identity into
             // the cooked scene (locked decision D1): the placement id, and
