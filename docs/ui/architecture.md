@@ -168,6 +168,32 @@ covers both directions.
 Routing order mirrors the z-order in §4: diagnostics, then authored UI, then the
 application (and an editor's own shell).
 
+**A pointer gesture has one owner.** From a press in a window to the release of
+the last button held there, that window's pointer events -- moves, presses,
+releases, the wheel -- go only to whoever claimed the press: a consumer, or the
+application when none did. The router keeps this per window, and it is the only
+copy: a drag in the world carried over a menu never hovers or clicks it, and a
+menu's drag carried over the world never reaches the application. Within the
+authored UI the same rule holds between surfaces: the surface holding a press
+hears its window's pointer alone until it is let go.
+
+A gesture whose release its owner will not see is ended, never left open. The
+window losing focus, being hidden or minimized ends it, and the owning consumer
+is told (`GestureEnded`); the application hears the window event itself. A host
+that takes on a gesture a document began -- the editor's number scrub -- calls
+`PlatformEventRouter::HandGestureToApplication`, which ends the document's side
+and gives the rest, release included, to the application; it returns false when
+the release has been heard already. The authored UI ends a press by letting go
+with nothing under the pointer: nothing is clicked, and a drag ends where it
+last was. A surface that stops taking input, or moves to another window, ends
+its press the same way.
+
+The platform frame follows the same rule. A window drawing its own decorations
+answers the platform's hit test as client everywhere while a button is held
+(`WindowFrameProbe::PointerHeld`): SDL's Wayland backend acts on the last answer
+for every left-button event, a release included, and a release over the caption
+or an edge was otherwise turned into a window move and never delivered.
+
 A surface that consumed input **publishes** it in `InputFrame::UiCapture` rather
 than hiding the events. Two kinds of reader care:
 

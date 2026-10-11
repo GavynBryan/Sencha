@@ -186,6 +186,10 @@ public:
     // is decided separately, by an InputContextLease the host takes.
     [[nodiscard]] bool ProcessPlatformEvent(const union SDL_Event& event);
 
+    // Ends a press whose release will not come: nothing is clicked, and a
+    // drag stops where it is.
+    void EndPointerGesture(std::uint32_t platformWindowId);
+
     // Which devices the UI is consuming. Published, never compensated for: the
     // device snapshot still records everything that happened, and this is what
     // tells a reader of raw state which of it was not meant for them.

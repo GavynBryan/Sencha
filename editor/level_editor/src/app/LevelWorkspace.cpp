@@ -12,7 +12,6 @@
 #include "input/ViewportToolDispatcher.h"
 #include "input/OriginViewportStamp.h"
 #include "input/SdlEventTranslation.h"
-#include "input/UiInputGuard.h"
 #include "commands/CompositeCommand.h"
 #include "document/BrushBake.h"
 #include "document/DocumentFileActions.h"
@@ -471,10 +470,6 @@ void LevelWorkspace::BuildInput()
     }
 
     Router = std::make_unique<InputRouter>();
-    // The window's UI is the top layer of the input stack: events it wants are
-    // consumed here before navigation, tools, or shortcuts can act on them.
-    // (The guard adds pointer capture so drags survive crossing the UI.)
-    Router->AddHandler(MakeUiInputGuard([this] { return WindowUiCapture(); }));
     // The map, while it shows, takes the pointer and Escape from everything
     // under it.
     Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return OnMapInput(e); });
@@ -1223,11 +1218,6 @@ void LevelWorkspace::OfferProfileActions()
     OfferedProfiles = std::move(offered);
 }
 
-bool LevelWorkspace::HoldsPointer() const
-{
-    return Router != nullptr && Router->PointerCaptured();
-}
-
 WorkspaceDocumentFacet LevelWorkspace::Document() const
 {
     if (Files == nullptr)
@@ -1348,7 +1338,7 @@ void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_vie
 UiInputCapture LevelWorkspace::WindowUiCapture() const
 {
     UiService* ui = EnginePtr != nullptr ? EnginePtr->TryUi() : nullptr;
-    return ui != nullptr ? ui->Capture() : UiInputCapture{};
+    return ui != nullptr && Window != nullptr ? ui->Capture(Window->GetId()) : UiInputCapture{};
 }
 
 void LevelWorkspace::PublishProblems()

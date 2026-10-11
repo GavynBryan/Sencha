@@ -164,6 +164,11 @@ bool UiService::ProcessPlatformEvent(const SDL_Event& event)
     return Runtime->ProcessPlatformEvent(event);
 }
 
+void UiService::EndPointerGesture(std::uint32_t platformWindowId)
+{
+    Runtime->EndPointerGesture(platformWindowId);
+}
+
 UiInputCapture UiService::Capture() const
 {
     return Runtime->Capture();

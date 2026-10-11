@@ -120,6 +120,8 @@ public:
     [[nodiscard]] bool ProcessPlatformEvent(const union SDL_Event& event);
 
     // What the UI is currently consuming, for a reader of raw device state.
+    void EndPointerGesture(std::uint32_t platformWindowId);
+
     [[nodiscard]] UiInputCapture Capture() const;
     [[nodiscard]] UiInputCapture Capture(std::uint32_t platformWindowId) const;
 
@@ -228,10 +230,10 @@ private:
         int PointerX = 0;
         int PointerY = 0;
         bool PointerInside = false;
-        // A press landed inside and has not been released. The drag follows the
-        // pointer wherever it goes until it is; leaving the placement does not
-        // end an interaction, releasing the button does.
-        bool PointerOwned = false;
+        // The buttons of presses the document took, bit per document button,
+        // until each is released. While any is held the surface alone hears
+        // its window's pointer, wherever the pointer goes.
+        std::uint32_t HeldButtons = 0;
     };
 
     // One open document, and everything whose lifetime it decides.
@@ -335,6 +337,8 @@ private:
                                          Rml::Element& element, UiElementRef ref);
 
     [[nodiscard]] Surface* ResolveSurface(UiSurfaceId surface);
+    static void EndPress(Surface& surface);
+    [[nodiscard]] Surface* PointerHolder(std::uint32_t platformWindowId);
     [[nodiscard]] const Surface* ResolveSurface(UiSurfaceId surface) const;
     [[nodiscard]] Screen* ResolveScreen(UiScreenHandle screen);
     [[nodiscard]] const Screen* ResolveScreen(UiScreenHandle screen) const;

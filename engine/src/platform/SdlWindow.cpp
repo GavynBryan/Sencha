@@ -44,9 +44,8 @@ namespace
         return flags;
     }
 
-    // SDL asks what a point means on every press and, for the cursor shape,
-    // on motion, inside its event dispatch on the main thread. The answer
-    // comes from the window's snapshot and state, nothing else.
+    // Asked on motion inside SDL's dispatch; Wayland acts on the last answer
+    // for every left-button event, a release included.
     SDL_HitTestResult FrameHitTest(SDL_Window*, const SDL_Point* point, void* data)
     {
         const auto* window = static_cast<const SdlWindow*>(data);
@@ -237,7 +236,7 @@ void SdlWindow::SetFrameRegions(const WindowFrameRegions& regions)
 
 WindowFrameHit SdlWindow::ClassifyFrameHit(int32_t x, int32_t y) const
 {
-    if (!Window || SDL_GetWindowRelativeMouseMode(Window))
+    if (!Window)
         return WindowFrameHit::Client;
     const auto flags = SDL_GetWindowFlags(Window);
     const WindowFrameProbe probe{
@@ -246,6 +245,7 @@ WindowFrameHit SdlWindow::ClassifyFrameHit(int32_t x, int32_t y) const
         .Extent = GetExtent(),
         .Resizable = (flags & SDL_WINDOW_RESIZABLE) != 0,
         .Maximized = (flags & SDL_WINDOW_MAXIMIZED) != 0,
+        .PointerHeld = SDL_GetWindowRelativeMouseMode(Window) || SDL_GetMouseState(nullptr, nullptr) != 0,
     };
     return ClassifyWindowFrameHit(FrameRegions, probe);
 }

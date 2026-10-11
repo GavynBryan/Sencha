@@ -858,14 +858,11 @@ void AnimationWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
     }
     if (ctx.Handled || Viewport == nullptr)
         return;
-    UiService* ui = EngineRef.TryUi();
-    const auto onStage = [&](float x, float y, std::uint32_t window) {
-        return !(ui != nullptr && ui->Capture(window).Mouse) && ContentRect.Contains(Vec2d(x, y));
-    };
+    const auto onStage = [&](float x, float y) { return ContentRect.Contains(Vec2d(x, y)); };
     switch (event.type)
     {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (event.button.button == SDL_BUTTON_LEFT && onStage(event.button.x, event.button.y, event.button.windowID)
+        if (event.button.button == SDL_BUTTON_LEFT && onStage(event.button.x, event.button.y)
             && Pad != nullptr && Pad->Contains(Vec2d(event.button.x, event.button.y)))
         {
             Drag = StageDrag::Pad;
@@ -873,7 +870,7 @@ void AnimationWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
             ctx.Handled = true;
         }
         else if (event.button.button == SDL_BUTTON_LEFT
-                 && onStage(event.button.x, event.button.y, event.button.windowID))
+                 && onStage(event.button.x, event.button.y))
         {
             Drag = StageDrag::Pressed;
             PressedAt = Vec2d(event.button.x, event.button.y);
@@ -909,7 +906,7 @@ void AnimationWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
         }
         break;
     case SDL_EVENT_MOUSE_WHEEL:
-        if (onStage(event.wheel.mouse_x, event.wheel.mouse_y, event.wheel.windowID))
+        if (onStage(event.wheel.mouse_x, event.wheel.mouse_y))
         {
             Viewport->Zoom(event.wheel.y);
             ctx.Handled = true;

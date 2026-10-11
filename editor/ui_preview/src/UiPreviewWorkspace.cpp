@@ -385,11 +385,8 @@ void UiPreviewWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
     if (!Session || ctx.Handled || !Visible)
         return;
     const SDL_Event& event = ctx.Event;
-    UiService& ui = Session->Service();
     const bool inspecting = Session->Mode() == UiPreviewSession::PointerMode::Inspect;
-    const auto onContent = [&](float x, float y, std::uint32_t window) {
-        return !ui.Capture(window).Mouse && ContentRect.Contains(Vec2d(x, y));
-    };
+    const auto onContent = [&](float x, float y) { return ContentRect.Contains(Vec2d(x, y)); };
     switch (event.type)
     {
     case SDL_EVENT_MOUSE_MOTION:
@@ -399,12 +396,12 @@ void UiPreviewWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
             ctx.Handled = true;
         }
         else if (inspecting)
-            Hovered = onContent(event.motion.x, event.motion.y, event.motion.windowID)
+            Hovered = onContent(event.motion.x, event.motion.y)
                           ? ElementAtWindowPoint(Vec2d(event.motion.x, event.motion.y))
                           : UiElementRef{};
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (!onContent(event.button.x, event.button.y, event.button.windowID))
+        if (!onContent(event.button.x, event.button.y))
             break;
         if (event.button.button == SDL_BUTTON_MIDDLE && Zoom != PreviewZoom::Fit)
         {

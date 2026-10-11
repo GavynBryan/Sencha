@@ -58,7 +58,6 @@ public:
     void Tick(FrameUpdateContext& ctx) override;
     void SetVisible(bool visible) override;
     void HandlePlatformEvent(PlatformEventContext& ctx) override;
-    [[nodiscard]] bool HoldsPointer() const override { return Panning; }
     void MoveTo(const WorkspaceWindow& window) override;
     void SetContentRect(const Rect2d& content) override { ContentRect = content; }
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }

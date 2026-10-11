@@ -959,10 +959,16 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
     // Below diagnostics and above the application, matching the z-order: the
     // console has to be usable over a menu, and a menu over the game. Every
     // window's events are offered; each surface hears only its own window's.
-    engine.PlatformEvents().AddConsumer("authored_ui", [&engine](const SDL_Event& event) {
-        UiService* ui = engine.TryUi();
-        return ui != nullptr && ui->ProcessPlatformEvent(event);
-    });
+    engine.PlatformEvents().AddConsumer(
+        "authored_ui",
+        [&engine](const SDL_Event& event) {
+            UiService* ui = engine.TryUi();
+            return ui != nullptr && ui->ProcessPlatformEvent(event);
+        },
+        [&engine](std::uint32_t window) {
+            if (UiService* ui = engine.TryUi())
+                ui->EndPointerGesture(window);
+        });
 #endif
 
     driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {

@@ -93,7 +93,7 @@ body { display: block; width: 100%; height: 100%; pointer-events: none; }
 )";
 
 UiPackage MakePackage(std::string_view rootName = "menu.rml", std::string_view markup = kMarkup,
-                      std::string_view style = kStyle)
+                      std::string_view style = kStyle, std::string_view sheetName = "menu.rcss")
 {
     UiPackage package;
     package.RootDocumentName = std::string(rootName);
@@ -106,8 +106,8 @@ UiPackage MakePackage(std::string_view rootName = "menu.rml", std::string_view m
     package.Blobs.push_back(std::move(root));
 
     UiPackageBlob sheet;
-    sheet.VirtualName = "menu.rcss";
-    sheet.SourcePath = "ui/menu.rcss";
+    sheet.VirtualName = std::string(sheetName);
+    sheet.SourcePath = "ui/" + std::string(sheetName);
     sheet.Kind = UiBlobKind::StyleSheet;
     sheet.Bytes = BytesOf(style);
     package.Blobs.push_back(std::move(sheet));
@@ -173,10 +173,10 @@ void ClickAt(UiService& ui, float x, float y)
 
 void WritePackage(const TempAssetRoot& root, std::string_view relPath,
                   std::string_view rootName = "menu.rml", std::string_view markup = kMarkup,
-                  std::string_view style = kStyle)
+                  std::string_view style = kStyle, std::string_view sheetName = "menu.rcss")
 {
     std::vector<std::byte> bytes;
-    ASSERT_TRUE(WriteSuiToBytes(MakePackage(rootName, markup, style), bytes));
+    ASSERT_TRUE(WriteSuiToBytes(MakePackage(rootName, markup, style, sheetName), bytes));
     root.WriteBytes(relPath, bytes);
 }
 } // namespace
@@ -642,4 +642,112 @@ TEST(UiInput, ScrollingIntoViewBringsAFarRowWithinTheList)
 
     EXPECT_FALSE(ui.ScrollIntoView(fixture.Screen, "no_such_row"));
     EXPECT_FALSE(ui.MeasureScroll(fixture.Screen, "no_such_row").has_value());
+}
+
+namespace
+{
+// A handle dragged by its press, whose drag ending is the action. It sits
+// clear of the button kMarkup puts at (100, 100, 200, 80).
+constexpr std::string_view kDragMarkup = R"(<rml>
+<head><link type="text/rcss" href="drag.rcss"/></head>
+<body data-model="menu">
+    <div id="handle" data-event-dragend="menu_quit"/>
+</body>
+</rml>)";
+
+constexpr std::string_view kDragStyle = R"(
+body { display: block; width: 100%; height: 100%; pointer-events: none; }
+#handle { display: block; position: absolute; left: 400px; top: 300px; width: 200px; height: 80px;
+          drag: drag; pointer-events: auto; }
+)";
+
+// A handle on one surface, a button on a surface above it.
+struct DragUnderButton
+{
+    TempAssetRoot Root;
+    std::unique_ptr<UiTestHost> Host;
+    UiSurfaceId Lower;
+    UiScreenHandle Dragged;
+
+    DragUnderButton()
+    {
+        WritePackage(Root, "ui/drag.sui", "drag.rml", kDragMarkup, kDragStyle, "drag.rcss");
+        WritePackage(Root, "ui/menu.sui");
+        Host = std::make_unique<UiTestHost>(Root);
+        UiService& ui = Host->Service();
+        Lower = ui.CreateSurface("lower", RenderExtent{ 800, 600 });
+        const UiSurfaceId upper = ui.CreateSurface("upper", RenderExtent{ 800, 600 });
+        Dragged = ui.OpenScreen(Lower, MakeDesc("asset://ui/drag.sui"));
+        EXPECT_TRUE(Dragged.IsValid());
+        EXPECT_TRUE(ui.OpenScreen(upper, MakeDesc()).IsValid());
+        ui.Update();
+    }
+
+    // Takes the handle and drags it over the upper surface's button.
+    void DragOverTheButton()
+    {
+        UiService& ui = Host->Service();
+        (void)ui.ProcessPlatformEvent(MouseMove(450.0f, 330.0f));
+        ASSERT_TRUE(ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, 450.0f, 330.0f)));
+        (void)ui.ProcessPlatformEvent(MouseMove(420.0f, 320.0f));
+        (void)ui.ProcessPlatformEvent(MouseMove(150.0f, 130.0f));
+    }
+
+    [[nodiscard]] std::size_t DragsEnded()
+    {
+        std::size_t ended = 0;
+        for (const UiAction& action : Host->Service().DrainActions())
+            ended += action.Screen == Dragged ? 1 : 0;
+        return ended;
+    }
+};
+} // namespace
+
+TEST(UiInput, AReleaseOverAnotherSurfaceEndsTheDragItBelongsTo)
+{
+    DragUnderButton fixture;
+    UiService& ui = fixture.Host->Service();
+    fixture.DragOverTheButton();
+
+    EXPECT_TRUE(ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_UP, 150.0f, 130.0f)));
+    ui.Update();
+    EXPECT_EQ(fixture.DragsEnded(), 1u) << "the button above took the release, and the drag under it never ended";
+    (void)ui.ProcessPlatformEvent(MouseMove(700.0f, 550.0f));
+    EXPECT_FALSE(ui.Capture().Mouse) << "the handle's surface still holds the pointer";
+}
+
+TEST(UiInput, ASurfaceThatStopsTakingInputEndsTheDragItHeld)
+{
+    DragUnderButton fixture;
+    UiService& ui = fixture.Host->Service();
+    fixture.DragOverTheButton();
+
+    ui.SetSurfaceInputPolicy(fixture.Lower, UiSurfaceInputPolicy::Disabled);
+    ui.Update();
+    EXPECT_EQ(fixture.DragsEnded(), 1u) << "the drag was left running where no release can reach it";
+}
+
+TEST(UiInput, AnEndedPressClicksNothing)
+{
+    // A press handed on, or cut off by the window losing focus, is let go
+    // with nothing under the pointer.
+    TempAssetRoot root;
+    WritePackage(root, "ui/menu.sui");
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    ASSERT_TRUE(ui.OpenScreen(surface, MakeDesc()).IsValid());
+    ui.Update();
+
+    (void)ui.ProcessPlatformEvent(MouseMove(150.0f, 130.0f));
+    ASSERT_TRUE(ui.ProcessPlatformEvent(MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, 150.0f, 130.0f)));
+    ui.EndPointerGesture(0);
+    ui.Update();
+    EXPECT_TRUE(ui.DrainActions().empty()) << "ending the press clicked the button under it";
+    EXPECT_FALSE(ui.Capture().Mouse);
+
+    // And the surface takes the next press as its own again.
+    ClickAt(ui, 150.0f, 130.0f);
+    ui.Update();
+    EXPECT_EQ(ui.DrainActions().size(), 1u);
 }

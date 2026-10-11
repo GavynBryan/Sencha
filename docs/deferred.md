@@ -412,3 +412,22 @@ do the work and delete the entry.
 - **Trigger:** content that ships a scene whose mesh can go missing (a renamed
   or deleted model in a project), or the owner choosing the mesh stand-in's
   shape, its material, and whether it collides.
+
+## Same-named stylesheets in different UI packages
+
+- **What:** two packages that each carry a stylesheet under the same virtual
+  name (both `menu.rcss`, with different rules) share one: the document engine
+  caches a sheet by the name it was linked by, so the second package's
+  documents are styled by the first's. Found while writing
+  `UiInput.AReleaseOverAnotherSurfaceEndsTheDragItBelongsTo`, whose two
+  packages now name their sheets apart.
+- **Where:** the runtime's file interface over package blobs
+  (`engine/src/ui/UiRuntime.cpp`, how a package's blobs are named to RmlUi);
+  the fix is to qualify each blob's name by its package so identity follows the
+  package, not the leaf name.
+- **Why not now:** no shipped content collides (the editor's documents share
+  one kit, whose sheets are the same files), and qualifying names touches how
+  links resolve, the cook's dependency records and hot reload of a shared sheet.
+- **Trigger:** a game or the editor shipping two packages whose stylesheets
+  share a name but not their rules, or the authored-UI hot reload work touching
+  how blobs are named.

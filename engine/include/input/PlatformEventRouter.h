@@ -2,6 +2,7 @@
 
 #include <input/InputFrame.h>
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -32,15 +33,28 @@ class SdlGamepadCapture;
 //
 // Consumers are registered once at startup and run in registration order, so
 // there is no per-event sorting and no priority number to keep in sync.
+//
+// It is also the one owner of each window's pointer gesture, from a press to
+// the release of the last button held: whoever claimed the press hears the
+// window's pointer alone until then (docs/ui/architecture.md, Input).
 //=============================================================================
 class PlatformEventRouter
 {
 public:
     // Returns true to claim the event, hiding it from every later consumer.
     using Consumer = std::function<bool(const SDL_Event&)>;
+    // Told that the gesture it owns in a window ended without its release.
+    using GestureEnded = std::function<void(std::uint32_t window)>;
 
     // Registered highest priority first. `name` is for diagnostics only.
-    void AddConsumer(std::string_view name, Consumer consumer);
+    void AddConsumer(std::string_view name, Consumer consumer, GestureEnded gestureEnded = {});
+
+    // The rest of the gesture in `window`, release included, is the
+    // application's; its consumer is told it ended. False when none is open.
+    bool HandGestureToApplication(std::uint32_t window);
+
+    [[nodiscard]] bool HasGesture(std::uint32_t window) const;
+    [[nodiscard]] bool ApplicationHasGesture(std::uint32_t window) const;
 
     [[nodiscard]] std::size_t ConsumerCount() const { return Consumers.size(); }
     [[nodiscard]] std::string_view ConsumerName(std::size_t index) const;
@@ -57,7 +71,24 @@ private:
     {
         std::string Name;
         Consumer Handle;
+        GestureEnded Ended;
     };
 
+    static constexpr std::size_t kApplication = static_cast<std::size_t>(-1);
+
+    struct Gesture
+    {
+        std::uint32_t Window = 0;
+        std::size_t Owner = kApplication;
+        std::uint32_t Buttons = 0;
+    };
+
+    bool RoutePointer(const SDL_Event& event, std::uint32_t window);
+    [[nodiscard]] std::size_t Offer(const SDL_Event& event) const;
+    void EndGesture(std::uint32_t window);
+    [[nodiscard]] Gesture* Find(std::uint32_t window);
+    [[nodiscard]] const Gesture* Find(std::uint32_t window) const;
+
     std::vector<Entry> Consumers;
+    std::vector<Gesture> Gestures;
 };

@@ -101,7 +101,6 @@ public:
     bool UndoStagedEdit() override;
     [[nodiscard]] bool HasStagedEdit() const override;
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
-    [[nodiscard]] bool HoldsPointer() const override;
     void MoveTo(const WorkspaceWindow& window) override;
     void SetContentRect(const Rect2d& content) override { ContentRect = content; }
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;

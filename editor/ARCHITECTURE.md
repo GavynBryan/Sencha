@@ -162,7 +162,7 @@ Shared shell (`editor/common/src/`):
 | `selection/` | Multi-element selection model (`SelectionService`, `SelectionContext`, `SelectableRef`). | -- |
 | `tools/` | Tool framework (`ToolRegistry`, `ToolContext`). | `ITool` |
 | `interaction/` | Drag-interaction host (`InteractionHost`). | `IInteraction` |
-| `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `KeymapFile`, `UiInputGuard`). | router handlers |
+| `input/` | Generic input primitives (`InputRouter` handler chain + pointer capture, `KeymapFile`). | router handlers |
 | `properties/` | The toolkit-free property model: `PropertyNode` trees (key, descriptor, value as text, children; no rows), `IPropertySource` (begin/preview/commit/cancel mapped onto a document's own transaction) and `PropertyEditSession` (the one edit in flight, ended by any interruption). The level's source is `authoring/ComponentPropertySource`. | inspectors, cards, drawers |
 | `observers/` | `WeakObserverList`: subscribers held for as long as they keep their token. | selection, resources, problems |
 | `resources/` | `ActiveResources`: what the person is holding, per asset kind, with a stash; changes reach the tool in hand through `ToolRegistry`. `ResourceActions` offers the stash as actions. | tools, workspaces |
@@ -296,6 +296,12 @@ format boundary; the editor's own types use document/scene vocabulary.
 - No file under `editor/` names ImGui. Geometry, input, tools and viewport
   math are written in engine vectors (`Vec2d`), and everything a person sees
   is an authored document (`docs/editor/interaction-grammar.md`).
+- A workspace never asks whether the window's UI has the pointer before
+  acting on a press or a move: whatever reaches it is a gesture the UI did not
+  take, because the engine's router gives each gesture to whoever took its
+  press (`docs/ui/architecture.md`, Input). A press a document began and the
+  shell carries on, like a number scrub, is handed over through
+  `PlatformEventRouter::HandGestureToApplication`.
 
 Enforced by `scripts/check_editor_layering.sh` (a ctest) plus the include-path
 firewall above.

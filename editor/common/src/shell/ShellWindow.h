@@ -31,6 +31,7 @@ class NoticeQueue;
 class ProblemList;
 class PromptQueue;
 class RadialMenuScreen;
+class PlatformEventRouter;
 class SdlWindow;
 class UiService;
 class IWorkspace;
@@ -62,6 +63,8 @@ struct ShellWindowServices
     NoticeQueue& Notices;
     PromptQueue& Prompts;
     SdlWindow& Window;
+    // Hands the shell a gesture its document began, as a scrub does.
+    PlatformEventRouter& Pointer;
     PresentationId Presentation;
     // What the rail's close key does: leave the editor from the main window,
     // take a detached window away from any other.
@@ -158,7 +161,7 @@ private:
     [[nodiscard]] bool WheelUp() const { return OpenWheel() != nullptr; }
     void MakeClickWheel(ClickWheel& wheel, IRadialMenuModel& model);
     [[nodiscard]] RadialMenu::Frame WheelFrame() const;
-    void YieldPointerToContent();
+    void YieldPointerToWheel();
     void OpenPopover(Popover popover, std::string category = {});
     // What the row's verb asks to be chosen first.
     void OpenChoices(std::string sheet, std::size_t row, std::string verb, std::vector<std::string> choices,

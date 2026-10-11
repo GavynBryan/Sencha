@@ -20,6 +20,7 @@
 
 #include <platform/SdlWindow.h>
 #include <platform/WindowFrameHit.h>
+#include <input/PlatformEventRouter.h>
 #include <ui/UiKeys.h>
 #include <ui/UiService.h>
 
@@ -420,8 +421,8 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
                                       Vec2d(static_cast<float>(extent.Width),
                                             std::max(0.0f, static_cast<float>(extent.Height) - rail - shelf))));
     }
-    YieldPointerToContent();
     HandleActions();
+    YieldPointerToWheel();
     Prompt->Update();
     // A question stands alone: nothing else opened stays open under it.
     if (Prompt->IsShowing())
@@ -733,6 +734,13 @@ void ShellWindow::PressNumber(std::string sheet, std::size_t row, std::int64_t e
         element >= 0 ? std::optional<std::size_t>(static_cast<std::size_t>(element)) : std::nullopt;
     const std::string text = part.has_value() ? (*part < shown[row].Parts.size() ? shown[row].Parts[*part] : "")
                                               : shown[row].Value;
+    // The rest of the press is the shell's to read. One already let go was a
+    // click, which types into the number instead.
+    if (!Services.Pointer.HandGestureToApplication(Services.Window.GetId()))
+    {
+        SheetTyping = TypingKey(sheet, row, element);
+        return;
+    }
     const std::optional<double> start = NumberIn(text);
     ScrubSheet = std::move(sheet);
     ScrubRow = row;
@@ -941,14 +949,11 @@ void ShellWindow::ActOnSheet(PropertySheet& sheet, std::span<const PropertySecti
                           NoticeTone::Info, NoticeClockNow());
 }
 
-void ShellWindow::YieldPointerToContent()
+void ShellWindow::YieldPointerToWheel()
 {
-    // A number pressed in a sheet holds the pointer too: what it does next is
-    // the shell's to read, not the document's.
-    const IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation);
-    const UiSurfaceInputPolicy policy = (active != nullptr && active->HoldsPointer()) || HoldsInput()
-                                            ? UiSurfaceInputPolicy::Disabled
-                                            : UiSurfaceInputPolicy::Full;
+    // An open click wheel is chosen from by the next click wherever it lands,
+    // so nothing of the document under it takes the pointer while it is up.
+    const UiSurfaceInputPolicy policy = WheelUp() ? UiSurfaceInputPolicy::Disabled : UiSurfaceInputPolicy::Full;
     if (policy == InputPolicy)
         return;
     Services.Ui.SetSurfaceInputPolicy(SurfaceId, policy);

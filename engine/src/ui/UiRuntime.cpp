@@ -404,9 +404,9 @@ void UiRuntime::SetSurfaceInputPolicy(UiSurfaceId surface, UiSurfaceInputPolicy 
     if (policy == UiSurfaceInputPolicy::Disabled && slot->InputPolicy != policy
         && slot->Context != nullptr)
     {
+        EndPress(*slot);
         (void)slot->Context->ProcessMouseLeave();
         slot->PointerInside = false;
-        slot->PointerOwned = false;
     }
     if (policy != UiSurfaceInputPolicy::Full && slot->Context != nullptr)
         DropFocus(*slot->Context);
@@ -422,7 +422,7 @@ UiSurfaceInputPolicy UiRuntime::GetSurfaceInputPolicy(UiSurfaceId surface) const
 bool UiRuntime::IsPointerOver(UiSurfaceId surface) const
 {
     const Surface* slot = ResolveSurface(surface);
-    return slot != nullptr && (slot->PointerInside || slot->PointerOwned);
+    return slot != nullptr && (slot->PointerInside || slot->HeldButtons != 0);
 }
 
 void UiRuntime::SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination)
@@ -449,11 +449,11 @@ void UiRuntime::SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWind
     // window's business.
     if (slot->Context != nullptr)
     {
+        EndPress(*slot);
         (void)slot->Context->ProcessMouseLeave();
         DropFocus(*slot->Context);
     }
     slot->PointerInside = false;
-    slot->PointerOwned = false;
     slot->WindowId = window;
 }
 
@@ -1172,11 +1172,17 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
     // window's surfaces are asked: another window's surface is not under this
     // pointer at all.
     const std::uint32_t eventWindow = SdlEventWindowId(event);
+    const bool pointer = event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+                      || event.type == SDL_EVENT_MOUSE_BUTTON_UP || event.type == SDL_EVENT_MOUSE_WHEEL;
+    // A surface holding a press hears its window's pointer alone until let go.
+    Surface* holder = pointer ? PointerHolder(eventWindow) : nullptr;
     const std::vector<std::size_t> order = InputOrder();
     for (auto it = order.begin(); it != order.end(); ++it)
     {
         Surface& surface = Surfaces[*it];
         if (!surface.Live || surface.Context == nullptr)
+            continue;
+        if (holder != nullptr && &surface != holder)
             continue;
         if (surface.InputPolicy == UiSurfaceInputPolicy::Disabled)
             continue;
@@ -1201,7 +1207,7 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
         {
             const SurfacePoint at =
                 ToSurface(surface.Placement, surface.Size, event.motion.x, event.motion.y);
-            if (!at.Inside && !surface.PointerOwned)
+            if (!at.Inside && surface.HeldButtons == 0)
             {
                 // Left the placement with nothing held: the document is told
                 // once, so nothing stays hovered.
@@ -1215,14 +1221,14 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
             surface.PointerX = at.X;
             surface.PointerY = at.Y;
             surface.PointerInside = at.Inside;
-            if (!context.ProcessMouseMove(at.X, at.Y, modifiers) || surface.PointerOwned)
+            if (!context.ProcessMouseMove(at.X, at.Y, modifiers) || surface.HeldButtons != 0)
             {
                 // The surfaces below never see this move, so nothing on them
                 // stays hovered under a pointer that is no longer theirs.
                 for (auto below = std::next(it); below != order.end(); ++below)
                 {
                     Surface& under = Surfaces[*below];
-                    if (under.Live && under.Context != nullptr && under.PointerInside && !under.PointerOwned
+                    if (under.Live && under.Context != nullptr && under.PointerInside && under.HeldButtons == 0
                         && Hears(under, eventWindow))
                     {
                         under.PointerInside = false;
@@ -1243,9 +1249,10 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
             const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
             const SurfacePoint at =
                 ToSurface(surface.Placement, surface.Size, event.button.x, event.button.y);
-            // A press lands only inside; a release goes to whoever holds the
-            // pointer, wherever it is now, else only inside.
-            if (!at.Inside && !(surface.PointerOwned && !down))
+            // A press lands only inside, unless the surface already holds one;
+            // a release goes to whoever holds the pointer, wherever it is now.
+            const bool held = surface.HeldButtons != 0;
+            if (!at.Inside && !held)
             {
                 if (down)
                     DropFocus(context);
@@ -1260,18 +1267,18 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
             (void)context.ProcessMouseMove(at.X, at.Y, modifiers);
             const bool free = down ? context.ProcessMouseButtonDown(button, modifiers)
                                    : context.ProcessMouseButtonUp(button, modifiers);
-            const bool owned = surface.PointerOwned;
-            if (down)
-                surface.PointerOwned = !free;
-            else
-                surface.PointerOwned = false;
-            if (down && free)
+            const std::uint32_t bit = 1u << static_cast<std::uint32_t>(button);
+            if (down && !free)
+                surface.HeldButtons |= bit;
+            else if (!down)
+                surface.HeldButtons &= ~bit;
+            if (down && free && !held)
                 DropFocus(context);
-            if (!free || owned)
+            if (!free || held)
             {
                 // The surfaces below never see this press, so they are told
                 // the person has moved on here rather than left focused.
-                if (down)
+                if (down && !held)
                 {
                     for (auto below = std::next(it); below != order.end(); ++below)
                     {
@@ -1359,7 +1366,40 @@ bool UiRuntime::ProcessPlatformEvent(const SDL_Event& event)
         }
     }
 
-    return false;
+    return holder != nullptr;
+}
+
+UiRuntime::Surface* UiRuntime::PointerHolder(std::uint32_t platformWindowId)
+{
+    for (Surface& surface : Surfaces)
+        if (surface.Live && surface.Context != nullptr && surface.HeldButtons != 0
+            && surface.InputPolicy != UiSurfaceInputPolicy::Disabled && Hears(surface, platformWindowId))
+            return &surface;
+    return nullptr;
+}
+
+void UiRuntime::EndPress(Surface& surface)
+{
+    // Released with nothing under the pointer: the active element is reset
+    // without a click, and a drag ends where it last was.
+    if (surface.HeldButtons != 0 && surface.Context != nullptr)
+    {
+        Rml::Context& context = *surface.Context;
+        (void)context.ProcessMouseLeave();
+        for (std::uint32_t button = 0; button < 32; ++button)
+            if ((surface.HeldButtons & (1u << button)) != 0)
+                (void)context.ProcessMouseButtonUp(static_cast<int>(button), 0);
+        (void)context.ProcessMouseLeave();
+        surface.PointerInside = false;
+    }
+    surface.HeldButtons = 0;
+}
+
+void UiRuntime::EndPointerGesture(std::uint32_t platformWindowId)
+{
+    for (Surface& surface : Surfaces)
+        if (surface.Live && Hears(surface, platformWindowId))
+            EndPress(surface);
 }
 
 std::vector<std::size_t> UiRuntime::InputOrder() const
@@ -1409,7 +1449,7 @@ UiInputCapture UiRuntime::CaptureOver(std::optional<std::uint32_t> window) const
         // A surface the pointer is not over is not interacting with it,
         // whatever hover state its context still remembers; one it holds a
         // press in is, wherever the pointer went.
-        if ((surface.PointerInside || surface.PointerOwned) && surface.Context->IsMouseInteracting())
+        if ((surface.PointerInside || surface.HeldButtons != 0) && surface.Context->IsMouseInteracting())
             capture.Mouse = true;
     }
 

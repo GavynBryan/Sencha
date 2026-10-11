@@ -10,8 +10,8 @@
 // publishes where its caption is and whether dragging from it is permitted
 // right now; the window classifies a pointer position against that snapshot
 // and its own state (size, resizable, maximized) when the platform asks what
-// a press there means. Plain data with fixed storage: the probe runs inside
-// the platform's event dispatch and must not allocate.
+// a pointer event there means. Plain data with fixed storage: the probe runs
+// inside the platform's event dispatch and must not allocate.
 struct WindowRect
 {
     int32_t X = 0;
@@ -50,10 +50,13 @@ struct WindowFrameProbe
     WindowExtent Extent;
     bool Resizable = false;
     bool Maximized = false;
+    // A button is down or the pointer is relative: the application has it.
+    bool PointerHeld = false;
 };
 
 // Resize edges and corners win over the caption (the caption touches the top
 // edge, so its outer pixels resize rather than drag); edges apply only to a
 // resizable, unmaximized window with a border; the caption applies only while
-// enabled. Everything else is Client.
+// enabled. Everything else is Client, and so is everything while the pointer
+// is held: the frame is somewhere a press starts, never somewhere a drag ends.
 [[nodiscard]] WindowFrameHit ClassifyWindowFrameHit(const WindowFrameRegions& regions, const WindowFrameProbe& probe);

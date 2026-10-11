@@ -36,9 +36,6 @@ public:
     // Platform events the window routes to its active workspace, after the
     // window's own UI has seen them.
     virtual void HandlePlatformEvent(PlatformEventContext&) {}
-    // Whether a drag that began in this workspace's content has the pointer:
-    // until it ends, nothing over the content takes the pointer from it.
-    [[nodiscard]] virtual bool HoldsPointer() const { return false; }
     // The window the workspace now shows in: when it is first placed, and
     // whenever it moves to another.
     virtual void MoveTo(const WorkspaceWindow&) {}

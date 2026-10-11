@@ -57,7 +57,6 @@ public:
     void Tick(FrameUpdateContext& ctx) override;
     void SetVisible(bool visible) override;
     void HandlePlatformEvent(PlatformEventContext& ctx) override;
-    [[nodiscard]] bool HoldsPointer() const override { return Orbiting; }
     void MoveTo(const WorkspaceWindow& window) override;
     void SetContentRect(const Rect2d& content) override { ContentRect = content; }
     [[nodiscard]] bool OwnsDocument(const DocumentRef& document) const override;

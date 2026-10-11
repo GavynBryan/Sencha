@@ -328,15 +328,11 @@ void MaterialWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
     if (Preview == nullptr || ctx.Handled)
         return;
     const SDL_Event& event = ctx.Event;
-    UiService* ui = EngineRef.TryUi();
-    const auto onStage = [&](float x, float y, std::uint32_t window) {
-        const bool overUi = ui != nullptr && ui->Capture(window).Mouse;
-        return !overUi && ContentRect.Contains(Vec2d(x, y));
-    };
+    const auto onStage = [&](float x, float y) { return ContentRect.Contains(Vec2d(x, y)); };
     switch (event.type)
     {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (event.button.button == SDL_BUTTON_LEFT && onStage(event.button.x, event.button.y, event.button.windowID))
+        if (event.button.button == SDL_BUTTON_LEFT && onStage(event.button.x, event.button.y))
         {
             Orbiting = true;
             ctx.Handled = true;
@@ -358,7 +354,7 @@ void MaterialWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
         }
         break;
     case SDL_EVENT_MOUSE_WHEEL:
-        if (onStage(event.wheel.mouse_x, event.wheel.mouse_y, event.wheel.windowID))
+        if (onStage(event.wheel.mouse_x, event.wheel.mouse_y))
         {
             Preview->Zoom(event.wheel.y);
             ctx.Handled = true;
