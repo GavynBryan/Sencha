@@ -169,14 +169,14 @@ Shared shell (`editor/common/src/`):
 | `problems/`, `notices/` | `ProblemList` (every located problem, republished whole by each source) and `NoticeQueue` (brief word that something happened). | the shell |
 | `prompts/` | `PromptQueue` (questions that hold an operation, answered one at a time; an `Asker` withdraws its questions when it goes) and the document questions over it: `AskAboutChanges`, `DocumentExitHold` (exit waits on changed documents) and `DocumentSaveFollowUp` (a failed save is a problem, a conflict is a question). | workspaces, Kyusu |
 | `presenters/` | Neutral models as what a document shows: `PropertySheet` turns property nodes into rows and a row's edit back into its source; `ContentPicture` shows a host image full bleed with picked marks and frames; `PlanePad` shows a 2D value as a pad the workspace drags. Used by the shell and by documents a workspace owns. | shell, workspaces |
-| `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `TimelineDeck`, `CommandPalette`, `PromptDialog`, `ThemeSheet`, `SurfacePlacement` (the explorer opens in free space, the selection at its place; both moved by the header and sized by the corner) and `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of. Workspaces never include it. | Kyusu |
-| `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first). | Kyusu, workspaces |
+| `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `TimelineDeck`, `CommandPalette`, `PromptDialog`, `ThemeSheet`, `SurfacePlacement` (the explorer opens in free space, the selection at its place; both moved by the header and sized by the corner), `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of, and the `Shelf` (the project's content along a window's bottom, or alone in a window of its own: tiles to open, carry and drop, its file verbs, a tile's wheel and `NewContentWheel`). Workspaces never include it. | Kyusu |
+| `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first); `ActionWheelModel` offers a context's actions as a wheel. | Kyusu, workspaces |
 | `ui/` | The theme palette (`EditorUiStyle`, loaded from `editor/themes/*.json` by `EditorThemeFile`) and its stylesheet (`AuthoredThemeStyleSheet`), the display scale choice (`UiScaleChoice`), material thumbnails as host images, and the wheel's screen (`RadialMenuScreen`). | a palette entry; an SVG in `editor/ui/icons/` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
 | `workspaces/` | The workspace model: `IWorkspace`, the `WorkspaceKind` row, `WorkspaceHost` (open, close, activate, window placement, requests at the frame boundary; headless-tested). | a row in `WorkspaceKinds.cpp` |
 | `render/` | Display-driven offscreen target lifetime (`DisplayLedger`, `DisplayedTargets`), publishing a target as a host image (`TargetImagePublish`), the overlay pipelines every workspace draws with (`EditorImmediatePipeline`, `EditorWideLinePipeline` and its `EditorLineSegment`), `DetachRenderFeature`. | -- |
 | `viewport/` | `ViewportId`. | -- |
-| `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`). | -- |
+| `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`); the project's files as content (`ProjectFiles`, `AssetQuery`, `ReferenceIndex`), every file stating its id (`AssetAdoption`), and moving, copying, trashing and importing them as journal steps (`ProjectFileSteps`, which open documents follow). | a step kind in `ProjectFileSteps` |
 
 Level editor (`editor/level_editor/src/`):
 
@@ -407,7 +407,10 @@ firewall above.
   effect marked, its enabled actions, and More... (`selection.details`, the
   full sheet), with its values read out in the hub (`IRadialMenuModel::Summary`).
   A wheel of words is sized by `RadialMenu::Proportions`. An open wheel is
-  modal, which is what keeps the others closed.
+  modal, which is what keeps the others closed. A wheel may instead open on a
+  click and be chosen from by the next one (`RadialMenuGesture::Clicked`): the
+  shell runs the Shelf's tile and NEW wheels so, each on a router of its own.
+  A wheel's screen is open only while its wheel is up.
 - A handle on the object: a row in `workspace/PropertyHandles`'s rule table
   (component, field, kind). A Radius is a ring facing each view with a knob to
   drag; a Scroll changes its number while the wheel turns over the object.
@@ -419,9 +422,13 @@ firewall above.
   `EditorOverlayState` (segments, dials, the drag readout), drawn into each view
   by `AnnotationStrokeRenderer`; what sits at a point (labels, handles, buttons,
   a dial's knob) becomes a `ViewMark` the views document places.
-- A scripted walkthrough: `input.pointer`, `input.key` and `input.button` push
-  platform events at a named frame, so an unattended run can hold a wheel open
-  or click a view before `render.screenshot` captures it.
+- A scripted walkthrough: `input.pointer`, `input.key`, `input.button` and
+  `input.drop` push platform events at a named frame, so an unattended run can
+  hold a wheel open, click a view or drop a file before `render.screenshot`
+  (or `editor.window.screenshot`) captures it.
+- What a file carried off the Shelf means over a workspace's content:
+  `IWorkspace::DropAsset`. What it can make new: its kind's `Creates`, the
+  same definitions its workspace offers.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in
   `BuildViewportRendering`).
 - A workspace: a library under `editor/<name>/` linking `editor_common`, with
