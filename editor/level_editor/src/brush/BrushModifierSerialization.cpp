@@ -223,7 +223,7 @@ JsonValue BrushRecordToJson(const BrushRecord& record)
 BrushRecord BrushRecordFromJson(const JsonValue& value, std::string* error)
 {
     BrushRecord record;
-    record.Mesh = BrushMeshFromJson(value);
+    record.Mesh = BrushMeshFromJson(value, error);
     if (const JsonValue* modifiers = value.Find("modifiers"))
         record.Modifiers = BrushModifierStackFromJson(*modifiers, error);
     return record;

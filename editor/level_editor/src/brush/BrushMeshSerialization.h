@@ -19,12 +19,14 @@
 //=============================================================================
 
 [[nodiscard]] JsonValue BrushMeshToJson(const BrushMesh& mesh);
-[[nodiscard]] BrushMesh BrushMeshFromJson(const JsonValue& value);
+// Malformed entries are dropped and described in `problems`, one per line.
+[[nodiscard]] BrushMesh BrushMeshFromJson(const JsonValue& value, std::string* problems = nullptr);
 
 // The whole store as an object keyed by BrushId text, one record per entry
 // (mesh keys plus the modifier stack, BrushModifierSerialization). Load
 // validates/repairs each mesh so a corrupt brush is never accepted silently;
-// a malformed modifier entry is skipped and named in `error`.
+// a malformed key, vertex, face or modifier entry is skipped and named in
+// `error`.
 [[nodiscard]] JsonValue SerializeBrushMeshes(const BrushMeshStore& store);
 void DeserializeBrushMeshes(const JsonValue& value, BrushMeshStore& store,
                             std::string* error = nullptr);

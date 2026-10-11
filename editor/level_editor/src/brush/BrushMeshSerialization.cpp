@@ -6,7 +6,10 @@
 #include <core/assets/AssetRefCodec.h>
 #include <core/json/JsonValue.h>
 
+#include <charconv>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 
@@ -27,23 +30,73 @@ namespace
             JsonValue(static_cast<double>(v.Y)) });
     }
 
-    Vec3d Vec3FromJson(const JsonValue& v, Vec3d fallback)
+    bool LeadingNumbers(const JsonValue& v, std::size_t count)
     {
-        if (!v.IsArray() || v.Size() < 3)
-            return fallback;
+        if (!v.IsArray() || v.Size() < count)
+            return false;
+        for (std::size_t i = 0; i < count; ++i)
+            if (!v.AsArray()[i].IsNumber())
+                return false;
+        return true;
+    }
+
+    std::optional<Vec3d> Vec3FromJson(const JsonValue& v)
+    {
+        if (!LeadingNumbers(v, 3))
+            return std::nullopt;
         const JsonValue::Array& a = v.AsArray();
         return Vec3d{ static_cast<float>(a[0].AsNumber()),
                       static_cast<float>(a[1].AsNumber()),
                       static_cast<float>(a[2].AsNumber()) };
     }
 
+    Vec3d Vec3FromJson(const JsonValue& v, Vec3d fallback)
+    {
+        return Vec3FromJson(v).value_or(fallback);
+    }
+
     Vec2d Vec2FromJson(const JsonValue& v, Vec2d fallback)
     {
-        if (!v.IsArray() || v.Size() < 2)
+        if (!LeadingNumbers(v, 2))
             return fallback;
         const JsonValue::Array& a = v.AsArray();
         return Vec2d{ static_cast<float>(a[0].AsNumber()),
                       static_cast<float>(a[1].AsNumber()) };
+    }
+
+    std::optional<std::uint32_t> IndexFromJson(const JsonValue& v)
+    {
+        if (!v.IsNumber())
+            return std::nullopt;
+        const double number = v.AsNumber();
+        if (!(number >= 0.0) || number > std::numeric_limits<std::uint32_t>::max()
+            || std::floor(number) != number)
+            return std::nullopt;
+        return static_cast<std::uint32_t>(number);
+    }
+
+    // False when any entry is not the index of an existing vertex.
+    bool LoopFromJson(const JsonValue& v, std::size_t vertexCount, std::vector<std::uint32_t>& loop)
+    {
+        if (!v.IsArray())
+            return false;
+        for (const JsonValue& entry : v.AsArray())
+        {
+            const std::optional<std::uint32_t> index = IndexFromJson(entry);
+            if (!index || *index >= vertexCount)
+                return false;
+            loop.push_back(*index);
+        }
+        return true;
+    }
+
+    void AppendProblem(std::string* problems, const std::string& problem)
+    {
+        if (problems == nullptr)
+            return;
+        if (!problems->empty())
+            problems->push_back('\n');
+        problems->append(problem);
     }
 
     JsonValue FaceMaterialToJson(const FaceMaterial& fm)
@@ -130,50 +183,56 @@ JsonValue BrushMeshToJson(const BrushMesh& mesh)
     return JsonValue(std::move(obj));
 }
 
-BrushMesh BrushMeshFromJson(const JsonValue& value)
+BrushMesh BrushMeshFromJson(const JsonValue& value, std::string* problems)
 {
     BrushMesh mesh;
     if (const JsonValue* vertices = value.Find("vertices"); vertices && vertices->IsArray())
     {
         for (const JsonValue& p : vertices->AsArray())
         {
-            if (!p.IsArray() || p.Size() < 3)
-                continue;
-            mesh.Vertices.push_back(BrushVertex{ Vec3FromJson(p, Vec3d{}) });
+            // A skipped vertex would renumber every later one under the faces
+            // that index them, so a malformed vertex rejects the whole mesh.
+            const std::optional<Vec3d> position = Vec3FromJson(p);
+            if (!position)
+            {
+                AppendProblem(problems, "vertex " + std::to_string(mesh.Vertices.size())
+                                            + " is not three numbers; brush dropped");
+                return {};
+            }
+            mesh.Vertices.push_back(BrushVertex{ *position });
         }
     }
     if (const JsonValue* faces = value.Find("faces"); faces && faces->IsArray())
     {
-        for (const JsonValue& f : faces->AsArray())
+        const JsonValue::Array& entries = faces->AsArray();
+        for (std::size_t i = 0; i < entries.size(); ++i)
         {
+            const JsonValue& f = entries[i];
             BrushFace face;
-            if (f.IsArray()) // pre-texturing form: bare loop array
+            const JsonValue* loop = f.IsArray() ? &f : (f.IsObject() ? f.Find("loop") : nullptr);
+            if (loop == nullptr || !LoopFromJson(*loop, mesh.Vertices.size(), face.Loop))
             {
-                for (const JsonValue& index : f.AsArray())
-                    face.Loop.push_back(static_cast<std::uint32_t>(index.AsNumber()));
-            }
-            else if (f.IsObject())
-            {
-                if (const JsonValue* loop = f.Find("loop"); loop && loop->IsArray())
-                    for (const JsonValue& index : loop->AsArray())
-                        face.Loop.push_back(static_cast<std::uint32_t>(index.AsNumber()));
-                face.Material = FaceMaterialFromJson(f);
-            }
-            else
-            {
+                AppendProblem(problems, "face " + std::to_string(i)
+                                            + " has a loop entry that is not a vertex index; face dropped");
                 continue;
             }
+            if (f.IsObject())
+                face.Material = FaceMaterialFromJson(f);
             mesh.Faces.push_back(std::move(face));
         }
     }
     // Flat pair list [a0, b0, a1, b1, ...]; absent in older documents (all hard).
+    // A pair naming no edge of the mesh is pruned by the repair below.
     if (const JsonValue* soft = value.Find("soft_edges"); soft && soft->IsArray())
     {
         const JsonValue::Array& a = soft->AsArray();
         for (std::size_t i = 0; i + 1 < a.size(); i += 2)
-            mesh.SoftEdges.push_back(BrushSoftEdgeKey(
-                static_cast<std::uint32_t>(a[i].AsNumber()),
-                static_cast<std::uint32_t>(a[i + 1].AsNumber())));
+        {
+            const std::optional<std::uint32_t> first = IndexFromJson(a[i]);
+            const std::optional<std::uint32_t> second = IndexFromJson(a[i + 1]);
+            if (first && second)
+                mesh.SoftEdges.push_back(BrushSoftEdgeKey(*first, *second));
+        }
     }
     // Part of parsing, not a courtesy for the caller: the cached face normals
     // are data the tessellator reads, and a mesh without them lights as black
@@ -197,7 +256,25 @@ void DeserializeBrushMeshes(const JsonValue& value, BrushMeshStore& store, std::
         return;
     for (const auto& [idText, recordJson] : value.AsObject())
     {
-        store.Set(BrushId{ static_cast<std::uint32_t>(std::stoul(idText)) },
-                  BrushRecordFromJson(recordJson, error));
+        std::uint32_t id = 0;
+        const char* end = idText.data() + idText.size();
+        const auto [stop, status] = std::from_chars(idText.data(), end, id);
+        if (status != std::errc{} || stop != end || id == 0)
+        {
+            AppendProblem(error, "brush_meshes key '" + idText + "' is not a brush id; entry skipped");
+            continue;
+        }
+        std::string problems;
+        store.Set(BrushId{ id }, BrushRecordFromJson(recordJson, &problems));
+        std::size_t lineStart = 0;
+        while (lineStart < problems.size())
+        {
+            std::size_t lineEnd = problems.find('\n', lineStart);
+            if (lineEnd == std::string::npos)
+                lineEnd = problems.size();
+            if (lineEnd > lineStart)
+                AppendProblem(error, "brush " + idText + ": " + problems.substr(lineStart, lineEnd - lineStart));
+            lineStart = lineEnd + 1;
+        }
     }
 }

@@ -406,17 +406,17 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
 
     if (parsed->BrushMeshes.IsObject() && !parsed->BrushMeshes.Members.empty())
     {
-        std::string modifierErrors;
+        std::string sidecarProblems;
         BrushMeshStore& store = Scene.GetBrushMeshStore();
-        DeserializeBrushMeshes(Json5ToJson(parsed->BrushMeshes), store, &modifierErrors);
+        DeserializeBrushMeshes(Json5ToJson(parsed->BrushMeshes), store, &sidecarProblems);
         std::vector<BrushId> loaded;
         for (const auto& [id, record] : store.All())
             loaded.push_back(BrushId{ id });
         for (const BrushId id : loaded)
             store.Set(id, CurrentMaterials(*store.FindRecord(id)));
-        if (!modifierErrors.empty())
+        if (!sidecarProblems.empty())
             Logging.GetLogger<EditorDocument>().Warn(
-                "brush sidecar: modifier entries skipped:\n{}", modifierErrors);
+                "brush sidecar: entries skipped:\n{}", sidecarProblems);
     }
 
     if (const Json5Value* material = parsed->Settings.Find("default_material"))
