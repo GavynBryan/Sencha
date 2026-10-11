@@ -258,6 +258,13 @@ cannot either, however well the rest is wired.
 The first two are silent when missed, which is why they are written down here and
 exercised in `UiInputTests.cpp`.
 
+**Opacity replaces, it does not compound.** The document engine inherits
+`opacity` and uses each element's own value, unlike CSS, which multiplies down
+the tree. An element that states its own opacity inside a container faded to
+0 still draws: a shut card's read-only rows used to show through it. Nothing
+inside a container that hides by fading may set `opacity`; dim it with a
+colour role instead (`theme-muted` for a value shown but not offered).
+
 **A scrolling region inside a flex column needs a zero basis.** The document
 engine gives an auto-based flex item that is not itself a scroll container its
 content's size as a minimum, and `min-height: 0` (already the initial value)

@@ -23,7 +23,8 @@
 
             <div id="form">
                 <div class="setting" data-for="row : settings"
-                     data-class-heading="row.control == 'section'" data-class-locked="!row.editable">
+                     data-class-heading="row.control == 'section'" data-class-locked="!row.editable"
+                     data-class-theme-muted="!row.editable">
                     <span class="setting_label">{{row.label}}</span>
                     <input type="text" class="setting_control theme-field" data-if="row.control == 'text' || row.control == 'number'"
                            data-value="row.value" data-event-focus="profiles_hold(it_index)"
