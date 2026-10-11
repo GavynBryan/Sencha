@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/handle/Handle.h>
+#include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/SchemaVisit.h>
 #include <core/metadata/TypeSchema.h>
@@ -186,6 +187,11 @@ public:
     bool IsRemovable() const override
     {
         return ComponentRemovable<Component>::Value;
+    }
+
+    std::string_view PlacementLabel() const override
+    {
+        return ComponentPlacement<Component>::Label;
     }
 
     std::vector<std::byte> DefaultBytes() const override

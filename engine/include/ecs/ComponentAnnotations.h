@@ -37,6 +37,9 @@
 #define SENCHA_PREDICTED             SENCHA_ANNOTATE("sencha.predicted")
 #define SENCHA_NON_REMOVABLE         SENCHA_ANNOTATE("sencha.non_removable")
 #define SENCHA_VISUAL_MESH(asset)    SENCHA_ANNOTATE("sencha.visual_mesh=" asset)
+// A thing of its own in a world: a tool may put an entity carrying just this
+// component (at its defaults) somewhere, under this name.
+#define SENCHA_PLACEABLE(label)      SENCHA_ANNOTATE("sencha.placeable=" label)
 
 // Opt-in: an untagged member is not part of the schema, so adding an ordinary
 // member never silently changes the scene format or the replication layout.

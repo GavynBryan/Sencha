@@ -8,6 +8,7 @@
 // lets components migrate one at a time.
 
 #include <core/metadata/ComponentDefinition.h>
+#include <core/metadata/ComponentPlacement.h>
 #include <core/metadata/ComponentRemovable.h>
 #include <core/metadata/EditorVisual.h>
 #include <core/metadata/Field.h>
@@ -16,6 +17,7 @@
 #include <core/serialization/FourCC.h>
 #include <ecs/ComponentTypeId.h>
 #include <world/ComponentSet.h>
+#include <world/serialization/ComponentSerializer.h>
 
 #include <gtest/gtest.h>
 
@@ -46,6 +48,7 @@ struct ComponentDefinition<DefinedFull>
     static constexpr bool Predicted  = true;
     static constexpr bool Removable  = false;
     static constexpr std::string_view VisualMeshAsset = "camera.glb";
+    static constexpr std::string_view PlaceableLabel = "Full Thing";
 
     static auto Fields()
     {
@@ -218,4 +221,13 @@ TEST(ComponentSetTest, OwnershipIsCheckedAcrossTheCollection)
 
     using Flattened = ComponentSetCollection<SetA, SetB>::Flattened;
     static_assert(Flattened::Size == 4, "flattening preserves every member");
+}
+
+TEST(ComponentDefinitionProjection, APlaceableComponentOffersItselfUnderItsLabel)
+{
+    EXPECT_EQ(ComponentPlacement<DefinedFull>::Label, "Full Thing");
+    EXPECT_TRUE(ComponentPlacement<DefinedIdentityOnly>::Label.empty()) << "a component is placeable only by saying so";
+
+    const ComponentSerializer<DefinedFull> serializer;
+    EXPECT_EQ(serializer.PlacementLabel(), "Full Thing") << "a tool reads the label without naming the type";
 }

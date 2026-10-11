@@ -119,7 +119,7 @@ TEST_F(ToolVariantTest, AToolWithoutVariantsAnswersEmptyAndIgnoresASelection)
     for (const std::unique_ptr<ITool>& tool : Tools().GetTools())
     {
         ASSERT_NE(tool, nullptr);
-        if (tool->GetId() == "select" || tool->GetId() == "brush")
+        if (tool->GetId() == "select" || tool->GetId() == "brush" || tool->GetId() == "place")
             continue;
         EXPECT_TRUE(tool->GetVariants().empty()) << tool->GetId();
         EXPECT_EQ(tool->GetActiveVariant(Tools().GetContext()), -1) << tool->GetId();

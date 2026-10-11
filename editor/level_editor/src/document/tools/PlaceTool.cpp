@@ -2,6 +2,8 @@
 
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
+#include "document/DocumentSerialization.h"
+#include "document/commands/PlaceComponentEntityCommand.h"
 #include "document/commands/SceneInstanceCommands.h"
 #include "viewport/GridSettings.h"
 #include "overlay/EditorOverlayState.h"
@@ -11,8 +13,12 @@
 #include "viewport/EditorViewport.h"
 #include "viewport/Picking.h"
 
+#include <world/serialization/ComponentSerializerRegistry.h>
+
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <format>
 
 namespace
 {
@@ -25,7 +31,55 @@ ITool::Shortcut PlaceTool::GetShortcut() const { return { SDLK_P, {} }; }
 
 std::span<const ResourceRole> PlaceTool::Resources() const
 {
+    if (!Chosen.empty())
+        return {};
     return kRoles;
+}
+
+void PlaceTool::RefreshKinds() const
+{
+    std::vector<PlaceKind> kinds;
+    for (const auto& serializer : EditorSceneSerializers().Entries())
+        if (const std::string_view label = serializer->PlacementLabel(); !label.empty())
+            kinds.push_back({ std::string(label), std::string(serializer->JsonKey()) });
+    // Registration order differs between the engine's and a module's
+    // components; by name, the wheel reads the same however they arrived.
+    std::ranges::sort(kinds, {}, &PlaceKind::Label);
+    kinds.insert(kinds.begin(), PlaceKind{ "Prefab", {} });
+    const auto same = [](const PlaceKind& a, const PlaceKind& b) { return a.ComponentKey == b.ComponentKey; };
+    if (std::ranges::equal(kinds, Kinds, same))
+        return;
+    Kinds = std::move(kinds);
+    KindChoices.clear();
+    for (const PlaceKind& kind : Kinds)
+        KindChoices.push_back({ .Label = kind.Label });
+}
+
+std::span<const ITool::Variant> PlaceTool::GetVariants() const
+{
+    RefreshKinds();
+    return KindChoices;
+}
+
+int PlaceTool::GetActiveVariant(const ToolContext&) const
+{
+    RefreshKinds();
+    const auto found = std::ranges::find(Kinds, Chosen, &PlaceKind::ComponentKey);
+    return found != Kinds.end() ? static_cast<int>(found - Kinds.begin()) : 0;
+}
+
+void PlaceTool::SelectVariant(ToolContext&, std::size_t index)
+{
+    RefreshKinds();
+    if (index < Kinds.size())
+        Chosen = Kinds[index].ComponentKey;
+}
+
+const std::string* PlaceTool::ChosenLabel() const
+{
+    RefreshKinds();
+    const auto found = std::ranges::find(Kinds, Chosen, &PlaceKind::ComponentKey);
+    return found != Kinds.end() ? &found->Label : nullptr;
 }
 
 std::optional<Vec3d> PlaceTool::Target(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos)
@@ -72,7 +126,7 @@ void PlaceTool::OnHoverEnd(ToolContext& ctx)
 InputConsumed PlaceTool::OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     const AssetRef& prefab = ctx.Resources.Active(AssetType::Scene);
-    if (!prefab.IsValid())
+    if (Chosen.empty() && !prefab.IsValid())
         return InputConsumed::No;
     const std::optional<Vec3d> point = Target(ctx, viewport, pointer.Position);
     if (!point.has_value())
@@ -80,8 +134,12 @@ InputConsumed PlaceTool::OnClick(ToolContext& ctx, EditorViewport& viewport, con
     Transform3f placement = Transform3f::Identity();
     placement.Position = *point;
     placement.Rotation = Quatf::FromAxisAngle(Vec3d::Up(), static_cast<float>(YawDegrees) * 3.14159265f / 180.0f);
-    ctx.Commands.Execute(std::make_unique<PlaceSceneInstanceCommand>(prefab.Path, placement, ctx.Document,
-                                                                     ctx.Selection));
+    if (Chosen.empty())
+        ctx.Commands.Execute(std::make_unique<PlaceSceneInstanceCommand>(prefab.Path, placement, ctx.Document,
+                                                                         ctx.Selection));
+    else
+        ctx.Commands.Execute(std::make_unique<PlaceComponentEntityCommand>(Chosen, placement, ctx.Document,
+                                                                           ctx.Selection));
     return InputConsumed::Yes;
 }
 
@@ -104,5 +162,7 @@ PropertyEditResult PlaceTool::SetParameter(ToolContext&, std::string_view key, s
 
 std::string PlaceTool::Hint(const ToolContext& ctx) const
 {
+    if (const std::string* label = ChosenLabel(); label != nullptr && !Chosen.empty())
+        return std::format("Click to place a {}", *label);
     return ctx.Resources.Active(AssetType::Scene).IsValid() ? "Click to place" : "Pick a prefab to place";
 }

@@ -127,6 +127,12 @@ surface under the cursor, snapped to the grid; click stamps an instance, Esc
 leaves. Pressing a tile and dragging into the world is the same gesture — the
 tray tucks away and the world takes the pointer.
 
+Place's fan on the tool wheel holds, besides **Prefab**, every component that
+declares itself placeable (`SENCHA_PLACEABLE`): the engine's **Point Light**
+and **Spot Light**, and whatever a game adds, such as the template's **Player
+Start**. Those place a new entity carrying just that component at its defaults,
+named after it and selected, as one step; no prefab is in hand for them.
+
 **Hierarchy** (Tab, or a part of the breadcrumb): a sheet on the left edge,
 opened where there is room. The world, its graphs and zones, and the edited
 zone's entities as one tree,
