@@ -1,6 +1,6 @@
 #include <anim/AnimPredicate.h>
 
-#include "AnimSchemaFields.h"
+#include <core/metadata/DataSchemaFields.h>
 
 #include <anim/AnimFacts.h>
 #include <anim/AnimRequests.h>
@@ -36,11 +36,11 @@ namespace
 
     std::vector<DataFieldSchema> TestMembers()
     {
-        using AnimSchema::ArrayOf;
-        using AnimSchema::DataRef;
-        using AnimSchema::Enum;
-        using AnimSchema::Field;
-        using AnimSchema::Record;
+        using DataField::ArrayOf;
+        using DataField::DataRef;
+        using DataField::Enum;
+        using DataField::Field;
+        using DataField::Record;
         const auto optional = [](DataFieldSchema field) {
             field.Required = false;
             return field;
@@ -429,11 +429,11 @@ namespace
 
 DataFieldSchema AnimPredicateSchema(std::string key, std::string display, std::string summary)
 {
-    using AnimSchema::ArrayOf;
-    using AnimSchema::DataRef;
-    using AnimSchema::Enum;
-    using AnimSchema::Field;
-    using AnimSchema::Record;
+    using DataField::ArrayOf;
+    using DataField::DataRef;
+    using DataField::Enum;
+    using DataField::Field;
+    using DataField::Record;
     DataFieldSchema test = Record({}, "Test", {}, TestMembers());
     std::vector<DataFieldSchema> rowMembers = TestMembers();
     rowMembers.push_back(ArrayOf("any", "Any of", "Passes when any of these tests passes.", test));

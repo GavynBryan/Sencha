@@ -1,6 +1,6 @@
 #include <anim/AnimFactSchema.h>
 
-#include "AnimSchemaFields.h"
+#include <core/metadata/DataSchemaFields.h>
 
 #include <algorithm>
 #include <array>
@@ -28,7 +28,7 @@ namespace
         return static_cast<std::size_t>(it - names.begin());
     }
 
-    using AnimSchema::Field;
+    using DataField::Field;
 
     DataFieldSchema OperandRecord(std::string key, bool required)
     {
@@ -46,7 +46,7 @@ namespace
         DataFieldSchema slot = Field({}, DataFieldKind::Record, "Slot", {});
         slot.Children.push_back(Field("name", DataFieldKind::String, "Name",
                                       "The name rules and bindings address this slot by."));
-        slot.Children.push_back(AnimSchema::Enum(
+        slot.Children.push_back(DataField::Enum(
             "kind", "Kind", "What the slot holds.",
             { { "bool", "Boolean", "True or false" },
               { "float", "Float", "32-bit floating point" },
@@ -66,7 +66,7 @@ namespace
         DataFieldSchema derived = Field({}, DataFieldKind::Record, "Derived fact", {});
         derived.Children.push_back(Field("name", DataFieldKind::String, "Name",
                                          "The derived fact's own name."));
-        derived.Children.push_back(AnimSchema::Enum(
+        derived.Children.push_back(DataField::Enum(
             "op", "Derivation", "The closed set of derivations.",
             { { "edge", "Edge", "True for a while after the source changes" },
               { "time_since", "Time since", "Seconds since the source last had a value" },
@@ -82,7 +82,7 @@ namespace
                                         "Two or more operands, for All of and Any of.", false);
         sources.Children.push_back(OperandRecord({}, true));
         derived.Children.push_back(std::move(sources));
-        derived.Children.push_back(AnimSchema::Enum("direction", "Direction", "Which edge.",
+        derived.Children.push_back(DataField::Enum("direction", "Direction", "Which edge.",
                                              { { "rising", "Rising", "False to true" },
                                                { "falling", "Falling", "True to false" } },
                                              false));
@@ -99,7 +99,7 @@ namespace
                                          "Rises when the source reaches this.", false));
         derived.Children.push_back(Field("exit", DataFieldKind::Float, "Exit",
                                          "Falls when the source drops to this.", false));
-        derived.Children.push_back(AnimSchema::Enum(
+        derived.Children.push_back(DataField::Enum(
             "compare", "Comparison", "How the source is compared.",
             { { "lt", "<", {} }, { "le", "<=", {} }, { "gt", ">", {} },
               { "ge", ">=", {} }, { "eq", "==", {} }, { "ne", "!=", {} } },

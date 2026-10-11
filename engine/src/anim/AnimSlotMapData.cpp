@@ -1,6 +1,6 @@
 #include <anim/AnimSlotMapData.h>
 
-#include "AnimSchemaFields.h"
+#include <core/metadata/DataSchemaFields.h>
 
 #include <anim/AnimBlendspaceData.h>
 #include <anim/AnimFlowData.h>
@@ -15,11 +15,11 @@ namespace
 {
     DataSchema MakeSchema()
     {
-        using AnimSchema::ArrayOf;
-        using AnimSchema::DataRef;
-        using AnimSchema::Enum;
-        using AnimSchema::Field;
-        using AnimSchema::Record;
+        using DataField::ArrayOf;
+        using DataField::DataRef;
+        using DataField::Enum;
+        using DataField::Field;
+        using DataField::Record;
         DataFieldSchema clip = Field("clip", DataFieldKind::AssetRef, "Clip", "The clip this row plays.", false);
         clip.Reference.AssetTypeFilter = AssetType::AnimationClip;
 

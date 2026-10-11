@@ -1,6 +1,6 @@
 #include <anim/AnimBlendspaceData.h>
 
-#include "AnimSchemaFields.h"
+#include <core/metadata/DataSchemaFields.h>
 
 #include <cmath>
 #include <format>
@@ -10,9 +10,9 @@ namespace
 {
     DataSchema MakeSchema()
     {
-        using AnimSchema::ArrayOf;
-        using AnimSchema::Field;
-        using AnimSchema::Record;
+        using DataField::ArrayOf;
+        using DataField::Field;
+        using DataField::Record;
         DataFieldSchema axis = Record({}, "Axis", {},
             {
                 Field("fact", DataFieldKind::String, "Fact", "A float or int fact that places the mix."),
