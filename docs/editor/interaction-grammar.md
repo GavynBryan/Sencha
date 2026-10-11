@@ -173,6 +173,12 @@ it, or on every selected face when that is one of them, and holds what was
 dropped. Files dropped on a window from outside are imported into the folder
 in view, each one step, and shown.
 
+The Shelf also has a window of its own (the bar's window key, or
+`shelf.window`): a window whose shell is the Shelf alone (`ShellRole::Shelf`),
+filling it below the rail and always up, its close key closing the window.
+What it opens opens in its workspace's window. A carried tile stays in the
+window it was picked up in.
+
 The rail is also the window caption (client decorations) and the only
 full-width chrome. Every persistent instrument is **a readout that is also a
 button**: the station shows the tool and opens its wheel, the cartridge shows

@@ -12,7 +12,7 @@
          top edge is dragged to size it; pinned, it stays and the work ends
          above it. -->
     <div id="shelf" class="theme-plate" data-style-height="height">
-        <div id="shelf_grip" data-event-mousedown="shelf_grab(ev.mouse_y)"
+        <div id="shelf_grip" data-if="!own_window" data-event-mousedown="shelf_grab(ev.mouse_y)"
              data-event-drag="shelf_drag(ev.mouse_y)" data-event-dragend="shelf_drop()"></div>
         <div id="shelf_bar">
             <div class="key theme-key" data-if="choosing == ''" data-event-click="shelf_new(ev.mouse_x, ev.mouse_y)"
@@ -41,8 +41,10 @@
             <span id="shelf_count" class="theme-dim">{{count}}</span>
             <div class="key theme-key glyph" data-class-lit="view == 'list'" data-event-click="shelf_view()"
                  title="Tiles or a list">&#xf03a;</div>
-            <div class="key theme-key glyph" data-class-lit="pinned" data-event-click="shelf_pin()"
+            <div class="key theme-key glyph" data-if="!own_window" data-class-lit="pinned" data-event-click="shelf_pin()"
                  title="Pinned, it stays and the work ends above it">&#xf08d;</div>
+            <div class="key theme-key glyph" data-if="!own_window" data-event-click="shelf_window()"
+                 title="The shelf in a window of its own">&#xf2d2;</div>
             <div class="key theme-key glyph" data-event-click="shelf_close()">&#xf00d;</div>
         </div>
         <div id="shelf_body">

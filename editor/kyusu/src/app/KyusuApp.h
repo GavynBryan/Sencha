@@ -62,7 +62,8 @@ private:
     // The theme, then each window's shell: act on and publish its rail.
     void UpdateShells();
     [[nodiscard]] std::unique_ptr<ShellWindow> MakeShell(SdlWindow& window, PresentationId presentation,
-                                                         WindowActions& actions, std::function<void()> close);
+                                                         WindowActions& actions, std::function<void()> close,
+                                                         ShellRole role = ShellRole::Workspaces);
     [[nodiscard]] WindowActions& ActionsFor(PresentationId window);
     // The active workspace's staged edit, then the journal's newest step.
     void Undo();
@@ -72,6 +73,9 @@ private:
     // A window for a detached workspace and the shell drawn in it; null when
     // either cannot be made.
     PresentationId OpenDetachedWindow(const WorkspaceKind& kind);
+    // A window of its own beside the main one, its shell in `role`; null when
+    // it cannot be made.
+    PresentationId OpenWindow(std::string title, ShellRole role);
     void CloseDetachedWindow(PresentationId window);
     // The window an event names; the primary for one naming none.
     [[nodiscard]] PresentationId WindowOf(std::uint32_t windowId) const;
@@ -126,6 +130,8 @@ private:
     };
     std::vector<DetachedWindow> Detached;
     std::vector<PresentationId> WindowsToClose;
+    // The shelf's window of its own, while it is open.
+    PresentationId ShelfWindow;
     SynthesizedInput Input;
     // Until the first frame nothing records, so the startup script's workspace
     // commands apply at once and the commands after them find what they open.

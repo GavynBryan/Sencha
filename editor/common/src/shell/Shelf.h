@@ -127,6 +127,9 @@ public:
     void Show(std::string category = {});
     void Hide();
     void Toggle();
+    // As the whole of a window of its own, `height` window pixels tall: always
+    // up, and its close key closes the window.
+    void Fill(float height);
     // Raised to choose for `pick`, in place of opening.
     void Pick(ShelfPick pick);
     // Raised in the folder of `assetPath`, with it chosen and nothing else
@@ -158,7 +161,7 @@ public:
     void Import(std::span<const std::filesystem::path> files);
 
 private:
-    enum class Placement : std::uint8_t { Down, Raised, Pinned };
+    enum class Placement : std::uint8_t { Down, Raised, Pinned, Filling };
     enum class Listing : std::uint8_t { Everything, Recent, Open, Changed, Unused, Problems };
     enum class Look : std::uint8_t { Tiles, List };
     enum class Edge : std::uint8_t { Resting, Sizing };
@@ -198,6 +201,7 @@ private:
     WorkspaceHost& Workspaces;
     PresentationId Presentation;
     ShelfSources Sources;
+    std::function<void()> CloseWindow;
     ActionCatalog& Catalog;
     ActionContextStack& Actions;
     NoticeQueue& Notices;

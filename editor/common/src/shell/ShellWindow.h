@@ -45,6 +45,13 @@ inline constexpr std::uint8_t kContentUiLayer = 1;
 // window's own: everything the rail does goes through it, so a key on the rail
 // and a chord on the keyboard perform the same thing.
 
+// What a window is for: the workspaces placed in it, or the shelf alone.
+enum class ShellRole : std::uint8_t
+{
+    Workspaces,
+    Shelf,
+};
+
 struct ShellWindowServices
 {
     UiService& Ui;
@@ -62,6 +69,7 @@ struct ShellWindowServices
     // The application's name, which the window's title leads with.
     std::string Title;
     ShelfSources Content = {};
+    ShellRole Role = ShellRole::Workspaces;
 };
 
 // What the person has chosen about how every shell looks and moves.

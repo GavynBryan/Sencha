@@ -49,6 +49,7 @@ const UiModelPropertyId kTile = UiPropertyIdAt(15);
 const UiModelPropertyId kChoosing = UiPropertyIdAt(16);
 const UiModelPropertyId kOffersNone = UiPropertyIdAt(17);
 const UiModelPropertyId kCanGoBack = UiPropertyIdAt(18);
+const UiModelPropertyId kOwnWindow = UiPropertyIdAt(19);
 
 const UiModelRowsId kCrumbs = UiRowsIdAt(0);
 const UiModelRowsId kChips = UiRowsIdAt(1);
@@ -82,6 +83,7 @@ const UiActionId kNew = UiActionIdAt(19);
 const UiActionId kCarry = UiActionIdAt(20);
 const UiActionId kInto = UiActionIdAt(21);
 const UiActionId kPut = UiActionIdAt(22);
+const UiActionId kWindow = UiActionIdAt(23);
 
 // How much wider a tile is than its picture, and the gap after it, in dp.
 constexpr float kTileMarginDp = 24.0f;
@@ -120,13 +122,14 @@ UiScreenDesc Describe()
         UiModelProperty{ "choosing", UiValue(std::string{}) },
         UiModelProperty{ "offers_none", UiValue(false) },
         UiModelProperty{ "can_go_back", UiValue(false) },
+        UiModelProperty{ "own_window", UiValue(false) },
     };
     desc.RowLists = { "crumbs", "chips", "lists", "folders", "items", "uses", "used_by", "missing" };
     desc.Actions = { "shelf_grab",   "shelf_drag",   "shelf_drop", "shelf_query", "shelf_key",
                      "shelf_category", "shelf_list", "shelf_folder", "shelf_branch", "shelf_pick",
                      "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom", "shelf_none",
                      "shelf_follow", "shelf_back", "shelf_press", "shelf_new",
-                     "shelf_carry", "shelf_into", "shelf_put" };
+                     "shelf_carry", "shelf_into", "shelf_put", "shelf_window" };
     return desc;
 }
 
@@ -226,6 +229,7 @@ Shelf::Shelf(const ShellWindowServices& services, UiSurfaceId surface)
     , Workspaces(services.Workspaces)
     , Presentation(services.Presentation)
     , Sources(services.Content)
+    , CloseWindow(services.CloseWindow)
     , Catalog(services.Catalog)
     , Actions(services.Actions)
     , Notices(services.Notices)
@@ -259,8 +263,21 @@ void Shelf::Show(std::string category)
         Screen = Ui.OpenScreen(Surface, Describe());
 }
 
+void Shelf::Fill(float height)
+{
+    if (State != Placement::Filling)
+    {
+        Show();
+        State = Placement::Filling;
+    }
+    HeightDp = height / Dp;
+}
+
 void Shelf::Hide()
 {
+    // A window of its own is nothing else: only closing the window takes it.
+    if (State == Placement::Filling)
+        return;
     State = Placement::Down;
     TopEdge = Edge::Resting;
     Use = Purpose::Opening;
@@ -447,7 +464,7 @@ void Shelf::Move(int by)
 
 void Shelf::HandleAction(const UiAction& action, float windowHeight)
 {
-    if (action.Id == kGrab)
+    if (action.Id == kGrab && State != Placement::Filling)
     {
         TopEdge = Edge::Sizing;
         GrabbedAt = static_cast<float>(Number(action));
@@ -553,10 +570,17 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
     }
     else if (action.Id == kViewAction)
         View = View == Look::Tiles ? Look::List : Look::Tiles;
-    else if (action.Id == kPin)
+    else if (action.Id == kPin && State != Placement::Filling)
         State = State == Placement::Pinned ? Placement::Raised : Placement::Pinned;
+    else if (action.Id == kClose && State == Placement::Filling)
+    {
+        if (CloseWindow)
+            CloseWindow();
+    }
     else if (action.Id == kClose)
         Hide();
+    else if (action.Id == kWindow)
+        (void)Actions.Invoke("shelf.window");
     else if (action.Id == kZoom && Flag(action, 1))
         PictureDp = std::clamp(PictureDp - static_cast<float>(Number(action)) * 8.0f, kSmallestPictureDp,
                                kLargestPictureDp);
@@ -737,10 +761,12 @@ void Shelf::Tell(std::string text, bool failed)
 
 void Shelf::Update(float dp, float windowHeight)
 {
-    // Raised, it is in front of the work, and Delete is the chosen file's.
-    if ((State == Placement::Raised) != FileLayer.IsActive())
+    // Raised, or the whole of its window, it is in front of the work, and
+    // Delete is the chosen file's.
+    const bool inFront = State == Placement::Raised || State == Placement::Filling;
+    if (inFront != FileLayer.IsActive())
     {
-        if (State == Placement::Raised)
+        if (inFront)
             FileLayer = Actions.Push(FileActions, ActionRank::Surface);
         else
             FileLayer.Reset();
@@ -761,6 +787,7 @@ void Shelf::Publish()
     (void)Ui.SetValue(Screen, kHeight, UiValue(std::format("{:.0f}px", HeightDp * Dp)));
     (void)Ui.SetValue(Screen, kView, UiValue(std::string(View == Look::List ? "list" : "tiles")));
     (void)Ui.SetValue(Screen, kPinned, UiValue(State == Placement::Pinned));
+    (void)Ui.SetValue(Screen, kOwnWindow, UiValue(State == Placement::Filling));
     (void)Ui.SetValue(Screen, kPicture, UiValue(std::format("{:.0f}dp", PictureDp)));
     (void)Ui.SetValue(Screen, kTile, UiValue(std::format("{:.0f}dp", PictureDp + kTileMarginDp)));
     (void)Ui.SetValue(Screen, kChoosing, UiValue(Picking.Title));

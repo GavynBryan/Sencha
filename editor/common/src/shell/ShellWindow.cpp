@@ -430,6 +430,8 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
         Palette->Close();
     }
     Palette->Update();
+    if (Services.Role == ShellRole::Shelf)
+        AssetShelf->Fill(static_cast<float>(extent.Height) - RailHeight());
     AssetShelf->Update(Services.Ui.GetSurfaceScale(SurfaceId), static_cast<float>(extent.Height));
     if (const std::optional<ShelfDrop> drop = AssetShelf->TakeDrop())
     {

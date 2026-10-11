@@ -381,3 +381,16 @@ do the work and delete the entry.
   `ProjectSession`'s `IsOpen` hook asks only the journal.
 - **Trigger:** the preview's model card joining the journal as a document
   source, or a person moving a previewed document.
+
+## Carrying a tile from the shelf's window into another
+
+- **What:** the Shelf in a window of its own opens what it holds in the
+  workspace's window, but a tile dragged from it cannot be let go over another
+  window's view or fields: a drag lives in the document it began in, and each
+  window has its own.
+- **Where:** `editor/common/src/shell/Shelf.cpp` (Carry, `TakeDrop`) and
+  `ShellWindow` (`shell_sheet_drop`, `DropAsset`); the engine's per-window
+  authored UI contexts (`engine/src/ui/UiRuntime.cpp`).
+- **Trigger:** a person working with the Shelf on a second display who wants
+  to drop from it, which then needs a drag the application holds across
+  windows rather than one document does.

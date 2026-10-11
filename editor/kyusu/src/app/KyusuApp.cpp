@@ -185,6 +185,11 @@ void KyusuApp::OnStart(GameStartupContext&)
 
 PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
 {
+    return OpenWindow("Kyusu - " + kind.DisplayName, ShellRole::Workspaces);
+}
+
+PresentationId KyusuApp::OpenWindow(std::string title, ShellRole role)
+{
     Engine& engine = GetEngine();
     GraphicsServices& graphics = engine.Graphics();
     SdlWindowService& windows = engine.Platform().Windows;
@@ -192,7 +197,7 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
     if (primary == nullptr || engine.TryUi() == nullptr)
         return {};
     WindowCreateInfo info;
-    info.Title = "Kyusu - " + kind.DisplayName;
+    info.Title = std::move(title);
     const WindowExtent extent = primary->GetExtent();
     info.Width = extent.Width;
     info.Height = extent.Height;
@@ -216,8 +221,8 @@ PresentationId KyusuApp::OpenDetachedWindow(const WorkspaceKind& kind)
         RenderFeatureScope::For(presentation));
     auto actions = std::make_unique<WindowActions>();
     actions->Application = actions->Stack.Push(ApplicationActions, ActionRank::Application);
-    std::unique_ptr<ShellWindow> windowShell =
-        MakeShell(window, presentation, *actions, [this, presentation] { WindowsToClose.push_back(presentation); });
+    std::unique_ptr<ShellWindow> windowShell = MakeShell(
+        window, presentation, *actions, [this, presentation] { WindowsToClose.push_back(presentation); }, role);
     Detached.push_back(DetachedWindow{ presentation, window.GetId(), std::move(actions), std::move(windowShell),
                                        uiFeature, contentFeature });
     return presentation;
@@ -246,9 +251,15 @@ void KyusuApp::CloseRequestedWindows()
 {
     std::vector<PresentationId> closing = std::move(WindowsToClose);
     WindowsToClose.clear();
-    // Closing a window brings its workspaces back, which empties and closes it.
+    // Closing a window brings its workspaces back, which empties and closes
+    // it; one that held none, the shelf's own, closes as it is.
     for (const PresentationId window : closing)
+    {
         Workspaces->Gather(window);
+        CloseDetachedWindow(window);
+        if (window == ShelfWindow)
+            ShelfWindow = {};
+    }
 }
 
 std::vector<std::filesystem::path> KyusuApp::ContentRoots() const
@@ -401,6 +412,15 @@ void KyusuApp::DefineApplicationActions()
           { .Invoke = [&documents] { documents.Redo(); }, .Enabled = [&documents] { return documents.CanRedo(); } });
     offer("file.save_all", "Save All", { { SDLK_S, { .Ctrl = true, .Shift = true } } },
           { .Invoke = [&documents] { (void)documents.SaveAll(); } });
+    // One shelf window: asked again while it is open, it comes to the front.
+    OfferAction(Catalog, ApplicationActions,
+                { .Id = "shelf.window", .Label = "Shelf Window", .Category = "View", .Icon = IconId::Folder },
+                { .Invoke = [this] {
+                    if (ShelfWindow.IsNull())
+                        ShelfWindow = OpenWindow("Kyusu - Shelf", ShellRole::Shelf);
+                    else if (auto* presentation = GetEngine().Graphics().Frames.FindPresentation(ShelfWindow))
+                        (void)SDL_RaiseWindow(presentation->Window().GetHandle());
+                } });
 
     registry.RegisterCVar({
         .Name = std::string(kScaleCVar),
@@ -574,11 +594,14 @@ void KyusuApp::RegisterWorkspaceCommands()
     registry.RegisterCommand({
         .Name = "editor.window.screenshot",
         .Owner = "editor",
-        .Usage = "editor.window.screenshot <kind> <path.png> [frame]",
-        .Help = "Write the window showing an open workspace to a PNG, once the renderer has drawn [frame] frames.",
+        .Usage = "editor.window.screenshot <kind|shelf> <path.png> [frame]",
+        .Help = "Write the window showing an open workspace, or the shelf's own window, to a PNG, once the "
+                "renderer has drawn [frame] frames.",
         .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
             ConsoleResult result;
-            const PresentationId window = args.size() >= 2 ? Workspaces->WindowOf(args[0]) : PresentationId{};
+            const PresentationId window = args.size() < 2      ? PresentationId{}
+                                        : args[0] == "shelf" ? ShelfWindow
+                                                             : Workspaces->WindowOf(args[0]);
             std::uint64_t atFrame = 0;
             if (args.size() == 3)
                 atFrame = std::strtoull(args[2].c_str(), nullptr, 10);
@@ -700,7 +723,7 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
 }
 
 std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, PresentationId presentation,
-                                                 WindowActions& actions, std::function<void()> close)
+                                                 WindowActions& actions, std::function<void()> close, ShellRole role)
 {
     Engine& engine = GetEngine();
     return std::make_unique<ShellWindow>(ShellWindowServices{
@@ -720,6 +743,7 @@ std::unique_ptr<ShellWindow> KyusuApp::MakeShell(SdlWindow& window, Presentation
                      .Pictures = Session != nullptr ? &Session->Pictures() : nullptr,
                      .References = Session != nullptr ? &Session->References() : nullptr,
                      .Files = Session != nullptr ? Session->Files() : nullptr },
+        .Role = role,
     });
 }
 
