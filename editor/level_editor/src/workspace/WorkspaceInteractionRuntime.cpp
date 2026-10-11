@@ -77,8 +77,8 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
         Tools->Register(std::make_unique<BrushTool>());
         Tools->Register(std::make_unique<EdgeCutTool>());
         Tools->Register(std::make_unique<FaceCarveTool>());
-        Tools->Register(std::make_unique<ClipTool>());
         Tools->Register(std::make_unique<PlaceTool>());
+        Tools->Register(std::make_unique<ClipTool>());
         Tools->Activate("select");
         Tools->ForwardResourceChanges(inputs.Settings.Resources);
     }
