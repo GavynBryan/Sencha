@@ -166,6 +166,9 @@ private:
                               bool failed);
     void CommitReady(const std::string& path);
     void CompleteLoad(AssetType type, const std::string& path, bool failed);
+    // Completes a load that failed with what the front door resolves it to,
+    // the kind's stand-in where it has one.
+    void FailLoad(AssetType type, const std::string& path, std::string reason);
     void Deliver(const LoadWaiter& waiter,
                  AssetType type,
                  const std::string& path,

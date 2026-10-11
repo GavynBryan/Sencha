@@ -53,6 +53,12 @@ struct AssetKindRegistration
     // cannot reload.
     std::function<bool(AssetStaging&&)> Reload;
 
+    // Puts the kind's stand-in into its store under `path` and yields the
+    // creation reference: what a reference to an asset of this kind that
+    // cannot be loaded resolves to (docs/assets/pipeline.md, Stand-ins).
+    // Requires Reload, which is what replaces it once the asset loads.
+    std::function<AssetLease(std::string_view path)> StandIn;
+
     [[nodiscard]] bool IsLoadable() const
     {
         return Stager != nullptr && Store != nullptr && Commit != nullptr;

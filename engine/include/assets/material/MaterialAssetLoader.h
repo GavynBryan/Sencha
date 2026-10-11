@@ -65,8 +65,8 @@ private:
                             std::vector<TextureCacheHandle>& owned);
 
     // One reference to the texture at `path`, staged with `srgb` when it is
-    // not yet resident. The generic texture load assumes sRGB; only a
-    // material knows which of its slots hold color.
+    // not yet resident, or to its stand-in. The generic texture load assumes
+    // sRGB; only a material knows which of its slots hold color.
     [[nodiscard]] TextureHandle LoadTexture(std::string_view path, bool srgb, AssetSystem& assets);
 
     Logger& Log;

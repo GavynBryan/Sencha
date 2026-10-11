@@ -75,9 +75,6 @@ private:
 
     void EnqueueFileAction(FileActionKind kind, std::string path);
     void RescanMaterials(const std::string& levelPath);
-    // Logs each face material ref the scanned roots cannot resolve (they render
-    // as the level default), so cross-project level moves are diagnosable.
-    void LogUnresolvedFaceMaterials(const std::string& levelPath);
 
     SdlWindow*        Window;
     WorldDocument&    World;

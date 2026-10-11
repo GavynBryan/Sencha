@@ -143,10 +143,10 @@ void AssetHotReloader::StageReload(const AssetRecord& record)
         [stager, source, rec]() -> AssetStaging {
             return stager->LoadStaged(rec, *source);
         },
-        // Owner thread, drain point: swap the resident entry in place.
-        [this, kindName = kind->Name, reload = kind->Reload, path = record.Path]
-        (AssetStaging staging) {
-            if (reload(std::move(staging)))
+        // Owner thread, drain point: swap the resident entry in place, through
+        // the front door so a reload that fixes a failed load clears it.
+        [this, kindName = kind->Name, path = record.Path](AssetStaging staging) {
+            if (Assets.Reload(std::move(staging)))
                 Log.Info("AssetHotReloader: reloaded {} '{}'", kindName, path);
         });
 }

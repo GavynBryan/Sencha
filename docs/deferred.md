@@ -394,3 +394,21 @@ do the work and delete the entry.
 - **Trigger:** a person working with the Shelf on a second display who wants
   to drop from it, which then needs a drag the application holds across
   windows rather than one document does.
+
+## Mesh stand-ins
+
+- **What:** a missing material or texture stands in as the pink and black
+  checker (`docs/assets/pipeline.md`, Decision P). A missing static or skinned
+  mesh still fails its load, so the scene field naming it fails as before.
+- **Where:** a kind opts in with `AssetKindRegistration::StandIn`
+  (`engine/include/core/assets/AssetKindRegistry.h`), registered in
+  `RuntimeAssets` (`engine/src/assets/runtime/RuntimeAssets.cpp`) from
+  `engine/include/assets/runtime/AssetStandIns.h`.
+- **Why not now:** what a missing mesh is has product consequences a material
+  does not: its bounds decide culling and placement, its sections choose the
+  entity's materials (so a plain cube would draw in the entity's own material,
+  not conspicuously), and collision cooked from it would collide with a shape
+  nobody authored.
+- **Trigger:** content that ships a scene whose mesh can go missing (a renamed
+  or deleted model in a project), or the owner choosing the mesh stand-in's
+  shape, its material, and whether it collides.

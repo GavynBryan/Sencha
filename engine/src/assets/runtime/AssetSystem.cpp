@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <format>
 #include <utility>
+#include <vector>
 
 AssetSystem::AssetSystem(LoggingProvider& logging, AssetRegistry& registry)
     : Log(logging.GetLogger<AssetSystem>())
@@ -60,52 +61,108 @@ AssetLease AssetSystem::TryAcquireLease(std::string_view path, AssetType type)
 
 AssetLease AssetSystem::LoadLease(std::string_view path, AssetType type)
 {
-    const AssetRecord* record = Resolve(path, type);
-    if (record == nullptr)
+    if (path.empty())
+    {
+        Log.Error("AssetSystem: empty asset path");
         return {};
+    }
+
+    // By where it was, too: a document read before a move names it there.
+    const AssetRecord* record = Registry.Find(AssetRef{ .Path = std::string(path) });
+    if (record == nullptr)
+    {
+        // A stand-in already waits here with its reason recorded; asking
+        // again is not a new failure.
+        if (AssetLease standIn = TryAcquireLease(path, type); standIn.IsValid())
+            return standIn;
+        return FailLoad(path, type, std::format("'{}' is in no mounted content root", path));
+    }
+    if (record->Type != type)
+        return FailLoad(path, type, std::format("'{}' is a {} asset, not a {}", record->Path,
+                                                AssetTypeToString(record->Type), AssetTypeToString(type)));
 
     if (AssetLease resident = TryAcquireLease(record->Path, type); resident.IsValid())
         return resident;
 
     const std::string recordPath = record->Path;
-    const auto fail = [&](std::string reason) {
-        Log.Error("AssetSystem: {}", reason);
-        RecordFailure(recordPath, std::move(reason));
-        return AssetLease{};
-    };
 
     // A procedural asset is put into its store by whoever built it; there are
-    // no bytes to stage.
+    // no bytes to stage, and a stand-in under its path would take its place.
     if (record->SourceKind == AssetSourceKind::Procedural)
-        return fail(std::format("no runtime resource registered for procedural {} '{}'", AssetTypeToString(type),
-                                recordPath));
+    {
+        std::string reason = std::format("no runtime resource registered for procedural {} '{}'",
+                                         AssetTypeToString(type), recordPath);
+        Log.Error("AssetSystem: {}", reason);
+        RecordFailure(recordPath, type, std::move(reason));
+        return {};
+    }
 
     IAssetStager* stager = LoaderFor(type);
     if (stager == nullptr)
-        return fail(std::format("no loader registered for {} '{}'", AssetTypeToString(type), recordPath));
+        return FailLoad(recordPath, type, std::format("no loader registered for {} '{}'", AssetTypeToString(type),
+                                                      recordPath));
 
     AssetStaging staged = stager->LoadStagedResolving(*record, Source, *Registry.PathsById());
     if (!staged.IsValid())
-        return fail(staged.Error);
+        return FailLoad(recordPath, type, std::move(staged.Error));
 
     // A dependency the commit loads and fails records its own reason first;
     // this one then names it.
     const std::uint64_t beforeCommit = FailuresRecorded;
     AssetLease lease = Commit(std::move(staged));
     if (lease.IsValid())
-        ClearFailure(recordPath);
-    else if (FailuresRecorded != beforeCommit && LastFailedPath != recordPath)
-        RecordFailure(recordPath, std::format("'{}' depends on '{}', which did not load", recordPath, LastFailedPath));
-    else
-        RecordFailure(recordPath, std::format("'{}' was staged but could not be committed", recordPath));
-    return lease;
+        return lease;
+    if (FailuresRecorded != beforeCommit && LastFailedPath != recordPath)
+        return FailLoad(recordPath, type,
+                        std::format("'{}' depends on '{}', which did not load", recordPath, LastFailedPath));
+    return FailLoad(recordPath, type, std::format("'{}' was staged but could not be committed", recordPath));
 }
 
-void AssetSystem::RecordFailure(std::string_view path, std::string reason)
+AssetLease AssetSystem::FailLoad(std::string_view path, AssetType type, std::string reason)
+{
+    Log.Error("AssetSystem: {}", reason);
+    RecordFailure(path, type, std::move(reason));
+
+    const AssetKindRegistration* kind = KindRegistry.Find(type);
+    if (kind == nullptr || !kind->StandIn)
+        return {};
+    if (AssetLease standIn = TryAcquireLease(path, type); standIn.IsValid())
+        return standIn;
+    return kind->StandIn(path);
+}
+
+void AssetSystem::RetryStandIns()
+{
+    if (Registry.Revision() == RetriedAtRevision)
+        return;
+    RetriedAtRevision = Registry.Revision();
+
+    // A copy: a retry that loads clears its own entry.
+    const std::vector<LoadFailure> failures = Failures;
+    for (const LoadFailure& failure : failures)
+        RetryStandIn(failure);
+}
+
+void AssetSystem::RetryStandIn(const LoadFailure& failure)
+{
+    if (!IsResident(failure.Path, failure.Type))
+        return;
+    const AssetRecord* record = Registry.FindByPath(failure.Path);
+    if (record == nullptr || record->Type != failure.Type || record->SourceKind != AssetSourceKind::File)
+        return;
+    IAssetStager* stager = LoaderFor(failure.Type);
+    if (stager == nullptr)
+        return;
+    (void)Reload(stager->LoadStagedResolving(*record, Source, *Registry.PathsById()));
+}
+
+void AssetSystem::RecordFailure(std::string_view path, AssetType type, std::string reason)
 {
     LastFailedPath = path;
     ++FailuresRecorded;
-    const auto found = std::ranges::find(Failures, path, &LoadFailure::Path);
+    const auto found = std::ranges::find_if(Failures, [&](const LoadFailure& failure) {
+        return failure.Path == path && failure.Type == type;
+    });
     if (found != Failures.end())
     {
         if (found->Reason == reason)
@@ -114,14 +171,15 @@ void AssetSystem::RecordFailure(std::string_view path, std::string reason)
     }
     else
     {
-        Failures.push_back({ std::string(path), std::move(reason) });
+        Failures.push_back({ std::string(path), std::move(reason), type });
     }
     ++FailuresVersion;
 }
 
-void AssetSystem::ClearFailure(std::string_view path)
+void AssetSystem::ClearFailure(std::string_view path, AssetType type)
 {
-    if (std::erase_if(Failures, [&](const LoadFailure& failure) { return failure.Path == path; }) > 0)
+    if (std::erase_if(Failures, [&](const LoadFailure& failure) { return failure.Path == path && failure.Type == type; })
+        > 0)
         ++FailuresVersion;
 }
 
@@ -167,48 +225,45 @@ AssetLease AssetSystem::Commit(AssetStaging&& staged)
         return {};
     }
 
-    return kind->Commit(std::move(staged));
+    const std::string path = staged.Record.Path;
+    const AssetType type = staged.Record.Type;
+    AssetLease lease = kind->Commit(std::move(staged));
+    if (lease.IsValid())
+        ClearFailure(path, type);
+    return lease;
 }
 
 bool AssetSystem::Reload(AssetStaging&& staged)
 {
-    const AssetKindRegistration* kind = KindRegistry.Find(staged.Record.Type);
-    if (kind == nullptr || !kind->Reload)
+    const std::string path = staged.Record.Path;
+    const AssetType type = staged.Record.Type;
+    if (!staged.IsValid())
     {
-        Log.Error("AssetSystem: no reload registered for {} '{}'",
-                  AssetTypeToString(staged.Record.Type), staged.Record.Path);
+        Log.Error("AssetSystem: reload of '{}' failed: {}", path, staged.Error);
+        RecordFailure(path, type, std::move(staged.Error));
         return false;
     }
 
-    return kind->Reload(std::move(staged));
+    const AssetKindRegistration* kind = KindRegistry.Find(type);
+    if (kind == nullptr || !kind->Reload)
+    {
+        Log.Error("AssetSystem: no reload registered for {} '{}'", AssetTypeToString(type), path);
+        return false;
+    }
+
+    if (!kind->Reload(std::move(staged)))
+        return false;
+    ClearFailure(path, type);
+    return true;
 }
 
 const AssetRecord* AssetSystem::Resolve(std::string_view path, AssetType expectedType) const
 {
     if (path.empty())
-    {
-        Log.Error("AssetSystem: empty asset path");
         return nullptr;
-    }
-
     // By where it was, too: a document read before a move names it there.
     const AssetRecord* record = Registry.Find(AssetRef{ .Path = std::string(path) });
-    if (!record)
-    {
-        Log.Error("AssetSystem: failed to resolve asset '{}'", path);
-        return nullptr;
-    }
-
-    if (record->Type != expectedType)
-    {
-        Log.Error("AssetSystem: expected {} asset, got {} for path {}",
-                  AssetTypeToString(expectedType),
-                  AssetTypeToString(record->Type),
-                  record->Path);
-        return nullptr;
-    }
-
-    return record;
+    return record != nullptr && record->Type == expectedType ? record : nullptr;
 }
 
 bool AssetSystem::IsResident(std::string_view path, AssetType type) const

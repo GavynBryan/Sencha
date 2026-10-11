@@ -839,6 +839,39 @@ component types we happen to have, and never let the loader contract assume
 a payload is leaf data with no refs of its own — materials → textures
 already broke that assumption; templates and tables break it harder.
 
+### P. Stand-ins — a reference that cannot load still names something (added 2026-10-11)
+
+**Landed.** A reference to an asset that cannot be loaded — no record, bytes
+that do not decode, a commit that fails — resolves to the kind's *stand-in*: an
+ordinary resident entry in the kind's store under the path that was asked for.
+
+- **Seen, not vanished.** The material stand-in is unlit and two-sided with a
+  point-sampled pink and black checker (`AssetStandIns.h`); the texture stand-in
+  is that checker. No light, facing or distance hides one. A material slot whose
+  texture is missing samples the checker too.
+- **Identity kept.** The entry is keyed by the reference's path, so a scene,
+  brush or field holding it saves back the reference it was read with, and a
+  scene with a missing material loads instead of rolling back.
+- **Said once.** The front door records why (`AssetSystem::LoadFailures`, which
+  the editor shows as problems); asking for the path again returns the same
+  stand-in without a new failure. `Resolve` is a quiet lookup for that reason.
+- **Replaced in place.** Only a reload replaces a stand-in, keeping its handle,
+  so every holder sees the asset the moment it loads: the hot reload of the file
+  when its bytes change, and `AssetSystem::RetryStandIns`, run once a frame,
+  when the registry changes (a file the editor creates, imports, moves or renames
+  into the path). A commit of the same path yields the stand-in rather than
+  displacing it. A reload whose staging fails keeps what is resident — the last
+  good version, or the stand-in — and records the reason.
+- **One door, two schedulings.** Every failure goes through
+  `AssetSystem::FailLoad`, the async preloader's included, so a zone whose
+  material names a missing texture streams in with the checker exactly as the
+  synchronous load would.
+- **Which kinds.** A kind opts in with `AssetKindRegistration::StandIn`, which
+  requires `Reload`. Materials and textures do. Meshes do not yet
+  (`docs/deferred.md`, Mesh stand-ins). A procedural record never stands in: its
+  builder puts it in the store under that path, and a stand-in there would take
+  its place.
+
 ---
 
 ## Rollout

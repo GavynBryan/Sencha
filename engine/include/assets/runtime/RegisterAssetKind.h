@@ -6,6 +6,8 @@
 #include <core/assets/AssetStore.h>
 
 #include <cassert>
+#include <functional>
+#include <string_view>
 #include <utility>
 
 namespace AssetKindDetail
@@ -46,13 +48,14 @@ namespace AssetKindDetail
 //
 // The stager is always wired because staging touches no cache; the commit
 // half exists only for a cache this composition has, so a headless host still
-// stages a mesh and reports the commit as a failure.
+// stages a mesh and reports the commit as a failure. So does the stand-in.
 template<typename TLoader, typename TCache>
 void RegisterAssetKind(AssetSystem& assets,
                        AssetType type,
                        TLoader& loader,
                        TCache* cache,
-                       IAssetListStore* listStore = nullptr)
+                       IAssetListStore* listStore = nullptr,
+                       std::function<AssetLease(std::string_view)> standIn = {})
 {
     AssetKindRegistration kind = MakeBuiltinAssetKind(type);
     kind.Stager = &loader;
@@ -73,6 +76,7 @@ void RegisterAssetKind(AssetSystem& assets,
             {
                 return AssetKindDetail::CommitReload(loader, std::move(staged), assets);
             };
+            kind.StandIn = std::move(standIn);
         }
     }
 

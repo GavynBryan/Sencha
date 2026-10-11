@@ -31,6 +31,20 @@
 
 namespace
 {
+// A file that appears after a load of it failed replaces the stand-in
+// wherever it is held. Free until the registry changes.
+struct StandInRetrySystem
+{
+    explicit StandInRetrySystem(RuntimeContent& content)
+        : Content(content)
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext&) { Content.Assets().Assets.RetryStandIns(); }
+
+    RuntimeContent& Content;
+};
+
 #ifdef SENCHA_ENABLE_COOK
 // Polls the watched sources; a changed one stages an in-place swap that
 // commits at the async drain. The poll throttles itself.
@@ -156,10 +170,9 @@ void RuntimeContent::Publish(World& world)
 
 void RuntimeContent::RegisterSystems(EngineSchedule& schedule)
 {
+    schedule.Register<StandInRetrySystem>(*this);
 #ifdef SENCHA_ENABLE_COOK
     schedule.Register<HotReloadPollSystem>(*this);
-#else
-    (void)schedule;
 #endif
 }
 

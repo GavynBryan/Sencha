@@ -137,7 +137,7 @@ bool AssetRegistry::Unregister(std::string_view path)
         FormerIds.insert_or_assign(it->first, it->second.Id);
     }
     RecordsByPath.erase(it);
-    PathsSnapshot.reset();
+    Changed();
     return true;
 }
 
@@ -169,13 +169,13 @@ bool AssetRegistry::AssignId(std::string_view path, AssetId id)
     RecordsById.erase(it->second.Id);
     it->second.Id = id;
     RecordsById.emplace(id, &it->second);
-    PathsSnapshot.reset();
+    Changed();
     return true;
 }
 
 void AssetRegistry::BindId(AssetRecord& record)
 {
-    PathsSnapshot.reset();
+    Changed();
     const AssetId stated = record.Id;
     if (!record.Id.IsValid())
         record.Id = AssetIdOfPath(record.Path);
@@ -185,6 +185,12 @@ void AssetRegistry::BindId(AssetRecord& record)
         Log.Warn("AssetRegistry: '{}' states id {}, which '{}' already holds; it goes by {}", record.Path,
             AssetIdToString(stated), RecordsById.at(stated)->Path, AssetIdToString(record.Id));
     RecordsById.emplace(record.Id, &record);
+}
+
+void AssetRegistry::Changed()
+{
+    PathsSnapshot.reset();
+    ++Revision_;
 }
 
 const AssetRecord* AssetRegistry::FindByPath(std::string_view path) const

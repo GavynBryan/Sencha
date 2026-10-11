@@ -65,6 +65,9 @@ public:
     [[nodiscard]] AssetRef Current(AssetRef ref) const;
     [[nodiscard]] bool Contains(std::string_view path) const;
 
+    // Changes whenever a record is added, dropped or rebound to another id.
+    [[nodiscard]] std::uint64_t Revision() const { return Revision_; }
+
     // Read-only enumeration of every registered record (keyed by virtual path).
     // Lets tooling list assets of a kind (e.g. the editor's material picker)
     // without a parallel asset-discovery path. (04-§3)
@@ -81,6 +84,7 @@ private:
     // Binds a newly registered record's id: the one it states, or its path's;
     // a taken id leaves it with its path's next free one, and says so.
     void BindId(AssetRecord& record);
+    void Changed();
 
     Logger& Log;
     std::unordered_map<std::string, AssetRecord> RecordsByPath;
@@ -88,6 +92,7 @@ private:
     std::unordered_map<AssetId, const AssetRecord*> RecordsById;
     // Paths unregistered this session, and the ids they went by.
     std::unordered_map<std::string, AssetId> FormerIds;
+    std::uint64_t Revision_ = 0;
 };
 
 // IsValidAssetPath lives in <core/assets/AssetPath.h> (included above) so

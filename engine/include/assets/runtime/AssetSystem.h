@@ -33,6 +33,8 @@ class AssetSystem
 public:
     AssetSystem(LoggingProvider& logging, AssetRegistry& registry);
 
+    // The record `path` names when it is of `expectedType`. A lookup, so it
+    // says nothing about an absence; LoadLease records why a load failed.
     [[nodiscard]] const AssetRecord* Resolve(std::string_view path, AssetType expectedType) const;
 
     // True if `path` currently has a live entry in the store for `type`,
@@ -69,13 +71,24 @@ public:
     [[nodiscard]] AssetLease TryAcquireLease(std::string_view path, AssetType type);
 
     // The synchronous load. A resident path gains a reference instead of
-    // re-staging.
+    // re-staging. A path that cannot be loaded records why and yields its
+    // kind's stand-in under that path, or an invalid lease for a kind with none.
     //
     // A lease rather than a raw handle because the caller usually is not the
     // final owner: a component that names the asset takes its own reference
     // when it is added, and the load's reference has to be let go afterwards.
     // A lease that goes out of scope does that on its own.
     [[nodiscard]] AssetLease LoadLease(std::string_view path, AssetType type);
+
+    // Records why `path` did not load and yields what it resolves to instead:
+    // the kind's stand-in, or an invalid lease. Every scheduling of a load
+    // fails through here, so the synchronous and the async path agree.
+    [[nodiscard]] AssetLease FailLoad(std::string_view path, AssetType type, std::string reason);
+
+    // Loads again every failed path whose stand-in is still held, replacing the
+    // stand-in in place where the asset now loads. Does nothing until the
+    // registry changes; the engine calls it once a frame.
+    void RetryStandIns();
 
     // The path a held token names. Empty when the kind is unregistered or the
     // token names nothing.
@@ -95,12 +108,14 @@ public:
                                                          std::uint64_t token) const;
 
     // Owner-thread commit of a staged payload, dispatched through the kind's
-    // registered Commit. Returns the creation reference.
+    // registered Commit. Returns the creation reference. A path committed
+    // over its stand-in yields the stand-in; only Reload replaces one.
     [[nodiscard]] AssetLease Commit(AssetStaging&& staged);
 
     // Owner-thread in-place reload of a staged payload, through the kind's
-    // registered Reload. False when the kind cannot reload or the asset is
-    // not resident.
+    // registered Reload. False when the staging failed, the kind cannot
+    // reload, or the asset is not resident. A failed staging is recorded and
+    // leaves what is resident, the last good version or the stand-in, as it is.
     [[nodiscard]] bool Reload(AssetStaging&& staged);
 
     // The staged-load surface (Decision C), exposed for async drivers: the
@@ -119,20 +134,22 @@ public:
     // take it after the last kind is registered.
     [[nodiscard]] AssetStoreTable Stores() const;
 
-    // Why a synchronous load of a path failed, kept until a load of that path
+    // Why a load of a path failed, kept until a load or reload of that path
     // succeeds: what a tool shows a person instead of a log line.
     struct LoadFailure
     {
         std::string Path;
         std::string Reason;
+        AssetType Type = AssetType::Unknown;
     };
     [[nodiscard]] std::span<const LoadFailure> LoadFailures() const { return Failures; }
     // Changes whenever a failure is recorded or cleared.
     [[nodiscard]] std::uint64_t LoadFailuresVersion() const { return FailuresVersion; }
 
 private:
-    void RecordFailure(std::string_view path, std::string reason);
-    void ClearFailure(std::string_view path);
+    void RecordFailure(std::string_view path, AssetType type, std::string reason);
+    void ClearFailure(std::string_view path, AssetType type);
+    void RetryStandIn(const LoadFailure& failure);
 
     [[nodiscard]] IAssetStore* StoreFor(AssetType type, AssetArity arity = AssetArity::Single);
     [[nodiscard]] const IAssetStore* StoreFor(AssetType type,
@@ -147,4 +164,5 @@ private:
     std::uint64_t FailuresVersion = 0;
     std::uint64_t FailuresRecorded = 0;
     std::string LastFailedPath;
+    std::uint64_t RetriedAtRevision = 0;
 };
