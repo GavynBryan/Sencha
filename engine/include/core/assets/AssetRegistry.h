@@ -41,9 +41,8 @@ public:
     bool Register(const AssetRecord& record);
     bool RegisterOrVerify(const AssetRecord& record);
 
-    // Drops a record and any id bound to it. For an editor that deleted or
-    // renamed the file behind it; the runtime never unregisters. The path still
-    // answers by the id it went by (Find, Current) wherever that id is
+    // Drops a record and its id, for an editor that deleted or moved its file.
+    // The old path keeps answering by that id (Find, Current) wherever it is
     // registered next, so what was read before a move keeps resolving.
     bool Unregister(std::string_view path);
 
@@ -114,14 +113,9 @@ bool ScanAssetsDirectory(std::string_view rootDirectory,
                          AssetRegistry& registry,
                          const AssetKindRegistry& kinds);
 
-// Registers cooked artifacts listed in <assetsRoot>/.cooked/index.json under
-// their cook-time virtual paths and the ids the index names for them. The path-keyed companion to the physical scan:
-// ScanAssetsDirectory keys a cooked runtime file by its location (so .smesh
-// resolves), but a cooked texture keeps its source virtual path (asset://...png
-// serves cooked .stex bytes), which physical layout cannot express. A COOK=OFF
-// player calls this to bind those artifacts without the cook layer. Skips paths
-// already registered (the scan owns those); a missing or unreadable index is not
-// an error. Returns the count of records newly registered.
+// Registers the artifacts <assetsRoot>/.cooked/index.json lists under their
+// virtual paths and ids, which physical layout cannot express (asset://x.png
+// serves .stex bytes). Skips registered paths; returns how many it added.
 int RegisterCookedAssets(std::string_view assetsRoot, AssetRegistry& registry);
 
 // Name of the cooked-asset cache directory under an assets root

@@ -108,10 +108,8 @@ struct CookedSourceEntry
 // docs/assets/pipeline.md.
 inline constexpr uint32_t kCookedCacheIndexVersion = 10;
 
-// The id an artifact goes by (docs/assets/pipeline.md, Decision A): its
-// source's when it is the source cooked -- the same path, or the same path with
-// its extension changed; a part's ("#anim:Walk") when it is a part of it; and
-// otherwise, being named for nothing but where the cook put it, its path's.
+// The id an artifact goes by: its source's, a part's ("#anim:Walk"), or else
+// its own path's (docs/assets/pipeline.md, Decision A).
 [[nodiscard]] AssetId CookedArtifactId(std::string_view sourcePath, AssetId source, std::string_view artifactPath);
 
 // Names the entry's source id -- its path's, when the source states none --

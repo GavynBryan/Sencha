@@ -344,8 +344,8 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # by value and reaches the service through an inline Engine accessor, so
     # these decide layout a module compiles against.
     "${SENCHA_ENGINE_INCLUDE_DIR}/ui/*.h"
-    # UiService::Frames() and TextureChanges() hand these to a module by
-    # reference, and a host drawing its own surfaces reads their members.
+    # UiService::Frames() and TakeTextureChanges() hand these to a module, and
+    # a host drawing its own surfaces reads their members.
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/ui/*.h"
     # The authored vocabulary: a game declares verbs through VerbRegistry and
     # binds implementations through VerbDispatcher, holding tokens and
@@ -630,19 +630,9 @@ target_include_directories(sencha_navigation_thirdparty SYSTEM PUBLIC
 target_compile_definitions(sencha_navigation_thirdparty PUBLIC DT_POLYREF64=1 DT_VIRTUAL_QUERYFILTER=1)
 target_link_libraries(sencha_engine PRIVATE sencha_navigation_thirdparty)
 
-# RmlUi: the layout and document engine behind the retained authored UI runtime
-# (docs/ui/architecture.md). Deliberately NOT inside the Vulkan block -- cooking a
-# package, parsing a document, laying it out, and driving presentation models need
-# no device, and the headless UI tests are what keep that honest.
-#
-# STATIC and PRIVATE, which is the opposite of the imgui treatment below, for the
-# reason recorded there in reverse: imgui is an OBJECT library because a game
-# module links only sencha::engine yet may call ImGui, so those symbols must
-# reach the shared library's export table. Nothing outside engine/src/ui/rml/ ever calls RmlUi --
-# cmake/CheckUiIsolation.cmake enforces exactly that -- so RmlUi must not be
-# re-exported, must not appear on the install interface, and must not oblige the
-# SDK to ship its headers. PIC comes from CMAKE_POSITION_INDEPENDENT_CODE at the
-# root, so a static library links into the shared engine cleanly.
+# RmlUi, the authored UI's document engine: outside the Vulkan block because it
+# needs no device, and STATIC and PRIVATE because nothing outside engine/src/ui/
+# calls it (docs/building.md, Third-party linkage).
 if(SENCHA_ENABLE_UI)
     # RmlUi's own font engine. The alternative is implementing FontEngineInterface
     # ourselves, which is a large project buying nothing we need today.
@@ -791,14 +781,9 @@ if(SENCHA_ENABLE_VULKAN)
     )
     target_compile_features(sencha_imgui_support PUBLIC cxx_std_20)
 
-    # The engine is the single ImGui provider: a game module links only
-    # sencha::engine yet may call ImGui for its debug panels, so the engine has
-    # to carry those symbols on its exported surface. Hence an OBJECT library rather than a static one.
-    # The Windows export table is generated from the shared library's own object
-    # files, and symbols that arrive from a linked static library are not in it,
-    # which leaves every such module with unresolved ImGui symbols. A consumer needs
-    # the imgui headers (leaked by public debug/ and serialization headers) but
-    # not the objects, so only the header dirs go on the public interface.
+    # An OBJECT library, so ImGui's symbols reach the engine's export table for a
+    # game module's debug panels; only the header dirs are public
+    # (docs/building.md, Third-party linkage).
     target_link_libraries(sencha_engine PRIVATE sencha_imgui_support)
     target_include_directories(sencha_engine SYSTEM PUBLIC
         "$<BUILD_INTERFACE:${IMGUI_DIR}>"

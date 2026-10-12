@@ -12,21 +12,13 @@ class JsonValue;
 struct IReadArchive;
 struct IWriteArchive;
 
-//=============================================================================
-// AssetRefCodec (docs/assets/pipeline.md, Decision A)
-//
-// The one text form of an asset reference, wherever text names an asset: a
-// bare "asset://..." path, or {"id": "<16 hex>", "path": "asset://..."} once
-// the asset's id is known, with the path then optional. Writing chooses the
-// object whenever the reference carries an id. Reading fills Id and Path and
-// leaves Type to the caller, who knows what the field holds; resolving the id
-// to the asset's current path belongs to whoever holds the registry.
-//=============================================================================
+// The one text form of an asset reference: "asset://..." or {"id", "path"}, the
+// object whenever the id is known. Reading leaves Type to the caller and the id's
+// current path to whoever holds the registry (docs/assets/pipeline.md, Decision A).
 
-// False, with the field marked invalid, when `key` holds anything else: a
-// non-path string, a malformed id, or neither id nor path. As JSON, an object
-// with any other member is not a reference: a document stating its own id is
-// not one.
+// False, with the field marked invalid, for a non-path string, a malformed id,
+// or neither id nor path. An object with any other member is not a reference:
+// a document stating its own id is not one.
 [[nodiscard]] bool ReadAssetRef(IReadArchive& archive, std::string_view key, AssetRef& out);
 void WriteAssetRef(IWriteArchive& archive, std::string_view key, const AssetRef& ref);
 

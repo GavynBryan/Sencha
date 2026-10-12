@@ -14,20 +14,9 @@
 
 class TextureCache;
 
-//=============================================================================
-// UiDrawPass
-//
-// Turns a recorded UiDrawFrame into draw commands.
-//
-// Takes plain render-domain data and names no render-domain type of its own,
-// which is what lets the feature that owns it hold it by value without the
-// recording set growing a fourth member -- the SkyGradientPass precedent
-// (cmake/CheckRenderIsolation.cmake).
-//
-// Generated textures are resolved through the renderer's one
-// UiTextureResidency, shared by every pass that draws authored UI, and the
-// first pass to draw in a frame applies what the last extraction handed over.
-//=============================================================================
+// Turns a recorded UiDrawFrame into draw commands. Names no render-domain type
+// of its own (cmake/CheckRenderIsolation.cmake); generated textures resolve
+// through the renderer's one UiTextureResidency (docs/ui/architecture.md §9).
 class UiDrawPass
 {
 public:

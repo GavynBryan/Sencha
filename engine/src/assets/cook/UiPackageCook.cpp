@@ -60,9 +60,6 @@ std::vector<std::string_view> UiPackageImporter::SourceExtensions() const
 
 std::uint64_t UiPackageImporter::CookIdentity() const
 {
-    // 2: the source scan stopped reading data-attr-src as a literal image and
-    // an image decorator's keywords as part of its path; packages it scanned
-    // before name resources that never load.
     return CookFingerprint("ui_package", 2).Value();
 }
 

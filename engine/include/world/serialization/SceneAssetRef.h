@@ -9,20 +9,9 @@ struct IReadArchive;
 struct IWriteArchive;
 struct SceneSerializationContext;
 
-//=============================================================================
-// SceneAssetRef
-//
-// How a scene field names an asset, in one place, because more than one kind of
-// serializer needs it: the schema-driven field codecs resolve typed handles
-// through it, and a component whose persisted form is hand-written resolves its
-// own the same way.
-//
-// A reference is read in AssetRefCodec's form: a bare path, or {"id", "path"}
-// where the id wins when the registry knows it and the path is the fallback.
-//
-// Reading is strict: an unresolvable reference is a scene that refuses to load
-// rather than an entity quietly missing what it names.
-//=============================================================================
+// How a scene field names an asset, for schema codecs and hand-written ones alike:
+// AssetRefCodec's form, the id winning when the registry knows it. Strict: an
+// unresolvable reference refuses the scene rather than dropping what it names.
 
 // Resolves whatever shape `key` holds into a virtual path. The archive scope
 // containing `key` must be open.

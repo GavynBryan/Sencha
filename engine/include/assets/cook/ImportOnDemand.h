@@ -171,8 +171,7 @@ private:
                                      LoggingProvider& logging,
                                      std::vector<std::string>& outArtifactPaths);
 
-// Drops the cooked index's entry for the source at `sourceRelPath`, and every
-// artifact it lists from `registry`: for an editor that moved or trashed the
-// source. The artifacts' bytes stay, since content-hash dedup may share them.
-// False when the index names no such source.
+// Drops the cooked index's entry for a moved or trashed source and its artifacts'
+// records; the bytes stay, since content-hash dedup may share them. False when
+// the index names no such source.
 bool ForgetImportedSource(std::string_view rootDirectory, std::string_view sourceRelPath, AssetRegistry& registry);

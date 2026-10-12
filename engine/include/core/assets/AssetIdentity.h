@@ -8,14 +8,9 @@
 
 class JsonValue;
 
-//=============================================================================
-// AssetIdentity (docs/assets/pipeline.md, Decision A)
-//
-// Where an asset states its id: Sencha's own documents at their root ("id"),
-// every other file in the ".meta" sidecar beside it, which also holds the
-// file's import settings. An asset that states none has the id of where it is
-// (AssetIdOfPath).
-//=============================================================================
+// Where an asset states its id: a Sencha document at its root ("id"), any other
+// file in the ".meta" sidecar beside it; one that states none has the id of where
+// it is (docs/assets/pipeline.md, Decision A).
 
 inline constexpr std::string_view kAssetSidecarSuffix = ".meta";
 inline constexpr std::string_view kAssetIdKey = "id";

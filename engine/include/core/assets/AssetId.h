@@ -7,22 +7,9 @@
 
 #include <core/identity/StrongId.h>
 
-//=============================================================================
-// AssetId (docs/assets/pipeline.md, Decision A)
-//
-// Stable 64-bit asset identity, carried by the asset itself: minted once from
-// the path the asset first appears at and kept through every move, so a
-// reference holding it survives renames. Paths remain the human-facing alias
-// and the fallback resolver.
-//
-// AssetId is a StrongId<Tag, uint64_t> — the engine's single id vocabulary —
-// so equality, ordering, hashing, and binary serialization come from there.
-// What is specific to AssetId is its text form: ids round-trip through 16-digit
-// lowercase hex (JSON numbers are doubles and cannot hold 64 bits — the same
-// rule the cooked-cache index follows for content hashes).
-//
-// Zero is the invalid id.
-//=============================================================================
+// Stable 64-bit identity the asset carries through every move; zero is invalid.
+// Its text form is 16 lowercase hex digits, since a JSON number cannot hold 64
+// bits (docs/assets/pipeline.md, Decision A).
 using AssetId = StrongId<struct AssetIdTag, uint64_t>;
 
 // 16-digit lowercase hex, no prefix: "00000000000001a4".

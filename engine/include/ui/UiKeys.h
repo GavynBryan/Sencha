@@ -3,11 +3,9 @@
 #include <cstdint>
 #include <optional>
 
-// The keys a document reports by number when it hands a key event to its host:
-// data-event-keydown="menu_key(ev.key_identifier)". A text field that has focus
-// takes every key, so a document is the only thing that sees them; this is the
-// vocabulary its host reads them back in, without learning which document
-// engine numbered them.
+// The keys a document reports by number to its host
+// (data-event-keydown="menu_key(ev.key_identifier)"), read back without
+// learning which document engine numbered them.
 enum class UiKey : std::uint8_t
 {
     Tab,

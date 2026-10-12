@@ -32,12 +32,9 @@ inline constexpr std::string_view kUiRenderFeatureId = "application_ui";
 class UiRenderFeature final : public IRenderFeature
 {
 public:
-    // `textures` may be null, in which case content images do not draw -- the
-    // same answer the runtime gives when asked to resolve one. `windowId` is
-    // the platform window whose surfaces this draws, 0 for the primary: a host
-    // presenting authored UI in a window of its own adds one scoped to that
-    // window's presentation. `layer` is the surface layer it draws
-    // (UiService::SetSurfaceLayer).
+    // Draws the surfaces of one platform window (0, the primary) in one layer
+    // (docs/ui/architecture.md §13). Without `textures` content images do not
+    // draw, as the runtime does not resolve them.
     UiRenderFeature(UiService& ui, TextureCache* textures, std::uint32_t windowId = 0, std::uint8_t layer = 0);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::ApplicationUi; }

@@ -1394,11 +1394,9 @@ int Engine::Run(Game& game)
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
 
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_ENABLE_VULKAN)
-    // Authored UI draws for every host, without one having to assemble the
-    // feature itself. Phase order puts it over the scene and under the debug
-    // overlay. Within ApplicationUi it records after whatever the game already
-    // registered there in OnStart, which is what puts retained surfaces over a
-    // host's own application UI; its id lets a later feature order against it.
+    // Over the scene, under the debug overlay, and after whatever the game added
+    // to ApplicationUi in OnStart, so authored surfaces draw over a host's own UI;
+    // its id lets a later feature order against it.
     if (UiState != nullptr && UiState->IsReady() && GraphicsState != nullptr)
     {
         RuntimeAssets& assets = ContentState->Assets();

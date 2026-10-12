@@ -122,15 +122,9 @@ inline std::string_view AssetSourceKindToString(AssetSourceKind kind)
     }
 }
 
-//=============================================================================
-// AssetRef
-//
-// Stable, serializable reference to an asset. Used in authored and cooked data
-// and in editors; never stored in runtime components (those use cache
-// handles). The id decides which asset is meant; the path is where it was
-// last known to be, read by people and used when the id is unknown
-// (docs/assets/pipeline.md, Decision A). Either may be absent, not both.
-//=============================================================================
+// A serializable reference to an asset for authored and cooked data, never for
+// runtime components. The id decides; the path is where it was last known to
+// be. Either may be absent, not both (docs/assets/pipeline.md, Decision A).
 struct AssetRef
 {
     AssetType   Type = AssetType::Unknown;

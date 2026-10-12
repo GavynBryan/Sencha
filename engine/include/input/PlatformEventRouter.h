@@ -12,32 +12,9 @@
 
 class SdlGamepadCapture;
 
-//=============================================================================
-// PlatformEventRouter
-//
-// Who sees a platform event, in what order, and what that order guarantees.
-//
-// The rule this type exists to hold: the canonical device snapshot is folded
-// FIRST and UNCONDITIONALLY, before any consumer is offered the event. A
-// consumer that claims an event hides it from later consumers -- never from the
-// snapshot. A key-up that never reaches the snapshot leaves that key held
-// forever, and no amount of compensating afterwards recovers the release edge
-// that was thrown away.
-//
-// Consumers are offered the event highest priority first, and the first to
-// return true ends the offer. Priority is the z-order of the surfaces involved:
-// diagnostics above authored UI, authored UI above the application. A surface
-// that consumed input reports it through UiInputCapture, which is how a reader
-// of raw device state learns those keystrokes were not meant for it; a reader of
-// mapped actions needs nothing, because an InputContextLease already answers it.
-//
-// Consumers are registered once at startup and run in registration order, so
-// there is no per-event sorting and no priority number to keep in sync.
-//
-// It is also the one owner of each window's pointer gesture, from a press to
-// the release of the last button held: whoever claimed the press hears the
-// window's pointer alone until then (docs/ui/architecture.md, Input).
-//=============================================================================
+// Folds every platform event into the device snapshot first and unconditionally,
+// then offers it to consumers in registration order until one claims it, and owns
+// each window's pointer gesture between them (docs/ui/architecture.md §6).
 class PlatformEventRouter
 {
 public:
