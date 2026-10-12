@@ -94,6 +94,14 @@ full sheet.
 | Edges | bevel, bridge, soften / harden, dissolve |
 | Vertices | weld, snap to grid |
 
+**Delete** removes the whole selection as one step: the objects selected, and
+the faces (or, with no faces, the edges, which dissolve) of brushes that are not
+themselves going. Whatever cannot go says why in a notice — edges whose faces
+cannot merge, vertices (weld them, or delete the faces they bound) — rather than
+the key seeming to do nothing. After Face Carve or Edge Cut the Select tool is
+left in Edge mode with the new edges selected, so a click picks edges until
+Object mode (1) is chosen again.
+
 **Values with a place in the world are handles on the object.** A selected
 light's range is a ring with a knob to drag; a spot light's inner and outer
 cone, and a camera's field of view, are edges with a knob at the end of one;

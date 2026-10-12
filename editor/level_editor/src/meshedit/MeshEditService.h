@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 
 class LoggingProvider;
 
@@ -75,10 +76,13 @@ public:
     // One observer: the workspace wires it at composition.
     void SetElementKindObserver(std::function<void(MeshElementKind next)> observer);
 
+    // Null when the verb changes nothing; `whyNot` then says why, in words for
+    // the person who asked.
     [[nodiscard]] std::unique_ptr<ICommand> ApplyVerb(IMeshEditTarget& target,
                                                       const SelectionSnapshot& selection,
                                                       MeshEditVerb verb,
-                                                      const MeshEditParams& params = {}) const;
+                                                      const MeshEditParams& params = {},
+                                                      std::string* whyNot = nullptr) const;
 
     // Moves the local vertices referenced by `elements` (interpreted per `kind`)
     // by a world-space delta, deduplicating shared vertices and converting the

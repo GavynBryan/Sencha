@@ -22,10 +22,13 @@
 
 #include "document/WorldDocument.h"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <array>
 #include <optional>
+#include <string>
+#include <vector>
 
 class LoggingProvider;
 
@@ -54,6 +57,17 @@ public:
     // policy lives.
     void ResolvePendingEdits();
 
+    // A mechanism that stages a preview in the edited document. Escape, document
+    // teardown and save resolve every one registered, for as long as the token
+    // returned is held, so none is remembered at each of those sites.
+    struct PendingEditHooks
+    {
+        std::function<bool()> HasPending;
+        std::function<void()> Commit;
+        std::function<void()> Cancel;
+    };
+    [[nodiscard]] std::shared_ptr<const PendingEditHooks> RegisterPendingEdit(PendingEditHooks hooks);
+
     // Tears down and rebuilds everything that binds the active document (tool
     // context, manipulation sink, session, transient interaction state) and
     // clears the selection and the undo stack. Document open and focus change
@@ -61,8 +75,17 @@ public:
     void ResetInteractionState();
     void BindSelectionToActiveDocument();
 
-    // Deletes the entity-kind selection as one undoable step (no-op if empty).
-    void DeleteSelection();
+    // What Delete did with the selection: everything selected goes as one step,
+    // or the reason it could not is said rather than nothing happening.
+    struct Deletion
+    {
+        enum class Result : std::uint8_t { Deleted, NothingSelected, Refused };
+        Result Outcome = Result::NothingSelected;
+        // Why some or all of the selection stayed; empty when all of it went.
+        std::string WhyNot = {};
+    };
+    // Objects, and the faces (or else the edges) of brushes not themselves deleted.
+    Deletion DeleteSelection();
     // Backspace verb in edge mode: merge the faces across each selected edge.
     void DissolveSelectedEdges();
     [[nodiscard]] bool HasPendingBridge() const { return BridgeEdit.HasPending(); }
@@ -180,20 +203,10 @@ public:
     SelectionActions Actions;
 
 private:
-    // One entry per panel-driven pending-edit mechanism. The lifecycle verbs
-    // (Escape, document teardown, save resolution) iterate this rather than
-    // naming each mechanism, so a new mechanism is registered once here instead
-    // of being remembered at every site that has to resolve a staged preview.
-    //
-    // Order does not matter: the command stack holds a single pending-edit
-    // scope, so at most one entry ever has something staged.
-    struct PendingEditHooks
-    {
-        std::function<bool()> HasPending;
-        std::function<void()> Commit;
-        std::function<void()> Cancel;
-    };
-    std::array<PendingEditHooks, 2> PendingPanelEdits;
+    std::vector<std::weak_ptr<const PendingEditHooks>> PendingEdits;
+    std::array<std::shared_ptr<const PendingEditHooks>, 2> OwnPendingEdits;
+    // Every live registration, in the order they were made.
+    [[nodiscard]] std::vector<std::shared_ptr<const PendingEditHooks>> LivePendingEdits();
 
     // True while any panel-driven preview is staged.
     [[nodiscard]] bool HasPendingPanelEdit() const;

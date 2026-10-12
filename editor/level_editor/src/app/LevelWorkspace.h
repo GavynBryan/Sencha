@@ -53,6 +53,7 @@ class ComponentPropertySource;
 class ElementVerbs;
 class MaterialExplorer;
 class PrefabExplorer;
+class NoticeQueue;
 class ProblemList;
 class LightingDiagnostics;
 class HierarchyOutline;
@@ -87,6 +88,7 @@ public:
                    ActionCatalog& actions,
                    PromptQueue& prompts,
                    ProblemList& problems,
+                   NoticeQueue& notices,
                    AssetPictures& pictures);
     ~LevelWorkspace() override;
 
@@ -220,6 +222,7 @@ private:
     PromptQueue::Asker Prompts;
     // Where the world's validation and the lighting's troubles are reported.
     ProblemList& Problems;
+    NoticeQueue& Notices;
     // The held-key radial menus: the tools over the workspace's registry, the
     // gizmo modes over the manipulator session. One mechanism, two models.
     std::unique_ptr<ToolRegistryMenuModel> ToolMenu;
@@ -236,6 +239,8 @@ private:
     std::unique_ptr<ElementVerbs> Verbs;
     std::unique_ptr<FaceUvSource> Uv;
     std::unique_ptr<ComponentPropertySource> Components;
+    // Keeps the workspace ending an edit the source has open.
+    std::shared_ptr<const void> ComponentEdits;
     std::unique_ptr<PropertyHandles> Handles;
     std::unique_ptr<MaterialExplorer> MaterialsExplorer;
     std::unique_ptr<PrefabExplorer> PrefabsExplorer;

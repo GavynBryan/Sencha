@@ -243,9 +243,15 @@ An action is a *definition* (id, label, category, icon, default chord) and, at
 any moment, possibly a *handler* (enabled, checked, invoke) supplied by
 whichever context claims it. Each window resolves an action through a stack of
 contexts, innermost first: the focused shell surface, the active tool or
-element mode, the active workspace, the window, the application. A focused text
-field sits ahead of the stack, so Delete in a field edits text; the shell's
-controls take no part in Tab traversal, so Tab is always the editor's. The
+element mode, the active workspace, the window, the application. What an
+action shows (its label, whether it can run) is the nearest claim's; a chord is
+performed by the nearest claim that can run now, so a surface whose Delete has
+nothing to act on passes the key to the work behind it. A focused text field
+sits ahead of the stack, so Delete in a field edits text, and the shelf's search
+field passes on what it has no use for; while it has the keys, the shelf's file
+verbs are a layer on the stack like any other. The shell's controls take no
+part in Tab traversal, so Tab is always the editor's. What Delete does with the
+selection is in `docs/editor/level-design.md`. The
 catalog never holds callbacks, and every definition is also a console command
 of the same id.
 

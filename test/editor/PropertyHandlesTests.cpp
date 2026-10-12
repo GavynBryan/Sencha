@@ -181,3 +181,72 @@ TEST_F(PropertyHandlesTest, DraggingACamerasKnobSetsItsVerticalFieldOfView)
     const CameraComponent& camera = *Scene().GetRegistry().Components.TryGet<CameraComponent>(eye);
     EXPECT_NEAR(camera.FovYRadians, std::numbers::pi_v<float> / 2.0f, 0.01f) << "45 degrees either side is 90";
 }
+
+// The workspace's lifecycle ends a handle's change wherever it was begun:
+// Escape and teardown cancel it for good, save commits it, a focus change puts
+// the old zone back as it was.
+TEST_F(PropertyHandlesTest, AScrollTheWorkspaceCancelsDoesNotCommitOnceTheWheelRests)
+{
+    const float before = Lit().Intensity;
+    Handles.Publish();
+    (void)Router.Route(PointerMoveEvent{ .Position = PixelOf(Vec3d{}), .Delta = {}, .Modifiers = {}, .Viewport = Top });
+    (void)Router.Route(WheelEvent{ .Position = {}, .Delta = 1.0f, .Modifiers = {} });
+    ASSERT_GT(Lit().Intensity, before);
+
+    Workspace.CancelOpenEdits();
+    EXPECT_FLOAT_EQ(Lit().Intensity, before);
+    for (int frame = 0; frame < 30; ++frame)
+        Handles.Publish();
+    EXPECT_FLOAT_EQ(Lit().Intensity, before) << "the rested wheel committed what had been cancelled";
+    EXPECT_FALSE(Commands.CanUndo());
+}
+
+TEST_F(PropertyHandlesTest, ADragTheWorkspaceCancelsLetsGoOfThePointer)
+{
+    Handles.Publish();
+    Drag(Vec3d(4.0f, 0.0f, 0.0f), Vec3d(8.0f, 0.0f, 0.0f));
+    ASSERT_TRUE(Router.PointerCaptured());
+    Workspace.CancelOpenEdits();
+    EXPECT_FLOAT_EQ(Lit().Range, 4.0f);
+    EXPECT_FALSE(Router.PointerCaptured()) << "a cancelled drag kept every later pointer event";
+}
+
+TEST_F(PropertyHandlesTest, SavingMidDragCommitsWhatIsShownAsOneStep)
+{
+    Handles.Publish();
+    Drag(Vec3d(4.0f, 0.0f, 0.0f), Vec3d(6.0f, 0.0f, 0.0f));
+    Workspace.ResolvePendingEdits();
+    EXPECT_NEAR(Lit().Range, 6.0f, 0.1f);
+    EXPECT_FALSE(Router.PointerCaptured());
+    ASSERT_TRUE(Commands.CanUndo());
+    Commands.Undo();
+    EXPECT_FLOAT_EQ(Lit().Range, 4.0f);
+}
+
+TEST_F(PropertyHandlesTest, AFocusChangeMidScrollLeavesTheOldZoneAsItWas)
+{
+    const float before = Lit().Intensity;
+    EditorDocument& first = Workspace.ActiveDocument();
+    const ZoneId second = AddSecondZone();
+    Handles.Publish();
+    (void)Router.Route(PointerMoveEvent{ .Position = PixelOf(Vec3d{}), .Delta = {}, .Modifiers = {}, .Viewport = Top });
+    (void)Router.Route(WheelEvent{ .Position = {}, .Delta = 1.0f, .Modifiers = {} });
+    ASSERT_GT(Lit().Intensity, before);
+
+    ASSERT_TRUE(Workspace.World.SetFocusZone(second));
+    const auto* light = first.GetScene().GetRegistry().Components.TryGet<PointLightComponent>(Light);
+    ASSERT_NE(light, nullptr);
+    EXPECT_FLOAT_EQ(light->Intensity, before) << "the preview stayed in the zone it was begun in";
+    EXPECT_FALSE(first.IsDirty());
+}
+
+// A sheet's edit stays in the document it began in when focus moves under it.
+TEST_F(PropertyHandlesTest, AnEditBegunInOneZoneIsNotWrittenIntoAnother)
+{
+    const ZoneId second = AddSecondZone();
+    const std::string key = Components.KeyOf(ResolveComponentTypeId<PointLightComponent>(), "intensity");
+    ASSERT_TRUE(Components.BeginEdit(key));
+    ASSERT_TRUE(Workspace.World.SetFocusZone(second));
+    EXPECT_EQ(Components.PreviewEdit(key, "9"), PropertyEditResult::Gone);
+    EXPECT_FALSE(Components.HasOpenEdit());
+}

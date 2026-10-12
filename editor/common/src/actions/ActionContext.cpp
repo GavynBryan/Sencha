@@ -74,6 +74,16 @@ ActionContextStack::Claim ActionContextStack::Find(std::string_view id) const
     return best;
 }
 
+ActionContextStack::Claim ActionContextStack::FindEnabled(std::string_view id) const
+{
+    Claim best;
+    for (const Entry& entry : Entries)
+        if (const ActionHandler* found = entry.Context->Find(id);
+            found != nullptr && (!found->Enabled || found->Enabled()) && Outranks(entry, best))
+            best = Claim{ &entry, found };
+    return best;
+}
+
 bool ActionContextStack::Perform(const Claim& claim)
 {
     if (claim.Handler == nullptr)
@@ -108,10 +118,15 @@ bool ActionContextStack::Invoke(std::string_view id) const
 bool ActionContextStack::Dispatch(const ActionCatalog& catalog, const KeyChord& chord) const
 {
     Claim best;
+    bool claimed = false;
     for (const ActionDefinition* definition : catalog.ForChord(chord))
-        if (const Claim claim = Find(definition->Id); claim.By != nullptr && Outranks(*claim.By, best))
+    {
+        claimed |= Find(definition->Id).By != nullptr;
+        if (const Claim claim = FindEnabled(definition->Id); claim.By != nullptr && Outranks(*claim.By, best))
             best = claim;
-    return Perform(best);
+    }
+    (void)Perform(best);
+    return claimed;
 }
 
 void ActionContextStack::Remove(std::uint64_t id)

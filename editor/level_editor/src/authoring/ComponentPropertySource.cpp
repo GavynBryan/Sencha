@@ -562,7 +562,8 @@ bool ComponentPropertySource::BeginEdit(std::string_view key)
     const std::optional<Field> field = Resolve(key);
     if (!field.has_value())
         return false;
-    const World& world = std::as_const(WorldDoc.FocusDocument().GetScene().GetRegistry()).Components;
+    EditorDocument& document = WorldDoc.FocusDocument();
+    const World& world = std::as_const(document.GetScene().GetRegistry()).Components;
     const ComponentMeta* meta = world.GetMeta(field->Component);
     if (meta == nullptr || meta->Size == 0)
         return false;
@@ -578,6 +579,7 @@ bool ComponentPropertySource::BeginEdit(std::string_view key)
         return false;
     EditingKey = std::string(key);
     EditingComponent = field->Component;
+    EditingDocument = &document;
     Phase = EditPhase::Armed;
     return true;
 }
@@ -588,6 +590,12 @@ PropertyEditResult ComponentPropertySource::Stage(std::string_view key, const Wr
         return PropertyEditResult::Unchanged;
     if (Phase == EditPhase::Idle || key != EditingKey)
         return PropertyEditResult::Gone;
+    // The bytes held are another document's now: what began there ends there.
+    if (EditingDocument != &WorldDoc.FocusDocument())
+    {
+        CancelEdit(key);
+        return PropertyEditResult::Gone;
+    }
     const std::optional<Field> field = Resolve(key);
     if (!field.has_value() || field->Leaf->Asset != AssetType::Unknown)
         return PropertyEditResult::Gone;
@@ -608,7 +616,7 @@ PropertyEditResult ComponentPropertySource::Stage(std::string_view key, const Wr
         Commands.OpenPendingEdit([this] { RestoreBefore(); });
         Phase = EditPhase::Previewing;
     }
-    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
+    World& world = EditingDocument->GetScene().GetRegistry().Components;
     for (std::size_t i = 0; i < Holding.size(); ++i)
         if (void* live = world.GetComponentRaw(Holding[i].Entity, EditingComponent); live != nullptr)
             std::memcpy(live, staged[i].data(), staged[i].size());
@@ -633,17 +641,22 @@ PropertyEditResult ComponentPropertySource::Finish(std::string_view key, const W
             return PropertyEditResult::Refused;
         afters.push_back(std::move(after));
     }
+    return Conclude(std::move(afters));
+}
 
+PropertyEditResult ComponentPropertySource::Conclude(std::vector<std::vector<std::byte>> afters)
+{
     if (Phase == EditPhase::Previewing)
     {
         RestoreBefore();
         Commands.ClosePendingEdit();
     }
+    EditorDocument& document = *EditingDocument;
     Phase = EditPhase::Idle;
     EditingKey.clear();
+    EditingDocument = nullptr;
     std::vector<Held> held = std::exchange(Holding, {});
 
-    EditorDocument& document = WorldDoc.FocusDocument();
     std::vector<std::unique_ptr<ICommand>> commands;
     for (std::size_t i = 0; i < held.size(); ++i)
         if (afters[i] != held[i].Before)
@@ -721,7 +734,25 @@ void ComponentPropertySource::CancelEdit(std::string_view key)
     }
     Phase = EditPhase::Idle;
     EditingKey.clear();
+    EditingDocument = nullptr;
     Holding.clear();
+}
+
+void ComponentPropertySource::CommitOpenEdit()
+{
+    if (Phase != EditPhase::Previewing)
+    {
+        CancelEdit(EditingKey);
+        return;
+    }
+    const World& world = std::as_const(EditingDocument->GetScene().GetRegistry()).Components;
+    std::vector<std::vector<std::byte>> afters;
+    for (const Held& held : Holding)
+    {
+        const auto* live = static_cast<const std::byte*>(world.GetComponentRaw(held.Entity, EditingComponent));
+        afters.push_back(live != nullptr ? std::vector<std::byte>(live, live + held.Before.size()) : held.Before);
+    }
+    (void)Conclude(std::move(afters));
 }
 
 PropertyEditResult ComponentPropertySource::Act(std::string_view key, std::string_view verb, std::string_view choice)
@@ -833,7 +864,7 @@ PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<En
 
 void ComponentPropertySource::RestoreBefore()
 {
-    World& world = WorldDoc.FocusDocument().GetScene().GetRegistry().Components;
+    World& world = EditingDocument->GetScene().GetRegistry().Components;
     for (const Held& held : Holding)
         if (void* live = world.GetComponentRaw(held.Entity, EditingComponent); live != nullptr)
             std::memcpy(live, held.Before.data(), held.Before.size());

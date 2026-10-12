@@ -195,6 +195,31 @@ TEST(ActionContextStack, ADisabledActionIsClaimedButNotPerformed)
     EXPECT_FALSE(stack.Dispatch(catalog, kDelete)) << "a chord no action answers is not the window's";
 }
 
+TEST(ActionContextStack, AClaimThatCannotActNowPassesTheChordOutward)
+{
+    // The shelf holds the keys with no file chosen: its Delete cannot act, so
+    // Delete deletes what the workspace has selected instead of nothing.
+    ActionCatalog catalog;
+    ASSERT_TRUE(catalog.Define(Define("edit.delete", { kDelete })));
+    ActionContextStack stack;
+    ActionContext workspace;
+    ActionContext shelf;
+    std::string performed;
+    bool fileChosen = false;
+    workspace.Claim("edit.delete", { .Invoke = [&] { performed = "selection"; } });
+    shelf.Claim("edit.delete", { .Invoke = [&] { performed = "file"; }, .Enabled = [&] { return fileChosen; } });
+    const auto workspaceLayer = stack.Push(workspace, ActionRank::Workspace);
+    const auto shelfLayer = stack.Push(shelf, ActionRank::Surface);
+
+    EXPECT_TRUE(stack.Dispatch(catalog, kDelete));
+    EXPECT_EQ(performed, "selection");
+    EXPECT_FALSE(stack.Query("edit.delete").Enabled) << "what is shown is still the nearest claim's";
+
+    fileChosen = true;
+    EXPECT_TRUE(stack.Dispatch(catalog, kDelete));
+    EXPECT_EQ(performed, "file");
+}
+
 TEST(ActionContextStack, AMovedLayerStaysInPlay)
 {
     ActionContextStack stack;

@@ -101,6 +101,8 @@ public:
     // something claims it, enabled or not: a chord for an action that exists
     // here but cannot run right now is still this window's, not the world's.
     bool Invoke(std::string_view id) const;
+    // A chord is performed by the nearest claim that can act now: one that
+    // cannot passes it outward, as a focused field passes a key it has no use for.
     bool Dispatch(const ActionCatalog& catalog, const KeyChord& chord) const;
 
 private:
@@ -120,6 +122,7 @@ private:
     // The highest rank answers, and of equal rank the newest.
     [[nodiscard]] static bool Outranks(const Entry& entry, const Claim& other);
     [[nodiscard]] Claim Find(std::string_view id) const;
+    [[nodiscard]] Claim FindEnabled(std::string_view id) const;
     static bool Perform(const Claim& claim);
     void Remove(std::uint64_t id);
 

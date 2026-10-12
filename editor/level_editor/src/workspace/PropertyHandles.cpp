@@ -137,6 +137,8 @@ std::string Readout(std::string_view label, PropertyHandleKind kind, float value
 PropertyHandles::PropertyHandles(EditorWorkspace& workspace, ComponentPropertySource& components)
     : Workspace(workspace)
     , Components(components)
+    , Pending(workspace.RegisterPendingEdit({ [this] { return Now != Phase::Resting; }, [this] { Finish(); },
+                                              [this] { Cancel(); } }))
 {
 }
 
@@ -239,7 +241,7 @@ void PropertyHandles::Publish()
     const std::optional<Frame> frame = ObjectFrame();
     // What was being changed went away under it: nothing to keep.
     if (Now != Phase::Resting && (Components.Entity() != Editing || !frame.has_value()))
-        Cancel(nullptr);
+        Cancel();
     if (handles.empty() || !frame.has_value())
         return;
 
@@ -333,6 +335,7 @@ InputConsumed PropertyHandles::OnInput(const InputEvent& event, PointerCapture& 
         Active = *knob;
         PointerView = view;
         capture.Acquire(PointerCaptureKind::Exclusive, view);
+        Captured.emplace(capture);
         return InputConsumed::Yes;
     }
     if (const auto* up = std::get_if<PointerUpEvent>(&event))
@@ -340,8 +343,6 @@ InputConsumed PropertyHandles::OnInput(const InputEvent& event, PointerCapture& 
         if (Now != Phase::Dragging || up->Button != MouseButton::Left)
             return InputConsumed::No;
         Finish();
-        if (capture.HeldBySelf())
-            capture.Release();
         return InputConsumed::Yes;
     }
     if (const auto* wheel = std::get_if<WheelEvent>(&event))
@@ -360,7 +361,7 @@ InputConsumed PropertyHandles::OnInput(const InputEvent& event, PointerCapture& 
             return InputConsumed::No;
         if (key->Key == SDLK_ESCAPE)
         {
-            Cancel(&capture);
+            Cancel();
             return InputConsumed::Yes;
         }
         if (Now == Phase::Scrolling)
@@ -368,7 +369,7 @@ InputConsumed PropertyHandles::OnInput(const InputEvent& event, PointerCapture& 
         return InputConsumed::No;
     }
     if (std::get_if<FocusLostEvent>(&event))
-        Cancel(&capture);
+        Cancel();
     return InputConsumed::No;
 }
 
@@ -394,13 +395,19 @@ void PropertyHandles::Finish()
 {
     if (Session.IsOpen())
         (void)Session.Commit(Text(Active.Value));
-    Now = Phase::Resting;
+    Rest();
 }
 
-void PropertyHandles::Cancel(PointerCapture* capture)
+void PropertyHandles::Cancel()
 {
     Session.Cancel();
-    if (Now == Phase::Dragging && capture != nullptr && capture->HeldBySelf())
-        capture->Release();
+    Rest();
+}
+
+void PropertyHandles::Rest()
+{
+    if (Captured.has_value() && Captured->HeldBySelf())
+        Captured->Release();
+    Captured.reset();
     Now = Phase::Resting;
 }

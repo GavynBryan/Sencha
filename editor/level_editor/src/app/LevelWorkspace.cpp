@@ -1,6 +1,7 @@
 #include "LevelWorkspace.h"
 
 #include "actions/ActionCatalog.h"
+#include "notices/NoticeQueue.h"
 #include "project/MaterialLibraryActions.h"
 #include "project/ProjectFiles.h"
 
@@ -126,10 +127,11 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
                                MaterialLibrary& materials,
                                DocumentSourceSet& documents,
                                ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems,
-                               AssetPictures& pictures)
+                               NoticeQueue& notices, AssetPictures& pictures)
     : Documents(documents)
     , Prompts(prompts.MakeAsker())
     , Problems(problems)
+    , Notices(notices)
     , Catalog(actions)
     , Materials(&materials)
     , Project(project)
@@ -167,7 +169,23 @@ LevelWorkspace::~LevelWorkspace()
     Problems.Clear("world");
     Problems.Clear("lighting");
 
-    // The panels and chrome first: they hold references into everything below.
+    // An edit still open ends while what it edits is alive; then everything
+    // bound to the workspace goes before the workspace does.
+    if (Workspace != nullptr)
+        Workspace->CancelOpenEdits();
+    Lighting.reset();
+    Hierarchy.reset();
+    Partition.reset();
+    WorldOutline.reset();
+    Entities.reset();
+    PrefabsExplorer.reset();
+    MaterialsExplorer.reset();
+    Handles.reset();
+    ComponentEdits.reset();
+    Components.reset();
+    Uv.reset();
+    Verbs.reset();
+    ToolParameters.reset();
 
     // The cook runtime and Files reference Workspace/Commands/Materials/Project;
     // tear them down before that state goes away.
@@ -286,7 +304,11 @@ void LevelWorkspace::BuildInput()
     for (const LevelAction& action : actions)
         offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
     OfferAction(Catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] { Workspace->EscapeStep(); } });
-    OfferAction(Catalog, ActionHandlers, DeleteAction(), { .Invoke = [this] { Workspace->DeleteSelection(); } });
+    OfferAction(Catalog, ActionHandlers, DeleteAction(), { .Invoke = [this] {
+                    const EditorWorkspace::Deletion deletion = Workspace->DeleteSelection();
+                    if (!deletion.WhyNot.empty())
+                        Notices.Post(deletion.WhyNot, NoticeTone::Warning, NoticeClockNow());
+                } });
     OfferAction(Catalog, ActionHandlers, DuplicateAction(),
                 { .Invoke = [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } });
     OfferAction(Catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { Files->Save(); } });
@@ -305,6 +327,9 @@ void LevelWorkspace::BuildInput()
     // The sheet's title is the name and its subtitle the id.
     Components->ShowElsewhere({ ResolveComponentTypeId<EntityNameComponent>(),
                                 ResolveComponentTypeId<PersistentIdComponent>() });
+    ComponentEdits = Workspace->RegisterPendingEdit({ [this] { return Components->HasOpenEdit(); },
+                                                      [this] { Components->CommitOpenEdit(); },
+                                                      [this] { Components->CancelOpenEdit(); } });
     Handles = std::make_unique<PropertyHandles>(*Workspace, *Components);
     Entities = std::make_unique<EntityVerbs>(*Workspace, [this](const std::string& source) {
         return Files != nullptr && Files->OpenSceneSource(source);

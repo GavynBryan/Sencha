@@ -9,6 +9,7 @@
 #include <math/Vec.h>
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -17,7 +18,6 @@
 class ComponentPropertySource;
 struct EditorViewport;
 class EditorWorkspace;
-class PointerCapture;
 
 // How a property is changed on the object rather than in a sheet: a size in
 // the world as a ring around it with a knob to drag; an angle about the
@@ -110,7 +110,9 @@ private:
     [[nodiscard]] bool OverObject(Vec2d pointer, ViewportId viewport) const;
     void Scroll(float notches, bool fine);
     void Finish();
-    void Cancel(PointerCapture* capture);
+    void Cancel();
+    // Back to resting, letting go of the pointer if a drag held it.
+    void Rest();
 
     EditorWorkspace& Workspace;
     ComponentPropertySource& Components;
@@ -122,4 +124,8 @@ private:
     int RestingFrames = 0;
     Vec2d Pointer = {};
     ViewportId PointerView = {};
+    // The router's hold on the pointer while a knob is dragged.
+    std::optional<PointerCapture> Captured;
+    // Last: the workspace stops resolving this edit before anything it touches goes.
+    std::shared_ptr<const void> Pending;
 };

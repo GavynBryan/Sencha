@@ -28,10 +28,10 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         // A level can be authored without a project; its materials then come
         // from beside the level file.
         .RequiresProject = false,
-        .Create = [&engine, &window, &session, &actions, &prompts, &problems] {
+        .Create = [&engine, &window, &session, &actions, &prompts, &problems, &notices] {
             return std::make_unique<LevelWorkspace>(engine, window, session.Project(), session.Module(),
                                                     session.Materials(), session.Documents(), actions, prompts,
-                                                    problems, session.Pictures());
+                                                    problems, notices, session.Pictures());
         },
         .Opens = { { ".sscene" }, { ".sworld" } },
         .Creates = { NewLevelAction(), NewWorldAction() },

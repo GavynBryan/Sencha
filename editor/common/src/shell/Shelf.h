@@ -167,11 +167,14 @@ private:
     enum class Edge : std::uint8_t { Resting, Sizing };
     enum class Purpose : std::uint8_t { Opening, Choosing };
     enum class Carry : std::uint8_t { None, Carrying };
+    enum class KeyHolder : std::uint8_t { Elsewhere, Search };
 
     void HandleAction(const UiAction& action, float windowHeight);
     // A chord the search field had no use for, answered as the window would.
     void PassOn(const UiAction& action);
     void OfferFileActions();
+    // The file verbs are the window's while the shelf is in front of the work.
+    void SyncFileLayer();
     [[nodiscard]] bool CanChangeFiles() const;
     void AskRename();
     void Rename(const std::string& from, std::string_view written);
@@ -220,6 +223,8 @@ private:
 
     Placement State = Placement::Down;
     Purpose Use = Purpose::Opening;
+    // Whether its search field has the keys, as the document reports it.
+    KeyHolder Keys = KeyHolder::Elsewhere;
     ShelfPick Picking;
     Listing List = Listing::Everything;
     Look View = Look::Tiles;

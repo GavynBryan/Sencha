@@ -84,6 +84,7 @@ const UiActionId kCarry = UiActionIdAt(20);
 const UiActionId kInto = UiActionIdAt(21);
 const UiActionId kPut = UiActionIdAt(22);
 const UiActionId kWindow = UiActionIdAt(23);
+const UiActionId kKeys = UiActionIdAt(24);
 
 // How much wider a tile is than its picture, and the gap after it, in dp.
 constexpr float kTileMarginDp = 24.0f;
@@ -127,7 +128,7 @@ UiScreenDesc Describe()
                      "shelf_category", "shelf_list", "shelf_folder", "shelf_branch", "shelf_pick",
                      "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom", "shelf_none",
                      "shelf_follow", "shelf_back", "shelf_press", "shelf_new",
-                     "shelf_carry", "shelf_into", "shelf_put", "shelf_window" };
+                     "shelf_carry", "shelf_into", "shelf_put", "shelf_window", "shelf_keys" };
     return desc;
 }
 
@@ -279,6 +280,7 @@ void Shelf::Hide()
     State = Placement::Down;
     TopEdge = Edge::Resting;
     Use = Purpose::Opening;
+    Keys = KeyHolder::Elsewhere;
     Picking = {};
     if (Screen.IsValid())
         Ui.CloseScreen(Screen);
@@ -493,6 +495,11 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
         TopEdge = Edge::Resting;
     else if (action.Id == kQueryAction)
         Query.Text = Text(action);
+    else if (action.Id == kKeys)
+    {
+        Keys = Flag(action, 0) ? KeyHolder::Search : KeyHolder::Elsewhere;
+        SyncFileLayer();
+    }
     else if (action.Id == kKey)
     {
         const bool plain = !Flag(action, 1) && !Flag(action, 3);
@@ -609,14 +616,6 @@ void Shelf::PassOn(const UiAction& action)
     const KeyChord chord{ key, { .Ctrl = ctrl, .Shift = shift, .Alt = alt } };
     if (key == SDLK_UNKNOWN || SearchFieldKeeps(chord, Query.Text.empty()))
         return;
-    // Its own verbs first: a pinned shelf has them only while it has the keys.
-    for (const ActionDefinition* definition : Catalog.ForChord(chord))
-        if (const ActionHandler* own = FileActions.Find(definition->Id);
-            own != nullptr && (!own->Enabled || own->Enabled()))
-        {
-            own->Invoke();
-            return;
-        }
     (void)Actions.Dispatch(Catalog, chord);
 }
 
@@ -773,18 +772,22 @@ void Shelf::Tell(std::string text, bool failed)
     Notices.Post(std::move(text), failed ? NoticeTone::Warning : NoticeTone::Done, NoticeClockNow());
 }
 
+void Shelf::SyncFileLayer()
+{
+    // Raised, the whole of its window, or holding the keys in its search field,
+    // it is in front of the work, and Delete is the chosen file's.
+    const bool inFront = State == Placement::Raised || State == Placement::Filling || Keys == KeyHolder::Search;
+    if (inFront == FileLayer.IsActive())
+        return;
+    if (inFront)
+        FileLayer = Actions.Push(FileActions, ActionRank::Surface);
+    else
+        FileLayer.Reset();
+}
+
 void Shelf::Update(float dp, float windowHeight)
 {
-    // Raised, or the whole of its window, it is in front of the work, and
-    // Delete is the chosen file's.
-    const bool inFront = State == Placement::Raised || State == Placement::Filling;
-    if (inFront != FileLayer.IsActive())
-    {
-        if (inFront)
-            FileLayer = Actions.Push(FileActions, ActionRank::Surface);
-        else
-            FileLayer.Reset();
-    }
+    SyncFileLayer();
     Dp = dp > 0.0f ? dp : 1.0f;
     if (Screen.IsValid())
         for (const UiAction& action : Ui.DrainActions(Screen))

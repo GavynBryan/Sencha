@@ -17,6 +17,7 @@
 #include <vector>
 
 class CommandStack;
+class EditorDocument;
 struct ICommand;
 class EditorComponentAdapterRegistry;
 class SelectionService;
@@ -92,6 +93,12 @@ public:
     // the component to add, or an adapter's verb.
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
+    // The byte edit staged by whichever presentation began it, ended from
+    // outside: what the workspace's lifecycle (Escape, save, teardown) asks.
+    [[nodiscard]] bool HasOpenEdit() const { return Phase != EditPhase::Idle; }
+    void CommitOpenEdit();
+    void CancelOpenEdit() { CancelEdit(EditingKey); }
+
     // What an asset property may be set to: stable, sorted, narrowed to the
     // data subtype the field accepts. Scans the project, so ask when a picker
     // opens rather than every frame.
@@ -126,6 +133,8 @@ private:
     [[nodiscard]] PropertyEditResult CommitAsset(const Field& field, std::string_view path);
     PropertyEditResult Stage(std::string_view key, const Writer& write);
     PropertyEditResult Finish(std::string_view key, const Writer& write);
+    // The open edit ended with each holder at `afters`, as one step.
+    PropertyEditResult Conclude(std::vector<std::vector<std::byte>> afters);
     // The commands as one step: nothing, one, or several together.
     PropertyEditResult Run(std::vector<std::unique_ptr<ICommand>> commands);
     void RestoreBefore();
@@ -155,6 +164,8 @@ private:
     EditPhase Phase = EditPhase::Idle;
     std::string EditingKey;
     ComponentId EditingComponent = InvalidComponentId;
+    // Where the held bytes live: the focus document when the edit began.
+    EditorDocument* EditingDocument = nullptr;
     std::vector<Held> Holding;
 
     // Stable addresses, so a sheet reading several holders' baselines keeps them.

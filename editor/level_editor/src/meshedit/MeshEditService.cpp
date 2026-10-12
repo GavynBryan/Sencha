@@ -17,6 +17,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <format>
 #include <map>
 #include <limits>
 #include <optional>
@@ -148,19 +149,32 @@ struct VerbContext
     const MeshEditParams&          Params;
     MeshElementKind                ElementKind;
     Logger*                        Log;
+    std::string*                   Refusal;
 };
+
+// Why a verb changed nothing, said to the person: logged, and handed back to
+// whoever asked for the edit.
+std::nullopt_t Refuse(const VerbContext& ctx, std::string reason)
+{
+    if (ctx.Log)
+        ctx.Log->Info("{}", reason);
+    if (ctx.Refusal != nullptr)
+        *ctx.Refusal = std::move(reason);
+    return std::nullopt;
+}
 
 // Per-face verbs (extrude/delete): resolve faces by stable identity up front so one
 // face's edit can't invalidate another's index, apply per surviving face, validate.
 template <typename Op>
-std::optional<BrushMesh> ApplyPerFace(const BrushMesh& before, std::span<const SelectableRef> faces, Op op)
+std::optional<BrushMesh> ApplyPerFace(const VerbContext& ctx, std::string_view doing, Op op)
 {
+    const BrushMesh& before = ctx.Before;
     std::vector<FaceKey> faceKeys;
-    faceKeys.reserve(faces.size());
-    for (const SelectableRef& ref : faces)
+    faceKeys.reserve(ctx.Refs.size());
+    for (const SelectableRef& ref : ctx.Refs)
     {
         if (ref.ElementId >= before.Faces.size())
-            return std::nullopt;
+            return Refuse(ctx, "Those faces aren't on the brush any more.");
         faceKeys.push_back(MakeFaceKey(before, ref.ElementId));
     }
 
@@ -173,27 +187,27 @@ std::optional<BrushMesh> ApplyPerFace(const BrushMesh& before, std::span<const S
             ++applied;
         }
     if (applied == 0)
-        return std::nullopt;
+        return Refuse(ctx, "Those faces aren't on the brush any more.");
     if (!BrushValidateAndRepair(after).Ok)
-        return std::nullopt;
+        return Refuse(ctx, std::format("{} would leave the brush without a valid shape.", doing));
     return after;
 }
 
 std::optional<BrushMesh> ApplyExtrude(const VerbContext& ctx)
 {
-    return ApplyPerFace(ctx.Before, ctx.Refs, [d = ctx.Params.Distance](const BrushMesh& m, std::uint32_t i)
+    return ApplyPerFace(ctx, "Extruding those faces", [d = ctx.Params.Distance](const BrushMesh& m, std::uint32_t i)
                         { return BrushOps::ExtrudeFace(m, i, d); });
 }
 
 std::optional<BrushMesh> ApplyDelete(const VerbContext& ctx)
 {
-    return ApplyPerFace(ctx.Before, ctx.Refs,
+    return ApplyPerFace(ctx, "Deleting those faces",
                         [](const BrushMesh& m, std::uint32_t i) { return BrushOps::DeleteFace(m, i); });
 }
 
 std::optional<BrushMesh> ApplyFlipNormal(const VerbContext& ctx)
 {
-    return ApplyPerFace(ctx.Before, ctx.Refs,
+    return ApplyPerFace(ctx, "Flipping those faces",
                         [](const BrushMesh& m, std::uint32_t i) { return BrushOps::FlipFace(m, i); });
 }
 
@@ -242,12 +256,7 @@ std::optional<BrushMesh> ApplyInsertEdgeLoop(const VerbContext& ctx)
     const std::optional<EdgeElement> edge =
         MeshElements::TryGetEdge(ctx.Before, ctx.Transform, ctx.Refs.front().ElementId);
     if (!edge.has_value())
-    {
-        if (ctx.Log)
-            ctx.Log->Warn("Insert Loop: selected edge {} did not resolve to a mesh edge",
-                          ctx.Refs.front().ElementId);
-        return std::nullopt;
-    }
+        return Refuse(ctx, "That edge isn't on the brush any more.");
 
     BrushMesh after = ctx.Params.LoopCut
         ? BrushOps::InsertEdgeLoop(ctx.Before, edge->VertexA, edge->VertexB, ctx.Params.CutPosition)
@@ -256,19 +265,10 @@ std::optional<BrushMesh> ApplyInsertEdgeLoop(const VerbContext& ctx)
     // Detect that (no vertices appended) and produce no command, so the undo stack
     // never gets a do-nothing entry.
     if (after.Vertices.size() == ctx.Before.Vertices.size())
-    {
-        if (ctx.Log)
-            ctx.Log->Info("Insert Loop: no clean loop from edge {}-{} "
-                          "(blocked by a non-quad face or open boundary)",
-                          edge->VertexA, edge->VertexB);
-        return std::nullopt;
-    }
+        return Refuse(ctx, "No clean loop runs through that edge: a face on its way isn't four-sided, "
+                           "or the surface is open.");
     if (!BrushValidateAndRepair(after).Ok)
-    {
-        if (ctx.Log)
-            ctx.Log->Warn("Insert Loop: loop result failed validation; edit discarded");
-        return std::nullopt;
-    }
+        return Refuse(ctx, "That loop would leave the brush without a valid shape.");
     return after;
 }
 
@@ -284,7 +284,7 @@ std::optional<BrushMesh> ApplyDissolveEdge(const VerbContext& ctx)
             endpoints.emplace_back(ctx.Before.Vertices[edge->VertexA].Position,
                                    ctx.Before.Vertices[edge->VertexB].Position);
     if (endpoints.empty())
-        return std::nullopt;
+        return Refuse(ctx, "Those edges aren't on the brush any more.");
 
     const auto findVertex = [](const BrushMesh& mesh, Vec3d p) -> std::optional<std::uint32_t>
     {
@@ -313,17 +313,9 @@ std::optional<BrushMesh> ApplyDissolveEdge(const VerbContext& ctx)
         }
     }
     if (applied == 0)
-    {
-        if (ctx.Log)
-            ctx.Log->Info("Dissolve: no selected edge had exactly two mergeable faces");
-        return std::nullopt;
-    }
+        return Refuse(ctx, "Those edges can't be dissolved: the faces either side can't merge into one flat face.");
     if (!BrushValidateAndRepair(after, 0.0f).Ok)
-    {
-        if (ctx.Log)
-            ctx.Log->Warn("Dissolve: merged result failed validation; edit discarded");
-        return std::nullopt;
-    }
+        return Refuse(ctx, "Dissolving those edges would leave the brush without a valid shape.");
     return after;
 }
 
@@ -340,12 +332,7 @@ std::optional<BrushMesh> ApplyWeldVertices(const VerbContext& ctx)
     if (!BrushValidateAndRepair(after).Ok)
         return std::nullopt;
     if (after.Vertices.size() == ctx.Before.Vertices.size())
-    {
-        if (ctx.Log)
-            ctx.Log->Info("Weld: no selected vertices within {} of each other",
-                          ctx.Params.WeldDistance);
-        return std::nullopt;
-    }
+        return Refuse(ctx, std::format("No selected vertices are within {} of each other.", ctx.Params.WeldDistance));
     return after;
 }
 
@@ -525,11 +512,7 @@ std::optional<BrushMesh> ApplyBridgeEdges(const VerbContext& ctx)
 {
     const BridgeChains chains = GatherBridgeChains(ctx.Before, ctx.Transform, ctx.Refs);
     if (chains.Paths[0].empty())
-    {
-        if (ctx.Log)
-            ctx.Log->Info("Bridge: selection must be two separate equal-length edge paths or loops");
-        return std::nullopt;
-    }
+        return Refuse(ctx, "Bridge needs two separate edge paths or loops of the same length.");
 
     // The bridge continues the texture bordering chain A's first edge.
     const FaceMaterial* inherit = nullptr;
@@ -553,11 +536,7 @@ std::optional<BrushMesh> ApplyBridgeEdges(const VerbContext& ctx)
     if (after.Faces.size() == ctx.Before.Faces.size())
         return std::nullopt;
     if (!BrushValidateAndRepair(after, 0.0f).Ok)
-    {
-        if (ctx.Log)
-            ctx.Log->Warn("Bridge: result failed validation; edit discarded");
-        return std::nullopt;
-    }
+        return Refuse(ctx, "That bridge would leave the brush without a valid shape.");
     return after;
 }
 
@@ -590,6 +569,7 @@ struct VerbDescriptor
 {
     bool (*Filter)(const SelectableRef&);
     std::optional<BrushMesh> (*Apply)(const VerbContext&);
+    std::string_view Name;
 };
 
 bool IsFaceRef(const SelectableRef& r) { return r.IsFace(); }
@@ -599,19 +579,19 @@ bool IsMeshElementRef(const SelectableRef& r) { return r.IsMeshElement(); }
 bool IsEntityRef(const SelectableRef& r) { return r.IsEntity(); }
 
 const std::array<VerbDescriptor, 13> kVerbs = { {
-    { IsFaceRef,        ApplyExtrude },             // Extrude
-    { IsFaceRef,        ApplyDelete },              // Delete
-    { IsFaceRef,        ApplyClip },                // Clip
-    { IsFaceRef,        ApplyResizeFace },          // ResizeFace
-    { IsMeshElementRef, ApplyTranslate },           // TranslateElements
-    { IsEdgeRef,        ApplyInsertEdgeLoop },      // InsertEdgeLoop
-    { IsFaceRef,        ApplyFlipNormal },          // FlipFaceNormal
-    { IsEntityRef,      ApplyRecalculateNormals },  // RecalculateNormals
-    { IsEdgeRef,        ApplyDissolveEdge },        // DissolveEdge
-    { IsVertexRef,      ApplyWeldVertices },        // WeldVertices
-    { IsVertexRef,      ApplySnapVerticesToGrid },  // SnapVerticesToGrid
-    { IsEdgeRef,        ApplyBridgeEdges },         // BridgeEdges
-    { IsEdgeRef,        ApplySetEdgeSoftness },     // SetEdgeSoftness
+    { IsFaceRef,        ApplyExtrude,            "Extrude" },
+    { IsFaceRef,        ApplyDelete,             "Delete" },
+    { IsFaceRef,        ApplyClip,               "Clip" },
+    { IsFaceRef,        ApplyResizeFace,         "Resize" },
+    { IsMeshElementRef, ApplyTranslate,          "Move" },
+    { IsEdgeRef,        ApplyInsertEdgeLoop,     "Insert Loop" },
+    { IsFaceRef,        ApplyFlipNormal,         "Flip" },
+    { IsEntityRef,      ApplyRecalculateNormals, "Recalculate Normals" },
+    { IsEdgeRef,        ApplyDissolveEdge,       "Dissolve" },
+    { IsVertexRef,      ApplyWeldVertices,       "Weld" },
+    { IsVertexRef,      ApplySnapVerticesToGrid, "Snap to Grid" },
+    { IsEdgeRef,        ApplyBridgeEdges,        "Bridge" },
+    { IsEdgeRef,        ApplySetEdgeSoftness,    "Soften" },
 } };
 
 // ApplyVerb indexes kVerbs by the enum value, so the row order above is the
@@ -653,7 +633,8 @@ void MeshEditService::SetElementKindObserver(std::function<void(MeshElementKind)
 std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
                                                      const SelectionSnapshot& selection,
                                                      MeshEditVerb verb,
-                                                     const MeshEditParams& params) const
+                                                     const MeshEditParams& params,
+                                                     std::string* whyNot) const
 {
     const VerbDescriptor& desc = kVerbs[static_cast<std::size_t>(verb)];
 
@@ -679,7 +660,11 @@ std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
             group->Refs.push_back(ref);
         }
     if (groups.empty())
+    {
+        if (whyNot != nullptr)
+            *whyNot = std::format("Nothing selected that {} applies to.", desc.Name);
         return nullptr;
+    }
 
     Logger* log = Logging ? &Logging->GetLogger<MeshEditService>() : nullptr;
     std::vector<std::unique_ptr<ICommand>> commands;
@@ -691,7 +676,7 @@ std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
             continue;
 
         BrushMesh before = *resolved->Mesh;
-        const VerbContext ctx{ before, resolved->Transform, group.Refs, params, ElementKind, log };
+        const VerbContext ctx{ before, resolved->Transform, group.Refs, params, ElementKind, log, whyNot };
         std::optional<BrushMesh> after = desc.Apply(ctx);
         if (!after.has_value())
             continue;
@@ -700,7 +685,13 @@ std::unique_ptr<ICommand> MeshEditService::ApplyVerb(IMeshEditTarget& target,
             commands.push_back(std::move(command));
     }
     if (commands.empty())
+    {
+        if (whyNot != nullptr && whyNot->empty())
+            *whyNot = std::format("{} changed nothing.", desc.Name);
         return nullptr;
+    }
+    if (whyNot != nullptr)
+        whyNot->clear();
     if (commands.size() == 1)
         return std::move(commands.front());
     return std::make_unique<CompositeCommand>(std::move(commands));
