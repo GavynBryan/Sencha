@@ -333,9 +333,7 @@ struct TimelineSample
 };
 
 // A row under the ruler: what held along the clock, span by span, or a value
-// plotted along it, sample by sample, scaled to the largest. A deck has room
-// for kTimelineLaneLimit of them.
-inline constexpr std::size_t kTimelineLaneLimit = 4;
+// plotted along it, sample by sample, scaled to the largest.
 struct TimelineLane
 {
     std::string Label;

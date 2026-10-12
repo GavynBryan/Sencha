@@ -379,7 +379,7 @@ void AnimationWorkspace::DefineExplorers(ActionCatalog& catalog)
 
 void AnimationWorkspace::DefineTransport(ActionCatalog& catalog)
 {
-    const auto offer = [&](std::string id, std::string label, std::vector<KeyChord> chords, ActionHandler handler) {
+    const auto offer = [&](std::string id, std::string label, std::vector<KeyChord> chords, ActionBinding handler) {
         handler.Enabled = [this, enabled = std::move(handler.Enabled)] {
             return !Clock->IsLab() && (!enabled || enabled());
         };
@@ -532,11 +532,10 @@ void AnimationWorkspace::DefineLensViews()
           .Card = [this] {
               return Card{ { .Title = LayerCard->Title(), .Sections = { { .Heading = {}, .Source = LayerCard.get() } } } };
           },
-          // What won each layer, as many as the deck has lanes for.
+          // What won each layer.
           .Lanes = [=](std::vector<TimelineLane>& lanes) {
               const AnimBoundRig* rig = simulation().Rig();
-              for (std::size_t layer = 0; rig != nullptr && layer < rig->Layers.size() && layer < kTimelineLaneLimit;
-                   ++layer)
+              for (std::size_t layer = 0; rig != nullptr && layer < rig->Layers.size(); ++layer)
                   lanes.push_back(AnimationDecisionLane(simulation(), layer,
                                                         layer == navigation().Layer ? navigation().Rule : -1));
           },

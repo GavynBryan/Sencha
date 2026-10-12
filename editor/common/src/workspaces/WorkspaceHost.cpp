@@ -275,9 +275,8 @@ void WorkspaceHost::ApplyRequests()
     for (const AssetCreateRequest& create : creates)
         if (IWorkspace* workspace = Open(create.Kind))
             if (const ActionContext* actions = workspace->Actions())
-                if (const ActionHandler* handler = actions->Find(create.Action);
-                    handler != nullptr && handler->Invoke && (!handler->Enabled || handler->Enabled()))
-                    handler->Invoke();
+                if (const ActionBinding* binding = actions->Find(create.Action))
+                    (void)binding->TryInvoke();
     for (const WorkspaceRequest& request : requests)
     {
         switch (request.Action)

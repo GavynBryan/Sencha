@@ -37,7 +37,7 @@ TEST_F(ThemeSheetTest, AThemeActionTakesEffectAtTheNextBoundary)
     ActionCatalog catalog;
     ActionContext context;
     Sheet.DefineActions(catalog, context);
-    const ActionHandler* shudei = context.Find("theme.use.Shudei");
+    const ActionBinding* shudei = context.Find("theme.use.Shudei");
     ASSERT_NE(shudei, nullptr);
     ASSERT_NE(context.Find("theme.use.builtin"), nullptr);
 

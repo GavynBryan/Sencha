@@ -72,7 +72,7 @@ void OfferManipulationActions(ActionCatalog& catalog, ActionContext& context, Ed
 {
     EditorWorkspace* w = &workspace;
     const auto offer = [&](std::string id, std::string label, std::string category, std::vector<KeyChord> chords,
-                           IconId icon, ActionHandler handler) {
+                           IconId icon, ActionBinding handler) {
         OfferAction(catalog, context,
                     { .Id = std::move(id), .Label = std::move(label), .Category = std::move(category), .Icon = icon,
                       .DefaultChords = std::move(chords) },

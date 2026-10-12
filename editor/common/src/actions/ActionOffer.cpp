@@ -4,7 +4,7 @@
 
 #include <cstdio>
 
-void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinition definition, ActionHandler handler)
+void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinition definition, ActionBinding handler)
 {
     const std::string id = definition.Id;
     std::string error;

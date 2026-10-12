@@ -150,3 +150,8 @@ bool SurfaceLayout::Sized(std::string_view key) const
     const auto found = Entries.find(key);
     return found != Entries.end() && found->second.Resized;
 }
+
+OpeningToward OpenTowardRoom(const Rect2d& anchor, Vec2d window)
+{
+    return { .Left = anchor.Center().X > window.X * 0.5f, .Up = anchor.Center().Y > window.Y * 0.5f };
+}

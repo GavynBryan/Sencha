@@ -144,6 +144,7 @@ body
 
 #popover
 {
+    overscroll-behavior: contain;
     display: block;
     position: absolute;
     top: 38dp;
@@ -305,6 +306,7 @@ body
    view instrument down, as the drawer. */
 #selection_card
 {
+    overscroll-behavior: contain;
     display: block;
     position: absolute;
     box-sizing: border-box;
@@ -473,6 +475,7 @@ body
    reach. Open, it has risen out of it. */
 #tool_card
 {
+    overscroll-behavior: contain;
     display: block;
     padding: 8dp 10dp;
     border-width: 1dp;
@@ -522,6 +525,7 @@ body
 /* An explorer: pictures in a grid, or names in an outline. */
 #explorer
 {
+    overscroll-behavior: contain;
     display: flex;
     flex-direction: column;
     position: absolute;

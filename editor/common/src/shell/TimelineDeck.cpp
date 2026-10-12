@@ -32,6 +32,8 @@ const UiModelRowsId kBars = UiRowsIdAt(4);
 // The ruler's row, then one row per lane under it, in dp.
 constexpr int kRulerHeight = 24;
 constexpr int kLaneHeight = 16;
+// The lanes the deck has room for; any past these are not shown.
+constexpr std::size_t kLaneLimit = 4;
 // Where it sits above the window's bottom edge, clear of the stations, in dp.
 constexpr int kDeckBottomDp = 50;
 // A plotted lane is drawn as this many bars, each the largest sample it covers.
@@ -262,7 +264,7 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
     std::vector<UiRow> bars;
     for (std::size_t index = 0; const TimelineLane& lane : timeline.Lanes)
     {
-        if (index == kTimelineLaneLimit)
+        if (index == kLaneLimit)
             break;
         const int laneTop = kRulerHeight + kLaneHeight * static_cast<int>(index++);
         const std::string top = std::format("{}dp", laneTop);

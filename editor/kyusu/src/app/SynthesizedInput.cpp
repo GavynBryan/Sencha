@@ -1,20 +1,24 @@
 #include "app/SynthesizedInput.h"
 
+#include "properties/SettingProperties.h"
+
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleTypes.h>
 
 #include <SDL3/SDL_keyboard.h>
 
 #include <charconv>
+#include <optional>
 #include <string>
 #include <string_view>
 
 namespace
 {
-bool ParseNumber(std::string_view text, float& out)
+bool ParseFloat(std::string_view text, float& out)
 {
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), out);
-    return error == std::errc{} && end == text.data() + text.size();
+    const std::optional<double> parsed = ParseNumber(text);
+    out = static_cast<float>(parsed.value_or(0.0));
+    return parsed.has_value();
 }
 
 bool ParseFrame(std::span<const std::string> args, std::size_t at, std::uint64_t& out)
@@ -54,6 +58,7 @@ void SynthesizedInput::Register(ConsoleRegistry& registry, std::function<std::ui
             std::uint64_t frame = Frame;
             if (key == SDLK_UNKNOWN || (args[1] != "down" && args[1] != "up") || !ParseFrame(args, 2, frame))
             {
+                result.Status = ConsoleStatus::InvalidArguments;
                 result.Error("usage: input.key <key name> <down|up> [frame]");
                 return result;
             }
@@ -78,8 +83,9 @@ void SynthesizedInput::Register(ConsoleRegistry& registry, std::function<std::ui
             ConsoleResult result;
             float notches = 0.0f;
             std::uint64_t frame = Frame;
-            if (args.empty() || !ParseNumber(args[0], notches) || !ParseFrame(args, 1, frame))
+            if (args.empty() || !ParseFloat(args[0], notches) || !ParseFrame(args, 1, frame))
             {
+                result.Status = ConsoleStatus::InvalidArguments;
                 result.Error("usage: input.wheel <dy> [frame]");
                 return result;
             }
@@ -103,6 +109,7 @@ void SynthesizedInput::Register(ConsoleRegistry& registry, std::function<std::ui
             std::uint64_t frame = Frame;
             if (args.empty() || !ParseFrame(args, 1, frame))
             {
+                result.Status = ConsoleStatus::InvalidArguments;
                 result.Error("usage: input.drop <file> [frame]");
                 return result;
             }
@@ -126,8 +133,9 @@ void SynthesizedInput::Register(ConsoleRegistry& registry, std::function<std::ui
             float x = 0.0f;
             float y = 0.0f;
             std::uint64_t frame = Frame;
-            if (args.size() < 2 || !ParseNumber(args[0], x) || !ParseNumber(args[1], y) || !ParseFrame(args, 2, frame))
+            if (args.size() < 2 || !ParseFloat(args[0], x) || !ParseFloat(args[1], y) || !ParseFrame(args, 2, frame))
             {
+                result.Status = ConsoleStatus::InvalidArguments;
                 result.Error("usage: input.pointer <x> <y> [frame]");
                 return result;
             }
@@ -157,6 +165,7 @@ void SynthesizedInput::Register(ConsoleRegistry& registry, std::function<std::ui
             if (button == 0 || args.size() < 2 || (args[1] != "down" && args[1] != "up")
                 || !ParseFrame(args, 2, frame))
             {
+                result.Status = ConsoleStatus::InvalidArguments;
                 result.Error("usage: input.button <left|right|middle> <down|up> [frame]");
                 return result;
             }

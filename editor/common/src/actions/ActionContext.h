@@ -14,25 +14,41 @@ class ActionCatalog;
 // What claiming an action means: how to perform it, and whether it can be
 // performed or is switched on right now. Empty predicates read as enabled and
 // as not a toggle.
-struct ActionHandler
+struct ActionBinding
 {
     std::function<void()> Invoke;
     std::function<bool()> Enabled = {};
     std::function<bool()> Checked = {};
+
+    [[nodiscard]] bool IsEnabled() const { return !Enabled || Enabled(); }
+    // Performs it if it can be performed now; whether it was.
+    bool TryInvoke() const
+    {
+        if (!IsEnabled() || !Invoke)
+            return false;
+        Invoke();
+        return true;
+    }
 };
 
-// The handlers one owner provides -- the application, a window, a workspace, a
+// The bindings one owner provides -- the application, a window, a workspace, a
 // document, the tool in hand, a focused surface -- and that live exactly as
 // long as it does.
 class ActionContext
 {
 public:
-    void Claim(std::string id, ActionHandler handler);
+    void Claim(std::string id, ActionBinding handler);
     void Release(std::string_view id);
-    [[nodiscard]] const ActionHandler* Find(std::string_view id) const;
+    [[nodiscard]] const ActionBinding* Find(std::string_view id) const;
 
 private:
-    std::unordered_map<std::string, ActionHandler> Handlers;
+    // Looked up by view, without a string made for each lookup.
+    struct KeyHash
+    {
+        using is_transparent = void;
+        std::size_t operator()(std::string_view key) const { return std::hash<std::string_view>{}(key); }
+    };
+    std::unordered_map<std::string, ActionBinding, KeyHash, std::equal_to<>> Handlers;
 };
 
 // How close to the person's attention a context is. Resolution asks the
@@ -87,7 +103,7 @@ public:
 
     [[nodiscard]] Layer Push(const ActionContext& context, ActionRank rank);
 
-    [[nodiscard]] const ActionHandler* Resolve(std::string_view id) const;
+    [[nodiscard]] const ActionBinding* Resolve(std::string_view id) const;
 
     struct State
     {
@@ -116,7 +132,7 @@ private:
     struct Claim
     {
         const Entry* By = nullptr;
-        const ActionHandler* Handler = nullptr;
+        const ActionBinding* Handler = nullptr;
     };
 
     // The highest rank answers, and of equal rank the newest.

@@ -44,7 +44,7 @@ EntityVerbs::EntityVerbs(EditorWorkspace& workspace, std::function<bool(const st
 void EntityVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
 {
     EditorWorkspace& w = Workspace;
-    const auto offer = [&](std::string id, std::string label, std::vector<KeyChord> chords, ActionHandler handler) {
+    const auto offer = [&](std::string id, std::string label, std::vector<KeyChord> chords, ActionBinding handler) {
         OfferAction(catalog, context,
                     { .Id = std::move(id), .Label = std::move(label), .Category = "Entity",
                       .DefaultChords = std::move(chords) },

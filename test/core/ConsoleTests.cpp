@@ -165,3 +165,20 @@ TEST(ConsoleStartupScript, ParsesArgvAndQuotedScriptLines)
     EXPECT_EQ(file.Commands()[0].Args[1], "hello world");
     EXPECT_EQ(file.Commands()[1].Args[2], "quoted value");
 }
+
+TEST(ConsoleResult, AnErrorIsAFailureUnlessItSaidHowAlready)
+{
+    ConsoleResult failed;
+    failed.Error("no project open");
+    EXPECT_FALSE(failed.Succeeded()) << "a command that says it failed reported success";
+    EXPECT_EQ(failed.Status, ConsoleStatus::ExecutionFailed);
+
+    ConsoleResult refused;
+    refused.Status = ConsoleStatus::InvalidArguments;
+    refused.Error("usage: input.key <key name> <down|up> [frame]");
+    EXPECT_EQ(refused.Status, ConsoleStatus::InvalidArguments);
+
+    ConsoleResult warned;
+    warned.Warning("nothing to do");
+    EXPECT_TRUE(warned.Succeeded());
+}

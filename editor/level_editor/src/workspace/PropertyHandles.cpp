@@ -2,12 +2,12 @@
 
 #include "EditorTheme.h"
 #include "authoring/ComponentPropertySource.h"
+#include "properties/SettingProperties.h"
 #include "ui/EditorUiStyle.h"
 #include "viewport/ViewportProjection.h"
 #include "workspace/EditorWorkspace.h"
 
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 #include <format>
 #include <numbers>
@@ -52,13 +52,6 @@ bool IsAngle(PropertyHandleKind kind)
     return kind == PropertyHandleKind::Cone || kind == PropertyHandleKind::Spread;
 }
 
-std::optional<float> Number(std::string_view text)
-{
-    float value = 0.0f;
-    if (std::from_chars(text.data(), text.data() + text.size(), value).ec != std::errc{})
-        return std::nullopt;
-    return value;
-}
 
 // Screen right and up as world directions, for a ring that faces the view.
 std::pair<Vec3d, Vec3d> Facing(const EditorViewport& viewport)
@@ -153,10 +146,10 @@ std::vector<PropertyHandles::Handle> PropertyHandles::Handles() const
         for (const PropertyNode& field : component.Children)
         {
             const PropertyHandleRule* rule = RuleOf(field.Key);
-            const std::optional<float> value = Number(field.Value);
+            const std::optional<double> value = ParseNumber(field.Value);
             if (rule == nullptr || field.Descriptor.ReadOnly || !value.has_value())
                 continue;
-            Handle handle{ .Key = field.Key, .Label = field.Descriptor.Label, .Kind = rule->Kind, .Value = *value };
+            Handle handle{ .Key = field.Key, .Label = field.Descriptor.Label, .Kind = rule->Kind, .Value = static_cast<float>(*value) };
             if (IsAngle(rule->Kind))
             {
                 handle.Side = side;
@@ -166,7 +159,7 @@ std::vector<PropertyHandles::Handle> PropertyHandles::Handles() const
                 for (const PropertyNode& sibling : component.Children)
                     if (sibling.Key.ends_with(rule->Reach) && sibling.Key.size() > rule->Reach.size()
                         && sibling.Key[sibling.Key.size() - rule->Reach.size() - 1] == '/')
-                        handle.Reach = Number(sibling.Value).value_or(0.0f);
+                        handle.Reach = static_cast<float>(ParseNumber(sibling.Value).value_or(0.0));
             handles.push_back(std::move(handle));
         }
     }

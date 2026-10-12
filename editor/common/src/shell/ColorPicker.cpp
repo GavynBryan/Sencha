@@ -1,6 +1,7 @@
-#include "presenters/ColorPicker.h"
+#include "shell/ColorPicker.h"
 
 #include "properties/PropertySource.h"
+#include "shell/SurfacePlacement.h"
 
 #include <ui/UiService.h>
 
@@ -136,11 +137,12 @@ void ColorPicker::Open(ColorPickerTarget target, std::string_view value, UiEleme
     const float height = static_cast<float>(extent.Height);
     constexpr float kGap = 8.0f;
     const auto px = [](float pixels) { return UiValue(std::format("{:.0f}px", pixels)); };
-    if (anchor.X + anchor.Width * 0.5f > width * 0.5f)
+    const OpeningToward toward = OpenTowardRoom(Rect2d(anchor.X, anchor.Y, anchor.Width, anchor.Height), { width, height });
+    if (toward.Left)
         (void)Ui.SetValue(Screen, kRight, px(width - anchor.X + kGap));
     else
         (void)Ui.SetValue(Screen, kLeft, px(anchor.X + anchor.Width + kGap));
-    if (anchor.Y + anchor.Height * 0.5f > height * 0.5f)
+    if (toward.Up)
         (void)Ui.SetValue(Screen, kBottom, px(height - anchor.Y - anchor.Height));
     else
         (void)Ui.SetValue(Screen, kTop, px(anchor.Y));

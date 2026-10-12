@@ -5,7 +5,7 @@
 #include "icons/IconNames.h"
 #include "input/SdlEventTranslation.h"
 #include "notices/NoticeQueue.h"
-#include "presenters/ColorPicker.h"
+#include "shell/ColorPicker.h"
 #include "problems/ProblemList.h"
 #include "project/AssetKinds.h"
 #include "properties/PropertyEditSession.h"
@@ -187,7 +187,7 @@ ShellWindow::ShellWindow(ShellWindowServices services)
             EscapeLayer.Reset();
     });
     // Escape belongs to what is open while anything is.
-    EscapeActions.Claim("edit.escape", ActionHandler{ .Invoke = [this] { EscapeFront(); } });
+    EscapeActions.Claim("edit.escape", ActionBinding{ .Invoke = [this] { EscapeFront(); } });
 
     OfferWindowActions();
     WindowLayer = Services.Actions.Push(WindowActions, ActionRank::Window);

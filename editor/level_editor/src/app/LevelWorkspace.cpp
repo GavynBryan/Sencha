@@ -1192,7 +1192,7 @@ void LevelWorkspace::DefineTransportActions()
     // palette reach the same handlers. A cook reads the live documents (and
     // force-saves the world first), so open previews settle before it starts or
     // they would cook half-staged.
-    const auto offer = [this](std::string id, std::string label, ActionHandler handler) {
+    const auto offer = [this](std::string id, std::string label, ActionBinding handler) {
         OfferAction(Catalog, ActionHandlers,
                     { .Id = std::move(id), .Label = std::move(label), .Category = "Transport" }, std::move(handler));
     };

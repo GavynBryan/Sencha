@@ -5,6 +5,7 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/commands/ValueCommand.h"
+#include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
 #include <abilities/AbilityRegistry.h>
@@ -18,7 +19,6 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cstdint>
 #include <cstring>
 #include <optional>
@@ -64,13 +64,10 @@ namespace
     // "tag:12" -> 12, for a key naming a registry entry.
     std::optional<std::uint32_t> EntryOf(std::string_view key, std::string_view prefix)
     {
-        if (!key.starts_with(prefix))
+        const std::optional<PropertyKeyIndex> entry = ParsePropertyKeyIndex(key, prefix);
+        if (!entry.has_value() || !entry->Rest.empty())
             return std::nullopt;
-        key.remove_prefix(prefix.size());
-        std::uint32_t value = 0;
-        if (key.empty() || std::from_chars(key.data(), key.data() + key.size(), value).ec != std::errc{})
-            return std::nullopt;
-        return value;
+        return static_cast<std::uint32_t>(entry->Index);
     }
 
     // What a refused edit said, until the entity or the next edit changes it.

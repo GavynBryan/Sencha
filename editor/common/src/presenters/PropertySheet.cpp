@@ -4,6 +4,7 @@
 #include "actions/ActionContext.h"
 #include "properties/ColorValue.h"
 #include "properties/PropertyEditSession.h"
+#include "properties/SettingProperties.h"
 #include "text/PathLeaf.h"
 
 #include <algorithm>
@@ -34,38 +35,12 @@ UiRowControl ControlFor(const PropertyDescriptor& descriptor)
     }
 }
 
-// A vector's numbers as the texts they are shown as.
-std::vector<std::string> PartsOf(std::string_view text)
-{
-    std::vector<std::string> parts;
-    while (!text.empty())
-    {
-        const std::size_t comma = text.find(',');
-        std::string_view part = text.substr(0, comma);
-        while (!part.empty() && part.front() == ' ')
-            part.remove_prefix(1);
-        while (!part.empty() && part.back() == ' ')
-            part.remove_suffix(1);
-        parts.emplace_back(part);
-        if (comma == std::string_view::npos)
-            break;
-        text.remove_prefix(comma + 1);
-    }
-    return parts;
-}
-
 std::string AxisName(std::size_t index, std::size_t count)
 {
     static constexpr std::string_view kAxes[] = { "X", "Y", "Z", "W" };
     return count <= std::size(kAxes) ? std::string(kAxes[index]) : std::to_string(index);
 }
 
-double NumberOf(std::string_view text)
-{
-    double value = 0.0;
-    (void)std::from_chars(text.data(), text.data() + text.size(), value);
-    return value;
-}
 } // namespace
 
 std::vector<UiRow> PropertySheet::Present(const IPropertySource& source, bool everything)
@@ -147,7 +122,7 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
         row.Parts = { std::string(PathLeaf(node.Value)) };
     if (row.Control == UiRowControl::Number)
     {
-        row.Number = NumberOf(node.Value);
+        row.Number = ParseNumber(node.Value).value_or(0.0);
         row.Min = descriptor.Min;
         row.Max = descriptor.Max;
         row.Step = descriptor.Step;
@@ -167,7 +142,7 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
             }
         else
         {
-            row.Parts = PartsOf(node.Value);
+            row.Parts = VectorParts(node.Value);
             for (std::size_t i = 0; i < row.Parts.size(); ++i)
                 row.Choices.push_back(AxisName(i, row.Parts.size()));
         }
@@ -276,14 +251,11 @@ PropertyEditResult PropertySheet::SetElement(std::span<const PropertySection> se
     if (element < row.ElementKeys.size())
         return PropertyEditSession{}.Set(*source, row.ElementKeys[element], value);
     // A vector without a key per number is set whole, the others as they were.
-    std::vector<std::string> parts = PartsOf(row.Value);
+    std::vector<std::string> parts = VectorParts(row.Value);
     if (element >= parts.size())
         return PropertyEditResult::Gone;
     parts[element] = std::string(value);
-    std::string joined;
-    for (const std::string& part : parts)
-        joined += (joined.empty() ? "" : ", ") + part;
-    return Set(*source, index, joined);
+    return Set(*source, index, JoinVector(parts));
 }
 
 PropertyEditResult PropertySheet::ReleaseElement(std::span<const PropertySection> sections, std::size_t index,

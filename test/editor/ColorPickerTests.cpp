@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "presenters/ColorPicker.h"
+#include "shell/ColorPicker.h"
 #include "properties/ColorValue.h"
 #include "properties/PropertySource.h"
 

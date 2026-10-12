@@ -184,7 +184,7 @@ void ExplorerPanel::Claim(const std::vector<WorkspaceExplorerInfo>& explorers)
     for (const std::string& action : Claimed)
         Host.WindowActions.Release(action);
     for (const WorkspaceExplorerInfo& explorer : explorers)
-        Host.WindowActions.Claim(explorer.Action, ActionHandler{ .Invoke = [this, id = explorer.Id] {
+        Host.WindowActions.Claim(explorer.Action, ActionBinding{ .Invoke = [this, id = explorer.Id] {
                                      if (id == ShownId)
                                          Close();
                                      else if (!Host.Assets.Choosing().empty() && id == ChoosingFor)

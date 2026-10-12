@@ -8,11 +8,11 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/commands/ValueCommand.h"
+#include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cmath>
 #include <optional>
 #include <string>
@@ -20,26 +20,10 @@
 
 namespace
 {
-    // "m2.offset" -> modifier 2, field "offset"; "m2" -> modifier 2, no field.
-    struct RowKey
+    // "m2.offset" is modifier 2's field "offset"; "m2" is modifier 2 itself.
+    std::optional<PropertyKeyIndex> ParseRowKey(std::string_view key)
     {
-        std::size_t Index = 0;
-        std::string_view Field;
-    };
-
-    std::optional<RowKey> ParseRowKey(std::string_view key)
-    {
-        if (!key.starts_with('m'))
-            return std::nullopt;
-        key.remove_prefix(1);
-        const std::size_t dot = key.find('.');
-        const std::string_view digits = key.substr(0, dot);
-        RowKey row;
-        if (digits.empty() || std::from_chars(digits.data(), digits.data() + digits.size(), row.Index).ec != std::errc{})
-            return std::nullopt;
-        if (dot != std::string_view::npos)
-            row.Field = key.substr(dot + 1);
-        return row;
+        return ParsePropertyKeyIndex(key, "m");
     }
 
     // What each registered kind is called and does, in kind order: the menu a
@@ -153,11 +137,11 @@ namespace
                                              std::string_view value) const override
         {
             const BrushModifierStack* stored = context.Scene.TryGetBrushModifiers(context.Entity);
-            const std::optional<RowKey> row = ParseRowKey(key);
+            const std::optional<PropertyKeyIndex> row = ParseRowKey(key);
             if (stored == nullptr || !row.has_value() || row->Index >= stored->size())
                 return PropertyEditResult::Gone;
             BrushModifierStack edited = *stored;
-            if (!SetField(edited[row->Index], row->Field, value))
+            if (!SetField(edited[row->Index], row->Rest, value))
                 return PropertyEditResult::Refused;
             return Commit(context, *stored, std::move(edited));
         }
@@ -178,7 +162,7 @@ namespace
                 edited.push_back(BrushModifierKinds()[static_cast<std::size_t>(kind - kinds.begin())].MakeDefault());
                 return Commit(context, *stored, std::move(edited));
             }
-            const std::optional<RowKey> row = ParseRowKey(key);
+            const std::optional<PropertyKeyIndex> row = ParseRowKey(key);
             if (!row.has_value() || row->Index >= edited.size())
                 return PropertyEditResult::Gone;
             const auto at = static_cast<std::ptrdiff_t>(row->Index);

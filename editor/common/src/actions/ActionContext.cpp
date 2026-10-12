@@ -6,19 +6,20 @@
 #include <cassert>
 #include <utility>
 
-void ActionContext::Claim(std::string id, ActionHandler handler)
+void ActionContext::Claim(std::string id, ActionBinding handler)
 {
     Handlers[std::move(id)] = std::move(handler);
 }
 
 void ActionContext::Release(std::string_view id)
 {
-    Handlers.erase(std::string(id));
+    if (const auto it = Handlers.find(id); it != Handlers.end())
+        Handlers.erase(it);
 }
 
-const ActionHandler* ActionContext::Find(std::string_view id) const
+const ActionBinding* ActionContext::Find(std::string_view id) const
 {
-    const auto it = Handlers.find(std::string(id));
+    const auto it = Handlers.find(id);
     return it != Handlers.end() ? &it->second : nullptr;
 }
 
@@ -69,7 +70,7 @@ ActionContextStack::Claim ActionContextStack::Find(std::string_view id) const
 {
     Claim best;
     for (const Entry& entry : Entries)
-        if (const ActionHandler* found = entry.Context->Find(id); found != nullptr && Outranks(entry, best))
+        if (const ActionBinding* found = entry.Context->Find(id); found != nullptr && Outranks(entry, best))
             best = Claim{ &entry, found };
     return best;
 }
@@ -78,8 +79,8 @@ ActionContextStack::Claim ActionContextStack::FindEnabled(std::string_view id) c
 {
     Claim best;
     for (const Entry& entry : Entries)
-        if (const ActionHandler* found = entry.Context->Find(id);
-            found != nullptr && (!found->Enabled || found->Enabled()) && Outranks(entry, best))
+        if (const ActionBinding* found = entry.Context->Find(id);
+            found != nullptr && found->IsEnabled() && Outranks(entry, best))
             best = Claim{ &entry, found };
     return best;
 }
@@ -88,24 +89,23 @@ bool ActionContextStack::Perform(const Claim& claim)
 {
     if (claim.Handler == nullptr)
         return false;
-    if ((!claim.Handler->Enabled || claim.Handler->Enabled()) && claim.Handler->Invoke)
-        claim.Handler->Invoke();
+    (void)claim.Handler->TryInvoke();
     return true;
 }
 
-const ActionHandler* ActionContextStack::Resolve(std::string_view id) const
+const ActionBinding* ActionContextStack::Resolve(std::string_view id) const
 {
     return Find(id).Handler;
 }
 
 ActionContextStack::State ActionContextStack::Query(std::string_view id) const
 {
-    const ActionHandler* handler = Resolve(id);
+    const ActionBinding* handler = Resolve(id);
     if (handler == nullptr)
         return {};
     return State{
         .Claimed = true,
-        .Enabled = !handler->Enabled || handler->Enabled(),
+        .Enabled = handler->IsEnabled(),
         .Checked = handler->Checked && handler->Checked(),
     };
 }

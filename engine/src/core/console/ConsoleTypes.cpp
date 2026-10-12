@@ -14,6 +14,10 @@ void ConsoleResult::Warning(std::string text, std::string channel)
 
 void ConsoleResult::Error(std::string text, std::string channel)
 {
+    // An error is a failure: a command that says why it failed has failed,
+    // unless it already said more exactly how.
+    if (Status == ConsoleStatus::Ok)
+        Status = ConsoleStatus::ExecutionFailed;
     Output.push_back({ ConsoleOutputSeverity::Error, std::move(channel), std::move(text) });
 }
 

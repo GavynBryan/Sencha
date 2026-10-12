@@ -132,3 +132,14 @@ TEST(SurfacePlacement, AnAnchoredSurfaceKeepsToItsHomeUntilItIsMoved)
     EXPECT_EQ(layout.Place("selection.card", SurfaceAnchor::Home, shortCard, std::vector<Rect2d>{}, kBounds, kStep).Position,
               Vec2d(772.0f, 360.0f)) << "moved, it stays where the person put it";
 }
+
+TEST(SurfacePlacement, SomethingOpenedBesideAnAnchorGoesTowardTheWindowsRoom)
+{
+    const Vec2d window(1000.0f, 800.0f);
+    const OpeningToward topLeft = OpenTowardRoom(Rect2d(20.0f, 20.0f, 60.0f, 20.0f), window);
+    EXPECT_FALSE(topLeft.Left);
+    EXPECT_FALSE(topLeft.Up);
+    const OpeningToward bottomRight = OpenTowardRoom(Rect2d(900.0f, 760.0f, 60.0f, 20.0f), window);
+    EXPECT_TRUE(bottomRight.Left);
+    EXPECT_TRUE(bottomRight.Up);
+}

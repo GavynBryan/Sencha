@@ -397,7 +397,7 @@ void KyusuApp::DefineApplicationActions()
 
     DocumentSourceSet& documents = Session->Documents();
     const auto offer = [this](std::string id, std::string label, std::vector<KeyChord> chords,
-                              ActionHandler handler) {
+                              ActionBinding handler) {
         std::string category = id.substr(0, id.find('.')) == "edit" ? "Edit" : "File";
         OfferAction(Catalog, ApplicationActions,
                     { .Id = std::move(id), .Label = std::move(label), .Category = std::move(category),

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -20,21 +21,14 @@ public:
         return token;
     }
 
+    // An observer subscribed while this runs hears from the next notify on.
     void Notify(Args... args)
     {
-        auto it = Observers.begin();
-        while (it != Observers.end())
-        {
-            if (std::shared_ptr<Fn> fn = it->lock())
-            {
+        std::erase_if(Observers, [](const std::weak_ptr<Fn>& observer) { return observer.expired(); });
+        const std::size_t count = Observers.size();
+        for (std::size_t i = 0; i < count; ++i)
+            if (std::shared_ptr<Fn> fn = Observers[i].lock())
                 (*fn)(args...);
-                ++it;
-            }
-            else
-            {
-                it = Observers.erase(it);
-            }
-        }
     }
 
 private:

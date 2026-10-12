@@ -56,7 +56,7 @@ PromptDialog::PromptDialog(UiService& ui, UiSurfaceId surface, PromptQueue& prom
     , Prompts(prompts)
     , Actions(actions)
 {
-    EscapeActions.Claim("edit.escape", ActionHandler{ .Invoke = [this] { (void)Prompts.Dismiss(); } });
+    EscapeActions.Claim("edit.escape", ActionBinding{ .Invoke = [this] { (void)Prompts.Dismiss(); } });
 }
 
 PromptDialog::~PromptDialog()

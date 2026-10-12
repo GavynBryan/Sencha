@@ -4,6 +4,7 @@
 #include "actions/ActionContext.h"
 #include "icons/IconNames.h"
 #include "problems/ProblemList.h"
+#include "shell/SurfacePlacement.h"
 #include "text/TextFilterMatch.h"
 #include "ui/ScreenModel.h"
 #include "workspaces/IWorkspace.h"
@@ -280,7 +281,9 @@ void RailMenus::Place(std::string_view anchor)
             x = std::floor(box->X);
             // From an instrument in the lower half, a popover rises instead of
             // hanging below it; either way it ends inside the window.
-            rises = box->Y > windowHeight / 2.0f;
+            rises = OpenTowardRoom(Rect2d(box->X, box->Y, box->Width, box->Height),
+                                   { static_cast<float>(Host.Window.GetExtent().Width), windowHeight })
+                        .Up;
             const float hangsFrom = std::floor(box->Y + box->Height) + kPopoverGap;
             if (!rises)
                 top = std::format("{}px", hangsFrom);

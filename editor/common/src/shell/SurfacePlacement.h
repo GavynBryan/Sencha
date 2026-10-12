@@ -15,6 +15,15 @@
 // `bounds`, else at home over whatever is there.
 [[nodiscard]] Rect2d FindSpace(const Rect2d& home, std::span<const Rect2d> taken, const Rect2d& bounds, float step);
 
+// Which way something opened beside `anchor` goes for the more of the window:
+// leftward from an anchor right of its middle, upward from one below it.
+struct OpeningToward
+{
+    bool Left = false;
+    bool Up = false;
+};
+[[nodiscard]] OpeningToward OpenTowardRoom(const Rect2d& anchor, Vec2d window);
+
 // The offset nearest `offset` that keeps `placed` moved by it inside `bounds`.
 // A surface larger than the bounds keeps its top left edge inside them.
 [[nodiscard]] Vec2d KeepInside(Vec2d offset, const Rect2d& placed, const Rect2d& bounds);

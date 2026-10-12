@@ -50,13 +50,6 @@ constexpr float kCarvePlanarTolerance = 1e-3f;
 // can be sampled before its chords weld away.
 constexpr float kCarveWeldTolerance = 1e-4f;
 
-float ScreenDistance(Vec2d a, Vec2d b)
-{
-    const float dx = a.X - b.X;
-    const float dy = a.Y - b.Y;
-    return std::sqrt(dx * dx + dy * dy);
-}
-
 std::vector<SelectableRef> NewEdgeRefs(const EditorScene& scene, EntityId entity,
                                        const BrushMesh& original, const BrushMesh& edited)
 {
@@ -497,7 +490,7 @@ CarveHandleHit FaceCarveTool::HandleUnderCursor(const EditorViewport& viewport, 
         const std::optional<ProjectedPoint> projected = projection.WorldToPixel(world);
         if (!projected.has_value())
             return std::nullopt;
-        return ScreenDistance(pos, projected->Pixel);
+        return Vec2d::Distance(pos, projected->Pixel);
     };
 
     if (ShapeHandlesApply() && Shape == CarveShape::Arch)

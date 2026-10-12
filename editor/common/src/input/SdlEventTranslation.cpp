@@ -4,6 +4,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <unordered_map>
+
 ModifierFlags ReadModifiers(SDL_Keymod mod)
 {
     return {
@@ -15,25 +17,24 @@ ModifierFlags ReadModifiers(SDL_Keymod mod)
 
 namespace
 {
-// Where the last pointer event said the pointer is, once one has. A key event
+// Where the last pointer event in each window said the pointer is. A key event
 // carries no position of its own; for a real pointer this is what SDL's mouse
 // state says, and for a pointer a script moved, SDL's state never heard of it.
-struct PointerSeen
+std::unordered_map<SDL_WindowID, Vec2d>& LastPointers()
 {
-    bool Heard = false;
-    Vec2d At = {};
-};
-PointerSeen LastPointer;
-
-void Hear(float x, float y)
-{
-    LastPointer = { true, { x, y } };
+    static std::unordered_map<SDL_WindowID, Vec2d> seen;
+    return seen;
 }
 
-Vec2d PointerNow()
+void Hear(SDL_WindowID window, float x, float y)
 {
-    if (LastPointer.Heard)
-        return LastPointer.At;
+    LastPointers()[window] = { x, y };
+}
+
+Vec2d PointerNow(SDL_WindowID window)
+{
+    if (const auto seen = LastPointers().find(window); seen != LastPointers().end())
+        return seen->second;
     float x = 0.0f;
     float y = 0.0f;
     SDL_GetMouseState(&x, &y);
@@ -57,7 +58,7 @@ std::optional<InputEvent> TranslateSdlEvent(const SDL_Event& event)
         else
             return std::nullopt;
 
-        Hear(event.button.x, event.button.y);
+        Hear(event.button.windowID, event.button.x, event.button.y);
         return PointerDownEvent{
             .Position = { event.button.x, event.button.y },
             .Button = button,
@@ -77,6 +78,7 @@ std::optional<InputEvent> TranslateSdlEvent(const SDL_Event& event)
         else
             return std::nullopt;
 
+        Hear(event.button.windowID, event.button.x, event.button.y);
         return PointerUpEvent{
             .Position = { event.button.x, event.button.y },
             .Button = button,
@@ -85,7 +87,7 @@ std::optional<InputEvent> TranslateSdlEvent(const SDL_Event& event)
     }
 
     case SDL_EVENT_MOUSE_MOTION:
-        Hear(event.motion.x, event.motion.y);
+        Hear(event.motion.windowID, event.motion.x, event.motion.y);
         return PointerMoveEvent{
             .Position = { event.motion.x, event.motion.y },
             .Delta = { event.motion.xrel, event.motion.yrel },
@@ -93,8 +95,9 @@ std::optional<InputEvent> TranslateSdlEvent(const SDL_Event& event)
         };
 
     case SDL_EVENT_MOUSE_WHEEL:
+        Hear(event.wheel.windowID, event.wheel.mouse_x, event.wheel.mouse_y);
         return WheelEvent{
-            .Position = {},
+            .Position = { event.wheel.mouse_x, event.wheel.mouse_y },
             .Delta = event.wheel.y,
             .Modifiers = ReadModifiers(SDL_GetModState()),
         };
@@ -105,14 +108,14 @@ std::optional<InputEvent> TranslateSdlEvent(const SDL_Event& event)
         return KeyDownEvent{
             .Key = event.key.key,
             .Modifiers = ReadModifiers(event.key.mod),
-            .Pointer = PointerNow(),
+            .Pointer = PointerNow(event.key.windowID),
         };
 
     case SDL_EVENT_KEY_UP:
         return KeyUpEvent{
             .Key = event.key.key,
             .Modifiers = ReadModifiers(event.key.mod),
-            .Pointer = PointerNow(),
+            .Pointer = PointerNow(event.key.windowID),
         };
 
     case SDL_EVENT_WINDOW_FOCUS_LOST:

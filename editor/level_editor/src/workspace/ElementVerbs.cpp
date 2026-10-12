@@ -72,7 +72,7 @@ void ElementVerbs::Apply(MeshEditVerb verb, const MeshEditParams& params, bool r
 void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
 {
     EditorWorkspace& w = Workspace;
-    const auto offer = [&](std::string id, std::string label, ActionHandler handler) {
+    const auto offer = [&](std::string id, std::string label, ActionBinding handler) {
         OfferAction(catalog, context, { .Id = std::move(id), .Label = std::move(label), .Category = "Selection" },
                     std::move(handler));
     };

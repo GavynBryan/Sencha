@@ -302,13 +302,6 @@ std::optional<double> SelectionBoundCoord(const ManipulatorContext& ctx, MeshEle
     return (maxCoord - p >= p - minCoord) ? maxCoord : minCoord;
 }
 
-float ScreenDistance(Vec2d a, Vec2d b)
-{
-    const float dx = a.X - b.X;
-    const float dy = a.Y - b.Y;
-    return std::sqrt(dx * dx + dy * dy);
-}
-
 class ScaleDrag : public IInteraction
 {
 public:
@@ -366,7 +359,7 @@ private:
         // Uniform: screen-space distance ratio from the pivot.
         if (StartScreenDist < 1.0e-3f)
             return Vec3d(1.0f, 1.0f, 1.0f);
-        const float f = std::max(kMinFactor, ScreenDistance(pos, PivotScreen) / StartScreenDist);
+        const float f = std::max(kMinFactor, Vec2d::Distance(pos, PivotScreen) / StartScreenDist);
         return Vec3d(f, f, f);
     }
 
@@ -453,7 +446,7 @@ int ScaleManipulator::HitTest(const ManipulatorContext& ctx,
         const std::optional<ProjectedPoint> tip = projection.WorldToPixel(*pivot + AxisDirection(axis) * length);
         if (!origin.has_value() || !tip.has_value())
             continue;
-        const float toTip = ScreenDistance(screenPos, tip->Pixel);
+        const float toTip = Vec2d::Distance(screenPos, tip->Pixel);
         const float toStalk = ViewportProjection::DistancePointToSegment(screenPos, origin->Pixel, tip->Pixel);
         const float pixels = std::min(toTip, toStalk);
         if (pixels <= bestPixels)
@@ -466,7 +459,7 @@ int ScaleManipulator::HitTest(const ManipulatorContext& ctx,
     // Center box (uniform) wins ties against a stalk passing through the pivot.
     if (const std::optional<ProjectedPoint> center = projection.WorldToPixel(*pivot))
     {
-        const float toCenter = ScreenDistance(screenPos, center->Pixel);
+        const float toCenter = Vec2d::Distance(screenPos, center->Pixel);
         if (toCenter <= kCenterHitPixels && (best == 0 || toCenter <= bestPixels))
         {
             bestPixels = toCenter;
@@ -506,7 +499,7 @@ std::unique_ptr<IInteraction> ScaleManipulator::BeginDrag(
     Vec2d pivotScreen = screenPos;
     if (const std::optional<ProjectedPoint> p = projection.WorldToPixel(*pivot))
         pivotScreen = p->Pixel;
-    const float startScreenDist = ScreenDistance(screenPos, pivotScreen);
+    const float startScreenDist = Vec2d::Distance(screenPos, pivotScreen);
 
     // The bound is captured before the extrude variant grows geometry, so the
     // snap drives the pre-drag selection's AABB face.
