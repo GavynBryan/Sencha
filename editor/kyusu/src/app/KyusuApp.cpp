@@ -486,33 +486,18 @@ void KyusuApp::SyncActionLayers()
 
 void KyusuApp::AskBeforeClosing(const WorkspaceKind& kind, std::vector<DocumentRef> changed)
 {
-    std::vector<std::string> labels;
-    for (const DocumentRef& document : changed)
-        labels.push_back(document.Source->DocumentLabel(document.Key));
-    CloseAsker.Ask({
-        .Title = "Close " + kind.DisplayName,
-        .Message = "Save changes before closing?",
-        .Items = std::move(labels),
-        .Choices = { { "save", "Save and close" },
-                     { "discard", "Discard and close", ActionTone::Destructive },
-                     { "cancel", "Keep editing" } },
-        .Answer =
-            [this, id = kind.Id, changed = std::move(changed)](std::string_view key, std::string_view) {
-                if (key == "cancel")
-                    return;
-                DocumentSourceSet& documents = Session->Documents();
-                for (const DocumentRef& document : changed)
-                {
-                    if (key == "discard")
-                        document.Source->DiscardDocument(document.Key);
-                    else
-                        (void)documents.Save(document);
-                }
-                // Asked again, by the close guard, if a save left something
-                // unsaved; the save's follow-up says what.
-                Workspaces->Request({ WorkspaceAction::Close, id });
-            },
-    });
+    AskAboutDocuments(CloseAsker, "Close " + kind.DisplayName, changed,
+                      [this, id = kind.Id, changed](DirtyDisposition disposition) {
+                          DocumentSourceSet& documents = Session->Documents();
+                          for (const DocumentRef& document : changed)
+                              if (disposition == DirtyDisposition::Discard)
+                                  document.Source->DiscardDocument(document.Key);
+                              else
+                                  (void)documents.Save(document);
+                          // Asked again, by the close guard, if a save left
+                          // something unsaved; the save's follow-up says what.
+                          Workspaces->Request({ WorkspaceAction::Close, id });
+                      });
 }
 
 void KyusuApp::RegisterWorkspaceCommands()

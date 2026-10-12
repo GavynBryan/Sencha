@@ -23,6 +23,20 @@ std::vector<std::string> LabelsOf(const std::vector<DocumentRef>& documents)
 }
 
 constexpr std::string_view kSaveSource = "save";
+
+void AskToSettle(PromptQueue::Asker& asker, PromptRequest request, std::function<void(DirtyDisposition)> proceed,
+                 std::function<void()> kept)
+{
+    request.Answer = [proceed = std::move(proceed), kept = std::move(kept)](std::string_view key, std::string_view) {
+        if (key == "save")
+            proceed(DirtyDisposition::Save);
+        else if (key == "discard")
+            proceed(DirtyDisposition::Discard);
+        else if (kept)
+            kept();
+    };
+    asker.Ask(std::move(request));
+}
 } // namespace
 
 Engine::ExitDecision DecideDocumentExit(const DocumentSourceSet& sources)
@@ -38,18 +52,31 @@ void AskAboutChanges(PromptQueue::Asker& asker, bool hasChanges, const std::stri
         proceed(DirtyDisposition::Refuse);
         return;
     }
-    asker.Ask({
-        .Title = "Unsaved changes",
-        .Message = std::format("{} has unsaved changes.", documentName),
-        .Choices = { { "save", "Save" }, { "discard", "Discard", ActionTone::Destructive }, { "cancel", "Cancel" } },
-        .Answer =
-            [proceed = std::move(proceed)](std::string_view key, std::string_view) {
-                if (key == "save")
-                    proceed(DirtyDisposition::Save);
-                else if (key == "discard")
-                    proceed(DirtyDisposition::Discard);
-            },
-    });
+    AskToSettle(asker,
+                { .Title = "Unsaved changes",
+                  .Message = std::format("{} has unsaved changes.", documentName),
+                  .Choices = { { "save", "Save" },
+                               { "discard", "Discard", ActionTone::Destructive },
+                               { "cancel", "Cancel" } } },
+                std::move(proceed), {});
+}
+
+void AskAboutDocuments(PromptQueue::Asker& asker, std::string title, const std::vector<DocumentRef>& changed,
+                       std::function<void(DirtyDisposition)> proceed, std::function<void()> kept)
+{
+    if (changed.empty())
+    {
+        proceed(DirtyDisposition::Refuse);
+        return;
+    }
+    AskToSettle(asker,
+                { .Title = std::move(title),
+                  .Message = "Save changes before closing?",
+                  .Items = LabelsOf(changed),
+                  .Choices = { { "save", "Save and close" },
+                               { "discard", "Discard and close", ActionTone::Destructive },
+                               { "cancel", "Keep editing" } } },
+                std::move(proceed), std::move(kept));
 }
 
 DocumentExitHold::DocumentExitHold(Engine& engine, DocumentSourceSet& sources, PromptQueue& prompts)
@@ -76,29 +103,23 @@ DocumentExitHold::~DocumentExitHold()
 
 void DocumentExitHold::Ask()
 {
-    Asker.Ask({
-        .Title = "Unsaved documents",
-        .Message = "Save changes before closing?",
-        .Items = LabelsOf(Sources.ChangedDocuments()),
-        .Choices = { { "save", "Save all and close" },
-                     { "discard", "Discard and close", ActionTone::Destructive },
-                     { "cancel", "Keep editing" } },
-        .Answer =
-            [this](std::string_view key, std::string_view) {
-                if (key == "save")
-                    (void)Sources.SaveAll();
-                else if (key == "discard")
-                    // Thrown away here, deliberately, so nothing is destroyed
-                    // later still holding changes.
-                    Sources.DiscardAll();
-                // A save that left something unsaved keeps the editor open; the
-                // save's follow-up says what and why.
-                if (key != "cancel" && DecideDocumentExit(Sources) == Engine::ExitDecision::Allow)
-                    EngineRef.ConfirmExit();
-                else
-                    EngineRef.CancelExit();
-            },
-    });
+    AskAboutDocuments(
+        Asker, "Unsaved documents", Sources.ChangedDocuments(),
+        [this](DirtyDisposition disposition) {
+            if (disposition == DirtyDisposition::Save)
+                (void)Sources.SaveAll();
+            else if (disposition == DirtyDisposition::Discard)
+                // Thrown away here, deliberately, so nothing is destroyed later
+                // still holding changes.
+                Sources.DiscardAll();
+            // A save that left something unsaved keeps the editor open; the
+            // save's follow-up says what and why.
+            if (DecideDocumentExit(Sources) == Engine::ExitDecision::Allow)
+                EngineRef.ConfirmExit();
+            else
+                EngineRef.CancelExit();
+        },
+        [this] { EngineRef.CancelExit(); });
 }
 
 DocumentSaveFollowUp::DocumentSaveFollowUp(DocumentSourceSet& sources, ProblemList& problems, PromptQueue& prompts)

@@ -54,6 +54,34 @@ TEST(DocumentPrompts, ADocumentWithNoChangesProceedsWithoutAsking)
     EXPECT_FALSE(chosen.has_value()) << "cancelling proceeds with nothing";
 }
 
+TEST(DocumentPrompts, AskingAboutDocumentsListsThemAndProceedsAsAnswered)
+{
+    PromptQueue prompts;
+    PromptQueue::Asker asker = prompts.MakeAsker();
+    std::optional<DirtyDisposition> chosen;
+    int kept = 0;
+    const auto ask = [&](std::vector<DocumentRef> changed) {
+        AskAboutDocuments(asker, "Close Animation", changed, [&](DirtyDisposition d) { chosen = d; }, [&] { ++kept; });
+    };
+    ask({});
+    EXPECT_EQ(chosen, DirtyDisposition::Refuse) << "nothing changed, nothing asked";
+    EXPECT_EQ(prompts.Front(), nullptr);
+
+    chosen.reset();
+    ask({ { nullptr, "hero.rig.sdata" }, { nullptr, "walk events" } });
+    ASSERT_NE(prompts.Front(), nullptr);
+    EXPECT_EQ(prompts.Front()->Title, "Close Animation");
+    EXPECT_EQ(prompts.Front()->Items, (std::vector<std::string>{ "hero.rig.sdata", "walk events" }));
+    EXPECT_TRUE(prompts.Answer("save"));
+    EXPECT_EQ(chosen, DirtyDisposition::Save);
+
+    chosen.reset();
+    ask({ { nullptr, "hero.rig.sdata" } });
+    EXPECT_TRUE(prompts.Dismiss());
+    EXPECT_FALSE(chosen.has_value());
+    EXPECT_EQ(kept, 1) << "keeping on editing is heard";
+}
+
 TEST_F(SaveFollowUp, AFailedSaveIsAProblemUntilASaveSucceeds)
 {
     SaveAs("a", DocumentSaveStatus::Failed);

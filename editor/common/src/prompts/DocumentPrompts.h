@@ -22,13 +22,14 @@ class ProblemList;
 void AskAboutChanges(PromptQueue::Asker& asker, bool hasChanges, const std::string& documentName,
                      std::function<void(DirtyDisposition)> proceed);
 
-//=============================================================================
-// DocumentExitHold
-//
-// Holds the editor's exit behind a question while any document has changes:
-// save them all, throw them away, or keep editing. Installed on the engine for
-// as long as it lives.
-//=============================================================================
+// Asks Save, Discard or Keep editing about the `changed` documents before an
+// operation titled `title` drops them, then proceeds as answered; `kept` hears
+// a Keep editing. Proceeds at once, refusing nothing, when none are changed.
+void AskAboutDocuments(PromptQueue::Asker& asker, std::string title, const std::vector<DocumentRef>& changed,
+                       std::function<void(DirtyDisposition)> proceed, std::function<void()> kept = {});
+
+// Holds the editor's exit behind a question while any document has changes.
+// Installed on the engine for as long as it lives.
 class DocumentExitHold
 {
 public:
@@ -46,14 +47,8 @@ private:
     PromptQueue::Asker Asker;
 };
 
-//=============================================================================
-// DocumentSaveFollowUp
-//
-// What follows a save, whoever made it: a file that could not be written, or
-// was written with problems, stays on the problem list until a later save or
-// its closing clears it, and a file that changed on disk under its document is
-// a question -- keep mine, or take the file's.
-//=============================================================================
+// What follows a save, whoever made it: a failure stays a problem until a
+// later save or its closing clears it, and a conflict is a question.
 class DocumentSaveFollowUp
 {
 public:
