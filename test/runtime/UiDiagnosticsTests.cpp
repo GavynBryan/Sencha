@@ -316,7 +316,8 @@ data-class-lit="row.selected" data-style-left="row.parts[0]" data-attr-title="ro
     (void)f.Ui().DrainDiagnostics();
     const auto shownBefore = rowsShown();
 
-    ASSERT_TRUE(f.Ui().SetRows(screen, UiRowsIdAt(0), PartedRows(2)));
+    ASSERT_TRUE(f.Ui().SetRows(screen, UiRowsIdAt(0), PartedRows(3)));
+    ASSERT_TRUE(f.Ui().SetRows(screen, UiRowsIdAt(0), PartedRows(2))) << "twice before the document updates";
     f.Ui().Update();
     f.Ui().Update();
 

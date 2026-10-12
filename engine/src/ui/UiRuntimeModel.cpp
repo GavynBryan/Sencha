@@ -338,11 +338,13 @@ bool UiRuntime::SetRows(UiScreenHandle screen, UiModelRowsId rows,
 
     // The document still has elements for every row it last saw, and may read
     // a departing one before the update that removes it.
-    std::vector<UiRow> previous = std::exchange(bound.Items, std::vector<UiRow>(items.begin(), items.end()));
-    previous.insert(previous.end(), std::make_move_iterator(bound.Departing.begin()),
-                    std::make_move_iterator(bound.Departing.end()));
-    bound.Departing.assign(std::make_move_iterator(previous.begin() + std::min(items.size(), previous.size())),
-                           std::make_move_iterator(previous.end()));
+    const std::size_t seen = bound.Items.size() + bound.Departing.size();
+    std::vector<UiRow> departing;
+    departing.reserve(seen > items.size() ? seen - items.size() : 0);
+    for (std::size_t i = items.size(); i < seen; ++i)
+        departing.push_back(std::move(i < bound.Items.size() ? bound.Items[i] : bound.Departing[i - bound.Items.size()]));
+    bound.Departing = std::move(departing);
+    bound.Items.assign(items.begin(), items.end());
     if (slot->Model != nullptr)
         slot->Model->DirtyVariable(bound.Path);
     return true;

@@ -85,13 +85,9 @@ namespace AssetKindDetail
     }
 }
 
-// Attaches one of the engine's typed loader-and-cache pairs to the front door
-// as the kind for `type`. The loader stages; the cache is the kind's store,
-// and its typed CommitTyped / CommitReload become the kind's commit and reload.
-//
-// The stager is always wired because staging touches no cache; the commit
-// half exists only for a cache this composition has, so a headless host still
-// stages a mesh and reports the commit as a failure.
+// Attaches a typed loader-and-cache pair as the kind for `type`: the cache is its
+// store, CommitTyped / CommitReload its commit and reload. The stager is wired
+// even without a cache, so a headless host stages what it cannot commit.
 template<typename TLoader, typename TCache>
 void RegisterAssetKind(AssetSystem& assets,
                        AssetType type,

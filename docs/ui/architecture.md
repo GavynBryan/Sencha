@@ -554,6 +554,14 @@ host reread the model; and a `<select>` whose value matches no option selects
 its first and reports that as a change, so a host presenting a value it has no
 label for appends it to the choices.
 
+**A host publishes exactly the rows it means, and a list may shrink.** The
+document engine updates a shrinking list's departing elements in the same pass
+that removes them, and its own array binding refuses those reads with a warning
+per binding. The runtime binds row lists through its own definition
+(`UiRuntime::RowListDefinition`), which keeps the departing rows readable past
+the list's end until the update that removes their elements has run, so no
+host pads a list to the longest it has been (`UiDiagnosticsTests`).
+
 The runtime declares the row and list types once per context
 (`UiRuntime::DeclareModelTypes`), not per model: the type register is the
 context's, a second declaration is a silent refusal that leaves a member
