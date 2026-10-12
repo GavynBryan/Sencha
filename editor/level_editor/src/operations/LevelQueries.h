@@ -8,7 +8,7 @@ class WorldDocument;
 
 // The read-only operations over the world document's focus level:
 // level.summary, entity.describe, query.box, query.near, plan.section,
-// nav.reachable and measure.clearance.
+// nav.reachable, measure.clearance and conventions.get.
 // The executors read `world` on each call, so it must outlive their
 // registration.
 [[nodiscard]] std::vector<EditorOperationEntry> LevelQueryOperations(const WorldDocument& world);

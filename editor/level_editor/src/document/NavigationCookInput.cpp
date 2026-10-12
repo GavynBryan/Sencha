@@ -3,13 +3,13 @@
 #include "EditorDocument.h"
 #include "EditorScene.h"
 
+#include "project/ProjectFiles.h"
+
 #include <core/json/JsonParser.h>
 #include <navigation/NavLinkComponent.h>
 #include <world/registry/Registry.h>
 
 #include <algorithm>
-#include <fstream>
-#include <sstream>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -37,37 +37,21 @@ std::vector<NavLinkRecord> CollectNavLinks(const EditorDocument& document)
     return links;
 }
 
-// Paths are visited in sorted order so the "more than one" diagnostic names the
+// Files come sorted by asset path, so the "more than one" diagnostic names the
 // same files every time.
 NavigationSettingsLookup FindNavigationSettings(const std::filesystem::path& assetsRoot)
 {
     NavigationSettingsLookup lookup;
-    std::vector<std::filesystem::path> candidates;
-    std::error_code ec;
-    for (auto it = std::filesystem::recursive_directory_iterator(assetsRoot, ec);
-         !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
+    const std::filesystem::path roots[] = { assetsRoot };
+    std::vector<std::pair<std::string, JsonValue>> found;
+    for (const ProjectFile& file : ScanProjectFiles(roots))
     {
-        const std::filesystem::path& path = it->path();
-        if (it->is_directory() && path.filename().string().starts_with("."))
-        {
-            it.disable_recursion_pending();
+        if (file.Subtype != kNavigationSettingsSubtype)
             continue;
-        }
-        if (it->is_regular_file() && path.extension() == ".sdata")
-            candidates.push_back(path);
-    }
-    std::sort(candidates.begin(), candidates.end());
-
-    std::vector<std::pair<std::filesystem::path, JsonValue>> found;
-    for (const std::filesystem::path& path : candidates)
-    {
-        std::ifstream stream(path, std::ios::binary);
-        std::stringstream text;
-        text << stream.rdbuf();
-        std::optional<JsonValue> parsed = JsonParse(text.str());
-        const JsonValue* type = parsed ? parsed->Find("type") : nullptr;
-        if (type != nullptr && type->IsString() && type->AsString() == kNavigationSettingsSubtype)
-            found.emplace_back(path, std::move(*parsed));
+        const std::optional<std::string> text = ReadProjectFileText(file.FilePath);
+        std::optional<JsonValue> parsed = text ? JsonParse(*text) : std::nullopt;
+        if (parsed)
+            found.emplace_back(file.AssetPath, std::move(*parsed));
     }
 
     if (found.empty())
@@ -76,7 +60,7 @@ NavigationSettingsLookup FindNavigationSettings(const std::filesystem::path& ass
     {
         std::string message = "more than one navigation.settings asset:";
         for (const auto& [path, envelope] : found)
-            message += " " + std::filesystem::relative(path, assetsRoot, ec).generic_string();
+            message += " " + path;
         lookup.Diagnostics.push_back(CookDiagnostic{
             .Severity = CookDiagnosticSeverity::Error,
             .Source = CookDiagnosticSource::NavigationSettings,

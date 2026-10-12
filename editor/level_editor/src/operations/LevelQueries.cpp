@@ -10,6 +10,7 @@
 #include "document/BrushComponents.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
+#include "document/LevelConventions.h"
 #include "document/WorldDocument.h"
 
 #include <assets/texture/PngEncoding.h>
@@ -503,6 +504,39 @@ namespace
         };
         return entry;
     }
+
+    EditorOperationEntry Conventions(const WorldDocument& world)
+    {
+        EditorOperationEntry entry;
+        entry.Definition.Name = "conventions.get";
+        entry.Definition.Category = "Level";
+        entry.Definition.Description =
+            "The project's blockout conventions: wall thickness, opening size, space height and "
+            "material roles, from its level.conventions asset or the defaults when it has none.";
+        entry.Definition.Result = Root({
+            DataField::Optional("asset", {}, "the asset the values came from; null for the defaults",
+                                DataField::Field({}, DataFieldKind::String, {}, {}), true),
+            [] {
+                DataFieldSchema values = LevelConventionsSchema().Root;
+                values.Key = "values";
+                return values;
+            }(),
+            DataField::ArrayOf("problems", {}, "why an asset was not used",
+                               DataField::Field({}, DataFieldKind::String, {}, {}), true),
+        });
+        entry.Execute = [&world](const JsonValue&) {
+            const LevelConventionsLookup found = FindLevelConventions(world.ContentRoots());
+            JsonValue::Array problems;
+            for (const std::string& problem : found.Problems)
+                problems.push_back(JsonValue(problem));
+            return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
+                { "asset", found.AssetPath ? JsonValue(*found.AssetPath) : JsonValue{} },
+                { "values", found.Values },
+                { "problems", JsonValue(std::move(problems)) },
+            }));
+        };
+        return entry;
+    }
 }
 
 std::vector<EditorOperationEntry> LevelQueryOperations(const WorldDocument& world)
@@ -515,5 +549,6 @@ std::vector<EditorOperationEntry> LevelQueryOperations(const WorldDocument& worl
     entries.push_back(PlanSection(world));
     entries.push_back(ReachabilityOperation(world));
     entries.push_back(ClearanceOperation(world));
+    entries.push_back(Conventions(world));
     return entries;
 }
