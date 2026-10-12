@@ -91,8 +91,6 @@ public:
     [[nodiscard]] bool HasPendingBridge() const { return BridgeEdit.HasPending(); }
     // Regenerates the pending preview with a new segment count.
     void SetPendingBridgeSegments(int segments) { BridgeEdit.SetSegments(segments); }
-    void CommitPendingBridge();
-    void CancelPendingBridge();
 
     // Select-all for the current element kind, as one undoable step. Object mode:
     // every visible, unlocked entity. Element modes: every element of that kind on
@@ -204,12 +202,11 @@ public:
 
 private:
     std::vector<std::weak_ptr<const PendingEditHooks>> PendingEdits;
-    std::array<std::shared_ptr<const PendingEditHooks>, 2> OwnPendingEdits;
+    std::array<std::shared_ptr<const PendingEditHooks>, 2> StagedElementEdits;
     // Every live registration, in the order they were made.
     [[nodiscard]] std::vector<std::shared_ptr<const PendingEditHooks>> LivePendingEdits();
 
-    // True while any panel-driven preview is staged.
-    [[nodiscard]] bool HasPendingPanelEdit() const;
+    [[nodiscard]] bool HasPendingEdit() const;
 
 public:
     void BeginInsetOnSelectedFaces(float distance);
@@ -218,8 +215,10 @@ public:
     void BeginBevelOnSelectedEdges(float width, int segments);
     [[nodiscard]] bool HasPendingBevel() const { return ElementEdit.HasPendingBevel(); }
     void SetPendingBevelParams(float width, int segments) { ElementEdit.SetBevelParams(width, segments); }
-    void CommitPendingElementEdit();
-    void CancelPendingElementEdit();
+    // The element operation staged for Apply or Cancel: a bridge, an inset or a bevel.
+    [[nodiscard]] bool HasStagedElementEdit() const;
+    void CommitStagedElementEdit();
+    void CancelStagedElementEdit();
 
 private:
     // The identity remap every duplicate route shares. See the definition.

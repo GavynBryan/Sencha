@@ -285,14 +285,9 @@ void LevelWorkspace::BuildInput()
         std::function<void()> Invoke;
     };
     const LevelAction actions[] = {
-        { "edit.dissolve",         "Dissolve Edges",              "Edit",     { SDLK_BACKSPACE, {} },                     [this] { Workspace->DissolveSelectedEdges(); } },
         { "edit.select_all",       "Select All",                  "Edit",     { SDLK_A, { .Ctrl = true } },               [this] { Workspace->SelectAll(); } },
-        { "edit.duplicate_instance", "Duplicate as Instance",     "Edit",     { SDLK_D, { .Alt = true } },                [this] { Workspace->Actions.Duplicate(/*asInstance*/ true); } },
         { "edit.repeat",           "Repeat Last",                 "Edit",     { SDLK_R, { .Ctrl = true } },               [this] { Workspace->Actions.RepeatLast(); } },
         { "file.open",             "Open...",                     "File",     { SDLK_O, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } },
-        { "material.apply",        "Apply Material",              "Material", { SDLK_T, { .Shift = true } },              [this] { Workspace->ApplyActiveMaterialToSelectedFaces(); } },
-        { "material.copy_proj",    "Copy Face Projection",        "Material", { SDLK_C, { .Ctrl = true, .Shift = true } }, [this] { Workspace->CopySelectedFaceProjection(); } },
-        { "material.paste_proj",   "Paste Face Projection",       "Material", { SDLK_V, { .Ctrl = true, .Shift = true } }, [this] { Workspace->PasteFaceProjectionToSelection(); } },
     };
     const ActionOffers offer{ Catalog, ActionHandlers };
     for (const LevelAction& action : actions)

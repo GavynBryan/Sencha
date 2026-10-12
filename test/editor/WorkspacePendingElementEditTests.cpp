@@ -63,7 +63,7 @@ TEST_F(WorkspacePendingElementEditTest, CancelRestoresTheOriginalMeshAndClosesTh
 
     Workspace.BeginInsetOnSelectedFaces(0.1f);
     ASSERT_GT(FaceCount(brush), before);
-    Workspace.CancelPendingElementEdit();
+    Workspace.CancelStagedElementEdit();
 
     EXPECT_FALSE(Workspace.HasPendingInset());
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -77,7 +77,7 @@ TEST_F(WorkspacePendingElementEditTest, CommitKeepsTheEditAsOneUndoStep)
     const std::size_t before = FaceCount(brush);
 
     Workspace.BeginInsetOnSelectedFaces(0.1f);
-    Workspace.CommitPendingElementEdit();
+    Workspace.CommitStagedElementEdit();
 
     EXPECT_FALSE(Workspace.HasPendingInset());
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -146,7 +146,7 @@ TEST_F(WorkspacePendingElementEditTest, BevelCancelRestoresTheOriginalMesh)
     const std::size_t before = FaceCount(brush);
 
     Workspace.BeginBevelOnSelectedEdges(0.1f, 2);
-    Workspace.CancelPendingElementEdit();
+    Workspace.CancelStagedElementEdit();
 
     EXPECT_FALSE(Workspace.HasPendingBevel());
     EXPECT_EQ(FaceCount(brush), before);
@@ -160,7 +160,7 @@ TEST_F(WorkspacePendingElementEditTest, CommittingABevelClearsTheElementSelectio
     ASSERT_FALSE(Workspace.Selection.GetSelection().empty());
 
     Workspace.BeginBevelOnSelectedEdges(0.1f, 1);
-    Workspace.CommitPendingElementEdit();
+    Workspace.CommitStagedElementEdit();
 
     for (const SelectableRef& ref : Workspace.Selection.GetSelection())
         EXPECT_FALSE(ref.IsEdge());
@@ -187,7 +187,7 @@ TEST_F(WorkspacePendingElementEditTest, CommitWithNothingPendingIsANoOp)
 {
     (void)AddBrush(Vec3d{ 0, 0, 0 });
 
-    Workspace.CommitPendingElementEdit();
+    Workspace.CommitStagedElementEdit();
 
     EXPECT_FALSE(Commands.CanUndo());
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -197,7 +197,7 @@ TEST_F(WorkspacePendingElementEditTest, CancelWithNothingPendingIsANoOp)
 {
     (void)AddBrush(Vec3d{ 0, 0, 0 });
 
-    Workspace.CancelPendingElementEdit();
+    Workspace.CancelStagedElementEdit();
 
     EXPECT_FALSE(Commands.CanUndo());
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -212,7 +212,7 @@ TEST_F(WorkspacePendingElementEditTest, CommitAfterTheEditedEntityDiesLeavesNoPe
     ASSERT_TRUE(Workspace.HasPendingInset());
 
     Scene().DestroyEntity(brush);
-    Workspace.CommitPendingElementEdit();
+    Workspace.CommitStagedElementEdit();
 
     EXPECT_FALSE(Workspace.HasPendingInset());
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -224,7 +224,7 @@ TEST_F(WorkspacePendingElementEditTest, CancelAfterTheEditedEntityDiesLeavesNoPe
     Workspace.BeginInsetOnSelectedFaces(0.1f);
 
     Scene().DestroyEntity(brush);
-    Workspace.CancelPendingElementEdit();
+    Workspace.CancelStagedElementEdit();
 
     EXPECT_FALSE(Workspace.HasPendingInset());
     EXPECT_FALSE(Commands.HasPendingEdit());

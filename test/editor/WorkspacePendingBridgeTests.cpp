@@ -46,7 +46,7 @@ TEST_F(WorkspacePendingBridgeTest, CancelDestroysThePreviewEntity)
 
     Workspace.Actions.Bridge(1);
     ASSERT_TRUE(Workspace.HasPendingBridge());
-    Workspace.CancelPendingBridge();
+    Workspace.CancelStagedElementEdit();
 
     EXPECT_FALSE(Workspace.HasPendingBridge());
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -60,7 +60,7 @@ TEST_F(WorkspacePendingBridgeTest, CommitKeepsTheBridgeAsOneUndoStep)
     const std::size_t before = BrushCount();
 
     Workspace.Actions.Bridge(1);
-    Workspace.CommitPendingBridge();
+    Workspace.CommitStagedElementEdit();
 
     EXPECT_FALSE(Workspace.HasPendingBridge());
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -162,7 +162,7 @@ TEST_F(WorkspacePendingBridgeTest, CommitWithNothingPendingIsANoOp)
     SelectMatchingEdgesOnTwoBrushes();
     const std::size_t before = BrushCount();
 
-    Workspace.CommitPendingBridge();
+    Workspace.CommitStagedElementEdit();
 
     EXPECT_EQ(BrushCount(), before);
     EXPECT_FALSE(Commands.CanUndo());
@@ -173,7 +173,7 @@ TEST_F(WorkspacePendingBridgeTest, CancelWithNothingPendingIsANoOp)
     SelectMatchingEdgesOnTwoBrushes();
     const std::size_t before = BrushCount();
 
-    Workspace.CancelPendingBridge();
+    Workspace.CancelStagedElementEdit();
 
     EXPECT_EQ(BrushCount(), before);
     EXPECT_FALSE(Commands.HasPendingEdit());
@@ -195,7 +195,7 @@ TEST_F(WorkspacePendingBridgeTest, CommitAfterThePreviewEntityDiesLeavesNoPendin
             Scene().DestroyEntity(entity);
     }
 
-    Workspace.CommitPendingBridge();
+    Workspace.CommitStagedElementEdit();
 
     EXPECT_FALSE(Workspace.HasPendingBridge());
     EXPECT_FALSE(Commands.HasPendingEdit());

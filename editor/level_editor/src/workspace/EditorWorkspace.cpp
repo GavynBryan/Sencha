@@ -64,7 +64,7 @@ EditorWorkspace::EditorWorkspace(LoggingProvider& logging, CommandStack& command
               MakeDuplicateRemap())
 {
     World.BindViewSettings(&WorldView);
-    OwnPendingEdits = {
+    StagedElementEdits = {
         RegisterPendingEdit({
             [this] { return BridgeEdit.HasPending(); },
             [this] { BridgeEdit.Commit(Commands, Selection); },
@@ -96,7 +96,7 @@ std::vector<std::shared_ptr<const EditorWorkspace::PendingEditHooks>> EditorWork
     return live;
 }
 
-bool EditorWorkspace::HasPendingPanelEdit() const
+bool EditorWorkspace::HasPendingEdit() const
 {
     for (const std::weak_ptr<const PendingEditHooks>& hooks : PendingEdits)
         if (const std::shared_ptr<const PendingEditHooks> held = hooks.lock(); held != nullptr && held->HasPending())
@@ -397,7 +397,7 @@ void EditorWorkspace::EscapeStep()
         }
 
     switch (NextEscapeAction(EscapeContext{
-                .HasPendingEdit = HasPendingPanelEdit(),
+                .HasPendingEdit = HasPendingEdit(),
                 .GridOriginEditing = Interaction.Manipulators->IsEditingGridOrigin(),
                 .PivotEditing = Pivot.Editing,
                 .HasElementRefs = hasElementRefs,
@@ -691,16 +691,6 @@ void EditorWorkspace::DissolveSelectedEdges()
     }
 }
 
-void EditorWorkspace::CommitPendingBridge()
-{
-    BridgeEdit.Commit(Commands, Selection);
-}
-
-void EditorWorkspace::CancelPendingBridge()
-{
-    BridgeEdit.Cancel(Commands);
-}
-
 void EditorWorkspace::BeginInsetOnSelectedFaces(float distance)
 {
     if (Interaction.Sink == nullptr)
@@ -715,12 +705,21 @@ void EditorWorkspace::BeginBevelOnSelectedEdges(float width, int segments)
     ElementEdit.BeginBevel(*Interaction.Sink, Commands, Selection.GetSelection(), width, segments);
 }
 
-void EditorWorkspace::CommitPendingElementEdit()
+bool EditorWorkspace::HasStagedElementEdit() const
 {
-    ElementEdit.Commit(Commands);
+    return std::ranges::any_of(StagedElementEdits, [](const auto& staged) { return staged->HasPending(); });
 }
 
-void EditorWorkspace::CancelPendingElementEdit()
+void EditorWorkspace::CommitStagedElementEdit()
 {
-    ElementEdit.Cancel(Commands);
+    for (const std::shared_ptr<const PendingEditHooks>& staged : StagedElementEdits)
+        if (staged->HasPending())
+            staged->Commit();
+}
+
+void EditorWorkspace::CancelStagedElementEdit()
+{
+    for (const std::shared_ptr<const PendingEditHooks>& staged : StagedElementEdits)
+        if (staged->HasPending())
+            staged->Cancel();
 }

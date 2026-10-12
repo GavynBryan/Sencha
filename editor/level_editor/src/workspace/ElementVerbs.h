@@ -32,7 +32,6 @@ public:
     // The verbs that act on what is selected now, in the order a person meets
     // them.
     [[nodiscard]] std::vector<std::string> Relevant() const;
-    [[nodiscard]] bool HasPending() const;
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
     bool BeginEdit(std::string_view key) override;

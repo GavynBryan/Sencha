@@ -27,6 +27,8 @@ public:
     FaceUvSource(EditorWorkspace& workspace, const MaterialLibrary* library) : Workspace(workspace), Library(library) {}
 
     void Offer(ActionCatalog& catalog, ActionContext& context);
+    // The texture verbs a face selection offers, in the order a person meets them.
+    [[nodiscard]] std::vector<std::string> Relevant() const;
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
     bool BeginEdit(std::string_view key) override;

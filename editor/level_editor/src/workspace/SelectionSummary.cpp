@@ -55,7 +55,7 @@ WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& ve
     WorkspaceSelectionFacet facet;
     facet.Revision = workspace.Selection.Revision();
     facet.Actions = verbs.Relevant();
-    facet.Staged = verbs.HasPending();
+    facet.Staged = workspace.HasStagedElementEdit();
     if (!verbs.Nodes().empty())
         facet.Sections.push_back({ .Heading = "Settings", .Source = &verbs });
 
@@ -114,8 +114,8 @@ WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& ve
     if (kind == MeshElementKind::Face)
     {
         if (!facet.Staged)
-            for (const char* action : { "uv.fit", "uv.center", "uv.reset_axes", "material.copy_proj", "material.paste_proj" })
-                facet.Actions.emplace_back(action);
+            for (std::string& verb : uv.Relevant())
+                facet.Actions.push_back(std::move(verb));
         if (!uv.Nodes().empty())
             facet.Sections.push_back({ .Heading = "Texture", .Source = &uv });
     }

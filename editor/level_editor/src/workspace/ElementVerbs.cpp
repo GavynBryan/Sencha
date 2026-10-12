@@ -5,6 +5,8 @@
 #include "workspace/BrushManipulationSink.h"
 #include "workspace/EditorWorkspace.h"
 
+#include <SDL3/SDL_keycode.h>
+
 #include <algorithm>
 #include <format>
 
@@ -51,11 +53,6 @@ std::size_t ElementVerbs::Selected(MeshElementKind kind) const
     return count;
 }
 
-bool ElementVerbs::HasPending() const
-{
-    return Workspace.HasPendingInset() || Workspace.HasPendingBevel() || Workspace.HasPendingBridge();
-}
-
 void ElementVerbs::Apply(MeshEditVerb verb, const MeshEditParams& params, bool renumbers)
 {
     if (Workspace.Interaction.Sink == nullptr)
@@ -75,9 +72,18 @@ void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
     const ActionOffers offer{ catalog, context, "Selection" };
     const auto brushes = [this](std::size_t atLeast) { return [this, atLeast] { return Selected(MeshElementKind::Object) >= atLeast; }; };
     const auto elements = [this](MeshElementKind kind) {
-        return [this, kind] { return !HasPending() && Selected(kind) > 0; };
+        return [this, kind] { return !Workspace.HasStagedElementEdit() && Selected(kind) > 0; };
     };
 
+    offer({ .Id = "edit.duplicate_instance", .Label = "Duplicate as Instance", .Category = "Edit",
+            .DefaultChords = { { SDLK_D, { .Alt = true } } } },
+          { .Invoke = [&w] { w.Actions.Duplicate(/*asInstance*/ true); } });
+    offer({ .Id = "edit.dissolve", .Label = "Dissolve Edges", .Category = "Edit",
+            .DefaultChords = { { SDLK_BACKSPACE, {} } } },
+          { .Invoke = [&w] { w.DissolveSelectedEdges(); } });
+    offer({ .Id = "material.apply", .Label = "Apply Material", .Category = "Material",
+            .DefaultChords = { { SDLK_T, { .Shift = true } } } },
+          { .Invoke = [&w] { w.ApplyActiveMaterialToSelectedFaces(); } });
     offer({ .Id = "brush.normals", .Label = "Recalculate Normals" },
           { .Invoke = [this] { Apply(MeshEditVerb::RecalculateNormals, {}, false); }, .Enabled = brushes(1) });
     offer({ .Id = "brush.make_unique", .Label = "Make Unique" },
@@ -119,7 +125,7 @@ void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
             .Enabled = elements(MeshElementKind::Edge) });
     offer({ .Id = "edge.bridge", .Label = "Bridge" },
           { .Invoke = [this] { Workspace.Actions.Bridge(Current.BridgeSegments); },
-            .Enabled = [this] { return !HasPending() && Selected(MeshElementKind::Edge) >= 2; } });
+            .Enabled = [this] { return !Workspace.HasStagedElementEdit() && Selected(MeshElementKind::Edge) >= 2; } });
 
     offer({ .Id = "vertex.weld", .Label = "Weld by Distance" },
           { .Invoke = [this] {
@@ -141,31 +147,19 @@ void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
             .Enabled = elements(MeshElementKind::Vertex) });
 
     offer({ .Id = "element.apply", .Label = "Apply" },
-          { .Invoke = [&w] {
-                if (w.HasPendingBridge())
-                    w.CommitPendingBridge();
-                else
-                    w.CommitPendingElementEdit();
-            },
-            .Enabled = [this] { return HasPending(); } });
+          { .Invoke = [&w] { w.CommitStagedElementEdit(); }, .Enabled = [&w] { return w.HasStagedElementEdit(); } });
     offer({ .Id = "element.cancel", .Label = "Cancel" },
-          { .Invoke = [&w] {
-                if (w.HasPendingBridge())
-                    w.CancelPendingBridge();
-                else
-                    w.CancelPendingElementEdit();
-            },
-            .Enabled = [this] { return HasPending(); } });
+          { .Invoke = [&w] { w.CancelStagedElementEdit(); }, .Enabled = [&w] { return w.HasStagedElementEdit(); } });
 }
 
 std::vector<std::string> ElementVerbs::Relevant() const
 {
-    if (HasPending())
+    if (Workspace.HasStagedElementEdit())
         return { "element.apply", "element.cancel" };
     switch (Workspace.MeshEdit.GetElementKind())
     {
     case MeshElementKind::Face:
-        return { "edit.delete", "face.flip", "face.separate", "face.inset", "material.apply", "material.clear" };
+        return { DeleteAction().Id, "face.flip", "face.separate", "face.inset", "material.apply", "material.clear" };
     case MeshElementKind::Edge:
         return { "edge.soften", "edge.harden", "edit.dissolve", "edge.bevel", "edge.bridge" };
     case MeshElementKind::Vertex:
@@ -175,9 +169,9 @@ std::vector<std::string> ElementVerbs::Relevant() const
         // A brush's verbs are for brushes and what was baked from them; a light
         // or an empty is only duplicated or deleted.
         if (Selected(MeshElementKind::Object) == 0 && !Workspace.Actions.HasBakedSelection())
-            return { "edit.duplicate", "edit.duplicate_instance", "edit.delete" };
-        return { "brush.normals", "edit.duplicate", "edit.duplicate_instance", "brush.make_unique", "brush.merge",
-                 "brush.bake", "brush.revert", "brush.export", "edit.delete" };
+            return { DuplicateAction().Id, "edit.duplicate_instance", DeleteAction().Id };
+        return { "brush.normals", DuplicateAction().Id, "edit.duplicate_instance", "brush.make_unique", "brush.merge",
+                 "brush.bake", "brush.revert", "brush.export", DeleteAction().Id };
     }
 }
 

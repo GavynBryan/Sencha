@@ -8,6 +8,8 @@
 #include "workspace/BrushManipulationSink.h"
 #include "workspace/EditorWorkspace.h"
 
+#include <SDL3/SDL_keycode.h>
+
 #include <algorithm>
 #include <array>
 
@@ -61,6 +63,17 @@ void FaceUvSource::Offer(ActionCatalog& catalog, ActionContext& context)
                     Realign(*Workspace.Interaction.Sink, Workspace.Selection, Workspace.Commands, std::nullopt);
             },
             .Enabled = hasFaces });
+    offer({ .Id = "material.copy_proj", .Label = "Copy Face Projection", .Category = "Material",
+            .DefaultChords = { { SDLK_C, { .Ctrl = true, .Shift = true } } } },
+          { .Invoke = [this] { Workspace.CopySelectedFaceProjection(); } });
+    offer({ .Id = "material.paste_proj", .Label = "Paste Face Projection", .Category = "Material",
+            .DefaultChords = { { SDLK_V, { .Ctrl = true, .Shift = true } } } },
+          { .Invoke = [this] { Workspace.PasteFaceProjectionToSelection(); } });
+}
+
+std::vector<std::string> FaceUvSource::Relevant() const
+{
+    return { "uv.fit", "uv.center", "uv.reset_axes", "material.copy_proj", "material.paste_proj" };
 }
 
 std::vector<PropertyNode> FaceUvSource::Nodes() const
