@@ -1,11 +1,14 @@
 #pragma once
 
 #include "authoring/AnimationJointPicking.h"
+#include "authoring/AnimationLens.h"
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
 #include "data/DataSubtypeAuthoring.h"
+#include "presenters/StageOrbit.h"
 #include "prompts/PromptQueue.h"
+#include "workspaces/ExplorerTable.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/TreeOutline.h"
 
@@ -43,45 +46,30 @@ class AnimationTimeline;
 class AnimationPreviewWorkspace;
 class ContentPicture;
 class DataCreation;
-class DataProperties;
+class DataDocumentSheet;
 class DataDocumentStore;
 class DocumentSourceSet;
 class Engine;
 class Game;
 class PlanePad;
 class ProblemList;
+class ProjectFileSteps;
 class PromptQueue;
+struct AnimationLanePick;
 struct Problem;
 struct ProjectDescriptor;
-
-// What the card, the drawer and the deck's lanes are about when nothing more
-// particular is picked: one of the workspace's lenses.
-enum class AnimationLens : std::uint8_t
-{
-    Rules,
-    Layers,
-    Flow,
-    Blends,
-    RootMotion,
-    Facts,
-    Requests,
-    Events,
-};
 
 // A new rig, its parts asked for first.
 [[nodiscard]] ActionDefinition NewRigAction();
 
-// The animation workspace: rigs, clips and their events authored against a
-// live preview. The rig turns on a stage that fills the window, its bones and
-// joints drawn over it; the card is the picked joint, or what is auditioned
-// and the open rig's scenario. Content, rigs and the skeleton are explorers,
-// and the rig is the cartridge. The game module is used only for its
-// vocabulary; its game never runs here.
+// The animation workspace (docs/editor/animation-workspace.md): rigs, clips and
+// their events authored against a live preview on a stage that fills the
+// window. The game module is used only for its vocabulary; its game never runs.
 class AnimationWorkspace final : public IWorkspace
 {
 public:
     AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module, DocumentSourceSet& sources,
-                       DataDocumentStore& store, PromptQueue& prompts, ActionCatalog& catalog,
+                       DataDocumentStore& store, ProjectFileSteps* files, PromptQueue& prompts, ActionCatalog& catalog,
                        ProblemList& problems, const DataSubtypeAuthoringSetup& authorings);
     ~AnimationWorkspace() override;
 
@@ -90,6 +78,7 @@ public:
 
     void Tick(FrameUpdateContext& ctx) override;
     void SetVisible(bool visible) override;
+    [[nodiscard]] bool ClaimPlatformEvent(PlatformEventContext& ctx) override;
     void HandlePlatformEvent(PlatformEventContext& ctx) override;
     void MoveTo(const WorkspaceWindow& window) override;
     void SetContentRect(const Rect2d& content) override { ContentRect = content; }
@@ -114,15 +103,6 @@ public:
                           std::size_t mark) override;
 
 private:
-    // A press on the stage orbits once it moves; let go where it was pressed,
-    // it picks the joint under it. A press on the pad drags its point.
-    enum class StageDrag : std::uint8_t
-    {
-        None,
-        Pressed,
-        Orbiting,
-        Pad,
-    };
     // What the card is about when no joint is picked.
     enum class CardSubject : std::uint8_t
     {
@@ -141,25 +121,9 @@ private:
         Migration,
         Trace,
     };
-
-    void RegisterCommands();
-    void DefineActions(ActionCatalog& catalog);
-    // Pausing the preview and dropping an open edit: what a focus loss and a
-    // tab sent to the background both mean.
-    void Interrupt();
-    // Per frame it is seen: the picture placed, the strokes and joints over it.
-    void ShowStage();
-    void PickJointAt(Vec2d windowPoint);
-    void ShowPad();
-    void DragPadTo(Vec2d windowPoint);
-    // The card about `subject`, with no joint picked.
-    void ShowCard(CardSubject subject);
-    void ShowLens(AnimationLens lens);
-    [[nodiscard]] bool ShowingLens(AnimationLens lens) const { return Subject == CardSubject::Lens && ShownLens == lens; }
-    void DefineLenses(ActionCatalog& catalog);
-    // What a lens shows: its card when it is up (none to fall back to the
-    // stage's), the deck's lanes on the simulation clock, and a step back
-    // within its card before Escape leaves it.
+    // What a lens shows: its card when it is up (none falls back to the
+    // stage's), the deck's lanes and marks, what a pick on its lane names, what
+    // Save and Delete act on, and a step back within its card before Escape.
     struct LensView
     {
         AnimationLens Lens;
@@ -168,27 +132,68 @@ private:
         std::string_view Hint;
         std::function<std::optional<WorkspaceSelectionFacet>()> Card;
         std::function<void(std::vector<TimelineLane>&)> Lanes = {};
+        std::function<void(std::vector<TimelineMark>&, double end)> Marks = {};
+        std::function<void(const AnimationLanePick&)> Picked = {};
+        std::function<std::optional<DocumentRef>()> Document = {};
+        std::function<bool()> CanDelete = {};
+        std::function<void()> Delete = {};
         std::function<bool()> StepBack = {};
+        bool Pad = false;
     };
-    void DefineLensViews();
-    [[nodiscard]] const LensView& ViewOf(AnimationLens lens) const;
-    void DefineRuns(ActionCatalog& catalog);
-    // While the lab's sheet is up the deck runs the lab's clock, not the preview's.
-    [[nodiscard]] bool ShowingLabClock() const;
-    void OpenDocument(const std::string& path);
+    struct RunView
+    {
+        RunKind Kind;
+        std::string_view Action;
+        std::string_view Label;
+        std::string_view Title;
+        IPropertySource* Source = nullptr;
+        std::function<void()> Opened = {};
+    };
+
+    void RegisterCommands();
+    void DefineActions(ActionCatalog& catalog);
+    void DefineDocumentActions(ActionCatalog& catalog);
+    void DefineExplorers(ActionCatalog& catalog);
     void DefineTransport(ActionCatalog& catalog);
     void DefineEventActions(ActionCatalog& catalog);
+    void DefineLenses(ActionCatalog& catalog);
+    void DefineLensViews();
+    void DefineRuns(ActionCatalog& catalog);
+    // Pausing the preview and dropping an open edit: what a focus loss and a
+    // tab sent to the background both mean.
+    void Interrupt();
+    // Per frame it is seen: the picture placed, the strokes and joints over it.
+    void ShowStage();
+    void PickJointAt(Vec2d windowPoint);
+    void ShowPad();
+    void DragPadTo(Vec2d windowPoint);
+    void ReleasePad(bool keep);
+    // The card about `subject`, with no joint picked.
+    void ShowCard(CardSubject subject);
+    void ShowLens(AnimationLens lens);
+    void ShowRun(RunKind kind);
+    [[nodiscard]] const LensView& ViewOf(AnimationLens lens) const;
+    [[nodiscard]] const RunView& RunOf(RunKind kind) const;
+    // A retime on the deck ends with nothing kept when its clock or lens goes.
+    void CancelRetime();
+    bool OpenDocument(const std::string& path);
+    void OpenRig(const std::string& path);
+    // The document Save, Close and the dial's current mark are about: the
+    // lens's, the card's data document, or the open rig's scenario.
+    [[nodiscard]] std::optional<DocumentRef> EditedDocument() const;
+    void CloseEditedDocument();
     // The auditioned clip's events open as its clip changes.
     void FollowAuditionedClip();
     [[nodiscard]] AnimationClipEventsDocument* AuditionedEvents() const;
-    void CloseActiveDocument();
     // The rig's and the scenario's problems, republished when they change.
     void PublishProblems();
 
     Engine& EngineRef;
+    DocumentSourceSet& Sources;
     DataDocumentStore& Store;
     std::unique_ptr<AnimationPreviewWorkspace> Workspace;
     AnimationPreviewRenderFeature* Viewport = nullptr;
+    std::string SetupProblem;
     std::unique_ptr<ContentPicture> Picture;
     // The blendspace the selected layer plays, over the stage while Blends is the lens.
     std::unique_ptr<PlanePad> Pad;
@@ -207,6 +212,7 @@ private:
     std::unique_ptr<AnimationTraceProperties> Trace;
     std::unique_ptr<AnimationLabProperties> LabSheet;
     RunKind ShownRun = RunKind::Batch;
+    std::vector<RunView> Runs;
     ProblemList& Problems;
     std::string ProblemSignature;
     // Names the rig's content uses that nothing declares, as of ProblemSignature.
@@ -219,9 +225,7 @@ private:
     std::unique_ptr<AnimationAuditionProperties> Audition;
     std::unique_ptr<AnimationScenarioProperties> Scenario;
     std::unique_ptr<AnimationRigCreation> Creation;
-    // What animation subtypes add to their documents' sheets.
-    DataSubtypeAuthoringRegistry Authoring;
-    std::unique_ptr<DataProperties> DocumentSheet;
+    std::unique_ptr<DataDocumentSheet> Sheet;
     std::unique_ptr<DataCreation> NewDocument;
     PromptQueue::Asker Prompts;
     CardSubject Subject = CardSubject::Stage;
@@ -231,14 +235,14 @@ private:
     TreeOutline RigOutline;
     TreeOutline SkeletonOutline;
     ActionContext ActionHandlers;
+    ExplorerTable ExplorerRows;
     std::string FramedSubject;
     Rect2d ContentRect{};
     bool Visible = false;
     bool ShowJoints = true;
     bool ShowPath = true;
-    StageDrag Drag = StageDrag::None;
-    Vec2d PressedAt{};
+    StageOrbitDrag Orbit;
+    bool PadHeld = false;
     // The joints where they were drawn last, for picking.
     std::vector<AnimationJointMarker> Joints;
-
 };

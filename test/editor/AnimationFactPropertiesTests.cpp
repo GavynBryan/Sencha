@@ -40,7 +40,8 @@ TEST(AnimationFactProperties, InputsAreDrivenDerivationsDescribedAndOneFactPlott
     const int speed = session.Rig()->FindSlot("Speed");
     EXPECT_FLOAT_EQ(AnimFactToFloat(session.Facts()[static_cast<std::size_t>(speed)]), 2.5f);
     EXPECT_EQ(card.CommitEdit("facts.Speed", "fast"), PropertyEditResult::Refused);
-    EXPECT_FALSE(workspace.Sources.CanUndo()) << "a scenario edit, not a document's";
+    EXPECT_EQ(workspace.Sources.ChangedDocuments(), std::vector<DocumentRef>{ workspace.Rig.Scenario.Ref() })
+        << "a scenario edit, not a data document's";
 
     nodes = card.Nodes();
     const auto clear = std::ranges::find(FindProperty(nodes, "facts.Speed")->Descriptor.Verbs, "clear", &PropertyVerb::Id);
@@ -59,4 +60,5 @@ TEST(AnimationFactProperties, InputsAreDrivenDerivationsDescribedAndOneFactPlott
     EXPECT_TRUE(card.Plotted().empty()) << "plotting it again puts it away";
     EXPECT_TRUE(AnimationFactLane(session, "Nothing").Samples.empty());
     session.Close();
+    workspace.Sources.DiscardAll();
 }

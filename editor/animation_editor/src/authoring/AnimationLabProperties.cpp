@@ -159,7 +159,7 @@ std::vector<PropertyNode> AnimationLabProperties::RunNodes() const
         joined.Children.push_back(NoteProperty("joined.none", "Snapshots", "Nothing has arrived yet."));
     nodes.push_back(std::move(joined));
 
-    const AnimTick inspected = std::min(Inspected, lab.Tick());
+    const AnimTick inspected = std::min(Workspace.Lab.Inspected, lab.Tick());
     nodes.push_back(NumberProperty("inspect", "Tick", static_cast<double>(inspected), 0.0,
                                    static_cast<double>(lab.Tick()), 1.0));
     const AnimationPreviewTickRecord* here = RecordAt(lab.Authority(), inspected);
@@ -219,7 +219,7 @@ PropertyEditResult AnimationLabProperties::CommitEdit(std::string_view key, std:
     else if (key == "link.run_to")
         lab.Tick = std::max<std::uint64_t>(whole, 1);
     else if (key == "inspect")
-        InspectTick(whole);
+        lab.Inspected = whole;
     else
         return PropertyEditResult::Gone;
     return PropertyEditResult::Applied;
@@ -251,37 +251,4 @@ PropertyEditResult AnimationLabProperties::Act(std::string_view key, std::string
         return PropertyEditResult::Applied;
     }
     return PropertyEditResult::Gone;
-}
-
-std::optional<WorkspaceTimelineFacet> AnimationLabProperties::Timeline() const
-{
-    const AnimationLabRun& run = Workspace.Lab;
-    if (run.Session == nullptr || !run.Session->IsOpen() || run.Session->Ticks().empty())
-        return std::nullopt;
-    const AnimationSessionLab& lab = *run.Session;
-    const double seconds = lab.Authority().TickSeconds();
-    const AnimTick inspected = std::min(Inspected, lab.Tick());
-    WorkspaceTimelineFacet facet{ .Clock = "Session lab",
-                                  .Start = static_cast<double>(lab.Ticks().front().Tick) * seconds,
-                                  .End = static_cast<double>(lab.Tick()) * seconds,
-                                  .Time = static_cast<double>(inspected) * seconds,
-                                  .Playing = false,
-                                  .Live = false,
-                                  .Readout = std::format("lab tick {} / {}", inspected, lab.Tick()) };
-    facet.Lanes = AnimationLabLanes(lab, inspected);
-    return facet;
-}
-
-void AnimationLabProperties::InspectAt(double seconds)
-{
-    const AnimationLabRun& run = Workspace.Lab;
-    if (run.Session == nullptr || !run.Session->IsOpen())
-        return;
-    const double tick = seconds / run.Session->Authority().TickSeconds();
-    InspectTick(static_cast<AnimTick>(std::max(0.0, std::round(tick))));
-}
-
-void AnimationLabProperties::InspectTick(AnimTick tick)
-{
-    Inspected = tick;
 }

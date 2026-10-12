@@ -61,7 +61,8 @@ TEST(AnimationBlendLens, ThePadMovesTheBlendspaceAndTheCardAndLaneAccountForIt)
     ASSERT_TRUE(halfway.has_value());
     EXPECT_NEAR(halfway->Coordinates[0], 2.0f, 1e-5f);
     EXPECT_NEAR(halfway->Samples[0].Weight, 0.5f, 1e-5f);
-    EXPECT_FALSE(workspace.Sources.CanUndo()) << "a live fact, never an asset change";
+    EXPECT_EQ(workspace.Sources.ChangedDocuments(), std::vector<DocumentRef>{ workspace.Rig.Scenario.Ref() })
+        << "a live fact is recorded in the scenario, never an asset change";
 
     AnimationBlendProperties card(workspace);
     const std::vector<PropertyNode> nodes = card.Nodes();
@@ -79,4 +80,5 @@ TEST(AnimationBlendLens, ThePadMovesTheBlendspaceAndTheCardAndLaneAccountForIt)
     EXPECT_EQ(pick->Names, AnimationLanePick::What::Blend);
     EXPECT_FALSE(AnimationBlendspaceOn(session, 3).has_value());
     session.Close();
+    workspace.Sources.DiscardAll();
 }

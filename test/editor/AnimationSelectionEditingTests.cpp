@@ -274,6 +274,7 @@ TEST(AnimationSelectionEditing, TheSessionRecordsWhyEveryRuleLost)
     EXPECT_EQ(DescribeAnimVerdict(workspace.DataCache(), walk, record.Layers[0].Verdicts[0]),
               "stay failed: Speed > 0.1 (read 0)");
     workspace.Rig.Simulation.Close();
+    workspace.Sources.DiscardAll();
 }
 
 // The Rules card lists a layer's rules as they fared; inspecting one shows what
@@ -325,6 +326,7 @@ TEST(AnimationSelectionEditing, TheRulesCardExplainsARuleAndWhatItSelects)
     EXPECT_EQ(workspace.Rig.Navigation.Rule, -1);
     EXPECT_FALSE(card.Decisions().Nodes().empty());
     workspace.Rig.Simulation.Close();
+    workspace.Sources.DiscardAll();
 }
 
 // The decisions lane is what won the layer, one span per stretch a rule held,
@@ -357,6 +359,7 @@ TEST(AnimationSelectionEditing, TheDecisionLaneSpansEachStretchARuleHeld)
     EXPECT_FALSE(ParseAnimationLaneKey("7").has_value());
     EXPECT_TRUE(AnimationDecisionLane(session, 3, -1).Spans.empty());
     session.Close();
+    workspace.Sources.DiscardAll();
 }
 
 // A selector's sheet reads its conditions as they read, adds a test of a fact

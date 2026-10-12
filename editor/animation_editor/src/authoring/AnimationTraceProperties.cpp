@@ -1,7 +1,5 @@
 #include "authoring/AnimationTraceProperties.h"
 
-#include "authoring/AnimationPreviewWorkspace.h"
-
 #include "properties/SettingProperties.h"
 
 #include <format>
@@ -73,10 +71,8 @@ PropertyEditResult AnimationTraceProperties::Act(std::string_view key, std::stri
     }
     if (key == "whose" && verb == "open" && Trace)
     {
-        if (Workspace.OpenRig(Trace->Rig))
-            return PropertyEditResult::Applied;
-        Error = Workspace.Rig.Error;
-        return PropertyEditResult::Refused;
+        OpenRig(Trace->Rig);
+        return PropertyEditResult::Applied;
     }
     return PropertyEditResult::Gone;
 }

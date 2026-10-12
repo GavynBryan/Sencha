@@ -10,10 +10,31 @@
 #include <filesystem>
 #include <format>
 
-AnimationRigScenario::AnimationRigScenario(RuntimeAssets& assets, std::function<void(World&)> vocabulary)
+AnimationRigScenario::AnimationRigScenario(RuntimeAssets& assets, DocumentSourceSet& sources,
+                                           std::function<void(World&)> vocabulary)
     : Simulation(assets.DataAssets, &assets.AnimationClips, std::move(vocabulary), &assets.Skeletons)
+    , Scenario(sources,
+               { .Write =
+                     [this](std::string& text, std::string&) {
+                         text = AnimationScenarioText(Simulation.Scenario());
+                         return true;
+                     },
+                 .Read =
+                     [this](std::string_view text, std::string& error) {
+                         std::vector<AnimDiagnostic> problems;
+                         std::optional<AnimationScenario> read =
+                             ParseAnimationScenarioText(text, Scenario.Path().generic_string(), problems);
+                         if (!read)
+                         {
+                             error = problems.empty() ? std::string("Not a scenario.") : problems.front().Message;
+                             return false;
+                         }
+                         Simulation.ReplaceScenario(std::move(*read));
+                         return true;
+                     } })
     , Assets(assets)
 {
+    Simulation.OnScenarioChanged([this] { Scenario.Changed(); });
 }
 
 bool AnimationRigScenario::Open(const std::string& path)
@@ -57,21 +78,10 @@ bool AnimationRigScenario::Open(const std::string& path)
     Simulation.Close();
     Lease = std::move(lease);
     Path = path;
-    ScenarioFile = sidecar.string();
     Error.clear();
     (void)Simulation.Open(std::move(scenario));
+    Scenario.Open(std::move(sidecar));
     Navigation = AnimationNavigation{};
-    return true;
-}
-
-bool AnimationRigScenario::Save()
-{
-    if (!Simulation.IsOpen() || ScenarioFile.empty())
-        return false;
-    if (!SaveAnimationScenario(Simulation.Scenario(), ScenarioFile, Error))
-        return false;
-    Simulation.MarkScenarioSaved();
-    Error.clear();
     return true;
 }
 

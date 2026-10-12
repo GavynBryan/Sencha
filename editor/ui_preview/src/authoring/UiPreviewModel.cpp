@@ -227,6 +227,18 @@ std::optional<UiPreviewModel> UiPreviewModel::Parse(const JsonValue& json, std::
     return model;
 }
 
+std::optional<UiPreviewModel> UiPreviewModel::ParseText(std::string_view text, std::string* error)
+{
+    JsonParseError parseError;
+    const std::optional<JsonValue> json = JsonParse(text, &parseError);
+    if (!json)
+    {
+        if (error) *error = "preview model: " + parseError.Message;
+        return std::nullopt;
+    }
+    return Parse(*json, error);
+}
+
 std::optional<UiPreviewModel> UiPreviewModel::Load(const std::filesystem::path& sidecar, std::string* error)
 {
     const std::optional<JsonValue> json = JsonParseFile(sidecar, error);
@@ -282,7 +294,7 @@ JsonValue UiPreviewModel::ToJson() const
     return JsonValue(std::move(out));
 }
 
-bool UiPreviewModel::Save(const std::filesystem::path& sidecar, std::string* error) const
+bool UiPreviewModel::WriteText(std::string& text, std::string* error) const
 {
     for (const UiModelProperty& p : Properties)
     {
@@ -294,13 +306,22 @@ bool UiPreviewModel::Save(const std::filesystem::path& sidecar, std::string* err
             return false;
         }
     }
+    text = JsonStringify(ToJson(), true) + '\n';
+    return true;
+}
+
+bool UiPreviewModel::Save(const std::filesystem::path& sidecar, std::string* error) const
+{
+    std::string text;
+    if (!WriteText(text, error))
+        return false;
     std::ofstream out(sidecar, std::ios::binary | std::ios::trunc);
     if (!out.is_open())
     {
         if (error) *error = "could not write '" + sidecar.string() + "'";
         return false;
     }
-    out << JsonStringify(ToJson(), true) << '\n';
+    out << text;
     return static_cast<bool>(out);
 }
 

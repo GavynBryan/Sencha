@@ -111,7 +111,7 @@ TEST(AnimationTraceImport, TheSheetReadsAndFiltersAFile)
 
     EditorDocuments documents(*project.Assets);
     AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
-    AnimationTraceProperties sheet(workspace);
+    AnimationTraceProperties sheet([&](const std::string& rig) { (void)workspace.OpenRig(rig); });
     ASSERT_TRUE(sheet.BeginEdit("file"));
     EXPECT_EQ(sheet.CommitEdit("file", (project.Root / "missing.json").string()), PropertyEditResult::Applied);
     EXPECT_EQ(sheet.Act("file", "read", ""), PropertyEditResult::Refused);

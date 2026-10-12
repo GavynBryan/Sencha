@@ -8,20 +8,13 @@
 #include <string>
 
 class AnimationClipEventsDocument;
-class AnimationClipEventsSet;
 class AnimationPreviewWorkspace;
 struct AnimationClipEvent;
 
-//=============================================================================
-// AnimationEventProperties
-//
-// The clip event picked on the deck: its name, time along the clip (dragged,
-// a live edit), whether it is cosmetic or gameplay and a cosmetic one's own
-// weight threshold, the rig binding it raises and that binding's contract,
-// the value for each of the binding's inputs, checked as the runtime would,
-// and a new binding to raise instead. With no event picked, the clip's events
-// as a whole: what the sidecar is and what is wrong in it.
-//=============================================================================
+// The clip event picked on the deck: its name, its time along the clip (a live
+// edit), its scope and a cosmetic one's weight threshold, the rig binding it
+// raises with that binding's inputs checked as the runtime would, and a new
+// binding to raise instead. With none picked, what is wrong in the clip's events.
 class AnimationEventProperties final : public IPropertySource
 {
 public:
@@ -52,11 +45,6 @@ private:
     std::string NewVerb;
     std::string NewKey;
 };
-
-// Event `key` shown at `time`, 0 to 1 along the clip, as a live edit: begun if
-// none is open, reaching the preview's clip only once committed.
-void PreviewEventTime(AnimationClipEventsSet& events, AnimationClipEventsDocument& document, std::uint32_t key,
-                      double time);
 
 // What an event is called where it is shown: its name, or its key when unnamed.
 [[nodiscard]] std::string EventLabel(const AnimationClipEvent& event);

@@ -727,6 +727,26 @@ previewer (`editor/ui_preview/`) adds the project's roots, the engine's and the
 editor's own to it and shows the open document rebuilt on every save, with the
 diagnostics above among the editor's problems.
 
+### The preview model
+
+The previewer opens a document against a preview model: what a host would
+declare for it (its `UiScreenDesc`, minus the package path) and the values that
+host would publish, kept beside the document as `<name>.preview.json`
+(`UiPreviewModel`). The sidecar is the authoritative preview schema. It travels
+with the document, so a second author sees it rendered rather than blank; a
+test opens the document with it, so preview and test cannot drift; a template
+ships its UI with one, which a new author reads by opening it. The bindings a
+document asks for and the model misses (`BindingMisses`) help write it
+incrementally; they never replace it.
+
+Values are written with an explicit kind. "1", 1 and 1.0 are three different
+presentation values, and a document that compares one of them to a literal
+cares which.
+
+In Kyusu the sidecar is a document of the editor's journal like any other
+(`SnapshotDocument`): a model edit is an undoable step, Save and Save All write
+it, and closing UI Preview or the editor with an unsaved model asks first.
+
 ## 13. Rendering destinations
 
 **One surface per host surface, not per controller.** Focus and modality are

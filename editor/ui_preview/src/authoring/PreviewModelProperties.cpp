@@ -150,11 +150,6 @@ std::vector<std::string> SplitChoices(std::string_view text)
     return out;
 }
 
-UiRow SampleRow()
-{
-    return UiRow{ "Row", "value", "" };
-}
-
 std::vector<PropertyNode> RowNodes(const std::string& key, const UiRow& row)
 {
     const std::vector<std::string_view> controls = ControlNames();
@@ -245,14 +240,21 @@ bool SetRowField(UiRow& row, std::string_view field, std::string_view value)
 }
 } // namespace
 
-void PreviewModelProperties::MarkSaved()
+SnapshotValue PreviewModelSnapshots(UiPreviewSession& session)
 {
-    Saved = Session.Model();
-}
-
-bool PreviewModelProperties::Changed() const
-{
-    return !(Session.Model() == Saved);
+    return {
+        .Write = [&session](std::string& text, std::string& error) { return session.Model().WriteText(text, &error); },
+        .Read =
+            [&session](std::string_view text, std::string& error) {
+                std::optional<UiPreviewModel> model = UiPreviewModel::ParseText(text, &error);
+                if (!model)
+                    return false;
+                session.Model() = std::move(*model);
+                if (session.IsOpen())
+                    (void)session.Reopen();
+                return true;
+            },
+    };
 }
 
 std::vector<PropertyNode> PreviewModelProperties::Nodes() const
@@ -323,7 +325,9 @@ std::vector<PropertyNode> PreviewModelProperties::Nodes() const
 
 bool PreviewModelProperties::BeginEdit(std::string_view)
 {
-    Before = Session.Model();
+    if (!Model.IsOpen())
+        return false;
+    Model.BeginEdit();
     return true;
 }
 
@@ -335,17 +339,13 @@ PropertyEditResult PreviewModelProperties::PreviewEdit(std::string_view key, std
 PropertyEditResult PreviewModelProperties::CommitEdit(std::string_view key, std::string_view value)
 {
     const PropertyEditResult result = Show(Apply(key, value));
-    Before.reset();
+    Model.CommitEdit();
     return result;
 }
 
 void PreviewModelProperties::CancelEdit(std::string_view)
 {
-    if (!Before)
-        return;
-    Session.Model() = std::move(*Before);
-    Before.reset();
-    (void)Session.Reopen();
+    Model.CancelEdit();
 }
 
 PreviewModelProperties::Applied PreviewModelProperties::Apply(std::string_view key, std::string_view value)
@@ -418,6 +418,8 @@ PreviewModelProperties::Applied PreviewModelProperties::Apply(std::string_view k
 
 PropertyEditResult PreviewModelProperties::Act(std::string_view key, std::string_view verb, std::string_view)
 {
+    if (!Model.IsOpen())
+        return PropertyEditResult::Refused;
     UiPreviewModel& model = Session.Model();
     const std::vector<std::string_view> parts = Parts(key);
     Applied applied{ PropertyEditResult::Applied, Reach::Declaration };
@@ -428,7 +430,7 @@ PropertyEditResult PreviewModelProperties::Act(std::string_view key, std::string
         else if (key == "lists")
             model.Arrays.push_back({ "new_list", { "first", "second" } });
         else if (key == "rows")
-            model.Rows.push_back({ "new_rows", { SampleRow() } });
+            model.Rows.push_back({ "new_rows", { UiPreviewModel::SampleRow() } });
         else if (key == "actions")
             model.Actions.emplace_back("new_action");
         else
@@ -462,12 +464,14 @@ PropertyEditResult PreviewModelProperties::Act(std::string_view key, std::string
     else if (UiPreviewModel::RowsSample* rows =
                  verb == "add_row" && parts.size() == 2 && parts[0] == "rows" ? At(model.Rows, parts[1]) : nullptr)
     {
-        rows->Items.push_back(SampleRow());
+        rows->Items.push_back(UiPreviewModel::SampleRow());
         applied.Touched = Reach::Samples;
     }
     else
         applied.Result = PropertyEditResult::Gone;
-    return Show(applied);
+    const PropertyEditResult result = Show(applied);
+    Model.Changed();
+    return result;
 }
 
 PropertyEditResult PreviewModelProperties::Show(Applied applied)

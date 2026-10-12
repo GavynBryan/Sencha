@@ -1,5 +1,7 @@
 #include "authoring/AnimationTimelineLanes.h"
 
+#include "authoring/AnimationClipEventsDocument.h"
+#include "authoring/AnimationEventProperties.h"
 #include "authoring/AnimationPreviewSession.h"
 #include "authoring/AnimationSessionLab.h"
 
@@ -16,13 +18,20 @@
 
 namespace
 {
-constexpr std::array<std::pair<std::string_view, AnimationLanePick::What>, 5> kPrefixes{ {
-    { "rule:", AnimationLanePick::What::Rule },
-    { "section:", AnimationLanePick::What::Section },
-    { "blend:", AnimationLanePick::What::Blend },
-    { "request:", AnimationLanePick::What::Request },
-    { "lab:", AnimationLanePick::What::LabTick },
+struct LaneKind
+{
+    std::string_view Prefix;
+    AnimationLanePick::What Names;
+    std::optional<AnimationLens> Lens;
+};
+constexpr std::array<LaneKind, 5> kLaneKinds{ {
+    { "rule:", AnimationLanePick::What::Rule, AnimationLens::Rules },
+    { "section:", AnimationLanePick::What::Section, AnimationLens::Flow },
+    { "blend:", AnimationLanePick::What::Blend, AnimationLens::Blends },
+    { "request:", AnimationLanePick::What::Request, AnimationLens::Requests },
+    { "lab:", AnimationLanePick::What::LabTick, std::nullopt },
 } };
+constexpr std::string_view kEventMark = "event:";
 
 // What held on one recorded tick: the same Identity on consecutive ticks is
 // one span.
@@ -73,8 +82,8 @@ TimelineLane Runs(const AnimationPreviewSession& session, std::string label, Rea
 
 std::string LaneKey(AnimationLanePick::What what, std::size_t layer, int index)
 {
-    const auto prefix = std::ranges::find(kPrefixes, what, &std::pair<std::string_view, AnimationLanePick::What>::second);
-    return std::format("{}{}:{}", prefix->first, layer, index);
+    const auto kind = std::ranges::find(kLaneKinds, what, &LaneKind::Names);
+    return std::format("{}{}:{}", kind->Prefix, layer, index);
 }
 } // namespace
 
@@ -234,13 +243,13 @@ std::vector<TimelineLane> AnimationLabLanes(const AnimationSessionLab& lab, Anim
 
 std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key)
 {
-    for (const auto& [prefix, what] : kPrefixes)
+    for (const LaneKind& kind : kLaneKinds)
     {
-        if (!key.starts_with(prefix))
+        if (!key.starts_with(kind.Prefix))
             continue;
-        const std::string_view rest = key.substr(prefix.size());
+        const std::string_view rest = key.substr(kind.Prefix.size());
         const std::size_t colon = rest.find(':');
-        AnimationLanePick pick{ .Names = what };
+        AnimationLanePick pick{ .Names = kind.Names, .Lens = kind.Lens };
         if (colon == std::string_view::npos
             || std::from_chars(rest.data(), rest.data() + colon, pick.Layer).ec != std::errc{}
             || std::from_chars(rest.data() + colon + 1, rest.data() + rest.size(), pick.Index).ec != std::errc{})
@@ -248,4 +257,28 @@ std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key)
         return pick;
     }
     return std::nullopt;
+}
+
+std::vector<TimelineMark> AnimationEventMarks(const AnimationClipEventsDocument& events, double duration,
+                                              std::optional<std::uint32_t> picked)
+{
+    std::vector<TimelineMark> marks;
+    for (const AnimationClipEvent& event : events.Events())
+        marks.push_back({ .Key = std::format("{}{}", kEventMark, event.Key),
+                          .Time = static_cast<double>(event.Time) * duration,
+                          .Label = EventLabel(event),
+                          .Shape = event.Scope == AnimEventScope::Gameplay ? TimelineMarkShape::Diamond
+                                                                            : TimelineMarkShape::Round,
+                          .Selected = picked == event.Key,
+                          .Movable = true });
+    return marks;
+}
+
+std::optional<std::uint32_t> ParseAnimationEventMarkKey(std::string_view key)
+{
+    std::uint32_t event = 0;
+    if (!key.starts_with(kEventMark)
+        || std::from_chars(key.data() + kEventMark.size(), key.data() + key.size(), event).ec != std::errc{})
+        return std::nullopt;
+    return event;
 }

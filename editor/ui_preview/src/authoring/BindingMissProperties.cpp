@@ -2,9 +2,9 @@
 
 #include "authoring/BindingMisses.h"
 #include "authoring/UiPreviewSession.h"
+#include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
-#include <charconv>
 #include <format>
 
 namespace
@@ -25,11 +25,6 @@ std::string_view KindLabel(BindingMissKind kind)
     case BindingMissKind::Action:   return "Action";
     }
     return "Variable";
-}
-
-UiRow SampleRow()
-{
-    return UiRow{ "Row", "value", "" };
 }
 
 // The row list a member was read through, when the model declares no list of
@@ -75,25 +70,27 @@ std::vector<PropertyNode> BindingMissProperties::Nodes() const
 PropertyEditResult BindingMissProperties::Act(std::string_view key, std::string_view verb, std::string_view)
 {
     const std::vector<BindingMiss> misses = Misses(Session);
-    std::size_t index = 0;
-    if (!key.starts_with("miss.")
-        || std::from_chars(key.data() + 5, key.data() + key.size(), index).ec != std::errc{} || index >= misses.size())
+    const std::optional<PropertyKeyIndex> picked = ParsePropertyKeyIndex(key, "miss.");
+    if (!picked || !picked->Rest.empty() || picked->Index >= misses.size())
         return PropertyEditResult::Gone;
-    const BindingMiss& miss = misses[index];
+    if (!Model.IsOpen())
+        return PropertyEditResult::Refused;
+    const BindingMiss& miss = misses[picked->Index];
     UiPreviewModel& model = Session.Model();
     if (verb == "property" && miss.Kind == BindingMissKind::Variable)
         model.Properties.push_back(UiModelProperty{ .Path = miss.Name, .Initial = UiValue(miss.Name) });
     else if (verb == "list" && miss.Kind == BindingMissKind::Variable)
         model.Arrays.push_back({ miss.Name, { "first", "second" } });
     else if (verb == "rows" && miss.Kind == BindingMissKind::Variable)
-        model.Rows.push_back({ miss.Name, { SampleRow() } });
+        model.Rows.push_back({ miss.Name, { UiPreviewModel::SampleRow() } });
     else if (verb == "rows" && miss.Kind == BindingMissKind::Member && DeclarableParent(miss, model))
-        model.Rows.push_back({ miss.Parent, { SampleRow() } });
+        model.Rows.push_back({ miss.Parent, { UiPreviewModel::SampleRow() } });
     else if (verb == "action" && miss.Kind == BindingMissKind::Action)
         model.Actions.push_back(miss.Name);
     else
         return PropertyEditResult::Refused;
     // The remade screen reports again what is still missing.
     (void)Session.Reopen();
+    Model.Changed();
     return PropertyEditResult::Applied;
 }

@@ -476,8 +476,27 @@ std::optional<AnimationScenario> ReadAnimationScenario(const JsonValue& document
     return scenario;
 }
 
-bool SaveAnimationScenario(const AnimationScenario& scenario, const std::string& filePath,
-                           std::string& error)
+std::string AnimationScenarioText(const AnimationScenario& scenario)
+{
+    return JsonFormat(WriteAnimationScenario(scenario), 4) + '\n';
+}
+
+std::optional<AnimationScenario> ParseAnimationScenarioText(std::string_view text, std::string_view assetPath,
+                                                            std::vector<AnimDiagnostic>& diagnostics)
+{
+    JsonParseError parseError;
+    const std::optional<JsonValue> document = JsonParse(text, &parseError);
+    if (!document)
+    {
+        diagnostics.push_back(AnimDiagnostic{ AnimDiagnosticSeverity::Error, "anim.scenario.unreadable",
+                                              std::string(assetPath), {},
+                                              std::format("Not valid JSON: {}", parseError.Message) });
+        return std::nullopt;
+    }
+    return ReadAnimationScenario(*document, assetPath, diagnostics);
+}
+
+bool SaveAnimationScenario(const AnimationScenario& scenario, const std::string& filePath, std::string& error)
 {
     std::ofstream out(filePath, std::ios::binary | std::ios::trunc);
     if (!out)
@@ -485,7 +504,7 @@ bool SaveAnimationScenario(const AnimationScenario& scenario, const std::string&
         error = std::format("Could not open '{}' for writing.", filePath);
         return false;
     }
-    out << JsonFormat(WriteAnimationScenario(scenario), 4) << '\n';
+    out << AnimationScenarioText(scenario);
     if (!out)
     {
         error = std::format("Could not write '{}'.", filePath);
@@ -506,14 +525,5 @@ std::optional<AnimationScenario> LoadAnimationScenario(const std::string& filePa
     }
     std::stringstream text;
     text << in.rdbuf();
-    JsonParseError parseError;
-    const std::optional<JsonValue> document = JsonParse(text.str(), &parseError);
-    if (!document)
-    {
-        diagnostics.push_back(AnimDiagnostic{ AnimDiagnosticSeverity::Error, "anim.scenario.unreadable",
-                                              filePath, {},
-                                              std::format("Not valid JSON: {}", parseError.Message) });
-        return std::nullopt;
-    }
-    return ReadAnimationScenario(*document, filePath, diagnostics);
+    return ParseAnimationScenarioText(text.str(), filePath, diagnostics);
 }

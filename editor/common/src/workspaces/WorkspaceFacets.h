@@ -358,11 +358,13 @@ struct WorkspaceTimelineFacet
     std::vector<TimelineLane> Lanes = {};
 };
 
-// Where a drag along the deck is: pressed, moving, or let go. A drag the
-// workspace hears no end of -- focus lost, Escape -- it cancels itself.
+// Where a drag along the deck is: pressed, moving, let go, or given up with
+// nothing kept. A drag the workspace hears no end of (focus lost, Escape, its
+// lens or clock switched) it cancels itself.
 enum class TimelineDrag : std::uint8_t
 {
     Begin,
     Move,
     End,
+    Cancel,
 };

@@ -153,8 +153,7 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
     ASSERT_NE(events, nullptr);
     EXPECT_EQ(events->SidecarPath(), project.Root / "anim" / "hero.glb.meta");
 
-    const std::uint32_t key = events->Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(*events);
+    const std::uint32_t key = workspace.ClipEvents.Add(*events, Footstep(0.25f));
     ASSERT_NE(workspace.ClipEvents.PreviewStateOf(*events), nullptr);
     EXPECT_EQ(workspace.ClipEvents.PreviewStateOf(*events)->Status, ClipEventsPreviewStatus::Current);
 
@@ -182,18 +181,11 @@ TEST(AnimationEventEditing, ADragReachesThePreviewOnlyWhenCommitted)
     AnimationClipEventsDocument* opened = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(opened, nullptr) << workspace.DocumentError;
     AnimationClipEventsDocument& events = *opened;
-    const std::uint32_t key = events.Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(events);
+    const std::uint32_t key = workspace.ClipEvents.Add(events, Footstep(0.25f));
     const AnimationClipData* clip = project.Assets->AnimationClips.Get(project.Assets->AnimationClips.Find(kClip));
     ASSERT_EQ(clip->Events.size(), 1u);
 
-    const auto drag = [&] {
-        events.BeginEdit(key);
-        AnimationClipEvent moved = *events.Find(key);
-        moved.Time = 0.8f;
-        events.PreviewEdit(moved);
-        workspace.ClipEvents.Changed(events);
-    };
+    const auto drag = [&] { workspace.ClipEvents.PreviewTime(events, key, 0.8); };
     drag();
     EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.25f) << "a preview never reaches the clip";
     workspace.Sources.CancelEdits();
@@ -236,8 +228,7 @@ TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
     loud.Binding = "anim.footstep_loud";
     loud.Inputs[0].Key = "Surface";
     loud.Inputs[1].Key = "Volume";
-    (void)events.Add(loud);
-    workspace.ClipEvents.Changed(events);
+    (void)workspace.ClipEvents.Add(events, loud);
     ASSERT_EQ(workspace.Rig.Simulation.Rig()->Contents.at(0).Events.size(), 1u);
     EXPECT_TRUE(workspace.Rig.Simulation.Rig()->Contents[0].Events[0].Resolved)
         << (workspace.Rig.Simulation.Rig()->Diagnostics.empty() ? "" : workspace.Rig.Simulation.Rig()->Diagnostics.back().Message);
@@ -285,8 +276,7 @@ TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
-    (void)events->Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(*events);
+    (void)workspace.ClipEvents.Add(*events, Footstep(0.25f));
     AuthorDocument(workspace, "asset://anim/hero.behaviors.sdata", [](JsonValue& data) {
         JsonArrayOf(data, "behaviors").front().AsObject().emplace_back("rate", JsonValue(2.0));
     });
@@ -319,8 +309,7 @@ TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
-    (void)events->Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(*events);
+    (void)workspace.ClipEvents.Add(*events, Footstep(0.25f));
     AuthorDocument(workspace, "asset://anim/hero.behaviors.sdata", [](JsonValue& data) {
         JsonArrayOf(data, "behaviors").front().AsObject().emplace_back("rate", JsonValue(2.0));
     });
@@ -358,8 +347,7 @@ TEST(AnimationEventEditing, TheCardEditsThePickedEventOneStepAtATime)
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
     AnimationClipEvent cosmetic = Footstep(0.25f);
     cosmetic.MinWeight = 0.3f;
-    const std::uint32_t key = events->Add(cosmetic);
-    workspace.ClipEvents.Changed(*events);
+    const std::uint32_t key = workspace.ClipEvents.Add(*events, cosmetic);
     std::optional<std::uint32_t> picked;
     AnimationEventProperties card(workspace, [&] { return picked; });
 
@@ -414,8 +402,7 @@ TEST(AnimationEventEditing, TheCardBindsAndFeedsThePickedEvent)
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
-    const std::uint32_t key = events->Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(*events);
+    const std::uint32_t key = workspace.ClipEvents.Add(*events, Footstep(0.25f));
     AnimationEventProperties card(workspace, [&] { return std::optional(key); });
     ASSERT_NE(FindProperty(card.Nodes(), "inputs.surface"), nullptr);
     ASSERT_NE(FindProperty(card.Nodes(), "contract"), nullptr);
@@ -455,8 +442,7 @@ TEST(AnimationEventEditing, TheAdmissionsSayWhatEachCrossingWasAnswered)
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
-    (void)events->Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(*events);
+    (void)workspace.ClipEvents.Add(*events, Footstep(0.25f));
     AnimationAdmissionProperties card(workspace);
 
     std::vector<PropertyNode> nodes = card.Nodes();

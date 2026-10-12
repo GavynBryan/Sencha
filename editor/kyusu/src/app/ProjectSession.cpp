@@ -140,7 +140,7 @@ void ProjectSession::MountContent()
     {
         // Before the scan, so the registry reads the ids the files now state.
         const std::vector<std::filesystem::path> roots(Descriptor->ContentRoots.begin(), Descriptor->ContentRoots.end());
-        Adoption_ = AdoptAssetIds(roots, [this](const ProjectFile& file) { return IsAsset(file); }, AdoptionErrors_);
+        Adopted = AdoptAssetIds(roots, [this](const ProjectFile& file) { return IsAsset(file); }, AdoptionFailures);
         MountProjectContent(*Descriptor, assets, Host.Logging(), &Host.Jobs());
     }
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)

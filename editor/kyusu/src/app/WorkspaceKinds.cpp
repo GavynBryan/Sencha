@@ -39,10 +39,10 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
     kinds.push_back(WorkspaceKind{
         .Id = "materials",
         .DisplayName = "Materials",
-        .Create = [&engine, &session, &prompts, &actions] {
+        .Create = [&engine, &session, &prompts, &actions, &problems] {
             return std::make_unique<MaterialWorkspace>(engine, session.Project(), session.Materials(),
                                                        session.Documents(), session.Files(), prompts, actions,
-                                                       session.Pictures());
+                                                       problems, session.Pictures());
         },
         .Opens = { { ".smat" }, { ".png" } },
         .Creates = { NewMaterialAction() },
@@ -63,8 +63,8 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         .DisplayName = "Animation",
         .Create = [&engine, &session, &prompts, &actions, &problems, authorings] {
             return std::make_unique<AnimationWorkspace>(engine, *session.Project(), session.Module(),
-                                                        session.Documents(), session.DataDocuments(), prompts,
-                                                        actions, problems, authorings);
+                                                        session.Documents(), session.DataDocuments(), session.Files(),
+                                                        prompts, actions, problems, authorings);
         },
         .Opens = { { ".sdata", "animation.rig" } },
         .Creates = { NewRigAction() },
@@ -74,9 +74,9 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         .DisplayName = "UI Preview",
         // The engine's and the editor's own documents are there without one.
         .RequiresProject = false,
-        .Create = [&engine, &session, &actions, &problems, &notices] {
-            return std::make_unique<UiPreviewWorkspace>(engine, session.Project(), session.Module(), actions,
-                                                        problems, notices);
+        .Create = [&engine, &session, &prompts, &actions, &problems, &notices] {
+            return std::make_unique<UiPreviewWorkspace>(engine, session.Project(), session.Module(),
+                                                        session.Documents(), prompts, actions, problems, notices);
         },
         .Opens = { { ".rml" } },
     });

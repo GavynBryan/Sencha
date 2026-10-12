@@ -58,7 +58,7 @@ namespace
     // edit back, compare blends, run the lab and every scenario.
     void Round(AnimationPreviewWorkspace& workspace, const char* rig)
     {
-        ASSERT_TRUE(workspace.OpenRig(rig)) << workspace.Rig.Error;
+        ASSERT_TRUE(workspace.OpenRig(rig, DirtyDisposition::Discard)) << workspace.Rig.Error;
         workspace.Rig.Simulation.RunTo(90);
         AnimationScenarioAction act;
         act.Kind = AnimationScenarioActionKind::IssueRequest;
@@ -120,5 +120,7 @@ TEST(AnimationLongSession, RepeatedWorkHoldsSteady)
 
     for (const auto& document : workspace.Documents.Documents())
         EXPECT_FALSE(document->IsEditing()) << document->VirtualPath();
+    // The last round's act is recorded in its scenario, which is thrown away.
+    workspace.Rig.Scenario.DiscardDocument(workspace.Rig.Scenario.Ref().Key);
     EXPECT_FALSE(workspace.Sources.CanUndo()) << "every edit was taken back";
 }

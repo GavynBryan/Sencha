@@ -1,6 +1,7 @@
 #include "authoring/AnimationTimeline.h"
 
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationTimelineLanes.h"
 
 #include <algorithm>
 #include <array>
@@ -12,13 +13,38 @@ namespace
 constexpr std::array<double, 5> kSpeeds{ 0.25, 0.5, 1.0, 2.0, 4.0 };
 }
 
+bool AnimationTimeline::IsLab() const
+{
+    const AnimationLabRun& run = Workspace.Lab;
+    return LabShown && run.Session != nullptr && run.Session->IsOpen() && !run.Session->Ticks().empty();
+}
+
 bool AnimationTimeline::IsSimulation() const
 {
-    return Workspace.Viewport.Source == AnimationViewportSource::Simulation && Workspace.Rig.Simulation.IsOpen();
+    return !IsLab() && Workspace.Viewport.Source == AnimationViewportSource::Simulation
+        && Workspace.Rig.Simulation.IsOpen();
+}
+
+WorkspaceTimelineFacet AnimationTimeline::LabFacet() const
+{
+    const AnimationSessionLab& lab = *Workspace.Lab.Session;
+    const double seconds = lab.Authority().TickSeconds();
+    const AnimTick inspected = std::min(Workspace.Lab.Inspected, lab.Tick());
+    WorkspaceTimelineFacet facet{ .Clock = "Session lab",
+                                  .Start = static_cast<double>(lab.Ticks().front().Tick) * seconds,
+                                  .End = static_cast<double>(lab.Tick()) * seconds,
+                                  .Time = static_cast<double>(inspected) * seconds,
+                                  .Playing = false,
+                                  .Live = false,
+                                  .Readout = std::format("lab tick {} / {}", inspected, lab.Tick()) };
+    facet.Lanes = AnimationLabLanes(lab, inspected);
+    return facet;
 }
 
 WorkspaceTimelineFacet AnimationTimeline::Facet() const
 {
+    if (IsLab())
+        return LabFacet();
     if (IsSimulation())
     {
         const AnimationPreviewSession& simulation = Workspace.Rig.Simulation;
@@ -124,8 +150,19 @@ void AnimationTimeline::ChangeSpeed(int direction)
     (void)Workspace.Audition.Session.SetSpeed(kSpeeds[next]);
 }
 
+void AnimationTimeline::InspectLabTick(AnimTick tick)
+{
+    Workspace.Lab.Inspected = tick;
+}
+
 void AnimationTimeline::Scrub(double seconds)
 {
+    if (IsLab())
+    {
+        const double tick = seconds / Workspace.Lab.Session->Authority().TickSeconds();
+        InspectLabTick(static_cast<AnimTick>(std::max(0.0, std::round(tick))));
+        return;
+    }
     if (!IsSimulation())
     {
         AnimationClipPreviewSession& audition = Workspace.Audition.Session;

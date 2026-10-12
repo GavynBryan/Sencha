@@ -111,12 +111,7 @@ PropertyEditResult AnimationBlendProperties::CommitEdit(std::string_view key, st
     const AnimBoundRig* rig = Workspace.Rig.Simulation.Rig();
     if (rig == nullptr || key != "layer")
         return PropertyEditResult::Gone;
-    const std::optional<std::size_t> layer = ParseAnimationLayerChoice(*rig, value);
-    if (!layer)
-        return PropertyEditResult::Refused;
-    Workspace.Rig.Navigation.Layer = *layer;
-    Workspace.Rig.Navigation.Rule = -1;
-    return PropertyEditResult::Applied;
+    return CommitAnimationLayerChoice(*rig, Workspace.Rig.Navigation, value);
 }
 
 std::vector<PropertyNode> AnimationBlendProperties::TakeSource::Nodes() const

@@ -54,8 +54,8 @@ std::vector<PropertyNode> AnimationScenarioProperties::Nodes() const
     }
     const AnimationScenario& scenario = session.Scenario();
     std::vector<PropertyNode> nodes{
-        NoteProperty("name", "Scenario", scenario.Name + (session.ScenarioModified() ? ", unsaved" : "")),
-        NoteProperty("file", "File", Workspace.Rig.ScenarioFile),
+        NoteProperty("name", "Scenario", scenario.Name + (Workspace.Rig.Scenario.IsChanged() ? ", unsaved" : "")),
+        NoteProperty("file", "File", Workspace.Rig.Scenario.Path().generic_string()),
         NoteProperty("rate", "Rate", std::format("{} Hz, {} actions", scenario.TickRate, scenario.Actions.size())),
     };
     if (!Workspace.Rig.Error.empty())

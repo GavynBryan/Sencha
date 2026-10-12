@@ -8,6 +8,7 @@
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "presenters/StageOrbit.h"
 #include "project/TextureImportStore.h"
 #include "prompts/DocumentPrompts.h"
 #include "workspaces/IWorkspace.h"
@@ -26,6 +27,7 @@ class Engine;
 class MaterialLibrary;
 class MaterialThumbnailCache;
 class MaterialPreviewRenderFeature;
+class ProblemList;
 class ProjectFileSteps;
 struct ProjectDescriptor;
 struct RuntimeAssets;
@@ -34,8 +36,8 @@ struct RuntimeAssets;
 [[nodiscard]] ActionDefinition NewMaterialAction();
 
 // The materials workspace: the open material turned on a lit stage that fills
-// the window, its parameters on the card, the project's materials in an
-// explorer, and every open material on the document dial. Each open
+// the window, its parameters on the card, and every open material on the
+// document dial; materials and textures are found on the Shelf. Each open
 // material's working description is pushed into its resident material after
 // every change, so every view of it is live.
 class MaterialWorkspace final : public IWorkspace
@@ -48,6 +50,7 @@ public:
                       ProjectFileSteps* files,
                       PromptQueue& prompts,
                       ActionCatalog& catalog,
+                      ProblemList& problems,
                       AssetPictures& pictures);
     ~MaterialWorkspace() override;
 
@@ -74,7 +77,7 @@ private:
 
     // Browser/tab actions. New writes materials/<name>.smat under the first
     // content root, re-registers it, and opens it.
-    void OpenMaterial(const std::string& virtualPath);
+    bool OpenMaterial(const std::string& virtualPath);
     void CloseTab(std::size_t index);
     void SaveActiveMaterial();
     void CreateMaterial(const std::string& name);
@@ -102,6 +105,8 @@ private:
     // Pushes a description into a tab's resident material (in-place swap;
     // live handles keep working).
     void PushToResident(MaterialEditTab& tab, const MaterialDescription& description);
+    // What the last operation could not do, or nothing, as the workspace's problems.
+    void Report(std::string error);
 
     Engine& EngineRef;
     const ProjectDescriptor* Project = nullptr;
@@ -111,6 +116,8 @@ private:
     ProjectFileSteps* Files;
     MaterialDocumentSet Tabs;
     PromptQueue::Asker Prompts;
+    ProblemList& Problems;
+    std::string SetupProblem;
 
     MaterialPreviewRenderFeature* Preview = nullptr;
     ActionContext ActionHandlers;
@@ -131,7 +138,5 @@ private:
     AssetPictures& Pictures;
     Rect2d ContentRect{};
     bool Visible = false;
-    // A drag on the stage turns the material over until the button lets go.
-    bool Orbiting = false;
-
+    StageOrbitDrag Orbit;
 };

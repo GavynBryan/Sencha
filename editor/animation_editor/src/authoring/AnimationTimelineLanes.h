@@ -1,5 +1,7 @@
 #pragma once
 
+#include "authoring/AnimationLens.h"
+
 #include "workspaces/WorkspaceFacets.h"
 
 #include <anim/AnimTypes.h>
@@ -10,12 +12,13 @@
 #include <string_view>
 #include <vector>
 
+class AnimationClipEventsDocument;
 class AnimationPreviewSession;
 class AnimationSessionLab;
 
 // What a lane's span names when picked: a layer, and the rule that won it,
 // the flow section it played, the tick a blend began, a request's sequence,
-// or a lab run's tick; -1 for none.
+// or a lab run's tick; -1 for none. A span of a lens's lane names that lens.
 struct AnimationLanePick
 {
     enum class What : std::uint8_t
@@ -29,6 +32,7 @@ struct AnimationLanePick
     What Names = What::Rule;
     std::size_t Layer = 0;
     int Index = -1;
+    std::optional<AnimationLens> Lens;
 };
 
 // What won `layer` along the simulation's recorded ticks: a span per stretch
@@ -55,3 +59,10 @@ struct AnimationLanePick
 // holding `inspected` selected; and the client's pose residual, plotted.
 [[nodiscard]] std::vector<TimelineLane> AnimationLabLanes(const AnimationSessionLab& lab, AnimTick inspected);
 [[nodiscard]] std::optional<AnimationLanePick> ParseAnimationLaneKey(std::string_view key);
+
+// The clip's events as marks along a clip `duration` long, `picked` selected:
+// a diamond for gameplay, a circle for cosmetic, each dragged to retime it.
+[[nodiscard]] std::vector<TimelineMark> AnimationEventMarks(const AnimationClipEventsDocument& events,
+                                                            double duration, std::optional<std::uint32_t> picked);
+// The event a mark's key names.
+[[nodiscard]] std::optional<std::uint32_t> ParseAnimationEventMarkKey(std::string_view key);

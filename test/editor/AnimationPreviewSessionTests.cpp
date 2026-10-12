@@ -275,6 +275,8 @@ TEST(AnimationPreviewSession, ASavedScenarioReproducesTheTake)
     PreviewFixture fx;
     AnimationPreviewSession live(fx.Data, nullptr, &PreviewFixture::Vocabulary);
     ASSERT_TRUE(live.Open(PreviewFixture::Scenario()));
+    int edits = 0;
+    live.OnScenarioChanged([&edits] { ++edits; });
 
     live.SetFact("Speed", AnimationScenarioValue::FromNumber(3.0));
     live.SetFact("Stance", AnimationScenarioValue::FromName("stance.crouch"));
@@ -292,14 +294,12 @@ TEST(AnimationPreviewSession, ASavedScenarioReproducesTheTake)
     live.SetFact("Grounded", AnimationScenarioValue::FromBool(true));
     for (int i = 0; i < 4; ++i)
         live.Step();
-    EXPECT_TRUE(live.ScenarioModified());
+    EXPECT_EQ(edits, 7) << "every live edit is an edit to the scenario";
 
     const std::filesystem::path path =
         std::filesystem::temp_directory_path() / "sencha_preview_take.sanimscenario";
     std::string error;
     ASSERT_TRUE(SaveAnimationScenario(live.Scenario(), path.string(), error)) << error;
-    live.MarkScenarioSaved();
-    EXPECT_FALSE(live.ScenarioModified());
 
     std::vector<AnimDiagnostic> diagnostics;
     std::optional<AnimationScenario> loaded = LoadAnimationScenario(path.string(), diagnostics);
@@ -476,7 +476,6 @@ TEST(AnimationPreviewSession, FixtureTagsAreDeclaredAndRemovedLive)
     EXPECT_EQ(session.Tick(), 12u);
     EXPECT_TRUE(session.Rig()->Valid);
     EXPECT_EQ(session.Scenario().DeclaredTags, std::vector<std::string>{ "game.intent.dash" });
-    EXPECT_TRUE(session.ScenarioModified());
 
     EXPECT_FALSE(session.DeclareTag("game.intent.dash", &error));
     EXPECT_NE(error.find("already declared"), std::string::npos);

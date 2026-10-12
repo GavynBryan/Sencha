@@ -4,7 +4,8 @@
 #include "authoring/AnimationNameDeclarations.h"
 #include "authoring/AnimationNewFiles.h"
 #include "data/DataAssetFiles.h"
-#include "data/DataFieldEdit.h"
+#include "prompts/DocumentPrompts.h"
+#include "text/PathLeaf.h"
 
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
@@ -47,7 +48,7 @@ AnimationPreviewWorkspace::AnimationPreviewWorkspace(RuntimeAssets& assets, Docu
     , ClipEvents(assets, Sources)
     , Audition(assets)
     , Viewport(assets)
-    , Rig(assets, Tags.Vocabulary(vocabulary))
+    , Rig(assets, Sources, Tags.Vocabulary(vocabulary))
     , Vocabulary(Tags.Vocabulary(std::move(vocabulary)))
     , Lab(assets, Vocabulary)
     , ClipPlayers(authoringRoot)
@@ -91,8 +92,24 @@ void AnimationPreviewWorkspace::DataDocumentChanged(DataDocument& document, bool
         Rig.Simulation.Rebind();
 }
 
-bool AnimationPreviewWorkspace::OpenRig(const std::string& path)
+bool AnimationPreviewWorkspace::OpenRig(const std::string& path, DirtyDisposition disposition)
 {
+    if (Rig.Scenario.IsChanged())
+    {
+        const DocumentRef scenario = Rig.Scenario.Ref();
+        if (disposition == DirtyDisposition::Refuse)
+        {
+            Rig.Error = std::format("{} has unsaved changes.", Rig.Scenario.DocumentLabel(scenario.Key));
+            return false;
+        }
+        if (disposition == DirtyDisposition::Discard)
+            Rig.Scenario.DiscardDocument(scenario.Key);
+        else if (const DocumentSaveResult saved = Sources.Save(scenario); saved.Status != DocumentSaveStatus::Saved)
+        {
+            Rig.Error = std::format("{} was not saved: {}", Rig.Scenario.DocumentLabel(scenario.Key), saved.Error);
+            return false;
+        }
+    }
     if (!Rig.Open(path))
         return false;
     Viewport.LayerDisplay = {};
@@ -110,9 +127,48 @@ const DataAssetCache& AnimationPreviewWorkspace::DataCache() const
     return Assets.DataAssets;
 }
 
-bool AnimationPreviewWorkspace::ReloadScenario()
+void AnimationPreviewWorkspace::AppendDialDocuments(WorkspaceDocumentFacet& facet)
 {
-    return !Rig.Path.empty() && OpenRig(Rig.Path);
+    if (Rig.Scenario.IsOpen())
+        facet.Open.push_back({ .Key = DialKeyOf(Rig.Scenario.Ref()),
+                               .Label = Rig.Scenario.DocumentLabel(Rig.Scenario.Ref().Key),
+                               .Changed = Rig.Scenario.IsChanged() });
+    for (const std::unique_ptr<AnimationClipEventsDocument>& events : ClipEvents.Documents())
+        facet.Open.push_back({ .Key = std::string(kEventsDialKey) + events->ClipPath(),
+                               .Label = ClipEvents.DocumentLabel(events->ClipPath()),
+                               .Changed = events->IsDirty() });
+}
+
+std::string AnimationPreviewWorkspace::DialKeyOf(const DocumentRef& document) const
+{
+    if (document.Source == &ClipEvents)
+        return std::string(kEventsDialKey) + document.Key;
+    if (document.Source == &Rig.Scenario)
+        return std::string(kScenarioDialKey) + document.Key;
+    return document.Key;
+}
+
+bool AnimationPreviewWorkspace::RevertScenario()
+{
+    return Rig.Scenario.Revert(Rig.Error);
+}
+
+bool OpenRigAsking(AnimationPreviewWorkspace& workspace, PromptQueue::Asker& asker, const std::string& path,
+                   std::function<void()> opened)
+{
+    if (!workspace.Rig.Scenario.IsChanged())
+    {
+        const bool done = workspace.OpenRig(path);
+        if (done && opened)
+            opened();
+        return done;
+    }
+    AskAboutDocuments(asker, "Open " + std::string(PathLeaf(path)), { workspace.Rig.Scenario.Ref() },
+                      [&workspace, path, opened = std::move(opened)](DirtyDisposition disposition) {
+                          if (workspace.OpenRig(path, disposition) && opened)
+                              opened();
+                      });
+    return true;
 }
 
 const AnimationClipCache& AnimationPreviewWorkspace::Clips() const

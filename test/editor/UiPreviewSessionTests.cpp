@@ -7,6 +7,7 @@
 #include "authoring/PreviewReports.h"
 #include "authoring/SurfaceProperties.h"
 #include "authoring/UiPreviewSession.h"
+#include "documents/DocumentSourceSet.h"
 #include "properties/PropertyTree.h"
 
 #include <assets/runtime/RuntimeAssets.h>
@@ -278,16 +279,18 @@ TEST(UiPreviewSession, TheModelCardPublishesSamplesAndRedeclaresDeclarations)
     UiPreviewModel model = Fixture::Model();
     model.Arrays.push_back({ "entries", { "Resume", "Quit" } });
     ASSERT_TRUE(session.Open("asset://ui/doc.sui", model));
-    PreviewModelProperties card(session);
-    card.MarkSaved();
-    EXPECT_FALSE(card.Changed());
+    DocumentSourceSet journal;
+    SnapshotDocument sidecar(journal, PreviewModelSnapshots(session));
+    sidecar.Open(f.Root / "ui" / "doc.preview.json");
+    PreviewModelProperties card(session, sidecar);
+    EXPECT_FALSE(sidecar.IsChanged());
 
     const UiScreenHandle opened = session.OpenScreen();
     ASSERT_TRUE(card.BeginEdit("lists.0.items.1"));
     EXPECT_EQ(card.CommitEdit("lists.0.items.1", "Exit"), PropertyEditResult::Applied);
     EXPECT_EQ(session.Model().Arrays[0].Items[1], "Exit");
     EXPECT_EQ(session.OpenScreen(), opened) << "a sample publishes to the open screen";
-    EXPECT_TRUE(card.Changed());
+    EXPECT_TRUE(sidecar.IsChanged());
 
     ASSERT_TRUE(card.BeginEdit("properties.0.name"));
     EXPECT_EQ(card.CommitEdit("properties.0.name", "heading"), PropertyEditResult::Applied);
@@ -310,8 +313,59 @@ TEST(UiPreviewSession, TheModelCardPublishesSamplesAndRedeclaresDeclarations)
     EXPECT_EQ(session.Model().Arrays[0].Items, (std::vector<std::string>{ "Exit" }));
     EXPECT_EQ(card.Act("lists.4", "remove", {}), PropertyEditResult::Gone);
 
-    card.MarkSaved();
-    EXPECT_FALSE(card.Changed());
+    EXPECT_EQ(journal.Save(sidecar.Ref()).Status, DocumentSaveStatus::Saved);
+    EXPECT_FALSE(sidecar.IsChanged());
+    EXPECT_TRUE(std::filesystem::exists(f.Root / "ui" / "doc.preview.json"));
+}
+
+// The model is a document of the journal: an edit is a step undo takes back,
+// and while one is unsaved the model is among the changed documents.
+TEST(UiPreviewSession, AModelEditIsAStepUndoTakesBack)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    DocumentSourceSet journal;
+    SnapshotDocument sidecar(journal, PreviewModelSnapshots(session));
+    sidecar.Open(f.Root / "ui" / "doc.preview.json");
+    PreviewModelProperties card(session, sidecar);
+    EXPECT_TRUE(journal.ChangedDocuments().empty());
+
+    ASSERT_TRUE(card.BeginEdit("model.name"));
+    EXPECT_EQ(card.PreviewEdit("model.name", "other"), PropertyEditResult::Applied);
+    EXPECT_FALSE(journal.CanUndo()) << "a preview is not a step";
+    EXPECT_EQ(card.CommitEdit("model.name", "other"), PropertyEditResult::Unchanged) << "the preview already applied it";
+    EXPECT_EQ(card.Act("actions", "add", {}), PropertyEditResult::Applied);
+    ASSERT_EQ(journal.ChangedDocuments(), std::vector<DocumentRef>{ sidecar.Ref() })
+        << "closing UI Preview or the editor asks about it";
+
+    journal.Undo();
+    EXPECT_EQ(session.Model().Actions, std::vector<std::string>{ "pressed" });
+    EXPECT_EQ(session.Model().ModelName, "other");
+    journal.Undo();
+    EXPECT_EQ(session.Model().ModelName, "m");
+    EXPECT_TRUE(session.IsOpen()) << "the screen is remade on the model undo put back";
+    EXPECT_FALSE(sidecar.IsChanged());
+    journal.Redo();
+    EXPECT_EQ(session.Model().ModelName, "other");
+
+    sidecar.DiscardDocument(sidecar.Ref().Key);
+    EXPECT_EQ(session.Model().ModelName, "m");
+    EXPECT_TRUE(journal.ChangedDocuments().empty());
+}
+
+// With no sidecar to keep it in, the model is not edited at all.
+TEST(UiPreviewSession, AModelWithNowhereToBeSavedIsNotEdited)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    DocumentSourceSet journal;
+    SnapshotDocument sidecar(journal, PreviewModelSnapshots(session));
+    PreviewModelProperties card(session, sidecar);
+    EXPECT_FALSE(card.BeginEdit("model.name"));
+    EXPECT_EQ(card.Act("actions", "add", {}), PropertyEditResult::Refused);
+    EXPECT_EQ(session.Model().Actions.size(), 1u);
 }
 
 TEST(UiPreviewSession, AMissingBindingIsDeclaredFromTheCard)
@@ -321,7 +375,10 @@ TEST(UiPreviewSession, AMissingBindingIsDeclaredFromTheCard)
     ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
     f.Ui->Update();
     session.Poll();
-    BindingMissProperties misses(session);
+    DocumentSourceSet journal;
+    SnapshotDocument sidecar(journal, PreviewModelSnapshots(session));
+    sidecar.Open(f.Root / "ui" / "doc.preview.json");
+    BindingMissProperties misses(session, sidecar);
     std::vector<PropertyNode> nodes = misses.Nodes();
     const auto missing = std::ranges::find_if(nodes, [](const PropertyNode& node) { return node.Value == "missing"; });
     ASSERT_NE(missing, nodes.end());
@@ -334,4 +391,7 @@ TEST(UiPreviewSession, AMissingBindingIsDeclaredFromTheCard)
     session.Poll();
     for (const PropertyNode& node : misses.Nodes())
         EXPECT_NE(node.Value, "missing") << "declared, so no longer missing";
+    EXPECT_TRUE(sidecar.IsChanged()) << "a declaration is a step on the sidecar";
+    journal.Undo();
+    EXPECT_FALSE(session.Model().DeclaresProperty("missing"));
 }

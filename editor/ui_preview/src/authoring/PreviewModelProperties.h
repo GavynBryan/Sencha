@@ -2,30 +2,25 @@
 
 #include "authoring/UiPreviewModel.h"
 
+#include "documents/SnapshotDocument.h"
 #include "properties/PropertySource.h"
 
-#include <optional>
+#include <cstdint>
 
 class UiPreviewSession;
 
-//=============================================================================
-// PreviewModelProperties
-//
+// The session's model as its sidecar's text, for the journal.
+[[nodiscard]] SnapshotValue PreviewModelSnapshots(UiPreviewSession& session);
+
 // The preview model the open document is shown against, as properties: its
-// name and modality, each declared property with its kind, sample and whether
-// a control may write it, each sample list and row list with its items, and
-// each action. Samples publish to the open screen as they change; a change to
-// what is declared remakes the screen against the new model, since a
-// declaration is made before the document loads. Saving is the sidecar's.
-//=============================================================================
+// name and modality, each declared property, sample list, row list and action.
+// A sample publishes to the open screen; a change to what is declared remakes
+// the screen, since a declaration is made before the document loads. Every
+// edit is a step on `model`, the sidecar's document, and only while it is open.
 class PreviewModelProperties final : public IPropertySource
 {
 public:
-    explicit PreviewModelProperties(UiPreviewSession& session) : Session(session) {}
-
-    // The model is what its sidecar holds: just opened, or just saved.
-    void MarkSaved();
-    [[nodiscard]] bool Changed() const;
+    PreviewModelProperties(UiPreviewSession& session, SnapshotDocument& model) : Session(session), Model(model) {}
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
     bool BeginEdit(std::string_view key) override;
@@ -52,7 +47,5 @@ private:
     PropertyEditResult Show(Applied applied);
 
     UiPreviewSession& Session;
-    UiPreviewModel Saved;
-    // The model as an edit found it, put back if the edit is cancelled.
-    std::optional<UiPreviewModel> Before;
+    SnapshotDocument& Model;
 };

@@ -176,20 +176,6 @@ std::string EventLabel(const AnimationClipEvent& event)
     return event.Name.empty() ? std::format("Event {}", event.Key) : event.Name;
 }
 
-void PreviewEventTime(AnimationClipEventsSet& events, AnimationClipEventsDocument& document, std::uint32_t key,
-                      double time)
-{
-    const AnimationClipEvent* event = document.Find(key);
-    if (event == nullptr)
-        return;
-    if (!document.IsEditing())
-        document.BeginEdit(key);
-    AnimationClipEvent moved = *event;
-    moved.Time = static_cast<float>(std::clamp(time, 0.0, 1.0));
-    document.PreviewEdit(std::move(moved));
-    events.Changed(document);
-}
-
 AnimationClipEventsDocument* AnimationEventProperties::Document() const
 {
     return Workspace.ClipEvents.Active();
@@ -378,7 +364,7 @@ PropertyEditResult AnimationEventProperties::PreviewEdit(std::string_view key, s
     const std::optional<double> time = ParseNumber(value, 0.0, 1.0);
     if (!time)
         return PropertyEditResult::Refused;
-    PreviewEventTime(Workspace.ClipEvents, *document, event->Key, *time);
+    Workspace.ClipEvents.PreviewTime(*document, event->Key, *time);
     return PropertyEditResult::Applied;
 }
 
@@ -387,11 +373,8 @@ PropertyEditResult AnimationEventProperties::CommitEdit(std::string_view key, st
     if (key == "time")
     {
         const PropertyEditResult result = PreviewEdit(key, value);
-        if (AnimationClipEventsDocument* document = Document(); document != nullptr && document->IsEditing())
-        {
-            document->CommitEdit();
-            Workspace.ClipEvents.Changed(*document);
-        }
+        if (AnimationClipEventsDocument* document = Document())
+            Workspace.ClipEvents.CommitEdit(*document);
         return result;
     }
     if (key == "new_binding.file")
@@ -463,12 +446,8 @@ PropertyEditResult AnimationEventProperties::CommitEdit(std::string_view key, st
 
 void AnimationEventProperties::CancelEdit(std::string_view key)
 {
-    AnimationClipEventsDocument* document = Document();
-    if (key == "time" && document != nullptr && document->IsEditing())
-    {
-        document->CancelEdit();
-        Workspace.ClipEvents.Changed(*document);
-    }
+    if (AnimationClipEventsDocument* document = Document(); key == "time" && document != nullptr)
+        Workspace.ClipEvents.CancelEdit(*document);
 }
 
 PropertyEditResult AnimationEventProperties::Act(std::string_view key, std::string_view verb, std::string_view)
@@ -479,6 +458,7 @@ PropertyEditResult AnimationEventProperties::Act(std::string_view key, std::stri
     if (key == "binding" && verb == "open")
     {
         const std::string file = BindingFileOf(Workspace, event->Binding);
+        Workspace.DocumentError.clear();
         return !file.empty() && Workspace.Documents.OpenOrFocus(file, Workspace.DocumentError) != nullptr
                    ? PropertyEditResult::Applied
                    : PropertyEditResult::Refused;
@@ -487,6 +467,7 @@ PropertyEditResult AnimationEventProperties::Act(std::string_view key, std::stri
     {
         const std::vector<std::string> files = BindingFiles(Workspace);
         const std::string file = NewFile.empty() && !files.empty() ? files.front() : NewFile;
+        Workspace.DocumentError.clear();
         if (!CreateAnimationBinding(Workspace.Documents, Workspace.Rig.Simulation, file, NewKey, NewVerb,
                                     Workspace.DocumentError))
             return PropertyEditResult::Refused;
@@ -528,7 +509,6 @@ PropertyEditResult AnimationEventProperties::Replace(const std::function<bool(An
     AnimationClipEvent edited = *event;
     if (!edit(edited))
         return PropertyEditResult::Refused;
-    document->Replace(std::move(edited));
-    Workspace.ClipEvents.Changed(*document);
+    Workspace.ClipEvents.Replace(*document, std::move(edited));
     return PropertyEditResult::Applied;
 }

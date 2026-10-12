@@ -2,9 +2,9 @@
 
 #include "authoring/AnimationPreviewWorkspace.h"
 
+#include "properties/PropertyTree.h"
 #include "properties/SettingProperties.h"
 
-#include <charconv>
 #include <format>
 
 namespace
@@ -76,10 +76,9 @@ PropertyEditResult AnimationScenarioBatchProperties::Act(std::string_view key, s
         Runs = Workspace.RunScenarioBatch(verb == "rig");
         return PropertyEditResult::Applied;
     }
-    std::size_t index = 0;
-    if (verb != "open" || !key.starts_with(kRuns)
-        || std::from_chars(key.data() + kRuns.size(), key.data() + key.size(), index).ec != std::errc{}
-        || index >= Runs.size())
+    const std::optional<PropertyKeyIndex> run = ParsePropertyKeyIndex(key, kRuns);
+    if (verb != "open" || !run || run->Index >= Runs.size())
         return PropertyEditResult::Gone;
-    return Workspace.OpenRig(Runs[index].RigPath) ? PropertyEditResult::Applied : PropertyEditResult::Refused;
+    OpenRig(Runs[run->Index].RigPath);
+    return PropertyEditResult::Applied;
 }

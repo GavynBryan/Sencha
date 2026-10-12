@@ -1,9 +1,12 @@
 #include "authoring/AnimationLayerChoice.h"
 
+#include "authoring/AnimationNavigation.h"
+
 #include "properties/SettingProperties.h"
 
 #include <anim/AnimRigBinding.h>
 
+#include <optional>
 #include <vector>
 
 namespace
@@ -22,7 +25,13 @@ PropertyNode AnimationLayerChoice(const AnimBoundRig& rig, std::size_t layer)
     return ChoiceProperty("layer", "Layer", LayerNames(rig), layer);
 }
 
-std::optional<std::size_t> ParseAnimationLayerChoice(const AnimBoundRig& rig, std::string_view value)
+PropertyEditResult CommitAnimationLayerChoice(const AnimBoundRig& rig, AnimationNavigation& navigation,
+                                              std::string_view value)
 {
-    return ParseChoice(value, LayerNames(rig));
+    const std::optional<std::size_t> layer = ParseChoice(value, LayerNames(rig));
+    if (!layer)
+        return PropertyEditResult::Refused;
+    navigation.Layer = *layer;
+    navigation.Rule = -1;
+    return PropertyEditResult::Applied;
 }

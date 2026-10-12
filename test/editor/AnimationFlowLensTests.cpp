@@ -68,6 +68,7 @@ TEST_F(FlowLens, TheCardAndTheLaneFollowTheFlowALayerPlays)
     const std::optional<AnimationLanePick> pick = ParseAnimationLaneKey(lane.Spans[1].Key);
     ASSERT_TRUE(pick.has_value());
     EXPECT_EQ(pick->Names, AnimationLanePick::What::Section);
+    EXPECT_EQ(pick->Lens, AnimationLens::Flow) << "a pick on the lane brings up its lens";
     EXPECT_EQ(pick->Index, 1);
 }
 

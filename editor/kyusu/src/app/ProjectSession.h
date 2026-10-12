@@ -56,8 +56,8 @@ public:
     [[nodiscard]] ReferenceIndex& References() { return ContentReferences; }
     // What opening the project did to leave every file stating its own id,
     // and what it could not do.
-    [[nodiscard]] const AssetAdoption& Adoption() const { return Adoption_; }
-    [[nodiscard]] std::span<const std::string> AdoptionErrors() const { return AdoptionErrors_; }
+    [[nodiscard]] const AssetAdoption& Adoption() const { return Adopted; }
+    [[nodiscard]] std::span<const std::string> AdoptionErrors() const { return AdoptionFailures; }
     // Whether `file` is an asset, and so goes by an id (IsAssetFile).
     [[nodiscard]] bool IsAsset(const ProjectFile& file) const;
     // Moving, copying and trashing the project's files as journal steps; null
@@ -82,8 +82,8 @@ private:
     DataDocumentStore DataDocumentFiles;
     AssetPictures PictureSources;
     ReferenceIndex ContentReferences;
-    AssetAdoption Adoption_;
-    std::vector<std::string> AdoptionErrors_;
+    AssetAdoption Adopted;
+    std::vector<std::string> AdoptionFailures;
     std::unique_ptr<MaterialThumbnailCache> MaterialPictures;
     AssetPictures::Registration MaterialPictureFiles;
     AssetPictures::Registration TexturePictureFiles;

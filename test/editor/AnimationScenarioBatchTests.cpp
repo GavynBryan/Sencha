@@ -142,7 +142,7 @@ TEST(AnimationScenarioBatch, TheSheetRunsTheBatchAndOpensARunsRig)
     AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
     std::string error;
     ASSERT_TRUE(workspace.CreateRig(Prop("waver", "asset://meshes/man.blend#anim:Wave"), error)) << error;
-    AnimationScenarioBatchProperties sheet(workspace);
+    AnimationScenarioBatchProperties sheet(workspace, [&](const std::string& rig) { (void)workspace.OpenRig(rig); });
     std::vector<PropertyNode> nodes = sheet.Nodes();
     ASSERT_EQ(nodes.size(), 2u);
     EXPECT_EQ(nodes[1].Key, "runs.none");

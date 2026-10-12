@@ -128,6 +128,13 @@ struct AnimationScenario
     std::string_view assetPath,
     std::vector<AnimDiagnostic>& diagnostics);
 
+// The scenario as its file holds it.
+[[nodiscard]] std::string AnimationScenarioText(const AnimationScenario& scenario);
+// Null, with why in `diagnostics`, when `text` is not a scenario.
+[[nodiscard]] std::optional<AnimationScenario> ParseAnimationScenarioText(std::string_view text,
+                                                                          std::string_view assetPath,
+                                                                          std::vector<AnimDiagnostic>& diagnostics);
+
 [[nodiscard]] bool SaveAnimationScenario(const AnimationScenario& scenario,
                                          const std::string& filePath,
                                          std::string& error);

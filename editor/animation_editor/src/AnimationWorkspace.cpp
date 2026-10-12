@@ -33,13 +33,13 @@
 
 #include "actions/ActionOffer.h"
 #include "data/DataCreation.h"
+#include "data/DataDocumentSheet.h"
 #include "data/DataDocumentStore.h"
-#include "data/DataProperties.h"
-#include "prompts/DocumentPrompts.h"
 #include "documents/DocumentSourceSet.h"
 #include "presenters/ContentPicture.h"
 #include "presenters/PlanePad.h"
 #include "project/Project.h"
+#include "prompts/DocumentPrompts.h"
 #include "render/RenderFeatureDetach.h"
 #include "workspaces/WorkspaceWindow.h"
 
@@ -53,21 +53,15 @@
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
 #include <core/console/ConsoleTypes.h>
-#include <graphics/vulkan/GraphicsServices.h>
-#include <graphics/vulkan/Renderer.h>
 #include <ui/UiService.h>
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
-#include <array>
-#include <charconv>
-#include <cmath>
-#include <deque>
 #include <format>
-#include <optional>
-#include <cstdio>
+#include <initializer_list>
 #include <functional>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -76,21 +70,14 @@ namespace
 constexpr std::string_view kCommandOwner = "editor.animation";
 constexpr std::string_view kProblemSource = "animation";
 constexpr std::string_view kDeclareAction = "animation.declare_names";
-// How far a press may move and still pick rather than orbit, in pixels.
-constexpr float kPickSlop = 3.0f;
+constexpr std::string_view kCloseAction = "animation.document.close";
 constexpr float kPickRadius = 8.0f;
 constexpr float kJointRadius = 3.0f;
+constexpr float kPickedJointRadius = 5.0f;
 // The blendspace pad, in window pixels from the stage's corner.
 constexpr float kPadMargin = 16.0f;
 constexpr float kPadSize = 240.0f;
 constexpr float kPadLineHeight = 64.0f;
-constexpr float kPickedJointRadius = 5.0f;
-constexpr float kOrbitPerPixel = 0.01f;
-
-constexpr std::string_view kContentExplorer = "anim_content";
-constexpr std::string_view kRigExplorer = "anim_rigs";
-constexpr std::string_view kSkeletonExplorer = "anim_skeleton";
-
 } // namespace
 
 ActionDefinition NewRigAction()
@@ -99,10 +86,11 @@ ActionDefinition NewRigAction()
 }
 
 AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module,
-                                       DocumentSourceSet& sources, DataDocumentStore& store, PromptQueue& prompts,
-                                       ActionCatalog& catalog, ProblemList& problems,
+                                       DocumentSourceSet& sources, DataDocumentStore& store, ProjectFileSteps* files,
+                                       PromptQueue& prompts, ActionCatalog& catalog, ProblemList& problems,
                                        const DataSubtypeAuthoringSetup& authorings)
     : EngineRef(engine)
+    , Sources(sources)
     , Store(store)
     , Problems(problems)
     , Prompts(prompts.MakeAsker())
@@ -114,64 +102,52 @@ AnimationWorkspace::AnimationWorkspace(Engine& engine, const ProjectDescriptor& 
         project.ContentRoots.empty() ? std::filesystem::path{} : std::filesystem::path(project.ContentRoots.front());
     Workspace = std::make_unique<AnimationPreviewWorkspace>(engine.Content().Assets(), sources, store,
                                                             std::move(vocabulary), authoringRoot);
+    const auto openDocument = [this](const std::string& path) { (void)OpenDocument(path); };
+    const auto openRig = [this](const std::string& path) { OpenRig(path); };
     Bone = std::make_unique<AnimationBoneProperties>(*Workspace);
-    RuleCard = std::make_unique<AnimationRuleProperties>(*Workspace,
-                                                         [this](const std::string& path) { OpenDocument(path); });
+    RuleCard = std::make_unique<AnimationRuleProperties>(*Workspace, openDocument);
     LayerCard = std::make_unique<AnimationLayerProperties>(*Workspace);
-    FlowCard = std::make_unique<AnimationFlowProperties>(*Workspace,
-                                                         [this](const std::string& path) { OpenDocument(path); });
+    FlowCard = std::make_unique<AnimationFlowProperties>(*Workspace, openDocument);
     BlendCard = std::make_unique<AnimationBlendProperties>(*Workspace);
     RootMotionCard = std::make_unique<AnimationRootMotionProperties>(*Workspace);
     FactCard = std::make_unique<AnimationFactProperties>(*Workspace);
     RequestCard = std::make_unique<AnimationRequestProperties>(*Workspace);
     Admissions = std::make_unique<AnimationAdmissionProperties>(*Workspace);
     RigReport = std::make_unique<AnimationRigReportProperties>(*Workspace);
-    Batch = std::make_unique<AnimationScenarioBatchProperties>(*Workspace);
+    Batch = std::make_unique<AnimationScenarioBatchProperties>(*Workspace, openRig);
     Migration = std::make_unique<AnimationMigrationProperties>(*Workspace);
-    Trace = std::make_unique<AnimationTraceProperties>(*Workspace);
+    Trace = std::make_unique<AnimationTraceProperties>(openRig);
     LabSheet = std::make_unique<AnimationLabProperties>(*Workspace);
     Clock = std::make_unique<AnimationTimeline>(*Workspace);
     EventCard = std::make_unique<AnimationEventProperties>(*Workspace, [this] { return PickedEvent; });
     Audition = std::make_unique<AnimationAuditionProperties>(*Workspace);
     Scenario = std::make_unique<AnimationScenarioProperties>(*Workspace);
-    Creation = std::make_unique<AnimationRigCreation>(*Workspace, [this] { Subject = CardSubject::Stage; });
-    authorings(Authoring);
-    DocumentSheet = std::make_unique<DataProperties>(
-        Workspace->Documents, [this] { return Workspace->Documents.Active(); }, &Authoring);
+    Creation = std::make_unique<AnimationRigCreation>(*Workspace, [this] { ShowCard(CardSubject::Stage); });
+    Sheet = std::make_unique<DataDocumentSheet>(Workspace->Documents, prompts, authorings, files);
     NewDocument = std::make_unique<DataCreation>(
         [this] { return Workspace->Documents.CreatableSubtypes(); },
         [this](const std::string& subtype, const std::string& path, std::string& error) {
             if (Workspace->Documents.Create(subtype, path, error) == nullptr)
                 return false;
             Workspace->RefreshBrowser();
-            Subject = CardSubject::Document;
+            ShowCard(CardSubject::Document);
             return true;
         });
 
-    Renderer& renderer = engine.Graphics().MainRenderer;
-    Viewport = renderer.StageFeature(
-        std::make_unique<AnimationPreviewRenderFeature>(engine.Content().Assets(), Workspace->Viewport.Scene),
-        FeatureRegistration{ .Id = "animation_preview" });
-    std::vector<std::string_view> failed;
-    if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
-    {
-        std::fprintf(stderr, "[animation] the preview failed to set up; it will not draw\n");
-        Viewport = nullptr;
-    }
+    Viewport = AttachRenderFeature(
+        engine, std::make_unique<AnimationPreviewRenderFeature>(engine.Content().Assets(), Workspace->Viewport.Scene),
+        "animation_preview");
+    if (Viewport == nullptr)
+        SetupProblem = "The animation preview did not set up, so the stage will not draw.";
     if (UiService* ui = engine.TryUi(); ui != nullptr && ui->IsReady())
     {
         Picture = std::make_unique<ContentPicture>(*ui, "animation_stage");
         Pad = std::make_unique<PlanePad>(*ui);
     }
 
-    OfferAction(catalog, ActionHandlers, SaveAction(), { .Invoke = [this, &sources] {
-                    if (AnimationClipEventsDocument* events = AuditionedEvents();
-                        events != nullptr && ShowingLens(AnimationLens::Events))
-                        (void)sources.Save(Workspace->ClipEvents.RefOf(*events));
-                    else if (const DataDocument* active = Workspace->Documents.Active())
-                        (void)sources.Save(Workspace->Documents.RefOf(*active));
-                } });
     DefineActions(catalog);
+    DefineDocumentActions(catalog);
+    DefineExplorers(catalog);
     DefineTransport(catalog);
     DefineEventActions(catalog);
     DefineLenses(catalog);
@@ -188,7 +164,7 @@ AnimationWorkspace::~AnimationWorkspace()
     Pad.reset();
     Picture.reset();
     NewDocument.reset();
-    DocumentSheet.reset();
+    Sheet.reset();
     Creation.reset();
     Scenario.reset();
     Audition.reset();
@@ -237,29 +213,6 @@ void AnimationWorkspace::RegisterCommands()
             return result;
         },
     });
-    EngineRef.Console().Registry().RegisterCommand({
-        .Name = "animation.rig",
-        .Owner = std::string(kCommandOwner),
-        .Usage = "animation.rig <rig>",
-        .Help = "Open a rig and its scenario in the animation workspace.",
-        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
-            ConsoleResult result;
-            if (args.size() != 1)
-            {
-                result.Status = ConsoleStatus::InvalidArguments;
-                result.Error("expected <rig>");
-                return result;
-            }
-            if (!Workspace->OpenRig(args[0]))
-            {
-                result.Status = ConsoleStatus::ExecutionFailed;
-                result.Error(Workspace->Rig.Error);
-                return result;
-            }
-            result.Info("opened '" + args[0] + "'");
-            return result;
-        },
-    });
 }
 
 void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
@@ -277,21 +230,8 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
                              Subject == CardSubject::Lens && lens.StepBack && lens.StepBack())
                         return;
                     else
-                        Subject = CardSubject::Stage;
+                        ShowCard(CardSubject::Stage);
                 } });
-
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "explorer.anim_content", .Label = "Content", .Category = "Explore", .Icon = IconId::Folder,
-                  .DefaultChords = { { SDLK_C, {} } } },
-                {});
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "explorer.anim_rigs", .Label = "Rigs", .Category = "Explore", .Icon = IconId::Folder,
-                  .DefaultChords = { { SDLK_R, {} } } },
-                {});
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "explorer.anim_skeleton", .Label = "Skeleton", .Category = "Explore",
-                  .DefaultChords = { { SDLK_J, {} } } },
-                {});
     OfferAction(catalog, ActionHandlers,
                 { .Id = "animation.bind_pose", .Label = "Bind Pose", .Category = "Explore" },
                 { .Invoke = [this] { (void)Workspace->AuditionClip({}); } });
@@ -301,32 +241,7 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
     OfferAction(catalog, ActionHandlers,
                 { .Id = "animation.refresh", .Label = "Refresh Content", .Category = "Explore", .Icon = IconId::Refresh },
                 { .Invoke = [this] { Workspace->RefreshBrowser(); } });
-
-    const auto documentOpen = [this] { return Workspace->Documents.Active() != nullptr; };
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "animation.document.new", .Label = "New Animation Document", .Category = "File",
-                  .DefaultChords = { { SDLK_N, { .Ctrl = true } } } },
-                { .Invoke = [this] {
-                    NewDocument->Clear();
-                    ShowCard(CardSubject::NewDocument);
-                } });
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "animation.document.close", .Label = "Close Document", .Category = "File",
-                  .DefaultChords = { { SDLK_W, { .Ctrl = true } } } },
-                { .Invoke = [this] { CloseActiveDocument(); }, .Enabled = documentOpen });
-
-    const auto rigOpen = [this] { return Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty(); };
-    OfferAction(catalog, ActionHandlers, NewRigAction(),
-                { .Invoke = [this] {
-                    ShowCard(CardSubject::NewRig);
-                } });
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "animation.scenario.save", .Label = "Save Scenario", .Category = "Resource" },
-                { .Invoke = [this] { (void)Workspace->Rig.Save(); }, .Enabled = rigOpen });
-    OfferAction(catalog, ActionHandlers,
-                { .Id = "animation.scenario.revert", .Label = "Revert Scenario", .Category = "Resource" },
-                { .Invoke = [this] { (void)Workspace->ReloadScenario(); },
-                  .Enabled = [this, rigOpen] { return rigOpen() && Workspace->Rig.Simulation.ScenarioModified(); } });
+    OfferAction(catalog, ActionHandlers, NewRigAction(), { .Invoke = [this] { ShowCard(CardSubject::NewRig); } });
     OfferAction(catalog, ActionHandlers, { .Id = "animation.view.joints", .Label = "Joints", .Category = "View" },
                 { .Invoke = [this] { ShowJoints = !ShowJoints; }, .Checked = [this] { return ShowJoints; } });
     OfferAction(catalog, ActionHandlers, { .Id = "animation.view.path", .Label = "Path", .Category = "View" },
@@ -335,20 +250,138 @@ void AnimationWorkspace::DefineActions(ActionCatalog& catalog)
                   .Checked = [this] { return ShowPath; } });
     OfferAction(catalog, ActionHandlers,
                 { .Id = "timeline.source.audition", .Label = "Audition Clock", .Category = "View" },
-                { .Invoke = [this] { Workspace->Viewport.Source = AnimationViewportSource::Audition; },
+                { .Invoke = [this] {
+                      CancelRetime();
+                      Workspace->Viewport.Source = AnimationViewportSource::Audition;
+                  },
                   .Checked = [this] { return Workspace->Viewport.Source == AnimationViewportSource::Audition; } });
     OfferAction(catalog, ActionHandlers,
                 { .Id = "timeline.source.simulation", .Label = "Simulation Clock", .Category = "View" },
-                { .Invoke = [this] { Workspace->Viewport.Source = AnimationViewportSource::Simulation; },
+                { .Invoke = [this] {
+                      CancelRetime();
+                      Workspace->Viewport.Source = AnimationViewportSource::Simulation;
+                  },
                   .Enabled = [this] { return Workspace->Rig.Simulation.IsOpen(); },
                   .Checked = [this] { return Workspace->Viewport.Source == AnimationViewportSource::Simulation; } });
+}
+
+void AnimationWorkspace::DefineDocumentActions(ActionCatalog& catalog)
+{
+    OfferAction(catalog, ActionHandlers, SaveAction(), { .Invoke = [this] {
+                    if (const std::optional<DocumentRef> edited = EditedDocument())
+                        (void)Sources.Save(*edited);
+                } });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.document.new", .Label = "New Animation Document", .Category = "File",
+                  .DefaultChords = { { SDLK_N, { .Ctrl = true } } } },
+                { .Invoke = [this] {
+                    NewDocument->Clear();
+                    ShowCard(CardSubject::NewDocument);
+                } });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = std::string(kCloseAction), .Label = "Close Document", .Category = "File",
+                  .DefaultChords = { { SDLK_W, { .Ctrl = true } } } },
+                { .Invoke = [this] { CloseEditedDocument(); },
+                  .Enabled = [this] {
+                      const std::optional<DocumentRef> edited = EditedDocument();
+                      return edited && edited->Source != &Workspace->Rig.Scenario;
+                  } });
+    const auto rigOpen = [this] { return Workspace->Rig.Simulation.IsOpen() && Workspace->Rig.Scenario.IsOpen(); };
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.scenario.save", .Label = "Save Scenario", .Category = "Resource" },
+                { .Invoke = [this] { (void)Sources.Save(Workspace->Rig.Scenario.Ref()); }, .Enabled = rigOpen });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "animation.scenario.revert", .Label = "Revert Scenario", .Category = "Resource" },
+                { .Invoke = [this] { (void)Workspace->RevertScenario(); },
+                  .Enabled = [this, rigOpen] { return rigOpen() && Workspace->Rig.Scenario.IsChanged(); } });
+}
+
+void AnimationWorkspace::DefineExplorers(ActionCatalog& catalog)
+{
+    // A group opens or closes rather than being chosen.
+    const auto flipped = [](TreeOutline& outline, std::string_view key) {
+        const std::optional<AnimationExplorerItem> item = ParseAnimationExplorerKey(key);
+        if (!item || item->What != AnimationExplorerItem::Kind::Group)
+            return false;
+        outline.Flip(key);
+        return true;
+    };
+    ExplorerRows.Offer(
+        catalog, ActionHandlers,
+        { .Id = "anim_content", .Title = "Content", .Icon = IconId::Folder, .Chords = { { SDLK_C, {} } },
+          .Explore =
+              [this](const ExplorerQuery& query) {
+                  ExplorerPage page = ContentOutline.Explore(AnimationContentNodes(*Workspace), query);
+                  page.Actions = { "animation.bind_pose", "animation.neutral_material", "animation.refresh" };
+                  page.Empty = "No meshes, skeletons, clips or materials hold that.";
+                  return page;
+              },
+          .Choose =
+              [this, flipped](std::string_view key, ExplorerChoice, std::size_t) {
+                  if (flipped(ContentOutline, key))
+                      return;
+                  const std::optional<AnimationExplorerItem> item = ParseAnimationExplorerKey(key);
+                  if (!item)
+                      return;
+                  AnimationAuditionSelection& audition = Workspace->Audition;
+                  using Kind = AnimationExplorerItem::Kind;
+                  if (item->What == Kind::Mesh)
+                      (void)audition.SelectMesh(item->Path);
+                  else if (item->What == Kind::Skeleton)
+                      (void)audition.SelectSkeleton(item->Path);
+                  else if (item->What == Kind::Clip)
+                      (void)Workspace->AuditionClip(item->Path);
+                  else if (item->What == Kind::Material)
+                      (void)audition.SelectMaterial(item->Path);
+              } });
+    ExplorerRows.Offer(catalog, ActionHandlers,
+                       { .Id = "anim_rigs", .Title = "Rigs", .Icon = IconId::Folder, .Chords = { { SDLK_R, {} } },
+                         .Explore =
+                             [this](const ExplorerQuery& query) {
+                                 ExplorerPage page = RigOutline.Explore(AnimationRigNodes(*Workspace), query);
+                                 page.Actions = { NewRigAction().Id };
+                                 page.Empty = "No rig or animation document holds that.";
+                                 return page;
+                             },
+                         .Choose =
+                             [this, flipped](std::string_view key, ExplorerChoice, std::size_t) {
+                                 if (flipped(RigOutline, key))
+                                     return;
+                                 const std::optional<AnimationExplorerItem> item = ParseAnimationExplorerKey(key);
+                                 if (item && item->What == AnimationExplorerItem::Kind::Rig)
+                                     OpenRig(item->Path);
+                                 else if (item && item->What == AnimationExplorerItem::Kind::Document)
+                                     (void)OpenDocument(item->Path);
+                             } });
+    ExplorerRows.Offer(
+        catalog, ActionHandlers,
+        { .Id = "anim_skeleton", .Title = "Skeleton", .Chords = { { SDLK_J, {} } },
+          .Explore =
+              [this](const ExplorerQuery& query) {
+                  const SkeletonData& skeleton = Workspace->Audition.Session.Skeleton();
+                  ExplorerPage page = SkeletonOutline.Explore(
+                      AnimationSkeletonNodes(skeleton, Workspace->Rig.Navigation.Joint), query);
+                  page.Empty = skeleton.Joints.empty() ? "Nothing with a skeleton is auditioned."
+                                                       : "No joint's name holds that.";
+                  return page;
+              },
+          .Choose =
+              [this](std::string_view key, ExplorerChoice choice, std::size_t) {
+                  const std::optional<AnimationExplorerItem> item = ParseAnimationExplorerKey(key);
+                  if (!item)
+                      return;
+                  if (item->What == AnimationExplorerItem::Kind::Group || choice == ExplorerChoice::Open)
+                      SkeletonOutline.Flip(key);
+                  else if (item->What == AnimationExplorerItem::Kind::Joint)
+                      Workspace->Rig.Navigation.Joint = item->Joint;
+              } });
 }
 
 void AnimationWorkspace::DefineTransport(ActionCatalog& catalog)
 {
     const auto offer = [&](std::string id, std::string label, std::vector<KeyChord> chords, ActionHandler handler) {
         handler.Enabled = [this, enabled = std::move(handler.Enabled)] {
-            return !ShowingLabClock() && (!enabled || enabled());
+            return !Clock->IsLab() && (!enabled || enabled());
         };
         OfferAction(catalog, ActionHandlers,
                     { .Id = std::move(id), .Label = std::move(label), .Category = "Timeline",
@@ -377,7 +410,7 @@ void AnimationWorkspace::PublishProblems()
     std::vector<AnimDiagnostic> diagnostics = Workspace->Rig.Simulation.Problems();
     diagnostics.insert(diagnostics.end(), Workspace->Rig.LoadProblems.begin(), Workspace->Rig.LoadProblems.end());
     // A working document the preview refused runs on its last valid version.
-    std::vector<Problem> kept;
+    std::vector<Problem> kept = Sheet->Problems();
     for (const DataDocument* document : Workspace->Documents.Documents())
         if (const DataResidentState* state = Workspace->Documents.Store().ResidentStateOf(*document);
             state != nullptr && state->Status == DataResidentStatus::KeptLastValid)
@@ -385,9 +418,12 @@ void AnimationWorkspace::PublishProblems()
                              .Message = std::format("{}: {}", PathLeaf(document->VirtualPath()),
                                                     AnimationPreviewStatusText(state)),
                              .Document = Workspace->Documents.RefOf(*document) });
-    std::string signature = DeclareError;
+    for (const std::string* error : { &SetupProblem, &DeclareError, &Workspace->DocumentError, &Workspace->Rig.Error })
+        if (!error->empty())
+            kept.push_back({ .Severity = ProblemSeverity::Error, .Message = *error });
+    std::string signature;
     for (const Problem& problem : kept)
-        signature += problem.Message + "\n";
+        signature += problem.Message + problem.Location + "\n";
     for (const AnimDiagnostic& diagnostic : diagnostics)
         signature += diagnostic.AssetPath + diagnostic.FieldPath + diagnostic.Code + diagnostic.Message + "\n";
     if (signature == ProblemSignature)
@@ -398,8 +434,6 @@ void AnimationWorkspace::PublishProblems()
 
     std::vector<Problem> problems = AnimationRigProblems(diagnostics, Undeclared, Workspace->Documents.Store());
     problems.insert(problems.end(), std::make_move_iterator(kept.begin()), std::make_move_iterator(kept.end()));
-    if (!DeclareError.empty())
-        problems.push_back({ .Severity = ProblemSeverity::Error, .Message = DeclareError });
     Problems.Publish(kProblemSource, std::move(problems));
 }
 
@@ -412,34 +446,39 @@ bool AnimationWorkspace::RevealProblem(const Problem& problem)
     }
     if (!problem.Document || problem.Document->Source != &Workspace->Documents.Store())
         return false;
-    OpenDocument(problem.Document->Key);
-    return true;
+    return OpenDocument(problem.Document->Key);
 }
-
-namespace
-{
-struct RunRow
-{
-    std::string_view Action;
-    std::string_view Label;
-};
-} // namespace
 
 void AnimationWorkspace::DefineRuns(ActionCatalog& catalog)
 {
-    const std::array<std::pair<RunKind, RunRow>, 4> runs{ {
-        { RunKind::Lab, { "animation.run.lab", "Session Lab" } },
-        { RunKind::Batch, { "animation.run.batch", "Scenario Batch" } },
-        { RunKind::Migration, { "animation.run.migration", "Clip Player Migration" } },
-        { RunKind::Trace, { "animation.run.trace", "Imported Trace" } },
-    } };
-    for (const auto& [kind, row] : runs)
+    Runs = {
+        { .Kind = RunKind::Lab, .Action = "animation.run.lab", .Label = "Session Lab", .Title = "Session lab",
+          .Source = LabSheet.get() },
+        { .Kind = RunKind::Batch, .Action = "animation.run.batch", .Label = "Scenario Batch",
+          .Title = "Scenario batch", .Source = Batch.get() },
+        { .Kind = RunKind::Migration, .Action = "animation.run.migration", .Label = "Clip Player Migration",
+          .Title = "Clip player migration", .Source = Migration.get(),
+          .Opened = [this] { Migration->ScanOnce(); } },
+        { .Kind = RunKind::Trace, .Action = "animation.run.trace", .Label = "Imported Trace",
+          .Title = "Imported trace", .Source = Trace.get() },
+    };
+    for (const RunView& run : Runs)
         OfferAction(catalog, ActionHandlers,
-                    { .Id = std::string(row.Action), .Label = std::string(row.Label), .Category = "Run" },
-                    { .Invoke = [this, which = kind] {
-                         ShownRun = which;
-                         ShowCard(CardSubject::Run);
-                     } });
+                    { .Id = std::string(run.Action), .Label = std::string(run.Label), .Category = "Run" },
+                    { .Invoke = [this, kind = run.Kind] { ShowRun(kind); } });
+}
+
+const AnimationWorkspace::RunView& AnimationWorkspace::RunOf(RunKind kind) const
+{
+    return *std::ranges::find(Runs, kind, &RunView::Kind);
+}
+
+void AnimationWorkspace::ShowRun(RunKind kind)
+{
+    ShownRun = kind;
+    if (const RunView& run = RunOf(kind); run.Opened)
+        run.Opened();
+    ShowCard(CardSubject::Run);
 }
 
 void AnimationWorkspace::DefineLenses(ActionCatalog& catalog)
@@ -466,6 +505,7 @@ void AnimationWorkspace::DefineLensViews()
     using Card = std::optional<WorkspaceSelectionFacet>;
     const auto simulation = [this]() -> AnimationPreviewSession& { return Workspace->Rig.Simulation; };
     const auto navigation = [this]() -> AnimationNavigation& { return Workspace->Rig.Navigation; };
+    const auto onLayer = [navigation](const AnimationLanePick& pick) { navigation().Layer = pick.Layer; };
     LensViews = {
         { .Lens = AnimationLens::Rules, .Action = "animation.lens.rules", .Label = "Rules",
           .Hint = "Inspect a rule to see why it won or lost; the deck's lane shows what won the layer",
@@ -476,6 +516,10 @@ void AnimationWorkspace::DefineLensViews()
           },
           .Lanes = [=](std::vector<TimelineLane>& lanes) {
               lanes.push_back(AnimationDecisionLane(simulation(), navigation().Layer, navigation().Rule));
+          },
+          .Picked = [=](const AnimationLanePick& pick) {
+              navigation().Layer = pick.Layer;
+              navigation().Rule = pick.Index;
           },
           .StepBack = [=] {
               if (navigation().Rule < 0)
@@ -504,7 +548,8 @@ void AnimationWorkspace::DefineLensViews()
           },
           .Lanes = [=](std::vector<TimelineLane>& lanes) {
               lanes.push_back(AnimationFlowLane(simulation(), navigation().Layer));
-          } },
+          },
+          .Picked = onLayer },
         { .Lens = AnimationLens::Blends, .Action = "animation.lens.blends", .Label = "Blends",
           .Hint = "Drag the pad to move a blendspace; the deck's lane shows each blend as long as it ran",
           .Card = [this] {
@@ -514,7 +559,9 @@ void AnimationWorkspace::DefineLensViews()
           },
           .Lanes = [=](std::vector<TimelineLane>& lanes) {
               lanes.push_back(AnimationBlendLane(simulation(), navigation().Layer));
-          } },
+          },
+          .Picked = onLayer,
+          .Pad = true },
         { .Lens = AnimationLens::RootMotion, .Action = "animation.lens.root_motion", .Label = "Root motion",
           .Hint = "Move the character to see how far its clips carry it; the deck plots carried against achieved",
           .Card = [this] {
@@ -536,7 +583,8 @@ void AnimationWorkspace::DefineLensViews()
           .Card = [this] {
               return Card{ { .Title = "Requests", .Sections = { { .Heading = {}, .Source = RequestCard.get() } } } };
           },
-          .Lanes = [=](std::vector<TimelineLane>& lanes) { lanes.push_back(AnimationRequestLane(simulation())); } },
+          .Lanes = [=](std::vector<TimelineLane>& lanes) { lanes.push_back(AnimationRequestLane(simulation())); },
+          .Picked = onLayer },
         { .Lens = AnimationLens::Events, .Action = "animation.lens.events", .Label = "Events",
           .Hint = "E adds an event at the playhead",
           .Card = [this]() -> Card {
@@ -545,10 +593,25 @@ void AnimationWorkspace::DefineLensViews()
                   return std::nullopt;
               const AnimationClipEvent* event = PickedEvent ? document->Find(*PickedEvent) : nullptr;
               return WorkspaceSelectionFacet{
-                  .Title = event == nullptr ? std::string(PathLeaf(document->ClipPath())) + " events" : EventLabel(*event),
-                  .Actions = { "animation.event.add", "edit.delete", "file.save" },
+                  .Title = event == nullptr ? Workspace->ClipEvents.DocumentLabel(document->ClipPath())
+                                            : EventLabel(*event),
+                  .Actions = { "animation.event.add", "edit.delete", "file.save", std::string(kCloseAction) },
                   .Sections = { { .Heading = {}, .Source = EventCard.get() } },
                   .Details = { { .Heading = "Admissions", .Source = Admissions.get() } } };
+          },
+          .Marks = [this](std::vector<TimelineMark>& marks, double end) {
+              if (const AnimationClipEventsDocument* document = AuditionedEvents())
+                  marks = AnimationEventMarks(*document, end, PickedEvent);
+          },
+          .Document = [this]() -> std::optional<DocumentRef> {
+              const AnimationClipEventsDocument* document = AuditionedEvents();
+              return document != nullptr ? std::optional(Workspace->ClipEvents.RefOf(*document)) : std::nullopt;
+          },
+          .CanDelete = [this] { return AuditionedEvents() != nullptr && PickedEvent.has_value(); },
+          .Delete = [this] {
+              if (AnimationClipEventsDocument* document = AuditionedEvents(); document != nullptr && PickedEvent)
+                  Workspace->ClipEvents.Remove(*document, *PickedEvent);
+              PickedEvent.reset();
           },
           .StepBack = [this] {
               if (!PickedEvent)
@@ -576,7 +639,6 @@ WorkspaceOperationFacet AnimationWorkspace::Operation()
 
 void AnimationWorkspace::DefineEventActions(ActionCatalog& catalog)
 {
-    const auto events = [this] { return !Clock->IsSimulation() && AuditionedEvents() != nullptr; };
     OfferAction(catalog, ActionHandlers,
                 { .Id = "animation.event.add", .Label = "Add Event at Playhead", .Category = "Edit",
                   .DefaultChords = { { SDLK_E, {} } } },
@@ -590,21 +652,19 @@ void AnimationWorkspace::DefineEventActions(ActionCatalog& catalog)
                           event.Binding = rig->Bindings.All().front().KeyText;
                       else
                           event.Binding = "anim.event";
-                      PickedEvent = document->Add(std::move(event));
-                      Workspace->ClipEvents.Changed(*document);
+                      PickedEvent = Workspace->ClipEvents.Add(*document, std::move(event));
                       ShowLens(AnimationLens::Events);
                   },
-                  .Enabled = events });
+                  .Enabled = [this] { return !Clock->IsSimulation() && AuditionedEvents() != nullptr; } });
     OfferAction(catalog, ActionHandlers, DeleteAction(),
                 { .Invoke = [this] {
-                      AnimationClipEventsDocument* document = AuditionedEvents();
-                      if (document == nullptr || !PickedEvent)
-                          return;
-                      document->Remove(*PickedEvent);
-                      PickedEvent.reset();
-                      Workspace->ClipEvents.Changed(*document);
+                      if (const LensView& lens = ViewOf(ShownLens); Subject == CardSubject::Lens && lens.Delete)
+                          lens.Delete();
                   },
-                  .Enabled = [this] { return ShowingLens(AnimationLens::Events) && PickedEvent.has_value(); } });
+                  .Enabled = [this] {
+                      const LensView& lens = ViewOf(ShownLens);
+                      return Subject == CardSubject::Lens && lens.CanDelete && lens.CanDelete();
+                  } });
 }
 
 AnimationClipEventsDocument* AnimationWorkspace::AuditionedEvents() const
@@ -620,38 +680,28 @@ void AnimationWorkspace::FollowAuditionedClip()
         return;
     FollowedClip = clip;
     PickedEvent.reset();
-    if (!clip.empty() && MeshClipSourceOf(clip).has_value())
-    {
-        Workspace->Sources.CancelEdits();
-        std::string error;
-        (void)Workspace->ClipEvents.OpenOrFocus(clip, error);
-    }
+    if (clip.empty() || !MeshClipSourceOf(clip).has_value())
+        return;
+    CancelRetime();
+    Workspace->DocumentError.clear();
+    (void)Workspace->ClipEvents.OpenOrFocus(clip, Workspace->DocumentError);
 }
 
-bool AnimationWorkspace::ShowingLabClock() const
+void AnimationWorkspace::CancelRetime()
 {
-    return Subject == CardSubject::Run && ShownRun == RunKind::Lab && LabSheet->Timeline().has_value();
+    Workspace->ClipEvents.CancelDocumentEdits();
 }
 
 WorkspaceTimelineFacet AnimationWorkspace::Timeline()
 {
-    if (Subject == CardSubject::Run && ShownRun == RunKind::Lab)
-        if (std::optional<WorkspaceTimelineFacet> lab = LabSheet->Timeline())
-            return *lab;
     WorkspaceTimelineFacet facet = Clock->Facet();
-    if (const LensView& lens = ViewOf(ShownLens); lens.Lanes && Clock->IsSimulation())
-        lens.Lanes(facet.Lanes);
-    const AnimationClipEventsDocument* document = Clock->IsSimulation() ? nullptr : AuditionedEvents();
-    if (document == nullptr || facet.End <= 0.0)
+    if (Clock->IsLab())
         return facet;
-    for (const AnimationClipEvent& event : document->Events())
-        facet.Marks.push_back({ .Key = std::to_string(event.Key),
-                                .Time = static_cast<double>(event.Time) * facet.End,
-                                .Label = EventLabel(event),
-                                .Shape = event.Scope == AnimEventScope::Gameplay ? TimelineMarkShape::Diamond
-                                                                                  : TimelineMarkShape::Round,
-                                .Selected = PickedEvent == event.Key,
-                                .Movable = true });
+    const LensView& lens = ViewOf(ShownLens);
+    if (lens.Lanes && Clock->IsSimulation())
+        lens.Lanes(facet.Lanes);
+    if (lens.Marks && !Clock->IsSimulation() && facet.End > 0.0)
+        lens.Marks(facet.Marks, facet.End);
     return facet;
 }
 
@@ -659,68 +709,56 @@ void AnimationWorkspace::PickOnTimeline(std::string_view key)
 {
     if (const std::optional<AnimationLanePick> pick = ParseAnimationLaneKey(key))
     {
-        if (pick->Names == AnimationLanePick::What::LabTick)
+        if (!pick->Lens)
         {
-            LabSheet->InspectTick(static_cast<AnimTick>(std::max(pick->Index, 0)));
+            Clock->InspectLabTick(static_cast<AnimTick>(std::max(pick->Index, 0)));
             return;
         }
-        AnimationNavigation& navigation = Workspace->Rig.Navigation;
-        navigation.Layer = pick->Layer;
-        if (pick->Names == AnimationLanePick::What::Section)
-        {
-            ShowLens(AnimationLens::Flow);
-            return;
-        }
-        if (pick->Names == AnimationLanePick::What::Blend)
-        {
-            ShowLens(AnimationLens::Blends);
-            return;
-        }
-        if (pick->Names == AnimationLanePick::What::Request)
-        {
-            ShowLens(AnimationLens::Requests);
-            return;
-        }
-        navigation.Rule = pick->Index;
-        ShowLens(AnimationLens::Rules);
+        if (const LensView& lens = ViewOf(*pick->Lens); lens.Picked)
+            lens.Picked(*pick);
+        ShowLens(*pick->Lens);
         return;
     }
-    std::uint32_t event = 0;
-    if (std::from_chars(key.data(), key.data() + key.size(), event).ec != std::errc{})
-        return;
-    PickedEvent = event;
-    ShowLens(AnimationLens::Events);
+    if (const std::optional<std::uint32_t> event = ParseAnimationEventMarkKey(key))
+    {
+        PickedEvent = event;
+        ShowLens(AnimationLens::Events);
+    }
 }
 
 void AnimationWorkspace::MoveMark(std::string_view key, double time, TimelineDrag drag)
 {
     AnimationClipEventsDocument* document = AuditionedEvents();
     const double duration = Workspace->Audition.Session.Duration();
-    std::uint32_t eventKey = 0;
-    if (document == nullptr || duration <= 0.0
-        || std::from_chars(key.data(), key.data() + key.size(), eventKey).ec != std::errc{})
+    const std::optional<std::uint32_t> event = ParseAnimationEventMarkKey(key);
+    if (document == nullptr || duration <= 0.0 || !event)
         return;
-    if (drag == TimelineDrag::Begin)
+    switch (drag)
     {
-        PickOnTimeline(key);
+    case TimelineDrag::Begin:
         Workspace->Sources.CancelEdits();
-    }
-    else if (document->EditingKey() != eventKey)
+        PickOnTimeline(key);
+        break;
+    case TimelineDrag::Move:
+        if (document->EditingKey() != event)
+            return;
+        break;
+    case TimelineDrag::End:
+        if (document->EditingKey() != event)
+            return;
+        Workspace->ClipEvents.PreviewTime(*document, *event, time / duration);
+        Workspace->ClipEvents.CommitEdit(*document);
         return;
-    PreviewEventTime(Workspace->ClipEvents, *document, eventKey, time / duration);
-    if (drag == TimelineDrag::End && document->IsEditing())
-    {
-        document->CommitEdit();
-        Workspace->ClipEvents.Changed(*document);
+    case TimelineDrag::Cancel:
+        Workspace->ClipEvents.CancelEdit(*document);
+        return;
     }
+    Workspace->ClipEvents.PreviewTime(*document, *event, time / duration);
 }
 
 void AnimationWorkspace::Scrub(double time, TimelineDrag)
 {
-    if (ShowingLabClock())
-        LabSheet->InspectAt(time);
-    else
-        Clock->Scrub(time);
+    Clock->Scrub(time);
 }
 
 void AnimationWorkspace::Tick(FrameUpdateContext& ctx)
@@ -731,9 +769,8 @@ void AnimationWorkspace::Tick(FrameUpdateContext& ctx)
         return;
     FollowAuditionedClip();
     PublishProblems();
-    if (const DataDocument* document = Workspace->Documents.Active(); document != nullptr && Subject == CardSubject::Document)
-        if (IDataSubtypeAuthoring* authoring = Authoring.Find(document->Subtype()))
-            authoring->Update(*document, Workspace->Documents);
+    if (Subject == CardSubject::Document)
+        Sheet->Update();
     Workspace->Advance(ctx.WallDeltaSeconds);
     Workspace->ExtractViewport();
     // A new subject on the stage is framed once it can be: a mesh, or a skeleton alone.
@@ -749,10 +786,10 @@ void AnimationWorkspace::ShowStage()
     if (Picture == nullptr || Viewport == nullptr)
         return;
     Picture->Place(ContentRect);
+    if (!CanShowStage(ContentRect))
+        return;
     const float width = ContentRect.Width();
     const float height = ContentRect.Height();
-    if (width < 8.0f || height < 8.0f)
-        return;
     Viewport->Show(VkExtent2D{ static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height) },
                    Picture->Image());
 
@@ -783,15 +820,14 @@ void AnimationWorkspace::ShowStage()
 void AnimationWorkspace::ShowPad()
 {
     const std::optional<AnimationBlendspaceView> space =
-        ShownLens == AnimationLens::Blends && Clock->IsSimulation()
+        Subject == CardSubject::Lens && ViewOf(ShownLens).Pad && Clock->IsSimulation()
             ? AnimationBlendspaceOn(Workspace->Rig.Simulation, Workspace->Rig.Navigation.Layer)
             : std::nullopt;
     if (Pad == nullptr || !space)
     {
         if (Pad != nullptr)
             Pad->Hide();
-        if (Drag == StageDrag::Pad)
-            Drag = StageDrag::None;
+        ReleasePad(false);
         return;
     }
     std::vector<PlanePadMark> marks;
@@ -804,7 +840,7 @@ void AnimationWorkspace::ShowPad()
                         Vec2d(kPadSize, line ? kPadLineHeight : kPadSize));
     std::string caption = space->AxisFact[0];
     if (!line)
-        caption += " Ã " + space->AxisFact[1];
+        caption += " \xC3\x97 " + space->AxisFact[1];
     Pad->Show(region, marks, Vec2d(static_cast<float>(space->U), static_cast<float>(space->V)), std::move(caption),
               line);
 }
@@ -813,6 +849,17 @@ void AnimationWorkspace::DragPadTo(Vec2d windowPoint)
 {
     const Vec2d at = Pad->ValueAt(windowPoint);
     (void)PlaceAnimationBlendspacePoint(Workspace->Rig.Simulation, Workspace->Rig.Navigation.Layer, at.X, at.Y);
+}
+
+void AnimationWorkspace::ReleasePad(bool keep)
+{
+    if (!PadHeld)
+        return;
+    PadHeld = false;
+    if (keep)
+        Workspace->Rig.Scenario.CommitEdit();
+    else
+        Workspace->Rig.Scenario.CancelEdit();
 }
 
 void AnimationWorkspace::PickJointAt(Vec2d windowPoint)
@@ -825,8 +872,9 @@ void AnimationWorkspace::PickJointAt(Vec2d windowPoint)
 void AnimationWorkspace::Interrupt()
 {
     Workspace->Audition.Session.Pause();
+    ReleasePad(false);
     Workspace->Sources.CancelEdits();
-    Drag = StageDrag::None;
+    Orbit.Cancel();
 }
 
 void AnimationWorkspace::SetVisible(bool visible)
@@ -848,6 +896,11 @@ void AnimationWorkspace::MoveTo(const WorkspaceWindow& window)
         Pad->MoveTo(window.Content);
 }
 
+bool AnimationWorkspace::ClaimPlatformEvent(PlatformEventContext& ctx)
+{
+    return Subject == CardSubject::Document && Sheet->ClaimPlatformEvent(ctx.Event);
+}
+
 void AnimationWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
 {
     const SDL_Event& event = ctx.Event;
@@ -862,48 +915,40 @@ void AnimationWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
     switch (event.type)
     {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (event.button.button == SDL_BUTTON_LEFT && onStage(event.button.x, event.button.y)
-            && Pad != nullptr && Pad->Contains(Vec2d(event.button.x, event.button.y)))
+        if (event.button.button != SDL_BUTTON_LEFT || !onStage(event.button.x, event.button.y))
+            break;
+        if (Pad != nullptr && Pad->Contains(Vec2d(event.button.x, event.button.y)))
         {
-            Drag = StageDrag::Pad;
+            // The whole drag is one edit to the scenario.
+            Workspace->Rig.Scenario.BeginEdit();
+            PadHeld = true;
             DragPadTo(Vec2d(event.button.x, event.button.y));
-            ctx.Handled = true;
         }
-        else if (event.button.button == SDL_BUTTON_LEFT
-                 && onStage(event.button.x, event.button.y))
-        {
-            Drag = StageDrag::Pressed;
-            PressedAt = Vec2d(event.button.x, event.button.y);
-            ctx.Handled = true;
-        }
+        else
+            Orbit.Press(Vec2d(event.button.x, event.button.y));
+        ctx.Handled = true;
         break;
     case SDL_EVENT_MOUSE_MOTION:
-        if (Drag == StageDrag::Pad)
+        if (PadHeld)
         {
             DragPadTo(Vec2d(event.motion.x, event.motion.y));
             ctx.Handled = true;
         }
-        if (Drag == StageDrag::Pressed)
+        else if (const std::optional<StageOrbitDrag::Turn> turn =
+                     Orbit.Move(Vec2d(event.motion.x, event.motion.y), Vec2d(event.motion.xrel, event.motion.yrel)))
         {
-            const Vec2d moved = Vec2d(event.motion.x, event.motion.y) - PressedAt;
-            if (moved.X * moved.X + moved.Y * moved.Y > kPickSlop * kPickSlop)
-                Drag = StageDrag::Orbiting;
-        }
-        if (Drag == StageDrag::Orbiting)
-        {
-            // Turntable feel: drag right orbits right, drag up orbits above.
-            Viewport->Orbit(event.motion.xrel * kOrbitPerPixel, -event.motion.yrel * kOrbitPerPixel);
+            Viewport->Orbit(turn->Yaw, turn->Pitch);
             ctx.Handled = true;
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
-        if (event.button.button == SDL_BUTTON_LEFT && Drag != StageDrag::None)
-        {
-            if (Drag == StageDrag::Pressed && ShowJoints)
-                PickJointAt(Vec2d(event.button.x, event.button.y));
-            Drag = StageDrag::None;
-            ctx.Handled = true;
-        }
+        if (event.button.button != SDL_BUTTON_LEFT || (!PadHeld && !Orbit.IsHeld()))
+            break;
+        if (PadHeld)
+            ReleasePad(true);
+        else if (Orbit.Release() && ShowJoints)
+            PickJointAt(Vec2d(event.button.x, event.button.y));
+        ctx.Handled = true;
         break;
     case SDL_EVENT_MOUSE_WHEEL:
         if (onStage(event.wheel.mouse_x, event.wheel.mouse_y))
@@ -917,98 +962,129 @@ void AnimationWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
     }
 }
 
+std::optional<DocumentRef> AnimationWorkspace::EditedDocument() const
+{
+    if (Subject == CardSubject::Lens)
+        if (const LensView& lens = ViewOf(ShownLens); lens.Document)
+            return lens.Document();
+    if (Subject == CardSubject::Document)
+        return Sheet->ActiveRef();
+    if (Subject == CardSubject::Stage && Workspace->Rig.Scenario.IsOpen())
+        return Workspace->Rig.Scenario.Ref();
+    return std::nullopt;
+}
+
 bool AnimationWorkspace::OwnsDocument(const DocumentRef& document) const
 {
-    if (document.Source == &Workspace->ClipEvents)
-        return true;
-    return document.Source == &Store && Workspace->Documents.IndexOf(document.Key).has_value();
+    return document.Source == &Workspace->ClipEvents || document.Source == &Workspace->Rig.Scenario
+        || Sheet->Owns(document);
 }
 
 void AnimationWorkspace::RevealDocument(const DocumentRef& document)
 {
-    if (document.Source == &Store)
-        Workspace->Documents.Reveal(document.Key);
+    ShowDocument(Workspace->DialKeyOf(document));
 }
 
 WorkspaceDocumentFacet AnimationWorkspace::Document() const
 {
     WorkspaceDocumentFacet facet;
-    if (const AnimationClipEventsDocument* events = AuditionedEvents())
-        facet.Open.push_back({ .Key = "events:" + events->ClipPath(),
-                               .Label = std::string(PathLeaf(events->ClipPath())) + " events",
-                               .Changed = events->IsDirty() });
-    for (const DataDocument* document : Workspace->Documents.Documents())
-        facet.Open.push_back({ .Key = document->VirtualPath(),
-                               .Label = std::string(PathLeaf(document->VirtualPath())),
-                               .Changed = document->IsDirty() });
-    if (const DataDocument* active = Workspace->Documents.Active())
+    Workspace->AppendDialDocuments(facet);
+    Sheet->AppendOpen(facet);
+    if (const std::optional<DocumentRef> edited = EditedDocument())
     {
-        facet.Label = std::string(PathLeaf(active->VirtualPath()));
-        facet.Changed = active->IsDirty();
-        facet.Active = active->VirtualPath();
+        const std::string key = Workspace->DialKeyOf(*edited);
+        if (const auto open = std::ranges::find(facet.Open, key, &WorkspaceOpenDocument::Key); open != facet.Open.end())
+        {
+            facet.Label = open->Label;
+            facet.Changed = open->Changed;
+            facet.Active = key;
+        }
     }
     return facet;
 }
 
 void AnimationWorkspace::ShowDocument(std::string_view key)
 {
-    if (key.starts_with("events:"))
+    if (key.starts_with(kEventsDialKey))
     {
+        const std::string clip(key.substr(kEventsDialKey.size()));
+        if (Workspace->Audition.ClipPath != clip)
+            (void)Workspace->AuditionClip(clip);
+        Workspace->DocumentError.clear();
+        (void)Workspace->ClipEvents.OpenOrFocus(clip, Workspace->DocumentError);
         PickedEvent.reset();
         ShowLens(AnimationLens::Events);
         return;
     }
-    if (const std::optional<std::size_t> index = Workspace->Documents.IndexOf(key))
-        Workspace->Documents.SetActive(*index);
-    ShowCard(CardSubject::Document);
+    if (key.starts_with(kScenarioDialKey))
+    {
+        ShowCard(CardSubject::Stage);
+        return;
+    }
+    if (Sheet->Show(key))
+        ShowCard(CardSubject::Document);
 }
 
 void AnimationWorkspace::ShowCard(CardSubject subject)
 {
     Workspace->Rig.Navigation.Joint = -1;
     Subject = subject;
+    Clock->ShowLab(Subject == CardSubject::Run && ShownRun == RunKind::Lab);
 }
 
 void AnimationWorkspace::ShowLens(AnimationLens lens)
 {
+    if (lens != ShownLens)
+        CancelRetime();
     ShownLens = lens;
     ShowCard(CardSubject::Lens);
 }
 
 bool AnimationWorkspace::OpenAsset(const ProjectFile& file)
 {
-    if (file.Subtype == "animation.rig")
-    {
-        if (!Workspace->OpenRig(file.AssetPath))
-            return false;
-        Subject = CardSubject::Stage;
-        return true;
-    }
-    OpenDocument(file.AssetPath);
+    if (file.Subtype != "animation.rig")
+        return OpenDocument(file.AssetPath);
+    return OpenRigAsking(*Workspace, Prompts, file.AssetPath, [this] { ShowCard(CardSubject::Stage); });
+}
+
+void AnimationWorkspace::OpenRig(const std::string& path)
+{
+    (void)OpenRigAsking(*Workspace, Prompts, path, [this] { ShowCard(CardSubject::Stage); });
+}
+
+bool AnimationWorkspace::OpenDocument(const std::string& path)
+{
+    if (!Sheet->Open(path))
+        return false;
+    ShowCard(CardSubject::Document);
     return true;
 }
 
-void AnimationWorkspace::OpenDocument(const std::string& path)
+void AnimationWorkspace::CloseEditedDocument()
 {
-    if (Workspace->Documents.OpenOrFocus(path, Workspace->DocumentError) == nullptr)
+    const std::optional<DocumentRef> edited = EditedDocument();
+    if (!edited)
         return;
-    ShowCard(CardSubject::Document);
-}
-
-void AnimationWorkspace::CloseActiveDocument()
-{
-    const DataDocument* document = Workspace->Documents.Active();
-    if (document == nullptr)
+    if (edited->Source != &Workspace->ClipEvents)
+    {
+        Sheet->CloseActive([this](const std::string&) {
+            if (Workspace->Documents.Active() == nullptr && Subject == CardSubject::Document)
+                ShowCard(CardSubject::Stage);
+        });
         return;
-    // By path: the documents may move while the question is open.
-    const std::string path = document->VirtualPath();
-    AskAboutChanges(Prompts, document->IsDirty() || document->IsEditing(), path,
-                    [this, path](DirtyDisposition disposition) {
-                        if (const std::optional<std::size_t> index = Workspace->Documents.IndexOf(path))
-                            (void)Workspace->Documents.Close(*index, disposition, Workspace->DocumentError);
-                        if (Workspace->Documents.Active() == nullptr && Subject == CardSubject::Document)
-                            Subject = CardSubject::Stage;
-                    });
+    }
+    std::vector<DocumentRef> changed;
+    for (const DocumentRef& document : Sources.ChangedDocuments())
+        if (document == *edited)
+            changed.push_back(document);
+    AskAboutDocuments(Prompts, "Close " + Workspace->ClipEvents.DocumentLabel(edited->Key), changed,
+                      [this, clip = edited->Key](DirtyDisposition disposition) {
+                          Workspace->DocumentError.clear();
+                          if (!Workspace->ClipEvents.Close(clip, disposition, Workspace->DocumentError))
+                              return;
+                          PickedEvent.reset();
+                          ShowCard(CardSubject::Stage);
+                      });
 }
 
 WorkspaceViewFacet AnimationWorkspace::Viewing() const
@@ -1026,7 +1102,7 @@ std::vector<WorkspaceResourceFacet> AnimationWorkspace::Resources()
         if (Workspace->Rig.Simulation.IsOpen())
             label += " \xC2\xB7 " + Workspace->Rig.Simulation.Scenario().Name;
     }
-    return { { .Role = "Rig", .Primary = true, .Explorer = std::string(kRigExplorer), .Active = { .Label = label } } };
+    return { { .Role = "Rig", .Primary = true, .Explorer = "anim_rigs", .Active = { .Label = label } } };
 }
 
 WorkspaceSelectionFacet AnimationWorkspace::Selection()
@@ -1043,28 +1119,18 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         if (std::optional<WorkspaceSelectionFacet> card = ViewOf(ShownLens).Card())
             return *std::move(card);
     if (Subject == CardSubject::Run)
-        switch (ShownRun)
-        {
-        case RunKind::Lab:
-            return { .Title = "Session lab", .Sections = { { .Heading = {}, .Source = LabSheet.get() } }, .Primary = true };
-        case RunKind::Batch:
-            return { .Title = "Scenario batch", .Sections = { { .Heading = {}, .Source = Batch.get() } }, .Primary = true };
-        case RunKind::Migration:
-            Migration->ScanOnce();
-            return { .Title = "Clip player migration",
-                     .Sections = { { .Heading = {}, .Source = Migration.get() } },
-                     .Primary = true };
-        case RunKind::Trace:
-            return { .Title = "Imported trace", .Sections = { { .Heading = {}, .Source = Trace.get() } }, .Primary = true };
-        }
+    {
+        const RunView& run = RunOf(ShownRun);
+        return { .Title = std::string(run.Title), .Sections = { { .Heading = {}, .Source = run.Source } }, .Primary = true };
+    }
     if (Subject == CardSubject::NewRig)
         return { .Title = "New rig", .Sections = { { .Heading = {}, .Source = Creation.get() } } };
     if (Subject == CardSubject::NewDocument)
         return { .Title = "New animation document", .Sections = { { .Heading = {}, .Source = NewDocument.get() } } };
     if (const DataDocument* document = Workspace->Documents.Active(); Subject == CardSubject::Document && document)
         return { .Title = std::string(PathLeaf(document->VirtualPath())),
-                 .Actions = { "file.save", "animation.document.close" },
-                 .Sections = { { .Heading = {}, .Source = DocumentSheet.get() } } };
+                 .Actions = { "file.save", std::string(kCloseAction) },
+                 .Sections = Sheet->Sections() };
 
     const bool rigOpen = Workspace->Rig.Simulation.IsOpen() && !Workspace->Rig.Path.empty();
     WorkspaceSelectionFacet stage;
@@ -1085,67 +1151,16 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
 
 std::vector<WorkspaceExplorerInfo> AnimationWorkspace::Explorers() const
 {
-    return { { .Id = std::string(kContentExplorer), .Title = "Content", .Shape = ExplorerShape::Outline,
-               .Action = "explorer.anim_content" },
-             { .Id = std::string(kRigExplorer), .Title = "Rigs", .Shape = ExplorerShape::Outline,
-               .Action = "explorer.anim_rigs" },
-             { .Id = std::string(kSkeletonExplorer), .Title = "Skeleton", .Shape = ExplorerShape::Outline,
-               .Action = "explorer.anim_skeleton" } };
+    return ExplorerRows.Infos();
 }
 
 ExplorerPage AnimationWorkspace::Explore(const ExplorerQuery& query)
 {
-    ExplorerPage page;
-    if (query.Explorer == kContentExplorer)
-    {
-        page = ContentOutline.Explore(AnimationContentNodes(*Workspace), query);
-        page.Actions = { "animation.bind_pose", "animation.neutral_material", "animation.refresh" };
-        page.Empty = "No meshes, skeletons, clips or materials hold that.";
-    }
-    else if (query.Explorer == kRigExplorer)
-    {
-        page = RigOutline.Explore(AnimationRigNodes(*Workspace), query);
-        page.Actions = { "animation.rig.new" };
-        page.Empty = "No rig or animation document holds that.";
-    }
-    else if (query.Explorer == kSkeletonExplorer)
-    {
-        page = SkeletonOutline.Explore(
-            AnimationSkeletonNodes(Workspace->Audition.Session.Skeleton(), Workspace->Rig.Navigation.Joint), query);
-        page.Empty = Workspace->Audition.Session.Skeleton().Joints.empty() ? "Nothing with a skeleton is auditioned."
-                                                                           : "No joint's name holds that.";
-    }
-    return page;
+    return ExplorerRows.Explore(query);
 }
 
 void AnimationWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
-                                          std::size_t)
+                                          std::size_t mark)
 {
-    const std::optional<AnimationExplorerItem> item = ParseAnimationExplorerKey(key);
-    if (!item)
-        return;
-    using Kind = AnimationExplorerItem::Kind;
-    if (item->What == Kind::Group || (item->What == Kind::Joint && choice == ExplorerChoice::Open))
-    {
-        TreeOutline& outline = explorer == kContentExplorer ? ContentOutline
-                               : explorer == kRigExplorer   ? RigOutline
-                                                            : SkeletonOutline;
-        outline.Flip(key);
-        return;
-    }
-    AnimationAuditionSelection& audition = Workspace->Audition;
-    switch (item->What)
-    {
-    case Kind::Mesh:     (void)audition.SelectMesh(item->Path); break;
-    case Kind::Skeleton: (void)audition.SelectSkeleton(item->Path); break;
-    case Kind::Clip:     (void)Workspace->AuditionClip(item->Path); break;
-    case Kind::Material: (void)audition.SelectMaterial(item->Path); break;
-    case Kind::Rig:
-        if (Workspace->OpenRig(item->Path))
-            Subject = CardSubject::Stage;
-        break;
-    case Kind::Document: OpenDocument(item->Path); break;
-    case Kind::Joint:    Workspace->Rig.Navigation.Joint = item->Joint; break;
-    case Kind::Group:    break;
-    }
+    ExplorerRows.Choose(explorer, key, choice, mark);
 }

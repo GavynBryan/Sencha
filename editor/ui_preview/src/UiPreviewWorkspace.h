@@ -13,8 +13,11 @@
 #include "authoring/VocabularyOutline.h"
 
 #include "actions/ActionContext.h"
+#include "documents/SnapshotDocument.h"
+#include "prompts/PromptQueue.h"
 #include "render/UiSurfaceTargetRenderFeature.h"
 #include "vocabulary/VocabularyCatalog.h"
+#include "workspaces/ExplorerTable.h"
 #include "workspaces/IWorkspace.h"
 
 #include <math/geometry/2d/Rect2d.h>
@@ -28,6 +31,7 @@
 
 class ActionCatalog;
 class ContentPicture;
+class DocumentSourceSet;
 class Engine;
 class Game;
 class NoticeQueue;
@@ -35,21 +39,15 @@ class ProblemList;
 class SourceReloadRoots;
 struct ProjectDescriptor;
 
-// The UI preview workspace: an authored document drawn by the engine's own UI
-// pass at the resolution and scale the author chooses, filling the window and
-// re-cooked on every save. Interact hands it the pointer and keys; Inspect
-// picks its elements instead, each shown on the card with its boxes, computed
-// style and attributes. With nothing picked the card is the surface and what
-// the document asked its model for in vain, and the details are the preview
-// model itself, saved beside the document. The document library, the element
-// tree and the vocabulary are explorers, the layer's diagnostics are problems,
-// and what the document raises is a notice.
+// The UI preview workspace (editor/ARCHITECTURE.md): an authored document
+// drawn by the engine's own UI pass, inspected or interacted with, against a
+// preview model kept as a journal document beside it.
 class UiPreviewWorkspace final : public IWorkspace
 {
 public:
     // The module is loaded for its vocabulary alone and never started.
-    UiPreviewWorkspace(Engine& engine, const ProjectDescriptor* project, Game* module, ActionCatalog& catalog,
-                       ProblemList& problems, NoticeQueue& notices);
+    UiPreviewWorkspace(Engine& engine, const ProjectDescriptor* project, Game* module, DocumentSourceSet& sources,
+                       PromptQueue& prompts, ActionCatalog& catalog, ProblemList& problems, NoticeQueue& notices);
     ~UiPreviewWorkspace() override;
 
     UiPreviewWorkspace(const UiPreviewWorkspace&) = delete;
@@ -60,6 +58,8 @@ public:
     void HandlePlatformEvent(PlatformEventContext& ctx) override;
     void MoveTo(const WorkspaceWindow& window) override;
     void SetContentRect(const Rect2d& content) override { ContentRect = content; }
+    [[nodiscard]] bool OwnsDocument(const DocumentRef& document) const override;
+    void RevealDocument(const DocumentRef& document) override;
     [[nodiscard]] ActionContext* Actions() override { return &ActionHandlers; }
     [[nodiscard]] WorkspaceDocumentFacet Document() const override;
     [[nodiscard]] WorkspaceOperationFacet Operation() override;
@@ -76,11 +76,14 @@ private:
     void BuildLibrary(const ProjectDescriptor* project);
     void BuildUi();
     void DefineActions(ActionCatalog& catalog);
-    void RegisterCommands();
+    void DefineExplorers(ActionCatalog& catalog);
 
+    // Asks first when the open model has unsaved changes.
     void OpenDocument(const std::string& packagePath);
+    void LoadDocument(const std::string& packagePath);
     void RescanLibrary();
-    bool SaveModel(std::string* error);
+    void SaveModel();
+    void RevertModel();
     // Every binding asset in the mounted content, inspected against the
     // vocabulary, and what is wrong with them reported.
     void ScanVocabulary();
@@ -89,24 +92,27 @@ private:
     void SetZoom(PreviewZoom zoom);
     [[nodiscard]] const DocumentEntry* OpenEntry() const;
 
-    // Per frame: the picture placed and marked, the problems and notices the
-    // session's histories add up to.
+    // Per frame: the picture placed and marked, and the problems and notices
+    // the session's histories add up to.
     void ShowPicture();
     void Report();
     [[nodiscard]] UiElementRef ElementAtWindowPoint(Vec2d point) const;
 
     Engine& EngineRef;
+    DocumentSourceSet& Sources;
+    PromptQueue::Asker Prompts;
     SourceReloadRoots* Watch = nullptr;
     ProblemList& Problems;
     NoticeQueue& Notices;
     VocabularyCatalog Vocabulary;
     DocumentLibrary Library;
     std::unique_ptr<UiPreviewSession> Session;
-    // The document's source, for the sidecar beside it.
-    std::filesystem::path OpenSource;
-    // What was open when the workspace went to the background: the screen
-    // closes with it, and the working model comes back when it does.
-    std::optional<std::pair<std::string, UiPreviewModel>> Suspended;
+    // The open document's preview model, as its sidecar's journal document.
+    std::unique_ptr<SnapshotDocument> Model;
+    // The screen closes while the workspace is in the background and opens
+    // again on the session's model when it comes back.
+    bool Suspended = false;
+    std::string SetupProblem;
 
     UiSurfaceTargetRenderFeature* Target = nullptr;
     UiSurfaceTargetId Binding;
@@ -131,9 +137,9 @@ private:
     std::vector<BindingAsset> Bindings;
 
     ActionContext ActionHandlers;
+    ExplorerTable ExplorerRows;
     // What was last reported, so a change is reported once.
     std::uint64_t ReportedDiagnostics = 0;
     std::uint64_t ReportedRaised = 0;
     std::vector<Problem> Reported;
-
 };

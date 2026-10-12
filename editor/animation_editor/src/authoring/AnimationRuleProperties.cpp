@@ -261,12 +261,7 @@ PropertyEditResult AnimationRuleProperties::CommitEdit(std::string_view key, std
     }
     if (key != "layer")
         return PropertyEditResult::Gone;
-    const std::optional<std::size_t> layer = ParseAnimationLayerChoice(*rig, value);
-    if (!layer)
-        return PropertyEditResult::Refused;
-    Workspace.Rig.Navigation.Layer = *layer;
-    Workspace.Rig.Navigation.Rule = -1;
-    return PropertyEditResult::Applied;
+    return CommitAnimationLayerChoice(*rig, Workspace.Rig.Navigation, value);
 }
 
 PropertyEditResult AnimationRuleProperties::Act(std::string_view key, std::string_view verb, std::string_view)

@@ -80,8 +80,10 @@ TEST(AnimationRequestProperties, ARequestIsDraftedIssuedCancelledAndLaned)
     const std::optional<AnimationLanePick> pick = ParseAnimationLaneKey(lane.Spans.back().Key);
     ASSERT_TRUE(pick.has_value());
     EXPECT_EQ(pick->Names, AnimationLanePick::What::Request);
-    EXPECT_FALSE(workspace.Sources.CanUndo()) << "issuing is a scenario edit";
+    EXPECT_EQ(workspace.Sources.ChangedDocuments(), std::vector<DocumentRef>{ workspace.Rig.Scenario.Ref() })
+        << "issuing is a scenario edit, not a data document's";
     session.Close();
+    workspace.Sources.DiscardAll();
 }
 
 TEST(AnimationRequestProperties, TheSchemaSheetCountsParametersAgainstTheBudget)

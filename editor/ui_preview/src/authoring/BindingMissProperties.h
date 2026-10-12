@@ -1,22 +1,18 @@
 #pragma once
 
+#include "documents/SnapshotDocument.h"
 #include "properties/PropertySource.h"
 
 class UiPreviewSession;
 
-//=============================================================================
-// BindingMissProperties
-//
-// What the open document asked its model for and the model does not declare,
-// observed so far (BindingMisses), each with the declarations that would
-// satisfy it as verbs: a variable as a property, a list or row list, a member
-// read through an undeclared list as a row list, an event as an action.
-// Declaring one remakes the screen against the model.
-//=============================================================================
+// What the open document asked its model for and the model does not declare
+// (BindingMisses), each with the declarations that would satisfy it as verbs.
+// Declaring one is a step on `model`, the sidecar's document, and remakes the
+// screen against the model.
 class BindingMissProperties final : public IPropertySource
 {
 public:
-    explicit BindingMissProperties(UiPreviewSession& session) : Session(session) {}
+    BindingMissProperties(UiPreviewSession& session, SnapshotDocument& model) : Session(session), Model(model) {}
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
     bool BeginEdit(std::string_view) override { return false; }
@@ -27,4 +23,5 @@ public:
 
 private:
     UiPreviewSession& Session;
+    SnapshotDocument& Model;
 };

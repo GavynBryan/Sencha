@@ -6,6 +6,7 @@
 
 #include "actions/ActionOffer.h"
 #include "presenters/ContentPicture.h"
+#include "problems/ProblemList.h"
 #include "project/MaterialLibraryActions.h"
 #include "properties/FilePathProperty.h"
 #include "properties/SettingProperties.h"
@@ -39,8 +40,9 @@
 #include <SDL3/SDL_events.h>
 
 #include <array>
-#include <cstdio>
 #include <filesystem>
+#include <format>
+#include <optional>
 #include <memory>
 #include <string_view>
 #include <utility>
@@ -50,6 +52,7 @@
 namespace
 {
 constexpr std::string_view kPreviewFeatureId = "material_preview";
+constexpr std::string_view kProblemSource = "materials";
 
 struct PrimitiveRow
 {
@@ -79,6 +82,7 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
                                      ProjectFileSteps* files,
                                      PromptQueue& prompts,
                                      ActionCatalog& catalog,
+                                     ProblemList& problems,
                                      AssetPictures& pictures)
     : EngineRef(engine)
     , Project(project)
@@ -90,6 +94,7 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
         PushToResident(tab, description);
     })
     , Prompts(prompts.MakeAsker())
+    , Problems(problems)
     , Properties(Tabs, engine.Content().Assets().Registry)
     , TextureImport(
           [this](const std::string& texture, const TextureImportSettings& settings, std::string& cooked,
@@ -123,11 +128,9 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
             const MaterialEditTab* tab = Tabs.Active();
             if (tab == nullptr || Files == nullptr)
                 return;
-            if (const std::string refused = Files->Move(tab->Session.VirtualPath(), path); !refused.empty())
-                std::fprintf(stderr, "[materials] %s\n", refused.c_str());
+            Report(Files->Move(tab->Session.VirtualPath(), path));
         });
     RegisterPreviewBackdropCVars();
-    MaterialThumbnailCache::RegisterBudget(engine.Console().Registry());
     BuildUi();
     DefineActions(catalog);
     OfferAction(catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { SaveActiveMaterial(); } });
@@ -135,31 +138,31 @@ MaterialWorkspace::MaterialWorkspace(Engine& engine,
 
 MaterialWorkspace::~MaterialWorkspace()
 {
+    Problems.Clear(kProblemSource);
     // The preview feature borrows the tabs' resident materials and the asset
-    // stack, and the textures panel's bindings free their sets through the
-    // live UI backend; both go before the panels and the tabs.
+    // stack, so it goes before the tabs.
     DetachRenderFeature(EngineRef, Preview);
     Picture.reset();
 }
 
 void MaterialWorkspace::BuildUi()
 {
-    Renderer& renderer = EngineRef.Graphics().MainRenderer;
-    Preview = renderer.StageFeature(std::make_unique<MaterialPreviewRenderFeature>(Assets),
-                                    FeatureRegistration{ .Id = kPreviewFeatureId });
-    std::vector<std::string_view> failed;
-    if (!renderer.CommitStagedFeatures(&failed) || !failed.empty())
-    {
-        std::fprintf(stderr, "[materials] preview render feature failed to set up; "
-                             "the preview is unavailable\n");
-        Preview = nullptr;
-    }
+    Preview = AttachRenderFeature(EngineRef, std::make_unique<MaterialPreviewRenderFeature>(Assets), kPreviewFeatureId);
+    if (Preview == nullptr)
+        SetupProblem = "The material preview did not set up, so the stage will not draw.";
     if (UiService* ui = EngineRef.TryUi(); ui != nullptr && ui->IsReady())
-    {
         Picture = std::make_unique<ContentPicture>(*ui, "material_preview");
-    }
+    Report({});
+}
 
-
+void MaterialWorkspace::Report(std::string error)
+{
+    std::vector<Problem> problems;
+    if (!SetupProblem.empty())
+        problems.push_back({ .Severity = ProblemSeverity::Error, .Message = SetupProblem });
+    if (!error.empty())
+        problems.push_back({ .Severity = ProblemSeverity::Warning, .Message = std::move(error) });
+    Problems.Publish(kProblemSource, std::move(problems));
 }
 
 void MaterialWorkspace::DefineActions(ActionCatalog& catalog)
@@ -301,7 +304,7 @@ void MaterialWorkspace::Tick(FrameUpdateContext&)
     {
         const Rect2d content = Visible ? ContentRect : Rect2d{};
         Picture->Place(content);
-        if (Preview != nullptr && content.Width() >= 8.0f && content.Height() >= 8.0f)
+        if (Preview != nullptr && CanShowStage(content))
             Preview->Show(VkExtent2D{ static_cast<std::uint32_t>(content.Width()),
                                       static_cast<std::uint32_t>(content.Height()) },
                           Picture->Image());
@@ -312,7 +315,7 @@ void MaterialWorkspace::SetVisible(bool visible)
 {
     Visible = visible;
     if (!visible)
-        Orbiting = false;
+        Orbit.Cancel();
     if (Picture != nullptr)
         Picture->SetShown(visible);
 }
@@ -334,22 +337,22 @@ void MaterialWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (event.button.button == SDL_BUTTON_LEFT && onStage(event.button.x, event.button.y))
         {
-            Orbiting = true;
+            Orbit.Press(Vec2d(event.button.x, event.button.y));
             ctx.Handled = true;
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
-        if (event.button.button == SDL_BUTTON_LEFT && Orbiting)
+        if (event.button.button == SDL_BUTTON_LEFT && Orbit.IsHeld())
         {
-            Orbiting = false;
+            (void)Orbit.Release();
             ctx.Handled = true;
         }
         break;
     case SDL_EVENT_MOUSE_MOTION:
-        // Turntable feel: drag right orbits right, drag up orbits above.
-        if (Orbiting)
+        if (const std::optional<StageOrbitDrag::Turn> turn =
+                Orbit.Move(Vec2d(event.motion.x, event.motion.y), Vec2d(event.motion.xrel, event.motion.yrel)))
         {
-            Preview->Orbit(event.motion.xrel * 0.01f, -event.motion.yrel * 0.01f);
+            Preview->Orbit(turn->Yaw, turn->Pitch);
             ctx.Handled = true;
         }
         break;
@@ -361,7 +364,7 @@ void MaterialWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
         }
         break;
     case SDL_EVENT_WINDOW_FOCUS_LOST:
-        Orbiting = false;
+        Orbit.Cancel();
         break;
     default:
         break;
@@ -373,13 +376,13 @@ bool MaterialWorkspace::OwnsDocument(const DocumentRef& document) const
     return document.Source == &Tabs;
 }
 
-void MaterialWorkspace::OpenMaterial(const std::string& virtualPath)
+bool MaterialWorkspace::OpenMaterial(const std::string& virtualPath)
 {
     const AssetRecord* record = Assets.Registry.FindByPath(virtualPath);
     if (record == nullptr || record->FilePath.empty())
     {
-        std::fprintf(stderr, "[materials] '%s' is not an editable material file\n", virtualPath.c_str());
-        return;
+        Report(std::format("{} is not an editable material file.", virtualPath));
+        return false;
     }
 
     std::string error;
@@ -387,9 +390,10 @@ void MaterialWorkspace::OpenMaterial(const std::string& virtualPath)
     MaterialEditTab* tab = Tabs.OpenOrFocus(virtualPath, record->FilePath, &error);
     if (tab == nullptr)
     {
-        std::fprintf(stderr, "[materials] failed to open '%s': %s\n", virtualPath.c_str(), error.c_str());
-        return;
+        Report(std::format("{} did not open: {}", virtualPath, error));
+        return false;
     }
+    Report({});
 
     if (!existed)
     {
@@ -398,27 +402,32 @@ void MaterialWorkspace::OpenMaterial(const std::string& virtualPath)
         // (and, right after Open, working) state.
         tab->AppliedVersion = tab->Session.Version();
     }
+    return true;
 }
 
 void MaterialWorkspace::CloseTab(std::size_t index)
 {
     if (index >= Tabs.Tabs().size())
         return;
-    const MaterialEditTab& tab = *Tabs.Tabs()[index];
+    MaterialEditTab& tab = *Tabs.Tabs()[index];
     const std::string path = tab.Session.VirtualPath();
+    std::vector<DocumentRef> changed;
+    if (tab.Session.IsDirty())
+        changed.push_back(Tabs.RefOf(tab));
     // By path, not index: the tabs may move while the question is open.
-    AskAboutChanges(Prompts, tab.Session.IsDirty(), path, [this, path](DirtyDisposition disposition) {
-        const auto& tabs = Tabs.Tabs();
-        for (std::size_t i = 0; i < tabs.size(); ++i)
-        {
-            if (tabs[i]->Session.VirtualPath() != path)
-                continue;
-            std::string error;
-            if (!Tabs.Close(i, disposition, error))
-                std::fprintf(stderr, "[materials] %s\n", error.c_str());
-            return;
-        }
-    });
+    AskAboutDocuments(Prompts, "Close " + std::string(MaterialLeafName(path)), changed,
+                      [this, path](DirtyDisposition disposition) {
+                          const auto& tabs = Tabs.Tabs();
+                          for (std::size_t i = 0; i < tabs.size(); ++i)
+                          {
+                              if (tabs[i]->Session.VirtualPath() != path)
+                                  continue;
+                              std::string error;
+                              (void)Tabs.Close(i, disposition, error);
+                              Report(std::move(error));
+                              return;
+                          }
+                      });
 }
 
 void MaterialWorkspace::SaveActiveMaterial()
@@ -426,11 +435,8 @@ void MaterialWorkspace::SaveActiveMaterial()
     MaterialEditTab* tab = Tabs.Active();
     if (tab == nullptr || !tab->Session.HasOpen())
         return;
-    const DocumentSaveResult result = Documents.Save(Tabs.RefOf(*tab));
-    if (result.Status == DocumentSaveStatus::Conflict)
-        std::fprintf(stderr, "[materials] '%s' changed on disk since it was read\n", tab->Session.VirtualPath().c_str());
-    else if (result.Status == DocumentSaveStatus::Failed)
-        std::fprintf(stderr, "[materials] save failed: %s\n", result.Error.c_str());
+    // A conflict or a failure is the save follow-up's to report.
+    (void)Documents.Save(Tabs.RefOf(*tab));
 }
 
 void MaterialWorkspace::CreateMaterial(const std::string& name)
@@ -444,19 +450,19 @@ void MaterialWorkspace::CreateMaterial(const std::string& name)
     std::filesystem::create_directories(file.parent_path(), ec);
     if (std::filesystem::exists(file, ec))
     {
-        std::fprintf(stderr, "[materials] '%s' already exists\n", file.string().c_str());
+        Report(std::format("{} already exists.", file.generic_string()));
         return;
     }
 
     std::string error;
     if (!MaterialEditSession::CreateNew(file.string(), &error))
     {
-        std::fprintf(stderr, "[materials] create failed: %s\n", error.c_str());
+        Report(std::format("The material was not created: {}", error));
         return;
     }
 
     RescanMaterials();
-    OpenMaterial("asset://materials/" + name + ".smat");
+    (void)OpenMaterial("asset://materials/" + name + ".smat");
 }
 
 void MaterialWorkspace::DuplicateActive()
@@ -466,12 +472,12 @@ void MaterialWorkspace::DuplicateActive()
         return;
     const std::string copy = CopyPath(tab->Session.VirtualPath(),
                                       [this](const std::string& path) { return Assets.Registry.Contains(path); });
-    if (const std::string refused = Files->Duplicate(tab->Session.VirtualPath(), copy); !refused.empty())
+    if (std::string refused = Files->Duplicate(tab->Session.VirtualPath(), copy); !refused.empty())
     {
-        std::fprintf(stderr, "[materials] %s\n", refused.c_str());
+        Report(std::move(refused));
         return;
     }
-    OpenMaterial(copy);
+    (void)OpenMaterial(copy);
 }
 
 void MaterialWorkspace::CreateMaterialFromTexture(const std::string& textureVirtualPath)
@@ -484,8 +490,7 @@ void MaterialWorkspace::CreateMaterialFromTexture(const std::string& textureVirt
     const auto source = ResolveTextureSource(Project->ContentRoots, textureVirtualPath);
     if (!source)
     {
-        std::fprintf(stderr, "[materials] '%s' has no source file under any content root\n",
-                     textureVirtualPath.c_str());
+        Report(std::format("{} has no source file under any content root.", textureVirtualPath));
         return;
     }
 
@@ -503,24 +508,19 @@ void MaterialWorkspace::CreateMaterialFromTexture(const std::string& textureVirt
     const std::filesystem::path file = std::filesystem::path(source->Root) / materialRel;
 
     std::error_code ec;
-    if (std::filesystem::exists(file, ec))
-    {
-        std::fprintf(stderr, "[materials] '%s' already exists; opening it\n",
-                     file.string().c_str());
-    }
-    else
+    if (!std::filesystem::exists(file, ec))
     {
         MaterialDescription description;
         description.BaseColorTexture = Assets.Registry.Current(AssetRef{ AssetType::Texture, textureVirtualPath });
         std::string error;
         if (!SaveMaterialFile(file.string(), description, &error))
         {
-            std::fprintf(stderr, "[materials] create material failed: %s\n", error.c_str());
+            Report(std::format("The material was not created: {}", error));
             return;
         }
         RescanMaterials();
     }
-    OpenMaterial("asset://" + materialRel);
+    (void)OpenMaterial("asset://" + materialRel);
 }
 
 bool MaterialWorkspace::RecookTexture(const TextureSourceLocation& source, std::string* error)
@@ -637,7 +637,8 @@ bool MaterialWorkspace::OpenAsset(const ProjectFile& file)
 {
     if (file.Extension == ".smat")
     {
-        OpenMaterial(file.AssetPath);
+        if (!OpenMaterial(file.AssetPath))
+            return false;
         ShowMaterial();
         return true;
     }

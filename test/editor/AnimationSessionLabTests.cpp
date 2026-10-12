@@ -5,6 +5,7 @@
 #include "properties/PropertyTree.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationLabProperties.h"
+#include "authoring/AnimationTimeline.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationScenario.h"
 #include "authoring/AnimationSessionLab.h"
@@ -144,7 +145,9 @@ TEST(AnimationSessionLab, TheSheetRunsTheLabAndRunsItsOwnClock)
     AnimationPreviewWorkspace workspace(content.Assets, documents.Sources, documents.Store);
     ASSERT_TRUE(workspace.OpenRig("asset://animation/examples/pump_reload.rig.sdata")) << workspace.Rig.Error;
     AnimationLabProperties sheet(workspace);
-    EXPECT_FALSE(sheet.Timeline().has_value()) << "no clock before it runs";
+    AnimationTimeline deck(workspace);
+    deck.ShowLab(true);
+    EXPECT_FALSE(deck.IsLab()) << "no clock before it runs";
 
     ASSERT_TRUE(sheet.BeginEdit("link.join"));
     EXPECT_EQ(sheet.CommitEdit("link.join", "100"), PropertyEditResult::Applied);
@@ -164,14 +167,15 @@ TEST(AnimationSessionLab, TheSheetRunsTheLabAndRunsItsOwnClock)
     ASSERT_NE(FindProperty(nodes, "summary.snapshots"), nullptr);
     EXPECT_NE(FindProperty(nodes, "joined.at"), nullptr);
 
-    const std::optional<WorkspaceTimelineFacet> clock = sheet.Timeline();
-    ASSERT_TRUE(clock.has_value());
-    EXPECT_EQ(clock->Clock, "Session lab");
-    ASSERT_EQ(clock->Lanes.size(), 2u);
-    EXPECT_EQ(clock->Lanes[0].Spans.front().Label, "not joined");
-    EXPECT_FALSE(clock->Lanes[1].Samples.empty());
+    ASSERT_TRUE(deck.IsLab());
+    EXPECT_FALSE(deck.IsSimulation()) << "while the lab's sheet is up the deck runs the lab's clock";
+    const WorkspaceTimelineFacet clock = deck.Facet();
+    EXPECT_EQ(clock.Clock, "Session lab");
+    ASSERT_EQ(clock.Lanes.size(), 2u);
+    EXPECT_EQ(clock.Lanes[0].Spans.front().Label, "not joined");
+    EXPECT_FALSE(clock.Lanes[1].Samples.empty());
 
-    sheet.InspectAt(clock->End * 0.75);
+    deck.Scrub(clock.End * 0.75);
     nodes = sheet.Nodes();
     ASSERT_NE(FindProperty(nodes, "inspect"), nullptr);
     EXPECT_EQ(FindProperty(nodes, "inspect")->Value, "150");
