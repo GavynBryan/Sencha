@@ -78,8 +78,13 @@ The transport popover holds the cook profile, lighting bake and hosted play.
 
 ## Selection and context
 
-Lights, cameras and plain entities are pickable in the world through icon pick
-proxies, so every selectable thing can be selected where it is.
+Every entity without a shape to click stands in the views as a marker at its
+origin, so every selectable thing can be selected where it is. A component's
+marker is the icon it is placed by (`SENCHA_PLACE_ICON`): a light, a camera, the
+template's Player Start. An entity with no brush body, no such component and
+nothing an adapter draws (an empty, a prefab's root, a placed mesh) wears the
+empty mark. Who wears what is worked out again only when the scene's structure
+changes (`EntityMarkers`).
 
 Nothing about the selection sits on the view by default. **Hold Space** over
 it — or over anything, which selects it first — for its wheel: the hub reads out
@@ -138,7 +143,7 @@ tray tucks away and the world takes the pointer.
 The Entity tool's fan on the tool wheel holds **Prefab**, **Empty** (a bare
 entity named Entity: a transform, an identity and a name), and every component that
 declares itself placeable (`SENCHA_PLACEABLE`, pictured by `SENCHA_PLACE_ICON`):
-the engine's **Point Light** and **Spot Light**, and whatever a game adds, such
+the engine's **Camera**, **Point Light** and **Spot Light**, and whatever a game adds, such
 as the template's **Player Start**. Those place a new entity carrying just that
 component at its defaults, named after it and selected, as one step; no prefab
 is in hand for them.

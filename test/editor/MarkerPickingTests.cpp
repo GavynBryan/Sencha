@@ -5,13 +5,17 @@
 #include "viewport/EditorViewport.h"
 #include "viewport/ViewportProjection.h"
 
+#include <components/CameraComponent.h>
 #include <render/PointLightComponent.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 // A light has no shape to click: it stands in the views as a marker at its
 // origin, drawn over everything, and the pointer on the marker picks it even
-// with a brush behind.
+// with a brush behind. A component's marker is the icon it is placed by; an
+// entity with nothing else to click wears the empty mark.
 namespace
 {
 class MarkerPickingTest : public WorkspaceTest
@@ -52,7 +56,7 @@ TEST_F(MarkerPickingTest, ALightInsideABrushIsPickedByItsMarker)
     Workspace.Affordances->Build(output);
     ASSERT_EQ(output.Markers.size(), 1u);
     EXPECT_EQ(output.Markers[0].Entity, light);
-    EXPECT_EQ(output.Markers[0].Icon, IconId::Light);
+    EXPECT_EQ(output.Markers[0].Icon, IconId::LightBulb) << "the icon the light is placed by";
 
     const SelectableRef onMarker = PickAt(top, marker);
     EXPECT_TRUE(onMarker.IsEntity());
@@ -71,4 +75,30 @@ TEST_F(MarkerPickingTest, AHiddenLightHasNoMarker)
     ViewportAffordanceOutput output;
     Workspace.Affordances->Build(output);
     EXPECT_TRUE(output.Markers.empty());
+}
+
+TEST_F(MarkerPickingTest, EveryEntityWithNothingElseToClickHasAMarker)
+{
+    (void)AddBrush(Vec3d(0.0f, 0.0f, 0.0f));
+    const EntityId empty = Scene().CreateEntity(Vec3d(4.0f, 0.0f, 0.0f));
+    const EntityId camera = Scene().CreateEntity(Vec3d(-4.0f, 0.0f, 0.0f));
+    Scene().GetRegistry().Components.AddComponent(camera, CameraComponent{});
+
+    ViewportAffordanceOutput output;
+    Workspace.Affordances->Build(output);
+    const auto iconOf = [&](EntityId entity) {
+        const auto found = std::ranges::find(output.Markers, entity, &EditorMarker::Entity);
+        return found != output.Markers.end() ? found->Icon : IconId::None;
+    };
+    EXPECT_EQ(output.Markers.size(), 2u) << "a brush is clicked by its shape";
+    EXPECT_EQ(iconOf(empty), IconId::Empty);
+    EXPECT_EQ(iconOf(camera), IconId::Camera);
+
+    EXPECT_EQ(PickAt(TopView(), ViewportProjection(TopView()).WorldToPixel(Vec3d(4.0f, 0.0f, 0.0f))->Pixel).Entity,
+              empty);
+
+    Scene().GetRegistry().Components.AddComponent(empty, PointLightComponent{});
+    output = {};
+    Workspace.Affordances->Build(output);
+    EXPECT_EQ(iconOf(empty), IconId::LightBulb) << "a component added is seen at once";
 }

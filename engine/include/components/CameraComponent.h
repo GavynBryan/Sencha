@@ -38,6 +38,8 @@ struct SENCHA_COMPONENT("Camera")
        SENCHA_SCHEMA("Camera")
        SENCHA_SCENE_CHUNK("CAMR")
        SENCHA_VISUAL_MESH("camera.glb")
+       SENCHA_PLACEABLE("Camera")
+       SENCHA_PLACE_ICON("camera")
 CameraComponent
 {
     SENCHA_FIELD("projection")

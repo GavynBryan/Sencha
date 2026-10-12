@@ -176,8 +176,10 @@ void EditorAffordanceService::Build(ViewportAffordanceOutput& output) const
         }
     }
 
-    for (const MarkerSource& source : MarkerSources)
-        source.Collect(scene, source.Icon, output.Markers);
+    std::vector<const IComponentSerializer*> drawn;
+    for (const EditorComponentAdapterRegistry::Entry& entry : entries)
+        drawn.push_back(entry.Serializer);
+    Markers.Collect(scene, drawn, output.Markers);
 
     AppendZoneBoundsTarget(output);
 }

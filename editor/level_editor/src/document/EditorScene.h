@@ -188,6 +188,8 @@ public:
     // entity such a read can only be about.
     [[nodiscard]] const Transform3f* TryGetWorldTransform(EntityId entity) const;
     [[nodiscard]] const BrushComponent* TryGetBrush(EntityId entity) const;
+    // A live or baked brush: something the pointer can hit by its shape.
+    [[nodiscard]] bool HasBrushBody(EntityId entity) const { return BrushRecordIdOf(entity).IsValid(); }
     [[nodiscard]] const BrushMesh* TryGetBrushMesh(EntityId entity) const;
     [[nodiscard]] const BrushModifierStack* TryGetBrushModifiers(EntityId entity) const;
     // The entity's brush evaluated through its modifier stack (live brush or

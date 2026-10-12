@@ -1,5 +1,6 @@
 #pragma once
 
+#include "authoring/EntityMarkers.h"
 #include "overlay/EditorOverlayState.h"
 #include "properties/PropertySource.h"
 #include "render/EditorLinePipeline.h"
@@ -70,25 +71,6 @@ struct EditorPickProxy
     Vec2d HalfExtents;
 };
 
-// An icon at a world point standing for an entity with no shape to click --
-// a light, a camera, an empty -- drawn at a fixed size on screen and picked by
-// how near the pointer is to it there.
-struct EditorMarker
-{
-    EntityId Entity;
-    Vec3d World;
-    IconId Icon = IconId::None;
-};
-
-// A component whose entities stand in the views as an icon at their origin --
-// a light, a camera: nothing with a shape of its own to click. A source walks
-// only the entities carrying its component (MarkerSources.h makes one), so a
-// level of brushes pays nothing for it.
-struct MarkerSource
-{
-    IconId Icon = IconId::None;
-    void (*Collect)(const EditorScene& scene, IconId icon, std::vector<EditorMarker>& out) = nullptr;
-};
 
 struct ViewportAffordanceOutput
 {
@@ -211,7 +193,6 @@ public:
                             CommandStack& commands, GridSettings& grid);
 
     [[nodiscard]] EditorComponentAdapterRegistry& Registry() { return Adapters; }
-    void AddMarkerSource(MarkerSource source) { MarkerSources.push_back(source); }
     void Build(ViewportAffordanceOutput& output) const;
     // What the pointer at `point` in `viewport` picks among the proxies and
     // markers, with its distance along `ray` (the ray through `point`).
@@ -235,5 +216,5 @@ private:
     CommandStack& Commands;
     GridSettings& Grid;
     EditorComponentAdapterRegistry Adapters;
-    std::vector<MarkerSource> MarkerSources;
+    mutable EntityMarkers Markers;
 };
