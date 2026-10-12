@@ -61,6 +61,13 @@ struct SurfaceHit
 // runs before it builds a piece's faces.
 [[nodiscard]] bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& box, float& outNear);
 
+// The nearest visible brush surface along `ray` within `maxDistance`: what a
+// pointer pick finds under the cursor, and what an editor measurement finds in
+// any direction. Locked brushes are still geometry unless `skipLocked`.
+[[nodiscard]] std::optional<SurfaceHit> CastRayAgainstBrushes(const EditorScene& scene,
+                                                              const Ray3d& ray, float maxDistance,
+                                                              bool skipLocked);
+
 // The pick mode an element edit-mode selects with (Object->EntityOnly,
 // Vertex->VertexOnly, ...). The viewport's own table keyed by MeshElementKind —
 // BrushPickMode stays viewport-side, so this is the projection, not a switch.

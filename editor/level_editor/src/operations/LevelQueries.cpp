@@ -1,6 +1,7 @@
 #include "LevelQueries.h"
 
 #include "FloorPlan.h"
+#include "LevelClearance.h"
 #include "LevelJson.h"
 #include "LevelReachability.h"
 #include "LevelSubjects.h"
@@ -513,5 +514,6 @@ std::vector<EditorOperationEntry> LevelQueryOperations(const WorldDocument& worl
     entries.push_back(Near(world));
     entries.push_back(PlanSection(world));
     entries.push_back(ReachabilityOperation(world));
+    entries.push_back(ClearanceOperation(world));
     return entries;
 }

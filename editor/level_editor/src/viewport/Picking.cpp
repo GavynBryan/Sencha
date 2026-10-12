@@ -722,10 +722,16 @@ std::optional<SurfaceHit> PickingService::PickSurface(const EditorViewport& view
                                                       Vec2d point,
                                                       const EditorScene& scene) const
 {
-    const Ray3d ray = BuildRay(viewport, point);
-    float best = static_cast<float>(kMaxPickDistance);
+    return CastRayAgainstBrushes(scene, BuildRay(viewport, point),
+                                 static_cast<float>(kMaxPickDistance), true);
+}
+
+std::optional<SurfaceHit> CastRayAgainstBrushes(const EditorScene& scene, const Ray3d& ray,
+                                                float maxDistance, bool skipLocked)
+{
+    float best = maxDistance;
     std::optional<SurfaceHit> hit;
-    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, EntityId{}))
+    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, skipLocked, EntityId{}))
     {
         if (candidate.Near >= best)
             break; // nearest-box order: nothing after this can beat the hit in hand
