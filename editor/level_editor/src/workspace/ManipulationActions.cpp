@@ -43,29 +43,6 @@ constexpr std::array<SnapRow, 4> kSnapTargets = { {
     { SnapTarget::Face, "snap.face", "Snap to Faces" },
 } };
 
-const char* TransformActionId(TransformMode mode)
-{
-    switch (mode)
-    {
-    case TransformMode::Resize: return "gizmo.resize";
-    case TransformMode::Move:   return "gizmo.move";
-    case TransformMode::Rotate: return "gizmo.rotate";
-    case TransformMode::Scale:
-    default:                    return "gizmo.scale";
-    }
-}
-
-SDL_Keycode TransformKey(TransformMode mode)
-{
-    switch (mode)
-    {
-    case TransformMode::Resize: return SDLK_Q;
-    case TransformMode::Move:   return SDLK_W;
-    case TransformMode::Rotate: return SDLK_E;
-    case TransformMode::Scale:
-    default:                    return SDLK_R;
-    }
-}
 } // namespace
 
 void OfferManipulationActions(ActionCatalog& catalog, ActionContext& context, EditorWorkspace& workspace)
@@ -85,8 +62,8 @@ void OfferManipulationActions(ActionCatalog& catalog, ActionContext& context, Ed
     // The gizmo. Shift keeps its keys off the fly camera's bare letters; the
     // mode checked is the effective one, which is what the gizmo does now.
     for (const TransformModeItem& item : kTransformModeItems)
-        offer({ .Id = TransformActionId(item.Mode), .Label = std::string(item.Choice.Label), .Category = "Transform",
-                .Icon = item.Choice.Icon, .DefaultChords = { { TransformKey(item.Mode), { .Shift = true } } } },
+        offer({ .Id = item.Action, .Label = std::string(item.Choice.Label), .Category = "Transform",
+                .Icon = item.Choice.Icon, .DefaultChords = { { item.Key, { .Shift = true } } } },
               { .Invoke = [w, mode = item.Mode] { w->Interaction.Manipulators->SetTransformMode(mode); },
                 .Checked = [w, mode = item.Mode] { return w->Interaction.Manipulators->EffectiveMode() == mode; } });
     offer({ .Id = "gizmo.space", .Label = "Next Transform Space", .Category = "Transform",

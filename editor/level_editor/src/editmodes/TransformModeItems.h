@@ -4,6 +4,8 @@
 #include "TransformSpace.h"
 #include "tools/CommandChoice.h"
 
+#include <SDL3/SDL_keycode.h>
+
 #include <array>
 
 // The transform gizmo modes and spaces as a user sees them: the tables the
@@ -12,14 +14,17 @@
 struct TransformModeItem
 {
     TransformMode Mode;
+    const char* Action;
+    // Taken with Shift, which keeps it off the fly camera's bare keys.
+    SDL_Keycode Key;
     CommandChoice Choice;
 };
 
 inline constexpr std::array<TransformModeItem, 4> kTransformModeItems = {{
-    { TransformMode::Resize, { "Resize", IconId::Resize } },
-    { TransformMode::Move, { "Move", IconId::Move } },
-    { TransformMode::Rotate, { "Rotate", IconId::Rotate } },
-    { TransformMode::Scale, { "Scale", IconId::Scale } },
+    { TransformMode::Resize, "gizmo.resize", SDLK_Q, { "Resize", IconId::Resize } },
+    { TransformMode::Move, "gizmo.move", SDLK_W, { "Move", IconId::Move } },
+    { TransformMode::Rotate, "gizmo.rotate", SDLK_E, { "Rotate", IconId::Rotate } },
+    { TransformMode::Scale, "gizmo.scale", SDLK_R, { "Scale", IconId::Scale } },
 }};
 
 struct TransformSpaceItem
