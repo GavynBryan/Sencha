@@ -16,6 +16,7 @@
 #include "input/InputRouter.h"
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "actions/ActionFamily.h"
 #include "input/ViewportNavigation.h"
 #include "tools/RadialMenuModel.h"
 #include "tools/RadialMenuSession.h"
@@ -268,8 +269,7 @@ private:
     // Cooking, the player it feeds, and the serials that hand one to the other.
     std::unique_ptr<EditorCookRuntime>  CookRuntime;
     std::unique_ptr<CookProfilesModal>  ProfilesModal;
-    // The transport.profile.* actions in play, one per cook profile.
-    std::vector<std::string> OfferedProfiles;
+    ActionFamily ProfileActions;
     std::uint64_t OfferedProfilesRevision = 0;
     std::unique_ptr<DocumentFileActions> Files;
 };

@@ -14,6 +14,13 @@ void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinitio
         context.Claim(id, std::move(handler));
 }
 
+void ActionOffers::operator()(ActionDefinition definition, ActionBinding handler) const
+{
+    if (definition.Category.empty())
+        definition.Category = Category;
+    OfferAction(Catalog, Context, std::move(definition), std::move(handler));
+}
+
 ActionDefinition StepBackAction()
 {
     return { .Id = "edit.escape", .Label = "Step Back", .Category = "Edit", .DefaultChords = { { SDLK_ESCAPE, {} } } };

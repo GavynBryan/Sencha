@@ -72,35 +72,33 @@ void ElementVerbs::Apply(MeshEditVerb verb, const MeshEditParams& params, bool r
 void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
 {
     EditorWorkspace& w = Workspace;
-    const auto offer = [&](std::string id, std::string label, ActionBinding handler) {
-        OfferAction(catalog, context, { .Id = std::move(id), .Label = std::move(label), .Category = "Selection" },
-                    std::move(handler));
-    };
+    const ActionOffers offer{ catalog, context, "Selection" };
     const auto brushes = [this](std::size_t atLeast) { return [this, atLeast] { return Selected(MeshElementKind::Object) >= atLeast; }; };
     const auto elements = [this](MeshElementKind kind) {
         return [this, kind] { return !HasPending() && Selected(kind) > 0; };
     };
 
-    offer("brush.normals", "Recalculate Normals",
+    offer({ .Id = "brush.normals", .Label = "Recalculate Normals" },
           { .Invoke = [this] { Apply(MeshEditVerb::RecalculateNormals, {}, false); }, .Enabled = brushes(1) });
-    offer("brush.make_unique", "Make Unique",
+    offer({ .Id = "brush.make_unique", .Label = "Make Unique" },
           { .Invoke = [&w] { w.Actions.MakeUnique(); }, .Enabled = [&w] { return w.Actions.HasInstancedSelection(); } });
-    offer("brush.merge", "Merge Brushes", { .Invoke = [&w] { w.Actions.Merge(); }, .Enabled = brushes(2) });
-    offer("brush.bake", "Bake to Static Mesh", { .Invoke = [&w] { w.Actions.Bake(); }, .Enabled = brushes(1) });
-    offer("brush.revert", "Revert to Brush",
+    offer({ .Id = "brush.merge", .Label = "Merge Brushes" },
+          { .Invoke = [&w] { w.Actions.Merge(); }, .Enabled = brushes(2) });
+    offer({ .Id = "brush.bake", .Label = "Bake to Static Mesh" },
+          { .Invoke = [&w] { w.Actions.Bake(); }, .Enabled = brushes(1) });
+    offer({ .Id = "brush.revert", .Label = "Revert to Brush" },
           { .Invoke = [&w] { w.Actions.RevertBaked(); }, .Enabled = [&w] { return w.Actions.HasBakedSelection(); } });
-    offer("brush.export", "Export .glb...",
-          { .Invoke = [this] { if (ExportGlb) ExportGlb(); },
+    offer({ .Id = "brush.export", .Label = "Export .glb..." }, { .Invoke = [this] { if (ExportGlb) ExportGlb(); },
             .Enabled = [&w] { return w.Actions.SelectedExportMesh() != nullptr; } });
 
-    offer("face.flip", "Flip Normals",
+    offer({ .Id = "face.flip", .Label = "Flip Normals" },
           { .Invoke = [this] { Apply(MeshEditVerb::FlipFaceNormal, {}, true); }, .Enabled = elements(MeshElementKind::Face) });
-    offer("face.separate", "Separate",
+    offer({ .Id = "face.separate", .Label = "Separate" },
           { .Invoke = [&w] { w.Actions.SeparateFaces(); }, .Enabled = elements(MeshElementKind::Face) });
-    offer("face.inset", "Inset",
+    offer({ .Id = "face.inset", .Label = "Inset" },
           { .Invoke = [this] { Workspace.BeginInsetOnSelectedFaces(Current.InsetDistance); },
             .Enabled = elements(MeshElementKind::Face) });
-    offer("material.clear", "Clear Material",
+    offer({ .Id = "material.clear", .Label = "Clear Material" },
           { .Invoke = [&w] {
                 if (w.Interaction.Sink != nullptr)
                     ApplyMaterialToSelectedFaces(*w.Interaction.Sink, w.Selection, w.Commands, AssetRef{});
@@ -112,23 +110,25 @@ void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
         params.Soften = on;
         Apply(MeshEditVerb::SetEdgeSoftness, params, false);
     };
-    offer("edge.soften", "Soften", { .Invoke = [soften] { soften(true); }, .Enabled = elements(MeshElementKind::Edge) });
-    offer("edge.harden", "Harden", { .Invoke = [soften] { soften(false); }, .Enabled = elements(MeshElementKind::Edge) });
-    offer("edge.bevel", "Bevel",
+    offer({ .Id = "edge.soften", .Label = "Soften" },
+          { .Invoke = [soften] { soften(true); }, .Enabled = elements(MeshElementKind::Edge) });
+    offer({ .Id = "edge.harden", .Label = "Harden" },
+          { .Invoke = [soften] { soften(false); }, .Enabled = elements(MeshElementKind::Edge) });
+    offer({ .Id = "edge.bevel", .Label = "Bevel" },
           { .Invoke = [this] { Workspace.BeginBevelOnSelectedEdges(Current.BevelWidth, Current.BevelSegments); },
             .Enabled = elements(MeshElementKind::Edge) });
-    offer("edge.bridge", "Bridge",
+    offer({ .Id = "edge.bridge", .Label = "Bridge" },
           { .Invoke = [this] { Workspace.Actions.Bridge(Current.BridgeSegments); },
             .Enabled = [this] { return !HasPending() && Selected(MeshElementKind::Edge) >= 2; } });
 
-    offer("vertex.weld", "Weld by Distance",
+    offer({ .Id = "vertex.weld", .Label = "Weld by Distance" },
           { .Invoke = [this] {
                 MeshEditParams params;
                 params.WeldDistance = Current.WeldDistance;
                 Apply(MeshEditVerb::WeldVertices, params, true);
             },
             .Enabled = elements(MeshElementKind::Vertex) });
-    offer("vertex.snap", "Snap to Grid",
+    offer({ .Id = "vertex.snap", .Label = "Snap to Grid" },
           { .Invoke = [this] {
                 const GridSettings& grid = Workspace.Grid;
                 MeshEditParams params;
@@ -140,7 +140,7 @@ void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
             },
             .Enabled = elements(MeshElementKind::Vertex) });
 
-    offer("element.apply", "Apply",
+    offer({ .Id = "element.apply", .Label = "Apply" },
           { .Invoke = [&w] {
                 if (w.HasPendingBridge())
                     w.CommitPendingBridge();
@@ -148,7 +148,7 @@ void ElementVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
                     w.CommitPendingElementEdit();
             },
             .Enabled = [this] { return HasPending(); } });
-    offer("element.cancel", "Cancel",
+    offer({ .Id = "element.cancel", .Label = "Cancel" },
           { .Invoke = [&w] {
                 if (w.HasPendingBridge())
                     w.CancelPendingBridge();

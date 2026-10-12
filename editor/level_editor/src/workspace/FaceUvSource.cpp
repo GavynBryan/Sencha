@@ -50,16 +50,17 @@ void FaceUvSource::Justify(bool fit)
 
 void FaceUvSource::Offer(ActionCatalog& catalog, ActionContext& context)
 {
-    const auto offer = [&](std::string id, std::string label, std::function<void()> invoke) {
-        OfferAction(catalog, context, { .Id = std::move(id), .Label = std::move(label), .Category = "Texture" },
-                    { .Invoke = std::move(invoke), .Enabled = [this] { return HasFaces(); } });
-    };
-    offer("uv.fit", "Fit Texture", [this] { Justify(true); });
-    offer("uv.center", "Center Texture", [this] { Justify(false); });
-    offer("uv.reset_axes", "Reset Texture Axes", [this] {
-        if (Workspace.Interaction.Sink != nullptr)
-            Realign(*Workspace.Interaction.Sink, Workspace.Selection, Workspace.Commands, std::nullopt);
-    });
+    const ActionOffers offer{ catalog, context, "Texture" };
+    const auto hasFaces = [this] { return HasFaces(); };
+    offer({ .Id = "uv.fit", .Label = "Fit Texture" }, { .Invoke = [this] { Justify(true); }, .Enabled = hasFaces });
+    offer({ .Id = "uv.center", .Label = "Center Texture" },
+          { .Invoke = [this] { Justify(false); }, .Enabled = hasFaces });
+    offer({ .Id = "uv.reset_axes", .Label = "Reset Texture Axes" },
+          { .Invoke = [this] {
+                if (Workspace.Interaction.Sink != nullptr)
+                    Realign(*Workspace.Interaction.Sink, Workspace.Selection, Workspace.Commands, std::nullopt);
+            },
+            .Enabled = hasFaces });
 }
 
 std::vector<PropertyNode> FaceUvSource::Nodes() const

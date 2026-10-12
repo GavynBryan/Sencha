@@ -294,16 +294,11 @@ void LevelWorkspace::BuildInput()
         { "material.copy_proj",    "Copy Face Projection",        "Material", { SDLK_C, { .Ctrl = true, .Shift = true } }, [this] { Workspace->CopySelectedFaceProjection(); } },
         { "material.paste_proj",   "Paste Face Projection",       "Material", { SDLK_V, { .Ctrl = true, .Shift = true } }, [this] { Workspace->PasteFaceProjectionToSelection(); } },
     };
-    const auto offer = [&](std::string_view id, std::string_view label, std::string_view category,
-                           std::vector<KeyChord> chords, IconId icon, std::function<void()> invoke)
-    {
-        OfferAction(Catalog, ActionHandlers,
-                    { .Id = std::string(id), .Label = std::string(label), .Category = std::string(category),
-                      .Icon = icon, .DefaultChords = std::move(chords) },
-                    { .Invoke = std::move(invoke) });
-    };
+    const ActionOffers offer{ Catalog, ActionHandlers };
     for (const LevelAction& action : actions)
-        offer(action.Id, action.Label, action.Category, { action.Chord }, IconId::None, action.Invoke);
+        offer({ .Id = std::string(action.Id), .Label = std::string(action.Label),
+                .Category = std::string(action.Category), .DefaultChords = { action.Chord } },
+              { .Invoke = action.Invoke });
     OfferAction(Catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] { Workspace->EscapeStep(); } });
     OfferAction(Catalog, ActionHandlers, DeleteAction(), { .Invoke = [this] {
                     const EditorWorkspace::Deletion deletion = Workspace->DeleteSelection();
@@ -313,7 +308,8 @@ void LevelWorkspace::BuildInput()
     OfferAction(Catalog, ActionHandlers, DuplicateAction(),
                 { .Invoke = [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } });
     OfferAction(Catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { Files->Save(); } });
-    offer("file.save_as", "Save As...", "File", {}, IconId::None, [this] { Files->RequestSaveAs(); });
+    offer({ .Id = "file.save_as", .Label = "Save As...", .Category = "File" },
+          { .Invoke = [this] { Files->RequestSaveAs(); } });
     OfferAction(Catalog, ActionHandlers, NewLevelAction(),
                 { .Invoke = [this] { AfterSettlingChanges([this] { Files->New(); }); } });
     OfferAction(Catalog, ActionHandlers, NewWorldAction(),
@@ -408,21 +404,26 @@ void LevelWorkspace::BuildInput()
             std::vector<KeyChord> chords;
             if (shortcut.Key != SDLK_UNKNOWN)
                 chords.push_back(KeyChord{ shortcut.Key, shortcut.Mods });
-            offer("tool." + id, tool->GetDisplayName(), "Tool", std::move(chords), tool->GetIcon(),
-                  [this, id]
-                  {
-                      if (ToolRegistry* live = Workspace->Interaction.Tools.get())
-                          (void)live->Activate(id);
-                  });
+            offer({ .Id = "tool." + id, .Label = std::string(tool->GetDisplayName()), .Category = "Tool",
+                    .Icon = tool->GetIcon(), .DefaultChords = std::move(chords) },
+                  { .Invoke = [this, id] {
+                        if (ToolRegistry* live = Workspace->Interaction.Tools.get())
+                            (void)live->Activate(id);
+                    } });
         }
     }
 
     // A wheel's key is held rather than pressed, so the session owns both
     // edges of it and no handler claims the action; it is defined so the
     // keymap, hints and palette name it like any other.
-    offer("tool.wheel", "Tool Wheel", "Tool", { KeyChord{ SDLK_Q, {} } }, IconId::None, {});
-    offer("gizmo.wheel", "Transform Wheel", "Transform", { KeyChord{ SDLK_Z, {} } }, IconId::None, {});
-    offer("context.wheel", "Context Wheel", "Edit", { KeyChord{ SDLK_SPACE, {} } }, IconId::None, {});
+    offer({ .Id = "tool.wheel", .Label = "Tool Wheel", .Category = "Tool", .DefaultChords = { { SDLK_Q, {} } } },
+          {});
+    offer({ .Id = "gizmo.wheel", .Label = "Transform Wheel", .Category = "Transform",
+            .DefaultChords = { { SDLK_Z, {} } } },
+          {});
+    offer({ .Id = "context.wheel", .Label = "Context Wheel", .Category = "Edit",
+            .DefaultChords = { { SDLK_SPACE, {} } } },
+          {});
     OfferAction(Catalog, ActionHandlers, { .Id = std::string(kMapAction), .Label = "World Map", .Category = "View" },
                 { .Invoke = [this] { Showing = Showing == LevelContent::Map ? LevelContent::Views : LevelContent::Map; },
                   .Enabled = [this] { return Workspace->World.IsWorld(); },
@@ -434,14 +435,16 @@ void LevelWorkspace::BuildInput()
         ToolRegistry* tools = Workspace->Interaction.Tools.get();
         return { tools != nullptr ? tools->GetActiveTool() : nullptr, tools };
     };
-    offer("tool.apply", "Apply", "Tool", {}, IconId::Check, [activeTool] {
-        if (const auto [tool, tools] = activeTool(); tool != nullptr && tool->Draft() == ToolDraft::Ready)
-            tool->CommitPending(tools->GetContext());
-    });
-    offer("tool.cancel", "Cancel", "Tool", {}, IconId::Cancel, [activeTool] {
-        if (const auto [tool, tools] = activeTool(); tool != nullptr && tool->Draft() != ToolDraft::None)
-            tool->OnCancel(tools->GetContext());
-    });
+    offer({ .Id = "tool.apply", .Label = "Apply", .Category = "Tool", .Icon = IconId::Check },
+          { .Invoke = [activeTool] {
+                if (const auto [tool, tools] = activeTool(); tool != nullptr && tool->Draft() == ToolDraft::Ready)
+                    tool->CommitPending(tools->GetContext());
+            } });
+    offer({ .Id = "tool.cancel", .Label = "Cancel", .Category = "Tool", .Icon = IconId::Cancel },
+          { .Invoke = [activeTool] {
+                if (const auto [tool, tools] = activeTool(); tool != nullptr && tool->Draft() != ToolDraft::None)
+                    tool->OnCancel(tools->GetContext());
+            } });
     ToolParameters = std::make_unique<ToolParameterSource>([this] { return Workspace->Interaction.Tools.get(); });
 
     // A wheel's key is held, not pressed, so it is not a shortcut row: the
@@ -1193,27 +1196,24 @@ void LevelWorkspace::DefineTransportActions()
     // palette reach the same handlers. A cook reads the live documents (and
     // force-saves the world first), so open previews settle before it starts or
     // they would cook half-staged.
-    const auto offer = [this](std::string id, std::string label, ActionBinding handler) {
-        OfferAction(Catalog, ActionHandlers,
-                    { .Id = std::move(id), .Label = std::move(label), .Category = "Transport" }, std::move(handler));
-    };
+    const ActionOffers offer{ Catalog, ActionHandlers, "Transport" };
     const auto cooking = [this] { return CookRuntime != nullptr && CookRuntime->IsActive(); };
     const auto playing = [this] { return CookRuntime != nullptr && CookRuntime->Player().IsPlaying(); };
-    offer("transport.cook", "Cook", {
+    offer({ .Id = "transport.cook", .Label = "Cook" }, {
         .Invoke = [this] { Workspace->ResolvePendingEdits(); if (CookRuntime) CookRuntime->Start(); },
         .Enabled = [this, cooking] { return CookRuntime != nullptr && !cooking(); } });
-    offer("transport.rebuild", "Cook From Scratch", {
+    offer({ .Id = "transport.rebuild", .Label = "Cook From Scratch" }, {
         .Invoke = [this] { Workspace->ResolvePendingEdits(); if (CookRuntime) CookRuntime->Start(/*rebuild*/ true); },
         .Enabled = [this, cooking] { return CookRuntime != nullptr && !cooking(); } });
-    offer("transport.cancel", "Cancel Cook", {
+    offer({ .Id = "transport.cancel", .Label = "Cancel Cook" }, {
         .Invoke = [this] { if (CookRuntime) CookRuntime->Cancel(); },
         .Enabled = cooking });
-    offer("transport.play", "Play", {
+    offer({ .Id = "transport.play", .Label = "Play" }, {
         .Invoke = [this] { if (CookRuntime) CookRuntime->Player().Play(CookRuntime->Player().LastCookedMap()); },
         .Enabled = [this, playing] { return CookRuntime != nullptr && !playing(); } });
-    offer("transport.stop", "Stop", { .Invoke = [this] { if (CookRuntime) CookRuntime->Player().Stop(); },
-                                      .Enabled = playing });
-    offer("transport.profiles", "Cook Profiles...", {
+    offer({ .Id = "transport.stop", .Label = "Stop" },
+          { .Invoke = [this] { if (CookRuntime) CookRuntime->Player().Stop(); }, .Enabled = playing });
+    offer({ .Id = "transport.profiles", .Label = "Cook Profiles..." }, {
         .Invoke = [this] { if (ProfilesModal) ProfilesModal->Open(); },
         .Enabled = [this] { return ProfilesModal != nullptr; } });
     OfferProfileActions();
@@ -1224,24 +1224,16 @@ void LevelWorkspace::OfferProfileActions()
     if (CookRuntime == nullptr)
         return;
     const std::vector<CookProfile> profiles = CookRuntime->GetSession().AvailableProfiles();
-    std::vector<std::string> offered;
+    std::vector<ActionDefinition> members;
     for (const CookProfile& profile : profiles)
-    {
-        const std::string action = "transport.profile." + profile.Id;
-        const std::string label = "Cook with " + profile.Name;
-        if (const ActionDefinition* existing = Catalog.Find(action); existing != nullptr && existing->Label != label)
-            (void)Catalog.Relabel(action, label);
-        OfferAction(Catalog, ActionHandlers, { .Id = action, .Label = label, .Category = "Transport" },
-                    { .Invoke = [this, id = profile.Id] { if (CookRuntime) CookRuntime->SelectProfile(id); },
-                      .Checked = [this, id = profile.Id] {
-                          return CookRuntime != nullptr && CookRuntime->SelectedProfileId() == id;
-                      } });
-        offered.push_back(action);
-    }
-    for (const std::string& action : OfferedProfiles)
-        if (std::ranges::find(offered, action) == offered.end())
-            ActionHandlers.Release(action);
-    OfferedProfiles = std::move(offered);
+        members.push_back(
+            { .Id = "transport.profile." + profile.Id, .Label = "Cook with " + profile.Name, .Category = "Transport" });
+    ProfileActions.Offer(Catalog, ActionHandlers, std::move(members), [this, &profiles](std::size_t index) {
+        const std::string& id = profiles[index].Id;
+        return ActionBinding{
+            .Invoke = [this, id] { if (CookRuntime) CookRuntime->SelectProfile(id); },
+            .Checked = [this, id] { return CookRuntime != nullptr && CookRuntime->SelectedProfileId() == id; } };
+    });
 }
 
 WorkspaceDocumentFacet LevelWorkspace::Document() const

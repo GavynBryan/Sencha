@@ -10,6 +10,17 @@
 // Invoke claims nothing -- the action is only named, as a held key is.
 void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinition definition, ActionBinding handler);
 
+// Offers into one context under one category, what a group of verbs shares; a
+// definition naming its own category keeps it.
+struct ActionOffers
+{
+    ActionCatalog& Catalog;
+    ActionContext& Context;
+    std::string Category = {};
+
+    void operator()(ActionDefinition definition, ActionBinding handler) const;
+};
+
 // Escape: whatever is open or in hand steps back one level. One action in every
 // workspace, so every one of them answers the same key.
 [[nodiscard]] ActionDefinition StepBackAction();

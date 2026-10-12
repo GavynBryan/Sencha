@@ -1,5 +1,7 @@
 #pragma once
 
+#include "actions/ActionFamily.h"
+
 #include <functional>
 #include <string>
 #include <vector>
@@ -36,7 +38,5 @@ public:
 private:
     EditorWorkspace& Workspace;
     std::function<bool(const std::string&)> OpenSource;
-    // The zone moves in play, and the zone names they were offered under.
-    std::vector<std::string> OfferedMoves;
-    std::vector<std::string> OfferedNames;
+    ActionFamily ZoneMoves;
 };

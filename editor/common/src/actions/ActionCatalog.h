@@ -19,7 +19,7 @@ struct ActionDefinition
 {
     std::string Id;
     std::string Label;
-    std::string Category;
+    std::string Category = {};
     IconId Icon = IconId::None;
     ActionTone Tone = ActionTone::Normal;
     std::vector<KeyChord> DefaultChords = {};
