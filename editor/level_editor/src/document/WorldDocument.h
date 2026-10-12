@@ -5,6 +5,7 @@
 #include "viewport/WorldViewSettings.h"
 
 #include <zone/ContentRiskRecord.h>
+#include <zone/WorldTopologyCook.h>
 #include <zone/WorldPartitionIndex.h>
 #include <zone/WorldPartitionManifest.h>
 
@@ -117,6 +118,12 @@ public:
     // Manifest validation plus the editor-side scene-resolvability check, rerun
     // on world load, save, and every manifest verb. Errors are logged as they
     // are produced; the records stay here for the partition panel to display.
+    // The world scene's docks and links as the topology cook reads them. False
+    // with `error` set when a dock has no transform.
+    [[nodiscard]] bool CollectAuthoredTopology(std::vector<AuthoredDockCookInput>& docks,
+                                               std::vector<AuthoredLinkCookInput>& links,
+                                               std::string* error = nullptr) const;
+
     [[nodiscard]] std::span<const ContentRiskRecord> ValidationRecords() const
     {
         return ValidationRecords_;

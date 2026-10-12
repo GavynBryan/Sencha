@@ -333,6 +333,16 @@ TEST_F(WorldDocumentTest, AWorldOpenedWithItsUserStateIgnoredNeitherReadsNorWrit
     EXPECT_EQ(kept, written);
 }
 
+TEST_F(WorldDocumentTest, ZonesTheWorldScenesDocksReachAreReachable)
+{
+    // Every zone of the template world is joined to the start zone by docks
+    // authored in its world scene, which the manifest itself does not carry.
+    WorldDocument world(Logging, WorldDocument::UserState::Ignored);
+    ASSERT_TRUE(world.LoadWorld(std::string(SENCHA_REPO_ROOT) + "/templates/fps/assets/traversal3.sworld"));
+    for (const ContentRiskRecord& record : world.ValidationRecords())
+        EXPECT_NE(record.RuleId, "partition.graph.unreachable") << record.Message;
+}
+
 TEST_F(WorldDocumentTest, SceneUnresolvedRecordFiresForMissingFile)
 {
     ZoneId second{};

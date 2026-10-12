@@ -1165,13 +1165,49 @@ void WorldDocument::AssignSceneRefsForNewZones()
     }
 }
 
+bool WorldDocument::CollectAuthoredTopology(std::vector<AuthoredDockCookInput>& docks,
+                                            std::vector<AuthoredLinkCookInput>& links,
+                                            std::string* error) const
+{
+    const EditorScene& worldScene = WorldSceneDocument().GetScene();
+    const Registry& registry = WorldSceneDocument().GetRegistry();
+    for (EntityId entity : worldScene.GetAllEntities())
+    {
+        const uint64_t authoredEntity = (static_cast<uint64_t>(entity.Generation) << 32)
+            | entity.Index;
+        if (const WorldDock* dock = registry.Components.TryGet<WorldDock>(entity))
+        {
+            const LocalTransform* transform = registry.Components.TryGet<LocalTransform>(entity);
+            if (transform == nullptr)
+            {
+                if (error != nullptr)
+                    *error = "a world dock has no transform";
+                return false;
+            }
+            docks.push_back({ *dock, transform->Value, authoredEntity });
+        }
+        if (const WorldLink* link = registry.Components.TryGet<WorldLink>(entity))
+            links.push_back({ *link, authoredEntity });
+    }
+    return true;
+}
+
 void WorldDocument::RunValidation()
 {
     ValidationRecords_.clear();
     if (!WorldMode_)
         return;
 
-    ValidationRecords_ = ValidateWorldPartitionManifest(Manifest_, Index());
+    // The authored manifest carries no dock or link endpoints: the topology
+    // they compile to is cooked from the world scene. Reachability is checked
+    // against that compiled topology, so a zone a dock reaches is reached.
+    WorldPartitionManifest compiled = Manifest_;
+    std::vector<AuthoredDockCookInput> docks;
+    std::vector<AuthoredLinkCookInput> links;
+    if (CollectAuthoredTopology(docks, links) && CookWorldTopology(compiled, docks, links))
+        ValidationRecords_ = ValidateWorldPartitionManifest(compiled, WorldPartitionIndex::Build(compiled));
+    else
+        ValidationRecords_ = ValidateWorldPartitionManifest(Manifest_, Index());
 
     std::vector<DockId> dockIds;
     std::vector<LinkId> linkIds;
