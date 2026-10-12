@@ -30,14 +30,17 @@ TEST_F(PrefabExplorerTest, OffersSceneSourcesButNotTheLevelBeingEdited)
     EXPECT_EQ(info.Accepts.front().Extension, ".sscene");
     EXPECT_TRUE(info.Withheld.empty()) << "an unsaved level is no file to withhold";
 
-    const std::filesystem::path level = std::filesystem::temp_directory_path() /
-                                        ("sencha_prefab_explorer_" + std::to_string(std::random_device{}()) + ".sscene");
-    ASSERT_TRUE(Workspace.World.FocusDocument().SaveAs(level.string()));
+    const std::filesystem::path root = std::filesystem::temp_directory_path() /
+                                       ("sencha_prefab_explorer_" + std::to_string(std::random_device{}()));
+    std::filesystem::create_directories(root / "levels");
+    EditorDocument& editing = Workspace.World.FocusDocument();
+    editing.SetContentRoots({ root });
+    ASSERT_TRUE(editing.SaveAs((root / "levels" / "hub.sscene").string()));
     info = Explorer.Info();
-    ASSERT_EQ(info.Withheld.size(), 1u);
-    EXPECT_EQ(std::filesystem::path(info.Withheld.front()), level);
+    EXPECT_EQ(info.Withheld, (std::vector<std::string>{ "asset://levels/hub.sscene" }))
+        << "the level is withheld by the name a placement would give it";
     std::error_code ec;
-    std::filesystem::remove(level, ec);
+    std::filesystem::remove_all(root, ec);
 }
 
 TEST_F(PrefabExplorerTest, ChoosingOnePutsItInHandAndTakesUpPlace)

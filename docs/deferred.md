@@ -232,11 +232,13 @@ do the work and delete the entry.
 
 - **What:** a prefab placed with the Place tool turns by its yaw setting (the
   tool card's 0/90/180/270), not by a key while the ghost hovers; one dragged
-  from the Shelf into the view lands unturned.
+  from the Shelf into the view lands unturned, because the drop repeats the
+  tool's surface-then-grid pick instead of placing through the tool.
 - **Where:** `editor/level_editor/src/document/tools/PlaceTool.cpp`;
   `LevelWorkspace::DropAsset`.
-- **Trigger:** the owner's walkthrough at the explorers checkpoint, or a
-  designer placing many turned props.
+- **Trigger:** the owner's walkthrough at the explorers checkpoint, a designer
+  placing many turned props, or `claude/place-preview` landing: it hands the
+  drop to the tool as a carry and resolves both.
 
 ## Reordering and reparenting by dragging in the outline
 

@@ -1,10 +1,11 @@
 {
-  "version": 9,
+  "version": 10,
   "sources": [
     {
       "source": "art/screw.svg",
+      "id": "0bae705789bf021e",
       "input_fingerprint": "dabb667618e36357",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "498",
       "mtime": "-4646886354211229060",
       "meta_size": "0",
@@ -12,6 +13,7 @@
       "artifacts": [
         {
           "path": "asset://art/screw.svg",
+          "id": "0bae705789bf021e",
           "file": ".cooked/art/screw.svg.stex",
           "type": "Texture",
           "hash": "da61a8706bb866df"
@@ -20,8 +22,9 @@
     },
     {
       "source": "art/vent.svg",
+      "id": "451969959dbefc0d",
       "input_fingerprint": "df990ba0719dbea5",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "1495",
       "mtime": "-4646886309950389189",
       "meta_size": "0",
@@ -29,6 +32,7 @@
       "artifacts": [
         {
           "path": "asset://art/vent.svg",
+          "id": "451969959dbefc0d",
           "file": ".cooked/art/vent.svg.stex",
           "type": "Texture",
           "hash": "3082071e17378d3b"
@@ -36,18 +40,81 @@
       ]
     },
     {
-      "source": "cook_profiles.rml",
-      "input_fingerprint": "dc6e09cf9d528cbd",
+      "source": "color_picker.rml",
+      "id": "8f5f9cf24e415311",
+      "input_fingerprint": "94cfd822c0d8ccd4",
       "cook_identity": "4765341e77032c66",
-      "size": "2819",
-      "mtime": "-4646871005579443671",
+      "size": "2430",
+      "mtime": "-4645923053160539376",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "color_picker.rcss",
+          "size": "2068",
+          "mtime": "-4645923190821372216"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "5908",
+          "mtime": "-4646761306498704282"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://color_picker.rml",
+          "id": "8f5f9cf24e415311",
+          "file": ".cooked/color_picker.rml.sui",
+          "type": "UiPackage",
+          "hash": "b07671c4a296553f"
+        }
+      ]
+    },
+    {
+      "source": "content_picture.rml",
+      "id": "bbb16277b290fc1d",
+      "input_fingerprint": "5fd318f1c50d7ba3",
+      "cook_identity": "4765341e77032c66",
+      "size": "1696",
+      "mtime": "-4646789678307572111",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "content_picture.rcss",
+          "size": "536",
+          "mtime": "-4646789678307543080"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "5908",
+          "mtime": "-4646761306498704282"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://content_picture.rml",
+          "id": "bbb16277b290fc1d",
+          "file": ".cooked/content_picture.rml.sui",
+          "type": "UiPackage",
+          "hash": "d956338030ed6b3b"
+        }
+      ]
+    },
+    {
+      "source": "cook_profiles.rml",
+      "id": "ec702af829009be7",
+      "input_fingerprint": "d77979644287fe3a",
+      "cook_identity": "4765341e77032c66",
+      "size": "2906",
+      "mtime": "-4645924247924635320",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "controls.rcss",
-          "size": "3221",
-          "mtime": "-4646864653601029654"
+          "size": "5610",
+          "mtime": "-4645924247925799897"
         },
         {
           "source": "cook_profiles.rcss",
@@ -56,21 +123,59 @@
         },
         {
           "source": "theme.rcss",
-          "size": "4472",
-          "mtime": "-4646877067248872502"
+          "size": "5908",
+          "mtime": "-4646761306498704282"
         }
       ],
       "artifacts": [
         {
           "path": "asset://cook_profiles.rml",
+          "id": "ec702af829009be7",
           "file": ".cooked/cook_profiles.rml.sui",
           "type": "UiPackage",
-          "hash": "ede292c6665a13b9"
+          "hash": "aed792752c993458"
+        }
+      ]
+    },
+    {
+      "source": "deck.rml",
+      "id": "7cfce3f69913a5ea",
+      "input_fingerprint": "d651965d8cf05c8e",
+      "cook_identity": "4765341e77032c66",
+      "size": "3436",
+      "mtime": "-4646331185526970983",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "deck.rcss",
+          "size": "2620",
+          "mtime": "-4646331185526729814"
+        },
+        {
+          "source": "controls.rcss",
+          "size": "5610",
+          "mtime": "-4645924247925799897"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "5908",
+          "mtime": "-4646761306498704282"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://deck.rml",
+          "id": "7cfce3f69913a5ea",
+          "file": ".cooked/deck.rml.sui",
+          "type": "UiPackage",
+          "hash": "74888d9c1534ac44"
         }
       ]
     },
     {
       "source": "fonts/ChakraPetch-SemiBold.ttf",
+      "id": "3d538511ea6ad3ca",
       "input_fingerprint": "5f92830505c1f46b",
       "cook_identity": "9ef2365382486487",
       "size": "78604",
@@ -80,6 +185,7 @@
       "artifacts": [
         {
           "path": "asset://fonts/ChakraPetch-SemiBold.ttf",
+          "id": "3d538511ea6ad3ca",
           "file": ".cooked/fonts/ChakraPetch-SemiBold.ttf.sfont",
           "type": "Font",
           "hash": "db37414eafffed1e"
@@ -88,6 +194,7 @@
     },
     {
       "source": "fonts/Inter-Medium.ttf",
+      "id": "31e9f64b0f6057d5",
       "input_fingerprint": "76da859b2e3396b4",
       "cook_identity": "9ef2365382486487",
       "size": "417300",
@@ -97,6 +204,7 @@
       "artifacts": [
         {
           "path": "asset://fonts/Inter-Medium.ttf",
+          "id": "31e9f64b0f6057d5",
           "file": ".cooked/fonts/Inter-Medium.ttf.sfont",
           "type": "Font",
           "hash": "db2d9851966bb769"
@@ -105,6 +213,7 @@
     },
     {
       "source": "fonts/Inter-Regular.ttf",
+      "id": "4171c94e7e0b0633",
       "input_fingerprint": "c694bb143377f2be",
       "cook_identity": "9ef2365382486487",
       "size": "411640",
@@ -114,6 +223,7 @@
       "artifacts": [
         {
           "path": "asset://fonts/Inter-Regular.ttf",
+          "id": "4171c94e7e0b0633",
           "file": ".cooked/fonts/Inter-Regular.ttf.sfont",
           "type": "Font",
           "hash": "50409bd6468ed112"
@@ -122,6 +232,7 @@
     },
     {
       "source": "fonts/JetBrainsMono-Regular.ttf",
+      "id": "8e6b2ee451d3254d",
       "input_fingerprint": "f4b7077dab274e6b",
       "cook_identity": "9ef2365382486487",
       "size": "270224",
@@ -131,6 +242,7 @@
       "artifacts": [
         {
           "path": "asset://fonts/JetBrainsMono-Regular.ttf",
+          "id": "8e6b2ee451d3254d",
           "file": ".cooked/fonts/JetBrainsMono-Regular.ttf.sfont",
           "type": "Font",
           "hash": "358e88fb023d9527"
@@ -139,6 +251,7 @@
     },
     {
       "source": "fonts/fa-solid-900.ttf",
+      "id": "01ab805db8986735",
       "input_fingerprint": "dfd5f17967c05612",
       "cook_identity": "9ef2365382486487",
       "size": "426112",
@@ -148,6 +261,7 @@
       "artifacts": [
         {
           "path": "asset://fonts/fa-solid-900.ttf",
+          "id": "01ab805db8986735",
           "file": ".cooked/fonts/fa-solid-900.ttf.sfont",
           "type": "Font",
           "hash": "b7f199cd34ab7fba"
@@ -156,8 +270,9 @@
     },
     {
       "source": "icons/add.svg",
+      "id": "dc244fbc135a23d9",
       "input_fingerprint": "f272ce5fbac6c742",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "277",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -165,6 +280,7 @@
       "artifacts": [
         {
           "path": "asset://icons/add.svg",
+          "id": "dc244fbc135a23d9",
           "file": ".cooked/icons/add.svg.stex",
           "type": "Texture",
           "hash": "c7ec4fdeb292ed99"
@@ -173,8 +289,9 @@
     },
     {
       "source": "icons/anchor.svg",
+      "id": "4d49d0f5c8af1847",
       "input_fingerprint": "246060c4f821da3d",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "418",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -182,6 +299,7 @@
       "artifacts": [
         {
           "path": "asset://icons/anchor.svg",
+          "id": "4d49d0f5c8af1847",
           "file": ".cooked/icons/anchor.svg.stex",
           "type": "Texture",
           "hash": "ec954166238bfd65"
@@ -190,8 +308,9 @@
     },
     {
       "source": "icons/box.svg",
+      "id": "b100788cb400e489",
       "input_fingerprint": "baaafd7f5d6fc753",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "438",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -199,6 +318,7 @@
       "artifacts": [
         {
           "path": "asset://icons/box.svg",
+          "id": "b100788cb400e489",
           "file": ".cooked/icons/box.svg.stex",
           "type": "Texture",
           "hash": "9fee57052861257f"
@@ -207,8 +327,9 @@
     },
     {
       "source": "icons/camera.svg",
+      "id": "f8ca7269d009dbfa",
       "input_fingerprint": "7a20446fd542a9dc",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "295",
       "mtime": "-4646881415769879254",
       "meta_size": "0",
@@ -216,6 +337,7 @@
       "artifacts": [
         {
           "path": "asset://icons/camera.svg",
+          "id": "f8ca7269d009dbfa",
           "file": ".cooked/icons/camera.svg.stex",
           "type": "Texture",
           "hash": "86dbd0ebf125b36d"
@@ -224,8 +346,9 @@
     },
     {
       "source": "icons/cancel.svg",
+      "id": "7407411373c8fa12",
       "input_fingerprint": "474d172bf3e8f656",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "287",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -233,6 +356,7 @@
       "artifacts": [
         {
           "path": "asset://icons/cancel.svg",
+          "id": "7407411373c8fa12",
           "file": ".cooked/icons/cancel.svg.stex",
           "type": "Texture",
           "hash": "e0443919c8dc905b"
@@ -241,8 +365,9 @@
     },
     {
       "source": "icons/carve.svg",
+      "id": "1e62fa576eb3b566",
       "input_fingerprint": "6ed9d7b41455b366",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "309",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -250,6 +375,7 @@
       "artifacts": [
         {
           "path": "asset://icons/carve.svg",
+          "id": "1e62fa576eb3b566",
           "file": ".cooked/icons/carve.svg.stex",
           "type": "Texture",
           "hash": "6e57919a3ec153da"
@@ -258,8 +384,9 @@
     },
     {
       "source": "icons/check.svg",
+      "id": "da0cf678ac7284cc",
       "input_fingerprint": "311a5a3d723ae7a5",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "218",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -267,6 +394,7 @@
       "artifacts": [
         {
           "path": "asset://icons/check.svg",
+          "id": "da0cf678ac7284cc",
           "file": ".cooked/icons/check.svg.stex",
           "type": "Texture",
           "hash": "3920558942fb77c3"
@@ -275,8 +403,9 @@
     },
     {
       "source": "icons/chevron-down.svg",
+      "id": "9c1caee211f8e150",
       "input_fingerprint": "7c2fffc12ab2fe93",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "211",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -284,6 +413,7 @@
       "artifacts": [
         {
           "path": "asset://icons/chevron-down.svg",
+          "id": "9c1caee211f8e150",
           "file": ".cooked/icons/chevron-down.svg.stex",
           "type": "Texture",
           "hash": "063c2360f4ec2e1f"
@@ -292,8 +422,9 @@
     },
     {
       "source": "icons/clip-back.svg",
+      "id": "cc85530aa9cf986d",
       "input_fingerprint": "2c5f3f41d3e0cb92",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "402",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -301,6 +432,7 @@
       "artifacts": [
         {
           "path": "asset://icons/clip-back.svg",
+          "id": "cc85530aa9cf986d",
           "file": ".cooked/icons/clip-back.svg.stex",
           "type": "Texture",
           "hash": "3aa492abc83b4555"
@@ -309,8 +441,9 @@
     },
     {
       "source": "icons/clip-cap.svg",
+      "id": "13c4c114adbaf2c2",
       "input_fingerprint": "3bc23ba0453fc833",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "387",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -318,6 +451,7 @@
       "artifacts": [
         {
           "path": "asset://icons/clip-cap.svg",
+          "id": "13c4c114adbaf2c2",
           "file": ".cooked/icons/clip-cap.svg.stex",
           "type": "Texture",
           "hash": "db1fb321b7155eef"
@@ -326,8 +460,9 @@
     },
     {
       "source": "icons/clip-front.svg",
+      "id": "7efb061ef4178c9a",
       "input_fingerprint": "fa6d9b3f5af3f6f0",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "402",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -335,6 +470,7 @@
       "artifacts": [
         {
           "path": "asset://icons/clip-front.svg",
+          "id": "7efb061ef4178c9a",
           "file": ".cooked/icons/clip-front.svg.stex",
           "type": "Texture",
           "hash": "e57ca5552652ade7"
@@ -343,8 +479,9 @@
     },
     {
       "source": "icons/clip-split.svg",
+      "id": "cc4463a2a8bf67d2",
       "input_fingerprint": "ecfb891d367acafe",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "428",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -352,6 +489,7 @@
       "artifacts": [
         {
           "path": "asset://icons/clip-split.svg",
+          "id": "cc4463a2a8bf67d2",
           "file": ".cooked/icons/clip-split.svg.stex",
           "type": "Texture",
           "hash": "4fd58633a4f2a272"
@@ -360,8 +498,9 @@
     },
     {
       "source": "icons/clip.svg",
+      "id": "dcb7d117a64d3cf4",
       "input_fingerprint": "b7ab55924103ddb1",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "284",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -369,6 +508,7 @@
       "artifacts": [
         {
           "path": "asset://icons/clip.svg",
+          "id": "dcb7d117a64d3cf4",
           "file": ".cooked/icons/clip.svg.stex",
           "type": "Texture",
           "hash": "6fc4a048c892bf78"
@@ -377,8 +517,9 @@
     },
     {
       "source": "icons/cut.svg",
+      "id": "0c5eb4c6891d8460",
       "input_fingerprint": "d5a76fb0de0fedfa",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "408",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -386,6 +527,7 @@
       "artifacts": [
         {
           "path": "asset://icons/cut.svg",
+          "id": "0c5eb4c6891d8460",
           "file": ".cooked/icons/cut.svg.stex",
           "type": "Texture",
           "hash": "f63a66cd4491c9b5"
@@ -394,8 +536,9 @@
     },
     {
       "source": "icons/cylinder.svg",
+      "id": "1d7d4d8dccc50a6c",
       "input_fingerprint": "46ed5f921ef5081b",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "435",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -403,6 +546,7 @@
       "artifacts": [
         {
           "path": "asset://icons/cylinder.svg",
+          "id": "1d7d4d8dccc50a6c",
           "file": ".cooked/icons/cylinder.svg.stex",
           "type": "Texture",
           "hash": "8e4309c48ab3a94a"
@@ -410,9 +554,29 @@
       ]
     },
     {
+      "source": "icons/data.svg",
+      "id": "13ececc900d9068b",
+      "input_fingerprint": "5874dfe406897112",
+      "cook_identity": "47010746ab1ff183",
+      "size": "407",
+      "mtime": "-4646331484105837173",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/data.svg",
+          "id": "13ececc900d9068b",
+          "file": ".cooked/icons/data.svg.stex",
+          "type": "Texture",
+          "hash": "8cd8dc79eb1c789f"
+        }
+      ]
+    },
+    {
       "source": "icons/delete.svg",
+      "id": "58d5a9bcfea96415",
       "input_fingerprint": "ae1022a3b11ac44e",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "517",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -420,6 +584,7 @@
       "artifacts": [
         {
           "path": "asset://icons/delete.svg",
+          "id": "58d5a9bcfea96415",
           "file": ".cooked/icons/delete.svg.stex",
           "type": "Texture",
           "hash": "5d12e3fe0ec294af"
@@ -427,9 +592,48 @@
       ]
     },
     {
+      "source": "icons/document.svg",
+      "id": "6678288140aebd36",
+      "input_fingerprint": "c3076db8c388f4a6",
+      "cook_identity": "47010746ab1ff183",
+      "size": "412",
+      "mtime": "-4646331484104404817",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/document.svg",
+          "id": "6678288140aebd36",
+          "file": ".cooked/icons/document.svg.stex",
+          "type": "Texture",
+          "hash": "460ce495c82ab02b"
+        }
+      ]
+    },
+    {
+      "source": "icons/empty.svg",
+      "id": "4ecbf94dfbf6c53e",
+      "input_fingerprint": "8da72aa5db40dcbf",
+      "cook_identity": "47010746ab1ff183",
+      "size": "348",
+      "mtime": "-4645911273384125939",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/empty.svg",
+          "id": "4ecbf94dfbf6c53e",
+          "file": ".cooked/icons/empty.svg.stex",
+          "type": "Texture",
+          "hash": "6b3ef80b9f2fd614"
+        }
+      ]
+    },
+    {
       "source": "icons/eye-off.svg",
+      "id": "3ef030afcfeab918",
       "input_fingerprint": "16c3e1038815d929",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "358",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -437,6 +641,7 @@
       "artifacts": [
         {
           "path": "asset://icons/eye-off.svg",
+          "id": "3ef030afcfeab918",
           "file": ".cooked/icons/eye-off.svg.stex",
           "type": "Texture",
           "hash": "27ca8d26086cfb3b"
@@ -445,8 +650,9 @@
     },
     {
       "source": "icons/eye.svg",
+      "id": "d3c6d794211ef2e1",
       "input_fingerprint": "1626bee5ba54d2bc",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "288",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -454,6 +660,7 @@
       "artifacts": [
         {
           "path": "asset://icons/eye.svg",
+          "id": "d3c6d794211ef2e1",
           "file": ".cooked/icons/eye.svg.stex",
           "type": "Texture",
           "hash": "c8bc4307bbe85c07"
@@ -461,9 +668,48 @@
       ]
     },
     {
+      "source": "icons/file.svg",
+      "id": "13f89960f4a59549",
+      "input_fingerprint": "a249ea23028f60d5",
+      "cook_identity": "47010746ab1ff183",
+      "size": "282",
+      "mtime": "-4646331484103690026",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/file.svg",
+          "id": "13f89960f4a59549",
+          "file": ".cooked/icons/file.svg.stex",
+          "type": "Texture",
+          "hash": "5601446bc55b0dc3"
+        }
+      ]
+    },
+    {
+      "source": "icons/flag.svg",
+      "id": "eaef7f06bacb3eff",
+      "input_fingerprint": "11bb70ad46c6917e",
+      "cook_identity": "47010746ab1ff183",
+      "size": "302",
+      "mtime": "-4645911273385912982",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/flag.svg",
+          "id": "eaef7f06bacb3eff",
+          "file": ".cooked/icons/flag.svg.stex",
+          "type": "Texture",
+          "hash": "df43941b734e0c62"
+        }
+      ]
+    },
+    {
       "source": "icons/folder.svg",
+      "id": "613e71cc0b130aa0",
       "input_fingerprint": "b202546a2bbc2ada",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "239",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -471,6 +717,7 @@
       "artifacts": [
         {
           "path": "asset://icons/folder.svg",
+          "id": "613e71cc0b130aa0",
           "file": ".cooked/icons/folder.svg.stex",
           "type": "Texture",
           "hash": "c8574613aa794a7d"
@@ -479,8 +726,9 @@
     },
     {
       "source": "icons/grid-frame.svg",
+      "id": "bda387753448cb2b",
       "input_fingerprint": "dc33164d96314cfb",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "563",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -488,6 +736,7 @@
       "artifacts": [
         {
           "path": "asset://icons/grid-frame.svg",
+          "id": "bda387753448cb2b",
           "file": ".cooked/icons/grid-frame.svg.stex",
           "type": "Texture",
           "hash": "b51fde85731e47b2"
@@ -496,8 +745,9 @@
     },
     {
       "source": "icons/grid.svg",
+      "id": "50ade0f2b399bdbe",
       "input_fingerprint": "ada1ccbfe9c0b35d",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "496",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -505,6 +755,7 @@
       "artifacts": [
         {
           "path": "asset://icons/grid.svg",
+          "id": "50ade0f2b399bdbe",
           "file": ".cooked/icons/grid.svg.stex",
           "type": "Texture",
           "hash": "6fb310a35f114c0d"
@@ -513,8 +764,9 @@
     },
     {
       "source": "icons/hammer.svg",
+      "id": "07b6518b66ddb990",
       "input_fingerprint": "2d3b3e51d1eca422",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "305",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -522,6 +774,7 @@
       "artifacts": [
         {
           "path": "asset://icons/hammer.svg",
+          "id": "07b6518b66ddb990",
           "file": ".cooked/icons/hammer.svg.stex",
           "type": "Texture",
           "hash": "ffd2360c9a448a08"
@@ -529,9 +782,48 @@
       ]
     },
     {
+      "source": "icons/light-bulb.svg",
+      "id": "36e98d317d6134ae",
+      "input_fingerprint": "01fa33ede1bb8e60",
+      "cook_identity": "47010746ab1ff183",
+      "size": "419",
+      "mtime": "-4645913086624120464",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/light-bulb.svg",
+          "id": "36e98d317d6134ae",
+          "file": ".cooked/icons/light-bulb.svg.stex",
+          "type": "Texture",
+          "hash": "db1298b480d7c643"
+        }
+      ]
+    },
+    {
+      "source": "icons/light-spot.svg",
+      "id": "0ded7d96b2dad3fd",
+      "input_fingerprint": "9dfdf737f27bba62",
+      "cook_identity": "47010746ab1ff183",
+      "size": "426",
+      "mtime": "-4645913771213675322",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/light-spot.svg",
+          "id": "0ded7d96b2dad3fd",
+          "file": ".cooked/icons/light-spot.svg.stex",
+          "type": "Texture",
+          "hash": "271a6a8fc99c76c8"
+        }
+      ]
+    },
+    {
       "source": "icons/light.svg",
+      "id": "784aef7b8813d758",
       "input_fingerprint": "228aeecd85e567e8",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "770",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -539,6 +831,7 @@
       "artifacts": [
         {
           "path": "asset://icons/light.svg",
+          "id": "784aef7b8813d758",
           "file": ".cooked/icons/light.svg.stex",
           "type": "Texture",
           "hash": "f61f065f08394208"
@@ -547,8 +840,9 @@
     },
     {
       "source": "icons/local.svg",
+      "id": "dcaf942617d4e4d6",
       "input_fingerprint": "371c2b4ca51aa1b1",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "382",
       "mtime": "-4646872277555130179",
       "meta_size": "0",
@@ -556,6 +850,7 @@
       "artifacts": [
         {
           "path": "asset://icons/local.svg",
+          "id": "dcaf942617d4e4d6",
           "file": ".cooked/icons/local.svg.stex",
           "type": "Texture",
           "hash": "c00e3d46a9e0fcb4"
@@ -564,8 +859,9 @@
     },
     {
       "source": "icons/lock.svg",
+      "id": "d7b4084590f45343",
       "input_fingerprint": "4a266dedf555f3cf",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "494",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -573,6 +869,7 @@
       "artifacts": [
         {
           "path": "asset://icons/lock.svg",
+          "id": "d7b4084590f45343",
           "file": ".cooked/icons/lock.svg.stex",
           "type": "Texture",
           "hash": "89c87010e27ac954"
@@ -580,9 +877,29 @@
       ]
     },
     {
+      "source": "icons/material.svg",
+      "id": "93db1c46f4c13250",
+      "input_fingerprint": "3bc1a7bed27ac61e",
+      "cook_identity": "47010746ab1ff183",
+      "size": "268",
+      "mtime": "-4646331484108190554",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/material.svg",
+          "id": "93db1c46f4c13250",
+          "file": ".cooked/icons/material.svg.stex",
+          "type": "Texture",
+          "hash": "83e1bdb24901e18a"
+        }
+      ]
+    },
+    {
       "source": "icons/mode-edge.svg",
+      "id": "08fe13c303e2f5c4",
       "input_fingerprint": "b2a0fe84bbd950c4",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "419",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -590,6 +907,7 @@
       "artifacts": [
         {
           "path": "asset://icons/mode-edge.svg",
+          "id": "08fe13c303e2f5c4",
           "file": ".cooked/icons/mode-edge.svg.stex",
           "type": "Texture",
           "hash": "1a0a4a641721a3f7"
@@ -598,8 +916,9 @@
     },
     {
       "source": "icons/mode-face.svg",
+      "id": "f56d6f189a54d81a",
       "input_fingerprint": "32ae6c0b7709564e",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "308",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -607,6 +926,7 @@
       "artifacts": [
         {
           "path": "asset://icons/mode-face.svg",
+          "id": "f56d6f189a54d81a",
           "file": ".cooked/icons/mode-face.svg.stex",
           "type": "Texture",
           "hash": "68d7fefc10d591c7"
@@ -615,8 +935,9 @@
     },
     {
       "source": "icons/mode-object.svg",
+      "id": "cd6a2e9d67c52e47",
       "input_fingerprint": "baaafd7f5d6fc753",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "438",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -624,6 +945,7 @@
       "artifacts": [
         {
           "path": "asset://icons/mode-object.svg",
+          "id": "cd6a2e9d67c52e47",
           "file": ".cooked/icons/mode-object.svg.stex",
           "type": "Texture",
           "hash": "9fee57052861257f"
@@ -632,8 +954,9 @@
     },
     {
       "source": "icons/mode-vertex.svg",
+      "id": "b3f247bba05259fd",
       "input_fingerprint": "3d62959c6081cf89",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "414",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -641,6 +964,7 @@
       "artifacts": [
         {
           "path": "asset://icons/mode-vertex.svg",
+          "id": "b3f247bba05259fd",
           "file": ".cooked/icons/mode-vertex.svg.stex",
           "type": "Texture",
           "hash": "c876fb384f3c218e"
@@ -648,9 +972,29 @@
       ]
     },
     {
+      "source": "icons/model.svg",
+      "id": "5a297af79eee47e9",
+      "input_fingerprint": "84b1acf2b709b934",
+      "cook_identity": "47010746ab1ff183",
+      "size": "408",
+      "mtime": "-4646331484105108410",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/model.svg",
+          "id": "5a297af79eee47e9",
+          "file": ".cooked/icons/model.svg.stex",
+          "type": "Texture",
+          "hash": "73de3c16e6b4fb73"
+        }
+      ]
+    },
+    {
       "source": "icons/move.svg",
+      "id": "126c6b888aafbab7",
       "input_fingerprint": "89b6ad8863b46777",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "599",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -658,6 +1002,7 @@
       "artifacts": [
         {
           "path": "asset://icons/move.svg",
+          "id": "126c6b888aafbab7",
           "file": ".cooked/icons/move.svg.stex",
           "type": "Texture",
           "hash": "5c366a063ce2082b"
@@ -665,9 +1010,29 @@
       ]
     },
     {
+      "source": "icons/pawn.svg",
+      "id": "3f69698f5623cacd",
+      "input_fingerprint": "710eb033c259fe80",
+      "cook_identity": "47010746ab1ff183",
+      "size": "474",
+      "mtime": "-4645911273384796566",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/pawn.svg",
+          "id": "3f69698f5623cacd",
+          "file": ".cooked/icons/pawn.svg.stex",
+          "type": "Texture",
+          "hash": "4bf42743ef586756"
+        }
+      ]
+    },
+    {
       "source": "icons/pivot.svg",
+      "id": "4d287b0252bc5dbb",
       "input_fingerprint": "697d60b83803e260",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "526",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -675,6 +1040,7 @@
       "artifacts": [
         {
           "path": "asset://icons/pivot.svg",
+          "id": "4d287b0252bc5dbb",
           "file": ".cooked/icons/pivot.svg.stex",
           "type": "Texture",
           "hash": "34a4b192a2aa3beb"
@@ -683,8 +1049,9 @@
     },
     {
       "source": "icons/plane.svg",
+      "id": "a7e4e419da22623a",
       "input_fingerprint": "642e6118088ceaa5",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "229",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -692,6 +1059,7 @@
       "artifacts": [
         {
           "path": "asset://icons/plane.svg",
+          "id": "a7e4e419da22623a",
           "file": ".cooked/icons/plane.svg.stex",
           "type": "Texture",
           "hash": "0d691d09b53b1f23"
@@ -700,8 +1068,9 @@
     },
     {
       "source": "icons/play.svg",
+      "id": "eec5afe05a9efd44",
       "input_fingerprint": "499a8ce8c521747d",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "222",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -709,6 +1078,7 @@
       "artifacts": [
         {
           "path": "asset://icons/play.svg",
+          "id": "eec5afe05a9efd44",
           "file": ".cooked/icons/play.svg.stex",
           "type": "Texture",
           "hash": "5703b98c2def0301"
@@ -716,9 +1086,29 @@
       ]
     },
     {
-      "source": "icons/pointer.svg",
-      "input_fingerprint": "6db6e72c4d4b4cfe",
+      "source": "icons/player-start.svg",
+      "id": "25e522031fa015b7",
+      "input_fingerprint": "640d8ad3a2fe8e2d",
       "cook_identity": "f69a7450659d4d5d",
+      "size": "417",
+      "mtime": "-4645913771212675324",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/player-start.svg",
+          "id": "25e522031fa015b7",
+          "file": ".cooked/icons/player-start.svg.stex",
+          "type": "Texture",
+          "hash": "8c96b5d309831a2e"
+        }
+      ]
+    },
+    {
+      "source": "icons/pointer.svg",
+      "id": "1243c6c825e81de9",
+      "input_fingerprint": "6db6e72c4d4b4cfe",
+      "cook_identity": "47010746ab1ff183",
       "size": "271",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -726,6 +1116,7 @@
       "artifacts": [
         {
           "path": "asset://icons/pointer.svg",
+          "id": "1243c6c825e81de9",
           "file": ".cooked/icons/pointer.svg.stex",
           "type": "Texture",
           "hash": "361190cd80035166"
@@ -734,8 +1125,9 @@
     },
     {
       "source": "icons/refresh.svg",
+      "id": "8ec0995a258b6d97",
       "input_fingerprint": "b8be75d4eed515ed",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "301",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -743,6 +1135,7 @@
       "artifacts": [
         {
           "path": "asset://icons/refresh.svg",
+          "id": "8ec0995a258b6d97",
           "file": ".cooked/icons/refresh.svg.stex",
           "type": "Texture",
           "hash": "661a7b87c299307c"
@@ -751,8 +1144,9 @@
     },
     {
       "source": "icons/resize.svg",
+      "id": "726f097a49e48c54",
       "input_fingerprint": "ee38f3ee019ee620",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "345",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -760,6 +1154,7 @@
       "artifacts": [
         {
           "path": "asset://icons/resize.svg",
+          "id": "726f097a49e48c54",
           "file": ".cooked/icons/resize.svg.stex",
           "type": "Texture",
           "hash": "2cff9f7f8f77e5e3"
@@ -768,8 +1163,9 @@
     },
     {
       "source": "icons/rotate.svg",
+      "id": "8063f744e2e14504",
       "input_fingerprint": "b8be75d4eed515ed",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "301",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -777,6 +1173,7 @@
       "artifacts": [
         {
           "path": "asset://icons/rotate.svg",
+          "id": "8063f744e2e14504",
           "file": ".cooked/icons/rotate.svg.stex",
           "type": "Texture",
           "hash": "661a7b87c299307c"
@@ -785,8 +1182,9 @@
     },
     {
       "source": "icons/scale.svg",
+      "id": "2fb642db922a2aca",
       "input_fingerprint": "f79ecc3dfdcbe206",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "359",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -794,6 +1192,7 @@
       "artifacts": [
         {
           "path": "asset://icons/scale.svg",
+          "id": "2fb642db922a2aca",
           "file": ".cooked/icons/scale.svg.stex",
           "type": "Texture",
           "hash": "4c272d5df40d043d"
@@ -802,8 +1201,9 @@
     },
     {
       "source": "icons/search.svg",
+      "id": "1bee0ab56e0b6539",
       "input_fingerprint": "adb2131a5a1d5943",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "278",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -811,6 +1211,7 @@
       "artifacts": [
         {
           "path": "asset://icons/search.svg",
+          "id": "1bee0ab56e0b6539",
           "file": ".cooked/icons/search.svg.stex",
           "type": "Texture",
           "hash": "aa0cb6ff23bb81e0"
@@ -819,8 +1220,9 @@
     },
     {
       "source": "icons/snap.svg",
+      "id": "78ef0a1ae2103f03",
       "input_fingerprint": "fff7e90d0398169e",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "553",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -828,6 +1230,7 @@
       "artifacts": [
         {
           "path": "asset://icons/snap.svg",
+          "id": "78ef0a1ae2103f03",
           "file": ".cooked/icons/snap.svg.stex",
           "type": "Texture",
           "hash": "af3fcc3c047ab1ab"
@@ -836,8 +1239,9 @@
     },
     {
       "source": "icons/stop.svg",
+      "id": "f47db9375d2ac9ac",
       "input_fingerprint": "430f2eafea936095",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "229",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -845,6 +1249,7 @@
       "artifacts": [
         {
           "path": "asset://icons/stop.svg",
+          "id": "f47db9375d2ac9ac",
           "file": ".cooked/icons/stop.svg.stex",
           "type": "Texture",
           "hash": "c8c67af867ba5795"
@@ -852,9 +1257,29 @@
       ]
     },
     {
+      "source": "icons/texture.svg",
+      "id": "1d42c63bae9eb234",
+      "input_fingerprint": "28fbda83ba08f0ea",
+      "cook_identity": "47010746ab1ff183",
+      "size": "370",
+      "mtime": "-4646331484106481983",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "artifacts": [
+        {
+          "path": "asset://icons/texture.svg",
+          "id": "1d42c63bae9eb234",
+          "file": ".cooked/icons/texture.svg.stex",
+          "type": "Texture",
+          "hash": "2dd61e4accdc1fdd"
+        }
+      ]
+    },
+    {
       "source": "icons/unlock.svg",
+      "id": "bda77747fa84548e",
       "input_fingerprint": "bf91bc0c1962dc73",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "498",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -862,6 +1287,7 @@
       "artifacts": [
         {
           "path": "asset://icons/unlock.svg",
+          "id": "bda77747fa84548e",
           "file": ".cooked/icons/unlock.svg.stex",
           "type": "Texture",
           "hash": "1153522d2b4e076a"
@@ -870,8 +1296,9 @@
     },
     {
       "source": "icons/window-close.svg",
+      "id": "e308aed2e2168215",
       "input_fingerprint": "474d172bf3e8f656",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "287",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -879,6 +1306,7 @@
       "artifacts": [
         {
           "path": "asset://icons/window-close.svg",
+          "id": "e308aed2e2168215",
           "file": ".cooked/icons/window-close.svg.stex",
           "type": "Texture",
           "hash": "e0443919c8dc905b"
@@ -887,8 +1315,9 @@
     },
     {
       "source": "icons/window-maximize.svg",
+      "id": "9440ca13b8a392f1",
       "input_fingerprint": "82a12766cd16afb3",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "216",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -896,6 +1325,7 @@
       "artifacts": [
         {
           "path": "asset://icons/window-maximize.svg",
+          "id": "9440ca13b8a392f1",
           "file": ".cooked/icons/window-maximize.svg.stex",
           "type": "Texture",
           "hash": "e20af7531f416b7c"
@@ -904,8 +1334,9 @@
     },
     {
       "source": "icons/window-minimize.svg",
+      "id": "a14d1bd9605a0d83",
       "input_fingerprint": "a6be636f7c3dad8b",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "210",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -913,6 +1344,7 @@
       "artifacts": [
         {
           "path": "asset://icons/window-minimize.svg",
+          "id": "a14d1bd9605a0d83",
           "file": ".cooked/icons/window-minimize.svg.stex",
           "type": "Texture",
           "hash": "655969fe1476c2e8"
@@ -921,8 +1353,9 @@
     },
     {
       "source": "icons/window-restore.svg",
+      "id": "f1409d7fef4b68de",
       "input_fingerprint": "a085594d2625721c",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "318",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -930,6 +1363,7 @@
       "artifacts": [
         {
           "path": "asset://icons/window-restore.svg",
+          "id": "f1409d7fef4b68de",
           "file": ".cooked/icons/window-restore.svg.stex",
           "type": "Texture",
           "hash": "09168647696b5985"
@@ -938,8 +1372,9 @@
     },
     {
       "source": "icons/world.svg",
+      "id": "b1153efd63f97f42",
       "input_fingerprint": "34a7aeaae35a4a0f",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "331",
       "mtime": "-4646872277556254565",
       "meta_size": "0",
@@ -947,6 +1382,7 @@
       "artifacts": [
         {
           "path": "asset://icons/world.svg",
+          "id": "b1153efd63f97f42",
           "file": ".cooked/icons/world.svg.stex",
           "type": "Texture",
           "hash": "3a00d06bc1c6d775"
@@ -955,8 +1391,9 @@
     },
     {
       "source": "icons/zone-bounds.svg",
+      "id": "fd252e2c2354d931",
       "input_fingerprint": "823cd98077a24a97",
-      "cook_identity": "f69a7450659d4d5d",
+      "cook_identity": "47010746ab1ff183",
       "size": "497",
       "mtime": "-4648281512815406458",
       "meta_size": "0",
@@ -964,6 +1401,7 @@
       "artifacts": [
         {
           "path": "asset://icons/zone-bounds.svg",
+          "id": "fd252e2c2354d931",
           "file": ".cooked/icons/zone-bounds.svg.stex",
           "type": "Texture",
           "hash": "f5ea80fc38458e4b"
@@ -971,37 +1409,9 @@
       ]
     },
     {
-      "source": "inspector.rml",
-      "input_fingerprint": "ff15502f9ad404bc",
-      "cook_identity": "4765341e77032c66",
-      "size": "2242",
-      "mtime": "-4648151002172867364",
-      "meta_size": "0",
-      "meta_mtime": "0",
-      "additional_sources": [
-        {
-          "source": "inspector.rcss",
-          "size": "4849",
-          "mtime": "-4646934029588205895"
-        },
-        {
-          "source": "theme.rcss",
-          "size": "4472",
-          "mtime": "-4646877067248872502"
-        }
-      ],
-      "artifacts": [
-        {
-          "path": "asset://inspector.rml",
-          "file": ".cooked/inspector.rml.sui",
-          "type": "UiPackage",
-          "hash": "7fa99edc24a918dc"
-        }
-      ]
-    },
-    {
       "source": "palette.rml",
-      "input_fingerprint": "9764aa6084e03309",
+      "id": "be8fd0d695f88354",
+      "input_fingerprint": "568ae28eb68b0a27",
       "cook_identity": "4765341e77032c66",
       "size": "1030",
       "mtime": "-4646888290794166014",
@@ -1010,95 +1420,209 @@
       "additional_sources": [
         {
           "source": "palette.rcss",
-          "size": "1394",
-          "mtime": "-4646888290792970424"
+          "size": "1428",
+          "mtime": "-4645828920141803315"
         },
         {
           "source": "theme.rcss",
-          "size": "4472",
-          "mtime": "-4646877067248872502"
+          "size": "5908",
+          "mtime": "-4646761306498704282"
         }
       ],
       "artifacts": [
         {
           "path": "asset://palette.rml",
+          "id": "be8fd0d695f88354",
           "file": ".cooked/palette.rml.sui",
           "type": "UiPackage",
-          "hash": "5fc4c6402b51259f"
+          "hash": "5f9c4d153bb99060"
         }
       ]
     },
     {
-      "source": "prompt.rml",
-      "input_fingerprint": "b4ee2fd8ddf5945e",
+      "source": "plane_pad.rml",
+      "id": "f062c4b04652d569",
+      "input_fingerprint": "cca5c19858b1d723",
       "cook_identity": "4765341e77032c66",
-      "size": "871",
-      "mtime": "-4646887282353163968",
+      "size": "1251",
+      "mtime": "-4646761921078087685",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
-          "source": "prompt.rcss",
-          "size": "1401",
-          "mtime": "-4646887293435772851"
+          "source": "plane_pad.rcss",
+          "size": "678",
+          "mtime": "-4646761921077087684"
         },
         {
           "source": "theme.rcss",
-          "size": "4472",
-          "mtime": "-4646877067248872502"
+          "size": "5908",
+          "mtime": "-4646761306498704282"
         }
       ],
       "artifacts": [
         {
-          "path": "asset://prompt.rml",
-          "file": ".cooked/prompt.rml.sui",
+          "path": "asset://plane_pad.rml",
+          "id": "f062c4b04652d569",
+          "file": ".cooked/plane_pad.rml.sui",
           "type": "UiPackage",
-          "hash": "0fe2695f5162fa33"
+          "hash": "1e59c250ba0b428b"
         }
       ]
     },
     {
-      "source": "shell.rml",
-      "input_fingerprint": "22750dc0f48565ca",
+      "source": "project_rack.rml",
+      "id": "aec5f87b2c1bb20e",
+      "input_fingerprint": "2c112d9a0d7f17c2",
       "cook_identity": "4765341e77032c66",
-      "size": "18991",
-      "mtime": "-4646865096890010917",
+      "size": "1978",
+      "mtime": "-4646858720987884518",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "controls.rcss",
-          "size": "3221",
-          "mtime": "-4646864653601029654"
+          "size": "5610",
+          "mtime": "-4645924247925799897"
         },
         {
-          "source": "shell.rcss",
-          "size": "10532",
-          "mtime": "-4646864653601342466"
-        },
-        {
-          "source": "icons.rcss",
-          "size": "3382",
-          "mtime": "-4646872191488615692"
+          "source": "project_rack.rcss",
+          "size": "1995",
+          "mtime": "-4646859403061960484"
         },
         {
           "source": "theme.rcss",
-          "size": "4472",
-          "mtime": "-4646877067248872502"
+          "size": "5908",
+          "mtime": "-4646761306498704282"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://project_rack.rml",
+          "id": "aec5f87b2c1bb20e",
+          "file": ".cooked/project_rack.rml.sui",
+          "type": "UiPackage",
+          "hash": "3d3db951c277717a"
+        }
+      ]
+    },
+    {
+      "source": "prompt.rml",
+      "id": "e8ba7f697ddc1e05",
+      "input_fingerprint": "1a00da507a86c95c",
+      "cook_identity": "4765341e77032c66",
+      "size": "1041",
+      "mtime": "-4646080958936024126",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "prompt.rcss",
+          "size": "1677",
+          "mtime": "-4645828920139506504"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "5908",
+          "mtime": "-4646761306498704282"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://prompt.rml",
+          "id": "e8ba7f697ddc1e05",
+          "file": ".cooked/prompt.rml.sui",
+          "type": "UiPackage",
+          "hash": "336b740d4f837a71"
+        }
+      ]
+    },
+    {
+      "source": "shelf.rml",
+      "id": "b44bd4a4cd0e3bb6",
+      "input_fingerprint": "e009a1a3442e04c0",
+      "cook_identity": "4765341e77032c66",
+      "size": "8995",
+      "mtime": "-4645828953731613714",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "shelf.rcss",
+          "size": "5072",
+          "mtime": "-4645828953731673014"
+        },
+        {
+          "source": "controls.rcss",
+          "size": "5610",
+          "mtime": "-4645924247925799897"
+        },
+        {
+          "source": "icons.rcss",
+          "size": "4059",
+          "mtime": "-4645911268697275552"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "5908",
+          "mtime": "-4646761306498704282"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://shelf.rml",
+          "id": "b44bd4a4cd0e3bb6",
+          "file": ".cooked/shelf.rml.sui",
+          "type": "UiPackage",
+          "hash": "5183448d0f4bfed5"
+        }
+      ]
+    },
+    {
+      "source": "shell.rml",
+      "id": "bfd6149bde2c5a99",
+      "input_fingerprint": "01e29a8701a15a4c",
+      "cook_identity": "4765341e77032c66",
+      "size": "30308",
+      "mtime": "-4645908864136068142",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "controls.rcss",
+          "size": "5610",
+          "mtime": "-4645924247925799897"
+        },
+        {
+          "source": "shell.rcss",
+          "size": "13209",
+          "mtime": "-4645828927683804961"
+        },
+        {
+          "source": "icons.rcss",
+          "size": "4059",
+          "mtime": "-4645911268697275552"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "5908",
+          "mtime": "-4646761306498704282"
         }
       ],
       "artifacts": [
         {
           "path": "asset://shell.rml",
+          "id": "bfd6149bde2c5a99",
           "file": ".cooked/shell.rml.sui",
           "type": "UiPackage",
-          "hash": "48333f760daff131"
+          "hash": "a01fae3d3a4e8ac1"
         }
       ]
     },
     {
       "source": "views.rml",
-      "input_fingerprint": "d508d9f17df8e940",
+      "id": "702ed593ba142b83",
+      "input_fingerprint": "5f0eef93d09c8c73",
       "cook_identity": "4765341e77032c66",
       "size": "3524",
       "mtime": "-4646878608184534101",
@@ -1112,55 +1636,89 @@
         },
         {
           "source": "icons.rcss",
-          "size": "3382",
-          "mtime": "-4646872191488615692"
+          "size": "4059",
+          "mtime": "-4645911268697275552"
         },
         {
           "source": "theme.rcss",
-          "size": "4472",
-          "mtime": "-4646877067248872502"
+          "size": "5908",
+          "mtime": "-4646761306498704282"
         }
       ],
       "artifacts": [
         {
           "path": "asset://views.rml",
+          "id": "702ed593ba142b83",
           "file": ".cooked/views.rml.sui",
           "type": "UiPackage",
-          "hash": "8002f612a8cbb9d5"
+          "hash": "7d5ba88991e4690c"
         }
       ]
     },
     {
       "source": "wheel.rml",
-      "input_fingerprint": "2873d860a64812e1",
+      "id": "74e69d8373e93333",
+      "input_fingerprint": "d4e05d701239d998",
       "cook_identity": "4765341e77032c66",
-      "size": "2054",
-      "mtime": "-4646878608184425458",
+      "size": "2738",
+      "mtime": "-4645828953731561434",
       "meta_size": "0",
       "meta_mtime": "0",
       "additional_sources": [
         {
           "source": "wheel.rcss",
-          "size": "1183",
-          "mtime": "-4646882716887503991"
+          "size": "2196",
+          "mtime": "-4646414387966798773"
         },
         {
           "source": "icons.rcss",
-          "size": "3382",
-          "mtime": "-4646872191488615692"
+          "size": "4059",
+          "mtime": "-4645911268697275552"
         },
         {
           "source": "theme.rcss",
-          "size": "4472",
-          "mtime": "-4646877067248872502"
+          "size": "5908",
+          "mtime": "-4646761306498704282"
         }
       ],
       "artifacts": [
         {
           "path": "asset://wheel.rml",
+          "id": "74e69d8373e93333",
           "file": ".cooked/wheel.rml.sui",
           "type": "UiPackage",
-          "hash": "4bc2f7aaed22bd9e"
+          "hash": "9fc381091f80493d"
+        }
+      ]
+    },
+    {
+      "source": "world_map.rml",
+      "id": "66afe5572a7515d9",
+      "input_fingerprint": "146395adecdf0211",
+      "cook_identity": "4765341e77032c66",
+      "size": "2344",
+      "mtime": "-4645828953731517784",
+      "meta_size": "0",
+      "meta_mtime": "0",
+      "additional_sources": [
+        {
+          "source": "world_map.rcss",
+          "size": "1524",
+          "mtime": "-4646411551845136219"
+        },
+        {
+          "source": "theme.rcss",
+          "size": "5908",
+          "mtime": "-4646761306498704282"
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "asset://world_map.rml",
+          "id": "66afe5572a7515d9",
+          "file": ".cooked/world_map.rml.sui",
+          "type": "UiPackage",
+          "hash": "3fd1a43a361cbaff"
         }
       ]
     }

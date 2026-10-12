@@ -32,8 +32,7 @@ private:
 };
 
 // Builds one undoable step that clears the selection (so a deleted entity's
-// handle is not left selected) then deletes each given entity. Mirrors how the
-// create path pairs a CreateEntityCommand with a SelectCommand.
+// handle is not left selected) then deletes each given entity.
 [[nodiscard]] std::unique_ptr<ICommand> MakeDeleteEntitiesCommand(
     std::span<const EntityId> entities, EditorScene& scene, EditorDocument& document,
     SelectionService& selection);

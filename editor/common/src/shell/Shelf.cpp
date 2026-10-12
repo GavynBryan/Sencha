@@ -314,9 +314,7 @@ void Shelf::Follow(const std::string& assetPath)
 
 bool ShelfPick::Offers(const ProjectFile& file) const
 {
-    if (std::ranges::any_of(Withheld, [&](const std::string& withheld) {
-            return withheld == file.AssetPath || std::filesystem::path(withheld) == file.FilePath;
-        }))
+    if (std::ranges::find(Withheld, file.AssetPath) != Withheld.end())
         return false;
     if (!Only.empty())
         return std::ranges::find(Only, file.AssetPath) != Only.end();

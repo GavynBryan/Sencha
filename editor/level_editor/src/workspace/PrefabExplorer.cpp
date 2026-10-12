@@ -17,8 +17,8 @@ WorkspaceExplorerInfo PrefabExplorer::Info() const
                                 .Action = "explorer.prefabs",
                                 .Accepts = { { ".sscene" } },
                                 .Current = Workspace.Resources.Active(AssetType::Scene).Path };
-    if (const EditorDocument& editing = Workspace.World.FocusDocument(); editing.HasFilePath())
-        info.Withheld.emplace_back(editing.GetDisplayName());
+    if (std::string own = Workspace.World.FocusDocument().SourceAssetPath(); !own.empty())
+        info.Withheld.push_back(std::move(own));
     return info;
 }
 

@@ -1406,9 +1406,7 @@ bool LevelWorkspace::DropAsset(const ProjectFile& file, Vec2d point)
     if (file.Extension != ".sscene")
         return false;
     // A level is not placed inside itself.
-    std::error_code ec;
-    if (document.HasFilePath()
-        && std::filesystem::equivalent(std::filesystem::path(document.GetDisplayName()), file.FilePath, ec))
+    if (document.SourceAssetPath() == file.AssetPath)
         return false;
     // Where the Entity tool would put it: on the surface under it, else on the grid.
     std::optional<Vec3d> at;

@@ -39,14 +39,11 @@ TEST(ShelfPick, NamedFilesAreExactlyWhatItOffers)
     EXPECT_FALSE(pick.Offers(File("asset://materials/stone.smat", ".smat")));
 }
 
-TEST(ShelfPick, AWithheldFileIsNotOfferedByEitherName)
+TEST(ShelfPick, AWithheldFileIsNotOffered)
 {
-    const ShelfPick byAsset{ .Title = "Prefab", .Accepts = { { ".sscene" } }, .Withheld = { "asset://levels/hub.sscene" } };
-    const ShelfPick byDisk{ .Title = "Prefab", .Accepts = { { ".sscene" } }, .Withheld = { "/project/content/levels/hub.sscene" } };
-    const ProjectFile hub = File("asset://levels/hub.sscene", ".sscene");
-    EXPECT_FALSE(byAsset.Offers(hub));
-    EXPECT_FALSE(byDisk.Offers(hub));
-    EXPECT_TRUE(byDisk.Offers(File("asset://props/crate.sscene", ".sscene")));
+    const ShelfPick pick{ .Title = "Prefab", .Accepts = { { ".sscene" } }, .Withheld = { "asset://levels/hub.sscene" } };
+    EXPECT_FALSE(pick.Offers(File("asset://levels/hub.sscene", ".sscene")));
+    EXPECT_TRUE(pick.Offers(File("asset://props/crate.sscene", ".sscene")));
 }
 
 // The search field has the keys while the shelf is up; what it does not edit

@@ -126,3 +126,18 @@ TEST_F(WorldExplorerTest, ParentingPutsTheRestOfTheSelectionUnderThePrimary)
     ASSERT_TRUE(Stack.Invoke("entity.unparent"));
     EXPECT_FALSE(Scene().GetParent(Other).IsValid());
 }
+
+TEST_F(WorldExplorerTest, ANewEntityIsMadeAndSelectedAsOneStep)
+{
+    Select({ SelectableRef::EntitySelection(Registry(), Other) });
+    const std::uint32_t before = Scene().GetEntityCount();
+    ASSERT_TRUE(Stack.Invoke("entity.create"));
+    ASSERT_EQ(Scene().GetEntityCount(), before + 1);
+    const std::span<const SelectableRef> selected = Workspace.Selection.GetSelection();
+    ASSERT_EQ(selected.size(), 1u);
+    EXPECT_NE(selected.front().Entity, Other);
+
+    Commands.Undo();
+    EXPECT_EQ(Scene().GetEntityCount(), before);
+    EXPECT_TRUE(IsSelected(Other)) << "one undo takes the entity and gives the selection back";
+}

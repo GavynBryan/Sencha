@@ -3,13 +3,12 @@
 #include "actions/ActionCatalog.h"
 #include "actions/ActionOffer.h"
 #include "commands/CompositeCommand.h"
-#include "document/commands/CreateEntityCommand.h"
 #include "document/commands/MoveEntitiesToZoneCommand.h"
+#include "document/commands/PlaceEntityCommand.h"
 #include "document/commands/ReparentEntitiesCommand.h"
 #include "document/commands/SceneInstanceCommands.h"
 #include "document/commands/SetSceneOriginCommand.h"
 #include "document/commands/EntityFlagCommand.h"
-#include "selection/commands/SelectCommand.h"
 #include "workspace/EditorWorkspace.h"
 
 #include <world/identity/PersistentIdComponent.h>
@@ -59,13 +58,8 @@ void EntityVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
 
     offer("entity.create", "New Entity", { { SDLK_N, { .Ctrl = true, .Shift = true } } },
           { .Invoke = [&w, document] {
-                EditorDocument& doc = document();
-                auto create = MakeCreateEntityCommand(Vec3d::Zero(), doc.GetScene(), doc);
-                CreateEntityCommand* created = create.get();
-                w.Commands.Execute(std::move(create));
-                w.Commands.Execute(std::make_unique<SelectCommand>(
-                    w.Selection, SelectableRef::EntitySelection(doc.GetScene().GetRegistry().Id,
-                                                                created->GetCreatedEntity())));
+                w.Commands.Execute(std::make_unique<PlaceEntityCommand>(std::string{}, Transform3f::Identity(),
+                                                                        document(), w.Selection));
             } });
 
     // Everything selected but the primary goes under it: the primary is the
