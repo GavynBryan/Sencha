@@ -27,8 +27,8 @@ document transactions, plus the clip events document's own
 begin/preview/commit. This proposal touches none of that. It replaces only the
 presentation, and it removes two last couplings:
 
-- `authoring/` uses `ui/DataForm.h`'s `FieldEdit` and `ApplyFieldEdit`. Those
-  move to a property source, as Data did in M11.
+- `authoring/` used `ui/DataForm.h`'s `FieldEdit` and `ApplyFieldEdit`. An
+  edit now lands through `DataDocumentSet::ApplyEdit`, as Data's sheet does.
 - The preview feature hands out an `ImTextureID` through `DisplayedTargets`.
   It moves to a host image, as Materials did in M10.
 
@@ -118,6 +118,44 @@ budget). This is the same path input and movement took, so the animation
 sheets and the Data workspace's sheet of the same asset are one
 implementation.
 
+## Documents, as built
+
+- **Every document is the journal's.** The rig's data documents are shown
+  through a `DataDocumentSheet`, the one Data uses, so an animation subtype's
+  sheet captures writes, claims events and shows previews here as there. The
+  rig's scenario (`.sanimscenario`) is a `SnapshotDocument`: every edit to it,
+  a live fact and a request among them, is a step undo takes back, and a pad
+  drag is one step. Save and Save All write it, and closing, exiting or opening
+  another rig over unsaved changes asks first (`OpenRigAsking`).
+- **One document is being edited.** The lens's (Events: the auditioned clip's
+  events), the card's data document, or the stage's scenario. Save, Close and
+  the dial's current mark all read that one answer.
+- **Every open clip's events is on the dial**, so an earlier clip's unsaved
+  events stay reachable; choosing one auditions its clip, and Close asks
+  before it drops changes. Edits to events go through `AnimationClipEventsSet`,
+  which tells the preview. A retime on the deck is cancelled when its lens or
+  its clock changes, as every other interruption cancels it.
+- **The deck has three clocks**: the session lab's while its sheet is up and
+  it has run (looked through, never played), the simulation's, and the
+  audition's (`AnimationTimeline`).
+
+## Cards
+
+| Card | What it shows |
+|---|---|
+| Rules | A layer's rules and how each fared on the inspected tick, or on the next while paused; one picked: why it won or lost, what it reads, where it was authored, the behavior and its policy, the slot rows that resolve it, and the other rules selecting it. Details: what every layer decided. |
+| Layers | Each layer top to bottom with mode, weight, mask and what it plays, muted or soloed on the stage; an inspected one's weight source and removable mask steps. |
+| Bone | A picked joint's parent, the layers covering it, and mask steps putting it into or out of the selected layer's mask, with or without what is below it, each an edit of the rig. |
+| Flow | The flow a layer plays on the inspected tick, the section and how far, where a cancel goes, and how each section is left (loop, branches, the end). |
+| Blends | Crossfading, inertializing or settled, per layer; the selected layer's blendspace and its samples' weights; the latest blends. Details: pairwise overrides and A/B takes. |
+| Root motion | Whether the scenario moves the character, the walls it may meet (both scenario state), what the base clip carries and where along its root curve it is, and carried against achieved. |
+| Facts | Every fact the rig reads, now and on the next tick while paused; an input driven or cleared as a scenario edit, a derived one described; one plotted on the deck. |
+| Requests | A request drafted for the next tick (participant, intent, lifetime, layers, parameters), the live ones with Cancel for a reason, and how the last tick's fared. |
+| Events | The picked clip event: name, time (a live edit), scope and a cosmetic one's weight threshold, its binding and inputs checked as the runtime would, and a new binding to raise instead. Details: admissions, the role the preview plays and the verbs a recorder stands behind. |
+| Stage | The audition, and the open rig's scenario: name, file, participants and fixture tags (an edit replays it); details: what `anim.risk` says of the rig and what the previewed entity carries. |
+| New rig | Name, tier (prop, simple, character), the clips (the first idles; all on one skeleton) and a character's upper body joint. |
+| Migration run | The scenes still naming a clip on the retired clip player, converted to one-layer rigs under `animation/migrated/` with their names declared. |
+
 ## Explorers and benches
 
 - **Explorers:**
@@ -136,9 +174,9 @@ implementation.
   - `NewDataAssetForm` is replaced by `DataCreation` (moved into common data
     code), and `DataDocumentTabs` by the document dial. Both are deleted in
     M13a.
-  - `DataForm`'s neutral half (`FieldEdit`, `ApplyFieldEdit`) moves to
-    `data/DataFieldEdit`. Its ImGui drawing and `SchemaWidgets` go when their
-    last users, the Rules, Flow and Request panels, do in M13c-e.
+  - `DataForm` and `SchemaWidgets` went with their last users, the Rules,
+    Flow and Request panels, in M13c-e; its neutral half became
+    `DataDocumentSet::ApplyEdit`.
 
 ## Decisions (accepted)
 

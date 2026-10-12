@@ -5,10 +5,8 @@
 
 class UiPreviewSession;
 
-// What the open document asked its model for and the model does not declare
-// (BindingMisses), each with the declarations that would satisfy it as verbs.
-// Declaring one is a step on `model`, the sidecar's document, and remakes the
-// screen against the model.
+// What the open document asked its model for and the model does not declare,
+// each declaration that would satisfy it a verb; declaring is a step on `model`.
 class BindingMissProperties final : public IPropertySource
 {
 public:

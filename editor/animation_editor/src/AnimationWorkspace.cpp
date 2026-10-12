@@ -820,7 +820,7 @@ void AnimationWorkspace::ShowStage()
 void AnimationWorkspace::ShowPad()
 {
     const std::optional<AnimationBlendspaceView> space =
-        Subject == CardSubject::Lens && ViewOf(ShownLens).Pad && Clock->IsSimulation()
+        ViewOf(ShownLens).Pad && Clock->IsSimulation()
             ? AnimationBlendspaceOn(Workspace->Rig.Simulation, Workspace->Rig.Navigation.Layer)
             : std::nullopt;
     if (Pad == nullptr || !space)

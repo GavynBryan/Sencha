@@ -36,11 +36,9 @@ struct AnimationPredicateVocabulary
 
 [[nodiscard]] AnimationPredicateVocabulary GatherAnimationPredicateVocabulary(const DataDocumentStore& store);
 
-// What every animation document holding conditions shares on its sheet: each
-// condition row titled as it reads ("Speed > 2.2"), added as a test of a named
-// fact, request or time in behavior, widened with an "or", and a fact, intent
-// or parameter chosen among those the project declares. A subtype's authoring
-// composes it with what it adds of its own.
+// What every animation document holding conditions shares on its sheet: rows
+// titled as they read, tests of the project's declared names, and an "or" to
+// widen a row. A subtype's authoring composes it.
 class AnimationConditionAuthoring
 {
 public:
@@ -75,10 +73,8 @@ void ChooseAmong(PropertyNode& node, std::vector<std::string> names);
 [[nodiscard]] std::vector<std::string> AnimationIntentParams(const AnimationPredicateVocabulary& names,
                                                              std::string_view intent);
 
-// Selectors (enter and stay; a rule's stay starts as a copy of its enter),
-// slot maps (when) and flows (branch and loop conditions, and control that
-// only ever goes forward: AnimationFlowAuthoring.cpp); request schemas count
-// each intent's parameters against their budget.
+// The animation subtypes' sheets: selectors, slot maps and flows read their
+// conditions; request schemas count parameters against their budget.
 [[nodiscard]] std::unique_ptr<IDataSubtypeAuthoring> CreateAnimationSelectorAuthoring();
 [[nodiscard]] std::unique_ptr<IDataSubtypeAuthoring> CreateAnimationSlotMapAuthoring();
 [[nodiscard]] std::unique_ptr<IDataSubtypeAuthoring> CreateAnimationFlowAuthoring();

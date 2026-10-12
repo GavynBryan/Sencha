@@ -9,14 +9,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationRigCreation
-//
-// A new rig, drafted: its name, its tier (prop, simple, character), the clips
-// it plays -- the first idles, and every clip must pose the first one's
-// skeleton -- and, for a character, the joint its upper body starts at.
-// Create writes the rig's documents and opens it; `created` hears it opened.
-//=============================================================================
+// A new rig drafted: name, tier, clips on one skeleton and a character's upper
+// body joint; Create writes its documents and opens it, telling `created`.
 class AnimationRigCreation final : public IPropertySource
 {
 public:

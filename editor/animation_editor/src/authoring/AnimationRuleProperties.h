@@ -11,16 +11,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationRuleProperties
-//
-// The Rules lens's card. With no rule picked, a layer's rules and how each
-// fared on the inspected tick, or on the next when asked while paused. With
-// one picked: why it won or lost, what it reads, where it was authored, the
-// behavior it selects and that behavior's policy, the slot rows that resolve
-// the behavior to content, and the other rules that select it. Its details are
-// what every layer decided on the inspected tick.
-//=============================================================================
+// The Rules lens's card: a layer's rules and how each fared, or one picked rule
+// with why it won or lost and what it selects; details are every layer's decision.
 class AnimationRuleProperties final : public IPropertySource
 {
 public:

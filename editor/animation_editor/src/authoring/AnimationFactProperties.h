@@ -6,14 +6,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationFactProperties
-//
-// The Facts lens's card: every fact the rig reads, its value now and, while
-// paused, on the next tick; an input fact is driven from here as a recorded
-// scenario edit, or cleared, and a derived one says how it is derived. One
-// fact at a time is plotted along the deck.
-//=============================================================================
+// The Facts lens's card: every fact the rig reads, now and on the next tick;
+// an input fact is driven or cleared as a scenario edit, and one is plotted.
 class AnimationFactProperties final : public IPropertySource
 {
 public:

@@ -124,10 +124,8 @@ void KyusuApp::OnConfigure(GameConfigureContext& ctx)
     // stack; the runtime's default mount of `assets` beside the working
     // directory would be the wrong directory.
     ctx.Config.Runtime.ContentRoots.clear();
-    // Each frame the level editor re-uploads every brush wireframe/solid/overlay
-    // once per viewport (up to 4) into a single frame-scratch slice; the game's
-    // 1 MB default overflows on real scenes (dropped draws look like warped or
-    // missing geometry). Only a session that opens a level pays for more.
+    // The level views re-upload every brush once per view each frame into one
+    // scratch slice, which the game's 1 MB default overflows on real scenes.
     if (OpensLevel())
         ctx.Config.Graphics.FrameScratchBytesPerFrame = 64ull * 1024 * 1024;
 }
@@ -658,11 +656,9 @@ void KyusuApp::OnShutdown(GameShutdownContext&)
     if (GraphicsServices* graphics = GetEngine().TryGraphics())
         graphics->WaitIdle();
 
-    // Inside the Game shutdown window, before the engine disconnects the asset
-    // stack they hold leases into. The workspaces first: their documents hold
-    // code the session's module compiled.
-    // Detached workspaces come home before anything closes, so each one's
-    // window, and the shell drawn in it, go while the workspace still lives.
+    // Before the engine disconnects the asset stack they lease from, and the
+    // workspaces first: their documents hold module code. Detached ones come
+    // home first, so their windows close while they still live.
     if (Workspaces)
     {
         while (!Detached.empty())

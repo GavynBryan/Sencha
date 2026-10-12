@@ -11,14 +11,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationRequestProperties
-//
-// The Requests lens's card: a request to issue on the next tick -- from which
-// participant, which intent, for how long, on which layers, with the intent's
-// parameters -- the live records with a Cancel for a reason, and how the last
-// tick's requests fared. Issuing and cancelling are recorded scenario edits.
-//=============================================================================
+// The Requests lens's card: a request drafted for the next tick, the live ones
+// with Cancel, and how the last tick's fared; each is a scenario edit.
 class AnimationRequestProperties final : public IPropertySource
 {
 public:

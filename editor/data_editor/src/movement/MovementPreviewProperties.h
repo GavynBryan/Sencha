@@ -8,10 +8,9 @@
 
 class MovementResolvePreview;
 
-// What a movement profile does in a situation the author dials: the character
-// on stable ground, in the air or on a slope, how immersed, in which mode,
-// holding which tags, at what move speed -- and, read back, which rules match
-// and what each coefficient comes to and which rule set it.
+// What a movement profile does in a situation the author dials (ground, air,
+// immersion, mode, tags, speed): the rules that match and what each
+// coefficient comes to.
 class MovementResolveProperties final : public IPropertySource
 {
 public:

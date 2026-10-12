@@ -4,9 +4,7 @@
 
 #include <memory>
 
-// A profile read as the keymap it describes: contexts holding bindings, each
-// titled by what it binds to what, its action chosen among those its action
-// set declares, what it is bound to chosen as a shape (one control, two
-// buttons as an axis, four directions) that sets its slots, and each slot
-// picked from the controls this platform can bind or filled by pressing one.
+// A profile read as the keymap it describes: bindings titled by what they bind,
+// actions chosen among the declared ones, a shape setting a binding's slots,
+// and a slot picked or filled by pressing a control.
 [[nodiscard]] std::unique_ptr<IDataSubtypeAuthoring> CreateInputProfileAuthoring();

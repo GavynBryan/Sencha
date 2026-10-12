@@ -8,16 +8,8 @@
 
 class UiPreviewSession;
 
-//=============================================================================
-// ElementProperties
-//
-// What a picked element of the previewed document is: its depth, where it is
-// and the size of its four boxes in surface pixels and in dp, the computed
-// values a layout question usually turns on, what it is likely to get wrong
-// (activatable but out of a controller's reach, a root that swallows every
-// pointer event), and its attributes. Read-only: the document is edited in
-// its own file.
-//=============================================================================
+// A picked element of the previewed document: its boxes, the computed values
+// layout turns on, what it likely gets wrong, and its attributes. Read-only.
 class ElementProperties final : public IPropertySource
 {
 public:

@@ -18,9 +18,7 @@ struct UiPreviewModel;
 inline constexpr std::string_view kPreviewModelLocation = "preview model";
 
 // The warnings and errors among a session's diagnostics that concern the
-// previewed document: its cook, the layer's refusals, and what happened on its
-// surface. Info is what every rebuild says, and another surface's diagnostics
-// are another document's. Each problem is listed once, however often it was said.
+// previewed document's surface, each listed once however often it was said.
 [[nodiscard]] std::vector<Problem> PreviewProblems(const std::deque<UiDiagnostic>& diagnostics, UiSurfaceId surface);
 
 // What a raised action said, by its declared name: `play (int 3)`.

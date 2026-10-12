@@ -11,14 +11,8 @@ class SourceReloadRoots;
 class UiPreviewSession;
 struct DocumentEntry;
 
-//=============================================================================
-// SurfaceProperties
-//
-// The surface the open document is laid out on -- its size in pixels and how
-// many of them a dp is, both live -- and what is known about the document:
-// the model it binds, whether it is cooked, whether it has a preview model,
-// and how much of the library is being watched for saves.
-//=============================================================================
+// The surface the open document is laid out on (its size and dp scale, both
+// live) and what is known about the document.
 class SurfaceProperties final : public IPropertySource
 {
 public:

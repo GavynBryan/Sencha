@@ -8,15 +8,8 @@
 #include <optional>
 #include <string>
 
-//=============================================================================
-// TextureImportProperties
-//
-// One source texture's import settings as properties -- what it is used for,
-// how it is filtered, whether it is block compressed and mipmapped -- beside
-// what its cook actually holds. A change is applied at once through the apply
-// it is given, which saves the settings and cooks the texture again; what the
-// cook then holds is read back rather than assumed.
-//=============================================================================
+// A source texture's import settings beside what its cook holds; a change is
+// saved and cooked at once, and the cook is read back rather than assumed.
 class TextureImportProperties final : public IPropertySource
 {
 public:

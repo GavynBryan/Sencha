@@ -6,14 +6,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationLayerProperties
-//
-// The Layers lens's card. The rig's layers top to bottom, each with its mode,
-// weight, mask and what it plays on the inspected tick, and switches to mute
-// or solo it on the stage alone. Inspecting one adds where its weight comes
-// from and its mask steps, each removable; a picked joint's card adds them.
-//=============================================================================
+// The Layers lens's card: each layer's mode, weight, mask and what it plays,
+// muted or soloed on the stage, and an inspected one's weight source and mask.
 class AnimationLayerProperties final : public IPropertySource
 {
 public:

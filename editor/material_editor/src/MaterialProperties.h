@@ -10,15 +10,8 @@
 class AssetRegistry;
 class MaterialDocumentSet;
 
-//=============================================================================
-// MaterialProperties
-//
-// The open material's parameters as properties, grouped as the shading model
-// reads them: surface parameters only for a lit material, the cutoff only for
-// a masked one. A drag previews on the material itself and becomes one step
-// in its tab's history when it lets go; a texture slot is chosen from the
-// source textures the registry holds.
-//=============================================================================
+// The open material's parameters as the shading model reads them: a drag
+// previews on the material and is one step when it lets go.
 class MaterialProperties final : public IPropertySource
 {
 public:

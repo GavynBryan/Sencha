@@ -23,14 +23,8 @@ private:
     const AnimationPreviewWorkspace& Workspace;
 };
 
-//=============================================================================
-// AnimationScenarioProperties
-//
-// The open rig's scenario: its name and file, the participants it simulates,
-// the fixture tags it declares in place of a game module, and, in full, what
-// the rig depends on and whether each is loaded. A participant or tag edit
-// replays the scenario; saving it is the Resource action's.
-//=============================================================================
+// The open rig's scenario: its name, file, participants and fixture tags (an
+// edit replays it), and what the rig depends on.
 class AnimationScenarioProperties final : public IPropertySource
 {
 public:

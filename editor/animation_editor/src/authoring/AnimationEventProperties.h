@@ -11,10 +11,8 @@ class AnimationClipEventsDocument;
 class AnimationPreviewWorkspace;
 struct AnimationClipEvent;
 
-// The clip event picked on the deck: its name, its time along the clip (a live
-// edit), its scope and a cosmetic one's weight threshold, the rig binding it
-// raises with that binding's inputs checked as the runtime would, and a new
-// binding to raise instead. With none picked, what is wrong in the clip's events.
+// The clip event picked on the deck (its time a live edit, every other field a
+// step), or with none picked what is wrong in the clip's events.
 class AnimationEventProperties final : public IPropertySource
 {
 public:

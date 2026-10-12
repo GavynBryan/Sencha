@@ -4,14 +4,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationRigReportProperties
-//
-// What a game's `anim.risk` would say of the open rig -- counts that show it
-// growing toward a graph, none an error, and the findings behind them -- and
-// what the previewed entity carries: its animation state's size, and the
-// requests that ended with no layer playing them.
-//=============================================================================
+// What a game's `anim.risk` says of the open rig, and the size of what the
+// previewed entity carries.
 class AnimationRigReportProperties final : public IPropertySource
 {
 public:

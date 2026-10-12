@@ -35,11 +35,9 @@ struct RuntimeAssets;
 // Ctrl+N: a new material, opened.
 [[nodiscard]] ActionDefinition NewMaterialAction();
 
-// The materials workspace: the open material turned on a lit stage that fills
-// the window, its parameters on the card, and every open material on the
-// document dial; materials and textures are found on the Shelf. Each open
-// material's working description is pushed into its resident material after
-// every change, so every view of it is live.
+// The materials workspace: the open material on a lit stage, its parameters on
+// the card and every open material on the dial, each pushed live into its
+// resident material (editor/ARCHITECTURE.md).
 class MaterialWorkspace final : public IWorkspace
 {
 public:

@@ -9,10 +9,8 @@
 
 class AnimationPreviewWorkspace;
 
-// The session lab as a sheet: the working scenario run on an authority and on
-// a client that gets its requests only over a link (when it joins, how late
-// and lossy the link is, the client's guesses), then whether the two agreed and
-// from when, and both machines side by side on the tick the deck inspects.
+// The session lab as a sheet: the scenario run on an authority and on a client
+// linked as it says, whether they agreed, and both on the deck's tick.
 class AnimationLabProperties final : public IPropertySource
 {
 public:

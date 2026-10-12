@@ -4,14 +4,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationBoneProperties
-//
-// The joint picked on the stage: its parent, which of the rig's layers cover
-// it, and the steps that put it into or take it out of the selected layer's
-// mask, with or without everything below it. A step is an edit of the rig
-// document, in its transaction.
-//=============================================================================
+// The joint picked on the stage: its parent, the layers covering it, and the
+// mask steps that add or remove it, each an edit of the rig document.
 class AnimationBoneProperties final : public IPropertySource
 {
 public:

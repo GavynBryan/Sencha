@@ -12,11 +12,9 @@ class UiPreviewSession;
 // The session's model as its sidecar's text, for the journal.
 [[nodiscard]] SnapshotValue PreviewModelSnapshots(UiPreviewSession& session);
 
-// The preview model the open document is shown against, as properties: its
-// name and modality, each declared property, sample list, row list and action.
-// A sample publishes to the open screen; a change to what is declared remakes
-// the screen, since a declaration is made before the document loads. Every
-// edit is a step on `model`, the sidecar's document, and only while it is open.
+// The preview model the open document is shown against, as properties; every
+// edit is a step on `model`, the sidecar's document, and only while it is open
+// (docs/ui/architecture.md, The preview model).
 class PreviewModelProperties final : public IPropertySource
 {
 public:

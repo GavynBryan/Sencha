@@ -19,7 +19,7 @@ of editing it offers is a workspace library:
 | `editor/animation_editor/` | `animation_authoring` + `animation_editor` (static libs) | The Animation workspace: rig, selector and clip-event authoring over a live skinned preview and a scenario lab. |
 | `editor/material_editor/` | `material_editor` (static lib) | The Materials workspace: browse, edit and save `.smat` with a live MeshForwardPass preview. |
 | `editor/project_browser/` | `project_browser` (static lib) | The Project workspace: recent projects, create project, project settings. Opening a project starts Kyusu again on it and ends the choosing process. Kyusu opens on it when started without a project. |
-| `editor/ui_preview/` | `ui_preview_authoring` + `ui_preview` (static libs) | The UI Preview workspace: renders an `.rml` document through the engine's own UI pass into a host image that fills the content (`ContentPicture`), at a chosen resolution, display scale and zoom, and re-cooks and rebuilds it on save. Interact hands the document the pointer; Inspect picks elements, which the card describes. With nothing picked the card is the surface and the bindings the model misses, and the details are the preview model, saved as the sidecar. The library, the element tree and the vocabulary are explorers, the layer's diagnostics and unresolved bindings are problems, and raised actions are notices. The authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`, `PreviewFraming`, `PreviewReports`, `ElementOutline`, `LibraryOutline`, `VocabularyOutline`, `ElementProperties`, `SurfaceProperties`, `PreviewModelProperties`, `BindingMissProperties`) is GUI-free; the workspace library holds `UiPreviewWorkspace` alone. |
+| `editor/ui_preview/` | `ui_preview_authoring` + `ui_preview` (static libs) | The UI Preview workspace: renders an `.rml` document through the engine's own UI pass into a host image that fills the content (`ContentPicture`), at a chosen resolution, display scale and zoom, and re-cooks and rebuilds it on save. Interact hands the document the pointer; Inspect picks elements, which the card describes. With nothing picked the card is the surface and the bindings the model misses, and the details are the preview model, saved as the sidecar, a document of the journal like any other. The library, the element tree and the vocabulary are explorers, the layer's diagnostics and unresolved bindings are problems, and raised actions are notices. The authoring library (`DocumentLibrary`, `UiPreviewModel` and its `.preview.json` sidecar, `UiPreviewSession`, `BindingMisses`, `PreviewFraming`, `PreviewReports`, `ElementOutline`, `LibraryOutline`, `VocabularyOutline`, `ElementProperties`, `SurfaceProperties`, `PreviewModelProperties`, `BindingMissProperties`) is GUI-free; the workspace library holds `UiPreviewWorkspace` alone. |
 
 Product names (Kyusu) exist only on executables and
 window titles; internal types stay mechanically named.
@@ -65,13 +65,19 @@ the one `WorkspaceTickSystem`, since a workspace adds and removes render
 features as it comes and goes; each open workspace is ticked there too.
 
 Data documents live once per process in the session's `DataDocumentStore`;
-each workspace shows them through a `DataDocumentSet` view (its open documents,
-active document and selected field), so the Data and Animation workspaces showing one
-file edit one document, and the store closes it when its last view lets go.
+each workspace shows them through a `DataDocumentSet` view (its open documents
+and active document), so the Data and Animation workspaces showing one file
+edit one document, and the store closes it when its last view lets go. Both
+present them through one `data/DataDocumentSheet`: the subtype registry, the
+fields, the subtype's update, captured writes, event claims and previews, the
+file path, the dial entries, and closing after asking.
 
 Documents share one journal, the session's `DocumentSourceSet`: every
 workspace's documents are sources in it (the level's is `LevelDocumentSource`,
-one document for the whole world since a command may span zones). Undo retakes
+one document for the whole world since a command may span zones). A file a
+session holds and edits in place -- UI Preview's preview model, the animation
+scenario -- is a `documents/SnapshotDocument`, journaled as snapshots of the
+text it is saved as. Undo retakes
 the newest step wherever it is and brings the owning workspace forward first;
 a workspace's own staged edit, such as the level's live preview, is undone by
 itself before that. A workspace with changed documents asks Save, Discard or
@@ -167,14 +173,14 @@ Shared shell (`editor/common/src/`):
 | `observers/` | `WeakObserverList`: subscribers held for as long as they keep their token. | selection, resources, problems |
 | `resources/` | `ActiveResources`: what the person is holding, per asset kind, with a stash; changes reach the tool in hand through `ToolRegistry`. `ResourceActions` offers the stash as actions. | tools, workspaces |
 | `problems/`, `notices/` | `ProblemList` (every located problem, republished whole by each source) and `NoticeQueue` (brief word that something happened). | the shell |
-| `prompts/` | `PromptQueue` (questions that hold an operation, answered one at a time; an `Asker` withdraws its questions when it goes) and the document questions over it: `AskAboutChanges`, `DocumentExitHold` (exit waits on changed documents) and `DocumentSaveFollowUp` (a failed save is a problem, a conflict is a question). | workspaces, Kyusu |
-| `presenters/` | Neutral models as what a document shows: `PropertySheet` turns property nodes into rows and a row's edit back into its source; `ContentPicture` shows a host image full bleed with picked marks and frames; `PlanePad` shows a 2D value as a pad the workspace drags; `ColorPicker` edits a colour property on a hue and saturation wheel with a value bar, through the property's edit session. Used by the shell and by documents a workspace owns. | shell, workspaces |
+| `prompts/` | `PromptQueue` (questions that hold an operation, answered one at a time; an `Asker` withdraws its questions when it goes) and the document questions over it: `AskAboutChanges`, `AskAboutDocuments` (the one prompt listing the changed documents a close would drop), `DocumentExitHold` (exit waits on changed documents) and `DocumentSaveFollowUp` (a failed save is a problem, a conflict is a question). | workspaces, Kyusu |
+| `presenters/` | Neutral models as what a document shows: `PropertySheet` turns property nodes into rows and a row's edit back into its source; `ContentPicture` shows a host image full bleed with picked marks and frames; `PlanePad` shows a 2D value as a pad the workspace drags; `StageOrbit` turns a press on a stage into a click or turntable orbit; `ColorPicker` edits a colour property on a hue and saturation wheel with a value bar, through the property's edit session. Used by the shell and by documents a workspace owns. | shell, workspaces |
 | `shell/` | The replaceable presentation policy's home (`docs/editor/interaction-grammar.md`); today `ShellWindow`, `TimelineDeck`, `CommandPalette`, `PromptDialog`, `ThemeSheet`, `SurfacePlacement` (the explorer opens in free space, the selection at its place; both moved by the header and sized by the corner), `TransientSurfaces`, the generic open/dismiss/Escape mechanism its popovers, drawers and explorers are presets of, and the `Shelf` (the project's content along a window's bottom, or alone in a window of its own: tiles to open, carry and drop, its file verbs, a tile's wheel and `NewContentWheel`). Workspaces never include it. | Kyusu |
 | `actions/` | The one table of operations (`ActionCatalog`: id, label, category, chords, no callbacks) and who performs them (`ActionContext` handlers, resolved per window by `ActionContextStack`, closest context first); `ActionWheelModel` offers a context's actions as a wheel. | Kyusu, workspaces |
 | `ui/` | The theme palette (`EditorUiStyle`, loaded from `editor/themes/*.json` by `EditorThemeFile`) and its stylesheet (`AuthoredThemeStyleSheet`), the display scale choice (`UiScaleChoice`), material thumbnails as host images, and the wheel's screen (`RadialMenuScreen`). | a palette entry; an SVG in `editor/ui/icons/` |
 | `icons/` | `IconId`, the leaf enum a tool or control names an icon by. | -- |
-| `workspaces/` | The workspace model: `IWorkspace`, the `WorkspaceKind` row, `WorkspaceHost` (open, close, activate, window placement, requests at the frame boundary; headless-tested). | a row in `WorkspaceKinds.cpp` |
-| `render/` | Display-driven offscreen target lifetime (`DisplayLedger`, `DisplayedTargets`), publishing a target as a host image (`TargetImagePublish`), the overlay pipelines every workspace draws with (`EditorImmediatePipeline`, `EditorWideLinePipeline` and its `EditorLineSegment`), `DetachRenderFeature`. | -- |
+| `workspaces/` | The workspace model: `IWorkspace`, the `WorkspaceKind` row, `WorkspaceHost` (open, close, activate, window placement, requests at the frame boundary; headless-tested), and `ExplorerTable` (a workspace's explorers as rows: each its action, its entry and its paging and choosing). | a row in `WorkspaceKinds.cpp` |
+| `render/` | Display-driven offscreen target lifetime (`DisplayLedger`, `DisplayedTargets`), publishing a target as a host image (`TargetImagePublish`), a workspace's feature attached and detached (`AttachRenderFeature`, `DetachRenderFeature`), the overlay pipelines every workspace draws with (`EditorImmediatePipeline`, `EditorWideLinePipeline` and its `EditorLineSegment`), `DetachRenderFeature`. | -- |
 | `viewport/` | `ViewportId`. | -- |
 | `project/` | Project descriptor + resolution + mounting + spawning (`Project`, `ProjectArgs`, `ProjectContentMount`, `ProcessLaunch`, `MaterialLibrary`); the project's files as content (`ProjectFiles`, `AssetQuery`, `ReferenceIndex`), every file stating its id (`AssetAdoption`), and moving, copying, trashing and importing them as journal steps (`ProjectFileSteps`, which open documents follow). | a step kind in `ProjectFileSteps` |
 
@@ -213,7 +219,8 @@ shell's tabs (`WorkspaceDocumentFacet::Open`,
 the working description into the resident material via `AssetSystem::Reload`;
 a watched `.smat` that changes on disk is taken by a clean document and kept
 out of the stack while a document holds its own changes (`DocumentSource::FileChangedOnDisk`
-behind `SourceReloadRoots::SetReloadFilter`).
+behind `SourceReloadRoots::SetReloadFilter`). What an operation could not do is
+one of the workspace's problems.
 
 Data workspace (`editor/data_editor/src/`): `DataWorkspace` presents the
 active document whole, as a sheet (`WorkspaceSelectionFacet::Primary`): its
@@ -345,7 +352,8 @@ firewall above.
   whose properties are its content keeps the card shown while something is
   selected. What a workspace lets a person browse is
   an explorer (`WorkspaceExplorerInfo`, paged through `Explore` and chosen
-  from with `ChooseInExplorer`); the Level's materials are
+  from with `ChooseInExplorer`; Animation and UI Preview declare theirs as
+  `ExplorerTable` rows); the Level's materials are
   `workspace/MaterialExplorer`, which the shell shows as a tray and opens from
   its `explorer.materials` action or the cartridge; its prefabs are
   `workspace/PrefabExplorer` (Shift+P), whose choice takes up the Entity tool,

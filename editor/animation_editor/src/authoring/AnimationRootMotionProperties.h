@@ -4,14 +4,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationRootMotionProperties
-//
-// The Root motion lens's card: whether the scenario moves the character, the
-// walls it may run into, what the base layer's clip carries and where along
-// its root curve it is, and how far it was carried against how far it got.
-// The walls and the switch are the scenario's, saved with it.
-//=============================================================================
+// The Root motion lens's card: whether the scenario moves the character, its
+// walls (both scenario state), and carried against achieved travel.
 class AnimationRootMotionProperties final : public IPropertySource
 {
 public:

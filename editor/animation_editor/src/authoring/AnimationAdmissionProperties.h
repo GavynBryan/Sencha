@@ -4,15 +4,9 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationAdmissionProperties
-//
-// What the simulation's events met: whether the preview plays the authority or
-// a client, which verbs a recorder stands behind (nothing runs the game here,
-// so any other verb answers Unavailable), and the latest event crossings and
-// behavior lifecycle events with what their bindings answered, and what the
-// recorders were handed. Role and recorders are scenario state.
-//=============================================================================
+// What the simulation's events met: the role it plays, the verbs a recorder
+// stands behind, and what their bindings answered (role and recorders are
+// scenario state).
 class AnimationAdmissionProperties final : public IPropertySource
 {
 public:

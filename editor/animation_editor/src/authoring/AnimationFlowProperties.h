@@ -7,13 +7,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationFlowProperties
-//
-// The Flow lens's card: the flow a layer plays on the inspected tick, the
-// section it is in and how far, where a cancel goes, and how each section is
-// left -- loop, branches, the end. Edit opens the flow as a sheet.
-//=============================================================================
+// The Flow lens's card: the flow a layer plays on the inspected tick, where it
+// is, where a cancel goes and how each section is left.
 class AnimationFlowProperties final : public IPropertySource
 {
 public:

@@ -18,13 +18,8 @@ struct BindingAsset
     std::vector<VocabularyCatalog::BindingRow> Records;
 };
 
-//=============================================================================
-// VocabularyOutline
-//
-// The vocabulary a project's documents author against, as an outline to read:
-// its verbs, queries and events, each with its label, provider and arity, and
-// every binding asset with its records under it.
-//=============================================================================
+// The vocabulary a project's documents author against, as an outline: verbs,
+// queries and events, and every binding asset with its records.
 class VocabularyOutline
 {
 public:

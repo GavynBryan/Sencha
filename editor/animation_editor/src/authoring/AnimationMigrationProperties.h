@@ -6,14 +6,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationMigrationProperties
-//
-// The project's scenes that still name a clip on the retired clip player --
-// such an entity loads unposed -- and converting them: each gets a one-layer
-// rig that plays the clip as the player did, under animation/migrated/, the
-// rigs' names declared and the scenes rewritten.
-//=============================================================================
+// The scenes that still name a clip on the retired clip player, and their
+// conversion to one-layer rigs under animation/migrated/.
 class AnimationMigrationProperties final : public IPropertySource
 {
 public:

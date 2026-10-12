@@ -6,14 +6,8 @@
 
 class AnimationPreviewWorkspace;
 
-//=============================================================================
-// AnimationBlendProperties
-//
-// The Blends lens's card: how each layer is blending now -- crossfading,
-// inertializing or settled -- the blendspace the selected layer plays and its
-// samples' weights, and the latest blends. Its details are the rig's pairwise
-// overrides and an A/B comparison of a recorded take against a replay.
-//=============================================================================
+// The Blends lens's card: how each layer blends now, the selected layer's
+// blendspace and the latest blends; its details are the overrides and A/B takes.
 class AnimationBlendProperties final : public IPropertySource
 {
 public:
