@@ -46,7 +46,15 @@ bool ParseTextureImportSettings(std::span<const std::byte> bytes,
                                 TextureImportSettings& out,
                                 std::string* error)
 {
-    out = TextureImportSettings{};
+    return ParseTextureImportSettings(bytes, TextureImportSettings{}, out, error);
+}
+
+bool ParseTextureImportSettings(std::span<const std::byte> bytes,
+                                const TextureImportSettings& defaults,
+                                TextureImportSettings& out,
+                                std::string* error)
+{
+    out = defaults;
     if (bytes.empty())
         return true;
 

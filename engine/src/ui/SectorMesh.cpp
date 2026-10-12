@@ -54,9 +54,8 @@ std::uint32_t AppendLoop(const std::vector<Vec2d>& loop, float feather, bool hol
     for (std::size_t i = 0; i < count; ++i)
     {
         Vec2d edge = loop[(i + 1) % count] - loop[i];
-        const float length = std::sqrt(edge.X * edge.X + edge.Y * edge.Y);
-        if (length > 1e-6f)
-            edge = edge * (1.0f / length);
+        if (edge.Magnitude() > 1e-6f)
+            edge = edge.Normalized();
         normals[i] = outwardIsLeft ? Vec2d(-edge.Y, edge.X) : Vec2d(edge.Y, -edge.X);
     }
 
@@ -67,7 +66,7 @@ std::uint32_t AppendLoop(const std::vector<Vec2d>& loop, float feather, bool hol
     for (std::size_t i = 0; i < count; ++i)
     {
         Vec2d mitre = (normals[(i + count - 1) % count] + normals[i]) * 0.5f;
-        const float length2 = mitre.X * mitre.X + mitre.Y * mitre.Y;
+        const float length2 = mitre.SqrMagnitude();
         if (length2 > 1e-6f)
             mitre = mitre * std::min(1.0f / length2, kMitreLimit * kMitreLimit);
         mitres[i] = mitre * half;

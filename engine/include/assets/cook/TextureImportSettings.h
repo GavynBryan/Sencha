@@ -47,6 +47,12 @@ struct TextureImportSettings
 [[nodiscard]] bool ParseTextureImportSettings(std::span<const std::byte> bytes,
                                               TextureImportSettings& out,
                                               std::string* error = nullptr);
+// The same over an importer's own defaults: a field the sidecar does not state
+// keeps its value in `defaults`.
+[[nodiscard]] bool ParseTextureImportSettings(std::span<const std::byte> bytes,
+                                              const TextureImportSettings& defaults,
+                                              TextureImportSettings& out,
+                                              std::string* error = nullptr);
 
 // Writes the sidecar next to the source (pretty JSON, all fields explicit),
 // stating `id` beside the settings when it is valid.

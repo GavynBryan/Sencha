@@ -103,16 +103,9 @@ private:
     JobSystem* Jobs = nullptr;
 };
 
-//=============================================================================
-// SvgTextureImporter -- .svg -> cooked .stex.
-//
-// Authored vector art (the editor's icons, UI ornaments) becomes an ordinary
-// texture, rasterized once at the cook rather than at every launch, so a
-// document names `icons/move.svg` like any image. White art stays white: a
-// document tints it with `image-color`. Uncompressed, because block encoding
-// smears the edges icons are made of; mipped, because they draw at several
-// sizes. Same virtual-path rule as the PNG importer.
-//=============================================================================
+// .svg -> cooked .stex, rasterized once at the cook; white art stays white for
+// `image-color` to tint. Uncompressed and mipped unless the source's import
+// settings say otherwise. Same virtual-path rule as the PNG importer.
 class SvgTextureImporter final : public IAssetImporter
 {
 public:

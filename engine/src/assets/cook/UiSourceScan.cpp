@@ -1,5 +1,7 @@
 #include <assets/cook/UiSourceScan.h>
 
+#include <render/ui/UiDrawFrame.h>
+
 #include <algorithm>
 #include <cctype>
 
@@ -128,7 +130,7 @@ std::string_view FunctionArgument(std::string_view text, std::size_t keywordEnd)
 void AddResource(UiSourceReferences& out, AssetType type, std::string_view path)
 {
     // A host image is supplied at draw time, not cooked into the package.
-    if (path.empty() || path.starts_with("host:"))
+    if (path.empty() || path.starts_with(kUiHostImageScheme))
         return;
     const std::string value(path);
     const bool already = std::any_of(out.Resources.begin(), out.Resources.end(),

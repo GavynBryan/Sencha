@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 //=============================================================================
@@ -61,6 +62,7 @@ inline constexpr UiGeneratedTextureId kInvalidUiGeneratedTexture = 0;
 // stand behind it is decided by the host each frame, never by the document.
 using UiHostImageId = std::uint32_t;
 inline constexpr UiHostImageId kInvalidUiHostImage = 0;
+inline constexpr std::string_view kUiHostImageScheme = "host:";
 
 enum class UiTextureKind : std::uint8_t
 {
@@ -78,10 +80,8 @@ struct UiTextureRef
     UiHostImageId Host = kInvalidUiHostImage;
 };
 
-// Pixels for a generated texture, handed over the first extraction after the
-// document engine minted it. RGBA8 with premultiplied alpha, already converted
-// to linear (§8): the document engine hands over sRGB, and converting once here
-// beats converting per sample.
+// Pixels for a generated texture, handed over the first extraction after it was
+// minted: RGBA8, premultiplied, converted once to linear (docs/ui/architecture.md §8).
 struct UiTextureUpload
 {
     UiGeneratedTextureId Id = kInvalidUiGeneratedTexture;
@@ -90,9 +90,7 @@ struct UiTextureUpload
 };
 
 // Generated textures minted and finished with since the previous extraction,
-// for every surface at once. Kept apart from the per-surface frames because a
-// glyph atlas belongs to a font, not to whichever surface first drew it: every
-// pass drawing any surface resolves the same ids through one GPU owner.
+// for every surface at once (docs/ui/architecture.md §9).
 struct UiTextureChanges
 {
     std::vector<UiTextureUpload> Uploads;

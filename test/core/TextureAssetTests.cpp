@@ -15,6 +15,7 @@
 #include <assets/cook/TextureImportSettings.h>
 #include <core/assets/AssetRegistry.h>
 #include <bc7decomp.h>
+#include <MemoryCookOutput.h>
 #endif
 
 #include <gtest/gtest.h>
@@ -443,7 +444,7 @@ TEST(TextureAssetLoaderStex, SniffsContainerOverExtension)
     source.Add("asset://textures/dev/cooked.png", std::move(stexBytes));
 
     AssetStaging staging = loader.LoadStaged(
-        MakeTextureRecord("asset://textures/dev/cooked.png"), source);
+        MakeTextureRecord("asset://textures/dev/cooked.png"), source, AssetPathsById{});
     ASSERT_TRUE(staging.IsValid()) << staging.Error;
 
     const auto* texture = std::any_cast<TextureData>(&staging.Payload);
@@ -469,7 +470,7 @@ TEST(TextureAssetLoaderStex, CorruptStexFailsStagingWithError)
     source.Add("asset://textures/dev/torn.stex", std::move(bytes));
 
     AssetStaging staging = loader.LoadStaged(
-        MakeTextureRecord("asset://textures/dev/torn.stex"), source);
+        MakeTextureRecord("asset://textures/dev/torn.stex"), source, AssetPathsById{});
     EXPECT_FALSE(staging.IsValid());
     EXPECT_NE(staging.Error.find("stex"), std::string::npos);
 }
@@ -777,4 +778,35 @@ TEST(SvgTextureImport, VectorArtCooksToAnUncompressedMippedTexture)
     EXPECT_EQ(texture.Height, SvgTextureImporter::kRasterHeight);
     EXPECT_EQ(texture.Format, TexturePixelFormat::RGBA8_SRGB);
     EXPECT_GT(texture.Mips.size(), 1u);
+}
+
+TEST(SvgTextureImport, ItsImportSettingsApplyOverTheVectorDefaults)
+{
+    SvgTextureImporter importer;
+    constexpr std::string_view meta = R"({"version": 1, "filter": "nearest", "mips": false})";
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(
+        ImportInput{ .SourceRelPath = "icons/half.svg", .Bytes = AsBytes(kHalfSquareSvg), .MetaBytes = AsBytes(meta) },
+        output);
+    ASSERT_TRUE(result.Error.empty()) << result.Error;
+    ASSERT_EQ(result.Artifacts.size(), 1u);
+
+    TextureData texture;
+    std::string error;
+    ASSERT_TRUE(LoadStexFromBytes(output.Files.at(result.Artifacts[0].FileRelPath), texture, &error)) << error;
+    EXPECT_EQ(texture.Filter, TextureFilter::Nearest) << "the source's filter setting was ignored";
+    EXPECT_EQ(texture.Mips.size(), 1u) << "the source's mips setting was ignored";
+    EXPECT_EQ(texture.Format, TexturePixelFormat::RGBA8_SRGB) << "a setting it did not state replaced a vector default";
+}
+
+TEST(SvgTextureImport, AMalformedSidecarFailsTheImport)
+{
+    SvgTextureImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(ImportInput{ .SourceRelPath = "icons/half.svg",
+                                                             .Bytes = AsBytes(kHalfSquareSvg),
+                                                             .MetaBytes = AsBytes(R"({"filtr": 1})") },
+                                                output);
+    EXPECT_FALSE(result.Error.empty());
+    EXPECT_TRUE(output.Files.empty());
 }

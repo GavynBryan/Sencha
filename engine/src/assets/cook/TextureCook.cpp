@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <format>
 #include <functional>
 #include <optional>
 #include <string>
@@ -412,6 +413,55 @@ bool CookImageToTexture(const Image& image,
     return true;
 }
 
+namespace
+{
+// The tail every image importer shares: the source's import settings over the
+// importer's defaults, the cook, and the .stex artifact at the source's path.
+ImportResult ImportImageAsTexture(const Image& image,
+                                  const ImportInput& input,
+                                  const TextureImportSettings& defaults,
+                                  JobSystem* jobs,
+                                  std::string_view importer,
+                                  ICookOutputWriter& output)
+{
+    // A malformed sidecar fails the import rather than cooking with defaults.
+    TextureImportSettings settings;
+    std::string settingsError;
+    if (!ParseTextureImportSettings(input.MetaBytes, defaults, settings, &settingsError))
+        return ImportResult{ .Error = std::format("{}: {}", importer, settingsError) };
+
+    const TextureCookParams params{
+        .Usage = settings.Usage != TextureUsage::Unknown
+                     ? settings.Usage
+                     : InferTextureUsageFromName(input.SourceRelPath),
+        .Filter = settings.Filter,
+        .Compress = settings.Compress,
+        .GenerateMips = settings.GenerateMips,
+        .Jobs = jobs,
+    };
+
+    TextureData texture;
+    std::string cookError;
+    if (!CookImageToTexture(image, params, texture, &cookError))
+        return ImportResult{ .Error = cookError };
+
+    std::vector<std::byte> stexBytes;
+    if (!WriteStexToBytes(texture, stexBytes))
+        return ImportResult{ .Error = std::format("{}: stex serialization failed", importer) };
+
+    CookedArtifact artifact;
+    artifact.Path = "asset://" + std::string(input.SourceRelPath);
+    artifact.FileRelPath = ".cooked/" + std::string(input.SourceRelPath) + ".stex";
+    artifact.Type = AssetType::Texture;
+    if (!output.WriteBytes(artifact.FileRelPath, stexBytes))
+        return ImportResult{ .Error = std::format("{}: artifact write failed", importer) };
+
+    ImportResult result;
+    result.Artifacts.push_back(std::move(artifact));
+    return result;
+}
+} // namespace
+
 std::vector<std::string_view> PngTextureImporter::SourceExtensions() const
 {
     return { ".png" };
@@ -430,44 +480,7 @@ ImportResult PngTextureImporter::Import(const ImportInput& input, ICookOutputWri
         /*srgb*/ true);
     if (!image)
         return ImportResult{ .Error = "png import: decode failed" };
-
-    // Sidecar import settings (the driver reads the file); a malformed
-    // sidecar fails the import rather than silently cooking with defaults.
-    TextureImportSettings settings;
-    std::string settingsError;
-    if (!ParseTextureImportSettings(input.MetaBytes, settings, &settingsError))
-        return ImportResult{ .Error = "png import: " + settingsError };
-
-    const TextureCookParams params{
-        .Usage = settings.Usage != TextureUsage::Unknown
-                     ? settings.Usage
-                     : InferTextureUsageFromName(input.SourceRelPath),
-        .Filter = settings.Filter,
-        .Compress = settings.Compress,
-        .GenerateMips = settings.GenerateMips,
-        .Jobs = Jobs,
-    };
-
-    TextureData texture;
-    std::string cookError;
-    if (!CookImageToTexture(*image, params, texture, &cookError))
-        return ImportResult{ .Error = cookError };
-
-    std::vector<std::byte> stexBytes;
-    if (!WriteStexToBytes(texture, stexBytes))
-        return ImportResult{ .Error = "png import: stex serialization failed" };
-
-    CookedArtifact artifact;
-    artifact.Path = "asset://" + std::string(input.SourceRelPath);
-    artifact.FileRelPath = ".cooked/" + std::string(input.SourceRelPath) + ".stex";
-    artifact.Type = AssetType::Texture;
-
-    if (!output.WriteBytes(artifact.FileRelPath, stexBytes))
-        return ImportResult{ .Error = "png import: artifact write failed" };
-
-    ImportResult result;
-    result.Artifacts.push_back(std::move(artifact));
-    return result;
+    return ImportImageAsTexture(*image, input, TextureImportSettings{}, Jobs, "png import", output);
 }
 
 std::vector<std::string_view> SvgTextureImporter::SourceExtensions() const
@@ -477,7 +490,7 @@ std::vector<std::string_view> SvgTextureImporter::SourceExtensions() const
 
 std::uint64_t SvgTextureImporter::CookIdentity() const
 {
-    return CookFingerprint("svg_texture", kRasterHeight).Value();
+    return CookFingerprint("svg_texture", 2).AddU32("raster_height", kRasterHeight).Value();
 }
 
 ImportResult SvgTextureImporter::Import(const ImportInput& input, ICookOutputWriter& output)
@@ -487,29 +500,7 @@ ImportResult SvgTextureImporter::Import(const ImportInput& input, ICookOutputWri
     if (!image)
         return ImportResult{ .Error = "svg import: " + rasterError };
 
-    const TextureCookParams params{
-        .Usage = TextureUsage::BaseColor,
-        .Filter = TextureFilter::Linear,
-        .Compress = false,
-        .GenerateMips = true,
-    };
-    TextureData texture;
-    std::string cookError;
-    if (!CookImageToTexture(*image, params, texture, &cookError))
-        return ImportResult{ .Error = cookError };
-
-    std::vector<std::byte> stexBytes;
-    if (!WriteStexToBytes(texture, stexBytes))
-        return ImportResult{ .Error = "svg import: stex serialization failed" };
-
-    CookedArtifact artifact;
-    artifact.Path = "asset://" + std::string(input.SourceRelPath);
-    artifact.FileRelPath = ".cooked/" + std::string(input.SourceRelPath) + ".stex";
-    artifact.Type = AssetType::Texture;
-    if (!output.WriteBytes(artifact.FileRelPath, stexBytes))
-        return ImportResult{ .Error = "svg import: artifact write failed" };
-
-    ImportResult result;
-    result.Artifacts.push_back(std::move(artifact));
-    return result;
+    // Block encoding smears the edges icons are made of.
+    const TextureImportSettings defaults{ .Usage = TextureUsage::BaseColor, .Compress = false };
+    return ImportImageAsTexture(*image, input, defaults, nullptr, "svg import", output);
 }

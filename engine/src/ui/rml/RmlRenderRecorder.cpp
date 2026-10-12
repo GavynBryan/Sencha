@@ -184,12 +184,11 @@ Rml::TextureHandle RmlRenderRecorder::LoadTexture(Rml::Vector2i& texture_dimensi
         return 0;
     }
 
-    constexpr std::string_view kHostScheme = "host:";
-    if (std::string_view(source).starts_with(kHostScheme))
+    if (std::string_view(source).starts_with(kUiHostImageScheme))
     {
         UiHostImageId host = kInvalidUiHostImage;
         RenderExtent hostSize{};
-        const std::string_view name = std::string_view(source).substr(kHostScheme.size());
+        const std::string_view name = std::string_view(source).substr(kUiHostImageScheme.size());
         if (!Resolver->ResolveHostImage(name, host, hostSize))
         {
             Log.Error("ui: '{}' names a host image the host never registered", source);

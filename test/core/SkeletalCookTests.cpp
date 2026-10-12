@@ -4,6 +4,8 @@
 // output. The cooked artifacts are round-tripped back through the runtime
 // loaders so the cook→load chain is exercised end to end.
 
+#include <MemoryCookOutput.h>
+
 #include <gtest/gtest.h>
 
 #ifdef SENCHA_ENABLE_COOK
@@ -30,18 +32,6 @@
 
 namespace
 {
-    class MemoryCookOutputWriter final : public ICookOutputWriter
-    {
-    public:
-        bool WriteBytes(std::string_view fileRelPath, std::span<const std::byte> bytes) override
-        {
-            Files[std::string(fileRelPath)].assign(bytes.begin(), bytes.end());
-            return true;
-        }
-
-        std::map<std::string, std::vector<std::byte>> Files;
-    };
-
     std::string Base64Encode(std::span<const std::byte> bytes)
     {
         static constexpr char kAlphabet[] =
