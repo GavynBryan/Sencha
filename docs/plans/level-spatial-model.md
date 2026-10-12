@@ -758,7 +758,7 @@ and gets structured, verifiable answers.
   console adapter.
 - The headless host.
 - Queries: `level.summary`, `query.box`, `query.near`, `entity.describe`,
-  `deps`, `plan.section` (text and PNG), `measure.clearance`, `nav.reachable`
+  `plan.section` (text and PNG), `measure.clearance`, `nav.reachable`
   (both walks), `diagnostics`.
 - An in-memory navigation build.
 - `level.conventions` as a data asset with its schema, read through
@@ -777,12 +777,35 @@ and gets structured, verifiable answers.
 - Closing and reopening the level workspace leaves every level command
   registered once and live.
 
+**Outcome (2026-10-12):** built, with these differences from the work list.
+- `deps` moved to M1. In M0 nothing derives from an entity but its children,
+  which `entity.describe` already reports; its purpose is derived outputs
+  (shells, openings), which arrive with M1.
+- `diagnostics` reports the world's existing validation records
+  (`ContentRiskRecord`). No new rules were written for M0.
+- Reachability is per zone. Navigation answers `CrossZoneUnsupported` across
+  zones, so the acceptance asked it inside each zone, up to the docks that
+  `world.summary` locates.
+- `world.summary` was added so a client can find zones and docks at all; the
+  zone queries read the focused zone only.
+- `kyusu_batch` opens worlds with their user state ignored, so answers do not
+  depend on, or write, anyone's `.sworld.user.json`.
+
+The acceptance run on `traversal3` answered with structured data throughout
+and found three real things: Room 2's Player Start stands on Zone 1's floor,
+so reachability from it inside Room 2 is refused as off the walkable surface;
+Zone 1's floor slab extends below its zone's bounds; and the editor's own
+validation called Room 2 and Room 3 unreachable although docks join them
+(section 9, item 8). The Loss Function walkthrough produced a floor plan whose
+open runs show brushes with open surfaces.
+
 ### M1: propose connected spaces, review them, survive hand edits
 
 **Capability:** the review's nine steps. The thinnest path through every layer
 of the real model, with spaces included from the start.
 
 **Work:**
+- `deps`: the derived outputs, openings and children that depend on a subject.
 - Command labels and document revision with record digests. Their consumers
   (the labelled accept and the precondition check) arrive here, so they do too.
 - Volume brushes; `space`, `shell`, `opening`.
@@ -949,6 +972,15 @@ section 10.
 6. **Focus loss cancels tool previews** (`ViewportToolDispatcher.cpp:49-64`).
    This is correct for pointer gestures and is recorded only because drafts
    must not inherit it. Drafts are not pending edits, so they don't.
+7. **A navigation query context larger than 65535 nodes failed every query**
+   as "search limit reached": Detour's node pool indexes with 16 bits. Fixed
+   by clamping at the context's construction.
+8. **The editor's world validation ignored docks.** Reachability walked the
+   manifest's dock endpoints, which only the world cook fills, so every zone
+   reached through a dock was reported unreachable. Validation now checks
+   against the topology compiled from the world scene, as the cook does.
+9. **Normalized data could fail its own schema**: a member with no default
+   came back as null. It now stays out.
 
 ---
 
