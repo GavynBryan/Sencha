@@ -290,6 +290,15 @@ if(TARGET kyusu_batch)
     set_tests_properties(kyusu_batch.AnswersAFixtureLevel PROPERTIES
         PASS_REGULAR_EXPRESSION "\"operation\":\"query.near\",\"status\":\"ok\""
         FAIL_REGULAR_EXPRESSION "\"status\":\"error\"")
+    # A world opens at its start zone, whatever anyone last focused.
+    add_test(NAME kyusu_batch.OpensAWorldAtItsStartZone
+        COMMAND kyusu_batch
+            --project "${CMAKE_SOURCE_DIR}/templates/fps/project.senchaproj"
+            --world "${CMAKE_SOURCE_DIR}/templates/fps/assets/traversal3.sworld"
+            --script "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/operations/level_queries.txt")
+    set_tests_properties(kyusu_batch.OpensAWorldAtItsStartZone PROPERTIES
+        PASS_REGULAR_EXPRESSION "\"document\":\"asset://levels/zone_1.sscene\""
+        FAIL_REGULAR_EXPRESSION "\"status\":\"error\"")
 endif()
 
 # The transport, protocol, and channel layers. Their own target because they

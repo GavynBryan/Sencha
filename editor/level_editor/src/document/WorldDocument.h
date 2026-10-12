@@ -9,6 +9,7 @@
 #include <zone/WorldPartitionManifest.h>
 
 #include <cassert>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -55,7 +56,17 @@ public:
     void SetContentRoots(std::vector<std::filesystem::path> roots);
     [[nodiscard]] const std::vector<std::filesystem::path>& ContentRoots() const { return ContentRoots_; }
 
-    explicit WorldDocument(LoggingProvider& logging);
+    // Whether a person's view of a world -- its focus, open zones and
+    // overlays -- is read from and written to the world's .user.json sidecar.
+    // A tool that opens a world to answer questions ignores it, so its answers
+    // do not depend on, or disturb, anyone's view.
+    enum class UserState : std::uint8_t
+    {
+        Sidecar,
+        Ignored,
+    };
+
+    explicit WorldDocument(LoggingProvider& logging, UserState userState = UserState::Sidecar);
     ~WorldDocument();   // writes the user sidecar so view state survives exit
 
     // Forwarded to every zone document, present and future.
@@ -305,6 +316,7 @@ private:
     void NotifyEditedDocumentChanged();
 
     LoggingProvider& Logging_;
+    UserState UserState_ = UserState::Sidecar;
     RuntimeAssets* Assets_ = nullptr;
 
     bool WorldMode_ = false;

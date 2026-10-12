@@ -6,11 +6,14 @@
 #include "project/Project.h"
 
 #include <core/logging/LoggingProvider.h>
+#include <zone/WorldPartitionIds.h>
+#include <zone/WorldPartitionManifest.h>
 
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,8 +24,8 @@ namespace
     constexpr int kCouldNotStart = 2;
 
     constexpr std::string_view kUsage =
-        "usage: kyusu_batch [--project <file.senchaproj>] --level <file.sscene> "
-        "[--script <file>]\n"
+        "usage: kyusu_batch [--project <file.senchaproj>] (--level <file.sscene> | "
+        "--world <file.sworld> [--zone <id or name>]) [--script <file>]\n"
         "Runs one editor operation per line of the script (stdin without --script) and "
         "writes one line of JSON per answer to stdout.\n";
 
@@ -30,6 +33,8 @@ namespace
     {
         std::string Project;
         std::string Level;
+        std::string World;
+        std::string Zone;
         std::string Script;
     };
 
@@ -45,12 +50,28 @@ namespace
                 options.Project = value;
             else if (flag == "--level")
                 options.Level = value;
+            else if (flag == "--world")
+                options.World = value;
+            else if (flag == "--zone")
+                options.Zone = value;
             else if (flag == "--script")
                 options.Script = value;
             else
                 return false;
         }
-        return !options.Level.empty();
+        return options.Level.empty() != options.World.empty()
+            && (options.Zone.empty() || !options.World.empty());
+    }
+
+    // By id first, then by name.
+    bool FocusZone(WorldDocument& world, const std::string& zone)
+    {
+        if (const std::optional<ZoneId> id = ZoneIdFromString(zone))
+            return world.SetFocusZone(*id);
+        for (const ZoneHeader& header : world.Manifest().Zones)
+            if (header.Name == zone)
+                return world.SetFocusZone(header.Id);
+        return false;
     }
 }
 
@@ -65,7 +86,8 @@ int main(int argc, char** argv)
 
     RegisterDocumentSerializers();
     LoggingProvider logging;
-    WorldDocument world(logging);
+    // Answers must not depend on, or disturb, anyone's view of a world.
+    WorldDocument world(logging, WorldDocument::UserState::Ignored);
 
     if (!options.Project.empty())
     {
@@ -81,9 +103,15 @@ int main(int argc, char** argv)
         world.SetContentRoots(std::move(roots));
     }
 
-    if (!world.Load(options.Level))
+    const std::string& opened = options.World.empty() ? options.Level : options.World;
+    if (!(options.World.empty() ? world.Load(options.Level) : world.LoadWorld(options.World)))
     {
-        std::fprintf(stderr, "kyusu_batch: could not open '%s'\n", options.Level.c_str());
+        std::fprintf(stderr, "kyusu_batch: could not open '%s'\n", opened.c_str());
+        return kCouldNotStart;
+    }
+    if (!options.Zone.empty() && !FocusZone(world, options.Zone))
+    {
+        std::fprintf(stderr, "kyusu_batch: the world has no zone '%s'\n", options.Zone.c_str());
         return kCouldNotStart;
     }
 

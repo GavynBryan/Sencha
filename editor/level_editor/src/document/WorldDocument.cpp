@@ -62,8 +62,9 @@ std::string SanitizeZoneFileName(std::string_view name)
 
 } // namespace
 
-WorldDocument::WorldDocument(LoggingProvider& logging)
+WorldDocument::WorldDocument(LoggingProvider& logging, UserState userState)
     : Logging_(logging)
+    , UserState_(userState)
     , LegacyDocument_(std::make_unique<EditorDocument>(logging))
     , Rng_(std::random_device{}())
 {
@@ -1422,7 +1423,7 @@ std::string WorldDocument::UserSidecarPath() const
 
 void WorldDocument::WriteUserSidecar() const
 {
-    if (!WorldMode_ || WorldPath_.empty())
+    if (!WorldMode_ || WorldPath_.empty() || UserState_ == UserState::Ignored)
         return;
 
     JsonValue::Object root;
@@ -1462,6 +1463,8 @@ void WorldDocument::WriteUserSidecar() const
 
 WorldDocument::SidecarFocus WorldDocument::ApplyUserSidecar()
 {
+    if (UserState_ == UserState::Ignored)
+        return {};
     std::ifstream file(UserSidecarPath(), std::ios::binary);
     if (!file.is_open())
         return {};
