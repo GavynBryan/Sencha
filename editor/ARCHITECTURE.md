@@ -210,7 +210,7 @@ Level editor (`editor/level_editor/src/`):
 | `authoring/` | The selection's components as properties (`ComponentPropertySource`, walking the serializer registry), the adapters that author a component's own presentation (`EditorComponentAdapter`), and what entities show in the views (`EntityMarkers`, `PlaceIcons`). A component is a Group keyed by its serializer's JSON key; a field is `<component>/<field>`, one number of it `<component>/<field>[i]`, one asset slot `<component>/<field>#<slot>`, and an adapter's property `<component>:<key>`, so an edit lands by key after the list changed. Several selected entities read as one: a component only some hold says how many, a field they disagree on is Mixed, a set writes every holder, a drag moves each from its own value, and either is one step; an adapter-authored component is edited one object at a time. A scene instance's member carries `reset` on a field or component that differs from its source. Byte fields preview inside the command stack's pending-edit scope and commit as one `RawComponentEditCommand`; an asset field commits its path through `AssetFieldEditCommand`. | `EditorComponentAdapter` |
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
-| `operations/` | The level's operations over a `WorldDocument`'s focus level: `LevelQueryOperations` (`level.summary`, `entity.describe`, `query.box`, `query.near`, `plan.section`), subject resolution (`ResolveEntitySubject`: a persistent id, or `@name`), and `FloorPlan` (a level cut at a height through `brush/BrushSection`, rasterized north-up for `plan.section`'s PNG). | an entry in an operations list |
+| `operations/` | The level's operations over a `WorldDocument`'s focus level: `LevelQueryOperations` (`level.summary`, `entity.describe`, `query.box`, `query.near`, `plan.section`, and `nav.reachable` in `LevelReachability`: the walkable surface asked with unknown traversal kinds blocked and then open), `LevelJson` (how answers spell metres and points), subject resolution (`ResolveEntitySubject`: a persistent id, or `@name`), and `FloorPlan` (a level cut at a height through `brush/BrushSection`, rasterized north-up for `plan.section`'s PNG). | an entry in an operations list |
 
 Materials workspace (`editor/material_editor/src/`, flat): `MaterialWorkspace`,
 `MaterialDocumentSet` (the open materials as journal documents, one undo
@@ -274,7 +274,9 @@ that opens a project in a new process).
 - Document/scene model: `EditorDocument`, `EditorScene`, `DocumentSerialization`,
   `EntitySnapshot`.
 - Cook: `DocumentCook` (`CookDocument` turns an `EditorDocument` into a runtime
-  level file), `BrushCookInput`, `BrushBake`.
+  level file), `BrushCookInput`, `NavigationCookInput` (the authored links and
+  the project's navigation settings), `BrushBake`; `DocumentNavigation` builds a
+  document's navigation in memory from the same inputs, for analysis.
 - File actions: `DocumentFileActions` (dialogs, content-root material rescan,
   unresolved-ref logging), `AssetFieldIo`.
 - `document/commands/`: entity-edit commands (`ICommand` implementations).

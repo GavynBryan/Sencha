@@ -53,6 +53,7 @@ public:
     // assets root. Applied to the documents that already exist and to every
     // one created afterwards.
     void SetContentRoots(std::vector<std::filesystem::path> roots);
+    [[nodiscard]] const std::vector<std::filesystem::path>& ContentRoots() const { return ContentRoots_; }
 
     explicit WorldDocument(LoggingProvider& logging);
     ~WorldDocument();   // writes the user sidecar so view state survives exit

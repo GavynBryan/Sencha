@@ -1,6 +1,8 @@
 #include "LevelQueries.h"
 
 #include "FloorPlan.h"
+#include "LevelJson.h"
+#include "LevelReachability.h"
 #include "LevelSubjects.h"
 
 #include "brush/BrushMeshStore.h"
@@ -73,30 +75,6 @@ namespace
 
     // Values -----------------------------------------------------------------
 
-    // Millimetres: finer than any authored position, and free of the float
-    // noise (0.10000000149) a client would pay to read.
-    JsonValue Metres(double value)
-    {
-        return JsonValue(std::round(value * 1000.0) / 1000.0);
-    }
-
-    JsonValue VectorJson(const Vec3d& v)
-    {
-        return JsonValue(JsonValue::Array{ Metres(v.X), Metres(v.Y), Metres(v.Z) });
-    }
-
-    JsonValue GroundJson(const Vec2d& v)
-    {
-        return JsonValue(JsonValue::Array{ Metres(v.X), Metres(v.Y) });
-    }
-
-    Vec3d VectorFrom(const JsonValue& value)
-    {
-        const JsonValue::Array& a = value.AsArray();
-        return Vec3d{ static_cast<float>(a[0].AsNumber()), static_cast<float>(a[1].AsNumber()),
-                      static_cast<float>(a[2].AsNumber()) };
-    }
-
     std::size_t LimitFrom(const JsonValue& arguments)
     {
         return static_cast<std::size_t>(arguments.Find("limit")->AsNumber());
@@ -122,9 +100,9 @@ namespace
             { "name", JsonValue(EntityNameText(document, entity)) },
             { "kind", JsonValue(document.GetScene().TryGetBrush(entity) != nullptr ? "brush"
                                                                                   : "entity") },
-            { "position", world != nullptr ? VectorJson(world->Position) : JsonValue{} },
-            { "min", bounds ? VectorJson(bounds->Min) : JsonValue{} },
-            { "max", bounds ? VectorJson(bounds->Max) : JsonValue{} },
+            { "position", world != nullptr ? PointJson(world->Position) : JsonValue{} },
+            { "min", bounds ? PointJson(bounds->Min) : JsonValue{} },
+            { "max", bounds ? PointJson(bounds->Max) : JsonValue{} },
         });
     }
 
@@ -211,8 +189,8 @@ namespace
                 { "document", JsonValue(document.SourceAssetPath()) },
                 { "entity_count", JsonValue(static_cast<double>(count)) },
                 { "brush_count", JsonValue(static_cast<double>(brushes)) },
-                { "min", overall ? VectorJson(overall->Min) : JsonValue{} },
-                { "max", overall ? VectorJson(overall->Max) : JsonValue{} },
+                { "min", overall ? PointJson(overall->Min) : JsonValue{} },
+                { "max", overall ? PointJson(overall->Max) : JsonValue{} },
                 { "entities", JsonValue(std::move(entities)) },
                 { "truncated", JsonValue(count > limit) },
             }));
@@ -301,8 +279,8 @@ namespace
                                          DataField::Field("truncated", DataFieldKind::Bool, {}, {}) });
         entry.Execute = [&world](const JsonValue& arguments) {
             const EditorDocument& document = world.FocusDocument();
-            const Vec3d low = VectorFrom(*arguments.Find("min"));
-            const Vec3d high = VectorFrom(*arguments.Find("max"));
+            const Vec3d low = PointFromJson(*arguments.Find("min"));
+            const Vec3d high = PointFromJson(*arguments.Find("max"));
             const Aabb3d box{ Vec3d{ std::min(low.X, high.X), std::min(low.Y, high.Y),
                                      std::min(low.Z, high.Z) },
                               Vec3d{ std::max(low.X, high.X), std::max(low.Y, high.Y),
@@ -352,7 +330,7 @@ namespace
         });
         entry.Execute = [&world](const JsonValue& arguments) {
             const EditorDocument& document = world.FocusDocument();
-            const Vec3d point = VectorFrom(*arguments.Find("point"));
+            const Vec3d point = PointFromJson(*arguments.Find("point"));
             const float reach = static_cast<float>(arguments.Find("radius")->AsNumber());
             const std::size_t limit = LimitFrom(arguments);
 
@@ -383,7 +361,7 @@ namespace
             for (std::size_t index = 0; index < hits.size() && index < limit; ++index)
                 entities.push_back(JsonValue(JsonValue::Object{
                     { "entity", EntityJson(document, hits[index].Entity) },
-                    { "distance", Metres(hits[index].Distance) },
+                    { "distance", MetresJson(hits[index].Distance) },
                     { "bearing", JsonValue(std::string(Bearing(point, hits[index].Center))) },
                 }));
             return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
@@ -508,13 +486,13 @@ namespace
                         { "width", JsonValue(static_cast<double>(raster->Width)) },
                         { "height", JsonValue(static_cast<double>(raster->Height)) },
                         { "origin", GroundJson(raster->Origin) },
-                        { "pixels_per_metre", Metres(raster->Scale) },
+                        { "pixels_per_metre", MetresJson(raster->Scale) },
                     });
                 }
             }
 
             return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
-                { "height", Metres(cut) },
+                { "height", MetresJson(cut) },
                 { "brushes", JsonValue(std::move(brushes)) },
                 { "points", JsonValue(std::move(points)) },
                 { "min", plan.Empty ? JsonValue{} : GroundJson(plan.Min) },
@@ -534,5 +512,6 @@ std::vector<EditorOperationEntry> LevelQueryOperations(const WorldDocument& worl
     entries.push_back(Box(world));
     entries.push_back(Near(world));
     entries.push_back(PlanSection(world));
+    entries.push_back(ReachabilityOperation(world));
     return entries;
 }
