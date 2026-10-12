@@ -38,8 +38,8 @@
 #define SENCHA_NON_REMOVABLE         SENCHA_ANNOTATE("sencha.non_removable")
 #define SENCHA_VISUAL_MESH(asset)    SENCHA_ANNOTATE("sencha.visual_mesh=" asset)
 // A thing of its own in a world: a tool may put an entity carrying just this
-// component (at its defaults) somewhere, under this name, pictured by the
-// named editor icon (editor/ui/icons/<name>.svg).
+// component (at its defaults) somewhere, under this name. SENCHA_PLACE_ICON
+// names the tool's icon for it, and needs SENCHA_PLACEABLE.
 #define SENCHA_PLACEABLE(label)      SENCHA_ANNOTATE("sencha.placeable=" label)
 #define SENCHA_PLACE_ICON(icon)      SENCHA_ANNOTATE("sencha.place_icon=" icon)
 

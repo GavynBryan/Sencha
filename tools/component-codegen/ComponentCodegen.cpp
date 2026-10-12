@@ -331,6 +331,12 @@ public:
                 Error(record->getLocation(),
                       "scene chunk '" + facts.SceneChunk + "' must be exactly four characters");
             }
+            if (!facts.PlaceIcon.empty() && facts.Placeable.empty())
+            {
+                Error(record->getLocation(),
+                      "component '" + facts.Type + "' names a place icon but is not SENCHA_PLACEABLE: "
+                      "an icon pictures a placeable component, and nothing would show this one");
+            }
             if (facts.Predicted && !facts.Replicated)
             {
                 Error(record->getLocation(),

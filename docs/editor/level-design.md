@@ -142,6 +142,12 @@ the engine's **Point Light** and **Spot Light**, and whatever a game adds, such
 as the template's **Player Start**. Those place a new entity carrying just that
 component at its defaults, named after it and selected, as one step; no prefab
 is in hand for them.
+Placement is tooling metadata the runtime ignores. `ComponentPlacement<T>`
+carries it from the generated component definition through
+`IComponentSerializer::Placement`, so the editor names no component type and a
+game module's components offer themselves exactly as the engine's do. The icon
+is the name of one of the tool's icons; the component code generator refuses
+`SENCHA_PLACE_ICON` on a component that is not `SENCHA_PLACEABLE`.
 
 **Hierarchy** (Tab, or a part of the breadcrumb): a sheet on the left edge,
 opened where there is room. The world, its graphs and zones, and the edited

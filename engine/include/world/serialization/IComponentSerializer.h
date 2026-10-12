@@ -64,21 +64,17 @@ struct IComponentSerializer
     virtual bool Remove(EntityId entity, Registry& registry) const = 0;
 
     // Optional hint for how the editor should visualize an entity carrying this
-    // component (e.g. a camera mesh). None by default; pure tooling metadata the
-    // runtime ignores. Declared last so adding it appends a vtable slot rather
-    // than shifting existing ones. (core/metadata/EditorVisual.h)
+    // component (e.g. a camera mesh); pure tooling metadata the runtime ignores.
     virtual std::optional<EditorVisual> GetEditorVisual() const { return std::nullopt; }
 
-    // Whether a tool may remove this component from an entity. True by default;
-    // structural components (the transform) opt out. Pure tooling metadata the
-    // runtime ignores. Declared last so adding it appends a vtable slot rather
-    // than shifting existing ones. (core/metadata/ComponentRemovable.h)
+    // Whether a tool may remove this component from an entity; structural
+    // components (the transform) opt out. Pure tooling metadata.
     virtual bool IsRemovable() const { return true; }
 
     // What a tool may place an entity carrying just this component as; an
     // empty label when it is not a thing of its own. Pure tooling metadata.
-    // Declared last so adding it appends a vtable slot.
     virtual ComponentPlacementFacts Placement() const { return {}; }
 
+    // Last, so every virtual added above moves its slots: an ABI break.
     virtual ~IComponentSerializer() = default;
 };
