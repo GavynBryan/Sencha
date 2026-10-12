@@ -48,6 +48,7 @@ WorldMap LayOutWorldMap(const WorldDocument& world, std::span<const ZoneGraphEdg
     const Vec2d origin = request.Area.Position + Vec2d(request.Margin, request.Margin) + (room - drawn) * 0.5f;
     const auto toMap = [&](float x, float z) { return Vec2d(origin.X + (x - low.X) * scale, origin.Y + (high.Y - z) * scale); };
 
+    const ZoneHeader* here = request.Camera.has_value() ? InnermostZoneAt(manifest, *request.Camera) : nullptr;
     for (const ZoneHeader& zone : manifest.Zones)
     {
         if (!HasFootprint(zone.Bounds))
@@ -58,12 +59,12 @@ WorldMap LayOutWorldMap(const WorldDocument& world, std::span<const ZoneGraphEdg
         if (plate.Width() < request.MinimumPlate || plate.Height() < request.MinimumPlate)
             plate = Rect2d::FromCenterSize(plate.Center(), Vec2d(std::max(plate.Width(), request.MinimumPlate),
                                                                  std::max(plate.Height(), request.MinimumPlate)));
-        WorldMapZone entry{ .Id = zone.Id, .Name = zone.Name, .Plate = plate };
+        WorldMapZone entry{ .Id = zone.Id, .Name = ZoneDisplayName(manifest, zone.Id), .Plate = plate };
         entry.State = zone.Id == world.FocusZone() ? WorldMapZoneState::Focus
                     : world.IsZoneOpen(zone.Id)    ? WorldMapZoneState::Open
                                                    : WorldMapZoneState::Closed;
         entry.Problem = std::ranges::find(request.Problems, zone.Id) != request.Problems.end();
-        entry.Here = request.Camera.has_value() && zone.Bounds.Contains(*request.Camera);
+        entry.Here = here == &zone;
         map.Zones.push_back(std::move(entry));
     }
     for (const ZoneGraphEdge& edge : edges)

@@ -159,14 +159,6 @@ void AppendArrow(ViewportAffordanceOutput& output, Vec3d from, Vec3d to,
     AppendLine(output, to, base - wing, color, 2.0f);
 }
 
-std::string ZoneName(const WorldPartitionManifest& manifest, ZoneId id)
-{
-    for (const ZoneHeader& zone : manifest.Zones)
-        if (zone.Id == id)
-            return zone.Name.empty() ? ZoneIdToString(id) : zone.Name;
-    return "unresolved";
-}
-
 class WorldDockEditorAdapter final : public IEditorComponentAdapter
 {
 public:
@@ -221,9 +213,9 @@ public:
                         origin - normal * 0.65f - right * 0.22f, up, line);
 
         output.Labels.push_back({ origin - normal * 1.55f, line,
-            "A: " + ZoneName(context.World.Manifest(), dock->ZoneA) });
+            "A: " + ZoneDisplayName(context.World.Manifest(), dock->ZoneA) });
         output.Labels.push_back({ origin + normal * 1.55f, line,
-            "B: " + ZoneName(context.World.Manifest(), dock->ZoneB) });
+            "B: " + ZoneDisplayName(context.World.Manifest(), dock->ZoneB) });
         if (invalid)
             output.Labels.push_back({ origin + up * (dock->HalfExtents.Y + 0.35f), line,
                                       "Invalid Dock" });
@@ -310,7 +302,7 @@ public:
         WorldDock after = *dock;
         if (key == "zone_a" || key == "zone_b" || key == "candidate_a" || key == "candidate_b")
         {
-            const std::optional<ZoneId> zone = ZoneNamed(manifest, value);
+            const std::optional<ZoneId> zone = ZoneDisplayedAs(manifest, value);
             if (!zone.has_value())
                 return PropertyEditResult::Refused;
             (key.ends_with("_a") ? after.ZoneA : after.ZoneB) = *zone;
@@ -394,8 +386,8 @@ private:
         node.Descriptor.Kind = PropertyKind::Choice;
         node.Descriptor.Label = std::move(label);
         for (const ZoneHeader& zone : manifest.Zones)
-            node.Descriptor.Choices.push_back(zone.Name);
-        node.Value = ZoneName(manifest, current);
+            node.Descriptor.Choices.push_back(ZoneDisplayName(manifest, zone.Id));
+        node.Value = ZoneDisplayName(manifest, current);
         if (std::ranges::find(node.Descriptor.Choices, node.Value) == node.Descriptor.Choices.end())
             node.Descriptor.Choices.push_back(node.Value);
         return node;
@@ -410,17 +402,9 @@ private:
         node.Descriptor.Label = std::move(label);
         node.Descriptor.Choices.push_back("Choose a zone");
         for (const ZoneId candidate : candidates)
-            node.Descriptor.Choices.push_back(ZoneName(manifest, candidate));
+            node.Descriptor.Choices.push_back(ZoneDisplayName(manifest, candidate));
         node.Value = node.Descriptor.Choices.front();
         return node;
-    }
-
-    static std::optional<ZoneId> ZoneNamed(const WorldPartitionManifest& manifest, std::string_view name)
-    {
-        for (const ZoneHeader& zone : manifest.Zones)
-            if (zone.Name == name)
-                return zone.Id;
-        return std::nullopt;
     }
 
     static void ApplyDock(EditorComponentInspectorContext& context, const WorldDock& before, const WorldDock& after)

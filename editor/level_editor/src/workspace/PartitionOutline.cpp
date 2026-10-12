@@ -33,14 +33,6 @@ const GraphRecord* FindGraph(const WorldPartitionManifest& manifest, GraphId gra
     return found != manifest.Graphs.end() ? &*found : nullptr;
 }
 
-std::string ZoneName(const WorldPartitionManifest& manifest, ZoneId zone)
-{
-    const ZoneHeader* header = FindZone(manifest, zone);
-    return header == nullptr ? "<missing " + ZoneIdToString(zone) + ">"
-         : header->Name.empty() ? ZoneIdToString(zone)
-                                : header->Name;
-}
-
 // A starter radius for a graph turned to Proximity: the largest horizontal
 // half-extent among its zones, so the first preview reaches the neighbours'
 // near faces. 100 when no zone has measurable bounds yet.
@@ -104,7 +96,7 @@ ExplorerPage PartitionOutline::Explore(const ExplorerQuery& query) const
         {
             if (zone.Graph != graph.Id || !TextFilterMatch(zone.Name, query.Filter))
                 continue;
-            std::string label = ZoneName(manifest, zone.Id);
+            std::string label = ZoneDisplayName(manifest, zone.Id);
             if (zone.Id == world.FocusZone())
                 label += "  (focus)";
             else if (world.IsZoneOpen(zone.Id))
@@ -253,7 +245,7 @@ std::string PartitionOutline::Title() const
     case Picked::Graph:
         return FindGraph(Workspace.World.Manifest(), PickedGraph)->Name;
     case Picked::Zone:
-        return ZoneName(Workspace.World.Manifest(), world.SelectedZone());
+        return ZoneDisplayName(Workspace.World.Manifest(), world.SelectedZone());
     case Picked::None:
     default:
         return {};
@@ -296,7 +288,7 @@ std::vector<PropertyNode> PartitionOutline::ZoneNodes(ZoneId id) const
     std::vector<std::string> others;
     for (const ZoneHeader& other : manifest.Zones)
         if (other.Id != id)
-            others.push_back(ZoneName(manifest, other.Id));
+            others.push_back(ZoneDisplayName(manifest, other.Id));
     if (!others.empty())
         group.Descriptor.Verbs.push_back({ .Id = "link", .Label = "Teleport Link To", .Choices = std::move(others) });
 
@@ -306,9 +298,9 @@ std::vector<PropertyNode> PartitionOutline::ZoneNodes(ZoneId id) const
     graph.Descriptor.Kind = PropertyKind::Choice;
     graph.Descriptor.Label = "Graph";
     for (const GraphRecord& record : manifest.Graphs)
-        graph.Descriptor.Choices.push_back(record.Name);
-    if (const GraphRecord* record = FindGraph(manifest, zone->Graph))
-        graph.Value = record->Name;
+        graph.Descriptor.Choices.push_back(GraphDisplayName(manifest, record.Id));
+    if (FindGraph(manifest, zone->Graph) != nullptr)
+        graph.Value = GraphDisplayName(manifest, zone->Graph);
     group.Children.push_back(std::move(graph));
     group.Children.push_back(NoteProperty("state", "State", focus ? "Focus" : open ? "Loaded as context" : "Not loaded"));
     const Vec3d min = zone->Bounds.Min;
@@ -375,7 +367,7 @@ std::vector<PropertyNode> PartitionOutline::WorldNodes() const
         for (const TransitionRecord& transition : manifest.Transitions)
         {
             PropertyNode row = NoteProperty("transition:" + TransitionIdToString(transition.Id),
-                                    ZoneName(manifest, transition.From) + " to " + ZoneName(manifest, transition.To),
+                                    ZoneDisplayName(manifest, transition.From) + " to " + ZoneDisplayName(manifest, transition.To),
                                     transition.Name);
             row.Descriptor.Verbs = { { .Id = "convert", .Label = "Convert to Link" },
                                      { .Id = "discard", .Label = "Discard" } };
@@ -414,7 +406,7 @@ std::vector<PropertyNode> PartitionOutline::WorldNodes() const
                      : record.Desired.Visible                        ? ", render preload"
                                                                      : ", dormant preload";
                 preview.Children.push_back(
-                    NoteProperty("demand:" + ZoneIdToString(record.Zone), ZoneName(manifest, record.Zone), std::move(why)));
+                    NoteProperty("demand:" + ZoneIdToString(record.Zone), ZoneDisplayName(manifest, record.Zone), std::move(why)));
             }
         }
         group.Children.push_back(std::move(preview));
@@ -484,9 +476,8 @@ PropertyEditResult PartitionOutline::CommitEdit(std::string_view key, std::strin
         if (key == "name")
             return applied(Edit([&] { return world.RenameZone(zone, std::string(value)); }));
         if (key == "graph")
-            for (const GraphRecord& graph : world.Manifest().Graphs)
-                if (graph.Name == value)
-                    return applied(Edit([&, id = graph.Id] { return world.SetZoneGraph(zone, id); }));
+            if (const std::optional<GraphId> graph = GraphDisplayedAs(world.Manifest(), value))
+                return applied(Edit([&, id = *graph] { return world.SetZoneGraph(zone, id); }));
         return PropertyEditResult::Refused;
     }
     case Picked::Graph:
@@ -596,8 +587,9 @@ PropertyEditResult PartitionOutline::Act(std::string_view key, std::string_view 
         }
         if (verb == "link")
         {
+            const std::optional<ZoneId> chosen = ZoneDisplayedAs(manifest, choice);
             const auto destination = std::ranges::find_if(manifest.Zones, [&](const ZoneHeader& other) {
-                return other.Id != zone && ZoneName(manifest, other.Id) == choice;
+                return other.Id != zone && chosen == other.Id;
             });
             if (destination == manifest.Zones.end())
                 return PropertyEditResult::Refused;

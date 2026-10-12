@@ -709,3 +709,60 @@ JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest)
 
     return JsonValue{ std::move(root) };
 }
+
+namespace
+{
+template <typename Record, typename Id>
+std::string DisplayName(const std::vector<Record>& records, Id id, std::string (*text)(Id))
+{
+    const auto found = std::ranges::find(records, id, &Record::Id);
+    if (found == records.end())
+        return "missing " + text(id);
+    if (found->Name.empty())
+        return text(id);
+    const bool shared = std::ranges::count(records, found->Name, &Record::Name) > 1;
+    return shared ? std::format("{} \xC2\xB7 {}", found->Name, text(id)) : found->Name;
+}
+
+template <typename Record, typename Id>
+std::optional<Id> DisplayedAs(const std::vector<Record>& records, std::string_view name, std::string (*text)(Id))
+{
+    for (const Record& record : records)
+        if (DisplayName(records, record.Id, text) == name)
+            return record.Id;
+    return std::nullopt;
+}
+} // namespace
+
+std::string ZoneDisplayName(const WorldPartitionManifest& manifest, ZoneId zone)
+{
+    return DisplayName(manifest.Zones, zone, &ZoneIdToString);
+}
+
+std::string GraphDisplayName(const WorldPartitionManifest& manifest, GraphId graph)
+{
+    return DisplayName(manifest.Graphs, graph, &GraphIdToString);
+}
+
+std::optional<ZoneId> ZoneDisplayedAs(const WorldPartitionManifest& manifest, std::string_view name)
+{
+    return DisplayedAs(manifest.Zones, name, &ZoneIdToString);
+}
+
+std::optional<GraphId> GraphDisplayedAs(const WorldPartitionManifest& manifest, std::string_view name)
+{
+    return DisplayedAs(manifest.Graphs, name, &GraphIdToString);
+}
+
+const ZoneHeader* InnermostZoneAt(const WorldPartitionManifest& manifest, Vec3d point)
+{
+    const auto volume = [](const Aabb3d& bounds) {
+        const Vec3d size = bounds.Size();
+        return size.X * size.Y * size.Z;
+    };
+    const ZoneHeader* innermost = nullptr;
+    for (const ZoneHeader& zone : manifest.Zones)
+        if (zone.Bounds.Contains(point) && (innermost == nullptr || volume(zone.Bounds) < volume(innermost->Bounds)))
+            innermost = &zone;
+    return innermost;
+}

@@ -39,33 +39,13 @@ bool IsUnit(Vec3d value)
 // Human-legible reference for a message: the authored name when set, else the
 // hex id. Messages are baked at validation time, so a rename that re-runs
 // validation re-renders them with the new name.
-std::string ZoneLabel(const WorldPartitionManifest& manifest, ZoneId id)
-{
-    for (const ZoneHeader& zone : manifest.Zones)
-    {
-        if (zone.Id == id)
-            return zone.Name.empty() ? Hex(id.Value) : zone.Name;
-    }
-    return Hex(id.Value);
-}
-
-std::string GraphLabel(const WorldPartitionManifest& manifest, GraphId id)
-{
-    for (const GraphRecord& graph : manifest.Graphs)
-    {
-        if (graph.Id == id)
-            return graph.Name.empty() ? Hex(id.Value) : graph.Name;
-    }
-    return Hex(id.Value);
-}
-
 std::string TransitionLabel(const WorldPartitionManifest& manifest,
                             const TransitionRecord& transition)
 {
     if (!transition.Name.empty())
         return transition.Name;
-    return std::format("{} -> {}", ZoneLabel(manifest, transition.From),
-                       ZoneLabel(manifest, transition.To));
+    return std::format("{} -> {}", ZoneDisplayName(manifest, transition.From),
+                       ZoneDisplayName(manifest, transition.To));
 }
 
 void AppendSortedBySourceId(std::vector<ContentRiskRecord>& records,
@@ -143,8 +123,8 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .SourceId = zone.Id.Value,
                 .RuleId = "partition.zone.graph_missing",
                 .Message = std::format("zone {} references missing graph {}",
-                                       ZoneLabel(manifest, zone.Id),
-                                       GraphLabel(manifest, zone.Graph)),
+                                       ZoneDisplayName(manifest, zone.Id),
+                                       GraphDisplayName(manifest, zone.Graph)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -169,13 +149,13 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
             };
             if (streaming.HopCount && *streaming.HopCount < 0)
                 add(std::format("graph {} streaming hop count {} is negative",
-                                GraphLabel(manifest, graph.Id), *streaming.HopCount));
+                                GraphDisplayName(manifest, graph.Id), *streaming.HopCount));
             if (streaming.Radius && (!std::isfinite(*streaming.Radius) || *streaming.Radius < 0.0))
                 add(std::format("graph {} streaming radius {} must be finite and non-negative",
-                                GraphLabel(manifest, graph.Id), *streaming.Radius));
+                                GraphDisplayName(manifest, graph.Id), *streaming.Radius));
             if (streaming.ResidentZoneCap && *streaming.ResidentZoneCap < 1)
                 add(std::format("graph {} streaming resident zone cap {} is below 1",
-                                GraphLabel(manifest, graph.Id), *streaming.ResidentZoneCap));
+                                GraphDisplayName(manifest, graph.Id), *streaming.ResidentZoneCap));
         }
         AppendSortedBySourceId(records, std::move(rule));
     }
@@ -216,7 +196,7 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .RuleId = "partition.transition.self_loop",
                 .Message = std::format("transition {} connects zone {} to itself",
                                        TransitionLabel(manifest, transition),
-                                       ZoneLabel(manifest, transition.From)),
+                                       ZoneDisplayName(manifest, transition.From)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -242,8 +222,8 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .RuleId = "partition.transition.unpaired",
                 .Message = std::format("transition {} ({} to {}) has no reverse edge",
                                        TransitionLabel(manifest, transition),
-                                       ZoneLabel(manifest, transition.From),
-                                       ZoneLabel(manifest, transition.To)),
+                                       ZoneDisplayName(manifest, transition.From),
+                                       ZoneDisplayName(manifest, transition.To)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -373,7 +353,7 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .SourceId = zone.Id.Value,
                 .RuleId = "partition.zone.scene_missing",
                 .Message = std::format("zone {} has no scene reference",
-                                       ZoneLabel(manifest, zone.Id)),
+                                       ZoneDisplayName(manifest, zone.Id)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -392,7 +372,7 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .SourceId = zone.Id.Value,
                 .RuleId = "partition.zone.bounds_invalid",
                 .Message = std::format("zone {} bounds are invalid",
-                                       ZoneLabel(manifest, zone.Id)),
+                                       ZoneDisplayName(manifest, zone.Id)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));
@@ -473,7 +453,7 @@ ValidateWorldPartitionManifest(const WorldPartitionManifest& manifest,
                 .SourceId = zone.Id.Value,
                 .RuleId = "partition.graph.unreachable",
                 .Message = std::format("zone {} is not reachable from the start zone",
-                                       ZoneLabel(manifest, zone.Id)),
+                                       ZoneDisplayName(manifest, zone.Id)),
             });
         }
         AppendSortedBySourceId(records, std::move(rule));

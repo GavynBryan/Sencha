@@ -1274,29 +1274,19 @@ WorkspaceLocationFacet LevelWorkspace::Location() const
     {
         const WorldPartitionManifest& manifest = world.Manifest();
         facet.Parts.push_back({ .Label = manifest.Name.empty() ? std::string("World") : manifest.Name, .Key = "world" });
-        // The zone the camera is in -- the smallest, where zones overlap --
-        // or, outside every zone, the one being edited.
-        const auto volume = [](const Aabb3d& bounds) {
-            const Vec3d size = bounds.Size();
-            return size.X * size.Y * size.Z;
-        };
+        // The zone the camera is in, or, outside every zone, the one being edited.
         const ZoneHeader* here = nullptr;
         if (const EditorViewport* view = Workspace->Layout.Active())
-            for (const ZoneHeader& zone : manifest.Zones)
-                if (zone.Bounds.Contains(view->Camera.Position)
-                    && (here == nullptr || volume(zone.Bounds) < volume(here->Bounds)))
-                    here = &zone;
+            here = InnermostZoneAt(manifest, view->Camera.Position);
         if (here == nullptr)
             for (const ZoneHeader& zone : manifest.Zones)
                 if (zone.Id == world.FocusZone())
                     here = &zone;
         if (here != nullptr)
         {
-            for (const GraphRecord& graph : manifest.Graphs)
-                if (graph.Id == here->Graph)
-                    facet.Parts.push_back({ .Label = graph.Name.empty() ? GraphIdToString(graph.Id) : graph.Name,
-                                            .Key = "graph:" + GraphIdToString(graph.Id) });
-            facet.Parts.push_back({ .Label = here->Name.empty() ? ZoneIdToString(here->Id) : here->Name,
+            facet.Parts.push_back({ .Label = GraphDisplayName(manifest, here->Graph),
+                                    .Key = "graph:" + GraphIdToString(here->Graph) });
+            facet.Parts.push_back({ .Label = ZoneDisplayName(manifest, here->Id),
                                     .Key = "zone:" + ZoneIdToString(here->Id) });
         }
     }
