@@ -138,6 +138,11 @@ void EditorComponentAdapterRegistry::ResolveEntries() const
     ResolvedSerializerCount = serializers.size();
 }
 
+SelectableRef EditorComponentInspectorContext::Ref() const
+{
+    return SelectableRef::EntitySelection(Scene.GetRegistry().Id, Entity);
+}
+
 void EditorAffordanceService::Build(ViewportAffordanceOutput& output) const
 {
     ++Builds;

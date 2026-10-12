@@ -74,7 +74,7 @@ namespace
     class RefusalNote
     {
     public:
-        PropertyEditResult Report(EntityId entity, const VocabularyEdit& edit) const
+        PropertyEditResult Report(const SelectableRef& entity, const VocabularyEdit& edit) const
         {
             Entity = entity;
             Message = edit.Error;
@@ -83,14 +83,14 @@ namespace
             return edit.Changed ? PropertyEditResult::Applied : PropertyEditResult::Unchanged;
         }
 
-        void AppendTo(EntityId entity, std::vector<PropertyNode>& nodes) const
+        void AppendTo(const SelectableRef& entity, std::vector<PropertyNode>& nodes) const
         {
             if (entity == Entity && !Message.empty())
                 nodes.push_back(NoteProperty("refused", "Refused", Message));
         }
 
     private:
-        mutable EntityId Entity;
+        mutable SelectableRef Entity;
         mutable std::string Message;
     };
 
@@ -143,7 +143,7 @@ namespace
             tags.Children.push_back(std::move(typed));
 
             std::vector<PropertyNode> nodes{ std::move(tags) };
-            Refusal.AppendTo(context.Entity, nodes);
+            Refusal.AppendTo(context.Ref(), nodes);
             return nodes;
         }
 
@@ -174,7 +174,7 @@ namespace
             {
                 return PropertyEditResult::Gone;
             }
-            const PropertyEditResult result = Refusal.Report(context.Entity, edit);
+            const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
             return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
         }
 
@@ -194,7 +194,7 @@ namespace
                 edit = RevokeTag(working, GameplayTagId{ *tag });
             else
                 return PropertyEditResult::Gone;
-            const PropertyEditResult result = Refusal.Report(context.Entity, edit);
+            const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
             return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
         }
 
@@ -244,7 +244,7 @@ namespace
                 attributes.Children.push_back(std::move(row));
             }
             std::vector<PropertyNode> nodes{ std::move(attributes) };
-            Refusal.AppendTo(context.Entity, nodes);
+            Refusal.AppendTo(context.Ref(), nodes);
             return nodes;
         }
 
@@ -262,7 +262,7 @@ namespace
                 return PropertyEditResult::Refused;
             AttributeSet working = *held;
             const PropertyEditResult result = Refusal.Report(
-                context.Entity, SetAttributeBase(working, *registry, AttributeId{ *id }, static_cast<float>(*base)));
+                context.Ref(), SetAttributeBase(working, *registry, AttributeId{ *id }, static_cast<float>(*base)));
             return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
         }
 
@@ -291,7 +291,7 @@ namespace
                 edit = RemoveAttribute(working, AttributeId{ *id });
             else
                 return PropertyEditResult::Gone;
-            const PropertyEditResult result = Refusal.Report(context.Entity, edit);
+            const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
             return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
         }
 
@@ -338,7 +338,7 @@ namespace
                 abilities.Children.push_back(std::move(row));
             }
             std::vector<PropertyNode> nodes{ std::move(abilities) };
-            Refusal.AppendTo(context.Entity, nodes);
+            Refusal.AppendTo(context.Ref(), nodes);
             return nodes;
         }
 
@@ -367,7 +367,7 @@ namespace
                 edit = RevokeAbility(working, AbilityId{ *id });
             else
                 return PropertyEditResult::Gone;
-            const PropertyEditResult result = Refusal.Report(context.Entity, edit);
+            const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
             return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
         }
 

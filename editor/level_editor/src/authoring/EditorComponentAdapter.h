@@ -102,6 +102,9 @@ struct EditorComponentInspectorContext
     SelectionService& Selection;
     CommandStack& Commands;
     EntityId Entity;
+
+    // The entity in its document: an id alone repeats across zone documents.
+    [[nodiscard]] SelectableRef Ref() const;
 };
 
 class IEditorComponentAdapter

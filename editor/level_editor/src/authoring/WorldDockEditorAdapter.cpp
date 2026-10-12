@@ -267,7 +267,7 @@ public:
         group.Children.push_back(VectorProperty("size", "Width, Height", size));
 
         // Bounds that overlap leave the suggestion ambiguous: the person picks.
-        if (SuggestionEntity == context.Entity)
+        if (SuggestionFor == context.Ref())
         {
             if (!AmbiguousA.empty())
                 group.Children.push_back(CandidateChoice("candidate_a", "Side A could be", manifest, AmbiguousA));
@@ -433,7 +433,7 @@ private:
         if (after.ZoneA != dock.ZoneA || after.ZoneB != dock.ZoneB)
             ApplyDock(context, dock, after);
 
-        SuggestionEntity = context.Entity;
+        SuggestionFor = context.Ref();
         AmbiguousA = sideA.size() > 1 ? sideA : std::vector<ZoneId>{};
         AmbiguousB = sideB.size() > 1 ? sideB : std::vector<ZoneId>{};
         SuggestionStatus.clear();
@@ -443,7 +443,7 @@ private:
             SuggestionStatus += "No Side B candidate.";
     }
 
-    mutable EntityId SuggestionEntity;
+    mutable SelectableRef SuggestionFor;
     mutable std::vector<ZoneId> AmbiguousA;
     mutable std::vector<ZoneId> AmbiguousB;
     mutable std::string SuggestionStatus;
