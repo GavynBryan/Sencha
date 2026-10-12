@@ -3,6 +3,7 @@
 #include "operations/EditorOperations.h"
 #include "operations/LevelQueries.h"
 #include "operations/OperationScript.h"
+#include "operations/WorldQueries.h"
 #include "project/Project.h"
 
 #include <core/logging/LoggingProvider.h>
@@ -117,7 +118,8 @@ int main(int argc, char** argv)
 
     EditorOperations operations;
     std::vector<std::string> errors;
-    if (!operations.Register("level", LevelQueryOperations(world), errors))
+    if (!operations.Register("level", LevelQueryOperations(world), errors)
+        || !operations.Register("world", WorldQueryOperations(world), errors))
     {
         for (const std::string& error : errors)
             std::fprintf(stderr, "kyusu_batch: %s\n", error.c_str());
