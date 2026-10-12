@@ -5,7 +5,6 @@
 
 #include <ui/UiService.h>
 
-#include <algorithm>
 #include <cmath>
 #include <format>
 #include <numbers>
@@ -89,22 +88,6 @@ UiRow Sector(Vec2d centre, const RadialMenuSector& sector)
                   std::format("{:.4f}", sector.Outer > 0.0f ? sector.Inner / sector.Outer : 0.0f) };
     return row;
 }
-
-// A list grows to the longest it has been, rows that show nothing filling it
-// out: the document engine evaluates a shrinking list's departing rows once
-// against the shorter list and warns, every time a petal changes underfoot.
-void PadRows(std::vector<UiRow>& rows, std::size_t& longest, const UiRow& hidden)
-{
-    longest = std::max(longest, rows.size());
-    rows.resize(longest, hidden);
-}
-
-UiRow HiddenRow(std::vector<std::string> parts)
-{
-    UiRow row{ "", "none", "none" };
-    row.Parts = std::move(parts);
-    return row;
-}
 } // namespace
 
 RadialMenuScreen::RadialMenuScreen(UiService& ui)
@@ -144,10 +127,6 @@ void RadialMenuScreen::Close()
         return;
     Ui.CloseScreen(Screen);
     Screen = {};
-    LongestSectors = 0;
-    LongestKeys = 0;
-    LongestWords = 0;
-    LongestSummary = 0;
 }
 
 void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenuModel* menu)
@@ -205,10 +184,6 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
         for (const std::string& line : face.Summary)
             summary.push_back(UiRow{ line, "", "" });
     }
-    PadRows(sectors, LongestSectors, HiddenRow({ "0px", "0px", "0px", "0", "0", "0" }));
-    PadRows(keys, LongestKeys, HiddenRow({ "0px", "0px", "0px" }));
-    PadRows(words, LongestWords, HiddenRow({ "0px", "0px", "0px", "0px", "" }));
-    PadRows(summary, LongestSummary, HiddenRow({}));
     (void)Ui.SetRows(Screen, kSectors, sectors);
     (void)Ui.SetRows(Screen, kKeys, keys);
     (void)Ui.SetRows(Screen, kWords, words);

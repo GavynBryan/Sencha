@@ -440,7 +440,7 @@ TEST(UiExtraction, AGlyphAtlasIsHandedOverOnceForEverySurfaceThatDrawsIt)
     ui.ExtractRender();
 
     std::vector<UiGeneratedTextureId> uploaded;
-    for (const UiTextureUpload& upload : ui.TextureChanges().Uploads)
+    for (const UiTextureUpload& upload : ui.TakeTextureChanges().Uploads)
         uploaded.push_back(upload.Id);
     ASSERT_FALSE(uploaded.empty()) << "text drew without a glyph atlas being minted";
 
@@ -465,7 +465,7 @@ TEST(UiExtraction, AGlyphAtlasIsHandedOverOnceForEverySurfaceThatDrawsIt)
     // Handed over once: the next extraction has nothing new to mint.
     ui.Update();
     ui.ExtractRender();
-    EXPECT_TRUE(ui.TextureChanges().Uploads.empty())
+    EXPECT_TRUE(ui.TakeTextureChanges().Uploads.empty())
         << "an atlas already handed over was handed over again";
 }
 

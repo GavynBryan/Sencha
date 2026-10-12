@@ -38,9 +38,10 @@ void UiTextureResidency::Teardown()
     Services = nullptr;
 }
 
-void UiTextureResidency::Queue(const UiTextureChanges& changes)
+void UiTextureResidency::Queue(UiTextureChanges&& changes)
 {
-    Pending.Uploads.insert(Pending.Uploads.end(), changes.Uploads.begin(), changes.Uploads.end());
+    Pending.Uploads.insert(Pending.Uploads.end(), std::make_move_iterator(changes.Uploads.begin()),
+                           std::make_move_iterator(changes.Uploads.end()));
     Pending.Released.insert(Pending.Released.end(), changes.Released.begin(), changes.Released.end());
 }
 

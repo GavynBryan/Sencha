@@ -42,7 +42,4 @@ private:
     UiService& Ui;
     UiSurfaceId Surface;
     UiScreenHandle Screen;
-    std::size_t LongestZones = 0;
-    std::size_t LongestLinks = 0;
-    std::size_t LongestArrows = 0;
 };

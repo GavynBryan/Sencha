@@ -15,6 +15,7 @@ body
 {
     display: flex;
     flex-direction: column;
+    overscroll-behavior: contain;
     position: absolute;
     left: 0dp;
     right: 0dp;

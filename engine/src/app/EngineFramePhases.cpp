@@ -1135,7 +1135,7 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
             ui->ExtractRender();
 #ifdef SENCHA_ENABLE_VULKAN
             if (engine.HasPresentation())
-                engine.Graphics().MainRenderer.GetUiTextures().Queue(ui->TextureChanges());
+                engine.Graphics().MainRenderer.GetUiTextures().Queue(ui->TakeTextureChanges());
 #endif
         }
 #endif

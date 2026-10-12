@@ -528,8 +528,9 @@ TEST(UiInput, AFrameNamesItsWindow)
 namespace
 {
 // A list that holds more rows than it shows, beside a panel that scrolls
-// nothing, over a root the pointer passes through.
-std::string ScrollingMarkup()
+// nothing and one that holds the wheel anyway, over a root the pointer passes
+// through.
+std::string ScrollingMarkup(std::string_view listAttributes = "")
 {
     std::string rows;
     for (int i = 0; i < 20; ++i)
@@ -537,8 +538,9 @@ std::string ScrollingMarkup()
     return R"(<rml>
 <head><link type="text/rcss" href="menu.rcss"/></head>
 <body data-model="menu">
-    <div id="list" data-event-mousescroll="menu_quit">)" + rows + R"(</div>
+    <div id="list" data-event-mousescroll="menu_quit" )" + std::string(listAttributes) + ">" + rows + R"(</div>
     <div id="panel"/>
+    <div id="holder"/>
 </body>
 </rml>)";
 }
@@ -552,6 +554,8 @@ body { display: block; width: 100%; height: 100%; pointer-events: none; }
 .row { display: block; height: 40px; }
 #panel { display: block; position: absolute; left: 300px; top: 0px; width: 100px; height: 100px;
          pointer-events: auto; }
+#holder { display: block; position: absolute; left: 450px; top: 0px; width: 100px; height: 100px;
+          pointer-events: auto; overscroll-behavior: contain; }
 )";
 
 SDL_Event Wheel(float x, float y, float notches)
@@ -571,55 +575,97 @@ struct ScrollingScreen
     std::unique_ptr<UiTestHost> Host;
     UiScreenHandle Screen;
 
-    ScrollingScreen()
+    explicit ScrollingScreen(std::string_view markup = ScrollingMarkup(), std::string_view style = kScrollingStyle)
     {
-        WritePackage(Root, "ui/menu.sui", "menu.rml", ScrollingMarkup(), kScrollingStyle);
+        WritePackage(Root, "ui/menu.sui", "menu.rml", markup, style);
         Host = std::make_unique<UiTestHost>(Root);
         UiService& ui = Host->Service();
         const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
         Screen = ui.OpenScreen(surface, MakeDesc());
         ui.Update();
     }
+
+    bool CtrlWheelAt(float x, float y)
+    {
+        UiService& ui = Host->Service();
+        (void)ui.ProcessPlatformEvent(MouseMove(x, y));
+        SDL_SetModState(SDL_KMOD_LCTRL);
+        const bool consumed = ui.ProcessPlatformEvent(Wheel(x, y, -3.0f));
+        SDL_SetModState(SDL_KMOD_NONE);
+        ui.Update();
+        return consumed;
+    }
 };
 } // namespace
 
-TEST(UiInput, TheWheelOverTheDocumentIsTheDocumentsWhetherOrNotAnythingScrolls)
+TEST(UiInput, TheWheelIsConsumedOnlyWhereSomethingScrollsOrHoldsIt)
 {
-    // A panel with nothing to scroll still sits over the world; a wheel turned
-    // over it must not zoom the camera behind it.
     ScrollingScreen fixture;
     ASSERT_TRUE(fixture.Screen.IsValid());
     UiService& ui = fixture.Host->Service();
 
-    (void)ui.ProcessPlatformEvent(MouseMove(350.0f, 50.0f));
-    EXPECT_TRUE(ui.ProcessPlatformEvent(Wheel(350.0f, 50.0f, -1.0f)))
-        << "a wheel over a panel with nothing to scroll fell through to what is beneath";
-
     (void)ui.ProcessPlatformEvent(MouseMove(100.0f, 50.0f));
-    EXPECT_TRUE(ui.ProcessPlatformEvent(Wheel(100.0f, 50.0f, -1.0f)));
+    EXPECT_TRUE(ui.ProcessPlatformEvent(Wheel(100.0f, 50.0f, -1.0f))) << "a list that scrolled let the wheel through";
+
+    (void)ui.ProcessPlatformEvent(MouseMove(350.0f, 50.0f));
+    EXPECT_FALSE(ui.ProcessPlatformEvent(Wheel(350.0f, 50.0f, -1.0f)))
+        << "a panel with nothing to scroll kept the wheel from what is beneath";
+
+    (void)ui.ProcessPlatformEvent(MouseMove(500.0f, 50.0f));
+    EXPECT_TRUE(ui.ProcessPlatformEvent(Wheel(500.0f, 50.0f, -1.0f)))
+        << "a panel that contains its overscroll let the wheel through";
 
     (void)ui.ProcessPlatformEvent(MouseMove(600.0f, 400.0f));
     EXPECT_FALSE(ui.ProcessPlatformEvent(Wheel(600.0f, 400.0f, -1.0f)))
         << "a wheel over the pass-through root was kept from what is beneath";
 }
 
-TEST(UiInput, CtrlAndTheWheelReachOnlyTheDocumentsListener)
+TEST(UiInput, AFullScreenContainerThatScrollsNothingLetsTheWheelThrough)
+{
+    constexpr std::string_view markup = R"(<rml>
+<head><link type="text/rcss" href="menu.rcss"/></head>
+<body data-model="menu"><div id="hud"/></body>
+</rml>)";
+    constexpr std::string_view style = R"(
+body { display: block; width: 100%; height: 100%; pointer-events: none; }
+#hud { display: block; position: absolute; left: 0px; top: 0px; width: 100%; height: 100%;
+       pointer-events: auto; }
+)";
+    ScrollingScreen fixture(markup, style);
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    UiService& ui = fixture.Host->Service();
+
+    (void)ui.ProcessPlatformEvent(MouseMove(400.0f, 300.0f));
+    EXPECT_FALSE(ui.ProcessPlatformEvent(Wheel(400.0f, 300.0f, -1.0f)))
+        << "a HUD's container took the wheel from the game beneath it";
+}
+
+TEST(UiInput, CtrlAndTheWheelOverAZoomingElementReachOnlyItsListener)
+{
+    ScrollingScreen fixture(ScrollingMarkup("wheel-zoom=\"\""));
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    UiService& ui = fixture.Host->Service();
+
+    EXPECT_TRUE(fixture.CtrlWheelAt(100.0f, 50.0f));
+    EXPECT_EQ(ui.DrainActions().size(), 1u) << "the listener did not hear Ctrl and the wheel";
+    const std::optional<UiScrollBox> box = ui.MeasureScroll(fixture.Screen, "list");
+    ASSERT_TRUE(box.has_value());
+    EXPECT_EQ(box->Top, 0.0f) << "Ctrl and the wheel scrolled as well as zooming";
+}
+
+TEST(UiInput, CtrlAndTheWheelElsewhereScrollAsTheWheelDoes)
 {
     ScrollingScreen fixture;
     ASSERT_TRUE(fixture.Screen.IsValid());
     UiService& ui = fixture.Host->Service();
 
-    (void)ui.ProcessPlatformEvent(MouseMove(100.0f, 50.0f));
-    SDL_SetModState(SDL_KMOD_LCTRL);
-    const bool consumed = ui.ProcessPlatformEvent(Wheel(100.0f, 50.0f, -3.0f));
-    SDL_SetModState(SDL_KMOD_NONE);
-    ui.Update();
-
-    EXPECT_TRUE(consumed);
-    EXPECT_EQ(ui.DrainActions().size(), 1u) << "the listener did not hear Ctrl and the wheel";
+    EXPECT_TRUE(fixture.CtrlWheelAt(100.0f, 50.0f));
+    EXPECT_EQ(ui.DrainActions().size(), 1u) << "the document's own listener did not hear the wheel";
     const std::optional<UiScrollBox> box = ui.MeasureScroll(fixture.Screen, "list");
     ASSERT_TRUE(box.has_value());
-    EXPECT_EQ(box->Top, 0.0f) << "Ctrl and the wheel scrolled as well as zooming";
+    EXPECT_GT(box->Top, 0.0f) << "Ctrl held turned the wheel into something other than a scroll";
+
+    EXPECT_FALSE(fixture.CtrlWheelAt(350.0f, 50.0f)) << "Ctrl and the wheel over a still panel were kept";
 }
 
 TEST(UiInput, ScrollingIntoViewBringsAFarRowWithinTheList)

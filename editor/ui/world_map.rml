@@ -15,7 +15,7 @@
             <span id="map_note" class="theme-dim" data-if="note != ''">{{note}}</span>
         </div>
     </div>
-    <div class="zone theme-map-zone" data-for="zone : zones" data-if="zone.value != 'none'"
+    <div class="zone theme-map-zone" data-for="zone : zones"
          data-class-focus="zone.value == 'focus'" data-class-closed="zone.value == 'closed'"
          data-class-hot="zone.selected" data-class-problem="zone.parts[5] == 'problem'"
          data-style-left="zone.parts[0]" data-style-top="zone.parts[1]"
@@ -25,12 +25,12 @@
         <span class="zone_here theme-accent" data-if="zone.parts[4] == 'here'">camera</span>
         <span class="zone_here problems" data-if="zone.parts[5] == 'problem'">has problems</span>
     </div>
-    <div class="link theme-map-link" data-for="link : links" data-if="link.value != 'none'"
+    <div class="link theme-map-link" data-for="link : links"
          data-class-oneway="link.value == 'oneway'" data-class-warned="link.detail == 'warned'"
          data-class-failed="link.detail == 'failed'"
          data-style-left="link.parts[0]" data-style-top="link.parts[1]"
          data-style-width="link.parts[2]" data-style-transform="link.parts[3]"></div>
-    <div class="arrow theme-map-link oneway" data-for="arrow : arrows" data-if="arrow.value != 'none'"
+    <div class="arrow theme-map-link oneway" data-for="arrow : arrows"
          data-class-warned="arrow.detail == 'warned'" data-class-failed="arrow.detail == 'failed'"
          data-style-left="arrow.parts[0]" data-style-top="arrow.parts[1]"
          data-style-transform="arrow.parts[3]"><span class="glyph">&#xf0da;</span></div>

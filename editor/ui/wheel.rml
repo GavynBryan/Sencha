@@ -21,7 +21,7 @@
              data-style-width="caption_width" data-style-height="caption_height">
             <span class="ledge theme-readout" data-class-dim="caption_dim">{{caption}}</span>
         </div>
-        <div class="word theme-wheel-word" data-for="word : words" data-if="word.value != 'none'"
+        <div class="word theme-wheel-word" data-for="word : words"
              data-class-lit="word.selected" data-class-active="word.value == 'active'"
              data-class-variant="word.detail == 'variant'"
              data-style-left="word.parts[0]" data-style-top="word.parts[1]"
@@ -31,10 +31,10 @@
         </div>
         <div class="readout" data-if="summary.size > 0" data-style-left="hub_left" data-style-top="hub_top"
              data-style-width="hub_size" data-style-height="hub_size">
-            <div class="readout_line theme-wheel-readout" data-for="line : summary" data-if="line.value != 'none'"
+            <div class="readout_line theme-wheel-readout" data-for="line : summary"
                  data-class-first="it_index == 0"><span>{{line.label}}</span></div>
         </div>
-        <sector class="well theme-wheel-well" data-for="key : keys" data-if="key.value != 'none'"
+        <sector class="well theme-wheel-well" data-for="key : keys"
                 data-class-lit="key.selected" data-class-active="key.value == 'active'"
                 data-class-variant="key.detail == 'variant'"
                 data-style-left="key.parts[0]" data-style-top="key.parts[1]"

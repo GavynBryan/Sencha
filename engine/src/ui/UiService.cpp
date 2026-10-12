@@ -306,9 +306,9 @@ const UiDrawFrame* UiService::OffscreenFrame(UiSurfaceId surface) const
     return Runtime->OffscreenFrame(surface);
 }
 
-const UiTextureChanges& UiService::TextureChanges() const
+UiTextureChanges UiService::TakeTextureChanges()
 {
-    return Runtime->TextureChanges();
+    return Runtime->TakeTextureChanges();
 }
 
 bool UiService::IsPointerOver(UiSurfaceId surface) const

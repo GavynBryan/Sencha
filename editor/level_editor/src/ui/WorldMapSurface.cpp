@@ -2,7 +2,6 @@
 
 #include <ui/UiService.h>
 
-#include <algorithm>
 #include <cmath>
 #include <format>
 #include <numbers>
@@ -71,16 +70,6 @@ const char* StateText(WorldMapZoneState state)
     default:                       return "not loaded";
     }
 }
-
-// A list grows to the longest it has been, rows that show nothing filling it
-// out, so a shrinking list never has departing rows evaluated against it.
-void Pad(std::vector<UiRow>& rows, std::size_t& longest, std::size_t parts)
-{
-    longest = std::max(longest, rows.size());
-    UiRow hidden{ "", "none", "" };
-    hidden.Parts.assign(parts, "0px");
-    rows.resize(longest, hidden);
-}
 } // namespace
 
 WorldMapSurface::WorldMapSurface(UiService& ui)
@@ -116,7 +105,6 @@ void WorldMapSurface::Close()
         return;
     Ui.CloseScreen(Screen);
     Screen = {};
-    LongestZones = LongestLinks = LongestArrows = 0;
 }
 
 void WorldMapSurface::Present(const WorldMap* map, const Rect2d& ground, const std::string& title,
@@ -176,9 +164,6 @@ void WorldMapSurface::Present(const WorldMap* map, const Rect2d& ground, const s
             arrows.push_back(std::move(arrow));
         }
     }
-    Pad(zones, LongestZones, 6);
-    Pad(links, LongestLinks, 4);
-    Pad(arrows, LongestArrows, 4);
     (void)Ui.SetRows(Screen, kZones, zones);
     (void)Ui.SetRows(Screen, kLinks, links);
     (void)Ui.SetRows(Screen, kArrows, arrows);

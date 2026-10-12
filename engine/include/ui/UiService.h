@@ -121,18 +121,14 @@ public:
     void SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination);
     [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
 
-    // The platform window a surface lives on, by its window id; 0, the default,
-    // is the window the service was created with. The surface hears only that
-    // window's events, its frames name that window, and a field focused in it
-    // takes text input there. Naming the primary's own id is the same as 0.
+    // The platform window a surface lives on (0, the default, is the service's
+    // own); it hears only that window's events and its frames name it
+    // (docs/ui/architecture.md §13).
     void SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId);
     [[nodiscard]] std::uint32_t GetSurfaceWindow(UiSurfaceId surface) const;
 
-    // Which of its window's UI render features draws the surface; 0, the
-    // default, is the one every window has. A host that draws UI of its own
-    // between two authored layers stages a UiRenderFeature per layer and
-    // orders its own feature between them. Layers order drawing only; input
-    // still goes to surfaces by their input policy.
+    // Which of its window's UI render features draws the surface (0, the one
+    // every window has). Layers order drawing only (docs/ui/architecture.md §13).
     void SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer);
     [[nodiscard]] std::uint8_t GetSurfaceLayer(UiSurfaceId surface) const;
 
@@ -224,9 +220,9 @@ public:
     [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
 
     // Generated textures this extraction minted and released, across every
-    // surface. Whatever owns the GPU side applies them once, before any surface
-    // is drawn; same lifetime as Frames().
-    [[nodiscard]] const UiTextureChanges& TextureChanges() const;
+    // surface, handed over once: whatever owns the GPU side takes them after
+    // ExtractRender and applies them before any surface is drawn.
+    [[nodiscard]] UiTextureChanges TakeTextureChanges();
 
     // -- presentation model --------------------------------------------------
 
@@ -280,15 +276,9 @@ public:
 
     // -- host images ---------------------------------------------------------
 
-    // An image the host supplies at draw time, which a document names as
-    // `host:NAME` wherever it would name an image -- a viewport's render, a
-    // thumbnail chosen at runtime, a preview. The id is what the host's render
-    // feature publishes pixels under, each frame, through the renderer's
-    // UiTextureResidency; the document never learns what stands behind it.
-    //
-    // Register before a document that names it opens. The size is the image's
-    // natural size for layout; a document that sizes the element itself, as a
-    // viewport does, is unaffected when the host's pixels change size.
+    // Registers `host:NAME` before a document naming it opens, at its natural
+    // size for layout; the host publishes its pixels under the returned id each
+    // frame through UiTextureResidency (docs/ui/architecture.md §9).
     UiHostImageId SetHostImage(std::string_view name, RenderExtent size);
     void RemoveHostImage(std::string_view name);
 
@@ -315,12 +305,9 @@ public:
 
     // -- inspection ----------------------------------------------------------
 
-    // The measured box of an element, after layout and before any transform.
-    // Nullopt when the screen is closed or no element carries that id.
-    //
-    // Public because it is how a test asserts that a document laid out the way
-    // it was authored to, without a window or a device -- the substrate's own
-    // regression surface.
+    // The measured box of an element after layout, before any transform; nullopt
+    // when the screen is closed or no element has that id. Also how a test checks
+    // layout without a window or a device.
     [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen, std::string_view elementId,
                                                             UiBoxArea area = UiBoxArea::Content) const;
 

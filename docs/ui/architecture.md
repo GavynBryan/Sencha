@@ -166,16 +166,28 @@ genuinely-held gameplay keys along with the stuck one. `PlatformEventRouterTests
 covers both directions.
 
 Routing order mirrors the z-order in §4: diagnostics, then authored UI, then the
-application (and an editor's own shell).
+application (and an editor's own shell). Consumers register once, at startup, in that order, so
+there is no per-event sorting and no priority number to keep in sync; the first
+to claim an event ends the offer.
 
 **A pointer gesture has one owner.** From a press in a window to the release of
 the last button held there, that window's pointer events -- moves, presses,
 releases, the wheel -- go only to whoever claimed the press: a consumer, or the
-application when none did. The router keeps this per window, and it is the only
-copy: a drag in the world carried over a menu never hovers or clicks it, and a
-menu's drag carried over the world never reaches the application. Within the
-authored UI the same rule holds between surfaces: the surface holding a press
-hears its window's pointer alone until it is let go.
+application when none did. The router owns this between consumers, per window
+(`PlatformEventRouter::Gesture`): a drag in the world carried over a menu never
+hovers or clicks it, and a menu's drag carried over the world never reaches the
+application.
+
+The authored UI is one consumer holding many surfaces, so it keeps the same rule
+one level down. `UiRuntime` records, per surface, the buttons of presses its
+document took (`Surface::HeldButtons`); while any is held that surface alone
+hears its window's pointer (`PointerHolder`). The two layers answer different
+questions -- which consumer owns the window's gesture, and which surface inside
+the UI holds it -- and neither is derived from the other: the UI also runs
+without a router (its tests drive it directly), and only it knows which buttons
+its documents took rather than let through. They meet when a gesture ends:
+the router's `GestureEnded` reaches the UI as `UiService::EndPointerGesture`,
+which releases the holding surface's press.
 
 A gesture whose release its owner will not see is ended, never left open. The
 window losing focus, being hidden or minimized ends it, and the owning consumer
@@ -223,13 +235,20 @@ surface losing `Full` input. Otherwise a field typed into and then clicked
 away from keeps text input, and the next key meant for the world types into it
 (`UiControlTests`).
 
-**The wheel over a document is the document's.** Over any element that takes
-the pointer, the wheel is consumed whether or not anything there scrolls; only
-over a pass-through region does it reach the application. Deciding by whether
-something scrolled made a full list or a short panel leak the wheel to the
-camera behind it. Ctrl with the wheel is a zoom gesture: it raises `mousescroll`
-on the element under the pointer (with `ctrl_key` set) and never scrolls, so a
-document that zooms on it is not scrolled at the same time.
+**The wheel is consumed only where the document uses it.** The document
+engine's own rule decides: the wheel is the document's when an element under
+the pointer scrolled, when a `mousescroll` listener stopped it, or when an
+element declares `overscroll-behavior: contain`, which holds the wheel even
+where nothing scrolls. Everywhere else -- a HUD's full-screen container, a
+panel with nothing to scroll -- it reaches the application, so a game hears its
+wheel under any overlay. A panel that sits over a camera and must keep the
+wheel from it declares `overscroll-behavior: contain` (the Shelf does).
+
+Ctrl with the wheel is the engine's ordinary wheel too: it raises `mousescroll`
+with `ctrl_key` set and then scrolls. An element that zooms on it opts out of
+the scroll with the `wheel-zoom` attribute: Ctrl and the wheel over it, or
+inside it, reach the document's listeners and stop there, nothing scrolls, and
+the wheel is consumed (`RmlWheelZoom`, `UiInputTests`).
 
 Hosts that keep a chosen row in view use `UiService::ScrollIntoView` (instant,
 nearest edge, closest scrolling ancestor) and read the scroll state with
@@ -398,7 +417,8 @@ resources.** The runtime links no backend header and owns no GPU object.
 
 - `GenerateTexture` mints a `UiGeneratedTextureId` and stores CPU pixels. The
   upload, and later its release, travel in the extraction's
-  `UiService::TextureChanges()` -- one list for every surface, never a
+  `UiService::TakeTextureChanges()`, handed over once and moved rather than
+  copied -- one list for every surface, never a
   surface's frame, because a glyph atlas belongs to a font and every pass that
   draws any surface names the same id. The host queues the list into the
   renderer's one `UiTextureResidency`; the first pass to draw authored UI in a

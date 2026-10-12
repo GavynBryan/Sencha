@@ -15,10 +15,12 @@
 #include "rml/RmlPackageFileSource.h"
 #include "rml/RmlTextInputBridge.h"
 #include "rml/RmlRenderRecorder.h"
+#include "rml/RmlWheelZoom.h"
 
 #include <math/Vec.h>
 #include <math/geometry/2d/Rect2d.h>
 
+#include <RmlUi/Core/DataVariable.h>
 #include <RmlUi/Core/ObserverPtr.h>
 
 #include <cstdint>
@@ -28,6 +30,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace Rml
@@ -155,7 +158,7 @@ public:
     void ExtractRender();
     [[nodiscard]] const std::vector<UiDrawFrame>& Frames() const { return DrawFrames; }
     [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
-    [[nodiscard]] const UiTextureChanges& TextureChanges() const { return ExtractedTextureChanges; }
+    [[nodiscard]] UiTextureChanges TakeTextureChanges() { return std::exchange(ExtractedTextureChanges, {}); }
 
     // IUiTextureResolver: a content image resolves against the open screen's
     // own resource table and nothing else.
@@ -197,6 +200,8 @@ public:
     [[nodiscard]] std::uint32_t LiveTextureCount() const;
 
 private:
+    class RowListDefinition;
+
     // A surface and its context. Slots are never compacted; a destroyed surface
     // leaves a dead slot whose generation has moved on.
     struct Surface
@@ -211,6 +216,8 @@ private:
         // type register. Once per context, not per model: the register is the
         // context's, and a second declaration is a silent refusal.
         bool ModelTypesDeclared = false;
+        // How a row list reads on this context, built over its row type.
+        std::unique_ptr<RowListDefinition> RowLists;
 
         // Where the surface is shown, in window points; nullopt is the window.
         std::optional<Rect2d> Placement;
@@ -291,6 +298,9 @@ private:
         {
             std::string Path;
             std::vector<UiRow> Items;
+            // Rows a shrink took away, read past Items' end until the update
+            // that removes their elements has run.
+            std::vector<UiRow> Departing;
         };
         std::vector<std::unique_ptr<BoundRows>> RowLists;
         std::vector<std::string> ActionNames;
@@ -338,6 +348,8 @@ private:
 
     [[nodiscard]] Surface* ResolveSurface(UiSurfaceId surface);
     static void EndPress(Surface& surface);
+    // Moves focus off whatever holds it, which ends text input if a field did.
+    static void DropFocus(Rml::Context& context);
     [[nodiscard]] Surface* PointerHolder(std::uint32_t platformWindowId);
     [[nodiscard]] const Surface* ResolveSurface(UiSurfaceId surface) const;
     [[nodiscard]] Screen* ResolveScreen(UiScreenHandle screen);
@@ -429,6 +441,7 @@ private:
     std::unique_ptr<RmlSystemBridge> SystemBridge;
     std::unique_ptr<RmlPackageFileSource> FileSource;
     std::unique_ptr<RmlTextInputBridge> TextInput;
+    RmlWheelZoom WheelZoom;
     SDL_Window* PrimaryWindow = nullptr;
     std::uint32_t PrimaryWindowId = 0;
 
@@ -436,7 +449,9 @@ private:
     // event (a device, a key with nothing focused) belongs to the primary.
     [[nodiscard]] bool Hears(const Surface& surface, std::uint32_t eventWindow) const;
     // Indices into Surfaces, topmost first, the order events are offered in.
-    [[nodiscard]] std::vector<std::size_t> InputOrder() const;
+    // Rebuilt when a surface is created or changes destination.
+    std::vector<std::size_t> InputOrder;
+    void RebuildInputOrder();
     [[nodiscard]] SDL_Window* WindowOf(const Surface& surface) const;
     [[nodiscard]] UiInputCapture CaptureOver(std::optional<std::uint32_t> window) const;
     std::unique_ptr<RmlRenderRecorder> Recorder;
@@ -486,4 +501,21 @@ private:
     [[nodiscard]] std::vector<const Screen*> ResolutionCandidates() const;
 
     bool Ready = false;
+};
+
+// A list of rows as the document reads it: its current rows, and past their end
+// the rows a shrink took away, which a departing element may still read in the
+// update that removes it. RmlUi's own array would refuse those reads.
+class UiRuntime::RowListDefinition final : public Rml::VariableDefinition
+{
+public:
+    explicit RowListDefinition(Rml::VariableDefinition& row);
+
+    int Size(void* list) override;
+
+protected:
+    Rml::DataVariable Child(void* list, const Rml::DataAddressEntry& address) override;
+
+private:
+    Rml::VariableDefinition& Row;
 };

@@ -1,6 +1,11 @@
 #include "RmlInputBridge.h"
 
+#include <ui/UiKeys.h>
+
+#include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
+
+#include <optional>
 
 namespace
 {
@@ -10,21 +15,22 @@ struct KeyMapping
 {
     SDL_Scancode Scancode;
     KeyIdentifier Key;
+    std::optional<UiKey> Host = std::nullopt;
 };
 
 // Ordered by what a document actually uses: activation and navigation first,
 // then editing, then the printable set a shortcut might name.
 constexpr KeyMapping kKeyMap[] = {
-    { SDL_SCANCODE_RETURN, Rml::Input::KI_RETURN },
+    { SDL_SCANCODE_RETURN, Rml::Input::KI_RETURN, UiKey::Return },
     { SDL_SCANCODE_KP_ENTER, Rml::Input::KI_NUMPADENTER },
-    { SDL_SCANCODE_ESCAPE, Rml::Input::KI_ESCAPE },
-    { SDL_SCANCODE_TAB, Rml::Input::KI_TAB },
+    { SDL_SCANCODE_ESCAPE, Rml::Input::KI_ESCAPE, UiKey::Escape },
+    { SDL_SCANCODE_TAB, Rml::Input::KI_TAB, UiKey::Tab },
     { SDL_SCANCODE_SPACE, Rml::Input::KI_SPACE },
 
-    { SDL_SCANCODE_LEFT, Rml::Input::KI_LEFT },
-    { SDL_SCANCODE_RIGHT, Rml::Input::KI_RIGHT },
-    { SDL_SCANCODE_UP, Rml::Input::KI_UP },
-    { SDL_SCANCODE_DOWN, Rml::Input::KI_DOWN },
+    { SDL_SCANCODE_LEFT, Rml::Input::KI_LEFT, UiKey::Left },
+    { SDL_SCANCODE_RIGHT, Rml::Input::KI_RIGHT, UiKey::Right },
+    { SDL_SCANCODE_UP, Rml::Input::KI_UP, UiKey::Up },
+    { SDL_SCANCODE_DOWN, Rml::Input::KI_DOWN, UiKey::Down },
     { SDL_SCANCODE_HOME, Rml::Input::KI_HOME },
     { SDL_SCANCODE_END, Rml::Input::KI_END },
     { SDL_SCANCODE_PAGEUP, Rml::Input::KI_PRIOR },
@@ -127,4 +133,20 @@ int ToRmlMouseButton(std::uint8_t sdlButton)
     case SDL_BUTTON_MIDDLE: return 2;
     default:                return -1;
     }
+}
+
+std::optional<UiKey> UiKeyFromEvent(std::int64_t keyIdentifier)
+{
+    for (const KeyMapping& mapping : kKeyMap)
+    {
+        if (mapping.Key == keyIdentifier)
+            return mapping.Host;
+    }
+    return std::nullopt;
+}
+
+std::uint32_t UiKeyCodeFromEvent(std::int64_t keyIdentifier)
+{
+    const SDL_Scancode scancode = FromRmlKey(static_cast<KeyIdentifier>(keyIdentifier));
+    return scancode == SDL_SCANCODE_UNKNOWN ? 0 : SDL_GetKeyFromScancode(scancode, SDL_KMOD_NONE, false);
 }

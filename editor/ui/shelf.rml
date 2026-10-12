@@ -64,7 +64,7 @@
                     <span class="side_label">{{folder.label}}</span>
                 </div>
             </div>
-            <div id="shelf_items" data-class-list="view == 'list'"
+            <div id="shelf_items" data-class-list="view == 'list'" wheel-zoom=""
                  data-event-mousescroll="shelf_zoom(ev.wheel_delta_y, ev.ctrl_key)">
                 <div class="tile theme-row" data-for="item : items" data-class-selected="item.selected"
                      data-attr-id="'tile:' + item.key"

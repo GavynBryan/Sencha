@@ -13,21 +13,9 @@
 
 struct RendererServices;
 
-//=============================================================================
-// UiTextureResidency
-//
-// The GPU side of every texture the authored UI generated -- glyph atlases,
-// decorator images -- for every pass that draws authored UI. One per renderer.
-//
-// One owner rather than one per pass because a generated texture belongs to the
-// document engine, not to a surface: a font's atlas is minted while whichever
-// surface first needs it records, and every other surface, drawn by whichever
-// pass draws it (the window's, a host's offscreen one), names the same id.
-//
-// Changes arrive once per extraction and are queued; the first UI draw of a
-// frame applies everything queued, so an upload exists before any pass looks
-// it up and a release is stamped against the frame clock that will retire it.
-//=============================================================================
+// The GPU side of every texture the authored UI generated, for every pass that
+// draws it: one per renderer, because a glyph atlas belongs to a font, not to a
+// surface (docs/ui/architecture.md §9).
 class UiTextureResidency
 {
 public:
@@ -36,7 +24,7 @@ public:
 
     // What one extraction minted and released. Queued, not applied: the frame
     // that will draw them has not started recording yet.
-    void Queue(const UiTextureChanges& changes);
+    void Queue(UiTextureChanges&& changes);
 
     struct Applied
     {
@@ -51,10 +39,9 @@ public:
 
     [[nodiscard]] std::optional<BindlessImageIndex> FindGenerated(UiGeneratedTextureId id) const;
 
-    // What stands behind a host image this frame. The host publishes after it
-    // has rendered or chosen the image and before the UI draws; the image is
-    // the host's to keep alive while published. A document naming an image
-    // nothing is published under draws that element untextured.
+    // What stands behind a host image this frame, published before the UI draws
+    // and kept alive by the host while published; an image nothing is published
+    // under draws untextured.
     void PublishHostImage(UiHostImageId id, BindlessImageIndex image);
     void WithdrawHostImage(UiHostImageId id);
     [[nodiscard]] std::optional<BindlessImageIndex> FindHost(UiHostImageId id) const;
