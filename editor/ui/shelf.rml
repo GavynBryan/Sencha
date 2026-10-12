@@ -72,6 +72,7 @@
                      data-event-click="shelf_pick(item.key)" data-event-dblclick="shelf_open(item.key)"
                      data-event-mousedown="shelf_press(item.key, ev.button, ev.mouse_x, ev.mouse_y)"
                      data-event-dragstart="shelf_carry(item.key)"
+                     data-event-drag="shelf_carrying(ev.mouse_x, ev.mouse_y)"
                      data-event-dragend="shelf_put(ev.mouse_x, ev.mouse_y)">
                     <div class="well theme-field" data-style-width="view == 'list' ? '16dp' : picture"
                          data-style-height="view == 'list' ? '16dp' : picture">

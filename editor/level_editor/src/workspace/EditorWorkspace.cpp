@@ -33,6 +33,7 @@
 #include "meshedit/ElementGeometry.h"
 #include "meshedit/MeshElements.h"
 #include "meshedit/SelectionConversion.h"
+#include "overlay/PlacementMarks.h"
 #include "overlay/SelectionLabels.h"
 #include "GridEditing.h"
 #include "viewport/GridFrame.h"
@@ -536,6 +537,7 @@ void EditorWorkspace::UpdateOverlay()
                 .Selected = Selection.Contains(SelectableRef::EntitySelection(registry, marker.Entity)),
             });
     }
+    AppendPlacementMarks(Interaction.Placement, Grid.Spacing, Interaction.Overlay);
 }
 
 void EditorWorkspace::SetSelectedBrushOriginToPivot()

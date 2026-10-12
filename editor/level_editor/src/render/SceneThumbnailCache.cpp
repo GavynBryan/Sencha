@@ -3,13 +3,11 @@
 #include <graphics/vulkan/UiTextureResidency.h>
 #include <ui/UiService.h>
 
-#include "BrushBakeGpu.h"
 #include "SceneRenderQueueBuilder.h"
+#include "SceneSourceStage.h"
 
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
-
-#include "scene_source/SceneSourcePaths.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/logging/Logger.h>
@@ -137,28 +135,16 @@ void SceneThumbnailCache::AppendLiveViewports(std::vector<ViewportId>& live) con
 
 bool SceneThumbnailCache::LoadEntry(const std::string& assetPath, Entry& entry)
 {
-    entry.Document = std::make_unique<EditorDocument>(Logging);
-    entry.Document->SetContentRoots(ContentRoots);
-    entry.Document->SetAssetEnvironment(Assets);
-
-    const std::filesystem::path file =
-        ResolveSceneSourceFile(ContentRoots, assetPath);
-    if (file.empty() || !entry.Document->Load(file.generic_string()))
+    std::string error;
+    entry.Stage = SceneSourceStage::Prepare(assetPath, ContentRoots, &Assets, Logging, &error);
+    if (entry.Stage == nullptr)
     {
-        Logging.GetLogger<SceneThumbnailCache>().Warn(
-            "scene thumbnail: could not load '{}'", assetPath);
+        Logging.GetLogger<SceneThumbnailCache>().Warn("scene thumbnail: could not place '{}': {}", assetPath, error);
         return false;
     }
-
-    entry.Document->GetScene().RefreshDerivedTransforms();
+    entry.Stage->Build();
     entry.Camera = ThumbnailStudio::FrameSubject(
-        RenderableBounds(*entry.Document, Meshes, Assets.SkinnedMeshes.get()));
-
-    entry.Bakes = std::make_unique<BrushBakeCache>(MakeBrushBakeGpu(Assets));
-    entry.Queues = std::make_unique<SceneRenderQueueBuilder>(
-        Assets.Assets, *entry.Bakes, *Assets.StaticMeshes, Assets.Materials, Assets.MaterialSets,
-        Logging, nullptr, Assets.SkinnedMeshes.get());
-    entry.Queues->Build(*entry.Document);
+        RenderableBounds(entry.Stage->Document(), Meshes, Assets.SkinnedMeshes.get()));
     return true;
 }
 
@@ -167,12 +153,8 @@ void SceneThumbnailCache::RenderPending(const FrameContext& frame)
     // Scratch payloads whose recorded passes are safely retired go first: the
     // preview keeps only its target once every slot holds the image.
     for (auto& [path, entry] : Entries)
-        if (entry.Document != nullptr && FrameClock > entry.ReleasePayloadAfter)
-        {
-            entry.Queues.reset();
-            entry.Bakes.reset();
-            entry.Document.reset();
-        }
+        if (entry.Stage != nullptr && FrameClock > entry.ReleasePayloadAfter)
+            entry.Stage.reset();
 
     // One pass per frame keeps the editor responsive while a folder of scenes
     // streams in; each thumbnail needs a pass per in-flight slot before every
@@ -200,8 +182,8 @@ void SceneThumbnailCache::RenderPending(const FrameContext& frame)
         pending->Loaded = true;
     }
 
-    const RenderQueue* queues[] = { &pending->Queues->BrushQueue(),
-                                    &pending->Queues->MeshQueue() };
+    const SceneRenderQueueBuilder& built = *pending->Stage->Queues();
+    const RenderQueue* queues[] = { &built.BrushQueue(), &built.MeshQueue() };
     if (!Studio.RenderPass(frame, pending->Target, pending->Camera, queues))
         return;
 
@@ -214,7 +196,7 @@ bool SceneThumbnailCache::HasPendingWork() const
 {
     return std::ranges::any_of(Entries, [](const auto& item) {
         const Entry& entry = item.second;
-        return entry.Document != nullptr || (entry.RemainingPasses > 0 && !entry.Failed);
+        return entry.Stage != nullptr || (entry.RemainingPasses > 0 && !entry.Failed);
     });
 }
 
@@ -231,6 +213,20 @@ void SceneThumbnailCache::TrimToBudget(std::size_t budget)
         if (oldest->second.Image != kInvalidUiHostImage)
             Gone.push_back(oldest->second.Image);
         Entries.erase(oldest);
+    }
+}
+
+void SceneThumbnailCache::Invalidate(std::span<const std::string> assetPaths)
+{
+    if (assetPaths.empty())
+        return;
+    for (auto& [path, entry] : Entries)
+    {
+        entry.Stage.reset();
+        entry.Loaded = false;
+        entry.Failed = false;
+        entry.ReleasePayloadAfter = UINT64_MAX;
+        entry.RemainingPasses = ThumbnailStudio::PassesPerTarget();
     }
 }
 

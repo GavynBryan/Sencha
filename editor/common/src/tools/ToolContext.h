@@ -10,6 +10,7 @@ class EditorDocument;
 class EditorScene;
 class MeshEditService;
 class PickingService;
+class PlacementSession;
 class PreviewBuffer;
 class SelectionService;
 struct MarqueeState;
@@ -18,14 +19,14 @@ struct EditorOverlayState;
 struct ManipulationSink;
 class ActiveResources;
 
-// The transient editing state a tool reads and writes: the live interaction,
-// the geometry it previews, the marquee, and the viewport overlay. They are
-// created, reset, and torn down together with the document being edited, so
-// they reach a tool as one group rather than four arguments.
+// The transient editing state a tool reads and writes: interaction, previews,
+// pending placement, marquee, overlay. It is created, reset and torn down with
+// the edited document, so it reaches a tool as one group.
 struct ToolInteractionState
 {
     InteractionHost& Interactions;
     PreviewBuffer& Preview;
+    PlacementSession& Placement;
     MarqueeState& Marquee;
     EditorOverlayState& Overlay;
 };
@@ -58,6 +59,7 @@ struct ToolContext
     EditorDocument& Document;
     InteractionHost& Interactions;
     PreviewBuffer& Preview;
+    PlacementSession& Placement;
     MeshEditService& MeshEdit;
     MarqueeState& Marquee;
     GridSettings& Grid;

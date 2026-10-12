@@ -51,6 +51,16 @@ struct PointerMoveEvent
     ViewportId Viewport = {};
 };
 
+// A press that began outside this input chain -- on a surface that then
+// handed the rest of its gesture over -- arriving held at Position. Whoever
+// takes it owns the gesture through to its release.
+struct PointerHandedEvent
+{
+    Vec2d Position;
+    ModifierFlags Modifiers;
+    ViewportId Viewport = {};
+};
+
 struct WheelEvent
 {
     Vec2d Position;
@@ -95,6 +105,7 @@ using InputEvent = std::variant<
     PointerDownEvent,
     PointerUpEvent,
     PointerMoveEvent,
+    PointerHandedEvent,
     WheelEvent,
     KeyDownEvent,
     KeyUpEvent,

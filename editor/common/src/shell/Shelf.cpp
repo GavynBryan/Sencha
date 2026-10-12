@@ -87,6 +87,7 @@ const UiActionId kInto = UiActionIdAt(21);
 const UiActionId kPut = UiActionIdAt(22);
 const UiActionId kWindow = UiActionIdAt(23);
 const UiActionId kKeys = UiActionIdAt(24);
+const UiActionId kCarrying = UiActionIdAt(25);
 
 // How much wider a tile is than its picture, and the gap after it, in dp.
 constexpr float kTileMarginDp = 24.0f;
@@ -130,7 +131,8 @@ UiScreenDesc Describe()
                      "shelf_category", "shelf_list", "shelf_folder", "shelf_branch", "shelf_pick",
                      "shelf_open",   "shelf_view",   "shelf_pin",  "shelf_close", "shelf_zoom", "shelf_none",
                      "shelf_follow", "shelf_back", "shelf_press", "shelf_new",
-                     "shelf_carry", "shelf_into", "shelf_put", "shelf_window", "shelf_keys" };
+                     "shelf_carry", "shelf_into", "shelf_put", "shelf_window", "shelf_keys",
+                     "shelf_carrying" };
     return desc;
 }
 
@@ -565,12 +567,19 @@ void Shelf::HandleAction(const UiAction& action, float windowHeight)
     }
     else if (action.Id == kInto && Carrying == Carry::Carrying)
         Into(Text(action));
+    else if (action.Id == kCarrying && Carrying == Carry::Carrying)
+    {
+        const Vec2d at{ static_cast<float>(Number(action, 0)), static_cast<float>(Number(action, 1)) };
+        const ProjectFile* file = FileAt(Carried);
+        CarriedOver = file != nullptr && OverContent(at, windowHeight) ? std::optional(ShelfDrop{ *file, at })
+                                                                     : std::nullopt;
+    }
     // Let go where nothing took it: above the shelf, it is the content's.
     else if (action.Id == kPut)
     {
         const std::string carried = TakeCarried();
         const Vec2d at{ static_cast<float>(Number(action, 0)), static_cast<float>(Number(action, 1)) };
-        if (const ProjectFile* file = FileAt(carried); file != nullptr && at.Y < windowHeight - Reach())
+        if (const ProjectFile* file = FileAt(carried); file != nullptr && OverContent(at, windowHeight))
             Dropped = ShelfDrop{ *file, at };
     }
     else if (action.Id == kNew)
@@ -725,7 +734,13 @@ std::string Shelf::TakeCarried()
     if (Carrying != Carry::Carrying)
         return {};
     Carrying = Carry::None;
+    CarriedOver.reset();
     return std::exchange(Carried, std::string{});
+}
+
+bool Shelf::OverContent(Vec2d at, float windowHeight) const
+{
+    return at.Y < windowHeight - Reach();
 }
 
 void Shelf::Into(const std::string& folder)

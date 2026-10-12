@@ -254,6 +254,11 @@ public:
     // so the tool context, sink, and selection stay.
     std::function<void(ZoneId)> OnZoneUnloaded;
 
+    // Fires after a save lands scene sources on disk and the open documents
+    // placing them have re-projected: whatever else prepared from those
+    // sources (the placement ghost, the previews) prepares afresh.
+    std::function<void(std::span<const std::string>)> OnSourcesSaved;
+
 private:
     // Each open zone document gets a unique RegistryId {NextRegistryIndex_++, 1},
     // starting at 2, never reused within a session, so a stale SelectableRef

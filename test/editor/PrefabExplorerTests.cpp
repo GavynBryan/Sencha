@@ -75,6 +75,8 @@ TEST_F(PrefabExplorerTest, PlaceConsumesAPrefabAndTurnsItByItsYaw)
     ToolContext& ctx = Workspace.Interaction.Tools->GetContext();
     EXPECT_EQ(place.Hint(ctx), "Pick a prefab to place");
     EXPECT_EQ(place.SetParameter(ctx, "yaw", "180"), PropertyEditResult::Applied);
-    EXPECT_EQ(place.SetParameter(ctx, "yaw", "45"), PropertyEditResult::Refused);
+    EXPECT_EQ(place.SetParameter(ctx, "yaw", "east"), PropertyEditResult::Refused);
     EXPECT_EQ(place.Parameters(ctx).front().Value, "180");
+    EXPECT_EQ(place.SetParameter(ctx, "yaw", "45"), PropertyEditResult::Applied) << "a yaw is any angle";
+    EXPECT_EQ(place.Parameters(ctx).front().Value, "45");
 }

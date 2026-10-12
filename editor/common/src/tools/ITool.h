@@ -55,6 +55,10 @@ struct ITool
     virtual InputConsumed OnClick(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, const PointerEvent& /*pointer*/) { return InputConsumed::No; }
     virtual InputConsumed OnDoubleClick(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, const PointerEvent& /*pointer*/) { return InputConsumed::No; }
     virtual std::unique_ptr<IInteraction> BeginDrag(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, const PointerEvent& /*pressPointer*/) { return nullptr; }
+    // A press that began outside the views (a file carried off the shelf),
+    // arriving held: the interaction that runs the rest of it from view to
+    // view, release included. Null if this tool takes none.
+    virtual std::unique_ptr<IInteraction> TakeHandedGesture(ToolContext& /*ctx*/) { return nullptr; }
     virtual InputConsumed OnKeyDown(ToolContext& /*ctx*/, const KeyDownEvent& /*event*/) { return InputConsumed::No; }
 
     // Cursor motion with no button held. A tool that drives a live hover preview

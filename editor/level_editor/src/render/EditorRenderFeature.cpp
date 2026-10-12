@@ -16,6 +16,7 @@
 
 #include <app/EngineConsoleBuiltins.h>
 #include "BrushBakeGpu.h"
+#include "SceneSourceStage.h"
 #include "render/TargetImagePublish.h"
 
 #include <assets/runtime/RuntimeAssets.h>
@@ -44,6 +45,10 @@ constexpr std::string_view kBloomEnable = "editor.bloom.enable";
 // changes whether a level cooks.
 constexpr std::string_view kPieceBudget = "editor.brush.preview_piece_budget";
 constexpr std::int64_t kPieceBudgetDefault = 4096;
+// How many prefabs recently in hand stay prepared for the placement ghost, so
+// switching back costs nothing.
+constexpr std::string_view kPreparedPrefabs = "editor.placement.prepared_prefabs";
+constexpr std::int64_t kPreparedPrefabsDefault = 4;
 
 struct LookKnob
 {
@@ -104,6 +109,31 @@ void EditorRenderFeature::RegisterCVars(ConsoleRegistry& console)
                                .Flags = CVarFlags::Archive,
                                .Help = std::string(knob.Help),
                                .Source = { "editor" } });
+    console.RegisterCVar({ .Name = std::string(kPreparedPrefabs),
+                           .Owner = "editor",
+                           .Type = CVarType::Int,
+                           .DefaultValue = kPreparedPrefabsDefault,
+                           .CurrentValue = kPreparedPrefabsDefault,
+                           .Flags = CVarFlags::Archive,
+                           .Help = "Editor: prefabs kept prepared for the placement ghost.",
+                           .Source = { "editor" } });
+}
+
+void EditorRenderFeature::DrawPlacementGhost(const FrameContext& frame, const EditorViewport& viewport,
+                                             const CameraRenderData& camera, const SceneSourceStage& ghost)
+{
+    // Solid, lit by the focus scene, depth-tested and depth-writing; its own
+    // lights and casters are never gathered (docs/editor/placement.md).
+    const SceneRenderQueueBuilder& queues = *ghost.Queues();
+    for (const RenderQueue* queue : { &queues.BrushQueue(), &queues.MeshQueue() })
+        Forward.Draw(frame, MeshForwardPass::DrawContext{ .Camera = camera,
+                                                          .Lights = QueueBuilder->Lights(),
+                                                          .Queue = *queue,
+                                                          .Meshes = *MeshCache,
+                                                          .Materials = *MaterialStore,
+                                                          .SkinnedMeshes = SkinnedMeshCacheRef,
+                                                          .Tint = EditorTheme::PlacementGhostTint });
+    Visuals.DrawViewport(frame, viewport, camera, ghost.Scene(), EditorTheme::PlacementGhostTint);
 }
 
 void EditorRenderFeature::SweepBrushBakes()
@@ -142,6 +172,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          MeshEditService& meshEdit,
                                          const EditorOverlayState& overlay,
                                          PreviewBuffer& preview,
+                                         const PlacementSession& placement,
                                          std::function<const ManipulatorSession*()> session,
                                          const GridSettings& grid,
                                          WorldViewSettings& worldView,
@@ -158,6 +189,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , BrushSolid(Solid)
     , BrushBakes(runtimeAssets != nullptr ? MakeBrushBakeGpu(*runtimeAssets) : BrushBakeCache::Gpu{})
     , Meshes(Solid, logging, assets, catalog)
+    , Placement(placement)
     , Wireframe(selection, overlay, Lines)
     , Visuals(Lines)
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
@@ -244,6 +276,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
                        VK_FORMAT_D32_SFLOAT);
         Thumbnails.emplace(*Studio, *RuntimeAssetsRef,
                            *RuntimeAssetsRef->StaticMeshes, *LoggingRef);
+        Ghost.emplace(RuntimeAssetsRef, *LoggingRef);
     }
     Bloom.Setup(services);
     Composition.Setup(services.Logging);
@@ -328,6 +361,15 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         World.FocusDocument().GetScene().SetInteractiveEvaluationPolicy(previewPolicy);
         World.FocusDocument().GetScene().RefreshDerivedTransforms();
         QueueBuilder->Build(World.FocusDocument());
+        if (Ghost)
+        {
+            // Resolved through the focus document's own roots, so the ghost
+            // places what the document would.
+            Ghost->SetContentRoots(World.FocusDocument().ContentRoots());
+            Ghost->Update(Placement, previewPolicy,
+                          static_cast<std::size_t>(std::max<std::int64_t>(
+                              1, ReadCVarInt(Console, kPreparedPrefabs, kPreparedPrefabsDefault))));
+        }
 
         // Context zones build their own queues so they render real materials.
         std::erase_if(ContextBuilders, [&](const auto& entry)
@@ -721,6 +763,9 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         }
         else
             Meshes.DrawViewport(local, viewport, camera, scene);
+        if (const SceneSourceStage* ghost = Ghost ? Ghost->Shown() : nullptr;
+            MaterialPath && ghost != nullptr && ghost->Queues() != nullptr)
+            DrawPlacementGhost(local, viewport, camera, *ghost);
         Visuals.DrawViewport(local, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
         IrradianceVolumes.DrawViewport(local, viewport, camera, scene);
         Highlight.DrawViewport(local, viewport, camera, scene, *Session());

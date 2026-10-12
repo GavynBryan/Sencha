@@ -76,7 +76,7 @@ TEST_F(PlaceToolTest, AComponentVariantNeedsNoPrefabInHand)
     place.SelectVariant(ctx, IndexOf(place, "Point Light"));
     EXPECT_EQ(place.GetVariants()[static_cast<std::size_t>(place.GetActiveVariant(ctx))].Label, "Point Light");
     EXPECT_TRUE(place.Resources().empty()) << "a light was asked to be placed and a prefab cartridge offered";
-    EXPECT_EQ(place.Hint(ctx), "Click to place a Point Light");
+    EXPECT_EQ(place.Hint(ctx), "Click to place a Point Light, or drag to turn it");
 }
 
 TEST_F(PlaceToolTest, APlacedComponentIsOneStepNamedAndSelected)
@@ -108,7 +108,7 @@ TEST_F(PlaceToolTest, AnEmptyIsOneStepNamedAndSelected)
     ToolContext& ctx = Workspace.Interaction.Tools->GetContext();
     place.SelectVariant(ctx, IndexOf(place, "Empty"));
     EXPECT_TRUE(place.Resources().empty()) << "an empty was asked to be placed and a prefab cartridge offered";
-    EXPECT_EQ(place.Hint(ctx), "Click to place an Empty");
+    EXPECT_EQ(place.Hint(ctx), "Click to place an Empty, or drag to turn it");
 
     World& world = Scene().GetRegistry().Components;
     const std::size_t before = Scene().GetAllEntities().size();

@@ -89,6 +89,11 @@ public:
     // `point`, in window pixels: what that means is the workspace's -- a prefab
     // placed there, a material put on the face there. False when it means nothing.
     virtual bool DropAsset(const ProjectFile&, Vec2d /*point*/) { return false; }
+    // A content file carried off the shelf over the content: whether this
+    // workspace takes the rest of that gesture, and taking it at `point` once
+    // the shell has handed the gesture's events, release included, over.
+    [[nodiscard]] virtual bool TakesCarry(const ProjectFile&) const { return false; }
+    virtual void TakeCarry(const ProjectFile&, Vec2d /*point*/) {}
     // Shows where a problem in one of its documents is; false when it cannot.
     virtual bool RevealProblem(const Problem&) { return false; }
     // Its work over time, for a deck; null when it keeps no time.

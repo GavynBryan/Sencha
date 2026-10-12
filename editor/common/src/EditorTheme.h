@@ -79,6 +79,10 @@ inline constexpr Vec4 ActiveWireframe{ 0.25f, 0.55f, 2.5f, 1.0f };
 // so it stays distinct from (and subordinate to) the active body.
 inline constexpr Vec4 PreviewWireframe{ 0.1f, 0.3f, 0.62f, 1.0f };
 inline constexpr Vec4 CreatePreview{ 1.0f, 0.6f, 0.0f, 1.0f };     // the create-drag's wireframe: the brush about to be placed
+// A placement not yet made: the marks where it lands and the multiply tint on
+// its ghost, so it never reads as something already in the level.
+inline constexpr Vec4 PlacementMark{ 0.35f, 0.85f, 1.0f, 1.0f };
+inline constexpr Vec4 PlacementGhostTint{ 0.7f, 0.92f, 1.0f, 1.0f };
 // The element under the cursor (selection-eligible): a paler yellow than the
 // selected FaceHighlight/EdgeHighlight, drawn bolder, so a hovered neighbor of
 // a selected element still reads as a different state.

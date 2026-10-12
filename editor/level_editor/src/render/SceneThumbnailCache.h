@@ -7,32 +7,21 @@
 
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-class EditorDocument;
+class SceneSourceStage;
 class UiService;
 class UiTextureResidency;
 class LoggingProvider;
-class BrushBakeCache;
-class SceneRenderQueueBuilder;
 struct FrameContext;
 struct RuntimeAssets;
 
-//=============================================================================
-// SceneThumbnailCache
-//
-// Previews of .sscene sources for the browser: each requested scene loads
-// into a scratch document, its renderable bounds pick the framing, and the
-// ThumbnailStudio renders it. This cache owns what is scene-specific --
-// loading, bounding, queue building, and the entry lifecycle; how a preview
-// looks belongs to the studio.
-//
-// An entry's scratch document and queue builder live only while their
-// recorded passes may still be in flight; once every slot holds the image,
-// the payload is released and the entry keeps nothing but its target.
-//=============================================================================
+// Previews of .sscene sources for the browser: framing and entry lifetime over
+// a SceneSourceStage (released once every slot holds the image); how a
+// preview looks belongs to the ThumbnailStudio.
 class SceneThumbnailCache final : public IAssetPictureSource
 {
 public:
@@ -75,17 +64,16 @@ public:
 
     // Drops entries not used recently, keeping at most `budget`.
     void TrimToBudget(std::size_t budget);
+    // Renders every preview afresh: a released one no longer knows whether it
+    // nests one of `assetPaths`. Image names are kept.
+    void Invalidate(std::span<const std::string> assetPaths);
     void Clear();
 
 private:
     struct Entry
     {
         ViewportId Target{};
-        std::unique_ptr<EditorDocument> Document;
-        // The thumbnail document is never an open document, so its brush
-        // meshes are resident exactly as long as this entry's builder is.
-        std::unique_ptr<BrushBakeCache> Bakes;
-        std::unique_ptr<SceneRenderQueueBuilder> Queues;
+        std::unique_ptr<SceneSourceStage> Stage;
         CameraRenderData Camera;
         int RemainingPasses = 0;
         // The frame after which the recorded passes cannot still be in

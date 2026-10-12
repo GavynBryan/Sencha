@@ -395,6 +395,7 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
         AssetShelf->Fill(static_cast<float>(extent.Height) - RailHeight());
     ShownTabs = AssetTabsIn(Services.Workspaces, Services.Presentation);
     AssetShelf->Update(Services.Ui.GetSurfaceScale(SurfaceId), static_cast<float>(extent.Height), ShownTabs);
+    HandCarryToContent();
     if (const std::optional<ShelfDrop> drop = AssetShelf->TakeDrop())
     {
         IWorkspace* receiving = Services.Workspaces.ActiveIn(Services.Presentation);
@@ -550,6 +551,23 @@ void ShellWindow::OnTabDrop(const UiAction& action)
 void ShellWindow::OnCrumb(const UiAction& action)
 {
     RevealLocation(action.Arg(0).AsInt(-1));
+}
+
+void ShellWindow::HandCarryToContent()
+{
+    // The world takes a carry the moment it leaves the shelf, so what follows
+    // the pointer from there is the workspace's own interaction; the shelf's
+    // drag ends without a drop because the carried file is taken first.
+    const std::optional<ShelfDrop> carried = AssetShelf->CarriedOverContent();
+    IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation);
+    if (!carried.has_value() || active == nullptr || !active->TakesCarry(carried->File))
+        return;
+    (void)AssetShelf->TakeCarried();
+    if (!Services.Pointer.HandGestureToApplication(Services.Window.GetId()))
+        return;
+    if (AssetShelf->IsRaised())
+        AssetShelf->Hide();
+    active->TakeCarry(carried->File, carried->At);
 }
 
 bool ShellWindow::TakeHeldInput(const InputEvent& event)

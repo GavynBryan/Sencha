@@ -316,7 +316,13 @@ format boundary; the editor's own types use document/scene vocabulary.
   take, because the engine's router gives each gesture to whoever took its
   press (`docs/ui/architecture.md`, Input). A press a document began and the
   shell carries on, like a number scrub, is handed over through
-  `PlatformEventRouter::HandGestureToApplication`.
+  `PlatformEventRouter::HandGestureToApplication`; one the content takes, like
+  a file carried off the shelf, reaches the workspace as `IWorkspace::TakeCarry`
+  and its input chain as a `PointerHandedEvent`.
+- Within the views, `ViewportToolDispatcher` owns each left-button gesture from
+  press (or hand-off) to release, and ends it on Escape, focus loss, a tool
+  switch or a rebuilt editing stack (`docs/editor/placement.md`, Gesture
+  lifecycle).
 
 Enforced by `scripts/check_editor_layering.sh` (a ctest) plus the include-path
 firewall above.

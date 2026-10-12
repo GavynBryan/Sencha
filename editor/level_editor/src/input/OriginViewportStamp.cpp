@@ -7,16 +7,16 @@
 
 void StampOriginViewport(InputRouter& router, ViewportLayout& layout, InputEvent& event)
 {
-    // While a gesture holds the pointer, every event belongs to the viewport it began
-    // in; otherwise a positioned event belongs to the viewport under the cursor, which
-    // also becomes the focused viewport. (Wheel carries no position and keeps
-    // targeting the focused viewport downstream.)
+    // A gesture pinned to a viewport keeps every event there; any other
+    // positioned event belongs to the viewport under the cursor, which becomes
+    // the focused viewport unless a gesture holds the pointer. (Wheel carries
+    // no position and keeps targeting the focused viewport downstream.)
     const auto resolve = [&](Vec2d position) -> ViewportId
     {
-        if (router.PointerCaptured())
+        if (router.PointerCaptured() && router.CaptureViewport().IsValid())
             return router.CaptureViewport();
         const ViewportId hovered = layout.ResolveAt(position);
-        if (hovered.IsValid())
+        if (hovered.IsValid() && !router.PointerCaptured())
             layout.SetActive(hovered);
         return hovered;
     };
@@ -27,4 +27,6 @@ void StampOriginViewport(InputRouter& router, ViewportLayout& layout, InputEvent
         up->Viewport = resolve(up->Position);
     else if (auto* move = std::get_if<PointerMoveEvent>(&event))
         move->Viewport = resolve(move->Position);
+    else if (auto* handed = std::get_if<PointerHandedEvent>(&event))
+        handed->Viewport = resolve(handed->Position);
 }

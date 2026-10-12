@@ -64,20 +64,7 @@ ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport
         if (surface.has_value())
         {
             depthAxis = DominantAxis(surface->Normal);
-            plane = GridForAxis(UnitAxis(depthAxis));
-            // Keep the plane at the hit depth, but phase-align U/V to the
-            // workspace grid: GridPlane::Snap quantizes relative to Origin, so a
-            // raw hit point would smear its fractional offset onto every snapped
-            // drag point, putting surface-projected brushes off the world grid.
-            Vec3d origin = surface->Point;
-            const Vec3d fromGrid = origin - ctx.Grid.Origin;
-            const float du = fromGrid.Dot(plane.AxisU);
-            const float dv = fromGrid.Dot(plane.AxisV);
-            origin -= plane.AxisU * (du - std::round(du / ctx.Grid.Spacing) * ctx.Grid.Spacing);
-            origin -= plane.AxisV * (dv - std::round(dv / ctx.Grid.Spacing) * ctx.Grid.Spacing);
-            plane.Origin = origin;
-            plane.Spacing = ctx.Grid.Spacing;
-            plane.SnapEnabled = ctx.Grid.SnapEnabled;
+            plane = GridThrough(GridForAxis(UnitAxis(depthAxis)), surface->Point, ctx.Grid);
         }
     }
     if (!surface.has_value())

@@ -160,6 +160,15 @@ struct PropertyHandleMarks
     }
 };
 
+// The pending placement's marks: where its root lands and which way it faces.
+// Rebuilt every frame from the placement session (AppendPlacementMarks).
+struct PlacementMarks
+{
+    std::vector<WorldSegmentRequest> Strokes;
+
+    void Clear() { Strokes.clear(); }
+};
+
 // The element under the cursor for the active element mode. The renderer glows it
 // to show it is selection-eligible; an edge also carries its length, drawn at
 // MeasureAnchor. Element is invalid when nothing is hovered.
@@ -183,6 +192,7 @@ struct EditorOverlayState
     std::vector<ViewportDialRequest> ViewportDials;
     std::vector<MarkerRequest> Markers;
     PropertyHandleMarks Handles;
+    PlacementMarks Placement;
     DragReadout Readout;
     ElementHoverState Hover;
     // A whole brush to highlight as a selected body while hovering, even when it is

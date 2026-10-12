@@ -213,6 +213,9 @@ private:
     // Keeps the shelf's place among the window's open surfaces, and raises it
     // for a workspace showing nothing.
     void FollowShelf();
+    // A file carried off the shelf over the content goes to a workspace that
+    // takes carries of its kind, gesture and all.
+    void HandCarryToContent();
 
     ShellWindowServices Services;
     UiSurfaceId SurfaceId;

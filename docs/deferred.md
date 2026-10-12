@@ -397,3 +397,13 @@ do the work and delete the entry.
 - **Trigger:** a game or the editor shipping two packages whose stylesheets
   share a name but not their rules, or the authored-UI hot reload work touching
   how blobs are named.
+
+## Placements standing on a surface
+
+- **What:** the Entity card's planned "align to surface": a placement standing
+  along the normal of the surface under it rather than upright.
+- **Where:** `ResolvePlacementSite` (`editor/level_editor/src/document/placement/PlacementResolver.cpp`)
+  makes every site upright; `SiteOnPlane` and the turn already take any normal
+  (`docs/editor/placement.md`, Turning).
+- **Trigger:** the Entity card gaining the setting, or the first prefab meant
+  to hang on a wall or a ceiling.

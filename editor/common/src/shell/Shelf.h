@@ -147,6 +147,9 @@ public:
     // The file being dragged from a tile, taken by whatever it is dropped on;
     // empty when none is or it has been taken.
     [[nodiscard]] std::string TakeCarried();
+    // The file being carried and where, while the pointer has it over the
+    // content rather than the shelf.
+    [[nodiscard]] const std::optional<ShelfDrop>& CarriedOverContent() const { return CarriedOver; }
     // A carried file let go off the shelf, for the content under it, taken once.
     [[nodiscard]] std::optional<ShelfDrop> TakeDrop() { return std::exchange(Dropped, std::nullopt); }
     // Files from outside the project, dropped on the window: each copied into
@@ -175,6 +178,7 @@ private:
     void AskTrash();
     void Trash(const std::string& assetPath);
     void Tell(std::string text, bool failed);
+    [[nodiscard]] bool OverContent(Vec2d at, float windowHeight) const;
     // The carried file moved into `folder` (root-relative, empty for the root).
     void Into(const std::string& folder);
     void Rescan();
@@ -216,6 +220,7 @@ private:
     std::optional<ShelfWheelRequest> Wanted;
     Carry Carrying = Carry::None;
     std::string Carried;
+    std::optional<ShelfDrop> CarriedOver;
     std::optional<ShelfDrop> Dropped;
     PromptQueue::Asker Asker;
 

@@ -21,6 +21,7 @@ public:
 
     InputConsumed OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
     InputConsumed OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
+    void OnPointerLeftViews(ToolContext& ctx);
 
 private:
     std::unique_ptr<IInteraction> Active;

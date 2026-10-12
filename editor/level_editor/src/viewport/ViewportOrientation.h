@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorCamera.h"
+#include "GridSettings.h"
 
 #include <math/spatial/GridPlane.h>
 
@@ -31,3 +32,6 @@ struct OrientationTraits
 const OrientationTraits& Traits(ViewportOrientation orientation);
 const std::array<ViewportOrientation, 8>& AllViewportOrientations();
 GridPlane GridForAxis(const Vec3d& axis);
+// `axisPlane` laid through `point`, with its lines in phase with the working
+// grid's, so a snap on a surface lands on the same lattice as one on the grid.
+GridPlane GridThrough(GridPlane axisPlane, Vec3d point, const GridSettings& grid);

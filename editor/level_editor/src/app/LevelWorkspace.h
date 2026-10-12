@@ -103,6 +103,7 @@ public:
     void SetVisible(bool visible) override;
     // Routes one platform event through the input router chain.
     void HandlePlatformEvent(PlatformEventContext& ctx) override;
+    InputConsumed Route(InputEvent event);
     [[nodiscard]] bool OwnsDocument(const DocumentRef& document) const override;
     bool UndoStagedEdit() override;
     [[nodiscard]] bool HasStagedEdit() const override;
@@ -122,6 +123,8 @@ public:
     bool RevealProblem(const Problem& problem) override;
     bool OpenAsset(const ProjectFile& file) override;
     bool DropAsset(const ProjectFile& file, Vec2d point) override;
+    [[nodiscard]] bool TakesCarry(const ProjectFile& file) const override;
+    void TakeCarry(const ProjectFile& file, Vec2d point) override;
     // The world's validation, republished only when it changed.
     void PublishProblems();
     // What the window's UI wants of the pointer and keys now.

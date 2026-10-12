@@ -324,6 +324,8 @@ void WorldDocument::PropagateSavedSources(std::span<const std::string> savedSour
     });
     if (WorldScene_ != nullptr && WorldScene_->ReloadDependentSources(savedSources))
         log.Info("re-projected the world scene after its sources saved");
+    if (OnSourcesSaved)
+        OnSourcesSaved(savedSources);
 }
 
 bool WorldDocument::SaveWorldAs(std::string_view path)

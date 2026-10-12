@@ -73,6 +73,10 @@ public:
     {
         Projection.SetContentRoots(std::move(roots));
     }
+    [[nodiscard]] const std::vector<std::filesystem::path>& ContentRoots() const
+    {
+        return Projection.ContentRoots();
+    }
 
     // What resolution and expansion of this document's instances reported.
     using ProjectionDiagnostics = SceneProjectionDiagnostics;
@@ -97,10 +101,13 @@ public:
 
     // ── Scene instances ─────────────────────────────────────────────────────
 
+    // Whether `source` can be placed here: it resolves, and it is not this
+    // document's own source. `error` says why not.
+    [[nodiscard]] bool CanPlaceSceneSource(std::string_view source, std::string* error = nullptr);
     // Places `source` (asset://...sscene) at `placement`, minting the instance
     // id and an id for every entity the source contributes, and projects it.
-    // Returns the invalid id with `error` set when the source does not
-    // resolve. An authoring act: the document is dirty afterwards.
+    // Returns the invalid id with `error` set when CanPlaceSceneSource refuses
+    // it. An authoring act: the document is dirty afterwards.
     SceneInstanceId PlaceSceneInstance(std::string source,
                                        const Transform3f& placement,
                                        PersistentEntityId parent = {},
@@ -169,6 +176,9 @@ public:
     {
         return Projection.DependsOnSource(assetPath);
     }
+
+    // Whether a source it placed has changed on disk since it was read.
+    [[nodiscard]] bool SourcesChangedOnDisk() { return Projection.Sources().ChangedOnDisk(); }
 
     // Forgets the given sources' cached parses and re-projects once, when
     // any of them is one this document depends on; false means none were and

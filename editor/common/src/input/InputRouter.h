@@ -28,8 +28,9 @@ class InputRouter;
 class PointerCapture
 {
 public:
-    // `origin` is the viewport the gesture began in; the router stamps it onto
-    // subsequent pointer events so the gesture stays on its starting viewport.
+    // With an `origin`, every later pointer event is stamped with it wherever
+    // the pointer is; without one, each is stamped with the viewport under the
+    // pointer, so the gesture follows it from view to view.
     void Acquire(PointerCaptureKind kind, ViewportId origin = {});
     void Release();
     [[nodiscard]] bool HeldBySelf() const;
@@ -63,7 +64,8 @@ public:
     InputConsumed Route(const InputEvent& event);
 
     // Whether a pointer capture is currently held, and the viewport its holder
-    // recorded at Acquire. Used by the input boundary to stamp events while captured.
+    // pinned it to at Acquire (none for a capture that follows the pointer).
+    // Used by the input boundary to stamp events while captured.
     [[nodiscard]] bool PointerCaptured() const { return CapturedIndex.has_value(); }
     [[nodiscard]] ViewportId CaptureViewport() const { return CaptureOrigin; }
 

@@ -30,13 +30,19 @@ endforeach()
 # These render sources carry no GPU dependency and the authoring layer uses
 # them: the light gather feeds the cook, the preview buffer backs tool
 # previews, and the brush bake cache and draw set (residency and retention
-# rules) are tested headlessly through injected GPU callbacks.
+# rules) are tested headlessly through injected GPU callbacks. The scene stage
+# and the placement ghost (a placement staged exactly as a level places it)
+# build their queues on the CPU through the queue builder, and are tested
+# headlessly without an asset environment.
 list(APPEND LEVEL_AUTHORING_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/EditorLightGather.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/PreviewBuffer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushBakeCache.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushDrawSet.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushFaceHighlight.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/SceneRenderQueueBuilder.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/SceneSourceStage.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/PlacementGhost.cpp"
 )
 
 # An authored workflow's controller is not shell. It presents through a document

@@ -32,6 +32,7 @@ bool InputRouter::IsPointerEvent(const InputEvent& event)
     return std::holds_alternative<PointerDownEvent>(event)
         || std::holds_alternative<PointerUpEvent>(event)
         || std::holds_alternative<PointerMoveEvent>(event)
+        || std::holds_alternative<PointerHandedEvent>(event)
         || std::holds_alternative<WheelEvent>(event);
 }
 

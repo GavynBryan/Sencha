@@ -40,8 +40,13 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
     // Tear the outgoing stack down before building the new one, innermost
     // dependent first. Building over it would free the sink while the context,
     // registry, and session still referenced it.
+    // A gesture in flight ends here: its interaction takes the context per
+    // call, so one left running would commit into the incoming document.
+    if (Context != nullptr)
+        Interactions.Cancel(*Context);
     if (Tools != nullptr)
         Tools->Cancel();
+    Placement.Clear();
     Dispatcher.reset();
     Context.reset();
     Sink.reset();
@@ -63,7 +68,7 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
         document,
         inputs.MeshEdit,
         *Sink,
-        ToolInteractionState{ Interactions, Preview, Marquee, Overlay },
+        ToolInteractionState{ Interactions, Preview, Placement, Marquee, Overlay },
         inputs.Settings);
 
     // The tools and the manipulator session are editor-lifetime: they hold
@@ -145,7 +150,9 @@ void WorkspaceInteractionRuntime::ClearTransient()
     Overlay.Readout.Clear();
     Overlay.Hover = {};
     Overlay.HoverBody = {};
+    Overlay.Placement.Clear();
     Preview.Clear();
+    Placement.Clear();
 }
 
 void WorkspaceInteractionRuntime::CancelActiveTool()

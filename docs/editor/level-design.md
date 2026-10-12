@@ -31,7 +31,7 @@ A tool with parameters raises a **tool card** from the station:
 | Face carve | mode, shape, turn, rise and segments (arch), pierce, Apply / Cancel |
 | Clip | keep front / back / split, cap, Apply / Cancel |
 | Edge cut | single / loop |
-| Entity | align to surface, rotation step |
+| Entity | yaw, turn step (align to surface planned) |
 
 The world-pinned Apply/Cancel buttons, the carve dial and the rise/segment
 handles stay in the world; the card mirrors them for typed entry.
@@ -135,10 +135,19 @@ faces; leaving cancels the preview. Clicking loads the cartridge. With faces
 selected, Enter or double-click applies to them.
 
 **Prefabs** (P for the Entity tool, or the cartridge): a tray of scene
-thumbnails. Picking one loads the cartridge and arms the Entity tool: a ghost follows the
-surface under the cursor, snapped to the grid; click stamps an instance, Esc
-leaves. Pressing a tile and dragging into the world is the same gesture — the
-tray tucks away and the world takes the pointer.
+thumbnails. Picking one loads the cartridge and arms the Entity tool: a ghost of
+the prefab, as it will be placed and lit as the scene is, follows the surface
+under the cursor, or the grid where there is none, snapped to the grid lines
+either way; a click places it as shown.
+Pressing on the spot and dragging away turns it to face the pointer, by the
+card's turn step while snapping is on, and lets go to place it; the next
+placement starts facing the same way, and Esc during the turn puts it back.
+Pressing a tile and dragging into the world is the same gesture — once the
+tile leaves the tray, the tray tucks away, the Entity tool takes the prefab
+and its ghost follows the pointer from view to view; letting go places it as
+shown, and letting go off the views places nothing. An Empty or a component
+shows, where it will stand, the marker it will be seen by, and turns the same
+way. How it works: `docs/editor/placement.md`.
 
 The Entity tool's fan on the tool wheel holds **Prefab**, **Empty** (a bare
 entity named Entity: a transform, an identity and a name), and every component that
@@ -171,7 +180,8 @@ graph. Selecting a row selects the entity; F frames it.
 | Grid | readout popover | `[` `]`, Shift+G, Alt+G |
 | Choose material | cartridge → tray | M, Shift+RMB sample |
 | Apply material | tray (Enter / double-click) | Shift+T |
-| Place prefab | cartridge → tray → click world | P |
+| Place prefab | cartridge → tray → click world, or drag a tile into the world | P |
+| Turn a placement | press on the spot, drag away, release | Esc cancels |
 | A choice or action on it | — | Space (hold over it, release on a petal) |
 | A value in the world | drag its handle, scroll over it | — |
 | Every property | Space → More… | palette: "All Properties" |

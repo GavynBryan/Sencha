@@ -16,6 +16,7 @@ ToolContext::ToolContext(CommandStack& commandStack,
     , Document(levelDocument)
     , Interactions(interaction.Interactions)
     , Preview(interaction.Preview)
+    , Placement(interaction.Placement)
     , MeshEdit(meshEdit)
     , Marquee(interaction.Marquee)
     , Grid(settings.Grid)

@@ -1,21 +1,17 @@
 #pragma once
 
+#include "document/placement/PendingPlacement.h"
 #include "tools/ITool.h"
-#include "viewport/ViewportId.h"
 
-#include <math/Vec.h>
-
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
-//=============================================================================
-// PlaceTool
-// Stamps its variant (the prefab in hand, an empty entity, or a placeable
-// component) on the surface under the pointer, or the grid where the ray misses,
-// turned by its yaw; each click is one step that selects what it placed.
-//=============================================================================
+// Puts down the prefab in hand, an empty entity, or one placeable component
+// where the pointer points: a click places what hovering shows, a drag turns
+// it first, a carry from the shelf follows the pointer. docs/editor/placement.md
 class PlaceTool final : public ITool
 {
 public:
@@ -30,20 +26,26 @@ public:
     void SelectVariant(ToolContext& ctx, std::size_t index) override;
 
     void OnDeactivate(ToolContext& ctx) override;
+    void OnCancel(ToolContext& ctx) override;
+    void OnResourceChanged(ToolContext& ctx, AssetType type) override;
     InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, Vec2d pos) override;
     void OnHoverEnd(ToolContext& ctx) override;
     InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
+    std::unique_ptr<IInteraction> BeginDrag(ToolContext& ctx, EditorViewport& viewport,
+                                            const PointerEvent& pressPointer) override;
+    std::unique_ptr<IInteraction> TakeHandedGesture(ToolContext& ctx) override;
 
     [[nodiscard]] std::vector<PropertyNode> Parameters(const ToolContext& ctx) const override;
     PropertyEditResult SetParameter(ToolContext& ctx, std::string_view key, std::string_view value) override;
     [[nodiscard]] std::string Hint(const ToolContext& ctx) const override;
 
 private:
-    [[nodiscard]] static std::optional<Vec3d> Target(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos);
-    void ShowGhost(ToolContext& ctx, Vec3d point);
-    static void ClearGhost(ToolContext& ctx);
     void RefreshKinds() const;
     [[nodiscard]] const std::string* ChosenLabel() const;
+    // What a placement would put down now; nullopt with no prefab in hand.
+    [[nodiscard]] std::optional<PlacementSubject> Subject(const ToolContext& ctx) const;
+    // The pending placement takes the subject now in hand, where it stands.
+    void Reaim(ToolContext& ctx);
 
     enum class PlaceSource : std::uint8_t
     {
@@ -66,5 +68,7 @@ private:
     mutable std::vector<PlaceKind> Kinds;
     mutable std::vector<Variant> KindChoices;
     PlaceChoice Chosen;
-    int YawDegrees = 0;
+    // Radians: where the next placement starts turned, and where a turn leaves it.
+    float RestingYaw = 0.0f;
+    std::size_t TurnStep = 1; // into the tool's turn steps
 };

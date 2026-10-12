@@ -27,7 +27,6 @@
 #include <ui/UiService.h>
 #include <world/identity/PersistentIdComponent.h>
 #include "ui/EditorUiStyle.h"
-#include "document/commands/SceneInstanceCommands.h"
 #include "meshedit/FaceMaterialEdits.h"
 #include "render/RenderFeatureDetach.h"
 #include "documents/DocumentSourceSet.h"
@@ -440,6 +439,7 @@ void LevelWorkspace::BuildViewportRendering()
         Workspace->MeshEdit,
         Workspace->Interaction.Overlay,
         Workspace->Interaction.Preview,
+        Workspace->Interaction.Placement,
         [this]() -> const ManipulatorSession* { return Workspace->Interaction.Manipulators; },
         Workspace->Grid,
         Workspace->WorldView,
@@ -502,6 +502,14 @@ void LevelWorkspace::BuildUi()
         }
         MaterialsExplorer = std::make_unique<MaterialExplorer>(*Workspace);
         ExplorerRows.Offer(Catalog, ActionHandlers, MaterialsExplorer->Row());
+        Workspace->World.OnSourcesSaved = [this](std::span<const std::string> saved) {
+            if (RenderFeature == nullptr)
+                return;
+            if (SceneThumbnailCache* cache = RenderFeature->SceneThumbnails())
+                cache->Invalidate(saved);
+            if (PlacementGhost* ghost = RenderFeature->PlacementGhosts())
+                ghost->Invalidate(saved);
+        };
         PrefabsExplorer = std::make_unique<PrefabExplorer>(*Workspace);
         ExplorerRows.Offer(Catalog, ActionHandlers, PrefabsExplorer->Row());
     }
@@ -657,13 +665,17 @@ void LevelWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
         // per-device special-casing here. Pointer events are stamped with their
         // origin viewport first, so navigation and tools never re-resolve it.
         std::optional<InputEvent> event = TranslateSdlEvent(ctx.Event);
-        if (event.has_value())
-        {
-            StampOriginViewport(*Router, Workspace->Layout, *event);
-            if (Router->Route(*event) == InputConsumed::Yes)
-                ctx.Handled = true;
-        }
+        if (event.has_value() && Route(std::move(*event)) == InputConsumed::Yes)
+            ctx.Handled = true;
     }
+}
+
+InputConsumed LevelWorkspace::Route(InputEvent event)
+{
+    if (Router == nullptr)
+        return InputConsumed::No;
+    StampOriginViewport(*Router, Workspace->Layout, event);
+    return Router->Route(event);
 }
 
 void LevelWorkspace::BuildAuthoredWorkflows()
@@ -821,25 +833,28 @@ bool LevelWorkspace::DropAsset(const ProjectFile& file, Vec2d point)
         Workspace->Resources.SetActive(ref);
         return true;
     }
-    if (file.Extension != ".sscene")
+    if (!TakesCarry(file))
         return false;
-    // A level is not placed inside itself.
-    if (document.SourceAssetPath() == file.AssetPath)
-        return false;
-    // Where the Entity tool would put it: on the surface under it, else on the grid.
-    std::optional<Vec3d> at;
-    if (const std::optional<SurfaceHit> hit = Workspace->Picking.PickSurface(*viewport, point, document.GetScene()))
-        at = hit->Point;
-    else
-        at = Workspace->Picking.ProjectPointToGrid(*viewport, point, Workspace->Grid);
-    if (!at.has_value())
-        return false;
-    Transform3f placement = Transform3f::Identity();
-    placement.Position = *at;
-    Workspace->Commands.Execute(
-        std::make_unique<PlaceSceneInstanceCommand>(file.AssetPath, placement, document, Workspace->Selection));
-    Workspace->Resources.SetActive(ref);
-    return true;
+    // Let go before the views took the carry: the same carry, handed over and
+    // released where it was let go.
+    TakeCarry(file, point);
+    return Route(PointerUpEvent{ .Position = point, .Button = MouseButton::Left, .Modifiers = {} })
+        == InputConsumed::Yes;
+}
+
+bool LevelWorkspace::TakesCarry(const ProjectFile& file) const
+{
+    // Not over a gesture that already holds the pointer, such as an open wheel.
+    return MapMode->Content() == LevelContent::Views && Workspace->Interaction.Tools != nullptr && Router != nullptr
+        && !Router->PointerCaptured() && file.Extension == ".sscene";
+}
+
+void LevelWorkspace::TakeCarry(const ProjectFile& file, Vec2d point)
+{
+    // A prefab carried in arms the Entity tool with it, as picking it does.
+    Workspace->Resources.SetActive(AssetRef{ AssetType::Scene, file.AssetPath, AssetIdOf(file) });
+    (void)Workspace->Interaction.Tools->Activate("place");
+    (void)Route(PointerHandedEvent{ .Position = point, .Modifiers = {} });
 }
 
 bool LevelWorkspace::RevealProblem(const Problem& problem)

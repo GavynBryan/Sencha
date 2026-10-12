@@ -17,6 +17,7 @@
 #include "SceneRenderQueueBuilder.h"
 #include "SceneWireframeRenderer.h"
 #include "EditorInstancedFillPipeline.h"
+#include "PlacementGhost.h"
 #include "SceneThumbnailCache.h"
 #include "ThumbnailStudio.h"
 #include "SceneSolidRenderer.h"
@@ -54,7 +55,9 @@ class EditorDocument;
 class WorldDocument;
 class ManipulatorSession;
 class MeshEditService;
+class PlacementSession;
 class PreviewBuffer;
+class SceneSourceStage;
 class SelectionService;
 class ViewportLayout;
 class AssetSystem;
@@ -84,6 +87,7 @@ public:
                         MeshEditService& meshEdit,
                         const EditorOverlayState& overlay,
                         PreviewBuffer& preview,
+                        const PlacementSession& placement,
                         std::function<const ManipulatorSession*()> session,
                         const GridSettings& grid,
                         WorldViewSettings& worldView,
@@ -136,6 +140,8 @@ public:
         return Thumbnails ? &*Thumbnails : nullptr;
     }
 
+    [[nodiscard]] PlacementGhost* PlacementGhosts() { return Ghost ? &*Ghost : nullptr; }
+
     [[nodiscard]] SceneRenderQueueBuilder* FocusQueueBuilder()
     {
         return QueueBuilder.has_value() ? &*QueueBuilder : nullptr;
@@ -168,6 +174,8 @@ private:
     // depth views, then publishes the panel snapshot. Called once per frame
     // before any viewport renders.
     void SweepBrushBakes();
+    void DrawPlacementGhost(const FrameContext& frame, const EditorViewport& viewport,
+                            const CameraRenderData& camera, const SceneSourceStage& ghost);
     void UpdateShadowResidency(const FrameContext& frame);
     // The camera position shadow scores rank against: the active viewport if
     // it is perspective, else the first perspective viewport, else the active
@@ -229,6 +237,9 @@ private:
     std::optional<SceneRenderQueueBuilder> QueueBuilder;
     std::optional<ThumbnailStudio> Studio;
     std::optional<SceneThumbnailCache> Thumbnails;
+    // The pending prefab placement, drawn where it stands.
+    const PlacementSession& Placement;
+    std::optional<PlacementGhost> Ghost;
     std::optional<SceneSolidRenderer>      SceneSolid;
     // Wireframe body over the builder's retained draws (instanced lines);
     // declared after the pipelines and the builder it references.
