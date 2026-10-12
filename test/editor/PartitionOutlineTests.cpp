@@ -89,3 +89,37 @@ TEST_F(PartitionOutlineTest, AProblemRevealsTheZoneItIsAbout)
     for (const Problem& problem : Outline.Problems({}))
         EXPECT_FALSE(problem.Location.empty()) << "every problem says where it is";
 }
+
+TEST_F(PartitionOutlineTest, ADockIsMadeInTheWorldSceneAndSelectedAsOneStep)
+{
+    ASSERT_TRUE(Workspace.World.SetFocusZone(Workspace.World.Manifest().Zones.front().Id));
+    Choose("world", ExplorerChoice::Pick);
+    const std::uint32_t before = Workspace.World.WorldSceneDocument().GetScene().GetEntityCount();
+    ASSERT_EQ(Outline.Act("world", "add_dock", {}), PropertyEditResult::Applied);
+    EditorScene& scene = Workspace.World.WorldSceneDocument().GetScene();
+    ASSERT_EQ(scene.GetEntityCount(), before + 1);
+    const std::span<const SelectableRef> selected = Workspace.Selection.GetSelection();
+    ASSERT_EQ(selected.size(), 1u);
+    EXPECT_TRUE(selected.front().IsEntity());
+
+    Commands.Undo();
+    EXPECT_EQ(scene.GetEntityCount(), before);
+    EXPECT_TRUE(Workspace.Selection.GetSelection().empty()) << "one undo takes the dock and its selection";
+}
+
+TEST_F(PartitionOutlineTest, ALinkIsMadeTowardTheZoneChosenByName)
+{
+    Choose(KeyStartingWith("graph:"), ExplorerChoice::Pick);
+    ASSERT_EQ(Outline.Act("graph", "add_zone", {}), PropertyEditResult::Applied);
+    const WorldPartitionManifest& manifest = Workspace.World.Manifest();
+    ASSERT_GE(manifest.Zones.size(), 2u);
+    Choose(LevelLocationKey(manifest.Zones.front().Id), ExplorerChoice::Pick);
+
+    const std::uint32_t before = Workspace.World.WorldSceneDocument().GetScene().GetEntityCount();
+    EXPECT_EQ(Outline.Act("zone", "link", "No Such Zone"), PropertyEditResult::Refused);
+    ASSERT_EQ(Outline.Act("zone", "link", ZoneDisplayName(manifest, manifest.Zones.back().Id)),
+              PropertyEditResult::Applied);
+    EXPECT_EQ(Workspace.World.WorldSceneDocument().GetScene().GetEntityCount(), before + 1);
+    Commands.Undo();
+    EXPECT_EQ(Workspace.World.WorldSceneDocument().GetScene().GetEntityCount(), before);
+}

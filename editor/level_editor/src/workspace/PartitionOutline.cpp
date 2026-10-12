@@ -1,12 +1,11 @@
 #include "workspace/PartitionOutline.h"
 
 #include "document/EditorEntityRecipe.h"
+#include "document/commands/PlaceEntityCommand.h"
 #include "document/ZoneBounds.h"
-#include "document/commands/CreateSnapshotEntityCommand.h"
 #include "document/commands/EditWorldManifestCommand.h"
 #include "document/commands/SetZoneBoundsCommand.h"
 #include "properties/SettingProperties.h"
-#include "selection/commands/SelectCommand.h"
 #include "viewport/WorldViewSettings.h"
 #include "workspace/EditorWorkspace.h"
 #include "workspace/LevelLocation.h"
@@ -578,7 +577,7 @@ PropertyEditResult PartitionOutline::Act(std::string_view key, std::string_view 
             // the creation is what undo takes back.
             (void)world.FocusWorldScene();
             Workspace.Commands.Execute(
-                std::make_unique<CreateSnapshotEntityCommand>(world.WorldSceneDocument(), std::move(snapshot)));
+                std::make_unique<PlaceEntityCommand>(std::move(snapshot), world.WorldSceneDocument(), nullptr));
             return PropertyEditResult::Applied;
         }
         return PropertyEditResult::Gone;
@@ -606,12 +605,8 @@ PropertyEditResult PartitionOutline::Act(std::string_view key, std::string_view 
             if (!snapshot.Components.IsObject())
                 return PropertyEditResult::Refused;
             (void)world.FocusWorldScene();
-            auto create = std::make_unique<CreateSnapshotEntityCommand>(world.WorldSceneDocument(), std::move(snapshot));
-            CreateSnapshotEntityCommand* created = create.get();
-            Workspace.Commands.Execute(std::move(create));
-            Workspace.Commands.Execute(std::make_unique<SelectCommand>(
-                Workspace.Selection, SelectableRef::EntitySelection(world.WorldSceneDocument().GetRegistry().Id,
-                                                                    created->CreatedEntity())));
+            Workspace.Commands.Execute(std::make_unique<PlaceEntityCommand>(
+                std::move(snapshot), world.WorldSceneDocument(), &Workspace.Selection));
             return PropertyEditResult::Applied;
         }
         return PropertyEditResult::Gone;

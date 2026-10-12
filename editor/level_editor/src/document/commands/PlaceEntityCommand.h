@@ -16,10 +16,11 @@
 #include <string_view>
 #include <utility>
 
-// Places a new entity, named and selected, as one step: carrying one placeable
-// component at its defaults (a light, a player start) and named after it, or,
-// with no component key, empty and named Entity. The first execute builds it; a redo restores
-// what that built, its identity included.
+// Makes one new entity as one step, selecting it: carrying one placeable
+// component at its defaults (a light, a player start) and named after it; with
+// no component key, empty and named Entity; or as a snapshot a recipe built,
+// selected only when given a selection. The first execute builds it; a redo
+// restores what that built, its identity included.
 class PlaceEntityCommand final : public ICommand
 {
 public:
@@ -28,20 +29,29 @@ public:
         : ComponentKey(std::move(componentKey))
         , Placement(placement)
         , Document(document)
+        , Selection(&selection)
+    {
+    }
+
+    PlaceEntityCommand(EntitySnapshot built, EditorDocument& document, SelectionService* selection)
+        : Document(document)
         , Selection(selection)
+        , Snapshot(std::move(built))
     {
     }
 
     void Execute() override
     {
-        PreviousSelection = Selection.GetSnapshot();
+        if (Selection != nullptr)
+            PreviousSelection = Selection->GetSnapshot();
         Entity = Snapshot.has_value() ? Document.RestoreEntity(*Snapshot) : Build();
         if (!Entity.IsValid())
             return;
         if (!Snapshot.has_value())
             Snapshot = Document.CaptureEntity(Entity);
         Document.MarkDirty();
-        Selection.SetSelection({ SelectableRef::EntitySelection(Document.GetRegistry().Id, Entity) });
+        if (Selection != nullptr)
+            Selection->SetSelection({ SelectableRef::EntitySelection(Document.GetRegistry().Id, Entity) });
     }
 
     void Undo() override
@@ -49,7 +59,8 @@ public:
         if (Entity.IsValid())
             Document.GetScene().DestroyEntity(Entity);
         Entity = {};
-        Selection.ApplySnapshot(PreviousSelection);
+        if (Selection != nullptr)
+            Selection->ApplySnapshot(PreviousSelection);
         Document.MarkDirty();
     }
 
@@ -65,7 +76,6 @@ private:
         if (serializer == nullptr || serializer->Placement().Label.empty())
             return {};
         World& world = scene.GetRegistry().Components;
-        serializer->RegisterStorage(scene.GetRegistry());
         const ComponentId component = world.GetComponentIdByType(serializer->TypeId());
         const ComponentMeta* meta = component != InvalidComponentId ? world.GetMeta(component) : nullptr;
         if (meta == nullptr)
@@ -88,9 +98,9 @@ private:
     }
 
     std::string ComponentKey;
-    Transform3f Placement;
+    Transform3f Placement = Transform3f::Identity();
     EditorDocument& Document;
-    SelectionService& Selection;
+    SelectionService* Selection = nullptr;
     std::optional<EntitySnapshot> Snapshot;
     SelectionSnapshot PreviousSelection;
     EntityId Entity;
