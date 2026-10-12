@@ -1075,7 +1075,8 @@ void LevelWorkspace::ProcessFrame()
     if (ViewSurface != nullptr)
         ViewSurface->Arrange(Visible ? ContentRect : Rect2d{}, Arrangement(),
                              Divider(), EditorUi::UiScale);
-    Handles->Publish();
+    if (Visible)
+        Handles->Publish();
     PresentMap();
     // Only one wheel is ever open: each yields its key to the other.
     if (WheelScreen != nullptr)

@@ -501,6 +501,18 @@ std::vector<std::string> ElementsOf(const RuntimeField& field, const void* compo
 }
 } // namespace
 
+std::optional<double> RuntimeFieldNumber(const RuntimeField& field, const void* componentBytes)
+{
+    if (componentBytes == nullptr || field.InlineText || !IsScalarKind(field) || !field.Enum.empty()
+        || field.Scalar == FieldScalar::Bool || ShownAsAngles(field) || RunOf(field).Count != 1)
+        return std::nullopt;
+    const std::byte* base = At(componentBytes, field.Offset);
+    if (!IsFloatingKind(field.Scalar))
+        return static_cast<double>(ReadInteger(base, field));
+    const double value = ReadFloating(base, field);
+    return field.DisplayDegrees ? value * kRadiansToDegrees : value;
+}
+
 std::string FormatRuntimeFieldElement(const RuntimeField& field, const void* componentBytes, std::size_t index)
 {
     std::vector<std::string> elements = ElementsOf(field, componentBytes);

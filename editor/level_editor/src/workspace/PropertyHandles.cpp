@@ -2,7 +2,8 @@
 
 #include "EditorTheme.h"
 #include "authoring/ComponentPropertySource.h"
-#include "properties/SettingProperties.h"
+#include "authoring/RuntimeFieldText.h"
+#include "document/DocumentSerialization.h"
 #include "ui/EditorUiStyle.h"
 #include "viewport/ViewportProjection.h"
 #include "workspace/EditorWorkspace.h"
@@ -11,6 +12,9 @@
 #include <cmath>
 #include <format>
 #include <numbers>
+#include <span>
+
+#include <world/serialization/ComponentSerializerRegistry.h>
 
 namespace
 {
@@ -38,13 +42,11 @@ constexpr float kEdgeDp = 96.0f;
 constexpr float kArcAlongEdge = 0.35f;
 constexpr float kRadiansPerDegree = std::numbers::pi_v<float> / 180.0f;
 
-const PropertyHandleRule* RuleOf(std::string_view key)
+const RuntimeField* FieldNamed(const IComponentSerializer& serializer, std::string_view name)
 {
-    for (const PropertyHandleRule& rule : kRules)
-        if (key.size() == rule.Component.size() + 1 + rule.Field.size() && key.starts_with(rule.Component)
-            && key[rule.Component.size()] == '/' && key.ends_with(rule.Field))
-            return &rule;
-    return nullptr;
+    const std::span<const RuntimeField> fields = serializer.RuntimeFields();
+    const auto found = std::ranges::find(fields, name, &RuntimeField::Name);
+    return found != fields.end() ? &*found : nullptr;
 }
 
 bool IsAngle(PropertyHandleKind kind)
@@ -133,35 +135,50 @@ PropertyHandles::PropertyHandles(EditorWorkspace& workspace, ComponentPropertySo
     , Pending(workspace.RegisterPendingEdit({ [this] { return Now != Phase::Resting; }, [this] { Finish(); },
                                               [this] { Cancel(); } }))
 {
+    for (const PropertyHandleRule& rule : kRules)
+    {
+        const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey(rule.Component);
+        const RuntimeField* field = serializer != nullptr ? FieldNamed(*serializer, rule.Field) : nullptr;
+        if (field == nullptr || field->ReadOnly || !IsRuntimeFieldEditable(*field))
+            continue;
+        Rules.push_back({ .Serializer = serializer,
+                          .Field = field,
+                          .Reach = rule.Reach.empty() ? nullptr : FieldNamed(*serializer, rule.Reach),
+                          .Kind = rule.Kind,
+                          .Key = components.KeyOf(serializer->TypeId(), rule.Field),
+                          .Label = RuntimeFieldLabel(*field) });
+    }
 }
 
 std::vector<PropertyHandles::Handle> PropertyHandles::Handles() const
 {
     std::vector<Handle> handles;
-    if (Workspace.Selection.GetSelection().size() != 1 || !Components.Entity().IsValid())
+    const EntityId entity = Components.Entity();
+    if (Workspace.Selection.GetSelection().size() != 1 || !entity.IsValid())
         return handles;
-    for (const PropertyNode& component : Components.Nodes())
+    const World& world = Workspace.World.FocusDocument().GetScene().GetRegistry().Components;
+    float side = 1.0f;
+    const IComponentSerializer* component = nullptr;
+    for (const ResolvedRule& rule : Rules)
     {
-        float side = 1.0f;
-        for (const PropertyNode& field : component.Children)
+        const ComponentId id = world.GetComponentIdByType(rule.Serializer->TypeId());
+        const void* bytes = id != InvalidComponentId ? world.GetComponentRaw(entity, id) : nullptr;
+        const std::optional<double> value = RuntimeFieldNumber(*rule.Field, bytes);
+        if (!value.has_value())
+            continue;
+        // Two angles of one object keep their knobs on opposite edges.
+        if (rule.Serializer != component)
+            side = 1.0f;
+        component = rule.Serializer;
+        Handle handle{ .Key = rule.Key, .Label = rule.Label, .Kind = rule.Kind, .Value = static_cast<float>(*value) };
+        if (IsAngle(rule.Kind))
         {
-            const PropertyHandleRule* rule = RuleOf(field.Key);
-            const std::optional<double> value = ParseNumber(field.Value);
-            if (rule == nullptr || field.Descriptor.ReadOnly || !value.has_value())
-                continue;
-            Handle handle{ .Key = field.Key, .Label = field.Descriptor.Label, .Kind = rule->Kind, .Value = static_cast<float>(*value) };
-            if (IsAngle(rule->Kind))
-            {
-                handle.Side = side;
-                side = -side;
-            }
-            if (!rule->Reach.empty())
-                for (const PropertyNode& sibling : component.Children)
-                    if (sibling.Key.ends_with(rule->Reach) && sibling.Key.size() > rule->Reach.size()
-                        && sibling.Key[sibling.Key.size() - rule->Reach.size() - 1] == '/')
-                        handle.Reach = static_cast<float>(ParseNumber(sibling.Value).value_or(0.0));
-            handles.push_back(std::move(handle));
+            handle.Side = side;
+            side = -side;
         }
+        if (rule.Reach != nullptr)
+            handle.Reach = static_cast<float>(RuntimeFieldNumber(*rule.Reach, bytes).value_or(0.0));
+        handles.push_back(std::move(handle));
     }
     return handles;
 }

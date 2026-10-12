@@ -2,6 +2,7 @@
 
 #include <core/metadata/RuntimeSchema.h>
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -66,6 +67,9 @@
                                             std::size_t index,
                                             std::string_view text,
                                             void* componentBytes);
+// A one-number leaf's value in the units it is shown in (degrees for an angle
+// held as radians); empty for text, a choice, a switch or several numbers.
+[[nodiscard]] std::optional<double> RuntimeFieldNumber(const RuntimeField& field, const void* componentBytes);
 // The number at `index` moved by `delta`, in the units it is shown in.
 [[nodiscard]] bool OffsetRuntimeFieldElement(const RuntimeField& field,
                                              std::size_t index,

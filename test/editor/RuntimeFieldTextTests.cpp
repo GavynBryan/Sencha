@@ -194,6 +194,34 @@ TEST(RuntimeFieldText, AMovedNumberMovesInTheUnitsItIsShownInAndKeepsItsKind)
     EXPECT_FALSE(OffsetRuntimeFieldElement(BoolField(), 0, 1.0, &sample)) << "a switch has no amount";
 }
 
+TEST(RuntimeFieldText, ALoneNumberIsReadInTheUnitsItIsShownIn)
+{
+    Sample sample{};
+    sample.Angle = std::numbers::pi_v<float> * 0.25f;
+    sample.Count = -4;
+    sample.Wide = 2.5;
+    ASSERT_TRUE(RuntimeFieldNumber(AngleField(), &sample).has_value());
+    EXPECT_NEAR(*RuntimeFieldNumber(AngleField(), &sample), 45.0, 1e-4);
+
+    RuntimeField count;
+    count.Name = "count";
+    count.Offset = offsetof(Sample, Count);
+    count.Size = sizeof(std::int32_t);
+    count.Scalar = FieldScalar::Int32;
+    EXPECT_EQ(RuntimeFieldNumber(count, &sample), -4.0);
+    RuntimeField wide;
+    wide.Name = "wide";
+    wide.Offset = offsetof(Sample, Wide);
+    wide.Size = sizeof(double);
+    wide.Scalar = FieldScalar::Double;
+    EXPECT_EQ(RuntimeFieldNumber(wide, &sample), 2.5);
+
+    EXPECT_FALSE(RuntimeFieldNumber(Vector3Field(), &sample).has_value()) << "several numbers are not one";
+    EXPECT_FALSE(RuntimeFieldNumber(BoolField(), &sample).has_value());
+    EXPECT_FALSE(RuntimeFieldNumber(ModeField(), &sample).has_value()) << "a choice is read by its name";
+    EXPECT_FALSE(RuntimeFieldNumber(AngleField(), nullptr).has_value());
+}
+
 TEST(RuntimeFieldText, ABoolTakesTheWordsAndTheDigitsAndNothingElse)
 {
     Sample sample{};

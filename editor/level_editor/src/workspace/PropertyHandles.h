@@ -16,6 +16,8 @@
 #include <vector>
 
 class ComponentPropertySource;
+class IComponentSerializer;
+struct RuntimeField;
 struct EditorViewport;
 class EditorWorkspace;
 
@@ -91,6 +93,17 @@ private:
         float Side = 1.0f;
     };
 
+    // A rule found in the schema: the field it reads and the key it edits.
+    struct ResolvedRule
+    {
+        const IComponentSerializer* Serializer = nullptr;
+        const RuntimeField* Field = nullptr;
+        const RuntimeField* Reach = nullptr;
+        PropertyHandleKind Kind = PropertyHandleKind::Radius;
+        std::string Key;
+        std::string Label;
+    };
+
     struct Frame
     {
         Vec3d Centre;
@@ -116,6 +129,7 @@ private:
 
     EditorWorkspace& Workspace;
     ComponentPropertySource& Components;
+    std::vector<ResolvedRule> Rules;
     PropertyEditSession Session;
     Phase Now = Phase::Resting;
     EntityId Editing{};
