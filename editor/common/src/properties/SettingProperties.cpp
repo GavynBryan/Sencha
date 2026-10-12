@@ -79,8 +79,10 @@ PropertyNode VectorProperty(std::string key, std::string label, std::span<const 
     node.Descriptor.Kind = PropertyKind::Vector;
     node.Descriptor.Label = std::move(label);
     node.Descriptor.Tooltip = std::move(tooltip);
-    for (std::size_t i = 0; i < values.size(); ++i)
-        node.Value += (i == 0 ? "" : ", ") + std::format("{}", values[i]);
+    std::vector<std::string> parts;
+    for (const double value : values)
+        parts.push_back(NumberText(value));
+    node.Value = JoinVector(parts);
     return node;
 }
 
@@ -92,8 +94,21 @@ std::optional<std::size_t> ParseChoice(std::string_view value, std::span<const s
     return static_cast<std::size_t>(it - options.begin());
 }
 
+namespace
+{
+std::string_view Trimmed(std::string_view text)
+{
+    while (!text.empty() && text.front() == ' ')
+        text.remove_prefix(1);
+    while (!text.empty() && text.back() == ' ')
+        text.remove_suffix(1);
+    return text;
+}
+} // namespace
+
 std::optional<double> ParseNumber(std::string_view value, double min, double max)
 {
+    value = Trimmed(value);
     double parsed = 0.0;
     const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
     if (error != std::errc{} || end != value.data() + value.size())
@@ -110,24 +125,42 @@ std::optional<bool> ParseToggle(std::string_view value)
     return std::nullopt;
 }
 
-std::optional<std::vector<double>> ParseVector(std::string_view value, std::size_t count)
+std::string NumberText(double value)
 {
-    std::vector<double> numbers;
+    return std::format("{:.6g}", value);
+}
+
+std::vector<std::string> VectorParts(std::string_view value)
+{
+    std::vector<std::string> parts;
     while (!value.empty())
     {
         const std::size_t comma = value.find(',');
-        std::string_view part = value.substr(0, comma);
-        while (!part.empty() && part.front() == ' ')
-            part.remove_prefix(1);
-        while (!part.empty() && part.back() == ' ')
-            part.remove_suffix(1);
+        parts.emplace_back(Trimmed(value.substr(0, comma)));
+        if (comma == std::string_view::npos)
+            break;
+        value.remove_prefix(comma + 1);
+    }
+    return parts;
+}
+
+std::string JoinVector(std::span<const std::string> parts)
+{
+    std::string joined;
+    for (std::size_t i = 0; i < parts.size(); ++i)
+        joined += (i == 0 ? "" : ", ") + parts[i];
+    return joined;
+}
+
+std::optional<std::vector<double>> ParseVector(std::string_view value, std::size_t count)
+{
+    std::vector<double> numbers;
+    for (const std::string& part : VectorParts(value))
+    {
         const std::optional<double> number = ParseNumber(part);
         if (!number.has_value())
             return std::nullopt;
         numbers.push_back(*number);
-        if (comma == std::string_view::npos)
-            break;
-        value.remove_prefix(comma + 1);
     }
     if (numbers.size() != count)
         return std::nullopt;

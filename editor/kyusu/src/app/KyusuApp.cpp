@@ -518,45 +518,27 @@ void KyusuApp::AskBeforeClosing(const WorkspaceKind& kind, std::vector<DocumentR
 void KyusuApp::RegisterWorkspaceCommands()
 {
     ConsoleRegistry& registry = GetEngine().Console().Registry();
-    const auto registerAction = [&](const char* name, WorkspaceAction action, const char* help) {
-        registry.RegisterCommand({
-            .Name = name,
-            .Owner = "editor",
-            .Usage = std::string(name) + " <kind>",
-            .Help = help,
-            .Callback = [this, action](ConsoleExecutionContext&, std::span<const std::string> args) {
-                ConsoleResult result;
-                if (args.size() != 1 || !Workspaces->IsOffered(args[0]))
-                {
-                    result.Status = ConsoleStatus::InvalidArguments;
-                    std::string kinds;
-                    for (const WorkspaceKind& kind : Workspaces->Kinds())
-                        if (Workspaces->IsOffered(kind.Id))
-                            kinds += (kinds.empty() ? "" : ", ") + kind.Id;
-                    result.Error("expected one of: " + kinds);
-                    return result;
-                }
-                if (action != WorkspaceAction::Open && action != WorkspaceAction::Close
-                    && Workspaces->Find(args[0]) == nullptr)
-                {
-                    result.Status = ConsoleStatus::InvalidArguments;
-                    result.Error("'" + args[0] + "' is not open; workspace.open opens it");
-                    return result;
-                }
-                // Mid-frame, applied at the next frame boundary: a workspace
-                // adds and removes render work as it comes and goes.
-                Workspaces->Request({ action, args[0] });
-                if (!FramesStarted)
-                    Workspaces->ApplyRequests();
-                result.Info("done for '" + args[0] + "'");
-                return result;
-            },
-        });
-    };
+    // Each editor is gone to by an action of its own, so the hatch, the
+    // palette and the console all reach it the same way. Before the first
+    // frame a startup script waits on it, so it is placed at once.
+    for (const WorkspaceKind& kind : Workspaces->Kinds())
+        if (Workspaces->IsOffered(kind.Id))
+            OfferAction(Catalog, ApplicationActions,
+                        { .Id = "workspace.open." + kind.Id, .Label = "Go to " + kind.DisplayName,
+                          .Category = "Workspace" },
+                        { .Invoke = [this, id = kind.Id] {
+                              Workspaces->Request({ WorkspaceAction::Open, id });
+                              if (!FramesStarted)
+                                  Workspaces->ApplyRequests();
+                          },
+                          .Checked = [this, id = kind.Id] {
+                              const WorkspaceKind* active = Workspaces->ActiveKind();
+                              return active != nullptr && active->Id == id;
+                          } });
     registry.RegisterCommand({
         .Name = "shell.popover",
         .Owner = "editor",
-        .Usage = "shell.popover <hatch|workspaces|document|none>",
+        .Usage = "shell.popover <hatch|tools|problems|category:<name>|none>",
         .Help = "Open one of the main window's rail popovers, or close it.",
         .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
             ConsoleResult result;
@@ -566,12 +548,6 @@ void KyusuApp::RegisterWorkspaceCommands()
             return result;
         },
     });
-    registerAction("workspace.open", WorkspaceAction::Open, "Open a workspace, or bring it to the front if open.");
-    registerAction("workspace.close", WorkspaceAction::Close, "Close a workspace.");
-    registerAction("workspace.activate", WorkspaceAction::Activate, "Bring an open workspace to the front.");
-    registerAction("workspace.detach", WorkspaceAction::Detach, "Move an open workspace into a window of its own.");
-    registerAction("workspace.attach", WorkspaceAction::Attach, "Move a workspace back into the main window.");
-
     registry.RegisterCommand({
         .Name = "editor.open_asset",
         .Owner = "editor",

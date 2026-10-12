@@ -14,7 +14,7 @@ void OfferResourceActions(ActionCatalog& catalog,
     {
         const std::size_t number = slot + 1;
         OfferAction(catalog, context,
-                    { .Id = std::format("resource.slot.{}", number),
+                    { .Id = UseSlotAction(slot),
                       .Label = std::format("Use Slot {}", number),
                       .Category = "Resource" },
                     { .Invoke = [&resources, primary, slot] { resources.UseStashSlot(primary(), slot); },
@@ -35,4 +35,9 @@ void OfferResourceActions(ActionCatalog& catalog,
                     { .Invoke = [&resources, primary, slot] { resources.ClearStashSlot(primary(), slot); },
                       .Enabled = [&resources, primary, slot] { return resources.Stash(primary())[slot].IsValid(); } });
     }
+}
+
+std::string UseSlotAction(std::size_t slot)
+{
+    return std::format("resource.slot.{}", slot + 1);
 }

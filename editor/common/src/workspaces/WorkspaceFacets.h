@@ -113,12 +113,12 @@ struct HeldResource
 {
     std::string Label = {};
     std::string Image = {};
+    // The action choosing it performs; empty when choosing it does nothing.
+    std::string Action = {};
 };
 
 // What the workspace's operations consume, per role: the resource the next one
-// will use, and those stashed beside it. For the primary role, the actions in
-// the Resource category use, store and clear the slots (resource.slot.N,
-// resource.store.N, resource.clear.N) and browse for another (resource.browse).
+// will use, and those stashed beside it.
 struct WorkspaceResourceFacet
 {
     std::string Role = {};
@@ -152,6 +152,9 @@ struct WorkspaceSelectionFacet
 {
     // Empty when nothing is selected.
     std::string Title = {};
+    // Moves on whenever what is selected does, so anything held for the last
+    // selection ends; 0 where selections are told apart by their title alone.
+    std::uint64_t Revision = 0;
     // A line under it: how the selection is known, where it came from.
     std::string Subtitle = {};
     // The property the title is, when renaming it is an edit; empty when the

@@ -12,7 +12,6 @@
 class ActionCatalog;
 class ActionContextStack;
 class UiService;
-class WorkspaceHost;
 
 // Something the palette can do: an action in play, or a workspace to go to.
 struct CommandCandidate
@@ -35,14 +34,14 @@ struct CommandCandidate
 // CommandPalette
 //
 // Everything the window can do, found by typing: the actions claimed in the
-// window's stack and the workspaces to go to. Enter performs the highlighted
+// window's stack, the workspaces to go to among them. Enter performs the highlighted
 // one; Up and Down move the highlight; Escape or a press elsewhere leaves.
 //=============================================================================
 class CommandPalette
 {
 public:
     CommandPalette(UiService& ui, UiSurfaceId surface, const ActionCatalog& catalog,
-                   ActionContextStack& actions, WorkspaceHost& workspaces);
+                   ActionContextStack& actions);
     ~CommandPalette();
 
     CommandPalette(const CommandPalette&) = delete;
@@ -64,7 +63,6 @@ private:
     UiSurfaceId Surface;
     const ActionCatalog& Catalog;
     ActionContextStack& Actions;
-    WorkspaceHost& Workspaces;
 
     UiScreenHandle Screen;
     std::vector<CommandCandidate> Candidates;

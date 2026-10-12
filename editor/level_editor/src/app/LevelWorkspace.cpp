@@ -480,7 +480,7 @@ void LevelWorkspace::BuildInput()
             ContextMenuModel::Hooks{ .Aim = [this](Vec2d pointer) { AimAt(pointer); },
                                      .Selection = [this] { return Selection(); },
                                      .Actions = [this] { return WindowActions; },
-                                     .Details = "selection.details",
+                                     .Details = DetailsAction().Id,
                                      .Recent = [this](AssetType type) { return AssetsToHand(type); },
                                      .Browse = [](AssetType type) {
                                          return type == AssetType::Material ? MaterialExplorerAction().Id
@@ -1468,8 +1468,13 @@ std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()
                                   .Primary = true,
                                   .Explorer = std::string(prefab ? PrefabExplorer::kId : MaterialExplorer::kId),
                                   .Active = held(Workspace->Resources.Active(type)) };
-    for (const AssetRef& slot : Workspace->Resources.Stash(type))
-        facet.Stash.push_back(held(slot));
+    const std::span<const AssetRef> stash = Workspace->Resources.Stash(type);
+    for (std::size_t slot = 0; slot < stash.size(); ++slot)
+    {
+        HeldResource stashed = held(stash[slot]);
+        stashed.Action = UseSlotAction(slot);
+        facet.Stash.push_back(std::move(stashed));
+    }
     return { std::move(facet) };
 }
 

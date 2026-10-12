@@ -4,6 +4,7 @@
 
 #include "ISelectionContext.h"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <span>
@@ -69,11 +70,15 @@ public:
     [[nodiscard]] const ISelectionContext& GetContext() const;
 
     [[nodiscard]] std::shared_ptr<ObserverFn> Subscribe(ObserverFn fn);
+    // Moves on every time the selection is written, so a presentation can tell
+    // one selection from the next even when both read the same.
+    [[nodiscard]] std::uint64_t Revision() const { return Revisions; }
 
 private:
     ISelectionContext& Context;
     const World* Document = nullptr;
     WeakObserverList<const SelectionSnapshot&> Observers;
+    std::uint64_t Revisions = 0;
 
     // Stamps identity onto fresh refs and re-resolves handles on identified
     // ones. A ref whose identity is gone comes back invalid, which the

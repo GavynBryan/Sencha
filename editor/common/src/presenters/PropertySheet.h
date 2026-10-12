@@ -6,7 +6,7 @@
 #include <ui/UiScreenDesc.h>
 
 #include <cstddef>
-#include <limits>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -90,7 +90,16 @@ public:
     // Row `index`'s field took focus. Until it is released the rows must not
     // be presented again, or what is being typed would be replaced.
     void Hold(std::size_t index);
-    [[nodiscard]] bool Holding() const { return Held != kNothingHeld; }
+    // Row `index`'s number -- one of its vector's, or -1 for all of it -- shown
+    // as a field to type into, held from now until it is let go.
+    void Type(std::size_t index, std::int64_t element);
+    [[nodiscard]] bool Holding() const { return Held.Kind != HoldKind::Nothing; }
+    struct TypedNumber
+    {
+        std::size_t Row = 0;
+        std::int64_t Element = -1;
+    };
+    [[nodiscard]] std::optional<TypedNumber> Typing() const;
     // The held field let go of focus holding `value`.
     PropertyEditResult Release(IPropertySource& source, std::size_t index, std::string_view value);
     PropertyEditResult Release(std::span<const PropertySection> sections, std::size_t index, std::string_view value);
@@ -98,10 +107,9 @@ public:
                                       std::size_t element, std::string_view value);
     // The held field went away without letting go -- its document closed, or
     // what it described did: nothing is committed.
-    void Drop() { Held = kNothingHeld; }
+    void Drop() { Held = {}; }
 
 private:
-    static constexpr std::size_t kNothingHeld = std::numeric_limits<std::size_t>::max();
 
     struct Presented
     {
@@ -129,7 +137,14 @@ private:
     [[nodiscard]] bool FoldedNow(const PropertyNode& node) const;
 
     std::vector<Presented> Rows;
-    std::size_t Held = kNothingHeld;
+    enum class HoldKind : std::uint8_t { Nothing, Field, Number };
+    struct HeldRow
+    {
+        HoldKind Kind = HoldKind::Nothing;
+        std::size_t Row = 0;
+        std::int64_t Element = -1;
+    };
+    HeldRow Held;
     const ActionCatalog* Catalog = nullptr;
     const ActionContextStack* Actions = nullptr;
     // Groups opened or closed by hand, by key, against how each starts.

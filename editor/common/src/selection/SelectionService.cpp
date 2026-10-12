@@ -211,5 +211,6 @@ std::shared_ptr<SelectionService::ObserverFn> SelectionService::Subscribe(Observ
 
 void SelectionService::Notify()
 {
+    ++Revisions;
     Observers.Notify(Context.GetSnapshot());
 }

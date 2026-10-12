@@ -46,13 +46,14 @@ WorkspaceSelectionFacet SelectionOf(EditorWorkspace& workspace, ElementVerbs& ve
     const std::span<const SelectableRef> selected = workspace.Selection.GetSelection();
     if (selected.empty())
     {
-        WorkspaceSelectionFacet zone{ .Title = partition.Title() };
+        WorkspaceSelectionFacet zone{ .Title = partition.Title(), .Revision = workspace.Selection.Revision() };
         if (!zone.Title.empty())
             zone.Sections.push_back({ .Heading = {}, .Source = &partition });
         return zone;
     }
 
     WorkspaceSelectionFacet facet;
+    facet.Revision = workspace.Selection.Revision();
     facet.Actions = verbs.Relevant();
     facet.Staged = verbs.HasPending();
     if (!verbs.Nodes().empty())

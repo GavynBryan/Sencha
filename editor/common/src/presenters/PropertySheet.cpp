@@ -289,7 +289,7 @@ PropertyEditResult PropertySheet::SetElement(std::span<const PropertySection> se
 PropertyEditResult PropertySheet::ReleaseElement(std::span<const PropertySection> sections, std::size_t index,
                                                  std::size_t element, std::string_view value)
 {
-    Held = kNothingHeld;
+    Held = {};
     return SetElement(sections, index, element, value);
 }
 
@@ -425,18 +425,33 @@ std::vector<std::string> PropertySheet::CandidatesOf(std::span<const PropertySec
 
 void PropertySheet::Hold(std::size_t index)
 {
-    Held = index < Rows.size() ? index : kNothingHeld;
+    // The field a typed number becomes takes focus too: it stays a number.
+    if (Held.Kind == HoldKind::Number && Held.Row == index)
+        return;
+    Held = index < Rows.size() ? HeldRow{ HoldKind::Field, index } : HeldRow{};
+}
+
+void PropertySheet::Type(std::size_t index, std::int64_t element)
+{
+    Held = index < Rows.size() ? HeldRow{ HoldKind::Number, index, element } : HeldRow{};
+}
+
+std::optional<PropertySheet::TypedNumber> PropertySheet::Typing() const
+{
+    if (Held.Kind != HoldKind::Number)
+        return std::nullopt;
+    return TypedNumber{ Held.Row, Held.Element };
 }
 
 PropertyEditResult PropertySheet::Release(IPropertySource& source, std::size_t index, std::string_view value)
 {
-    Held = kNothingHeld;
+    Held = {};
     return Set(source, index, value);
 }
 
 PropertyEditResult PropertySheet::Release(std::span<const PropertySection> sections, std::size_t index,
                                           std::string_view value)
 {
-    Held = kNothingHeld;
+    Held = {};
     return Set(sections, index, value);
 }

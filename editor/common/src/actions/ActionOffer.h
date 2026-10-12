@@ -28,3 +28,6 @@ void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinitio
 
 // F2: what is picked is given a new name.
 [[nodiscard]] ActionDefinition RenameAction();
+
+// Everything about the selection, laid out as the window shows it.
+[[nodiscard]] ActionDefinition DetailsAction();

@@ -27,8 +27,13 @@
                                           std::string tooltip = {});
 
 [[nodiscard]] std::optional<std::size_t> ParseChoice(std::string_view value, std::span<const std::string_view> options);
-// A number, clamped to the property's range when it has one.
+// A number, spaces around it allowed, clamped to the range when there is one.
 [[nodiscard]] std::optional<double> ParseNumber(std::string_view value, double min = 0.0, double max = -1.0);
+// A number as properties write it.
+[[nodiscard]] std::string NumberText(double value);
+// A vector's numbers as written, each without the spaces around it.
+[[nodiscard]] std::vector<std::string> VectorParts(std::string_view value);
+[[nodiscard]] std::string JoinVector(std::span<const std::string> parts);
 [[nodiscard]] std::optional<bool> ParseToggle(std::string_view value);
 // Exactly `count` numbers, separated by commas.
 [[nodiscard]] std::optional<std::vector<double>> ParseVector(std::string_view value, std::size_t count);

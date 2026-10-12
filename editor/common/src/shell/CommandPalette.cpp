@@ -3,7 +3,6 @@
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
 #include "text/TextFilterMatch.h"
-#include "workspaces/WorkspaceHost.h"
 
 #include <ui/UiKeys.h>
 #include <ui/UiService.h>
@@ -60,12 +59,11 @@ std::vector<std::size_t> RankCommands(std::span<const CommandCandidate> candidat
 }
 
 CommandPalette::CommandPalette(UiService& ui, UiSurfaceId surface, const ActionCatalog& catalog,
-                               ActionContextStack& actions, WorkspaceHost& workspaces)
+                               ActionContextStack& actions)
     : Ui(ui)
     , Surface(surface)
     , Catalog(catalog)
     , Actions(actions)
-    , Workspaces(workspaces)
 {
 }
 
@@ -105,9 +103,6 @@ void CommandPalette::Gather()
             continue;
         Candidates.push_back({ action->Id, action->Label, action->Category, Catalog.ChordText(action->Id) });
     }
-    for (const WorkspaceKind& kind : Workspaces.Kinds())
-        if (Workspaces.IsOffered(kind.Id))
-            Candidates.push_back({ "open:" + kind.Id, "Go to " + kind.DisplayName, "Workspace" });
 }
 
 void CommandPalette::Update()
@@ -179,12 +174,5 @@ void CommandPalette::Perform(std::size_t shownIndex)
         return;
     const std::string key = Candidates[Shown[shownIndex]].Key;
     Close();
-    if (key.starts_with("open:"))
-    {
-        const std::string kind = key.substr(5);
-        Workspaces.Request({ Workspaces.Find(kind) != nullptr ? WorkspaceAction::Activate : WorkspaceAction::Open,
-                             kind });
-        return;
-    }
     (void)Actions.Invoke(key);
 }

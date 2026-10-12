@@ -45,3 +45,8 @@ ActionDefinition RenameAction()
 {
     return { .Id = "edit.rename", .Label = "Rename", .Category = "Edit", .DefaultChords = { { SDLK_F2, {} } } };
 }
+
+ActionDefinition DetailsAction()
+{
+    return { .Id = "selection.details", .Label = "All Properties", .Category = "Edit" };
+}
