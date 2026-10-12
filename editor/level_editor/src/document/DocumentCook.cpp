@@ -24,6 +24,7 @@
 #include "EditorDocument.h"
 #include "LightmapSurfaceCook.h"
 
+#include <core/assets/AssetPath.h>
 #include <assets/cook/BakeBvh.h>
 #include <assets/cook/BrushClustering.h>
 #include <assets/cook/CookedCache.h>
@@ -334,7 +335,7 @@ DocumentCookResult CookDocument(const EditorDocument& liveDocument,
     // prefabs/); an unsaved document falls back to the levels/ convention.
     std::string sourceRel = "levels/" + std::string(levelName) + ".sscene";
     if (const std::string assetPath = liveDocument.SourceAssetPath();
-        assetPath.starts_with("asset://"))
+        assetPath.starts_with(kAssetPathPrefix))
     {
         sourceRel = assetPath.substr(sizeof("asset://") - 1);
     }

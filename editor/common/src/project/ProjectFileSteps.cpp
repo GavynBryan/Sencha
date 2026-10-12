@@ -2,8 +2,10 @@
 
 #include "documents/DocumentSourceSet.h"
 #include "project/AssetAdoption.h"
+#include "project/ReferenceIndex.h"
 #include "text/PathLeaf.h"
 
+#include <core/assets/AssetPath.h>
 #include <core/assets/AssetIdentity.h>
 #include <core/json/JsonParser.h>
 #include <zone/WorldPartitionManifest.h>
@@ -18,15 +20,7 @@ namespace
 constexpr std::string_view kStepPrefix = "file-step:";
 constexpr std::string_view kTrashFolder = ".trash";
 constexpr std::string_view kSceneSource = ".sscene";
-constexpr std::string_view kCookedScene = ".smap";
 constexpr std::string_view kWorld = ".sworld";
-// The documents that can name other files; nothing else is read for references.
-constexpr std::string_view kDocuments[] = { ".smat", ".sscene", ".sdata", ".sworld", ".sanimscenario", ".json" };
-
-std::string CookedFormOf(std::string_view scenePath)
-{
-    return std::string(scenePath.substr(0, scenePath.size() - kSceneSource.size())) + std::string(kCookedScene);
-}
 
 // Whether the string literal starting at `quote` is the value of a `path`
 // member -- the hint inside an {id, path} reference -- rather than a reference.
@@ -87,8 +81,8 @@ std::optional<std::string> NamingMovedAsset(std::string_view text, std::string_v
                                             AssetId id)
 {
     const bool scene = from.ends_with(kSceneSource);
-    const std::string cookedFrom = scene ? CookedFormOf(from) : std::string{};
-    const std::string cookedTo = scene ? CookedFormOf(to) : std::string{};
+    const std::string cookedFrom = scene ? CookedSceneOf(from) : std::string{};
+    const std::string cookedTo = scene ? CookedSceneOf(to) : std::string{};
 
     std::string out;
     out.reserve(text.size());
@@ -197,7 +191,7 @@ std::filesystem::path ProjectFileSteps::RootOf(const std::filesystem::path& file
 std::filesystem::path ProjectFileSteps::FileAt(const ProjectFile& source, std::string_view assetPath) const
 {
     // A file moves within the root that holds it.
-    return (RootOf(source.FilePath) / std::string(assetPath.substr(std::string_view("asset://").size())))
+    return (RootOf(source.FilePath) / std::string(ContentRelativePath(assetPath)))
         .lexically_normal();
 }
 
@@ -206,7 +200,7 @@ std::string ProjectFileSteps::Move(std::string_view assetPath, std::string_view 
     std::optional<ProjectFile> source;
     if (std::string refused = Refusal(assetPath, OpenFiles::Follow, source); !refused.empty())
         return refused;
-    if (!toAssetPath.starts_with("asset://") || toAssetPath == assetPath)
+    if (!toAssetPath.starts_with(kAssetPathPrefix) || toAssetPath == assetPath)
         return "Name it somewhere else in the project.";
     if (std::filesystem::path(std::string(toAssetPath)).extension().string() != source->FilePath.extension().string())
         return "A file keeps its kind: name it with the same extension.";
@@ -239,8 +233,7 @@ std::string ProjectFileSteps::Move(std::string_view assetPath, std::string_view 
 
     for (const ProjectFile& document : asset ? ScanProjectFiles(Roots) : std::vector<ProjectFile>{})
     {
-        if (std::ranges::find(kDocuments, std::string_view(document.Extension)) == std::end(kDocuments)
-            || document.AssetPath == assetPath)
+        if (!NamesOtherFiles(document.Extension) || document.AssetPath == assetPath)
             continue;
         const std::optional<std::string> text = ReadProjectFileText(document.FilePath);
         if (!text.has_value())
@@ -266,7 +259,7 @@ std::string ProjectFileSteps::Duplicate(std::string_view assetPath, std::string_
     std::optional<ProjectFile> source = FindProjectFile(Roots, assetPath);
     if (!source.has_value())
         return std::format("{} is not one of the project's files.", assetPath);
-    if (!toAssetPath.starts_with("asset://"))
+    if (!toAssetPath.starts_with(kAssetPathPrefix))
         return "Name it somewhere in the project.";
     const std::filesystem::path target = FileAt(*source, toAssetPath);
     std::error_code ec;
@@ -286,11 +279,11 @@ std::string ProjectFileSteps::Duplicate(std::string_view assetPath, std::string_
 
 std::string ProjectFileSteps::Import(const std::filesystem::path& external, std::string_view toAssetPath)
 {
-    if (Roots.empty() || !toAssetPath.starts_with("asset://"))
+    if (Roots.empty() || !toAssetPath.starts_with(kAssetPathPrefix))
         return "Name it somewhere in the project.";
     ProjectFile arriving;
     arriving.AssetPath = std::string(toAssetPath);
-    arriving.FilePath = (Roots.front() / std::string(toAssetPath.substr(std::string_view("asset://").size())))
+    arriving.FilePath = (Roots.front() / std::string(ContentRelativePath(toAssetPath)))
                             .lexically_normal();
     arriving.Extension = ExtensionOf(arriving.FilePath);
     std::error_code ec;

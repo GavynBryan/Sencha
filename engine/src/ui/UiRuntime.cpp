@@ -1,5 +1,6 @@
 #include "UiRuntime.h"
 
+#include <core/assets/AssetPath.h>
 #include <platform/SdlWindowService.h>
 
 #include <ui/UiSurfacePlacement.h>
@@ -996,7 +997,7 @@ std::string UiRuntime::AssetPathFor(const Screen& screen, std::string_view sourc
     std::filesystem::path combined = screen.ResourceRoot.empty()
         ? std::filesystem::path(source)
         : std::filesystem::path(screen.ResourceRoot) / std::filesystem::path(source);
-    return "asset://" + combined.lexically_normal().generic_string();
+    return AssetPathOf(combined.lexically_normal().generic_string());
 }
 
 std::vector<const UiRuntime::Screen*> UiRuntime::ResolutionCandidates() const

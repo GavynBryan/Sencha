@@ -4,6 +4,7 @@
 #include "scene_source/Json5Parser.h"
 #include "scene_source/Json5Writer.h"
 
+#include <core/assets/AssetPath.h>
 #include <core/assets/AssetRefCodec.h>
 
 #include <algorithm>
@@ -126,7 +127,7 @@ namespace
         out.SourceId = sourceRef->Id;
         if (const Json5Value* name = record.Find("name"); name != nullptr && name->IsString())
             out.Name = name->Text;
-        if (out.Source.rfind("asset://", 0) != 0 || !out.Source.ends_with(".sscene"))
+        if (!out.Source.starts_with(kAssetPathPrefix) || !out.Source.ends_with(".sscene"))
             return Fail(error, what + ": source must be an asset://...sscene reference, got '"
                 + out.Source + "'");
 

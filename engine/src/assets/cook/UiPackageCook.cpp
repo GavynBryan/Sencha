@@ -1,5 +1,6 @@
 #include <assets/cook/UiPackageCook.h>
 
+#include <core/assets/AssetPath.h>
 #include <assets/cook/CookFingerprint.h>
 #include <assets/cook/UiSourceScan.h>
 #include <assets/ui/UiPackage.h>
@@ -195,12 +196,10 @@ ImportResult UiPackageImporter::Import(const ImportInput& input, ICookOutputWrit
     {
         // Already assets-root-relative: a stylesheet's resources were resolved
         // against that sheet above, and the root document's against itself here.
-        const std::string resolved = resource.Path.starts_with("asset://")
-            ? resource.Path.substr(8)
-            : resource.Path;
+        const std::string resolved(ContentRelativePath(resource.Path));
         if (resolved.empty())
             continue;
-        const std::string assetPath = "asset://" + resolved;
+        const std::string assetPath = AssetPathOf(resolved);
         const bool already = std::any_of(package.Resources.begin(), package.Resources.end(),
             [&](const AssetRef& existing) {
                 return existing.Type == resource.Type && existing.Path == assetPath;
@@ -216,7 +215,7 @@ ImportResult UiPackageImporter::Import(const ImportInput& input, ICookOutputWrit
         return ImportResult{ .Error = "ui package import: sui serialization failed" };
 
     CookedArtifact artifact;
-    artifact.Path = "asset://" + rootRelPath;
+    artifact.Path = AssetPathOf(rootRelPath);
     artifact.FileRelPath = ".cooked/" + rootRelPath + ".sui";
     artifact.Type = AssetType::UiPackage;
 

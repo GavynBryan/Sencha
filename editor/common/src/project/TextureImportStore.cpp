@@ -32,10 +32,9 @@ std::string TextureSourceLocation::CookedFile() const
 std::optional<TextureSourceLocation> ResolveTextureSource(
     std::span<const std::string> contentRoots, std::string_view virtualPath)
 {
-    constexpr std::string_view scheme = "asset://";
-    if (!virtualPath.starts_with(scheme))
+    if (!virtualPath.starts_with(kAssetPathPrefix))
         return std::nullopt;
-    const std::string rel{ virtualPath.substr(scheme.size()) };
+    const std::string rel{ ContentRelativePath(virtualPath) };
     for (const std::string& root : contentRoots)
     {
         std::error_code ec;

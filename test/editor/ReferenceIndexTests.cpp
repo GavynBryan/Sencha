@@ -146,3 +146,25 @@ TEST(ReferenceIndex, AReferenceToACookedSceneIsUseOfItsSource)
     EXPECT_TRUE(index.Missing("asset://game.sdata").empty());
     EXPECT_FALSE(index.IsUnused("asset://prefabs/pawn.sscene"));
 }
+
+// What a move rewrites is what the index reads: a scenario naming a rig keeps
+// it from reading as unused, as a world names its scenes' materials.
+TEST(ReferenceIndex, EveryDocumentAMoveRewritesIsReadForWhatItNames)
+{
+    for (const std::string_view extension : { ".smat", ".sscene", ".sdata", ".sworld", ".sanimscenario", ".json" })
+        EXPECT_TRUE(NamesOtherFiles(extension)) << extension;
+    EXPECT_FALSE(NamesOtherFiles(".png"));
+
+    Disk disk;
+    disk.Text["/project/anim/charge.rig.sanimscenario"] = R"({ rig: "asset://anim/charge.rig.sdata" })";
+    const std::vector<ProjectFile> files = { File("anim/charge.rig.sanimscenario"), File("anim/charge.rig.sdata") };
+    ReferenceIndex index;
+    index.Refresh(files, {}, disk.Reader());
+    EXPECT_FALSE(index.IsUnused("asset://anim/charge.rig.sdata"));
+}
+
+TEST(ReferencedFile, AScenesCookedFormIsNamedAndReadBack)
+{
+    EXPECT_EQ(CookedSceneOf("asset://prefabs/pawn.sscene"), "asset://prefabs/pawn.smap");
+    EXPECT_EQ(ReferencedFile(CookedSceneOf("asset://prefabs/pawn.sscene")), "asset://prefabs/pawn.sscene");
+}

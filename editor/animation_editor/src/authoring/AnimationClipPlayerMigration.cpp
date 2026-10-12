@@ -1,5 +1,6 @@
 #include "authoring/AnimationClipPlayerMigration.h"
 
+#include <core/assets/AssetPath.h>
 #include <anim/AnimationClipCache.h>
 #include <core/assets/AssetRefCodec.h>
 #include <core/json/JsonParser.h>
@@ -154,15 +155,15 @@ AnimationClipPlayerMigrationPlan PlanAnimationClipPlayerMigration(const std::fil
                                                                   { "behavior", JsonValue(tag) },
                                                                   { "clip", JsonValue(use.Clip) } }) }) } })) });
         JsonValue::Object rig{
-            { "behaviors", JsonValue(JsonValue::Array{ JsonValue("asset://" + stem + ".behaviors.sdata") }) },
-            { "slot_maps", JsonValue(JsonValue::Array{ JsonValue("asset://" + stem + ".slots.sdata") }) },
+            { "behaviors", JsonValue(JsonValue::Array{ JsonValue(AssetPathOf(stem + ".behaviors.sdata")) }) },
+            { "slot_maps", JsonValue(JsonValue::Array{ JsonValue(AssetPathOf(stem + ".slots.sdata")) }) },
             { "layers", JsonValue(JsonValue::Array{ JsonValue(JsonValue::Object{
                             { "name", JsonValue("anim.layer.base") }, { "idle", JsonValue(tag) } }) }) },
         };
         if (!clip->SkeletonPath.empty())
             rig.emplace(rig.begin(), "skeleton", JsonValue(clip->SkeletonPath));
         plan.Documents.push_back({ stem + ".rig.sdata", Document("animation.rig", JsonValue(std::move(rig))) });
-        rigs.emplace(key, "asset://" + stem + ".rig.sdata");
+        rigs.emplace(key, AssetPathOf(stem + ".rig.sdata"));
     }
     JsonValue::Array declared;
     for (const std::string& tag : tags)

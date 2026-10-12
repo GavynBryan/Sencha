@@ -40,7 +40,7 @@ constexpr ZoneId kPlayZone{ 1 };
     constexpr std::string_view cookedPrefix = ".cooked/";
     if (ref.starts_with(cookedPrefix))
         ref.remove_prefix(cookedPrefix.size());
-    return "asset://" + std::string(ref);
+    return AssetPathOf(ref);
 }
 } // namespace
 
@@ -179,7 +179,7 @@ ConsoleResult LoadedLevel::LoadScene(std::string_view mapName)
     }
 
     const std::string sceneAssetPath =
-        "asset://" + std::string(mapName) + ".smap";
+        AssetPathOf(std::string(mapName) + ".smap");
     const AssetRecord* sceneRecord =
         assets.Assets.Resolve(sceneAssetPath, AssetType::Scene);
     if (sceneRecord == nullptr)

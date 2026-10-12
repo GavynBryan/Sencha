@@ -8,6 +8,7 @@
 #include "DocumentCookContext.h"
 #include "DocumentSerialization.h"
 
+#include <core/assets/AssetPath.h>
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/static_mesh/MeshSerializer.h>
 #include <world/scene/SmapFormat.h>
@@ -96,8 +97,7 @@ bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
     const auto physicalPathFor =
         [&assetsRoot, &catalog, &transaction](
             std::string_view assetPath) -> std::filesystem::path {
-            constexpr std::string_view prefix = "asset://";
-            const std::string rel(assetPath.substr(prefix.size()));
+            const std::string rel(ContentRelativePath(assetPath));
             if (catalog.IsGenerated(assetPath))
             {
                 // A preserved generated asset already exists in the active tree;

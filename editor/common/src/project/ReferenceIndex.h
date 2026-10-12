@@ -11,9 +11,14 @@
 #include <unordered_map>
 #include <vector>
 
+// Whether a file of this extension can name other files: the content documents.
+// Everything else is read by whatever imports it and names nothing.
+[[nodiscard]] bool NamesOtherFiles(std::string_view extension);
 // The file a reference names: a part of a file (`model.blend#anim:Walk`) is the
 // file, and a cooked scene (.smap) is the scene source cooked under its stem.
 [[nodiscard]] std::string ReferencedFile(std::string_view reference);
+// The cooked scene a scene source cooks to, which references may name instead.
+[[nodiscard]] std::string CookedSceneOf(std::string_view scenePath);
 
 // Every reference a content document makes, in either form (AssetRefCodec), in
 // the order written; none when the text is not JSON or JSON5.

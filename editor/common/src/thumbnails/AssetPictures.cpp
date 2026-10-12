@@ -1,7 +1,7 @@
 #include "thumbnails/AssetPictures.h"
 
-#include <algorithm>
-#include <cctype>
+#include "project/ProjectFiles.h"
+
 #include <utility>
 
 AssetPictures::Registration::Registration(AssetPictures& owner, std::string extension, IAssetPictureSource& source)
@@ -53,13 +53,7 @@ AssetPictures::Registration AssetPictures::Provide(std::string extension, IAsset
 
 AssetPicture AssetPictures::PictureOf(std::string_view assetPath)
 {
-    const std::size_t dot = assetPath.rfind('.');
-    if (dot == std::string_view::npos)
-        return {};
-    std::string extension(assetPath.substr(dot));
-    std::ranges::transform(extension, extension.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    const auto source = Sources.find(extension);
+    const auto source = Sources.find(ExtensionOf(std::filesystem::path(assetPath)));
     return source != Sources.end() ? source->second->PictureOf(assetPath) : AssetPicture{};
 }
 

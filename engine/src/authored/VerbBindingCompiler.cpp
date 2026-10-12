@@ -344,7 +344,7 @@ namespace
                                : "the verb does not declare this argument as an asset");
                 return false;
             }
-            if (!argument.Text.starts_with("asset://"))
+            if (!argument.Text.starts_with(kAssetPathPrefix))
             {
                 Fail(errors, bindingKey, argument.Key, "an asset path starts with 'asset://'");
                 return false;

@@ -18,7 +18,7 @@ namespace
                                      const std::filesystem::path& file)
     {
         std::filesystem::path relative = std::filesystem::relative(file, root);
-        return std::string("asset://") + relative.generic_string();
+        return AssetPathOf(relative.generic_string());
     }
 
     bool AreEquivalentRecords(const AssetRecord& a, const AssetRecord& b)

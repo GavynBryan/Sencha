@@ -1,21 +1,18 @@
 #include "project/AssetQuery.h"
 
 #include "project/AssetKinds.h"
+#include "text/PathLeaf.h"
 #include "text/TextFilterMatch.h"
+
+#include <core/assets/AssetPath.h>
 
 #include <algorithm>
 #include <optional>
 
 namespace
 {
-constexpr std::string_view kAssetScheme = "asset://";
 // A word found only in the folders above a file ranks after one in its name.
 constexpr int kPathRank = 3;
-
-std::string_view WithoutScheme(std::string_view path)
-{
-    return path.starts_with(kAssetScheme) ? path.substr(kAssetScheme.size()) : path;
-}
 
 std::vector<std::string_view> Words(std::string_view text)
 {
@@ -49,7 +46,7 @@ std::optional<int> RankOf(const ProjectFile& file, const std::vector<std::string
     {
         std::optional<int> rank = TextFilterRank(NameOf(file), word);
         if (!rank.has_value())
-            if (const std::optional<int> inPath = TextFilterRank(WithoutScheme(file.AssetPath), word))
+            if (const std::optional<int> inPath = TextFilterRank(ContentRelativePath(file.AssetPath), word))
                 rank = *inPath + kPathRank;
         if (!rank.has_value())
             return std::nullopt;
@@ -61,16 +58,14 @@ std::optional<int> RankOf(const ProjectFile& file, const std::vector<std::string
 
 std::string FolderOf(const ProjectFile& file)
 {
-    const std::string_view path = WithoutScheme(file.AssetPath);
+    const std::string_view path = ContentRelativePath(file.AssetPath);
     const std::size_t slash = path.rfind('/');
     return slash == std::string_view::npos ? std::string{} : std::string(path.substr(0, slash));
 }
 
 std::string_view NameOf(const ProjectFile& file)
 {
-    const std::string_view path = WithoutScheme(file.AssetPath);
-    const std::size_t slash = path.rfind('/');
-    return slash == std::string_view::npos ? path : path.substr(slash + 1);
+    return PathLeaf(file.AssetPath);
 }
 
 std::vector<const ProjectFile*> FindAssets(std::span<const ProjectFile> files, const AssetQuery& query)

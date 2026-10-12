@@ -12,7 +12,7 @@ std::string NormalizeDataAssetPath(std::string_view relativePath)
 
 std::string DataAssetVirtualPath(std::string_view relativePath)
 {
-    return "asset://" + NormalizeDataAssetPath(relativePath);
+    return AssetPathOf(NormalizeDataAssetPath(relativePath));
 }
 
 bool DataAssetPathTaken(const AssetRegistry& registry, const std::filesystem::path& file, std::string_view virtualPath)

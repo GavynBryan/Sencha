@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <string_view>
 
 //=============================================================================
@@ -14,6 +15,19 @@
 //=============================================================================
 
 inline constexpr std::string_view kAssetPathPrefix = "asset://";
+
+// The asset path of what lies at `relative` under its content root.
+[[nodiscard]] inline std::string AssetPathOf(std::string_view relative)
+{
+    return std::string(kAssetPathPrefix) + std::string(relative);
+}
+
+// Where an asset lies under its content root: "materials/stone.smat" of
+// "asset://materials/stone.smat". A path without the scheme is returned as it is.
+[[nodiscard]] constexpr std::string_view ContentRelativePath(std::string_view assetPath)
+{
+    return assetPath.starts_with(kAssetPathPrefix) ? assetPath.substr(kAssetPathPrefix.size()) : assetPath;
+}
 
 // True for a non-empty "asset://<something>" path with no backslashes
 // (paths are stored with forward slashes only).

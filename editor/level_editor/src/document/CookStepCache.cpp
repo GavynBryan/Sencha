@@ -3,6 +3,7 @@
 #include "CookArtifactTransaction.h"
 #include "CookGraph.h"
 
+#include <core/assets/AssetPath.h>
 #include <core/hash/ContentHash.h>
 
 #include <format>
@@ -98,16 +99,15 @@ bool RestoreCookStepArtifacts(
     bool sceneReference,
     std::string* error)
 {
-    constexpr std::string_view prefix = "asset://";
     for (const CookedArtifact& cached : receipt.Artifacts)
     {
-        if (!cached.Path.starts_with(prefix))
+        if (!cached.Path.starts_with(kAssetPathPrefix))
         {
             if (error != nullptr)
                 *error = "cached step artifact has an invalid asset path";
             return false;
         }
-        const std::string relative(cached.Path.substr(prefix.size()));
+        const std::string relative(ContentRelativePath(cached.Path));
         const std::filesystem::path active = assetsRoot / ".cooked" / relative;
         if (!CopyFile(assetsRoot / cached.FileRelPath,
                       transaction.Stage(active), error))

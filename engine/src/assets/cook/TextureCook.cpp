@@ -1,4 +1,5 @@
 #include <assets/cook/TextureCook.h>
+#include <core/assets/AssetPath.h>
 #include <assets/cook/SvgRasterize.h>
 
 #include <assets/cook/CookFingerprint.h>
@@ -450,7 +451,7 @@ ImportResult ImportImageAsTexture(const Image& image,
         return ImportResult{ .Error = std::format("{}: stex serialization failed", importer) };
 
     CookedArtifact artifact;
-    artifact.Path = "asset://" + std::string(input.SourceRelPath);
+    artifact.Path = AssetPathOf(input.SourceRelPath);
     artifact.FileRelPath = ".cooked/" + std::string(input.SourceRelPath) + ".stex";
     artifact.Type = AssetType::Texture;
     if (!output.WriteBytes(artifact.FileRelPath, stexBytes))

@@ -12,20 +12,27 @@
 
 namespace
 {
-// The content documents that can name other files; everything else is read by
-// whatever imports it and names nothing.
-constexpr std::array<std::string_view, 4> kDocuments = { ".smat", ".sscene", ".sdata", ".json" };
+constexpr std::array<std::string_view, 6> kDocuments = { ".smat", ".sscene", ".sdata",
+                                                         ".sworld", ".sanimscenario", ".json" };
 
 // A scene source cooks under its own stem (`DeriveDocumentCookPaths`), so a
 // reference to the cooked form names the source.
 constexpr std::string_view kCookedScene = ".smap";
 constexpr std::string_view kSceneSource = ".sscene";
 
-bool IsDocument(const ProjectFile& file)
-{
-    return std::ranges::find(kDocuments, file.Extension) != kDocuments.end();
-}
 } // namespace
+
+bool NamesOtherFiles(std::string_view extension)
+{
+    return std::ranges::find(kDocuments, extension) != kDocuments.end();
+}
+
+std::string CookedSceneOf(std::string_view scenePath)
+{
+    if (!scenePath.ends_with(kSceneSource))
+        return std::string(scenePath);
+    return std::string(scenePath.substr(0, scenePath.size() - kSceneSource.size())) + std::string(kCookedScene);
+}
 
 std::string ReferencedFile(std::string_view reference)
 {
@@ -48,7 +55,7 @@ void ReferenceIndex::Refresh(std::span<const ProjectFile> files, std::span<const
     for (const ProjectFile& file : files)
     {
         present.insert(file.AssetPath);
-        if (!IsDocument(file))
+        if (!NamesOtherFiles(file.Extension))
             continue;
         const auto known = Documents.find(file.AssetPath);
         if (known != Documents.end() && known->second.Size == file.Size && known->second.Modified == file.Modified)

@@ -13,6 +13,7 @@
 #include "thumbnails/AssetPictures.h"
 #include "workspaces/WorkspaceHost.h"
 
+#include <core/assets/AssetPath.h>
 #include <ui/UiKeys.h>
 #include <ui/UiService.h>
 
@@ -179,13 +180,6 @@ std::string AgeText(std::filesystem::file_time_type modified)
     return std::format("changed {} days ago", minutes / (60 * 24));
 }
 
-std::string_view FolderName(std::string_view folder)
-{
-    const std::size_t slash = folder.rfind('/');
-    return slash == std::string_view::npos ? folder : folder.substr(slash + 1);
-}
-
-constexpr std::string_view kAssetScheme = "asset://";
 } // namespace
 
 bool SearchFieldKeeps(const KeyChord& chord, bool empty)
@@ -217,7 +211,7 @@ std::string RenamedPath(std::string_view from, std::string_view written)
     if (first == std::string_view::npos)
         return {};
     const std::size_t last = written.find_last_not_of(" /");
-    return std::string(kAssetScheme) + std::string(written.substr(first, last - first + 1))
+    return AssetPathOf(written.substr(first, last - first + 1))
            + std::filesystem::path(from).extension().string();
 }
 
@@ -366,7 +360,7 @@ const ProjectFile* Shelf::FileAt(const std::string& assetPath) const
 void Shelf::Remember()
 {
     for (const AssetTab& tab : AssetTabsIn(Workspaces, Presentation))
-        if (tab.Current && tab.Document.starts_with("asset://"))
+        if (tab.Current && tab.Document.starts_with(kAssetPathPrefix))
         {
             if (!Recent.empty() && Recent.front() == tab.Document)
                 return;
@@ -648,7 +642,7 @@ void Shelf::AskRename()
         return;
     // Written without its scheme and extension, which a rename keeps.
     const std::string extension = std::filesystem::path(file->AssetPath).extension().string();
-    std::string where = file->AssetPath.substr(kAssetScheme.size());
+    std::string where = std::string(ContentRelativePath(file->AssetPath));
     where.resize(where.size() - extension.size());
     Asker.Ask({ .Title = "Rename " + std::string(PathLeaf(file->AssetPath)),
                 .Message = "Where it is in the project: a slash puts it in another folder.",
@@ -668,7 +662,7 @@ void Shelf::Rename(const std::string& from, std::string_view written)
     if (std::string refused = Sources.Files->Move(from, to); !refused.empty())
         return Tell(std::move(refused), true);
     Selected = to;
-    Tell(std::format("Moved {} to {}", PathLeaf(from), to.substr(kAssetScheme.size())), false);
+    Tell(std::format("Moved {} to {}", PathLeaf(from), ContentRelativePath(to)), false);
 }
 
 void Shelf::DuplicateChosen()
@@ -735,7 +729,7 @@ std::string Shelf::TakeCarried()
 void Shelf::Into(const std::string& folder)
 {
     const std::string from = TakeCarried();
-    const std::string to = std::string(kAssetScheme) + (folder.empty() ? std::string{} : folder + "/")
+    const std::string to = AssetPathOf(folder.empty() ? std::string{} : folder + "/")
                          + std::string(PathLeaf(from));
     if (from.empty() || to == from || Sources.Files == nullptr)
         return;
@@ -753,7 +747,7 @@ void Shelf::Import(std::span<const std::filesystem::path> files)
     std::string arrived;
     for (const std::filesystem::path& file : files)
     {
-        const std::string to = std::string(kAssetScheme) + (folder.empty() ? std::string{} : folder + "/")
+        const std::string to = AssetPathOf(folder.empty() ? std::string{} : folder + "/")
                              + file.filename().string();
         if (std::string refused = Sources.Files->Import(file, to); !refused.empty())
         {
@@ -905,7 +899,7 @@ void Shelf::Publish()
         const bool holdsFolders = std::ranges::any_of(known, [&](const std::string& other) {
             return other.size() > folder.size() && other.starts_with(folder + "/");
         });
-        UiRow row{ std::string(FolderName(folder)),
+        UiRow row{ std::string(PathLeaf(folder)),
                    holdsFolders ? (OpenFolders.contains(folder) ? "open" : "closed") : "", "" };
         row.Key = folder;
         row.Depth = static_cast<int>(std::ranges::count(folder, '/'));

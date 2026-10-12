@@ -6,6 +6,7 @@
 #include "authoring/AnimationRigEdits.h"
 #include "data/DataDocumentSet.h"
 
+#include <core/assets/AssetPath.h>
 #include <anim/AnimRigData.h>
 #include <assets/data/DataAssetCache.h>
 #include <authored/VerbRegistry.h>
@@ -78,11 +79,11 @@ bool DeclareUndeclaredAnimationNames(DataDocumentSet& documents, const Animation
     const std::vector<std::string> names = UndeclaredAnimationNamesOf(simulation, documents);
     if (names.empty() || rigPath.empty())
         return true;
-    std::string relative = rigPath.substr(std::string_view("asset://").size());
+    std::string relative(ContentRelativePath(rigPath));
     const std::size_t suffix = relative.ends_with(".rig.sdata") ? relative.size() - std::string_view(".rig.sdata").size()
                                                                 : relative.size() - std::string_view(".sdata").size();
     relative = relative.substr(0, suffix) + ".tags.sdata";
-    const std::string path = "asset://" + relative;
+    const std::string path = AssetPathOf(relative);
 
     const std::size_t active = documents.ActiveIndex();
     DataDocument* document = documents.Find(path);

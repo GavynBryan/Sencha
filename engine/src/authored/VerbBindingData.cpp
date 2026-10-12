@@ -1,5 +1,6 @@
 #include <authored/VerbBindingData.h>
 
+#include <core/assets/AssetPath.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <authored/VerbRegistry.h>
 #include <core/identity/Id.h>
@@ -181,7 +182,7 @@ namespace
         case VerbArgumentSource::Asset:
         case VerbArgumentSource::DataAsset:
         {
-            if (!out.Text.starts_with("asset://"))
+            if (!out.Text.starts_with(kAssetPathPrefix))
             {
                 error = std::format("binding '{}' argument '{}': an asset path starts with "
                                     "'asset://'",

@@ -85,7 +85,7 @@ void AssetHotReloader::ReloadSource(std::string_view sourceRelPath)
     const std::filesystem::path relPath{ std::string(sourceRelPath) };
     if (Importers.FindByExtension(relPath.extension().generic_string()) == nullptr)
     {
-        const std::string virtualPath = "asset://" + std::string(sourceRelPath);
+        const std::string virtualPath = AssetPathOf(sourceRelPath);
         const AssetRecord* record = Registry.FindByPath(virtualPath);
         if (record == nullptr)
         {

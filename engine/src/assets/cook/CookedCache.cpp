@@ -112,7 +112,7 @@ AssetId CookedArtifactId(std::string_view sourcePath, AssetId source, std::strin
 
 void NameCookedIds(CookedSourceEntry& entry)
 {
-    const std::string sourcePath = "asset://" + entry.SourceRelPath;
+    const std::string sourcePath = AssetPathOf(entry.SourceRelPath);
     if (!entry.SourceId.IsValid())
         entry.SourceId = AssetIdOfPath(sourcePath);
     for (CookedArtifact& artifact : entry.Artifacts)

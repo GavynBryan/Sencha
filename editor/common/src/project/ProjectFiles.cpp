@@ -5,6 +5,7 @@
 
 #include <assets/data/DataAssetSubtype.h>
 #include <core/assets/AssetIdentity.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/io/FileBytes.h>
 #include <core/json/JsonValue.h>
 
@@ -15,8 +16,6 @@
 
 namespace
 {
-constexpr std::string_view kAssetScheme = "asset://";
-
 // The project's bookkeeping beside its content, rather than content.
 bool IsBookkeeping(const std::filesystem::path& file)
 {
@@ -38,7 +37,7 @@ ProjectFile Describe(const std::filesystem::path& root, const std::filesystem::p
     std::error_code ec;
     ProjectFile described;
     described.FilePath = file;
-    described.AssetPath = std::string(kAssetScheme) + std::filesystem::relative(file, root, ec).generic_string();
+    described.AssetPath = AssetPathOf(std::filesystem::relative(file, root, ec).generic_string());
     described.Extension = ExtensionOf(file);
     described.Size = std::filesystem::file_size(file, ec);
     described.Modified = std::filesystem::last_write_time(file, ec);
@@ -82,8 +81,7 @@ void ForEachFile(std::span<const std::filesystem::path> roots, Visit&& visit)
             continue;
         for (std::filesystem::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec))
         {
-            const std::string name = it->path().filename().string();
-            if (name.starts_with('.'))
+            if (IsHiddenContentFolder(it->path()))
             {
                 if (it->is_directory(ec))
                     it.disable_recursion_pending();
@@ -121,9 +119,9 @@ std::vector<std::filesystem::path> ScanOrphanedSidecars(std::span<const std::fil
 
 std::optional<ProjectFile> FindProjectFile(std::span<const std::filesystem::path> roots, std::string_view assetPath)
 {
-    if (!assetPath.starts_with(kAssetScheme))
+    if (!assetPath.starts_with(kAssetPathPrefix))
         return std::nullopt;
-    const std::filesystem::path relative(assetPath.substr(kAssetScheme.size()));
+    const std::filesystem::path relative(ContentRelativePath(assetPath));
     for (const std::filesystem::path& root : roots)
     {
         std::error_code ec;
