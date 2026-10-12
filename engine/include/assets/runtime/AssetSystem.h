@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/assets/AssetCommitResult.h>
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSource.h>
@@ -7,11 +8,13 @@
 #include <core/logging/Logger.h>
 
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
+class AsyncTaskQueue;
 class LoggingProvider;
 
 //=============================================================================
@@ -70,14 +73,9 @@ public:
     // dedup against the stores before submitting staged work.
     [[nodiscard]] AssetLease TryAcquireLease(std::string_view path, AssetType type);
 
-    // The synchronous load. A resident path gains a reference instead of
-    // re-staging. A path that cannot be loaded records why and yields its
-    // kind's stand-in under that path, or an invalid lease for a kind with none.
-    //
-    // A lease rather than a raw handle because the caller usually is not the
-    // final owner: a component that names the asset takes its own reference
-    // when it is added, and the load's reference has to be let go afterwards.
-    // A lease that goes out of scope does that on its own.
+    // The synchronous load: a resident path gains a reference; one that cannot
+    // load records why and yields its kind's stand-in, or an invalid lease. A
+    // lease, so the load's reference lets go once the real holder takes its own.
     [[nodiscard]] AssetLease LoadLease(std::string_view path, AssetType type);
 
     // Records why `path` did not load and yields what it resolves to instead:
@@ -85,10 +83,18 @@ public:
     // fails through here, so the synchronous and the async path agree.
     [[nodiscard]] AssetLease FailLoad(std::string_view path, AssetType type, std::string reason);
 
-    // Loads again every failed path whose stand-in is still held, replacing the
-    // stand-in in place where the asset now loads. Does nothing until the
-    // registry changes; the engine calls it once a frame.
-    void RetryStandIns();
+    // Stages again every failed path whose stand-in is still held, replacing
+    // the stand-in in place at the drain where the asset now loads. Does
+    // nothing until the registry changes; the engine calls it once a frame.
+    void RetryStandIns(AsyncTaskQueue& tasks);
+
+    // Stages `record` on a task thread and swaps the result into its resident
+    // entry at the drain, through Reload.
+    void StageReload(const AssetRecord& record, AsyncTaskQueue& tasks);
+
+    // Where assets named by id are now. Owner thread; the snapshot itself may
+    // travel to a stage on any thread.
+    [[nodiscard]] std::shared_ptr<const AssetPathsById> PathsById() const { return Registry.PathsById(); }
 
     // The path a held token names. Empty when the kind is unregistered or the
     // token names nothing.
@@ -107,20 +113,21 @@ public:
     [[nodiscard]] std::vector<std::uint64_t> ListMembers(AssetType type,
                                                          std::uint64_t token) const;
 
-    // Owner-thread commit of a staged payload, dispatched through the kind's
-    // registered Commit. Returns the creation reference. A path committed
-    // over its stand-in yields the stand-in; only Reload replaces one.
-    [[nodiscard]] AssetLease Commit(AssetStaging&& staged);
+    // Owner-thread commit through the kind's registered Commit: the creation
+    // reference, or the dependency that refused it. A path committed over its
+    // stand-in yields the stand-in; only Reload replaces one.
+    [[nodiscard]] AssetCommitOutcome Commit(AssetStaging&& staged);
+    // Why a commit of `path` that yielded no reference failed, as it is recorded.
+    [[nodiscard]] static std::string CommitFailureReason(std::string_view path, const AssetCommitOutcome& outcome);
 
-    // Owner-thread in-place reload of a staged payload, through the kind's
-    // registered Reload. False when the staging failed, the kind cannot
-    // reload, or the asset is not resident. A failed staging is recorded and
-    // leaves what is resident, the last good version or the stand-in, as it is.
+    // Owner-thread in-place reload through the kind's registered Reload. False
+    // when the staging failed, the kind cannot reload or the asset is not
+    // resident; a failed staging is recorded and leaves what is resident as it is.
     [[nodiscard]] bool Reload(AssetStaging&& staged);
 
     // The staged-load surface (Decision C), exposed for async drivers: the
     // preloader runs LoaderFor(type)->LoadStaged on a task thread against
-    // DefaultSource(), and commits at the drain point.
+    // DefaultSource() and PathsById(), and commits at the drain point.
     [[nodiscard]] IAssetStager* LoaderFor(AssetType type);
     [[nodiscard]] IAssetSource& DefaultSource() { return Source; }
 
@@ -149,7 +156,7 @@ public:
 private:
     void RecordFailure(std::string_view path, AssetType type, std::string reason);
     void ClearFailure(std::string_view path, AssetType type);
-    void RetryStandIn(const LoadFailure& failure);
+    void RetryStandIn(const LoadFailure& failure, AsyncTaskQueue& tasks);
 
     [[nodiscard]] IAssetStore* StoreFor(AssetType type, AssetArity arity = AssetArity::Single);
     [[nodiscard]] const IAssetStore* StoreFor(AssetType type,
@@ -162,7 +169,5 @@ private:
     AssetKindRegistry KindRegistry;
     std::vector<LoadFailure> Failures;
     std::uint64_t FailuresVersion = 0;
-    std::uint64_t FailuresRecorded = 0;
-    std::string LastFailedPath;
     std::uint64_t RetriedAtRevision = 0;
 };

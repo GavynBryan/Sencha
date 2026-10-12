@@ -37,7 +37,8 @@ public:
                         TextureCache* textures);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
+                                          IAssetSource& source,
+                                          const AssetPathsById& current) override;
 
     // Owner-thread commit returning the typed handle (refcount 1, owned by
     // the caller). `assets` resolves the description's texture references.

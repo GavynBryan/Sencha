@@ -63,7 +63,8 @@ void DataResidentSync::RestoreFromFile(const DataDocument& document)
     if (!IsResident(document))
         return;
     const AssetRecord* record = Assets.Registry.FindByPath(document.VirtualPath());
-    AssetStaging staged = Assets.Assets.LoaderFor(AssetType::Data)->LoadStaged(*record, Assets.Assets.DefaultSource());
+    AssetStaging staged = Assets.Assets.LoaderFor(AssetType::Data)
+                              ->LoadStaged(*record, Assets.Assets.DefaultSource(), *Assets.Assets.PathsById());
     if (staged.IsValid())
         (void)Assets.Assets.Reload(std::move(staged));
 }

@@ -20,7 +20,7 @@ namespace
     class NullStager final : public IAssetStager
     {
     public:
-        AssetStaging LoadStaged(const AssetRecord&, IAssetSource&) override { return {}; }
+        AssetStaging LoadStaged(const AssetRecord&, IAssetSource&, const AssetPathsById&) override { return {}; }
     };
 
     class NullStore : public IAssetListStore

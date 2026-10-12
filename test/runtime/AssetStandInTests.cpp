@@ -1,3 +1,5 @@
+#include <anim/AnimationClipCache.h>
+#include <assets/animation/AnimationClipAssetLoader.h>
 #include <assets/material/MaterialAssetLoader.h>
 #include <assets/runtime/AssetPreloader.h>
 #include <assets/runtime/AssetStandIns.h>
@@ -20,6 +22,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <random>
 #include <string>
@@ -95,11 +98,20 @@ struct StandInHarness
     bool Reload(const std::string& path)
     {
         const AssetRecord* record = Registry.FindByPath(path);
-        return record != nullptr && Assets.Reload(Loader.LoadStaged(*record, Assets.DefaultSource()));
+        return record != nullptr && Assets.Reload(Loader.LoadStaged(*record, Assets.DefaultSource(), AssetPathsById{}));
+    }
+
+    // Stages every retry on the task lane and commits it at the drain.
+    void RetryStandIns()
+    {
+        Assets.RetryStandIns(Tasks);
+        (void)Tasks.PumpWork();
+        (void)Tasks.DrainCompletions();
     }
 
     LoggingProvider Logging;
     AssetRegistry Registry{ Logging };
+    AsyncTaskQueue Tasks{ 0 };
     MaterialCache Materials;
     MaterialAssetLoader Loader{ Logging, &Materials, nullptr };
     AssetSystem Assets{ Logging, Registry };
@@ -216,11 +228,28 @@ TEST(AssetStandIn, AFileThatAppearsReplacesTheStandInWhereverItIsHeld)
     ASSERT_TRUE(IsStandIn(h.MaterialOf(held)));
 
     h.RegisterMaterial(path, content.Write("later.smat", kRed));
-    h.Assets.RetryStandIns();
+    h.RetryStandIns();
 
     const Material* arrived = h.MaterialOf(held);
     ASSERT_NE(arrived, nullptr);
     EXPECT_EQ(arrived->Shading, MaterialShading::StandardLit) << "the stand-in outlived the file it stood in for";
+    EXPECT_FALSE(h.HasFailure(path, AssetType::Material));
+}
+
+TEST(AssetStandIn, ARetryStagesOnTheTaskLaneAndReplacesTheStandInAtTheDrain)
+{
+    StandInHarness h;
+    TempContent content;
+    const std::string path = "asset://materials/later.smat";
+    const AssetLease held = h.Assets.LoadLease(path, AssetType::Material);
+    h.RegisterMaterial(path, content.Write("later.smat", kRed));
+
+    h.Assets.RetryStandIns(h.Tasks);
+    EXPECT_TRUE(IsStandIn(h.MaterialOf(held))) << "the retry read and committed on the owner thread";
+
+    (void)h.Tasks.PumpWork();
+    (void)h.Tasks.DrainCompletions();
+    EXPECT_FALSE(IsStandIn(h.MaterialOf(held)));
     EXPECT_FALSE(h.HasFailure(path, AssetType::Material));
 }
 
@@ -231,18 +260,18 @@ TEST(AssetStandIn, StandInsAreRetriedOnlyOnceTheRegistryChanges)
     const std::string path = "asset://materials/broken.smat";
     h.RegisterMaterial(path, content.Write("broken.smat", kMalformed));
     const AssetLease held = h.Assets.LoadLease(path, AssetType::Material);
-    h.Assets.RetryStandIns();
+    h.RetryStandIns();
     ASSERT_TRUE(IsStandIn(h.MaterialOf(held)));
 
     // Fixed on disk with nothing registered or rebound: the frame's retry
     // costs a comparison and reads nothing. The hot reload of the file is
     // what replaces it in that case.
     content.Write("broken.smat", kRed);
-    h.Assets.RetryStandIns();
+    h.RetryStandIns();
     EXPECT_TRUE(IsStandIn(h.MaterialOf(held)));
 
     h.RegisterMaterial("asset://materials/other.smat", content.Write("other.smat", kRed));
-    h.Assets.RetryStandIns();
+    h.RetryStandIns();
     EXPECT_FALSE(IsStandIn(h.MaterialOf(held)));
 }
 
@@ -304,6 +333,16 @@ TEST(AssetStandIn, AnAsyncLoadDeliversAMissingDependencyAsItsStandIn)
     EXPECT_TRUE(h.Materials.Find(material).IsValid());
     EXPECT_TRUE(h.HasFailure(texture, AssetType::Texture));
 }
+
+template <typename TLoader, typename TCache>
+concept TakesAStandIn = requires(AssetSystem& assets, TLoader& loader, TCache* cache,
+                                 std::function<AssetLease(std::string_view)> standIn) {
+    RegisterAssetKind(assets, AssetType::Material, loader, cache, nullptr, standIn);
+};
+
+static_assert(TakesAStandIn<MaterialAssetLoader, MaterialCache>);
+static_assert(!TakesAStandIn<AnimationClipAssetLoader, AnimationClipCache>,
+              "a stand-in for a kind that cannot reload would never be replaced");
 
 TEST(AssetStandIn, AStandInNeedsAReloadToBeReplacedBy)
 {

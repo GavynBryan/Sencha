@@ -18,6 +18,7 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <input/InputBindingCache.h>
+#include <jobs/AsyncTaskQueue.h>
 #include <movement/MovementProfileBindingCache.h>
 #include <runtime/spawn/NetPrefabSpawner.h>
 #include <runtime/spawn/SceneSpawnService.h>
@@ -35,14 +36,16 @@ namespace
 // wherever it is held. Free until the registry changes.
 struct StandInRetrySystem
 {
-    explicit StandInRetrySystem(RuntimeContent& content)
+    StandInRetrySystem(RuntimeContent& content, AsyncTaskQueue& tasks)
         : Content(content)
+        , Tasks(tasks)
     {
     }
 
-    void FrameUpdate(FrameUpdateContext&) { Content.Assets().Assets.RetryStandIns(); }
+    void FrameUpdate(FrameUpdateContext&) { Content.Assets().Assets.RetryStandIns(Tasks); }
 
     RuntimeContent& Content;
+    AsyncTaskQueue& Tasks;
 };
 
 #ifdef SENCHA_ENABLE_COOK
@@ -170,7 +173,7 @@ void RuntimeContent::Publish(World& world)
 
 void RuntimeContent::RegisterSystems(EngineSchedule& schedule)
 {
-    schedule.Register<StandInRetrySystem>(*this);
+    schedule.Register<StandInRetrySystem>(*this, Host.Tasks());
 #ifdef SENCHA_ENABLE_COOK
     schedule.Register<HotReloadPollSystem>(*this);
 #endif

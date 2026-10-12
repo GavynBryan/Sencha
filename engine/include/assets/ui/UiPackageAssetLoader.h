@@ -26,7 +26,8 @@ public:
     UiPackageAssetLoader(LoggingProvider& logging, UiPackageCache* cache);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
+                                          IAssetSource& source,
+                                          const AssetPathsById& current) override;
 
     [[nodiscard]] UiPackageHandle CommitTyped(AssetStaging&& staged);
 

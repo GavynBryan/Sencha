@@ -21,13 +21,8 @@ DataAssetLoader::DataAssetLoader(LoggingProvider& logging,
 {
 }
 
-AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
-{
-    return LoadStagedResolving(record, source, AssetPathsById{});
-}
-
-AssetStaging DataAssetLoader::LoadStagedResolving(const AssetRecord& record, IAssetSource& source,
-                                                  const AssetPathsById& current)
+AssetStaging DataAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                         const AssetPathsById& current)
 {
     AssetStaging staging;
     staging.Record = record;
@@ -135,8 +130,8 @@ AssetStaging DataAssetLoader::StageRoot(const AssetRecord& record, const JsonVal
     return staging;
 }
 
-bool DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
-                                       std::vector<AssetLease>& out)
+std::string DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
+                                              std::vector<AssetLease>& out)
 {
     // A dependency still being committed further up this stack is a cycle.
     // The asynchronous preloader refuses one before it stages anything; the
@@ -144,7 +139,7 @@ bool DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetSystem& 
     if (std::find(Committing.begin(), Committing.end(), staged.Record.Path) != Committing.end())
     {
         Log.Error("DataAssetLoader: dependency cycle through '{}'", staged.Record.Path);
-        return false;
+        return staged.Record.Path;
     }
     Committing.push_back(staged.Record.Path);
     struct Unwind
@@ -160,32 +155,33 @@ bool DataAssetLoader::LoadDependencies(const AssetStaging& staged, AssetSystem& 
         {
             Log.Error("DataAssetLoader: dependency cycle between '{}' and '{}'",
                       staged.Record.Path, dependency.Path);
-            return false;
+            return dependency.Path;
         }
         AssetLease lease = assets.LoadLease(dependency.Path, dependency.Type);
         if (!lease)
         {
             Log.Error("DataAssetLoader: '{}' depends on '{}', which did not load",
                       staged.Record.Path, dependency.Path);
-            return false;
+            return dependency.Path;
         }
         out.push_back(std::move(lease));
     }
-    return true;
+    return {};
 }
 
-DataAssetHandle DataAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
+AssetCommitResult<DataAssetHandle> DataAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
 {
     std::vector<AssetLease> dependencies;
-    if (staged.IsValid() && !LoadDependencies(staged, assets, dependencies))
-        return {};
+    if (staged.IsValid())
+        if (std::string failed = LoadDependencies(staged, assets, dependencies); !failed.empty())
+            return AssetCommitResult<DataAssetHandle>::DependencyFailed(std::move(failed));
     return Commit(std::move(staged), std::move(dependencies));
 }
 
 bool DataAssetLoader::CommitReload(AssetStaging&& staged, AssetSystem& assets)
 {
     std::vector<AssetLease> dependencies;
-    if (staged.IsValid() && !LoadDependencies(staged, assets, dependencies))
+    if (staged.IsValid() && !LoadDependencies(staged, assets, dependencies).empty())
         return false;
     return Reload(std::move(staged), std::move(dependencies));
 }

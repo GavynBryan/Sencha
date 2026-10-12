@@ -13,7 +13,8 @@ FontFaceAssetLoader::FontFaceAssetLoader(LoggingProvider& logging, FontFaceCache
 {
 }
 
-AssetStaging FontFaceAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging FontFaceAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                             const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;

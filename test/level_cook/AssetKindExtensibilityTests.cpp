@@ -90,7 +90,7 @@ namespace
     class ScriptStager final : public IAssetStager
     {
     public:
-        AssetStaging LoadStaged(const AssetRecord& record, IAssetSource&) override
+        AssetStaging LoadStaged(const AssetRecord& record, IAssetSource&, const AssetPathsById&) override
         {
             AssetStaging staged;
             staged.Record = record;

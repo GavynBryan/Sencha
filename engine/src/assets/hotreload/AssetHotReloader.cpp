@@ -4,7 +4,6 @@
 
 #include <assets/cook/AssetImporter.h>
 #include <assets/cook/ImportOnDemand.h>
-#include <core/assets/AssetStager.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
@@ -133,20 +132,5 @@ void AssetHotReloader::StageReload(const AssetRecord& record)
                   record.Path, AssetTypeToString(record.Type));
         return;
     }
-
-    IAssetStager* stager = kind->Stager;
-    IAssetSource* source = &Assets.DefaultSource();
-    const AssetRecord rec = record; // capture by value for the task thread
-
-    Tasks.Submit<AssetStaging>(
-        // Task thread: pure decode of the re-cooked bytes.
-        [stager, source, rec]() -> AssetStaging {
-            return stager->LoadStaged(rec, *source);
-        },
-        // Owner thread, drain point: swap the resident entry in place, through
-        // the front door so a reload that fixes a failed load clears it.
-        [this, kindName = kind->Name, path = record.Path](AssetStaging staging) {
-            if (Assets.Reload(std::move(staging)))
-                Log.Info("AssetHotReloader: reloaded {} '{}'", kindName, path);
-        });
+    Assets.StageReload(record, Tasks);
 }

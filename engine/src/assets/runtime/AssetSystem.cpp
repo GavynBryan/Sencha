@@ -1,6 +1,7 @@
 #include <assets/runtime/AssetSystem.h>
 
 #include <core/logging/LoggingProvider.h>
+#include <jobs/AsyncTaskQueue.h>
 
 #include <algorithm>
 #include <format>
@@ -102,20 +103,23 @@ AssetLease AssetSystem::LoadLease(std::string_view path, AssetType type)
         return FailLoad(recordPath, type, std::format("no loader registered for {} '{}'", AssetTypeToString(type),
                                                       recordPath));
 
-    AssetStaging staged = stager->LoadStagedResolving(*record, Source, *Registry.PathsById());
+    AssetStaging staged = stager->LoadStaged(*record, Source, *Registry.PathsById());
     if (!staged.IsValid())
         return FailLoad(recordPath, type, std::move(staged.Error));
 
-    // A dependency the commit loads and fails records its own reason first;
-    // this one then names it.
-    const std::uint64_t beforeCommit = FailuresRecorded;
-    AssetLease lease = Commit(std::move(staged));
-    if (lease.IsValid())
-        return lease;
-    if (FailuresRecorded != beforeCommit && LastFailedPath != recordPath)
-        return FailLoad(recordPath, type,
-                        std::format("'{}' depends on '{}', which did not load", recordPath, LastFailedPath));
-    return FailLoad(recordPath, type, std::format("'{}' was staged but could not be committed", recordPath));
+    AssetCommitOutcome committed = Commit(std::move(staged));
+    if (committed.IsValid())
+        return std::move(committed.Handle);
+    return FailLoad(recordPath, type, CommitFailureReason(recordPath, committed));
+}
+
+std::string AssetSystem::CommitFailureReason(std::string_view path, const AssetCommitOutcome& outcome)
+{
+    if (outcome.FailedDependency.empty())
+        return std::format("'{}' was staged but could not be committed", path);
+    if (outcome.FailedDependency == path)
+        return std::format("'{}' is part of a dependency cycle", path);
+    return std::format("'{}' depends on '{}', which did not load", path, outcome.FailedDependency);
 }
 
 AssetLease AssetSystem::FailLoad(std::string_view path, AssetType type, std::string reason)
@@ -131,7 +135,7 @@ AssetLease AssetSystem::FailLoad(std::string_view path, AssetType type, std::str
     return kind->StandIn(path);
 }
 
-void AssetSystem::RetryStandIns()
+void AssetSystem::RetryStandIns(AsyncTaskQueue& tasks)
 {
     if (Registry.Revision() == RetriedAtRevision)
         return;
@@ -140,26 +144,38 @@ void AssetSystem::RetryStandIns()
     // A copy: a retry that loads clears its own entry.
     const std::vector<LoadFailure> failures = Failures;
     for (const LoadFailure& failure : failures)
-        RetryStandIn(failure);
+        RetryStandIn(failure, tasks);
 }
 
-void AssetSystem::RetryStandIn(const LoadFailure& failure)
+void AssetSystem::RetryStandIn(const LoadFailure& failure, AsyncTaskQueue& tasks)
 {
     if (!IsResident(failure.Path, failure.Type))
         return;
     const AssetRecord* record = Registry.FindByPath(failure.Path);
     if (record == nullptr || record->Type != failure.Type || record->SourceKind != AssetSourceKind::File)
         return;
-    IAssetStager* stager = LoaderFor(failure.Type);
+    StageReload(*record, tasks);
+}
+
+void AssetSystem::StageReload(const AssetRecord& record, AsyncTaskQueue& tasks)
+{
+    IAssetStager* stager = LoaderFor(record.Type);
     if (stager == nullptr)
         return;
-    (void)Reload(stager->LoadStagedResolving(*record, Source, *Registry.PathsById()));
+    tasks.Submit<AssetStaging>(
+        [stager, source = &Source, record, current = Registry.PathsById()]() -> AssetStaging {
+            return stager->LoadStaged(record, *source, *current);
+        },
+        [this](AssetStaging staged) {
+            const std::string path = staged.Record.Path;
+            const AssetType type = staged.Record.Type;
+            if (Reload(std::move(staged)))
+                Log.Info("AssetSystem: reloaded {} '{}'", AssetTypeToString(type), path);
+        });
 }
 
 void AssetSystem::RecordFailure(std::string_view path, AssetType type, std::string reason)
 {
-    LastFailedPath = path;
-    ++FailuresRecorded;
     const auto found = std::ranges::find_if(Failures, [&](const LoadFailure& failure) {
         return failure.Path == path && failure.Type == type;
     });
@@ -215,7 +231,7 @@ std::vector<std::uint64_t> AssetSystem::ListMembers(AssetType type, std::uint64_
     return kind->ListStore->ListMembers(token);
 }
 
-AssetLease AssetSystem::Commit(AssetStaging&& staged)
+AssetCommitOutcome AssetSystem::Commit(AssetStaging&& staged)
 {
     const AssetKindRegistration* kind = KindRegistry.Find(staged.Record.Type);
     if (kind == nullptr || !kind->Commit)
@@ -227,10 +243,10 @@ AssetLease AssetSystem::Commit(AssetStaging&& staged)
 
     const std::string path = staged.Record.Path;
     const AssetType type = staged.Record.Type;
-    AssetLease lease = kind->Commit(std::move(staged));
-    if (lease.IsValid())
+    AssetCommitOutcome committed = kind->Commit(std::move(staged));
+    if (committed.IsValid())
         ClearFailure(path, type);
-    return lease;
+    return committed;
 }
 
 bool AssetSystem::Reload(AssetStaging&& staged)

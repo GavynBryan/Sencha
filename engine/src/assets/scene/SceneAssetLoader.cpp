@@ -17,7 +17,8 @@ SceneAssetLoader::SceneAssetLoader(LoggingProvider& logging,
 {
 }
 
-AssetStaging SceneAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging SceneAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                          const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;

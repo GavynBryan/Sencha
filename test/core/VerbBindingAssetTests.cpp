@@ -79,7 +79,7 @@ protected:
     [[nodiscard]] AssetStaging Stage(std::string_view text)
     {
         File.Write(text);
-        return Loader.LoadStaged(File.Record(), Source);
+        return Loader.LoadStaged(File.Record(), Source, AssetPathsById{});
     }
 
     // The compiled value as the cache would hand it out, without committing:

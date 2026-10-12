@@ -18,7 +18,8 @@ AnimationClipAssetLoader::AnimationClipAssetLoader(LoggingProvider& logging,
 {
 }
 
-AssetStaging AnimationClipAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging AnimationClipAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                                  const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;
@@ -48,7 +49,7 @@ AssetStaging AnimationClipAssetLoader::LoadStaged(const AssetRecord& record, IAs
     return staging;
 }
 
-AnimationClipHandle AnimationClipAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
+AssetCommitResult<AnimationClipHandle> AnimationClipAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
 {
     if (!staged.IsValid())
     {
@@ -80,7 +81,7 @@ AnimationClipHandle AnimationClipAssetLoader::CommitTyped(AssetStaging&& staged,
     {
         Log.Error("AnimationClipAssetLoader: clip '{}' references skeleton '{}' that failed to load",
                   staged.Record.Path, data->SkeletonPath);
-        return {};
+        return AssetCommitResult<AnimationClipHandle>::DependencyFailed(data->SkeletonPath);
     }
     // The load's reference is the one the clip keeps -- wrap without attaching.
     SkeletonCacheHandle ownedSkeleton(Skeletons, skeleton, SkeletonCacheHandle::NoAttachTag{});

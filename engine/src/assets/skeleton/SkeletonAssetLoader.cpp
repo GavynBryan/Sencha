@@ -13,7 +13,8 @@ SkeletonAssetLoader::SkeletonAssetLoader(LoggingProvider& logging, SkeletonCache
 {
 }
 
-AssetStaging SkeletonAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging SkeletonAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                             const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;

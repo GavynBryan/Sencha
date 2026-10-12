@@ -25,7 +25,8 @@ public:
     AudioClipAssetLoader(LoggingProvider& logging, AudioClipCache* cache);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
+                                          IAssetSource& source,
+                                          const AssetPathsById& current) override;
 
     // Owner-thread commit returning the typed handle (refcount 1, owned by
     // the caller). The virtual Commit wraps this for heterogeneous drivers.

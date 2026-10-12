@@ -18,14 +18,15 @@ TextureAssetLoader::TextureAssetLoader(LoggingProvider& logging, TextureCache* c
 {
 }
 
-AssetStaging TextureAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging TextureAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                            const AssetPathsById&)
 {
-    return LoadStaged(record, source, /*srgb*/ true);
+    return LoadStagedAs(record, source, /*srgb*/ true);
 }
 
-AssetStaging TextureAssetLoader::LoadStaged(const AssetRecord& record,
-                                            IAssetSource& source,
-                                            bool srgb)
+AssetStaging TextureAssetLoader::LoadStagedAs(const AssetRecord& record,
+                                              IAssetSource& source,
+                                              bool srgb)
 {
     AssetStaging staging;
     staging.Record = record;

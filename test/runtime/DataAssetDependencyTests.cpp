@@ -87,7 +87,7 @@ TEST(DataAssetDependencies, AReloadSwapsTheHeldSet)
     const AssetRecord* record = chain.Assets.Registry.FindByPath("asset://animation/game.facts.sdata");
     ASSERT_NE(record, nullptr);
     AssetSystem& assets = chain.Assets.Assets;
-    ASSERT_TRUE(assets.Reload(assets.LoaderFor(AssetType::Data)->LoadStaged(*record, assets.DefaultSource())));
+    ASSERT_TRUE(assets.Reload(assets.LoaderFor(AssetType::Data)->LoadStaged(*record, assets.DefaultSource(), AssetPathsById{})));
 
     EXPECT_TRUE(chain.Resident("asset://animation/other.facts.sdata"));
     EXPECT_FALSE(chain.Resident("asset://animation/base.facts.sdata"));

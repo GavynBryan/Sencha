@@ -11,24 +11,9 @@ class Logger;
 class LoggingProvider;
 struct AssetRecord;
 
-//=============================================================================
-// AssetHotReloader (Stage 6 hot reload, Decision H). Dev-only — compiled
-// under SENCHA_ENABLE_COOK.
-//
-// The reaction half (AssetSourceWatcher is the detection half): given a
-// changed source file, re-cooks it and stages an in-place reload of each of
-// its cooked artifacts that is currently resident. The reload mirrors the
-// staged-load contract — LoadStaged (decode) on a task thread, a commit that
-// *swaps* the existing cache slot in place at the drain point — so live
-// handles never change and the old GPU resource retires through the deletion
-// queue. Owner-thread only.
-//
-// Stage 6 wires textures (6a), static meshes (6b), and materials (6c).
-// Materials are authored .smat with no cook step, so ReloadSource resolves
-// them directly by virtual path; cook sources re-import first. Skinned meshes
-// and audio clips reuse the same machinery when a streamable component
-// references them.
-//=============================================================================
+// Re-cooks a changed source and stages an in-place reload of each resident
+// artifact through AssetSystem::StageReload; a source no importer claims is
+// its own asset. Cook-only, owner thread (docs/assets/pipeline.md, Decision H).
 class AssetHotReloader
 {
 public:

@@ -241,7 +241,7 @@ TEST_F(MovementProfileLifetimeTest, HotReloadKeepsTheHandleTheComponentHolds)
     record.SourceKind = AssetSourceKind::File;
     record.Path = std::string(kProfilePath);
     record.FilePath = File.generic_string();
-    ASSERT_TRUE(DataLoader.CommitReload(DataLoader.LoadStaged(record, Assets.DefaultSource())));
+    ASSERT_TRUE(DataLoader.CommitReload(DataLoader.LoadStaged(record, Assets.DefaultSource(), AssetPathsById{})));
 
     EXPECT_EQ(World_.TryGet<MovementTuningSource>(entity)->Profile.Value, held)
         << "a reload minted a new handle and stranded the component on the old one";

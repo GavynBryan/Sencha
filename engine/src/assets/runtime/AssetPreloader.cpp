@@ -193,7 +193,7 @@ void AssetPreloader::SubmitStagedLoad(const AssetRecord& record)
         // and the id snapshot are captured by value -- neither ever changes.
         [stager, source, record, current = Registry.PathsById()]() -> AssetStaging
         {
-            return stager->LoadStagedResolving(record, *source, *current);
+            return stager->LoadStaged(record, *source, *current);
         },
         // Commit, owner thread at the drain point.
         [this, type = record.Type, path = record.Path](AssetStaging staging)
@@ -316,12 +316,12 @@ void AssetPreloader::CommitReady(const std::string& path)
     PendingCommits.erase(it);
     DependencyEdges.erase(path);
 
-    const AssetLease created = Assets.Commit(std::move(pending.Staging));
+    const AssetCommitOutcome created = Assets.Commit(std::move(pending.Staging));
     // The dependency leases outlive the commit that needed them and release
     // here; the committed asset holds its own references by now.
     if (!created.IsValid())
     {
-        FailLoad(pending.Type, path, std::format("'{}' was staged but could not be committed", path));
+        FailLoad(pending.Type, path, AssetSystem::CommitFailureReason(path, created));
         return;
     }
     CompleteLoad(pending.Type, path, /*failed*/ false);

@@ -76,6 +76,7 @@ private:
     IAssetStager* Stager = nullptr; // looked up on the owner thread, used on the task thread
     AssetRecord Record;
     AssetLease SceneRef;
+    std::shared_ptr<const AssetPathsById> Current; // taken on the owner thread with the record
     std::shared_ptr<const SmapContents> Resident;
     AssetStaging Staging; // engaged only when the scene was not resident
     bool Staged = false;

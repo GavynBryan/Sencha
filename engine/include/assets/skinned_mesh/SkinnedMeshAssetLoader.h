@@ -1,6 +1,7 @@
 #pragma once
 
 #include <assets/static_mesh/MeshLoader.h>
+#include <core/assets/AssetCommitResult.h>
 #include <core/assets/AssetStager.h>
 #include <render/skinned_mesh/SkinnedMeshHandle.h>
 
@@ -26,9 +27,10 @@ public:
                            SkeletonCache* skeletons);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
+                                          IAssetSource& source,
+                                          const AssetPathsById& current) override;
 
-    [[nodiscard]] SkinnedMeshHandle CommitTyped(AssetStaging&& staged, AssetSystem& assets);
+    [[nodiscard]] AssetCommitResult<SkinnedMeshHandle> CommitTyped(AssetStaging&& staged, AssetSystem& assets);
 
 private:
     Logger& Log;

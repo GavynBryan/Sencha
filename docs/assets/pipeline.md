@@ -403,13 +403,26 @@ public:
 class SomeAssetLoader final : public IAssetStager
 {
 public:
-    AssetStaging LoadStaged(const AssetRecord& record, IAssetSource& source) override;
+    AssetStaging LoadStaged(const AssetRecord& record, IAssetSource& source,
+                            const AssetPathsById& current) override;
 
     // Owner thread, inside a drain commit. Insert into the cache, perform
     // the GPU upload, return the handle. Must respect chunking (below).
     SomeHandle CommitTyped(AssetStaging&& staged);
 };
 ```
+
+**One staging door.** `LoadStaged` always receives `current`, where assets named
+by id are now: a snapshot (`AssetRegistry::PathsById`) the owner thread takes
+when it asks for the stage, so a reference by id compiles at its asset's present
+path however the stage is scheduled -- a load, a preload, a hot reload, a
+stand-in retry. A loader whose content names no other asset ignores it.
+
+**A commit says why it refused.** A commit that resolves other assets through
+the front door returns `AssetCommitResult<Handle>`; when one of them did not
+load it names that dependency, and the kind's registered commit carries it as
+`AssetCommitOutcome`, so the recorded failure reads "'a' depends on 'b', which
+did not load" without the front door inferring it from the failure table.
 
 Notes that are contractual, not stylistic:
 
@@ -859,7 +872,9 @@ ordinary resident entry in the kind's store under the path that was asked for.
   so every holder sees the asset the moment it loads: the hot reload of the file
   when its bytes change, and `AssetSystem::RetryStandIns`, run once a frame,
   when the registry changes (a file the editor creates, imports, moves or renames
-  into the path). A commit of the same path yields the stand-in rather than
+  into the path). Both stage through `AssetSystem::StageReload` -- decode on the
+  async lane, swap at the drain -- so a retry never reads a file on the owner
+  thread. A commit of the same path yields the stand-in rather than
   displacing it. A reload whose staging fails keeps what is resident — the last
   good version, or the stand-in — and records the reason.
 - **One door, two schedulings.** Every failure goes through
@@ -867,7 +882,8 @@ ordinary resident entry in the kind's store under the path that was asked for.
   material names a missing texture streams in with the checker exactly as the
   synchronous load would.
 - **Which kinds.** A kind opts in with `AssetKindRegistration::StandIn`, which
-  requires `Reload`. Materials and textures do. Meshes do not yet
+  requires `Reload`; `RegisterAssetKind` takes a stand-in only for a loader that
+  can reload, and refuses one at compile time otherwise. Materials and textures do. Meshes do not yet
   (`docs/deferred.md`, Mesh stand-ins). A procedural record never stands in: its
   builder puts it in the store under that path, and a stand-in there would take
   its place.

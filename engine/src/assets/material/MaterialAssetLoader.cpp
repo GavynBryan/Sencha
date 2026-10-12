@@ -22,7 +22,8 @@ MaterialAssetLoader::MaterialAssetLoader(LoggingProvider& logging,
 {
 }
 
-AssetStaging MaterialAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging MaterialAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                             const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;
@@ -206,8 +207,8 @@ TextureHandle MaterialAssetLoader::LoadTexture(std::string_view path, bool srgb,
     AssetLease lease = assets.TryAcquireLease(record->Path, AssetType::Texture);
     if (!lease.IsValid())
     {
-        AssetStaging staged = TextureLoader.LoadStaged(*record, assets.DefaultSource(), srgb);
-        lease = staged.IsValid() ? assets.Commit(std::move(staged))
+        AssetStaging staged = TextureLoader.LoadStagedAs(*record, assets.DefaultSource(), srgb);
+        lease = staged.IsValid() ? std::move(assets.Commit(std::move(staged)).Handle)
                                  : assets.FailLoad(record->Path, AssetType::Texture, std::move(staged.Error));
     }
 

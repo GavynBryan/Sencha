@@ -21,7 +21,8 @@ public:
     SkeletonAssetLoader(LoggingProvider& logging, SkeletonCache* cache);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
+                                          IAssetSource& source,
+                                          const AssetPathsById& current) override;
 
     [[nodiscard]] SkeletonHandle CommitTyped(AssetStaging&& staged);
 
