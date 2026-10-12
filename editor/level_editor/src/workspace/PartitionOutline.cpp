@@ -7,9 +7,9 @@
 #include "document/commands/SetZoneBoundsCommand.h"
 #include "properties/SettingProperties.h"
 #include "selection/commands/SelectCommand.h"
-#include "text/TextFilterMatch.h"
 #include "viewport/WorldViewSettings.h"
 #include "workspace/EditorWorkspace.h"
+#include "workspace/LevelLocation.h"
 
 #include <zone/ZoneDemand.h>
 
@@ -70,31 +70,26 @@ PartitionOutline::Picked PartitionOutline::What() const
     return Pick;
 }
 
-ExplorerPage PartitionOutline::Explore(const ExplorerQuery& query) const
+std::vector<OutlineNode> PartitionOutline::OutlineNodes() const
 {
-    ExplorerPage page;
+    std::vector<OutlineNode> nodes;
     WorldDocument& world = Workspace.World;
     if (!world.IsWorld())
-    {
-        page.Empty = "This level is not a world: it has no zones.";
-        return page;
-    }
-    page.Actions = { "world.add_graph" };
-    page.Empty = "No zone's name holds that.";
+        return nodes;
     const WorldPartitionManifest& manifest = world.Manifest();
     const Picked picked = What();
-
-    std::vector<ExplorerItem> rows;
     const std::string worldName = manifest.Name.empty() ? std::string("World") : manifest.Name;
-    rows.push_back({ .Key = "world",
-                     .Label = worldName + (world.IsWorldSceneFocused() ? "  (focus)" : ""),
-                     .Current = picked == Picked::World });
+    nodes.push_back({ .Key = LevelLocationKey(WorldScenePlace{}),
+                      .Label = worldName + (world.IsWorldSceneFocused() ? "  (focus)" : ""),
+                      .Current = picked == Picked::World });
     for (const GraphRecord& graph : manifest.Graphs)
     {
-        std::vector<ExplorerItem> zones;
+        nodes.push_back({ .Key = LevelLocationKey(graph.Id),
+                          .Label = GraphDisplayName(manifest, graph.Id),
+                          .Current = picked == Picked::Graph && PickedGraph == graph.Id });
         for (const ZoneHeader& zone : manifest.Zones)
         {
-            if (zone.Graph != graph.Id || !TextFilterMatch(zone.Name, query.Filter))
+            if (zone.Graph != graph.Id)
                 continue;
             std::string label = ZoneDisplayName(manifest, zone.Id);
             if (zone.Id == world.FocusZone())
@@ -109,52 +104,37 @@ ExplorerPage PartitionOutline::Explore(const ExplorerQuery& query) const
                 if (id == zone.Id)
                     visible = view.VisibleInEditor;
             });
-            zones.push_back({ .Key = "zone:" + ZoneIdToString(zone.Id),
+            nodes.push_back({ .Key = LevelLocationKey(zone.Id),
                               .Label = std::move(label),
                               .Depth = 1,
                               .Current = picked == Picked::Zone && world.SelectedZone() == zone.Id,
                               .Marks = { visible ? IconId::Eye : IconId::EyeOff } });
         }
-        if (!query.Filter.empty() && zones.empty() && !TextFilterMatch(graph.Name, query.Filter))
-            continue;
-        rows.push_back({ .Key = "graph:" + GraphIdToString(graph.Id),
-                         .Label = graph.Name.empty() ? GraphIdToString(graph.Id) : graph.Name,
-                         .Branch = zones.empty() ? ExplorerBranch::Leaf : ExplorerBranch::Open,
-                         .Current = picked == Picked::Graph && PickedGraph == graph.Id });
-        rows.insert(rows.end(), std::make_move_iterator(zones.begin()), std::make_move_iterator(zones.end()));
     }
-    page.Total = rows.size();
-    for (std::size_t i = query.First; i < rows.size() && page.Items.size() < query.Count; ++i)
-        page.Items.push_back(std::move(rows[i]));
-    return page;
+    return nodes;
 }
 
-void PartitionOutline::Choose(std::string_view key, ExplorerChoice choice, std::size_t)
+void PartitionOutline::Choose(const LevelLocation& location, ExplorerChoice choice)
 {
     WorldDocument& world = Workspace.World;
-    // Its rows are always shown, and revealing one picks nothing.
-    if (!world.IsWorld() || choice == ExplorerChoice::Reveal)
+    // Revealing one picks nothing, and opening one is the outline's.
+    if (!world.IsWorld() || choice == ExplorerChoice::Reveal || choice == ExplorerChoice::Open)
         return;
-    if (key == "world")
+    if (std::holds_alternative<WorldScenePlace>(location))
     {
         Pick = Picked::World;
         if (choice == ExplorerChoice::Commit)
             (void)world.FocusWorldScene();
         return;
     }
-    if (key.starts_with("graph:"))
+    if (const GraphId* graph = std::get_if<GraphId>(&location))
     {
-        if (const std::optional<GraphId> graph = GraphIdFromString(key.substr(6)))
-        {
-            Pick = Picked::Graph;
-            PickedGraph = *graph;
-        }
+        Pick = Picked::Graph;
+        PickedGraph = *graph;
         return;
     }
-    if (!key.starts_with("zone:"))
-        return;
-    const std::optional<ZoneId> zone = ZoneIdFromString(key.substr(5));
-    if (!zone.has_value())
+    const ZoneId* zone = std::get_if<ZoneId>(&location);
+    if (zone == nullptr)
         return;
     if (choice == ExplorerChoice::Mark)
     {
@@ -181,52 +161,47 @@ std::vector<Problem> PartitionOutline::Problems(const DocumentRef& document) con
         return problems;
     for (const ContentRiskRecord& record : Workspace.World.ValidationRecords())
     {
-        std::string location;
+        LevelLocation location = WorldScenePlace{};
         switch (record.Kind)
         {
-        case ContentRiskSourceKind::Zone:       location = "zone:" + ZoneIdToString(ZoneId{ record.SourceId }); break;
-        case ContentRiskSourceKind::Graph:      location = "graph:" + GraphIdToString(GraphId{ record.SourceId }); break;
-        case ContentRiskSourceKind::Transition:
-            location = "transition:" + TransitionIdToString(TransitionId{ record.SourceId });
-            break;
-        default:                                location = "world"; break;
+        case ContentRiskSourceKind::Zone:       location = ZoneId{ record.SourceId }; break;
+        case ContentRiskSourceKind::Graph:      location = GraphId{ record.SourceId }; break;
+        case ContentRiskSourceKind::Transition: location = TransitionId{ record.SourceId }; break;
+        default:                                break;
         }
         problems.push_back({ .Severity = record.Severity == ContentRiskSeverity::Error ? ProblemSeverity::Error
                                                                                        : ProblemSeverity::Warning,
                              .Message = record.Message,
-                             .Location = std::move(location),
+                             .Location = LevelLocationKey(location),
                              .Document = document });
     }
     return problems;
 }
 
-bool PartitionOutline::Reveal(std::string_view location)
+bool PartitionOutline::Reveal(std::string_view key)
 {
     WorldDocument& world = Workspace.World;
-    if (!world.IsWorld())
+    const std::optional<LevelLocation> location = ParseLevelLocation(key);
+    if (!world.IsWorld() || !location.has_value())
         return false;
-    ZoneId zone{};
-    if (location.starts_with("graph:"))
-    {
-        const std::optional<GraphId> graph = GraphIdFromString(location.substr(6));
-        if (!graph.has_value())
-            return false;
-        Pick = Picked::Graph;
-        PickedGraph = *graph;
-        return true;
-    }
-    if (location.starts_with("zone:"))
-        zone = ZoneIdFromString(location.substr(5)).value_or(ZoneId{});
-    else if (location.starts_with("transition:"))
-        if (const std::optional<TransitionId> transition = TransitionIdFromString(location.substr(11)))
-            for (const TransitionRecord& record : world.Manifest().Transitions)
-                if (record.Id == *transition)
-                    zone = record.From;
-    if (location == "world")
+    if (std::holds_alternative<WorldScenePlace>(*location))
     {
         Pick = Picked::World;
         return true;
     }
+    if (const GraphId* graph = std::get_if<GraphId>(&*location))
+    {
+        Pick = Picked::Graph;
+        PickedGraph = *graph;
+        return true;
+    }
+    ZoneId zone{};
+    if (const ZoneId* named = std::get_if<ZoneId>(&*location))
+        zone = *named;
+    else if (const TransitionId* transition = std::get_if<TransitionId>(&*location))
+        for (const TransitionRecord& record : world.Manifest().Transitions)
+            if (record.Id == *transition)
+                zone = record.From;
     if (!zone.IsValid())
         return false;
     Workspace.Selection.ClearSelection();

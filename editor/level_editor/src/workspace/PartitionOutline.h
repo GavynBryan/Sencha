@@ -2,6 +2,8 @@
 
 #include "problems/ProblemList.h"
 #include "properties/PropertySource.h"
+#include "workspace/LevelLocation.h"
+#include "workspaces/TreeOutline.h"
 #include "workspaces/WorkspaceFacets.h"
 
 #include <zone/WorldPartitionIds.h>
@@ -31,13 +33,13 @@ class PartitionOutline final : public IPropertySource
 public:
     explicit PartitionOutline(EditorWorkspace& workspace) : Workspace(workspace) {}
 
-    [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) const;
-    void Choose(std::string_view key, ExplorerChoice choice, std::size_t mark);
+    // The world, its graphs and their zones, as outline nodes.
+    [[nodiscard]] std::vector<OutlineNode> OutlineNodes() const;
+    void Choose(const LevelLocation& location, ExplorerChoice choice);
 
     // What is picked, and what to call it; empty when nothing is.
     [[nodiscard]] std::string Title() const;
-    // The world's validation as problems, each located by what it is about
-    // ("zone:<id>", "graph:<id>", "transition:<id>").
+    // The world's validation as problems, each located by what it is about.
     [[nodiscard]] std::vector<Problem> Problems(const DocumentRef& document) const;
     // Picks what a problem's location names; false when it names nothing here.
     bool Reveal(std::string_view location);

@@ -2,6 +2,7 @@
 
 #include "document/commands/ReparentEntitiesCommand.h"
 #include "workspace/HierarchyOutline.h"
+#include "workspace/LevelLocation.h"
 #include "workspace/PartitionOutline.h"
 #include "workspace/WorldExplorer.h"
 
@@ -31,10 +32,7 @@ protected:
 
     [[nodiscard]] ExplorerPage All() { return Outline.Explore({ .Explorer = "hierarchy", .Count = 100 }); }
 
-    [[nodiscard]] static std::string KeyOf(EntityId entity)
-    {
-        return HierarchyOutline::EntityKey(WorldExplorer::KeyOf(entity));
-    }
+    [[nodiscard]] std::string KeyOf(EntityId entity) { return LevelLocationKey(Scene().PersistentIdOf(entity)); }
 
     [[nodiscard]] static std::ptrdiff_t IndexOf(const ExplorerPage& page, std::string_view key)
     {

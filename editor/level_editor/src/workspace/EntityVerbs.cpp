@@ -8,7 +8,7 @@
 #include "document/commands/ReparentEntitiesCommand.h"
 #include "document/commands/SceneInstanceCommands.h"
 #include "document/commands/SetSceneOriginCommand.h"
-#include "document/commands/ValueCommand.h"
+#include "document/commands/EntityFlagCommand.h"
 #include "selection/commands/SelectCommand.h"
 #include "workspace/EditorWorkspace.h"
 
@@ -100,36 +100,20 @@ void EntityVerbs::Offer(ActionCatalog& catalog, ActionContext& context)
 
     // One step for the whole selection, each entity to the state the primary
     // does not have now.
-    const auto flip = [&w, document](bool visibility) {
+    const auto flip = [&w, document](EntityFlag flag) {
         EditorDocument& doc = document();
-        EditorScene& scene = doc.GetScene();
         const EntityId primary = Primary(w);
         if (!primary.IsValid())
             return;
-        const bool to = visibility ? !scene.IsEntityVisible(primary) : !scene.IsEntityLocked(primary);
-        std::vector<std::unique_ptr<ICommand>> steps;
-        for (const EntityId entity : SelectedEntities(w))
-        {
-            const bool now = visibility ? scene.IsEntityVisible(entity) : scene.IsEntityLocked(entity);
-            if (now == to)
-                continue;
-            steps.push_back(std::make_unique<ValueCommand<bool>>(
-                now, to,
-                [&scene, entity, visibility](const bool& value) {
-                    if (visibility)
-                        scene.SetEntityVisible(entity, value);
-                    else
-                        scene.SetEntityLocked(entity, value);
-                },
-                doc));
-        }
-        if (!steps.empty())
-            w.Commands.Execute(std::make_unique<CompositeCommand>(std::move(steps)));
+        const std::vector<EntityId> selected = SelectedEntities(w);
+        if (std::unique_ptr<ICommand> step =
+                MakeSetEntityFlagCommand(selected, flag, !EntityFlagOf(doc.GetScene(), primary, flag), doc))
+            w.Commands.Execute(std::move(step));
     };
     offer("entity.visible", "Hide or Show", {},
-          { .Invoke = [flip] { flip(true); }, .Enabled = anySelected });
+          { .Invoke = [flip] { flip(EntityFlag::Visible); }, .Enabled = anySelected });
     offer("entity.lock", "Lock or Unlock", {},
-          { .Invoke = [flip] { flip(false); }, .Enabled = anySelected });
+          { .Invoke = [flip] { flip(EntityFlag::Locked); }, .Enabled = anySelected });
 
     offer("scene.open_source", "Open Source", {},
           { .Invoke = [this, &w, document] {

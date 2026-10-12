@@ -156,6 +156,10 @@ public:
     // the runtime allocator namespace. The returned id is reserved immediately,
     // so a discarded mint is retired for the life of the document.
     [[nodiscard]] PersistentEntityId MintPersistentId();
+    // The id an entity is known by across rebuilds and reloads; invalid without one.
+    [[nodiscard]] PersistentEntityId PersistentIdOf(EntityId entity) const;
+    // The entity known by `id` now; invalid when none is.
+    [[nodiscard]] EntityId EntityWithPersistentId(PersistentEntityId id) const;
     // Establishes the document identity invariant on one entity: it keeps the
     // id it carries unless that id is unset, in the runtime namespace, or
     // already held by another tracked entity (a duplicate or copy-paste of a

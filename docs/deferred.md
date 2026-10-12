@@ -126,18 +126,6 @@ do the work and delete the entry.
 - **Trigger:** the performance and cleanup ticket that follows, and before any
   scene with hundreds of rigged entities ships.
 
-## Level explorers walk their own trees
-
-- **What:** `TreeOutline` (`editor/common/src/workspaces/`) is the one outline
-  over preorder nodes, with closable branches, a filter that keeps ancestors,
-  and the current node revealed. UI Preview's and Animation's explorers use it.
-  Level's `WorldExplorer` and `PartitionOutline` still walk, filter and open
-  their own trees.
-- **Where:** `editor/level_editor/src/workspace/WorldExplorer.cpp`,
-  `PartitionOutline.cpp`.
-- **Trigger:** the next change to how either one pages, filters or opens
-  branches moves it onto `TreeOutline` in the same change.
-
 ## Hand-rolled generational pools
 
 - **What:** `HandlePool<Tag, T>` (`engine/include/core/handle/HandlePool.h`) is
@@ -371,16 +359,6 @@ do the work and delete the entry.
 - **Trigger:** a person stopped by the refusal with a material or rig open, or
   either writer settling its references (`AssetRegistry::Current`) for another
   reason; then their sources stop keeping names as read.
-
-## The previewed UI document is not held
-
-- **What:** UI Preview's open document is not a journal document source, so
-  the Shelf will move or trash the `.rml` being previewed; the preview then
-  shows the file it last read and does not follow it.
-- **Where:** `editor/ui_preview/src/UiPreviewSession.cpp`;
-  `ProjectSession`'s `IsOpen` hook asks only the journal.
-- **Trigger:** the preview's model card joining the journal as a document
-  source, or a person moving a previewed document.
 
 ## Carrying a tile from the shelf's window into another
 

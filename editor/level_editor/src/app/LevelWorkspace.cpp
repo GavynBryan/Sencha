@@ -7,6 +7,7 @@
 
 #include "viewport/EditorViewportCameraSystem.h"
 #include "editmodes/ManipulatorSession.h"
+#include "workspace/LevelLocation.h"
 #include "workspace/BrushManipulationSink.h"
 #include "input/KeymapFile.h"
 #include "tools/ToolRegistry.h"
@@ -882,8 +883,8 @@ void LevelWorkspace::PresentMap()
     std::vector<ZoneId> problems;
     if (Partition != nullptr && LevelDocument != nullptr)
         for (const Problem& problem : Partition->Problems(LevelDocument->Ref()))
-            if (problem.Location.starts_with("zone:"))
-                if (const std::optional<ZoneId> zone = ZoneIdFromString(problem.Location.substr(5)))
+            if (const std::optional<LevelLocation> location = ParseLevelLocation(problem.Location))
+                if (const ZoneId* zone = std::get_if<ZoneId>(&*location))
                     problems.push_back(*zone);
     const EditorViewport* view = Workspace->Layout.Active();
     const std::vector<ZoneGraphEdge> edges = ZoneGraphEdges(Workspace->World);
@@ -1285,9 +1286,9 @@ WorkspaceLocationFacet LevelWorkspace::Location() const
         if (here != nullptr)
         {
             facet.Parts.push_back({ .Label = GraphDisplayName(manifest, here->Graph),
-                                    .Key = "graph:" + GraphIdToString(here->Graph) });
+                                    .Key = LevelLocationKey(here->Graph) });
             facet.Parts.push_back({ .Label = ZoneDisplayName(manifest, here->Id),
-                                    .Key = "zone:" + ZoneIdToString(here->Id) });
+                                    .Key = LevelLocationKey(here->Id) });
         }
     }
     else if (Files != nullptr)
@@ -1300,7 +1301,7 @@ WorkspaceLocationFacet LevelWorkspace::Location() const
     if (primary.IsEntity() && document.GetScene().HasEntity(primary.Entity))
         facet.Parts.push_back({ .Label = objects > 1 ? std::format("{} objects", objects)
                                                      : EntityLabel(document, primary.Entity),
-                                .Key = HierarchyOutline::EntityKey(WorldExplorer::KeyOf(primary.Entity)),
+                                .Key = LevelLocationKey(document.GetScene().PersistentIdOf(primary.Entity)),
                                 .Selection = true });
     return facet;
 }

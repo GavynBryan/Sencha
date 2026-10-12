@@ -34,8 +34,9 @@ public:
     SnapshotDocument& operator=(const SnapshotDocument&) = delete;
 
     // Follows `file` from now, what the holder has taken as what it holds; the
-    // previous file's changes were settled by whoever opens another.
-    void Open(std::filesystem::path file);
+    // previous file's changes were settled by whoever opens another. A file it
+    // is kept beside -- the document a sidecar describes -- is held with it.
+    void Open(std::filesystem::path file, std::filesystem::path beside = {});
     void Close();
     [[nodiscard]] bool IsOpen() const { return !File.empty(); }
     [[nodiscard]] const std::filesystem::path& Path() const { return File; }
@@ -73,6 +74,7 @@ private:
     DocumentSourceSet& Sources;
     SnapshotValue Value;
     std::filesystem::path File;
+    std::filesystem::path Beside;
     // The value as the journal last recorded it, and as the file last held it.
     std::string Recorded;
     std::string Saved;

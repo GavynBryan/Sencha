@@ -597,7 +597,7 @@ void UiPreviewWorkspace::LoadDocument(const std::string& packagePath)
     if (sidecar.empty())
         Model->Close();
     else
-        Model->Open(std::move(sidecar));
+        Model->Open(std::move(sidecar), entry->SourcePath());
 }
 
 void UiPreviewWorkspace::RescanLibrary()

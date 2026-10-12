@@ -160,3 +160,18 @@ TEST_F(SnapshotDocuments, ADiscardPutsTheSavedVersionBackAndForgetsItsSteps)
     EXPECT_FALSE(Journal.CanUndo());
     EXPECT_EQ(Document.DocumentLabel(Document.Ref().Key), "value.txt");
 }
+
+// A sidecar holds the document it describes too, so the shelf does not move or
+// trash that document out from under it while it is open.
+TEST_F(SnapshotDocuments, ASidecarHoldsTheDocumentItIsKeptBeside)
+{
+    const std::filesystem::path described = Root / "menu.rml";
+    std::ofstream(described) << "<rml/>";
+    std::ofstream(File()) << "value";
+    EXPECT_FALSE(Journal.HoldsFile(described));
+    Document.Open(File(), described);
+    EXPECT_TRUE(Journal.HoldsFile(described));
+    EXPECT_TRUE(Journal.HoldsFile(File()));
+    Document.Close();
+    EXPECT_FALSE(Journal.HoldsFile(described));
+}

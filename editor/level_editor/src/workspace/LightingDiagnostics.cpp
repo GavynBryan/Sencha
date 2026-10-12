@@ -1,3 +1,4 @@
+#include "workspace/LevelLocation.h"
 #include "workspace/LightingDiagnostics.h"
 
 #include "actions/ActionOffer.h"
@@ -18,8 +19,6 @@
 
 namespace
 {
-constexpr std::string_view kEntityLocation = "entity:";
-
 std::string_view PolicyLabel(ShadowUpdatePolicy policy)
 {
     switch (policy)
@@ -125,7 +124,7 @@ std::vector<Problem> LightingDiagnostics::Problems(const DocumentRef& document) 
                                        point ? readout->Budgets.MaxPointSlots : readout->Budgets.MaxSlots,
                                        point ? "point" : "spot",
                                        point ? "render.shadow.max_point" : "render.shadow.max_spot"),
-                .Location = id.IsValid() ? std::string(kEntityLocation) + PersistentEntityIdToString(id) : std::string{},
+                .Location = id.IsValid() ? LevelLocationKey(id) : std::string{},
                 .Document = document,
             });
         }
@@ -139,14 +138,12 @@ std::vector<Problem> LightingDiagnostics::Problems(const DocumentRef& document) 
 
 bool LightingDiagnostics::Reveal(std::string_view location)
 {
-    if (!location.starts_with(kEntityLocation))
-        return false;
-    const std::optional<PersistentEntityId> id = PersistentEntityIdFromString(location.substr(kEntityLocation.size()));
-    if (!id.has_value())
+    const std::optional<LevelLocation> parsed = ParseLevelLocation(location);
+    const PersistentEntityId* id = parsed.has_value() ? std::get_if<PersistentEntityId>(&*parsed) : nullptr;
+    if (id == nullptr)
         return false;
     const Registry& registry = Workspace.World.FocusDocument().GetRegistry();
-    const auto* index = registry.Components.TryGetResource<PersistentEntityIndex>();
-    const EntityId entity = index != nullptr ? index->TryResolve(*id) : EntityId{};
+    const EntityId entity = Workspace.World.FocusDocument().GetScene().EntityWithPersistentId(*id);
     if (!entity.IsValid())
         return false;
     Commands.Execute(std::make_unique<SelectCommand>(Workspace.Selection,

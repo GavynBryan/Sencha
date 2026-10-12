@@ -44,9 +44,10 @@ SnapshotDocument::~SnapshotDocument()
     Sources.RemoveSource(*this);
 }
 
-void SnapshotDocument::Open(std::filesystem::path file)
+void SnapshotDocument::Open(std::filesystem::path file, std::filesystem::path beside)
 {
     Close();
+    Beside = std::move(beside);
     std::string text;
     std::string error;
     if (!Value.Write(text, error))
@@ -65,6 +66,7 @@ void SnapshotDocument::Close()
     History.Clear();
     Sources.ForgetDocument(Ref());
     File.clear();
+    Beside.clear();
     Recorded.clear();
     Saved.clear();
 }
@@ -222,5 +224,7 @@ std::string SnapshotDocument::DocumentLabel(std::string_view key) const
 bool SnapshotDocument::HoldsFile(const std::filesystem::path& file) const
 {
     std::error_code ec;
-    return IsOpen() && std::filesystem::equivalent(file, File, ec);
+    return IsOpen()
+           && (std::filesystem::equivalent(file, File, ec)
+               || (!Beside.empty() && std::filesystem::equivalent(file, Beside, ec)));
 }

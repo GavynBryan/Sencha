@@ -641,10 +641,21 @@ const Registry& EditorScene::GetRegistry() const
     return Registry_;
 }
 
-std::uint64_t EditorScene::FlagKeyOf(EntityId entity) const
+PersistentEntityId EditorScene::PersistentIdOf(EntityId entity) const
 {
     const auto* id = Registry_.Components.TryGet<PersistentIdComponent>(entity);
-    return id != nullptr ? id->Id.Value : 0;
+    return id != nullptr ? id->Id : PersistentEntityId{};
+}
+
+EntityId EditorScene::EntityWithPersistentId(PersistentEntityId id) const
+{
+    const auto* index = Registry_.Components.TryGetResource<PersistentEntityIndex>();
+    return index != nullptr ? index->TryResolve(id) : EntityId{};
+}
+
+std::uint64_t EditorScene::FlagKeyOf(EntityId entity) const
+{
+    return PersistentIdOf(entity).Value;
 }
 
 bool EditorScene::IsEntityVisible(EntityId entity) const

@@ -2,7 +2,7 @@
 
 #include "text/TextFilterMatch.h"
 
-#include <vector>
+#include <algorithm>
 
 namespace
 {
@@ -30,21 +30,34 @@ void ForEachAncestor(std::span<const OutlineNode> nodes, std::size_t index, Visi
 }
 } // namespace
 
+bool TreeOutline::IsOpen(const OutlineNode& node) const
+{
+    return node.StartsClosed == Flipped.contains(node.Key);
+}
+
+void TreeOutline::OpenAbove(std::span<const OutlineNode> nodes, std::size_t index)
+{
+    ForEachAncestor(nodes, index, [&](std::size_t up) {
+        const OutlineNode& ancestor = nodes[up];
+        if (ancestor.StartsClosed)
+            Flipped.insert(ancestor.Key);
+        else if (const auto flipped = Flipped.find(ancestor.Key); flipped != Flipped.end())
+            Flipped.erase(flipped);
+    });
+}
+
 ExplorerPage TreeOutline::Explore(std::span<const OutlineNode> nodes, const ExplorerQuery& query)
 {
+    std::vector<std::string> current;
+    for (const OutlineNode& node : nodes)
+        if (node.Current)
+            current.push_back(node.Key);
+    const bool moved = current != Revealed;
     for (std::size_t i = 0; i < nodes.size(); ++i)
-        if (nodes[i].Current)
-        {
-            if (nodes[i].Key != Revealed)
-            {
-                Revealed = nodes[i].Key;
-                ForEachAncestor(nodes, i, [&](std::size_t up) {
-                    if (const auto closed = Closed.find(nodes[up].Key); closed != Closed.end())
-                        Closed.erase(closed);
-                });
-            }
-            break;
-        }
+        if ((moved && nodes[i].Current) || (!PendingReveal.empty() && nodes[i].Key == PendingReveal))
+            OpenAbove(nodes, i);
+    Revealed = std::move(current);
+    PendingReveal.clear();
 
     const bool filtering = !query.Filter.empty();
     std::vector<bool> keep(nodes.size(), !filtering);
@@ -67,7 +80,7 @@ ExplorerPage TreeOutline::Explore(std::span<const OutlineNode> nodes, const Expl
             continue;
         }
         const bool leaf = end == i + 1;
-        const bool open = filtering || !Closed.contains(node.Key);
+        const bool open = filtering || IsOpen(node);
         if (CountOnPage(page, query))
             page.Items.push_back({ .Key = node.Key,
                                    .Label = node.Label,
@@ -75,7 +88,8 @@ ExplorerPage TreeOutline::Explore(std::span<const OutlineNode> nodes, const Expl
                                    .Branch = leaf ? ExplorerBranch::Leaf
                                              : open ? ExplorerBranch::Open
                                                     : ExplorerBranch::Closed,
-                                   .Current = node.Current });
+                                   .Current = node.Current,
+                                   .Marks = node.Marks });
         i = open ? i + 1 : end;
     }
     return page;
@@ -83,8 +97,8 @@ ExplorerPage TreeOutline::Explore(std::span<const OutlineNode> nodes, const Expl
 
 void TreeOutline::Flip(std::string_view key)
 {
-    if (const auto closed = Closed.find(key); closed != Closed.end())
-        Closed.erase(closed);
+    if (const auto flipped = Flipped.find(key); flipped != Flipped.end())
+        Flipped.erase(flipped);
     else
-        Closed.emplace(key);
+        Flipped.emplace(key);
 }

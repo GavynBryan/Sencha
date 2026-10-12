@@ -4,6 +4,9 @@
 #include "actions/ActionContext.h"
 #include "document/commands/ReparentEntitiesCommand.h"
 #include "workspace/EntityVerbs.h"
+#include "workspace/HierarchyOutline.h"
+#include "workspace/LevelLocation.h"
+#include "workspace/PartitionOutline.h"
 #include "workspace/WorldExplorer.h"
 
 #include <gtest/gtest.h>
@@ -32,12 +35,12 @@ protected:
         Layer = Stack.Push(Context, ActionRank::Workspace);
     }
 
-    [[nodiscard]] ExplorerPage All() { return Explorer.Explore({ .Explorer = "world", .Count = 100 }); }
+    [[nodiscard]] ExplorerPage All() { return Outline.Explore({ .Explorer = "hierarchy", .Count = 100 }); }
 
     [[nodiscard]] const ExplorerItem* ItemFor(const ExplorerPage& page, EntityId entity)
     {
-        const auto found = std::ranges::find(page.Items, std::to_string(entity.Index) + ":" + std::to_string(entity.Generation),
-                                             &ExplorerItem::Key);
+        const auto found =
+            std::ranges::find(page.Items, LevelLocationKey(Scene().PersistentIdOf(entity)), &ExplorerItem::Key);
         return found != page.Items.end() ? &*found : nullptr;
     }
 
@@ -51,6 +54,8 @@ protected:
     EntityId Child{};
     EntityId Other{};
     WorldExplorer Explorer{ Workspace };
+    PartitionOutline Partition{ Workspace };
+    HierarchyOutline Outline{ Workspace, Explorer, Partition };
     EntityVerbs Verbs{ Workspace, {} };
     ActionCatalog Catalog;
     ActionContext Context;
@@ -69,7 +74,7 @@ TEST_F(WorldExplorerTest, ChildrenSitUnderTheirParentAndABranchCloses)
     EXPECT_EQ(parent->Branch, ExplorerBranch::Open);
     EXPECT_EQ(child->Depth, parent->Depth + 1);
 
-    Explorer.Choose(parent->Key, ExplorerChoice::Open, 0);
+    Outline.Choose(parent->Key, ExplorerChoice::Open, 0);
     page = All();
     EXPECT_EQ(ItemFor(page, Parent)->Branch, ExplorerBranch::Closed);
     EXPECT_EQ(ItemFor(page, Child), nullptr) << "a closed branch shows nothing under it";
@@ -79,7 +84,7 @@ TEST_F(WorldExplorerTest, AFilterKeepsWhatMatchesAndTheBranchesAboveIt)
 {
     const ExplorerPage everything = All();
     const std::string childName = ItemFor(everything, Child)->Label;
-    const ExplorerPage page = Explorer.Explore({ .Explorer = "world", .Filter = childName, .Count = 100 });
+    const ExplorerPage page = Outline.Explore({ .Explorer = "hierarchy", .Filter = childName, .Count = 100 });
     EXPECT_NE(ItemFor(page, Child), nullptr);
     EXPECT_NE(ItemFor(page, Parent), nullptr) << "the match's parent stays so it is not shown at the root";
 }
@@ -87,12 +92,12 @@ TEST_F(WorldExplorerTest, AFilterKeepsWhatMatchesAndTheBranchesAboveIt)
 TEST_F(WorldExplorerTest, PickingSelectsOneARangeOrOneMore)
 {
     const ExplorerPage page = All();
-    Explorer.Choose(ItemFor(page, Parent)->Key, ExplorerChoice::Pick, 0);
+    Outline.Choose(ItemFor(page, Parent)->Key, ExplorerChoice::Pick, 0);
     EXPECT_TRUE(IsSelected(Parent));
-    Explorer.Choose(ItemFor(page, Other)->Key, ExplorerChoice::Extend, 0);
+    Outline.Choose(ItemFor(page, Other)->Key, ExplorerChoice::Extend, 0);
     EXPECT_TRUE(IsSelected(Child)) << "a range takes the rows between";
     EXPECT_TRUE(IsSelected(Other));
-    Explorer.Choose(ItemFor(page, Child)->Key, ExplorerChoice::Toggle, 0);
+    Outline.Choose(ItemFor(page, Child)->Key, ExplorerChoice::Toggle, 0);
     EXPECT_FALSE(IsSelected(Child));
     EXPECT_TRUE(IsSelected(Parent));
 }
@@ -100,9 +105,9 @@ TEST_F(WorldExplorerTest, PickingSelectsOneARangeOrOneMore)
 TEST_F(WorldExplorerTest, AMarkHidesOrLocksAsAStep)
 {
     const ExplorerPage page = All();
-    Explorer.Choose(ItemFor(page, Other)->Key, ExplorerChoice::Mark, 0);
+    Outline.Choose(ItemFor(page, Other)->Key, ExplorerChoice::Mark, 0);
     EXPECT_FALSE(Scene().IsEntityVisible(Other));
-    Explorer.Choose(ItemFor(page, Other)->Key, ExplorerChoice::Mark, 1);
+    Outline.Choose(ItemFor(page, Other)->Key, ExplorerChoice::Mark, 1);
     EXPECT_TRUE(Scene().IsEntityLocked(Other));
     Commands.Undo();
     Commands.Undo();

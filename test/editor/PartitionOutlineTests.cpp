@@ -16,14 +16,21 @@ namespace
 class PartitionOutlineTest : public WorkspaceTest
 {
 protected:
-    [[nodiscard]] ExplorerPage All() const { return Outline.Explore({ .Explorer = "zones", .Count = 50 }); }
+    [[nodiscard]] std::vector<OutlineNode> All() const { return Outline.OutlineNodes(); }
 
     [[nodiscard]] std::string KeyStartingWith(std::string_view prefix) const
     {
-        for (const ExplorerItem& item : All().Items)
-            if (item.Key.starts_with(prefix))
-                return item.Key;
+        for (const OutlineNode& node : All())
+            if (node.Key.starts_with(prefix))
+                return node.Key;
         return {};
+    }
+
+    void Choose(std::string_view key, ExplorerChoice choice)
+    {
+        const std::optional<LevelLocation> location = ParseLevelLocation(key);
+        ASSERT_TRUE(location.has_value()) << key;
+        Outline.Choose(*location, choice);
     }
 
     PropertyEditResult Commit(std::string_view key, std::string_view value)
@@ -37,18 +44,18 @@ protected:
 
 TEST_F(PartitionOutlineTest, TheWorldItsGraphsAndTheirZonesAreTheOutline)
 {
-    const ExplorerPage page = All();
-    ASSERT_GE(page.Items.size(), 3u);
-    EXPECT_EQ(page.Items[0].Key, "world");
-    EXPECT_TRUE(page.Items[1].Key.starts_with("graph:"));
-    EXPECT_TRUE(page.Items[2].Key.starts_with("zone:"));
-    EXPECT_EQ(page.Items[2].Depth, 1);
+    const std::vector<OutlineNode> nodes = All();
+    ASSERT_GE(nodes.size(), 3u);
+    EXPECT_EQ(nodes[0].Key, "world");
+    EXPECT_TRUE(nodes[1].Key.starts_with("graph:"));
+    EXPECT_TRUE(nodes[2].Key.starts_with("zone:"));
+    EXPECT_EQ(nodes[2].Depth, 1);
 }
 
 TEST_F(PartitionOutlineTest, ChoosingAZoneSelectsItAndItsPropertiesAreTheCard)
 {
     const std::string zone = KeyStartingWith("zone:");
-    Outline.Choose(zone, ExplorerChoice::Pick, 0);
+    Choose(zone, ExplorerChoice::Pick);
     EXPECT_TRUE(Workspace.World.SelectedZone().IsValid());
     EXPECT_FALSE(Outline.Title().empty());
     EXPECT_EQ(Commit("name", "Atrium"), PropertyEditResult::Applied);
@@ -60,7 +67,7 @@ TEST_F(PartitionOutlineTest, ChoosingAZoneSelectsItAndItsPropertiesAreTheCard)
 
 TEST_F(PartitionOutlineTest, AGraphsShapeIsAChoiceOverItsRadius)
 {
-    Outline.Choose(KeyStartingWith("graph:"), ExplorerChoice::Pick, 0);
+    Choose(KeyStartingWith("graph:"), ExplorerChoice::Pick);
     const GraphId graph = Workspace.World.Manifest().Graphs.front().Id;
     EXPECT_EQ(Commit("shape", "Graph"), PropertyEditResult::Applied);
     EXPECT_EQ(Workspace.World.Manifest().Graphs.front().Streaming.Radius, 0.0);
