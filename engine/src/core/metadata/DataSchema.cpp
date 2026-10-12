@@ -260,7 +260,10 @@ bool NormalizeDataValue(const JsonValue* value,
         {
             JsonValue member;
             const JsonValue* authored = value->Find(child.Key);
-            if (authored == nullptr && !rules.FillDefaults && !child.Required)
+            // Left out and nothing to fill it with: it stays out, so what comes
+            // back satisfies the schema it was checked against.
+            const bool fills = rules.FillDefaults && !std::holds_alternative<std::monostate>(child.Default);
+            if (authored == nullptr && !child.Required && !fills)
                 continue;
             valid = NormalizeDataValue(authored, child, ChildPath(path, child.Key), rules,
                                        out != nullptr ? &member : nullptr, errors)

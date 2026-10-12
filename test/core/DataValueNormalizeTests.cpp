@@ -45,7 +45,7 @@ namespace
     }
 }
 
-TEST(DataValueNormalize, AbsentMembersTakeTheirDefaultOrNull)
+TEST(DataValueNormalize, AbsentMembersTakeTheirDefaultOrStayOut)
 {
     std::vector<DataValidationError> errors;
     JsonValue out;
@@ -55,8 +55,12 @@ TEST(DataValueNormalize, AbsentMembersTakeTheirDefaultOrNull)
     EXPECT_TRUE(errors.empty());
     EXPECT_DOUBLE_EQ(out.Find("radius")->AsNumber(), 2.0);
     EXPECT_EQ(out.Find("label")->AsString(), "hall");
-    EXPECT_TRUE(out.Find("count")->IsNull());
-    EXPECT_TRUE(out.Find("tint")->IsNull());
+    EXPECT_EQ(out.Find("count"), nullptr);
+    EXPECT_EQ(out.Find("tint"), nullptr);
+
+    // What comes back satisfies the schema it was checked against.
+    std::vector<DataValidationError> again;
+    EXPECT_TRUE(NormalizeDataValue(&out, Record(), "$", DataValueRules{}, nullptr, again));
 }
 
 TEST(DataValueNormalize, ARequiredMemberWithoutADefaultIsReportedByPath)

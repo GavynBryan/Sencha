@@ -160,7 +160,8 @@ struct DataValueRules
 
 // Checks `value` against `field`, where null means the member was left out.
 // When `out` is given it receives the value as checked, with defaults filled
-// under FillDefaults and an absent member that tolerates absence as null.
+// under FillDefaults; a member left out with no default to fill stays out, so
+// `out` satisfies the schema it was checked against.
 [[nodiscard]] bool NormalizeDataValue(const JsonValue* value,
                                       const DataFieldSchema& field,
                                       std::string_view path,
