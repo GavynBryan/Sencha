@@ -3,9 +3,6 @@
 #include "data/DataSubtypeAuthoring.h"
 
 #include <memory>
-#include <string_view>
-
-[[nodiscard]] std::string_view InputProfileSubtype();
 
 // A profile read as the keymap it describes: contexts holding bindings, each
 // titled by what it binds to what, its action chosen among those its action

@@ -80,7 +80,6 @@ void DataDocumentSet::Dropped(const DataDocument& document)
     Tabs.erase(it);
     if (ActiveTab > index || ActiveTab >= Tabs.size())
         ActiveTab = ActiveTab == 0 ? 0 : ActiveTab - 1;
-    SelectField(nullptr, {});
 }
 
 void DataDocumentSet::SetActive(std::size_t index)
@@ -91,7 +90,6 @@ void DataDocumentSet::SetActive(std::size_t index)
         if (DataDocument* previous = Active())
             Documents_.CommitEdit(*previous);
     ActiveTab = index;
-    SelectField(nullptr, {});
 }
 
 void DataDocumentSet::Reveal(std::string_view virtualPath)
@@ -155,36 +153,13 @@ std::vector<std::string> DataDocumentSet::CreatableSubtypes() const
     return subtypes;
 }
 
-void DataDocumentSet::SelectField(const DataFieldSchema* field, std::string path)
+void DataDocumentSet::ApplyEdit(DataDocument& document, JsonValue root, DataEdit edit)
 {
-    Selected = field;
-    SelectedJsonPath = std::move(path);
-}
-
-std::vector<std::string> DataDocumentSet::DataAssetPaths(std::string_view subtype)
-{
-    return Documents_.DataAssetPaths(subtype);
-}
-
-void DataDocumentSet::OpenDataAsset(std::string_view path)
-{
-    std::string error;
-    (void)OpenOrFocus(path, error);
-}
-
-void DataDocumentSet::SelectField(const DataFieldSchema& field, std::string_view path)
-{
-    SelectField(&field, std::string(path));
-}
-
-void DataDocumentSet::EditPreviewed(DataDocument& document)
-{
+    document.BeginEdit();
+    document.PreviewRoot(std::move(root));
     Documents_.Validate(document);
-}
-
-void DataDocumentSet::EditCommitted(DataDocument& document)
-{
-    Documents_.Changed(document);
+    if (edit == DataEdit::Step)
+        Documents_.CommitEdit(document);
 }
 
 bool DataDocumentSet::Accepts(std::string_view subtype) const

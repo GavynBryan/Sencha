@@ -53,8 +53,8 @@ public:
     // Reads the project's names again once the document has changed.
     void Update(const DataDocument& document, DataDocumentSet& documents);
     void Refine(std::vector<PropertyNode>& nodes, const JsonValue& data) const;
-    [[nodiscard]] std::optional<bool> Perform(std::string_view key, std::string_view verb, std::string_view choice,
-                                              JsonValue& data) const;
+    [[nodiscard]] DataSubtypeEdit Perform(std::string_view key, std::string_view verb, std::string_view choice,
+                                          JsonValue& data) const;
     [[nodiscard]] const AnimationPredicateVocabulary& Names() const { return Vocabulary; }
 
 private:

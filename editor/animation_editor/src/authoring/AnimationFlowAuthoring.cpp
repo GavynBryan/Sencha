@@ -8,30 +8,27 @@
 #include <core/metadata/DataSchema.h>
 
 #include <algorithm>
-#include <charconv>
 
 namespace
 {
-constexpr std::string_view kSections = "$.data.sections";
-
-// The section a key names or lies within, and what follows it there.
+// The section a key names or lies within, and the steps that follow it there.
 struct SectionPlace
 {
     std::size_t Section = 0;
-    std::string_view Rest;
+    std::vector<DataPathStep> Rest;
+
+    [[nodiscard]] bool IsMember(std::string_view key) const
+    {
+        return Rest.size() == 1 && !Rest.front().Index && Rest.front().Key == key;
+    }
 };
 
 std::optional<SectionPlace> SectionOf(std::string_view key)
 {
-    if (!key.starts_with(kSections) || key.size() <= kSections.size() || key[kSections.size()] != '[')
+    std::optional<std::vector<DataPathStep>> steps = ParseDataPath(key);
+    if (!steps || steps->size() < 2 || (*steps)[0].Key != "sections" || !(*steps)[1].Index)
         return std::nullopt;
-    const std::size_t close = key.find(']', kSections.size());
-    SectionPlace place;
-    if (close == std::string_view::npos
-        || std::from_chars(key.data() + kSections.size() + 1, key.data() + close, place.Section).ec != std::errc{})
-        return std::nullopt;
-    place.Rest = key.substr(close + 1);
-    return place;
+    return SectionPlace{ .Section = *(*steps)[1].Index, .Rest = { steps->begin() + 2, steps->end() } };
 }
 
 std::vector<std::string> Tags(const JsonValue& data, std::size_t after = 0)
@@ -75,18 +72,19 @@ void RefineAll(std::vector<PropertyNode>& nodes, const JsonValue& data, const An
         const std::optional<SectionPlace> place = SectionOf(node.Key);
         if (!place)
             continue;
-        if (place->Rest.starts_with(".branches[") && place->Rest.ends_with("].to"))
+        if (place->Rest.size() == 3 && place->Rest[0].Key == "branches" && place->Rest[1].Index
+            && place->Rest[2].Key == "to")
             ChooseAmong(node, Tags(data, place->Section + 1));
-        else if (place->Rest == ".count_intent")
+        else if (place->IsMember("count_intent"))
         {
             std::vector<std::string> intents;
             for (const AnimationPredicateVocabulary::Intent& intent : names.Intents)
                 intents.push_back(intent.Name);
             ChooseAmong(node, std::move(intents));
         }
-        else if (place->Rest == ".count_param")
+        else if (place->IsMember("count_param"))
         {
-            const JsonValue* section = FindDataValue(data, node.Key.substr(0, node.Key.rfind('.')));
+            const JsonValue* section = FindDataValue(data, DataPathParent(node.Key).value_or(node.Key));
             const JsonValue* intent = section != nullptr ? section->Find("count_intent") : nullptr;
             ChooseAmong(node, AnimationIntentParams(names, intent != nullptr && intent->IsString()
                                                                 ? std::string_view(intent->AsString())
@@ -114,27 +112,28 @@ public:
         RefineAll(nodes, *data, Conditions.Names());
     }
 
-    [[nodiscard]] std::optional<bool> Write(std::string_view key, std::string_view value, JsonValue& data,
-                                            const DataSchema& schema) const override
+    [[nodiscard]] DataSubtypeEdit Write(std::string_view key, std::string_view value, JsonValue& data,
+                                        const DataSchema& schema) const override
     {
         const std::optional<SectionPlace> place = SectionOf(key);
-        if (!place || place->Rest != ".loop")
-            return std::nullopt;
+        if (!place || !place->IsMember("loop"))
+            return DataSubtypeEdit::NotMine;
         const std::optional<std::string> loop = LoopValue(value, schema);
-        return loop && SetAnimFlowLoop(data, place->Section, *loop);
+        return DataSubtypeEditOf(loop && SetAnimFlowLoop(data, place->Section, *loop));
     }
 
-    [[nodiscard]] std::optional<bool> Perform(std::string_view key, std::string_view verb, std::string_view choice,
-                                              JsonValue& data) const override
+    [[nodiscard]] DataSubtypeEdit Perform(std::string_view key, std::string_view verb, std::string_view choice,
+                                          JsonValue& data) const override
     {
         if (const std::optional<SectionPlace> place = SectionOf(key); place && place->Rest.empty())
         {
             if (verb == "up")
-                return place->Section > 0 && MoveAnimFlowSection(data, place->Section, place->Section - 1);
+                return DataSubtypeEditOf(place->Section > 0
+                                         && MoveAnimFlowSection(data, place->Section, place->Section - 1));
             if (verb == "down")
-                return MoveAnimFlowSection(data, place->Section, place->Section + 1);
+                return DataSubtypeEditOf(MoveAnimFlowSection(data, place->Section, place->Section + 1));
             if (verb == "delete")
-                return RemoveAnimFlowSection(data, place->Section);
+                return DataSubtypeEditOf(RemoveAnimFlowSection(data, place->Section));
         }
         return Conditions.Perform(key, verb, choice, data);
     }

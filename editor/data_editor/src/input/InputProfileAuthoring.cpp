@@ -197,19 +197,19 @@ public:
             }
     }
 
-    [[nodiscard]] std::optional<bool> Write(std::string_view key, std::string_view value, JsonValue& data,
-                                            const DataSchema&) const override
+    [[nodiscard]] DataSubtypeEdit Write(std::string_view key, std::string_view value, JsonValue& data,
+                                        const DataSchema&) const override
     {
         const std::optional<BindingKey> at = BindingOf(key);
         if (!at.has_value() || at->Member != kShapeSuffix)
-            return std::nullopt;
+            return DataSubtypeEdit::NotMine;
         JsonValue* binding = FindDataValue(data, at->Binding);
         const auto shape = std::ranges::find(kShapes, value, &ShapeChoice::Label);
         if (binding == nullptr || shape == kShapes.end())
-            return false;
+            return DataSubtypeEdit::Refused;
         if (shape->Shape != ReadShape(*binding))
             ApplyShape(*binding, shape->Shape);
-        return true;
+        return DataSubtypeEdit::Applied;
     }
 
     [[nodiscard]] std::optional<std::vector<std::string>> Candidates(std::string_view key,
@@ -229,21 +229,21 @@ public:
         return controls;
     }
 
-    [[nodiscard]] std::optional<PropertyEditResult> Act(std::string_view key, std::string_view verb,
-                                                        const DataDocument& document) override
+    [[nodiscard]] DataSubtypeEdit Act(std::string_view key, std::string_view verb,
+                                      const DataDocument& document) override
     {
         if (verb != "listen")
-            return std::nullopt;
+            return DataSubtypeEdit::NotMine;
         const std::optional<BindingKey> at = BindingOf(key);
         const JsonValue* binding = at.has_value() && document.Data() != nullptr ? FindDataValue(*document.Data(), at->Binding)
                                                                                 : nullptr;
         if (binding == nullptr || !IsSlot(*binding, at->Member))
-            return PropertyEditResult::Gone;
+            return DataSubtypeEdit::Gone;
         if (Capture.IsArmedAt(key))
             Capture.Disarm();
         else
             Capture.Arm(std::string(key), AcceptanceOf(*binding), document.VirtualPath(), document.Revision());
-        return PropertyEditResult::Applied;
+        return DataSubtypeEdit::Applied;
     }
 
     bool HandlePlatformEvent(const SDL_Event& event) override { return Capture.HandleSdlEvent(event); }
@@ -352,11 +352,6 @@ private:
     InputControlCapture Capture;
 };
 } // namespace
-
-std::string_view InputProfileSubtype()
-{
-    return kSubtype;
-}
 
 std::unique_ptr<IDataSubtypeAuthoring> CreateInputProfileAuthoring()
 {

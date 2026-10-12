@@ -1,5 +1,7 @@
 #include "MovementLayerSummary.h"
 
+#include "data/DataProperties.h"
+
 #include <movement/MovementProfileRuntime.h>
 
 #include <algorithm>
@@ -113,7 +115,7 @@ std::vector<MovementCoefficientLabel> MovementCoefficientLabels(const DataSchema
     {
         labels.push_back(MovementCoefficientLabel{
             .Key = field.Key,
-            .Display = field.DisplayName.empty() ? field.Key : field.DisplayName,
+            .Display = DataFieldDisplayName(field),
             .Units = field.Units,
         });
     }

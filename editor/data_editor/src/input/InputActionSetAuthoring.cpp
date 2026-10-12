@@ -96,17 +96,17 @@ public:
         }
     }
 
-    [[nodiscard]] std::optional<bool> Write(std::string_view key, std::string_view value, JsonValue& data,
-                                            const DataSchema& schema) const override
+    [[nodiscard]] DataSubtypeEdit Write(std::string_view key, std::string_view value, JsonValue& data,
+                                        const DataSchema& schema) const override
     {
         const std::optional<std::size_t> index = ActionTypeKey(key);
         if (!index.has_value())
-            return std::nullopt;
+            return DataSubtypeEdit::NotMine;
         JsonValue* action = FindDataValue(data, std::format("$.data.actions[{}]", *index));
         const DataFieldSchema* record = ActionRecordSchema(schema);
         const DataFieldSchema* type = record != nullptr ? FindChild(*record, "type") : nullptr;
         if (action == nullptr || type == nullptr)
-            return false;
+            return DataSubtypeEdit::Refused;
         for (const DataEnumChoice& choice : type->EnumChoices)
         {
             if (value != choice.Value && value != (choice.DisplayName.empty() ? choice.Value : choice.DisplayName))
@@ -116,17 +116,12 @@ public:
             // than leaving a member nothing shows and the compiler rejects.
             if (choice.Value != "digital")
                 EraseMember(*action, "fire");
-            return true;
+            return DataSubtypeEdit::Applied;
         }
-        return false;
+        return DataSubtypeEdit::Refused;
     }
 };
 } // namespace
-
-std::string_view InputActionSetSubtype()
-{
-    return kSubtype;
-}
 
 std::unique_ptr<IDataSubtypeAuthoring> CreateInputActionSetAuthoring()
 {

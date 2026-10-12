@@ -3,9 +3,6 @@
 #include "data/DataSubtypeAuthoring.h"
 
 #include <memory>
-#include <string_view>
-
-[[nodiscard]] std::string_view MovementProfileSubtype();
 
 // A movement profile read as the ruleset the runtime evaluates: each rule
 // titled by its name or condition and marked active or off in the situation

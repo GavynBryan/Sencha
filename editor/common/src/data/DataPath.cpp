@@ -32,6 +32,22 @@ std::optional<std::vector<DataPathStep>> ParseDataPath(std::string_view path)
     return steps;
 }
 
+std::optional<std::string_view> DataPathParent(std::string_view path)
+{
+    const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);
+    if (!steps.has_value() || steps->empty())
+        return std::nullopt;
+    return path.substr(0, steps->back().Index.has_value() ? path.rfind('[') : path.rfind('.'));
+}
+
+std::optional<std::size_t> DataPathLastIndex(std::string_view path)
+{
+    const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);
+    if (!steps.has_value() || steps->empty())
+        return std::nullopt;
+    return steps->back().Index;
+}
+
 const JsonValue* FindDataValue(const JsonValue& data, std::string_view path)
 {
     const std::optional<std::vector<DataPathStep>> steps = ParseDataPath(path);

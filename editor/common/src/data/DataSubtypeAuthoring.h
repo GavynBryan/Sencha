@@ -5,10 +5,10 @@
 
 #include <core/json/JsonValue.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -19,16 +19,27 @@ struct DataSchema;
 class DataDocument;
 class DataDocumentSet;
 
-//=============================================================================
-// IDataSubtypeAuthoring
-//
+// What a subtype made of a write or a verb: not its to take, or taken with
+// what came of it.
+enum class DataSubtypeEdit : std::uint8_t
+{
+    NotMine,
+    Applied,
+    Unchanged,
+    Refused,
+    Gone,
+};
+
+[[nodiscard]] constexpr DataSubtypeEdit DataSubtypeEditOf(bool applied)
+{
+    return applied ? DataSubtypeEdit::Applied : DataSubtypeEdit::Refused;
+}
+
+// A taken edit's result as the property it was made through reports it.
+[[nodiscard]] PropertyEditResult PropertyEditResultOf(DataSubtypeEdit edit);
+
 // What one data subtype adds to its schema's properties so its documents read
-// as what they are: a keymap as bindings on controls, an action set as the
-// vocabulary it declares. It reshapes the laid-out properties, takes the
-// writes and verbs whose meaning it knows better than the schema does, and
-// may put previews beside the document. It never draws: whatever presents the
-// properties presents what it adds.
-//=============================================================================
+// as what they are (editor/ARCHITECTURE.md, Data workspace). It never draws.
 class IDataSubtypeAuthoring
 {
 public:
@@ -45,30 +56,28 @@ public:
                         const DataSchema& /*schema*/) const
     {
     }
-    // A write it takes itself, made to the document's data object; nothing
-    // when the key is not its to take, false when the value is refused.
-    [[nodiscard]] virtual std::optional<bool> Write(std::string_view /*key*/, std::string_view /*value*/,
-                                                    JsonValue& /*data*/, const DataSchema& /*schema*/) const
+    // A write it takes itself, made to the document's data object.
+    [[nodiscard]] virtual DataSubtypeEdit Write(std::string_view /*key*/, std::string_view /*value*/,
+                                                JsonValue& /*data*/, const DataSchema& /*schema*/) const
     {
-        return std::nullopt;
+        return DataSubtypeEdit::NotMine;
     }
     [[nodiscard]] virtual std::optional<std::vector<std::string>> Candidates(std::string_view /*key*/,
                                                                              const JsonValue& /*data*/) const
     {
         return std::nullopt;
     }
-    // A verb it takes that changes the data, made to the document's data object
-    // as one step; nothing when the verb is not its to take, false when refused.
-    [[nodiscard]] virtual std::optional<bool> Perform(std::string_view /*key*/, std::string_view /*verb*/,
-                                                      std::string_view /*choice*/, JsonValue& /*data*/) const
+    // A verb it takes that changes the data, made to the data object as one step.
+    [[nodiscard]] virtual DataSubtypeEdit Perform(std::string_view /*key*/, std::string_view /*verb*/,
+                                                  std::string_view /*choice*/, JsonValue& /*data*/) const
     {
-        return std::nullopt;
+        return DataSubtypeEdit::NotMine;
     }
     // A verb it takes that changes no data, such as listening for a control.
-    [[nodiscard]] virtual std::optional<PropertyEditResult> Act(std::string_view /*key*/, std::string_view /*verb*/,
-                                                                const DataDocument& /*document*/)
+    [[nodiscard]] virtual DataSubtypeEdit Act(std::string_view /*key*/, std::string_view /*verb*/,
+                                              const DataDocument& /*document*/)
     {
-        return std::nullopt;
+        return DataSubtypeEdit::NotMine;
     }
     // Offered before the window's UI sees it; true claims it.
     virtual bool HandlePlatformEvent(const SDL_Event& /*event*/) { return false; }

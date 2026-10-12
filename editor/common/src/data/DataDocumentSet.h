@@ -1,9 +1,11 @@
 #pragma once
 
 #include "data/DataDocumentStore.h"
-#include "data/DataFieldEdit.h"
+
+#include <core/json/JsonValue.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -19,16 +21,24 @@ struct DataDocumentSetConfig
     std::vector<std::string> Subtypes;
 };
 
-// One workspace's tabs over the application's data documents: which it shows,
-// which is active, and the field selected in it. Documents themselves live in
-// the store, so two workspaces showing one file edit one document.
-class DataDocumentSet final : public DataFormHost
+// How an edit lands in a document: within its open edit, opened if none is,
+// or as a step of its own.
+enum class DataEdit : std::uint8_t
+{
+    Preview,
+    Step,
+};
+
+// One workspace's tabs over the application's data documents: which it shows
+// and which is active. Documents themselves live in the store, so two
+// workspaces showing one file edit one document.
+class DataDocumentSet final
 {
 public:
     using ChangeObserver = DataDocumentStore::ChangeObserver;
 
     DataDocumentSet(DataDocumentStore& store, DataDocumentSetConfig config);
-    ~DataDocumentSet() override;
+    ~DataDocumentSet();
 
     DataDocumentSet(const DataDocumentSet&) = delete;
     DataDocumentSet& operator=(const DataDocumentSet&) = delete;
@@ -65,15 +75,9 @@ public:
     // Told of every change to a document this view shows.
     void OnChanged(ChangeObserver observer) { Observer = std::move(observer); }
 
-    void SelectField(const DataFieldSchema* field, std::string path);
-    [[nodiscard]] const DataFieldSchema* SelectedField() const { return Selected; }
-    [[nodiscard]] const std::string& SelectedPath() const { return SelectedJsonPath; }
-
-    [[nodiscard]] std::vector<std::string> DataAssetPaths(std::string_view subtype) override;
-    void OpenDataAsset(std::string_view path) override;
-    void SelectField(const DataFieldSchema& field, std::string_view path) override;
-    void EditPreviewed(DataDocument& document) override;
-    void EditCommitted(DataDocument& document) override;
+    // `root` as the document's new root, validated, and told to every view of
+    // it once it is a step.
+    void ApplyEdit(DataDocument& document, JsonValue root, DataEdit edit);
 
 private:
     [[nodiscard]] bool Accepts(std::string_view subtype) const;
@@ -84,8 +88,6 @@ private:
     DataDocumentSetConfig Config;
     std::vector<DataDocument*> Tabs;
     std::size_t ActiveTab = 0;
-    const DataFieldSchema* Selected = nullptr;
-    std::string SelectedJsonPath;
     ChangeObserver Observer;
     std::size_t ChangeToken = 0;
     std::size_t CloseToken = 0;

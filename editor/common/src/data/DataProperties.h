@@ -1,5 +1,6 @@
 #pragma once
 
+#include "data/DataDocumentSet.h"
 #include "properties/PropertySource.h"
 
 #include <core/json/JsonValue.h>
@@ -9,23 +10,13 @@
 #include <vector>
 
 class DataDocument;
-class DataDocumentSet;
 class DataSubtypeAuthoringRegistry;
 class IDataSubtypeAuthoring;
 struct DataFieldSchema;
 
-//=============================================================================
-// DataProperties
-//
 // A data document's "data" object as properties, laid out by its authoring
-// schema: a record's members, an array's elements with their verbs (add,
-// duplicate, delete, move), an optional member switched on and off, a
-// reference to another data asset chosen among those of its subtype. Each
-// property is keyed by its JSON path ("$.data.layers[1].speed"), and a
-// validation error at a field is a note beside it. Every edit runs in the
-// document's own transaction, so a drag is one step and every interruption
-// cancels it.
-//=============================================================================
+// schema and keyed by JSON path ("$.data.layers[1].speed"); each edit runs in
+// the document's own transaction (editor/ARCHITECTURE.md, Data workspace).
 class DataProperties final : public IPropertySource
 {
 public:
@@ -48,10 +39,10 @@ public:
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
 private:
-    // The document's root with `change` applied to the value at `key`, as one
-    // step; false when the change is refused.
-    PropertyEditResult Change(std::string_view key, const std::function<bool(JsonValue& value, const DataFieldSchema&)>& change,
-                              bool step);
+    // The document's root with `change` applied to the value at `key`.
+    PropertyEditResult Change(std::string_view key,
+                              const std::function<bool(JsonValue& value, const DataFieldSchema&)>& change, DataEdit edit);
+    PropertyEditResult Replace(JsonValue data, DataEdit edit);
 
     [[nodiscard]] IDataSubtypeAuthoring* AuthoringOf(const DataDocument& document) const;
 
@@ -59,3 +50,6 @@ private:
     std::function<DataDocument*()> Shown;
     const DataSubtypeAuthoringRegistry* Subtypes = nullptr;
 };
+
+// What a field is called wherever it is shown.
+[[nodiscard]] std::string DataFieldDisplayName(const DataFieldSchema& field);

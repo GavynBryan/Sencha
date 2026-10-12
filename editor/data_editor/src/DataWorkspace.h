@@ -6,10 +6,8 @@
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
-#include "data/DataProperties.h"
+#include "data/DataDocumentSheet.h"
 #include "data/DataSubtypeAuthoring.h"
-#include "prompts/PromptQueue.h"
-#include "properties/FilePathProperty.h"
 #include "workspaces/IWorkspace.h"
 
 #include <cstdint>
@@ -26,9 +24,7 @@ struct ProjectDescriptor;
 
 // The data workspace: every structured data asset in the project, the open
 // one presented whole as a sheet of its schema's fields (or as its source),
-// the project's data assets in an explorer, and every open one on the
-// document dial. A subtype reads its documents as what they are and may put
-// previews beside them.
+// and every open one on the document dial.
 class DataWorkspace final : public IWorkspace
 {
 public:
@@ -52,31 +48,23 @@ public:
     bool OpenAsset(const ProjectFile& file) override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     bool RevealProblem(const Problem& problem) override;
+
 private:
-    // Opens the data asset at `assetPath`, or brings it forward, as the card.
-    bool OpenPath(std::string_view assetPath);
-    void BuildUi();
-    void RegisterCommands();
     void DefineActions(ActionCatalog& catalog);
     void SaveActive();
     void DuplicateActive();
     void TrashActive();
-    // Settles the active document's changes as the person says, then runs `then`.
-    void AfterSettling(std::function<void(const std::string& path, DirtyDisposition disposition)> then);
-    void PublishProblems();
+    // The card turns to the active document, as its fields.
+    void ShowSheet();
 
     Engine& EngineRef;
     DataEditorWorkspace Model;
     ProjectFileSteps* Files;
-    PromptQueue::Asker Prompts;
     ProblemList& Problems;
     ActionContext ActionHandlers;
-    // What subtypes add to their schema's properties; the properties read it.
-    DataSubtypeAuthoringRegistry Authoring;
-    DataProperties Properties;
+    DataDocumentSheet Sheet;
     DataSourceText Source;
     DataCreation Creation;
-    FilePathProperty FilePath;
     // What the sheet is about: the active document, or a new asset being made.
     // Only the new-asset action and showing a document change it.
     enum class CardSubject : std::uint8_t
@@ -88,5 +76,4 @@ private:
     // The active document shown as its source rather than as fields.
     bool ShowingSource = false;
     bool Visible = false;
-    std::string OperationError;
 };

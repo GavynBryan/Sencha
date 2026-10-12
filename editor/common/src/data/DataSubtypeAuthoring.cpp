@@ -1,5 +1,18 @@
 #include "data/DataSubtypeAuthoring.h"
 
+PropertyEditResult PropertyEditResultOf(DataSubtypeEdit edit)
+{
+    switch (edit)
+    {
+    case DataSubtypeEdit::Applied:   return PropertyEditResult::Applied;
+    case DataSubtypeEdit::Unchanged: return PropertyEditResult::Unchanged;
+    case DataSubtypeEdit::Refused:   return PropertyEditResult::Refused;
+    case DataSubtypeEdit::NotMine:
+    case DataSubtypeEdit::Gone:      return PropertyEditResult::Gone;
+    }
+    return PropertyEditResult::Gone;
+}
+
 bool DataSubtypeAuthoringRegistry::Register(std::unique_ptr<IDataSubtypeAuthoring> authoring)
 {
     if (authoring == nullptr || Find(authoring->Subtype()) != nullptr)

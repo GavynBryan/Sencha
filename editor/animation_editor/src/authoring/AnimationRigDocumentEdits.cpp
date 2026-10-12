@@ -5,7 +5,6 @@
 #include "authoring/AnimationPreviewSession.h"
 #include "authoring/AnimationRigEdits.h"
 #include "data/DataDocumentSet.h"
-#include "data/DataFieldEdit.h"
 
 #include <anim/AnimRigData.h>
 #include <assets/data/DataAssetCache.h>
@@ -18,6 +17,7 @@
 bool EditAnimationRig(DataDocumentSet& documents, const std::string& rigPath,
                       const std::function<bool(JsonValue&)>& edit, std::string& error)
 {
+    error.clear();
     DataDocument* rig = documents.Find(rigPath);
     if (rig == nullptr)
         rig = documents.OpenOrFocus(rigPath, error);
@@ -26,9 +26,7 @@ bool EditAnimationRig(DataDocumentSet& documents, const std::string& rigPath,
     JsonValue root = rig->CopyRoot();
     if (!edit(root))
         return false;
-    rig->BeginEdit();
-    rig->PreviewRoot(std::move(root));
-    documents.Store().CommitEdit(*rig);
+    documents.ApplyEdit(*rig, std::move(root), DataEdit::Step);
     return true;
 }
 
@@ -95,7 +93,7 @@ bool DeclareUndeclaredAnimationNames(DataDocumentSet& documents, const Animation
         return false;
     JsonValue root = document->CopyRoot();
     if (AddAnimationTagDeclarations(root, names))
-        ApplyFieldEdit(*document, documents, FieldEdit::Instant(), std::move(root));
+        documents.ApplyEdit(*document, std::move(root), DataEdit::Step);
     documents.SetActive(active);
     return true;
 }

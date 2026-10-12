@@ -102,11 +102,6 @@ private:
 };
 } // namespace
 
-std::string_view MovementProfileSubtype()
-{
-    return kSubtype;
-}
-
 std::unique_ptr<IDataSubtypeAuthoring> CreateMovementProfileAuthoring()
 {
     return std::make_unique<MovementProfileAuthoring>();

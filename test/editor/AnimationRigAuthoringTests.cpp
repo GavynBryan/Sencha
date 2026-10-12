@@ -74,7 +74,7 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
         AddAnimSelectorRule(root, "rest", "Anim.Upper.Rest", 0);
         AddAnimSelectorRule(root, "reload", "Anim.Weapon.Reload", 50);
         AddAnimPredicateRow(*AnimSelectorPredicate(root, 1, "enter"), MakeAnimRequestTest("Anim.Weapon.Reload"));
-        ApplyFieldEdit(selector, workspace.Documents, FieldEdit::Instant(), std::move(root));
+        workspace.Documents.ApplyEdit(selector, std::move(root), DataEdit::Step);
     }
     ASSERT_TRUE((workspace.Documents.Create(kAnimRequestSchemaType, "animation/brute/brute.requests", error) != nullptr)) << error;
     AuthorDocument(workspace, "asset://animation/brute/brute.requests.sdata", [](JsonValue& data) {
@@ -107,7 +107,7 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
         DataDocument& rig = *workspace.Documents.Find(kRig);
         JsonValue root = rig.CopyRoot();
         ASSERT_TRUE(AddAnimMaskStep(root, 1, "spine", false, true));
-        ApplyFieldEdit(rig, workspace.Documents, FieldEdit::Instant(), std::move(root));
+        workspace.Documents.ApplyEdit(rig, std::move(root), DataEdit::Step);
     }
 
     // The new names are not declared yet; the Problems fix declares them.
@@ -161,4 +161,5 @@ TEST(AnimationRigAuthoring, ASimpleRigGainsAnUpperBodyLayerInTheEditor)
     ASSERT_TRUE(saved != nullptr && saved->Valid) << FirstProblem(fresh);
     EXPECT_EQ(saved->Layers.size(), 2u);
     fresh.Rig.Simulation.Close();
+    workspace.Sources.DiscardAll();
 }

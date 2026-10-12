@@ -3,9 +3,6 @@
 #include "data/DataSubtypeAuthoring.h"
 
 #include <memory>
-#include <string_view>
-
-[[nodiscard]] std::string_view InputActionSetSubtype();
 
 // An action set read as the vocabulary it declares: each action titled by its
 // name and the shape of value it carries, its firing mode shown only for a

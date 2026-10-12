@@ -78,26 +78,6 @@ PredicatePlace PlaceOf(std::string_view key, std::span<const std::string_view> p
     return {};
 }
 
-// The key of the test holding a member: the key without its last step.
-std::string_view HolderOf(std::string_view key)
-{
-    const std::size_t dot = key.rfind('.');
-    return dot == std::string_view::npos ? key : key.substr(0, dot);
-}
-
-// The array index a row's key ends in, and the key of its rows.
-std::optional<std::pair<std::string_view, std::size_t>> RowOf(std::string_view key)
-{
-    if (!key.ends_with(']'))
-        return std::nullopt;
-    const std::size_t open = key.rfind('[');
-    std::size_t index = 0;
-    if (open == std::string_view::npos
-        || std::from_chars(key.data() + open + 1, key.data() + key.size() - 1, index).ec != std::errc{})
-        return std::nullopt;
-    return std::pair{ key.substr(0, open), index };
-}
-
 // One subtype whose documents hold conditions and nothing else of their own.
 class ConditionDocumentAuthoring final : public IDataSubtypeAuthoring
 {
@@ -119,13 +99,13 @@ public:
         if (const JsonValue* data = document.Data())
             Conditions.Refine(nodes, *data);
     }
-    [[nodiscard]] std::optional<bool> Perform(std::string_view key, std::string_view verb, std::string_view choice,
-                                              JsonValue& data) const override
+    [[nodiscard]] DataSubtypeEdit Perform(std::string_view key, std::string_view verb, std::string_view choice,
+                                          JsonValue& data) const override
     {
         if (StayCopiesEnter && verb == "add" && choice == "Stay")
         {
             JsonValue* rule = FindDataValue(data, key);
-            return rule != nullptr && SetAnimRuleStay(*rule, true);
+            return DataSubtypeEditOf(rule != nullptr && SetAnimRuleStay(*rule, true));
         }
         return Conditions.Perform(key, verb, choice, data);
     }
@@ -165,33 +145,32 @@ void AnimationConditionAuthoring::Refine(std::vector<PropertyNode>& nodes, const
     RefineAll(nodes, data);
 }
 
-std::optional<bool> AnimationConditionAuthoring::Perform(std::string_view key, std::string_view verb,
-                                                         std::string_view choice, JsonValue& data) const
+DataSubtypeEdit AnimationConditionAuthoring::Perform(std::string_view key, std::string_view verb,
+                                                     std::string_view choice, JsonValue& data) const
 {
     if (verb == "condition")
     {
         JsonValue* rows = FindDataValue(data, key);
-        if (rows == nullptr || !rows->IsArray())
-            return false;
-        std::optional<JsonValue> test = TestFor(choice);
+        std::optional<JsonValue> test = rows != nullptr && rows->IsArray() ? TestFor(choice) : std::nullopt;
         if (!test)
-            return false;
+            return DataSubtypeEdit::Refused;
         AddAnimPredicateRow(rows->AsArray(), std::move(*test));
-        return true;
+        return DataSubtypeEdit::Applied;
     }
     if (verb == "or")
     {
-        const std::optional<std::pair<std::string_view, std::size_t>> row = RowOf(key);
-        JsonValue* rows = row ? FindDataValue(data, row->first) : nullptr;
-        if (rows == nullptr || !rows->IsArray() || row->second >= rows->AsArray().size())
-            return false;
-        const JsonValue& held = rows->AsArray()[row->second];
+        const std::optional<std::size_t> row = DataPathLastIndex(key);
+        const std::optional<std::string_view> parent = DataPathParent(key);
+        JsonValue* rows = row && parent ? FindDataValue(data, *parent) : nullptr;
+        if (rows == nullptr || !rows->IsArray() || *row >= rows->AsArray().size())
+            return DataSubtypeEdit::Refused;
+        const JsonValue& held = rows->AsArray()[*row];
         // The new alternative starts as a copy of the row's first test.
         const JsonValue* any = held.Find("any");
         JsonValue first = any != nullptr && any->IsArray() && !any->AsArray().empty() ? any->AsArray().front() : held;
-        return AddAnimPredicateAlternative(rows->AsArray(), row->second, std::move(first));
+        return DataSubtypeEditOf(AddAnimPredicateAlternative(rows->AsArray(), *row, std::move(first)));
     }
-    return std::nullopt;
+    return DataSubtypeEdit::NotMine;
 }
 
 std::optional<JsonValue> AnimationConditionAuthoring::TestFor(std::string_view choice) const
@@ -246,7 +225,8 @@ void AnimationConditionAuthoring::Refine(PropertyNode& node, const JsonValue& da
             const JsonValue rows(JsonValue::Array{ *row });
             node.Descriptor.Label = DescribeAnimPredicate(&rows);
         }
-        if (const auto row = RowOf(node.Key); row && !row->first.ends_with(".any"))
+        if (const std::optional<std::string_view> rows = DataPathParent(node.Key);
+            rows && DataPathLastIndex(node.Key) && !rows->ends_with(".any"))
             node.Descriptor.Verbs.insert(node.Descriptor.Verbs.begin(), { .Id = "or", .Label = "Or" });
         return;
     case PredicatePlace::Part::Member:
@@ -266,7 +246,7 @@ void AnimationConditionAuthoring::Refine(PropertyNode& node, const JsonValue& da
         }
         else if (place.Member == "param")
         {
-            const JsonValue* test = FindDataValue(data, HolderOf(node.Key));
+            const JsonValue* test = FindDataValue(data, DataPathParent(node.Key).value_or(node.Key));
             const JsonValue* request = test != nullptr ? test->Find("request") : nullptr;
             ChooseAmong(node, AnimationIntentParams(Vocabulary, request != nullptr && request->IsString()
                                                                    ? std::string_view(request->AsString())
