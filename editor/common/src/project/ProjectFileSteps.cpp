@@ -166,7 +166,7 @@ std::string ProjectFileSteps::Refusal(std::string_view assetPath, OpenFiles open
     file = FindProjectFile(Roots, assetPath);
     if (!file.has_value())
         return std::format("{} is not one of the project's files.", assetPath);
-    if (open == OpenFiles::Refuse && Hooks.IsOpen && Hooks.IsOpen(*file))
+    if (open == OpenFiles::Refuse && Journal.HoldsFile(file->FilePath))
         return std::format("{} is open; close it first.", PathLeaf(assetPath));
     if (file->Extension == kSceneSource)
         for (const ProjectFile& world : ScanProjectFiles(Roots))
@@ -241,7 +241,7 @@ std::string ProjectFileSteps::Move(std::string_view assetPath, std::string_view 
         std::optional<std::string> named = NamingMovedAsset(*text, assetPath, toAssetPath, id);
         if (!named.has_value())
             continue;
-        if (Hooks.KeepsNames && Hooks.KeepsNames(document))
+        if (Journal.KeepsNamesAsRead(document.FilePath))
             return std::format("{} names it and is open; close it first.", PathLeaf(document.AssetPath));
         step.After.push_back({ document.FilePath, text, std::move(named) });
     }

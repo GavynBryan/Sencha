@@ -42,8 +42,7 @@ struct DataDocumentMove : testing::Test
             "version": 1, "data": { "slots": [ { "name": "Crouched", "kind": "bool" } ] } })";
         (void)ScanAssetsDirectory(Root.generic_string(), Assets.Registry, Assets.Assets.Kinds());
         Files = std::make_unique<ProjectFileSteps>(
-            std::vector<std::filesystem::path>{ Root }, Sources,
-            ProjectFileHooks{ .IsOpen = [this](const ProjectFile& file) { return Sources.HoldsFile(file.FilePath); } });
+            std::vector<std::filesystem::path>{ Root }, Sources, ProjectFileHooks{});
     }
 
     void TearDown() override

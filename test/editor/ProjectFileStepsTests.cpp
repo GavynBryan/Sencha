@@ -88,9 +88,7 @@ struct Fixture
     explicit Fixture(const Project& project)
         : Open(Journal)
         , Steps({ project.Root }, Journal,
-                { .IsOpen = [this](const ProjectFile& file) { return OpenPaths.contains(file.AssetPath); },
-                  .KeepsNames = [this](const ProjectFile& file) { return Journal.KeepsNamesAsRead(file.FilePath); },
-                  .IsAsset = [](const ProjectFile& file) { return file.Extension != ".txt"; },
+                { .IsAsset = [](const ProjectFile& file) { return file.Extension != ".txt"; },
                   .Changed =
                       [this](const ProjectFileChange& change) {
                           Changes.push_back((change.What == ProjectFileChange::Kind::Gone ? "-" : "+")
@@ -101,7 +99,6 @@ struct Fixture
 
     DocumentSourceSet Journal;
     OpenFiles Open;
-    std::set<std::string> OpenPaths;
     std::vector<std::string> Changes;
     ProjectFileSteps Steps;
 };
@@ -221,7 +218,7 @@ TEST(ProjectFileSteps, AStepThatCannotBeTakenSaysWhy)
     project.Write("m/stone.smat", "{}");
     project.Write("m/brick.smat", "{}");
     Fixture files(project);
-    files.OpenPaths.insert("asset://m/brick.smat");
+    files.Open.Held.insert("brick.smat");
 
     EXPECT_NE(files.Steps.Move("asset://m/stone.smat", "asset://m/brick.smat"), "") << "taken";
     EXPECT_NE(files.Steps.Move("asset://m/stone.smat", "asset://m/stone.png"), "") << "a kind is kept";
