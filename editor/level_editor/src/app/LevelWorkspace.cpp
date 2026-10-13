@@ -37,6 +37,7 @@
 #include "selection/commands/SelectCommand.h"
 #include "resources/ResourceActions.h"
 #include "authoring/ComponentPropertySource.h"
+#include "authoring/PlaceIcons.h"
 #include "workspace/ElementVerbs.h"
 #include "workspace/FaceUvSource.h"
 #include "workspace/MaterialExplorer.h"
@@ -122,6 +123,7 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
     // Before the document is created, so its World registers storage for the
     // module's components.
     Module = std::make_unique<ModuleComponents>(module);
+    Problems.Publish("components", UnknownPlaceIcons(EditorSceneSerializers()));
 
     BuildDocument();
     // After the document: an authored workflow presents editor state, and the
@@ -150,6 +152,7 @@ LevelWorkspace::~LevelWorkspace()
     // Its problems go with it.
     Problems.Clear("world");
     Problems.Clear("lighting");
+    Problems.Clear("components");
 
     // An edit still open ends while what it edits is alive; then everything
     // bound to the workspace goes before the workspace does.

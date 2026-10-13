@@ -1,5 +1,6 @@
 #include "document/tools/PlaceTool.h"
 
+#include "authoring/PlaceIcons.h"
 #include "icons/IconNames.h"
 
 #include "commands/CommandStack.h"
@@ -45,7 +46,7 @@ void PlaceTool::RefreshKinds() const
         if (const ComponentPlacementFacts facts = serializer->Placement(); !facts.Label.empty())
             kinds.push_back({ .Label = std::string(facts.Label),
                               .What = { PlaceSource::Component, std::string(serializer->JsonKey()) },
-                              .Icon = IconByName(facts.Icon) });
+                              .Icon = PlaceIconOf(*serializer) });
     // Registration order differs between the engine's and a module's
     // components; by label, the wheel reads the same however they arrived.
     std::ranges::sort(kinds, {}, &PlaceKind::Label);

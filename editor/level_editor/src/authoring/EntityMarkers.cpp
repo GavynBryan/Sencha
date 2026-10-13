@@ -2,7 +2,7 @@
 
 #include "document/DocumentSerialization.h"
 #include "document/EditorScene.h"
-#include "icons/IconNames.h"
+#include "authoring/PlaceIcons.h"
 
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -38,7 +38,7 @@ void EntityMarkers::Refresh(const EditorScene& scene, std::span<const IComponent
     };
     std::vector<Declared> declared;
     for (const auto& serializer : EditorSceneSerializers().Entries())
-        if (const IconId icon = IconByName(serializer->Placement().Icon); icon != IconId::None)
+        if (const IconId icon = PlaceIconOf(*serializer); icon != IconId::None)
             declared.push_back({ serializer.get(), icon });
 
     Wearing.clear();
