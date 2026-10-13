@@ -96,11 +96,6 @@ std::vector<PropertyNode> AnimationScenarioProperties::Nodes() const
     return nodes;
 }
 
-bool AnimationScenarioProperties::BeginEdit(std::string_view key)
-{
-    return key == "participants.add" || key == "tags.declare";
-}
-
 PropertyEditResult AnimationScenarioProperties::CommitEdit(std::string_view key, std::string_view value)
 {
     if (value.empty())

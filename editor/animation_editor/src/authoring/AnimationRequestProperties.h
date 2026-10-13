@@ -13,16 +13,13 @@ class AnimationPreviewWorkspace;
 
 // The Requests lens's card: a request drafted for the next tick, the live ones
 // with Cancel, and how the last tick's fared; each is a scenario edit.
-class AnimationRequestProperties final : public IPropertySource
+class AnimationRequestProperties final : public CommitOnlyPropertySource
 {
 public:
     explicit AnimationRequestProperties(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
-    bool BeginEdit(std::string_view key) override { return key.starts_with("issue."); }
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Unchanged; }
     PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
-    void CancelEdit(std::string_view) override {}
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
 private:

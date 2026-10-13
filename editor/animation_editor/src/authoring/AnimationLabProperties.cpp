@@ -174,11 +174,6 @@ std::vector<PropertyNode> AnimationLabProperties::RunNodes() const
     return nodes;
 }
 
-bool AnimationLabProperties::BeginEdit(std::string_view key)
-{
-    return key.starts_with("link.") || key.starts_with(kGuesses) || key == "inspect";
-}
-
 PropertyEditResult AnimationLabProperties::CommitEdit(std::string_view key, std::string_view value)
 {
     AnimationLabRun& lab = Workspace.Lab;

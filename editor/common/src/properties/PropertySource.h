@@ -61,3 +61,25 @@ public:
         return PropertyEditResult::Gone;
     }
 };
+
+// A source that only shows, and acts through its verbs: no property of it is
+// edited as a value.
+class ReadOnlyPropertySource : public IPropertySource
+{
+public:
+    bool BeginEdit(std::string_view) override { return false; }
+    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Refused; }
+    PropertyEditResult CommitEdit(std::string_view, std::string_view) override { return PropertyEditResult::Refused; }
+    void CancelEdit(std::string_view) override {}
+};
+
+// A source whose values change only when committed -- a choice made, a field
+// typed and entered -- so nothing previews and nothing is left to put back. An
+// edit begins on any property its nodes show as writable.
+class CommitOnlyPropertySource : public IPropertySource
+{
+public:
+    bool BeginEdit(std::string_view key) override;
+    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Unchanged; }
+    void CancelEdit(std::string_view) override {}
+};

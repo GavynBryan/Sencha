@@ -10,7 +10,7 @@
 
 // A source texture's import settings beside what its cook holds; a change is
 // saved and cooked at once, and the cook is read back rather than assumed.
-class TextureImportProperties final : public IPropertySource
+class TextureImportProperties final : public CommitOnlyPropertySource
 {
 public:
     struct Shown

@@ -6,16 +6,12 @@ class AnimationPreviewWorkspace;
 
 // What a game's `anim.risk` says of the open rig, and the size of what the
 // previewed entity carries.
-class AnimationRigReportProperties final : public IPropertySource
+class AnimationRigReportProperties final : public ReadOnlyPropertySource
 {
 public:
     explicit AnimationRigReportProperties(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
-    bool BeginEdit(std::string_view) override { return false; }
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Gone; }
-    PropertyEditResult CommitEdit(std::string_view, std::string_view) override { return PropertyEditResult::Gone; }
-    void CancelEdit(std::string_view) override {}
 
 private:
     AnimationPreviewWorkspace& Workspace;

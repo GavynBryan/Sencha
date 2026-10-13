@@ -54,7 +54,7 @@ struct LightingReports
 // preview and a shadow re-render as view actions. Read-only: nothing here edits
 // the document.
 //=============================================================================
-class LightingDiagnostics final : public IPropertySource
+class LightingDiagnostics final : public ReadOnlyPropertySource
 {
 public:
     LightingDiagnostics(EditorWorkspace& workspace, CommandStack& commands, LightingReports reports);
@@ -68,10 +68,6 @@ public:
 
     // The selected entity's lighting facts; empty when it has none.
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
-    bool BeginEdit(std::string_view) override { return false; }
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Refused; }
-    PropertyEditResult CommitEdit(std::string_view, std::string_view) override { return PropertyEditResult::Refused; }
-    void CancelEdit(std::string_view) override {}
 
 private:
     [[nodiscard]] EntityId SelectedEntity() const;

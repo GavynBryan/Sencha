@@ -20,7 +20,7 @@ class MaterialLibrary;
 // center, reset axes) are actions in the Texture category; "treat as one"
 // decides whether they justify each face or the selection as a single unit.
 //=============================================================================
-class FaceUvSource final : public IPropertySource
+class FaceUvSource final : public CommitOnlyPropertySource
 {
 public:
     // `library` names the materials a face can take; null offers none.
@@ -31,10 +31,7 @@ public:
     [[nodiscard]] std::vector<std::string> Relevant() const;
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
-    bool BeginEdit(std::string_view key) override;
-    PropertyEditResult PreviewEdit(std::string_view key, std::string_view value) override;
     PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
-    void CancelEdit(std::string_view key) override;
     [[nodiscard]] std::vector<std::string> Candidates(std::string_view key) const override;
 
 private:

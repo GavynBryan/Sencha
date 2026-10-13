@@ -28,7 +28,7 @@ class EditorWorkspace;
 // graph or a graph to the world. Every manifest edit is one undoable step.
 // Nothing here exists for a level that is not a world.
 //=============================================================================
-class PartitionOutline final : public IPropertySource
+class PartitionOutline final : public CommitOnlyPropertySource
 {
 public:
     explicit PartitionOutline(EditorWorkspace& workspace) : Workspace(workspace) {}
@@ -45,10 +45,7 @@ public:
     bool Reveal(std::string_view location);
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
-    bool BeginEdit(std::string_view key) override;
-    PropertyEditResult PreviewEdit(std::string_view key, std::string_view value) override;
     PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
-    void CancelEdit(std::string_view key) override;
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
 private:

@@ -13,7 +13,7 @@ class AnimationPreviewWorkspace;
 // Every saved scenario in the project run twice from the start, each in a
 // session of its own: a verdict per scenario, what it ended on, and why it
 // warned or failed, with the scenario's rig opened through `openRig`.
-class AnimationScenarioBatchProperties final : public IPropertySource
+class AnimationScenarioBatchProperties final : public ReadOnlyPropertySource
 {
 public:
     AnimationScenarioBatchProperties(AnimationPreviewWorkspace& workspace,
@@ -24,10 +24,6 @@ public:
     }
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
-    bool BeginEdit(std::string_view) override { return false; }
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Gone; }
-    PropertyEditResult CommitEdit(std::string_view, std::string_view) override { return PropertyEditResult::Gone; }
-    void CancelEdit(std::string_view) override {}
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
 private:

@@ -112,12 +112,6 @@ std::string FaceUvSource::ValueOf(std::string_view key) const
     return {};
 }
 
-bool FaceUvSource::BeginEdit(std::string_view key)
-{
-    const std::vector<PropertyNode> nodes = Nodes();
-    return std::ranges::any_of(nodes, [&](const PropertyNode& node) { return node.Key == key; });
-}
-
 std::vector<std::string> FaceUvSource::Candidates(std::string_view key) const
 {
     std::vector<std::string> paths;
@@ -127,19 +121,9 @@ std::vector<std::string> FaceUvSource::Candidates(std::string_view key) const
     return paths;
 }
 
-PropertyEditResult FaceUvSource::PreviewEdit(std::string_view, std::string_view)
-{
-    // A face edit is a mesh command; there is nothing to show before it is one.
-    return PropertyEditResult::Unchanged;
-}
-
 PropertyEditResult FaceUvSource::CommitEdit(std::string_view key, std::string_view value)
 {
     return Set(key, value);
-}
-
-void FaceUvSource::CancelEdit(std::string_view)
-{
 }
 
 PropertyEditResult FaceUvSource::Set(std::string_view key, std::string_view value)

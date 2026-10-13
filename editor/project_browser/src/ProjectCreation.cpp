@@ -44,11 +44,6 @@ std::vector<PropertyNode> ProjectCreation::Nodes() const
     return { std::move(project) };
 }
 
-bool ProjectCreation::BeginEdit(std::string_view key)
-{
-    return key == "directory" || key == "name" || key == "template";
-}
-
 PropertyEditResult ProjectCreation::CommitEdit(std::string_view key, std::string_view value)
 {
     if (key == "directory")

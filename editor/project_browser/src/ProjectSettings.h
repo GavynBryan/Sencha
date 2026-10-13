@@ -14,7 +14,7 @@
 // content roots. Every change is saved at once through the save it is given;
 // a save that fails keeps what the file holds and says why.
 //=============================================================================
-class ProjectSettings final : public IPropertySource
+class ProjectSettings final : public CommitOnlyPropertySource
 {
 public:
     using SaveFn = std::function<bool(const ProjectDescriptor&, std::string& error)>;
@@ -27,9 +27,7 @@ public:
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
     bool BeginEdit(std::string_view key) override;
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Unchanged; }
     PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
-    void CancelEdit(std::string_view) override {}
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
 private:

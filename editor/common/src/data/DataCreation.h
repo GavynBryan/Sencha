@@ -9,7 +9,7 @@
 // A new data asset as properties: what kind it is and where it goes, relative
 // to the content root. Its one verb creates it through the creation it is
 // given, which says why when it cannot.
-class DataCreation final : public IPropertySource
+class DataCreation final : public CommitOnlyPropertySource
 {
 public:
     using CreateFn = std::function<bool(const std::string& subtype, const std::string& path, std::string& error)>;
@@ -23,10 +23,7 @@ public:
     void Clear();
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
-    bool BeginEdit(std::string_view key) override;
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Unchanged; }
     PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
-    void CancelEdit(std::string_view) override {}
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
 private:

@@ -7,7 +7,7 @@
 
 // Where a document lives, as the one property that moves it: its path inside
 // its content root, which, changed, moves the file.
-class FilePathProperty final : public IPropertySource
+class FilePathProperty final : public CommitOnlyPropertySource
 {
 public:
     // `path` is the document's asset path ("asset://..."), empty for none;
@@ -21,9 +21,7 @@ public:
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
     bool BeginEdit(std::string_view key) override;
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Unchanged; }
     PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
-    void CancelEdit(std::string_view) override {}
 
 private:
     std::function<std::string()> Path;

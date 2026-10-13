@@ -13,7 +13,7 @@
 // starter template it copies, or none for the descriptor alone. Its one verb
 // creates it through the creation it is given, which says why when it cannot.
 //=============================================================================
-class ProjectCreation final : public IPropertySource
+class ProjectCreation final : public CommitOnlyPropertySource
 {
 public:
     // `templateName` is one of the templates offered, or empty for none.
@@ -26,10 +26,7 @@ public:
     void Clear();
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
-    bool BeginEdit(std::string_view key) override;
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Unchanged; }
     PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
-    void CancelEdit(std::string_view) override {}
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
 private:

@@ -9,7 +9,7 @@ class AnimationPreviewWorkspace;
 
 // The Flow lens's card: the flow a layer plays on the inspected tick, where it
 // is, where a cancel goes and how each section is left.
-class AnimationFlowProperties final : public IPropertySource
+class AnimationFlowProperties final : public CommitOnlyPropertySource
 {
 public:
     // `open` brings the flow's document up on the card.
@@ -20,10 +20,7 @@ public:
     }
 
     [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
-    bool BeginEdit(std::string_view key) override { return key == "layer"; }
-    PropertyEditResult PreviewEdit(std::string_view, std::string_view) override { return PropertyEditResult::Unchanged; }
     PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
-    void CancelEdit(std::string_view) override {}
     PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
 
     [[nodiscard]] std::string Title() const;

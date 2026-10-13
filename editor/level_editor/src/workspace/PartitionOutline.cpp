@@ -413,20 +413,6 @@ bool PartitionOutline::Edit(Verb&& verb)
     return true;
 }
 
-bool PartitionOutline::BeginEdit(std::string_view)
-{
-    return What() != Picked::None;
-}
-
-PropertyEditResult PartitionOutline::PreviewEdit(std::string_view, std::string_view)
-{
-    return PropertyEditResult::Unchanged;
-}
-
-void PartitionOutline::CancelEdit(std::string_view)
-{
-}
-
 PropertyEditResult PartitionOutline::CommitEdit(std::string_view key, std::string_view value)
 {
     WorldDocument& world = Workspace.World;

@@ -31,11 +31,6 @@ std::vector<PropertyNode> DataCreation::Nodes() const
     return { std::move(asset) };
 }
 
-bool DataCreation::BeginEdit(std::string_view key)
-{
-    return key == "kind" || key == "path";
-}
-
 PropertyEditResult DataCreation::CommitEdit(std::string_view key, std::string_view value)
 {
     if (key == "kind")

@@ -115,11 +115,6 @@ std::vector<PropertyNode> AnimationRootMotionProperties::Nodes() const
     return nodes;
 }
 
-bool AnimationRootMotionProperties::BeginEdit(std::string_view key)
-{
-    return key == "moves" || ParsePropertyKeyIndex(key, kWalls).has_value();
-}
-
 PropertyEditResult AnimationRootMotionProperties::CommitEdit(std::string_view key, std::string_view value)
 {
     AnimationPreviewSession& session = Workspace.Rig.Simulation;

@@ -131,11 +131,6 @@ std::vector<PropertyNode> MovementResolveProperties::Nodes() const
     return { std::move(pretend), std::move(rules), std::move(result) };
 }
 
-bool MovementResolveProperties::BeginEdit(std::string_view key)
-{
-    return key == "support" || key == "immersion" || key == "move_speed" || key == "mode" || key.starts_with(kTagPrefix);
-}
-
 PropertyEditResult MovementResolveProperties::Apply(std::string_view key, std::string_view value)
 {
     MovementPreviewContext& context = Preview.Context();

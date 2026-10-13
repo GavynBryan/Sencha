@@ -88,11 +88,6 @@ std::vector<PropertyNode> AnimationAdmissionProperties::Nodes() const
     return nodes;
 }
 
-bool AnimationAdmissionProperties::BeginEdit(std::string_view key)
-{
-    return key == "role" || key.starts_with(kRecorders);
-}
-
 PropertyEditResult AnimationAdmissionProperties::CommitEdit(std::string_view key, std::string_view value)
 {
     AnimationPreviewSession& session = Workspace.Rig.Simulation;
