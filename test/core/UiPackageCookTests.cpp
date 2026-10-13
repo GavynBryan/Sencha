@@ -372,4 +372,53 @@ TEST(UiPackageCook, ACommentedOutImportDoesNotPullAFileIntoThePackage)
     EXPECT_EQ(package.Blobs.size(), 2u);
 }
 
+namespace
+{
+std::string RootText(const UiPackage& package)
+{
+    const UiPackageBlob* root = package.FindBlob(package.RootDocumentName);
+    return root != nullptr ? std::string(reinterpret_cast<const char*>(root->Bytes.data()), root->Bytes.size())
+                           : std::string{};
+}
+} // namespace
+
+TEST(UiPackageCook, AnIncludedPartStandsInItsPlaceWithItsNamesFilledIn)
+{
+    TempAssetRoot root;
+    root.Write("ui/sheets.rml", R"(<rml><body><div id="a"><include src="parts/row.rmlpart" sheet="tool"/></div>)"
+                                R"(<div id="b"><include src="parts/row.rmlpart" sheet="selection"/></div></body></rml>)");
+    root.Write("ui/parts/row.rmlpart", R"(<span data-for="row : ${sheet}_rows">${sheet}</span><include src="mark.rmlpart"/>)");
+    root.Write("ui/parts/mark.rmlpart", "<i/>");
+
+    ASSERT_TRUE(Cook(root).Ok);
+    UiPackage package;
+    ASSERT_TRUE(root.ReadPackage(".cooked/ui/sheets.rml.sui", package));
+    const std::string text = RootText(package);
+    EXPECT_NE(text.find(R"(data-for="row : tool_rows">tool</span><i/>)"), std::string::npos) << text;
+    EXPECT_NE(text.find(R"(data-for="row : selection_rows">selection</span><i/>)"), std::string::npos) << text;
+    EXPECT_EQ(text.find("<include"), std::string::npos) << "the document engine never sees an include";
+
+    // A part is a source of the document: editing it recooks the document.
+    EXPECT_EQ(Cook(root).Stats.Imported, 0u);
+    root.Write("ui/parts/mark.rmlpart", "<b/>");
+    EXPECT_EQ(Cook(root).Stats.Imported, 1u);
+}
+
+TEST(UiPackageCook, AnIncludeThatCannotBeFilledIsRefused)
+{
+    TempAssetRoot missing;
+    missing.Write("ui/a.rml", R"(<rml><body><include src="gone.rmlpart"/></body></rml>)");
+    EXPECT_FALSE(Cook(missing).Ok);
+
+    TempAssetRoot unnamed;
+    unnamed.Write("ui/a.rml", R"(<rml><body><include src="part.rmlpart"/></body></rml>)");
+    unnamed.Write("ui/part.rmlpart", "<span>${sheet}</span>");
+    EXPECT_FALSE(Cook(unnamed).Ok) << "a name the include does not give is an error, not text";
+
+    TempAssetRoot cycle;
+    cycle.Write("ui/a.rml", R"(<rml><body><include src="loop.rmlpart"/></body></rml>)");
+    cycle.Write("ui/loop.rmlpart", R"(<include src="loop.rmlpart"/>)");
+    EXPECT_FALSE(Cook(cycle).Ok);
+}
+
 #endif // SENCHA_ENABLE_COOK

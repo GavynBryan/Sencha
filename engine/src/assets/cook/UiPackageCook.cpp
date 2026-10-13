@@ -7,14 +7,19 @@
 #include <assets/ui/UiPackageSerializer.h>
 
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
 {
 constexpr std::size_t kMaxStyleSheetDepth = 16;
+constexpr std::size_t kMaxIncludeDepth = 8;
+constexpr std::string_view kIncludeTag = "<include ";
 
 std::string_view DirectoryOf(std::string_view relPath)
 {
@@ -54,6 +59,90 @@ std::string TextOf(std::span<const std::byte> bytes)
 
 } // namespace
 
+// The `name="value"` pairs of a tag's body.
+std::optional<std::vector<std::pair<std::string, std::string>>> AttributesOf(std::string_view body)
+{
+    std::vector<std::pair<std::string, std::string>> attributes;
+    std::size_t at = 0;
+    while (true)
+    {
+        at = body.find_first_not_of(" \t\r\n", at);
+        if (at == std::string_view::npos)
+            return attributes;
+        const std::size_t equals = body.find('=', at);
+        if (equals == std::string_view::npos || equals + 1 >= body.size() || body[equals + 1] != '"')
+            return std::nullopt;
+        const std::size_t close = body.find('"', equals + 2);
+        if (close == std::string_view::npos)
+            return std::nullopt;
+        attributes.emplace_back(std::string(body.substr(at, equals - at)),
+                                std::string(body.substr(equals + 2, close - equals - 2)));
+        at = close + 1;
+    }
+}
+
+// `text` with each `<include src="part" name="value"/>` replaced by the part
+// read through `sources`, every `${name}` in it standing for its value. A part
+// resolves against the file naming it and may include others; each read is
+// recorded so editing it recooks the document.
+std::optional<std::string> ExpandIncludes(std::string_view text, const std::string& relPath, ISourceFileReader* sources,
+                                          std::vector<std::string>& read, std::size_t depth, std::string& error)
+{
+    std::string out;
+    std::size_t at = 0;
+    for (std::size_t found = text.find(kIncludeTag); found != std::string_view::npos;
+         found = text.find(kIncludeTag, at))
+    {
+        const std::size_t end = text.find("/>", found);
+        const std::size_t bodyAt = found + kIncludeTag.size();
+        const auto attributes =
+            end == std::string_view::npos ? std::nullopt : AttributesOf(text.substr(bodyAt, end - bodyAt));
+        const std::string* src = nullptr;
+        if (attributes.has_value())
+            for (const auto& [name, value] : *attributes)
+                if (name == "src")
+                    src = &value;
+        if (src == nullptr)
+        {
+            error = std::format("'{}' has an <include> that is not <include src=\"...\" .../>", relPath);
+            return std::nullopt;
+        }
+        if (depth >= kMaxIncludeDepth)
+        {
+            error = std::format("'{}' includes nested deeper than {}; this is usually a cycle", relPath, depth);
+            return std::nullopt;
+        }
+        const std::string resolved = ResolveAgainst(relPath, *src);
+        std::vector<std::byte> bytes;
+        if (sources == nullptr || !sources->ReadSource(resolved, bytes))
+        {
+            error = std::format("'{}' includes '{}', which could not be read", relPath, resolved);
+            return std::nullopt;
+        }
+        if (std::ranges::find(read, resolved) == read.end())
+            read.push_back(resolved);
+        std::string part = TextOf(bytes);
+        for (const auto& [name, value] : *attributes)
+            for (std::size_t named = part.find("${" + name + "}"); named != std::string::npos;
+                 named = part.find("${" + name + "}", named + value.size()))
+                part.replace(named, name.size() + 3, value);
+        if (const std::size_t unnamed = part.find("${"); unnamed != std::string::npos)
+        {
+            error = std::format("'{}' uses {} where '{}' includes it without saying what it is", resolved,
+                                part.substr(unnamed, part.find('}', unnamed) - unnamed + 1), relPath);
+            return std::nullopt;
+        }
+        const std::optional<std::string> expanded = ExpandIncludes(part, resolved, sources, read, depth + 1, error);
+        if (!expanded.has_value())
+            return std::nullopt;
+        out.append(text.substr(at, found - at));
+        out += *expanded;
+        at = end + 2;
+    }
+    out.append(text.substr(at));
+    return out;
+}
+
 std::vector<std::string_view> UiPackageImporter::SourceExtensions() const
 {
     return { ".rml" };
@@ -70,7 +159,13 @@ ImportResult UiPackageImporter::Import(const ImportInput& input, ICookOutputWrit
         return ImportResult{ .Error = "ui package import: empty source" };
 
     const std::string rootRelPath(input.SourceRelPath);
-    const std::string rootText = TextOf(input.Bytes);
+    std::vector<std::string> additionalSources;
+    std::string includeError;
+    const std::optional<std::string> expanded =
+        ExpandIncludes(TextOf(input.Bytes), rootRelPath, input.Sources, additionalSources, 0, includeError);
+    if (!expanded.has_value())
+        return ImportResult{ .Error = "ui package import: " + includeError };
+    const std::string& rootText = *expanded;
 
     UiPackage package;
     // Named by filename alone: the document engine joins a relative reference
@@ -82,7 +177,8 @@ ImportResult UiPackageImporter::Import(const ImportInput& input, ICookOutputWrit
     rootBlob.VirtualName = package.RootDocumentName;
     rootBlob.SourcePath = rootRelPath;
     rootBlob.Kind = UiBlobKind::Document;
-    rootBlob.Bytes.assign(input.Bytes.begin(), input.Bytes.end());
+    rootBlob.Bytes.resize(rootText.size());
+    std::memcpy(rootBlob.Bytes.data(), rootText.data(), rootText.size());
     package.Blobs.push_back(std::move(rootBlob));
 
     UiSourceReferences references;
@@ -113,7 +209,6 @@ ImportResult UiPackageImporter::Import(const ImportInput& input, ICookOutputWrit
         pending.push_back(PendingSheet{ rootRelPath, package.RootDocumentName, sheet, 1 });
     references.StyleSheets.clear();
 
-    std::vector<std::string> additionalSources;
     std::vector<std::string> visited;
 
     for (std::size_t i = 0; i < pending.size(); ++i)

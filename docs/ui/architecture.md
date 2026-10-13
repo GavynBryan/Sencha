@@ -651,6 +651,16 @@ Reading a sibling any other way would leave it outside the hash, and a stale
 build cache is a worse failure than a missing feature because nothing about it
 looks wrong.
 
+**A document can include a part.** `<include src="parts/row.rmlpart" sheet="tool"/>`
+is replaced at cook time by the part's text, every `${sheet}` in it standing for
+`tool`, so one piece of markup serves several places that differ only by name
+(the editor's tool and selection sheets share `parts/sheet_rows.rmlpart`). A part
+resolves against the file that names it, may include others, and is recorded
+like a stylesheet, so editing it recooks every document that includes it; a part
+is not a document of its own (`.rmlpart` is not cooked) and the document engine
+never sees an `<include>`. A name a part uses that its include does not give, a
+missing part and a cycle are cook errors.
+
 Images a document names are ordinary textures, and that includes vector art:
 an `.svg` cooks to a texture like a `.png` does, so a document writes
 `icons/move.svg` and tints the white art with `image-color`.

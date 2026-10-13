@@ -93,75 +93,7 @@
     <div id="instruments_left" data-style-bottom="instruments_lift">
     <div id="station_bay" data-if="station_name != ''">
         <div id="tool_card" class="theme-plate" data-class-open="card_open" data-class-shut="!card_open">
-            <div class="setting" data-for="row, ri : tool_rows" data-attr-id="'tool_row_' + ri"
-                 data-style-margin-left="(row.depth * 8) + 'dp'"
-                 data-class-heading="row.control == 'section'"
-                 data-class-locked="!row.editable &amp;&amp; row.control != 'section'"
-                 data-class-theme-muted="!row.editable &amp;&amp; row.control != 'section'">
-                <span class="fold glyph theme-dim" data-if="row.control == 'section' &amp;&amp; row.value != ''"
-                      data-event-click="shell_sheet_fold('tool', ri)"><span data-if="row.value == 'closed'">&#xf0da;</span><span data-if="row.value == 'open'">&#xf0d7;</span></span>
-                <span class="setting_label" data-if="row.control != 'action'" data-event-click="shell_sheet_fold('tool', ri)">{{row.label}}</span>
-                <input style="tab-index: none;" type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
-                       data-value="row.value"
-                       data-event-focus="shell_sheet_hold('tool', ri)"
-                       data-event-blur="shell_sheet_release('tool', ri)"/>
-                <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
-                <div class="numbox theme-field" data-if="row.control == 'number' &amp;&amp; sheet_typing != 'tool:' + ri + ':-1'"
-                     data-class-locked="!row.editable" data-event-mousedown="shell_scrub_press('tool', ri, -1)">
-                    <span class="numfill theme-fill" data-if="row.max > row.min"
-                          data-style-width="(row.max > row.min ? (row.number - row.min) / (row.max - row.min) * 100 : 0) + '%'"></span>
-                    <span class="numtext" data-if="!row.mixed">{{row.value}}</span>
-                    <span class="numtext theme-dim" data-if="row.mixed">&#x2014; differs</span>
-                </div>
-                <input style="tab-index: none;" type="text" class="setting_control theme-field" autofocus=""
-                       data-if="row.control == 'number' &amp;&amp; sheet_typing == 'tool:' + ri + ':-1'"
-                       data-value="row.value" data-event-focus="shell_sheet_hold('tool', ri)"
-                       data-event-keydown="shell_sheet_key('tool', ri, -1, ev.key_identifier)"
-                       data-event-blur="shell_sheet_release_part('tool', ri, -1)"/>
-                <div class="vector" data-if="row.control == 'vector'">
-                    <div class="vecpart theme-field" data-for="part, pi : row.parts" data-class-locked="!row.editable">
-                        <span data-attr-class="'axis theme-axis-' + pi">{{row.choices[pi]}}</span>
-                        <div class="numtext" data-if="sheet_typing != 'tool:' + ri + ':' + pi"
-                             data-event-mousedown="shell_scrub_press('tool', ri, pi)">
-                            <span data-if="part != ''">{{part}}</span><span class="theme-dim" data-if="part == ''">&#x2014;</span>
-                        </div>
-                        <input style="tab-index: none;" type="text" class="partinput" autofocus=""
-                               data-if="sheet_typing == 'tool:' + ri + ':' + pi"
-                               data-value="part" data-event-focus="shell_sheet_hold('tool', ri)"
-                               data-event-keydown="shell_sheet_key('tool', ri, pi, ev.key_identifier)"
-                               data-event-blur="shell_sheet_release_part('tool', ri, pi)"/>
-                    </div>
-                </div>
-                <select style="tab-index: none;" class="setting_control theme-field" data-if="row.control == 'choice'"
-                        data-value="row.value" data-event-change="shell_sheet_set('tool', ri, ev.value)">
-                    <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
-                </select>
-                <div class="setting_toggle key theme-key" data-if="row.control == 'toggle'"
-                     data-class-lit="row.value == 'true'" data-event-click="shell_sheet_flip('tool', ri)">
-                    <span data-if="row.value == 'true'">ON</span><span data-if="row.value != 'true'">OFF</span>
-                </div>
-                <textarea style="tab-index: none;" class="setting_control setting_long theme-field" data-if="row.control == 'longtext'" rows="5"
-                          data-value="row.value" data-event-focus="shell_sheet_hold('tool', ri)"
-                          data-event-blur="shell_sheet_release('tool', ri)"></textarea>
-                <div class="setting_color" data-if="row.control == 'color'">
-                    <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"
-                         data-event-click="shell_sheet_color('tool', ri)"></div>
-                    <input style="tab-index: none;" type="text" class="setting_control theme-field" data-value="row.value"
-                           data-event-focus="shell_sheet_hold('tool', ri)"
-                           data-event-blur="shell_sheet_release('tool', ri)"/>
-                </div>
-                <div class="setting_control key theme-key" data-if="row.control == 'asset'"
-                     data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('tool', ri, ev.ctrl_key)"
-                     data-event-dragdrop="shell_sheet_drop('tool', ri)">
-                    <span class="asset_name" data-if="row.value != ''">{{row.parts.size > 0 ? row.parts[0] : row.value}}</span><span data-if="row.value == ''">NONE</span>
-                </div>
-                <div class="remove glyph theme-remove" data-for="verb : row.verbs" data-if="verb.removes"
-                     data-event-click="shell_sheet_act('tool', ri, verb.key, '')">&#xf00d;</div>
-                <div class="row_verbs" data-if="row.verbs.size > 0">
-                    <div class="key theme-key" data-for="verb : row.verbs" data-if="!verb.removes"
-                         data-event-click="shell_sheet_act('tool', ri, verb.key, '')">{{verb.label}}</div>
-                </div>
-            </div>
+            <include src="parts/sheet_rows.rmlpart" sheet="tool" help="false"/>
             <div id="tool_hint" class="theme-dim" data-if="station_hint != ''">{{station_hint}}</div>
             <div id="tool_keys" data-if="draft != 'none'">
                 <div class="key theme-key" data-class-lit="draft == 'ready'" data-class-disabled="draft != 'ready'"
@@ -239,76 +171,7 @@
                data-value="selection_title" data-event-focus="shell_title_hold()"
                data-event-blur="shell_title_release()"/>
         <div id="selection_subtitle" class="theme-dim" data-if="!selection_named &amp;&amp; selection_subtitle != ''">{{selection_subtitle}}</div>
-        <div class="setting" data-for="row, ri : selection_rows" data-attr-id="'selection_row_' + ri"
-                 data-style-margin-left="(row.depth * 8) + 'dp'"
-                 data-class-heading="row.control == 'section'"
-                 data-class-locked="!row.editable &amp;&amp; row.control != 'section'"
-                 data-class-theme-muted="!row.editable &amp;&amp; row.control != 'section'">
-                <span class="fold glyph theme-dim" data-if="row.control == 'section' &amp;&amp; row.value != ''"
-                      data-event-click="shell_sheet_fold('selection', ri)"><span data-if="row.value == 'closed'">&#xf0da;</span><span data-if="row.value == 'open'">&#xf0d7;</span></span>
-                <span class="setting_label" data-if="row.control != 'action'" data-event-click="shell_sheet_fold('selection', ri)">{{row.label}}</span>
-                <input style="tab-index: none;" type="text" class="setting_control theme-field" data-if="row.control == 'text' &amp;&amp; row.editable"
-                       data-value="row.value"
-                       data-event-focus="shell_sheet_hold('selection', ri)"
-                       data-event-blur="shell_sheet_release('selection', ri)"/>
-                <span class="setting_value" data-if="row.control == 'text' &amp;&amp; !row.editable">{{row.value}}</span>
-                <div class="numbox theme-field" data-if="row.control == 'number' &amp;&amp; sheet_typing != 'selection:' + ri + ':-1'"
-                     data-class-locked="!row.editable" data-event-mousedown="shell_scrub_press('selection', ri, -1)">
-                    <span class="numfill theme-fill" data-if="row.max > row.min"
-                          data-style-width="(row.max > row.min ? (row.number - row.min) / (row.max - row.min) * 100 : 0) + '%'"></span>
-                    <span class="numtext" data-if="!row.mixed">{{row.value}}</span>
-                    <span class="numtext theme-dim" data-if="row.mixed">&#x2014; differs</span>
-                </div>
-                <input style="tab-index: none;" type="text" class="setting_control theme-field" autofocus=""
-                       data-if="row.control == 'number' &amp;&amp; sheet_typing == 'selection:' + ri + ':-1'"
-                       data-value="row.value" data-event-focus="shell_sheet_hold('selection', ri)"
-                       data-event-keydown="shell_sheet_key('selection', ri, -1, ev.key_identifier)"
-                       data-event-blur="shell_sheet_release_part('selection', ri, -1)"/>
-                <div class="vector" data-if="row.control == 'vector'">
-                    <div class="vecpart theme-field" data-for="part, pi : row.parts" data-class-locked="!row.editable">
-                        <span data-attr-class="'axis theme-axis-' + pi">{{row.choices[pi]}}</span>
-                        <div class="numtext" data-if="sheet_typing != 'selection:' + ri + ':' + pi"
-                             data-event-mousedown="shell_scrub_press('selection', ri, pi)">
-                            <span data-if="part != ''">{{part}}</span><span class="theme-dim" data-if="part == ''">&#x2014;</span>
-                        </div>
-                        <input style="tab-index: none;" type="text" class="partinput" autofocus=""
-                               data-if="sheet_typing == 'selection:' + ri + ':' + pi"
-                               data-value="part" data-event-focus="shell_sheet_hold('selection', ri)"
-                               data-event-keydown="shell_sheet_key('selection', ri, pi, ev.key_identifier)"
-                               data-event-blur="shell_sheet_release_part('selection', ri, pi)"/>
-                    </div>
-                </div>
-                <select style="tab-index: none;" class="setting_control theme-field" data-if="row.control == 'choice'"
-                        data-value="row.value" data-event-change="shell_sheet_set('selection', ri, ev.value)">
-                    <option data-for="c : row.choices" data-attr-value="c">{{c}}</option>
-                </select>
-                <div class="setting_toggle key theme-key" data-if="row.control == 'toggle'"
-                     data-class-lit="row.value == 'true'" data-event-click="shell_sheet_flip('selection', ri)">
-                    <span data-if="row.value == 'true'">ON</span><span data-if="row.value != 'true'">OFF</span>
-                </div>
-                <textarea style="tab-index: none;" class="setting_control setting_long theme-field" data-if="row.control == 'longtext'" rows="5"
-                          data-value="row.value" data-event-focus="shell_sheet_hold('selection', ri)"
-                          data-event-blur="shell_sheet_release('selection', ri)"></textarea>
-                <div class="setting_color" data-if="row.control == 'color'">
-                    <div class="swatch theme-field" data-style-background-color="row.control == 'color' ? row.parts[0] : 'transparent'"
-                         data-event-click="shell_sheet_color('selection', ri)"></div>
-                    <input style="tab-index: none;" type="text" class="setting_control theme-field" data-value="row.value"
-                           data-event-focus="shell_sheet_hold('selection', ri)"
-                           data-event-blur="shell_sheet_release('selection', ri)"/>
-                </div>
-                <div class="setting_control key theme-key" data-if="row.control == 'asset'"
-                     data-class-disabled="!row.editable" data-event-click="shell_sheet_pick('selection', ri, ev.ctrl_key)"
-                     data-event-dragdrop="shell_sheet_drop('selection', ri)">
-                    <span class="asset_name" data-if="row.value != ''">{{row.parts.size > 0 ? row.parts[0] : row.value}}</span><span data-if="row.value == ''">NONE</span>
-                </div>
-                <span class="setting_help theme-dim" data-if="sheet &amp;&amp; row.detail != ''">{{row.detail}}</span>
-                <div class="remove glyph theme-remove" data-for="verb : row.verbs" data-if="verb.removes"
-                     data-event-click="shell_sheet_act('selection', ri, verb.key, '')">&#xf00d;</div>
-                <div class="row_verbs" data-if="row.verbs.size > 0">
-                    <div class="key theme-key" data-for="verb : row.verbs" data-if="!verb.removes"
-                         data-event-click="shell_sheet_act('selection', ri, verb.key, '')">{{verb.label}}</div>
-                </div>
-            </div>
+        <include src="parts/sheet_rows.rmlpart" sheet="selection" help="sheet"/>
         <div id="selection_verbs">
             <div class="key theme-key" data-for="verb : selection_verbs"
                  data-class-lit="selection_staged &amp;&amp; it_index == 0"
