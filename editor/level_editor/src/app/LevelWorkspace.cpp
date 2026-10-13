@@ -52,6 +52,7 @@
 #include "workspace/PropertyHandles.h"
 #include "ui/WorldMapSurface.h"
 #include "viewport/CameraFraming.h"
+#include "viewport/ViewArrangementSettings.h"
 #include "workspace/WorldExplorer.h"
 #include "scene_source/SceneSourcePaths.h"
 #include "document/EntityNameComponent.h"
@@ -105,9 +106,6 @@
 namespace
 {
 constexpr std::string_view kEditorRenderFeatureId = "editor_render";
-constexpr std::string_view kArrangementCVar = "editor.view.arrangement";
-constexpr std::string_view kDividerXCVar = "editor.view.divider_x";
-constexpr std::string_view kDividerYCVar = "editor.view.divider_y";
 } // namespace
 
 ActionDefinition NewLevelAction()
@@ -350,39 +348,8 @@ void LevelWorkspace::BuildInput()
                 } });
     OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [this] { return HeldType(); });
 
-    // How the views share the content area, and which one a single view shows.
-    struct ArrangementRow
-    {
-        const char* Id;
-        const char* Label;
-        SDL_Keycode Key;
-        ViewportArrangementKind Kind;
-    };
-    for (const ArrangementRow& row : { ArrangementRow{ "view.one", "One View", SDLK_1, ViewportArrangementKind::Single },
-                                       ArrangementRow{ "view.two", "Two Views", SDLK_2, ViewportArrangementKind::Split },
-                                       ArrangementRow{ "view.four", "Four Views", SDLK_4, ViewportArrangementKind::Quad } })
-        OfferAction(Catalog, ActionHandlers,
-                    { .Id = row.Id, .Label = row.Label, .Category = "View", .DefaultChords = { { row.Key, { .Alt = true } } } },
-                    { .Invoke = [this, kind = row.Kind] { SetArrangement(kind); },
-                      .Checked = [this, kind = row.Kind] { return Arrangement() == kind; } });
-    struct ProjectionRow
-    {
-        const char* Id;
-        const char* Label;
-        SDL_Keycode Key;
-        ViewportOrientation Orientation;
-    };
-    for (const ProjectionRow& row : { ProjectionRow{ "view.perspective", "Perspective View", SDLK_KP_5, ViewportOrientation::Perspective },
-                                      ProjectionRow{ "view.top", "Top View", SDLK_KP_7, ViewportOrientation::Top },
-                                      ProjectionRow{ "view.front", "Front View", SDLK_KP_1, ViewportOrientation::Front },
-                                      ProjectionRow{ "view.side", "Side View", SDLK_KP_3, ViewportOrientation::Right } })
-        OfferAction(Catalog, ActionHandlers,
-                    { .Id = row.Id, .Label = row.Label, .Category = "View", .DefaultChords = { { row.Key, {} } } },
-                    { .Invoke = [this, orientation = row.Orientation] { ShowView(orientation); },
-                      .Checked = [this, orientation = row.Orientation] {
-                          const EditorViewport* active = Workspace->Layout.Active();
-                          return active != nullptr && active->Orientation == orientation;
-                      } });
+    ViewArrangement = std::make_unique<ViewArrangementSettings>(EnginePtr->Console().Registry());
+    ViewArrangement->Offer(Catalog, ActionHandlers, Workspace->Layout);
 
     // Tool activation is generated from the registry rather than listed above: a
     // tool declares its own key, so adding one needs no edit here. The action is
@@ -509,11 +476,11 @@ void LevelWorkspace::BuildInput()
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Handles->OnInput(e, cap); });
     DividerDrag = std::make_unique<ViewDividerDrag>(
         [this] {
-            return ViewDividerDrag::Arrangement{ .Kind = Arrangement(),
+            return ViewDividerDrag::Arrangement{ .Kind = ViewArrangement->Kind(),
                                                  .Content = ContentRect,
-                                                 .Divider = Divider() };
+                                                 .Divider = ViewArrangement->Divider() };
         },
-        [this](Vec2d divider) { SetDivider(divider); });
+        [this](Vec2d divider) { ViewArrangement->SetDivider(divider); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return DividerDrag->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Interaction.Dispatcher->OnInput(e, cap); });
@@ -525,99 +492,7 @@ void LevelWorkspace::BuildViewportRendering()
     Engine& engine = *EnginePtr;
     ConsoleService& console = engine.Console();
 
-    // The solid pass reads this cvar to backface-cull the editor viewport to match
-    // play mode (EditorRenderFeature / EditorSolidPipeline).
-    console.Registry().RegisterCVar({
-        .Name = "editor.cull_backfaces",
-        .Owner = "editor",
-        .Type = CVarType::Bool,
-        .DefaultValue = true,
-        .CurrentValue = true,
-        .Flags = CVarFlags::Archive,
-        .Help = "Backface-cull the editor solid viewport to match play mode.",
-        .Source = { "editor" },
-    });
-
-    // The interactive limit on pieces one brush's modifier stack may evaluate to
-    // (read per frame by EditorRenderFeature). Preview only: the cook uses the
-    // compile-time hard limit, so this never changes whether a level cooks.
-    console.Registry().RegisterCVar({
-        .Name = "editor.brush.preview_piece_budget",
-        .Owner = "editor",
-        .Type = CVarType::Int,
-        .DefaultValue = 4096,
-        .CurrentValue = 4096,
-        .Flags = CVarFlags::Archive,
-        .Help = "Editor: max pieces a brush's modifier stack evaluates to in the viewport preview.",
-        .Source = { "editor" },
-    });
-
-    // Grid look knobs, read per frame by EditorRenderFeature. Dial these live in the
-    // dev console to tune the grid without recompiling.
-    const auto registerGridFloat = [&](const char* name, double def, const char* help)
-    {
-        console.Registry().RegisterCVar({
-            .Name = name,
-            .Owner = "editor",
-            .Type = CVarType::Double,
-            .DefaultValue = def,
-            .CurrentValue = def,
-            .Flags = CVarFlags::Archive,
-            .Help = help,
-            .Source = { "editor" },
-        });
-    };
-    registerGridFloat("editor.grid.cell_px", 3.0, "Editor grid: target on-screen cell size in px (density; larger = sparser).");
-    registerGridFloat("editor.grid.opacity", 0.6, "Editor grid: line opacity 0..1 (larger = bolder).");
-    registerGridFloat("editor.grid.brightness", 0.62, "Editor grid: line brightness 0..1 (gray level).");
-    registerGridFloat("editor.grid.fade_start", -0.3, "Editor grid: fade start as a signed fraction of reach; negative fades gradually from near the camera (~ -0.3 is a good global falloff).");
-
-    console.Registry().RegisterCVar({
-        .Name = std::string(kArrangementCVar),
-        .Owner = "editor",
-        .Type = CVarType::Int,
-        .DefaultValue = std::int64_t{ 0 },
-        .CurrentValue = std::int64_t{ 0 },
-        .Flags = CVarFlags::Archive,
-        .Help = "Level views: 0 one view, 1 two side by side, 2 four in a grid.",
-        .Source = { "editor" },
-        .Min = 0.0,
-        .Max = 2.0,
-    });
-
-    for (const auto& [name, help] : { std::pair{ kDividerXCVar, "Level views: where side-by-side views meet, as a fraction of the width." },
-                                      std::pair{ kDividerYCVar, "Level views: where the rows of four views meet, as a fraction of the height." } })
-        console.Registry().RegisterCVar({
-            .Name = std::string(name),
-            .Owner = "editor",
-            .Type = CVarType::Double,
-            .DefaultValue = 0.5,
-            .CurrentValue = 0.5,
-            .Flags = CVarFlags::Archive,
-            .Help = help,
-            .Source = { "editor" },
-            .Min = 0.15,
-            .Max = 0.85,
-        });
-
-    // Selection bloom/glow knobs, read per frame by EditorRenderFeature.
-    console.Registry().RegisterCVar({
-        .Name = "editor.bloom.enable",
-        .Owner = "editor",
-        .Type = CVarType::Bool,
-        .DefaultValue = true,
-        .CurrentValue = true,
-        .Flags = CVarFlags::Archive,
-        .Help = "Editor: enable the selection bloom/glow pass.",
-        .Source = { "editor" },
-    });
-    registerGridFloat("editor.bloom.threshold", 1.0, "Editor bloom: per-channel HDR threshold; only color above this glows.");
-    registerGridFloat("editor.bloom.intensity", 1.0, "Editor bloom: additive strength of the glow.");
-    registerGridFloat("editor.bloom.radius", 2.0, "Editor bloom: blur spread (larger = wider, softer glow).");
-
-    // The render.ambient.* cvars EditorRenderFeature polls are the engine's
-    // own registrations (EngineConsoleBuiltins); the editor registers nothing
-    // for them.
+    EditorRenderFeature::RegisterCVars(console.Registry());
 
     auto renderFeature = std::make_unique<EditorRenderFeature>(
         Workspace->Layout,
@@ -808,58 +683,6 @@ void LevelWorkspace::Tick(FrameUpdateContext& ctx)
     if (Visible)
         CameraSystem->FrameUpdate(ctx);
     ProcessFrame();
-}
-
-ViewportArrangementKind LevelWorkspace::Arrangement() const
-{
-    std::int64_t value = 0;
-    if (const CVarMetadata* var = EnginePtr->Console().Registry().FindCVar(kArrangementCVar))
-        if (const std::int64_t* stored = std::get_if<std::int64_t>(&var->CurrentValue))
-            value = *stored;
-    switch (value)
-    {
-    case 1:  return ViewportArrangementKind::Split;
-    case 2:  return ViewportArrangementKind::Quad;
-    default: return ViewportArrangementKind::Single;
-    }
-}
-
-Vec2d LevelWorkspace::Divider() const
-{
-    const auto read = [this](std::string_view name) {
-        const CVarMetadata* var = EnginePtr->Console().Registry().FindCVar(name);
-        const double* value = var != nullptr ? std::get_if<double>(&var->CurrentValue) : nullptr;
-        return value != nullptr ? static_cast<float>(*value) : 0.5f;
-    };
-    return Vec2d(read(kDividerXCVar), read(kDividerYCVar));
-}
-
-void LevelWorkspace::SetDivider(Vec2d divider)
-{
-    ConsoleRegistry& registry = EnginePtr->Console().Registry();
-    const ConsoleValueSource source{ .Description = "view divider" };
-    (void)registry.SetCVar(kDividerXCVar, static_cast<double>(divider.X), source, ConsolePhase::GameplayStarted);
-    (void)registry.SetCVar(kDividerYCVar, static_cast<double>(divider.Y), source, ConsolePhase::GameplayStarted);
-}
-
-void LevelWorkspace::SetArrangement(ViewportArrangementKind kind)
-{
-    const std::int64_t value = kind == ViewportArrangementKind::Split ? 1 : kind == ViewportArrangementKind::Quad ? 2 : 0;
-    (void)EnginePtr->Console().Registry().SetCVar(kArrangementCVar, value,
-                                                  ConsoleValueSource{ .Description = "view action" },
-                                                  ConsolePhase::GameplayStarted);
-}
-
-void LevelWorkspace::ShowView(ViewportOrientation orientation)
-{
-    for (const ViewportLayout::ViewportStorage& viewport : Workspace->Layout.All())
-    {
-        if (viewport != nullptr && viewport->Orientation == orientation)
-        {
-            Workspace->Layout.SetActive(viewport->Id);
-            return;
-        }
-    }
 }
 
 void LevelWorkspace::PresentMap()
@@ -1073,8 +896,8 @@ void LevelWorkspace::ProcessFrame()
     // window last said the content shows; a view not shown loses its rect, so
     // ResolveAt never routes input to it.
     if (ViewSurface != nullptr)
-        ViewSurface->Arrange(Visible ? ContentRect : Rect2d{}, Arrangement(),
-                             Divider(), EditorUi::UiScale);
+        ViewSurface->Arrange(Visible ? ContentRect : Rect2d{}, ViewArrangement->Kind(), ViewArrangement->Divider(),
+                             EditorUi::UiScale);
     if (Visible)
         Handles->Publish();
     PresentMap();
@@ -1250,7 +1073,7 @@ WorkspaceViewFacet LevelWorkspace::Viewing() const
 {
     const EditorViewport* active = Workspace->Layout.Active();
     return { .Projection = active != nullptr ? active->GetDisplayLabel() : "",
-             .Views = static_cast<int>(TileCount(Arrangement())) };
+             .Views = static_cast<int>(TileCount(ViewArrangement->Kind())) };
 }
 
 WorkspaceLocationFacet LevelWorkspace::Location() const

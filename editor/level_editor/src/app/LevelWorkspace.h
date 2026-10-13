@@ -26,6 +26,7 @@
 #include "workspace/LevelDocumentSource.h"
 #include "prompts/DocumentPrompts.h"
 #include "project/MaterialLibrary.h"
+#include "viewport/ViewArrangementSettings.h"
 #include "viewport/ViewDividerDrag.h"
 #include "viewport/ViewportArrangement.h"
 #include "project/Project.h"
@@ -167,16 +168,6 @@ private:
 
     void BuildAuthoredWorkflows();
 
-    // How the views share the content area: editor.view.arrangement, so the
-    // choice outlives the session.
-    [[nodiscard]] ViewportArrangementKind Arrangement() const;
-    void SetArrangement(ViewportArrangementKind kind);
-    [[nodiscard]] Vec2d Divider() const;
-    void SetDivider(Vec2d divider);
-    // Makes the view looking along `orientation` the active one, which is the
-    // one a single view shows: each keeps its own camera.
-    void ShowView(ViewportOrientation orientation);
-
     // Writes the selection's geometry as binary glTF, behind a save dialog.
     void ExportSelectionGlb();
 
@@ -236,6 +227,7 @@ private:
     const ActionContextStack* WindowActions = nullptr;
     std::unique_ptr<InputRouter> Router;
     std::unique_ptr<ViewportNavigation> Navigation;
+    std::unique_ptr<ViewArrangementSettings> ViewArrangement;
     std::unique_ptr<ViewDividerDrag> DividerDrag;
     std::unique_ptr<ElementVerbs> Verbs;
     std::unique_ptr<FaceUvSource> Uv;

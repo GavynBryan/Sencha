@@ -27,6 +27,9 @@ public:
     std::span<const ViewportStorage> All() const;
     ViewportId Add(ViewportOrientation orientation);
     void SetActive(ViewportId id);
+    // Makes the view looking along `orientation` the active one, the one a
+    // single view shows: each keeps its own camera.
+    void ActivateFacing(ViewportOrientation orientation);
     void OnResize(uint32_t width, uint32_t height);
 
     // The viewport whose on-screen rect contains `point` (window-space pixels), or

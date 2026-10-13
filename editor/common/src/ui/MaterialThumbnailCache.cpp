@@ -5,6 +5,7 @@
 #include <assets/runtime/AssetSystem.h>
 #include <assets/texture/TextureCache.h>
 #include <core/assets/AssetRegistry.h>
+#include <core/console/CVarRead.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
 #include <graphics/vulkan/GraphicsServices.h>
@@ -60,10 +61,7 @@ void MaterialThumbnailCache::UpdateFrame(Engine& engine)
     if (const GraphicsServices* graphics = engine.TryGraphics())
         retirement = graphics->Frames.GetRetirement();
     BeginFrame(retirement);
-    std::int64_t budget = 128;
-    if (const CVarMetadata* var = engine.Console().Registry().FindCVar(kBudgetCVar))
-        if (const std::int64_t* value = std::get_if<std::int64_t>(&var->CurrentValue))
-            budget = *value;
+    const std::int64_t budget = ReadCVarInt(&engine.Console().Registry(), kBudgetCVar, 128);
     TrimToBudget(static_cast<std::size_t>(std::max<std::int64_t>(1, budget)));
 }
 

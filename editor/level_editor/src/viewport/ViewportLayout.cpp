@@ -74,6 +74,16 @@ void ViewportLayout::SetActive(ViewportId id)
     SyncActiveFlags();
 }
 
+void ViewportLayout::ActivateFacing(ViewportOrientation orientation)
+{
+    for (const ViewportStorage& viewport : Viewports)
+        if (viewport != nullptr && viewport->Orientation == orientation)
+        {
+            SetActive(viewport->Id);
+            return;
+        }
+}
+
 void ViewportLayout::OnResize(uint32_t width, uint32_t height)
 {
     Width = width;

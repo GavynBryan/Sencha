@@ -93,6 +93,10 @@ public:
                         const AssetRegistry* catalog,
                         RuntimeAssets* runtimeAssets);
 
+    // The look and budget cvars it reads each frame, archived, so a session
+    // keeps what was dialled in. Registered before it first draws.
+    static void RegisterCVars(ConsoleRegistry& console);
+
     // Offscreen: this feature renders each viewport into its own texture before the
     // swapchain (MainColor) pass opens; the UI then composites those textures.
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::Offscreen; }
