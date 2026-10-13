@@ -267,9 +267,8 @@ void Shelf::Hide()
         return;
     State = Placement::Down;
     TopEdge = Edge::Resting;
-    Use = Purpose::Opening;
+    Serve(Purpose::Opening, {});
     Keys = KeyHolder::Elsewhere;
-    Picking = {};
     if (Screen.IsValid())
         Ui.CloseScreen(Screen);
     Screen = {};
@@ -278,8 +277,7 @@ void Shelf::Hide()
 void Shelf::Pick(ShelfPick pick)
 {
     Show();
-    Use = Purpose::Choosing;
-    Picking = std::move(pick);
+    Serve(Purpose::Choosing, std::move(pick));
     Selected = Picking.Current;
     // What it offers is the chooser's; a kind narrowed to while browsing would hide it.
     Query.Category.clear();
@@ -339,6 +337,7 @@ void Shelf::Rescan()
 {
     Files = ScanProjectFiles(Sources.ContentRoots);
     FilesVersion = Sources.Files != nullptr ? Sources.Files->Version() : 0;
+    ++Offering;
     if (Sources.References != nullptr)
         Sources.References->Refresh(Files, ScanProjectFiles(Sources.OtherRoots), ReadProjectFileText);
 }
@@ -349,9 +348,16 @@ const ProjectFile* Shelf::FileAt(const std::string& assetPath) const
     return found != Files.end() && found->AssetPath == assetPath ? &*found : nullptr;
 }
 
+void Shelf::Serve(Purpose use, ShelfPick pick)
+{
+    Use = use;
+    Picking = std::move(pick);
+    ++Offering;
+}
+
 void Shelf::Remember()
 {
-    for (const AssetTab& tab : AssetTabsIn(Workspaces, Presentation))
+    for (const AssetTab& tab : Tabs)
         if (tab.Current && tab.Document.starts_with(kAssetPathPrefix))
         {
             if (!Recent.empty() && Recent.front() == tab.Document)
@@ -375,19 +381,23 @@ bool Shelf::Listed(const ProjectFile& file) const
     }
 }
 
-std::vector<const ProjectFile*> Shelf::Shown() const
+std::vector<const ProjectFile*> Shelf::Shown()
 {
     if (List == Listing::Everything || List == Listing::Unused || List == Listing::Problems)
     {
-        std::vector<const ProjectFile*> found = FindAssets(Files, Query);
-        std::erase_if(found, [&](const ProjectFile* file) { return !Offers(*file) || !Listed(*file); });
-        return found;
+        if (Finding.Offering != Offering || Finding.List != List || Finding.Query != Query)
+        {
+            std::vector<const ProjectFile*> found = FindAssets(Files, Query);
+            std::erase_if(found, [&](const ProjectFile* file) { return !Offers(*file) || !Listed(*file); });
+            Finding = { .Offering = Offering, .Query = Query, .List = List, .Files = std::move(found) };
+        }
+        return Finding.Files;
     }
     std::vector<std::string> keys;
     if (List == Listing::Recent)
         keys = Recent;
     else
-        for (const AssetTab& tab : AssetTabsIn(Workspaces, Presentation))
+        for (const AssetTab& tab : Tabs)
             if (!tab.Document.empty() && (List == Listing::Open || tab.Changed))
                 keys.push_back(tab.Document);
     std::vector<ProjectFile> listed;
@@ -412,7 +422,7 @@ void Shelf::Open(const std::string& assetPath)
             return;
         // Taken before it is handed over: a choice may raise the shelf again.
         const ShelfPick pick = std::exchange(Picking, {});
-        Use = Purpose::Opening;
+        Serve(Purpose::Opening, {});
         if (State == Placement::Raised)
             Hide();
         if (pick.Choose)
@@ -771,8 +781,9 @@ void Shelf::SyncFileLayer()
         FileLayer.Reset();
 }
 
-void Shelf::Update(float dp, float windowHeight)
+void Shelf::Update(float dp, float windowHeight, std::span<const AssetTab> tabs)
 {
+    Tabs.assign(tabs.begin(), tabs.end());
     SyncFileLayer();
     Dp = dp > 0.0f ? dp : 1.0f;
     if (Screen.IsValid())
@@ -817,33 +828,30 @@ void Shelf::Publish()
     }
     (void)Ui.SetRows(Screen, kCrumbs, crumbs);
 
+    Derive();
     const auto offered = [&](const std::string& assetPath) {
         const ProjectFile* file = FileAt(assetPath);
         return file != nullptr && Offers(*file);
     };
-    const std::size_t offeredCount =
-        static_cast<std::size_t>(std::ranges::count_if(Files, [&](const ProjectFile& file) { return Offers(file); }));
 
     // A chip shows only where it would narrow: among two kinds or more.
     std::vector<UiRow> chips;
-    UiRow all{ "All", "", "" };
-    all.Selected = Query.Category.empty();
-    chips.push_back(std::move(all));
-    for (const std::string_view category : AssetCategories())
-        if (std::ranges::any_of(Files, [&](const ProjectFile& file) {
-                return KindOf(file).Category == category && Offers(file);
-            }))
+    if (Known.Categories.size() >= 2)
+    {
+        UiRow all{ "All", "", "" };
+        all.Selected = Query.Category.empty();
+        chips.push_back(std::move(all));
+        for (const std::string_view category : Known.Categories)
         {
             UiRow chip{ std::string(category), "", "" };
             chip.Key = category;
             chip.Selected = Query.Category == category;
             chips.push_back(std::move(chip));
         }
-    if (chips.size() < 3)
-        chips.clear();
+    }
     (void)Ui.SetRows(Screen, kChips, chips);
 
-    const std::vector<AssetTab> tabs = AssetTabsIn(Workspaces, Presentation);
+    const std::vector<AssetTab>& tabs = Tabs;
     const auto counted = [&](bool changedOnly) {
         return std::ranges::count_if(tabs, [&](const AssetTab& tab) {
             return !tab.Document.empty() && offered(tab.Document) && (!changedOnly || tab.Changed);
@@ -856,46 +864,32 @@ void Shelf::Publish()
         row.Selected = List == which;
         lists.push_back(std::move(row));
     };
-    list("Everything", "everything", offeredCount, Listing::Everything);
+    list("Everything", "everything", Known.Offered, Listing::Everything);
     list("Recent", "recent", static_cast<std::size_t>(std::ranges::count_if(Recent, offered)), Listing::Recent);
     list("Open", "open", static_cast<std::size_t>(counted(false)), Listing::Open);
     list("Changed", "changed", static_cast<std::size_t>(counted(true)), Listing::Changed);
-    if (const ReferenceIndex* references = Sources.References)
+    if (Sources.References != nullptr)
     {
-        const auto countWhere = [&](auto&& holds) {
-            return static_cast<std::size_t>(std::ranges::count_if(Files, [&](const ProjectFile& file) {
-                return Offers(file) && holds(file.AssetPath);
-            }));
-        };
-        list("Unused", "unused", countWhere([&](const std::string& path) { return references->IsUnused(path); }),
-             Listing::Unused);
-        list("Problems", "problems",
-             countWhere([&](const std::string& path) { return !references->Missing(path).empty(); }),
-             Listing::Problems);
+        list("Unused", "unused", Known.Unused, Listing::Unused);
+        list("Problems", "problems", Known.Problems, Listing::Problems);
     }
     (void)Ui.SetRows(Screen, kLists, lists);
 
     std::vector<UiRow> folders;
-    std::vector<ProjectFile> offeredFiles;
-    if (Use == Purpose::Choosing)
-        std::ranges::copy_if(Files, std::back_inserter(offeredFiles), [&](const ProjectFile& file) { return Offers(file); });
-    const std::vector<std::string> known = FoldersOf(Use == Purpose::Choosing ? offeredFiles : Files);
-    for (const std::string& folder : known)
+    for (const DerivedFolder& folder : Known.Folders)
     {
         // Shown when every folder above it is open.
         bool visible = true;
-        for (std::size_t slash = folder.find('/'); slash != std::string::npos; slash = folder.find('/', slash + 1))
-            visible = visible && OpenFolders.contains(folder.substr(0, slash));
+        for (std::size_t slash = folder.Path.find('/'); slash != std::string::npos;
+             slash = folder.Path.find('/', slash + 1))
+            visible = visible && OpenFolders.contains(folder.Path.substr(0, slash));
         if (!visible)
             continue;
-        const bool holdsFolders = std::ranges::any_of(known, [&](const std::string& other) {
-            return other.size() > folder.size() && other.starts_with(folder + "/");
-        });
-        UiRow row{ std::string(PathLeaf(folder)),
-                   holdsFolders ? (OpenFolders.contains(folder) ? "open" : "closed") : "", "" };
-        row.Key = folder;
-        row.Depth = static_cast<int>(std::ranges::count(folder, '/'));
-        row.Selected = Query.Folder == folder;
+        UiRow row{ std::string(PathLeaf(folder.Path)),
+                   folder.HoldsFolders ? (OpenFolders.contains(folder.Path) ? "open" : "closed") : "", "" };
+        row.Key = folder.Path;
+        row.Depth = static_cast<int>(std::ranges::count(folder.Path, '/'));
+        row.Selected = Query.Folder == folder.Path;
         folders.push_back(std::move(row));
     }
     (void)Ui.SetRows(Screen, kFolders, folders);
@@ -927,7 +921,7 @@ void Shelf::Publish()
         items.push_back(std::move(item));
     }
     (void)Ui.SetRows(Screen, kItems, items);
-    (void)Ui.SetValue(Screen, kCount, UiValue(std::format("{} of {}", shown.size(), offeredCount)));
+    (void)Ui.SetValue(Screen, kCount, UiValue(std::format("{} of {}", shown.size(), Known.Offered)));
     (void)Ui.SetValue(Screen, kEmpty, UiValue(std::string(Query.Text.empty() ? "Nothing here."
                                                                             : "Nothing holds that.")));
 
@@ -948,6 +942,37 @@ void Shelf::Publish()
     (void)Ui.SetValue(Screen, kCanGoBack, UiValue(!Trail.empty()));
     (void)Ui.SetValue(Screen, kPreviewOpens, UiValue(chosen != nullptr && (Use == Purpose::Choosing
                                                                              || Workspaces.KindOpening(*chosen) != nullptr)));
+}
+
+void Shelf::Derive()
+{
+    if (Known.Offering == Offering)
+        return;
+    Known = { .Offering = Offering };
+    const auto offers = [&](const ProjectFile& file) { return Offers(file); };
+    Known.Offered = static_cast<std::size_t>(std::ranges::count_if(Files, offers));
+    for (const std::string_view category : AssetCategories())
+        if (std::ranges::any_of(Files, [&](const ProjectFile& file) {
+                return KindOf(file).Category == category && Offers(file);
+            }))
+            Known.Categories.push_back(category);
+    if (const ReferenceIndex* references = Sources.References)
+        for (const ProjectFile& file : Files)
+            if (Offers(file))
+            {
+                Known.Unused += references->IsUnused(file.AssetPath) ? 1 : 0;
+                Known.Problems += references->Missing(file.AssetPath).empty() ? 0 : 1;
+            }
+    std::vector<ProjectFile> offered;
+    if (Use == Purpose::Choosing)
+        std::ranges::copy_if(Files, std::back_inserter(offered), offers);
+    const std::vector<std::string> folders = FoldersOf(Use == Purpose::Choosing ? offered : Files);
+    for (const std::string& folder : folders)
+        Known.Folders.push_back({ .Path = folder,
+                                  .HoldsFolders = std::ranges::any_of(folders, [&](const std::string& other) {
+                                      return other.size() > folder.size() && other.starts_with(folder)
+                                          && other[folder.size()] == '/';
+                                  }) });
 }
 
 void Shelf::PublishReferences(const ProjectFile* chosen)

@@ -258,6 +258,7 @@ private:
     std::string ShelvedFor;
 
     std::vector<AssetTab> ShownTabs;
+    std::optional<UiElementBox> Rail;
     // Which shape of the selection's surface is showing ("" for none), and the
     // shapes last placed, let go when another shows instead.
     std::string SelectionKey;

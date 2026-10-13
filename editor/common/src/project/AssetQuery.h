@@ -20,6 +20,8 @@ struct AssetQuery
     // Files that rank alike keep the order they were given in -- a list of
     // the most recent -- rather than going by name.
     bool KeepOrder = false;
+
+    bool operator==(const AssetQuery&) const = default;
 };
 
 // The files `query` finds, best first: a name that begins with what was typed,

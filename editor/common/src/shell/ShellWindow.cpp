@@ -369,6 +369,8 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
         Services.Ui.SetSurfaceScale(surface, scale);
     }
 
+    // Laid out last frame; measured once and read by everything placed against it.
+    Rail = Services.Ui.MeasureElement(Screen, "rail");
     IWorkspace* active = Services.Workspaces.ActiveIn(Services.Presentation);
     FollowWorkspace(active);
     if (active != nullptr)
@@ -394,7 +396,8 @@ void ShellWindow::Update(double now, const ShellPreferences& preferences)
         Menus->Show(RailMenus::Popover::None);
     if (Services.Role == ShellRole::Shelf)
         AssetShelf->Fill(static_cast<float>(extent.Height) - RailHeight());
-    AssetShelf->Update(Services.Ui.GetSurfaceScale(SurfaceId), static_cast<float>(extent.Height));
+    ShownTabs = AssetTabsIn(Services.Workspaces, Services.Presentation);
+    AssetShelf->Update(Services.Ui.GetSurfaceScale(SurfaceId), static_cast<float>(extent.Height), ShownTabs);
     if (const std::optional<ShelfDrop> drop = AssetShelf->TakeDrop())
     {
         IWorkspace* receiving = Services.Workspaces.ActiveIn(Services.Presentation);
@@ -430,10 +433,7 @@ void ShellWindow::FollowWorkspace(const IWorkspace* workspace)
 
 float ShellWindow::RailHeight() const
 {
-    if (Screen.IsValid())
-        if (const std::optional<UiElementBox> rail = Services.Ui.MeasureElement(Screen, "rail"))
-            return rail->Height;
-    return kRailHeightDp * Services.Ui.GetSurfaceScale(SurfaceId);
+    return Rail.has_value() ? Rail->Height : kRailHeightDp * Services.Ui.GetSurfaceScale(SurfaceId);
 }
 
 void ShellWindow::HandleActions()
@@ -891,7 +891,6 @@ void ShellWindow::Publish(double now)
 
 void ShellWindow::PublishTabs()
 {
-    ShownTabs = AssetTabsIn(Services.Workspaces, Services.Presentation);
     std::vector<UiRow> rows;
     for (const AssetTab& tab : ShownTabs)
     {
@@ -1045,7 +1044,7 @@ void ShellWindow::PublishCaption()
     // the rail too.
     WindowFrameRegions regions;
     regions.ResizeBorder = static_cast<std::int32_t>(std::lround(4.0f * Services.Ui.GetSurfaceScale(SurfaceId)));
-    const std::optional<UiElementBox> rail = Services.Ui.MeasureElement(Screen, "rail");
+    const std::optional<UiElementBox>& rail = Rail;
     const std::optional<UiElementBox> left = Services.Ui.MeasureElement(Screen, "rail_left");
     const std::optional<UiElementBox> right = Services.Ui.MeasureElement(Screen, "rail_right");
     if (rail.has_value() && left.has_value() && right.has_value())

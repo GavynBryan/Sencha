@@ -5,6 +5,7 @@
 #include "project/AssetQuery.h"
 #include "project/ProjectFiles.h"
 #include "prompts/PromptQueue.h"
+#include "shell/AssetTabs.h"
 #include "shell/NewContentWheel.h"
 #include "workspaces/WorkspaceKind.h"
 
@@ -141,8 +142,9 @@ public:
     [[nodiscard]] bool IsPinned() const { return State == Placement::Pinned; }
 
     // Per frame: act on what was done to it, then publish what it shows.
-    // `dp` is the surface's scale; `windowHeight` bounds how tall it may be.
-    void Update(float dp, float windowHeight);
+    // `dp` is the surface's scale; `windowHeight` bounds how tall it may be;
+    // `tabs` are the window's, as its shell worked them out this frame.
+    void Update(float dp, float windowHeight, std::span<const AssetTab> tabs);
     // How far up from the window's bottom edge it reaches, in window pixels;
     // nothing while it is down.
     [[nodiscard]] float Reach() const;
@@ -195,7 +197,12 @@ private:
     void Move(int by);
     void Publish();
     void PublishReferences(const ProjectFile* chosen);
-    [[nodiscard]] std::vector<const ProjectFile*> Shown() const;
+    [[nodiscard]] std::vector<const ProjectFile*> Shown();
+    // Sets what it is for, and so what it offers.
+    void Serve(Purpose use, ShelfPick pick);
+    // What the files and the pick in force say, worked out again only when
+    // either changes (Offering): counts, the kinds offered, the folders.
+    void Derive();
     [[nodiscard]] const ProjectFile* FileAt(const std::string& assetPath) const;
     [[nodiscard]] int Columns() const;
     // The tiles in view, as indices into what is shown, a row either side.
@@ -232,6 +239,33 @@ private:
     std::vector<ProjectFile> Files;
     // The file steps' version the files were read at.
     std::uint64_t FilesVersion = 0;
+    // Moves on whenever the files or what is offered of them change.
+    std::uint64_t Offering = 1;
+    struct DerivedFolder
+    {
+        std::string Path;
+        bool HoldsFolders = false;
+    };
+    struct Derived
+    {
+        std::uint64_t Offering = 0;
+        std::size_t Offered = 0;
+        std::vector<std::string_view> Categories = {};
+        std::size_t Unused = 0;
+        std::size_t Problems = 0;
+        std::vector<DerivedFolder> Folders = {};
+    };
+    Derived Known;
+    // The files found for the query, while it and what is offered stay put.
+    struct Found
+    {
+        std::uint64_t Offering = 0;
+        AssetQuery Query = {};
+        Listing List = Listing::Everything;
+        std::vector<const ProjectFile*> Files = {};
+    };
+    Found Finding;
+    std::vector<AssetTab> Tabs;
     std::string Selected;
     // The chosen file whose tile was last scrolled into view.
     std::string ScrolledTo;
