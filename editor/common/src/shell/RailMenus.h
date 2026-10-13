@@ -1,5 +1,6 @@
 #pragma once
 
+#include "properties/PropertyNode.h"
 #include "shell/SheetPoint.h"
 #include "shell/TransientSurfaces.h"
 
@@ -61,8 +62,7 @@ public:
     // As a document or a script names one: "hatch", "tools", "problems",
     // "category:Grid"; anything else closes what is open.
     void ShowNamed(std::string_view name);
-    void ShowChoices(SheetPoint at, std::string verb, std::vector<std::string> choices,
-                     std::vector<std::string> notes);
+    void ShowChoices(SheetPoint at, PropertyVerb verb);
     // Whether the transient that closed was this one; it is shut if so.
     bool Closed(TransientSurfaces::Id id);
 
@@ -86,9 +86,7 @@ private:
     std::string Category;
     TransientSurfaces::Id OpenTransient = 0;
     SheetPoint ChoicesAt;
-    std::string ChoicesVerb;
-    std::vector<std::string> ChoicesListed;
-    std::vector<std::string> ChoicesNotes;
+    PropertyVerb Choosing;
     // What has been typed to narrow the choices.
     std::string ChoicesFilter;
 

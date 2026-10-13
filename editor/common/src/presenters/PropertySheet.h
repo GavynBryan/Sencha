@@ -69,10 +69,8 @@ public:
                            std::string_view choice = {});
     PropertyEditResult Act(std::span<const PropertySection> sections, std::size_t index, std::string_view verb,
                            std::string_view choice = {});
-    // What row `index`'s verb asks to be chosen first; empty for none.
-    [[nodiscard]] std::vector<std::string> ChoicesOf(std::size_t index, std::string_view verb) const;
-    // Beside each of those choices, what choosing it brings with it; may be empty.
-    [[nodiscard]] std::vector<std::string> NotesOf(std::size_t index, std::string_view verb) const;
+    // Row `index`'s verb, with what it asks to be chosen first; null when it has none.
+    [[nodiscard]] const PropertyVerb* VerbOf(std::size_t index, std::string_view verb) const;
     // Whether row `index`'s verb takes the row's property away.
     [[nodiscard]] bool Removes(std::size_t index, std::string_view verb) const;
     [[nodiscard]] std::string LabelOf(std::size_t index) const;

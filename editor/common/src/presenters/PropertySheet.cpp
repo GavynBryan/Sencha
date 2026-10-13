@@ -352,20 +352,12 @@ PropertyEditResult PropertySheet::Act(std::span<const PropertySection> sections,
     return source != nullptr ? Act(*source, index, verb, choice) : PropertyEditResult::Gone;
 }
 
-std::vector<std::string> PropertySheet::ChoicesOf(std::size_t index, std::string_view verb) const
+const PropertyVerb* PropertySheet::VerbOf(std::size_t index, std::string_view verb) const
 {
     if (index >= Rows.size())
-        return {};
+        return nullptr;
     const auto found = std::ranges::find(Rows[index].Verbs, verb, &PropertyVerb::Id);
-    return found != Rows[index].Verbs.end() ? found->Choices : std::vector<std::string>{};
-}
-
-std::vector<std::string> PropertySheet::NotesOf(std::size_t index, std::string_view verb) const
-{
-    if (index >= Rows.size())
-        return {};
-    const auto found = std::ranges::find(Rows[index].Verbs, verb, &PropertyVerb::Id);
-    return found != Rows[index].Verbs.end() ? found->ChoiceNotes : std::vector<std::string>{};
+    return found != Rows[index].Verbs.end() ? &*found : nullptr;
 }
 
 bool PropertySheet::Removes(std::size_t index, std::string_view verb) const

@@ -203,9 +203,12 @@ TEST(ComponentPropertySource, RemovingAndAddingAComponentAreStepsLikeAnyOther)
     const PropertyNode* components = FindNode(afterRemoval, "components");
     ASSERT_NE(components, nullptr);
     ASSERT_FALSE(components->Descriptor.Verbs.empty());
-    const std::vector<std::string>& addable = components->Descriptor.Verbs.front().Choices;
-    ASSERT_NE(std::ranges::find(addable, name->Descriptor.Label), addable.end()) << "what was removed can come back";
-    EXPECT_EQ(f.Source.Act("components", "add", name->Descriptor.Label), PropertyEditResult::Applied);
+    const PropertyVerb& add = components->Descriptor.Verbs.front();
+    const auto offered = std::ranges::find(add.ChoiceKeys, std::string("name"));
+    ASSERT_NE(offered, add.ChoiceKeys.end()) << "what was removed can come back";
+    EXPECT_EQ(add.Choices[static_cast<std::size_t>(offered - add.ChoiceKeys.begin())], name->Descriptor.Label)
+        << "offered by the name it reads as, chosen by its key";
+    EXPECT_EQ(f.Source.Act("components", "add", "name"), PropertyEditResult::Applied);
     EXPECT_NE(FindNode(f.Source.Nodes(), "name"), nullptr);
 
     f.Commands.Undo();
@@ -266,7 +269,7 @@ public:
 TEST(ComponentPropertySource, AddingComesFirstAndDerivedComponentsLastClosedUnderTheirSource)
 {
     Fixture f;
-    ASSERT_EQ(f.Source.Act("components", "add", "Character Movement"), PropertyEditResult::Applied);
+    ASSERT_EQ(f.Source.Act("components", "add", "CharacterMovement"), PropertyEditResult::Applied);
     const std::vector<PropertyNode> nodes = f.Source.Nodes();
     ASSERT_FALSE(nodes.empty());
     EXPECT_EQ(nodes.front().Key, "components");

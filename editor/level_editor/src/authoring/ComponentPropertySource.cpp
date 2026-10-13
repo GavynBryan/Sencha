@@ -240,6 +240,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
 
     std::vector<std::string> addable;
     std::vector<std::string> addableNotes;
+    std::vector<std::string> addableKeys;
     for (const auto& serializer : EditorSceneSerializers().Entries())
     {
         const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
@@ -261,6 +262,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
             if (serializer->IsRemovable())
             {
                 addable.push_back(HumanizeSchemaName(key));
+                addableKeys.push_back(key);
                 addableNotes.push_back(BroughtWith(world, entities.front(), id));
             }
             continue;
@@ -419,7 +421,8 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         components.Descriptor.Verbs.push_back({ .Id = "add",
                                                 .Label = "Add Component",
                                                 .Choices = std::move(addable),
-                                                .ChoiceNotes = std::move(addableNotes) });
+                                                .ChoiceNotes = std::move(addableNotes),
+                                                .ChoiceKeys = std::move(addableKeys) });
     nodes.insert(nodes.begin(), std::move(components));
 
     // What the engine put on the entities because of what was authored:
@@ -796,7 +799,7 @@ PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<En
     {
         for (const auto& serializer : EditorSceneSerializers().Entries())
         {
-            if (!serializer->IsRemovable() || HumanizeSchemaName(serializer->JsonKey()) != choice)
+            if (!serializer->IsRemovable() || serializer->JsonKey() != choice)
                 continue;
             const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
             if (id == InvalidComponentId)

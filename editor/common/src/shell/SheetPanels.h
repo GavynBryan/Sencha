@@ -36,9 +36,7 @@ struct SheetPanelsHost
     // workspace's frame may have moved on since they were presented.
     std::function<std::vector<PropertySection>(SheetId)> Sections;
     // A verb's choices, picked from before it acts.
-    std::function<void(SheetPoint, std::string verb, std::vector<std::string> choices,
-                       std::vector<std::string> notes)>
-        OpenChoices;
+    std::function<void(SheetPoint, const PropertyVerb&)> OpenChoices;
     std::function<void(SheetPoint)> OpenColor;
     // Hands the rest of a press to the shell; false when it was already let go.
     std::function<bool()> TakePress;

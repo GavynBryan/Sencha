@@ -98,9 +98,9 @@ bool SheetPanels::Handle(const UiAction& action)
         // A verb that asks for a choice first opens its choices under it.
         const std::string verb(action.Arg(2).AsString());
         const std::string chosen(action.Arg(3).AsString());
-        std::vector<std::string> choices = sheet.ChoicesOf(at.Row, verb);
-        if (!choices.empty() && chosen.empty())
-            Host.OpenChoices({ at.Sheet, at.Row }, verb, std::move(choices), sheet.NotesOf(at.Row, verb));
+        const PropertyVerb* asked = sheet.VerbOf(at.Row, verb);
+        if (asked != nullptr && !asked->Choices.empty() && chosen.empty())
+            Host.OpenChoices({ at.Sheet, at.Row }, *asked);
         else
             Act({ at.Sheet, at.Row }, verb, chosen);
     }

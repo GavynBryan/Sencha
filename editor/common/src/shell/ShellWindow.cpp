@@ -120,10 +120,7 @@ ShellWindow::ShellWindow(ShellWindowServices services)
         .Notices = Services.Notices,
         .Assets = *AssetShelf,
         .Sections = [this](SheetId sheet) { return SheetSections(sheet); },
-        .OpenChoices = [this](SheetPoint at, std::string verb, std::vector<std::string> choices,
-                              std::vector<std::string> notes) {
-            Menus->ShowChoices(at, std::move(verb), std::move(choices), std::move(notes));
-        },
+        .OpenChoices = [this](SheetPoint at, const PropertyVerb& verb) { Menus->ShowChoices(at, verb); },
         .OpenColor = [this](SheetPoint at) { OpenColor(at); },
         .TakePress = [this] { return Services.Pointer.HandGestureToApplication(Services.Window.GetId()); },
         .CapturePointer = [this](bool held) { SetRelativeMouseMode(Services.Window, held); },

@@ -34,6 +34,9 @@ struct PropertyVerb
     bool Removes = false;
     // Beside each choice, what choosing it brings with it; empty, or one per choice.
     std::vector<std::string> ChoiceNotes = {};
+    // What each choice names back to the source when that is not its label (two
+    // may read alike); empty, or one per choice.
+    std::vector<std::string> ChoiceKeys = {};
 };
 
 struct PropertyDescriptor

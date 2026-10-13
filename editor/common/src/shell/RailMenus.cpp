@@ -110,14 +110,11 @@ void RailMenus::ShowNamed(std::string_view name)
                                   : Popover::None);
 }
 
-void RailMenus::ShowChoices(SheetPoint at, std::string verb, std::vector<std::string> choices,
-                            std::vector<std::string> notes)
+void RailMenus::ShowChoices(SheetPoint at, PropertyVerb verb)
 {
     Show(Popover::Choices);
     ChoicesAt = at;
-    ChoicesVerb = std::move(verb);
-    ChoicesListed = std::move(choices);
-    ChoicesNotes = std::move(notes);
+    Choosing = std::move(verb);
     ChoicesFilter.clear();
 }
 
@@ -152,7 +149,7 @@ void RailMenus::Choose(const std::string& key)
     if (chosenFrom == Popover::Problems)
         Host.RevealProblem(key);
     else if (chosenFrom == Popover::Choices)
-        Host.ChooseForSheet(ChoicesAt, ChoicesVerb, key);
+        Host.ChooseForSheet(ChoicesAt, Choosing.Id, key);
     else
         (void)Host.Actions.Invoke(key);
 }
@@ -231,14 +228,15 @@ std::vector<UiRow> RailMenus::ProblemEntries() const
 std::vector<UiRow> RailMenus::ChoiceEntries() const
 {
     std::vector<UiRow> rows;
-    for (std::size_t i = 0; i < ChoicesListed.size(); ++i)
+    const std::vector<std::string>& choices = Choosing.Choices;
+    for (std::size_t i = 0; i < choices.size(); ++i)
     {
-        const std::string& choice = ChoicesListed[i];
+        const std::string& choice = choices[i];
         if (!TextFilterMatch(choice, ChoicesFilter))
             continue;
         UiRow entry{ choice.empty() ? std::string("None") : choice, "",
-                     i < ChoicesNotes.size() ? ChoicesNotes[i] : std::string{} };
-        entry.Key = choice;
+                     i < Choosing.ChoiceNotes.size() ? Choosing.ChoiceNotes[i] : std::string{} };
+        entry.Key = i < Choosing.ChoiceKeys.size() ? Choosing.ChoiceKeys[i] : choice;
         rows.push_back(std::move(entry));
     }
     return rows;
@@ -264,7 +262,7 @@ void RailMenus::Publish()
     UiService& ui = Host.Ui;
     (void)ui.SetValue(Screen, PopoverName, UiValue(Name()));
     (void)ui.SetValue(Screen, Filters,
-                      UiValue(Shown == Popover::Choices && ChoicesListed.size() > kChoicesUnfiltered));
+                      UiValue(Shown == Popover::Choices && Choosing.Choices.size() > kChoicesUnfiltered));
     Place(anchor);
     (void)ui.SetRows(Screen, Entries, entries);
 }
