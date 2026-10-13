@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/UiScreenSlot.h"
+
 #include "properties/ColorValue.h"
 #include "properties/PropertyEditSession.h"
 
@@ -50,8 +52,8 @@ public:
     // Opens beside `anchor`, a box in surface pixels.
     void Open(ColorPickerTarget target, std::string_view value, UiElementBox anchor);
     void Close();
-    [[nodiscard]] bool IsOpen() const { return Screen.IsValid(); }
-    [[nodiscard]] UiScreenHandle CurrentScreen() const { return Screen; }
+    [[nodiscard]] bool IsOpen() const { return Screen.IsOpen(); }
+    [[nodiscard]] UiScreenHandle CurrentScreen() const { return Screen.Handle(); }
 
     // Per frame while open: act on what the document asked for, then publish.
     // False once the person has closed it.
@@ -68,8 +70,7 @@ private:
     [[nodiscard]] IPropertySource* Source() const;
 
     UiService& Ui;
-    UiSurfaceId Surface;
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
     ColorPickerTarget Target;
     ColorValue Shown;
     Hsv Chosen;

@@ -1,5 +1,7 @@
 #include "presenters/ContentPicture.h"
 
+#include "ui/DocumentLengths.h"
+
 #include <ui/UiService.h>
 
 #include <format>
@@ -43,11 +45,6 @@ UiScreenDesc Describe()
     return desc;
 }
 
-std::string Px(float value)
-{
-    return std::format("{}px", value);
-}
-
 std::string_view RoleName(PictureFrameRole role)
 {
     switch (role)
@@ -65,21 +62,22 @@ ContentPicture::ContentPicture(UiService& ui, std::string imageName)
     : Ui(ui)
     , Name(std::move(imageName))
     , HostImage(ui.SetHostImage(Name, RenderExtent{ 1, 1 }))
+    , Screen(ui, Describe)
 {
 }
 
 ContentPicture::~ContentPicture()
 {
-    Close();
+    Screen.Close();
     Ui.RemoveHostImage(Name);
 }
 
 void ContentPicture::MoveTo(UiSurfaceId content)
 {
-    if (content == Surface)
+    if (content == Screen.Surface())
         return;
-    Close();
-    Surface = content;
+    Screen.Close();
+    Screen.MoveTo(content);
     if (Shown)
         Open();
 }
@@ -90,7 +88,7 @@ void ContentPicture::SetShown(bool shown)
     if (shown)
         Open();
     else
-        Close();
+        Screen.Close();
 }
 
 void ContentPicture::Place(const Rect2d& content, const Rect2d& picture)
@@ -108,7 +106,7 @@ void ContentPicture::Mark(std::span<const PictureFrame> frames)
 
 void ContentPicture::PublishFrames()
 {
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return;
     std::vector<UiRow> rows;
     rows.reserve(Frames.size());
@@ -116,10 +114,10 @@ void ContentPicture::PublishFrames()
     {
         const Vec2d corner = frame.Rect.Position - Content.Position;
         UiRow row{ "", frame.Faint ? "faint" : "", std::string(RoleName(frame.Role)) };
-        row.Parts = { Px(corner.X), Px(corner.Y), Px(frame.Rect.Width()), Px(frame.Rect.Height()) };
+        row.Parts = { PixelLength(corner.X), PixelLength(corner.Y), PixelLength(frame.Rect.Width()), PixelLength(frame.Rect.Height()) };
         rows.push_back(std::move(row));
     }
-    (void)Ui.SetRows(Screen, kFrames, rows);
+    (void)Ui.SetRows(Screen.Handle(), kFrames, rows);
 }
 
 void ContentPicture::MarkDots(std::span<const PictureDot> dots)
@@ -130,7 +128,7 @@ void ContentPicture::MarkDots(std::span<const PictureDot> dots)
 
 void ContentPicture::PublishDots()
 {
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return;
     std::vector<UiRow> rows;
     rows.reserve(Dots.size());
@@ -139,42 +137,34 @@ void ContentPicture::PublishDots()
         const Vec2d corner = dot.Centre - Content.Position - Vec2d(dot.Radius, dot.Radius);
         UiRow row{ "", "", "" };
         row.Selected = dot.Selected;
-        row.Parts = { Px(corner.X), Px(corner.Y), Px(dot.Radius * 2.0f) };
+        row.Parts = { PixelLength(corner.X), PixelLength(corner.Y), PixelLength(dot.Radius * 2.0f) };
         rows.push_back(std::move(row));
     }
-    (void)Ui.SetRows(Screen, kDots, rows);
+    (void)Ui.SetRows(Screen.Handle(), kDots, rows);
 }
 
 void ContentPicture::Publish()
 {
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return;
+    const UiScreenHandle screen = Screen.Handle();
     const Vec2d corner = Picture.Position - Content.Position;
-    (void)Ui.SetValue(Screen, kImage, UiValue(Name));
-    (void)Ui.SetValue(Screen, kLeft, UiValue(Px(Content.Position.X)));
-    (void)Ui.SetValue(Screen, kTop, UiValue(Px(Content.Position.Y)));
-    (void)Ui.SetValue(Screen, kWidth, UiValue(Px(Content.Width())));
-    (void)Ui.SetValue(Screen, kHeight, UiValue(Px(Content.Height())));
-    (void)Ui.SetValue(Screen, kPictureLeft, UiValue(Px(corner.X)));
-    (void)Ui.SetValue(Screen, kPictureTop, UiValue(Px(corner.Y)));
-    (void)Ui.SetValue(Screen, kPictureWidth, UiValue(Px(Picture.Width())));
-    (void)Ui.SetValue(Screen, kPictureHeight, UiValue(Px(Picture.Height())));
+    (void)Ui.SetValue(screen, kImage, UiValue(Name));
+    (void)Ui.SetValue(screen, kLeft, UiValue(PixelLength(Content.Position.X)));
+    (void)Ui.SetValue(screen, kTop, UiValue(PixelLength(Content.Position.Y)));
+    (void)Ui.SetValue(screen, kWidth, UiValue(PixelLength(Content.Width())));
+    (void)Ui.SetValue(screen, kHeight, UiValue(PixelLength(Content.Height())));
+    (void)Ui.SetValue(screen, kPictureLeft, UiValue(PixelLength(corner.X)));
+    (void)Ui.SetValue(screen, kPictureTop, UiValue(PixelLength(corner.Y)));
+    (void)Ui.SetValue(screen, kPictureWidth, UiValue(PixelLength(Picture.Width())));
+    (void)Ui.SetValue(screen, kPictureHeight, UiValue(PixelLength(Picture.Height())));
 }
 
 void ContentPicture::Open()
 {
-    if (Screen.IsValid() || !Surface.IsValid())
+    if (Screen.IsOpen() || !Screen.Open())
         return;
-    Screen = Ui.OpenScreen(Surface, Describe());
     Publish();
     PublishFrames();
     PublishDots();
-}
-
-void ContentPicture::Close()
-{
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
 }

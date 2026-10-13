@@ -1,10 +1,11 @@
 #pragma once
 
+#include "ui/UiScreenSlot.h"
+
 #include "overlay/ViewMarks.h"
 #include "viewport/ViewportArrangement.h"
 
 #include <render/ui/UiDrawFrame.h>
-#include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
 #include <array>
@@ -52,8 +53,6 @@ public:
     void Arrange(const Rect2d& content, ViewportArrangementKind kind, Vec2d divider, float scale);
 
 private:
-    void Open();
-    void Close();
     void ShowMarks(float scale);
 
     UiService& Ui;
@@ -62,8 +61,7 @@ private:
     const MarqueeState& Marquee;
     EditorRenderFeature* Render = nullptr;
     std::vector<ViewMark> Marks;
-    UiSurfaceId Surface;
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
     bool Shown = false;
     std::array<UiHostImageId, kSlots> Images{};
 };

@@ -4,6 +4,9 @@
 #include "render/EditorRenderFeature.h"
 #include "viewport/ViewportLayout.h"
 
+#include "ui/DocumentLengths.h"
+#include "ui/EditorThemeFile.h"
+
 #include <ui/UiService.h>
 
 #include <algorithm>
@@ -34,23 +37,6 @@ UiScreenDesc Describe()
     return desc;
 }
 
-std::string Px(float value)
-{
-    return std::format("{}px", static_cast<int>(std::lround(value)));
-}
-
-// The overlay's colours are linear, as the scene's are; a document's are sRGB.
-std::string CssColor(const Vec4& linear)
-{
-    const auto encode = [](float c) {
-        c = std::clamp(c, 0.0f, 1.0f);
-        const float srgb = c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
-        return static_cast<int>(std::lround(srgb * 255.0f));
-    };
-    return std::format("rgba({},{},{},{})", encode(linear.X), encode(linear.Y), encode(linear.Z),
-                       static_cast<int>(std::lround(std::clamp(linear.W, 0.0f, 1.0f) * 255.0f)));
-}
-
 const char* KindName(ViewMarkKind kind)
 {
     switch (kind)
@@ -67,16 +53,6 @@ const char* KindName(ViewMarkKind kind)
     }
 }
 
-const char* ToneName(ActionTone tone)
-{
-    switch (tone)
-    {
-    case ActionTone::Destructive: return "destructive";
-    case ActionTone::Active:      return "active";
-    case ActionTone::Normal:
-    default:                      return "normal";
-    }
-}
 } // namespace
 
 LevelViewSurface::LevelViewSurface(UiService& ui, ViewportLayout& layout, const EditorOverlayState& overlay,
@@ -86,6 +62,7 @@ LevelViewSurface::LevelViewSurface(UiService& ui, ViewportLayout& layout, const 
     , Overlay(overlay)
     , Marquee(marquee)
     , Render(render)
+    , Screen(ui, Describe)
 {
     for (std::size_t slot = 0; slot < kSlots; ++slot)
         Images[slot] = Ui.SetHostImage(SlotName(slot), RenderExtent{ 1, 1 });
@@ -93,7 +70,7 @@ LevelViewSurface::LevelViewSurface(UiService& ui, ViewportLayout& layout, const 
 
 LevelViewSurface::~LevelViewSurface()
 {
-    Close();
+    Screen.Close();
     if (Render != nullptr)
         Render->SetViewImages({});
     for (std::size_t slot = 0; slot < kSlots; ++slot)
@@ -102,36 +79,19 @@ LevelViewSurface::~LevelViewSurface()
 
 void LevelViewSurface::MoveTo(UiSurfaceId content)
 {
-    if (content == Surface)
-        return;
-    Close();
-    Surface = content;
+    // Shown before it had a surface to open on, it opens on this one.
+    Screen.MoveTo(content);
     if (Shown)
-        Open();
+        (void)Screen.Open();
 }
 
 void LevelViewSurface::SetShown(bool shown)
 {
     Shown = shown;
     if (shown)
-        Open();
+        (void)Screen.Open();
     else
-        Close();
-}
-
-void LevelViewSurface::Open()
-{
-    if (Screen.IsValid() || !Surface.IsValid())
-        return;
-    Screen = Ui.OpenScreen(Surface, Describe());
-}
-
-void LevelViewSurface::Close()
-{
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
+        Screen.Close();
 }
 
 void LevelViewSurface::Arrange(const Rect2d& content, ViewportArrangementKind kind, Vec2d divider, float scale)
@@ -171,19 +131,19 @@ void LevelViewSurface::Arrange(const Rect2d& content, ViewportArrangementKind ki
         row.Key = SlotName(slot);
         // Which view is active only means something while views share the content.
         row.Selected = viewport->IsActive && tiles.size() > 1;
-        row.Parts = { Px(tile.Position.X), Px(tile.Position.Y), Px(tile.Width()), Px(tile.Height()) };
+        row.Parts = { PixelLength(tile.Position.X), PixelLength(tile.Position.Y), PixelLength(tile.Width()), PixelLength(tile.Height()) };
         rows.push_back(std::move(row));
     }
     if (Render != nullptr)
         Render->SetViewImages(std::move(images));
-    if (Screen.IsValid())
-        (void)Ui.SetRows(Screen, kTiles, rows);
+    if (Screen.IsOpen())
+        (void)Ui.SetRows(Screen.Handle(), kTiles, rows);
     ShowMarks(scale);
 }
 
 void LevelViewSurface::ShowMarks(float scale)
 {
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return;
     Marks.clear();
     for (const ViewportLayout::ViewportStorage& viewport : Layout.All())
@@ -195,13 +155,13 @@ void LevelViewSurface::ShowMarks(float scale)
     rows.reserve(Marks.size());
     for (const ViewMark& mark : Marks)
     {
-        UiRow row{ mark.Text, ToneName(mark.Tone), KindName(mark.Kind) };
+        UiRow row{ mark.Text, std::string(ActionToneName(mark.Tone)), KindName(mark.Kind) };
         row.Icon = std::string(IconName(mark.Icon));
         row.Selected = mark.Hot;
         row.Disabled = !mark.Enabled;
-        row.Parts = { Px(mark.Rect.Position.X), Px(mark.Rect.Position.Y), Px(mark.Rect.Width()),
-                      Px(mark.Rect.Height()), CssColor(mark.Color), CssColor(mark.Border) };
+        row.Parts = { PixelLength(mark.Rect.Position.X), PixelLength(mark.Rect.Position.Y), PixelLength(mark.Rect.Width()),
+                      PixelLength(mark.Rect.Height()), ThemeColorCss(mark.Color), ThemeColorCss(mark.Border) };
         rows.push_back(std::move(row));
     }
-    (void)Ui.SetRows(Screen, kMarks, rows);
+    (void)Ui.SetRows(Screen.Handle(), kMarks, rows);
 }

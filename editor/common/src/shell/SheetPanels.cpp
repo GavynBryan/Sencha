@@ -133,7 +133,7 @@ bool SheetPanels::Handle(const UiAction& action)
     else if (id == Pick)
         PickAsset({ at.Sheet, at.Row }, action.Arg(2).AsBool());
     else if (action.Arguments.size() > 2)
-        (void)sheet.SetFromControl(sections, at.Row, action.Arguments[2]);
+        (void)sheet.SetFromControl(sections, at.Row, action.Arg(2));
     return true;
 }
 

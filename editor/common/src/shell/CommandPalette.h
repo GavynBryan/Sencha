@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/UiScreenSlot.h"
+
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
@@ -49,7 +51,7 @@ public:
 
     void Open();
     void Close();
-    [[nodiscard]] bool IsOpen() const { return Screen.IsValid(); }
+    [[nodiscard]] bool IsOpen() const { return Screen.IsOpen(); }
 
     // Per frame while open: act on what the document asked for, then publish.
     void Update();
@@ -60,11 +62,10 @@ private:
     void Perform(std::size_t shownIndex);
 
     UiService& Ui;
-    UiSurfaceId Surface;
     const ActionCatalog& Catalog;
     ActionContextStack& Actions;
 
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
     std::vector<CommandCandidate> Candidates;
     std::vector<std::size_t> Shown;
     std::string Query;

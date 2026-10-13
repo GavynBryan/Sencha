@@ -2,8 +2,7 @@
 
 #include "document/WorldMap.h"
 
-#include <ui/UiScreenHandle.h>
-#include <ui/UiSurface.h>
+#include "ui/UiScreenSlot.h"
 
 #include <cstddef>
 #include <optional>
@@ -25,21 +24,13 @@ class WorldMapSurface
 {
 public:
     explicit WorldMapSurface(UiService& ui);
-    ~WorldMapSurface();
 
-    WorldMapSurface(const WorldMapSurface&) = delete;
-    WorldMapSurface& operator=(const WorldMapSurface&) = delete;
-
-    void MoveTo(UiSurfaceId content);
+    void MoveTo(UiSurfaceId content) { Screen.MoveTo(content); }
     // Shows `map` over `ground`, titled `title`, the plate of `hot` lit; a null
     // map closes it.
     void Present(const WorldMap* map, const Rect2d& ground, const std::string& title, std::optional<ZoneId> hot);
 
 private:
-    void Open();
-    void Close();
-
     UiService& Ui;
-    UiSurfaceId Surface;
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
 };

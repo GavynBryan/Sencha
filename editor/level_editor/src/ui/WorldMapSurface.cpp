@@ -1,5 +1,7 @@
 #include "ui/WorldMapSurface.h"
 
+#include "ui/DocumentLengths.h"
+
 #include <ui/UiService.h>
 
 #include <cmath>
@@ -44,11 +46,6 @@ UiScreenDesc Describe()
     return desc;
 }
 
-std::string Px(float value)
-{
-    return std::format("{}px", static_cast<int>(std::lround(value)));
-}
-
 const char* StateName(WorldMapZoneState state)
 {
     switch (state)
@@ -74,37 +71,8 @@ const char* StateText(WorldMapZoneState state)
 
 WorldMapSurface::WorldMapSurface(UiService& ui)
     : Ui(ui)
+    , Screen(ui, Describe)
 {
-}
-
-WorldMapSurface::~WorldMapSurface()
-{
-    Close();
-}
-
-void WorldMapSurface::MoveTo(UiSurfaceId content)
-{
-    if (content == Surface)
-        return;
-    const bool open = Screen.IsValid();
-    Close();
-    Surface = content;
-    if (open)
-        Open();
-}
-
-void WorldMapSurface::Open()
-{
-    if (!Screen.IsValid() && Surface.IsValid())
-        Screen = Ui.OpenScreen(Surface, Describe());
-}
-
-void WorldMapSurface::Close()
-{
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
 }
 
 void WorldMapSurface::Present(const WorldMap* map, const Rect2d& ground, const std::string& title,
@@ -112,26 +80,26 @@ void WorldMapSurface::Present(const WorldMap* map, const Rect2d& ground, const s
 {
     if (map == nullptr)
     {
-        Close();
+        Screen.Close();
         return;
     }
-    Open();
-    if (!Screen.IsValid())
+    if (!Screen.Open())
         return;
-    (void)Ui.SetValue(Screen, kGroundLeft, UiValue(Px(ground.Min().X)));
-    (void)Ui.SetValue(Screen, kGroundTop, UiValue(Px(ground.Min().Y)));
-    (void)Ui.SetValue(Screen, kGroundWidth, UiValue(Px(ground.Width())));
-    (void)Ui.SetValue(Screen, kGroundHeight, UiValue(Px(ground.Height())));
-    (void)Ui.SetValue(Screen, kTitle, UiValue(title));
-    (void)Ui.SetValue(Screen, kNote,
+    const UiScreenHandle screen = Screen.Handle();
+    (void)Ui.SetValue(screen, kGroundLeft, UiValue(PixelLength(ground.Min().X)));
+    (void)Ui.SetValue(screen, kGroundTop, UiValue(PixelLength(ground.Min().Y)));
+    (void)Ui.SetValue(screen, kGroundWidth, UiValue(PixelLength(ground.Width())));
+    (void)Ui.SetValue(screen, kGroundHeight, UiValue(PixelLength(ground.Height())));
+    (void)Ui.SetValue(screen, kTitle, UiValue(title));
+    (void)Ui.SetValue(screen, kNote,
                       UiValue(map->Unplaced == 0 ? std::string{}
                                                  : std::format("{} zone{} without bounds not shown", map->Unplaced,
                                                                map->Unplaced == 1 ? "" : "s")));
-    (void)Ui.SetValue(Screen, kCameraShown, UiValue(map->Camera.has_value()));
+    (void)Ui.SetValue(screen, kCameraShown, UiValue(map->Camera.has_value()));
     if (map->Camera.has_value())
     {
-        (void)Ui.SetValue(Screen, kCameraLeft, UiValue(Px(map->Camera->X)));
-        (void)Ui.SetValue(Screen, kCameraTop, UiValue(Px(map->Camera->Y)));
+        (void)Ui.SetValue(screen, kCameraLeft, UiValue(PixelLength(map->Camera->X)));
+        (void)Ui.SetValue(screen, kCameraTop, UiValue(PixelLength(map->Camera->Y)));
     }
 
     std::vector<UiRow> zones;
@@ -139,7 +107,7 @@ void WorldMapSurface::Present(const WorldMap* map, const Rect2d& ground, const s
     {
         UiRow row{ zone.Name, StateName(zone.State), StateText(zone.State) };
         row.Selected = hot.has_value() && *hot == zone.Id;
-        row.Parts = { Px(zone.Plate.Min().X), Px(zone.Plate.Min().Y), Px(zone.Plate.Width()), Px(zone.Plate.Height()),
+        row.Parts = { PixelLength(zone.Plate.Min().X), PixelLength(zone.Plate.Min().Y), PixelLength(zone.Plate.Width()), PixelLength(zone.Plate.Height()),
                       zone.Here ? "here" : "", zone.Problem ? "problem" : "" };
         zones.push_back(std::move(row));
     }
@@ -151,7 +119,7 @@ void WorldMapSurface::Present(const WorldMap* map, const Rect2d& ground, const s
         const float angle = std::atan2(along.Y, along.X) * kDegrees;
         UiRow row{ "", link.AToB && link.BToA ? "both" : "oneway",
                    link.Failed ? "failed" : link.Warned ? "warned" : "" };
-        row.Parts = { Px(link.From.X), Px(link.From.Y), Px(along.Magnitude()),
+        row.Parts = { PixelLength(link.From.X), PixelLength(link.From.Y), PixelLength(along.Magnitude()),
                       std::format("rotate({:.2f}deg)", angle) };
         links.push_back(row);
         if (link.AToB != link.BToA)
@@ -160,11 +128,11 @@ void WorldMapSurface::Present(const WorldMap* map, const Rect2d& ground, const s
             const bool forward = link.AToB;
             const Vec2d at = link.From + along * (forward ? 0.66f : 0.34f);
             UiRow arrow{ "", "oneway", row.Detail };
-            arrow.Parts = { Px(at.X), Px(at.Y), "0px", std::format("rotate({:.2f}deg)", forward ? angle : angle + 180.0f) };
+            arrow.Parts = { PixelLength(at.X), PixelLength(at.Y), "0px", std::format("rotate({:.2f}deg)", forward ? angle : angle + 180.0f) };
             arrows.push_back(std::move(arrow));
         }
     }
-    (void)Ui.SetRows(Screen, kZones, zones);
-    (void)Ui.SetRows(Screen, kLinks, links);
-    (void)Ui.SetRows(Screen, kArrows, arrows);
+    (void)Ui.SetRows(screen, kZones, zones);
+    (void)Ui.SetRows(screen, kLinks, links);
+    (void)Ui.SetRows(screen, kArrows, arrows);
 }

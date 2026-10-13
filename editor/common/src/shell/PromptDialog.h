@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/UiScreenSlot.h"
+
 #include "actions/ActionContext.h"
 
 #include <ui/UiScreenHandle.h>
@@ -31,7 +33,7 @@ public:
 
     // Per frame: act on an answer, then show whatever is in front now.
     void Update();
-    [[nodiscard]] bool IsShowing() const { return Screen.IsValid(); }
+    [[nodiscard]] bool IsShowing() const { return Screen.IsOpen(); }
 
 private:
     void Show();
@@ -39,11 +41,10 @@ private:
     void Publish();
 
     UiService& Ui;
-    UiSurfaceId Surface;
     PromptQueue& Prompts;
     ActionContextStack& Actions;
 
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
     // The question shown, and what has been written in its field.
     std::uint64_t Showing = 0;
     std::string Written;

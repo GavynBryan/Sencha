@@ -38,23 +38,13 @@ UiScreenDesc Describe()
     return desc;
 }
 
-const char* ToneName(ActionTone tone)
-{
-    switch (tone)
-    {
-    case ActionTone::Destructive: return "destructive";
-    case ActionTone::Active:      return "active";
-    case ActionTone::Normal:
-    default:                      return "normal";
-    }
-}
 } // namespace
 
 PromptDialog::PromptDialog(UiService& ui, UiSurfaceId surface, PromptQueue& prompts, ActionContextStack& actions)
     : Ui(ui)
-    , Surface(surface)
     , Prompts(prompts)
     , Actions(actions)
+    , Screen(ui, Describe, surface)
 {
     EscapeActions.Claim("edit.escape", ActionBinding{ .Invoke = [this] { (void)Prompts.Dismiss(); } });
 }
@@ -68,10 +58,10 @@ void PromptDialog::Update()
 {
     if (IsShowing())
     {
-        for (const UiAction& action : Ui.DrainActions(Screen))
+        for (const UiAction& action : Ui.DrainActions(Screen.Handle()))
         {
             const std::optional<UiKey> key = action.Id == kKeyAction && !action.Arguments.empty()
-                                               ? UiKeyFromEvent(action.Arguments[0].AsInt())
+                                               ? UiKeyFromEvent(action.Arg(0).AsInt())
                                                : std::nullopt;
             const PromptRequest* front = Prompts.Front();
             if (key == UiKey::Escape)
@@ -79,9 +69,9 @@ void PromptDialog::Update()
             else if (key == UiKey::Return && front != nullptr && front->Field.has_value() && !front->Choices.empty())
                 (void)Prompts.Answer(front->Choices.front().Key, Written);
             else if (action.Id == kWriteAction && !action.Arguments.empty())
-                Written = action.Arguments[0].AsString();
+                Written = action.Arg(0).AsString();
             else if (action.Id == kChooseAction && !action.Arguments.empty())
-                (void)Prompts.Answer(action.Arguments[0].AsString(), Written);
+                (void)Prompts.Answer(action.Arg(0).AsString(), Written);
         }
     }
     if (Prompts.Front() == nullptr)
@@ -100,41 +90,38 @@ void PromptDialog::Show()
 {
     if (IsShowing())
         return;
-    Screen = Ui.OpenScreen(Surface, Describe());
+    (void)Screen.Open();
     EscapeLayer = Actions.Push(EscapeActions, ActionRank::Surface);
     Showing = Prompts.FrontNumber();
     Written = Prompts.Front()->Field.value_or(std::string{});
-    (void)Ui.SetValue(Screen, kHasField, UiValue(Prompts.Front()->Field.has_value()));
-    (void)Ui.SetValue(Screen, kField, UiValue(Written));
+    (void)Ui.SetValue(Screen.Handle(), kHasField, UiValue(Prompts.Front()->Field.has_value()));
+    (void)Ui.SetValue(Screen.Handle(), kField, UiValue(Written));
 }
 
 void PromptDialog::Hide()
 {
     EscapeLayer.Reset();
     Showing = 0;
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
+    Screen.Close();
 }
 
 void PromptDialog::Publish()
 {
     const PromptRequest& prompt = *Prompts.Front();
-    (void)Ui.SetValue(Screen, kTitle, UiValue(prompt.Title));
-    (void)Ui.SetValue(Screen, kMessage, UiValue(prompt.Message));
+    (void)Ui.SetValue(Screen.Handle(), kTitle, UiValue(prompt.Title));
+    (void)Ui.SetValue(Screen.Handle(), kMessage, UiValue(prompt.Message));
 
     std::vector<UiRow> items;
     for (const std::string& item : prompt.Items)
         items.push_back(UiRow{ item, "", "" });
-    (void)Ui.SetRows(Screen, kItems, items);
+    (void)Ui.SetRows(Screen.Handle(), kItems, items);
 
     std::vector<UiRow> choices;
     for (const PromptChoice& choice : prompt.Choices)
     {
-        UiRow row{ choice.Label, "", ToneName(choice.Tone) };
+        UiRow row{ choice.Label, "", std::string(ActionToneName(choice.Tone)) };
         row.Key = choice.Key;
         choices.push_back(std::move(row));
     }
-    (void)Ui.SetRows(Screen, kChoices, choices);
+    (void)Ui.SetRows(Screen.Handle(), kChoices, choices);
 }

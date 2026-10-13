@@ -6,6 +6,7 @@
 #include "problems/ProblemList.h"
 #include "shell/SurfacePlacement.h"
 #include "text/TextFilterMatch.h"
+#include "ui/DocumentLengths.h"
 #include "ui/ScreenModel.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/WorkspaceHost.h"
@@ -286,9 +287,8 @@ void RailMenus::Place(std::string_view anchor)
                         .Up;
             const float hangsFrom = std::floor(box->Y + box->Height) + kPopoverGap;
             if (!rises)
-                top = std::format("{}px", hangsFrom);
-            tallest = std::format("{}px", std::floor(rises ? box->Y - kPopoverMargin
-                                                            : windowHeight - hangsFrom - kPopoverMargin));
+                top = PixelLength(hangsFrom);
+            tallest = PixelLength(std::floor(rises ? box->Y - kPopoverMargin : windowHeight - hangsFrom - kPopoverMargin));
         }
     (void)ui.SetValue(Screen, Rises, UiValue(rises));
     (void)ui.SetValue(Screen, Top, UiValue(top));

@@ -61,9 +61,9 @@ std::vector<std::size_t> RankCommands(std::span<const CommandCandidate> candidat
 CommandPalette::CommandPalette(UiService& ui, UiSurfaceId surface, const ActionCatalog& catalog,
                                ActionContextStack& actions)
     : Ui(ui)
-    , Surface(surface)
     , Catalog(catalog)
     , Actions(actions)
+    , Screen(ui, Describe, surface)
 {
 }
 
@@ -76,7 +76,7 @@ void CommandPalette::Open()
 {
     if (IsOpen())
         return;
-    Screen = Ui.OpenScreen(Surface, Describe());
+    (void)Screen.Open();
     Query.clear();
     Highlight = 0;
     Gather();
@@ -84,10 +84,7 @@ void CommandPalette::Open()
 
 void CommandPalette::Close()
 {
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
+    Screen.Close();
 }
 
 void CommandPalette::Gather()
@@ -109,14 +106,14 @@ void CommandPalette::Update()
 {
     if (!IsOpen())
         return;
-    for (const UiAction& action : Ui.DrainActions(Screen))
+    for (const UiAction& action : Ui.DrainActions(Screen.Handle()))
     {
         if (action.Id == kQueryAction)
         {
-            Query = action.Arguments.empty() ? std::string{} : std::string(action.Arguments[0].AsString());
+            Query = std::string(action.Arg(0).AsString());
             Highlight = 0;
             // A single-line field reports Enter as a change with a line break.
-            if (action.Arguments.size() > 1 && action.Arguments[1].AsBool())
+            if (action.Arg(1).AsBool())
             {
                 Perform(Highlight);
                 return;
@@ -125,7 +122,7 @@ void CommandPalette::Update()
         else if (action.Id == kKeyAction)
         {
             const std::optional<UiKey> key =
-                UiKeyFromEvent(action.Arguments.empty() ? 0 : action.Arguments[0].AsInt());
+                UiKeyFromEvent(action.Arg(0).AsInt());
             if (key == UiKey::Escape)
             {
                 Close();
@@ -138,7 +135,7 @@ void CommandPalette::Update()
         }
         else if (action.Id == kChooseAction)
         {
-            Perform(static_cast<std::size_t>(std::max<std::int64_t>(0, action.Arguments.empty() ? 0 : action.Arguments[0].AsInt())));
+            Perform(static_cast<std::size_t>(std::max<std::int64_t>(0, action.Arg(0).AsInt())));
             return;
         }
         else if (action.Id == kCloseAction)
@@ -164,7 +161,7 @@ void CommandPalette::Publish()
         row.Selected = i == Highlight;
         rows.push_back(std::move(row));
     }
-    (void)Ui.SetRows(Screen, kResults, rows);
+    (void)Ui.SetRows(Screen.Handle(), kResults, rows);
 }
 
 void CommandPalette::Perform(std::size_t shownIndex)

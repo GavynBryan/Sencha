@@ -24,6 +24,8 @@
 // The inverse: a linear palette color as the authored sRGB hex, always eight
 // digits, so a theme and the stylesheet generated from it cannot disagree.
 [[nodiscard]] std::string ThemeColorHex(const Vec4& linear);
+// The same as a document's rgba(), for a colour the editor computes.
+[[nodiscard]] std::string ThemeColorCss(const Vec4& linear);
 
 // One themeable palette entry: the JSON key and the EditorUi color it drives.
 struct EditorThemePaletteEntry

@@ -1,7 +1,8 @@
 #pragma once
 
+#include "ui/UiScreenSlot.h"
+
 #include <math/geometry/2d/Rect2d.h>
-#include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
 #include <span>
@@ -34,13 +35,9 @@ struct PlanePadMark
 class PlanePad
 {
 public:
-    explicit PlanePad(UiService& ui) : Ui(ui) {}
-    ~PlanePad();
+    explicit PlanePad(UiService& ui);
 
-    PlanePad(const PlanePad&) = delete;
-    PlanePad& operator=(const PlanePad&) = delete;
-
-    void MoveTo(UiSurfaceId content);
+    void MoveTo(UiSurfaceId content) { Screen.MoveTo(content); }
     // Per frame it shows: where, in window pixels, what is marked, the point,
     // and whether it is a line of one range.
     void Show(const Rect2d& region, std::span<const PlanePadMark> marks, Vec2d point, std::string caption,
@@ -53,12 +50,8 @@ public:
     [[nodiscard]] Vec2d ValueAt(Vec2d windowPoint) const { return PlanePadValueAt(Region, Line, windowPoint); }
 
 private:
-    void Open();
-    void Close();
-
     UiService& Ui;
-    UiSurfaceId Surface;
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
     Rect2d Region{};
     bool Line = false;
     bool Showing = false;

@@ -50,13 +50,14 @@ UiScreenDesc Describe()
 
 std::size_t IndexArgument(const UiAction& action)
 {
-    return action.Arguments.empty() ? 0 : static_cast<std::size_t>(std::max<std::int64_t>(0, action.Arguments[0].AsInt()));
+    return static_cast<std::size_t>(std::max<std::int64_t>(0, action.Arg(0).AsInt()));
 }
 } // namespace
 
 CookProfilesModal::CookProfilesModal(UiService& ui, ProjectDescriptor& project)
     : Ui(ui)
     , Profiles(project)
+    , Screen(ui, Describe)
 {
 }
 
@@ -67,32 +68,28 @@ CookProfilesModal::~CookProfilesModal()
 
 void CookProfilesModal::MoveTo(UiSurfaceId surface)
 {
-    if (surface == Surface)
+    if (surface == Screen.Surface())
         return;
     Close();
-    Surface = surface;
+    Screen.MoveTo(surface);
 }
 
 void CookProfilesModal::Open()
 {
-    if (Screen.IsValid() || !Surface.IsValid())
+    if (Screen.IsOpen() || !Screen.Open())
         return;
-    Screen = Ui.OpenScreen(Surface, Describe());
     Sheet.Drop();
     Publish();
 }
 
 void CookProfilesModal::Close()
 {
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
+    Screen.Close();
 }
 
 void CookProfilesModal::Update()
 {
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return;
     HandleActions();
     Publish();
@@ -100,18 +97,18 @@ void CookProfilesModal::Update()
 
 void CookProfilesModal::HandleActions()
 {
-    for (const UiAction& action : Ui.DrainActions(Screen))
+    for (const UiAction& action : Ui.DrainActions(Screen.Handle()))
     {
         if (action.Id == kSelect)
             Profiles.Select(IndexArgument(action));
         else if (action.Id == kSet && action.Arguments.size() > 1)
-            (void)Sheet.SetFromControl(Profiles, IndexArgument(action), action.Arguments[1]);
+            (void)Sheet.SetFromControl(Profiles, IndexArgument(action), action.Arg(1));
         else if (action.Id == kHold)
             Sheet.Hold(IndexArgument(action));
         else if (action.Id == kRelease)
         {
             const std::size_t row = IndexArgument(action);
-            const std::vector<UiRow> shown = Ui.GetRows(Screen, kSettings);
+            const std::vector<UiRow> shown = Ui.GetRows(Screen.Handle(), kSettings);
             (void)Sheet.Release(Profiles, row, row < shown.size() ? std::string_view(shown[row].Value) : std::string_view{});
         }
         else if (action.Id == kFlip)
@@ -134,16 +131,16 @@ void CookProfilesModal::HandleActions()
 
 void CookProfilesModal::Publish()
 {
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return;
     std::vector<std::string> names;
     for (const CookProfile& profile : Profiles.Profiles())
         names.push_back(profile.Name);
-    (void)Ui.SetArray(Screen, kProfiles, names);
-    (void)Ui.SetValue(Screen, kSelectedIndex, UiValue(static_cast<std::int64_t>(Profiles.Selected())));
-    (void)Ui.SetValue(Screen, kStatus, UiValue(Profiles.Status()));
-    (void)Ui.SetValue(Screen, kDirty, UiValue(Profiles.Changed()));
-    (void)Ui.SetValue(Screen, kBuiltIn, UiValue(Profiles.SelectedIsBuiltIn()));
+    (void)Ui.SetArray(Screen.Handle(), kProfiles, names);
+    (void)Ui.SetValue(Screen.Handle(), kSelectedIndex, UiValue(static_cast<std::int64_t>(Profiles.Selected())));
+    (void)Ui.SetValue(Screen.Handle(), kStatus, UiValue(Profiles.Status()));
+    (void)Ui.SetValue(Screen.Handle(), kDirty, UiValue(Profiles.Changed()));
+    (void)Ui.SetValue(Screen.Handle(), kBuiltIn, UiValue(Profiles.SelectedIsBuiltIn()));
     if (!Sheet.Holding())
-        (void)Ui.SetRows(Screen, kSettings, Sheet.Present(Profiles));
+        (void)Ui.SetRows(Screen.Handle(), kSettings, Sheet.Present(Profiles));
 }

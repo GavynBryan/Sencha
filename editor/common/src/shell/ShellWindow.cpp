@@ -5,10 +5,11 @@
 #include "icons/IconNames.h"
 #include "input/SdlEventTranslation.h"
 #include "notices/NoticeQueue.h"
-#include "shell/ColorPicker.h"
 #include "problems/ProblemList.h"
 #include "project/AssetKinds.h"
 #include "properties/PropertyEditSession.h"
+#include "shell/ColorPicker.h"
+#include "ui/DocumentLengths.h"
 #include "ui/RadialMenuScreen.h"
 #include "ui/ScreenModel.h"
 #include "ui/UiScaleChoice.h"
@@ -90,10 +91,6 @@ const char* NoticeToneName(NoticeTone tone)
     }
 }
 
-std::string Pixels(float value)
-{
-    return std::format("{}px", std::round(value));
-}
 } // namespace
 
 ShellWindow::ShellWindow(ShellWindowServices services)
@@ -635,7 +632,7 @@ void ShellWindow::FollowShelf()
         Transients.Close(ShelfTransient);
 
     const float dp = Services.Ui.GetSurfaceScale(SurfaceId);
-    (void)Services.Ui.SetValue(Screen, Ids.InstrumentsLift, UiValue(Pixels(AssetShelf->Reach() + kSurfaceGapDp * dp)));
+    (void)Services.Ui.SetValue(Screen, Ids.InstrumentsLift, UiValue(PixelLength(AssetShelf->Reach() + kSurfaceGapDp * dp)));
     Deck->Lift(AssetShelf->Reach());
 }
 
@@ -734,10 +731,10 @@ void ShellWindow::PlaceFloatingSurfaces()
 
     const auto publish = [&](const Rect2d& rect, bool autoHeight, UiModelPropertyId left, UiModelPropertyId top,
                              UiModelPropertyId width, UiModelPropertyId height) {
-        (void)ui.SetValue(Screen, left, UiValue(Pixels(rect.Min().X)));
-        (void)ui.SetValue(Screen, top, UiValue(Pixels(rect.Min().Y)));
-        (void)ui.SetValue(Screen, width, UiValue(Pixels(rect.Width())));
-        (void)ui.SetValue(Screen, height, UiValue(autoHeight ? std::string("auto") : Pixels(rect.Height())));
+        (void)ui.SetValue(Screen, left, UiValue(PixelLength(rect.Min().X)));
+        (void)ui.SetValue(Screen, top, UiValue(PixelLength(rect.Min().Y)));
+        (void)ui.SetValue(Screen, width, UiValue(PixelLength(rect.Width())));
+        (void)ui.SetValue(Screen, height, UiValue(autoHeight ? std::string("auto") : PixelLength(rect.Height())));
     };
     const auto follow = [&](std::string& placed, const std::string& key) {
         if (placed != key && !placed.empty())

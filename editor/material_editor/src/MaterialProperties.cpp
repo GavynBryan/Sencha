@@ -4,6 +4,7 @@
 #include "MaterialDocumentSet.h"
 
 #include "project/TextureImportStore.h"
+#include "properties/ColorValue.h"
 #include "properties/SettingProperties.h"
 
 #include <core/assets/AssetRegistry.h>
@@ -39,19 +40,19 @@ bool WriteToggle(bool& field, std::string_view text)
     return parsed.has_value();
 }
 
-// "r, g, b" -- the colour's channels as the vector properties write them.
 std::string Color(const Vec4& color)
 {
-    return std::format("{}, {}, {}", color.X, color.Y, color.Z);
+    return ColorValueText({ .Color = { color.X, color.Y, color.Z } });
 }
 
+// Red, green and blue; the factor's alpha is not the colour's to set.
 bool WriteColor(Vec4& field, std::string_view text)
 {
-    const std::optional<std::vector<double>> parsed = ParseVector(text, 3);
-    if (!parsed.has_value())
+    const std::optional<ColorValue> parsed = ParseColorValue(text);
+    if (!parsed.has_value() || !parsed->Rest.empty())
         return false;
-    field = Vec4(static_cast<float>((*parsed)[0]), static_cast<float>((*parsed)[1]), static_cast<float>((*parsed)[2]),
-                 field.W);
+    field = Vec4(static_cast<float>(parsed->Color.R), static_cast<float>(parsed->Color.G),
+                 static_cast<float>(parsed->Color.B), field.W);
     return true;
 }
 

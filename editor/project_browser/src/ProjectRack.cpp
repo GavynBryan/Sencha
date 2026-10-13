@@ -26,11 +26,13 @@ UiScreenDesc Describe()
     return desc;
 }
 
-std::string PathArgument(const UiAction& action)
-{
-    return action.Arguments.empty() ? std::string{} : std::string(action.Arguments[0].AsString());
-}
 } // namespace
+
+ProjectRack::ProjectRack(UiService& ui)
+    : Ui(ui)
+    , Screen(ui, Describe)
+{
+}
 
 ProjectRack::~ProjectRack()
 {
@@ -39,10 +41,10 @@ ProjectRack::~ProjectRack()
 
 void ProjectRack::MoveTo(UiSurfaceId surface)
 {
-    if (surface == Surface)
+    if (surface == Screen.Surface())
         return;
     Close();
-    Surface = surface;
+    Screen.MoveTo(surface);
     if (Visible)
         Open();
 }
@@ -58,40 +60,36 @@ void ProjectRack::SetVisible(bool visible)
 
 void ProjectRack::Open()
 {
-    if (Screen.IsValid() || !Surface.IsValid())
+    if (Screen.IsOpen() || !Screen.Open())
         return;
-    Screen = Ui.OpenScreen(Surface, Describe());
     Published = false;
 }
 
 void ProjectRack::Close()
 {
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
+    Screen.Close();
 }
 
 std::vector<RackRequest> ProjectRack::Update(const ProjectCatalog& catalog, const std::string& selected, bool creating)
 {
     std::vector<RackRequest> requests;
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return requests;
-    for (const UiAction& action : Ui.DrainActions(Screen))
+    for (const UiAction& action : Ui.DrainActions(Screen.Handle()))
     {
         if (action.Id == kPick)
-            requests.push_back({ RackChoice::Pick, PathArgument(action) });
+            requests.push_back({ RackChoice::Pick, std::string(action.Arg(0).AsString()) });
         else if (action.Id == kOpen)
-            requests.push_back({ RackChoice::Open, PathArgument(action) });
+            requests.push_back({ RackChoice::Open, std::string(action.Arg(0).AsString()) });
         else if (action.Id == kForget)
-            requests.push_back({ RackChoice::Forget, PathArgument(action) });
+            requests.push_back({ RackChoice::Forget, std::string(action.Arg(0).AsString()) });
         else if (action.Id == kNew)
             requests.push_back({ RackChoice::New });
         else if (action.Id == kBrowse)
             requests.push_back({ RackChoice::Browse });
     }
 
-    (void)Ui.SetValue(Screen, kCreating, UiValue(creating));
+    (void)Ui.SetValue(Screen.Handle(), kCreating, UiValue(creating));
     const std::vector<ProjectCatalogEntry>& entries = catalog.Entries();
     const bool same = Published && ShownSelection == selected && Shown.size() == entries.size()
         && std::equal(Shown.begin(), Shown.end(), entries.begin(), [](const auto& a, const auto& b) {
@@ -111,7 +109,7 @@ std::vector<RackRequest> ProjectRack::Update(const ProjectCatalog& catalog, cons
         row.Selected = entry.Path == selected;
         rows.push_back(std::move(row));
     }
-    (void)Ui.SetRows(Screen, kProjects, rows);
+    (void)Ui.SetRows(Screen.Handle(), kProjects, rows);
     Shown = entries;
     ShownSelection = selected;
     Published = true;

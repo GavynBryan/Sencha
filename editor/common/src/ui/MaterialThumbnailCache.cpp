@@ -1,5 +1,7 @@
 #include "MaterialThumbnailCache.h"
 
+#include "properties/ColorValue.h"
+
 #include <app/Engine.h>
 #include <assets/material/MaterialLoader.h>
 #include <assets/runtime/AssetSystem.h>
@@ -95,8 +97,7 @@ void MaterialThumbnailCache::ResolveBaseColor(const std::string& materialPath, E
         return;
     entry.TexturePath = description.BaseColorTexture.Path;
     const Vec4& color = description.BaseColorFactor;
-    const auto channel = [](float value) { return static_cast<int>(std::clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f); };
-    entry.Swatch = std::format("rgba({}, {}, {}, 255)", channel(color.X), channel(color.Y), channel(color.Z));
+    entry.Swatch = ColorSwatch({ color.X, color.Y, color.Z });
 }
 
 template <typename Resolve>

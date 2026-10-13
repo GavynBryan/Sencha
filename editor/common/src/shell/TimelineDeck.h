@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/UiScreenSlot.h"
+
 #include <graphics/PresentationId.h>
 #include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
@@ -49,7 +51,7 @@ public:
     // Raised by `pixels` above where it sits, to stay clear of what lies along
     // the bottom of the window under it.
     void Lift(float pixels);
-    [[nodiscard]] bool IsShowing() const { return Screen.IsValid(); }
+    [[nodiscard]] bool IsShowing() const { return Screen.IsOpen(); }
     // Where the deck sits in the window, while it shows.
     [[nodiscard]] std::optional<UiElementBox> Area() const;
 
@@ -62,10 +64,9 @@ private:
     [[nodiscard]] std::optional<double> TimeAt(const WorkspaceTimelineFacet& timeline, double x) const;
 
     UiService& Ui;
-    UiSurfaceId Surface;
     WorkspaceHost& Workspaces;
     ActionContextStack& Actions;
     PresentationId Presentation;
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
     std::size_t LaneCount = 0;
 };

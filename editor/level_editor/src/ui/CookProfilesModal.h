@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/UiScreenSlot.h"
+
 #include "presenters/PropertySheet.h"
 #include "project/CookProfileEditor.h"
 
@@ -33,8 +35,8 @@ public:
     // Opens the dialog; opening it again changes nothing.
     void Open();
     void Close();
-    [[nodiscard]] bool IsOpen() const { return Screen.IsValid(); }
-    [[nodiscard]] UiScreenHandle CurrentScreen() const { return Screen; }
+    [[nodiscard]] bool IsOpen() const { return Screen.IsOpen(); }
+    [[nodiscard]] UiScreenHandle CurrentScreen() const { return Screen.Handle(); }
     [[nodiscard]] CookProfileEditor& Editor() { return Profiles; }
 
     // Per frame, before the UI updates: act on what the document asked for,
@@ -48,6 +50,5 @@ private:
     UiService& Ui;
     CookProfileEditor Profiles;
     PropertySheet Sheet;
-    UiSurfaceId Surface;
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
 };

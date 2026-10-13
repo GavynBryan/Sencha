@@ -1,5 +1,7 @@
 #include "ui/RadialMenuScreen.h"
 
+#include "ui/DocumentLengths.h"
+
 #include "icons/IconNames.h"
 #include "tools/RadialMenuFace.h"
 
@@ -51,15 +53,10 @@ UiScreenDesc Describe()
     return desc;
 }
 
-std::string Px(float value)
-{
-    return std::format("{}px", static_cast<int>(std::lround(value)));
-}
-
 // A circle as the document places one: left, top, diameter.
 std::vector<std::string> Circle(Vec2d centre, float radius)
 {
-    return { Px(centre.X - radius), Px(centre.Y - radius), Px(radius * 2.0f) };
+    return { PixelLength(centre.X - radius), PixelLength(centre.Y - radius), PixelLength(radius * 2.0f) };
 }
 
 std::string_view PartName(RadialMenuPart part)
@@ -83,7 +80,7 @@ std::string_view PartName(RadialMenuPart part)
 UiRow Sector(Vec2d centre, const RadialMenuSector& sector)
 {
     UiRow row{ "", "", std::string(PartName(sector.Part)) };
-    row.Parts = { Px(centre.X - sector.Outer), Px(centre.Y - sector.Outer), Px(sector.Outer * 2.0f),
+    row.Parts = { PixelLength(centre.X - sector.Outer), PixelLength(centre.Y - sector.Outer), PixelLength(sector.Outer * 2.0f),
                   std::format("{:.3f}", sector.Begin * kDegrees), std::format("{:.3f}", sector.Width * kDegrees),
                   std::format("{:.4f}", sector.Outer > 0.0f ? sector.Inner / sector.Outer : 0.0f) };
     return row;
@@ -92,41 +89,15 @@ UiRow Sector(Vec2d centre, const RadialMenuSector& sector)
 
 RadialMenuScreen::RadialMenuScreen(UiService& ui)
     : Ui(ui)
+    , Screen(ui, Describe)
 {
-}
-
-RadialMenuScreen::~RadialMenuScreen()
-{
-    Close();
-}
-
-void RadialMenuScreen::MoveTo(UiSurfaceId overlay)
-{
-    if (overlay == Surface)
-        return;
-    Close();
-    Surface = overlay;
 }
 
 void RadialMenuScreen::SetShown(bool shown)
 {
     Shown = shown;
     if (!shown)
-        Close();
-}
-
-void RadialMenuScreen::Open()
-{
-    if (!Screen.IsValid() && Surface.IsValid())
-        Screen = Ui.OpenScreen(Surface, Describe());
-}
-
-void RadialMenuScreen::Close()
-{
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
+        Screen.Close();
 }
 
 void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenuModel* menu)
@@ -136,13 +107,13 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
     // screen on the window's overlay, and one document model each would clash.
     if (!face.Open || !Shown)
     {
-        Close();
+        Screen.Close();
         return;
     }
-    Open();
-    if (!Screen.IsValid())
+    if (!Screen.Open())
         return;
-    (void)Ui.SetValue(Screen, kOpen, UiValue(face.Open));
+    const UiScreenHandle screen = Screen.Handle();
+    (void)Ui.SetValue(screen, kOpen, UiValue(face.Open));
 
     std::vector<UiRow> sectors;
     std::vector<UiRow> keys;
@@ -153,10 +124,10 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
         for (const RadialMenuSector& sector : face.Sectors)
             sectors.push_back(Sector(face.Centre, sector));
         const float width = face.PlateRadius * 2.0f;
-        (void)Ui.SetValue(Screen, kCaptionLeft, UiValue(Px(face.Centre.X - width * 0.5f)));
-        (void)Ui.SetValue(Screen, kCaptionTop, UiValue(Px(face.CaptionTop)));
-        (void)Ui.SetValue(Screen, kCaptionWidth, UiValue(Px(width)));
-        (void)Ui.SetValue(Screen, kCaptionHeight, UiValue(Px(face.CaptionHeight)));
+        (void)Ui.SetValue(screen, kCaptionLeft, UiValue(PixelLength(face.Centre.X - width * 0.5f)));
+        (void)Ui.SetValue(screen, kCaptionTop, UiValue(PixelLength(face.CaptionTop)));
+        (void)Ui.SetValue(screen, kCaptionWidth, UiValue(PixelLength(width)));
+        (void)Ui.SetValue(screen, kCaptionHeight, UiValue(PixelLength(face.CaptionHeight)));
 
         for (const RadialMenuKey& key : face.Keys)
         {
@@ -168,8 +139,8 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
                 // A word takes the width of its petal rather than its glyph's well.
                 const float wordWidth = key.Radius * 3.4f;
                 const float wordHeight = key.Radius * 1.8f;
-                row.Parts = { Px(key.Centre.X - wordWidth * 0.5f), Px(key.Centre.Y - wordHeight * 0.5f), Px(wordWidth),
-                              Px(wordHeight), key.Image };
+                row.Parts = { PixelLength(key.Centre.X - wordWidth * 0.5f), PixelLength(key.Centre.Y - wordHeight * 0.5f), PixelLength(wordWidth),
+                              PixelLength(wordHeight), key.Image };
                 words.push_back(std::move(row));
                 continue;
             }
@@ -178,16 +149,16 @@ void RadialMenuScreen::Present(const RadialMenuSession* wheel, const IRadialMenu
         }
         // The hub's readout sits in the square inside its circle.
         const float side = face.HubRadius * 1.5f;
-        (void)Ui.SetValue(Screen, kHubLeft, UiValue(Px(face.Centre.X - side * 0.5f)));
-        (void)Ui.SetValue(Screen, kHubTop, UiValue(Px(face.Centre.Y - side * 0.5f)));
-        (void)Ui.SetValue(Screen, kHubSize, UiValue(Px(side)));
+        (void)Ui.SetValue(screen, kHubLeft, UiValue(PixelLength(face.Centre.X - side * 0.5f)));
+        (void)Ui.SetValue(screen, kHubTop, UiValue(PixelLength(face.Centre.Y - side * 0.5f)));
+        (void)Ui.SetValue(screen, kHubSize, UiValue(PixelLength(side)));
         for (const std::string& line : face.Summary)
             summary.push_back(UiRow{ line, "", "" });
     }
-    (void)Ui.SetRows(Screen, kSectors, sectors);
-    (void)Ui.SetRows(Screen, kKeys, keys);
-    (void)Ui.SetRows(Screen, kWords, words);
-    (void)Ui.SetRows(Screen, kSummary, summary);
-    (void)Ui.SetValue(Screen, kCaption, UiValue(face.Caption));
-    (void)Ui.SetValue(Screen, kCaptionDim, UiValue(face.CaptionNamesCurrent));
+    (void)Ui.SetRows(screen, kSectors, sectors);
+    (void)Ui.SetRows(screen, kKeys, keys);
+    (void)Ui.SetRows(screen, kWords, words);
+    (void)Ui.SetRows(screen, kSummary, summary);
+    (void)Ui.SetValue(screen, kCaption, UiValue(face.Caption));
+    (void)Ui.SetValue(screen, kCaptionDim, UiValue(face.CaptionNamesCurrent));
 }

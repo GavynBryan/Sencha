@@ -2,6 +2,7 @@
 
 #include "properties/PropertySource.h"
 #include "shell/SurfacePlacement.h"
+#include "ui/DocumentLengths.h"
 
 #include <ui/UiService.h>
 
@@ -60,11 +61,6 @@ UiScreenDesc Describe()
     return desc;
 }
 
-std::string Percent(double fraction)
-{
-    return std::format("{:.3f}%", fraction * 100.0);
-}
-
 // The wheel at full value, a ring of cells per saturation band: each cell its
 // box (left, top and size as a share of the wheel), its arc, its inner radius
 // as a share of its outer, and its colour.
@@ -80,9 +76,9 @@ std::vector<UiRow> WheelCells()
         {
             const double hue = (segment + 0.5) / kSegments;
             UiRow cell;
-            cell.Parts = { Percent((1.0 - outer) * 0.5),
-                           Percent((1.0 - outer) * 0.5),
-                           Percent(outer),
+            cell.Parts = { PercentLength((1.0 - outer) * 0.5),
+                           PercentLength((1.0 - outer) * 0.5),
+                           PercentLength(outer),
                            std::format("{:.3f}", segment * 360.0 / kSegments - kSeamDegrees * 0.5),
                            std::format("{:.3f}", 360.0 / kSegments + kSeamDegrees),
                            std::format("{:.4f}", ring == 0 ? 0.0 : inner / outer),
@@ -112,7 +108,7 @@ Hsv ColorWheelPick(Vec2d point, double value)
 
 ColorPicker::ColorPicker(UiService& ui, UiSurfaceId surface)
     : Ui(ui)
-    , Surface(surface)
+    , Screen(ui, Describe, surface)
 {
 }
 
@@ -128,26 +124,26 @@ void ColorPicker::Open(ColorPickerTarget target, std::string_view value, UiEleme
     Shown = ParseColorValue(value).value_or(ColorValue{ .Color = { 1.0, 1.0, 1.0 }, .Rest = {} });
     Chosen = HsvOf(Shown.Color);
     Chosen.V = std::min(Chosen.V, 1.0);
-    Screen = Ui.OpenScreen(Surface, Describe());
-    if (!Screen.IsValid())
+    (void)Screen.Open();
+    if (!Screen.IsOpen())
         return;
     // Beside the field, on whichever side of it the window has room.
-    const RenderExtent extent = Ui.GetSurfaceSize(Surface);
+    const RenderExtent extent = Ui.GetSurfaceSize(Screen.Surface());
     const float width = static_cast<float>(extent.Width);
     const float height = static_cast<float>(extent.Height);
     constexpr float kGap = 8.0f;
-    const auto px = [](float pixels) { return UiValue(std::format("{:.0f}px", pixels)); };
+    const auto px = [](float pixels) { return UiValue(PixelLength(pixels)); };
     const OpeningToward toward = OpenTowardRoom(Rect2d(anchor.X, anchor.Y, anchor.Width, anchor.Height), { width, height });
     if (toward.Left)
-        (void)Ui.SetValue(Screen, kRight, px(width - anchor.X + kGap));
+        (void)Ui.SetValue(Screen.Handle(), kRight, px(width - anchor.X + kGap));
     else
-        (void)Ui.SetValue(Screen, kLeft, px(anchor.X + anchor.Width + kGap));
+        (void)Ui.SetValue(Screen.Handle(), kLeft, px(anchor.X + anchor.Width + kGap));
     if (toward.Up)
-        (void)Ui.SetValue(Screen, kBottom, px(height - anchor.Y - anchor.Height));
+        (void)Ui.SetValue(Screen.Handle(), kBottom, px(height - anchor.Y - anchor.Height));
     else
-        (void)Ui.SetValue(Screen, kTop, px(anchor.Y));
-    (void)Ui.SetValue(Screen, kLabel, UiValue(Target.Label));
-    (void)Ui.SetRows(Screen, kCells, WheelCells());
+        (void)Ui.SetValue(Screen.Handle(), kTop, px(anchor.Y));
+    (void)Ui.SetValue(Screen.Handle(), kLabel, UiValue(Target.Label));
+    (void)Ui.SetRows(Screen.Handle(), kCells, WheelCells());
     Publish();
 }
 
@@ -155,28 +151,24 @@ void ColorPicker::Close()
 {
     Session.Cancel();
     Held = Part::None;
-    if (Screen.IsValid())
-        Ui.CloseScreen(Screen);
-    Screen = {};
+    Screen.Close();
 }
 
 bool ColorPicker::Update()
 {
     if (!IsOpen())
         return false;
-    for (const UiAction& action : Ui.DrainActions(Screen))
+    for (const UiAction& action : Ui.DrainActions(Screen.Handle()))
     {
-        const auto argument = [&](std::size_t index) {
-            return index < action.Arguments.size() ? static_cast<float>(action.Arguments[index].AsFloat()) : 0.0f;
-        };
+        const auto number = [&](std::size_t index) { return static_cast<float>(action.Arg(index).AsFloat()); };
         if (action.Id == kGrab && !action.Arguments.empty())
-            Grab(action.Arguments[0].AsString() == "value" ? Part::Value : Part::Wheel, argument(1), argument(2));
+            Grab(action.Arg(0).AsString() == "value" ? Part::Value : Part::Wheel, number(1), number(2));
         else if (action.Id == kDrag)
-            Move(argument(0), argument(1));
+            Move(number(0), number(1));
         else if (action.Id == kRelease)
             Release();
-        else if (action.Id == kTypeAction && action.Arguments.size() > 1 && action.Arguments[1].AsBool())
-            Type(action.Arguments[0].AsString());
+        else if (action.Id == kTypeAction && action.Arg(1).AsBool())
+            Type(action.Arg(0).AsString());
         else if (action.Id == kClose)
         {
             Close();
@@ -207,7 +199,7 @@ void ColorPicker::Move(float x, float y)
 {
     const std::string_view element = Held == Part::Wheel ? "color_wheel" : "color_value";
     const std::optional<UiElementBox> box =
-        Held == Part::None ? std::nullopt : Ui.MeasureElement(Screen, element, UiBoxArea::Content);
+        Held == Part::None ? std::nullopt : Ui.MeasureElement(Screen.Handle(), element, UiBoxArea::Content);
     if (!box.has_value() || box->Width <= 0.0f || box->Height <= 0.0f)
         return;
     if (Held == Part::Wheel)
@@ -251,13 +243,13 @@ void ColorPicker::Type(std::string_view text)
 void ColorPicker::Publish()
 {
     const Vec2d mark = ColorWheelPoint(Chosen);
-    (void)Ui.SetValue(Screen, kText, UiValue(ColorValueText(Shown)));
-    (void)Ui.SetValue(Screen, kSwatch, UiValue(ColorSwatch(Shown.Color)));
-    (void)Ui.SetValue(Screen, kMarkLeft, UiValue(Percent(0.5 + mark.X * 0.5)));
-    (void)Ui.SetValue(Screen, kMarkTop, UiValue(Percent(0.5 + mark.Y * 0.5)));
-    (void)Ui.SetValue(Screen, kValueMark, UiValue(Percent(1.0 - Chosen.V)));
+    (void)Ui.SetValue(Screen.Handle(), kText, UiValue(ColorValueText(Shown)));
+    (void)Ui.SetValue(Screen.Handle(), kSwatch, UiValue(ColorSwatch(Shown.Color)));
+    (void)Ui.SetValue(Screen.Handle(), kMarkLeft, UiValue(PercentLength(0.5 + mark.X * 0.5)));
+    (void)Ui.SetValue(Screen.Handle(), kMarkTop, UiValue(PercentLength(0.5 + mark.Y * 0.5)));
+    (void)Ui.SetValue(Screen.Handle(), kValueMark, UiValue(PercentLength(1.0 - Chosen.V)));
     std::vector<UiRow> values(kValueSteps);
     for (int step = 0; step < kValueSteps; ++step)
         values[step].Value = ColorSwatch(RgbOf({ Chosen.H, Chosen.S, 1.0 - (step + 0.5) / kValueSteps }));
-    (void)Ui.SetRows(Screen, kValues, values);
+    (void)Ui.SetRows(Screen.Handle(), kValues, values);
 }

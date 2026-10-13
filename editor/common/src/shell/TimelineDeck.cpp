@@ -1,9 +1,10 @@
 #include "shell/TimelineDeck.h"
 
 #include "actions/ActionContext.h"
+#include "ui/DocumentLengths.h"
 #include "workspaces/IWorkspace.h"
-#include "workspaces/WorkspaceTimeline.h"
 #include "workspaces/WorkspaceHost.h"
+#include "workspaces/WorkspaceTimeline.h"
 
 #include <ui/UiService.h>
 
@@ -89,11 +90,6 @@ UiScreenDesc Describe()
     return desc;
 }
 
-std::string Percent(double fraction)
-{
-    return std::format("{:.3f}%", std::clamp(fraction, 0.0, 1.0) * 100.0);
-}
-
 std::optional<TimelineDrag> DragPhase(std::string_view phase)
 {
     if (phase == "begin")
@@ -105,22 +101,6 @@ std::optional<TimelineDrag> DragPhase(std::string_view phase)
     return std::nullopt;
 }
 
-std::string Text(const UiAction& action, std::size_t index)
-{
-    return index < action.Arguments.size() && action.Arguments[index].Kind() == UiValueKind::String
-               ? std::string(action.Arguments[index].AsString())
-               : std::string{};
-}
-
-double Number(const UiAction& action, std::size_t index)
-{
-    if (index >= action.Arguments.size())
-        return 0.0;
-    const UiValue& value = action.Arguments[index];
-    return value.Kind() == UiValueKind::Float ? value.AsFloat()
-           : value.Kind() == UiValueKind::Int ? static_cast<double>(value.AsInt())
-                                               : 0.0;
-}
 } // namespace
 
 std::vector<double> TimelinePlotPeaks(std::span<const TimelineSample> samples, double start, double end,
@@ -146,10 +126,10 @@ std::vector<double> TimelinePlotPeaks(std::span<const TimelineSample> samples, d
 TimelineDeck::TimelineDeck(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces,
                            ActionContextStack& actions, PresentationId presentation)
     : Ui(ui)
-    , Surface(surface)
     , Workspaces(workspaces)
     , Actions(actions)
     , Presentation(presentation)
+    , Screen(ui, Describe, surface)
 {
 }
 
@@ -175,47 +155,43 @@ void TimelineDeck::Update()
 
 void TimelineDeck::Open()
 {
-    if (!Screen.IsValid() && Surface.IsValid())
-        Screen = Ui.OpenScreen(Surface, Describe());
+    (void)Screen.Open();
 }
 
 void TimelineDeck::Close()
 {
     LaneCount = 0;
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
+    Screen.Close();
 }
 
 void TimelineDeck::HandleActions(IWorkspaceTimeline& timeline, const WorkspaceTimelineFacet& shown)
 {
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return;
-    for (const UiAction& action : Ui.DrainActions(Screen))
+    for (const UiAction& action : Ui.DrainActions(Screen.Handle()))
     {
         if (action.Id == kInvokeAction)
-            (void)Actions.Invoke(Text(action, 0));
+            (void)Actions.Invoke(std::string(action.Arg(0).AsString()));
         else if (action.Id == kScrubAction)
         {
-            const std::optional<TimelineDrag> phase = DragPhase(Text(action, 0));
-            if (const std::optional<double> time = TimeAt(shown, Number(action, 1)); phase && time)
+            const std::optional<TimelineDrag> phase = DragPhase(std::string(action.Arg(0).AsString()));
+            if (const std::optional<double> time = TimeAt(shown, action.Arg(1).AsFloat()); phase && time)
                 timeline.Scrub(*time, *phase);
         }
         else if (action.Id == kMarkAction)
         {
-            const std::optional<TimelineDrag> phase = DragPhase(Text(action, 0));
-            if (const std::optional<double> time = TimeAt(shown, Number(action, 2)); phase && time)
-                timeline.MoveMark(Text(action, 1), *time, *phase);
+            const std::optional<TimelineDrag> phase = DragPhase(std::string(action.Arg(0).AsString()));
+            if (const std::optional<double> time = TimeAt(shown, action.Arg(2).AsFloat()); phase && time)
+                timeline.MoveMark(std::string(action.Arg(1).AsString()), *time, *phase);
         }
         else if (action.Id == kPickAction)
-            timeline.Pick(Text(action, 0));
+            timeline.Pick(std::string(action.Arg(0).AsString()));
     }
 }
 
 std::optional<double> TimelineDeck::TimeAt(const WorkspaceTimelineFacet& timeline, double x) const
 {
-    const std::optional<UiElementBox> ruler = Ui.MeasureElement(Screen, "ruler");
+    const std::optional<UiElementBox> ruler = Ui.MeasureElement(Screen.Handle(), "ruler");
     if (!ruler || ruler->Width <= 0.0f)
         return std::nullopt;
     const double fraction = std::clamp((x - ruler->X) / ruler->Width, 0.0, 1.0);
@@ -224,15 +200,15 @@ std::optional<double> TimelineDeck::TimeAt(const WorkspaceTimelineFacet& timelin
 
 void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
 {
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return;
     const double span = timeline.End - timeline.Start;
     const auto at = [&](double time) { return span > 0.0 ? (time - timeline.Start) / span : 0.0; };
-    (void)Ui.SetValue(Screen, kClock, UiValue(timeline.Clock));
-    (void)Ui.SetValue(Screen, kReadout, UiValue(timeline.Readout));
-    (void)Ui.SetValue(Screen, kPlaying, UiValue(timeline.Playing));
-    (void)Ui.SetValue(Screen, kLive, UiValue(timeline.Live));
-    (void)Ui.SetValue(Screen, kPlayhead, UiValue(Percent(at(timeline.Time))));
+    (void)Ui.SetValue(Screen.Handle(), kClock, UiValue(timeline.Clock));
+    (void)Ui.SetValue(Screen.Handle(), kReadout, UiValue(timeline.Readout));
+    (void)Ui.SetValue(Screen.Handle(), kPlaying, UiValue(timeline.Playing));
+    (void)Ui.SetValue(Screen.Handle(), kLive, UiValue(timeline.Live));
+    (void)Ui.SetValue(Screen.Handle(), kPlayhead, UiValue(PercentLength(at(timeline.Time))));
 
     std::vector<UiRow> keys;
     for (const TransportKey& key : kTransport)
@@ -247,7 +223,7 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
         row.Disabled = !state.Enabled;
         keys.push_back(std::move(row));
     }
-    (void)Ui.SetRows(Screen, kKeys, keys);
+    (void)Ui.SetRows(Screen.Handle(), kKeys, keys);
 
     std::vector<UiRow> marks;
     for (const TimelineMark& mark : timeline.Marks)
@@ -256,10 +232,10 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
                    mark.Shape == TimelineMarkShape::Diamond ? "diamond" : "round" };
         row.Key = mark.Key;
         row.Selected = mark.Selected;
-        row.Parts = { Percent(at(mark.Time)) };
+        row.Parts = { PercentLength(at(mark.Time)) };
         marks.push_back(std::move(row));
     }
-    (void)Ui.SetRows(Screen, kMarks, marks);
+    (void)Ui.SetRows(Screen.Handle(), kMarks, marks);
 
     std::vector<UiRow> lanes;
     std::vector<UiRow> spans;
@@ -279,7 +255,7 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
             UiRow piece{ stretch.Label, "", "" };
             piece.Key = stretch.Key;
             piece.Selected = stretch.Selected;
-            piece.Parts = { Percent(start), Percent(std::clamp(at(stretch.End), start, 1.0) - start), top };
+            piece.Parts = { PercentLength(start), PercentLength(std::clamp(at(stretch.End), start, 1.0) - start), top };
             spans.push_back(std::move(piece));
         }
         const std::vector<double> peaks = TimelinePlotPeaks(lane.Samples, timeline.Start, timeline.End, kPlotBars);
@@ -289,31 +265,31 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
                 continue;
             const double height = std::max(1.0, kBarHeight * peaks[bar]);
             UiRow column{ "", "", "" };
-            column.Parts = { Percent(static_cast<double>(bar) / kPlotBars), Percent(1.0 / kPlotBars),
+            column.Parts = { PercentLength(static_cast<double>(bar) / kPlotBars), PercentLength(1.0 / kPlotBars),
                              std::format("{:.1f}dp", laneTop + 1 + kBarHeight - height),
                              std::format("{:.1f}dp", height) };
             bars.push_back(std::move(column));
         }
     }
     LaneCount = lanes.size();
-    (void)Ui.SetRows(Screen, kLanes, lanes);
-    (void)Ui.SetRows(Screen, kSpans, spans);
-    (void)Ui.SetRows(Screen, kBars, bars);
-    (void)Ui.SetValue(Screen, kLaned, UiValue(LaneCount > 0));
-    (void)Ui.SetValue(Screen, kTrackHeight,
+    (void)Ui.SetRows(Screen.Handle(), kLanes, lanes);
+    (void)Ui.SetRows(Screen.Handle(), kSpans, spans);
+    (void)Ui.SetRows(Screen.Handle(), kBars, bars);
+    (void)Ui.SetValue(Screen.Handle(), kLaned, UiValue(LaneCount > 0));
+    (void)Ui.SetValue(Screen.Handle(), kTrackHeight,
                       UiValue(std::format("{}dp", kRulerHeight + kLaneHeight * static_cast<int>(LaneCount))));
 }
 
 void TimelineDeck::Lift(float pixels)
 {
-    if (Screen.IsValid())
-        (void)Ui.SetValue(Screen, kBottom,
-                          UiValue(std::format("{:.0f}px", pixels + kDeckBottomDp * Ui.GetSurfaceScale(Surface))));
+    if (Screen.IsOpen())
+        (void)Ui.SetValue(Screen.Handle(), kBottom,
+                          UiValue(PixelLength(pixels + kDeckBottomDp * Ui.GetSurfaceScale(Screen.Surface()))));
 }
 
 std::optional<UiElementBox> TimelineDeck::Area() const
 {
-    if (!Screen.IsValid())
+    if (!Screen.IsOpen())
         return std::nullopt;
-    return Ui.MeasureElement(Screen, "deck", UiBoxArea::Border);
+    return Ui.MeasureElement(Screen.Handle(), "deck", UiBoxArea::Border);
 }

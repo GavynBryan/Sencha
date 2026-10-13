@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/UiScreenSlot.h"
+
 #include "ProjectCatalog.h"
 
 #include <ui/UiScreenHandle.h>
@@ -37,7 +39,7 @@ struct RackRequest
 class ProjectRack
 {
 public:
-    explicit ProjectRack(UiService& ui) : Ui(ui) {}
+    explicit ProjectRack(UiService& ui);
     ~ProjectRack();
 
     ProjectRack(const ProjectRack&) = delete;
@@ -59,8 +61,7 @@ private:
     void Close();
 
     UiService& Ui;
-    UiSurfaceId Surface;
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
     bool Visible = false;
     // What was last shown, so an unchanged catalog does not touch the disk
     // again to ask which files are missing.

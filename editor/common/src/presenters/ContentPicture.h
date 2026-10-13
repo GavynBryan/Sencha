@@ -1,8 +1,9 @@
 #pragma once
 
+#include "ui/UiScreenSlot.h"
+
 #include <math/geometry/2d/Rect2d.h>
 #include <render/ui/UiDrawFrame.h>
-#include <ui/UiScreenHandle.h>
 #include <ui/UiSurface.h>
 
 #include <cstdint>
@@ -68,8 +69,8 @@ public:
     [[nodiscard]] const Rect2d& Placed() const { return Picture; }
 
 private:
+    // Opens it and publishes what it shows.
     void Open();
-    void Close();
     void Publish();
     void PublishFrames();
     void PublishDots();
@@ -77,8 +78,7 @@ private:
     UiService& Ui;
     std::string Name;
     UiHostImageId HostImage;
-    UiSurfaceId Surface;
-    UiScreenHandle Screen;
+    UiScreenSlot Screen;
     Rect2d Content{};
     Rect2d Picture{};
     std::vector<PictureFrame> Frames;

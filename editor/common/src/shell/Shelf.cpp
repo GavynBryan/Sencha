@@ -11,6 +11,7 @@
 #include "shell/ShellWindow.h"
 #include "text/PathLeaf.h"
 #include "thumbnails/AssetPictures.h"
+#include "ui/DocumentLengths.h"
 #include "workspaces/WorkspaceHost.h"
 
 #include <core/assets/AssetPath.h>
@@ -135,26 +136,19 @@ UiScreenDesc Describe()
 
 std::string Text(const UiAction& action, std::size_t index = 0)
 {
-    return index < action.Arguments.size() && action.Arguments[index].Kind() == UiValueKind::String
-               ? std::string(action.Arguments[index].AsString())
-               : std::string{};
+    return std::string(action.Arg(index).AsString());
 }
 
 double Number(const UiAction& action, std::size_t index = 0)
 {
-    if (index >= action.Arguments.size())
-        return 0.0;
-    const UiValue& value = action.Arguments[index];
-    return value.Kind() == UiValueKind::Float ? value.AsFloat()
-           : value.Kind() == UiValueKind::Int ? static_cast<double>(value.AsInt())
-                                               : 0.0;
+    return action.Arg(index).AsFloat();
 }
 
+// A switch: a bool, or a number that is not zero.
 bool Flag(const UiAction& action, std::size_t index)
 {
-    return index < action.Arguments.size()
-           && (action.Arguments[index].Kind() == UiValueKind::Bool ? action.Arguments[index].AsBool()
-                                                                   : Number(action, index) != 0.0);
+    const UiValue& value = action.Arg(index);
+    return value.Kind() == UiValueKind::Bool ? value.AsBool() : value.AsFloat() != 0.0;
 }
 
 std::string SizeText(std::uintmax_t bytes)
@@ -798,7 +792,7 @@ void Shelf::Update(float dp, float windowHeight)
 
 void Shelf::Publish()
 {
-    (void)Ui.SetValue(Screen, kHeight, UiValue(std::format("{:.0f}px", HeightDp * Dp)));
+    (void)Ui.SetValue(Screen, kHeight, UiValue(PixelLength(HeightDp * Dp)));
     (void)Ui.SetValue(Screen, kView, UiValue(std::string(View == Look::List ? "list" : "tiles")));
     (void)Ui.SetValue(Screen, kPinned, UiValue(State == Placement::Pinned));
     (void)Ui.SetValue(Screen, kOwnWindow, UiValue(State == Placement::Filling));

@@ -1,5 +1,7 @@
 #include "presenters/PlanePad.h"
 
+#include "ui/DocumentLengths.h"
+
 #include <ui/UiService.h>
 
 #include <algorithm>
@@ -19,11 +21,6 @@ const UiModelRowsId kMarks = UiRowsIdAt(0);
 // Kept clear inside the edge, so a mark at either end of a range is whole.
 constexpr float kInset = 14.0f;
 constexpr float kPointDiameter = 16.0f;
-
-std::string Px(float value)
-{
-    return std::format("{}px", value);
-}
 
 UiScreenDesc Describe()
 {
@@ -58,17 +55,10 @@ Vec2d PlanePadPointOf(const Rect2d& region, Vec2d at)
                                    kInset + (1.0f - at.Y) * (region.Height() - 2.0f * kInset));
 }
 
-PlanePad::~PlanePad()
+PlanePad::PlanePad(UiService& ui)
+    : Ui(ui)
+    , Screen(ui, Describe)
 {
-    Close();
-}
-
-void PlanePad::MoveTo(UiSurfaceId content)
-{
-    if (content == Surface)
-        return;
-    Close();
-    Surface = content;
 }
 
 void PlanePad::Show(const Rect2d& region, std::span<const PlanePadMark> marks, Vec2d point, std::string caption,
@@ -77,17 +67,17 @@ void PlanePad::Show(const Rect2d& region, std::span<const PlanePadMark> marks, V
     Region = region;
     Line = line;
     Showing = true;
-    Open();
-    if (!Screen.IsValid())
+    if (!Screen.Open())
         return;
-    (void)Ui.SetValue(Screen, kLeft, UiValue(Px(region.Position.X)));
-    (void)Ui.SetValue(Screen, kTop, UiValue(Px(region.Position.Y)));
-    (void)Ui.SetValue(Screen, kWidth, UiValue(Px(region.Width())));
-    (void)Ui.SetValue(Screen, kHeight, UiValue(Px(region.Height())));
-    (void)Ui.SetValue(Screen, kCaption, UiValue(std::move(caption)));
+    const UiScreenHandle screen = Screen.Handle();
+    (void)Ui.SetValue(screen, kLeft, UiValue(PixelLength(region.Position.X)));
+    (void)Ui.SetValue(screen, kTop, UiValue(PixelLength(region.Position.Y)));
+    (void)Ui.SetValue(screen, kWidth, UiValue(PixelLength(region.Width())));
+    (void)Ui.SetValue(screen, kHeight, UiValue(PixelLength(region.Height())));
+    (void)Ui.SetValue(screen, kCaption, UiValue(std::move(caption)));
     const Vec2d at = PlanePadPointOf(region, point) - region.Position - Vec2d(kPointDiameter * 0.5f, kPointDiameter * 0.5f);
-    (void)Ui.SetValue(Screen, kPointLeft, UiValue(Px(at.X)));
-    (void)Ui.SetValue(Screen, kPointTop, UiValue(Px(at.Y)));
+    (void)Ui.SetValue(screen, kPointLeft, UiValue(PixelLength(at.X)));
+    (void)Ui.SetValue(screen, kPointTop, UiValue(PixelLength(at.Y)));
 
     std::vector<UiRow> rows;
     rows.reserve(marks.size());
@@ -97,34 +87,19 @@ void PlanePad::Show(const Rect2d& region, std::span<const PlanePadMark> marks, V
         const Vec2d corner = PlanePadPointOf(region, mark.At) - region.Position - Vec2d(diameter * 0.5f, diameter * 0.5f);
         UiRow row{ mark.Label, "", "" };
         row.Selected = mark.Weight > 0.0f;
-        row.Parts = { Px(corner.X), Px(corner.Y), Px(diameter) };
+        row.Parts = { PixelLength(corner.X), PixelLength(corner.Y), PixelLength(diameter) };
         rows.push_back(std::move(row));
     }
-    (void)Ui.SetRows(Screen, kMarks, rows);
+    (void)Ui.SetRows(screen, kMarks, rows);
 }
 
 void PlanePad::Hide()
 {
     Showing = false;
-    Close();
+    Screen.Close();
 }
 
 bool PlanePad::Contains(Vec2d windowPoint) const
 {
     return Showing && Region.Contains(windowPoint);
-}
-
-void PlanePad::Open()
-{
-    if (Screen.IsValid() || !Surface.IsValid())
-        return;
-    Screen = Ui.OpenScreen(Surface, Describe());
-}
-
-void PlanePad::Close()
-{
-    if (!Screen.IsValid())
-        return;
-    Ui.CloseScreen(Screen);
-    Screen = {};
 }

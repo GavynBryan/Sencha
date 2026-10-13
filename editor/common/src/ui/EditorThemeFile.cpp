@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -133,6 +134,12 @@ std::string ThemeColorHex(const Vec4& linear)
                   SrgbByte(linear.X), SrgbByte(linear.Y), SrgbByte(linear.Z),
                   static_cast<unsigned>(std::clamp(linear.W, 0.0f, 1.0f) * 255.0f + 0.5f));
     return hex;
+}
+
+std::string ThemeColorCss(const Vec4& linear)
+{
+    return std::format("rgba({},{},{},{})", SrgbByte(linear.X), SrgbByte(linear.Y), SrgbByte(linear.Z),
+                       static_cast<unsigned>(std::clamp(linear.W, 0.0f, 1.0f) * 255.0f + 0.5f));
 }
 
 bool ParseThemeColor(const std::string& hex, float& r, float& g, float& b, float& a)
