@@ -68,29 +68,16 @@ struct UiModelProperty
     bool Editable = false;
 };
 
-// Which control a document offers for a row's value, when it offers one.
-//
-// Editable still says whether it offers one at all; this says which. A Range
-// that is not editable is a read-out with a bar, and a document tests both.
-// Text is the default and is what every existing row is.
-enum class UiRowControl : std::uint8_t
+// Which control a document offers for a row's value, by the name a document
+// tests (`row.control == 'range'`); Editable says whether it offers one at all.
+// The runtime's own pages offer these; any other name is the host's and its
+// documents' to agree on, and is bound as written.
+namespace UiRowControls
 {
-    Text,
-    Range,
-    Choice,
-    Toggle,   // Value is "true" or "false"
-    Asset,    // Value names an asset; Parts[0], when set, is how it reads; the document offers a way to pick another
-    Color,    // Value is the colour as the host writes it; Parts[0], when set, is a CSS colour to swatch it with
-    Section,  // not a value at all: a heading the rows after it sit under
-    Action,   // not a value either: something to do, named by its label, raised by its key
-    LongText, // text that runs over several lines
-    Number,   // a number typed or dragged: Value as text; Number, Min and Max when it has bounds
-    Vector,   // numbers side by side: Parts as text (empty for one standing for several), Choices naming each
-};
-
-// What a document reads `row.control` as ("text", "range", ...), and back.
-[[nodiscard]] std::string_view UiRowControlName(UiRowControl control);
-[[nodiscard]] std::optional<UiRowControl> ParseUiRowControl(std::string_view name);
+inline constexpr std::string_view Text = "text";
+inline constexpr std::string_view Range = "range";
+inline constexpr std::string_view Choice = "choice";
+} // namespace UiRowControls
 
 // Something to do about a row, offered beside it rather than as a row of its
 // own: a command on what the row stands for, or taking the row away. An action
@@ -132,7 +119,7 @@ struct UiRow
     // identity, a type it cannot express, a field it has no editor for.
     bool Editable = false;
 
-    UiRowControl Control = UiRowControl::Text;
+    std::string Control = std::string(UiRowControls::Text);
 
     // Range: the value as a number, and the bounds and step the control moves
     // within. Its own member rather than a reading of Value, because a document

@@ -202,9 +202,10 @@ carry it.
 
 **Rows.** UiRow gains Key, Depth, Icon, Selected, Expanded, Mixed, Disabled,
 Parts and Verbs (`std::vector<UiRowVerb>`; `UiRowVerb` is Key, Label, Removes).
-UiRowControl gains Toggle, Asset, Color, Section, Action, LongText, Number and
-Vector, with the names documents read exported (`UiRowControlName`,
-`ParseUiRowControl`).
+`UiRow::Control` is a control's name, a `std::string`, rather than an enum: the
+runtime names the three its own pages offer (`UiRowControls::Text`, `Range`,
+`Choice`) and binds any other as written, so a host adds a control in its own
+documents without growing this header.
 
 **UiService measurement, scrolling and input.** `MeasureElement` takes the box
 area to measure (`UiBoxArea`, Content by default); `MeasureScroll` and

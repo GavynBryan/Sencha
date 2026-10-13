@@ -1,4 +1,5 @@
 #include "actions/ActionCatalog.h"
+#include "presenters/RowControls.h"
 #include "actions/ActionContext.h"
 #include "properties/SettingProperties.h"
 #include "presenters/PropertySheet.h"
@@ -56,16 +57,16 @@ TEST(PropertySheet, WhatAPropertyIsDecidesItsControl)
     PropertySheet sheet;
     const std::vector<UiRow> rows = sheet.Present(settings);
     ASSERT_EQ(rows.size(), 4u) << "the group, its three settings, and no advanced one";
-    EXPECT_EQ(rows[0].Control, UiRowControl::Section);
+    EXPECT_EQ(rows[0].Control, RowControls::Section);
     EXPECT_FALSE(rows[0].Editable);
-    EXPECT_EQ(rows[1].Control, UiRowControl::Choice);
+    EXPECT_EQ(rows[1].Control, RowControls::Choice);
     EXPECT_EQ(rows[1].Choices, (std::vector<std::string>{ "Rectangle", "Arch" }));
     EXPECT_EQ(rows[1].Depth, 1);
-    EXPECT_EQ(rows[2].Control, UiRowControl::Number) << "a number is a box, filled as far as it is between its bounds";
+    EXPECT_EQ(rows[2].Control, RowControls::Number) << "a number is a box, filled as far as it is between its bounds";
     EXPECT_EQ(rows[2].Number, 6.0);
     EXPECT_EQ(rows[2].Min, 2.0);
     EXPECT_EQ(rows[2].Max, 64.0);
-    EXPECT_EQ(rows[3].Control, UiRowControl::Toggle);
+    EXPECT_EQ(rows[3].Control, RowControls::Toggle);
 
     EXPECT_EQ(sheet.Present(settings, /*everything*/ true).size(), 5u);
 }
@@ -268,7 +269,7 @@ TEST(PropertySheet, AGroupsActionsAreARowInsideItOfferedOnlyWhileTheyCanRunAndAt
         offered.push_back(verb.Key);
     EXPECT_EQ(offered, (std::vector<std::string>{ "body.export", "body.weld", "body.split" }))
         << "unclaimed and disabled actions are not offered, and three is all there is room for";
-    EXPECT_EQ(rows[1].Control, UiRowControl::Action);
+    EXPECT_EQ(rows[1].Control, RowControls::Action);
     EXPECT_EQ(rows[1].Depth, 1);
     EXPECT_EQ(rows[1].Verbs[0].Label, "Do body.export");
     EXPECT_NE(rows[1].Key, rows[0].Key);
@@ -349,7 +350,7 @@ TEST(PropertySheet, AVectorIsItsNumbersSideBySideEachSetOnItsOwn)
     PropertySheet sheet;
     std::vector<UiRow> rows = sheet.Present(sections);
     ASSERT_EQ(rows.size(), 1u) << "its numbers are not rows of their own";
-    EXPECT_EQ(rows[0].Control, UiRowControl::Vector);
+    EXPECT_EQ(rows[0].Control, RowControls::Vector);
     EXPECT_EQ(rows[0].Choices, (std::vector<std::string>{ "A", "B", "C" }));
     EXPECT_EQ(rows[0].Parts, (std::vector<std::string>{ "1", "", "3" })) << "the one standing for several shows nothing";
     EXPECT_EQ(sheet.EditKeyOf(0, 1), "offset[1]");
@@ -388,7 +389,7 @@ TEST(PropertySheet, AnAssetReadsAsItsFileNameAndKeepsItsPath)
     PropertySheet sheet;
     const std::vector<UiRow> rows = sheet.Present(holdings);
     ASSERT_EQ(rows.size(), 2u);
-    EXPECT_EQ(rows[0].Control, UiRowControl::Asset);
+    EXPECT_EQ(rows[0].Control, RowControls::Asset);
     EXPECT_EQ(rows[0].Value, "asset://meshes/baked/brush_14_fd676.smesh") << "the path is what a pick compares";
     EXPECT_EQ(rows[0].Parts, (std::vector<std::string>{ "brush_14_fd676.smesh" }));
     EXPECT_TRUE(rows[1].Parts.empty()) << "nothing held reads as none";

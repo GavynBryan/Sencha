@@ -1,4 +1,5 @@
 #include "presenters/PropertySheet.h"
+#include "presenters/RowControls.h"
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
@@ -18,20 +19,20 @@ namespace
 // context wheel and in the palette.
 constexpr std::size_t kActionsInside = 3;
 
-UiRowControl ControlFor(const PropertyDescriptor& descriptor)
+std::string_view ControlFor(const PropertyDescriptor& descriptor)
 {
     switch (descriptor.Kind)
     {
-    case PropertyKind::Group:  return UiRowControl::Section;
-    case PropertyKind::Choice: return UiRowControl::Choice;
-    case PropertyKind::Toggle: return UiRowControl::Toggle;
-    case PropertyKind::Asset:  return UiRowControl::Asset;
-    case PropertyKind::Color:  return UiRowControl::Color;
-    case PropertyKind::Number: return UiRowControl::Number;
-    case PropertyKind::Vector: return UiRowControl::Vector;
+    case PropertyKind::Group:  return RowControls::Section;
+    case PropertyKind::Choice: return RowControls::Choice;
+    case PropertyKind::Toggle: return RowControls::Toggle;
+    case PropertyKind::Asset:  return RowControls::Asset;
+    case PropertyKind::Color:  return RowControls::Color;
+    case PropertyKind::Number: return RowControls::Number;
+    case PropertyKind::Vector: return RowControls::Vector;
     case PropertyKind::Text:
     case PropertyKind::Unsupported:
-    default:                   return UiRowControl::Text;
+    default:                   return RowControls::Text;
     }
 }
 
@@ -77,7 +78,7 @@ std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> secti
         if (!sections[section].Heading.empty())
         {
             UiRow heading{ sections[section].Heading, "", "" };
-            heading.Control = UiRowControl::Section;
+            heading.Control = RowControls::Section;
             rows.push_back(std::move(heading));
             Rows.push_back({ .Key = {}, .Value = {}, .Section = section });
         }
@@ -110,17 +111,17 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     UiRow row{ descriptor.Label, node.Value, descriptor.Tooltip };
     row.Key = node.Key;
     row.Depth = depth;
-    row.Control = descriptor.Kind == PropertyKind::Text && descriptor.Multiline ? UiRowControl::LongText
+    row.Control = descriptor.Kind == PropertyKind::Text && descriptor.Multiline ? RowControls::LongText
                                                                                : ControlFor(descriptor);
     row.Editable = !descriptor.ReadOnly && descriptor.Kind != PropertyKind::Group
                 && descriptor.Kind != PropertyKind::Unsupported;
     row.Choices = descriptor.Choices;
     row.Mixed = node.Mixed;
-    if (row.Control == UiRowControl::Color)
+    if (row.Control == RowControls::Color)
         row.Parts = { ColorSwatch(ParseColorValue(node.Value).value_or(ColorValue{}).Color) };
-    if (row.Control == UiRowControl::Asset && !node.Value.empty())
+    if (row.Control == RowControls::Asset && !node.Value.empty())
         row.Parts = { std::string(PathLeaf(node.Value)) };
-    if (row.Control == UiRowControl::Number)
+    if (row.Control == RowControls::Number)
     {
         row.Number = ParseNumber(node.Value).value_or(0.0);
         row.Min = descriptor.Min;
@@ -129,7 +130,7 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     }
     // A vector's numbers each with its name; one standing for several shows nothing.
     std::vector<std::string> elementKeys;
-    if (row.Control == UiRowControl::Vector)
+    if (row.Control == RowControls::Vector)
     {
         row.Parts.clear();
         row.Choices.clear();
@@ -194,7 +195,7 @@ void PropertySheet::AppendActions(const PropertyNode& node, int depth, std::size
     UiRow row{ "", "", "" };
     row.Key = node.Key + "!actions";
     row.Depth = depth;
-    row.Control = UiRowControl::Action;
+    row.Control = RowControls::Action;
     row.Editable = true;
     std::vector<std::string> actions;
     std::string layout = row.Key;

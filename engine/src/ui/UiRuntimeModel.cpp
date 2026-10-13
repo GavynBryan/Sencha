@@ -106,13 +106,6 @@ void UiRuntime::DeclareModelTypes(Rml::DataModelConstructor& constructor, Surfac
         return;
     surface.ModelTypesDeclared = true;
 
-    // Bound as its name so a document can write `row.control == 'range'`; the
-    // integer it would otherwise bind as compares against nothing anyone
-    // would author.
-    (void)constructor.RegisterScalar<UiRowControl>(
-        [](const UiRowControl& control, Rml::Variant& out) {
-            out = Rml::String(UiRowControlName(control));
-        });
     (void)constructor.RegisterArray<std::vector<std::string>>();
     if (auto verb = constructor.RegisterStruct<UiRowVerb>())
     {

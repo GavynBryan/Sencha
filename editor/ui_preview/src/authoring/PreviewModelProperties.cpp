@@ -1,4 +1,5 @@
 #include "authoring/PreviewModelProperties.h"
+#include "presenters/RowControls.h"
 
 #include "authoring/UiPreviewSession.h"
 #include "properties/SettingProperties.h"
@@ -41,8 +42,12 @@ UiValue DefaultOfKind(std::size_t index)
 std::vector<std::string_view> ControlNames()
 {
     std::vector<std::string_view> names;
-    for (std::uint8_t control = 0; control <= static_cast<std::uint8_t>(UiRowControl::LongText); ++control)
-        names.push_back(UiRowControlName(static_cast<UiRowControl>(control)));
+    for (const std::string_view control : RowControls::kAll)
+    {
+        names.push_back(control);
+        if (control == RowControls::LongText)
+            break;
+    }
     return names;
 }
 
@@ -152,22 +157,27 @@ std::vector<std::string> SplitChoices(std::string_view text)
 
 std::vector<PropertyNode> RowNodes(const std::string& key, const UiRow& row)
 {
-    const std::vector<std::string_view> controls = ControlNames();
+    std::vector<std::string_view> controls = ControlNames();
+    // A name of the document's own, offered with the editor's.
+    auto at = std::ranges::find(controls, std::string_view(row.Control));
+    if (at == controls.end())
+        at = controls.insert(controls.end(), row.Control);
+    const auto chosen = static_cast<std::size_t>(at - controls.begin());
     std::vector<PropertyNode> nodes{
         TextProperty(key + ".label", "Label", row.Label),
         TextProperty(key + ".value", "Value", row.Value),
         TextProperty(key + ".detail", "Detail", row.Detail),
         ToggleProperty(key + ".editable", "Editable", row.Editable, "The document may offer a control for it"),
-        ChoiceProperty(key + ".control", "Control", controls, static_cast<std::size_t>(row.Control)),
+        ChoiceProperty(key + ".control", "Control", controls, chosen),
     };
-    if (row.Control == UiRowControl::Range)
+    if (row.Control == RowControls::Range)
     {
         nodes.push_back(NumberProperty(key + ".number", "Number", row.Number, 0.0, -1.0, 0.0));
         nodes.push_back(NumberProperty(key + ".min", "Min", row.Min, 0.0, -1.0, 0.0));
         nodes.push_back(NumberProperty(key + ".max", "Max", row.Max, 0.0, -1.0, 0.0));
         nodes.push_back(NumberProperty(key + ".step", "Step", row.Step, 0.0, -1.0, 0.0));
     }
-    if (row.Control == UiRowControl::Choice)
+    if (row.Control == RowControls::Choice)
         nodes.push_back(TextProperty(key + ".choices", "Choices", JoinChoices(row.Choices),
                                      "Comma-separated labels; the value should be one of them"));
     return nodes;
@@ -219,10 +229,9 @@ bool SetRowField(UiRow& row, std::string_view field, std::string_view value)
     }
     else if (field == "control")
     {
-        const std::optional<UiRowControl> control = ParseUiRowControl(value);
-        if (!control)
+        if (value.empty())
             return false;
-        row.Control = *control;
+        row.Control = std::string(value);
     }
     else
     {

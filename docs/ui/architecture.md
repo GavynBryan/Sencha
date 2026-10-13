@@ -540,9 +540,11 @@ anyway still only writes the copy, and the host is still what decides whether a
 value read back becomes a change.
 
 A row also names the control a document should offer for it. `UiRow::Control`
-is `Text` (the default, and what every row was), `Range` or `Choice`, with
-`Min`/`Max`/`Step` for a range and `Choices` for a drop-down; a document
-branches with `data-if="row.editable && row.control == 'range'"`. `Editable`
+is a name: the runtime's own pages use `text` (the default), `range` and
+`choice` (`UiRowControls`), with `Min`/`Max`/`Step` for a range and `Choices`
+for a drop-down, and a host's documents agree on any others with the host (the
+editor's are in `presenters/RowControls.h`); a document branches with
+`data-if="row.editable && row.control == 'range'"`. `Editable`
 still says whether a control is offered at all; `Control` says which. The value
 stays text either way -- a slider bound to `row.value` writes its number back as
 text, which is the same rule met from the other side. Two things about the

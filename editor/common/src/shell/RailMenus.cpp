@@ -1,4 +1,5 @@
 #include "shell/RailMenus.h"
+#include "presenters/RowControls.h"
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
@@ -32,7 +33,7 @@ constexpr std::string_view kCategoryPrefix = "category:";
 UiRow Heading(std::string label)
 {
     UiRow row{ std::move(label), "", "" };
-    row.Control = UiRowControl::Section;
+    row.Control = RowControls::Section;
     return row;
 }
 

@@ -234,7 +234,7 @@ TEST(OptionsPageTest, WhatThePageShowsIsWhatTheCVarSays)
                                  ConsolePhase::EngineReady).Succeeded());
     const std::vector<UiRow> rows = page.Present(registry);
     ASSERT_EQ(rows.size(), 1u);
-    EXPECT_EQ(rows.front().Control, UiRowControl::Range);
+    EXPECT_EQ(rows.front().Control, UiRowControls::Range);
     EXPECT_DOUBLE_EQ(rows.front().Number, 0.5);
     EXPECT_EQ(rows.front().Value, "0.5");
 }
@@ -256,7 +256,7 @@ TEST(OptionsPageTest, AnUncappedFrameRateReadsAsUnlimitedRatherThanZero)
     const std::vector<UiRow> rows = page.Present(registry);
     ASSERT_EQ(rows.size(), 1u);
     EXPECT_EQ(rows.front().Value, "Unlimited");
-    EXPECT_EQ(rows.front().Control, UiRowControl::Choice);
+    EXPECT_EQ(rows.front().Control, UiRowControls::Choice);
     EXPECT_EQ(rows.front().Choices.front(), "Unlimited");
     EXPECT_TRUE(rows.front().Editable);
 }

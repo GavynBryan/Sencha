@@ -150,7 +150,7 @@ std::vector<UiRow> OptionsPage::Present(const ConsoleRegistry& registry) const
 
         if (row.Control == OptionControl::Range)
         {
-            out.Control = UiRowControl::Range;
+            out.Control = UiRowControls::Range;
             out.Min = row.Min;
             out.Max = row.Max;
             out.Step = row.Step;
@@ -163,7 +163,7 @@ std::vector<UiRow> OptionsPage::Present(const ConsoleRegistry& registry) const
         }
         else
         {
-            out.Control = UiRowControl::Choice;
+            out.Control = UiRowControls::Choice;
             for (const OptionChoice& choice : row.Choices)
                 out.Choices.push_back(choice.Label);
             if (const OptionChoice* current = CurrentChoice(registry, *meta, row))

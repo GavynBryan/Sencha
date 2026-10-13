@@ -754,7 +754,7 @@ constexpr auto kRowsActivate = UiActionId{ 1 };
 UiRow RangeRow(double value)
 {
     UiRow row{ "Volume", "", "", true };
-    row.Control = UiRowControl::Range;
+    row.Control = UiRowControls::Range;
     row.Number = value;
     row.Min = 0.0;
     row.Max = 1.0;
@@ -765,7 +765,7 @@ UiRow RangeRow(double value)
 UiRow ChoiceRow(const char* value, std::vector<std::string> choices)
 {
     UiRow row{ "Quality", value, "", true };
-    row.Control = UiRowControl::Choice;
+    row.Control = UiRowControls::Choice;
     row.Choices = std::move(choices);
     return row;
 }
@@ -1013,7 +1013,7 @@ TEST(UiControls, ARowCarriesItsKeyDepthStateAndParts)
     ASSERT_TRUE(screen.IsValid());
 
     UiRow heading{ "Transform", "", "" };
-    heading.Control = UiRowControl::Section;
+    heading.Control = "section";
     heading.Key = "section:transform";
     UiRow position{ "Position", "", "" };
     position.Key = "transform.position";

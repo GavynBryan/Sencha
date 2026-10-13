@@ -1,4 +1,5 @@
 #include "authoring/UiPreviewModel.h"
+#include "presenters/RowControls.h"
 
 #include <utility>
 #include <core/json/JsonParser.h>
@@ -75,16 +76,16 @@ namespace
         if (!row.Detail.empty())
             out.emplace_back("detail", JsonValue(row.Detail));
         out.emplace_back("editable", JsonValue(row.Editable));
-        if (row.Control != UiRowControl::Text)
-            out.emplace_back("control", JsonValue(std::string(UiRowControlName(row.Control))));
-        if (row.Control == UiRowControl::Range)
+        if (row.Control != RowControls::Text)
+            out.emplace_back("control", JsonValue(row.Control));
+        if (row.Control == RowControls::Range)
         {
             out.emplace_back("number", JsonValue(row.Number));
             out.emplace_back("min", JsonValue(row.Min));
             out.emplace_back("max", JsonValue(row.Max));
             out.emplace_back("step", JsonValue(row.Step));
         }
-        if (row.Control == UiRowControl::Choice)
+        if (row.Control == RowControls::Choice)
         {
             JsonValue::Array choices;
             for (const std::string& c : row.Choices)
@@ -108,13 +109,12 @@ namespace
         if (const JsonValue* v = json.Find("editable"); v && v->IsBool()) row.Editable = v->AsBool();
         if (const JsonValue* v = json.Find("control"); v && v->IsString())
         {
-            const std::optional<UiRowControl> control = ParseUiRowControl(v->AsString());
-            if (!control)
+            if (v->AsString().empty())
             {
-                if (error) *error = "unknown row control '" + v->AsString() + "'";
+                if (error) *error = "a row's control needs a name";
                 return std::nullopt;
             }
-            row.Control = *control;
+            row.Control = v->AsString();
         }
         if (const JsonValue* v = json.Find("number"); v && v->IsNumber()) row.Number = v->AsNumber();
         if (const JsonValue* v = json.Find("min"); v && v->IsNumber()) row.Min = v->AsNumber();
