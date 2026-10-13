@@ -166,7 +166,7 @@ public:
 };
 }
 
-TEST(ShojiVocabulary, AModulesQueriesAndEventsAreListedBesideItsVerbs)
+TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
 {
     VocabularyCatalog catalog;
     LampGame game;
