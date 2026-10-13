@@ -200,8 +200,6 @@ private:
     // Asks the workspace a listed problem belongs to to show where it is.
     void RevealProblem(std::string_view index);
     void RevealLocation(std::int64_t index);
-    [[nodiscard]] std::string HierarchyAction(const IWorkspace& workspace,
-                                              const WorkspaceLocationFacet& location) const;
     // What the window shows moved on -- another workspace, another selection:
     // whatever was held for what it showed before ends unapplied.
     void FollowWorkspace(const IWorkspace* workspace);

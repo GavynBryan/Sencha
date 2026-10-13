@@ -1,7 +1,7 @@
 #pragma once
 
 #include "actions/ActionCatalog.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/ExplorerFacet.h"
 
 #include <cstddef>
 #include <functional>
@@ -19,13 +19,17 @@ struct ExplorerRow
     std::string Title;
     IconId Icon = IconId::None;
     std::vector<KeyChord> Chords = {};
-    std::function<ExplorerPage(const ExplorerQuery&)> Explore;
-    std::function<void(std::string_view key, ExplorerChoice choice, std::size_t mark)> Choose;
+    std::function<ExplorerPage(const ExplorerQuery&)> Explore = {};
+    std::function<void(std::string_view key, ExplorerChoice choice, std::size_t mark)> Choose = {};
     ExplorerShape Shape = ExplorerShape::Outline;
+    // What it is as of now beyond the above: for Files, the kinds it offers,
+    // the one in use and the ones withheld.
+    std::function<void(WorkspaceExplorerInfo&)> Describe = {};
 };
 
 // A workspace's explorers as one table: each row's `explorer.<id>` action,
-// its entry among the workspace's explorers, and its paging and choosing.
+// its entry among the workspace's explorers, and its paging and choosing. A
+// workspace adds a row; the shell finds an explorer by its id.
 class ExplorerTable
 {
 public:

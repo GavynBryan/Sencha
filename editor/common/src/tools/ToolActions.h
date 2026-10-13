@@ -1,6 +1,6 @@
 #pragma once
 
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/OperationFacet.h"
 
 #include <functional>
 

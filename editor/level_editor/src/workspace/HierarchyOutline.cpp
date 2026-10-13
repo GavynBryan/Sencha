@@ -5,12 +5,20 @@
 #include "workspace/PartitionOutline.h"
 #include "workspace/WorldExplorer.h"
 
+#include <SDL3/SDL_keycode.h>
+
 #include <algorithm>
 
-WorkspaceExplorerInfo HierarchyOutline::Info()
+ExplorerRow HierarchyOutline::Row()
 {
-    return { .Id = std::string(kId), .Title = "Hierarchy", .Shape = ExplorerShape::Outline,
-             .Action = "explorer.hierarchy" };
+    return { .Id = std::string(kId),
+             .Title = "Hierarchy",
+             .Chords = { { SDLK_TAB, {} } },
+             .Explore = [this](const ExplorerQuery& query) { return Explore(query); },
+             .Choose = [this](std::string_view key, ExplorerChoice choice, std::size_t mark) {
+                 Choose(key, choice, mark);
+             },
+             .Shape = ExplorerShape::Outline };
 }
 
 ExplorerPage HierarchyOutline::Explore(const ExplorerQuery& query)

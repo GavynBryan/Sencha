@@ -20,7 +20,13 @@ std::vector<WorkspaceExplorerInfo> ExplorerTable::Infos() const
     std::vector<WorkspaceExplorerInfo> infos;
     infos.reserve(Rows.size());
     for (const ExplorerRow& row : Rows)
-        infos.push_back({ .Id = row.Id, .Title = row.Title, .Shape = row.Shape, .Action = ActionOf(row.Id) });
+    {
+        WorkspaceExplorerInfo& info =
+            infos.emplace_back(WorkspaceExplorerInfo{ .Id = row.Id, .Title = row.Title, .Shape = row.Shape,
+                                                      .Action = ActionOf(row.Id) });
+        if (row.Describe)
+            row.Describe(info);
+    }
     return infos;
 }
 

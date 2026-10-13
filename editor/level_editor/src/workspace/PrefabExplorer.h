@@ -1,6 +1,6 @@
 #pragma once
 
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/ExplorerTable.h"
 
 #include <string_view>
 
@@ -20,7 +20,10 @@ public:
 
     explicit PrefabExplorer(EditorWorkspace& workspace);
 
-    [[nodiscard]] WorkspaceExplorerInfo Info() const;
+    // Its row in the workspace's explorers: opened as explorer.prefabs.
+    [[nodiscard]] ExplorerRow Row();
+    // The kinds it offers, the one in hand, and the level being edited withheld.
+    void Describe(WorkspaceExplorerInfo& info) const;
     void Choose(std::string_view key, ExplorerChoice choice);
 
 private:

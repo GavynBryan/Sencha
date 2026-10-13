@@ -1,7 +1,7 @@
 #pragma once
 
 #include "actions/ContextMenuModel.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/ResourceFacet.h"
 
 #include <core/assets/AssetRef.h>
 

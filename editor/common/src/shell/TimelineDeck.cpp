@@ -2,6 +2,7 @@
 
 #include "actions/ActionContext.h"
 #include "workspaces/IWorkspace.h"
+#include "workspaces/WorkspaceTimeline.h"
 #include "workspaces/WorkspaceHost.h"
 
 #include <ui/UiService.h>
@@ -160,15 +161,16 @@ TimelineDeck::~TimelineDeck()
 void TimelineDeck::Update()
 {
     IWorkspace* workspace = Workspaces.ActiveIn(Presentation);
-    const WorkspaceTimelineFacet timeline = workspace != nullptr ? workspace->Timeline() : WorkspaceTimelineFacet{};
-    if (timeline.Clock.empty())
+    IWorkspaceTimeline* timeline = workspace != nullptr ? workspace->Timeline() : nullptr;
+    const WorkspaceTimelineFacet shown = timeline != nullptr ? timeline->Facet() : WorkspaceTimelineFacet{};
+    if (shown.Clock.empty())
     {
         Close();
         return;
     }
     Open();
-    HandleActions(*workspace, timeline);
-    Publish(workspace->Timeline());
+    HandleActions(*timeline, shown);
+    Publish(timeline->Facet());
 }
 
 void TimelineDeck::Open()
@@ -186,7 +188,7 @@ void TimelineDeck::Close()
     Screen = {};
 }
 
-void TimelineDeck::HandleActions(IWorkspace& workspace, const WorkspaceTimelineFacet& timeline)
+void TimelineDeck::HandleActions(IWorkspaceTimeline& timeline, const WorkspaceTimelineFacet& shown)
 {
     if (!Screen.IsValid())
         return;
@@ -197,17 +199,17 @@ void TimelineDeck::HandleActions(IWorkspace& workspace, const WorkspaceTimelineF
         else if (action.Id == kScrubAction)
         {
             const std::optional<TimelineDrag> phase = DragPhase(Text(action, 0));
-            if (const std::optional<double> time = TimeAt(timeline, Number(action, 1)); phase && time)
-                workspace.Scrub(*time, *phase);
+            if (const std::optional<double> time = TimeAt(shown, Number(action, 1)); phase && time)
+                timeline.Scrub(*time, *phase);
         }
         else if (action.Id == kMarkAction)
         {
             const std::optional<TimelineDrag> phase = DragPhase(Text(action, 0));
-            if (const std::optional<double> time = TimeAt(timeline, Number(action, 2)); phase && time)
-                workspace.MoveMark(Text(action, 1), *time, *phase);
+            if (const std::optional<double> time = TimeAt(shown, Number(action, 2)); phase && time)
+                timeline.MoveMark(Text(action, 1), *time, *phase);
         }
         else if (action.Id == kPickAction)
-            workspace.PickOnTimeline(Text(action, 0));
+            timeline.Pick(Text(action, 0));
     }
 }
 

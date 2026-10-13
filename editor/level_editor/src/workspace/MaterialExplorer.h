@@ -1,6 +1,6 @@
 #pragma once
 
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/ExplorerTable.h"
 
 #include <string_view>
 
@@ -20,7 +20,10 @@ public:
 
     explicit MaterialExplorer(EditorWorkspace& workspace);
 
-    [[nodiscard]] WorkspaceExplorerInfo Info() const;
+    // Its row in the workspace's explorers: opened as explorer.materials.
+    [[nodiscard]] ExplorerRow Row();
+    // The kinds it offers and the one in hand.
+    void Describe(WorkspaceExplorerInfo& info) const;
     void Choose(std::string_view key, ExplorerChoice choice);
 
 private:

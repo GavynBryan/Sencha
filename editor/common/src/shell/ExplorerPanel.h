@@ -1,7 +1,7 @@
 #pragma once
 
 #include "shell/TransientSurfaces.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/ExplorerFacet.h"
 
 #include <graphics/PresentationId.h>
 #include <ui/UiScreenDesc.h>

@@ -4,7 +4,7 @@
 #include "properties/PropertySource.h"
 #include "workspace/LevelLocation.h"
 #include "workspaces/TreeOutline.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/ExplorerFacet.h"
 
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneId.h>

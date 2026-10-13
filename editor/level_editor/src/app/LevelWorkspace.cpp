@@ -302,16 +302,7 @@ void LevelWorkspace::BuildSelectionSources()
     WorldOutline = std::make_unique<WorldExplorer>(*Workspace);
     Partition = std::make_unique<PartitionOutline>(*Workspace);
     Hierarchy = std::make_unique<HierarchyOutline>(*Workspace, *WorldOutline, *Partition);
-    OfferAction(Catalog, ActionHandlers,
-                { .Id = "explorer.hierarchy", .Label = "Hierarchy", .Category = "Explore",
-                  .DefaultChords = { { SDLK_TAB, {} } } },
-                {});
-    // The explorers: defined here, opened by whichever shell shows the workspace.
-    OfferAction(Catalog, ActionHandlers, MaterialExplorerAction(), {});
-    OfferAction(Catalog, ActionHandlers,
-                { .Id = "explorer.prefabs", .Label = "Prefabs", .Category = "Explore",
-                  .Icon = IconId::Box, .DefaultChords = { { SDLK_P, { .Shift = true } } } },
-                {});
+    ExplorerRows.Offer(Catalog, ActionHandlers, Hierarchy->Row());
     OfferAction(Catalog, ActionHandlers, MaterialRescanAction(), { .Invoke = [this] {
                     if (Materials == nullptr)
                         return;
@@ -509,12 +500,14 @@ void LevelWorkspace::BuildUi()
             cache->SetUi(ui != nullptr && ui->IsReady() ? ui : nullptr);
             ScenePictures = Pictures.Provide(".sscene", *cache);
         }
+        MaterialsExplorer = std::make_unique<MaterialExplorer>(*Workspace);
+        ExplorerRows.Offer(Catalog, ActionHandlers, MaterialsExplorer->Row());
         PrefabsExplorer = std::make_unique<PrefabExplorer>(*Workspace);
+        ExplorerRows.Offer(Catalog, ActionHandlers, PrefabsExplorer->Row());
     }
     Lighting = std::make_unique<LightingDiagnostics>(*Workspace, *Commands,
                                                      LightingReportsFrom(RenderFeature, *CookRuntime));
     Lighting->Offer(Catalog, ActionHandlers);
-    MaterialsExplorer = std::make_unique<MaterialExplorer>(*Workspace);
 
 }
 
@@ -774,34 +767,6 @@ WorkspaceSelectionFacet LevelWorkspace::Selection()
     // wheel, and in full when asked for.
     selection.OnRequest = true;
     return selection;
-}
-
-std::vector<WorkspaceExplorerInfo> LevelWorkspace::Explorers() const
-{
-    std::vector<WorkspaceExplorerInfo> explorers{ HierarchyOutline::Info() };
-    if (MaterialsExplorer != nullptr)
-        explorers.push_back(MaterialsExplorer->Info());
-    if (PrefabsExplorer != nullptr)
-        explorers.push_back(PrefabsExplorer->Info());
-    return explorers;
-}
-
-ExplorerPage LevelWorkspace::Explore(const ExplorerQuery& query)
-{
-    if (query.Explorer == HierarchyOutline::kId && Hierarchy != nullptr)
-        return Hierarchy->Explore(query);
-    return {};
-}
-
-void LevelWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
-                                      std::size_t mark)
-{
-    if (explorer == MaterialExplorer::kId && MaterialsExplorer != nullptr)
-        MaterialsExplorer->Choose(key, choice);
-    else if (explorer == PrefabExplorer::kId && PrefabsExplorer != nullptr)
-        PrefabsExplorer->Choose(key, choice);
-    else if (explorer == HierarchyOutline::kId && Hierarchy != nullptr)
-        Hierarchy->Choose(key, choice, mark);
 }
 
 UiInputCapture LevelWorkspace::WindowUiCapture() const

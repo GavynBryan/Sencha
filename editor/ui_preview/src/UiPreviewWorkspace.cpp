@@ -727,19 +727,3 @@ bool UiPreviewWorkspace::RevealProblem(const Problem& problem)
     }
     return false;
 }
-
-std::vector<WorkspaceExplorerInfo> UiPreviewWorkspace::Explorers() const
-{
-    return ExplorerRows.Infos();
-}
-
-ExplorerPage UiPreviewWorkspace::Explore(const ExplorerQuery& query)
-{
-    return ExplorerRows.Explore(query);
-}
-
-void UiPreviewWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
-                                          std::size_t mark)
-{
-    ExplorerRows.Choose(explorer, key, choice, mark);
-}

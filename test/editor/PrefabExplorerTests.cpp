@@ -4,6 +4,10 @@
 #include "tools/ToolRegistry.h"
 #include "workspace/PrefabExplorer.h"
 
+#include "actions/ActionCatalog.h"
+#include "actions/ActionContext.h"
+#include "workspaces/ExplorerTable.h"
+
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -18,13 +22,23 @@ namespace
 class PrefabExplorerTest : public WorkspaceTest
 {
 protected:
+    // What the shell is told of it: its row's entry in the workspace's explorers.
+    [[nodiscard]] WorkspaceExplorerInfo Info()
+    {
+        ExplorerTable table;
+        table.Offer(Catalog, Context, Explorer.Row());
+        return table.Infos().front();
+    }
+
     PrefabExplorer Explorer{ Workspace };
+    ActionCatalog Catalog;
+    ActionContext Context;
 };
 } // namespace
 
 TEST_F(PrefabExplorerTest, OffersSceneSourcesButNotTheLevelBeingEdited)
 {
-    WorkspaceExplorerInfo info = Explorer.Info();
+    WorkspaceExplorerInfo info = Info();
     EXPECT_EQ(info.Shape, ExplorerShape::Files);
     ASSERT_EQ(info.Accepts.size(), 1u);
     EXPECT_EQ(info.Accepts.front().Extension, ".sscene");
@@ -36,7 +50,7 @@ TEST_F(PrefabExplorerTest, OffersSceneSourcesButNotTheLevelBeingEdited)
     EditorDocument& editing = Workspace.World.FocusDocument();
     editing.SetContentRoots({ root });
     ASSERT_TRUE(editing.SaveAs((root / "levels" / "hub.sscene").string()));
-    info = Explorer.Info();
+    info = Info();
     EXPECT_EQ(info.Withheld, (std::vector<std::string>{ "asset://levels/hub.sscene" }))
         << "the level is withheld by the name a placement would give it";
     std::error_code ec;
@@ -50,7 +64,7 @@ TEST_F(PrefabExplorerTest, ChoosingOnePutsItInHandAndTakesUpPlace)
     EXPECT_EQ(Workspace.Resources.Active(AssetType::Scene).Path, door);
     ASSERT_NE(Workspace.Interaction.Tools->GetActiveTool(), nullptr);
     EXPECT_EQ(Workspace.Interaction.Tools->GetActiveTool()->GetId(), "place");
-    EXPECT_EQ(Explorer.Info().Current, door);
+    EXPECT_EQ(Info().Current, door);
 }
 
 TEST_F(PrefabExplorerTest, PlaceConsumesAPrefabAndTurnsItByItsYaw)

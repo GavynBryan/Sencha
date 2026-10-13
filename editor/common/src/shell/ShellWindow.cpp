@@ -12,6 +12,7 @@
 #include "ui/RadialMenuScreen.h"
 #include "ui/ScreenModel.h"
 #include "ui/UiScaleChoice.h"
+#include "workspaces/ExplorerTable.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/WorkspaceHost.h"
 
@@ -807,16 +808,8 @@ void ShellWindow::PublishLocation(const IWorkspace* workspace)
     (void)Services.Ui.SetRows(Screen, Ids.Crumbs, crumbs);
     (void)Services.Ui.SetValue(Screen, Ids.MapAction, UiValue(location.MapAction));
     const std::string chord =
-        location.Hierarchy.empty() ? std::string{} : Services.Catalog.ChordText(HierarchyAction(*workspace, location));
+        location.Hierarchy.empty() ? std::string{} : Services.Catalog.ChordText(ExplorerTable::ActionOf(location.Hierarchy));
     (void)Services.Ui.SetValue(Screen, Ids.HierarchyChord, UiValue(chord));
-}
-
-std::string ShellWindow::HierarchyAction(const IWorkspace& workspace, const WorkspaceLocationFacet& location) const
-{
-    for (const WorkspaceExplorerInfo& explorer : workspace.Explorers())
-        if (explorer.Id == location.Hierarchy)
-            return explorer.Action;
-    return {};
 }
 
 void ShellWindow::RevealLocation(std::int64_t index)

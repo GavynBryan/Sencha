@@ -10,6 +10,7 @@
 #include "prompts/PromptQueue.h"
 #include "workspaces/ExplorerTable.h"
 #include "workspaces/IWorkspace.h"
+#include "workspaces/WorkspaceTimeline.h"
 #include "workspaces/TreeOutline.h"
 
 #include <math/geometry/2d/Rect2d.h>
@@ -65,7 +66,7 @@ struct ProjectDescriptor;
 // The animation workspace (docs/editor/animation-workspace.md): rigs, clips and
 // their events authored against a live preview on a stage that fills the
 // window. The game module is used only for its vocabulary; its game never runs.
-class AnimationWorkspace final : public IWorkspace
+class AnimationWorkspace final : public IWorkspace, public IWorkspaceTimeline
 {
 public:
     AnimationWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module, DocumentSourceSet& sources,
@@ -92,15 +93,13 @@ public:
     [[nodiscard]] WorkspaceViewFacet Viewing() const override;
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
-    [[nodiscard]] WorkspaceTimelineFacet Timeline() override;
+    [[nodiscard]] IWorkspaceTimeline* Timeline() override { return this; }
+    [[nodiscard]] WorkspaceTimelineFacet Facet() override;
     bool RevealProblem(const Problem& problem) override;
     void Scrub(double time, TimelineDrag drag) override;
     void MoveMark(std::string_view key, double time, TimelineDrag drag) override;
-    void PickOnTimeline(std::string_view key) override;
-    [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
-    [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
-    void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
-                          std::size_t mark) override;
+    void Pick(std::string_view key) override;
+    [[nodiscard]] ExplorerTable* Explorers() override { return &ExplorerRows; }
 
 private:
     // What the card is about when no joint is picked.

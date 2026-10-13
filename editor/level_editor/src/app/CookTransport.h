@@ -1,7 +1,7 @@
 #pragma once
 
 #include "actions/ActionFamily.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/TransportFacet.h"
 
 #include <cstdint>
 #include <functional>

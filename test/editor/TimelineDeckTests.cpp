@@ -1,5 +1,5 @@
 #include "shell/TimelineDeck.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/TimelineFacet.h"
 
 #include <gtest/gtest.h>
 

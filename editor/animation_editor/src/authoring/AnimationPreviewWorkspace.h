@@ -14,7 +14,7 @@
 #include "data/DataDocumentSet.h"
 #include "documents/DocumentSourceSet.h"
 #include "prompts/PromptQueue.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/DocumentFacet.h"
 
 #include <filesystem>
 #include <functional>

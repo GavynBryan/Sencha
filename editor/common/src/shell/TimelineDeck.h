@@ -12,7 +12,7 @@
 
 class ActionContextStack;
 struct TimelineSample;
-class IWorkspace;
+class IWorkspaceTimeline;
 class UiService;
 class WorkspaceHost;
 struct UiAction;
@@ -56,7 +56,7 @@ public:
 private:
     void Open();
     void Close();
-    void HandleActions(IWorkspace& workspace, const WorkspaceTimelineFacet& timeline);
+    void HandleActions(IWorkspaceTimeline& timeline, const WorkspaceTimelineFacet& shown);
     void Publish(const WorkspaceTimelineFacet& timeline);
     // A pointer x on the ruler, in surface pixels, as the clock's time.
     [[nodiscard]] std::optional<double> TimeAt(const WorkspaceTimelineFacet& timeline, double x) const;

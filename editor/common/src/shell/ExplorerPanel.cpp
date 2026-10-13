@@ -5,6 +5,7 @@
 #include "icons/IconNames.h"
 #include "shell/Shelf.h"
 #include "ui/ScreenModel.h"
+#include "workspaces/ExplorerTable.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/WorkspaceHost.h"
 
@@ -17,6 +18,12 @@
 
 namespace
 {
+std::vector<WorkspaceExplorerInfo> InfosOf(IWorkspace* workspace)
+{
+    const ExplorerTable* explorers = workspace != nullptr ? workspace->Explorers() : nullptr;
+    return explorers != nullptr ? explorers->Infos() : std::vector<WorkspaceExplorerInfo>{};
+}
+
 // How many items an explorer shows at once, and asks its workspace for.
 constexpr std::size_t kPage = 40;
 
@@ -107,12 +114,13 @@ void ExplorerPanel::Handle(std::span<const UiAction> actions)
 
 void ExplorerPanel::Choose(IWorkspace& workspace, const std::string& item, ExplorerChoice choice, std::size_t mark)
 {
-    workspace.ChooseInExplorer(ShownId, item, choice, mark);
+    if (ExplorerTable* explorers = workspace.Explorers())
+        explorers->Choose(ShownId, item, choice, mark);
     // Putting an item to use is what an explorer of pictures was open for; an
     // outline stays, since it is where the structure is worked.
     if (choice != ExplorerChoice::Commit || OpenTransient == 0)
         return;
-    const std::vector<WorkspaceExplorerInfo> explorers = workspace.Explorers();
+    const std::vector<WorkspaceExplorerInfo> explorers = InfosOf(&workspace);
     const auto shown = std::ranges::find(explorers, ShownId, &WorkspaceExplorerInfo::Id);
     if (shown != explorers.end() && shown->Shape == ExplorerShape::Pictures)
         Close();
@@ -125,7 +133,7 @@ void ExplorerPanel::Show(std::string id)
         return;
     // The project's files are chosen from the shelf rather than a tray.
     if (IWorkspace* active = Host.Workspaces.ActiveIn(Host.Presentation))
-        for (const WorkspaceExplorerInfo& info : active->Explorers())
+        for (const WorkspaceExplorerInfo& info : InfosOf(active))
             if (info.Id == id && info.Shape == ExplorerShape::Files)
             {
                 ChoosingFor = id;
@@ -135,8 +143,9 @@ void ExplorerPanel::Show(std::string id)
                                    .Withheld = info.Withheld,
                                    .Choose = [this, id](const std::string& path, bool commit) {
                                        if (IWorkspace* workspace = Host.Workspaces.ActiveIn(Host.Presentation))
-                                           workspace->ChooseInExplorer(
-                                               id, path, commit ? ExplorerChoice::Commit : ExplorerChoice::Pick, 0);
+                                           if (ExplorerTable* explorers = workspace->Explorers())
+                                               explorers->Choose(id, path, commit ? ExplorerChoice::Commit
+                                                                                  : ExplorerChoice::Pick, 0);
                                    } });
                 return;
             }
@@ -171,7 +180,8 @@ void ExplorerPanel::Reveal(const std::string& id, const std::string& key)
     if (Host.BringToFront)
         Host.BringToFront();
     if (IWorkspace* workspace = Host.Workspaces.ActiveIn(Host.Presentation); workspace != nullptr && !key.empty())
-        workspace->ChooseInExplorer(id, key, ExplorerChoice::Reveal, 0);
+        if (ExplorerTable* explorers = workspace->Explorers())
+            explorers->Choose(id, key, ExplorerChoice::Reveal, 0);
 }
 
 void ExplorerPanel::Claim(const std::vector<WorkspaceExplorerInfo>& explorers)
@@ -201,8 +211,7 @@ void ExplorerPanel::Claim(const std::vector<WorkspaceExplorerInfo>& explorers)
 void ExplorerPanel::Publish(IWorkspace* workspace)
 {
     UiService& ui = Host.Ui;
-    const std::vector<WorkspaceExplorerInfo> explorers =
-        workspace != nullptr ? workspace->Explorers() : std::vector<WorkspaceExplorerInfo>{};
+    const std::vector<WorkspaceExplorerInfo> explorers = InfosOf(workspace);
     Claim(explorers);
     const auto shown = std::ranges::find(explorers, ShownId, &WorkspaceExplorerInfo::Id);
     if (shown == explorers.end() || workspace == nullptr)
@@ -212,12 +221,13 @@ void ExplorerPanel::Publish(IWorkspace* workspace)
         return;
     }
     Key = std::format("explorer.{}", ShapeName(shown->Shape));
-    ExplorerPage page = workspace->Explore({ .Explorer = ShownId, .Filter = Filter, .First = First, .Count = kPage });
+    const ExplorerTable& table = *workspace->Explorers();
+    ExplorerPage page = table.Explore({ .Explorer = ShownId, .Filter = Filter, .First = First, .Count = kPage });
     // A narrower filter can leave the page past the end.
     if (First > 0 && First >= page.Total)
     {
         First = 0;
-        page = workspace->Explore({ .Explorer = ShownId, .Filter = Filter, .First = 0, .Count = kPage });
+        page = table.Explore({ .Explorer = ShownId, .Filter = Filter, .First = 0, .Count = kPage });
     }
     (void)ui.SetValue(Screen, IdProperty, UiValue(ShownId));
     (void)ui.SetValue(Screen, Title, UiValue(shown->Title));

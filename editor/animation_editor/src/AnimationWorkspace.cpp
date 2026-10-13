@@ -691,7 +691,7 @@ void AnimationWorkspace::CancelRetime()
     Workspace->ClipEvents.CancelDocumentEdits();
 }
 
-WorkspaceTimelineFacet AnimationWorkspace::Timeline()
+WorkspaceTimelineFacet AnimationWorkspace::Facet()
 {
     WorkspaceTimelineFacet facet = Clock->Facet();
     if (Clock->IsLab())
@@ -704,7 +704,7 @@ WorkspaceTimelineFacet AnimationWorkspace::Timeline()
     return facet;
 }
 
-void AnimationWorkspace::PickOnTimeline(std::string_view key)
+void AnimationWorkspace::Pick(std::string_view key)
 {
     if (const std::optional<AnimationLanePick> pick = ParseAnimationLaneKey(key))
     {
@@ -736,7 +736,7 @@ void AnimationWorkspace::MoveMark(std::string_view key, double time, TimelineDra
     {
     case TimelineDrag::Begin:
         Workspace->Sources.CancelEdits();
-        PickOnTimeline(key);
+        Pick(key);
         break;
     case TimelineDrag::Move:
         if (document->EditingKey() != event)
@@ -1146,20 +1146,4 @@ WorkspaceSelectionFacet AnimationWorkspace::Selection()
         stage.Details.push_back({ .Heading = "Rig report", .Source = RigReport.get() });
     }
     return stage;
-}
-
-std::vector<WorkspaceExplorerInfo> AnimationWorkspace::Explorers() const
-{
-    return ExplorerRows.Infos();
-}
-
-ExplorerPage AnimationWorkspace::Explore(const ExplorerQuery& query)
-{
-    return ExplorerRows.Explore(query);
-}
-
-void AnimationWorkspace::ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
-                                          std::size_t mark)
-{
-    ExplorerRows.Choose(explorer, key, choice, mark);
 }

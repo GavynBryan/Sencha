@@ -15,6 +15,7 @@
 #include "input/InputRouter.h"
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "workspaces/ExplorerTable.h"
 #include "input/ViewportNavigation.h"
 #include "tools/RadialMenuModel.h"
 #include "tools/RadialMenuSession.h"
@@ -117,10 +118,7 @@ public:
     void AimAt(Vec2d pointer);
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
-    [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
-    [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
-    void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
-                          std::size_t mark) override;
+    [[nodiscard]] ExplorerTable* Explorers() override { return &ExplorerRows; }
     bool RevealProblem(const Problem& problem) override;
     bool OpenAsset(const ProjectFile& file) override;
     bool DropAsset(const ProjectFile& file, Vec2d point) override;
@@ -223,6 +221,7 @@ private:
     std::unique_ptr<LightingDiagnostics> Lighting;
     ActionCatalog& Catalog;
     ActionContext ActionHandlers;
+    ExplorerTable ExplorerRows;
     // The tool in hand's settings, as the operation facet hands them out.
     std::unique_ptr<ToolParameterSource> ToolParameters;
     MaterialLibrary* Materials = nullptr;

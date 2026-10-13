@@ -4,22 +4,31 @@
 #include "tools/ToolRegistry.h"
 #include "workspace/EditorWorkspace.h"
 
+#include <SDL3/SDL_keycode.h>
+
 PrefabExplorer::PrefabExplorer(EditorWorkspace& workspace)
     : Workspace(workspace)
 {
 }
 
-WorkspaceExplorerInfo PrefabExplorer::Info() const
+ExplorerRow PrefabExplorer::Row()
 {
-    WorkspaceExplorerInfo info{ .Id = std::string(kId),
-                                .Title = "Prefabs",
-                                .Shape = ExplorerShape::Files,
-                                .Action = "explorer.prefabs",
-                                .Accepts = { { ".sscene" } },
-                                .Current = Workspace.Resources.Active(AssetType::Scene).Path };
+    return { .Id = std::string(kId),
+             .Title = "Prefabs",
+             .Icon = IconId::Box,
+             .Chords = { { SDLK_P, { .Shift = true } } },
+             .Choose = [this](std::string_view key, ExplorerChoice choice, std::size_t) { Choose(key, choice); },
+             .Shape = ExplorerShape::Files,
+             .Describe = [this](WorkspaceExplorerInfo& info) { Describe(info); } };
+}
+
+void PrefabExplorer::Describe(WorkspaceExplorerInfo& info) const
+{
+    info.Accepts = { { ".sscene" } };
+    info.Current = Workspace.Resources.Active(AssetType::Scene).Path;
+    info.Withheld.clear();
     if (std::string own = Workspace.World.FocusDocument().SourceAssetPath(); !own.empty())
         info.Withheld.push_back(std::move(own));
-    return info;
 }
 
 void PrefabExplorer::Choose(std::string_view key, ExplorerChoice)

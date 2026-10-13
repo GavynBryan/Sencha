@@ -3,7 +3,7 @@
 #include "problems/ProblemList.h"
 #include "vocabulary/VocabularyCatalog.h"
 #include "workspaces/TreeOutline.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/ExplorerFacet.h"
 
 #include <span>
 #include <string>

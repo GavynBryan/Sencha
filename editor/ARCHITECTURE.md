@@ -41,7 +41,7 @@ hatch listing every action in play, a tab per asset open in the editors placed
 in the window (`shell/AssetTabs`: choosing one shows its editor and the asset;
 an editor with nothing open is a tab of its own; "+" opens another editor), the
 problems lamp, the transport and the window keys, all fed by the active
-workspace's facets (`WorkspaceFacets.h`) and actions. It also presents the
+workspace's facets (`workspaces/facets/`, one header per facet) and actions. It also presents the
 command palette (Ctrl+K) and the prompt queue's front question; every window
 shows the same question, so it is answered wherever the person is. Under the
 shell is the window's content surface (`WorkspaceWindow::Content`, drawn in
@@ -358,9 +358,11 @@ firewall above.
   asked for (`selection.details`) or while an edit is staged. A workspace
   whose properties are its content keeps the card shown while something is
   selected. What a workspace lets a person browse is
-  an explorer (`WorkspaceExplorerInfo`, paged through `Explore` and chosen
-  from with `ChooseInExplorer`; Animation and UI Preview declare theirs as
-  `ExplorerTable` rows); the Level's materials are
+  an explorer: a row in the `ExplorerTable` the workspace hands out
+  (`IWorkspace::Explorers`), paged through its `Explore` and chosen from with
+  its `Choose`, so a new explorer is a row rather than a branch; a workspace
+  whose work runs over time hands out an `IWorkspaceTimeline` for the deck.
+  The Level's materials are
   `workspace/MaterialExplorer`, which the shell shows as a tray and opens from
   its `explorer.materials` action or the cartridge; its prefabs are
   `workspace/PrefabExplorer` (Shift+P), whose choice takes up the Entity tool,
@@ -452,7 +454,7 @@ firewall above.
   `IWorkspace::DropAsset`. What it can make new: its kind's `Creates`, the
   same definitions its workspace offers.
 - A tunable: a cvar registered where it is read (see `editor.cull_backfaces` in
-  `BuildViewportRendering`).
+  `EditorRenderFeature::RegisterCVars`).
 - A workspace: a library under `editor/<name>/` linking `editor_common`, with
   an `IWorkspace` that exposes the facets it has (documents, operation,
   selection, resources, explorers, timeline, view) and shows its content on

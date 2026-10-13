@@ -1,20 +1,31 @@
 #include "workspace/MaterialExplorer.h"
 
+#include "project/MaterialLibraryActions.h"
 #include "workspace/EditorWorkspace.h"
+
+#include <utility>
 
 MaterialExplorer::MaterialExplorer(EditorWorkspace& workspace)
     : Workspace(workspace)
 {
 }
 
-WorkspaceExplorerInfo MaterialExplorer::Info() const
+ExplorerRow MaterialExplorer::Row()
 {
+    ActionDefinition action = MaterialExplorerAction();
     return { .Id = std::string(kId),
-             .Title = "Materials",
+             .Title = std::move(action.Label),
+             .Icon = action.Icon,
+             .Chords = std::move(action.DefaultChords),
+             .Choose = [this](std::string_view key, ExplorerChoice choice, std::size_t) { Choose(key, choice); },
              .Shape = ExplorerShape::Files,
-             .Action = "explorer.materials",
-             .Accepts = { { ".smat" } },
-             .Current = Workspace.Resources.Active(AssetType::Material).Path };
+             .Describe = [this](WorkspaceExplorerInfo& info) { Describe(info); } };
+}
+
+void MaterialExplorer::Describe(WorkspaceExplorerInfo& info) const
+{
+    info.Accepts = { { ".smat" } };
+    info.Current = Workspace.Resources.Active(AssetType::Material).Path;
 }
 
 void MaterialExplorer::Choose(std::string_view key, ExplorerChoice choice)

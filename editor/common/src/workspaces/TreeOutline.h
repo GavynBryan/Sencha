@@ -1,7 +1,7 @@
 #pragma once
 
 #include "icons/IconId.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/ExplorerFacet.h"
 
 #include <set>
 #include <span>

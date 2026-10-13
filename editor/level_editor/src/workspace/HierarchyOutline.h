@@ -1,7 +1,7 @@
 #pragma once
 
 #include "workspaces/TreeOutline.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/ExplorerTable.h"
 
 #include <string_view>
 
@@ -26,7 +26,8 @@ public:
     {
     }
 
-    [[nodiscard]] static WorkspaceExplorerInfo Info();
+    // Its row in the workspace's explorers: opened as explorer.hierarchy, by Tab.
+    [[nodiscard]] ExplorerRow Row();
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query);
     void Choose(std::string_view key, ExplorerChoice choice, std::size_t mark);
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "workspaces/TreeOutline.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/ExplorerFacet.h"
 
 #include <ui/UiElementInfo.h>
 

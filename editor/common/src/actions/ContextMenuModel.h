@@ -1,7 +1,7 @@
 #pragma once
 
 #include "tools/RadialMenuModel.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/SelectionFacet.h"
 
 #include <core/assets/AssetRef.h>
 

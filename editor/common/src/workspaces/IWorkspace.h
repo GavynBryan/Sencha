@@ -1,7 +1,14 @@
 #pragma once
 
 #include "documents/DocumentRef.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/DocumentFacet.h"
+#include "workspaces/facets/LocationFacet.h"
+#include "workspaces/facets/ManipulationFacet.h"
+#include "workspaces/facets/OperationFacet.h"
+#include "workspaces/facets/ResourceFacet.h"
+#include "workspaces/facets/SelectionFacet.h"
+#include "workspaces/facets/TransportFacet.h"
+#include "workspaces/facets/ViewFacet.h"
 
 #include <math/Vec.h>
 #include <math/geometry/2d/Rect2d.h>
@@ -9,16 +16,19 @@
 struct Problem;
 
 class ActionContext;
+class ExplorerTable;
+class IWorkspaceTimeline;
 struct FrameUpdateContext;
 struct PlatformEventContext;
 struct WorkspaceWindow;
 
-// One kind of editing, alive only while open: what it is doing, which the shell
-// presents through its facets, and the actions it performs while in use. It
-// never draws the shell; its own content it shows on the window's surfaces
-// (editor/ARCHITECTURE.md).
 struct ProjectFile;
 
+// One kind of editing, alive only while open: what it is doing, which the shell
+// presents through its facets (plain facts: a shell decides whether a document
+// is a dial or a tab), and the actions it performs while in use. It never draws
+// the shell; its own content it shows on the window's surfaces
+// (editor/ARCHITECTURE.md).
 class IWorkspace
 {
 public:
@@ -57,7 +67,7 @@ public:
     // hides or goes elsewhere; the definitions live in the ActionCatalog.
     [[nodiscard]] virtual ActionContext* Actions() { return nullptr; }
 
-    // What the shell presents about this workspace (WorkspaceFacets.h).
+    // What the shell presents about this workspace (workspaces/facets/).
     [[nodiscard]] virtual WorkspaceDocumentFacet Document() const { return {}; }
     [[nodiscard]] virtual WorkspaceTransportFacet Transport() const { return {}; }
     // Not const: the parameters it hands out are the workspace's to edit.
@@ -81,21 +91,8 @@ public:
     virtual bool DropAsset(const ProjectFile&, Vec2d /*point*/) { return false; }
     // Shows where a problem in one of its documents is; false when it cannot.
     virtual bool RevealProblem(const Problem&) { return false; }
-    // Not const: a clock reads what it is showing, which may settle it.
-    [[nodiscard]] virtual WorkspaceTimelineFacet Timeline() { return {}; }
-    // The deck's ruler dragged to `time`, in the clock's seconds.
-    virtual void Scrub(double /*time*/, TimelineDrag) {}
-    // A movable mark dragged to `time`: one edit from Begin to End.
-    virtual void MoveMark(std::string_view /*key*/, double /*time*/, TimelineDrag) {}
-    // A mark or a lane's span picked, by its key.
-    virtual void PickOnTimeline(std::string_view /*key*/) {}
-    [[nodiscard]] virtual std::vector<WorkspaceExplorerInfo> Explorers() const { return {}; }
-    // Not const: picturing an item may start loading its image.
-    [[nodiscard]] virtual ExplorerPage Explore(const ExplorerQuery&) { return {}; }
-    // `mark` is the index of the mark chosen, for ExplorerChoice::Mark.
-    virtual void ChooseInExplorer(std::string_view /*explorer*/, std::string_view /*key*/, ExplorerChoice,
-                                  std::size_t /*mark*/)
-    {
-    }
-
+    // Its work over time, for a deck; null when it keeps no time.
+    [[nodiscard]] virtual IWorkspaceTimeline* Timeline() { return nullptr; }
+    // What it lets a person browse and pick from, by id; null when nothing.
+    [[nodiscard]] virtual ExplorerTable* Explorers() { return nullptr; }
 };

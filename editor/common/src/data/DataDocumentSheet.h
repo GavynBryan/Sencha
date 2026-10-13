@@ -6,7 +6,8 @@
 #include "problems/ProblemList.h"
 #include "prompts/PromptQueue.h"
 #include "properties/FilePathProperty.h"
-#include "workspaces/WorkspaceFacets.h"
+#include "workspaces/facets/DocumentFacet.h"
+#include "workspaces/facets/SelectionFacet.h"
 
 #include <functional>
 #include <optional>

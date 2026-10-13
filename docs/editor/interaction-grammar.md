@@ -46,7 +46,7 @@ What survives any grammar:
 | Selection, tools, picking, manipulation | `common/src/selection`, `tools`, workspace libraries |
 | Active resources | `common/src/resources` |
 | Problems and notices | `common/src/problems`, `notices` |
-| Workspace facets | `common/src/workspaces/WorkspaceFacets.h` |
+| Workspace facets | `common/src/workspaces/facets/`, `WorkspaceTimeline.h`, `ExplorerTable.h` |
 | Shoji surfaces, host images, rows | `engine/include/ui` |
 
 What a grammar change rewrites: `common/src/shell/` (the window controller,
