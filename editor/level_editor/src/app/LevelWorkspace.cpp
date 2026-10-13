@@ -6,24 +6,22 @@
 #include "project/ProjectFiles.h"
 
 #include "viewport/EditorViewportCameraSystem.h"
-#include "editmodes/ManipulatorSession.h"
-#include "workspace/LevelLocation.h"
+#include "workspace/HeldResources.h"
+#include "workspace/LevelBreadcrumb.h"
 #include "workspace/BrushManipulationSink.h"
-#include "input/KeymapFile.h"
 #include "tools/ToolRegistry.h"
 #include "input/ViewportToolDispatcher.h"
 #include "input/OriginViewportStamp.h"
 #include "input/SdlEventTranslation.h"
-#include "commands/CompositeCommand.h"
-#include "document/BrushBake.h"
 #include "document/DocumentFileActions.h"
 #include "document/DocumentSerialization.h"
+#include "CookTransport.h"
+#include "LightingReportFeed.h"
+#include "SelectionGlbExport.h"
+#include "ModuleComponents.h"
 #include "EditorCookRuntime.h"
 #include "project/MaterialLibrary.h"
-#include "document/commands/BakeBrushToMeshCommand.h"
-#include "export/GltfMeshExport.h"
 
-#include <world/ComponentRegistrar.h>
 #include "render/EditorRenderFeature.h"
 #include "ui/CookProfilesModal.h"
 #include <ui/UiService.h>
@@ -33,7 +31,6 @@
 #include "meshedit/FaceMaterialEdits.h"
 #include "render/RenderFeatureDetach.h"
 #include "documents/DocumentSourceSet.h"
-#include "ui/MaterialThumbnailCache.h"
 #include "render/SceneThumbnailCache.h"
 #include "actions/ActionOffer.h"
 #include "actions/ContextMenuModel.h"
@@ -46,18 +43,17 @@
 #include "workspace/PrefabExplorer.h"
 #include "workspace/EntityVerbs.h"
 #include "workspace/LightingDiagnostics.h"
-#include "document/EntityLabel.h"
 #include "workspace/HierarchyOutline.h"
 #include "workspace/PartitionOutline.h"
 #include "workspace/PropertyHandles.h"
+#include "workspace/WorldMapMode.h"
 #include "ui/WorldMapSurface.h"
-#include "viewport/CameraFraming.h"
 #include "viewport/ViewArrangementSettings.h"
 #include "workspace/WorldExplorer.h"
-#include "scene_source/SceneSourcePaths.h"
 #include "document/EntityNameComponent.h"
 #include "workspace/SelectionSummary.h"
 #include "workspace/ManipulationActions.h"
+#include "tools/ToolActions.h"
 #include "tools/ToolParameterSource.h"
 #include "ui/RadialMenuScreen.h"
 #include "ui/LevelViewSurface.h"
@@ -65,41 +61,22 @@
 
 #include <SDL3/SDL.h>
 
-#include "project/ProjectContentMount.h"
 
 #include <app/Engine.h>
-#include <app/EngineSchedule.h>
-#include <app/Game.h>
-#include <assets/cook/TextureCook.h>
-#include <render/LightComponentTypes.h>
-#include <render/IrradianceVolumeComponent.h>
-#include <render/PointLightComponent.h>
-#include <render/SpotLightComponent.h>
-#include <core/assets/AssetRegistry.h>
-#include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
-#include <core/console/ConsoleTypes.h>
-#include <core/logging/Logger.h>
-#include <debug/DebugService.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
-#include <graphics/vulkan/VulkanFrameService.h>
-#include <graphics/vulkan/VulkanInstanceService.h>
 #include <platform/SdlWindow.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <algorithm>
-#include <array>
-#include <chrono>
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
-#include <span>
-#include <variant>
 #include <vector>
 
 
@@ -144,7 +121,7 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
     RegisterDocumentSerializers();
     // Before the document is created, so its World registers storage for the
     // module's components.
-    RegisterModuleComponents(module);
+    Module = std::make_unique<ModuleComponents>(module);
 
     BuildDocument();
     // After the document: an authored workflow presents editor state, and the
@@ -152,10 +129,16 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
     BuildAuthoredWorkflows();
     BuildPlayLoop();
     BuildFileActions();
-    BuildInput();
+    OfferDocumentActions();
+    BuildSelectionSources();
+    BuildViewControls();
+    BuildWheels();
+    BuildRouter();
     BuildViewportRendering();
     BuildUi();
-    DefineTransportActions();
+    CookControls = std::make_unique<CookTransport>(*CookRuntime, ProfilesModal.get(),
+                                                   [this] { Workspace->ResolvePendingEdits(); });
+    CookControls->Offer(Catalog, ActionHandlers);
 }
 
 LevelWorkspace::~LevelWorkspace()
@@ -173,6 +156,7 @@ LevelWorkspace::~LevelWorkspace()
     if (Workspace != nullptr)
         Workspace->CancelOpenEdits();
     Lighting.reset();
+    MapMode.reset();
     Hierarchy.reset();
     Partition.reset();
     WorldOutline.reset();
@@ -189,6 +173,7 @@ LevelWorkspace::~LevelWorkspace()
     // The cook runtime and Files reference Workspace/Commands/Materials/Project;
     // tear them down before that state goes away.
     Files.reset();
+    CookControls.reset();
     CookRuntime.reset();
     // Before Workspace, not after: the render feature holds references straight
     // into it -- the world document, the viewport layout, grid and world-view
@@ -206,7 +191,7 @@ LevelWorkspace::~LevelWorkspace()
     // After the documents, not before: their worlds hold things the module
     // compiled, and the document destructor is what runs them. The module
     // itself is unmapped by its owner, after this.
-    RetractModuleComponents();
+    Module.reset();
     Commands.reset();
     Router.reset();
     Navigation.reset();
@@ -258,40 +243,11 @@ void LevelWorkspace::BuildFileActions()
     Files->RegisterCommands(engine.Console().Registry());
 }
 
-void LevelWorkspace::BuildInput()
+void LevelWorkspace::OfferDocumentActions()
 {
-    Navigation = std::make_unique<ViewportNavigation>(
-        Workspace->Layout,
-        [this](bool enabled)
-        {
-            // Fly-look only: hide the cursor and switch to relative mouse.
-            if (Window != nullptr)
-                SetRelativeMouseMode(*Window, enabled);
-        });
-
-    // The workspace's operations: defined once in the catalog, performed by
-    // this workspace's handlers while it is the one in use. Gizmo switches carry
-    // Shift to stay off the fly camera's bare W/A/S/D + Q/E. Escape reaches its
-    // handler only when no drag is in flight (the viewport dispatcher consumes
-    // it to cancel one), so it climbs the editing context one level per press.
-    struct LevelAction
-    {
-        std::string_view Id;
-        std::string_view Label;
-        std::string_view Category;
-        KeyChord Chord;
-        std::function<void()> Invoke;
-    };
-    const LevelAction actions[] = {
-        { "edit.select_all",       "Select All",                  "Edit",     { SDLK_A, { .Ctrl = true } },               [this] { Workspace->SelectAll(); } },
-        { "edit.repeat",           "Repeat Last",                 "Edit",     { SDLK_R, { .Ctrl = true } },               [this] { Workspace->Actions.RepeatLast(); } },
-        { "file.open",             "Open...",                     "File",     { SDLK_O, { .Ctrl = true } },               [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } },
-    };
-    const ActionOffers offer{ Catalog, ActionHandlers };
-    for (const LevelAction& action : actions)
-        offer({ .Id = std::string(action.Id), .Label = std::string(action.Label),
-                .Category = std::string(action.Category), .DefaultChords = { action.Chord } },
-              { .Invoke = action.Invoke });
+    // Escape reaches its handler only when no drag is in flight (the viewport
+    // dispatcher consumes it to cancel one), so it climbs the editing context
+    // one level per press.
     OfferAction(Catalog, ActionHandlers, StepBackAction(), { .Invoke = [this] { Workspace->EscapeStep(); } });
     OfferAction(Catalog, ActionHandlers, DeleteAction(), { .Invoke = [this] {
                     const EditorWorkspace::Deletion deletion = Workspace->DeleteSelection();
@@ -300,15 +256,29 @@ void LevelWorkspace::BuildInput()
                 } });
     OfferAction(Catalog, ActionHandlers, DuplicateAction(),
                 { .Invoke = [this] { Workspace->Actions.Duplicate(/*asInstance*/ false); } });
+    const ActionOffers edit{ Catalog, ActionHandlers, "Edit" };
+    edit({ .Id = "edit.select_all", .Label = "Select All", .DefaultChords = { { SDLK_A, { .Ctrl = true } } } },
+         { .Invoke = [this] { Workspace->SelectAll(); } });
+    edit({ .Id = "edit.repeat", .Label = "Repeat Last", .DefaultChords = { { SDLK_R, { .Ctrl = true } } } },
+         { .Invoke = [this] { Workspace->Actions.RepeatLast(); } });
+
     OfferAction(Catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { Files->Save(); } });
-    offer({ .Id = "file.save_as", .Label = "Save As...", .Category = "File" },
-          { .Invoke = [this] { Files->RequestSaveAs(); } });
     OfferAction(Catalog, ActionHandlers, NewLevelAction(),
                 { .Invoke = [this] { AfterSettlingChanges([this] { Files->New(); }); } });
     OfferAction(Catalog, ActionHandlers, NewWorldAction(),
                 { .Invoke = [this] { AfterSettlingChanges([this] { Files->NewWorld(); }); } });
-    OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
-    Verbs = std::make_unique<ElementVerbs>(*Workspace, [this] { ExportSelectionGlb(); });
+    const ActionOffers file{ Catalog, ActionHandlers, "File" };
+    file({ .Id = "file.open", .Label = "Open...", .DefaultChords = { { SDLK_O, { .Ctrl = true } } } },
+         { .Invoke = [this] { AfterSettlingChanges([this] { Files->RequestOpen(); }); } });
+    file({ .Id = "file.save_as", .Label = "Save As..." }, { .Invoke = [this] { Files->RequestSaveAs(); } });
+}
+
+void LevelWorkspace::BuildSelectionSources()
+{
+    Verbs = std::make_unique<ElementVerbs>(*Workspace, [this] {
+        if (Window != nullptr)
+            ExportSelectionGlb(*Window, *Workspace);
+    });
     Verbs->Offer(Catalog, ActionHandlers);
     Uv = std::make_unique<FaceUvSource>(*Workspace, Materials);
     Uv->Offer(Catalog, ActionHandlers);
@@ -346,73 +316,45 @@ void LevelWorkspace::BuildInput()
                     // A rescan may follow a save that re-pointed a material's textures.
                     Pictures.Forget();
                 } });
-    OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [this] { return HeldType(); });
+    OfferResourceActions(Catalog, ActionHandlers, Workspace->Resources, [this] { return HeldType(*Workspace); });
+}
 
+void LevelWorkspace::BuildViewControls()
+{
+    Navigation = std::make_unique<ViewportNavigation>(
+        Workspace->Layout,
+        [this](bool enabled)
+        {
+            // Fly-look only: hide the cursor and switch to relative mouse.
+            if (Window != nullptr)
+                SetRelativeMouseMode(*Window, enabled);
+        });
+
+    OfferManipulationActions(Catalog, ActionHandlers, *Workspace);
     ViewArrangement = std::make_unique<ViewArrangementSettings>(EnginePtr->Console().Registry());
     ViewArrangement->Offer(Catalog, ActionHandlers, Workspace->Layout);
 
-    // Tool activation is generated from the registry rather than listed above: a
-    // tool declares its own key, so adding one needs no edit here. The action is
-    // "tool.<id>", which is also what a keymap file overrides, and the registry
-    // resolves at fire time because the workspace owns it.
-    if (ToolRegistry* tools = Workspace->Interaction.Tools.get())
-    {
-        for (const std::unique_ptr<ITool>& tool : tools->GetTools())
-        {
-            if (tool == nullptr)
-                continue;
-            const std::string id(tool->GetId());
-            const ITool::Shortcut shortcut = tool->GetShortcut();
-            std::vector<KeyChord> chords;
-            if (shortcut.Key != SDLK_UNKNOWN)
-                chords.push_back(KeyChord{ shortcut.Key, shortcut.Mods });
-            offer({ .Id = "tool." + id, .Label = std::string(tool->GetDisplayName()), .Category = "Tool",
-                    .Icon = tool->GetIcon(), .DefaultChords = std::move(chords) },
-                  { .Invoke = [this, id] {
-                        if (ToolRegistry* live = Workspace->Interaction.Tools.get())
-                            (void)live->Activate(id);
-                    } });
-        }
-    }
+    OfferToolActions(Catalog, ActionHandlers, [this] { return Workspace->Interaction.Tools.get(); });
 
-    // A wheel's key is held rather than pressed, so the session owns both
-    // edges of it and no handler claims the action; it is defined so the
-    // keymap, hints and palette name it like any other.
-    offer({ .Id = "tool.wheel", .Label = "Tool Wheel", .Category = "Tool", .DefaultChords = { { SDLK_Q, {} } } },
-          {});
+    MapMode = std::make_unique<WorldMapMode>(*Workspace, *Partition, LevelDocument->Ref());
+    MapMode->Offer(Catalog, ActionHandlers);
+
+    ToolParameters = std::make_unique<ToolParameterSource>([this] { return Workspace->Interaction.Tools.get(); });
+}
+
+void LevelWorkspace::BuildWheels()
+{
+    // A wheel's key is held rather than pressed: its session owns both edges
+    // and no handler claims the action, which is defined so the keymap, hints
+    // and palette name it. The wheels place themselves against the same window
+    // and open over the same scene test.
+    const ActionOffers offer{ Catalog, ActionHandlers };
     offer({ .Id = "gizmo.wheel", .Label = "Transform Wheel", .Category = "Transform",
             .DefaultChords = { { SDLK_Z, {} } } },
           {});
     offer({ .Id = "context.wheel", .Label = "Context Wheel", .Category = "Edit",
             .DefaultChords = { { SDLK_SPACE, {} } } },
           {});
-    OfferAction(Catalog, ActionHandlers, { .Id = std::string(kMapAction), .Label = "World Map", .Category = "View" },
-                { .Invoke = [this] { Showing = Showing == LevelContent::Map ? LevelContent::Views : LevelContent::Map; },
-                  .Enabled = [this] { return Workspace->World.IsWorld(); },
-                  .Checked = [this] { return Showing == LevelContent::Map; } });
-
-    // A drafted operation's Apply and Cancel, for whatever presents them. The
-    // tools take Enter and Escape themselves, so these carry no chord.
-    const auto activeTool = [this]() -> std::pair<ITool*, ToolRegistry*> {
-        ToolRegistry* tools = Workspace->Interaction.Tools.get();
-        return { tools != nullptr ? tools->GetActiveTool() : nullptr, tools };
-    };
-    offer({ .Id = "tool.apply", .Label = "Apply", .Category = "Tool", .Icon = IconId::Check },
-          { .Invoke = [activeTool] {
-                if (const auto [tool, tools] = activeTool(); tool != nullptr && tool->Draft() == ToolDraft::Ready)
-                    tool->CommitPending(tools->GetContext());
-            } });
-    offer({ .Id = "tool.cancel", .Label = "Cancel", .Category = "Tool", .Icon = IconId::Cancel },
-          { .Invoke = [activeTool] {
-                if (const auto [tool, tools] = activeTool(); tool != nullptr && tool->Draft() != ToolDraft::None)
-                    tool->OnCancel(tools->GetContext());
-            } });
-    ToolParameters = std::make_unique<ToolParameterSource>([this] { return Workspace->Interaction.Tools.get(); });
-
-    // A wheel's key is held, not pressed, so it is not a shortcut row: the
-    // session owns both edges of it. The action names are what a keymap file
-    // rebinds, like any other. Both wheels place themselves against the same
-    // window and open over the same scene test.
     {
         const auto chordFor = [&](std::string_view action, SDL_Keycode fallback)
         {
@@ -435,7 +377,7 @@ void LevelWorkspace::BuildInput()
             // The view whose rect holds the pointer, with nothing of the
             // window's UI over it. Which view is active or was focused last
             // plays no part.
-            return Showing == LevelContent::Views && Workspace->Layout.ResolveAt(pointer).IsValid()
+            return MapMode->Content() == LevelContent::Views && Workspace->Layout.ResolveAt(pointer).IsValid()
                 && !WindowUiCapture().Mouse;
         };
         ToolMenu = std::make_unique<ToolRegistryMenuModel>(*Workspace->Interaction.Tools);
@@ -447,7 +389,7 @@ void LevelWorkspace::BuildInput()
                                      .Selection = [this] { return Selection(); },
                                      .Actions = [this] { return WindowActions; },
                                      .Details = DetailsAction().Id,
-                                     .Recent = [this](AssetType type) { return AssetsToHand(type); },
+                                     .Recent = [this](AssetType type) { return AssetsToHand(*Workspace, type, Pictures); },
                                      .Browse = [](AssetType type) {
                                          return type == AssetType::Material ? MaterialExplorerAction().Id
                                                                             : std::string{};
@@ -459,11 +401,14 @@ void LevelWorkspace::BuildInput()
                                                            RadialMenu::Proportions{ .Radius = 112.0f, .Hub = 60.0f,
                                                                                     .Button = 44.0f });
     }
+}
 
+void LevelWorkspace::BuildRouter()
+{
     Router = std::make_unique<InputRouter>();
     // The map, while it shows, takes the pointer and Escape from everything
     // under it.
-    Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return OnMapInput(e); });
+    Router->AddHandler([this](const InputEvent& e, PointerCapture&) { return MapMode->OnInput(e); });
     // The wheels sit under the guard (a focused text field keeps its letters)
     // and above everything else: an open wheel owns the pointer and the keys,
     // which is also what keeps the other wheel closed, and each yields its key
@@ -484,7 +429,6 @@ void LevelWorkspace::BuildInput()
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return DividerDrag->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Navigation->OnInput(e, cap); });
     Router->AddHandler([this](const InputEvent& e, PointerCapture& cap) { return Workspace->Interaction.Dispatcher->OnInput(e, cap); });
-
 }
 
 void LevelWorkspace::BuildViewportRendering()
@@ -564,42 +508,8 @@ void LevelWorkspace::BuildUi()
         }
         PrefabsExplorer = std::make_unique<PrefabExplorer>(*Workspace);
     }
-    const auto previewBuilder = [this]() -> SceneRenderQueueBuilder* {
-        return RenderFeature != nullptr ? RenderFeature->FocusQueueBuilder() : nullptr;
-    };
-    const auto lastCook = [this]() -> const CookSession::Record* {
-        return CookRuntime != nullptr ? CookRuntime->LastRecord() : nullptr;
-    };
-    LightingReports lighting{
-        .Shadows = RenderFeature != nullptr ? &RenderFeature->ShadowReadout() : nullptr,
-        .Preview = [previewBuilder, lastCook] {
-            const SceneRenderQueueBuilder* builder = previewBuilder();
-            if (builder == nullptr || lastCook() == nullptr)
-                return BakedLightingPreview::Unavailable;
-            if (!builder->LightmapPreviewEnabled() || !builder->LightmapPreviewLoaded())
-                return BakedLightingPreview::Off;
-            return builder->LightmapPreviewStale() ? BakedLightingPreview::Stale : BakedLightingPreview::Fresh;
-        },
-        .ShowPreview = [this, previewBuilder](bool enabled) {
-            SceneRenderQueueBuilder* builder = previewBuilder();
-            if (builder == nullptr)
-                return;
-            if (enabled && CookRuntime != nullptr)
-                CookRuntime->RefreshPreviewNow(*builder);
-            builder->SetLightmapPreviewEnabled(enabled);
-        },
-        .RerenderShadows = [this] {
-            if (RenderFeature != nullptr)
-                RenderFeature->InvalidateShadows();
-        },
-        .LastCook = [lastCook]() -> std::optional<LightingCook> {
-            const CookSession::Record* record = lastCook();
-            if (record == nullptr)
-                return std::nullopt;
-            return LightingCook{ .ProbeVolumes = record->ProbeVolumeCount, .Probes = record->ProbeCount };
-        },
-    };
-    Lighting = std::make_unique<LightingDiagnostics>(*Workspace, *Commands, std::move(lighting));
+    Lighting = std::make_unique<LightingDiagnostics>(*Workspace, *Commands,
+                                                     LightingReportsFrom(RenderFeature, *CookRuntime));
     Lighting->Offer(Catalog, ActionHandlers);
     MaterialsExplorer = std::make_unique<MaterialExplorer>(*Workspace);
 
@@ -683,96 +593,6 @@ void LevelWorkspace::Tick(FrameUpdateContext& ctx)
     if (Visible)
         CameraSystem->FrameUpdate(ctx);
     ProcessFrame();
-}
-
-void LevelWorkspace::PresentMap()
-{
-    if (Showing == LevelContent::Map && !Workspace->World.IsWorld())
-        Showing = LevelContent::Views;
-    if (MapSurface == nullptr)
-        return;
-    if (Showing != LevelContent::Map || !Visible)
-    {
-        MapSurface->Present(nullptr, {}, {}, {});
-        return;
-    }
-    // The plates stay clear of the breadcrumb and view instrument above and
-    // the stations below.
-    const float scale = EditorUi::UiScale;
-    const Rect2d area = Rect2d::FromMinMax(ContentRect.Min() + Vec2d(24.0f, 48.0f) * scale,
-                                           ContentRect.Max() - Vec2d(24.0f, 96.0f) * scale);
-    std::vector<ZoneId> problems;
-    if (Partition != nullptr && LevelDocument != nullptr)
-        for (const Problem& problem : Partition->Problems(LevelDocument->Ref()))
-            if (const std::optional<LevelLocation> location = ParseLevelLocation(problem.Location))
-                if (const ZoneId* zone = std::get_if<ZoneId>(&*location))
-                    problems.push_back(*zone);
-    const EditorViewport* view = Workspace->Layout.Active();
-    const std::vector<ZoneGraphEdge> edges = ZoneGraphEdges(Workspace->World);
-    Map = LayOutWorldMap(Workspace->World, edges,
-                         { .Area = area,
-                           .Margin = 0.0f,
-                           .MinimumPlate = 18.0f * scale,
-                           .Camera = view != nullptr ? std::optional<Vec3d>(view->Camera.Position) : std::nullopt,
-                           .Problems = problems });
-    const std::string& name = Workspace->World.Manifest().Name;
-    MapSurface->Present(&Map, ContentRect, name.empty() ? std::string("World") : name, MapHot);
-}
-
-InputConsumed LevelWorkspace::OnMapInput(const InputEvent& event)
-{
-    if (Showing != LevelContent::Map)
-        return InputConsumed::No;
-    if (const auto* move = std::get_if<PointerMoveEvent>(&event))
-    {
-        MapHot = ZoneAt(Map, move->Position);
-        return InputConsumed::Yes;
-    }
-    if (const auto* down = std::get_if<PointerDownEvent>(&event))
-    {
-        if (down->Button == MouseButton::Left)
-            if (const std::optional<ZoneId> zone = ZoneAt(Map, down->Position))
-                Travel(*zone);
-        return InputConsumed::Yes;
-    }
-    if (const auto* key = std::get_if<KeyDownEvent>(&event); key != nullptr && key->Key == SDLK_ESCAPE)
-    {
-        Showing = LevelContent::Views;
-        return InputConsumed::Yes;
-    }
-    return std::holds_alternative<PointerUpEvent>(event) || std::holds_alternative<WheelEvent>(event)
-        ? InputConsumed::Yes
-        : InputConsumed::No;
-}
-
-void LevelWorkspace::Travel(ZoneId zone)
-{
-    WorldDocument& world = Workspace->World;
-    if (zone != world.FocusZone() && !world.SetFocusZone(zone))
-        return;
-    for (const ZoneHeader& header : world.Manifest().Zones)
-        if (header.Id == zone && header.Bounds.IsValid())
-            if (EditorViewport* view = Workspace->Layout.Active())
-                FrameBounds(view->Camera, header.Bounds);
-    Showing = LevelContent::Views;
-    MapHot.reset();
-}
-
-std::vector<ContextMenuModel::AssetChoice> LevelWorkspace::AssetsToHand(AssetType type)
-{
-    std::vector<ContextMenuModel::AssetChoice> choices;
-    const auto add = [&](const AssetRef& ref) {
-        if (ref.Path.empty() || std::ranges::any_of(choices, [&](const auto& c) { return c.Path == ref.Path; }))
-            return;
-        choices.push_back({ .Path = ref.Path,
-                            .Label = MaterialLeafName(ref.Path),
-                            .Image = type == AssetType::Material ? Pictures.PictureOf(ref.Path).Image
-                                                                 : std::string{} });
-    };
-    add(Workspace->Resources.Active(type));
-    for (const AssetRef& stashed : Workspace->Resources.Stash(type))
-        add(stashed);
-    return choices;
 }
 
 void LevelWorkspace::AimAt(Vec2d pointer)
@@ -864,15 +684,8 @@ void LevelWorkspace::ProcessFrame()
     // publish what it should now show, so a click and its answer land in the
     // same frame. This hook runs inside FramePhase::Update, which is where the
     // engine guarantees that ordering.
-    if (ProfilesModal != nullptr)
-    {
-        ProfilesModal->Update();
-        if (ProfilesModal->Editor().Revision() != OfferedProfilesRevision)
-        {
-            OfferProfileActions();
-            OfferedProfilesRevision = ProfilesModal->Editor().Revision();
-        }
-    }
+    if (CookControls != nullptr)
+        CookControls->Update(Catalog, ActionHandlers);
 
     if (Entities != nullptr)
         Entities->OfferZoneMoves(Catalog, ActionHandlers);
@@ -900,7 +713,9 @@ void LevelWorkspace::ProcessFrame()
                              EditorUi::UiScale);
     if (Visible)
         Handles->Publish();
-    PresentMap();
+    const WorldMap* map = MapMode->LayOut(ContentRect, Visible);
+    if (MapSurface != nullptr)
+        MapSurface->Present(map, ContentRect, MapMode->Title(), MapMode->Hot());
     // Only one wheel is ever open: each yields its key to the other.
     if (WheelScreen != nullptr)
     {
@@ -913,146 +728,6 @@ void LevelWorkspace::ProcessFrame()
         else
             WheelScreen->Present(nullptr, nullptr);
     }
-}
-
-namespace
-{
-// Self-contained export payload handed to the async save dialog: the callback
-// owns it and touches no editor state.
-struct GlbExportPayload
-{
-    MeshGeometry Geometry;
-    std::vector<AssetRef> Materials;
-};
-}
-
-
-
-
-void LevelWorkspace::ExportSelectionGlb()
-{
-    if (Window == nullptr || Window->GetHandle() == nullptr)
-        return;
-
-    // The geometry comes from the selection actions (baked in local space
-    // through the same kernel as the level cook); the dialog is this layer's.
-    const BrushMesh* mesh = Workspace->Actions.SelectedExportMesh();
-    if (mesh == nullptr)
-    {
-        std::fprintf(stderr, "[editor] export: select a brush or baked brush first\n");
-        return;
-    }
-
-    auto payload = std::make_unique<GlbExportPayload>();
-    std::string error;
-    if (!BakeBrushToGeometry(*mesh, Workspace->ActiveDocument().GetDefaultMaterial(),
-                             payload->Geometry, payload->Materials, &error))
-    {
-        std::fprintf(stderr, "[editor] export: %s\n", error.c_str());
-        return;
-    }
-
-    static constexpr SDL_DialogFileFilter kGlbFilters[] = { { "Binary glTF", "glb" } };
-    SDL_ShowSaveFileDialog(
-        [](void* userdata, const char* const* filelist, int)
-        {
-            // The dialog callback may run off the main thread; the payload is
-            // self-contained (no editor state), so writing here is safe.
-            std::unique_ptr<GlbExportPayload> owned(static_cast<GlbExportPayload*>(userdata));
-            if (filelist == nullptr || filelist[0] == nullptr)
-                return;
-            std::filesystem::path path(filelist[0]);
-            if (path.extension() != ".glb")
-                path += ".glb";
-            std::string writeError;
-            if (!WriteGlbFile(owned->Geometry, owned->Materials, path, &writeError))
-                std::fprintf(stderr, "[editor] export: %s\n", writeError.c_str());
-            else
-                std::fprintf(stderr, "[editor] exported '%s'\n", path.string().c_str());
-        },
-        payload.release(),
-        Window->GetHandle(),
-        kGlbFilters,
-        static_cast<int>(std::size(kGlbFilters)),
-        nullptr);
-}
-
-void LevelWorkspace::RegisterModuleComponents(Game* module)
-{
-    if (module == nullptr)
-        return;
-
-    // The editor only borrows the module's component serializers (so it can edit
-    // scenes containing game components); it never runs the game's lifecycle.
-    // No World and no session here, so the registrar carries neither -- a game
-    // component that only replicates is registered and simply has nowhere to go.
-    ComponentRegistrar registrar(nullptr, &EditorSceneSerializers(), nullptr);
-    module->OnRegisterComponents(registrar);
-    const std::span<const ComponentTypeId> added = registrar.AddedSerializers();
-    GameModuleSerializerTypes.assign(added.begin(), added.end());
-
-    // Storage is what a game component needs to exist in a document; its
-    // gameplay vocabulary is what the names inside authored content resolve
-    // against. Each document installs it into its own World, so this is held
-    // rather than run once.
-    SetEditorModuleVocabulary([module](World& world) { module->OnRegisterVocabulary(world); });
-}
-
-void LevelWorkspace::RetractModuleComponents()
-{
-    // The vocabulary installer goes with the serializers: its target is code in
-    // the module's image. Documents already built keep the names they were
-    // given -- they are values in their own worlds.
-    for (ComponentTypeId type : GameModuleSerializerTypes)
-        (void)EditorSceneSerializers().Remove(type);
-    GameModuleSerializerTypes.clear();
-    SetEditorModuleVocabulary({});
-}
-
-void LevelWorkspace::DefineTransportActions()
-{
-    // The transport as actions: the rail shows the keys, the console and the
-    // palette reach the same handlers. A cook reads the live documents (and
-    // force-saves the world first), so open previews settle before it starts or
-    // they would cook half-staged.
-    const ActionOffers offer{ Catalog, ActionHandlers, "Transport" };
-    const auto cooking = [this] { return CookRuntime != nullptr && CookRuntime->IsActive(); };
-    const auto playing = [this] { return CookRuntime != nullptr && CookRuntime->Player().IsPlaying(); };
-    offer({ .Id = "transport.cook", .Label = "Cook" }, {
-        .Invoke = [this] { Workspace->ResolvePendingEdits(); if (CookRuntime) CookRuntime->Start(); },
-        .Enabled = [this, cooking] { return CookRuntime != nullptr && !cooking(); } });
-    offer({ .Id = "transport.rebuild", .Label = "Cook From Scratch" }, {
-        .Invoke = [this] { Workspace->ResolvePendingEdits(); if (CookRuntime) CookRuntime->Start(/*rebuild*/ true); },
-        .Enabled = [this, cooking] { return CookRuntime != nullptr && !cooking(); } });
-    offer({ .Id = "transport.cancel", .Label = "Cancel Cook" }, {
-        .Invoke = [this] { if (CookRuntime) CookRuntime->Cancel(); },
-        .Enabled = cooking });
-    offer({ .Id = "transport.play", .Label = "Play" }, {
-        .Invoke = [this] { if (CookRuntime) CookRuntime->Player().Play(CookRuntime->Player().LastCookedMap()); },
-        .Enabled = [this, playing] { return CookRuntime != nullptr && !playing(); } });
-    offer({ .Id = "transport.stop", .Label = "Stop" },
-          { .Invoke = [this] { if (CookRuntime) CookRuntime->Player().Stop(); }, .Enabled = playing });
-    offer({ .Id = "transport.profiles", .Label = "Cook Profiles..." }, {
-        .Invoke = [this] { if (ProfilesModal) ProfilesModal->Open(); },
-        .Enabled = [this] { return ProfilesModal != nullptr; } });
-    OfferProfileActions();
-}
-
-void LevelWorkspace::OfferProfileActions()
-{
-    if (CookRuntime == nullptr)
-        return;
-    const std::vector<CookProfile> profiles = CookRuntime->GetSession().AvailableProfiles();
-    std::vector<ActionDefinition> members;
-    for (const CookProfile& profile : profiles)
-        members.push_back(
-            { .Id = "transport.profile." + profile.Id, .Label = "Cook with " + profile.Name, .Category = "Transport" });
-    ProfileActions.Offer(Catalog, ActionHandlers, std::move(members), [this, &profiles](std::size_t index) {
-        const std::string& id = profiles[index].Id;
-        return ActionBinding{
-            .Invoke = [this, id] { if (CookRuntime) CookRuntime->SelectProfile(id); },
-            .Checked = [this, id] { return CookRuntime != nullptr && CookRuntime->SelectedProfileId() == id; } };
-    });
 }
 
 WorkspaceDocumentFacet LevelWorkspace::Document() const
@@ -1078,43 +753,7 @@ WorkspaceViewFacet LevelWorkspace::Viewing() const
 
 WorkspaceLocationFacet LevelWorkspace::Location() const
 {
-    WorkspaceLocationFacet facet{ .Parts = {},
-                                  .Hierarchy = std::string(HierarchyOutline::kId),
-                                  .MapAction = Workspace->World.IsWorld() ? std::string(kMapAction) : std::string{} };
-    const WorldDocument& world = Workspace->World;
-    if (world.IsWorld())
-    {
-        const WorldPartitionManifest& manifest = world.Manifest();
-        facet.Parts.push_back({ .Label = manifest.Name.empty() ? std::string("World") : manifest.Name, .Key = "world" });
-        // The zone the camera is in, or, outside every zone, the one being edited.
-        const ZoneHeader* here = nullptr;
-        if (const EditorViewport* view = Workspace->Layout.Active())
-            here = InnermostZoneAt(manifest, view->Camera.Position);
-        if (here == nullptr)
-            for (const ZoneHeader& zone : manifest.Zones)
-                if (zone.Id == world.FocusZone())
-                    here = &zone;
-        if (here != nullptr)
-        {
-            facet.Parts.push_back({ .Label = GraphDisplayName(manifest, here->Graph),
-                                    .Key = LevelLocationKey(here->Graph) });
-            facet.Parts.push_back({ .Label = ZoneDisplayName(manifest, here->Id),
-                                    .Key = LevelLocationKey(here->Id) });
-        }
-    }
-    else if (Files != nullptr)
-    {
-        facet.Parts.push_back({ .Label = Files->DocumentLabel(), .Key = {} });
-    }
-    const SelectableRef primary = Workspace->Selection.GetPrimarySelection();
-    const EditorDocument& document = world.FocusDocument();
-    const auto objects = std::ranges::count_if(Workspace->Selection.GetSelection(), &SelectableRef::IsEntity);
-    if (primary.IsEntity() && document.GetScene().HasEntity(primary.Entity))
-        facet.Parts.push_back({ .Label = objects > 1 ? std::format("{} objects", objects)
-                                                     : EntityLabel(document, primary.Entity),
-                                .Key = LevelLocationKey(document.GetScene().PersistentIdOf(primary.Entity)),
-                                .Selection = true });
-    return facet;
+    return LevelBreadcrumb(*Workspace, Files != nullptr ? Files->DocumentLabel() : std::string{});
 }
 
 WorkspaceManipulationFacet LevelWorkspace::Manipulation() const
@@ -1194,7 +833,7 @@ bool LevelWorkspace::OpenAsset(const ProjectFile& file)
 bool LevelWorkspace::DropAsset(const ProjectFile& file, Vec2d point)
 {
     const EditorViewport* viewport = Workspace->Layout.Find(Workspace->Layout.ResolveAt(point));
-    if (viewport == nullptr || Showing != LevelContent::Views)
+    if (viewport == nullptr || MapMode->Content() != LevelContent::Views)
         return false;
     EditorDocument& document = Workspace->ActiveDocument();
     const AssetRef ref{ file.Extension == ".smat" ? AssetType::Material : AssetType::Scene, file.AssetPath,
@@ -1241,88 +880,17 @@ bool LevelWorkspace::RevealProblem(const Problem& problem)
         || (Lighting != nullptr && Lighting->Reveal(problem.Location));
 }
 
-AssetType LevelWorkspace::HeldType() const
-{
-    // The tool in hand says what it consumes; without a say of its own, what
-    // the Level holds is the material its face verbs apply.
-    const ToolRegistry* tools = Workspace->Interaction.Tools.get();
-    const ITool* tool = tools != nullptr ? tools->GetActiveTool() : nullptr;
-    if (tool != nullptr)
-        for (const ResourceRole& role : tool->Resources())
-            if (role.Primary)
-                return role.Type;
-    return AssetType::Material;
-}
-
 std::vector<WorkspaceResourceFacet> LevelWorkspace::Resources()
 {
-    const AssetType type = HeldType();
-    const bool prefab = type == AssetType::Scene;
-    const auto held = [&](const AssetRef& ref) -> HeldResource {
-        if (!ref.IsValid())
-            return {};
-        return { .Label = prefab ? std::string(SceneSourceStem(ref.Path)) : MaterialLeafName(ref.Path),
-                 .Image = Pictures.PictureOf(ref.Path).Image };
-    };
-    WorkspaceResourceFacet facet{ .Role = prefab ? "Prefab" : "Material",
-                                  .Primary = true,
-                                  .Explorer = std::string(prefab ? PrefabExplorer::kId : MaterialExplorer::kId),
-                                  .Active = held(Workspace->Resources.Active(type)) };
-    const std::span<const AssetRef> stash = Workspace->Resources.Stash(type);
-    for (std::size_t slot = 0; slot < stash.size(); ++slot)
-    {
-        HeldResource stashed = held(stash[slot]);
-        stashed.Action = UseSlotAction(slot);
-        facet.Stash.push_back(std::move(stashed));
-    }
-    return { std::move(facet) };
+    return { HeldResourceFacet(*Workspace, Pictures) };
 }
 
 WorkspaceOperationFacet LevelWorkspace::Operation()
 {
-    ToolRegistry* tools = Workspace->Interaction.Tools.get();
-    ITool* tool = tools != nullptr ? tools->GetActiveTool() : nullptr;
-    if (tool == nullptr)
-        return {};
-    const std::span<const ITool::Variant> variants = tool->GetVariants();
-    const int variant = tool->GetActiveVariant(tools->GetContext());
-    std::vector<OperationChoice> choices;
-    for (const std::unique_ptr<ITool>& offered : tools->GetTools())
-        if (offered != nullptr)
-            choices.push_back({ .Label = std::string(offered->GetDisplayName()),
-                                .Icon = offered->GetIcon(),
-                                .Action = "tool." + std::string(offered->GetId()),
-                                .Current = offered.get() == tool });
-    return {
-        .Name = std::string(tool->GetDisplayName()),
-        .Variant = variant >= 0 && variant < static_cast<int>(variants.size())
-            ? std::string(variants[static_cast<std::size_t>(variant)].Label)
-            : std::string{},
-        .Icon = tool->GetIcon(),
-        .Draft = tool->Draft(),
-        .Hint = tool->Hint(tools->GetContext()),
-        .Parameters = ToolParameters.get(),
-        .Choices = std::move(choices),
-    };
+    return ToolOperation(Workspace->Interaction.Tools.get(), ToolParameters.get());
 }
 
 WorkspaceTransportFacet LevelWorkspace::Transport() const
 {
-    if (CookRuntime == nullptr)
-        return {};
-    const CookSession::Status status = CookRuntime->GetSession().GetStatus();
-    if (CookRuntime->Player().IsPlaying())
-        return { .State = TransportState::Playing };
-    if (status.Active)
-    {
-        std::string text = status.ProfileName;
-        if (!status.StepName.empty())
-            text += ": " + status.StepName;
-        if (status.TotalSteps > 0)
-            text += " (" + std::to_string(status.CompletedSteps) + "/" + std::to_string(status.TotalSteps) + ")";
-        return { .State = TransportState::Cooking, .Readout = std::move(text) };
-    }
-    if (!status.LastError.empty())
-        return { .State = TransportState::Failed, .Readout = status.LastError };
-    return { .State = TransportState::Idle };
+    return CookControls != nullptr ? CookControls->Facet() : WorkspaceTransportFacet{};
 }

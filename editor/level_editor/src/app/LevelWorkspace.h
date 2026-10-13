@@ -3,7 +3,6 @@
 #include "thumbnails/AssetPictures.h"
 
 #include "actions/ContextMenuModel.h"
-#include "document/WorldMap.h"
 
 #include <app/GameContexts.h>
 #include <assets/runtime/RuntimeAssets.h>
@@ -16,7 +15,6 @@
 #include "input/InputRouter.h"
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
-#include "actions/ActionFamily.h"
 #include "input/ViewportNavigation.h"
 #include "tools/RadialMenuModel.h"
 #include "tools/RadialMenuSession.h"
@@ -38,6 +36,9 @@
 
 class MaterialThumbnailCache;
 class LevelViewSurface;
+class CookTransport;
+class ModuleComponents;
+class WorldMapMode;
 class WorldMapSurface;
 class ActionContextStack;
 class RadialMenuScreen;
@@ -114,22 +115,12 @@ public:
     [[nodiscard]] WorkspaceLocationFacet Location() const override;
     // Selects what is under `pointer` for the context wheel, unless it already is.
     void AimAt(Vec2d pointer);
-    // The world map in place of the views: laid out from the world each frame
-    // it shows, hit-tested by the pointer, and left by going somewhere or Escape.
-    void PresentMap();
-    InputConsumed OnMapInput(const InputEvent& event);
-    // Edits `zone` with the camera on it.
-    void Travel(ZoneId zone);
-    // The assets of a kind to hand: the one in use, then the ones put by.
-    [[nodiscard]] std::vector<ContextMenuModel::AssetChoice> AssetsToHand(AssetType type);
     [[nodiscard]] std::vector<WorkspaceResourceFacet> Resources() override;
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     [[nodiscard]] std::vector<WorkspaceExplorerInfo> Explorers() const override;
     [[nodiscard]] ExplorerPage Explore(const ExplorerQuery& query) override;
     void ChooseInExplorer(std::string_view explorer, std::string_view key, ExplorerChoice choice,
                           std::size_t mark) override;
-    // The kind of resource the hands hold now: what the tool in hand consumes.
-    [[nodiscard]] AssetType HeldType() const;
     bool RevealProblem(const Problem& problem) override;
     bool OpenAsset(const ProjectFile& file) override;
     bool DropAsset(const ProjectFile& file, Vec2d point) override;
@@ -140,15 +131,20 @@ public:
     [[nodiscard]] WorkspaceTransportFacet Transport() const override;
 
 private:
-    void DefineTransportActions();
-    void OfferProfileActions();
     // Constructor phases, in call order. Each builds one cohesive slice of the
     // editor against the engine (*EnginePtr) and primary window (*Window), so the
     // constructor reads as the bring-up sequence.
     void BuildDocument();
     void BuildPlayLoop();
     void BuildFileActions();
-    void BuildInput();
+    void OfferDocumentActions();
+    // The selection's verbs and properties, its handles, and the explorers.
+    void BuildSelectionSources();
+    // How the views are worked: navigation, manipulation, arrangement, tools, the map.
+    void BuildViewControls();
+    void BuildWheels();
+    // The input chain, innermost claim first.
+    void BuildRouter();
     void BuildViewportRendering();
     void BuildUi();
 
@@ -160,16 +156,8 @@ private:
     // disk; false, and the save's follow-up says why, when one could not be saved.
     [[nodiscard]] bool SaveBeforeLaunch(std::string& error);
 
-    // The game module's components into the editor's serializer registry, and
-    // its vocabulary into every document's World, before the document exists.
-    void RegisterModuleComponents(Game* module);
-    // Retracted while the module is still mapped: it built the serializers.
-    void RetractModuleComponents();
 
     void BuildAuthoredWorkflows();
-
-    // Writes the selection's geometry as binary glTF, behind a save dialog.
-    void ExportSelectionGlb();
 
     // Where the window last said the views show.
     Rect2d ContentRect{};
@@ -178,17 +166,8 @@ private:
     EditorRenderFeature* RenderFeature = nullptr;
     // The views on the window's content surface; gone before RenderFeature.
     std::unique_ptr<LevelViewSurface> ViewSurface;
+    std::unique_ptr<WorldMapMode> MapMode;
     std::unique_ptr<WorldMapSurface> MapSurface;
-    // What fills the content: the views, or the world map over them.
-    enum class LevelContent : std::uint8_t
-    {
-        Views,
-        Map,
-    };
-    static constexpr std::string_view kMapAction = "view.map";
-    LevelContent Showing = LevelContent::Views;
-    WorldMap Map;
-    std::optional<ZoneId> MapHot;
     // Whichever wheel is open, over everything in the window.
     std::unique_ptr<RadialMenuScreen> WheelScreen;
     // The window this workspace is placed in; null until it is.
@@ -247,9 +226,7 @@ private:
     // The tool in hand's settings, as the operation facet hands them out.
     std::unique_ptr<ToolParameterSource> ToolParameters;
     MaterialLibrary* Materials = nullptr;
-    // Component identities the module's registration added serializers for,
-    // so retraction removes exactly those.
-    std::vector<ComponentTypeId> GameModuleSerializerTypes;
+    std::unique_ptr<ModuleComponents> Module;
 
     ProjectDescriptor* Project = nullptr;
     // Pictures of content files, shared with every workspace.
@@ -261,7 +238,6 @@ private:
     // Cooking, the player it feeds, and the serials that hand one to the other.
     std::unique_ptr<EditorCookRuntime>  CookRuntime;
     std::unique_ptr<CookProfilesModal>  ProfilesModal;
-    ActionFamily ProfileActions;
-    std::uint64_t OfferedProfilesRevision = 0;
+    std::unique_ptr<CookTransport> CookControls;
     std::unique_ptr<DocumentFileActions> Files;
 };

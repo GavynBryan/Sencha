@@ -106,8 +106,15 @@ hidden workspace and a minimized window cost no target and no recording.
 The level workspace (`level_editor/src/app/LevelWorkspace`) is the level
 editor's composition root. Its constructor is the bring-up sequence, split
 into named phases: `BuildDocument` -> `BuildPlayLoop` -> `BuildFileActions` ->
-`BuildInput` -> `BuildViewportRendering` -> `BuildUi`. Member order is teardown
-order; the destructor reproduces the load-bearing sequence explicitly.
+`OfferDocumentActions` -> `BuildSelectionSources` -> `BuildViewControls` ->
+`BuildWheels` -> `BuildRouter` -> `BuildViewportRendering` -> `BuildUi`. It
+composes; each responsibility has its own owner: the view arrangement
+(`viewport/ViewArrangementSettings`), the world map (`workspace/WorldMapMode`),
+the breadcrumb (`workspace/LevelBreadcrumb`), what the hands hold
+(`workspace/HeldResources`), cooking and playing (`app/CookTransport`), a game
+module's components (`app/ModuleComponents`) and the tools as actions
+(`tools/ToolActions`). Member order is teardown order; the destructor
+reproduces the load-bearing sequence explicitly.
 
 ## Projects
 
@@ -399,14 +406,15 @@ firewall above.
 - An operation a person can invoke: define it in the `ActionCatalog` (its id,
   label, category and default chords -- data, no callback) and claim it in the
   `ActionContext` of whatever performs it (`OfferAction` does both). The level
-  workspace's table is in `LevelWorkspace::BuildInput`; the operations every
-  workspace shares (undo, redo, save all) are Kyusu's, in
+  workspace's own are offered in `LevelWorkspace::OfferDocumentActions` and by
+  each verb source (`ElementVerbs`, `EntityVerbs`, `FaceUvSource`,
+  `ManipulationActions`); the operations every workspace shares (undo, redo, save all) are Kyusu's, in
   `KyusuApp::DefineApplicationActions`, and Save is each workspace's own
   (`SaveAction()`). Kyusu puts the active workspace's context in play in its
   window, so a chord, the hatch, the console (every action is a console
   command of its id) and the palette all reach one table, and a chord belongs to one action whoever
   performs it. Tool activation is generated from the registry, under
-  `tool.<id>`. Any action is rebindable from `keybinds.json`. A held key is
+  `tool.<id>` (`OfferToolActions`). Any action is rebindable from `keybinds.json`. A held key is
   owned by a `RadialMenuSession` rather than an action handler, which fires on
   presses; its chord is still the catalog's (`tool.wheel`, `gizmo.wheel`). There is
   one radial-menu mechanism (`RadialMenuMath`, `RadialMenuSession`, `FaceOf`
