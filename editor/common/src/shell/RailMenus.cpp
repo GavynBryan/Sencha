@@ -1,9 +1,9 @@
 #include "shell/RailMenus.h"
-#include "presenters/RowControls.h"
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
 #include "icons/IconNames.h"
+#include "presenters/RowControls.h"
 #include "problems/ProblemList.h"
 #include "shell/SurfacePlacement.h"
 #include "text/TextFilterMatch.h"

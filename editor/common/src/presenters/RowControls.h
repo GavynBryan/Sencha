@@ -19,7 +19,9 @@ inline constexpr std::string_view Action = "action";     // something to do, nam
 inline constexpr std::string_view LongText = "longtext"; // text that runs over several lines
 inline constexpr std::string_view Number = "number";     // typed or dragged; Number, Min and Max when bounded
 inline constexpr std::string_view Vector = "vector";     // Parts side by side, Choices naming each
+inline constexpr std::string_view Plot = "plot";         // Parts are bar heights, left to right
 
 // Every one, in the order a model's author meets them.
-inline constexpr std::array kAll = { Text, Range, Choice, Toggle, Asset, Color, Section, Action, LongText, Number, Vector };
+inline constexpr std::array kAll = { Text, Range, Choice, Toggle, Asset, Color, Section, Action, LongText, Number, Vector,
+                                     Plot };
 } // namespace RowControls

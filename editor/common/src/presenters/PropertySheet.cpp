@@ -1,12 +1,14 @@
 #include "presenters/PropertySheet.h"
-#include "presenters/RowControls.h"
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "presenters/PlotPeaks.h"
+#include "presenters/RowControls.h"
 #include "properties/ColorValue.h"
 #include "properties/PropertyEditSession.h"
 #include "properties/SettingProperties.h"
 #include "text/PathLeaf.h"
+#include "ui/DocumentLengths.h"
 
 #include <algorithm>
 #include <charconv>
@@ -18,6 +20,7 @@ namespace
 // Inside a group there is room for this many actions; the rest are on the
 // context wheel and in the palette.
 constexpr std::size_t kActionsInside = 3;
+constexpr std::size_t kPlotBars = 40;
 
 std::string_view ControlFor(const PropertyDescriptor& descriptor)
 {
@@ -30,6 +33,7 @@ std::string_view ControlFor(const PropertyDescriptor& descriptor)
     case PropertyKind::Color:  return RowControls::Color;
     case PropertyKind::Number: return RowControls::Number;
     case PropertyKind::Vector: return RowControls::Vector;
+    case PropertyKind::Plot:   return RowControls::Plot;
     case PropertyKind::Text:
     case PropertyKind::Unsupported:
     default:                   return RowControls::Text;
@@ -127,6 +131,18 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
         row.Min = descriptor.Min;
         row.Max = descriptor.Max;
         row.Step = descriptor.Step;
+    }
+    if (row.Control == RowControls::Plot)
+    {
+        std::vector<TimelineSample> samples;
+        for (const std::string& part : VectorParts(node.Value))
+            samples.push_back({ .Time = static_cast<double>(samples.size()), .Value = ParseNumber(part).value_or(0.0) });
+        row.Parts.clear();
+        if (!samples.empty())
+            for (const double peak : PlotPeaks(samples, 0.0, samples.back().Time, kPlotBars))
+                row.Parts.push_back(PercentLength(peak));
+        row.Value.clear();
+        row.Editable = false;
     }
     // A vector's numbers each with its name; one standing for several shows nothing.
     std::vector<std::string> elementKeys;

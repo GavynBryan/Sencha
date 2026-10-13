@@ -62,6 +62,9 @@
          data-event-dragdrop="shell_sheet_drop('${sheet}', ri)">
         <span class="asset_name" data-if="row.value != ''">{{row.parts.size > 0 ? row.parts[0] : row.value}}</span><span data-if="row.value == ''">NONE</span>
     </div>
+    <div class="setting_plot theme-field" data-if="row.control == 'plot'">
+        <div class="plot_bar theme-fill" data-for="height : row.parts" data-style-height="height"></div>
+    </div>
     <span class="setting_help theme-dim" data-if="${help} &amp;&amp; row.detail != ''">{{row.detail}}</span>
     <div class="remove glyph theme-remove" data-for="verb : row.verbs" data-if="verb.removes"
          data-event-click="shell_sheet_act('${sheet}', ri, verb.key, '')">&#xf00d;</div>

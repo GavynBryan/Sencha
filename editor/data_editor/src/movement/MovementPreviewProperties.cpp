@@ -202,5 +202,20 @@ std::vector<PropertyNode> MovementResponseProperties::Nodes() const
                      : NoteProperty("time_to_top_speed", "Time to top speed", "Not reached"));
     if (!arc.Landed)
         nodes.push_back(NoteProperty("landed", "Landing", "The character never came back down within the simulated window"));
+    const auto plot = [](std::string key, std::string label, const std::vector<MovementSimSample>& samples,
+                         float MovementSimSample::*value, std::string tooltip) {
+        std::string text;
+        for (const MovementSimSample& sample : samples)
+            text += (text.empty() ? "" : ", ") + FormatMovementCoefficient(sample.*value);
+        PropertyNode node{ .Key = std::move(key),
+                           .Descriptor = { .Kind = PropertyKind::Plot, .Label = std::move(label),
+                                           .Tooltip = std::move(tooltip), .ReadOnly = true },
+                           .Value = std::move(text) };
+        return node;
+    };
+    nodes.push_back(plot("jump_arc", "Jump arc", arc.Samples, &MovementSimSample::Height,
+                         "Height above the launch point, from launch until back down"));
+    nodes.push_back(plot("speed_ramp", "Speed ramp", response.Samples, &MovementSimSample::PlanarSpeed,
+                         "Planar speed from standing, stick held forward"));
     return nodes;
 }

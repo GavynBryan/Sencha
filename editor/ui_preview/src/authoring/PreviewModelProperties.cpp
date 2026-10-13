@@ -1,7 +1,7 @@
 #include "authoring/PreviewModelProperties.h"
-#include "presenters/RowControls.h"
 
 #include "authoring/UiPreviewSession.h"
+#include "presenters/RowControls.h"
 #include "properties/SettingProperties.h"
 
 #include <array>

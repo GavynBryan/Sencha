@@ -1,11 +1,13 @@
 #include "actions/ActionCatalog.h"
-#include "presenters/RowControls.h"
 #include "actions/ActionContext.h"
-#include "properties/SettingProperties.h"
 #include "presenters/PropertySheet.h"
+#include "presenters/RowControls.h"
+#include "properties/SettingProperties.h"
+#include "ui/DocumentLengths.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <map>
 #include <string>
@@ -393,4 +395,32 @@ TEST(PropertySheet, AnAssetReadsAsItsFileNameAndKeepsItsPath)
     EXPECT_EQ(rows[0].Value, "asset://meshes/baked/brush_14_fd676.smesh") << "the path is what a pick compares";
     EXPECT_EQ(rows[0].Parts, (std::vector<std::string>{ "brush_14_fd676.smesh" }));
     EXPECT_TRUE(rows[1].Parts.empty()) << "nothing held reads as none";
+}
+
+namespace
+{
+class Curve final : public ReadOnlyPropertySource
+{
+public:
+    [[nodiscard]] std::vector<PropertyNode> Nodes() const override
+    {
+        return { PropertyNode{ .Key = "arc",
+                               .Descriptor = { .Kind = PropertyKind::Plot, .Label = "Arc", .ReadOnly = true },
+                               .Value = "0, 1, 2, 4, 2, 1, 0" } };
+    }
+};
+} // namespace
+
+TEST(PropertySheet, APlottedValueIsBarsScaledToItsLargestAndNothingToEdit)
+{
+    PropertySheet sheet;
+    Curve curve;
+    const std::vector<UiRow> rows = sheet.Present(curve);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows.front().Control, RowControls::Plot);
+    EXPECT_FALSE(rows.front().Editable);
+    EXPECT_TRUE(rows.front().Value.empty()) << "the samples are drawn, not read out";
+    ASSERT_FALSE(rows.front().Parts.empty());
+    EXPECT_NE(std::ranges::find(rows.front().Parts, PercentLength(1.0)), rows.front().Parts.end())
+        << "the largest sample fills its bar";
 }

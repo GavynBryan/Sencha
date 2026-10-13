@@ -113,6 +113,19 @@
 .setting_long { height: 80dp; }
 .setting_color { display: flex; flex: 1; align-items: center; gap: 6dp; }
 .swatch { display: block; width: 20dp; height: 20dp; border-width: 1dp; border-radius: 2dp; }
+/* A value along a span, as bars rising from its foot. */
+.setting_plot
+{
+    display: flex;
+    flex: 1;
+    align-items: flex-end;
+    gap: 1dp;
+    height: 36dp;
+    border-width: 1dp;
+    border-radius: 2dp;
+    padding: 2dp;
+}
+.plot_bar { display: block; flex: 1 1 0dp; min-height: 1dp; }
 .setting.heading
 {
     margin-top: 6dp;

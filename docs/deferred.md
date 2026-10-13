@@ -277,20 +277,6 @@ do the work and delete the entry.
 - **Trigger:** the owner's walkthrough of the Materials workspace, or a material
   with several texture slots being filled one after another.
 
-## The movement response curves
-
-- **What:** the movement profile's Response section gives the jump and speed
-  response as numbers (jump height, time to apex, hang time, hop distance, top
-  speed, time to top speed, stopping distance). The ImGui panel also plotted
-  the jump arc's height and the speed ramp over time; nothing draws those
-  curves now.
-- **Where:** `editor/data_editor/src/movement/MovementPreviewProperties.cpp`
-  has the samples (`MovementJumpArc::Samples`,
-  `MovementSpeedResponse::Samples`); a curve would be a small host image or a
-  row the sheet draws as a polyline.
-- **Trigger:** tuning a jump's shape rather than its height and hang time, or
-  the Animation workspace's fact plots (M13), which need the same drawing.
-
 ## Engine content on the Shelf
 
 - **What:** the Shelf lists the project's content roots only. An asset field

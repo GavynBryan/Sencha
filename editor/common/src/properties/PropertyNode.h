@@ -19,6 +19,7 @@ enum class PropertyKind : std::uint8_t
     Vector,       // several numbers edited together, "x, y, z"
     Color,
     Asset,
+    Plot,         // a value sampled at even steps, read-only: the samples, "a, b, c"
     Unsupported,  // shown for completeness, never edited
 };
 

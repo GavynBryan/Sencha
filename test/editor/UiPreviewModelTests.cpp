@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
-#include "presenters/RowControls.h"
 
 #include "authoring/UiPreviewModel.h"
 #include "authoring/UiPreviewSession.h"
+#include "presenters/RowControls.h"
 
 #include <app/OptionsPage.h>
 #include <assets/runtime/RuntimeAssets.h>

@@ -1,6 +1,7 @@
 #include "shell/TimelineDeck.h"
 
 #include "actions/ActionContext.h"
+#include "presenters/PlotPeaks.h"
 #include "ui/DocumentLengths.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/WorkspaceHost.h"
@@ -102,26 +103,6 @@ std::optional<TimelineDrag> DragPhase(std::string_view phase)
 }
 
 } // namespace
-
-std::vector<double> TimelinePlotPeaks(std::span<const TimelineSample> samples, double start, double end,
-                                      std::size_t bars)
-{
-    std::vector<double> peaks(bars, 0.0);
-    double largest = 0.0;
-    for (const TimelineSample& sample : samples)
-        largest = std::max(largest, std::abs(sample.Value));
-    if (largest <= 0.0 || end <= start || bars == 0)
-        return peaks;
-    for (const TimelineSample& sample : samples)
-    {
-        const double fraction = (sample.Time - start) / (end - start);
-        if (fraction < 0.0 || fraction > 1.0)
-            continue;
-        const std::size_t bar = std::min(bars - 1, static_cast<std::size_t>(fraction * static_cast<double>(bars)));
-        peaks[bar] = std::max(peaks[bar], std::abs(sample.Value) / largest);
-    }
-    return peaks;
-}
 
 TimelineDeck::TimelineDeck(UiService& ui, UiSurfaceId surface, WorkspaceHost& workspaces,
                            ActionContextStack& actions, PresentationId presentation)
@@ -258,7 +239,7 @@ void TimelineDeck::Publish(const WorkspaceTimelineFacet& timeline)
             piece.Parts = { PercentLength(start), PercentLength(std::clamp(at(stretch.End), start, 1.0) - start), top };
             spans.push_back(std::move(piece));
         }
-        const std::vector<double> peaks = TimelinePlotPeaks(lane.Samples, timeline.Start, timeline.End, kPlotBars);
+        const std::vector<double> peaks = PlotPeaks(lane.Samples, timeline.Start, timeline.End, kPlotBars);
         for (std::size_t bar = 0; bar < peaks.size(); ++bar)
         {
             if (peaks[bar] <= 0.0)
