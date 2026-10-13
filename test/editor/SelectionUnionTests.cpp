@@ -173,7 +173,7 @@ TEST_F(SelectionUnionTest, RemovingAndSpreadingActOnTheSelectionAsOneStep)
 
 TEST_F(SelectionUnionTest, AddingAComponentGivesItToEveryOneAsOneStep)
 {
-    EXPECT_EQ(Components.Act("components", "add", "Spot Light"), PropertyEditResult::Applied);
+    EXPECT_EQ(Components.Act("components", "add", "SpotLight"), PropertyEditResult::Applied);
     for (const EntityId entity : { First, Second, Third })
         EXPECT_NE(Scene().GetRegistry().Components.TryGet<SpotLightComponent>(entity), nullptr);
     Commands.Undo();
