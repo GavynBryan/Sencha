@@ -129,6 +129,28 @@ TEST(Plane, StreamOutput)
 	EXPECT_EQ(oss.str(), "{Normal: (0, 1, 0), D: -5}");
 }
 
+TEST(Plane, ThreePlanesMeetAtOnePoint)
+{
+	const Planef x = Planef::FromNormalAndPoint(Vec3d(1.0f, 0.0f, 0.0f), Vec3d(2.0f, 0.0f, 0.0f));
+	const Planef y = Planef::FromNormalAndPoint(Vec3d(0.0f, 1.0f, 0.0f), Vec3d(0.0f, -3.0f, 0.0f));
+	const Planef slanted = Planef::FromNormalAndPoint(Vec3d(0.0f, 1.0f, 1.0f).Normalized(), Vec3d(0.0f, 0.0f, 4.0f));
+	const std::optional<Vec3d> point = IntersectPlanes(x, y, slanted);
+	ASSERT_TRUE(point.has_value());
+	EXPECT_NEAR(point->X, 2.0f, 1e-5f);
+	EXPECT_NEAR(point->Y, -3.0f, 1e-5f);
+	EXPECT_NEAR(point->Z, 7.0f, 1e-5f);
+	for (const Planef* plane : { &x, &y, &slanted })
+		EXPECT_NEAR(plane->SignedDistanceTo(*point), 0.0f, 1e-5f);
+}
+
+TEST(Plane, ParallelPlanesShareNoPoint)
+{
+	const Planef a(Vec3d(0.0f, 1.0f, 0.0f), 0.0f);
+	const Planef b(Vec3d(0.0f, 1.0f, 0.0f), -2.0f);
+	const Planef c(Vec3d(1.0f, 0.0f, 0.0f), 0.0f);
+	EXPECT_FALSE(IntersectPlanes(a, b, c).has_value());
+}
+
 // --- Line ---
 
 TEST(Line, SignedDistanceAndClosestPoint)

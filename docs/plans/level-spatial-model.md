@@ -887,6 +887,15 @@ of the real model, with spaces included from the start.
   draws them translucent with their edges from the retained draw set, in every
   shading mode, for the focus level; context zones do not draw their volumes
   yet. Floor plans show spaces once the space operations land.
+- `GenerateShell` is the pure kernel: slab corners are three-plane
+  intersections of the face's inner or outer plane with the join planes of its
+  two edges, so non-convex faces need no special case. A refusal clears every
+  slab. Integration (next) mints the slabs as meshes of the space's own brush
+  evaluation, each with a solid role and a face map whose inner face points at
+  its volume face, so baking, drawing, picking ("a slab click selects the
+  space; a face edit resolves to the volume face") and the cook reuse the piece
+  machinery. The shell stage is cached per space by a content hash of its own
+  inputs, never by the brush store's revision slot.
 
 ### M2: work live, and widen the vocabulary
 

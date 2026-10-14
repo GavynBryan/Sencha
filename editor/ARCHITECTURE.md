@@ -202,7 +202,7 @@ Level editor (`editor/level_editor/src/`):
 | --- | --- | --- |
 | `app/` | The composition root (`LevelWorkspace`) and `EditorCookRuntime` (the cook session, the player it feeds, and the serials that hand one to the other). | -- |
 | `workspace/` | The per-document authoring hub (`EditorWorkspace`, `BrushManipulationSink`) plus the mechanisms it composes: `WorkspaceInteractionRuntime`, `PendingBridgeEdit`, `PendingElementEdit`, `SelectionActions`, `GridEditing`, `EscapePolicy`. | -- |
-| `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation. Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `editmodes`, interactions, and the test suite. | -- |
+| `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation, and `ShellGeneration` (a volume's walls: one slab per face, bounded by the join rules, or a refusal naming the face). Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `editmodes`, interactions, and the test suite. | -- |
 | `input/` | Viewport-coupled input (`ViewportNavigation`, `ViewportToolDispatcher`, `SdlEventTranslation`). | -- |
 | `editmodes/` | Transform gizmos and manipulator sessions (`TranslateManipulator`, `BoundsManipulator`, `EditSessionHost`). | manipulators |
 | `meshedit/` | Polygon mesh-editing verbs (`MeshEditService`). | `IMeshEditTarget` |

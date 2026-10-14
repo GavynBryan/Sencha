@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iosfwd>
+#include <optional>
 
 #include <math/Vec.h>
 
@@ -25,5 +26,10 @@ struct Plane
 };
 
 std::ostream& operator<<(std::ostream& os, const Plane& plane);
+
+// The one point on all three planes; nullopt when two are parallel or all three
+// share a line, judged by the triple product of the normals against `epsilon`.
+[[nodiscard]] std::optional<Vec3d> IntersectPlanes(const Plane& a, const Plane& b, const Plane& c,
+                                                   float epsilon = 1e-6f);
 
 using Planef = Plane;
