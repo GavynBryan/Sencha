@@ -73,6 +73,15 @@ namespace
         return first;
     }
 
+    bool HoldsSubject(const World& world, EntityId participant, EntityId subject)
+    {
+        const ParticipantControl* held = world.IsAlive(participant)
+            ? world.TryGet<ParticipantControl>(participant)
+            : nullptr;
+        return held != nullptr
+            && (held->Body == subject || held->ControlSubject == subject);
+    }
+
     // False means the participant went out from under us. The control pointer
     // is re-read on both sides of ApplyInputReference because that call adds or
     // removes a component, and an archetype move relocates rows.
@@ -89,6 +98,19 @@ namespace
         control->ControlSubject = subject;
         return true;
     }
+}
+
+EntityId ParticipantWithBody(const World& world, EntityId body)
+{
+    EntityId found;
+    if (!TracksParticipants(world) || !body.IsValid())
+        return found;
+    world.ForEachComponent<ParticipantControl>(
+        [&](EntityId participant, const ParticipantControl& held) {
+            if (held.Body == body)
+                found = participant;
+        });
+    return found;
 }
 
 EntityId LocalParticipantOf(const World& world)
@@ -226,20 +248,64 @@ ParticipantBodyChange ParticipantLifecycle::RequestBody(
         return result;
     }
 
-    // Providing a body is structural and the policy is the game's, so the
-    // participant it was asked for can be gone by the time it answers. A body
-    // that did not end up bound is destroyed rather than reported as assigned:
-    // nothing refers to it and nothing drives it, so leaving it would stand a
-    // second copy of a player wherever the game spawns them, for good.
-    //
-    // The condition is where the subject actually landed rather than whether
-    // the call changed anything, so a policy that hands back the entity this
-    // participant already drives keeps it.
+    const ParticipantBodyChange bound = Bind(world, participant, body);
+    if (bound.Status == ParticipantBodyStatus::Assigned
+        || bound.Status == ParticipantBodyStatus::InvalidBody
+        || bound.Status == ParticipantBodyStatus::BodyInUse
+        || HoldsSubject(world, participant, body))
+    {
+        return bound;
+    }
+
+    // The policy's answer is the lifecycle's, and the participant it was asked
+    // for can be gone by the time it answers. Nothing refers to an unbound
+    // answer, so leaving it would stand a second copy of a player for good.
+    world.DestroyEntity(body);
+    result.Status = ParticipantBodyStatus::Unavailable;
+    return result;
+}
+
+ParticipantBodyChange ParticipantLifecycle::AssignBody(
+    World& world, EntityId participant, EntityId body)
+{
+    return Bind(world, participant, body);
+}
+
+ParticipantBodyChange ParticipantLifecycle::Bind(
+    World& world, EntityId participant, EntityId body)
+{
+    ParticipantBodyChange result;
+    result.Participant = participant;
+    if (!TracksParticipants(world) || !world.IsAlive(participant))
+        return result;
+    const ParticipantControl* held = world.TryGet<ParticipantControl>(participant);
+    if (held == nullptr)
+        return result;
+    if (held->Body.IsValid() && world.IsAlive(held->Body))
+    {
+        result.Status = ParticipantBodyStatus::AlreadyAssigned;
+        result.Body = held->Body;
+        return result;
+    }
+    if (!body.IsValid() || !world.IsAlive(body)
+        || world.HasComponent<ParticipantControl>(body))
+    {
+        result.Status = ParticipantBodyStatus::InvalidBody;
+        return result;
+    }
+    // A living body of this participant returned AlreadyAssigned above.
+    if (ParticipantWithBody(world, body).IsValid())
+    {
+        result.Status = ParticipantBodyStatus::BodyInUse;
+        return result;
+    }
+
+    // Where the subject landed, not whether the call changed anything: a body
+    // this participant already drives is kept.
     result.Control = SetControlSubject(world, participant, body);
     ParticipantControl* bound = world.TryGet<ParticipantControl>(participant);
     if (bound == nullptr || bound->ControlSubject != body)
     {
-        world.DestroyEntity(body);
         result.Status = ParticipantBodyStatus::Unavailable;
         return result;
     }

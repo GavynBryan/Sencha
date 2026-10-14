@@ -84,21 +84,20 @@ check "ContentMount reaches outside the asset layer" \
       "$ENGINE/include/assets/runtime/ContentMount.h" \
       "$ENGINE/src/assets/runtime/ContentMount.cpp"
 
-# F. Where a body comes from is nobody's business below app/. The participant
-# layer asks a policy for a body and never learns that it was a scene spawn;
-# the spawn service publishes groups and never learns that one was a body.
-# BodySpawns is the one place both are known, and it knows
-# nothing else: no session, no camera, no input, no zone policy.
+# F. Where a body comes from is decided above both participant/ and
+# runtime/spawn/. The participant layer binds whatever it is handed and never
+# learns that it was a scene spawn; the spawn service publishes groups and never
+# learns that one was a body. participant_spawn/ is the one place both are
+# known, and it knows nothing else: no session, no camera, no input, no zone.
 check "participant/ learns how a body is produced" \
-      '#include[[:space:]]*["<](runtime/spawn|world/scene|app)/' \
+      '#include[[:space:]]*["<](runtime/spawn|world/scene|participant_spawn|app)/' \
       "$ENGINE/include/participant" "$ENGINE/src/participant"
 check "runtime/spawn/ learns what a participant is" \
-      '#include[[:space:]]*["<]participant/' \
+      '#include[[:space:]]*["<](participant|participant_spawn)/' \
       "$ENGINE/include/runtime/spawn" "$ENGINE/src/runtime/spawn"
-check "BodySpawns decides a game policy" \
-      '#include[[:space:]]*["<](net|camera|controller|input|zone|core/config)/' \
-      "$ENGINE/include/app/BodySpawns.h" \
-      "$ENGINE/src/app/BodySpawns.cpp"
+check "participant_spawn/ decides a game policy" \
+      '#include[[:space:]]*["<](net|camera|controller|input|zone|core/config|app)/' \
+      "$ENGINE/include/participant_spawn" "$ENGINE/src/participant_spawn"
 
 # G. Spatial queries read world state and answer; they never act on it or
 # present it. Candidate evaluation composes navigation, physics and ECS reads,

@@ -6,7 +6,7 @@
 #include "ArenaScore.h"
 #include "ArenaSessionPolicy.h"
 
-#include <app/BodySpawns.h>
+#include <participant_spawn/ParticipantBodySpawns.h>
 #include <assets/data/DataAssetHandle.h>
 #include <authored/AuthoredApi.h>
 
@@ -40,10 +40,10 @@ private:
     [[nodiscard]] ArenaSessionPolicy& Session();
     void InstallScore(Engine& engine);
 
-    // The engine's book on this game's prefab body requests. Closed in
+    // This game's prefab body requests in flight. Closed in
     // OnShutdown, ahead of the session whose settings its callbacks read;
     // kept, closed, until the next OnStart replaces it.
-    std::optional<BodySpawns> Bodies;
+    std::optional<ParticipantBodySpawns> Bodies;
 
     // Reset in OnShutdown, while the dispatchers still exist.
     ArenaScoreOperation Score;
