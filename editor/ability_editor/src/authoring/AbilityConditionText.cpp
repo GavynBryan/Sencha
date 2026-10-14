@@ -102,6 +102,8 @@ std::string AbilityConditionText(const JsonValue& data, const JsonValue& conditi
         return std::format("{} {}", LocalName(data, ReadMemberString(*body, "of")), Compared(*body));
     if (const JsonValue* body = FindMember(condition, "hit"); body != nullptr && body->IsString())
         return std::format("{} struck", LocalName(data, body->AsString()));
+    if (const JsonValue* body = FindMember(condition, "target_lost"); body != nullptr && body->IsString())
+        return std::format("{} lost", LocalName(data, body->AsString()));
     if (const JsonValue* body = FindMember(condition, "entity"))
     {
         const JsonValue* of = FindMember(*body, "of");

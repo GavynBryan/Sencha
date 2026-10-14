@@ -62,6 +62,8 @@ enum class LeaseStep : std::uint8_t
     None,
     Acquire,
     Release,
+    // Accepted while the owner's hold goes on; sent only to a lease that Completes.
+    Probe,
 };
 
 [[nodiscard]] const char* VerbAdmissionName(VerbAdmission admission);

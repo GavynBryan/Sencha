@@ -187,6 +187,23 @@ VerbAdmission VerbDispatcher::ReleaseLease(VerbId lease, const LeaseOwner& owner
     return status;
 }
 
+bool VerbDispatcher::LeaseHolds(VerbId lease, const LeaseOwner& owner)
+{
+    const VerbDefinition* definition = Verbs.IsLive(lease) ? Verbs.Get(lease) : nullptr;
+    if (definition == nullptr || definition->Kind != VerbKind::Lease || !owner.IsSet())
+        return false;
+    if (!definition->Completes || Dispatching)
+        return true;
+    Implementation* entry = Find(lease);
+    if (entry == nullptr || entry->Revision != Verbs.Revision(lease))
+        return false;
+    VerbInvocation invocation;
+    invocation.Verb = lease;
+    invocation.Owner = owner;
+    invocation.Step = LeaseStep::Probe;
+    return Call(*entry, invocation) == VerbAdmission::Accepted;
+}
+
 VerbInvocationResult VerbDispatcher::Dispatch(const CompiledVerbBinding& binding,
                                               std::span<const AuthoredValue> inputs,
                                               const VerbInvocationSource& source,

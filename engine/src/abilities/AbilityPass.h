@@ -80,6 +80,8 @@ public:
                  std::uint8_t triggerAction, EntityId instigator);
 
     void Run(const AbilityActor& actor, std::size_t slot);
+    // Every hold of the record's phase that can complete has, and it holds one.
+    [[nodiscard]] bool HoldsCompleted(const AbilityActor& actor, std::size_t slot);
     void End(const AbilityActor& actor, std::size_t slot, AbilityEndReason reason, std::uint16_t element = 0xFFFF);
 
     void Sweep(const AbilityActor& actor);

@@ -105,6 +105,10 @@ public:
     // unbound provider holds nothing.
     VerbAdmission ReleaseLease(VerbId lease, const LeaseOwner& owner, const VerbInvocationSource& source = {});
 
+    // Whether what `owner` holds through `lease` goes on: always, for a lease that
+    // never completes; otherwise as its provider answers. Mints and traces nothing.
+    [[nodiscard]] bool LeaseHolds(VerbId lease, const LeaseOwner& owner);
+
     // Where an entity constant resolves at each invocation. Borrowed and
     // outlived by its owner; null means a binding naming an entity is refused
     // with UnresolvedReference, never dispatched with an invalid handle.

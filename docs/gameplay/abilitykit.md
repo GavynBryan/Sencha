@@ -326,11 +326,16 @@ An ability is content: an `ability.definition` data asset
 
 - **Activation, continuation, cancellation.** Three keyed condition lists: what
   must hold to start, what must keep holding, and what ends a running activation.
+  A `target_lost` condition holds once the entity an `entity` or `hit` local named
+  has ended; as a `cancel_on` entry it ends the activation `TargetLost`.
 - **Phases.** Each has `enter` ops, an optional `while` pulse (`every` ticks),
   `hold` leases acquired on entry and released on exit, `exit` ops (run on a
   transition, never on a cancel), `present` cues, phase-scoped `continue`
-  conditions and ordered `then` transitions (`on: release`, `on: timeout`, or
-  immediate; `to` a phase or `end`).
+  conditions and ordered `then` transitions (`on: release`, `on: timeout`,
+  `on: complete`, or immediate; `to` a phase or `end`). `complete` waits until
+  every hold of the phase that can finish on its own has (a lease whose
+  definition `Completes`, as a timed `movement.burst` or a `movement.tether` does);
+  a phase that holds none is `complete_unheld`.
 - **Ops.** `invoke` a verb, `query` into a local, `set` a local, `commit` cost
   groups, emit a `cue`, or (in `hold`) a `lease`. Each may carry a `when` guard.
   Arguments come from a constant (the verb-binding forms: `const`, `tag`, `data`,
@@ -410,10 +415,13 @@ advances, in five steps over every actor with grants:
 
 1. **Sweep:** the definition still current, the grant still held, the input source
    unchanged (`InputLost`), continuation and phase `continue` conditions
-   (`ContinuationFailed`), `cancel_on` (`CancelTriggered`).
+   (`ContinuationFailed`), `cancel_on` (`CancelTriggered`, or `TargetLost` for a
+   `target_lost` entry).
 2. **Input:** the edges above.
 3. **Requests:** the queue, in order.
-4. **Advance:** pulses that fell due, then timeouts and condition transitions.
+4. **Advance:** pulses that fell due, then timeouts, completions and condition
+   transitions. A completion is seen the tick after the hold finished, since the
+   movement systems that step the hold run after the pass.
 5. **Linger:** ended records past `ability.present_linger_ticks` are freed.
 
 Every start runs to quiescence before the next edge: enter the phase (acquire its

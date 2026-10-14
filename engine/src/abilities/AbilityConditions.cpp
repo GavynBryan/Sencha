@@ -224,6 +224,13 @@ bool AbilityPass::Holds(const AbilityActor& actor, std::size_t slot, const Abili
         const AbilityLocalValue& hit = actor.Locals(slot).Values[condition.Subject.Local];
         return hit.Set && hit.Hit;
     }
+    case AbilityConditionKind::TargetLost:
+    {
+        if (slot >= kAbilityRecordCapacity)
+            return false;
+        const AbilityLocalValue& held = actor.Locals(slot).Values[condition.Subject.Local];
+        return held.Set && held.Entity.IsValid() && !world.IsAlive(held.Entity);
+    }
     case AbilityConditionKind::Entity:
     {
         const EntityId entity = EntityOf(actor, slot, condition.Subject);

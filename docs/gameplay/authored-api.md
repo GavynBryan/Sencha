@@ -218,6 +218,11 @@ change to any of them moves its revision.
   release from inside a dispatch is `Reentrant`. An effect hold whose owner's
   entity has gone ends in the next lifetime pass; an animation hold in that
   state is reported as orphaned, like any Held request its producer forgot.
+  A lease whose definition `Completes` can finish while still held (a timed
+  burst runs out, a tether's anchor goes); `LeaseHolds(verb, owner)` asks its
+  provider with `Step = Probe`, answered `Accepted` while the hold goes on. A
+  lease that does not complete is never probed, so a provider written before the
+  probe existed never sees one; `Completes` is part of the contract.
 - **Scope.** `Gameplay` or `Cosmetic`. A producer states its own scope in
   `VerbInvocationSource::Scope`, and a cosmetic producer that names a gameplay
   verb is refused (`ScopeMismatch`): presentation can never change simulation.
@@ -251,8 +256,8 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `ability.activate`, `ability.cancel {target, ability}` | verb | gameplay / authority only | a request into the actor's ability queue, or its live records ended |
 | `ability.grant`, `ability.revoke {target, ability, key}` | verb | gameplay / authority only | a `Request`-kind grant for scripts and tests |
 | `time.scale {target, scale}` | lease | gameplay / simulation | the actor's time scaled while held (`docs/core-systems-map.md`) |
-| `movement.burst {target, direction, speed = 10, seconds = 0, rises = false}` | lease | gameplay / simulation | the character driven at a velocity while held, or for `seconds` of its time |
-| `movement.tether {target, anchor?, point?, length = 2, speed = 12}` | lease | gameplay / simulation | the character pulled toward an anchor beyond the rope's length; ends with its anchor entity |
+| `movement.burst {target, direction, speed = 10, seconds = 0, rises = false}` | lease | gameplay / simulation | the character driven at a velocity while held, or for `seconds` of its time; completes when they run out |
+| `movement.tether {target, anchor?, point?, length = 2, speed = 12}` | lease | gameplay / simulation | the character pulled toward an anchor beyond the rope's length; completes when its anchor entity ends |
 | `movement.mode {target, mode}` | lease | gameplay / simulation | a locomotion mode while held, free again on release |
 | `audio.play {clip, gain = 1, bus = "Sfx"}` | verb | cosmetic / presentation | the clip played once |
 | `audio.loop {clip, gain = 1, bus = "Sfx"}` | lease | cosmetic / presentation | the clip looped while held, stopped on release |

@@ -118,6 +118,8 @@ enum class AbilityConditionKind : std::uint8_t
     All,
     Any,
     Not,
+    // The entity an entity or hit local named has ended.
+    TargetLost,
 };
 
 struct AbilityConditionDecl
@@ -132,7 +134,7 @@ struct AbilityConditionDecl
     // Attribute, Local, PhaseTicks, Pulse.
     AbilityCompare Compare = AbilityCompare::AtLeast;
     AbilityValueDecl Value;
-    // Local, Hit: the local. Entity: the entity.
+    // Local, Hit, TargetLost: the local. Entity: the entity.
     AbilityValueDecl Subject;
     // Entity: component identities it must carry.
     std::vector<std::string> Components;
@@ -185,6 +187,8 @@ enum class AbilityTransitionTrigger : std::uint8_t
     Immediate,
     Release,
     Timeout,
+    // Every hold of the phase that can complete has (VerbDefinition::Completes).
+    Complete,
 };
 
 struct AbilityTransitionDecl

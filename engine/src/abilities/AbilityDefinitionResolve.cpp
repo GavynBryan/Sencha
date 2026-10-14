@@ -377,6 +377,7 @@ namespace
                 }
                 break;
             case AbilityConditionKind::Hit:
+            case AbilityConditionKind::TargetLost:
                 condition.Subject.Source = AbilityValueSource::Local;
                 if (const auto found = LocalIndex.find(declared.Subject.Local); found != LocalIndex.end())
                     condition.Subject.Local = found->second;
@@ -565,6 +566,15 @@ namespace
             return ops;
         }
 
+        [[nodiscard]] bool HoldsCompleting(const AbilityPhase& phase) const
+        {
+            const VerbRegistry* verbs = Env.Verbs.Verbs;
+            return verbs != nullptr && std::ranges::any_of(phase.Hold, [&](std::uint16_t op) {
+                const VerbId verb = Out.Ops[op].Binding.Verb;
+                return verb.IsValid() && verbs->IsLive(verb) && verbs->Get(verb)->Completes;
+            });
+        }
+
         void Phases()
         {
             std::unordered_map<std::string, std::uint8_t> index;
@@ -604,6 +614,11 @@ namespace
                         transition.When = Condition(*declaredTransition.When, nullptr);
                     if (const auto to = index.find(declaredTransition.To); to != index.end())
                         transition.To = to->second;
+                    if (transition.Trigger == AbilityTransitionTrigger::Complete && !HoldsCompleting(phase))
+                        Error("complete_unheld", declaredTransition.Key, declaredTransition.Path,
+                              std::format("'{}' holds nothing that completes on its own, so 'on complete' would "
+                                          "never come; hold a timed burst, a tether or another lease that does",
+                                          phase.Name));
                     phase.Then.push_back(std::move(transition));
                 }
                 Out.Phases.push_back(std::move(phase));

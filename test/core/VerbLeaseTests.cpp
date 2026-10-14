@@ -1,6 +1,7 @@
 // What a verb's kind and classification add to dispatch: a lease is acquired for an
-// owner and released by it, an instant verb is never held, and a cosmetic producer
-// cannot reach a gameplay operation.
+// owner and released by it, an instant verb is never held, a cosmetic producer
+// cannot reach a gameplay operation, and only a lease that completes is asked
+// whether a hold goes on.
 
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>
@@ -18,6 +19,7 @@ struct Declared
     VerbKind Kind = VerbKind::Instant;
     AuthoredScope Scope = AuthoredScope::Gameplay;
     AuthoredPrediction Prediction = AuthoredPrediction::AuthorityOnly;
+    bool Completes = false;
 };
 
 bool Declare(VerbRegistry& registry, const Declared& declared)
@@ -27,6 +29,7 @@ bool Declare(VerbRegistry& registry, const Declared& declared)
     definition.Kind = declared.Kind;
     definition.Scope = declared.Scope;
     definition.Prediction = declared.Prediction;
+    definition.Completes = declared.Completes;
     VerbRegistrationScope scope(registry, "test");
     (void)scope.Declare(std::move(definition));
     return scope.Commit();
@@ -42,6 +45,8 @@ public:
         Calls.push_back({ invocation.Step, invocation.Owner, invocation.Arguments != nullptr });
         if (Reenter != nullptr)
             ReentrantStatus = Reenter->ReleaseLease(invocation.Verb, invocation.Owner);
+        if (invocation.Step == LeaseStep::Probe)
+            return Finished ? VerbAdmission::Refused : VerbAdmission::Accepted;
         return VerbAdmission::Accepted;
     }
 
@@ -55,6 +60,7 @@ public:
     std::vector<Call> Calls;
     VerbDispatcher* Reenter = nullptr;
     VerbAdmission ReentrantStatus = VerbAdmission::Accepted;
+    bool Finished = false;
 };
 
 class VerbLeaseTest : public ::testing::Test
@@ -185,4 +191,30 @@ TEST_F(VerbLeaseTest, KindAndClassificationArePartOfTheContract)
     RecordingOperation operation;
     const VerbBindingToken token = dispatcher.Bind(hold, operation);
     EXPECT_EQ(dispatcher.AcquireLease(stale, {}, Holder).Status, VerbAdmission::StaleBinding);
+}
+
+TEST_F(VerbLeaseTest, OnlyALeaseThatCompletesIsAskedWhetherAHoldGoesOn)
+{
+    ASSERT_TRUE(Declare(Verbs, { .Name = "test.hold", .Kind = VerbKind::Lease }));
+    ASSERT_TRUE(Declare(Verbs, { .Name = "test.timed", .Kind = VerbKind::Lease, .Completes = true }));
+    VerbDispatcher dispatcher(Verbs);
+    RecordingOperation held;
+    RecordingOperation timed;
+    const VerbBindingToken heldToken = dispatcher.Bind(Verbs.Find("test.hold"), held);
+    const VerbBindingToken timedToken = dispatcher.Bind(Verbs.Find("test.timed"), timed);
+
+    EXPECT_TRUE(dispatcher.LeaseHolds(Verbs.Find("test.hold"), Holder));
+    EXPECT_TRUE(held.Calls.empty()) << "a lease that never completes is never asked, so an old provider never sees a probe";
+
+    EXPECT_TRUE(dispatcher.LeaseHolds(Verbs.Find("test.timed"), Holder));
+    timed.Finished = true;
+    EXPECT_FALSE(dispatcher.LeaseHolds(Verbs.Find("test.timed"), Holder));
+    ASSERT_EQ(timed.Calls.size(), 2u);
+    EXPECT_EQ(timed.Calls[0].Step, LeaseStep::Probe);
+    EXPECT_EQ(timed.Calls[0].Owner, Holder);
+}
+
+TEST_F(VerbLeaseTest, OnlyALeaseCompletes)
+{
+    EXPECT_FALSE(Declare(Verbs, { .Name = "test.once", .Completes = true }));
 }

@@ -1,7 +1,8 @@
 // Held movement from abilities: a burst drives the character along its aim for a
 // time or while held, a tether pulls it toward an anchor and ends when the anchor
 // goes, a mode lease holds a locomotion mode, and replay steps all of it through
-// the kernel the live tick uses.
+// the kernel the live tick uses. A phase waits on what it holds completing, and
+// an activation ends when the target it grabbed is gone.
 
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
@@ -38,6 +39,7 @@
 #include <movement/components/CharacterMovement.h>
 #include <physics/CharacterMoverPool.h>
 #include <physics/PhysicsWorld.h>
+#include <physics/RigidBodyBinding.h>
 #include <physics/components/CharacterController.h>
 #include <time/ActorTimeSystem.h>
 #include <time/SimClock.h>
@@ -215,6 +217,35 @@ constexpr std::string_view kLunge = R"({
                                    "speed": { "const": 12 }, "seconds": { "const": 0.25 } } } ],
         "then": [ { "key": "t_done", "on": "timeout", "ticks": 40, "to": "end" } ] } ] })";
 
+constexpr std::string_view kLungeThenRecover = R"({
+    "input_default": { "action": "Input.PrimaryFire" },
+    "phases": [ { "key": "p_lunge", "name": "Lunge",
+        "hold": [ { "key": "o_burst", "lease": "movement.burst",
+                    "arguments": { "target": { "port": "actor" }, "direction": { "port": "aim.direction" },
+                                   "speed": { "const": 12 }, "seconds": { "const": 0.25 } } } ],
+        "then": [ { "key": "t_done", "on": "complete", "to": "p_recover" } ] },
+      { "key": "p_recover", "name": "Recover", "then": [ { "key": "t_end", "on": "timeout", "ticks": 30, "to": "end" } ] } ] })";
+
+// Grabs what the aim strikes and is pulled toward it until it is gone.
+constexpr std::string_view kGrapple = R"({
+    "input_default": { "action": "Input.PrimaryFire" },
+    "locals": [ { "key": "l_hit", "name": "Hit", "type": "hit" } ],
+    "cancel_on": [ { "key": "c_lost", "target_lost": "l_hit" } ],
+    "phases": [
+      { "key": "p_aim", "name": "Aim",
+        "enter": [ { "key": "o_trace", "op": "query", "query": "physics.trace", "into": "l_hit",
+                     "arguments": { "origin": { "port": "aim.origin" }, "direction": { "port": "aim.direction" },
+                                    "range": { "const": 30 }, "ignore": { "port": "actor" } } } ],
+        "then": [ { "key": "t_grab", "to": "p_pull",
+                    "when": { "key": "w_hit", "entity": { "of": { "local": "l_hit", "field": "entity" } } } },
+                  { "key": "t_miss", "to": "end" } ] },
+      { "key": "p_pull", "name": "Pull",
+        "hold": [ { "key": "o_tether", "lease": "movement.tether",
+                    "when": { "key": "w_anchor", "entity": { "of": { "local": "l_hit", "field": "entity" } } },
+                    "arguments": { "target": { "port": "actor" },
+                                   "anchor": { "local": "l_hit", "field": "entity" } } } ],
+        "then": [ { "key": "t_free", "on": "complete", "to": "end" } ] } ] })";
+
 constexpr std::string_view kHeldDash = R"({
     "input_default": { "action": "Input.PrimaryFire" },
     "phases": [ { "key": "p_dash", "name": "Dash",
@@ -319,6 +350,65 @@ TEST_F(AbilityMovement, ATetherPullsTowardItsAnchorAndEndsWhenTheAnchorGoes)
     Step();
     EXPECT_FALSE(static_cast<const World&>(Entities).TryGet<TetherSession>(Character)->Owner.IsSet())
         << "its anchor is gone, so it is";
+}
+
+TEST_F(AbilityMovement, APhaseWaitsForItsTimedBurstToComplete)
+{
+    Grant(kLungeThenRecover);
+    Steps(20);
+    Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
+    const AbilityRecord& record = static_cast<const World&>(Entities).TryGet<ActiveAbilities>(Character)->Records[0];
+    Steps(13);
+    EXPECT_EQ(record.Phase, 0u) << "still lunging: the burst has time left";
+    Steps(4);
+    EXPECT_EQ(record.Phase, 1u) << "the burst ran its quarter second, so the lunge completed";
+    EXPECT_EQ(record.State, AbilityRecordState::Live);
+}
+
+TEST_F(AbilityMovement, CompletingNeedsAHoldThatCompletes)
+{
+    AbilityDeclaration declaration;
+    std::vector<AssetRef> dependencies;
+    std::vector<AbilityDiagnostic> diagnostics;
+    ASSERT_TRUE(CompileAbilityDeclaration(*JsonParse(R"({ "phases": [ { "key": "p_slow", "name": "Slow",
+        "hold": [ { "key": "o_scale", "lease": "time.scale",
+                    "arguments": { "target": { "port": "actor" }, "scale": { "const": 0.5 } } } ],
+        "then": [ { "key": "t_done", "on": "complete", "to": "end" } ] } ] })"),
+                                          declaration, dependencies, diagnostics));
+    AbilityDefinition definition;
+    EXPECT_FALSE(ResolveAbilityDeclaration(declaration, "asset://abilities/slow.sdata",
+                                           MakeAbilityResolveEnvironment(Entities), definition, diagnostics));
+    EXPECT_TRUE(std::ranges::any_of(diagnostics, [](const AbilityDiagnostic& diagnostic) {
+        return diagnostic.Code == "complete_unheld" && diagnostic.ElementKey == "t_done";
+    })) << "time.scale is held until let go, so 'on complete' would never come";
+}
+
+TEST_F(AbilityMovement, AGrappleEndsWhenWhatItGrabbedIsGone)
+{
+    Bindings->BindPhysics(Physics, *Queries);
+    const EntityId anchor = Entities.CreateEntity();
+    Entities.AddComponent<LocalTransform>(
+        anchor, LocalTransform{ Transform3f{ Vec3d(0.0f, 1.5f, -8.0f), Quatf::Identity(), Vec3d::One() } });
+    BodyDesc post;
+    post.Shape = CollisionShape::MakeBox(Vec3d(0.5f, 0.5f, 0.5f));
+    post.Position = Vec3d(0.0f, 1.5f, -8.0f);
+    post.Motion = BodyMotion::Static;
+    post.Layer = CollisionLayer::Static;
+    post.UserData = PackEntity(anchor);
+    (void)Physics.AddBody(post);
+    Grant(kGrapple);
+    Steps(10);
+    Step({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
+    Steps(5);
+    const AbilityRecord& record = static_cast<const World&>(Entities).TryGet<ActiveAbilities>(Character)->Records[0];
+    ASSERT_EQ(record.Phase, 1u) << "the trace struck the post, so it pulls";
+    EXPECT_TRUE(static_cast<const World&>(Entities).TryGet<TetherSession>(Character)->Owner.IsSet());
+
+    Entities.DestroyEntity(anchor);
+    Step();
+    EXPECT_EQ(record.State, AbilityRecordState::Lingering);
+    EXPECT_EQ(record.EndReason, AbilityEndReason::TargetLost) << "what it grabbed is gone";
+    EXPECT_FALSE(static_cast<const World&>(Entities).TryGet<TetherSession>(Character)->Owner.IsSet());
 }
 
 TEST_F(AbilityMovement, AModeLeaseHoldsTheModeUntilLetGoOrItsHolderGoes)

@@ -2,7 +2,10 @@
 
 #include <authored/VerbInvocation.h>
 #include <authored/VerbRegistry.h>
+#include <ecs/Query.h>
+#include <movement/components/HeldMotion.h>
 
+#include <optional>
 #include <string_view>
 
 class World;
@@ -17,7 +20,8 @@ inline constexpr std::string_view kMovementModeLease = "movement.mode";
 void DeclareMovementVerbs(VerbRegistrationScope& scope);
 
 // The movement leases' provider: each holds one of a character's motion slots
-// (movement/components/HeldMotion.h) for its owner, and lets it go.
+// (movement/components/HeldMotion.h) for its owner, and lets it go. A timed burst
+// completes when its time is up, and a tether when its anchor goes.
 class MovementOperations
 {
 public:
@@ -31,7 +35,13 @@ public:
     VerbAdmission Mode(const VerbInvocation& invocation);
 
 private:
+    // Whether `owner` still holds a slot of `T`, looked for on its own entity first.
+    template <typename T>
+    [[nodiscard]] bool Holds(std::optional<Query<Read<T>>>& everyone, const LeaseOwner& owner);
+
     World* Entities;
+    std::optional<Query<Read<MotionBursts>>> Bursts;
+    std::optional<Query<Read<TetherSession>>> Tethers;
 };
 
 inline VerbAdmission InvokeMovementBurst(MovementOperations& operations, const VerbInvocation& invocation)

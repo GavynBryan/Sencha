@@ -343,3 +343,8 @@ burst and tether slots.
 `AnimationComponents`, composed under the new `AnimRigPart::Presentation`;
 `AnimLayerRequests` and the `anim.present` verb (`AnimRequestOperations::Present`)
 are new; `CollectAnimEvents` takes the presentation set beside the simulation's.
+
+**Completion and lost targets.** `VerbDefinition` gains `Completes` (part of the
+contract), `LeaseStep` gains `Probe`, and `VerbDispatcher::LeaseHolds` is new;
+`movement.burst` and `movement.tether` complete. `AbilityTransitionTrigger` gains
+`Complete` and `AbilityConditionKind` gains `TargetLost`.

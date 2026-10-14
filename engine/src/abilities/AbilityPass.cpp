@@ -216,6 +216,25 @@ void AbilityPass::Pulse(const AbilityActor& actor, std::size_t slot, const Abili
     record.NextPulse += phase.PulseEvery;
 }
 
+bool AbilityPass::HoldsCompleted(const AbilityActor& actor, std::size_t slot)
+{
+    if (Host.Verbs == nullptr)
+        return false;
+    const VerbRegistry& verbs = Host.Verbs->Registry();
+    const AbilityRecord& record = actor.Record(slot);
+    bool completing = false;
+    for (std::size_t i = 0; i < record.LeaseCount; ++i)
+    {
+        const AbilityHeldLease& held = record.Leases[i];
+        if (!verbs.IsLive(held.Lease) || !verbs.Get(held.Lease)->Completes)
+            continue;
+        completing = true;
+        if (Host.Verbs->LeaseHolds(held.Lease, OwnerOf(actor, slot, held.Op)))
+            return false;
+    }
+    return completing;
+}
+
 void AbilityPass::Run(const AbilityActor& actor, std::size_t slot)
 {
     std::uint32_t steps = 0;
@@ -234,7 +253,8 @@ void AbilityPass::Run(const AbilityActor& actor, std::size_t slot)
             const AbilityTransition& transition = phase.Then[t];
             const bool triggered = transition.Trigger == AbilityTransitionTrigger::Immediate
                 || (transition.Trigger == AbilityTransitionTrigger::Release && actor.Record(slot).Released)
-                || (transition.Trigger == AbilityTransitionTrigger::Timeout && ticks >= transition.Ticks);
+                || (transition.Trigger == AbilityTransitionTrigger::Timeout && ticks >= transition.Ticks)
+                || (transition.Trigger == AbilityTransitionTrigger::Complete && HoldsCompleted(actor, slot));
             if (!triggered)
                 continue;
             if (transition.When != kAbilityNoCondition && !Holds(actor, slot, *definition, transition.When))
@@ -571,7 +591,8 @@ void AbilityPass::Sweep(const AbilityActor& actor)
         {
             if (Holds(actor, slot, *definition, trigger))
             {
-                End(actor, slot, AbilityEndReason::CancelTriggered, trigger);
+                const bool lost = definition->Conditions[trigger].Kind == AbilityConditionKind::TargetLost;
+                End(actor, slot, lost ? AbilityEndReason::TargetLost : AbilityEndReason::CancelTriggered, trigger);
                 break;
             }
         }

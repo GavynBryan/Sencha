@@ -38,9 +38,10 @@ namespace
         { "simulation", AbilityTimeDomain::Simulation },
     } };
 
-    constexpr std::array<Named<AbilityTransitionTrigger>, 2> kTriggers{ {
+    constexpr std::array<Named<AbilityTransitionTrigger>, 3> kTriggers{ {
         { "release", AbilityTransitionTrigger::Release },
         { "timeout", AbilityTransitionTrigger::Timeout },
+        { "complete", AbilityTransitionTrigger::Complete },
     } };
 
     constexpr std::array<Named<AbilityCostTiming>, 2> kCostTimings{ {
@@ -73,7 +74,7 @@ namespace
         { "cue", AbilityOpKind::Cue },
     } };
 
-    constexpr std::array<Named<AbilityConditionKind>, 12> kConditionKinds{ {
+    constexpr std::array<Named<AbilityConditionKind>, 13> kConditionKinds{ {
         { "tags", AbilityConditionKind::Tags },
         { "attribute", AbilityConditionKind::Attribute },
         { "local", AbilityConditionKind::Local },
@@ -86,6 +87,7 @@ namespace
         { "all", AbilityConditionKind::All },
         { "any", AbilityConditionKind::Any },
         { "not", AbilityConditionKind::Not },
+        { "target_lost", AbilityConditionKind::TargetLost },
     } };
 
     std::size_t SlotsOf(AbilityLocalType type)
@@ -388,8 +390,11 @@ namespace
                 Comparison(body, out, bodyPath);
                 break;
             case AbilityConditionKind::Hit:
+            case AbilityConditionKind::TargetLost:
                 if (!body.IsString() || body.AsString().empty())
-                    Error("schema", out.Key, bodyPath, "a hit condition names a hit local");
+                    Error("schema", out.Key, bodyPath,
+                          out.Kind == AbilityConditionKind::Hit ? "a hit condition names a hit local"
+                                                                : "a lost target names the local holding it");
                 else
                 {
                     out.Subject.Source = AbilityValueSource::Local;
@@ -1038,11 +1043,16 @@ namespace
             {
             case AbilityConditionKind::Local:
             case AbilityConditionKind::Hit:
+            case AbilityConditionKind::TargetLost:
             {
                 const AbilityLocalType* type = TypeOf(condition.Subject.Local);
                 if (type == nullptr)
                     Report.Error("local_unknown", condition.Key, condition.Path,
                                  std::format("no local '{}'", condition.Subject.Local));
+                else if (condition.Kind == AbilityConditionKind::TargetLost && *type != AbilityLocalType::Entity
+                         && *type != AbilityLocalType::Hit)
+                    Report.Error("local_type", condition.Key, condition.Path,
+                                 std::format("'{}' does not hold one entity to lose", condition.Subject.Local));
                 else if (condition.Kind == AbilityConditionKind::Hit && *type != AbilityLocalType::Hit)
                     Report.Error("local_type", condition.Key, condition.Path,
                                  std::format("'{}' is not a hit", condition.Subject.Local));

@@ -64,6 +64,9 @@ struct VerbDefinition
     VerbKind Kind = VerbKind::Instant;
     AuthoredScope Scope = AuthoredScope::Gameplay;
     AuthoredPrediction Prediction = AuthoredPrediction::AuthorityOnly;
+    // A lease whose hold can finish while still held, as a timed burst does; only
+    // such a lease's provider is asked (LeaseStep::Probe) whether a hold goes on.
+    bool Completes = false;
 };
 
 struct VerbCatalogTraits
@@ -79,7 +82,7 @@ struct VerbCatalogTraits
     static bool ContractsMatch(const VerbDefinition& left, const VerbDefinition& right)
     {
         return left.Kind == right.Kind && left.Scope == right.Scope && left.Prediction == right.Prediction
-            && AuthoredContractsMatch(left.Arguments, right.Arguments);
+            && left.Completes == right.Completes && AuthoredContractsMatch(left.Arguments, right.Arguments);
     }
 };
 

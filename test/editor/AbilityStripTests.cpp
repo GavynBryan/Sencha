@@ -142,6 +142,7 @@ TEST(AbilityConditionText, AGuardReadsAsWhatItChecks)
     const JsonValue data = TwoPhases();
     const auto text = [&](std::string_view json) { return AbilityConditionText(data, *JsonParse(json)); };
     EXPECT_EQ(text(R"({ "hit": "l_hit" })"), "Hit struck");
+    EXPECT_EQ(text(R"({ "target_lost": "l_hit" })"), "Hit lost");
     EXPECT_EQ(text(R"({ "phase_ticks": { "at_least": 6 } })"), "phase ticks \xE2\x89\xA5 6");
     EXPECT_EQ(text(R"({ "entity": { "of": { "local": "l_hit", "field": "entity" }, "has": ["sencha.attribute_set"] } })"),
               "entity(Hit.entity) has sencha.attribute_set");

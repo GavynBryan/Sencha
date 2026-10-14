@@ -471,3 +471,21 @@ do the work and delete the entry.
 - **Trigger:** characters gaining an inner body or character-versus-character
   collision; the two tests are written with that change, against dilated characters
   as well as undilated ones.
+
+## Ending an ability on an authored event
+
+- **What:** `cancel_on` entries that end a running activation when an authored
+  event is published from a source the entry names (the plan's "authored event
+  from a source filter", `docs/plans/abilitykit-2.md` §3.5). Conditions,
+  `target_lost` and the always-on triggers are delivered; this one is not.
+- **Where:** `AbilityPass::Sweep` (`engine/src/abilities/AbilityPass.cpp`) and the
+  condition kinds in `abilities/AbilityDeclaration.h`; events come through
+  `AuthoredEventDispatcher`, which drains once per fixed tick after fixed logic.
+- **Why not now:** the drain runs after the ability pass and is not journaled or
+  replicated, so whether such a cancel is seen the next tick, is authority-only, or
+  is predicted from a client's own events is a design choice no consumer has made;
+  no planned content (the normative charge, CTX modes, Vector abilities, Overclock)
+  ends on an event.
+- **Trigger:** the first ability content that must end when an event is published
+  (a stagger announced by a hit, an interrupt published by a script), which also
+  decides the timing and prediction rule above.

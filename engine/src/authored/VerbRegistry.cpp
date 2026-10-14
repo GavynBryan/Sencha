@@ -13,4 +13,6 @@ void VerbCatalogTraits::Validate(const VerbDefinition& definition, std::vector<s
         errors.push_back(std::format("'{}': a cosmetic verb changes no simulation state to predict", definition.Name));
     if (!cosmetic && definition.Prediction == AuthoredPrediction::Presentation)
         errors.push_back(std::format("'{}': a presentation-predicted verb is cosmetic", definition.Name));
+    if (definition.Completes && definition.Kind != VerbKind::Lease)
+        errors.push_back(std::format("'{}': only a lease is held long enough to complete", definition.Name));
 }

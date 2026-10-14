@@ -1676,3 +1676,18 @@ Deviations from the plan's wording, each for a stated reason:
   `presentation_layer` example in §9 require. AbilityKit's movement abilities use
   the `movement.*` leases, not root motion, so the Loss Function rigs are not
   affected.
+- **8d delivered.** Transitions `on: complete` wait for every hold of the phase
+  whose lease `Completes` to finish, asked through `VerbDispatcher::LeaseHolds`
+  (`LeaseStep::Probe`, sent only to such leases); a timed `movement.burst` and a
+  `movement.tether` complete, and a phase holding nothing that completes is
+  `complete_unheld`. A `target_lost` condition holds once an `entity` or `hit`
+  local's entity has ended, and as a `cancel_on` entry ends the activation
+  `TargetLost`. Headless: a lunge completing into its recovery, the
+  `complete_unheld` refusal, a grapple ending `TargetLost` when what it grabbed
+  goes, and a lease that does not complete never being probed.
+- **Deferral: `cancel_on` on authored events.** No planned content ends on an
+  event, and the timing and prediction of a cancel heard from the event drain
+  (which runs after the pass and is not replicated) is undecided; recorded in
+  `docs/deferred.md`, "Ending an ability on an authored event".
+- **Stage 8 is complete.** Owner check owed: the Workbench's stage with the Timed
+  Movement recipe, and a cue presentation driving `audio.play` in a real shell.

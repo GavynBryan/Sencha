@@ -72,6 +72,7 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     rises.Required = false;
     rises.Default = false;
     burst.Arguments.Children.push_back(std::move(rises));
+    burst.Completes = true;
     (void)scope.Declare(std::move(burst));
 
     VerbDefinition tether = Lease(kMovementTetherLease, "Tether",
@@ -85,6 +86,7 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     tether.Arguments.Children.push_back(std::move(point));
     tether.Arguments.Children.push_back(Number("length", "Length", "Metres of rope.", 2.0, 0.0));
     tether.Arguments.Children.push_back(Number("speed", "Speed", "How fast it pulls, in metres per second.", 12.0, 0.0));
+    tether.Completes = true;
     (void)scope.Declare(std::move(tether));
 
     VerbDefinition mode = Lease(kMovementModeLease, "Locomotion mode",
@@ -94,8 +96,43 @@ void DeclareMovementVerbs(VerbRegistrationScope& scope)
     (void)scope.Declare(std::move(mode));
 }
 
+namespace
+{
+bool HeldBy(const MotionBursts& bursts, const LeaseOwner& owner)
+{
+    return std::ranges::any_of(bursts.Slots, [&](const MotionBurst& burst) { return burst.Owner == owner; });
+}
+
+bool HeldBy(const TetherSession& tether, const LeaseOwner& owner)
+{
+    return tether.Owner == owner;
+}
+} // namespace
+
+template <typename T>
+bool MovementOperations::Holds(std::optional<Query<Read<T>>>& everyone, const LeaseOwner& owner)
+{
+    if (!Entities->IsRegistered<T>())
+        return false;
+    const World& reader = *Entities;
+    if (const T* own = Entities->IsAlive(owner.Entity) ? reader.TryGet<T>(owner.Entity) : nullptr;
+        own != nullptr && HeldBy(*own, owner))
+        return true;
+    if (!everyone)
+        everyone.emplace(*Entities);
+    bool held = false;
+    everyone->ForEachChunk([&](auto& view) {
+        const auto slots = view.template Read<T>();
+        for (std::uint32_t i = 0; i < view.Count() && !held; ++i)
+            held = HeldBy(slots[i], owner);
+    });
+    return held;
+}
+
 VerbAdmission MovementOperations::Burst(const VerbInvocation& invocation)
 {
+    if (invocation.Step == LeaseStep::Probe)
+        return Holds(Bursts, invocation.Owner) ? VerbAdmission::Accepted : VerbAdmission::Refused;
     if (invocation.Step == LeaseStep::Release)
     {
         ForEachHeld<MotionBursts>(*Entities, [&](EntityId, MotionBursts& bursts) {
@@ -132,6 +169,8 @@ VerbAdmission MovementOperations::Burst(const VerbInvocation& invocation)
 
 VerbAdmission MovementOperations::Tether(const VerbInvocation& invocation)
 {
+    if (invocation.Step == LeaseStep::Probe)
+        return Holds(Tethers, invocation.Owner) ? VerbAdmission::Accepted : VerbAdmission::Refused;
     if (invocation.Step == LeaseStep::Release)
     {
         ForEachHeld<TetherSession>(*Entities, [&](EntityId, TetherSession& tether) {
