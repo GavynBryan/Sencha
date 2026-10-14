@@ -237,3 +237,24 @@ dependency that refused it), as does `AssetSystem::Commit`.
 `AssetSystem::RetryStandIns` takes the async task queue, and `StageReload` and
 `PathsById` are new. `RegisterAssetKind` takes a stand-in only for a loader that
 can reload.
+
+## v26
+
+**A body can be assigned as well as asked for.** `Engine::AssignParticipantBody`
+binds an entity the game already has, through the same validation and session
+projection as `RequestParticipantBody`, and never destroys a refused entity.
+`ParticipantBodyStatus` gains `InvalidBody` and `BodyInUse`; a `ProvideBody`
+answer that is a participant or another participant's body is refused rather
+than rebound. `ParticipantWithBody` names the participant holding a body.
+
+**A spawned group can live as long as its root.** `SceneSpawnService::RequestSpawn`
+takes a `SceneSpawnLifetime`; `OwnedByRoot` needs exactly one root record and
+despawns the rest of the group at the pump after its root dies. `Root(id)` names
+the single root a group was published with.
+
+`app/BodySpawns` is replaced by `participant_spawn/ParticipantBodySpawns`. It
+holds pending requests only, hands a landed body over through
+`AssignParticipantBody`, and leaves group lifetime to `OwnedByRoot`, so games no
+longer bind `ReapBody` to it. `participant/`, `participant_spawn/`,
+`runtime/spawn/`, `world/scene/SceneInstanceGroup.h`, and the math headers
+`Transform3f` is built from join the fingerprint.

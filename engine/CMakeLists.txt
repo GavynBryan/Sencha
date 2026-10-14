@@ -355,6 +355,17 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # Navigation queries: a game holds locations, regions, requests, and route
     # buffers by value and reaches the system through Schedule().Get<>().
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/*.h"
+    # Engine holds the participant lifecycle by value behind the inline
+    # Participants(); body results and spawn requests cross by value.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/participant/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/participant_spawn/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/runtime/spawn/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstanceGroup.h"
+    # A spawn's root transform is built by the module and read by the engine.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/math/geometry/3d/Transform3d.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/math/Mat.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/math/Quat.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/math/Vec.h"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)

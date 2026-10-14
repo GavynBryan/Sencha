@@ -213,6 +213,160 @@ TEST(ParticipantLifecycle, ABodyThatCouldNotBeBoundIsDestroyed)
         << "an unbindable body was left standing with nothing driving it";
 }
 
+// A policy cannot give away what is not its to give. The answer used to be
+// rebound regardless, so a buggy policy moved one participant's body under
+// another; and destroying it as "unbound" would kill the first one's body.
+TEST(ParticipantLifecycle, ARequestedBodyHeldByAnotherParticipantIsRefusedAndKept)
+{
+    ParticipantWorld fixture;
+    EntityId answer;
+    fixture.Lifecycle.Policies().ProvideBody =
+        [&](World&, EntityId) { return answer.IsValid() ? answer : fixture.Thing(); };
+    const EntityId owner = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 12 }).Participant;
+    const EntityId other = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 13 }).Participant;
+    answer = fixture.Lifecycle.RequestBody(fixture.Entities, owner).Body;
+    ASSERT_TRUE(answer.IsValid());
+
+    const ParticipantBodyChange change =
+        fixture.Lifecycle.RequestBody(fixture.Entities, other);
+
+    EXPECT_EQ(change.Status, ParticipantBodyStatus::BodyInUse);
+    EXPECT_TRUE(fixture.Entities.IsAlive(answer));
+    EXPECT_EQ(fixture.Control(owner).Body, answer);
+    EXPECT_EQ(fixture.Control(owner).ControlSubject, answer);
+    EXPECT_FALSE(fixture.Control(other).Body.IsValid());
+}
+
+TEST(ParticipantLifecycle, AssigningAnExistingEntityBindsItAsTheBody)
+{
+    ParticipantWorld fixture;
+    const EntityId participant = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 14 }).Participant;
+    const EntityId body = fixture.Thing();
+
+    const ParticipantBodyChange change =
+        fixture.Lifecycle.AssignBody(fixture.Entities, participant, body);
+
+    EXPECT_EQ(change.Status, ParticipantBodyStatus::Assigned);
+    EXPECT_EQ(change.Body, body);
+    EXPECT_EQ(fixture.Control(participant).Body, body);
+    EXPECT_EQ(fixture.Control(participant).ControlSubject, body);
+    const InputActionSourceRef* ref = fixture.Entities.TryGet<InputActionSourceRef>(body);
+    ASSERT_NE(ref, nullptr);
+    EXPECT_EQ(ref->Source, InputActionSourceId{ 14 });
+}
+
+// Every refusal leaves the offered entity alive and nothing rebound: the
+// caller still owns it.
+TEST(ParticipantLifecycle, ARefusedAssignmentDestroysNothingAndChangesNothing)
+{
+    ParticipantWorld fixture;
+    const EntityId participant = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 15 }).Participant;
+    const EntityId other = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 16 }).Participant;
+    const EntityId othersBody = fixture.Thing();
+    ASSERT_EQ(fixture.Lifecycle.AssignBody(fixture.Entities, other, othersBody).Status,
+              ParticipantBodyStatus::Assigned);
+    const EntityId dead = fixture.Thing();
+    fixture.Entities.DestroyEntity(dead);
+    const EntityId gone = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 17 }).Participant;
+    fixture.Entities.DestroyEntity(gone);
+
+    struct Case
+    {
+        const char* Name;
+        EntityId Participant;
+        EntityId Offered;
+        ParticipantBodyStatus Expected;
+    };
+    const EntityId spare = fixture.Thing();
+    const Case cases[] = {
+        { "dead entity", participant, dead, ParticipantBodyStatus::InvalidBody },
+        { "invalid entity", participant, EntityId{}, ParticipantBodyStatus::InvalidBody },
+        { "a participant", participant, other, ParticipantBodyStatus::InvalidBody },
+        { "another's body", participant, othersBody, ParticipantBodyStatus::BodyInUse },
+        { "gone participant", gone, spare, ParticipantBodyStatus::InvalidParticipant },
+        { "not a participant", spare, fixture.Thing(), ParticipantBodyStatus::InvalidParticipant },
+    };
+    for (const Case& c : cases)
+    {
+        const ParticipantBodyChange change =
+            fixture.Lifecycle.AssignBody(fixture.Entities, c.Participant, c.Offered);
+        EXPECT_EQ(change.Status, c.Expected) << c.Name;
+        if (c.Offered.IsValid() && c.Offered != dead)
+        {
+            EXPECT_TRUE(fixture.Entities.IsAlive(c.Offered)) << c.Name;
+        }
+    }
+    EXPECT_FALSE(fixture.Control(participant).Body.IsValid());
+    EXPECT_FALSE(fixture.Control(participant).ControlSubject.IsValid());
+    EXPECT_EQ(fixture.Control(other).Body, othersBody);
+    EXPECT_EQ(fixture.Control(other).ControlSubject, othersBody);
+}
+
+TEST(ParticipantLifecycle, AssigningOverALivingBodyIsRefusedAndKeepsBoth)
+{
+    ParticipantWorld fixture;
+    const EntityId participant = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 18 }).Participant;
+    const EntityId body = fixture.Thing();
+    const EntityId offered = fixture.Thing();
+    ASSERT_EQ(fixture.Lifecycle.AssignBody(fixture.Entities, participant, body).Status,
+              ParticipantBodyStatus::Assigned);
+
+    const ParticipantBodyChange change =
+        fixture.Lifecycle.AssignBody(fixture.Entities, participant, offered);
+
+    EXPECT_EQ(change.Status, ParticipantBodyStatus::AlreadyAssigned);
+    EXPECT_EQ(change.Body, body);
+    EXPECT_TRUE(fixture.Entities.IsAlive(offered));
+    EXPECT_EQ(fixture.Entities.TryGet<InputActionSourceRef>(offered), nullptr);
+    EXPECT_EQ(fixture.Control(participant).Body, body);
+}
+
+// Control may be taken from a participant that only drives the entity, as a
+// requested body takes it; a body is never taken.
+TEST(ParticipantLifecycle, AssigningADrivenEntityDisplacesItsDriver)
+{
+    ParticipantWorld fixture;
+    const EntityId driver = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 19 }).Participant;
+    const EntityId participant = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 20 }).Participant;
+    const EntityId vehicle = fixture.Thing();
+    (void)fixture.Lifecycle.SetControlSubject(fixture.Entities, driver, vehicle);
+
+    const ParticipantBodyChange change =
+        fixture.Lifecycle.AssignBody(fixture.Entities, participant, vehicle);
+
+    EXPECT_EQ(change.Status, ParticipantBodyStatus::Assigned);
+    EXPECT_EQ(change.Control.DisplacedParticipant, driver);
+    EXPECT_FALSE(fixture.Control(driver).ControlSubject.IsValid());
+    EXPECT_EQ(fixture.Control(participant).Body, vehicle);
+}
+
+TEST(ParticipantLifecycle, ABodyCanBeAssignedAgainAfterTheLastOneDied)
+{
+    ParticipantWorld fixture;
+    const EntityId participant = fixture.Lifecycle.Admit(
+        fixture.Entities, InputActionSourceId{ 21 }).Participant;
+    const EntityId first = fixture.Thing();
+    ASSERT_EQ(fixture.Lifecycle.AssignBody(fixture.Entities, participant, first).Status,
+              ParticipantBodyStatus::Assigned);
+    fixture.Entities.DestroyEntity(first);
+
+    const EntityId second = fixture.Thing();
+    const ParticipantBodyChange change =
+        fixture.Lifecycle.AssignBody(fixture.Entities, participant, second);
+
+    EXPECT_EQ(change.Status, ParticipantBodyStatus::Assigned);
+    EXPECT_EQ(fixture.Control(participant).Body, second);
+}
+
 TEST(ParticipantLifecycle, RetirementReapsTheBodyButNeverTheDrivenSubject)
 {
     ParticipantWorld fixture;

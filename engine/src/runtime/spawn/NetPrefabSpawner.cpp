@@ -7,10 +7,10 @@
 #include <core/logging/LoggingProvider.h>
 #include <world/RuntimeWorld.h>
 #include <world/build/EntityBuildPackage.h>
+#include <world/scene/SceneInstanceGroup.h>
 #include <world/scene/SceneInstanceIndex.h>
 #include <world/scene/SmapFormat.h>
 #include <world/serialization/SceneSerializationContext.h>
-#include <world/transform/TransformComponents.h>
 #include <zone/ZonePackageImporter.h>
 
 #include <cstdint>
@@ -18,22 +18,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-
-namespace
-{
-    // A prefab expands to one group with one root. More than one parentless
-    // entity has no root to bind the wire identity to, and zero has nothing to
-    // bind at all -- either way the authority is describing something this
-    // build cannot represent as a single replicated entity.
-    std::size_t CountRoots(const SmapContents& contents)
-    {
-        std::size_t roots = 0;
-        for (const SmapEntityRecord& entity : contents.Entities)
-            if (entity.Parent == UINT32_MAX)
-                ++roots;
-        return roots;
-    }
-}
 
 NetPrefabSpawner::NetPrefabSpawner(RuntimeWorld& world,
                                    const WorldComponentSchema& schema,
@@ -104,7 +88,7 @@ NetPrefabReadiness NetPrefabSpawner::Prepare(AssetId scene)
     }
 
     const SmapContents* contents = Scenes->Get(SceneHandle::FromToken(lease.OpaqueToken()));
-    const std::size_t roots = contents != nullptr ? CountRoots(*contents) : 0;
+    const std::size_t roots = contents != nullptr ? CountRootRecords(*contents) : 0;
     if (roots != 1)
     {
         RefuseOnce(scene,
@@ -170,9 +154,8 @@ EntityId NetPrefabSpawner::Instantiate(AssetId scene,
         return EntityId{};
     }
 
-    for (const EntityId entity : created)
-        if (world.TryGet<Parent>(entity) == nullptr)
-            return entity;
+    if (const EntityId root = SingleRoot(world, created); root.IsValid())
+        return root;
 
     // Validated at Prepare, so reaching here means the package disagreed with
     // the contents it was built from.
@@ -193,18 +176,10 @@ void NetPrefabSpawner::Despawn(World& world, EntityId root)
     const SceneInstance* group = world.IsRegistered<SceneInstance>()
         ? world.TryGet<SceneInstance>(root)
         : nullptr;
-    const auto* index = world.TryGetResource<SceneInstanceIndex>();
-    if (group == nullptr || index == nullptr)
+    if (group == nullptr || world.TryGetResource<SceneInstanceIndex>() == nullptr)
     {
         world.DestroyEntity(root);
         return;
     }
-
-    // From a copy: destruction mutates the index through the component's own
-    // hooks, so iterating the live span would walk what is being emptied.
-    const std::span<const EntityId> members = index->Entities(group->Id);
-    const std::vector<EntityId> snapshot(members.begin(), members.end());
-    for (const EntityId entity : snapshot)
-        if (world.IsAlive(entity))
-            world.DestroyEntity(entity);
+    DestroySceneInstance(world, group->Id);
 }

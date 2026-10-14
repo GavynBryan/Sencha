@@ -1,9 +1,9 @@
 # Body spawns
 
-Status: landed 2026-09-07. The design below is the one that shipped;
-`engine/include/app/BodySpawns.h` and
-`test/runtime/BodySpawnsTests.cpp` are the authority where they
-and this document differ. The shutdown gate it names landed with it as
+Status: landed 2026-09-07; superseded 2026-10-14 by
+[body-assignment-and-spawn-lifetime.md](body-assignment-and-spawn-lifetime.md),
+which replaced `app/BodySpawns` with `participant_spawn/ParticipantBodySpawns`.
+Kept as the history of the original design. The shutdown gate it names landed with it as
 `AsyncTaskQueue::Stop` and `test/runtime/SceneSpawnShutdownTests.cpp`.
 
 The change gives a prefab-backed body request one owner from submission through

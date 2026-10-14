@@ -23,6 +23,7 @@
 #include <world/RuntimeComponentSchema.h>
 #include <world/RuntimeWorld.h>
 #include <world/scene/SceneInstance.h>
+#include <world/scene/SceneInstanceIndex.h>
 #include <world/serialization/SceneSerializer.h>
 #include <world/transform/TransformComponents.h>
 
@@ -138,6 +139,24 @@ TEST_F(NetPrefabSpawnerTest, EachSpawnIsItsOwnGroup)
     EXPECT_FALSE(world.IsAlive(first));
     EXPECT_TRUE(world.IsAlive(second))
         << "despawning one player's body took another player's with it";
+}
+
+// The wire names only a prefab body's root; the despawn it triggers on a
+// client has to sweep the children the same prefab built there.
+TEST_F(NetPrefabSpawnerTest, DespawningTheRootRemovesTheWholeGroup)
+{
+    ASSERT_EQ(Spawner->Prepare(PawnId), NetPrefabReadiness::Ready);
+    World& world = Runtime->Entities();
+    const EntityId root =
+        Spawner->Instantiate(PawnId, world, PersistentStoragePartition);
+    ASSERT_TRUE(root.IsValid());
+    const SceneInstanceId group = world.TryGet<SceneInstance>(root)->Id;
+    const SceneInstanceIndex& index = world.GetResource<SceneInstanceIndex>();
+    ASSERT_GE(index.Entities(group).size(), 2u) << "the pawn prefab has a child";
+
+    Spawner->Despawn(world, root);
+
+    EXPECT_TRUE(index.Entities(group).empty());
 }
 
 // An id no scene in this build answers to. The authority is running content

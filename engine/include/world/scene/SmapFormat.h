@@ -84,6 +84,9 @@ struct SmapContents
     std::vector<SmapEntityRecord> Entities;
 };
 
+// Records with no parent: the roots an import of these contents produces.
+[[nodiscard]] std::size_t CountRootRecords(const SmapContents& contents);
+
 struct SmapError
 {
     std::string Message;
