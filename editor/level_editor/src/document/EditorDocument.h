@@ -13,6 +13,7 @@
 #include <core/json/JsonValue.h>
 #include <world/registry/Registry.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -220,6 +221,11 @@ public:
     [[nodiscard]] EntitySnapshot CaptureEntity(EntityId entity) const;
     EntityId RestoreEntity(const EntitySnapshot& snapshot, bool freshMesh = false);
 
+    // Makes a live entity what `snapshot` records, in place: its handle, its
+    // children and its persistent id stay, which a destroy and restore would
+    // not keep.
+    void OverwriteEntity(EntityId entity, const EntitySnapshot& snapshot);
+
     // Deep copy of a live entity (capture + restore with a fresh brush mesh). The
     // one "clone a live entity" primitive; the duplicate command and the drag
     // preview both go through here.
@@ -241,6 +247,9 @@ public:
     void TakeFileAsRead() { Baseline.Record(FilePath); }
 
     void MarkDirty(bool dirty = true);
+    // Moves on every authored mutation: two readings that agree saw the same
+    // document. Loads and saves leave it alone.
+    [[nodiscard]] std::uint64_t Revision() const { return Revision_; }
     // Owner hook for derived editor state (world validation). It is invoked only
     // for authored mutations, never for load/save clearing dirty state.
     std::function<void()> OnEdited;
@@ -270,6 +279,7 @@ private:
     std::string FilePath;
     FileBaseline Baseline;
     bool Dirty = false;
+    std::uint64_t Revision_ = 0;
     Registry Registry_;
     EditorScene Scene;
     // What the file said that the live registry does not model: unknown

@@ -575,6 +575,38 @@ EntityId EditorDocument::RestoreEntity(const EntitySnapshot& snapshot, bool fres
     return entity;
 }
 
+void EditorDocument::OverwriteEntity(EntityId entity, const EntitySnapshot& snapshot)
+{
+    SceneSerializationContext context(Logging, Assets);
+    for (const auto& serializer : EditorSceneSerializers().Entries())
+    {
+        const JsonValue* recorded =
+            snapshot.Components.IsObject() ? snapshot.Components.Find(serializer->JsonKey()) : nullptr;
+        if (recorded != nullptr)
+        {
+            serializer->RegisterStorage(Registry_);
+            JsonReadArchive archive(*recorded);
+            (void)serializer->Load(archive, entity, Registry_, context);
+        }
+        else if (serializer->HasComponent(entity, Registry_) && serializer->IsRemovable())
+        {
+            (void)serializer->Remove(entity, Registry_);
+        }
+    }
+
+    if (snapshot.Brush)
+        Scene.GetBrushMeshStore().Set(snapshot.MeshId, *snapshot.Brush);
+
+    EntityId parent;
+    if (snapshot.ParentId.IsValid())
+        if (const auto* index = Registry_.Components.TryGetResource<PersistentEntityIndex>())
+            parent = index->TryResolve(snapshot.ParentId);
+    (void)Scene.SetParent(entity, parent);
+
+    Scene.SetEntityVisible(entity, !snapshot.Hidden);
+    Scene.SetEntityLocked(entity, snapshot.Locked);
+}
+
 EntityId EditorDocument::DuplicateEntity(EntityId source)
 {
     return RestoreEntity(CaptureEntity(source), /*freshMesh*/ true);
@@ -673,6 +705,8 @@ bool EditorDocument::IsExternallyModified() const
 void EditorDocument::MarkDirty(bool dirty)
 {
     Dirty = dirty;
+    if (dirty)
+        ++Revision_;
     if (dirty && OnEdited)
         OnEdited();
 }
