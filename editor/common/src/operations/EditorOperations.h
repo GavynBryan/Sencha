@@ -4,9 +4,11 @@
 
 #include <core/json/JsonValue.h>
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 class ConsoleRegistry;
@@ -68,6 +70,14 @@ public:
     // registered and retired with its provider. The console must outlive this.
     void ExposeTo(ConsoleRegistry& console);
 
+    // What happened that a client may want to know without asking: an event is
+    // one JSON object naming itself in "event" (a selection, a save, a draft
+    // accepted). Every listener hears every event, in the order emitted.
+    using EventListener = std::function<void(const JsonValue& event)>;
+    [[nodiscard]] std::uint64_t Listen(EventListener listener);
+    void StopListening(std::uint64_t listener);
+    void Emit(const JsonValue& event);
+
 private:
     void RegisterCommand(EditorOperationId id);
 
@@ -75,4 +85,6 @@ private:
     // Indexed by catalog slot.
     std::vector<EditorOperationExecutor> Executors;
     ConsoleRegistry* Console = nullptr;
+    std::vector<std::pair<std::uint64_t, EventListener>> Listeners;
+    std::uint64_t NextListener = 1;
 };

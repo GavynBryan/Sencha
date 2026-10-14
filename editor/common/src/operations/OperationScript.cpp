@@ -24,6 +24,21 @@ namespace
     }
 }
 
+std::optional<JsonValue> AnswerOperationLine(std::string_view line, EditorOperations& operations)
+{
+    const std::size_t start = line.find_first_not_of(" \t\r");
+    if (start == std::string_view::npos || line[start] == '#')
+        return std::nullopt;
+    const std::size_t nameEnd = line.find_first_of(" \t\r", start);
+    const std::string_view name =
+        line.substr(start, nameEnd == std::string_view::npos ? std::string_view::npos : nameEnd - start);
+    const std::string_view rest = nameEnd == std::string_view::npos ? std::string_view{} : line.substr(nameEnd);
+
+    std::string error;
+    const std::optional<JsonValue> arguments = OperationArgumentsFromText(rest, error);
+    return arguments ? operations.Invoke(name, *arguments) : MalformedLine(name, std::move(error));
+}
+
 std::size_t RunOperationScript(std::istream& script, std::ostream& answers,
                                EditorOperations& operations)
 {
@@ -31,24 +46,13 @@ std::size_t RunOperationScript(std::istream& script, std::ostream& answers,
     std::string line;
     while (std::getline(script, line))
     {
-        const std::size_t start = line.find_first_not_of(" \t\r");
-        if (start == std::string::npos || line[start] == '#')
+        const std::optional<JsonValue> answer = AnswerOperationLine(line, operations);
+        if (!answer)
             continue;
-        const std::size_t nameEnd = line.find_first_of(" \t\r", start);
-        const std::string_view name =
-            std::string_view(line).substr(start, nameEnd == std::string::npos ? std::string::npos
-                                                                              : nameEnd - start);
-        const std::string_view rest =
-            nameEnd == std::string::npos ? std::string_view{} : std::string_view(line).substr(nameEnd);
-
-        std::string error;
-        const std::optional<JsonValue> arguments = OperationArgumentsFromText(rest, error);
-        const JsonValue answer =
-            arguments ? operations.Invoke(name, *arguments) : MalformedLine(name, std::move(error));
-        const JsonValue* status = answer.Find("status");
+        const JsonValue* status = answer->Find("status");
         if (status != nullptr && status->IsString() && status->AsString() == "error")
             ++errors;
-        answers << JsonStringify(answer) << '\n';
+        answers << JsonStringify(*answer) << '\n';
     }
     answers.flush();
     return errors;

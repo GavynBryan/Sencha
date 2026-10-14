@@ -5,7 +5,9 @@
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
 #include "app/SynthesizedInput.h"
+#include "documents/DocumentSourceSet.h"
 #include "notices/NoticeQueue.h"
+#include "operations/OperationSocket.h"
 #include "operations/EditorOperations.h"
 #include "problems/AssetLoadProblems.h"
 #include "problems/ProblemList.h"
@@ -62,6 +64,8 @@ private:
     void SyncActionLayers();
     // The theme, then each window's shell: act on and publish its rail.
     void UpdateShells();
+    // Opens or closes the operation socket as its cvar says, and answers it.
+    void ServeOperations();
     [[nodiscard]] std::unique_ptr<ShellWindow> MakeShell(SdlWindow& window, PresentationId presentation,
                                                          WindowActions& actions, std::function<void()> close,
                                                          ShellRole role = ShellRole::Workspaces);
@@ -101,6 +105,19 @@ private:
     ProblemList Problems;
     AssetLoadProblems LoadProblems{ Problems };
     NoticeQueue Notices;
+    // The operations served on a local socket while editor.operations.socket is on.
+    OperationSocket OperationServer{ Operations };
+    // Refused holds a failed open until the cvar is turned off, so it is not
+    // retried every frame.
+    enum class Serving : std::uint8_t
+    {
+        Off,
+        On,
+        Refused,
+    };
+    Serving OperationServing = Serving::Off;
+    // Tells clients of the operations when a document is saved.
+    std::shared_ptr<DocumentSourceSet::ReportObserver::Fn> SaveEvents;
     // Before everything that asks, so every asker withdraws into a live queue.
     PromptQueue Prompts;
     struct WindowActions

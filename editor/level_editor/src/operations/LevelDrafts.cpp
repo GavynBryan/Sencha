@@ -272,24 +272,41 @@ namespace
             }));
     }
 
-    EditorOperationEntry Accept(LevelTarget& level)
+    JsonValue DraftEvent(std::string_view event, const LevelDraft& draft)
+    {
+        return JsonValue(JsonValue::Object{
+            { "event", JsonValue(std::string(event)) },
+            { "draft", JsonValue(draft.Id) },
+            { "label", JsonValue(draft.Label) },
+        });
+    }
+
+    EditorOperationEntry Accept(LevelTarget& level, EditorOperations& operations)
     {
         return Entry(
             "draft.accept", EditorOperationKind::Mutation,
             "Applies a draft to the level it copies as one undoable step, and drops it. Refused when "
             "the level has changed under any entity the draft changes; rebase it then.",
             DraftOnly(), MutationResultSchema(),
-            WithDraft(level, [&level](LevelDraft& draft) { return level.AcceptDraft(draft); }));
+            WithDraft(level, [&level, &operations](LevelDraft& draft) {
+                const JsonValue event = DraftEvent("draft.accepted", draft);
+                EditorOperationOutcome outcome = level.AcceptDraft(draft);
+                if (outcome.Status == EditorOperationStatus::Ok)
+                    operations.Emit(event);
+                return outcome;
+            }));
     }
 
-    EditorOperationEntry Discard(LevelTarget& level)
+    EditorOperationEntry Discard(LevelTarget& level, EditorOperations& operations)
     {
         return Entry(
             "draft.discard", EditorOperationKind::Mutation, "Drops a draft; the level never saw it.",
             DraftOnly(), DataField::Record({}, {}, {}, { Text("draft", "the dropped draft") }),
-            WithDraft(level, [&level](LevelDraft& draft) {
+            WithDraft(level, [&level, &operations](LevelDraft& draft) {
                 JsonValue data(JsonValue::Object{ { "draft", JsonValue(draft.Id) } });
+                const JsonValue event = DraftEvent("draft.discarded", draft);
                 level.DiscardDraft(draft);
+                operations.Emit(event);
                 return EditorOperationOutcome::Ok(std::move(data));
             }));
     }
@@ -431,8 +448,8 @@ std::vector<EditorOperationEntry> LevelDraftOperations(LevelTarget& level, Edito
     entries.push_back(PreviewDraft(level));
     entries.push_back(List(level));
     entries.push_back(Diff(level));
-    entries.push_back(Accept(level));
-    entries.push_back(Discard(level));
+    entries.push_back(Accept(level, operations));
+    entries.push_back(Discard(level, operations));
     entries.push_back(Resume(level));
     entries.push_back(Rebase(level, operations));
     entries.push_back(Save(level));

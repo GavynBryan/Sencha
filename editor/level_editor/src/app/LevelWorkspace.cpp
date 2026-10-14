@@ -3,6 +3,7 @@
 
 #include "operations/EditorOperations.h"
 #include "operations/LevelOperations.h"
+#include "operations/LevelSubjects.h"
 #include "operations/LevelTarget.h"
 #include "operations/WorldQueries.h"
 
@@ -230,6 +231,26 @@ void LevelWorkspace::BuildDocument()
 
 void LevelWorkspace::BuildOperations()
 {
+    SelectionEvents = Workspace->Selection.Subscribe([this](const SelectionSnapshot& snapshot) {
+        const EditorDocument& document = Workspace->ActiveDocument();
+        JsonValue::Array selected;
+        for (const SelectableRef& ref : snapshot.Items)
+        {
+            if (!ref.IsValid())
+                continue;
+            const char* element = ref.IsFace() ? "face" : ref.IsEdge() ? "edge" : ref.IsVertex() ? "vertex" : "entity";
+            JsonValue::Object item{
+                { "id", JsonValue(PersistentIdText(document, ref.Entity)) },
+                { "name", JsonValue(EntityNameText(document, ref.Entity)) },
+                { "element", JsonValue(element) },
+            };
+            if (ref.IsMeshElement())
+                item.emplace_back("index", JsonValue(static_cast<double>(ref.ElementId)));
+            selected.push_back(JsonValue(std::move(item)));
+        }
+        Operations.Emit(JsonValue(JsonValue::Object{ { "event", JsonValue("selection") },
+                                                     { "selected", JsonValue(std::move(selected)) } }));
+    });
     std::vector<std::string> errors;
     if (!Operations.Register(std::string(kLevelOperations), LevelOperations(Workspace->Level, Operations), errors)
         || !Operations.Register(std::string(kWorldOperations), WorldQueryOperations(Workspace->World), errors))

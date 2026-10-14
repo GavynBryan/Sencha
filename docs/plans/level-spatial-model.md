@@ -1040,6 +1040,21 @@ agent resolves `aim` and proposes it live. The designer edits elsewhere
 meanwhile, and accept succeeds. An edit to the same wall makes accept report a
 conflict instead.
 
+**Progress notes (in flight):**
+- The socket is a Unix domain socket (`ipc/LineSocket`) in a directory only
+  the user can enter (`$XDG_RUNTIME_DIR/sencha/kyusu.sock`, or a private
+  temp directory), opened while `editor.operations.socket` is on and polled
+  from Kyusu's workspace tick. A line is a request in the script form or a
+  JSON object `{id, op, args}` whose answer carries the id back. A path in use
+  by a live editor is refused; a dead editor's socket file is replaced. The
+  serving state is `Off`, `On` or `Refused`, so a failed open is not retried
+  every frame.
+- Events go through `EditorOperations::Emit`, so workspaces never know a socket
+  exists: `selection` (persistent ids, names and elements), `saved` (the
+  document and how it went), `draft.accepted` and `draft.discarded`.
+- `kyusu_client` sends one operation or stdin's lines and prints answers,
+  skipping events; `--events [n]` prints them.
+
 ### M3: analysis depth
 
 **Capability:** answer progression questions for hypothetical capability sets

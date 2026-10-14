@@ -204,3 +204,23 @@ void EditorOperations::RegisterCommand(EditorOperationId id)
         },
     });
 }
+
+std::uint64_t EditorOperations::Listen(EventListener listener)
+{
+    const std::uint64_t id = NextListener++;
+    Listeners.emplace_back(id, std::move(listener));
+    return id;
+}
+
+void EditorOperations::StopListening(std::uint64_t listener)
+{
+    std::erase_if(Listeners, [listener](const auto& entry) { return entry.first == listener; });
+}
+
+void EditorOperations::Emit(const JsonValue& event)
+{
+    // A listener may stop listening while it hears.
+    const auto listeners = Listeners;
+    for (const auto& [id, listener] : listeners)
+        listener(event);
+}

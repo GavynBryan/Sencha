@@ -194,6 +194,8 @@ private:
     // The level's and the world's operations, retired before the documents
     // they read go.
     EditorOperations& Operations;
+    // Tells clients of the operations what is selected whenever it changes.
+    std::shared_ptr<SelectionService::ObserverFn> SelectionEvents;
     // The open level in the application's journal; destroyed before the
     // workspace whose world it reports on.
     std::unique_ptr<LevelDocumentSource> LevelDocument;

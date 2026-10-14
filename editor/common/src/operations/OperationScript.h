@@ -2,8 +2,17 @@
 
 #include <cstddef>
 #include <iosfwd>
+#include <optional>
+#include <string_view>
+
+#include <core/json/JsonValue.h>
 
 class EditorOperations;
+
+// The answer to one line: its operation's name and then its arguments as
+// OperationArgumentsFromText reads them. Nullopt for a blank line or one
+// starting with '#'.
+[[nodiscard]] std::optional<JsonValue> AnswerOperationLine(std::string_view line, EditorOperations& operations);
 
 // Runs one operation per line of `script`, its name and then its arguments as
 // OperationArgumentsFromText reads them, writing each answer to `answers` as
