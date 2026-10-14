@@ -4,6 +4,7 @@
 #include <input/InputActionRegistry.h>
 #include <math/Vec.h>
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -29,6 +30,9 @@
 struct InputActionView
 {
     std::span<const InputActionValue> Values;
+    // Every transition of the pass, in order, across all actions: what gameplay
+    // built out of several moments walks, rather than the summary flags.
+    std::span<const InputActionEdge> Edges{};
 
     [[nodiscard]] InputActionValue Get(InputActionId action) const
     {
@@ -44,11 +48,12 @@ struct InputActionView
     // mapping rather than to the code that consumes it.
     [[nodiscard]] bool Fired(InputActionId action) const { return Get(action).WasFired(); }
 
-    // The raw edges, for gameplay built out of several phases -- charge while
-    // held, loose on release -- where no single mode describes what it wants.
+    // Summaries of Edges, for gameplay built out of several phases -- charge
+    // while held, loose on release -- where no single mode describes what it wants.
     [[nodiscard]] bool Held(InputActionId action) const { return Get(action).IsHeld(); }
     [[nodiscard]] bool Pressed(InputActionId action) const { return Get(action).WasPressed(); }
     [[nodiscard]] bool Released(InputActionId action) const { return Get(action).WasReleased(); }
+    [[nodiscard]] bool Interrupted(InputActionId action) const { return Get(action).WasInterrupted(); }
     [[nodiscard]] float Axis(InputActionId action) const { return Get(action).X; }
 
     [[nodiscard]] Vec2d Axis2(InputActionId action) const
@@ -62,8 +67,12 @@ struct InputActionTickRecord
 {
     std::uint64_t Tick = 0;
     std::span<const InputActionValue> Values;
+    const InputActionEdgeList* Edges = nullptr;
 
-    [[nodiscard]] InputActionView View() const { return InputActionView{ Values }; }
+    [[nodiscard]] InputActionView View() const
+    {
+        return InputActionView{ Values, Edges != nullptr ? Edges->View() : std::span<const InputActionEdge>{} };
+    }
 };
 
 class InputActionState
@@ -77,10 +86,13 @@ public:
     [[nodiscard]] std::size_t ActionCount() const { return Actions; }
 
     [[nodiscard]] std::span<InputActionValue> FrameStorage();
+    [[nodiscard]] InputActionEdgeList& FrameEdgeStorage() { return FrameEdges; }
     [[nodiscard]] InputActionView Frame() const;
 
-    // Opens a record for `tick` and returns the storage a resolve pass fills.
+    // Opens a record for `tick` and returns the storage a resolve pass fills; its
+    // edges are TickEdgeStorage() until the next BeginTick.
     [[nodiscard]] std::span<InputActionValue> BeginTick(std::uint64_t tick);
+    [[nodiscard]] InputActionEdgeList& TickEdgeStorage() { return RingEdges[Newest]; }
 
     [[nodiscard]] InputActionView Tick() const;
     [[nodiscard]] std::uint64_t CurrentTick() const { return NewestTick; }
@@ -119,6 +131,8 @@ private:
     // kHistoryCapacity records laid end to end. Sized once in Configure so the
     // spans handed out stay valid.
     std::vector<InputActionValue> RingValues;
+    std::array<InputActionEdgeList, kHistoryCapacity> RingEdges{};
+    InputActionEdgeList FrameEdges;
     std::vector<std::uint64_t> RingTicks;
     std::size_t Newest = 0;
     std::size_t Recorded = 0;

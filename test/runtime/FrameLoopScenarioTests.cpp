@@ -322,39 +322,30 @@ TEST(RuntimeFrameLoopScenario, DiscontinuityPublishesOnceAndFlagsTheFrame)
 // InputFrame edges
 // ---------------------------------------------------------------------------
 
-TEST(InputFrame, EdgesDrainedAfterClear)
+TEST(InputFrame, TransitionsDrainedAfterClear)
 {
     InputFrame frame;
-    frame.KeysPressed.push_back(42);
-    frame.MouseButtonsPressed.push_back(1);
-    frame.ClearEdges();
-    EXPECT_TRUE(frame.KeysPressed.empty());
-    EXPECT_TRUE(frame.MouseButtonsPressed.empty());
+    frame.SetButton({ InputControlSource::Key, 42 }, true);
+    frame.SetButton({ InputControlSource::MouseButton, 1 }, true);
+    frame.ClearTransitions();
+    EXPECT_TRUE(frame.TransitionLog().empty());
 }
 
-TEST(InputFrame, HeldStateSurvivesEdgeClear)
+TEST(InputFrame, HeldStateSurvivesTransitionClear)
 {
     InputFrame frame;
-    frame.SetKeyHeld(kTestScancode, true);
-    frame.KeysPressed.push_back(kTestScancode);
-    frame.ClearEdges();
+    frame.SetButton({ InputControlSource::Key, kTestScancode }, true);
+    frame.ClearTransitions();
     EXPECT_TRUE(frame.IsKeyDown(kTestScancode));
 }
 
-TEST(InputFrame, ConsumeKeyPressedRemovesAllMatchingEdges)
+TEST(InputFrame, OnlyAChangeIsLogged)
 {
     InputFrame frame;
-    frame.KeysPressed.push_back(kTestScancode);
-    frame.KeysPressed.push_back(99);
-    frame.KeysPressed.push_back(kTestScancode);
-
-    EXPECT_TRUE(frame.ConsumeKeyPressed(kTestScancode));
-    EXPECT_EQ(frame.KeysPressed.size(), 1u);
-    EXPECT_EQ(frame.KeysPressed.front(), 99u);
-
-    // A second consume finds nothing, which is what stops a handler outside the
-    // fixed-tick drain from acting on the same press twice.
-    EXPECT_FALSE(frame.ConsumeKeyPressed(kTestScancode));
+    const InputControl key{ InputControlSource::Key, kTestScancode };
+    frame.SetButton(key, true);
+    frame.SetButton(key, true);
+    EXPECT_EQ(frame.TransitionLog().size(), 1u) << "a key already down cannot be pressed again";
 }
 
 TEST(FrameDriver, FirstTickSeesInputEdges)
@@ -371,15 +362,14 @@ TEST(FrameDriver, FirstTickSeesInputEdges)
     driver.Register(FramePhase::PumpPlatform, [&](PhaseContext& ctx) {
         if (!pressThisFrame)
             return;
-        ctx.Input->SetKeyHeld(kTestScancode, true);
-        ctx.Input->KeysPressed.push_back(kTestScancode);
+        ctx.Input->SetButton({ InputControlSource::Key, kTestScancode }, true);
     });
     driver.Register(FramePhase::ScheduleTicks, [&](PhaseContext& ctx) {
         ctx.Runtime->ScheduleFixedTicks();
     });
     driver.Register(FramePhase::Simulate, [&](PhaseContext& ctx) {
         if (tickCount == 0)
-            firstTickPressed = ctx.Input->KeysPressed.size();
+            firstTickPressed = ctx.Input->TransitionLog().size();
         ++tickCount;
     });
 
@@ -410,15 +400,15 @@ TEST(FrameDriver, EdgesPersistAcrossZeroTickFramesUntilFirstTick)
 
     driver.Register(FramePhase::PumpPlatform, [&](PhaseContext& ctx) {
         if (pressThisFrame)
-            ctx.Input->KeysPressed.push_back(kTestScancode);
+            ctx.Input->SetButton({ InputControlSource::Key, kTestScancode }, true);
     });
     driver.Register(FramePhase::ScheduleTicks, [&](PhaseContext& ctx) {
         ctx.Runtime->ScheduleFixedTicks();
     });
     driver.Register(FramePhase::Simulate, [&](PhaseContext& ctx) {
         ++ticksSeen;
-        for (uint32_t scancode : ctx.Input->KeysPressed)
-            if (scancode == kTestScancode)
+        for (const InputTransition& transition : ctx.Input->TransitionLog())
+            if (transition.Control.Index == kTestScancode && transition.Down)
                 ++ticksThatSawTheEdge;
     });
 

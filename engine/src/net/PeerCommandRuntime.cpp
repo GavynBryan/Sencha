@@ -78,6 +78,10 @@ void PeerCommandRuntime::Feed(World& world, std::uint64_t tick)
             storage[index] =
                 index < copied ? record.Actions[index] : InputActionValue{};
         }
+        InputActionEdgeList& edges = state.TickEdgeStorage();
+        for (const InputActionEdge& edge : record.Edges.View())
+            if (edge.Action < copied)
+                edges.Append(edge);
     }
 
     if (!world.IsRegistered<NetOwner>() || !world.IsRegistered<LookOrientation>())
@@ -153,6 +157,7 @@ std::size_t PeerCommandRuntime::SendLocal(NetSession& session,
         record.ActionCount = source.ActionCount;
         for (std::uint8_t action = 0; action < record.ActionCount; ++action)
             record.Actions[action] = source.Actions[action];
+        record.Edges = source.Edges;
     }
     command.RecordCount = static_cast<std::uint8_t>(window);
 

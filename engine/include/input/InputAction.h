@@ -2,8 +2,11 @@
 
 #include <core/identity/StrongId.h>
 
+#include <array>
 #include <cstdint>
+#include <span>
 #include <string>
+#include <type_traits>
 
 //=============================================================================
 // Input actions
@@ -67,6 +70,10 @@ enum class InputActionFlags : std::uint8_t
     // of one of the three above, stamped where the mode is known so a recorded
     // tick carries the decision made under the mode in force when it ran.
     Fired = 1 << 3,
+    // A fall in this pass was not the player letting go: a context went away,
+    // a higher context claimed the control, the profile was lost, or focus was.
+    // Never fires a Released-mode action.
+    Interrupted = 1 << 4,
 };
 
 [[nodiscard]] constexpr InputActionFlags operator|(InputActionFlags a, InputActionFlags b)
@@ -109,11 +116,61 @@ struct InputActionDefinition
     InputActionFireMode Fire = InputActionFireMode::Pressed;
 };
 
+enum class InputEdgeKind : std::uint8_t
+{
+    Press,
+    Release,
+    InterruptedRelease,
+};
+
+// One transition of one action, by dense action index.
+struct InputActionEdge
+{
+    std::uint8_t Action = 0;
+    InputEdgeKind Kind = InputEdgeKind::Press;
+
+    friend bool operator==(const InputActionEdge&, const InputActionEdge&) = default;
+};
+
+// Every action transition of one pass, in the order they happened, across all
+// actions. Bounded: past capacity nothing more is kept, and the pass's summary
+// flags stay authoritative (docs/gameplay/input.md, "Edges").
+struct InputActionEdgeList
+{
+    static constexpr std::size_t Capacity = 32;
+
+    std::array<InputActionEdge, Capacity> Edges{};
+    std::uint8_t Count = 0;
+    bool Overflowed = false;
+
+    bool Append(InputActionEdge edge)
+    {
+        if (Count == Capacity)
+        {
+            Overflowed = true;
+            return false;
+        }
+        Edges[Count++] = edge;
+        return true;
+    }
+
+    void Clear()
+    {
+        Count = 0;
+        Overflowed = false;
+    }
+
+    [[nodiscard]] std::span<const InputActionEdge> View() const { return std::span(Edges).first(Count); }
+};
+
+static_assert(std::is_trivially_copyable_v<InputActionEdgeList>);
+
 // One action's resolved state for one clock.
 //
 // Pressed and Released may both be set: a tap that begins and ends inside a
 // frame that ran no fixed tick still owes the simulation both edges, and
-// dropping either would lose the impulse.
+// dropping either would lose the impulse. The order of every transition is in
+// the pass's InputActionEdgeList; these flags summarize it.
 struct InputActionValue
 {
     float X = 0.0f;
@@ -124,4 +181,5 @@ struct InputActionValue
     [[nodiscard]] bool WasPressed() const { return HasFlag(Flags, InputActionFlags::Pressed); }
     [[nodiscard]] bool WasReleased() const { return HasFlag(Flags, InputActionFlags::Released); }
     [[nodiscard]] bool WasFired() const { return HasFlag(Flags, InputActionFlags::Fired); }
+    [[nodiscard]] bool WasInterrupted() const { return HasFlag(Flags, InputActionFlags::Interrupted); }
 };

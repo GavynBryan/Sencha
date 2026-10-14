@@ -256,3 +256,11 @@ granted tags. `CheckEffectCosts` (`effects/EffectCost.h`) is new.
 
 **Physics queries.** `Raycast`, `SweepShape` and `OverlapShape` take an optional
 `PhysicsQueryFilter`.
+
+**Input edges.** `InputFrame` logs button transitions in order
+(`TransitionLog`, `SetButton`, `ClearTransitions`) in place of its six edge vectors;
+`ConsumeKeyPressed` is gone. `InputActionFlags` gains `Interrupted`;
+`InputActionView` and `InputActionTickRecord` carry the pass's ordered
+`InputActionEdge` list. `InputEdgeLatch` is replaced by `InputMotionLatch` and
+`InputEdgeAttribution`, and `AccumulateInputFrame` by `AttributeInputFrame`.
+`NetCommandRecord` and `PawnCommandTick` carry edges; net protocol 7.

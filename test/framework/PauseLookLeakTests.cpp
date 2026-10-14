@@ -175,18 +175,16 @@ protected:
         Schedule.RunFrameUpdate(frame);
         Runtime.EndFrame();
 
-        Input.ClearEdges();
+        Input.ClearTransitions();
     }
 
     void PressBack()
     {
-        Input.SetKeyHeld(SDL_SCANCODE_ESCAPE, true);
-        Input.KeysPressed.push_back(SDL_SCANCODE_ESCAPE);
+        Input.SetButton({ InputControlSource::Key, static_cast<std::uint16_t>(SDL_SCANCODE_ESCAPE) }, true);
     }
     void ReleaseBack()
     {
-        Input.SetKeyHeld(SDL_SCANCODE_ESCAPE, false);
-        Input.KeysReleased.push_back(SDL_SCANCODE_ESCAPE);
+        Input.SetButton({ InputControlSource::Key, static_cast<std::uint16_t>(SDL_SCANCODE_ESCAPE) }, false);
     }
 
     [[nodiscard]] float Yaw() const

@@ -52,6 +52,11 @@ void PawnCommandCaptureSystem::FixedLogic(FixedLogicContext& ctx)
             std::min<std::size_t>(source.Values.size(), kNetMaxCommandActions));
         for (std::uint8_t index = 0; index < record.ActionCount; ++index)
             record.Actions[index] = source.Values[index];
+        // An edge for an action the command cannot carry would name nothing.
+        if (source.Edges != nullptr)
+            for (const InputActionEdge& edge : source.Edges->View())
+                if (edge.Action < record.ActionCount)
+                    record.Edges.Append(edge);
     }
 
     Prediction->Commands().Push(record);

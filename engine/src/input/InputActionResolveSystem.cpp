@@ -38,7 +38,7 @@ InputActionResolveSystem::InputActionResolveSystem(DataAssetCache& dataAssets,
     DiscontinuityToken = Discontinuities->Subscribe(
         [this](const FrameDiscontinuityEvent& event) {
             if (event.Reason == TemporalDiscontinuityReason::SimulationPause)
-                Simulation.Latch.Clear();
+                DiscardSuspendedInput(Simulation);
         });
 }
 
@@ -109,46 +109,49 @@ void InputActionResolveSystem::PreSimulate(PreSimulateContext& ctx)
 {
     World& world = ctx.Entities;
     const BoundInputProfile* profile = ResolveProfile(world);
+    InputActionState* state = world.TryGetResource<InputActionState>();
 
-    // Both clocks still take the frame's transitions when no profile is bound,
-    // so a profile loaded mid-session does not inherit a backlog of stale
-    // impulses on its first pass.
-    AccumulateInputFrame(ctx.Input, Devices, Presentation, Simulation);
+    if (profile != nullptr)
+    {
+        if (state == nullptr)
+            state = &world.AddResource<InputActionState>();
+        state->Configure(profile->ActionCount());
+
+        InputContextSet* contexts = world.TryGetResource<InputContextSet>();
+        if (contexts == nullptr)
+            contexts = &world.AddResource<InputContextSet>();
+        contexts->ApplyPending();
+        contexts->BuildActiveMask(*profile, ActiveMask);
+    }
+
+    // Attributed whether or not a profile is bound: losing one owes an interrupted
+    // fall for whatever it held.
+    AttributeInputFrame(ctx.Input, profile, ActiveMask, Attribution, Presentation, Simulation);
 
     if (profile == nullptr)
     {
-        // Anything held was held under bindings that are gone. Publishing the
-        // release they owe is what stops a consumer from reading a held action
-        // for the rest of the session after a profile swap fails. The sampled
-        // shares go with them, or a consumer integrating a rate would keep
-        // turning on a stick reading that no longer has a binding behind it.
-        if (InputActionState* state = world.TryGetResource<InputActionState>())
+        // The sampled shares go with the bindings, or a consumer integrating a
+        // rate would keep turning on a stick reading nothing binds any more.
+        if (state != nullptr)
         {
-            ReleaseInputActions(Presentation, state->FrameStorage());
+            ReleaseInputActions(Presentation, state->FrameStorage(), state->FrameEdgeStorage());
             for (InputActionValue& sampled : state->FrameSampledStorage())
                 sampled = InputActionValue{};
             for (InputActionValue& sampled : state->TickSampledStorage())
                 sampled = InputActionValue{};
         }
-        Presentation.Latch.Clear();
-        Simulation.Latch.Clear();
+        else
+        {
+            Presentation.Pending.Clear();
+            Simulation.Pending.Clear();
+        }
+        Presentation.Motion.Clear();
+        Simulation.Motion.Clear();
         return;
     }
 
-    InputActionState* state = world.TryGetResource<InputActionState>();
-    if (state == nullptr)
-        state = &world.AddResource<InputActionState>();
-    state->Configure(profile->ActionCount());
-
-    InputContextSet* contexts = world.TryGetResource<InputContextSet>();
-    if (contexts == nullptr)
-        contexts = &world.AddResource<InputContextSet>();
-
-    contexts->ApplyPending();
-    contexts->BuildActiveMask(*profile, ActiveMask);
-
-    ResolveInputActions(*profile, ActiveMask, Devices, Presentation,
-                        state->FrameStorage(), 1, state->FrameSampledStorage());
+    ResolveInputActions(*profile, ActiveMask, Attribution, Presentation, state->FrameStorage(),
+                        state->FrameEdgeStorage(), 1, state->FrameSampledStorage());
 }
 
 void InputActionResolveSystem::FixedLogic(FixedLogicContext& ctx)
@@ -169,21 +172,14 @@ void InputActionResolveSystem::FixedLogic(FixedLogicContext& ctx)
 
     if (profile == nullptr)
     {
-        ReleaseInputActions(Simulation, storage);
+        ReleaseInputActions(Simulation, storage, state->TickEdgeStorage());
         for (InputActionValue& sampled : state->TickSampledStorage())
             sampled = InputActionValue{};
         return;
     }
 
-    // ActiveMask is whatever PreSimulate settled for this frame: every tick of
-    // one frame resolves against the same contexts.
-    //
-    // The frame's device snapshot, not the live platform frame: simulation is
-    // downstream of the pump, and every tick of one frame owes the same answer.
-    //
-    // Motion is the exception, and takes the tick count for that reason: the
-    // frame latched one displacement covering the span these ticks divide
-    // between them, so each takes its share rather than the whole thing.
-    ResolveInputActions(*profile, ActiveMask, Devices, Simulation, storage,
+    // Every tick of a frame resolves against what PreSimulate settled; the first
+    // takes the edges, and motion is shared across the ticks left.
+    ResolveInputActions(*profile, ActiveMask, Attribution, Simulation, storage, state->TickEdgeStorage(),
                         ctx.TicksLeftInFrame, state->TickSampledStorage());
 }

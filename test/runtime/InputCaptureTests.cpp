@@ -19,9 +19,17 @@
 
 namespace
 {
-bool Contains(const std::vector<uint32_t>& values, uint32_t value)
+std::size_t CountLogged(const InputFrame& frame, InputControlSource source, uint32_t index, bool down)
 {
-    return std::find(values.begin(), values.end(), value) != values.end();
+    const auto log = frame.TransitionLog();
+    return static_cast<std::size_t>(std::count_if(log.begin(), log.end(), [&](const InputTransition& t) {
+        return t.Control == InputControl{ source, static_cast<std::uint16_t>(index) } && t.Down == down;
+    }));
+}
+
+bool Logged(const InputFrame& frame, InputControlSource source, uint32_t index, bool down)
+{
+    return CountLogged(frame, source, index, down) > 0;
 }
 
 SDL_Event KeyEvent(uint32_t type, SDL_Scancode scancode)
@@ -54,9 +62,43 @@ TEST(InputFrameRelease, HeldKeysBecomeReleaseEdges)
     EXPECT_FALSE(frame.IsKeyDown(SDL_SCANCODE_W));
     EXPECT_FALSE(frame.IsKeyDown(SDL_SCANCODE_SPACE));
     EXPECT_FALSE(frame.IsMouseButtonDown(SDL_BUTTON_LEFT));
-    EXPECT_TRUE(Contains(frame.KeysReleased, SDL_SCANCODE_W));
-    EXPECT_TRUE(Contains(frame.KeysReleased, SDL_SCANCODE_SPACE));
-    EXPECT_TRUE(Contains(frame.MouseButtonsReleased, SDL_BUTTON_LEFT));
+    EXPECT_TRUE(Logged(frame, InputControlSource::Key, SDL_SCANCODE_W, false));
+    EXPECT_TRUE(Logged(frame, InputControlSource::Key, SDL_SCANCODE_SPACE, false));
+    EXPECT_TRUE(Logged(frame, InputControlSource::MouseButton, SDL_BUTTON_LEFT, false));
+    for (const InputTransition& transition : frame.TransitionLog())
+        EXPECT_TRUE(transition.Synthetic) << "the device sent none of these";
+}
+
+// Transitions keep the order the platform reported them in, across devices, and
+// a press-release-press of one key in one frame is three transitions, not one.
+TEST(InputFrameLog, KeepsEveryTransitionInArrivalOrder)
+{
+    InputFrame frame;
+    SdlInputCapture::Accept(frame, KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_SPACE));
+    SdlInputCapture::Accept(frame, MouseButtonEvent(SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_BUTTON_LEFT));
+    SdlInputCapture::Accept(frame, KeyEvent(SDL_EVENT_KEY_UP, SDL_SCANCODE_SPACE));
+    SdlInputCapture::Accept(frame, KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_SPACE));
+
+    const auto log = frame.TransitionLog();
+    ASSERT_EQ(log.size(), 4u);
+    EXPECT_EQ(log[0].Control.Source, InputControlSource::Key);
+    EXPECT_TRUE(log[0].Down);
+    EXPECT_EQ(log[1].Control.Source, InputControlSource::MouseButton);
+    EXPECT_FALSE(log[2].Down);
+    EXPECT_TRUE(log[3].Down);
+    for (const InputTransition& transition : log)
+        EXPECT_FALSE(transition.Synthetic);
+}
+
+TEST(InputFrameLog, OverflowDropsTransitionsButKeepsHeldStateExact)
+{
+    InputFrame frame;
+    const InputControl space{ InputControlSource::Key, SDL_SCANCODE_SPACE };
+    for (std::size_t i = 0; i < kInputFrameTransitionCapacity + 5; ++i)
+        frame.SetButton(space, i % 2 == 0);
+    EXPECT_EQ(frame.TransitionLog().size(), kInputFrameTransitionCapacity);
+    EXPECT_EQ(frame.DroppedTransitions, 5u);
+    EXPECT_TRUE(frame.IsKeyDown(SDL_SCANCODE_SPACE)) << "the last of an odd count of transitions is a press";
 }
 
 TEST(InputFrameRelease, IsIdempotent)
@@ -65,13 +107,13 @@ TEST(InputFrameRelease, IsIdempotent)
     frame.SetKeyHeld(SDL_SCANCODE_W, true);
 
     frame.ReleaseAllHeld();
-    ASSERT_EQ(frame.KeysReleased.size(), 1u);
+    ASSERT_EQ(CountLogged(frame, InputControlSource::Key, SDL_SCANCODE_W, false), 1u);
 
     // Callers hold the condition, not the transition: releasing again while
     // nothing is held has to stay silent or a UI layer that releases every
     // frame would emit a release edge every frame.
     frame.ReleaseAllHeld();
-    EXPECT_EQ(frame.KeysReleased.size(), 1u);
+    EXPECT_EQ(CountLogged(frame, InputControlSource::Key, SDL_SCANCODE_W, false), 1u);
 }
 
 TEST(InputFrameRelease, DropsPendingMotion)
@@ -92,14 +134,14 @@ TEST(InputFrameRelease, PressAndReleaseInOneFrameKeepsBothEdges)
 {
     InputFrame frame;
     SdlInputCapture::Accept(frame, KeyEvent(SDL_EVENT_KEY_DOWN, SDL_SCANCODE_SPACE));
-    ASSERT_TRUE(Contains(frame.KeysPressed, SDL_SCANCODE_SPACE));
+    ASSERT_TRUE(Logged(frame, InputControlSource::Key, SDL_SCANCODE_SPACE, true));
 
     frame.ReleaseAllHeld();
 
     // A tap that starts and ends inside one frame is still a tap: dropping the
     // press edge here would lose the impulse entirely.
-    EXPECT_TRUE(Contains(frame.KeysPressed, SDL_SCANCODE_SPACE));
-    EXPECT_TRUE(Contains(frame.KeysReleased, SDL_SCANCODE_SPACE));
+    EXPECT_TRUE(Logged(frame, InputControlSource::Key, SDL_SCANCODE_SPACE, true));
+    EXPECT_TRUE(Logged(frame, InputControlSource::Key, SDL_SCANCODE_SPACE, false));
 }
 
 TEST(SdlInputCapture, FocusLossReleasesHeldInput)
@@ -117,7 +159,7 @@ TEST(SdlInputCapture, FocusLossReleasesHeldInput)
     // walks forever after alt-tabbing mid-stride.
     EXPECT_FALSE(frame.IsKeyDown(SDL_SCANCODE_W));
     EXPECT_FALSE(frame.IsMouseButtonDown(SDL_BUTTON_RIGHT));
-    EXPECT_TRUE(Contains(frame.KeysReleased, SDL_SCANCODE_W));
+    EXPECT_TRUE(Logged(frame, InputControlSource::Key, SDL_SCANCODE_W, false));
 }
 
 TEST(SdlInputCapture, BeginFrameKeepsHeldStateAndEdges)
@@ -131,7 +173,7 @@ TEST(SdlInputCapture, BeginFrameKeepsHeldStateAndEdges)
     // Deltas are per-frame accumulations; held state and unconsumed edges are
     // not, because a frame that runs no tick still owes them to the next one.
     EXPECT_TRUE(frame.IsKeyDown(SDL_SCANCODE_W));
-    EXPECT_TRUE(Contains(frame.KeysPressed, SDL_SCANCODE_W));
+    EXPECT_TRUE(Logged(frame, InputControlSource::Key, SDL_SCANCODE_W, true));
     EXPECT_FLOAT_EQ(frame.MouseDeltaX, 0.0f);
 }
 
@@ -172,18 +214,18 @@ TEST(GamepadDeviceSet, AButtonStaysDownWhileAnyPadHoldsIt)
     PressOn(devices, frame, kPadA, true);
     PressOn(devices, frame, kPadB, true);
     ASSERT_TRUE(frame.IsGamepadButtonDown(kSouth));
-    EXPECT_EQ(frame.GamepadButtonsPressed.size(), 1u) << "one abstract pad, one press";
+    EXPECT_EQ(CountLogged(frame, InputControlSource::GamepadButton, kSouth, true), 1u) << "one abstract pad, one press";
 
     // The first pad lets go while the second is still holding it.
-    frame.ClearEdges();
+    frame.ClearTransitions();
     PressOn(devices, frame, kPadA, false);
     EXPECT_TRUE(frame.IsGamepadButtonDown(kSouth));
-    EXPECT_TRUE(frame.GamepadButtonsReleased.empty());
+    EXPECT_TRUE(!Logged(frame, InputControlSource::GamepadButton, kSouth, false));
 
     // Only when the last one lets go does the abstract pad come up.
     PressOn(devices, frame, kPadB, false);
     EXPECT_FALSE(frame.IsGamepadButtonDown(kSouth));
-    EXPECT_TRUE(Contains(frame.GamepadButtonsReleased, kSouth));
+    EXPECT_TRUE(Logged(frame, InputControlSource::GamepadButton, kSouth, false));
 }
 
 TEST(GamepadDeviceSet, UnpluggingOnePadLeavesWhatTheOthersHold)
@@ -192,7 +234,7 @@ TEST(GamepadDeviceSet, UnpluggingOnePadLeavesWhatTheOthersHold)
     InputFrame frame;
     PressOn(devices, frame, kPadA, true);
     PressOn(devices, frame, kPadB, true);
-    frame.ClearEdges();
+    frame.ClearTransitions();
 
     // A pad pulled out mid-press never sends its button-up.
     const std::uint32_t before = devices.FoldButtons();
@@ -200,13 +242,13 @@ TEST(GamepadDeviceSet, UnpluggingOnePadLeavesWhatTheOthersHold)
     devices.PublishButtons(frame, before);
 
     EXPECT_TRUE(frame.IsGamepadButtonDown(kSouth)) << "the pad still plugged in is still holding it";
-    EXPECT_TRUE(frame.GamepadButtonsReleased.empty());
+    EXPECT_TRUE(!Logged(frame, InputControlSource::GamepadButton, kSouth, false));
 
     const std::uint32_t beforeLast = devices.FoldButtons();
     devices.Remove(kPadB);
     devices.PublishButtons(frame, beforeLast);
     EXPECT_FALSE(frame.IsGamepadButtonDown(kSouth));
-    EXPECT_TRUE(Contains(frame.GamepadButtonsReleased, kSouth));
+    EXPECT_TRUE(Logged(frame, InputControlSource::GamepadButton, kSouth, false));
 }
 
 TEST(GamepadDeviceSet, AStickTakesTheDevicePushedFurthest)
@@ -242,12 +284,12 @@ TEST(GamepadDeviceSet, PublishingDoesNotFightAForcedRelease)
     // Focus loss releases everything the frame is holding while the device
     // itself keeps reporting the button down.
     frame.ReleaseAllHeld();
-    frame.ClearEdges();
+    frame.ClearTransitions();
 
     // An unrelated device change must not resurrect it as a fresh press.
     devices.SetAxis(kPadB, GamepadAxis::RightX, 0.5f);
     devices.PublishAxes(frame);
     devices.PublishButtons(frame, devices.FoldButtons());
     EXPECT_FALSE(frame.IsGamepadButtonDown(kSouth));
-    EXPECT_TRUE(frame.GamepadButtonsPressed.empty());
+    EXPECT_TRUE(!Logged(frame, InputControlSource::GamepadButton, kSouth, true));
 }

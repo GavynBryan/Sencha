@@ -63,9 +63,9 @@ private:
     Logger* Log = nullptr;
     std::uint64_t ReportedErrorRevision = 0;
 
-    // Device state as of this frame's platform pump. Captured in PreSimulate so
-    // the fixed ticks that follow need no access to the platform's frame at all.
-    InputDeviceSnapshot Devices;
+    // Device state and held actions as of this frame's platform pump. Settled in
+    // PreSimulate so the fixed ticks that follow need no access to the frame.
+    InputEdgeAttribution Attribution;
 
     // Per-clock carry-over. Owned by the system rather than the world: nothing
     // outside a resolve pass has any business reading a half-consumed latch.

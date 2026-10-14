@@ -647,3 +647,104 @@ TEST(NetPlayerCommandCodec, ATruncatedAcknowledgementIsRefused)
             << "accepted an acknowledgement cut to " << cut << " bytes";
     }
 }
+
+//-----------------------------------------------------------------------------
+// Ordered edges on the wire
+//-----------------------------------------------------------------------------
+
+namespace
+{
+    std::vector<InputActionEdge> EdgesOf(const NetCommandRecord& record)
+    {
+        return { record.Edges.View().begin(), record.Edges.View().end() };
+    }
+}
+
+TEST(NetPlayerCommandEdges, TheEdgeListCrossesTheWireInOrder)
+{
+    NetPlayerCommand command;
+    command.RecordCount = 1;
+    command.Records[0] = RecordAt(40, 2);
+    command.Records[0].Actions[0] = Digital(true, true, true);
+    command.Records[0].Actions[1].Flags = InputActionFlags::Released | InputActionFlags::Interrupted;
+    const std::vector<InputActionEdge> sent{ { 1, InputEdgeKind::InterruptedRelease },
+                                             { 0, InputEdgeKind::Press },
+                                             { 0, InputEdgeKind::Release },
+                                             { 0, InputEdgeKind::Press } };
+    for (const InputActionEdge& edge : sent)
+        command.Records[0].Edges.Append(edge);
+
+    std::array<std::byte, 512> bytes{};
+    NetBitWriter writer(bytes);
+    ASSERT_EQ(NetEncodePlayerCommand(command, writer), 1u);
+    NetBitReader reader(std::span<const std::byte>(bytes).subspan(0, writer.BytesWritten()));
+    NetPlayerCommand decoded;
+    ASSERT_TRUE(NetDecodePlayerCommand(reader, decoded));
+    EXPECT_EQ(EdgesOf(decoded.Records[0]), sent);
+    EXPECT_TRUE(decoded.Records[0].Actions[1].WasInterrupted());
+}
+
+TEST(NetPeerCommandBufferDepth, CollapseConcatenatesEdgesInOrder)
+{
+    NetPeerCommandBuffer buffer;
+    buffer.Receive(CommandEndingAt(1, 1));
+    NetCommandRecord record;
+    ASSERT_TRUE(buffer.Next(record));
+
+    // Two taps living in two different shed ticks of a burst.
+    for (std::uint64_t tick = 5; tick <= 12; ++tick)
+    {
+        NetPlayerCommand command;
+        command.RecordCount = 1;
+        command.Records[0] = RecordAt(tick, 1);
+        if (tick == 8 || tick == 9)
+        {
+            command.Records[0].Actions[0] = Digital(false, true, true);
+            command.Records[0].Edges.Append({ 0, InputEdgeKind::Press });
+            command.Records[0].Edges.Append({ 0, InputEdgeKind::Release });
+        }
+        buffer.Receive(command);
+    }
+
+    ASSERT_TRUE(buffer.Next(record));  // 5
+    ASSERT_TRUE(buffer.Next(record));  // 6
+    ASSERT_TRUE(buffer.Next(record));  // collapse: 7..11 into one
+    EXPECT_EQ(EdgesOf(record),
+              (std::vector<InputActionEdge>{ { 0, InputEdgeKind::Press }, { 0, InputEdgeKind::Release },
+                                             { 0, InputEdgeKind::Press }, { 0, InputEdgeKind::Release } }))
+        << "two shots, not one";
+}
+
+TEST(NetPeerCommandBufferGap, AStarvedRepeatCarriesNoEdges)
+{
+    NetPeerCommandBuffer buffer;
+    NetPlayerCommand command;
+    command.RecordCount = 1;
+    command.Records[0] = RecordAt(9, 1);
+    command.Records[0].Actions[0] = Digital(true, true, true);
+    command.Records[0].Edges.Append({ 0, InputEdgeKind::Press });
+    buffer.Receive(command);
+
+    NetCommandRecord record;
+    ASSERT_TRUE(buffer.Next(record));
+    ASSERT_TRUE(buffer.Next(record));
+    EXPECT_EQ(record.Edges.Count, 0u) << "repeating the list would replay the press";
+    EXPECT_TRUE(record.Actions[0].IsHeld());
+}
+
+TEST(NetPlayerCommandEdges, AnEdgeForAnActionTheRecordDoesNotCarryIsNotSent)
+{
+    NetPlayerCommand command;
+    command.RecordCount = 1;
+    command.Records[0] = RecordAt(3, 1);
+    command.Records[0].Edges.Append({ 0, InputEdgeKind::Press });
+    command.Records[0].Edges.Append({ 5, InputEdgeKind::Press });
+
+    std::array<std::byte, 256> bytes{};
+    NetBitWriter writer(bytes);
+    ASSERT_EQ(NetEncodePlayerCommand(command, writer), 1u);
+    NetBitReader reader(std::span<const std::byte>(bytes).subspan(0, writer.BytesWritten()));
+    NetPlayerCommand decoded;
+    ASSERT_TRUE(NetDecodePlayerCommand(reader, decoded));
+    EXPECT_EQ(EdgesOf(decoded.Records[0]), (std::vector<InputActionEdge>{ { 0, InputEdgeKind::Press } }));
+}

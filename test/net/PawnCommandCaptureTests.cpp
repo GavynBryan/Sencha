@@ -67,8 +67,8 @@ namespace
         {
             InputActionState& state = WorldState.GetResource<InputActionState>();
 
-            Presentation.MotionX += lookX;
-            Simulation.MotionX += lookX;
+            Presentation.X += lookX;
+            Simulation.X += lookX;
 
             const InputMotionDelta framePass = Presentation.Share(1);
             Presentation.Consume(framePass);
@@ -125,8 +125,8 @@ namespace
         NetTickEstimator Clock;
         EntityId Pawn;
 
-        InputEdgeLatch Presentation;
-        InputEdgeLatch Simulation;
+        InputMotionLatch Presentation;
+        InputMotionLatch Simulation;
         std::uint64_t TickIndex = 1;
     };
 }

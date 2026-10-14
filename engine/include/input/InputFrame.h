@@ -1,13 +1,13 @@
 #pragma once
 
+#include <input/InputControl.h>
 #include <input/UiInputCapture.h>
 
-#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <span>
 
 //=============================================================================
 // InputFrame
@@ -20,11 +20,10 @@
 // layer, editor viewports, debug tooling, and a rebinding screen that needs to
 // know which physical control moved.
 //
-// Edges (Pressed/Released) persist until something drains them, so a frame that
-// runs no fixed tick cannot silently drop an impulse. The mapper drains them
-// when it folds them into its own per-clock latches; FrameDriver drains them on
-// the first fixed tick for hosts running no mapper, which is also what keeps the
-// edge lists from growing without bound.
+// Button transitions are kept in one ordered log, in the order the platform
+// reported them, until something drains it. The mapper drains it when it turns
+// the transitions into action edges; FrameDriver drains it on the first fixed
+// tick for hosts running no mapper.
 //
 // Keyboard: fixed-size bitset keyed by platform scancode. Bit set = held.
 // Mouse: accumulated delta for this platform frame. Right-button hold is a
@@ -66,15 +65,28 @@ enum class GamepadAxis : std::uint8_t
 static constexpr std::size_t kInputGamepadAxisCount =
     static_cast<std::size_t>(GamepadAxis::Count);
 
+// One button going down or up. Synthetic marks an up the device never sent --
+// focus left with the button held -- which reaches gameplay as an interruption
+// rather than as the player letting go.
+struct InputTransition
+{
+    InputControl Control;
+    bool Down = false;
+    bool Synthetic = false;
+};
+
+static constexpr std::size_t kInputFrameTransitionCapacity = 64;
+
 struct InputFrame
 {
     std::array<uint64_t, kInputScancodeCount / 64> KeyHeld{};
-    std::vector<uint32_t> KeysPressed;
-    std::vector<uint32_t> KeysReleased;
-
     std::array<uint64_t, 1> MouseHeld{};
-    std::vector<uint32_t> MouseButtonsPressed;
-    std::vector<uint32_t> MouseButtonsReleased;
+
+    // Past capacity a transition is dropped and counted; held state stays exact,
+    // and the mapper reconciles against it.
+    std::array<InputTransition, kInputFrameTransitionCapacity> Transitions{};
+    std::uint8_t TransitionCount = 0;
+    std::uint32_t DroppedTransitions = 0;
 
     float MouseDeltaX = 0.0f;
     float MouseDeltaY = 0.0f;
@@ -83,8 +95,6 @@ struct InputFrame
     // Axes are positions, not displacement: they hold their value until the
     // device moves, so every tick of a catch-up frame reads the same stick.
     std::uint32_t GamepadButtonsHeld = 0;
-    std::vector<uint32_t> GamepadButtonsPressed;
-    std::vector<uint32_t> GamepadButtonsReleased;
     std::array<float, kInputGamepadAxisCount> GamepadAxes{};
     bool GamepadConnected = false;
 
@@ -108,11 +118,11 @@ struct InputFrame
     // SdlInputCapture::BeginFrame. Raw readers below gate on it -- see above.
     UiInputCapture UiCapture;
 
-    // Release every held key and button as a release edge and drop pending
+    // Release every held key and button as a synthetic release and drop pending
     // motion, for when device events stop arriving mid-press.
     //
-    // Idempotent: with nothing held it produces no edges, so a caller may call
-    // it every frame for as long as the condition lasts rather than tracking
+    // Idempotent: with nothing held it produces no transitions, so a caller may
+    // call it every frame for as long as the condition lasts rather than tracking
     // the transition itself.
     void ReleaseAllHeld()
     {
@@ -123,7 +133,7 @@ struct InputFrame
             {
                 const auto bit = static_cast<uint32_t>(std::countr_zero(bits));
                 bits &= bits - 1;
-                KeysReleased.push_back(static_cast<uint32_t>(word * 64) + bit);
+                Record({ InputControlSource::Key, static_cast<std::uint16_t>(word * 64 + bit) }, false, true);
             }
             KeyHeld[word] = 0;
         }
@@ -133,7 +143,7 @@ struct InputFrame
         {
             const auto bit = static_cast<uint32_t>(std::countr_zero(buttons));
             buttons &= buttons - 1;
-            MouseButtonsReleased.push_back(bit);
+            Record({ InputControlSource::MouseButton, static_cast<std::uint16_t>(bit) }, false, true);
         }
         MouseHeld[0] = 0;
 
@@ -142,7 +152,7 @@ struct InputFrame
         {
             const auto bit = static_cast<uint32_t>(std::countr_zero(padButtons));
             padButtons &= padButtons - 1;
-            GamepadButtonsReleased.push_back(bit);
+            Record({ InputControlSource::GamepadButton, static_cast<std::uint16_t>(bit) }, false, true);
         }
         GamepadButtonsHeld = 0;
         GamepadAxes.fill(0.0f);
@@ -152,27 +162,48 @@ struct InputFrame
         MouseWheelY = 0.0f;
     }
 
-    void ClearEdges()
+    void ClearTransitions() { TransitionCount = 0; }
+
+    [[nodiscard]] std::span<const InputTransition> TransitionLog() const
     {
-        KeysPressed.clear();
-        KeysReleased.clear();
-        MouseButtonsPressed.clear();
-        MouseButtonsReleased.clear();
-        GamepadButtonsPressed.clear();
-        GamepadButtonsReleased.clear();
+        return std::span(Transitions).first(TransitionCount);
     }
 
-    // Take a key press edge. Bindings that run outside the fixed-tick drain,
-    // such as engine-level window and pause keys in PumpPlatform, must consume
-    // the edge they act on: edges survive frames that run no fixed tick, so a
-    // handler that only tests for the press would fire again next frame.
-    bool ConsumeKeyPressed(uint32_t scancode)
+    // A button's new state, logged as a transition only when it changes.
+    void SetButton(InputControl control, bool down)
     {
-        const auto first = std::remove(KeysPressed.begin(), KeysPressed.end(), scancode);
-        if (first == KeysPressed.end())
-            return false;
-        KeysPressed.erase(first, KeysPressed.end());
-        return true;
+        if (!HasButton(control) || IsButtonDown(control) == down)
+            return;
+        Record(control, down, false);
+        switch (control.Source)
+        {
+        case InputControlSource::Key:           SetKeyHeld(control.Index, down); break;
+        case InputControlSource::MouseButton:   SetMouseButtonHeld(control.Index, down); break;
+        case InputControlSource::GamepadButton: SetGamepadButtonHeld(control.Index, down); break;
+        default: break;
+        }
+    }
+
+    [[nodiscard]] static bool HasButton(InputControl control)
+    {
+        switch (control.Source)
+        {
+        case InputControlSource::Key:           return control.Index < kInputScancodeCount;
+        case InputControlSource::MouseButton:   return control.Index < 64;
+        case InputControlSource::GamepadButton: return control.Index < 32;
+        default:                                return false;
+        }
+    }
+
+    [[nodiscard]] bool IsButtonDown(InputControl control) const
+    {
+        switch (control.Source)
+        {
+        case InputControlSource::Key:           return IsKeyDown(control.Index);
+        case InputControlSource::MouseButton:   return IsMouseButtonDown(control.Index);
+        case InputControlSource::GamepadButton: return IsGamepadButtonDown(control.Index);
+        default:                                return false;
+        }
     }
 
     [[nodiscard]] bool IsKeyDown(uint32_t scancode) const
@@ -232,5 +263,16 @@ struct InputFrame
         const auto index = static_cast<std::size_t>(axis);
         if (index < GamepadAxes.size())
             GamepadAxes[index] = value;
+    }
+
+private:
+    void Record(InputControl control, bool down, bool synthetic)
+    {
+        if (TransitionCount == kInputFrameTransitionCapacity)
+        {
+            ++DroppedTransitions;
+            return;
+        }
+        Transitions[TransitionCount++] = InputTransition{ control, down, synthetic };
     }
 };

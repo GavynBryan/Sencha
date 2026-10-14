@@ -243,10 +243,9 @@ loss, and focus loss (synthetic device releases are tagged at capture). Rules:
 
 **Representation.** Each tick record carries an ordered list of action edges,
 `InputActionEdge { std::uint8_t Action; InputEdgeKind Kind; }` with
-`InputEdgeKind { Press, Release, InterruptedRelease }`, at most
-`kInputEdgeCapacity = 32`. Per action the edges alternate (`Press`, then `Release` or
-`InterruptedRelease`, …) starting from the action's held state at the previous
-record. The list preserves where each interruption falls and the order of edges
+`InputEdgeKind { Press, Release, InterruptedRelease }`, at most 32 per pass. A
+rise nobody pressed for (a context returning over a held key) is silent, so a
+`Release` may follow with no `Press` before it. The list preserves where each interruption falls and the order of edges
 across actions (press Reload, then press Fire). The per-action flags
 (`Held`, `Pressed`, `Released`, `Fired`, `Interrupted`) stay as summaries derived
 from the list, for existing consumers; a Released-mode `Fired` requires a genuine
@@ -1348,3 +1347,28 @@ Deviations from the plan's wording, each for a stated reason:
 - **The cost floor is the higher of zero and the attribute's minimum**, not the
   minimum alone: an attribute declared without a minimum would otherwise make any
   cost affordable.
+
+### 17.3 Stage 2 — ordered input edges
+
+- **Attribution replaces the latch.** The bitset latch is gone. Once per frame,
+  after contexts settle, `AttributeInputFrame` replays the frame's transition log
+  under that frame's contexts and claims (both depend only on which contexts are
+  active, so the replay is exact) and appends action edges to both clocks. A single
+  `BindingHeld` rule serves attribution and resolution, so edges and the held flag
+  cannot disagree.
+- **Correction 5 (overflow).** A pass's kept edges are walked from the previous
+  pass's held state; if they end held while the action is up, the pass publishes an
+  interrupted fall in its summary flags (and in the list if there is room), and if
+  they end up while the action is down it is held with no press. The summary flags
+  travel on the wire beside the list, so a reconstructed record is never wrong
+  about what is held. Tests: `AnOverflowNeverInventsAStartOrAReleaseAndNeverStrandsAHold`,
+  `OverflowDropsTransitionsButKeepsHeldStateExact`.
+- **Fire modes on lost profiles.** The clock no longer carries each action's fire
+  mode for a release owed after the profile is gone: those falls are interruptions,
+  which never fire.
+- **Pause.** On resume the simulation clock drops what was made during the pause
+  but keeps interruptions (`DiscardSuspendedInput`).
+- **Wire.** Five flag bits per action, then a 6-bit edge count and 7 bits per edge.
+  `kNetProtocolVersion` 7.
+- **Deviation:** the plan said per-action edges alternate; they need not, because a
+  silent rise is not an edge. Recorded in §2.6.

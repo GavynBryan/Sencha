@@ -407,3 +407,15 @@ do the work and delete the entry.
   (`docs/editor/placement.md`, Turning).
 - **Trigger:** the Entity card gaining the setting, or the first prefab meant
   to hang on a wall or a ceiling.
+
+## A trigger pulled and released inside one frame
+
+- **What:** a gamepad trigger bound as a button is judged against its threshold
+  once per rendered frame, on the frame's resting position, so a pull and release
+  that both happen between two frames produces no edge. Button transitions are
+  logged in order and never lose a tap; analog positions are not.
+- **Where:** `UpdateAnalogThresholds` in `engine/src/input/InputActionResolve.cpp`
+  reads `InputFrame::GamepadAxes`, which holds positions only. An axis event log
+  beside `InputFrame::Transitions` would let attribution replay crossings in order.
+- **Trigger:** a measured lost trigger tap (a semi-automatic weapon on a trigger
+  that drops shots at the frame rates players run).

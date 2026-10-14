@@ -51,6 +51,7 @@ struct PawnCommandTick
 
     std::uint8_t ActionCount = 0;
     std::array<InputActionValue, kNetMaxCommandActions> Actions{};
+    InputActionEdgeList Edges;
 };
 
 class PawnCommandRing

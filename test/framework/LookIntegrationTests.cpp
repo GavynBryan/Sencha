@@ -88,10 +88,10 @@ namespace
             InputActionState& state = WorldState.GetResource<InputActionState>();
 
             // The mapper folds the frame's displacement into both clocks.
-            Presentation.MotionX += lookX;
-            Presentation.MotionY += lookY;
-            Simulation.MotionX += lookX;
-            Simulation.MotionY += lookY;
+            Presentation.X += lookX;
+            Presentation.Y += lookY;
+            Simulation.X += lookX;
+            Simulation.Y += lookY;
 
             // Presentation resolves once per frame and takes everything.
             const InputMotionDelta framePass = Presentation.Share(1);
@@ -240,8 +240,8 @@ namespace
         YawReadingSystem* Reader = nullptr;
 
         // The two clocks' unconsumed displacement, as the mapper carries it.
-        InputEdgeLatch Presentation;
-        InputEdgeLatch Simulation;
+        InputMotionLatch Presentation;
+        InputMotionLatch Simulation;
         std::uint64_t TickIndex = 1;
         // Wall time the fixed-step boundary has not crossed yet, for the
         // wall-clock stepper: what the engine's accumulator carries.

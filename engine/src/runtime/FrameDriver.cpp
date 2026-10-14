@@ -55,7 +55,7 @@ void FrameDriver::InvokePhase(FramePhase phase, PhaseContext& ctx)
 void FrameDriver::DrainInputEdgesForFirstTick()
 {
     if (EdgesDrainedThisFrame) return;
-    Input.ClearEdges();
+    Input.ClearTransitions();
     EdgesDrainedThisFrame = true;
 }
 
