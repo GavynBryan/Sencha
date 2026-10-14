@@ -30,6 +30,10 @@ struct EntityChangeSet
     [[nodiscard]] bool Empty() const { return Changes.empty(); }
 };
 
+// Makes `into` the change from its before to `next`'s after, as if one edit
+// had made both; an entity left as it was drops out.
+void AppendChangeSet(EntityChangeSet& into, EntityChangeSet next);
+
 // Records entity records around edits made directly to a document, so the
 // edits become a change set that can be undone, redone and replayed.
 class EntityChangeRecorder

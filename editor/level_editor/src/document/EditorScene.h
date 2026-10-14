@@ -158,6 +158,8 @@ public:
     // the runtime allocator namespace. The returned id is reserved immediately,
     // so a discarded mint is retired for the life of the document.
     [[nodiscard]] PersistentEntityId MintPersistentId();
+    // From now on the ids minted follow from `seed`, so a replay mints the same ones.
+    void SeedPersistentIds(std::uint64_t seed) { IdRng_.Seed(seed); }
     // The id an entity is known by across rebuilds and reloads; invalid without one.
     [[nodiscard]] PersistentEntityId PersistentIdOf(EntityId entity) const;
     // The entity known by `id` now; invalid when none is.

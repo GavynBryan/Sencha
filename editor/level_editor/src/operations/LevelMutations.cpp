@@ -29,20 +29,20 @@ namespace
             DataField::Field("name", DataFieldKind::String, {}, "the new name; empty clears it"),
         });
         entry.Definition.Result = MutationResultSchema();
-        entry.Execute = [&target](const JsonValue& arguments) {
-            return target.Mutate([&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
+        entry.Execute = [&target, name = entry.Definition.Name](const JsonValue& arguments) {
+            return target.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
                 const SubjectResolution subject =
                     ResolveEntitySubject(document, arguments.Find("subject")->AsString());
                 if (!subject.Resolved())
                     return EditorOperationOutcome::Refused(subject.Code, subject.Message);
-                const std::string& name = arguments.Find("name")->AsString();
-                if (name.size() > kLongestName)
+                const std::string& newName = arguments.Find("name")->AsString();
+                if (newName.size() > kLongestName)
                     return EditorOperationOutcome::Refused(
                         "entity.name_invalid", "a name is at most " + std::to_string(kLongestName) + " characters");
 
                 const EntityId entity = subject.Entities.front();
                 recorder.Touch(entity);
-                if (auto rename = MakeRenameEntityCommand(entity, name, document.GetScene(), document))
+                if (auto rename = MakeRenameEntityCommand(entity, newName, document.GetScene(), document))
                     rename->Execute();
                 return EditorOperationOutcome::Ok({});
             });

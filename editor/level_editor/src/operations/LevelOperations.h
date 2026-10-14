@@ -6,5 +6,6 @@
 
 class LevelTarget;
 
-// Every operation over `level`: its queries and its mutations.
-[[nodiscard]] std::vector<EditorOperationEntry> LevelOperations(LevelTarget& level);
+// Every operation over `level`: its queries, its mutations and its drafts,
+// which replay through `operations`.
+[[nodiscard]] std::vector<EditorOperationEntry> LevelOperations(LevelTarget& level, EditorOperations& operations);

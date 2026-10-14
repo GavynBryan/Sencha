@@ -231,7 +231,7 @@ void LevelWorkspace::BuildOperations()
 {
     Level = std::make_unique<LevelTarget>(Workspace->World, *Commands);
     std::vector<std::string> errors;
-    if (!Operations.Register(std::string(kLevelOperations), LevelOperations(*Level), errors)
+    if (!Operations.Register(std::string(kLevelOperations), LevelOperations(*Level, Operations), errors)
         || !Operations.Register(std::string(kWorldOperations), WorldQueryOperations(Workspace->World), errors))
         for (const std::string& error : errors)
             EnginePtr->Logging().GetLogger<LevelWorkspace>().Error("operations: {}", error);

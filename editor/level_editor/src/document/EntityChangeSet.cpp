@@ -7,6 +7,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/registry/Registry.h>
 
+#include <algorithm>
 #include <ranges>
 
 namespace
@@ -103,4 +104,23 @@ std::vector<PersistentEntityId> ChangeSetConflicts(const EditorDocument& documen
             conflicts.push_back(change.Id);
     }
     return conflicts;
+}
+
+void AppendChangeSet(EntityChangeSet& into, EntityChangeSet next)
+{
+    for (EntityChange& change : next.Changes)
+    {
+        const auto earlier = std::ranges::find(into.Changes, change.Id, &EntityChange::Id);
+        if (earlier == into.Changes.end())
+        {
+            into.Changes.push_back(std::move(change));
+            continue;
+        }
+        earlier->After = std::move(change.After);
+        const bool never = !earlier->Before && !earlier->After;
+        const bool unchanged = earlier->Before && earlier->After
+            && DigestOf(*earlier->Before) == DigestOf(*earlier->After);
+        if (never || unchanged)
+            into.Changes.erase(earlier);
+    }
 }

@@ -122,7 +122,7 @@ int main(int argc, char** argv)
     LevelTarget level(world, commands);
     EditorOperations operations;
     std::vector<std::string> errors;
-    if (!operations.Register("level", LevelOperations(level), errors)
+    if (!operations.Register("level", LevelOperations(level, operations), errors)
         || !operations.Register("world", WorldQueryOperations(world), errors))
     {
         for (const std::string& error : errors)

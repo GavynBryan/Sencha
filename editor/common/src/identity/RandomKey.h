@@ -10,6 +10,8 @@ class RandomKeySource
 {
 public:
     [[nodiscard]] std::uint64_t Next() { return Engine(); }
+    // From now on the keys follow from `seed`, so a replay draws the same ones.
+    void Seed(std::uint64_t seed) { Engine.seed(seed); }
 
 private:
     std::mt19937_64 Engine{ std::random_device{}() };

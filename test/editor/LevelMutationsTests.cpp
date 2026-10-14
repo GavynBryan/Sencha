@@ -114,7 +114,7 @@ namespace
     TEST_F(LevelMutationsTest, AMutationRefusedHalfwayPutsBackWhatItChanged)
     {
         const EditorOperationOutcome outcome =
-            Level.Mutate([this](EditorDocument& document, EntityChangeRecorder& recorder) {
+            Level.Mutate("test.halfway", JsonValue{}, [this](EditorDocument& document, EntityChangeRecorder& recorder) {
                 recorder.Touch(Hall);
                 MakeRenameEntityCommand(Hall, "Atrium", document.GetScene(), document)->Execute();
                 return EditorOperationOutcome::Refused("test.halfway", "refused after editing");

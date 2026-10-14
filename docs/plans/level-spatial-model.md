@@ -851,6 +851,23 @@ of the real model, with spaces included from the start.
   offset shared walls, T-junction, different floor elevations, and one
   deliberately unsupported volume.
 
+**Progress notes (in flight):**
+- One `LevelTarget` is what every level operation reads and writes: the draft
+  being written, else the focus level. `Mutate` makes each mutation atomic (a
+  refusal puts back what it had changed) and adds the change summary, so no
+  operation repeats either. Queries read the draft too, so a batch can measure
+  what it just proposed.
+- `draft.begin` makes the new draft the one written; `draft.write` switches,
+  or returns to the level. A refused step leaves the draft `failed` with the
+  steps before it; `draft.resume` is the explicit way back to `open`. Draft
+  state is a plain enum.
+- A draft names its level by asset path and resolves it again at accept and
+  rebase, refusing with `draft.base_gone` when it is no longer open. Discarding
+  drafts with a notice when their level closes comes with the proposal tray.
+- Replayed ids: a draft seeds its copy's id minter from a 32-bit `id_seed`
+  (exact in JSON), so the same seed on the same base mints the same ids.
+- R1: copying `bench_stress` (77 entities, 10 brushes) costs about 13 ms.
+
 ### M2: work live, and widen the vocabulary
 
 **Capability:** the agent works beside the designer in a running Kyusu and can
