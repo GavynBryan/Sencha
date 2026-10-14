@@ -1,5 +1,6 @@
 #include "WorldQueries.h"
 
+#include "DiagnosticRecords.h"
 #include "LevelJson.h"
 #include "LevelSubjects.h"
 
@@ -113,26 +114,6 @@ namespace
         return entry;
     }
 
-    std::string_view KindText(ContentRiskSourceKind kind)
-    {
-        switch (kind)
-        {
-        case ContentRiskSourceKind::World:
-            return "world";
-        case ContentRiskSourceKind::Graph:
-            return "graph";
-        case ContentRiskSourceKind::Zone:
-            return "zone";
-        case ContentRiskSourceKind::Dock:
-            return "dock";
-        case ContentRiskSourceKind::Link:
-            return "link";
-        case ContentRiskSourceKind::Transition:
-            return "transition";
-        }
-        return "world";
-    }
-
     EditorOperationEntry Diagnostics(const WorldDocument& world)
     {
         EditorOperationEntry entry;
@@ -141,33 +122,10 @@ namespace
         entry.Definition.Description =
             "What the world's validation reports: each record's severity, stable rule id, the "
             "kind and id of what it is about, and a message.";
-        std::vector<DataEnumChoice> kinds;
-        for (std::string_view kind : { "world", "graph", "zone", "dock", "link", "transition" })
-            kinds.push_back({ std::string(kind), std::string(kind), {} });
-        entry.Definition.Result = DataField::Record({}, {}, {}, {
-            DataField::ArrayOf("records", {}, {},
-                DataField::Record({}, {}, {}, {
-                    DataField::Enum("severity", {}, {}, { { "warning", "Warning", {} },
-                                                          { "error", "Error", {} } }),
-                    Text("rule"),
-                    DataField::Enum("kind", {}, "what the record is about", std::move(kinds)),
-                    Text("source", "the id of what it is about, in hex; empty for the world"),
-                    Text("message"),
-                }),
-                true),
-        });
+        entry.Definition.Result = DataField::Record({}, {}, {}, { ContentRiskRecordsSchema("records") });
         entry.Execute = [&world](const JsonValue&) {
-            JsonValue::Array records;
-            for (const ContentRiskRecord& record : world.ValidationRecords())
-                records.push_back(JsonValue(JsonValue::Object{
-                    { "severity", JsonValue(record.Severity == ContentRiskSeverity::Error ? "error" : "warning") },
-                    { "rule", JsonValue(record.RuleId) },
-                    { "kind", JsonValue(std::string(KindText(record.Kind))) },
-                    { "source", JsonValue(record.SourceId == 0 ? std::string{} : std::format("{:016x}", record.SourceId)) },
-                    { "message", JsonValue(record.Message) },
-                }));
             return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
-                { "records", JsonValue(std::move(records)) },
+                { "records", ContentRiskRecordsJson(world.ValidationRecords()) },
             }));
         };
         return entry;

@@ -1,14 +1,18 @@
 #include "SpaceOperations.h"
 
+#include "DiagnosticRecords.h"
 #include "LevelJson.h"
 #include "LevelSubjects.h"
 #include "LevelTarget.h"
+#include "SpaceDiagnostics.h"
+#include "SpaceRelations.h"
 
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/EntityChangeSet.h"
 #include "document/EntityNameComponent.h"
 #include "document/LevelConventions.h"
+#include "document/NavigationCookInput.h"
 #include "document/SpaceComponents.h"
 #include "document/commands/RenameEntityCommand.h"
 #include "meshedit/MeshEditService.h"
@@ -24,7 +28,6 @@
 namespace
 {
     constexpr float kSmallest = 0.1f;
-    constexpr float kOpeningReach = 0.5f;
 
     LevelConventions ConventionsOf(const EditorDocument& document)
     {
@@ -130,63 +133,6 @@ namespace
         return entry;
     }
 
-    struct WallHit
-    {
-        EntityId Space;
-        Vec3d    Outward;
-        Vec3d    OnWall;   // the point carried onto the middle of the wall
-        float    FloorY = 0.0f;
-    };
-
-    // The generated wall `point` is in or nearest: a side face of a shelled
-    // space whose slab, half a metre either way, holds the point, and whose
-    // face the point lies over.
-    std::optional<WallHit> WallAt(const EditorScene& scene, const Vec3d& point)
-    {
-        std::optional<WallHit> best;
-        float bestOff = 0.0f;
-        const World& components = scene.GetRegistry().Components;
-        for (const EntityId entity : scene.GetAllEntities())
-        {
-            const Shell* shell = components.TryGet<Shell>(entity);
-            const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-            const Transform3f* world = scene.TryGetWorldTransform(entity);
-            if (shell == nullptr || mesh == nullptr || world == nullptr || scene.RoleOf(entity) != BrushRole::Volume)
-                continue;
-            for (const BrushFace& face : mesh->Faces)
-            {
-                std::vector<Vec3d> corners;
-                for (const std::uint32_t v : face.Loop)
-                    corners.push_back(world->TransformPoint(mesh->Vertices[v].Position));
-                Vec3d normal{ 0, 0, 0 };
-                for (std::size_t i = 0; i < corners.size(); ++i)
-                    normal = normal + corners[i].Cross(corners[(i + 1) % corners.size()]);
-                normal = normal.Normalized();
-                if (std::abs(normal.Y) > 0.7f)
-                    continue;
-                const float depth = normal.Dot(point - corners.front());
-                if (depth < -kOpeningReach || depth > shell->Thickness + kOpeningReach)
-                    continue;
-                const Vec3d onFace = point - normal * depth;
-                bool inside = true;
-                for (std::size_t i = 0; i < corners.size() && inside; ++i)
-                    inside = (corners[(i + 1) % corners.size()] - corners[i]).Cross(onFace - corners[i]).Dot(normal)
-                        >= -1e-3f;
-                if (!inside)
-                    continue;
-                const float off = std::abs(depth - 0.5f * shell->Thickness);
-                if (best && off >= bestOff)
-                    continue;
-                float floorY = corners.front().Y;
-                for (const Vec3d& corner : corners)
-                    floorY = std::min(floorY, corner.Y);
-                best = WallHit{ entity, normal, onFace + normal * (0.5f * shell->Thickness), floorY };
-                bestOff = off;
-            }
-        }
-        return best;
-    }
-
     EditorOperationEntry CreateOpening(LevelTarget& level)
     {
         EditorOperationEntry entry;
@@ -275,15 +221,6 @@ namespace
                                  { "west", "West", "-X" }, { "up", "Up", "+Y" }, { "down", "Down", "-Y" } });
     }
 
-    Vec3d WorldNormal(const BrushMesh& mesh, const BrushFace& face, const Transform3f& world)
-    {
-        Vec3d normal{ 0, 0, 0 };
-        for (std::size_t i = 0; i < face.Loop.size(); ++i)
-            normal = normal + world.TransformPoint(mesh.Vertices[face.Loop[i]].Position)
-                                  .Cross(world.TransformPoint(mesh.Vertices[face.Loop[(i + 1) % face.Loop.size()]].Position));
-        return normal.Normalized();
-    }
-
     // The face of `entity`'s volume whose outward normal is nearest `direction`.
     std::optional<std::uint32_t> FaceToward(const EditorScene& scene, EntityId entity, const Vec3d& direction)
     {
@@ -294,7 +231,7 @@ namespace
         std::optional<std::uint32_t> best;
         float bestDot = 0.7f;
         for (std::uint32_t f = 0; f < mesh->Faces.size(); ++f)
-            if (const float dot = WorldNormal(*mesh, mesh->Faces[f], *world).Dot(direction); dot > bestDot)
+            if (const float dot = WorldFaceOf(scene, entity, f)->Normal.Dot(direction); dot > bestDot)
             {
                 best = f;
                 bestDot = dot;
@@ -319,58 +256,6 @@ namespace
                 return false;
         scene.SetBrushMesh(entity, std::move(*moved));
         return true;
-    }
-
-    // The space on the far side of `opening`: a shelled volume, other than
-    // `owner`, with a face looking back along the opening's through axis that
-    // the opening's middle lies over, within a wall's thickness and a half.
-    struct FarSide
-    {
-        EntityId      Space;
-        std::uint32_t Face = 0;
-        Vec3d         Outward;
-    };
-
-    std::optional<FarSide> FarSideOf(const EditorScene& scene, EntityId owner, EntityId opening)
-    {
-        const Transform3f* frame = scene.TryGetWorldTransform(opening);
-        const Opening* cut = scene.GetRegistry().Components.TryGet<Opening>(opening);
-        if (frame == nullptr || cut == nullptr)
-            return std::nullopt;
-        const Vec3d through = frame->Rotation.RotateVector(Vec3d{ 0, 0, 1 });
-        const Vec3d middle = frame->Position + frame->Rotation.RotateVector(Vec3d{ 0, 0.5f * cut->Height, 0 });
-        for (const EntityId entity : scene.GetAllEntities())
-        {
-            if (entity == owner || scene.RoleOf(entity) != BrushRole::Volume
-                || !scene.GetRegistry().Components.HasComponent<Space>(entity))
-                continue;
-            const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-            const Transform3f* world = scene.TryGetWorldTransform(entity);
-            if (mesh == nullptr || world == nullptr)
-                continue;
-            for (std::uint32_t f = 0; f < mesh->Faces.size(); ++f)
-            {
-                const Vec3d normal = WorldNormal(*mesh, mesh->Faces[f], *world);
-                if (normal.Dot(through) > -0.99f)
-                    continue;
-                const Vec3d corner = world->TransformPoint(mesh->Vertices[mesh->Faces[f].Loop.front()].Position);
-                const float depth = normal.Dot(middle - corner);
-                if (depth < -kOpeningReach || depth > kOpeningReach)
-                    continue;
-                const Vec3d onFace = middle - normal * depth;
-                bool inside = true;
-                const std::vector<std::uint32_t>& loop = mesh->Faces[f].Loop;
-                for (std::size_t i = 0; i < loop.size() && inside; ++i)
-                {
-                    const Vec3d a = world->TransformPoint(mesh->Vertices[loop[i]].Position);
-                    const Vec3d b = world->TransformPoint(mesh->Vertices[loop[(i + 1) % loop.size()]].Position);
-                    inside = (b - a).Cross(onFace - a).Dot(normal) >= -1e-3f;
-                }
-                if (inside)
-                    return FarSide{ entity, f, normal };
-            }
-        }
-        return std::nullopt;
     }
 
     void Translate(EditorScene& scene, EntityId entity, const Vec3d& offset)
@@ -485,8 +370,7 @@ namespace
                 const std::optional<std::uint32_t> face = FaceToward(scene, space, direction);
                 if (!face)
                     return EditorOperationOutcome::Refused("space.no_face", "no face looks that way");
-                const BrushMesh& mesh = *scene.TryGetBrushMesh(space);
-                const Vec3d normal = WorldNormal(mesh, mesh.Faces[*face], *scene.TryGetWorldTransform(space));
+                const Vec3d normal = WorldFaceOf(scene, space, *face)->Normal;
                 recorder.Touch(space);
                 if (!MoveFace(scene, space, *face, normal * static_cast<float>(arguments.Find("distance")->AsNumber())))
                     return EditorOperationOutcome::Refused("space.resize_invalid",
@@ -523,6 +407,31 @@ namespace
                 document.MarkDirty();
                 return EditorOperationOutcome::Ok({});
             });
+        };
+        return entry;
+    }
+
+    EditorOperationEntry Diagnostics(const LevelTarget& level)
+    {
+        EditorOperationEntry entry;
+        entry.Definition.Name = "level.diagnostics";
+        entry.Definition.Category = "Space";
+        entry.Definition.Description =
+            "What is wrong with the level's spaces and openings: refused or approximate shells, spaces "
+            "that overlap, openings that could not be cut, lead into no space, or are too small for the "
+            "navigation profile's capsule. Each record is about an entity, by persistent id.";
+        entry.Definition.Result = DataField::Record({}, {}, {}, { ContentRiskRecordsSchema("records") });
+        entry.Execute = [&level](const JsonValue&) {
+            const EditorDocument& document = level.Document();
+            std::optional<OpeningClearance> clearance;
+            if (!document.ContentRoots().empty())
+                if (const NavigationSettingsLookup settings = FindNavigationSettings(document.ContentRoots().front());
+                    settings.Settings && !settings.Settings->Profiles.empty())
+                    clearance = OpeningClearance{ settings.Settings->Profiles.front().Build.Radius,
+                                                  settings.Settings->Profiles.front().Build.Height };
+            return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
+                { "records", ContentRiskRecordsJson(SpaceDiagnostics(document.GetScene(), clearance)) },
+            }));
         };
         return entry;
     }
@@ -596,5 +505,6 @@ std::vector<EditorOperationEntry> SpaceOperations(LevelTarget& level)
     entries.push_back(ResizeFace(level));
     entries.push_back(MoveOpening(level));
     entries.push_back(Detach(level));
+    entries.push_back(Diagnostics(level));
     return entries;
 }

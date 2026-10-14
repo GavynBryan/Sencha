@@ -85,8 +85,7 @@ namespace
     std::vector<ShellOpening> OpeningsNear(const EditorScene& scene, const ShelledVolume& self,
                                            std::vector<EntityId>* entities = nullptr)
     {
-        constexpr float kReach = 0.51f;
-        const float margin = self.Thickness + kReach;
+        const float margin = self.Thickness + kOpeningReach + 0.01f;
         Aabb3d reach = WorldBounds(self.Record->Mesh, *self.World);
         reach.Min = reach.Min - Vec3d{ margin, margin, margin };
         reach.Max = reach.Max + Vec3d{ margin, margin, margin };
@@ -185,6 +184,7 @@ const BrushEvaluated* VolumeEvaluations::Evaluate(const EditorScene& scene, Enti
 
     entry.Inputs = inputs;
     entry.Problems.clear();
+    entry.Openings.clear();
     entry.Value = EvaluateBrushModifiers(record->Mesh, record->Modifiers, policy);
     BrushEvaluated& value = entry.Value;
     for (BrushEvaluatedMesh& mesh : value.Meshes)
@@ -210,7 +210,11 @@ const BrushEvaluated* VolumeEvaluations::Evaluate(const EditorScene& scene, Enti
     rules.Thickness = self->Thickness;
     rules.OpenFaceMaterial = scene.OpenFaceMaterial();
     ShellResult walls = GenerateShell(InWorld(record->Mesh, *world), rules, neighbours);
-    CutOpenings(walls, self->Thickness, OpeningsNear(scene, *self));
+    std::vector<EntityId> openingEntities;
+    const std::vector<ShellOpening> openings = OpeningsNear(scene, *self, &openingEntities);
+    for (const EntityId opening : openingEntities)
+        entry.Openings.push_back(scene.PersistentIdOf(opening));
+    CutOpenings(walls, self->Thickness, openings);
     entry.Problems = std::move(walls.Problems);
 
     for (ShellSlab& slab : walls.Slabs)
@@ -237,6 +241,13 @@ std::span<const ShellProblem> VolumeEvaluations::ShellProblems(EntityId entity) 
     const auto found = Entries.find(EntityKey(entity));
     return found != Entries.end() ? std::span<const ShellProblem>(found->second.Problems)
                                   : std::span<const ShellProblem>{};
+}
+
+std::span<const PersistentEntityId> VolumeEvaluations::ShellOpenings(EntityId entity) const
+{
+    const auto found = Entries.find(EntityKey(entity));
+    return found != Entries.end() ? std::span<const PersistentEntityId>(found->second.Openings)
+                                  : std::span<const PersistentEntityId>{};
 }
 
 void VolumeEvaluations::Forget(EntityId entity)

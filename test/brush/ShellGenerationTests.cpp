@@ -342,3 +342,30 @@ TEST(ShellOpenings, AnOpeningOverAnEarlierOneIsRefused)
     EXPECT_EQ(shell.Problems.front().Kind, ShellProblemKind::OpeningRefused);
     EXPECT_EQ(shell.Problems.front().Element, 1u);
 }
+
+TEST(ShellGeneration, OverlappingSpacesAreRefusedButOneInAnLsNotchIsNot)
+{
+    const BrushMesh room = BrushOps::MakeBox({ 2, 1.5f, 2 });
+    const BrushMesh crossing = Shifted(BrushOps::MakeBox({ 2, 1.5f, 2 }), { 1, 0, 0 });
+    const ShellNeighbour overlap{ &crossing, 0.25f, false };
+    const ShellResult refused = GenerateShell(room, Rules(0.25f), std::span(&overlap, 1));
+    EXPECT_TRUE(refused.Refused);
+    EXPECT_EQ(refused.Problems.front().Kind, ShellProblemKind::SpaceOverlap);
+
+    const BrushMesh ell = Prism({ { 0, 0 }, { 0, 6 }, { 3, 6 }, { 3, 3 }, { 8, 3 }, { 8, 0 } }, 0, 3);
+    const BrushMesh notch = Prism({ { 3.25f, 3.25f }, { 3.25f, 6 }, { 8, 6 }, { 8, 3.25f } }, 0, 3);
+    const ShellNeighbour inTheNotch{ &notch, 0.25f, false };
+    EXPECT_FALSE(GenerateShell(ell, Rules(0.25f), std::span(&inTheNotch, 1)).Refused);
+}
+
+TEST(ShellGeneration, WallsNearerThanTheirThicknessAreNoted)
+{
+    const BrushMesh west = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { -2, 0, 0 });
+    const BrushMesh east = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { 2.1f, 0, 0 });
+    const ShellNeighbour close{ &east, 0.25f, true };
+    const ShellResult shell = GenerateShell(west, Rules(0.25f), std::span(&close, 1));
+    EXPECT_FALSE(shell.Refused);
+    EXPECT_EQ(shell.Slabs.size(), 6u);
+    ASSERT_FALSE(shell.Problems.empty());
+    EXPECT_EQ(shell.Problems.front().Kind, ShellProblemKind::WallsOverlap);
+}

@@ -28,12 +28,17 @@ enum class ShellProblemKind : std::uint8_t
     OpenVolume,
     NonPlanarFace,
     InvertedSlab,
+    // It intersects another shelled volume; both are refused until they part.
+    SpaceOverlap,
     // Notes. More than three planes meet at a corner, so the bisector cuts may
     // leave a small gap or overlap there:
     VertexJoin,
     // A face shared with a neighbour across the gap is not convex, so both walls
     // stand there (version 1 shares convex faces only):
     SharedWallNotConvex,
+    // A neighbour's face is closer than a wall's thickness, so the two walls
+    // pass through each other there:
+    WallsOverlap,
     // An opening could not be cut through a slab it crosses; Element is its
     // index among the openings:
     OpeningRefused,
@@ -95,8 +100,11 @@ struct ShellOpening
     CarveShapeParams Params;
 };
 
+// How far either side of a slab an opening's sill may stand and still cut it.
+inline constexpr float kOpeningReach = 0.5f;
+
 // Cuts each opening through every slab facing along it whose thickness, give
-// or take half a metre, holds the opening's sill. A shared wall is one slab, so
+// or take kOpeningReach, holds the opening's sill. A shared wall is one slab, so
 // it is cut once; an outline on a slab's rim becomes a notch, which is how a
 // doorway differs from a window. A cut the carve refuses is reported and the
 // slab stands uncut there.

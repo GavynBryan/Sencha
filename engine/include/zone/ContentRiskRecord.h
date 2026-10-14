@@ -19,6 +19,8 @@ enum class ContentRiskSourceKind : uint8_t
     Dock,
     Link,
     Transition,
+    // An authored entity in a level; SourceId is its persistent id.
+    Entity,
 };
 
 struct ContentRiskRecord

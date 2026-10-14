@@ -941,6 +941,18 @@ of the real model, with spaces included from the start.
   refreshes world transforms on both sides of its edit: an operation is the
   "mutation finished" point the document otherwise lacks, and without it a
   batch read positions from before its own previous step.
+- Diagnostics are `ContentRiskRecord`s, the world validation's record, with a
+  new `Entity` source kind whose id is the persistent id; `level.diagnostics`
+  reports them for the target level (a draft included) in the same shape as
+  the world's `diagnostics`. Rules: `shell.unsupported`, `space.overlap`
+  (both shells refused; judged by face-plane separation, exact for convex
+  volumes, so a space in an L's notch is not refused, and a non-convex pair is
+  not judged), `shell.overlap` (walls nearer than their thickness),
+  `shell.vertex_join`, `shell.shared_not_convex`, `opening.refused` (about the
+  opening), `opening.no_wall`, `opening.joins_one_space`, and opening clearance
+  as `opening.too_narrow` and `opening.too_low` against the first navigation
+  profile's capsule. `carry.skipped_detached` stays in `space.move`'s answer,
+  since it is about one move rather than the level.
 
 ### M2: work live, and widen the vocabulary
 

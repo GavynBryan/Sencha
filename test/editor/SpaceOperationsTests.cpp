@@ -13,6 +13,8 @@
 #include "viewport/Picking.h"
 
 #include <core/json/JsonParser.h>
+#include <filesystem>
+#include <fstream>
 #include <core/json/JsonStringify.h>
 #include <world/registry/Registry.h>
 
@@ -229,4 +231,74 @@ TEST_F(CarryTest, AnOpeningSlidesAlongItsWall)
     Ok("opening.move", R"({"subject": "@Hall door", "offset": [0, 0, 2.5]})");
     EXPECT_TRUE(EastFromTheHall(3.0f).has_value() && EastFromTheHall(3.0f)->Point.X < 9.0f)
         << "the old doorway is wall again";
+}
+
+namespace
+{
+    std::vector<std::string> Rules(const JsonValue& answer, std::string_view source = {})
+    {
+        std::vector<std::string> rules;
+        for (const JsonValue& record : answer.Find("records")->AsArray())
+            if (source.empty() || record.Find("source")->AsString() == source)
+                rules.push_back(record.Find("rule")->AsString());
+        return rules;
+    }
+
+    bool Has(const std::vector<std::string>& rules, std::string_view rule)
+    {
+        return std::find(rules.begin(), rules.end(), rule) != rules.end();
+    }
+}
+
+TEST_F(SpaceOperationsTest, OverlappingSpacesAreBothReported)
+{
+    Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
+    Ok("space.create", R"({"name": "Annex", "min": [6, 0, 0], "max": [10, 3, 6]})");
+    const JsonValue answer = Ok("level.diagnostics", "{}");
+    EXPECT_TRUE(Has(Rules(answer, PersistentIdText(Workspace.ActiveDocument(), Find("Hall"))), "space.overlap"));
+    EXPECT_TRUE(Has(Rules(answer, PersistentIdText(Workspace.ActiveDocument(), Find("Annex"))), "space.overlap"));
+    EXPECT_EQ(Walls(), 0u) << "both shells are refused until they part";
+}
+
+TEST_F(SpaceOperationsTest, ADoorLeadingNowhereIsReportedAndOneBetweenSpacesIsNot)
+{
+    Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
+    Ok("space.create", R"({"name": "Corridor", "min": [8.25, 0, 2], "max": [14, 3, 4]})");
+    Ok("opening.create", R"({"at": [8.1, 1, 3], "name": "Inner door"})");
+    Ok("opening.create", R"({"at": [4, 1, -0.1], "name": "Front door"})");
+    const JsonValue answer = Ok("level.diagnostics", "{}");
+    const std::string inner = PersistentIdText(Workspace.ActiveDocument(), Find("Inner door"));
+    const std::string front = PersistentIdText(Workspace.ActiveDocument(), Find("Front door"));
+    EXPECT_TRUE(Rules(answer, inner).empty());
+    EXPECT_TRUE(Has(Rules(answer, front), "opening.joins_one_space"));
+}
+
+TEST_F(SpaceOperationsTest, AnOpeningOverAnotherIsReportedAgainstTheOneRefused)
+{
+    Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
+    Ok("opening.create", R"({"at": [4, 1, -0.1], "sill": 1, "width": 1, "height": 1, "name": "First"})");
+    Ok("opening.create", R"({"at": [4.3, 1, -0.1], "sill": 1.2, "width": 1, "height": 1, "name": "Second"})");
+    const JsonValue answer = Ok("level.diagnostics", "{}");
+    const std::vector<std::string> refused =
+        Rules(answer, PersistentIdText(Workspace.ActiveDocument(), Find("Second")));
+    EXPECT_TRUE(Has(refused, "opening.refused")) << JsonStringify(answer);
+}
+
+TEST_F(SpaceOperationsTest, ADoorLowerThanTheNavigationCapsuleIsReported)
+{
+    const std::filesystem::path root = std::filesystem::temp_directory_path()
+        / ("sencha_space_diag_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)));
+    std::filesystem::create_directories(root / "data");
+    std::ofstream(root / "data/navigation.sdata") << R"({"type": "navigation.settings", "version": 1,
+        "data": { "profiles": [ { "tag": "navigation.profile.humanoid", "radius": 0.3, "height": 1.8,
+                                  "max_slope_degrees": 45, "max_climb": 0.35, "cell_size": 0.2,
+                                  "cell_height": 0.1, "tile_cells": 40 } ], "areas": [] } })";
+    Workspace.World.SetContentRoots({ root });
+
+    Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
+    Ok("opening.create", R"({"at": [4, 1, -0.1], "height": 1.5, "name": "Hatch"})");
+    const JsonValue answer = Ok("level.diagnostics", "{}");
+    EXPECT_TRUE(Has(Rules(answer, PersistentIdText(Workspace.ActiveDocument(), Find("Hatch"))), "opening.too_low"));
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
 }

@@ -220,11 +220,12 @@ namespace
             {
                 if (BrushComputeFaceNormal(*neighbour.Volume, across).Dot(inner.Normal) > -1.0f + kParallel)
                     continue;
-                const bool onOuterPlane = std::all_of(across.Loop.begin(), across.Loop.end(), [&](std::uint32_t v) {
-                    return std::abs(inner.SignedDistanceTo(neighbour.Volume->Vertices[v].Position) - thickness)
+                const float gap = inner.SignedDistanceTo(neighbour.Volume->Vertices[across.Loop.front()].Position);
+                const bool parallel = std::all_of(across.Loop.begin(), across.Loop.end(), [&](std::uint32_t v) {
+                    return std::abs(inner.SignedDistanceTo(neighbour.Volume->Vertices[v].Position) - gap)
                         <= kShareTolerance;
                 });
-                if (!onOuterPlane)
+                if (!parallel || gap <= kShareTolerance || gap > thickness + kShareTolerance)
                     continue;
                 std::vector<Vec2d> theirs;
                 for (auto v = across.Loop.rbegin(); v != across.Loop.rend(); ++v)
@@ -232,6 +233,13 @@ namespace
                 const std::vector<Vec2d> shared = ClipPolygonToConvex2D(face, theirs, kShareTolerance);
                 if (shared.size() < 3 || PolygonSignedArea(shared) <= kShareTolerance)
                     continue;
+                if (gap < thickness - kShareTolerance)
+                {
+                    result.Problems.push_back({ ShellProblemKind::WallsOverlap, f,
+                                                "a neighbour is " + std::to_string(gap) + " m from face "
+                                                    + std::to_string(f) + ", nearer than a wall is thick" });
+                    continue;
+                }
                 if (!IsConvexPolygon2D(theirs, kShareTolerance) || !IsConvexPolygon2D(face, kShareTolerance))
                 {
                     result.Problems.push_back({ ShellProblemKind::SharedWallNotConvex, f,
@@ -260,6 +268,43 @@ namespace
         return regions;
     }
 
+    // Whether every vertex lies on or behind every face's plane.
+    bool IsConvexVolume(const BrushMesh& mesh)
+    {
+        for (const BrushFace& face : mesh.Faces)
+        {
+            const Plane plane = Plane::FromNormalAndPoint(BrushComputeFaceNormal(mesh, face),
+                                                          mesh.Vertices[face.Loop.front()].Position);
+            for (const BrushVertex& vertex : mesh.Vertices)
+                if (plane.SignedDistanceTo(vertex.Position) > kShareTolerance)
+                    return false;
+        }
+        return true;
+    }
+
+    // Whether `b` lies wholly outside one of `a`'s face planes.
+    bool SeparatedByAFaceOf(const BrushMesh& a, const BrushMesh& b)
+    {
+        for (const BrushFace& face : a.Faces)
+        {
+            const Plane plane = Plane::FromNormalAndPoint(BrushComputeFaceNormal(a, face),
+                                                          a.Vertices[face.Loop.front()].Position);
+            if (std::all_of(b.Vertices.begin(), b.Vertices.end(), [&](const BrushVertex& vertex) {
+                    return plane.SignedDistanceTo(vertex.Position) >= -kShareTolerance;
+                }))
+                return true;
+        }
+        return false;
+    }
+
+    // Two convex volumes share interior unless a face plane of either
+    // separates them. Faces alone settle boxes and prisms standing upright;
+    // a non-convex pair is not judged.
+    bool ConvexVolumesIntersect(const BrushMesh& a, const BrushMesh& b)
+    {
+        return IsConvexVolume(a) && IsConvexVolume(b) && !SeparatedByAFaceOf(a, b) && !SeparatedByAFaceOf(b, a);
+    }
+
     void Refuse(ShellResult& result, ShellProblemKind kind, std::uint32_t face, std::string message)
     {
         result.Problems.push_back({ kind, face, std::move(message) });
@@ -279,6 +324,15 @@ ShellResult GenerateShell(const BrushMesh& volume, const ShellRules& rules,
             Refuse(result, ShellProblemKind::OpenVolume, halfEdge.Face, "the volume is not closed");
             return result;
         }
+
+    for (const ShellNeighbour& neighbour : neighbours)
+    {
+        if (neighbour.Volume != nullptr && ConvexVolumesIntersect(volume, *neighbour.Volume))
+        {
+            Refuse(result, ShellProblemKind::SpaceOverlap, 0, "it overlaps another shelled space");
+            return result;
+        }
+    }
 
     std::vector<FaceInfo> faces(volume.Faces.size());
     for (std::uint32_t f = 0; f < volume.Faces.size(); ++f)
@@ -370,7 +424,6 @@ ShellResult GenerateShell(const BrushMesh& volume, const ShellRules& rules,
 
 namespace
 {
-    constexpr float kOpeningReach = 0.5f;
     // How square to a wall an opening must run to cut it.
     constexpr float kFacingCosine = 0.9f;
 
