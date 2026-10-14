@@ -208,6 +208,16 @@ namespace
         }
         EXPECT_EQ(compared, 2u);
     }
+    TEST_F(LevelDraftsTest, ADraftWhoseLevelClosesIsDropped)
+    {
+        Ok("draft.begin", R"({"label": "Doomed"})");
+        EXPECT_TRUE(Level.DropOrphanedDrafts().empty()) << "its level is still open";
+        World.NewWorld("Another");
+        EXPECT_EQ(Level.DropOrphanedDrafts(), std::vector<std::string>{ "Doomed" });
+        EXPECT_TRUE(Level.Drafts().empty());
+        EXPECT_EQ(Level.WritingDraft(), nullptr);
+    }
+
     class LevelProposalTest : public LevelDraftsTest
     {
     protected:

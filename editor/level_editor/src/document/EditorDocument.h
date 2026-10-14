@@ -30,6 +30,8 @@ struct RuntimeAssets;
 struct IComponentSerializer;
 
 class PersistentEntityIndex;
+[[nodiscard]] std::uint64_t NextDocumentInstance();
+
 class EditorDocument
 {
 public:
@@ -249,6 +251,9 @@ public:
     // Moves on every authored mutation: two readings that agree saw the same
     // document. Loads and saves leave it alone.
     [[nodiscard]] std::uint64_t Revision() const { return Revision_; }
+    // Which document this is, for as long as the process runs: minted once per
+    // document and never reused, so one that replaced it is never mistaken for it.
+    [[nodiscard]] std::uint64_t Instance() const { return Instance_; }
     // Owner hook for derived editor state (world validation). It is invoked only
     // for authored mutations, never for load/save clearing dirty state.
     std::function<void()> OnEdited;
@@ -279,6 +284,7 @@ private:
     FileBaseline Baseline;
     bool Dirty = false;
     std::uint64_t Revision_ = 0;
+    std::uint64_t Instance_ = NextDocumentInstance();
     Registry Registry_;
     EditorScene Scene;
     // What the file said that the live registry does not model: unknown

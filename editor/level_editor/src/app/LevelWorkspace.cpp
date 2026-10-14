@@ -724,6 +724,9 @@ void LevelWorkspace::ProcessFrame()
     if (Entities != nullptr)
         Entities->OfferZoneMoves(Catalog, ActionHandlers);
     PublishProblems();
+    for (const std::string& label : Level->DropOrphanedDrafts())
+        Notices.Post("The proposal '" + label + "' was dropped: the level it was for closed", NoticeTone::Warning,
+                     NoticeClockNow());
     if (Files)
         Files->ProcessPending();
 

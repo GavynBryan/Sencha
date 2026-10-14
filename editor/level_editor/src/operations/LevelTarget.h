@@ -35,8 +35,10 @@ struct LevelDraft
     std::string Id;
     std::string Label;
     std::string Rationale;
-    // The copied level's asset path; empty when it was never saved.
+    // The copied level: its asset path for files (empty when never saved), and
+    // the document itself while this session lasts.
     std::string BasePath;
+    std::uint64_t BaseInstance = 0;
     std::uint32_t IdSeed = 0;
     std::unique_ptr<EditorDocument> Document;
     EntityChangeSet Changes;
@@ -82,13 +84,15 @@ public:
     // unless the level has moved on under any entity the draft changes.
     [[nodiscard]] EditorOperationOutcome AcceptDraft(LevelDraft& draft);
     void DiscardDraft(LevelDraft& draft);
+    // Drops every draft whose level is no longer open, and says which by label.
+    std::vector<std::string> DropOrphanedDrafts();
     // Replays the draft's steps through `replay` on a fresh copy of its level.
     [[nodiscard]] EditorOperationOutcome RebaseDraft(LevelDraft& draft, const Replay& replay);
 
 private:
     std::unique_ptr<LevelDraft> CopyLevel(EditorDocument& level, std::string label, std::string rationale,
                                           std::uint32_t idSeed, std::string& error);
-    [[nodiscard]] EditorDocument* FindBase(const std::string& path);
+    [[nodiscard]] EditorDocument* FindBase(const LevelDraft& draft);
 
     WorldDocument& World;
     CommandStack& Commands;

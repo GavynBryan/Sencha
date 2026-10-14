@@ -3,6 +3,8 @@
 
 #include <assets/runtime/ContentVocabulary.h>
 
+#include <atomic>
+
 #include "brush/BrushMeshSerialization.h"
 #include "brush/BrushModifierSerialization.h"
 #include "EntityNameComponent.h"
@@ -158,6 +160,12 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     InstallEditorModuleVocabulary(world);
     for (const std::string& error : AuthoredInstallationErrors(world))
         Logging.GetLogger<EditorDocument>().Error("vocabulary: {}", error);
+}
+
+std::uint64_t NextDocumentInstance()
+{
+    static std::atomic<std::uint64_t> next{ 1 };
+    return next.fetch_add(1, std::memory_order_relaxed);
 }
 
 void EditorDocument::SetContentRoots(std::vector<std::filesystem::path> roots)

@@ -861,9 +861,12 @@ of the real model, with spaces included from the start.
   or returns to the level. A refused step leaves the draft `failed` with the
   steps before it; `draft.resume` is the explicit way back to `open`. Draft
   state is a plain enum.
-- A draft names its level by asset path and resolves it again at accept and
-  rebase, refusing with `draft.base_gone` when it is no longer open. Discarding
-  drafts with a notice when their level closes comes with the proposal tray.
+- A draft names its level by the document's instance (minted once per
+  `EditorDocument`, never reused) and resolves it again at accept and rebase,
+  refusing with `draft.base_gone` when it is no longer open; the asset path is
+  its identity only in proposal files. The level workspace drops a draft whose
+  level has closed or been replaced, reload included, with a notice, checking
+  each frame rather than holding another document listener.
 - Replayed ids: a draft seeds its copy's id minter from a 32-bit `id_seed`
   (exact in JSON), so the same seed on the same base mints the same ids.
 - R1: copying `bench_stress` (77 entities, 10 brushes) costs about 13 ms.

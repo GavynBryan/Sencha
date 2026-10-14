@@ -124,6 +124,7 @@ std::unique_ptr<LevelDraft> LevelTarget::CopyLevel(EditorDocument& level, std::s
     draft->Label = std::move(label);
     draft->Rationale = std::move(rationale);
     draft->BasePath = level.SourceAssetPath();
+    draft->BaseInstance = level.Instance();
     draft->IdSeed = idSeed;
     draft->Document = std::make_unique<EditorDocument>(World.Logging());
     draft->Document->SetContentRoots(level.ContentRoots());
@@ -151,18 +152,18 @@ LevelDraft* LevelTarget::FindDraft(std::string_view id)
     return found != Drafts_.end() ? found->get() : nullptr;
 }
 
-EditorDocument* LevelTarget::FindBase(const std::string& path)
+EditorDocument* LevelTarget::FindBase(const LevelDraft& draft)
 {
     EditorDocument& focus = World.FocusDocument();
-    if (focus.SourceAssetPath() == path)
+    if (focus.Instance() == draft.BaseInstance)
         return &focus;
-    if (path.empty() || !World.IsWorld())
+    if (!World.IsWorld())
         return nullptr;
-    if (World.WorldSceneDocument().SourceAssetPath() == path)
+    if (World.WorldSceneDocument().Instance() == draft.BaseInstance)
         return &World.WorldSceneDocument();
     EditorDocument* found = nullptr;
     World.VisitOpenZones([&](ZoneId, EditorDocument& zone, const auto&) {
-        if (found == nullptr && zone.SourceAssetPath() == path)
+        if (found == nullptr && zone.Instance() == draft.BaseInstance)
             found = &zone;
     });
     return found;
@@ -172,7 +173,7 @@ EditorOperationOutcome LevelTarget::AcceptDraft(LevelDraft& draft)
 {
     if (draft.State == LevelDraftState::Failed)
         return RefuseFailed(draft);
-    EditorDocument* level = FindBase(draft.BasePath);
+    EditorDocument* level = FindBase(draft);
     if (level == nullptr)
         return RefuseBaseGone(draft);
     const std::vector<PersistentEntityId> conflicts = ChangeSetConflicts(*level, draft.Changes);
@@ -204,9 +205,23 @@ void LevelTarget::DiscardDraft(LevelDraft& draft)
     std::erase_if(Drafts_, [&draft](const auto& held) { return held.get() == &draft; });
 }
 
+std::vector<std::string> LevelTarget::DropOrphanedDrafts()
+{
+    std::vector<std::string> dropped;
+    for (std::size_t index = Drafts_.size(); index-- > 0;)
+    {
+        LevelDraft& draft = *Drafts_[index];
+        if (FindBase(draft) != nullptr)
+            continue;
+        dropped.push_back(draft.Label);
+        DiscardDraft(draft);
+    }
+    return dropped;
+}
+
 EditorOperationOutcome LevelTarget::RebaseDraft(LevelDraft& draft, const Replay& replay)
 {
-    EditorDocument* level = FindBase(draft.BasePath);
+    EditorDocument* level = FindBase(draft);
     if (level == nullptr)
         return RefuseBaseGone(draft);
     std::string error;
