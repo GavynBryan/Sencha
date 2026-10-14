@@ -2,7 +2,12 @@
 
 #include <authored/VerbBinding.h>
 
+#include <core/assets/AssetRef.h>
+#include <core/json/JsonValue.h>
+
+#include <string>
 #include <string_view>
+#include <vector>
 
 class DataAssetTypeRegistry;
 class DataSchemaRegistry;
@@ -45,3 +50,12 @@ inline constexpr std::string_view kVerbBindingsTypeName = "authored.bindings";
 
 void RegisterVerbBindingData(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas);
 void UnregisterVerbBindingData(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas);
+
+// One argument's wrapper object, as above. An asset or data-asset reference is
+// appended to `dependencies`; false leaves `error` naming the binding and argument.
+[[nodiscard]] bool ParseVerbBindingArgument(std::string_view bindingKey,
+                                            const std::string& argumentKey,
+                                            const JsonValue& value,
+                                            VerbBindingArgument& out,
+                                            std::vector<AssetRef>& dependencies,
+                                            std::string& error);

@@ -113,116 +113,6 @@ namespace
         return true;
     }
 
-    bool ParseArgument(std::string_view bindingKey,
-                       const std::string& argumentKey,
-                       const JsonValue& value,
-                       VerbBindingArgument& out,
-                       std::vector<AssetRef>& dependencies,
-                       std::string& error)
-    {
-        if (!value.IsObject())
-        {
-            error = std::format(
-                "binding '{}' argument '{}': expected one of {{\"const\"}}, {{\"input\"}}, "
-                "{{\"asset\"}}, {{\"data\"}}, {{\"tag\"}} or {{\"entity\"}}",
-                bindingKey, argumentKey);
-            return false;
-        }
-
-        const JsonValue* found = nullptr;
-        VerbArgumentSource source = VerbArgumentSource::Literal;
-        for (const SourceKey& candidate : kSourceKeys)
-        {
-            const JsonValue* member = value.Find(candidate.Key);
-            if (member == nullptr)
-                continue;
-            if (found != nullptr)
-            {
-                error = std::format("binding '{}' argument '{}': names more than one source",
-                                    bindingKey, argumentKey);
-                return false;
-            }
-            found = member;
-            source = candidate.Source;
-        }
-        if (found == nullptr)
-        {
-            error = std::format("binding '{}' argument '{}': names no source", bindingKey,
-                                argumentKey);
-            return false;
-        }
-
-        out.Key = argumentKey;
-        out.Source = source;
-
-        if (source == VerbArgumentSource::Literal)
-        {
-            out.Literal = *found;
-            return true;
-        }
-
-        if (!found->IsString())
-        {
-            error = std::format("binding '{}' argument '{}': this source takes a string",
-                                bindingKey, argumentKey);
-            return false;
-        }
-        out.Text = found->AsString();
-
-        switch (source)
-        {
-        case VerbArgumentSource::Input:
-            if (!IsIdentifier(out.Text))
-            {
-                error = std::format("binding '{}' argument '{}': '{}' is not an input name",
-                                    bindingKey, argumentKey, out.Text);
-                return false;
-            }
-            break;
-        case VerbArgumentSource::Asset:
-        case VerbArgumentSource::DataAsset:
-        {
-            if (!out.Text.starts_with(kAssetPathPrefix))
-            {
-                error = std::format("binding '{}' argument '{}': an asset path starts with "
-                                    "'asset://'",
-                                    bindingKey, argumentKey);
-                return false;
-            }
-            // An eager dependency: the binding cannot execute without it, so the
-            // asset system is told now, while it is still staging. Tags and
-            // entities are not dependencies -- they are World vocabulary and
-            // World contents, resolved when the binding is instantiated.
-            AssetRef reference;
-            reference.Type = source == VerbArgumentSource::DataAsset ? AssetType::Data
-                                                                     : AssetType::Unknown;
-            reference.Path = out.Text;
-            dependencies.push_back(std::move(reference));
-            break;
-        }
-        case VerbArgumentSource::Tag:
-            if (out.Text.empty())
-            {
-                error = std::format("binding '{}' argument '{}': a gameplay tag cannot be empty",
-                                    bindingKey, argumentKey);
-                return false;
-            }
-            break;
-        case VerbArgumentSource::Entity:
-            if (!PersistentEntityIdFromString(out.Text).has_value())
-            {
-                error = std::format("binding '{}' argument '{}': expected 16 lowercase hex "
-                                    "digits naming a persistent entity",
-                                    bindingKey, argumentKey);
-                return false;
-            }
-            break;
-        case VerbArgumentSource::Literal:
-            break;
-        }
-        return true;
-    }
-
     DataAssetCompileResult CompileVerbBindings(const JsonValue& data)
     {
         DataAssetCompileResult result;
@@ -310,7 +200,7 @@ namespace
                 for (const auto& [argumentKey, argumentValue] : arguments->AsObject())
                 {
                     VerbBindingArgument argument;
-                    if (!ParseArgument(desc.Key, argumentKey, argumentValue, argument,
+                    if (!ParseVerbBindingArgument(desc.Key, argumentKey, argumentValue, argument,
                                        result.Dependencies, result.Error))
                     {
                         return result;
@@ -325,6 +215,116 @@ namespace
         result.Value = std::move(library);
         return result;
     }
+}
+
+bool ParseVerbBindingArgument(std::string_view bindingKey,
+                   const std::string& argumentKey,
+                   const JsonValue& value,
+                   VerbBindingArgument& out,
+                   std::vector<AssetRef>& dependencies,
+                   std::string& error)
+{
+    if (!value.IsObject())
+    {
+        error = std::format(
+            "binding '{}' argument '{}': expected one of {{\"const\"}}, {{\"input\"}}, "
+            "{{\"asset\"}}, {{\"data\"}}, {{\"tag\"}} or {{\"entity\"}}",
+            bindingKey, argumentKey);
+        return false;
+    }
+
+    const JsonValue* found = nullptr;
+    VerbArgumentSource source = VerbArgumentSource::Literal;
+    for (const SourceKey& candidate : kSourceKeys)
+    {
+        const JsonValue* member = value.Find(candidate.Key);
+        if (member == nullptr)
+            continue;
+        if (found != nullptr)
+        {
+            error = std::format("binding '{}' argument '{}': names more than one source",
+                                bindingKey, argumentKey);
+            return false;
+        }
+        found = member;
+        source = candidate.Source;
+    }
+    if (found == nullptr)
+    {
+        error = std::format("binding '{}' argument '{}': names no source", bindingKey,
+                            argumentKey);
+        return false;
+    }
+
+    out.Key = argumentKey;
+    out.Source = source;
+
+    if (source == VerbArgumentSource::Literal)
+    {
+        out.Literal = *found;
+        return true;
+    }
+
+    if (!found->IsString())
+    {
+        error = std::format("binding '{}' argument '{}': this source takes a string",
+                            bindingKey, argumentKey);
+        return false;
+    }
+    out.Text = found->AsString();
+
+    switch (source)
+    {
+    case VerbArgumentSource::Input:
+        if (!IsIdentifier(out.Text))
+        {
+            error = std::format("binding '{}' argument '{}': '{}' is not an input name",
+                                bindingKey, argumentKey, out.Text);
+            return false;
+        }
+        break;
+    case VerbArgumentSource::Asset:
+    case VerbArgumentSource::DataAsset:
+    {
+        if (!out.Text.starts_with(kAssetPathPrefix))
+        {
+            error = std::format("binding '{}' argument '{}': an asset path starts with "
+                                "'asset://'",
+                                bindingKey, argumentKey);
+            return false;
+        }
+        // An eager dependency: the binding cannot execute without it, so the
+        // asset system is told now, while it is still staging. Tags and
+        // entities are not dependencies -- they are World vocabulary and
+        // World contents, resolved when the binding is instantiated.
+        AssetRef reference;
+        reference.Type = source == VerbArgumentSource::DataAsset ? AssetType::Data
+                                                                 : AssetType::Unknown;
+        reference.Path = out.Text;
+        dependencies.push_back(std::move(reference));
+        break;
+    }
+    case VerbArgumentSource::Tag:
+        if (out.Text.empty())
+        {
+            error = std::format("binding '{}' argument '{}': a gameplay tag cannot be empty",
+                                bindingKey, argumentKey);
+            return false;
+        }
+        break;
+    case VerbArgumentSource::Entity:
+        if (!PersistentEntityIdFromString(out.Text).has_value())
+        {
+            error = std::format("binding '{}' argument '{}': expected 16 lowercase hex "
+                                "digits naming a persistent entity",
+                                bindingKey, argumentKey);
+            return false;
+        }
+        break;
+    case VerbArgumentSource::Literal:
+        break;
+    }
+    return true;
 }
 
 void RegisterVerbBindingData(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas)

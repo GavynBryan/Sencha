@@ -315,6 +315,45 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
   zero or the attribute's minimum (whichever is higher), and a missing definition,
   attribute set or attribute, or a cost that is not an Instant Add, refuses.
 
+## Ability definitions
+
+An ability is content: an `ability.definition` data asset
+(`abilities/AbilityDefinitionData.h`). Its full format and semantics are
+`docs/plans/abilitykit-2.md` §3–§5 and §16; the normative example is
+`test/fixtures/abilities/assets/abilities/charge_release.sdata`. In brief:
+
+- **Activation, continuation, cancellation.** Three keyed condition lists: what
+  must hold to start, what must keep holding, and what ends a running activation.
+- **Phases.** Each has `enter` ops, an optional `while` pulse (`every` ticks),
+  `hold` leases acquired on entry and released on exit, `exit` ops (run on a
+  transition, never on a cancel), `present` cues, phase-scoped `continue`
+  conditions and ordered `then` transitions (`on: release`, `on: timeout`, or
+  immediate; `to` a phase or `end`).
+- **Ops.** `invoke` a verb, `query` into a local, `set` a local, `commit` cost
+  groups, emit a `cue`, or (in `hold`) a `lease`. Each may carry a `when` guard.
+  Arguments come from a constant (the verb-binding forms: `const`, `tag`, `data`,
+  `asset`, `entity`), a `port` (`actor`, `instigator`, `aim.origin`,
+  `aim.direction`, `phase.progress`, `phase.ticks`, `pulse`, `time.scale`, and
+  `target` inside an op with `targets`) or a `local` (with `field` on a hit).
+- **Locals.** Up to eight slots of typed values for one activation (`bool`, `int`,
+  `float`, `vec3`, `entity`; `hit` and `entities` take two; one `entities` local).
+- **Costs and cooldown.** Cost groups paid at start or by a `commit`, once or per
+  pulse; a cooldown effect started on start, on a group's commit, or on end.
+
+Every element carries a stable key. Compiling happens in two stages, both
+reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
+
+1. `CompileAbilityDeclaration` reads the document with no World: field names,
+   key uniqueness per kind, references between elements, reachability
+   (`unreachable`, a warning), `no_exit`, `zero_time_cycle` over immediate
+   transitions, cost and commit placement (`commit_repeat`, `commit_twice`,
+   `cost_shape`), guards on values that may be empty or stale
+   (`unguarded_maybe_empty`, `unguarded_recipient`; a guard counts as the op's
+   `when` or a child of a top-level `all`) and capacities
+   (`abilities/AbilityCapacity.h`). Loading refuses a document with an error.
+2. Declaring it into a World resolves names: tags, attributes, effects, actions,
+   verbs, queries, leases and component identities.
+
 ## Animation
 
 An ability may ask its actor for animation: `AbilityDefinition::Animation` names

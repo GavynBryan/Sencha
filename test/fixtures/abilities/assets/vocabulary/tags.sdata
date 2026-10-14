@@ -1,0 +1,9 @@
+{
+  "id": "93e4b07a1c5d2f68",
+  "type": "gameplay.tag_declarations",
+  "version": 1,
+  "data": {
+    "tags": [ "State.Stunned", "State.Dead", "Weapon.Reloading", "Weapon.Firing", "Weapon.CTX.Mode.Charge",
+              "Cooldown.Charge", "weapon.charge", "cue.charge_glow", "cue.charge_release", "cue.impact" ]
+  }
+}

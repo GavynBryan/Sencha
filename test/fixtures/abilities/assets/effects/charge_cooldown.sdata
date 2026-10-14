@@ -1,0 +1,10 @@
+{
+  "id": "0d93a7c5e1f26b48",
+  "type": "effect.definition",
+  "version": 1,
+  "data": {
+    "duration": "duration",
+    "seconds": 0.5,
+    "granted_tags": [ "Cooldown.Charge" ]
+  }
+}
