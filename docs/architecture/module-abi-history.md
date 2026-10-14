@@ -285,3 +285,22 @@ appends `Released`. `VerbDispatcher::AcquireLease` and `ReleaseLease` are new.
 `AnimRequestDesc::Owner` are `LeaseOwner`s, which moves the replication table
 hash (the record's local size; the wire record is unchanged). `Engine`'s members
 changed.
+
+**Phased abilities.** The single-shot kit is gone: `AbilitySet`,
+`AbilityActivation`, `AbilityActivationQueue`, `AbilityActivationSystem`,
+`AbilityAnimation`, `AbilityAnimationLeases`, `TryActivateAbility`,
+`ProcessAbilityActivations` and `AbilityRegistry::Register`. Abilities are the
+`ability.definition` data subtype (`AbilityDeclaration`, `CompileAbilityDeclaration`,
+`ResolveAbilityDeclaration`, `AbilityDefinition`); `AbilityRegistry` names them by
+asset path (`Reserve`, `Define`, `Undefine`, `Revision`, `Generation`). New
+components `AbilityGrants`, `ActiveAbilities`, `AbilityLocals` (kit),
+`ActorTime` (time) and `AimOrigin` (controller); new resources
+`AbilityGrantEntries`, `AbilityRequestQueue`, `AbilityTrace` and
+`InputActionVocabulary`. `AbilitySystem` and `ActorTimeSystem` replace the
+activation system, and `RegisterAbilityKitSystems` takes an `AbilityHost` and is
+called by the engine for every host, not by games. `ability.activate`,
+`ability.cancel`, `ability.grant` and `ability.revoke` join the engine vocabulary.
+`VerbTraceRing` is built on `core/containers/BoundedRing.h`.
+`CompileAuthoredConstant`, `CompileAuthoredDefault` and `ParseVerbBindingArgument`
+are public. Scenes name `AbilityGrants` (chunk `ABGR`) where they named
+`AbilitySet`.

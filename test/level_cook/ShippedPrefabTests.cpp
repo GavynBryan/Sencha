@@ -16,7 +16,7 @@
 #include <world/transform/TransformComponents.h>
 #include <attributes/AttributeRegistry.h>
 #include <attributes/AttributeSet.h>
-#include <abilities/AbilitySet.h>
+#include <abilities/AbilityGrants.h>
 #include <components/CameraComponent.h>
 #include <controller/LookOrientation.h>
 #include <core/assets/AssetRegistry.h>
@@ -166,7 +166,7 @@ TEST_F(ShippedPrefabTest, ThePawnCarriesWhatMakesItAPawn)
     ASSERT_NE(pawnAttributes, nullptr);
     EXPECT_FLOAT_EQ(pawnAttributes->GetBase(attributes->FindAttribute("MoveSpeed")), 4.5f);
 
-    EXPECT_NE(Get<AbilitySet>(pawn), nullptr);
+    EXPECT_NE(Get<AbilityGrants>(pawn), nullptr);
 
     // And the per-tick columns the movement step reads, which content does not
     // author and never should: the movement component owes them, so a pawn

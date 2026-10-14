@@ -4,6 +4,7 @@
 
 #include "vocabulary/VocabularyCatalog.h"
 
+#include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
 #include <app/EngineVocabulary.h>
 #include <app/Game.h>
@@ -66,7 +67,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 7u);
+    ASSERT_EQ(verbs.size(), 11u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
@@ -75,6 +76,8 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[4].Name, kAnimHoldLease);
     EXPECT_EQ(verbs[5].Name, kEffectApplyVerb);
     EXPECT_EQ(verbs[6].Name, kEffectHoldLease);
+    EXPECT_EQ(verbs[7].Name, kAbilityActivateVerb);
+    EXPECT_EQ(verbs[10].Name, kAbilityRevokeVerb);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
     ASSERT_EQ(queries.size(), 2u);
     EXPECT_EQ(queries[0].Name, kPhysicsTraceQuery);
@@ -90,10 +93,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 8u);
-    EXPECT_EQ(verbs[7].Name, kModuleVerb);
-    EXPECT_EQ(verbs[7].Provider, "spike");
-    EXPECT_EQ(verbs[7].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 12u);
+    EXPECT_EQ(verbs[11].Name, kModuleVerb);
+    EXPECT_EQ(verbs[11].Provider, "spike");
+    EXPECT_EQ(verbs[11].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -133,7 +136,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 7u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 11u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)

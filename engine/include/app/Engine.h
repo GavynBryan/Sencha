@@ -74,6 +74,7 @@ class RuntimeWorld;
 class NetPrefabSpawner;
 class SceneSpawnService;
 class AnimRequestOperations;
+class AbilityOperations;
 class EffectOperations;
 class PhysicsQueries;
 class RuntimeResumeOperation;
@@ -646,6 +647,7 @@ private:
     DataAssetCacheHandle ShellBindingLease;
     std::unique_ptr<AnimRequestOperations> AnimationOperations;
     std::unique_ptr<EffectOperations> EffectVerbOperations;
+    std::unique_ptr<AbilityOperations> AbilityVerbOperations;
     std::unique_ptr<PhysicsQueries> AuthoredPhysics;
     std::vector<VerbBindingToken> DomainVerbBindings;
     std::vector<AuthoredQueryBindingToken> DomainQueryBindings;

@@ -15,7 +15,7 @@ SDL events
        └─ InputActionResolveSystem                      the only gameplay-path reader of InputFrame
             ├─ PreSimulate  (1× per frame) → InputActionState::Frame()
             └─ FixedLogic   (1× per tick)  → InputActionState::Tick()
-                 └─ game systems → MovementIntent, AbilityActivationQueue
+                 └─ game systems → MovementIntent; AbilitySystem walks the edges
 ```
 
 `InputFrame` (`input/InputFrame.h`) stays what it was: a platform-agnostic
@@ -344,14 +344,12 @@ that silently never fires.
 
 ## Boundaries this leaves open
 
-**AbilityKit.** A game bridges actions to `AbilityActivationQueue` in its own
-system, which is what keeps one activation path for players and AI (abilitykit
-D-I). Which moment an action fires on is settled here, in the mapping, not
-there. What remains for the AbilityKit stage is binding an ability definition
-directly to an action id, and abilities whose shape spans several moments —
-charge while held then loose on release, tap versus hold, timed sequences. Those
-need more than one moment and so read the raw edges; the tick records already
-carry the edges and tick stamps they will need.
+**AbilityKit.** Abilities read the tick's ordered edges themselves, through the
+action each grant is bound to (`docs/gameplay/abilitykit.md`, "Grants and input"),
+so a charge while held and a loose on release are one ability's phases rather than
+two actions. The resolve pass publishes the vocabulary those bindings resolve
+against as `InputActionVocabulary`. Which moment a plain action fires on is still
+settled here, in the mapping.
 
 **The application shell.** Which actions open and drive a menu, and what a pause
 does to the contexts underneath it, are in [pause.md](pause.md). The mapper's

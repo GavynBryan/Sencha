@@ -3,6 +3,7 @@
 #include <assets/data/DataAssetCache.h>
 #include <core/logging/LoggingProvider.h>
 #include <input/InputActionState.h>
+#include <input/InputActionVocabulary.h>
 #include <input/InputContextSet.h>
 #include <input/InputRegistration.h>
 #include <input/ShellInputActions.h>
@@ -88,7 +89,11 @@ const BoundInputProfile* InputActionResolveSystem::ResolveProfile(World& world)
 {
     InputProfileBinding* binding = world.TryGetResource<InputProfileBinding>();
     if (binding == nullptr || !binding->Profile.IsValid())
-        return ShellOnly();
+    {
+        const BoundInputProfile* shell = ShellOnly();
+        world.SetResource(InputActionVocabulary{ &ShellOnlyActions, 0 });
+        return shell;
+    }
 
     InputBindingCache* cache = world.TryGetResource<InputBindingCache>();
     if (cache == nullptr)
@@ -96,6 +101,7 @@ const BoundInputProfile* InputActionResolveSystem::ResolveProfile(World& world)
 
     const BoundInputProfile* profile = cache->Get(binding->Profile);
     ReportBindStatus(world, cache->Status(binding->Profile));
+    world.SetResource(InputActionVocabulary{ cache->GetActions(binding->Profile), cache->RebuildCount() });
 
     // Deliberately not the shell-only tables. A profile that named an asset and
     // could not bind still defined the id space a game resolved its names

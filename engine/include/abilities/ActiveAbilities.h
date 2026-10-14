@@ -1,0 +1,119 @@
+#pragma once
+
+#include <abilities/AbilityCapacity.h>
+#include <abilities/AbilityGrantId.h>
+#include <abilities/AbilityId.h>
+#include <ecs/ComponentAnnotations.h>
+#include <ecs/EntityId.h>
+#include <gameplay_tags/GameplayTagId.h>
+#include <input/InputActionSource.h>
+
+#include <authored/VerbId.h>
+
+#include <cstdint>
+#include <string_view>
+#include <type_traits>
+
+enum class AbilityEndReason : std::uint8_t
+{
+    None,
+    Completed,
+    InputReleased,
+    InputInterrupted,
+    InputLost,
+    GrantRevoked,
+    ContinuationFailed,
+    CancelTriggered,
+    CancelledByAbility,
+    TargetLost,
+    CommitFailed,
+    LeaseRefused,
+    ActorEnded,
+    ZoneDetached,
+    AuthorityDenied,
+    HotReload,
+    ExplicitCancel,
+    StepBudget,
+    CapacityExceeded,
+};
+
+[[nodiscard]] std::string_view AbilityEndReasonName(AbilityEndReason reason);
+
+// Which start this is: the command tick, the ability, and where the start came from
+// -- the index of the press in that tick's edge list, or kAbilityRequestOrigin plus
+// the request's place in the queue. Tied to the attempt rather than to a count of
+// admitted starts, so two machines that admit differently still name the same
+// press the same way.
+struct AbilityActivationKey
+{
+    std::uint64_t CommandTick = 0;
+    AbilityId Ability;
+    std::uint8_t Origin = 0;
+
+    friend bool operator==(const AbilityActivationKey&, const AbilityActivationKey&) = default;
+};
+
+inline constexpr std::uint8_t kAbilityRequestOrigin = 0x80;
+inline constexpr std::uint8_t kAbilityNoTrigger = 0xFF;
+
+enum class AbilityRecordState : std::uint8_t
+{
+    Free,
+    Live,
+    Lingering,
+};
+
+struct AbilityHeldLease
+{
+    VerbId Lease;
+    std::uint8_t Op = 0;
+};
+
+struct AbilityRecord
+{
+    AbilityActivationKey Key;
+    AbilityGrantId Grant;
+    AbilityRecordState State = AbilityRecordState::Free;
+    // The definition revision it started under; a reload moves it.
+    std::uint32_t Revision = 0;
+    std::uint8_t Phase = 0;
+    // The action and source a press started it from, when one did.
+    std::uint8_t TriggerAction = kAbilityNoTrigger;
+    InputActionSourceId TriggerSource = kLocalInputActionSource;
+    // The trigger was released (or, for a toggle, pressed again) since the start.
+    bool Released = false;
+    // Phase entry, on the phase's own clock: actor ticks or simulation ticks.
+    std::uint64_t PhaseStart = 0;
+    std::uint32_t Pulse = 0;
+    std::uint32_t NextPulse = 0;
+    // A bit per once-group already paid.
+    std::uint8_t PaidGroups = 0;
+    bool CooldownStarted = false;
+    std::uint8_t LeaseCount = 0;
+    AbilityHeldLease Leases[kAbilityRecordLeaseCapacity] = {};
+    std::uint8_t OwnedTagCount = 0;
+    GameplayTagId OwnedTags[kAbilityOwnedTagCapacity] = {};
+    EntityId Instigator;
+    AbilityEndReason EndReason = AbilityEndReason::None;
+    // The condition or element whose failure ended it, by index; 0xFFFF when none.
+    std::uint16_t EndElement = 0xFFFF;
+    std::uint64_t EndTick = 0;
+    // Start order on this actor: what lingering eviction and lease owners key on.
+    std::uint64_t Sequence = 0;
+};
+
+// What an actor is running, and what it ran recently enough to still present.
+struct SENCHA_COMPONENT("sencha.active_abilities") ActiveAbilities
+{
+    AbilityRecord Records[kAbilityRecordCapacity] = {};
+    std::uint64_t NextSequence = 1;
+    // Lingering records evicted to make room for a live one.
+    std::uint32_t Evicted = 0;
+};
+
+static_assert(std::is_trivially_copyable_v<ActiveAbilities>,
+              "ActiveAbilities must be trivially copyable to live in ECS chunks");
+
+#if !defined(SENCHA_CODEGEN)
+#  include <abilities/ActiveAbilities.sencha.h>
+#endif

@@ -5,8 +5,6 @@
 // leaves the host to retract it -- the in-tree analog of a shipped game.so,
 // exercised without running the game.
 
-#include <abilities/AbilityDefinition.h>
-#include <abilities/AbilityRegistry.h>
 #include <app/Game.h>
 #include <app/GameModule.h>
 #include <attributes/AttributeRegistry.h>
@@ -31,7 +29,6 @@
 // same strings the module registers.
 inline constexpr std::string_view kGrappleTag = "Spike.Grappling";
 inline constexpr std::string_view kGrappleAttribute = "GrappleRange";
-inline constexpr std::string_view kGrappleAbility = "Grapple";
 inline constexpr std::string_view kGrappleMode = "spike.mode.grapple";
 inline constexpr std::string_view kGrappleVerb = "spike.grapple.fire";
 inline constexpr std::string_view kGrappleTetherLease = "spike.grapple.tether";
@@ -81,8 +78,6 @@ namespace
                 (void)tags->RegisterTag(kGrappleTag);
             if (auto* attributes = world.TryGetResource<AttributeRegistry>())
                 (void)attributes->RegisterAttribute(kGrappleAttribute, 0.0f, 50.0f, 12.0f);
-            if (auto* abilities = world.TryGetResource<AbilityRegistry>())
-                (void)abilities->Register(kGrappleAbility, AbilityDefinition{});
             // A mode is movement's vocabulary, and movement is this game's to
             // opt into: the hook installs that vocabulary itself, so the same
             // declaration lands in the runtime World and in an editor's, with

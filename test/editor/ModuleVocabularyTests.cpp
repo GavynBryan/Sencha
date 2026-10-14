@@ -10,10 +10,8 @@
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 
-#include <abilities/AbilityDefinition.h>
 #include <app/EngineVocabulary.h>
 #include <authored/WorldVocabulary.h>
-#include <abilities/AbilityRegistry.h>
 #include <attributes/AttributeRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/World.h>
@@ -26,7 +24,6 @@ namespace
 {
 constexpr const char* kModuleTag = "Spike.Sprinting";
 constexpr const char* kModuleAttribute = "SprintDrain";
-constexpr const char* kModuleAbility = "Sprint";
 
 // The installer a host sets at module load. Names only here: a real module's
 // locomotion mode carries closures out of its own image, which is why the hook
@@ -47,8 +44,6 @@ void InstallSpikeVocabulary(World& world)
         (void)tags->RegisterTag(kModuleTag);
     if (auto* attributes = world.TryGetResource<AttributeRegistry>())
         (void)attributes->RegisterAttribute(kModuleAttribute, 0.0f, 10.0f, 3.0f);
-    if (auto* abilities = world.TryGetResource<AbilityRegistry>())
-        (void)abilities->Register(kModuleAbility, AbilityDefinition{});
 }
 
 class ModuleVocabularyTest : public ::testing::Test
@@ -65,13 +60,11 @@ protected:
         World& world = document.GetScene().GetRegistry().Components;
         const auto* tags = world.TryGetResource<GameplayTagRegistry>();
         const auto* attributes = world.TryGetResource<AttributeRegistry>();
-        const auto* abilities = world.TryGetResource<AbilityRegistry>();
         const VerbRegistry* verbs = FindVerbRegistry(world);
-        return tags != nullptr && attributes != nullptr && abilities != nullptr
+        return tags != nullptr && attributes != nullptr
             && verbs != nullptr && verbs->Find(kModuleVerb).IsValid()
             && tags->FindTag(kModuleTag).IsValid()
-            && attributes->FindAttribute(kModuleAttribute).IsValid()
-            && abilities->Find(kModuleAbility).IsValid();
+            && attributes->FindAttribute(kModuleAttribute).IsValid();
     }
 
     LoggingProvider Logging;

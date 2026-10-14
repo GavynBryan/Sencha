@@ -19,5 +19,6 @@ inline constexpr std::size_t kAbilityEntityListCapacity = 8;
 inline constexpr std::size_t kAbilityPhaseCapacity = 16;
 inline constexpr std::size_t kAbilityCostGroupCapacity = 8;
 inline constexpr std::size_t kAbilityRecordLeaseCapacity = 8;
+inline constexpr std::size_t kAbilityOwnedTagCapacity = 4;
 inline constexpr std::size_t kAbilityConditionDepth = 3;
 inline constexpr std::size_t kAbilityRequestCapacity = 32;

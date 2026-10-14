@@ -199,7 +199,7 @@ void EditorWorkspace::Build()
     Affordances->Registry().Register(MakeBrushModifierEditorAdapter());
     Affordances->Registry().Register(MakeGameplayTagEditorAdapter());
     Affordances->Registry().Register(MakeAttributeSetEditorAdapter());
-    Affordances->Registry().Register(MakeAbilitySetEditorAdapter());
+    Affordances->Registry().Register(MakeAbilityGrantsEditorAdapter());
     Affordances->Registry().Register(MakeCharacterMovementEditorAdapter());
     CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());
     Picking.SetEntityProxyProvider(

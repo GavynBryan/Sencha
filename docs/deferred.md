@@ -433,3 +433,16 @@ do the work and delete the entry.
 - **Trigger:** the first game module that declares a lease, a cosmetic verb or a
   predicted verb. The Loss Function module (AbilityKit 2, Stage 10) is the known
   candidate, if any of its abilities needs an operation the engine does not offer.
+
+## An animation hold whose holder is gone
+
+- **What:** an `anim.hold` lease whose owner's entity ends without releasing it is
+  reported as orphaned and stays held, the existing rule for any Held request a
+  producer forgot. Plan §11 asks lease providers to end such holds themselves (the
+  pull rule), as effects already do.
+- **Where:** `AnimRequestOperations::Hold` (`engine/src/anim/AnimRequestVerbs.cpp`)
+  and the orphan report in `NoteAnimRequestOutcomes`
+  (`engine/src/anim/AnimContentSystem.cpp`).
+- **Trigger:** an ability that holds animation on an entity other than the actor
+  running it. An actor's own holds die with it, so CTX Charge and every Stage 10
+  ability are covered; the first ability that poses another entity is not.

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <abilities/AbilityActivationSystem.h>
+#include <abilities/AbilitySystem.h>
 #include <app/EngineSchedule.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/JumpState.h>
@@ -88,7 +88,7 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
 template <typename TInputSystem>
 void OrderMovementAfterInput(EngineSchedule& schedule)
 {
-    schedule.After<AbilityActivationSystem, TInputSystem>();
+    schedule.After<AbilitySystem, TInputSystem>();
     schedule.After<FreeLocomotionSystem, TInputSystem>();
     schedule.After<ModeRequestCollectionSystem, TInputSystem>();
 }

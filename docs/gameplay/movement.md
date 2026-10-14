@@ -45,7 +45,7 @@ All movement systems run in the `FixedLogic` phase; the motor runs in the
 | # | System | Does |
 |---|--------|------|
 | 1 | `SupportTagProjectionSystem` | Mirrors last step's `SupportState` onto the `movement.grounded` tag. |
-| 2 | `AbilityActivationSystem` (AbilityKit) | Activates abilities: actions that ask the authority for something (fire, cast, interact). Jump is not one of them; see below. |
+| 2 | `AbilitySystem` (AbilityKit) | Runs abilities: actions that ask the authority for something (fire, cast, interact). Jump is not one of them; see below. |
 | 3 | `ModeRequestCollectionSystem` | Consumes granted `movement.request.*` tags into the arbitrated transition mailbox. |
 | 4 | `LocomotionModeTransitionSystem` | Applies at most one mode transition per entity: exit old session, enter new, move the active tag. |
 | 5 | `AttributeResolveSystem`, then `MovementTuningResolutionSystem` | Resolves this tick's `ResolvedMovementTuning` from the profile layers against the current facts, mode, and tags. |

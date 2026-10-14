@@ -233,7 +233,6 @@ TEST(GameModuleLoader, ModuleDeclaresItsGameplayVocabularyIntoAnyWorld)
         ASSERT_TRUE(range.IsValid());
         EXPECT_FLOAT_EQ(attributes.DefaultBase(range), 12.0f);
         EXPECT_FLOAT_EQ(attributes.Max(range), 50.0f);
-        EXPECT_TRUE(world.TryGetResource<AbilityRegistry>()->Find("Grapple").IsValid());
         EXPECT_NE(world.TryGetResource<LocomotionModeRegistry>()->Find("spike.mode.grapple"),
                   nullptr);
 

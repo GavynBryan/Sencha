@@ -7,6 +7,8 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <abilities/AbilityKit.h>
+#include <app/EngineVocabulary.h>
+#include <authored/WorldVocabulary.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <attributes/AttributeDeclarations.h>
 #include <core/json/JsonParser.h>
@@ -187,6 +189,50 @@ TEST(ContentVocabulary, AReloadedEffectIsRedefinedUnderTheSameId)
     EXPECT_EQ(world.Effects().Find("asset://b/hit.sdata"), hit) << "every reference to the effect still means it";
     EXPECT_FLOAT_EQ(world.Effects().Get(hit)->Modifiers[0].Magnitude, -40.0f);
     ReleaseContentVocabulary(world.Entities);
+}
+
+TEST(ContentVocabulary, TheNormativeChargeIsDeclaredFromItsContentRoot)
+{
+    LoggingProvider logging;
+    ComponentSerializerRegistry serializers;
+    RuntimeAssets assets{ logging, serializers };
+    const std::string root = std::string(SENCHA_REPO_ROOT) + "/test/fixtures/abilities/assets";
+    (void)ScanAssetsDirectory(root, assets.Registry, assets.Assets.Kinds());
+
+    VocabularyWorld world;
+    world.Entities.RegisterComponent<AttributeSet>();
+    InstallAuthoredVocabulary(world.Entities);
+    ASSERT_TRUE(DeclareEngineVocabulary(world.Entities));
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(assets, world.Entities, ContentVocabularyReload::Once, errors);
+    ASSERT_TRUE(errors.empty()) << errors.front();
+
+    const AbilityRegistry& abilities = world.Entities.GetResource<AbilityRegistry>();
+    const AbilityDefinition* charge = abilities.Get(abilities.Find("asset://abilities/charge_release.sdata"));
+    ASSERT_NE(charge, nullptr) << "an ability is named by its asset path";
+    ASSERT_EQ(charge->Phases.size(), 3u);
+    ASSERT_EQ(charge->Costs.size(), 1u);
+    EXPECT_EQ(charge->Costs[0].Effects.front(), world.Effects().Find("asset://effects/ammo_1.sdata"))
+        << "effects are declared before the abilities that name them";
+}
+
+TEST(ContentVocabulary, AnAbilityNamingAnUnknownVerbIsReportedAndKeepsItsName)
+{
+    Content content;
+    content.Write("a/broken.sdata", R"({ "type": "ability.definition", "version": 1, "data": {
+        "phases": [ { "key": "p_a", "enter": [ { "key": "o_x", "op": "invoke", "verb": "no.such" } ],
+                      "then": [ { "key": "t_end", "to": "end" } ] } ] } })");
+    content.Scan();
+    VocabularyWorld world;
+    InstallAuthoredVocabulary(world.Entities);
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, world.Entities, ContentVocabularyReload::Once, errors);
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_NE(errors.front().find("verb_unknown o_x"), std::string::npos) << errors.front();
+    const AbilityRegistry& abilities = world.Entities.GetResource<AbilityRegistry>();
+    const AbilityId broken = abilities.Find("asset://a/broken.sdata");
+    EXPECT_TRUE(broken.IsValid()) << "reserved, so a grant naming it still saves";
+    EXPECT_EQ(abilities.Get(broken), nullptr);
 }
 
 TEST(ContentVocabulary, MalformedDeclarationsDoNotCompile)

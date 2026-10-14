@@ -8,7 +8,7 @@ class GameplayTagRegistry;
 class World;
 struct RuntimeAssets;
 
-// The vocabulary content declares: gameplay tags, attributes and effects, each
+// The vocabulary content declares: gameplay tags, attributes, effects and abilities, each
 // registered into a World's registries in asset path order, so every machine and
 // every editor document gets the same names in the same order.
 
@@ -23,8 +23,8 @@ enum class ContentVocabularyReload : std::uint8_t
 {
     // Declared once; nothing is held afterwards.
     Once,
-    // Effects stay leased so a reload can redefine them; ReleaseContentVocabulary
-    // lets go, before the asset stack goes away.
+    // Effects and abilities stay leased so a reload can redefine them;
+    // ReleaseContentVocabulary lets go, before the asset stack goes away.
     Watch,
 };
 

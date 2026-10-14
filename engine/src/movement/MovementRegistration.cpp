@@ -113,13 +113,13 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     // coefficients from the profile, run locomotion, let actions contribute,
     // then compose the single motor request.
     schedule.After<ModeRequestCollectionSystem, SupportTagProjectionSystem>();
-    schedule.After<AbilityActivationSystem, SupportTagProjectionSystem>();
-    schedule.After<ModeRequestCollectionSystem, AbilityActivationSystem>();
+    schedule.After<AbilitySystem, SupportTagProjectionSystem>();
+    schedule.After<ModeRequestCollectionSystem, AbilitySystem>();
     schedule.After<LocomotionModeTransitionSystem, ModeRequestCollectionSystem>();
 
     // Tuning resolution reads the mode chosen this tick and the attributes
     // effects have already resolved, so it follows both.
-    schedule.After<AttributeResolveSystem, AbilityActivationSystem>();
+    schedule.After<AttributeResolveSystem, AbilitySystem>();
     schedule.After<MovementTuningResolutionSystem, LocomotionModeTransitionSystem>();
     schedule.After<MovementTuningResolutionSystem, AttributeResolveSystem>();
 

@@ -5,6 +5,7 @@
 #include "AnimFlowFixture.h"
 
 #include <anim/AnimEventSystem.h>
+#include <anim/AnimRequestJournal.h>
 #include <anim/AnimRequestVerbs.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>
@@ -216,4 +217,33 @@ TEST(AnimRequestVerbs, AHoldIsTheOwnersUntilItLetsGo)
     EXPECT_EQ(fx.Dispatcher->ReleaseLease(lease, holder, fx.Source()), VerbAdmission::Accepted);
     EXPECT_TRUE(request->IsCancelled());
     EXPECT_EQ(request->CancelReason, AnimCancelReason::Released);
+}
+
+// A producer that ends without cancelling what it holds is a bug animation makes
+// visible, not one it tidies away: the request stays held, and is counted.
+TEST(AnimRequestVerbs, AHeldRequestItsProducerForgotIsReportedNotEnded)
+{
+    VerbFixture fx;
+    const EntityId owner = fx.Entities.CreateEntity();
+    fx.Tick();
+    AnimRequestDesc desc;
+    desc.Source = fx.Prop;
+    desc.Intent = fx.Tag("anim.intent.reload");
+    desc.Owner = LeaseOwner{ .Entity = owner };
+    ASSERT_TRUE(RequestAnimation(fx.Entities, fx.Prop, desc, fx.Now).Accepted());
+    fx.Tick(3);
+    EXPECT_EQ(fx.Entities.TryGet<AnimRequestReport>(fx.Prop)->Orphaned, 0u);
+
+    fx.Entities.DestroyEntity(owner);
+    fx.Tick();
+    EXPECT_EQ(fx.Entities.TryGet<AnimRequestReport>(fx.Prop)->Orphaned, 0u) << "one pass for the producer to let go";
+    fx.Tick(3);
+    EXPECT_EQ(fx.Entities.TryGet<AnimRequestReport>(fx.Prop)->Orphaned, 1u) << "counted once";
+    const AnimRequest* held = nullptr;
+    for (const AnimRequest& request : static_cast<const World&>(fx.Entities).TryGet<AnimRequestSet>(fx.Prop)->Records)
+        if (request.Occupied && request.Intent == fx.Tag("anim.intent.reload"))
+            held = &request;
+    ASSERT_NE(held, nullptr);
+    EXPECT_FALSE(held->IsCancelled()) << "the producer's to end";
+    EXPECT_NE(fx.LastRecord(fx.Prop, AnimDecisionCause::RequestOrphaned), nullptr);
 }

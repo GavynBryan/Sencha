@@ -90,7 +90,7 @@ EntityId SpawnControlledPawn(World& world)
     attributes.Add(defs.MoveSpeed, 6.0f);
     world.AddComponent<AttributeSet>(pawn, attributes);
 
-    world.AddComponent<AbilitySet>(pawn, AbilitySet{});
+    world.AddComponent<AbilityGrants>(pawn, AbilityGrants{});
     return pawn;
 }
 } // namespace

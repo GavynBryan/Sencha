@@ -15,6 +15,7 @@
 #include <participant/ParticipantComponentRegistration.h>
 #include <physics/PhysicsRegistration.h>
 #include <render/RenderComponentRegistration.h>
+#include <time/TimeComponentRegistration.h>
 #include <world/ComponentRegistrar.h>
 #include <world/ComponentSet.h>
 #include <world/WorldComponentRegistration.h>
@@ -35,6 +36,7 @@ namespace
         NavigationComponents,
         CameraComponents,
         PhysicsComponents,
+        TimeComponents,
         AbilityKitComponents,
         MovementComponents,
         ControllerComponents,
@@ -81,6 +83,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterCameraComponents(registrar);
 
     RegisterPhysicsComponents(registrar);
+    RegisterTimeComponents(registrar);
 
     // Movement pulls the ability kit in itself: it is built on the kit, so the
     // two cannot be registered apart.

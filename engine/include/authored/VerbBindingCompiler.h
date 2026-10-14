@@ -72,6 +72,23 @@ struct VerbBindingEnvironment
                                          AuthoredValue& out,
                                          std::vector<std::string>& errors);
 
+// One constant converted for a field outside any binding -- a query argument, a
+// comparison. Literals, tags and asset references; an entity names a persistent
+// identity only a verb dispatch resolves, so it is refused here.
+[[nodiscard]] bool CompileAuthoredConstant(const VerbBindingArgument& authored,
+                                           const DataFieldSchema& expected,
+                                           const VerbBindingEnvironment& environment,
+                                           std::string_view bindingKey,
+                                           AuthoredValue& out,
+                                           std::vector<std::string>& errors);
+
+// What an argument nobody supplied means: its default, absent when the field
+// allows absence, or a diagnostic.
+[[nodiscard]] bool CompileAuthoredDefault(const DataFieldSchema& field,
+                                          std::string_view bindingKey,
+                                          AuthoredValue& out,
+                                          std::vector<std::string>& errors);
+
 // Whether a compiled binding still describes the catalog it was compiled
 // against. False after a World teardown, a schema change, or a retirement, and
 // the reason a dispatcher rechecks rather than trusting the ids it is handed.

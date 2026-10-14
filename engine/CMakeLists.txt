@@ -15,8 +15,9 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
 # The annotated component headers: the generator reads them, and the ABI
 # fingerprint below hashes them.
 set(SENCHA_ENGINE_COMPONENT_HEADERS
-    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilityAnimation.h"
-    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilitySet.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilityGrants.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilityLocals.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/ActiveAbilities.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimContentState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimDecisionLog.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimEventCursor.h"
@@ -33,6 +34,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/audio/AudioSourceComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/camera/CameraExclusion.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/components/CameraComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/controller/AimOrigin.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/controller/LookOrientation.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/effects/ActiveEffect.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/gameplay_tags/GameplayTagContainer.h"
@@ -63,6 +65,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/StaticMeshComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/ZoneLightmapComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/time/ActorTime.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"

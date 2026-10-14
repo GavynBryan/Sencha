@@ -1440,3 +1440,44 @@ Deviations from the plan's wording, each for a stated reason:
   7 from Stage 2 covers it. ABI v26 history extended.
 - **Deferred.** Declaring leases and cosmetic or predicted verbs through
   `SENCHA_VERB` (`docs/deferred.md`).
+
+### 17.6 Stage 5 — phased runtime
+
+- **Delivered.** `ability.definition` with a World-free compiler (structural
+  diagnostics) and a World-bound resolver (names, operation contracts, recipient
+  guards against each argument's declared component); abilities declared from
+  content after effects and redefined on reload. `AbilityGrants` with per-actor grant
+  ids and the World's `AbilityGrantEntries` (key, override, effective binding); the
+  scene form and editor adapter; the four template prefabs migrated. `ActiveAbilities`
+  (live and lingering records), `AbilityLocals`, the actor clock at identity scale
+  (correction 4: Stage 7 adds leases and scaling to `ActorTime`, replacing nothing),
+  the five-step pass with run-to-quiescence, conditions, guards, continuation,
+  cancellation, atomic commit and cooldown timing, input resolution over edges,
+  the request queue and `ability.*` verbs, and `AbilityTrace`. A warm pass allocates
+  nothing (measured: `AWarmPassAllocatesNothing`).
+- **Correction 1.** The CTX Charge fixture is `prediction: simulation`: its
+  charge pose is an `anim.hold`, a Simulation lease, and the policy is that an
+  ability whose presentation includes held authoritative animation predicts at the
+  simulation level. Stage 9 carries the prediction tests.
+- **Correction 2.** An activation's key is `{command tick, ability, origin}`, the
+  origin being the press's index in the tick's edge list (or `0x80` plus the
+  request's place in the queue): it names the attempt, not a count of admitted
+  starts, so a refusal on one machine does not shift the keys of later starts.
+- **Deviations.** The input vocabulary reaches abilities through
+  `InputActionVocabulary`, which the resolve pass publishes, rather than through the
+  binding cache. `when_blocked` is `consume | fall_through`; the separate
+  `fallback` flag of §2.2 would have said the same thing twice. An actor needs an
+  `InputActionSourceRef` to read input (the input layer's existing rule). Kit systems
+  are registered by the engine for every host before the game's hook, as
+  animation's are, so they can be handed the dispatchers; games no longer call
+  `RegisterAbilityKitSystems`. The fixture lives in its own content root,
+  `test/fixtures/abilities/assets`, with `asset://` paths.
+- **Scoped to later stages, with their consumers.** Transitions `on: complete`
+  (a lease reporting completion) and `cancel_on` entries for `target_lost` and
+  authored events arrive with the movement leases that need them (Stage 8); an
+  op's `cue` is traced and reaches presentation in Stage 8; a phase's `present` is
+  stored for Stage 8's sustained channel. The transition `reason` field is not
+  offered: every transition to `end` ends `Completed`.
+- **Owed.** Effect-sourced grants (`granted_abilities` on `effect.definition`) land
+  next, before Stage 6. The animation pull rule (§17.5) is recorded in
+  `docs/deferred.md`.

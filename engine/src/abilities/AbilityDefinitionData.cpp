@@ -1,5 +1,6 @@
 #include <abilities/AbilityDefinitionData.h>
 
+#include <abilities/AbilityBindingNames.h>
 #include <abilities/AbilityCapacity.h>
 #include <authored/VerbBindingData.h>
 #include <core/assets/AssetPath.h>
@@ -20,11 +21,7 @@
 namespace
 {
     template<typename E>
-    struct Named
-    {
-        std::string_view Name;
-        E Value;
-    };
+    using Named = AbilityNamed<E>;
 
     constexpr std::array<Named<AbilityPort>, 9> kPorts{ {
         { "actor", AbilityPort::Actor },
@@ -61,27 +58,6 @@ namespace
         { "below", AbilityCompare::Below },
         { "equals", AbilityCompare::Equals },
         { "not_equals", AbilityCompare::NotEquals },
-    } };
-
-    constexpr std::array<Named<AbilityInputPolicy>, 3> kPolicies{ {
-        { "press", AbilityInputPolicy::Press },
-        { "press_release", AbilityInputPolicy::PressRelease },
-        { "toggle", AbilityInputPolicy::Toggle },
-    } };
-
-    constexpr std::array<Named<AbilityConsume>, 2> kConsumes{ {
-        { "exclusive", AbilityConsume::Exclusive },
-        { "observe", AbilityConsume::Observe },
-    } };
-
-    constexpr std::array<Named<AbilityWhenBlocked>, 2> kWhenBlocked{ {
-        { "consume", AbilityWhenBlocked::Consume },
-        { "fall_through", AbilityWhenBlocked::FallThrough },
-    } };
-
-    constexpr std::array<Named<AbilityInterrupt>, 2> kInterrupts{ {
-        { "cancel", AbilityInterrupt::Cancel },
-        { "release", AbilityInterrupt::Release },
     } };
 
     constexpr std::array<Named<AbilityTimeDomain>, 2> kDomains{ {
@@ -720,7 +696,7 @@ namespace
                 else
                     Error("schema", {}, path + ".action", "an input action's name");
             }
-            binding.Policy = OptionalChoice(value, "policy", kPolicies, {}, path);
+            binding.Policy = OptionalChoice(value, "policy", kAbilityInputPolicyNames, {}, path);
             if (const JsonValue* priority = value.Find("priority"))
             {
                 if (priority->IsNumber() && priority->AsNumber() == static_cast<double>(static_cast<std::int32_t>(priority->AsNumber())))
@@ -728,11 +704,11 @@ namespace
                 else
                     Error("schema", {}, path + ".priority", "a whole number");
             }
-            binding.Consume = OptionalChoice(value, "consume", kConsumes, {}, path);
-            binding.WhenBlocked = OptionalChoice(value, "when_blocked", kWhenBlocked, {}, path);
+            binding.Consume = OptionalChoice(value, "consume", kAbilityConsumeNames, {}, path);
+            binding.WhenBlocked = OptionalChoice(value, "when_blocked", kAbilityWhenBlockedNames, {}, path);
             if (const JsonValue* context = value.Find("context"))
                 binding.Context = TagQuery(*context, {}, path + ".context");
-            binding.OnInterrupt = OptionalChoice(value, "on_interrupt", kInterrupts, {}, path);
+            binding.OnInterrupt = OptionalChoice(value, "on_interrupt", kAbilityInterruptNames, {}, path);
             return binding;
         }
 
@@ -767,6 +743,9 @@ namespace
             out.Continuation = Conditions(data, "continuation", root);
             out.CancelOn = Conditions(data, "cancel_on", root);
             out.OwnedTags = Names(data, "owned_tags", {}, root);
+            if (out.OwnedTags.size() > kAbilityOwnedTagCapacity)
+                Error("capacity", {}, root + ".owned_tags",
+                      std::format("an ability owns at most {} tags", kAbilityOwnedTagCapacity));
             out.CancelTags = Names(data, "cancel_tags", {}, root);
             const std::uint32_t instances = Count(data, "instances", {}, root, 1, 1);
             if (instances > kAbilityLiveRecordCapacity)
@@ -1407,15 +1386,15 @@ namespace
 
         DataFieldSchema binding = Field(DataFieldKind::Record, "input_default", "Input");
         binding.Children.push_back(Field(DataFieldKind::String, "action", "Action"));
-        binding.Children.push_back(Choices("policy", "Policy", kPolicies));
+        binding.Children.push_back(Choices("policy", "Policy", kAbilityInputPolicyNames));
         binding.Children.push_back(Field(DataFieldKind::Int, "priority", "Priority"));
-        binding.Children.push_back(Choices("consume", "Consume", kConsumes));
-        binding.Children.push_back(Choices("when_blocked", "When refused", kWhenBlocked));
+        binding.Children.push_back(Choices("consume", "Consume", kAbilityConsumeNames));
+        binding.Children.push_back(Choices("when_blocked", "When refused", kAbilityWhenBlockedNames));
         DataFieldSchema context = tagQuery;
         context.Key = "context";
         context.DisplayName = "Context";
         binding.Children.push_back(std::move(context));
-        binding.Children.push_back(Choices("on_interrupt", "On interruption", kInterrupts));
+        binding.Children.push_back(Choices("on_interrupt", "On interruption", kAbilityInterruptNames));
 
         DataFieldSchema display = Field(DataFieldKind::Record, "display", "Display");
         display.Children = { Field(DataFieldKind::String, "name", "Name"), Field(DataFieldKind::String, "category", "Category") };

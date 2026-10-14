@@ -1,5 +1,6 @@
 #include <net/PeerCommandRuntime.h>
 
+#include <abilities/AbilitySystem.h>
 #include <app/EngineSchedule.h>
 #include <controller/AimFacingSystem.h>
 #include <controller/LookOrientation.h>
@@ -225,6 +226,10 @@ void RegisterNetSystems(EngineSchedule& schedule, PeerCommandRuntime& commands,
     schedule.Register<PeerCommandFeedSystem>(commands);
     schedule.Register<ReplicationInterpolationSystem>(interpolation, prediction, clock);
     schedule.Register<PawnCommandCaptureSystem>(prediction, clock);
+
+    // The authority's ability pass walks a peer's input edges in the tick they arrive.
+    if (schedule.Has<AbilitySystem>())
+        schedule.After<AbilitySystem, PeerCommandFeedSystem>();
 
     // Where a body that faces its aim sits between the two things that write a
     // pose. Declared here rather than in controller, which has no business

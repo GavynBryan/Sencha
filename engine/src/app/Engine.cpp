@@ -11,6 +11,7 @@
 #include <logic/VerbRelaySystem.h>
 #include <abilities/AbilityKit.h>
 #include <anim/AnimFactProviders.h>
+#include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
 #include <effects/EffectVerbs.h>
 #include <physics/PhysicsAuthoredQueries.h>
@@ -1103,7 +1104,7 @@ int Engine::Run(Game& game)
         // too, so a name a module declares lands here exactly as it does there.
         // Movement is not among them: it is a feature a game opts into, and a
         // locomotion mode is declared once the game has, as the templates do.
-        InstallAbilityKitVocabulary(entities);
+        RegisterAbilityKit(entities);
         InstallAnimationVocabulary(entities);
         // The engine's character facts read movement's components; a game without
         // movement has no entity they answer for.
@@ -1380,7 +1381,23 @@ int Engine::Run(Game& game)
             dispatcher.Bind<&InvokeEffectApply>(verbs.Find(kEffectApplyVerb), *EffectVerbOperations));
         DomainVerbBindings.push_back(
             dispatcher.Bind<&InvokeEffectHold>(verbs.Find(kEffectHoldLease), *EffectVerbOperations));
+        AbilityVerbOperations = std::make_unique<AbilityOperations>(entities);
+        DomainVerbBindings.push_back(
+            dispatcher.Bind<&InvokeAbilityActivate>(verbs.Find(kAbilityActivateVerb), *AbilityVerbOperations));
+        DomainVerbBindings.push_back(
+            dispatcher.Bind<&InvokeAbilityCancel>(verbs.Find(kAbilityCancelVerb), *AbilityVerbOperations));
+        DomainVerbBindings.push_back(
+            dispatcher.Bind<&InvokeAbilityGrant>(verbs.Find(kAbilityGrantVerb), *AbilityVerbOperations));
+        DomainVerbBindings.push_back(
+            dispatcher.Bind<&InvokeAbilityRevoke>(verbs.Find(kAbilityRevokeVerb), *AbilityVerbOperations));
     }
+
+    // Every host runs abilities: an actor granted one runs it in a process whose
+    // game registered nothing for it. Before the game's hook, so movement and a
+    // game's own systems order against these.
+    RegisterAbilityKitSystems(EngineSystems, AbilityHost{ .Verbs = VerbDispatcherState.get(),
+                                                          .Queries = QueryDispatcherState.get(),
+                                                          .Console = &console.Registry() });
 
     // Every host animates: an entity that names a rig plays it, in a process whose
     // game registered nothing for it. Before the game's hook, so a game orders its
@@ -1502,6 +1519,7 @@ int Engine::Run(Game& game)
     QuitOperation.reset();
     AnimationOperations.reset();
     EffectVerbOperations.reset();
+    AbilityVerbOperations.reset();
     AuthoredPhysics.reset();
 #ifdef SENCHA_ENABLE_UI
     if (PauseMenuState != nullptr)

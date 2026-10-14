@@ -99,8 +99,9 @@ What exists and is reused:
 : A data-defined activatable action: activation tags, require/block tag query,
   cost effect, cooldown effect, granted-while-active tags, and a behavior.
 
-`AbilitySet`
-: A POD component listing the abilities an entity has been granted (by handle).
+`AbilityGrants`
+: A POD component listing what an entity may run: one grant per ability binding
+  (see "Grants and input").
 
 `GameplayTagContainer`
 : A POD per-entity tag component (fixed-cap sorted ids + stack counts) — the
@@ -166,6 +167,8 @@ without engine code. `Current` is derived; `Base` is authoritative.
   clamps to the attribute's range.
 
 ### D-E — Abilities are data + one activation system; cost/cooldown are effects
+
+*Superseded by phased abilities ("Ability definitions", "Runtime").*
 
 An `AbilityDef` data asset carries: activation tag, a `GameplayTagQuery`
 (require/block), a cost effect ref, a cooldown effect ref + duration + cooldown
@@ -260,8 +263,7 @@ utilities stay in `core/`.
 
 All in `FixedLogic` (deterministic), ordered with `After<>`:
 
-1. `AbilityActivationSystem` — intents → cost/cooldown effects applied, tags
-   granted, behaviors fired.
+1. `ActorTimeSystem`, then `AbilitySystem` — see "Runtime".
 2. `EffectApplicationSystem` — drain apply-effect requests: instant → `Base`,
    duration → spawn `ActiveEffect`.
 3. `EffectLifetimeSystem` — tick durations, periodic ticks, expiry, tag
@@ -354,30 +356,92 @@ reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
 2. Declaring it into a World resolves names: tags, attributes, effects, actions,
    verbs, queries, leases and component identities.
 
-## Animation
+## Grants and input
 
-An ability may ask its actor for animation: `AbilityDefinition::Animation` names
-an intent the actor's rig declares, a lifetime and the layers it may play on.
-Activation asks through `RequestAnimation`, the one door every producer of
-animation requests uses (`docs/gameplay/animation.md`, "Requests"): the
-authority issues the request, and a client predicts it only for the pawn it
-predicts, on that pawn's command timeline.
+An actor runs only what it is granted: `AbilityGrants` holds up to sixteen grants,
+each an ability, a kind (authored on the actor, held by an effect, or made by a
+request) and an entry in the World's `AbilityGrantEntries`. An entry is the
+grant's stable key and its binding override; its effective binding is the
+ability's `input_default` with every field the grant states replacing the
+ability's, resolved against the action vocabulary input publishes
+(`InputActionVocabulary`). The same ability is bound to different actions on two
+pawns by two grants, never by a copy. Grant ids are minted per actor and never
+reused, so revoking one grant ends exactly the activations it started. Scenes
+save authored grants by key, ability asset and override
+(`abilities/AbilityGrantsSerializer.h`); an ability a scene names before anything
+declared it keeps its name.
 
-The request's source is the actor. Its lifetime is the ability's:
+An actor with grants carries `ActiveAbilities`, `AbilityLocals`, `ActorTime` and a
+tag container, by derivation. It must also carry an `InputActionSourceRef` to read
+input at all.
 
-- A `Held` request lasts while the activation does. The activation is the entity
-  its `OnActivate` effect spawns; the kit leases the request to it
-  (`AbilityAnimationLeases` on the actor) and cancels the request, `Released`,
-  once that entity has ended. The release happens at the start of the next
-  activation pass, before selection, so an effect that expires on tick N ends its
-  animation on tick N + 1 on every machine alike.
-- An activation with no lasting effect holds its request for the tick it
-  happened, as an `Impulse`.
-- `Fixed` and `Impulse` requests end on their own.
+The pass walks the tick's ordered input edges (`docs/gameplay/input.md`, "Edges"):
 
-Animation never ends a producer's held request for it. A held request whose
-source or owner has ended while it is still held is reported as orphaned, in the
-decision log and `anim.risk`, and stays held: the fix belongs in the producer.
+- **Press A.** First, a running toggle started by A ends its hold (the press is
+  its release). Otherwise the grants bound to A whose context matches are taken in
+  priority order. Two exclusive bindings at the top priority start nothing
+  (`BindingAmbiguous`). The top exclusive binding runs admission: admitted, it
+  starts and consumes the press; refused, the press is consumed (`Blocked`) unless
+  the binding says `when_blocked: fall_through`, which lets the next priority try.
+  Observe bindings start whenever admitted and never consume.
+- **Release A.** Reaches only the running activations A started, whatever the
+  bindings say now. A `press_release` activation sees it as `on: release`; a
+  `press` one ignores it; a `toggle` ignores a key coming up.
+- **Interrupted release A.** Ends those activations `InputInterrupted`, unless the
+  binding says `on_interrupt: release`.
+
+`ability.activate`, `ability.cancel`, `ability.grant` and `ability.revoke` reach
+the same admission by name, through `AbilityRequestQueue` (bounded; a full queue
+answers `QueueFull`).
+
+## Runtime
+
+`AbilitySystem` runs once per fixed tick where the simulation is authoritative,
+after input resolution and the peer command feed and after the actor clock
+advances, in five steps over every actor with grants:
+
+1. **Sweep:** the definition still current, the grant still held, the input source
+   unchanged (`InputLost`), continuation and phase `continue` conditions
+   (`ContinuationFailed`), `cancel_on` (`CancelTriggered`).
+2. **Input:** the edges above.
+3. **Requests:** the queue, in order.
+4. **Advance:** pulses that fell due, then timeouts and condition transitions.
+5. **Linger:** ended records past `ability.present_linger_ticks` are freed.
+
+Every start runs to quiescence before the next edge: enter the phase (acquire its
+holds, run its `enter` ops, the first pulse), then take the first transition whose
+trigger and guard hold, run the old phase's `exit` ops and release its holds, enter
+the next, and so on until it waits or ends. More than `ability.step_budget`
+transitions in one tick ends it `StepBudget`. So three presses of an instant
+ability in one tick are three activations. An activation's key is the command
+tick, the ability, and the press's place in the tick's edges (or the request's
+place in the queue): two machines that admit differently still name the same
+press the same way.
+
+**Admission** checks the definition, the activation conditions, `instances`, the
+four live records, and that the start costs and an `on_start` cooldown can be
+paid. **End** is the only exit and is idempotent: holds are released newest first,
+owned tags revoked, an `on_end` cooldown started, exit ops never run; the record
+lingers for presentation with its reason and the element behind it.
+
+**Commit** pays cost groups atomically: every check (definitions, Instant Add
+shape, attribute floors summed per attribute, the cooldown's tag room) passes
+before anything applies, or nothing applies and the activation ends `CommitFailed`
+(unless the op says `on_fail: continue`). A `once` group already paid is a traced
+no-op. A cooldown of D ticks started on tick N blocks ticks N … N+D−1 and admits on
+N+D.
+
+**Ops** run against the dispatchers the host gives the kit (`AbilityHost`): an
+`invoke` or a hold through `VerbDispatcher` with the actor as producer and the
+activation's instigator; a hold's owner is the actor and a key of the record and
+the op, so a provider ends exactly it. A `query` writes its local, or empties it
+when the query has no answer. Guards are evaluated at the op; a stale entity skips
+the op closed. Phases measure time on the actor's clock unless they say
+`simulation`.
+
+`AbilityTrace` records starts, refusals with their reason and failing condition,
+transitions, ends, skipped ops, operation admissions, cues, ambiguous and blocked
+presses. A warm pass allocates nothing.
 
 ## Rollout
 

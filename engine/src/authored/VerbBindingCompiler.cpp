@@ -637,6 +637,32 @@ bool CompileVerbBinding(const VerbBindingDesc& desc,
     return true;
 }
 
+bool CompileAuthoredDefault(const DataFieldSchema& field,
+                            std::string_view bindingKey,
+                            AuthoredValue& out,
+                            std::vector<std::string>& errors)
+{
+    return CompileDefault(field, bindingKey, field.Key, out, errors);
+}
+
+bool CompileAuthoredConstant(const VerbBindingArgument& authored,
+                             const DataFieldSchema& expected,
+                             const VerbBindingEnvironment& environment,
+                             std::string_view bindingKey,
+                             AuthoredValue& out,
+                             std::vector<std::string>& errors)
+{
+    if (authored.Source == VerbArgumentSource::Input || authored.Source == VerbArgumentSource::Entity)
+    {
+        Fail(errors, bindingKey, authored.Key, "a constant here is a literal, a tag, or an asset reference");
+        return false;
+    }
+    bool referencesChecked = true;
+    return authored.Source == VerbArgumentSource::Literal
+        ? CompileLiteral(authored.Literal, expected, bindingKey, authored.Key, out, errors)
+        : CompileReference(authored, expected, environment, bindingKey, out, referencesChecked, errors);
+}
+
 bool CompileVerbInputValue(const VerbBindingArgument& authored,
                            const VerbCompiledInput& input,
                            const VerbBindingEnvironment& environment,
@@ -660,11 +686,7 @@ bool CompileVerbInputValue(const VerbBindingArgument& authored,
     // the dispatcher will hold it: one value, however many arguments read it.
     const DataFieldSchema& first = input.Destinations.front().Expected;
     AuthoredValue value;
-    bool referencesChecked = true;
-    const bool compiled = authored.Source == VerbArgumentSource::Literal
-        ? CompileLiteral(authored.Literal, first, bindingKey, authored.Key, value, errors)
-        : CompileReference(authored, first, environment, bindingKey, value, referencesChecked, errors);
-    if (!compiled)
+    if (!CompileAuthoredConstant(authored, first, environment, bindingKey, value, errors))
         return false;
     for (const VerbInputDestination& destination : input.Destinations)
     {

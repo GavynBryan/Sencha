@@ -93,10 +93,9 @@ void FpsGame::OnRegisterSystems(SystemRegisterContext& ctx)
     // goes into and the movers the streaming correction writes through.
     Session().RegisterSystems(ctx);
 
-    // Movement stands on the ability kit: a pawn's move speed is an attribute
-    // the kit resolves each tick, and the movement pipeline orders itself
-    // against the kit's systems. The kit comes first by that contract.
-    RegisterAbilityKitSystems(ctx.Schedule);
+    // Movement stands on the ability kit, which the engine registers for every
+    // host before this hook: a pawn's move speed is an attribute the kit
+    // resolves each tick.
     RegisterMovementSystems(ctx.Schedule, Session().Assets().DataAssets,
                             &GetEngine().Logging());
     RegisterControllerSystems(ctx.Schedule);

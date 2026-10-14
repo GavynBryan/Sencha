@@ -15,7 +15,7 @@
 #include <anim/AnimSelectSystem.h>
 #include <anim/AnimTrace.h>
 #include <anim/AnimWorldReport.h>
-#include <abilities/AbilityActivationSystem.h>
+#include <abilities/AbilitySystem.h>
 #include <app/EngineSchedule.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/json/JsonFormat.h>
@@ -239,8 +239,8 @@ void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging
     // edges when they register second.
     if (schedule.Get<RootMotionSystem>() != nullptr)
         schedule.After<RootMotionSystem, AnimContentSystem>();
-    if (schedule.Get<AbilityActivationSystem>() != nullptr)
-        schedule.After<AnimSelectSystem, AbilityActivationSystem>();
+    if (schedule.Get<AbilitySystem>() != nullptr)
+        schedule.After<AnimSelectSystem, AbilitySystem>();
 
     // Posing runs in the post-fixed phase, after movement has moved what it
     // poses; nothing in the fixed phase reads it.

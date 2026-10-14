@@ -1,6 +1,6 @@
 #include <app/Application.h>
 #include <app/Engine.h>
-#include <abilities/AbilitySet.h>
+#include <abilities/AbilityGrants.h>
 #include <attributes/AttributeSet.h>
 #include <audio/AudioCaptionComponent.h>
 #include <audio/AudioSourceComponent.h>

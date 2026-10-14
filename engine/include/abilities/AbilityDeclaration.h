@@ -91,6 +91,7 @@ struct AbilityTagQueryDecl
     std::vector<std::string> None;
 
     [[nodiscard]] bool Empty() const { return All.empty() && Any.empty() && None.empty(); }
+    friend bool operator==(const AbilityTagQueryDecl&, const AbilityTagQueryDecl&) = default;
 };
 
 enum class AbilityCompare : std::uint8_t
@@ -303,13 +304,15 @@ enum class AbilityInterrupt : std::uint8_t
 // Every field is optional so that a grant entry overrides only what it states.
 struct AbilityBindingDecl
 {
-    std::optional<std::string> Action;
-    std::optional<AbilityInputPolicy> Policy;
-    std::optional<std::int32_t> Priority;
-    std::optional<AbilityConsume> Consume;
-    std::optional<AbilityWhenBlocked> WhenBlocked;
-    std::optional<AbilityTagQueryDecl> Context;
-    std::optional<AbilityInterrupt> OnInterrupt;
+    std::optional<std::string> Action{};
+    std::optional<AbilityInputPolicy> Policy{};
+    std::optional<std::int32_t> Priority{};
+    std::optional<AbilityConsume> Consume{};
+    std::optional<AbilityWhenBlocked> WhenBlocked{};
+    std::optional<AbilityTagQueryDecl> Context{};
+    std::optional<AbilityInterrupt> OnInterrupt{};
+
+    friend bool operator==(const AbilityBindingDecl&, const AbilityBindingDecl&) = default;
 };
 
 enum class AbilityPredictionLevel : std::uint8_t

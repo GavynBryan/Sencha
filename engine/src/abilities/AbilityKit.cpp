@@ -1,37 +1,29 @@
 #include <abilities/AbilityKit.h>
 
+#include <abilities/AbilityGrantsSerializer.h>
 #include <anim/AnimSelectSystem.h>
-
-#include <abilities/AbilityActivation.h>
-#include <abilities/AbilityActivationSystem.h>
-#include <abilities/AbilityRegistry.h>
-#include <abilities/AbilitySet.h>
-#include <abilities/AbilitySetSerializer.h>
 #include <app/EngineSchedule.h>
-#include <attributes/AttributeRegistry.h>
-#include <attributes/AttributeSet.h>
 #include <attributes/AttributeSetSerializer.h>
 #include <ecs/World.h>
-#include <effects/ActiveEffect.h>
 #include <effects/AttributeResolveSystem.h>
 #include <effects/EffectLifetimeSystem.h>
-#include <effects/EffectRegistry.h>
-#include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagContainerSerializer.h>
-#include <gameplay_tags/GameplayTagRegistry.h>
+#include <input/InputActionResolveSystem.h>
+#include <time/ActorTimeSystem.h>
+#include <time/TimeComponentRegistration.h>
 #include <world/ComponentRegistrar.h>
 
 void RegisterAbilityKitComponents(ComponentRegistrar& registrar)
 {
     registrar.AddAll<AbilityKitComponents>();
 
-    // Tags and attributes hold registration-order ids, so their persisted form
-    // is names and cannot come from a schema. The serializers go in beside the
-    // storage: one edit here reaches the runtime, the editor's preview
-    // registry, and the cook, because all three compose from this registrar.
+    // Tags, attributes and grants hold registration-order ids, so their persisted
+    // form is names and cannot come from a schema. The serializers go in beside the
+    // storage: one edit here reaches the runtime, the editor's preview registry,
+    // and the cook, because all three compose from this registrar.
     registrar.AddSerializer(MakeGameplayTagContainerSerializer());
     registrar.AddSerializer(MakeAttributeSetSerializer());
-    registrar.AddSerializer(MakeAbilitySetSerializer());
+    registrar.AddSerializer(MakeAbilityGrantsSerializer());
 }
 
 void InstallAbilityKitVocabulary(World& world)
@@ -44,28 +36,39 @@ void InstallAbilityKitVocabulary(World& world)
         world.AddResource<EffectRegistry>();
     if (!world.HasResource<AbilityRegistry>())
         world.AddResource<AbilityRegistry>();
+    if (!world.HasResource<AbilityGrantEntries>())
+        world.AddResource<AbilityGrantEntries>();
 }
 
 void RegisterAbilityKit(World& world)
 {
     ComponentRegistrar registrar(world);
+    // An actor's clock is time's, not the kit's, but every actor the kit runs owns one.
+    RegisterTimeComponents(registrar);
     RegisterAbilityKitComponents(registrar);
 
     InstallAbilityKitVocabulary(world);
-    if (!world.HasResource<AbilityActivationQueue>())
-        world.AddResource<AbilityActivationQueue>();
+    if (!world.HasResource<AbilityRequestQueue>())
+        world.AddResource<AbilityRequestQueue>();
+    if (!world.HasResource<AbilityTrace>())
+        world.AddResource<AbilityTrace>();
 }
 
-void RegisterAbilityKitSystems(EngineSchedule& schedule)
+void RegisterAbilityKitSystems(EngineSchedule& schedule, const AbilityHost& host)
 {
-    schedule.Register<AbilityActivationSystem>();
+    schedule.Register<ActorTimeSystem>();
+    schedule.Register<AbilitySystem>(host);
     schedule.Register<AttributeResolveSystem>();
     schedule.Register<EffectLifetimeSystem>();
 
-    schedule.After<AttributeResolveSystem, AbilityActivationSystem>();
+    schedule.After<AbilitySystem, ActorTimeSystem>();
+    schedule.After<AttributeResolveSystem, AbilitySystem>();
     schedule.After<EffectLifetimeSystem, AttributeResolveSystem>();
+    // An ability reads the tick's input edges.
+    if (schedule.Get<InputActionResolveSystem>() != nullptr)
+        schedule.After<AbilitySystem, InputActionResolveSystem>();
     // An ability's animation request is seen by the same tick's selection. Declared
     // by whichever of the two registers second.
     if (schedule.Get<AnimSelectSystem>() != nullptr)
-        schedule.After<AnimSelectSystem, AbilityActivationSystem>();
+        schedule.After<AnimSelectSystem, AbilitySystem>();
 }

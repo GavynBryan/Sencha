@@ -1,5 +1,8 @@
 #include <assets/runtime/ContentVocabulary.h>
 
+#include <abilities/AbilityDefinitionData.h>
+#include <abilities/AbilityDefinitionResolve.h>
+#include <abilities/AbilityRegistry.h>
 #include <assets/data/DataAssetSubtype.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <attributes/AttributeDeclarations.h>
@@ -17,9 +20,9 @@
 
 namespace
 {
-// The effects this World declared from content, held so they can be redefined
-// when their assets reload.
-struct ContentEffectLeases
+// The definitions this World declared from content, held so they can be redefined
+// when their assets reload. Effects before abilities, since abilities name effects.
+struct ContentDefinitionLeases
 {
     struct Entry
     {
@@ -28,6 +31,7 @@ struct ContentEffectLeases
         std::uint64_t Version = 0;
     };
     std::vector<Entry> Effects;
+    std::vector<Entry> Abilities;
 };
 
 std::vector<std::string> PathsOfSubtype(RuntimeAssets& assets, std::string_view subtype)
@@ -51,7 +55,7 @@ const T* Compiled(RuntimeAssets& assets, const AssetLease& lease, std::string_vi
     return lease ? assets.DataAssets.TryGet<T>(HandleOf(lease), subtype) : nullptr;
 }
 
-void DeclareEffect(RuntimeAssets& assets, World& world, ContentEffectLeases::Entry& entry,
+void DeclareEffect(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
                    std::vector<std::string>& errors)
 {
     const EffectDeclaration* declaration = Compiled<EffectDeclaration>(assets, entry.Lease, kEffectDefinitionType);
@@ -75,6 +79,53 @@ void DeclareEffect(RuntimeAssets& assets, World& world, ContentEffectLeases::Ent
     }
     if (!effects->Define(entry.Path, std::move(definition)).IsValid())
         errors.push_back(std::format("{}: the effect registry refused it", entry.Path));
+}
+
+// A reload that no longer resolves keeps the definition that last did, and says why.
+void DeclareAbility(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
+                    std::vector<std::string>& errors)
+{
+    const AbilityDeclaration* declaration = Compiled<AbilityDeclaration>(assets, entry.Lease, kAbilityDefinitionType);
+    AbilityRegistry* abilities = world.TryGetResource<AbilityRegistry>();
+    if (declaration == nullptr || abilities == nullptr)
+    {
+        errors.push_back(std::format("{} did not load as {}", entry.Path, kAbilityDefinitionType));
+        return;
+    }
+    entry.Version = assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease));
+
+    std::vector<AbilityDiagnostic> diagnostics;
+    AbilityDefinition definition;
+    const bool resolved = ResolveAbilityDeclaration(*declaration, entry.Path, MakeAbilityResolveEnvironment(world),
+                                                    definition, diagnostics);
+    for (const AbilityDiagnostic& diagnostic : diagnostics)
+        if (diagnostic.Severity == AbilityDiagnosticSeverity::Error)
+            errors.push_back(std::format("{}: {} {} {}: {}", entry.Path, diagnostic.Code, diagnostic.ElementKey,
+                                         diagnostic.Path, diagnostic.Message));
+    if (resolved)
+        (void)abilities->Define(entry.Path, std::move(definition));
+    else
+        (void)abilities->Reserve(entry.Path);
+}
+
+using DeclareFn = void (*)(RuntimeAssets&, World&, ContentDefinitionLeases::Entry&, std::vector<std::string>&);
+
+void DeclareAll(RuntimeAssets& assets, World& world, ContentVocabularyReload reload, std::string_view subtype,
+                std::vector<ContentDefinitionLeases::Entry>* held, DeclareFn declare, std::vector<std::string>& errors)
+{
+    for (const std::string& path : PathsOfSubtype(assets, subtype))
+    {
+        if (reload == ContentVocabularyReload::Once)
+        {
+            ContentDefinitionLeases::Entry entry{ path, assets.Assets.LoadLease(path, AssetType::Data), 0 };
+            declare(assets, world, entry, errors);
+            continue;
+        }
+        if (std::ranges::any_of(*held, [&](const auto& entry) { return entry.Path == path; }))
+            continue;
+        held->push_back({ path, assets.Assets.LoadLease(path, AssetType::Data), 0 });
+        declare(assets, world, held->back(), errors);
+    }
 }
 } // namespace
 
@@ -127,41 +178,37 @@ void DeclareContentVocabulary(RuntimeAssets& assets, World& world, ContentVocabu
         }
     }
 
-    if (!world.HasResource<EffectRegistry>())
-        return;
-    if (reload == ContentVocabularyReload::Once)
-    {
-        for (const std::string& path : PathsOfSubtype(assets, kEffectDefinitionType))
-        {
-            ContentEffectLeases::Entry entry{ path, assets.Assets.LoadLease(path, AssetType::Data), 0 };
-            DeclareEffect(assets, world, entry, errors);
-        }
-        return;
-    }
-    ContentEffectLeases& leases = world.HasResource<ContentEffectLeases>()
-                                      ? world.GetResource<ContentEffectLeases>()
-                                      : world.AddResource<ContentEffectLeases>();
-    for (const std::string& path : PathsOfSubtype(assets, kEffectDefinitionType))
-    {
-        if (std::ranges::any_of(leases.Effects, [&](const auto& entry) { return entry.Path == path; }))
-            continue;
-        leases.Effects.push_back({ path, assets.Assets.LoadLease(path, AssetType::Data), 0 });
-        DeclareEffect(assets, world, leases.Effects.back(), errors);
-    }
+    ContentDefinitionLeases* leases = nullptr;
+    if (reload == ContentVocabularyReload::Watch)
+        leases = world.HasResource<ContentDefinitionLeases>() ? &world.GetResource<ContentDefinitionLeases>()
+                                                              : &world.AddResource<ContentDefinitionLeases>();
+    if (world.HasResource<EffectRegistry>())
+        DeclareAll(assets, world, reload, kEffectDefinitionType, leases != nullptr ? &leases->Effects : nullptr,
+                   &DeclareEffect, errors);
+    if (world.HasResource<AbilityRegistry>())
+        DeclareAll(assets, world, reload, kAbilityDefinitionType, leases != nullptr ? &leases->Abilities : nullptr,
+                   &DeclareAbility, errors);
 }
 
 void RefreshContentVocabulary(RuntimeAssets& assets, World& world, std::vector<std::string>& errors)
 {
-    ContentEffectLeases* leases = world.TryGetResource<ContentEffectLeases>();
+    ContentDefinitionLeases* leases = world.TryGetResource<ContentDefinitionLeases>();
     if (leases == nullptr)
         return;
-    for (ContentEffectLeases::Entry& entry : leases->Effects)
-        if (entry.Lease && assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease)) != entry.Version)
-            DeclareEffect(assets, world, entry, errors);
+    const auto refresh = [&](std::vector<ContentDefinitionLeases::Entry>& entries, DeclareFn declare) {
+        for (ContentDefinitionLeases::Entry& entry : entries)
+            if (entry.Lease && assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease)) != entry.Version)
+                declare(assets, world, entry, errors);
+    };
+    refresh(leases->Effects, &DeclareEffect);
+    refresh(leases->Abilities, &DeclareAbility);
 }
 
 void ReleaseContentVocabulary(World& world)
 {
-    if (ContentEffectLeases* leases = world.TryGetResource<ContentEffectLeases>())
+    if (ContentDefinitionLeases* leases = world.TryGetResource<ContentDefinitionLeases>())
+    {
         leases->Effects.clear();
+        leases->Abilities.clear();
+    }
 }
