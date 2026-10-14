@@ -172,7 +172,7 @@ void EditorWorkspace::BindSelectionToActiveDocument()
 {
     EditorDocument& document = ActiveDocument();
     Selection.BindDocument(&document.GetScene().GetRegistry().Components);
-    document.SetProjectionObserver([this] { Selection.RetargetToDocument(); });
+    document.SetHandleObserver([this] { Selection.RetargetToDocument(); });
 }
 
 void EditorWorkspace::ResetInteractionState()

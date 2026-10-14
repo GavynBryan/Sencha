@@ -92,13 +92,18 @@ public:
     // source change.
     void RebuildSceneProjection() { Projection.Rebuild(); }
 
-    // Fired after every rebuild, once the new projection is live. Projected
-    // entities are destroyed and recreated, so anything holding their handles
-    // -- the workspace's selection, above all -- has to re-resolve, and this
-    // is how it learns without the document knowing who is listening.
-    void SetProjectionObserver(std::function<void()> observer)
+    // Fired whenever entities were destroyed or recreated under their handles:
+    // after every projection rebuild and every change set applied. Anything
+    // holding handles -- the workspace's selection, above all -- re-resolves.
+    void SetHandleObserver(std::function<void()> observer)
     {
-        Projection.SetObserver(std::move(observer));
+        Projection.SetObserver(observer);
+        HandleObserver = std::move(observer);
+    }
+    void AnnounceHandlesChanged() const
+    {
+        if (HandleObserver)
+            HandleObserver();
     }
 
     // ── Scene instances ─────────────────────────────────────────────────────
@@ -303,4 +308,5 @@ private:
     // Declared last: it names Registry_, Scene, Retained_ and Logging, so all
     // four have to exist before it is constructed.
     SceneInstanceProjection Projection{ Registry_, Scene, Retained_, Logging };
+    std::function<void()> HandleObserver;
 };

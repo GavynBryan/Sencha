@@ -278,7 +278,7 @@ namespace
         SelectionContext context;
         SelectionService selection(context);
         selection.BindDocument(&host.GetScene().GetRegistry().Components);
-        host.SetProjectionObserver([&selection]
+        host.SetHandleObserver([&selection]
                                    { selection.RetargetToDocument(); });
         selection.ApplySelection(SelectableRef::EntitySelection(
             host.GetScene().GetRegistry().Id, light));
@@ -559,7 +559,7 @@ namespace
         // The workspace's wiring, reproduced: identity source plus the
         // rebuild announcement that drives the retarget.
         Selection.BindDocument(&host.GetScene().GetRegistry().Components);
-        host.SetProjectionObserver([this] { Selection.RetargetToDocument(); });
+        host.SetHandleObserver([this] { Selection.RetargetToDocument(); });
 
         PlaceSceneInstanceCommand place("asset://props/door.sscene",
                                         Transform3f::Identity(), host, Selection);
@@ -604,7 +604,7 @@ namespace
         EditorDocument host(Logging);
         host.SetContentRoots({ Root });
         Selection.BindDocument(&host.GetScene().GetRegistry().Components);
-        host.SetProjectionObserver([this] { Selection.RetargetToDocument(); });
+        host.SetHandleObserver([this] { Selection.RetargetToDocument(); });
 
         PlaceSceneInstanceCommand place("asset://props/door.sscene",
                                         Transform3f::Identity(), host, Selection);

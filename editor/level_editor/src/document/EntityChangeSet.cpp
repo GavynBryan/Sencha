@@ -88,6 +88,7 @@ void ApplyEntityChangeSet(EditorDocument& document, const EntityChangeSet& chang
     }
     document.GetScene().RefreshDerivedTransforms();
     document.MarkDirty();
+    document.AnnounceHandlesChanged();
 }
 
 std::optional<std::uint64_t> CurrentDigest(const EditorDocument& document, PersistentEntityId id)
