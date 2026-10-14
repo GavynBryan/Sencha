@@ -185,6 +185,7 @@ const BrushEvaluated* VolumeEvaluations::Evaluate(const EditorScene& scene, Enti
     entry.Inputs = inputs;
     entry.Problems.clear();
     entry.Openings.clear();
+    entry.SharedWith.clear();
     entry.Value = EvaluateBrushModifiers(record->Mesh, record->Modifiers, policy);
     BrushEvaluated& value = entry.Value;
     for (BrushEvaluatedMesh& mesh : value.Meshes)
@@ -216,6 +217,8 @@ const BrushEvaluated* VolumeEvaluations::Evaluate(const EditorScene& scene, Enti
         entry.Openings.push_back(scene.PersistentIdOf(opening));
     CutOpenings(walls, self->Thickness, openings);
     entry.Problems = std::move(walls.Problems);
+    for (const std::uint32_t index : walls.SharedWith)
+        entry.SharedWith.push_back(near[index].Id);
 
     for (ShellSlab& slab : walls.Slabs)
     {
@@ -247,6 +250,13 @@ std::span<const PersistentEntityId> VolumeEvaluations::ShellOpenings(EntityId en
 {
     const auto found = Entries.find(EntityKey(entity));
     return found != Entries.end() ? std::span<const PersistentEntityId>(found->second.Openings)
+                                  : std::span<const PersistentEntityId>{};
+}
+
+std::span<const PersistentEntityId> VolumeEvaluations::ShellSharedWith(EntityId entity) const
+{
+    const auto found = Entries.find(EntityKey(entity));
+    return found != Entries.end() ? std::span<const PersistentEntityId>(found->second.SharedWith)
                                   : std::span<const PersistentEntityId>{};
 }
 

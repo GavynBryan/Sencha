@@ -28,6 +28,8 @@ public:
     // The openings that shell was cut by, in the order its OpeningRefused
     // problems number them.
     [[nodiscard]] std::span<const PersistentEntityId> ShellOpenings(EntityId entity) const;
+    // The spaces that shell shares a wall with.
+    [[nodiscard]] std::span<const PersistentEntityId> ShellSharedWith(EntityId entity) const;
 
     void Forget(EntityId entity);
     void Clear() { Entries.clear(); }
@@ -39,6 +41,7 @@ private:
         BrushEvaluated            Value;
         std::vector<ShellProblem> Problems;
         std::vector<PersistentEntityId> Openings;
+        std::vector<PersistentEntityId> SharedWith;
     };
     std::unordered_map<std::uint64_t, Entry> Entries;
 };

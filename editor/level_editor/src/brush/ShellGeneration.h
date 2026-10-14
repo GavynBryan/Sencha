@@ -54,9 +54,11 @@ struct ShellProblem
 
 struct ShellResult
 {
-    std::vector<ShellSlab>    Slabs;
-    std::vector<ShellProblem> Problems;
-    bool                      Refused = false;
+    std::vector<ShellSlab>     Slabs;
+    std::vector<ShellProblem>  Problems;
+    // The neighbours a wall was shared with, by their index among those given.
+    std::vector<std::uint32_t> SharedWith;
+    bool                       Refused = false;
 };
 
 struct ShellRules

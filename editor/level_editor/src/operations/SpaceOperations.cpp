@@ -21,6 +21,7 @@
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <string>
@@ -436,6 +437,102 @@ namespace
         return entry;
     }
 
+    // Appends `entity` to `list` once, by id and name.
+    void Note(JsonValue::Array& list, const EditorDocument& document, EntityId entity)
+    {
+        JsonValue named = Named(document, entity);
+        if (std::none_of(list.begin(), list.end(), [&](const JsonValue& seen) {
+                return seen.Find("id")->AsString() == named.Find("id")->AsString();
+            }))
+            list.push_back(std::move(named));
+    }
+
+    void Note(JsonValue::Array& list, const EditorDocument& document, PersistentEntityId id)
+    {
+        const SubjectResolution found = ResolveEntitySubject(document, PersistentEntityIdToString(id));
+        if (found.Resolved())
+            Note(list, document, found.Entities.front());
+    }
+
+    EditorOperationEntry Deps(const LevelTarget& level)
+    {
+        EditorOperationEntry entry;
+        entry.Definition.Name = "deps";
+        entry.Definition.Category = "Space";
+        entry.Definition.Description =
+            "What follows from an entity and would change with it. For a space: how many walls it "
+            "generates, the openings cutting them, the spaces it shares a wall with, and the spaces its "
+            "doors lead into. For an opening: the spaces whose walls it cuts and the spaces it joins.";
+        entry.Definition.Parameters = DataField::Record({}, {}, {}, {
+            DataField::Field("subject", DataFieldKind::String, {}, "an entity id or '@<name>'"),
+        });
+        entry.Definition.Result = DataField::Record({}, {}, {}, {
+            NamedSchema("subject", {}),
+            DataField::Field("walls", DataFieldKind::Int, {}, "generated walls"),
+            DataField::ArrayOf("cut_by", {}, "openings cutting its walls", NamedSchema({}, {}), true),
+            DataField::ArrayOf("shares_walls_with", {}, {}, NamedSchema({}, {}), true),
+            DataField::ArrayOf("leads_to", {}, "spaces its openings lead into", NamedSchema({}, {}), true),
+            DataField::ArrayOf("cuts", {}, "spaces whose walls this opening cuts", NamedSchema({}, {}), true),
+            DataField::ArrayOf("joins", {}, "the spaces either side of this opening", NamedSchema({}, {}), true),
+        });
+        entry.Execute = [&level](const JsonValue& arguments) {
+            const EditorDocument& document = level.Document();
+            const SubjectResolution subject = ResolveEntitySubject(document, arguments.Find("subject")->AsString());
+            if (!subject.Resolved())
+                return EditorOperationOutcome::Refused(subject.Code, subject.Message);
+            const EditorScene& scene = document.GetScene();
+            const World& components = scene.GetRegistry().Components;
+            const EntityId entity = subject.Entities.front();
+
+            std::int64_t walls = 0;
+            JsonValue::Array cutBy, sharesWith, leadsTo, cuts, joins;
+            if (const BrushEvaluated* evaluated = scene.TryGetBrushPieces(entity);
+                evaluated != nullptr && components.HasComponent<Shell>(entity))
+            {
+                for (const BrushPiece& piece : evaluated->Pieces)
+                    walls += evaluated->Meshes[piece.MeshIndex].Role == BrushRole::Solid ? 1 : 0;
+                for (const PersistentEntityId id : scene.ShellOpenings(entity))
+                    Note(cutBy, document, id);
+                for (const PersistentEntityId id : scene.ShellSharedWith(entity))
+                    Note(sharesWith, document, id);
+            }
+            for (const EntityId other : scene.GetAllEntities())
+                if (components.HasComponent<Opening>(other) && OwnerOf(scene, other) == entity)
+                    if (const std::optional<FarSide> far = FarSideOf(scene, entity, other))
+                        Note(leadsTo, document, far->Space);
+
+            if (components.HasComponent<Opening>(entity))
+            {
+                const PersistentEntityId self = scene.PersistentIdOf(entity);
+                for (const EntityId other : scene.GetAllEntities())
+                {
+                    if (!components.HasComponent<Shell>(other) || scene.TryGetBrushPieces(other) == nullptr)
+                        continue;
+                    const std::span<const PersistentEntityId> openings = scene.ShellOpenings(other);
+                    if (std::find(openings.begin(), openings.end(), self) != openings.end())
+                        Note(cuts, document, other);
+                }
+                if (const std::optional<EntityId> owner = OwnerOf(scene, entity))
+                {
+                    Note(joins, document, *owner);
+                    if (const std::optional<FarSide> far = FarSideOf(scene, *owner, entity))
+                        Note(joins, document, far->Space);
+                }
+            }
+
+            return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
+                { "subject", Named(document, entity) },
+                { "walls", JsonValue(static_cast<double>(walls)) },
+                { "cut_by", JsonValue(std::move(cutBy)) },
+                { "shares_walls_with", JsonValue(std::move(sharesWith)) },
+                { "leads_to", JsonValue(std::move(leadsTo)) },
+                { "cuts", JsonValue(std::move(cuts)) },
+                { "joins", JsonValue(std::move(joins)) },
+            }));
+        };
+        return entry;
+    }
+
     EditorOperationEntry Detach(LevelTarget& level)
     {
         EditorOperationEntry entry;
@@ -506,5 +603,6 @@ std::vector<EditorOperationEntry> SpaceOperations(LevelTarget& level)
     entries.push_back(MoveOpening(level));
     entries.push_back(Detach(level));
     entries.push_back(Diagnostics(level));
+    entries.push_back(Deps(level));
     return entries;
 }

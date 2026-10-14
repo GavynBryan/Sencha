@@ -302,3 +302,25 @@ TEST_F(SpaceOperationsTest, ADoorLowerThanTheNavigationCapsuleIsReported)
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
 }
+
+TEST_F(SpaceOperationsTest, DepsSaysWhatFollowsFromASpaceAndFromItsDoor)
+{
+    Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
+    Ok("space.create", R"({"name": "Corridor", "min": [8.25, 0, 2], "max": [14, 3, 4]})");
+    Ok("opening.create", R"({"at": [8.1, 1, 3], "name": "Door"})");
+
+    const auto names = [](const JsonValue& list) {
+        std::vector<std::string> out;
+        for (const JsonValue& item : list.AsArray())
+            out.push_back(item.Find("name")->AsString());
+        return out;
+    };
+    const JsonValue hall = Ok("deps", R"({"subject": "@Hall"})");
+    EXPECT_GE(hall.Find("walls")->AsNumber(), 6.0);
+    EXPECT_EQ(names(*hall.Find("shares_walls_with")), std::vector<std::string>{ "Corridor" });
+    EXPECT_EQ(names(*hall.Find("leads_to")), std::vector<std::string>{ "Corridor" });
+
+    const JsonValue door = Ok("deps", R"({"subject": "@Door"})");
+    EXPECT_EQ(names(*door.Find("joins")), (std::vector<std::string>{ "Hall", "Corridor" }));
+    EXPECT_FALSE(door.Find("cuts")->AsArray().empty());
+}

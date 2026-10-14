@@ -953,6 +953,10 @@ of the real model, with spaces included from the start.
   as `opening.too_narrow` and `opening.too_low` against the first navigation
   profile's capsule. `carry.skipped_detached` stays in `space.move`'s answer,
   since it is about one move rather than the level.
+- `deps` answers what would change with an entity, from facts the evaluation
+  already holds: a space's wall count, the openings that cut it and the
+  spaces it shares walls with (the shell records both as it builds), and the
+  spaces its doors lead into; an opening's cut spaces and the two it joins.
 
 ### M2: work live, and widen the vocabulary
 

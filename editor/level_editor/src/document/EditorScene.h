@@ -264,6 +264,10 @@ public:
     {
         return Volumes_.ShellOpenings(entity);
     }
+    [[nodiscard]] std::span<const PersistentEntityId> ShellSharedWith(EntityId entity) const
+    {
+        return Volumes_.ShellSharedWith(entity);
+    }
     [[nodiscard]] bool IsEntityEffectivelyLocked(EntityId entity) const;
 
     // The brush mesh store (serialized as a sidecar by EditorDocument).

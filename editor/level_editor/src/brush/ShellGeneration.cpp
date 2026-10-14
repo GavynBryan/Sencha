@@ -212,8 +212,9 @@ namespace
                                 ShellResult& result)
     {
         std::vector<Region> regions{ Region{ face } };
-        for (const ShellNeighbour& neighbour : neighbours)
+        for (std::uint32_t index = 0; index < neighbours.size(); ++index)
         {
+            const ShellNeighbour& neighbour = neighbours[index];
             if (neighbour.Volume == nullptr || std::abs(neighbour.Thickness - thickness) > kShareTolerance)
                 continue;
             for (const BrushFace& across : neighbour.Volume->Faces)
@@ -248,6 +249,8 @@ namespace
                     continue;
                 }
 
+                if (std::find(result.SharedWith.begin(), result.SharedWith.end(), index) == result.SharedWith.end())
+                    result.SharedWith.push_back(index);
                 std::vector<Region> split;
                 for (Region& region : regions)
                 {
@@ -309,6 +312,7 @@ namespace
     {
         result.Problems.push_back({ kind, face, std::move(message) });
         result.Slabs.clear();
+        result.SharedWith.clear();
         result.Refused = true;
     }
 }
