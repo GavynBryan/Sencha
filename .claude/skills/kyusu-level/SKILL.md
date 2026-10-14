@@ -54,11 +54,14 @@ of 0 makes a doorway.
 A refused step fails the draft. Fix the cause, `draft.resume`, and carry on;
 the refused step is not kept. `draft.diff` shows the steps and what changed.
 
-## The designer's side, in Kyusu's console
+## The designer's side, in Kyusu
 
-`draft.open path=<file>` replays the proposal into a draft, and its answer's
-`moved_since` lists entities edited after the proposal was written.
-`draft.accept` applies it as one undo step; `draft.discard` drops it.
+The Proposals tray (Shift+D) lists the files in `<project>/.proposals`;
+picking one replays it into a draft, drawn over the level in green (deleted
+entities in red). Ctrl+Enter accepts the shown proposal as one undo step and
+Ctrl+Backspace rejects it. From the console the same is `draft.open
+path=<file>` (its `moved_since` lists entities edited after the proposal was
+written), `draft.accept` and `draft.discard`.
 
 ## Pitfalls
 
