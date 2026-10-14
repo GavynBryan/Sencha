@@ -12,6 +12,7 @@
 #include <graphics/vulkan/GraphicsServices.h>
 #include <graphics/vulkan/Renderer.h>
 #include <graphics/vulkan/VulkanSwapchainService.h>
+#include <render/feature/DebugLineRenderFeature.h>
 #include <render/feature/MeshRenderFeature.h>
 #include <render/feature/ShadowRenderFeature.h>
 #include <render/feature/SkinnedPoseRenderFeature.h>
@@ -91,6 +92,7 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     //                    MainColor samples it.
     //   mesh   -> sky    within MainColor the background fills the view with
     //                    no depth test, so it records first.
+    //   lines  -> mesh   depth-tested debug lines need the scene's depth.
     //
     // Staging order below is deliberately not the resolved order: the resolver
     // produces the order, and the goldens are what prove it.
@@ -98,7 +100,9 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
     static constexpr std::string_view kShadow = "runtime_shadow";
     static constexpr std::string_view kSky = "runtime_sky";
     static constexpr std::array<std::string_view, 1> kShadowDeps{ kPose };
+    static constexpr std::string_view kMesh = "runtime_mesh";
     static constexpr std::array<std::string_view, 2> kMeshDeps{ kShadow, kSky };
+    static constexpr std::array<std::string_view, 1> kDebugLineDeps{ kMesh };
 
     auto bindings = std::make_shared<LightBindings>();
     // Constructed before the mesh feature is staged, which captures it: staging
@@ -110,7 +114,11 @@ bool DefaultRenderPipeline::AddMeshRenderFeature(GraphicsServices& graphics)
         std::make_unique<MeshRenderFeature>(
             Queue, *Meshes, *Materials, Camera, Lights, bindings,
             SkinnedMeshes, SkinnedPoses, &ProbeVolumes),
-        FeatureRegistration{ .Id = "runtime_mesh", .DependsOn = kMeshDeps });
+        FeatureRegistration{ .Id = kMesh, .DependsOn = kMeshDeps });
+
+    graphics.MainRenderer.StageFeature(
+        std::make_unique<DebugLineRenderFeature>(Camera, DebugLines),
+        FeatureRegistration{ .Id = "runtime_debug_lines", .DependsOn = kDebugLineDeps });
 
     graphics.MainRenderer.StageFeature(
         std::make_unique<SkyRenderFeature>(Camera, Lights),
@@ -196,6 +204,7 @@ void DefaultRenderPipeline::PublishEmptyFrameOutputs()
     PointShadowRequests.clear();
     CasterEvents.clear();
     Residency.ClearFrameSchedule();
+    DebugLines.Clear();
 }
 
 void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
@@ -284,6 +293,8 @@ void DefaultRenderPipeline::ExtractRender(RenderExtractContext& ctx)
 
     if (Instrumentation != nullptr && Instrumentation->Stats != nullptr)
         PublishExtractionStats(*Instrumentation->Stats, lightCounts);
+
+    ExtractDebugLines(world, DebugLines);
 
     if (Log != nullptr)
     {

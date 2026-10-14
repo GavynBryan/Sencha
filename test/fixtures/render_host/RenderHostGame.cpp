@@ -17,6 +17,7 @@
 #include <components/CameraComponent.h>
 #include <core/console/ConsoleRegistry.h>
 #include <core/console/ConsoleService.h>
+#include <debug/DebugLines.h>
 #include <ecs/World.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <world/RuntimeWorld.h>
@@ -193,6 +194,38 @@ private:
     bool Initialised = false;
 };
 
+// A fixed figure on a debug-line channel, written once: a square outline in
+// front of the camera that the scene can hide, and a cross over it that it
+// cannot. What the debug-lines golden watches.
+struct DebugLineFigureSystem
+{
+    explicit DebugLineFigureSystem(const bool& enabled)
+        : Enabled(enabled)
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        if (!Enabled || Drawn)
+            return;
+        if (!ctx.Entities.HasResource<DebugLineChannels>())
+            ctx.Entities.AddResource<DebugLineChannels>();
+        DebugLineChannels& channels = ctx.Entities.GetResource<DebugLineChannels>();
+        DebugLineList& lines = channels.Lines(channels.Channel("render_host"));
+        const Vec4 green{ 0.1f, 0.9f, 0.2f, 1.0f };
+        const Vec4 magenta{ 0.9f, 0.1f, 0.8f, 1.0f };
+        const Vec3d corners[4]{ { -2.0f, 1.0f, 0.0f }, { 2.0f, 1.0f, 0.0f }, { 2.0f, 4.0f, 0.0f },
+                                { -2.0f, 4.0f, 0.0f } };
+        for (int i = 0; i < 4; ++i)
+            lines.AddTested(corners[i], corners[(i + 1) % 4], green);
+        AppendMarker(lines, Vec3d{ 0.0f, 2.5f, 0.0f }, 2.0f, magenta);
+        Drawn = true;
+    }
+
+    const bool& Enabled;
+    bool Drawn = false;
+};
+
 class RenderHostGame final : public Game
 {
 public:
@@ -235,6 +268,20 @@ public:
         });
 
         engine.Console().Registry().RegisterCVar({
+            .Name = "render_host.debug_lines",
+            .Owner = "render_host",
+            .Type = CVarType::Bool,
+            .DefaultValue = false,
+            .CurrentValue = false,
+            .Flags = CVarFlags::Transient,
+            .Help = "Draw a fixed figure through the debug-line channels.",
+            .Source = { "render_host" },
+            .OnChange = [this](const CVarChangeContext& ctx) {
+                DebugLineFigure = std::get<bool>(ctx.NewValue);
+            },
+        });
+
+        engine.Console().Registry().RegisterCVar({
             .Name = "render_host.ui",
             .Owner = "render_host",
             .Type = CVarType::String,
@@ -269,6 +316,7 @@ public:
     {
         ctx.Schedule.Register<ScriptedCameraPathSystem>(Camera, ScriptedCamera);
         ctx.Schedule.Register<UiHostSystem>(GetEngine(), UiPackagePath, Picture);
+        ctx.Schedule.Register<DebugLineFigureSystem>(DebugLineFigure);
     }
 
     void OnShutdown(GameShutdownContext&) override
@@ -286,6 +334,7 @@ public:
 private:
     EntityId Camera;
     bool ScriptedCamera = false;
+    bool DebugLineFigure = false;
     std::string UiPackagePath;
     HostPicture Picture;
 };

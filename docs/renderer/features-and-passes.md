@@ -44,7 +44,7 @@ enum class RenderPhase : uint8_t { Offscreen = 0, MainColor = 1, Count };
 | Phase | Rendering scope | Used by |
 |---|---|---|
 | `Offscreen` | none is opened. The feature owns its own passes, targets, and image barriers | `ShadowRenderFeature`, `EditorRenderFeature` |
-| `MainColor` | the swapchain color plus depth scope is already open | `SkyRenderFeature`, `MeshRenderFeature`, the ImGui debug overlay |
+| `MainColor` | the swapchain color plus depth scope is already open | `SkyRenderFeature`, `MeshRenderFeature`, `DebugLineRenderFeature`, the ImGui debug overlay |
 
 The enum comment reserves Shadow, Opaque, Transparent, UI, and Post. Adding one
 means adding an enum value before `Count` and a `RecordXPhase` in `Renderer`;
@@ -118,6 +118,25 @@ A thin wrapper that holds the queue, caches, camera, and light set, and drives
 
 Both features wrap their `OnDraw` body in a `CpuScopeTimer` and, when the mode
 is Gpu or above, in a debug label plus a GPU timestamp scope.
+
+### `DebugLineRenderFeature` (MainColor)
+
+Draws the frame's `DebugLineFrame`, which `DefaultRenderPipeline::ExtractRender`
+fills from the World's `DebugLineChannels` (`debug/DebugLines.h`). It depends on
+`runtime_mesh`, so depth-tested lines meet the scene's depth; on-top lines follow
+with the depth test off. Neither writes depth. The pass, `DebugLinePass`, is a
+LINE_LIST configuration of `ColoredVertexPipeline`
+(`graphics/vulkan/ColoredVertexPipelines.h`): the same immediate-mode pipeline
+and colored-vertex shaders the editor's overlays are built on.
+
+A simulation system draws by owning a named channel. It replaces the channel's
+lines when it has new state, and the channel keeps them until then, so a frame
+that runs no fixed tick still shows the last tick and a catch-up burst shows its
+final one. Nothing renders a channel's lines but extraction, so no simulation
+code reaches the renderer. With every channel empty the cost is one loop over
+the channel list and an early return in `OnDraw`. Perception's channel is the
+first producer (`perception.debug.draw`, `docs/plans/perception.md`); the
+golden `debug_lines` scene watches the path end to end.
 
 ## `RenderQueue`
 

@@ -4,6 +4,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <profiling/RenderInstrumentation.h>
 #include <render/extract/Camera.h>
+#include <render/extract/DebugLineExtraction.h>
 #include <render/extract/LightExtractionSystem.h>
 #include <render/MaterialCache.h>
 #include <render/MaterialSetCache.h>
@@ -96,6 +97,7 @@ private:
     std::vector<SpotShadowRequest> ShadowRequests;
     std::vector<PointShadowRequest> PointShadowRequests;
     CameraRenderData Camera;
+    DebugLineFrame DebugLines;
     StaticMeshCache* Meshes = nullptr;
     const SkinnedMeshCache* SkinnedMeshes = nullptr;
     const SkeletonCache* Skeletons = nullptr;
