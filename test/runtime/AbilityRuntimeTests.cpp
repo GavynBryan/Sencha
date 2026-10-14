@@ -178,6 +178,8 @@ protected:
         QueryTokens.push_back(Queries->Bind<&EvaluateReady>(Queries->Registry().Find("test.ready"), std::as_const(Ready)));
         QueryTokens.push_back(Queries->Bind<&EvaluatePhysicsTrace>(Queries->Registry().Find(kPhysicsTraceQuery),
                                                                    std::as_const(Traces)));
+        QueryTokens.push_back(Queries->Bind<&EvaluatePhysicsOverlap>(Queries->Registry().Find(kPhysicsOverlapQuery),
+                                                                     std::as_const(Traces)));
         Host = AbilityHost{ .Verbs = Verbs.get(), .Queries = Queries.get() };
     }
 
@@ -1084,4 +1086,87 @@ TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
     Step();
     EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
     EXPECT_EQ(Traced(AbilityTraceEvent::Ended).front().EndReason, AbilityEndReason::GrantRevoked);
+}
+
+TEST_F(AbilityRuntime, AStaleTargetSkipsClosed)
+{
+    const AbilityId sweep = Define("asset://abilities/sweep.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire", "policy": "press_release" },
+        "locals": [ { "key": "l_near", "type": "entities" } ],
+        "phases": [
+          { "key": "p_look", "enter": [ { "key": "o_find", "op": "query", "query": "physics.overlap", "into": "l_near",
+                "arguments": { "position": { "port": "aim.origin" }, "radius": { "const": 10.0 }, "ignore": { "port": "actor" } } } ],
+            "then": [ { "key": "t_hit", "on": "release", "to": "p_hit" } ] },
+          { "key": "p_hit", "enter": [ { "key": "o_damage", "op": "invoke", "verb": "effect.apply", "targets": "l_near",
+                "when": { "key": "w_live", "entity": { "of": { "port": "target" }, "has": ["sencha.attribute_set"] } },
+                "arguments": { "target": { "port": "target" }, "effect": { "data": "asset://effects/charge_damage.sdata" } } } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, sweep);
+    const EntityId kept = Target(actor, true);
+    const EntityId gone = Target(actor, true);
+
+    Step({ Press(kFire) });
+    Entities.DestroyEntity(gone);
+    Step({ Release(kFire) });
+
+    EXPECT_FLOAT_EQ(Base(kept, Health), 60.0f);
+    const std::vector<AbilityTraceRecord> skipped = Traced(AbilityTraceEvent::Skipped);
+    ASSERT_EQ(skipped.size(), 1u);
+    EXPECT_EQ(skipped[0].Admission, VerbAdmission::UnresolvedReference) << "skipped for being gone, not for its guard";
+}
+
+TEST_F(AbilityRuntime, AFifthLiveRecordIsRefusedForCapacity)
+{
+    std::vector<AbilityId> waits;
+    for (int i = 0; i < 5; ++i)
+        waits.push_back(Define("asset://abilities/wait" + std::to_string(i) + ".sdata", R"({
+            "phases": [ { "key": "p_wait", "then": [ { "key": "t_end", "on": "timeout", "ticks": 50, "to": "end" } ] } ] })"));
+    const EntityId actor = Actor();
+    AbilityRequestQueue& queue = Entities.GetResource<AbilityRequestQueue>();
+    for (int i = 0; i < 5; ++i)
+    {
+        Grant(actor, waits[i], {}, "g_" + std::to_string(i));
+        ASSERT_TRUE(queue.Push({ .Kind = AbilityRequestKind::Activate, .Actor = actor, .Ability = waits[i] }));
+    }
+    Step();
+    EXPECT_EQ(LiveCount(actor), 4u);
+    ASSERT_EQ(Traced(AbilityTraceEvent::Refused).size(), 1u);
+    EXPECT_EQ(Traced(AbilityTraceEvent::Refused)[0].Refusal, AbilityRefusal::Capacity);
+}
+
+TEST_F(AbilityRuntime, GrantIdsSurviveTheRemovalOfOthers)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    const AbilityId primary = Define("asset://abilities/primary.sdata", kInstant);
+    const EntityId actor = Actor();
+    const AbilityGrantId first = Grant(actor, primary, { .Action = "Input.AltFire" }, "g_first");
+    const AbilityGrantId kept = Grant(actor, charge, {}, "g_kept");
+    Step({ Press(kFire) });
+    ASSERT_NE(LiveRecord(actor, charge), nullptr);
+    EXPECT_EQ(LiveRecord(actor, charge)->Grant, kept);
+
+    ASSERT_TRUE(RevokeAbilityGrant(*Entities.TryGet<AbilityGrants>(actor), first));
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Entries[0].Id, kept) << "the survivor moved, its id did not";
+    const AbilityGrantId later = Grant(actor, primary, { .Action = "Input.AltFire" }, "g_first");
+    EXPECT_NE(later, first) << "an id is never handed out twice";
+    Step();
+    EXPECT_NE(LiveRecord(actor, charge), nullptr) << "its activation kept its grant";
+}
+
+TEST_F(AbilityRuntime, ABotSourceReachesItsGrantsThroughTheSameResolution)
+{
+    const AbilityId primary = Define("asset://abilities/primary.sdata", kInstant);
+    const EntityId bot = Actor();
+    Entities.TryGet<InputActionSourceRef>(bot)->Source = 5;
+    Grant(bot, primary);
+    InputActionState& source = Entities.AddResource<InputActionSourceTable>().Open(5, 2);
+
+    Step({ Press(kFire) });
+    EXPECT_TRUE(Marks.Values.empty()) << "the local player's press is not the bot's";
+
+    (void)source.BeginTick(Now);
+    (void)source.TickEdgeStorage().Append(Press(kFire));
+    Step();
+    EXPECT_EQ(Marks.Values.size(), 1u);
 }
