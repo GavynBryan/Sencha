@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class Engine;
@@ -45,7 +46,7 @@ public:
     }
 
     // Registers play/stop/project. CookSession owns cook commands and settings.
-    void RegisterCommands(ConsoleRegistry& registry);
+    void RegisterCommands(ConsoleRegistry& registry, std::string_view commandOwner);
 
     // Runs before a session is launched from what is on disk; false stops it.
     void SetSaveGate(std::function<bool(std::string& error)> gate) { SaveGate = std::move(gate); }
@@ -74,10 +75,6 @@ private:
     // two have different lifetimes to manage and different arguments; a session
     // stops client first so the host sees it leave.
     PieSession         HostPie;
-    // Port a hosted session's authority binds. A collision surfaces as the host
-    // process failing to start, through the same exit report as any other
-    // launch failure.
-    int                HostPort = 27500;
     // Last successfully cooked map ("levels/<name>"); `play` with no arg uses it,
     // closing the author -> cook -> play loop.
     std::string        LastCookedMap_;

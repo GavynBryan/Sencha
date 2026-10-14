@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class ConsoleRegistry;
@@ -25,7 +26,7 @@ class EditorCookRuntime
 public:
     EditorCookRuntime(Engine& engine, WorldDocument& world, ProjectDescriptor* project, RuntimeAssets* assets);
 
-    void RegisterConsoleCommands(ConsoleRegistry& registry);
+    void RegisterConsoleCommands(ConsoleRegistry& registry, std::string_view commandOwner);
 
     // Runs before a cook or a play session reads the disk; false stops it.
     void SetSaveGate(const std::function<bool(std::string& error)>& gate)

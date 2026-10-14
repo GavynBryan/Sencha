@@ -83,6 +83,9 @@
 namespace
 {
 constexpr std::string_view kEditorRenderFeatureId = "editor_render";
+// Commands capture this workspace and go with it; its cvars are archived
+// settings registered under "editor" and outlive it.
+constexpr std::string_view kCommandOwner = "editor.level";
 } // namespace
 
 ActionDefinition NewLevelAction()
@@ -144,6 +147,7 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
 
 LevelWorkspace::~LevelWorkspace()
 {
+    EnginePtr->Console().Registry().UnregisterOwner(kCommandOwner);
     // Before the render feature that owns the studio goes.
     ScenePictures = {};
     if (Window != nullptr)
@@ -217,7 +221,7 @@ void LevelWorkspace::BuildPlayLoop()
     CookRuntime = std::make_unique<EditorCookRuntime>(engine, Workspace->World,
                                                       Project ? &*Project : nullptr,
                                                       Assets ? &*Assets : nullptr);
-    CookRuntime->RegisterConsoleCommands(engine.Console().Registry());
+    CookRuntime->RegisterConsoleCommands(engine.Console().Registry(), kCommandOwner);
     CookRuntime->SetSaveGate([this](std::string& error) { return SaveBeforeLaunch(error); });
 }
 
@@ -242,7 +246,7 @@ void LevelWorkspace::BuildFileActions()
     Files = std::make_unique<DocumentFileActions>(
         *Window, Workspace->World, [this] { Workspace->ResolvePendingEdits(); },
         *Materials, std::move(contentRoots), Workspace->Selection, Workspace->MeshEdit);
-    Files->RegisterCommands(engine.Console().Registry());
+    Files->RegisterCommands(engine.Console().Registry(), kCommandOwner);
 }
 
 void LevelWorkspace::OfferDocumentActions()

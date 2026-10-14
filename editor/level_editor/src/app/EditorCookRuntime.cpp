@@ -11,10 +11,10 @@ EditorCookRuntime::EditorCookRuntime(Engine& engine, WorldDocument& world, Proje
 {
 }
 
-void EditorCookRuntime::RegisterConsoleCommands(ConsoleRegistry& registry)
+void EditorCookRuntime::RegisterConsoleCommands(ConsoleRegistry& registry, std::string_view commandOwner)
 {
-    Session.RegisterCommands(registry);
-    Driver.RegisterCommands(registry);
+    Session.RegisterCommands(registry, commandOwner);
+    Driver.RegisterCommands(registry, commandOwner);
 }
 
 void EditorCookRuntime::Start(bool rebuild)
