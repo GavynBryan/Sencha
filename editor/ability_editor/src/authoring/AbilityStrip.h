@@ -17,7 +17,8 @@ struct AbilityStripRows
 {
     // A phase: its name, its clock and the transitions into it in Detail.
     std::vector<UiRow> Cards;
-    // A phase's op list, keyed by AbilityStripSlotKey: its title.
+    // A phase's op list, keyed by AbilityStripSlotKey: its title; Detail "fixed" for the
+    // list of what it presents, which takes no ops.
     std::vector<UiRow> Slots;
     // An op: what it runs, its kind in Detail.
     std::vector<UiRow> Ops;

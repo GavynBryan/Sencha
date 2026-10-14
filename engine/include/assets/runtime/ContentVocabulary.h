@@ -8,9 +8,9 @@ class GameplayTagRegistry;
 class World;
 struct RuntimeAssets;
 
-// The vocabulary content declares: gameplay tags, attributes, effects and abilities, each
-// registered into a World's registries in asset path order, so every machine and
-// every editor document gets the same names in the same order.
+// The vocabulary content declares: gameplay tags, attributes, effects, abilities and cue
+// presentations, each registered into a World's registries in asset path order, so every
+// machine and every editor document gets the same names in the same order.
 
 // Every name the mounted `gameplay.tag_declarations` assets list, in asset path
 // order and then list order. Appends one message per declaration that fails.

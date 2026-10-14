@@ -22,3 +22,7 @@ inline constexpr std::size_t kAbilityRecordLeaseCapacity = 8;
 inline constexpr std::size_t kAbilityOwnedTagCapacity = 4;
 inline constexpr std::size_t kAbilityConditionDepth = 3;
 inline constexpr std::size_t kAbilityRequestCapacity = 32;
+
+// Discrete cues an actor keeps until the oldest is overwritten: a peer misses one
+// only if this many newer ones are made before a snapshot carrying it arrives.
+inline constexpr std::size_t kAbilityCueLogCapacity = 8;

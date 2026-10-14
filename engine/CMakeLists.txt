@@ -15,8 +15,10 @@ file(GLOB_RECURSE SENCHA_ENGINE_HEADERS CONFIGURE_DEPENDS
 # The annotated component headers: the generator reads them, and the ABI
 # fingerprint below hashes them.
 set(SENCHA_ENGINE_COMPONENT_HEADERS
+    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilityCueLog.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilityGrants.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilityLocals.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/AbilityPresentationState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/abilities/ActiveAbilities.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimContentState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimDecisionLog.h"

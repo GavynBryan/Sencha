@@ -585,6 +585,8 @@ namespace
                     phase.PulseEvery = declared.While->Every;
                     phase.PulseFirstOnEntry = declared.While->FirstOnEntry;
                     phase.PulseOps = Ops(declared.While->Ops);
+                    for (const std::uint16_t op : phase.PulseOps)
+                        Out.Ops[op].Pulsed = true;
                 }
                 phase.Exit = Ops(declared.Exit);
                 for (const AbilityPresentDecl& present : declared.Present)

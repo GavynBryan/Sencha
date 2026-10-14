@@ -1628,3 +1628,20 @@ Deviations from the plan's wording, each for a stated reason:
   `MotionBurst` and `TetherSession` components; every character carries the slots
   (as `CharacterMovement` derives them), so acquiring or releasing a lease changes no
   archetype mid-pass and replay resumes them like any other stepped state.
+- **8b delivered.** Discrete cues in a per-actor `AbilityCueLog` ring (eight, u16
+  serial), pulse cues carried by the record's pulse count and last hit, and a
+  phase's `present` entries held as cosmetic leases while it lasts.
+  `cue.presentation` assets name each cue's `once` verbs and `sustain` leases;
+  `CuePresentationLibrary` refuses gameplay-scope operations.
+  `AbilityPresentationSystem` runs only where the engine renders, keeps
+  machine-local state, and takes a late joiner's baseline at first sight with a
+  30-tick window for discrete cues.
+  `audio.play` and `audio.loop` are the first cosmetic operations. The Workbench
+  opens cue presentations and lists each phase's presented cues on the strip.
+  Headless: discrete cues presented once, pulses folded into one occurrence,
+  sustained leases following the phase, the late-join baseline, the scope refusal,
+  and presentations merged across assets.
+- **Deviation: the presenter keeps its own state.** The plan has the presenter read
+  replicated state alone; it does, but what it has already shown is a
+  machine-local component (`AbilityPresentationState`), since the occurrence a
+  machine has presented is not simulation state and must not travel or roll back.

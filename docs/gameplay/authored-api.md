@@ -253,6 +253,8 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `movement.burst {target, direction, speed = 10, seconds = 0, rises = false}` | lease | gameplay / simulation | the character driven at a velocity while held, or for `seconds` of its time |
 | `movement.tether {target, anchor?, point?, length = 2, speed = 12}` | lease | gameplay / simulation | the character pulled toward an anchor beyond the rope's length; ends with its anchor entity |
 | `movement.mode {target, mode}` | lease | gameplay / simulation | a locomotion mode while held, free again on release |
+| `audio.play {clip, gain = 1, bus = "Sfx"}` | verb | cosmetic / presentation | the clip played once |
+| `audio.loop {clip, gain = 1, bus = "Sfx"}` | lease | cosmetic / presentation | the clip looped while held, stopped on release |
 | `physics.trace {origin, direction, range, ignore?}` | query | — | `{hit, entity, point, normal}`; a miss is `hit = false`, and `entity` may be invalid on a hit |
 | `physics.overlap {position, radius, ignore?}` | query | — | every entity whose body overlaps the sphere |
 

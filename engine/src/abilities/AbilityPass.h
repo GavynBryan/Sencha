@@ -124,6 +124,14 @@ private:
     bool Operate(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition,
                  std::uint16_t index);
     void Pulse(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition);
+    // Where a cue happened, as its `at` value says.
+    struct CuePlace
+    {
+        Vec3d Point = Vec3d::Zero();
+        Vec3d Normal = Vec3d::Zero();
+        EntityId Target;
+    };
+    [[nodiscard]] static CuePlace PlaceOf(const AuthoredValue& at);
     [[nodiscard]] bool Live(const AbilityActor& actor, std::size_t slot) const;
     [[nodiscard]] LeaseOwner OwnerOf(const AbilityActor& actor, std::size_t slot, std::uint8_t op) const;
     void Write(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition, std::uint8_t local,

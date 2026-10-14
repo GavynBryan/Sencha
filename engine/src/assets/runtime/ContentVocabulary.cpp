@@ -4,6 +4,7 @@
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityRegistry.h>
+#include <abilities/CuePresentationLibrary.h>
 #include <assets/data/DataAssetSubtype.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <attributes/AttributeDeclarations.h>
@@ -33,6 +34,7 @@ struct ContentDefinitionLeases
     };
     std::vector<Entry> Effects;
     std::vector<Entry> Abilities;
+    std::vector<Entry> CuePresentations;
 };
 
 std::vector<std::string> PathsOfSubtype(RuntimeAssets& assets, std::string_view subtype)
@@ -110,6 +112,21 @@ void DeclareAbility(RuntimeAssets& assets, World& world, ContentDefinitionLeases
         (void)abilities->Define(entry.Path, std::move(definition));
     else
         (void)abilities->Reserve(entry.Path);
+}
+
+void DeclareCuePresentation(RuntimeAssets& assets, World& world, ContentDefinitionLeases::Entry& entry,
+                            std::vector<std::string>& errors)
+{
+    const CuePresentationDeclaration* declaration =
+        Compiled<CuePresentationDeclaration>(assets, entry.Lease, kCuePresentationType);
+    CuePresentationLibrary* library = world.TryGetResource<CuePresentationLibrary>();
+    if (declaration == nullptr || library == nullptr)
+    {
+        errors.push_back(std::format("{} did not load as {}", entry.Path, kCuePresentationType));
+        return;
+    }
+    entry.Version = assets.DataAssets.GetReloadVersion(HandleOf(entry.Lease));
+    library->Declare(entry.Path, *declaration, world, errors);
 }
 
 using DeclareFn = void (*)(RuntimeAssets&, World&, ContentDefinitionLeases::Entry&, std::vector<std::string>&);
@@ -192,6 +209,9 @@ void DeclareContentVocabulary(RuntimeAssets& assets, World& world, ContentVocabu
     if (world.HasResource<AbilityRegistry>())
         DeclareAll(assets, world, reload, kAbilityDefinitionType, leases != nullptr ? &leases->Abilities : nullptr,
                    &DeclareAbility, errors);
+    if (world.HasResource<CuePresentationLibrary>())
+        DeclareAll(assets, world, reload, kCuePresentationType,
+                   leases != nullptr ? &leases->CuePresentations : nullptr, &DeclareCuePresentation, errors);
 }
 
 void RefreshContentVocabulary(RuntimeAssets& assets, World& world, std::vector<std::string>& errors)
@@ -206,6 +226,7 @@ void RefreshContentVocabulary(RuntimeAssets& assets, World& world, std::vector<s
     };
     refresh(leases->Effects, &DeclareEffect);
     refresh(leases->Abilities, &DeclareAbility);
+    refresh(leases->CuePresentations, &DeclareCuePresentation);
 }
 
 void ReleaseContentVocabulary(World& world)
@@ -214,5 +235,6 @@ void ReleaseContentVocabulary(World& world)
     {
         leases->Effects.clear();
         leases->Abilities.clear();
+        leases->CuePresentations.clear();
     }
 }

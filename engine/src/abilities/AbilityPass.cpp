@@ -1,5 +1,6 @@
 #include "AbilityPass.h"
 
+#include <abilities/AbilityCueLog.h>
 #include <abilities/AbilityRegistry.h>
 #include <attributes/AttributeRegistry.h>
 #include <authored/AuthoredQueryDispatcher.h>
@@ -290,6 +291,28 @@ void AbilityPass::End(const AbilityActor& actor, std::size_t slot, AbilityEndRea
             .Phase = record.Phase, .Element = element });
 }
 
+AbilityPass::CuePlace AbilityPass::PlaceOf(const AuthoredValue& at)
+{
+    const auto vector = [](const AuthoredValue& value) {
+        AuthoredVectorValue read;
+        return value.TryGetVector(read) ? Vec3d(static_cast<float>(read.Components[0]),
+                                                static_cast<float>(read.Components[1]),
+                                                static_cast<float>(read.Components[2]))
+                                        : Vec3d::Zero();
+    };
+    CuePlace place;
+    // A hit is {hit, entity, point, normal}; an entity or a point stands alone.
+    if (at.Kind() == AuthoredValueKind::Record && at.Children().size() == 4)
+    {
+        (void)at.Children()[1].TryGetEntity(place.Target);
+        place.Point = vector(at.Children()[2]);
+        place.Normal = vector(at.Children()[3]);
+    }
+    else if (!at.TryGetEntity(place.Target))
+        place.Point = vector(at);
+    return place;
+}
+
 bool AbilityPass::RunOps(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition,
                          const std::vector<std::uint16_t>& ops)
 {
@@ -407,14 +430,24 @@ bool AbilityPass::Operate(const AbilityActor& actor, std::size_t slot, const Abi
     {
         traced.Event = AbilityTraceEvent::Cue;
         traced.Cue = op.Cue;
+        CuePlace place;
         if (op.At)
         {
             Evaluate(actor, slot, definition, *op.At, Answer);
-            AuthoredVectorValue at;
-            if (Answer.TryGetVector(at))
-                traced.At = Vec3d(static_cast<float>(at.Components[0]), static_cast<float>(at.Components[1]),
-                                  static_cast<float>(at.Components[2]));
+            place = PlaceOf(Answer);
         }
+        traced.At = place.Point;
+        AbilityRecord& running = actor.Record(slot);
+        if (op.Pulsed)
+        {
+            running.LastPoint = place.Point;
+            running.LastNormal = place.Normal;
+            running.LastTarget = place.Target;
+        }
+        else if (AbilityCueLog* log = Entities.TryGet<AbilityCueLog>(actor.Entity))
+            (void)AppendAbilityCue(*log, { .Cue = op.Cue, .Activation = running.Sequence, .Op = index,
+                                           .Tick = Now.TickIndex, .Point = place.Point, .Normal = place.Normal,
+                                           .Target = place.Target });
         Trace(traced);
         return true;
     }

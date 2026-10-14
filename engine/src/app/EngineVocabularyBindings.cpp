@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
+#include <audio/AudioVerbs.h>
 #include <effects/EffectVerbs.h>
 #include <movement/MovementVerbs.h>
 #include <physics/PhysicsAuthoredQueries.h>
@@ -17,6 +18,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     , Time(std::make_unique<ActorTimeOperations>(entities, clock))
     , Abilities(std::make_unique<AbilityOperations>(entities))
     , Movement(std::make_unique<MovementOperations>(entities))
+    , Audio(std::make_unique<AudioOperations>(entities))
 {
     const VerbRegistry& catalog = verbs.Registry();
     Verbs.push_back(verbs.Bind<&InvokeAnimRequest>(catalog.Find(kAnimRequestVerb), *Animation));
@@ -32,6 +34,8 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeMovementBurst>(catalog.Find(kMovementBurstLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementTether>(catalog.Find(kMovementTetherLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementMode>(catalog.Find(kMovementModeLease), *Movement));
+    Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(catalog.Find(kAudioPlayVerb), *Audio));
+    Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(catalog.Find(kAudioLoopLease), *Audio));
 }
 
 EngineVocabularyBindings::~EngineVocabularyBindings()

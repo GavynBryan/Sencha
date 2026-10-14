@@ -4,6 +4,7 @@
 #include "data/DataDocument.h"
 
 #include <abilities/AbilityDefinitionData.h>
+#include <abilities/CuePresentationData.h>
 #include <effects/EffectDefinitionData.h>
 
 #include <algorithm>
@@ -13,7 +14,8 @@ namespace
 DataDocumentSetConfig ConfigFor(const std::vector<std::filesystem::path>& roots)
 {
     return { .ContentRoot = roots.empty() ? std::filesystem::path{} : roots.front(),
-             .Subtypes = { std::string(kAbilityDefinitionType), std::string(kEffectDefinitionType) } };
+             .Subtypes = { std::string(kAbilityDefinitionType), std::string(kEffectDefinitionType),
+                           std::string(kCuePresentationType) } };
 }
 } // namespace
 

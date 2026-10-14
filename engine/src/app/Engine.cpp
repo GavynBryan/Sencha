@@ -1367,9 +1367,11 @@ int Engine::Run(Game& game)
     // Every host runs abilities: an actor granted one runs it in a process whose
     // game registered nothing for it. Before the game's hook, so movement and a
     // game's own systems order against these.
-    RegisterAbilityKitSystems(EngineSystems, AbilityHost{ .Verbs = VerbDispatcherState.get(),
-                                                          .Queries = QueryDispatcherState.get(),
-                                                          .Console = &console.Registry() });
+    RegisterAbilityKitSystems(EngineSystems,
+                              AbilityHost{ .Verbs = VerbDispatcherState.get(),
+                                           .Queries = QueryDispatcherState.get(),
+                                           .Console = &console.Registry(),
+                                           .Presents = Configuration.Window.GraphicsApi != WindowGraphicsApi::None });
 
     // Every host animates: an entity that names a rig plays it, in a process whose
     // game registered nothing for it. Before the game's hook, so a game orders its

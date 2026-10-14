@@ -14,6 +14,7 @@
 namespace
 {
 constexpr std::string_view kSlotPrefix = "slot:";
+constexpr std::string_view kPresentList = "present";
 
 struct SlotTitle
 {
@@ -145,6 +146,8 @@ AbilityStripRows AbilityStripOf(const JsonValue& data, std::span<const AbilityDi
         for (const SlotTitle& slot : kSlots)
             rows.Slots.push_back(Row(AbilityStripSlotKey(phase.Key, AbilityOpListName(slot.List)), std::string(slot.Title),
                                      phase.Key));
+        // What the phase presents while it lasts: listed, but not an op list to add to.
+        rows.Slots.push_back(Row(AbilityStripSlotKey(phase.Key, kPresentList), "PRESENTED", phase.Key, "fixed"));
     }
     for (const AbilityElement& element : elements)
     {
@@ -160,6 +163,14 @@ AbilityStripRows AbilityStripOf(const JsonValue& data, std::span<const AbilityDi
             op.Selected = element.Key == selected;
             Mark(op, worst, GuardOf(data, *value));
             rows.Ops.push_back(std::move(op));
+        }
+        else if (element.Kind == AbilityElementKind::Presentation)
+        {
+            UiRow present = Row(element.Key, AbilityElementLabel(data, element),
+                                AbilityStripSlotKey(element.Phase, kPresentList), "CUE");
+            present.Selected = element.Key == selected;
+            Mark(present, worst, {});
+            rows.Ops.push_back(std::move(present));
         }
         else if (element.Kind == AbilityElementKind::Transition)
         {

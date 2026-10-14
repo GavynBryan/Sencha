@@ -451,6 +451,39 @@ the op closed. Phases measure time on the actor's clock unless they say
 transitions, ends, skipped ops, operation admissions, cues, ambiguous and blocked
 presses. A warm pass allocates nothing.
 
+## Presentation
+
+An ability says what it shows by naming cues; a `cue.presentation` asset says how
+each cue is shown. The ability's simulation never runs a presentation, and a
+presentation can never change the simulation: the library keeps only
+cosmetic-scope operations (`scope_mismatch` otherwise), `once` entries must be
+verbs and `sustain` entries leases. Bindings read the ports `actor`, `target`,
+`point`, `normal`, `seed` and `count`. Several assets may present the same cue;
+their entries run in path order.
+
+Three channels carry what happened, all in replicated state:
+
+- **Discrete cues** — a `cue` op outside a pulse appends to the actor's
+  `AbilityCueLog`, a ring of eight entries with a u16 serial, the activation, the
+  op, the tick and the place (a hit's point, normal and entity, an entity, or a
+  vector).
+- **Pulse cues** — a `cue` op in a pulse list writes nothing new: the record's pulse
+  count and its last hit (`LastPoint`, `LastNormal`, `LastTarget`) carry it, so an
+  automatic weapon costs no log entries.
+- **Sustained presentation** — a phase's `present` entries are held as leases while
+  that phase is live, and released when it ends or the record goes.
+
+`AbilityPresentationSystem` runs only where something presents (`AbilityHost::
+Presents`, set when the engine renders). It keeps a machine-local
+`AbilityPresentationState` per actor, never replicated or journaled. The first
+time it sees an actor it takes what the actor already shows as presented, except
+discrete cues younger than `kAbilityCueWindowTicks`, so a late joiner neither
+replays an old fight nor misses the shot that was just fired. After that it
+presents each new log entry once, each record's new pulses as one occurrence with
+`count` (at most `kAbilityPulsesPerOccurrence`), and holds or releases a record's
+sustained leases as its phase changes. A log overrun is counted in
+`Overwritten`, and the cues lost to it are not presented.
+
 ## Rollout
 
 Each stage is independently testable and buildable with physics/animation

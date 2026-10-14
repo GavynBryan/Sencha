@@ -1,6 +1,8 @@
 #include <abilities/AbilityKit.h>
 
 #include <abilities/AbilityGrantsSerializer.h>
+#include <abilities/AbilityPresentationSystem.h>
+#include <abilities/CuePresentationLibrary.h>
 #include <anim/AnimSelectSystem.h>
 #include <app/EngineSchedule.h>
 #include <attributes/AttributeSetSerializer.h>
@@ -38,6 +40,8 @@ void InstallAbilityKitVocabulary(World& world)
         world.AddResource<AbilityRegistry>();
     if (!world.HasResource<AbilityGrantEntries>())
         world.AddResource<AbilityGrantEntries>();
+    if (!world.HasResource<CuePresentationLibrary>())
+        world.AddResource<CuePresentationLibrary>();
 }
 
 void RegisterAbilityKit(World& world)
@@ -62,6 +66,11 @@ void RegisterAbilityKitSystems(EngineSchedule& schedule, const AbilityHost& host
     schedule.Register<EffectLifetimeSystem>();
 
     schedule.After<AbilitySystem, ActorTimeSystem>();
+    if (host.Presents)
+    {
+        schedule.Register<AbilityPresentationSystem>(host.Verbs);
+        schedule.After<AbilityPresentationSystem, AbilitySystem>();
+    }
     schedule.After<AttributeResolveSystem, AbilitySystem>();
     schedule.After<EffectLifetimeSystem, AttributeResolveSystem>();
     // An ability reads the tick's input edges.

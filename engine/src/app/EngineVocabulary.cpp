@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityVerbs.h>
 #include <anim/AnimRequestVerbs.h>
+#include <audio/AudioVerbs.h>
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
 #include <movement/MovementVerbs.h>
@@ -38,6 +39,7 @@ bool DeclareEngineVocabulary(World& world)
     DeclareAbilityVerbs(scope);
     DeclareActorTimeVerbs(scope);
     DeclareMovementVerbs(scope);
+    DeclareAudioVerbs(scope);
     DeclarePhysicsQueries(queryScope);
 
     return CommitTogether(scope, queryScope);

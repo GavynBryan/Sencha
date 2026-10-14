@@ -15,6 +15,7 @@
 #include <core/logging/LoggingProvider.h>
 #include <attributes/AttributeDeclarations.h>
 #include <abilities/AbilityDefinitionData.h>
+#include <abilities/CuePresentationData.h>
 #include <effects/EffectDefinitionData.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>
 #include <input/InputProfileData.h>
@@ -111,6 +112,7 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterAttributeDeclarations(DataTypes, DataSchemas);
     RegisterEffectDefinitionData(DataTypes, DataSchemas);
     RegisterAbilityDefinitionData(DataTypes, DataSchemas);
+    RegisterCuePresentationData(DataTypes, DataSchemas);
 
     // A reference store is its own stager and store, so it takes the mesh
     // kind whole; the real loader stages against a cache this composition

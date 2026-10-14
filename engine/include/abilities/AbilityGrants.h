@@ -1,9 +1,11 @@
 #pragma once
 
 #include <abilities/AbilityCapacity.h>
+#include <abilities/AbilityCueLog.h>
 #include <abilities/AbilityGrantId.h>
 #include <abilities/AbilityId.h>
 #include <abilities/AbilityLocals.h>
+#include <abilities/AbilityPresentationState.h>
 #include <abilities/ActiveAbilities.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
@@ -56,7 +58,9 @@ static_assert(std::is_trivially_copyable_v<AbilityGrants>,
 template<>
 struct ComponentTraits<AbilityGrants>
 {
-    using DerivedComponents = std::tuple<ActiveAbilities, AbilityLocals, ActorTime, GameplayTagContainer>;
+    using DerivedComponents =
+        std::tuple<ActiveAbilities, AbilityLocals, AbilityCueLog, AbilityPresentationState, ActorTime,
+                   GameplayTagContainer>;
 };
 
 // Invalid when the component is full or `ability` is invalid.

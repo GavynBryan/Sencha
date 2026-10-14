@@ -329,3 +329,11 @@ archetype gains them; `LocomotionModeId` moved to `movement/LocomotionModeId.h`.
 `StepHeldMotion`, `HeldMotionSystem` and the `movement.burst`, `movement.tether` and
 `movement.mode` leases (`MovementVerbs.h`) are new, and the replay kernel resumes the
 burst and tether slots.
+
+**Ability presentation.** `AbilityCueLog` (`sencha.ability_cue_log`) and
+`AbilityPresentationState` (`sencha.ability_presentation_state`) join the
+`AbilityGrants` derived set; `AbilityRecord` gains `LastPoint`, `LastNormal` and
+`LastTarget`, and `AbilityOp` gains `Pulsed`. The `cue.presentation` data type
+(`CuePresentationData.h`), `CuePresentationLibrary`, `AbilityPresentationSystem` and
+`AbilityHost::Presents` are new, as are the `audio.play` verb and `audio.loop` lease
+(`audio/AudioVerbs.h`), which join the engine vocabulary.

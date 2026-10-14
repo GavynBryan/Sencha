@@ -28,6 +28,7 @@
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
 
+#include <abilities/AbilityCueLog.h>
 #include <abilities/AbilityDefinition.h>
 #include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityGrants.h>
@@ -52,7 +53,9 @@ using AbilityKitComponents = ComponentSet<
     ActiveEffect,
     AbilityGrants,
     ActiveAbilities,
-    AbilityLocals>;
+    AbilityLocals,
+    AbilityCueLog,
+    AbilityPresentationState>;
 
 void RegisterAbilityKitComponents(ComponentRegistrar& registrar);
 

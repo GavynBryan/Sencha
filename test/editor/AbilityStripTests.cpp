@@ -23,6 +23,7 @@ constexpr std::string_view kTwoPhases = R"({
         "enter": [ { "key": "o_a", "op": "cue", "cue": "cue.a" }, { "key": "o_b", "op": "cue", "cue": "cue.b" },
                    { "key": "o_c", "op": "cue", "cue": "cue.c" } ],
         "hold": [ { "key": "o_hold", "lease": "anim.hold" } ],
+        "present": [ { "key": "s_glow", "cue": "cue.charging" } ],
         "then": [ { "key": "t_go", "on": "release", "to": "p_fire" } ] },
       { "key": "p_fire", "name": "Fire",
         "enter": [ { "key": "o_trace", "op": "query", "query": "physics.trace", "into": "l_hit" },
@@ -58,9 +59,11 @@ TEST(AbilityStrip, EachPhaseIsACardHoldingItsSlotsOpsAndTransitions)
     EXPECT_EQ(rows.Cards[0].Label, "Aim");
     EXPECT_EQ(rows.Cards[0].Detail, "actor time \xC2\xB7 full in 30");
     EXPECT_EQ(rows.Cards[1].Detail, "actor time \xC2\xB7 1 in");
-    EXPECT_EQ(rows.Slots.size(), 8u) << "four op lists a phase";
+    EXPECT_EQ(rows.Slots.size(), 10u) << "four op lists a phase and what it presents";
     EXPECT_EQ(RowOf(rows.Ops, "o_hold").Value, AbilityStripSlotKey("p_aim", "hold"));
     EXPECT_EQ(RowOf(rows.Ops, "o_hold").Detail, "LEASE");
+    EXPECT_EQ(RowOf(rows.Ops, "s_glow").Value, AbilityStripSlotKey("p_aim", "present"));
+    EXPECT_EQ(RowOf(rows.Slots, AbilityStripSlotKey("p_aim", "present")).Detail, "fixed") << "listed, not added to";
     EXPECT_EQ(RowOf(rows.Ops, "o_hurt").Parts.front(), "Hit struck") << "its guard, as it reads";
     EXPECT_EQ(RowOf(rows.Links, "t_go").Value, "p_aim");
     EXPECT_TRUE(RowOf(rows.Ops, "o_trace").Selected);

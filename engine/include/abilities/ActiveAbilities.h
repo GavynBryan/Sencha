@@ -7,6 +7,7 @@
 #include <ecs/EntityId.h>
 #include <gameplay_tags/GameplayTagId.h>
 #include <input/InputActionSource.h>
+#include <math/Vec.h>
 
 #include <authored/VerbId.h>
 
@@ -98,6 +99,10 @@ struct AbilityRecord
     // The condition or element whose failure ended it, by index; 0xFFFF when none.
     std::uint16_t EndElement = 0xFFFF;
     std::uint64_t EndTick = 0;
+    // The last hit its pulse cues struck, for presenting the latest pulse.
+    Vec3d LastPoint = Vec3d::Zero();
+    Vec3d LastNormal = Vec3d::Zero();
+    EntityId LastTarget;
     // Start order on this actor: what lingering eviction and lease owners key on.
     std::uint64_t Sequence = 0;
 };

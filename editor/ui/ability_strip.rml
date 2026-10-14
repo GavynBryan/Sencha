@@ -27,7 +27,7 @@
                     <div class="slot" data-if="slot.value == card.key">
                         <div class="slot_head theme-dim" data-event-dragdrop="strip_drop(slot.key)">
                             <span class="slot_title">{{slot.label}}</span>
-                            <span class="slot_add glyph" data-event-click="strip_add(slot.key)">&#xf067;</span>
+                            <span class="slot_add glyph" data-if="slot.detail == ''" data-event-click="strip_add(slot.key)">&#xf067;</span>
                         </div>
                         <div class="op_view" data-for="op : ops">
                             <div class="op theme-row" data-if="op.value == slot.key" data-attr-id="'op:' + op.key"

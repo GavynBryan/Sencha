@@ -20,6 +20,8 @@ struct AbilityHost
     // Registers ability.step_budget and ability.present_linger_ticks; null keeps
     // the defaults.
     ConsoleRegistry* Console = nullptr;
+    // Whether this host presents what abilities do: it runs the presenter.
+    bool Presents = false;
 };
 
 struct AbilitySettings

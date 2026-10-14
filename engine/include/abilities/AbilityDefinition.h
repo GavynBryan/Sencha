@@ -73,6 +73,9 @@ struct AbilityOp
     bool ContinueOnFail = false;
     GameplayTagId Cue;
     std::optional<AbilityValue> At;
+    // A cue run by a phase's pulse, which the pulse count carries, rather than a
+    // discrete one the cue log does.
+    bool Pulsed = false;
 };
 
 struct AbilityTransition
