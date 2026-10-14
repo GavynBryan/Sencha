@@ -201,7 +201,7 @@ Level editor (`editor/level_editor/src/`):
 | Directory | Owns | Extension seam |
 | --- | --- | --- |
 | `app/` | The composition root (`LevelWorkspace`) and `EditorCookRuntime` (the cook session, the player it feeds, and the serials that hand one to the other). | -- |
-| `workspace/` | The per-document authoring hub (`EditorWorkspace`, `BrushManipulationSink`) plus the mechanisms it composes: `WorkspaceInteractionRuntime`, `PendingBridgeEdit`, `PendingElementEdit`, `SelectionActions`, `GridEditing`, `EscapePolicy`. | -- |
+| `workspace/` | The per-document authoring hub (`EditorWorkspace`, which owns the `LevelTarget`; `BrushManipulationSink`) plus the mechanisms it composes: `WorkspaceInteractionRuntime`, `PendingBridgeEdit`, `PendingElementEdit`, `SelectionActions`, `GridEditing`, `EscapePolicy`, and `ProposalTray` (the Proposals explorer: open drafts with what they change and their diagnostics delta, unopened `.proposals` files, and `proposal.accept` / `proposal.reject` on the draft shown). | -- |
 | `brush/` | Half-edge brush geometry kernel: mesh, ops, tessellation, validation, and `ShellGeneration` (a volume's walls: one slab per face, bounded by the join rules, a face shared with a neighbour across the gap split so the shared part is built once, `CutOpenings` piercing each opening through the slabs it crosses, or a refusal naming the face). Pure leaf (engine-only), consumed by `document`, `meshedit`, `render`, `editmodes`, interactions, and the test suite. | -- |
 | `input/` | Viewport-coupled input (`ViewportNavigation`, `ViewportToolDispatcher`, `SdlEventTranslation`). | -- |
 | `editmodes/` | Transform gizmos and manipulator sessions (`TranslateManipulator`, `BoundsManipulator`, `EditSessionHost`). | manipulators |

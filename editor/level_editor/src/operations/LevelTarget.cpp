@@ -242,6 +242,7 @@ EditorOperationOutcome LevelTarget::RebaseDraft(LevelDraft& draft, const Replay&
     if (fresh == nullptr)
         return EditorOperationOutcome::Refused("draft.copy_failed", error);
     fresh->Id = draft.Id;
+    fresh->OpenedFrom = draft.OpenedFrom;
 
     LevelDraft* const writing = Writing;
     Writing = fresh.get();

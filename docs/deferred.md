@@ -602,3 +602,13 @@ do the work and delete the entry.
   selection verbs in `editor/level_editor/src/workspace/SelectionActions.cpp`.
 - **Trigger:** `BrushTool` moves in milestone M2 with the brush operations;
   each other tool moves the next time its commit path is changed.
+
+## Command labels
+
+- **What:** the level spatial model plan (M1) asks for undo steps to carry
+  labels, so an accepted proposal reads as its label in the undo history.
+  `ICommand` has no label, and nothing shows undo history: the tray lists
+  proposals, not steps, so a label would have no reader.
+- **Where:** `editor/common/src/commands/ICommand.h` and `CommandStack`;
+  `ApplyChangeSetCommand` would carry the proposal's label.
+- **Trigger:** an undo history display, or an "Undo <what>" menu label.

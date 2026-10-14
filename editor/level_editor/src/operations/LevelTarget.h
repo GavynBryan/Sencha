@@ -40,6 +40,8 @@ struct LevelDraft
     std::string BasePath;
     std::uint64_t BaseInstance = 0;
     std::uint32_t IdSeed = 0;
+    // The proposal file it was opened from; empty when it was begun here.
+    std::string OpenedFrom;
     std::unique_ptr<EditorDocument> Document;
     EntityChangeSet Changes;
     std::vector<LevelDraftStep> Steps;

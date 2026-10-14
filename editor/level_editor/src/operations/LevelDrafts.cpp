@@ -404,6 +404,7 @@ namespace
                 LevelDraft* draft = level.BeginDraft(proposal->Label, proposal->Rationale, proposal->IdSeed, error);
                 if (draft == nullptr)
                     return EditorOperationOutcome::Refused("draft.copy_failed", error);
+                draft->OpenedFrom = path;
                 for (const LevelDraftStep& step : proposal->Steps)
                     if (ReplayStep(operations, step).Status != EditorOperationStatus::Ok)
                         break;

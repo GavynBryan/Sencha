@@ -57,6 +57,7 @@ class ComponentPropertySource;
 class ElementVerbs;
 class MaterialExplorer;
 class PrefabExplorer;
+class ProposalTray;
 class NoticeQueue;
 class ProblemList;
 class LightingDiagnostics;
@@ -223,6 +224,7 @@ private:
     std::unique_ptr<PropertyHandles> Handles;
     std::unique_ptr<MaterialExplorer> MaterialsExplorer;
     std::unique_ptr<PrefabExplorer> PrefabsExplorer;
+    std::unique_ptr<ProposalTray> Proposals;
     std::unique_ptr<EntityVerbs> Entities;
     std::unique_ptr<WorldExplorer> WorldOutline;
     std::unique_ptr<PartitionOutline> Partition;

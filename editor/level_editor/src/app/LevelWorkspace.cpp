@@ -1,4 +1,5 @@
 #include "LevelWorkspace.h"
+#include "workspace/ProposalTray.h"
 
 #include "operations/EditorOperations.h"
 #include "operations/LevelOperations.h"
@@ -543,6 +544,11 @@ void LevelWorkspace::BuildUi()
         PrefabsExplorer = std::make_unique<PrefabExplorer>(*Workspace);
         ExplorerRows.Offer(Catalog, ActionHandlers, PrefabsExplorer->Row());
     }
+    Proposals = std::make_unique<ProposalTray>(
+        Workspace->Level, Operations, Notices,
+        Project != nullptr ? std::filesystem::path(Project->Directory) / ".proposals" : std::filesystem::path{});
+    ExplorerRows.Offer(Catalog, ActionHandlers, Proposals->Row());
+    Proposals->Offer(Catalog, ActionHandlers);
     Lighting = std::make_unique<LightingDiagnostics>(*Workspace, *Commands,
                                                      LightingReportsFrom(RenderFeature, *CookRuntime));
     Lighting->Offer(Catalog, ActionHandlers);
