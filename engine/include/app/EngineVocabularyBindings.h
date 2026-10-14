@@ -12,6 +12,7 @@ class ActorTimeOperations;
 class AnimRequestOperations;
 class EffectOperations;
 class FixedSimulationLoop;
+class MovementOperations;
 class PhysicsQueries;
 class PhysicsWorld;
 class World;
@@ -20,7 +21,7 @@ class World;
 // EngineVocabularyBindings
 //
 // The engine's own operations bound into one World's dispatchers: animation
-// requests, effects, actor time and abilities, and the physics queries once a
+// requests, effects, actor time, abilities and held movement, and the physics queries once a
 // physics world answers them. The runtime and an editor preview both run a World
 // this way, so both run the same behaviour behind the same names. The bindings
 // are released before the operations they call.
@@ -42,6 +43,7 @@ private:
     std::unique_ptr<EffectOperations> Effects;
     std::unique_ptr<ActorTimeOperations> Time;
     std::unique_ptr<AbilityOperations> Abilities;
+    std::unique_ptr<MovementOperations> Movement;
     std::unique_ptr<PhysicsQueries> Physics;
     std::vector<VerbBindingToken> Verbs;
     std::vector<AuthoredQueryBindingToken> Queries;

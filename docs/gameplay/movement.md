@@ -289,6 +289,34 @@ writes back position, achieved velocity, and support.
 Config knobs (`CharacterMoverConfig`): capsule radius/height, slope limit,
 step height, ground-snap distance, skin width, push mass.
 
+## Held motion
+
+What an ability holds a character to while it lasts is a slot on the character,
+owned by the lease's holder (`movement/components/HeldMotion.h`, every character
+carries them): two `MotionBursts` slots, one `TetherSession`, one
+`LocomotionModeLease`. The leases `movement.burst`, `movement.tether` and
+`movement.mode` (`MovementVerbs.h`) fill a slot on acquire and empty it on
+release; a slot whose holder's entity is gone empties when the character next
+steps, as every provider's pull rule asks.
+
+- **Burst:** a velocity, held or for a number of seconds of the character's time.
+  The live bursts' velocities are summed and forced into the planar channel (and
+  the up channel when one rises), over locomotion, jump and root motion. When it
+  ends, the character keeps what it was moving at and slows as locomotion says.
+- **Tether:** a rope to an anchor entity (followed while it lives; the tether ends
+  when it does) or a point. Longer than its length, it forces a pull toward the
+  anchor at its speed, never past taut in one step, so the character arrives at
+  the rope's length.
+- **Mode:** a locomotion mode requested for the lease's scope; released, the
+  character is asked back to free if it is still in the leased mode.
+
+`StepHeldMotion` steps bursts and tethers for one step of the character's time.
+`HeldMotionSystem` calls it for undilated characters after root motion and
+before composition, and frees a mode whose holder is gone; `StepCharacterTick`
+calls it inside every step, so a dilated character and replay step held motion
+exactly as the live tick does, and the burst and tether slots are among the
+components replay resumes.
+
 ## Dilated characters
 
 A character owns a clock (`ActorTime`, derived from `CharacterMovement`); its

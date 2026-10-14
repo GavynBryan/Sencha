@@ -247,12 +247,21 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `anim.hold {target, intent}` | lease | gameplay / simulation | a Held request owned by the lease's holder |
 | `effect.apply {target, effect, scale = 1}` | verb | gameplay / authority only | applies an `effect.definition`, unowned, every magnitude times `scale` |
 | `effect.hold {target, effect, scale = 1}` | lease | gameplay / authority only | a lasting effect owned by the holder, removed on release |
+| `ability.activate`, `ability.cancel {target, ability}` | verb | gameplay / authority only | a request into the actor's ability queue, or its live records ended |
+| `ability.grant`, `ability.revoke {target, ability, key}` | verb | gameplay / authority only | a `Request`-kind grant for scripts and tests |
+| `time.scale {target, scale}` | lease | gameplay / simulation | the actor's time scaled while held (`docs/core-systems-map.md`) |
+| `movement.burst {target, direction, speed = 10, seconds = 0, rises = false}` | lease | gameplay / simulation | the character driven at a velocity while held, or for `seconds` of its time |
+| `movement.tether {target, anchor?, point?, length = 2, speed = 12}` | lease | gameplay / simulation | the character pulled toward an anchor beyond the rope's length; ends with its anchor entity |
+| `movement.mode {target, mode}` | lease | gameplay / simulation | a locomotion mode while held, free again on release |
 | `physics.trace {origin, direction, range, ignore?}` | query | — | `{hit, entity, point, normal}`; a miss is `hit = false`, and `entity` may be invalid on a hit |
 | `physics.overlap {position, radius, ignore?}` | query | — | every entity whose body overlaps the sphere |
 
 Both effect operations refuse a target without an attribute set, or without an
 attribute the effect modifies. The physics queries are answered only in a host
-whose game registered physics.
+whose game registered physics. `EngineVocabularyBindings` binds every operation
+above into a World's dispatchers; the runtime and the Ability Workbench's preview
+both bind through it. The movement leases are described in
+`docs/gameplay/movement.md`, "Held motion".
 
 ## Handles, not slot numbers
 

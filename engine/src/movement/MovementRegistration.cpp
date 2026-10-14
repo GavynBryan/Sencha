@@ -22,6 +22,7 @@
 #include <movement/RootMotionSource.h>
 #include <movement/LocomotionMode.h>
 #include <movement/MotionComposition.h>
+#include <movement/HeldMotionStep.h>
 #include <movement/MovementDefs.h>
 #include <movement/MovementModeSystems.h>
 #include <movement/MovementTags.h>
@@ -111,6 +112,7 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     schedule.Register<FreeLocomotionSystem>();
     schedule.Register<JumpExecutionSystem>();
     schedule.Register<RootMotionSystem>();
+    schedule.Register<HeldMotionSystem>();
     schedule.Register<MotionCompositionSystem>();
     schedule.Register<DilatedCharacterStepSystem>(*schedule.Get<FreeLocomotionSystem>(),
                                                  schedule.Get<PhysicsStepSystem>());
@@ -138,7 +140,9 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     // A source carrying the character replaces what locomotion and actions
     // asked for across the ground, so it writes after them.
     schedule.After<RootMotionSystem, JumpExecutionSystem>();
-    schedule.After<MotionCompositionSystem, RootMotionSystem>();
+    // What an ability holds the character to replaces all of that.
+    schedule.After<HeldMotionSystem, RootMotionSystem>();
+    schedule.After<MotionCompositionSystem, HeldMotionSystem>();
     // A dilated character is stepped whole, after the bulk systems it is excluded from.
     schedule.After<DilatedCharacterStepSystem, MotionCompositionSystem>();
     // Root motion reads what animation resolved this tick. Declared by whichever of

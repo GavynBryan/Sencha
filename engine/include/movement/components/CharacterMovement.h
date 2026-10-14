@@ -6,9 +6,11 @@
 #include <ecs/ComponentTraits.h>
 #include <ecs/ComponentTypeId.h>
 #include <movement/JumpState.h>
+#include <movement/LocomotionModeId.h>
 #include <movement/MovementIntent.h>
 #include <movement/components/CharacterFacts.h>
 #include <movement/components/MotionChannels.h>
+#include <movement/components/HeldMotion.h>
 #include <movement/components/MovementTuning.h>
 #include <time/ActorTime.h>
 #include <world/transform/TransformHistory.h>
@@ -26,31 +28,6 @@
 // systems step. The columns that tick reads and writes are the set it owes,
 // declared below.
 //=============================================================================
-
-// Registration-order id from the LocomotionModeRegistry. Zero is the sentinel;
-// these are runtime values and are never serialized into content.
-struct LocomotionModeId
-{
-    uint32_t Value = 0;
-
-    [[nodiscard]] bool IsValid() const { return Value != 0; }
-    auto operator<=>(const LocomotionModeId&) const = default;
-};
-
-// Beside its type: this describes a value, not a component, and every schema
-// with a mode field needs it in scope.
-template <>
-struct TypeSchema<LocomotionModeId>
-{
-    static constexpr std::string_view Name = "LocomotionModeId";
-
-    static auto Fields()
-    {
-        return std::tuple{
-            MakeField("value", &LocomotionModeId::Value),
-        };
-    }
-};
 
 // The mode travels to the owner so its own machine knows which rules it is
 // resuming under, and refuses to replay under rules it does not implement
@@ -127,7 +104,10 @@ struct ComponentTraits<CharacterMovement>
         MotionRequest,
         ModeTransitionRequest,
         WorldTransformHistory,
-        ActorTime>;
+        ActorTime,
+        MotionBursts,
+        TetherSession,
+        LocomotionModeLease>;
 };
 
 #if !defined(SENCHA_CODEGEN)

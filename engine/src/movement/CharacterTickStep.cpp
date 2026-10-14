@@ -7,6 +7,7 @@
 #include <movement/LocomotionMode.h>
 #include <movement/RootMotionSource.h>
 #include <movement/MotionComposition.h>
+#include <movement/HeldMotionStep.h>
 #include <movement/components/CharacterFacts.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/MotionChannels.h>
@@ -37,9 +38,9 @@ bool CharacterTickModeSupported(const World& world, EntityId entity)
         && movement->Mode == modes->FreeMode();
 }
 
-// The first four are advanced by the step below: locomotion integrates
+// The first six are advanced by the step below: locomotion integrates
 // velocity, the sweep writes the pose and what the character came to rest
-// against, and the jump gate carries its own state between ticks.
+// against, and the jump gate and held motion carry their own state between ticks.
 //
 // The last two are read rather than advanced, and still resumed: the step
 // derives everything above from them, and neither is a function of its own
@@ -47,7 +48,7 @@ bool CharacterTickModeSupported(const World& world, EntityId entity)
 // tuning is re-resolved from the profile every tick, so a restored copy is
 // corrected by the next live tick rather than left behind by the replayed ones.
 using CharacterTickResumedComponents = ComponentSet<
-    KinematicState, SupportState, LocalTransform, JumpState,
+    KinematicState, SupportState, LocalTransform, JumpState, MotionBursts, TetherSession,
     CharacterMovement, ResolvedMovementTuning>;
 
 bool CharacterTickResumes(ComponentTypeId type)
@@ -89,6 +90,7 @@ namespace
         }
         if (rootMotion != nullptr)
             ApplyRootMotion(overrides, *rootMotion);
+        StepHeldMotion(world, entity, overrides, dt, locomotion.UpAxis);
 
         const MotionRequest motionRequest = ComposeMotion(locomotion, &carried, overrides, MotionImpulse{});
 

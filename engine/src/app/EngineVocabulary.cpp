@@ -4,6 +4,7 @@
 #include <anim/AnimRequestVerbs.h>
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
+#include <movement/MovementVerbs.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <time/ActorTimeVerbs.h>
 
@@ -36,6 +37,7 @@ bool DeclareEngineVocabulary(World& world)
     DeclareEffectVerbs(scope);
     DeclareAbilityVerbs(scope);
     DeclareActorTimeVerbs(scope);
+    DeclareMovementVerbs(scope);
     DeclarePhysicsQueries(queryScope);
 
     return CommitTogether(scope, queryScope);

@@ -11,6 +11,7 @@
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
 #include <effects/EffectVerbs.h>
+#include <movement/MovementVerbs.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <time/ActorTimeVerbs.h>
 
@@ -68,7 +69,7 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     VocabularyCatalog catalog;
     EXPECT_TRUE(catalog.Errors().empty());
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 12u);
+    ASSERT_EQ(verbs.size(), 15u);
     EXPECT_EQ(verbs[0].Name, kRuntimeResumeVerb);
     EXPECT_EQ(verbs[0].Provider, "engine");
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
@@ -80,6 +81,8 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[7].Name, kAbilityActivateVerb);
     EXPECT_EQ(verbs[10].Name, kAbilityRevokeVerb);
     EXPECT_EQ(verbs[11].Name, kTimeScaleLease);
+    EXPECT_EQ(verbs[12].Name, kMovementBurstLease);
+    EXPECT_EQ(verbs[14].Name, kMovementModeLease);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
     ASSERT_EQ(queries.size(), 2u);
     EXPECT_EQ(queries[0].Name, kPhysicsTraceQuery);
@@ -95,10 +98,10 @@ TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRunti
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::VerbRow> verbs = catalog.ListVerbs();
-    ASSERT_EQ(verbs.size(), 13u);
-    EXPECT_EQ(verbs[12].Name, kModuleVerb);
-    EXPECT_EQ(verbs[12].Provider, "spike");
-    EXPECT_EQ(verbs[12].ArgumentCount, 1u);
+    ASSERT_EQ(verbs.size(), 16u);
+    EXPECT_EQ(verbs[15].Name, kModuleVerb);
+    EXPECT_EQ(verbs[15].Provider, "spike");
+    EXPECT_EQ(verbs[15].ArgumentCount, 1u);
 }
 
 TEST(VocabularyCatalog, ARecordIsReportedResolvedOrNotAndNeverLost)
@@ -138,7 +141,7 @@ TEST(VocabularyCatalog, AModulesRefusedDeclarationIsReportedNotHidden)
     ASSERT_FALSE(catalog.Errors().empty());
     EXPECT_NE(catalog.Errors().front().find("spike..broken"), std::string::npos);
     // The whole batch was refused: the good name did not land either.
-    EXPECT_EQ(catalog.ListVerbs().size(), 12u);
+    EXPECT_EQ(catalog.ListVerbs().size(), 15u);
 }
 
 TEST(VocabularyCatalog, TwoCatalogsAreTwoWorlds)

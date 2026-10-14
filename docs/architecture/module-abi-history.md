@@ -322,3 +322,10 @@ actor time. `AuthoredPredictionName`, `EffectiveAbilityBinding` and `abilities/A
 (the port, local-type and hit-field names) are new. `EngineVocabularyBindings` (`app/EngineVocabularyBindings.h`) is new and holds
 the engine's domain operations and their bindings in place of `Engine`'s own members;
 `AbilityEndReasonName` and `AbilityRefusalName` are defined.
+
+**Held motion.** `movement/components/HeldMotion.h` (`MotionBursts`, `TetherSession`,
+`LocomotionModeLease`) joins `CharacterMovement`'s derived set, so every character's
+archetype gains them; `LocomotionModeId` moved to `movement/LocomotionModeId.h`.
+`StepHeldMotion`, `HeldMotionSystem` and the `movement.burst`, `movement.tether` and
+`movement.mode` leases (`MovementVerbs.h`) are new, and the replay kernel resumes the
+burst and tether slots.

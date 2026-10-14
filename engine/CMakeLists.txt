@@ -45,6 +45,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterFacts.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/CharacterMovement.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MotionChannels.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/HeldMotion.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementSessions.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/movement/components/MovementTuning.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/navigation/NavLinkComponent.h"

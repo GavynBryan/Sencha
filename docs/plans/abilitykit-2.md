@@ -1611,3 +1611,20 @@ Deviations from the plan's wording, each for a stated reason:
   consumption the pass applies are the production ones.
 - **Stage 6 is complete.** Owner walkthrough owed: author Primary, Automatic and
   Charge from recipes in the real shell, and play each in the preview.
+
+### 17.9 Stage 8 — movement and presentation
+
+- **8a delivered.** `movement.burst`, `movement.tether` and `movement.mode` as
+  engine leases over slots every character carries (`HeldMotion.h`), stepped by one
+  function the bulk `HeldMotionSystem` and the replay kernel share; replay resumes
+  the burst and tether slots. Headless: a lunge along the aim, a held dash ended
+  with its activation, replay matching the live tick, a tether that pulls to its
+  length and ends with its anchor, a mode held until let go or its holder goes, and
+  Overclock as content alone (a toggled phase holding `time.scale` and an
+  `effect.hold` drain, continued while Energy lasts, cooling down on end).
+  `LocomotionModeId` moved into its own header so the held-motion components and
+  `CharacterMovement`'s derived set can name each other.
+- **Deviation: sessions are slots, not added components.** The plan names
+  `MotionBurst` and `TetherSession` components; every character carries the slots
+  (as `CharacterMovement` derives them), so acquiring or releasing a lease changes no
+  archetype mid-pass and replay resumes them like any other stepped state.
