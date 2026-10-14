@@ -144,17 +144,32 @@ SessionParticipantAdmission SessionParticipantProjection::Admit(
 ParticipantBodyChange SessionParticipantProjection::RequestBody(
     World& world, EntityId participant, bool sessionActive)
 {
-    ParticipantBodyChange result = Lifecycle.RequestBody(world, participant);
-    if (result.Status != ParticipantBodyStatus::Assigned)
-        return result;
-
-    const std::uint32_t peer = PeerOf(world, participant);
-    if (sessionActive)
-        AddReplicationMarker(world, result.Body);
-    if (peer != kNetAuthorityPeer)
-        NetSetOwner(world, result.Body, PeerId{ peer });
-    ProjectControl(world, result.Control, peer);
+    const ParticipantBodyChange result = Lifecycle.RequestBody(world, participant);
+    ProjectBody(world, result, sessionActive);
     return result;
+}
+
+ParticipantBodyChange SessionParticipantProjection::AssignBody(
+    World& world, EntityId participant, EntityId body, bool sessionActive)
+{
+    const ParticipantBodyChange result =
+        Lifecycle.AssignBody(world, participant, body);
+    ProjectBody(world, result, sessionActive);
+    return result;
+}
+
+void SessionParticipantProjection::ProjectBody(
+    World& world, const ParticipantBodyChange& change, bool sessionActive)
+{
+    if (change.Status != ParticipantBodyStatus::Assigned)
+        return;
+
+    const std::uint32_t peer = PeerOf(world, change.Participant);
+    if (sessionActive)
+        AddReplicationMarker(world, change.Body);
+    if (peer != kNetAuthorityPeer)
+        NetSetOwner(world, change.Body, PeerId{ peer });
+    ProjectControl(world, change.Control, peer);
 }
 
 void SessionParticipantProjection::ProjectSessionStart(World& world)

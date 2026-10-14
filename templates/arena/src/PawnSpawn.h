@@ -1,13 +1,12 @@
 #pragma once
 
-#include <app/BodySpawns.h>
+#include <participant_spawn/ParticipantBodySpawns.h>
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionId.h>
 #include <math/Vec.h>
 #include <world/RuntimeWorld.h>
 
 #include <optional>
-#include <span>
 
 class Engine;
 class Logger;
@@ -19,9 +18,9 @@ struct ZoneResidencyContext;
 // Where a body comes from and who ends up driving it.
 //
 // The engine owns who a participant is, which of them this process provides a
-// body for, what happens when one leaves, and -- through BodySpawns
-// -- a prefab request from the moment it is asked for until its group is handed
-// over or cleaned up. What is here is the game's half: which prefab, where it
+// body for, what happens when one leaves, and -- through ParticipantBodySpawns
+// -- a prefab request from the moment it is asked for until its body is
+// assigned. What is here is the game's half: which prefab, where it
 // stands, when there is somewhere for it to stand, and pointing this machine's
 // camera at whatever it turned out to be driving.
 
@@ -51,10 +50,6 @@ struct PlayContentPartition
     StoragePartitionId partition = PersistentStoragePartition,
     const Vec3d& scale = Vec3d::One());
 
-// The spawned group's root: the member without a parent.
-[[nodiscard]] EntityId SpawnedGroupRoot(const World& world,
-                                        std::span<const EntityId> members);
-
 // Names the prefab a spawned group came from, so a peer receiving it builds
 // the same body rather than a bag of replicated components.
 void StampNetPrefab(World& world, EntityId root, Logger& log);
@@ -73,7 +68,7 @@ void RequestBodiesForWaitingParticipants(Engine& engine);
 // start, offset by peer so two players do not arrive inside each other. None
 // when there is no content to stand in or no prefab configured, and each of
 // those is said out loud.
-[[nodiscard]] std::optional<BodySpawnRequest> ChoosePawnSpawn(
+[[nodiscard]] std::optional<ParticipantBodySpawnRequest> ChoosePawnSpawn(
     const World& world, EntityId participant,
     const CompiledArenaSettings* settings, Logger& log);
 
@@ -116,14 +111,14 @@ private:
 // SpawnSettlementSystem
 //
 // Decides when there is somewhere for a body to go, and lets the engine's
-// prefab request book settle what landed. The book owns every request from
-// ask to handoff; this system owns when to ask and when to give up.
+// prefab requests settle what landed. The adapter owns every request from ask
+// to assignment; this system owns when to ask and when to give up.
 //=============================================================================
 struct SpawnSettlementSystem
 {
     Engine* Owner = nullptr;
     Logger* Log = nullptr;
-    BodySpawns* Bodies = nullptr;
+    ParticipantBodySpawns* Bodies = nullptr;
 
     // Where a pawn belongs, learned from the level arriving rather than from
     // having loaded it. The engine loads; this decides that a loaded play zone

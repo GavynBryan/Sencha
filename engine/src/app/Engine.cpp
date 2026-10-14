@@ -892,6 +892,15 @@ ParticipantBodyChange Engine::RequestParticipantBody(EntityId participant)
                                               participant, NetState != nullptr);
 }
 
+ParticipantBodyChange Engine::AssignParticipantBody(EntityId participant,
+                                                    EntityId body)
+{
+    if (RuntimeWorldState == nullptr)
+        return {};
+    return ParticipantProjection.AssignBody(RuntimeWorldState->Entities(),
+                                             participant, body, NetState != nullptr);
+}
+
 ParticipantControlChange Engine::SetParticipantControlSubject(
     EntityId participant, EntityId subject)
 {

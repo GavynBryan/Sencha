@@ -92,11 +92,11 @@ struct TurretSettlementSystem
                 Log->Warn("ArenaGame: the turret prefab failed to spawn");
                 continue;
             }
-            const EntityId root = SpawnedGroupRoot(world, spawns.Entities(id));
+            const EntityId root = spawns.Root(id);
             if (!root.IsValid() || world.TryGet<TurretMount>(root) == nullptr)
             {
-                Log->Error("ArenaGame: the turret prefab's root carries no "
-                           "turret_mount; dropping the placement");
+                Log->Error("ArenaGame: the turret prefab has no single root "
+                           "carrying turret_mount; dropping the placement");
                 (void)spawns.RequestDespawn(id);
                 continue;
             }

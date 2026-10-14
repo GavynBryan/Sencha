@@ -262,6 +262,8 @@ public:
         InputActionSourceId source);
 
     ParticipantBodyChange RequestParticipantBody(EntityId participant);
+    // Never destroys `body`: a refused body stays the caller's to clean up.
+    ParticipantBodyChange AssignParticipantBody(EntityId participant, EntityId body);
     ParticipantControlChange SetParticipantControlSubject(
         EntityId participant, EntityId subject);
 

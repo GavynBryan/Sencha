@@ -65,6 +65,8 @@ enum class ParticipantBodyStatus : std::uint8_t
     AlreadyAssigned,
     Unavailable,
     InvalidParticipant,
+    InvalidBody, // dead, or itself a participant
+    BodyInUse,   // another participant's body
 };
 
 struct ParticipantBodyChange
@@ -111,6 +113,10 @@ public:
     // AlreadyAssigned no-op; an unavailable policy answer is not retried.
     ParticipantBodyChange RequestBody(World& world, EntityId participant);
 
+    // Binds an entity that already exists, under the checks RequestBody's
+    // answer gets. Never destroys `body`; it is the lifecycle's only once Assigned.
+    ParticipantBodyChange AssignBody(World& world, EntityId participant, EntityId body);
+
     // Moves this participant's input and local-presentation projection as one
     // operation. A subject has at most one participant; transfer clears the
     // prior holder. Structural and O(participants).
@@ -123,8 +129,12 @@ public:
     ParticipantRetirement Retire(World& world, EntityId participant);
 
 private:
+    ParticipantBodyChange Bind(World& world, EntityId participant, EntityId body);
+
     ParticipantPolicies Policy;
 };
 
 // Read-only, O(participants).
 [[nodiscard]] EntityId LocalParticipantOf(const World& world);
+// The participant holding `body` as its body, if any. Read-only, O(participants).
+[[nodiscard]] EntityId ParticipantWithBody(const World& world, EntityId body);

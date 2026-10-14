@@ -687,6 +687,15 @@ bool BuildEntityPackageFromSmap(const SmapContents& contents,
     return true;
 }
 
+std::size_t CountRootRecords(const SmapContents& contents)
+{
+    std::size_t roots = 0;
+    for (const SmapEntityRecord& entity : contents.Entities)
+        if (entity.Parent == UINT32_MAX)
+            ++roots;
+    return roots;
+}
+
 std::vector<std::string> ResolveSmapDependencyPaths(
     std::span<const SmapDependency> dependencies, const AssetRegistry& registry)
 {

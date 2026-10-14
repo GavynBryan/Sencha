@@ -15,6 +15,7 @@
 #include <world/identity/PersistentEntityIndex.h>
 #include <world/identity/PersistentIdComponent.h>
 #include <world/scene/SceneInstance.h>
+#include <world/scene/SceneInstanceGroup.h>
 #include <world/scene/SceneInstanceIndex.h>
 #include <world/scene/SmapFormat.h>
 #include <world/serialization/ComponentSerializer.h>
@@ -27,9 +28,11 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -370,4 +373,181 @@ TEST(SceneSpawnService, AWithdrawalSurvivesTheBuildFailing)
     h.Turn();
     EXPECT_NE(h.Service.Status(doomed), SceneSpawnStatus::Live);
     EXPECT_TRUE(h.Service.IsDespawnRequested(doomed));
+}
+
+namespace
+{
+    [[nodiscard]] SmapContents MakeTwoRootContents()
+    {
+        SmapContents contents = MakeSpawnContents();
+        contents.Entities[1].Parent = UINT32_MAX;
+        return contents;
+    }
+
+    [[nodiscard]] SceneSpawnId SpawnOwned(SpawnHarness& h, const std::string& path)
+    {
+        return h.Service.RequestSpawn(path, Transform3f::Identity(),
+                                      StoragePartitionId::Default(),
+                                      SceneSpawnLifetime::OwnedByRoot);
+    }
+}
+
+// The default keeps what a spawn always was: members outlive one another.
+TEST(SceneSpawnService, AnIndependentGroupOutlivesItsRoot)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "loose");
+    const SceneSpawnId id = h.Service.RequestSpawn(scene.Path, Transform3f::Identity());
+    h.Turn();
+    const EntityId root = h.Service.Root(id);
+    ASSERT_TRUE(root.IsValid());
+
+    h.World.Entities().DestroyEntity(root);
+    h.Turn();
+    h.Turn();
+
+    EXPECT_EQ(h.Service.Status(id), SceneSpawnStatus::Live);
+    EXPECT_FALSE(h.Service.IsDespawnRequested(id));
+    EXPECT_EQ(h.Service.Entities(id).size(), 1u);
+}
+
+TEST(SceneSpawnService, ARootOwnedGroupFollowsItsRootAtTheNextPump)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "owned");
+    const SceneSpawnId id = SpawnOwned(h, scene.Path);
+    h.Turn();
+    ASSERT_EQ(h.Service.Status(id), SceneSpawnStatus::Live);
+    const EntityId root = h.Service.Root(id);
+    ASSERT_TRUE(root.IsValid());
+
+    h.World.Entities().DestroyEntity(root);
+    EXPECT_EQ(h.Service.Entities(id).size(), 1u) << "nothing happens inside the destroy";
+    EXPECT_FALSE(h.Service.Root(id).IsValid());
+
+    h.Service.Pump();
+    EXPECT_EQ(h.Service.Status(id), SceneSpawnStatus::Despawned);
+    EXPECT_TRUE(h.Service.IsDespawnRequested(id));
+    EXPECT_TRUE(h.World.Entities().GetAliveEntities().empty());
+}
+
+TEST(SceneSpawnService, ARootOwnedSpawnNeedsOneRootAndPublishesNothingOtherwise)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeTwoRootContents(), "pair");
+    const SceneSpawnId owned = SpawnOwned(h, scene.Path);
+    const SceneSpawnId loose = h.Service.RequestSpawn(scene.Path, Transform3f::Identity());
+    h.Turn();
+
+    EXPECT_EQ(h.Service.Status(owned), SceneSpawnStatus::Failed);
+    EXPECT_TRUE(h.Service.Entities(owned).empty());
+    EXPECT_EQ(h.Service.Status(loose), SceneSpawnStatus::Live);
+    EXPECT_EQ(h.World.Entities().GetAliveEntities().size(), 2u)
+        << "only the independent spawn may publish a two-root scene";
+}
+
+TEST(SceneSpawnService, OnlyTheGroupWhoseRootDiedIsDespawned)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "both");
+    const SceneSpawnId first = SpawnOwned(h, scene.Path);
+    const SceneSpawnId second = SpawnOwned(h, scene.Path);
+    h.Turn();
+
+    h.World.Entities().DestroyEntity(h.Service.Root(second));
+    h.Service.Pump();
+
+    EXPECT_EQ(h.Service.Status(first), SceneSpawnStatus::Live);
+    EXPECT_EQ(h.Service.Entities(first).size(), 2u);
+    EXPECT_EQ(h.Service.Status(second), SceneSpawnStatus::Despawned);
+}
+
+TEST(SceneSpawnService, RootNamesThePublishedSingleRootOnly)
+{
+    SpawnHarness h;
+    TempSmapScene single(h.Registry, h.Serializers, MakeSpawnContents(), "single");
+    TempSmapScene pair(h.Registry, h.Serializers, MakeTwoRootContents(), "pair");
+
+    const SceneSpawnId id = h.Service.RequestSpawn(single.Path, Transform3f::Identity());
+    const SceneSpawnId twoRoots = h.Service.RequestSpawn(pair.Path, Transform3f::Identity());
+    EXPECT_FALSE(h.Service.Root(id).IsValid()) << "pending";
+    EXPECT_FALSE(h.Service.Root(SceneSpawnId{ 999 }).IsValid());
+    h.Turn();
+
+    const EntityId root = h.Service.Root(id);
+    ASSERT_TRUE(root.IsValid());
+    EXPECT_EQ(h.World.Entities().TryGet<Parent>(root), nullptr);
+    EXPECT_EQ(h.Service.Status(twoRoots), SceneSpawnStatus::Live);
+    EXPECT_FALSE(h.Service.Root(twoRoots).IsValid()) << "two roots name no root";
+
+    // A member unparented later is a second parentless entity, not a new root.
+    for (const EntityId member : h.Service.Entities(id))
+        if (member != root)
+            h.World.Entities().RemoveComponent<Parent>(member);
+    EXPECT_EQ(h.Service.Root(id), root);
+
+    h.World.Entities().DestroyEntity(root);
+    EXPECT_FALSE(h.Service.Root(id).IsValid());
+}
+
+TEST(SceneSpawnService, AnExplicitDespawnOfARootOwnedGroupHappensOnce)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "ended");
+    const SceneSpawnId id = SpawnOwned(h, scene.Path);
+    h.Turn();
+
+    ASSERT_TRUE(h.Service.RequestDespawn(id));
+    h.Service.Pump();
+    EXPECT_EQ(h.Service.Status(id), SceneSpawnStatus::Despawned);
+    EXPECT_FALSE(h.Service.RequestDespawn(id));
+    h.Service.Pump();
+    EXPECT_EQ(h.Service.Status(id), SceneSpawnStatus::Despawned);
+    EXPECT_TRUE(h.World.Entities().GetAliveEntities().empty());
+}
+
+// A partition teardown takes every member at once; the group settles quietly.
+TEST(SceneSpawnService, ARootOwnedGroupWhoseMembersAllWentSettlesAsDespawned)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "swept");
+    const SceneSpawnId id = SpawnOwned(h, scene.Path);
+    h.Turn();
+
+    const std::span<const EntityId> members = h.Service.Entities(id);
+    const std::vector<EntityId> all(members.begin(), members.end());
+    for (const EntityId entity : all)
+        h.World.Entities().DestroyEntity(entity);
+    h.Service.Pump();
+
+    EXPECT_EQ(h.Service.Status(id), SceneSpawnStatus::Despawned);
+}
+
+// A client's replicated groups arrive through the net prefab spawner, so no
+// record here names them: root-owned lifetime cannot destroy what the
+// authority replicates. Only the snapshot's own despawn removes such a group.
+TEST(SceneSpawnService, RootOwnershipNeverReachesAGroupThisServiceDidNotSpawn)
+{
+    SpawnHarness h;
+    TempSmapScene scene(h.Registry, h.Serializers, MakeSpawnContents(), "local");
+    const SceneSpawnId owned = SpawnOwned(h, scene.Path);
+    h.Turn();
+
+    World& world = h.World.Entities();
+    const SceneInstanceId replicatedGroup{ SceneInstanceIdRuntimeBit | 0xABCDu };
+    const EntityId replicatedRoot = world.CreateEntity();
+    world.AddComponent<SceneInstance>(replicatedRoot, SceneInstance{ {}, replicatedGroup });
+    const EntityId replicatedChild = world.CreateEntity();
+    world.AddComponent<SceneInstance>(replicatedChild, SceneInstance{ {}, replicatedGroup });
+    world.AddComponent<Parent>(replicatedChild, Parent{ replicatedRoot });
+
+    world.DestroyEntity(replicatedRoot);
+    world.DestroyEntity(h.Service.Root(owned));
+    h.Turn();
+
+    EXPECT_TRUE(world.IsAlive(replicatedChild)) << "a local policy destroyed a replicated member";
+    EXPECT_EQ(h.Service.Status(owned), SceneSpawnStatus::Despawned);
+
+    DestroySceneInstance(world, replicatedGroup);
+    EXPECT_FALSE(world.IsAlive(replicatedChild));
 }
