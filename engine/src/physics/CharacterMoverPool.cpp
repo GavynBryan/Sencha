@@ -5,6 +5,7 @@
 
 #include <ecs/CommandBuffer.h>
 #include <ecs/Query.h>
+#include <time/ActorTime.h>
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <physics/CharacterMover.h>
@@ -76,7 +77,8 @@ struct CharacterMoverPool::State
         Read<CharacterMoverLink>,
         Write<MotionRequest>,
         Write<KinematicState>,
-        Write<SupportState>>;
+        Write<SupportState>,
+        Without<ActorTimeDilated>>;
     std::optional<CharacterDriveQuery> DriveQuery;
     StoragePartitionSet ActivePartitions;
 
@@ -130,7 +132,8 @@ bool CharacterMoverPool::ReadyToDrive(const World& world) const
     return Ready(world)
         && world.IsRegistered<MotionRequest>()
         && world.IsRegistered<KinematicState>()
-        && world.IsRegistered<SupportState>();
+        && world.IsRegistered<SupportState>()
+        && world.IsRegistered<ActorTimeDilated>();
 }
 
 CharacterMoverPool::State& CharacterMoverPool::EnsureState(World& world)

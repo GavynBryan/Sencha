@@ -3,6 +3,9 @@
 #include <abilities/AbilityDefinition.h>
 #include <abilities/AbilityKit.h>
 #include <abilities/AbilityRegistry.h>
+#include <movement/DilatedCharacterStepSystem.h>
+#include <physics/PhysicsStepSystem.h>
+#include <time/TimeComponentRegistration.h>
 #include <app/EngineSchedule.h>
 #include <attributes/AttributeRegistry.h>
 #include <ecs/World.h>
@@ -42,6 +45,8 @@ namespace
 
 void RegisterMovementComponents(ComponentRegistrar& registrar)
 {
+    // A character steps on its own clock.
+    RegisterTimeComponents(registrar);
     RegisterAbilityKitComponents(registrar);
     registrar.AddAll<MovementComponents>();
 
@@ -107,6 +112,8 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     schedule.Register<JumpExecutionSystem>();
     schedule.Register<RootMotionSystem>();
     schedule.Register<MotionCompositionSystem>();
+    schedule.Register<DilatedCharacterStepSystem>(*schedule.Get<FreeLocomotionSystem>(),
+                                                 schedule.Get<PhysicsStepSystem>());
 
     // The tick reads as one sentence: project last step's physical facts onto
     // tags, collect and apply mode transitions, resolve this tick's
@@ -132,6 +139,8 @@ void RegisterMovementSystems(EngineSchedule& schedule, DataAssetCache& dataAsset
     // asked for across the ground, so it writes after them.
     schedule.After<RootMotionSystem, JumpExecutionSystem>();
     schedule.After<MotionCompositionSystem, RootMotionSystem>();
+    // A dilated character is stepped whole, after the bulk systems it is excluded from.
+    schedule.After<DilatedCharacterStepSystem, MotionCompositionSystem>();
     // Root motion reads what animation resolved this tick. Declared by whichever of
     // the two registers second, so neither has to come first.
     if (schedule.Get<AnimContentSystem>() != nullptr)

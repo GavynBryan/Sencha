@@ -60,6 +60,20 @@ void StepCharacterTick(World& world,
                        Vec3d gravity,
                        Vec3d upAxis);
 
+// The same tick for a character whose time runs at `scaleQ16`: slowed, one step of
+// the scaled time; hastened, as many complete steps as the scale rounds up to, so
+// no sweep carries it further than an undilated tick would. The ground's carry is
+// divided by the scale, so a platform moves it at the platform's own speed.
+void StepScaledCharacterTick(World& world,
+                             CharacterMoverPool* movers,
+                             EntityId entity,
+                             const MovementIntent& intent,
+                             std::uint64_t authorityTick,
+                             float fixedDeltaSeconds,
+                             std::int64_t scaleQ16,
+                             Vec3d gravity,
+                             Vec3d upAxis);
+
 // Whether re-running a tick puts this component back in step: either the tick
 // advances it forward, or it is the state the tick derives those from and
 // nothing between ticks moves it on its own.

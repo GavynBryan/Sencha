@@ -289,6 +289,30 @@ writes back position, achieved velocity, and support.
 Config knobs (`CharacterMoverConfig`): capsule radius/height, slope limit,
 step height, ground-snap distance, skin width, push mass.
 
+## Dilated characters
+
+A character owns a clock (`ActorTime`, derived from `CharacterMovement`); its
+scale comes from the leases on it (`docs/core-systems-map.md`, frame contract).
+While the scale is not one the clock marks the character `ActorTimeDilated`, and
+the bulk systems -- free locomotion, jump, root motion and the motor's drive --
+leave it to `DilatedCharacterStepSystem`, which steps it whole through
+`StepScaledCharacterTick`, the kernel replay runs:
+
+- **Slowed** (scale below one): one complete step of `dt × scale`.
+- **Hastened** (above one): `ceil(scale)` complete steps of `dt × scale / n`, so no
+  sweep carries it further than an undilated tick would; stair stepping, ground
+  snapping and pushes behave as at normal speed, at a cost that grows with `n`
+  (bounded by the hard maximum of four).
+- **Carried:** the ground's carry is divided by the scale, so a dilated character on
+  a moving platform rides it at the platform's speed.
+- **Gravity** applies in the character's time: a slowed character falls slower.
+- **Replay** computes each replayed tick's scale from the lease history on the pawn,
+  so a dilation the client never predicted is applied from the tick it took effect
+  and ended on the tick it ended.
+
+Only modes `StepCharacterTick` implements are stepped dilated; a character in a
+game-defined mode runs at simulation speed (`docs/deferred.md`).
+
 ## Extension recipes
 
 ### Adding a locomotion mode

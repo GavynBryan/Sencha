@@ -7,7 +7,7 @@
 
 // Each actor's own clock and the leases that scale it. Run-time state the ability
 // kit, effects and movement read; neither saved nor, yet, sent.
-using TimeComponents = ComponentSet<ActorTime, ActorTimeLeases>;
+using TimeComponents = ComponentSet<ActorTime, ActorTimeLeases, ActorTimeDilated>;
 
 inline void RegisterTimeComponents(ComponentRegistrar& registrar)
 {

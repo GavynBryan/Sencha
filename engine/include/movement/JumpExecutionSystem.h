@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ecs/Query.h>
+#include <time/ActorTime.h>
 #include <movement/JumpState.h>
 #include <movement/components/CharacterFacts.h>
 #include <movement/components/MovementTuning.h>
@@ -59,5 +60,6 @@ private:
     std::optional<Query<Write<JumpState>,
                         Read<MovementIntent>,
                         Read<SupportState>,
-                        Read<ResolvedMovementTuning>>> CachedQuery;
+                        Read<ResolvedMovementTuning>,
+                        Without<ActorTimeDilated>>> CachedQuery;
 };

@@ -2,6 +2,7 @@
 
 #include <ecs/EntityId.h>
 #include <ecs/Query.h>
+#include <time/ActorTime.h>
 #include <math/Vec.h>
 #include <movement/components/CharacterMovement.h>
 #include <movement/components/MotionChannels.h>
@@ -59,5 +60,5 @@ private:
     // Reused each tick.
     std::vector<EntityId> Characters;
     const World* LastWorld = nullptr;
-    std::optional<Query<Read<CharacterMovement>, Read<MotionAxisOverride>>> CharacterQuery;
+    std::optional<Query<Read<CharacterMovement>, Read<MotionAxisOverride>, Without<ActorTimeDilated>>> CharacterQuery;
 };

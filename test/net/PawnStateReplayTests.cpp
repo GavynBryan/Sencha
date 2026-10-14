@@ -3,6 +3,7 @@
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
+#include <movement/CharacterTickStep.h>
 #include <movement/FreeLocomotionSystem.h>
 #include <movement/JumpExecutionSystem.h>
 #include <movement/JumpState.h>
@@ -18,6 +19,9 @@
 #include <physics/PhysicsWorld.h>
 #include <physics/components/CharacterController.h>
 #include <physics/components/CharacterMoverLink.h>
+#include <time/ActorTime.h>
+#include <time/ActorTimeLeases.h>
+#include <time/ActorTimeSystem.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
@@ -570,4 +574,72 @@ TEST(PredictedComponentContract, AnUnresumedPredictedComponentIsResetAndNotCarri
     EXPECT_GT(after, kLocallyAdvanced)
         << "something advanced it during replay, so the contract this test "
            "pins has changed and the header describing it is now wrong";
+}
+
+namespace
+{
+    // A live tick on the authority with the clock running: a dilated pawn is stepped
+    // whole through the scaled kernel, as DilatedCharacterStepSystem does.
+    void LiveTimedTick(Machine& machine, const MovementIntent& intent, std::uint64_t tick)
+    {
+        AdvanceActorTime(machine.Entities, tick);
+        if (!machine.Entities.HasComponent<ActorTimeDilated>(machine.Pawn))
+        {
+            machine.Tick(intent);
+            return;
+        }
+        *machine.Entities.TryGet<MovementIntent>(machine.Pawn) = intent;
+        StepScaledCharacterTick(machine.Entities, &machine.Movers, machine.Pawn, intent, tick, kDt,
+                                machine.Entities.TryGet<ActorTime>(machine.Pawn)->ScaleQ16, kGravity, kUpAxis);
+    }
+
+    void ReplayAgainstLiveDilation(std::uint64_t releaseOffset)
+    {
+        constexpr std::uint64_t kFirstTick = 1000;
+        constexpr std::size_t kTicks = PawnCommandRing::kDepth - 4;
+        const std::vector<PawnCommandTick> script = ScriptedRun(kFirstTick, kTicks);
+        constexpr std::uint64_t kKey = 1;
+
+        Machine live;
+        live.Entities.AddComponent<ActorTimeLeases>(live.Pawn, ActorTimeLeases{});
+        for (const PawnCommandTick& record : script)
+        {
+            ActorTimeLeases& leases = *live.Entities.TryGet<ActorTimeLeases>(live.Pawn);
+            // An owner the pull rule keeps: the pawn itself.
+            const LeaseOwner holder{ .Entity = live.Pawn, .Key = kKey };
+            if (record.Tick == kFirstTick + 10)
+            {
+                ASSERT_TRUE(AcquireActorTimeLease(leases, holder, kActorTimeOne / 2, record.Tick));
+            }
+            if (releaseOffset != 0 && record.Tick == kFirstTick + releaseOffset)
+                ReleaseActorTimeLeases(leases, holder, record.Tick);
+            LiveTimedTick(live, record.Intent, record.Tick);
+        }
+
+        // The client never predicted the dilation; the authority's lease history
+        // arrives with the snapshot, and the replay applies it from its own ticks.
+        Machine replayed;
+        replayed.Entities.AddComponent<ActorTimeLeases>(replayed.Pawn,
+                                                        *live.Entities.TryGet<ActorTimeLeases>(live.Pawn));
+        ClientPrediction prediction = PredictingPawn(replayed);
+        ShadowPawn(prediction, replayed, replayed.Pawn);
+        for (const PawnCommandTick& record : script)
+            prediction.Commands().Push(record);
+        const PawnReplayResult result = ReplayPawnState(RequestFor(replayed, prediction, kFirstTick - 1));
+        ASSERT_TRUE(result.Ran);
+        EXPECT_EQ(result.TicksReplayed, kTicks);
+        EXPECT_EQ(replayed.Position().X, live.Position().X);
+        EXPECT_EQ(replayed.Position().Y, live.Position().Y);
+        EXPECT_EQ(replayed.Position().Z, live.Position().Z);
+    }
+}
+
+TEST(PawnStateReplay, AServerOnlyDilationIsReplayedFromItsEffectiveTick)
+{
+    ReplayAgainstLiveDilation(0);
+}
+
+TEST(PawnStateReplay, AServerEndedDilationIsReplayedToItsUntilTick)
+{
+    ReplayAgainstLiveDilation(40);
 }

@@ -446,3 +446,13 @@ do the work and delete the entry.
 - **Trigger:** an ability that holds animation on an entity other than the actor
   running it. An actor's own holds die with it, so CTX Charge and every Stage 10
   ability are covered; the first ability that poses another entity is not.
+
+## Dilating a character in a game-defined locomotion mode
+
+- **What:** a dilated character is stepped through `StepScaledCharacterTick`, which
+  implements only the free mode; a character in a mode a game registers keeps the
+  bulk path and runs at simulation speed whatever its scale.
+- **Where:** `engine/src/movement/CharacterTickStep.cpp` (`CharacterTickModeSupported`)
+  and `DilatedCharacterStepSystem`.
+- **Trigger:** the first game mode whose characters are time-scaled, which will also
+  need that mode's kernel shared with replay.

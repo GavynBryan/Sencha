@@ -10,6 +10,7 @@
 #include <movement/components/CharacterFacts.h>
 #include <movement/components/MotionChannels.h>
 #include <movement/components/MovementTuning.h>
+#include <time/ActorTime.h>
 #include <world/transform/TransformHistory.h>
 
 #include <compare>
@@ -125,7 +126,8 @@ struct ComponentTraits<CharacterMovement>
         MotionImpulse,
         MotionRequest,
         ModeTransitionRequest,
-        WorldTransformHistory>;
+        WorldTransformHistory,
+        ActorTime>;
 };
 
 #if !defined(SENCHA_CODEGEN)

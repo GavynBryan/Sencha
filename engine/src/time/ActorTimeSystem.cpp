@@ -47,6 +47,34 @@ namespace
         });
     }
 
+    using UndilatedQuery = Query<Read<ActorTime>, Without<ActorTimeDilated>>;
+    using DilatedQuery = Query<Read<ActorTime>, With<ActorTimeDilated>>;
+
+    // The marker follows the scale; it moves only when the scale crosses one, so a
+    // steady dilation costs a scan and no structural change.
+    void MarkDilation(World& world, UndilatedQuery& undilated, DilatedQuery& dilated,
+                      const StoragePartitionSet* partitions, std::vector<EntityId>& changed)
+    {
+        const auto collect = [&](auto& query, bool wantDilated) {
+            changed.clear();
+            query.ForEachChunk([&](auto& view) {
+                if (partitions != nullptr && !partitions->Contains(view.Partition()))
+                    return;
+                const auto times = view.template Read<ActorTime>();
+                const EntityIndex* indices = view.Entities();
+                for (std::uint32_t i = 0; i < view.Count(); ++i)
+                    if ((times[i].ScaleQ16 != kActorTimeOne) == wantDilated)
+                        changed.push_back(world.ResolveEntityIndex(indices[i]));
+            });
+        };
+        collect(undilated, true);
+        for (const EntityId entity : changed)
+            world.AddComponent<ActorTimeDilated>(entity);
+        collect(dilated, false);
+        for (const EntityId entity : changed)
+            world.RemoveComponent<ActorTimeDilated>(entity);
+    }
+
     void RegisterLimit(ConsoleRegistry& console, const char* name, std::int64_t& value, const char* help)
     {
         const double scale = static_cast<double>(value) / static_cast<double>(kActorTimeOne);
@@ -93,6 +121,16 @@ void ActorTimeSystem::FixedLogic(FixedLogicContext& ctx)
     if (!Clocks)
         Clocks.emplace(world);
     Accumulate(*Clocks, &ctx.Partitions);
+    if (world.IsRegistered<ActorTimeDilated>())
+    {
+        if (!Undilated)
+        {
+            Undilated.emplace(world);
+            Dilated.emplace(world);
+        }
+        MarkDilation(world, *Undilated, *Dilated, &ctx.Partitions, Changed);
+    }
+    world.SetResource(Bounds);
 }
 
 void AdvanceActorTime(World& world, std::uint64_t tick, const ActorScaleLimits& limits)
@@ -106,6 +144,14 @@ void AdvanceActorTime(World& world, std::uint64_t tick, const ActorScaleLimits& 
     }
     ClockQuery clocks(world);
     Accumulate(clocks, nullptr);
+    if (world.IsRegistered<ActorTimeDilated>())
+    {
+        UndilatedQuery undilated(world);
+        DilatedQuery dilated(world);
+        std::vector<EntityId> changed;
+        MarkDilation(world, undilated, dilated, nullptr, changed);
+    }
+    world.SetResource(limits);
 }
 
 std::uint64_t ActorTicksSince(const World& world, EntityId actor, std::uint64_t mark, std::uint64_t simulationTick)

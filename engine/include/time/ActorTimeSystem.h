@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 class ConsoleRegistry;
 class StoragePartitionSet;
@@ -29,6 +30,9 @@ private:
     ActorScaleLimits Bounds;
     std::optional<Query<Write<ActorTimeLeases>, Write<ActorTime>>> Scaled;
     std::optional<Query<Write<ActorTime>>> Clocks;
+    std::optional<Query<Read<ActorTime>, Without<ActorTimeDilated>>> Undilated;
+    std::optional<Query<Read<ActorTime>, With<ActorTimeDilated>>> Dilated;
+    std::vector<EntityId> Changed;
 };
 
 // One tick's advance outside a schedule, for tests and tools.

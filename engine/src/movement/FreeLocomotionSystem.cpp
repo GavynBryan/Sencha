@@ -5,6 +5,7 @@
 #include <movement/LocomotionMode.h>
 #include <movement/MovementStep.h>
 #include <ecs/Query.h>
+#include <time/ActorTime.h>
 #include <ecs/StoragePartitionSet.h>
 
 #include <algorithm>
@@ -128,7 +129,8 @@ void FreeLocomotionSystem::StepImpl(World& world,
           Read<KinematicState>,
           Read<SupportState>,
           Read<MovementIntent>,
-          Read<ResolvedMovementTuning>> query(world);
+          Read<ResolvedMovementTuning>,
+          Without<ActorTimeDilated>> query(world);
 
     const auto visit = [&](auto& view)
     {

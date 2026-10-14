@@ -3,6 +3,7 @@
 #include <ecs/World.h>
 #include <ecs/WorldComponentSchema.h>
 #include <movement/CharacterTickStep.h>
+#include <time/ActorTimeLeases.h>
 #include <net/ClientPrediction.h>
 #include <net/ReplicationLayout.h>
 #include <physics/CharacterMoverPool.h>
@@ -19,6 +20,21 @@ void CollectUnresumedPredictedComponents(const ReplicationLayout& layout,
     {
         if (component.Predicted && !CharacterTickResumes(component.Type))
             out.push_back(component.Name);
+    }
+}
+
+namespace
+{
+    // The scale the pawn's time ran at on a replayed tick, from the leases it held
+    // then -- the history the authority sent -- not the scale it runs at now.
+    std::int64_t ReplayedScale(const World& world, EntityId pawn, std::uint64_t tick)
+    {
+        const ActorTimeLeases* leases =
+            world.IsRegistered<ActorTimeLeases>() ? world.TryGet<ActorTimeLeases>(pawn) : nullptr;
+        if (leases == nullptr || !world.HasComponent<ActorTime>(pawn))
+            return kActorTimeOne;
+        const ActorScaleLimits* limits = world.TryGetResource<ActorScaleLimits>();
+        return ActorScaleAt(*leases, tick, limits != nullptr ? *limits : ActorScaleLimits{});
     }
 }
 
@@ -98,8 +114,9 @@ PawnReplayResult ReplayPawnState(const PawnReplayRequest& request)
                 request.AckTick, [&](const PawnCommandTick& command) {
                     // The predicted pawn lives on the command timeline, so a command's
                     // tick is the tick its animation and root motion ran on live.
-                    StepCharacterTick(world, request.Movers, pawn, command.Intent, command.Tick,
-                                      request.FixedDeltaSeconds, request.Gravity, request.UpAxis);
+                    StepScaledCharacterTick(world, request.Movers, pawn, command.Intent, command.Tick,
+                                            request.FixedDeltaSeconds, ReplayedScale(world, pawn, command.Tick),
+                                            request.Gravity, request.UpAxis);
                     ++replayed;
                 });
 

@@ -1500,6 +1500,15 @@ Deviations from the plan's wording, each for a stated reason:
   carry entity indices and per-actor start counts, which two machines need not
   share; ordering by the scale values themselves gives every machine the same
   product from the same set of leases, which is what the ordering is for.
+- **7b delivered.** Characters own a clock; `ActorTimeDilated` routes a dilated
+  character out of the bulk movement systems into `DilatedCharacterStepSystem`, which
+  runs the replay kernel with substeps and scaled platform carry; replay takes each
+  tick's scale from lease history (`AServerOnlyDilationIsReplayedFromItsEffectiveTick`,
+  `AServerEndedDilationIsReplayedToItsUntilTick`). The dilated step runs in the fixed
+  phase, as replay does, rather than beside the bulk drive in the physics phase.
+  Found in passing: `Archetype::BuildLayout` sized chunks without the padding between
+  aligned columns, so some archetypes overflowed their chunk; fixed with a regression
+  test.
 - **Deviation: effect leases end a tick late.** An effect's `time_scale` lease is
   held by the effect entity and ended by the clock's pull rule the tick after the
   effect ends, rather than by `EndEffect`, which has no tick to stamp it with.

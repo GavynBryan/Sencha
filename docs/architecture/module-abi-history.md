@@ -312,4 +312,6 @@ are new.
 `ActorScaleLimits`; `ActorTicksAdvanced`, `ActorTicksSince`; `ActorTimeSystem` takes a
 console and `AdvanceActorTime` a tick. The `time.scale` lease joins the engine
 vocabulary. `EffectDefinition` and `ActiveEffect` gain a `TimeDomain`, and
-`EffectDefinition` a `TimeScale`.
+`EffectDefinition` a `TimeScale`. `ActorTimeDilated` (time) is new, `CharacterMovement` derives
+`ActorTime`, and `StepScaledCharacterTick` and `DilatedCharacterStepSystem` are new;
+the bulk movement queries and the character drive exclude dilated characters.
