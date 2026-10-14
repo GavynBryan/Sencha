@@ -303,6 +303,8 @@ namespace
             Fail(errors, bindingKey, path,
                  "an entity argument is written as {\"entity\": ...}");
             return false;
+        case DataFieldKind::StableKey:
+            break;
         }
 
         Fail(errors, bindingKey, path, "the verb declares a shape this binding cannot compile");

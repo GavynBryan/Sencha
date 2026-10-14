@@ -79,7 +79,8 @@ namespace
         case DataFieldKind::DataAssetRef: return AuthoredValueKind::DataAssetRef;
         case DataFieldKind::GameplayTag: return AuthoredValueKind::GameplayTag;
         case DataFieldKind::Entity: return AuthoredValueKind::Entity;
-        case DataFieldKind::Optional: break;
+        case DataFieldKind::Optional:
+        case DataFieldKind::StableKey: break;
         }
         return AuthoredValueKind::None;
     }

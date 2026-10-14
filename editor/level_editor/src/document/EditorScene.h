@@ -1,5 +1,7 @@
 #pragma once
 
+#include "identity/RandomKey.h"
+
 #include "brush/BrushEvaluation.h"
 #include "brush/BrushId.h"
 #include "brush/BrushMesh.h"
@@ -262,7 +264,7 @@ private:
     BrushEvaluationPolicy InteractivePolicy_ = BrushEvaluationPolicy::Interactive(4096);
     BrushPlacementFacts PlacementFacts_{ *this }; // after the store and policy it reads
     // Persistent-id minting entropy (per document, like WorldDocument's Rng_).
-    std::mt19937_64 IdRng_{ std::random_device{}() };
+    RandomKeySource IdRng_;
     // Every persistent id spoken for in this document: held by a tracked entity
     // or reserved by a mint. Minting and duplicate detection are lookups against
     // it rather than scans of the entity list, which is what keeps a bulk paste

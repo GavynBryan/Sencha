@@ -1,5 +1,7 @@
 #include "EditorDocument.h"
 
+#include <assets/runtime/ContentVocabulary.h>
+
 #include "brush/BrushMeshSerialization.h"
 #include "brush/BrushModifierSerialization.h"
 #include "EntityNameComponent.h"
@@ -167,6 +169,12 @@ void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)
     // lets go of its reference, and the document then saves a handle that
     // names nothing.
     Registry_.Components.SetResource(assets.Assets.Stores());
+
+    // The names content declares, so the document reads back what it names.
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(assets, Registry_.Components, ContentVocabularyReload::Once, errors);
+    for (const std::string& error : errors)
+        Logging.GetLogger<EditorDocument>().Error("content vocabulary: {}", error);
 }
 
 void EditorDocument::SetRegistryIdentity(RegistryId id, ZoneId zone)

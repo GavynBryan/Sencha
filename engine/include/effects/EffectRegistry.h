@@ -25,6 +25,11 @@ public:
     // for a definition granting more tags than an active effect can record.
     EffectId Register(std::string_view name, EffectDefinition definition);
 
+    // Registers `definition` under `name`, or replaces the definition an existing
+    // name holds and keeps its id: what content declaring and reloading uses.
+    // Invalid id under the same conditions as Register.
+    EffectId Define(std::string_view name, EffectDefinition definition);
+
     [[nodiscard]] EffectId Find(std::string_view name) const;
     [[nodiscard]] const EffectDefinition* Get(EffectId id) const; // nullptr if unknown
     [[nodiscard]] std::string_view GetName(EffectId id) const;

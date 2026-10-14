@@ -43,6 +43,8 @@ namespace
         case DataFieldKind::GameplayTag:
         case DataFieldKind::Entity:
             return std::holds_alternative<std::string>(field.Default);
+        case DataFieldKind::StableKey:
+            return false;
         case DataFieldKind::Optional:
             // Checked as a default for the wrapped element.
             if (field.Children.size() != 1)
@@ -174,6 +176,9 @@ void ValidateAuthoredField(const DataFieldSchema& field,
     case DataFieldKind::DataAssetRef:
     case DataFieldKind::GameplayTag:
     case DataFieldKind::Entity:
+        break;
+    case DataFieldKind::StableKey:
+        errors.push_back(std::format("{}: a stable key names an element of a document, not a value an operation takes", path));
         break;
     }
 }

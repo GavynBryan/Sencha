@@ -264,3 +264,10 @@ granted tags. `CheckEffectCosts` (`effects/EffectCost.h`) is new.
 `InputActionEdge` list. `InputEdgeLatch` is replaced by `InputMotionLatch` and
 `InputEdgeAttribution`, and `AccumulateInputFrame` by `AttributeInputFrame`.
 `NetCommandRecord` and `PawnCommandTick` carry edges; net protocol 7.
+
+**Content vocabulary.** `DataFieldKind::StableKey` is appended (with
+`IsValidStableKey`). `gameplay.attribute_declarations` and `effect.definition` are
+engine data subtypes; `EffectRegistry::Define` is new.
+`assets/runtime/ContentTagDeclarations.h` is now `ContentVocabulary.h`, adding
+`DeclareContentVocabulary`, `RefreshContentVocabulary` and
+`ReleaseContentVocabulary`.

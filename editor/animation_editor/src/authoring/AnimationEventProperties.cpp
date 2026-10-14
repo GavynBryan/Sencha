@@ -40,6 +40,7 @@ std::string_view KindName(DataFieldKind kind)
     case DataFieldKind::DataAssetRef: return "data asset";
     case DataFieldKind::GameplayTag:  return "tag";
     case DataFieldKind::Entity:       return "entity";
+    case DataFieldKind::StableKey:    return "key";
     }
     return "?";
 }

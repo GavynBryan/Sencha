@@ -316,6 +316,8 @@ bool AuthoredValueSatisfiesField(const AuthoredValue& value, const DataFieldSche
         // validated; a producer supplying one dynamically has not done the
         // resolving it owes, and an operation must never be handed one.
         return value.Kind() == AuthoredValueKind::Entity;
+    case DataFieldKind::StableKey:
+        return false;
     }
     return false;
 }

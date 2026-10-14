@@ -148,3 +148,6 @@ private:
 };
 
 [[nodiscard]] JsonValue CreateDefaultDataValue(const DataFieldSchema& field);
+// Gives every StableKey field under `value` a fresh key, for a copy that must not
+// share identities with the element it was copied from.
+void RemintStableKeys(JsonValue& value, const DataFieldSchema& field);

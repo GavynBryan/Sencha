@@ -1372,3 +1372,22 @@ Deviations from the plan's wording, each for a stated reason:
   `kNetProtocolVersion` 7.
 - **Deviation:** the plan said per-action edges alternate; they need not, because a
   silent rise is not an edge. Recorded in §2.6.
+
+### 17.4 Stage 3 — content vocabulary and identity
+
+- **Reorganised.** Ability definitions and grants (`ability.definition`,
+  `AbilityGrants`, the binding table, removing C++ ability registration, the prefab
+  migration) move to Stage 5, beside the runtime that executes them: moving them
+  here would have needed a temporary interpreter for the old single-shot runtime,
+  which correction 4 and the constitution both rule out. `cue.presentation` moves to
+  Stage 8 beside its runtime, and the tag `replicate` field to Stage 9 beside the
+  codec that reads it.
+- **Delivered.** `DataFieldKind::StableKey` (validated, unique among an array's
+  elements); editors mint keys on add (`CreateDefaultDataValue`) and re-mint them in
+  a duplicate (`RemintStableKeys`), through one `RandomKeySource` that scene
+  persistent ids also use. `gameplay.attribute_declarations` and
+  `effect.definition` subtypes; `DeclareContentVocabulary` registers tags,
+  attributes and effects into the runtime World at publish and into every editor
+  document; effects reload in place under the same id.
+- **Found and fixed in passing:** level documents never declared content tags, so a
+  tag only content named could not be read back by a document.

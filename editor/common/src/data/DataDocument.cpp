@@ -1,5 +1,7 @@
 #include "data/DataDocument.h"
 
+#include "identity/RandomKey.h"
+
 #include "commands/ICommand.h"
 
 #include <core/json/JsonFormat.h>
@@ -477,6 +479,35 @@ void DataDocument::RefreshDirty()
     Dirty = JsonFormat(WorkingRoot) != SavedText;
 }
 
+void RemintStableKeys(JsonValue& value, const DataFieldSchema& field)
+{
+    switch (field.Kind)
+    {
+    case DataFieldKind::StableKey:
+        value = JsonValue(MintStableKey());
+        return;
+    case DataFieldKind::Record:
+        if (!value.IsObject())
+            return;
+        for (const DataFieldSchema& child : field.Children)
+            if (JsonValue* member = value.Find(child.Key))
+                RemintStableKeys(*member, child);
+        return;
+    case DataFieldKind::Array:
+        if (!value.IsArray() || field.Children.size() != 1)
+            return;
+        for (JsonValue& element : value.AsArray())
+            RemintStableKeys(element, field.Children.front());
+        return;
+    case DataFieldKind::Optional:
+        if (!value.IsNull() && field.Children.size() == 1)
+            RemintStableKeys(value, field.Children.front());
+        return;
+    default:
+        return;
+    }
+}
+
 JsonValue CreateDefaultDataValue(const DataFieldSchema& field)
 {
     if (HasExplicitDefault(field.Default))
@@ -499,6 +530,8 @@ JsonValue CreateDefaultDataValue(const DataFieldSchema& field)
     // chosen yet.
     case DataFieldKind::Entity:
         return JsonValue("");
+    case DataFieldKind::StableKey:
+        return JsonValue(MintStableKey());
     case DataFieldKind::Enum:
         return field.EnumChoices.empty()
             ? JsonValue("")

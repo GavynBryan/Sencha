@@ -8,7 +8,7 @@
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/hotreload/SourceReloadRoots.h>
 #endif
-#include <assets/runtime/ContentTagDeclarations.h>
+#include <assets/runtime/ContentVocabulary.h>
 #include <audio/AudioSourceRuntime.h>
 #include <core/assets/AssetStoreTable.h>
 #include <core/config/EngineConfig.h>
@@ -65,6 +65,27 @@ struct HotReloadPollSystem
     }
 
     RuntimeContent& Content;
+};
+
+// Redefines declared effects whose assets have reloaded.
+struct ContentVocabularyRefreshSystem
+{
+    ContentVocabularyRefreshSystem(RuntimeContent& content, Logger& log)
+        : Content(content)
+        , Log(log)
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext& ctx)
+    {
+        std::vector<std::string> errors;
+        RefreshContentVocabulary(Content.Assets(), ctx.Entities, errors);
+        for (const std::string& error : errors)
+            Log.Error("content vocabulary: {}", error);
+    }
+
+    RuntimeContent& Content;
+    Logger& Log;
 };
 #endif
 } // namespace
@@ -135,13 +156,12 @@ void RuntimeContent::Publish(World& world)
         &assets.AudioClips, &Host.Audio(), &Host.Captions() });
     world.SetResource(AnimRigBindings{ &assets.DataAssets, &assets.AnimationClips, &assets.Skeletons });
 
-    // The names content declares, before anything binds against them.
-    if (GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>())
+    // The names and definitions content declares, before anything binds against them.
     {
         std::vector<std::string> errors;
-        DeclareContentTags(assets, *tags, errors);
+        DeclareContentVocabulary(assets, world, ContentVocabularyReload::Watch, errors);
         for (const std::string& error : errors)
-            Log.Error("gameplay tags: {}", error);
+            Log.Error("content vocabulary: {}", error);
     }
 
     // The spawn services are engine-owned; the asset stack they resolve scenes
@@ -176,6 +196,7 @@ void RuntimeContent::RegisterSystems(EngineSchedule& schedule)
     schedule.Register<StandInRetrySystem>(*this, Host.Tasks());
 #ifdef SENCHA_ENABLE_COOK
     schedule.Register<HotReloadPollSystem>(*this);
+    schedule.Register<ContentVocabularyRefreshSystem>(*this, Log);
 #endif
 }
 
@@ -198,6 +219,7 @@ void RuntimeContent::Disconnect(World& world)
     {
         bindings->Clear();
     }
+    ReleaseContentVocabulary(world);
 
     // The prefab spawner holds a scene reference per resident prefab for the
     // length of the run. Disconnecting drops those while the caches that issued

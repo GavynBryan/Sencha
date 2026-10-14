@@ -538,7 +538,7 @@ PropertyEditResult DataProperties::Act(std::string_view key, std::string_view ve
     if (!parent.has_value() || !steps.has_value())
         return PropertyEditResult::Gone;
     const DataPathStep step = steps->back();
-    return Change(*parent, [&](JsonValue& held, const DataFieldSchema&) {
+    return Change(*parent, [&](JsonValue& held, const DataFieldSchema& described) {
         if (verb == "remove" && !step.Index.has_value() && held.IsObject())
         {
             std::erase_if(held.AsObject(), [&](const auto& member) { return member.first == step.Key; });
@@ -550,7 +550,12 @@ PropertyEditResult DataProperties::Act(std::string_view key, std::string_view ve
         const std::size_t index = *step.Index;
         const auto at = array.begin() + static_cast<std::ptrdiff_t>(index);
         if (verb == "duplicate")
-            array.insert(at + 1, *at);
+        {
+            JsonValue copy = *at;
+            if (const DataFieldSchema* element = Element(Unwrapped(described)))
+                RemintStableKeys(copy, *element);
+            array.insert(at + 1, std::move(copy));
+        }
         else if (verb == "delete")
             array.erase(at);
         else if (verb == "up" && index > 0)

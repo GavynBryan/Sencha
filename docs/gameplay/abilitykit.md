@@ -276,6 +276,17 @@ All in `FixedLogic` (deterministic), ordered with `After<>`:
 What the effect runtime guarantees today (`effects/EffectSystem.h`,
 `effects/ActiveEffect.h`, `effects/EffectCost.h`):
 
+- **Content declares the vocabulary.** `gameplay.attribute_declarations` assets
+  declare attributes (name, range, default) and `effect.definition` assets declare
+  effects (duration, period, modifiers by attribute name, granted tags by name).
+  `DeclareContentVocabulary` registers tags, then attributes, then effects, each in
+  asset path order, into a World's registries: the runtime when content is
+  published, every editor document when it receives the asset stack. An effect is
+  named by its asset path. A reloaded effect asset is redefined in place under the
+  same id (`EffectRegistry::Define`); instances already applied keep the timing they
+  were applied with. A module may still register effects and attributes in code;
+  content adds to the same registries.
+
 - **Time is whole fixed ticks.** `ApplyEffect` takes the tick it is applied on
   (`FixedSimTime`) and turns the authored seconds into ticks of that length, at
   least one. An effect counts down one tick per lifetime pass while its target is
