@@ -26,6 +26,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimFacts.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimFlowState.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimPoseState.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimPresentationRequests.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRequestReport.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRequestSet.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/anim/AnimRig.h"

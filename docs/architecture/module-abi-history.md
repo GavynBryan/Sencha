@@ -337,3 +337,9 @@ burst and tether slots.
 (`CuePresentationData.h`), `CuePresentationLibrary`, `AbilityPresentationSystem` and
 `AbilityHost::Presents` are new, as are the `audio.play` verb and `audio.loop` lease
 (`audio/AudioVerbs.h`), which join the engine vocabulary.
+
+**Presentation layers.** `AnimRigLayer` and `AnimBoundLayer` gain `Presentation`;
+`AnimPresentationRequests` (`sencha.anim_presentation_requests`) joins
+`AnimationComponents`, composed under the new `AnimRigPart::Presentation`;
+`AnimLayerRequests` and the `anim.present` verb (`AnimRequestOperations::Present`)
+are new; `CollectAnimEvents` takes the presentation set beside the simulation's.

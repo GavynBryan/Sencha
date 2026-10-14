@@ -313,6 +313,7 @@ void AnimRigBinder::BindLayers(const AnimRigData& rig)
         layer.Name = tags != nullptr ? tags->FindTag(layer.NameText) : GameplayTagId{};
         layer.Mode = rig.Layers[i].Mode;
         layer.Weight = rig.Layers[i].Weight;
+        layer.Presentation = rig.Layers[i].Presentation;
         if (!rig.Layers[i].Idle.empty())
         {
             if (std::optional<GameplayTagId> idle = ResolveTag(
@@ -445,6 +446,7 @@ namespace
         binder.ValidateClipSkeletons();
         binder.BindEvents(*rig);
         binder.ValidateBlendspaceGameplayEvents();
+        binder.ValidatePresentationLayers();
         bound.Valid = !HasAnimErrors(bound.Diagnostics);
         bound.DrivesGameplay = !bound.Valid || ReachesGameplay(bound);
         bound.TimingIdentity = AnimRigTimingIdentity(bound, clips, world.TryGetResource<GameplayTagRegistry>());

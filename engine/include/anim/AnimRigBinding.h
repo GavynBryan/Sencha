@@ -88,6 +88,8 @@ struct AnimBoundLayer
     GameplayTagId Idle;
     // Per skeleton joint, 1 where the layer applies; empty when unmasked.
     std::vector<std::uint8_t> Mask;
+    // Reads AnimPresentationRequests, never the simulation's requests.
+    bool Presentation = false;
     [[nodiscard]] bool Masked() const { return !Mask.empty(); }
     [[nodiscard]] bool Covers(std::size_t joint) const { return Mask.empty() || (joint < Mask.size() && Mask[joint] != 0); }
 };

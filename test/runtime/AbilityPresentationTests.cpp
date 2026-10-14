@@ -281,6 +281,17 @@ TEST_F(AbilityPresentation, AGameplayOperationIsNeverPartOfAPresentation)
     EXPECT_NE(errors.front().find("scope_mismatch"), std::string::npos) << errors.front();
 }
 
+TEST_F(AbilityPresentation, ACueMayPresentAnimationOnTheActor)
+{
+    (void)Entities.GetResource<GameplayTagRegistry>().RegisterTag("anim.intent.flinch");
+    const std::vector<std::string> errors = Present(R"({ "cues": [
+        { "key": "k_flinch", "cue": "cue.shot", "once": [ { "verb": "anim.present", "arguments": {
+            "target": { "port": "actor" }, "intent": { "tag": "anim.intent.flinch" },
+            "lifetime": { "const": "fixed" }, "ticks": { "const": 12 } } } ] } ] })",
+                                                  "asset://cues/flinch.sdata");
+    EXPECT_TRUE(errors.empty()) << errors.front();
+}
+
 TEST_F(AbilityPresentation, AudioWithNoDeviceIsUnavailable)
 {
     Present(R"({ "cues": [ { "key": "k_bang", "cue": "cue.shot",

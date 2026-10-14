@@ -3,6 +3,7 @@
 #include <anim/AnimFacts.h>
 #include <anim/AnimFlowState.h>
 #include <anim/AnimPoseState.h>
+#include <anim/AnimPresentationRequests.h>
 #include <anim/AnimSelectorState.h>
 #include <app/GameContexts.h>
 #include <core/logging/LoggingProvider.h>
@@ -30,7 +31,8 @@ namespace
              | PartIfCarried<AnimFactHistory>(world, entity, AnimRigPart::History)
              | PartIfCarried<AnimSelectorState>(world, entity, AnimRigPart::Selection)
              | PartIfCarried<AnimFlowState>(world, entity, AnimRigPart::Flows)
-             | PartIfCarried<AnimPoseState>(world, entity, AnimRigPart::Pose);
+             | PartIfCarried<AnimPoseState>(world, entity, AnimRigPart::Pose)
+             | PartIfCarried<AnimPresentationRequests>(world, entity, AnimRigPart::Presentation);
     }
 
     template <typename Component>
@@ -60,6 +62,8 @@ AnimRigParts AnimRigRequiredParts(const AnimBoundRig& rig, bool presentsPose, bo
         parts |= Part(AnimRigPart::Flows);
     if (presentsPose && consumesPose && rig.Skeleton.IsValid())
         parts |= Part(AnimRigPart::Pose);
+    if (presentsPose && std::ranges::any_of(rig.Layers, [](const AnimBoundLayer& layer) { return layer.Presentation; }))
+        parts |= Part(AnimRigPart::Presentation);
     return parts;
 }
 
@@ -71,6 +75,7 @@ void ComposeAnimRigParts(EntityId entity, AnimRigParts from, AnimRigParts to, Co
     Compose<AnimSelectorState>(entity, from, to, AnimRigPart::Selection, commands);
     Compose<AnimFlowState>(entity, from, to, AnimRigPart::Flows, commands);
     Compose<AnimPoseState>(entity, from, to, AnimRigPart::Pose, commands);
+    Compose<AnimPresentationRequests>(entity, from, to, AnimRigPart::Presentation, commands);
 }
 
 AnimRigCompositionSystem::AnimRigCompositionSystem(bool presentsPose, LoggingProvider* logging)

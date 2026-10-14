@@ -245,6 +245,7 @@ verb is declared by hand, as the engine's own are (`docs/deferred.md`).
 | `runtime.resume`, `application.quit` | verb | gameplay / authority only | the application shell |
 | `anim.request`, `anim.cancel` | verb | gameplay / simulation | `docs/gameplay/animation.md` |
 | `anim.hold {target, intent}` | lease | gameplay / simulation | a Held request owned by the lease's holder |
+| `anim.present {target, intent, lifetime = impulse, ticks}` | verb | cosmetic / presentation | the intent played on the target's presentation layers, on this machine alone (`docs/gameplay/animation.md`, "Presentation layers") |
 | `effect.apply {target, effect, scale = 1}` | verb | gameplay / authority only | applies an `effect.definition`, unowned, every magnitude times `scale` |
 | `effect.hold {target, effect, scale = 1}` | lease | gameplay / authority only | a lasting effect owned by the holder, removed on release |
 | `ability.activate`, `ability.cancel {target, ability}` | verb | gameplay / authority only | a request into the actor's ability queue, or its live records ended |

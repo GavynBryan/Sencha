@@ -39,6 +39,9 @@ struct AnimRigLayer
     // Empty leaves the layer unmasked. The first layer may not be masked, since the
     // others compose onto it.
     std::vector<AnimMaskOp> Mask;
+    // Request-keyed by what this machine presents (anim.present) rather than by what
+    // the simulation asks for, so it may not move a body or fire a gameplay event.
+    bool Presentation = false;
 };
 
 // A selector bound to an extension point selectors expose, so a game or mod adds

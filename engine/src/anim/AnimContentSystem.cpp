@@ -4,6 +4,7 @@
 #include <anim/AnimBlendspaceData.h>
 #include <anim/AnimFacts.h>
 #include <anim/AnimFlowRunner.h>
+#include <anim/AnimPresentationRequests.h>
 #include <anim/AnimRequests.h>
 #include <app/GameContexts.h>
 #include <core/logging/LoggingProvider.h>
@@ -584,6 +585,8 @@ namespace
     {
         for (std::size_t l = 0; l < rig.Layers.size() && l < kAnimMaxLayers; ++l)
         {
+            if (rig.Layers[l].Presentation)
+                continue;
             if (content.Layers[l].Request == request.Id)
                 return true;
             const int selector = rig.Layers[l].Selector;
@@ -626,6 +629,9 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
     const World& reader = world;
     const AnimRequestSet* requests =
         reader.IsRegistered<AnimRequestSet>() ? reader.TryGet<AnimRequestSet>(entity) : nullptr;
+    const AnimPresentationRequests* presented = reader.IsRegistered<AnimPresentationRequests>()
+                                                  ? reader.TryGet<AnimPresentationRequests>(entity)
+                                                  : nullptr;
     AnimFlowState* flows = world.IsRegistered<AnimFlowState>() ? world.TryGet<AnimFlowState>(entity) : nullptr;
     const bool authority = IsSimulationAuthority(world);
 
@@ -633,7 +639,6 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
     inputs.Facts = facts;
     inputs.Tags = reader.IsRegistered<GameplayTagContainer>() ? reader.TryGet<GameplayTagContainer>(entity) : nullptr;
     inputs.Registry = reader.TryGetResource<GameplayTagRegistry>();
-    inputs.Requests = requests;
     inputs.Now = now;
     inputs.TickSeconds = tickSeconds;
 
@@ -648,11 +653,13 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
     for (std::size_t l = 0; l < rig.Layers.size() && l < kAnimMaxLayers; ++l)
     {
         AnimLayerContent& layer = content.Layers[l];
+        const AnimRequestSet* layerRequests = AnimLayerRequests(rig, l, requests, presented);
+        inputs.Requests = layerRequests;
         inputs.LayerBit = static_cast<std::uint8_t>(1u << l);
         inputs.BehaviorStartTick = selection != nullptr ? selection->Layers[l].WinnerStartTick : layer.StartTick;
 
         const bool lostPin = rebound && RemapLayerAfterRebind(rig, l, layer, now, log);
-        const LayerTarget target = ResolveLayerTarget(rig, l, selection, requests, inputs, layer, now);
+        const LayerTarget target = ResolveLayerTarget(rig, l, selection, layerRequests, inputs, layer, now);
         const LayerInstanceDecision decision = DecideLayerInstance(rig, layer, target, lostPin, content.Reconstruct);
         const LayerStep step{ .Rig = rig,
                               .Layer = l,
@@ -667,6 +674,9 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
                               .Log = log };
         RetimeAnimPlayback(layer.Playback, now, tickSeconds, timeScale);
         AdvanceLayerContent(step, facts, layer, flows, progress.Layers[l]);
+        // What this machine presents carries no anchor or tail for another to read.
+        if (rig.Layers[l].Presentation)
+            progress.Layers[l] = {};
     }
     WriteAnimRequestProgress(world, entity, rig, progress, now);
     content.Reconstruct = false;

@@ -81,6 +81,7 @@ the only thing that adds or removes these parts.
 | `AnimSelectorState` | has a layer with a selector |
 | `AnimFlowState` | plays a flow |
 | `AnimPoseState` | has a skeleton, the machine presents a pose, and something consumes it |
+| `AnimPresentationRequests` | has a presentation layer and the machine presents a pose |
 
 A pose consumer carries `AnimPoseConsumer`; `SkinnedMesh` brings it, so a skinned
 mesh beside a rig is posed and a rig nobody draws is not. A rig still loading,
@@ -243,6 +244,30 @@ held.
 The rules are pure over the component data. The World overloads find the
 components, validate the intent against the entity's rig and write the
 decision log.
+
+### Presentation layers
+
+A reaction only a viewer needs -- a flinch where a shot struck, a recoil kick on
+a remote pawn -- cannot be an ordinary request, since only the authority and a
+predicting client write those. A rig layer declared `presentation: true` is
+request-keyed by a second set, `AnimPresentationRequests`, which holds an ordinary
+`AnimRequestSet` and is written by the cosmetic `anim.present` verb wherever
+something presents a pose, on that machine alone: it has no codec, no journal
+and no prediction, and the authority's set never sees it. `AnimLayerRequests`
+names the set each layer reads, so content resolution, slot-row predicates and
+event attribution on a presentation layer read only what was presented, and
+every other layer only what the simulation asked for. A presented request is
+`impulse` or `fixed`; it is pruned like any other. What a presentation layer
+plays leaves no anchor or tail in either set and never counts as playing a
+simulation request.
+
+The binder makes the separation hold (`anim.rig.presentation_layer`): a
+presentation layer takes no selector, and nothing a presented request can make
+it play -- its idle, and every behavior an intent names -- may carry root motion
+or fire a gameplay-scope event, through its lifecycle, its clips or a flow's
+sections. A rig with a presentation layer therefore keeps root motion and
+gameplay events off its intents; root motion reads only the first layer and the
+simulation's set in any case.
 
 ## Predicates
 

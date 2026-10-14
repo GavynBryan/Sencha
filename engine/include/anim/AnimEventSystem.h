@@ -5,6 +5,7 @@
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimEventCursor.h>
 #include <anim/AnimFlowState.h>
+#include <anim/AnimPresentationRequests.h>
 #include <anim/AnimRequestSet.h>
 #include <anim/AnimRig.h>
 #include <anim/AnimRigBinding.h>
@@ -84,8 +85,8 @@ struct AnimEventGates
 // Queues what crossed at tick `now`; a crossing its queue refuses is recorded as
 // QueueFull. Shared with the preview.
 void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBoundRig& rig,
-                       const AnimSelectorState* selection, const AnimRequestSet* requests,
-                       const AnimFlowState* flows, const AnimContentState& content, AnimEventCursor& cursor,
+                       const AnimSelectorState* selection, const AnimRequestSet* simulationRequests,
+                       const AnimPresentationRequests* presentedRequests, const AnimFlowState* flows, const AnimContentState& content, AnimEventCursor& cursor,
                        AnimTick now, double tickSeconds, AnimEventGates gates, AnimPendingEvents& pending,
                        AnimDecisionLog* log);
 

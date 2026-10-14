@@ -14,6 +14,7 @@ enum class AnimRigPart : std::uint8_t
     Selection = 1u << 3,
     Flows = 1u << 4,
     Pose = 1u << 5,
+    Presentation = 1u << 6,
 };
 using AnimRigParts = std::uint8_t;
 

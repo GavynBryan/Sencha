@@ -15,6 +15,9 @@ inline constexpr std::string_view kAnimRequestVerb = "anim.request";
 inline constexpr std::string_view kAnimCancelVerb = "anim.cancel";
 // Ask `target` to present `intent` for as long as the lease's owner holds it.
 inline constexpr std::string_view kAnimHoldLease = "anim.hold";
+// Play `intent` on `target`'s presentation layers, on this machine alone, for a
+// fixed number of ticks or the tick it is asked on.
+inline constexpr std::string_view kAnimPresentVerb = "anim.present";
 
 // The contracts, declared with the engine's own vocabulary.
 void DeclareAnimRequestVerbs(VerbRegistrationScope& scope);
@@ -34,6 +37,7 @@ public:
     VerbAdmission Request(const VerbInvocation& invocation);
     VerbAdmission Cancel(const VerbInvocation& invocation);
     VerbAdmission Hold(const VerbInvocation& invocation);
+    VerbAdmission Present(const VerbInvocation& invocation);
 
 private:
     World* Entities;
@@ -53,4 +57,9 @@ inline VerbAdmission InvokeAnimCancel(AnimRequestOperations& operations, const V
 inline VerbAdmission InvokeAnimHold(AnimRequestOperations& operations, const VerbInvocation& invocation)
 {
     return operations.Hold(invocation);
+}
+
+inline VerbAdmission InvokeAnimPresent(AnimRequestOperations& operations, const VerbInvocation& invocation)
+{
+    return operations.Present(invocation);
 }

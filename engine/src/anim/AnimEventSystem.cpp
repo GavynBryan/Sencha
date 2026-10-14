@@ -56,7 +56,8 @@ namespace
 }
 
 void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBoundRig& rig,
-                       const AnimSelectorState* selection, const AnimRequestSet* requests,
+                       const AnimSelectorState* selection, const AnimRequestSet* simulationRequests,
+                       const AnimPresentationRequests* presentedRequests,
                        const AnimFlowState* flows, const AnimContentState& content, AnimEventCursor& cursor,
                        AnimTick now, double tickSeconds, AnimEventGates gates, AnimPendingEvents& pending,
                        AnimDecisionLog* log)
@@ -68,6 +69,7 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
     for (std::size_t l = 0; l < rig.Layers.size() && l < kAnimMaxLayers; ++l)
     {
         const AnimLayerContent& layer = content.Layers[l];
+        const AnimRequestSet* requests = AnimLayerRequests(rig, l, simulationRequests, presentedRequests);
         AnimLayerEventCursor& seen = cursor.Layers[l];
         const AnimTick through = seen.Tick;
         const AnimPlayback previousPlayback = seen.Playback;
@@ -443,6 +445,7 @@ void AnimEventSystem::RunImpl(World& world, const StoragePartitionSet* partition
     const AnimEventGates gates{ .Authority = IsSimulationAuthority(world), .Presents = Presents };
     const bool hasSelection = world.IsRegistered<AnimSelectorState>();
     const bool hasRequests = world.IsRegistered<AnimRequestSet>();
+    const bool hasPresented = world.IsRegistered<AnimPresentationRequests>();
     const bool hasLog = world.IsRegistered<AnimDecisionLog>();
     const bool hasFlows = world.IsRegistered<AnimFlowState>();
 
@@ -462,6 +465,7 @@ void AnimEventSystem::RunImpl(World& world, const StoragePartitionSet* partition
             CollectAnimEvents(entity, rigs[i].Rig, *rig,
                               hasSelection ? reader.TryGet<AnimSelectorState>(entity) : nullptr,
                               hasRequests ? reader.TryGet<AnimRequestSet>(entity) : nullptr,
+                              hasPresented ? reader.TryGet<AnimPresentationRequests>(entity) : nullptr,
                               hasFlows ? reader.TryGet<AnimFlowState>(entity) : nullptr, contents[i], cursors[i],
                               clock.For(entity),
                               tickSeconds, gates, Pending,

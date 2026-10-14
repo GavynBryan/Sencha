@@ -1653,3 +1653,26 @@ Deviations from the plan's wording, each for a stated reason:
   target the Material, Animation and Ability previews draw into is one
   `StagePicture`, and the wire box, capsule and grid are `render/LineShapes.h`,
   shared with the level editor's overlays.
+- **8c delivered.** `anim.present` (cosmetic / presentation) writes
+  `AnimPresentationRequests` wherever a pose is presented; a rig layer declared
+  `presentation: true` reads only that set (`AnimLayerRequests` names each layer's
+  set for content resolution, slot-row predicates and event attribution), and
+  ordinary layers never read it. The set is a rig part, composed only where a pose
+  is presented and the rig has a presentation layer. The binder's
+  `anim.rig.presentation_layer` refuses a selector on a presentation layer and any
+  root motion or gameplay-scope event (lifecycle, clip, flow section) on what a
+  presented request can make it play. Headless: a presented intent plays on the
+  presentation layer alone and ends with its lifetime; the simulation's requests
+  never reach it and presenting writes nothing the simulation replicates; only a
+  presenting machine carries the set; the three refusals; a cue presentation naming
+  `anim.present` compiles through the scope gate.
+- **Deviation: the presentation set holds eight records, not four.** It is an
+  ordinary `AnimRequestSet` inside its own component, so every request rule and
+  reader serves both sets unchanged; a second, smaller record type would have been
+  a second implementation of the request rules.
+- **Consequence recorded: a rig with a presentation layer keeps root motion and
+  gameplay events off its intents.** A presented request may name any intent, so
+  the binder checks every behavior an intent names, as §6.7 and the
+  `presentation_layer` example in §9 require. AbilityKit's movement abilities use
+  the `movement.*` leases, not root motion, so the Loss Function rigs are not
+  affected.

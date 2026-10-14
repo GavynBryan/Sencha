@@ -1,5 +1,6 @@
 #include <anim/AnimRequestVerbs.h>
 
+#include <anim/AnimPresentationRequests.h>
 #include <anim/AnimRequestJournal.h>
 #include <authored/AuthoredValue.h>
 #include <ecs/Query.h>
@@ -77,6 +78,27 @@ void DeclareAnimRequestVerbs(VerbRegistrationScope& scope)
         Argument("intent", DataFieldKind::GameplayTag, "Intent", "What to present, as its rig names it."),
     };
     (void)scope.Declare(std::move(hold));
+
+    VerbDefinition present;
+    present.Name = std::string(kAnimPresentVerb);
+    present.DisplayName = "Present animation";
+    present.Description = "Plays an intent on the entity's presentation layers, on this machine alone.";
+    present.Category = "Animation";
+    present.Scope = AuthoredScope::Cosmetic;
+    present.Prediction = AuthoredPrediction::Presentation;
+    DataFieldSchema presentLifetime = Argument("lifetime", DataFieldKind::Enum, "Lifetime",
+                                               "Fixed for `ticks`; impulse for one tick.");
+    presentLifetime.EnumChoices = { { "impulse", "Impulse", {} }, { "fixed", "Fixed", {} } };
+    presentLifetime.Default = std::string("impulse");
+    DataFieldSchema presentTicks = Argument("ticks", DataFieldKind::Int, "Ticks", "How long a fixed one lasts.");
+    presentTicks.Default = std::int64_t{ 0 };
+    present.Arguments.Children = {
+        Argument("target", DataFieldKind::Entity, "Target", "The animated entity."),
+        Argument("intent", DataFieldKind::GameplayTag, "Intent", "What to present, as its rig names it."),
+        std::move(presentLifetime),
+        std::move(presentTicks),
+    };
+    (void)scope.Declare(std::move(present));
 }
 
 VerbAdmission AnimRequestOperations::Request(const VerbInvocation& invocation)
@@ -159,4 +181,28 @@ VerbAdmission AnimRequestOperations::Hold(const VerbInvocation& invocation)
     desc.Cause = invocation.Id;
     return RequestAnimation(*Entities, target, desc, tick).Accepted() ? VerbAdmission::Accepted
                                                                       : VerbAdmission::Refused;
+}
+
+VerbAdmission AnimRequestOperations::Present(const VerbInvocation& invocation)
+{
+    EntityId target;
+    AnimRequestDesc desc;
+    std::string_view lifetime;
+    std::int64_t ticks = 0;
+    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
+        || !invocation.Arguments->TryGetTag(1, desc.Intent) || !invocation.Arguments->TryGetEnum(2, lifetime)
+        || !invocation.Arguments->TryGetInt(3, ticks) || !Entities->IsAlive(target))
+        return VerbAdmission::InvalidArguments;
+    // Only a rig with a presentation layer, where something presents, carries one.
+    AnimPresentationRequests* presented =
+        Entities->IsRegistered<AnimPresentationRequests>() ? Entities->TryGet<AnimPresentationRequests>(target) : nullptr;
+    if (presented == nullptr)
+        return VerbAdmission::Refused;
+    desc.Lifetime = lifetime == "fixed" ? AnimRequestLifetime::Fixed : AnimRequestLifetime::Impulse;
+    desc.FixedTicks = static_cast<std::uint32_t>(std::max<std::int64_t>(ticks, 0));
+    desc.Source = SourceOf(invocation, target);
+    desc.Cause = invocation.Id;
+    const std::uint64_t tick = invocation.Tick != 0 ? invocation.Tick : Clock->GetTickIndex();
+    return IssueAnimRequest(presented->Set, desc, tick, nullptr).Accepted() ? VerbAdmission::Accepted
+                                                                            : VerbAdmission::Refused;
 }
