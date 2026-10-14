@@ -1,10 +1,13 @@
 #include "LevelOperations.h"
 
+#include "AssetQueries.h"
 #include "BrushOperations.h"
+#include "ComponentOperations.h"
 #include "LevelChanges.h"
 #include "LevelDrafts.h"
 #include "LevelMutations.h"
 #include "LevelQueries.h"
+#include "MaterialOperations.h"
 #include "SpaceOperations.h"
 
 #include <iterator>
@@ -23,6 +26,9 @@ std::vector<EditorOperationEntry> LevelOperations(LevelTarget& level, EditorOper
     Append(entries, LevelMutationOperations(level));
     Append(entries, SpaceOperations(level));
     Append(entries, BrushOperations(level));
+    Append(entries, AssetQueries(level));
+    Append(entries, MaterialOperations(level));
+    Append(entries, ComponentOperations(level));
     Append(entries, LevelDraftOperations(level, operations));
     Append(entries, LevelChangeOperations(level));
     return entries;

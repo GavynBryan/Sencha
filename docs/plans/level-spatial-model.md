@@ -1091,6 +1091,14 @@ conflict instead.
   Space tool does: the commit adopts the brush the designer sees as a created
   entity. Undo no longer restores the selection from before the drag; the
   handle observer only drops the brush from it.
+- `material.apply` takes a material's asset path and refuses one the
+  project does not hold, so a typo can't paint a face missing. `assets.list`
+  is how a client finds paths: the asset shelf's own query (`t:material
+  stone`, `in:folder`) over the project's files.
+  `component.set` edits a field through the entity's serialized record, the
+  form `entity.describe` already shows, so it covers every registered
+  component, editor-only ones included (`shell.thickness`). It refuses a value
+  of another kind than the field holds and answers with what was stored.
 
 ### M3: analysis depth
 
