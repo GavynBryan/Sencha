@@ -3,6 +3,7 @@
 #include "AssetQueries.h"
 #include "BrushOperations.h"
 #include "ComponentOperations.h"
+#include "InstanceOperations.h"
 #include "LevelChanges.h"
 #include "LevelDrafts.h"
 #include "LevelMutations.h"
@@ -29,6 +30,7 @@ std::vector<EditorOperationEntry> LevelOperations(LevelTarget& level, EditorOper
     Append(entries, AssetQueries(level));
     Append(entries, MaterialOperations(level));
     Append(entries, ComponentOperations(level));
+    Append(entries, InstanceOperations(level));
     Append(entries, LevelDraftOperations(level, operations));
     Append(entries, LevelChangeOperations(level));
     return entries;

@@ -1099,6 +1099,13 @@ conflict instead.
   form `entity.describe` already shows, so it covers every registered
   component, editor-only ones included (`shell.thickness`). It refuses a value
   of another kind than the field holds and answers with what was stored.
+- A placed scene is an instance record whose entities the projection
+  recreates, so a change set made of entity snapshots could not place one:
+  undo would leave the record to bring the entities back. Change sets now
+  carry placements as records (`InstanceChange`), restored before the entity
+  changes and removed after them, so undo, drafts, accept, conflicts and the
+  ghost preview treat `instance.place` like any other edit. Change sets are
+  never persisted (a proposal file stores steps), so no format changes.
 
 ### M3: analysis depth
 

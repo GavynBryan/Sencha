@@ -20,9 +20,15 @@ namespace
     {
         // What it adds or changes, as it leaves them; or what it deletes, as it finds them.
         EntityChangeSet kept;
+        const auto shown = [side](const auto& change) {
+            return side == ChangeSetSide::After ? change.After.has_value() : change.Before && !change.After;
+        };
         for (const EntityChange& change : draft.Changes.Changes)
-            if (side == ChangeSetSide::After ? change.After.has_value() : change.Before && !change.After)
+            if (shown(change))
                 kept.Changes.push_back(change);
+        for (const InstanceChange& change : draft.Changes.Instances)
+            if (shown(change))
+                kept.Instances.push_back(change);
         if (kept.Empty())
             return nullptr;
 

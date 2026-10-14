@@ -2,6 +2,8 @@
 
 #include "EntitySnapshot.h"
 
+#include "scene_source/SceneSourceDocument.h"
+
 #include <core/identity/Id.h>
 #include <ecs/EntityId.h>
 
@@ -21,13 +23,23 @@ struct EntityChange
     std::optional<EntitySnapshot> After;
 };
 
+// A scene placed into a document, by its instance record. The entities the
+// placement projects come and go with the record, never on their own.
+struct InstanceChange
+{
+    SceneInstanceId Id;
+    std::optional<SceneInstanceRecord> Before;
+    std::optional<SceneInstanceRecord> After;
+};
+
 struct EntityChangeSet
 {
     // In the order the entities were first touched: parents before children
     // for what was created.
     std::vector<EntityChange> Changes;
+    std::vector<InstanceChange> Instances;
 
-    [[nodiscard]] bool Empty() const { return Changes.empty(); }
+    [[nodiscard]] bool Empty() const { return Changes.empty() && Instances.empty(); }
 };
 
 // Makes `into` the change from its before to `next`'s after, as if one edit
@@ -45,6 +57,8 @@ public:
     void Touch(EntityId entity);
     // After creating an entity.
     void Created(EntityId entity);
+    // After placing a scene.
+    void Placed(SceneInstanceId instance);
 
     // Every recorded entity that changed, as it is now; one deleted since has no after.
     [[nodiscard]] EntityChangeSet Finish() const;
@@ -53,6 +67,7 @@ private:
     EditorDocument& Document;
     std::vector<EntityChange> Changes;
     std::unordered_set<std::uint64_t> Recorded;
+    std::vector<SceneInstanceId> PlacedInstances;
 };
 
 enum class ChangeSetSide : std::uint8_t
@@ -63,6 +78,8 @@ enum class ChangeSetSide : std::uint8_t
 
 // Makes the document hold `side` of every change: overwriting in place what
 // exists on both sides, creating what only that side has, destroying the rest.
+// A placement is put back before the entity changes and taken away after
+// them, so edits to what it projects apply over it.
 void ApplyEntityChangeSet(EditorDocument& document, const EntityChangeSet& changes, ChangeSetSide side);
 
 // The digest of the record `id` has in `document`; nullopt when nothing has it.

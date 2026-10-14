@@ -282,6 +282,16 @@ JsonValue::Object ChangeSummary(const EntityChangeSet& changes)
         else
             modified.push_back(std::move(entry));
     }
+    // A placement is listed as its root, which goes by the placement's id.
+    for (const InstanceChange& change : changes.Instances)
+    {
+        const SceneInstanceRecord& shown = change.After ? *change.After : *change.Before;
+        JsonValue entry(JsonValue::Object{
+            { "id", JsonValue(PersistentEntityIdToString(PersistentEntityId{ change.Id.Value })) },
+            { "name", JsonValue(shown.Name.empty() ? shown.Source : shown.Name) },
+        });
+        (!change.Before ? created : !change.After ? deleted : modified).push_back(std::move(entry));
+    }
     return JsonValue::Object{
         { "created", JsonValue(std::move(created)) },
         { "modified", JsonValue(std::move(modified)) },
