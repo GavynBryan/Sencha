@@ -926,6 +926,12 @@ of the real model, with spaces included from the start.
   brushes parented under the space at an identity transform, named after it,
   and `shell` goes. It refuses a space whose shell is refused, since there are
   no walls to keep.
+- `space.create` takes a name (unique, so `@name` always resolves) and two
+  corners; its faces take the conventions' floor, ceiling and wall materials,
+  and its shell the conventions' thickness. `opening.create` takes a point
+  in or near a generated wall rather than a space and a face: the wall at the
+  point decides the space that owns it, its through axis and its floor, so a
+  client names a door by where it is. A sill of zero is a doorway.
 
 ### M2: work live, and widen the vocabulary
 
