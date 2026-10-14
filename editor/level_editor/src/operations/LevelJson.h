@@ -1,7 +1,11 @@
 #pragma once
 
 #include <core/json/JsonValue.h>
+#include <core/metadata/DataSchema.h>
 #include <math/Vec.h>
+
+#include <string>
+#include <string_view>
 
 // How the level's operations spell numbers and points in their answers.
 
@@ -17,3 +21,8 @@
 
 // From a value already checked as a three-number vector.
 [[nodiscard]] Vec3d PointFromJson(const JsonValue& value);
+
+// The eight-way compass direction from one point to another on the ground
+// plane, north being -Z and east +X: n, ne, e, se, s, sw, w, nw, or none.
+[[nodiscard]] std::string_view CompassBearing(const Vec3d& from, const Vec3d& to);
+[[nodiscard]] DataFieldSchema CompassBearingField(std::string key, std::string summary);

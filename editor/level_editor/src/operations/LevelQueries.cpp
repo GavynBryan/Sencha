@@ -1,5 +1,6 @@
 #include "LevelQueries.h"
 
+#include "EntityRecords.h"
 #include "FloorPlan.h"
 #include "LevelClearance.h"
 #include "LevelJson.h"
@@ -23,9 +24,7 @@
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <numbers>
 #include <optional>
 
 namespace
@@ -48,41 +47,6 @@ namespace
         field.Default = fallback;
         field.Numeric.Minimum = 0.0;
         return field;
-    }
-
-    DataFieldSchema KindField()
-    {
-        return DataField::Enum("kind", {}, "how the entity is represented",
-                    { { "brush", "Brush", "solid level geometry" },
-                      { "space", "Space", "a named region of air: a volume brush tagged space" },
-                      { "volume", "Volume", "a brush enclosing air, not geometry" },
-                      { "opening", "Opening", "a cut through generated walls" },
-                      { "entity", "Entity", "anything else" } });
-    }
-
-    std::string_view KindOf(const EditorScene& scene, EntityId entity)
-    {
-        const World& components = scene.GetRegistry().Components;
-        if (components.HasComponent<Space>(entity))
-            return "space";
-        if (components.HasComponent<Opening>(entity))
-            return "opening";
-        if (scene.TryGetBrush(entity) == nullptr)
-            return "entity";
-        return scene.RoleOf(entity) == BrushRole::Volume ? "volume" : "brush";
-    }
-
-    // One line per entity: what every listing answers with.
-    DataFieldSchema EntityRecord(std::string key = {})
-    {
-        return DataField::Record(std::move(key), {}, {}, {
-            DataField::Field("id", DataFieldKind::Entity, {}, "persistent id"),
-            DataField::Field("name", DataFieldKind::String, {}, "authored name"),
-            KindField(),
-            Bounds("position"),
-            Bounds("min"),
-            Bounds("max"),
-        });
     }
 
     DataFieldSchema Root(std::vector<DataFieldSchema> members)
@@ -110,48 +74,12 @@ namespace
         return std::nullopt;
     }
 
-    JsonValue EntityJson(const EditorDocument& document, EntityId entity)
-    {
-        const std::optional<Aabb3d> bounds = document.GetScene().EvaluatedWorldBounds(entity);
-        const Transform3f* world = document.GetScene().TryGetWorldTransform(entity);
-        return JsonValue(JsonValue::Object{
-            { "id", JsonValue(PersistentIdText(document, entity)) },
-            { "name", JsonValue(EntityNameText(document, entity)) },
-            { "kind", JsonValue(std::string(KindOf(document.GetScene(), entity))) },
-            { "position", world != nullptr ? PointJson(world->Position) : JsonValue{} },
-            { "min", bounds ? PointJson(bounds->Min) : JsonValue{} },
-            { "max", bounds ? PointJson(bounds->Max) : JsonValue{} },
-        });
-    }
-
     float DistanceToBounds(const Vec3d& point, const Aabb3d& bounds)
     {
         const float dx = std::max({ bounds.Min.X - point.X, 0.0f, point.X - bounds.Max.X });
         const float dy = std::max({ bounds.Min.Y - point.Y, 0.0f, point.Y - bounds.Max.Y });
         const float dz = std::max({ bounds.Min.Z - point.Z, 0.0f, point.Z - bounds.Max.Z });
         return std::sqrt(dx * dx + dy * dy + dz * dz);
-    }
-
-    // Eight-way compass on the ground plane; north is -Z and east is +X.
-    std::string_view Bearing(const Vec3d& from, const Vec3d& to)
-    {
-        const float east = to.X - from.X;
-        const float north = from.Z - to.Z;
-        if (east * east + north * north < 1.0e-6f)
-            return "none";
-        static constexpr std::array<std::string_view, 8> kWords = { "n", "ne", "e", "se",
-                                                                    "s", "sw", "w", "nw" };
-        const double turns = std::atan2(east, north) / (2.0 * std::numbers::pi) + 1.0 / 16.0;
-        const double wrapped = turns - std::floor(turns);
-        return kWords[static_cast<std::size_t>(wrapped * 8.0) % 8];
-    }
-
-    DataFieldSchema BearingField()
-    {
-        std::vector<DataEnumChoice> words;
-        for (std::string_view word : { "n", "ne", "e", "se", "s", "sw", "w", "nw", "none" })
-            words.push_back({ std::string(word), std::string(word), {} });
-        return DataField::Enum("bearing", {}, "compass direction from the point, north is -Z", std::move(words));
     }
 
     EditorOperationOutcome Refusal(const SubjectResolution& subject)
@@ -183,7 +111,7 @@ namespace
             DataField::Field("brush_count", DataFieldKind::Int, {}, "solid brushes"),
             Bounds("min"),
             Bounds("max"),
-            DataField::ArrayOf("entities", {}, {}, EntityRecord(), true),
+            DataField::ArrayOf("entities", {}, {}, EntityRecordSchema(), true),
             DataField::Field("truncated", DataFieldKind::Bool, {}, "more entities exist than were listed"),
         });
         entry.Execute = [&level](const JsonValue& arguments) {
@@ -200,7 +128,7 @@ namespace
                 if (const std::optional<Aabb3d> bounds = SpatialExtent(scene, entity))
                     overall = overall ? overall->ExpandedToInclude(*bounds) : *bounds;
                 if (entities.size() < limit)
-                    entities.push_back(EntityJson(document, entity));
+                    entities.push_back(EntityRecordJson(document, entity));
             }
             const std::size_t count = scene.GetAllEntities().size();
             return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
@@ -228,7 +156,7 @@ namespace
             Root({ DataField::Field("subject", DataFieldKind::String, {}, "an entity id or '@<name>'") });
         const DataFieldSchema id = DataField::Field({}, DataFieldKind::Entity, {}, {});
         entry.Definition.Result = Root({
-            EntityRecord("entity"),
+            EntityRecordSchema("entity"),
             DataField::Optional("parent", {}, {}, id, true),
             DataField::ArrayOf("children", {}, {}, id, true),
             DataField::ArrayOf("components", {}, "each component's value as JSON text",
@@ -275,7 +203,7 @@ namespace
                 });
 
             return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
-                { "entity", EntityJson(document, entity) },
+                { "entity", EntityRecordJson(document, entity) },
                 { "parent", std::move(parent) },
                 { "children", JsonValue(std::move(children)) },
                 { "components", JsonValue(std::move(serialized)) },
@@ -293,7 +221,7 @@ namespace
         entry.Definition.Description = "Entities whose bounds touch an axis-aligned box.";
         entry.Definition.Parameters =
             Root({ Point("min", "one corner"), Point("max", "the opposite corner"), Limit(200) });
-        entry.Definition.Result = Root({ DataField::ArrayOf("entities", {}, {}, EntityRecord(), true),
+        entry.Definition.Result = Root({ DataField::ArrayOf("entities", {}, {}, EntityRecordSchema(), true),
                                          DataField::Field("truncated", DataFieldKind::Bool, {}, {}) });
         entry.Execute = [&level](const JsonValue& arguments) {
             const EditorDocument& document = level.Document();
@@ -316,7 +244,7 @@ namespace
                     truncated = true;
                     break;
                 }
-                entities.push_back(EntityJson(document, entity));
+                entities.push_back(EntityRecordJson(document, entity));
             }
             return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
                 { "entities", JsonValue(std::move(entities)) },
@@ -340,9 +268,9 @@ namespace
         entry.Definition.Parameters = Root({ Point("point", "where to look from"), radius, Limit(50) });
         entry.Definition.Result = Root({
             DataField::ArrayOf("entities", {}, {},
-                    DataField::Record({}, {}, {}, { EntityRecord("entity"),
+                    DataField::Record({}, {}, {}, { EntityRecordSchema("entity"),
                                          DataField::Field("distance", DataFieldKind::Float, {}, "metres to the bounds"),
-                                         BearingField() }),
+                                         CompassBearingField("bearing", "compass direction from the point, north is -Z") }),
                     true),
             DataField::Field("truncated", DataFieldKind::Bool, {}, {}),
         });
@@ -378,9 +306,9 @@ namespace
             JsonValue::Array entities;
             for (std::size_t index = 0; index < hits.size() && index < limit; ++index)
                 entities.push_back(JsonValue(JsonValue::Object{
-                    { "entity", EntityJson(document, hits[index].Entity) },
+                    { "entity", EntityRecordJson(document, hits[index].Entity) },
                     { "distance", MetresJson(hits[index].Distance) },
-                    { "bearing", JsonValue(std::string(Bearing(point, hits[index].Center))) },
+                    { "bearing", JsonValue(std::string(CompassBearing(point, hits[index].Center))) },
                 }));
             return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
                 { "entities", JsonValue(std::move(entities)) },

@@ -37,12 +37,13 @@ struct BrushPickRequest
     EntityId RestrictTo = {};
 };
 
-// Nearest ray/brush-surface intersection: the world hit point and that face's
-// world-space normal. Used to rest a new brush on the geometry under the cursor.
+// Nearest ray/brush-surface intersection: the world hit point, that face's
+// world-space normal, and the brush it belongs to (a space, for a generated wall).
 struct SurfaceHit
 {
     Vec3d Point = {};
     Vec3d Normal = {};
+    EntityId Entity = {};
 };
 
 // Nearest ray/face intersection: intersects the face plane and tests the hit for

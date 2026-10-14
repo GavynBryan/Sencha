@@ -4,11 +4,13 @@
 #include "document/EditorScene.h"
 #include "document/SpaceComponents.h"
 
+#include <math/geometry/3d/Aabb3d.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 bool WorldFace::Over(const Vec3d& point) const
 {
@@ -47,6 +49,35 @@ namespace
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
         return mesh != nullptr ? static_cast<std::uint32_t>(mesh->Faces.size()) : 0;
     }
+
+    // The solid angle a triangle subtends at the origin, signed by winding
+    // (Van Oosterom and Strackee).
+    double SolidAngle(const Vec3d& a, const Vec3d& b, const Vec3d& c)
+    {
+        const double la = a.Magnitude();
+        const double lb = b.Magnitude();
+        const double lc = c.Magnitude();
+        const double numerator = a.Dot(b.Cross(c));
+        const double denominator = la * lb * lc + a.Dot(b) * lc + b.Dot(c) * la + c.Dot(a) * lb;
+        return 2.0 * std::atan2(numerator, denominator);
+    }
+
+    // Turns of the volume's surface around `point`: one inside, zero outside,
+    // for any closed volume, convex or not.
+    double WindingAround(const EditorScene& scene, EntityId entity, const Vec3d& point)
+    {
+        double total = 0.0;
+        for (std::uint32_t f = 0; f < FaceCount(scene, entity); ++f)
+        {
+            const std::optional<WorldFace> face = WorldFaceOf(scene, entity, f);
+            if (!face)
+                continue;
+            const Vec3d origin = face->Corners.front() - point;
+            for (std::size_t i = 1; i + 1 < face->Corners.size(); ++i)
+                total += SolidAngle(origin, face->Corners[i] - point, face->Corners[i + 1] - point);
+        }
+        return total / (4.0 * std::numbers::pi);
+    }
 }
 
 std::optional<WallHit> WallAt(const EditorScene& scene, const Vec3d& point)
@@ -77,6 +108,29 @@ std::optional<WallHit> WallAt(const EditorScene& scene, const Vec3d& point)
         }
     }
     return best;
+}
+
+std::optional<EntityId> SpaceContaining(const EditorScene& scene, const Vec3d& point)
+{
+    std::optional<EntityId> smallest;
+    float smallestVolume = 0.0f;
+    for (const EntityId entity : scene.GetAllEntities())
+    {
+        if (!IsSpace(scene, entity))
+            continue;
+        const std::optional<Aabb3d> bounds = scene.EvaluatedWorldBounds(entity);
+        if (!bounds || !bounds->Contains(point))
+            continue;
+        const Vec3d size = bounds->Max - bounds->Min;
+        const float volume = size.X * size.Y * size.Z;
+        if (smallest && volume >= smallestVolume)
+            continue;
+        if (std::abs(WindingAround(scene, entity, point)) < 0.5)
+            continue;
+        smallest = entity;
+        smallestVolume = volume;
+    }
+    return smallest;
 }
 
 std::optional<FarSide> FarSideOf(const EditorScene& scene, EntityId owner, EntityId opening)

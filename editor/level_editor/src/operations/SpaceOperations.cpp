@@ -1,6 +1,7 @@
 #include "SpaceOperations.h"
 
 #include "DiagnosticRecords.h"
+#include "EntityRecords.h"
 #include "LevelJson.h"
 #include "LevelSubjects.h"
 #include "LevelTarget.h"
@@ -29,22 +30,6 @@
 namespace
 {
     constexpr float kSmallestOpening = 0.1f;
-
-    JsonValue Named(const EditorDocument& document, EntityId entity)
-    {
-        return JsonValue(JsonValue::Object{
-            { "id", JsonValue(PersistentIdText(document, entity)) },
-            { "name", JsonValue(EntityNameText(document, entity)) },
-        });
-    }
-
-    DataFieldSchema NamedSchema(std::string key, std::string summary)
-    {
-        return DataField::Record(std::move(key), {}, std::move(summary), {
-            DataField::Field("id", DataFieldKind::Entity, {}, {}),
-            DataField::Field("name", DataFieldKind::String, {}, {}),
-        });
-    }
 
     std::optional<float> NumberOf(const JsonValue& arguments, std::string_view key)
     {
@@ -77,7 +62,7 @@ namespace
             DataField::Optional("thickness", {}, "wall thickness in metres; the project's when absent",
                                 DataField::Field({}, DataFieldKind::Float, {}, {})),
         });
-        entry.Definition.Result = MutationResultSchema({ NamedSchema("space", "the space made") });
+        entry.Definition.Result = MutationResultSchema({ EntityNameSchema("space", "the space made") });
         entry.Execute = [&level, name = entry.Definition.Name](const JsonValue& arguments) {
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
                 NewSpace wanted;
@@ -91,7 +76,7 @@ namespace
                 if (EditorOperationOutcome refused = CreateSpace(document, recorder, wanted, space);
                     refused.Status != EditorOperationStatus::Ok)
                     return refused;
-                return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{ { "space", Named(document, space) } }));
+                return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{ { "space", EntityNameJson(document, space) } }));
             });
         };
         return entry;
@@ -120,8 +105,8 @@ namespace
                                 DataField::Field({}, DataFieldKind::String, {}, {})),
         });
         entry.Definition.Result = MutationResultSchema({
-            NamedSchema("opening", "the opening made"),
-            NamedSchema("space", "the space whose wall it cuts and that owns it"),
+            EntityNameSchema("opening", "the opening made"),
+            EntityNameSchema("space", "the space whose wall it cuts and that owns it"),
         });
         entry.Execute = [&level, name = entry.Definition.Name](const JsonValue& arguments) {
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
@@ -159,8 +144,8 @@ namespace
                 recorder.Created(entity);
                 document.MarkDirty();
                 return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
-                    { "opening", Named(document, entity) },
-                    { "space", Named(document, wall->Space) },
+                    { "opening", EntityNameJson(document, entity) },
+                    { "space", EntityNameJson(document, wall->Space) },
                 }));
             });
         };
@@ -221,9 +206,9 @@ namespace
                                 DataField::Field({}, DataFieldKind::Bool, {}, {})),
         });
         entry.Definition.Result = MutationResultSchema({
-            DataField::ArrayOf("carried", {}, "spaces whose face was pulled along", NamedSchema({}, {}), true),
+            DataField::ArrayOf("carried", {}, "spaces whose face was pulled along", EntityNameSchema({}, {}), true),
             DataField::ArrayOf("skipped", {}, "spaces left alone because their walls were detached",
-                               NamedSchema({}, {}), true),
+                               EntityNameSchema({}, {}), true),
         });
         entry.Execute = [&level, name = entry.Definition.Name](const JsonValue& arguments) {
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
@@ -245,9 +230,9 @@ namespace
                     return refused;
                 JsonValue::Array carried, skipped;
                 for (const EntityId entity : report.Carried)
-                    carried.push_back(Named(document, entity));
+                    carried.push_back(EntityNameJson(document, entity));
                 for (const EntityId entity : report.Skipped)
-                    skipped.push_back(Named(document, entity));
+                    skipped.push_back(EntityNameJson(document, entity));
                 return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
                     { "carried", JsonValue(std::move(carried)) },
                     { "skipped", JsonValue(std::move(skipped)) },
@@ -355,7 +340,7 @@ namespace
     // Appends `entity` to `list` once, by id and name.
     void Note(JsonValue::Array& list, const EditorDocument& document, EntityId entity)
     {
-        JsonValue named = Named(document, entity);
+        JsonValue named = EntityNameJson(document, entity);
         if (std::none_of(list.begin(), list.end(), [&](const JsonValue& seen) {
                 return seen.Find("id")->AsString() == named.Find("id")->AsString();
             }))
@@ -382,13 +367,13 @@ namespace
             DataField::Field("subject", DataFieldKind::String, {}, "an entity id or '@<name>'"),
         });
         entry.Definition.Result = DataField::Record({}, {}, {}, {
-            NamedSchema("subject", {}),
+            EntityNameSchema("subject", {}),
             DataField::Field("walls", DataFieldKind::Int, {}, "generated walls"),
-            DataField::ArrayOf("cut_by", {}, "openings cutting its walls", NamedSchema({}, {}), true),
-            DataField::ArrayOf("shares_walls_with", {}, {}, NamedSchema({}, {}), true),
-            DataField::ArrayOf("leads_to", {}, "spaces its openings lead into", NamedSchema({}, {}), true),
-            DataField::ArrayOf("cuts", {}, "spaces whose walls this opening cuts", NamedSchema({}, {}), true),
-            DataField::ArrayOf("joins", {}, "the spaces either side of this opening", NamedSchema({}, {}), true),
+            DataField::ArrayOf("cut_by", {}, "openings cutting its walls", EntityNameSchema({}, {}), true),
+            DataField::ArrayOf("shares_walls_with", {}, {}, EntityNameSchema({}, {}), true),
+            DataField::ArrayOf("leads_to", {}, "spaces its openings lead into", EntityNameSchema({}, {}), true),
+            DataField::ArrayOf("cuts", {}, "spaces whose walls this opening cuts", EntityNameSchema({}, {}), true),
+            DataField::ArrayOf("joins", {}, "the spaces either side of this opening", EntityNameSchema({}, {}), true),
         });
         entry.Execute = [&level](const JsonValue& arguments) {
             const EditorDocument& document = level.Document();
@@ -448,7 +433,7 @@ namespace
             }
 
             return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
-                { "subject", Named(document, entity) },
+                { "subject", EntityNameJson(document, entity) },
                 { "walls", JsonValue(static_cast<double>(walls)) },
                 { "cut_by", JsonValue(std::move(cutBy)) },
                 { "shares_walls_with", JsonValue(std::move(sharesWith)) },

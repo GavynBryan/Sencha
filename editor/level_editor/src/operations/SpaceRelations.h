@@ -41,6 +41,9 @@ struct FarSide
 // the space whose wall it stands in.
 [[nodiscard]] std::optional<EntityId> OwnerOf(const EditorScene& scene, EntityId opening);
 
+// The smallest space whose volume holds `point`.
+[[nodiscard]] std::optional<EntityId> SpaceContaining(const EditorScene& scene, const Vec3d& point);
+
 // A volume face in the world: its corners in loop order and outward normal.
 struct WorldFace
 {

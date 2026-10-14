@@ -3,8 +3,9 @@
 
 #include "operations/EditorOperations.h"
 #include "operations/LevelOperations.h"
-#include "operations/LevelSubjects.h"
+#include "operations/EntityRecords.h"
 #include "operations/LevelTarget.h"
+#include "operations/ViewOperations.h"
 #include "operations/WorldQueries.h"
 
 #include "actions/ActionCatalog.h"
@@ -95,6 +96,7 @@ constexpr std::string_view kEditorRenderFeatureId = "editor_render";
 constexpr std::string_view kCommandOwner = "editor.level";
 constexpr std::string_view kLevelOperations = "level";
 constexpr std::string_view kWorldOperations = "world";
+constexpr std::string_view kViewOperations = "view";
 } // namespace
 
 ActionDefinition NewLevelAction()
@@ -159,6 +161,7 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
 
 LevelWorkspace::~LevelWorkspace()
 {
+    Operations.Retire(kViewOperations);
     Operations.Retire(kWorldOperations);
     Operations.Retire(kLevelOperations);
     EnginePtr->Console().Registry().UnregisterOwner(kCommandOwner);
@@ -232,28 +235,14 @@ void LevelWorkspace::BuildDocument()
 void LevelWorkspace::BuildOperations()
 {
     SelectionEvents = Workspace->Selection.Subscribe([this](const SelectionSnapshot& snapshot) {
-        const EditorDocument& document = Workspace->ActiveDocument();
-        JsonValue::Array selected;
-        for (const SelectableRef& ref : snapshot.Items)
-        {
-            if (!ref.IsValid())
-                continue;
-            const char* element = ref.IsFace() ? "face" : ref.IsEdge() ? "edge" : ref.IsVertex() ? "vertex" : "entity";
-            JsonValue::Object item{
-                { "id", JsonValue(PersistentIdText(document, ref.Entity)) },
-                { "name", JsonValue(EntityNameText(document, ref.Entity)) },
-                { "element", JsonValue(element) },
-            };
-            if (ref.IsMeshElement())
-                item.emplace_back("index", JsonValue(static_cast<double>(ref.ElementId)));
-            selected.push_back(JsonValue(std::move(item)));
-        }
-        Operations.Emit(JsonValue(JsonValue::Object{ { "event", JsonValue("selection") },
-                                                     { "selected", JsonValue(std::move(selected)) } }));
+        Operations.Emit(JsonValue(JsonValue::Object{
+            { "event", JsonValue("selection") },
+            { "selected", SelectionJson(Workspace->ActiveDocument(), snapshot.Items) } }));
     });
     std::vector<std::string> errors;
     if (!Operations.Register(std::string(kLevelOperations), LevelOperations(Workspace->Level, Operations), errors)
-        || !Operations.Register(std::string(kWorldOperations), WorldQueryOperations(Workspace->World), errors))
+        || !Operations.Register(std::string(kWorldOperations), WorldQueryOperations(Workspace->World), errors)
+        || !Operations.Register(std::string(kViewOperations), ViewOperations({ Workspace->World, Workspace->Layout, Workspace->Selection, Workspace->Commands }), errors))
         for (const std::string& error : errors)
             EnginePtr->Logging().GetLogger<LevelWorkspace>().Error("operations: {}", error);
 }

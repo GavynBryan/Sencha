@@ -745,7 +745,7 @@ std::optional<SurfaceHit> CastRayAgainstBrushes(const EditorScene& scene, const 
             if (IntersectRayFacePolygon(ray, face.Corners, distance) && distance < best)
             {
                 best = distance;
-                hit = SurfaceHit{ .Point = ray.PointAt(distance), .Normal = face.Normal };
+                hit = SurfaceHit{ .Point = ray.PointAt(distance), .Normal = face.Normal, .Entity = candidate.Entity };
             }
         }
     }

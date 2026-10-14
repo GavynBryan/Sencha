@@ -1054,6 +1054,15 @@ conflict instead.
   document and how it went), `draft.accepted` and `draft.discarded`.
 - `kyusu_client` sends one operation or stdin's lines and prints answers,
   skipping events; `--events [n]` prints them.
+- The aim is the ray through the middle of the active view, not the pointer:
+  the designer turns to face a wall and then types in another window, which
+  takes the pointer away from the view. `view.context` reports the first solid
+  surface on that ray (a space's generated wall reports the space), the space
+  it faces into, the space holding the eye (the smallest whose volume winds
+  around it, so a non-convex space counts) and the spaces in the view's
+  frustum, nearest first. `view.*` reads the live document, never a draft.
+  `kyusu_batch` has no view and doesn't register them, but its reference
+  lists them.
 
 ### M3: analysis depth
 

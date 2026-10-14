@@ -6,8 +6,10 @@
 #include "operations/LevelTarget.h"
 #include "operations/OperationReference.h"
 #include "operations/OperationScript.h"
+#include "operations/ViewOperations.h"
 #include "operations/WorldQueries.h"
 #include "project/Project.h"
+#include "workspace/EditorWorkspace.h"
 
 #include <core/logging/LoggingProvider.h>
 #include <zone/WorldPartitionIds.h>
@@ -116,10 +118,13 @@ int main(int argc, char** argv)
 
     if (options.Reference)
     {
+        // A workspace, so the reference also lists what only a running editor answers.
         CommandStack commands;
-        LevelTarget level(world, commands);
+        EditorWorkspace workspace(logging, commands);
         EditorOperations operations;
-        if (!RegisterOperations(world, level, operations))
+        std::vector<std::string> errors;
+        if (!RegisterOperations(workspace.World, workspace.Level, operations)
+            || !operations.Register("view", ViewOperations({ workspace.World, workspace.Layout, workspace.Selection, workspace.Commands }), errors))
             return kCouldNotStart;
         std::cout << OperationReference(operations.Catalog());
         return 0;
