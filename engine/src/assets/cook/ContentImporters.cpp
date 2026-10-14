@@ -7,6 +7,7 @@ ContentImporterSet::ContentImporterSet(JobSystem* jobs)
     // collision is caught here rather than resolving to whichever registered
     // first.
     (void)Importers.Register(Texture);
+    (void)Importers.Register(VectorTexture);
     (void)Importers.Register(Gltf);
     (void)Importers.Register(Blend);
     (void)Importers.Register(Font);

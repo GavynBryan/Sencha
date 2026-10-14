@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -38,6 +39,10 @@ class ConsoleRegistry;
 [[nodiscard]] bool ReadCVarBool(const ConsoleRegistry* console,
                                 std::string_view name,
                                 bool fallback);
+
+[[nodiscard]] std::int64_t ReadCVarInt(const ConsoleRegistry* console,
+                                       std::string_view name,
+                                       std::int64_t fallback);
 
 // Returns a copy: the registry may rewrite the value between calls, so handing
 // back a view into its storage would invite a dangling read.

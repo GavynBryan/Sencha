@@ -39,9 +39,18 @@ ViewportId ThumbnailStudio::AllocateTarget()
     return ViewportId{ kThumbnailIdBase + NextTargetId++ };
 }
 
-ImTextureID ThumbnailStudio::Display(ViewportId target)
+void ThumbnailStudio::Show(ViewportId target)
 {
-    return Targets.Display(target, kThumbnailExtent);
+    Targets.Show(target, kThumbnailExtent);
+}
+
+std::optional<std::uint32_t> ThumbnailStudio::ReadableImage(ViewportId target)
+{
+    const std::optional<ViewportTargetCache::RenderView> view = Targets.AcquireForRender(target);
+    if (!view.has_value() || view->ColorLayout == nullptr
+        || *view->ColorLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        return std::nullopt;
+    return view->ColorBindless;
 }
 
 int ThumbnailStudio::PassesPerTarget()

@@ -4,7 +4,7 @@
 
 #include "input/InputEvent.h"
 
-#include <imgui.h>
+#include <math/Vec.h>
 #include <memory>
 
 struct ToolContext;
@@ -21,6 +21,7 @@ public:
 
     InputConsumed OnPointerMove(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
     InputConsumed OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer);
+    void OnPointerLeftViews(ToolContext& ctx);
 
 private:
     std::unique_ptr<IInteraction> Active;

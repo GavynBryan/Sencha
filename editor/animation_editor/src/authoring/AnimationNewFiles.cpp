@@ -2,6 +2,7 @@
 
 #include "data/DataAssetFiles.h"
 
+#include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonFormat.h>
 
@@ -12,7 +13,7 @@ bool WriteAnimationNewDocuments(const std::filesystem::path& root, AssetRegistry
                                 const std::vector<AnimationNewDocument>& documents, std::string& error)
 {
     for (const AnimationNewDocument& document : documents)
-        if (DataAssetPathTaken(registry, root / document.RelativePath, "asset://" + document.RelativePath))
+        if (DataAssetPathTaken(registry, root / document.RelativePath, AssetPathOf(document.RelativePath)))
         {
             error = std::format("'{}' already exists; choose another name.", document.RelativePath);
             return false;
@@ -21,7 +22,8 @@ bool WriteAnimationNewDocuments(const std::filesystem::path& root, AssetRegistry
     {
         if (!WriteAnimationNewFile(root, document, 4, error))
             return false;
-        RegisterDataAssetFile(registry, "asset://" + document.RelativePath, root / document.RelativePath);
+        (void)RegisterAssetFile(AssetPathOf(document.RelativePath), root / document.RelativePath, registry,
+                                BuiltinAssetKindRegistry());
     }
     return true;
 }

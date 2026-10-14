@@ -1,6 +1,7 @@
 #pragma once
 
 #include <anim/AnimationClipHandle.h>
+#include <core/assets/AssetCommitResult.h>
 #include <core/assets/AssetStager.h>
 #include <core/logging/Logger.h>
 
@@ -26,9 +27,10 @@ public:
                              SkeletonCache* skeletons);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
+                                          IAssetSource& source,
+                                          const AssetPathsById& current) override;
 
-    [[nodiscard]] AnimationClipHandle CommitTyped(AssetStaging&& staged, AssetSystem& assets);
+    [[nodiscard]] AssetCommitResult<AnimationClipHandle> CommitTyped(AssetStaging&& staged, AssetSystem& assets);
 
 private:
     Logger& Log;

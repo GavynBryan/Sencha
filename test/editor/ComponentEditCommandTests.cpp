@@ -11,8 +11,11 @@
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
+#include "document/WorldDocument.h"
 #include "document/commands/RawComponentEditCommand.h"
 #include "document/commands/ValueCommand.h"
+#include "selection/SelectionContext.h"
+#include "selection/SelectionService.h"
 
 #include <abilities/AbilitySet.h>
 #include <attributes/AttributeRegistry.h>
@@ -26,6 +29,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -149,4 +153,34 @@ TEST_F(ComponentEditCommandTest, EveryVocabularyAdapterPairsWithItsSerializer)
         EXPECT_NE(adapters.Find(serializer->TypeId()), nullptr)
             << serializer->JsonKey() << " draws neither fields nor its own rows";
     }
+}
+
+// A refused edit's note belongs to the entity in its document: the same id in
+// another zone's document is another entity, and shows nothing.
+TEST_F(ComponentEditCommandTest, ARefusalNoteStaysWithTheEntityInItsDocument)
+{
+    WorldDocument world(Logging);
+    EditorDocument other(Logging);
+    SelectionContext selectionContext;
+    SelectionService selection{ selectionContext };
+    other.SetRegistryIdentity({ 3, 1 }, ZoneId{ 7 });
+    const EntityId here = Document.GetScene().CreateEntity(Vec3d::Zero());
+    const EntityId there = other.GetScene().CreateEntity(Vec3d::Zero());
+    ASSERT_EQ(here, there) << "the test needs the two documents' entities to share an id";
+    Components().AddComponent<GameplayTagContainer>(here, GameplayTagContainer{});
+    other.GetScene().GetRegistry().Components.AddComponent<GameplayTagContainer>(there, GameplayTagContainer{});
+
+    const std::unique_ptr<IEditorComponentAdapter> tags = MakeGameplayTagEditorAdapter();
+    EditorComponentInspectorContext refused{ .World = world, .Document = Document, .Scene = Document.GetScene(),
+                                             .Selection = selection, .Commands = Commands, .Entity = here };
+    EditorComponentInspectorContext elsewhere{ .World = world, .Document = other, .Scene = other.GetScene(),
+                                               .Selection = selection, .Commands = Commands, .Entity = there };
+    ASSERT_EQ(tags->SetInspectorValue(refused, "new", "Not..A.Tag"), PropertyEditResult::Refused);
+
+    const auto notes = [&](const EditorComponentInspectorContext& context) {
+        const std::vector<PropertyNode> nodes = tags->InspectorNodes(context);
+        return std::ranges::count(nodes, std::string("refused"), &PropertyNode::Key);
+    };
+    EXPECT_EQ(notes(refused), 1);
+    EXPECT_EQ(notes(elsewhere), 0);
 }

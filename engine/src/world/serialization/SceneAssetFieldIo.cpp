@@ -5,6 +5,7 @@
 #include <assets/runtime/AssetSystem.h>
 #include <core/assets/AssetId.h>
 #include <core/assets/AssetLease.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/serialization/Archive.h>
 #include <world/serialization/SceneSerializationContext.h>
@@ -79,97 +80,6 @@ namespace
         return false;
     }
 
-    // Reads the legacy {"type": ..., "path": ...} ref object. The enclosing
-    // object scope is already open.
-    bool ReadLegacyAssetRefFields(IReadArchive& archive,
-                                  std::string_view key,
-                                  AssetType expected,
-                                  std::string& outPath,
-                                  SceneSerializationContext& context)
-    {
-        std::string typeText;
-        std::string path;
-
-        archive.Field(std::string_view{"type"}, typeText);
-        archive.Field(std::string_view{"path"}, path);
-
-        if (!archive.Ok())
-            return false;
-
-        AssetType type = AssetType::Unknown;
-        if (!AssetTypeFromString(typeText, type))
-        {
-            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has unknown asset type '{}'", key, typeText);
-            archive.MarkInvalidField(key);
-            return false;
-        }
-
-        if (type != expected)
-        {
-            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' expected asset type '{}', got '{}'",
-                                          key, AssetTypeToString(expected), typeText);
-            archive.MarkInvalidField(key);
-            return false;
-        }
-
-        if (path.empty())
-        {
-            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has an empty asset path", key);
-            archive.MarkMissingField(key);
-            return false;
-        }
-
-        outPath = std::move(path);
-        return true;
-    }
-
-    // Reads the cooked-scene {"id": "<hex>", "path": ...} ref object
-    // (docs/assets/pipeline.md, Decision A / Stage 4e): the id wins when
-    // the registry knows it — that is what survives a rename the stamped
-    // path predates — and the stamped path is the fallback otherwise. The
-    // enclosing object scope is already open. Authored scenes keep writing
-    // bare path strings; the editor round trip never produces this form.
-    bool ReadStampedAssetRefFields(IReadArchive& archive,
-                                   std::string_view key,
-                                   AssetType expected,
-                                   std::string& outPath,
-                                   SceneSerializationContext& context)
-    {
-        std::string idText;
-        archive.Field(std::string_view{"id"}, idText);
-
-        std::string path;
-        if (archive.HasField(std::string_view{"path"}))
-            archive.Field(std::string_view{"path"}, path);
-
-        if (!archive.Ok())
-            return false;
-
-        const std::optional<AssetId> id = AssetIdFromString(idText);
-        if (!id.has_value())
-        {
-            GetSceneLogger(context).Error("SceneFieldCodec: field '{}' has malformed asset id '{}'",
-                                          key, idText);
-            archive.MarkInvalidField(key);
-            return false;
-        }
-
-        outPath = context.Assets
-            ? std::string(context.Assets->ResolveRefPath(*id, path, expected))
-            : std::move(path);
-
-        if (outPath.empty())
-        {
-            GetSceneLogger(context).Error(
-                "SceneFieldCodec: field '{}' has unknown asset id {} and no fallback path",
-                key, AssetIdToString(*id));
-            archive.MarkInvalidField(key);
-            return false;
-        }
-
-        return true;
-    }
-
     // ── The list arity ───────────────────────────────────────────────────────
     //
     // A list is not a token in a store like every other reference: it persists
@@ -188,7 +98,7 @@ namespace
         for (const std::uint64_t member : members)
         {
             // Key is ignored inside an array scope; the element is appended.
-            if (!WriteSceneAssetRef(archive, key, context.Assets->GetPathForLease(type, member), context))
+            if (!WriteSceneAssetRef(archive, key, type, context.Assets->GetPathForLease(type, member), context))
             {
                 archive.End();
                 return false;
@@ -279,39 +189,30 @@ bool ReadSceneAssetRef(IReadArchive& archive,
                        std::string& outPath,
                        SceneSerializationContext& context)
 {
-    if (archive.IsString(key))
+    AssetRef ref{ .Type = expected };
+    if (!ReadAssetRef(archive, key, ref))
     {
-        archive.Field(key, outPath);
-        if (!archive.Ok())
-            return false;
-
-        if (!outPath.empty())
-            return true;
-
-        GetSceneLogger(context).Error("SceneAssetRef: field '{}' has an empty asset path", key);
-        archive.MarkMissingField(key);
+        GetSceneLogger(context).Error(
+            "SceneAssetRef: field '{}' must be an asset path or an {{id, path}} reference", key);
         return false;
     }
 
-    if (archive.IsObject(key))
+    outPath = ref.Id.IsValid() && context.Assets != nullptr
+                  ? std::string(context.Assets->ResolveRefPath(ref.Id, ref.Path, expected))
+                  : std::move(ref.Path);
+    if (outPath.empty())
     {
-        archive.BeginObject(key);
-        const bool stamped = archive.HasField(std::string_view{"id"});
-        const bool ok = stamped
-            ? ReadStampedAssetRefFields(archive, key, expected, outPath, context)
-            : ReadLegacyAssetRefFields(archive, key, expected, outPath, context);
-        archive.End();
-        return ok && archive.Ok();
+        GetSceneLogger(context).Error("SceneAssetRef: field '{}' names unknown asset {} and no path", key,
+                                      AssetIdToString(ref.Id));
+        archive.MarkInvalidField(key);
+        return false;
     }
-
-    GetSceneLogger(context).Error(
-        "SceneAssetRef: field '{}' must be an asset path string or an AssetRef object", key);
-    archive.MarkInvalidField(key);
-    return false;
+    return true;
 }
 
 bool WriteSceneAssetRef(IWriteArchive& archive,
                         std::string_view key,
+                        AssetType type,
                         std::string_view path,
                         SceneSerializationContext& context)
 {
@@ -322,7 +223,11 @@ bool WriteSceneAssetRef(IWriteArchive& archive,
         return false;
     }
 
-    archive.Field(key, path);
+    AssetRef ref{ type, std::string(path) };
+    if (context.Assets != nullptr)
+        if (const AssetRecord* record = context.Assets->Resolve(path, type))
+            ref = AssetRef{ type, record->Path, record->Id };
+    WriteAssetRef(archive, key, ref);
     return archive.Ok();
 }
 
@@ -342,7 +247,7 @@ bool SaveAssetField(IWriteArchive& archive,
     if (arity == AssetArity::List)
         return SaveAssetList(archive, key, token, type, context);
 
-    return WriteSceneAssetRef(archive, key, context.Assets->GetPathForLease(type, token), context);
+    return WriteSceneAssetRef(archive, key, type, context.Assets->GetPathForLease(type, token), context);
 }
 
 bool LoadAssetField(IReadArchive& archive,

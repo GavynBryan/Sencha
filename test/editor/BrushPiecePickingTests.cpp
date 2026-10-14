@@ -21,16 +21,16 @@ protected:
         EditorViewport viewport;
         viewport.ApplyOrientation(ViewportOrientation::Top);
         viewport.Id = ViewportId{ 1 };
-        viewport.RegionMin = ImVec2(0.0f, 0.0f);
-        viewport.RegionMax = ImVec2(400.0f, 400.0f);
+        viewport.RegionMin = Vec2d(0.0f, 0.0f);
+        viewport.RegionMax = Vec2d(400.0f, 400.0f);
         return viewport;
     }
 
-    [[nodiscard]] static ImVec2 PixelOf(const EditorViewport& viewport, Vec3d world)
+    [[nodiscard]] static Vec2d PixelOf(const EditorViewport& viewport, Vec3d world)
     {
         const std::optional<ProjectedPoint> p = ViewportProjection(viewport).WorldToPixel(world);
         EXPECT_TRUE(p.has_value());
-        return p.has_value() ? p->Pixel : ImVec2{};
+        return p.has_value() ? p->Pixel : Vec2d{};
     }
 
     // A unit box at the origin mirrored across x = 3: the copy spans x in [4, 6].
@@ -107,10 +107,10 @@ TEST_F(BrushPiecePickingTest, MarqueeOverEveryPieceYieldsEachSourceFaceOnce)
 {
     const EntityId brush = MirroredBrush();
     const EditorViewport top = TopViewport();
-    const ImVec2 a = PixelOf(top, { -2, 0, -2 });
-    const ImVec2 b = PixelOf(top, { 7, 0, 2 });
+    const Vec2d a = PixelOf(top, { -2, 0, -2 });
+    const Vec2d b = PixelOf(top, { 7, 0, 2 });
     const std::vector<SelectableRef> faces = Workspace.Picking.PickInRect(
-        top, ImVec2(std::min(a.x, b.x), std::min(a.y, b.y)), ImVec2(std::max(a.x, b.x), std::max(a.y, b.y)),
+        top, Vec2d(std::min(a.X, b.X), std::min(a.Y, b.Y)), Vec2d(std::max(a.X, b.X), std::max(a.Y, b.Y)),
         Scene(), MeshElementKind::Face);
     // Both pieces project the top and bottom face centers into the rectangle;
     // each source face is reported once.
@@ -125,7 +125,7 @@ TEST_F(BrushPiecePickingTest, MarqueeOverEveryPieceYieldsEachSourceFaceOnce)
     EXPECT_FALSE(ids.empty());
 
     const std::vector<SelectableRef> objects = Workspace.Picking.PickInRect(
-        top, ImVec2(std::min(a.x, b.x), std::min(a.y, b.y)), ImVec2(std::max(a.x, b.x), std::max(a.y, b.y)),
+        top, Vec2d(std::min(a.X, b.X), std::min(a.Y, b.Y)), Vec2d(std::max(a.X, b.X), std::max(a.Y, b.Y)),
         Scene(), MeshElementKind::Object);
     EXPECT_EQ(objects.size(), 1u);
 }

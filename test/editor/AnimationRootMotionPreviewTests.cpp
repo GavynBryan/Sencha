@@ -2,8 +2,13 @@
 // pipeline after content: a root-motion clip carries it, a placed wall stops it,
 // and each tick records where the clip carried it against where it got.
 
+#include "properties/PropertyTree.h"
+#include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewSession.h"
+#include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRootMotionProperties.h"
 #include "authoring/AnimationScenario.h"
+#include "authoring/AnimationTimelineLanes.h"
 
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
@@ -171,4 +176,71 @@ TEST(AnimationRootMotionPreview, MovementIsScenarioState)
     EXPECT_EQ(session.Tick(), 20u) << "replayed to where it was";
     EXPECT_EQ(session.SubjectTransform(), nullptr);
     EXPECT_FALSE(session.History().back().Movement.has_value());
+}
+
+// The deck plots how far the clip carried the character on each tick against
+// how far it got: against a wall the two part.
+TEST(AnimationRootMotionPreview, TheTravelLanesPlotCarriedAgainstAchieved)
+{
+    Project project;
+    AnimationPreviewSession session(project.Assets->DataAssets, &project.Assets->AnimationClips, {},
+                                    &project.Assets->Skeletons);
+    ASSERT_TRUE(session.Open(
+        Project::Dash({ AnimationScenarioWall{ .Center = Vec3d(0.0f, 1.0f, -1.75f),
+                                               .HalfExtents = Vec3d(2.0f, 1.0f, 0.25f) } })));
+    session.RunTo(90);
+    const std::vector<TimelineLane> lanes = AnimationTravelLanes(session);
+    ASSERT_EQ(lanes.size(), 2u);
+    EXPECT_EQ(lanes[0].Label, "Carried");
+    EXPECT_EQ(lanes[1].Label, "Achieved");
+    ASSERT_EQ(lanes[0].Samples.size(), lanes[1].Samples.size());
+    ASSERT_FALSE(lanes[0].Samples.empty());
+    double carried = 0.0;
+    double achieved = 0.0;
+    for (std::size_t i = 0; i < lanes[0].Samples.size(); ++i)
+    {
+        carried += lanes[0].Samples[i].Value;
+        achieved += lanes[1].Samples[i].Value;
+    }
+    EXPECT_GT(carried, achieved + 1.0) << "the wall stopped it short";
+
+    session.SetMovement(std::nullopt);
+    EXPECT_TRUE(AnimationTravelLanes(session).empty()) << "posing in place, nothing travels";
+}
+
+// The card moves the character or not, and places the walls, as scenario state.
+TEST(AnimationRootMotionPreview, TheCardPlacesTheScenariosWalls)
+{
+    Project project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
+    AnimationPreviewSession& session = workspace.Rig.Simulation;
+    ASSERT_TRUE(session.Open(Project::Dash({})));
+    session.RunTo(30);
+    AnimationRootMotionProperties card(workspace);
+
+    std::vector<PropertyNode> nodes = card.Nodes();
+    ASSERT_NE(FindProperty(nodes, "moves"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "moves")->Value, "true");
+    ASSERT_NE(FindProperty(nodes, "clip.root"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "clip.root")->Value, "Carrying the character");
+    EXPECT_EQ(FindProperty(nodes, "walls.0"), nullptr);
+
+    EXPECT_EQ(card.Act("walls", "add", ""), PropertyEditResult::Applied);
+    ASSERT_EQ(session.Scenario().Movement->Walls.size(), 1u);
+    ASSERT_TRUE(card.BeginEdit("walls.0.centre"));
+    EXPECT_EQ(card.CommitEdit("walls.0.centre", "0, 1, -3"), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Scenario().Movement->Walls[0].Center, Vec3d(0.0f, 1.0f, -3.0f));
+    EXPECT_EQ(card.CommitEdit("walls.0.half", "0, 1, 1"), PropertyEditResult::Applied);
+    EXPECT_FLOAT_EQ(session.Scenario().Movement->Walls[0].HalfExtents.X, 0.01f) << "a wall keeps some thickness";
+    EXPECT_EQ(card.CommitEdit("walls.0.half", "wide"), PropertyEditResult::Refused);
+    EXPECT_EQ(card.Act("walls.0", "remove", ""), PropertyEditResult::Applied);
+    EXPECT_TRUE(session.Scenario().Movement->Walls.empty());
+
+    EXPECT_EQ(card.CommitEdit("moves", "false"), PropertyEditResult::Applied);
+    EXPECT_FALSE(session.Scenario().Movement.has_value());
+    nodes = card.Nodes();
+    EXPECT_EQ(FindProperty(nodes, "walls"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "travel"), nullptr);
+    session.Close();
 }

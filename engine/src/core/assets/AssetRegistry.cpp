@@ -2,6 +2,7 @@
 
 #include <core/assets/AssetKindRegistry.h>
 
+#include <core/assets/AssetIdentity.h>
 #include <core/hash/ContentHash.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
@@ -17,7 +18,7 @@ namespace
                                      const std::filesystem::path& file)
     {
         std::filesystem::path relative = std::filesystem::relative(file, root);
-        return std::string("asset://") + relative.generic_string();
+        return AssetPathOf(relative.generic_string());
     }
 
     bool AreEquivalentRecords(const AssetRecord& a, const AssetRecord& b)
@@ -75,6 +76,7 @@ bool AssetRegistry::Register(const AssetRecord& record)
         return false;
     }
 
+    BindId(it->second);
     Log.Debug("AssetRegistry: registered {} '{}'", type, path);
     return inserted;
 }
@@ -108,7 +110,7 @@ bool AssetRegistry::RegisterOrVerify(const AssetRecord& record)
     auto it = RecordsByPath.find(record.Path);
     if (it == RecordsByPath.end())
     {
-        RecordsByPath.emplace(record.Path, record);
+        BindId(RecordsByPath.emplace(record.Path, record).first->second);
         Log.Debug("AssetRegistry: registered {} '{}'",
             std::string(AssetTypeToString(record.Type)), record.Path);
         return true;
@@ -120,7 +122,7 @@ bool AssetRegistry::RegisterOrVerify(const AssetRecord& record)
         return false;
     }
 
-    return true;
+    return !record.Id.IsValid() || AssignId(record.Path, record.Id);
 }
 
 bool AssetRegistry::Unregister(std::string_view path)
@@ -130,8 +132,12 @@ bool AssetRegistry::Unregister(std::string_view path)
         return false;
 
     if (it->second.Id.IsValid())
+    {
         RecordsById.erase(it->second.Id);
+        FormerIds.insert_or_assign(it->first, it->second.Id);
+    }
     RecordsByPath.erase(it);
+    Changed();
     return true;
 }
 
@@ -153,13 +159,6 @@ bool AssetRegistry::AssignId(std::string_view path, AssetId id)
     if (it->second.Id == id)
         return true;
 
-    if (it->second.Id.IsValid())
-    {
-        Log.Warn("AssetRegistry: '{}' already has id {}; rejected reassignment to {}",
-            path, AssetIdToString(it->second.Id), AssetIdToString(id));
-        return false;
-    }
-
     if (auto bound = RecordsById.find(id); bound != RecordsById.end())
     {
         Log.Warn("AssetRegistry: id {} is already bound to '{}'; rejected for '{}'",
@@ -167,9 +166,31 @@ bool AssetRegistry::AssignId(std::string_view path, AssetId id)
         return false;
     }
 
+    RecordsById.erase(it->second.Id);
     it->second.Id = id;
     RecordsById.emplace(id, &it->second);
+    Changed();
     return true;
+}
+
+void AssetRegistry::BindId(AssetRecord& record)
+{
+    Changed();
+    const AssetId stated = record.Id;
+    if (!record.Id.IsValid())
+        record.Id = AssetIdOfPath(record.Path);
+    for (uint64_t salt = 1; RecordsById.contains(record.Id); ++salt)
+        record.Id = AssetIdOfPath(record.Path, salt);
+    if (stated.IsValid() && record.Id != stated)
+        Log.Warn("AssetRegistry: '{}' states id {}, which '{}' already holds; it goes by {}", record.Path,
+            AssetIdToString(stated), RecordsById.at(stated)->Path, AssetIdToString(record.Id));
+    RecordsById.emplace(record.Id, &record);
+}
+
+void AssetRegistry::Changed()
+{
+    PathsSnapshot.reset();
+    ++Revision_;
 }
 
 const AssetRecord* AssetRegistry::FindByPath(std::string_view path) const
@@ -184,9 +205,81 @@ const AssetRecord* AssetRegistry::FindById(AssetId id) const
     return it == RecordsById.end() ? nullptr : it->second;
 }
 
+const AssetRecord* AssetRegistry::Find(const AssetRef& ref) const
+{
+    if (const AssetRecord* byId = ref.Id.IsValid() ? FindById(ref.Id) : nullptr)
+        return byId;
+    if (ref.Path.empty())
+        return nullptr;
+    if (const AssetRecord* byPath = FindByPath(ref.Path))
+        return byPath;
+    const auto former = FormerIds.find(ref.Path);
+    return former != FormerIds.end() ? FindById(former->second) : nullptr;
+}
+
+std::shared_ptr<const AssetPathsById> AssetRegistry::PathsById() const
+{
+    if (PathsSnapshot == nullptr)
+    {
+        auto paths = std::make_shared<AssetPathsById>();
+        paths->reserve(RecordsById.size());
+        for (const auto& [id, record] : RecordsById)
+            paths->emplace(id, record->Path);
+        PathsSnapshot = std::move(paths);
+    }
+    return PathsSnapshot;
+}
+
+AssetRef AssetRegistry::Current(AssetRef ref) const
+{
+    if (const AssetRecord* found = Find(ref))
+    {
+        ref.Path = found->Path;
+        ref.Id = found->Id;
+    }
+    return ref;
+}
+
 bool AssetRegistry::Contains(std::string_view path) const
 {
     return FindByPath(path) != nullptr;
+}
+
+bool IsHiddenContentFolder(const std::filesystem::path& folder)
+{
+    return folder.filename().string().starts_with('.');
+}
+
+namespace
+{
+    // A file as the registry records it: its kind's type by extension, the id it
+    // states, its bytes' hash (zero when they cannot be read).
+    std::optional<AssetRecord> DescribeAssetFile(std::string assetPath,
+                                                 const std::filesystem::path& file,
+                                                 const AssetKindRegistry& kinds)
+    {
+        const AssetType type = kinds.FindTypeByExtension(file.extension().generic_string());
+        if (type == AssetType::Unknown)
+            return std::nullopt;
+        AssetRecord record;
+        record.Type = type;
+        record.SourceKind = AssetSourceKind::File;
+        record.Path = std::move(assetPath);
+        record.FilePath = file.generic_string();
+        record.Id = ReadStatedAssetId(file).value_or(AssetId{});
+        if (!HashFileContents(record.FilePath, record.ContentHash))
+            record.ContentHash = 0;
+        return record;
+    }
+}
+
+bool RegisterAssetFile(std::string_view assetPath,
+                       const std::filesystem::path& file,
+                       AssetRegistry& registry,
+                       const AssetKindRegistry& kinds)
+{
+    std::optional<AssetRecord> record = DescribeAssetFile(std::string(assetPath), file, kinds);
+    return record.has_value() && registry.RegisterOrVerify(*record);
 }
 
 bool ScanAssetsDirectory(std::string_view rootDirectory,
@@ -225,7 +318,7 @@ bool ScanAssetsDirectory(std::string_view rootDirectory,
             // Never descend into the cooked cache: its artifacts carry
             // virtual paths assigned at cook time, not derived from their
             // physical location (docs/assets/pipeline.md, Decision B).
-            if (it->path().filename() == kCookedCacheDirName)
+            if (IsHiddenContentFolder(it->path()))
                 it.disable_recursion_pending();
             continue;
         }
@@ -233,23 +326,17 @@ bool ScanAssetsDirectory(std::string_view rootDirectory,
         // Source formats (.png, .gltf, ...) match no registered kind: they reach
         // the registry through import-on-demand, registered under their virtual
         // path against the cooked artifact (Decision B).
-        const AssetType type =
-            kinds.FindTypeByExtension(it->path().extension().generic_string());
-        if (type == AssetType::Unknown)
+        std::optional<AssetRecord> record =
+            DescribeAssetFile(MakeVirtualAssetPath(root, it->path()), it->path(), kinds);
+        if (!record.has_value())
             continue;
-
-        AssetRecord record;
-        record.Type = type;
-        record.SourceKind = AssetSourceKind::File;
-        record.Path = MakeVirtualAssetPath(root, it->path());
-        record.FilePath = it->path().generic_string();
-        if (!HashFileContents(record.FilePath, record.ContentHash))
+        if (record->ContentHash == 0)
         {
             registry.Log.Warn("AssetRegistry: could not hash '{}'; registered with no content hash",
-                record.FilePath);
+                record->FilePath);
             ok = false;
         }
-        const bool inserted = registry.Register(record);
+        const bool inserted = registry.Register(*record);
         if (inserted)
             ++registered;
         ok = inserted && ok;
@@ -300,9 +387,15 @@ int RegisterCookedAssets(std::string_view assetsRoot, AssetRegistry& registry)
                 continue;
 
             // The physical scan already keyed cooked runtime files (.smesh, ...)
-            // by location; this only needs to add the ones it cannot key.
+            // by location; this only needs to add the ones it cannot key, and
+            // give every one the id its source states.
+            const AssetId id = StatedAssetId(artifact).value_or(AssetId{});
             if (registry.Contains(path->AsString()))
+            {
+                if (id.IsValid())
+                    (void)registry.AssignId(path->AsString(), id);
                 continue;
+            }
 
             AssetType type = AssetType::Unknown;
             if (!AssetTypeFromString(typeName->AsString(), type))
@@ -312,6 +405,7 @@ int RegisterCookedAssets(std::string_view assetsRoot, AssetRegistry& registry)
             record.Type = type;
             record.SourceKind = AssetSourceKind::File;
             record.Path = path->AsString();
+            record.Id = id;
             record.FilePath =
                 (std::filesystem::path(std::string(assetsRoot)) / fileRel->AsString()).generic_string();
             if (registry.Register(record))

@@ -1,5 +1,6 @@
 #include <assets/cook/MeshImportSettings.h>
 
+#include <core/assets/AssetPath.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/json/JsonValue.h>
@@ -148,8 +149,7 @@ namespace
 
 std::optional<MeshClipSource> MeshClipSourceOf(std::string_view clipPath)
 {
-    constexpr std::string_view kScheme = "asset://";
-    if (!clipPath.starts_with(kScheme))
+    if (!clipPath.starts_with(kAssetPathPrefix))
         return std::nullopt;
     const std::size_t hash = clipPath.find('#');
     if (hash == std::string_view::npos)
@@ -157,7 +157,7 @@ std::optional<MeshClipSource> MeshClipSourceOf(std::string_view clipPath)
     const std::string_view fragment = clipPath.substr(hash + 1);
     if (!fragment.starts_with(kMeshClipFragmentPrefix) || fragment.size() == kMeshClipFragmentPrefix.size())
         return std::nullopt;
-    return MeshClipSource{ std::string(clipPath.substr(kScheme.size(), hash - kScheme.size())),
+    return MeshClipSource{ std::string(clipPath.substr(kAssetPathPrefix.size(), hash - kAssetPathPrefix.size())),
                            std::string(fragment.substr(kMeshClipFragmentPrefix.size())) };
 }
 
@@ -184,6 +184,8 @@ bool ParseMeshImportSettings(std::span<const std::byte> bytes, MeshImportSetting
                 return Fail(error, "unsupported import settings version");
             continue;
         }
+        if (key == kAssetIdKey)
+            continue;
         if (key != "clips")
             return Fail(error, std::format("'{}' is not a mesh import setting", key));
         if (!value.IsObject())
@@ -224,9 +226,11 @@ bool ParseMeshImportSettings(std::span<const std::byte> bytes, MeshImportSetting
     return true;
 }
 
-std::string WriteMeshImportSettings(const MeshImportSettings& settings)
+std::string WriteMeshImportSettings(const MeshImportSettings& settings, AssetId id)
 {
     JsonValue::Object root;
+    if (id.IsValid())
+        root.emplace_back(std::string(kAssetIdKey), JsonValue(AssetIdToString(id)));
     root.emplace_back("version", JsonValue(1.0));
     JsonValue::Object clips;
     for (const auto& [clip, clipSettings] : settings.Clips)

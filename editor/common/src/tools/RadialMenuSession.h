@@ -23,6 +23,15 @@ enum class RadialMenuPhase : std::uint8_t
     Dismissed,
 };
 
+// What opened the wheel, and so what closes it: the key held, whose release
+// chooses; or a click, after which the next click chooses -- or, off every
+// entry, closes it -- and the key plays no part.
+enum class RadialMenuGesture : std::uint8_t
+{
+    Held,
+    Clicked,
+};
+
 // The hold-to-choose radial menu: press the key and a wheel of the model's
 // entries opens at the pointer; moving picks a sector by direction; releasing
 // the key selects that sector's entry on the model. What the entries are (the
@@ -58,11 +67,15 @@ public:
     // is placed against, which is what keeps hit-testing and painting on one
     // set of numbers.
     RadialMenuSession(IRadialMenuModel& menu, KeyChord key, std::function<RadialMenu::Frame()> frame,
-                      std::function<bool(ImVec2 pointer)> pointerOnScene);
+                      std::function<bool(Vec2d pointer)> pointerOnScene, RadialMenu::Proportions proportions = {});
 
     InputConsumed OnInput(const InputEvent& event, PointerCapture& capture);
+    // Opens it at `pointer` for a click to choose from, whatever the key is
+    // doing; nothing when the model offers nothing.
+    void OpenClicked(Vec2d pointer, PointerCapture& capture);
 
     [[nodiscard]] RadialMenuPhase GetPhase() const { return Phase; }
+    [[nodiscard]] RadialMenuGesture GetGesture() const { return Gesture; }
     // Meaningful while Open.
     [[nodiscard]] const RadialMenu::Layout& GetLayout() const { return Layout; }
     // The sector under the pointer, or -1 (the hub, or no motion yet).
@@ -73,9 +86,9 @@ public:
 private:
     InputConsumed OnKeyDown(const KeyDownEvent& event, PointerCapture& capture);
     InputConsumed OnKeyUp(const KeyUpEvent& event, PointerCapture& capture);
-    void Open(ImVec2 pointer, PointerCapture& capture);
+    void Open(Vec2d pointer, PointerCapture& capture);
     void Leave(RadialMenuPhase next, PointerCapture& capture);
-    void Track(ImVec2 pointer);
+    void Track(Vec2d pointer);
     void Select(int index, int variant);
     [[nodiscard]] int VariantCount(int index) const;
     [[nodiscard]] bool IsWheelKey(SDL_Keycode key) const { return key == Key.Key; }
@@ -83,8 +96,10 @@ private:
     IRadialMenuModel& Menu;
     KeyChord Key;
     std::function<RadialMenu::Frame()> FrameProvider;
-    std::function<bool(ImVec2)> PointerOnScene;
+    std::function<bool(Vec2d)> PointerOnScene;
+    RadialMenu::Proportions Sizes;
     RadialMenuPhase Phase = RadialMenuPhase::Closed;
+    RadialMenuGesture Gesture = RadialMenuGesture::Held;
     RadialMenu::Layout Layout{};
     int Hot = -1;
     int HotVariant = -1;

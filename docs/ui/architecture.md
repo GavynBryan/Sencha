@@ -57,6 +57,7 @@ engine/src/ui/rml/        The interface implementations, grouped because they
 engine/include/render/ui/ Render-domain UI data. Plain CPU values, no backend.
 engine/include/render/feature/UiRenderFeature.h
 engine/include/graphics/vulkan/UiDrawPass.h
+engine/include/graphics/vulkan/UiTextureResidency.h
 ```
 
 `cmake/CheckUiIsolation.cmake` (ctest `ui_isolation`) enforces that boundary
@@ -102,9 +103,9 @@ source split is real either way, which is what the two filters buy.
 
 RmlUi is pinned at **6.3** via `FetchContent`, built STATIC and linked PRIVATE.
 That is the opposite of the `imgui` treatment in the same file, for the reason
-recorded there in reverse: imgui is an OBJECT library because the editors link
-only `sencha::engine` yet call ImGui, so those symbols must reach the export
-table. Nothing outside `engine/src/ui/rml/` calls RmlUi, so it must not be
+recorded there in reverse: imgui is an OBJECT library because a game module
+links only `sencha::engine` yet may call ImGui for its own debug panels, so
+those symbols must reach the export table. Nothing outside `engine/src/ui/rml/` calls RmlUi, so it must not be
 re-exported. `RMLUI_DIR` substitutes a vendored copy.
 
 FreeType is RmlUi's font engine, found with `find_package(Freetype REQUIRED)`.
@@ -124,16 +125,15 @@ still the finished frame. UI pipelines disable depth test and write; the depth
 attachment stays bound, as it already was for ImGui.
 
 **ApplicationUi is authored, user-facing UI. DevelopmentOverlay is diagnostics.**
-The distinction is not stylistic, and it decides where an ImGui host belongs:
+Kyusu's whole interface is `ApplicationUi`; `ImGuiDebugOverlay` (the console
+and timing panels) is `DevelopmentOverlay`, so it stays readable on top of
+whatever is underneath, in Kyusu as in any Sencha application.
 
-| Feature | Phase | Why |
-|---|---|---|
-| `EditorUiFeature` (Kyusu's shell) | `ApplicationUi` | It is the editor's *application UI*, which happens to be built in ImGui. Retained surfaces record later in the same phase, so an authored panel draws **over** the ImGui panel it replaces. Putting it in `DevelopmentOverlay` would let the legacy shell paint over its own replacement and make incremental migration impossible. |
-| `ImGuiDebugOverlay` | `DevelopmentOverlay` | The console and timing panels, which must stay readable on top of whatever is underneath. |
-
-Order within `ApplicationUi` is a **declared edge**, not a staging accident.
-`UiRenderFeature` stages under a known id and accepts host-supplied predecessors,
-so Kyusu names its ImGui shell as one and a game names nothing.
+Order within `ApplicationUi` follows registration, and the engine fixes when
+it registers: `UiRenderFeature` is added after `Game::OnStart` returns, so any
+application-UI feature a host registers during `OnStart` (Kyusu's content
+layer) records under it. It registers under `kUiRenderFeatureId`, so a feature that has
+to draw over authored UI declares that id as a dependency.
 
 GPU scopes `Phase/ApplicationUi` and `Phase/DevelopmentOverlay` report each
 bucket separately under `render.profile.mode gpu`.
@@ -166,7 +166,45 @@ genuinely-held gameplay keys along with the stuck one. `PlatformEventRouterTests
 covers both directions.
 
 Routing order mirrors the z-order in §4: diagnostics, then authored UI, then the
-application (and an editor's own shell).
+application (and an editor's own shell). Consumers register once, at startup, in that order, so
+there is no per-event sorting and no priority number to keep in sync; the first
+to claim an event ends the offer.
+
+**A pointer gesture has one owner.** From a press in a window to the release of
+the last button held there, that window's pointer events -- moves, presses,
+releases, the wheel -- go only to whoever claimed the press: a consumer, or the
+application when none did. The router owns this between consumers, per window
+(`PlatformEventRouter::Gesture`): a drag in the world carried over a menu never
+hovers or clicks it, and a menu's drag carried over the world never reaches the
+application.
+
+The authored UI is one consumer holding many surfaces, so it keeps the same rule
+one level down. `UiRuntime` records, per surface, the buttons of presses its
+document took (`Surface::HeldButtons`); while any is held that surface alone
+hears its window's pointer (`PointerHolder`). The two layers answer different
+questions -- which consumer owns the window's gesture, and which surface inside
+the UI holds it -- and neither is derived from the other: the UI also runs
+without a router (its tests drive it directly), and only it knows which buttons
+its documents took rather than let through. They meet when a gesture ends:
+the router's `GestureEnded` reaches the UI as `UiService::EndPointerGesture`,
+which releases the holding surface's press.
+
+A gesture whose release its owner will not see is ended, never left open. The
+window losing focus, being hidden or minimized ends it, and the owning consumer
+is told (`GestureEnded`); the application hears the window event itself. A host
+that takes on a gesture a document began -- the editor's number scrub -- calls
+`PlatformEventRouter::HandGestureToApplication`, which ends the document's side
+and gives the rest, release included, to the application; it returns false when
+the release has been heard already. The authored UI ends a press by letting go
+with nothing under the pointer: nothing is clicked, and a drag ends where it
+last was. A surface that stops taking input, or moves to another window, ends
+its press the same way.
+
+The platform frame follows the same rule. A window drawing its own decorations
+answers the platform's hit test as client everywhere while a button is held
+(`WindowFrameProbe::PointerHeld`): SDL's Wayland backend acts on the last answer
+for every left-button event, a release included, and a release over the caption
+or an edge was otherwise turned into a window move and never delivered.
 
 A surface that consumed input **publishes** it in `InputFrame::UiCapture` rather
 than hiding the events. Two kinds of reader care:
@@ -189,6 +227,33 @@ Text input is started and stopped rather than left on, because a platform with
 it always active is one where the IME is always eligible to eat a keystroke
 meant for the game.
 
+**Focus leaves when the person does.** The document engine moves focus only to
+something a press lands on, so a press that lands on nothing -- empty space on
+a pass-through surface, a point outside its placement, or anywhere on a surface
+below one that took the press -- takes focus off whatever held it. So does a
+surface losing `Full` input. Otherwise a field typed into and then clicked
+away from keeps text input, and the next key meant for the world types into it
+(`UiControlTests`).
+
+**The wheel is consumed only where the document uses it.** The document
+engine's own rule decides: the wheel is the document's when an element under
+the pointer scrolled, when a `mousescroll` listener stopped it, or when an
+element declares `overscroll-behavior: contain`, which holds the wheel even
+where nothing scrolls. Everywhere else -- a HUD's full-screen container, a
+panel with nothing to scroll -- it reaches the application, so a game hears its
+wheel under any overlay. A panel that sits over a camera and must keep the
+wheel from it declares `overscroll-behavior: contain` (the Shelf does).
+
+Ctrl with the wheel is the engine's ordinary wheel too: it raises `mousescroll`
+with `ctrl_key` set and then scrolls. An element that zooms on it opts out of
+the scroll with the `wheel-zoom` attribute: Ctrl and the wheel over it, or
+inside it, reach the document's listeners and stop there, nothing scrolls, and
+the wheel is consumed (`RmlWheelZoom`, `UiInputTests`).
+
+Hosts that keep a chosen row in view use `UiService::ScrollIntoView` (instant,
+nearest edge, closest scrolling ancestor) and read the scroll state with
+`MeasureScroll`, for example to request pictures only for rows in view.
+
 ### Navigation
 
 `UiService::Navigate(surface, UiNavigation::…)` — Up, Down, Left, Right, Next,
@@ -198,7 +263,7 @@ already implements. No document names a key or a gamepad button anywhere in that
 path, so remapping, controller profiles and accessibility settings keep working
 without knowing a document exists.
 
-### Two authoring contracts worth knowing before they bite
+### Authoring contracts worth knowing before they bite
 
 **`pointer-events: none` on a full-screen root.** A document's `body` is
 interactive by default, so a HUD covering the window counts as "the pointer is
@@ -209,8 +274,24 @@ back in with `pointer-events: auto`.
 order, so navigation cannot reach it -- which means a controller and a keyboard
 cannot either, however well the rest is wired.
 
-Both are silent when missed, which is why they are written down here and
+The first two are silent when missed, which is why they are written down here and
 exercised in `UiInputTests.cpp`.
+
+**Opacity replaces, it does not compound.** The document engine inherits
+`opacity` and uses each element's own value, unlike CSS, which multiplies down
+the tree. An element that states its own opacity inside a container faded to
+0 still draws: a shut card's read-only rows used to show through it. Nothing
+inside a container that hides by fading may set `opacity`; dim it with a
+colour role instead (`theme-muted` for a value shown but not offered).
+
+**A scrolling region inside a flex column needs a zero basis.** The document
+engine gives an auto-based flex item that is not itself a scroll container its
+content's size as a minimum, and `min-height: 0` (already the initial value)
+cannot lift it. A body between a bar and an edge declared `flex: 1 1 auto` grows
+to hold every row, so its scrolling child has nothing to scroll. Declare it
+`flex: 1 1 0` (the Shelf's `#shelf_body`), or make the item itself the scroll
+container. Items that should keep their size inside a scrolling column say
+`flex-shrink: 0`.
 
 ## 7. Rendering capability profile
 
@@ -246,6 +327,39 @@ The RCSS features that need them are **out of contract**: `box-shadow`,
 `filter`/`backdrop-filter`, `mask-image`, and **gradient decorators**. Gradients
 are authored as textures until Tier 2 lands.
 
+**Vector shapes: `<sector>`.** A box cannot be a ring, a pie slice or a petal,
+and faking one with clip masks fails in two ways. Mask edges are not
+antialiased. Cutting holes by painting one shape over another lets every
+aliased edge show the colour underneath. So the runtime registers one element
+that draws the shape itself, as a mesh with a one-pixel fringe of falling
+coverage on every edge. That is how an immediate-mode vector painter
+antialiases without multisampling, and it goes through the ordinary geometry
+path with nothing new in the renderer (`engine/src/ui/rml/RmlSectorElement`,
+`engine/src/ui/SectorMesh`).
+
+```html
+<sector start="40" sweep="60" inner="0.35"></sector>
+```
+
+- **Shape:** an annular sector filling the element's box. The outer radius is
+  half the box's smaller side.
+  - `start`: degrees clockwise from straight up.
+  - `sweep`: degrees, up to a full turn, which makes a ring.
+  - `inner`: the inner radius as a fraction of the outer; 0 makes a disc or a
+    pie.
+- **Paint:** RCSS properties the runtime adds. `fill-color` paints the shape.
+  `stroke-width` of `stroke-color` is drawn inside its edge, with the fill
+  inset by the same amount and its flanks kept parallel. The element's own
+  background and border are a box's, as on any element, and are not used for
+  the shape.
+- **Data binding:** the attributes take `data-attr-*` like any other.
+- **Inside `data-for`:** give the element content (`<sector ...></sector>`)
+  or wrap it. A self-closing element has no inner markup for the loop to
+  repeat.
+
+The element costs nothing in a document that does not use it. A game's radial
+menu, cooldown ring or gauge uses it the same way the editor's wheels do.
+
 **Two guards, not one.** The runtime adapter overrides every optional method with
 a diagnostic stub that logs once per site and draws nothing, so an unsupported
 operation that actually reaches the renderer fails loudly. The `.sui` cooker
@@ -262,8 +376,8 @@ because depth precision is not a thing to trade for a stencil aspect. Verified
 against the golden images: the format change moved no pixel.
 
 The whole swapchain scope binds that stencil aspect, so **every pipeline
-recording into it declares the format** -- the mesh and sky passes, and both
-ImGui hosts. Dynamic rendering matches attachment formats, not intentions: a
+recording into it declares the format** -- the mesh and sky passes, and the
+ImGui overlay. Dynamic rendering matches attachment formats, not intentions: a
 pipeline that never touches the stencil still has to say so. Verified against
 the golden images, which did not move.
 
@@ -301,13 +415,28 @@ its whole palette in linear for the same reason.
 **RmlUi creates presentation-domain resources; the renderer creates GPU
 resources.** The runtime links no backend header and owns no GPU object.
 
-- `GenerateTexture` mints a `UiTextureId` and stores CPU pixels. The record
-  travels in the draw frame the first time it is used; the render feature
-  materialises, owns, and retires the GPU image.
+- `GenerateTexture` mints a `UiGeneratedTextureId` and stores CPU pixels. The
+  upload, and later its release, travel in the extraction's
+  `UiService::TakeTextureChanges()`, handed over once and moved rather than
+  copied -- one list for every surface, never a
+  surface's frame, because a glyph atlas belongs to a font and every pass that
+  draws any surface names the same id. The host queues the list into the
+  renderer's one `UiTextureResidency`; the first pass to draw authored UI in a
+  frame materialises the uploads and stamps the releases against that frame's
+  retirement clock. A release that happens between frames, a screen closing,
+  waits in the same list instead of being lost with a frame record.
 - `LoadTexture` resolves against the loaded package's **resource table** to an
   asset the open screen already holds a lease on. It performs no ad-hoc asset
   discovery: a source the table does not name is an authoring error, diagnosed as
   one, not fetched at render time.
+- A source written `host:NAME` is a **host image**: pixels the host supplies at
+  draw time -- a viewport's render, a thumbnail chosen at runtime, a preview.
+  The host registers the name with `UiService::SetHostImage` (its natural size
+  for layout) before a document naming it opens, and its render feature
+  publishes what stands behind the id each frame through
+  `UiTextureResidency::PublishHostImage`. The cook skips `host:` sources, the
+  document never learns what the pixels are, and an image nothing is published
+  under draws untextured. It samples as straight alpha, like content.
 
 A submitted `UiDrawFrame` is self-contained. It holds **references to immutable
 CPU geometry blobs**, not handles into a mutable store, so the render feature
@@ -411,9 +540,11 @@ anyway still only writes the copy, and the host is still what decides whether a
 value read back becomes a change.
 
 A row also names the control a document should offer for it. `UiRow::Control`
-is `Text` (the default, and what every row was), `Range` or `Choice`, with
-`Min`/`Max`/`Step` for a range and `Choices` for a drop-down; a document
-branches with `data-if="row.editable && row.control == 'range'"`. `Editable`
+is a name: the runtime's own pages use `text` (the default), `range` and
+`choice` (`UiRowControls`), with `Min`/`Max`/`Step` for a range and `Choices`
+for a drop-down, and a host's documents agree on any others with the host (the
+editor's are in `presenters/RowControls.h`); a document branches with
+`data-if="row.editable && row.control == 'range'"`. `Editable`
 still says whether a control is offered at all; `Control` says which. The value
 stays text either way -- a slider bound to `row.value` writes its number back as
 text, which is the same rule met from the other side. Two things about the
@@ -425,12 +556,35 @@ host reread the model; and a `<select>` whose value matches no option selects
 its first and reports that as a change, so a host presenting a value it has no
 label for appends it to the choices.
 
+**A host publishes exactly the rows it means, and a list may shrink.** The
+document engine updates a shrinking list's departing elements in the same pass
+that removes them, and its own array binding refuses those reads with a warning
+per binding. The runtime binds row lists through its own definition
+(`UiRuntime::RowListDefinition`), which keeps the departing rows readable past
+the list's end until the update that removes their elements has run, so no
+host pads a list to the longest it has been (`UiDiagnosticsTests`).
+
 The runtime declares the row and list types once per context
 (`UiRuntime::DeclareModelTypes`), not per model: the type register is the
 context's, a second declaration is a silent refusal that leaves a member
 unbound, and an enum binds as an integer unless a string getter is registered
 for it before any member of that type -- which is why `control` compares as a
 name at all.
+
+Rows also describe structure, because a tree and a grouped property sheet are
+lists too. `Key` is the host's stable name for the row (a property path, an
+entity id) and is what an action about a row should carry, never its position;
+`Depth` nests it under the rows before it; `Icon` names an icon; `Selected`,
+`Expanded`, `Mixed` and `Disabled` are its standing; `Parts` holds a vector's
+components as text, edited side by side. `Control` adds `toggle`, `asset`,
+`color` and `section`, the last being a heading rather than a value, and
+`number` and `vector`: a number typed or dragged, with `Number`/`Min`/`Max`
+when it is bounded, and numbers side by side in `Parts`, each named by the
+`Choices` at its index and empty where it stands for several values. `Verbs`
+are things to do about the row, offered beside it rather than as rows of their
+own -- a section's commands, the cross that takes it away (`Removes`) -- each a
+key the document raises back. All of it stays presentation: the host still
+decides what a value read back means.
 
 Arbitrary value structs are still not here. Rows cover what surfaces have asked
 for; a shape rows cannot express is a design question when it turns up.
@@ -496,6 +650,24 @@ document that imports it. That is what `kCookedCacheIndexVersion` 8 is for.
 Reading a sibling any other way would leave it outside the hash, and a stale
 build cache is a worse failure than a missing feature because nothing about it
 looks wrong.
+
+**A document can include a part.** `<include src="parts/row.rmlpart" sheet="tool"/>`
+is replaced at cook time by the part's text, every `${sheet}` in it standing for
+`tool`, so one piece of markup serves several places that differ only by name
+(the editor's tool and selection sheets share `parts/sheet_rows.rmlpart`). A part
+resolves against the file that names it, may include others, and is recorded
+like a stylesheet, so editing it recooks every document that includes it; a part
+is not a document of its own (`.rmlpart` is not cooked) and the document engine
+never sees an `<include>`. A name a part uses that its include does not give, a
+missing part and a cycle are cook errors.
+
+Images a document names are ordinary textures, and that includes vector art:
+an `.svg` cooks to a texture like a `.png` does, so a document writes
+`icons/move.svg` and tints the white art with `image-color`.
+
+The system bridge answers the document engine's ambient requests with the
+platform's: the desktop clipboard for a field's copy and paste, and the
+platform's own pointer shapes for a document's `cursor` property.
 
 Fonts cook `.ttf`/`.otf` to `.sfont`: the face bytes unchanged, plus the family,
 style and weight, taken from the filename convention (`Inter-BoldItalic.ttf`)
@@ -565,7 +737,27 @@ and importer assembly is the engine's `SourceReloadRoots`
 (`engine/include/assets/hotreload/`), owned by `RuntimeContent`; the UI
 previewer (`editor/ui_preview/`) adds the project's roots, the engine's and the
 editor's own to it and shows the open document rebuilt on every save, with the
-diagnostics above beside it.
+diagnostics above among the editor's problems.
+
+### The preview model
+
+The previewer opens a document against a preview model: what a host would
+declare for it (its `UiScreenDesc`, minus the package path) and the values that
+host would publish, kept beside the document as `<name>.preview.json`
+(`UiPreviewModel`). The sidecar is the authoritative preview schema. It travels
+with the document, so a second author sees it rendered rather than blank; a
+test opens the document with it, so preview and test cannot drift; a template
+ships its UI with one, which a new author reads by opening it. The bindings a
+document asks for and the model misses (`BindingMisses`) help write it
+incrementally; they never replace it.
+
+Values are written with an explicit kind. "1", 1 and 1.0 are three different
+presentation values, and a document that compares one of them to a literal
+cares which.
+
+In Kyusu the sidecar is a document of the editor's journal like any other
+(`SnapshotDocument`): a model edit is an undoable step, Save and Save All write
+it, and closing UI Preview or the editor with an unsaved model asks first.
 
 ## 13. Rendering destinations
 
@@ -575,6 +767,27 @@ take focus from nothing while the screens it meant to block kept taking clicks.
 Kyusu creates one surface for its window and hands it to every authored
 controller; the surface tracks the window's size each frame, because a retained
 document re-flows on a resize where a baked font atlas cannot.
+
+**A surface lives on one platform window.** `SetSurfaceWindow(surface, id)`
+names it (0, the default, is the primary). The surface hears only that window's
+events -- routed by the id the platform stamped on each event, so a click in one
+window never presses a button that sits at the same point in another -- its
+frames carry the window (`UiDrawFrame::WindowId`), a `UiRenderFeature` draws only
+its own window's frames, and a field focused there takes text input on that
+window. `Capture(windowId)` answers for one window, which is what a host routing
+each window's input to its own shortcuts asks; `Capture()` still answers for all.
+A host presenting authored UI in a second window adds a `UiRenderFeature` for
+that window, scoped to its presentation.
+
+**A surface draws in a layer.** `SetSurfaceLayer(surface, layer)` (0 by
+default) says which of its window's `UiRenderFeature`s draws it, and its frames
+carry the layer (`UiDrawFrame::Layer`). A window has the layer-0 feature; a host
+that draws UI of its own between two authored layers -- an editor whose
+display-only view surface sits under its legacy panels and whose shell sits
+over them -- stages one more `UiRenderFeature` for the lower layer and orders
+its own feature after it with `DependsOn`. Layers order drawing and nothing
+else: input reaches surfaces by their input policy whatever their layer, which
+is why a lower layer's surface is normally `Disabled`.
 
 The engine creates one for the primary window and tracks its size and display
 scale every frame, which is what the application shell's pages open on. Tracking
@@ -589,26 +802,25 @@ swapchain in the `ApplicationUi` phase. `Offscreen` is published through
 host feature asked for it draws it into a target of its own with a `UiDrawPass`
 instance of its own. The engine learns only the split -- `ExtractRender` sorts
 recordings into two lists by destination. The target, its format and its
-presentation stay the host's, which is what `RenderTargetStore` and
-`ImGuiTargetPresenter` already said about editor viewports.
+presentation stay the host's, which is what `RenderTargetStore` and the host
+images already said about editor viewports.
 
 The editor family's consumer is `UiSurfaceTargetRenderFeature`
 (`editor/common/src/render/`): one `Offscreen`-phase feature, N surface-to-target
 bindings, each target sized from `GetSurfaceSize` every frame so the pass's
 projection (taken from the surface) and its viewport (taken from the target)
 agree. A binding is the host's declaration, not device state: it is made while
-the composition root is wiring panels -- before any feature has been set up --
-and the target behind it is created on the first frame it is drawn and remade
-after a teardown. A panel is therefore given its binding id when it is
-constructed, which is the only way it can be given a valid one. Three facts fix
-the details:
+the workspace is wiring itself -- before any feature has been set up -- and the
+target behind it is created on the first frame it is shown and remade after a
+teardown. Each frame the workspace names the host image to show it in
+(`Show(binding, image)`), and the feature publishes the target's bindless slot
+to that image once the frame's recording ends. Three facts fix the details:
 
 - the target is `B8G8R8A8_SRGB` like the swapchain: the shaders output linear and
-  rely on encode-on-write, and sampled by ImGui into an sRGB swapchain the round
-  trip is exact;
-- it is cleared opaque with the host's ground colour, because the pass blends
-  premultiplied and ImGui composites straight alpha -- a transparent target would
-  be alpha-multiplied twice at every anti-aliased edge;
+  rely on encode-on-write, and sampled back through a host image into an sRGB
+  swapchain the round trip is exact;
+- it is cleared opaque with the host's ground colour, so the document composites
+  the same whatever shows it;
 - it carries a stencil aspect when the device has one (`FormatHasStencil`), so a
   clip mask renders the same as on the swapchain instead of falling back to the
   rectangular clip the pass warns about.
@@ -625,6 +837,15 @@ may still ask `ElementAt` with a point it mapped itself), `Pointer` pointer and
 wheel, `Full` keys and text as well. A drag that started inside a placement keeps
 the pointer until the button comes up, wherever it comes up, so a slider survives
 an overshoot; leaving the placement sends the document one mouse-leave.
+
+**A window's own surfaces are above its offscreen ones.** Events are offered
+topmost first and stop at the first surface that consumes them. A window
+surface is drawn over everything its host composites, an offscreen surface's
+picture included, so window surfaces are asked first; within each kind,
+reverse creation order is the stacking. A previewed document placed under an
+editor's panels therefore never takes a click aimed at a panel, however late it
+was created. A surface under a consumed move is sent a mouse-leave, so nothing
+on it stays hovered.
 
 ### Inspection
 
@@ -664,13 +885,19 @@ an engine upgrade fails there rather than in a tool. `DrainDiagnostics` is
 destructive and meant for one consumer per service; a host with several
 interested parties drains once and fans out.
 
-Per-panel parity is separate work and belongs to each panel. The authored
-inspector, for instance, now matches the ImGui one for anything the component
-schema describes -- numbers, enums, flags, inline text, asset references -- and
-does not yet present the six components whose `EditorComponentAdapter` authors
-its own rows, or offer adding and removing components. It says so on the rows
-concerned rather than showing something the panel would contradict. Neither
-inspector goes away until one is better at all of it.
+Per-panel parity is separate work and belongs to each panel. Kyusu's
+inspector is now its selection drawer: every component the schema describes,
+the components whose `EditorComponentAdapter` authors its own properties (brush
+modifiers, the gameplay vocabularies, world docks), adding and removing
+components and resetting a scene instance's overrides -- all as property nodes
+and verbs the shell presents as rows, with the ImGui inspector gone.
+
+**A scrollbar needs a size.** A container with `overflow: auto` whose content
+overflows builds a scrollbar from `scrollbarvertical` and its parts; with no
+width given, the scrollbar takes the container's whole width and what it
+scrolls is laid out at none. Kyusu's `controls.rcss` sizes them, and scopes the
+range input's own `slidertrack`/`sliderbar` rules under `input` so they do not
+reach a scrollbar's parts of the same names.
 
 **Authored lengths are `dp`, not `px`.** A surface carries the display scale its
 host resolved, and the document engine applies that to the `dp` unit alone. A
@@ -756,6 +983,22 @@ costs 0.078 ms. Retained layout is doing its job -- an update that applies what
 a host published and re-lays-out costs 0.03 ms, which is why publishing every
 frame is a reasonable thing for a host to do.
 
+**`<sector>` vector shapes.** The editor's tool wheel with a fan up (22 sectors
+and 9 glyph wells, at 1920x1080) was compared with the same document drawn as
+rounded boxes. It ran in `build-profile`, publishing through the wheel's row
+path, averaged over 2000 frames:
+
+| | sectors | boxes |
+|---|---|---|
+| held still: `Update` + `Extract` | 0.5 + 3.8 us | 0.5 + 2.8 us |
+| the hot petal changing every frame | 79.5 + 20.8 us | 85.7 + 36.4 us |
+| vertices / triangles | 4104 / 5990 | 1916 / 1862 |
+
+A sector rebuilds its mesh only when its attributes, paint or size change. So
+a held wheel costs a microsecond more than boxes would, and a changing one
+costs less, since it rebuilds only the sectors that changed. The price is
+about three times the triangles, which is nothing to a GPU at this count.
+
 **Take these from a Release build or not at all.** The same run under the `dev`
 preset reports `Ui/Extract` at 0.76 ms -- sixteen times higher, and enough to
 justify optimisation work that the shipping binary does not need. The `profile`
@@ -774,14 +1017,20 @@ Kyusu's spatial interaction stays purpose-built: transform gizmos, resize
 handles, carve, clip planes and pins, face highlights, vertex/edge/face selection,
 measurement, snapping feedback, viewport annotations, the tool wheel. These
 operate on geometry and need viewport-aware hit testing, projection and
-manipulation. Expressing them as documents would weaken them.
+manipulation. Expressing their *interaction* as documents would weaken them.
+
+Their *presentation* is a document where it can be: a pure face model computed
+from the same layout the hit test uses, published as rows to a display-only
+surface. The radial wheels draw that way (`RadialMenuFace`,
+`editor/ui/wheel.rml`). Every plate, rim, petal and mark is one `<sector>`
+(§7), exactly its own shape, listed back to front.
 
 Dear ImGui keeps the work it is good at: the profiler, render statistics, ECS
 inspection, memory and networking diagnostics, experimental controls, and any
-surface an engineer wants to exist ten minutes from now. It stops being the
-default substrate for surfaces meant to become part of Kyusu's designed
-experience, and those migrate one at a time -- the ImGui version staying until the
-replacement is better.
+surface an engineer wants to exist ten minutes from now. It is never the
+substrate for Kyusu's designed experience: no file under `editor/` names ImGui
+(rule F of `scripts/check_editor_layering.sh`), and the overlay is the only
+ImGui in a Kyusu window.
 
 ## 17. Related documents
 

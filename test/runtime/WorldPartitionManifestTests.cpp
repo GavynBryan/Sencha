@@ -354,3 +354,64 @@ TEST(WorldPartitionManifest, ReadRejectsMalformedGraphStreaming)
     EXPECT_FALSE(manifest.has_value());
     EXPECT_EQ(error, "regions[0].streaming.hop_count must be a 32-bit integer");
 }
+
+// A world document states its own id, and keeps it through a save.
+TEST(WorldPartitionManifest, TheIdAWorldStatesSurvivesASave)
+{
+    WorldPartitionManifest first = ParseFixture(CanonicalFixture);
+    first.Transitions.clear();
+    first.Id = AssetId{ 0x5eedull };
+
+    std::string error;
+    const auto second = ReadWorldPartitionManifest(WriteWorldPartitionManifest(first), &error);
+    ASSERT_TRUE(second.has_value()) << error;
+    EXPECT_EQ(second->Id, first.Id);
+
+    auto malformed = JsonParse(R"({"format_version": 4, "id": "5EED"})");
+    ASSERT_TRUE(malformed.has_value());
+    EXPECT_FALSE(ReadWorldPartitionManifest(*malformed, &error).has_value());
+}
+
+// Where people read zones and graphs -- the breadcrumb, a choice of link
+// target, a problem -- each is told apart by what it shows, and a choice made
+// by what it showed finds the one it meant.
+namespace
+{
+ZoneHeader Zone(std::uint64_t id, std::string name, Aabb3d bounds = {})
+{
+    ZoneHeader zone;
+    zone.Id = ZoneId{ id };
+    zone.Name = std::move(name);
+    zone.Bounds = bounds;
+    return zone;
+}
+} // namespace
+
+TEST(WorldPartitionDisplayName, ZonesSharingANameAreToldApartAndFoundAgain)
+{
+    WorldPartitionManifest manifest;
+    manifest.Zones = { Zone(0x1, "New Zone"), Zone(0x2, "New Zone"), Zone(0x3, "Hall"), Zone(0x4, "") };
+
+    const std::string first = ZoneDisplayName(manifest, ZoneId{ 0x1 });
+    const std::string second = ZoneDisplayName(manifest, ZoneId{ 0x2 });
+    EXPECT_NE(first, second);
+    EXPECT_TRUE(first.starts_with("New Zone")) << first;
+    EXPECT_EQ(ZoneDisplayName(manifest, ZoneId{ 0x3 }), "Hall") << "a name of its own shows as it is";
+    EXPECT_EQ(ZoneDisplayName(manifest, ZoneId{ 0x4 }), ZoneIdToString(ZoneId{ 0x4 }));
+    EXPECT_TRUE(ZoneDisplayName(manifest, ZoneId{ 0x9 }).starts_with("missing"));
+
+    EXPECT_EQ(ZoneDisplayedAs(manifest, second), ZoneId{ 0x2 });
+    EXPECT_EQ(ZoneDisplayedAs(manifest, "Hall"), ZoneId{ 0x3 });
+    EXPECT_FALSE(ZoneDisplayedAs(manifest, "New Zone").has_value()) << "a shared bare name names neither";
+}
+
+TEST(WorldPartitionDisplayName, TheInnermostZoneHoldsAPointWhereZonesOverlap)
+{
+    WorldPartitionManifest manifest;
+    manifest.Zones = { Zone(0x1, "Outer", Aabb3d(Vec3d(-10, -10, -10), Vec3d(10, 10, 10))),
+                       Zone(0x2, "Inner", Aabb3d(Vec3d(-1, -1, -1), Vec3d(1, 1, 1))) };
+    ASSERT_NE(InnermostZoneAt(manifest, Vec3d(0, 0, 0)), nullptr);
+    EXPECT_EQ(InnermostZoneAt(manifest, Vec3d(0, 0, 0))->Id, ZoneId{ 0x2 });
+    EXPECT_EQ(InnermostZoneAt(manifest, Vec3d(5, 0, 0))->Id, ZoneId{ 0x1 });
+    EXPECT_EQ(InnermostZoneAt(manifest, Vec3d(50, 0, 0)), nullptr);
+}

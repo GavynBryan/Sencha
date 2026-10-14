@@ -153,6 +153,26 @@ In-tree, `SENCHA_BUILD_TEMPLATES` names the templates built with the engine
 (all five by default), each writing `templates/<name>/build/game.so`. It is a
 cache variable: an existing build tree keeps its list until told otherwise.
 
+## Third-party linkage
+
+**ImGui is an OBJECT library.** The engine is the single ImGui provider: a game
+module links only `sencha::engine` yet may call ImGui for its debug panels, so
+the engine carries those symbols on its exported surface. The Windows export
+table is generated from the shared library's own object files, and symbols that
+arrive from a linked static library are not in it, which would leave every such
+module with unresolved ImGui symbols. A consumer needs the ImGui headers (public
+debug/ and serialization headers name them) but not the objects, so only the
+header directories go on the public interface.
+
+**RmlUi is STATIC and PRIVATE**, the opposite treatment for the opposite reason:
+nothing outside `engine/src/ui/` calls it (`cmake/CheckUiIsolation.cmake`
+enforces that), so it is not re-exported, not on the install interface, and the
+SDK does not ship its headers. PIC comes from `CMAKE_POSITION_INDEPENDENT_CODE`
+at the root, so the static library links into the shared engine cleanly. It sits
+outside the Vulkan block: cooking a package, parsing and laying out a document
+and driving presentation models need no device, and the headless UI tests keep
+that honest.
+
 ## Without presets (CMake < 3.23)
 
 ```sh

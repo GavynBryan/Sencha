@@ -7,6 +7,12 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <core/assets/AssetRegistry.h>
+
+bool IsSourceTexture(const AssetRecord& record)
+{
+    return record.Type == AssetType::Texture && !record.Path.ends_with(".stex");
+}
 
 std::string TextureSourceLocation::SourceFile() const
 {
@@ -15,7 +21,7 @@ std::string TextureSourceLocation::SourceFile() const
 
 std::string TextureSourceLocation::MetaFile() const
 {
-    return SourceFile() + std::string(kImportSettingsSuffix);
+    return SourceFile() + std::string(kAssetSidecarSuffix);
 }
 
 std::string TextureSourceLocation::CookedFile() const
@@ -26,10 +32,9 @@ std::string TextureSourceLocation::CookedFile() const
 std::optional<TextureSourceLocation> ResolveTextureSource(
     std::span<const std::string> contentRoots, std::string_view virtualPath)
 {
-    constexpr std::string_view scheme = "asset://";
-    if (!virtualPath.starts_with(scheme))
+    if (!virtualPath.starts_with(kAssetPathPrefix))
         return std::nullopt;
-    const std::string rel{ virtualPath.substr(scheme.size()) };
+    const std::string rel{ ContentRelativePath(virtualPath) };
     for (const std::string& root : contentRoots)
     {
         std::error_code ec;
@@ -62,7 +67,8 @@ bool SaveTextureImportSettingsFor(const TextureSourceLocation& source,
                                   const TextureImportSettings& settings,
                                   std::string* error)
 {
-    return SaveTextureImportSettingsFile(source.MetaFile(), settings, error);
+    return SaveTextureImportSettingsFile(source.MetaFile(), settings,
+                                         ReadStatedAssetId(source.SourceFile()).value_or(AssetId{}), error);
 }
 
 CookedTextureState ReadCookedTextureState(const TextureSourceLocation& source)

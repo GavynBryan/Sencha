@@ -56,3 +56,16 @@ const SceneSourceDocument* SceneSourceCache::Find(std::string_view assetPath)
     const auto [slot, inserted] = Entries.insert_or_assign(key, std::move(entry));
     return slot->second.Valid ? &slot->second.Document : nullptr;
 }
+
+bool SceneSourceCache::ChangedOnDisk() const
+{
+    for (const auto& [assetPath, entry] : Entries)
+    {
+        const std::filesystem::path file = ResolveSceneSourceFile(Roots, assetPath);
+        std::error_code ec;
+        if (file.empty() || std::filesystem::last_write_time(file, ec) != entry.WriteTime
+            || std::filesystem::file_size(file, ec) != entry.Size)
+            return true;
+    }
+    return false;
+}

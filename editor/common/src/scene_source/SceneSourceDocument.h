@@ -3,6 +3,7 @@
 #include "scene_source/Json5Value.h"
 #include "scene_source/SceneElementPath.h"
 
+#include <core/assets/AssetId.h>
 #include <core/identity/Id.h>
 #include <math/geometry/3d/Transform3d.h>
 
@@ -83,6 +84,10 @@ struct SceneInstanceRecord
     std::vector<SceneElementPath> Suppressed;
 
     std::vector<std::string> LeadingComments;
+
+    // The source's id, when known: it finds the source wherever Source went
+    // stale (docs/assets/pipeline.md, Decision A).
+    AssetId SourceId{};
 };
 
 struct SceneSourceDocument

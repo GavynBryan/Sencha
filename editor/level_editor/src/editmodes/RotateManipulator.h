@@ -19,11 +19,11 @@ public:
                      ManipulatorVisual& out) const override;
     [[nodiscard]] int HitTest(const ManipulatorContext& ctx,
                               const EditorViewport& viewport,
-                              ImVec2 screenPos) const override;
+                              Vec2d screenPos) const override;
     [[nodiscard]] std::unique_ptr<IInteraction> BeginDrag(
         int part,
         const ManipulatorContext& ctx,
         const EditorViewport& viewport,
-        ImVec2 screenPos,
+        Vec2d screenPos,
         ModifierFlags modifiers) const override;
 };

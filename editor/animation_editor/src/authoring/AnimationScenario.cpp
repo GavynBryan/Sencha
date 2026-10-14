@@ -1,5 +1,6 @@
 #include "authoring/AnimationScenario.h"
 
+#include <core/assets/AssetRefCodec.h>
 #include <core/json/JsonFormat.h>
 #include <core/json/JsonParser.h>
 
@@ -295,7 +296,7 @@ JsonValue WriteAnimationScenario(const AnimationScenario& scenario)
     root.emplace_back("type", JsonValue(std::string(kAnimationScenarioType)));
     root.emplace_back("version", JsonValue(kAnimationScenarioVersion));
     root.emplace_back("name", JsonValue(scenario.Name));
-    root.emplace_back("rig", JsonValue(scenario.RigPath));
+    root.emplace_back("rig", AssetRefToJson(AssetRef{ AssetType::Data, scenario.RigPath, scenario.RigId }));
     root.emplace_back("tick_rate", JsonValue(static_cast<double>(scenario.TickRate)));
     root.emplace_back("seed", JsonValue(static_cast<double>(scenario.Seed)));
     root.emplace_back("participants", JsonValue(std::move(participants)));
@@ -352,8 +353,12 @@ std::optional<AnimationScenario> ReadAnimationScenario(const JsonValue& document
     AnimationScenario scenario;
     if (const JsonValue* name = document.Find("name"); name != nullptr && name->IsString())
         scenario.Name = name->AsString();
-    if (const JsonValue* rig = document.Find("rig"); rig != nullptr && rig->IsString())
-        scenario.RigPath = rig->AsString();
+    if (const JsonValue* rig = document.Find("rig"))
+        if (const std::optional<AssetRef> ref = AssetRefFromJson(*rig))
+        {
+            scenario.RigPath = ref->Path;
+            scenario.RigId = ref->Id;
+        }
     if (const JsonValue* rate = document.Find("tick_rate"); rate != nullptr)
     {
         if (!rate->IsNumber() || rate->AsNumber() < 1.0 || rate->AsNumber() > 1000.0)
@@ -471,8 +476,27 @@ std::optional<AnimationScenario> ReadAnimationScenario(const JsonValue& document
     return scenario;
 }
 
-bool SaveAnimationScenario(const AnimationScenario& scenario, const std::string& filePath,
-                           std::string& error)
+std::string AnimationScenarioText(const AnimationScenario& scenario)
+{
+    return JsonFormat(WriteAnimationScenario(scenario), 4) + '\n';
+}
+
+std::optional<AnimationScenario> ParseAnimationScenarioText(std::string_view text, std::string_view assetPath,
+                                                            std::vector<AnimDiagnostic>& diagnostics)
+{
+    JsonParseError parseError;
+    const std::optional<JsonValue> document = JsonParse(text, &parseError);
+    if (!document)
+    {
+        diagnostics.push_back(AnimDiagnostic{ AnimDiagnosticSeverity::Error, "anim.scenario.unreadable",
+                                              std::string(assetPath), {},
+                                              std::format("Not valid JSON: {}", parseError.Message) });
+        return std::nullopt;
+    }
+    return ReadAnimationScenario(*document, assetPath, diagnostics);
+}
+
+bool SaveAnimationScenario(const AnimationScenario& scenario, const std::string& filePath, std::string& error)
 {
     std::ofstream out(filePath, std::ios::binary | std::ios::trunc);
     if (!out)
@@ -480,7 +504,7 @@ bool SaveAnimationScenario(const AnimationScenario& scenario, const std::string&
         error = std::format("Could not open '{}' for writing.", filePath);
         return false;
     }
-    out << JsonFormat(WriteAnimationScenario(scenario), 4) << '\n';
+    out << AnimationScenarioText(scenario);
     if (!out)
     {
         error = std::format("Could not write '{}'.", filePath);
@@ -501,14 +525,5 @@ std::optional<AnimationScenario> LoadAnimationScenario(const std::string& filePa
     }
     std::stringstream text;
     text << in.rdbuf();
-    JsonParseError parseError;
-    const std::optional<JsonValue> document = JsonParse(text.str(), &parseError);
-    if (!document)
-    {
-        diagnostics.push_back(AnimDiagnostic{ AnimDiagnosticSeverity::Error, "anim.scenario.unreadable",
-                                              filePath, {},
-                                              std::format("Not valid JSON: {}", parseError.Message) });
-        return std::nullopt;
-    }
-    return ReadAnimationScenario(*document, filePath, diagnostics);
+    return ParseAnimationScenarioText(text.str(), filePath, diagnostics);
 }

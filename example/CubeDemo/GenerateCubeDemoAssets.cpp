@@ -1,5 +1,5 @@
 // Build-time dev-asset generator for CubeDemo (docs/assets/pipeline.md,
-// Stages 1, 3, and 4e). Four jobs, all seeds of the Stage 4 cook step:
+// Stages 1, 3, and 4e). Three jobs, all seeds of the Stage 4 cook step:
 //
 //   1. Writes the demo's cube mesh as a real .smesh file so the demo loads
 //      it through the file path like shipped content would. Generating at
@@ -7,13 +7,9 @@
 //      sync with StaticMeshVertex when the format version moves.
 //   2. Derives the scene's dependency table — the transitive closure of every
 //      asset:// reference in the scene plus, for each referenced .smat, the
-//      texture refs inside it. Derived data, never authored (Decision D).
-//   3. Maintains the persisted asset id map (Decision A): every dependency
-//      path gets a stable id at first sight; renames keep theirs via the
-//      map's content hashes. The map at <assets-root>/asset_ids.json is the
-//      committed identity record — this tool only appends and rehashes.
-//   4. Emits the cooked scene, <scene-stem>.smap: the authored scene with
-//      every known asset ref stamped {"id", "path"}, compiled with its
+//      texture refs inside it, each by its id (Decision A). Derived data,
+//      never authored (Decision D).
+//   3. Emits the cooked scene, <scene-stem>.smap, compiled with its
 //      dependency table into the one binary the runtime reads. The authored
 //      scene is never modified — it stays the round-trip format.
 //
@@ -21,7 +17,6 @@
 
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/static_mesh/MeshSerializer.h>
-#include <core/assets/AssetIdMap.h>
 #include <core/json/JsonParser.h>
 #include <core/logging/ConsoleLogSink.h>
 #include <core/logging/LoggingProvider.h>
@@ -102,9 +97,7 @@ int main(int argc, char** argv)
         /*collisionCells*/ {},
         serializers,
         [&outRoot](std::string_view assetPath) { return PhysicalPathFor(outRoot, assetPath); },
-        outRoot / kAssetIdMapFileName,
-        cookedScenePath,
-        /*sceneAssetPath*/ {}, &cookError);
+        cookedScenePath, &cookError);
     if (!cooked)
     {
         std::fprintf(stderr, "GenerateCubeDemoAssets: %s\n", cookError.c_str());

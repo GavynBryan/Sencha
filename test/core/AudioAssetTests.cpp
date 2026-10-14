@@ -237,7 +237,7 @@ TEST(AudioClipAssetLoaderStaged, SniffsSclipOverExtensionAndCommits)
     MemoryAssetSource source;
     source.Add("asset://audio/cooked.wav", std::move(sclipBytes));
 
-    AssetStaging staging = loader.LoadStaged(MakeAudioRecord("asset://audio/cooked.wav"), source);
+    AssetStaging staging = loader.LoadStaged(MakeAudioRecord("asset://audio/cooked.wav"), source, AssetPathsById{});
     ASSERT_TRUE(staging.IsValid()) << staging.Error;
 
     AudioClipHandle handle = loader.CommitTyped(std::move(staging));
@@ -261,7 +261,7 @@ TEST(AudioClipAssetLoaderStaged, LooseWavBytesStageThroughTheFallback)
     MemoryAssetSource source;
     source.Add("asset://audio/loose.wav", MakeWavBytes(44100, 2, samples));
 
-    AssetStaging staging = loader.LoadStaged(MakeAudioRecord("asset://audio/loose.wav"), source);
+    AssetStaging staging = loader.LoadStaged(MakeAudioRecord("asset://audio/loose.wav"), source, AssetPathsById{});
     ASSERT_TRUE(staging.IsValid()) << staging.Error;
 
     const auto* clip = std::any_cast<AudioClip>(&staging.Payload);
@@ -282,7 +282,7 @@ TEST(AudioClipAssetLoaderStaged, MalformedBytesFailStagingWithError)
     source.Add("asset://audio/garbage.wav", MakeWavBytes(44100, 1, { 1, 2, 3, 4 }));
 
     // Missing source.
-    AssetStaging missing = loader.LoadStaged(MakeAudioRecord("asset://audio/absent.wav"), source);
+    AssetStaging missing = loader.LoadStaged(MakeAudioRecord("asset://audio/absent.wav"), source, AssetPathsById{});
     EXPECT_FALSE(missing.IsValid());
 
     // Corrupt .sclip: truncated past the magic.
@@ -292,7 +292,7 @@ TEST(AudioClipAssetLoaderStaged, MalformedBytesFailStagingWithError)
     torn.resize(torn.size() - 1);
     source.Add("asset://audio/torn.sclip", std::move(torn));
 
-    AssetStaging staging = loader.LoadStaged(MakeAudioRecord("asset://audio/torn.sclip"), source);
+    AssetStaging staging = loader.LoadStaged(MakeAudioRecord("asset://audio/torn.sclip"), source, AssetPathsById{});
     EXPECT_FALSE(staging.IsValid());
     EXPECT_NE(staging.Error.find("sclip"), std::string::npos);
 }

@@ -90,7 +90,7 @@ public:
 
         archive.BeginObject(std::string_view{});
         if (!bindingsPath.empty()
-            && !WriteSceneAssetRef(archive, kBindingsKey, bindingsPath, context))
+            && !WriteSceneAssetRef(archive, kBindingsKey, AssetType::Data, bindingsPath, context))
             return false;
         if (relay->Binding.IsValid())
         {

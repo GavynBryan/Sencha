@@ -11,9 +11,11 @@
 #ifdef SENCHA_ENABLE_COOK
 #include <assets/cook/ImportOnDemand.h>
 #include <assets/cook/TextureCook.h>
+#include <assets/cook/SvgRasterize.h>
 #include <assets/cook/TextureImportSettings.h>
 #include <core/assets/AssetRegistry.h>
 #include <bc7decomp.h>
+#include <MemoryCookOutput.h>
 #endif
 
 #include <gtest/gtest.h>
@@ -442,7 +444,7 @@ TEST(TextureAssetLoaderStex, SniffsContainerOverExtension)
     source.Add("asset://textures/dev/cooked.png", std::move(stexBytes));
 
     AssetStaging staging = loader.LoadStaged(
-        MakeTextureRecord("asset://textures/dev/cooked.png"), source);
+        MakeTextureRecord("asset://textures/dev/cooked.png"), source, AssetPathsById{});
     ASSERT_TRUE(staging.IsValid()) << staging.Error;
 
     const auto* texture = std::any_cast<TextureData>(&staging.Payload);
@@ -468,7 +470,7 @@ TEST(TextureAssetLoaderStex, CorruptStexFailsStagingWithError)
     source.Add("asset://textures/dev/torn.stex", std::move(bytes));
 
     AssetStaging staging = loader.LoadStaged(
-        MakeTextureRecord("asset://textures/dev/torn.stex"), source);
+        MakeTextureRecord("asset://textures/dev/torn.stex"), source, AssetPathsById{});
     EXPECT_FALSE(staging.IsValid());
     EXPECT_NE(staging.Error.find("stex"), std::string::npos);
 }
@@ -647,7 +649,7 @@ TEST(TextureImportSettings, SaveFileRoundTrips)
     const std::filesystem::path path =
         std::filesystem::temp_directory_path() / "sencha_import_settings_roundtrip.meta";
     std::string error;
-    ASSERT_TRUE(SaveTextureImportSettingsFile(path.string(), settings, &error)) << error;
+    ASSERT_TRUE(SaveTextureImportSettingsFile(path.string(), settings, AssetId{}, &error)) << error;
 
     std::ifstream file(path, std::ios::binary);
     const std::string text((std::istreambuf_iterator<char>(file)), {});
@@ -713,4 +715,98 @@ TEST(TextureCook, FilterRidesTheStexRoundTrip)
     ASSERT_TRUE(WriteStexToBytes(texture, bytes));
     ASSERT_TRUE(LoadStexFromBytes(bytes, loaded, &error)) << error;
     EXPECT_EQ(loaded.Filter, TextureFilter::Linear);
+}
+
+namespace
+{
+    // A white square filling the left half of a 24x24 icon: the shape of every
+    // editor icon, white art on a 24 unit viewBox.
+    constexpr std::string_view kHalfSquareSvg =
+        R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">)"
+        R"(<rect x="0" y="0" width="12" height="24" fill="#ffffff"/></svg>)";
+
+}
+
+TEST(SvgRasterize, DrawsTheArtAtTheAskedHeightWithTheDrawingsAspect)
+{
+    const std::optional<Image> image = RasterizeSvg(AsBytes(kHalfSquareSvg), 16);
+    ASSERT_TRUE(image.has_value());
+    ASSERT_TRUE(image->IsValid());
+    EXPECT_EQ(image->Width, 16u);
+    EXPECT_EQ(image->Height, 16u);
+
+    const auto alphaAt = [&](std::uint32_t x, std::uint32_t y) {
+        return image->Pixels[(static_cast<std::size_t>(y) * image->Width + x) * 4u + 3u];
+    };
+    EXPECT_EQ(alphaAt(3, 8), 255) << "inside the square is not covered";
+    EXPECT_EQ(alphaAt(12, 8), 0) << "outside the square is covered";
+}
+
+TEST(SvgRasterize, BytesThatAreNotADrawingAreRefused)
+{
+    std::string error;
+    EXPECT_FALSE(RasterizeSvg(AsBytes("not an svg"), 16, &error).has_value());
+    EXPECT_FALSE(error.empty());
+    EXPECT_FALSE(RasterizeSvg(AsBytes(kHalfSquareSvg), 0).has_value());
+}
+
+TEST(SvgTextureImport, VectorArtCooksToAnUncompressedMippedTexture)
+{
+    // Icons are edges; block compression smears them, so they stay RGBA.
+    TempTextureRoot root;
+    {
+        std::ofstream svg(root.Root / "textures/dev/half.svg", std::ios::binary | std::ios::trunc);
+        svg << kHalfSquareSvg;
+    }
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    SvgTextureImporter importer;
+    AssetImporterRegistry importers;
+    ASSERT_TRUE(importers.Register(importer));
+    ASSERT_TRUE(ImportAssetsOnDemand(root.Root.generic_string(), importers, registry, logging));
+
+    const AssetRecord* record = registry.FindByPath("asset://textures/dev/half.svg");
+    ASSERT_NE(record, nullptr);
+    EXPECT_EQ(record->Type, AssetType::Texture);
+
+    FileAssetSource files;
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(files.ReadBytes(record->FilePath, bytes));
+    TextureData texture;
+    std::string error;
+    ASSERT_TRUE(LoadStexFromBytes(bytes, texture, &error)) << error;
+    EXPECT_EQ(texture.Height, SvgTextureImporter::kRasterHeight);
+    EXPECT_EQ(texture.Format, TexturePixelFormat::RGBA8_SRGB);
+    EXPECT_GT(texture.Mips.size(), 1u);
+}
+
+TEST(SvgTextureImport, ItsImportSettingsApplyOverTheVectorDefaults)
+{
+    SvgTextureImporter importer;
+    constexpr std::string_view meta = R"({"version": 1, "filter": "nearest", "mips": false})";
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(
+        ImportInput{ .SourceRelPath = "icons/half.svg", .Bytes = AsBytes(kHalfSquareSvg), .MetaBytes = AsBytes(meta) },
+        output);
+    ASSERT_TRUE(result.Error.empty()) << result.Error;
+    ASSERT_EQ(result.Artifacts.size(), 1u);
+
+    TextureData texture;
+    std::string error;
+    ASSERT_TRUE(LoadStexFromBytes(output.Files.at(result.Artifacts[0].FileRelPath), texture, &error)) << error;
+    EXPECT_EQ(texture.Filter, TextureFilter::Nearest) << "the source's filter setting was ignored";
+    EXPECT_EQ(texture.Mips.size(), 1u) << "the source's mips setting was ignored";
+    EXPECT_EQ(texture.Format, TexturePixelFormat::RGBA8_SRGB) << "a setting it did not state replaced a vector default";
+}
+
+TEST(SvgTextureImport, AMalformedSidecarFailsTheImport)
+{
+    SvgTextureImporter importer;
+    MemoryCookOutputWriter output;
+    const ImportResult result = importer.Import(ImportInput{ .SourceRelPath = "icons/half.svg",
+                                                             .Bytes = AsBytes(kHalfSquareSvg),
+                                                             .MetaBytes = AsBytes(R"({"filtr": 1})") },
+                                                output);
+    EXPECT_FALSE(result.Error.empty());
+    EXPECT_TRUE(output.Files.empty());
 }

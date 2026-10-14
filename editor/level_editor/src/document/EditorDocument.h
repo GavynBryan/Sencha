@@ -73,6 +73,10 @@ public:
     {
         Projection.SetContentRoots(std::move(roots));
     }
+    [[nodiscard]] const std::vector<std::filesystem::path>& ContentRoots() const
+    {
+        return Projection.ContentRoots();
+    }
 
     // What resolution and expansion of this document's instances reported.
     using ProjectionDiagnostics = SceneProjectionDiagnostics;
@@ -97,10 +101,13 @@ public:
 
     // ── Scene instances ─────────────────────────────────────────────────────
 
+    // Whether `source` can be placed here: it resolves, and it is not this
+    // document's own source. `error` says why not.
+    [[nodiscard]] bool CanPlaceSceneSource(std::string_view source, std::string* error = nullptr);
     // Places `source` (asset://...sscene) at `placement`, minting the instance
     // id and an id for every entity the source contributes, and projects it.
-    // Returns the invalid id with `error` set when the source does not
-    // resolve. An authoring act: the document is dirty afterwards.
+    // Returns the invalid id with `error` set when CanPlaceSceneSource refuses
+    // it. An authoring act: the document is dirty afterwards.
     SceneInstanceId PlaceSceneInstance(std::string source,
                                        const Transform3f& placement,
                                        PersistentEntityId parent = {},
@@ -170,6 +177,9 @@ public:
         return Projection.DependsOnSource(assetPath);
     }
 
+    // Whether a source it placed has changed on disk since it was read.
+    [[nodiscard]] bool SourcesChangedOnDisk() { return Projection.Sources().ChangedOnDisk(); }
+
     // Forgets the given sources' cached parses and re-projects once, when
     // any of them is one this document depends on; false means none were and
     // nothing happened. The explicit half of source invalidation (§3):
@@ -225,6 +235,10 @@ public:
                           const JsonValue& snapshot);
 
     [[nodiscard]] bool HasFilePath() const;
+    // Its file moved, unchanged: it lives there now.
+    void MoveTo(std::string path) { FilePath = std::move(path); }
+    // Its file was rewritten to say the same: what is there now is what it read.
+    void TakeFileAsRead() { Baseline.Record(FilePath); }
 
     void MarkDirty(bool dirty = true);
     // Owner hook for derived editor state (world validation). It is invoked only
@@ -244,6 +258,14 @@ private:
     // retained source's trivia and unknowns. ToSceneText renders it; Save also
     // scans it for unresolved asset references before writing.
     [[nodiscard]] SceneSourceDocument BuildSceneSource() const;
+    // A reference as the catalog knows its asset now (AssetRegistry::Current):
+    // saved with its id, loaded at the asset's current path.
+    [[nodiscard]] AssetRef Current(AssetRef ref) const;
+    [[nodiscard]] BrushRecord CurrentMaterials(BrushRecord record) const;
+    // Instances' sources as the project's files know them now: named by their
+    // ids on save, found by them on load.
+    void SettleSources(std::vector<SceneInstanceRecord>& instances) const;
+    void ReportUnresolvedRefs(const std::vector<SceneSourceEntity>& entities, std::string_view when) const;
 
     std::string FilePath;
     FileBaseline Baseline;

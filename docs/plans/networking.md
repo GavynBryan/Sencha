@@ -186,8 +186,9 @@ Verified against the tree at ratification (2026-08-07).
   Cooked scenes now carry a stable per-entity id (`PersistentIdComponent`, chunk
   `'PSID'`), so the file-order remap the review found is no longer the only handle
   on an authored entity. See Section 3.4.
-- **Identity that is already wire-safe.** `AssetId` is cook-minted, persisted in
-  `asset_ids.json`, deterministic and rename-stable (`AssetIdMap.h:53-65`). Zone,
+- **Identity that is already wire-safe.** `AssetId` is carried by the asset
+  itself -- in its document or its `.meta` sidecar -- minted once from the path it
+  first appeared at, and kept through every move (pipeline Decision A). Zone,
   region, and transition ids are editor-minted persisted 64-bit `StrongId`s carried
   verbatim in the cooked manifest (`ZoneId.h:5-8`). `PersistentEntityId` is an
   editor-minted 64-bit `StrongId` carried verbatim through the cook and resolved to
@@ -662,11 +663,10 @@ Identity assignment has two cases:
   carry as the prefab authored it. The interim `NetSpawnRecipes` registry, where
   each game re-described its own entities in code on both ends, is deleted.
 
-  What the id rests on: `AssetId` is minted from the asset's virtual path, so it
-  does not depend on the order content was seen in, and the cook now mints one
-  for the cooked scene itself rather than only for what a scene references. Two
-  machines agree because both ship the id map the cook wrote -- the same
-  same-content assumption a cooked scene's bytes already rest on.
+  What the id rests on: an asset states its id in its own files, and a cooked
+  scene goes by its source scene's id through the cooked index. Two machines
+  agree because both ship the same content -- the same same-content assumption
+  a cooked scene's bytes already rest on.
 
   A prefab the receiver cannot build is deferred exactly as an unresolved
   authored key is: the record is read, nothing is created, and the snapshot goes

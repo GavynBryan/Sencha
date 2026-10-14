@@ -1,0 +1,144 @@
+/* The shelf: geometry only, colours are theme roles. It spans the bottom edge;
+   the shell lifts what would sit under it. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: "Inter";
+    font-size: 11dp;
+}
+
+#shelf
+{
+    display: flex;
+    flex-direction: column;
+    overscroll-behavior: contain;
+    position: absolute;
+    left: 0dp;
+    right: 0dp;
+    bottom: 0dp;
+    box-sizing: border-box;
+    padding: 0dp 10dp 8dp 10dp;
+    border-width: 1dp 0dp 0dp 0dp;
+    pointer-events: auto;
+}
+
+/* The top edge, dragged to size it. */
+#shelf_grip { display: block; height: 6dp; margin: 0dp -10dp 2dp -10dp; cursor: ns-resize; }
+
+#shelf_bar
+{
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    height: 28dp;
+    margin-bottom: 6dp;
+}
+#shelf_choosing { display: block; padding: 3dp 8dp; border-width: 1dp; border-radius: 3dp; white-space: nowrap; }
+#shelf_path { display: flex; align-items: center; gap: 2dp; flex: 0 1 auto; overflow: hidden; }
+#shelf_search_well
+{
+    display: flex;
+    align-items: center;
+    width: 320dp;
+    height: 24dp;
+    padding: 0dp 6dp;
+    border-width: 1dp;
+    border-radius: 3dp;
+}
+.search_icon { display: block; width: 12dp; height: 12dp; margin-right: 6dp; }
+#shelf_search { display: block; flex: 1; height: 22dp; }
+#shelf_chips { display: flex; gap: 3dp; flex: 0 1 auto; }
+#shelf_count { display: block; flex: 1 1 auto; text-align: right; white-space: nowrap; }
+.key.glyph { font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: 10dp; }
+
+/* A zero basis: an auto one would grow to every tile (RmlUi gives an auto-based
+   flex item its content's height as a minimum), leaving nothing to scroll. */
+#shelf_body { flex: 1 1 0dp; display: flex; gap: 10dp; }
+
+#shelf_side { flex: 0 0 188dp; overflow-y: auto; }
+.side_row { display: flex; align-items: center; height: 22dp; padding-right: 6dp; border-radius: 3dp; }
+.side_label { display: block; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side_count { display: block; font-family: "JetBrains Mono"; font-size: 10dp; }
+.side_gap { display: block; height: 10dp; }
+.branch { display: block; width: 12dp; text-align: center; font-size: 10dp; }
+
+#shelf_items
+{
+    flex: 1 1 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 8dp;
+    overflow-y: auto;
+}
+/* Carried by dragging: a ghost of it follows the pointer to where it goes. */
+.tile
+{
+    drag: clone;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4dp 0dp;
+    gap: 2dp;
+    border-radius: 3dp;
+}
+.well
+{
+    display: block;
+    position: relative;
+    border-width: 1dp;
+    border-radius: 3dp;
+}
+.well .kind, .preview_well .kind
+{
+    display: block;
+    position: absolute;
+    left: 30%;
+    top: 30%;
+    width: 40%;
+    height: 40%;
+}
+/* A picture fills its well; a colour does where there is no picture. */
+.picture, .swatch { display: block; position: absolute; left: 0dp; top: 0dp; width: 100%; height: 100%; }
+.swatch { border-radius: 2dp; }
+.lamp { display: block; position: absolute; right: 4dp; top: 4dp; width: 8dp; height: 8dp; border-radius: 4dp; }
+.tile_name, .tile_kind
+{
+    display: block;
+    width: 100%;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tile_kind { font-size: 9dp; }
+
+/* The list: a row a file, its kind beside its name. */
+#shelf_items.list { display: block; }
+#shelf_items.list .tile { flex-direction: row; width: auto; height: 22dp; padding: 0dp 6dp; gap: 8dp; }
+#shelf_items.list .well { border-width: 0dp; }
+#shelf_items.list .well .kind { left: 0dp; top: 0dp; width: 100%; height: 100%; }
+#shelf_items.list .lamp { right: -2dp; top: -2dp; width: 6dp; height: 6dp; }
+#shelf_items.list .tile_name { flex: 1; width: auto; text-align: left; }
+#shelf_items.list .tile_kind { width: 160dp; text-align: left; font-size: 10dp; }
+#shelf_empty { display: block; padding: 12dp; }
+
+#shelf_preview { flex: 0 0 220dp; display: flex; flex-direction: column; gap: 4dp; overflow-y: auto; }
+/* It scrolls rather than squeezing what it holds. */
+#shelf_preview > * { flex-shrink: 0; }
+.preview_well { display: block; position: relative; width: 140dp; height: 140dp; border-width: 1dp; border-radius: 3dp; }
+#preview_name { display: block; font-family: "Chakra Petch"; font-weight: 600; font-size: 14dp; word-break: break-word; }
+.fact { display: block; font-size: 10dp; word-break: break-word; }
+.fact.path { font-family: "JetBrains Mono"; }
+
+/* What the chosen file names and what names it; a row follows to that file. */
+.refs_heading { display: block; margin-top: 6dp; font-size: 9dp; letter-spacing: 1dp; }
+.ref { display: flex; align-items: center; gap: 6dp; height: 18dp; padding: 0dp 4dp; border-radius: 2dp; }
+.ref_name { display: block; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref_kind { display: block; font-size: 9dp; white-space: nowrap; }
+.ref.missing { font-family: "JetBrains Mono"; font-size: 10dp; }

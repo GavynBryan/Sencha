@@ -277,13 +277,13 @@ TEST(ShellDocument, TheOptionsDocumentReadsTheRowMembersTheRuntimeActuallyBinds)
     // One of each control the page offers, so every member the document reads
     // for a slider and for a drop-down is exercised.
     UiRow volume{ "Master Volume", "0.8", "", true };
-    volume.Control = UiRowControl::Range;
+    volume.Control = UiRowControls::Range;
     volume.Number = 0.8;
     volume.Min = 0.0;
     volume.Max = 1.0;
     volume.Step = 0.05;
     UiRow mode{ "Display Mode", "Windowed", "", true };
-    mode.Control = UiRowControl::Choice;
+    mode.Control = UiRowControls::Choice;
     mode.Choices = { "Windowed", "Borderless", "Fullscreen" };
     ASSERT_TRUE(ui.SetRows(screen, rows, std::vector<UiRow>{ volume, mode }));
     ui.Update();

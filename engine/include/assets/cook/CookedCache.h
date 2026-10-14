@@ -1,5 +1,7 @@
 #pragma once
 
+#include <core/assets/AssetId.h>
+
 #include <core/assets/AssetRef.h>
 
 #include <cstdint>
@@ -46,6 +48,8 @@ struct CookedArtifact
     // every launch. 0 = unknown (pre-hash index entry); registration falls
     // back to hashing the file and upgrades the entry.
     uint64_t ContentHash = 0;
+    // The id it goes by, named by CookedArtifactId when its entry is put.
+    AssetId Id{};
 };
 
 // One extra source a cook read beyond its root file: a stylesheet a document
@@ -95,11 +99,22 @@ struct CookedSourceEntry
     std::vector<CookedAdditionalSource> AdditionalSources{};
 
     std::vector<CookedArtifact> Artifacts;
+
+    // The id the source states; when it states none, Put gives it its path's.
+    AssetId SourceId{};
 };
 
 // An index of another version is a cold cache. Why each version moved is in
 // docs/assets/pipeline.md.
-inline constexpr uint32_t kCookedCacheIndexVersion = 9;
+inline constexpr uint32_t kCookedCacheIndexVersion = 10;
+
+// The id an artifact goes by: its source's, a part's ("#anim:Walk"), or else
+// its own path's (docs/assets/pipeline.md, Decision A).
+[[nodiscard]] AssetId CookedArtifactId(std::string_view sourcePath, AssetId source, std::string_view artifactPath);
+
+// Names the entry's source id -- its path's, when the source states none --
+// and every artifact's (CookedArtifactId). Idempotent.
+void NameCookedIds(CookedSourceEntry& entry);
 
 // The index's name inside <assets-root>/.cooked/. Part of the cache's contract
 // rather than a detail of whoever writes it: the hot reloader reads the same
@@ -111,7 +126,8 @@ class CookedCacheIndex
 public:
     [[nodiscard]] const CookedSourceEntry* Find(std::string_view sourceRelPath) const;
 
-    // Inserts or replaces the entry for entry.SourceRelPath.
+    // Inserts or replaces the entry for entry.SourceRelPath, its ids named
+    // (NameCookedIds).
     void Put(CookedSourceEntry entry);
 
     // Drops the entry for a source. The caller deletes the artifact files; the

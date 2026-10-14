@@ -14,7 +14,8 @@ StaticMeshAssetLoader::StaticMeshAssetLoader(LoggingProvider& logging, StaticMes
 {
 }
 
-AssetStaging StaticMeshAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging StaticMeshAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                               const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;

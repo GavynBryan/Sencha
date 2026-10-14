@@ -26,8 +26,20 @@ TEST_F(TransformModeMenuModelTest, ItemsAreTheModeTableInOrder)
         EXPECT_EQ(menu.Item(i).Label, kTransformModeItems[static_cast<std::size_t>(i)].Choice.Label);
         EXPECT_NE(menu.Item(i).Icon, IconId::None);
     }
-    EXPECT_TRUE(menu.Variants(0).empty());
-    EXPECT_EQ(menu.ActiveVariant(0), -1);
+    EXPECT_EQ(menu.Variants(0).size(), kTransformSpaceItems.size()) << "every mode fans out its spaces";
+    EXPECT_TRUE(menu.Variants(99).empty());
+}
+
+TEST_F(TransformModeMenuModelTest, AModeAndItsSpaceAreOneChoice)
+{
+    TransformModeMenuModel menu = Menu();
+    menu.Select(2, 2);
+    EXPECT_EQ(Session().GetTransformMode(), TransformMode::Rotate);
+    EXPECT_EQ(Session().GetTransformSpace(), TransformSpace::Local);
+    EXPECT_EQ(menu.ActiveVariant(2), 2);
+    EXPECT_EQ(menu.ActiveVariant(1), -1) << "only the mode in effect shows its space";
+    menu.Select(1, -1);
+    EXPECT_EQ(Session().GetTransformSpace(), TransformSpace::Local) << "the entry alone keeps the space";
 }
 
 TEST_F(TransformModeMenuModelTest, TheActiveEntryIsTheModeBeingDriven)
@@ -51,7 +63,7 @@ TEST_F(TransformModeMenuModelTest, AChoiceRequestsThatMode)
     TransformModeMenuModel menu = Menu();
     menu.Select(3, -1);
     EXPECT_EQ(Session().GetTransformMode(), TransformMode::Scale);
-    menu.Select(1, 7); // a variant it has none of is ignored, the entry is not
+    menu.Select(1, 7); // a space it has none of is ignored, the entry is not
     EXPECT_EQ(Session().GetTransformMode(), TransformMode::Move);
     menu.Select(-1, -1);
     menu.Select(99, -1);

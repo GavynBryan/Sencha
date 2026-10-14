@@ -8,9 +8,9 @@
 #include "DocumentCookContext.h"
 #include "DocumentSerialization.h"
 
+#include <core/assets/AssetPath.h>
 #include <assets/cook/SceneCookOutput.h>
 #include <assets/static_mesh/MeshSerializer.h>
-#include <core/assets/AssetIdMap.h>
 #include <world/scene/SmapFormat.h>
 
 #include <string>
@@ -97,8 +97,7 @@ bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
     const auto physicalPathFor =
         [&assetsRoot, &catalog, &transaction](
             std::string_view assetPath) -> std::filesystem::path {
-            constexpr std::string_view prefix = "asset://";
-            const std::string rel(assetPath.substr(prefix.size()));
+            const std::string rel(ContentRelativePath(assetPath));
             if (catalog.IsGenerated(assetPath))
             {
                 // A preserved generated asset already exists in the active tree;
@@ -110,17 +109,9 @@ bool WriteCookedSceneArtifacts(const DocumentCookContext& ctx,
             return assetsRoot / rel;
         };
 
-    const std::filesystem::path idMapPath = assetsRoot / kAssetIdMapFileName;
     std::string cookError;
-    if (!transaction.Seed(idMapPath, &cookError))
-    {
-        result.Error = "CookDocument: " + cookError;
-        return false;
-    }
     if (!WriteCookedScene(cooked, catalog.SceneRefs(), collisionCells,
-            EditorSceneSerializers(), physicalPathFor,
-            transaction.Stage(idMapPath), transaction.Stage(paths.Scene),
-            "asset://" + paths.Stem + ".smap", &cookError))
+            EditorSceneSerializers(), physicalPathFor, transaction.Stage(paths.Scene), &cookError))
     {
         result.Error = "CookDocument: " + cookError;
         return false;

@@ -8,10 +8,6 @@
 
 #include <optional>
 
-// Forward-declared (not <imgui.h>) so the pure depth helpers below stay includable
-// from the UI-free brush_tests target. ImVec2 is only used by the resolver, which
-// lives in the .cpp where imgui is fully available.
-struct ImVec2;
 struct ToolContext;
 struct EditorViewport;
 
@@ -44,7 +40,7 @@ struct BrushCreationPlane
 };
 
 // Depth-axis placement (center, half-extent, rest side). Pure math, no
-// viewport/ImGui, so the three creation cases unit-test in brush_tests.
+// viewport, so the three creation cases unit-test in brush_tests.
 struct BrushDepthPlacement
 {
     float Center = 0.0f;
@@ -94,5 +90,5 @@ struct BrushDepthPlacement
 }
 
 [[nodiscard]] std::optional<BrushCreationPlane>
-ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport, ImVec2 pressPos,
+ResolveBrushCreationPlane(const ToolContext& ctx, const EditorViewport& viewport, Vec2d pressPos,
                           BrushPrimitive primitive);

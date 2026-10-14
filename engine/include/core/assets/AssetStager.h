@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/assets/AssetRefCodec.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSource.h>
 
@@ -64,7 +65,10 @@ class IAssetStager
 public:
     virtual ~IAssetStager() = default;
 
-    // Task-thread half. `source` is the byte seam (Decision I).
+    // Task-thread half. `source` is the byte seam (Decision I); `current` is
+    // where assets named by id are now, a snapshot the owner took when it asked
+    // for the stage. A loader whose content names no other asset ignores it.
     [[nodiscard]] virtual AssetStaging LoadStaged(const AssetRecord& record,
-                                                  IAssetSource& source) = 0;
+                                                  IAssetSource& source,
+                                                  const AssetPathsById& current) = 0;
 };

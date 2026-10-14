@@ -31,8 +31,8 @@ EditorViewport PerspectiveViewport()
 TEST(ViewportRenderCamera, MatchesThePanelCameraWhenTheTargetMatchesThePanel)
 {
     EditorViewport viewport = PerspectiveViewport();
-    viewport.RegionMin = ImVec2(10.0f, 20.0f);
-    viewport.RegionMax = ImVec2(810.0f, 620.0f); // 800x600
+    viewport.RegionMin = Vec2d(10.0f, 20.0f);
+    viewport.RegionMax = Vec2d(810.0f, 620.0f); // 800x600
 
     const CameraRenderData panel = viewport.BuildRenderData();
     const CameraRenderData target = viewport.CameraForExtent(800, 600);
@@ -46,8 +46,8 @@ TEST(ViewportRenderCamera, FollowsTheTargetRatherThanThePanelWhenTheyDisagree)
     EditorViewport viewport = PerspectiveViewport();
     // Mid-drag: the panel is already square, the target is still 2:1 from the
     // size the panel reported last frame.
-    viewport.RegionMin = ImVec2(0.0f, 0.0f);
-    viewport.RegionMax = ImVec2(400.0f, 400.0f);
+    viewport.RegionMin = Vec2d(0.0f, 0.0f);
+    viewport.RegionMax = Vec2d(400.0f, 400.0f);
 
     const CameraRenderData target = viewport.CameraForExtent(400, 200);
     const CameraRenderData square = viewport.CameraForExtent(400, 400);
@@ -61,8 +61,8 @@ TEST(ViewportRenderCamera, FollowsTheTargetRatherThanThePanelWhenTheyDisagree)
 TEST(ViewportRenderCamera, TreatsADegenerateExtentAsSquareRatherThanDividingByZero)
 {
     EditorViewport viewport = PerspectiveViewport();
-    viewport.RegionMin = ImVec2(0.0f, 0.0f);
-    viewport.RegionMax = ImVec2(400.0f, 400.0f);
+    viewport.RegionMin = Vec2d(0.0f, 0.0f);
+    viewport.RegionMax = Vec2d(400.0f, 400.0f);
 
     const CameraRenderData square = viewport.CameraForExtent(400, 400);
     EXPECT_EQ(viewport.CameraForExtent(0, 0).Projection, square.Projection);
@@ -73,8 +73,8 @@ TEST(ViewportRenderCamera, AnOrthographicViewportSizesItsBoxFromTheTargetToo)
 {
     EditorViewport viewport;
     viewport.ApplyOrientation(ViewportOrientation::Top);
-    viewport.RegionMin = ImVec2(0.0f, 0.0f);
-    viewport.RegionMax = ImVec2(400.0f, 400.0f);
+    viewport.RegionMin = Vec2d(0.0f, 0.0f);
+    viewport.RegionMax = Vec2d(400.0f, 400.0f);
 
     const CameraRenderData wide = viewport.CameraForExtent(800, 400);
     EXPECT_EQ(wide.Projection, viewport.Camera.BuildRenderData(2.0f).Projection);

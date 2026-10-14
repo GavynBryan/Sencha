@@ -2,7 +2,10 @@
 // and played through in the preview, the way the event panels do it -- no
 // game, and nothing written to disk until saved.
 
+#include "properties/PropertyTree.h"
 #include "authoring/AnimationEventBindings.h"
+#include "authoring/AnimationAdmissionProperties.h"
+#include "authoring/AnimationEventProperties.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationRigDocumentEdits.h"
@@ -150,8 +153,7 @@ TEST(AnimationEventEditing, AMarkerPlayedThroughShowsItsAdmission)
     ASSERT_NE(events, nullptr);
     EXPECT_EQ(events->SidecarPath(), project.Root / "anim" / "hero.glb.meta");
 
-    const std::uint32_t key = events->Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(*events);
+    const std::uint32_t key = workspace.ClipEvents.Add(*events, Footstep(0.25f));
     ASSERT_NE(workspace.ClipEvents.PreviewStateOf(*events), nullptr);
     EXPECT_EQ(workspace.ClipEvents.PreviewStateOf(*events)->Status, ClipEventsPreviewStatus::Current);
 
@@ -179,18 +181,11 @@ TEST(AnimationEventEditing, ADragReachesThePreviewOnlyWhenCommitted)
     AnimationClipEventsDocument* opened = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(opened, nullptr) << workspace.DocumentError;
     AnimationClipEventsDocument& events = *opened;
-    const std::uint32_t key = events.Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(events);
+    const std::uint32_t key = workspace.ClipEvents.Add(events, Footstep(0.25f));
     const AnimationClipData* clip = project.Assets->AnimationClips.Get(project.Assets->AnimationClips.Find(kClip));
     ASSERT_EQ(clip->Events.size(), 1u);
 
-    const auto drag = [&] {
-        events.BeginEdit(key);
-        AnimationClipEvent moved = *events.Find(key);
-        moved.Time = 0.8f;
-        events.PreviewEdit(moved);
-        workspace.ClipEvents.Changed(events);
-    };
+    const auto drag = [&] { workspace.ClipEvents.PreviewTime(events, key, 0.8); };
     drag();
     EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.25f) << "a preview never reaches the clip";
     workspace.Sources.CancelEdits();
@@ -233,8 +228,7 @@ TEST(AnimationEventEditing, ACreatedBindingIsOneTheEventsCanName)
     loud.Binding = "anim.footstep_loud";
     loud.Inputs[0].Key = "Surface";
     loud.Inputs[1].Key = "Volume";
-    (void)events.Add(loud);
-    workspace.ClipEvents.Changed(events);
+    (void)workspace.ClipEvents.Add(events, loud);
     ASSERT_EQ(workspace.Rig.Simulation.Rig()->Contents.at(0).Events.size(), 1u);
     EXPECT_TRUE(workspace.Rig.Simulation.Rig()->Contents[0].Events[0].Resolved)
         << (workspace.Rig.Simulation.Rig()->Diagnostics.empty() ? "" : workspace.Rig.Simulation.Rig()->Diagnostics.back().Message);
@@ -282,8 +276,7 @@ TEST(AnimationEventEditing, UndoStepsClipEventsAndDataDocumentsInOneOrder)
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
-    (void)events->Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(*events);
+    (void)workspace.ClipEvents.Add(*events, Footstep(0.25f));
     AuthorDocument(workspace, "asset://anim/hero.behaviors.sdata", [](JsonValue& data) {
         JsonArrayOf(data, "behaviors").front().AsObject().emplace_back("rate", JsonValue(2.0));
     });
@@ -316,8 +309,7 @@ TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
     ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
     AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
     ASSERT_NE(events, nullptr) << workspace.DocumentError;
-    (void)events->Add(Footstep(0.25f));
-    workspace.ClipEvents.Changed(*events);
+    (void)workspace.ClipEvents.Add(*events, Footstep(0.25f));
     AuthorDocument(workspace, "asset://anim/hero.behaviors.sdata", [](JsonValue& data) {
         JsonArrayOf(data, "behaviors").front().AsObject().emplace_back("rate", JsonValue(2.0));
     });
@@ -340,5 +332,140 @@ TEST(AnimationEventEditing, SaveAllHoldsBackOnlyTheChangedSidecar)
     EXPECT_TRUE(workspace.Sources.LastSave().WithStatus(DocumentSaveStatus::Conflict).empty());
     workspace.Sources.Undo();
     EXPECT_EQ(events->Events().size(), 1u) << "the author's events are one step away";
+    workspace.Sources.DiscardAll();
+}
+
+// The card edits the picked event: each change one step, a dragged time live in
+// the preview and gone again on cancel.
+TEST(AnimationEventEditing, TheCardEditsThePickedEventOneStepAtATime)
+{
+    EventProject project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+    AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
+    ASSERT_NE(events, nullptr) << workspace.DocumentError;
+    AnimationClipEvent cosmetic = Footstep(0.25f);
+    cosmetic.MinWeight = 0.3f;
+    const std::uint32_t key = workspace.ClipEvents.Add(*events, cosmetic);
+    std::optional<std::uint32_t> picked;
+    AnimationEventProperties card(workspace, [&] { return picked; });
+
+    EXPECT_EQ(FindProperty(card.Nodes(), "name"), nullptr) << "with nothing picked, the card is the clip's events";
+    EXPECT_NE(FindProperty(card.Nodes(), "sidecar"), nullptr);
+    picked = key;
+    ASSERT_NE(FindProperty(card.Nodes(), "weight"), nullptr);
+
+    EXPECT_EQ(card.CommitEdit("name", "left foot"), PropertyEditResult::Applied);
+    EXPECT_EQ(events->Find(key)->Name, "left foot");
+
+    const AnimationClipData* clip = project.Assets->AnimationClips.Get(project.Assets->AnimationClips.Find(kClip));
+    ASSERT_TRUE(card.BeginEdit("time"));
+    EXPECT_EQ(card.PreviewEdit("time", "0.6"), PropertyEditResult::Applied);
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.6f);
+    EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.25f) << "a preview never reaches the clip";
+    card.CancelEdit("time");
+    EXPECT_FALSE(events->IsEditing());
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.25f);
+
+    ASSERT_TRUE(card.BeginEdit("time"));
+    (void)card.PreviewEdit("time", "0.6");
+    EXPECT_EQ(card.CommitEdit("time", "0.7"), PropertyEditResult::Applied);
+    EXPECT_FALSE(events->IsEditing());
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.7f);
+    EXPECT_FLOAT_EQ(clip->Events[0].Time, 0.7f);
+    EXPECT_EQ(card.CommitEdit("time", "late"), PropertyEditResult::Refused);
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.7f);
+
+    EXPECT_EQ(card.CommitEdit("scope", "Gameplay"), PropertyEditResult::Applied);
+    EXPECT_EQ(events->Find(key)->Scope, AnimEventScope::Gameplay);
+    EXPECT_FALSE(events->Find(key)->MinWeight.has_value()) << "a gameplay event has no weight threshold";
+    EXPECT_EQ(FindProperty(card.Nodes(), "own_weight"), nullptr);
+
+    workspace.Sources.Undo();
+    EXPECT_EQ(events->Find(key)->Scope, AnimEventScope::Cosmetic);
+    EXPECT_EQ(events->Find(key)->MinWeight, 0.3f);
+    workspace.Sources.Undo();
+    EXPECT_FLOAT_EQ(events->Find(key)->Time, 0.25f) << "the drag was one step";
+    workspace.Sources.Undo();
+    EXPECT_EQ(events->Find(key)->Name, "");
+    workspace.Sources.DiscardAll();
+}
+
+// Choosing another binding keeps the inputs it shares and starts the rest from
+// defaults; an input can be supplied, typed and taken away.
+TEST(AnimationEventEditing, TheCardBindsAndFeedsThePickedEvent)
+{
+    EventProject project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+    AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
+    ASSERT_NE(events, nullptr) << workspace.DocumentError;
+    const std::uint32_t key = workspace.ClipEvents.Add(*events, Footstep(0.25f));
+    AnimationEventProperties card(workspace, [&] { return std::optional(key); });
+    ASSERT_NE(FindProperty(card.Nodes(), "inputs.surface"), nullptr);
+    ASSERT_NE(FindProperty(card.Nodes(), "contract"), nullptr);
+    EXPECT_EQ(FindProperty(card.Nodes(), "contract")->Value, "test.footstep(Surface tag, Volume float)");
+
+    EXPECT_EQ(card.CommitEdit("binding", "anim.count"), PropertyEditResult::Applied);
+    ASSERT_EQ(events->Find(key)->Inputs.size(), 1u);
+    EXPECT_EQ(events->Find(key)->Inputs[0].Key, "amount");
+    EXPECT_EQ(card.CommitEdit("inputs.amount", "3.6"), PropertyEditResult::Applied);
+    EXPECT_DOUBLE_EQ(events->Find(key)->Inputs[0].Literal.AsNumber(), 4.0) << "an int input takes whole numbers";
+    EXPECT_EQ(card.CommitEdit("inputs.amount", "lots"), PropertyEditResult::Refused);
+
+    EXPECT_EQ(card.Act("inputs.amount", "remove", ""), PropertyEditResult::Applied);
+    EXPECT_TRUE(events->Find(key)->Inputs.empty());
+    ASSERT_NE(FindProperty(card.Nodes(), "inputs.amount"), nullptr);
+    EXPECT_EQ(FindProperty(card.Nodes(), "inputs.amount")->Value, "Not supplied");
+    EXPECT_EQ(card.Act("inputs.amount", "supply", ""), PropertyEditResult::Applied);
+    ASSERT_EQ(events->Find(key)->Inputs.size(), 1u);
+    EXPECT_DOUBLE_EQ(events->Find(key)->Inputs[0].Literal.AsNumber(), 0.0);
+    EXPECT_EQ(card.Act("inputs.nothing", "supply", ""), PropertyEditResult::Refused);
+
+    EXPECT_EQ(card.CommitEdit("binding", "anim.footstep"), PropertyEditResult::Applied);
+    ASSERT_EQ(events->Find(key)->Inputs.size(), 2u);
+    EXPECT_EQ(events->Find(key)->Inputs[0].Source, VerbArgumentSource::Tag) << "a tag input starts as a tag";
+    EXPECT_EQ(card.CommitEdit("inputs.surface", "Surface.Grass"), PropertyEditResult::Applied);
+    EXPECT_EQ(events->Find(key)->Inputs[0].Text, "Surface.Grass");
+    workspace.Sources.DiscardAll();
+}
+
+// What the events met, on the Events card's details: the preview's role and
+// recorders as scenario state, and each crossing with what its binding answered.
+TEST(AnimationEventEditing, TheAdmissionsSayWhatEachCrossingWasAnswered)
+{
+    EventProject project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, &Vocabulary);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+    AnimationClipEventsDocument* events = workspace.ClipEvents.OpenOrFocus(std::string(kClip), workspace.DocumentError);
+    ASSERT_NE(events, nullptr) << workspace.DocumentError;
+    (void)workspace.ClipEvents.Add(*events, Footstep(0.25f));
+    AnimationAdmissionProperties card(workspace);
+
+    std::vector<PropertyNode> nodes = card.Nodes();
+    ASSERT_NE(FindProperty(nodes, "role"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "role")->Value, "Authority");
+    ASSERT_NE(FindProperty(nodes, "recorders.test.footstep"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "recorders.test.footstep")->Value, "true") << "the scenario records footsteps";
+    EXPECT_NE(FindProperty(nodes, "admitted.none"), nullptr);
+
+    workspace.Rig.Simulation.RunTo(30);
+    nodes = card.Nodes();
+    ASSERT_NE(FindProperty(nodes, "admitted.0"), nullptr);
+    bool accepted = false;
+    for (const PropertyNode& row : FindProperty(nodes, "admitted")->Children)
+        accepted = accepted || row.Value.find("accepted") != std::string::npos;
+    EXPECT_TRUE(accepted) << "a footstep crossed and was accepted";
+
+    ASSERT_TRUE(card.BeginEdit("recorders.test.count"));
+    EXPECT_EQ(card.CommitEdit("recorders.test.count", "true"), PropertyEditResult::Applied);
+    EXPECT_TRUE(workspace.Rig.Simulation.HasRecorder("test.count"));
+    ASSERT_TRUE(card.BeginEdit("role"));
+    EXPECT_EQ(card.CommitEdit("role", "Client"), PropertyEditResult::Applied);
+    EXPECT_EQ(workspace.Rig.Simulation.Scenario().Role, AnimationPreviewRole::Client);
+    EXPECT_EQ(card.CommitEdit("role", "Spectator"), PropertyEditResult::Refused);
     workspace.Sources.DiscardAll();
 }

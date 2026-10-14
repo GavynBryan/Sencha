@@ -1,9 +1,8 @@
 #include "BrushTool.h"
 
-#include "ui/chrome/ChromeHeader.h"
+#include "properties/SettingProperties.h"
 
-#include "ui/ButtonFlow.h"
-#include "ui/chrome/ChromeBars.h"
+
 
 
 #include "brush/BrushMesh.h"
@@ -14,7 +13,7 @@
 #include "document/commands/DeferredCreateBrushCommand.h"
 #include "document/interactions/BrushCreateDragInteraction.h"
 #include "document/interactions/BrushCreationPlane.h"
-#include "meshedit/ActiveMaterialState.h"
+#include "resources/ActiveResources.h"
 #include "meshedit/MeshEditService.h"
 #include "render/PreviewBuffer.h"
 #include "selection/commands/SelectCommand.h"
@@ -48,6 +47,8 @@ namespace
         ITool::Variant{ .Label = "Cylinder", .Icon = IconId::Cylinder },
     };
     static_assert(kPrimitiveKinds.size() == kPrimitiveVariants.size());
+    constexpr std::array<std::string_view, 3> kPrimitiveNames = { "Box", "Plane", "Cylinder" };
+    constexpr std::array<std::string_view, 2> kFacingNames = { "Outer", "Inner" };
 
     // The local-space mesh for the pending brush's current settings. Placement
     // lives on the scene entity; this builds shape only.
@@ -148,6 +149,13 @@ void BrushTool::OnCancel(ToolContext& ctx)
     CancelPending(ctx);
 }
 
+void BrushTool::OnResourceChanged(ToolContext& ctx, AssetType type)
+{
+    // The uncommitted brush always carries the material in hand.
+    if (type == AssetType::Material && HasPending() && PendingMaterialStale(ctx))
+        RefreshPending(ctx);
+}
+
 InputConsumed BrushTool::OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     // Clicking off a pending brush commits it; the click is spent on the commit
@@ -226,8 +234,8 @@ void BrushTool::SetPending(ToolContext& ctx, const PendingBrush& pending)
 
     BrushMesh mesh = BuildPendingMesh(Creation, Pending, depthHalf);
     MeshLocalBounds(mesh, Pending.LastBuiltBoundsMin, Pending.LastBuiltBoundsMax);
-    ApplyActiveMaterial(mesh, ctx.ActiveMaterial.Active);
-    PendingMaterial = ctx.ActiveMaterial.Active;
+    ApplyActiveMaterial(mesh, ctx.Resources.Active(AssetType::Material));
+    PendingMaterial = ctx.Resources.Active(AssetType::Material);
     PendingEntity = ctx.Scene.CreateBrushFromMesh(transform, std::move(mesh));
     ctx.Preview.Clear();
     ctx.Selection.SetSelection({
@@ -280,8 +288,8 @@ void BrushTool::RefreshPending(ToolContext& ctx)
 
     BrushMesh mesh = BuildPendingMesh(Creation, Pending, depthHalf);
     MeshLocalBounds(mesh, Pending.LastBuiltBoundsMin, Pending.LastBuiltBoundsMax);
-    ApplyActiveMaterial(mesh, ctx.ActiveMaterial.Active);
-    PendingMaterial = ctx.ActiveMaterial.Active;
+    ApplyActiveMaterial(mesh, ctx.Resources.Active(AssetType::Material));
+    PendingMaterial = ctx.Resources.Active(AssetType::Material);
 
     // Only a primitive-class depth change moves the entity beyond the adopted
     // recenter, and relatively, so the rest side stays where the drag put it.
@@ -301,8 +309,8 @@ void BrushTool::RefreshPending(ToolContext& ctx)
 bool BrushTool::PendingMaterialStale(const ToolContext& ctx) const
 {
     return State == BrushToolState::Pending
-        && ctx.ActiveMaterial.Active.IsValid()
-        && ctx.ActiveMaterial.Active.Path != PendingMaterial.Path;
+        && ctx.Resources.Active(AssetType::Material).IsValid()
+        && ctx.Resources.Active(AssetType::Material).Path != PendingMaterial.Path;
 }
 
 void BrushTool::CommitPending(ToolContext& ctx)
@@ -368,83 +376,59 @@ void BrushTool::SelectVariant(ToolContext&, std::size_t index)
         Creation.ActivePrimitive = kPrimitiveKinds[index];
 }
 
-void BrushTool::DrawProperties(ToolContext& ctx)
+std::vector<PropertyNode> BrushTool::Parameters(const ToolContext& ctx) const
 {
-    EditorChrome::SectionTitle("Primitive");
-
-    const bool pending = HasPending();
-    bool changed = false;
-
-    {
-        ButtonFlow flow;
-        const int active = GetActiveVariant(ctx);
-        for (std::size_t i = 0; i < kPrimitiveVariants.size(); ++i)
-        {
-            const ITool::Variant& prim = kPrimitiveVariants[i];
-            const bool on = static_cast<int>(i) == active;
-            if (flow.ToolButton(prim.Label.data(), prim.Icon, prim.Label.data(), on, EditorChrome::BarButtonSize()) && !on)
-            {
-                Creation.ActivePrimitive = kPrimitiveKinds[i];
-                changed = true;
-            }
-        }
-    }
-
+    std::vector<PropertyNode> nodes;
+    nodes.push_back(ChoiceProperty("primitive", "Primitive", kPrimitiveNames,
+                                   static_cast<std::size_t>(std::max(0, GetActiveVariant(ctx)))));
     if (Creation.ActivePrimitive == BrushPrimitive::Cylinder)
-    {
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
-        if (ImGui::DragInt("Sides", &Creation.CylinderSides, 0.25f, 3, 64))
-        {
-            Creation.CylinderSides = std::clamp(Creation.CylinderSides, 3, 64);
-            changed = true;
-        }
-    }
-
+        nodes.push_back(NumberProperty("sides", "Sides", Creation.CylinderSides, 3, 64, 1));
     if (Creation.ActivePrimitive == BrushPrimitive::Plane)
-    {
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
-        if (ImGui::DragInt("Subdivisions", &Creation.PlaneSubdivisions, 0.25f, 1, 32))
-        {
-            Creation.PlaneSubdivisions = std::clamp(Creation.PlaneSubdivisions, 1, 32);
-            changed = true;
-        }
-    }
+        nodes.push_back(NumberProperty("subdivisions", "Subdivisions", Creation.PlaneSubdivisions, 1, 32, 1));
+    nodes.push_back(ChoiceProperty("facing", "Facing", kFacingNames, Creation.Inner ? 1 : 0,
+                                   "Inside-out brush (all normals flipped), for rooms seen from within"));
+    return nodes;
+}
 
-    if (ImGui::RadioButton("Outer", !Creation.Inner))
+PropertyEditResult BrushTool::SetParameter(ToolContext& ctx, std::string_view key, std::string_view value)
+{
+    BrushCreationSettings next = Creation;
+    if (key == "primitive")
     {
-        changed |= Creation.Inner;
-        Creation.Inner = false;
+        const std::optional<std::size_t> index = ParseChoice(value, kPrimitiveNames);
+        if (!index)
+            return PropertyEditResult::Refused;
+        next.ActivePrimitive = kPrimitiveKinds[*index];
     }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Inner", Creation.Inner))
+    else if (key == "sides" || key == "subdivisions")
     {
-        changed |= !Creation.Inner;
-        Creation.Inner = true;
+        const bool sides = key == "sides";
+        const std::optional<double> number = sides ? ParseNumber(value, 3, 64) : ParseNumber(value, 1, 32);
+        if (!number)
+            return PropertyEditResult::Refused;
+        (sides ? next.CylinderSides : next.PlaneSubdivisions) = static_cast<int>(std::lround(*number));
     }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Inside-out brush (all normals flipped), for rooms seen from within");
-
-    // A material picked while the brush is pending restyles the preview: the
-    // uncommitted brush should always carry the current active material.
-    if (pending && PendingMaterialStale(ctx))
-        changed = true;
-
-    if (changed && pending)
+    else if (key == "facing")
+    {
+        const std::optional<std::size_t> index = ParseChoice(value, kFacingNames);
+        if (!index)
+            return PropertyEditResult::Refused;
+        next.Inner = *index == 1;
+    }
+    else
+    {
+        return PropertyEditResult::Gone;
+    }
+    if (next.ActivePrimitive == Creation.ActivePrimitive && next.CylinderSides == Creation.CylinderSides
+        && next.PlaneSubdivisions == Creation.PlaneSubdivisions && next.Inner == Creation.Inner)
+        return PropertyEditResult::Unchanged;
+    Creation = next;
+    if (HasPending())
         RefreshPending(ctx);
+    return PropertyEditResult::Applied;
+}
 
-    if (!pending)
-    {
-        ImGui::TextDisabled("Drag in a viewport to create");
-        return;
-    }
-
-    ButtonFlow flow;
-    if (flow.Button("Apply", EditorChrome::ButtonTone::Active))
-        CommitPending(ctx);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Commit the pending brush  [Enter]");
-    if (flow.Button("Cancel"))
-        CancelPending(ctx);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Discard the pending brush  [Esc]");
+std::string BrushTool::Hint(const ToolContext&) const
+{
+    return HasPending() ? std::string("Enter applies, Esc discards") : std::string("Drag in a view to create");
 }

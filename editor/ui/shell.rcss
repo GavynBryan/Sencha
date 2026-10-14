@@ -1,0 +1,597 @@
+@font-face { src: "fonts/Inter-Regular.ttf"; }
+
+/* The shell's own chrome: the rail and its popovers. Geometry only; every
+   colour comes from theme.rcss roles. The whole document passes the pointer
+   through except where something is actually mounted. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: Inter;
+    font-size: 12dp;
+}
+
+#rail
+{
+    display: flex;
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    height: 34dp;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom-width: 1dp;
+    pointer-events: auto;
+}
+
+#rail_left, #rail_right
+{
+    display: flex;
+    align-items: center;
+    height: 34dp;
+    padding: 0dp 6dp;
+    gap: 6dp;
+}
+
+#notices
+{
+    display: flex;
+    position: relative;
+    flex: 1;
+    justify-content: center;
+    align-items: center;
+    height: 34dp;
+    pointer-events: none;
+}
+
+/* Behind the notices, which pass over it. */
+#grille
+{
+    display: flex;
+    position: absolute;
+    left: 50%;
+    top: 11dp;
+    width: 108dp;
+    height: 12dp;
+    margin-left: -54dp;
+    align-items: center;
+    gap: 6dp;
+}
+
+.screw { display: block; width: 12dp; height: 12dp; }
+.vent { display: block; width: 72dp; height: 12dp; }
+
+.notice
+{
+    display: block;
+    height: 20dp;
+    line-height: 20dp;
+    padding: 0dp 10dp;
+    margin: 0dp 4dp;
+    border-width: 1dp;
+    border-radius: 3dp;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+
+.lamp
+{
+    display: block;
+    width: 8dp;
+    height: 8dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+}
+
+.readout
+{
+    display: flex;
+    align-items: center;
+    gap: 5dp;
+    height: 22dp;
+    padding: 0dp 7dp;
+    border-width: 1dp;
+    border-radius: 3dp;
+    font-family: "JetBrains Mono";
+    pointer-events: auto;
+}
+
+#transport
+{
+    display: flex;
+    align-items: center;
+    gap: 4dp;
+    height: 26dp;
+    padding: 0dp 4dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+#cat_Transport { padding: 0dp 6dp; border-right-width: 0dp; }
+
+.transport_text
+{
+    display: block;
+    max-width: 220dp;
+    overflow: hidden;
+    padding: 0dp 4dp;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+
+#window_keys
+{
+    display: flex;
+    gap: 3dp;
+    margin-left: 6dp;
+}
+
+#dismiss
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+}
+
+#popover
+{
+    overscroll-behavior: contain;
+    display: block;
+    position: absolute;
+    top: 38dp;
+    width: 280dp;
+    padding: 4dp 0dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    overflow-y: auto;
+    pointer-events: auto;
+}
+
+/* From a bottom instrument, a popover rises over it instead. */
+#popover.rising
+{
+    top: auto;
+    bottom: 52dp;
+}
+
+/* A problem is a sentence, not a command: the list is wider and wraps. */
+#popover.problems { width: 380dp; }
+#popover.problems .entry { height: auto; line-height: 16dp; padding: 4dp 12dp; }
+
+.entry
+{
+    display: flex;
+    justify-content: space-between;
+    height: 24dp;
+    line-height: 24dp;
+    padding: 0dp 12dp;
+}
+
+.entry.heading
+{
+    height: 20dp;
+    line-height: 20dp;
+    margin-top: 4dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 10dp;
+    letter-spacing: 2dp;
+    pointer-events: none;
+}
+
+.entry.disabled
+{
+    pointer-events: none;
+}
+
+/* A choice that brings more with it says so on a line of its own. */
+.entry.noted { flex-wrap: wrap; height: auto; padding-bottom: 4dp; }
+.entry_note { display: block; width: 100%; line-height: 14dp; font-size: 10dp; }
+#popover_filter { display: block; height: 22dp; margin: 2dp 8dp 4dp 8dp; padding: 0dp 6dp; }
+
+.entry_icon { width: 16dp; height: 16dp; margin: 4dp 8dp 0dp 0dp; }
+.entry_label { display: block; flex: 1; }
+
+.entry_chord
+{
+    display: block;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+
+/* An open asset's tab on the rail. */
+.tab
+{
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    height: 24dp;
+    max-width: 220dp;
+    padding: 0dp 10dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    drag: drag;
+    pointer-events: auto;
+}
+.tab_kind { font-family: "Chakra Petch"; font-weight: 600; font-size: 9dp; letter-spacing: 1dp; text-transform: uppercase; }
+.tab_label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12dp; }
+
+/* Tab belongs to the editor (the hierarchy), never to moving focus between
+   controls; a form control sets its own tab stop, so each one in the shell
+   document turns it off inline. */
+.key, .tab { tab-index: none; }
+
+/* Where the work is, top left under the rail. */
+#crumbs
+{
+    display: flex;
+    position: absolute;
+    left: 8dp;
+    top: 42dp;
+    height: 30dp;
+    align-items: center;
+    padding: 0dp 4dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    font-size: 13dp;
+    pointer-events: auto;
+}
+.crumb_map { font-family: "Chakra Petch"; font-weight: 600; font-size: 11dp; letter-spacing: 1dp; }
+.crumb_hint
+{
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    margin-left: 10dp;
+    font-size: 11dp;
+    white-space: nowrap;
+}
+.crumb_hint .chord { font-family: "JetBrains Mono"; }
+
+/* The station and its card, bottom left: the operation in hand and what it
+   is set to. */
+#instruments_left
+{
+    display: flex;
+    position: absolute;
+    left: 8dp;
+    bottom: 8dp;
+    align-items: flex-end;
+    gap: 8dp;
+    pointer-events: none;
+}
+
+#station_bay
+{
+    display: flex;
+    flex-direction: column;
+    width: 260dp;
+    gap: 6dp;
+    pointer-events: none;
+}
+
+#readout
+{
+    display: flex;
+    height: 34dp;
+    align-items: center;
+    border-width: 1dp;
+    border-radius: 4dp;
+    font-family: "JetBrains Mono";
+    font-size: 12dp;
+    pointer-events: auto;
+}
+
+.segment
+{
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0dp 10dp;
+    gap: 6dp;
+    border-right-width: 1dp;
+}
+.segment .lamp { width: 8dp; height: 8dp; border-width: 1dp; border-radius: 4dp; }
+
+/* Above the bottom instruments as a card; along the right edge, from under the
+   view instrument down, as the drawer. */
+#selection_card
+{
+    overscroll-behavior: contain;
+    display: block;
+    position: absolute;
+    box-sizing: border-box;
+    max-height: 70%;
+    overflow-y: auto;
+    padding: 8dp 10dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    opacity: 0;
+    transform: translateY(10dp);
+    pointer-events: none;
+}
+#selection_card.open { opacity: 1; transform: translateY(0dp); pointer-events: auto; }
+#selection_card.shut * { pointer-events: none; }
+.moving #selection_card { transition: opacity transform 0.14s cubic-out; }
+
+#selection_card.drawer { max-height: none; }
+/* The work itself: a sheet down the middle of the window, each field's help
+   in the margin beside it. */
+#selection_card.sheet { max-height: none; }
+#selection_card.sheet .setting_label { width: 160dp; }
+.setting_help { display: block; width: 240dp; padding-left: 12dp; font-size: 10dp; }
+
+#selection_head
+{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6dp;
+}
+
+/* The selection's part says whether its sheet is open. */
+.crumb_open { margin-left: 6dp; font-size: 10dp; }
+
+/* How a named selection is known besides its name, where its title would be;
+   the name itself, typed over to rename, under it. */
+#selection_known, #selection_subtitle
+{
+    display: block;
+    flex: 1 1 auto;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-family: "JetBrains Mono";
+    font-size: 10dp;
+}
+#selection_subtitle { margin-bottom: 6dp; }
+#selection_name
+{
+    display: block;
+    height: 24dp;
+    margin-bottom: 8dp;
+    padding: 0dp 4dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 16dp;
+    letter-spacing: 1dp;
+}
+
+
+#selection_title
+{
+    display: block;
+    flex: 1 1 auto;
+    margin-right: 8dp;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+}
+
+#selection_verbs
+{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4dp;
+    margin-top: 8dp;
+}
+
+#holding
+{
+    display: flex;
+    align-items: center;
+    height: 34dp;
+    padding: 0dp 4dp;
+    gap: 6dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+.cartridge
+{
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding-right: 8dp;
+    gap: 8dp;
+    border-right-width: 1dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+}
+
+.picture_well
+{
+    display: block;
+    width: 26dp;
+    height: 26dp;
+    border-width: 1dp;
+    border-radius: 2dp;
+}
+.cartridge_label.empty { text-transform: uppercase; }
+.picture { display: block; width: 100%; height: 100%; }
+
+#stash { display: flex; gap: 4dp; }
+.stash_slot { width: 20dp; height: 20dp; opacity: 0.55; }
+.stash_slot.filled, .stash_slot:hover { opacity: 1; }
+
+#cat_View
+{
+    display: flex;
+    position: absolute;
+    top: 42dp;
+    right: 8dp;
+    pointer-events: auto;
+    align-items: center;
+    height: 34dp;
+    padding: 0dp 12dp;
+    gap: 10dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+    pointer-events: auto;
+}
+
+#station
+{
+    display: flex;
+    align-items: center;
+    height: 34dp;
+    padding: 0dp 12dp;
+    gap: 8dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+    pointer-events: auto;
+}
+
+.station_icon { width: 18dp; height: 18dp; }
+.station_variant { font-size: 11dp; }
+
+/* Shut, the card sits folded into its station: out of sight and out of
+   reach. Open, it has risen out of it. */
+#tool_card
+{
+    overscroll-behavior: contain;
+    display: block;
+    padding: 8dp 10dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    opacity: 0;
+    transform: translateY(10dp);
+    pointer-events: none;
+}
+#tool_card.open { opacity: 1; transform: translateY(0dp); pointer-events: auto; }
+#tool_card.shut * { pointer-events: none; }
+
+/* Motion, while the person wants it (editor.ui.motion). Only transform and
+   opacity move, so nothing reflows and input is never held up. */
+.moving #tool_card { transition: opacity transform 0.14s cubic-out; }
+
+#tool_hint { display: block; margin-top: 6dp; font-size: 11dp; }
+
+#tool_keys
+{
+    display: flex;
+    justify-content: flex-end;
+    gap: 6dp;
+    margin-top: 8dp;
+}
+
+/* The explorer and the selection are placed and sized by the shell, laid out
+   rather than transformed so they stay on whole pixels; the one pressed last
+   is in front. A header moves its surface and the corner sizes it, except what
+   is pressed inside the header. */
+.front { z-index: 1; }
+.grip { drag: drag; cursor: move; }
+.grip .key, .grip input { drag: block; cursor: auto; }
+.corner
+{
+    display: block;
+    position: absolute;
+    right: 0dp;
+    bottom: 0dp;
+    width: 14dp;
+    height: 14dp;
+    drag: drag;
+    cursor: nwse-resize;
+    pointer-events: auto;
+}
+#dismiss, #popover { z-index: 2; }
+
+/* An explorer: pictures in a grid, or names in an outline. */
+#explorer
+{
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    box-sizing: border-box;
+    padding: 8dp 10dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    pointer-events: auto;
+}
+
+#explorer_head
+{
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    height: 26dp;
+    margin-bottom: 8dp;
+}
+#explorer_title
+{
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 12dp;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+}
+#explorer_filter { display: block; width: 180dp; height: 20dp; padding: 0dp 6dp; border-width: 1dp; }
+#explorer_range { display: block; flex: 1 0 auto; font-size: 11dp; white-space: nowrap; }
+
+#explorer_items
+{
+    flex: 1 1 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 8dp;
+    overflow-y: auto;
+}
+#explorer.outline #explorer_items { display: block; }
+
+.explorer_item
+{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 84dp;
+    gap: 3dp;
+    border-radius: 3dp;
+    pointer-events: auto;
+}
+.explorer_item .picture_well { width: 72dp; height: 72dp; }
+.explorer_item .item_label
+{
+    display: block;
+    width: 84dp;
+    font-size: 10dp;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+}
+#explorer.outline .explorer_item { flex-direction: row; width: auto; height: 22dp; gap: 4dp; }
+#explorer.outline .explorer_item .item_label { flex: 1; width: auto; text-align: left; font-size: 11dp; }
+#explorer.outline #explorer_head { flex-wrap: wrap; height: auto; }
+#explorer.outline #explorer_filter { width: 96dp; }
+.branch { display: block; width: 12dp; text-align: center; pointer-events: auto; }
+.marks { display: flex; gap: 4dp; padding-right: 4dp; }
+.mark { display: block; width: 14dp; height: 14dp; opacity: 0.7; pointer-events: auto; }
+.mark:hover { opacity: 1; }

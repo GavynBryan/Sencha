@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/assets/AssetCommitResult.h>
 #include <core/assets/AssetStager.h>
 #include <core/assets/AssetStore.h>
 
@@ -46,12 +47,18 @@ struct AssetKindRegistration
     // Requires Store: a list is made of that store's tokens.
     IAssetListStore* ListStore = nullptr;
 
-    // Commits a staged payload and yields the creation reference.
-    std::function<AssetLease(AssetStaging&&)> Commit;
+    // Commits a staged payload and yields the creation reference, or the
+    // dependency whose failure refused it.
+    std::function<AssetCommitOutcome(AssetStaging&&)> Commit;
 
     // Swaps a resident entry in place, keeping its handle. Empty when the kind
     // cannot reload.
     std::function<bool(AssetStaging&&)> Reload;
+
+    // Puts the kind's stand-in under `path` in its store and yields the creation
+    // reference (docs/assets/pipeline.md, Decision P). Requires Reload, which is
+    // what replaces it once the asset loads.
+    std::function<AssetLease(std::string_view path)> StandIn;
 
     [[nodiscard]] bool IsLoadable() const
     {

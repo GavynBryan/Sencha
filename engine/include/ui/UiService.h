@@ -121,6 +121,17 @@ public:
     void SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination);
     [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
 
+    // The platform window a surface lives on (0, the default, is the service's
+    // own); it hears only that window's events and its frames name it
+    // (docs/ui/architecture.md §13).
+    void SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId);
+    [[nodiscard]] std::uint32_t GetSurfaceWindow(UiSurfaceId surface) const;
+
+    // Which of its window's UI render features draws the surface (0, the one
+    // every window has). Layers order drawing only (docs/ui/architecture.md §13).
+    void SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer);
+    [[nodiscard]] std::uint8_t GetSurfaceLayer(UiSurfaceId surface) const;
+
     // -- screens -------------------------------------------------------------
 
     // Opens a screen: the cooked package, what it presents, and what it can ask
@@ -171,10 +182,18 @@ public:
     // is decided separately, by an InputContextLease the host takes.
     [[nodiscard]] bool ProcessPlatformEvent(const union SDL_Event& event);
 
+    // Ends a press whose release will not come: nothing is clicked, and a
+    // drag stops where it is.
+    void EndPointerGesture(std::uint32_t platformWindowId);
+
     // Which devices the UI is consuming. Published, never compensated for: the
     // device snapshot still records everything that happened, and this is what
     // tells a reader of raw state which of it was not meant for them.
     [[nodiscard]] UiInputCapture Capture() const;
+
+    // The same, for one window's surfaces: what a host with several windows
+    // asks before handing that window's input to its own shortcuts.
+    [[nodiscard]] UiInputCapture Capture(std::uint32_t platformWindowId) const;
 
     // Abstract navigation, from whatever the host mapped it to. A document
     // names no key and no gamepad button, so remapping, controller profiles and
@@ -199,6 +218,11 @@ public:
     // Offscreen, drew nothing, or does not exist. Same lifetime as Frames():
     // valid from ExtractRender until the next.
     [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
+
+    // Generated textures this extraction minted and released, across every
+    // surface, handed over once: whatever owns the GPU side takes them after
+    // ExtractRender and applies them before any surface is drawn.
+    [[nodiscard]] UiTextureChanges TakeTextureChanges();
 
     // -- presentation model --------------------------------------------------
 
@@ -250,6 +274,14 @@ public:
     // what its document asked for.
     [[nodiscard]] std::vector<UiAction> DrainActions(UiScreenHandle screen);
 
+    // -- host images ---------------------------------------------------------
+
+    // Registers `host:NAME` before a document naming it opens, at its natural
+    // size for layout; the host publishes its pixels under the returned id each
+    // frame through UiTextureResidency (docs/ui/architecture.md §9).
+    UiHostImageId SetHostImage(std::string_view name, RenderExtent size);
+    void RemoveHostImage(std::string_view name);
+
     // -- presentation policy -------------------------------------------------
 
     // A stylesheet the host supplies under a name packages already reference.
@@ -273,14 +305,21 @@ public:
 
     // -- inspection ----------------------------------------------------------
 
-    // The measured content box of an element, after layout. Nullopt when the
+    // The measured box of an element after layout, before any transform; nullopt
+    // when the screen is closed or no element has that id. Also how a test checks
+    // layout without a window or a device.
+    [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen, std::string_view elementId,
+                                                            UiBoxArea area = UiBoxArea::Content) const;
+
+    // How far an element is scrolled, as laid out at the last update: what a
+    // host showing a long list asks for what is in view. Nullopt when the
     // screen is closed or no element carries that id.
-    //
-    // Public because it is how a test asserts that a document laid out the way
-    // it was authored to, without a window or a device -- the substrate's own
-    // regression surface.
-    [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen,
-                                                            std::string_view elementId) const;
+    [[nodiscard]] std::optional<UiScrollBox> MeasureScroll(UiScreenHandle screen, std::string_view elementId) const;
+
+    // Scrolls the containers around an element as little as brings it into
+    // view, as laid out at the last update. False when the screen is closed or
+    // no element carries that id.
+    bool ScrollIntoView(UiScreenHandle screen, std::string_view elementId);
 
     // The element under a point, in surface pixels; invalid when nothing is
     // there. A host presenting the surface somewhere other than the window

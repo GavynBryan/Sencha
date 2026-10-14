@@ -13,6 +13,8 @@
 #include "authoring/AnimationViewportExtraction.h"
 #include "data/DataDocumentSet.h"
 #include "documents/DocumentSourceSet.h"
+#include "prompts/PromptQueue.h"
+#include "workspaces/facets/DocumentFacet.h"
 
 #include <filesystem>
 #include <functional>
@@ -23,6 +25,10 @@
 struct RuntimeAssets;
 
 [[nodiscard]] std::span<const std::string_view> AnimationDocumentSubtypes();
+
+// The document dial's keys for the documents that are not data documents.
+inline constexpr std::string_view kEventsDialKey = "events:";
+inline constexpr std::string_view kScenarioDialKey = "scenario:";
 
 // Composes the animation editor's parts and runs the operations that span them.
 class AnimationPreviewWorkspace final
@@ -45,18 +51,26 @@ public:
     void Advance(double wallSeconds);
     void ExtractViewport();
 
-    // Opens the rig's scenario, shows it in the viewport and brings waiting edits to it.
-    bool OpenRig(const std::string& path);
+    // Opens the rig's scenario, shows it in the viewport and brings waiting
+    // edits to it; the open scenario's changes are refused, saved or discarded
+    // first as `disposition` says.
+    bool OpenRig(const std::string& path, DirtyDisposition disposition = DirtyDisposition::Refuse);
     // Refuses before writing anything if any of the rig's files already exists.
     bool CreateRig(const AnimationRigRecipe& recipe, std::string& error);
     bool MigrateClipPlayers(std::string& error);
-    bool ReloadScenario();
+    // The open scenario's file version, taken as one step.
+    bool RevertScenario();
     // Runs in its own session; the working simulation is untouched.
     [[nodiscard]] std::vector<AnimationScenarioRun> RunScenarioBatch(bool againstOpenRig);
     [[nodiscard]] const DataAssetCache& DataCache() const;
     // Includes working clip events not yet saved.
     [[nodiscard]] const AnimationClipCache& Clips() const;
     [[nodiscard]] const SkeletonCache& Skeletons() const;
+
+    // The open rig's scenario and every open clip's events on the document
+    // dial, and the dial's key for any document of the workspace.
+    void AppendDialDocuments(WorkspaceDocumentFacet& facet);
+    [[nodiscard]] std::string DialKeyOf(const DocumentRef& document) const;
 
     // Declared before the vocabulary and every session that captures it.
     AnimationContentTags Tags;
@@ -80,3 +94,8 @@ private:
     RuntimeAssets& Assets;
     std::filesystem::path AuthoringRoot;
 };
+
+// Opens `path` as the rig, asking first when the open scenario has unsaved
+// changes; `opened` hears that it did. False when it was refused at once.
+bool OpenRigAsking(AnimationPreviewWorkspace& workspace, PromptQueue::Asker& asker, const std::string& path,
+                   std::function<void()> opened);

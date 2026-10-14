@@ -89,7 +89,91 @@ this plan. These are constraints, not options:
 
 ## Decisions
 
-### A. Asset identity — paths now, content hash for integrity, IDs in Stage 4
+### A. Asset identity — the id travels with the asset
+
+**Accepted 2026-10-07, superseding the June design** (below, kept as history).
+
+An asset's identity is a 64-bit `AssetId` carried by the asset itself, and a
+reference names the id first and the path second.
+
+- **Where an id lives.** Our own documents (`.smat`, `.sscene`, `.sdata`,
+  `.sworld`, `.sanimscenario`) carry an `"id"` member at their root. Every
+  other asset (`.png`, `.blend`, `.glb`, `.ttf`, `.rml`, a cooked `.smesh` ...)
+  keeps its id in its `.meta` sidecar, the file that already holds import
+  settings. What is not an asset -- a stylesheet a document imports, a licence
+  -- has no id: an asset is a kind the runtime loads, a source an importer
+  cooks, or one of the documents above (`IsAssetFile`).
+- **How an id is born.** Once, from the path the asset first appears at:
+  `AssetIdOfPath` (XXH64 of the path, nonzero). Two branches adding the same
+  file mint the same id, and a file whose id was never written down still has
+  one — the hash of where it is — so content written before ids loads
+  unchanged. A part of a file (`hero.blend#anim:Walk`) is `AssetIdOfPart` of
+  the file's id and the part's name, so it follows the file.
+- **How a reference is written.** `AssetRefCodec`: `{"id": "<16 hex>",
+  "path": "asset://..."}`. The id decides; the path is what people read and
+  the fallback when the id is unknown. A bare `"asset://..."` string is still a
+  reference — hand-written content and C++ code name assets that way, and they
+  resolve by path — and an editor writes the id form when it saves.
+- **How it resolves.** Id first, path second (`AssetSystem::ResolveRefPath`).
+  The registry learns ids from the sources it scans and, in a shipped build,
+  from the cooked index, which records every asset's id.
+- **What a move costs.** Nothing outside the moved file and its sidecar.
+  References keep their id; their path hints go stale and an editor refreshes
+  them when it next saves the referring document.
+- **Who keeps it honest.** Kyusu, when it opens a project, before it scans
+  (`project/AssetAdoption`): a file stating no id is given its path's; of files
+  stating one id, the one born with it -- the id is its path's -- keeps it,
+  else the earliest modified, and each other is a copy and is given its own; a
+  sidecar left behind by a move outside Kyusu goes back beside the one file of
+  its name that states nothing. An id is written as one line inserted after the
+  opening brace, so nothing a person wrote moves. A sidecar it cannot pair is a
+  problem, not a silent fallback.
+- **What it replaces.** The central `asset_ids.json` (`AssetIdMap`), whose
+  ids lived beside the content rather than in it, guessed renames from content
+  hashes, existed only for assets a cooked scene named, and was committed only
+  for CubeDemo; and the cook's `StampAssetRefIds`, which authored references
+  no longer need.
+- **Moving a file in Kyusu** (`project/ProjectFileSteps`). Moving, copying
+  and trashing a project file are steps in the one journal, so Ctrl+Z puts the
+  file and every byte the step wrote back. A move takes the file's sidecar,
+  states the id where the file was if it stated none, and rewrites every
+  document that names the old path to name the id and the new path, comments
+  and all else as written; a part (`#anim:Walk`) and a scene's cooked form
+  (`.smap`) follow their file. A copy is a new asset with its new path's id.
+  Trash is `<root>/.trash/<step>/`, a hidden folder no scan, import or watcher
+  enters. A document open in a moved file follows it, its unsaved changes and
+  its undo steps with it (`DocumentSource::FileMoved`, `DocumentSourceSet::
+  Rekey`), and so does a world's per-user state beside it. A file an editor
+  holds is not trashed (`DocumentSource::HoldsFile`). The registry still
+  answers a path an asset left by the id it went by (`AssetRegistry::
+  Unregister`), so what an open level read before a move keeps resolving, and
+  its save names the asset where it is now; it takes the step's rewrite of
+  its own file as read. A material or data document writes back the names it
+  read, so a file one of them names is not moved while it is open
+  (`DocumentSource::KeepsNamesAsRead`). Materials' and Data's own rename,
+  duplicate and delete are these steps. A file imported from outside is a
+  copy too: it states its new path's id, never one it came with. The asset stack follows each step as a fresh mount would
+  have found the files (`MountProjectFileChange`): a file gone loses its record
+  and its cooked index entry (`ForgetImportedSource`), whose artifact bytes
+  stay for content-hash dedup; a file appeared is registered, and imported when
+  an importer claims it.
+- **The known limit.** An asset named by C++ code resolves by path; moving it
+  needs the code changed.
+- **What is not a reference.** A world document's zone scenes, named by paths
+  relative to the world: the world creates, names and saves them as its own
+  parts, and they move with it; Kyusu refuses to move or trash one alone, and
+  renames a world only in its own folder. And a cooked artifact's paths to its siblings
+  (a mesh's skeleton, a clip's skeleton, a UI package's resources): the cook
+  writes them afresh from the source every time, so they are never stale.
+
+Built in stages on the Kyusu branch: I1 the reference type and codec
+(`AssetRef::Id`, `AssetRefCodec`, `AssetIdOfPath`/`AssetIdOfPart`); I2 ids on
+assets and in the scans and cooked index; I3 every reference writer and reader
+on the codec; I4 Kyusu's adoption pass and a reference index keyed by id; I5
+every project's files stating their ids (references inside them stay bare
+paths until an editor saves them) and the central map deleted.
+
+#### The June design (superseded)
 
 **Proposed; revised after product input (2026-06-11).**
 
@@ -292,6 +376,7 @@ source recooks.
 | 6 | Lightmap atlases moved from RGBM RGBA8 to RGB9E5; the shader no longer applies a multiplier, so older atlases would render wrong. |
 | 8 | Entries record the additional sources a cook read, so a multi-file source recooks when one of its inputs changes. |
 | 9 | Entries record the importer's cook identity, so an importer change recooks what it produced. |
+| 10 | Entries record their source's id and every artifact's (Decision A), so a cooked-only registry goes by the ids the sources state. |
 
 ### C. The staged-load contract — `IAssetStager` work/commit split
 
@@ -318,13 +403,26 @@ public:
 class SomeAssetLoader final : public IAssetStager
 {
 public:
-    AssetStaging LoadStaged(const AssetRecord& record, IAssetSource& source) override;
+    AssetStaging LoadStaged(const AssetRecord& record, IAssetSource& source,
+                            const AssetPathsById& current) override;
 
     // Owner thread, inside a drain commit. Insert into the cache, perform
     // the GPU upload, return the handle. Must respect chunking (below).
     SomeHandle CommitTyped(AssetStaging&& staged);
 };
 ```
+
+**One staging door.** `LoadStaged` always receives `current`, where assets named
+by id are now: a snapshot (`AssetRegistry::PathsById`) the owner thread takes
+when it asks for the stage, so a reference by id compiles at its asset's present
+path however the stage is scheduled -- a load, a preload, a hot reload, a
+stand-in retry. A loader whose content names no other asset ignores it.
+
+**A commit says why it refused.** A commit that resolves other assets through
+the front door returns `AssetCommitResult<Handle>`; when one of them did not
+load it names that dependency, and the kind's registered commit carries it as
+`AssetCommitOutcome`, so the recorded failure reads "'a' depends on 'b', which
+did not load" without the front door inferring it from the failure table.
 
 Notes that are contractual, not stylistic:
 
@@ -754,6 +852,42 @@ component types we happen to have, and never let the loader contract assume
 a payload is leaf data with no refs of its own — materials → textures
 already broke that assumption; templates and tables break it harder.
 
+### P. Stand-ins — a reference that cannot load still names something (added 2026-10-11)
+
+**Landed.** A reference to an asset that cannot be loaded — no record, bytes
+that do not decode, a commit that fails — resolves to the kind's *stand-in*: an
+ordinary resident entry in the kind's store under the path that was asked for.
+
+- **Seen, not vanished.** The material stand-in is unlit and two-sided with a
+  point-sampled pink and black checker (`AssetStandIns.h`); the texture stand-in
+  is that checker. No light, facing or distance hides one. A material slot whose
+  texture is missing samples the checker too.
+- **Identity kept.** The entry is keyed by the reference's path, so a scene,
+  brush or field holding it saves back the reference it was read with, and a
+  scene with a missing material loads instead of rolling back.
+- **Said once.** The front door records why (`AssetSystem::LoadFailures`, which
+  the editor shows as problems); asking for the path again returns the same
+  stand-in without a new failure. `Resolve` is a quiet lookup for that reason.
+- **Replaced in place.** Only a reload replaces a stand-in, keeping its handle,
+  so every holder sees the asset the moment it loads: the hot reload of the file
+  when its bytes change, and `AssetSystem::RetryStandIns`, run once a frame,
+  when the registry changes (a file the editor creates, imports, moves or renames
+  into the path). Both stage through `AssetSystem::StageReload` -- decode on the
+  async lane, swap at the drain -- so a retry never reads a file on the owner
+  thread. A commit of the same path yields the stand-in rather than
+  displacing it. A reload whose staging fails keeps what is resident — the last
+  good version, or the stand-in — and records the reason.
+- **One door, two schedulings.** Every failure goes through
+  `AssetSystem::FailLoad`, the async preloader's included, so a zone whose
+  material names a missing texture streams in with the checker exactly as the
+  synchronous load would.
+- **Which kinds.** A kind opts in with `AssetKindRegistration::StandIn`, which
+  requires `Reload`; `RegisterAssetKind` takes a stand-in only for a loader that
+  can reload, and refuses one at compile time otherwise. Materials and textures do. Meshes do not yet
+  (`docs/deferred.md`, Mesh stand-ins). A procedural record never stands in: its
+  builder puts it in the store under that path, and a stand-in there would take
+  its place.
+
 ---
 
 ## Rollout
@@ -1039,6 +1173,10 @@ TSan-clean), Decisions E and L made real:
   Normal -> BC5, ORM/LinearData -> BC7. `PngTextureImporter` emits the
   artifact under the **source's virtual path** — authored references never
   churn when the cooked format evolves.
+  `SvgTextureImporter` cooks `.svg` vector art the same way: `RasterizeSvg`
+  (nanosvg, the one SVG rasterizer, cook-only) draws it 64 px tall, and it is
+  kept uncompressed with a full mip chain, because block encoding smears the
+  edges icons are made of. White art stays white; a document tints it.
 - Runtime consumption: `VulkanImageService::UploadMips` (one staging pass,
   per-level copy regions, explicit chains only — it rejects GenerateMips
   images), `TextureCache::CreateFromTextureData` with the BC VkFormat

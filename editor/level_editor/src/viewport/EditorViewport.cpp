@@ -76,8 +76,8 @@ const char* EditorViewport::GetDisplayLabel() const
 
 float EditorViewport::AspectRatio() const
 {
-    const float width = RegionMax.x - RegionMin.x;
-    const float height = RegionMax.y - RegionMin.y;
+    const float width = RegionMax.X - RegionMin.X;
+    const float height = RegionMax.Y - RegionMin.Y;
     if (width <= 0.0f || height <= 0.0f)
         return 1.0f;
     return width / height;
@@ -95,10 +95,10 @@ CameraRenderData EditorViewport::CameraForExtent(uint32_t width, uint32_t height
     return Camera.BuildRenderData(w > 0.0f && h > 0.0f ? w / h : 1.0f);
 }
 
-bool EditorViewport::Contains(ImVec2 point) const
+bool EditorViewport::Contains(Vec2d point) const
 {
-    return point.x >= RegionMin.x
-        && point.x <= RegionMax.x
-        && point.y >= RegionMin.y
-        && point.y <= RegionMax.y;
+    return point.X >= RegionMin.X
+        && point.X <= RegionMax.X
+        && point.Y >= RegionMin.Y
+        && point.Y <= RegionMax.Y;
 }

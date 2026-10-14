@@ -1,0 +1,42 @@
+<rml>
+<head>
+    <title>Colour</title>
+    <link type="text/rcss" href="color_picker.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="color_picker">
+    <!-- A press anywhere else puts it away. -->
+    <div id="catch" data-event-mousedown="color_close"></div>
+    <div id="picker" class="theme-plate" data-style-left="picker_left" data-style-right="picker_right"
+         data-style-top="picker_top" data-style-bottom="picker_bottom">
+        <div id="head">
+            <span class="theme-dim">{{label}}</span>
+            <div id="swatch" class="theme-field" data-style-background-color="swatch"></div>
+        </div>
+        <div id="body">
+            <!-- Hue round the rim from red at the top, saturation out from the middle. -->
+            <div id="color_wheel" data-event-mousedown="color_grab('wheel', ev.mouse_x, ev.mouse_y)"
+                 data-event-drag="color_drag(ev.mouse_x, ev.mouse_y)"
+                 data-event-mouseup="color_release" data-event-dragend="color_release">
+                <div class="cell_slot" data-for="cell : cells">
+                    <sector class="cell" data-style-left="cell.parts[0]" data-style-top="cell.parts[1]"
+                            data-style-width="cell.parts[2]" data-style-height="cell.parts[2]"
+                            data-attr-start="cell.parts[3]" data-attr-sweep="cell.parts[4]"
+                            data-attr-inner="cell.parts[5]" data-style-fill-color="cell.parts[6]"></sector>
+                </div>
+                <sector id="mark" class="theme-mark selected" sweep="360" inner="0.45"
+                        data-style-left="mark_left" data-style-top="mark_top"></sector>
+            </div>
+            <!-- Value, full at the top. -->
+            <div id="color_value" data-event-mousedown="color_grab('value', ev.mouse_x, ev.mouse_y)"
+                 data-event-drag="color_drag(ev.mouse_x, ev.mouse_y)"
+                 data-event-mouseup="color_release" data-event-dragend="color_release">
+                <div class="step" data-for="step : values" data-style-background-color="step.value"></div>
+                <div id="value_mark" class="theme-frame active" data-style-top="value_mark"></div>
+            </div>
+        </div>
+        <input id="text" type="text" class="theme-field" data-value="value_text"
+               data-event-change="color_type(ev.value, ev.linebreak)"/>
+    </div>
+</body>
+</rml>

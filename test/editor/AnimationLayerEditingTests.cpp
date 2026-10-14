@@ -193,17 +193,17 @@ TEST(AnimationFlowEdits, NoEditMakesControlGoBackward)
         return result.IsValid() ? std::static_pointer_cast<const AnimFlowData>(result.Value) : nullptr;
     };
 
-    AddAnimFlowSection(*root, "Anim.B", "asset://anim/b.sanim");
-    AddAnimFlowSection(*root, "Anim.C", "asset://anim/c.sanim");
-    ASSERT_TRUE(AddAnimFlowBranch(*root, 0, 2));
-    EXPECT_FALSE(AddAnimFlowBranch(*root, 2, 0)) << "a branch goes only to a later section";
-    EXPECT_FALSE(AddAnimFlowBranch(*root, 1, 1));
-    ASSERT_TRUE(SetAnimFlowCancel(*root, "Anim.C"));
-    ASSERT_TRUE(SetAnimFlowEnds(*root, 1, true));
-    ASSERT_TRUE(SetAnimFlowCancelImmediately(*root, 1, true));
-    ASSERT_TRUE(SetAnimFlowLoop(*root, 1, "count"));
-    (*AnimFlowSections(*root))[1].AsObject().emplace_back("count_intent", JsonValue("anim.intent.reload"));
-    (*AnimFlowSections(*root))[1].AsObject().emplace_back("count_param", JsonValue("shells"));
+    AddAnimFlowSection(*root->Find("data"), "Anim.B", "asset://anim/b.sanim");
+    AddAnimFlowSection(*root->Find("data"), "Anim.C", "asset://anim/c.sanim");
+    ASSERT_TRUE(AddAnimFlowBranch(*root->Find("data"), 0, 2));
+    EXPECT_FALSE(AddAnimFlowBranch(*root->Find("data"), 2, 0)) << "a branch goes only to a later section";
+    EXPECT_FALSE(AddAnimFlowBranch(*root->Find("data"), 1, 1));
+    ASSERT_TRUE(SetAnimFlowCancel(*root->Find("data"), "Anim.C"));
+    ASSERT_TRUE(SetAnimFlowEnds(*root->Find("data"), 1, true));
+    ASSERT_TRUE(SetAnimFlowCancelImmediately(*root->Find("data"), 1, true));
+    ASSERT_TRUE(SetAnimFlowLoop(*root->Find("data"), 1, "count"));
+    (*AnimFlowSections(*root->Find("data")))[1].AsObject().emplace_back("count_intent", JsonValue("anim.intent.reload"));
+    (*AnimFlowSections(*root->Find("data")))[1].AsObject().emplace_back("count_param", JsonValue("shells"));
     std::shared_ptr<const AnimFlowData> flow = compiles();
     ASSERT_NE(flow, nullptr);
     EXPECT_EQ(flow->Sections[0].Branches[0].To, "Anim.C");
@@ -213,15 +213,15 @@ TEST(AnimationFlowEdits, NoEditMakesControlGoBackward)
     EXPECT_EQ(flow->Sections[1].Loop, AnimFlowLoop::Count);
 
     // Moving C above A would turn A's branch backward.
-    EXPECT_FALSE(MoveAnimFlowSection(*root, 2, 0));
-    EXPECT_TRUE(MoveAnimFlowSection(*root, 1, 2));
+    EXPECT_FALSE(MoveAnimFlowSection(*root->Find("data"), 2, 0));
+    EXPECT_TRUE(MoveAnimFlowSection(*root->Find("data"), 1, 2));
     ASSERT_NE(compiles(), nullptr);
 
     // Back to once drops the count's fields; a removed section takes its
     // branches and the cancel with it.
-    ASSERT_TRUE(SetAnimFlowLoop(*root, 2, "once"));
-    EXPECT_EQ((*AnimFlowSections(*root))[2].Find("count_param"), nullptr);
-    ASSERT_TRUE(RemoveAnimFlowSection(*root, 1));
+    ASSERT_TRUE(SetAnimFlowLoop(*root->Find("data"), 2, "once"));
+    EXPECT_EQ((*AnimFlowSections(*root->Find("data")))[2].Find("count_param"), nullptr);
+    ASSERT_TRUE(RemoveAnimFlowSection(*root->Find("data"), 1));
     flow = compiles();
     ASSERT_NE(flow, nullptr);
     EXPECT_TRUE(flow->Sections[0].Branches.empty());
@@ -239,21 +239,21 @@ TEST(AnimationFlowEdits, LoopAndBranchConditionsEditAsPredicates)
         { "tag": "Anim.A", "clip": "asset://anim/a.sanim" }, { "tag": "Anim.B", "clip": "asset://anim/b.sanim" } ] } })");
     ASSERT_TRUE(root.has_value());
 
-    EXPECT_EQ(AnimFlowLoopCondition(*root, 0), nullptr) << "a section that plays once has no loop condition";
-    ASSERT_TRUE(SetAnimFlowLoop(*root, 0, "while"));
-    JsonValue::Array* loop = AnimFlowLoopCondition(*root, 0);
+    EXPECT_EQ(AnimFlowLoopCondition(*root->Find("data"), 0), nullptr) << "a section that plays once has no loop condition";
+    ASSERT_TRUE(SetAnimFlowLoop(*root->Find("data"), 0, "while"));
+    JsonValue::Array* loop = AnimFlowLoopCondition(*root->Find("data"), 0);
     ASSERT_NE(loop, nullptr);
     AddAnimPredicateRow(*loop, MakeAnimRequestTest("anim.intent.charge"));
     AddAnimPredicateRow(*loop, MakeAnimFactTest("Speed", AnimFactKind::Float));
     ASSERT_TRUE(AddAnimPredicateAlternative(*loop, 1, MakeAnimFactTest("Crouched", AnimFactKind::Bool)));
 
-    ASSERT_TRUE(AddAnimFlowBranch(*root, 0, 1));
-    JsonValue::Array* when = AnimFlowBranchCondition(*root, 0, 0);
+    ASSERT_TRUE(AddAnimFlowBranch(*root->Find("data"), 0, 1));
+    JsonValue::Array* when = AnimFlowBranchCondition(*root->Find("data"), 0, 0);
     ASSERT_NE(when, nullptr);
     JsonValue released = MakeAnimRequestTest("anim.intent.charge");
     released.AsObject().emplace_back("not", JsonValue(true));
     AddAnimPredicateRow(*when, std::move(released));
-    EXPECT_EQ(AnimFlowBranchCondition(*root, 0, 3), nullptr);
+    EXPECT_EQ(AnimFlowBranchCondition(*root->Find("data"), 0, 3), nullptr);
 
     const DataAssetCompileResult result = types.Find(kAnimFlowType)->Compile(*root->Find("data"));
     ASSERT_TRUE(result.IsValid()) << result.Error;

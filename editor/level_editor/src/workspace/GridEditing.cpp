@@ -39,16 +39,8 @@ void GridEditing::SetOriginToSelection(GridSettings& grid, const EditorScene& sc
         }
     }
 
-    Aabb3d bounds = Aabb3d::Empty();
-    for (const SelectableRef& ref : selection)
-    {
-        if (!ref.Entity.IsValid())
-            continue;
-        if (const auto entityBounds = scene.EvaluatedWorldBounds(ref.Entity))
-            bounds.ExpandToInclude(*entityBounds);
-    }
-    if (bounds.IsValid())
-        grid.Origin = bounds.Center();
+    if (const std::optional<Aabb3d> bounds = scene.SelectionWorldBounds(selection))
+        grid.Origin = bounds->Center();
 }
 
 void GridEditing::AlignToSelectedFace(GridSettings& grid, const EditorScene& scene,

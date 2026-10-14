@@ -1,13 +1,21 @@
 #pragma once
 
+#include <core/assets/AssetRef.h>
+
 #include "CommandChoice.h"
+#include "properties/PropertySource.h"
+#include "resources/ActiveResources.h"
+#include "tools/ToolDraft.h"
 #include "icons/IconId.h"
 #include "input/InputEvent.h"
 #include "interaction/IInteraction.h"
 
-#include <imgui.h>
+#include <math/Vec.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -30,6 +38,9 @@ struct ITool
     // transient state. Called on Escape and focus loss so a tool gesture can never
     // be left dangling. (W4.)
     virtual void OnCancel(ToolContext& /*ctx*/) {}
+    // What the person is holding changed while this tool is in hand: a pending
+    // preview built with the old resource takes the new one.
+    virtual void OnResourceChanged(ToolContext& /*ctx*/, AssetType /*type*/) {}
 
     // Resolve any staged-but-uncommitted state, because the document is about to
     // be persisted and a preview must not reach the file unresolved. A tool that
@@ -44,13 +55,17 @@ struct ITool
     virtual InputConsumed OnClick(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, const PointerEvent& /*pointer*/) { return InputConsumed::No; }
     virtual InputConsumed OnDoubleClick(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, const PointerEvent& /*pointer*/) { return InputConsumed::No; }
     virtual std::unique_ptr<IInteraction> BeginDrag(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, const PointerEvent& /*pressPointer*/) { return nullptr; }
+    // A press that began outside the views (a file carried off the shelf),
+    // arriving held: the interaction that runs the rest of it from view to
+    // view, release included. Null if this tool takes none.
+    virtual std::unique_ptr<IInteraction> TakeHandedGesture(ToolContext& /*ctx*/) { return nullptr; }
     virtual InputConsumed OnKeyDown(ToolContext& /*ctx*/, const KeyDownEvent& /*event*/) { return InputConsumed::No; }
 
     // Cursor motion with no button held. A tool that drives a live hover preview
     // (e.g. the edge cut) handles it and returns Yes, which suppresses the default
     // element-hover glow. OnHoverEnd fires when the cursor leaves the viewport, a
     // drag starts, or the tool deactivates, so the tool can drop its preview.
-    virtual InputConsumed OnHover(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, ImVec2 /*pos*/) { return InputConsumed::No; }
+    virtual InputConsumed OnHover(ToolContext& /*ctx*/, EditorViewport& /*viewport*/, Vec2d /*pos*/) { return InputConsumed::No; }
     virtual void OnHoverEnd(ToolContext& /*ctx*/) {}
 
     // Whether the transform gizmo belongs on screen while this tool is active.
@@ -59,13 +74,25 @@ struct ITool
     // goes; the session honours it, and nothing else learns which tool it was.
     [[nodiscard]] virtual bool UsesTransformGizmo() const { return true; }
 
-    // A tool's own chrome, drawn while it is active: the settings and verbs in
-    // the Tool Properties panel, and the compact controls in the toolbar's
-    // contextual group. The tool draws them itself so that adding a tool does not
-    // mean editing the panel and the toolbar as well; both surfaces simply hand
-    // the active tool its space. Leave empty for a tool with no controls.
-    virtual void DrawProperties(ToolContext& /*ctx*/) {}
-    virtual void DrawToolbarControls(ToolContext& /*ctx*/) {}
+    // What the tool can be set to -- a primitive, a mode, a count -- as
+    // properties a surface presents however it likes, and setting one by key
+    // from the text that surface read back. The tool answers only in terms of
+    // its own settings; it never learns what showed them.
+    [[nodiscard]] virtual std::vector<PropertyNode> Parameters(const ToolContext& /*ctx*/) const { return {}; }
+    virtual PropertyEditResult SetParameter(ToolContext& /*ctx*/, std::string_view /*key*/, std::string_view /*value*/)
+    {
+        return PropertyEditResult::Gone;
+    }
+    // Whether the tool has drafted work waiting on Apply (CommitPending) or
+    // Cancel (OnCancel).
+    [[nodiscard]] virtual ToolDraft Draft() const { return ToolDraft::None; }
+    // One line on what to do next, or why the draft cannot apply; empty for
+    // nothing to say.
+    [[nodiscard]] virtual std::string Hint(const ToolContext& /*ctx*/) const { return {}; }
+    // What the tool consumes, the primary role first: a shell shows the
+    // primary one where what is held belongs. Empty when it consumes nothing
+    // of its own.
+    [[nodiscard]] virtual std::span<const ResourceRole> Resources() const { return {}; }
 
     // A sub-mode the tool exposes as a choice: what a control shows for it.
     // The tool maps an index back to whatever the choice means, so a surface

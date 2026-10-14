@@ -3,10 +3,13 @@
 #include <core/assets/AssetId.h>
 #include <core/assets/AssetPath.h> // re-exports IsValidAssetPath for registry callers
 #include <core/assets/AssetRef.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/logging/LoggingProvider.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -21,9 +24,9 @@ struct AssetRecord
     std::string Path{};
     std::string FilePath{};
 
-    // Stable identity from the cook's persisted id map (Decision A / Stage
-    // 4e). Invalid until ApplyAssetIds runs after import + scan; records
-    // register id-less and ids never participate in equivalence checks.
+    // Stable identity (docs/assets/pipeline.md, Decision A): the id the
+    // asset states, or else the id of its path, bound when it registers.
+    // Ids never participate in equivalence checks.
     AssetId Id{};
 
     uint64_t ContentHash = 0;
@@ -38,19 +41,31 @@ public:
     bool Register(const AssetRecord& record);
     bool RegisterOrVerify(const AssetRecord& record);
 
-    // Drops a record and any id bound to it. For an editor that deleted or
-    // renamed the file behind it; the runtime never unregisters.
+    // Drops a record and its id, for an editor that deleted or moved its file.
+    // The old path keeps answering by that id (Find, Current) wherever it is
+    // registered next, so what was read before a move keeps resolving.
     bool Unregister(std::string_view path);
 
-    // Binds a stable id to an already-registered path (the ApplyAssetIds
-    // pass). Idempotent for the same pair; a record that already carries a
-    // different id, or an id already bound to another path, is a conflict
-    // and is rejected with a warning.
+    // Rebinds a registered path to `id`. Idempotent for the same pair; an id
+    // already bound to another path is a conflict and is rejected with a
+    // warning.
     bool AssignId(std::string_view path, AssetId id);
 
     [[nodiscard]] const AssetRecord* FindByPath(std::string_view path) const;
     [[nodiscard]] const AssetRecord* FindById(AssetId id) const;
+    // The record `ref` names: by its id when the id is known, else by its path.
+    [[nodiscard]] const AssetRecord* Find(const AssetRef& ref) const;
+    // Where every asset named by id is now, as a snapshot that never changes and
+    // so may be read on any thread. Built when asked for after the registry
+    // changed; until then, the same snapshot again.
+    [[nodiscard]] std::shared_ptr<const AssetPathsById> PathsById() const;
+    // `ref` as the registry knows its asset now: the asset's path when its id
+    // is known, else its id when its path is. Anything unknown stays as it was.
+    [[nodiscard]] AssetRef Current(AssetRef ref) const;
     [[nodiscard]] bool Contains(std::string_view path) const;
+
+    // Changes whenever a record is added, dropped or rebound to another id.
+    [[nodiscard]] std::uint64_t Revision() const { return Revision_; }
 
     // Read-only enumeration of every registered record (keyed by virtual path).
     // Lets tooling list assets of a kind (e.g. the editor's material picker)
@@ -65,13 +80,30 @@ private:
                                     AssetRegistry& registry,
                                     const AssetKindRegistry& kinds);
 
+    // Binds a newly registered record's id: the one it states, or its path's;
+    // a taken id leaves it with its path's next free one, and says so.
+    void BindId(AssetRecord& record);
+    void Changed();
+
     Logger& Log;
     std::unordered_map<std::string, AssetRecord> RecordsByPath;
+    mutable std::shared_ptr<const AssetPathsById> PathsSnapshot;
     std::unordered_map<AssetId, const AssetRecord*> RecordsById;
+    // Paths unregistered this session, and the ids they went by.
+    std::unordered_map<std::string, AssetId> FormerIds;
+    std::uint64_t Revision_ = 0;
 };
 
 // IsValidAssetPath lives in <core/assets/AssetPath.h> (included above) so
 // low-level data validators can use it without depending on this header.
+
+// Registers the one file at `file` under `assetPath`, as the scan would: by its
+// extension's kind, under the id it states. False when no kind claims it or
+// the registry refuses it.
+bool RegisterAssetFile(std::string_view assetPath,
+                       const std::filesystem::path& file,
+                       AssetRegistry& registry,
+                       const AssetKindRegistry& kinds);
 
 // Registers every file under `rootDirectory` whose extension a registered kind
 // claims. `kinds` is the only extension table: a kind that is scanned but not
@@ -81,14 +113,9 @@ bool ScanAssetsDirectory(std::string_view rootDirectory,
                          AssetRegistry& registry,
                          const AssetKindRegistry& kinds);
 
-// Registers cooked artifacts listed in <assetsRoot>/.cooked/index.json under
-// their cook-time virtual paths. The path-keyed companion to the physical scan:
-// ScanAssetsDirectory keys a cooked runtime file by its location (so .smesh
-// resolves), but a cooked texture keeps its source virtual path (asset://...png
-// serves cooked .stex bytes), which physical layout cannot express. A COOK=OFF
-// player calls this to bind those artifacts without the cook layer. Skips paths
-// already registered (the scan owns those); a missing or unreadable index is not
-// an error. Returns the count of records newly registered.
+// Registers the artifacts <assetsRoot>/.cooked/index.json lists under their
+// virtual paths and ids, which physical layout cannot express (asset://x.png
+// serves .stex bytes). Skips registered paths; returns how many it added.
 int RegisterCookedAssets(std::string_view assetsRoot, AssetRegistry& registry);
 
 // Name of the cooked-asset cache directory under an assets root
@@ -96,3 +123,7 @@ int RegisterCookedAssets(std::string_view assetsRoot, AssetRegistry& registry);
 // cooked artifacts are registered by the import-on-demand driver under
 // their intended virtual paths, never discovered by extension.
 inline constexpr std::string_view kCookedCacheDirName = ".cooked";
+
+// A folder whose name begins with a dot holds no content -- the cook's cache,
+// the project's trash, version control -- and no walk over content enters it.
+[[nodiscard]] bool IsHiddenContentFolder(const std::filesystem::path& folder);

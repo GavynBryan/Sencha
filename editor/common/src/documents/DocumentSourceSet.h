@@ -3,9 +3,11 @@
 #include "documents/DocumentRef.h"
 #include "documents/DocumentSaveReport.h"
 #include "documents/DocumentSource.h"
+#include "observers/WeakObserverList.h"
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,10 @@ public:
     void Record(DocumentRef document);
     // The document's history is gone: it closed, reloaded or took the file's version.
     void ForgetDocument(const DocumentRef& document);
+    // The document goes by `key` now: the steps taken in it are its still.
+    void Rekey(const DocumentRef& document, std::string key);
+    // Every source follows a file that moved.
+    void FileMoved(const MovedFile& moved);
 
     // Open edits are cancelled before the newest step is retaken.
     void Undo();
@@ -47,9 +53,19 @@ public:
     DocumentSaveResult Save(const DocumentRef& document);
     bool Settle(const DocumentRef& document, ConflictChoice choice, std::string& error);
     [[nodiscard]] const DocumentSaveReport& LastSave() const { return Report; }
+    // Told whenever LastSave changes: with the result when a save changed it,
+    // with null when a settle or a document leaving did.
+    using ReportObserver = WeakObserverList<const DocumentSaveResult*>;
+    [[nodiscard]] std::shared_ptr<ReportObserver::Fn> SubscribeReport(ReportObserver::Fn fn)
+    {
+        return ReportObservers.Subscribe(std::move(fn));
+    }
     [[nodiscard]] std::vector<DocumentRef> ChangedDocuments() const;
     // Offered to every source until one has the file open.
     [[nodiscard]] ExternalChange FileChangedOnDisk(const std::filesystem::path& file);
+    [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const;
+    [[nodiscard]] bool KeepsNamesAsRead(const std::filesystem::path& file) const;
+    void NamesRewritten(const std::filesystem::path& file);
 
 private:
     void Step(DocumentStep step);
@@ -62,5 +78,6 @@ private:
     std::size_t Cursor = 0;
     bool Stepping = false;
     DocumentSaveReport Report;
+    ReportObserver ReportObservers;
     std::function<void(const DocumentRef&)> StepObserver;
 };

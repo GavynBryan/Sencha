@@ -6,12 +6,35 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <format>
 
-AnimationRigScenario::AnimationRigScenario(RuntimeAssets& assets, std::function<void(World&)> vocabulary)
+AnimationRigScenario::AnimationRigScenario(RuntimeAssets& assets, DocumentSourceSet& sources,
+                                           std::function<void(World&)> vocabulary)
     : Simulation(assets.DataAssets, &assets.AnimationClips, std::move(vocabulary), &assets.Skeletons)
+    , Scenario(sources,
+               { .Write =
+                     [this](std::string& text, std::string&) {
+                         text = AnimationScenarioText(Simulation.Scenario());
+                         return true;
+                     },
+                 .Read =
+                     [this](std::string_view text, std::string& error) {
+                         std::vector<AnimDiagnostic> problems;
+                         std::optional<AnimationScenario> read =
+                             ParseAnimationScenarioText(text, Scenario.Path().generic_string(), problems);
+                         if (!read)
+                         {
+                             error = problems.empty() ? std::string("Not a scenario.") : problems.front().Message;
+                             return false;
+                         }
+                         Simulation.ReplaceScenario(std::move(*read));
+                         return true;
+                     } })
     , Assets(assets)
 {
+    Simulation.OnScenarioChanged([this] { Scenario.Changed(); });
 }
 
 bool AnimationRigScenario::Open(const std::string& path)
@@ -21,7 +44,10 @@ bool AnimationRigScenario::Open(const std::string& path)
     const DataAssetHandle handle = lease ? DataAssetHandle::FromToken(lease.OpaqueToken()) : DataAssetHandle{};
     if (record == nullptr || Assets.DataAssets.TryGet<AnimRigData>(handle, kAnimRigType) == nullptr)
     {
-        Error = "Select an animation.rig asset that loads.";
+        const std::span<const AssetSystem::LoadFailure> failures = Assets.Assets.LoadFailures();
+        const auto failure = std::ranges::find(failures, path, &AssetSystem::LoadFailure::Path);
+        Error = failure != failures.end() ? std::format("{} did not load: {}", path, failure->Reason)
+                                          : std::format("{} is not an animation.rig asset that loads.", path);
         return false;
     }
 
@@ -39,32 +65,23 @@ bool AnimationRigScenario::Open(const std::string& path)
         }
         scenario = std::move(*loaded);
         scenario.RigPath = path;
+        scenario.RigId = record->Id;
     }
     else
     {
         scenario.Name = sidecar.stem().string();
         scenario.RigPath = path;
+        scenario.RigId = record->Id;
         scenario.Participants = { "player" };
     }
 
     Simulation.Close();
     Lease = std::move(lease);
     Path = path;
-    ScenarioFile = sidecar.string();
     Error.clear();
     (void)Simulation.Open(std::move(scenario));
+    Scenario.Open(std::move(sidecar));
     Navigation = AnimationNavigation{};
-    return true;
-}
-
-bool AnimationRigScenario::Save()
-{
-    if (!Simulation.IsOpen() || ScenarioFile.empty())
-        return false;
-    if (!SaveAnimationScenario(Simulation.Scenario(), ScenarioFile, Error))
-        return false;
-    Simulation.MarkScenarioSaved();
-    Error.clear();
     return true;
 }
 
@@ -78,4 +95,14 @@ const SkeletonData* AnimationRigScenario::Skeleton() const
 {
     const AnimBoundRig* rig = Simulation.Rig();
     return rig != nullptr && rig->Skeleton.IsValid() ? Assets.Skeletons.Get(rig->Skeleton) : nullptr;
+}
+
+const AnimationPreviewTickRecord* AnimationRigScenario::Inspected() const
+{
+    const std::deque<AnimationPreviewTickRecord>& history = Simulation.History();
+    if (history.empty())
+        return nullptr;
+    if (Navigation.InspectRecord && *Navigation.InspectRecord < history.size())
+        return &history[*Navigation.InspectRecord];
+    return &history.back();
 }

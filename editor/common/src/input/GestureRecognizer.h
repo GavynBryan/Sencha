@@ -38,5 +38,5 @@ private:
     Phase Current = Phase::Idle;
     PointerEvent Pressed = {};
     std::chrono::steady_clock::time_point LastClickTime{};
-    ImVec2 LastClickPosition = {};
+    Vec2d LastClickPosition = {};
 };

@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "ui/RuntimeFieldText.h"
+#include "authoring/RuntimeFieldText.h"
 
 #include <core/text/InlineString.h>
+#include <math/Quat.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -154,6 +155,73 @@ TEST(RuntimeFieldText, DegreesAreShownAndTakenInDegreesAndStoredInRadians)
     EXPECT_NEAR(sample.Angle, std::numbers::pi_v<float>, 1e-5f);
 }
 
+TEST(RuntimeFieldText, OneNumberOfAVectorIsReadAndWrittenAlone)
+{
+    Sample sample{};
+    sample.Position[0] = 1.0f;
+    sample.Position[1] = 2.0f;
+    sample.Position[2] = 3.0f;
+    const RuntimeField field = Vector3Field();
+    EXPECT_EQ(FormatRuntimeFieldElement(field, &sample, 1), "2");
+    EXPECT_TRUE(FormatRuntimeFieldElement(field, &sample, 3).empty());
+
+    ASSERT_TRUE(ParseRuntimeFieldElement(field, 1, "7.5", &sample));
+    EXPECT_FLOAT_EQ(sample.Position[0], 1.0f);
+    EXPECT_FLOAT_EQ(sample.Position[1], 7.5f);
+    EXPECT_FLOAT_EQ(sample.Position[2], 3.0f);
+    EXPECT_FALSE(ParseRuntimeFieldElement(field, 1, "nonsense", &sample));
+    EXPECT_FLOAT_EQ(sample.Position[1], 7.5f) << "a refused number leaves it as it was";
+
+    ASSERT_TRUE(OffsetRuntimeFieldElement(field, 2, -0.5, &sample));
+    EXPECT_FLOAT_EQ(sample.Position[2], 2.5f);
+}
+
+TEST(RuntimeFieldText, AMovedNumberMovesInTheUnitsItIsShownInAndKeepsItsKind)
+{
+    Sample sample{};
+    sample.Angle = 0.0f;
+    ASSERT_TRUE(OffsetRuntimeFieldElement(AngleField(), 0, 90.0, &sample));
+    EXPECT_NEAR(sample.Angle, std::numbers::pi_v<float> * 0.5f, 1e-5f) << "ninety degrees, stored in radians";
+
+    RuntimeField count;
+    count.Name = "count";
+    count.Offset = offsetof(Sample, Count);
+    count.Size = sizeof(std::int32_t);
+    count.Scalar = FieldScalar::Int32;
+    sample.Count = 3;
+    ASSERT_TRUE(OffsetRuntimeFieldElement(count, 0, 1.6, &sample));
+    EXPECT_EQ(sample.Count, 5) << "a whole number moved stays whole";
+    EXPECT_FALSE(OffsetRuntimeFieldElement(BoolField(), 0, 1.0, &sample)) << "a switch has no amount";
+}
+
+TEST(RuntimeFieldText, ALoneNumberIsReadInTheUnitsItIsShownIn)
+{
+    Sample sample{};
+    sample.Angle = std::numbers::pi_v<float> * 0.25f;
+    sample.Count = -4;
+    sample.Wide = 2.5;
+    ASSERT_TRUE(RuntimeFieldNumber(AngleField(), &sample).has_value());
+    EXPECT_NEAR(*RuntimeFieldNumber(AngleField(), &sample), 45.0, 1e-4);
+
+    RuntimeField count;
+    count.Name = "count";
+    count.Offset = offsetof(Sample, Count);
+    count.Size = sizeof(std::int32_t);
+    count.Scalar = FieldScalar::Int32;
+    EXPECT_EQ(RuntimeFieldNumber(count, &sample), -4.0);
+    RuntimeField wide;
+    wide.Name = "wide";
+    wide.Offset = offsetof(Sample, Wide);
+    wide.Size = sizeof(double);
+    wide.Scalar = FieldScalar::Double;
+    EXPECT_EQ(RuntimeFieldNumber(wide, &sample), 2.5);
+
+    EXPECT_FALSE(RuntimeFieldNumber(Vector3Field(), &sample).has_value()) << "several numbers are not one";
+    EXPECT_FALSE(RuntimeFieldNumber(BoolField(), &sample).has_value());
+    EXPECT_FALSE(RuntimeFieldNumber(ModeField(), &sample).has_value()) << "a choice is read by its name";
+    EXPECT_FALSE(RuntimeFieldNumber(AngleField(), nullptr).has_value());
+}
+
 TEST(RuntimeFieldText, ABoolTakesTheWordsAndTheDigitsAndNothingElse)
 {
     Sample sample{};
@@ -244,6 +312,14 @@ TEST(RuntimeFieldText, ALabelComesFromTheFieldOrItsName)
     EXPECT_EQ(RuntimeFieldLabel(field), "Start Playing");
 }
 
+TEST(RuntimeFieldText, ANameRunTogetherReadsAsItsWords)
+{
+    EXPECT_EQ(HumanizeSchemaName("CharacterMovement"), "Character Movement");
+    EXPECT_EQ(HumanizeSchemaName("sencha.world_transform"), "World Transform");
+    EXPECT_EQ(HumanizeSchemaName("Lod2Mesh"), "Lod2 Mesh");
+    EXPECT_EQ(HumanizeSchemaName("AABB"), "AABB") << "an acronym stays one word";
+}
+
 // InlineString members: the one string form a component may hold, because
 // archetype storage relocates with memcpy. They are bytes at an offset like
 // everything else, so they read and write here rather than needing a component
@@ -321,4 +397,43 @@ TEST(RuntimeFieldText, AShorterNameZeroesWhatTheLongerOneLeft)
     ASSERT_TRUE(ParseRuntimeField(field, "seven77", &sample));
     ASSERT_TRUE(ParseRuntimeField(field, "ab", &sample));
     EXPECT_EQ(sample.Short, InlineString<8>("ab"));
+}
+
+// A rotation is a quaternion in its bytes and pitch, yaw and roll in degrees
+// to a person; one angle moves alone, from what the others were.
+namespace
+{
+struct Turned
+{
+    float Rotation[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+};
+
+[[nodiscard]] RuntimeField RotationField()
+{
+    RuntimeField field;
+    field.Name = "rotation";
+    field.Offset = offsetof(Turned, Rotation);
+    field.Size = sizeof(float);
+    field.Scalar = FieldScalar::Float;
+    field.Count = 4;
+    field.DisplayAngles = true;
+    return field;
+}
+} // namespace
+
+TEST(RuntimeFieldText, ARotationReadsAndWritesAsPitchYawRollInDegrees)
+{
+    Turned turned;
+    const RuntimeField field = RotationField();
+    EXPECT_EQ(FormatRuntimeField(field, &turned), "0, 0, 0");
+
+    ASSERT_TRUE(ParseRuntimeField(field, "10, 90, -20", &turned));
+    const Quatf stored(turned.Rotation[0], turned.Rotation[1], turned.Rotation[2], turned.Rotation[3]);
+    const float degree = std::numbers::pi_v<float> / 180.0f;
+    EXPECT_NEAR(std::abs(stored.Dot(Quatf::FromPitchYawRoll(10 * degree, 90 * degree, -20 * degree))), 1.0f, 1e-5f);
+    EXPECT_EQ(FormatRuntimeFieldElement(field, &turned, 1), "90");
+
+    ASSERT_TRUE(OffsetRuntimeFieldElement(field, 1, 15.0, &turned));
+    EXPECT_EQ(FormatRuntimeField(field, &turned), "10, 105, -20") << "yaw moved, pitch and roll kept";
+    EXPECT_FALSE(ParseRuntimeField(field, "10, 20", &turned)) << "three angles, no fewer";
 }

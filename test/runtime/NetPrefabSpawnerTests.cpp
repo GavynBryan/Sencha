@@ -12,7 +12,6 @@
 #include <runtime/spawn/NetPrefabSpawner.h>
 
 #include <assets/runtime/RuntimeAssets.h>
-#include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <ecs/WorldComponentSchema.h>
@@ -60,14 +59,7 @@ namespace
             (void)RegisterCookedAssets(root.generic_string(), Assets->Registry);
 
             // The ids both machines share, which is the whole reason an id can
-            // be what a spawn carries.
-            AssetIdMap idMap;
-            std::string error;
-            ASSERT_TRUE(AssetIdMap::LoadFromFile(
-                (root / std::string(kAssetIdMapFileName)).generic_string(), idMap,
-                &error)) << error;
-            (void)ApplyAssetIds(idMap, Assets->Registry);
-
+            // be what a spawn carries: the cooked index names every artifact's.
             const AssetRecord* pawn =
                 Assets->Registry.FindByPath(std::string(kPawnPrefab));
             ASSERT_NE(pawn, nullptr);

@@ -8,7 +8,7 @@
 #include <cmath>
 #include <optional>
 
-// Pure viewport projection math — no ImGui, no EditorViewport, no Vulkan. The GUI
+// Pure viewport projection math — no UI, no EditorViewport, no Vulkan. The
 // wrapper (ViewportProjection) feeds it a view-projection matrix and a pixel rect;
 // this is the part worth unit-testing (the bugs lived here: ray/pixel mapping,
 // screen-space distance). Vec2d is the engine's float-backed 2D vector.

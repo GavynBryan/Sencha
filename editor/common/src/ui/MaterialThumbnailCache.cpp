@@ -1,22 +1,70 @@
 #include "MaterialThumbnailCache.h"
 
-#include <assets/material/MaterialLoader.h>
-#include <core/assets/AssetRegistry.h>
+#include "properties/ColorValue.h"
 
+#include <app/Engine.h>
+#include <assets/material/MaterialLoader.h>
+#include <assets/runtime/AssetSystem.h>
+#include <assets/texture/TextureCache.h>
+#include <core/assets/AssetRegistry.h>
+#include <core/console/CVarRead.h>
+#include <core/console/ConsoleRegistry.h>
+#include <core/console/ConsoleService.h>
+#include <graphics/vulkan/GraphicsServices.h>
+#include <graphics/vulkan/UiTextureResidency.h>
+#include <ui/UiService.h>
+
+#include <algorithm>
+#include <format>
 #include <utility>
 #include <vector>
 
 MaterialThumbnailCache::MaterialThumbnailCache(AssetSystem& assets,
                                                TextureCache& textures,
-                                               VulkanImageService& images,
-                                               VulkanSamplerCache& samplers,
-                                               const AssetRegistry& registry)
-    : Assets(assets)
+                                               const AssetRegistry& registry,
+                                               UiService* ui,
+                                               UiTextureResidency* uiTextures,
+                                               std::string imagePrefix)
+    : ImagePrefix(std::move(imagePrefix))
+    , Assets(assets)
     , Textures(textures)
-    , Images(images)
-    , Samplers(samplers)
     , Registry(registry)
+    , Ui(ui)
+    , UiTextures(uiTextures)
 {
+}
+
+namespace
+{
+constexpr const char* kBudgetCVar = "editor.materials.thumbnail_budget";
+}
+
+void MaterialThumbnailCache::RegisterBudget(ConsoleRegistry& registry)
+{
+    if (registry.FindCVar(kBudgetCVar) != nullptr)
+        return;
+    registry.RegisterCVar({
+        .Name = kBudgetCVar,
+        .Owner = "editor",
+        .Type = CVarType::Int,
+        .DefaultValue = std::int64_t{ 128 },
+        .CurrentValue = std::int64_t{ 128 },
+        .Flags = CVarFlags::Archive,
+        .Help = "Most material thumbnails kept on the GPU; the ones shown most recently stay.",
+        .Source = { "editor" },
+    });
+}
+
+void MaterialThumbnailCache::UpdateFrame(Engine& engine)
+{
+    // The renderer's fence-anchored clock decides when an evicted binding's
+    // descriptor set is safe to free.
+    GpuFrameRetirement retirement;
+    if (const GraphicsServices* graphics = engine.TryGraphics())
+        retirement = graphics->Frames.GetRetirement();
+    BeginFrame(retirement);
+    const std::int64_t budget = ReadCVarInt(&engine.Console().Registry(), kBudgetCVar, 128);
+    TrimToBudget(static_cast<std::size_t>(std::max<std::int64_t>(1, budget)));
 }
 
 void MaterialThumbnailCache::BeginFrame(GpuFrameRetirement retirement)
@@ -35,37 +83,75 @@ void MaterialThumbnailCache::BeginFrame(GpuFrameRetirement retirement)
 
 void MaterialThumbnailCache::Retire(Entry& entry)
 {
-    if (entry.Binding != nullptr)
-        RetireList.push_back(Retiring{ std::move(entry.Binding), Retirement.Stamp() });
+    if (entry.Image != kInvalidUiHostImage && UiTextures != nullptr)
+        UiTextures->WithdrawHostImage(entry.Image);
+    if (entry.Texture.IsValid())
+        RetireList.push_back(Retiring{ std::move(entry.Texture), Retirement.Stamp() });
 }
 
-std::string MaterialThumbnailCache::ResolveBaseColor(const std::string& materialPath) const
+void MaterialThumbnailCache::ResolveBaseColor(const std::string& materialPath, Entry& entry) const
 {
     const AssetRecord* record = Registry.FindByPath(materialPath);
-    if (record == nullptr || record->FilePath.empty())
-        return {};
     MaterialDescription description;
-    if (!LoadMaterialFromFile(record->FilePath, description))
-        return {};
-    return description.BaseColorTexture.Path;
+    if (record == nullptr || record->FilePath.empty() || !LoadMaterialFromFile(record->FilePath, description))
+        return;
+    entry.TexturePath = description.BaseColorTexture.Path;
+    const Vec4& color = description.BaseColorFactor;
+    entry.Swatch = ColorSwatch({ color.X, color.Y, color.Z });
 }
 
-ImTextureID MaterialThumbnailCache::Thumbnail(const std::string& materialPath)
+template <typename Resolve>
+MaterialThumbnailCache::Entry& MaterialThumbnailCache::Find(const std::string& key, Resolve&& resolve)
 {
-    auto it = Entries.find(materialPath);
+    auto it = Entries.find(key);
     if (it == Entries.end())
     {
         Entry entry;
-        const std::string texturePath = ResolveBaseColor(materialPath);
-        if (!texturePath.empty())
-        {
-            entry.Binding = std::make_unique<ImGuiTextureBinding>(Assets, Textures, Images, Samplers);
-            entry.Binding->SetTexture(texturePath);
-        }
-        it = Entries.emplace(materialPath, std::move(entry)).first;
+        resolve(entry);
+        it = Entries.emplace(key, std::move(entry)).first;
     }
     it->second.LastUsedFrame = Frame;
-    return it->second.Binding != nullptr ? it->second.Binding->TextureId() : ImTextureID{};
+    return it->second;
+}
+
+std::string MaterialThumbnailCache::ImageName(const std::string& materialPath)
+{
+    return Publish(materialPath, Find(materialPath, [&](Entry& entry) { ResolveBaseColor(materialPath, entry); }));
+}
+
+std::string MaterialThumbnailCache::TextureImageName(const std::string& texturePath)
+{
+    const std::string key = "texture:" + texturePath;
+    return Publish(key, Find(key, [&](Entry& entry) { entry.TexturePath = texturePath; }));
+}
+
+AssetPicture MaterialThumbnailCache::PictureOf(std::string_view assetPath)
+{
+    const std::string path(assetPath);
+    if (!path.ends_with(".smat"))
+        return { .Image = TextureImageName(path) };
+    return { .Image = ImageName(path), .Color = Entries.at(path).Swatch };
+}
+
+std::string MaterialThumbnailCache::Publish(const std::string& key, Entry& entry)
+{
+    if (entry.TexturePath.empty() || Ui == nullptr || UiTextures == nullptr)
+        return {};
+    std::string name = ImagePrefix + key;
+    if (!entry.Texture.IsValid())
+    {
+        entry.Texture = Assets.LoadLease(entry.TexturePath, AssetType::Texture);
+        // Registered for as long as the process runs: the document engine keeps
+        // a texture per source, so a name re-registered under a new id would
+        // leave it drawing the old one.
+        entry.Image = Ui->SetHostImage(name, RenderExtent{ 1, 1 });
+    }
+    // A hot reload repoints the same slot, so publishing is only ever waiting
+    // for the first upload.
+    const BindlessImageIndex slot = Textures.GetBindlessIndex(TextureHandle::FromToken(entry.Texture.OpaqueToken()));
+    if (slot.IsValid())
+        UiTextures->PublishHostImage(entry.Image, slot);
+    return name;
 }
 
 void MaterialThumbnailCache::TrimToBudget(std::size_t budget)

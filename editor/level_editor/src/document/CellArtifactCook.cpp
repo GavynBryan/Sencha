@@ -5,6 +5,7 @@
 #include "DocumentArtifactCatalog.h"
 #include "DocumentCookContext.h"
 
+#include <core/assets/AssetPath.h>
 #include <assets/cook/BrushGeometryCook.h>
 #include <assets/cook/CollisionShapeCook.h>
 #include <assets/cook/StaticCollisionGeometry.h>
@@ -96,7 +97,7 @@ bool EmitCellArtifacts(const DocumentCookContext& ctx,
         }
 
         const std::string cellName = CellName(cell.Coord);
-        const std::string meshAssetPath = "asset://" + stemStr + "/" + cellName;
+        const std::string meshAssetPath = AssetPathOf(stemStr + "/" + cellName);
         const std::string meshRelPath = ".cooked/" + stemStr + "/" + cellName;
         const std::filesystem::path meshPhysical = assetsRoot / meshRelPath;
         const std::filesystem::path meshStaged = transaction.Stage(meshPhysical);
@@ -134,7 +135,7 @@ bool EmitCellArtifacts(const DocumentCookContext& ctx,
                 if (colFile.good())
                 {
                     collision.push_back(CellCollisionEntry{ colRel, cell.Origin });
-                    catalog.AddCollision("asset://" + colRel, ".cooked/" + colRel);
+                    catalog.AddCollision(AssetPathOf(colRel), ".cooked/" + colRel);
                 }
             }
         }

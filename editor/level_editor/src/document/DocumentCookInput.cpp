@@ -3,6 +3,7 @@
 #include "BakeTriangleGather.h"
 #include "EditorDocument.h"
 
+#include <core/assets/AssetPath.h>
 #include <assets/static_mesh/MeshLoader.h>
 #include <assets/runtime/AssetSystem.h>
 #include <assets/runtime/RuntimeAssets.h>
@@ -152,10 +153,9 @@ std::vector<LightmapPlacement> CollectLightmapPlacements(
                 return;
             const std::string_view assetPath = assetSystem->GetPathForLease(
                 AssetType::StaticMesh, renderer.Mesh.ToToken());
-            constexpr std::string_view prefix = "asset://";
-            if (assetPath.size() <= prefix.size())
+            if (assetPath.size() <= kAssetPathPrefix.size())
                 return;
-            const std::string rel(assetPath.substr(prefix.size()));
+            const std::string rel(ContentRelativePath(assetPath));
 
             // Authored meshes live under the root; generated ones under
             // .cooked (the same split physicalPathFor uses for refs).

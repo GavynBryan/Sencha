@@ -58,3 +58,17 @@ TEST(KeymapFile, MissingFileMeansDefaults)
     EXPECT_TRUE(overrides.empty());
     EXPECT_TRUE(error.empty());
 }
+
+TEST(KeymapFile, AChordShownIsTheTextThatReadsItBack)
+{
+    for (const KeyChord chord : { KeyChord{ SDLK_Z, { .Ctrl = true } }, KeyChord{ SDLK_Z, { .Ctrl = true, .Shift = true } },
+                                  KeyChord{ SDLK_DELETE, {} }, KeyChord{ SDLK_SPACE, { .Shift = true } },
+                                  KeyChord{ SDLK_F2, {} }, KeyChord{ SDLK_D, { .Alt = true } } })
+    {
+        const std::string text = FormatKeyChord(chord);
+        const std::optional<KeyChord> read = ParseKeyChord(text);
+        ASSERT_TRUE(read.has_value()) << text;
+        EXPECT_EQ(read->Key, chord.Key) << text;
+        EXPECT_TRUE(read->Mods == chord.Mods) << text;
+    }
+}

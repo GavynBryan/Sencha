@@ -16,11 +16,12 @@ ToolContext::ToolContext(CommandStack& commandStack,
     , Document(levelDocument)
     , Interactions(interaction.Interactions)
     , Preview(interaction.Preview)
+    , Placement(interaction.Placement)
     , MeshEdit(meshEdit)
     , Marquee(interaction.Marquee)
     , Grid(settings.Grid)
     , Overlay(interaction.Overlay)
     , Sink(sink)
-    , ActiveMaterial(settings.ActiveMaterial)
+    , Resources(settings.Resources)
 {
 }

@@ -1,0 +1,55 @@
+<rml>
+<head>
+    <title>Views</title>
+    <link type="text/rcss" href="views.rcss"/>
+    <link type="text/rcss" href="icons.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="views">
+    <!-- Each view the arrangement shows, at its own tile. The pixels are the
+         host's, rendered this frame; the document only places them. -->
+    <div class="tile_slot" data-for="tile : tiles">
+        <img class="view" data-attr-src="'host:' + tile.key"
+             data-style-left="tile.parts[0]" data-style-top="tile.parts[1]"
+             data-style-width="tile.parts[2]" data-style-height="tile.parts[3]"/>
+        <div class="frame theme-frame" data-class-active="tile.selected"
+             data-style-left="tile.parts[0]" data-style-top="tile.parts[1]"
+             data-style-width="tile.parts[2]" data-style-height="tile.parts[3]"></div>
+    </div>
+
+    <!-- What tools and drags put at points over the views, in window pixels.
+         parts: left, top, width, height, colour, border colour. -->
+    <div class="mark_slot" data-for="mark : marks">
+        <div class="label" data-if="mark.detail == 'label'" data-style-color="mark.parts[4]"
+             data-style-left="mark.parts[0]" data-style-top="mark.parts[1]">{{mark.label}}</div>
+        <div class="handle" data-if="mark.detail == 'handle'"
+             data-style-background-color="mark.parts[4]" data-style-border-color="mark.parts[5]"
+             data-style-left="mark.parts[0]" data-style-top="mark.parts[1]"
+             data-style-width="mark.parts[2]" data-style-height="mark.parts[3]"></div>
+        <div class="button theme-key" data-if="mark.detail == 'button'"
+             data-class-lit="mark.selected" data-class-disabled="mark.disabled"
+             data-class-destructive="mark.value == 'destructive'"
+             data-style-left="mark.parts[0]" data-style-top="mark.parts[1]"
+             data-style-width="mark.parts[2]" data-style-height="mark.parts[3]">
+            <span data-if="mark.icon != ''" data-attr-class="'icon icon-' + mark.icon"></span>{{mark.label}}
+        </div>
+        <div class="caption" data-if="mark.detail == 'caption'" data-style-color="mark.parts[4]"
+             data-style-left="mark.parts[0]" data-style-top="mark.parts[1]"
+             data-style-width="mark.parts[2]" data-style-height="mark.parts[3]">{{mark.label}}</div>
+        <div class="caption" data-if="mark.detail == 'tooltip'"
+             data-style-left="mark.parts[0]" data-style-top="mark.parts[1]"
+             data-style-width="mark.parts[2]" data-style-height="mark.parts[3]"><span class="tip theme-readout">{{mark.label}}</span></div>
+        <div class="knob theme-lamp on" data-if="mark.detail == 'knob'" data-class-lit="mark.selected"
+             data-style-left="mark.parts[0]" data-style-top="mark.parts[1]"
+             data-style-width="mark.parts[2]" data-style-height="mark.parts[3]"></div>
+        <div class="marker theme-key" data-if="mark.detail == 'marker'" data-class-lit="mark.selected"
+             data-style-left="mark.parts[0]" data-style-top="mark.parts[1]"
+             data-style-width="mark.parts[2]" data-style-height="mark.parts[3]">
+            <span data-attr-class="'icon icon-' + mark.icon"></span>
+        </div>
+        <div class="marquee theme-marquee" data-if="mark.detail == 'marquee'"
+             data-style-left="mark.parts[0]" data-style-top="mark.parts[1]"
+             data-style-width="mark.parts[2]" data-style-height="mark.parts[3]"></div>
+    </div>
+</body>
+</rml>

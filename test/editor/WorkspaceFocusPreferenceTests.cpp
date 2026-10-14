@@ -60,7 +60,7 @@ TEST_F(WorkspaceFocusPreferenceTest, TheEditingStackStillWorksAfterAFocusChange)
     Workspace.BeginInsetOnSelectedFaces(0.1f);
 
     EXPECT_TRUE(Workspace.HasPendingInset());
-    Workspace.CancelPendingElementEdit();
+    Workspace.CancelStagedElementEdit();
     EXPECT_FALSE(Commands.HasPendingEdit());
 }
 

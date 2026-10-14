@@ -173,8 +173,10 @@ public:
     [[nodiscard]] AnimTick NextTick() const { return CurrentTick + 1; }
     [[nodiscard]] double TickSeconds() const;
     [[nodiscard]] const AnimationScenario& Scenario() const { return Working; }
-    [[nodiscard]] bool ScenarioModified() const;
-    void MarkScenarioSaved();
+    // Told after every edit to the scenario; not when it is opened or replaced.
+    void OnScenarioChanged(std::function<void()> observer) { ScenarioObserver = std::move(observer); }
+    // `scenario` in place of the working one, replayed to the current tick.
+    void ReplaceScenario(AnimationScenario scenario);
 
     // Null when the rig did not bind.
     [[nodiscard]] const AnimBoundRig* Rig() const { return Bound; }
@@ -199,6 +201,9 @@ public:
     [[nodiscard]] EntityId ParticipantEntity(std::string_view name) const;
     [[nodiscard]] std::string_view ParticipantName(EntityId entity) const;
     [[nodiscard]] const GameplayTagRegistry* Tags() const;
+    // A tag as the preview World names it: "(none)" for no tag, "#7" for one
+    // it does not know.
+    [[nodiscard]] std::string TagName(GameplayTagId tag) const;
     // Rebuilt on every restart; null while closed.
     [[nodiscard]] World* SimulationWorld() { return Preview.get(); }
     [[nodiscard]] const World* SimulationWorld() const { return Preview.get(); }
@@ -244,6 +249,7 @@ private:
                                                    InputTable& inputs) const;
     void Schedule(AnimationScenarioAction action);
     void Problem(std::string code, std::string field, std::string message);
+    void ScenarioChanged();
     [[nodiscard]] std::string ScenarioField(std::size_t actionIndex, std::string_view key) const;
 
     const DataAssetCache& Data;
@@ -252,7 +258,7 @@ private:
     std::function<void(World&)> Vocabulary;
 
     AnimationScenario Working;
-    std::string SavedScenarioText;
+    std::function<void()> ScenarioObserver;
     // Lets several edits made while paused on one tick share one branch.
     std::optional<AnimTick> BranchedAt;
 

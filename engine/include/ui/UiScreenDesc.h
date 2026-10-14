@@ -5,7 +5,9 @@
 #include <ui/UiValue.h>
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 //=============================================================================
@@ -66,16 +68,28 @@ struct UiModelProperty
     bool Editable = false;
 };
 
-// Which control a document offers for a row's value, when it offers one.
-//
-// Editable still says whether it offers one at all; this says which. A Range
-// that is not editable is a read-out with a bar, and a document tests both.
-// Text is the default and is what every existing row is.
-enum class UiRowControl : std::uint8_t
+// Which control a document offers for a row's value, by the name a document
+// tests (`row.control == 'range'`); Editable says whether it offers one at all.
+// The runtime's own pages offer these; any other name is the host's and its
+// documents' to agree on, and is bound as written.
+namespace UiRowControls
 {
-    Text,
-    Range,
-    Choice,
+inline constexpr std::string_view Text = "text";
+inline constexpr std::string_view Range = "range";
+inline constexpr std::string_view Choice = "choice";
+} // namespace UiRowControls
+
+// Something to do about a row, offered beside it rather than as a row of its
+// own: a command on what the row stands for, or taking the row away. An action
+// raised from it carries Key; Removes lets a document draw removal apart from
+// everything else.
+struct UiRowVerb
+{
+    std::string Key;
+    std::string Label;
+    bool Removes = false;
+
+    friend bool operator==(const UiRowVerb&, const UiRowVerb&) = default;
 };
 
 // One row of a presented list.
@@ -105,7 +119,7 @@ struct UiRow
     // identity, a type it cannot express, a field it has no editor for.
     bool Editable = false;
 
-    UiRowControl Control = UiRowControl::Text;
+    std::string Control = std::string(UiRowControls::Text);
 
     // Range: the value as a number, and the bounds and step the control moves
     // within. Its own member rather than a reading of Value, because a document
@@ -128,6 +142,32 @@ struct UiRow
     // free: the compiler waives the missing-initializer warning for members
     // that have a default of their own.
     std::vector<std::string> Choices = {};
+
+    // What the host calls this row, stable across republishing: a property
+    // path, an entity id, an asset path. An action about a row carries it, so
+    // the host never has to trust a position in a list that may have changed.
+    std::string Key = {};
+
+    // How far the row is nested under the rows before it: a tree's depth, a
+    // field inside a section. The document indents by it; nothing else does.
+    int Depth = 0;
+
+    // A named icon the document shows beside the row, or empty.
+    std::string Icon = {};
+
+    // The row's standing in whatever the list presents: picked, opened to show
+    // what is nested under it, standing for several values that differ, or not
+    // actionable right now.
+    bool Selected = false;
+    bool Expanded = false;
+    bool Mixed = false;
+    bool Disabled = false;
+
+    // A value made of parts edited side by side -- a vector's components --
+    // each as text, the same rule as Value. Empty for a single value.
+    std::vector<std::string> Parts = {};
+
+    std::vector<UiRowVerb> Verbs = {};
 
     friend bool operator==(const UiRow&, const UiRow&) = default;
 };

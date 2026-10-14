@@ -92,3 +92,17 @@ TEST(WindowFrameHit, DegenerateInputsAreClient)
     over.CaptionCount = 9;
     EXPECT_EQ(ClassifyWindowFrameHit(over, Probe(400, 15)), WindowFrameHit::Caption);
 }
+
+TEST(WindowFrameHit, AHeldPointerIsClientEverywhere)
+{
+    // A drag carried over the caption or an edge and let go there: Wayland
+    // acts on the last answer for the release too, moving or resizing the
+    // window and swallowing the release, which leaves the drag running.
+    const WindowFrameRegions regions = Regions(6, true);
+    WindowFrameProbe overCaption = Probe(60, 15);
+    WindowFrameProbe overEdge = Probe(640, 2);
+    overCaption.PointerHeld = true;
+    overEdge.PointerHeld = true;
+    EXPECT_EQ(ClassifyWindowFrameHit(regions, overCaption), WindowFrameHit::Client);
+    EXPECT_EQ(ClassifyWindowFrameHit(regions, overEdge), WindowFrameHit::Client);
+}

@@ -1,5 +1,6 @@
 #include "authoring/AnimationRigRecipe.h"
 
+#include <core/assets/AssetPath.h>
 #include <anim/AnimationClipCache.h>
 #include <anim/SkeletonCache.h>
 
@@ -152,7 +153,7 @@ AnimationRigPlan PlanAnimationRig(const AnimationRigRecipe& recipe, const Animat
     const bool selects = preset != AnimationRigPreset::Prop;
     const std::size_t firstAction = selects && behaviors.size() > 1 ? 2 : 1;
     const std::string folder = "animation/" + recipe.Name + "/";
-    const std::string asset = "asset://" + folder + recipe.Name;
+    const std::string asset = AssetPathOf(folder + recipe.Name);
 
     JsonValue::Array behaviorDecls;
     JsonValue::Array rows;

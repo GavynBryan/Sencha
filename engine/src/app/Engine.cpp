@@ -1394,16 +1394,18 @@ int Engine::Run(Game& game)
     console.AdvancePhase(ConsolePhase::SystemsRegistered);
 
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_ENABLE_VULKAN)
-    // Authored UI draws for every host, without one having to assemble the
-    // feature itself. Phase order puts it over the scene and under the debug
-    // overlay regardless of when it is added, so this needs no dependency edge
-    // -- an editor ordering its own chrome against it will, and that is what
-    // kUiRenderFeatureId is for.
+    // Over the scene, under the debug overlay, and after whatever the game added
+    // to ApplicationUi in OnStart, so authored surfaces draw over a host's own UI;
+    // its id lets a later feature order against it.
     if (UiState != nullptr && UiState->IsReady() && GraphicsState != nullptr)
     {
         RuntimeAssets& assets = ContentState->Assets();
-        GraphicsState->MainRenderer.AddFeature(
-            std::make_unique<UiRenderFeature>(*UiState, assets.Textures.get()));
+        Renderer& renderer = GraphicsState->MainRenderer;
+        (void)renderer.StageFeature(
+            std::make_unique<UiRenderFeature>(*UiState, assets.Textures.get()),
+            FeatureRegistration{ .Id = kUiRenderFeatureId });
+        if (!renderer.CommitStagedFeatures())
+            LoggingState.GetLogger<Engine>().Error("the authored UI render feature did not register");
     }
 #endif
 

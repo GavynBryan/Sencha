@@ -1,0 +1,38 @@
+#pragma once
+
+#include "authoring/AnimationScenario.h"
+
+#include "properties/PropertySource.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+class AnimationPreviewWorkspace;
+
+// The Requests lens's card: a request drafted for the next tick, the live ones
+// with Cancel, and how the last tick's fared; each is a scenario edit.
+class AnimationRequestProperties final : public CommitOnlyPropertySource
+{
+public:
+    explicit AnimationRequestProperties(AnimationPreviewWorkspace& workspace) : Workspace(workspace) {}
+
+    [[nodiscard]] std::vector<PropertyNode> Nodes() const override;
+    PropertyEditResult CommitEdit(std::string_view key, std::string_view value) override;
+    PropertyEditResult Act(std::string_view key, std::string_view verb, std::string_view choice) override;
+
+private:
+    [[nodiscard]] PropertyNode IssueNodes() const;
+    [[nodiscard]] PropertyNode LiveNodes() const;
+
+    AnimationPreviewWorkspace& Workspace;
+    // The request being drafted.
+    std::size_t Participant = 0;
+    std::size_t Intent = 0;
+    std::string FreeIntent;
+    AnimRequestLifetime Lifetime = AnimRequestLifetime::Held;
+    std::uint32_t FixedTicks = 30;
+    std::uint8_t Layers = kAnimAllLayers;
+    std::vector<AnimationScenarioValue> Params;
+};

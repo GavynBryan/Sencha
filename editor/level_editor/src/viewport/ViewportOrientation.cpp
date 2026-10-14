@@ -52,3 +52,18 @@ GridPlane GridForAxis(const Vec3d& axis)
         return GridPlanes::YZ();
     return GridPlanes::XY();
 }
+
+GridPlane GridThrough(GridPlane axisPlane, Vec3d point, const GridSettings& grid)
+{
+    // GridPlane::Snap quantizes relative to Origin, so a raw point would smear
+    // its fractional offset onto every snap, off the working grid.
+    const Vec3d fromGrid = point - grid.Origin;
+    const float du = fromGrid.Dot(axisPlane.AxisU);
+    const float dv = fromGrid.Dot(axisPlane.AxisV);
+    point -= axisPlane.AxisU * (du - std::round(du / grid.Spacing) * grid.Spacing);
+    point -= axisPlane.AxisV * (dv - std::round(dv / grid.Spacing) * grid.Spacing);
+    axisPlane.Origin = point;
+    axisPlane.Spacing = grid.Spacing;
+    axisPlane.SnapEnabled = grid.SnapEnabled;
+    return axisPlane;
+}

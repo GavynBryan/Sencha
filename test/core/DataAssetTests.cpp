@@ -2,15 +2,20 @@
 #include <assets/data/DataAssetSubtype.h>
 #include <assets/data/DataAssetLoader.h>
 #include <assets/data/DataAssetTypeRegistry.h>
+#include <assets/cook/AssetImporter.h>
+#include <assets/hotreload/AssetHotReloader.h>
 #include <assets/runtime/AssetSystem.h>
+#include <assets/runtime/RegisterAssetKind.h>
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/assets/AssetSource.h>
 #include <core/logging/LoggingProvider.h>
 #include <core/metadata/DataSchema.h>
+#include <jobs/AsyncTaskQueue.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -175,7 +180,7 @@ TEST(DataAsset, LoadsTypedValueAndReportsDependencies)
         }
     })");
 
-    AssetStaging staged = loader.LoadStaged(file.Record(), source);
+    AssetStaging staged = loader.LoadStaged(file.Record(), source, AssetPathsById{});
     ASSERT_TRUE(staged.IsValid()) << staged.Error;
     ASSERT_EQ(staged.Dependencies.size(), 1u);
     EXPECT_EQ(staged.Dependencies[0].Type, AssetType::Material);
@@ -191,7 +196,7 @@ TEST(DataAsset, LoadsTypedValueAndReportsDependencies)
         "version": 1,
         "data": { "speed": 8.5, "label": "runner" }
     })");
-    AssetStaging independent = loader.LoadStaged(file.Record(), source);
+    AssetStaging independent = loader.LoadStaged(file.Record(), source, AssetPathsById{});
     ASSERT_TRUE(independent.IsValid()) << independent.Error;
     EXPECT_TRUE(independent.Dependencies.empty());
 
@@ -215,6 +220,118 @@ TEST(DataAsset, LoadsTypedValueAndReportsDependencies)
     EXPECT_FALSE(cache.Find(file.Record().Path).IsValid());
 }
 
+// A data asset that names another by id compiles with the path that asset is at
+// now, read from the snapshot the owner took; without the id known, the hint.
+TEST(DataAsset, AReferenceByIdCompilesAtItsAssetsCurrentPath)
+{
+    LoggingProvider logging;
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    DataAssetCache cache;
+    ASSERT_TRUE(types.Register(MakeType()));
+    ASSERT_TRUE(schemas.Register(MakeSchema()));
+
+    DataAssetLoader loader(logging, &types, &schemas, &cache);
+    FileAssetSource source;
+    TempDataFile file;
+    file.Write(R"({
+        "type": "test.definition",
+        "version": 1,
+        "data": {
+            "speed": 1,
+            "label": "runner",
+            "dependency": { "id": "00000000000000d1", "path": "asset://materials/old.smat" }
+        }
+    })");
+
+    const AssetPathsById current{ { AssetId{ 0xd1 }, "asset://materials/new.smat" } };
+    const AssetStaging moved = loader.LoadStaged(file.Record(), source, current);
+    ASSERT_TRUE(moved.IsValid()) << moved.Error;
+    ASSERT_EQ(moved.Dependencies.size(), 1u);
+    EXPECT_EQ(moved.Dependencies[0].Path, "asset://materials/new.smat");
+
+    const AssetStaging unknown = loader.LoadStaged(file.Record(), source, AssetPathsById{});
+    ASSERT_TRUE(unknown.IsValid()) << unknown.Error;
+    EXPECT_EQ(unknown.Dependencies[0].Path, "asset://materials/old.smat");
+}
+
+// A hot reload stages through the same door as a load, so a reference that
+// names its asset by id alone reads where that asset is now.
+TEST(DataAssetHotReload, AReferenceByIdAloneResolvesToItsAssetsCurrentPath)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    DataAssetTypeRegistry types;
+    DataAssetCache cache;
+    DataAssetTypeRegistration pointer;
+    pointer.Name = "test.pointer";
+    pointer.CurrentVersion = 1;
+    pointer.Compile = [](const JsonValue& data)
+    {
+        const JsonValue* target = data.Find("target");
+        DataAssetCompileResult result;
+        result.Value = std::make_shared<std::string>(target != nullptr && target->IsString() ? target->AsString() : "");
+        return result;
+    };
+    ASSERT_TRUE(types.Register(std::move(pointer)));
+    DataAssetLoader loader(logging, &types, nullptr, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Data, loader, &cache);
+
+    const std::string target = "asset://materials/new.smat";
+    ASSERT_TRUE(registry.Register(AssetRecord{ .Type = AssetType::Material,
+                                               .SourceKind = AssetSourceKind::File,
+                                               .Path = target,
+                                               .FilePath = "new.smat" }));
+    ASSERT_TRUE(registry.AssignId(target, AssetId{ 0xd1 }));
+
+    TempDataFile file;
+    file.Write(R"({"type":"test.pointer","version":1,"data":{"target":"asset://materials/new.smat"}})");
+    ASSERT_TRUE(registry.Register(file.Record()));
+    const AssetLease lease = assets.LoadLease(file.Record().Path, AssetType::Data);
+    ASSERT_TRUE(lease.IsValid());
+
+    file.Write(R"({"type":"test.pointer","version":1,"data":{"target":{"id":"00000000000000d1"}}})");
+    AssetImporterRegistry importers;
+    AsyncTaskQueue tasks{ 0 };
+    AssetHotReloader reloader(logging, assets, registry, importers, tasks,
+                              std::filesystem::temp_directory_path().generic_string());
+    reloader.ReloadSource("data/test/definition.sdata");
+    (void)tasks.PumpWork();
+    (void)tasks.DrainCompletions();
+
+    const DataAssetHandle handle = cache.Find(file.Record().Path);
+    ASSERT_EQ(cache.GetReloadVersion(handle), 2u) << "the edit was not reloaded";
+    const std::string* resolved = cache.TryGet<std::string>(handle, "test.pointer");
+    ASSERT_NE(resolved, nullptr);
+    EXPECT_EQ(*resolved, target) << "the reload compiled the reference without knowing where its asset is";
+}
+
+// A load refused because something it depends on did not load says which.
+TEST(DataAssetKind, AFailedDependencyIsNamedInTheLoadFailure)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    DataAssetCache cache;
+    ASSERT_TRUE(types.Register(MakeType()));
+    ASSERT_TRUE(schemas.Register(MakeSchema()));
+    DataAssetLoader loader(logging, &types, &schemas, &cache);
+    AssetSystem assets(logging, registry);
+    RegisterAssetKind(assets, AssetType::Data, loader, &cache);
+
+    TempDataFile file;
+    file.Write(R"({"type":"test.definition","version":1,
+                   "data":{"speed":1,"label":"x","dependency":"asset://materials/absent.smat"}})");
+    ASSERT_TRUE(registry.Register(file.Record()));
+
+    EXPECT_FALSE(assets.LoadLease(file.Record().Path, AssetType::Data).IsValid());
+    const auto failure = std::ranges::find(assets.LoadFailures(), file.Record().Path, &AssetSystem::LoadFailure::Path);
+    ASSERT_NE(failure, assets.LoadFailures().end());
+    EXPECT_NE(failure->Reason.find("depends on 'asset://materials/absent.smat'"), std::string::npos) << failure->Reason;
+}
+
 TEST(DataAsset, HotReloadPreservesHandleAndIncrementsVersion)
 {
     LoggingProvider logging;
@@ -230,13 +347,13 @@ TEST(DataAsset, HotReloadPreservesHandleAndIncrementsVersion)
     file.Write(R"({"type":"test.definition","version":1,
                    "data":{"speed":4.0,"label":"before"}})");
 
-    ASSERT_TRUE(loader.CommitTyped(loader.LoadStaged(file.Record(), source)).IsValid());
+    ASSERT_TRUE(loader.CommitTyped(loader.LoadStaged(file.Record(), source, AssetPathsById{})).IsValid());
     const DataAssetHandle handle = cache.Find(file.Record().Path);
     ASSERT_TRUE(handle.IsValid());
 
     file.Write(R"({"type":"test.definition","version":1,
                    "data":{"speed":12.0,"label":"after"}})");
-    AssetStaging reload = loader.LoadStaged(file.Record(), source);
+    AssetStaging reload = loader.LoadStaged(file.Record(), source, AssetPathsById{});
     ASSERT_TRUE(reload.IsValid()) << reload.Error;
     ASSERT_TRUE(loader.CommitReload(std::move(reload)));
 
@@ -262,13 +379,13 @@ TEST(DataAsset, RejectsUnknownSubtypeAndSchemaViolation)
     TempDataFile file;
 
     file.Write(R"({"type":"missing.type","version":1,"data":{}})");
-    AssetStaging unknown = loader.LoadStaged(file.Record(), source);
+    AssetStaging unknown = loader.LoadStaged(file.Record(), source, AssetPathsById{});
     EXPECT_FALSE(unknown.IsValid());
     EXPECT_NE(unknown.Error.find("unknown data asset subtype"), std::string::npos);
 
     file.Write(R"({"type":"test.definition","version":1,
                    "data":{"speed":200.0,"label":"invalid"}})");
-    AssetStaging invalid = loader.LoadStaged(file.Record(), source);
+    AssetStaging invalid = loader.LoadStaged(file.Record(), source, AssetPathsById{});
     EXPECT_FALSE(invalid.IsValid());
     EXPECT_NE(invalid.Error.find("$.speed"), std::string::npos);
 }
@@ -313,7 +430,7 @@ TEST(DataAssetKind, RegisteringTheKindMakesItVisibleThroughTheFrontDoor)
     ASSERT_NE(stager, nullptr);
     EXPECT_FALSE(assets.IsResident(file.Record().Path, AssetType::Data));
 
-    AssetLease lease = assets.Commit(stager->LoadStaged(file.Record(), assets.DefaultSource()));
+    AssetLease lease = std::move(assets.Commit(stager->LoadStaged(file.Record(), assets.DefaultSource(), AssetPathsById{})).Handle);
     ASSERT_TRUE(lease.IsValid());
     EXPECT_TRUE(assets.IsResident(file.Record().Path, AssetType::Data));
 
@@ -322,6 +439,43 @@ TEST(DataAssetKind, RegisteringTheKindMakesItVisibleThroughTheFrontDoor)
 
     lease.Reset();
     EXPECT_FALSE(assets.IsResident(file.Record().Path, AssetType::Data));
+}
+
+TEST(DataAssetKind, AFailedLoadKeepsItsReasonUntilTheAssetLoads)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    DataAssetTypeRegistry types;
+    DataSchemaRegistry schemas;
+    DataAssetCache cache;
+    ASSERT_TRUE(types.Register(MakeType()));
+    ASSERT_TRUE(schemas.Register(MakeSchema()));
+    DataAssetLoader loader(logging, &types, &schemas, &cache);
+    AssetSystem assets(logging, registry);
+    AssetKindRegistration kind = MakeBuiltinAssetKind(AssetType::Data);
+    kind.Stager = &loader;
+    kind.Store = &cache;
+    kind.Commit = [&](AssetStaging&& staged) -> AssetLease
+    {
+        const DataAssetHandle handle = loader.CommitTyped(std::move(staged));
+        return handle.IsValid() ? AssetLease::Adopt(AssetType::Data, cache, handle.ToToken()) : AssetLease{};
+    };
+    ASSERT_TRUE(assets.Kinds().Register(std::move(kind)));
+
+    TempDataFile file;
+    ASSERT_TRUE(registry.Register(file.Record()));
+    file.Write(R"({"type":"test.definition","version":1,"data":{"speed":200.0,"label":"invalid"}})");
+    const std::uint64_t before = assets.LoadFailuresVersion();
+    EXPECT_FALSE(assets.LoadLease(file.Record().Path, AssetType::Data).IsValid());
+    ASSERT_EQ(assets.LoadFailures().size(), 1u);
+    EXPECT_EQ(assets.LoadFailures()[0].Path, file.Record().Path);
+    EXPECT_NE(assets.LoadFailures()[0].Reason.find("$.speed"), std::string::npos);
+    EXPECT_NE(assets.LoadFailuresVersion(), before);
+
+    file.Write(R"({"type":"test.definition","version":1,"data":{"speed":3.0,"label":"fixed"}})");
+    AssetLease lease = assets.LoadLease(file.Record().Path, AssetType::Data);
+    EXPECT_TRUE(lease.IsValid());
+    EXPECT_TRUE(assets.LoadFailures().empty());
 }
 
 // The envelope peek: what a picker asks before an asset has been chosen, and

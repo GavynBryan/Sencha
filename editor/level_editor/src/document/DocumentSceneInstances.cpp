@@ -24,18 +24,25 @@ std::string EditorDocument::SourceAssetPath() const
     return MakeSceneSourcePath(Projection.ContentRoots(), FilePath);
 }
 
+bool EditorDocument::CanPlaceSceneSource(std::string_view source, std::string* error)
+{
+    std::string why;
+    if (const std::string own = SourceAssetPath(); !own.empty() && own == source)
+        why = "a scene is not placed inside itself";
+    else if (SceneSourceCache& sources = Projection.Sources(); sources.Find(source) == nullptr)
+        why = sources.LastError();
+    if (error != nullptr)
+        *error = why;
+    return why.empty();
+}
+
 SceneInstanceId EditorDocument::PlaceSceneInstance(std::string source,
                                                    const Transform3f& placement,
                                                    PersistentEntityId parent,
                                                    std::string* error)
 {
-    SceneSourceCache& sources = Projection.Sources();
-    if (sources.Find(source) == nullptr)
-    {
-        if (error != nullptr)
-            *error = sources.LastError();
+    if (!CanPlaceSceneSource(source, error))
         return SceneInstanceId{};
-    }
 
     const SceneInstanceId id{ Scene.MintPersistentId().Value };
     SceneInstanceRecord record;

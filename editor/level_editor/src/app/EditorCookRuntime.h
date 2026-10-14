@@ -10,7 +10,6 @@
 #include <vector>
 
 class ConsoleRegistry;
-class CookProfilesPanel;
 class Engine;
 class SceneRenderQueueBuilder;
 class WorldDocument;
@@ -59,14 +58,11 @@ public:
 
     // The panel listing profiles, so the toolbar's profile menu and the panel
     // agree on the selection. Non-owning; the UI feature owns the panel.
-    void SetProfilesPanel(CookProfilesPanel* panel) { Profiles = panel; }
-    [[nodiscard]] CookProfilesPanel* ProfilesPanel() const { return Profiles; }
 
 private:
     CookSession Session;
     PieDriver   Driver;
 
-    CookProfilesPanel* Profiles = nullptr;
     std::string        SelectedProfile = "full";
     // The publication the player was last pointed at, and the cook the lightmap
     // preview was last refreshed from. Both guard against redoing the handoff.

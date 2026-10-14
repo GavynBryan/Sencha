@@ -20,8 +20,8 @@ namespace ViewportDial
     // The ray through the middle of the region is the view axis in both the
     // perspective and the orthographic modes, which the camera's own forward is
     // not.
-    const ImVec2 middle((viewport.RegionMin.x + viewport.RegionMax.x) * 0.5f,
-                        (viewport.RegionMin.y + viewport.RegionMax.y) * 0.5f);
+    const Vec2d middle((viewport.RegionMin.X + viewport.RegionMax.X) * 0.5f,
+                        (viewport.RegionMin.Y + viewport.RegionMax.Y) * 0.5f);
     return Place(center, axisU, axisV, projection.RayThroughPixel(middle).Direction, boxSemiMinor,
                  projection.WorldSizeForPixels(center, 1.0f), EditorUi::Px(1.0f));
 }

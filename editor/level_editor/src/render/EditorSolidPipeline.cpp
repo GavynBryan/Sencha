@@ -31,7 +31,7 @@ void EditorSolidPipeline::Submit(const FrameContext& frame,
                                  const CameraRenderData& camera,
                                  std::span<const EditorSolidVertex> vertices)
 {
-    Pipeline.Submit(frame, viewport, camera, vertices);
+    Pipeline.Submit(frame, viewport.Region(), camera, vertices);
 }
 
 void EditorSolidPipeline::SetCullBackfaces(bool on)

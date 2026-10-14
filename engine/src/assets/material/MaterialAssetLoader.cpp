@@ -22,7 +22,8 @@ MaterialAssetLoader::MaterialAssetLoader(LoggingProvider& logging,
 {
 }
 
-AssetStaging MaterialAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging MaterialAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                             const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;
@@ -178,13 +179,10 @@ void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
     if (!Textures)
         return;
 
-    TextureHandle handle = LoadTexture(ref.Path, srgb, assets);
+    const std::string path(assets.ResolveRefPath(ref.Id, ref.Path, AssetType::Texture));
+    TextureHandle handle = LoadTexture(path, srgb, assets);
     if (!handle.IsValid())
-    {
-        Log.Error("MaterialAssetLoader: failed to resolve texture '{}'; using neutral default",
-                  ref.Path);
         return;
-    }
 
     const BindlessImageIndex bindless = Textures->GetBindlessIndex(handle);
     if (!bindless.IsValid())
@@ -203,19 +201,15 @@ void MaterialAssetLoader::ResolveTextureSlot(const AssetRef& ref,
 TextureHandle MaterialAssetLoader::LoadTexture(std::string_view path, bool srgb, AssetSystem& assets)
 {
     const AssetRecord* record = assets.Resolve(path, AssetType::Texture);
-    if (record == nullptr)
-        return {};
+    if (record == nullptr || record->SourceKind != AssetSourceKind::File)
+        return TextureHandle::FromToken(assets.LoadLease(path, AssetType::Texture).Relinquish());
 
     AssetLease lease = assets.TryAcquireLease(record->Path, AssetType::Texture);
-    if (!lease.IsValid() && record->SourceKind == AssetSourceKind::File)
+    if (!lease.IsValid())
     {
-        AssetStaging staged = TextureLoader.LoadStaged(*record, assets.DefaultSource(), srgb);
-        if (!staged.IsValid())
-        {
-            Log.Error("MaterialAssetLoader: {}", staged.Error);
-            return {};
-        }
-        lease = assets.Commit(std::move(staged));
+        AssetStaging staged = TextureLoader.LoadStagedAs(*record, assets.DefaultSource(), srgb);
+        lease = staged.IsValid() ? std::move(assets.Commit(std::move(staged)).Handle)
+                                 : assets.FailLoad(record->Path, AssetType::Texture, std::move(staged.Error));
     }
 
     return TextureHandle::FromToken(lease.Relinquish());

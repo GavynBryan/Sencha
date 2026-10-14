@@ -39,9 +39,17 @@ public:
     // that snapshot, faithfully, and were not meant for whatever else reads it.
     [[nodiscard]] bool IsTextInputActive() const { return Active != nullptr; }
 
+    // The window a field focused from now on takes text input against: the
+    // runtime names the window of the surface it is about to deliver to.
+    void SetWindow(SDL_Window* window) { Window = window; }
+
+    // The window the focused field's text input runs on; null when none does.
+    [[nodiscard]] SDL_Window* ActiveWindow() const { return Active != nullptr ? ActiveOn : nullptr; }
+
 private:
     void Stop();
 
     SDL_Window* Window = nullptr;
+    SDL_Window* ActiveOn = nullptr;
     Rml::TextInputContext* Active = nullptr;
 };

@@ -1,6 +1,5 @@
 #include <assets/runtime/ContentMount.h>
 #include <assets/runtime/RuntimeAssets.h>
-#include <core/assets/AssetIdMap.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -17,7 +16,7 @@
 // the editor runs with an import between them. The fixture is a root with one
 // authored asset, one cooked artifact the physical scan can key by location,
 // one the index alone can key (a cooked texture still serving its source
-// virtual path), and an id map naming the authored one.
+// virtual path).
 //=============================================================================
 namespace
 {
@@ -56,9 +55,6 @@ namespace
               ]
             })");
 
-            AssetIdMap ids;
-            AuthoredId = ids.EnsureId(kAuthoredPath, 0);
-            EXPECT_TRUE(ids.SaveToFile((Root / kAssetIdMapFileName).string()));
         }
 
         ~ContentRoot()
@@ -68,11 +64,9 @@ namespace
         }
 
         [[nodiscard]] ContentRootPaths Paths() const { return ResolveContentRoot(Root); }
-        [[nodiscard]] AssetId Id() const { return AuthoredId; }
 
     private:
         std::filesystem::path Root;
-        AssetId AuthoredId;
     };
 
     // A stack composed the way a dedicated host composes one: no graphics, so
@@ -113,27 +107,68 @@ TEST(ContentMount, ScanRegistersAuthoredAndCookedFilesButNotTheIndex)
     EXPECT_TRUE(stack.Assets.Registry.Contains(std::string(kCookedScannedPath)));
     EXPECT_FALSE(stack.Assets.Registry.Contains(std::string(kIndexOnlyPath)));
 
-    // No id map has been applied, so the authored record resolves by path only.
+    // The asset states no id, so it has the id of where it is.
     const AssetRecord* record =
         stack.Assets.Registry.FindByPath(std::string(kAuthoredPath));
     ASSERT_NE(record, nullptr);
-    EXPECT_FALSE(record->Id.IsValid());
+    EXPECT_EQ(record->Id, AssetIdOfPath(kAuthoredPath));
 }
 
-TEST(ContentMount, CookedRegistrationAddsTheIndexEntriesAndStampsIds)
+// An asset that states its id keeps it wherever it now is: a document at its
+// root, any other file in its sidecar.
+TEST(ContentMount, AnAssetGoesByTheIdItStates)
+{
+    const ContentRoot root("stated");
+    WriteFile(root.Paths().Authored / "materials" / "moved.smat", R"({"id": "00000000000000aa", "version": 2})");
+    WriteFile(root.Paths().Authored / "meshes" / "baked.smesh", "");
+    WriteFile(root.Paths().Authored / "meshes" / "baked.smesh.meta", R"({"id": "00000000000000bb"})");
+    HeadlessStack stack;
+
+    ScanContentRoot(root.Paths(), stack.Assets);
+
+    ASSERT_NE(stack.Assets.Registry.FindById(AssetId{ 0xaa }), nullptr);
+    EXPECT_EQ(stack.Assets.Registry.FindById(AssetId{ 0xaa })->Path, "asset://materials/moved.smat");
+    ASSERT_NE(stack.Assets.Registry.FindById(AssetId{ 0xbb }), nullptr);
+    EXPECT_EQ(stack.Assets.Registry.FindById(AssetId{ 0xbb })->Path, "asset://meshes/baked.smesh");
+}
+
+TEST(ContentMount, CookedRegistrationAddsTheIndexEntries)
 {
     const ContentRoot root("cooked");
     HeadlessStack stack;
 
     ScanContentRoot(root.Paths(), stack.Assets);
-    RegisterCookedContent(root.Paths(), stack.Assets, stack.Log());
+    RegisterCookedContent(root.Paths(), stack.Assets);
 
     EXPECT_TRUE(stack.Assets.Registry.Contains(std::string(kIndexOnlyPath)));
 
     const AssetRecord* record =
         stack.Assets.Registry.FindByPath(std::string(kAuthoredPath));
     ASSERT_NE(record, nullptr);
-    EXPECT_EQ(record->Id, root.Id());
+    EXPECT_EQ(record->Id, AssetIdOfPath(kAuthoredPath));
+}
+
+// A cooked artifact goes by the id its index names, whether the scan or the
+// index registered it.
+TEST(ContentMount, CookedArtifactsGoByTheIdsTheIndexNames)
+{
+    const ContentRoot root("cookedids");
+    WriteFile(root.Paths().Cooked / "index.json", R"({
+      "sources": [
+        { "artifacts": [
+          { "path": "asset://textures/wall.png", "id": "00000000000000c1",
+            "file": ".cooked/textures/wall.stex", "type": "Texture" },
+          { "path": "asset://meshes/box.smesh", "id": "00000000000000c2",
+            "file": ".cooked/meshes/box.smesh", "type": "StaticMesh" }
+        ] }
+      ]
+    })");
+    HeadlessStack stack;
+
+    MountContentRoot(root.Paths(), stack.Assets);
+
+    EXPECT_EQ(stack.Assets.Registry.FindByPath(std::string(kIndexOnlyPath))->Id, AssetId{ 0xc1 });
+    EXPECT_EQ(stack.Assets.Registry.FindByPath(std::string(kCookedScannedPath))->Id, AssetId{ 0xc2 });
 }
 
 // The editor runs the two steps with an import between them; a runtime host
@@ -147,8 +182,8 @@ TEST(ContentMount, MountEqualsScanThenRegister)
     HeadlessStack mounted;
 
     ScanContentRoot(root.Paths(), stepwise.Assets);
-    RegisterCookedContent(root.Paths(), stepwise.Assets, stepwise.Log());
-    MountContentRoot(root.Paths(), mounted.Assets, mounted.Log());
+    RegisterCookedContent(root.Paths(), stepwise.Assets);
+    MountContentRoot(root.Paths(), mounted.Assets);
 
     ASSERT_EQ(stepwise.Assets.Registry.Records().size(),
               mounted.Assets.Registry.Records().size());
@@ -160,20 +195,4 @@ TEST(ContentMount, MountEqualsScanThenRegister)
         EXPECT_EQ(other->Id, record.Id) << path;
         EXPECT_EQ(other->FilePath, record.FilePath) << path;
     }
-}
-
-// A root that has never been cooked has no id map. That is the first-run state
-// of a new project, not a failure: everything still resolves by path.
-TEST(ContentMount, AMissingIdMapLeavesThePathsResolvable)
-{
-    const ContentRoot root("nomap");
-    HeadlessStack stack;
-    std::filesystem::remove(root.Paths().Authored / kAssetIdMapFileName);
-
-    MountContentRoot(root.Paths(), stack.Assets, stack.Log());
-
-    const AssetRecord* record =
-        stack.Assets.Registry.FindByPath(std::string(kAuthoredPath));
-    ASSERT_NE(record, nullptr);
-    EXPECT_FALSE(record->Id.IsValid());
 }

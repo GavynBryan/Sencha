@@ -1,6 +1,7 @@
 #include "WorldDocument.h"
 
 #include "ZoneBounds.h"
+#include "project/ProjectFiles.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -323,6 +324,8 @@ void WorldDocument::PropagateSavedSources(std::span<const std::string> savedSour
     });
     if (WorldScene_ != nullptr && WorldScene_->ReloadDependentSources(savedSources))
         log.Info("re-projected the world scene after its sources saved");
+    if (OnSourcesSaved)
+        OnSourcesSaved(savedSources);
 }
 
 bool WorldDocument::SaveWorldAs(std::string_view path)
@@ -435,6 +438,12 @@ bool WorldDocument::SaveAs(std::string_view path)
 }
 
 WorldPartitionManifest& WorldDocument::Manifest()
+{
+    assert(WorldMode_ && "Manifest: world mode only");
+    return Manifest_;
+}
+
+const WorldPartitionManifest& WorldDocument::Manifest() const
 {
     assert(WorldMode_ && "Manifest: world mode only");
     return Manifest_;
@@ -610,6 +619,54 @@ const EditorDocument& WorldDocument::FocusDocument() const
     const auto it = OpenZones_.find(FocusZone_);
     assert(it != OpenZones_.end() && "FocusDocument: focus zone is not open");
     return *it->second.Document;
+}
+
+bool WorldDocument::HoldsFile(const std::filesystem::path& file) const
+{
+    std::error_code ec;
+    const auto holds = [&](const EditorDocument* document) {
+        return document != nullptr && document->HasFilePath()
+               && std::filesystem::equivalent(std::filesystem::path(document->GetDisplayName()), file, ec);
+    };
+    if (!WorldMode_)
+        return holds(LegacyDocument_.get());
+    return (!WorldPath_.empty() && std::filesystem::equivalent(WorldPath_, file, ec)) || holds(WorldScene_.get())
+           || std::ranges::any_of(OpenZones_, [&](const auto& open) { return holds(open.second.Document.get()); });
+}
+
+void WorldDocument::FileMoved(const std::filesystem::path& from, const std::filesystem::path& to)
+{
+    // Compared by where they would be: the file is no longer at `from`.
+    std::error_code ec;
+    const std::filesystem::path moved = std::filesystem::weakly_canonical(from, ec);
+    const auto was = [&](const std::filesystem::path& path) {
+        return std::filesystem::weakly_canonical(path, ec) == moved;
+    };
+    if (!WorldMode_)
+    {
+        if (LegacyDocument_->HasFilePath() && was(std::filesystem::path(LegacyDocument_->GetDisplayName())))
+            LegacyDocument_->MoveTo(to.string());
+        return;
+    }
+    if (!WorldPath_.empty() && was(WorldPath_))
+        WorldPath_ = to.string();
+}
+
+void WorldDocument::TakeFileAsRead(const std::filesystem::path& file)
+{
+    std::error_code ec;
+    const auto is = [&](const std::filesystem::path& path) { return std::filesystem::equivalent(path, file, ec); };
+    const auto take = [&](EditorDocument* document) {
+        if (document != nullptr && document->HasFilePath() && is(std::filesystem::path(document->GetDisplayName())))
+            document->TakeFileAsRead();
+    };
+    if (!WorldMode_)
+        return take(LegacyDocument_.get());
+    if (!WorldPath_.empty() && is(WorldPath_))
+        WorldBaseline_.Record(WorldPath_);
+    take(WorldScene_.get());
+    for (const auto& [zone, open] : OpenZones_)
+        take(open.Document.get());
 }
 
 bool WorldDocument::IsExternallyModified() const
@@ -1319,7 +1376,7 @@ void WorldDocument::RunValidation()
             .SourceId = zone.Id.Value,
             .RuleId = "partition.zone.entity_outside_bounds",
             .Message = std::format("zone {} has {} entities outside its bounds",
-                                   ZoneIdToString(zone.Id), outside),
+                                   ZoneDisplayName(Manifest_, zone.Id), outside),
         });
     }
 
@@ -1360,7 +1417,7 @@ void WorldDocument::CreateWorldSceneDocument()
 
 std::string WorldDocument::UserSidecarPath() const
 {
-    return WorldPath_ + ".user.json";
+    return WorldPath_ + std::string(kUserStateSuffix);
 }
 
 void WorldDocument::WriteUserSidecar() const
@@ -1376,6 +1433,7 @@ void WorldDocument::WriteUserSidecar() const
     if (ViewSettings_ != nullptr)
     {
         root.emplace_back("show_zone_bounds", JsonValue{ ViewSettings_->ShowZoneBounds });
+        root.emplace_back("show_zone_graph", JsonValue{ ViewSettings_->ShowZoneGraph });
         root.emplace_back("streaming_preview", JsonValue{ ViewSettings_->StreamingPreview });
         // Preview overrides follow the absent-inherits model on disk too: no
         // key means the preview shows the authored per-graph shape.
@@ -1441,6 +1499,9 @@ WorldDocument::SidecarFocus WorldDocument::ApplyUserSidecar()
     if (const JsonValue* show = root->Find("show_zone_bounds");
         show != nullptr && show->IsBool() && ViewSettings_ != nullptr)
         ViewSettings_->ShowZoneBounds = show->AsBool();
+    if (const JsonValue* graph = root->Find("show_zone_graph");
+        graph != nullptr && graph->IsBool() && ViewSettings_ != nullptr)
+        ViewSettings_->ShowZoneGraph = graph->AsBool();
     if (const JsonValue* preview = root->Find("streaming_preview");
         preview != nullptr && preview->IsBool() && ViewSettings_ != nullptr)
         ViewSettings_->StreamingPreview = preview->AsBool();

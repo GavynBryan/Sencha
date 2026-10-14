@@ -1,6 +1,8 @@
 #pragma once
 
+#include "authoring/EntityMarkers.h"
 #include "overlay/EditorOverlayState.h"
+#include "properties/PropertySource.h"
 #include "render/EditorLinePipeline.h"
 #include "render/EditorWideLinePipeline.h"
 
@@ -69,12 +71,14 @@ struct EditorPickProxy
     Vec2d HalfExtents;
 };
 
+
 struct ViewportAffordanceOutput
 {
     std::vector<EditorLineSegment> Lines;
     std::vector<EditorLineVertex> FillTriangles;
     std::vector<LabelRequest> Labels;
     std::vector<EditorPickProxy> PickProxies;
+    std::vector<EditorMarker> Markers;
     std::vector<AabbEditTarget> Aabbs;
     std::vector<RectEditTarget> Rectangles;
 };
@@ -98,6 +102,9 @@ struct EditorComponentInspectorContext
     SelectionService& Selection;
     CommandStack& Commands;
     EntityId Entity;
+
+    // The entity in its document: an id alone repeats across zone documents.
+    [[nodiscard]] SelectableRef Ref() const;
 };
 
 class IEditorComponentAdapter
@@ -117,18 +124,28 @@ public:
     virtual void BuildViewport(const EditorComponentContext&,
                                ViewportAffordanceOutput&) const {}
 
-    // Rows for this component in the inspector, in place of the generic
-    // field-driven ones. True when it drew them.
-    //
-    // These two travel together, the same way the viewport pair above does. An
-    // authoring surface that cannot call DrawInspector -- because it presents a
-    // document rather than drawing widgets -- still has to know that this
-    // component's generic rows are not the whole story, or it shows a designer
-    // raw zone ids where the panel offers zone names. Overriding DrawInspector
-    // without AuthorsInspectorRows is rows one inspector has and the other
-    // silently contradicts.
+    // This component's properties, in place of the generic field-driven ones,
+    // keyed within the component: what each holds, what it can be set to, and
+    // the verbs that add, remove or reorder what it lists. Set and act are one
+    // command each.
     [[nodiscard]] virtual bool AuthorsInspectorRows() const { return false; }
-    virtual bool DrawInspector(EditorComponentInspectorContext&) const { return false; }
+    [[nodiscard]] virtual std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext&) const
+    {
+        return {};
+    }
+    virtual PropertyEditResult SetInspectorValue(EditorComponentInspectorContext&, std::string_view /*key*/,
+                                                 std::string_view /*value*/) const
+    {
+        return PropertyEditResult::Gone;
+    }
+    virtual PropertyEditResult ActInspector(EditorComponentInspectorContext&, std::string_view /*key*/,
+                                            std::string_view /*verb*/, std::string_view /*choice*/) const
+    {
+        return PropertyEditResult::Gone;
+    }
+    // Catalog actions about what this component makes of its entity, offered
+    // on the component's heading: a brush's bake and export.
+    [[nodiscard]] virtual std::span<const std::string_view> Actions() const { return {}; }
     [[nodiscard]] virtual bool AllowEntityScale() const { return true; }
     virtual ~IEditorComponentAdapter() = default;
 };
@@ -180,8 +197,10 @@ public:
 
     [[nodiscard]] EditorComponentAdapterRegistry& Registry() { return Adapters; }
     void Build(ViewportAffordanceOutput& output) const;
+    // What the pointer at `point` in `viewport` picks among the proxies and
+    // markers, with its distance along `ray` (the ray through `point`).
     [[nodiscard]] std::optional<std::pair<SelectableRef, float>> Pick(
-        const Ray3d& ray, const EditorScene& scene) const;
+        const EditorViewport& viewport, Vec2d point, const Ray3d& ray, const EditorScene& scene) const;
     [[nodiscard]] bool AllowsScaleForSelection() const;
     [[nodiscard]] bool HasEditTargets() const;
 
@@ -200,4 +219,5 @@ private:
     CommandStack& Commands;
     GridSettings& Grid;
     EditorComponentAdapterRegistry Adapters;
+    mutable EntityMarkers Markers;
 };

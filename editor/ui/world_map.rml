@@ -1,0 +1,40 @@
+<rml>
+<head>
+    <title>World map</title>
+    <link type="text/rcss" href="world_map.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="world_map">
+    <!-- The world from above, over the views: a plate per zone at its
+         footprint, the ways between them, and the camera. Display only; the
+         workspace hit-tests the map it laid out. -->
+    <div id="ground" class="theme-map-ground" data-style-left="ground_left" data-style-top="ground_top"
+         data-style-width="ground_width" data-style-height="ground_height">
+        <div id="map_head">
+            <span id="map_title" class="theme-accent">{{title}}</span>
+            <span id="map_note" class="theme-dim" data-if="note != ''">{{note}}</span>
+        </div>
+    </div>
+    <div class="zone theme-map-zone" data-for="zone : zones"
+         data-class-focus="zone.value == 'focus'" data-class-closed="zone.value == 'closed'"
+         data-class-hot="zone.selected" data-class-problem="zone.parts[5] == 'problem'"
+         data-style-left="zone.parts[0]" data-style-top="zone.parts[1]"
+         data-style-width="zone.parts[2]" data-style-height="zone.parts[3]">
+        <span class="zone_name">{{zone.label}}</span>
+        <span class="zone_state theme-dim">{{zone.detail}}</span>
+        <span class="zone_here theme-accent" data-if="zone.parts[4] == 'here'">camera</span>
+        <span class="zone_here problems" data-if="zone.parts[5] == 'problem'">has problems</span>
+    </div>
+    <div class="link theme-map-link" data-for="link : links"
+         data-class-oneway="link.value == 'oneway'" data-class-warned="link.detail == 'warned'"
+         data-class-failed="link.detail == 'failed'"
+         data-style-left="link.parts[0]" data-style-top="link.parts[1]"
+         data-style-width="link.parts[2]" data-style-transform="link.parts[3]"></div>
+    <div class="arrow theme-map-link oneway" data-for="arrow : arrows"
+         data-class-warned="arrow.detail == 'warned'" data-class-failed="arrow.detail == 'failed'"
+         data-style-left="arrow.parts[0]" data-style-top="arrow.parts[1]"
+         data-style-transform="arrow.parts[3]"><span class="glyph">&#xf0da;</span></div>
+    <div id="camera" class="theme-map-camera" data-if="camera_shown"
+         data-style-left="camera_left" data-style-top="camera_top"></div>
+</body>
+</rml>

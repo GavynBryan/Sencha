@@ -7,10 +7,8 @@
 #include <string_view>
 #include <utility>
 
-// In-place edits to one authored JSON object, for forms that write named
-// members rather than whole subtrees. A form mutates the document's working
-// copy directly and reports what it did through FieldEdit, so these stay
-// deliberately small: no traversal, no paths, no schema.
+// In-place edits to one authored JSON object's named members: no traversal,
+// no paths, no schema.
 
 [[nodiscard]] inline JsonValue* FindMember(JsonValue& object, std::string_view key)
 {

@@ -1,5 +1,6 @@
 #include <assets/cook/AudioCook.h>
 
+#include <core/assets/AssetPath.h>
 #include <assets/cook/CookFingerprint.h>
 #include <assets/audio_clip/AudioClipSerializer.h>
 #include <audio/AudioClip.h>
@@ -93,7 +94,7 @@ ImportResult AudioClipImporter::Import(const ImportInput& input, ICookOutputWrit
         return ImportResult{ .Error = "audio import: sclip serialization failed" };
 
     CookedArtifact artifact;
-    artifact.Path = "asset://" + std::string(input.SourceRelPath);
+    artifact.Path = AssetPathOf(input.SourceRelPath);
     artifact.FileRelPath = ".cooked/" + std::string(input.SourceRelPath) + ".sclip";
     artifact.Type = AssetType::Audio;
 

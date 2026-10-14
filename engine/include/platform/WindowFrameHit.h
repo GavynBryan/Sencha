@@ -6,12 +6,9 @@
 #include <cstddef>
 #include <cstdint>
 
-// The frame of a window that draws its own decorations. The application
-// publishes where its caption is and whether dragging from it is permitted
-// right now; the window classifies a pointer position against that snapshot
-// and its own state (size, resizable, maximized) when the platform asks what
-// a press there means. Plain data with fixed storage: the probe runs inside
-// the platform's event dispatch and must not allocate.
+// The frame of a window that draws its own decorations: where the application
+// says its caption is, classified against the window's own state when the
+// platform asks. Fixed storage: the probe runs inside event dispatch.
 struct WindowRect
 {
     int32_t X = 0;
@@ -50,10 +47,11 @@ struct WindowFrameProbe
     WindowExtent Extent;
     bool Resizable = false;
     bool Maximized = false;
+    // A button is down or the pointer is relative: the application has it.
+    bool PointerHeld = false;
 };
 
-// Resize edges and corners win over the caption (the caption touches the top
-// edge, so its outer pixels resize rather than drag); edges apply only to a
-// resizable, unmaximized window with a border; the caption applies only while
-// enabled. Everything else is Client.
+// Edges and corners (of a resizable, unmaximized, bordered window) win over an
+// enabled caption; everything else is Client, and so is everything while the
+// pointer is held (docs/ui/architecture.md §6).
 [[nodiscard]] WindowFrameHit ClassifyWindowFrameHit(const WindowFrameRegions& regions, const WindowFrameProbe& probe);

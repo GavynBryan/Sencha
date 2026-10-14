@@ -17,6 +17,8 @@ bool MoveAnimSelectorRule(JsonValue& root, std::size_t from, std::size_t to);
 
 // Adding copies the enter rows; without a stay the rule stays on enter.
 bool SetAnimSelectorStay(JsonValue& root, std::size_t rule, bool present);
+// The same, on one rule object.
+bool SetAnimRuleStay(JsonValue& rule, bool present);
 
 // Rows are created empty when absent; null for a missing rule or unknown field.
 [[nodiscard]] JsonValue::Array* AnimSelectorPredicate(JsonValue& root, std::size_t rule, std::string_view field);

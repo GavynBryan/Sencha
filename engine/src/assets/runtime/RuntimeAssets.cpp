@@ -1,5 +1,6 @@
 #include <assets/runtime/RuntimeAssets.h>
 
+#include <assets/runtime/AssetStandIns.h>
 #include <assets/runtime/RegisterAssetKind.h>
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimFactSchema.h>
@@ -116,8 +117,10 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
         RegisterAssetKind(Assets, AssetType::SkinnedMesh, *SkinnedMeshReferences, SkinnedMeshReferences.get());
     else
         RegisterAssetKind(Assets, AssetType::SkinnedMesh, SkinnedMeshLoader, SkinnedMeshes.get());
-    RegisterAssetKind(Assets, AssetType::Material, MaterialLoader, &Materials, &MaterialSets);
-    RegisterAssetKind(Assets, AssetType::Texture, TextureLoader, Textures.get());
+    RegisterAssetKind(Assets, AssetType::Material, MaterialLoader, &Materials, &MaterialSets,
+                      [this](std::string_view path) { return PutStandInMaterial(Materials, Textures.get(), path); });
+    RegisterAssetKind(Assets, AssetType::Texture, TextureLoader, Textures.get(), nullptr,
+                      [this](std::string_view path) { return PutStandInTexture(*Textures, path); });
     RegisterAssetKind(Assets, AssetType::Audio, AudioClipLoader, &AudioClips);
     RegisterAssetKind(Assets, AssetType::Skeleton, SkeletonLoader, &Skeletons);
     RegisterAssetKind(Assets, AssetType::AnimationClip, AnimationClipLoader, &AnimationClips);

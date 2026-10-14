@@ -10,7 +10,7 @@
 // Reads authored input data back as prose, so a list of bindings presents as
 // the keymap it describes rather than as JSON with expanders.
 //
-// Pure text synthesis: no ImGui, no document, no engine state. Everything here
+// Pure text synthesis: no UI, no document, no engine state. Everything here
 // is table-tested, which is also why the exact wording is deliberate -- changing
 // a phrase is a test update, not an accident.
 //

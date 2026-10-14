@@ -278,6 +278,55 @@ TEST(UiDiagnostics, AMissingRowMemberIsAMissingBinding)
     EXPECT_NE(paths.front().Variable.value_or("").find("Label"), std::string::npos);
 }
 
+namespace
+{
+std::vector<UiRow> PartedRows(std::size_t count)
+{
+    std::vector<UiRow> rows;
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        UiRow row{ "row" + std::to_string(i), "shown", "" };
+        row.Parts = { std::to_string(i * 10) + "px", "x" };
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+} // namespace
+
+TEST(UiDiagnostics, AShrinkingRowListReportsNothingAndLeavesNoStaleRows)
+{
+    // Every member a row's elements read, by index into the row as well.
+    Fixture f({ MakePackage("shrink", R"(<rml><head><link type="text/rcss" href="shrink.rcss"/></head>
+<body data-model="m"><div data-if="rows.size > 0"><div class="row" data-for="row : rows" data-if="row.value != 'none'"
+data-class-lit="row.selected" data-style-left="row.parts[0]" data-attr-title="row.label">
+<span data-if="row.parts[1] != ''" data-attr-title="row.parts[1]"></span></div></div></body></rml>)", kStyle) });
+    UiScreenDesc desc;
+    desc.PackagePath = Fixture::PathOf("shrink");
+    desc.ModelName = "m";
+    desc.RowLists = { "rows" };
+    const UiScreenHandle screen = f.Ui().OpenScreen(f.Surface, desc);
+    ASSERT_TRUE(screen.IsValid());
+    const auto rowsShown = [&] {
+        return std::ranges::count_if(f.Ui().ElementTree(screen), [](const UiElementInfo& element) {
+            return std::ranges::find(element.Classes, "row") != element.Classes.end();
+        });
+    };
+    ASSERT_TRUE(f.Ui().SetRows(screen, UiRowsIdAt(0), PartedRows(5)));
+    f.Ui().Update();
+    (void)f.Ui().DrainDiagnostics();
+    const auto shownBefore = rowsShown();
+
+    ASSERT_TRUE(f.Ui().SetRows(screen, UiRowsIdAt(0), PartedRows(3)));
+    ASSERT_TRUE(f.Ui().SetRows(screen, UiRowsIdAt(0), PartedRows(2))) << "twice before the document updates";
+    f.Ui().Update();
+    f.Ui().Update();
+
+    for (const UiDiagnostic& report : f.Ui().DrainDiagnostics())
+        ADD_FAILURE() << "a shrinking list reported: " << report.Message;
+    EXPECT_EQ(rowsShown(), shownBefore - 3) << "the departed rows are still in the document";
+    EXPECT_EQ(f.Ui().GetRows(screen, UiRowsIdAt(0)).size(), 2u);
+}
+
 TEST(UiDiagnostics, AnUndeclaredActionIsReportedWhenItFiresAndNotBefore)
 {
     Fixture f({ MakePackage("act", R"(<rml><head><link type="text/rcss" href="act.rcss"/></head>

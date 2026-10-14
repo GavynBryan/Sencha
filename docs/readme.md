@@ -37,6 +37,15 @@ test/       GoogleTest-based engine tests.
 - `docs/plans/sencha-level-editor/` is the shipped-branch record and the
   execution detail for the editor substrate roadmap Track D builds on.
 
+## Editor Docs
+
+- `editor/ARCHITECTURE.md` maps the Kyusu editor as it exists: one
+  application of workspaces over the shared `editor_common` shell.
+- `docs/editor/interaction-grammar.md` is the design of record for how Kyusu
+  is operated (instruments, depth, actions, properties, motion) and how the
+  code keeps that grammar replaceable.
+- `docs/editor/level-design.md` applies it to the Level Design workspace.
+
 ## Core Architecture Map
 
 - `docs/core-systems-map.md` is the first broad map of the engine: core

@@ -8,7 +8,8 @@
 
 #include <math/spatial/GridPlane.h>
 
-#include <imgui.h>
+#include <math/Vec.h>
+#include <math/geometry/2d/Rect2d.h>
 
 struct EditorViewport
 {
@@ -18,8 +19,8 @@ struct EditorViewport
     // How brushes draw in this view. Defaulted from the orientation by
     // ApplyOrientation; left public so a future per-view toggle can override it.
     ViewportShading Shading = ViewportShading::Wireframe;
-    ImVec2 RegionMin = {};
-    ImVec2 RegionMax = {};
+    Vec2d RegionMin = {};
+    Vec2d RegionMax = {};
     bool IsActive = false;
     bool WantsFlyCameraInput = false;
     bool WantsOrthoPanInput = false;
@@ -31,6 +32,8 @@ struct EditorViewport
     [[nodiscard]] GridPlane GetGrid(const GridSettings& settings) const;
     [[nodiscard]] const char* GetDisplayLabel() const;
     [[nodiscard]] float AspectRatio() const;
+    // Where the view is in the window, in pixels.
+    [[nodiscard]] Rect2d Region() const { return Rect2d::FromMinMax(RegionMin, RegionMax); }
     // The camera as seen through the panel's screen rect, which is what the
     // input path projects against.
     [[nodiscard]] CameraRenderData BuildRenderData() const;
@@ -41,5 +44,5 @@ struct EditorViewport
     // goes through this one, once per view, and every renderer in the view is
     // handed the result.
     [[nodiscard]] CameraRenderData CameraForExtent(uint32_t width, uint32_t height) const;
-    [[nodiscard]] bool Contains(ImVec2 point) const;
+    [[nodiscard]] bool Contains(Vec2d point) const;
 };

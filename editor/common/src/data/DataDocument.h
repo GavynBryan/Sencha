@@ -52,6 +52,12 @@ public:
 
     [[nodiscard]] const std::filesystem::path& FilePath() const { return File; }
     [[nodiscard]] const std::string& VirtualPath() const { return AssetPath; }
+    // Its file moved, unchanged: it lives there now.
+    void MoveTo(std::filesystem::path file, std::string virtualPath)
+    {
+        File = std::move(file);
+        AssetPath = std::move(virtualPath);
+    }
     [[nodiscard]] const std::string& Subtype() const { return TypeName; }
     [[nodiscard]] uint32_t Version() const { return FileVersion; }
 

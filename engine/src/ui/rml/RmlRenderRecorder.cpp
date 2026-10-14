@@ -110,6 +110,11 @@ UiDrawFrame RmlRenderRecorder::EndFrame()
     return std::exchange(Frame, UiDrawFrame{});
 }
 
+UiTextureChanges RmlRenderRecorder::TakeTextureChanges()
+{
+    return std::exchange(Changes, UiTextureChanges{});
+}
+
 Rml::CompiledGeometryHandle RmlRenderRecorder::CompileGeometry(
     Rml::Span<const Rml::Vertex> vertices, Rml::Span<const int> indices)
 {
@@ -179,6 +184,26 @@ Rml::TextureHandle RmlRenderRecorder::LoadTexture(Rml::Vector2i& texture_dimensi
         return 0;
     }
 
+    if (std::string_view(source).starts_with(kUiHostImageScheme))
+    {
+        UiHostImageId host = kInvalidUiHostImage;
+        RenderExtent hostSize{};
+        const std::string_view name = std::string_view(source).substr(kUiHostImageScheme.size());
+        if (!Resolver->ResolveHostImage(name, host, hostSize))
+        {
+            Log.Error("ui: '{}' names a host image the host never registered", source);
+            return 0;
+        }
+        texture_dimensions = Rml::Vector2i(static_cast<int>(hostSize.Width),
+                                           static_cast<int>(hostSize.Height));
+        const std::uint64_t hostKey = NextTextureHandle++;
+        UiTextureRef hostRef;
+        hostRef.Kind = UiTextureKind::Host;
+        hostRef.Host = host;
+        Textures.emplace(hostKey, TextureRecord{ hostRef });
+        return static_cast<Rml::TextureHandle>(hostKey);
+    }
+
     TextureHandle handle{};
     RenderExtent size{};
     if (!Resolver->ResolveTexture(source, handle, size))
@@ -216,7 +241,7 @@ Rml::TextureHandle RmlRenderRecorder::GenerateTexture(Rml::Span<const Rml::byte>
     ref.Generated = upload.Id;
     Textures.emplace(key, TextureRecord{ ref });
 
-    Frame.PendingUploads.push_back(std::move(upload));
+    Changes.Uploads.push_back(std::move(upload));
     return static_cast<Rml::TextureHandle>(key);
 }
 
@@ -230,7 +255,7 @@ void RmlRenderRecorder::ReleaseTexture(Rml::TextureHandle texture)
     // A content texture's lifetime is the screen's lease, and releasing it here
     // would be releasing something this layer never acquired.
     if (it->second.Ref.Kind == UiTextureKind::Generated)
-        Frame.ReleasedTextures.push_back(it->second.Ref.Generated);
+        Changes.Released.push_back(it->second.Ref.Generated);
 
     Textures.erase(it);
 }

@@ -1,3 +1,4 @@
+#include <core/assets/AssetRefCodec.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetLease.h>
 #include <core/assets/AssetRegistry.h>
@@ -121,8 +122,10 @@ TEST(AssetReferenceStore, AMeshFieldRoundTripsThroughTheSceneCodec)
     JsonWriteArchive writer;
     ASSERT_TRUE(SaveHandleField<StaticMeshHandle>(AssetType::StaticMesh, writer, "mesh", loaded, context));
     JsonValue json = writer.TakeValue();
-    ASSERT_TRUE(json.IsString());
-    EXPECT_EQ(json.AsString(), "asset://meshes/dev/cube.smesh");
+const std::optional<AssetRef> written = AssetRefFromJson(json);
+    ASSERT_TRUE(written.has_value());
+    EXPECT_EQ(written->Path, "asset://meshes/dev/cube.smesh");
+    EXPECT_TRUE(written->Id.IsValid()) << "a registered asset is written by its id too";
 
     // The load's reference was relinquished into the handle; give it back.
     assets.Assets.ReleaseLease(AssetType::StaticMesh, loaded.ToToken());

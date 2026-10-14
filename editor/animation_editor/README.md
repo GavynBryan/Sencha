@@ -40,51 +40,56 @@ implemented. Refresh asset list enumerates the mounted registry, not the disk.
 
 ## Request schema authoring
 
-Open a request schema from the content browser to edit it alongside the animated
-preview. The fixture project includes `asset://animation/requests.sdata`.
-`animation.request_schema` is registered with the existing structured-data asset
-pipeline, so new schemas can also be created in Data Editor. Both editors use the
-same document transactions and validation implementation in editor-common.
+A request schema opens as a sheet from the Content explorer or the document
+dial, as every animation document does; the fixture project includes
+`asset://animation/requests.sdata`. `animation.request_schema` is registered
+with the structured-data asset pipeline, and the Data workspace shows the same
+sheet (`AnimationRequestSchemaAuthoring`): intent tags, and up to four named
+parameters of kind float, int, bool or tag, counted against that budget, which
+stops offering more once it is spent. Duplicates, invalid value kinds and
+capacity violations report their precise field paths. Names remain text in the
+asset; no runtime tag IDs are persisted. Unknown fields are retained and
+diagnosed, not silently discarded.
 
-The request pane edits intent tags and up to four named parameters of kind float,
-int, bool, or tag. Duplicates, invalid value kinds, and capacity violations report
-their precise field paths. Names remain text in the asset; no runtime tag IDs are
-persisted. Unknown fields are retained and diagnosed, not silently discarded.
+Each edit runs in the document's own transaction; Escape and focus loss cancel
+an unfinished one. Undo, redo and Save are the shell's. Open documents keep
+independent history, and choosing one does not change the preview subject or
+time. Closing with unsaved changes asks whether to save.
 
-Text edits coalesce into one undo operation. Escape and focus loss cancel an
-unfinished edit; switching documents commits it. Undo/redo and Save are available through the
-shell and pane. Open documents retain independent history; selecting one does not
-change the preview subject or time. Reload is explicit and refuses dirty documents;
-Save refuses externally modified files. Closing with unsaved changes offers Save
-all, Discard, or Keep editing.
-
-This pane edits the request contract only; issuing and cancelling requests against
-a rig happens in the simulation panels below. Preview clip selections remain
-transient and do not dirty documents.
+The schema is the request contract only; issuing and cancelling requests
+against a rig is the Requests lens. Preview clip selections remain transient
+and do not dirty documents.
 
 ## Rig simulation under a scenario
 
-Select an `animation.rig` in **Rig and scenario**. The rig is simulated in an
+Pick an `animation.rig` from the Rigs explorer (R), or the rig cartridge. The rig is simulated in an
 isolated preview World at the scenario's fixed tick rate, using the runtime's
 own binding, fact gathering, derivations and request lifecycle. The editor
 replaces only gameplay: each gathered fact reads a scenario-owned input, and
 named scenario participants issue requests through the normal request API.
 
-- **Facts** lists every slot of the bound layout. Gathered facts take typed
-  inputs (bool, float, int, tag by name); derived facts are read-only and show
-  their derivation, and the panel says whether derived facts are exact or still
-  warming up toward the rig's horizon. While paused, the Next tick column is a
-  disposable evaluation of the edits scheduled for the next tick. Select a fact
-  to plot its history.
-- **Requests** issues from a form derived from the rig's request schema (source,
-  intent, lifetime, layers, typed parameters) and lists the live records with
-  age, primary-record status, cancel reason and retained tail. Capacity refusals,
-  supersession and impulse deduplication are reported per tick.
-- **Simulation** plays, pauses, steps and restarts. Speed changes how quickly
-  fixed ticks are scheduled, never their length. Running to an earlier tick
-  replays the scenario from tick 0.
-- **Problems and changes** shows the rig's bind diagnostics and the scenario's
-  located problems, the entity's decision history, and what is unsaved.
+- The **Facts** lens's card (`AnimationFactProperties`) lists every slot of
+  the bound layout. Gathered facts take typed inputs (bool, float, int, tag by
+  name), each a recorded scenario edit on the next tick, and Clear; derived
+  facts are read-only and show their derivation, and the card says whether
+  derived facts are exact or still warming up toward the rig's horizon. While
+  paused, a fact's tooltip gives its value on the next tick, from a disposable
+  evaluation of the edits scheduled for it. *Plot* puts one fact's history
+  along the deck.
+- The **Requests** lens's card (`AnimationRequestProperties`) drafts a request
+  from the rig's request schema (source, intent, lifetime, layers, typed
+  parameters) and issues it on the next tick, lists the live records with age,
+  primary-record status, cancel reason and retained tail, each with Cancel for
+  a reason, and reports capacity refusals, supersession and impulse
+  deduplication on the last tick. On the simulation clock the deck's lane
+  shows each request for as long as it lived.
+- The tape deck plays, pauses, steps and restarts the simulation. Speed
+  changes how quickly fixed ticks are scheduled, never their length. Scrubbing
+  back inspects a recorded tick; Live returns to the running one.
+- The rig's bind diagnostics and the scenario's located problems are the
+  shell's problems (`AnimationRigProblems`): each reveals the document it was
+  found in as a sheet. The entity's decision log is on the Rules card's
+  details, and what is unsaved is the document dial's and the cartridge's.
 
 Every live edit is recorded into the working scenario on the next tick, so the
 live session and a replay of the saved scenario run the same code on the same
@@ -138,28 +143,35 @@ kyusu --project test/fixtures/content/animation_preview.senchaproj +workspace.op
 With a rig open, each simulated tick runs the runtime's selection and content
 resolution and records why every rule did or did not win.
 
-- **Rules** lists the layer's flattened selector in evaluation order: band,
-  enter and stay (read from where each row was authored, however deeply it was
-  delegated), behavior, and this tick's verdict -- winner (entered or stayed),
-  a failed row with the value it read, cooldown, blocked by latch, blocked by
-  hold, or not reached. While paused, *Show next tick* explains the next tick
-  from disposable copies, so an edited fact or rule shows its effect before
-  time moves. With a selector document active, the same panel edits it: rules,
-  priority, behavior, hold and cooldown, and a typed predicate builder whose
-  rows pick facts, requests and parameters from the bound rig.
-- **Behavior** shows the selected behavior's policy (kind, blend, latch and
-  what may interrupt it, late join), the rules that select it and the rows that
-  resolve it.
-- **Slot map** shows the rig's merged rows -- priority, then stack order -- with
-  each row's source and which layer is playing it now. *Audition this clip*
-  switches the viewport to the clip without touching the simulation; the
-  viewport's Simulation/Audition switch goes back.
-- **Decisions** shows the live tick or, with Live unchecked, any recorded tick:
-  each layer's winner, latch, content and time, every rule's verdict, and the
-  decision records written on that tick. Inspecting history never changes the
-  live session.
+The **Rules** lens (the station at the bottom left; Events is the other lens)
+puts all of it on the card, `AnimationRuleProperties`:
 
-Picking a rule, behavior, row or clip in any of these moves one shared
+- With no rule picked, a layer's flattened selector in evaluation order, each
+  rule with its verdict on the inspected tick -- winner (entered or stayed), a
+  failed row with the value it read, cooldown, blocked by latch, blocked by
+  hold, or not reached. While paused, *Next tick* explains the next tick from
+  disposable copies, so an edited fact or rule shows its effect before time
+  moves.
+- *Inspect* on a rule shows its band, enter and stay (read from where each row
+  was authored, however deeply it was delegated), hold and cooldown, where it
+  was authored (*Edit* opens that selector as a sheet, below), the behavior it
+  selects with that behavior's policy (kind, blend, latch and what may
+  interrupt it, late join, entered and exited events), the slot rows that
+  resolve the behavior with which layer is playing each now (*Audition*,
+  *Edit*), and the other rules that select it. Escape goes back to the list.
+- A selector or slot map document is a sheet whose conditions read as they
+  do on the card ("Speed > 2.2"): *Add condition* adds a test of a fact or
+  request the project's schemas declare, or of time in behavior; *Or* widens a
+  row into an any-of group; a test's fact, intent and parameter are chosen
+  among the declared ones; and a rule's stay starts as a copy of its enter.
+  The Data workspace shows the same sheet.
+- The card's details are the inspected tick: each layer's winner, latch,
+  content and time, and the decision records written on it.
+- On the simulation clock the deck shows a lane for the layer: one span per
+  stretch a rule held, picked to inspect that rule. Inspecting history never
+  changes the live session.
+
+Picking a rule, a slot row or a span moves one shared
 navigation state and nothing else. Valid edits to any open animation document
 reach the running preview as soon as they are committed (and on undo or redo);
 an invalid working edit leaves the preview on the last valid version and says
@@ -186,24 +198,27 @@ from the source on every import; the cook copies them into `.sanim`. A clip's
 events document reads the whole sidecar, edits that clip's entry, and writes
 every other clip's entry back as it found it.
 
-- **Clip events** picks a clip the open rig plays (or the auditioned one) and
-  shows its track: circles are cosmetic events, diamonds gameplay events, and
-  the playhead follows whichever preview is playing the clip. Double-click to
-  add, drag to move, right-click to delete. A drag is one undo step, and the
-  preview plays the marker's new time once it is released; Escape, focus loss
-  or hiding the panel cancel it and put the marker back.
-- The inspector edits name, normalized time, scope and a cosmetic event's own
-  weight threshold, then the binding: search the rig's bindings, open the
-  file that declares one, or create one from any declared verb (each argument
-  becomes an input of its name, for you to narrow). Each input the binding
-  takes gets a field typed by the argument it fills, lists every argument it
-  fills, and is checked against all of them with the rig binding's own
-  conversion. The verb's contract is shown beside it.
+- The auditioned clip's events are marks on the tape deck: circles are
+  cosmetic events, diamonds gameplay events. **E** adds one at the playhead,
+  a click picks it, a drag moves it, Delete removes it. A drag is one undo
+  step and the preview plays the marker's new time once it is released;
+  Escape, focus loss or hiding the workspace cancel it and put the marker
+  back. The events document sits on the dial as "<clip> events", and Ctrl+S
+  saves it while its card is up.
+- The event card (`AnimationEventProperties`) edits name, normalized time,
+  scope and a cosmetic event's own weight threshold, then the binding: choose
+  one of the rig's bindings, open the file that declares it, or create one from
+  any declared verb (each argument becomes an input of its name, for you to
+  narrow). Each input the binding takes gets a field typed by the argument it
+  fills, names every argument it fills, and is checked against all of them
+  with the rig binding's own conversion; a missing one can be supplied and a
+  stray one removed. The verb's contract is shown beside it.
 - Valid working events reach the preview at once through the production rig
   binding; invalid ones leave it on the last valid events, and say why. Only
   Save writes the sidecar, and it refuses a sidecar changed on disk.
-- **Event admissions** shows every crossing and lifecycle event the simulation
-  produced, with what its binding answered: accepted, unavailable, unresolved,
+- The Events card's details (`AnimationAdmissionProperties`) show the latest
+  crossings and lifecycle events the simulation produced, with what each
+  binding answered: accepted, unavailable, unresolved,
   invalid arguments, stale, or refused past capacity, and suppressed or
   skipped crossings that were never offered. The preview runs no game: a verb
   answers Unavailable unless a recorder stands behind it, and a recorder's
@@ -236,34 +251,32 @@ sections, each a clip or a slot resolved when the section is entered, that loop
 while a predicate holds or as many times as a request parameter says, branch to
 a later section, and go to one cancel section at once or at the section's end.
 
-- **Flow** draws the flow the selected layer plays as a strip of sections sized
-  by length, with the playing section lit, its progress, the loop pass, and the
-  cancel section in a lane beneath, and states how each section is left. With
-  the flow's document open (Edit, or Flows in the content browser) it edits the
-  structure: loop kind, whether a section ends the flow, whether a cancel
-  leaves it at once, branches, the cancel section, and sections added, moved
-  and removed. A branch can only be added to a later section, and a move that
-  would turn one backward is refused, so control never goes back. Loop and
-  branch conditions show as text and are edited in Data Editor.
-- **Layers** lists the rig's layers with mode, current weight (hover for the
-  weight rule that set it, or the rig's constant), mask size and what each
-  plays. Mute and solo change only what the viewport shows; the simulation, its
-  events and the rig are untouched. The viewport composes every shown layer:
-  override layers blend toward their pose over their mask, additive layers add
-  what their clip changed from its first frame, each at its weight.
-- **Skeleton and masks** shows the rig's skeleton as a tree with each layer's
-  coverage beside every joint (`#` covers, `.` does not), dimming joints the
-  selected layer leaves out. Right-click a joint to add it, or remove it, with
-  or without everything below; each is one undo step on the rig document. The
-  mask's steps are listed in order with their own remove buttons. The first
-  layer is always unmasked. Joints are named as the skeleton names them, so an
-  unknown or ambiguous joint is a located problem.
-
-Loop and branch conditions edit in the Flow pane with the same predicate
-builder the rule table uses, and a count loop's intent and parameter are chosen
-from the rig's request schema. In the viewport, **Joints** draws the skeleton on
-screen: click a joint to select it (the skeleton tree follows), and right-click
-one for the same mask steps the tree offers.
+- The **Flow** lens's card (`AnimationFlowProperties`) shows the flow a layer
+  plays on the inspected tick, the section it is in and how far, the loop
+  pass, where a cancel goes, and how each section is left. On the simulation
+  clock the deck's lane runs the sections the layer played, one span per pass.
+  *Edit* opens the flow as a sheet (`AnimationFlowAuthoring`): its loop and
+  branch conditions read and add as every condition does, a branch names only
+  a later section, a count loop's intent and parameter are chosen among the
+  declared ones, a move that would turn a branch backward is refused, a removed
+  section takes its branches and the cancel with it, and changing a loop's
+  kind drops what the old kind needed. The Data workspace shows the same sheet.
+- The **Layers** lens's card (`AnimationLayerProperties`) lists the rig's
+  layers with mode, weight on the inspected tick, mask size and what each
+  plays, with Mute and Solo, which change only what the stage shows; the
+  simulation, its events and the rig are untouched. The stage composes every
+  shown layer: override layers blend toward their pose over their mask,
+  additive layers add what their clip changed from its first frame, each at
+  its weight. *Inspect* adds where the weight came from (a weight rule, or the
+  rig's constant) and the mask's steps in order, each removable, with Clear
+  Mask; each is one undo step on the rig document. The first layer is always
+  unmasked. On the simulation clock the deck shows what won each layer, a
+  lane per layer.
+- A joint picked on the stage or in the Skeleton explorer (J) gets the bone
+  card: the layers covering it and the steps that add it to the selected
+  layer's mask or take it out, with or without everything below. Joints are
+  named as the skeleton names them, so an unknown or ambiguous joint is a
+  located problem.
 
 A selector rule can result in a layer weight, a constant or a float fact,
 instead of a behavior; the first weight rule to pass weights its layer.
@@ -293,22 +306,26 @@ decays to rest along a quintic, and a change mid-decay folds into it). A
 behavior whose blend carries phase starts where the one it replaces had got to
 in its sync group.
 
-- **Blends** shows each layer's blend in progress -- a crossfade's source and
-  progress, an inertialization's progress and remaining offset -- the recent
-  blend records (mode, duration, the offset it began from, whether an override
-  chose it) and the bound overrides against `anim.blend.override_cap`.
-- **A/B** in the same panel: *Record A* takes the simulation's pose on every
-  kept tick with the scenario as written. Edit a blend, then *Replay B against
-  A*: the scenario runs again from tick 0 with the same inputs, clock, seed and
-  start pose, and the two compare tick by tick -- the largest joint residual
-  plotted, and where the worst fell. A is drawn as an orange ghost. Takes of
-  different scenarios are refused rather than compared.
-- **Blendspace** draws the mix the selected layer plays: samples on their axes
-  sized by weight, the point the facts put it at, its phase, and which sample's
-  events play. Drag the point to set the axis facts for the next tick, as a
-  recorded live edit.
-- Inspecting a recorded tick (Decisions, Live unchecked) shows the pose the
-  pass made then.
+- The **Blends** lens's card (`AnimationBlendProperties`) shows each layer's
+  blend in progress -- a crossfade's source and progress, an
+  inertialization's progress and remaining offset -- the blendspace the
+  selected layer plays (where its axes' facts put it, its phase, each sample's
+  weight), and the recent blend records (mode, duration, the offset it began
+  from, whether an override chose it). On the simulation clock the deck's lane
+  shows each blend as long as it ran.
+- While Blends is the lens, the blendspace is a pad over the stage
+  (`presenters/PlanePad`): samples on their axes sized by weight, and the
+  point the facts put it at. Dragging the point sets the axes' facts for the
+  next tick, as a recorded live edit, never an asset change.
+- The card's details are the bound overrides against
+  `anim.blend.override_cap`, and **A/B**: *Record A* takes the simulation's
+  pose on every kept tick with the scenario as written. Edit a blend, then
+  *Replay B against A*: the scenario runs again from tick 0 with the same
+  inputs, clock, seed and start pose, and the two compare tick by tick, with
+  where the worst residual fell. A is drawn as a ghost. Takes of different
+  scenarios are refused rather than compared.
+- Inspecting a recorded tick (scrubbing the deck) shows the pose the pass
+  made then.
 
 The fixture examples include `moving`: a blendspace on Speed entered with
 carried phase and an inertialized change, and an override that crossfades back
@@ -319,12 +336,13 @@ per-layer ghosts.
 
 ## Two machines: the session lab
 
-**Session lab** runs the working scenario on an authority, and on a client
+**Session Lab** (`animation.run.lab`, a sheet: `AnimationLabProperties`) runs
+the working scenario on an authority, and on a client
 that gets the authority's requests only as snapshot bytes. Those bytes go
 through the production change store, snapshot writer and applier, request codec
 and prediction journal, across a link with a join tick, a latency in ticks and a
 loss rate. The loss rate drops a fixed pattern of snapshots, so a run repeats.
-The status line at the top always says which machine is which, and that facts
+The sheet's first line always says which machine is which, and that facts
 are synthetic scenario inputs on both.
 
 Both machines read the same scenario facts on the same ticks, standing in for
@@ -335,17 +353,19 @@ acknowledgements return at once.
 
 - **Client guesses** inject a request the client predicts on a tick, plus the
   tick the authority decides the command behind it, confirming or refusing it.
-- The strip marks each tick green where the client plays what the authority
-  does (behavior, content, time, flow section), red where it does not, and grey
-  before the client joined. A notch marks each lost snapshot. Below it is the
-  client's pose residual against the authority's.
+- While the sheet is up the deck runs the lab's clock instead of the
+  preview's: an Agreement lane marks where the client plays what the authority
+  does (behavior, content, time, flow section), where it does not, and before
+  the client joined, and a Residual lane plots the client's pose against the
+  authority's. The preview's transport rests meanwhile.
 - **What the joiner received** lists the requests of the client's first
-  snapshot with their anchors and tails. Clicking a tick sets the two machines'
-  layers, sections, requests (guesses marked) and decisions side by side.
+  snapshot with their anchors and tails. Scrubbing the deck, picking a span or
+  setting the tick lays the two machines' layers, sections, requests (guesses
+  marked) and decisions side by side.
 
 `AnimationSessionLab` is the headless model; `test/editor/AnimationSessionLabTests.cpp`
 covers a late join over a lossy link on the `pump_reload` example, a refused
-guess, and repeatability.
+guess, repeatability and the sheet.
 
 Not yet: the client's pose drawn as a ghost in the viewport.
 
@@ -357,33 +377,37 @@ with a `movement` block puts the character on a floor and runs the game's
 movement pipeline and mover after content resolves, so the clip carries it
 and a wall can stop it.
 
-- **Root motion** toggles *Move the character*, and edits the walls: add one
-  ahead, set its centre and half size, or remove it. Each change replays the
-  scenario to the current tick. It plots the playing clip's root curves --
-  right, back and turn over the clip -- with where the base layer is, and
-  totals the distance carried against the distance achieved, naming the ticks
-  a wall cut short.
-- **Path** in the viewport draws the character's path on the floor, each move
-  a collision cut short (red, where it would have gone), and the walls. The
+- The **Root motion** lens's card (`AnimationRootMotionProperties`) toggles
+  *Move the character* and edits the walls: add one ahead, set its centre and
+  half size, or remove it. Each change replays the scenario to the current
+  tick. It names the base layer's clip, whether it carries the character, and
+  where along its root curve it is (right, back, turn), and totals the
+  distance carried against the distance achieved, naming the ticks a wall cut
+  short. On the simulation clock the deck plots both per tick, carried above
+  achieved.
+- The stage's path draws the character's path on the floor, each move a
+  collision cut short (red, where it would have gone), and the walls. The
   character is drawn where it stands.
 
 `test/editor/AnimationRootMotionPreviewTests.cpp` covers a carried character, a
-wall stopping it, and movement as scenario state.
+wall stopping it, movement as scenario state, the travel lanes and the card.
 
 ## Documents, undo and saving
 
-The **Document** panel shows each open document as a tab, drawn through the
-same tabs and schema-generated form Data Editor uses
-(`editor/common/src/ui/DataDocumentTabs.h`); closing a tab with unsaved changes
-asks Save, Discard or Cancel. Every field of a rig, behavior set, slot map,
-selector, flow, blendspace, blend overrides, fact or request schema, bindings
-file and tag declaration is editable here; the purpose-built panels above are
-the richer views of the same documents. **New asset** creates any of those
-types, and a reference field's Pick names it.
+An animation document opens from the **Rigs** explorer (R) onto the card, as
+the same schema-laid sheet the Data workspace shows (`data/DataProperties`),
+and every open document is on the document dial. Closing one with unsaved
+changes (Ctrl+W) asks Save, Discard or Cancel. Every field of a rig, behavior
+set, slot map, selector, flow, blendspace, blend overrides, fact or request
+schema, bindings file and tag declaration is editable there; the purpose-built
+views are the richer ones of the same documents. **New Animation Document**
+(Ctrl+N) creates any of those types through the same creation card Data uses
+(`data/DataCreation`).
 
 A name content introduces as a gameplay tag -- a new behavior, intent or
-layer -- fails the rig's binding until something declares it. The Problems tab
-lists those names and **Declare them beside the rig** adds them to the rig's
+layer -- fails the rig's binding until something declares it. One problem
+lists those names and reveals the stage card, where **Declare Names Beside the
+Rig** adds them to the rig's
 tag declarations as one undo step there; working declarations reach the
 preview before they are saved.
 
@@ -408,17 +432,22 @@ Data Editor uses; clip events join it as `AnimationClipEventsSet`.
 
 ## Qualification
 
-- **Scenario batch** runs every saved scenario in the project -- each under its
-  own rig, or all under the open rig -- twice from tick 0, in a session of its
-  own. A scenario fails on an error or a second run that differs from the
+- **Scenario Batch** (`animation.run.batch`, a sheet:
+  `AnimationScenarioBatchProperties`) runs every saved scenario in the project
+  -- each under its own rig, or all under the open rig -- twice from tick 0,
+  in a session of its own. A scenario fails on an error or a second run that differs from the
   first, and warns on a warning or a request no layer played.
-- **Migration** finds scenes that still name the retired clip player and turns
-  each into a one-layer rig that plays the clip as the player did.
-- **Content risk** (Problems and changes) shows the open rig's risk measures,
-  the previewed entity's footprint and its unplayed requests -- what `anim.risk`
-  reports in a game.
-- **Imported trace** reads a trace written by `anim.trace.export` in a running
-  game: every decision record as logged, and what the trace did not capture.
+- **Clip Player Migration** (`animation.run.migration`, a sheet:
+  `AnimationMigrationProperties`) finds scenes that still name the retired
+  clip player and turns each into a one-layer rig that plays the clip as the
+  player did.
+- The stage card's details (`AnimationRigReportProperties`) show the open
+  rig's risk measures, the previewed entity's footprint and its unplayed
+  requests -- what `anim.risk` reports in a game.
+- **Imported Trace** (`animation.run.trace`, a sheet:
+  `AnimationTraceProperties`) reads a trace written by `anim.trace.export` in
+  a running game: every decision record as logged, filtered by cause, layer or
+  detail, and what the trace did not capture.
 
 The runtime side of these is described in
 [docs/gameplay/animation.md](../../docs/gameplay/animation.md).

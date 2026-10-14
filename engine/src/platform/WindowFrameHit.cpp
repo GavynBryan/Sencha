@@ -13,7 +13,8 @@ WindowFrameHit ClassifyWindowFrameHit(const WindowFrameRegions& regions, const W
 {
     const int32_t width = static_cast<int32_t>(probe.Extent.Width);
     const int32_t height = static_cast<int32_t>(probe.Extent.Height);
-    if (width <= 0 || height <= 0 || probe.X < 0 || probe.Y < 0 || probe.X >= width || probe.Y >= height)
+    if (probe.PointerHeld || width <= 0 || height <= 0 || probe.X < 0 || probe.Y < 0 || probe.X >= width
+        || probe.Y >= height)
         return WindowFrameHit::Client;
 
     if (probe.Resizable && !probe.Maximized && regions.ResizeBorder > 0)

@@ -1,17 +1,24 @@
 // A trace a game exported reads back in the editor as the game logged it,
 // and says what it does not hold.
 
+#include "EditorDocumentsFixture.h"
+#include "authoring/AnimationPreviewWorkspace.h"
 #include "authoring/AnimationTraceImport.h"
+#include "authoring/AnimationTraceProperties.h"
+
+#include "AnimationTestProject.h"
 
 #include <anim/AnimDecisionLog.h>
 #include <anim/AnimTrace.h>
 #include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 
 #include <gtest/gtest.h>
 
 #include <format>
+#include <fstream>
 
 // What the engine writes, the editor reads: a full ring, so the earliest
 // records are gone and the reader says how many.
@@ -77,4 +84,50 @@ TEST(AnimationTraceImport, OtherDocumentsAreRefused)
                                     error));
     EXPECT_NE(error.find("version"), std::string::npos);
     EXPECT_FALSE(ReadAnimationTraceFile("/nonexistent/trace.json", error));
+}
+
+// As a sheet: a trace file read, its records filtered, and a file that is not
+// a trace refused with why.
+TEST(AnimationTraceImport, TheSheetReadsAndFiltersAFile)
+{
+    World world;
+    world.RegisterComponent<AnimDecisionLog>();
+    GameplayTagRegistry& tags = world.AddResource<GameplayTagRegistry>();
+    const GameplayTagId reload = *tags.RegisterTag("anim.intent.reload");
+    const EntityId entity = world.CreateEntity();
+    world.AddComponent(entity, AnimDecisionLog{});
+    AnimDecisionLog& log = *world.TryGet<AnimDecisionLog>(entity);
+    for (std::uint64_t tick = 0; tick < 5; ++tick)
+    {
+        AnimDecisionRecord record;
+        record.Tick = tick;
+        record.Cause = tick % 2 == 0 ? AnimDecisionCause::RequestAdded : AnimDecisionCause::BehaviorEntered;
+        record.Intent = reload;
+        log.Append(record);
+    }
+    AnimationTestProject project("sencha_trace_sheet");
+    const std::filesystem::path file = project.Root / "trace.json";
+    std::ofstream(file) << JsonStringify(WriteAnimTrace(world, entity, nullptr));
+
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store, {}, project.Root);
+    AnimationTraceProperties sheet([&](const std::string& rig) { (void)workspace.OpenRig(rig); });
+    ASSERT_TRUE(sheet.BeginEdit("file"));
+    EXPECT_EQ(sheet.CommitEdit("file", (project.Root / "missing.json").string()), PropertyEditResult::Applied);
+    EXPECT_EQ(sheet.Act("file", "read", ""), PropertyEditResult::Refused);
+    std::vector<PropertyNode> nodes = sheet.Nodes();
+    EXPECT_NE(std::ranges::find(nodes, std::string("error"), &PropertyNode::Key), nodes.end());
+
+    EXPECT_EQ(sheet.CommitEdit("file", file.string()), PropertyEditResult::Applied);
+    EXPECT_EQ(sheet.Act("file", "read", ""), PropertyEditResult::Applied);
+    nodes = sheet.Nodes();
+    auto rows = std::ranges::find(nodes, std::string("rows"), &PropertyNode::Key);
+    ASSERT_NE(rows, nodes.end());
+    EXPECT_EQ(rows->Children.size(), 5u);
+    EXPECT_EQ(sheet.CommitEdit("filter", std::string(AnimDecisionCauseName(AnimDecisionCause::BehaviorEntered))),
+              PropertyEditResult::Applied);
+    nodes = sheet.Nodes();
+    rows = std::ranges::find(nodes, std::string("rows"), &PropertyNode::Key);
+    ASSERT_NE(rows, nodes.end());
+    EXPECT_EQ(rows->Children.size(), 2u);
 }

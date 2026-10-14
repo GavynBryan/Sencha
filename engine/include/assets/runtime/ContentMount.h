@@ -35,15 +35,10 @@ struct ContentRootPaths
 // by being registered second.
 void ScanContentRoot(const ContentRootPaths& root, RuntimeAssets& assets);
 
-// Registers the cooked index (artifacts the physical scan cannot key, notably a
-// cooked texture still serving its source virtual path) and applies the root's
-// asset-id map. A root with no id map resolves by path only, which is a warning
-// rather than a failure: a project that has never cooked has no map yet.
-void RegisterCookedContent(const ContentRootPaths& root,
-                           RuntimeAssets& assets,
-                           Logger& log);
+// Registers the cooked index: artifacts the physical scan cannot key, notably a
+// cooked texture still serving its source virtual path, and the id every
+// artifact goes by.
+void RegisterCookedContent(const ContentRootPaths& root, RuntimeAssets& assets);
 
 // Both steps in order, for a caller with nothing to do between them.
-void MountContentRoot(const ContentRootPaths& root,
-                      RuntimeAssets& assets,
-                      Logger& log);
+void MountContentRoot(const ContentRootPaths& root, RuntimeAssets& assets);

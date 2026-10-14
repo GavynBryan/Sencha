@@ -1,0 +1,267 @@
+<rml>
+<head>
+    <title>Shell</title>
+    <link type="text/rcss" href="controls.rcss"/>
+    <link type="text/rcss" href="shell.rcss"/>
+    <link type="text/rcss" href="icons.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="shell" data-class-moving="motion">
+    <!-- The rail: the window's caption and the one full-width piece of chrome.
+         Left is identity (the hatch, which workspace, which document), right is
+         consequence (problems, the transport, the window), and the middle is
+         where the window is dragged from and where notices pass through. -->
+    <div id="rail" class="theme-rail">
+        <div id="rail_left">
+            <div id="hatch" class="key theme-key" data-class-lit="popover == 'hatch'"
+                 data-event-click="shell_popover('hatch')"><span class="glyph">&#xf0c9;</span></div>
+            <!-- A tab per asset open, its editor named small beside it: choosing
+                 one shows it, dragging one down out of the rail gives its
+                 editor a window of its own. -->
+            <div class="tab theme-key" data-for="tab : tabs" data-class-lit="tab.selected"
+                 data-event-click="shell_tab(it_index)"
+                 data-event-dragend="shell_tab_drop(it_index, ev.mouse_x, ev.mouse_y)">
+                <span class="tab_kind theme-accent">{{tab.value}}</span>
+                <span class="tab_label">{{tab.label}}</span>
+                <div class="lamp theme-lamp lit" data-if="tab.detail == 'changed'"></div>
+            </div>
+            <div id="tab_new" class="key theme-key" data-event-click="shell_invoke('shelf.toggle')"><span class="glyph">&#x2b;</span></div>
+        </div>
+
+        <div id="notices">
+            <!-- The grille the rail is dragged by, fastened at both ends. -->
+            <div id="grille">
+                <img class="screw theme-art" src="art/screw.svg"/>
+                <img class="vent theme-art" src="art/vent.svg"/>
+                <img class="screw theme-art" src="art/screw.svg"/>
+            </div>
+            <div class="notice theme-readout" data-for="notice : notices"
+                 data-class-warning="notice.detail == 'warning'"
+                 data-class-failed="notice.detail == 'failed'">{{notice.label}}</div>
+        </div>
+
+        <div id="rail_right">
+            <div id="problems" class="readout theme-readout" data-if="problem_count > 0"
+                 data-class-lit="popover == 'problems'" data-event-click="shell_popover('problems')">
+                <div class="lamp theme-lamp" data-class-warn="!problem_errors" data-class-fault="problem_errors"></div>
+                <span class="count">{{problem_count}}</span>
+            </div>
+            <div id="transport" class="theme-plate" data-if="transport_state != 'none'">
+                <div class="key theme-key" data-class-disabled="!cook_enabled"
+                     data-event-click="shell_invoke('transport.cook')">COOK</div>
+                <div class="key theme-key" data-class-lit="transport_state == 'playing'"
+                     data-class-disabled="!play_enabled"
+                     data-event-click="shell_invoke('transport.play')">PLAY</div>
+                <div class="key theme-key" data-class-disabled="!stop_enabled"
+                     data-event-click="shell_invoke('transport.stop')">STOP</div>
+                <div id="cat_Transport" class="segment theme-segment" data-class-lit="popover == 'category:Transport'"
+                     data-event-click="shell_popover('category:Transport')">
+                    <div class="lamp theme-lamp" data-class-on="transport_state == 'playing'"
+                         data-class-warn="transport_state == 'cooking'"
+                         data-class-fault="transport_state == 'failed'"></div>
+                    <span class="transport_text theme-dim" data-if="transport_text != ''">{{transport_text}}</span>
+                    <span class="glyph theme-dim">&#xf078;</span>
+                </div>
+            </div>
+            <div id="window_keys">
+                <div class="key theme-key" data-event-click="shell_window('minimize')"><span class="glyph">&#xf2d1;</span></div>
+                <div class="key theme-key" data-event-click="shell_window('maximize')"><span class="glyph">&#xf2d0;</span></div>
+                <div class="key theme-key" data-event-click="shell_window('close')"><span class="glyph">&#xf00d;</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Where the work is, outermost first; each part opens the hierarchy
+         showing it. -->
+    <div id="crumbs" class="theme-plate" data-if="crumbs.size > 0">
+        <div class="crumb crumb_map theme-segment" data-if="map_action != ''" data-event-click="shell_invoke(map_action)">
+            <span class="theme-accent">MAP</span>
+        </div>
+        <div class="crumb theme-segment" data-for="crumb : crumbs" data-class-lit="crumb.selected"
+             data-event-click="shell_crumb(it_index)">
+            <span class="crumb_sep glyph theme-dim" data-if="it_index > 0">&#xf054;</span><span>{{crumb.label}}</span>
+            <span class="crumb_open glyph" data-if="crumb.selected"><span data-if="!crumb.expanded">&#xf0da;</span><span data-if="crumb.expanded">&#xf0d7;</span></span>
+        </div>
+        <div class="crumb_hint theme-dim" data-if="hierarchy_chord != ''">
+            <span class="chord">{{hierarchy_chord}}</span><span>hierarchy</span>
+        </div>
+    </div>
+
+    <!-- Bottom left, what the hands are doing: the station (and over it, while
+         the operation has settings or drafted work, its card), then how they
+         act -- element, gizmo, grid -- each segment opening its category. -->
+    <div id="instruments_left" data-style-bottom="instruments_lift">
+    <div id="station_bay" data-if="station_name != ''">
+        <div id="tool_card" class="theme-plate" data-class-open="card_open" data-class-shut="!card_open">
+            <include src="parts/sheet_rows.rmlpart" sheet="tool" help="false"/>
+            <div id="tool_hint" class="theme-dim" data-if="station_hint != ''">{{station_hint}}</div>
+            <div id="tool_keys" data-if="draft != 'none'">
+                <div class="key theme-key" data-class-lit="draft == 'ready'" data-class-disabled="draft != 'ready'"
+                     data-event-click="shell_invoke('tool.apply')">APPLY</div>
+                <div class="key theme-key" data-event-click="shell_invoke('tool.cancel')">CANCEL</div>
+            </div>
+        </div>
+        <div id="station" class="theme-plate" data-class-lit="popover == 'tools'"
+             data-event-click="shell_popover('tools')">
+            <span data-if="station_icon != ''" data-attr-class="'station_icon icon icon-' + station_icon"></span>
+            <span class="station_name">{{station_name}}</span>
+            <span class="station_variant theme-accent" data-if="station_variant != ''">{{station_variant}}</span>
+        </div>
+    </div>
+    <div id="readout" class="theme-readout" data-if="element != ''">
+        <div id="cat_Mode" class="segment theme-segment" data-class-lit="popover == 'category:Mode'"
+             data-event-click="shell_popover('category:Mode')"><span>{{element}}</span></div>
+        <div id="cat_Transform" class="segment theme-segment" data-class-lit="popover == 'category:Transform'"
+             data-event-click="shell_popover('category:Transform')">
+            <span>{{gizmo_mode}}</span><span class="theme-dim">&#183;</span><span>{{gizmo_space}}</span>
+            <span class="theme-warning" data-if="pivot">PIVOT</span>
+        </div>
+        <div id="cat_Grid" class="segment theme-segment" data-class-lit="popover == 'category:Grid'"
+             data-event-click="shell_popover('category:Grid')">
+            <div class="lamp theme-lamp" data-class-on="snap"></div><span>{{grid}}u</span>
+        </div>
+    </div>
+    <!-- What the hands hold, beside what they do: the cartridge the next
+         operation consumes, which opens what can be done with it, and the
+         stash beside it, where a click trades a slot with the cartridge. -->
+    <div id="holding" class="theme-plate" data-if="holding_role != ''">
+        <div id="cat_Resource" class="cartridge theme-segment" data-class-lit="explorer_id == holding_explorer"
+             data-event-click="shell_explore(holding_explorer)">
+            <div class="picture_well theme-field">
+                <img class="picture" data-if="holding_image != ''" data-attr-src="'host:' + holding_image"/>
+            </div>
+            <span class="cartridge_label" data-if="holding_label != ''">{{holding_label}}</span>
+            <span class="cartridge_label empty theme-dim" data-if="holding_label == ''">No {{holding_role}}</span>
+        </div>
+        <div class="key theme-key" data-class-lit="popover == 'category:Resource'"
+             data-event-click="shell_popover('category:Resource')"><span class="glyph">&#xf078;</span></div>
+        <div id="stash">
+            <div class="picture_well stash_slot theme-field" data-for="slot : stash"
+                 data-class-filled="slot.label != ''" data-event-click="shell_invoke(slot.key)">
+                <img class="picture" data-if="slot.value != ''" data-attr-src="'host:' + slot.value"/>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- What is selected: its name, its settings, and what can be done to
+         it now -- or, while an edit is previewed, applying or cancelling it.
+         Looked at closely it becomes the drawer along the right edge, with
+         every property it has. -->
+    <div id="selection_card" class="theme-plate" data-class-open="selection_shown"
+         data-class-shut="!selection_shown" data-class-drawer="drawer" data-class-sheet="sheet"
+         data-class-front="front == 'selection'"
+         data-style-left="selection_left" data-style-top="selection_top"
+         data-style-width="selection_width" data-style-height="selection_height"
+         data-event-mousedown="shell_raise('selection')">
+        <div id="selection_head" class="grip"
+             data-event-mousedown="shell_grab('selection', ev.mouse_x, ev.mouse_y, 'header')"
+             data-event-drag="shell_drag('selection', ev.mouse_x, ev.mouse_y)"
+             data-event-dragend="shell_drop('selection')">
+            <span id="selection_title" class="theme-accent" data-if="!selection_named"
+                  data-event-dblclick="shell_unmove('selection')">{{selection_title}}</span>
+            <span id="selection_known" class="theme-dim" data-if="selection_named"
+                  data-event-dblclick="shell_unmove('selection')">{{selection_subtitle}}</span>
+            <div class="key theme-key" data-if="!sheet" data-class-lit="drawer" data-event-click="shell_drawer('toggle')">
+                <span data-if="!drawer">DETAILS</span><span data-if="drawer">CLOSE</span>
+            </div>
+        </div>
+        <!-- A name is the title, and typing over it renames. -->
+        <input style="tab-index: none;" type="text" id="selection_name" class="theme-accent" data-if="selection_named"
+               data-value="selection_title" data-event-focus="shell_title_hold()"
+               data-event-blur="shell_title_release()"/>
+        <div id="selection_subtitle" class="theme-dim" data-if="!selection_named &amp;&amp; selection_subtitle != ''">{{selection_subtitle}}</div>
+        <include src="parts/sheet_rows.rmlpart" sheet="selection" help="sheet"/>
+        <div id="selection_verbs">
+            <div class="key theme-key" data-for="verb : selection_verbs"
+                 data-class-lit="selection_staged &amp;&amp; it_index == 0"
+                 data-event-click="shell_invoke(verb.key)">{{verb.label}}</div>
+        </div>
+        <div class="corner" data-event-mousedown="shell_grab('selection', ev.mouse_x, ev.mouse_y, 'corner')"
+             data-event-drag="shell_drag('selection', ev.mouse_x, ev.mouse_y)"
+             data-event-dragend="shell_drop('selection')"></div>
+    </div>
+    <!-- An explorer: what the workspace lets a person browse, a page at a
+         time, as pictures or as an outline of names. A click picks an item
+         up, a double click puts it to use. Like the selection, it opens where
+         there is room, moves by its header and sizes by its corner; a double
+         click on its title puts it back. -->
+    <div id="explorer" class="theme-plate" data-if="explorer_id != ''"
+         data-class-outline="explorer_shape == 'outline'" data-class-front="front == 'explorer'"
+         data-style-left="explorer_left" data-style-top="explorer_top"
+         data-style-width="explorer_width" data-style-height="explorer_height"
+         data-event-mousedown="shell_raise('explorer')">
+        <div id="explorer_head" class="grip"
+             data-event-mousedown="shell_grab('explorer', ev.mouse_x, ev.mouse_y, 'header')"
+             data-event-drag="shell_drag('explorer', ev.mouse_x, ev.mouse_y)"
+             data-event-dragend="shell_drop('explorer')">
+            <span id="explorer_title" class="theme-accent"
+                  data-event-dblclick="shell_unmove('explorer')">{{explorer_title}}</span>
+            <input style="tab-index: none;" type="text" id="explorer_filter" class="theme-field"
+                   data-event-change="shell_explorer_filter(ev.value)"/>
+            <span id="explorer_range" class="theme-dim">{{explorer_range}}</span>
+            <div class="key theme-key" data-if="explorer_earlier || explorer_later" data-class-disabled="!explorer_earlier"
+                 data-event-click="shell_explorer_page(-1)"><span class="glyph">&#xf053;</span></div>
+            <div class="key theme-key" data-if="explorer_earlier || explorer_later" data-class-disabled="!explorer_later"
+                 data-event-click="shell_explorer_page(1)"><span class="glyph">&#xf054;</span></div>
+            <div class="key theme-key" data-for="verb : explorer_verbs"
+                 data-event-click="shell_invoke(verb.key)">{{verb.label}}</div>
+            <div class="key theme-key" data-event-click="shell_explorer_close()"><span class="glyph">&#xf00d;</span></div>
+        </div>
+        <div id="explorer_items">
+            <div class="explorer_item theme-row" data-for="item : explorer_items" data-class-selected="item.selected"
+                 data-style-padding-left="(item.depth * 12 + 6) + 'dp'"
+                 data-event-click="shell_explorer_pick(item.key, ev.shift_key, ev.ctrl_key)"
+                 data-event-dblclick="shell_explorer_commit(item.key)">
+                <div class="picture_well theme-field" data-if="explorer_shape == 'pictures'">
+                    <img class="picture" data-if="item.value != ''" data-attr-src="'host:' + item.value"/>
+                </div>
+                <span class="branch glyph theme-dim" data-if="explorer_shape == 'outline'"
+                      data-event-click="shell_explorer_open(item.key)">
+                    <span data-if="item.value == 'closed'">&#xf0da;</span><span data-if="item.value == 'open'">&#xf0d7;</span>
+                </span>
+                <span class="item_label">{{item.label}}</span>
+                <div class="marks" data-if="explorer_shape == 'outline'">
+                    <span data-for="mark : item.parts" data-attr-class="'mark icon icon-' + mark"
+                          data-event-click="shell_explorer_mark(item.key, it_index)"></span>
+                </div>
+            </div>
+            <div id="explorer_empty" class="theme-dim" data-if="explorer_empty != ''">{{explorer_empty}}</div>
+        </div>
+        <div class="corner" data-event-mousedown="shell_grab('explorer', ev.mouse_x, ev.mouse_y, 'corner')"
+             data-event-drag="shell_drag('explorer', ev.mouse_x, ev.mouse_y)"
+             data-event-dragend="shell_drop('explorer')"></div>
+    </div>
+
+
+    <!-- Top right of the content, how the work is seen: which view, and how
+         many share the content. -->
+    <div id="cat_View" class="theme-plate" data-if="projection != ''"
+         data-class-lit="popover == 'category:View'" data-event-click="shell_popover('category:View')">
+        <span class="view_projection">{{projection}}</span>
+        <span class="view_count theme-accent" data-if="view_count > 0">{{view_count}}&#9635;</span>
+    </div>
+
+    <!-- A popover: one decision, anchored under the instrument that opened it.
+         Anything outside it takes it away, which is what the catch is for. -->
+    <div id="dismiss" data-if="popover != ''" data-event-click="shell_popover('')"></div>
+    <div id="popover" class="theme-surface" data-if="popover != ''" data-class-rising="popover_rises"
+         data-class-problems="popover == 'problems'"
+         data-style-left="popover_x + 'px'" data-style-top="popover_top"
+         data-style-max-height="popover_tallest">
+        <input style="tab-index: none;" type="text" id="popover_filter" class="theme-field" data-if="popover_filters"
+               autofocus="" placeholder="Type to narrow" data-event-change="shell_popover_filter(ev.value)"/>
+        <div class="entry theme-row" data-for="entry : entries"
+             data-class-noted="entry.detail != ''"
+             data-class-heading="entry.control == 'section'"
+             data-class-disabled="entry.disabled"
+             data-class-selected="entry.selected"
+             data-event-click="shell_choose(entry.key)">
+            <span data-if="entry.icon != ''" data-attr-class="'entry_icon icon icon-' + entry.icon"></span>
+            <span class="entry_label">{{entry.label}}</span>
+            <span class="entry_chord theme-muted">{{entry.value}}</span>
+            <span class="entry_note theme-dim" data-if="entry.detail != ''">{{entry.detail}}</span>
+        </div>
+    </div>
+</body>
+</rml>

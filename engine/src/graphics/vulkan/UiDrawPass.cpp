@@ -1,5 +1,7 @@
 #include <graphics/vulkan/UiDrawPass.h>
 
+#include <graphics/vulkan/UiTextureResidency.h>
+
 #include <assets/texture/TextureCache.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
@@ -9,7 +11,6 @@
 #include <graphics/vulkan/VulkanDeviceService.h>
 #include <graphics/vulkan/VulkanImageService.h>
 #include <graphics/vulkan/VulkanPipelineCache.h>
-#include <graphics/vulkan/VulkanSamplerCache.h>
 #include <graphics/vulkan/VulkanShaderCache.h>
 
 #include <shaders/kUiFragSpv.h>
@@ -132,7 +133,7 @@ bool UiDrawPass::Setup(const RendererServices& services, TextureCache* textures)
     Device = services.Device != nullptr ? services.Device->GetDevice() : VK_NULL_HANDLE;
     if (Device == VK_NULL_HANDLE || services.Shaders == nullptr
         || services.Descriptors == nullptr || services.Pipelines == nullptr
-        || services.Samplers == nullptr)
+        || services.UiTextures == nullptr)
     {
         return false;
     }
@@ -149,10 +150,6 @@ bool UiDrawPass::Setup(const RendererServices& services, TextureCache* textures)
             log->Error("UiDrawPass: shader modules failed; authored UI will not draw");
         return false;
     }
-
-    // Clamp, not repeat: a glyph atlas sampled past its edge should not wrap
-    // into a neighbouring glyph.
-    Sampler = services.Samplers->GetLinearClamp();
 
     VkPushConstantRange push{};
     // Both stages read the same block: the vertex stage needs the matrix, the
@@ -190,23 +187,6 @@ void UiDrawPass::Teardown()
         vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
     PipelineLayout = VK_NULL_HANDLE;
 
-    // Every generated texture, retiring or not: the device is idle by the time
-    // a feature is torn down, so there is nothing left to wait for.
-    if (Services != nullptr && Services->Images != nullptr && Services->Descriptors != nullptr)
-    {
-        for (auto& [id, texture] : Generated)
-        {
-            Services->Descriptors->UnregisterSampledImage(texture.Bindless);
-            Services->Images->Destroy(texture.Image);
-        }
-        for (RetiredTexture& retired : Retiring)
-        {
-            Services->Descriptors->UnregisterSampledImage(retired.Texture.Bindless);
-            Services->Images->Destroy(retired.Texture.Image);
-        }
-    }
-    Generated.clear();
-    Retiring.clear();
     Services = nullptr;
     Textures = nullptr;
 }
@@ -314,81 +294,6 @@ VkPipeline UiDrawPass::EnsurePipeline(const FrameContext& frame, Variant variant
     return cached;
 }
 
-void UiDrawPass::ApplyUploads(const UiDrawFrame& ui)
-{
-    if (ui.PendingUploads.empty())
-        return;
-
-    Logger* log = Services->Logging != nullptr
-        ? &Services->Logging->GetLogger<UiDrawPass>() : nullptr;
-
-    for (const UiTextureUpload& upload : ui.PendingUploads)
-    {
-        if (Generated.contains(upload.Id))
-            continue;
-
-        ImageCreateInfo info{};
-        // UNORM, not SRGB: the runtime converted these once on the CPU and they
-        // already hold linear premultiplied values. An sRGB view would decode
-        // them a second time.
-        info.Format = VK_FORMAT_R8G8B8A8_UNORM;
-        info.Extent = VkExtent2D{ upload.Size.Width, upload.Size.Height };
-        info.Usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        info.DebugName = "ui_generated";
-
-        ++LastStats.TextureUploads;
-        LastStats.TextureUploadBytes +=
-            static_cast<std::uint64_t>(upload.Size.Width) * upload.Size.Height * 4u;
-
-        const ImageHandle image = Services->Images->Create(info);
-        if (!image.IsValid())
-        {
-            if (log != nullptr)
-                log->Error("UiDrawPass: could not create a generated UI texture");
-            continue;
-        }
-        if (!Services->Images->Upload(image, upload.LinearPremultipliedRgba8.data(),
-                                      upload.LinearPremultipliedRgba8.size()))
-        {
-            Services->Images->Destroy(image);
-            continue;
-        }
-
-        GeneratedTexture texture;
-        texture.Image = image;
-        texture.Bindless = Services->Descriptors->RegisterSampledImage(image, Sampler);
-        texture.Size = upload.Size;
-        Generated.emplace(upload.Id, texture);
-    }
-}
-
-void UiDrawPass::ApplyReleases(const UiDrawFrame& ui, const FrameContext& frame)
-{
-    for (const UiGeneratedTextureId id : ui.ReleasedTextures)
-    {
-        const auto it = Generated.find(id);
-        if (it == Generated.end())
-            continue;
-        // Command buffers recorded in earlier frames still name this image, so
-        // it is retired against the frame clock rather than destroyed here.
-        Retiring.push_back(RetiredTexture{ it->second, frame.Retirement.Stamp() });
-        Generated.erase(it);
-    }
-}
-
-void UiDrawPass::CollectRetired(const FrameContext& frame)
-{
-    const auto retired = std::remove_if(Retiring.begin(), Retiring.end(),
-        [&](const RetiredTexture& entry) {
-            if (!frame.Retirement.IsRetired(entry.RetireStamp))
-                return false;
-            Services->Descriptors->UnregisterSampledImage(entry.Texture.Bindless);
-            Services->Images->Destroy(entry.Texture.Image);
-            return true;
-        });
-    Retiring.erase(retired, Retiring.end());
-}
-
 // Resets the mask inside the scope that is already open. vkCmdClearAttachments
 // is the only way to clear mid-scope, and it is what the document engine's own
 // backends do here: a Set or SetInverse starts a new mask rather than adding to
@@ -423,9 +328,9 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
     // textures it materialized rather than carrying last frame's number.
     LastStats = DrawStats{};
 
-    ApplyUploads(ui);
-    ApplyReleases(ui, frame);
-    CollectRetired(frame);
+    const UiTextureResidency::Applied applied = Services->UiTextures->Prepare(frame.Retirement);
+    LastStats.TextureUploads = applied.Uploads;
+    LastStats.TextureUploadBytes = applied.UploadBytes;
 
     if (ui.Commands.empty())
         return;
@@ -559,11 +464,22 @@ void UiDrawPass::Draw(const FrameContext& frame, const UiDrawFrame& ui)
         }
         else if (command.Texture.Kind == UiTextureKind::Generated)
         {
-            const auto it = Generated.find(command.Texture.Generated);
-            if (it != Generated.end())
+            if (const std::optional<BindlessImageIndex> index =
+                    Services->UiTextures->FindGenerated(command.Texture.Generated))
             {
-                push.TextureIndex = it->second.Bindless.Value;
+                push.TextureIndex = index->Value;
                 push.Flags = kFlagHasTexture;
+            }
+        }
+        else if (command.Texture.Kind == UiTextureKind::Host)
+        {
+            // Straight alpha like content: a host image is a render target or an
+            // ordinary texture, never premultiplied by the document engine.
+            if (const std::optional<BindlessImageIndex> index =
+                    Services->UiTextures->FindHost(command.Texture.Host))
+            {
+                push.TextureIndex = index->Value;
+                push.Flags = kFlagHasTexture | kFlagStraightAlphaTexture;
             }
         }
 

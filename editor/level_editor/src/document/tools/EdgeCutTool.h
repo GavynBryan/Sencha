@@ -16,7 +16,7 @@ public:
     std::string_view GetDisplayName() const override;
     IconId GetIcon() const override;
 
-    InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) override;
+    InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, Vec2d pos) override;
     void OnHoverEnd(ToolContext& ctx) override;
     InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     InputConsumed OnKeyDown(ToolContext& ctx, const KeyDownEvent& event) override;
@@ -26,8 +26,9 @@ public:
     // work, so a save drops it rather than cutting the mesh on the user's behalf.
     void CommitPending(ToolContext& ctx) override;
 
-    void DrawProperties(ToolContext& ctx) override;
-    void DrawToolbarControls(ToolContext& ctx) override;
+    [[nodiscard]] std::vector<PropertyNode> Parameters(const ToolContext& ctx) const override;
+    PropertyEditResult SetParameter(ToolContext& ctx, std::string_view key, std::string_view value) override;
+    [[nodiscard]] std::string Hint(const ToolContext& ctx) const override;
     [[nodiscard]] Shortcut GetShortcut() const override;
     [[nodiscard]] bool UsesTransformGizmo() const override { return false; }
 
@@ -37,7 +38,7 @@ public:
 
 private:
     // Revert any active preview, pick the edge under the cursor, and preview its cut.
-    void UpdatePreview(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos);
+    void UpdatePreview(ToolContext& ctx, EditorViewport& viewport, Vec2d pos);
     void Commit(ToolContext& ctx);
     void Revert(ToolContext& ctx);
 

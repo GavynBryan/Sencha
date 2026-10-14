@@ -14,6 +14,7 @@
 #include "EditorTheme.h"
 #include "authoring/GameplayVocabularyAdapters.h"
 #include "authoring/BrushModifierEditorAdapter.h"
+
 #include "authoring/WorldDockEditorAdapter.h"
 #include "brush/BrushBounds.h"
 #include "document/EditorScene.h"
@@ -32,11 +33,13 @@
 #include "meshedit/ElementGeometry.h"
 #include "meshedit/MeshElements.h"
 #include "meshedit/SelectionConversion.h"
+#include "overlay/PlacementMarks.h"
 #include "overlay/SelectionLabels.h"
 #include "GridEditing.h"
 #include "viewport/GridFrame.h"
 #include "selection/SelectionFold.h"
 #include "selection/commands/SelectCommand.h"
+#include "viewport/CameraFraming.h"
 
 #include <algorithm>
 #include <array>
@@ -62,25 +65,42 @@ EditorWorkspace::EditorWorkspace(LoggingProvider& logging, CommandStack& command
               MakeDuplicateRemap())
 {
     World.BindViewSettings(&WorldView);
-    PendingPanelEdits = {
-        PendingEditHooks{
+    StagedElementEdits = {
+        RegisterPendingEdit({
             [this] { return BridgeEdit.HasPending(); },
             [this] { BridgeEdit.Commit(Commands, Selection); },
             [this] { BridgeEdit.Cancel(Commands); },
-        },
-        PendingEditHooks{
+        }),
+        RegisterPendingEdit({
             [this] { return ElementEdit.HasPendingInset() || ElementEdit.HasPendingBevel(); },
             [this] { ElementEdit.Commit(Commands); },
             [this] { ElementEdit.Cancel(Commands); },
-        },
+        }),
     };
     Build();
 }
 
-bool EditorWorkspace::HasPendingPanelEdit() const
+std::shared_ptr<const EditorWorkspace::PendingEditHooks> EditorWorkspace::RegisterPendingEdit(PendingEditHooks hooks)
 {
-    for (const PendingEditHooks& pending : PendingPanelEdits)
-        if (pending.HasPending())
+    auto token = std::make_shared<const PendingEditHooks>(std::move(hooks));
+    PendingEdits.push_back(token);
+    return token;
+}
+
+std::vector<std::shared_ptr<const EditorWorkspace::PendingEditHooks>> EditorWorkspace::LivePendingEdits()
+{
+    std::erase_if(PendingEdits, [](const std::weak_ptr<const PendingEditHooks>& hooks) { return hooks.expired(); });
+    std::vector<std::shared_ptr<const PendingEditHooks>> live;
+    for (const std::weak_ptr<const PendingEditHooks>& hooks : PendingEdits)
+        if (std::shared_ptr<const PendingEditHooks> held = hooks.lock())
+            live.push_back(std::move(held));
+    return live;
+}
+
+bool EditorWorkspace::HasPendingEdit() const
+{
+    for (const std::weak_ptr<const PendingEditHooks>& hooks : PendingEdits)
+        if (const std::shared_ptr<const PendingEditHooks> held = hooks.lock(); held != nullptr && held->HasPending())
             return true;
     return false;
 }
@@ -106,7 +126,7 @@ void EditorWorkspace::BuildInteractionState()
             Layout,
             Pivot,
             *Affordances,
-            ToolAuthoringSettings{ Grid, ActiveMaterial },
+            ToolAuthoringSettings{ Grid, Resources },
             MakeDuplicateRemap(),
             // A committed duplicate (the gizmo Shift-drag) becomes the repeatable
             // action: Ctrl+R re-duplicates the current selection at the same offset.
@@ -122,8 +142,8 @@ void EditorWorkspace::CancelOpenEdits()
     // scene it was begun in, the element edit holds the pre-edit meshes. Cancel
     // them (rather than dropping the stack under them) so the staged state is
     // reverted while the document that holds it is still alive.
-    for (const PendingEditHooks& pending : PendingPanelEdits)
-        pending.Cancel();
+    for (const std::shared_ptr<const PendingEditHooks>& pending : LivePendingEdits())
+        pending->Cancel();
 }
 
 void EditorWorkspace::CancelDocumentTransactions()
@@ -140,8 +160,8 @@ void EditorWorkspace::ResolvePendingEdits()
     // an unwanted commit is one Ctrl+Z away. Tools whose preview is a hover
     // artifact rather than placed work revert instead (see ITool::CommitPending).
     Interaction.CommitActiveTool();
-    for (const PendingEditHooks& pending : PendingPanelEdits)
-        pending.Commit();
+    for (const std::shared_ptr<const PendingEditHooks>& pending : LivePendingEdits())
+        pending->Commit();
 }
 
 // Points the selection at the focused document: identity comes from that
@@ -183,8 +203,8 @@ void EditorWorkspace::Build()
     Affordances->Registry().Register(MakeCharacterMovementEditorAdapter());
     CreationRecipes.Register("world_dock", std::make_unique<WorldDockRecipe>());
     Picking.SetEntityProxyProvider(
-        [this](const Ray3d& ray, const EditorScene& scene)
-        { return Affordances->Pick(ray, scene); });
+        [this](const EditorViewport& viewport, Vec2d point, const Ray3d& ray, const EditorScene& scene)
+        { return Affordances->Pick(viewport, point, ray, scene); });
 
     BuildInteractionState();
 
@@ -340,6 +360,16 @@ void EditorWorkspace::SetGridOriginToSelection()
     GridEditing::SetOriginToSelection(Grid, ActiveDocument().GetScene(), Selection.GetSelection());
 }
 
+bool EditorWorkspace::FrameSelection()
+{
+    EditorViewport* view = Layout.Active();
+    const std::optional<Aabb3d> bounds = ActiveDocument().GetScene().SelectionWorldBounds(Selection.GetSelection());
+    if (view == nullptr || !bounds.has_value())
+        return false;
+    FrameBounds(view->Camera, *bounds);
+    return true;
+}
+
 void EditorWorkspace::AlignGridToSelectedFace()
 {
     GridEditing::AlignToSelectedFace(Grid, ActiveDocument().GetScene(), Selection.GetSelection(),
@@ -368,7 +398,7 @@ void EditorWorkspace::EscapeStep()
         }
 
     switch (NextEscapeAction(EscapeContext{
-                .HasPendingEdit = HasPendingPanelEdit(),
+                .HasPendingEdit = HasPendingEdit(),
                 .GridOriginEditing = Interaction.Manipulators->IsEditingGridOrigin(),
                 .PivotEditing = Pivot.Editing,
                 .HasElementRefs = hasElementRefs,
@@ -377,8 +407,8 @@ void EditorWorkspace::EscapeStep()
             }))
     {
     case EscapeAction::CancelPendingEdit:
-        for (const PendingEditHooks& pending : PendingPanelEdits)
-            pending.Cancel();
+        for (const std::shared_ptr<const PendingEditHooks>& pending : LivePendingEdits())
+            pending->Cancel();
         break;
     case EscapeAction::CancelGridOriginEdit:
         Interaction.Manipulators->SetEditingGridOrigin(false);
@@ -475,7 +505,7 @@ void EditorWorkspace::UpdateOverlay()
 
     // Zone name labels ride the same per-frame label rebuild as the dimension
     // text, anchored at each zone box's top center.
-    if (World.IsWorld() && WorldView.ShowZoneBounds)
+    if (World.IsWorld() && (WorldView.ShowZoneBounds || WorldView.ShowZoneGraph))
     {
         for (const ZoneHeader& zone : World.Manifest().Zones)
         {
@@ -491,6 +521,7 @@ void EditorWorkspace::UpdateOverlay()
         }
     }
 
+    Interaction.Overlay.Markers.clear();
     if (Affordances)
     {
         ViewportAffordanceOutput affordances;
@@ -498,7 +529,15 @@ void EditorWorkspace::UpdateOverlay()
         Interaction.Overlay.Labels.insert(Interaction.Overlay.Labels.end(),
                               std::make_move_iterator(affordances.Labels.begin()),
                               std::make_move_iterator(affordances.Labels.end()));
+        const RegistryId registry = World.FocusDocument().GetScene().GetRegistry().Id;
+        for (const EditorMarker& marker : affordances.Markers)
+            Interaction.Overlay.Markers.push_back({
+                .World = marker.World,
+                .Icon = marker.Icon,
+                .Selected = Selection.Contains(SelectableRef::EntitySelection(registry, marker.Entity)),
+            });
     }
+    AppendPlacementMarks(Interaction.Placement, Grid.Spacing, Interaction.Overlay);
 }
 
 void EditorWorkspace::SetSelectedBrushOriginToPivot()
@@ -573,9 +612,10 @@ void EditorWorkspace::SetSelectedBrushOrigin(OriginAnchor anchor)
 
 void EditorWorkspace::ApplyActiveMaterialToSelectedFaces()
 {
-    if (!ActiveMaterial.Active.IsValid() || Interaction.Sink == nullptr)
+    const AssetRef& material = Resources.Active(AssetType::Material);
+    if (!material.IsValid() || Interaction.Sink == nullptr)
         return;
-    ApplyMaterialToSelectedFaces(*Interaction.Sink, Selection, Commands, ActiveMaterial.Active);
+    ApplyMaterialToSelectedFaces(*Interaction.Sink, Selection, Commands, material);
 }
 
 void EditorWorkspace::CopySelectedFaceProjection()
@@ -593,39 +633,53 @@ void EditorWorkspace::PasteFaceProjectionToSelection()
     PasteFaceProjection(*Interaction.Sink, Selection, Commands, *UvClipboard);
 }
 
-void EditorWorkspace::DeleteSelection()
+EditorWorkspace::Deletion EditorWorkspace::DeleteSelection()
 {
-
-    // Element selections delete through mesh verbs: faces are removed, edges
-    // dissolve (merge their two faces). Vertex refs have no delete verb yet.
-    bool hasFace = false;
-    bool hasEdge = false;
-    for (const SelectableRef& ref : Selection.GetSelection())
-    {
-        hasFace |= ref.IsFace();
-        hasEdge |= ref.IsEdge();
-    }
-    if (Interaction.Sink != nullptr && (hasFace || hasEdge))
-    {
-        const MeshEditVerb verb = hasFace ? MeshEditVerb::Delete : MeshEditVerb::DissolveEdge;
-        if (auto command = MeshEdit.ApplyVerb(*Interaction.Sink, Selection.GetSnapshot(), verb, {}))
-        {
-            Commands.Execute(std::move(command));
-            Selection.ClearMeshElementSelections();
-        }
-        return;
-    }
-
-    // Entity-kind selections only; vertex/edge/face element refs are not entities.
+    const SelectionSnapshot selection = Selection.GetSnapshot();
     std::vector<EntityId> entities;
-    for (const SelectableRef& ref : Selection.GetSelection())
+    for (const SelectableRef& ref : selection.Items)
         if (ref.Kind == SelectableKind::Entity && ref.Entity.IsValid())
             entities.push_back(ref.Entity);
 
-    if (entities.empty())
-        return;
+    // An element of an object going whole goes with it.
+    SelectionSnapshot faces;
+    SelectionSnapshot edges;
+    bool vertices = false;
+    for (const SelectableRef& ref : selection.Items)
+    {
+        if (!ref.IsMeshElement() || std::ranges::find(entities, ref.Entity) != entities.end())
+            continue;
+        if (ref.IsFace())
+            faces.Items.push_back(ref);
+        else if (ref.IsEdge())
+            edges.Items.push_back(ref);
+        else
+            vertices = true;
+    }
 
-    Commands.Execute(MakeDeleteEntitiesCommand(entities, ActiveDocument().GetScene(), ActiveDocument(), Selection));
+    std::string whyNot = vertices ? "Vertices can't be deleted: weld them, or delete the faces they bound." : "";
+    std::vector<std::unique_ptr<ICommand>> steps;
+    const SelectionSnapshot& elements = faces.Items.empty() ? edges : faces;
+    bool elementsWent = false;
+    if (!elements.Items.empty() && Interaction.Sink != nullptr)
+    {
+        const MeshEditVerb verb = faces.Items.empty() ? MeshEditVerb::DissolveEdge : MeshEditVerb::Delete;
+        if (std::unique_ptr<ICommand> command = MeshEdit.ApplyVerb(*Interaction.Sink, elements, verb, {}, &whyNot))
+        {
+            steps.push_back(std::move(command));
+            elementsWent = true;
+        }
+    }
+    if (!entities.empty())
+        steps.push_back(MakeDeleteEntitiesCommand(entities, ActiveDocument().GetScene(), ActiveDocument(), Selection));
+
+    if (steps.empty())
+        return { whyNot.empty() ? Deletion::Result::NothingSelected : Deletion::Result::Refused, std::move(whyNot) };
+    Commands.Execute(steps.size() == 1 ? std::move(steps.front())
+                                       : std::make_unique<CompositeCommand>(std::move(steps)));
+    if (elementsWent)
+        Selection.ClearMeshElementSelections();
+    return { Deletion::Result::Deleted, std::move(whyNot) };
 }
 
 void EditorWorkspace::DissolveSelectedEdges()
@@ -637,16 +691,6 @@ void EditorWorkspace::DissolveSelectedEdges()
         Commands.Execute(std::move(command));
         Selection.ClearMeshElementSelections();
     }
-}
-
-void EditorWorkspace::CommitPendingBridge()
-{
-    BridgeEdit.Commit(Commands, Selection);
-}
-
-void EditorWorkspace::CancelPendingBridge()
-{
-    BridgeEdit.Cancel(Commands);
 }
 
 void EditorWorkspace::BeginInsetOnSelectedFaces(float distance)
@@ -663,12 +707,21 @@ void EditorWorkspace::BeginBevelOnSelectedEdges(float width, int segments)
     ElementEdit.BeginBevel(*Interaction.Sink, Commands, Selection.GetSelection(), width, segments);
 }
 
-void EditorWorkspace::CommitPendingElementEdit()
+bool EditorWorkspace::HasStagedElementEdit() const
 {
-    ElementEdit.Commit(Commands);
+    return std::ranges::any_of(StagedElementEdits, [](const auto& staged) { return staged->HasPending(); });
 }
 
-void EditorWorkspace::CancelPendingElementEdit()
+void EditorWorkspace::CommitStagedElementEdit()
 {
-    ElementEdit.Cancel(Commands);
+    for (const std::shared_ptr<const PendingEditHooks>& staged : StagedElementEdits)
+        if (staged->HasPending())
+            staged->Commit();
+}
+
+void EditorWorkspace::CancelStagedElementEdit()
+{
+    for (const std::shared_ptr<const PendingEditHooks>& staged : StagedElementEdits)
+        if (staged->HasPending())
+            staged->Cancel();
 }

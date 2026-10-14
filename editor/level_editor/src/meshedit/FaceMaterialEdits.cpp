@@ -46,10 +46,19 @@ void EditSelectedFaces(
     CommandStack& commands,
     const std::function<void(const BrushMesh&, const Transform3f&, BrushFace&)>& mutate)
 {
-    // Group selected face indices by entity so a multi-face edit on one brush is
-    // a single command (value-semantics before/after).
+    EditFaces(target, selection.GetSelection(), commands, mutate);
+}
+
+void EditFaces(
+    IMeshEditTarget& target,
+    std::span<const SelectableRef> faces,
+    CommandStack& commands,
+    const std::function<void(const BrushMesh&, const Transform3f&, BrushFace&)>& mutate)
+{
+    // Group face indices by entity so a multi-face edit on one brush is a
+    // single command (value-semantics before/after).
     std::vector<std::pair<EntityId, std::vector<std::uint32_t>>> byEntity;
-    for (const SelectableRef& ref : selection.GetSelection())
+    for (const SelectableRef& ref : faces)
     {
         if (!ref.IsFace())
             continue;
@@ -61,7 +70,7 @@ void EditSelectedFaces(
             it->second.push_back(ref.ElementId);
     }
 
-    for (auto& [entity, faces] : byEntity)
+    for (auto& [entity, indices] : byEntity)
     {
         const std::optional<MeshEditTargetMesh> resolved = target.Resolve(entity);
         if (!resolved || !resolved->Mesh)
@@ -70,7 +79,7 @@ void EditSelectedFaces(
         BrushMesh before = *resolved->Mesh;
         BrushMesh after = before;
         bool changed = false;
-        for (std::uint32_t f : faces)
+        for (std::uint32_t f : indices)
         {
             if (f < after.Faces.size())
             {
@@ -91,14 +100,21 @@ void ApplyMaterialToSelectedFaces(IMeshEditTarget& target,
                                   CommandStack& commands,
                                   const AssetRef& material)
 {
-    EditSelectedFaces(target, selection, commands,
-                      [&](const BrushMesh&, const Transform3f&, BrushFace& face) {
-                          face.Material.Material = material;
-                      });
+    ApplyMaterialToFaces(target, selection.GetSelection(), commands, material);
 }
 
-std::optional<UvProjection> RepresentativeFaceUv(const IMeshEditTarget& target,
-                                                 const SelectionService& selection)
+void ApplyMaterialToFaces(IMeshEditTarget& target,
+                          std::span<const SelectableRef> faces,
+                          CommandStack& commands,
+                          const AssetRef& material)
+{
+    EditFaces(target, faces, commands, [&](const BrushMesh&, const Transform3f&, BrushFace& face) {
+        face.Material.Material = material;
+    });
+}
+
+std::optional<FaceMaterial> RepresentativeFaceMaterial(const IMeshEditTarget& target,
+                                                       const SelectionService& selection)
 {
     for (const SelectableRef& ref : selection.GetSelection())
     {
@@ -106,7 +122,7 @@ std::optional<UvProjection> RepresentativeFaceUv(const IMeshEditTarget& target,
             continue;
         const std::optional<MeshEditTargetMesh> resolved = target.Resolve(ref.Entity);
         if (resolved && resolved->Mesh && ref.ElementId < resolved->Mesh->Faces.size())
-            return resolved->Mesh->Faces[ref.ElementId].Material.Uv;
+            return resolved->Mesh->Faces[ref.ElementId].Material;
     }
     return std::nullopt;
 }
@@ -188,8 +204,8 @@ void JustifySelectedFacesAsOne(IMeshEditTarget& target,
     WorldUvProjection world;
     world.AxisU = axes.AxisU;
     world.AxisV = axes.AxisV;
-    if (const std::optional<UvProjection> representative = RepresentativeFaceUv(target, selection))
-        world.Scale = representative->Scale;
+    if (const std::optional<FaceMaterial> representative = RepresentativeFaceMaterial(target, selection))
+        world.Scale = representative->Uv.Scale;
     world = fit ? WorldUvProjectionFit(world, worldPositions)
                 : WorldUvProjectionCenter(world, worldPositions);
 

@@ -302,17 +302,17 @@ static bool Deserialize(BinaryReader& reader, PlayerRecord& r)
         && Deserialize(reader, r.Y);
 }
 
-// Local stand-ins for the id-wrapper pattern, in an anonymous namespace so
-// they can never ODR-collide with the engine's real AssetId (core/assets,
-// 64-bit) or TypeId (core/identity) — these tests exercise the serialization
-// vocabulary, not those types.
+// Local stand-ins for the id-wrapper pattern, named apart from the engine's
+// real AssetId (core/assets, 64-bit) and in an anonymous namespace so they can
+// never ODR-collide with TypeId (core/identity) — these tests exercise the
+// serialization vocabulary, not those types.
 namespace
 {
-    struct AssetId
+    struct ItemId
     {
         std::uint32_t Value = 0;
 
-        bool operator==(const AssetId&) const = default;
+        bool operator==(const ItemId&) const = default;
         explicit operator bool() const { return Value != 0; }
     };
 
@@ -332,8 +332,8 @@ namespace
         explicit operator bool() const { return Value != 0; }
     };
 
-    bool Serialize(BinaryWriter& writer, const AssetId& id) { return writer.Write(id.Value); }
-    bool Deserialize(BinaryReader& reader, AssetId& id) { return reader.Read(id.Value); }
+    bool Serialize(BinaryWriter& writer, const ItemId& id) { return writer.Write(id.Value); }
+    bool Deserialize(BinaryReader& reader, ItemId& id) { return reader.Read(id.Value); }
 
     bool Serialize(BinaryWriter& writer, const TypeId& id) { return writer.Write(id.Value); }
     bool Deserialize(BinaryReader& reader, TypeId& id) { return reader.Read(id.Value); }
@@ -469,7 +469,7 @@ TEST(SerializationTests, BoundedTrivialArrayRejectsTooMany)
 
 struct InventoryItemRecord
 {
-    AssetId ItemAsset;
+    ItemId ItemAsset;
     std::uint32_t Quantity = 0;
 };
 
@@ -663,7 +663,7 @@ TEST(SerializationTests, RoundTripsIdTypes)
     auto stream = MakeBinaryStream();
     BinaryWriter writer(stream);
 
-    const AssetId  expectedAsset  { 42 };
+    const ItemId  expectedAsset  { 42 };
     const TypeId   expectedType   { 7 };
     const EntityId expectedEntity { 1001 };
 
@@ -674,7 +674,7 @@ TEST(SerializationTests, RoundTripsIdTypes)
     stream.seekg(0);
     BinaryReader reader(stream);
 
-    AssetId  actualAsset{};
+    ItemId  actualAsset{};
     TypeId   actualType{};
     EntityId actualEntity{};
 
@@ -689,9 +689,9 @@ TEST(SerializationTests, RoundTripsIdTypes)
 
 TEST(SerializationTests, DefaultIdIsFalsy)
 {
-    AssetId id{};
+    ItemId id{};
     EXPECT_FALSE(static_cast<bool>(id));
-    EXPECT_TRUE(static_cast<bool>(AssetId{ 1 }));
+    EXPECT_TRUE(static_cast<bool>(ItemId{ 1 }));
 }
 
 //=============================================================================
@@ -953,8 +953,8 @@ TEST(SerializationTests, RoundTripsFullInventoryFormat)
 
     EXPECT_EQ(actual.Gold, 1500u);
     ASSERT_EQ(actual.Items.size(), 2u);
-    EXPECT_EQ(actual.Items[0].ItemAsset, AssetId{ 10 });
+    EXPECT_EQ(actual.Items[0].ItemAsset, ItemId{ 10 });
     EXPECT_EQ(actual.Items[0].Quantity, 3u);
-    EXPECT_EQ(actual.Items[1].ItemAsset, AssetId{ 20 });
+    EXPECT_EQ(actual.Items[1].ItemAsset, ItemId{ 20 });
     EXPECT_EQ(actual.Items[1].Quantity, 1u);
 }

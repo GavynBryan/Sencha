@@ -1,9 +1,13 @@
 #include "authoring/UiPreviewModel.h"
 
+#include "presenters/RowControls.h"
+
+#include <utility>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <ui/UiService.h>
 
+#include <algorithm>
 #include <fstream>
 
 namespace
@@ -73,16 +77,16 @@ namespace
         if (!row.Detail.empty())
             out.emplace_back("detail", JsonValue(row.Detail));
         out.emplace_back("editable", JsonValue(row.Editable));
-        if (row.Control != UiRowControl::Text)
-            out.emplace_back("control", JsonValue(UiRowControlName(row.Control)));
-        if (row.Control == UiRowControl::Range)
+        if (row.Control != RowControls::Text)
+            out.emplace_back("control", JsonValue(row.Control));
+        if (row.Control == RowControls::Range)
         {
             out.emplace_back("number", JsonValue(row.Number));
             out.emplace_back("min", JsonValue(row.Min));
             out.emplace_back("max", JsonValue(row.Max));
             out.emplace_back("step", JsonValue(row.Step));
         }
-        if (row.Control == UiRowControl::Choice)
+        if (row.Control == RowControls::Choice)
         {
             JsonValue::Array choices;
             for (const std::string& c : row.Choices)
@@ -106,13 +110,12 @@ namespace
         if (const JsonValue* v = json.Find("editable"); v && v->IsBool()) row.Editable = v->AsBool();
         if (const JsonValue* v = json.Find("control"); v && v->IsString())
         {
-            const std::optional<UiRowControl> control = ParseUiRowControl(v->AsString());
-            if (!control)
+            if (v->AsString().empty())
             {
-                if (error) *error = "unknown row control '" + v->AsString() + "'";
+                if (error) *error = "a row's control needs a name";
                 return std::nullopt;
             }
-            row.Control = *control;
+            row.Control = v->AsString();
         }
         if (const JsonValue* v = json.Find("number"); v && v->IsNumber()) row.Number = v->AsNumber();
         if (const JsonValue* v = json.Find("min"); v && v->IsNumber()) row.Min = v->AsNumber();
@@ -135,25 +138,6 @@ namespace
                 out.push_back(item.AsString());
         return out;
     }
-}
-
-const char* UiRowControlName(UiRowControl control)
-{
-    switch (control)
-    {
-    case UiRowControl::Range:  return "range";
-    case UiRowControl::Choice: return "choice";
-    case UiRowControl::Text:
-    default:                   return "text";
-    }
-}
-
-std::optional<UiRowControl> ParseUiRowControl(std::string_view name)
-{
-    if (name == "text") return UiRowControl::Text;
-    if (name == "range") return UiRowControl::Range;
-    if (name == "choice") return UiRowControl::Choice;
-    return std::nullopt;
 }
 
 std::filesystem::path UiPreviewModel::SidecarFor(const std::filesystem::path& documentSource)
@@ -244,6 +228,18 @@ std::optional<UiPreviewModel> UiPreviewModel::Parse(const JsonValue& json, std::
     return model;
 }
 
+std::optional<UiPreviewModel> UiPreviewModel::ParseText(std::string_view text, std::string* error)
+{
+    JsonParseError parseError;
+    const std::optional<JsonValue> json = JsonParse(text, &parseError);
+    if (!json)
+    {
+        if (error) *error = "preview model: " + parseError.Message;
+        return std::nullopt;
+    }
+    return Parse(*json, error);
+}
+
 std::optional<UiPreviewModel> UiPreviewModel::Load(const std::filesystem::path& sidecar, std::string* error)
 {
     const std::optional<JsonValue> json = JsonParseFile(sidecar, error);
@@ -299,7 +295,7 @@ JsonValue UiPreviewModel::ToJson() const
     return JsonValue(std::move(out));
 }
 
-bool UiPreviewModel::Save(const std::filesystem::path& sidecar, std::string* error) const
+bool UiPreviewModel::WriteText(std::string& text, std::string* error) const
 {
     for (const UiModelProperty& p : Properties)
     {
@@ -311,13 +307,22 @@ bool UiPreviewModel::Save(const std::filesystem::path& sidecar, std::string* err
             return false;
         }
     }
+    text = JsonStringify(ToJson(), true) + '\n';
+    return true;
+}
+
+bool UiPreviewModel::Save(const std::filesystem::path& sidecar, std::string* error) const
+{
+    std::string text;
+    if (!WriteText(text, error))
+        return false;
     std::ofstream out(sidecar, std::ios::binary | std::ios::trunc);
     if (!out.is_open())
     {
         if (error) *error = "could not write '" + sidecar.string() + "'";
         return false;
     }
-    out << JsonStringify(ToJson(), true) << '\n';
+    out << text;
     return static_cast<bool>(out);
 }
 
@@ -374,4 +379,14 @@ bool UiPreviewModel::DeclaresAction(std::string_view name) const
         if (a == name)
             return true;
     return false;
+}
+
+bool UiPreviewModel::operator==(const UiPreviewModel& other) const
+{
+    const auto sameProperty = [](const UiModelProperty& a, const UiModelProperty& b) {
+        return a.Path == b.Path && a.Initial == b.Initial && a.Editable == b.Editable;
+    };
+    return ModelName == other.ModelName && Modal == other.Modal && Arrays == other.Arrays && Rows == other.Rows
+           && Actions == other.Actions
+           && std::ranges::equal(Properties, other.Properties, sameProperty);
 }

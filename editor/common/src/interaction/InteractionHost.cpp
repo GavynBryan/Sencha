@@ -33,6 +33,12 @@ InputConsumed InteractionHost::OnPointerMove(ToolContext& ctx,
     return InputConsumed::Yes;
 }
 
+void InteractionHost::OnPointerLeftViews(ToolContext& ctx)
+{
+    if (Active)
+        Active->OnPointerLeftViews(ctx);
+}
+
 InputConsumed InteractionHost::OnPointerUp(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer)
 {
     if (!Active)

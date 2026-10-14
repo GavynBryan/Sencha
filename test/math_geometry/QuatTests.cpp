@@ -3,6 +3,7 @@
 #include <math/Quat.h>
 #include <math/Vec.h>
 #include <cmath>
+#include <numbers>
 #include <sstream>
 
 namespace
@@ -334,4 +335,36 @@ TEST(Quat, StreamOutput)
 	std::ostringstream oss;
 	oss << q;
 	EXPECT_EQ(oss.str(), "(1, 2, 3, 4)");
+}
+
+// A turn as a person states it with Y up: roll first, then pitch, then yaw;
+// and back again, the same turn for any angles in range, all yaw when it
+// points straight up or down.
+TEST(Quat, PitchYawRollIsRollThenPitchThenYaw)
+{
+    const float quarter = std::numbers::pi_v<float> * 0.5f;
+    const Quatf yaw = Quatf::FromPitchYawRoll(0.0f, quarter, 0.0f);
+    const Vec3d forward = yaw.RotateVector(Vec3d(0.0f, 0.0f, -1.0f));
+    EXPECT_NEAR(forward.X, -1.0f, 1e-5f) << "a quarter yaw turns -Z towards -X, about Y";
+
+    const Quatf composed = Quatf::FromAxisAngle(Vec3d(0, 1, 0), 0.3f) * Quatf::FromAxisAngle(Vec3d(1, 0, 0), 0.2f)
+                         * Quatf::FromAxisAngle(Vec3d(0, 0, 1), 0.1f);
+    const Quatf stated = Quatf::FromPitchYawRoll(0.2f, 0.3f, 0.1f);
+    EXPECT_NEAR(std::abs(composed.Dot(stated)), 1.0f, 1e-5f);
+}
+
+TEST(Quat, PitchYawRollReadsBackAsTheSameTurn)
+{
+    for (const Vec3d angles : { Vec3d(0.2f, -1.1f, 0.4f), Vec3d(-1.2f, 2.9f, -2.5f), Vec3d(0.0f, 3.0f, 0.0f) })
+    {
+        const Quatf turn = Quatf::FromPitchYawRoll(angles.X, angles.Y, angles.Z);
+        const Vec3d read = turn.ToPitchYawRoll();
+        EXPECT_NEAR(read.X, angles.X, 1e-4f);
+        EXPECT_NEAR(read.Y, angles.Y, 1e-4f);
+        EXPECT_NEAR(read.Z, angles.Z, 1e-4f);
+    }
+    const Quatf up = Quatf::FromPitchYawRoll(std::numbers::pi_v<float> * 0.5f, 0.4f, 0.3f);
+    const Vec3d read = up.ToPitchYawRoll();
+    EXPECT_FLOAT_EQ(read.Z, 0.0f) << "straight up, the turn is all yaw";
+    EXPECT_NEAR(std::abs(Quatf::FromPitchYawRoll(read.X, read.Y, read.Z).Dot(up)), 1.0f, 1e-4f);
 }

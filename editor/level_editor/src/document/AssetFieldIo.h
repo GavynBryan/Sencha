@@ -1,6 +1,5 @@
 #pragma once
 
-#include <core/assets/AssetId.h>
 #include <core/assets/AssetRef.h>
 
 #include <string>
@@ -8,22 +7,12 @@
 
 class AssetSystem;
 
-// One asset reference as the editor carries it: a stable logical id plus the
-// path it was known by. Mirrors the engine reference contract (id-first, path
-// fallback via AssetSystem::ResolveRefPath): the id follows a rename, the path
-// covers assets the id map has not stamped. An empty Path means unset.
-struct AssetFieldRef
-{
-    AssetId     Id{};
-    std::string Path;
-};
-
 // The value of an asset-handle field as references, independent of the concrete
 // handle type. Single-arity fields carry 0..1 refs; List-arity fields (a static
 // mesh's per-slot materials) carry 0..N in slot order.
 struct AssetFieldValue
 {
-    std::vector<AssetFieldRef> Refs;
+    std::vector<AssetRef> Refs;
 };
 
 // Reads the live handle(s) at `field` (component bytes with the field offset

@@ -235,22 +235,6 @@ namespace
 
 // -- Manifest ----------------------------------------------------------------
 
-TEST(AssetManifest, CollectFindsNestedUniquePathsInOrder)
-{
-    const std::optional<JsonValue> json = JsonParse(R"({
-        "a": "asset://meshes/dev/cube.smesh",
-        "nested": { "b": ["asset://materials/dev/red.smat", "not a path"],
-                    "c": "asset://meshes/dev/cube.smesh" },
-        "n": 7
-    })");
-    ASSERT_TRUE(json.has_value());
-
-    const std::vector<std::string> paths = CollectAssetPaths(*json);
-    ASSERT_EQ(paths.size(), 2u);
-    EXPECT_EQ(paths[0], "asset://meshes/dev/cube.smesh");
-    EXPECT_EQ(paths[1], "asset://materials/dev/red.smat");
-}
-
 TEST(AssetManifest, ResolvePathsPrefersIdOverStalePath)
 {
     LoggingProvider logging;

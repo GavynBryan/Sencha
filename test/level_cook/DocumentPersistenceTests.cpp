@@ -12,7 +12,10 @@
 #include "document/EntityNameComponent.h"
 #include "document/commands/RenameEntityCommand.h"
 
+#include <assets/runtime/RuntimeAssets.h>
+#include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <world/serialization/ComponentSerializerRegistry.h>
 #include <world/identity/PersistentIdComponent.h>
 
 #include <gtest/gtest.h>
@@ -250,3 +253,47 @@ namespace
         EXPECT_EQ(saved, again) << "save-twice must stay byte-identical";
     }
 } // namespace
+
+// A level names its materials by id: saved with the id the catalog knows, and
+// loaded at wherever that material now is, though the file still says where
+// it was.
+TEST(DocumentAssetReferences, AMovedMaterialIsFoundByItsId)
+{
+    RegisterDocumentSerializers();
+    LoggingProvider logging;
+    ComponentSerializerRegistry serializers;
+    RuntimeAssets assets(logging, serializers, RuntimeAssets::ReferenceOnly{});
+    const auto record = [](std::string path) {
+        AssetRecord material;
+        material.Type = AssetType::Material;
+        material.SourceKind = AssetSourceKind::File;
+        material.Path = std::move(path);
+        return material;
+    };
+    ASSERT_TRUE(assets.Registry.Register(record("asset://materials/old.smat")));
+    const AssetId id = assets.Registry.FindByPath("asset://materials/old.smat")->Id;
+
+    EditorDocument source(logging);
+    source.SetAssetEnvironment(assets);
+    source.SetDefaultMaterial(AssetRef{ AssetType::Material, "asset://materials/old.smat" });
+    const EntityId brush = source.GetScene().CreateBrush(Vec3d{});
+    const BrushId mesh = source.GetScene().TryGetBrush(brush)->Id;
+    BrushMesh faces = *source.GetScene().GetBrushMeshStore().Find(mesh);
+    faces.Faces[0].Material.Material = AssetRef{ AssetType::Material, "asset://materials/old.smat" };
+    source.GetScene().GetBrushMeshStore().Set(mesh, faces);
+    const std::string text = source.ToSceneText();
+    EXPECT_NE(text.find(AssetIdToString(id)), std::string::npos) << "saved by its id";
+
+    ASSERT_TRUE(assets.Registry.Unregister("asset://materials/old.smat"));
+    ASSERT_TRUE(assets.Registry.Register(record("asset://materials/new.smat")));
+    ASSERT_TRUE(assets.Registry.AssignId("asset://materials/new.smat", id));
+
+    EditorDocument loaded(logging);
+    loaded.SetAssetEnvironment(assets);
+    ASSERT_TRUE(loaded.LoadFromSceneText(text));
+    EXPECT_EQ(loaded.GetDefaultMaterial().Path, "asset://materials/new.smat");
+    bool found = false;
+    for (const auto& [brushId, brushRecord] : loaded.GetScene().GetBrushMeshStore().All())
+        found = found || brushRecord.Mesh.Faces[0].Material.Material.Path == "asset://materials/new.smat";
+    EXPECT_TRUE(found) << "the face follows its material";
+}

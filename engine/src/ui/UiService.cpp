@@ -164,6 +164,11 @@ bool UiService::ProcessPlatformEvent(const SDL_Event& event)
     return Runtime->ProcessPlatformEvent(event);
 }
 
+void UiService::EndPointerGesture(std::uint32_t platformWindowId)
+{
+    Runtime->EndPointerGesture(platformWindowId);
+}
+
 UiInputCapture UiService::Capture() const
 {
     return Runtime->Capture();
@@ -184,10 +189,20 @@ const std::vector<UiDrawFrame>& UiService::Frames() const
     return Runtime->Frames();
 }
 
-std::optional<UiElementBox> UiService::MeasureElement(UiScreenHandle screen,
-                                                      std::string_view elementId) const
+std::optional<UiElementBox> UiService::MeasureElement(UiScreenHandle screen, std::string_view elementId,
+                                                      UiBoxArea area) const
 {
-    return Runtime->MeasureElement(screen, elementId);
+    return Runtime->MeasureElement(screen, elementId, area);
+}
+
+std::optional<UiScrollBox> UiService::MeasureScroll(UiScreenHandle screen, std::string_view elementId) const
+{
+    return Runtime->MeasureScroll(screen, elementId);
+}
+
+bool UiService::ScrollIntoView(UiScreenHandle screen, std::string_view elementId)
+{
+    return Runtime->ScrollIntoView(screen, elementId);
 }
 
 std::vector<UiDiagnostic> UiService::DrainDiagnostics()
@@ -251,9 +266,49 @@ UiSurfaceDestination UiService::GetSurfaceDestination(UiSurfaceId surface) const
     return Runtime->GetSurfaceDestination(surface);
 }
 
+void UiService::SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId)
+{
+    Runtime->SetSurfaceWindow(surface, platformWindowId);
+}
+
+std::uint32_t UiService::GetSurfaceWindow(UiSurfaceId surface) const
+{
+    return Runtime->GetSurfaceWindow(surface);
+}
+
+void UiService::SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer)
+{
+    Runtime->SetSurfaceLayer(surface, layer);
+}
+
+std::uint8_t UiService::GetSurfaceLayer(UiSurfaceId surface) const
+{
+    return Runtime->GetSurfaceLayer(surface);
+}
+
+UiHostImageId UiService::SetHostImage(std::string_view name, RenderExtent size)
+{
+    return Runtime->SetHostImage(name, size);
+}
+
+void UiService::RemoveHostImage(std::string_view name)
+{
+    Runtime->RemoveHostImage(name);
+}
+
+UiInputCapture UiService::Capture(std::uint32_t platformWindowId) const
+{
+    return Runtime->Capture(platformWindowId);
+}
+
 const UiDrawFrame* UiService::OffscreenFrame(UiSurfaceId surface) const
 {
     return Runtime->OffscreenFrame(surface);
+}
+
+UiTextureChanges UiService::TakeTextureChanges()
+{
+    return Runtime->TakeTextureChanges();
 }
 
 bool UiService::IsPointerOver(UiSurfaceId surface) const

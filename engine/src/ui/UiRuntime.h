@@ -15,10 +15,12 @@
 #include "rml/RmlPackageFileSource.h"
 #include "rml/RmlTextInputBridge.h"
 #include "rml/RmlRenderRecorder.h"
+#include "rml/RmlWheelZoom.h"
 
 #include <math/Vec.h>
 #include <math/geometry/2d/Rect2d.h>
 
+#include <RmlUi/Core/DataVariable.h>
 #include <RmlUi/Core/ObserverPtr.h>
 
 #include <cstdint>
@@ -28,6 +30,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace Rml
@@ -104,6 +107,10 @@ public:
     [[nodiscard]] bool IsPointerOver(UiSurfaceId surface) const;
     void SetSurfaceDestination(UiSurfaceId surface, UiSurfaceDestination destination);
     [[nodiscard]] UiSurfaceDestination GetSurfaceDestination(UiSurfaceId surface) const;
+    void SetSurfaceWindow(UiSurfaceId surface, std::uint32_t platformWindowId);
+    [[nodiscard]] std::uint32_t GetSurfaceWindow(UiSurfaceId surface) const;
+    void SetSurfaceLayer(UiSurfaceId surface, std::uint8_t layer);
+    [[nodiscard]] std::uint8_t GetSurfaceLayer(UiSurfaceId surface) const;
 
     [[nodiscard]] UiScreenHandle OpenScreen(UiSurfaceId surface, const UiScreenDesc& desc);
     void CloseScreen(UiScreenHandle screen);
@@ -116,7 +123,10 @@ public:
     [[nodiscard]] bool ProcessPlatformEvent(const union SDL_Event& event);
 
     // What the UI is currently consuming, for a reader of raw device state.
+    void EndPointerGesture(std::uint32_t platformWindowId);
+
     [[nodiscard]] UiInputCapture Capture() const;
+    [[nodiscard]] UiInputCapture Capture(std::uint32_t platformWindowId) const;
 
     // Abstract navigation, driven by the host's own mapped actions rather than
     // by keys this layer decided on. The document engine's focus and spatial
@@ -148,9 +158,16 @@ public:
     void ExtractRender();
     [[nodiscard]] const std::vector<UiDrawFrame>& Frames() const { return DrawFrames; }
     [[nodiscard]] const UiDrawFrame* OffscreenFrame(UiSurfaceId surface) const;
+    [[nodiscard]] UiTextureChanges TakeTextureChanges() { return std::exchange(ExtractedTextureChanges, {}); }
 
     // IUiTextureResolver: a content image resolves against the open screen's
     // own resource table and nothing else.
+    [[nodiscard]] bool ResolveHostImage(std::string_view name,
+                                        UiHostImageId& outId,
+                                        RenderExtent& outSize) override;
+    UiHostImageId SetHostImage(std::string_view name, RenderExtent size);
+    void RemoveHostImage(std::string_view name);
+
     [[nodiscard]] bool ResolveTexture(std::string_view source,
                                       TextureHandle& outHandle,
                                       RenderExtent& outSize) override;
@@ -161,8 +178,10 @@ public:
     [[nodiscard]] bool ResolveResourceBytes(std::string_view source,
                                             const std::vector<std::byte>*& outBytes) override;
 
-    [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen,
-                                                             std::string_view elementId) const;
+    [[nodiscard]] std::optional<UiElementBox> MeasureElement(UiScreenHandle screen, std::string_view elementId,
+                                                             UiBoxArea area) const;
+    [[nodiscard]] std::optional<UiScrollBox> MeasureScroll(UiScreenHandle screen, std::string_view elementId) const;
+    bool ScrollIntoView(UiScreenHandle screen, std::string_view elementId);
 
     // Everything this layer and the document engine reported since the last
     // call. Destructive; one consumer per runtime.
@@ -181,6 +200,8 @@ public:
     [[nodiscard]] std::uint32_t LiveTextureCount() const;
 
 private:
+    class RowListDefinition;
+
     // A surface and its context. Slots are never compacted; a destroyed surface
     // leaves a dead slot whose generation has moved on.
     struct Surface
@@ -195,11 +216,17 @@ private:
         // type register. Once per context, not per model: the register is the
         // context's, and a second declaration is a silent refusal.
         bool ModelTypesDeclared = false;
+        // How a row list reads on this context, built over its row type.
+        std::unique_ptr<RowListDefinition> RowLists;
 
         // Where the surface is shown, in window points; nullopt is the window.
         std::optional<Rect2d> Placement;
         UiSurfaceInputPolicy InputPolicy = UiSurfaceInputPolicy::Full;
         UiSurfaceDestination Destination = UiSurfaceDestination::Window;
+        // The platform window the surface lives on; 0 is the primary, which is
+        // how every surface began and how a host that never names one is served.
+        std::uint32_t WindowId = 0;
+        std::uint8_t Layer = 0;
 
         // The last pointer position delivered, in surface pixels. The document
         // engine is told where the pointer is on a move; a click has to be told
@@ -210,10 +237,10 @@ private:
         int PointerX = 0;
         int PointerY = 0;
         bool PointerInside = false;
-        // A press landed inside and has not been released. The drag follows the
-        // pointer wherever it goes until it is; leaving the placement does not
-        // end an interaction, releasing the button does.
-        bool PointerOwned = false;
+        // The buttons of presses the document took, bit per document button,
+        // until each is released. While any is held the surface alone hears
+        // its window's pointer, wherever the pointer goes.
+        std::uint32_t HeldButtons = 0;
     };
 
     // One open document, and everything whose lifetime it decides.
@@ -271,6 +298,9 @@ private:
         {
             std::string Path;
             std::vector<UiRow> Items;
+            // Rows a shrink took away, read past Items' end until the update
+            // that removes their elements has run.
+            std::vector<UiRow> Departing;
         };
         std::vector<std::unique_ptr<BoundRows>> RowLists;
         std::vector<std::string> ActionNames;
@@ -317,6 +347,10 @@ private:
                                          Rml::Element& element, UiElementRef ref);
 
     [[nodiscard]] Surface* ResolveSurface(UiSurfaceId surface);
+    static void EndPress(Surface& surface);
+    // Moves focus off whatever holds it, which ends text input if a field did.
+    static void DropFocus(Rml::Context& context);
+    [[nodiscard]] Surface* PointerHolder(std::uint32_t platformWindowId);
     [[nodiscard]] const Surface* ResolveSurface(UiSurfaceId surface) const;
     [[nodiscard]] Screen* ResolveScreen(UiScreenHandle screen);
     [[nodiscard]] const Screen* ResolveScreen(UiScreenHandle screen) const;
@@ -407,6 +441,19 @@ private:
     std::unique_ptr<RmlSystemBridge> SystemBridge;
     std::unique_ptr<RmlPackageFileSource> FileSource;
     std::unique_ptr<RmlTextInputBridge> TextInput;
+    RmlWheelZoom WheelZoom;
+    SDL_Window* PrimaryWindow = nullptr;
+    std::uint32_t PrimaryWindowId = 0;
+
+    // Whether an event from `eventWindow` is the surface's to hear. A windowless
+    // event (a device, a key with nothing focused) belongs to the primary.
+    [[nodiscard]] bool Hears(const Surface& surface, std::uint32_t eventWindow) const;
+    // Indices into Surfaces, topmost first, the order events are offered in.
+    // Rebuilt when a surface is created or changes destination.
+    std::vector<std::size_t> InputOrder;
+    void RebuildInputOrder();
+    [[nodiscard]] SDL_Window* WindowOf(const Surface& surface) const;
+    [[nodiscard]] UiInputCapture CaptureOver(std::optional<std::uint32_t> window) const;
     std::unique_ptr<RmlRenderRecorder> Recorder;
 
     std::vector<Surface> Surfaces;
@@ -424,6 +471,15 @@ private:
     // list, because each one has exactly one consumer and that consumer asks
     // for it by name.
     std::vector<std::pair<UiSurfaceId, UiDrawFrame>> OffscreenFrames;
+    UiTextureChanges ExtractedTextureChanges;
+
+    struct HostImage
+    {
+        UiHostImageId Id = kInvalidUiHostImage;
+        RenderExtent Size{};
+    };
+    std::unordered_map<std::string, HostImage> HostImages;
+    UiHostImageId NextHostImageId = 1;
 
     // Whose resource table answers an image or font request while one document
     // is loading, rebuilding or being restyled. Exact by design: a package must
@@ -445,4 +501,21 @@ private:
     [[nodiscard]] std::vector<const Screen*> ResolutionCandidates() const;
 
     bool Ready = false;
+};
+
+// A list of rows as the document reads it: its current rows, and past their end
+// the rows a shrink took away, which a departing element may still read in the
+// update that removes it. RmlUi's own array would refuse those reads.
+class UiRuntime::RowListDefinition final : public Rml::VariableDefinition
+{
+public:
+    explicit RowListDefinition(Rml::VariableDefinition& row);
+
+    int Size(void* list) override;
+
+protected:
+    Rml::DataVariable Child(void* list, const Rml::DataAddressEntry& address) override;
+
+private:
+    Rml::VariableDefinition& Row;
 };

@@ -118,6 +118,8 @@ struct ComponentFacts
     std::string SchemaName;
     std::string SceneChunk;
     std::string VisualMesh;
+    std::string Placeable;
+    std::string PlaceIcon;
     bool Replicated = false;
     bool Predicted = false;
     bool NonRemovable = false;
@@ -273,6 +275,8 @@ public:
             else if (Split(text, "sencha.schema=", value))        facts.SchemaName = value;
             else if (Split(text, "sencha.scene_chunk=", value))   facts.SceneChunk = value;
             else if (Split(text, "sencha.visual_mesh=", value))   facts.VisualMesh = value;
+            else if (Split(text, "sencha.placeable=", value))     facts.Placeable = value;
+            else if (Split(text, "sencha.place_icon=", value))    facts.PlaceIcon = value;
             else if (text == "sencha.replicated")                 facts.Replicated = true;
             else if (text == "sencha.predicted")                  facts.Predicted = true;
             else if (text == "sencha.non_removable")              facts.NonRemovable = true;
@@ -326,6 +330,12 @@ public:
             {
                 Error(record->getLocation(),
                       "scene chunk '" + facts.SceneChunk + "' must be exactly four characters");
+            }
+            if (!facts.PlaceIcon.empty() && facts.Placeable.empty())
+            {
+                Error(record->getLocation(),
+                      "component '" + facts.Type + "' names a place icon but is not SENCHA_PLACEABLE: "
+                      "an icon pictures a placeable component, and nothing would show this one");
             }
             if (facts.Predicted && !facts.Replicated)
             {
@@ -1386,6 +1396,10 @@ bool WriteCompanion(const std::string& path,
         if (component.NonRemovable) out << "    static constexpr bool Removable = false;\n";
         if (!component.VisualMesh.empty())
             out << "    static constexpr std::string_view VisualMeshAsset = " << Quoted(component.VisualMesh) << ";\n";
+        if (!component.Placeable.empty())
+            out << "    static constexpr std::string_view PlaceableLabel = " << Quoted(component.Placeable) << ";\n";
+        if (!component.PlaceIcon.empty())
+            out << "    static constexpr std::string_view PlaceableIcon = " << Quoted(component.PlaceIcon) << ";\n";
 
         if (!component.SchemaName.empty())
             EmitFields(out, component);

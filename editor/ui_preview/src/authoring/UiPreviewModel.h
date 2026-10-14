@@ -6,28 +6,14 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class UiService;
 
-//=============================================================================
-// UiPreviewModel
-//
 // The model a document is previewed against: what a host would declare for it
-// (UiScreenDesc, minus the package path) and the values that host would
-// publish -- as a file beside the document, `<name>.preview.json`.
-//
-// The sidecar is the authoritative preview schema. It travels with the
-// document, so a second author sees it rendered rather than blank; a test
-// opens the document with it, so preview and test cannot drift; a template
-// ships its UI with one, which is documentation a new author reads by opening
-// it. Diagnostics observed at runtime help write it incrementally
-// (BindingMisses); they never replace it.
-//
-// Values are written with an explicit kind. "1", 1 and 1.0 are three different
-// presentation values, and a document that compares one of them to a literal
-// cares which.
-//=============================================================================
+// and the values it would publish, kept beside the document as
+// `<name>.preview.json` (docs/ui/architecture.md, The preview model).
 struct UiPreviewModel
 {
     std::string ModelName;
@@ -39,6 +25,8 @@ struct UiPreviewModel
     {
         std::string Name;
         std::vector<std::string> Items;
+
+        bool operator==(const ArraySample&) const = default;
     };
     std::vector<ArraySample> Arrays;
 
@@ -46,18 +34,26 @@ struct UiPreviewModel
     {
         std::string Name;
         std::vector<UiRow> Items;
+
+        bool operator==(const RowsSample&) const = default;
     };
     std::vector<RowsSample> Rows;
 
     std::vector<std::string> Actions;
 
+    // What a new row list starts with.
+    [[nodiscard]] static UiRow SampleRow() { return UiRow{ "Row", "value", "" }; }
+
     // `pause.rml` -> `pause.preview.json`, beside it.
     [[nodiscard]] static std::filesystem::path SidecarFor(const std::filesystem::path& documentSource);
 
     [[nodiscard]] static std::optional<UiPreviewModel> Parse(const JsonValue& json, std::string* error);
+    [[nodiscard]] static std::optional<UiPreviewModel> ParseText(std::string_view text, std::string* error);
     [[nodiscard]] static std::optional<UiPreviewModel> Load(const std::filesystem::path& sidecar,
                                                             std::string* error);
     [[nodiscard]] JsonValue ToJson() const;
+    // The sidecar's text; false when a value cannot be written.
+    [[nodiscard]] bool WriteText(std::string& text, std::string* error) const;
     bool Save(const std::filesystem::path& sidecar, std::string* error) const;
 
     // The declaration a host would make for the package at `packagePath`.
@@ -71,10 +67,7 @@ struct UiPreviewModel
     [[nodiscard]] bool DeclaresArray(std::string_view name) const;
     [[nodiscard]] bool DeclaresRows(std::string_view name) const;
     [[nodiscard]] bool DeclaresAction(std::string_view name) const;
-};
 
-// The document-facing names of a row's control, as a document compares them
-// (`row.control == 'range'`). Shared with the sidecar so the two spellings
-// cannot part.
-[[nodiscard]] const char* UiRowControlName(UiRowControl control);
-[[nodiscard]] std::optional<UiRowControl> ParseUiRowControl(std::string_view name);
+    // The same declarations and samples, as a saved sidecar would compare.
+    [[nodiscard]] bool operator==(const UiPreviewModel& other) const;
+};

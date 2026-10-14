@@ -4,11 +4,13 @@
 #include "brush/BrushModifierSerialization.h"
 #include "EntityNameComponent.h"
 
+#include "project/ProjectFiles.h"
 #include "scene_source/Json5Convert.h"
 
 #include <app/EngineVerbs.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <authored/WorldVocabulary.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/serialization/JsonArchive.h>
 #include <core/logging/Logger.h>
 #include <core/logging/LoggingProvider.h>
@@ -36,25 +38,6 @@ namespace
     // Collects every asset:// string anywhere in a component subtree,
     // shape-agnostic: a bare path value or a path nested in an {id, path} ref
     // both surface, with no per-type knowledge.
-    void CollectAssetRefs5(const Json5Value& value, std::vector<std::string>& out)
-    {
-        if (value.IsString())
-        {
-            if (value.Text.rfind("asset://", 0) == 0)
-                out.push_back(value.Text);
-        }
-        else if (value.IsObject())
-        {
-            for (const Json5Value::Member& member : value.Members)
-                CollectAssetRefs5(member.second, out);
-        }
-        else if (value.IsArray())
-        {
-            for (const Json5Value& element : value.Elements)
-                CollectAssetRefs5(element, out);
-        }
-    }
-
     // Comments matched onto the regenerated values by member name, recursively.
     // Values are entirely the fresh side's; only trivia crosses.
     void CarryTrivia(Json5Value& fresh, const Json5Value& retained)
@@ -204,10 +187,58 @@ bool EditorDocument::IsDirty() const
     return Dirty;
 }
 
+AssetRef EditorDocument::Current(AssetRef ref) const
+{
+    return Catalog != nullptr ? Catalog->Current(std::move(ref)) : ref;
+}
+
+void EditorDocument::SettleSources(std::vector<SceneInstanceRecord>& instances) const
+{
+    // Many placements of one source settle it once.
+    std::unordered_map<std::string, AssetRef> settled;
+    for (SceneInstanceRecord& instance : instances)
+    {
+        const std::string key = AssetIdToString(instance.SourceId) + instance.Source;
+        auto found = settled.find(key);
+        if (found == settled.end())
+            found = settled.emplace(key, CurrentInProject(Projection.ContentRoots(),
+                                                          AssetRef{ AssetType::Scene, instance.Source, instance.SourceId }))
+                        .first;
+        instance.Source = found->second.Path;
+        instance.SourceId = found->second.Id;
+    }
+}
+
+void EditorDocument::ReportUnresolvedRefs(const std::vector<SceneSourceEntity>& entities, std::string_view when) const
+{
+    if (Catalog == nullptr)
+        return;
+    std::size_t missing = 0;
+    Logger& log = Logging.GetLogger<EditorDocument>();
+    for (const SceneSourceEntity& record : entities)
+        for (const AssetRef& ref : CollectAssetRefs(Json5ToJson(record.Components)))
+            if (!Catalog->Contains(Current(ref).Path))
+            {
+                log.Warn("asset reference '{}' is unresolved ({})", ref.Path, when);
+                ++missing;
+            }
+    if (missing > 0)
+        log.Warn("{}: {} unresolved asset reference(s)", when, missing);
+}
+
+BrushRecord EditorDocument::CurrentMaterials(BrushRecord record) const
+{
+    for (BrushFace& face : record.Mesh.Faces)
+        if (face.Material.Material.IsValid())
+            face.Material.Material = Current(std::move(face.Material.Material));
+    return record;
+}
+
 SceneSourceDocument EditorDocument::BuildSceneSource() const
 {
     SceneSourceDocument out;
     out.Instances = Retained_.Instances;
+    SettleSources(out.Instances);
     out.UnknownRoot = Retained_.UnknownRoot;
     out.LeadingComments = Retained_.LeadingComments;
     out.TrailingComments = Retained_.TrailingComments;
@@ -221,7 +252,7 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
         { return member.first == "default_material"; });
     if (DefaultMaterial.IsValid())
         out.Settings.Members.emplace_back("default_material",
-                                          Json5Value(DefaultMaterial.Path));
+                                          Json5FromJson(AssetRefToJson(Current(DefaultMaterial))));
 
 
     std::unordered_map<std::uint64_t, const SceneSourceEntity*> retainedById;
@@ -281,7 +312,7 @@ SceneSourceDocument EditorDocument::BuildSceneSource() const
             if (const BrushRecord* record = Scene.GetBrushMeshStore().FindRecord(id))
                 meshes.Members.emplace_back(
                     std::to_string(id.Value),
-                    Json5FromJson(BrushRecordToJson(*record)));
+                    Json5FromJson(BrushRecordToJson(CurrentMaterials(*record))));
         out.BrushMeshes = std::move(meshes);
     }
     return out;
@@ -368,41 +399,33 @@ bool EditorDocument::LoadFromSceneText(std::string_view text, std::string* error
     if (parsed->BrushMeshes.IsObject() && !parsed->BrushMeshes.Members.empty())
     {
         std::string modifierErrors;
-        DeserializeBrushMeshes(Json5ToJson(parsed->BrushMeshes),
-                               Scene.GetBrushMeshStore(), &modifierErrors);
+        BrushMeshStore& store = Scene.GetBrushMeshStore();
+        DeserializeBrushMeshes(Json5ToJson(parsed->BrushMeshes), store, &modifierErrors);
+        std::vector<BrushId> loaded;
+        for (const auto& [id, record] : store.All())
+            loaded.push_back(BrushId{ id });
+        for (const BrushId id : loaded)
+            store.Set(id, CurrentMaterials(*store.FindRecord(id)));
         if (!modifierErrors.empty())
             Logging.GetLogger<EditorDocument>().Warn(
                 "brush sidecar: modifier entries skipped:\n{}", modifierErrors);
     }
 
-    if (const Json5Value* material = parsed->Settings.Find("default_material");
-        material != nullptr && material->IsString())
-    {
-        DefaultMaterial = AssetRef{ AssetType::Material, material->Text };
-    }
+    if (const Json5Value* material = parsed->Settings.Find("default_material"))
+        if (std::optional<AssetRef> ref = AssetRefFromJson(Json5ToJson(*material)))
+        {
+            DefaultMaterial = Current(std::move(*ref));
+            DefaultMaterial.Type = AssetType::Material;
+        }
 
-    if (Catalog != nullptr)
-    {
-        std::vector<std::string> refs;
-        for (const SceneSourceEntity& record : parsed->Entities)
-            CollectAssetRefs5(record.Components, refs);
-        std::size_t missing = 0;
-        Logger& log = Logging.GetLogger<EditorDocument>();
-        for (const std::string& ref : refs)
-            if (!Catalog->Contains(ref))
-            {
-                log.Warn("asset reference '{}' is unresolved (load)", ref);
-                ++missing;
-            }
-        if (missing > 0)
-            log.Warn("load: {} unresolved asset reference(s)", missing);
-    }
+    ReportUnresolvedRefs(parsed->Entities, "load");
 
     // Identity is authored, so a file that does not already carry it is rejected
     // rather than repaired (the parse enforces this; the check is the backstop).
     if (std::string identityError; !Scene.ValidateIdentities(&identityError))
         return fail("scene identity is invalid: " + identityError);
 
+    SettleSources(parsed->Instances);
     Retained_ = std::move(*parsed);
 
     // Expand the instance records into derived entities. Not an authored
@@ -573,22 +596,7 @@ bool EditorDocument::Save()
 
     Projection.Harvest();
     const SceneSourceDocument source = BuildSceneSource();
-    if (Catalog != nullptr)
-    {
-        std::vector<std::string> refs;
-        for (const SceneSourceEntity& record : source.Entities)
-            CollectAssetRefs5(record.Components, refs);
-        std::size_t missing = 0;
-        Logger& log = Logging.GetLogger<EditorDocument>();
-        for (const std::string& ref : refs)
-            if (!Catalog->Contains(ref))
-            {
-                log.Warn("asset reference '{}' is unresolved (save)", ref);
-                ++missing;
-            }
-        if (missing > 0)
-            log.Warn("save: {} unresolved asset reference(s)", missing);
-    }
+    ReportUnresolvedRefs(source.Entities, "save");
     const std::string text = WriteSceneSource(source);
 
     std::ofstream file(FilePath, std::ios::binary | std::ios::trunc);

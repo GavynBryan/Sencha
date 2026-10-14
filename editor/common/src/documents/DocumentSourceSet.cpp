@@ -19,6 +19,7 @@ void DocumentSourceSet::RemoveSource(DocumentSource& source)
     EraseSteps([&](const DocumentRef& step) { return step.Source == &source; });
     Report.RemoveSource(source);
     std::erase(Sources, &source);
+    ReportObservers.Notify(nullptr);
 }
 
 void DocumentSourceSet::Record(DocumentRef document)
@@ -33,6 +34,22 @@ void DocumentSourceSet::ForgetDocument(const DocumentRef& document)
 {
     EraseSteps([&](const DocumentRef& step) { return step == document; });
     Report.Remove(document);
+    ReportObservers.Notify(nullptr);
+}
+
+void DocumentSourceSet::Rekey(const DocumentRef& document, std::string key)
+{
+    for (DocumentRef& step : Steps)
+        if (step == document)
+            step.Key = key;
+    Report.Remove(document);
+    ReportObservers.Notify(nullptr);
+}
+
+void DocumentSourceSet::FileMoved(const MovedFile& moved)
+{
+    for (DocumentSource* source : Sources)
+        source->FileMoved(moved);
 }
 
 void DocumentSourceSet::Undo()
@@ -79,6 +96,7 @@ DocumentSaveResult DocumentSourceSet::Save(const DocumentRef& document)
     DocumentSaveResult result = document.Source->SaveDocument(document.Key);
     result.Document = document;
     Report.Add(result);
+    ReportObservers.Notify(&result);
     return result;
 }
 
@@ -87,6 +105,7 @@ bool DocumentSourceSet::Settle(const DocumentRef& document, ConflictChoice choic
     if (!document.Source->SettleDocument(document.Key, choice, error))
         return false;
     Report.Remove(document);
+    ReportObservers.Notify(nullptr);
     return true;
 }
 
@@ -104,6 +123,22 @@ ExternalChange DocumentSourceSet::FileChangedOnDisk(const std::filesystem::path&
         if (const ExternalChange change = source->FileChangedOnDisk(file); change != ExternalChange::NotOpen)
             return change;
     return ExternalChange::NotOpen;
+}
+
+bool DocumentSourceSet::HoldsFile(const std::filesystem::path& file) const
+{
+    return std::ranges::any_of(Sources, [&](const DocumentSource* source) { return source->HoldsFile(file); });
+}
+
+bool DocumentSourceSet::KeepsNamesAsRead(const std::filesystem::path& file) const
+{
+    return std::ranges::any_of(Sources, [&](const DocumentSource* source) { return source->KeepsNamesAsRead(file); });
+}
+
+void DocumentSourceSet::NamesRewritten(const std::filesystem::path& file)
+{
+    for (DocumentSource* source : Sources)
+        source->NamesRewritten(file);
 }
 
 void DocumentSourceSet::Step(DocumentStep step)

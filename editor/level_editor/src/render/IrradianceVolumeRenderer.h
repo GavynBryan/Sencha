@@ -1,7 +1,7 @@
 #pragma once
 
 #include "EditorLinePipeline.h"
-#include "EditorWideLinePipeline.h"
+#include "render/EditorWideLinePipeline.h"
 
 #include "viewport/EditorViewport.h"
 

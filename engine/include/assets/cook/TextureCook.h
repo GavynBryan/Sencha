@@ -102,3 +102,19 @@ public:
 private:
     JobSystem* Jobs = nullptr;
 };
+
+// .svg -> cooked .stex, rasterized once at the cook; white art stays white for
+// `image-color` to tint. Uncompressed and mipped unless the source's import
+// settings say otherwise. Same virtual-path rule as the PNG importer.
+class SvgTextureImporter final : public IAssetImporter
+{
+public:
+    // The rasterized height. Large enough for the biggest a UI draws an icon at
+    // a 2x display scale; the mips cover everything smaller.
+    static constexpr std::uint32_t kRasterHeight = 64;
+
+    [[nodiscard]] std::vector<std::string_view> SourceExtensions() const override;
+    [[nodiscard]] ImportResult Import(const ImportInput& input,
+                                      ICookOutputWriter& output) override;
+    [[nodiscard]] std::uint64_t CookIdentity() const override;
+};

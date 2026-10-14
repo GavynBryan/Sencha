@@ -1,6 +1,6 @@
 #pragma once
 
-#include <imgui.h>
+#include <math/Vec.h>
 
 #include <algorithm>
 #include <cmath>
@@ -8,8 +8,8 @@
 #include <numbers>
 
 // Where a radial menu lands on screen and which sector a point is in.
-// Pure pixel math with no ImGui runtime, so the session that hit-tests the
-// wheel and the chrome that paints it go through one rule rather than two
+// Pure pixel math with no UI runtime, so the session that hit-tests the
+// wheel and the screen that draws it go through one rule rather than two
 // versions of it that drift apart.
 //
 // One layout rule, two uses: slots laid evenly over an angular range at a
@@ -39,13 +39,22 @@ inline constexpr float kCaptionHeight = 18.0f; // the caption's line
 struct Frame
 {
     float Scale = 1.0f;
-    ImVec2 Min = {};
-    ImVec2 Max = {};
+    Vec2d Min = {};
+    Vec2d Max = {};
+};
+
+// A wheel's sizes in design pixels: a wheel of glyphs is compact, one whose
+// entries are words and whose hub reads out values is roomier.
+struct Proportions
+{
+    float Radius = kRadius;
+    float Hub = kHub;
+    float Button = kButton;
 };
 
 struct Layout
 {
-    ImVec2 Center = {};
+    Vec2d Center = {};
     float Radius = 0.0f;
     float Hub = 0.0f;
     float Button = 0.0f;
@@ -67,7 +76,7 @@ struct Layout
         return MaxVariants > 0 ? OuterRadius + Button * 0.5f + Seam + Rim : RimOuter();
     }
     // Where the caption's line starts, under everything the wheel can show.
-    [[nodiscard]] float CaptionY() const { return Center.y + OuterExtent() + CaptionGap; }
+    [[nodiscard]] float CaptionY() const { return Center.Y + OuterExtent() + CaptionGap; }
     // The half-extents the wheel needs clear of the frame's edges.
     [[nodiscard]] float HalfWidth() const { return OuterExtent(); }
     [[nodiscard]] float HalfHeightAbove() const { return OuterExtent(); }
@@ -149,12 +158,13 @@ struct Range
 // A wheel of `count` slots opened at `pointer`, shifted -- never clipped -- so
 // the whole of it (both rings, slots, caption) lies inside the frame. A frame
 // too small on an axis centres the wheel on that axis instead.
-[[nodiscard]] inline Layout Place(const Frame& frame, ImVec2 pointer, int count, int maxVariants = 0)
+[[nodiscard]] inline Layout Place(const Frame& frame, Vec2d pointer, int count, int maxVariants = 0,
+                                  Proportions proportions = {})
 {
     Layout layout;
-    layout.Radius = kRadius * frame.Scale;
-    layout.Hub = kHub * frame.Scale;
-    layout.Button = kButton * frame.Scale;
+    layout.Radius = proportions.Radius * frame.Scale;
+    layout.Hub = proportions.Hub * frame.Scale;
+    layout.Button = proportions.Button * frame.Scale;
     layout.Seam = kSeam * frame.Scale;
     layout.Rim = kRim * frame.Scale;
     layout.CaptionGap = kCaptionGap * frame.Scale;
@@ -170,34 +180,34 @@ struct Range
             return (lo + hi) * 0.5f;
         return std::clamp(wanted, lo + before, hi - after);
     };
-    layout.Center.x = fit(pointer.x, frame.Min.x, frame.Max.x, layout.HalfWidth(), layout.HalfWidth());
-    layout.Center.y = fit(pointer.y, frame.Min.y, frame.Max.y, layout.HalfHeightAbove(), layout.HalfHeightBelow());
+    layout.Center.X = fit(pointer.X, frame.Min.X, frame.Max.X, layout.HalfWidth(), layout.HalfWidth());
+    layout.Center.Y = fit(pointer.Y, frame.Min.Y, frame.Max.Y, layout.HalfHeightAbove(), layout.HalfHeightBelow());
     return layout;
 }
 
 // The centre of slot `index`, on the ring.
-[[nodiscard]] inline ImVec2 SlotCenter(const Layout& layout, int index)
+[[nodiscard]] inline Vec2d SlotCenter(const Layout& layout, int index)
 {
     const Span span = SectorSpan(index, layout.Count);
     const float angle = (span.Begin + span.End) * 0.5f;
-    return { layout.Center.x + std::sin(angle) * layout.Radius, layout.Center.y - std::cos(angle) * layout.Radius };
+    return { layout.Center.X + std::sin(angle) * layout.Radius, layout.Center.Y - std::cos(angle) * layout.Radius };
 }
 
 // The direction of `point` from the wheel's centre, clockwise from straight up.
-[[nodiscard]] inline float AngleAt(const Layout& layout, ImVec2 point)
+[[nodiscard]] inline float AngleAt(const Layout& layout, Vec2d point)
 {
-    return std::atan2(point.x - layout.Center.x, -(point.y - layout.Center.y));
+    return std::atan2(point.X - layout.Center.X, -(point.Y - layout.Center.Y));
 }
 
 // The sector `point` is in, or -1 inside the hub (or with nothing to choose).
 // Only the direction from the centre matters beyond the hub: the whole wedge,
 // out to the edge of the screen, is the target.
-[[nodiscard]] inline int SectorAt(const Layout& layout, ImVec2 point)
+[[nodiscard]] inline int SectorAt(const Layout& layout, Vec2d point)
 {
     if (layout.Count <= 0)
         return -1;
-    const float dx = point.x - layout.Center.x;
-    const float dy = point.y - layout.Center.y;
+    const float dx = point.X - layout.Center.X;
+    const float dy = point.Y - layout.Center.Y;
     if (dx * dx + dy * dy < layout.Hub * layout.Hub)
         return -1;
     return SlotAt(PrimaryRange(layout.Count), layout.Count, AngleAt(layout, point));
@@ -210,11 +220,11 @@ struct Range
 }
 
 // The centre of variant `index`'s slot, on the outer ring.
-[[nodiscard]] inline ImVec2 VariantSlotCenter(const Layout& layout, int parent, int index, int count)
+[[nodiscard]] inline Vec2d VariantSlotCenter(const Layout& layout, int parent, int index, int count)
 {
     const Span span = VariantSpan(layout, parent, index, count);
     const float angle = (span.Begin + span.End) * 0.5f;
-    return { layout.Center.x + std::sin(angle) * layout.OuterRadius, layout.Center.y - std::cos(angle) * layout.OuterRadius };
+    return { layout.Center.X + std::sin(angle) * layout.OuterRadius, layout.Center.Y - std::cos(angle) * layout.OuterRadius };
 }
 
 // Which band of the wheel `point` is in, by radius alone. Outer runs to the
@@ -227,10 +237,10 @@ enum class Ring : std::uint8_t
     Outer,
 };
 
-[[nodiscard]] inline Ring RingAt(const Layout& layout, ImVec2 point)
+[[nodiscard]] inline Ring RingAt(const Layout& layout, Vec2d point)
 {
-    const float dx = point.x - layout.Center.x;
-    const float dy = point.y - layout.Center.y;
+    const float dx = point.X - layout.Center.X;
+    const float dy = point.Y - layout.Center.Y;
     const float r2 = dx * dx + dy * dy;
     if (r2 < layout.Hub * layout.Hub)
         return Ring::Hub;
@@ -241,7 +251,7 @@ enum class Ring : std::uint8_t
 
 // The variant of `parent`'s fan whose arc `point`'s direction falls in, or -1
 // outside the fan. Direction only: the caller has already settled the ring.
-[[nodiscard]] inline int VariantAt(const Layout& layout, int parent, int count, ImVec2 point)
+[[nodiscard]] inline int VariantAt(const Layout& layout, int parent, int count, Vec2d point)
 {
     if (count <= 0 || parent < 0 || layout.Count <= 0)
         return -1;

@@ -37,7 +37,8 @@ public:
                         TextureCache* textures);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
+                                          IAssetSource& source,
+                                          const AssetPathsById& current) override;
 
     // Owner-thread commit returning the typed handle (refcount 1, owned by
     // the caller). `assets` resolves the description's texture references.
@@ -65,8 +66,8 @@ private:
                             std::vector<TextureCacheHandle>& owned);
 
     // One reference to the texture at `path`, staged with `srgb` when it is
-    // not yet resident. The generic texture load assumes sRGB; only a
-    // material knows which of its slots hold color.
+    // not yet resident, or to its stand-in. The generic texture load assumes
+    // sRGB; only a material knows which of its slots hold color.
     [[nodiscard]] TextureHandle LoadTexture(std::string_view path, bool srgb, AssetSystem& assets);
 
     Logger& Log;

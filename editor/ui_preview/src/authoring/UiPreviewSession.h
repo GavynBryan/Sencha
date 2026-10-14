@@ -8,6 +8,7 @@
 #include <ui/UiService.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <optional>
 #include <string>
@@ -87,8 +88,16 @@ public:
     void Poll();
     [[nodiscard]] const std::deque<UiDiagnostic>& Diagnostics() const { return DiagnosticHistory; }
     [[nodiscard]] const std::deque<UiAction>& Actions() const { return ActionHistory; }
-    void ClearDiagnostics() { DiagnosticHistory.clear(); }
+    void ClearDiagnostics()
+    {
+        DiagnosticHistory.clear();
+        ++DiagnosticChanges;
+    }
     void ClearActions() { ActionHistory.clear(); }
+    // Changes whenever Diagnostics() does, so a reader can tell it needs to look.
+    [[nodiscard]] std::uint64_t DiagnosticsVersion() const { return DiagnosticChanges; }
+    // Every action the document has raised, including those the history let go.
+    [[nodiscard]] std::uint64_t RaisedCount() const { return Raised; }
 
     static constexpr std::size_t kDiagnosticHistory = 1024;
     static constexpr std::size_t kActionHistory = 256;
@@ -107,4 +116,6 @@ private:
     bool Activated = false;
     std::deque<UiDiagnostic> DiagnosticHistory;
     std::deque<UiAction> ActionHistory;
+    std::uint64_t DiagnosticChanges = 0;
+    std::uint64_t Raised = 0;
 };

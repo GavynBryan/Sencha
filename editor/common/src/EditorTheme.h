@@ -36,6 +36,20 @@ inline constexpr Vec4 ContextZoneOverlay{ 0.55f, 0.55f, 0.60f, 0.30f };
 inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body
 // Transition graph edges in the streaming preview: cyan lines between zone centers.
 inline constexpr Vec4 TransitionLine{ 0.25f, 0.75f, 0.95f, 1.0f };
+// The zone graph over the views: teleport links, and a connection between two
+// graphs; one validation warns about or fails takes the problem colours.
+inline constexpr Vec4 ZoneGraphLink{ 0.62f, 0.5f, 0.98f, 1.0f };
+inline constexpr Vec4 ZoneGraphCrossGraph{ 0.95f, 0.55f, 0.85f, 1.0f };
+inline constexpr Vec4 ProblemWarning{ 1.0f, 0.75f, 0.2f, 1.0f };
+inline constexpr Vec4 ProblemError{ 1.0f, 0.32f, 0.28f, 1.0f };
+// A rig's stage: its bones, where a simulated character went, a move root
+// motion asked for that a wall stopped, and the walls.
+inline constexpr Vec4 AnimationBone{ 0.19f, 0.58f, 1.0f, 0.65f };
+inline constexpr Vec4 AnimationTrail{ 0.1f, 0.65f, 0.22f, 1.0f };
+inline constexpr Vec4 AnimationOvershoot{ 0.8f, 0.08f, 0.06f, 1.0f };
+inline constexpr Vec4 AnimationWall{ 0.4f, 0.46f, 0.58f, 0.8f };
+// The ground an authored document is previewed on: the panel well, linear.
+inline constexpr Vec4 DocumentGround{ 0.00335f, 0.00478f, 0.0075f, 1.0f };
 // Irradiance probe volumes: the authored bounds box, and the lattice points a
 // selected volume's bake will place (violet, distinct from zone/component blues).
 inline constexpr Vec4 IrradianceVolume{ 0.72f, 0.45f, 0.95f, 1.0f };
@@ -47,6 +61,14 @@ inline constexpr Vec4 PreviewUndemanded{ 0.65f, 0.2f, 0.2f, 1.0f };
 
 inline constexpr Vec4 DimensionLabel{ 0.85f, 0.9f, 1.0f, 1.0f }; // selected-brush W/L/H text
 inline constexpr Vec4 Readout{ 0.3f, 0.6f, 1.0f, 1.0f };         // drag origin->current line + distance
+// A tool's rotation dial: the rim, the rim while the pointer is on it, and the
+// stops a snapped turn lands on.
+inline constexpr Vec4 DialRim{ 0.35f, 0.42f, 0.5f, 1.0f };
+inline constexpr Vec4 DialRimHot = Hover;
+inline constexpr Vec4 DialStop{ 0.55f, 0.62f, 0.7f, 1.0f };
+// An entity's marker in the views -- a light, a camera, an empty -- and how
+// near the pointer has to be to pick it.
+inline constexpr float MarkerPixels = 20.0f;
 // The active selection's mesh edges: a vivid blue authored above 1.0 so the bloom pass
 // (editor.bloom.*) extracts the bright excess into a glow. Exceeding 1.0 is intended
 // now: it renders into the RGBA16F viewport target, and only the > threshold part blooms
@@ -57,6 +79,10 @@ inline constexpr Vec4 ActiveWireframe{ 0.25f, 0.55f, 2.5f, 1.0f };
 // so it stays distinct from (and subordinate to) the active body.
 inline constexpr Vec4 PreviewWireframe{ 0.1f, 0.3f, 0.62f, 1.0f };
 inline constexpr Vec4 CreatePreview{ 1.0f, 0.6f, 0.0f, 1.0f };     // the create-drag's wireframe: the brush about to be placed
+// A placement not yet made: the marks where it lands and the multiply tint on
+// its ghost, so it never reads as something already in the level.
+inline constexpr Vec4 PlacementMark{ 0.35f, 0.85f, 1.0f, 1.0f };
+inline constexpr Vec4 PlacementGhostTint{ 0.7f, 0.92f, 1.0f, 1.0f };
 // The element under the cursor (selection-eligible): a paler yellow than the
 // selected FaceHighlight/EdgeHighlight, drawn bolder, so a hovered neighbor of
 // a selected element still reads as a different state.

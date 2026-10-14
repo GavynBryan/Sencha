@@ -3,6 +3,13 @@
 #include <algorithm>
 #include <utility>
 
+DataAssetCompileResult CompileDataAsset(const DataAssetTypeRegistration& registration,
+                                        const JsonValue& data,
+                                        const AssetPathsById& current)
+{
+    return registration.Compile(ResolveAssetRefs(data, current));
+}
+
 bool DataAssetTypeRegistry::Register(DataAssetTypeRegistration registration)
 {
     if (registration.Name.empty() || registration.CurrentVersion == 0

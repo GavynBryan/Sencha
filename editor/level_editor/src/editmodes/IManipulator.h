@@ -10,7 +10,6 @@
 
 #include <math/Vec.h>
 
-#include <imgui.h>
 
 #include <array>
 #include <memory>
@@ -82,7 +81,7 @@ struct IManipulator
 
     [[nodiscard]] virtual int HitTest(const ManipulatorContext& ctx,
                                       const EditorViewport& viewport,
-                                      ImVec2 screenPos) const = 0;
+                                      Vec2d screenPos) const = 0;
 
     // `modifiers` carries the pointer-down modifier state (Shift/Ctrl/Alt) so a
     // manipulator can pick a drag variant (e.g. Shift = duplicate/extrude) without
@@ -91,7 +90,7 @@ struct IManipulator
         int part,
         const ManipulatorContext& ctx,
         const EditorViewport& viewport,
-        ImVec2 screenPos,
+        Vec2d screenPos,
         ModifierFlags modifiers) const = 0;
 
     virtual ~IManipulator() = default;

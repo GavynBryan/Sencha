@@ -34,6 +34,17 @@ float ReadCVarFloat(const ConsoleRegistry* console,
         ReadCVarDouble(console, name, static_cast<double>(fallback)));
 }
 
+std::int64_t ReadCVarInt(const ConsoleRegistry* console,
+                         std::string_view name,
+                         std::int64_t fallback)
+{
+    const CVarValue* value = FindValue(console, name);
+    if (value == nullptr)
+        return fallback;
+    const std::int64_t* number = std::get_if<std::int64_t>(value);
+    return number != nullptr ? *number : fallback;
+}
+
 bool ReadCVarBool(const ConsoleRegistry* console,
                   std::string_view name,
                   bool fallback)

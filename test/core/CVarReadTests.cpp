@@ -107,3 +107,21 @@ TEST(CVarRead, StringIsReturnedByValue)
     EXPECT_EQ(first, "none");
     EXPECT_EQ(ReadCVarString(&harness.Registry, "test.label", "missing"), "changed");
 }
+
+TEST(CVarRead, AWholeNumberIsReadAsOneAndNotAsADouble)
+{
+    ConsoleRegistry registry;
+    registry.RegisterCVar({
+        .Name = "test.budget",
+        .Owner = "test",
+        .Type = CVarType::Int,
+        .DefaultValue = std::int64_t{ 4096 },
+        .CurrentValue = std::int64_t{ 4096 },
+        .Source = { "test" },
+    });
+    ASSERT_TRUE(registry.SetCVar("test.budget", std::int64_t{ 64 }, { "test" }, ConsolePhase::EngineReady).Succeeded());
+    EXPECT_EQ(ReadCVarInt(&registry, "test.budget", 1), 64);
+    EXPECT_DOUBLE_EQ(ReadCVarDouble(&registry, "test.budget", 1.0), 1.0) << "a whole number is not a double";
+    EXPECT_EQ(ReadCVarInt(&registry, "nothing.here", 7), 7);
+    EXPECT_EQ(ReadCVarInt(nullptr, "test.budget", 7), 7);
+}

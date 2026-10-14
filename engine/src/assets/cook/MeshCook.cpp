@@ -1,5 +1,6 @@
 #include <assets/cook/MeshCook.h>
 
+#include <core/assets/AssetPath.h>
 #include <assets/cook/AnimationRootExtraction.h>
 
 #include <anim/AnimationClipSampling.h>
@@ -1542,7 +1543,7 @@ ImportResult GltfMeshImporter::Import(const ImportInput& input, ICookOutputWrite
     }
 
     const std::string source(input.SourceRelPath);
-    const std::string virtualPrefix = "asset://" + source;
+    const std::string virtualPrefix = AssetPathOf(source);
     const std::string fileBase = ".cooked/" + source;
 
     // '#' cannot appear in scanned paths, so a fragment-named artifact never

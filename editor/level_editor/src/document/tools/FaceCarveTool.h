@@ -87,7 +87,7 @@ public:
     std::string_view GetDisplayName() const override;
     IconId GetIcon() const override;
 
-    InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos) override;
+    InputConsumed OnHover(ToolContext& ctx, EditorViewport& viewport, Vec2d pos) override;
     void OnHoverEnd(ToolContext& ctx) override;
     InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     std::unique_ptr<IInteraction> BeginDrag(ToolContext& ctx, EditorViewport& viewport,
@@ -98,7 +98,10 @@ public:
     // A carve that is far enough along to commit is placed work and goes into
     // the document; a half-formed draft cannot be committed, so it reverts.
     void CommitPending(ToolContext& ctx) override;
-    void DrawProperties(ToolContext& ctx) override;
+    [[nodiscard]] std::vector<PropertyNode> Parameters(const ToolContext& ctx) const override;
+    PropertyEditResult SetParameter(ToolContext& ctx, std::string_view key, std::string_view value) override;
+    [[nodiscard]] ToolDraft Draft() const override;
+    [[nodiscard]] std::string Hint(const ToolContext& ctx) const override;
     [[nodiscard]] Shortcut GetShortcut() const override;
     [[nodiscard]] bool UsesTransformGizmo() const override { return false; }
 
@@ -120,13 +123,13 @@ public:
 
     // Called by the drag interaction (file-local forwarder in the .cpp), which
     // carries what the press grabbed for exactly as long as the drag lasts.
-    void UpdateDrag(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos, CarveHandleHit grabbed);
+    void UpdateDrag(ToolContext& ctx, EditorViewport& viewport, Vec2d pos, CarveHandleHit grabbed);
     void EndDrag(ToolContext& ctx);
     void RevertAll(ToolContext& ctx);
 
 private:
-    [[nodiscard]] bool CaptureFace(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos);
-    [[nodiscard]] bool BeginPendingAdjust(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos,
+    [[nodiscard]] bool CaptureFace(ToolContext& ctx, EditorViewport& viewport, Vec2d pos);
+    [[nodiscard]] bool BeginPendingAdjust(ToolContext& ctx, EditorViewport& viewport, Vec2d pos,
                                           int corner);
     // Rebuild the preview from the retained box. Every setting that changes what
     // the box means routes through here, which is why the box survives them.
@@ -143,7 +146,7 @@ private:
     // The snapped cursor position in the target face's frame coordinates,
     // clamped to the face bounds. nullopt when the ray misses the drag plane.
     [[nodiscard]] std::optional<Vec2d> CursorUv(ToolContext& ctx, const EditorViewport& viewport,
-                                                ImVec2 pos) const;
+                                                Vec2d pos) const;
     [[nodiscard]] Vec2d BoxMin() const;
     [[nodiscard]] Vec2d BoxMax() const;
     void WriteReadout(ToolContext& ctx, Vec2d boxMin, Vec2d boxMax, bool pending) const;
@@ -179,12 +182,12 @@ private:
     [[nodiscard]] float TurnIncrement(const ToolContext& ctx) const;
     // What the cursor is over. Nearest in pixels, so what highlights, what can be
     // grabbed and what is drawn are one answer rather than three.
-    [[nodiscard]] CarveHandleHit HandleUnderCursor(const EditorViewport& viewport, ImVec2 pos) const;
-    void DragOrientation(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos);
-    void DragRise(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos);
+    [[nodiscard]] CarveHandleHit HandleUnderCursor(const EditorViewport& viewport, Vec2d pos) const;
+    void DragOrientation(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos);
+    void DragRise(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos);
     // Which of them the pointer is over, or -1. Shared by hover, click and the
     // drag guard so a press on a button never starts a carve underneath it.
-    [[nodiscard]] int ButtonUnderCursor(const EditorViewport& viewport, ImVec2 pos) const;
+    [[nodiscard]] int ButtonUnderCursor(const EditorViewport& viewport, Vec2d pos) const;
 
     FaceCarveMode Mode = FaceCarveMode::Polygon;
     CarveShape Shape = CarveShape::Rectangle;

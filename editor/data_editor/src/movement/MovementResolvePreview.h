@@ -42,7 +42,7 @@ class MovementResolvePreview
 {
 public:
     // Recompiles only when the document's content revision moves.
-    void Update(const DataDocument& document, const DataAssetTypeRegistry& types);
+    void Update(const DataDocument& document, const DataAssetTypeRegistry& types, const AssetPathsById& current);
 
     [[nodiscard]] bool IsBound() const { return Bound.has_value(); }
     [[nodiscard]] const std::string& Error() const { return BindError; }
@@ -70,7 +70,7 @@ public:
     [[nodiscard]] const std::vector<std::string>& KnownModes() const { return Modes; }
 
 private:
-    void Rebuild(const DataDocument& document, const DataAssetTypeRegistry& types);
+    void Rebuild(const DataDocument& document, const DataAssetTypeRegistry& types, const AssetPathsById& current);
     void CollectNames();
     [[nodiscard]] LocomotionModeId ResolveMode(std::string_view name) const;
 

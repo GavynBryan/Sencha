@@ -111,6 +111,7 @@ public:
     }
 
     [[nodiscard]] WorldPartitionManifest& Manifest();          // World mode only (asserts)
+    [[nodiscard]] const WorldPartitionManifest& Manifest() const;
     [[nodiscard]] const WorldPartitionIndex& Index() const;    // rebuilt on manifest edits
 
     // Zone lifecycle. LoadZone deserializes the zone's scene into a fresh
@@ -172,6 +173,14 @@ public:
     }
 
     [[nodiscard]] bool IsDirty() const;   // any zone document dirty, or the manifest edited
+    // Whether `file` is the world file, the world scene, an open zone's scene,
+    // or the legacy document's.
+    [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const;
+    // The legacy document's file, or the world file within its own folder,
+    // moved: it lives there now. A zone's scene is the world's to move.
+    void FileMoved(const std::filesystem::path& from, const std::filesystem::path& to);
+    // `file`, one of its own, was rewritten to say the same: it is taken as read.
+    void TakeFileAsRead(const std::filesystem::path& file);
     // Any file this world last read or wrote changed on disk since: the world
     // file, the world scene, an open zone's scene, or the legacy document's.
     [[nodiscard]] bool IsExternallyModified() const;
@@ -244,6 +253,11 @@ public:
     // dangle them. Narrower than the focus-change reset: focus did not change,
     // so the tool context, sink, and selection stay.
     std::function<void(ZoneId)> OnZoneUnloaded;
+
+    // Fires after a save lands scene sources on disk and the open documents
+    // placing them have re-projected: whatever else prepared from those
+    // sources (the placement ghost, the previews) prepares afresh.
+    std::function<void(std::span<const std::string>)> OnSourcesSaved;
 
 private:
     // Each open zone document gets a unique RegistryId {NextRegistryIndex_++, 1},

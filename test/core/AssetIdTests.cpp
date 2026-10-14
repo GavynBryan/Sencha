@@ -1,4 +1,4 @@
-#include <core/assets/AssetIdMap.h>
+#include <core/assets/AssetId.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/assets/AssetManifest.h>
@@ -40,183 +40,6 @@ TEST(AssetId, ParseRejectsMalformedText)
     EXPECT_FALSE(AssetIdFromString("0000000000000000").has_value());    // the invalid id
 }
 
-// -- AssetIdMap assignment ---------------------------------------------------
-
-TEST(AssetIdMap, FirstSightMintsDeterministicallyFromPath)
-{
-    const std::string path = "asset://meshes/dev/cube.smesh";
-
-    AssetIdMap a;
-    AssetIdMap b;
-    const AssetId fromA = a.EnsureId(path, 0x1111);
-    const AssetId fromB = b.EnsureId(path, 0x2222);
-
-    EXPECT_TRUE(fromA.IsValid());
-    EXPECT_EQ(fromA, fromB);                       // independent maps agree
-    EXPECT_EQ(fromA.Value, HashBytes64(path));     // and the scheme is the path hash
-    EXPECT_EQ(a.EnsureId(path, 0x1111), fromA);    // idempotent
-}
-
-// What lets an id travel between two processes: nothing about it depends on
-// the order the content was seen in. Two cooks that walked the same directory
-// in different orders, in different processes, agree on every id -- which is
-// the whole reason a spawn can name a prefab by id and expect the peer to
-// resolve the same one.
-//
-// The one thing this does not establish is that two machines have the same
-// content. They agree because both ship the id map the cook wrote, the same
-// way they agree about a cooked scene's bytes.
-TEST(AssetIdMap, MintingDoesNotDependOnTheOrderContentWasSeen)
-{
-    const std::vector<std::string> paths = {
-        "asset://prefabs/player_pawn.smap", "asset://prefabs/turret.smap",
-        "asset://meshes/dev/cube.smesh",    "asset://materials/dev/gray.smat",
-        "asset://data/player_movement.sdata",
-    };
-
-    AssetIdMap forward;
-    for (std::size_t i = 0; i < paths.size(); ++i)
-        (void)forward.EnsureId(paths[i], /*contentHash*/ i + 1);
-
-    AssetIdMap reversed;
-    for (std::size_t i = paths.size(); i-- > 0;)
-        (void)reversed.EnsureId(paths[i], i + 1);
-
-    // A third that saw only one of them, as a peer with a narrower content set
-    // would: the id it mints for that path is still the same id.
-    AssetIdMap partial;
-    const AssetId lone = partial.EnsureId(paths.front(), 0);
-
-    std::unordered_set<std::uint64_t> distinct;
-    for (const std::string& path : paths)
-    {
-        const AssetId id = forward.FindId(path);
-        ASSERT_TRUE(id.IsValid()) << path;
-        EXPECT_EQ(id, reversed.FindId(path))
-            << path << ": the id depends on when the content was seen";
-        distinct.insert(id.Value);
-    }
-    EXPECT_EQ(distinct.size(), paths.size()) << "two paths share an id";
-    EXPECT_EQ(lone, forward.FindId(paths.front()));
-}
-
-TEST(AssetIdMap, RenameInheritsIdViaContentHash)
-{
-    constexpr uint64_t contentHash = 0xfeedface;
-
-    AssetIdMap map;
-    const AssetId original = map.EnsureId("asset://meshes/old.smesh", contentHash);
-
-    const auto onlyNewPathLives = [](std::string_view path) {
-        return path == "asset://meshes/new.smesh";
-    };
-    const AssetId inherited =
-        map.EnsureId("asset://meshes/new.smesh", contentHash, onlyNewPathLives);
-
-    EXPECT_EQ(inherited, original);
-    EXPECT_FALSE(map.FindId("asset://meshes/old.smesh").IsValid());  // donor entry retired
-    EXPECT_EQ(map.FindId("asset://meshes/new.smesh"), original);
-}
-
-TEST(AssetIdMap, LiveDuplicateContentMintsFreshId)
-{
-    constexpr uint64_t contentHash = 0xfeedface;
-    const auto everythingLives = [](std::string_view) { return true; };
-
-    AssetIdMap map;
-    const AssetId first = map.EnsureId("asset://meshes/a.smesh", contentHash, everythingLives);
-    const AssetId second = map.EnsureId("asset://meshes/b.smesh", contentHash, everythingLives);
-
-    // A copied file is a new asset, not a rename: the original still exists.
-    EXPECT_NE(first, second);
-    EXPECT_EQ(map.FindId("asset://meshes/a.smesh"), first);
-}
-
-TEST(AssetIdMap, MintProbesPastOccupiedId)
-{
-    const std::string path = "asset://meshes/cube.smesh";
-    const AssetId pathHashId{ HashBytes64(path) };
-
-    // Pre-bind the path-hash id to a different path (a synthetic collision —
-    // real XXH64 collisions are not craftable in a test) and check the mint
-    // probes to a different, valid id instead of double-binding.
-    const std::string mapJson = std::string(R"({"version": 1, "assets": [)")
-        + R"({"id": ")" + AssetIdToString(pathHashId)
-        + R"(", "path": "asset://other/asset.smat", "content_hash": "0000000000000001"}]})";
-    const std::optional<JsonValue> json = JsonParse(mapJson);
-    ASSERT_TRUE(json.has_value());
-
-    AssetIdMap map;
-    std::string error;
-    ASSERT_TRUE(AssetIdMap::FromJson(*json, map, &error)) << error;
-
-    const AssetId minted = map.EnsureId(path, 0x2);
-    EXPECT_TRUE(minted.IsValid());
-    EXPECT_NE(minted, pathHashId);
-    EXPECT_EQ(map.FindId("asset://other/asset.smat"), pathHashId);
-}
-
-// -- AssetIdMap persistence ----------------------------------------------------
-
-TEST(AssetIdMap, JsonRoundTripAndDirtyTracking)
-{
-    AssetIdMap map;
-    EXPECT_FALSE(map.IsDirty());
-    const AssetId meshId = map.EnsureId("asset://meshes/dev/cube.smesh", 0xaa);
-    const AssetId matId = map.EnsureId("asset://materials/dev/red.smat", 0xbb);
-    EXPECT_TRUE(map.IsDirty());
-
-    AssetIdMap parsed;
-    std::string error;
-    ASSERT_TRUE(AssetIdMap::FromJson(map.ToJson(), parsed, &error)) << error;
-    EXPECT_FALSE(parsed.IsDirty());
-    EXPECT_EQ(parsed.FindId("asset://meshes/dev/cube.smesh"), meshId);
-    EXPECT_EQ(parsed.FindId("asset://materials/dev/red.smat"), matId);
-    EXPECT_EQ(parsed.Entries().size(), 2u);
-
-    // Re-ensuring with an unchanged hash must not dirty a loaded map — the
-    // committed file only changes when identity actually changes.
-    (void)parsed.EnsureId("asset://meshes/dev/cube.smesh", 0xaa);
-    EXPECT_FALSE(parsed.IsDirty());
-    (void)parsed.EnsureId("asset://meshes/dev/cube.smesh", 0xcc);
-    EXPECT_TRUE(parsed.IsDirty());
-}
-
-TEST(AssetIdMap, SerializationIsSortedByPath)
-{
-    AssetIdMap map;
-    (void)map.EnsureId("asset://z/last.smesh", 0x1);
-    (void)map.EnsureId("asset://a/first.smesh", 0x2);
-
-    const JsonValue json = map.ToJson();
-    const JsonValue* assets = json.Find("assets");
-    ASSERT_NE(assets, nullptr);
-    ASSERT_EQ(assets->Size(), 2u);
-    EXPECT_EQ(assets->AsArray()[0].Find("path")->AsString(), "asset://a/first.smesh");
-    EXPECT_EQ(assets->AsArray()[1].Find("path")->AsString(), "asset://z/last.smesh");
-}
-
-TEST(AssetIdMap, ParseRejectsMangledMaps)
-{
-    const auto reject = [](std::string_view text) {
-        const std::optional<JsonValue> json = JsonParse(text);
-        ASSERT_TRUE(json.has_value());
-        AssetIdMap map;
-        EXPECT_FALSE(AssetIdMap::FromJson(*json, map)) << text;
-    };
-
-    reject(R"({"version": 9, "assets": []})");
-    reject(R"({"version": 1, "assets": [{"id": "bogus", "path": "asset://a.smesh", "content_hash": "0000000000000000"}]})");
-    reject(R"({"version": 1, "assets": [{"id": "0000000000000001", "path": "no_prefix", "content_hash": "0000000000000000"}]})");
-    // Duplicate path and duplicate id are hand-mangled maps; refuse both.
-    reject(R"({"version": 1, "assets": [
-        {"id": "0000000000000001", "path": "asset://a.smesh", "content_hash": "0000000000000000"},
-        {"id": "0000000000000002", "path": "asset://a.smesh", "content_hash": "0000000000000000"}]})");
-    reject(R"({"version": 1, "assets": [
-        {"id": "0000000000000001", "path": "asset://a.smesh", "content_hash": "0000000000000000"},
-        {"id": "0000000000000001", "path": "asset://b.smesh", "content_hash": "0000000000000000"}]})");
-}
-
 // -- Registry id binding -------------------------------------------------------
 
 namespace
@@ -250,7 +73,7 @@ TEST(AssetRegistryIds, AssignAndFindById)
     EXPECT_EQ(registry.FindByPath("asset://meshes/cube.smesh")->Id, id);
 }
 
-TEST(AssetRegistryIds, AssignRejectsConflicts)
+TEST(AssetRegistryIds, AssignRebindsButNeverTakesAnotherAssetsId)
 {
     LoggingProvider logging;
     AssetRegistry registry(logging);
@@ -261,23 +84,24 @@ TEST(AssetRegistryIds, AssignRejectsConflicts)
     EXPECT_FALSE(registry.AssignId("asset://missing.smesh", AssetId{ 1 }));   // unknown path
 
     ASSERT_TRUE(registry.AssignId("asset://a.smesh", AssetId{ 1 }));
-    EXPECT_FALSE(registry.AssignId("asset://a.smesh", AssetId{ 2 }));  // reassignment
-    EXPECT_FALSE(registry.AssignId("asset://b.smesh", AssetId{ 1 }));  // id already bound
-    EXPECT_EQ(registry.FindById(AssetId{ 1 })->Path, "asset://a.smesh");
+    ASSERT_TRUE(registry.AssignId("asset://a.smesh", AssetId{ 2 }));   // rebinding
+    EXPECT_EQ(registry.FindById(AssetId{ 1 }), nullptr);
+    EXPECT_FALSE(registry.AssignId("asset://b.smesh", AssetId{ 2 }));  // id already bound
+    EXPECT_EQ(registry.FindById(AssetId{ 2 })->Path, "asset://a.smesh");
 }
 
-TEST(AssetRegistryIds, ApplyAssetIdsFillsRegisteredPathsOnly)
+TEST(AssetRegistryIds, ARecordThatStatesNoIdHasItsPathsAndATakenOneIsNotShared)
 {
     LoggingProvider logging;
     AssetRegistry registry(logging);
-    ASSERT_TRUE(registry.Register(MakeRecord("asset://meshes/cube.smesh")));
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://a.smesh")));
+    EXPECT_EQ(registry.FindByPath("asset://a.smesh")->Id, AssetIdOfPath("asset://a.smesh"));
 
-    AssetIdMap map;
-    const AssetId known = map.EnsureId("asset://meshes/cube.smesh", 0x1);
-    (void)map.EnsureId("asset://meshes/not_registered.smesh", 0x2);
-
-    EXPECT_EQ(ApplyAssetIds(map, registry), 1u);
-    EXPECT_EQ(registry.FindById(known)->Path, "asset://meshes/cube.smesh");
+    AssetRecord copy = MakeRecord("asset://copy.smesh");
+    copy.Id = AssetIdOfPath("asset://a.smesh");
+    ASSERT_TRUE(registry.Register(copy));
+    EXPECT_EQ(registry.FindById(copy.Id)->Path, "asset://a.smesh") << "the first holder keeps it";
+    EXPECT_NE(registry.FindByPath("asset://copy.smesh")->Id, copy.Id);
 }
 
 // -- Id-first resolution through the front door ---------------------------------
@@ -310,40 +134,79 @@ TEST(AssetSystemIds, ResolveRefPathPrefersIdAndFallsBackToPath)
               "asset://materials/fallback.smat");
 }
 
-// -- Stamping cooked JSON --------------------------------------------------------
-
-TEST(AssetIdStamping, StampsKnownRefsAndLeavesTheRestAlone)
+// A reference follows its asset: a known id gives the current path, a known
+// path gives the id, and what the registry does not know stays as written.
+TEST(AssetRegistryIds, AReferenceIsMadeCurrentByItsIdOrItsPath)
 {
-    AssetIdMap map;
-    const AssetId meshId = map.EnsureId("asset://meshes/dev/cube.smesh", 0x1);
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://moved.smesh")));
+    const AssetId id = registry.FindByPath("asset://moved.smesh")->Id;
 
-    const std::optional<JsonValue> scene = JsonParse(R"({
-        "entities": [{ "components": {
-            "StaticMesh": { "mesh": "asset://meshes/dev/cube.smesh",
-                            "material": "asset://materials/dev/unmapped.smat",
-                            "visible": true } } }]
-    })");
-    ASSERT_TRUE(scene.has_value());
+    const AssetRef stale = registry.Current(AssetRef{ AssetType::StaticMesh, "asset://old.smesh", id });
+    EXPECT_EQ(stale.Path, "asset://moved.smesh");
 
-    const JsonValue stamped = StampAssetRefIds(*scene, map);
-    const JsonValue* component =
-        stamped.Find("entities")->AsArray()[0].Find("components")->Find("StaticMesh");
-    ASSERT_NE(component, nullptr);
+    const AssetRef bare = registry.Current(AssetRef{ AssetType::StaticMesh, "asset://moved.smesh" });
+    EXPECT_EQ(bare.Id, id);
 
-    const JsonValue* mesh = component->Find("mesh");
-    ASSERT_NE(mesh, nullptr);
-    ASSERT_TRUE(mesh->IsObject());
-    EXPECT_EQ(mesh->Find("id")->AsString(), AssetIdToString(meshId));
-    EXPECT_EQ(mesh->Find("path")->AsString(), "asset://meshes/dev/cube.smesh");
+    const AssetRef unknown = registry.Current(AssetRef{ AssetType::StaticMesh, "asset://gone.smesh", AssetId{ 9 } });
+    EXPECT_EQ(unknown.Path, "asset://gone.smesh");
+    EXPECT_EQ(unknown.Id, AssetId{ 9 });
+}
 
-    // Unmapped refs stay plain strings; non-ref fields are untouched.
-    EXPECT_TRUE(component->Find("material")->IsString());
-    EXPECT_TRUE(component->Find("visible")->IsBool());
+// What was read before a move still finds the asset by the path it was at.
+TEST(AssetRegistryIds, APathAnAssetMovedFromStillFindsIt)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://old.smesh")));
+    const AssetId id = registry.FindByPath("asset://old.smesh")->Id;
+    ASSERT_TRUE(registry.Unregister("asset://old.smesh"));
+    AssetRecord moved = MakeRecord("asset://new.smesh");
+    moved.Id = id;
+    ASSERT_TRUE(registry.Register(moved));
 
-    // Manifest derivation still sees every path in the stamped document —
-    // the {"id","path"} object keeps the path string walkable.
-    const std::vector<std::string> paths = CollectAssetPaths(stamped);
-    const std::unordered_set<std::string> pathSet(paths.begin(), paths.end());
-    EXPECT_TRUE(pathSet.contains("asset://meshes/dev/cube.smesh"));
-    EXPECT_TRUE(pathSet.contains("asset://materials/dev/unmapped.smat"));
+    ASSERT_NE(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://old.smesh" }), nullptr);
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://old.smesh" })->Path, "asset://new.smesh");
+    const AssetRef current = registry.Current(AssetRef{ AssetType::StaticMesh, "asset://old.smesh" });
+    EXPECT_EQ(current.Path, "asset://new.smesh");
+    EXPECT_EQ(current.Id, id);
+    EXPECT_FALSE(registry.Contains("asset://old.smesh")) << "nothing is at the old path";
+
+    ASSERT_TRUE(registry.Unregister("asset://new.smesh"));
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://old.smesh" }), nullptr) << "gone is gone";
+}
+
+// A dependency named by id is found where its asset now is.
+TEST(AssetRegistryIds, AReferenceFindsItsAssetByIdBeforePath)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://moved.smesh")));
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://other.smesh")));
+    const AssetId moved = registry.FindByPath("asset://moved.smesh")->Id;
+
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://other.smesh", moved })->Path,
+              "asset://moved.smesh") << "the id decides";
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://other.smesh" })->Path, "asset://other.smesh");
+    EXPECT_EQ(registry.Find(AssetRef{ AssetType::StaticMesh, "asset://gone.smesh", AssetId{ 7 } }), nullptr);
+}
+
+// The snapshot a stage reads is the registry as it was asked for, and asking
+// again after a change gives the change.
+TEST(AssetRegistryIds, TheIdSnapshotIsTakenAfterEachChange)
+{
+    LoggingProvider logging;
+    AssetRegistry registry(logging);
+    ASSERT_TRUE(registry.Register(MakeRecord("asset://a.smesh")));
+    const std::shared_ptr<const AssetPathsById> first = registry.PathsById();
+    EXPECT_EQ(registry.PathsById(), first) << "unchanged, the same snapshot";
+    EXPECT_EQ(first->at(AssetIdOfPath("asset://a.smesh")), "asset://a.smesh");
+
+    ASSERT_TRUE(registry.AssignId("asset://a.smesh", AssetId{ 0x42 }));
+    const std::shared_ptr<const AssetPathsById> second = registry.PathsById();
+    EXPECT_NE(second, first);
+    EXPECT_EQ(second->at(AssetId{ 0x42 }), "asset://a.smesh");
+    EXPECT_FALSE(second->contains(AssetIdOfPath("asset://a.smesh")));
+    EXPECT_EQ(first->size(), 1u) << "a snapshot already taken never changes";
 }

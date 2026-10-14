@@ -1,5 +1,6 @@
 #pragma once
 
+#include "document/placement/PlacementSession.h"
 #include "editmodes/EditSessionHost.h"
 #include "interaction/InteractionHost.h"
 #include "overlay/EditorOverlayState.h"
@@ -55,8 +56,9 @@ struct WorkspaceInteractionInputs
 // viewport dispatcher, and the manipulator session.
 //
 // Also owns the transient state that dies with the edited document (the live
-// interaction, its preview geometry, the marquee, and the viewport overlay), so
-// a rebuild cannot leave any of it pointing at the outgoing document.
+// interaction, its preview geometry, the pending placement, the marquee, and
+// the viewport overlay), so a rebuild cannot leave any of it pointing at the
+// outgoing document.
 //
 // Rebuild is the only way the stack is created. Document open and focus change
 // both go through it, which is what keeps them one path instead of two.
@@ -92,6 +94,7 @@ public:
 
     InteractionHost Interactions;
     PreviewBuffer Preview;
+    PlacementSession Placement;
     MarqueeState Marquee;
     EditorOverlayState Overlay;
     EditSessionHost Sessions;

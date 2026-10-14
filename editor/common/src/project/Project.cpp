@@ -133,7 +133,7 @@ namespace
                 return true;
         }
         const std::string file = relative.filename().string();
-        return file == "asset_ids.json" || file.ends_with(".sworld.user.json");
+        return file.ends_with(".sworld.user.json");
     }
 }
 

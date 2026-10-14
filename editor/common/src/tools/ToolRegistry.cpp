@@ -1,5 +1,7 @@
 #include "ToolRegistry.h"
 
+#include "resources/ActiveResources.h"
+
 #include "ToolContext.h"
 #include "interaction/InteractionHost.h"
 
@@ -113,7 +115,16 @@ std::unique_ptr<IInteraction> ToolRegistry::BeginDrag(EditorViewport& viewport, 
     return active->BeginDrag(*Context, viewport, pressPointer);
 }
 
-InputConsumed ToolRegistry::Hover(EditorViewport& viewport, ImVec2 pos)
+std::unique_ptr<IInteraction> ToolRegistry::TakeHandedGesture()
+{
+    ITool* active = GetActiveTool();
+    if (active == nullptr)
+        return nullptr;
+
+    return active->TakeHandedGesture(*Context);
+}
+
+InputConsumed ToolRegistry::Hover(EditorViewport& viewport, Vec2d pos)
 {
     ITool* active = GetActiveTool();
     if (active == nullptr)
@@ -138,4 +149,12 @@ InputConsumed ToolRegistry::OnInput(const InputEvent& event)
         return active->OnKeyDown(*Context, *e);
 
     return InputConsumed::No;
+}
+
+void ToolRegistry::ForwardResourceChanges(ActiveResources& resources)
+{
+    ResourceWatch = resources.Subscribe([this](AssetType type) {
+        if (ITool* tool = GetActiveTool(); tool != nullptr && Context != nullptr)
+            tool->OnResourceChanged(*Context, type);
+    });
 }

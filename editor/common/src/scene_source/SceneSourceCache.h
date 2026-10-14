@@ -41,6 +41,10 @@ public:
         return Entries.contains(std::string(assetPath));
     }
 
+    // Whether any file it has read has since changed, moved or gone on disk:
+    // what it would read differently now.
+    [[nodiscard]] bool ChangedOnDisk() const;
+
     // Drops one entry so the next Find re-reads the file. The explicit form
     // of the timestamp invalidation, for the saver who KNOWS the file moved:
     // same-second rewrites can leave mtime and size both unchanged.

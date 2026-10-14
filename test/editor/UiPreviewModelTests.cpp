@@ -2,6 +2,7 @@
 
 #include "authoring/UiPreviewModel.h"
 #include "authoring/UiPreviewSession.h"
+#include "presenters/RowControls.h"
 
 #include <app/OptionsPage.h>
 #include <assets/runtime/RuntimeAssets.h>
@@ -37,13 +38,13 @@ UiPreviewModel Sample()
     };
     m.Arrays = { { "entries", { "a", "b" } } };
     UiRow range{ "Volume", "0.5", "", true };
-    range.Control = UiRowControl::Range;
+    range.Control = RowControls::Range;
     range.Number = 0.5;
     range.Min = 0.0;
     range.Max = 1.0;
     range.Step = 0.1;
     UiRow choice{ "Mode", "Windowed", "", true };
-    choice.Control = UiRowControl::Choice;
+    choice.Control = RowControls::Choice;
     choice.Choices = { "Windowed", "Fullscreen" };
     UiRow text{ "Name", "crate", "asset", false };
     m.Rows = { { "rows", { range, choice, text } } };
@@ -95,10 +96,10 @@ TEST(UiPreviewModel, RoundTripsThroughJsonWithEveryValueKind)
     EXPECT_EQ(back->Properties[1].Initial.Kind(), UiValueKind::Int);
     EXPECT_EQ(back->Properties[2].Initial.Kind(), UiValueKind::Float);
     EXPECT_TRUE(back->Properties[2].Editable);
-    EXPECT_EQ(back->Rows[0].Items[0].Control, UiRowControl::Range);
+    EXPECT_EQ(back->Rows[0].Items[0].Control, RowControls::Range);
     EXPECT_DOUBLE_EQ(back->Rows[0].Items[0].Step, 0.1);
     EXPECT_EQ(back->Rows[0].Items[1].Choices.size(), 2u);
-    EXPECT_EQ(back->Rows[0].Items[2].Control, UiRowControl::Text);
+    EXPECT_EQ(back->Rows[0].Items[2].Control, RowControls::Text);
 }
 
 TEST(UiPreviewModel, SavesBesideTheDocumentAndLoadsBack)
@@ -128,8 +129,19 @@ TEST(UiPreviewModel, RefusesWhatItCannotRepresentAndSaysWhy)
     EXPECT_NE(error.find("name"), std::string::npos);
     EXPECT_FALSE(UiPreviewModel::Parse(*JsonParse(R"({"properties":[{"name":"a","kind":"int","value":"x"}]})"), &error));
     EXPECT_NE(error.find("kind"), std::string::npos);
-    EXPECT_FALSE(UiPreviewModel::Parse(*JsonParse(R"({"rows":[{"name":"r","items":[{"control":"dial"}]}]})"), &error));
-    EXPECT_NE(error.find("dial"), std::string::npos);
+    EXPECT_FALSE(UiPreviewModel::Parse(*JsonParse(R"({"rows":[{"name":"r","items":[{"control":""}]}]})"), &error));
+    EXPECT_NE(error.find("control"), std::string::npos);
+}
+
+TEST(UiPreviewModel, ARowsControlIsWhateverNameItsDocumentUses)
+{
+    std::string error;
+    const std::optional<UiPreviewModel> model =
+        UiPreviewModel::Parse(*JsonParse(R"({"rows":[{"name":"r","items":[{"control":"dial"}]}]})"), &error);
+    ASSERT_TRUE(model.has_value()) << error;
+    ASSERT_FALSE(model->Rows.empty());
+    ASSERT_FALSE(model->Rows.front().Items.empty());
+    EXPECT_EQ(model->Rows.front().Items.front().Control, "dial") << "a game's own control is passed through as named";
 }
 
 TEST(UiPreviewModel, TheOptionsSidecarDeclaresWhatTheOptionsPageDeclares)
@@ -154,7 +166,7 @@ TEST(UiPreviewModel, TheOptionsSidecarDeclaresWhatTheOptionsPageDeclares)
 
 TEST(UiPreviewModel, EveryShippedDocumentOpensAgainstItsSidecarWithNothingMissing)
 {
-    // Four documents, four sidecars, zero misses: the previewer shows each one
+    // Every shipped document with a sidecar, zero misses: the previewer shows each one
     // the way its host would, and the sidecar is a complete declaration.
     ShippedContent content;
     ASSERT_TRUE(content.Service().IsReady());
@@ -165,7 +177,6 @@ TEST(UiPreviewModel, EveryShippedDocumentOpensAgainstItsSidecarWithNothingMissin
         { "/engine/assets/ui/options.rml", "asset://ui/options.rml" },
     };
     const Shipped editorShipped[] = {
-        { "/inspector.rml", "asset://inspector.rml" },
         { "/cook_profiles.rml", "asset://cook_profiles.rml" },
     };
 

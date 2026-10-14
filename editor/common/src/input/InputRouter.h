@@ -10,7 +10,7 @@
 // What kind of owner currently holds the pointer. A UI drag (Ui) keeps the UI
 // live; an Exclusive gesture — fly-look, ortho-pan, a tool drag, or a modal
 // surface such as the tool wheel — owns the pointer and the keys outright, so
-// the app gates ImGui's mouse and keyboard off while one is held.
+// the shell yields both while one is held.
 enum class PointerCaptureKind
 {
     Ui,
@@ -28,8 +28,9 @@ class InputRouter;
 class PointerCapture
 {
 public:
-    // `origin` is the viewport the gesture began in; the router stamps it onto
-    // subsequent pointer events so the gesture stays on its starting viewport.
+    // With an `origin`, every later pointer event is stamped with it wherever
+    // the pointer is; without one, each is stamped with the viewport under the
+    // pointer, so the gesture follows it from view to view.
     void Acquire(PointerCaptureKind kind, ViewportId origin = {});
     void Release();
     [[nodiscard]] bool HeldBySelf() const;
@@ -63,13 +64,10 @@ public:
     InputConsumed Route(const InputEvent& event);
 
     // Whether a pointer capture is currently held, and the viewport its holder
-    // recorded at Acquire. Used by the input boundary to stamp events while captured.
+    // pinned it to at Acquire (none for a capture that follows the pointer).
+    // Used by the input boundary to stamp events while captured.
     [[nodiscard]] bool PointerCaptured() const { return CapturedIndex.has_value(); }
     [[nodiscard]] ViewportId CaptureViewport() const { return CaptureOrigin; }
-
-    // Notified when the capture owner changes: the new kind, or nullopt on release.
-    // Drives the ImGui input gate (off while an Exclusive capture is held).
-    void SetCaptureChanged(std::function<void(std::optional<PointerCaptureKind>)> callback);
 
 private:
     friend class PointerCapture;
@@ -81,5 +79,4 @@ private:
     std::optional<std::size_t> CapturedIndex;
     PointerCaptureKind CapturedKind = PointerCaptureKind::Exclusive;
     ViewportId CaptureOrigin = {};
-    std::function<void(std::optional<PointerCaptureKind>)> CaptureChanged;
 };

@@ -330,6 +330,11 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/net/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/serialization/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/metadata/*.h"
+    # An asset reference crosses into a module inside authored values and data
+    # schemas, so its layout and its id's are layout the module compiled.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetRef.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/core/assets/AssetId.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/core/identity/StrongId.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/core/console/*.h"
     # EngineConfig reaches a game module through GameConfigureContext, so its
     # sections are layout the module compiled against.
@@ -339,6 +344,9 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # by value and reaches the service through an inline Engine accessor, so
     # these decide layout a module compiles against.
     "${SENCHA_ENGINE_INCLUDE_DIR}/ui/*.h"
+    # UiService::Frames() and TakeTextureChanges() hand these to a module, and
+    # a host drawing its own surfaces reads their members.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/render/ui/*.h"
     # The authored vocabulary: a game declares verbs through VerbRegistry and
     # binds implementations through VerbDispatcher, holding tokens and
     # invocation values by value.
@@ -506,6 +514,18 @@ if(SENCHA_ENABLE_COOK)
     )
     FetchContent_MakeAvailable(mikktspace)
 
+    # SVG parsing and rasterization for vector art (SvgRasterize, the .svg
+    # texture importer). Header-only; its implementation TU is
+    # src/assets/cook/SvgRasterize.cpp. Cook-only, never ships.
+    FetchContent_Declare(
+        nanosvg
+        GIT_REPOSITORY https://github.com/memononen/nanosvg.git
+        GIT_TAG        239e102ec2c691f2902e20ace2ed36ee4a35cfe6
+        SOURCE_SUBDIR  sencha-does-not-build-this
+    )
+    FetchContent_MakeAvailable(nanosvg)
+    target_include_directories(sencha_engine SYSTEM PRIVATE "${nanosvg_SOURCE_DIR}/src")
+
     # Vendored encoder/tangent sources compile in their own target so the
     # first-party diagnostic set never binds to third-party code. OBJECT rather
     # than STATIC for the sencha_imgui_support reason: the objects have to land
@@ -610,19 +630,9 @@ target_include_directories(sencha_navigation_thirdparty SYSTEM PUBLIC
 target_compile_definitions(sencha_navigation_thirdparty PUBLIC DT_POLYREF64=1 DT_VIRTUAL_QUERYFILTER=1)
 target_link_libraries(sencha_engine PRIVATE sencha_navigation_thirdparty)
 
-# RmlUi: the layout and document engine behind the retained authored UI runtime
-# (docs/ui/architecture.md). Deliberately NOT inside the Vulkan block -- cooking a
-# package, parsing a document, laying it out, and driving presentation models need
-# no device, and the headless UI tests are what keep that honest.
-#
-# STATIC and PRIVATE, which is the opposite of the imgui treatment below, for the
-# reason recorded there in reverse: imgui is an OBJECT library because the editors
-# link only sencha::engine yet call ImGui, so those symbols must reach the shared
-# library's export table. Nothing outside engine/src/ui/rml/ ever calls RmlUi --
-# cmake/CheckUiIsolation.cmake enforces exactly that -- so RmlUi must not be
-# re-exported, must not appear on the install interface, and must not oblige the
-# SDK to ship its headers. PIC comes from CMAKE_POSITION_INDEPENDENT_CODE at the
-# root, so a static library links into the shared engine cleanly.
+# RmlUi, the authored UI's document engine: outside the Vulkan block because it
+# needs no device, and STATIC and PRIVATE because nothing outside engine/src/ui/
+# calls it (docs/building.md, Third-party linkage).
 if(SENCHA_ENABLE_UI)
     # RmlUi's own font engine. The alternative is implementing FontEngineInterface
     # ourselves, which is a large project buying nothing we need today.
@@ -739,8 +749,8 @@ if(SENCHA_ENABLE_VULKAN)
         FetchContent_Declare(
             imgui
             GIT_REPOSITORY https://github.com/ocornut/imgui.git
-            # Docking-enabled, version-matched tag (adds DockSpace/DockBuilder; same
-            # backends). Editor docks its panels into a default layout.
+            # The docking branch's tag; nothing in the tree docks, so the plain
+            # release of the same version would serve.
             GIT_TAG        v1.91.9-docking
         )
         FetchContent_MakeAvailable(imgui)
@@ -771,14 +781,9 @@ if(SENCHA_ENABLE_VULKAN)
     )
     target_compile_features(sencha_imgui_support PUBLIC cxx_std_20)
 
-    # The engine is the single ImGui provider: the editors link only
-    # sencha::engine yet call ImGui, so the engine has to carry those symbols on
-    # its exported surface. Hence an OBJECT library rather than a static one.
-    # The Windows export table is generated from the shared library's own object
-    # files, and symbols that arrive from a linked static library are not in it,
-    # which leaves every editor with unresolved ImGui symbols. A consumer needs
-    # the imgui headers (leaked by public debug/ and serialization headers) but
-    # not the objects, so only the header dirs go on the public interface.
+    # An OBJECT library, so ImGui's symbols reach the engine's export table for a
+    # game module's debug panels; only the header dirs are public
+    # (docs/building.md, Third-party linkage).
     target_link_libraries(sencha_engine PRIVATE sencha_imgui_support)
     target_include_directories(sencha_engine SYSTEM PUBLIC
         "$<BUILD_INTERFACE:${IMGUI_DIR}>"
@@ -920,7 +925,6 @@ foreach(_template IN LISTS _sencha_template_dirs)
             DESTINATION "${CMAKE_INSTALL_DATADIR}/sencha/templates/${_template}"
             PATTERN "build" EXCLUDE
             PATTERN ".cooked" EXCLUDE
-            PATTERN "asset_ids.json" EXCLUDE
             PATTERN "*.sworld.user.json" EXCLUDE)
     endif()
 endforeach()

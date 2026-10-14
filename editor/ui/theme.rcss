@@ -29,6 +29,20 @@ body { color: #d8dce4ff; }
 .theme-field:hover  { background-color: #161b24ff; }
 .theme-field:focus  { background-color: #161b24ff; border-color: #4c7fd0ff; }
 .theme-well         { background-color: #12161dff; border-color: #39414fff; }
+.theme-frame        { border-color: #39414fff; }
+.theme-frame.active { border-color: #ffb347ff; }
+.theme-frame.hover  { border-color: #4c7fd0ff; }
+.theme-frame.caution { border-color: #d8a24aff; }
+.theme-dot          { fill-color: #4c7fd0ff; }
+.theme-dot.selected { fill-color: #ffb347ff; }
+.theme-playhead     { background-color: #ffb347ff; }
+.theme-mark         { fill-color: #8d95a5ff; }
+.theme-mark.gameplay { fill-color: #d8a24aff; }
+.theme-mark.selected { fill-color: #ffb347ff; stroke-color: #e8ecf4ff; }
+.theme-bar          { background-color: #4c7fd0ff; }
+.theme-span         { background-color: #2a3140ff; border-color: #39414fff; color: #e8ecf4ff; }
+.theme-span.selected { background-color: #2f6fb0ff; border-color: #ffb347ff; }
+.theme-marquee      { background-color: #4c7fd029; border-color: #6f9be0ff; }
 
 .theme-icon        { color: #8d95a5ff; }
 .theme-icon:hover  { background-color: #38414fff; color: #e8ecf4ff; }
@@ -39,12 +53,52 @@ body { color: #d8dce4ff; }
 
 .theme-row:hover     { background-color: #222834ff; }
 .theme-row.selected  { background-color: #2f6fb0ff; color: #ffffffff; }
+.theme-row.disabled  { color: #6b7285ff; }
 
 .theme-dim      { color: #aab3c4ff; }
 .theme-muted    { color: #6b7285ff; }
 .theme-accent   { color: #4c7fd0ff; }
 .theme-warning  { color: #d8a24aff; }
 .theme-danger   { color: #d86a5aff; }
+
+.theme-rail         { background-color: #10151cff; border-color: #3a4856ff; }
+.theme-plate        { background-color: #1a222cff; border-color: #3a4856ff; }
+.theme-key          { background-color: #131a23ff; border-color: #3a4856ff; color: #d6e4f0ff; }
+.theme-key:hover    { background-color: #1b2633ff; border-color: #ffd84aff; }
+.theme-key.lit      { background-color: #4d330bff; border-color: #ffb347ff; color: #ffb347ff; }
+.theme-key.disabled { background-color: #080b10ff; border-color: #24303cff; color: #6e8296ff; }
+.theme-key.destructive { color: #d86a5aff; }
+.theme-readout      { background-color: #05070aff; border-color: #24303cff; color: #2ed0eaff; }
+
+.theme-wheel-plate  { fill-color: #03050aff; }
+.theme-wheel-rim    { fill-color: #1a222cff; }
+.theme-wheel-petal  { fill-color: #12161dff; }
+.theme-wheel-hot    { fill-color: #4d330bff; stroke-color: #ffb347ff; }
+.theme-wheel-mark   { fill-color: #ffb347ff; }
+.theme-wheel-detail { fill-color: #2ed0eaff; }
+.theme-wheel-hub    { fill-color: #05070aff; }
+.theme-wheel-well   { fill-color: #05070aff; stroke-color: #3a4856ff; color: #2ed0eaff; }
+.theme-wheel-well .icon { image-color: #2ed0eaff; }
+.theme-wheel-well.active { color: #ffb347ff; }
+.theme-wheel-well.active .icon { image-color: #ffb347ff; }
+.theme-wheel-well.lit { fill-color: #2a1c06ff; stroke-color: #ffb347ff; color: #ffd08fff; }
+.theme-wheel-well.lit .icon { image-color: #ffd08fff; }
+.theme-art          { image-color: #3a4856ff; }
+.theme-segment      { border-color: #39414fff; }
+.theme-segment:hover { background-color: #1b2230ff; }
+.theme-segment.lit  { background-color: #4d330bff; color: #ffb347ff; }
+slidertrack         { background-color: #12161dff; }
+sliderprogress      { background-color: #2e4a70ff; }
+sliderbar           { background-color: #4c7fd0ff; }
+sliderbar:hover, sliderbar:active { background-color: #6f9be0ff; }
+selectbox           { background-color: #12161dff; border-color: #4c7fd0ff; }
+selectbox option:hover { background-color: #1b2230ff; }
+selectbox option:checked { background-color: #4d330bff; color: #d6e4f0ff; }
+.theme-lamp         { background-color: #10141bff; border-color: #03050aff; }
+.theme-lamp.on      { background-color: #2ed0eaff; }
+.theme-lamp.lit     { background-color: #ffb347ff; }
+.theme-lamp.warn    { background-color: #ee9d26ff; }
+.theme-lamp.fault   { background-color: #e0473cff; }
 
 scrollbarvertical, scrollbarhorizontal { background-color: #12161dff; }
 scrollbarvertical sliderbar, scrollbarhorizontal sliderbar { background-color: #39414fff; }

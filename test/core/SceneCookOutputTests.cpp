@@ -1,6 +1,6 @@
 #include <assets/cook/SceneCookOutput.h>
 
-#include <core/assets/AssetIdMap.h>
+#include <core/assets/AssetId.h>
 #include <core/json/JsonValue.h>
 #include <world/scene/SmapFormat.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
@@ -63,8 +63,7 @@ namespace
                                 std::string* error)
         {
             return WriteCookedScene(scene, extraRefs, /*collisionCells*/ {},
-                Serializers, Resolver(), Root / "asset_ids.json",
-                Root / "scene.smap", "asset://scene.smap", error);
+                Serializers, Resolver(), Root / "scene.smap", error);
         }
 
         fs::path Root;
@@ -125,54 +124,55 @@ TEST_F(SceneCookOutputTest, DependenciesCoverSceneRefsSmatIndirectionAndExtraRef
         EXPECT_TRUE(dependency.Id.IsValid()) << dependency.Path;
 }
 
-TEST_F(SceneCookOutputTest, CookedSceneStampsKnownRefs)
+// A dependency goes by the id its reference names, else the one its file
+// states, else its path's; the scene's references pass through as written.
+TEST_F(SceneCookOutputTest, DependenciesGoByTheIdsTheAssetsGoBy)
 {
     WriteFile("asset://meshes/cell.smesh", "smesh-bytes");
-    WriteFile("asset://materials/gray.smat", R"({})");
+    WriteFile("asset://meshes/cell.smesh.meta", R"({"id": "00000000000000c1"})");
+    WriteFile("asset://materials/gray.smat", R"({"id": "00000000000000c2", "version": 2})");
+    WriteFile("asset://materials/brick.smat", R"({"version": 2})");
 
-    const JsonValue scene = SceneWith("asset://meshes/cell.smesh", "asset://materials/gray.smat");
+    JsonValue scene = SceneWith("asset://meshes/cell.smesh", "asset://materials/gray.smat");
+    const std::vector<std::string> extraRefs = { "asset://materials/brick.smat" };
     std::string error;
-    ASSERT_TRUE(Cook(scene, {}, &error)) << error;
+    ASSERT_TRUE(Cook(scene, extraRefs, &error)) << error;
 
     SmapContents contents;
     SmapError readError;
-    ASSERT_TRUE(ReadSmapFile(Root / "scene.smap", Serializers, contents, &readError))
-        << readError.Message;
-    ASSERT_EQ(contents.Entities.size(), 1u);
-    ASSERT_EQ(contents.Entities[0].Components.size(), 1u);
+    ASSERT_TRUE(ReadSmapFile(Root / "scene.smap", Serializers, contents, &readError)) << readError.Message;
+    const auto idOf = [&](std::string_view path) {
+        const auto found = std::ranges::find(contents.Dependencies, path, &SmapDependency::Path);
+        return found != contents.Dependencies.end() ? found->Id : AssetId{};
+    };
+    EXPECT_EQ(idOf("asset://meshes/cell.smesh"), AssetId{ 0xc1 }) << "its sidecar states it";
+    EXPECT_EQ(idOf("asset://materials/gray.smat"), AssetId{ 0xc2 }) << "its document states it";
+    EXPECT_EQ(idOf("asset://materials/brick.smat"), AssetIdOfPath("asset://materials/brick.smat"));
 
-    // The mesh ref is stamped from a bare string to {"id","path"}.
     const JsonValue& staticMesh = contents.Entities[0].Components[0].second;
-    const JsonValue* mesh = staticMesh.Find("mesh");
-    ASSERT_NE(mesh, nullptr);
-    ASSERT_TRUE(mesh->IsObject());
-    ASSERT_NE(mesh->Find("id"), nullptr);
-    ASSERT_NE(mesh->Find("path"), nullptr);
-    EXPECT_EQ(mesh->Find("path")->AsString(), "asset://meshes/cell.smesh");
+    EXPECT_TRUE(staticMesh.Find("mesh")->IsString()) << "a bare path is cooked as written";
 }
 
-TEST_F(SceneCookOutputTest, IdsAreStableAcrossRecook)
+TEST_F(SceneCookOutputTest, AReferenceByIdNamesItsDependencyByThatId)
 {
     WriteFile("asset://meshes/cell.smesh", "smesh-bytes");
-    const JsonValue scene = SceneWith("asset://meshes/cell.smesh", "asset://materials/gray.smat");
-    WriteFile("asset://materials/gray.smat", R"({})");
+    WriteFile("asset://materials/gray.smat", R"({"version": 2})");
+    JsonValue::Object mesh{ { "id", JsonValue("00000000000000d4") }, { "path", JsonValue("asset://meshes/cell.smesh") } };
+    JsonValue::Object staticMesh{ { "mesh", JsonValue(std::move(mesh)) },
+                                  { "materials", JsonValue(JsonValue::Array{ JsonValue("asset://materials/gray.smat") }) } };
+    JsonValue::Object components{ { "StaticMesh", JsonValue(std::move(staticMesh)) } };
+    JsonValue::Object entity{ { "components", JsonValue(std::move(components)) } };
+    const JsonValue scene(JsonValue::Object{ { "version", JsonValue(1.0) },
+                                             { "entities", JsonValue(JsonValue::Array{ JsonValue(std::move(entity)) }) } });
 
-    const auto cook = [&] {
-        std::string error;
-        return Cook(scene, {}, &error);
-    };
-
-    ASSERT_TRUE(cook());
-    AssetIdMap first;
-    ASSERT_TRUE(AssetIdMap::LoadFromFile((Root / "asset_ids.json").generic_string(), first));
-
-    ASSERT_TRUE(cook());
-    AssetIdMap second;
-    ASSERT_TRUE(AssetIdMap::LoadFromFile((Root / "asset_ids.json").generic_string(), second));
-
-    EXPECT_EQ(first.FindId("asset://meshes/cell.smesh"),
-              second.FindId("asset://meshes/cell.smesh"));
-    EXPECT_TRUE(first.FindId("asset://meshes/cell.smesh").IsValid());
+    std::string error;
+    ASSERT_TRUE(Cook(scene, {}, &error)) << error;
+    SmapContents metadata;
+    SmapError metadataError;
+    ASSERT_TRUE(ReadSmapMetadataFile(Root / "scene.smap", metadata, &metadataError)) << metadataError.Message;
+    const auto cell = std::ranges::find(metadata.Dependencies, std::string_view("asset://meshes/cell.smesh"), &SmapDependency::Path);
+    ASSERT_NE(cell, metadata.Dependencies.end());
+    EXPECT_EQ(cell->Id, AssetId{ 0xd4 });
 }
 
 TEST_F(SceneCookOutputTest, UnknownComponentRefusesTheCook)

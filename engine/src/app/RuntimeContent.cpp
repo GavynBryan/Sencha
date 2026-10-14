@@ -18,6 +18,7 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <graphics/vulkan/GraphicsServices.h>
 #include <input/InputBindingCache.h>
+#include <jobs/AsyncTaskQueue.h>
 #include <movement/MovementProfileBindingCache.h>
 #include <runtime/spawn/NetPrefabSpawner.h>
 #include <runtime/spawn/SceneSpawnService.h>
@@ -31,6 +32,22 @@
 
 namespace
 {
+// A file that appears after a load of it failed replaces the stand-in
+// wherever it is held. Free until the registry changes.
+struct StandInRetrySystem
+{
+    StandInRetrySystem(RuntimeContent& content, AsyncTaskQueue& tasks)
+        : Content(content)
+        , Tasks(tasks)
+    {
+    }
+
+    void FrameUpdate(FrameUpdateContext&) { Content.Assets().Assets.RetryStandIns(Tasks); }
+
+    RuntimeContent& Content;
+    AsyncTaskQueue& Tasks;
+};
+
 #ifdef SENCHA_ENABLE_COOK
 // Polls the watched sources; a changed one stages an in-place swap that
 // commits at the async drain. The poll throttles itself.
@@ -97,7 +114,7 @@ void RuntimeContent::Mount()
     for (const std::string& root : Host.Config().Runtime.ContentRoots)
     {
         const ContentRootPaths paths = ResolveContentRoot(root);
-        MountContentRoot(paths, *Assets_, Log);
+        MountContentRoot(paths, *Assets_);
         MountedRoots.push_back(paths);
     }
 
@@ -156,10 +173,9 @@ void RuntimeContent::Publish(World& world)
 
 void RuntimeContent::RegisterSystems(EngineSchedule& schedule)
 {
+    schedule.Register<StandInRetrySystem>(*this, Host.Tasks());
 #ifdef SENCHA_ENABLE_COOK
     schedule.Register<HotReloadPollSystem>(*this);
-#else
-    (void)schedule;
 #endif
 }
 

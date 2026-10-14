@@ -239,3 +239,31 @@ TEST_F(DerivedComponentAddTest, TheGroupIsOrderedAndStable)
     const EntityId bare = Document.GetScene().CreateEntity(Vec3d::Zero());
     EXPECT_TRUE(DerivedComponentsOn(Components(), EditorSceneSerializers(), bare).empty());
 }
+
+// What adding a component would bring, asked before the add: the same set the
+// add then provisions, each once.
+TEST_F(DerivedComponentAddTest, TheClosureNamesWhatAnAddWouldBringBeforeItHappens)
+{
+    const IComponentSerializer* serializer = EditorSceneSerializers().FindByJsonKey("CharacterMovement");
+    ASSERT_NE(serializer, nullptr);
+    const ComponentId movement = Components().GetComponentIdByType(serializer->TypeId());
+    const std::vector<ComponentId> closure = DerivedClosureOf(Components(), movement);
+    EXPECT_EQ(std::ranges::find(closure, movement), closure.end()) << "not itself";
+    for (std::size_t i = 0; i < closure.size(); ++i)
+        EXPECT_EQ(std::ranges::count(closure, closure[i]), 1) << "each once";
+
+    const EntityId entity = Document.GetScene().CreateEntity(Vec3d::Zero());
+    std::vector<ComponentId> before;
+    Components().ComponentIdsOn(entity, before);
+    AddByMenu(entity, "CharacterMovement");
+    std::vector<ComponentId> after;
+    Components().ComponentIdsOn(entity, after);
+    for (const ComponentId id : after)
+    {
+        if (id != movement && std::ranges::find(before, id) == before.end())
+        {
+            EXPECT_NE(std::ranges::find(closure, id), closure.end()) << "the add brought something the closure missed";
+        }
+    }
+    EXPECT_FALSE(closure.empty());
+}

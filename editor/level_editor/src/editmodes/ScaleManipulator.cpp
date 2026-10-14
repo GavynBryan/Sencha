@@ -302,18 +302,11 @@ std::optional<double> SelectionBoundCoord(const ManipulatorContext& ctx, MeshEle
     return (maxCoord - p >= p - minCoord) ? maxCoord : minCoord;
 }
 
-float ScreenDistance(ImVec2 a, ImVec2 b)
-{
-    const float dx = a.x - b.x;
-    const float dy = a.y - b.y;
-    return std::sqrt(dx * dx + dy * dy);
-}
-
 class ScaleDrag : public IInteraction
 {
 public:
     ScaleDrag(Vec3d pivot, int part, Vec3d axisDir, double startParam,
-              ImVec2 pivotScreen, float startScreenDist, std::optional<double> boundOffset,
+              Vec2d pivotScreen, float startScreenDist, std::optional<double> boundOffset,
               std::unique_ptr<IScaleApply> apply)
         : Pivot(pivot), Part(part), AxisDir(axisDir), StartParam(startParam)
         , PivotScreen(pivotScreen), StartScreenDist(startScreenDist)
@@ -339,7 +332,7 @@ public:
     }
 
 private:
-    Vec3d FactorAt(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos) const
+    Vec3d FactorAt(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos) const
     {
         if (Part >= 1 && Part <= 3)
         {
@@ -366,7 +359,7 @@ private:
         // Uniform: screen-space distance ratio from the pivot.
         if (StartScreenDist < 1.0e-3f)
             return Vec3d(1.0f, 1.0f, 1.0f);
-        const float f = std::max(kMinFactor, ScreenDistance(pos, PivotScreen) / StartScreenDist);
+        const float f = std::max(kMinFactor, Vec2d::Distance(pos, PivotScreen) / StartScreenDist);
         return Vec3d(f, f, f);
     }
 
@@ -389,7 +382,7 @@ private:
     int Part;
     Vec3d AxisDir;
     double StartParam;
-    ImVec2 PivotScreen;
+    Vec2d PivotScreen;
     float StartScreenDist;
     // AABB bound minus pivot along AxisDir at drag start, for absolute grid snap.
     std::optional<double> BoundOffset;
@@ -433,7 +426,7 @@ void ScaleManipulator::BuildVisual(const ManipulatorContext& ctx,
 
 int ScaleManipulator::HitTest(const ManipulatorContext& ctx,
                               const EditorViewport& viewport,
-                              ImVec2 screenPos) const
+                              Vec2d screenPos) const
 {
     const std::optional<Vec3d> pivot =
         ComputeSelectionPivot(ctx.Sink, ctx.Selection, ctx.Service.GetElementKind(), ctx.Pivot);
@@ -453,7 +446,7 @@ int ScaleManipulator::HitTest(const ManipulatorContext& ctx,
         const std::optional<ProjectedPoint> tip = projection.WorldToPixel(*pivot + AxisDirection(axis) * length);
         if (!origin.has_value() || !tip.has_value())
             continue;
-        const float toTip = ScreenDistance(screenPos, tip->Pixel);
+        const float toTip = Vec2d::Distance(screenPos, tip->Pixel);
         const float toStalk = ViewportProjection::DistancePointToSegment(screenPos, origin->Pixel, tip->Pixel);
         const float pixels = std::min(toTip, toStalk);
         if (pixels <= bestPixels)
@@ -466,7 +459,7 @@ int ScaleManipulator::HitTest(const ManipulatorContext& ctx,
     // Center box (uniform) wins ties against a stalk passing through the pivot.
     if (const std::optional<ProjectedPoint> center = projection.WorldToPixel(*pivot))
     {
-        const float toCenter = ScreenDistance(screenPos, center->Pixel);
+        const float toCenter = Vec2d::Distance(screenPos, center->Pixel);
         if (toCenter <= kCenterHitPixels && (best == 0 || toCenter <= bestPixels))
         {
             bestPixels = toCenter;
@@ -480,7 +473,7 @@ std::unique_ptr<IInteraction> ScaleManipulator::BeginDrag(
     int part,
     const ManipulatorContext& ctx,
     const EditorViewport& viewport,
-    ImVec2 screenPos,
+    Vec2d screenPos,
     ModifierFlags modifiers) const
 {
     if (part < 1 || part > kUniformPart)
@@ -503,10 +496,10 @@ std::unique_ptr<IInteraction> ScaleManipulator::BeginDrag(
         startParam = *s;
     }
 
-    ImVec2 pivotScreen = screenPos;
+    Vec2d pivotScreen = screenPos;
     if (const std::optional<ProjectedPoint> p = projection.WorldToPixel(*pivot))
         pivotScreen = p->Pixel;
-    const float startScreenDist = ScreenDistance(screenPos, pivotScreen);
+    const float startScreenDist = Vec2d::Distance(screenPos, pivotScreen);
 
     // The bound is captured before the extrude variant grows geometry, so the
     // snap drives the pre-drag selection's AABB face.

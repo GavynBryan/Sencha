@@ -9,6 +9,8 @@
 struct SENCHA_COMPONENT("SpotLight")
        SENCHA_SCHEMA("SpotLight")
        SENCHA_SCENE_CHUNK("SPOT")
+       SENCHA_PLACEABLE("Spot Light")
+       SENCHA_PLACE_ICON("light-spot")
 SpotLightComponent
 {
     SENCHA_FIELD("color")

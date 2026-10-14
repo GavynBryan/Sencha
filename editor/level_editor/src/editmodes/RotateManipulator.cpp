@@ -398,7 +398,7 @@ public:
     }
 
 private:
-    bool UpdateAngle(const EditorViewport& viewport, ImVec2 pos)
+    bool UpdateAngle(const EditorViewport& viewport, Vec2d pos)
     {
         const Ray3d ray = ViewportProjection(viewport).RayThroughPixel(pos);
         const std::optional<double> angle = GizmoMath::AngleOnPlane(ray, Pivot, Axis, U, V);
@@ -479,7 +479,7 @@ void RotateManipulator::BuildVisual(const ManipulatorContext& ctx,
 
 int RotateManipulator::HitTest(const ManipulatorContext& ctx,
                                const EditorViewport& viewport,
-                               ImVec2 screenPos) const
+                               Vec2d screenPos) const
 {
     const std::optional<Vec3d> pivot = GizmoPivot(ctx);
     if (!pivot.has_value())
@@ -522,7 +522,7 @@ std::unique_ptr<IInteraction> RotateManipulator::BeginDrag(
     int part,
     const ManipulatorContext& ctx,
     const EditorViewport& viewport,
-    ImVec2 screenPos,
+    Vec2d screenPos,
     ModifierFlags modifiers) const
 {
     if (part < 1 || part > 3)

@@ -1,5 +1,7 @@
 #include "workspaces/WorkspaceHost.h"
 
+#include "actions/ActionContext.h"
+
 #include <algorithm>
 #include <utility>
 
@@ -97,6 +99,8 @@ IWorkspace* WorkspaceHost::Open(std::string_view kind)
     Opened.push_back(Entry{ row, std::move(instance), Main });
     if (OnOpened)
         OnOpened(*row, *built);
+    if (OnPlaced)
+        OnPlaced(*row, *built);
     (void)Activate(kind);
     return built;
 }
@@ -214,11 +218,65 @@ void WorkspaceHost::CloseAll()
         (void)Destroy(Opened.back().Kind->Id);
 }
 
+const WorkspaceKind* WorkspaceHost::KindOpening(const ProjectFile& file) const
+{
+    const WorkspaceKind* best = nullptr;
+    bool bestNamesSubtype = false;
+    for (const WorkspaceKind& kind : Table)
+    {
+        if (!IsOffered(kind.Id))
+            continue;
+        for (const ContentKind& rule : kind.Opens)
+        {
+            if (rule.Extension != file.Extension || (!rule.Subtype.empty() && rule.Subtype != file.Subtype))
+                continue;
+            const bool namesSubtype = !rule.Subtype.empty();
+            if (best == nullptr || (namesSubtype && !bestNamesSubtype))
+            {
+                best = &kind;
+                bestNamesSubtype = namesSubtype;
+            }
+        }
+    }
+    return best;
+}
+
+bool WorkspaceHost::RequestOpen(ProjectFile file)
+{
+    if (KindOpening(file) == nullptr)
+        return false;
+    PendingAssets.push_back({ std::move(file) });
+    return true;
+}
+
+bool WorkspaceHost::RequestCreate(std::string_view kind, std::string_view action)
+{
+    const WorkspaceKind* row = FindKind(kind);
+    if (row == nullptr || !IsOffered(kind)
+        || std::ranges::find(row->Creates, action, &ActionDefinition::Id) == row->Creates.end())
+        return false;
+    PendingCreates.push_back({ std::string(kind), std::string(action) });
+    return true;
+}
+
 void WorkspaceHost::ApplyRequests()
 {
     // Taken first: a workspace opening may itself request something.
     std::vector<WorkspaceRequest> requests = std::move(Pending);
     Pending.clear();
+    std::vector<AssetOpenRequest> assets = std::move(PendingAssets);
+    PendingAssets.clear();
+    std::vector<AssetCreateRequest> creates = std::move(PendingCreates);
+    PendingCreates.clear();
+    for (const AssetOpenRequest& asset : assets)
+        if (const WorkspaceKind* kind = KindOpening(asset.File))
+            if (IWorkspace* workspace = Open(kind->Id))
+                (void)workspace->OpenAsset(asset.File);
+    for (const AssetCreateRequest& create : creates)
+        if (IWorkspace* workspace = Open(create.Kind))
+            if (const ActionContext* actions = workspace->Actions())
+                if (const ActionBinding* binding = actions->Find(create.Action))
+                    (void)binding->TryInvoke();
     for (const WorkspaceRequest& request : requests)
     {
         switch (request.Action)

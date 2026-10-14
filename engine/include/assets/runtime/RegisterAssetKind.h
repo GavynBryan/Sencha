@@ -6,6 +6,8 @@
 #include <core/assets/AssetStore.h>
 
 #include <cassert>
+#include <functional>
+#include <string_view>
 #include <utility>
 
 namespace AssetKindDetail
@@ -38,15 +40,54 @@ namespace AssetKindDetail
         else
             return loader.CommitReload(std::move(staged));
     }
+
+    template<typename TLoader, typename TCache>
+    AssetKindRegistration Make(AssetSystem& assets, AssetType type, TLoader& loader, TCache* cache,
+                               IAssetListStore* listStore)
+    {
+        AssetKindRegistration kind = MakeBuiltinAssetKind(type);
+        kind.Stager = &loader;
+        if (cache == nullptr)
+            return kind;
+        kind.Store = cache;
+        kind.ListStore = listStore;
+        kind.Commit = [type, &loader, cache, &assets](AssetStaging&& staged) -> AssetCommitOutcome
+        {
+            auto committed = CommitTyped(loader, std::move(staged), assets);
+            if constexpr (requires { committed.FailedDependency; })
+            {
+                if (!committed.IsValid())
+                    return AssetCommitOutcome::DependencyFailed(std::move(committed.FailedDependency));
+                return AssetLease::Adopt(type, *cache, committed.Handle.ToToken());
+            }
+            else
+            {
+                if (!committed.IsValid())
+                    return {};
+                return AssetLease::Adopt(type, *cache, committed.ToToken());
+            }
+        };
+        if constexpr (CanReload<TLoader>)
+        {
+            kind.Reload = [&loader, &assets](AssetStaging&& staged)
+            {
+                return CommitReload(loader, std::move(staged), assets);
+            };
+        }
+        return kind;
+    }
+
+    inline void Register(AssetSystem& assets, AssetKindRegistration kind)
+    {
+        const bool registered = assets.Kinds().Register(std::move(kind));
+        assert(registered && "an asset kind registered twice or claims another's extension");
+        (void)registered;
+    }
 }
 
-// Attaches one of the engine's typed loader-and-cache pairs to the front door
-// as the kind for `type`. The loader stages; the cache is the kind's store,
-// and its typed CommitTyped / CommitReload become the kind's commit and reload.
-//
-// The stager is always wired because staging touches no cache; the commit
-// half exists only for a cache this composition has, so a headless host still
-// stages a mesh and reports the commit as a failure.
+// Attaches a typed loader-and-cache pair as the kind for `type`: the cache is its
+// store, CommitTyped / CommitReload its commit and reload. The stager is wired
+// even without a cache, so a headless host stages what it cannot commit.
 template<typename TLoader, typename TCache>
 void RegisterAssetKind(AssetSystem& assets,
                        AssetType type,
@@ -54,29 +95,22 @@ void RegisterAssetKind(AssetSystem& assets,
                        TCache* cache,
                        IAssetListStore* listStore = nullptr)
 {
-    AssetKindRegistration kind = MakeBuiltinAssetKind(type);
-    kind.Stager = &loader;
-    if (cache != nullptr)
-    {
-        kind.Store = cache;
-        kind.ListStore = listStore;
-        kind.Commit = [type, &loader, cache, &assets](AssetStaging&& staged) -> AssetLease
-        {
-            const auto handle = AssetKindDetail::CommitTyped(loader, std::move(staged), assets);
-            if (!handle.IsValid())
-                return {};
-            return AssetLease::Adopt(type, *cache, handle.ToToken());
-        };
-        if constexpr (AssetKindDetail::CanReload<TLoader>)
-        {
-            kind.Reload = [&loader, &assets](AssetStaging&& staged)
-            {
-                return AssetKindDetail::CommitReload(loader, std::move(staged), assets);
-            };
-        }
-    }
+    AssetKindDetail::Register(assets, AssetKindDetail::Make(assets, type, loader, cache, listStore));
+}
 
-    const bool registered = assets.Kinds().Register(std::move(kind));
-    assert(registered && "an asset kind registered twice or claims another's extension");
-    (void)registered;
+// The same, with what an asset of the kind that cannot be loaded resolves to.
+// Only a kind that can reload takes one: the reload is what replaces it.
+template<typename TLoader, typename TCache>
+    requires AssetKindDetail::CanReload<TLoader>
+void RegisterAssetKind(AssetSystem& assets,
+                       AssetType type,
+                       TLoader& loader,
+                       TCache* cache,
+                       IAssetListStore* listStore,
+                       std::function<AssetLease(std::string_view)> standIn)
+{
+    AssetKindRegistration kind = AssetKindDetail::Make(assets, type, loader, cache, listStore);
+    if (cache != nullptr)
+        kind.StandIn = std::move(standIn);
+    AssetKindDetail::Register(assets, std::move(kind));
 }

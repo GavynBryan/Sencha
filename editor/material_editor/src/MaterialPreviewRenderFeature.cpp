@@ -1,5 +1,7 @@
 #include "MaterialPreviewRenderFeature.h"
 
+#include "render/TargetImagePublish.h"
+
 #include <assets/runtime/RuntimeAssets.h>
 #include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/VulkanSamplerCache.h>
@@ -26,12 +28,12 @@ bool MaterialPreviewRenderFeature::Setup(const RenderFeatureServices& featureSer
 {
     const RendererServices& services = *featureServices.Backend;
     Services = services;
-    Targets.Setup(services, services.Samplers != nullptr ? services.Samplers->GetLinearClamp() : VK_NULL_HANDLE);
+    Targets.Setup(services);
     RenderTargetDesc scene{};
     scene.ColorFormat = kPreviewColorFormat;
     scene.DepthFormat = services.DepthFormat;
-    // ImGui binds this itself, through the presenter.
-    scene.Read = RenderTargetRead::Sampled;
+    scene.Read = RenderTargetRead::Bindless;
+    scene.Sampler = services.Samplers != nullptr ? services.Samplers->GetLinearClamp() : VK_NULL_HANDLE;
     scene.DebugName = "material_preview";
     SceneTarget = Targets.Create(scene);
     Backdrop.Setup(services);
@@ -82,18 +84,23 @@ void MaterialPreviewRenderFeature::Zoom(float wheelDelta)
     Camera.Zoom(wheelDelta);
 }
 
-ImTextureID MaterialPreviewRenderFeature::Display(VkExtent2D extent)
+void MaterialPreviewRenderFeature::Show(VkExtent2D extent, UiHostImageId image)
 {
-    return Targets.Display(SceneTarget, extent);
+    Image = image;
+    Targets.Show(SceneTarget, extent);
 }
 
 void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
 {
     const FrameContext& frame = *renderFrame.Backend;
-    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
+    Targets.BeginFrame(frame.FrameInFlightIndex);
     const std::optional<RenderTargetView> target = Targets.Acquire(SceneTarget);
     if (!target)
+    {
+        if (Services.UiTextures != nullptr && Image.has_value())
+            Services.UiTextures->WithdrawHostImage(*Image);
         return;
+    }
 
     // Brackets the recording below and commits the layout the store remembers.
     RenderTargetSession session(frame.Cmd, target->ColorImage, target->ColorLayout,
@@ -168,5 +175,7 @@ void MaterialPreviewRenderFeature::OnDraw(const RenderFrame& renderFrame)
         }
     }
 
-    // Session ends here: sampled, and the store's layout committed.
+    session.End();
+    if (Services.UiTextures != nullptr && Image.has_value())
+        PublishTargetImage(*Services.UiTextures, *Image, target->ColorLayout, target->BindlessIndex);
 }

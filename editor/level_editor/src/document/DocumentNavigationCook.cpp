@@ -6,6 +6,7 @@
 #include "DocumentArtifactCatalog.h"
 #include "DocumentCookContext.h"
 
+#include <core/assets/AssetPath.h>
 #include <assets/cook/NavigationCook.h>
 #include <assets/cook/StaticCollisionGeometry.h>
 #include <navigation/NavigationFile.h>
@@ -32,7 +33,7 @@ namespace
                      static_cast<std::streamsize>(bytes.size()));
         if (!stream.good())
             return std::nullopt;
-        return ctx.Catalog.AddNavigation("asset://" + rel, ".cooked/" + rel);
+        return ctx.Catalog.AddNavigation(AssetPathOf(rel), ".cooked/" + rel);
     }
 
     CookDiagnostic MissingSettingsWarning()

@@ -103,3 +103,10 @@ TEST_F(MaterialLibraryTest, MissingAndEmptyRootsContributeNothing)
     library.Rescan(roots);
     EXPECT_TRUE(library.Materials().empty());
 }
+
+TEST(MaterialNames, TheLeafIsTheLastPartOfTheDisplayName)
+{
+    EXPECT_EQ(MaterialLeafName("asset://materials/dev/gray.smat"), "gray");
+    EXPECT_EQ(MaterialLeafName("materials/dev/gray"), "gray");
+    EXPECT_EQ(MaterialLeafName("gray.smat"), "gray");
+}

@@ -1,125 +1,191 @@
 #include "DataWorkspace.h"
 
-#include "DataEditorPanels.h"
-#include "SubtypeEditors.h"
+#include "project/ProjectFileSteps.h"
+#include "project/ProjectFiles.h"
+#include "text/PathLeaf.h"
+
+#include "actions/ActionOffer.h"
+#include "problems/ProblemList.h"
 
 #include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <app/RuntimeContent.h>
-#include <core/console/ConsoleRegistry.h>
-#include <core/console/ConsoleService.h>
-#include <core/console/ConsoleTypes.h>
 
-#include <memory>
-#include <span>
+#include <SDL3/SDL_keycode.h>
+
 #include <utility>
 
 namespace
 {
-constexpr std::string_view kCommandOwner = "editor.data";
+constexpr std::string_view kProblemSource = "data";
+} // namespace
+
+ActionDefinition NewDataAssetAction()
+{
+    return { .Id = "data.new", .Label = "New Data Asset", .Category = "File",
+             .DefaultChords = { { SDLK_N, { .Ctrl = true } } } };
 }
 
 DataWorkspace::DataWorkspace(Engine& engine, const ProjectDescriptor& project, DocumentSourceSet& sources,
-                             DataDocumentStore& store)
+                             DataDocumentStore& store, ProjectFileSteps* files, PromptQueue& prompts,
+                             ActionCatalog& catalog, ProblemList& problems, const DataSubtypeAuthoringSetup& authorings)
     : EngineRef(engine)
     , Model(engine.Content().Assets(), project, sources, store)
+    , Files(files)
+    , Problems(problems)
+    , Sheet(Model.Documents, prompts, authorings, files)
+    , Source(Model.Documents, [this] { return Model.Documents.Active(); })
+    , Creation([this] { return Model.Documents.CreatableSubtypes(); },
+               [this](const std::string& subtype, const std::string& path, std::string& error) {
+                   if (Model.Documents.Create(subtype, path, error) == nullptr)
+                       return false;
+                   ShowSheet();
+                   return true;
+               })
 {
-    RegisterBuiltInSubtypeEditors(SubtypeEditors);
-    BuildUi();
-    RegisterCommands();
+    DefineActions(catalog);
+    OfferAction(catalog, ActionHandlers, SaveAction(), { .Invoke = [this] { SaveActive(); } });
 }
 
 DataWorkspace::~DataWorkspace()
 {
-    EngineRef.Console().Registry().UnregisterOwner(kCommandOwner);
-    Surface = WorkspaceView{};
+    Problems.Clear(kProblemSource);
 }
 
-void DataWorkspace::BuildUi()
+void DataWorkspace::DefineActions(ActionCatalog& catalog)
 {
-    Surface.Layout = DockLayoutRatios{
-        .Bottom = 0.18f,
-        .Left = 0.23f,
-        .Right = 0.30f,
-        .CenterBottom = 0.30f,
-    };
-    Surface.File.Save = [this] { SaveActive(); };
-    Surface.Status = [this] {
-        const DataDocument* document = Model.Documents.Active();
-        if (document == nullptr)
-            return std::string{};
-        return document->VirtualPath() + (document->IsDirty() ? " *" : "");
-    };
-
-    Surface.AddPanel(std::make_unique<DataAssetBrowserPanel>(Model));
-    Surface.AddPanel(std::make_unique<DataFormPanel>(Model, SubtypeEditors));
-    Surface.AddPanel(std::make_unique<DataDocumentationPanel>(Model));
-    Surface.AddPanel(std::make_unique<DataValidationPanel>(Model));
-    Surface.AddPanel(std::make_unique<DataRawJsonPanel>(Model));
-    // Documents open and close at runtime, so a subtype's panel gates itself on
-    // the active subtype rather than appearing and disappearing.
-    for (const auto& editor : SubtypeEditors.Entries())
-        for (auto& panel : editor->CreatePanels(Model.Documents))
-            Surface.AddPanel(std::move(panel));
+    const auto active = [this] { return Model.Documents.Active() != nullptr; };
+    OfferAction(catalog, ActionHandlers, NewDataAssetAction(),
+                { .Invoke = [this] {
+                    Creation.Clear();
+                    Subject = CardSubject::Creating;
+                } });
+    const auto changesFiles = [this, active] { return Files != nullptr && active(); };
+    OfferAction(catalog, ActionHandlers, { .Id = "data.duplicate", .Label = "Duplicate", .Category = "File" },
+                { .Invoke = [this] { DuplicateActive(); }, .Enabled = changesFiles });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "data.delete", .Label = "Trash File", .Category = "File", .Tone = ActionTone::Destructive },
+                { .Invoke = [this] { TrashActive(); }, .Enabled = changesFiles });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "data.close", .Label = "Close", .Category = "File",
+                  .DefaultChords = { { SDLK_W, { .Ctrl = true } } } },
+                { .Invoke = [this] { Sheet.CloseActive(); }, .Enabled = active });
+    OfferAction(catalog, ActionHandlers,
+                { .Id = "data.view_source", .Label = "View Source", .Category = "View",
+                  .DefaultChords = { { SDLK_U, { .Ctrl = true } } } },
+                { .Invoke = [this] { ShowingSource = !ShowingSource; },
+                  .Enabled = active,
+                  .Checked = [this] { return ShowingSource; } });
 }
 
-void DataWorkspace::RegisterCommands()
+void DataWorkspace::DuplicateActive()
 {
-    EngineRef.Console().Registry().RegisterCommand({
-        .Name = "data.open",
-        .Owner = std::string(kCommandOwner),
-        .Usage = "data.open <asset>",
-        .Help = "Open a data asset in the data workspace.",
-        .Callback = [this](ConsoleExecutionContext&, std::span<const std::string> args) {
-            ConsoleResult result;
-            std::string error;
-            if (args.size() != 1 || Model.Documents.OpenOrFocus(args[0], error) == nullptr)
-            {
-                result.Status = ConsoleStatus::ExecutionFailed;
-                result.Error(args.size() != 1 ? "expected one asset path" : error);
-                return result;
-            }
-            result.Info("opened '" + args[0] + "'");
-            return result;
-        },
+    const DataDocument* document = Model.Documents.Active();
+    if (document == nullptr || Files == nullptr)
+        return;
+    // What is saved is copied; unsaved changes stay with the original.
+    const AssetRegistry& registry = EngineRef.Content().Assets().Registry;
+    const std::string copy =
+        CopyPath(document->VirtualPath(), [&](const std::string& path) { return registry.Contains(path); });
+    std::string refused = Files->Duplicate(document->VirtualPath(), copy);
+    if (refused.empty())
+        (void)Sheet.Open(copy);
+    else
+        Sheet.SetError(std::move(refused));
+}
+
+void DataWorkspace::TrashActive()
+{
+    // Closed first, its changes settled: a file an editor holds is not trashed.
+    Sheet.CloseActive([this](const std::string& path) {
+        if (Files != nullptr)
+            Sheet.SetError(Files->Trash(path));
     });
+}
+
+bool DataWorkspace::RevealProblem(const Problem& problem)
+{
+    if (!problem.Document.has_value() || !OwnsDocument(*problem.Document))
+        return false;
+    (void)Sheet.Show(problem.Document->Key);
+    ShowSheet();
+    return true;
 }
 
 void DataWorkspace::SaveActive()
 {
-    if (const DataDocument* active = Model.Documents.Active())
-        (void)Model.Sources.Save(Model.Documents.RefOf(*active));
+    if (const std::optional<DocumentRef> active = Sheet.ActiveRef())
+        (void)Model.Sources.Save(*active);
+}
+
+void DataWorkspace::ShowSheet()
+{
+    Subject = CardSubject::Document;
+    ShowingSource = false;
 }
 
 void DataWorkspace::Tick(FrameUpdateContext&)
 {
     (void)Model.Documents.Store().PushWaiting();
+    Problems.Publish(kProblemSource, Sheet.Problems());
     // Only the active document's editor runs, and only while it can be seen: a
     // background document has no surface on screen and nothing reads its state.
-    if (!Visible)
-        return;
-    if (const DataDocument* document = Model.Documents.Active())
-        if (IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype()))
-            editor->UpdateForFrame(*document, Model.Documents);
+    if (Visible)
+        Sheet.Update();
 }
 
 bool DataWorkspace::ClaimPlatformEvent(PlatformEventContext& ctx)
 {
-    // A surface listening for a control to bind claims the press outright, or
-    // the same keystroke also lands in whatever widget has focus.
-    const DataDocument* document = Model.Documents.Active();
-    if (document == nullptr)
-        return false;
-    IDataSubtypeEditor* editor = SubtypeEditors.Find(document->Subtype());
-    return editor != nullptr && editor->HandlePlatformEvent(ctx.Event);
+    return Sheet.ClaimPlatformEvent(ctx.Event);
 }
 
 bool DataWorkspace::OwnsDocument(const DocumentRef& document) const
 {
-    return document.Source == &Model.Documents.Store() && Model.Documents.IndexOf(document.Key).has_value();
+    return Sheet.Owns(document);
 }
 
 void DataWorkspace::RevealDocument(const DocumentRef& document)
 {
-    Model.Documents.Reveal(document.Key);
+    if (Sheet.Show(document.Key))
+        ShowSheet();
+}
+
+WorkspaceDocumentFacet DataWorkspace::Document() const
+{
+    WorkspaceDocumentFacet facet;
+    Sheet.AppendOpen(facet);
+    if (const std::optional<WorkspaceOpenDocument> active = Sheet.ActiveEntry())
+    {
+        facet.Label = active->Label;
+        facet.Changed = active->Changed;
+        facet.Active = active->Key;
+    }
+    return facet;
+}
+
+void DataWorkspace::ShowDocument(std::string_view key)
+{
+    (void)Sheet.Show(key);
+    Subject = CardSubject::Document;
+}
+
+WorkspaceSelectionFacet DataWorkspace::Selection()
+{
+    if (Subject == CardSubject::Creating)
+        return { .Title = "New Data Asset", .Sections = { { .Heading = {}, .Source = &Creation } } };
+    const DataDocument* document = Model.Documents.Active();
+    if (document == nullptr)
+        return {};
+    return { .Title = std::string(PathLeaf(document->VirtualPath())),
+             .Actions = { "file.save", "data.view_source", "data.duplicate", "data.close", "data.delete" },
+             .Sections = Sheet.Sections(ShowingSource ? &Source : nullptr),
+             .Primary = true };
+}
+
+bool DataWorkspace::OpenAsset(const ProjectFile& file)
+{
+    if (!Sheet.Open(file.AssetPath))
+        return false;
+    ShowSheet();
+    return true;
 }

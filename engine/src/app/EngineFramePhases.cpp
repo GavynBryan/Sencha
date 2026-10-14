@@ -957,12 +957,18 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
 
 #ifdef SENCHA_ENABLE_UI
     // Below diagnostics and above the application, matching the z-order: the
-    // console has to be usable over a menu, and a menu over the game.
-    // Authored surfaces live on the primary window.
-    engine.PlatformEvents().AddConsumer("authored_ui", [&engine, primaryWindow = engine.Platform().Windows.GetPrimaryWindowId()](const SDL_Event& event) {
-        UiService* ui = engine.TryUi();
-        return ui != nullptr && IsPrimaryWindowEvent(event, primaryWindow) && ui->ProcessPlatformEvent(event);
-    });
+    // console has to be usable over a menu, and a menu over the game. Every
+    // window's events are offered; each surface hears only its own window's.
+    engine.PlatformEvents().AddConsumer(
+        "authored_ui",
+        [&engine](const SDL_Event& event) {
+            UiService* ui = engine.TryUi();
+            return ui != nullptr && ui->ProcessPlatformEvent(event);
+        },
+        [&engine](std::uint32_t window) {
+            if (UiService* ui = engine.TryUi())
+                ui->EndPointerGesture(window);
+        });
 #endif
 
     driver.Register(FramePhase::PumpPlatform, [&engine, &game, &config, &windows, windowId](PhaseContext& ctx) {
@@ -974,29 +980,36 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
         if (gamepads != nullptr && !ctx.Input->GamepadConnected && gamepads->OpenCount() == 0)
             gamepads->OpenConnected(*ctx.Input);
 
-        SDL_Event event;
-        while (SDL_PollEvent(&event))
-        {
-            windows.HandleEvent(event);
-
-            // Router order is surface z-order, and the fold into the InputFrame
-            // happens inside Route() before any of them is asked. See
-            // PlatformEventRouter's header for why that order is not negotiable.
+        // Router order is surface z-order, and the fold into the InputFrame
+        // happens inside Route() before any of them is asked. See
+        // PlatformEventRouter's header for why that order is not negotiable.
+        const auto dispatch = [&](SDL_Event& event) {
             PlatformEventContext eventCtx{
                 .Config = config,
                 .Event = event,
                 .WindowId = SdlEventWindowId(event),
             };
             if (engine.PlatformEvents().Route(event, *ctx.Input, gamepads))
+                return true;
+            game.OnPlatformEvent(eventCtx);
+            return eventCtx.Handled;
+        };
+
+        SDL_Event event;
+        while (SDL_PollEvent(&event))
+        {
+            windows.HandleEvent(event);
+
+            for (SDL_Event release : engine.PlatformEvents().ReleasesMissedBefore(event))
+                (void)dispatch(release);
+            if (dispatch(event))
                 continue;
 
-            game.OnPlatformEvent(eventCtx);
-            if (eventCtx.Handled)
-                continue;
+            const std::uint32_t eventWindow = SdlEventWindowId(event);
 
             // The frame's lifecycle follows the primary; another window's
             // minimize or focus is its own presentation's business.
-            if (eventCtx.WindowId != 0 && eventCtx.WindowId != windowId)
+            if (eventWindow != 0 && eventWindow != windowId)
                 continue;
 
             if (event.type == SDL_EVENT_WINDOW_MINIMIZED)
@@ -1120,6 +1133,10 @@ void Engine::RegisterPresentationFramePhases([[maybe_unused]] Game& game)
 
             CpuScopeTimer timer(engine.Instrumentation().CpuScopes, CpuScope::UiExtract);
             ui->ExtractRender();
+#ifdef SENCHA_ENABLE_VULKAN
+            if (engine.HasPresentation())
+                engine.Graphics().MainRenderer.GetUiTextures().Queue(ui->TakeTextureChanges());
+#endif
         }
 #endif
     });

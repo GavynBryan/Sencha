@@ -138,25 +138,25 @@ TEST(ViewportDial, TicksLandOnTheStopsAndVanishWithoutAnIncrement)
 TEST(ViewportDial, TheRimDistanceIsSymmetricAboutIt)
 {
     // A projected ring of radius 100 about (200, 200).
-    std::vector<std::optional<ImVec2>> rim;
+    std::vector<std::optional<Vec2d>> rim;
     for (int i = 0; i <= ViewportDial::kRimSegments; ++i)
     {
         const float angle = 2.0f * std::numbers::pi_v<float> * static_cast<float>(i)
                             / static_cast<float>(ViewportDial::kRimSegments);
-        rim.push_back(ImVec2(200.0f + 100.0f * std::cos(angle), 200.0f + 100.0f * std::sin(angle)));
+        rim.push_back(Vec2d(200.0f + 100.0f * std::cos(angle), 200.0f + 100.0f * std::sin(angle)));
     }
 
-    const std::optional<float> outside = ViewportDial::DistanceToRim(rim, ImVec2(310.0f, 200.0f));
-    const std::optional<float> inside = ViewportDial::DistanceToRim(rim, ImVec2(290.0f, 200.0f));
+    const std::optional<float> outside = ViewportDial::DistanceToRim(rim, Vec2d(310.0f, 200.0f));
+    const std::optional<float> inside = ViewportDial::DistanceToRim(rim, Vec2d(290.0f, 200.0f));
     ASSERT_TRUE(outside.has_value());
     ASSERT_TRUE(inside.has_value());
     EXPECT_NEAR(*outside, 10.0f, 0.5f);
     EXPECT_NEAR(*inside, 10.0f, 0.5f) << "the rim's reach should be the same from either side";
 
     // The centre is a radius away, so it is not on the rim.
-    EXPECT_GT(*ViewportDial::DistanceToRim(rim, ImVec2(200.0f, 200.0f)), 90.0f);
+    EXPECT_GT(*ViewportDial::DistanceToRim(rim, Vec2d(200.0f, 200.0f)), 90.0f);
 
     // A rim entirely behind the camera cannot be measured against.
-    const std::vector<std::optional<ImVec2>> gone(rim.size(), std::nullopt);
-    EXPECT_FALSE(ViewportDial::DistanceToRim(gone, ImVec2(0.0f, 0.0f)).has_value());
+    const std::vector<std::optional<Vec2d>> gone(rim.size(), std::nullopt);
+    EXPECT_FALSE(ViewportDial::DistanceToRim(gone, Vec2d(0.0f, 0.0f)).has_value());
 }

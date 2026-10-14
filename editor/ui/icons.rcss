@@ -1,0 +1,71 @@
+/* The editor's icons, one class each, for documents that choose an icon from
+   data: an element takes `icon icon-<name>` (IconName in icons/IconNames.h).
+   The art is white; `image-color` on the element or a theme role tints it.
+   A new icon is a file in icons/ and a line here. */
+
+.icon
+{
+    display: inline-block;
+    width: 16dp;
+    height: 16dp;
+}
+
+.icon-add { decorator: image(icons/add.svg contain); }
+.icon-anchor { decorator: image(icons/anchor.svg contain); }
+.icon-box { decorator: image(icons/box.svg contain); }
+.icon-cancel { decorator: image(icons/cancel.svg contain); }
+.icon-camera { decorator: image(icons/camera.svg contain); }
+.icon-carve { decorator: image(icons/carve.svg contain); }
+.icon-check { decorator: image(icons/check.svg contain); }
+.icon-chevron-down { decorator: image(icons/chevron-down.svg contain); }
+.icon-clip-back { decorator: image(icons/clip-back.svg contain); }
+.icon-clip-cap { decorator: image(icons/clip-cap.svg contain); }
+.icon-clip-front { decorator: image(icons/clip-front.svg contain); }
+.icon-clip-split { decorator: image(icons/clip-split.svg contain); }
+.icon-clip { decorator: image(icons/clip.svg contain); }
+.icon-cut { decorator: image(icons/cut.svg contain); }
+.icon-cylinder { decorator: image(icons/cylinder.svg contain); }
+.icon-delete { decorator: image(icons/delete.svg contain); }
+.icon-empty { decorator: image(icons/empty.svg contain); }
+.icon-eye-off { decorator: image(icons/eye-off.svg contain); }
+.icon-eye { decorator: image(icons/eye.svg contain); }
+.icon-flag { decorator: image(icons/flag.svg contain); }
+.icon-folder { decorator: image(icons/folder.svg contain); }
+.icon-grid-frame { decorator: image(icons/grid-frame.svg contain); }
+.icon-grid { decorator: image(icons/grid.svg contain); }
+.icon-hammer { decorator: image(icons/hammer.svg contain); }
+.icon-light { decorator: image(icons/light.svg contain); }
+.icon-light-bulb { decorator: image(icons/light-bulb.svg contain); }
+.icon-light-spot { decorator: image(icons/light-spot.svg contain); }
+.icon-lock { decorator: image(icons/lock.svg contain); }
+.icon-local { decorator: image(icons/local.svg contain); }
+.icon-mode-edge { decorator: image(icons/mode-edge.svg contain); }
+.icon-mode-face { decorator: image(icons/mode-face.svg contain); }
+.icon-mode-object { decorator: image(icons/mode-object.svg contain); }
+.icon-mode-vertex { decorator: image(icons/mode-vertex.svg contain); }
+.icon-move { decorator: image(icons/move.svg contain); }
+.icon-pawn { decorator: image(icons/pawn.svg contain); }
+.icon-pivot { decorator: image(icons/pivot.svg contain); }
+.icon-plane { decorator: image(icons/plane.svg contain); }
+.icon-play { decorator: image(icons/play.svg contain); }
+.icon-pointer { decorator: image(icons/pointer.svg contain); }
+.icon-refresh { decorator: image(icons/refresh.svg contain); }
+.icon-resize { decorator: image(icons/resize.svg contain); }
+.icon-rotate { decorator: image(icons/rotate.svg contain); }
+.icon-scale { decorator: image(icons/scale.svg contain); }
+.icon-search { decorator: image(icons/search.svg contain); }
+.icon-snap { decorator: image(icons/snap.svg contain); }
+.icon-stop { decorator: image(icons/stop.svg contain); }
+.icon-unlock { decorator: image(icons/unlock.svg contain); }
+.icon-window-close { decorator: image(icons/window-close.svg contain); }
+.icon-window-maximize { decorator: image(icons/window-maximize.svg contain); }
+.icon-window-minimize { decorator: image(icons/window-minimize.svg contain); }
+.icon-window-restore { decorator: image(icons/window-restore.svg contain); }
+.icon-world { decorator: image(icons/world.svg contain); }
+.icon-zone-bounds { decorator: image(icons/zone-bounds.svg contain); }
+.icon-material { decorator: image(icons/material.svg contain); }
+.icon-texture { decorator: image(icons/texture.svg contain); }
+.icon-data { decorator: image(icons/data.svg contain); }
+.icon-model { decorator: image(icons/model.svg contain); }
+.icon-document { decorator: image(icons/document.svg contain); }
+.icon-file { decorator: image(icons/file.svg contain); }

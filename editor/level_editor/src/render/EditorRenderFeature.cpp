@@ -16,6 +16,8 @@
 
 #include <app/EngineConsoleBuiltins.h>
 #include "BrushBakeGpu.h"
+#include "SceneSourceStage.h"
+#include "render/TargetImagePublish.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/console/ConsoleRegistry.h>
@@ -33,6 +35,106 @@
 #include <optional>
 #include <variant>
 #include <vector>
+
+namespace
+{
+constexpr std::string_view kCullBackfaces = "editor.cull_backfaces";
+constexpr std::string_view kBloomEnable = "editor.bloom.enable";
+// The interactive limit on pieces one brush's modifier stack may evaluate to.
+// Preview only: the cook uses the compile-time hard limit, so this never
+// changes whether a level cooks.
+constexpr std::string_view kPieceBudget = "editor.brush.preview_piece_budget";
+constexpr std::int64_t kPieceBudgetDefault = 4096;
+// How many prefabs recently in hand stay prepared for the placement ghost, so
+// switching back costs nothing.
+constexpr std::string_view kPreparedPrefabs = "editor.placement.prepared_prefabs";
+constexpr std::int64_t kPreparedPrefabsDefault = 4;
+
+struct LookKnob
+{
+    std::string_view Name;
+    float Default;
+    std::string_view Help;
+};
+constexpr LookKnob kGridCellPx{ "editor.grid.cell_px", 3.0f,
+                                "Editor grid: target on-screen cell size in px (density; larger = sparser)." };
+constexpr LookKnob kGridOpacity{ "editor.grid.opacity", 0.6f, "Editor grid: line opacity 0..1 (larger = bolder)." };
+constexpr LookKnob kGridBrightness{ "editor.grid.brightness", 0.62f,
+                                    "Editor grid: line brightness 0..1 (gray level)." };
+constexpr LookKnob kGridFadeStart{ "editor.grid.fade_start", -0.3f,
+                                   "Editor grid: fade start as a signed fraction of reach; negative fades gradually "
+                                   "from near the camera (~ -0.3 is a good global falloff)." };
+constexpr LookKnob kBloomThreshold{ "editor.bloom.threshold", 1.0f,
+                                    "Editor bloom: per-channel HDR threshold; only color above this glows." };
+constexpr LookKnob kBloomIntensity{ "editor.bloom.intensity", 1.0f, "Editor bloom: additive strength of the glow." };
+constexpr LookKnob kBloomRadius{ "editor.bloom.radius", 2.0f,
+                                 "Editor bloom: blur spread (larger = wider, softer glow)." };
+constexpr LookKnob kLookKnobs[] = { kGridCellPx,      kGridOpacity,     kGridBrightness, kGridFadeStart,
+                                    kBloomThreshold, kBloomIntensity, kBloomRadius };
+
+float Read(const ConsoleRegistry* console, const LookKnob& knob)
+{
+    return ReadCVarFloat(console, knob.Name, knob.Default);
+}
+} // namespace
+
+void EditorRenderFeature::RegisterCVars(ConsoleRegistry& console)
+{
+    const auto registerBool = [&](std::string_view name, std::string_view help) {
+        console.RegisterCVar({ .Name = std::string(name),
+                               .Owner = "editor",
+                               .Type = CVarType::Bool,
+                               .DefaultValue = true,
+                               .CurrentValue = true,
+                               .Flags = CVarFlags::Archive,
+                               .Help = std::string(help),
+                               .Source = { "editor" } });
+    };
+    registerBool(kCullBackfaces, "Backface-cull the editor solid viewport to match play mode.");
+    registerBool(kBloomEnable, "Editor: enable the selection bloom/glow pass.");
+    console.RegisterCVar({ .Name = std::string(kPieceBudget),
+                           .Owner = "editor",
+                           .Type = CVarType::Int,
+                           .DefaultValue = kPieceBudgetDefault,
+                           .CurrentValue = kPieceBudgetDefault,
+                           .Flags = CVarFlags::Archive,
+                           .Help = "Editor: max pieces a brush's modifier stack evaluates to in the viewport preview.",
+                           .Source = { "editor" } });
+    for (const LookKnob& knob : kLookKnobs)
+        console.RegisterCVar({ .Name = std::string(knob.Name),
+                               .Owner = "editor",
+                               .Type = CVarType::Double,
+                               .DefaultValue = static_cast<double>(knob.Default),
+                               .CurrentValue = static_cast<double>(knob.Default),
+                               .Flags = CVarFlags::Archive,
+                               .Help = std::string(knob.Help),
+                               .Source = { "editor" } });
+    console.RegisterCVar({ .Name = std::string(kPreparedPrefabs),
+                           .Owner = "editor",
+                           .Type = CVarType::Int,
+                           .DefaultValue = kPreparedPrefabsDefault,
+                           .CurrentValue = kPreparedPrefabsDefault,
+                           .Flags = CVarFlags::Archive,
+                           .Help = "Editor: prefabs kept prepared for the placement ghost.",
+                           .Source = { "editor" } });
+}
+
+void EditorRenderFeature::DrawPlacementGhost(const FrameContext& frame, const EditorViewport& viewport,
+                                             const CameraRenderData& camera, const SceneSourceStage& ghost)
+{
+    // Solid, lit by the focus scene, depth-tested and depth-writing; its own
+    // lights and casters are never gathered (docs/editor/placement.md).
+    const SceneRenderQueueBuilder& queues = *ghost.Queues();
+    for (const RenderQueue* queue : { &queues.BrushQueue(), &queues.MeshQueue() })
+        Forward.Draw(frame, MeshForwardPass::DrawContext{ .Camera = camera,
+                                                          .Lights = QueueBuilder->Lights(),
+                                                          .Queue = *queue,
+                                                          .Meshes = *MeshCache,
+                                                          .Materials = *MaterialStore,
+                                                          .SkinnedMeshes = SkinnedMeshCacheRef,
+                                                          .Tint = EditorTheme::PlacementGhostTint });
+    Visuals.DrawViewport(frame, viewport, camera, ghost.Scene(), EditorTheme::PlacementGhostTint);
+}
 
 void EditorRenderFeature::SweepBrushBakes()
 {
@@ -70,6 +172,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
                                          MeshEditService& meshEdit,
                                          const EditorOverlayState& overlay,
                                          PreviewBuffer& preview,
+                                         const PlacementSession& placement,
                                          std::function<const ManipulatorSession*()> session,
                                          const GridSettings& grid,
                                          WorldViewSettings& worldView,
@@ -86,13 +189,16 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , BrushSolid(Solid)
     , BrushBakes(runtimeAssets != nullptr ? MakeBrushBakeGpu(*runtimeAssets) : BrushBakeCache::Gpu{})
     , Meshes(Solid, logging, assets, catalog)
+    , Placement(placement)
     , Wireframe(selection, overlay, Lines)
     , Visuals(Lines)
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
     , BrushFills(Fills)
     , ZoneBounds(WideLines)
+    , ZoneGraph(WideLines)
     , IrradianceVolumes(selection, WideLines, Lines)
     , Affordances(affordances, WideLines, Fills)
+    , Annotations(overlay, WideLines)
     , Preview(preview, Lines)
     , Console(&console)
 {
@@ -170,6 +276,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
                        VK_FORMAT_D32_SFLOAT);
         Thumbnails.emplace(*Studio, *RuntimeAssetsRef,
                            *RuntimeAssetsRef->StaticMeshes, *LoggingRef);
+        Ghost.emplace(RuntimeAssetsRef, *LoggingRef);
     }
     Bloom.Setup(services);
     Composition.Setup(services.Logging);
@@ -193,20 +300,19 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
 
     // Match play-mode backface culling by default; the cvar lets you draw both sides to
     // diagnose inverted/missing-winding geometry. Missing cvar falls back to culling.
-    Solid.SetCullBackfaces(ReadCVarBool(Console, "editor.cull_backfaces", true));
+    Solid.SetCullBackfaces(ReadCVarBool(Console, kCullBackfaces, true));
 
-    // Live look knobs via cvars (dial in the dev console).
-    GridStyleCache.CellPx     = ReadCVarFloat(Console, "editor.grid.cell_px", 14.0f);
-    GridStyleCache.Opacity    = ReadCVarFloat(Console, "editor.grid.opacity", 0.6f);
-    GridStyleCache.Brightness = ReadCVarFloat(Console, "editor.grid.brightness", 0.62f);
-    GridStyleCache.FadeStart  = ReadCVarFloat(Console, "editor.grid.fade_start", -0.3f);
+    GridStyleCache.CellPx = Read(Console, kGridCellPx);
+    GridStyleCache.Opacity = Read(Console, kGridOpacity);
+    GridStyleCache.Brightness = Read(Console, kGridBrightness);
+    GridStyleCache.FadeStart = Read(Console, kGridFadeStart);
 
-    BloomEnabled = ReadCVarBool(Console, "editor.bloom.enable", true);
-    BloomParamsCache.Threshold = ReadCVarFloat(Console, "editor.bloom.threshold", 1.0f);
-    BloomParamsCache.Intensity = ReadCVarFloat(Console, "editor.bloom.intensity", 1.0f);
-    BloomParamsCache.Radius    = ReadCVarFloat(Console, "editor.bloom.radius", 2.0f);
+    BloomEnabled = ReadCVarBool(Console, kBloomEnable, true);
+    BloomParamsCache.Threshold = Read(Console, kBloomThreshold);
+    BloomParamsCache.Intensity = Read(Console, kBloomIntensity);
+    BloomParamsCache.Radius = Read(Console, kBloomRadius);
 
-    Targets.BeginFrame(frame.FrameInFlightIndex, frame.Retirement);
+    Targets.BeginFrame(frame.FrameInFlightIndex);
     if (Thumbnails)
         Thumbnails->BeginFrame();
     Highlight.BeginFrame();
@@ -223,6 +329,8 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
     if (!viewportShown && !(Thumbnails && Thumbnails->HasPendingWork()))
     {
         LiveViewports.clear();
+        ViewSlots.clear();
+        PublishViewImages();
         PruneViewportTargets();
         return;
     }
@@ -248,15 +356,20 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         // so every panel, tool, and gizmo has already made its edits for the
         // frame; refreshing any earlier would render a parented entity a frame
         // behind whatever moved it.
-        // The preview piece budget is a cvar; the scene evaluates modifier
-        // stacks against it for everything the viewport shows (the cook asks
-        // for its own hard limit).
-        const BrushEvaluationPolicy previewPolicy = BrushEvaluationPolicy::Interactive(
-            static_cast<std::uint32_t>(std::max(1.0, ReadCVarDouble(
-                Console, "editor.brush.preview_piece_budget", 4096.0))));
+        const BrushEvaluationPolicy previewPolicy = BrushEvaluationPolicy::Interactive(static_cast<std::uint32_t>(
+            std::max<std::int64_t>(1, ReadCVarInt(Console, kPieceBudget, kPieceBudgetDefault))));
         World.FocusDocument().GetScene().SetInteractiveEvaluationPolicy(previewPolicy);
         World.FocusDocument().GetScene().RefreshDerivedTransforms();
         QueueBuilder->Build(World.FocusDocument());
+        if (Ghost)
+        {
+            // Resolved through the focus document's own roots, so the ghost
+            // places what the document would.
+            Ghost->SetContentRoots(World.FocusDocument().ContentRoots());
+            Ghost->Update(Placement, previewPolicy,
+                          static_cast<std::size_t>(std::max<std::int64_t>(
+                              1, ReadCVarInt(Console, kPreparedPrefabs, kPreparedPrefabsDefault))));
+        }
 
         // Context zones build their own queues so they render real materials.
         std::erase_if(ContextBuilders, [&](const auto& entry)
@@ -339,7 +452,28 @@ void EditorRenderFeature::OnDraw(const RenderFrame& renderFrame)
         });
 
     Composition.Execute(renderFrame);
+    PublishViewImages();
     PruneViewportTargets();
+}
+
+void EditorRenderFeature::PublishViewImages()
+{
+    if (Services.UiTextures == nullptr)
+        return;
+    if (Thumbnails)
+        Thumbnails->PublishImages(*Services.UiTextures);
+    for (const ViewImage& image : ViewImages)
+    {
+        const auto slot = std::ranges::find_if(ViewSlots, [&](const ViewSlot& s) {
+            return s.Viewport->Id == image.Viewport;
+        });
+        // A view the composition skipped is still in whatever layout it was
+        // acquired in.
+        if (slot != ViewSlots.end())
+            PublishTargetImage(*Services.UiTextures, image.Image, slot->Target.ColorLayout, slot->Target.ColorBindless);
+        else
+            Services.UiTextures->WithdrawHostImage(image.Image);
+    }
 }
 
 void EditorRenderFeature::PruneViewportTargets()
@@ -488,10 +622,10 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
     // screen rect. The offscreen target is origin-(0,0) and sized to the target,
     // so override the rect for this pass and restore it after. Picking reads the
     // screen rect on the input path, not here.
-    const ImVec2 savedMin = viewport.RegionMin;
-    const ImVec2 savedMax = viewport.RegionMax;
-    viewport.RegionMin = ImVec2(0.0f, 0.0f);
-    viewport.RegionMax = ImVec2(static_cast<float>(target.Extent.width),
+    const Vec2d savedMin = viewport.RegionMin;
+    const Vec2d savedMax = viewport.RegionMax;
+    viewport.RegionMin = Vec2d(0.0f, 0.0f);
+    viewport.RegionMax = Vec2d(static_cast<float>(target.Extent.width),
                                 static_cast<float>(target.Extent.height));
 
     // Brackets the recording below: both planes into attachment layouts now,
@@ -629,16 +763,22 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
         }
         else
             Meshes.DrawViewport(local, viewport, camera, scene);
+        if (const SceneSourceStage* ghost = Ghost ? Ghost->Shown() : nullptr;
+            MaterialPath && ghost != nullptr && ghost->Queues() != nullptr)
+            DrawPlacementGhost(local, viewport, camera, *ghost);
         Visuals.DrawViewport(local, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
         IrradianceVolumes.DrawViewport(local, viewport, camera, scene);
         Highlight.DrawViewport(local, viewport, camera, scene, *Session());
         if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)
             ZoneBounds.DrawViewport(local, viewport, camera, World, WorldView);
+        if (WorldView.ShowZoneGraph)
+            ZoneGraph.DrawViewport(local, viewport, camera, World);
         Affordances.DrawViewport(local, viewport, camera);
         Preview.DrawViewport(local, viewport, camera);
+        Annotations.DrawViewport(local, viewport, camera);
     }
 
-    // Sampled and committed, so the UI's ImGui::Image can read it -- and so
+    // Sampled and committed, so the view's host image can read it -- and so
     // bloom below starts from a target whose layout is what the store says.
     session.End();
 
@@ -669,10 +809,10 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
         RenderTargetSession glowTarget(frame.Cmd, target.BloomImage[0],
                                        target.BloomLayout[0]);
 
-        const ImVec2 savedMin = viewport.RegionMin;
-        const ImVec2 savedMax = viewport.RegionMax;
-        viewport.RegionMin = ImVec2(0.0f, 0.0f);
-        viewport.RegionMax = ImVec2(static_cast<float>(target.BloomExtent.width),
+        const Vec2d savedMin = viewport.RegionMin;
+        const Vec2d savedMax = viewport.RegionMax;
+        viewport.RegionMin = Vec2d(0.0f, 0.0f);
+        viewport.RegionMax = Vec2d(static_cast<float>(target.BloomExtent.width),
                                     static_cast<float>(target.BloomExtent.height));
 
         // Depth is attached but neither loaded nor stored: the wide-line pipeline
@@ -707,6 +847,9 @@ void EditorRenderFeature::RecordViewportBloom(const FrameContext& frame, EditorV
 
 void EditorRenderFeature::Teardown()
 {
+    // The UI stops naming the view images before the targets behind them go.
+    ViewSlots.clear();
+    PublishViewImages();
     Thumbnails.reset();
     Studio.reset();
     // Scene resources first: the brush GPU meshes and material refs below are

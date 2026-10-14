@@ -1,8 +1,11 @@
 #include "authoring/AnimationClipEventsSet.h"
 
+#include "text/PathLeaf.h"
+
 #include <assets/cook/AssetImporter.h>
 #include <assets/cook/MeshImportSettings.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <core/assets/AssetIdentity.h>
 #include <core/assets/AssetRegistry.h>
 
 #include <algorithm>
@@ -49,10 +52,11 @@ AnimationClipEventsDocument* AnimationClipEventsSet::OpenOrFocus(const std::stri
         return nullptr;
     }
     std::unique_ptr<AnimationClipEventsDocument> document = AnimationClipEventsDocument::Open(
-        clipPath, root / (source->SourceRelPath + std::string(kImportSettingsSuffix)), &error);
+        clipPath, root / (source->SourceRelPath + std::string(kAssetSidecarSuffix)), &error);
     if (document == nullptr)
         return nullptr;
-    document->ObserveSteps([this, clipPath] { Sources.Record({ this, clipPath }); });
+    // Its path read when it steps: its source may have moved since.
+    document->ObserveSteps([this, held = document.get()] { Sources.Record(RefOf(*held)); });
     Open.push_back(std::move(document));
     ActiveClipPath = clipPath;
     return Open.back().get();
@@ -64,6 +68,64 @@ AnimationClipEventsDocument* AnimationClipEventsSet::Find(std::string_view clipP
         if (document->ClipPath() == clipPath)
             return document.get();
     return nullptr;
+}
+
+std::uint32_t AnimationClipEventsSet::Add(AnimationClipEventsDocument& document, AnimationClipEvent event)
+{
+    const std::uint32_t key = document.Add(std::move(event));
+    Changed(document);
+    return key;
+}
+
+void AnimationClipEventsSet::Remove(AnimationClipEventsDocument& document, std::uint32_t key)
+{
+    document.Remove(key);
+    Changed(document);
+}
+
+void AnimationClipEventsSet::Replace(AnimationClipEventsDocument& document, AnimationClipEvent event)
+{
+    document.Replace(std::move(event));
+    Changed(document);
+}
+
+void AnimationClipEventsSet::PreviewTime(AnimationClipEventsDocument& document, std::uint32_t key, double time)
+{
+    const AnimationClipEvent* event = document.Find(key);
+    if (event == nullptr)
+        return;
+    if (!document.IsEditing())
+        document.BeginEdit(key);
+    AnimationClipEvent moved = *event;
+    moved.Time = static_cast<float>(std::clamp(time, 0.0, 1.0));
+    document.PreviewEdit(std::move(moved));
+}
+
+bool AnimationClipEventsSet::Close(std::string_view clipPath, DirtyDisposition disposition, std::string& error)
+{
+    AnimationClipEventsDocument* document = Find(clipPath);
+    if (document == nullptr)
+        return true;
+    if (document->IsDirty() || document->IsEditing())
+    {
+        if (disposition == DirtyDisposition::Refuse)
+        {
+            error = std::format("{} has unsaved changes.", DocumentLabel(clipPath));
+            return false;
+        }
+        if (disposition == DirtyDisposition::Discard)
+        {
+            DiscardDocument(clipPath);
+            return true;
+        }
+        if (const DocumentSaveResult saved = Sources.Save(RefOf(*document)); saved.Status != DocumentSaveStatus::Saved)
+        {
+            error = saved.Error;
+            return false;
+        }
+    }
+    Drop(clipPath);
+    return true;
 }
 
 void AnimationClipEventsSet::CommitEdit(AnimationClipEventsDocument& document)
@@ -115,6 +177,11 @@ void AnimationClipEventsSet::AppendChangedDocuments(std::vector<DocumentRef>& ou
     for (const auto& document : Open)
         if (document->IsDirty() || document->IsEditing())
             out.push_back(RefOf(*document));
+}
+
+std::string AnimationClipEventsSet::DocumentLabel(std::string_view key) const
+{
+    return std::string(PathLeaf(key)) + " events";
 }
 
 DocumentSaveResult AnimationClipEventsSet::SaveDocument(std::string_view key)
@@ -175,9 +242,18 @@ void AnimationClipEventsSet::DiscardDocument(std::string_view key)
     std::string error;
     if (document.IsDirty() && document.AdoptFileVersion(&error))
         Changed(document);
-    Sources.ForgetDocument(RefOf(document));
-    States.erase(&document);
-    if (ActiveClipPath == key)
+    Drop(key);
+}
+
+void AnimationClipEventsSet::Drop(std::string_view clipPath)
+{
+    const auto it = std::find_if(Open.begin(), Open.end(),
+                                 [&](const auto& document) { return document->ClipPath() == clipPath; });
+    if (it == Open.end())
+        return;
+    Sources.ForgetDocument(RefOf(**it));
+    States.erase(it->get());
+    if (ActiveClipPath == clipPath)
         ActiveClipPath.clear();
     Open.erase(it);
 }
@@ -206,4 +282,31 @@ bool AnimationClipEventsSet::Push(AnimationClipEventsDocument& document)
     }
     state = { ClipEventsPreviewStatus::Current, {} };
     return true;
+}
+
+bool AnimationClipEventsSet::HoldsFile(const std::filesystem::path& file) const
+{
+    // The sidecar need not exist yet, so it is compared by where it would be.
+    std::error_code ec;
+    const std::filesystem::path sidecar = std::filesystem::weakly_canonical(SidecarOf(file), ec);
+    return std::ranges::any_of(Open, [&](const auto& document) {
+        const std::filesystem::path held = std::filesystem::weakly_canonical(document->SidecarPath(), ec);
+        return held == sidecar || held == std::filesystem::weakly_canonical(file, ec);
+    });
+}
+
+void AnimationClipEventsSet::FileMoved(const MovedFile& moved)
+{
+    const std::string parts = moved.FromAsset + "#";
+    for (const std::unique_ptr<AnimationClipEventsDocument>& document : Open)
+    {
+        if (!document->ClipPath().starts_with(parts))
+            continue;
+        const std::string from = document->ClipPath();
+        std::string to = moved.ToAsset + from.substr(moved.FromAsset.size());
+        document->MoveTo(to, SidecarOf(moved.To));
+        if (ActiveClipPath == from)
+            ActiveClipPath = to;
+        Sources.Rekey({ this, from }, std::move(to));
+    }
 }

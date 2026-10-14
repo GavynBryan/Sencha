@@ -163,7 +163,7 @@ TEST(StaticMeshAssetLoader, StagesSerializedMeshFromMemory)
 
     StaticMeshAssetLoader loader(logging, nullptr);
     AssetStaging staging = loader.LoadStaged(
-        MakeFileRecord(AssetType::StaticMesh, "asset://meshes/dev/cube.smesh"), source);
+        MakeFileRecord(AssetType::StaticMesh, "asset://meshes/dev/cube.smesh"), source, AssetPathsById{});
 
     ASSERT_TRUE(staging.IsValid()) << staging.Error;
     const auto* data = std::any_cast<MeshGeometry>(&staging.Payload);
@@ -183,12 +183,12 @@ TEST(StaticMeshAssetLoader, StagingFailsOnMissingAndMalformedBytes)
     source.Add("asset://meshes/dev/garbage.smesh", "this is not a mesh");
 
     AssetStaging missing = loader.LoadStaged(
-        MakeFileRecord(AssetType::StaticMesh, "asset://meshes/dev/absent.smesh"), source);
+        MakeFileRecord(AssetType::StaticMesh, "asset://meshes/dev/absent.smesh"), source, AssetPathsById{});
     EXPECT_FALSE(missing.IsValid());
     EXPECT_FALSE(missing.Error.empty());
 
     AssetStaging malformed = loader.LoadStaged(
-        MakeFileRecord(AssetType::StaticMesh, "asset://meshes/dev/garbage.smesh"), source);
+        MakeFileRecord(AssetType::StaticMesh, "asset://meshes/dev/garbage.smesh"), source, AssetPathsById{});
     EXPECT_FALSE(malformed.IsValid());
     EXPECT_FALSE(malformed.Error.empty());
 }
@@ -204,7 +204,7 @@ TEST(TextureAssetLoader, StagesPngFromMemoryWithUsageColorspace)
 
     const AssetRecord record = MakeFileRecord(AssetType::Texture, "asset://textures/dev/checker.png");
 
-    AssetStaging srgb = loader.LoadStaged(record, source, /*srgb*/ true);
+    AssetStaging srgb = loader.LoadStagedAs(record, source, /*srgb*/ true);
     ASSERT_TRUE(srgb.IsValid()) << srgb.Error;
     const auto* srgbImage = std::any_cast<Image>(&srgb.Payload);
     ASSERT_NE(srgbImage, nullptr);
@@ -212,12 +212,12 @@ TEST(TextureAssetLoader, StagesPngFromMemoryWithUsageColorspace)
     EXPECT_EQ(srgbImage->Height, 16u);
     EXPECT_EQ(srgbImage->Format, PixelFormat::RGBA8_SRGB);
 
-    AssetStaging linear = loader.LoadStaged(record, source, /*srgb*/ false);
+    AssetStaging linear = loader.LoadStagedAs(record, source, /*srgb*/ false);
     ASSERT_TRUE(linear.IsValid()) << linear.Error;
     EXPECT_EQ(std::any_cast<Image>(&linear.Payload)->Format, PixelFormat::RGBA8);
 
     // The generic driver-facing overload assumes sRGB until .stex usage tags.
-    AssetStaging generic = static_cast<IAssetStager&>(loader).LoadStaged(record, source);
+    AssetStaging generic = static_cast<IAssetStager&>(loader).LoadStaged(record, source, AssetPathsById{});
     ASSERT_TRUE(generic.IsValid());
     EXPECT_EQ(std::any_cast<Image>(&generic.Payload)->Format, PixelFormat::RGBA8_SRGB);
 
@@ -233,7 +233,7 @@ TEST(TextureAssetLoader, StagingFailsOnUndecodableBytes)
     source.Add("asset://textures/dev/garbage.png", "not a png");
 
     AssetStaging staging = loader.LoadStaged(
-        MakeFileRecord(AssetType::Texture, "asset://textures/dev/garbage.png"), source);
+        MakeFileRecord(AssetType::Texture, "asset://textures/dev/garbage.png"), source, AssetPathsById{});
     EXPECT_FALSE(staging.IsValid());
     EXPECT_FALSE(staging.Error.empty());
 }
@@ -257,7 +257,7 @@ TEST(MaterialAssetLoader, StageAndCommitRoundTripHeadless)
     })");
 
     AssetStaging staging = loader.LoadStaged(
-        MakeFileRecord(AssetType::Material, "asset://materials/dev/test.smat"), source);
+        MakeFileRecord(AssetType::Material, "asset://materials/dev/test.smat"), source, AssetPathsById{});
     ASSERT_TRUE(staging.IsValid()) << staging.Error;
 
     MaterialHandle handle = loader.CommitTyped(std::move(staging), assets);
@@ -283,7 +283,7 @@ TEST(MaterialAssetLoader, StagingReportsParseErrors)
     source.Add("asset://materials/dev/bad.smat", R"({"version": 2, "typo_key": 1})");
 
     AssetStaging staging = loader.LoadStaged(
-        MakeFileRecord(AssetType::Material, "asset://materials/dev/bad.smat"), source);
+        MakeFileRecord(AssetType::Material, "asset://materials/dev/bad.smat"), source, AssetPathsById{});
     EXPECT_FALSE(staging.IsValid());
     EXPECT_NE(staging.Error.find("typo_key"), std::string::npos);
 }

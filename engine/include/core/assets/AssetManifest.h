@@ -8,7 +8,6 @@
 #include <vector>
 
 class AssetRegistry;
-class JsonValue;
 
 //=============================================================================
 // AssetManifest (docs/assets/pipeline.md, Decisions A and D)
@@ -42,15 +41,8 @@ struct AssetManifest
     std::vector<AssetManifestEntry> Entries;
 };
 
-// Collects every unique "asset://" string in a JSON document, in encounter
-// order. Deliberately schema-agnostic: any component or payload that
-// serializes an asset reference as a path string is covered without this
-// code knowing the component exists (the Decision O discipline).
-[[nodiscard]] std::vector<std::string> CollectAssetPaths(const JsonValue& root);
-
 // Id-first resolution to the path list the preloader consumes: an id the
 // registry knows yields the record's current path (rename-proof); anything
-// else falls back to the manifest's stamped path. Run after import + scan
-// + ApplyAssetIds, owner thread.
+// else falls back to the manifest's path. Owner thread.
 [[nodiscard]] std::vector<std::string> ResolveManifestPaths(const AssetManifest& manifest,
                                                             const AssetRegistry& registry);

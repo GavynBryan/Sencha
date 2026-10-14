@@ -2,7 +2,11 @@
 
 #include "CommandChoice.h"
 
+#include <math/Vec.h>
+
 #include <span>
+#include <string>
+#include <vector>
 
 // What a radial menu shows and what a choice on it does. The session that
 // runs the hold-move-release gesture and the chrome that paints the wheel go
@@ -27,4 +31,10 @@ struct IRadialMenuModel
     [[nodiscard]] virtual int ActiveVariant(int /*index*/) const { return -1; }
     // A release over `index`, with `variant` chosen or -1 for the entry alone.
     virtual void Select(int index, int variant) = 0;
+    // The wheel is opening at `pointer`: the last moment the entries may
+    // change before the gesture ends. A model with nothing to offer there
+    // leaves Count at zero and the wheel stays shut.
+    virtual void Opening(Vec2d /*pointer*/) {}
+    // What the hub reads out while the wheel is open, a line each.
+    [[nodiscard]] virtual std::vector<std::string> Summary() const { return {}; }
 };

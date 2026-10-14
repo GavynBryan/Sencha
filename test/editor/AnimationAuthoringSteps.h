@@ -4,7 +4,6 @@
 // document's root changed and applied as one undo step.
 
 #include "authoring/AnimationPreviewWorkspace.h"
-#include "ui/DataForm.h"
 
 #include <gtest/gtest.h>
 
@@ -21,7 +20,7 @@ inline void AuthorDocument(AnimationPreviewWorkspace& workspace, const std::stri
     DataDocument& document = *opened;
     JsonValue root = document.CopyRoot();
     edit(*root.Find("data"));
-    ApplyFieldEdit(document, workspace.Documents, FieldEdit::Instant(), std::move(root));
+    workspace.Documents.ApplyEdit(document, std::move(root), DataEdit::Step);
 }
 
 inline JsonValue JsonObjectOf(std::initializer_list<std::pair<const char*, JsonValue>> members)

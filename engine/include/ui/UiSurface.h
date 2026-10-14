@@ -70,12 +70,34 @@ enum class UiNavigation : std::uint8_t
 };
 
 // The measured layout box of an element, in surface pixels, with the origin at
-// the surface's top left. Content area: what the element actually occupies,
-// excluding its own padding and border.
+// the surface's top left.
 struct UiElementBox
 {
     float X = 0.0f;
     float Y = 0.0f;
     float Width = 0.0f;
     float Height = 0.0f;
+};
+
+// How far a scrolling element is scrolled: the part of what it holds that
+// shows (from Left/Top, ClientWidth by ClientHeight) out of the whole
+// (ScrollWidth by ScrollHeight), in surface pixels.
+struct UiScrollBox
+{
+    float Left = 0.0f;
+    float Top = 0.0f;
+    float ClientWidth = 0.0f;
+    float ClientHeight = 0.0f;
+    float ScrollWidth = 0.0f;
+    float ScrollHeight = 0.0f;
+};
+
+// Which of an element's boxes a measurement reports: Content excludes its own
+// padding and border, Border is the edge it is drawn to.
+enum class UiBoxArea : std::uint8_t
+{
+    Content,
+    Padding,
+    Border,
+    Margin,
 };

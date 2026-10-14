@@ -5,6 +5,7 @@
 #include <assets/ui/UiPackageSerializer.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <ui/UiKeys.h>
 #include <ui/UiService.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
@@ -332,6 +333,49 @@ TEST(UiControls, AFocusedFieldTakesTheKeyboardAndReleasesItOnBlur)
     fixture.Ui().Update();
     EXPECT_FALSE(fixture.Ui().Capture().Keyboard)
         << "the field lost focus and the keyboard stayed captured";
+}
+
+TEST(UiControls, APressOnNothingTakesFocusOffTheField)
+{
+    // A full-window surface passes presses on empty space through to whatever is
+    // behind it -- an editor's world, a game. A person who typed into a field and
+    // then clicked the world has moved on; if the field kept focus, the next
+    // camera key would type into it instead.
+    Fixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+
+    ClickAt(fixture.Ui(), 80.0f, 35.0f);
+    fixture.Ui().Update();
+    ASSERT_TRUE(fixture.Ui().Capture().Keyboard);
+
+    SDL_Event press = MouseButton(SDL_EVENT_MOUSE_BUTTON_DOWN, 600.0f, 500.0f);
+    EXPECT_FALSE(fixture.Ui().ProcessPlatformEvent(press))
+        << "a press on empty space must still reach whatever is behind the surface";
+    fixture.Ui().Update();
+    EXPECT_FALSE(fixture.Ui().Capture().Keyboard)
+        << "a press on nothing left the field focused, so keys keep going to it";
+}
+
+TEST(UiControls, TakingKeysFromASurfaceTakesFocusOffItsField)
+{
+    // A host withdraws the keyboard from a surface by its policy. A field left
+    // focused behind that would keep text input running for a surface that can
+    // no longer receive keys, and another surface that can would report the
+    // keyboard captured on its behalf.
+    Fixture fixture;
+    ASSERT_TRUE(fixture.Screen.IsValid());
+    const UiSurfaceId other = fixture.Ui().CreateSurface("other", RenderExtent{ 800, 600 });
+
+    ClickAt(fixture.Ui(), 80.0f, 35.0f);
+    fixture.Ui().Update();
+    ASSERT_TRUE(fixture.Ui().Capture().Keyboard);
+
+    fixture.Ui().SetSurfaceInputPolicy(fixture.Surface, UiSurfaceInputPolicy::Pointer);
+    fixture.Ui().Update();
+    EXPECT_FALSE(fixture.Ui().Capture().Keyboard)
+        << "the surface lost the keyboard but its field still holds text input";
+
+    fixture.Ui().DestroySurface(other);
 }
 
 // -- lists -------------------------------------------------------------------
@@ -710,7 +754,7 @@ constexpr auto kRowsActivate = UiActionId{ 1 };
 UiRow RangeRow(double value)
 {
     UiRow row{ "Volume", "", "", true };
-    row.Control = UiRowControl::Range;
+    row.Control = UiRowControls::Range;
     row.Number = value;
     row.Min = 0.0;
     row.Max = 1.0;
@@ -721,7 +765,7 @@ UiRow RangeRow(double value)
 UiRow ChoiceRow(const char* value, std::vector<std::string> choices)
 {
     UiRow row{ "Quality", value, "", true };
-    row.Control = UiRowControl::Choice;
+    row.Control = UiRowControls::Choice;
     row.Choices = std::move(choices);
     return row;
 }
@@ -916,4 +960,175 @@ TEST(UiControls, ListsAndRowsBindOnTheSameScreen)
     fixture.Ui().Update();
     EXPECT_EQ(fixture.Ui().ArraySize(fixture.Screen, UiArrayIdAt(0)), 3u);
     EXPECT_EQ(fixture.Ui().GetRows(fixture.Screen, UiRowsIdAt(0)).front().Value, "Low");
+}
+
+// -- rows that describe structure ---------------------------------------------
+
+namespace
+{
+// A tree of rows the way an outliner or a grouped property sheet presents one:
+// each row keyed, indented by depth, marked when selected, with a heading row
+// and a vector row whose parts are edited side by side.
+constexpr std::string_view kTreeMarkup = R"rml(<rml>
+<head><link type="text/rcss" href="tree.rcss"/></head>
+<body data-model="tree">
+    <div class="node" data-for="row : rows"
+         data-attr-data-key="row.key"
+         data-class-selected="row.selected"
+         data-class-heading="row.control == 'section'"
+         data-style-padding-left="(row.depth * 12) + 'px'">
+        {{row.label}}<span class="part" data-for="p : row.parts">{{p}}</span>
+    </div>
+</body>
+</rml>)rml";
+
+constexpr std::string_view kTreeStyle = R"(
+body { display: block; width: 100%; height: 100%; }
+.node { display: block; height: 20px; }
+.part { display: inline-block; width: 30px; }
+)";
+} // namespace
+
+TEST(UiControls, ARowCarriesItsKeyDepthStateAndParts)
+{
+    TempAssetRoot root;
+    UiPackage package;
+    package.RootDocumentName = "tree.rml";
+    package.Blobs.push_back(UiPackageBlob{ .VirtualName = "tree.rml", .SourcePath = "ui/tree.rml",
+                                           .Kind = UiBlobKind::Document, .Bytes = BytesOf(kTreeMarkup) });
+    package.Blobs.push_back(UiPackageBlob{ .VirtualName = "tree.rcss", .SourcePath = "ui/tree.rcss",
+                                           .Kind = UiBlobKind::StyleSheet, .Bytes = BytesOf(kTreeStyle) });
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(WriteSuiToBytes(package, bytes));
+    root.WriteBytes("ui/tree.sui", bytes);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    UiScreenDesc desc;
+    desc.PackagePath = "asset://ui/tree.sui";
+    desc.ModelName = "tree";
+    desc.RowLists = { "rows" };
+    const UiScreenHandle screen = ui.OpenScreen(surface, desc);
+    ASSERT_TRUE(screen.IsValid());
+
+    UiRow heading{ "Transform", "", "" };
+    heading.Control = "section";
+    heading.Key = "section:transform";
+    UiRow position{ "Position", "", "" };
+    position.Key = "transform.position";
+    position.Depth = 1;
+    position.Selected = true;
+    position.Parts = { "1", "2", "3" };
+    ASSERT_TRUE(ui.SetRows(screen, UiRowsIdAt(0), std::vector<UiRow>{ heading, position }));
+    ui.Update();
+
+    const auto hasClass = [](const UiElementInfo& e, std::string_view c) {
+        return std::ranges::find(e.Classes, std::string(c)) != e.Classes.end();
+    };
+    const auto keyOf = [](const UiElementInfo& e) {
+        for (const auto& [name, value] : e.Attributes)
+            if (name == "data-key")
+                return value;
+        return std::string{};
+    };
+
+    int parts = 0;
+    bool sawHeading = false;
+    bool sawSelectedPosition = false;
+    for (const UiElementInfo& element : ui.ElementTree(screen))
+    {
+        if (hasClass(element, "part") && element.Boxes.Content.Width > 0.0f)
+            ++parts;
+        if (!hasClass(element, "node"))
+            continue;
+        if (keyOf(element) == "section:transform")
+            sawHeading = hasClass(element, "heading");
+        if (keyOf(element) == "transform.position")
+            sawSelectedPosition = hasClass(element, "selected") && !hasClass(element, "heading");
+    }
+    EXPECT_TRUE(sawHeading) << "a section row was not presented as a heading under its key";
+    EXPECT_TRUE(sawSelectedPosition) << "the selected row lost its key or its selection";
+    EXPECT_EQ(parts, 3) << "a vector row's parts were not repeated";
+}
+
+// -- keys a document reports --------------------------------------------------
+
+namespace
+{
+constexpr std::string_view kKeyMarkup = R"rml(<rml>
+<head><link type="text/rcss" href="keys.rcss"/></head>
+<body data-model="keys">
+    <input id="field" type="text" data-event-keydown="keys_key(ev.key_identifier)"/>
+</body>
+</rml>)rml";
+
+constexpr std::string_view kKeyStyle = R"(
+body { display: block; width: 100%; height: 100%; pointer-events: none; }
+#field { display: block; position: absolute; left: 20px; top: 20px;
+         width: 200px; height: 30px; pointer-events: auto; tab-index: auto; }
+)";
+} // namespace
+
+TEST(UiControls, AKeyADocumentReportsIsReadBackAsAUiKey)
+{
+    // A focused field takes every key, so the document is what reports them;
+    // the host reads the number back without learning which engine chose it.
+    TempAssetRoot root;
+    UiPackage package;
+    package.RootDocumentName = "keys.rml";
+    package.Blobs.push_back(UiPackageBlob{ .VirtualName = "keys.rml", .SourcePath = "ui/keys.rml",
+                                           .Kind = UiBlobKind::Document, .Bytes = BytesOf(kKeyMarkup) });
+    package.Blobs.push_back(UiPackageBlob{ .VirtualName = "keys.rcss", .SourcePath = "ui/keys.rcss",
+                                           .Kind = UiBlobKind::StyleSheet, .Bytes = BytesOf(kKeyStyle) });
+    std::vector<std::byte> bytes;
+    ASSERT_TRUE(WriteSuiToBytes(package, bytes));
+    root.WriteBytes("ui/keys.sui", bytes);
+
+    UiTestHost host(root);
+    UiService& ui = host.Service();
+    const UiSurfaceId surface = ui.CreateSurface("test", RenderExtent{ 800, 600 });
+    UiScreenDesc desc;
+    desc.PackagePath = "asset://ui/keys.sui";
+    desc.ModelName = "keys";
+    desc.Actions = { "keys_key" };
+    const UiScreenHandle screen = ui.OpenScreen(surface, desc);
+    ASSERT_TRUE(screen.IsValid());
+    ui.Update();
+    ClickAt(ui, 80.0f, 35.0f);
+    ui.Update();
+
+    const auto pressed = [&](SDL_Scancode scancode) {
+        SDL_Event down{};
+        down.type = SDL_EVENT_KEY_DOWN;
+        down.key.scancode = scancode;
+        (void)ui.ProcessPlatformEvent(down);
+        ui.Update();
+        const std::vector<UiAction> actions = ui.DrainActions(screen);
+        EXPECT_EQ(actions.size(), 1u);
+        return actions.empty() || actions[0].Arguments.empty()
+            ? std::optional<UiKey>{}
+            : UiKeyFromEvent(actions[0].Arguments[0].AsInt());
+    };
+    EXPECT_EQ(pressed(SDL_SCANCODE_ESCAPE), UiKey::Escape);
+    EXPECT_EQ(pressed(SDL_SCANCODE_DOWN), UiKey::Down);
+    EXPECT_EQ(pressed(SDL_SCANCODE_LEFT), UiKey::Left);
+    EXPECT_EQ(pressed(SDL_SCANCODE_RIGHT), UiKey::Right);
+    EXPECT_EQ(pressed(SDL_SCANCODE_A), std::nullopt) << "a key outside the vocabulary reads as none";
+
+    // Any key a document reports reads back as the platform's, for a host
+    // matching a chord the field held against its own bindings.
+    const auto code = [&](SDL_Scancode scancode) {
+        SDL_Event down{};
+        down.type = SDL_EVENT_KEY_DOWN;
+        down.key.scancode = scancode;
+        (void)ui.ProcessPlatformEvent(down);
+        ui.Update();
+        const std::vector<UiAction> actions = ui.DrainActions(screen);
+        return actions.empty() || actions[0].Arguments.empty() ? 0u : UiKeyCodeFromEvent(actions[0].Arguments[0].AsInt());
+    };
+    EXPECT_EQ(code(SDL_SCANCODE_D), static_cast<std::uint32_t>(SDLK_D));
+    EXPECT_EQ(code(SDL_SCANCODE_F2), static_cast<std::uint32_t>(SDLK_F2));
+    EXPECT_EQ(code(SDL_SCANCODE_DELETE), static_cast<std::uint32_t>(SDLK_DELETE));
+    EXPECT_EQ(code(SDL_SCANCODE_7), static_cast<std::uint32_t>(SDLK_7));
 }

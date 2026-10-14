@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/assets/AssetPath.h>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -14,10 +15,9 @@
 [[nodiscard]] inline std::filesystem::path ResolveSceneSourceFile(
     std::span<const std::filesystem::path> roots, std::string_view assetPath)
 {
-    constexpr std::string_view prefix = "asset://";
-    if (assetPath.rfind(prefix, 0) != 0)
+    if (!assetPath.starts_with(kAssetPathPrefix))
         return {};
-    const std::string_view relative = assetPath.substr(prefix.size());
+    const std::string_view relative = ContentRelativePath(assetPath);
     for (const std::filesystem::path& root : roots)
     {
         std::error_code ec;
@@ -50,7 +50,7 @@
             absolute.lexically_relative(canonicalRoot).generic_string();
         if (relative.empty() || relative.starts_with(".."))
             continue;
-        return "asset://" + relative;
+        return AssetPathOf(relative);
     }
     return {};
 }

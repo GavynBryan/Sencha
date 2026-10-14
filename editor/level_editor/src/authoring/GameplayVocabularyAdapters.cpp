@@ -1,13 +1,12 @@
 #include "GameplayVocabularyAdapters.h"
 
-#include "ui/chrome/ChromeControls.h"
-
 #include "GameplayVocabularyEdits.h"
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/commands/ValueCommand.h"
-#include "fonts/IconsFontAwesome6.h"
+#include "properties/PropertyTree.h"
+#include "properties/SettingProperties.h"
 
 #include <abilities/AbilityRegistry.h>
 #include <abilities/AbilitySet.h>
@@ -17,8 +16,6 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <movement/LocomotionMode.h>
 #include <movement/components/CharacterMovement.h>
-
-#include <imgui.h>
 
 #include <algorithm>
 #include <array>
@@ -45,56 +42,17 @@ namespace
     // copyable values holding no handles, so a before/after pair is a complete
     // record and no lifecycle hook is owed anything.
     template <typename Component>
-    void Commit(EditorComponentInspectorContext& context,
-                const Component& before, const Component& after)
+    PropertyEditResult Commit(EditorComponentInspectorContext& context, const Component& before,
+                              const Component& after)
     {
+        context.Scene.SetComponent(context.Entity, after);
         context.Commands.Execute(std::make_unique<ValueCommand<Component>>(
             before, after,
             [&scene = context.Scene, entity = context.Entity](const Component& value)
             { scene.SetComponent(entity, value); },
             context.Document));
+        return PropertyEditResult::Applied;
     }
-
-    // One drag in flight: the component as it stood before the gesture started,
-    // so a drag records a single command rather than one per frame. Only one
-    // widget is active at a time, so one slot is enough.
-    template <typename Component>
-    struct DragGesture
-    {
-        EntityId  Entity;
-        Component Before{};
-        bool      Active = false;
-        bool      Finished = false;
-
-        // Call immediately after the drag widget. ImGui's item queries name the
-        // last item submitted, so both edges have to be read right there rather
-        // than at the end of the component's rows. `before` must be the value as
-        // of this frame's start: on the frame a widget activates it may already
-        // have written.
-        void Track(EntityId entity, const Component& before)
-        {
-            if (ImGui::IsItemActivated())
-            {
-                Entity = entity;
-                Before = before;
-                Active = true;
-            }
-            if (Active && Entity == entity && ImGui::IsItemDeactivatedAfterEdit())
-            {
-                Active = false;
-                Finished = true;
-            }
-        }
-
-        // The pre-gesture value, once a gesture has ended.
-        [[nodiscard]] std::optional<Component> Ended()
-        {
-            if (!Finished)
-                return std::nullopt;
-            Finished = false;
-            return Before;
-        }
-    };
 
     // A name the registry no longer knows, which authored content can outlive:
     // shown as itself rather than as a blank row.
@@ -103,18 +61,38 @@ namespace
         return name.empty() ? std::string("<unregistered>") : std::string(name);
     }
 
-    void DrawRefusal(const std::string& message)
+    // "tag:12" -> 12, for a key naming a registry entry.
+    std::optional<std::uint32_t> EntryOf(std::string_view key, std::string_view prefix)
     {
-        if (message.empty())
-            return;
-        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.25f, 1.0f), "%s", message.c_str());
+        const std::optional<PropertyKeyIndex> entry = ParsePropertyKeyIndex(key, prefix);
+        if (!entry.has_value() || !entry->Rest.empty())
+            return std::nullopt;
+        return static_cast<std::uint32_t>(entry->Index);
     }
 
-    // The narrow row button every list uses to drop an entry.
-    bool DrawRemoveButton()
+    // What a refused edit said, until the entity or the next edit changes it.
+    class RefusalNote
     {
-        return EditorChrome::IconButton("cancel", IconId::Cancel, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal);
-    }
+    public:
+        PropertyEditResult Report(const SelectableRef& entity, const VocabularyEdit& edit) const
+        {
+            Entity = entity;
+            Message = edit.Error;
+            if (!edit.Error.empty())
+                return PropertyEditResult::Refused;
+            return edit.Changed ? PropertyEditResult::Applied : PropertyEditResult::Unchanged;
+        }
+
+        void AppendTo(const SelectableRef& entity, std::vector<PropertyNode>& nodes) const
+        {
+            if (entity == Entity && !Message.empty())
+                nodes.push_back(NoteProperty("refused", "Refused", Message));
+        }
+
+    private:
+        mutable SelectableRef Entity;
+        mutable std::string Message;
+    };
 
     //=========================================================================
     // Gameplay tags
@@ -129,116 +107,99 @@ namespace
 
         bool AuthorsInspectorRows() const override { return true; }
 
-        bool DrawInspector(EditorComponentInspectorContext& context) const override
+        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
+        {
+            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
+            const GameplayTagContainer* held = world.TryGet<GameplayTagContainer>(context.Entity);
+            const auto* registry = world.TryGetResource<GameplayTagRegistry>();
+            if (held == nullptr)
+                return {};
+            if (registry == nullptr)
+                return { NoteProperty("missing", "Tags", "This document has no gameplay tag registry.") };
+
+            PropertyNode tags = GroupProperty("tags", "Tags");
+            std::vector<std::string> offered;
+            ForEachRegistered<GameplayTagId>(*registry, [&](GameplayTagId tag) {
+                if (!held->HasExact(tag))
+                    offered.emplace_back(registry->GetName(tag));
+            });
+            if (!offered.empty())
+                tags.Descriptor.Verbs.push_back({ .Id = "grant", .Label = "Grant Tag", .Choices = std::move(offered) });
+            for (std::uint8_t i = 0; i < held->Count; ++i)
+            {
+                const GameplayTagId tag = held->Tags[i];
+                PropertyNode row = NumberProperty("tag:" + std::to_string(tag.Value),
+                                                  DisplayName(registry->GetName(tag)), held->Counts[i], 0.0, -1.0, 1.0,
+                                                  "How many sources grant this tag. It stays present until every "
+                                                  "one of them revokes it.");
+                row.Descriptor.Verbs.push_back({ .Id = "revoke", .Label = "Revoke" });
+                tags.Children.push_back(std::move(row));
+            }
+            PropertyNode typed;
+            typed.Key = "new";
+            typed.Descriptor.Kind = PropertyKind::Text;
+            typed.Descriptor.Label = "New tag";
+            typed.Descriptor.Tooltip = "A dot-path (State.Stunned); a name the registry lacks is declared";
+            tags.Children.push_back(std::move(typed));
+
+            std::vector<PropertyNode> nodes{ std::move(tags) };
+            Refusal.AppendTo(context.Ref(), nodes);
+            return nodes;
+        }
+
+        PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
+                                             std::string_view value) const override
         {
             World& world = context.Scene.GetRegistry().Components;
-            const GameplayTagContainer* held =
-                std::as_const(world).TryGet<GameplayTagContainer>(context.Entity);
-            if (held == nullptr)
-                return false;
-
+            const GameplayTagContainer* held = std::as_const(world).TryGet<GameplayTagContainer>(context.Entity);
             auto* registry = world.TryGetResource<GameplayTagRegistry>();
-            if (registry == nullptr)
+            if (held == nullptr || registry == nullptr)
+                return PropertyEditResult::Gone;
+            GameplayTagContainer working = *held;
+            VocabularyEdit edit;
+            if (key == "new")
             {
-                ImGui::TextDisabled("This document has no gameplay tag registry.");
-                return true;
+                if (value.empty())
+                    return PropertyEditResult::Unchanged;
+                edit = GrantTagByName(working, *registry, value);
             }
-
-            if (StatusEntity != context.Entity)
+            else if (const std::optional<std::uint32_t> tag = EntryOf(key, "tag:"))
             {
-                StatusEntity = context.Entity;
-                Status.clear();
-                NewTag.fill('\0');
+                const std::optional<double> stacks = ParseNumber(value, 1.0, 999.0);
+                if (!stacks.has_value())
+                    return PropertyEditResult::Refused;
+                edit = SetTagStacks(working, GameplayTagId{ *tag }, static_cast<std::uint16_t>(std::lround(*stacks)));
             }
-
-            const GameplayTagContainer before = *held;
-            GameplayTagContainer working = before;
-            bool previewed = false;
-            bool instant = false;
-
-            for (std::uint8_t i = 0; i < before.Count; ++i)
+            else
             {
-                const GameplayTagId tag = before.Tags[i];
-                ImGui::PushID(static_cast<int>(tag.Value));
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(DisplayName(registry->GetName(tag)).c_str());
-
-                ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.55f);
-                int stacks = static_cast<int>(before.Counts[i]);
-                ImGui::SetNextItemWidth(80.0f);
-                ImGui::DragInt("##stacks", &stacks, 0.2f, 1, 999);
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-                    ImGui::SetTooltip("How many sources grant this tag. It stays "
-                                      "present until every one of them revokes it.");
-                Drag.Track(context.Entity, before);
-                const auto clamped = static_cast<std::uint16_t>(std::clamp(stacks, 1, 999));
-                if (clamped != before.Counts[i])
-                    previewed |= SetTagStacks(working, tag, clamped).Changed;
-
-                ImGui::SameLine();
-                if (DrawRemoveButton())
-                    instant |= RevokeTag(working, tag).Changed;
-                ImGui::PopID();
+                return PropertyEditResult::Gone;
             }
-            if (before.Count == 0)
-                ImGui::TextDisabled("No tags.");
+            const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
+            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
+        }
 
-            // Open vocabulary: pick a registered name, or type a new dot-path
-            // and it is declared here. The scene stores the name either way.
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-            const bool entered = ImGui::InputTextWithHint(
-                "##newtag", "State.Stunned", NewTag.data(), NewTag.size(),
-                ImGuiInputTextFlags_EnterReturnsTrue);
-            ImGui::SameLine();
-            if (EditorChrome::Button("Add", "Add", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal) || entered)
-            {
-                const VocabularyEdit edit =
-                    GrantTagByName(working, *registry, NewTag.data());
-                Status = edit.Error;
-                instant |= edit.Changed;
-                if (edit.Changed)
-                    NewTag.fill('\0');
-            }
-            ImGui::SameLine();
-            if (EditorChrome::IconButton("knowntags", IconId::ChevronDown, ImGui::GetTextLineHeight(), EditorChrome::ButtonTone::Normal))
-                ImGui::OpenPopup("known_tags");
-            if (ImGui::BeginPopup("known_tags"))
-            {
-                bool anyOffered = false;
-                ForEachRegistered<GameplayTagId>(*registry, [&](GameplayTagId tag)
-                {
-                    if (working.HasExact(tag))
-                        return;
-                    anyOffered = true;
-                    const std::string name(registry->GetName(tag));
-                    if (ImGui::Selectable(name.c_str()))
-                    {
-                        const VocabularyEdit edit =
-                            GrantTagByName(working, *registry, name);
-                        Status = edit.Error;
-                        instant |= edit.Changed;
-                    }
-                });
-                if (!anyOffered)
-                    ImGui::TextDisabled("Every registered tag is already here.");
-                ImGui::EndPopup();
-            }
-            DrawRefusal(Status);
-
-            if (previewed || instant)
-                context.Scene.SetComponent(context.Entity, working);
-            if (instant)
-                Commit(context, before, working);
-            else if (std::optional<GameplayTagContainer> pre = Drag.Ended())
-                Commit(context, *pre, working);
-            return true;
+        PropertyEditResult ActInspector(EditorComponentInspectorContext& context, std::string_view key,
+                                        std::string_view verb, std::string_view choice) const override
+        {
+            World& world = context.Scene.GetRegistry().Components;
+            const GameplayTagContainer* held = std::as_const(world).TryGet<GameplayTagContainer>(context.Entity);
+            auto* registry = world.TryGetResource<GameplayTagRegistry>();
+            if (held == nullptr || registry == nullptr)
+                return PropertyEditResult::Gone;
+            GameplayTagContainer working = *held;
+            VocabularyEdit edit;
+            if (key == "tags" && verb == "grant")
+                edit = GrantTagByName(working, *registry, choice);
+            else if (const std::optional<std::uint32_t> tag = EntryOf(key, "tag:"); tag.has_value() && verb == "revoke")
+                edit = RevokeTag(working, GameplayTagId{ *tag });
+            else
+                return PropertyEditResult::Gone;
+            const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
+            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
         }
 
     private:
-        mutable DragGesture<GameplayTagContainer> Drag;
-        mutable EntityId                          StatusEntity;
-        mutable std::string                       Status;
-        mutable std::array<char, 128>             NewTag{};
+        RefusalNote Refusal;
     };
 
     //=========================================================================
@@ -254,97 +215,88 @@ namespace
 
         bool AuthorsInspectorRows() const override { return true; }
 
-        bool DrawInspector(EditorComponentInspectorContext& context) const override
+        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
+        {
+            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
+            const AttributeSet* held = world.TryGet<AttributeSet>(context.Entity);
+            const auto* registry = world.TryGetResource<AttributeRegistry>();
+            if (held == nullptr)
+                return {};
+            if (registry == nullptr)
+                return { NoteProperty("missing", "Attributes", "This document has no attribute registry.") };
+
+            PropertyNode attributes = GroupProperty("attributes", "Attributes");
+            std::vector<std::string> offered;
+            ForEachRegistered<AttributeId>(*registry, [&](AttributeId id) {
+                if (!held->Has(id))
+                    offered.emplace_back(registry->GetName(id));
+            });
+            if (!offered.empty())
+                attributes.Descriptor.Verbs.push_back({ .Id = "add", .Label = "Add Attribute", .Choices = std::move(offered) });
+            for (std::uint8_t i = 0; i < held->Count; ++i)
+            {
+                const AttributeId id = held->Ids[i];
+                PropertyNode row = NumberProperty("attr:" + std::to_string(id.Value), DisplayName(registry->GetName(id)),
+                                                  held->Base[i], 0.0, -1.0, 0.05,
+                                                  "The authored value. What the entity has in play is this folded "
+                                                  "with active effects.");
+                row.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove" });
+                attributes.Children.push_back(std::move(row));
+            }
+            std::vector<PropertyNode> nodes{ std::move(attributes) };
+            Refusal.AppendTo(context.Ref(), nodes);
+            return nodes;
+        }
+
+        PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
+                                             std::string_view value) const override
         {
             World& world = context.Scene.GetRegistry().Components;
-            const AttributeSet* held =
-                std::as_const(world).TryGet<AttributeSet>(context.Entity);
-            if (held == nullptr)
-                return false;
+            const AttributeSet* held = std::as_const(world).TryGet<AttributeSet>(context.Entity);
+            const auto* registry = world.TryGetResource<AttributeRegistry>();
+            const std::optional<std::uint32_t> id = EntryOf(key, "attr:");
+            if (held == nullptr || registry == nullptr || !id.has_value())
+                return PropertyEditResult::Gone;
+            const std::optional<double> base = ParseNumber(value);
+            if (!base.has_value())
+                return PropertyEditResult::Refused;
+            AttributeSet working = *held;
+            const PropertyEditResult result = Refusal.Report(
+                context.Ref(), SetAttributeBase(working, *registry, AttributeId{ *id }, static_cast<float>(*base)));
+            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
+        }
 
-            auto* registry = world.TryGetResource<AttributeRegistry>();
-            if (registry == nullptr)
+        PropertyEditResult ActInspector(EditorComponentInspectorContext& context, std::string_view key,
+                                        std::string_view verb, std::string_view choice) const override
+        {
+            World& world = context.Scene.GetRegistry().Components;
+            const AttributeSet* held = std::as_const(world).TryGet<AttributeSet>(context.Entity);
+            const auto* registry = world.TryGetResource<AttributeRegistry>();
+            if (held == nullptr || registry == nullptr)
+                return PropertyEditResult::Gone;
+            AttributeSet working = *held;
+            VocabularyEdit edit;
+            if (key == "attributes" && verb == "add")
             {
-                ImGui::TextDisabled("This document has no attribute registry.");
-                return true;
-            }
-
-            if (StatusEntity != context.Entity)
-            {
-                StatusEntity = context.Entity;
-                Status.clear();
-            }
-
-            const AttributeSet before = *held;
-            AttributeSet working = before;
-            bool previewed = false;
-            bool instant = false;
-
-            for (std::uint8_t i = 0; i < before.Count; ++i)
-            {
-                const AttributeId id = before.Ids[i];
-                ImGui::PushID(static_cast<int>(id.Value));
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(DisplayName(registry->GetName(id)).c_str());
-
-                ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.55f);
-                float base = before.Base[i];
-                ImGui::SetNextItemWidth(-(ImGui::GetFrameHeight() * 2.0f));
-                ImGui::DragFloat("##base", &base, 0.05f,
-                                 registry->Min(id), registry->Max(id));
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-                    ImGui::SetTooltip("The authored value. What the entity has in "
-                                      "play is this folded with active effects.");
-                Drag.Track(context.Entity, before);
-                if (base != before.Base[i])
-                    previewed |= SetAttributeBase(working, *registry, id, base).Changed;
-
-                ImGui::SameLine();
-                if (DrawRemoveButton())
-                    instant |= RemoveAttribute(working, id).Changed;
-                ImGui::PopID();
-            }
-            if (before.Count == 0)
-                ImGui::TextDisabled("No attributes.");
-
-            if (EditorChrome::Button("Add attribute", "Add attribute", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
-                ImGui::OpenPopup("known_attributes");
-            if (ImGui::BeginPopup("known_attributes"))
-            {
-                bool anyOffered = false;
-                ForEachRegistered<AttributeId>(*registry, [&](AttributeId id)
-                {
-                    if (working.Has(id))
-                        return;
-                    anyOffered = true;
-                    if (ImGui::Selectable(DisplayName(registry->GetName(id)).c_str()))
-                    {
-                        const VocabularyEdit edit = AddAttribute(working, *registry, id);
-                        Status = edit.Error;
-                        instant |= edit.Changed;
-                    }
+                std::optional<AttributeId> chosen;
+                ForEachRegistered<AttributeId>(*registry, [&](AttributeId id) {
+                    if (registry->GetName(id) == choice)
+                        chosen = id;
                 });
-                if (!anyOffered)
-                    ImGui::TextDisabled(registry->Size() == 0
-                                            ? "No attributes are registered here."
-                                            : "Every registered attribute is already here.");
-                ImGui::EndPopup();
+                if (!chosen.has_value())
+                    return PropertyEditResult::Refused;
+                edit = AddAttribute(working, *registry, *chosen);
             }
-            DrawRefusal(Status);
-
-            if (previewed || instant)
-                context.Scene.SetComponent(context.Entity, working);
-            if (instant)
-                Commit(context, before, working);
-            else if (std::optional<AttributeSet> pre = Drag.Ended())
-                Commit(context, *pre, working);
-            return true;
+            else if (const std::optional<std::uint32_t> id = EntryOf(key, "attr:"); id.has_value() && verb == "remove")
+                edit = RemoveAttribute(working, AttributeId{ *id });
+            else
+                return PropertyEditResult::Gone;
+            const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
+            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
         }
 
     private:
-        mutable DragGesture<AttributeSet> Drag;
-        mutable EntityId                  StatusEntity;
-        mutable std::string               Status;
+        RefusalNote Refusal;
     };
 
     //=========================================================================
@@ -360,81 +312,67 @@ namespace
 
         bool AuthorsInspectorRows() const override { return true; }
 
-        bool DrawInspector(EditorComponentInspectorContext& context) const override
+        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
+        {
+            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
+            const AbilitySet* held = world.TryGet<AbilitySet>(context.Entity);
+            const auto* registry = world.TryGetResource<AbilityRegistry>();
+            if (held == nullptr)
+                return {};
+            if (registry == nullptr)
+                return { NoteProperty("missing", "Abilities", "This document has no ability registry.") };
+
+            PropertyNode abilities = GroupProperty("abilities", "Abilities");
+            std::vector<std::string> offered;
+            ForEachRegistered<AbilityId>(*registry, [&](AbilityId id) {
+                if (!held->Has(id))
+                    offered.emplace_back(registry->GetName(id));
+            });
+            if (!offered.empty())
+                abilities.Descriptor.Verbs.push_back({ .Id = "grant", .Label = "Grant Ability", .Choices = std::move(offered) });
+            for (std::uint8_t i = 0; i < held->Count; ++i)
+            {
+                const AbilityId id = held->Abilities[i];
+                PropertyNode row = NoteProperty("ability:" + std::to_string(id.Value), DisplayName(registry->GetName(id)), "");
+                row.Descriptor.Verbs.push_back({ .Id = "revoke", .Label = "Revoke" });
+                abilities.Children.push_back(std::move(row));
+            }
+            std::vector<PropertyNode> nodes{ std::move(abilities) };
+            Refusal.AppendTo(context.Ref(), nodes);
+            return nodes;
+        }
+
+        PropertyEditResult ActInspector(EditorComponentInspectorContext& context, std::string_view key,
+                                        std::string_view verb, std::string_view choice) const override
         {
             World& world = context.Scene.GetRegistry().Components;
-            const AbilitySet* held =
-                std::as_const(world).TryGet<AbilitySet>(context.Entity);
-            if (held == nullptr)
-                return false;
-
-            auto* registry = world.TryGetResource<AbilityRegistry>();
-            if (registry == nullptr)
+            const AbilitySet* held = std::as_const(world).TryGet<AbilitySet>(context.Entity);
+            const auto* registry = world.TryGetResource<AbilityRegistry>();
+            if (held == nullptr || registry == nullptr)
+                return PropertyEditResult::Gone;
+            AbilitySet working = *held;
+            VocabularyEdit edit;
+            if (key == "abilities" && verb == "grant")
             {
-                ImGui::TextDisabled("This document has no ability registry.");
-                return true;
-            }
-
-            if (StatusEntity != context.Entity)
-            {
-                StatusEntity = context.Entity;
-                Status.clear();
-            }
-
-            const AbilitySet before = *held;
-            AbilitySet working = before;
-            bool instant = false;
-
-            for (std::uint8_t i = 0; i < before.Count; ++i)
-            {
-                const AbilityId id = before.Abilities[i];
-                ImGui::PushID(static_cast<int>(id.Value));
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(DisplayName(registry->GetName(id)).c_str());
-                ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.55f);
-                if (DrawRemoveButton())
-                    instant |= RevokeAbility(working, id).Changed;
-                ImGui::PopID();
-            }
-            if (before.Count == 0)
-                ImGui::TextDisabled("No abilities.");
-
-            if (EditorChrome::Button("Grant ability", "Grant ability", ImVec2(0.0f, ImGui::GetTextLineHeight()), EditorChrome::ButtonTone::Normal))
-                ImGui::OpenPopup("known_abilities");
-            if (ImGui::BeginPopup("known_abilities"))
-            {
-                bool anyOffered = false;
-                ForEachRegistered<AbilityId>(*registry, [&](AbilityId id)
-                {
-                    if (working.Has(id))
-                        return;
-                    anyOffered = true;
-                    if (ImGui::Selectable(DisplayName(registry->GetName(id)).c_str()))
-                    {
-                        const VocabularyEdit edit = GrantAbility(working, *registry, id);
-                        Status = edit.Error;
-                        instant |= edit.Changed;
-                    }
+                std::optional<AbilityId> chosen;
+                ForEachRegistered<AbilityId>(*registry, [&](AbilityId id) {
+                    if (registry->GetName(id) == choice)
+                        chosen = id;
                 });
-                if (!anyOffered)
-                    ImGui::TextDisabled(registry->Size() == 0
-                                            ? "No abilities are registered here."
-                                            : "Every registered ability is already here.");
-                ImGui::EndPopup();
+                if (!chosen.has_value())
+                    return PropertyEditResult::Refused;
+                edit = GrantAbility(working, *registry, *chosen);
             }
-            DrawRefusal(Status);
-
-            if (instant)
-            {
-                context.Scene.SetComponent(context.Entity, working);
-                Commit(context, before, working);
-            }
-            return true;
+            else if (const std::optional<std::uint32_t> id = EntryOf(key, "ability:"); id.has_value() && verb == "revoke")
+                edit = RevokeAbility(working, AbilityId{ *id });
+            else
+                return PropertyEditResult::Gone;
+            const PropertyEditResult result = Refusal.Report(context.Ref(), edit);
+            return result == PropertyEditResult::Applied ? Commit(context, *held, working) : result;
         }
 
     private:
-        mutable EntityId    StatusEntity;
-        mutable std::string Status;
+        RefusalNote Refusal;
     };
 
     //=========================================================================
@@ -450,52 +388,43 @@ namespace
 
         bool AuthorsInspectorRows() const override { return true; }
 
-        bool DrawInspector(EditorComponentInspectorContext& context) const override
+        std::vector<PropertyNode> InspectorNodes(const EditorComponentInspectorContext& context) const override
+        {
+            const World& world = std::as_const(context.Scene.GetRegistry()).Components;
+            const CharacterMovement* held = world.TryGet<CharacterMovement>(context.Entity);
+            const auto* modes = world.TryGetResource<LocomotionModeRegistry>();
+            if (held == nullptr)
+                return {};
+            if (modes == nullptr)
+                return { NoteProperty("missing", "Starting mode", "This document has no locomotion mode registry.") };
+
+            PropertyNode mode;
+            mode.Key = "mode";
+            mode.Descriptor.Kind = PropertyKind::Choice;
+            mode.Descriptor.Label = "Starting mode";
+            mode.Descriptor.Tooltip = "Which locomotion rules the character spawns under. Modes change during play; "
+                                      "this is only where it begins.";
+            for (const LocomotionModeEntry& entry : modes->Entries())
+                mode.Descriptor.Choices.push_back(entry.Name);
+            const LocomotionModeEntry* current = modes->Find(held->Mode);
+            mode.Value = current != nullptr ? current->Name : std::string("<unregistered>");
+            if (current == nullptr)
+                mode.Descriptor.Choices.push_back(mode.Value);
+            return { std::move(mode) };
+        }
+
+        PropertyEditResult SetInspectorValue(EditorComponentInspectorContext& context, std::string_view key,
+                                             std::string_view value) const override
         {
             World& world = context.Scene.GetRegistry().Components;
-            const CharacterMovement* held =
-                std::as_const(world).TryGet<CharacterMovement>(context.Entity);
-            if (held == nullptr)
-                return false;
-
-            auto* modes = world.TryGetResource<LocomotionModeRegistry>();
-            if (modes == nullptr)
-            {
-                ImGui::TextDisabled("This document has no locomotion mode registry.");
-                return true;
-            }
-
-            const LocomotionModeEntry* current = modes->Find(held->Mode);
-            const std::string preview = current != nullptr ? current->Name
-                                                           : std::string("<unregistered>");
-
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted("Starting mode");
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-                ImGui::SetTooltip("Which locomotion rules the character spawns under. "
-                                  "Modes change during play; this is only where it begins.");
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.42f);
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            if (EditorChrome::BeginCombo("##mode", preview.c_str()))
-            {
-                for (const LocomotionModeEntry& mode : modes->Entries())
-                {
-                    const bool selected = mode.Id == held->Mode;
-                    if (ImGui::Selectable(mode.Name.c_str(), selected) && !selected)
-                    {
-                        CharacterMovement after = *held;
-                        if (SetLocomotionMode(after, *modes, mode.Name).Changed)
-                        {
-                            context.Scene.SetComponent(context.Entity, after);
-                            Commit(context, *held, after);
-                        }
-                    }
-                    if (selected)
-                        ImGui::SetItemDefaultFocus();
-                }
-                EditorChrome::EndCombo();
-            }
-            return true;
+            const CharacterMovement* held = std::as_const(world).TryGet<CharacterMovement>(context.Entity);
+            const auto* modes = world.TryGetResource<LocomotionModeRegistry>();
+            if (key != "mode" || held == nullptr || modes == nullptr)
+                return PropertyEditResult::Gone;
+            CharacterMovement after = *held;
+            if (!SetLocomotionMode(after, *modes, value).Changed)
+                return PropertyEditResult::Unchanged;
+            return Commit(context, *held, after);
         }
     };
 }

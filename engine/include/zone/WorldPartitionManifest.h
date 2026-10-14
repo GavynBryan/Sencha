@@ -3,8 +3,10 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include <core/assets/AssetId.h>
 #include <math/geometry/3d/Aabb3d.h>
 #include <zone/WorldPartitionIds.h>
 #include <zone/ZoneId.h>
@@ -133,6 +135,9 @@ struct TransitionRecord
 
 struct WorldPartitionManifest
 {
+    // The world document's own id, as it states it (docs/assets/pipeline.md,
+    // Decision A); invalid when it states none.
+    AssetId     Id{};
     std::string Name;
     ZoneId      StartZone;   // optional; invalid means "not designated" (validation warns)
     // The world scene: authored global content loaded once at world start and
@@ -163,3 +168,15 @@ ReadWorldPartitionManifest(const JsonValue& root, std::string* error);
 // Writes every field, ids as hex strings, arrays in the order stored. Cooked-only
 // fields are written only when nonzero/nonempty, so authored files stay clean.
 [[nodiscard]] JsonValue WriteWorldPartitionManifest(const WorldPartitionManifest& manifest);
+
+// What a zone or graph is called where people read it: its name, or its id when
+// it has none. A name another of the world's zones (or graphs) shares carries
+// the id after it, so each is told apart by what it shows; one the manifest
+// lacks reads "missing" and its id.
+[[nodiscard]] std::string ZoneDisplayName(const WorldPartitionManifest& manifest, ZoneId zone);
+[[nodiscard]] std::string GraphDisplayName(const WorldPartitionManifest& manifest, GraphId graph);
+// The zone (or graph) showing `name`, if one does.
+[[nodiscard]] std::optional<ZoneId> ZoneDisplayedAs(const WorldPartitionManifest& manifest, std::string_view name);
+[[nodiscard]] std::optional<GraphId> GraphDisplayedAs(const WorldPartitionManifest& manifest, std::string_view name);
+// The innermost zone holding `point`: the smallest by volume where zones overlap.
+[[nodiscard]] const ZoneHeader* InnermostZoneAt(const WorldPartitionManifest& manifest, Vec3d point);

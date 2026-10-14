@@ -1,5 +1,6 @@
 #include <assets/cook/CookedCache.h>
 
+#include <core/assets/AssetIdentity.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -77,6 +78,7 @@ namespace
             return Fail(error, "artifact 'type' must be a known asset type name");
 
         out.Path = path->AsString();
+        out.Id = StatedAssetId(value).value_or(AssetId{});
         out.FileRelPath = file->AsString();
         out.Type = assetType;
         if (const JsonValue* hash = value.Find("hash");
@@ -92,8 +94,34 @@ const CookedSourceEntry* CookedCacheIndex::Find(std::string_view sourceRelPath) 
     return it == EntriesBySource.end() ? nullptr : &it->second;
 }
 
+AssetId CookedArtifactId(std::string_view sourcePath, AssetId source, std::string_view artifactPath)
+{
+    const auto stem = [](std::string_view path) {
+        const std::size_t dot = path.rfind('.');
+        const std::size_t slash = path.rfind('/');
+        return dot != std::string_view::npos && (slash == std::string_view::npos || dot > slash) ? path.substr(0, dot)
+                                                                                                 : path;
+    };
+    if (artifactPath == sourcePath
+        || (artifactPath.find('#') == std::string_view::npos && stem(artifactPath) == stem(sourcePath)))
+        return source;
+    if (artifactPath.starts_with(sourcePath) && artifactPath.substr(sourcePath.size()).starts_with('#'))
+        return AssetIdOfPart(source, artifactPath.substr(sourcePath.size() + 1));
+    return AssetIdOfPath(artifactPath);
+}
+
+void NameCookedIds(CookedSourceEntry& entry)
+{
+    const std::string sourcePath = AssetPathOf(entry.SourceRelPath);
+    if (!entry.SourceId.IsValid())
+        entry.SourceId = AssetIdOfPath(sourcePath);
+    for (CookedArtifact& artifact : entry.Artifacts)
+        artifact.Id = CookedArtifactId(sourcePath, entry.SourceId, artifact.Path);
+}
+
 void CookedCacheIndex::Put(CookedSourceEntry entry)
 {
+    NameCookedIds(entry);
     std::string key = entry.SourceRelPath;
     EntriesBySource.insert_or_assign(std::move(key), std::move(entry));
 }
@@ -123,6 +151,7 @@ JsonValue CookedCacheIndex::ToJson() const
         {
             JsonValue::Object item;
             item.emplace_back("path", JsonValue(artifact.Path));
+            item.emplace_back(std::string(kAssetIdKey), JsonValue(AssetIdToString(artifact.Id)));
             item.emplace_back("file", JsonValue(artifact.FileRelPath));
             item.emplace_back("type", JsonValue(std::string(AssetTypeToString(artifact.Type))));
             if (artifact.ContentHash != 0)
@@ -145,6 +174,7 @@ JsonValue CookedCacheIndex::ToJson() const
 
         JsonValue::Object source;
         source.emplace_back("source", JsonValue(entry->SourceRelPath));
+        source.emplace_back(std::string(kAssetIdKey), JsonValue(AssetIdToString(entry->SourceId)));
         source.emplace_back("input_fingerprint", JsonValue(HashToHex(entry->InputFingerprint)));
         source.emplace_back("cook_identity", JsonValue(HashToHex(entry->CookIdentity)));
         source.emplace_back("size", JsonValue(DecimalToString(entry->SourceSize)));
@@ -204,6 +234,7 @@ bool CookedCacheIndex::FromJson(const JsonValue& root, CookedCacheIndex& out, st
             return Fail(error, "source 'artifacts' must be an array");
 
         entry.SourceRelPath = source->AsString();
+        entry.SourceId = StatedAssetId(item).value_or(AssetId{});
         entry.SourceSize = DecimalField<uint64_t>(item, "size");
         entry.SourceMTime = DecimalField<int64_t>(item, "mtime");
         entry.MetaSize = DecimalField<uint64_t>(item, "meta_size");

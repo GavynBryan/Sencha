@@ -226,7 +226,6 @@ AnimationPreviewSession::~AnimationPreviewSession() = default;
 bool AnimationPreviewSession::Open(AnimationScenario scenario)
 {
     Working = std::move(scenario);
-    SavedScenarioText = JsonStringify(WriteAnimationScenario(Working));
     Restart();
     return Bound != nullptr;
 }
@@ -255,7 +254,6 @@ void AnimationPreviewSession::Close()
     Slots.clear();
     Participants.clear();
     Working = AnimationScenario{};
-    SavedScenarioText.clear();
     Playing = false;
 }
 
@@ -264,14 +262,18 @@ double AnimationPreviewSession::TickSeconds() const
     return 1.0 / static_cast<double>(std::max<std::uint32_t>(Working.TickRate, 1));
 }
 
-bool AnimationPreviewSession::ScenarioModified() const
+void AnimationPreviewSession::ReplaceScenario(AnimationScenario scenario)
 {
-    return JsonStringify(WriteAnimationScenario(Working)) != SavedScenarioText;
+    Working = std::move(scenario);
+    BranchedAt.reset();
+    if (Preview != nullptr)
+        Replay();
 }
 
-void AnimationPreviewSession::MarkScenarioSaved()
+void AnimationPreviewSession::ScenarioChanged()
 {
-    SavedScenarioText = JsonStringify(WriteAnimationScenario(Working));
+    if (ScenarioObserver)
+        ScenarioObserver();
 }
 
 void AnimationPreviewSession::Problem(std::string code, std::string field, std::string message)
@@ -506,6 +508,7 @@ void AnimationPreviewSession::Schedule(AnimationScenarioAction action)
     }
     action.Tick = NextTick();
     Working.Append(std::move(action));
+    ScenarioChanged();
 }
 
 void AnimationPreviewSession::SetFact(const std::string& fact, AnimationScenarioValue value)
@@ -556,6 +559,7 @@ void AnimationPreviewSession::SetRole(AnimationPreviewRole role)
     Working.Role = role;
     if (Preview != nullptr)
         Replay();
+    ScenarioChanged();
 }
 
 void AnimationPreviewSession::SetRequestsFromWire(bool fromWire)
@@ -574,6 +578,7 @@ void AnimationPreviewSession::SetMovement(std::optional<AnimationScenarioMovemen
     Working.Movement = std::move(movement);
     if (Preview != nullptr)
         Replay();
+    ScenarioChanged();
 }
 
 AnimationPreviewMovementRecord AnimationPreviewSession::StepMovement(AnimTick tick)
@@ -632,6 +637,7 @@ void AnimationPreviewSession::SetRecorder(std::string_view verb, bool attached)
         Working.Recorders.erase(it);
     if (Preview != nullptr)
         Replay();
+    ScenarioChanged();
 }
 
 bool AnimationPreviewSession::HasRecorder(std::string_view verb) const
@@ -673,6 +679,7 @@ bool AnimationPreviewSession::AddParticipant(const std::string& name)
     if (name.empty() || Working.HasParticipant(name))
         return false;
     Working.Participants.push_back(name);
+    ScenarioChanged();
     return true;
 }
 
@@ -695,6 +702,7 @@ bool AnimationPreviewSession::DeclareTag(const std::string& name, std::string* e
     Working.DeclaredTags.push_back(name);
     if (Preview != nullptr)
         Replay();
+    ScenarioChanged();
     return true;
 }
 
@@ -706,6 +714,7 @@ bool AnimationPreviewSession::UndeclareTag(const std::string& name)
     Working.DeclaredTags.erase(it);
     if (Preview != nullptr)
         Replay();
+    ScenarioChanged();
     return true;
 }
 
@@ -1087,6 +1096,15 @@ std::string_view AnimationPreviewSession::ParticipantName(EntityId entity) const
 const GameplayTagRegistry* AnimationPreviewSession::Tags() const
 {
     return Preview != nullptr ? Preview->TryGetResource<GameplayTagRegistry>() : nullptr;
+}
+
+std::string AnimationPreviewSession::TagName(GameplayTagId tag) const
+{
+    if (!tag.IsValid())
+        return "(none)";
+    const GameplayTagRegistry* tags = Tags();
+    const std::string_view name = tags != nullptr ? tags->GetName(tag) : std::string_view{};
+    return name.empty() ? std::format("#{}", tag.Value) : std::string(name);
 }
 
 const VerbRegistry* AnimationPreviewSession::Verbs() const

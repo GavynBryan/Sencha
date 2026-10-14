@@ -12,7 +12,7 @@
 #include "tools/ToolContext.h"
 #include "viewport/EditorViewport.h"
 
-#include <imgui.h>
+#include <math/Vec.h>
 
 #include <utility>
 
@@ -123,7 +123,7 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
 {
     if (!GizmoApplies())
         return InputConsumed::No;
-    const ImVec2 pos = pointer.Position;
+    const Vec2d pos = pointer.Position;
     const SelectionSnapshot snapshot = Selection.GetSnapshot();
     const ManipulatorContext mctx = MakeContext(snapshot);
     const TransformMode mode = EffectiveMode();
@@ -147,7 +147,7 @@ InputConsumed ManipulatorSession::OnPointerDown(ToolContext& ctx, EditorViewport
     return InputConsumed::No;
 }
 
-void ManipulatorSession::UpdateHover(const EditorViewport& viewport, ImVec2 pos)
+void ManipulatorSession::UpdateHover(const EditorViewport& viewport, Vec2d pos)
 {
     ClearHover();
     if (!GizmoApplies())

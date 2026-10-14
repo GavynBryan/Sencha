@@ -3,8 +3,9 @@
 // conflict leaves the document, the resident asset and the file agreeing.
 
 #include "data/DataDocumentSet.h"
+#include "data/DataDocumentSheet.h"
 #include "documents/DocumentSourceSet.h"
-#include "ui/DocumentShellActions.h"
+#include "prompts/DocumentPrompts.h"
 
 #include <anim/AnimFactSchema.h>
 #include <anim/AnimRequestSchema.h>
@@ -12,6 +13,8 @@
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+
+#include <SDL3/SDL_events.h>
 
 #include <gtest/gtest.h>
 
@@ -348,4 +351,92 @@ TEST_F(FactDocuments, AFileChangedOnDiskIsTakenByACleanDocumentAndHeldByAChanged
     EXPECT_EQ(Sources.FileChangedOnDisk(changed.FilePath()), ExternalChange::Held);
     EXPECT_EQ(SlotOf(changed), "Dry") << "a held change was overwritten";
     EXPECT_EQ(Sources.Save(Set->RefOf(changed)).Status, DocumentSaveStatus::Conflict);
+}
+
+namespace
+{
+// A subtype that listens for a control: it is brought up to date, claims the
+// events it is listening for, writes what it heard once, and previews beside.
+class ListeningFacts final : public IDataSubtypeAuthoring
+{
+public:
+    [[nodiscard]] std::string_view Subtype() const override { return kAnimFactSchemaType; }
+    void Update(const DataDocument&, DataDocumentSet&) override { ++Updates; }
+    bool HandlePlatformEvent(const SDL_Event&) override { return Listening; }
+    [[nodiscard]] std::optional<std::pair<std::string, std::string>> TakeWrite(const DataDocument&) override
+    {
+        return std::exchange(Heard, std::nullopt);
+    }
+    [[nodiscard]] std::vector<PropertySection> Sections(const DataDocument&) override
+    {
+        return { { .Heading = "Preview", .Source = nullptr } };
+    }
+
+    int Updates = 0;
+    bool Listening = false;
+    std::optional<std::pair<std::string, std::string>> Heard;
+};
+} // namespace
+
+TEST_F(FactDocuments, TheSheetRunsWhatTheSubtypeAddsWhereverItIsShown)
+{
+    PromptQueue prompts;
+    ListeningFacts* listening = nullptr;
+    DataDocumentSheet sheet(*Set, prompts,
+                            [&](DataSubtypeAuthoringRegistry& registry) {
+                                auto authoring = std::make_unique<ListeningFacts>();
+                                listening = authoring.get();
+                                (void)registry.Register(std::move(authoring));
+                            },
+                            nullptr);
+    ASSERT_NE(listening, nullptr);
+    EXPECT_TRUE(sheet.Sections().empty()) << "no document, no card";
+    DataDocument& game = OpenFacts(kGame);
+
+    listening->Heard = std::pair{ std::string("$.data.slots[0].name"), std::string("Swimming") };
+    sheet.Update();
+    EXPECT_EQ(listening->Updates, 1);
+    EXPECT_EQ(SlotOf(game), "Swimming") << "what it heard is written as the author would";
+    EXPECT_FALSE(game.IsEditing());
+
+    SDL_Event press{};
+    EXPECT_FALSE(sheet.ClaimPlatformEvent(press));
+    listening->Listening = true;
+    EXPECT_TRUE(sheet.ClaimPlatformEvent(press));
+
+    const std::vector<PropertySection> sections = sheet.Sections();
+    ASSERT_EQ(sections.size(), 3u) << "its file, its fields and the subtype's preview";
+    EXPECT_EQ(sections[1].Source, &sheet.Fields());
+    EXPECT_EQ(sections[2].Heading, "Preview");
+
+    WorkspaceDocumentFacet facet;
+    sheet.AppendOpen(facet);
+    ASSERT_EQ(facet.Open.size(), 1u);
+    EXPECT_TRUE(facet.Open[0].Changed);
+    ASSERT_TRUE(sheet.ActiveEntry().has_value());
+    EXPECT_EQ(sheet.ActiveEntry()->Key, kGame);
+    EXPECT_TRUE(sheet.Owns(Set->RefOf(game)));
+}
+
+TEST_F(FactDocuments, TheSheetAsksBeforeClosingAChangedDocument)
+{
+    PromptQueue prompts;
+    DataDocumentSheet sheet(*Set, prompts, {}, nullptr);
+    DataDocument& game = OpenFacts(kGame);
+    Commit(game, "Swimming");
+
+    std::vector<std::string> closed;
+    sheet.CloseActive([&](const std::string& path) { closed.push_back(path); });
+    ASSERT_NE(prompts.Front(), nullptr);
+    EXPECT_EQ(prompts.Front()->Items, std::vector<std::string>{ std::string(kGame) });
+    EXPECT_TRUE(prompts.Dismiss());
+    EXPECT_TRUE(Set->IndexOf(kGame).has_value()) << "kept editing";
+
+    sheet.CloseActive([&](const std::string& path) { closed.push_back(path); });
+    EXPECT_TRUE(prompts.Answer("discard"));
+    EXPECT_FALSE(Set->IndexOf(kGame).has_value());
+    EXPECT_EQ(closed, std::vector<std::string>{ std::string(kGame) });
+
+    EXPECT_FALSE(sheet.Open("asset://animation/missing.facts.sdata"));
+    EXPECT_FALSE(sheet.Problems().empty()) << "what an operation could not do is a problem";
 }

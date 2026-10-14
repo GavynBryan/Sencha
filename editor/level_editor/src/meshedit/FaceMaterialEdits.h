@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <optional>
+#include <span>
 #include <vector>
 
 class CommandStack;
@@ -11,6 +12,7 @@ class SelectionService;
 struct BrushFace;
 struct BrushMesh;
 struct IMeshEditTarget;
+struct SelectableRef;
 
 //=============================================================================
 // FaceMaterialEdits — selection-wide face-material edits, committed as one
@@ -30,6 +32,12 @@ void EditSelectedFaces(
     const SelectionService& selection,
     CommandStack& commands,
     const std::function<void(const BrushMesh&, const Transform3f&, BrushFace&)>& mutate);
+// The same over `faces`, whatever is selected; refs that are not faces are skipped.
+void EditFaces(
+    IMeshEditTarget& target,
+    std::span<const SelectableRef> faces,
+    CommandStack& commands,
+    const std::function<void(const BrushMesh&, const Transform3f&, BrushFace&)>& mutate);
 
 // Sets the material on every selected face. An empty ref means "inherit the
 // level default" (see EffectiveMaterial).
@@ -37,12 +45,17 @@ void ApplyMaterialToSelectedFaces(IMeshEditTarget& target,
                                   const SelectionService& selection,
                                   CommandStack& commands,
                                   const AssetRef& material);
+void ApplyMaterialToFaces(IMeshEditTarget& target,
+                          std::span<const SelectableRef> faces,
+                          CommandStack& commands,
+                          const AssetRef& material);
 
-// The UV projection of the first selected face, by value — drives displayed
-// values. Returned by value (not a pointer into the brush store): applying a
-// material rebuilds that mesh mid-frame, so a held pointer would dangle.
-[[nodiscard]] std::optional<UvProjection> RepresentativeFaceUv(const IMeshEditTarget& target,
-                                                               const SelectionService& selection);
+// The material and projection of the first selected face, by value — drives
+// displayed values. Returned by value (not a pointer into the brush store):
+// applying a material rebuilds that mesh mid-frame, so a held pointer would
+// dangle.
+[[nodiscard]] std::optional<FaceMaterial> RepresentativeFaceMaterial(const IMeshEditTarget& target,
+                                                                     const SelectionService& selection);
 
 // A face's material + projection expressed in world space, so it can be pasted
 // onto faces of differently-transformed brushes and the texture lands

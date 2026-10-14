@@ -9,7 +9,6 @@
 #include "selection/SelectionService.h"
 #include "meshedit/MeshEditService.h"
 #include "brush/BrushWorkCounters.h"
-#include "SceneBrushWalk.h"
 #include "scene_source/SceneSourcePaths.h"
 
 #include <platform/SdlWindow.h>
@@ -18,10 +17,7 @@
 
 #include <SDL3/SDL.h>
 
-#include <algorithm>
-#include <cstdio>
 #include <filesystem>
-#include <map>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -87,7 +83,6 @@ void DocumentFileActions::RegisterCommands(ConsoleRegistry& registry)
                 return result;
             }
             RescanMaterials(path);
-            LogUnresolvedFaceMaterials(path);
             result.Info("opened '" + path + "'");
             return result;
         },
@@ -253,6 +248,11 @@ bool DocumentFileActions::OpenSceneSource(std::string_view assetPath)
     return true;
 }
 
+void DocumentFileActions::OpenFile(std::string path)
+{
+    EnqueueFileAction(FileActionKind::Open, std::move(path));
+}
+
 void DocumentFileActions::RequestOpen()
 {
     if (Window->GetHandle() == nullptr)
@@ -316,10 +316,7 @@ void DocumentFileActions::ProcessPending()
                 ? World.LoadWorld(action.Path)
                 : World.Load(action.Path);
             if (loaded)
-            {
                 RescanMaterials(action.Path);
-                LogUnresolvedFaceMaterials(action.Path);
-            }
             break;
         }
         case FileActionKind::SaveAs:
@@ -346,33 +343,6 @@ void DocumentFileActions::RescanMaterials(const std::string& levelPath)
         std::filesystem::path(levelPath).parent_path().string()
     };
     Materials.Rescan(fallback);
-}
-
-void DocumentFileActions::LogUnresolvedFaceMaterials(const std::string& levelPath)
-{
-    // A face ref that no scanned root can resolve renders as the level default;
-    // name each one (with a count) so the author knows what to reassign after a
-    // level moves between projects.
-    std::map<std::string, int> unresolved;
-    ForEachVisibleBrushSource(World.FocusDocument().GetScene(), /*skipLocked*/ false,
-        [&](EntityId, const BrushMesh& mesh, const Transform3f&)
-        {
-            for (const BrushFace& face : mesh.Faces)
-            {
-                const std::string& path = face.Material.Material.Path;
-                if (path.empty())
-                    continue;
-                const auto& known = Materials.Materials();
-                const bool found = std::any_of(known.begin(), known.end(),
-                    [&](const MaterialAsset& asset) { return asset.Path == path; });
-                if (!found)
-                    ++unresolved[path];
-            }
-        });
-
-    for (const auto& [path, count] : unresolved)
-        std::fprintf(stderr, "[editor] '%s': material '%s' not found in any content root (%d face(s) fall back to the level default)\n",
-                     levelPath.c_str(), path.c_str(), count);
 }
 
 std::string DocumentFileActions::DocumentLabel() const

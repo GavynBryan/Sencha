@@ -76,6 +76,7 @@ TEST(AnimationRigCreation, ANewRigOpensReadyToPlay)
     // Created once: the same name again is refused rather than overwritten.
     EXPECT_FALSE(workspace.CreateRig({ .Name = "praying_man", .Clips = { "asset://meshes/man.blend#anim:Idle" }, .Preset = AnimationRigPreset::Prop, .UpperBodyJoint = {} }, error));
     EXPECT_NE(error.find("already exists"), std::string::npos) << error;
+    workspace.Sources.DiscardAll();
 }
 
 TEST(AnimationRigCreation, ARecipeNeedsANameClipsAndOneSkeleton)
@@ -163,6 +164,7 @@ TEST(AnimationRigCreation, ASimpleRigIdlesWalksAndActs)
     workspace.Rig.Simulation.RunTo(workspace.Rig.Simulation.Tick() + 70);
     EXPECT_EQ(Playing(workspace, 0), "asset://meshes/man.blend#anim:Walk");
     workspace.Rig.Simulation.Close();
+    workspace.Sources.DiscardAll();
 }
 
 // A Character rig acts on its upper body over its walk, and its upper layer
@@ -198,6 +200,7 @@ TEST(AnimationRigCreation, ACharacterRigActsOverItsLocomotion)
     EXPECT_EQ(Playing(workspace, 1), "asset://meshes/man.blend#anim:Left_claw");
     EXPECT_FLOAT_EQ(workspace.Rig.Simulation.History().back().Layers[1].Weight, 1.0f);
     workspace.Rig.Simulation.Close();
+    workspace.Sources.DiscardAll();
 }
 
 TEST(AnimationRigCreation, ACharacterNeedsItsActionsAndAnUpperBodyJoint)

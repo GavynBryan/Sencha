@@ -255,8 +255,6 @@ if(EDITOR_TEST_SOURCES AND TARGET level_authoring)
     # does not drag in the panels beside it; including a shell-only header (a
     # panel) without compiling it is what the libraries' include paths allow.
     add_executable(editor_tests ${EDITOR_TEST_SOURCES})
-    # editor/ for the shared fonts.
-    target_include_directories(editor_tests PRIVATE ${CMAKE_SOURCE_DIR}/editor)
     # The previewer's tests open the shipped documents from the source tree
     # with their sidecars.
     target_link_libraries(editor_tests PRIVATE

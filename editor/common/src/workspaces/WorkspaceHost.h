@@ -1,6 +1,7 @@
 #pragma once
 
 #include "workspaces/IWorkspace.h"
+#include "project/ProjectFiles.h"
 #include "workspaces/WorkspaceKind.h"
 
 #include <graphics/PresentationId.h>
@@ -28,6 +29,21 @@ struct WorkspaceRequest
 {
     WorkspaceAction Action = WorkspaceAction::Open;
     std::string Kind;
+};
+
+// A content file to open in whichever workspace opens its kind, at the next
+// frame boundary, in that workspace's window.
+struct AssetOpenRequest
+{
+    ProjectFile File;
+};
+
+// One of a kind's create actions, performed by its workspace once it is open
+// and showing, at the next frame boundary.
+struct AssetCreateRequest
+{
+    std::string Kind;
+    std::string Action;
 };
 
 // The workspaces an application has open, at most one per kind, and the
@@ -62,7 +78,8 @@ public:
     void SetClosingListener(Listener listener) { OnClosing = std::move(listener); }
     void SetCloseGuard(CloseGuard guard) { MayClose = std::move(guard); }
     void SetWindowOpener(WindowOpener opener) { OpenWindow = std::move(opener); }
-    // Runs after a workspace moves to another window, before it shows there.
+    // Runs when a workspace is placed in a window, before it shows there: once
+    // when it opens, then after every move to another window.
     void SetPlacedListener(Listener listener) { OnPlaced = std::move(listener); }
     // A window other than the main one that no workspace is placed in any more.
     void SetWindowEmptiedListener(WindowListener listener) { OnWindowEmptied = std::move(listener); }
@@ -88,6 +105,15 @@ public:
     void CloseAll();
 
     void Request(WorkspaceRequest request) { Pending.push_back(std::move(request)); }
+    // The workspace kind that opens `file`: the one whose rule names its
+    // subtype before one that takes every subtype; null when none opens it.
+    [[nodiscard]] const WorkspaceKind* KindOpening(const ProjectFile& file) const;
+    // Opens `file` in its workspace at the next frame boundary; false when no
+    // offered workspace opens it.
+    bool RequestOpen(ProjectFile file);
+    // Performs one of `kind`'s create actions in its workspace at the next
+    // frame boundary; false when the kind is not offered or does not create so.
+    bool RequestCreate(std::string_view kind, std::string_view action);
     void ApplyRequests();
 
     // Applies what was requested since the last frame, then ticks every open
@@ -122,6 +148,8 @@ private:
     // closing the one showing falls back to the one used there before it.
     std::vector<const WorkspaceKind*> RecentlyActive;
     std::vector<WorkspaceRequest> Pending;
+    std::vector<AssetOpenRequest> PendingAssets;
+    std::vector<AssetCreateRequest> PendingCreates;
     Listener OnOpened;
     Listener OnClosing;
     Listener OnPlaced;

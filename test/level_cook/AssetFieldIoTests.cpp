@@ -74,7 +74,7 @@ namespace
     {
         AssetFieldValue value;
         for (const char* path : paths)
-            value.Refs.push_back(AssetFieldRef{ {}, path });
+            value.Refs.push_back(AssetRef{ .Type = AssetType::Material, .Path = path });
         return value;
     }
 
@@ -192,7 +192,7 @@ TEST(AssetFieldIo, ResolvesRefByIdWhenPathIsStale)
     ASSERT_TRUE(f.Registry.AssignId(current, id));
 
     AssetFieldValue value;
-    value.Refs.push_back(AssetFieldRef{ id, "asset://m/old-name.smat" });
+    value.Refs.push_back(AssetRef{ .Type = AssetType::Material, .Path = "asset://m/old-name.smat", .Id = id });
 
     MaterialSetHandle field{};
     WriteList(f.Assets, field, value);
@@ -211,7 +211,7 @@ TEST(AssetFieldIo, MissingRefResolvesToEmptySlot)
     AssetFieldFixture f;
 
     AssetFieldValue value;
-    value.Refs.push_back(AssetFieldRef{ {}, "asset://m/gone.smat" });
+    value.Refs.push_back(AssetRef{ .Type = AssetType::Material, .Path = "asset://m/gone.smat" });
 
     MaterialSetHandle field{};
     WriteList(f.Assets, field, value);

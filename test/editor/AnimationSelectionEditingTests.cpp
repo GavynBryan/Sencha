@@ -2,13 +2,19 @@
 // predicates as panels read them, and rule edits that change the running
 // preview's winner and clip without writing to disk.
 
+#include "properties/PropertyTree.h"
+#include "authoring/AnimationTimelineLanes.h"
+#include "authoring/AnimationPredicateAuthoring.h"
 #include "authoring/AnimationPredicateEdits.h"
 #include "authoring/AnimationPredicateText.h"
 #include "EditorDocumentsFixture.h"
 #include "authoring/AnimationPreviewWorkspace.h"
+#include "authoring/AnimationRuleProperties.h"
 #include "authoring/AnimationSelectorEdits.h"
+#include "data/DataProperties.h"
 
 #include <anim/AnimSelectorData.h>
+#include <anim/AnimSlotMapData.h>
 #include <anim/AnimationClipCache.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
@@ -18,6 +24,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -267,4 +274,158 @@ TEST(AnimationSelectionEditing, TheSessionRecordsWhyEveryRuleLost)
     EXPECT_EQ(DescribeAnimVerdict(workspace.DataCache(), walk, record.Layers[0].Verdicts[0]),
               "stay failed: Speed > 0.1 (read 0)");
     workspace.Rig.Simulation.Close();
+    workspace.Sources.DiscardAll();
+}
+
+// The Rules card lists a layer's rules as they fared; inspecting one shows what
+// it reads, the behavior it selects and the content that behavior resolves to.
+TEST(AnimationSelectionEditing, TheRulesCardExplainsARuleAndWhatItSelects)
+{
+    Project project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+    std::vector<std::string> opened;
+    AnimationRuleProperties card(workspace, [&](const std::string& path) { opened.push_back(path); });
+    workspace.Rig.Simulation.Step();
+
+    EXPECT_EQ(card.Title(), "Rules of anim.layer.base");
+    std::vector<PropertyNode> nodes = card.Nodes();
+    ASSERT_NE(FindProperty(nodes, "rules.0"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "rules.0")->Descriptor.Label, "walk");
+    EXPECT_NE(FindProperty(nodes, "rules.1"), nullptr);
+
+    // Paused, the card can say how the next tick would go instead.
+    workspace.Rig.Simulation.SetFact("Speed", AnimationScenarioValue::FromNumber(0.0));
+    const std::string now = FindProperty(nodes, "rules.0")->Value;
+    ASSERT_TRUE(card.BeginEdit("next"));
+    EXPECT_EQ(card.CommitEdit("next", "true"), PropertyEditResult::Applied);
+    nodes = card.Nodes();
+    EXPECT_NE(FindProperty(nodes, "rules.0")->Value, now);
+    (void)card.CommitEdit("next", "false");
+
+    EXPECT_EQ(card.Act("rules.0", "pick", ""), PropertyEditResult::Applied);
+    EXPECT_EQ(card.Title(), "walk");
+    nodes = card.Nodes();
+    EXPECT_EQ(FindProperty(nodes, "enter")->Value, "Speed > 0.1");
+    EXPECT_EQ(FindProperty(nodes, "stay")->Value, "as enter");
+    ASSERT_NE(FindProperty(nodes, "behavior.kind"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "behavior.kind")->Value, "cyclic");
+    ASSERT_NE(FindProperty(nodes, "slots.1"), nullptr) << "walk's slot row resolves it";
+    EXPECT_EQ(FindProperty(nodes, "slots.1")->Descriptor.Label, "asset://anim/walk.sanim");
+    EXPECT_EQ(FindProperty(nodes, "slots.0"), nullptr) << "idle's row resolves another behavior";
+
+    EXPECT_EQ(card.Act("source", "open", ""), PropertyEditResult::Applied);
+    EXPECT_EQ(card.Act("slots.1", "open", ""), PropertyEditResult::Applied);
+    EXPECT_EQ(card.Act("behavior.declared", "open", ""), PropertyEditResult::Applied);
+    EXPECT_EQ(opened, (std::vector<std::string>{ "asset://anim/hero.selector.sdata", "asset://anim/hero.slots.sdata",
+                                                  "asset://anim/hero.behaviors.sdata" }));
+
+    // Choosing the layer again goes back to its list.
+    EXPECT_EQ(card.CommitEdit("layer", "anim.layer.base"), PropertyEditResult::Applied);
+    EXPECT_EQ(workspace.Rig.Navigation.Rule, -1);
+    EXPECT_FALSE(card.Decisions().Nodes().empty());
+    workspace.Rig.Simulation.Close();
+    workspace.Sources.DiscardAll();
+}
+
+// The decisions lane is what won the layer, one span per stretch a rule held,
+// each naming its rule back when picked.
+TEST(AnimationSelectionEditing, TheDecisionLaneSpansEachStretchARuleHeld)
+{
+    Project project;
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
+    ASSERT_TRUE(workspace.OpenRig("asset://anim/hero.rig.sdata")) << workspace.Rig.Error;
+    AnimationPreviewSession& session = workspace.Rig.Simulation;
+    session.RunTo(10);
+    session.SetFact("Speed", AnimationScenarioValue::FromNumber(0.0));
+    session.RunTo(20);
+    const TimelineLane lane = AnimationDecisionLane(session, 0, 1);
+    EXPECT_EQ(lane.Label, "anim.layer.base");
+    ASSERT_EQ(lane.Spans.size(), 2u);
+    EXPECT_EQ(lane.Spans[0].Label, "walk");
+    EXPECT_EQ(lane.Spans[1].Label, "idle");
+    EXPECT_FALSE(lane.Spans[0].Selected);
+    EXPECT_TRUE(lane.Spans[1].Selected);
+    EXPECT_DOUBLE_EQ(lane.Spans[0].End, lane.Spans[1].Start);
+    EXPECT_DOUBLE_EQ(lane.Spans[1].End, static_cast<double>(session.Tick()) * session.TickSeconds());
+
+    const std::optional<AnimationLanePick> pick = ParseAnimationLaneKey(lane.Spans[1].Key);
+    ASSERT_TRUE(pick.has_value());
+    EXPECT_EQ(pick->Names, AnimationLanePick::What::Rule);
+    EXPECT_EQ(pick->Layer, 0u);
+    EXPECT_EQ(pick->Index, 1);
+    EXPECT_FALSE(ParseAnimationLaneKey("7").has_value());
+    EXPECT_TRUE(AnimationDecisionLane(session, 3, -1).Spans.empty());
+    session.Close();
+    workspace.Sources.DiscardAll();
+}
+
+// A selector's sheet reads its conditions as they read, adds a test of a fact
+// or request the project declares, widens a row with an "or", and starts a
+// stay as a copy of the enter, each one step.
+TEST(AnimationSelectionEditing, TheSelectorSheetAuthorsConditionsFromTheProjectsNames)
+{
+    Project project;
+    project.Write("hero.requests.sdata", R"({ "type": "animation.request_schema", "version": 1, "data": {
+        "intents": [ { "intent": "Anim.Reload", "params": [ { "name": "speed", "kind": "float" } ] } ] } })");
+    (void)ScanAssetsDirectory(project.Root.generic_string(), project.Assets->Registry, project.Assets->Assets.Kinds());
+    EditorDocuments documents(*project.Assets);
+    AnimationPreviewWorkspace workspace(*project.Assets, documents.Sources, documents.Store);
+    DataDocument* selector = workspace.Documents.OpenOrFocus("asset://anim/hero.selector.sdata", workspace.DocumentError);
+    ASSERT_NE(selector, nullptr) << workspace.DocumentError;
+    DataSubtypeAuthoringRegistry authorings;
+    RegisterAnimationSubtypeAuthoring(authorings);
+    IDataSubtypeAuthoring* authoring = authorings.Find(kAnimSelectorType);
+    ASSERT_NE(authoring, nullptr);
+    ASSERT_NE(authorings.Find(kAnimSlotMapType), nullptr);
+    DataProperties sheet(workspace.Documents, [&] { return selector; }, &authorings);
+
+    const AnimationPredicateVocabulary vocabulary = GatherAnimationPredicateVocabulary(workspace.Documents.Store());
+    ASSERT_EQ(vocabulary.Facts.size(), 1u);
+    EXPECT_EQ(vocabulary.Facts[0].Name, "Speed");
+    EXPECT_EQ(vocabulary.Facts[0].Kind, AnimFactKind::Float);
+    ASSERT_EQ(vocabulary.Intents.size(), 1u);
+    EXPECT_EQ(vocabulary.Intents[0].Params, std::vector<std::string>{ "speed" });
+
+    authoring->Update(*selector, workspace.Documents);
+    std::vector<PropertyNode> nodes = sheet.Nodes();
+    const PropertyNode* enter = FindProperty(nodes, "$.data.rules[0].enter");
+    ASSERT_NE(enter, nullptr);
+    const auto condition = std::ranges::find(enter->Descriptor.Verbs, "condition", &PropertyVerb::Id);
+    ASSERT_NE(condition, enter->Descriptor.Verbs.end());
+    EXPECT_EQ(condition->Choices,
+              (std::vector<std::string>{ "Fact: Speed", "Request: Anim.Reload", "Time in behavior" }));
+    EXPECT_EQ(std::ranges::find(enter->Descriptor.Verbs, "add", &PropertyVerb::Id), enter->Descriptor.Verbs.end())
+        << "an empty row is never added";
+    ASSERT_NE(FindProperty(nodes, "$.data.rules[0].enter[0]"), nullptr);
+    EXPECT_EQ(FindProperty(nodes, "$.data.rules[0].enter[0]")->Descriptor.Label, "Speed > 0.1");
+    EXPECT_EQ(FindProperty(nodes, "$.data.rules[0].enter[0]")->Descriptor.Verbs.front().Id, "or");
+    const PropertyNode* fact = FindProperty(nodes, "$.data.rules[0].enter[0].fact");
+    ASSERT_NE(fact, nullptr);
+    EXPECT_EQ(fact->Descriptor.Kind, PropertyKind::Choice);
+    EXPECT_EQ(fact->Descriptor.Choices, std::vector<std::string>{ "Speed" });
+
+    const auto rules = [&] { return selector->Data()->Find("rules")->AsArray(); };
+    EXPECT_EQ(sheet.Act("$.data.rules[1].enter", "condition", "Fact: Speed"), PropertyEditResult::Applied);
+    ASSERT_EQ(rules()[1].Find("enter")->AsArray().size(), 1u);
+    EXPECT_EQ(DescribeAnimPredicate(rules()[1].Find("enter")), "Speed > 0");
+    EXPECT_EQ(sheet.Act("$.data.rules[1].enter", "condition", "Request: Anim.Reload"), PropertyEditResult::Applied);
+    EXPECT_EQ(DescribeAnimPredicate(rules()[1].Find("enter")), "Speed > 0 and request Anim.Reload");
+    EXPECT_EQ(sheet.Act("$.data.rules[1].enter", "condition", "Nothing"), PropertyEditResult::Refused);
+
+    EXPECT_EQ(sheet.Act("$.data.rules[0].enter[0]", "or", ""), PropertyEditResult::Applied);
+    EXPECT_EQ(DescribeAnimPredicate(rules()[0].Find("enter")), "(Speed > 0.1 or Speed > 0.1)");
+
+    EXPECT_EQ(sheet.Act("$.data.rules[0]", "add", "Stay"), PropertyEditResult::Applied);
+    ASSERT_NE(rules()[0].Find("stay"), nullptr);
+    EXPECT_EQ(DescribeAnimPredicate(rules()[0].Find("stay")), DescribeAnimPredicate(rules()[0].Find("enter")))
+        << "a stay starts as the enter";
+
+    workspace.Sources.Undo();
+    EXPECT_EQ(rules()[0].Find("stay"), nullptr) << "each is one step";
+    workspace.Sources.Undo();
+    EXPECT_EQ(DescribeAnimPredicate(rules()[0].Find("enter")), "Speed > 0.1");
+    workspace.Sources.DiscardAll();
 }

@@ -1,5 +1,6 @@
 #include <world/scene/SceneInstance.h>
 
+#include <core/assets/AssetPath.h>
 #include <core/serialization/Archive.h>
 #include <ecs/World.h>
 #include <world/scene/SceneInstanceIndex.h>
@@ -89,7 +90,7 @@ bool SceneFieldCodec<AssetId>::Load(IReadArchive& archive, std::string_view key,
     // A bare asset:// path means the cook had no id for it, and all-zero hex
     // is how an invalid id round-trips; both leave the field invalid rather
     // than failing content that is otherwise loadable.
-    if (text.starts_with("asset://") || text == "0000000000000000")
+    if (text.starts_with(kAssetPathPrefix) || text == "0000000000000000")
     {
         value = AssetId{};
         return true;

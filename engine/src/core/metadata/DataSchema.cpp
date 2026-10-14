@@ -1,3 +1,4 @@
+#include <core/assets/AssetRefCodec.h>
 #include <core/metadata/DataSchema.h>
 
 #include <core/identity/Id.h>
@@ -234,14 +235,9 @@ namespace
 
         case DataFieldKind::AssetRef:
         case DataFieldKind::DataAssetRef:
-            if (!value.IsString())
+            if (!AssetRefFromJson(value).has_value())
             {
-                AddError(errors, path, "expected asset path string");
-                return false;
-            }
-            if (!value.AsString().starts_with("asset://"))
-            {
-                AddError(errors, path, "asset path must start with 'asset://'");
+                AddError(errors, path, "expected an asset path or an {id, path} reference");
                 return false;
             }
             return true;

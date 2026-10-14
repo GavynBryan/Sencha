@@ -160,7 +160,9 @@ bool TextureCache::ReloadInPlace(std::string_view path, const Image& image)
     ImageHandle gpuImage = UploadGpuImage(image, std::string(path).c_str());
     if (!gpuImage.IsValid())
         return false;
-    return ReloadEntryImage(path, gpuImage, { image.Width, image.Height });
+    // The sampler a loose image's load takes, which may replace a stand-in's.
+    const SamplerDesc sampler{};
+    return ReloadEntryImage(path, gpuImage, { image.Width, image.Height }, &sampler);
 }
 
 bool TextureCache::ReloadEntryImage(std::string_view path, ImageHandle newImage, RenderExtent extent,

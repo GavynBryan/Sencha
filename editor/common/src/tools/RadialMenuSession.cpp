@@ -7,11 +7,12 @@
 
 RadialMenuSession::RadialMenuSession(IRadialMenuModel& menu, KeyChord key,
                                      std::function<RadialMenu::Frame()> frame,
-                                     std::function<bool(ImVec2)> pointerOnScene)
+                                     std::function<bool(Vec2d)> pointerOnScene, RadialMenu::Proportions proportions)
     : Menu(menu)
     , Key(key)
     , FrameProvider(std::move(frame))
     , PointerOnScene(std::move(pointerOnScene))
+    , Sizes(proportions)
 {
 }
 
@@ -37,6 +38,14 @@ InputConsumed RadialMenuSession::OnInput(const InputEvent& event, PointerCapture
     // picks; everything else is swallowed so nothing under the wheel reacts.
     if (const auto* move = std::get_if<PointerMoveEvent>(&event))
         Track(move->Position);
+    else if (const auto* press = std::get_if<PointerDownEvent>(&event);
+             press != nullptr && Gesture == RadialMenuGesture::Clicked)
+    {
+        Track(press->Position);
+        if (Hot >= 0)
+            Select(Hot, HotVariant);
+        Leave(RadialMenuPhase::Closed, capture);
+    }
     return InputConsumed::Yes;
 }
 
@@ -45,7 +54,7 @@ InputConsumed RadialMenuSession::OnKeyDown(const KeyDownEvent& event, PointerCap
     switch (Phase)
     {
     case RadialMenuPhase::Closed:
-        if (!IsWheelKey(event.Key) || !(event.Modifiers == Key.Mods))
+        if (!IsWheelKey(event.Key) || !(event.Modifiers == Key.Mods) || Key.Key == SDLK_UNKNOWN)
             return InputConsumed::No;
         // A gesture in flight keeps its key: Q descends the fly camera, and
         // the wheel waits for a press with the pointer free.
@@ -55,12 +64,17 @@ InputConsumed RadialMenuSession::OnKeyDown(const KeyDownEvent& event, PointerCap
         // capture, and nothing behind gets to act on it either.
         if (!PointerOnScene || !PointerOnScene(event.Pointer))
             return InputConsumed::Yes;
+        Menu.Opening(event.Pointer);
+        if (Menu.Count() == 0)
+            return InputConsumed::Yes;
+        Gesture = RadialMenuGesture::Held;
         Open(event.Pointer, capture);
         return InputConsumed::Yes;
 
     case RadialMenuPhase::Open:
+        // A held wheel waits out its key's release; a clicked one has none.
         if (event.Key == SDLK_ESCAPE)
-            Leave(RadialMenuPhase::Dismissed, capture);
+            Leave(Gesture == RadialMenuGesture::Held ? RadialMenuPhase::Dismissed : RadialMenuPhase::Closed, capture);
         // Modal: no other key acts while the wheel is up.
         return InputConsumed::Yes;
 
@@ -76,7 +90,7 @@ InputConsumed RadialMenuSession::OnKeyUp(const KeyUpEvent& event, PointerCapture
 {
     // Modifiers are ignored on release: the gesture ends when the key does,
     // whatever else the hand is holding by then.
-    if (Phase == RadialMenuPhase::Closed || !IsWheelKey(event.Key))
+    if (Phase == RadialMenuPhase::Closed || !IsWheelKey(event.Key) || Gesture == RadialMenuGesture::Clicked)
         return InputConsumed::No;
     if (Phase == RadialMenuPhase::Open && Hot >= 0)
         Select(Hot, HotVariant);
@@ -84,13 +98,24 @@ InputConsumed RadialMenuSession::OnKeyUp(const KeyUpEvent& event, PointerCapture
     return InputConsumed::Yes;
 }
 
-void RadialMenuSession::Open(ImVec2 pointer, PointerCapture& capture)
+void RadialMenuSession::OpenClicked(Vec2d pointer, PointerCapture& capture)
+{
+    if (Phase == RadialMenuPhase::Open)
+        Leave(RadialMenuPhase::Closed, capture);
+    Menu.Opening(pointer);
+    if (Menu.Count() == 0)
+        return;
+    Gesture = RadialMenuGesture::Clicked;
+    Open(pointer, capture);
+}
+
+void RadialMenuSession::Open(Vec2d pointer, PointerCapture& capture)
 {
     const int count = Menu.Count();
     int maxVariants = 0;
     for (int i = 0; i < count; ++i)
         maxVariants = std::max(maxVariants, VariantCount(i));
-    Layout = RadialMenu::Place(FrameProvider ? FrameProvider() : RadialMenu::Frame{}, pointer, count, maxVariants);
+    Layout = RadialMenu::Place(FrameProvider ? FrameProvider() : RadialMenu::Frame{}, pointer, count, maxVariants, Sizes);
     Hot = -1;
     HotVariant = -1;
     Phase = RadialMenuPhase::Open;
@@ -106,7 +131,7 @@ void RadialMenuSession::Leave(RadialMenuPhase next, PointerCapture& capture)
     Phase = next;
 }
 
-void RadialMenuSession::Track(ImVec2 pointer)
+void RadialMenuSession::Track(Vec2d pointer)
 {
     switch (RadialMenu::RingAt(Layout, pointer))
     {

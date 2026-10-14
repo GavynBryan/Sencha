@@ -87,7 +87,7 @@ TEST_F(WorkspacePendingCollisionTest, BevelOverAnInsetKeepsOneScopeAndRevertsThe
 
     // Cancelling the bevel returns the mesh all the way to its pre-inset shape:
     // the inset never reached the document.
-    Workspace.CancelPendingElementEdit();
+    Workspace.CancelStagedElementEdit();
     EXPECT_FALSE(Commands.HasPendingEdit());
     EXPECT_EQ(FaceCount(brush), original);
 }

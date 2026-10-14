@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 16" width="96" height="16">
+  <!-- A vent grille of eight slots: recesses with a lit lower lip. White and
+       black at partial opacity, so the theme's tint reads as metal. -->
+  <g>
+    <rect x="3"  y="3" width="6" height="10" rx="3" fill="#000000" fill-opacity="0.6"/>
+    <rect x="15" y="3" width="6" height="10" rx="3" fill="#000000" fill-opacity="0.6"/>
+    <rect x="27" y="3" width="6" height="10" rx="3" fill="#000000" fill-opacity="0.6"/>
+    <rect x="39" y="3" width="6" height="10" rx="3" fill="#000000" fill-opacity="0.6"/>
+    <rect x="51" y="3" width="6" height="10" rx="3" fill="#000000" fill-opacity="0.6"/>
+    <rect x="63" y="3" width="6" height="10" rx="3" fill="#000000" fill-opacity="0.6"/>
+    <rect x="75" y="3" width="6" height="10" rx="3" fill="#000000" fill-opacity="0.6"/>
+    <rect x="87" y="3" width="6" height="10" rx="3" fill="#000000" fill-opacity="0.6"/>
+  </g>
+  <g fill="#ffffff" fill-opacity="0.35">
+    <rect x="3.5"  y="11" width="5" height="1.5" rx="0.75"/>
+    <rect x="15.5" y="11" width="5" height="1.5" rx="0.75"/>
+    <rect x="27.5" y="11" width="5" height="1.5" rx="0.75"/>
+    <rect x="39.5" y="11" width="5" height="1.5" rx="0.75"/>
+    <rect x="51.5" y="11" width="5" height="1.5" rx="0.75"/>
+    <rect x="63.5" y="11" width="5" height="1.5" rx="0.75"/>
+    <rect x="75.5" y="11" width="5" height="1.5" rx="0.75"/>
+    <rect x="87.5" y="11" width="5" height="1.5" rx="0.75"/>
+  </g>
+</svg>

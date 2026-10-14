@@ -47,7 +47,7 @@ TEST_F(WorkspaceInteractionResetTest, ResetClearsSelectionAndUndoHistory)
 {
     const EntityId brush = AddBrush(Vec3d{ 0, 0, 0 });
     SelectElements(brush, MeshElementKind::Face, { 0 });
-    Workspace.ActiveMaterial.Active = AssetRef{ AssetType::Material, "materials/test.smat" };
+    Workspace.Resources.SetActive(AssetRef{ AssetType::Material, "materials/test.smat" });
     Workspace.ApplyActiveMaterialToSelectedFaces();
     ASSERT_TRUE(Commands.CanUndo());
 
@@ -83,7 +83,7 @@ TEST_F(WorkspaceInteractionResetTest, TheEditingStackWorksAgainAfterAReset)
     EXPECT_TRUE(Workspace.HasPendingInset());
     EXPECT_GT(Scene().TryGetBrushMesh(brush)->Faces.size(), before);
 
-    Workspace.CancelPendingElementEdit();
+    Workspace.CancelStagedElementEdit();
     EXPECT_EQ(Scene().TryGetBrushMesh(brush)->Faces.size(), before);
 }
 

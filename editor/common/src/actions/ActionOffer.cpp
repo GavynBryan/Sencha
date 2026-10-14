@@ -1,0 +1,59 @@
+#include "actions/ActionOffer.h"
+
+#include <SDL3/SDL_keycode.h>
+
+#include <cstdio>
+
+void OfferAction(ActionCatalog& catalog, ActionContext& context, ActionDefinition definition, ActionBinding handler)
+{
+    const std::string id = definition.Id;
+    std::string error;
+    if (!catalog.Define(std::move(definition), &error))
+        std::fprintf(stderr, "[editor] %s\n", error.c_str());
+    if (handler.Invoke)
+        context.Claim(id, std::move(handler));
+}
+
+void ActionOffers::operator()(ActionDefinition definition, ActionBinding handler) const
+{
+    if (definition.Category.empty())
+        definition.Category = Category;
+    OfferAction(Catalog, Context, std::move(definition), std::move(handler));
+}
+
+ActionDefinition StepBackAction()
+{
+    return { .Id = "edit.escape", .Label = "Step Back", .Category = "Edit", .DefaultChords = { { SDLK_ESCAPE, {} } } };
+}
+
+ActionDefinition FrameAction()
+{
+    return { .Id = "view.frame_selection", .Label = "Frame Selection", .Category = "View",
+             .DefaultChords = { { SDLK_F, {} } } };
+}
+
+ActionDefinition SaveAction()
+{
+    return { .Id = "file.save", .Label = "Save", .Category = "File", .DefaultChords = { { SDLK_S, { .Ctrl = true } } } };
+}
+
+ActionDefinition DeleteAction()
+{
+    return { .Id = "edit.delete", .Label = "Delete", .Category = "Edit", .DefaultChords = { { SDLK_DELETE, {} } } };
+}
+
+ActionDefinition DuplicateAction()
+{
+    return { .Id = "edit.duplicate", .Label = "Duplicate", .Category = "Edit",
+             .DefaultChords = { { SDLK_D, { .Ctrl = true } } } };
+}
+
+ActionDefinition RenameAction()
+{
+    return { .Id = "edit.rename", .Label = "Rename", .Category = "Edit", .DefaultChords = { { SDLK_F2, {} } } };
+}
+
+ActionDefinition DetailsAction()
+{
+    return { .Id = "selection.details", .Label = "All Properties", .Category = "Edit" };
+}

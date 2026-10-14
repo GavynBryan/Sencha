@@ -1,13 +1,20 @@
 #include "app/ProjectSession.h"
 
+#include "project/AssetAdoption.h"
 #include "project/ProjectContentMount.h"
+#include "project/ProjectFileSteps.h"
+#include "ui/MaterialThumbnailCache.h"
 
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <app/GameDataAssets.h>
 #include <app/RuntimeContent.h>
+#include <assets/cook/ContentImporters.h>
 #include <assets/hotreload/SourceReloadRoots.h>
 #include <assets/runtime/RuntimeAssets.h>
+#include <core/console/ConsoleService.h>
+#include <graphics/vulkan/GraphicsServices.h>
+#include <ui/UiService.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -15,6 +22,7 @@
 
 ProjectSession::ProjectSession(Engine& engine, std::optional<std::string> projectPath)
     : Host(engine)
+    , Importers(&engine.Jobs())
     , MaterialList(engine.Logging())
     , DataDocumentFiles(engine.Content().Assets(), Journal)
 {
@@ -44,8 +52,15 @@ ProjectSession::ProjectSession(Engine& engine, std::optional<std::string> projec
     // The module's data asset types before the content that holds them is scanned.
     LoadModule(modulePath);
     MountContent();
-    if (Descriptor)
-        MaterialList.Rescan(Descriptor->ContentRoots);
+    if (!Descriptor)
+        return;
+    MaterialList.Rescan(Descriptor->ContentRoots);
+    FileSteps = std::make_unique<ProjectFileSteps>(
+        std::vector<std::filesystem::path>(Descriptor->ContentRoots.begin(), Descriptor->ContentRoots.end()), Journal,
+        ProjectFileHooks{
+            .IsAsset = [this](const ProjectFile& file) { return IsAsset(file); },
+            .Changed = [this](const ProjectFileChange& change) { FileChanged(change); },
+        });
 }
 
 ProjectSession::~ProjectSession()
@@ -56,6 +71,38 @@ ProjectSession::~ProjectSession()
         return;
     UnregisterGameDataAssets(*GameModule.Instance, Assets());
     ModuleLoader.Unload(GameModule);
+}
+
+void ProjectSession::UpdatePictures()
+{
+    if (MaterialPictures == nullptr)
+    {
+        UiService* ui = Host.TryUi();
+        GraphicsServices* graphics = Host.TryGraphics();
+        if (ui == nullptr || !ui->IsReady() || graphics == nullptr)
+            return;
+        MaterialThumbnailCache::RegisterBudget(Host.Console().Registry());
+        RuntimeAssets& assets = Assets();
+        MaterialPictures = std::make_unique<MaterialThumbnailCache>(assets.Assets, *assets.Textures, assets.Registry,
+                                                                    ui, &graphics->MainRenderer.GetUiTextures(),
+                                                                    "picture:");
+        MaterialPictureFiles = PictureSources.Provide(".smat", *MaterialPictures);
+        TexturePictureFiles = PictureSources.Provide(".png", *MaterialPictures);
+    }
+    MaterialPictures->UpdateFrame(Host);
+}
+
+bool ProjectSession::IsAsset(const ProjectFile& file) const
+{
+    return IsAssetFile(file, Assets().Assets.Kinds(), Importers.Registry());
+}
+
+void ProjectSession::FileChanged(const ProjectFileChange& change)
+{
+    MountProjectFileChange(change, Assets(), Importers.Registry(), Host.Logging());
+    if (Descriptor)
+        MaterialList.Rescan(Descriptor->ContentRoots);
+    PictureSources.Forget();
 }
 
 RuntimeAssets& ProjectSession::Assets() const
@@ -88,7 +135,12 @@ void ProjectSession::MountContent()
     // workspace and the authored UI see each asset once.
     RuntimeAssets& assets = Assets();
     if (Descriptor)
+    {
+        // Before the scan, so the registry reads the ids the files now state.
+        const std::vector<std::filesystem::path> roots(Descriptor->ContentRoots.begin(), Descriptor->ContentRoots.end());
+        Adopted = AdoptAssetIds(roots, [this](const ProjectFile& file) { return IsAsset(file); }, AdoptionFailures);
         MountProjectContent(*Descriptor, assets, Host.Logging(), &Host.Jobs());
+    }
 #if defined(SENCHA_ENABLE_UI) && defined(SENCHA_EDITOR_UI_DIR)
     MountEditorContent(SENCHA_EDITOR_UI_DIR, assets, Host.Logging(), &Host.Jobs());
 #endif

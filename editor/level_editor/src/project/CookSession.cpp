@@ -6,6 +6,7 @@
 #include "document/WorldDocument.h"
 #include "project/Project.h"
 
+#include <core/assets/AssetPath.h>
 #include <app/Engine.h>
 #include <core/console/ConsoleService.h>
 #include <core/console/ConsoleTypes.h>
@@ -234,7 +235,7 @@ bool CookSession::Start(const CookProfile& profile,
     // back to the levels/ convention.
     std::string sourceRel = "levels/" + levelName + ".sscene";
     if (const std::string assetPath = World_.FocusDocument().SourceAssetPath();
-        assetPath.starts_with("asset://"))
+        assetPath.starts_with(kAssetPathPrefix))
     {
         sourceRel = assetPath.substr(sizeof("asset://") - 1);
     }

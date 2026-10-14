@@ -28,6 +28,8 @@ struct MaterialAsset
 // clipboard) displays identically to a scanned entry.
 // "asset://materials/dev/gray.smat" -> "materials/dev/gray"
 [[nodiscard]] std::string MaterialDisplayName(std::string_view virtualPath);
+// The last part of it: "asset://materials/dev/gray.smat" -> "gray".
+[[nodiscard]] std::string MaterialLeafName(std::string_view virtualPath);
 
 class MaterialLibrary
 {

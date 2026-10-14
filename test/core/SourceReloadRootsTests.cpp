@@ -69,7 +69,7 @@ namespace
             ScanContentRoot(paths, Assets);
             ContentImporterSet importers;
             (void)ImportAssetsOnDemand(Root.generic_string(), importers.Registry(), Assets.Registry, Logging);
-            RegisterCookedContent(paths, Assets, Logging.GetLogger<Fixture>());
+            RegisterCookedContent(paths, Assets);
             Package = Assets.Assets.LoadLease("asset://ui/a.rml", AssetType::UiPackage);
         }
         ~Fixture()

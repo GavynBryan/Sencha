@@ -4,6 +4,7 @@
 #include <profiling/RenderInstrumentation.h>
 #include <graphics/vulkan/UiDrawPass.h>
 
+#include <cstdint>
 #include <string_view>
 #include <vector>
 
@@ -31,9 +32,10 @@ inline constexpr std::string_view kUiRenderFeatureId = "application_ui";
 class UiRenderFeature final : public IRenderFeature
 {
 public:
-    // `textures` may be null, in which case content images do not draw -- the
-    // same answer the runtime gives when asked to resolve one.
-    UiRenderFeature(UiService& ui, TextureCache* textures);
+    // Draws the surfaces of one platform window (0, the primary) in one layer
+    // (docs/ui/architecture.md §13). Without `textures` content images do not
+    // draw, as the runtime does not resolve them.
+    UiRenderFeature(UiService& ui, TextureCache* textures, std::uint32_t windowId = 0, std::uint8_t layer = 0);
 
     [[nodiscard]] RenderPhase GetPhase() const override { return RenderPhase::ApplicationUi; }
     [[nodiscard]] bool Setup(const RenderFeatureServices& services) override;
@@ -43,6 +45,8 @@ public:
 private:
     UiService& Ui;
     TextureCache* Textures = nullptr;
+    std::uint32_t WindowId = 0;
+    std::uint8_t Layer = 0;
     const RenderInstrumentation* Instrumentation = nullptr;
     UiDrawPass Pass;
     bool Ready = false;

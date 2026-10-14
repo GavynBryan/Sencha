@@ -3,7 +3,7 @@
 #include "viewport/ViewportId.h"
 
 #include <SDL3/SDL_keycode.h>
-#include <imgui.h>
+#include <math/Vec.h>
 
 #include <cstdint>
 #include <variant>
@@ -25,7 +25,7 @@ struct ModifierFlags
 
 struct PointerDownEvent
 {
-    ImVec2 Position;
+    Vec2d Position;
     MouseButton Button;
     ModifierFlags Modifiers;
     // The viewport this event belongs to, resolved once at the input boundary: the
@@ -37,7 +37,7 @@ struct PointerDownEvent
 
 struct PointerUpEvent
 {
-    ImVec2 Position;
+    Vec2d Position;
     MouseButton Button;
     ModifierFlags Modifiers;
     ViewportId Viewport = {};
@@ -45,15 +45,25 @@ struct PointerUpEvent
 
 struct PointerMoveEvent
 {
-    ImVec2 Position;
-    ImVec2 Delta;
+    Vec2d Position;
+    Vec2d Delta;
+    ModifierFlags Modifiers;
+    ViewportId Viewport = {};
+};
+
+// A press that began outside this input chain -- on a surface that then
+// handed the rest of its gesture over -- arriving held at Position. Whoever
+// takes it owns the gesture through to its release.
+struct PointerHandedEvent
+{
+    Vec2d Position;
     ModifierFlags Modifiers;
     ViewportId Viewport = {};
 };
 
 struct WheelEvent
 {
-    ImVec2 Position;
+    Vec2d Position;
     float Delta;
     ModifierFlags Modifiers;
 };
@@ -66,14 +76,14 @@ struct KeyDownEvent
 {
     SDL_Keycode Key;
     ModifierFlags Modifiers;
-    ImVec2 Pointer = {};
+    Vec2d Pointer = {};
 };
 
 struct KeyUpEvent
 {
     SDL_Keycode Key;
     ModifierFlags Modifiers;
-    ImVec2 Pointer = {};
+    Vec2d Pointer = {};
 };
 
 struct FocusLostEvent {};
@@ -85,8 +95,8 @@ struct FocusLostEvent {};
 // (docs/architecture/hardening-and-consolidation.md W3.)
 struct PointerEvent
 {
-    ImVec2        Position = {};
-    ImVec2        Delta = {};                   // pointer motion (moves; {0,0} otherwise)
+    Vec2d        Position = {};
+    Vec2d        Delta = {};                   // pointer motion (moves; {0,0} otherwise)
     MouseButton   Button = MouseButton::Left;   // the button, for down/up
     ModifierFlags Modifiers = {};
 };
@@ -95,6 +105,7 @@ using InputEvent = std::variant<
     PointerDownEvent,
     PointerUpEvent,
     PointerMoveEvent,
+    PointerHandedEvent,
     WheelEvent,
     KeyDownEvent,
     KeyUpEvent,

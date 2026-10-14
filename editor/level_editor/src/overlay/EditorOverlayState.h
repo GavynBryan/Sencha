@@ -1,7 +1,7 @@
 #pragma once
 
 #include "icons/IconId.h"
-#include "ui/chrome/ChromeControls.h"
+#include "actions/ActionTone.h"
 #include "selection/SelectableRef.h"
 #include "viewport/ViewportId.h"
 
@@ -75,7 +75,7 @@ struct ViewportButton
     IconId Icon = IconId::None;
     std::string Label;
     bool Enabled = true;
-    EditorChrome::ButtonTone Tone = EditorChrome::ButtonTone::Normal; // the panel buttons' own voice
+    ActionTone Tone = ActionTone::Normal;
     std::string Tooltip; // shown while the button is hot; empty for none
 };
 
@@ -88,12 +88,11 @@ struct ViewportButtonCaption
     int LastButton = 0;
 };
 
-// A row of buttons pinned to a world point, drawn over one viewport by the
-// panel and hit-tested by the tool that asked for them.
+// A row of buttons pinned to a world point, drawn over one view as marks and
+// hit-tested by the tool that asked for them.
 //
-// They are painted into the viewport's draw list rather than made into ImGui
-// items, so there is no click ownership to negotiate with the viewport's own
-// input: the tool tests the same rects in its own callbacks and consumes the
+// They are display-only marks rather than interactive UI elements, so there is
+// no click ownership to negotiate with the view's own input: the tool tests the same rects in its own callbacks and consumes the
 // press, exactly as it already does for its drag handles. Both sides place the
 // row with ViewportButtons::Layout, so neither can drift from the other.
 struct ViewportButtonRequest
@@ -110,8 +109,8 @@ struct ViewportButtonRequest
 // A rotation dial lying in a face's plane, drawn over one viewport by the panel
 // and hit-tested by the tool that asked for it.
 //
-// The same arrangement as the button row: painted into the viewport's draw list
-// rather than made an ImGui item, so there is no click ownership to negotiate.
+// The same arrangement as the button row: drawn, not interactive, so there is
+// no click ownership to negotiate.
 // This carries the dial's inputs rather than a finished radius, because the
 // radius depends on the camera; both sides resolve it through
 // ViewportDial::PlaceIn, which is what keeps the drawn circle and the
@@ -126,6 +125,48 @@ struct ViewportDialRequest
     float TickIncrement = 0.0f; // the stops a snapped turn lands on; 0 = free
     bool Hot = false;
     ViewportId Viewport = {};
+};
+
+// An entity's marker, drawn at a fixed size wherever its world point shows:
+// how a light, a camera or an empty is seen and clicked in the views.
+struct MarkerRequest
+{
+    Vec3d World = {};
+    IconId Icon = IconId::None;
+    bool Selected = false;
+};
+
+// A selected object's handles: the rings and cone edges a value is measured
+// by, the knobs that change them -- small at rest, larger with the pointer near -- and the value
+// being changed, beside it. Only the property handles write it.
+struct PropertyKnobRequest
+{
+    Vec3d World = {};
+    bool Hot = false;
+    ViewportId Viewport = {};
+};
+
+struct PropertyHandleMarks
+{
+    std::vector<WorldSegmentRequest> Strokes;
+    std::vector<PropertyKnobRequest> Knobs;
+    std::vector<LabelRequest> Values;
+
+    void Clear()
+    {
+        Strokes.clear();
+        Knobs.clear();
+        Values.clear();
+    }
+};
+
+// The pending placement's marks: where its root lands and which way it faces.
+// Rebuilt every frame from the placement session (AppendPlacementMarks).
+struct PlacementMarks
+{
+    std::vector<WorldSegmentRequest> Strokes;
+
+    void Clear() { Strokes.clear(); }
 };
 
 // The element under the cursor for the active element mode. The renderer glows it
@@ -149,6 +190,9 @@ struct EditorOverlayState
     std::vector<PointHandleRequest> PointHandles;
     std::vector<ViewportButtonRequest> ViewportButtons;
     std::vector<ViewportDialRequest> ViewportDials;
+    std::vector<MarkerRequest> Markers;
+    PropertyHandleMarks Handles;
+    PlacementMarks Placement;
     DragReadout Readout;
     ElementHoverState Hover;
     // A whole brush to highlight as a selected body while hovering, even when it is

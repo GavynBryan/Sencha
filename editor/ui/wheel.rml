@@ -1,0 +1,47 @@
+<rml>
+<head>
+    <title>Wheel</title>
+    <link type="text/rcss" href="wheel.rcss"/>
+    <link type="text/rcss" href="icons.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="wheel">
+    <!-- A radial menu, while its key is held: a plate with petals set into
+         it, glyphs where the session hit-tests. Positions are window pixels. -->
+    <div id="wheel" data-if="open">
+        <!-- Back to front. parts: left, top and diameter of the outer circle,
+             start and sweep in degrees, the inner radius as a fraction. -->
+        <div class="sector_slot" data-for="s : sectors">
+            <sector data-attr-class="'theme-wheel-' + s.detail"
+                    data-style-left="s.parts[0]" data-style-top="s.parts[1]"
+                    data-style-width="s.parts[2]" data-style-height="s.parts[2]"
+                    data-attr-start="s.parts[3]" data-attr-sweep="s.parts[4]" data-attr-inner="s.parts[5]"></sector>
+        </div>
+        <div class="caption" data-style-left="caption_left" data-style-top="caption_top"
+             data-style-width="caption_width" data-style-height="caption_height">
+            <span class="ledge theme-readout" data-class-dim="caption_dim">{{caption}}</span>
+        </div>
+        <div class="word theme-wheel-word" data-for="word : words"
+             data-class-lit="word.selected" data-class-active="word.value == 'active'"
+             data-class-variant="word.detail == 'variant'"
+             data-style-left="word.parts[0]" data-style-top="word.parts[1]"
+             data-style-width="word.parts[2]" data-style-height="word.parts[3]">
+            <img class="swatch" data-if="word.parts[4] != ''" data-attr-src="'host:' + word.parts[4]"/>
+            <span>{{word.label}}</span>
+        </div>
+        <div class="readout" data-if="summary.size > 0" data-style-left="hub_left" data-style-top="hub_top"
+             data-style-width="hub_size" data-style-height="hub_size">
+            <div class="readout_line theme-wheel-readout" data-for="line : summary"
+                 data-class-first="it_index == 0"><span>{{line.label}}</span></div>
+        </div>
+        <sector class="well theme-wheel-well" data-for="key : keys"
+                data-class-lit="key.selected" data-class-active="key.value == 'active'"
+                data-class-variant="key.detail == 'variant'"
+                data-style-left="key.parts[0]" data-style-top="key.parts[1]"
+                data-style-width="key.parts[2]" data-style-height="key.parts[2]">
+            <span data-if="key.icon != ''" data-attr-class="'icon icon-' + key.icon"></span>
+            <span class="initial" data-if="key.icon == ''">{{key.label}}</span>
+        </sector>
+    </div>
+</body>
+</rml>

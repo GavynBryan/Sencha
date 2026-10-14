@@ -15,6 +15,7 @@ ScenePackageBuild::ScenePackageBuild(AssetSystem& assets, SceneCache& scenes,
     , Stager(assets.LoaderFor(AssetType::Scene))
     , Record(record)
     , SceneRef(assets.TryAcquireLease(record.Path, AssetType::Scene))
+    , Current(assets.PathsById())
 {
     if (SceneRef.IsValid())
         Resident = scenes.GetShared(SceneHandle::FromToken(SceneRef.OpaqueToken()));
@@ -33,7 +34,7 @@ void ScenePackageBuild::Build(const ComponentSerializerRegistry& serializers,
             ErrorText = "no scene loader is registered";
             return;
         }
-        Staging = Stager->LoadStaged(Record, Assets->DefaultSource());
+        Staging = Stager->LoadStaged(Record, Assets->DefaultSource(), *Current);
         if (!Staging.IsValid())
         {
             ErrorText = std::move(Staging.Error);
@@ -70,16 +71,14 @@ bool ScenePackageBuild::Settle()
 {
     if (ErrorText.empty() && Staged)
     {
-        SceneRef = Assets->Commit(std::move(Staging));
+        const std::string path = Staging.Record.Path;
+        AssetCommitOutcome committed = Assets->Commit(std::move(Staging));
         Staged = false;
+        SceneRef = std::move(committed.Handle);
         if (SceneRef.IsValid())
-        {
             Resident = Scenes->GetShared(SceneHandle::FromToken(SceneRef.OpaqueToken()));
-        }
         else
-        {
-            ErrorText = "scene contents did not commit into the cache";
-        }
+            ErrorText = AssetSystem::CommitFailureReason(path, committed);
     }
 
     if (!ErrorText.empty() || Built == nullptr)

@@ -107,6 +107,20 @@ TEST_F(LevelDocumentSourceTest, SavingOverAFileChangedOnDiskIsAConflict)
     EXPECT_TRUE(Sources.ChangedDocuments().empty());
 }
 
+// A file step renaming an asset the level names rewrites the level's file to
+// say the same: the level takes it as read rather than as a conflict.
+TEST_F(LevelDocumentSourceTest, ANamesRewriteOfItsFileIsTakenAsRead)
+{
+    const std::filesystem::path path = SavedWorld();
+    std::ofstream(path, std::ios::app) << "\n";
+    std::filesystem::last_write_time(path, std::filesystem::last_write_time(path) + std::chrono::seconds(2));
+    ASSERT_TRUE(Workspace.World.IsExternallyModified());
+
+    Sources.NamesRewritten(path);
+    EXPECT_FALSE(Workspace.World.IsExternallyModified());
+    EXPECT_FALSE(Source.KeepsNamesAsRead(path)) << "its saves settle what it names";
+}
+
 TEST_F(LevelDocumentSourceTest, AnUntitledLevelIsNotSavedBehindTheAuthorsBack)
 {
     Execute();

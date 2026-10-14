@@ -3,7 +3,11 @@
 #include "BrushModifierSerialization.h"
 #include "BrushValidation.h"
 
+#include <core/assets/AssetRefCodec.h>
+#include <core/json/JsonValue.h>
+
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace
@@ -53,8 +57,8 @@ namespace
         uv.emplace_back("world_aligned", JsonValue(fm.Uv.WorldAligned));
 
         JsonValue::Object obj;
-        if (!fm.Material.Path.empty()) // empty => inherit the level default
-            obj.emplace_back("material", JsonValue(fm.Material.Path));
+        if (!fm.Material.Path.empty() || fm.Material.Id.IsValid()) // none => inherit the level default
+            obj.emplace_back("material", AssetRefToJson(fm.Material));
         obj.emplace_back("uv", JsonValue(std::move(uv)));
         return JsonValue(std::move(obj));
     }
@@ -62,12 +66,12 @@ namespace
     FaceMaterial FaceMaterialFromJson(const JsonValue& value)
     {
         FaceMaterial fm;
-        if (const JsonValue* material = value.Find("material");
-            material && material->IsString())
-        {
-            fm.Material.Type = AssetType::Material;
-            fm.Material.Path = material->AsString();
-        }
+        if (const JsonValue* material = value.Find("material"))
+            if (std::optional<AssetRef> ref = AssetRefFromJson(*material))
+            {
+                fm.Material = std::move(*ref);
+                fm.Material.Type = AssetType::Material;
+            }
         if (const JsonValue* uv = value.Find("uv"); uv && uv->IsObject())
         {
             const UvProjection def;

@@ -4,6 +4,7 @@
 #include <ui/UiScreenHandle.h>
 #include <ui/UiValue.h>
 
+#include <cstddef>
 #include <vector>
 
 //=============================================================================
@@ -32,4 +33,11 @@ struct UiAction
 
     // Whatever the document passed along with it, in order. Copied and owned.
     std::vector<UiValue> Arguments;
+
+    // Argument `index`, or no value when the document passed fewer.
+    [[nodiscard]] const UiValue& Arg(std::size_t index) const
+    {
+        static const UiValue kNothing;
+        return index < Arguments.size() ? Arguments[index] : kNothing;
+    }
 };

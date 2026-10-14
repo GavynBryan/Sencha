@@ -4,9 +4,9 @@
 # a source scan so the layering cannot silently regress. Companion to
 # check_meshedit_deps.sh; same form (a ctest that fails on a violation).
 #
-# The editor is a family of applications over a shared shell:
-#   editor/common/src  the shared editor shell (editor_common)
-#   editor/level_editor/src   the level editor
+# Kyusu is a set of workspace libraries over a shared library:
+#   editor/common/src         what every workspace shares (editor_common)
+#   editor/level_editor/src   the Level workspace
 #
 # Rules:
 #
@@ -26,18 +26,22 @@
 #      aggregator). Cross-subsystem composition lives in workspace/; the
 #      subsystems below it stay independent of it.
 #
-#   D. The chrome's internals (its geometry, painters, frame, chassis,
-#      ornaments, sources, icon drawing) are reachable only from inside
-#      common/ui/. A panel asks for a PanelStyle, a section title, a selection
-#      scope, a control; it never draws a screw or a chamfer itself, so the
-#      look can change without a panel changing.
-#
 #   E. Workspaces never include one another. Each workspace tree (the level,
 #      material, data, animation and UI preview editors, the project browser)
 #      depends on editor_common and the engine only; the one tree that sees
 #      them all is the Kyusu application, which composes them. A quoted include
 #      that names a header existing only in another workspace tree is a
 #      violation.
+#
+#   G. The shell is a replaceable presentation policy
+#      (docs/editor/interaction-grammar.md). No workspace tree includes
+#      common/shell/: a workspace says what it has (actions, properties,
+#      resources, facets) and asks for surfaces by role, and only the Kyusu
+#      application and the shell itself decide how any of it appears.
+#
+#   F. No file under editor/ names ImGui (its headers, its namespace, its
+#      types). The editor presents through Shoji; the engine's own diagnostics
+#      overlay is the only ImGui in a Kyusu window.
 #
 # Usage: check_editor_layering.sh <source-root>
 
@@ -77,38 +81,14 @@ check "editor_common depends on an application-only subsystem" \
       '#include[[:space:]]*"([^"]*/)?(app|brush|document|editmodes|export|meshedit|overlay|workspace)/' \
       "$COMMON"
 
-# C. Only app/ may include workspace/, with one deliberate exception: panels may
-# read the narrow workspace mechanisms they drive (a panel that needs a pending
-# edit should hold that mechanism, not a bag of callbacks assembled for it).
-# EditorWorkspace itself stays off-limits to ui/ -- a panel takes the mechanism,
-# never the aggregator. Filter on the including FILE's path (not the line text,
-# which contains "workspace/" by construction), so a real violation in content
-# is not masked.
-ws_panel_mechanisms='workspace/(PendingBridgeEdit|PendingElementEdit|SelectionActions)\.h'
+# C. Only app/ may include workspace/. Filter on the including FILE's path (not
+# the line text, which contains "workspace/" by construction), so a real
+# violation in content is not masked.
 ws_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?workspace/' "$COMMON" "$LEVEL" 2>/dev/null \
                 | grep -vE '^'"$LEVEL"'/(app|workspace)/')"
-for file in $ws_includers; do
-    # A ui/ file is clean only when EVERY workspace include it has is an allowed
-    # mechanism; one stray aggregator include still fails.
-    if [ "${file#"$LEVEL"/ui/}" != "$file" ] \
-       && ! grep -E '#include[[:space:]]*["<]([^">]*/)?workspace/' "$file" \
-            | grep -qvE "$ws_panel_mechanisms"; then
-        continue
-    fi
+if [ -n "$ws_includers" ]; then
     echo "VIOLATION: a subsystem below the aggregator reaches up into workspace/ (compose in app/ instead)"
-    echo "$file"
-    echo
-    status=1
-done
-
-# D. Chrome internals stay inside common/ui/. Filter on the including FILE's
-# path, as in rule C.
-chrome_internals='ui/chrome/(ChromeGeometry|ChromePaint|ChromeFrame|ChromeChassis|ChromeOrnaments|IconDraw)\.h'
-chrome_includers="$(grep -rlE '#include[[:space:]]*["<]([^">]*/)?'"$chrome_internals" "$COMMON" "$LEVEL" 2>/dev/null \
-                    | grep -vE '^'"$COMMON"'/ui/')"
-if [ -n "$chrome_includers" ]; then
-    echo "VIOLATION: a panel or subsystem draws chrome internals (use ScopedPanel, ChromeHeader, ChromeSelection, ChromeControls, ChromeDecor, ChromeBars)"
-    echo "$chrome_includers"
+    echo "$ws_includers"
     echo
     status=1
 fi
@@ -138,6 +118,24 @@ for ws in $WORKSPACES; do
     done < <(grep -rnE '^[[:space:]]*#include[[:space:]]*"' "$own" 2>/dev/null)
 done
 
+# G. Workspaces never include the shell's policy.
+for ws in $WORKSPACES; do
+    own="$ROOT/editor/$ws/src"
+    [ -d "$own" ] || continue
+    check "workspace $ws includes the shell's presentation policy (expose semantics; the shell presents them)" \
+          '#include[[:space:]]*"([^"]*/)?shell/' "$own"
+done
+
+# F. No ImGui. Comment-only lines are ignored, like every rule here.
+imgui_pattern='(#include[[:space:]]*[<"][^">]*imgui|\bIm(Gui|Vec2|Vec4|TextureID|DrawList|U32|Font|Wchar)\b|ImGui::|ImGui[A-Z][A-Za-z]*Flags)'
+imgui_users="$(cd "$ROOT" && grep -rnE "$imgui_pattern" editor --include='*.h' --include='*.cpp' 2>/dev/null \
+               | grep -vE ':[0-9]+:[[:space:]]*(//|\*|/\*)' | cut -d: -f1 | sort -u)"
+if [ -n "$imgui_users" ]; then
+    echo "VIOLATION: ImGui under editor/ (present it through Shoji instead)"
+    echo "$imgui_users"
+    echo
+    status=1
+fi
 if [ "$status" -eq 0 ]; then
     echo "editor layering directions: OK"
 fi

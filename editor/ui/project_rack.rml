@@ -1,0 +1,38 @@
+<rml>
+<head>
+    <title>Projects</title>
+    <link type="text/rcss" href="controls.rcss"/>
+    <link type="text/rcss" href="project_rack.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="project_rack">
+    <!-- The projects this person has worked on, as cartridges in a rack: the
+         most recent first. Picking one shows its settings; putting it to use
+         opens it. The rack sits behind the shell, which owns the edges. -->
+    <div id="rack">
+        <div id="rack_head">
+            <span id="rack_title" class="theme-accent">PROJECTS</span>
+            <div class="key theme-key" data-class-lit="creating" data-event-click="rack_new">NEW</div>
+            <div class="key theme-key" data-event-click="rack_browse">OPEN&#8230;</div>
+        </div>
+        <div id="rack_slots">
+            <div class="cartridge theme-plate" data-for="project : projects"
+                 data-class-selected="project.selected" data-class-missing="project.detail != ''"
+                 data-event-click="rack_pick(project.key)" data-event-dblclick="rack_open(project.key)">
+                <div class="cartridge_spine theme-field theme-segment" data-class-lit="project.selected"></div>
+                <div class="cartridge_face">
+                    <span class="cartridge_name">{{project.label}}</span>
+                    <span class="cartridge_path theme-dim">{{project.value}}</span>
+                    <span class="cartridge_state theme-warning" data-if="project.detail != ''">{{project.detail}}</span>
+                </div>
+                <div class="cartridge_forget key theme-key" data-event-click="rack_forget(project.key)">
+                    <span class="glyph">&#xf00d;</span>
+                </div>
+            </div>
+            <div id="rack_empty" class="theme-dim" data-if="projects.size == 0">
+                No projects yet: open a project file, or make a new one.
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

@@ -9,7 +9,7 @@
 #include "interaction/InteractionHost.h"
 #include "meshedit/MeshEditService.h"
 #include "meshedit/MeshElements.h"
-#include "meshedit/ActiveMaterialState.h"
+#include "resources/ActiveResources.h"
 #include "overlay/EditorOverlayState.h"
 #include "overlay/SelectionLabels.h"
 #include "selection/SelectionService.h"
@@ -44,18 +44,23 @@ InputConsumed ViewportToolDispatcher::OnInput(const InputEvent& event, PointerCa
         return HandlePointerMove(*e, capture);
     if (const auto* e = std::get_if<PointerUpEvent>(&event))
         return HandlePointerUp(*e, capture);
+    if (const auto* e = std::get_if<PointerHandedEvent>(&event))
+        return HandlePointerHanded(*e, capture);
     if (const auto* e = std::get_if<KeyDownEvent>(&event))
         return HandleKeyDown(*e, capture);
     if (std::get_if<FocusLostEvent>(&event))
     {
         // Losing focus mid-gesture (e.g. alt-tab) aborts rather than stranding live
         // preview state; not consumed, so others still observe it.
-        Abort();
-        if (capture.HeldBySelf())
-            capture.Release();
+        AbortAndRelease(capture);
         return InputConsumed::No;
     }
     return InputConsumed::No;
+}
+
+bool ViewportToolDispatcher::GestureOutlivedItsTool() const
+{
+    return Span != GestureSpan::None && Tools.GetActiveTool() != GestureTool;
 }
 
 void ViewportToolDispatcher::Abort()
@@ -63,6 +68,35 @@ void ViewportToolDispatcher::Abort()
     Interactions.Cancel(Context); // revert any in-flight interaction (gizmo/marquee/brush)
     Tools.Cancel();               // drop any tool gesture state
     Recognizer.Reset();
+    Span = GestureSpan::None;
+    GestureTool = nullptr;
+}
+
+void ViewportToolDispatcher::AbortAndRelease(PointerCapture& capture)
+{
+    Abort();
+    if (capture.HeldBySelf())
+        capture.Release();
+}
+
+void ViewportToolDispatcher::HoverAt(EditorViewport& viewport, Vec2d pos)
+{
+    // Gizmo part highlight tracks the cursor regardless of the active tool
+    // (the session hit-tests only the manipulator that would take the press).
+    Sessions.UpdateHover(viewport, pos);
+
+    // The active tool gets first crack at hover (the edge cut drives a live preview);
+    // if it doesn't handle it, fall back to the element-mode selection glow.
+    if (Tools.Hover(viewport, pos) == InputConsumed::No)
+        UpdateHover(viewport, pos);
+}
+
+void ViewportToolDispatcher::ClearHover()
+{
+    Context.Overlay.Hover = {};
+    Context.Overlay.HoverBody = {};
+    Sessions.ClearHover();
+    Tools.HoverEnd();
 }
 
 void ViewportToolDispatcher::SampleFaceMaterial(const PointerDownEvent& e)
@@ -81,8 +115,8 @@ void ViewportToolDispatcher::SampleFaceMaterial(const PointerDownEvent& e)
 
     // Sample what the face RENDERS: an inherit-default face yields the level
     // default, not an empty ref.
-    Context.ActiveMaterial.Active = EffectiveMaterial(mesh->Faces[picked.ElementId].Material,
-                                                      Context.Document.GetDefaultMaterial());
+    Context.Resources.SetActive(EffectiveMaterial(mesh->Faces[picked.ElementId].Material,
+                                                      Context.Document.GetDefaultMaterial()));
 }
 
 InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& e, PointerCapture& capture)
@@ -96,7 +130,7 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
         return InputConsumed::Yes;
     }
 
-    if (e.Button != MouseButton::Left)
+    if (e.Button != MouseButton::Left || Span != GestureSpan::None)
         return InputConsumed::No;
 
     EditorViewport* vp = Layout.Find(e.Viewport);
@@ -107,6 +141,8 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
     // here exclusively (re-stamped with this viewport), so the gesture stays on its
     // origin viewport and the camera/UI never see these events.
     capture.Acquire(PointerCaptureKind::Exclusive, vp->Id);
+    Span = GestureSpan::PinnedToView;
+    GestureTool = Tools.GetActiveTool();
 
     const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
 
@@ -118,37 +154,40 @@ InputConsumed ViewportToolDispatcher::HandlePointerDown(const PointerDownEvent& 
         return InputConsumed::Yes;
     }
 
+    // What the click or drag acts on is what was shown at the press: no hover
+    // runs again until the gesture ends.
+    HoverAt(*vp, e.Position);
     Recognizer.Press(pointer);
     return InputConsumed::Yes;
 }
 
 InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& e, PointerCapture& capture)
 {
+    if (GestureOutlivedItsTool())
+        AbortAndRelease(capture);
+
     EditorViewport* vp = Layout.Find(e.Viewport);
     if (vp == nullptr)
     {
-        Context.Overlay.Hover = {}; // cursor left the viewports: drop the hover glow
-        Context.Overlay.HoverBody = {}; // and the preview-body wireframe
-        Sessions.ClearHover();      // and the gizmo part highlight
-        Tools.HoverEnd();           // and any tool's hover preview (e.g. the edge cut)
+        // A gesture that follows the pointer is merely between views.
+        if (Span == GestureSpan::FollowsPointer)
+        {
+            Interactions.OnPointerLeftViews(Context);
+            return InputConsumed::Yes;
+        }
+        ClearHover(); // cursor left the viewports
         // The gesture's viewport vanished mid-drag (e.g. a layout change): abandon it.
         if (capture.HeldBySelf())
-        {
-            Abort();
-            capture.Release();
-        }
+            AbortAndRelease(capture);
         return InputConsumed::No;
     }
 
     const PointerEvent pointer{ .Position = e.Position, .Delta = e.Delta, .Modifiers = e.Modifiers };
 
-    // A live drag (gizmo, marquee, or brush-create) owns the stream; no hover feedback.
+    // A live drag (gizmo, marquee, brush-create, a carry) owns the stream; no hover feedback.
     if (Interactions.IsActive())
     {
-        Context.Overlay.Hover = {};
-        Context.Overlay.HoverBody = {};
-        Sessions.ClearHover();
-        Tools.HoverEnd();
+        ClearHover();
         return Interactions.OnPointerMove(Context, *vp, pointer);
     }
 
@@ -167,18 +206,15 @@ InputConsumed ViewportToolDispatcher::HandlePointerMove(const PointerMoveEvent& 
         }
     }
 
-    // Gizmo part highlight tracks the cursor regardless of the active tool
-    // (the session hit-tests only the manipulator that would take the press).
-    Sessions.UpdateHover(*vp, pointer.Position);
+    // A held button is not a hover: the press already settled what is shown.
+    if (Span != GestureSpan::None || capture.HeldBySelf())
+        return InputConsumed::Yes;
 
-    // The active tool gets first crack at hover (the edge cut drives a live preview);
-    // if it doesn't handle it, fall back to the element-mode selection glow.
-    if (Tools.Hover(*vp, pointer.Position) == InputConsumed::No)
-        UpdateHover(*vp, pointer.Position);
+    HoverAt(*vp, pointer.Position);
     return InputConsumed::No;
 }
 
-void ViewportToolDispatcher::UpdateHover(EditorViewport& viewport, ImVec2 pos)
+void ViewportToolDispatcher::UpdateHover(EditorViewport& viewport, Vec2d pos)
 {
     const MeshElementKind mode = Context.MeshEdit.GetElementKind();
     // Hover any brush, even in an element mode: hovering another mesh's element
@@ -214,20 +250,38 @@ InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e, P
     if (e.Button != MouseButton::Left)
         return InputConsumed::No;
 
-    EditorViewport* vp = Layout.Find(e.Viewport);
-    const bool wasHeld = capture.HeldBySelf();
-    if (wasHeld)
-        capture.Release(); // the LMB gesture ends here
+    if (capture.HeldBySelf())
+        capture.Release(); // the LMB gesture ends here, whatever becomes of it
 
+    // A release with no gesture of ours -- one already aborted, or a capture
+    // inherited from a rebuilt stack -- ends nothing.
+    if (Span == GestureSpan::None)
+    {
+        Recognizer.Reset();
+        return InputConsumed::No;
+    }
+    if (GestureOutlivedItsTool())
+    {
+        Abort();
+        return InputConsumed::No;
+    }
+
+    EditorViewport* vp = Layout.Find(e.Viewport);
     if (vp == nullptr)
     {
-        if (wasHeld)
-            Abort(); // origin viewport gone; revert rather than strand preview state
-        Recognizer.Reset();
+        // Let go over no view, or its view is gone: nothing is made.
+        Abort();
         return InputConsumed::No;
     }
 
     const PointerEvent pointer{ .Position = e.Position, .Button = e.Button, .Modifiers = e.Modifiers };
+    const GestureRecognizer::Result gesture = Recognizer.Release(pointer);
+    const PointerEvent press{
+        .Position = Recognizer.PressPointer().Position,
+        .Modifiers = Recognizer.PressPointer().Modifiers,
+    };
+    Span = GestureSpan::None;
+    GestureTool = nullptr;
 
     // A live drag commits on release.
     if (Interactions.IsActive())
@@ -238,32 +292,44 @@ InputConsumed ViewportToolDispatcher::HandlePointerUp(const PointerUpEvent& e, P
     }
 
     // Otherwise the release is a click (or double-click), routed to the active tool
-    // with the modifiers held at press (gesture intent).
-    const GestureRecognizer::Result gesture = Recognizer.Release(pointer);
-    if (gesture == GestureRecognizer::Result::Clicked
-        || gesture == GestureRecognizer::Result::DoubleClicked)
-    {
-        // Pick at the press position, not the release: a click stays within the drag
-        // deadzone of its press, and the press is where the hover glow was last
-        // resolved, so "if it highlights, the click selects it" holds even for an
-        // edge grabbed at a glancing angle.
-        const PointerEvent click{
-            .Position = Recognizer.PressPointer().Position,
-            .Modifiers = Recognizer.PressPointer().Modifiers,
-        };
-        return gesture == GestureRecognizer::Result::DoubleClicked ? Tools.DoubleClick(*vp, click)
-                                                                   : Tools.Click(*vp, click);
-    }
+    // at the press: a click stays within the drag deadzone of its press, and the
+    // press is where the hover was last resolved, so "if it highlights, the click
+    // selects it" holds even for an edge grabbed at a glancing angle.
+    if (gesture == GestureRecognizer::Result::Clicked)
+        return Tools.Click(*vp, press);
+    if (gesture == GestureRecognizer::Result::DoubleClicked)
+        return Tools.DoubleClick(*vp, press);
     return InputConsumed::No;
+}
+
+InputConsumed ViewportToolDispatcher::HandlePointerHanded(const PointerHandedEvent& e, PointerCapture& capture)
+{
+    if (Span != GestureSpan::None)
+        return InputConsumed::No;
+    std::unique_ptr<IInteraction> interaction = Tools.TakeHandedGesture();
+    if (interaction == nullptr)
+        return InputConsumed::No;
+
+    // No origin: the rest of the gesture follows the pointer from view to view.
+    capture.Acquire(PointerCaptureKind::Exclusive);
+    Span = GestureSpan::FollowsPointer;
+    GestureTool = Tools.GetActiveTool();
+    Recognizer.Reset();
+    ClearHover();
+    Interactions.Begin(Context, std::move(interaction));
+
+    if (EditorViewport* vp = Layout.Find(e.Viewport))
+        (void)Interactions.OnPointerMove(Context, *vp, PointerEvent{ .Position = e.Position, .Modifiers = e.Modifiers });
+    else
+        Interactions.OnPointerLeftViews(Context);
+    return InputConsumed::Yes;
 }
 
 InputConsumed ViewportToolDispatcher::HandleKeyDown(const KeyDownEvent& e, PointerCapture& capture)
 {
-    if (e.Key == SDLK_ESCAPE && (Interactions.IsActive() || Recognizer.Active()))
+    if (e.Key == SDLK_ESCAPE && (Span != GestureSpan::None || Interactions.IsActive() || Recognizer.Active()))
     {
-        Abort();
-        if (capture.HeldBySelf())
-            capture.Release();
+        AbortAndRelease(capture);
         return InputConsumed::Yes;
     }
 

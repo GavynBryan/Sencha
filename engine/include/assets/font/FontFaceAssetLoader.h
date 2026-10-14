@@ -23,7 +23,8 @@ public:
     FontFaceAssetLoader(LoggingProvider& logging, FontFaceCache* cache);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
+                                          IAssetSource& source,
+                                          const AssetPathsById& current) override;
 
     [[nodiscard]] FontFaceHandle CommitTyped(AssetStaging&& staged);
 

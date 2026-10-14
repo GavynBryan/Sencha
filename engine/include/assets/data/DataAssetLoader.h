@@ -2,6 +2,7 @@
 
 #include <assets/data/DataAssetCache.h>
 #include <assets/data/DataAssetTypeRegistry.h>
+#include <core/assets/AssetCommitResult.h>
 #include <core/assets/AssetStager.h>
 #include <core/json/JsonValue.h>
 #include <core/logging/Logger.h>
@@ -34,13 +35,15 @@ public:
                     DataAssetCache* cache);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
+                                          IAssetSource& source,
+                                          const AssetPathsById& current) override;
     // Stages an envelope already in memory, such as an editor's working copy.
-    [[nodiscard]] AssetStaging StageRoot(const AssetRecord& record, const JsonValue& root);
+    [[nodiscard]] AssetStaging StageRoot(const AssetRecord& record, const JsonValue& root,
+                                         const AssetPathsById& current);
 
     // Loads the value's declared dependencies and has the entry hold them; one
-    // that cannot load fails the commit.
-    [[nodiscard]] DataAssetHandle CommitTyped(AssetStaging&& staged, AssetSystem& assets);
+    // that cannot load fails the commit and is named in the result.
+    [[nodiscard]] AssetCommitResult<DataAssetHandle> CommitTyped(AssetStaging&& staged, AssetSystem& assets);
     [[nodiscard]] bool CommitReload(AssetStaging&& staged, AssetSystem& assets);
 
     // Refuses a value that declares dependencies.
@@ -48,8 +51,9 @@ public:
     [[nodiscard]] bool CommitReload(AssetStaging&& staged);
 
 private:
-    [[nodiscard]] bool LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
-                                        std::vector<AssetLease>& out);
+    // The dependency that did not load, or empty when every one did.
+    [[nodiscard]] std::string LoadDependencies(const AssetStaging& staged, AssetSystem& assets,
+                                               std::vector<AssetLease>& out);
     [[nodiscard]] DataAssetHandle Commit(AssetStaging&& staged, std::vector<AssetLease> dependencies);
     [[nodiscard]] bool Reload(AssetStaging&& staged, std::vector<AssetLease> dependencies);
 

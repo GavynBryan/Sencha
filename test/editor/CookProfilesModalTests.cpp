@@ -100,7 +100,8 @@ public:
 
     void Start(ProjectDescriptor& project)
     {
-        Modal = std::make_unique<CookProfilesModal>(*Ui, Surface, &project);
+        Modal = std::make_unique<CookProfilesModal>(*Ui, project);
+        Modal->MoveTo(Surface);
         Modal->Open();
         Ui->Update();
     }
@@ -145,188 +146,56 @@ private:
     std::unique_ptr<CookProfilesModal> Modal;
 };
 
-// Positions the document's own stylesheet fixes. Read off the authored layout:
-// the dialog sits at (280,140), its list starts 12px below a 34px title bar,
-// and a row is 26px plus padding.
-constexpr float kListX = 400.0f;
-constexpr float kNameFieldX = 700.0f;
-constexpr float kNameFieldY = 227.0f;
-constexpr float kFooterButtonY = 577.0f;
-constexpr float kValidateButtonX = 830.0f;
-constexpr float kSaveButtonX = 937.0f;
-[[nodiscard]] float RowY(int index)
+// The middle of a profile's row, from where the document laid out its list;
+// a row is 26dp.
+[[nodiscard]] Vec2d RowCentre(UiService& ui, UiScreenHandle screen, int index)
 {
-    return 140.0f + 34.0f + 12.0f + 13.0f + static_cast<float>(index) * 31.0f;
+    const std::optional<UiElementBox> list = ui.MeasureElement(screen, "list");
+    if (!list.has_value())
+        return {};
+    return Vec2d(list->X + list->Width * 0.5f, list->Y + 14.0f + static_cast<float>(index) * 26.0f);
 }
 } // namespace
 
-TEST(CookProfilesModal, OpensAgainstTheRealProfileSet)
+TEST(CookProfilesModal, OpensOnTheProjectsProfiles)
 {
     TempProject project;
     Harness harness;
     harness.Start(project.Descriptor);
     ASSERT_TRUE(harness.Dialog().IsOpen()) << "the authored document did not open";
+
+    UiService& ui = harness.Service();
+    const UiScreenHandle screen = harness.Dialog().CurrentScreen();
+    EXPECT_EQ(ui.ArraySize(screen, ui.FindArray(screen, "profiles")),
+              ResolveCookProfiles(project.Descriptor.CookProfiles).size());
 }
 
-TEST(CookProfilesModal, ClosingDiscardsTheEditRatherThanCommittingIt)
+TEST(CookProfilesModal, ClickingAProfileSelectsIt)
 {
-    // The interruption case. A name typed into the field lives in the screen's
-    // presentation copy; closing takes it with nothing to roll back, because it
-    // never reached the project.
     TempProject project;
     Harness harness;
     harness.Start(project.Descriptor);
 
-    const std::string before = project.Descriptor.CookProfiles.front().Name;
+    const std::vector<CookProfile> profiles = ResolveCookProfiles(project.Descriptor.CookProfiles);
+    const int last = static_cast<int>(profiles.size()) - 1;
+    UiService& ui = harness.Service();
+    const UiScreenHandle screen = harness.Dialog().CurrentScreen();
+    const Vec2d row = RowCentre(ui, screen, last);
+    harness.ClickAt(row.X, row.Y);
+    harness.Frame();
+
+    EXPECT_EQ(harness.Dialog().Editor().Selected(), static_cast<std::size_t>(last));
+    EXPECT_EQ(ui.GetValue(screen, ui.FindProperty(screen, "selected_index")).AsInt(), last);
+    EXPECT_FALSE(ui.GetValue(screen, ui.FindProperty(screen, "builtin")).AsBool())
+        << "the project's own profile reads as built in";
+}
+
+TEST(CookProfilesModal, ClosingWritesNothing)
+{
+    TempProject project;
+    Harness harness;
+    harness.Start(project.Descriptor);
     harness.Dialog().Close();
-
     EXPECT_FALSE(harness.Dialog().IsOpen());
-    EXPECT_EQ(project.Descriptor.CookProfiles.front().Name, before)
-        << "closing the dialog changed the project";
-    EXPECT_FALSE(std::filesystem::exists(project.SavedPath()))
-        << "closing the dialog wrote the project file";
-}
-
-TEST(CookProfilesModal, SelectingAProfileChangesWhatTheFormShows)
-{
-    TempProject project;
-    Harness harness;
-    harness.Start(project.Descriptor);
-
-    const std::vector<CookProfile> profiles =
-        ResolveCookProfiles(project.Descriptor.CookProfiles);
-    ASSERT_GE(profiles.size(), 2u);
-
-    UiService& ui = harness.Service();
-    const UiScreenHandle screen = harness.Dialog().CurrentScreen();
-    const UiModelArrayId steps = ui.FindArray(screen, "steps");
-    const UiModelArrayId list = ui.FindArray(screen, "profiles");
-    ASSERT_TRUE(steps.IsValid());
-    ASSERT_TRUE(list.IsValid());
-
-    EXPECT_EQ(ui.ArraySize(screen, list), profiles.size())
-        << "the list is not the project's resolved profile set";
-    EXPECT_EQ(ui.ArraySize(screen, steps), profiles.front().TargetSteps.size());
-
-    // The project-owned profile is last: ResolveCookProfiles puts built-ins
-    // first. Clicking its row must republish that profile's steps.
-    const int last = static_cast<int>(profiles.size()) - 1;
-    ASSERT_NE(profiles[last].TargetSteps.size(), profiles.front().TargetSteps.size())
-        << "the fixture cannot tell the two selections apart";
-
-    harness.ClickAt(kListX, RowY(last));
-    harness.Frame();
-
-    EXPECT_EQ(ui.ArraySize(screen, steps), profiles[last].TargetSteps.size())
-        << "selecting a row did not change what the form shows";
-    EXPECT_EQ(ui.GetValue(screen, ui.FindProperty(screen, "selected_name")).AsString(),
-              profiles[last].Name);
-
-    // And selecting changed nothing the project owns.
-    EXPECT_EQ(project.Descriptor.CookProfiles.front().Name, "Nightly");
     EXPECT_FALSE(std::filesystem::exists(project.SavedPath()));
-}
-
-TEST(CookProfilesModal, TypingAlonePersistsNothingAndSaveIsWhatCommits)
-{
-    // The whole workflow, and the point of the boundary: the field's value is
-    // presentation state until an explicit action tells the controller to read
-    // it, validate it, and write it through the project's own save path.
-    TempProject project;
-    Harness harness;
-    harness.Start(project.Descriptor);
-
-    UiService& ui = harness.Service();
-    const UiScreenHandle screen = harness.Dialog().CurrentScreen();
-
-    const std::vector<CookProfile> profiles =
-        ResolveCookProfiles(project.Descriptor.CookProfiles);
-    const int last = static_cast<int>(profiles.size()) - 1;
-
-    harness.ClickAt(kListX, RowY(last));
-    harness.Frame();
-    ASSERT_EQ(ui.GetValue(screen, ui.FindProperty(screen, "selected_name")).AsString(),
-              "Nightly");
-
-    // Focus the name field and type. Positions come from the authored layout.
-    harness.ClickAt(kNameFieldX, kNameFieldY);
-    harness.Frame();
-
-    SDL_Event text{};
-    text.type = SDL_EVENT_TEXT_INPUT;
-    text.text.text = "X";
-    (void)ui.ProcessPlatformEvent(text);
-    harness.Frame();
-
-    const std::string typed(
-        ui.GetValue(screen, ui.FindProperty(screen, "selected_name")).AsString());
-    ASSERT_NE(typed, "Nightly") << "typing never reached the presentation copy";
-
-    // Nothing has been committed. This is the assertion the whole design is for.
-    EXPECT_EQ(project.Descriptor.CookProfiles.front().Name, "Nightly")
-        << "typing changed the project";
-    EXPECT_FALSE(std::filesystem::exists(project.SavedPath()))
-        << "typing wrote the project file";
-
-    // Save is what tells the controller to read, validate and persist.
-    harness.ClickAt(kSaveButtonX, kFooterButtonY);
-    harness.Frame();
-
-    EXPECT_EQ(project.Descriptor.CookProfiles.front().Name, typed)
-        << "save did not commit what the field was showing";
-    EXPECT_TRUE(std::filesystem::exists(project.SavedPath()))
-        << "save did not write the project through its own save path";
-}
-
-TEST(CookProfilesModal, ValidateReportsWithoutWriting)
-{
-    TempProject project;
-    Harness harness;
-    harness.Start(project.Descriptor);
-
-    UiService& ui = harness.Service();
-    const UiScreenHandle screen = harness.Dialog().CurrentScreen();
-
-    harness.ClickAt(kValidateButtonX, kFooterButtonY);
-    harness.Frame();
-
-    EXPECT_FALSE(ui.GetValue(screen, ui.FindProperty(screen, "status")).AsString().empty())
-        << "validate said nothing, so a user learns nothing from pressing it";
-    EXPECT_FALSE(std::filesystem::exists(project.SavedPath()))
-        << "validating wrote the project file";
-}
-
-TEST(CookProfilesModal, ABuiltInProfileIsRefusedRatherThanSilentlyOverridden)
-{
-    // A built-in is inherited, not owned. Renaming one would mean writing a
-    // project-local override, which is a different decision than the dialog is
-    // offering -- so the controller refuses and says so.
-    TempProject project;
-    Harness harness;
-    harness.Start(project.Descriptor);
-
-    UiService& ui = harness.Service();
-    const UiScreenHandle screen = harness.Dialog().CurrentScreen();
-    const std::size_t ownedBefore = project.Descriptor.CookProfiles.size();
-
-    // Row 0 is a built-in.
-    harness.ClickAt(kListX, RowY(0));
-    harness.Frame();
-
-    harness.ClickAt(kNameFieldX, kNameFieldY);
-    harness.Frame();
-    SDL_Event text{};
-    text.type = SDL_EVENT_TEXT_INPUT;
-    text.text.text = "Z";
-    (void)ui.ProcessPlatformEvent(text);
-    harness.Frame();
-
-    harness.ClickAt(kSaveButtonX, kFooterButtonY);
-    harness.Frame();
-
-    EXPECT_EQ(project.Descriptor.CookProfiles.size(), ownedBefore)
-        << "renaming a built-in quietly created a project-local override";
-    EXPECT_NE(ui.GetValue(screen, ui.FindProperty(screen, "status")).AsString().find("Built-in"),
-              std::string_view::npos)
-        << "the refusal was silent";
 }

@@ -63,6 +63,7 @@ public:
     void OnActivate(ToolContext& ctx) override;
     void OnDeactivate(ToolContext& ctx) override;
     void OnCancel(ToolContext& ctx) override;
+    void OnResourceChanged(ToolContext& ctx, AssetType type) override;
     InputConsumed OnClick(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pointer) override;
     InputConsumed OnKeyDown(ToolContext& ctx, const KeyDownEvent& event) override;
     std::unique_ptr<IInteraction> BeginDrag(ToolContext& ctx, EditorViewport& viewport, const PointerEvent& pressPointer) override;
@@ -80,7 +81,10 @@ public:
     // built; a RefreshPending restyles the preview with it.
     [[nodiscard]] bool PendingMaterialStale(const ToolContext& ctx) const;
 
-    void DrawProperties(ToolContext& ctx) override;
+    [[nodiscard]] std::vector<PropertyNode> Parameters(const ToolContext& ctx) const override;
+    PropertyEditResult SetParameter(ToolContext& ctx, std::string_view key, std::string_view value) override;
+    [[nodiscard]] ToolDraft Draft() const override { return HasPending() ? ToolDraft::Ready : ToolDraft::None; }
+    [[nodiscard]] std::string Hint(const ToolContext& ctx) const override;
     [[nodiscard]] Shortcut GetShortcut() const override;
 
     // The primitives as the tool's variants; Creation.ActivePrimitive is the

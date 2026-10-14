@@ -18,7 +18,8 @@ SkinnedMeshAssetLoader::SkinnedMeshAssetLoader(LoggingProvider& logging,
 {
 }
 
-AssetStaging SkinnedMeshAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging SkinnedMeshAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                                const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;
@@ -50,7 +51,7 @@ AssetStaging SkinnedMeshAssetLoader::LoadStaged(const AssetRecord& record, IAsse
     return staging;
 }
 
-SkinnedMeshHandle SkinnedMeshAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
+AssetCommitResult<SkinnedMeshHandle> SkinnedMeshAssetLoader::CommitTyped(AssetStaging&& staged, AssetSystem& assets)
 {
     if (!staged.IsValid())
     {
@@ -82,7 +83,7 @@ SkinnedMeshHandle SkinnedMeshAssetLoader::CommitTyped(AssetStaging&& staged, Ass
     {
         Log.Error("SkinnedMeshAssetLoader: skinned mesh '{}' references skeleton '{}' that "
                   "failed to load", staged.Record.Path, data->Skinning.SkeletonPath);
-        return {};
+        return AssetCommitResult<SkinnedMeshHandle>::DependencyFailed(data->Skinning.SkeletonPath);
     }
     // The load's reference is the one the mesh keeps -- wrap without attaching.
     SkeletonCacheHandle ownedSkeleton(Skeletons, skeleton, SkeletonCacheHandle::NoAttachTag{});

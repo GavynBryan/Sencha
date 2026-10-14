@@ -265,6 +265,63 @@ TEST(UiPackageCook, FontsAndTexturesBecomeResourceTableEntriesNotCopies)
         EXPECT_NE(blob.VirtualName, "icons/health.png");
 }
 
+TEST(UiPackageCook, AnImageDecoratorsFitAndAlignmentAreNotPartOfItsPath)
+{
+    // image( <source> <fit>? <align-x>? <align-y>? ): only the first token names
+    // a file.
+    TempAssetRoot root;
+    root.Write("ui/icons.rml", R"(<rml>
+<head><link type="text/rcss" href="icons.rcss"/></head>
+<body><div class="icon-move"/></body>
+</rml>)");
+    root.Write("ui/icons.rcss", R"(.icon-move { decorator: image(icons/move.svg contain center); })");
+
+    ASSERT_TRUE(Cook(root).Ok);
+    UiPackage package;
+    ASSERT_TRUE(root.ReadPackage(".cooked/ui/icons.rml.sui", package));
+    const bool named = std::any_of(package.Resources.begin(), package.Resources.end(), [](const AssetRef& ref) {
+        return ref.Type == AssetType::Texture && ref.Path == "asset://ui/icons/move.svg";
+    });
+    EXPECT_TRUE(named);
+    for (const AssetRef& ref : package.Resources)
+        EXPECT_EQ(ref.Path.find("contain"), std::string::npos) << ref.Path;
+}
+
+TEST(UiPackageCook, AHostImageIsLeftForTheHostRatherThanPackaged)
+{
+    // `host:` names pixels the host supplies at draw time -- a viewport, a
+    // thumbnail. There is nothing to cook, and a resource entry for it would be
+    // an asset that can never resolve.
+    TempAssetRoot root;
+    root.Write("ui/view.rml", R"(<rml>
+<head><link type="text/rcss" href="view.rcss"/></head>
+<body><img src="host:viewport"/></body>
+</rml>)");
+    root.Write("ui/view.rcss", R"(#frame { decorator: image(host:preview); })");
+
+    ASSERT_TRUE(Cook(root).Ok);
+    UiPackage package;
+    ASSERT_TRUE(root.ReadPackage(".cooked/ui/view.rml.sui", package));
+    for (const AssetRef& ref : package.Resources)
+        EXPECT_EQ(ref.Path.find("host:"), std::string::npos) << ref.Path;
+}
+
+TEST(UiPackageCook, AnImageWhoseSourceIsBoundIsNotMistakenForALiteralOne)
+{
+    // data-attr-src ends in "src"; the expression it holds is evaluated at
+    // load, and packaging it as a path would be an asset that never resolves.
+    TempAssetRoot root;
+    root.Write("ui/views.rml", R"(<rml>
+<body data-model="views"><img data-for="tile : tiles" data-attr-src="'host:' + tile.key"/></body>
+</rml>)");
+
+    ASSERT_TRUE(Cook(root).Ok);
+    UiPackage package;
+    ASSERT_TRUE(root.ReadPackage(".cooked/ui/views.rml.sui", package));
+    for (const AssetRef& ref : package.Resources)
+        EXPECT_EQ(ref.Path.find("tile.key"), std::string::npos) << ref.Path;
+}
+
 TEST(UiPackageCook, ConstructsOutsideTheSupportedProfileAreRecordedWithTheirSource)
 {
     TempAssetRoot root;
@@ -313,6 +370,55 @@ TEST(UiPackageCook, ACommentedOutImportDoesNotPullAFileIntoThePackage)
     UiPackage package;
     ASSERT_TRUE(root.ReadPackage(".cooked/ui/hud.rml.sui", package));
     EXPECT_EQ(package.Blobs.size(), 2u);
+}
+
+namespace
+{
+std::string RootText(const UiPackage& package)
+{
+    const UiPackageBlob* root = package.FindBlob(package.RootDocumentName);
+    return root != nullptr ? std::string(reinterpret_cast<const char*>(root->Bytes.data()), root->Bytes.size())
+                           : std::string{};
+}
+} // namespace
+
+TEST(UiPackageCook, AnIncludedPartStandsInItsPlaceWithItsNamesFilledIn)
+{
+    TempAssetRoot root;
+    root.Write("ui/sheets.rml", R"(<rml><body><div id="a"><include src="parts/row.rmlpart" sheet="tool"/></div>)"
+                                R"(<div id="b"><include src="parts/row.rmlpart" sheet="selection"/></div></body></rml>)");
+    root.Write("ui/parts/row.rmlpart", R"(<span data-for="row : ${sheet}_rows">${sheet}</span><include src="mark.rmlpart"/>)");
+    root.Write("ui/parts/mark.rmlpart", "<i/>");
+
+    ASSERT_TRUE(Cook(root).Ok);
+    UiPackage package;
+    ASSERT_TRUE(root.ReadPackage(".cooked/ui/sheets.rml.sui", package));
+    const std::string text = RootText(package);
+    EXPECT_NE(text.find(R"(data-for="row : tool_rows">tool</span><i/>)"), std::string::npos) << text;
+    EXPECT_NE(text.find(R"(data-for="row : selection_rows">selection</span><i/>)"), std::string::npos) << text;
+    EXPECT_EQ(text.find("<include"), std::string::npos) << "the document engine never sees an include";
+
+    // A part is a source of the document: editing it recooks the document.
+    EXPECT_EQ(Cook(root).Stats.Imported, 0u);
+    root.Write("ui/parts/mark.rmlpart", "<b/>");
+    EXPECT_EQ(Cook(root).Stats.Imported, 1u);
+}
+
+TEST(UiPackageCook, AnIncludeThatCannotBeFilledIsRefused)
+{
+    TempAssetRoot missing;
+    missing.Write("ui/a.rml", R"(<rml><body><include src="gone.rmlpart"/></body></rml>)");
+    EXPECT_FALSE(Cook(missing).Ok);
+
+    TempAssetRoot unnamed;
+    unnamed.Write("ui/a.rml", R"(<rml><body><include src="part.rmlpart"/></body></rml>)");
+    unnamed.Write("ui/part.rmlpart", "<span>${sheet}</span>");
+    EXPECT_FALSE(Cook(unnamed).Ok) << "a name the include does not give is an error, not text";
+
+    TempAssetRoot cycle;
+    cycle.Write("ui/a.rml", R"(<rml><body><include src="loop.rmlpart"/></body></rml>)");
+    cycle.Write("ui/loop.rmlpart", R"(<include src="loop.rmlpart"/>)");
+    EXPECT_FALSE(Cook(cycle).Ok);
 }
 
 #endif // SENCHA_ENABLE_COOK

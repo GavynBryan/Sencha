@@ -8,7 +8,7 @@ file(GLOB_RECURSE LEVEL_HEADERS CONFIGURE_DEPENDS
 
 # The editor splits into an authoring library and the shell that hosts it. The
 # authoring half (document, brush kernel, mesh edit, workspace, edit modes,
-# viewport math, cook) touches neither ImGui's runtime nor Vulkan, so the
+# viewport math, cook) touches neither the UI runtime nor Vulkan, so the
 # headless test targets link it instead of each re-listing its sources; the
 # shell half (app entry, panels, render passes, SDL and window plumbing) is what
 # needs a GPU and a window. Anything under these paths is shell.
@@ -30,24 +30,26 @@ endforeach()
 # These render sources carry no GPU dependency and the authoring layer uses
 # them: the light gather feeds the cook, the preview buffer backs tool
 # previews, and the brush bake cache and draw set (residency and retention
-# rules) are tested headlessly through injected GPU callbacks.
+# rules) are tested headlessly through injected GPU callbacks. The scene stage
+# and the placement ghost (a placement staged exactly as a level places it)
+# build their queues on the CPU through the queue builder, and are tested
+# headlessly without an asset environment.
 list(APPEND LEVEL_AUTHORING_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/EditorLightGather.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/PreviewBuffer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushBakeCache.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushDrawSet.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushFaceHighlight.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/SceneRenderQueueBuilder.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/SceneSourceStage.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/PlacementGhost.cpp"
 )
 
 # An authored workflow's controller is not shell. It presents through a document
-# rather than drawing one, so it has no GPU, window or ImGui dependency and is
-# testable headlessly -- which is most of the point of moving a workflow to
-# authored UI in the first place.
+# rather than drawing one, so it has no GPU or window dependency and is
+# testable headlessly.
 list(APPEND LEVEL_AUTHORING_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/AssetFieldCandidates.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/CookProfilesModal.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/InspectorSurface.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/RuntimeFieldText.cpp"
 )
 
 set(LEVEL_SHELL_SOURCES ${LEVEL_SOURCES})
@@ -61,8 +63,6 @@ set(LEVEL_SHADERS
     "editor_line.vert.glsl|vert|kEditorLineVertSpv"
     "editor_line.frag.glsl|frag|kEditorLineFragSpv"
     "editor_line_instanced.vert.glsl|vert|kEditorLineInstancedVertSpv"
-    "editor_wideline.vert.glsl|vert|kEditorWideLineVertSpv"
-    "editor_wideline.frag.glsl|frag|kEditorWideLineFragSpv"
     "fullscreen.vert.glsl|vert|kFullscreenVertSpv"
     "bloom_brightpass.frag.glsl|frag|kBloomBrightpassFragSpv"
     "bloom_blur.frag.glsl|frag|kBloomBlurFragSpv"

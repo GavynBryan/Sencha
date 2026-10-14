@@ -88,7 +88,7 @@ public:
         {
             const std::string_view path = context.Assets->GetPathForLease(
                 AssetType::Data, tuning->Profile.Value.ToToken());
-            if (!WriteSceneAssetRef(archive, kProfileKey, path, context))
+            if (!WriteSceneAssetRef(archive, kProfileKey, AssetType::Data, path, context))
                 return false;
         }
 

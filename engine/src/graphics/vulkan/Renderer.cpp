@@ -142,6 +142,8 @@ Renderer::Renderer(LoggingProvider& logging,
     PresentationTarget& primary = *frames.FindPresentation(frames.PrimaryPresentation());
     primary.SwapchainFeatureServices = MakeSwapchainServices(primary);
     ImageCapture.Setup(Services);
+    if (UiTextures.Setup(Services))
+        Services.UiTextures = &UiTextures;
     Valid = true;
 }
 
@@ -166,6 +168,8 @@ Renderer::~Renderer()
         if (*it) (*it)->Teardown();
     }
     OwnedFeatures.clear();
+    // After the features: a pass resolves through it until its own teardown.
+    UiTextures.Teardown();
     RegisteredOrder.clear();
     for (auto& bucket : PhaseBuckets)
     {

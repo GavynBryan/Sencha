@@ -15,6 +15,10 @@
 //=============================================================================
 struct MaterialDescription
 {
+    // The material's own id, as its file states it; invalid when it states none
+    // (docs/assets/pipeline.md, Decision A).
+    AssetId Id{};
+
     MaterialShading Shading = MaterialShading::StandardLit;
 
     Vec4 BaseColorFactor = Vec4(1.0f, 1.0f, 1.0f, 1.0f);

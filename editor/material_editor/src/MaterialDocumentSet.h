@@ -57,6 +57,7 @@ public:
     [[nodiscard]] bool Close(std::size_t index, DirtyDisposition disposition, std::string& error);
 
     [[nodiscard]] MaterialEditTab* Active();
+    [[nodiscard]] const MaterialEditTab* Active() const;
     [[nodiscard]] std::size_t ActiveIndex() const { return ActiveTab; }
     void SetActive(std::size_t index);
 
@@ -75,6 +76,8 @@ public:
     void CancelDocumentEdits() override {}
     void DiscardDocument(std::string_view key) override;
     [[nodiscard]] ExternalChange FileChangedOnDisk(const std::filesystem::path& file) override;
+    [[nodiscard]] bool HoldsFile(const std::filesystem::path& file) const override;
+    void FileMoved(const MovedFile& moved) override;
 
 private:
     [[nodiscard]] std::size_t IndexOf(std::string_view virtualPath) const;

@@ -32,18 +32,15 @@ bool InputRouter::IsPointerEvent(const InputEvent& event)
     return std::holds_alternative<PointerDownEvent>(event)
         || std::holds_alternative<PointerUpEvent>(event)
         || std::holds_alternative<PointerMoveEvent>(event)
+        || std::holds_alternative<PointerHandedEvent>(event)
         || std::holds_alternative<WheelEvent>(event);
 }
 
 void InputRouter::AcquireFor(std::size_t index, PointerCaptureKind kind, ViewportId origin)
 {
-    const bool changed =
-        !CapturedIndex.has_value() || *CapturedIndex != index || CapturedKind != kind;
     CapturedIndex = index;
     CapturedKind = kind;
     CaptureOrigin = origin;
-    if (changed && CaptureChanged)
-        CaptureChanged(kind);
 }
 
 void InputRouter::ReleaseFor(std::size_t index)
@@ -51,8 +48,6 @@ void InputRouter::ReleaseFor(std::size_t index)
     if (!CapturedIndex.has_value() || *CapturedIndex != index)
         return;
     CapturedIndex.reset();
-    if (CaptureChanged)
-        CaptureChanged(std::nullopt);
 }
 
 InputConsumed InputRouter::Route(const InputEvent& event)
@@ -87,9 +82,4 @@ InputConsumed InputRouter::Route(const InputEvent& event)
             return InputConsumed::Yes;
     }
     return InputConsumed::No;
-}
-
-void InputRouter::SetCaptureChanged(std::function<void(std::optional<PointerCaptureKind>)> callback)
-{
-    CaptureChanged = std::move(callback);
 }

@@ -8,6 +8,7 @@
 #include <jobs/AsyncTaskQueue.h>
 
 #include <cassert>
+#include <format>
 #include <utility>
 
 // -- AssetPreload ---------------------------------------------------------------
@@ -189,10 +190,10 @@ void AssetPreloader::SubmitStagedLoad(const AssetRecord& record)
 
     Tasks.Submit<AssetStaging>(
         // Work, task thread: pure decode against the byte seam. The record
-        // is captured by value — plain data, no shared state.
-        [stager, source, record]() -> AssetStaging
+        // and the id snapshot are captured by value -- neither ever changes.
+        [stager, source, record, current = Registry.PathsById()]() -> AssetStaging
         {
-            return stager->LoadStaged(record, *source);
+            return stager->LoadStaged(record, *source, *current);
         },
         // Commit, owner thread at the drain point.
         [this, type = record.Type, path = record.Path](AssetStaging staging)
@@ -207,8 +208,7 @@ void AssetPreloader::OnAssetStaged(AssetType type,
 {
     if (!staging.IsValid())
     {
-        Log.Error("AssetPreloader: '{}' failed to stage: {}", path, staging.Error);
-        CompleteLoad(type, path, /*failed*/ true);
+        FailLoad(type, path, std::move(staging.Error));
         return;
     }
 
@@ -217,27 +217,34 @@ void AssetPreloader::OnAssetStaged(AssetType type,
     std::vector<std::string> edges;
     std::unordered_set<std::string> unique;
 
-    for (const AssetRef& dependency : staging.Dependencies)
+    for (const AssetRef& declared : staging.Dependencies)
     {
-        if (!dependency.IsValid() || !unique.insert(dependency.Path).second)
+        if (!declared.IsValid())
             continue;
 
-        const AssetRecord* record = Registry.FindByPath(dependency.Path);
-        if (record == nullptr || record->Type != dependency.Type)
+        const AssetRecord* record = Registry.Find(declared);
+        if (record == nullptr || record->Type != declared.Type)
         {
-            Log.Error("AssetPreloader: '{}' declares unresolvable dependency '{}'",
-                      path, dependency.Path);
-            CompleteLoad(type, path, /*failed*/ true);
+            const std::string reason =
+                std::format("'{}' declares '{}', which is in no mounted content root", path, declared.Path);
+            if (AssetLease standIn = Assets.FailLoad(declared.Path, declared.Type, reason); standIn.IsValid())
+            {
+                residentDependencies.push_back(std::move(standIn));
+                continue;
+            }
+            FailLoad(type, path, reason);
             return;
         }
+        // Where the asset is now, which a reference by id may not have said.
+        const AssetRef dependency{ declared.Type, record->Path, record->Id };
+        if (!unique.insert(dependency.Path).second)
+            continue;
 
         // Checked before the edge is recorded: a cycle would otherwise leave
         // both payloads waiting on each other forever.
         if (dependency.Path == path || WouldCreateCycle(path, dependency.Path))
         {
-            Log.Error("AssetPreloader: dependency cycle between '{}' and '{}'",
-                      path, dependency.Path);
-            CompleteLoad(type, path, /*failed*/ true);
+            FailLoad(type, path, std::format("dependency cycle between '{}' and '{}'", path, dependency.Path));
             return;
         }
 
@@ -290,8 +297,7 @@ void AssetPreloader::OnDependencyFinished(const std::string& parentPath,
 
     if (pending.DependencyFailed)
     {
-        const AssetType type = pending.Type;
-        CompleteLoad(type, parentPath, /*failed*/ true);
+        FailLoad(pending.Type, parentPath, std::format("a dependency of '{}' did not load", parentPath));
         return;
     }
 
@@ -310,14 +316,23 @@ void AssetPreloader::CommitReady(const std::string& path)
     PendingCommits.erase(it);
     DependencyEdges.erase(path);
 
-    const AssetLease created = Assets.Commit(std::move(pending.Staging));
-    const bool failed = !created.IsValid();
-    if (failed)
-        Log.Error("AssetPreloader: '{}' failed to commit", path);
-
+    const AssetCommitOutcome created = Assets.Commit(std::move(pending.Staging));
     // The dependency leases outlive the commit that needed them and release
     // here; the committed asset holds its own references by now.
-    CompleteLoad(pending.Type, path, failed);
+    if (!created.IsValid())
+    {
+        FailLoad(pending.Type, path, AssetSystem::CommitFailureReason(path, created));
+        return;
+    }
+    CompleteLoad(pending.Type, path, /*failed*/ false);
+}
+
+void AssetPreloader::FailLoad(AssetType type, const std::string& path, std::string reason)
+{
+    // Held across the deliveries, so each waiter's reference is taken while
+    // the stand-in is still there to take.
+    const AssetLease standIn = Assets.FailLoad(path, type, std::move(reason));
+    CompleteLoad(type, path, /*failed*/ !standIn.IsValid());
 }
 
 void AssetPreloader::CompleteLoad(AssetType type, const std::string& path, bool failed)

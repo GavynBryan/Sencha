@@ -1,6 +1,6 @@
 #pragma once
 
-#include <assets/cook/AssetImporter.h> // kImportSettingsSuffix
+#include <core/assets/AssetIdentity.h> // kAssetSidecarSuffix
 #include <assets/font/FontFace.h>
 
 #include <cstddef>

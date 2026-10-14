@@ -20,6 +20,13 @@
 // instead of what the author hopes it produced.
 //=============================================================================
 
+struct AssetRecord;
+
+// A texture an author made, as against the cooked artifact the registry also
+// holds for it (asset://...png.stex): a material names the source, which the
+// asset system resolves to its cook.
+[[nodiscard]] bool IsSourceTexture(const AssetRecord& record);
+
 struct TextureSourceLocation
 {
     std::string Root;    // the content root that owns the source

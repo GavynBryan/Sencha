@@ -139,6 +139,8 @@ public:
     AnimationLabSettings Settings;
     std::vector<AnimationLabInjection> Injections;
     AnimTick Tick = 300;
+    // The tick both machines are shown on.
+    AnimTick Inspected = 0;
     std::unique_ptr<AnimationSessionLab> Session;
 
 private:

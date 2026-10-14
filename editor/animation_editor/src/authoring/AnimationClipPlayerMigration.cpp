@@ -1,6 +1,8 @@
 #include "authoring/AnimationClipPlayerMigration.h"
 
+#include <core/assets/AssetPath.h>
 #include <anim/AnimationClipCache.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/json/JsonParser.h>
 
 #include <algorithm>
@@ -13,6 +15,14 @@
 namespace
 {
     constexpr std::string_view kPlayerKey = "AnimationClipPlayer";
+
+    // The clip a player names, in either reference form.
+    std::string ClipOf(const JsonValue& player)
+    {
+        const JsonValue* clip = player.Find("clip");
+        const std::optional<AssetRef> ref = clip != nullptr ? AssetRefFromJson(*clip) : std::nullopt;
+        return ref.has_value() ? ref->Path : std::string();
+    }
 
     std::optional<JsonValue> ReadJson(const std::filesystem::path& file)
     {
@@ -84,8 +94,7 @@ std::vector<AnimationClipPlayerUse> FindAnimationClipPlayers(const std::filesyst
             use.Scene = relative;
             if (const JsonValue* id = entity.Find("id"); id != nullptr && id->IsString())
                 use.Entity = id->AsString();
-            if (const JsonValue* clip = player->Find("clip"); clip != nullptr && clip->IsString())
-                use.Clip = clip->AsString();
+            use.Clip = ClipOf(*player);
             use.TimeSeconds = NumberOr(*player, "time_seconds", 0.0);
             use.Rate = NumberOr(*player, "rate", 1.0);
             if (const JsonValue* loop = player->Find("loop"); loop != nullptr && loop->IsBool())
@@ -146,15 +155,15 @@ AnimationClipPlayerMigrationPlan PlanAnimationClipPlayerMigration(const std::fil
                                                                   { "behavior", JsonValue(tag) },
                                                                   { "clip", JsonValue(use.Clip) } }) }) } })) });
         JsonValue::Object rig{
-            { "behaviors", JsonValue(JsonValue::Array{ JsonValue("asset://" + stem + ".behaviors.sdata") }) },
-            { "slot_maps", JsonValue(JsonValue::Array{ JsonValue("asset://" + stem + ".slots.sdata") }) },
+            { "behaviors", JsonValue(JsonValue::Array{ JsonValue(AssetPathOf(stem + ".behaviors.sdata")) }) },
+            { "slot_maps", JsonValue(JsonValue::Array{ JsonValue(AssetPathOf(stem + ".slots.sdata")) }) },
             { "layers", JsonValue(JsonValue::Array{ JsonValue(JsonValue::Object{
                             { "name", JsonValue("anim.layer.base") }, { "idle", JsonValue(tag) } }) }) },
         };
         if (!clip->SkeletonPath.empty())
             rig.emplace(rig.begin(), "skeleton", JsonValue(clip->SkeletonPath));
         plan.Documents.push_back({ stem + ".rig.sdata", Document("animation.rig", JsonValue(std::move(rig))) });
-        rigs.emplace(key, "asset://" + stem + ".rig.sdata");
+        rigs.emplace(key, AssetPathOf(stem + ".rig.sdata"));
     }
     JsonValue::Array declared;
     for (const std::string& tag : tags)
@@ -182,9 +191,7 @@ AnimationClipPlayerMigrationPlan PlanAnimationClipPlayerMigration(const std::fil
             const JsonValue* player = components != nullptr ? components->Find(kPlayerKey) : nullptr;
             if (player == nullptr || !player->IsObject())
                 continue;
-            const Settings key{ player->Find("clip") != nullptr && player->Find("clip")->IsString()
-                                    ? player->Find("clip")->AsString()
-                                    : std::string(),
+            const Settings key{ ClipOf(*player),
                                 NumberOr(*player, "time_seconds", 0.0), NumberOr(*player, "rate", 1.0),
                                 player->Find("loop") == nullptr || !player->Find("loop")->IsBool()
                                     || player->Find("loop")->AsBool() };

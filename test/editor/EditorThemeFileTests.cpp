@@ -3,9 +3,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <utility>
 
 namespace
 {
@@ -41,8 +43,7 @@ TEST(EditorThemeFile, ParsesHexAsSrgbAndLinearizes)
 
 TEST(EditorThemeFile, MissingKeysKeepDefaultsAndKnownKeysApply)
 {
-    const ImVec4 defaultAccent = EditorUi::Accent;
-    const ImVec4 defaultBorder = EditorUi::Border;
+    const Vec4 defaultBorder = EditorUi::Border;
 
     const auto path = WriteTempTheme("sencha_theme_test.json",
                                      R"({ "colors": { "accent": "#FFFFFF" } })");
@@ -50,12 +51,12 @@ TEST(EditorThemeFile, MissingKeysKeepDefaultsAndKnownKeysApply)
     ASSERT_TRUE(LoadEditorTheme(path, &error)) << error;
     EXPECT_TRUE(error.empty()) << error;
 
-    EXPECT_NEAR(EditorUi::Accent.x, 1.0f, 1e-4f);
-    EXPECT_NEAR(EditorUi::Accent.y, 1.0f, 1e-4f);
+    EXPECT_NEAR(EditorUi::Accent.X, 1.0f, 1e-4f);
+    EXPECT_NEAR(EditorUi::Accent.Y, 1.0f, 1e-4f);
     // Untouched entry keeps the built-in default.
-    EXPECT_FLOAT_EQ(EditorUi::Border.x, defaultBorder.x);
+    EXPECT_FLOAT_EQ(EditorUi::Border.X, defaultBorder.X);
 
-    EditorUi::Accent = defaultAccent; // restore for other tests
+    ResetEditorTheme();
     std::filesystem::remove(path);
 }
 
@@ -78,123 +79,55 @@ TEST(EditorThemeFile, MalformedFileFails)
     std::filesystem::remove(path);
 }
 
-TEST(EditorThemeFile, MetricsApplyAndProblemsWarn)
+TEST(EditorThemeFile, AFileWithoutColorsIsNotATheme)
 {
-    const float defaultChamfer = EditorUi::Metrics.Chamfer;
-    ASSERT_NE(defaultChamfer, 9.5f);
+    const auto path = WriteTempTheme("sencha_theme_no_colors_test.json", R"({ "metrics": { "chamfer": 4 } })");
+    std::string error;
+    EXPECT_FALSE(LoadEditorTheme(path, &error));
+    EXPECT_NE(error.find("colors"), std::string::npos) << error;
+    std::filesystem::remove(path);
+}
 
+TEST(EditorThemeFile, RetiredSectionsLoadWithoutProblems)
+{
     const auto path = WriteTempTheme(
-        "sencha_theme_metrics_test.json",
-        R"({ "colors": {}, "metrics": { "chamfer": 9.5, "rail_height": "six", "not_a_metric": 1 } })");
-    std::string error;
-    ASSERT_TRUE(LoadEditorTheme(path, &error));
-    EXPECT_FLOAT_EQ(EditorUi::Metrics.Chamfer, 9.5f);
-    // A bad value and an unknown key each warn, and neither aborts the load.
-    EXPECT_NE(error.find("rail_height"), std::string::npos) << error;
-    EXPECT_NE(error.find("not_a_metric"), std::string::npos) << error;
-
-    ResetEditorTheme();
-    EXPECT_FLOAT_EQ(EditorUi::Metrics.Chamfer, defaultChamfer);
-    std::filesystem::remove(path);
-}
-
-TEST(EditorThemeFile, RetiredMetricKeysLoadWithoutProblems)
-{
-    // A theme saved before a metric was retired is still a valid theme: the
-    // key is dropped in silence, the rest of the file applies, and only a key
-    // the editor never had is worth warning about.
-    const auto path = WriteTempTheme(
-        "sencha_theme_retired_metric_test.json",
-        R"({ "metrics": { "caption_pad": 8, "screw_radius": 4 } })");
+        "sencha_theme_retired_test.json",
+        R"({ "colors": { "accent": "#FFFFFF" }, "metrics": { "chamfer": 4 }, "decor": { "hierarchy_empty": "VOID" } })");
     std::string error;
     ASSERT_TRUE(LoadEditorTheme(path, &error)) << error;
     EXPECT_TRUE(error.empty()) << error;
-    EXPECT_FLOAT_EQ(EditorUi::Metrics.ScrewRadius, 4.0f);
-    ResetEditorTheme();
-    std::filesystem::remove(path);
-
-    const auto unknown = WriteTempTheme("sencha_theme_unknown_metric_test.json",
-                                        R"({ "metrics": { "not_a_metric": 8 } })");
-    error.clear();
-    ASSERT_TRUE(LoadEditorTheme(unknown, &error));
-    EXPECT_NE(error.find("not_a_metric"), std::string::npos) << error;
-    ResetEditorTheme();
-    std::filesystem::remove(unknown);
-}
-
-TEST(EditorThemeFile, MetricsOnlyFileLoads)
-{
-    const auto path = WriteTempTheme("sencha_theme_metrics_only_test.json",
-                                     R"({ "metrics": { "screw_radius": 4 } })");
-    std::string error;
-    ASSERT_TRUE(LoadEditorTheme(path, &error)) << error;
-    EXPECT_TRUE(error.empty()) << error;
-    EXPECT_FLOAT_EQ(EditorUi::Metrics.ScrewRadius, 4.0f);
-
+    EXPECT_NEAR(EditorUi::Accent.X, 1.0f, 1e-4f);
     ResetEditorTheme();
     std::filesystem::remove(path);
 }
 
-TEST(EditorThemeFile, ColorsOnlyFileRevertsMetricsToDefaults)
+TEST(EditorThemeFile, ALoadStartsFromTheBuiltInPalette)
 {
-    // A theme describes the whole look: a file with no metrics section leaves
-    // the built-in metrics, not the previous theme's.
-    const float defaultChamfer = EditorUi::Metrics.Chamfer;
-    EditorUi::Metrics.Chamfer = 42.0f;
-
-    const auto path = WriteTempTheme("sencha_theme_colors_only_test.json",
-                                     R"({ "colors": { "accent": "#FFFFFF" } })");
-    std::string error;
-    ASSERT_TRUE(LoadEditorTheme(path, &error)) << error;
-    EXPECT_FLOAT_EQ(EditorUi::Metrics.Chamfer, defaultChamfer);
-
+    const Vec4 builtInBorder = EditorUi::Border;
+    const auto first = WriteTempTheme("sencha_theme_first_test.json", R"({ "colors": { "border": "#FFFFFF" } })");
+    const auto second = WriteTempTheme("sencha_theme_second_test.json", R"({ "colors": { "accent": "#FFFFFF" } })");
+    ASSERT_TRUE(LoadEditorTheme(first, nullptr));
+    ASSERT_TRUE(LoadEditorTheme(second, nullptr));
+    EXPECT_FLOAT_EQ(EditorUi::Border.X, builtInBorder.X);
     ResetEditorTheme();
-    std::filesystem::remove(path);
+    std::filesystem::remove(first);
+    std::filesystem::remove(second);
 }
 
-TEST(EditorThemeFile, NonObjectMetricsWarnsButLoads)
+TEST(EditorThemeFile, HexRoundTripsThroughTheLinearPalette)
 {
-    const auto path = WriteTempTheme("sencha_theme_metrics_shape_test.json",
-                                     R"({ "colors": { "accent": "#FFFFFF" }, "metrics": 5 })");
-    std::string error;
-    EXPECT_TRUE(LoadEditorTheme(path, &error));
-    EXPECT_NE(error.find("metrics"), std::string::npos) << error;
-
-    ResetEditorTheme();
-    std::filesystem::remove(path);
-}
-
-TEST(EditorThemeFile, SaveRoundTripsColorsAndMetrics)
-{
-    const auto edited = WriteTempTheme(
-        "sencha_theme_roundtrip_src_test.json",
-        R"({ "colors": { "accent": "#FF0080", "selected_outline": "#FFB347" }, "metrics": { "rail_height": 11, "glow_alpha": 0.5 } })");
-    std::string error;
-    ASSERT_TRUE(LoadEditorTheme(edited, &error)) << error;
-
-    const auto saved = std::filesystem::temp_directory_path() / "sencha_theme_roundtrip_out_test.json";
-    ASSERT_TRUE(SaveEditorTheme(saved, &error)) << error;
-
-    ResetEditorTheme();
-    EXPECT_NE(EditorUi::Metrics.RailHeight, 11.0f);
-
-    ASSERT_TRUE(LoadEditorTheme(saved, &error)) << error;
-    EXPECT_TRUE(error.empty()) << error;
-    EXPECT_FLOAT_EQ(EditorUi::Metrics.RailHeight, 11.0f);
-    EXPECT_FLOAT_EQ(EditorUi::Metrics.GlowAlpha, 0.5f);
-    EXPECT_NEAR(EditorUi::Accent.x, 1.0f, 1e-4f);
-    EXPECT_NEAR(EditorUi::Accent.z, 0.2158f, 1e-3f);
-    EXPECT_NEAR(EditorUi::SelectedOutline.x, 1.0f, 1e-4f);
-
-    ResetEditorTheme();
-    std::filesystem::remove(edited);
-    std::filesystem::remove(saved);
+    float r = 0.0f;
+    float g = 0.0f;
+    float b = 0.0f;
+    float a = 0.0f;
+    ASSERT_TRUE(ParseThemeColor("#FF008040", r, g, b, a));
+    EXPECT_EQ(ThemeColorHex(Vec4(r, g, b, a)), "#FF008040");
 }
 
 TEST(EditorThemeFile, BundledThemesLoadWithoutProblems)
 {
-    // Every theme shipped under editor/themes names only keys the palette and
-    // metrics tables know, so a bundled theme never warns on selection.
+    // Every theme shipped under editor/themes names only palette keys, so a
+    // bundled theme never warns on selection.
     for (const char* name : { "workstation.json", "dark_teal.json", "Shudei.json" })
     {
         const std::filesystem::path path = std::filesystem::path(SENCHA_EDITOR_THEME_DIR) / name;
@@ -205,33 +138,37 @@ TEST(EditorThemeFile, BundledThemesLoadWithoutProblems)
     ResetEditorTheme();
 }
 
-TEST(EditorThemeFile, DecorStringsLoadSilenceAndRoundTrip)
+namespace
 {
-    const auto path = WriteTempTheme(
-        "sencha_theme_decor_test.json",
-        R"({ "decor": { "hierarchy_empty": "VOID", "material_browser_empty": "", "scene_browser_empty": "ONE\nTWO", "not_a_slot": "x", "tool_properties_idle": 3 } })");
-    std::string error;
-    ASSERT_TRUE(LoadEditorTheme(path, &error));
-    EXPECT_EQ(EditorUi::Decor.HierarchyEmpty, "VOID");
-    EXPECT_TRUE(EditorUi::Decor.MaterialBrowserEmpty.empty());
-    EXPECT_EQ(EditorUi::Decor.SceneBrowserEmpty, "ONE\nTWO");
-    EXPECT_NE(error.find("not_a_slot"), std::string::npos) << error;
-    EXPECT_NE(error.find("tool_properties_idle"), std::string::npos) << error;
-    // Untouched slots keep the built-in copy.
-    EXPECT_FALSE(EditorUi::Decor.ToolPropertiesIdle.empty());
+float Luminance(const Vec4& linear)
+{
+    return 0.2126f * linear.X + 0.7152f * linear.Y + 0.0722f * linear.Z;
+}
 
-    const auto saved = std::filesystem::temp_directory_path() / "sencha_theme_decor_out_test.json";
-    ASSERT_TRUE(SaveEditorTheme(saved, &error)) << error;
-    ResetEditorTheme();
-    EXPECT_EQ(EditorUi::Decor.HierarchyEmpty, EditorUi::DecorStrings{}.HierarchyEmpty);
-    error.clear();
-    ASSERT_TRUE(LoadEditorTheme(saved, &error)) << error;
-    EXPECT_TRUE(error.empty()) << error;
-    EXPECT_EQ(EditorUi::Decor.HierarchyEmpty, "VOID");
-    EXPECT_EQ(EditorUi::Decor.SceneBrowserEmpty, "ONE\nTWO");
-    EXPECT_TRUE(EditorUi::Decor.MaterialBrowserEmpty.empty());
+float Contrast(const Vec4& a, const Vec4& b)
+{
+    const float la = Luminance(a);
+    const float lb = Luminance(b);
+    return (std::max(la, lb) + 0.05f) / (std::min(la, lb) + 0.05f);
+}
+} // namespace
 
+TEST(EditorThemeFile, EveryBundledThemesTextReadsOnEverySurfaceTextSitsOn)
+{
+    // 4.5:1 is the floor for small text; the editor's text is all small.
+    for (const char* name : { "workstation.json", "dark_teal.json", "Shudei.json" })
+    {
+        const std::filesystem::path path = std::filesystem::path(SENCHA_EDITOR_THEME_DIR) / name;
+        ASSERT_TRUE(LoadEditorTheme(path, nullptr)) << name;
+        const std::pair<const char*, Vec4> surfaces[] = {
+            { "window", EditorUi::WindowBg }, { "panel", EditorUi::PanelBg },   { "header", EditorUi::HeaderBg },
+            { "button", EditorUi::ButtonBg }, { "plate", EditorUi::MetalBase },
+        };
+        for (const auto& [surface, color] : surfaces)
+        {
+            EXPECT_GE(Contrast(EditorUi::TextPrimary, color), 4.5f) << name << ": primary text on " << surface;
+            EXPECT_GE(Contrast(EditorUi::TextDim, color), 4.5f) << name << ": secondary text on " << surface;
+        }
+    }
     ResetEditorTheme();
-    std::filesystem::remove(path);
-    std::filesystem::remove(saved);
 }

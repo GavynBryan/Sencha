@@ -7,6 +7,7 @@
 #include "brush/BrushMeshStore.h"
 #include "brush/BrushRecord.h"
 #include "document/BrushComponents.h"
+#include "selection/SelectableRef.h"
 
 #include <core/identity/Id.h>
 #include <ecs/EntityId.h>
@@ -155,6 +156,10 @@ public:
     // the runtime allocator namespace. The returned id is reserved immediately,
     // so a discarded mint is retired for the life of the document.
     [[nodiscard]] PersistentEntityId MintPersistentId();
+    // The id an entity is known by across rebuilds and reloads; invalid without one.
+    [[nodiscard]] PersistentEntityId PersistentIdOf(EntityId entity) const;
+    // The entity known by `id` now; invalid when none is.
+    [[nodiscard]] EntityId EntityWithPersistentId(PersistentEntityId id) const;
     // Establishes the document identity invariant on one entity: it keeps the
     // id it carries unless that id is unset, in the runtime namespace, or
     // already held by another tracked entity (a duplicate or copy-paste of a
@@ -183,6 +188,8 @@ public:
     // entity such a read can only be about.
     [[nodiscard]] const Transform3f* TryGetWorldTransform(EntityId entity) const;
     [[nodiscard]] const BrushComponent* TryGetBrush(EntityId entity) const;
+    // A live or baked brush: something the pointer can hit by its shape.
+    [[nodiscard]] bool HasBrushBody(EntityId entity) const { return BrushRecordIdOf(entity).IsValid(); }
     [[nodiscard]] const BrushMesh* TryGetBrushMesh(EntityId entity) const;
     [[nodiscard]] const BrushModifierStack* TryGetBrushModifiers(EntityId entity) const;
     // The entity's brush evaluated through its modifier stack (live brush or
@@ -211,6 +218,9 @@ public:
     // against the visible result. Two names so each consumer chooses on
     // purpose; they agree for a brush without modifiers.
     [[nodiscard]] std::optional<Aabb3d> EvaluatedWorldBounds(EntityId entity) const;
+    // What a selection spans: each selected entity's evaluated bounds, or its
+    // position when it has none (a light, an empty); nullopt when nothing does.
+    [[nodiscard]] std::optional<Aabb3d> SelectionWorldBounds(std::span<const SelectableRef> selection) const;
     // The retained world-space facts every interactive consumer reads: piece
     // placements and bounds, union and source bounds, source world elements.
     // Queries validate their key on access, so they are exact in the same

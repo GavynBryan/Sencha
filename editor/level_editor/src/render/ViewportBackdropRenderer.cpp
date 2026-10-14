@@ -66,8 +66,8 @@ void ViewportBackdropRenderer::DrawViewport(VkCommandBuffer cmd,
                                             VkFormat colorFormat,
                                             VkFormat depthFormat)
 {
-    const float vpWidth  = viewport.RegionMax.x - viewport.RegionMin.x;
-    const float vpHeight = viewport.RegionMax.y - viewport.RegionMin.y;
+    const float vpWidth  = viewport.RegionMax.X - viewport.RegionMin.X;
+    const float vpHeight = viewport.RegionMax.Y - viewport.RegionMin.Y;
     if (vpWidth <= 1.0f || vpHeight <= 1.0f || PipelineLayout == VK_NULL_HANDLE)
         return;
 
@@ -97,10 +97,10 @@ void ViewportBackdropRenderer::DrawViewport(VkCommandBuffer cmd,
     if (Pipeline == VK_NULL_HANDLE)
         return;
 
-    const int32_t  offX = static_cast<int32_t>(viewport.RegionMin.x);
-    const int32_t  offY = static_cast<int32_t>(viewport.RegionMin.y);
-    const uint32_t endX = std::min(targetExtent.width, static_cast<uint32_t>(viewport.RegionMax.x));
-    const uint32_t endY = std::min(targetExtent.height, static_cast<uint32_t>(viewport.RegionMax.y));
+    const int32_t  offX = static_cast<int32_t>(viewport.RegionMin.X);
+    const int32_t  offY = static_cast<int32_t>(viewport.RegionMin.Y);
+    const uint32_t endX = std::min(targetExtent.width, static_cast<uint32_t>(viewport.RegionMax.X));
+    const uint32_t endY = std::min(targetExtent.height, static_cast<uint32_t>(viewport.RegionMax.Y));
 
     VkRect2D scissor{};
     scissor.offset = { offX, offY };

@@ -1,5 +1,7 @@
 #include "MaterialLibrary.h"
 
+#include "text/PathLeaf.h"
+
 #include <core/assets/AssetKindRegistry.h>
 #include <core/assets/AssetRegistry.h>
 
@@ -7,13 +9,15 @@
 
 std::string MaterialDisplayName(std::string_view virtualPath)
 {
-    constexpr std::string_view scheme = "asset://";
-    std::string_view name = virtualPath;
-    if (name.substr(0, scheme.size()) == scheme)
-        name.remove_prefix(scheme.size());
+    std::string_view name = ContentRelativePath(virtualPath);
     if (name.size() >= 5 && name.substr(name.size() - 5) == ".smat")
         name.remove_suffix(5);
     return std::string(name);
+}
+
+std::string MaterialLeafName(std::string_view virtualPath)
+{
+    return std::string(PathLeaf(MaterialDisplayName(virtualPath)));
 }
 
 MaterialLibrary::MaterialLibrary(LoggingProvider& logging)

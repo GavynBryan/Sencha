@@ -1,13 +1,13 @@
 #pragma once
 
-#include <imgui.h>
+#include <math/Vec.h>
 
 #include <algorithm>
 #include <optional>
 #include <span>
 
 // Where a row of buttons pinned to some geometry lands on screen. Pure pixel
-// math with no ImGui runtime and no projection, so the panel that draws the
+// math with no UI runtime and no projection, so the marks that draw the
 // buttons and the tool that hit-tests them go through one rule rather than two
 // versions of it that drift apart.
 //
@@ -22,41 +22,41 @@ inline constexpr float kMargin = 8.0f; // kept clear of the viewport edge
 
 struct Row
 {
-    ImVec2 Min = {}; // top-left of the whole strip
+    Vec2d Min = {}; // top-left of the whole strip
     float Size = 0.0f;
     float Gap = 0.0f;
     int Count = 0;
     bool Visible = false;
 
-    [[nodiscard]] ImVec2 MinOf(int index) const
+    [[nodiscard]] Vec2d MinOf(int index) const
     {
-        return ImVec2(Min.x + static_cast<float>(index) * (Size + Gap), Min.y);
+        return Vec2d(Min.X + static_cast<float>(index) * (Size + Gap), Min.Y);
     }
-    [[nodiscard]] ImVec2 MaxOf(int index) const
+    [[nodiscard]] Vec2d MaxOf(int index) const
     {
-        const ImVec2 min = MinOf(index);
-        return ImVec2(min.x + Size, min.y + Size);
+        const Vec2d min = MinOf(index);
+        return Vec2d(min.X + Size, min.Y + Size);
     }
     // Where to centre a caption describing buttons `first` through `last`: above
     // the span they occupy, so a readout placed here comes from the same layout
     // rule as the buttons it labels.
-    [[nodiscard]] ImVec2 CaptionCenter(int first, int last) const
+    [[nodiscard]] Vec2d CaptionCenter(int first, int last) const
     {
         if (Count <= 0)
             return Min;
         const int lo = std::clamp(first, 0, Count - 1);
         const int hi = std::clamp(last, lo, Count - 1);
-        return ImVec2((MinOf(lo).x + MaxOf(hi).x) * 0.5f, Min.y - Gap);
+        return Vec2d((MinOf(lo).X + MaxOf(hi).X) * 0.5f, Min.Y - Gap);
     }
 
     // The button under `point`, or -1.
-    [[nodiscard]] int HitTest(ImVec2 point) const
+    [[nodiscard]] int HitTest(Vec2d point) const
     {
         for (int i = 0; Visible && i < Count; ++i)
         {
-            const ImVec2 min = MinOf(i);
-            const ImVec2 max = MaxOf(i);
-            if (point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y)
+            const Vec2d min = MinOf(i);
+            const Vec2d max = MaxOf(i);
+            if (point.X >= min.X && point.X <= max.X && point.Y >= min.Y && point.Y <= max.Y)
                 return i;
         }
         return -1;
@@ -71,17 +71,17 @@ struct Row
 // none of them project, the row is hidden rather than clamped. Clamping a
 // meaningless projection onto a screen edge would leave a live button somewhere
 // the geometry is not.
-[[nodiscard]] inline Row Layout(std::span<const std::optional<ImVec2>> anchors, int count, float scale,
-                                ImVec2 regionMin, ImVec2 regionMax)
+[[nodiscard]] inline Row Layout(std::span<const std::optional<Vec2d>> anchors, int count, float scale,
+                                Vec2d regionMin, Vec2d regionMax)
 {
     Row row;
     if (count <= 0)
         return row;
 
-    ImVec2 boundsMin(0.0f, 0.0f);
-    ImVec2 boundsMax(0.0f, 0.0f);
+    Vec2d boundsMin(0.0f, 0.0f);
+    Vec2d boundsMax(0.0f, 0.0f);
     bool any = false;
-    for (const std::optional<ImVec2>& anchor : anchors)
+    for (const std::optional<Vec2d>& anchor : anchors)
     {
         if (!anchor.has_value())
             continue;
@@ -92,10 +92,10 @@ struct Row
             any = true;
             continue;
         }
-        boundsMin.x = std::min(boundsMin.x, anchor->x);
-        boundsMin.y = std::min(boundsMin.y, anchor->y);
-        boundsMax.x = std::max(boundsMax.x, anchor->x);
-        boundsMax.y = std::max(boundsMax.y, anchor->y);
+        boundsMin.X = std::min(boundsMin.X, anchor->X);
+        boundsMin.Y = std::min(boundsMin.Y, anchor->Y);
+        boundsMax.X = std::max(boundsMax.X, anchor->X);
+        boundsMax.Y = std::max(boundsMax.Y, anchor->Y);
     }
     if (!any)
         return row;
@@ -106,18 +106,18 @@ struct Row
     row.Visible = true;
 
     const float width = static_cast<float>(count) * row.Size + static_cast<float>(count - 1) * row.Gap;
-    row.Min = ImVec2((boundsMin.x + boundsMax.x) * 0.5f - width * 0.5f,
-                     boundsMin.y - row.Gap - row.Size);
+    row.Min = Vec2d((boundsMin.X + boundsMax.X) * 0.5f - width * 0.5f,
+                     boundsMin.Y - row.Gap - row.Size);
 
     const float margin = kMargin * scale;
-    const float lowX = regionMin.x + margin;
-    const float highX = regionMax.x - margin - width;
-    const float lowY = regionMin.y + margin;
-    const float highY = regionMax.y - margin - row.Size;
+    const float lowX = regionMin.X + margin;
+    const float highX = regionMax.X - margin - width;
+    const float lowY = regionMin.Y + margin;
+    const float highY = regionMax.Y - margin - row.Size;
     // A region too small to hold the strip pins it to the near edge rather than
     // inverting the clamp.
-    row.Min.x = highX >= lowX ? std::clamp(row.Min.x, lowX, highX) : lowX;
-    row.Min.y = highY >= lowY ? std::clamp(row.Min.y, lowY, highY) : lowY;
+    row.Min.X = highX >= lowX ? std::clamp(row.Min.X, lowX, highX) : lowX;
+    row.Min.Y = highY >= lowY ? std::clamp(row.Min.Y, lowY, highY) : lowY;
     return row;
 }
 } // namespace ViewportButtons

@@ -32,7 +32,7 @@ namespace
     {
         MeshImportSettings settings;
         settings.Clips[clip].Events = events;
-        return WriteMeshImportSettings(settings);
+        return WriteMeshImportSettings(settings, AssetId{});
     }
 }
 
@@ -280,7 +280,8 @@ bool AnimationClipEventsDocument::Write(std::string* error)
     settings.Clips[Name].Events = Working;
     if (settings.Clips[Name].IsDefault())
         settings.Clips.erase(Name);
-    const std::string text = WriteMeshImportSettings(settings);
+    const std::string text = WriteMeshImportSettings(
+        settings, ReadStatedAssetId(std::filesystem::path(Sidecar).replace_extension()).value_or(AssetId{}));
     {
         std::ofstream file(Sidecar, std::ios::binary | std::ios::trunc);
         file << text;

@@ -13,7 +13,8 @@ UiPackageAssetLoader::UiPackageAssetLoader(LoggingProvider& logging, UiPackageCa
 {
 }
 
-AssetStaging UiPackageAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging UiPackageAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                              const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;

@@ -1,0 +1,75 @@
+@font-face { src: "fonts/Inter-Regular.ttf"; }
+@font-face { src: "fonts/JetBrainsMono-Regular.ttf"; }
+
+/* The command palette: a field and what it finds, over the middle of the
+   window. Geometry only; colours are theme roles. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: Inter;
+    font-size: 13dp;
+}
+
+#catch
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+}
+
+#palette
+{
+    overscroll-behavior: contain;
+    display: block;
+    position: absolute;
+    left: 50%;
+    top: 90dp;
+    width: 520dp;
+    margin-left: -260dp;
+    padding: 8dp;
+    border-width: 1dp;
+    border-radius: 5dp;
+    pointer-events: auto;
+}
+
+#query
+{
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 30dp;
+    padding: 0dp 10dp;
+    border-width: 1dp;
+    font-size: 14dp;
+    tab-index: auto;
+}
+
+/* Square: a rounded scrolling list clips through the stencil mask, and plain
+   scissor clipping is all a list of rows needs. */
+#results
+{
+    display: block;
+    margin-top: 6dp;
+    border-width: 1dp;
+}
+
+.result
+{
+    display: flex;
+    align-items: center;
+    height: 26dp;
+    padding: 0dp 10dp;
+    gap: 10dp;
+}
+
+.label { display: block; flex: 1; }
+.category { display: block; font-size: 11dp; }
+.chord { display: block; font-family: "JetBrains Mono"; font-size: 11dp; }

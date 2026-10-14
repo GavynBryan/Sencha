@@ -28,6 +28,15 @@ enum class ConflictChoice
     TakeFile,
 };
 
+// A project file moved, sidecar and all, as a file step moves one.
+struct MovedFile
+{
+    std::string FromAsset;
+    std::string ToAsset;
+    std::filesystem::path From;
+    std::filesystem::path To;
+};
+
 // What an open document did about its file changing on disk: took the new
 // version (a clean document, or its own write), or held its own changes, which
 // its next save reports as a conflict.
@@ -63,4 +72,16 @@ public:
 
     // What a person reading a prompt or a save report calls the document.
     [[nodiscard]] virtual std::string DocumentLabel(std::string_view key) const { return std::string(key); }
+    // Whether an open document lives in `file`, or is kept beside it.
+    [[nodiscard]] virtual bool HoldsFile(const std::filesystem::path&) const { return false; }
+    // The file an open document lives in, or is kept beside, moved: the
+    // document follows it, and its steps with it (DocumentSourceSet::Rekey).
+    virtual void FileMoved(const MovedFile&) {}
+    // Whether a document open in `file` writes the assets it names back as it
+    // read them, rather than as the registry knows them now: then an asset it
+    // names cannot move while it is open.
+    [[nodiscard]] virtual bool KeepsNamesAsRead(const std::filesystem::path& file) const { return HoldsFile(file); }
+    // A file step renamed, in `file`, an asset it names: it says the same, so a
+    // document open in it takes the new bytes as what it last read.
+    virtual void NamesRewritten(const std::filesystem::path&) {}
 };

@@ -15,7 +15,8 @@ AudioClipAssetLoader::AudioClipAssetLoader(LoggingProvider& logging, AudioClipCa
 {
 }
 
-AssetStaging AudioClipAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source)
+AssetStaging AudioClipAssetLoader::LoadStaged(const AssetRecord& record, IAssetSource& source,
+                                              const AssetPathsById&)
 {
     AssetStaging staging;
     staging.Record = record;

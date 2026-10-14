@@ -1,0 +1,58 @@
+@font-face { src: "fonts/Inter-Regular.ttf"; }
+@font-face { src: "fonts/JetBrainsMono-Regular.ttf"; }
+
+/* The views under a workspace's panels and what is drawn at points over them:
+   display only, placed in window pixels by the host. Geometry here; colours
+   are theme roles, or the host's where a mark carries its own. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: Inter;
+    font-size: 12dp;
+}
+
+.view, .frame, .label, .handle, .button, .caption, .knob, .marker, .marquee
+{
+    display: block;
+    position: absolute;
+}
+
+.frame { border-width: 1dp; }
+
+.label
+{
+    white-space: nowrap;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+
+.handle { border-width: 1dp; border-radius: 1px; }
+
+.button
+{
+    border-width: 1dp;
+    border-radius: 3dp;
+    text-align: center;
+    font-size: 11dp;
+}
+.button .icon { width: 100%; height: 100%; }
+
+.caption
+{
+    white-space: nowrap;
+    text-align: center;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+.caption .tip { padding: 1dp 6dp; border-width: 1dp; border-radius: 3dp; }
+
+.knob { border-width: 1dp; border-radius: 4dp; }
+
+.marker { border-width: 1dp; border-radius: 3dp; }
+.marker .icon { width: 70%; height: 70%; margin: 15%; }
+
+.marquee { border-width: 1px; }

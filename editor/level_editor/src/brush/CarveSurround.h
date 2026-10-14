@@ -11,7 +11,7 @@
 #include <vector>
 
 // The carve's 2D half: what is left of a face once a shape has been cut out of
-// it. Pure geometry in frame coordinates -- no mesh, no ImGui, no tolerance
+// it. Pure geometry in frame coordinates -- no mesh, no UI, no tolerance
 // beyond the one it is handed -- because this is where the operation is most
 // likely to be wrong and least pleasant to debug through a mesh.
 

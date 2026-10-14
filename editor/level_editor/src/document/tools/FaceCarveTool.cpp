@@ -1,10 +1,8 @@
 #include "FaceCarveTool.h"
 
-#include "ui/chrome/ChromeHeader.h"
+#include "properties/SettingProperties.h"
 
-#include "ui/ButtonFlow.h"
-#include "ui/chrome/ChromeBars.h"
-#include "ui/chrome/ChromeControls.h"
+
 #include "ui/EditorUiStyle.h"
 
 #include "EditorTheme.h"
@@ -51,13 +49,6 @@ constexpr float kCarvePlanarTolerance = 1e-3f;
 // What the mesh treats as coincident, which is what bounds how finely an arch
 // can be sampled before its chords weld away.
 constexpr float kCarveWeldTolerance = 1e-4f;
-
-float ScreenDistance(ImVec2 a, ImVec2 b)
-{
-    const float dx = a.x - b.x;
-    const float dy = a.y - b.y;
-    return std::sqrt(dx * dx + dy * dy);
-}
 
 std::vector<SelectableRef> NewEdgeRefs(const EditorScene& scene, EntityId entity,
                                        const BrushMesh& original, const BrushMesh& edited)
@@ -228,7 +219,7 @@ void FaceCarveTool::RefreshPreview(ToolContext& ctx)
     WriteReadout(ctx, boxMin, boxMax, Phase == FaceCarvePhase::Pending && PreviewValid);
 }
 
-InputConsumed FaceCarveTool::OnHover(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
+InputConsumed FaceCarveTool::OnHover(ToolContext& ctx, EditorViewport& viewport, Vec2d pos)
 {
     // A pending carve keeps its own glow and readout; hover only moves the
     // highlight between its confirm and cancel buttons.
@@ -348,7 +339,7 @@ InputConsumed FaceCarveTool::OnClick(ToolContext& ctx, EditorViewport& viewport,
     return InputConsumed::Yes;
 }
 
-bool FaceCarveTool::CaptureFace(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos)
+bool FaceCarveTool::CaptureFace(ToolContext& ctx, EditorViewport& viewport, Vec2d pos)
 {
     if (Phase != FaceCarvePhase::Idle)
         RevertAll(ctx);
@@ -411,7 +402,7 @@ bool FaceCarveTool::CaptureFace(ToolContext& ctx, EditorViewport& viewport, ImVe
     return true;
 }
 
-bool FaceCarveTool::BeginPendingAdjust(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos,
+bool FaceCarveTool::BeginPendingAdjust(ToolContext& ctx, EditorViewport& viewport, Vec2d pos,
                                        int corner)
 {
     if (Phase != FaceCarvePhase::Pending || !TargetEntity.IsValid() || corner < 0)
@@ -479,7 +470,7 @@ float FaceCarveTool::TurnIncrement(const ToolContext& ctx) const
     return ctx.Grid.SnapEnabled ? std::numbers::pi_v<float> / 4.0f : 0.0f;
 }
 
-CarveHandleHit FaceCarveTool::HandleUnderCursor(const EditorViewport& viewport, ImVec2 pos) const
+CarveHandleHit FaceCarveTool::HandleUnderCursor(const EditorViewport& viewport, Vec2d pos) const
 {
     CarveHandleHit hit;
     if (Phase == FaceCarvePhase::Idle || !PreviewValid || !TargetEntity.IsValid())
@@ -499,7 +490,7 @@ CarveHandleHit FaceCarveTool::HandleUnderCursor(const EditorViewport& viewport, 
         const std::optional<ProjectedPoint> projected = projection.WorldToPixel(world);
         if (!projected.has_value())
             return std::nullopt;
-        return ScreenDistance(pos, projected->Pixel);
+        return Vec2d::Distance(pos, projected->Pixel);
     };
 
     if (ShapeHandlesApply() && Shape == CarveShape::Arch)
@@ -516,13 +507,13 @@ CarveHandleHit FaceCarveTool::HandleUnderCursor(const EditorViewport& viewport, 
         // Anywhere on the ring turns it too, which is what a dial should allow.
         std::array<Vec3d, ViewportDial::kRimSegments + 1> ring{};
         const int count = ViewportDial::RimPoints(*dial, ring);
-        std::vector<std::optional<ImVec2>> rim;
+        std::vector<std::optional<Vec2d>> rim;
         rim.reserve(static_cast<std::size_t>(count));
         for (int i = 0; i < count; ++i)
         {
             const std::optional<ProjectedPoint> projected =
                 projection.WorldToPixel(ring[static_cast<std::size_t>(i)]);
-            rim.push_back(projected.has_value() ? std::optional<ImVec2>(projected->Pixel)
+            rim.push_back(projected.has_value() ? std::optional<Vec2d>(projected->Pixel)
                                                 : std::nullopt);
         }
         if (const std::optional<float> pixels = ViewportDial::DistanceToRim(rim, pos))
@@ -547,7 +538,7 @@ CarveHandleHit FaceCarveTool::HandleUnderCursor(const EditorViewport& viewport, 
     return hit;
 }
 
-void FaceCarveTool::DragOrientation(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos)
+void FaceCarveTool::DragOrientation(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos)
 {
     const std::optional<ViewportDial::Placement> dial = Dial(viewport);
     if (!dial.has_value())
@@ -565,7 +556,7 @@ void FaceCarveTool::DragOrientation(ToolContext& ctx, const EditorViewport& view
     SetShapeParams(ctx, params);
 }
 
-void FaceCarveTool::DragRise(ToolContext& ctx, const EditorViewport& viewport, ImVec2 pos)
+void FaceCarveTool::DragRise(ToolContext& ctx, const EditorViewport& viewport, Vec2d pos)
 {
     const std::optional<Vec2d> uv = CursorUv(ctx, viewport, pos);
     if (!uv.has_value())
@@ -709,7 +700,7 @@ std::unique_ptr<IInteraction> FaceCarveTool::BeginDrag(ToolContext& ctx, EditorV
     return std::make_unique<CarveDragInteraction>(*this, CarveHandleHit{ CarveHandle::BoxCorner, 0 });
 }
 
-void FaceCarveTool::UpdateDrag(ToolContext& ctx, EditorViewport& viewport, ImVec2 pos,
+void FaceCarveTool::UpdateDrag(ToolContext& ctx, EditorViewport& viewport, Vec2d pos,
                                CarveHandleHit grabbed)
 {
     if (Phase == FaceCarvePhase::Idle)
@@ -872,7 +863,7 @@ void FaceCarveTool::RevertAll(ToolContext& ctx)
 }
 
 std::optional<Vec2d> FaceCarveTool::CursorUv(ToolContext& ctx, const EditorViewport& viewport,
-                                             ImVec2 pos) const
+                                             Vec2d pos) const
 {
     const std::optional<Vec3d> world = ctx.Picking.ProjectPointToPlane(viewport, pos, DragPlane);
     if (!world.has_value())
@@ -1005,10 +996,10 @@ FaceCarveTool::ButtonRow FaceCarveTool::BuildButtons() const
         if (!limits.Empty())
         {
             row.Buttons.push_back(
-                ViewportButton{ IconId::None, "-", ShapeParams.ArchSegments > limits.MinSegments, EditorChrome::ButtonTone::Normal, {} });
+                ViewportButton{ IconId::None, "-", ShapeParams.ArchSegments > limits.MinSegments, ActionTone::Normal, {} });
             row.Roles.push_back(CarveButton::SegmentsDown);
             row.Buttons.push_back(
-                ViewportButton{ IconId::None, "+", ShapeParams.ArchSegments < limits.MaxSegments, EditorChrome::ButtonTone::Normal, {} });
+                ViewportButton{ IconId::None, "+", ShapeParams.ArchSegments < limits.MaxSegments, ActionTone::Normal, {} });
             row.Roles.push_back(CarveButton::SegmentsUp);
             // A readout rather than a third button: it says what the pair is
             // stepping, and nothing hit-tests it.
@@ -1016,9 +1007,9 @@ FaceCarveTool::ButtonRow FaceCarveTool::BuildButtons() const
         }
     }
 
-    row.Buttons.push_back(ViewportButton{ IconId::Check, {}, CanCommit(), EditorChrome::ButtonTone::Active, {} });
+    row.Buttons.push_back(ViewportButton{ IconId::Check, {}, CanCommit(), ActionTone::Active, {} });
     row.Roles.push_back(CarveButton::Confirm);
-    row.Buttons.push_back(ViewportButton{ IconId::Cancel, {}, true, EditorChrome::ButtonTone::Destructive, {} });
+    row.Buttons.push_back(ViewportButton{ IconId::Cancel, {}, true, ActionTone::Destructive, {} });
     row.Roles.push_back(CarveButton::Cancel);
     return row;
 }
@@ -1072,7 +1063,7 @@ void FaceCarveTool::WriteShapeHandles(ToolContext& ctx) const
     ctx.Overlay.ViewportDials.push_back(request);
 }
 
-int FaceCarveTool::ButtonUnderCursor(const EditorViewport& viewport, ImVec2 pos) const
+int FaceCarveTool::ButtonUnderCursor(const EditorViewport& viewport, Vec2d pos) const
 {
     if (Phase == FaceCarvePhase::Idle || viewport.Id != DragViewport)
         return -1;
@@ -1083,13 +1074,13 @@ int FaceCarveTool::ButtonUnderCursor(const EditorViewport& viewport, ImVec2 pos)
         boxMin, Vec2d{ boxMax.X, boxMin.Y }, boxMax, Vec2d{ boxMin.X, boxMax.Y }
     };
     const ViewportProjection projection(viewport);
-    std::vector<std::optional<ImVec2>> anchors;
+    std::vector<std::optional<Vec2d>> anchors;
     anchors.reserve(4);
     for (const Vec2d& corner : corners)
     {
         const std::optional<ProjectedPoint> p =
             projection.WorldToPixel(TargetTransform.TransformPoint(Frame.ToWorld(corner)));
-        anchors.push_back(p.has_value() ? std::optional<ImVec2>(p->Pixel) : std::nullopt);
+        anchors.push_back(p.has_value() ? std::optional<Vec2d>(p->Pixel) : std::nullopt);
     }
     const ViewportButtons::Row row =
         ViewportButtons::Layout(anchors, static_cast<int>(BuildButtons().Buttons.size()),
@@ -1099,93 +1090,102 @@ int FaceCarveTool::ButtonUnderCursor(const EditorViewport& viewport, ImVec2 pos)
 
 ITool::Shortcut FaceCarveTool::GetShortcut() const { return { SDLK_X, {} }; }
 
-void FaceCarveTool::DrawProperties(ToolContext& ctx)
+namespace
 {
-    EditorChrome::SectionTitle("Face Carve");
+constexpr std::array<std::string_view, 2> kModeNames = { "Polygon", "Quad" };
+constexpr std::array<std::string_view, 2> kShapeNames = { "Rectangle", "Arch" };
+constexpr float kRadiansPerDegree = std::numbers::pi_v<float> / 180.0f;
+}
 
-    const bool hasDraft = HasPending();
-    const bool canCommit = CanCommit();
-
-    if (ImGui::RadioButton("Polygon", Mode == FaceCarveMode::Polygon))
-        SetMode(ctx, FaceCarveMode::Polygon);
-    if (ImGui::RadioButton("Quad", Mode == FaceCarveMode::Quad))
-        SetMode(ctx, FaceCarveMode::Quad);
-
-    // The shape is what the box is turned into, in either mode: the polygon
-    // carve cuts it out, the loop cuts lay it into the cell they leave.
-    if (ImGui::RadioButton("Rectangle", Shape == CarveShape::Rectangle))
-        SetShape(ctx, CarveShape::Rectangle);
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Arch", Shape == CarveShape::Arch))
-        SetShape(ctx, CarveShape::Arch);
-
-    {
-        // Degrees, because nobody authors a doorway in radians. The turn applies
-        // to any shape: a quarter turn lays an arch on its side inside the same
-        // opening, and it makes a rectangle a diamond off the axes.
-        const float radiansPerDegree = std::numbers::pi_v<float> / 180.0f;
-        float degrees = ShapeParams.Orientation / radiansPerDegree;
-        if (ImGui::SliderFloat("Turn", &degrees, -180.0f, 180.0f, "%.0f deg"))
-        {
-            CarveShapeParams turned = ShapeParams;
-            turned.Orientation = degrees * radiansPerDegree;
-            SetShapeParams(ctx, turned);
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Turns the shape inside the box; a quarter turn keeps the opening");
-    }
-
+std::vector<PropertyNode> FaceCarveTool::Parameters(const ToolContext&) const
+{
+    std::vector<PropertyNode> nodes;
+    nodes.push_back(ChoiceProperty("mode", "Mode", kModeNames, Mode == FaceCarveMode::Quad ? 1 : 0,
+                                   "Quad keeps everything outside the carve quads; quad faces only"));
+    nodes.push_back(ChoiceProperty("shape", "Shape", kShapeNames, Shape == CarveShape::Arch ? 1 : 0));
+    // Degrees, because nobody authors a doorway in radians.
+    nodes.push_back(NumberProperty("turn", "Turn", std::round(ShapeParams.Orientation / kRadiansPerDegree), -180, 180,
+                                   1, "Turns the shape inside the box; a quarter turn keeps the opening"));
     if (Shape == CarveShape::Arch)
     {
         const CarveShapeLimits limits = ShapeLimits();
-        CarveShapeParams params = ShapeParams;
-        if (ImGui::SliderFloat("Rise", &params.ArchRise, limits.MinRise, limits.MaxRise, "%.2f"))
-            SetShapeParams(ctx, params);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Height of the arch as a fraction of the box; 1 springs from the floor");
-
-        params = ShapeParams;
-        if (limits.Empty())
-        {
-            ImGui::TextDisabled("Segments: no arc fits this rise");
-        }
-        else if (ImGui::SliderInt("Segments", &params.ArchSegments, limits.MinSegments,
-                                  std::min(limits.MaxSegments, 64)))
-        {
-            params.ArchSegments = std::clamp(params.ArchSegments, limits.MinSegments, limits.MaxSegments);
-            SetShapeParams(ctx, params);
-        }
+        nodes.push_back(NumberProperty("rise", "Rise", ShapeParams.ArchRise, limits.MinRise, limits.MaxRise, 0.01,
+                                       "Height of the arch as a fraction of the box; 1 springs from the floor"));
+        if (!limits.Empty())
+            nodes.push_back(NumberProperty("segments", "Segments", ShapeParams.ArchSegments, limits.MinSegments,
+                                           std::min(limits.MaxSegments, 64), 1));
     }
+    nodes.push_back(ToggleProperty("pierce", "Pierce", Pierce, "Carve matching bounds into the nearest opposite face"));
+    return nodes;
+}
 
-    bool pierce = Pierce;
-    if (ImGui::Checkbox("Pierce", &pierce))
-        SetPierceEnabled(ctx, pierce);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Carve matching bounds into the nearest opposite face");
-
-    if (!hasDraft)
+PropertyEditResult FaceCarveTool::SetParameter(ToolContext& ctx, std::string_view key, std::string_view value)
+{
+    if (key == "mode" || key == "shape")
     {
-        ImGui::TextDisabled(Mode == FaceCarveMode::Quad ? "Drag a box on a quad face"
-                                                            : "Drag a shape on a face");
+        const bool mode = key == "mode";
+        const std::optional<std::size_t> index = ParseChoice(value, mode ? kModeNames : kShapeNames);
+        if (!index)
+            return PropertyEditResult::Refused;
+        if (mode)
+            SetMode(ctx, *index == 1 ? FaceCarveMode::Quad : FaceCarveMode::Polygon);
+        else
+            SetShape(ctx, *index == 1 ? CarveShape::Arch : CarveShape::Rectangle);
+        return PropertyEditResult::Applied;
     }
-    if (Phase != FaceCarvePhase::Idle && !PreviewValid && LastStatus != CarveStatus::Ok)
-        ImGui::TextDisabled("%s", CarveStatusText(LastStatus));
+    if (key == "pierce")
+    {
+        const std::optional<bool> on = ParseToggle(value);
+        if (!on)
+            return PropertyEditResult::Refused;
+        SetPierceEnabled(ctx, *on);
+        return PropertyEditResult::Applied;
+    }
+    CarveShapeParams params = ShapeParams;
+    const CarveShapeLimits limits = ShapeLimits();
+    if (key == "turn")
+    {
+        const std::optional<double> degrees = ParseNumber(value, -180, 180);
+        if (!degrees)
+            return PropertyEditResult::Refused;
+        params.Orientation = static_cast<float>(*degrees) * kRadiansPerDegree;
+    }
+    else if (key == "rise")
+    {
+        const std::optional<double> rise = ParseNumber(value, limits.MinRise, limits.MaxRise);
+        if (!rise)
+            return PropertyEditResult::Refused;
+        params.ArchRise = static_cast<float>(*rise);
+    }
+    else if (key == "segments")
+    {
+        if (limits.Empty())
+            return PropertyEditResult::Refused;
+        const std::optional<double> segments = ParseNumber(value, limits.MinSegments, limits.MaxSegments);
+        if (!segments)
+            return PropertyEditResult::Refused;
+        params.ArchSegments = static_cast<int>(std::lround(*segments));
+    }
+    else
+    {
+        return PropertyEditResult::Gone;
+    }
+    SetShapeParams(ctx, params);
+    return PropertyEditResult::Applied;
+}
 
-    if (!canCommit)
-        ImGui::BeginDisabled();
-    ButtonFlow flow;
-    if (flow.Button("Apply", EditorChrome::ButtonTone::Active))
-        Commit(ctx);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Commit the pending carve  [Enter]");
-    if (!canCommit)
-        ImGui::EndDisabled();
-    if (!hasDraft)
-        ImGui::BeginDisabled();
-    if (flow.Button("Cancel"))
-        RevertAll(ctx);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Discard the pending carve  [Esc]");
-    if (!hasDraft)
-        ImGui::EndDisabled();
+ToolDraft FaceCarveTool::Draft() const
+{
+    if (Phase == FaceCarvePhase::Idle)
+        return ToolDraft::None;
+    return CanCommit() ? ToolDraft::Ready : ToolDraft::Incomplete;
+}
+
+std::string FaceCarveTool::Hint(const ToolContext&) const
+{
+    if (Phase != FaceCarvePhase::Idle && !PreviewValid && LastStatus != CarveStatus::Ok)
+        return CarveStatusText(LastStatus);
+    if (!HasPending())
+        return Mode == FaceCarveMode::Quad ? "Drag a box on a quad face" : "Drag a shape on a face";
+    return "Enter applies, Esc discards";
 }

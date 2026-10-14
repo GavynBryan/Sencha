@@ -328,20 +328,28 @@ requests so two zones that share an asset don't double-load it.
 
 ## Identity and resolution
 
-**Files:** `core/assets/AssetRef.h`, `AssetId.h`, `AssetIdMap.h`,
+**Files:** `core/assets/AssetRef.h`, `AssetId.h`, `AssetIdentity.h`, `AssetRefCodec.h`,
 `AssetRegistry.h`, `AssetPath.h`
 
 | Class | Role |
 |-------|------|
-| `AssetRef` | What gets serialized in scenes: a `Type` enum + a virtual path (`asset://...`). |
-| `AssetId` | 64-bit stable identity. Survives renames. Assigned by the cook step, persisted in `asset_ids.json`. |
-| `AssetRecord` | Registry entry: type, path, file path, id, content hash, version. |
+| `AssetRef` | A reference in authored or cooked data: a `Type`, the asset's `Id`, and the virtual path (`asset://...`) it was last known by. |
+| `AssetRefCodec` | The one text form of a reference: a bare path, or `{"id", "path"}`. Archive and JSON front ends. |
+| `AssetId` | 64-bit stable identity, carried by the asset (document header or `.meta` sidecar) and minted once from the path it first appeared at (`AssetIdOfPath`; parts by `AssetIdOfPart`). |
+| `AssetIdentity` | Where an asset states its id: a document at its root, any other file in its `.meta` sidecar beside its import settings. |
+| `AssetRecord` | Registry entry: type, path, file path, id (stated, else its path's, bound when it registers), content hash, version. |
 | `AssetRegistry` | Path-to-record and id-to-record maps. Populated by scanning the assets directory. |
-| `AssetIdMap` | Persisted `path -> (id, content_hash)` map that the cook maintains and runtime reads. |
 
 Resolution order (id-first with path fallback): if the ref has an id and the
 registry knows it, use the registry record's current path (survives renames).
 Otherwise fall back to the path in the ref.
+
+The registry belongs to the owner thread, so a stage that reads references
+(a data asset, before its compiler runs) resolves them against
+`AssetRegistry::PathsById()`: an immutable id-to-path snapshot the owner takes
+when it submits the stage (`IAssetStager::LoadStaged`, every caller). Every host
+compiles a data asset through `CompileDataAsset`, which hands the compiler paths
+only.
 
 ---
 

@@ -1,0 +1,126 @@
+<rml>
+<head>
+    <title>Shelf</title>
+    <link type="text/rcss" href="shelf.rcss"/>
+    <link type="text/rcss" href="controls.rcss"/>
+    <link type="text/rcss" href="icons.rcss"/>
+    <link type="text/rcss" href="theme.rcss"/>
+</head>
+<body data-model="shelf">
+    <!-- The project's content along the bottom edge: what is in it, found by
+         typing, narrowed by kind and folder, and opened in its editor. Its
+         top edge is dragged to size it; pinned, it stays and the work ends
+         above it. -->
+    <div id="shelf" class="theme-plate" data-style-height="height">
+        <div id="shelf_grip" data-if="!own_window" data-event-mousedown="shelf_grab(ev.mouse_y)"
+             data-event-drag="shelf_drag(ev.mouse_y)" data-event-dragend="shelf_drop()"></div>
+        <div id="shelf_bar">
+            <div class="key theme-key" data-if="choosing == ''" data-event-click="shelf_new(ev.mouse_x, ev.mouse_y)"
+                 title="Make something new">NEW</div>
+            <div class="key theme-key glyph" data-if="can_go_back" data-event-click="shelf_back()"
+                 title="Back to the file followed from">&#xf060;</div>
+            <div id="shelf_choosing" class="theme-readout" data-if="choosing != ''">CHOOSING &#xB7; {{choosing}}</div>
+            <div class="key theme-key" data-if="offers_none" data-event-click="shelf_none()">NONE</div>
+            <div id="shelf_path">
+                <div class="crumb theme-segment" data-for="crumb, ci : crumbs" data-class-lit="crumb.selected"
+                     data-event-click="shelf_folder(crumb.key)" data-event-dragdrop="shelf_into(crumb.key)">
+                    <span class="crumb_sep glyph theme-dim" data-if="ci > 0">&#xf054;</span><span>{{crumb.label}}</span>
+                </div>
+            </div>
+            <div id="shelf_search_well" class="theme-field">
+                <span class="icon icon-search search_icon"></span>
+                <input id="shelf_search" type="text" autofocus=""
+                       placeholder="Find anything: a name, t:material, in:dev"
+                       data-value="query" data-event-change="shelf_query(ev.value)"
+                       data-event-keydown="shelf_key(ev.key_identifier, ev.ctrl_key, ev.shift_key, ev.alt_key)"
+                       data-event-focus="shelf_keys(true)" data-event-blur="shelf_keys(false)"/>
+            </div>
+            <div id="shelf_chips">
+                <div class="key theme-key" data-for="chip : chips" data-class-lit="chip.selected"
+                     data-event-click="shelf_category(chip.key)">{{chip.label}}</div>
+            </div>
+            <span id="shelf_count" class="theme-dim">{{count}}</span>
+            <div class="key theme-key glyph" data-class-lit="view == 'list'" data-event-click="shelf_view()"
+                 title="Tiles or a list">&#xf03a;</div>
+            <div class="key theme-key glyph" data-if="!own_window" data-class-lit="pinned" data-event-click="shelf_pin()"
+                 title="Pinned, it stays and the work ends above it">&#xf08d;</div>
+            <div class="key theme-key glyph" data-if="!own_window" data-event-click="shelf_window()"
+                 title="The shelf in a window of its own">&#xf2d2;</div>
+            <div class="key theme-key glyph" data-event-click="shelf_close()">&#xf00d;</div>
+        </div>
+        <div id="shelf_body">
+            <div id="shelf_side">
+                <div class="side_row theme-row" data-for="list : lists" data-class-selected="list.selected"
+                     data-event-click="shelf_list(list.key)">
+                    <span class="side_label">{{list.label}}</span><span class="side_count theme-dim">{{list.value}}</span>
+                </div>
+                <div class="side_gap"></div>
+                <div class="side_row theme-row" data-for="folder : folders" data-class-selected="folder.selected"
+                     data-style-padding-left="(folder.depth * 12 + 4) + 'dp'"
+                     data-event-click="shelf_folder(folder.key)" data-event-dragdrop="shelf_into(folder.key)">
+                    <span class="branch glyph theme-dim" data-event-click="shelf_branch(folder.key)">
+                        <span data-if="folder.value == 'closed'">&#xf0da;</span><span data-if="folder.value == 'open'">&#xf0d7;</span>
+                    </span>
+                    <span class="side_label">{{folder.label}}</span>
+                </div>
+            </div>
+            <div id="shelf_items" data-class-list="view == 'list'" wheel-zoom=""
+                 data-event-mousescroll="shelf_zoom(ev.wheel_delta_y, ev.ctrl_key)">
+                <div class="tile theme-row" data-for="item : items" data-class-selected="item.selected"
+                     data-attr-id="'tile:' + item.key"
+                     data-style-width="view == 'list' ? 'auto' : tile"
+                     data-event-click="shelf_pick(item.key)" data-event-dblclick="shelf_open(item.key)"
+                     data-event-mousedown="shelf_press(item.key, ev.button, ev.mouse_x, ev.mouse_y)"
+                     data-event-dragstart="shelf_carry(item.key)"
+                     data-event-drag="shelf_carrying(ev.mouse_x, ev.mouse_y)"
+                     data-event-dragend="shelf_put(ev.mouse_x, ev.mouse_y)">
+                    <div class="well theme-field" data-style-width="view == 'list' ? '16dp' : picture"
+                         data-style-height="view == 'list' ? '16dp' : picture">
+                        <img class="picture" data-if="item.parts[0] != ''" data-attr-src="'host:' + item.parts[0]"
+                             data-style-image-color="item.parts[1] != '' ? item.parts[1] : 'white'"/>
+                        <span class="swatch" data-if="item.parts[0] == '' &amp;&amp; item.parts[1] != ''"
+                              data-style-background-color="item.parts[1] != '' ? item.parts[1] : 'transparent'"></span>
+                        <span data-if="item.parts[0] == '' &amp;&amp; item.parts[1] == ''"
+                              data-attr-class="'kind icon icon-' + item.icon"></span>
+                        <span class="lamp theme-lamp" data-if="item.value != ''" data-class-on="item.value == 'open'"
+                              data-class-warn="item.value == 'changed'" data-class-lit="item.value == 'current'"></span>
+                    </div>
+                    <span class="tile_name">{{item.label}}</span>
+                    <span class="tile_kind theme-dim">{{item.detail}}</span>
+                </div>
+                <div id="shelf_empty" class="theme-dim" data-if="items.size == 0">{{empty}}</div>
+            </div>
+            <div id="shelf_preview" data-if="preview_name != ''">
+                <div class="preview_well theme-field">
+                    <img class="picture" data-if="preview_image != ''" data-attr-src="'host:' + preview_image"
+                         data-style-image-color="preview_color != '' ? preview_color : 'white'"/>
+                    <span class="swatch" data-if="preview_image == '' &amp;&amp; preview_color != ''"
+                          data-style-background-color="preview_color != '' ? preview_color : 'transparent'"></span>
+                    <span data-if="preview_image == '' &amp;&amp; preview_color == ''"
+                          data-attr-class="'kind icon icon-' + preview_icon"></span>
+                </div>
+                <div id="preview_name" class="theme-accent">{{preview_name}}</div>
+                <div class="fact theme-dim">{{preview_kind}}</div>
+                <div class="fact path">{{preview_path}}</div>
+                <div class="fact theme-dim">{{preview_facts}}</div>
+                <div class="key theme-key" data-if="preview_opens" data-event-click="shelf_open(preview_path)">
+                    <span data-if="choosing == ''">OPEN</span><span data-if="choosing != ''">CHOOSE</span>
+                </div>
+                <div class="fact theme-dim" data-if="!preview_opens">No editor opens this kind.</div>
+                <div class="refs_heading theme-dim" data-if="uses.size > 0">USES</div>
+                <div class="ref theme-row" data-for="ref : uses" data-class-disabled="ref.key == ''"
+                     data-event-click="shelf_follow(ref.key)">
+                    <span class="ref_name">{{ref.label}}</span><span class="ref_kind theme-dim">{{ref.detail}}</span>
+                </div>
+                <div class="refs_heading theme-dim" data-if="used_by.size > 0">USED BY</div>
+                <div class="ref theme-row" data-for="ref : used_by" data-class-disabled="ref.key == ''"
+                     data-event-click="shelf_follow(ref.key)">
+                    <span class="ref_name">{{ref.label}}</span><span class="ref_kind theme-dim">{{ref.detail}}</span>
+                </div>
+                <div class="refs_heading theme-warning" data-if="missing.size > 0">NAMES WHAT IS NOT THERE</div>
+                <div class="ref missing" data-for="ref : missing"><span class="ref_name theme-warning">{{ref.label}}</span></div>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

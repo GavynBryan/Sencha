@@ -5,6 +5,8 @@
 // by design, so its test runs against the real executable and skips when
 // Blender is not installed.
 
+#include <MemoryCookOutput.h>
+
 #include <gtest/gtest.h>
 
 #ifdef SENCHA_ENABLE_COOK
@@ -37,18 +39,6 @@
 
 namespace
 {
-    class MemoryCookOutputWriter final : public ICookOutputWriter
-    {
-    public:
-        bool WriteBytes(std::string_view fileRelPath, std::span<const std::byte> bytes) override
-        {
-            Files[std::string(fileRelPath)].assign(bytes.begin(), bytes.end());
-            return true;
-        }
-
-        std::map<std::string, std::vector<std::byte>> Files;
-    };
-
     std::string Base64Encode(std::span<const std::byte> bytes)
     {
         static constexpr char kAlphabet[] =

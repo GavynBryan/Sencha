@@ -1,0 +1,39 @@
+#pragma once
+
+#include "properties/PropertyNode.h"
+
+#include <cstddef>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+// Properties for plain settings -- a tool's, a view's: one of several named
+// options, a number in a range, a switch. Values travel as text both ways, the
+// property model's rule; these write it and read it back.
+
+[[nodiscard]] PropertyNode GroupProperty(std::string key, std::string label, std::vector<PropertyNode> children = {});
+[[nodiscard]] PropertyNode TextProperty(std::string key, std::string label, std::string value, std::string tooltip = {});
+// A fact shown beside the settings, never edited.
+[[nodiscard]] PropertyNode NoteProperty(std::string key, std::string label, std::string text);
+[[nodiscard]] PropertyNode ChoiceProperty(std::string key, std::string label, std::span<const std::string_view> options,
+                                          std::size_t current, std::string tooltip = {});
+[[nodiscard]] PropertyNode NumberProperty(std::string key, std::string label, double value, double min, double max,
+                                          double step, std::string tooltip = {});
+[[nodiscard]] PropertyNode ToggleProperty(std::string key, std::string label, bool on, std::string tooltip = {});
+// Several numbers edited together, written "x, y".
+[[nodiscard]] PropertyNode VectorProperty(std::string key, std::string label, std::span<const double> values,
+                                          std::string tooltip = {});
+
+[[nodiscard]] std::optional<std::size_t> ParseChoice(std::string_view value, std::span<const std::string_view> options);
+// A number, spaces around it allowed, clamped to the range when there is one.
+[[nodiscard]] std::optional<double> ParseNumber(std::string_view value, double min = 0.0, double max = -1.0);
+// A number as properties write it.
+[[nodiscard]] std::string NumberText(double value);
+// A vector's numbers as written, each without the spaces around it.
+[[nodiscard]] std::vector<std::string> VectorParts(std::string_view value);
+[[nodiscard]] std::string JoinVector(std::span<const std::string> parts);
+[[nodiscard]] std::optional<bool> ParseToggle(std::string_view value);
+// Exactly `count` numbers, separated by commas.
+[[nodiscard]] std::optional<std::vector<double>> ParseVector(std::string_view value, std::size_t count);

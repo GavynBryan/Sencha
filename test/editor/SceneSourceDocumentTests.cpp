@@ -202,6 +202,21 @@ namespace
                       .find("3 numbers"), std::string::npos);
     }
 
+    TEST(SceneSourceDocument, AnInstanceNamesItsSourceByIdAndPath)
+    {
+        const std::optional<SceneSourceDocument> parsed = ParseSceneSource(R"({ format_version: 1, entities: [],
+            instances: [ { id: '0000000000000100',
+                           source: { id: '00000000000000d0', path: 'asset://prefabs/door.sscene' } } ] })");
+        ASSERT_TRUE(parsed.has_value());
+        ASSERT_EQ(parsed->Instances.size(), 1u);
+        EXPECT_EQ(parsed->Instances[0].Source, "asset://prefabs/door.sscene");
+        EXPECT_EQ(parsed->Instances[0].SourceId, AssetId{ 0xd0 });
+
+        const std::optional<SceneSourceDocument> again = ParseSceneSource(WriteSceneSource(*parsed));
+        ASSERT_TRUE(again.has_value());
+        EXPECT_EQ(again->Instances[0].SourceId, AssetId{ 0xd0 });
+    }
+
     TEST(SceneSourceDocument, ElementPathsRoundTripAsText)
     {
         SceneElementPath path;

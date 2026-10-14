@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 //=============================================================================
@@ -56,11 +57,19 @@ using UiGeometryRef = std::shared_ptr<const UiGeometryBlob>;
 using UiGeneratedTextureId = std::uint32_t;
 inline constexpr UiGeneratedTextureId kInvalidUiGeneratedTexture = 0;
 
+// Identity for an image the host supplies at draw time -- a viewport's render,
+// a thumbnail, a preview -- which a document names as `host:NAME`. What pixels
+// stand behind it is decided by the host each frame, never by the document.
+using UiHostImageId = std::uint32_t;
+inline constexpr UiHostImageId kInvalidUiHostImage = 0;
+inline constexpr std::string_view kUiHostImageScheme = "host:";
+
 enum class UiTextureKind : std::uint8_t
 {
     None = 0,
     Content,    // an ordinary asset the open screen holds a lease on
-    Generated,  // minted by the document engine, uploaded from PendingUploads
+    Generated,  // minted by the document engine, uploaded from UiTextureChanges
+    Host,       // supplied by the host at draw time through UiTextureResidency
 };
 
 struct UiTextureRef
@@ -68,16 +77,24 @@ struct UiTextureRef
     UiTextureKind Kind = UiTextureKind::None;
     TextureHandle Content{};
     UiGeneratedTextureId Generated = kInvalidUiGeneratedTexture;
+    UiHostImageId Host = kInvalidUiHostImage;
 };
 
-// Pixels for a generated texture, carried on the first frame that uses it. RGBA8
-// with premultiplied alpha, already converted to linear (§8): the document
-// engine hands over sRGB, and converting once here beats converting per sample.
+// Pixels for a generated texture, handed over the first extraction after it was
+// minted: RGBA8, premultiplied, converted once to linear (docs/ui/architecture.md §8).
 struct UiTextureUpload
 {
     UiGeneratedTextureId Id = kInvalidUiGeneratedTexture;
     RenderExtent Size{};
     std::vector<std::byte> LinearPremultipliedRgba8;
+};
+
+// Generated textures minted and finished with since the previous extraction,
+// for every surface at once (docs/ui/architecture.md §9).
+struct UiTextureChanges
+{
+    std::vector<UiTextureUpload> Uploads;
+    std::vector<UiGeneratedTextureId> Released;
 };
 
 // Scissor rectangle in surface pixels. Disabled means "the whole surface".
@@ -126,15 +143,15 @@ struct UiDrawFrame
     // smaller than the window still maps correctly.
     RenderExtent Surface{};
 
+    // The platform window the surface lives on, 0 for the primary. A window's
+    // own render feature draws the frames that name it and nothing else.
+    std::uint32_t WindowId = 0;
+
+    // Which of the window's UI render features draws it. A host that draws UI
+    // of its own between authored layers stages one feature per layer.
+    std::uint8_t Layer = 0;
+
     std::vector<UiDrawCommand> Commands;
 
-    // Generated textures first used this frame, and ones the document engine
-    // has finished with. The feature owns the GPU side of both.
-    std::vector<UiTextureUpload> PendingUploads;
-    std::vector<UiGeneratedTextureId> ReleasedTextures;
-
-    [[nodiscard]] bool IsEmpty() const
-    {
-        return Commands.empty() && PendingUploads.empty() && ReleasedTextures.empty();
-    }
+    [[nodiscard]] bool IsEmpty() const { return Commands.empty(); }
 };

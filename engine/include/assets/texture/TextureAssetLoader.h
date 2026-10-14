@@ -7,29 +7,21 @@
 class LoggingProvider;
 class TextureCache;
 
-//=============================================================================
-// TextureAssetLoader
-//
-// Staged-load contract for textures (docs/assets/pipeline.md, Decision C).
-// Stage: bytes -> decoded CPU Image for loose image data, or TextureData for
-// cooked .stex. Commit: GPU upload + bindless slot via TextureCache.
-//
-// The srgb parameter exists only for the Stage 1 loose-PNG mapping, where
-// usage is unknowable from the bytes; the generic LoadStaged assumes sRGB
-// (base color). Cooked .stex carries a usage tag that replaces the
-// parameter entirely (Decisions E/L).
-//=============================================================================
+// Stages a cooked .stex, or a loose image whose colour space its bytes cannot
+// say (LoadStagedAs; the generic LoadStaged assumes sRGB), and commits through
+// TextureCache (docs/assets/pipeline.md, Decisions C, E, L).
 class TextureAssetLoader final : public IAssetStager
 {
 public:
     TextureAssetLoader(LoggingProvider& logging, TextureCache* cache);
 
     [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
-                                          IAssetSource& source) override;
-
-    [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record,
                                           IAssetSource& source,
-                                          bool srgb);
+                                          const AssetPathsById& current) override;
+
+    [[nodiscard]] AssetStaging LoadStagedAs(const AssetRecord& record,
+                                            IAssetSource& source,
+                                            bool srgb);
 
     // Owner-thread commit returning the typed handle (refcount 1, owned by
     // the caller). The virtual Commit wraps this for heterogeneous drivers.

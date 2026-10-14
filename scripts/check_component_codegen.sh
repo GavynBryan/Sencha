@@ -94,6 +94,7 @@ expect_rejected BadComponentEvent.h component_event "both a component and an eve
 expect_rejected BadComponentMethod.h component_method "components and events are data"
 expect_rejected BadNoIdentity.h no_identity "no SENCHA_COMPONENT identity"
 expect_rejected BadShortChunk.h short_chunk "exactly four characters"
+expect_rejected BadIconNotPlaceable.h icon_not_placeable "names a place icon but is not SENCHA_PLACEABLE"
 
 # Generated, then refused by the compiler: a target and an event source that
 # name a type which exists but is not a component.

@@ -233,7 +233,7 @@ constexpr float kVertexPickPixels = 10.0f;
 // its `pixel`, i.e. the point is hidden behind geometry and must not be pickable.
 // The relative slack keeps the point's own incident faces (met at ~tPoint) from
 // counting as occluders.
-bool IsHidden(const EditorScene& scene, const ViewportProjection& projection, Vec3d worldPoint, ImVec2 pixel)
+bool IsHidden(const EditorScene& scene, const ViewportProjection& projection, Vec3d worldPoint, Vec2d pixel)
 {
     const Ray3d ray = projection.RayThroughPixel(pixel);
     const double tPoint = (worldPoint - ray.Origin).Dot(ray.Direction);
@@ -280,7 +280,7 @@ Vec3d ClosestPointOnSegmentToRay(Vec3d a, Vec3d b, const Ray3d& ray)
 }
 
 SelectableRef PickingService::Pick(const EditorViewport& viewport,
-                                   ImVec2 point,
+                                   Vec2d point,
                                    const EditorScene& scene,
                                    BrushPickRequest request) const
 {
@@ -289,20 +289,21 @@ SelectableRef PickingService::Pick(const EditorViewport& viewport,
     if (request.Mode == BrushPickMode::VertexOnly)
         return PickVertex(viewport, point, scene, request.RestrictTo);
 
-    const Ray3d ray = BuildRay(viewport, point);
-    return PickBrushElement(ray, scene, request);
+    return PickBrushElement(viewport, point, scene, request);
 }
 
-SelectableRef PickingService::PickBrushElement(const Ray3d& ray,
+SelectableRef PickingService::PickBrushElement(const EditorViewport& viewport,
+                                               Vec2d point,
                                                const EditorScene& scene,
                                                BrushPickRequest request) const
 {
+    const Ray3d ray = BuildRay(viewport, point);
     PickCandidate bestCandidate{};
     bool hasBestCandidate = false;
 
     if (AllowsEntities(request) && ProxyProvider)
     {
-        if (const auto proxy = ProxyProvider(ray, scene);
+        if (const auto proxy = ProxyProvider(viewport, point, ray, scene);
             proxy && (!request.RestrictTo.IsValid()
                       || proxy->first.Entity == request.RestrictTo))
         {
@@ -412,7 +413,7 @@ bool PickingService::IsBetterCandidate(const PickCandidate& candidate,
 }
 
 SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
-                                       ImVec2 point,
+                                       Vec2d point,
                                        const EditorScene& scene,
                                        EntityId restrictTo) const
 {
@@ -474,7 +475,7 @@ SelectableRef PickingService::PickEdge(const EditorViewport& viewport,
 }
 
 SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
-                                         ImVec2 point,
+                                         Vec2d point,
                                          const EditorScene& scene,
                                          EntityId restrictTo) const
 {
@@ -500,8 +501,8 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
             if (!projected.has_value())
                 continue;
 
-            const float dx = point.x - projected->Pixel.x;
-            const float dy = point.y - projected->Pixel.y;
+            const float dx = point.X - projected->Pixel.X;
+            const float dy = point.Y - projected->Pixel.Y;
             const float pixels = std::sqrt(dx * dx + dy * dy);
             if (pixels > bestPixels)
                 continue;
@@ -521,7 +522,7 @@ SelectableRef PickingService::PickVertex(const EditorViewport& viewport,
 }
 
 SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
-                                               ImVec2 point,
+                                               Vec2d point,
                                                const EditorScene& scene,
                                                MeshElementKind mode,
                                                EntityId restrictTo) const
@@ -533,8 +534,7 @@ SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
 
     // Face mode seeds from the edge of the picked face nearest the cursor: ray-pick
     // the face, then pick its screen-nearest loop edge.
-    const Ray3d ray = BuildRay(viewport, point);
-    const SelectableRef face = PickBrushElement(ray, scene,
+    const SelectableRef face = PickBrushElement(viewport, point, scene,
         BrushPickRequest{ .Mode = BrushPickMode::FaceOnly, .RestrictTo = restrictTo });
     if (!face.IsFace())
         return {};
@@ -578,20 +578,20 @@ SelectableRef PickingService::PickLoopSeedEdge(const EditorViewport& viewport,
 }
 
 std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& viewport,
-                                                      ImVec2 rectMin,
-                                                      ImVec2 rectMax,
+                                                      Vec2d rectMin,
+                                                      Vec2d rectMax,
                                                       const EditorScene& scene,
                                                       MeshElementKind mode) const
 {
-    const float minX = std::min(rectMin.x, rectMax.x);
-    const float minY = std::min(rectMin.y, rectMax.y);
-    const float maxX = std::max(rectMin.x, rectMax.x);
-    const float maxY = std::max(rectMin.y, rectMax.y);
+    const float minX = std::min(rectMin.X, rectMax.X);
+    const float minY = std::min(rectMin.Y, rectMax.Y);
+    const float maxX = std::max(rectMin.X, rectMax.X);
+    const float maxY = std::max(rectMin.Y, rectMax.Y);
     const ViewportProjection projection(viewport);
     const RegistryId registry = scene.GetRegistry().Id;
 
-    const auto inside = [&](ImVec2 p) {
-        return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY;
+    const auto inside = [&](Vec2d p) {
+        return p.X >= minX && p.X <= maxX && p.Y >= minY && p.Y <= maxY;
     };
 
     std::vector<SelectableRef> result;
@@ -664,10 +664,10 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
             {
                 if (const std::optional<ProjectedPoint> p = projection.WorldToPixel(vertex.Position))
                 {
-                    bxMin = std::min(bxMin, p->Pixel.x);
-                    byMin = std::min(byMin, p->Pixel.y);
-                    bxMax = std::max(bxMax, p->Pixel.x);
-                    byMax = std::max(byMax, p->Pixel.y);
+                    bxMin = std::min(bxMin, p->Pixel.X);
+                    byMin = std::min(byMin, p->Pixel.Y);
+                    bxMax = std::max(bxMax, p->Pixel.X);
+                    byMax = std::max(byMax, p->Pixel.Y);
                     any = true;
                 }
             }
@@ -695,14 +695,14 @@ std::vector<SelectableRef> PickingService::PickInRect(const EditorViewport& view
 }
 
 std::optional<Vec3d> PickingService::ProjectPointToGrid(const EditorViewport& viewport,
-                                                        ImVec2 point,
+                                                        Vec2d point,
                                                         const GridSettings& settings) const
 {
     return ProjectPointToPlane(viewport, point, viewport.GetGrid(settings));
 }
 
 std::optional<Vec3d> PickingService::ProjectPointToPlane(const EditorViewport& viewport,
-                                                         ImVec2 point,
+                                                         Vec2d point,
                                                          const GridPlane& plane) const
 {
     const Ray3d ray = BuildRay(viewport, point);
@@ -719,7 +719,7 @@ std::optional<Vec3d> PickingService::ProjectPointToPlane(const EditorViewport& v
 }
 
 std::optional<SurfaceHit> PickingService::PickSurface(const EditorViewport& viewport,
-                                                      ImVec2 point,
+                                                      Vec2d point,
                                                       const EditorScene& scene) const
 {
     const Ray3d ray = BuildRay(viewport, point);
@@ -744,7 +744,7 @@ std::optional<SurfaceHit> PickingService::PickSurface(const EditorViewport& view
     return hit;
 }
 
-Ray3d PickingService::BuildRay(const EditorViewport& viewport, ImVec2 point) const
+Ray3d PickingService::BuildRay(const EditorViewport& viewport, Vec2d point) const
 {
     return ViewportProjection(viewport).RayThroughPixel(point);
 }

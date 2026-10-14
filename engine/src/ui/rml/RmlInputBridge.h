@@ -21,6 +21,9 @@
 //=============================================================================
 
 [[nodiscard]] Rml::Input::KeyIdentifier ToRmlKey(SDL_Scancode scancode);
+// The inverse, for a key a document reports back; UNKNOWN for one ToRmlKey never
+// produces.
+[[nodiscard]] SDL_Scancode FromRmlKey(Rml::Input::KeyIdentifier key);
 
 [[nodiscard]] int ToRmlKeyModifiers(SDL_Keymod modifiers);
 

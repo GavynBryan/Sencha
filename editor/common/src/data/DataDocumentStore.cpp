@@ -69,7 +69,7 @@ DataDocument* DataDocumentStore::Create(std::string_view subtype, const std::fil
     Validate(*document);
     if (!document->Save(&error))
         return nullptr;
-    RegisterDataAssetFile(Assets.Registry, virtualPath, file);
+    (void)RegisterAssetFile(virtualPath, file, Assets.Registry, Assets.Assets.Kinds());
     return Adopt(std::move(document));
 }
 
@@ -167,6 +167,16 @@ const DataSchema* DataDocumentStore::SchemaOf(std::string_view subtype) const
 const DataAssetTypeRegistry& DataDocumentStore::Types() const
 {
     return Assets.DataTypes;
+}
+
+std::shared_ptr<const AssetPathsById> DataDocumentStore::PathsById() const
+{
+    return Assets.Registry.PathsById();
+}
+
+AssetRef DataDocumentStore::Current(AssetRef ref) const
+{
+    return Assets.Registry.Current(std::move(ref));
 }
 
 bool DataDocumentStore::IsRegistered(std::string_view virtualPath) const
@@ -290,7 +300,7 @@ DocumentSaveResult DataDocumentStore::SaveDocument(std::string_view key)
     if (!saved)
         return { {}, document->IsExternallyModified() ? DocumentSaveStatus::Conflict : DocumentSaveStatus::Failed,
                  std::move(error) };
-    RegisterDataAssetFile(Assets.Registry, document->VirtualPath(), document->FilePath());
+    (void)RegisterAssetFile(document->VirtualPath(), document->FilePath(), Assets.Registry, Assets.Assets.Kinds());
     return { {}, document->IsSemanticallyValid() ? DocumentSaveStatus::Saved : DocumentSaveStatus::SavedWithProblems,
              {} };
 }
@@ -354,9 +364,32 @@ ExternalChange DataDocumentStore::FileChangedOnDisk(const std::filesystem::path&
     return ExternalChange::NotOpen;
 }
 
+bool DataDocumentStore::HoldsFile(const std::filesystem::path& file) const
+{
+    std::error_code ec;
+    return std::ranges::any_of(Open_, [&](const Entry& entry) {
+        return std::filesystem::equivalent(entry.Document->FilePath(), file, ec);
+    });
+}
+
+void DataDocumentStore::FileMoved(const MovedFile& moved)
+{
+    for (const Entry& entry : Open_)
+    {
+        DataDocument& document = *entry.Document;
+        if (document.VirtualPath() != moved.FromAsset)
+            continue;
+        document.MoveTo(moved.To, moved.ToAsset);
+        Sources.Rekey({ this, moved.FromAsset }, moved.ToAsset);
+        Changed(document);
+        return;
+    }
+}
+
 DataDocument* DataDocumentStore::Adopt(std::unique_ptr<DataDocument> document)
 {
-    document->ObserveSteps([this, key = document->VirtualPath()] { Sources.Record({ this, key }); });
+    // Its path read when it steps: the file may have moved since.
+    document->ObserveSteps([this, held = document.get()] { Sources.Record({ this, held->VirtualPath() }); });
     Open_.push_back(Entry{ std::move(document), 0 });
     return Open_.back().Document.get();
 }

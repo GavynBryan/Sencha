@@ -1,5 +1,7 @@
 #include <assets/material/MaterialLoader.h>
 
+#include <core/assets/AssetIdentity.h>
+#include <core/assets/AssetRefCodec.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/json/JsonParser.h>
 #include <core/json/JsonValue.h>
@@ -57,13 +59,12 @@ namespace
     bool ReadTextureRef(const JsonValue& value, std::string_view key,
                         AssetRef& out, MaterialParseError* error)
     {
-        if (!value.IsString())
-            return Fail(error, std::format("'{}' must be an asset path string", key));
-        if (!IsValidAssetPath(value.AsString()))
-            return Fail(error, std::format("'{}' is not a valid asset path: '{}'", key, value.AsString()));
+        std::optional<AssetRef> ref = AssetRefFromJson(value);
+        if (!ref.has_value())
+            return Fail(error, std::format("'{}' must be an asset path or an {{id, path}} reference", key));
 
+        out = std::move(*ref);
         out.Type = AssetType::Texture;
-        out.Path = value.AsString();
         return true;
     }
 
@@ -113,6 +114,13 @@ bool ParseMaterialJson(const JsonValue& root, MaterialDescription& out, Material
         bool ok = true;
         if (key == "version")
             continue;
+        else if (key == kAssetIdKey)
+        {
+            const std::optional<AssetId> id = StatedAssetId(root);
+            if (!id.has_value())
+                return Fail(error, "'id' must be 16 lowercase hex digits");
+            desc.Id = *id;
+        }
         else if (key == "shading")
             ok = ReadShading(value, desc.Shading, error);
         else if (key == "base_color_factor")

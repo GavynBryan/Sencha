@@ -29,7 +29,7 @@ void EditorLinePipeline::Submit(const FrameContext& frame,
                                 std::span<const EditorLineVertex> vertices,
                                 bool onTop)
 {
-    Pipeline.Submit(frame, viewport, camera, vertices, onTop);
+    Pipeline.Submit(frame, viewport.Region(), camera, vertices, onTop);
 }
 
 void EditorLinePipeline::Teardown()

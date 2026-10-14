@@ -1,5 +1,6 @@
 #include <assets/cook/FontCook.h>
 
+#include <core/assets/AssetPath.h>
 #include <assets/cook/CookFingerprint.h>
 #include <assets/cook/FontImportSettings.h>
 #include <assets/font/FontFace.h>
@@ -44,7 +45,7 @@ ImportResult FontFaceImporter::Import(const ImportInput& input, ICookOutputWrite
         return ImportResult{ .Error = "font import: sfont serialization failed" };
 
     CookedArtifact artifact;
-    artifact.Path = "asset://" + std::string(input.SourceRelPath);
+    artifact.Path = AssetPathOf(input.SourceRelPath);
     artifact.FileRelPath = ".cooked/" + std::string(input.SourceRelPath) + ".sfont";
     artifact.Type = AssetType::Font;
 

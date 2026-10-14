@@ -13,11 +13,6 @@ void ViewportTargetCache::Setup(const RendererServices& services)
 {
     Services = services;
     Store.Setup(services);
-    // Nearest, not linear: the target is displayed 1:1, and bilinear resampling
-    // beats against the 1px grid and wireframe lines (moire). Nearest copies
-    // pixels verbatim, so the composited image matches direct-to-swapchain
-    // rendering.
-    Presenter.Setup(services.Samplers->GetNearestClamp());
 }
 
 void ViewportTargetCache::Teardown()
@@ -30,16 +25,11 @@ void ViewportTargetCache::Teardown()
     Entries.clear();
     Displays = {};
     Store.Teardown();
-    Presenter.Teardown();
 }
 
-void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex,
-                                     GpuFrameRetirement retirement)
+void ViewportTargetCache::BeginFrame(uint32_t frameInFlightIndex)
 {
     Store.BeginFrame(frameInFlightIndex);
-    // The presenter is the one here that retires anything of its own: the
-    // ImGui descriptor sets it hands the UI outlive the target they name.
-    Presenter.BeginFrame(retirement);
     Displays.Advance();
 }
 
@@ -62,8 +52,10 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
     // use for one -- inheriting it would make every barrier on these images a
     // combined-aspect barrier for a feature they do not have.
     scene.DepthFormat = VK_FORMAT_D32_SFLOAT;
-    // ImGui binds this one itself, through the presenter.
-    scene.Read = RenderTargetRead::Sampled;
+    // Nearest, not linear: the target is shown 1:1, and bilinear resampling
+    // beats against the 1px grid and wireframe lines (moire).
+    scene.Read = RenderTargetRead::Bindless;
+    scene.Sampler = Services.Samplers->GetNearestClamp();
     scene.DebugName = "viewport_color";
 
     // Full resolution, not half: a half-res glow source stair-steps the
@@ -86,7 +78,6 @@ ViewportTargetCache::Entry& ViewportTargetCache::FindOrAdd(ViewportId id)
 
 void ViewportTargetCache::Release(Entry& entry)
 {
-    Presenter.Release(entry.Scene);
     Store.Destroy(entry.Scene);
     for (RenderTargetId& bloom : entry.Bloom)
         Store.Destroy(bloom);
@@ -116,6 +107,7 @@ std::optional<ViewportTargetCache::RenderView> ViewportTargetCache::AcquireForRe
     view.DepthView = scene->DepthView;
     view.Extent = scene->Extent;
     view.ColorLayout = scene->ColorLayout;
+    view.ColorBindless = scene->BindlessIndex;
     if (haveBloom)
     {
         view.BloomImage[0] = bloom0->ColorImage;
@@ -146,12 +138,11 @@ void ViewportTargetCache::Prune(std::span<const ViewportId> live)
     }
 }
 
-ImTextureID ViewportTargetCache::Display(ViewportId id, VkExtent2D extent)
+void ViewportTargetCache::Show(ViewportId id, VkExtent2D extent)
 {
     Displays.MarkDisplayed(id);
     Entry& entry = FindOrAdd(id);
     Store.SetExtent(entry.Scene, extent);
     for (RenderTargetId bloom : entry.Bloom)
         Store.SetExtent(bloom, extent);
-    return Presenter.Present(Store, entry.Scene);
 }

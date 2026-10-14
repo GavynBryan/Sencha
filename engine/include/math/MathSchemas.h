@@ -103,6 +103,12 @@ struct PackedScalarGroup<Quat<T>>
 };
 
 template <typename T>
+struct PackedScalarRotation<Quat<T>>
+{
+    static constexpr bool Value = true;
+};
+
+template <typename T>
 struct TypeSchema<Transform3d<T>>
 {
     static constexpr std::string_view Name = "Transform3d";

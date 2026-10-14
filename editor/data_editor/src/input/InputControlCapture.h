@@ -33,6 +33,8 @@ public:
 
     [[nodiscard]] bool IsArmed() const { return Armed; }
     [[nodiscard]] bool IsArmedAt(std::string_view fieldPath) const;
+    // The slot a control was pressed for and not yet taken, if any.
+    [[nodiscard]] const std::string& PendingField() const { return CapturedField; }
 
     // The captured control name, once, for the slot that armed it. Reports
     // nothing when the document moved under the arm.

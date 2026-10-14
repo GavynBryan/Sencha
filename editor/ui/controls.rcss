@@ -1,0 +1,205 @@
+@font-face { src: "fonts/ChakraPetch-SemiBold.ttf"; }
+@font-face { src: "fonts/JetBrainsMono-Regular.ttf"; }
+@font-face { src: "fonts/fa-solid-900.ttf"; }
+
+/* The controls every editor document shares: keys, and a setting's row with
+   its field, slider, drop-down or switch. Geometry only; colours are the
+   theme's roles. */
+
+.key
+{
+    display: block;
+    min-width: 24dp;
+    height: 22dp;
+    line-height: 22dp;
+    padding: 0dp 7dp;
+    text-align: center;
+    border-width: 1dp;
+    border-radius: 3dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    font-size: 11dp;
+    letter-spacing: 1dp;
+    white-space: nowrap;
+    pointer-events: auto;
+    tab-index: auto;
+}
+
+.key:active
+{
+    /* Pressed in by a physical key's travel. */
+    transform: translateY(1dp);
+}
+
+.glyph
+{
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    font-size: 11dp;
+}
+
+.setting
+{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    min-height: 26dp;
+    gap: 8dp;
+}
+
+.setting_label { display: block; width: 84dp; font-size: 11dp; word-break: break-word; }
+.setting_control { display: block; flex: 1; height: 20dp; }
+.asset_name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.setting_number
+{
+    display: block;
+    width: 38dp;
+    padding: 0dp 4dp;
+    border-width: 1dp;
+    text-align: right;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+}
+/* A number is a box: dragged across to change it, clicked to type into it,
+   filled behind its value as far as it is between its bounds. */
+.numbox
+{
+    display: block;
+    position: relative;
+    flex: 1;
+    height: 20dp;
+    border-width: 1dp;
+    border-radius: 2dp;
+    overflow: hidden;
+    cursor: ew-resize;
+}
+.numfill { display: block; position: absolute; left: 0dp; top: 0dp; bottom: 0dp; }
+.numtext
+{
+    display: block;
+    position: relative;
+    padding: 0dp 6dp;
+    line-height: 20dp;
+    text-align: right;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+    white-space: nowrap;
+    overflow: hidden;
+}
+/* A vector's numbers side by side, each named by its axis in the gizmo's colour. */
+.vector { display: flex; flex: 1; gap: 4dp; }
+.vecpart
+{
+    display: flex;
+    flex: 1 1 0dp;
+    height: 20dp;
+    border-width: 1dp;
+    border-radius: 2dp;
+    overflow: hidden;
+    cursor: ew-resize;
+}
+.vecpart .numtext { flex: 1; }
+.axis
+{
+    display: block;
+    width: 14dp;
+    line-height: 20dp;
+    text-align: center;
+    font-family: "JetBrains Mono";
+    font-size: 9dp;
+}
+.partinput { display: block; flex: 1; height: 20dp; padding: 0dp 4dp; font-family: "JetBrains Mono"; font-size: 11dp; }
+.setting_toggle { flex: 0; }
+.setting_long { height: 80dp; }
+.setting_color { display: flex; flex: 1; align-items: center; gap: 6dp; }
+.swatch { display: block; width: 20dp; height: 20dp; border-width: 1dp; border-radius: 2dp; }
+/* A value along a span, as bars rising from its foot. */
+.setting_plot
+{
+    display: flex;
+    flex: 1;
+    align-items: flex-end;
+    gap: 1dp;
+    height: 36dp;
+    border-width: 1dp;
+    border-radius: 2dp;
+    padding: 2dp;
+}
+.plot_bar { display: block; flex: 1 1 0dp; min-height: 1dp; }
+.setting.heading
+{
+    margin-top: 6dp;
+    font-family: "Chakra Petch";
+    font-weight: 600;
+    letter-spacing: 1dp;
+}
+.setting.heading .setting_label { width: auto; flex: 1 0 auto; font-size: 11dp; }
+/* A group's arrow, what can be done about a row beside it, and the cross that
+   takes the row away -- dim until the pointer is on it. */
+.fold { display: block; width: 10dp; font-size: 10dp; }
+/* What can be done about a row runs along a line of its own under it, so a
+   long label never squeezes the row it belongs to. */
+.row_verbs { display: flex; flex-wrap: wrap; width: 100%; gap: 4dp; }
+.remove
+{
+    display: block;
+    width: 20dp;
+    height: 20dp;
+    line-height: 20dp;
+    text-align: center;
+    border-radius: 2dp;
+    font-size: 11dp;
+}
+.setting_value { display: block; flex: 1; font-size: 11dp; word-break: break-word; }
+.setting.locked * { pointer-events: none; }
+
+/* A setting's slider and drop-down: geometry here, colours the theme's. The
+   slider's parts are scoped to the input, because a scrollbar is built from
+   parts of the same names. */
+input slidertrack
+{
+    display: block;
+    height: 4dp;
+    margin-top: 8dp;
+    border-radius: 2dp;
+    pointer-events: auto;
+}
+input sliderbar
+{
+    display: block;
+    width: 10dp;
+    height: 16dp;
+    margin-top: -6dp;
+    border-radius: 2dp;
+    pointer-events: auto;
+}
+input sliderprogress { display: block; height: 4dp; pointer-events: auto; }
+input sliderarrowdec, input sliderarrowinc { display: none; }
+
+/* A scrollbar that takes a sliver of what it scrolls. With no size of its own
+   it takes the whole width, and what it scrolls is laid out in none. */
+scrollbarvertical { width: 6dp; margin-left: 2dp; pointer-events: auto; }
+scrollbarvertical slidertrack { width: 6dp; }
+scrollbarvertical sliderbar { width: 6dp; min-height: 16dp; border-radius: 3dp; }
+scrollbarhorizontal { height: 6dp; pointer-events: auto; }
+scrollbarhorizontal sliderbar { height: 6dp; min-width: 16dp; border-radius: 3dp; }
+scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc,
+scrollbarhorizontal sliderarrowdec, scrollbarhorizontal sliderarrowinc { width: 0dp; height: 0dp; }
+
+selectvalue { display: block; padding: 2dp 6dp; pointer-events: auto; }
+selectarrow { display: block; width: 16dp; height: 100%; pointer-events: auto; }
+selectbox { display: block; border-width: 1dp; border-radius: 3dp; pointer-events: auto; }
+selectbox option { display: block; padding: 4dp 6dp; pointer-events: auto; }
+
+/* A part of a path, one step of a breadcrumb or a folder trail. */
+.crumb
+{
+    display: flex;
+    align-items: center;
+    gap: 6dp;
+    height: 24dp;
+    padding: 0dp 6dp;
+    border-radius: 3dp;
+    white-space: nowrap;
+}
+.crumb_sep { font-size: 10dp; }

@@ -10,6 +10,8 @@
 struct SENCHA_COMPONENT("player_start")
        SENCHA_SCHEMA("player_start")
        SENCHA_SCENE_CHUNK("PSTR")
+       SENCHA_PLACEABLE("Player Start")
+       SENCHA_PLACE_ICON("flag")
 FpsStart
 {
 };

@@ -1,6 +1,14 @@
 #include <gtest/gtest.h>
 
+#include "authoring/BindingMissProperties.h"
+#include "authoring/ElementOutline.h"
+#include "authoring/ElementProperties.h"
+#include "authoring/PreviewModelProperties.h"
+#include "authoring/PreviewReports.h"
+#include "authoring/SurfaceProperties.h"
 #include "authoring/UiPreviewSession.h"
+#include "documents/DocumentSourceSet.h"
+#include "properties/PropertyTree.h"
 
 #include <assets/runtime/RuntimeAssets.h>
 #include <assets/ui/UiPackage.h>
@@ -168,6 +176,77 @@ TEST(UiPreviewSession, PollIsTheOneDrainerAndKeepsHistories)
     session.Poll();
     ASSERT_FALSE(session.Actions().empty()) << "the click on #button raised nothing";
     EXPECT_EQ(session.Actions().back().Id, UiActionIdAt(0));
+    EXPECT_EQ(session.RaisedCount(), 1u);
+    EXPECT_EQ(DescribeRaisedAction(session.Actions().back(), session.Model()), "pressed")
+        << "named by its declaration";
+}
+
+TEST(UiPreviewSession, AMissingBindingIsAProblemWithThePreviewModel)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    f.Ui->Update();
+    const std::uint64_t before = session.DiagnosticsVersion();
+    session.Poll();
+    EXPECT_NE(session.DiagnosticsVersion(), before);
+
+    const std::vector<Problem> problems = PreviewProblems(session.Diagnostics(), session.Surface());
+    ASSERT_FALSE(problems.empty());
+    const auto missing = std::ranges::find_if(problems, [](const Problem& problem) {
+        return problem.Message.find("missing") != std::string::npos;
+    });
+    ASSERT_NE(missing, problems.end());
+    EXPECT_EQ(missing->Location, kPreviewModelLocation);
+
+    const std::uint64_t seen = session.DiagnosticsVersion();
+    session.ClearDiagnostics();
+    EXPECT_NE(session.DiagnosticsVersion(), seen) << "a clear is a change a reader must see";
+}
+
+TEST(UiPreviewSession, TheElementCardDescribesThePickedElement)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    f.Ui->Update();
+    const UiElementRef button = f.Ui->ElementAt(session.Surface(), Vec2d(50.0f, 20.0f));
+    ASSERT_TRUE(button.IsValid());
+
+    UiElementRef picked = button;
+    ElementProperties card(session, [&picked] { return picked; });
+    std::vector<PropertyNode> nodes = card.Nodes();
+    const std::optional<PropertyPlace> border = FindPropertyNode(nodes, "boxes.border");
+    ASSERT_TRUE(border.has_value());
+    EXPECT_NE(border->Node().Value.find("100 x 40 px"), std::string::npos) << border->Node().Value;
+    EXPECT_TRUE(FindPropertyNode(nodes, "notes.focus").has_value())
+        << "it raises an action and has no tab-index: a controller cannot reach it";
+    EXPECT_TRUE(FindPropertyNode(nodes, "attribute.data-event-click").has_value());
+    EXPECT_FALSE(card.BeginEdit("boxes.border")) << "the document is edited in its own file";
+
+    picked = {};
+    EXPECT_TRUE(card.Nodes().empty());
+}
+
+TEST(UiPreviewSession, TheSurfaceCardResizesLiveAndACancelPutsItBack)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    SurfaceProperties card(session, [] { return nullptr; }, nullptr);
+
+    ASSERT_TRUE(card.BeginEdit("width"));
+    EXPECT_EQ(card.PreviewEdit("width", "1280"), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Resolution().Width, 1280u);
+    card.CancelEdit("width");
+    EXPECT_EQ(session.Resolution(), (RenderExtent{ 1920, 1080 }));
+
+    ASSERT_TRUE(card.BeginEdit("scale"));
+    EXPECT_EQ(card.CommitEdit("scale", "1.5"), PropertyEditResult::Applied);
+    EXPECT_FLOAT_EQ(session.DisplayScale(), 1.5f);
+    ASSERT_TRUE(card.BeginEdit("height"));
+    EXPECT_EQ(card.CommitEdit("height", "1080"), PropertyEditResult::Unchanged);
+    EXPECT_EQ(card.CommitEdit("height", "tall"), PropertyEditResult::Refused);
 }
 
 TEST(UiPreviewSession, ReopenAppliesAnEditedModelAndCloseLeavesNothingOpen)
@@ -191,4 +270,128 @@ TEST(UiPreviewSession, ReopenAppliesAnEditedModelAndCloseLeavesNothingOpen)
     session.Close();
     EXPECT_FALSE(session.IsOpen());
     EXPECT_FALSE(f.Ui->IsScreenOpen(screen));
+}
+
+TEST(UiPreviewSession, TheModelCardPublishesSamplesAndRedeclaresDeclarations)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    UiPreviewModel model = Fixture::Model();
+    model.Arrays.push_back({ "entries", { "Resume", "Quit" } });
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", model));
+    DocumentSourceSet journal;
+    SnapshotDocument sidecar(journal, PreviewModelSnapshots(session));
+    sidecar.Open(f.Root / "ui" / "doc.preview.json");
+    PreviewModelProperties card(session, sidecar);
+    EXPECT_FALSE(sidecar.IsChanged());
+
+    const UiScreenHandle opened = session.OpenScreen();
+    ASSERT_TRUE(card.BeginEdit("lists.0.items.1"));
+    EXPECT_EQ(card.CommitEdit("lists.0.items.1", "Exit"), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Model().Arrays[0].Items[1], "Exit");
+    EXPECT_EQ(session.OpenScreen(), opened) << "a sample publishes to the open screen";
+    EXPECT_TRUE(sidecar.IsChanged());
+
+    ASSERT_TRUE(card.BeginEdit("properties.0.name"));
+    EXPECT_EQ(card.CommitEdit("properties.0.name", "heading"), PropertyEditResult::Applied);
+    EXPECT_NE(session.OpenScreen(), opened) << "a declaration remakes the screen";
+    EXPECT_EQ(card.CommitEdit("properties.0.name", "heading"), PropertyEditResult::Unchanged);
+
+    ASSERT_TRUE(card.BeginEdit("properties.0.kind"));
+    EXPECT_EQ(card.CommitEdit("properties.0.kind", "int"), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Model().Properties[0].Initial, UiValue(std::int64_t{ 0 })) << "a new kind starts at its default";
+    EXPECT_EQ(card.CommitEdit("properties.0.sample", "seven"), PropertyEditResult::Refused);
+
+    ASSERT_TRUE(card.BeginEdit("model.name"));
+    EXPECT_EQ(card.PreviewEdit("model.name", "other"), PropertyEditResult::Applied);
+    card.CancelEdit("model.name");
+    EXPECT_EQ(session.Model().ModelName, "m") << "a cancel puts back what the edit found";
+
+    EXPECT_EQ(card.Act("actions", "add", {}), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Model().Actions.back(), "new_action");
+    EXPECT_EQ(card.Act("lists.0.items.0", "remove", {}), PropertyEditResult::Applied);
+    EXPECT_EQ(session.Model().Arrays[0].Items, (std::vector<std::string>{ "Exit" }));
+    EXPECT_EQ(card.Act("lists.4", "remove", {}), PropertyEditResult::Gone);
+
+    EXPECT_EQ(journal.Save(sidecar.Ref()).Status, DocumentSaveStatus::Saved);
+    EXPECT_FALSE(sidecar.IsChanged());
+    EXPECT_TRUE(std::filesystem::exists(f.Root / "ui" / "doc.preview.json"));
+}
+
+// The model is a document of the journal: an edit is a step undo takes back,
+// and while one is unsaved the model is among the changed documents.
+TEST(UiPreviewSession, AModelEditIsAStepUndoTakesBack)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    DocumentSourceSet journal;
+    SnapshotDocument sidecar(journal, PreviewModelSnapshots(session));
+    sidecar.Open(f.Root / "ui" / "doc.preview.json");
+    PreviewModelProperties card(session, sidecar);
+    EXPECT_TRUE(journal.ChangedDocuments().empty());
+
+    ASSERT_TRUE(card.BeginEdit("model.name"));
+    EXPECT_EQ(card.PreviewEdit("model.name", "other"), PropertyEditResult::Applied);
+    EXPECT_FALSE(journal.CanUndo()) << "a preview is not a step";
+    EXPECT_EQ(card.CommitEdit("model.name", "other"), PropertyEditResult::Unchanged) << "the preview already applied it";
+    EXPECT_EQ(card.Act("actions", "add", {}), PropertyEditResult::Applied);
+    ASSERT_EQ(journal.ChangedDocuments(), std::vector<DocumentRef>{ sidecar.Ref() })
+        << "closing UI Preview or the editor asks about it";
+
+    journal.Undo();
+    EXPECT_EQ(session.Model().Actions, std::vector<std::string>{ "pressed" });
+    EXPECT_EQ(session.Model().ModelName, "other");
+    journal.Undo();
+    EXPECT_EQ(session.Model().ModelName, "m");
+    EXPECT_TRUE(session.IsOpen()) << "the screen is remade on the model undo put back";
+    EXPECT_FALSE(sidecar.IsChanged());
+    journal.Redo();
+    EXPECT_EQ(session.Model().ModelName, "other");
+
+    sidecar.DiscardDocument(sidecar.Ref().Key);
+    EXPECT_EQ(session.Model().ModelName, "m");
+    EXPECT_TRUE(journal.ChangedDocuments().empty());
+}
+
+// With no sidecar to keep it in, the model is not edited at all.
+TEST(UiPreviewSession, AModelWithNowhereToBeSavedIsNotEdited)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    DocumentSourceSet journal;
+    SnapshotDocument sidecar(journal, PreviewModelSnapshots(session));
+    PreviewModelProperties card(session, sidecar);
+    EXPECT_FALSE(card.BeginEdit("model.name"));
+    EXPECT_EQ(card.Act("actions", "add", {}), PropertyEditResult::Refused);
+    EXPECT_EQ(session.Model().Actions.size(), 1u);
+}
+
+TEST(UiPreviewSession, AMissingBindingIsDeclaredFromTheCard)
+{
+    Fixture f;
+    UiPreviewSession session(*f.Ui);
+    ASSERT_TRUE(session.Open("asset://ui/doc.sui", Fixture::Model()));
+    f.Ui->Update();
+    session.Poll();
+    DocumentSourceSet journal;
+    SnapshotDocument sidecar(journal, PreviewModelSnapshots(session));
+    sidecar.Open(f.Root / "ui" / "doc.preview.json");
+    BindingMissProperties misses(session, sidecar);
+    std::vector<PropertyNode> nodes = misses.Nodes();
+    const auto missing = std::ranges::find_if(nodes, [](const PropertyNode& node) { return node.Value == "missing"; });
+    ASSERT_NE(missing, nodes.end());
+    ASSERT_FALSE(missing->Descriptor.Verbs.empty());
+    EXPECT_EQ(missing->Descriptor.Verbs.front().Id, "property");
+
+    EXPECT_EQ(misses.Act(missing->Key, "property", {}), PropertyEditResult::Applied);
+    EXPECT_TRUE(session.Model().DeclaresProperty("missing"));
+    f.Ui->Update();
+    session.Poll();
+    for (const PropertyNode& node : misses.Nodes())
+        EXPECT_NE(node.Value, "missing") << "declared, so no longer missing";
+    EXPECT_TRUE(sidecar.IsChanged()) << "a declaration is a step on the sidecar";
+    journal.Undo();
+    EXPECT_FALSE(session.Model().DeclaresProperty("missing"));
 }

@@ -121,7 +121,7 @@ public:
     // editor's working copy of a resident asset.
     [[nodiscard]] AssetStaging StageDataRoot(const AssetRecord& record, const JsonValue& root)
     {
-        return DataLoader.StageRoot(record, root);
+        return DataLoader.StageRoot(record, root, *Registry.PathsById());
     }
 
     // The windowed composition: every kind this engine knows is loadable.

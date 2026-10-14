@@ -4,7 +4,6 @@
 
 #include <assets/cook/AssetImporter.h>
 #include <assets/cook/ImportOnDemand.h>
-#include <core/assets/AssetStager.h>
 #include <core/assets/AssetRegistry.h>
 #include <assets/runtime/AssetSystem.h>
 #include <core/logging/LoggingProvider.h>
@@ -86,7 +85,7 @@ void AssetHotReloader::ReloadSource(std::string_view sourceRelPath)
     const std::filesystem::path relPath{ std::string(sourceRelPath) };
     if (Importers.FindByExtension(relPath.extension().generic_string()) == nullptr)
     {
-        const std::string virtualPath = "asset://" + std::string(sourceRelPath);
+        const std::string virtualPath = AssetPathOf(sourceRelPath);
         const AssetRecord* record = Registry.FindByPath(virtualPath);
         if (record == nullptr)
         {
@@ -133,20 +132,5 @@ void AssetHotReloader::StageReload(const AssetRecord& record)
                   record.Path, AssetTypeToString(record.Type));
         return;
     }
-
-    IAssetStager* stager = kind->Stager;
-    IAssetSource* source = &Assets.DefaultSource();
-    const AssetRecord rec = record; // capture by value for the task thread
-
-    Tasks.Submit<AssetStaging>(
-        // Task thread: pure decode of the re-cooked bytes.
-        [stager, source, rec]() -> AssetStaging {
-            return stager->LoadStaged(rec, *source);
-        },
-        // Owner thread, drain point: swap the resident entry in place.
-        [this, kindName = kind->Name, reload = kind->Reload, path = record.Path]
-        (AssetStaging staging) {
-            if (reload(std::move(staging)))
-                Log.Info("AssetHotReloader: reloaded {} '{}'", kindName, path);
-        });
+    Assets.StageReload(record, Tasks);
 }

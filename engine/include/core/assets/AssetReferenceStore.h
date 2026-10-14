@@ -68,7 +68,8 @@ public:
     // path is the whole of what the store keeps. The payload is the record's
     // path so the staging is valid by the front door's rule (no error, a
     // payload present) and the commit has something to intern.
-    [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record, IAssetSource&) override
+    [[nodiscard]] AssetStaging LoadStaged(const AssetRecord& record, IAssetSource&,
+                                          const AssetPathsById&) override
     {
         AssetStaging staging;
         staging.Record = record;

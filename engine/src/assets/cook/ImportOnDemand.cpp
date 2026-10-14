@@ -75,6 +75,11 @@ namespace
         std::unordered_map<std::string, uint64_t> WrittenHashes;
     };
 
+    std::string_view AsText(std::span<const std::byte> bytes)
+    {
+        return { reinterpret_cast<const char*>(bytes.data()), bytes.size() };
+    }
+
     // Records the hash each artifact was written with, so registration and
     // future launches never have to read the artifact back.
     void StampArtifactHashes(const FileCookOutputWriter& writer,
@@ -151,7 +156,7 @@ namespace
         uint64_t hash = HashBytes64(sourceBytes);
 
         std::filesystem::path metaPath = sourcePath;
-        metaPath += std::string(kImportSettingsSuffix);
+        metaPath += std::string(kAssetSidecarSuffix);
         std::error_code ec;
         if (std::filesystem::exists(metaPath, ec) && ReadFileBytes(metaPath, outMetaBytes)
             && !outMetaBytes.empty())
@@ -390,7 +395,7 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
 
         if (!it->is_regular_file(ec))
         {
-            if (it->path().filename() == kCookedCacheDirName)
+            if (IsHiddenContentFolder(it->path()))
                 it.disable_recursion_pending();
             continue;
         }
@@ -405,7 +410,7 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
             std::filesystem::relative(it->path(), assetsRoot).generic_string();
 
         std::filesystem::path metaPath = it->path();
-        metaPath += std::string(kImportSettingsSuffix);
+        metaPath += std::string(kAssetSidecarSuffix);
         const FileStat sourceStat = StatFile(it->path());
         const FileStat metaStat = StatFile(metaPath);
 
@@ -493,6 +498,7 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
 
         CookedSourceEntry entry;
         entry.SourceRelPath = sourceRel;
+        entry.SourceId = StatedAssetIdIn(AsText(metaBytes)).value_or(AssetId{});
         entry.AdditionalSources = StampAdditionalSources(result.AdditionalSources, assetsRoot);
         // The fingerprint covers every input the import actually consumed, which
         // is what makes editing one of them recook this source.
@@ -501,8 +507,9 @@ bool PrepareAssetsOnDemand(const std::filesystem::path& assetsRoot,
         entry.CookIdentity = cookIdentity;
         StampSourceStats(entry, sourceStat, metaStat);
         entry.Artifacts = result.Artifacts;
+        NameCookedIds(entry);
 
-        for (const CookedArtifact& artifact : result.Artifacts)
+        for (const CookedArtifact& artifact : entry.Artifacts)
         {
             out.Artifacts.push_back(PreparedCookedArtifact{
                 artifact, out.TempRoot / artifact.FileRelPath });
@@ -561,6 +568,7 @@ bool RegisterImportedAssets(std::span<const CookedArtifact> records,
         record.Type = artifact.Type;
         record.SourceKind = AssetSourceKind::File;
         record.Path = artifact.Path;
+        record.Id = artifact.Id;
         record.FilePath = (assetsRoot / artifact.FileRelPath).generic_string();
         record.ContentHash = artifact.ContentHash;
         // Preparation resolves hashes up front; a zero here means a file could
@@ -710,12 +718,13 @@ bool ReimportOneSource(std::string_view rootDirectory,
     }
     CookedSourceEntry entry;
     entry.SourceRelPath = std::string(sourceRelPath);
+    entry.SourceId = StatedAssetIdIn(AsText(metaBytes)).value_or(AssetId{});
     entry.AdditionalSources = StampAdditionalSources(result.AdditionalSources, root);
     entry.InputFingerprint =
         CombineAdditionalSourceHashes(sourceHash, entry.AdditionalSources, root);
     entry.CookIdentity = importer->CookIdentity();
     std::filesystem::path metaPath = sourcePath;
-    metaPath += std::string(kImportSettingsSuffix);
+    metaPath += std::string(kAssetSidecarSuffix);
     StampSourceStats(entry, StatFile(sourcePath), StatFile(metaPath));
     entry.Artifacts = std::move(result.Artifacts);
     index.Put(std::move(entry));
@@ -724,4 +733,21 @@ bool ReimportOneSource(std::string_view rootDirectory,
         log.Warn("ReimportOneSource: could not update cooked index after reimporting '{}'", sourceRelPath);
 
     return true;
+}
+
+bool ForgetImportedSource(std::string_view rootDirectory, std::string_view sourceRelPath, AssetRegistry& registry)
+{
+    const std::filesystem::path indexPath =
+        std::filesystem::path(rootDirectory) / kCookedCacheDirName / kIndexFileName;
+    CookedCacheIndex index;
+    std::error_code ec;
+    if (!std::filesystem::exists(indexPath, ec) || !CookedCacheIndex::LoadFromFile(indexPath.generic_string(), index))
+        return false;
+    const CookedSourceEntry* entry = index.Find(sourceRelPath);
+    if (entry == nullptr)
+        return false;
+    for (const CookedArtifact& artifact : entry->Artifacts)
+        (void)registry.Unregister(artifact.Path);
+    index.Erase(sourceRelPath);
+    return index.SaveToFile(indexPath.generic_string());
 }

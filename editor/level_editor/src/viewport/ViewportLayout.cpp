@@ -7,6 +7,8 @@ ViewportLayout ViewportLayout::MakeDefault()
     ViewportLayout layout;
     const ViewportId perspective = layout.Add(ViewportOrientation::Perspective);
     layout.Add(ViewportOrientation::Top);
+    layout.Add(ViewportOrientation::Front);
+    layout.Add(ViewportOrientation::Right);
     layout.SetActive(perspective);
     return layout;
 }
@@ -72,30 +74,41 @@ void ViewportLayout::SetActive(ViewportId id)
     SyncActiveFlags();
 }
 
+void ViewportLayout::ActivateFacing(ViewportOrientation orientation)
+{
+    for (const ViewportStorage& viewport : Viewports)
+        if (viewport != nullptr && viewport->Orientation == orientation)
+        {
+            SetActive(viewport->Id);
+            return;
+        }
+}
+
 void ViewportLayout::OnResize(uint32_t width, uint32_t height)
 {
     Width = width;
     Height = height;
 
-    // Seed any not-yet-drawn viewport with a full-window rect. ViewportPanel writes
-    // the real per-panel rects during draw, which runs *after* the first frame's
-    // input — so without this the first frame would project / aspect-test against a
-    // degenerate {0,0} box. Only fills uninitialized rects, so it never clobbers the
-    // live rects already on screen when a later resize arrives.
+    // Seed any not-yet-arranged viewport with a full-window rect. The arrangement
+    // writes the real rects from the views panel's rect, which is known only
+    // after the first frame's input -- so without this the first frame would
+    // project / aspect-test against a degenerate {0,0} box. Only fills
+    // uninitialized rects, so it never clobbers the live rects already on
+    // screen when a later resize arrives.
     for (const ViewportStorage& viewport : Viewports)
     {
         if (viewport == nullptr)
             continue;
-        if (viewport->RegionMax.x <= viewport->RegionMin.x
-            || viewport->RegionMax.y <= viewport->RegionMin.y)
+        if (viewport->RegionMax.X <= viewport->RegionMin.X
+            || viewport->RegionMax.Y <= viewport->RegionMin.Y)
         {
-            viewport->RegionMin = ImVec2(0.0f, 0.0f);
-            viewport->RegionMax = ImVec2(static_cast<float>(width), static_cast<float>(height));
+            viewport->RegionMin = Vec2d(0.0f, 0.0f);
+            viewport->RegionMax = Vec2d(static_cast<float>(width), static_cast<float>(height));
         }
     }
 }
 
-ViewportId ViewportLayout::ResolveAt(ImVec2 point) const
+ViewportId ViewportLayout::ResolveAt(Vec2d point) const
 {
     for (const ViewportStorage& viewport : Viewports)
     {

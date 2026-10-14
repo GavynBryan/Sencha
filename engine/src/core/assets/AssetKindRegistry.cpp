@@ -28,6 +28,9 @@ bool AssetKindRegistry::Register(AssetKindRegistration registration)
     if (registration.Reload != nullptr && !registration.IsLoadable())
         return false;
 
+    if (registration.StandIn != nullptr && registration.Reload == nullptr)
+        return false;
+
     for (const std::string& extension : registration.RuntimeExtensions)
     {
         if (extension.empty() || FindTypeByExtension(extension) != AssetType::Unknown)
