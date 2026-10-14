@@ -990,6 +990,9 @@ lands in a draft an agent is writing. The gizmo's transform commit puts the
 dragged entities back where the drag began and records the move through
 `MoveEntities`, the function `space.move` uses, so carry is one rule for both;
 a space dragged together with the space it would pull carries nothing.
+The Space tool (R) drags a footprint on a horizontal plane, the grid or a
+surface facing up, previews the box at the conventions' space height, and
+commits on release through `CreateSpace`, named `Space`, `Space 1`, and so on.
 
 Found on the way: `deps` counted only the doors a space owns as leading out
 of it; it now counts every opening in its walls. Skill v0 is

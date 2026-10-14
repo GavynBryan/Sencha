@@ -12,6 +12,8 @@
 #include "operations/LevelTarget.h"
 #include "meshedit/ManipulationSink.h"
 #include "workspace/BrushManipulationSink.h"
+#include "document/tools/SpaceTool.h"
+#include "tools/ToolRegistry.h"
 #include "viewport/Picking.h"
 
 #include <core/json/JsonParser.h>
@@ -392,4 +394,30 @@ TEST_F(CarryTest, TheGizmoEditsTheLevelWhileAnAgentWritesADraft)
     Drag(Workspace, Scene(), { Find("Hall") }, Vec3d{ -2, 0, 0 });
     EXPECT_NEAR(VolumeOf("Hall").Min.X, -2.0f, 1e-3f);
     EXPECT_TRUE(Ok("draft.diff", "{}").Find("steps")->AsArray().empty()) << "the designer's drag is no step of the draft";
+}
+
+TEST_F(SpaceOperationsTest, TheSpaceToolMakesTheSpaceTheOperationWould)
+{
+    ToolRegistry& tools = *Workspace.Interaction.Tools;
+    SpaceTool* tool = nullptr;
+    for (const std::unique_ptr<ITool>& candidate : tools.GetTools())
+        if (candidate->GetId() == "space")
+            tool = static_cast<SpaceTool*>(candidate.get());
+    ASSERT_NE(tool, nullptr) << "the Space tool is offered";
+
+    tool->Create(tools.GetContext(), Vec3d{ 8, 0, 6 }, Vec3d{ 0, 0, 0 });
+    const EntityId made = Find("Space");
+    ASSERT_TRUE(made.IsValid());
+    EXPECT_TRUE(Scene().GetRegistry().Components.HasComponent<Shell>(made));
+    EXPECT_EQ(Walls(), 6u);
+    const JsonValue described = Ok("entity.describe", R"({"subject": "@Space"})");
+    EXPECT_NEAR(described.Find("entity")->Find("max")->AsArray()[1].AsNumber(), 3.25, 1e-3)
+        << "the project's space height, under its generated ceiling";
+    EXPECT_EQ(Workspace.Selection.GetSelection().size(), 1u);
+
+    tool->Create(tools.GetContext(), Vec3d{ 20, 0, 0 }, Vec3d{ 24, 0, 4 });
+    EXPECT_TRUE(Find("Space 1").IsValid()) << "each new space takes the next free name";
+    Commands.Undo();
+    EXPECT_FALSE(Find("Space 1").IsValid());
+    EXPECT_TRUE(Find("Space").IsValid());
 }

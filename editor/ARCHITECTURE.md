@@ -305,7 +305,8 @@ that opens a project in a new process).
   unresolved-ref logging), `AssetFieldIo`.
 - `document/commands/`: entity-edit commands (`ICommand` implementations).
 - `document/tools/`: built-in tools (`SelectTool`, `BrushTool`, `EdgeCutTool`,
-  `FaceCarveTool`).
+  `FaceCarveTool`, and `SpaceTool`, which drags a space's footprint on a floor
+  and commits through `operations/SpaceEdits`' `CreateSpace`).
 - `document/interactions/`: tool-driven drag interactions (`IInteraction`).
 
 The authoring session that ties these to tools, mesh edit, viewport, and render
