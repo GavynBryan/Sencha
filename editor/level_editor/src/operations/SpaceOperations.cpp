@@ -496,10 +496,22 @@ namespace
                 for (const PersistentEntityId id : scene.ShellSharedWith(entity))
                     Note(sharesWith, document, id);
             }
+            // Every opening in its walls or of its own leads to whichever side is not it.
+            const std::span<const PersistentEntityId> cutting = scene.ShellOpenings(entity);
             for (const EntityId other : scene.GetAllEntities())
-                if (components.HasComponent<Opening>(other) && OwnerOf(scene, other) == entity)
-                    if (const std::optional<FarSide> far = FarSideOf(scene, entity, other))
-                        Note(leadsTo, document, far->Space);
+            {
+                if (!components.HasComponent<Opening>(other))
+                    continue;
+                const std::optional<EntityId> owner = OwnerOf(scene, other);
+                const bool inItsWalls = std::find(cutting.begin(), cutting.end(), scene.PersistentIdOf(other)) != cutting.end();
+                if (!owner || (*owner != entity && !inItsWalls))
+                    continue;
+                const std::optional<FarSide> far = FarSideOf(scene, *owner, other);
+                if (*owner != entity)
+                    Note(leadsTo, document, *owner);
+                else if (far)
+                    Note(leadsTo, document, far->Space);
+            }
 
             if (components.HasComponent<Opening>(entity))
             {

@@ -320,7 +320,30 @@ TEST_F(SpaceOperationsTest, DepsSaysWhatFollowsFromASpaceAndFromItsDoor)
     EXPECT_EQ(names(*hall.Find("shares_walls_with")), std::vector<std::string>{ "Corridor" });
     EXPECT_EQ(names(*hall.Find("leads_to")), std::vector<std::string>{ "Corridor" });
 
+    const JsonValue corridor = Ok("deps", R"({"subject": "@Corridor"})");
+    EXPECT_EQ(names(*corridor.Find("leads_to")), std::vector<std::string>{ "Hall" })
+        << "the hall's door leads out of the corridor too";
+
     const JsonValue door = Ok("deps", R"({"subject": "@Door"})");
     EXPECT_EQ(names(*door.Find("joins")), (std::vector<std::string>{ "Hall", "Corridor" }));
     EXPECT_FALSE(door.Find("cuts")->AsArray().empty());
+}
+
+TEST_F(SpaceOperationsTest, AProposalReplaysToTheSameEntitiesWithTheSameIds)
+{
+    const std::filesystem::path file = std::filesystem::temp_directory_path()
+        / ("sencha_wing_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)) + ".sproposal");
+    Ok("draft.begin", R"({"label": "East wing", "id_seed": 42})");
+    Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
+    Ok("space.create", R"({"name": "Corridor", "min": [8.25, 0, 2], "max": [14, 3, 4]})");
+    Ok("opening.create", R"({"at": [8.1, 1, 3]})");
+    const JsonValue written = Ok("draft.diff", "{}");
+    Ok("draft.save", R"({"path": ")" + file.generic_string() + R"("})");
+    Ok("draft.discard", "{}");
+
+    const JsonValue replayed = Ok("draft.open", R"({"path": ")" + file.generic_string() + R"("})");
+    EXPECT_EQ(JsonStringify(*replayed.Find("created")), JsonStringify(*written.Find("created")))
+        << "the same steps on the same level with the same seed make the same entities";
+    std::error_code ignored;
+    std::filesystem::remove(file, ignored);
 }
