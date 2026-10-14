@@ -1063,6 +1063,13 @@ conflict instead.
   frustum, nearest first. `view.*` reads the live document, never a draft.
   `kyusu_batch` has no view and doesn't register them, but its reference
   lists them.
+- `changes.since` compares the level, never a draft, against a mark of
+  per-entity digests, so it reports undo, accepted drafts and the designer's
+  edits alike, and each answer carries the mark to ask from next. Marks are
+  not per client (the operations don't know who asks): the newest 16 are held,
+  an older one refuses with `changes.unknown_mark`, and a reloaded or replaced
+  level refuses with `changes.level_replaced`. When the document's revision
+  hasn't moved the answer is empty without digesting anything.
 
 ### M3: analysis depth
 
