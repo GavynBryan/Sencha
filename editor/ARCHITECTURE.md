@@ -275,6 +275,11 @@ that opens a project in a new process).
 
 - Document/scene model: `EditorDocument`, `EditorScene`, `DocumentSerialization`,
   `EntitySnapshot`.
+- The spatial model's components (`docs/plans/level-spatial-model.md` §2):
+  `BrushVolume` (the `volume` tag, in `BrushComponents.h`: a brush enclosing
+  air, never geometry), and in `SpaceComponents.h` `Space`, `Shell` (walls
+  generated around the volume) and `Opening` (a cut through them). All are
+  declared editor-only.
 - Change sets: `EntityChangeRecorder` records the entities an edit touches by
   persistent id, before and after, keeping only those that changed;
   `ApplyEntityChangeSet` puts either side back (overwriting in place, so

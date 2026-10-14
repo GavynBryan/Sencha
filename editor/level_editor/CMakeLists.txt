@@ -105,6 +105,7 @@ sencha_generate_component_metadata(level_authoring
     HEADERS
         src/document/BrushComponents.h
         src/document/EntityNameComponent.h
+        src/document/SpaceComponents.h
 )
 
 # The level editor's shell: its composition root, panels, render passes and

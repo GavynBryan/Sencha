@@ -4,6 +4,7 @@
 
 #include "EditorScene.h"
 #include "EntityNameComponent.h"
+#include "SpaceComponents.h"
 
 #include <core/serialization/Archive.h>
 #include <core/serialization/JsonArchive.h>
@@ -85,6 +86,10 @@ void RegisterDocumentSerializers()
     RegisterEditorOnlyComponent<BrushComponent>(serializers);
     RegisterEditorOnlyComponent<BakedBrushComponent>(serializers);
     RegisterEditorOnlyComponent<EntityNameComponent>(serializers);
+    RegisterEditorOnlyComponent<BrushVolume>(serializers);
+    RegisterEditorOnlyComponent<Space>(serializers);
+    RegisterEditorOnlyComponent<Shell>(serializers);
+    RegisterEditorOnlyComponent<Opening>(serializers);
 }
 
 namespace

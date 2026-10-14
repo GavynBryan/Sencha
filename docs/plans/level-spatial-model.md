@@ -875,6 +875,12 @@ of the real model, with spaces included from the start.
   entities changed since it was written (`moved_since`), and leaves the draft
   `failed` at a step that no longer applies. The operation registry version
   (R8) is not recorded yet; that is measured in M2.
+- The closed `Solid | Volume` distinction is a `volume` tag component on the
+  brush entity rather than a role field: a two-valued role is a marker, and
+  markers are tags. Nothing about the `brush` component's format changes.
+  `space`, `shell { thickness }` and `opening { width, height, shape,
+  arch_rise }` are declared editor-only; their defaults are the conventions'
+  defaults.
 
 ### M2: work live, and widen the vocabulary
 

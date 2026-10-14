@@ -10,6 +10,7 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/EntityNameComponent.h"
+#include "document/SpaceComponents.h"
 #include "document/commands/RenameEntityCommand.h"
 
 #include <assets/runtime/RuntimeAssets.h>
@@ -209,10 +210,60 @@ namespace
     // including Nav Link, which reaches the runtime through the navigation file.
     TEST_F(DocumentPersistenceTest, EditorOnlyComponentsAreDeclaredAtRegistration)
     {
-        for (std::string_view key : { "name", "brush", "baked_brush" })
+        for (std::string_view key : { "name", "brush", "baked_brush", "volume", "space", "shell", "opening" })
             EXPECT_TRUE(IsEditorOnlyComponent(key)) << key;
         for (std::string_view key : { "Transform", "Nav Link", "player_start", "unknown" })
             EXPECT_FALSE(IsEditorOnlyComponent(key)) << key;
+    }
+
+    TEST_F(DocumentPersistenceTest, ASpaceItsShellAndAnOpeningRoundTrip)
+    {
+        std::string text;
+        {
+            EditorDocument doc(Logging);
+            World& world = doc.GetScene().GetRegistry().Components;
+            const EntityId hall = doc.GetScene().CreateBrush(Vec3d{ 0, 1.5f, 0 }, Vec3d{ 4, 1.5f, 3 });
+            world.AddComponent(hall, BrushVolume{});
+            world.AddComponent(hall, Space{});
+            world.AddComponent(hall, Shell{ .Thickness = 0.4f });
+            const EntityId door = doc.GetScene().CreateEntity(Vec3d{ 4, 0, 0 });
+            world.AddComponent(door, Opening{ .Width = 1.0f, .Height = 2.0f, .Shape = CarveShape::Arch,
+                                              .ArchRise = 0.3f });
+            text = doc.ToSceneText();
+        }
+
+        EditorDocument loaded(Logging);
+        ASSERT_TRUE(loaded.LoadFromSceneText(text));
+        const World& world = loaded.GetRegistry().Components;
+        int spaces = 0;
+        int openings = 0;
+        for (const EntityId entity : loaded.GetScene().GetAllEntities())
+        {
+            if (world.HasComponent<Space>(entity))
+            {
+                ++spaces;
+                EXPECT_TRUE(world.HasComponent<BrushVolume>(entity));
+                EXPECT_FLOAT_EQ(world.TryGet<Shell>(entity)->Thickness, 0.4f);
+            }
+            if (const Opening* opening = world.TryGet<Opening>(entity))
+            {
+                ++openings;
+                EXPECT_EQ(opening->Shape, CarveShape::Arch);
+                EXPECT_FLOAT_EQ(opening->ArchRise, 0.3f);
+            }
+        }
+        EXPECT_EQ(spaces, 1);
+        EXPECT_EQ(openings, 1);
+    }
+
+    TEST_F(DocumentPersistenceTest, AShellWithoutAThicknessTakesTheConventionDefault)
+    {
+        EditorDocument doc(Logging);
+        ASSERT_TRUE(doc.LoadFromSceneText(R"({ format_version: 1, entities: [
+            { id: '00000000000000ab', components: { space: {}, shell: {} } } ] })"));
+        const EntityId entity = doc.GetScene().GetAllEntities()[0];
+        EXPECT_FLOAT_EQ(doc.GetRegistry().Components.TryGet<Shell>(entity)->Thickness,
+                        static_cast<float>(kDefaultShellThickness));
     }
 } // namespace
 
