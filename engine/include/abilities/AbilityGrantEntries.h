@@ -74,5 +74,11 @@ private:
     std::uint64_t ActionsRevision = 0;
 };
 
+// A grant's binding by name: what the grant states, else what its ability's
+// default states, else the field's default. The action stays unset when neither
+// names one, and the context when neither states one.
+[[nodiscard]] AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
+                                                         const std::optional<AbilityBindingDecl>& fallback);
+
 [[nodiscard]] GameplayTagQuery ResolveTagQuery(const AbilityTagQueryDecl& declared, const GameplayTagRegistry& tags,
                                                std::vector<std::string>& missing);

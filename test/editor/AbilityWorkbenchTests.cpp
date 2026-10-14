@@ -3,16 +3,24 @@
 // problem is revealed as its element selected with its field brought forward,
 // and the inspector shows only the selected element.
 
+#include "authoring/AbilityArguments.h"
 #include "authoring/AbilityDocumentEdits.h"
+#include "authoring/AbilityOverview.h"
+#include "authoring/AbilityProblemProperties.h"
 #include "authoring/AbilityWorkbench.h"
 #include "data/DataDocument.h"
+#include "data/DataPath.h"
 #include "data/DataProperties.h"
+#include "data/JsonObjectEdit.h"
 #include "documents/DocumentSourceSet.h"
 #include "presenters/PropertySheet.h"
 
 #include <assets/runtime/RuntimeAssets.h>
+#include <effects/EffectDefinitionData.h>
 #include <core/assets/AssetRegistry.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
+
+#include <core/json/JsonParser.h>
 
 #include <gtest/gtest.h>
 
@@ -54,7 +62,25 @@ struct AbilityWorkbenchTest : testing::Test
     }
 
     [[nodiscard]] const JsonValue& Data() const { return *Bench->AbilityData(); }
+
+    [[nodiscard]] const JsonValue& ArgumentOf(std::string_view op, std::string_view argument) const
+    {
+        const std::optional<AbilityElement> element = FindAbilityElement(Data(), op);
+        return *FindMember(*FindMember(*FindDataValue(Data(), element->Path), "arguments"), argument);
+    }
 };
+
+const PropertyNode* Find(const std::vector<PropertyNode>& nodes, std::string_view key)
+{
+    for (const PropertyNode& node : nodes)
+    {
+        if (node.Key == key)
+            return &node;
+        if (const PropertyNode* inside = Find(node.Children, key))
+            return inside;
+    }
+    return nullptr;
+}
 }
 
 TEST_F(AbilityWorkbenchTest, TheNormativeChargeHasNoProblems)
@@ -133,4 +159,81 @@ TEST_F(AbilityWorkbenchTest, TheInspectorShowsOnlyTheSelectedElementAndFocusesIt
     ASSERT_EQ(fields.CommitEdit("$.data.phases[2].then[0].ticks", "30"), PropertyEditResult::Applied);
     EXPECT_EQ(Data().Find("phases")->AsArray()[2].Find("then")->AsArray()[0].Find("ticks")->AsNumber(), 30.0)
         << "an edit through the scoped element is made by its whole path";
+}
+
+TEST_F(AbilityWorkbenchTest, AnOpsArgumentsAreLaidOutFromItsContractAndSetAsSteps)
+{
+    AbilityArgumentProperties arguments(*Bench, {});
+    Bench->Select("o_trace");
+    const std::vector<PropertyNode> nodes = arguments.Nodes();
+    const PropertyNode* range = Find(nodes, "arg.range.value");
+    ASSERT_NE(range, nullptr) << "physics.trace declares a range";
+    EXPECT_EQ(range->Value, "80");
+    EXPECT_EQ(Find(nodes, "arg.origin.source")->Value, "Port");
+    EXPECT_EQ(Find(nodes, "arg.origin.value")->Value, "aim.origin");
+
+    ASSERT_EQ(arguments.CommitEdit("arg.range.value", "40"), PropertyEditResult::Applied);
+    EXPECT_EQ(FindMember(ArgumentOf("o_trace", "range"), "const")->AsNumber(), 40.0);
+    EXPECT_EQ(arguments.CommitEdit("arg.range.value", "far"), PropertyEditResult::Refused);
+    ASSERT_EQ(arguments.CommitEdit("arg.origin.source", "Local"), PropertyEditResult::Applied);
+    ASSERT_EQ(arguments.CommitEdit("arg.origin.value", "Hit.point"), PropertyEditResult::Applied);
+    EXPECT_EQ(ReadMemberString(ArgumentOf("o_trace", "origin"), "local"), "l_hit");
+    EXPECT_EQ(ReadMemberString(ArgumentOf("o_trace", "origin"), "field"), "point");
+    Sources.Undo();
+    EXPECT_EQ(ReadMemberString(ArgumentOf("o_trace", "origin"), "local"), "l_charge")
+        << "one step each: back to the first local the switch to a local took";
+}
+
+TEST_F(AbilityWorkbenchTest, AnUnguardedRecipientIsFixedWithOneStep)
+{
+    ASSERT_TRUE(Bench->Edit([](JsonValue& data) { return SetAbilityGuard(data, "o_damage", JsonValue()).empty(); }));
+    Bench->Select("o_damage");
+    AbilityProblemProperties problems(*Bench);
+    const std::vector<PropertyNode> nodes = problems.Nodes();
+    const auto fixable = std::ranges::find_if(nodes, [](const PropertyNode& node) { return !node.Descriptor.Verbs.empty(); });
+    ASSERT_NE(fixable, nodes.end()) << "the recipient problem offers its guard";
+    EXPECT_EQ(fixable->Descriptor.Verbs.front().Label, "Guard with 'entity(Hit.entity) has sencha.attribute_set'");
+    ASSERT_EQ(problems.Act(fixable->Key, "fix", {}), PropertyEditResult::Applied);
+    for (const AbilityDiagnostic& diagnostic : Bench->Diagnostics())
+        EXPECT_NE(diagnostic.Code, "unguarded_recipient") << diagnostic.Message;
+}
+
+TEST_F(AbilityWorkbenchTest, AFixJoinsTheGuardAnOpAlreadyHas)
+{
+    ASSERT_TRUE(Bench->Edit([](JsonValue& data) {
+        return !SetAbilityGuard(data, "o_damage", *JsonParse(R"({ "input": "held" })")).empty();
+    }));
+    Bench->Select("o_damage");
+    AbilityProblemProperties problems(*Bench);
+    const std::vector<PropertyNode> nodes = problems.Nodes();
+    const auto fixable = std::ranges::find_if(nodes, [](const PropertyNode& node) { return !node.Descriptor.Verbs.empty(); });
+    ASSERT_NE(fixable, nodes.end());
+    ASSERT_EQ(problems.Act(fixable->Key, "fix", {}), PropertyEditResult::Applied);
+    const JsonValue& when = *FindMember(*FindDataValue(Data(), FindAbilityElement(Data(), "o_damage")->Path), "when");
+    ASSERT_NE(FindMember(when, "all"), nullptr);
+    EXPECT_EQ(FindMember(when, "all")->AsArray().size(), 2u) << "the held guard and the recipient's";
+}
+
+TEST_F(AbilityWorkbenchTest, TheOverviewReadsTheBindingWithItsDefaults)
+{
+    AbilityOverviewProperties overview(*Bench);
+    const std::vector<PropertyNode> nodes = overview.Nodes();
+    EXPECT_EQ(Find(nodes, "overview.input")->Value,
+              "Input.PrimaryFire \xC2\xB7 press_release \xC2\xB7 priority 100 \xC2\xB7 exclusive \xC2\xB7 consume "
+              "when blocked \xC2\xB7 cancel on interrupt");
+    EXPECT_EQ(Find(nodes, "overview.activation")->Value, "not State.Stunned, Weapon.Reloading, Cooldown.Charge");
+    EXPECT_EQ(Find(nodes, "overview.problems")->Value, "none");
+}
+
+TEST_F(AbilityWorkbenchTest, TheAbilityStaysOpenWhileAnEffectIsShown)
+{
+    std::string error;
+    const JsonValue starter(JsonValue::Object{ { "duration", JsonValue("instant") },
+                                               { "modifiers", JsonValue(JsonValue::Array{}) } });
+    ASSERT_NE(Bench->Documents.Create(kEffectDefinitionType, "effects/new_hurt.sdata", error, &starter), nullptr) << error;
+    ASSERT_NE(Bench->Ability(), nullptr);
+    EXPECT_EQ(Bench->Ability()->VirtualPath(), kCharge);
+    EXPECT_FALSE(Bench->ShowingAbility());
+    ASSERT_TRUE(Bench->Open(kCharge, error));
+    EXPECT_TRUE(Bench->ShowingAbility());
 }

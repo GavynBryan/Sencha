@@ -57,10 +57,28 @@ groups holding it, marks its row and scrolls to it.
 
 With an element selected, the card is that element alone: `DataProperties`
 scoped to the element's path, so its fields are edited by their whole paths
-exactly as the whole document's are. With none selected it is the document's
-sheet. A new ability starts from a recipe (`AbilityRecipes`): Blank, Instant,
-Held / Periodic, Charge / Release and Sustained Toggle, each an ordinary document
-whose keys are minted when it is made.
+exactly as the whole document's are. An op's card adds its **arguments**
+(`AbilityArgumentProperties`), laid out from the contract the catalog declares
+for the verb, lease or query it runs (`AbilityOpContract`): each argument comes
+from a constant, a port or a local (a hit's fields among the locals), as its kind
+allows, and an optional one may be unset. An argument naming an effect offers
+**New effect…**: the effect is made where the person says, the argument names it,
+and the effect's sheet shows while the ability stays open on the strip -- picking
+on the strip brings the card back to the ability.
+
+Under the element are its **problems** (`AbilityProblemProperties`). A problem a
+guard answers -- a hit that may not have struck, a recipient that may be gone or
+lack what its argument needs -- offers that guard as one step
+(`AbilityGuardFixFor`): `hit`, or `entity … has` with the component the
+argument's contract names, joined to any guard the op already has.
+
+With nothing selected, the card is the ability's **overview**
+(`AbilityOverviewProperties`) -- the binding it gets with nothing overriding it
+(`EffectiveAbilityBinding`, the merge the runtime's grant entries use), when it
+may start, continue and is cancelled, its costs, cooldown and prediction, and its
+problem count -- above the document's sheet. A new ability starts from a recipe
+(`AbilityRecipes`): Blank, Instant, Held / Periodic, Charge / Release and
+Sustained Toggle, each an ordinary document whose keys are minted when it is made.
 
 ## The phase strip
 

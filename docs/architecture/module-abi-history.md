@@ -318,4 +318,5 @@ the bulk movement queries and the character drive exclude dilated characters.
 `AnimPlayback` gains `TimeScale`, `RetimedTick` and `RetimedSeconds`, with
 `RetimeAnimPlayback` and `RestartAnimPlayback`; `ActorScaleOnTick` and
 `ActorScaleValue` (time) are new; a root-motion sample's velocity is per second of
-actor time. `AuthoredPredictionName` is new.
+actor time. `AuthoredPredictionName`, `EffectiveAbilityBinding` and `abilities/AbilityValueNames.h`
+(the port, local-type and hit-field names) are new.

@@ -49,6 +49,11 @@ const VerbRegistry& VocabularyCatalog::Verbs() const
     return *FindVerbRegistry(Metadata);
 }
 
+const AuthoredQueryRegistry& VocabularyCatalog::Queries() const
+{
+    return *FindAuthoredQueryRegistry(Metadata);
+}
+
 std::vector<VocabularyCatalog::VerbRow> VocabularyCatalog::ListVerbs() const
 {
     const VerbRegistry& verbs = Verbs();

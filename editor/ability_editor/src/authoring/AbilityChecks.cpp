@@ -35,13 +35,19 @@ std::string WhereIn(const JsonValue& data, const AbilityElement& element)
 
 std::vector<AbilityDiagnostic> CheckAbilityData(const JsonValue& data, std::string_view name, const World& names)
 {
+    AbilityDeclaration compiled;
+    return CheckAbilityData(data, name, names, compiled);
+}
+
+std::vector<AbilityDiagnostic> CheckAbilityData(const JsonValue& data, std::string_view name, const World& names,
+                                                AbilityDeclaration& compiled)
+{
     std::vector<AbilityDiagnostic> diagnostics;
-    AbilityDeclaration declaration;
     std::vector<AssetRef> dependencies;
-    if (!CompileAbilityDeclaration(data, declaration, dependencies, diagnostics))
+    if (!CompileAbilityDeclaration(data, compiled, dependencies, diagnostics))
         return diagnostics;
     AbilityDefinition resolved;
-    (void)ResolveAbilityDeclaration(declaration, name, MakeAbilityResolveEnvironment(names), resolved, diagnostics);
+    (void)ResolveAbilityDeclaration(compiled, name, MakeAbilityResolveEnvironment(names), resolved, diagnostics);
     return diagnostics;
 }
 

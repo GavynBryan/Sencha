@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityBindingNames.h>
 #include <abilities/AbilityCapacity.h>
+#include <abilities/AbilityValueNames.h>
 #include <authored/VerbBindingData.h>
 #include <core/assets/AssetPath.h>
 #include <core/metadata/DataSchema.h>
@@ -22,34 +23,6 @@ namespace
 {
     template<typename E>
     using Named = AbilityNamed<E>;
-
-    constexpr std::array<Named<AbilityPort>, 9> kPorts{ {
-        { "actor", AbilityPort::Actor },
-        { "instigator", AbilityPort::Instigator },
-        { "aim.origin", AbilityPort::AimOrigin },
-        { "aim.direction", AbilityPort::AimDirection },
-        { "phase.progress", AbilityPort::PhaseProgress },
-        { "phase.ticks", AbilityPort::PhaseTicks },
-        { "pulse", AbilityPort::Pulse },
-        { "time.scale", AbilityPort::TimeScale },
-        { "target", AbilityPort::Target },
-    } };
-
-    constexpr std::array<Named<AbilityLocalType>, 7> kLocalTypes{ {
-        { "bool", AbilityLocalType::Bool },
-        { "int", AbilityLocalType::Int },
-        { "float", AbilityLocalType::Float },
-        { "vec3", AbilityLocalType::Vec3 },
-        { "entity", AbilityLocalType::Entity },
-        { "hit", AbilityLocalType::Hit },
-        { "entities", AbilityLocalType::Entities },
-    } };
-
-    constexpr std::array<Named<AbilityHitField>, 3> kHitFields{ {
-        { "entity", AbilityHitField::Entity },
-        { "point", AbilityHitField::Point },
-        { "normal", AbilityHitField::Normal },
-    } };
 
     constexpr std::array<Named<AbilityCompare>, 6> kCompares{ {
         { "at_least", AbilityCompare::AtLeast },
@@ -286,10 +259,10 @@ namespace
             {
                 CheckFields(value, { "port" }, key, path);
                 out.Source = AbilityValueSource::Port;
-                const auto found = std::ranges::find_if(kPorts, [&](const auto& p) {
+                const auto found = std::ranges::find_if(kAbilityPortNames, [&](const auto& p) {
                     return port->IsString() && p.Name == port->AsString();
                 });
-                if (found == kPorts.end())
+                if (found == kAbilityPortNames.end())
                 {
                     Error("schema", key, path + ".port", "not a port");
                     return false;
@@ -307,7 +280,7 @@ namespace
                     return false;
                 }
                 out.Local = local->AsString();
-                out.Field = Choice(value, "field", kHitFields, key, path, AbilityHitField::None);
+                out.Field = Choice(value, "field", kAbilityHitFieldNames, key, path, AbilityHitField::None);
                 return true;
             }
             std::string error;
@@ -791,7 +764,7 @@ namespace
                     local.Key = Key(entry, path);
                     CheckFields(entry, { "key", "name", "type" }, local.Key, path);
                     local.Name = Text(entry, "name", local.Key, path, false);
-                    local.Type = Choice(entry, "type", kLocalTypes, local.Key, path, AbilityLocalType::Float);
+                    local.Type = Choice(entry, "type", kAbilityLocalTypeNames, local.Key, path, AbilityLocalType::Float);
                     if (entry.Find("type") == nullptr)
                         Error("schema", local.Key, path, "'type' is required");
                     out.Locals.push_back(std::move(local));
@@ -1413,7 +1386,7 @@ namespace
 
         DataFieldSchema local = KeyedRecord("local", "Local");
         local.Children.push_back(Field(DataFieldKind::String, "name", "Name"));
-        local.Children.push_back(Choices("type", "Type", kLocalTypes));
+        local.Children.push_back(Choices("type", "Type", kAbilityLocalTypeNames));
 
         DataFieldSchema effect = Field(DataFieldKind::Record, "effect", "Effect");
         DataFieldSchema effectRef = MakeDataField(DataFieldKind::DataAssetRef, "data", "Effect");

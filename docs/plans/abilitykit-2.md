@@ -1579,8 +1579,16 @@ Deviations from the plan's wording, each for a stated reason:
   the document cannot lay out; the count of transitions coming in is on each card.
 - **Deviation: no Timed Movement recipe yet.** It is built on `movement.burst`, which
   Stage 8 adds; the recipe joins the table with that lease.
-- **Remaining in Stage 6.** Argument rows from each operation's schema (constant,
-  port or local, asset drops), one-click fixes for required guards, "New effect…",
-  the overview header and effective-binding view, the preview on
-  `FixedTickPreview` with a scripted fixture, rewind by replay, the live
-  inspector and the deck.
+- **6d delivered.** Argument rows from each operation's declared contract
+  (constant, port or local by kind; an effect argument's "New effect…"); one-click
+  guard fixes for `unguarded_maybe_empty` and `unguarded_recipient`, joined to an
+  existing guard; the overview card with the effective binding. The runtime's
+  binding merge is now `EffectiveAbilityBinding`, shared with the overview; the
+  port, local-type and hit-field name tables moved to `AbilityValueNames.h`, read
+  by the compiler and the editor.
+- **Deviation: the effective binding shows the ability's default.** A grant's
+  override lives where the grant does (a scene, an effect); the overview shows the
+  binding with nothing overriding it, and the preview's fixture grant (6e) shows
+  its own.
+- **Remaining in Stage 6.** The preview on `FixedTickPreview` with a scripted
+  fixture, rewind by replay, the live inspector and the deck.

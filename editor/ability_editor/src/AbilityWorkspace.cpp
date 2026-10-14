@@ -2,7 +2,10 @@
 
 #include "authoring/AbilityDocumentEdits.h"
 #include "AbilityPhaseStrip.h"
+#include "authoring/AbilityArguments.h"
 #include "authoring/AbilityExplorers.h"
+#include "authoring/AbilityOverview.h"
+#include "authoring/AbilityProblemProperties.h"
 #include "authoring/AbilityPalette.h"
 #include "authoring/AbilityRecipes.h"
 #include "authoring/AbilityStrip.h"
@@ -14,13 +17,16 @@
 #include "data/DataCreation.h"
 #include "data/DataDocument.h"
 #include "data/DataDocumentSheet.h"
+#include "data/DataPath.h"
 #include "data/DataProperties.h"
+#include "data/JsonObjectEdit.h"
 #include "documents/DocumentSourceSet.h"
 #include "problems/ProblemList.h"
 #include "project/Project.h"
 #include "workspaces/WorkspaceWindow.h"
 
 #include <abilities/AbilityDefinitionData.h>
+#include <effects/EffectDefinitionData.h>
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <app/GameContexts.h>
@@ -90,6 +96,10 @@ AbilityWorkspace::AbilityWorkspace(Engine& engine, const ProjectDescriptor& proj
             return true;
         });
 
+    Arguments = std::make_unique<AbilityArgumentProperties>(
+        *Workbench, [this](std::string argument) { CreateEffect(std::move(argument)); });
+    ElementProblems = std::make_unique<AbilityProblemProperties>(*Workbench);
+    Overview = std::make_unique<AbilityOverviewProperties>(*Workbench);
     Palette = AbilityPaletteOf(Workbench->Names());
     if (UiService* ui = engine.TryUi(); ui != nullptr && ui->IsReady())
         Strip = std::make_unique<AbilityPhaseStrip>(*ui);
@@ -218,8 +228,8 @@ void AbilityWorkspace::DefineExplorers(ActionCatalog& catalog)
                                  ElementOutline.Flip(key);
                                  return;
                              }
+                             ShowAbility();
                              Workbench->Select(std::string(key));
-                             Subject = CardSubject::Document;
                          } });
     ExplorerRows.Offer(catalog, ActionHandlers,
                        { .Id = std::string(kPaletteExplorer), .Title = "Operations", .Chords = { { SDLK_O, {} } },
@@ -303,8 +313,8 @@ void AbilityWorkspace::ShowStrip()
         switch (request.Ask)
         {
         case AbilityStripAsk::Pick:
+            ShowAbility();
             Workbench->Select(request.Key);
-            Subject = CardSubject::Document;
             break;
         case AbilityStripAsk::Carry:
             Carried = request.Key;
@@ -388,13 +398,60 @@ WorkspaceDocumentFacet AbilityWorkspace::Document() const
 
 void AbilityWorkspace::ShowDocument(std::string_view key)
 {
-    const DataDocument* before = Workbench->Ability();
-    if (Sheet->Show(key))
-    {
-        Subject = CardSubject::Document;
-        if (Workbench->Ability() != before)
-            Workbench->Select({});
-    }
+    if (!Sheet->Show(key))
+        return;
+    Subject = CardSubject::Document;
+    Workbench->FollowActive();
+}
+
+void AbilityWorkspace::ShowAbility()
+{
+    if (const DataDocument* ability = Workbench->Ability(); ability != nullptr && !Workbench->ShowingAbility())
+        (void)Sheet->Show(ability->VirtualPath());
+    Subject = CardSubject::Document;
+}
+
+void AbilityWorkspace::CreateEffect(std::string argument)
+{
+    const DataDocument* ability = Workbench->Ability();
+    const std::string op = Workbench->Selected();
+    if (ability == nullptr || op.empty())
+        return;
+    std::string leaf(PathLeaf(ability->VirtualPath()));
+    leaf = leaf.substr(0, leaf.find('.'));
+    Prompts.Ask({ .Title = "New effect",
+                  .Message = "Where the new effect goes, relative to the content root.",
+                  .Choices = { { .Key = "create", .Label = "Create" }, { .Key = "cancel", .Label = "Cancel" } },
+                  .Field = std::format("effects/{}_{}.sdata", leaf, argument),
+                  .Answer = [this, op, argument](std::string_view answer, std::string_view written) {
+                      if (answer != "create")
+                          return;
+                      const JsonValue starter(JsonValue::Object{ { "duration", JsonValue("instant") },
+                                                                 { "modifiers", JsonValue(JsonValue::Array{}) } });
+                      std::string error;
+                      const DataDocument* effect =
+                          Workbench->Documents.Create(kEffectDefinitionType, written, error, &starter);
+                      if (effect == nullptr)
+                      {
+                          Sheet->SetError(std::move(error));
+                          return;
+                      }
+                      const std::string path = effect->VirtualPath();
+                      (void)Workbench->Edit([&](JsonValue& data) {
+                          const std::optional<AbilityElement> element = FindAbilityElement(data, op);
+                          JsonValue* held = element ? FindDataValue(data, element->Path) : nullptr;
+                          if (held == nullptr)
+                              return false;
+                          if (FindMember(*held, "arguments") == nullptr)
+                              SetMember(*held, "arguments", JsonValue(JsonValue::Object{}));
+                          SetMember(*FindMember(*held, "arguments"), argument,
+                                    JsonValue(JsonValue::Object{ { "data", JsonValue(path) } }));
+                          return true;
+                      });
+                      Workbench->RefreshNames();
+                      Workbench->RefreshAssets();
+                      Subject = CardSubject::Document;
+                  } });
 }
 
 bool AbilityWorkspace::OpenAsset(const ProjectFile& file)
@@ -404,11 +461,9 @@ bool AbilityWorkspace::OpenAsset(const ProjectFile& file)
 
 bool AbilityWorkspace::OpenDocument(const std::string& path)
 {
-    const DataDocument* before = Workbench->Ability();
     if (!Sheet->Open(path))
         return false;
-    if (Workbench->Ability() != before)
-        Workbench->Select({});
+    Workbench->FollowActive();
     Subject = CardSubject::Document;
     return true;
 }
@@ -434,20 +489,30 @@ WorkspaceSelectionFacet AbilityWorkspace::Selection()
 {
     if (Subject == CardSubject::Creating)
         return { .Title = "New Ability", .Sections = { { .Heading = {}, .Source = Creation.get() } } };
-    const JsonValue* data = Workbench->AbilityData();
-    if (const std::optional<AbilityElement> element = Workbench->SelectedElement(); element && data != nullptr)
-        return { .Title = AbilityElementLabel(*data, *element),
-                 .Subtitle = std::string(PathLeaf(Workbench->Ability()->VirtualPath())),
-                 .Actions = { DuplicateAction().Id, DeleteAction().Id },
-                 .Sections = { { .Heading = {}, .Source = ElementFields.get() } },
-                 .Focus = Workbench->Focus(),
-                 .Primary = true };
     const DataDocument* document = Workbench->Documents.Active();
     if (document == nullptr)
         return {};
+    if (!Workbench->ShowingAbility())
+        return { .Title = std::string(PathLeaf(document->VirtualPath())),
+                 .Actions = { "file.save", "ability.close" },
+                 .Sections = Sheet->Sections(),
+                 .Primary = true };
+    const JsonValue* data = Workbench->AbilityData();
+    if (const std::optional<AbilityElement> element = Workbench->SelectedElement(); element && data != nullptr)
+        return { .Title = AbilityElementLabel(*data, *element),
+                 .Subtitle = std::string(PathLeaf(document->VirtualPath())),
+                 .Actions = { DuplicateAction().Id, DeleteAction().Id },
+                 .Sections = { { .Heading = {}, .Source = ElementFields.get() },
+                               { .Heading = {}, .Source = Arguments.get() },
+                               { .Heading = "Problems", .Source = ElementProblems.get() } },
+                 .Focus = Workbench->Focus(),
+                 .Primary = true };
+    std::vector<PropertySection> sections{ { .Heading = "Overview", .Source = Overview.get() } };
+    for (PropertySection& section : Sheet->Sections())
+        sections.push_back(section);
     return { .Title = std::string(PathLeaf(document->VirtualPath())),
              .Actions = { "file.save", "ability.phase.add", "ability.close" },
-             .Sections = Sheet->Sections(),
-             .Focus = Workbench->Ability() != nullptr ? Workbench->Focus() : std::string{},
+             .Sections = std::move(sections),
+             .Focus = Workbench->Focus(),
              .Primary = true };
 }

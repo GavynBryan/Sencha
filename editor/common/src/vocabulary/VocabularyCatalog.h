@@ -46,6 +46,7 @@ public:
     void DeclareContent(RuntimeAssets& assets);
 
     [[nodiscard]] const VerbRegistry& Verbs() const;
+    [[nodiscard]] const AuthoredQueryRegistry& Queries() const;
     // Every registry named here, for resolving content against what it names.
     [[nodiscard]] const World& Names() const { return Metadata; }
     [[nodiscard]] std::span<const std::string> Errors() const { return Diagnostics; }

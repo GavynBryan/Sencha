@@ -15,6 +15,9 @@ class World;
 // compiled, and resolved once it compiles. `name` is the asset's path.
 [[nodiscard]] std::vector<AbilityDiagnostic> CheckAbilityData(const JsonValue& data, std::string_view name,
                                                               const World& names);
+// The same, keeping what the data compiled to.
+[[nodiscard]] std::vector<AbilityDiagnostic> CheckAbilityData(const JsonValue& data, std::string_view name,
+                                                              const World& names, AbilityDeclaration& compiled);
 
 // Each diagnostic as a problem in `document`, named by the element it is about
 // and located by its path, which a reveal turns back into the element.

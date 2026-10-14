@@ -1,10 +1,14 @@
 add_library(ability_authoring STATIC
+    src/authoring/AbilityArguments.cpp
     src/authoring/AbilityChecks.cpp
     src/authoring/AbilityConditionText.cpp
     src/authoring/AbilityDocumentEdits.cpp
     src/authoring/AbilityElements.cpp
     src/authoring/AbilityExplorers.cpp
+    src/authoring/AbilityGuardFixes.cpp
+    src/authoring/AbilityOverview.cpp
     src/authoring/AbilityPalette.cpp
+    src/authoring/AbilityProblemProperties.cpp
     src/authoring/AbilityRecipes.cpp
     src/authoring/AbilityStrip.cpp
     src/authoring/AbilityWorkbench.cpp)

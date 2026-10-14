@@ -19,6 +19,23 @@ namespace
     }
 }
 
+AbilityBindingDecl EffectiveAbilityBinding(const AbilityBindingDecl& over,
+                                           const std::optional<AbilityBindingDecl>& fallback)
+{
+    const auto field = [&](auto member) {
+        return fallback ? (*fallback).*member : std::decay_t<decltype(over.*member)>{};
+    };
+    AbilityBindingDecl merged;
+    merged.Action = over.Action ? over.Action : field(&AbilityBindingDecl::Action);
+    merged.Policy = Pick(over.Policy, field(&AbilityBindingDecl::Policy), AbilityInputPolicy::Press);
+    merged.Priority = Pick(over.Priority, field(&AbilityBindingDecl::Priority), 0);
+    merged.Consume = Pick(over.Consume, field(&AbilityBindingDecl::Consume), AbilityConsume::Exclusive);
+    merged.WhenBlocked = Pick(over.WhenBlocked, field(&AbilityBindingDecl::WhenBlocked), AbilityWhenBlocked::Consume);
+    merged.OnInterrupt = Pick(over.OnInterrupt, field(&AbilityBindingDecl::OnInterrupt), AbilityInterrupt::Cancel);
+    merged.Context = over.Context ? over.Context : field(&AbilityBindingDecl::Context);
+    return merged;
+}
+
 GameplayTagQuery ResolveTagQuery(const AbilityTagQueryDecl& declared, const GameplayTagRegistry& tags,
                                  std::vector<std::string>& missing)
 {
@@ -80,34 +97,26 @@ void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputA
         slot.Binding = AbilityEffectiveBinding{};
         const AbilityDefinition* definition = abilities.Get(slot.Entry.Ability);
         static const std::optional<AbilityBindingDecl> kNone;
-        const std::optional<AbilityBindingDecl>& fallback = definition != nullptr ? definition->InputDefault : kNone;
-        const AbilityBindingDecl& over = slot.Entry.Override;
-        const auto field = [&](auto member) {
-            return fallback ? (*fallback).*member : std::decay_t<decltype(over.*member)>{};
-        };
-
-        const std::optional<std::string> action = over.Action ? over.Action : field(&AbilityBindingDecl::Action);
-        if (!action)
+        const AbilityBindingDecl merged = EffectiveAbilityBinding(
+            slot.Entry.Override, definition != nullptr ? definition->InputDefault : kNone);
+        if (!merged.Action)
             continue;
-        const InputActionId id = actions != nullptr ? actions->Find(*action) : InputActionId{};
+        const InputActionId id = actions != nullptr ? actions->Find(*merged.Action) : InputActionId{};
         const std::size_t index = id.IsValid() ? InputActionRegistry::IndexOf(id) : kAbilityUnboundAction;
         if (index >= kAbilityUnboundAction)
         {
             if (actions != nullptr)
                 problems.push_back(std::format("grant '{}' of '{}': no input action '{}'", slot.Entry.Key,
-                                               abilities.GetName(slot.Entry.Ability), *action));
+                                               abilities.GetName(slot.Entry.Ability), *merged.Action));
             continue;
         }
         slot.Binding.Action = static_cast<std::uint8_t>(index);
-        slot.Binding.Policy = Pick(over.Policy, field(&AbilityBindingDecl::Policy), AbilityInputPolicy::Press);
-        slot.Binding.Priority = Pick(over.Priority, field(&AbilityBindingDecl::Priority), 0);
-        slot.Binding.Consume = Pick(over.Consume, field(&AbilityBindingDecl::Consume), AbilityConsume::Exclusive);
-        slot.Binding.WhenBlocked =
-            Pick(over.WhenBlocked, field(&AbilityBindingDecl::WhenBlocked), AbilityWhenBlocked::Consume);
-        slot.Binding.OnInterrupt =
-            Pick(over.OnInterrupt, field(&AbilityBindingDecl::OnInterrupt), AbilityInterrupt::Cancel);
-        const std::optional<AbilityTagQueryDecl> context =
-            over.Context ? over.Context : field(&AbilityBindingDecl::Context);
+        slot.Binding.Policy = *merged.Policy;
+        slot.Binding.Priority = *merged.Priority;
+        slot.Binding.Consume = *merged.Consume;
+        slot.Binding.WhenBlocked = *merged.WhenBlocked;
+        slot.Binding.OnInterrupt = *merged.OnInterrupt;
+        const std::optional<AbilityTagQueryDecl>& context = merged.Context;
         if (context && !context->Empty())
         {
             std::vector<std::string> missing;

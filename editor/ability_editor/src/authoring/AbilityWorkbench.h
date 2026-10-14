@@ -39,13 +39,19 @@ public:
     [[nodiscard]] const VocabularyCatalog& Names() const { return *Catalog; }
 
     void RefreshAssets();
-    [[nodiscard]] std::span<const ProjectFile> Abilities() const { return AbilityFiles; }
+    // The project's data assets of `subtype`, by asset path.
+    [[nodiscard]] std::vector<ProjectFile> FilesOf(std::string_view subtype) const;
+    [[nodiscard]] std::vector<ProjectFile> Abilities() const;
 
-    // The active document when it is an ability.
+    // The ability being authored: the last ability document made active, which
+    // stays open on the strip while another document, such as an effect, is shown.
     [[nodiscard]] DataDocument* Ability();
     [[nodiscard]] const DataDocument* Ability() const;
     [[nodiscard]] const JsonValue* AbilityData() const;
+    [[nodiscard]] bool ShowingAbility() const;
     bool Open(std::string_view path, std::string& error);
+    // Takes the active document as the ability being authored when it is one.
+    void FollowActive();
 
     // The selected element's key, empty for the ability as a whole; kept only
     // while an element answers to it.
@@ -58,6 +64,8 @@ public:
     void Reveal(std::string_view path);
 
     [[nodiscard]] const std::vector<AbilityDiagnostic>& Diagnostics();
+    // What the working data compiled to, as far as it compiled.
+    [[nodiscard]] const AbilityDeclaration& Declaration();
     [[nodiscard]] std::vector<Problem> Problems();
 
     // `change` made to the open ability's data as one step; false, and nothing
@@ -69,7 +77,8 @@ private:
     std::vector<std::filesystem::path> Roots;
     std::function<void(VocabularyCatalog&)> Module;
     std::unique_ptr<VocabularyCatalog> Catalog;
-    std::vector<ProjectFile> AbilityFiles;
+    std::vector<ProjectFile> DataFiles;
+    std::string AbilityPath;
     std::string SelectedKey;
     std::string FocusPath;
 
@@ -79,4 +88,7 @@ private:
     std::uint64_t CheckedNames = 0;
     std::uint64_t NamesGeneration = 1;
     std::vector<AbilityDiagnostic> Found;
+    AbilityDeclaration Compiled;
+
+    void Check();
 };

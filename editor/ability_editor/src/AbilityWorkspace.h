@@ -14,7 +14,10 @@
 #include <memory>
 #include <string>
 
+class AbilityArgumentProperties;
+class AbilityOverviewProperties;
 class AbilityPhaseStrip;
+class AbilityProblemProperties;
 class AbilityWorkbench;
 class ActionContextStack;
 struct AbilityPaletteEntry;
@@ -86,11 +89,18 @@ private:
     // The selected element taken out; a phase that transitions go to asks first.
     void DeleteSelected();
     bool OpenDocument(const std::string& path);
+    // The card back on the ability, from another document it was showing.
+    void ShowAbility();
+    // A new effect, asked where, named by the selected op's `argument` and shown.
+    void CreateEffect(std::string argument);
 
     std::unique_ptr<AbilityWorkbench> Workbench;
     std::unique_ptr<DataDocumentSheet> Sheet;
     DataSubtypeAuthoringRegistry Authoring;
     std::unique_ptr<DataProperties> ElementFields;
+    std::unique_ptr<AbilityArgumentProperties> Arguments;
+    std::unique_ptr<AbilityProblemProperties> ElementProblems;
+    std::unique_ptr<AbilityOverviewProperties> Overview;
     std::unique_ptr<DataCreation> Creation;
     std::unique_ptr<AbilityPhaseStrip> Strip;
     std::vector<AbilityPaletteEntry> Palette;
