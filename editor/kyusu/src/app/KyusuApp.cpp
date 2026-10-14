@@ -145,7 +145,8 @@ void KyusuApp::OnStart(GameStartupContext&)
     PublishAdoptionProblems();
     MainWindowActions = std::make_unique<WindowActions>();
     MainWindowActions->Application = MainWindowActions->Stack.Push(ApplicationActions, ActionRank::Application);
-    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts, Problems, Notices),
+    Operations.ExposeTo(engine.Console().Registry());
+    Workspaces = std::make_unique<WorkspaceHost>(BuildWorkspaceKinds(engine, *window, *Session, Catalog, Prompts, Problems, Notices, Operations),
                                                  Session->Project() != nullptr, mainWindow);
 
     Theme = std::make_unique<ThemeSheet>(engine.Console().Registry(), Problems, SENCHA_EDITOR_THEME_DIR);

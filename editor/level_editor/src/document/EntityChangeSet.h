@@ -42,7 +42,7 @@ public:
     // After creating an entity.
     void Created(EntityId entity);
 
-    // Every recorded entity as it is now; one deleted since has no after.
+    // Every recorded entity that changed, as it is now; one deleted since has no after.
     [[nodiscard]] EntityChangeSet Finish() const;
 
 private:

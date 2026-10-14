@@ -34,7 +34,9 @@ The engine never depends on editor code (one-way dependency).
 ## Kyusu and its workspaces
 
 Kyusu (`editor/kyusu/`, `KyusuApp`) is the one `Game`. It owns the
-`ProjectSession`, each window's `ShellWindow`, the `ThemeSheet`, and a
+`ProjectSession`, each window's `ShellWindow`, the `ThemeSheet`, the
+`EditorOperations` exposed on the console (a workspace registers its
+operations while it lives), and a
 `WorkspaceHost` (`common/src/workspaces/`) built from the kinds table in
 `kyusu/src/app/WorkspaceKinds.cpp`. A workspace (`IWorkspace`) is built when
 first opened and destroyed when closed. Each window's `ShellWindow`
@@ -210,7 +212,7 @@ Level editor (`editor/level_editor/src/`):
 | `authoring/` | The selection's components as properties (`ComponentPropertySource`, walking the serializer registry), the adapters that author a component's own presentation (`EditorComponentAdapter`), and what entities show in the views (`EntityMarkers`, `PlaceIcons`). A component is a Group keyed by its serializer's JSON key; a field is `<component>/<field>`, one number of it `<component>/<field>[i]`, one asset slot `<component>/<field>#<slot>`, and an adapter's property `<component>:<key>`, so an edit lands by key after the list changed. Several selected entities read as one: a component only some hold says how many, a field they disagree on is Mixed, a set writes every holder, a drag moves each from its own value, and either is one step; an adapter-authored component is edited one object at a time. A scene instance's member carries `reset` on a field or component that differs from its source. Byte fields preview inside the command stack's pending-edit scope and commit as one `RawComponentEditCommand`; an asset field commits its path through `AssetFieldEditCommand`. | `EditorComponentAdapter` |
 | `document/` | Scene/document domain (see below). | -- |
 | `project/` | Play-In-Editor (`PieDriver`, `PieSession`). | -- |
-| `operations/` | The level's operations over a `WorldDocument`'s focus level: `LevelQueryOperations` (`level.summary`, `entity.describe`, `query.box`, `query.near`, `plan.section`, `nav.reachable` in `LevelReachability`: the walkable surface asked with unknown traversal kinds blocked and then open, and `measure.clearance` in `LevelClearance`: floor, ceiling and width around a point against the navigation profile's capsule, cast with `viewport/Picking`'s `CastRayAgainstBrushes`, and `conventions.get`), `WorldQueryOperations` (`world.summary`: zones and the docks between them; `diagnostics`: the world's validation records), `LevelJson` (how answers spell metres and points), subject resolution (`ResolveEntitySubject`: a persistent id, or `@name`), and `FloorPlan` (a level cut at a height through `brush/BrushSection`, rasterized north-up for `plan.section`'s PNG). | an entry in an operations list |
+| `operations/` | The level's operations over a `WorldDocument`'s focus level: `LevelQueryOperations` (`level.summary`, `entity.describe`, `query.box`, `query.near`, `plan.section`, `nav.reachable` in `LevelReachability`: the walkable surface asked with unknown traversal kinds blocked and then open, and `measure.clearance` in `LevelClearance`: floor, ceiling and width around a point against the navigation profile's capsule, cast with `viewport/Picking`'s `CastRayAgainstBrushes`, and `conventions.get`), `WorldQueryOperations` (`world.summary`: zones and the docks between them; `diagnostics`: the world's validation records), `LevelJson` (how answers spell metres and points), subject resolution (`ResolveEntitySubject`: a persistent id, or `@name`), `LevelMutationOperations` (`entity.rename`; each mutation edits a `LevelEditTarget`'s document under an `EntityChangeRecorder` and commits the change set to it; `LiveLevelEdits` makes it one undo step on the workspace's stack), and `FloorPlan` (a level cut at a height through `brush/BrushSection`, rasterized north-up for `plan.section`'s PNG). | an entry in an operations list |
 
 Materials workspace (`editor/material_editor/src/`, flat): `MaterialWorkspace`,
 `MaterialDocumentSet` (the open materials as journal documents, one undo
@@ -273,6 +275,12 @@ that opens a project in a new process).
 
 - Document/scene model: `EditorDocument`, `EditorScene`, `DocumentSerialization`,
   `EntitySnapshot`.
+- Change sets: `EntityChangeRecorder` records the entities an edit touches by
+  persistent id, before and after, keeping only those that changed;
+  `ApplyEntityChangeSet` puts either side back (overwriting in place, so
+  handles and children survive); `ChangeSetConflicts` names entities edited
+  since; `commands/ApplyChangeSetCommand` adopts an edit already made as one
+  undo step.
 - Cook: `DocumentCook` (`CookDocument` turns an `EditorDocument` into a runtime
   level file), `BrushCookInput`, `NavigationCookInput` (the authored links and
   the project's navigation settings), `BrushBake`; `DocumentNavigation` builds a

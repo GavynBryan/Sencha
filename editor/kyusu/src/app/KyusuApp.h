@@ -6,6 +6,7 @@
 #include "actions/ActionContext.h"
 #include "app/SynthesizedInput.h"
 #include "notices/NoticeQueue.h"
+#include "operations/EditorOperations.h"
 #include "problems/AssetLoadProblems.h"
 #include "problems/ProblemList.h"
 #include "prompts/DocumentPrompts.h"
@@ -93,6 +94,9 @@ private:
     // Before everything that claims actions, so every window's stack and the
     // contexts in it are gone before the catalog they resolve against.
     ActionCatalog Catalog;
+    // Every editing client's operations; before the workspaces that register
+    // into it, so it outlives them.
+    EditorOperations Operations;
     ActionContext ApplicationActions;
     ProblemList Problems;
     AssetLoadProblems LoadProblems{ Problems };

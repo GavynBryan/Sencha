@@ -53,7 +53,8 @@ EntityChangeSet EntityChangeRecorder::Finish() const
         EntityChange change = recorded;
         if (const EntityId entity = Resolve(Document, change.Id); entity.IsValid())
             change.After = Document.CaptureEntity(entity);
-        if (change.Before || change.After)
+        const bool unchanged = change.Before && change.After && DigestOf(*change.Before) == DigestOf(*change.After);
+        if ((change.Before || change.After) && !unchanged)
             set.Changes.push_back(std::move(change));
     }
     return set;

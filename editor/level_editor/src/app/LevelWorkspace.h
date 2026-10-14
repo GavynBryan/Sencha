@@ -65,6 +65,8 @@ class PartitionOutline;
 class PropertyHandles;
 class EntityVerbs;
 class WorldExplorer;
+class EditorOperations;
+class LiveLevelEdits;
 class FaceUvSource;
 class EditorCookRuntime;
 class DocumentFileActions;
@@ -93,7 +95,8 @@ public:
                    PromptQueue& prompts,
                    ProblemList& problems,
                    NoticeQueue& notices,
-                   AssetPictures& pictures);
+                   AssetPictures& pictures,
+                   EditorOperations& operations);
     ~LevelWorkspace() override;
 
     LevelWorkspace(const LevelWorkspace&) = delete;
@@ -136,6 +139,7 @@ private:
     // editor against the engine (*EnginePtr) and primary window (*Window), so the
     // constructor reads as the bring-up sequence.
     void BuildDocument();
+    void BuildOperations();
     void BuildPlayLoop();
     void BuildFileActions();
     void OfferDocumentActions();
@@ -187,6 +191,10 @@ private:
     DocumentSourceSet& Documents;
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<EditorWorkspace> Workspace;
+    // The level's operations, registered as provider "level" and retired
+    // before the document they read goes.
+    EditorOperations& Operations;
+    std::unique_ptr<LiveLevelEdits> LiveEdits;
     // The open level in the application's journal; destroyed before the
     // workspace whose world it reports on.
     std::unique_ptr<LevelDocumentSource> LevelDocument;

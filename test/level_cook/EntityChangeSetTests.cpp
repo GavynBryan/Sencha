@@ -141,4 +141,13 @@ namespace
         commands.Redo();
         EXPECT_EQ(Name(room), "Atrium");
     }
+    TEST_F(EntityChangeSetTest, AnEntityTouchedButLeftAsItWasIsNoChange)
+    {
+        const EntityId room = Scene().CreateBrush(Vec3d{ 0, 0, 0 });
+        Rename(room, "Hall");
+        EntityChangeRecorder recorder(Document);
+        recorder.Touch(room);
+        Rename(room, "Hall");
+        EXPECT_TRUE(recorder.Finish().Empty());
+    }
 }

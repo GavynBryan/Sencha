@@ -1,5 +1,11 @@
 #include "LevelWorkspace.h"
 
+#include "operations/EditorOperations.h"
+#include "operations/LevelEditTarget.h"
+#include "operations/LevelMutations.h"
+#include "operations/LevelQueries.h"
+#include "operations/WorldQueries.h"
+
 #include "actions/ActionCatalog.h"
 #include "notices/NoticeQueue.h"
 #include "project/MaterialLibraryActions.h"
@@ -70,6 +76,7 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <algorithm>
+#include <iterator>
 #include <cstdio>
 #include <filesystem>
 #include <memory>
@@ -86,6 +93,7 @@ constexpr std::string_view kEditorRenderFeatureId = "editor_render";
 // Commands capture this workspace and go with it; its cvars are archived
 // settings registered under "editor" and outlive it.
 constexpr std::string_view kCommandOwner = "editor.level";
+constexpr std::string_view kOperationsProvider = "level";
 } // namespace
 
 ActionDefinition NewLevelAction()
@@ -106,8 +114,10 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
                                MaterialLibrary& materials,
                                DocumentSourceSet& documents,
                                ActionCatalog& actions, PromptQueue& prompts, ProblemList& problems,
-                               NoticeQueue& notices, AssetPictures& pictures)
+                               NoticeQueue& notices, AssetPictures& pictures,
+                               EditorOperations& operations)
     : Documents(documents)
+    , Operations(operations)
     , Prompts(prompts.MakeAsker())
     , Problems(problems)
     , Notices(notices)
@@ -128,6 +138,7 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
     Problems.Publish("components", UnknownPlaceIcons(EditorSceneSerializers()));
 
     BuildDocument();
+    BuildOperations();
     // After the document: an authored workflow presents editor state, and the
     // inspector's is the selection and the command stack the document owns.
     BuildAuthoredWorkflows();
@@ -147,6 +158,7 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
 
 LevelWorkspace::~LevelWorkspace()
 {
+    Operations.Retire(kOperationsProvider);
     EnginePtr->Console().Registry().UnregisterOwner(kCommandOwner);
     // Before the render feature that owns the studio goes.
     ScenePictures = {};
@@ -213,6 +225,19 @@ void LevelWorkspace::BuildDocument()
     if (Assets)
         Workspace->World.SetAssetEnvironment(*Assets);
     Workspace->Layout.OnResize(Window->GetExtent().Width, Window->GetExtent().Height);
+}
+
+void LevelWorkspace::BuildOperations()
+{
+    LiveEdits = std::make_unique<LiveLevelEdits>(Workspace->World, *Commands);
+    std::vector<EditorOperationEntry> entries = LevelQueryOperations(Workspace->World);
+    for (std::vector<EditorOperationEntry> more : { WorldQueryOperations(Workspace->World),
+                                                    LevelMutationOperations(*LiveEdits) })
+        std::move(more.begin(), more.end(), std::back_inserter(entries));
+    std::vector<std::string> errors;
+    if (!Operations.Register(std::string(kOperationsProvider), std::move(entries), errors))
+        for (const std::string& error : errors)
+            EnginePtr->Logging().GetLogger<LevelWorkspace>().Error("operations: {}", error);
 }
 
 void LevelWorkspace::BuildPlayLoop()
