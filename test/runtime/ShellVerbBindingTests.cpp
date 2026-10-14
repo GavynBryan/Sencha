@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <app/BackRouter.h>
-#include <app/EngineVerbs.h>
+#include <app/EngineVocabulary.h>
 #include <app/PauseMenu.h>
 #include <app/PauseState.h>
 #include <app/ShellVerbs.h>
@@ -162,8 +162,9 @@ public:
                                          nullptr, nullptr);
         Surface = Ui->CreateSurface("shell", RenderExtent{ 800, 600 });
 
-        Verbs = &InstallVerbRegistry(Entities);
-        EXPECT_TRUE(DeclareEngineVerbs(*Verbs));
+        InstallAuthoredVocabulary(Entities);
+        Verbs = FindVerbRegistry(Entities);
+        EXPECT_TRUE(DeclareEngineVocabulary(Entities));
 
         Menu = std::make_unique<PauseMenu>(*Ui, Surface, Pause, Router);
         Menu->Model().SetRootPage("asset://ui/shell.sui");

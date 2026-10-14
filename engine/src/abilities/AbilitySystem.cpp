@@ -57,7 +57,7 @@ void RequestAbilityAnimation(World& world, EntityId actor, const AbilityAnimatio
     if (held && !activation.IsValid())
         desc.Lifetime = AnimRequestLifetime::Impulse;
     if (desc.Lifetime == AnimRequestLifetime::Held)
-        desc.Owner = activation;
+        desc.Owner = LeaseOwner{ .Entity = activation };
     const AnimRequestResult result = RequestAnimation(world, actor, desc, tick);
     if (result.Accepted() && desc.Lifetime == AnimRequestLifetime::Held)
         Lease(world, actor, activation, result.Id);

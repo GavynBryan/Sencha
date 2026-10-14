@@ -606,7 +606,7 @@ namespace
         if (request.Lifetime != AnimRequestLifetime::Held || !IsAnimRequestLive(request, now))
             return false;
         return (request.Id.Source.IsValid() && !world.IsAlive(request.Id.Source))
-            || (request.Owner.IsValid() && !world.IsAlive(request.Owner));
+            || (request.Owner.IsSet() && !world.IsAlive(request.Owner.Entity));
     }
 }
 

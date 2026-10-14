@@ -355,6 +355,7 @@ namespace
         tag.Kind = DataFieldKind::GameplayTag;
         VerbDefinition definition;
         definition.Name = "test.announce";
+        definition.Scope = AuthoredScope::Cosmetic;
         definition.Arguments.Children = { tag };
         VerbRegistrationScope scope(fx.Verbs(), "test");
         (void)scope.Declare(std::move(definition));

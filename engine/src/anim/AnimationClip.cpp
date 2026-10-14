@@ -17,16 +17,6 @@ namespace
     }
 } // namespace
 
-std::string_view AnimEventScopeName(AnimEventScope scope)
-{
-    switch (scope)
-    {
-    case AnimEventScope::Cosmetic: return "cosmetic";
-    case AnimEventScope::Gameplay: return "gameplay";
-    }
-    return "unknown";
-}
-
 bool ValidateAnimationClipEvent(const AnimationClipEvent& event, std::string* error)
 {
     const auto fail = [&](std::string_view why) {
@@ -38,11 +28,11 @@ bool ValidateAnimationClipEvent(const AnimationClipEvent& event, std::string* er
         return fail("time must be normalized, between 0 and 1");
     if (event.Binding.empty())
         return fail("names no binding");
-    if (event.Scope != AnimEventScope::Cosmetic && event.Scope != AnimEventScope::Gameplay)
+    if (event.Scope != AuthoredScope::Cosmetic && event.Scope != AuthoredScope::Gameplay)
         return fail("unknown scope");
     if (event.MinWeight.has_value())
     {
-        if (event.Scope != AnimEventScope::Cosmetic)
+        if (event.Scope != AuthoredScope::Cosmetic)
             return fail("only a cosmetic event has a minimum weight");
         if (!std::isfinite(*event.MinWeight) || *event.MinWeight < 0.0f || *event.MinWeight > 1.0f)
             return fail("minimum weight must be between 0 and 1");

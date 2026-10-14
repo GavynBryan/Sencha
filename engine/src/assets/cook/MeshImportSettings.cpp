@@ -83,9 +83,9 @@ namespace
             else if (key == "scope")
             {
                 if (field.IsString() && field.AsString() == "cosmetic")
-                    out.Scope = AnimEventScope::Cosmetic;
+                    out.Scope = AuthoredScope::Cosmetic;
                 else if (field.IsString() && field.AsString() == "gameplay")
-                    out.Scope = AnimEventScope::Gameplay;
+                    out.Scope = AuthoredScope::Gameplay;
                 else
                     return fail("expected \"cosmetic\" or \"gameplay\"");
             }
@@ -126,7 +126,7 @@ namespace
             object.emplace_back("name", JsonValue(event.Name));
         object.emplace_back("time", JsonValue(static_cast<double>(event.Time)));
         object.emplace_back("binding", JsonValue(event.Binding));
-        object.emplace_back("scope", JsonValue(std::string(AnimEventScopeName(event.Scope))));
+        object.emplace_back("scope", JsonValue(std::string(AuthoredScopeName(event.Scope))));
         if (event.MinWeight.has_value())
             object.emplace_back("min_weight", JsonValue(static_cast<double>(*event.MinWeight)));
         if (!event.Inputs.empty())

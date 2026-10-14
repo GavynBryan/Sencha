@@ -7,7 +7,7 @@
 #include <anim/AnimationRegistration.h>
 #include <anim/AnimRigCompositionSystem.h>
 #include <app/EngineSchedule.h>
-#include <app/EngineVerbs.h>
+#include <app/EngineVocabulary.h>
 #include <app/GameContexts.h>
 #include <authored/WorldVocabulary.h>
 #include <core/config/EngineConfig.h>
@@ -350,8 +350,9 @@ void AnimationPreviewSession::BuildWorld()
     }
     InstallAnimationVocabulary(*Preview);
     // Engine verbs before the project's, as a runtime World declares them.
-    VerbRegistry& verbs = InstallVerbRegistry(*Preview);
-    (void)DeclareEngineVerbs(verbs);
+    InstallAuthoredVocabulary(*Preview);
+    VerbRegistry& verbs = *FindVerbRegistry(*Preview);
+    (void)DeclareEngineVocabulary(*Preview);
     if (Vocabulary)
         Vocabulary(*Preview);
     for (const std::string& error : verbs.InstallationErrors())

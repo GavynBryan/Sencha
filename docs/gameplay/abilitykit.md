@@ -297,8 +297,10 @@ What the effect runtime guarantees today (`effects/EffectSystem.h`,
   moves between zones keeps its effects, and its old zone detaching does not take
   them; an effect whose target is gone ends on the next lifetime pass, as does one
   whose owner is gone.
-- **Owners and removal.** `ApplyEffect` takes an optional `EffectOwner`
-  (an entity plus an opaque key). `RemoveEffect` ends one effect and
+- **Owners, scale and removal.** `ApplyEffect` takes an optional `LeaseOwner`
+  (an entity plus an opaque key) and a scale that multiplies every modifier's
+  magnitude, whatever its op. Content applies effects through `effect.apply` and
+  holds them through the `effect.hold` lease (`docs/gameplay/authored-api.md`). `RemoveEffect` ends one effect and
   `RemoveEffectsOwnedBy` ends everything an owner holds; neither may run inside a
   query.
 - **Tags belong to the instance.** An effect records the tags it actually granted

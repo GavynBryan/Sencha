@@ -65,7 +65,7 @@ namespace
         FixedSimulationLoop Clock;
         std::optional<AnimRequestOperations> Operations;
         MarkRecorder Marks;
-        VerbBindingToken Tokens[3];
+        VerbBindingToken Tokens[4];
         std::optional<AnimEventSystem> Events;
 
         VerbFixture()
@@ -75,6 +75,7 @@ namespace
                 DeclareAnimRequestVerbs(scope);
                 VerbDefinition mark;
                 mark.Name = "test.mark";
+                mark.Scope = AuthoredScope::Cosmetic;
                 (void)scope.Declare(std::move(mark));
                 EXPECT_TRUE(scope.Commit());
             }
@@ -94,10 +95,11 @@ namespace
             Tokens[0] = Dispatcher->Bind<&InvokeAnimRequest>(Verbs().Find(kAnimRequestVerb), *Operations);
             Tokens[1] = Dispatcher->Bind<&InvokeAnimCancel>(Verbs().Find(kAnimCancelVerb), *Operations);
             Tokens[2] = Dispatcher->Bind(Verbs().Find("test.mark"), Marks);
+            Tokens[3] = Dispatcher->Bind<&InvokeAnimHold>(Verbs().Find(kAnimHoldLease), *Operations);
             Events.emplace(&*Dispatcher, true);
         }
 
-        VerbInvocationResult Invoke(std::string_view verb, std::vector<VerbBindingArgument> arguments)
+        CompiledVerbBinding Compile(std::string_view verb, std::vector<VerbBindingArgument> arguments)
         {
             VerbBindingDesc desc;
             desc.Key = std::string(verb);
@@ -109,11 +111,22 @@ namespace
             std::vector<std::string> errors;
             EXPECT_TRUE(CompileVerbBinding(desc, MakeVerbBindingEnvironment(Entities), compiled, errors))
                 << (errors.empty() ? std::string() : errors.front());
-            const AuthoredValue target = AuthoredValue::Entity(Prop);
+            return compiled;
+        }
+
+        VerbInvocationSource Source() const
+        {
             VerbInvocationSource source;
             source.Instigator = Player;
             source.Tick = Now;
-            return Dispatcher->Invoke(compiled, std::span(&target, 1), source);
+            return source;
+        }
+
+        VerbInvocationResult Invoke(std::string_view verb, std::vector<VerbBindingArgument> arguments)
+        {
+            const CompiledVerbBinding compiled = Compile(verb, std::move(arguments));
+            const AuthoredValue target = AuthoredValue::Entity(Prop);
+            return Dispatcher->Invoke(compiled, std::span(&target, 1), Source());
         }
 
         void Step(int ticks)
@@ -171,4 +184,36 @@ TEST(AnimRequestVerbs, ContentAsksOnlyForWhatTheRigDeclares)
               VerbAdmission::Refused);
     EXPECT_EQ(fx.Invoke(kAnimCancelVerb, { FromInput("target"), TagArgument("intent", "anim.intent.reload") }).Status,
               VerbAdmission::Refused);
+}
+
+// A held animation lasts exactly as long as the lease's owner holds it.
+TEST(AnimRequestVerbs, AHoldIsTheOwnersUntilItLetsGo)
+{
+    VerbFixture fx;
+    fx.Step(2);
+    const LeaseOwner holder{ .Entity = fx.Player, .Key = 9 };
+    const CompiledVerbBinding hold =
+        fx.Compile(kAnimHoldLease, { FromInput("target"), TagArgument("intent", "anim.intent.reload") });
+    const AuthoredValue target = AuthoredValue::Entity(fx.Prop);
+    const VerbInvocationResult acquired = fx.Dispatcher->AcquireLease(hold, std::span(&target, 1), holder, fx.Source());
+    ASSERT_TRUE(acquired.Accepted()) << VerbAdmissionName(acquired.Status);
+
+    const AnimRequest* request = nullptr;
+    for (const AnimRequest& record : static_cast<const World&>(fx.Entities).TryGet<AnimRequestSet>(fx.Prop)->Records)
+        if (record.Occupied)
+            request = &record;
+    ASSERT_NE(request, nullptr);
+    EXPECT_EQ(request->Lifetime, AnimRequestLifetime::Held);
+    EXPECT_EQ(request->Owner, holder);
+    EXPECT_EQ(request->Cause, acquired.Id);
+
+    fx.Step(3);
+    EXPECT_FALSE(request->IsCancelled());
+    const VerbId lease = fx.Verbs().Find(kAnimHoldLease);
+    EXPECT_EQ(fx.Dispatcher->ReleaseLease(lease, LeaseOwner{ .Entity = fx.Player, .Key = 8 }, fx.Source()),
+              VerbAdmission::Accepted);
+    EXPECT_FALSE(request->IsCancelled()) << "another holder's release";
+    EXPECT_EQ(fx.Dispatcher->ReleaseLease(lease, holder, fx.Source()), VerbAdmission::Accepted);
+    EXPECT_TRUE(request->IsCancelled());
+    EXPECT_EQ(request->CancelReason, AnimCancelReason::Released);
 }

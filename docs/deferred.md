@@ -419,3 +419,17 @@ do the work and delete the entry.
   beside `InputFrame::Transitions` would let attribution replay crossings in order.
 - **Trigger:** a measured lost trigger tap (a semi-automatic weapon on a trigger
   that drops shots at the frame rates players run).
+
+## Leases and cosmetic verbs through the generated authored API
+
+- **What:** `SENCHA_VERB` declares an instant gameplay verb that only the authority
+  runs. It has no way to declare a lease (`VerbKind::Lease`, with its release
+  half), a cosmetic verb, or a prediction class, so a game declares those by hand
+  as the engine's own are (`engine/src/effects/EffectVerbs.cpp`).
+- **Where:** the annotations are `engine/include/authored/AuthoredAnnotations.h`;
+  the generator is `tools/component-codegen/ComponentCodegen.cpp`; what it emits
+  is read by `AuthoredVocabularyScope` and `BindAuthoredApi`
+  (`engine/include/authored/AuthoredApi.h`).
+- **Trigger:** the first game module that declares a lease, a cosmetic verb or a
+  predicted verb. The Loss Function module (AbilityKit 2, Stage 10) is the known
+  candidate, if any of its abilities needs an operation the engine does not offer.

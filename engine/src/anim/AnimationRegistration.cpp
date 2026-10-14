@@ -249,7 +249,7 @@ void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging
 
     if (host.Console != nullptr)
     {
-        const auto capacityCVar = [&](AnimEventScope scope, const char* name, const char* help) {
+        const auto capacityCVar = [&](AuthoredScope scope, const char* name, const char* help) {
             const auto capacity = static_cast<std::int64_t>(eventSystem.GetCapacity(scope));
             (void)host.Console->RegisterCVar({
                 .Name = name,
@@ -267,10 +267,10 @@ void RegisterAnimationSystems(EngineSchedule& schedule, LoggingProvider* logging
                 },
             });
         };
-        capacityCVar(AnimEventScope::Gameplay, "anim.events.gameplay_capacity",
+        capacityCVar(AuthoredScope::Gameplay, "anim.events.gameplay_capacity",
                      "How many gameplay animation events one tick may offer to their bindings. Cosmetic events "
                      "never use this room. A crossing past it is logged as an error and recorded as refused.");
-        capacityCVar(AnimEventScope::Cosmetic, "anim.events.cosmetic_capacity",
+        capacityCVar(AuthoredScope::Cosmetic, "anim.events.cosmetic_capacity",
                      "How many cosmetic animation events one tick may offer to their bindings. A crossing past it "
                      "is counted and recorded as refused: the bound on presentation traffic.");
     }

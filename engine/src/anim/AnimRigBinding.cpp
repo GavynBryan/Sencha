@@ -385,7 +385,7 @@ namespace
 {
     bool IsGameplay(const std::optional<AnimBoundEvent>& event)
     {
-        return event.has_value() && event->Scope == AnimEventScope::Gameplay;
+        return event.has_value() && event->Scope == AuthoredScope::Gameplay;
     }
 
     // Conservative: anything the binding could not see into counts as reaching gameplay.
@@ -401,7 +401,7 @@ namespace
             if (content.IsClip() && !content.Clip.IsValid())
                 return true;
             for (const AnimBoundEvent& event : content.Events)
-                if (event.Scope == AnimEventScope::Gameplay)
+                if (event.Scope == AuthoredScope::Gameplay)
                     return true;
         }
         return false;

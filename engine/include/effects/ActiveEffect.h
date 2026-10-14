@@ -2,23 +2,13 @@
 
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
+#include <ecs/LeaseOwner.h>
 #include <effects/EffectId.h>
 #include <gameplay_tags/GameplayTagId.h>
 
 #include <cstdint>
 #include <limits>
 #include <type_traits>
-
-// Whoever holds an effect and ends it: an ability activation, a lease, a game
-// system. Opaque to effects beyond identity and the entity's liveness.
-struct EffectOwner
-{
-    EntityId Entity;
-    std::uint64_t Key = 0;
-
-    [[nodiscard]] bool IsSet() const { return Entity.IsValid(); }
-    friend bool operator==(const EffectOwner&, const EffectOwner&) = default;
-};
 
 inline constexpr std::uint8_t kEffectGrantedTagCapacity = 8;
 inline constexpr std::uint32_t kEffectNeverEnds = std::numeric_limits<std::uint32_t>::max();
@@ -29,7 +19,8 @@ struct SENCHA_COMPONENT("sencha.active_effect") ActiveEffect
 {
     EntityId Target;
     EffectId Def;
-    EffectOwner Owner;
+    LeaseOwner Owner;
+    float Scale = 1.0f;
     // Application order within this World: the fold's tie-break.
     std::uint64_t Sequence = 0;
     std::uint32_t RemainingTicks = kEffectNeverEnds;

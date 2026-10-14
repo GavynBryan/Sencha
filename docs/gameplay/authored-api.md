@@ -203,6 +203,57 @@ dispatcher is inert, and a token cannot remove a replacement bound after it.
 Binding or unbinding while a query is being answered, or a verb dispatched, is
 refused.
 
+## Verb kinds and classification
+
+A verb definition carries three contract fields beside its arguments, and a
+change to any of them moves its revision.
+
+- **Kind.** An `Instant` verb runs once per request through `Invoke`. A
+  `Lease` is held: `AcquireLease(binding, inputs, owner)` runs the same checks
+  as `Invoke` and hands the implementation `Step = Acquire` with the holder's
+  `LeaseOwner` (an entity and an opaque key); `ReleaseLease(verb, owner)` hands
+  it `Step = Release` with the owner and no arguments, and the implementation
+  ends whatever that owner holds through it. Each refuses the other kind
+  (`KindMismatch`), an acquire with no owner is `InvalidArguments`, and a
+  release from inside a dispatch is `Reentrant`. An effect hold whose owner's
+  entity has gone ends in the next lifetime pass; an animation hold in that
+  state is reported as orphaned, like any Held request its producer forgot.
+- **Scope.** `Gameplay` or `Cosmetic`. A producer states its own scope in
+  `VerbInvocationSource::Scope`, and a cosmetic producer that names a gameplay
+  verb is refused (`ScopeMismatch`): presentation can never change simulation.
+  A gameplay producer may ask for cosmetic operations.
+- **Prediction.** `AuthorityOnly`, `Presentation` or `Simulation`: whether a
+  predicting client may run the operation for its own pawn, never, wherever
+  presentation runs, or as a journaled state change that replay repeats. A
+  cosmetic verb cannot be `Simulation` and a gameplay verb cannot be
+  `Presentation`; the catalog refuses either.
+
+Animation events are producers with a scope: a cosmetic event bound to a
+gameplay verb, or to a lease, is reported when the rig binds
+(`anim.event.scope_mismatch`) and refused if it fires anyway.
+
+The generated API declares instant gameplay verbs only; a lease or a cosmetic
+verb is declared by hand, as the engine's own are (`docs/deferred.md`).
+
+## The engine's vocabulary
+
+`DeclareEngineVocabulary` (`app/EngineVocabulary.h`) declares, as provider
+`engine`, into every runtime and editor World:
+
+| Name | Kind | Scope / prediction | Does |
+|---|---|---|---|
+| `runtime.resume`, `application.quit` | verb | gameplay / authority only | the application shell |
+| `anim.request`, `anim.cancel` | verb | gameplay / simulation | `docs/gameplay/animation.md` |
+| `anim.hold {target, intent}` | lease | gameplay / simulation | a Held request owned by the lease's holder |
+| `effect.apply {target, effect, scale = 1}` | verb | gameplay / authority only | applies an `effect.definition`, unowned, every magnitude times `scale` |
+| `effect.hold {target, effect, scale = 1}` | lease | gameplay / authority only | a lasting effect owned by the holder, removed on release |
+| `physics.trace {origin, direction, range, ignore?}` | query | — | `{hit, entity, point, normal}`; a miss is `hit = false`, and `entity` may be invalid on a hit |
+| `physics.overlap {position, radius, ignore?}` | query | — | every entity whose body overlaps the sphere |
+
+Both effect operations refuse a target without an attribute set, or without an
+attribute the effect modifies. The physics queries are answered only in a host
+whose game registered physics.
+
 ## Handles, not slot numbers
 
 A consumer that stores a reference to a query or an event stores a handle,

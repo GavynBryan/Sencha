@@ -54,7 +54,7 @@ namespace
         event.Key = 1;
         event.Time = 0.1f;
         event.Binding = "test.gameplay_mark";
-        event.Scope = AnimEventScope::Gameplay;
+        event.Scope = AuthoredScope::Gameplay;
         return event;
     }
 }

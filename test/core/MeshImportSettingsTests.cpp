@@ -64,7 +64,7 @@ TEST(MeshImportSettings, ClipEventsParseInAuthoredOrder)
     EXPECT_EQ(walk[1].Inputs[1].Source, VerbArgumentSource::Literal);
     EXPECT_DOUBLE_EQ(walk[1].Inputs[1].Literal.AsNumber(), 0.8);
 
-    EXPECT_EQ(settings.Clips.at("Swing").Events.at(0).Scope, AnimEventScope::Gameplay);
+    EXPECT_EQ(settings.Clips.at("Swing").Events.at(0).Scope, AuthoredScope::Gameplay);
 }
 
 TEST(MeshImportSettings, WhatIsWrittenParsesBackUnchanged)

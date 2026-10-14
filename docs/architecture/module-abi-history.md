@@ -244,7 +244,7 @@ AbilityKit 2 (`docs/plans/abilitykit-2.md`); this entry grows with each stage of
 that epic, which bumps the version once.
 
 **Effects.** `ApplyEffect` takes the `FixedSimTime` it is applied on and an
-optional `EffectOwner`; `TickEffects` drops its delta (one call is one tick's
+optional `LeaseOwner`; `TickEffects` drops its delta (one call is one tick's
 lifetime pass); `RemoveEffect` and `RemoveEffectsOwnedBy` are new.
 `ActiveEffect` counts whole ticks and records its owner, application sequence and
 granted tags. `CheckEffectCosts` (`effects/EffectCost.h`) is new.
@@ -271,3 +271,17 @@ engine data subtypes; `EffectRegistry::Define` is new.
 `assets/runtime/ContentTagDeclarations.h` is now `ContentVocabulary.h`, adding
 `DeclareContentVocabulary`, `RefreshContentVocabulary` and
 `ReleaseContentVocabulary`.
+
+**Catalogs.** `VerbDefinition` gains `Kind` (`VerbKind::Instant` or `Lease`),
+`Scope` and `Prediction` (`authored/AuthoredClassification.h`), all part of the
+contract. `VerbInvocation` carries `Owner` (`ecs/LeaseOwner.h`, which replaces
+`EffectOwner`) and `Step`; `VerbInvocationSource` carries `Scope`.
+`VerbAdmission` appends `ScopeMismatch` and `KindMismatch`, and `VerbTraceEvent`
+appends `Released`. `VerbDispatcher::AcquireLease` and `ReleaseLease` are new.
+`AnimEventScope` is now `AuthoredScope`, with the same values.
+`app/EngineVerbs.h` is now `app/EngineVocabulary.h`, and `DeclareEngineVerbs` is
+`DeclareEngineVocabulary(World&)`, which also declares the engine's queries.
+`ApplyEffect` takes a scale, recorded on `ActiveEffect`. `AnimRequest::Owner` and
+`AnimRequestDesc::Owner` are `LeaseOwner`s, which moves the replication table
+hash (the record's local size; the wire record is unchanged). `Engine`'s members
+changed.

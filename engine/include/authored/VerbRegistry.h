@@ -1,6 +1,7 @@
 #pragma once
 
 #include <authored/AuthoredCatalog.h>
+#include <authored/AuthoredClassification.h>
 #include <authored/AuthoredSchema.h>
 #include <authored/VerbId.h>
 #include <core/metadata/DataSchema.h>
@@ -32,9 +33,17 @@
     return AuthoredRecordRoot();
 }
 
+// An instant verb runs once per request. A lease is acquired for an owner and
+// held until that owner releases it or its entity ends.
+enum class VerbKind : std::uint8_t
+{
+    Instant,
+    Lease,
+};
+
 // What a verb is called, what it takes, and how an authoring surface should
 // say it. The name is the persisted contract; everything else but the argument
-// schema is presentation.
+// schema, kind and classification is presentation.
 struct VerbDefinition
 {
     // Exact, case-sensitive, dot-separated: "runtime.resume". A prefix
@@ -51,6 +60,10 @@ struct VerbDefinition
     // what keeps ranges, enum choices, optionality and nesting described once
     // for the inspector, the binding compiler, and the .sdata validator.
     DataFieldSchema Arguments = EmptyVerbArguments();
+
+    VerbKind Kind = VerbKind::Instant;
+    AuthoredScope Scope = AuthoredScope::Gameplay;
+    AuthoredPrediction Prediction = AuthoredPrediction::AuthorityOnly;
 };
 
 struct VerbCatalogTraits
@@ -65,7 +78,8 @@ struct VerbCatalogTraits
 
     static bool ContractsMatch(const VerbDefinition& left, const VerbDefinition& right)
     {
-        return AuthoredContractsMatch(left.Arguments, right.Arguments);
+        return left.Kind == right.Kind && left.Scope == right.Scope && left.Prediction == right.Prediction
+            && AuthoredContractsMatch(left.Arguments, right.Arguments);
     }
 };
 

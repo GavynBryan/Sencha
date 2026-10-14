@@ -267,7 +267,7 @@ std::vector<TimelineMark> AnimationEventMarks(const AnimationClipEventsDocument&
         marks.push_back({ .Key = std::format("{}{}", kEventMark, event.Key),
                           .Time = static_cast<double>(event.Time) * duration,
                           .Label = EventLabel(event),
-                          .Shape = event.Scope == AnimEventScope::Gameplay ? TimelineMarkShape::Diamond
+                          .Shape = event.Scope == AuthoredScope::Gameplay ? TimelineMarkShape::Diamond
                                                                             : TimelineMarkShape::Round,
                           .Selected = picked == event.Key,
                           .Movable = true });

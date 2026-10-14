@@ -29,6 +29,7 @@ struct EffectPassState
         EntityId Target;
         EffectId Def;
         std::uint64_t Sequence = 0;
+        float Scale = 1.0f;
     };
 
     std::uint64_t NextSequence = 1;
@@ -51,20 +52,26 @@ std::uint32_t TicksFor(float seconds, double tickSeconds)
     return static_cast<std::uint32_t>(std::max(1LL, ticks));
 }
 
+void ApplyModifier(float& value, ModifierOp op, float magnitude)
+{
+    switch (op)
+    {
+    case ModifierOp::Add: value += magnitude; break;
+    case ModifierOp::Multiply: value *= magnitude; break;
+    case ModifierOp::Override: value = magnitude; break;
+    }
+}
+
 void ApplyModifiersToBase(
     AttributeSet& set,
     const EffectDefinition& def,
+    float scale,
     const AttributeRegistry* attrReg)
 {
-    for (const EffectModifier& m : def.Modifiers)
-        if (m.Op == ModifierOp::Add)
-            if (float* b = set.BasePtr(m.Attr)) *b += m.Magnitude;
-    for (const EffectModifier& m : def.Modifiers)
-        if (m.Op == ModifierOp::Multiply)
-            if (float* b = set.BasePtr(m.Attr)) *b *= m.Magnitude;
-    for (const EffectModifier& m : def.Modifiers)
-        if (m.Op == ModifierOp::Override)
-            if (float* b = set.BasePtr(m.Attr)) *b = m.Magnitude;
+    for (ModifierOp op : { ModifierOp::Add, ModifierOp::Multiply, ModifierOp::Override })
+        for (const EffectModifier& m : def.Modifiers)
+            if (m.Op == op)
+                if (float* b = set.BasePtr(m.Attr)) ApplyModifier(*b, op, m.Magnitude * scale);
 
     if (attrReg != nullptr)
         for (int i = 0; i < set.Count; ++i)
@@ -130,7 +137,7 @@ void TickEffectsImpl(
             if (ae.PeriodTicks > 0 && --ae.TicksToPeriod == 0)
             {
                 if (AttributeSet* set = world.TryGet<AttributeSet>(ae.Target))
-                    ApplyModifiersToBase(*set, *def, attrReg);
+                    ApplyModifiersToBase(*set, *def, ae.Scale, attrReg);
                 ae.TicksToPeriod = ae.PeriodTicks;
             }
             if (ae.RemainingTicks != kEffectNeverEnds && --ae.RemainingTicks == 0)
@@ -160,7 +167,7 @@ void FoldActiveEffectsImpl(
             const ActiveEffect& ae = effects[i];
             if (ae.PeriodTicks > 0 || !world.IsAlive(ae.Target) || !TargetIsActive(world, ae.Target, partitions))
                 continue;
-            state.Fold.push_back({ ae.Target, ae.Def, ae.Sequence });
+            state.Fold.push_back({ ae.Target, ae.Def, ae.Sequence, ae.Scale });
         }
     });
 
@@ -183,15 +190,8 @@ void FoldActiveEffectsImpl(
             {
                 if (m.Op != op)
                     continue;
-                float* c = set->CurrentPtr(m.Attr);
-                if (c == nullptr)
-                    continue;
-                switch (op)
-                {
-                case ModifierOp::Add: *c += m.Magnitude; break;
-                case ModifierOp::Multiply: *c *= m.Magnitude; break;
-                case ModifierOp::Override: *c = m.Magnitude; break;
-                }
+                if (float* c = set->CurrentPtr(m.Attr))
+                    ApplyModifier(*c, op, m.Magnitude * entry.Scale);
             }
         }
     }
@@ -199,7 +199,7 @@ void FoldActiveEffectsImpl(
 } // namespace
 
 EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const FixedSimTime& now,
-                     EffectOwner owner)
+                     LeaseOwner owner, float scale)
 {
     const EffectRegistry* effReg =
         std::as_const(world).TryGetResource<EffectRegistry>();
@@ -214,7 +214,7 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
         const AttributeRegistry* attrReg =
             std::as_const(world).TryGetResource<AttributeRegistry>();
         if (AttributeSet* set = world.TryGet<AttributeSet>(target))
-            ApplyModifiersToBase(*set, *def, attrReg);
+            ApplyModifiersToBase(*set, *def, scale, attrReg);
         return {};
     }
 
@@ -222,6 +222,7 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
     ae.Target = target;
     ae.Def = effect;
     ae.Owner = owner;
+    ae.Scale = scale;
     ae.Sequence = PassStateOf(world).NextSequence++;
     if (def->Duration == EffectDuration::Duration)
         ae.RemainingTicks = TicksFor(def->DurationSeconds, now.DeltaSeconds);
@@ -259,7 +260,7 @@ bool RemoveEffect(World& world, EntityId effect)
     return true;
 }
 
-std::size_t RemoveEffectsOwnedBy(World& world, const EffectOwner& owner)
+std::size_t RemoveEffectsOwnedBy(World& world, const LeaseOwner& owner)
 {
     if (!owner.IsSet() || !world.IsRegistered<ActiveEffect>())
         return 0;

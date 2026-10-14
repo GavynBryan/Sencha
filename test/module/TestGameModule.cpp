@@ -34,6 +34,8 @@ inline constexpr std::string_view kGrappleAttribute = "GrappleRange";
 inline constexpr std::string_view kGrappleAbility = "Grapple";
 inline constexpr std::string_view kGrappleMode = "spike.mode.grapple";
 inline constexpr std::string_view kGrappleVerb = "spike.grapple.fire";
+inline constexpr std::string_view kGrappleTetherLease = "spike.grapple.tether";
+inline constexpr std::string_view kGrappleInRangeQuery = "spike.grapple.in_range";
 
 // A purely game-defined component — the engine has never heard of it.
 struct GrappleHook
@@ -106,7 +108,29 @@ namespace
                 range.Required = false;
                 fire.Arguments.Children.push_back(std::move(range));
                 (void)scope.Declare(std::move(fire));
-                (void)scope.Commit();
+
+                // A held operation and a predicate, as an ability's phase would
+                // hold and guard them.
+                VerbDefinition tether;
+                tether.Name = std::string(kGrappleTetherLease);
+                tether.DisplayName = "Hold tether";
+                tether.Kind = VerbKind::Lease;
+                tether.Prediction = AuthoredPrediction::Simulation;
+                (void)scope.Declare(std::move(tether));
+
+                AuthoredQueryRegistry* queries = FindAuthoredQueryRegistry(world);
+                if (queries == nullptr)
+                {
+                    (void)scope.Commit();
+                    return;
+                }
+                AuthoredQueryRegistrationScope queryScope(*queries, "spike");
+                AuthoredQueryDefinition inRange;
+                inRange.Name = std::string(kGrappleInRangeQuery);
+                inRange.DisplayName = "Anchor in range";
+                inRange.Result.Kind = DataFieldKind::Bool;
+                (void)queryScope.Declare(std::move(inRange));
+                (void)CommitTogether(scope, queryScope);
             }
         }
     };

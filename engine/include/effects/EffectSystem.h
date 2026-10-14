@@ -12,14 +12,15 @@ class StoragePartitionSet;
 class World;
 
 // The effect entity a lasting effect spawns; none for an instant one. Its authored
-// seconds become whole ticks of `now`'s tick length.
+// seconds become whole ticks of `now`'s tick length, and `scale` multiplies every
+// modifier's magnitude, whatever its op.
 EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const FixedSimTime& now,
-                     EffectOwner owner = {});
+                     LeaseOwner owner = {}, float scale = 1.0f);
 
 // Ends one lasting effect, revoking the tags it granted. Not inside a query.
 bool RemoveEffect(World& world, EntityId effect);
 // Ends every lasting effect `owner` holds. Not inside a query.
-std::size_t RemoveEffectsOwnedBy(World& world, const EffectOwner& owner);
+std::size_t RemoveEffectsOwnedBy(World& world, const LeaseOwner& owner);
 
 // One fixed tick's lifetime pass: counts every active target's effects down a tick;
 // a period or end that falls due is what the next tick sees.

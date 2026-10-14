@@ -99,7 +99,7 @@ struct AnimBoundEvent
     std::uint32_t Key = 0;
     // Normalized clip time.
     float Time = 0.0f;
-    AnimEventScope Scope = AnimEventScope::Cosmetic;
+    AuthoredScope Scope = AuthoredScope::Cosmetic;
     std::optional<float> MinWeight;
     VerbBindingKey Binding;
     std::string BindingText;

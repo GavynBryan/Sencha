@@ -11,7 +11,7 @@
 #include "document/EditorDocument.h"
 
 #include <abilities/AbilityDefinition.h>
-#include <app/EngineVerbs.h>
+#include <app/EngineVocabulary.h>
 #include <authored/WorldVocabulary.h>
 #include <abilities/AbilityRegistry.h>
 #include <attributes/AttributeRegistry.h>

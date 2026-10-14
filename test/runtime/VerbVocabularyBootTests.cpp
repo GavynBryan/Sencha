@@ -3,7 +3,7 @@
 #include <app/Engine.h>
 #include <app/Game.h>
 #include <app/EngineSchedule.h>
-#include <app/EngineVerbs.h>
+#include <app/EngineVocabulary.h>
 #include <app/GameContexts.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/VerbDispatcher.h>

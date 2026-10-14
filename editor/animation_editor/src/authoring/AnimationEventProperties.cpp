@@ -206,8 +206,8 @@ std::vector<PropertyNode> AnimationEventProperties::Nodes() const
     {
         nodes.push_back(TextProperty("name", "Name", event->Name));
         nodes.push_back(NumberProperty("time", "Time", event->Time, 0.0, 1.0, 0.001, "Along the clip, 0 to 1"));
-        nodes.push_back(ChoiceProperty("scope", "Scope", kScopes, event->Scope == AnimEventScope::Gameplay ? 1 : 0));
-        if (event->Scope == AnimEventScope::Cosmetic)
+        nodes.push_back(ChoiceProperty("scope", "Scope", kScopes, event->Scope == AuthoredScope::Gameplay ? 1 : 0));
+        if (event->Scope == AuthoredScope::Cosmetic)
         {
             nodes.push_back(ToggleProperty("own_weight", "Own threshold", event->MinWeight.has_value(),
                                            "Below the behavior's event weight, the event is suppressed"));
@@ -396,8 +396,8 @@ PropertyEditResult AnimationEventProperties::CommitEdit(std::string_view key, st
             const std::optional<std::size_t> scope = ParseChoice(value, kScopes);
             if (!scope)
                 return false;
-            event.Scope = *scope == 1 ? AnimEventScope::Gameplay : AnimEventScope::Cosmetic;
-            if (event.Scope == AnimEventScope::Gameplay)
+            event.Scope = *scope == 1 ? AuthoredScope::Gameplay : AuthoredScope::Cosmetic;
+            if (event.Scope == AuthoredScope::Gameplay)
                 event.MinWeight.reset();
         }
         else if (key == "own_weight")

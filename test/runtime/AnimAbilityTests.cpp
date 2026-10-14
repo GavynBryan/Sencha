@@ -83,7 +83,7 @@ TEST(AnimAbility, AnActivationHoldsItsAnimationForAsLongAsItLasts)
     ASSERT_NE(asked, nullptr);
     EXPECT_EQ(asked->Id.Source, fx.Actor);
     EXPECT_EQ(asked->Lifetime, AnimRequestLifetime::Held);
-    EXPECT_TRUE(asked->Owner.IsValid()) << "owned by the activation";
+    EXPECT_TRUE(asked->Owner.IsSet()) << "owned by the activation";
     fx.TickWithTheKit();
     EXPECT_EQ(fx.BehaviorName(fx.Actor), "anim.intent.reload");
 
@@ -107,7 +107,7 @@ TEST(AnimAbility, AnInstantActivationHoldsItsAnimationForItsTick)
     const AnimRequest* asked = fx.Asked();
     ASSERT_NE(asked, nullptr);
     EXPECT_EQ(asked->Lifetime, AnimRequestLifetime::Impulse);
-    EXPECT_FALSE(asked->Owner.IsValid());
+    EXPECT_FALSE(asked->Owner.IsSet());
 }
 
 // Through the schedule: an activation queued before a tick is asked for, and
@@ -151,7 +151,7 @@ TEST(AnimAbility, AHeldRequestItsProducerForgotIsReportedNotEnded)
     AnimRequestDesc desc;
     desc.Source = fx.Actor;
     desc.Intent = fx.Tag("anim.intent.reload");
-    desc.Owner = owner;
+    desc.Owner = LeaseOwner{ .Entity = owner };
     ASSERT_TRUE(RequestAnimation(fx.Entities, fx.Actor, desc, fx.Now).Accepted());
     fx.Tick(3);
     EXPECT_EQ(fx.Entities.TryGet<AnimRequestReport>(fx.Actor)->Orphaned, 0u);

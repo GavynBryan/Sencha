@@ -612,6 +612,7 @@ TEST(AnimFlowEvents, SectionsAreAnnouncedInsideTheirBehavior)
     {
         VerbDefinition definition;
         definition.Name = "test.mark";
+        definition.Scope = AuthoredScope::Cosmetic;
         definition.Arguments.Children = { TagField("Tag") };
         VerbRegistrationScope scope(verbs, "test");
         (void)scope.Declare(std::move(definition));

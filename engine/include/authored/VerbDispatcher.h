@@ -93,6 +93,18 @@ public:
                                               std::span<const AuthoredValue> inputs,
                                               const VerbInvocationSource& source = {});
 
+    // Invoke's counterpart for a lease: the same checks, with `owner` recorded as
+    // the holder that ReleaseLease later names.
+    [[nodiscard]] VerbInvocationResult AcquireLease(const CompiledVerbBinding& binding,
+                                                    std::span<const AuthoredValue> inputs,
+                                                    const LeaseOwner& owner,
+                                                    const VerbInvocationSource& source = {});
+
+    // Ends whatever `owner` holds through `lease`. Unavailable once the lease has no
+    // implementation: its provider ends holds whose owner's entity is gone, and an
+    // unbound provider holds nothing.
+    VerbAdmission ReleaseLease(VerbId lease, const LeaseOwner& owner, const VerbInvocationSource& source = {});
+
     // Where an entity constant resolves at each invocation. Borrowed and
     // outlived by its owner; null means a binding naming an entity is refused
     // with UnresolvedReference, never dispatched with an invalid handle.
@@ -135,6 +147,14 @@ private:
         // layout it would read is not the layout it was handed.
         VerbContractRevision Revision;
     };
+
+    [[nodiscard]] VerbInvocationResult Dispatch(const CompiledVerbBinding& binding,
+                                                std::span<const AuthoredValue> inputs,
+                                                const VerbInvocationSource& source,
+                                                const LeaseOwner& owner,
+                                                LeaseStep step);
+    VerbAdmission Call(Implementation& entry, const VerbInvocation& invocation);
+    [[nodiscard]] VerbInvocation Begin(VerbId verb, const VerbInvocationSource& source);
 
     [[nodiscard]] VerbBindingToken BindErased(VerbId verb, void* target, InvokeFn invoke);
     void Release(VerbId verb, VerbBindingGeneration generation);

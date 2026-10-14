@@ -9,7 +9,7 @@
 #include "project/ProjectFiles.h"
 #include "scene_source/Json5Convert.h"
 
-#include <app/EngineVerbs.h>
+#include <app/EngineVocabulary.h>
 #include <assets/runtime/RuntimeAssets.h>
 #include <authored/WorldVocabulary.h>
 #include <core/assets/AssetRefCodec.h>
@@ -153,7 +153,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     RegisterMovement(world);
     // Declarations only: no dispatcher, so nothing a module declares can run.
     InstallAuthoredVocabulary(world);
-    (void)DeclareEngineVerbs(*FindVerbRegistry(world));
+    (void)DeclareEngineVocabulary(world);
     InstallEditorModuleVocabulary(world);
     for (const std::string& error : AuthoredInstallationErrors(world))
         Logging.GetLogger<EditorDocument>().Error("vocabulary: {}", error);

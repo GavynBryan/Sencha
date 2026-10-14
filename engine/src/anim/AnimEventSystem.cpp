@@ -125,7 +125,7 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
             return InvocationId{};
         };
         // False when the scope's queue is full this tick; the caller records the refusal.
-        const auto admit = [&](AnimPendingEvent record, AnimEventScope scope) {
+        const auto admit = [&](AnimPendingEvent record, AuthoredScope scope) {
             if (!pending.Admit(scope))
                 return false;
             const bool leaving = record.Kind == AnimPendingKind::BehaviorExited
@@ -145,12 +145,12 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
         // cosmetic one needs, refused past capacity, otherwise queued.
         const auto lifecycle = [&](const std::optional<AnimBoundEvent>& event, AnimPendingEvent record,
                                    AnimLayerContent logged, float threshold) {
-            if (!event.has_value() || (event->Scope == AnimEventScope::Gameplay ? !gates.Authority : !gates.Presents))
+            if (!event.has_value() || (event->Scope == AuthoredScope::Gameplay ? !gates.Authority : !gates.Presents))
                 return;
             const bool isSection = record.Kind == AnimPendingKind::SectionEntered
                 || record.Kind == AnimPendingKind::SectionExited;
             const std::uint8_t sectionIndex = isSection ? static_cast<std::uint8_t>(record.Event) : kAnimNoSection;
-            if (event->Scope == AnimEventScope::Cosmetic && weight < threshold)
+            if (event->Scope == AuthoredScope::Cosmetic && weight < threshold)
             {
                 Record(log, now, l, logged, *event, AnimEventOutcome::BelowWeight, VerbAdmission::Accepted, record.Kind,
                        sectionIndex);
@@ -222,7 +222,7 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
                 [&](std::size_t e) { return static_cast<double>(played.Events[e].Time) * std::max(length, 0.0); },
                 [&](std::size_t e) {
                     const AnimBoundEvent& event = played.Events[e];
-                    if (event.Scope == AnimEventScope::Gameplay ? !gates.Authority : !gates.Presents)
+                    if (event.Scope == AuthoredScope::Gameplay ? !gates.Authority : !gates.Presents)
                         return;
                     AnimLayerContent logged = layer;
                     logged.Clip = clipIndex;
@@ -233,7 +233,7 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
                         Record(log, now, l, logged, event, AnimEventOutcome::Skipped, VerbAdmission::Accepted);
                         return;
                     }
-                    if (event.Scope == AnimEventScope::Cosmetic && weight < event.MinWeight.value_or(threshold))
+                    if (event.Scope == AuthoredScope::Cosmetic && weight < event.MinWeight.value_or(threshold))
                     {
                         Record(log, now, l, logged, event, AnimEventOutcome::BelowWeight, VerbAdmission::Accepted);
                         return;
@@ -288,9 +288,9 @@ void CollectAnimEvents(EntityId entity, DataAssetHandle rigHandle, const AnimBou
     }
 }
 
-bool AnimPendingEvents::Admit(AnimEventScope scope)
+bool AnimPendingEvents::Admit(AuthoredScope scope)
 {
-    const bool gameplay = scope == AnimEventScope::Gameplay;
+    const bool gameplay = scope == AuthoredScope::Gameplay;
     if ((gameplay ? Gameplay.size() : Cosmetic.size()) < (gameplay ? GameplayCapacity : CosmeticCapacity))
         return true;
     ++(gameplay ? GameplayRefused : CosmeticRefused);
@@ -389,6 +389,7 @@ void Drain(World& world, std::span<const AnimPendingEvent> pending, VerbDispatch
             source.Instigator = record.Instigator;
             source.Parent = record.Cause;
             source.Tick = record.Tick;
+            source.Scope = event.Scope;
             admission = dispatcher->Invoke(*binding, event.Inputs, source).Status;
         }
         Record(log, record.Tick, record.Layer, layer, event, AnimEventOutcome::Fired, admission, record.Kind,
@@ -404,14 +405,14 @@ AnimEventSystem::AnimEventSystem(VerbDispatcher* dispatcher, bool presents, Logg
 {
 }
 
-void AnimEventSystem::SetCapacity(AnimEventScope scope, std::size_t capacity)
+void AnimEventSystem::SetCapacity(AuthoredScope scope, std::size_t capacity)
 {
-    (scope == AnimEventScope::Gameplay ? Pending.GameplayCapacity : Pending.CosmeticCapacity) = capacity;
+    (scope == AuthoredScope::Gameplay ? Pending.GameplayCapacity : Pending.CosmeticCapacity) = capacity;
 }
 
-std::size_t AnimEventSystem::GetCapacity(AnimEventScope scope) const
+std::size_t AnimEventSystem::GetCapacity(AuthoredScope scope) const
 {
-    return scope == AnimEventScope::Gameplay ? Pending.GameplayCapacity : Pending.CosmeticCapacity;
+    return scope == AuthoredScope::Gameplay ? Pending.GameplayCapacity : Pending.CosmeticCapacity;
 }
 
 void AnimEventSystem::FixedLogic(FixedLogicContext& ctx)

@@ -214,7 +214,8 @@ authority issues on the tick the animated entity is simulating, a client predict
 only for the entity it predicts, and cancels are the authority's. The ability
 kit asks through it (`docs/gameplay/abilitykit.md`, "Animation"), and so do the
 engine's authored verbs `anim.request` and `anim.cancel`, for level logic,
-scripted gameplay, AI and props. The rules:
+scripted gameplay, AI and props, and the `anim.hold` lease, whose Held request
+carries its holder as `Owner` and ends when that holder releases it. The rules:
 
 - expired Fixed and Impulse records, and cancelled records whose tail has
   ended, are pruned before any insert;
@@ -464,7 +465,10 @@ event track: the weights never decide what gameplay hears.
 
 Scope gates production, not authority. A gameplay event is produced only in a
 World with simulation authority, a cosmetic one only where a pose is
-presented. Neither makes the invocation authoritative; the verb decides.
+presented. Neither makes the invocation authoritative; the verb decides. An
+event's scope is the authored API's `AuthoredScope`, passed with every
+invocation, so a cosmetic event can only invoke a cosmetic verb
+(`docs/gameplay/authored-api.md`, "Verb kinds and classification").
 
 ## Pose
 

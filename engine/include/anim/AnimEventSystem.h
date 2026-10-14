@@ -64,12 +64,12 @@ struct AnimPendingEvents
     std::uint32_t GameplayRefused = 0;
     std::uint32_t CosmeticRefused = 0;
 
-    [[nodiscard]] std::vector<AnimPendingEvent>& Queue(AnimEventScope scope)
+    [[nodiscard]] std::vector<AnimPendingEvent>& Queue(AuthoredScope scope)
     {
-        return scope == AnimEventScope::Gameplay ? Gameplay : Cosmetic;
+        return scope == AuthoredScope::Gameplay ? Gameplay : Cosmetic;
     }
     // False, and counted, when the scope's queue is full.
-    [[nodiscard]] bool Admit(AnimEventScope scope);
+    [[nodiscard]] bool Admit(AuthoredScope scope);
     void Clear();
 };
 
@@ -101,8 +101,8 @@ public:
     // Collects and drains one tick outside a schedule: the preview and tests.
     void Run(World& world, AnimTick now, double tickSeconds);
 
-    void SetCapacity(AnimEventScope scope, std::size_t capacity);
-    [[nodiscard]] std::size_t GetCapacity(AnimEventScope scope) const;
+    void SetCapacity(AuthoredScope scope, std::size_t capacity);
+    [[nodiscard]] std::size_t GetCapacity(AuthoredScope scope) const;
     // Crossings refused since the system started, by scope.
     [[nodiscard]] std::uint64_t RefusedGameplay() const { return TotalGameplayRefused; }
     [[nodiscard]] std::uint64_t RefusedCosmetic() const { return TotalCosmeticRefused; }

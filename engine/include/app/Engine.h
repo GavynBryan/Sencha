@@ -74,6 +74,8 @@ class RuntimeWorld;
 class NetPrefabSpawner;
 class SceneSpawnService;
 class AnimRequestOperations;
+class EffectOperations;
+class PhysicsQueries;
 class RuntimeResumeOperation;
 class ApplicationQuitOperation;
 
@@ -643,8 +645,10 @@ private:
     VerbBindingSet ShellBindingSet;
     DataAssetCacheHandle ShellBindingLease;
     std::unique_ptr<AnimRequestOperations> AnimationOperations;
-    VerbBindingToken AnimRequestBinding;
-    VerbBindingToken AnimCancelBinding;
+    std::unique_ptr<EffectOperations> EffectVerbOperations;
+    std::unique_ptr<PhysicsQueries> AuthoredPhysics;
+    std::vector<VerbBindingToken> DomainVerbBindings;
+    std::vector<AuthoredQueryBindingToken> DomainQueryBindings;
     std::unique_ptr<RuntimeResumeOperation> ResumeOperation;
     std::unique_ptr<ApplicationQuitOperation> QuitOperation;
     VerbBindingToken ResumeBinding;

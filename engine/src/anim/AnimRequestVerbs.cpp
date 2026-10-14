@@ -2,10 +2,13 @@
 
 #include <anim/AnimRequestJournal.h>
 #include <authored/AuthoredValue.h>
+#include <ecs/Query.h>
 #include <ecs/World.h>
 #include <time/SimClock.h>
 
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace
 {
@@ -35,6 +38,7 @@ void DeclareAnimRequestVerbs(VerbRegistrationScope& scope)
     request.DisplayName = "Request animation";
     request.Description = "Asks an animated entity to present an intent its rig declares.";
     request.Category = "Animation";
+    request.Prediction = AuthoredPrediction::Simulation;
     DataFieldSchema lifetime = Argument("lifetime", DataFieldKind::Enum, "Lifetime",
                                         "Held lasts until anim.cancel; fixed for `ticks`; impulse for one tick.");
     lifetime.EnumChoices = { { "held", "Held", {} }, { "fixed", "Fixed", {} }, { "impulse", "Impulse", {} } };
@@ -54,11 +58,25 @@ void DeclareAnimRequestVerbs(VerbRegistrationScope& scope)
     cancel.DisplayName = "End animation request";
     cancel.Description = "Ends the held request this producer asked the entity for.";
     cancel.Category = "Animation";
+    cancel.Prediction = AuthoredPrediction::Simulation;
     cancel.Arguments.Children = {
         Argument("target", DataFieldKind::Entity, "Target", "The animated entity."),
         Argument("intent", DataFieldKind::GameplayTag, "Intent", "The intent it was asked for."),
     };
     (void)scope.Declare(std::move(cancel));
+
+    VerbDefinition hold;
+    hold.Name = std::string(kAnimHoldLease);
+    hold.DisplayName = "Hold animation";
+    hold.Description = "Keeps an animated entity presenting an intent until its holder lets go.";
+    hold.Category = "Animation";
+    hold.Kind = VerbKind::Lease;
+    hold.Prediction = AuthoredPrediction::Simulation;
+    hold.Arguments.Children = {
+        Argument("target", DataFieldKind::Entity, "Target", "The animated entity."),
+        Argument("intent", DataFieldKind::GameplayTag, "Intent", "What to present, as its rig names it."),
+    };
+    (void)scope.Declare(std::move(hold));
 }
 
 VerbAdmission AnimRequestOperations::Request(const VerbInvocation& invocation)
@@ -104,4 +122,41 @@ VerbAdmission AnimRequestOperations::Cancel(const VerbInvocation& invocation)
             : VerbAdmission::Refused;
     }
     return VerbAdmission::Refused;
+}
+
+VerbAdmission AnimRequestOperations::Hold(const VerbInvocation& invocation)
+{
+    const std::uint64_t tick = invocation.Tick != 0 ? invocation.Tick : Clock->GetTickIndex();
+    if (invocation.Step == LeaseStep::Release)
+    {
+        if (!Entities->IsRegistered<AnimRequestSet>())
+            return VerbAdmission::Accepted;
+        // Releases are rare beside ticks, so the holder's records are found by a walk
+        // rather than kept in a second index that could disagree with them.
+        std::vector<std::pair<EntityId, AnimRequestId>> held;
+        Query<Read<AnimRequestSet>> sets(*Entities);
+        sets.ForEachChunk([&](auto& view) {
+            const auto records = view.template Read<AnimRequestSet>();
+            const EntityIndex* indices = view.Entities();
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
+                for (const AnimRequest& request : records[i].Records)
+                    if (request.Occupied && !request.IsCancelled() && request.Owner == invocation.Owner)
+                        held.emplace_back(Entities->ResolveEntityIndex(indices[i]), request.Id);
+        });
+        for (const auto& [animated, id] : held)
+            (void)CancelAnimation(*Entities, animated, id, AnimCancelReason::Released, tick);
+        return VerbAdmission::Accepted;
+    }
+
+    AnimRequestDesc desc;
+    EntityId target;
+    if (invocation.Arguments == nullptr || !invocation.Arguments->TryGetEntity(0, target)
+        || !invocation.Arguments->TryGetTag(1, desc.Intent) || !Entities->IsAlive(target))
+        return VerbAdmission::InvalidArguments;
+    desc.Lifetime = AnimRequestLifetime::Held;
+    desc.Source = SourceOf(invocation, target);
+    desc.Owner = invocation.Owner;
+    desc.Cause = invocation.Id;
+    return RequestAnimation(*Entities, target, desc, tick).Accepted() ? VerbAdmission::Accepted
+                                                                      : VerbAdmission::Refused;
 }

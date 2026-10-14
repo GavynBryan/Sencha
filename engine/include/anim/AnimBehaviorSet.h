@@ -91,7 +91,7 @@ enum class AnimLateJoin : std::uint8_t
 struct AnimLifecycleDecl
 {
     std::string Binding;
-    AnimEventScope Scope = AnimEventScope::Cosmetic;
+    AuthoredScope Scope = AuthoredScope::Cosmetic;
 };
 
 inline constexpr std::string_view kAnimLifecycleBehaviorInput = "behavior";

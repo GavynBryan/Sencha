@@ -28,7 +28,7 @@ namespace
         if (clip == nullptr)
             return;
         for (const AnimationClipEvent& event : clip->Events)
-            if (event.Scope == AnimEventScope::Gameplay)
+            if (event.Scope == AuthoredScope::Gameplay)
                 marks.push_back({ section, event.Time, event.Binding });
     }
 

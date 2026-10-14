@@ -25,10 +25,12 @@ namespace
         return field;
     }
 
+    // Cosmetic, so an event of either scope may invoke it.
     bool Declare(VerbRegistry& registry, std::string name, std::vector<DataFieldSchema> arguments)
     {
         VerbDefinition definition;
         definition.Name = std::move(name);
+        definition.Scope = AuthoredScope::Cosmetic;
         definition.Arguments.Children = std::move(arguments);
         VerbRegistrationScope scope(registry, "test");
         (void)scope.Declare(std::move(definition));
@@ -54,7 +56,7 @@ namespace
 
     AnimationClipEvent Event(std::uint32_t key, float time, std::string binding,
                              std::vector<VerbBindingArgument> inputs = {},
-                             AnimEventScope scope = AnimEventScope::Cosmetic)
+                             AuthoredScope scope = AuthoredScope::Cosmetic)
     {
         AnimationClipEvent event;
         event.Key = key;
@@ -161,6 +163,32 @@ TEST(AnimEventBinding, BrokenEventsAreLocatedWarningsThatLeaveTheRigValid)
         EXPECT_FALSE(event.Resolved) << event.Key;
 }
 
+// A cosmetic event may only invoke a cosmetic verb; the same binding serves a
+// gameplay event.
+TEST(AnimEventBinding, ACosmeticEventCannotBindAGameplayVerb)
+{
+    AnimRigFixture fx({ "Anim.Walk", "Surface.Grass" });
+    {
+        VerbDefinition footstep;
+        footstep.Name = "test.footstep";
+        footstep.Arguments.Children = { VerbField("Surface", DataFieldKind::GameplayTag),
+                                        VerbField("Volume", DataFieldKind::Float),
+                                        VerbField("Gain", DataFieldKind::Float) };
+        VerbRegistrationScope scope(fx.Verbs(), "test");
+        (void)scope.Declare(std::move(footstep));
+        ASSERT_TRUE(scope.Commit());
+    }
+    const std::vector<VerbBindingArgument> inputs = { Tag("surface", "Surface.Grass"), Const("volume", JsonValue(0.5)) };
+    fx.Clip("asset://anim/walk.sanim", 1.0f,
+            { Event(1, 0.25f, "anim.footstep", inputs), Event(2, 0.5f, "anim.footstep", inputs, AuthoredScope::Gameplay) });
+    const AnimBoundRig& bound = fx.Bound(LoadRig(fx));
+    const AnimDiagnostic* mismatch = AnimRigFixture::FindCode(bound, "anim.event.scope_mismatch");
+    ASSERT_NE(mismatch, nullptr) << AnimRigFixture::Describe(bound);
+    EXPECT_EQ(mismatch->FieldPath, "$.events[0]");
+    EXPECT_FALSE(bound.Contents.at(0).Events.at(0).Resolved);
+    EXPECT_TRUE(bound.Contents.at(0).Events.at(1).Resolved);
+}
+
 // One input filling an Int and a Float argument must suit both; a float
 // literal does not suit the Int.
 TEST(AnimEventBinding, AnInputIsCheckedAgainstEveryArgumentItFills)
@@ -195,8 +223,8 @@ TEST(AnimEventBinding, ALaterDeclarationRebindsTheRig)
 TEST(AnimEventBinding, RowsReadingLocalFactsMustShareGameplayEvents)
 {
     AnimRigFixture fx({ "Anim.Idle" });
-    fx.Clip("asset://anim/a.sanim", 1.0f, { Event(1, 0.5f, "melee.hit", {}, AnimEventScope::Gameplay) });
-    fx.Clip("asset://anim/b.sanim", 1.0f, { Event(1, 0.6f, "melee.hit", {}, AnimEventScope::Gameplay) });
+    fx.Clip("asset://anim/a.sanim", 1.0f, { Event(1, 0.5f, "melee.hit", {}, AuthoredScope::Gameplay) });
+    fx.Clip("asset://anim/b.sanim", 1.0f, { Event(1, 0.6f, "melee.hit", {}, AuthoredScope::Gameplay) });
     (void)fx.Load("asset://anim/l.facts.sdata", kAnimFactSchemaType, R"({
         "slots": [ { "name": "Variant", "kind": "int", "local": true } ] })");
     (void)fx.Load("asset://anim/l.slots.sdata", kAnimSlotMapType, R"({ "rows": [
@@ -354,8 +382,8 @@ TEST(AnimEvents, ScopeDecidesWhereAnEventIsProduced)
             h.Events = AnimEventSystem(&h.Dispatcher, presents);
             h.Fx.Entities.SetResource(SimulationAuthority{ authority });
             h.Fx.Clip("asset://anim/walk.sanim", 1.0f,
-                      { Event(1, 0.1f, "anim.footstep", GrassInputs(), AnimEventScope::Cosmetic),
-                        Event(2, 0.2f, "anim.footstep", GrassInputs(), AnimEventScope::Gameplay) });
+                      { Event(1, 0.1f, "anim.footstep", GrassInputs(), AuthoredScope::Cosmetic),
+                        Event(2, 0.2f, "anim.footstep", GrassInputs(), AuthoredScope::Gameplay) });
             (void)h.Prop(LoadRig(h.Fx));
             h.Step(30);
 
@@ -424,8 +452,8 @@ TEST(AnimEvents, MarksInSkippedTicksAreSkippedAtEveryScope)
     EventHarness h;
     h.BindFootstep();
     h.Fx.Clip("asset://anim/walk.sanim", 1.0f,
-              { Event(1, 0.25f, "anim.footstep", GrassInputs(), AnimEventScope::Cosmetic),
-                Event(2, 0.30f, "anim.footstep", GrassInputs(), AnimEventScope::Gameplay) });
+              { Event(1, 0.25f, "anim.footstep", GrassInputs(), AuthoredScope::Cosmetic),
+                Event(2, 0.30f, "anim.footstep", GrassInputs(), AuthoredScope::Gameplay) });
     const EntityId walker = h.Prop(LoadRig(h.Fx));
 
     h.Step(5);
@@ -479,7 +507,7 @@ TEST(AnimEvents, CrossingsPastCapacityAreRecordedAsQueueFull)
 {
     EventHarness h;
     h.BindFootstep();
-    h.Events.SetCapacity(AnimEventScope::Cosmetic, 1);
+    h.Events.SetCapacity(AuthoredScope::Cosmetic, 1);
     h.Fx.Clip("asset://anim/walk.sanim", 1.0f, { Event(1, 0.25f, "anim.footstep", GrassInputs()) });
     const DataAssetHandle rig = LoadRig(h.Fx);
     const EntityId first = h.Prop(rig);
@@ -545,10 +573,10 @@ TEST(AnimEvents, AFlowSectionPlaysItsLastMarksBeforeTheNext)
     h.BindFootstep();
     // Open is 15 ticks, so its last tick covers (14/60, 15/60] s: both marks.
     h.Fx.Clip("asset://anim/open.sanim", 0.25f,
-              { Event(1, 0.96f, "anim.footstep", GrassInputs(), AnimEventScope::Gameplay),
-                Event(2, 1.0f, "anim.footstep", GrassInputs(), AnimEventScope::Gameplay) });
+              { Event(1, 0.96f, "anim.footstep", GrassInputs(), AuthoredScope::Gameplay),
+                Event(2, 1.0f, "anim.footstep", GrassInputs(), AuthoredScope::Gameplay) });
     h.Fx.Clip("asset://anim/insert.sanim", 0.5f,
-              { Event(3, 1.0f, "anim.footstep", GrassInputs(), AnimEventScope::Gameplay) });
+              { Event(3, 1.0f, "anim.footstep", GrassInputs(), AuthoredScope::Gameplay) });
     (void)h.Fx.Load("asset://anim/ev.bindings.sdata", kVerbBindingsTypeName, kBindings);
     const DataAssetHandle rig =
         LoadReloadRig(h.Fx, CountedLoopFlow(), "cancel_section", {}, {}, "asset://anim/ev.bindings.sdata");
@@ -659,10 +687,10 @@ TEST(AnimEvents, CosmeticTrafficCannotStarveAGameplayEvent)
 {
     EventHarness h;
     h.BindFootstep();
-    h.Events.SetCapacity(AnimEventScope::Cosmetic, 1);
+    h.Events.SetCapacity(AuthoredScope::Cosmetic, 1);
     h.Fx.Clip("asset://anim/walk.sanim", 1.0f,
-              { Event(1, 0.25f, "anim.footstep", GrassInputs(), AnimEventScope::Cosmetic),
-                Event(2, 0.25f, "anim.footstep", GrassInputs(), AnimEventScope::Gameplay) });
+              { Event(1, 0.25f, "anim.footstep", GrassInputs(), AuthoredScope::Cosmetic),
+                Event(2, 0.25f, "anim.footstep", GrassInputs(), AuthoredScope::Gameplay) });
     const DataAssetHandle rig = LoadRig(h.Fx);
     const EntityId first = h.Prop(rig);
     const EntityId second = h.Prop(rig);
@@ -681,9 +709,9 @@ TEST(AnimEvents, AGameplayOverflowIsCountedAndRecorded)
 {
     EventHarness h;
     h.BindFootstep();
-    h.Events.SetCapacity(AnimEventScope::Gameplay, 1);
+    h.Events.SetCapacity(AuthoredScope::Gameplay, 1);
     h.Fx.Clip("asset://anim/walk.sanim", 1.0f,
-              { Event(2, 0.25f, "anim.footstep", GrassInputs(), AnimEventScope::Gameplay) });
+              { Event(2, 0.25f, "anim.footstep", GrassInputs(), AuthoredScope::Gameplay) });
     const DataAssetHandle rig = LoadRig(h.Fx);
     const EntityId first = h.Prop(rig);
     const EntityId second = h.Prop(rig);

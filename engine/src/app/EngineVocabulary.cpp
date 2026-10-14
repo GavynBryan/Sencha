@@ -1,12 +1,20 @@
-#include <app/EngineVerbs.h>
+#include <app/EngineVocabulary.h>
 
 #include <anim/AnimRequestVerbs.h>
+#include <authored/WorldVocabulary.h>
+#include <effects/EffectVerbs.h>
+#include <physics/PhysicsAuthoredQueries.h>
 
 #include <string>
 
-bool DeclareEngineVerbs(VerbRegistry& registry)
+bool DeclareEngineVocabulary(World& world)
 {
-    VerbRegistrationScope scope(registry, "engine");
+    VerbRegistry* verbs = FindVerbRegistry(world);
+    AuthoredQueryRegistry* queries = FindAuthoredQueryRegistry(world);
+    if (verbs == nullptr || queries == nullptr)
+        return false;
+    VerbRegistrationScope scope(*verbs, "engine");
+    AuthoredQueryRegistrationScope queryScope(*queries, "engine");
 
     VerbDefinition resume;
     resume.Name = std::string(kRuntimeResumeVerb);
@@ -23,6 +31,8 @@ bool DeclareEngineVerbs(VerbRegistry& registry)
     (void)scope.Declare(std::move(quit));
 
     DeclareAnimRequestVerbs(scope);
+    DeclareEffectVerbs(scope);
+    DeclarePhysicsQueries(queryScope);
 
-    return scope.Commit();
+    return CommitTogether(scope, queryScope);
 }

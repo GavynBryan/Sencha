@@ -239,8 +239,8 @@ TEST_F(EffectFixture, RemovingByOwnerEndsOnlyThatOwnersEffects)
     EntityId hero = MakeActor(100.0f, 5.0f);
     const EntityId holder = world.CreateEntity();
 
-    const EffectOwner phase{ holder, 1 };
-    const EffectOwner other{ holder, 2 };
+    const LeaseOwner phase{ holder, 1 };
+    const LeaseOwner other{ holder, 2 };
     ApplyEffect(world, hero, mark, At(0), phase);
     ApplyEffect(world, hero, mark, At(0), phase);
     const EntityId kept = ApplyEffect(world, hero, mark, At(0), other);
@@ -259,7 +259,7 @@ TEST_F(EffectFixture, AnEffectWhoseOwnerIsGoneEndsOnTheNextPass)
     EntityId hero = MakeActor(100.0f, 5.0f);
     const EntityId holder = world.CreateEntity();
 
-    const EntityId held = ApplyEffect(world, hero, mark, At(0), EffectOwner{ holder, 7 });
+    const EntityId held = ApplyEffect(world, hero, mark, At(0), LeaseOwner{ holder, 7 });
     world.DestroyEntity(holder);
     Pass();
     EXPECT_FALSE(world.IsAlive(held));

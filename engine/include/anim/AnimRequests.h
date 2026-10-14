@@ -22,9 +22,9 @@ struct AnimRequestDesc
     // The command whose processing issues it; RequestAnimation fills in the tick it is
     // issued on when a producer names none.
     AnimTick Command = 0;
-    // The entity whose lifetime bounds a Held request: its producer cancels the request
-    // when this ends, and one left held past it is reported as orphaned.
-    EntityId Owner;
+    // The holder of a Held request: its producer cancels the request when the holder's
+    // entity ends, and one left held past it is reported as orphaned.
+    LeaseOwner Owner;
     InvocationId Cause;
     // A client's guess ahead of the authority: it never replaces, supersedes or
     // deduplicates against a record the authority wrote.

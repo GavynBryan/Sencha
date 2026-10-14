@@ -1,8 +1,8 @@
 #pragma once
 
-#include <authored/VerbRegistry.h>
-
 #include <string_view>
+
+class World;
 
 //=============================================================================
 // The engine's own authored vocabulary
@@ -25,7 +25,8 @@ inline constexpr std::string_view kRuntimeResumeVerb = "runtime.resume";
 // still gets to put a confirmation in front of it.
 inline constexpr std::string_view kApplicationQuitVerb = "application.quit";
 
-// Declares the above into one catalog, as the provider "engine". False means at
-// least one declaration was refused, and the reasons are on the registry's
-// installation errors.
-[[nodiscard]] bool DeclareEngineVerbs(VerbRegistry& registry);
+// Declares the above, and every engine domain's verbs, leases and queries, into the
+// World's catalogs as the provider "engine". False means a catalog is missing or at
+// least one declaration was refused; the reasons are on the registries' installation
+// errors.
+[[nodiscard]] bool DeclareEngineVocabulary(World& world);

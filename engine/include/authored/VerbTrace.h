@@ -34,6 +34,8 @@ enum class VerbTraceEvent : std::uint8_t
     // A deferred operation could not run one: the target had gone, authority
     // had moved, or the operation gave up on it.
     Abandoned,
+    // A lease's owner let it go.
+    Released,
 };
 
 struct VerbTraceRecord

@@ -1391,3 +1391,52 @@ Deviations from the plan's wording, each for a stated reason:
   document; effects reload in place under the same id.
 - **Found and fixed in passing:** level documents never declared content tags, so a
   tag only content named could not be read back by a document.
+
+### 17.5 Stage 4 — catalogs
+
+- **Deviation: a lease is a verb kind, not a fourth catalog.** §4.3 described an
+  `AuthoredLeaseDefinition` catalog and a `LeaseDispatcher` beside the verb
+  dispatcher. Acquiring a lease needs every check `Invoke` makes (binding,
+  revision, argument filling, persistent-entity resolution, data-asset subtypes,
+  reentrancy, trace), so a second dispatcher would have been a second copy of that
+  path. `VerbDefinition` gains `Kind { Instant, Lease }`; `AcquireLease` and
+  `ReleaseLease` sit on `VerbDispatcher` and share its one dispatch path; a binding
+  compiles the same way for either kind and the producer chooses which call it
+  makes, each refusing the other (`KindMismatch`). The palette, the binding
+  compiler and the editor vocabulary listing need nothing new to show a lease.
+- **Delivered.** `AuthoredScope` and `AuthoredPrediction` on every verb, in the
+  contract, validated against each other; runtime scope enforcement
+  (`ScopeMismatch`, `ScopeMismatchIsRefusedAtRuntime`); `LeaseOwner` in `ecs/`,
+  replacing `EffectOwner` and now also the owner of a Held animation request;
+  `effect.apply`, `effect.hold`, `anim.hold`; `anim.request` and `anim.cancel`
+  reclassified Simulation; `physics.trace` and `physics.overlap` bound in any
+  host whose game registered physics; `DeclareEngineVocabulary` declaring verbs and
+  queries together. A miss is an answer (`hit = false`), not `Unavailable`, as §4.1
+  specifies.
+- **Duplication removed in passing.** `AnimEventScope` was the same
+  classification as `AuthoredScope`; it is now that type, with the cooked values
+  kept, and an event passes its scope with every invocation. A cosmetic event bound
+  to a gameplay verb or a lease is reported at bind
+  (`anim.event.scope_mismatch`). The engine's per-verb binding tokens became one
+  list.
+- **Moved.** `ability.activate`, `ability.cancel`, `ability.grant` and
+  `ability.revoke` land in Stage 5 with the request queue and grants they operate
+  on; `audio.play` lands in Stage 8 with `audio.loop` and the other presentation
+  operations. The exit test "both compile into an ability" needs Stage 5's
+  compiler: the test module now declares `spike.grapple.tether` (a Simulation
+  lease) and `spike.grapple.in_range` (a Bool query), and Stage 5's compiler tests
+  compile them into an ability.
+- **Stage 5 owes the animation pull rule.** An `anim.hold` whose owner's entity is
+  gone is still reported as orphaned, the existing rule for any Held request a
+  producer forgot. §11's "providers end leases whose owner is gone" lands with
+  `DestroyedActorLeavesNoEffectsOrTags`, where the orphan report is reconciled with
+  it. Effects already end such holds.
+- **Zero-allocation note for Stage 5.** Query results that are records or arrays
+  allocate per evaluation (`AuthoredValue::Record`, `Array`). Stage 5's exit
+  measures allocations per tick and fixes this if a trace or overlap shows up.
+- **Formats and protocol.** No persisted format changed (`AuthoredScope` keeps
+  `AnimEventScope`'s values). The replication table hash moved because
+  `AnimRequestSet`'s local size grew; the wire record did not change, and protocol
+  7 from Stage 2 covers it. ABI v26 history extended.
+- **Deferred.** Declaring leases and cosmetic or predicted verbs through
+  `SENCHA_VERB` (`docs/deferred.md`).

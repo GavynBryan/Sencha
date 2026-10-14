@@ -83,7 +83,7 @@ namespace
             hit.Key = 2;
             hit.Time = 0.5f;
             hit.Binding = "melee.hit";
-            hit.Scope = AnimEventScope::Gameplay;
+            hit.Scope = AuthoredScope::Gameplay;
             clip.Events = { step, hit };
             (void)Clips.Register(kClip, std::move(clip), {});
 
@@ -123,11 +123,13 @@ namespace
             VerbRegistrationScope scope(verbs, "test");
             VerbDefinition footstep;
             footstep.Name = "test.footstep";
+            footstep.Scope = AuthoredScope::Cosmetic;
             footstep.Arguments.Children = { Arg("Surface", DataFieldKind::GameplayTag),
                                             Arg("Volume", DataFieldKind::Float) };
             (void)scope.Declare(std::move(footstep));
             VerbDefinition hit;
             hit.Name = "test.hit";
+            hit.Scope = AuthoredScope::Cosmetic;
             (void)scope.Declare(std::move(hit));
             (void)scope.Commit();
         }
