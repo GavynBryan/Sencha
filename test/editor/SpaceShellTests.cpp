@@ -7,9 +7,15 @@
 #include "document/BrushComponents.h"
 #include "document/BrushCookInput.h"
 #include "document/SpaceComponents.h"
+#include "operations/EditorOperations.h"
+#include "operations/LevelOperations.h"
+#include "operations/LevelSubjects.h"
+#include "operations/LevelTarget.h"
 #include "render/BrushDrawSet.h"
 #include "viewport/Picking.h"
 
+#include <core/json/JsonParser.h>
+#include <core/json/JsonStringify.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 
@@ -198,4 +204,84 @@ TEST_F(SpaceShellTest, ADoorEntityCutsTheWallItStandsInAndMovesItsHoleWithIt)
     Scene().RefreshDerivedTransforms();
     EXPECT_TRUE(northward(0.0f).has_value());
     EXPECT_FALSE(northward(2.0f).has_value());
+}
+
+namespace
+{
+class ShellDetachTest : public SpaceShellTest
+{
+protected:
+    void SetUp() override
+    {
+        SpaceShellTest::SetUp();
+        std::vector<std::string> errors;
+        ASSERT_TRUE(Operations.Register("level", LevelOperations(Level, Operations), errors));
+    }
+
+    JsonValue Detach(EntityId space)
+    {
+        return Operations.Invoke("shell.detach",
+                                 *JsonParse(R"({"subject": ")" + PersistentIdText(Workspace.ActiveDocument(), space) + R"("})"));
+    }
+
+    std::vector<EntityId> ChildrenOf(EntityId parent)
+    {
+        std::vector<EntityId> children;
+        for (const EntityId entity : Scene().GetAllEntities())
+            if (const Parent* link = Scene().GetRegistry().Components.TryGet<Parent>(entity); link && link->Entity == parent)
+                children.push_back(entity);
+        return children;
+    }
+
+    LevelTarget Level{ Workspace.World, Commands };
+    EditorOperations Operations;
+};
+}
+
+TEST_F(ShellDetachTest, DetachedWallsAreBrushesUnderTheSpaceStandingWhereTheShellStood)
+{
+    const EntityId hall = ShelledSpace({ 0, 1.5f, 0 }, { 4, 1.5f, 3 });
+    const Aabb3d before = CookedBounds();
+    const JsonValue answer = Detach(hall);
+    ASSERT_EQ(answer.Find("status")->AsString(), "ok") << JsonStringify(answer);
+    EXPECT_EQ(answer.Find("data")->Find("created")->AsArray().size(), 6u);
+    EXPECT_FALSE(Scene().GetRegistry().Components.HasComponent<Shell>(hall));
+    EXPECT_TRUE(Scene().GetRegistry().Components.HasComponent<Space>(hall));
+    EXPECT_EQ(ChildrenOf(hall).size(), 6u);
+
+    Scene().RefreshDerivedTransforms();
+    EXPECT_EQ(CollectCookBrushes(Scene(), Default).size(), 6u);
+    const Aabb3d after = CookedBounds();
+    ExpectNear(after.Min, before.Min);
+    ExpectNear(after.Max, before.Max);
+}
+
+TEST_F(ShellDetachTest, UndoBringsTheShellBack)
+{
+    const EntityId hall = ShelledSpace({ 0, 1.5f, 0 }, { 4, 1.5f, 3 });
+    ASSERT_EQ(Detach(hall).Find("status")->AsString(), "ok");
+    Commands.Undo();
+    EXPECT_TRUE(Scene().GetRegistry().Components.HasComponent<Shell>(hall));
+    EXPECT_TRUE(ChildrenOf(hall).empty());
+    Scene().RefreshDerivedTransforms();
+    EXPECT_EQ(CollectCookBrushes(Scene(), Default).size(), 6u);
+}
+
+TEST_F(ShellDetachTest, ADetachedWallKeepsItsDoorway)
+{
+    const EntityId hall = ShelledSpace({ 0, 1.5f, 0 }, { 4, 1.5f, 3 });
+    const EntityId door = Scene().CreateEntity(Vec3d{ 0, 0, -3.125f });
+    Scene().GetRegistry().Components.AddComponent(door, Opening{});
+    Scene().RefreshDerivedTransforms();
+    ASSERT_EQ(Detach(hall).Find("status")->AsString(), "ok");
+    Scene().RefreshDerivedTransforms();
+    EXPECT_FALSE(CastRayAgainstBrushes(Scene(), Ray3d(Vec3d{ 0, 1, 0 }, Vec3d{ 0, 0, -1 }), 20.0f, false).has_value());
+}
+
+TEST_F(ShellDetachTest, ASpaceWithoutAShellIsRefused)
+{
+    const EntityId hall = ShelledSpace({ 0, 1.5f, 0 }, { 4, 1.5f, 3 });
+    Scene().GetRegistry().Components.RemoveComponent<Shell>(hall);
+    EXPECT_EQ(Detach(hall).Find("code")->AsString(), "shell.none");
+    EXPECT_FALSE(Commands.CanUndo());
 }

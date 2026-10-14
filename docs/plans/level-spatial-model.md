@@ -921,6 +921,11 @@ of the real model, with spaces included from the start.
   the prism is not infinite, or a door would cut every wall in line with it.
   A full-height opening that would split a wall in two is refused by the
   carve; it is a gap between two spaces, not an opening.
+- `shell.detach` is an operation, so it is atomic, undoable and draftable
+  like every mutation: the walls the evaluation holds (openings cut) become
+  brushes parented under the space at an identity transform, named after it,
+  and `shell` goes. It refuses a space whose shell is refused, since there are
+  no walls to keep.
 
 ### M2: work live, and widen the vocabulary
 
