@@ -67,10 +67,10 @@ TEST_F(SceneSourceStageTest, AStagedPrefabStandsExactlyWhereThePlacedOneDoes)
             SceneSourceStage::Prepare(source, { Prefabs.Root }, nullptr, Logging, &error);
         ASSERT_NE(stage, nullptr) << error;
         stage->Pose(placement);
-        stage->Build();
+        stage->Staged().Build();
 
         const std::map<std::string, Transform3f> placed = WorldsByName(level.GetScene());
-        const std::map<std::string, Transform3f> staged = WorldsByName(stage->Scene());
+        const std::map<std::string, Transform3f> staged = WorldsByName(stage->Staged().Scene());
         ASSERT_FALSE(placed.empty());
         ASSERT_EQ(placed.size(), staged.size()) << source;
         for (const auto& [name, world] : placed)
@@ -86,8 +86,8 @@ TEST_F(SceneSourceStageTest, ANestedPrefabIsStagedWithEverythingItPlaces)
     const std::unique_ptr<SceneSourceStage> stage =
         SceneSourceStage::Prepare(Prefabs.Crate, { Prefabs.Root }, nullptr, Logging);
     ASSERT_NE(stage, nullptr);
-    stage->Build();
-    const std::map<std::string, Transform3f> staged = WorldsByName(stage->Scene());
+    stage->Staged().Build();
+    const std::map<std::string, Transform3f> staged = WorldsByName(stage->Staged().Scene());
     EXPECT_TRUE(staged.contains("Lid"));
     EXPECT_TRUE(staged.contains("Body")) << "the door the crate places";
     EXPECT_TRUE(staged.contains("Lamp")) << "the door's own child";
@@ -152,7 +152,7 @@ TEST_F(PlacementGhostTest, ItShowsThePendingPrefabPosedAtThePendingTransform)
     Hold(Prefabs.Door, Vec3d(2.0f, 0.0f, 1.0f), 0.8f);
     const SceneSourceStage* shown = Ghost.Shown();
     ASSERT_NE(shown, nullptr);
-    const Transform3f* root = shown->Scene().TryGetLocalTransform(shown->Root());
+    const Transform3f* root = shown->Staged().Scene().TryGetLocalTransform(shown->Root());
     ASSERT_NE(root, nullptr);
     EXPECT_TRUE(SameBits(*root, Session.Pending()->Placement));
 }

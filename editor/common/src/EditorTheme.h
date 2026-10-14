@@ -95,6 +95,10 @@ inline constexpr Vec4 CreatePreview{ 1.0f, 0.6f, 0.0f, 1.0f };     // the create
 // its ghost, so it never reads as something already in the level.
 inline constexpr Vec4 PlacementMark{ 0.35f, 0.85f, 1.0f, 1.0f };
 inline constexpr Vec4 PlacementGhostTint{ 0.7f, 0.92f, 1.0f, 1.0f };
+// A previewed draft over its level: what it would add or change, tinted green,
+// and what it would delete, tinted red.
+inline constexpr Vec4 DraftAddedTint{ 0.65f, 1.0f, 0.75f, 1.0f };
+inline constexpr Vec4 DraftRemovedTint{ 1.0f, 0.45f, 0.4f, 1.0f };
 // The element under the cursor (selection-eligible): a paler yellow than the
 // selected FaceHighlight/EdgeHighlight, drawn bolder, so a hovered neighbor of
 // a selected element still reads as a different state.

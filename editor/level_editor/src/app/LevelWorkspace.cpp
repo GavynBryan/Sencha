@@ -473,6 +473,11 @@ void LevelWorkspace::BuildViewportRendering()
         Assets ? &Assets->Assets : nullptr,
         Assets ? &Assets->Registry : nullptr,
         Assets ? &*Assets : nullptr);
+    renderFeature->SetDraftSource([this] {
+        LevelTarget& level = Workspace->Level;
+        const LevelDraft* draft = level.PreviewedDraft();
+        return EditorRenderFeature::ShownDraft{ draft, draft != nullptr ? level.BaseOf(*draft) : nullptr };
+    });
     // Staged, not added: the commit happens at the end of BuildUi, once the UI
     // feature this one depends on has been staged too. The pointer is good only
     // if the commit reports the id succeeded.

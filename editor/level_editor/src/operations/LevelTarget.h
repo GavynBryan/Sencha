@@ -82,6 +82,12 @@ public:
     [[nodiscard]] std::span<const std::unique_ptr<LevelDraft>> Drafts() const { return Drafts_; }
     // Null writes to the level itself.
     void WriteTo(LevelDraft* draft) { Writing = draft; }
+    // The draft Kyusu draws over its level: the newest begun until another is
+    // chosen; null shows none.
+    [[nodiscard]] const LevelDraft* PreviewedDraft() const { return Previewed; }
+    void Preview(LevelDraft* draft) { Previewed = draft; }
+    // The open level `draft` copies; null once that level has closed.
+    [[nodiscard]] const EditorDocument* BaseOf(const LevelDraft& draft) { return FindBase(draft); }
 
     // Applies the draft's changes to its level as one undo step and drops it,
     // unless the level has moved on under any entity the draft changes.
@@ -103,6 +109,7 @@ private:
     CommandStack& Commands;
     std::vector<std::unique_ptr<LevelDraft>> Drafts_;
     LevelDraft* Writing = nullptr;
+    LevelDraft* Previewed = nullptr;
     std::uint32_t DraftsBegun = 0;
 };
 

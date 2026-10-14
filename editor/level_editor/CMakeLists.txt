@@ -30,10 +30,10 @@ endforeach()
 # These render sources carry no GPU dependency and the authoring layer uses
 # them: the light gather feeds the cook, the preview buffer backs tool
 # previews, and the brush bake cache and draw set (residency and retention
-# rules) are tested headlessly through injected GPU callbacks. The scene stage
-# and the placement ghost (a placement staged exactly as a level places it)
-# build their queues on the CPU through the queue builder, and are tested
-# headlessly without an asset environment.
+# rules) are tested headlessly through injected GPU callbacks. The document and
+# scene stages, the placement ghost (a placement staged exactly as a level
+# places it) and the draft preview build their queues on the CPU through the
+# queue builder, and are tested headlessly without an asset environment.
 list(APPEND LEVEL_AUTHORING_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/EditorLightGather.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/PreviewBuffer.cpp"
@@ -41,6 +41,8 @@ list(APPEND LEVEL_AUTHORING_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushDrawSet.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/BrushFaceHighlight.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/SceneRenderQueueBuilder.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/DocumentStage.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/render/DraftPreview.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/SceneSourceStage.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/render/PlacementGhost.cpp"
 )

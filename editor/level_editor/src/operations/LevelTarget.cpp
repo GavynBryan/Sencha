@@ -153,6 +153,7 @@ LevelDraft* LevelTarget::BeginDraft(std::string label, std::string rationale, st
         return nullptr;
     draft->Id = "d" + std::to_string(++DraftsBegun);
     Writing = Drafts_.emplace_back(std::move(draft)).get();
+    Previewed = Writing;
     return Writing;
 }
 
@@ -212,6 +213,8 @@ void LevelTarget::DiscardDraft(LevelDraft& draft)
 {
     if (Writing == &draft)
         Writing = nullptr;
+    if (Previewed == &draft)
+        Previewed = nullptr;
     std::erase_if(Drafts_, [&draft](const auto& held) { return held.get() == &draft; });
 }
 

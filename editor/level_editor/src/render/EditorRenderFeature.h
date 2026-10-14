@@ -18,6 +18,7 @@
 #include "SceneRenderQueueBuilder.h"
 #include "SceneWireframeRenderer.h"
 #include "EditorInstancedFillPipeline.h"
+#include "DraftPreview.h"
 #include "PlacementGhost.h"
 #include "SceneThumbnailCache.h"
 #include "ThumbnailStudio.h"
@@ -58,6 +59,8 @@ class ManipulatorSession;
 class MeshEditService;
 class PlacementSession;
 class PreviewBuffer;
+class DocumentStage;
+struct LevelDraft;
 class SceneSourceStage;
 class SelectionService;
 class ViewportLayout;
@@ -142,6 +145,13 @@ public:
     }
 
     [[nodiscard]] PlacementGhost* PlacementGhosts() { return Ghost ? &*Ghost : nullptr; }
+    // The draft drawn over the level, and the level it copies; none by default.
+    struct ShownDraft
+    {
+        const LevelDraft*     Draft = nullptr;
+        const EditorDocument* Base = nullptr;
+    };
+    void SetDraftSource(std::function<ShownDraft()> source) { DraftSource = std::move(source); }
 
     [[nodiscard]] SceneRenderQueueBuilder* FocusQueueBuilder()
     {
@@ -175,8 +185,8 @@ private:
     // depth views, then publishes the panel snapshot. Called once per frame
     // before any viewport renders.
     void SweepBrushBakes();
-    void DrawPlacementGhost(const FrameContext& frame, const EditorViewport& viewport,
-                            const CameraRenderData& camera, const SceneSourceStage& ghost);
+    void DrawStage(const FrameContext& frame, const EditorViewport& viewport, const CameraRenderData& camera,
+                   const DocumentStage& stage, const Vec4& tint);
     void UpdateShadowResidency(const FrameContext& frame);
     // The camera position shadow scores rank against: the active viewport if
     // it is perspective, else the first perspective viewport, else the active
@@ -241,6 +251,8 @@ private:
     // The pending prefab placement, drawn where it stands.
     const PlacementSession& Placement;
     std::optional<PlacementGhost> Ghost;
+    std::optional<DraftPreview> Drafts;
+    std::function<ShownDraft()> DraftSource;
     std::optional<SceneSolidRenderer>      SceneSolid;
     // Wireframe body over the builder's retained draws (instanced lines);
     // declared after the pipelines and the builder it references.

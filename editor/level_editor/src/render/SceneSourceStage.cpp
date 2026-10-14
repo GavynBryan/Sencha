@@ -1,10 +1,5 @@
 #include "SceneSourceStage.h"
 
-#include "BrushBakeCache.h"
-#include "BrushBakeGpu.h"
-#include "SceneRenderQueueBuilder.h"
-
-#include "brush/BrushEvaluation.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 
@@ -19,15 +14,15 @@ std::unique_ptr<SceneSourceStage> SceneSourceStage::Prepare(const std::string& a
                                                             std::string* error)
 {
     std::unique_ptr<SceneSourceStage> stage(new SceneSourceStage());
-    stage->Doc = std::make_unique<EditorDocument>(logging);
-    stage->Doc->SetContentRoots(std::move(roots));
+    auto document = std::make_unique<EditorDocument>(logging);
+    document->SetContentRoots(std::move(roots));
     if (assets != nullptr)
-        stage->Doc->SetAssetEnvironment(*assets);
+        document->SetAssetEnvironment(*assets);
 
-    const SceneInstanceId placed = stage->Doc->PlaceSceneInstance(assetPath, Transform3f::Identity(), {}, error);
+    const SceneInstanceId placed = document->PlaceSceneInstance(assetPath, Transform3f::Identity(), {}, error);
     if (!placed.IsValid())
         return nullptr;
-    const auto* index = stage->Doc->GetRegistry().Components.TryGetResource<PersistentEntityIndex>();
+    const auto* index = document->GetRegistry().Components.TryGetResource<PersistentEntityIndex>();
     stage->RootEntity = index != nullptr ? index->TryResolve(PersistentEntityId{ placed.Value }) : EntityId{};
     if (!stage->RootEntity.IsValid())
     {
@@ -35,47 +30,23 @@ std::unique_ptr<SceneSourceStage> SceneSourceStage::Prepare(const std::string& a
             *error = "the placement of '" + assetPath + "' has no root";
         return nullptr;
     }
-
-    if (assets != nullptr)
-    {
-        stage->Bakes = std::make_unique<BrushBakeCache>(MakeBrushBakeGpu(*assets));
-        stage->Builder = std::make_unique<SceneRenderQueueBuilder>(
-            assets->Assets, *stage->Bakes, *assets->StaticMeshes, assets->Materials, assets->MaterialSets, logging,
-            nullptr, assets->SkinnedMeshes.get());
-    }
+    stage->Stage = std::make_unique<DocumentStage>(std::move(document), assets, logging);
     return stage;
 }
 
 SceneSourceStage::~SceneSourceStage() = default;
 
-const EditorScene& SceneSourceStage::Scene() const
-{
-    return Doc->GetScene();
-}
-
 void SceneSourceStage::Pose(const Transform3f& placement)
 {
-    Doc->GetScene().SetTransform(RootEntity, placement);
-}
-
-void SceneSourceStage::SetEvaluationPolicy(const BrushEvaluationPolicy& policy)
-{
-    Doc->GetScene().SetInteractiveEvaluationPolicy(policy);
-}
-
-void SceneSourceStage::Build()
-{
-    Doc->GetScene().RefreshDerivedTransforms();
-    if (Builder != nullptr)
-        Builder->Build(*Doc);
+    Stage->Document().GetScene().SetTransform(RootEntity, placement);
 }
 
 bool SceneSourceStage::ChangedOnDisk()
 {
-    return Doc->SourcesChangedOnDisk();
+    return Stage->Document().SourcesChangedOnDisk();
 }
 
 bool SceneSourceStage::DependsOnAny(std::span<const std::string> assetPaths) const
 {
-    return std::ranges::any_of(assetPaths, [this](const std::string& path) { return Doc->DependsOnSource(path); });
+    return std::ranges::any_of(assetPaths, [this](const std::string& path) { return Stage->Document().DependsOnSource(path); });
 }

@@ -169,10 +169,37 @@ namespace
             });
     }
 
+    EditorOperationEntry PreviewDraft(LevelTarget& level)
+    {
+        return Entry(
+            "draft.preview", EditorOperationKind::Mutation,
+            "Shows the named draft over its level in Kyusu, ghosted, or none when no draft is named.",
+            DataField::Record({}, {}, {}, { OptionalText("draft", "the draft's id; absent shows none") }),
+            DataField::Record({}, {}, {}, {
+                DataField::Optional("previewed", {}, "the draft now shown; null for none",
+                                    DataField::Field({}, DataFieldKind::String, {}, {}), true),
+            }),
+            [&level](const JsonValue& arguments) {
+                const JsonValue* named = arguments.Find("draft");
+                if (named == nullptr || !named->IsString())
+                {
+                    level.Preview(nullptr);
+                    return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{ { "previewed", JsonValue{} } }));
+                }
+                LevelDraft* draft = level.FindDraft(named->AsString());
+                if (draft == nullptr)
+                    return EditorOperationOutcome::Refused("draft.unknown",
+                                                           "there is no draft '" + named->AsString() + "'");
+                level.Preview(draft);
+                return EditorOperationOutcome::Ok(
+                    JsonValue(JsonValue::Object{ { "previewed", JsonValue(draft->Id) } }));
+            });
+    }
+
     EditorOperationEntry List(LevelTarget& level)
     {
         return Entry(
-            "draft.list", EditorOperationKind::Query, "Every open draft, and which one is being written.",
+            "draft.list", EditorOperationKind::Query, "Every open draft, which one is being written and which is shown.",
             DataField::Record({}, {}, {}, {}),
             DataField::Record({}, {}, {}, {
                 DataField::ArrayOf("drafts", {}, {},
@@ -183,6 +210,7 @@ namespace
                         DataField::Field("steps", DataFieldKind::Int, {}, {}),
                         DataField::Field("changed", DataFieldKind::Int, {}, "entities created, modified or deleted"),
                         DataField::Field("writing", DataFieldKind::Bool, {}, {}),
+                        DataField::Field("previewed", DataFieldKind::Bool, {}, "shown over its level in Kyusu"),
                     }),
                     true),
             }),
@@ -196,6 +224,7 @@ namespace
                         { "steps", JsonValue(static_cast<double>(draft->Steps.size())) },
                         { "changed", JsonValue(static_cast<double>(draft->Changes.Changes.size())) },
                         { "writing", JsonValue(draft.get() == level.WritingDraft()) },
+                        { "previewed", JsonValue(draft.get() == level.PreviewedDraft()) },
                     }));
                 return EditorOperationOutcome::Ok(
                     JsonValue(JsonValue::Object{ { "drafts", JsonValue(std::move(drafts)) } }));
@@ -398,6 +427,7 @@ std::vector<EditorOperationEntry> LevelDraftOperations(LevelTarget& level, Edito
     std::vector<EditorOperationEntry> entries;
     entries.push_back(Begin(level));
     entries.push_back(Write(level));
+    entries.push_back(PreviewDraft(level));
     entries.push_back(List(level));
     entries.push_back(Diff(level));
     entries.push_back(Accept(level));
