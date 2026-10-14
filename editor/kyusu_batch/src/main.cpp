@@ -1,7 +1,9 @@
+#include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/WorldDocument.h"
 #include "operations/EditorOperations.h"
-#include "operations/LevelQueries.h"
+#include "operations/LevelOperations.h"
+#include "operations/LevelTarget.h"
 #include "operations/OperationScript.h"
 #include "operations/WorldQueries.h"
 #include "project/Project.h"
@@ -116,9 +118,11 @@ int main(int argc, char** argv)
         return kCouldNotStart;
     }
 
+    CommandStack commands;
+    LevelTarget level(world, commands);
     EditorOperations operations;
     std::vector<std::string> errors;
-    if (!operations.Register("level", LevelQueryOperations(world), errors)
+    if (!operations.Register("level", LevelOperations(level), errors)
         || !operations.Register("world", WorldQueryOperations(world), errors))
     {
         for (const std::string& error : errors)

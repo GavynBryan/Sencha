@@ -2,12 +2,14 @@
 // read with every default filled, and refused, with the defaults standing,
 // when there are several or it does not fit the schema.
 
+#include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/LevelConventions.h"
 #include "document/NavigationCookInput.h"
 #include "document/WorldDocument.h"
 #include "operations/EditorOperations.h"
 #include "operations/LevelQueries.h"
+#include "operations/LevelTarget.h"
 
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/json/JsonParser.h>
@@ -123,9 +125,11 @@ namespace
         LoggingProvider logging;
         WorldDocument world(logging);
         world.SetContentRoots({ Root });
+        CommandStack commands;
+        LevelTarget level(world, commands);
         EditorOperations operations;
         std::vector<std::string> errors;
-        ASSERT_TRUE(operations.Register("level", LevelQueryOperations(world), errors));
+        ASSERT_TRUE(operations.Register("level", LevelQueryOperations(level), errors));
 
         const JsonValue answer = operations.Invoke("conventions.get", JsonValue(JsonValue::Object{}));
         ASSERT_EQ(answer.Find("status")->AsString(), "ok") << JsonStringify(answer);

@@ -4,11 +4,9 @@
 
 #include <vector>
 
-class WorldDocument;
+class LevelTarget;
 
-// The read-only operations over the world document's focus level:
+// The read-only operations over `level`, which must outlive their registration:
 // level.summary, entity.describe, query.box, query.near, plan.section,
 // nav.reachable, measure.clearance and conventions.get.
-// The executors read `world` on each call, so it must outlive their
-// registration.
-[[nodiscard]] std::vector<EditorOperationEntry> LevelQueryOperations(const WorldDocument& world);
+[[nodiscard]] std::vector<EditorOperationEntry> LevelQueryOperations(const LevelTarget& level);

@@ -2,7 +2,7 @@
 
 #include "document/DocumentNavigation.h"
 #include "document/EditorDocument.h"
-#include "document/WorldDocument.h"
+#include "operations/LevelTarget.h"
 #include "operations/LevelJson.h"
 
 #include <core/metadata/DataSchemaFields.h>
@@ -112,7 +112,7 @@ namespace
     }
 }
 
-EditorOperationEntry ReachabilityOperation(const WorldDocument& world)
+EditorOperationEntry ReachabilityOperation(const LevelTarget& level)
 {
     EditorOperationEntry entry;
     entry.Definition.Name = "nav.reachable";
@@ -160,12 +160,12 @@ EditorOperationEntry ReachabilityOperation(const WorldDocument& world)
         Point("to", "the end snapped onto the walkable surface"),
     });
 
-    entry.Execute = [&world](const JsonValue& arguments) {
-        if (world.ContentRoots().empty())
+    entry.Execute = [&level](const JsonValue& arguments) {
+        if (level.Document().ContentRoots().empty())
             return EditorOperationOutcome::Refused(
                 "nav.unavailable", "navigation needs a project: no content root holds navigation.settings");
-        const EditorDocument& document = world.FocusDocument();
-        const DocumentNavigation built = BuildDocumentNavigation(document, world.ContentRoots().front());
+        const EditorDocument& document = level.Document();
+        const DocumentNavigation built = BuildDocumentNavigation(document, level.Document().ContentRoots().front());
         if (!built.File)
         {
             std::string why = "the project has no navigation.settings asset or the level has no walkable geometry";

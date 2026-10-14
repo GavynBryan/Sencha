@@ -66,7 +66,7 @@ class PropertyHandles;
 class EntityVerbs;
 class WorldExplorer;
 class EditorOperations;
-class LiveLevelEdits;
+class LevelTarget;
 class FaceUvSource;
 class EditorCookRuntime;
 class DocumentFileActions;
@@ -191,10 +191,10 @@ private:
     DocumentSourceSet& Documents;
     std::unique_ptr<CommandStack> Commands;
     std::unique_ptr<EditorWorkspace> Workspace;
-    // The level's operations, registered as provider "level" and retired
-    // before the document they read goes.
+    // The level's and the world's operations, retired before the documents
+    // they read go.
     EditorOperations& Operations;
-    std::unique_ptr<LiveLevelEdits> LiveEdits;
+    std::unique_ptr<LevelTarget> Level;
     // The open level in the application's journal; destroyed before the
     // workspace whose world it reports on.
     std::unique_ptr<LevelDocumentSource> LevelDocument;

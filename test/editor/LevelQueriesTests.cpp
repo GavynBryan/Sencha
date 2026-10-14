@@ -1,6 +1,7 @@
 // The level's read-only operations answer with structured, repeatable data a
 // client never has to parse prose for, and name entities by persistent id.
 
+#include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
@@ -8,6 +9,7 @@
 #include "document/commands/RenameEntityCommand.h"
 #include "operations/EditorOperations.h"
 #include "operations/LevelQueries.h"
+#include "operations/LevelTarget.h"
 #include "operations/LevelSubjects.h"
 
 #include <assets/texture/ImageLoader.h>
@@ -32,7 +34,7 @@ namespace
         void SetUp() override
         {
             std::vector<std::string> errors;
-            ASSERT_TRUE(Operations.Register("level", LevelQueryOperations(World), errors));
+            ASSERT_TRUE(Operations.Register("level", LevelQueryOperations(Level), errors));
         }
 
         EntityId Brush(const Vec3d& center, const Vec3d& half, const char* name)
@@ -70,6 +72,8 @@ namespace
 
         LoggingProvider Logging;
         WorldDocument World{ Logging };
+        CommandStack Commands;
+        LevelTarget Level{ World, Commands };
         EditorOperations Operations;
     };
 

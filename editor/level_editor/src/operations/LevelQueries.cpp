@@ -11,7 +11,7 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/LevelConventions.h"
-#include "document/WorldDocument.h"
+#include "operations/LevelTarget.h"
 
 #include <assets/texture/PngEncoding.h>
 #include <core/io/FileBytes.h>
@@ -153,7 +153,7 @@ namespace
 
     // Operations ---------------------------------------------------------------
 
-    EditorOperationEntry Summary(const WorldDocument& world)
+    EditorOperationEntry Summary(const LevelTarget& level)
     {
         EditorOperationEntry entry;
         entry.Definition.Name = "level.summary";
@@ -170,8 +170,8 @@ namespace
             DataField::ArrayOf("entities", {}, {}, EntityRecord(), true),
             DataField::Field("truncated", DataFieldKind::Bool, {}, "more entities exist than were listed"),
         });
-        entry.Execute = [&world](const JsonValue& arguments) {
-            const EditorDocument& document = world.FocusDocument();
+        entry.Execute = [&level](const JsonValue& arguments) {
+            const EditorDocument& document = level.Document();
             const EditorScene& scene = document.GetScene();
             const std::size_t limit = LimitFrom(arguments);
             std::optional<Aabb3d> overall;
@@ -200,7 +200,7 @@ namespace
         return entry;
     }
 
-    EditorOperationEntry Describe(const WorldDocument& world)
+    EditorOperationEntry Describe(const LevelTarget& level)
     {
         EditorOperationEntry entry;
         entry.Definition.Name = "entity.describe";
@@ -224,8 +224,8 @@ namespace
                                           DataField::Field("faces", DataFieldKind::Int, {}, {}) }),
                      true),
         });
-        entry.Execute = [&world](const JsonValue& arguments) {
-            const EditorDocument& document = world.FocusDocument();
+        entry.Execute = [&level](const JsonValue& arguments) {
+            const EditorDocument& document = level.Document();
             const SubjectResolution subject =
                 ResolveEntitySubject(document, arguments.Find("subject")->AsString());
             if (!subject.Resolved())
@@ -269,7 +269,7 @@ namespace
         return entry;
     }
 
-    EditorOperationEntry Box(const WorldDocument& world)
+    EditorOperationEntry Box(const LevelTarget& level)
     {
         EditorOperationEntry entry;
         entry.Definition.Name = "query.box";
@@ -279,8 +279,8 @@ namespace
             Root({ Point("min", "one corner"), Point("max", "the opposite corner"), Limit(200) });
         entry.Definition.Result = Root({ DataField::ArrayOf("entities", {}, {}, EntityRecord(), true),
                                          DataField::Field("truncated", DataFieldKind::Bool, {}, {}) });
-        entry.Execute = [&world](const JsonValue& arguments) {
-            const EditorDocument& document = world.FocusDocument();
+        entry.Execute = [&level](const JsonValue& arguments) {
+            const EditorDocument& document = level.Document();
             const Vec3d low = PointFromJson(*arguments.Find("min"));
             const Vec3d high = PointFromJson(*arguments.Find("max"));
             const Aabb3d box{ Vec3d{ std::min(low.X, high.X), std::min(low.Y, high.Y),
@@ -310,7 +310,7 @@ namespace
         return entry;
     }
 
-    EditorOperationEntry Near(const WorldDocument& world)
+    EditorOperationEntry Near(const LevelTarget& level)
     {
         EditorOperationEntry entry;
         entry.Definition.Name = "query.near";
@@ -330,8 +330,8 @@ namespace
                     true),
             DataField::Field("truncated", DataFieldKind::Bool, {}, {}),
         });
-        entry.Execute = [&world](const JsonValue& arguments) {
-            const EditorDocument& document = world.FocusDocument();
+        entry.Execute = [&level](const JsonValue& arguments) {
+            const EditorDocument& document = level.Document();
             const Vec3d point = PointFromJson(*arguments.Find("point"));
             const float reach = static_cast<float>(arguments.Find("radius")->AsNumber());
             const std::size_t limit = LimitFrom(arguments);
@@ -374,7 +374,7 @@ namespace
         return entry;
     }
 
-    EditorOperationEntry PlanSection(const WorldDocument& world)
+    EditorOperationEntry PlanSection(const LevelTarget& level)
     {
         EditorOperationEntry entry;
         entry.Definition.Name = "plan.section";
@@ -435,8 +435,8 @@ namespace
                 true),
         });
 
-        entry.Execute = [&world](const JsonValue& arguments) {
-            const EditorDocument& document = world.FocusDocument();
+        entry.Execute = [&level](const JsonValue& arguments) {
+            const EditorDocument& document = level.Document();
             const float cut = static_cast<float>(arguments.Find("height")->AsNumber());
             const FloorPlan plan = SectionLevel(document, cut);
 
@@ -505,7 +505,7 @@ namespace
         return entry;
     }
 
-    EditorOperationEntry Conventions(const WorldDocument& world)
+    EditorOperationEntry Conventions(const LevelTarget& level)
     {
         EditorOperationEntry entry;
         entry.Definition.Name = "conventions.get";
@@ -524,8 +524,8 @@ namespace
             DataField::ArrayOf("problems", {}, "why an asset was not used",
                                DataField::Field({}, DataFieldKind::String, {}, {}), true),
         });
-        entry.Execute = [&world](const JsonValue&) {
-            const LevelConventionsLookup found = FindLevelConventions(world.ContentRoots());
+        entry.Execute = [&level](const JsonValue&) {
+            const LevelConventionsLookup found = FindLevelConventions(level.Document().ContentRoots());
             JsonValue::Array problems;
             for (const std::string& problem : found.Problems)
                 problems.push_back(JsonValue(problem));
@@ -539,16 +539,16 @@ namespace
     }
 }
 
-std::vector<EditorOperationEntry> LevelQueryOperations(const WorldDocument& world)
+std::vector<EditorOperationEntry> LevelQueryOperations(const LevelTarget& level)
 {
     std::vector<EditorOperationEntry> entries;
-    entries.push_back(Summary(world));
-    entries.push_back(Describe(world));
-    entries.push_back(Box(world));
-    entries.push_back(Near(world));
-    entries.push_back(PlanSection(world));
-    entries.push_back(ReachabilityOperation(world));
-    entries.push_back(ClearanceOperation(world));
-    entries.push_back(Conventions(world));
+    entries.push_back(Summary(level));
+    entries.push_back(Describe(level));
+    entries.push_back(Box(level));
+    entries.push_back(Near(level));
+    entries.push_back(PlanSection(level));
+    entries.push_back(ReachabilityOperation(level));
+    entries.push_back(ClearanceOperation(level));
+    entries.push_back(Conventions(level));
     return entries;
 }

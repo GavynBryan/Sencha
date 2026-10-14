@@ -1,9 +1,8 @@
 #include "LevelWorkspace.h"
 
 #include "operations/EditorOperations.h"
-#include "operations/LevelEditTarget.h"
-#include "operations/LevelMutations.h"
-#include "operations/LevelQueries.h"
+#include "operations/LevelOperations.h"
+#include "operations/LevelTarget.h"
 #include "operations/WorldQueries.h"
 
 #include "actions/ActionCatalog.h"
@@ -76,7 +75,6 @@
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 #include <algorithm>
-#include <iterator>
 #include <cstdio>
 #include <filesystem>
 #include <memory>
@@ -93,7 +91,8 @@ constexpr std::string_view kEditorRenderFeatureId = "editor_render";
 // Commands capture this workspace and go with it; its cvars are archived
 // settings registered under "editor" and outlive it.
 constexpr std::string_view kCommandOwner = "editor.level";
-constexpr std::string_view kOperationsProvider = "level";
+constexpr std::string_view kLevelOperations = "level";
+constexpr std::string_view kWorldOperations = "world";
 } // namespace
 
 ActionDefinition NewLevelAction()
@@ -158,7 +157,8 @@ LevelWorkspace::LevelWorkspace(Engine& engine,
 
 LevelWorkspace::~LevelWorkspace()
 {
-    Operations.Retire(kOperationsProvider);
+    Operations.Retire(kWorldOperations);
+    Operations.Retire(kLevelOperations);
     EnginePtr->Console().Registry().UnregisterOwner(kCommandOwner);
     // Before the render feature that owns the studio goes.
     ScenePictures = {};
@@ -229,13 +229,10 @@ void LevelWorkspace::BuildDocument()
 
 void LevelWorkspace::BuildOperations()
 {
-    LiveEdits = std::make_unique<LiveLevelEdits>(Workspace->World, *Commands);
-    std::vector<EditorOperationEntry> entries = LevelQueryOperations(Workspace->World);
-    for (std::vector<EditorOperationEntry> more : { WorldQueryOperations(Workspace->World),
-                                                    LevelMutationOperations(*LiveEdits) })
-        std::move(more.begin(), more.end(), std::back_inserter(entries));
+    Level = std::make_unique<LevelTarget>(Workspace->World, *Commands);
     std::vector<std::string> errors;
-    if (!Operations.Register(std::string(kOperationsProvider), std::move(entries), errors))
+    if (!Operations.Register(std::string(kLevelOperations), LevelOperations(*Level), errors)
+        || !Operations.Register(std::string(kWorldOperations), WorldQueryOperations(Workspace->World), errors))
         for (const std::string& error : errors)
             EnginePtr->Logging().GetLogger<LevelWorkspace>().Error("operations: {}", error);
 }

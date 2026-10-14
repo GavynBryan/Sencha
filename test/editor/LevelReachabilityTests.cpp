@@ -2,12 +2,14 @@
 // kinds blocked and then open, so a verified answer is never confused with one
 // that rests on an assumption.
 
+#include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 #include "operations/EditorOperations.h"
 #include "operations/LevelQueries.h"
+#include "operations/LevelTarget.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -50,7 +52,7 @@ namespace
             World.SetContentRoots({ Root });
 
             std::vector<std::string> errors;
-            ASSERT_TRUE(Operations.Register("level", LevelQueryOperations(World), errors));
+            ASSERT_TRUE(Operations.Register("level", LevelQueryOperations(Level), errors));
 
             // Two floor slabs, their walkable tops at y = 0, with a 4 m gap.
             EditorScene& scene = World.FocusDocument().GetScene();
@@ -99,6 +101,8 @@ namespace
         fs::path Root;
         LoggingProvider Logging;
         WorldDocument World{ Logging };
+        CommandStack Commands;
+        LevelTarget Level{ World, Commands };
         EditorOperations Operations;
     };
 

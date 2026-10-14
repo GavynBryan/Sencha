@@ -1,12 +1,14 @@
 // measure.clearance: floor, ceiling and width around a point, measured against
 // the level's brushes, and whether the navigation profile's capsule fits.
 
+#include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 #include "operations/EditorOperations.h"
 #include "operations/LevelQueries.h"
+#include "operations/LevelTarget.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -46,7 +48,7 @@ namespace
             std::ofstream(Root / "data/navigation.sdata", std::ios::trunc) << kSettings;
             World.SetContentRoots({ Root });
             std::vector<std::string> errors;
-            ASSERT_TRUE(Operations.Register("level", LevelQueryOperations(World), errors));
+            ASSERT_TRUE(Operations.Register("level", LevelQueryOperations(Level), errors));
         }
 
         void TearDown() override
@@ -79,6 +81,8 @@ namespace
         fs::path Root;
         LoggingProvider Logging;
         WorldDocument World{ Logging };
+        CommandStack Commands;
+        LevelTarget Level{ World, Commands };
         EditorOperations Operations;
     };
 

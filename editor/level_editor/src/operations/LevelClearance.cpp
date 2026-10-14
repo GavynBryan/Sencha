@@ -4,7 +4,7 @@
 
 #include "document/EditorDocument.h"
 #include "document/NavigationCookInput.h"
-#include "document/WorldDocument.h"
+#include "operations/LevelTarget.h"
 #include "viewport/Picking.h"
 
 #include <core/metadata/DataSchemaFields.h>
@@ -39,7 +39,7 @@ namespace
     }
 }
 
-EditorOperationEntry ClearanceOperation(const WorldDocument& world)
+EditorOperationEntry ClearanceOperation(const LevelTarget& level)
 {
     EditorOperationEntry entry;
     entry.Definition.Name = "measure.clearance";
@@ -70,8 +70,8 @@ EditorOperationEntry ClearanceOperation(const WorldDocument& world)
             true),
     });
 
-    entry.Execute = [&world](const JsonValue& arguments) {
-        const EditorScene& scene = world.FocusDocument().GetScene();
+    entry.Execute = [&level](const JsonValue& arguments) {
+        const EditorScene& scene = level.Document().GetScene();
         const Vec3d point = PointFromJson(*arguments.Find("point"));
         Vec3d travel{ 0.0f, 0.0f, -1.0f };
         if (const JsonValue* given = arguments.Find("direction"); given != nullptr && given->IsArray())
@@ -91,9 +91,9 @@ EditorOperationEntry ClearanceOperation(const WorldDocument& world)
             floor && ceiling ? std::optional<float>(*ceiling - *floor) : std::nullopt;
 
         std::optional<NavigationProfileSetting> profile;
-        if (!world.ContentRoots().empty())
+        if (!level.Document().ContentRoots().empty())
         {
-            NavigationSettingsLookup settings = FindNavigationSettings(world.ContentRoots().front());
+            NavigationSettingsLookup settings = FindNavigationSettings(level.Document().ContentRoots().front());
             if (settings.Settings && !settings.Settings->Profiles.empty())
                 profile = settings.Settings->Profiles.front();
         }
@@ -103,11 +103,11 @@ EditorOperationEntry ClearanceOperation(const WorldDocument& world)
         float bodyHeight = profile ? profile->Build.Height : 1.8f;
         if (height)
             bodyHeight = std::min(bodyHeight, *height);
-        Vec3d level = point;
+        Vec3d waist = point;
         if (floor)
-            level.Y = *floor + 0.5f * bodyHeight;
-        const std::optional<float> left = DistanceTo(scene, level, across * -1.0f);
-        const std::optional<float> right = DistanceTo(scene, level, across);
+            waist.Y = *floor + 0.5f * bodyHeight;
+        const std::optional<float> left = DistanceTo(scene, waist, across * -1.0f);
+        const std::optional<float> right = DistanceTo(scene, waist, across);
         const std::optional<float> width =
             left && right ? std::optional<float>(*left + *right) : std::nullopt;
 
