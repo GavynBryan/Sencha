@@ -11,6 +11,7 @@
 #include "document/commands/RenameEntityCommand.h"
 #include "operations/EditorOperations.h"
 #include "operations/LevelOperations.h"
+#include "operations/LevelProposal.h"
 #include "operations/LevelSubjects.h"
 #include "operations/LevelTarget.h"
 
@@ -22,6 +23,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -203,5 +207,107 @@ namespace
             ++compared;
         }
         EXPECT_EQ(compared, 2u);
+    }
+    class LevelProposalTest : public LevelDraftsTest
+    {
+    protected:
+        void SetUp() override
+        {
+            LevelDraftsTest::SetUp();
+            Root = std::filesystem::temp_directory_path()
+                / ("sencha_proposal_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)));
+            std::filesystem::create_directories(Root);
+        }
+
+        void TearDown() override
+        {
+            std::error_code ignored;
+            std::filesystem::remove_all(Root, ignored);
+        }
+
+        std::string File(const char* name) const { return (Root / name).generic_string(); }
+
+        std::string PathArgument(const char* name) const { return R"({"path": ")" + File(name) + R"("})"; }
+
+        std::filesystem::path Root;
+    };
+
+    TEST_F(LevelProposalTest, ASavedDraftOpensAsTheSameChange)
+    {
+        Ok("draft.begin", R"({"label": "Rename the hall", "rationale": "it is an atrium now"})");
+        Ok("entity.rename", RenameHall("Atrium"));
+        const std::uint64_t proposed = DigestOf(*Level.WritingDraft()->Changes.Changes.front().After);
+        Ok("draft.save", R"({"path": ")" + File("hall.sproposal") + R"(", "author": "agent"})");
+        Ok("draft.discard");
+
+        const JsonValue opened = Ok("draft.open", PathArgument("hall.sproposal"));
+        EXPECT_EQ(opened.Find("label")->AsString(), "Rename the hall");
+        EXPECT_EQ(opened.Find("author")->AsString(), "agent");
+        EXPECT_EQ(opened.Find("state")->AsString(), "open");
+        EXPECT_TRUE(opened.Find("moved_since")->AsArray().empty());
+        ASSERT_EQ(Level.WritingDraft()->Changes.Changes.size(), 1u);
+        EXPECT_EQ(DigestOf(*Level.WritingDraft()->Changes.Changes.front().After), proposed)
+            << "the replay made exactly the change the draft made";
+        Ok("draft.accept");
+        EXPECT_EQ(Name(Hall), "Atrium");
+    }
+
+    TEST_F(LevelProposalTest, OpeningNamesWhatTheLevelChangedSince)
+    {
+        Ok("draft.begin", R"({"label": "Rename the hall"})");
+        Ok("entity.rename", RenameHall("Atrium"));
+        Ok("draft.save", PathArgument("hall.sproposal"));
+        Ok("draft.discard");
+        Ok("entity.rename", RenameHall("Lobby"));
+
+        const JsonValue opened = Ok("draft.open", PathArgument("hall.sproposal"));
+        ASSERT_EQ(opened.Find("moved_since")->AsArray().size(), 1u);
+        EXPECT_EQ(opened.Find("moved_since")->AsArray().front().AsString(), HallId);
+        EXPECT_EQ(opened.Find("state")->AsString(), "open");
+    }
+
+    TEST_F(LevelProposalTest, AProposalForAnotherLevelIsRefused)
+    {
+        LevelProposal proposal;
+        proposal.Label = "Elsewhere";
+        proposal.BasePath = "asset://levels/elsewhere.sscene";
+        std::ofstream(File("elsewhere.sproposal")) << JsonStringify(LevelProposalToJson(proposal));
+        EXPECT_EQ(Code(Call("draft.open", PathArgument("elsewhere.sproposal"))), "proposal.wrong_level");
+        EXPECT_TRUE(Level.Drafts().empty());
+    }
+
+    TEST_F(LevelProposalTest, AStepThatNoLongerAppliesLeavesTheOpenedDraftFailed)
+    {
+        LevelProposal proposal;
+        proposal.Label = "Rename a room that went";
+        proposal.Steps.push_back({ "entity.rename", *JsonParse(R"({"subject": "@Gone", "name": "X"})") });
+        std::ofstream(File("gone.sproposal")) << JsonStringify(LevelProposalToJson(proposal));
+        const JsonValue opened = Ok("draft.open", PathArgument("gone.sproposal"));
+        EXPECT_EQ(opened.Find("state")->AsString(), "failed");
+        EXPECT_FALSE(opened.Find("failure")->AsString().empty());
+    }
+
+    TEST(LevelProposalJson, OnlyAVersionOneProposalReads)
+    {
+        LevelProposal proposal;
+        proposal.Label = "Rename";
+        proposal.IdSeed = 7;
+        proposal.BaseDigests.emplace_back(PersistentEntityId{ 0x1234 }, 0xfeedfacecafebeefull);
+        proposal.Steps.push_back({ "entity.rename", *JsonParse(R"({"subject": "@Hall", "name": "Atrium"})") });
+        std::string error;
+        const std::optional<LevelProposal> read = LevelProposalFromJson(LevelProposalToJson(proposal), error);
+        ASSERT_TRUE(read.has_value()) << error;
+        EXPECT_EQ(read->IdSeed, 7u);
+        ASSERT_EQ(read->BaseDigests.size(), 1u);
+        EXPECT_EQ(read->BaseDigests.front().second, 0xfeedfacecafebeefull) << "a digest survives as text";
+        ASSERT_EQ(read->Steps.size(), 1u);
+        EXPECT_EQ(read->Steps.front().Arguments.Find("name")->AsString(), "Atrium");
+
+        JsonValue later = LevelProposalToJson(proposal);
+        for (auto& [key, value] : later.AsObject())
+            if (key == "version")
+                value = JsonValue(2.0);
+        EXPECT_FALSE(LevelProposalFromJson(later, error).has_value());
+        EXPECT_FALSE(LevelProposalFromJson(*JsonParse(R"({"type": "level.proposal", "version": 1})"), error));
     }
 }

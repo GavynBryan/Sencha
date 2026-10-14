@@ -1,0 +1,4 @@
+# kyusu_batch: the proposal propose_rename.txt wrote, replayed into a draft and accepted.
+draft.open path=box_rename.sproposal
+draft.accept
+entity.describe subject=@Crate

@@ -299,6 +299,27 @@ if(TARGET kyusu_batch)
     set_tests_properties(kyusu_batch.OpensAWorldAtItsStartZone PROPERTIES
         PASS_REGULAR_EXPRESSION "\"document\":\"asset://levels/zone_1.sscene\""
         FAIL_REGULAR_EXPRESSION "\"status\":\"error\"")
+    # One run writes a proposal file; a second opens it into a draft and accepts it.
+    add_test(NAME kyusu_batch.WritesAProposal
+        COMMAND kyusu_batch
+            --project "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/project.senchaproj"
+            --level "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/assets/levels/box.sscene"
+            --script "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/operations/propose_rename.txt"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    set_tests_properties(kyusu_batch.WritesAProposal PROPERTIES
+        FIXTURES_SETUP kyusu_batch_proposal
+        PASS_REGULAR_EXPRESSION "\"operation\":\"draft.save\",\"status\":\"ok\""
+        FAIL_REGULAR_EXPRESSION "\"status\":\"(error|refused)\"")
+    add_test(NAME kyusu_batch.AcceptsAProposal
+        COMMAND kyusu_batch
+            --project "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/project.senchaproj"
+            --level "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/assets/levels/box.sscene"
+            --script "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/operations/accept_proposal.txt"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    set_tests_properties(kyusu_batch.AcceptsAProposal PROPERTIES
+        FIXTURES_REQUIRED kyusu_batch_proposal
+        PASS_REGULAR_EXPRESSION "\"operation\":\"entity.describe\",\"status\":\"ok\""
+        FAIL_REGULAR_EXPRESSION "\"status\":\"(error|refused)\"")
 endif()
 
 # The transport, protocol, and channel layers. Their own target because they

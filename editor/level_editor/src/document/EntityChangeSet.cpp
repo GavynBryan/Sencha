@@ -90,17 +90,24 @@ void ApplyEntityChangeSet(EditorDocument& document, const EntityChangeSet& chang
     document.MarkDirty();
 }
 
+std::optional<std::uint64_t> CurrentDigest(const EditorDocument& document, PersistentEntityId id)
+{
+    const EntityId entity = Resolve(document, id);
+    if (!entity.IsValid())
+        return std::nullopt;
+    return DigestOf(document.CaptureEntity(entity));
+}
+
 std::vector<PersistentEntityId> ChangeSetConflicts(const EditorDocument& document,
                                                    const EntityChangeSet& changes)
 {
     std::vector<PersistentEntityId> conflicts;
     for (const EntityChange& change : changes.Changes)
     {
-        const EntityId entity = Resolve(document, change.Id);
-        const bool unchanged = change.Before
-            ? entity.IsValid() && DigestOf(document.CaptureEntity(entity)) == DigestOf(*change.Before)
-            : !entity.IsValid();
-        if (!unchanged)
+        const std::optional<std::uint64_t> current = CurrentDigest(document, change.Id);
+        const std::optional<std::uint64_t> before =
+            change.Before ? std::optional<std::uint64_t>(DigestOf(*change.Before)) : std::nullopt;
+        if (current != before)
             conflicts.push_back(change.Id);
     }
     return conflicts;

@@ -1,0 +1,4 @@
+# kyusu_batch: a draft written as a proposal file, for accept_proposal.txt to open.
+draft.begin label='Rename the box' rationale='a crate reads better'
+entity.rename subject=@Box name=Crate
+draft.save path=box_rename.sproposal author=kyusu_batch

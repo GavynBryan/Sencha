@@ -65,6 +65,9 @@ enum class ChangeSetSide : std::uint8_t
 // exists on both sides, creating what only that side has, destroying the rest.
 void ApplyEntityChangeSet(EditorDocument& document, const EntityChangeSet& changes, ChangeSetSide side);
 
+// The digest of the record `id` has in `document`; nullopt when nothing has it.
+[[nodiscard]] std::optional<std::uint64_t> CurrentDigest(const EditorDocument& document, PersistentEntityId id);
+
 // The entities whose current record is not the change set's before: changed,
 // created or deleted since it was recorded. Applying over them would discard
 // someone's edit.

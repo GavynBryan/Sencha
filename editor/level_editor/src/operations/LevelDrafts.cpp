@@ -1,11 +1,19 @@
 #include "LevelDrafts.h"
 
+#include "LevelProposal.h"
 #include "LevelTarget.h"
 
+#include "document/EditorDocument.h"
+#include "document/EntityChangeSet.h"
+
+#include <core/io/FileBytes.h>
+#include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
 #include <core/metadata/DataSchemaFields.h>
 
+#include <format>
 #include <random>
+#include <span>
 #include <string>
 #include <variant>
 
@@ -57,6 +65,18 @@ namespace
         if (LevelDraft* draft = level.FindDraft(named->AsString()))
             return draft;
         return EditorOperationOutcome::Refused("draft.unknown", "there is no draft '" + named->AsString() + "'");
+    }
+
+    EditorOperationOutcome ReplayStep(EditorOperations& operations, const LevelDraftStep& step)
+    {
+        const JsonValue answer = operations.Invoke(step.Operation, step.Arguments);
+        const auto text = [&answer](std::string_view key) {
+            const JsonValue* value = answer.Find(key);
+            return value != nullptr && value->IsString() ? value->AsString() : std::string{};
+        };
+        if (text("status") == "ok")
+            return EditorOperationOutcome::Ok({});
+        return EditorOperationOutcome::Refused(text("code"), text("message"));
     }
 
     template <typename Body>
@@ -267,17 +287,109 @@ namespace
             DraftOnly(), ChangeSummarySchema(),
             WithDraft(level, [&level, &operations](LevelDraft& draft) {
                 return level.RebaseDraft(draft, [&operations](const LevelDraftStep& step) {
-                    const JsonValue answer = operations.Invoke(step.Operation, step.Arguments);
-                    const JsonValue* status = answer.Find("status");
-                    if (status != nullptr && status->IsString() && status->AsString() == "ok")
-                        return EditorOperationOutcome::Ok({});
-                    const JsonValue* code = answer.Find("code");
-                    const JsonValue* message = answer.Find("message");
-                    return EditorOperationOutcome::Refused(
-                        code != nullptr && code->IsString() ? code->AsString() : "operation.failed",
-                        message != nullptr && message->IsString() ? message->AsString() : JsonStringify(answer));
+                    return ReplayStep(operations, step);
                 });
             }));
+    }
+
+    EditorOperationEntry Save(LevelTarget& level)
+    {
+        return Entry(
+            "draft.save", EditorOperationKind::Mutation,
+            "Writes a draft as a proposal file: its steps, the level they apply to and what the "
+            "entities they change looked like, for a designer to open and review.",
+            DataField::Record({}, {}, {}, {
+                WhichDraft(),
+                Text("path", "the file to write, by convention <project>/.proposals/<name>.sproposal"),
+                OptionalText("author", "who proposes it"),
+            }),
+            DataField::Record({}, {}, {}, {
+                Text("draft", {}),
+                Text("path", {}),
+                DataField::Field("steps", DataFieldKind::Int, {}, {}),
+            }),
+            [&level](const JsonValue& arguments) {
+                auto picked = Pick(level, arguments);
+                if (auto* refused = std::get_if<EditorOperationOutcome>(&picked))
+                    return std::move(*refused);
+                const LevelDraft& draft = *std::get<LevelDraft*>(picked);
+                const JsonValue* author = arguments.Find("author");
+                const std::string text = JsonStringify(
+                    LevelProposalToJson(ProposalOf(draft, author != nullptr && author->IsString() ? author->AsString()
+                                                                                                  : std::string{})),
+                    true);
+                const std::string& path = arguments.Find("path")->AsString();
+                if (!WriteFileBytes(path, std::as_bytes(std::span(text))))
+                    return EditorOperationOutcome::Refused("proposal.not_written", "could not write " + path);
+                return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
+                    { "draft", JsonValue(draft.Id) },
+                    { "path", JsonValue(path) },
+                    { "steps", JsonValue(static_cast<double>(draft.Steps.size())) },
+                }));
+            });
+    }
+
+    // The entities whose record on `level` is no longer the one the proposal saw.
+    JsonValue::Array MovedSince(const EditorDocument& level, const LevelProposal& proposal)
+    {
+        JsonValue::Array moved;
+        for (const auto& [id, digest] : proposal.BaseDigests)
+            if (CurrentDigest(level, id) != digest)
+                moved.push_back(JsonValue(PersistentEntityIdToString(id)));
+        return moved;
+    }
+
+    EditorOperationEntry Open(LevelTarget& level, EditorOperations& operations)
+    {
+        return Entry(
+            "draft.open", EditorOperationKind::Mutation,
+            "Replays a proposal file into a new draft of the focus level, which must be the level it "
+            "was written for, and names the entities that level has changed since.",
+            DataField::Record({}, {}, {}, { Text("path", "the proposal file") }),
+            ChangeSummarySchema({
+                Text("draft", {}),
+                Text("label", {}),
+                Text("rationale", {}),
+                Text("author", {}),
+                StateField(),
+                DataField::Optional("failure", {}, "the refused step",
+                                    DataField::Field({}, DataFieldKind::String, {}, {}), true),
+                DataField::ArrayOf("moved_since", {}, "entities the level changed since it was written",
+                                   DataField::Field({}, DataFieldKind::Entity, {}, {}), true),
+            }),
+            [&level, &operations](const JsonValue& arguments) {
+                const std::string& path = arguments.Find("path")->AsString();
+                const std::optional<JsonValue> json = JsonParseFile(path);
+                if (!json)
+                    return EditorOperationOutcome::Refused("proposal.unreadable", "could not read " + path);
+                std::string error;
+                const std::optional<LevelProposal> proposal = LevelProposalFromJson(*json, error);
+                if (!proposal)
+                    return EditorOperationOutcome::Refused("proposal.malformed", path + ": " + error);
+                const std::string focus = level.FocusLevel().SourceAssetPath();
+                if (proposal->BasePath != focus)
+                    return EditorOperationOutcome::Refused(
+                        "proposal.wrong_level", "the proposal is for '" + proposal->BasePath + "', not '" + focus + "'");
+
+                const JsonValue::Array moved = MovedSince(level.FocusLevel(), *proposal);
+                LevelDraft* draft = level.BeginDraft(proposal->Label, proposal->Rationale, proposal->IdSeed, error);
+                if (draft == nullptr)
+                    return EditorOperationOutcome::Refused("draft.copy_failed", error);
+                for (const LevelDraftStep& step : proposal->Steps)
+                    if (ReplayStep(operations, step).Status != EditorOperationStatus::Ok)
+                        break;
+
+                JsonValue::Object data = ChangeSummary(draft->Changes);
+                data.emplace_back("draft", JsonValue(draft->Id));
+                data.emplace_back("label", JsonValue(draft->Label));
+                data.emplace_back("rationale", JsonValue(draft->Rationale));
+                data.emplace_back("author", JsonValue(proposal->Author));
+                data.emplace_back("state", JsonValue(StateName(draft->State)));
+                data.emplace_back("failure",
+                                  draft->State == LevelDraftState::Failed ? JsonValue(draft->Failure) : JsonValue{});
+                data.emplace_back("moved_since", JsonValue(moved));
+                return EditorOperationOutcome::Ok(JsonValue(std::move(data)));
+            });
     }
 }
 
@@ -292,5 +404,7 @@ std::vector<EditorOperationEntry> LevelDraftOperations(LevelTarget& level, Edito
     entries.push_back(Discard(level));
     entries.push_back(Resume(level));
     entries.push_back(Rebase(level, operations));
+    entries.push_back(Save(level));
+    entries.push_back(Open(level, operations));
     return entries;
 }

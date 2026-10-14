@@ -37,7 +37,7 @@ struct LevelDraft
     std::string Rationale;
     // The copied level's asset path; empty when it was never saved.
     std::string BasePath;
-    std::uint64_t IdSeed = 0;
+    std::uint32_t IdSeed = 0;
     std::unique_ptr<EditorDocument> Document;
     EntityChangeSet Changes;
     std::vector<LevelDraftStep> Steps;
@@ -60,6 +60,8 @@ public:
 
     [[nodiscard]] EditorDocument& Document();
     [[nodiscard]] const EditorDocument& Document() const;
+    // The level itself, whatever draft is being written.
+    [[nodiscard]] const EditorDocument& FocusLevel() const;
 
     // Runs `edit` as step `operation` with `arguments`: a refusal puts back what
     // it had already changed (and fails a draft), and success adds what changed
@@ -69,7 +71,7 @@ public:
 
     // Copies the focus level into a new draft and writes to it. Null, with
     // `error` set, when the copy did not load.
-    LevelDraft* BeginDraft(std::string label, std::string rationale, std::uint64_t idSeed, std::string& error);
+    LevelDraft* BeginDraft(std::string label, std::string rationale, std::uint32_t idSeed, std::string& error);
     [[nodiscard]] LevelDraft* FindDraft(std::string_view id);
     [[nodiscard]] LevelDraft* WritingDraft() { return Writing; }
     [[nodiscard]] std::span<const std::unique_ptr<LevelDraft>> Drafts() const { return Drafts_; }
@@ -85,7 +87,7 @@ public:
 
 private:
     std::unique_ptr<LevelDraft> CopyLevel(EditorDocument& level, std::string label, std::string rationale,
-                                          std::uint64_t idSeed, std::string& error);
+                                          std::uint32_t idSeed, std::string& error);
     [[nodiscard]] EditorDocument* FindBase(const std::string& path);
 
     WorldDocument& World;

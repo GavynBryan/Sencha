@@ -69,6 +69,11 @@ const EditorDocument& LevelTarget::Document() const
     return Writing != nullptr ? *Writing->Document : World.FocusDocument();
 }
 
+const EditorDocument& LevelTarget::FocusLevel() const
+{
+    return World.FocusDocument();
+}
+
 EditorOperationOutcome LevelTarget::Mutate(std::string_view operation, const JsonValue& arguments,
                                            const Edit& edit)
 {
@@ -107,7 +112,7 @@ EditorOperationOutcome LevelTarget::Mutate(std::string_view operation, const Jso
 }
 
 std::unique_ptr<LevelDraft> LevelTarget::CopyLevel(EditorDocument& level, std::string label,
-                                                   std::string rationale, std::uint64_t idSeed, std::string& error)
+                                                   std::string rationale, std::uint32_t idSeed, std::string& error)
 {
     auto draft = std::make_unique<LevelDraft>();
     draft->Label = std::move(label);
@@ -122,7 +127,7 @@ std::unique_ptr<LevelDraft> LevelTarget::CopyLevel(EditorDocument& level, std::s
     return draft;
 }
 
-LevelDraft* LevelTarget::BeginDraft(std::string label, std::string rationale, std::uint64_t idSeed,
+LevelDraft* LevelTarget::BeginDraft(std::string label, std::string rationale, std::uint32_t idSeed,
                                     std::string& error)
 {
     std::unique_ptr<LevelDraft> draft =

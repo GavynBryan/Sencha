@@ -867,6 +867,14 @@ of the real model, with spaces included from the start.
 - Replayed ids: a draft seeds its copy's id minter from a 32-bit `id_seed`
   (exact in JSON), so the same seed on the same base mints the same ids.
 - R1: copying `bench_stress` (77 entities, 10 brushes) costs about 13 ms.
+- Proposal files carry `type: "level.proposal"` and `version: 1`, the id seed,
+  the base level's asset path and the digest of every entity the draft changes,
+  and the steps as `{op, params}`. `draft.save` writes where it is told, like
+  `plan.section`; `<project>/.proposals/` (D8) is the convention clients and
+  the tray follow. `draft.open` refuses a proposal for another level, names the
+  entities changed since it was written (`moved_since`), and leaves the draft
+  `failed` at a step that no longer applies. The operation registry version
+  (R8) is not recorded yet; that is measured in M2.
 
 ### M2: work live, and widen the vocabulary
 
