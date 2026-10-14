@@ -66,9 +66,10 @@ CMakeSettings.json
 .DS_Store
 Thumbs.db
 
-# AI / agent tool directories.
+# AI / agent tool directories. Project skills are shared, so they are kept.
 .codex
-.claude/
+.claude/*
+!.claude/skills/
 .agents/
 .copilot/
 

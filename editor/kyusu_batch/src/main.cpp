@@ -4,6 +4,7 @@
 #include "operations/EditorOperations.h"
 #include "operations/LevelOperations.h"
 #include "operations/LevelTarget.h"
+#include "operations/OperationReference.h"
 #include "operations/OperationScript.h"
 #include "operations/WorldQueries.h"
 #include "project/Project.h"
@@ -29,8 +30,10 @@ namespace
     constexpr std::string_view kUsage =
         "usage: kyusu_batch [--project <file.senchaproj>] (--level <file.sscene> | "
         "--world <file.sworld> [--zone <id or name>]) [--script <file>]\n"
+        "       kyusu_batch --reference\n"
         "Runs one editor operation per line of the script (stdin without --script) and "
-        "writes one line of JSON per answer to stdout.\n";
+        "writes one line of JSON per answer to stdout. --reference prints every operation "
+        "as markdown instead.\n";
 
     struct Options
     {
@@ -39,6 +42,7 @@ namespace
         std::string World;
         std::string Zone;
         std::string Script;
+        bool        Reference = false;
     };
 
     bool ParseOptions(int argc, char** argv, Options& options)
@@ -46,6 +50,11 @@ namespace
         for (int index = 1; index < argc; ++index)
         {
             const std::string_view flag = argv[index];
+            if (flag == "--reference")
+            {
+                options.Reference = true;
+                continue;
+            }
             if (index + 1 >= argc)
                 return false;
             const std::string value = argv[++index];
@@ -62,8 +71,21 @@ namespace
             else
                 return false;
         }
+        if (options.Reference)
+            return options.Level.empty() && options.World.empty() && options.Script.empty();
         return options.Level.empty() != options.World.empty()
             && (options.Zone.empty() || !options.World.empty());
+    }
+
+    bool RegisterOperations(WorldDocument& world, LevelTarget& level, EditorOperations& operations)
+    {
+        std::vector<std::string> errors;
+        if (operations.Register("level", LevelOperations(level, operations), errors)
+            && operations.Register("world", WorldQueryOperations(world), errors))
+            return true;
+        for (const std::string& error : errors)
+            std::fprintf(stderr, "kyusu_batch: %s\n", error.c_str());
+        return false;
     }
 
     // By id first, then by name.
@@ -91,6 +113,17 @@ int main(int argc, char** argv)
     LoggingProvider logging;
     // Answers must not depend on, or disturb, anyone's view of a world.
     WorldDocument world(logging, WorldDocument::UserState::Ignored);
+
+    if (options.Reference)
+    {
+        CommandStack commands;
+        LevelTarget level(world, commands);
+        EditorOperations operations;
+        if (!RegisterOperations(world, level, operations))
+            return kCouldNotStart;
+        std::cout << OperationReference(operations.Catalog());
+        return 0;
+    }
 
     if (!options.Project.empty())
     {
@@ -121,14 +154,8 @@ int main(int argc, char** argv)
     CommandStack commands;
     LevelTarget level(world, commands);
     EditorOperations operations;
-    std::vector<std::string> errors;
-    if (!operations.Register("level", LevelOperations(level, operations), errors)
-        || !operations.Register("world", WorldQueryOperations(world), errors))
-    {
-        for (const std::string& error : errors)
-            std::fprintf(stderr, "kyusu_batch: %s\n", error.c_str());
+    if (!RegisterOperations(world, level, operations))
         return kCouldNotStart;
-    }
 
     std::size_t failed = 0;
     if (options.Script.empty())

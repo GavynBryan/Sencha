@@ -316,6 +316,12 @@ if(TARGET kyusu_batch)
             --level "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/content/assets/levels/box.sscene"
             --script "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/operations/accept_proposal.txt"
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    # The skill an agent reads its vocabulary from is generated from the registry.
+    add_test(NAME kyusu_batch.SkillReferenceIsCurrent
+        COMMAND "${CMAKE_COMMAND}"
+            -DBATCH=$<TARGET_FILE:kyusu_batch>
+            -DEXPECTED=${CMAKE_SOURCE_DIR}/.claude/skills/kyusu-level/reference.md
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckOperationReference.cmake")
     set_tests_properties(kyusu_batch.AcceptsAProposal PROPERTIES
         FIXTURES_REQUIRED kyusu_batch_proposal
         PASS_REGULAR_EXPRESSION "\"operation\":\"entity.describe\",\"status\":\"ok\""

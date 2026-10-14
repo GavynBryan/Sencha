@@ -3,6 +3,7 @@
 
 #include "operations/EditorOperations.h"
 #include "operations/OperationArguments.h"
+#include "operations/OperationReference.h"
 #include "operations/OperationScript.h"
 
 #include <core/console/ConsoleService.h>
@@ -254,4 +255,30 @@ TEST(OperationScript, AnswersEveryLineInOrderAndCountsErrors)
     EXPECT_EQ(Code(parsed[1]), "operation.unknown");
     EXPECT_DOUBLE_EQ(parsed[2].Find("data")->Find("length")->AsNumber(), 4.0);
     EXPECT_EQ(Code(parsed[3]), "script.malformed");
+}
+
+TEST(OperationReference, ListsEveryOperationByCategoryThenNameWithItsParameters)
+{
+    EditorOperations operations;
+    std::vector<std::string> errors;
+    EditorOperationEntry later = Echo("measure.later");
+    later.Definition.Category = "Measure";
+    EditorOperationEntry earlier = Echo("measure.earlier");
+    earlier.Definition.Category = "Measure";
+    earlier.Definition.Kind = EditorOperationKind::Mutation;
+    std::vector<EditorOperationEntry> entries;
+    entries.push_back(std::move(later));
+    entries.push_back(std::move(earlier));
+    ASSERT_TRUE(operations.Register("test", std::move(entries), errors));
+
+    const std::string reference = OperationReference(operations.Catalog());
+    const std::size_t earlierAt = reference.find("- `measure.earlier` mutation — Answers with its arguments.");
+    const std::size_t laterAt = reference.find("- `measure.later` query");
+    ASSERT_NE(earlierAt, std::string::npos) << reference;
+    ASSERT_NE(laterAt, std::string::npos);
+    EXPECT_LT(earlierAt, laterAt) << "operations are listed by name, whatever order they registered in";
+    EXPECT_NE(reference.find("## Measure"), std::string::npos);
+    EXPECT_NE(reference.find("  - `length` number, default 1"), std::string::npos) << reference;
+    EXPECT_NE(reference.find("  - answers: length, label"), std::string::npos);
+    EXPECT_EQ(reference, OperationReference(operations.Catalog())) << "the same catalog, the same text";
 }
