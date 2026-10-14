@@ -3,6 +3,7 @@
 <div class="setting" data-for="row, ri : ${sheet}_rows" data-attr-id="'${sheet}_row_' + ri"
      data-style-margin-left="(row.depth * 8) + 'dp'"
      data-class-heading="row.control == 'section'"
+     data-class-theme-focused="row.selected"
      data-class-locked="!row.editable &amp;&amp; row.control != 'section'"
      data-class-theme-muted="!row.editable &amp;&amp; row.control != 'section'">
     <span class="fold glyph theme-dim" data-if="row.control == 'section' &amp;&amp; row.value != ''"

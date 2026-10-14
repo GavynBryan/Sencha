@@ -1,6 +1,6 @@
 #include "input/InputProfileAuthoring.h"
 
-#include "JsonObjectEdit.h"
+#include "data/JsonObjectEdit.h"
 #include "input/InputBindingSummary.h"
 #include "input/InputControlCapture.h"
 #include "input/InputProfilePreview.h"

@@ -35,10 +35,10 @@ public:
 
     // The document for a registered data asset, loaded on first request.
     DataDocument* Open(std::string_view virtualPath, std::string& error);
-    // Writes the subtype's required members to a new file under `contentRoot`,
-    // registers it, and opens it.
+    // Writes `data`, or the subtype's required members, to a new file under
+    // `contentRoot`, registers it, and opens it.
     DataDocument* Create(std::string_view subtype, const std::filesystem::path& contentRoot,
-                         std::string_view relativePath, std::string& error);
+                         std::string_view relativePath, std::string& error, const JsonValue* data = nullptr);
 
     void Hold(const DataDocument& document);
     // Lets go of a held document. The last holder's release closes it: refused,

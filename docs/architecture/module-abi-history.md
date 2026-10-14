@@ -318,4 +318,4 @@ the bulk movement queries and the character drive exclude dilated characters.
 `AnimPlayback` gains `TimeScale`, `RetimedTick` and `RetimedSeconds`, with
 `RetimeAnimPlayback` and `RestartAnimPlayback`; `ActorScaleOnTick` and
 `ActorScaleValue` (time) are new; a root-motion sample's velocity is per second of
-actor time.
+actor time. `AuthoredPredictionName` is new.

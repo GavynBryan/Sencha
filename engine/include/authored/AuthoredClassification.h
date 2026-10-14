@@ -22,3 +22,4 @@ enum class AuthoredPrediction : std::uint8_t
 };
 
 [[nodiscard]] std::string_view AuthoredScopeName(AuthoredScope scope);
+[[nodiscard]] std::string_view AuthoredPredictionName(AuthoredPrediction prediction);

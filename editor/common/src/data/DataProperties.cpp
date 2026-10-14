@@ -198,6 +198,20 @@ std::optional<JsonValue> Parse(std::string_view text, const DataFieldSchema& fie
     }
 }
 
+// An array's element as it is listed: counted from one and named after the
+// element, or by what the author called it when the schema says which member does.
+std::string ElementLabel(const DataFieldSchema& array, const JsonValue& item, std::size_t index)
+{
+    const DataFieldSchema* element = Element(array);
+    const std::string name = element == nullptr || element->DisplayName.empty() ? std::string("Element")
+                                                                                 : element->DisplayName;
+    if (const JsonValue* title = !array.Editor.TitleKey.empty() && item.IsObject() ? item.Find(array.Editor.TitleKey)
+                                                                                   : nullptr;
+        title != nullptr && title->IsString() && !title->AsString().empty())
+        return title->AsString();
+    return std::format("{} {}", name, index + 1);
+}
+
 PropertyKind KindOf(const DataFieldSchema& field)
 {
     switch (field.Kind)
@@ -313,15 +327,8 @@ private:
         for (std::size_t index = 0; index < count; ++index)
         {
             const JsonValue& item = value.AsArray()[index];
-            // Counted from one and named after the element, or by what the
-            // author called it when the schema says which member does.
-            std::string label = std::format("{} {}", name, index + 1);
-            if (const JsonValue* title = !field.Editor.TitleKey.empty() && item.IsObject() ? item.Find(field.Editor.TitleKey)
-                                                                                           : nullptr;
-                title != nullptr && title->IsString() && !title->AsString().empty())
-                label = title->AsString();
             const std::size_t first = array.Children.size();
-            Field(array.Children, item, *element, std::format("{}[{}]", path, index), std::move(label));
+            Field(array.Children, item, *element, std::format("{}[{}]", path, index), ElementLabel(field, item, index));
             if (first >= array.Children.size())
                 continue;
             std::vector<PropertyVerb>& verbs = array.Children[first].Descriptor.Verbs;
@@ -350,12 +357,27 @@ std::vector<PropertyNode> DataProperties::Nodes() const
     const JsonValue* data = document != nullptr ? document->Data() : nullptr;
     if (schema == nullptr || data == nullptr)
         return {};
-    // The root as one group named for the asset's type, so its absent optional
-    // members have somewhere to be added from.
     std::vector<PropertyNode> nodes;
-    Layout(document->ValidationErrors())
-        .Field(nodes, *data, schema->Root, std::string(kDataPathRoot),
-               schema->DisplayName.empty() ? schema->TypeName : schema->DisplayName);
+    const Layout layout(document->ValidationErrors());
+    if (const std::string scope = Scope ? Scope() : std::string{}; !scope.empty())
+    {
+        const DataFieldSchema* field = FieldAt(schema->Root, scope);
+        const JsonValue* value = FindDataValue(*data, scope);
+        if (field == nullptr || value == nullptr)
+            return {};
+        const std::optional<std::string_view> parent = DataPathParent(scope);
+        const std::optional<std::size_t> index = DataPathLastIndex(scope);
+        const DataFieldSchema* list = parent && index ? FieldAt(schema->Root, *parent) : nullptr;
+        layout.Field(nodes, *value, *field, scope,
+                     list != nullptr ? ElementLabel(Unwrapped(*list), *value, *index) : Label(Unwrapped(*field)));
+    }
+    else
+    {
+        // The root as one group named for the asset's type, so its absent optional
+        // members have somewhere to be added from.
+        layout.Field(nodes, *data, schema->Root, std::string(kDataPathRoot),
+                     schema->DisplayName.empty() ? schema->TypeName : schema->DisplayName);
+    }
     if (const IDataSubtypeAuthoring* authoring = AuthoringOf(*document))
         authoring->Refine(nodes, *document, *schema);
     return nodes;

@@ -113,12 +113,13 @@ std::unique_ptr<DataDocument> DataDocument::Create(
     const std::filesystem::path& file,
     std::string virtualPath,
     const DataAssetTypeRegistration& type,
-    const DataSchema& schema)
+    const DataSchema& schema,
+    const JsonValue* data)
 {
     JsonValue::Object envelope;
     envelope.emplace_back("type", JsonValue(type.Name));
     envelope.emplace_back("version", JsonValue(static_cast<double>(type.CurrentVersion)));
-    envelope.emplace_back("data", CreateDefaultDataValue(schema.Root));
+    envelope.emplace_back("data", data != nullptr ? *data : CreateDefaultDataValue(schema.Root));
 
     auto document = std::unique_ptr<DataDocument>(
         new DataDocument(file, std::move(virtualPath), JsonValue(std::move(envelope))));

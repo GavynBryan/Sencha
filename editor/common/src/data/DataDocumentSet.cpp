@@ -45,14 +45,15 @@ DataDocument* DataDocumentSet::OpenOrFocus(std::string_view virtualPath, std::st
     return document != nullptr ? Show(*document) : nullptr;
 }
 
-DataDocument* DataDocumentSet::Create(std::string_view subtype, std::string_view relativePath, std::string& error)
+DataDocument* DataDocumentSet::Create(std::string_view subtype, std::string_view relativePath, std::string& error,
+                                      const JsonValue* data)
 {
     if (!Accepts(subtype))
     {
         error = std::format("'{}' is not a subtype this editor can create.", subtype);
         return nullptr;
     }
-    DataDocument* document = Documents_.Create(subtype, Config.ContentRoot, relativePath, error);
+    DataDocument* document = Documents_.Create(subtype, Config.ContentRoot, relativePath, error, data);
     return document != nullptr ? Show(*document) : nullptr;
 }
 

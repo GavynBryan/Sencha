@@ -142,6 +142,8 @@ constexpr Rule kRules[] = {
     { ".theme-row:hover", [] { return Fill(EditorUi::FrameBgHovered); } },
     { ".theme-row.selected", [] { return Fill(EditorUi::Selected) + Color(EditorUi::TextPrimary); } },
     { ".theme-row.disabled", [] { return Color(EditorUi::Mix(EditorUi::TextDim, EditorUi::PanelBg, 0.25f)); } },
+    // A property brought forward to be looked at: a problem's field.
+    { ".theme-focused", [] { return Edge(EditorUi::SelectedOutline); } },
 
     // Text roles. Dim is secondary information; muted is a value shown but not
     // offered; accent is the thing being read out.

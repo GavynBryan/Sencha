@@ -250,14 +250,20 @@ void SheetPanels::PickAsset(SheetPoint at, bool follows)
 }
 
 std::optional<std::size_t> SheetPanels::Present(SheetId sheet, std::span<const PropertySection> sections,
-                                                bool everything)
+                                                bool everything, std::string_view focus)
 {
     PublishTyping();
     PropertySheet& presented = Sheet(sheet);
     if (presented.Holding())
         return std::nullopt;
+    presented.Focus(std::string(focus));
     const std::vector<UiRow> rows = presented.Present(sections, everything);
     (void)Host.Ui.SetRows(Screen, RowsOf(sheet), rows);
+    std::optional<std::size_t>& scrolled = ScrolledTo[static_cast<std::size_t>(sheet)];
+    const std::optional<std::size_t> focused = presented.FocusedRow();
+    if (focused != scrolled
+        && (!focused || Host.Ui.ScrollIntoView(Screen, std::format("{}_row_{}", SheetName(sheet), *focused))))
+        scrolled = focused;
     return rows.size();
 }
 

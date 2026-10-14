@@ -51,6 +51,7 @@ std::string AxisName(std::size_t index, std::size_t count)
 std::vector<UiRow> PropertySheet::Present(const IPropertySource& source, bool everything)
 {
     Rows.clear();
+    Focused.reset();
     std::vector<UiRow> rows;
     for (const PropertyNode& node : source.Nodes())
         Append(node, 0, 0, everything, rows);
@@ -71,6 +72,7 @@ void PropertySheet::Settle()
 std::vector<UiRow> PropertySheet::Present(std::span<const PropertySection> sections, bool everything)
 {
     Rows.clear();
+    Focused.reset();
     std::vector<UiRow> rows;
     for (std::size_t section = 0; section < sections.size(); ++section)
     {
@@ -97,6 +99,13 @@ void PropertySheet::OfferActions(const ActionCatalog& catalog, const ActionConte
 {
     Catalog = &catalog;
     Actions = &actions;
+}
+
+bool PropertySheet::Holds(std::span<const PropertyNode> nodes, std::string_view key)
+{
+    return std::ranges::any_of(nodes, [&](const PropertyNode& node) {
+        return node.Key == key || Holds(node.Children, key);
+    });
 }
 
 bool PropertySheet::FoldedNow(const PropertyNode& node) const
@@ -167,7 +176,14 @@ void PropertySheet::Append(const PropertyNode& node, int depth, std::size_t sect
     // A group that holds something says whether it shows it, the way an
     // outline's branch does.
     const bool foldable = descriptor.Kind == PropertyKind::Group && !node.Children.empty();
+    if (foldable && !FocusKey.empty() && Holds(node.Children, FocusKey))
+        Folds[node.Key] = false;
     const bool folded = foldable && FoldedNow(node);
+    if (!FocusKey.empty() && node.Key == FocusKey)
+    {
+        Focused = rows.size();
+        row.Selected = true;
+    }
     row.Expanded = foldable && !folded;
     if (foldable)
         row.Value = folded ? "closed" : "open";

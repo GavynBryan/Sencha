@@ -1,0 +1,68 @@
+@font-face { src: "fonts/Inter-Regular.ttf"; }
+@font-face { src: "fonts/ChakraPetch-SemiBold.ttf"; }
+@font-face { src: "fonts/fa-solid-900.ttf"; }
+
+/* The phase strip: an ability's phases as cards over the workspace's content,
+   placed by the host. Geometry only; colours are the theme's roles. */
+
+body
+{
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    font-family: Inter;
+    font-size: 11dp;
+}
+
+#strip { display: block; position: absolute; pointer-events: auto; overflow: auto; }
+#strip_empty { display: block; margin: 24dp; }
+#cards { display: flex; flex-direction: row; align-items: flex-start; gap: 12dp; padding: 16dp; }
+
+.card
+{
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    width: 240dp;
+    padding: 8dp;
+    border-width: 1dp;
+    border-radius: 4dp;
+    gap: 4dp;
+}
+.card.holding { border-width: 2dp; }
+.card.add { width: 96dp; height: 32dp; justify-content: center; align-items: center; font-family: "Chakra Petch"; }
+
+.card_head { display: flex; align-items: center; gap: 6dp; drag: drag-drop; cursor: move; }
+.card_name { display: block; flex: 1; font-family: "Chakra Petch"; font-weight: 600; font-size: 13dp; }
+.card_clock { display: block; font-size: 10dp; }
+
+.slot_view, .op_view, .link_view { display: block; }
+.slot { display: block; }
+.slot_head
+{
+    display: flex;
+    align-items: center;
+    margin-top: 6dp;
+    font-family: "Chakra Petch";
+    font-size: 9dp;
+    letter-spacing: 2dp;
+}
+.slot_title { display: block; flex: 1; }
+.slot_add { display: block; width: 14dp; text-align: center; cursor: pointer; }
+
+.op, .link
+{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4dp;
+    min-height: 20dp;
+    padding: 2dp 4dp;
+    border-radius: 2dp;
+}
+.op { drag: drag-drop; }
+.op_kind { display: block; width: 36dp; font-family: "Chakra Petch"; font-size: 8dp; letter-spacing: 1dp; }
+.op_label, .link_label { display: block; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guard { display: block; width: 100%; padding: 1dp 4dp; border-radius: 2dp; font-size: 9dp; }
+.lamp { display: block; width: 7dp; height: 7dp; border-radius: 4dp; }

@@ -42,6 +42,8 @@ struct WorkspaceSelectionFacet
     // Everything else about it, for when it is looked at closely: an object's
     // components, each a top-level group.
     std::vector<PropertySection> Details = {};
+    // The property to bring into view and mark, by its key: a problem's field.
+    std::string Focus = {};
     bool Staged = false;
     // The properties are the work itself rather than a note about something in
     // the content: a data asset is its fields.

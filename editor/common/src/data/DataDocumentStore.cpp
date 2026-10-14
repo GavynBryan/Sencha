@@ -43,7 +43,7 @@ DataDocument* DataDocumentStore::Open(std::string_view virtualPath, std::string&
 }
 
 DataDocument* DataDocumentStore::Create(std::string_view subtype, const std::filesystem::path& contentRoot,
-                                        std::string_view relativePath, std::string& error)
+                                        std::string_view relativePath, std::string& error, const JsonValue* data)
 {
     const DataAssetTypeRegistration* type = Assets.DataTypes.Find(subtype);
     const DataSchema* schema = Assets.DataSchemas.Find(subtype);
@@ -65,7 +65,7 @@ DataDocument* DataDocumentStore::Create(std::string_view subtype, const std::fil
         error = std::format("'{}' already exists; choose another name.", relative);
         return nullptr;
     }
-    std::unique_ptr<DataDocument> document = DataDocument::Create(file, virtualPath, *type, *schema);
+    std::unique_ptr<DataDocument> document = DataDocument::Create(file, virtualPath, *type, *schema, data);
     Validate(*document);
     if (!document->Save(&error))
         return nullptr;

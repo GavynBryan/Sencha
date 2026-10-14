@@ -1,7 +1,9 @@
 #include "vocabulary/VocabularyCatalog.h"
 
+#include <abilities/AbilityKit.h>
 #include <anim/AnimationRegistration.h>
 #include <app/EngineVocabulary.h>
+#include <assets/runtime/ContentVocabulary.h>
 #include <app/Game.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/WorldVocabulary.h>
@@ -15,6 +17,7 @@ VocabularyCatalog::VocabularyCatalog()
     // modes -- what Kyusu gives a document, for the same reason. A module
     // declaring a tag into a World with no tag registry would be told nothing.
     RegisterMovement(Metadata);
+    InstallAbilityKitVocabulary(Metadata);
     InstallAnimationVocabulary(Metadata);
     InstallAuthoredVocabulary(Metadata);
     (void)DeclareEngineVocabulary(Metadata);
@@ -25,6 +28,11 @@ void VocabularyCatalog::InstallModuleVocabulary(Game& game)
 {
     game.OnRegisterVocabulary(Metadata);
     TakeInstallationErrors();
+}
+
+void VocabularyCatalog::DeclareContent(RuntimeAssets& assets)
+{
+    DeclareContentVocabulary(assets, Metadata, ContentVocabularyReload::Once, Diagnostics);
 }
 
 void VocabularyCatalog::TakeInstallationErrors()
@@ -54,6 +62,9 @@ std::vector<VocabularyCatalog::VerbRow> VocabularyCatalog::ListVerbs() const
             .Category = definition.Category,
             .Provider = std::string(verbs.Provider(id)),
             .ArgumentCount = definition.Arguments.Children.size(),
+            .Kind = definition.Kind,
+            .Scope = definition.Scope,
+            .Prediction = definition.Prediction,
         });
     }
     return rows;

@@ -2,6 +2,7 @@
 
 #include "app/LevelWorkspace.h"
 #include "app/ProjectSession.h"
+#include "AbilityWorkspace.h"
 #include "AnimationWorkspace.h"
 #include "DataWorkspace.h"
 #include "MaterialWorkspace.h"
@@ -68,6 +69,17 @@ std::vector<WorkspaceKind> BuildWorkspaceKinds(Engine& engine, SdlWindow& window
         },
         .Opens = { { ".sdata", "animation.rig" } },
         .Creates = { NewRigAction() },
+    });
+    kinds.push_back(WorkspaceKind{
+        .Id = "ability",
+        .DisplayName = "Abilities",
+        .Create = [&engine, &session, &prompts, &actions, &problems, authorings] {
+            return std::make_unique<AbilityWorkspace>(engine, *session.Project(), session.Module(),
+                                                      session.Documents(), session.DataDocuments(), session.Files(),
+                                                      prompts, actions, problems, authorings);
+        },
+        .Opens = { { ".sdata", "ability.definition" } },
+        .Creates = { NewAbilityAction() },
     });
     kinds.push_back(WorkspaceKind{
         .Id = "ui_preview",

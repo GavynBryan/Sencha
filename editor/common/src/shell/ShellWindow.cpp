@@ -990,7 +990,7 @@ void ShellWindow::PublishSelection(IWorkspace* workspace)
                  : std::format("{}.{}", kSelectionSurface, sheet ? "sheet" : drawer ? "drawer" : "card");
     (void)ui.SetValue(Screen, Ids.Drawer, UiValue(drawer));
     (void)ui.SetValue(Screen, Ids.Sheet, UiValue(sheet));
-    (void)Sheets->Present(SheetId::Selection, SelectionSections(selection), drawer || sheet);
+    (void)Sheets->Present(SheetId::Selection, SelectionSections(selection), drawer || sheet, selection.Focus);
 
     // A selection looked at through the context wheel has its actions there;
     // the sheet keeps only what applies or cancels a staged edit.

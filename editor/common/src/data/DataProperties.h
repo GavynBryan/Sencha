@@ -21,12 +21,15 @@ class DataProperties final : public IPropertySource
 {
 public:
     // `document` names the document shown, or null for none; `subtypes`, when
-    // given, add to the schema's properties for their documents.
+    // given, add to the schema's properties for their documents. `scope`, when
+    // given, names the path of the one element shown, empty for the whole
+    // document; keys stay whole paths either way.
     DataProperties(DataDocumentSet& documents, std::function<DataDocument*()> document,
-                   const DataSubtypeAuthoringRegistry* subtypes = nullptr)
+                   const DataSubtypeAuthoringRegistry* subtypes = nullptr, std::function<std::string()> scope = {})
         : Documents(documents)
         , Shown(std::move(document))
         , Subtypes(subtypes)
+        , Scope(std::move(scope))
     {
     }
 
@@ -49,6 +52,7 @@ private:
     DataDocumentSet& Documents;
     std::function<DataDocument*()> Shown;
     const DataSubtypeAuthoringRegistry* Subtypes = nullptr;
+    std::function<std::string()> Scope;
 };
 
 // What a field is called wherever it is shown.

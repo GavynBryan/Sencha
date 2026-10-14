@@ -1547,3 +1547,40 @@ Deviations from the plan's wording, each for a stated reason:
   flow from its anchor) is timed from its start at the current scale; ticks before
   the latest anchor are extrapolated at the current scale. Stage 9 replicates the
   leases and `ActorTime`, and decides whether followers need more.
+
+### 17.8 Stage 6 — Workbench
+
+- **6a delivered.** `FixedTickPreview<Record>` (`editor/common/src/preview/`) holds the
+  clock the Animation preview ran on -- tick zero from a rebuild, stepping, speed
+  that schedules ticks without changing their length, a bounded history, rewind as
+  a replay from zero, one script branch per paused tick -- and
+  `AnimationPreviewSession` runs on it (`docs/editor/fixed-tick-preview.md`).
+- **6b delivered.** The Abilities workspace (`editor/ability_editor/`,
+  `docs/editor/ability-workbench.md`): an element model naming every keyed element
+  by key and current path; key-addressed edits applied as one journal step each;
+  checks (compile, then resolve against a `VocabularyCatalog` that now also holds
+  the kit's registries and the content vocabulary, and lists each verb's kind,
+  scope and prediction); problems named by element and revealed as the element
+  selected with its field focused (`WorkspaceSelectionFacet::Focus`; the sheet
+  opens the groups holding it, marks and scrolls to its row); the card as
+  `DataProperties` scoped to the selected element's path; recipes through
+  `DataCreation` (documents can now be created with their data); the Abilities and
+  Elements explorers. Found in passing: `JsonObjectEdit.h` moved from the Data
+  workspace to `editor/common/src/data/` at its second consumer.
+- **6c delivered.** The phase strip on the window's interactive surface: phases as
+  cards holding their op lists and transitions, guard text, problem lamps, picking
+  by key, dragging phases and ops (`DropAbilityElement`; RmlUi sends drops only for
+  `drag: drag-drop`), and the Operations palette over the catalog with scope and
+  prediction badges (`AuthoredPredictionName` is new) and placement rules (a lease
+  only ever held).
+- **Deviation: transitions are rows, not drawn connectors.** Each card ends with
+  its transitions as rows ("on release → Fire", with the guard under it). Drawn
+  connectors between cards add nothing a row does not say and would need geometry
+  the document cannot lay out; the count of transitions coming in is on each card.
+- **Deviation: no Timed Movement recipe yet.** It is built on `movement.burst`, which
+  Stage 8 adds; the recipe joins the table with that lease.
+- **Remaining in Stage 6.** Argument rows from each operation's schema (constant,
+  port or local, asset drops), one-click fixes for required guards, "New effect…",
+  the overview header and effective-binding view, the preview on
+  `FixedTickPreview` with a scripted fixture, rewind by replay, the live
+  inspector and the deck.
