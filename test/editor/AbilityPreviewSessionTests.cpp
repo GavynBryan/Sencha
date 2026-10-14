@@ -1,11 +1,14 @@
-// The Workbench's preview: the normative charge run on a fixture with the
-// production schedule, driven by a timed script; rewinding replays the script to
-// the same ticks, and acting at a past tick cuts what came after it.
+// The Workbench's preview: the normative charge run on a fixture character with
+// the production schedule, driven by a timed script; rewinding replays the script
+// to the same ticks, acting at a past tick cuts what came after it, and the stage
+// draws where the pawn went.
 
 #include "authoring/AbilityPreviewControls.h"
 #include "authoring/AbilityPreviewInspector.h"
 #include "authoring/AbilityPreviewLanes.h"
 #include "authoring/AbilityPreviewSession.h"
+#include "authoring/AbilityRecipes.h"
+#include "authoring/AbilityStageStrokes.h"
 
 #include <abilities/AbilityDefinition.h>
 #include <abilities/AbilityRegistry.h>
@@ -192,4 +195,38 @@ TEST_F(AbilityPreviewTest, TheDeckShowsEachPhaseStayAndTheInputItWasGiven)
               facet.Marks.end());
     EXPECT_EQ(facet.Lanes[1].Label, "Ammo");
     EXPECT_FALSE(facet.Lanes[1].Samples.empty());
+}
+
+TEST_F(AbilityPreviewTest, ATimedMovementCarriesThePawnAlongItsAimAndTheStageFollows)
+{
+    Preview->Show("asset://abilities/dash.sdata", FindAbilityRecipe("Timed Movement")->Make());
+    ASSERT_TRUE(Preview->Problems().empty()) << Preview->Problems().front();
+    Preview->RunTo(5);
+    Control(AbilityPreviewControl::Press);
+    Preview->RunTo(30);
+    const Vec3d before = At(5).Pose.Position;
+    const Vec3d after = At(30).Pose.Position;
+    const Vec3d moved = after - before;
+    EXPECT_GT(moved.Dot(At(5).AimDirection), 2.0f) << "twelve ticks at twelve metres a second, along the aim";
+    EXPECT_NEAR(after.Y, before.Y, 0.05f) << "and on the floor, as the character's own mover keeps it";
+
+    const AbilityStage stage = AbilityStageOf(*Preview, Preview->Tick());
+    EXPECT_FALSE(stage.Strokes.empty());
+    EXPECT_GE(stage.Bounds.HalfExtent().Magnitude() * 2.0f, moved.Magnitude()) << "the stage frames the whole trail";
+    const AbilityStage earlier = AbilityStageOf(*Preview, 5);
+    EXPECT_LT(earlier.Bounds.HalfExtent().Magnitude(), stage.Bounds.HalfExtent().Magnitude())
+        << "a past tick shows the path only so far";
+}
+
+TEST_F(AbilityPreviewTest, TheStageShowsThePlacedTargetAndWhatTheChargeStruck)
+{
+    Control(AbilityPreviewControl::PlaceTarget, {}, 6.0);
+    ChargeAndRelease();
+    ASSERT_EQ(At(1).Placed.size(), 1u);
+    Preview->RunTo(13);
+    ASSERT_FALSE(At(13).Hits.empty()) << "Fire's trace struck the target";
+    const AbilityStage stage = AbilityStageOf(*Preview, 13);
+    const Vec3d hit = At(13).Hits.front().Point;
+    EXPECT_TRUE(stage.Bounds.Contains(hit));
+    EXPECT_TRUE(stage.Bounds.Contains(At(1).Placed.front()));
 }

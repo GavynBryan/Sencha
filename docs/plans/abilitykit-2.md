@@ -1645,3 +1645,11 @@ Deviations from the plan's wording, each for a stated reason:
   replicated state alone; it does, but what it has already shown is a
   machine-local component (`AbilityPresentationState`), since the occurrence a
   machine has presented is not simulation state and must not travel or roll back.
+- **The stage image and the Timed Movement recipe**, both due with 8a's leases and
+  recorded in Stage 6 as deferred, are delivered. The preview fixture is a capsule
+  character on the production physics, kit and movement registration, so a burst,
+  tether or mode lease moves it; the stage draws the preview as lines (floor,
+  capsule, trail, aim, placed targets, held hits) behind the strip. The offscreen
+  target the Material, Animation and Ability previews draw into is one
+  `StagePicture`, and the wire box, capsule and grid are `render/LineShapes.h`,
+  shared with the level editor's overlays.

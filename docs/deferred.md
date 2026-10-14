@@ -471,15 +471,3 @@ do the work and delete the entry.
 - **Trigger:** characters gaining an inner body or character-versus-character
   collision; the two tests are written with that change, against dilated characters
   as well as undilated ones.
-
-## A stage image for the Ability Workbench's preview
-
-- **What:** the Workbench's preview runs its fixture pawn headless and shows the
-  run through the inspector and the deck; there is no picture of the pawn, and the
-  fixture takes animation requests without a rig to play them.
-- **Where:** `editor/ability_editor/src/authoring/AbilityPreviewSession.cpp` (the
-  fixture) and `AbilityWorkspace` (which would place a `ContentPicture` beside the
-  strip, as the Animation workspace does).
-- **Trigger:** Stage 8's movement leases (`movement.burst`, `movement.tether`): an
-  ability that moves its pawn -- the Timed Movement recipe, Lunge, Tether -- needs
-  its author to see where the pawn goes.

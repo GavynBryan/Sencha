@@ -5,7 +5,7 @@
 #include "PreviewBackdropRenderer.h"
 #include "PreviewPrimitives.h"
 
-#include "render/DisplayedTargets.h"
+#include "render/StagePicture.h"
 
 #include <graphics/vulkan/Renderer.h>
 #include <render/pass/MeshForwardPass.h>
@@ -14,7 +14,6 @@
 #include <render/ui/UiDrawFrame.h>
 
 #include <array>
-#include <optional>
 
 struct RuntimeAssets;
 
@@ -53,10 +52,10 @@ public:
     PreviewBackdropStyle BackdropStyle;
 
 private:
+    void DrawMaterial(const RenderScope& rendering, VkExtent2D extent);
+
     RuntimeAssets& Assets;
-    DisplayedTargets Targets;
-    RenderTargetId SceneTarget;
-    std::optional<UiHostImageId> Image;
+    StagePicture Picture;
     PreviewBackdropRenderer Backdrop;
     // The forward pass requires the lighting bindings for its descriptor
     // layout. The preview never renders shadow tiles, so it skips atlas

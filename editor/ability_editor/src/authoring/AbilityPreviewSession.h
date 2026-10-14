@@ -9,6 +9,7 @@
 #include <ecs/EntityId.h>
 #include <ecs/StoragePartitionSet.h>
 #include <input/InputActionRegistry.h>
+#include <math/geometry/3d/Transform3d.h>
 #include <time/ActorTime.h>
 #include <time/SimClock.h>
 
@@ -21,7 +22,7 @@
 
 class AuthoredQueryDispatcher;
 class EngineVocabularyBindings;
-class PhysicsWorld;
+struct CharacterController;
 class VerbDispatcher;
 class World;
 struct AbilityDefinition;
@@ -58,7 +59,13 @@ struct AbilityPreviewAction
     friend bool operator==(const AbilityPreviewAction&, const AbilityPreviewAction&) = default;
 };
 
-// What one tick of the preview did, as the inspector and the deck read it.
+struct AbilityPreviewHit
+{
+    Vec3d Point;
+    Vec3d Normal;
+};
+
+// What one tick of the preview did, as the inspector, the deck and the stage read it.
 struct AbilityPreviewTickRecord
 {
     std::uint64_t Tick = 0;
@@ -70,6 +77,14 @@ struct AbilityPreviewTickRecord
     // Each attribute's current value, by attribute id from one.
     std::vector<float> Attributes;
     std::int64_t ScaleQ16 = kActorTimeOne;
+    // Where the fixture stood after the tick, and where it aimed from and along.
+    Transform3f Pose;
+    Vec3d AimOrigin;
+    Vec3d AimDirection;
+    // The centres of the targets placed on the tick.
+    std::vector<Vec3d> Placed;
+    // What the fixture's activations' hit locals held after the tick.
+    std::vector<AbilityPreviewHit> Hits;
 };
 
 //=============================================================================
@@ -120,14 +135,16 @@ public:
     [[nodiscard]] EntityId Fixture() const { return FixtureEntity; }
     [[nodiscard]] AbilityId Ability() const { return Shown; }
     [[nodiscard]] const AbilityDefinition* Definition() const;
+    [[nodiscard]] const CharacterController* FixtureCapsule() const;
 
     static constexpr std::uint32_t kTickRate = 60;
+    static constexpr float kTargetHalfExtent = 0.5f;
 
 private:
     bool Rebuild();
     void DropWorld();
     AbilityPreviewTickRecord RunTick(std::uint64_t tick);
-    void Apply(const AbilityPreviewAction& action, std::uint64_t tick);
+    void Apply(const AbilityPreviewAction& action, std::uint64_t tick, AbilityPreviewTickRecord& record);
 
     RuntimeAssets& Assets;
     std::function<void(World&)> Vocabulary;
@@ -137,16 +154,16 @@ private:
     std::vector<std::string> Issues;
     std::vector<std::string> ActionNames;
 
-    // Member order is teardown order: the bindings and systems go before the
-    // dispatchers and physics they hold, and those before the World.
+    // Member order is teardown order: the bindings go before the physics the
+    // schedule owns, the schedule before the dispatchers it holds, and all of
+    // them before the World.
     std::unique_ptr<World> Preview;
-    std::unique_ptr<PhysicsWorld> Physics;
     FixedSimulationLoop SimulationClock{ 1.0 / kTickRate };
     std::unique_ptr<VerbDispatcher> Verbs;
     std::unique_ptr<AuthoredQueryDispatcher> Queries;
-    std::unique_ptr<EngineVocabularyBindings> Bindings;
     struct Systems;
     std::unique_ptr<Systems> Schedule;
+    std::unique_ptr<EngineVocabularyBindings> Bindings;
     InputActionRegistry ActionSet;
     std::vector<bool> Held;
     EntityId FixtureEntity;

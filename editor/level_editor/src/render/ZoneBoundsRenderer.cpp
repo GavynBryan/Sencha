@@ -1,7 +1,7 @@
 #include "ZoneBoundsRenderer.h"
 
 #include "EditorTheme.h"
-#include "OverlayBoxEdges.h"
+#include "render/LineShapes.h"
 
 #include "document/WorldDocument.h"
 #include "viewport/WorldViewSettings.h"

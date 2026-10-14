@@ -2,6 +2,7 @@
 
 #include "actions/ActionCatalog.h"
 #include "actions/ActionContext.h"
+#include "presenters/StageOrbit.h"
 #include "data/DataSubtypeAuthoring.h"
 #include "prompts/PromptQueue.h"
 #include "workspaces/ExplorerTable.h"
@@ -22,8 +23,10 @@ class AbilityPreviewControls;
 class AbilityPreviewInspector;
 class AbilityPreviewSession;
 class AbilityProblemProperties;
+class AbilityStageRenderFeature;
 class AbilityWorkbench;
 class ActionContextStack;
+class ContentPicture;
 struct AbilityPaletteEntry;
 class DataCreation;
 class DataDocument;
@@ -94,6 +97,8 @@ private:
     void SyncPreview();
     void PublishProblems();
     void ShowStrip();
+    // The preview's pawn on the stage behind the strip, framed when a new ability opens.
+    void ShowStage();
     void AddPhase();
     // The palette's entry `entry` made an op where the strip's slot or the selection says.
     void InsertOp(std::string_view entry);
@@ -121,6 +126,11 @@ private:
     std::uint64_t PreviewedRevision = 0;
     std::unique_ptr<DataCreation> Creation;
     std::unique_ptr<AbilityPhaseStrip> Strip;
+    Engine& EngineRef;
+    AbilityStageRenderFeature* Stage = nullptr;
+    std::unique_ptr<ContentPicture> Picture;
+    StageOrbitDrag Orbit;
+    bool StageFramed = false;
     std::vector<AbilityPaletteEntry> Palette;
     DocumentSourceSet& Sources;
     ProblemList& Problems;

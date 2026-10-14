@@ -74,6 +74,21 @@ JsonValue ChargeRelease()
     return data;
 }
 
+JsonValue TimedMovement()
+{
+    JsonValue data = Started("press");
+    const std::string move = AddAbilityPhase(data, "Move");
+    (void)InsertAbilityOp(
+        data, move, AbilityOpList::Hold, 0,
+        Object({ { "lease", JsonValue("movement.burst") },
+                 { "arguments", Object({ { "target", Object({ { "port", JsonValue("actor") } }) },
+                                         { "direction", Object({ { "port", JsonValue("aim.direction") } }) },
+                                         { "speed", Object({ { "const", JsonValue(12) } }) } }) } }));
+    const std::string done = AddAbilityTransition(data, move, "timeout", "end");
+    (void)SetAbilityElementMember(data, done, "ticks", JsonValue(12));
+    return data;
+}
+
 JsonValue SustainedToggle()
 {
     JsonValue data = Started("toggle");
@@ -86,11 +101,12 @@ JsonValue SustainedToggle()
     return data;
 }
 
-constexpr std::array<AbilityRecipe, 5> kRecipes{ {
+constexpr std::array<AbilityRecipe, 6> kRecipes{ {
     { "Blank", "One phase that ends at once.", &Blank },
     { "Instant", "Runs once on a press.", &Instant },
     { "Held / Periodic", "Pulses while held, every ten ticks.", &Periodic },
     { "Charge / Release", "Charges while held; a long enough release fires, a short one recovers.", &ChargeRelease },
+    { "Timed Movement", "Drives the pawn along its aim for a fifth of a second on a press.", &TimedMovement },
     { "Sustained Toggle", "On until pressed again, holding a lease while on.", &SustainedToggle },
 } };
 } // namespace

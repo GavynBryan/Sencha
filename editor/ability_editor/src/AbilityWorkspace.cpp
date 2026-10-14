@@ -12,8 +12,10 @@
 #include "authoring/AbilityPreviewLanes.h"
 #include "authoring/AbilityPreviewSession.h"
 #include "authoring/AbilityRecipes.h"
+#include "authoring/AbilityStageStrokes.h"
 #include "authoring/AbilityStrip.h"
 #include "authoring/AbilityWorkbench.h"
+#include "render/AbilityStageRenderFeature.h"
 #include "text/PathLeaf.h"
 
 #include "actions/ActionContext.h"
@@ -25,8 +27,10 @@
 #include "data/DataProperties.h"
 #include "data/JsonObjectEdit.h"
 #include "documents/DocumentSourceSet.h"
+#include "presenters/ContentPicture.h"
 #include "problems/ProblemList.h"
 #include "project/Project.h"
+#include "render/RenderFeatureDetach.h"
 #include "workspaces/WorkspaceWindow.h"
 
 #include <abilities/AbilityDefinitionData.h>
@@ -39,6 +43,7 @@
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_mouse.h>
 
 #include <algorithm>
 #include <cmath>
@@ -63,7 +68,8 @@ AbilityWorkspace::AbilityWorkspace(Engine& engine, const ProjectDescriptor& proj
                                    DocumentSourceSet& sources, DataDocumentStore& store, ProjectFileSteps* files,
                                    PromptQueue& prompts, ActionCatalog& catalog, ProblemList& problems,
                                    const DataSubtypeAuthoringSetup& authorings)
-    : Sources(sources)
+    : EngineRef(engine)
+    , Sources(sources)
     , Problems(problems)
     , Prompts(prompts.MakeAsker())
 {
@@ -113,8 +119,12 @@ AbilityWorkspace::AbilityWorkspace(Engine& engine, const ProjectDescriptor& proj
     PreviewControls = std::make_unique<AbilityPreviewControls>(*Preview);
     PreviewInspector = std::make_unique<AbilityPreviewInspector>(*Preview, [this] { return Workbench->AbilityData(); });
     Palette = AbilityPaletteOf(Workbench->Names());
+    Stage = AttachRenderFeature(engine, std::make_unique<AbilityStageRenderFeature>(), "ability_stage");
     if (UiService* ui = engine.TryUi(); ui != nullptr && ui->IsReady())
+    {
+        Picture = std::make_unique<ContentPicture>(*ui, "ability_stage");
         Strip = std::make_unique<AbilityPhaseStrip>(*ui);
+    }
 
     DefineActions(catalog);
     DefineExplorers(catalog);
@@ -128,6 +138,8 @@ AbilityWorkspace::~AbilityWorkspace()
     PreviewControls.reset();
     Preview.reset();
     Strip.reset();
+    DetachRenderFeature(EngineRef, Stage);
+    Picture.reset();
     Problems.Clear(kProblemSource);
 }
 
@@ -174,6 +186,8 @@ void AbilityWorkspace::DefineActions(ActionCatalog& catalog)
                     Workbench->RefreshAssets();
                     Palette = AbilityPaletteOf(Workbench->Names());
                 } });
+    OfferAction(catalog, ActionHandlers, FrameAction(), { .Invoke = [this] { StageFramed = false; },
+                                                          .Enabled = [this] { return Preview->IsOpen(); } });
 }
 
 void AbilityWorkspace::DefineTransport(ActionCatalog& catalog)
@@ -220,7 +234,10 @@ void AbilityWorkspace::SyncPreview()
     if (ability == Previewed && ability->Revision() == PreviewedRevision)
         return;
     if (ability != Previewed)
+    {
         Preview->Close();
+        StageFramed = false;
+    }
     Previewed = ability;
     PreviewedRevision = ability->Revision();
     Preview->Show(ability->VirtualPath(), *data);
@@ -378,7 +395,24 @@ void AbilityWorkspace::Tick(FrameUpdateContext& ctx)
     Sheet->Update();
     SyncPreview();
     Preview->Advance(ctx.WallDeltaSeconds);
+    ShowStage();
     ShowStrip();
+}
+
+void AbilityWorkspace::ShowStage()
+{
+    if (Picture == nullptr || Stage == nullptr)
+        return;
+    Picture->Place(ContentRect);
+    if (!CanShowStage(ContentRect))
+        return;
+    Stage->Show(VkExtent2D{ static_cast<std::uint32_t>(ContentRect.Width()),
+                            static_cast<std::uint32_t>(ContentRect.Height()) },
+                Picture->Image());
+    AbilityStage stage = AbilityStageOf(*Preview, Preview->Tick());
+    if (!StageFramed)
+        StageFramed = Stage->Frame(stage.Bounds);
+    Stage->SetStrokes(std::move(stage.Strokes));
 }
 
 void AbilityWorkspace::ShowStrip()
@@ -426,6 +460,7 @@ void AbilityWorkspace::Interrupt()
     Carried.clear();
     Preview->Pause();
     Sources.CancelEdits();
+    Orbit.Cancel();
 }
 
 void AbilityWorkspace::SetVisible(bool visible)
@@ -433,6 +468,8 @@ void AbilityWorkspace::SetVisible(bool visible)
     Visible = visible;
     if (Strip != nullptr)
         Strip->SetVisible(visible);
+    if (Picture != nullptr)
+        Picture->SetShown(visible);
     if (!visible)
         Interrupt();
 }
@@ -442,12 +479,54 @@ void AbilityWorkspace::MoveTo(const WorkspaceWindow& window)
     WindowActions = window.Actions;
     if (Strip != nullptr)
         Strip->MoveTo(window.Interactive);
+    if (Picture != nullptr)
+        Picture->MoveTo(window.Content);
 }
 
 void AbilityWorkspace::HandlePlatformEvent(PlatformEventContext& ctx)
 {
-    if (ctx.Event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+    const SDL_Event& event = ctx.Event;
+    if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST)
+    {
         Interrupt();
+        return;
+    }
+    if (ctx.Handled || Stage == nullptr)
+        return;
+    switch (event.type)
+    {
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (event.button.button == SDL_BUTTON_LEFT && ContentRect.Contains(Vec2d(event.button.x, event.button.y)))
+        {
+            Orbit.Press(Vec2d(event.button.x, event.button.y));
+            ctx.Handled = true;
+        }
+        break;
+    case SDL_EVENT_MOUSE_MOTION:
+        if (const std::optional<StageOrbitDrag::Turn> turn =
+                Orbit.Move(Vec2d(event.motion.x, event.motion.y), Vec2d(event.motion.xrel, event.motion.yrel)))
+        {
+            Stage->Orbit(turn->Yaw, turn->Pitch);
+            ctx.Handled = true;
+        }
+        break;
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (event.button.button == SDL_BUTTON_LEFT && Orbit.IsHeld())
+        {
+            (void)Orbit.Release();
+            ctx.Handled = true;
+        }
+        break;
+    case SDL_EVENT_MOUSE_WHEEL:
+        if (ContentRect.Contains(Vec2d(event.wheel.mouse_x, event.wheel.mouse_y)))
+        {
+            Stage->Zoom(event.wheel.y);
+            ctx.Handled = true;
+        }
+        break;
+    default:
+        break;
+    }
 }
 
 bool AbilityWorkspace::ClaimPlatformEvent(PlatformEventContext& ctx)

@@ -78,8 +78,9 @@ With nothing selected, the card is the ability's **overview**
 (`EffectiveAbilityBinding`, the merge the runtime's grant entries use), when it
 may start, continue and is cancelled, its costs, cooldown and prediction, and its
 problem count -- above the document's sheet. A new ability starts from a recipe
-(`AbilityRecipes`): Blank, Instant, Held / Periodic, Charge / Release and
-Sustained Toggle, each an ordinary document whose keys are minted when it is made.
+(`AbilityRecipes`): Blank, Instant, Held / Periodic, Charge / Release, Timed
+Movement and Sustained Toggle, each an ordinary document whose keys are minted
+when it is made.
 
 ## The phase strip
 
@@ -114,17 +115,26 @@ what it still needs.
 
 ## Preview
 
-The open ability runs on a fixture pawn in a private World
+The open ability runs on a fixture character in a private World
 (`AbilityPreviewSession`) on the shared preview clock
-(`docs/editor/fixed-tick-preview.md`): the production kit schedule -- actor
-time, the ability pass, attribute resolve, effect lifetime -- with the engine's
+(`docs/editor/fixed-tick-preview.md`): the systems a game registers for a
+character that acts and moves -- physics and the character mover
+(`RegisterPhysics`), the kit (actor time, the ability pass, attribute resolve,
+effect lifetime) and movement (`RegisterMovementSystems`) -- with the engine's
 own operations bound exactly as the runtime binds them
-(`EngineVocabularyBindings`), the project's content vocabulary, and a floor for
-physics queries. The ability is its working data, compiled and resolved into the
+(`EngineVocabularyBindings`), the project's content vocabulary, and a floor. The ability is its working data, compiled and resolved into the
 preview World over whatever its saved file declared, so an edit replays the
-preview to the tick it was on. The fixture holds a grant of it, every declared
-attribute at its default, an input source, and an animation request set (it takes
-requests; no rig plays them).
+preview to the tick it was on. The fixture is a capsule character in the free
+locomotion mode holding a grant of it, every declared attribute at its default,
+an input source, and an animation request set (it takes requests; no rig plays
+them), so a movement lease moves it as it would a game's pawn.
+
+The **stage** fills the content behind the strip (`AbilityStageRenderFeature` in
+a `ContentPicture`): the preview drawn as lines up to the shown tick
+(`AbilityStageOf`) -- the floor, the fixture's capsule, its trail, its aim, the
+targets placed for it, and the points and normals its hit locals hold. It is
+framed when an ability opens and on Frame; a drag on it orbits and the wheel
+zooms.
 
 The card's **Preview** section is the controls, each applied on the next tick:
 press, release, tap (once or three times within the tick) or interrupt an input
