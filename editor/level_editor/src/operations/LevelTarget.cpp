@@ -81,6 +81,10 @@ EditorOperationOutcome LevelTarget::Mutate(std::string_view operation, const Jso
         return RefuseFailed(*Writing);
 
     EditorDocument& document = Document();
+    // An operation is where a mutation finishes, so world transforms are made
+    // current on both sides of it: the edit reads them, and so does whatever
+    // the client asks next.
+    document.GetScene().RefreshDerivedTransforms();
     const std::uint64_t before = document.Revision();
     EntityChangeRecorder recorder(document);
     EditorOperationOutcome outcome = edit(document, recorder);
@@ -88,6 +92,7 @@ EditorOperationOutcome LevelTarget::Mutate(std::string_view operation, const Jso
     if (outcome.Status != EditorOperationStatus::Ok)
     {
         ApplyEntityChangeSet(document, changes, ChangeSetSide::Before);
+        document.GetScene().RefreshDerivedTransforms();
         if (Writing != nullptr)
         {
             Writing->State = LevelDraftState::Failed;
@@ -97,6 +102,7 @@ EditorOperationOutcome LevelTarget::Mutate(std::string_view operation, const Jso
         return outcome;
     }
 
+    document.GetScene().RefreshDerivedTransforms();
     AddSummary(outcome.Data, ChangeSummary(changes), before, document.Revision());
     if (Writing != nullptr)
     {

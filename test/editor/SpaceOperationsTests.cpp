@@ -137,3 +137,96 @@ TEST_F(SpaceOperationsTest, ARoomAndItsDoorAreProposedInADraftAndAcceptedAsOneSt
     EXPECT_FALSE(Find("Corridor").IsValid());
     EXPECT_FALSE(Commands.CanUndo());
 }
+
+namespace
+{
+class CarryTest : public SpaceOperationsTest
+{
+protected:
+    void SetUp() override
+    {
+        SpaceOperationsTest::SetUp();
+        Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
+        Ok("space.create", R"({"name": "Corridor", "min": [8.25, 0, 2], "max": [14, 3, 4]})");
+        Ok("opening.create", R"({"at": [8.1, 1, 3]})");
+    }
+
+    Aabb3d VolumeOf(std::string_view name)
+    {
+        Scene().RefreshDerivedTransforms();
+        const EntityId entity = Find(name);
+        Aabb3d bounds = Aabb3d::Empty();
+        for (const BrushVertex& vertex : Scene().TryGetBrushMesh(entity)->Vertices)
+            bounds.ExpandToInclude(Scene().TryGetWorldTransform(entity)->TransformPoint(vertex.Position));
+        return bounds;
+    }
+
+    std::optional<SurfaceHit> EastFromTheHall(float z = 3.0f)
+    {
+        Scene().RefreshDerivedTransforms();
+        const Aabb3d hall = VolumeOf("Hall");
+        return CastRayAgainstBrushes(Scene(), Ray3d(Vec3d{ hall.Min.X + 1.0f, 1, z }, Vec3d{ 1, 0, 0 }), 50.0f, false);
+    }
+};
+}
+
+TEST_F(CarryTest, MovingTheHallAwayStretchesTheCorridorAndTheDoorStillLeadsDownIt)
+{
+    const JsonValue moved = Ok("space.move", R"({"subject": "@Hall", "offset": [-2, 0, 0]})");
+    ASSERT_EQ(moved.Find("carried")->AsArray().size(), 1u);
+    EXPECT_EQ(moved.Find("carried")->AsArray().front().Find("name")->AsString(), "Corridor");
+    EXPECT_NEAR(VolumeOf("Corridor").Min.X, 6.25f, 1e-3f);
+    EXPECT_NEAR(VolumeOf("Corridor").Max.X, 14.0f, 1e-3f);
+    const std::optional<SurfaceHit> hit = EastFromTheHall();
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_NEAR(hit->Point.X, 14.0f, 1e-3f);
+}
+
+TEST_F(CarryTest, MovingTheHallTowardItShrinksTheCorridor)
+{
+    Ok("space.move", R"({"subject": "@Hall", "offset": [1.5, 0, 0]})");
+    EXPECT_NEAR(VolumeOf("Corridor").Min.X, 9.75f, 1e-3f);
+    const std::optional<SurfaceHit> hit = EastFromTheHall();
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_NEAR(hit->Point.X, 14.0f, 1e-3f);
+}
+
+TEST_F(CarryTest, ASidewaysMoveCarriesNothing)
+{
+    const JsonValue moved = Ok("space.move", R"({"subject": "@Hall", "offset": [0, 0, 4]})");
+    EXPECT_TRUE(moved.Find("carried")->AsArray().empty());
+    EXPECT_NEAR(VolumeOf("Corridor").Min.X, 8.25f, 1e-3f);
+}
+
+TEST_F(CarryTest, ADetachedCorridorIsSkippedAndNamed)
+{
+    Ok("shell.detach", R"({"subject": "@Corridor"})");
+    const JsonValue moved = Ok("space.move", R"({"subject": "@Hall", "offset": [-2, 0, 0]})");
+    EXPECT_TRUE(moved.Find("carried")->AsArray().empty());
+    ASSERT_EQ(moved.Find("skipped")->AsArray().size(), 1u);
+    EXPECT_EQ(moved.Find("skipped")->AsArray().front().Find("name")->AsString(), "Corridor");
+    EXPECT_NEAR(VolumeOf("Corridor").Min.X, 8.25f, 1e-3f) << "hand-made walls are never edited";
+}
+
+TEST_F(CarryTest, OneUndoPutsBothSpacesBack)
+{
+    Ok("space.move", R"({"subject": "@Hall", "offset": [-2, 0, 0]})");
+    Commands.Undo();
+    EXPECT_NEAR(VolumeOf("Hall").Min.X, 0.0f, 1e-3f);
+    EXPECT_NEAR(VolumeOf("Corridor").Min.X, 8.25f, 1e-3f);
+}
+
+TEST_F(CarryTest, AFacePushedOutCarriesItsWalls)
+{
+    Ok("space.resize_face", R"({"subject": "@Hall", "face": "north", "distance": 2})");
+    EXPECT_NEAR(VolumeOf("Hall").Min.Z, -2.0f, 1e-3f);
+    EXPECT_EQ(Code(Call("space.resize_face", R"({"subject": "@Hall", "face": "north", "distance": -20})")),
+              "space.resize_invalid");
+}
+
+TEST_F(CarryTest, AnOpeningSlidesAlongItsWall)
+{
+    Ok("opening.move", R"({"subject": "@Hall door", "offset": [0, 0, 2.5]})");
+    EXPECT_TRUE(EastFromTheHall(3.0f).has_value() && EastFromTheHall(3.0f)->Point.X < 9.0f)
+        << "the old doorway is wall again";
+}

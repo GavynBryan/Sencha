@@ -932,6 +932,15 @@ of the real model, with spaces included from the start.
   in or near a generated wall rather than a space and a face: the wall at the
   point decides the space that owns it, its through axis and its floor, so a
   client names a door by where it is. A sill of zero is a doorway.
+- `space.move` finds the far side of each door the space owns before moving
+  (a space with a face looking back along the door's axis, over which the
+  door's middle lies), then pulls that face by the move's part along its
+  normal through `MeshEditService::TranslateElements`. A sideways move pulls
+  nothing; a detached far side is skipped and named in `skipped`; a pull that
+  would turn a space inside out refuses the whole move. Every mutation now
+  refreshes world transforms on both sides of its edit: an operation is the
+  "mutation finished" point the document otherwise lacks, and without it a
+  batch read positions from before its own previous step.
 
 ### M2: work live, and widen the vocabulary
 
