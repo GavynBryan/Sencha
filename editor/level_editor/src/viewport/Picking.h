@@ -61,9 +61,9 @@ struct SurfaceHit
 // runs before it builds a piece's faces.
 [[nodiscard]] bool IntersectRayAabb(const Ray3d& ray, const Aabb3d& box, float& outNear);
 
-// The nearest visible brush surface along `ray` within `maxDistance`: what a
-// pointer pick finds under the cursor, and what an editor measurement finds in
-// any direction. Locked brushes are still geometry unless `skipLocked`.
+// The nearest visible solid brush surface along `ray` within `maxDistance`:
+// what a pointer pick finds under the cursor, and what an editor measurement
+// finds in any direction. Locked brushes are still geometry unless `skipLocked`.
 [[nodiscard]] std::optional<SurfaceHit> CastRayAgainstBrushes(const EditorScene& scene,
                                                               const Ray3d& ray, float maxDistance,
                                                               bool skipLocked);

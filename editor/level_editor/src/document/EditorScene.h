@@ -31,6 +31,13 @@
 #include <unordered_set>
 #include <vector>
 
+// What a brush is: solid geometry, or a volume enclosing air (BrushVolume).
+enum class BrushRole : std::uint8_t
+{
+    Solid,
+    Volume,
+};
+
 class EditorScene
 {
 public:
@@ -251,6 +258,7 @@ public:
     // Own flag AND every ancestor's: what the viewport actually shows and what
     // picking may actually hit.
     [[nodiscard]] bool IsEntityEffectivelyVisible(EntityId entity) const;
+    [[nodiscard]] BrushRole RoleOf(EntityId entity) const;
     [[nodiscard]] bool IsEntityEffectivelyLocked(EntityId entity) const;
 
     // The brush mesh store (serialized as a sidecar by EditorDocument).

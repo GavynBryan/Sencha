@@ -881,6 +881,12 @@ of the real model, with spaces included from the start.
   `space`, `shell { thickness }` and `opening { width, height, shape,
   arch_rise }` are declared editor-only; their defaults are the conventions'
   defaults.
+- Volumes are air for every geometry consumer: one admission rule
+  (`BrushRoleFilter`) keeps them out of the cook (so navigation, collision and
+  lighting), the surface ray cast, the floor plan and the solid draw. Kyusu
+  draws them translucent with their edges from the retained draw set, in every
+  shading mode, for the focus level; context zones do not draw their volumes
+  yet. Floor plans show spaces once the space operations land.
 
 ### M2: work live, and widen the vocabulary
 

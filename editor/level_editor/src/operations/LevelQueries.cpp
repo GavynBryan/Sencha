@@ -11,6 +11,7 @@
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
 #include "document/LevelConventions.h"
+#include "document/SpaceComponents.h"
 #include "operations/LevelTarget.h"
 
 #include <assets/texture/PngEncoding.h>
@@ -52,7 +53,23 @@ namespace
     DataFieldSchema KindField()
     {
         return DataField::Enum("kind", {}, "how the entity is represented",
-                    { { "brush", "Brush", "level geometry" }, { "entity", "Entity", "anything else" } });
+                    { { "brush", "Brush", "solid level geometry" },
+                      { "space", "Space", "a named region of air: a volume brush tagged space" },
+                      { "volume", "Volume", "a brush enclosing air, not geometry" },
+                      { "opening", "Opening", "a cut through generated walls" },
+                      { "entity", "Entity", "anything else" } });
+    }
+
+    std::string_view KindOf(const EditorScene& scene, EntityId entity)
+    {
+        const World& components = scene.GetRegistry().Components;
+        if (components.HasComponent<Space>(entity))
+            return "space";
+        if (components.HasComponent<Opening>(entity))
+            return "opening";
+        if (scene.TryGetBrush(entity) == nullptr)
+            return "entity";
+        return scene.RoleOf(entity) == BrushRole::Volume ? "volume" : "brush";
     }
 
     // One line per entity: what every listing answers with.
@@ -100,8 +117,7 @@ namespace
         return JsonValue(JsonValue::Object{
             { "id", JsonValue(PersistentIdText(document, entity)) },
             { "name", JsonValue(EntityNameText(document, entity)) },
-            { "kind", JsonValue(document.GetScene().TryGetBrush(entity) != nullptr ? "brush"
-                                                                                  : "entity") },
+            { "kind", JsonValue(std::string(KindOf(document.GetScene(), entity))) },
             { "position", world != nullptr ? PointJson(world->Position) : JsonValue{} },
             { "min", bounds ? PointJson(bounds->Min) : JsonValue{} },
             { "max", bounds ? PointJson(bounds->Max) : JsonValue{} },
@@ -164,7 +180,7 @@ namespace
         entry.Definition.Result = Root({
             DataField::Field("document", DataFieldKind::String, {}, "the level's asset path"),
             DataField::Field("entity_count", DataFieldKind::Int, {}, {}),
-            DataField::Field("brush_count", DataFieldKind::Int, {}, {}),
+            DataField::Field("brush_count", DataFieldKind::Int, {}, "solid brushes"),
             Bounds("min"),
             Bounds("max"),
             DataField::ArrayOf("entities", {}, {}, EntityRecord(), true),
@@ -179,7 +195,7 @@ namespace
             JsonValue::Array entities;
             for (const EntityId entity : scene.GetAllEntities())
             {
-                if (scene.TryGetBrush(entity) != nullptr)
+                if (scene.TryGetBrush(entity) != nullptr && scene.RoleOf(entity) == BrushRole::Solid)
                     ++brushes;
                 if (const std::optional<Aabb3d> bounds = SpatialExtent(scene, entity))
                     overall = overall ? overall->ExpandedToInclude(*bounds) : *bounds;

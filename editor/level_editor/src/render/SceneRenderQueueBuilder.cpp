@@ -123,6 +123,8 @@ void SceneRenderQueueBuilder::EmitBrushQueue()
     Brushes.Reset();
     for (const BrushDrawEntity& entity : Draws.Entities())
     {
+        if (entity.Role == BrushRole::Volume)
+            continue;
         for (const BrushMeshRun& run : entity.Runs)
         {
             const BrushDrawMesh& drawMesh = entity.Meshes[run.MeshIndex];
@@ -155,6 +157,8 @@ void SceneRenderQueueBuilder::RebuildBrushCasters(const EditorDocument& document
     const Registry& registry = document.GetScene().GetRegistry();
     for (const BrushDrawEntity& entity : Draws.Entities())
     {
+        if (entity.Role == BrushRole::Volume)
+            continue;
         ShadowCasterGatherResult folded;
         StaticMeshHandle firstMesh;
         for (const BrushMeshRun& run : entity.Runs)

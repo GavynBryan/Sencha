@@ -39,7 +39,7 @@ void BrushFillRenderer::DrawZoneOverlay(const FrameContext& frame,
     // cannot grow quietly; draw it from the context builder's queue with a
     // tint when it shows up in a profile.
     std::vector<ColoredVertex> vertices;
-    ForEachVisibleBrush(scene, /*skipLocked*/ false,
+    ForEachVisibleBrush(scene, /*skipLocked*/ false, BrushRoleFilter::Solids,
         [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
         {
             AppendBrushFill(vertices, mesh, transform, color);

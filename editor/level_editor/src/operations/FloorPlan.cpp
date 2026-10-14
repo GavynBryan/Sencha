@@ -133,7 +133,7 @@ FloorPlan SectionLevel(const EditorDocument& document, float height)
     plan.Height = height;
     const EditorScene& scene = document.GetScene();
 
-    ForEachVisibleBrushPiece(scene, false,
+    ForEachVisibleBrushPiece(scene, false, BrushRoleFilter::Solids,
         [&](EntityId entity, const BrushPiece& piece, const Transform3f& toWorld) {
             std::vector<BrushSectionContour> contours = SectionBrushAtHeight(*piece.Mesh, toWorld, height);
             if (contours.empty())

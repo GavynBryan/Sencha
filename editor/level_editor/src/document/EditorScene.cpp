@@ -664,6 +664,11 @@ bool EditorScene::IsEntityVisible(EntityId entity) const
     return key == 0 || !HiddenEntities.contains(key);
 }
 
+BrushRole EditorScene::RoleOf(EntityId entity) const
+{
+    return Registry_.Components.HasComponent<BrushVolume>(entity) ? BrushRole::Volume : BrushRole::Solid;
+}
+
 bool EditorScene::IsEntityEffectivelyVisible(EntityId entity) const
 {
     if (!IsEntityVisible(entity))

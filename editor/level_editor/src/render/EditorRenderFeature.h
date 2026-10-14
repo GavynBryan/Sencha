@@ -11,6 +11,7 @@
 #include "viewport/EditorViewport.h"
 #include "GpuGridRenderer.h"
 #include "IrradianceVolumeRenderer.h"
+#include "VolumeRenderer.h"
 #include "render/ViewportTargetCache.h"
 #include "IBrushBodyRenderer.h"
 #include "BrushFillRenderer.h"
@@ -269,6 +270,7 @@ private:
     EditorFillPipeline     Fills;
     SelectionRenderer      Highlight;
     BrushFillRenderer      BrushFills;
+    VolumeRenderer         Volumes;
     ZoneBoundsRenderer     ZoneBounds;
     ZoneGraphRenderer      ZoneGraph;
     IrradianceVolumeRenderer IrradianceVolumes;

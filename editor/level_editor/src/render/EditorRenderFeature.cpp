@@ -194,6 +194,7 @@ EditorRenderFeature::EditorRenderFeature(ViewportLayout& viewportLayout,
     , Visuals(Lines)
     , Highlight(selection, meshEdit, overlay, WideLines, Fills)
     , BrushFills(Fills)
+    , Volumes(InstancedFill, InstancedLines)
     , ZoneBounds(WideLines)
     , ZoneGraph(WideLines)
     , IrradianceVolumes(selection, WideLines, Lines)
@@ -767,6 +768,8 @@ void EditorRenderFeature::RenderViewportOffscreen(const FrameContext& frame, Edi
             MaterialPath && ghost != nullptr && ghost->Queues() != nullptr)
             DrawPlacementGhost(local, viewport, camera, *ghost);
         Visuals.DrawViewport(local, viewport, camera, scene, Vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        if (QueueBuilder)
+            Volumes.DrawViewport(local, viewport, camera, QueueBuilder->BrushDraws());
         IrradianceVolumes.DrawViewport(local, viewport, camera, scene);
         Highlight.DrawViewport(local, viewport, camera, scene, *Session());
         if (WorldView.ShowZoneBounds || WorldView.StreamingPreview)

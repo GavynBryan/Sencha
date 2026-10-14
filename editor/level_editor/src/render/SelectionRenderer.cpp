@@ -92,8 +92,7 @@ namespace
 
     std::span<const ColoredVertexInstance> RowsOf(const BrushDrawEntity& record, std::uint32_t begin, std::uint32_t end)
     {
-        return std::span<const ColoredVertexInstance>(
-            reinterpret_cast<const ColoredVertexInstance*>(record.InstanceRows.data() + begin), end - begin);
+        return AsLineInstances(std::span(record.InstanceRows).subspan(begin, end - begin));
     }
 }
 

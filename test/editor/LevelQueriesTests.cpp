@@ -2,9 +2,11 @@
 // client never has to parse prose for, and name entities by persistent id.
 
 #include "commands/CommandStack.h"
+#include "document/BrushComponents.h"
 #include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
+#include "document/SpaceComponents.h"
 #include "document/WorldDocument.h"
 #include "document/commands/RenameEntityCommand.h"
 #include "operations/EditorOperations.h"
@@ -98,6 +100,24 @@ namespace
         const JsonValue limited = Call("level.summary", R"({"limit": 1})");
         EXPECT_EQ(Data(limited).Find("entities")->AsArray().size(), 1u);
         EXPECT_TRUE(Data(limited).Find("truncated")->AsBool());
+    }
+
+    TEST_F(LevelQueriesTest, ASpaceIsReportedAsOneAndIsNoBrush)
+    {
+        const EntityId hall = Brush({ 0, 1.5f, 0 }, { 4, 1.5f, 4 }, "Hall");
+        auto& components = World.FocusDocument().GetScene().GetRegistry().Components;
+        components.AddComponent(hall, BrushVolume{});
+        components.AddComponent(hall, Space{});
+        const EntityId store = Brush({ 20, 1.5f, 0 }, { 2, 1.5f, 2 }, "Store");
+        components.AddComponent(store, BrushVolume{});
+        (void)Brush({ 0, -0.5f, 0 }, { 4, 0.5f, 4 }, "Floor");
+
+        const JsonValue answer = Call("level.summary", "{}");
+        const JsonValue& data = Data(answer);
+        EXPECT_EQ(data.Find("brush_count")->AsNumber(), 1.0) << "only the floor is solid";
+        EXPECT_EQ(Text(data.Find("entities")->AsArray()[0], "kind"), "space");
+        EXPECT_EQ(Text(data.Find("entities")->AsArray()[1], "kind"), "volume");
+        EXPECT_EQ(Text(data.Find("entities")->AsArray()[2], "kind"), "brush");
     }
 
     TEST_F(LevelQueriesTest, AnswersAreTheSameOnEveryCall)

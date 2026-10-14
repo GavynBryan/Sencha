@@ -207,7 +207,7 @@ Level editor (`editor/level_editor/src/`):
 | `editmodes/` | Transform gizmos and manipulator sessions (`TranslateManipulator`, `BoundsManipulator`, `EditSessionHost`). | manipulators |
 | `meshedit/` | Polygon mesh-editing verbs (`MeshEditService`). | `IMeshEditTarget` |
 | `viewport/` | Viewport layout, camera, picking (`ViewportLayout`, `EditorCamera`, `EditorViewportCameraSystem`, `Picking`). | -- |
-| `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes, the 14 embedded shaders). | `IRenderFeature` (engine) |
+| `render/` | Viewport render features and pipelines (`EditorRenderFeature`, grid/gizmo/selection/solid passes, the 14 embedded shaders). Volume brushes stay out of the solid queue, the shadow casters and the wireframe; `VolumeRenderer` draws them, translucent, from the retained `BrushDrawSet`. | `IRenderFeature` (engine) |
 | `ui/` | The level editor's authored surfaces: the views (`LevelViewSurface`) and the cook profiles dialog (`CookProfilesModal`). | -- |
 | `authoring/` | The selection's components as properties (`ComponentPropertySource`, walking the serializer registry), the adapters that author a component's own presentation (`EditorComponentAdapter`), and what entities show in the views (`EntityMarkers`, `PlaceIcons`). A component is a Group keyed by its serializer's JSON key; a field is `<component>/<field>`, one number of it `<component>/<field>[i]`, one asset slot `<component>/<field>#<slot>`, and an adapter's property `<component>:<key>`, so an edit lands by key after the list changed. Several selected entities read as one: a component only some hold says how many, a field they disagree on is Mixed, a set writes every holder, a drag moves each from its own value, and either is one step; an adapter-authored component is edited one object at a time. A scene instance's member carries `reset` on a field or component that differs from its source. Byte fields preview inside the command stack's pending-edit scope and commit as one `RawComponentEditCommand`; an asset field commits its path through `AssetFieldEditCommand`. | `EditorComponentAdapter` |
 | `document/` | Scene/document domain (see below). | -- |
@@ -279,7 +279,10 @@ that opens a project in a new process).
   `BrushVolume` (the `volume` tag, in `BrushComponents.h`: a brush enclosing
   air, never geometry), and in `SpaceComponents.h` `Space`, `Shell` (walls
   generated around the volume) and `Opening` (a cut through them). All are
-  declared editor-only.
+  declared editor-only. `EditorScene::RoleOf` says whether a brush is solid
+  or a volume, and every walk over brush geometry (`SceneBrushWalk`'s
+  `BrushRoleFilter`, `CollectCookBrushes`, the ray cast against surfaces)
+  admits by it, so a volume never cooks, collides, navigates or lights.
 - Change sets: `EntityChangeRecorder` records the entities an edit touches by
   persistent id, before and after, keeping only those that changed;
   `ApplyEntityChangeSet` puts either side back (overwriting in place, so

@@ -4,6 +4,7 @@
 #include "brush/BrushEvaluation.h"
 #include "brush/BrushId.h"
 #include "document/BrushPlacementFacts.h"
+#include "document/EditorScene.h"
 
 #include <core/assets/AssetRef.h>
 #include <ecs/EntityId.h>
@@ -19,7 +20,6 @@
 #include <unordered_map>
 #include <vector>
 
-class EditorScene;
 
 //=============================================================================
 // BrushDrawSet — the retained render representation of a document's brushes.
@@ -47,6 +47,7 @@ struct BrushDrawMesh // one distinct mesh of the entity, owned by value
     Aabb3d                       LocalBounds = Aabb3d::Empty();
     std::uint64_t                ContentHash = 0;
     std::vector<BrushEdgeVertex> Edges;         // two per edge
+    std::vector<Vec3d>           VolumeFill;    // brush-local triangles; a volume's only
 };
 
 struct BrushPlacement
@@ -65,6 +66,7 @@ struct BrushMeshRun // placements of one mesh, contiguous
 struct BrushDrawEntity
 {
     BrushPlacementKey           Key;
+    BrushRole                   Role = BrushRole::Solid;
     std::uint64_t               BakedFingerprint = 0; // handles + default material; placements redo, edges do not
     std::vector<BrushDrawMesh>  Meshes;               // aligned with BrushEvaluated::Meshes
     std::vector<BrushMeshRun>   Runs;
@@ -95,6 +97,7 @@ private:
                            std::span<const Transform3f> pieceWorld,
                            std::span<const Aabb3d> pieceBounds);
     static void RebuildEdges(BrushDrawEntity& record, const BrushEvaluated& evaluated);
+    static void RebuildVolumeFill(BrushDrawEntity& record, const BrushEvaluated& evaluated);
     void RefreshDigest();
 
     std::vector<BrushDrawEntity> Records;

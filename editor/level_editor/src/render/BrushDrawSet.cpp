@@ -1,11 +1,14 @@
 #include "BrushDrawSet.h"
 
 #include "document/EditorScene.h"
+#include "brush/BrushTessellation.h"
 #include "brush/BrushWorkCounters.h"
+#include "brush/FaceMaterial.h"
 
 #include <core/hash/Fnv1a.h>
 #include <world/registry/Registry.h>
 
+#include <span>
 #include <utility>
 
 namespace
@@ -78,6 +81,13 @@ bool BrushDrawSet::Refresh(const EditorScene& scene, BrushBakeCache& bakes, cons
             ++Rebuilds;
             ++BrushWorkCounters::Frame().DrawRecordRebuilds;
             changed = true;
+        }
+        const BrushRole role = scene.RoleOf(entity);
+        if (!sameKey || record.Role != role)
+        {
+            changed = changed || record.Role != role;
+            record.Role = role;
+            RebuildVolumeFill(record, *evaluated);
         }
         Scratch.push_back(std::move(record));
         ++position;
@@ -204,12 +214,30 @@ void BrushDrawSet::RebuildEdges(BrushDrawEntity& record, const BrushEvaluated& e
     }
 }
 
+void BrushDrawSet::RebuildVolumeFill(BrushDrawEntity& record, const BrushEvaluated& evaluated)
+{
+    for (std::size_t i = 0; i < record.Meshes.size(); ++i)
+    {
+        std::vector<Vec3d>& fill = record.Meshes[i].VolumeFill;
+        fill.clear();
+        if (record.Role != BrushRole::Volume || i >= evaluated.Meshes.size() || evaluated.Meshes[i].Mesh == nullptr)
+            continue;
+        BrushTessellate(*evaluated.Meshes[i].Mesh, Transform3f::Identity(),
+            [&fill](std::uint32_t, const FaceMaterial&, std::span<const BrushTriVertex> triangles)
+            {
+                for (const BrushTriVertex& vertex : triangles)
+                    fill.push_back(vertex.Position);
+            });
+    }
+}
+
 void BrushDrawSet::RefreshDigest()
 {
     std::uint64_t digest = kFnv1aOffsetBasis;
     for (const BrushDrawEntity& record : Records)
     {
         HashFnv1aValue(digest, record.Digest);
+        HashFnv1aValue(digest, record.Role);
         HashFnv1aByte(digest, '|');
     }
     Digest_ = digest;

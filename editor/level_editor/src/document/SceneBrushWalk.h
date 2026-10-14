@@ -18,8 +18,22 @@
 // mesh edits) read TryGetBrushMesh directly rather than walking pieces.
 //=============================================================================
 
+// Which brushes a walk visits. Geometry consumers (the cook, solid drawing, ray
+// casts against surfaces) take Solids: a volume is air and stands in for nothing.
+enum class BrushRoleFilter : std::uint8_t
+{
+    Solids,
+    Volumes,
+    All,
+};
+
+[[nodiscard]] inline bool Admits(BrushRoleFilter filter, BrushRole role)
+{
+    return filter == BrushRoleFilter::All || (role == BrushRole::Volume) == (filter == BrushRoleFilter::Volumes);
+}
+
 template <class F>
-void ForEachVisibleBrushPiece(const EditorScene& scene, bool skipLocked, F&& fn)
+void ForEachVisibleBrushPiece(const EditorScene& scene, bool skipLocked, BrushRoleFilter roles, F&& fn)
 {
     ++BrushWorkCounters::Frame().PieceWalks;
     for (EntityId entity : scene.GetAllEntities())
@@ -30,6 +44,8 @@ void ForEachVisibleBrushPiece(const EditorScene& scene, bool skipLocked, F&& fn)
             continue;
         if (scene.TryGetBrush(entity) == nullptr)
             continue; // a baked brush draws as its placed mesh, not its dormant source
+        if (!Admits(roles, scene.RoleOf(entity)))
+            continue;
         const BrushEvaluated* evaluated = scene.TryGetBrushPieces(entity);
         const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (evaluated == nullptr || transform == nullptr)
@@ -43,13 +59,15 @@ void ForEachVisibleBrushPiece(const EditorScene& scene, bool skipLocked, F&& fn)
 // mesh elements (edge and vertex handles, material scans): generated pieces
 // are never element targets, so they are not visited here.
 template <class F>
-void ForEachVisibleBrushSource(const EditorScene& scene, bool skipLocked, F&& fn)
+void ForEachVisibleBrushSource(const EditorScene& scene, bool skipLocked, BrushRoleFilter roles, F&& fn)
 {
     for (EntityId entity : scene.GetAllEntities())
     {
         if (!scene.IsEntityEffectivelyVisible(entity))
             continue;
         if (skipLocked && scene.IsEntityEffectivelyLocked(entity))
+            continue;
+        if (!Admits(roles, scene.RoleOf(entity)))
             continue;
         const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
         const Transform3f* transform = scene.TryGetWorldTransform(entity);
@@ -63,9 +81,9 @@ void ForEachVisibleBrushSource(const EditorScene& scene, bool skipLocked, F&& fn
 // world placement. The piece identity is dropped; use the piece form when the
 // ordinal matters.
 template <class F>
-void ForEachVisibleBrush(const EditorScene& scene, bool skipLocked, F&& fn)
+void ForEachVisibleBrush(const EditorScene& scene, bool skipLocked, BrushRoleFilter roles, F&& fn)
 {
-    ForEachVisibleBrushPiece(scene, skipLocked,
+    ForEachVisibleBrushPiece(scene, skipLocked, roles,
         [&](EntityId entity, const BrushPiece& piece, const Transform3f& world)
         { fn(entity, *piece.Mesh, world); });
 }

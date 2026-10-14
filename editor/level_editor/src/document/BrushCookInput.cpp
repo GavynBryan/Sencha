@@ -2,6 +2,7 @@
 #include "brush/BrushWorkCounters.h"
 
 #include "EditorScene.h"
+#include "SceneBrushWalk.h"
 #include "brush/BrushLightmapCharts.h"
 #include "brush/BrushTessellation.h"
 #include "brush/FaceMaterial.h"
@@ -81,7 +82,8 @@ std::vector<CookBrushGeometry> CollectCookBrushes(const EditorScene& scene,
     // deterministic for a given document.
     for (EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityEffectivelyVisible(entity) || scene.TryGetBrush(entity) == nullptr)
+        if (!scene.IsEntityEffectivelyVisible(entity) || scene.TryGetBrush(entity) == nullptr
+            || !Admits(BrushRoleFilter::Solids, scene.RoleOf(entity)))
             continue;
         const BrushEvaluated* evaluated = scene.TryGetBrushPieces(entity, policy);
         const Transform3f* transform = scene.TryGetWorldTransform(entity);

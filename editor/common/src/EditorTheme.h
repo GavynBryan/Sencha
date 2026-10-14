@@ -33,6 +33,10 @@ inline constexpr Vec4 ContextZoneDim{ 0.45f, 0.45f, 0.50f, 1.0f };
 // this translucent grey washed over the brush faces (the FaceFill mechanism),
 // faint enough that the underlying textures stay readable.
 inline constexpr Vec4 ContextZoneOverlay{ 0.55f, 0.55f, 0.60f, 0.30f };
+// Volume brushes (spaces): air, so a faint teal wash over their faces and a
+// brighter edge, never a solid body.
+inline constexpr Vec4 VolumeFill{ 0.10f, 0.55f, 0.60f, 0.12f };
+inline constexpr Vec4 VolumeEdge{ 0.25f, 0.85f, 0.90f, 1.0f };
 inline constexpr Vec4 SolidWireframe{ 0.0f, 0.0f, 0.0f, 1.0f }; // face edges over solid body
 // Transition graph edges in the streaming preview: cyan lines between zone centers.
 inline constexpr Vec4 TransitionLine{ 0.25f, 0.75f, 0.95f, 1.0f };
