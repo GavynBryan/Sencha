@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EditorLinePipeline.h"
+#include <graphics/vulkan/ColoredVertexPipelines.h>
 
 #include "document/EditorScene.h"
 #include "viewport/EditorViewport.h"
@@ -21,7 +21,7 @@
 class ComponentVisualRenderer
 {
 public:
-    explicit ComponentVisualRenderer(EditorLinePipeline& lines);
+    explicit ComponentVisualRenderer(ColoredVertexPipeline& lines);
 
     // tint modulates the visual color (context-zone dimming); pass white for
     // the focus zone.
@@ -39,6 +39,6 @@ private:
 
     const MeshEdges& EdgesFor(std::string_view assetPath);
 
-    EditorLinePipeline& Lines;
+    ColoredVertexPipeline& Lines;
     std::unordered_map<std::string, MeshEdges> Cache;
 };

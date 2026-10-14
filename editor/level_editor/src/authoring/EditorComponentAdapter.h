@@ -3,7 +3,7 @@
 #include "authoring/EntityMarkers.h"
 #include "overlay/EditorOverlayState.h"
 #include "properties/PropertySource.h"
-#include "render/EditorLinePipeline.h"
+#include <graphics/vulkan/ColoredVertexPipelines.h>
 #include "render/EditorWideLinePipeline.h"
 
 #include <ecs/ComponentTypeId.h>
@@ -75,7 +75,7 @@ struct EditorPickProxy
 struct ViewportAffordanceOutput
 {
     std::vector<EditorLineSegment> Lines;
-    std::vector<EditorLineVertex> FillTriangles;
+    std::vector<ColoredVertex> FillTriangles;
     std::vector<LabelRequest> Labels;
     std::vector<EditorPickProxy> PickProxies;
     std::vector<EditorMarker> Markers;

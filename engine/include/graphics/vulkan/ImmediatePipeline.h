@@ -24,12 +24,11 @@
 #include <utility>
 #include <vector>
 
-// What one editor immediate-mode pipeline differs by: its shader pair, vertex
-// attribute layout, topology, and whether it writes depth. Everything else the
-// editor overlay pipelines share — scratch upload, viewport/scissor, the single
-// ViewProjection push constant, format-cached pipeline, and the depth-off "on
-// top" variant — lives in the template below.
-struct EditorImmediatePipelineConfig
+// What one immediate-mode pipeline differs by: its shader pair, vertex
+// attribute layout, topology, and whether it writes depth. Scratch upload,
+// viewport and scissor, the ViewProjection push constant, the format-keyed
+// pipeline cache and the depth-off "on top" variant are shared below.
+struct ImmediatePipelineConfig
 {
     const std::uint32_t* VertexSpirv = nullptr;
     std::size_t          VertexWordCount = 0;
@@ -57,17 +56,14 @@ struct EditorImmediatePipelineConfig
     float                DepthBiasSlope = 0.0f;
 };
 
-// The shared editor immediate-mode pipeline: uploads a per-frame vertex span to
-// scratch and draws it into a viewport under one ViewProjection push constant.
-// Templated on the vertex type only for the stride; the layout comes from the
-// config, so a new editor vertex format is a config + shaders — never another
-// copy of this Vulkan plumbing. (Consolidates the former line + solid pipelines,
-// extending the W5 line consolidation rather than re-duplicating it.)
+// Uploads a per-frame vertex span to scratch and draws it into a region of
+// the target under one ViewProjection push constant. A new vertex format is a
+// config and shaders, never another copy of this plumbing.
 template <typename TVertex>
-class EditorImmediatePipeline
+class ImmediatePipeline
 {
 public:
-    void Setup(const RendererServices& services, EditorImmediatePipelineConfig config)
+    void Setup(const RendererServices& services, ImmediatePipelineConfig config)
     {
         assert(config.InstanceExpansion == 0 || config.InstanceStride == 0);
         Config = std::move(config);
@@ -76,7 +72,7 @@ public:
         Pipelines = services.Pipelines;
         Scratch = services.Scratch;
         Buffers = services.Buffers;
-        Log = services.Logging != nullptr ? &services.Logging->GetLogger<EditorImmediatePipeline>() : nullptr;
+        Log = services.Logging != nullptr ? &services.Logging->GetLogger<ImmediatePipeline>() : nullptr;
 
         VertexShader = Shaders->CreateModuleFromSpirv(
             Config.VertexSpirv, Config.VertexWordCount, Config.VertexName);
@@ -289,6 +285,7 @@ public:
         PipelineOnTop = VK_NULL_HANDLE;
         CachedColor = VK_FORMAT_UNDEFINED;
         CachedDepth = VK_FORMAT_UNDEFINED;
+        CachedStencil = VK_FORMAT_UNDEFINED;
         Buffers = nullptr;
         Scratch = nullptr;
         Pipelines = nullptr;
@@ -306,12 +303,14 @@ private:
 
     VkPipeline EnsurePipeline(const FrameContext& frame, bool onTop)
     {
-        if (CachedColor != frame.TargetFormat || CachedDepth != frame.DepthFormat)
+        if (CachedColor != frame.TargetFormat || CachedDepth != frame.DepthFormat
+            || CachedStencil != frame.StencilFormat)
         {
             Pipeline = VK_NULL_HANDLE;
             PipelineOnTop = VK_NULL_HANDLE;
             CachedColor = frame.TargetFormat;
             CachedDepth = frame.DepthFormat;
+            CachedStencil = frame.StencilFormat;
         }
 
         VkPipeline& slot = onTop ? PipelineOnTop : Pipeline;
@@ -339,11 +338,12 @@ private:
         desc.ColorBlend = { Config.Blend };
         desc.ColorFormats = { frame.TargetFormat };
         desc.DepthFormat = frame.DepthFormat;
+        desc.StencilFormat = frame.StencilFormat;
         slot = Pipelines->GetGraphicsPipeline(desc);
         return slot;
     }
 
-    EditorImmediatePipelineConfig Config;
+    ImmediatePipelineConfig Config;
     VulkanBufferService* Buffers = nullptr;
     VulkanShaderCache* Shaders = nullptr;
     VulkanPipelineCache* Pipelines = nullptr;
@@ -358,4 +358,5 @@ private:
     VkPipeline PipelineOnTop = VK_NULL_HANDLE;  // depth-test disabled
     VkFormat CachedColor = VK_FORMAT_UNDEFINED;
     VkFormat CachedDepth = VK_FORMAT_UNDEFINED;
+    VkFormat CachedStencil = VK_FORMAT_UNDEFINED;
 };

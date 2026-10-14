@@ -90,10 +90,10 @@ namespace
             fn(record.SourceSlot + 1, end);
     }
 
-    std::span<const EditorLineInstance> RowsOf(const BrushDrawEntity& record, std::uint32_t begin, std::uint32_t end)
+    std::span<const ColoredVertexInstance> RowsOf(const BrushDrawEntity& record, std::uint32_t begin, std::uint32_t end)
     {
-        return std::span<const EditorLineInstance>(
-            reinterpret_cast<const EditorLineInstance*>(record.InstanceRows.data() + begin), end - begin);
+        return std::span<const ColoredVertexInstance>(
+            reinterpret_cast<const ColoredVertexInstance*>(record.InstanceRows.data() + begin), end - begin);
     }
 }
 
@@ -112,7 +112,7 @@ void SelectionRenderer::DrawViewport(const FrameContext& frame, const EditorView
     const bool occludeBody = viewport.Shading == ViewportShading::Solid;
     std::vector<EditorLineSegment> occluded;
     std::vector<EditorLineSegment> onTop;
-    std::vector<EditorLineVertex> faceFill;
+    std::vector<ColoredVertex> faceFill;
     onTop.reserve(selection.size() * 16 + 32);
     std::vector<EditorLineSegment>& bodyLines = occludeBody ? occluded : onTop;
     std::vector<InstancedBody> copies;
@@ -259,7 +259,7 @@ void SelectionRenderer::SubmitInstancedCopies(const FrameContext& frame, const E
             InstanceScratch.clear();
             InstanceScratch.reserve(mesh.Edges.size());
             for (const BrushEdgeVertex& edge : mesh.Edges)
-                InstanceScratch.push_back(EditorLineVertex{ .Position = edge.Position, .Color = body.Color });
+                InstanceScratch.push_back(ColoredVertex{ .Position = edge.Position, .Color = body.Color });
             ForEachCopySpan(*body.Record, run, [&](std::uint32_t begin, std::uint32_t end)
             {
                 InstancedLines->Submit(frame, viewport, camera, InstanceScratch,
@@ -305,7 +305,7 @@ void SelectionRenderer::AppendBodyWireframeAllPieces(std::vector<EditorLineSegme
 }
 
 void SelectionRenderer::AppendFaceHighlight(std::vector<EditorLineSegment>& outline,
-                                            std::vector<EditorLineVertex>& fill,
+                                            std::vector<ColoredVertex>& fill,
                                             const EditorScene& scene,
                                             EntityId entity,
                                             std::uint32_t sourceFace,
@@ -391,7 +391,7 @@ void SelectionRenderer::SubmitInstancedFaces(const FrameContext& frame, const Ed
                 InstanceScratch.clear();
                 InstanceScratch.reserve(geometry.Fill.size());
                 for (const Vec3d& position : geometry.Fill)
-                    InstanceScratch.push_back(EditorLineVertex{ .Position = position, .Color = EditorTheme::FaceFill });
+                    InstanceScratch.push_back(ColoredVertex{ .Position = position, .Color = EditorTheme::FaceFill });
                 InstancedFill->Submit(frame, viewport, camera, InstanceScratch,
                                       RowsOf(*face.Record, run.FirstPlacement, run.FirstPlacement + run.PlacementCount),
                                       onTop);
@@ -399,7 +399,7 @@ void SelectionRenderer::SubmitInstancedFaces(const FrameContext& frame, const Ed
                 InstanceScratch.clear();
                 InstanceScratch.reserve(geometry.Outline.size());
                 for (const Vec3d& position : geometry.Outline)
-                    InstanceScratch.push_back(EditorLineVertex{ .Position = position, .Color = EditorTheme::FaceHighlight });
+                    InstanceScratch.push_back(ColoredVertex{ .Position = position, .Color = EditorTheme::FaceHighlight });
                 ForEachCopySpan(*face.Record, run, [&](std::uint32_t begin, std::uint32_t end)
                 {
                     InstancedLines->Submit(frame, viewport, camera, InstanceScratch,
@@ -524,7 +524,7 @@ void SelectionRenderer::AppendFace(std::vector<EditorLineSegment>& segments,
     }
 }
 
-void SelectionRenderer::AppendFaceFill(std::vector<EditorLineVertex>& triangles,
+void SelectionRenderer::AppendFaceFill(std::vector<ColoredVertex>& triangles,
                                        const BrushMesh& mesh,
                                        const Transform3f& transform,
                                        std::uint32_t faceIndex,
@@ -533,7 +533,7 @@ void SelectionRenderer::AppendFaceFill(std::vector<EditorLineVertex>& triangles,
     BrushTessellateFace(mesh, transform, faceIndex,
         [&](std::uint32_t, const FaceMaterial&, std::span<const BrushTriVertex> tris) {
             for (const BrushTriVertex& tri : tris)
-                triangles.push_back(EditorLineVertex{ tri.Position, color });
+                triangles.push_back(ColoredVertex{ tri.Position, color });
         });
 }
 

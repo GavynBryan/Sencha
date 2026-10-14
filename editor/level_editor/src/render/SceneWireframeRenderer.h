@@ -43,5 +43,5 @@ private:
     const EditorOverlayState& Overlay;
     const SceneRenderQueueBuilder& Queues;
     EditorInstancedLinePipeline& Lines;
-    std::vector<EditorLineVertex> EdgeScratch; // one mesh's coloured edges, reused
+    std::vector<ColoredVertex> EdgeScratch; // one mesh's coloured edges, reused
 };

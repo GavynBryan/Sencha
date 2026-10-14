@@ -1,13 +1,12 @@
 #pragma once
 
-#include "render/EditorImmediatePipeline.h"
 #include "viewport/EditorViewport.h"
-#include "EditorLinePipeline.h"
+#include <graphics/vulkan/ColoredVertexPipelines.h>
 
 #include <span>
 
 // Alpha-blended flat-color triangles for translucent overlay fills (selected-face
-// highlight): a TRIANGLE_LIST configuration of the shared EditorImmediatePipeline
+// highlight): a TRIANGLE_LIST configuration of the shared ImmediatePipeline
 // over the same position+color vertex and shaders the line pipeline uses. Never
 // writes depth, so a fill cannot occlude; strokes submitted after it read on top.
 class EditorFillPipeline
@@ -19,10 +18,10 @@ public:
     void Submit(const FrameContext& frame,
                 const EditorViewport& viewport,
                 const CameraRenderData& camera,
-                std::span<const EditorLineVertex> vertices,
+                std::span<const ColoredVertex> vertices,
                 bool onTop = false);
     void Teardown();
 
 private:
-    EditorImmediatePipeline<EditorLineVertex> Pipeline;
+    ColoredVertexPipeline Pipeline;
 };

@@ -267,7 +267,41 @@ if(SENCHA_ENABLE_VULKAN)
         )
     endif()
 
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/colored.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _colored_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_colored_vert_spv}"
+        VAR_NAME kColoredVertSpv
+        OUT_HEADER _colored_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/colored_instanced.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _colored_instanced_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_colored_instanced_vert_spv}"
+        VAR_NAME kColoredInstancedVertSpv
+        OUT_HEADER _colored_instanced_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/colored.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _colored_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_colored_frag_spv}"
+        VAR_NAME kColoredFragSpv
+        OUT_HEADER _colored_frag_header
+    )
+
     list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
+        "${_colored_vert_header}"
+        "${_colored_instanced_vert_header}"
+        "${_colored_frag_header}"
         "${_mesh_forward_vert_header}"
         "${_mesh_forward_frag_header}"
         "${_shadow_depth_vert_header}"

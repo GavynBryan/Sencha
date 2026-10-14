@@ -1,8 +1,8 @@
 #version 450
 
-// Instanced line list: the vertices are one mesh's edges in its own frame, and
-// each instance carries the model matrix of one placement of that mesh, so a
-// brush repeated hundreds of times uploads its edges once per frame.
+// The vertices are one mesh in its own frame, and each instance carries the
+// model matrix of one placement of it, so a mesh repeated hundreds of times
+// uploads its vertices once per frame.
 
 layout(push_constant) uniform PushConstants {
     mat4 ViewProjection;

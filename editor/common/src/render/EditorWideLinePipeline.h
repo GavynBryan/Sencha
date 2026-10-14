@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EditorImmediatePipeline.h"
+#include <graphics/vulkan/ImmediatePipeline.h>
 #include "EditorLineSegment.h"
 
 #include <math/Vec.h>
@@ -9,7 +9,7 @@
 #include <string_view>
 
 // Screen-space expanded line pipeline: an instanced TRIANGLE_LIST, alpha-blended
-// configuration of the shared EditorImmediatePipeline. Producers gather
+// configuration of the shared ImmediatePipeline. Producers gather
 // EditorLineSegment lists and call Submit; each segment is one instance and the
 // vertex shader builds the ribbon quad. Oversized submissions are split into
 // scratch-sized chunks rather than dropped.
@@ -28,5 +28,5 @@ public:
     void Teardown();
 
 private:
-    EditorImmediatePipeline<EditorLineSegment> Pipeline;
+    ImmediatePipeline<EditorLineSegment> Pipeline;
 };

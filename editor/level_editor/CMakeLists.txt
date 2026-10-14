@@ -60,9 +60,6 @@ list(REMOVE_ITEM LEVEL_SHELL_SOURCES ${LEVEL_AUTHORING_SOURCES})
 set(LEVEL_SHADERS
     "grid.vert.glsl|vert|kGridVertSpv"
     "grid.frag.glsl|frag|kGridFragSpv"
-    "editor_line.vert.glsl|vert|kEditorLineVertSpv"
-    "editor_line.frag.glsl|frag|kEditorLineFragSpv"
-    "editor_line_instanced.vert.glsl|vert|kEditorLineInstancedVertSpv"
     "fullscreen.vert.glsl|vert|kFullscreenVertSpv"
     "bloom_brightpass.frag.glsl|frag|kBloomBrightpassFragSpv"
     "bloom_blur.frag.glsl|frag|kBloomBlurFragSpv"

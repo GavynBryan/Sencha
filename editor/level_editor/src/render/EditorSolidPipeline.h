@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/EditorImmediatePipeline.h"
+#include <graphics/vulkan/ImmediatePipeline.h>
 #include "viewport/EditorViewport.h"
 
 #include <math/Vec.h>
@@ -19,7 +19,7 @@ struct EditorSolidVertex
 };
 
 // The depth-writing solid pipeline for brush face preview: a TRIANGLE_LIST,
-// depth-writing configuration of the shared EditorImmediatePipeline. Opaque, so
+// depth-writing configuration of the shared ImmediatePipeline. Opaque, so
 // it draws after the grid and before the wireframe overlay.
 class EditorSolidPipeline
 {
@@ -34,5 +34,5 @@ public:
     void Teardown();
 
 private:
-    EditorImmediatePipeline<EditorSolidVertex> Pipeline;
+    ImmediatePipeline<EditorSolidVertex> Pipeline;
 };
