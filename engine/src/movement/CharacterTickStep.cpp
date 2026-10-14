@@ -61,7 +61,7 @@ namespace
     // `dt` actor seconds. `carry` scales what the ground carries the character by,
     // so a dilated character on a platform rides it at the platform's speed.
     void StepOnce(World& world, CharacterMoverPool* movers, EntityId entity, const MovementIntent& intent,
-                  std::uint64_t tick, float dt, float carry, Vec3d gravity, Vec3d upAxis)
+                  const RootMotionSample* rootMotion, float dt, float carry, Vec3d gravity, Vec3d upAxis)
     {
         KinematicState* motion = world.TryGet<KinematicState>(entity);
         SupportState* support = world.TryGet<SupportState>(entity);
@@ -87,11 +87,8 @@ namespace
                 overrides.HasUp = true;
             }
         }
-        // Asked again rather than remembered, so a replayed tick is carried by
-        // what the source says now -- after a correction, not before it.
-        RootMotionSample rootMotion;
-        if (SampleRootMotion(world, entity, tick, dt, rootMotion))
-            ApplyRootMotion(overrides, rootMotion);
+        if (rootMotion != nullptr)
+            ApplyRootMotion(overrides, *rootMotion);
 
         const MotionRequest motionRequest = ComposeMotion(locomotion, &carried, overrides, MotionImpulse{});
 
@@ -127,12 +124,17 @@ void StepScaledCharacterTick(World& world,
 {
     if (!CharacterTickModeSupported(world, entity) || scaleQ16 <= 0)
         return;
-    const double scale = static_cast<double>(scaleQ16) / static_cast<double>(kActorTimeOne);
+    const double scale = ActorScaleValue(scaleQ16);
     const int substeps = scale > 1.0 ? static_cast<int>(std::ceil(scale)) : 1;
     const float step = static_cast<float>(fixedDeltaSeconds * scale / substeps);
     const float carry = static_cast<float>(1.0 / scale);
+    // Asked again rather than remembered, so a replayed tick is carried by what the
+    // source says now -- after a correction, not before it. Each substep turns its share.
+    RootMotionSample rootMotion;
+    const bool carried = SampleRootMotion(world, entity, tick, fixedDeltaSeconds, rootMotion);
+    rootMotion.TurnRadians /= static_cast<float>(substeps);
     for (int i = 0; i < substeps; ++i)
-        StepOnce(world, movers, entity, intent, tick, step, carry, gravity, upAxis);
+        StepOnce(world, movers, entity, intent, carried ? &rootMotion : nullptr, step, carry, gravity, upAxis);
 }
 
 void StepCharacterTick(World& world,

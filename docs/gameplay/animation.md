@@ -432,6 +432,21 @@ Content time itself is a function of ticks, so a zone that wakes shows its
 content where the ticks put it, not where it stopped; only the marks it passed
 while asleep are skipped.
 
+**Actor time.** A playback also carries the scale of its actor's time
+(`TimeScale`; see `docs/core-systems-map.md`). Content resolution reads the
+entity's scale on each tick from its time leases (`ActorScaleOnTick`) and, when it
+differs, `RetimeAnimPlayback` re-anchors the playback at the tick before: that tick
+played at the new scale, as the actor's clock counts it, so the next pass crosses
+exactly where the last one stopped. The anchor is kept beside `StartTick` and
+`OffsetSeconds` rather than replacing them, so the instance stays the same one to
+the event pass and the pose pass; `RestartAnimPlayback` starts a new instance and
+drops the anchor. A blendspace's phase, a flow's sections and the pose pass's
+phase rate all advance by `rate × scale`. Root motion re-anchors its own copy the
+same way, borrowing the layer's anchor while the layer plays the carrying request,
+and reports velocity per second of actor time, which is what a dilated character's
+step sweeps through. A request read before its layer plays it is timed from its
+start at the current scale.
+
 ## Events
 
 After content resolution each layer's content time has advanced by one tick,

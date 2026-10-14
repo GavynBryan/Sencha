@@ -26,6 +26,11 @@ struct SENCHA_COMPONENT("sencha.actor_time_dilated") ActorTimeDilated
 {
 };
 
+[[nodiscard]] inline double ActorScaleValue(std::int64_t scaleQ16)
+{
+    return static_cast<double>(scaleQ16) / static_cast<double>(kActorTimeOne);
+}
+
 // Whole actor ticks elapsed since the clock started.
 [[nodiscard]] inline std::uint64_t ActorTicks(const ActorTime& time)
 {

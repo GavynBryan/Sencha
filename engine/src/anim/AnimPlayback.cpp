@@ -1,10 +1,53 @@
 #include <anim/AnimPlayback.h>
 
+namespace
+{
+    struct Anchor
+    {
+        AnimTick Tick;
+        double Seconds;
+    };
+
+    Anchor AnchorOf(const AnimPlayback& playback)
+    {
+        if (playback.RetimedTick != kAnimNoTick)
+            return { playback.RetimedTick, playback.RetimedSeconds };
+        return { playback.StartTick, static_cast<double>(playback.OffsetSeconds) };
+    }
+
+    double ClipSecondsOver(const AnimPlayback& playback, double ticks, double tickSeconds)
+    {
+        return ticks * tickSeconds * static_cast<double>(playback.Rate) * static_cast<double>(playback.TimeScale);
+    }
+}
+
 double AnimElapsedSeconds(const AnimPlayback& playback, AnimTick tick, double tickSeconds)
 {
-    const AnimTick ticks = tick >= playback.StartTick ? tick - playback.StartTick : 0;
-    return static_cast<double>(playback.OffsetSeconds)
-        + static_cast<double>(ticks) * tickSeconds * static_cast<double>(playback.Rate);
+    if (tick <= playback.StartTick)
+        return static_cast<double>(playback.OffsetSeconds);
+    const Anchor anchor = AnchorOf(playback);
+    const auto ticks = static_cast<std::int64_t>(tick - anchor.Tick);
+    return anchor.Seconds + ClipSecondsOver(playback, static_cast<double>(ticks), tickSeconds);
+}
+
+void RestartAnimPlayback(AnimPlayback& playback, AnimTick start, float offsetSeconds)
+{
+    playback.StartTick = start;
+    playback.OffsetSeconds = offsetSeconds;
+    playback.RetimedTick = kAnimNoTick;
+    playback.RetimedSeconds = 0.0;
+}
+
+void RetimeAnimPlayback(AnimPlayback& playback, AnimTick now, double tickSeconds, float timeScale)
+{
+    if (playback.TimeScale == timeScale)
+        return;
+    if (now > playback.StartTick + 1)
+    {
+        playback.RetimedSeconds = AnimElapsedSeconds(playback, now - 1, tickSeconds);
+        playback.RetimedTick = now - 1;
+    }
+    playback.TimeScale = timeScale;
 }
 
 double AnimPlaceSeconds(double elapsed, double duration, bool cyclic)
@@ -25,15 +68,15 @@ double AnimPlaybackSeconds(const AnimPlayback& playback, AnimTick tick, double t
 
 AnimTick AnimPlaybackEndTick(const AnimPlayback& playback, double tickSeconds)
 {
-    if (playback.Cyclic || playback.Rate == 0.0f)
+    if (playback.Cyclic || playback.Rate == 0.0f || playback.TimeScale <= 0.0f)
         return kAnimNoTick;
-    const double remaining = playback.Rate > 0.0f
-        ? static_cast<double>(playback.DurationSeconds) - static_cast<double>(playback.OffsetSeconds)
-        : static_cast<double>(playback.OffsetSeconds);
-    const double perTick = tickSeconds * std::abs(static_cast<double>(playback.Rate));
+    const Anchor anchor = AnchorOf(playback);
+    const double remaining =
+        playback.Rate > 0.0f ? static_cast<double>(playback.DurationSeconds) - anchor.Seconds : anchor.Seconds;
+    const double perTick = std::abs(ClipSecondsOver(playback, 1.0, tickSeconds));
     // A rounding short of a whole tick still ends on it.
     const double ticks = perTick > 0.0 ? std::ceil(remaining / perTick - 1e-9) : 1.0;
-    return playback.StartTick + std::max<AnimTick>(1, static_cast<AnimTick>(std::max(ticks, 1.0)));
+    return std::max(playback.StartTick + 1, anchor.Tick + static_cast<AnimTick>(std::max(ticks, 0.0)));
 }
 
 bool AnimPlaybackEnded(const AnimPlayback& playback, AnimTick tick, double tickSeconds)
@@ -64,7 +107,7 @@ AnimCrossing AnimCrossPlayback(const AnimPlayback& playback, AnimTick through, A
 
     const double start = static_cast<double>(playback.OffsetSeconds);
     const bool carried = entry == AnimPlaybackEntry::Carried;
-    const double from = carried ? start - tickSeconds * static_cast<double>(playback.Rate) : start;
+    const double from = carried ? start - ClipSecondsOver(playback, 1.0, tickSeconds) : start;
     if (now <= playback.StartTick + 1)
     {
         add(from, at, !carried, false);

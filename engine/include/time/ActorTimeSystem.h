@@ -42,3 +42,7 @@ void AdvanceActorTime(World& world, std::uint64_t tick, const ActorScaleLimits& 
 // for an entity with no clock.
 [[nodiscard]] std::uint64_t ActorTicksSince(const World& world, EntityId actor, std::uint64_t mark,
                                             std::uint64_t simulationTick);
+
+// The scale `actor`'s time ran at on `tick`, from the leases in force then, so a
+// replayed tick reads what the live one did; one for an entity with no clock.
+[[nodiscard]] std::int64_t ActorScaleOnTick(const World& world, EntityId actor, std::uint64_t tick);

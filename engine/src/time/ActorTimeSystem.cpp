@@ -160,3 +160,13 @@ std::uint64_t ActorTicksSince(const World& world, EntityId actor, std::uint64_t 
     const std::uint64_t now = time != nullptr ? ActorTicks(*time) : simulationTick;
     return now > mark ? now - mark : 0;
 }
+
+std::int64_t ActorScaleOnTick(const World& world, EntityId actor, std::uint64_t tick)
+{
+    const ActorTimeLeases* leases =
+        world.IsRegistered<ActorTimeLeases>() ? world.TryGet<ActorTimeLeases>(actor) : nullptr;
+    if (leases == nullptr || !world.HasComponent<ActorTime>(actor))
+        return kActorTimeOne;
+    const ActorScaleLimits* limits = world.TryGetResource<ActorScaleLimits>();
+    return ActorScaleAt(*leases, tick, limits != nullptr ? *limits : ActorScaleLimits{});
+}

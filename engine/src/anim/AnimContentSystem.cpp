@@ -10,6 +10,7 @@
 #include <ecs/StoragePartitionSet.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
+#include <time/ActorTimeSystem.h>
 #include <world/SimulationAuthority.h>
 
 #include <algorithm>
@@ -359,8 +360,7 @@ namespace
         LayerEntry entry;
         const auto carryFrom = [&](float normalized) {
             layer.StartTick = now;
-            layer.Playback.StartTick = now;
-            layer.Playback.OffsetSeconds = normalized * DurationOf(rig, target.Content);
+            RestartAnimPlayback(layer.Playback, now, normalized * DurationOf(rig, target.Content));
             layer.Carried = true;
             entry.StartNormalized = normalized;
         };
@@ -381,8 +381,7 @@ namespace
             layer.Request = target.Driving != nullptr ? target.Driving->Id : AnimRequestId{};
             layer.RequestStartTick = target.Driving != nullptr ? target.Driving->StartTick : 0;
             layer.StartTick = target.InstanceStart;
-            layer.Playback.StartTick = target.InstanceStart;
-            layer.Playback.OffsetSeconds = PlaybackOf(rig, target.Behavior).StartSeconds;
+            RestartAnimPlayback(layer.Playback, target.InstanceStart, PlaybackOf(rig, target.Behavior).StartSeconds);
             layer.Carried = false;
             layer.Pinned = target.Kind == AnimBehaviorKind::OneShot || target.Kind == AnimBehaviorKind::Flow;
             entry.StartNormalized = 0.0f;
@@ -487,7 +486,7 @@ namespace
         if (step.Entry.StartNormalized)
             layer.Phase = *step.Entry.StartNormalized;
         else if (duration > 0.0f)
-            layer.Phase += static_cast<float>(step.TickSeconds * rate / duration);
+            layer.Phase += static_cast<float>(step.TickSeconds * rate * layer.Playback.TimeScale / duration);
         // The phase is a sum of per-tick steps, so the tick that reaches the end may
         // land a rounding short of it; it counts as there.
         constexpr float kEndSlack = 1e-5f;
@@ -508,7 +507,8 @@ namespace
         const int dominant = space.Samples[AnimBlendspaceDominant(space, weights)].Content;
         layer.Clip = dominant >= 0 ? static_cast<std::uint16_t>(dominant) : kAnimNoContent;
         layer.Playback = AnimPlayback{ .StartTick = layer.StartTick, .OffsetSeconds = 0.0f, .Rate = rate,
-                                       .DurationSeconds = duration, .Cyclic = IsCyclic(kind) };
+                                       .DurationSeconds = duration, .Cyclic = IsCyclic(kind),
+                                       .TimeScale = layer.Playback.TimeScale };
         layer.TimeSeconds = layer.Phase * duration;
     }
 
@@ -639,6 +639,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
 
     const bool rebound = content.BindingGeneration != rig.Generation;
     content.BindingGeneration = rig.Generation;
+    const auto timeScale = static_cast<float>(ActorScaleValue(ActorScaleOnTick(world, entity, now)));
 
     AnimRequestProgress progress;
     if (requests != nullptr)
@@ -664,6 +665,7 @@ void ResolveAnimEntity(World& world, EntityId entity, const AnimBoundRig& rig,
                               .Now = now,
                               .TickSeconds = tickSeconds,
                               .Log = log };
+        RetimeAnimPlayback(layer.Playback, now, tickSeconds, timeScale);
         AdvanceLayerContent(step, facts, layer, flows, progress.Layers[l]);
     }
     WriteAnimRequestProgress(world, entity, rig, progress, now);

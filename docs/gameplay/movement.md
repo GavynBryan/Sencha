@@ -306,6 +306,11 @@ leave it to `DilatedCharacterStepSystem`, which steps it whole through
 - **Carried:** the ground's carry is divided by the scale, so a dilated character on
   a moving platform rides it at the platform's speed.
 - **Gravity** applies in the character's time: a slowed character falls slower.
+- **Root motion** is sampled once a tick at the simulation's tick length; its
+  velocity is per second of the character's time and each substep takes its share
+  of the tick's turn (`docs/gameplay/animation.md`, "Playback time").
+- **Rigid bodies** run at simulation rate: a dilated character pushes one through
+  its sweeps, with the velocity it crosses the simulation at.
 - **Replay** computes each replayed tick's scale from the lease history on the pawn,
   so a dilation the client never predicted is applied from the tick it took effect
   and ended on the tick it ended.

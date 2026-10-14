@@ -29,6 +29,8 @@
 #include <physics/PhysicsWorld.h>
 #include <physics/components/CharacterController.h>
 #include <runtime/RuntimeFrameLoop.h>
+#include <time/ActorTimeLeases.h>
+#include <time/ActorTimeSystem.h>
 #include <world/RuntimeComponentSchema.h>
 #include <world/transform/TransformComponents.h>
 
@@ -203,6 +205,31 @@ namespace
             *Entities.TryGet<SupportState>(Character) = saved.Support;
             ASSERT_TRUE(Movers.RestorePosition(Entities, Character, saved.Transform.Value.Position));
         }
+        // Animation, then the character stepped in its own time, as a dilated one is.
+        void StepDilated()
+        {
+            const AnimTick tick = Now;
+            Tick();
+            StepScaledCharacterTick(Entities, &Movers, Character, MovementIntent{}, tick, static_cast<float>(kTick),
+                                    ActorScaleOnTick(Entities, Character, tick), kGravity, kUp);
+        }
+
+        void StepDilatedTo(AnimTick tick)
+        {
+            while (Now <= tick)
+                StepDilated();
+        }
+
+        // Held by the character itself from the tick after now.
+        void Dilate(double scale)
+        {
+            if (!Entities.HasComponent<ActorTimeLeases>(Character))
+                Entities.AddComponent<ActorTimeLeases>(Character, ActorTimeLeases{});
+            ASSERT_TRUE(AcquireActorTimeLease(*Entities.TryGet<ActorTimeLeases>(Character),
+                                              LeaseOwner{ .Entity = Character },
+                                              std::llround(scale * static_cast<double>(kActorTimeOne)), Now));
+        }
+
         // Ticks `first`..`last` again through the replay kernel.
         void Replay(AnimTick first, AnimTick last)
         {
@@ -563,4 +590,56 @@ TEST(AnimRootMotion, ASelectorLayersReplayIsCarriedThroughACancel)
     client.Restore(at39);
     client.Replay(40, 80);
     EXPECT_NEAR(client.Position().Z, authority.Position().Z, 1e-4f);
+}
+
+// A change of the actor's scale carries the clip on from where it stood, at the new
+// rate, as the same instance.
+TEST(AnimRootMotion, AnimationReanchorsOnScaleChange)
+{
+    RootMotionFixture actor(false);
+    actor.Tick(10);
+    const AnimTick start = actor.Playing(actor.Character).Playback.StartTick;
+    actor.Dilate(0.5);
+    float previous = actor.Playing(actor.Character).TimeSeconds;
+    for (AnimTick tick = 10; tick < 30; ++tick)
+    {
+        actor.Tick();
+        const float now = actor.Playing(actor.Character).TimeSeconds;
+        const double expected = AnimRigFixture::kTick * (tick == 10 ? 1.0 : 0.5);
+        EXPECT_NEAR(now - previous, expected, 1e-6) << "tick " << tick;
+        previous = now;
+    }
+    EXPECT_EQ(actor.Playing(actor.Character).Playback.StartTick, start) << "never a new instance";
+}
+
+// Slowed to half, the dash takes twice as long and carries the character as far.
+TEST(AnimRootMotion, ASlowedCharacterIsCarriedTheWholeCurveInItsOwnTime)
+{
+    RootMotionFixture slowed(false);
+    slowed.Dilate(0.5);
+    slowed.StepDilatedTo(29);
+    ASSERT_TRUE(slowed.Dash().Accepted());
+    slowed.StepDilatedTo(29 + 60);
+    EXPECT_NEAR(slowed.Position().Z, -1.5f, 0.1f) << "half the curve in a second of simulation";
+    slowed.StepDilatedTo(29 + 160);
+    EXPECT_NEAR(slowed.Position().Z, -3.0f, 0.05f) << "the whole curve, once";
+}
+
+// Hastened to double, the substeps share the tick's turn rather than each taking it.
+TEST(AnimRootMotion, AHastenedCharacterTurnsAsFarAsTheCurve)
+{
+    constexpr float quarter = 1.5707964f;
+    RootMotionFixture hastened(false, false,
+                               AnimationRootCurve{ .TimesSeconds = { 0.0f, 0.5f, 1.0f },
+                                                   .Values = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, quarter, -1.0f, 0.0f, quarter } });
+    hastened.Dilate(2.0);
+    hastened.StepDilatedTo(29);
+    ASSERT_TRUE(hastened.Dash().Accepted());
+    hastened.StepDilatedTo(29 + 45);
+    EXPECT_NEAR(hastened.Position().X, -1.0f, 0.03f);
+    EXPECT_NEAR(hastened.Position().Z, 0.0f, 0.03f);
+    const Vec3d forward = static_cast<const World&>(hastened.Entities)
+                              .TryGet<LocalTransform>(hastened.Character)
+                              ->Value.Rotation.RotateVector(Vec3d{ 0.0f, 0.0f, -1.0f });
+    EXPECT_NEAR(forward.X, -1.0f, 1e-3f) << "a quarter turn, not two";
 }

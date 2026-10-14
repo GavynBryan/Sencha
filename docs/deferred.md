@@ -456,3 +456,18 @@ do the work and delete the entry.
   and `DilatedCharacterStepSystem`.
 - **Trigger:** the first game mode whose characters are time-scaled, which will also
   need that mode's kernel shared with replay.
+
+## Dilated characters meeting characters, and bodies striking them
+
+- **What:** the AbilityKit plan's actor-time interactions include two characters at
+  different scales colliding and an undilated body striking a dilated character
+  (`CharactersAtDifferentScalesCollideConsistently`,
+  `BodyStrikingADilatedCharacterUsesSimulationRate`). Neither happens at any scale
+  today: the character mover sets up no character-versus-character collision and
+  gives a character no inner body, so characters pass through each other and rigid
+  bodies pass through characters.
+- **Where:** `engine/src/physics/CharacterMover.cpp` (`CharacterMover::Move`, the
+  `CharacterVirtual` settings) and `test/runtime/ActorTimeInteractionTests.cpp`.
+- **Trigger:** characters gaining an inner body or character-versus-character
+  collision; the two tests are written with that change, against dilated characters
+  as well as undilated ones.

@@ -19,6 +19,12 @@ struct AnimPlayback
     float DurationSeconds = 0.0f;
     // Wraps at its ends rather than holding them.
     bool Cyclic = false;
+    // Actor ticks per tick: the scale of the actor's time it plays in.
+    float TimeScale = 1.0f;
+    // Where a change of scale re-anchored the clip's time; kAnimNoTick measures from
+    // the start. Identity stays with StartTick and OffsetSeconds.
+    AnimTick RetimedTick = kAnimNoTick;
+    double RetimedSeconds = 0.0;
 
     friend bool operator==(const AnimPlayback&, const AnimPlayback&) = default;
 };
@@ -29,6 +35,13 @@ struct AnimPlayback
 // `elapsed` on a clip of `duration`: wrapped either way round when cyclic, held at the
 // ends otherwise.
 [[nodiscard]] double AnimPlaceSeconds(double elapsed, double duration, bool cyclic);
+
+// A new instance from `start` at `offsetSeconds`, in the time scale it already plays in.
+void RestartAnimPlayback(AnimPlayback& playback, AnimTick start, float offsetSeconds);
+
+// Plays on from `now` at `timeScale`: the tick before `now` played at the scale in
+// force on `now`, so a pass at `now` crosses exactly what the previous one left.
+void RetimeAnimPlayback(AnimPlayback& playback, AnimTick now, double tickSeconds, float timeScale);
 
 [[nodiscard]] double AnimPlaybackSeconds(const AnimPlayback& playback, AnimTick tick, double tickSeconds);
 

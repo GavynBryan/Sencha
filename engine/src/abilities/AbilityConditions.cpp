@@ -126,7 +126,7 @@ double AbilityPass::Number(const AbilityActor& actor, std::size_t slot, const Ab
         {
             const World& world = Entities;
             const ActorTime* time = world.IsRegistered<ActorTime>() ? world.TryGet<ActorTime>(actor.Entity) : nullptr;
-            return time != nullptr ? static_cast<double>(time->ScaleQ16) / static_cast<double>(kActorTimeOne) : 1.0;
+            return time != nullptr ? ActorScaleValue(time->ScaleQ16) : 1.0;
         }
         default: return 0.0;
         }

@@ -1512,3 +1512,38 @@ Deviations from the plan's wording, each for a stated reason:
 - **Deviation: effect leases end a tick late.** An effect's `time_scale` lease is
   held by the effect entity and ended by the clock's pull rule the tick after the
   effect ends, rather than by `EndEffect`, which has no tick to stamp it with.
+- **7c delivered, in part.** `ADilatedCharacterPushesABodyAtTheSpeedItCrossesTheSimulation`
+  and `FastActorDoesNotTunnelThroughThinWall` run against Jolt; the platform case is
+  7b's `ADilatedActorRidesAPlatformAtThePlatformsSpeed`.
+- **Deviation: two §7.3 interactions do not exist.** The character mover has no
+  character-versus-character collision and no inner body, so characters pass
+  through each other and bodies through characters at every scale;
+  `CharactersAtDifferentScalesCollideConsistently` and
+  `BodyStrikingADilatedCharacterUsesSimulationRate` wait on that
+  (`docs/deferred.md`, "Dilated characters meeting characters, and bodies striking
+  them").
+- **Deviation: the push test asserts what physics does.** §7.3 expected a dilated
+  push to match an undilated one. Bodies run at simulation rate, so a slowed
+  character kicks a crate at the speed it crosses the simulation and the crate runs
+  on less far; the test asserts that. Found in passing: an undilated character also
+  walks through a 2 kg crate after shoving it, so a character never stops at a light
+  dynamic body. That is existing mover behaviour, not dilation's.
+- **7d delivered.** `AnimPlayback` carries its actor's `TimeScale` and a retime
+  anchor beside its identity; content resolution re-anchors at the tick before a
+  change (`AnimationReanchorsOnScaleChange`), so event passes cross each mark once
+  across changes (`PassesAcrossChangesOfScaleCrossEachMarkOnce`); blendspace phase,
+  flow sections and the pose pass's phase rate advance by `rate × scale`. Root motion
+  is sampled once a tick at the simulation tick length, per second of actor time,
+  with its turn shared among substeps (`ASlowedCharacterIsCarriedTheWholeCurveInItsOwnTime`,
+  `AHastenedCharacterTurnsAsFarAsTheCurve`); before, a dilated step sampled it per
+  substep at the substep's length. Replay's per-tick scale moved to
+  `ActorScaleOnTick`, which animation reads too.
+- **Deviation: no `AnimClock::For` rate.** §7.2 has animation read a per-entity rate
+  through `AnimClock`. The scale is read from the leases for the tick the entity is
+  on (`ActorScaleOnTick`), the function replay already used, so the clock stays a
+  tick and live, replayed and re-resolved ticks agree.
+- **Limit: re-anchoring needs the live sequence.** A playback that begins in the
+  past (a request issued before the layer saw it, a follower reconstructing a
+  flow from its anchor) is timed from its start at the current scale; ticks before
+  the latest anchor are extrapolated at the current scale. Stage 9 replicates the
+  leases and `ActorTime`, and decides whether followers need more.
