@@ -180,3 +180,22 @@ TEST_F(SpaceShellTest, RoomsAWallApartCookTheirSharedWallOnce)
     EXPECT_EQ(CollectCookBrushes(Scene(), Default).size(), 12u) << "moving one away gives each its own wall back";
     (void)west;
 }
+
+TEST_F(SpaceShellTest, ADoorEntityCutsTheWallItStandsInAndMovesItsHoleWithIt)
+{
+    (void)ShelledSpace({ 0, 1.5f, 0 }, { 4, 1.5f, 3 });
+    const EntityId door = Scene().CreateEntity(Vec3d{ 0, 0, -3.125f });
+    Scene().GetRegistry().Components.AddComponent(door, Opening{});
+    Scene().RefreshDerivedTransforms();
+
+    const auto northward = [this](float x) {
+        return CastRayAgainstBrushes(Scene(), Ray3d(Vec3d{ x, 1, 0 }, Vec3d{ 0, 0, -1 }), 20.0f, false);
+    };
+    EXPECT_FALSE(northward(0.0f).has_value()) << "through the doorway";
+    EXPECT_TRUE(northward(2.0f).has_value()) << "into the wall beside it";
+
+    Scene().GetRegistry().Components.TryGet<LocalTransform>(door)->Value.Position.X = 2.0f;
+    Scene().RefreshDerivedTransforms();
+    EXPECT_TRUE(northward(0.0f).has_value());
+    EXPECT_FALSE(northward(2.0f).has_value());
+}

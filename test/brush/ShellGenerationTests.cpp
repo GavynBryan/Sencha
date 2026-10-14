@@ -252,3 +252,93 @@ TEST(ShellGeneration, WallsOfDifferentThicknessAreNotShared)
     const ShellNeighbour thicker{ &east, 0.5f, false };
     EXPECT_EQ(GenerateShell(west, Rules(0.25f), std::span(&thicker, 1)).Slabs.size(), 6u);
 }
+
+namespace
+{
+    // A door or window through the east wall of a room whose floor is y = 0.
+    ShellOpening EastOpening(float x, float sill, float z, float width, float height)
+    {
+        ShellOpening opening;
+        opening.Origin = { x, sill, z };
+        opening.Across = { 0, 0, -1 };
+        opening.Up = { 0, 1, 0 };
+        opening.Through = { 1, 0, 0 };
+        opening.Width = width;
+        opening.Height = height;
+        return opening;
+    }
+
+    float EastWallInside(const ShellResult& shell, const BrushMesh& volume)
+    {
+        float area = 0.0f;
+        for (const ShellSlab& slab : shell.Slabs)
+            if (volume.Faces[slab.SourceFace].Normal.X > 0.99f)
+                area += FacingArea(slab.Mesh, { -1, 0, 0 });
+        return area;
+    }
+
+    void ExpectNoProblems(const ShellResult& shell)
+    {
+        for (const ShellProblem& problem : shell.Problems)
+            ADD_FAILURE() << problem.Message;
+    }
+}
+
+TEST(ShellOpenings, ADoorAtFloorLevelNotchesTheWall)
+{
+    const BrushMesh room = Shifted(BrushOps::MakeBox({ 4, 1.5f, 3 }), { 0, 1.5f, 0 });
+    ShellResult shell = GenerateShell(room, Rules(0.25f));
+    const ShellOpening door = EastOpening(4.125f, 0.0f, 0.0f, 1.2f, 2.2f);
+    CutOpenings(shell, 0.25f, std::span(&door, 1));
+    ExpectNoProblems(shell);
+    EXPECT_NEAR(EastWallInside(shell, room), 6.0f * 3.0f - 1.2f * 2.2f, 1e-3f);
+    for (const ShellSlab& slab : shell.Slabs)
+        EXPECT_TRUE(Closed(slab.Mesh));
+}
+
+TEST(ShellOpenings, AWindowCutsAHole)
+{
+    const BrushMesh room = Shifted(BrushOps::MakeBox({ 4, 1.5f, 3 }), { 0, 1.5f, 0 });
+    ShellResult shell = GenerateShell(room, Rules(0.25f));
+    const ShellOpening window = EastOpening(4.125f, 1.0f, 1.0f, 1.0f, 1.0f);
+    CutOpenings(shell, 0.25f, std::span(&window, 1));
+    ExpectNoProblems(shell);
+    EXPECT_NEAR(EastWallInside(shell, room), 18.0f - 1.0f, 1e-3f);
+}
+
+TEST(ShellOpenings, AnOpeningOutOfReachCutsNothing)
+{
+    const BrushMesh room = Shifted(BrushOps::MakeBox({ 4, 1.5f, 3 }), { 0, 1.5f, 0 });
+    ShellResult shell = GenerateShell(room, Rules(0.25f));
+    const ShellOpening far = EastOpening(7.0f, 0.0f, 0.0f, 1.2f, 2.2f);
+    CutOpenings(shell, 0.25f, std::span(&far, 1));
+    EXPECT_NEAR(EastWallInside(shell, room), 18.0f, 1e-3f);
+}
+
+TEST(ShellOpenings, ADoorThroughASharedWallIsCutOnce)
+{
+    const BrushMesh west = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { -2, 1.5f, 0 });
+    const BrushMesh east = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { 2.25f, 1.5f, 0 });
+    const ShellNeighbour eastNeighbour{ &east, 0.25f, true };
+    const ShellNeighbour westNeighbour{ &west, 0.25f, false };
+    ShellResult westShell = GenerateShell(west, Rules(0.25f), std::span(&eastNeighbour, 1));
+    ShellResult eastShell = GenerateShell(east, Rules(0.25f), std::span(&westNeighbour, 1));
+    const ShellOpening door = EastOpening(0.125f, 0.0f, 0.0f, 1.2f, 2.2f);
+    CutOpenings(westShell, 0.25f, std::span(&door, 1));
+    CutOpenings(eastShell, 0.25f, std::span(&door, 1));
+    ExpectNoProblems(westShell);
+    EXPECT_NEAR(EastWallInside(westShell, west), 6.0f * 3.0f - 1.2f * 2.2f, 1e-3f);
+    EXPECT_EQ(eastShell.Slabs.size(), 5u) << "the east room has no west wall of its own to cut";
+}
+
+TEST(ShellOpenings, AnOpeningOverAnEarlierOneIsRefused)
+{
+    const BrushMesh room = Shifted(BrushOps::MakeBox({ 4, 1.5f, 3 }), { 0, 1.5f, 0 });
+    ShellResult shell = GenerateShell(room, Rules(0.25f));
+    const ShellOpening openings[] = { EastOpening(4.125f, 1.0f, 0.0f, 1.0f, 1.0f),
+                                      EastOpening(4.125f, 1.2f, 0.3f, 1.0f, 1.0f) };
+    CutOpenings(shell, 0.25f, openings);
+    ASSERT_EQ(shell.Problems.size(), 1u);
+    EXPECT_EQ(shell.Problems.front().Kind, ShellProblemKind::OpeningRefused);
+    EXPECT_EQ(shell.Problems.front().Element, 1u);
+}

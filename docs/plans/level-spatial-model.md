@@ -913,6 +913,14 @@ of the real model, with spaces included from the start.
   record, transform and thickness are among its inputs, so moving either room
   rebuilds both. `shell.overlap` and `space.overlap` arrive with the step 5
   diagnostics.
+- Openings cut through `CarveAcrossSurface` with pierce, so a second opening
+  in a wall an earlier one already split still lands; every outline is first
+  clipped to the slab's uncut face, and one overlapping an earlier cut is
+  refused (`opening.refused`). An opening cuts a slab that faces along its
+  through axis and whose thickness, half a metre either way, holds its sill:
+  the prism is not infinite, or a door would cut every wall in line with it.
+  A full-height opening that would split a wall in two is refused by the
+  carve; it is a gap between two spaces, not an opening.
 
 ### M2: work live, and widen the vocabulary
 

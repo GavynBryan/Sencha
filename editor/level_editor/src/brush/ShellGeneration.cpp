@@ -1,7 +1,9 @@
 #include "ShellGeneration.h"
 
+#include "BrushFaceFrame.h"
 #include "BrushHalfEdge.h"
 #include "BrushValidation.h"
+#include "CarvePolygon.h"
 #include "CarveSurround.h"
 
 #include <math/geometry/3d/Plane.h>
@@ -336,7 +338,7 @@ ShellResult GenerateShell(const BrushMesh& volume, const ShellRules& rules,
                        "face " + std::to_string(f) + " is narrower than twice the wall thickness");
                 return result;
             }
-            ShellSlab slab{ std::move(*mesh), f, {} };
+            ShellSlab slab{ std::move(*mesh), f, faces[f].Inner.Normal, {} };
             for (std::uint32_t g = 0; g < slab.Mesh.Faces.size(); ++g)
                 if (slab.Mesh.Faces[g].Normal.Dot(faces[f].Inner.Normal) < -1.0f + kParallel)
                     slab.InnerFaces.push_back(g);
@@ -364,4 +366,88 @@ ShellResult GenerateShell(const BrushMesh& volume, const ShellRules& rules,
                                         std::to_string(normals.size()) + " planes meet at a corner" });
     }
     return result;
+}
+
+namespace
+{
+    constexpr float kOpeningReach = 0.5f;
+    // How square to a wall an opening must run to cut it.
+    constexpr float kFacingCosine = 0.9f;
+
+    std::vector<std::uint32_t> FacesFacing(const BrushMesh& mesh, const Vec3d& normal)
+    {
+        std::vector<std::uint32_t> faces;
+        for (std::uint32_t g = 0; g < mesh.Faces.size(); ++g)
+            if (mesh.Faces[g].Normal.Dot(normal) > 1.0f - kParallel)
+                faces.push_back(g);
+        return faces;
+    }
+
+    // The opening's outline on the face `frame` stands for, carried there along
+    // its through axis and wound counter-clockwise.
+    std::vector<Vec2d> OutlineOn(const BrushFaceFrame& frame, const ShellOpening& opening)
+    {
+        const Vec2d min{ -0.5f * opening.Width, 0.0f };
+        const Vec2d max{ 0.5f * opening.Width, opening.Height };
+        const Plane plane = Plane::FromNormalAndPoint(frame.Normal, frame.Origin);
+        const float rate = plane.Normal.Dot(opening.Through);
+        std::vector<Vec2d> outline;
+        for (const Vec2d& point : CarveShapeOutline(opening.Shape, min, max, opening.Params))
+        {
+            const Vec3d at = opening.Origin + opening.Across * point.X + opening.Up * point.Y;
+            outline.push_back(frame.ToFrame(at - opening.Through * (plane.SignedDistanceTo(at) / rate)));
+        }
+        if (PolygonSignedArea(outline) < 0.0f)
+            std::reverse(outline.begin(), outline.end());
+        return outline;
+    }
+}
+
+void CutOpenings(ShellResult& shell, float thickness, std::span<const ShellOpening> openings)
+{
+    for (ShellSlab& slab : shell.Slabs)
+    {
+        const std::vector<std::uint32_t> outer = FacesFacing(slab.Mesh, slab.Outward);
+        if (outer.size() != 1)
+            continue;
+        const BrushFaceFrameResult framed = FaceFrame(slab.Mesh, outer.front(), kPlanarTolerance);
+        if (!framed.Frame)
+            continue;
+        const BrushFaceFrame& frame = *framed.Frame;
+        // Every opening is clipped to the slab as it stood before any was cut,
+        // so the pieces an earlier cut left cover a later one exactly.
+        const std::vector<Vec2d> rim = frame.Outline;
+        const Plane outerPlane = Plane::FromNormalAndPoint(frame.Normal, frame.Origin);
+
+        bool cut = false;
+        for (std::uint32_t index = 0; index < openings.size(); ++index)
+        {
+            const ShellOpening& opening = openings[index];
+            if (std::abs(opening.Through.Dot(slab.Outward)) < kFacingCosine)
+                continue;
+            const float depth = -outerPlane.SignedDistanceTo(opening.Origin);
+            if (depth < -kOpeningReach || depth > thickness + kOpeningReach)
+                continue;
+            const std::vector<Vec2d> outline = ClipPolygonToConvex2D(OutlineOn(frame, opening), rim, kShareTolerance);
+            if (outline.size() < 3 || PolygonSignedArea(outline) <= kShareTolerance)
+                continue;
+
+            std::vector<FaceCorners> surface;
+            for (const std::uint32_t face : CoplanarSurface(slab.Mesh, FacesFacing(slab.Mesh, slab.Outward).front(),
+                                                            kPlanarTolerance))
+                surface.push_back(CornersOf(slab.Mesh, face));
+            CarveOutcome carved = CarveAcrossSurface(slab.Mesh, surface, frame, outline, true, kPlanarTolerance);
+            if (!carved.Ok())
+            {
+                shell.Problems.push_back({ ShellProblemKind::OpeningRefused, index,
+                                           std::string("opening ") + std::to_string(index)
+                                               + " could not be cut: " + CarveStatusText(carved.Status()) });
+                continue;
+            }
+            slab.Mesh = std::move(carved.Take().Mesh);
+            cut = true;
+        }
+        if (cut)
+            slab.InnerFaces = FacesFacing(slab.Mesh, slab.Outward * -1.0f);
+    }
 }

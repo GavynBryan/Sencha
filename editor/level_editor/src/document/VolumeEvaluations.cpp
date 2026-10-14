@@ -81,6 +81,39 @@ namespace
         return neighbours;
     }
 
+    // The openings whose sill is near enough to `self` to cut its walls.
+    std::vector<ShellOpening> OpeningsNear(const EditorScene& scene, const ShelledVolume& self,
+                                           std::vector<EntityId>* entities = nullptr)
+    {
+        constexpr float kReach = 0.51f;
+        const float margin = self.Thickness + kReach;
+        Aabb3d reach = WorldBounds(self.Record->Mesh, *self.World);
+        reach.Min = reach.Min - Vec3d{ margin, margin, margin };
+        reach.Max = reach.Max + Vec3d{ margin, margin, margin };
+        std::vector<ShellOpening> openings;
+        const World& components = scene.GetRegistry().Components;
+        for (const EntityId entity : scene.GetAllEntities())
+        {
+            const Opening* opening = components.TryGet<Opening>(entity);
+            const Transform3f* world = scene.TryGetWorldTransform(entity);
+            if (opening == nullptr || world == nullptr || !reach.Contains(world->Position))
+                continue;
+            ShellOpening cut;
+            cut.Origin = world->Position;
+            cut.Across = world->Rotation.RotateVector(Vec3d{ 1, 0, 0 });
+            cut.Up = world->Rotation.RotateVector(Vec3d{ 0, 1, 0 });
+            cut.Through = world->Rotation.RotateVector(Vec3d{ 0, 0, 1 });
+            cut.Width = opening->Width;
+            cut.Height = opening->Height;
+            cut.Shape = opening->Shape;
+            cut.Params.ArchRise = opening->ArchRise;
+            openings.push_back(cut);
+            if (entities != nullptr)
+                entities->push_back(entity);
+        }
+        return openings;
+    }
+
     BrushEvaluatedMesh SlabMesh(const BrushMesh& mesh, const ShellSlab& slab)
     {
         BrushEvaluatedMesh evaluated;
@@ -121,6 +154,19 @@ std::uint64_t VolumeEvaluationInputs(const EditorScene& scene, EntityId entity, 
     fold(*self);
     for (const ShelledVolume& neighbour : NeighboursOf(scene, *self))
         fold(neighbour);
+    std::vector<EntityId> openingEntities;
+    const std::vector<ShellOpening> openings = OpeningsNear(scene, *self, &openingEntities);
+    for (std::size_t i = 0; i < openings.size(); ++i)
+    {
+        const ShellOpening& opening = openings[i];
+        HashFnv1aValue(hash, scene.PersistentIdOf(openingEntities[i]).Value);
+        for (const Vec3d& axis : { opening.Origin, opening.Across, opening.Up })
+            HashFnv1aValue(hash, axis);
+        HashFnv1aValue(hash, opening.Width);
+        HashFnv1aValue(hash, opening.Height);
+        HashFnv1aValue(hash, opening.Shape);
+        HashFnv1aValue(hash, opening.Params.ArchRise);
+    }
     HashFnv1aValue(hash, scene.OpenFaceMaterial().Id.Value);
     HashFnv1aBytes(hash, scene.OpenFaceMaterial().Path.data(), scene.OpenFaceMaterial().Path.size());
     return hash;
@@ -164,6 +210,7 @@ const BrushEvaluated* VolumeEvaluations::Evaluate(const EditorScene& scene, Enti
     rules.Thickness = self->Thickness;
     rules.OpenFaceMaterial = scene.OpenFaceMaterial();
     ShellResult walls = GenerateShell(InWorld(record->Mesh, *world), rules, neighbours);
+    CutOpenings(walls, self->Thickness, OpeningsNear(scene, *self));
     entry.Problems = std::move(walls.Problems);
 
     for (ShellSlab& slab : walls.Slabs)
