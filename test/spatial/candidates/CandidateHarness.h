@@ -16,6 +16,7 @@
 #include <physics/PhysicsWorld.h>
 #include <physics/RigidBodyBinding.h>
 #include <physics/components/Collider.h>
+#include <spatial/sight/SightComponents.h>
 #include <world/RuntimeWorld.h>
 #include <world/transform/TransformComponents.h>
 
@@ -56,6 +57,8 @@ struct CandidateHarness
         schema.Add<WorldTransform>();
         schema.Add<NavigationGeometry>();
         schema.Add<GameplayTagContainer>();
+        schema.Add<SightSensor>();
+        schema.Add<SightTarget>();
         schema.Seal();
         return schema;
     }

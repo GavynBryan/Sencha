@@ -59,14 +59,14 @@ namespace candidate_operation
                     const bool slotWatches = visibility.Watcher == Observer::Slot;
                     const Vec3d& eyeBase = slotWatches ? point.Position : run.Position(row);
                     const Vec3d& targetBase = slotWatches ? run.Position(row) : point.Position;
-                    const SightObserver observer{ .Eye = eyeBase + kUp * sight.EyeHeight,
-                                                  .Forward = slotWatches ? point.Forward : Vec3d::Zero(),
-                                                  .HalfAngle = sight.HalfAngle,
-                                                  .Range = sight.Range };
                     const EntityId observerEntity = slotWatches ? point.Entity : run.Entity(row);
                     const EntityId targetEntity = slotWatches ? run.Entity(row) : point.Entity;
+                    const std::optional<SightObserver> observer =
+                        ObserverAt(run, observerEntity, eyeBase, slotWatches ? point.Forward : Vec3d::Zero(), sight);
+                    if (!observer)
+                        continue;
                     const std::optional<SightResult> result = TestSightCharged(
-                        run, observer, targetBase + kUp * sight.TargetHeight, targetEntity, observerEntity);
+                        run, *observer, TargetAt(run, targetEntity, targetBase, sight), targetEntity, observerEntity);
                     if (!result)
                     {
                         spent = true;

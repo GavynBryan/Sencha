@@ -101,16 +101,16 @@ namespace candidate_operation
                 for (std::uint32_t index = 0; index < observers && !spent; ++index)
                 {
                     const CandidatePoint point = run.SlotPoint(sight.Slot, index);
-                    const SightObserver observer{ .Eye = point.Position + kUp * sight.EyeHeight,
-                                                  .Forward = point.Forward,
-                                                  .HalfAngle = sight.HalfAngle,
-                                                  .Range = sight.Range };
+                    const std::optional<SightObserver> observer =
+                        ObserverAt(run, point.Entity, point.Position, point.Forward, sight);
+                    if (!observer)
+                        continue;
                     std::uint32_t samples = 0;
                     std::uint32_t seen = 0;
                     const bool finished = ForEachSample(start->Position, run.Route().Corners(), route.Spacing, [&](const Vec3d& sample) {
                         ++samples;
                         const std::optional<SightResult> result =
-                            TestSightCharged(run, observer, sample + kUp * sight.TargetHeight, run.Querier(), point.Entity);
+                            TestSightCharged(run, *observer, sample + kUp * sight.TargetHeight, run.Querier(), point.Entity);
                         if (!result)
                         {
                             spent = true;

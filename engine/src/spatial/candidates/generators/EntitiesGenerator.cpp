@@ -20,11 +20,6 @@ namespace candidate_operation
             bool AllResident = false;
         };
 
-        [[nodiscard]] bool Before(EntityId left, EntityId right)
-        {
-            return left.Index != right.Index ? left.Index < right.Index : left.Generation < right.Generation;
-        }
-
         CandidatePrepared PrepareEntities(const JsonValue& arguments, const CandidatePrepareContext& context,
                                           std::string_view subject, std::vector<std::string>& errors)
         {
@@ -66,15 +61,15 @@ namespace candidate_operation
                 if (selected.size() < room)
                 {
                     selected.push_back(entity);
-                    std::ranges::push_heap(selected, Before);
+                    std::ranges::push_heap(selected);
                     return;
                 }
                 overflowed = true;
-                if (room == 0 || !Before(entity, selected.front()))
+                if (room == 0 || !(entity < selected.front()))
                     return;
-                std::ranges::pop_heap(selected, Before);
+                std::ranges::pop_heap(selected);
                 selected.back() = entity;
-                std::ranges::push_heap(selected, Before);
+                std::ranges::push_heap(selected);
             };
             const auto visit = [&](auto& view) {
                 const auto transforms = view.template Read<WorldTransform>();
@@ -96,7 +91,7 @@ namespace candidate_operation
             else
                 run.TaggedEntities().ForEachChunkIn(run.Partitions(), visit);
 
-            std::ranges::sort_heap(selected, Before);
+            std::ranges::sort_heap(selected);
             const World& world = run.Entities();
             for (const EntityId entity : selected)
                 (void)run.Append(world.TryGet<WorldTransform>(entity)->Value.Position, entity);

@@ -63,6 +63,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/StaticMeshComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/ZoneLightmapComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/spatial/sight/SightComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"
@@ -83,11 +84,13 @@ if(NOT SENCHA_ENABLE_VULKAN)
         "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]ConsoleView\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]PerceptionPanel\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ConsoleView\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]PerceptionPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
@@ -393,6 +396,10 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     # traces by value and reaches the evaluator through an Engine accessor.
     "${SENCHA_ENGINE_INCLUDE_DIR}/spatial/candidates/*.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/spatial/sight/*.h"
+    # Perception: a game registers it, reads the World's PerceptionFrame, and
+    # draws through the debug-line channels.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/perception/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/debug/DebugLines.h"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)

@@ -657,6 +657,7 @@ private:
     std::unique_ptr<ApplicationQuitOperation> QuitOperation;
     VerbBindingToken ResumeBinding;
     VerbBindingToken QuitBinding;
+    std::vector<AuthoredQueryBindingToken> PerceptionQueryBindings;
     // Declared after the services it connects and the world it publishes into,
     // so destruction alone would give them back in the right order. Run states
     // that order explicitly anyway: OnShutdown, Disconnect, then reset.

@@ -111,4 +111,15 @@ check "spatial/sight/ reaches beyond physics and math" \
       '#include[[:space:]]*["<](app|graphics|render|net|navigation|movement|abilities|spatial/candidates)/' \
       "$ENGINE/include/spatial/sight" "$ENGINE/src/spatial/sight"
 
+
+# H. Perception reports what entities can sense and nothing else: it never
+# acts on what it reports, presents it, or reaches into the host. Its world
+# drawing goes through the neutral debug-line channels, which know no renderer.
+check "perception/ acts on, presents, or hosts what it senses" \
+      '#include[[:space:]]*["<](app/Engine\.h|graphics|render|net|movement|abilities|anim|controller|camera|ui|navigation|spatial/candidates)/?' \
+      "$ENGINE/include/perception" "$ENGINE/src/perception"
+check "debug lines reach the renderer" \
+      '#include[[:space:]]*["<](graphics|render)/' \
+      "$ENGINE/include/debug/DebugLines.h" "$ENGINE/src/debug/DebugLines.cpp"
+
 exit $status

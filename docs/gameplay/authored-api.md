@@ -149,8 +149,10 @@ The scope commits to the verb, query and event catalogs as one transaction:
 every batch is validated against its catalog before any catalog changes, so a
 provider whose query conflicts with another provider's publishes no verbs and
 no events either. The engine reads the installation errors after the hook and
-refuses to start on any; an editor reports them. Nothing is registered unless
-a hook declares it.
+refuses to start on any; an editor reports them. Apart from the engine's own
+vocabulary, which `InstallEngineVocabulary` declares into every runtime and
+editor World (its verbs, and the `perception.*` queries in
+`docs/plans/perception.md`), nothing is registered unless a hook declares it.
 
 ```cpp
 void TorchGame::OnStart(GameStartupContext&)

@@ -4,6 +4,9 @@
 #endif
 #include <app/OptionsPage.h>
 #include <app/EngineVerbs.h>
+#include <app/EngineVocabulary.h>
+#include <perception/PerceptionSystem.h>
+#include <perception/PerceptionVocabulary.h>
 #include <app/PauseMenu.h>
 #include <app/ShellVerbs.h>
 #include <authored/VerbBindingData.h>
@@ -69,6 +72,7 @@
 #include <debug/ImGuiDebugOverlay.h>
 #include <debug/NavigationPanel.h>
 #include <debug/NetStatsPanel.h>
+#include <debug/PerceptionPanel.h>
 #include <debug/TimingPanel.h>
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 #include <debug/RenderStatsPanel.h>
@@ -1110,7 +1114,7 @@ int Engine::Run(Game& game)
         RegisterAnimationConsole(ConsoleState->Registry(), entities);
         InstallAuthoredVocabulary(entities);
         VerbRegistry& verbs = *FindVerbRegistry(entities);
-        (void)DeclareEngineVerbs(verbs);
+        (void)InstallEngineVocabulary(entities);
 
         // Registration only: no entities, no engine state, nothing that starts
         // a service. The hook returns void, so what it got wrong is read off
@@ -1371,6 +1375,10 @@ int Engine::Run(Game& game)
             VerbDispatcherState->Bind<&InvokeAnimCancel>(verbs.Find(kAnimCancelVerb), *AnimationOperations);
     }
 
+    // Answered whether or not the game registers perception: a World nobody
+    // scans has an empty frame, which answers Unavailable.
+    PerceptionQueryBindings = BindPerceptionQueries(*QueryDispatcherState, RuntimeWorldState->Entities());
+
     // Every host animates: an entity that names a rig plays it, in a process whose
     // game registered nothing for it. Before the game's hook, so a game orders its
     // request producers against these; poses only where a window presents them.
@@ -1484,6 +1492,7 @@ int Engine::Run(Game& game)
     QuitBinding.Reset();
     AnimRequestBinding.Reset();
     AnimCancelBinding.Reset();
+    PerceptionQueryBindings.clear();
     ResumeOperation.reset();
     QuitOperation.reset();
     AnimationOperations.reset();
@@ -1647,6 +1656,9 @@ void Engine::CreateDebugOverlay()
     if (const NavigationSystem* navigation = EngineSystems.Get<NavigationSystem>();
         navigation != nullptr && RuntimeWorldState != nullptr)
         overlay->AddPanel<NavigationPanel>(*RuntimeWorldState, *navigation);
+    if (PerceptionSystem* perception = EngineSystems.Get<PerceptionSystem>();
+        perception != nullptr && RuntimeWorldState != nullptr)
+        overlay->AddPanel<PerceptionPanel>(RuntimeWorldState->Entities(), *perception);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     overlay->AddPanel<RenderStatsPanel>(
         ActiveProfileMode, RenderStatsRing, ConsoleState->Registry());

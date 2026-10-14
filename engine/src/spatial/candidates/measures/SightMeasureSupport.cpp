@@ -1,5 +1,9 @@
 #include "SightMeasureSupport.h"
 
+#include <ecs/World.h>
+#include <spatial/sight/SightPlacement.h>
+#include <world/transform/TransformComponents.h>
+
 namespace candidate_operation
 {
     std::vector<DataFieldSchema> SightFields()
@@ -19,6 +23,36 @@ namespace candidate_operation
         sight.EyeHeight = FloatOr(arguments, "eye_height", 1.6f);
         sight.TargetHeight = FloatOr(arguments, "target_height", 1.0f);
         return sight;
+    }
+
+    std::optional<SightObserver> ObserverAt(const CandidateRun& run, EntityId entity, const Vec3d& base,
+                                            const Vec3d& forward, const SightArguments& sight)
+    {
+        const World& world = run.Entities();
+        if (entity.IsValid() && world.IsRegistered<SightSensor>())
+        {
+            const SightSensor* sensor = world.TryGet<SightSensor>(entity);
+            const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
+            if (sensor != nullptr && transform != nullptr)
+                return PlaceSightObserver(*sensor, transform->Value);
+        }
+        return SightObserver{ .Eye = base + kUp * sight.EyeHeight,
+                              .Forward = forward,
+                              .HalfAngle = sight.HalfAngle,
+                              .Range = sight.Range };
+    }
+
+    Vec3d TargetAt(const CandidateRun& run, EntityId entity, const Vec3d& base, const SightArguments& sight)
+    {
+        const World& world = run.Entities();
+        if (entity.IsValid() && world.IsRegistered<SightTarget>())
+        {
+            const SightTarget* target = world.TryGet<SightTarget>(entity);
+            const WorldTransform* transform = world.TryGet<WorldTransform>(entity);
+            if (target != nullptr && transform != nullptr)
+                return PlaceSightTarget(*target, transform->Value);
+        }
+        return base + kUp * sight.TargetHeight;
     }
 
     std::optional<SightResult> TestSightCharged(CandidateRun& run,

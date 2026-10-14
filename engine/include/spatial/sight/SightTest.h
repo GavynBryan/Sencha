@@ -24,6 +24,9 @@ enum class SightOutcome : std::uint8_t
     OutOfRange,
     OutsideCone,
     Blocked,
+    // Range and cone passed but the caller's ray allowance was spent. TestSight
+    // never returns it; callers that cap rays record it.
+    Untested,
 };
 
 struct SightResult

@@ -8,12 +8,14 @@
 #include <app/Engine.h>
 #include <app/GameContexts.h>
 #include <app/GameModule.h>
+#include <core/console/ConsoleService.h>
 #include <controller/ControllerRegistration.h>
 #include <controller/LookIntegrationSystem.h>
 #include <input/InputActionResolveSystem.h>
 #include <input/InputRegistration.h>
 #include <movement/MovementRegistration.h>
 #include <participant/ParticipantLifecycle.h>
+#include <perception/PerceptionRegistration.h>
 #include <physics/PhysicsRegistration.h>
 #include <world/RuntimeWorld.h>
 
@@ -89,6 +91,8 @@ void FpsGame::OnStart(GameStartupContext&)
 void FpsGame::OnRegisterSystems(SystemRegisterContext& ctx)
 {
     RegisterPhysics(ctx.Schedule);
+    // Sight answers occlusion through the physics world, so it follows it.
+    RegisterPerception(ctx.Schedule, &GetEngine().Console().Registry());
     // After physics, which owns the shape cache the loaded content's collision
     // goes into and the movers the streaming correction writes through.
     Session().RegisterSystems(ctx);

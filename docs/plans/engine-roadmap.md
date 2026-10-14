@@ -293,9 +293,11 @@ Each item states its mechanism, version, the seam it builds on, and its gate.
    across a zone boundary.
 
 7. **AI substrate (v1.0 minimal, v2.0 grown).** A perception system (sight cones via
-   `PhysicsQueries` raycasts, hearing from event queues) writes gameplay tags and facts;
-   behavior selection is data (utility and consideration tables) producing AbilityKit
-   intents. No behavior-tree object model and no per-entity behavior object, consistent
+   `PhysicsQueries` raycasts, hearing from staged stimuli) publishes each tick's
+   observations and writes no gameplay state; authored behavior reads them through the
+   engine's `perception.*` queries, and memory, if wanted, is a separate consumer
+   (`docs/plans/perception.md`). Behavior selection is data (utility and consideration
+   tables) producing AbilityKit intents. No behavior-tree object model and no per-entity behavior object, consistent
    with the posture recorded in `docs/gameplay/abilitykit.md`. Gate: an enemy authored
    entirely as data patrols, perceives the player, and attacks through an ability.
 

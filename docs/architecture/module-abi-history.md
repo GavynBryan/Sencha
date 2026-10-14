@@ -237,3 +237,22 @@ dependency that refused it), as does `AssetSystem::Commit`.
 `AssetSystem::RetryStandIns` takes the async task queue, and `StageReload` and
 `PathsById` are new. `RegisterAssetKind` takes a stand-in only for a loader that
 can reload.
+
+## v26
+
+**Spatial queries and perception.** `Engine` holds a `CandidateEvaluator`
+(`TryCandidates`) and the perception query bindings, so its layout moved.
+`PhysicsQueries::Raycast` gains a filtered overload taking `PhysicsQueryFilter`.
+`spatial/candidates/`, `spatial/sight/`, `perception/` and `debug/DebugLines.h`
+join the module-facing headers.
+
+**Engine components.** `SightSensor` and `SightTarget` join the engine's
+component set, after the animation components, which moves no existing
+component's dense index or wire key.
+
+**Entity order.** `EntityId` gains a defaulted three-way comparison (index, then
+generation). Its layout is unchanged.
+
+**Engine vocabulary.** `InstallEngineVocabulary(World&)` declares the engine's
+verbs and the `perception.*` queries; a host that called `DeclareEngineVerbs`
+alone sees no perception queries.
