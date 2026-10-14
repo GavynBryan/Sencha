@@ -1,6 +1,7 @@
 #pragma once
 
 #include "authoring/AnimationScenario.h"
+#include "preview/FixedTickPreview.h"
 
 #include <anim/AnimContentSystem.h>
 #include <anim/AnimDecisionLog.h>
@@ -127,15 +128,13 @@ public:
     bool Open(AnimationScenario scenario);
     void Close();
 
-    void Restart();
-    void Step();
-    // Restarts first when `tick` is behind the current tick.
-    void RunTo(AnimTick tick);
-    // Speed scales how quickly fixed ticks are scheduled, never their length.
-    void Advance(double wallSeconds);
-    void Play() { Playing = true; }
-    void Pause();
-    [[nodiscard]] bool SetSpeed(double speed);
+    void Restart() { Clock.Restart(); }
+    void Step() { Clock.Step(); }
+    void RunTo(AnimTick tick) { Clock.RunTo(tick); }
+    void Advance(double wallSeconds) { Clock.Advance(wallSeconds, Working.TickRate); }
+    void Play() { Clock.Play(); }
+    void Pause() { Clock.Pause(); }
+    [[nodiscard]] bool SetSpeed(double speed) { return Clock.SetSpeed(speed); }
 
     // Live edits, applied at NextTick().
     void SetFact(const std::string& fact, AnimationScenarioValue value);
@@ -167,10 +166,10 @@ public:
     void VocabularyChanged();
 
     [[nodiscard]] bool IsOpen() const { return Preview != nullptr; }
-    [[nodiscard]] bool IsPlaying() const { return Playing; }
-    [[nodiscard]] double Speed() const { return PlaybackSpeed; }
-    [[nodiscard]] AnimTick Tick() const { return CurrentTick; }
-    [[nodiscard]] AnimTick NextTick() const { return CurrentTick + 1; }
+    [[nodiscard]] bool IsPlaying() const { return Clock.IsPlaying(); }
+    [[nodiscard]] double Speed() const { return Clock.Speed(); }
+    [[nodiscard]] AnimTick Tick() const { return Clock.Now(); }
+    [[nodiscard]] AnimTick NextTick() const { return Clock.NextTick(); }
     [[nodiscard]] double TickSeconds() const;
     [[nodiscard]] const AnimationScenario& Scenario() const { return Working; }
     // Told after every edit to the scenario; not when it is opened or replaced.
@@ -186,7 +185,7 @@ public:
     [[nodiscard]] const AnimDecisionLog* DecisionLog() const;
     [[nodiscard]] const AnimSelectorState* Selection() const;
     [[nodiscard]] const AnimContentState* Content() const;
-    [[nodiscard]] const std::deque<AnimationPreviewTickRecord>& History() const { return Records; }
+    [[nodiscard]] const std::deque<AnimationPreviewTickRecord>& History() const { return Clock.History(); }
     // The rig's diagnostics, then the scenario's, deduplicated.
     [[nodiscard]] std::vector<AnimDiagnostic> Problems() const;
     [[nodiscard]] const std::vector<AnimDiagnostic>& ScenarioProblems() const { return ScenarioIssues; }
@@ -209,7 +208,7 @@ public:
     [[nodiscard]] const World* SimulationWorld() const { return Preview.get(); }
     [[nodiscard]] const VerbRegistry* Verbs() const;
 
-    static constexpr std::size_t kHistoryCapacity = 3600;
+    static constexpr std::size_t kHistoryCapacity = FixedTickPreview<AnimationPreviewTickRecord>::kHistoryCapacity;
 
 private:
     // Accepts every invocation of one verb and records it into the running tick.
@@ -230,12 +229,11 @@ private:
 
     static bool ReadInput(const World& world, EntityId entity, const void* context, std::uint32_t& out);
 
+    bool Rebuild();
     void BuildWorld();
     void DropWorld();
     AnimationPreviewMovementRecord StepMovement(AnimTick tick);
-    // Restarts and runs back to the current tick.
-    void Replay();
-    void RunTick(AnimTick tick);
+    AnimationPreviewTickRecord RunTick(AnimTick tick);
     AnimationPreviewActionOutcome Apply(const AnimationScenarioAction& action, std::size_t index,
                                         AnimTick tick);
     struct Refusal
@@ -259,8 +257,6 @@ private:
 
     AnimationScenario Working;
     std::function<void()> ScenarioObserver;
-    // Lets several edits made while paused on one tick share one branch.
-    std::optional<AnimTick> BranchedAt;
 
     std::unique_ptr<World> Preview;
     // Declared after the World and before the tokens: teardown unbinds, then
@@ -283,18 +279,16 @@ private:
     // Points at a disposable copy while PreviewNextTick evaluates.
     const InputTable* ActiveInputs = &Inputs;
 
-    AnimTick CurrentTick = 0;
     std::uint64_t LogWritten = 0;
-    std::deque<AnimationPreviewTickRecord> Records;
     std::vector<AnimDiagnostic> ScenarioIssues;
-
-    bool Playing = false;
-    double PlaybackSpeed = 1.0;
-    double PendingTicks = 0.0;
     bool FromWire = false;
 
     // Torn down before the World, whose movers they hold.
     std::unique_ptr<PhysicsWorld> Physics;
     std::unique_ptr<CharacterMoverPool> Movers;
     StoragePartitionSet AllPartitions;
+
+    FixedTickPreview<AnimationPreviewTickRecord> Clock{ { .Rebuild = [this] { return Rebuild(); },
+                                                          .CanRun = [this] { return Preview != nullptr && Bound != nullptr; },
+                                                          .Run = [this](AnimTick tick) { return RunTick(tick); } } };
 };

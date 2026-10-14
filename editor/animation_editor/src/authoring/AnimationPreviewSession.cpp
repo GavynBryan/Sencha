@@ -38,8 +38,6 @@
 
 namespace
 {
-    constexpr int kMaxTicksPerAdvance = 8;
-
     std::string ValueText(const AuthoredValue& value, const GameplayTagRegistry* tags)
     {
         const auto list = [&](std::string_view open, std::string_view close) {
@@ -248,13 +246,12 @@ void AnimationPreviewSession::Close()
 {
     DropWorld();
     Bound = nullptr;
-    Records.clear();
+    Clock.Close();
     ScenarioIssues.clear();
     Inputs.clear();
     Slots.clear();
     Participants.clear();
     Working = AnimationScenario{};
-    Playing = false;
 }
 
 double AnimationPreviewSession::TickSeconds() const
@@ -265,9 +262,8 @@ double AnimationPreviewSession::TickSeconds() const
 void AnimationPreviewSession::ReplaceScenario(AnimationScenario scenario)
 {
     Working = std::move(scenario);
-    BranchedAt.reset();
-    if (Preview != nullptr)
-        Replay();
+    Clock.ForgetBranch();
+    Clock.Replay();
 }
 
 void AnimationPreviewSession::ScenarioChanged()
@@ -433,80 +429,26 @@ void AnimationPreviewSession::BuildWorld()
     Bound = bound;
 }
 
-void AnimationPreviewSession::Restart()
+bool AnimationPreviewSession::Rebuild()
 {
-    Records.clear();
     ScenarioIssues.clear();
     Inputs.clear();
-    CurrentTick = 0;
-    BranchedAt.reset();
-    PendingTicks = 0.0;
     BuildWorld();
     if (Bound == nullptr)
-        return;
-
+        return false;
     for (const auto& [fact, value] : Working.Inputs)
     {
         if (std::optional<Refusal> refusal =
                 ApplyFact(AnimationScenarioActionKind::SetFact, fact, value, Inputs))
             Problem(refusal->Code, std::format("$.inputs.{}", fact), refusal->Message);
     }
-    RunTick(0);
-}
-
-void AnimationPreviewSession::Step()
-{
-    if (Preview == nullptr || Bound == nullptr)
-        return;
-    BranchedAt.reset();
-    RunTick(CurrentTick + 1);
-}
-
-void AnimationPreviewSession::RunTo(AnimTick tick)
-{
-    if (Preview == nullptr)
-        return;
-    if (tick < CurrentTick)
-        Restart();
-    while (Bound != nullptr && CurrentTick < tick)
-        Step();
-}
-
-void AnimationPreviewSession::Advance(double wallSeconds)
-{
-    if (!Playing || Bound == nullptr)
-        return;
-    PendingTicks += wallSeconds * PlaybackSpeed * static_cast<double>(Working.TickRate);
-    // Drop ticks past the cap rather than spiral to catch up with a stall.
-    PendingTicks = std::min(PendingTicks, static_cast<double>(kMaxTicksPerAdvance));
-    while (PendingTicks >= 1.0)
-    {
-        PendingTicks -= 1.0;
-        Step();
-    }
-}
-
-void AnimationPreviewSession::Pause()
-{
-    Playing = false;
-    PendingTicks = 0.0;
-}
-
-bool AnimationPreviewSession::SetSpeed(double speed)
-{
-    if (!(speed > 0.0) || speed > 8.0)
-        return false;
-    PlaybackSpeed = speed;
     return true;
 }
 
 void AnimationPreviewSession::Schedule(AnimationScenarioAction action)
 {
-    if (!BranchedAt || *BranchedAt != CurrentTick)
-    {
-        Working.TruncateAfter(CurrentTick);
-        BranchedAt = CurrentTick;
-    }
+    if (Clock.Branch())
+        Working.TruncateAfter(Clock.Now());
     action.Tick = NextTick();
     Working.Append(std::move(action));
     ScenarioChanged();
@@ -546,20 +488,12 @@ void AnimationPreviewSession::CancelRequest(const std::string& participant, cons
     Schedule(std::move(action));
 }
 
-void AnimationPreviewSession::Replay()
-{
-    const AnimTick at = CurrentTick;
-    Restart();
-    RunTo(at);
-}
-
 void AnimationPreviewSession::SetRole(AnimationPreviewRole role)
 {
     if (Working.Role == role)
         return;
     Working.Role = role;
-    if (Preview != nullptr)
-        Replay();
+    Clock.Replay();
     ScenarioChanged();
 }
 
@@ -568,8 +502,7 @@ void AnimationPreviewSession::SetRequestsFromWire(bool fromWire)
     if (FromWire == fromWire)
         return;
     FromWire = fromWire;
-    if (Preview != nullptr)
-        Replay();
+    Clock.Replay();
 }
 
 void AnimationPreviewSession::SetMovement(std::optional<AnimationScenarioMovement> movement)
@@ -577,8 +510,7 @@ void AnimationPreviewSession::SetMovement(std::optional<AnimationScenarioMovemen
     if (Working.Movement == movement)
         return;
     Working.Movement = std::move(movement);
-    if (Preview != nullptr)
-        Replay();
+    Clock.Replay();
     ScenarioChanged();
 }
 
@@ -636,8 +568,7 @@ void AnimationPreviewSession::SetRecorder(std::string_view verb, bool attached)
         Working.Recorders.emplace_back(verb);
     else
         Working.Recorders.erase(it);
-    if (Preview != nullptr)
-        Replay();
+    Clock.Replay();
     ScenarioChanged();
 }
 
@@ -701,8 +632,7 @@ bool AnimationPreviewSession::DeclareTag(const std::string& name, std::string* e
         return false;
     }
     Working.DeclaredTags.push_back(name);
-    if (Preview != nullptr)
-        Replay();
+    Clock.Replay();
     ScenarioChanged();
     return true;
 }
@@ -713,8 +643,7 @@ bool AnimationPreviewSession::UndeclareTag(const std::string& name)
     if (it == Working.DeclaredTags.end())
         return false;
     Working.DeclaredTags.erase(it);
-    if (Preview != nullptr)
-        Replay();
+    Clock.Replay();
     ScenarioChanged();
     return true;
 }
@@ -855,9 +784,8 @@ AnimationPreviewActionOutcome AnimationPreviewSession::Apply(const AnimationScen
     return outcome;
 }
 
-void AnimationPreviewSession::RunTick(AnimTick tick)
+AnimationPreviewTickRecord AnimationPreviewSession::RunTick(AnimTick tick)
 {
-    CurrentTick = tick;
     AnimationPreviewTickRecord record;
     record.Tick = tick;
 
@@ -939,9 +867,7 @@ void AnimationPreviewSession::RunTick(AnimTick tick)
         LogWritten = log->Written;
     }
 
-    Records.push_back(std::move(record));
-    while (Records.size() > kHistoryCapacity)
-        Records.pop_front();
+    return record;
 }
 
 std::vector<std::uint32_t> AnimationPreviewSession::PreviewNextTick()
@@ -988,8 +914,7 @@ std::vector<std::vector<AnimRuleVerdict>> AnimationPreviewSession::ExplainNextTi
 
 void AnimationPreviewSession::VocabularyChanged()
 {
-    if (Preview != nullptr)
-        Replay();
+    Clock.Replay();
 }
 
 void AnimationPreviewSession::Rebind()
@@ -1018,7 +943,7 @@ bool AnimationPreviewSession::FactsExact() const
     if (Preview == nullptr || Bound == nullptr || !SubjectEntity.IsValid())
         return false;
     const AnimFactHistory* history = Preview->TryGet<AnimFactHistory>(SubjectEntity);
-    return history != nullptr && AreAnimDerivedFactsExact(*Bound, *history, CurrentTick, TickSeconds());
+    return history != nullptr && AreAnimDerivedFactsExact(*Bound, *history, Clock.Now(), TickSeconds());
 }
 
 const AnimRequestSet* AnimationPreviewSession::Requests() const
