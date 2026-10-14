@@ -80,7 +80,7 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
     {
         Tools = std::make_unique<ToolRegistry>(*Context);
         Tools->Register(std::make_unique<SelectTool>());
-        Tools->Register(std::make_unique<BrushTool>());
+        Tools->Register(std::make_unique<BrushTool>(inputs.Level));
         Tools->Register(std::make_unique<SpaceTool>(inputs.Level));
         Tools->Register(std::make_unique<EdgeCutTool>());
         Tools->Register(std::make_unique<FaceCarveTool>());

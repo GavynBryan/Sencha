@@ -1080,6 +1080,17 @@ conflict instead.
   (`ResolveReparentTargets`) moved out of the commands, which the designer's
   verbs still commit through; the operations and the commands share them. A
   copy claims the next free name, so space names stay unique.
+- The brush operations name a face by the world direction it looks toward
+  (`brush.extrude`) or by a point on it (`brush.carve`), never by index: an
+  index is opaque to a client and changes with every edit. They reshape solid
+  brushes only and refuse a space, whose faces move with `space.resize_face`.
+  `brush.clip` and the clip tool judge a cut through one kernel
+  (`brush/BrushClipCut`). `brush.carve` is for brushes (a detached wall, a
+  floor); a door in a generated wall stays `opening.create`.
+- The Brush tool commits its pending brush through the level target, as the
+  Space tool does: the commit adopts the brush the designer sees as a created
+  entity. Undo no longer restores the selection from before the drag; the
+  handle observer only drops the brush from it.
 
 ### M3: analysis depth
 

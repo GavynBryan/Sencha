@@ -12,6 +12,7 @@
 
 class DataAssetTypeRegistry;
 class DataSchemaRegistry;
+struct BrushMesh;
 struct DataSchema;
 
 // A project's blockout conventions: the authoring choices generated geometry
@@ -59,3 +60,7 @@ struct LevelConventionsLookup
 // The typed conventions from values with every field filled, as a lookup or
 // the schema's normalizer gives them.
 [[nodiscard]] LevelConventions LevelConventionsFrom(const JsonValue& values);
+
+// Floors take the floor material, ceilings the ceiling's, the rest the walls';
+// a role the conventions leave unset leaves the face as it is.
+void PaintByConvention(BrushMesh& mesh, const LevelConventions& conventions);

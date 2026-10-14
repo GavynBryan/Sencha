@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tools/ITool.h"
+#include "brush/BrushClipCut.h"
 #include "brush/BrushMesh.h"
 #include "viewport/ViewportId.h"
 
@@ -14,13 +15,6 @@
 #include <optional>
 #include <string>
 #include <vector>
-
-enum class ClipMode : std::uint8_t
-{
-    KeepFront, // the side the plane's normal points to stays
-    KeepBack,
-    Split, // both stay, as two brushes
-};
 
 // Clip lifecycle. The targets, the gesture and the clip plane are meaningful
 // exactly while Phase != Idle, and the CommandStack pending-edit scope is open
@@ -92,24 +86,12 @@ public:
     void RevertAll(ToolContext& ctx);
 
 private:
-    enum class Outcome : std::uint8_t
-    {
-        Missed,  // the plane does not cross the brush; untouched
-        Valid,   // both halves validate
-        Invalid, // a half did not validate: blocks the whole commit
-    };
-
     struct Target
     {
         EntityId Entity = {};
         BrushMesh Original;
         Transform3f Transform = Transform3f::Identity();
-        Outcome Result = Outcome::Missed;
-        BrushMesh Front;
-        BrushMesh Back;
-        // The stage that refused, when Result is Invalid: what the readout says
-        // instead of a generic failure.
-        std::string Why;
+        ClipCut Cut;
     };
 
     // What a press took hold of: an endpoint handle, or nothing.

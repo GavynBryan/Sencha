@@ -43,11 +43,6 @@ namespace
 {
 constexpr float kAdjustHandleHitPixels = 11.0f;
 
-// How far a face may bow out of its own plane and still be a 2D workspace,
-// relative to its size. Lives here rather than in the mesh layer, which has no
-// business reading editor settings.
-constexpr float kCarvePlanarTolerance = 1e-3f;
-
 // What the mesh treats as coincident, which is what bounds how finely an arch
 // can be sampled before its chords weld away.
 constexpr float kCarveWeldTolerance = 1e-4f;

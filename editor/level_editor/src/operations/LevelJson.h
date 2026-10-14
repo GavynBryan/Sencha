@@ -4,6 +4,7 @@
 #include <core/metadata/DataSchema.h>
 #include <math/Vec.h>
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -26,3 +27,7 @@
 // plane, north being -Z and east +X: n, ne, e, se, s, sw, w, nw, or none.
 [[nodiscard]] std::string_view CompassBearing(const Vec3d& from, const Vec3d& to);
 [[nodiscard]] DataFieldSchema CompassBearingField(std::string key, std::string summary);
+
+// A world axis by name: north (-Z), south, east (+X), west, up (+Y) or down.
+[[nodiscard]] std::optional<Vec3d> AxisDirection(std::string_view name);
+[[nodiscard]] DataFieldSchema AxisDirectionField(std::string key, std::string summary);

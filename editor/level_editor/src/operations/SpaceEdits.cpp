@@ -19,20 +19,6 @@ namespace
 {
     constexpr float kSmallest = 0.1f;
 
-    // Floors take the floor material, ceilings the ceiling's, the rest the walls'.
-    void PaintByConvention(BrushMesh& mesh, const LevelConventions& conventions)
-    {
-        for (BrushFace& face : mesh.Faces)
-        {
-            const float up = BrushComputeFaceNormal(mesh, face).Y;
-            const std::optional<AssetRef>& material = up < -0.7f ? conventions.FloorMaterial
-                : up > 0.7f                                       ? conventions.CeilingMaterial
-                                                                  : conventions.WallMaterial;
-            if (material)
-                face.Material.Material = *material;
-        }
-    }
-
     bool OnlyMoves(const Transform3f& before, const Transform3f& after)
     {
         const auto same = [](const auto& a, const auto& b) {

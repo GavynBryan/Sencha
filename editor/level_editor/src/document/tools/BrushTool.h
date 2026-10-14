@@ -13,9 +13,13 @@
 
 #include <vector>
 
+class LevelTarget;
+
 class BrushTool : public ITool
 {
 public:
+    explicit BrushTool(LevelTarget& level);
+
     // Brush creation lifecycle. Invariants: State == Pending exactly while
     // SetPending's scene entity (PendingEntity) is alive and
     // PendingPreviousSelection holds the selection to restore on cancel.
@@ -107,6 +111,7 @@ public:
     void CancelPending(ToolContext& ctx);
 
 private:
+    LevelTarget& Level;
     BrushToolState State = BrushToolState::Idle;
     PendingBrush Pending;
     EntityId PendingEntity = {};

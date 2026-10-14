@@ -152,42 +152,6 @@ namespace
         return entry;
     }
 
-    std::optional<Vec3d> Compass(std::string_view name)
-    {
-        if (name == "north") return Vec3d{ 0, 0, -1 };
-        if (name == "south") return Vec3d{ 0, 0, 1 };
-        if (name == "east") return Vec3d{ 1, 0, 0 };
-        if (name == "west") return Vec3d{ -1, 0, 0 };
-        if (name == "up") return Vec3d{ 0, 1, 0 };
-        if (name == "down") return Vec3d{ 0, -1, 0 };
-        return std::nullopt;
-    }
-
-    DataFieldSchema CompassField(std::string key, std::string summary)
-    {
-        return DataField::Enum(std::move(key), {}, std::move(summary),
-                               { { "north", "North", "-Z" }, { "south", "South", "+Z" }, { "east", "East", "+X" },
-                                 { "west", "West", "-X" }, { "up", "Up", "+Y" }, { "down", "Down", "-Y" } });
-    }
-
-    // The face of `entity`'s volume whose outward normal is nearest `direction`.
-    std::optional<std::uint32_t> FaceToward(const EditorScene& scene, EntityId entity, const Vec3d& direction)
-    {
-        const BrushMesh* mesh = scene.TryGetBrushMesh(entity);
-        const Transform3f* world = scene.TryGetWorldTransform(entity);
-        if (mesh == nullptr || world == nullptr)
-            return std::nullopt;
-        std::optional<std::uint32_t> best;
-        float bestDot = 0.7f;
-        for (std::uint32_t f = 0; f < mesh->Faces.size(); ++f)
-            if (const float dot = WorldFaceOf(scene, entity, f)->Normal.Dot(direction); dot > bestDot)
-            {
-                best = f;
-                bestDot = dot;
-            }
-        return best;
-    }
-
     EditorOperationEntry Move(LevelTarget& level)
     {
         EditorOperationEntry entry;
@@ -253,7 +217,7 @@ namespace
             "pulls it in with a negative one. Its walls follow.";
         entry.Definition.Parameters = DataField::Record({}, {}, {}, {
             DataField::Field("subject", DataFieldKind::String, {}, "a space's id or '@<name>'"),
-            CompassField("face", "the face looking this way"),
+            AxisDirectionField("face", "the face looking this way"),
             DataField::Field("distance", DataFieldKind::Float, {}, "metres outward; negative pulls it in"),
         });
         entry.Definition.Result = MutationResultSchema();
@@ -266,7 +230,7 @@ namespace
                 const EntityId space = subject.Entities.front();
                 if (!scene.GetRegistry().Components.HasComponent<Space>(space))
                     return EditorOperationOutcome::Refused("space.not_space", "it is not a space");
-                const Vec3d direction = *Compass(arguments.Find("face")->AsString());
+                const Vec3d direction = *AxisDirection(arguments.Find("face")->AsString());
                 const std::optional<std::uint32_t> face = FaceToward(scene, space, direction);
                 if (!face)
                     return EditorOperationOutcome::Refused("space.no_face", "no face looks that way");

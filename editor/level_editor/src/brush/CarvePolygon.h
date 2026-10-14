@@ -18,6 +18,11 @@
 // not land exactly flush still welds rather than leaving a permanent sliver.
 inline constexpr float kCarveSnapTolerance = 2e-4f;
 
+// How far a face may bow out of its own plane and still be carved as a 2D
+// workspace, relative to its size: what the carve tool and the carve
+// operation hold a face to.
+inline constexpr float kCarvePlanarTolerance = 1e-3f;
+
 struct CarveSuccess
 {
     BrushMesh Mesh;

@@ -1,5 +1,7 @@
 #include "LevelConventions.h"
 
+#include "brush/BrushMesh.h"
+
 #include "project/ProjectFiles.h"
 
 #include <assets/data/DataAssetTypeRegistry.h>
@@ -159,4 +161,17 @@ LevelConventions LevelConventionsFrom(const JsonValue& values)
     conventions.FloorMaterial = Reference(values, "floor_material");
     conventions.CeilingMaterial = Reference(values, "ceiling_material");
     return conventions;
+}
+
+void PaintByConvention(BrushMesh& mesh, const LevelConventions& conventions)
+{
+    for (BrushFace& face : mesh.Faces)
+    {
+        const float up = BrushComputeFaceNormal(mesh, face).Y;
+        const std::optional<AssetRef>& material = up < -0.7f ? conventions.FloorMaterial
+            : up > 0.7f                                       ? conventions.CeilingMaterial
+                                                              : conventions.WallMaterial;
+        if (material)
+            face.Material.Material = *material;
+    }
 }

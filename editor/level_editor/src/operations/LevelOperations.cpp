@@ -1,5 +1,6 @@
 #include "LevelOperations.h"
 
+#include "BrushOperations.h"
 #include "LevelChanges.h"
 #include "LevelDrafts.h"
 #include "LevelMutations.h"
@@ -21,6 +22,7 @@ std::vector<EditorOperationEntry> LevelOperations(LevelTarget& level, EditorOper
     std::vector<EditorOperationEntry> entries = LevelQueryOperations(level);
     Append(entries, LevelMutationOperations(level));
     Append(entries, SpaceOperations(level));
+    Append(entries, BrushOperations(level));
     Append(entries, LevelDraftOperations(level, operations));
     Append(entries, LevelChangeOperations(level));
     return entries;

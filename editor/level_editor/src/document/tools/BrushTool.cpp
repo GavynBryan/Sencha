@@ -10,11 +10,12 @@
 #include "commands/CommandStack.h"
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"
-#include "document/commands/DeferredCreateBrushCommand.h"
+#include "document/EntityChangeSet.h"
 #include "document/interactions/BrushCreateDragInteraction.h"
 #include "document/interactions/BrushCreationPlane.h"
 #include "resources/ActiveResources.h"
 #include "meshedit/MeshEditService.h"
+#include "operations/LevelTarget.h"
 #include "render/PreviewBuffer.h"
 #include "selection/commands/SelectCommand.h"
 #include "selection/SelectionService.h"
@@ -109,6 +110,11 @@ namespace
         for (BrushFace& face : mesh.Faces)
             face.Material.Material = material;
     }
+}
+
+BrushTool::BrushTool(LevelTarget& level)
+    : Level(level)
+{
 }
 
 std::string_view BrushTool::GetId() const
@@ -328,16 +334,18 @@ void BrushTool::CommitPending(ToolContext& ctx)
     }
 
     const EntityId entity = PendingEntity;
-    EntitySnapshot snapshot = ctx.Document.CaptureEntity(entity);
-    std::vector<SelectableRef> beforeSelection = std::move(PendingPreviousSelection);
     ctx.Commands.ClosePendingEdit();
     State = BrushToolState::Idle;
     Pending = {};
     PendingEntity = {};
     PendingPreviousSelection.clear();
     ctx.Preview.Clear();
-    ctx.Commands.Execute(std::make_unique<DeferredCreateBrushCommand>(
-        entity, std::move(snapshot), ctx.Scene, ctx.Document, ctx.Selection, std::move(beforeSelection)));
+    // The brush the designer sees is adopted as made, by the same mutation path an operation takes.
+    (void)Level.MutateLevel([entity](EditorDocument& document, EntityChangeRecorder& recorder) {
+        recorder.Created(entity);
+        document.MarkDirty();
+        return EditorOperationOutcome::Ok({});
+    });
 }
 
 void BrushTool::CancelPending(ToolContext& ctx)

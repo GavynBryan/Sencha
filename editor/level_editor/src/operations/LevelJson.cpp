@@ -48,3 +48,21 @@ DataFieldSchema CompassBearingField(std::string key, std::string summary)
         words.push_back({ std::string(word), std::string(word), {} });
     return DataField::Enum(std::move(key), {}, std::move(summary), std::move(words));
 }
+
+std::optional<Vec3d> AxisDirection(std::string_view name)
+{
+    if (name == "north") return Vec3d{ 0, 0, -1 };
+    if (name == "south") return Vec3d{ 0, 0, 1 };
+    if (name == "east") return Vec3d{ 1, 0, 0 };
+    if (name == "west") return Vec3d{ -1, 0, 0 };
+    if (name == "up") return Vec3d{ 0, 1, 0 };
+    if (name == "down") return Vec3d{ 0, -1, 0 };
+    return std::nullopt;
+}
+
+DataFieldSchema AxisDirectionField(std::string key, std::string summary)
+{
+    return DataField::Enum(std::move(key), {}, std::move(summary),
+                           { { "north", "North", "-Z" }, { "south", "South", "+Z" }, { "east", "East", "+X" },
+                             { "west", "West", "-X" }, { "up", "Up", "+Y" }, { "down", "Down", "-Y" } });
+}

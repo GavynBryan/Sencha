@@ -169,3 +169,17 @@ std::optional<EntityId> OwnerOf(const EditorScene& scene, EntityId opening)
     const std::optional<WallHit> wall = WallAt(scene, frame->Position + Vec3d{ 0, 0.01f, 0 });
     return wall ? std::optional<EntityId>(wall->Space) : std::nullopt;
 }
+
+std::optional<std::uint32_t> FaceToward(const EditorScene& scene, EntityId entity, const Vec3d& direction)
+{
+    std::optional<std::uint32_t> best;
+    float bestDot = 0.7f;
+    for (std::uint32_t f = 0; f < FaceCount(scene, entity); ++f)
+        if (const std::optional<WorldFace> face = WorldFaceOf(scene, entity, f))
+            if (const float dot = face->Normal.Dot(direction); dot > bestDot)
+            {
+                best = f;
+                bestDot = dot;
+            }
+    return best;
+}

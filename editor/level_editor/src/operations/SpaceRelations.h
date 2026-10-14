@@ -55,3 +55,7 @@ struct WorldFace
 };
 
 [[nodiscard]] std::optional<WorldFace> WorldFaceOf(const EditorScene& scene, EntityId entity, std::uint32_t face);
+
+// The face of `entity`'s brush whose outward normal is nearest `direction`,
+// within 45 degrees of it.
+[[nodiscard]] std::optional<std::uint32_t> FaceToward(const EditorScene& scene, EntityId entity, const Vec3d& direction);
