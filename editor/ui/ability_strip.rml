@@ -54,7 +54,7 @@
                     </div>
                 </div>
             </div>
-            <div class="card add theme-key" data-event-click="strip_add_phase()">+ PHASE</div>
+            <div class="card add theme-key" data-event-click="strip_add_phase()"><span class="add_label">+ PHASE</span></div>
         </div>
     </div>
 </body>

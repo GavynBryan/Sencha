@@ -73,11 +73,7 @@ struct PlatformServices;
 class RuntimeWorld;
 class NetPrefabSpawner;
 class SceneSpawnService;
-class AnimRequestOperations;
-class AbilityOperations;
-class ActorTimeOperations;
-class EffectOperations;
-class PhysicsQueries;
+class EngineVocabularyBindings;
 class RuntimeResumeOperation;
 class ApplicationQuitOperation;
 
@@ -646,13 +642,7 @@ private:
     // state: the authored records stay in the asset the lease holds.
     VerbBindingSet ShellBindingSet;
     DataAssetCacheHandle ShellBindingLease;
-    std::unique_ptr<AnimRequestOperations> AnimationOperations;
-    std::unique_ptr<EffectOperations> EffectVerbOperations;
-    std::unique_ptr<AbilityOperations> AbilityVerbOperations;
-    std::unique_ptr<ActorTimeOperations> TimeVerbOperations;
-    std::unique_ptr<PhysicsQueries> AuthoredPhysics;
-    std::vector<VerbBindingToken> DomainVerbBindings;
-    std::vector<AuthoredQueryBindingToken> DomainQueryBindings;
+    std::unique_ptr<EngineVocabularyBindings> VocabularyBindings;
     std::unique_ptr<RuntimeResumeOperation> ResumeOperation;
     std::unique_ptr<ApplicationQuitOperation> QuitOperation;
     VerbBindingToken ResumeBinding;

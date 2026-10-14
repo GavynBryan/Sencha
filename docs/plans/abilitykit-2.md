@@ -1590,5 +1590,24 @@ Deviations from the plan's wording, each for a stated reason:
   override lives where the grant does (a scene, an effect); the overview shows the
   binding with nothing overriding it, and the preview's fixture grant (6e) shows
   its own.
-- **Remaining in Stage 6.** The preview on `FixedTickPreview` with a scripted
-  fixture, rewind by replay, the live inspector and the deck.
+- **6e delivered.** The preview: a private World running the production kit
+  schedule with the engine's operations bound as the runtime binds them (the
+  binding moved out of `Engine` into `EngineVocabularyBindings`, which both use),
+  the working data compiled into it, a fixture pawn, and a timed script of
+  controls (press, release, tap ×N within a tick, interrupt, attributes, tags,
+  time scale, a target) replayed from tick zero to rewind; the live inspector from
+  the trace and the records; the deck's phase spans, input and refusal marks and
+  one attribute plot. `AbilityEndReasonName` and `AbilityRefusalName`, declared in
+  Stage 5b and never defined, are defined. Checked in the real Kyusu shell: the
+  normative charge opens on the strip and picking an op shows its fields and
+  arguments in the card.
+- **Deviation: no stage image.** The preview runs headless and shows itself
+  through the inspector and the deck, not a picture of the pawn; the fixture takes
+  animation requests but plays no rig. Recorded in `docs/deferred.md`, due with
+  Stage 8's movement leases, whose authoring needs to see the pawn move.
+- **Deviation: input goes through the resolved state.** The controls write edges
+  into the preview World's `InputActionState` -- the layer the ability pass reads
+  -- rather than a separate preview input source; the binding, priority and
+  consumption the pass applies are the production ones.
+- **Stage 6 is complete.** Owner walkthrough owed: author Primary, Automatic and
+  Charge from recipes in the real shell, and play each in the preview.

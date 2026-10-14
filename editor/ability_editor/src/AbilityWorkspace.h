@@ -7,6 +7,7 @@
 #include "workspaces/ExplorerTable.h"
 #include "workspaces/IWorkspace.h"
 #include "workspaces/TreeOutline.h"
+#include "workspaces/WorkspaceTimeline.h"
 
 #include <math/geometry/2d/Rect2d.h>
 
@@ -17,11 +18,15 @@
 class AbilityArgumentProperties;
 class AbilityOverviewProperties;
 class AbilityPhaseStrip;
+class AbilityPreviewControls;
+class AbilityPreviewInspector;
+class AbilityPreviewSession;
 class AbilityProblemProperties;
 class AbilityWorkbench;
 class ActionContextStack;
 struct AbilityPaletteEntry;
 class DataCreation;
+class DataDocument;
 class DataDocumentSheet;
 class DataDocumentStore;
 class DataProperties;
@@ -38,7 +43,7 @@ struct ProjectDescriptor;
 // The Ability Workbench (docs/editor/ability-workbench.md): an ability's phases,
 // ops and transitions authored as elements selected by key, checked against the
 // project's names as it is edited.
-class AbilityWorkspace final : public IWorkspace
+class AbilityWorkspace final : public IWorkspace, public IWorkspaceTimeline
 {
 public:
     AbilityWorkspace(Engine& engine, const ProjectDescriptor& project, Game* module, DocumentSourceSet& sources,
@@ -65,6 +70,11 @@ public:
     [[nodiscard]] WorkspaceSelectionFacet Selection() override;
     bool RevealProblem(const Problem& problem) override;
     [[nodiscard]] ExplorerTable* Explorers() override { return &ExplorerRows; }
+    [[nodiscard]] IWorkspaceTimeline* Timeline() override { return this; }
+    [[nodiscard]] WorkspaceTimelineFacet Facet() override;
+    void Scrub(double time, TimelineDrag drag) override;
+    void MoveMark(std::string_view, double, TimelineDrag) override {}
+    void Pick(std::string_view) override {}
 
     // For tests: the model the workspace presents.
     [[nodiscard]] AbilityWorkbench& Bench() { return *Workbench; }
@@ -79,6 +89,9 @@ private:
 
     void DefineActions(ActionCatalog& catalog);
     void DefineExplorers(ActionCatalog& catalog);
+    void DefineTransport(ActionCatalog& catalog);
+    // The preview shows the ability's working data, replayed when it changes.
+    void SyncPreview();
     void PublishProblems();
     void ShowStrip();
     void AddPhase();
@@ -101,6 +114,11 @@ private:
     std::unique_ptr<AbilityArgumentProperties> Arguments;
     std::unique_ptr<AbilityProblemProperties> ElementProblems;
     std::unique_ptr<AbilityOverviewProperties> Overview;
+    std::unique_ptr<AbilityPreviewSession> Preview;
+    std::unique_ptr<AbilityPreviewControls> PreviewControls;
+    std::unique_ptr<AbilityPreviewInspector> PreviewInspector;
+    const DataDocument* Previewed = nullptr;
+    std::uint64_t PreviewedRevision = 0;
     std::unique_ptr<DataCreation> Creation;
     std::unique_ptr<AbilityPhaseStrip> Strip;
     std::vector<AbilityPaletteEntry> Palette;

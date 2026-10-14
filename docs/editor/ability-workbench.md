@@ -55,7 +55,8 @@ groups holding it, marks its row and scrolls to it.
 
 ## The card
 
-With an element selected, the card is that element alone: `DataProperties`
+The card sits beside the strip as the inspector; the strip is the work. With an
+element selected, the card is that element alone: `DataProperties`
 scoped to the element's path, so its fields are edited by their whole paths
 exactly as the whole document's are. An op's card adds its **arguments**
 (`AbilityArgumentProperties`), laid out from the contract the catalog declares
@@ -110,6 +111,37 @@ selected phase's entry list. A lease is only ever held, and nothing but a lease
 is: a lease goes to its phase's held list, and anything else asked for there
 goes to its entry list. A new op's arguments start empty, and the checks name
 what it still needs.
+
+## Preview
+
+The open ability runs on a fixture pawn in a private World
+(`AbilityPreviewSession`) on the shared preview clock
+(`docs/editor/fixed-tick-preview.md`): the production kit schedule -- actor
+time, the ability pass, attribute resolve, effect lifetime -- with the engine's
+own operations bound exactly as the runtime binds them
+(`EngineVocabularyBindings`), the project's content vocabulary, and a floor for
+physics queries. The ability is its working data, compiled and resolved into the
+preview World over whatever its saved file declared, so an edit replays the
+preview to the tick it was on. The fixture holds a grant of it, every declared
+attribute at its default, an input source, and an animation request set (it takes
+requests; no rig plays them).
+
+The card's **Preview** section is the controls, each applied on the next tick:
+press, release, tap (once or three times within the tick) or interrupt an input
+the ability's binding names; set an attribute; grant or revoke a tag; scale the
+fixture's time; place a target with every attribute along its aim. The controls
+are a timed script: rewinding replays it from tick zero, so what a rewound tick
+shows is what the systems produce, and acting at a past tick cuts what came
+after it.
+
+**This tick** (the card's details, `AbilityPreviewInspector`) reads the trace and
+the records: each activation's phase, pulse, leases held, groups paid, cooldown
+and end reason, and every event the pass traced -- starts and refusals with the
+condition at fault, transitions, ops run and what they answered, skips, cues --
+its elements named from the working data. The **deck** (`AbilityPreviewTimeline`)
+shows each activation's stay in each phase as a span, the script's input and
+every op that did not accept as marks, and one attribute plotted (Plot on its
+row); the transport keys play, step, rewind and scrub it.
 
 ## Explorers
 

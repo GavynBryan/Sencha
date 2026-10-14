@@ -28,14 +28,14 @@ body
     padding: 8dp;
     border-width: 1dp;
     border-radius: 4dp;
-    gap: 4dp;
 }
 .card.holding { border-width: 2dp; }
-.card.add { width: 96dp; height: 32dp; justify-content: center; align-items: center; font-family: "Chakra Petch"; }
+.card.add { width: 96dp; height: 32dp; justify-content: center; align-items: center; }
+.add_label { display: block; font-family: "Chakra Petch"; font-size: 11dp; letter-spacing: 2dp; }
 
 .card_head { display: flex; align-items: center; gap: 6dp; drag: drag-drop; cursor: move; }
 .card_name { display: block; flex: 1; font-family: "Chakra Petch"; font-weight: 600; font-size: 13dp; }
-.card_clock { display: block; font-size: 10dp; }
+.card_clock { display: block; margin-top: 2dp; font-size: 10dp; }
 
 .slot_view, .op_view, .link_view { display: block; }
 .slot { display: block; }
@@ -58,6 +58,7 @@ body
     align-items: center;
     gap: 4dp;
     min-height: 20dp;
+    margin-top: 2dp;
     padding: 2dp 4dp;
     border-radius: 2dp;
 }

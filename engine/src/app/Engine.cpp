@@ -11,13 +11,7 @@
 #include <logic/VerbRelaySystem.h>
 #include <abilities/AbilityKit.h>
 #include <anim/AnimFactProviders.h>
-#include <abilities/AbilityVerbs.h>
-#include <anim/AnimRequestVerbs.h>
-#include <effects/EffectVerbs.h>
-#include <physics/PhysicsAuthoredQueries.h>
-#include <physics/PhysicsQueries.h>
 #include <physics/PhysicsStepSystem.h>
-#include <time/ActorTimeVerbs.h>
 #include <anim/AnimationRegistration.h>
 #include <movement/MovementAnimFacts.h>
 #include <participant/ParticipantLifecycle.h>
@@ -28,6 +22,8 @@
 #include <ui/UiService.h>
 #endif
 #include <app/Engine.h>
+
+#include <app/EngineVocabularyBindings.h>
 
 #include <app/EngineContentRoot.h>
 #include <app/SessionParticipantDiagnostics.h>
@@ -1365,36 +1361,8 @@ int Engine::Run(Game& game)
 
     // The engine domains' operations. Animation requests from authored content go
     // through the same door an ability's do.
-    {
-        ::World& entities = RuntimeWorldState->Entities();
-        const FixedSimulationLoop& clock = RuntimeLoop.GetSimulationClock();
-        AnimationOperations = std::make_unique<AnimRequestOperations>(entities, clock);
-        EffectVerbOperations = std::make_unique<EffectOperations>(entities, clock);
-        const VerbRegistry& verbs = entities.GetResource<VerbRegistry>();
-        VerbDispatcher& dispatcher = *VerbDispatcherState;
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeAnimRequest>(verbs.Find(kAnimRequestVerb), *AnimationOperations));
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeAnimCancel>(verbs.Find(kAnimCancelVerb), *AnimationOperations));
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeAnimHold>(verbs.Find(kAnimHoldLease), *AnimationOperations));
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeEffectApply>(verbs.Find(kEffectApplyVerb), *EffectVerbOperations));
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeEffectHold>(verbs.Find(kEffectHoldLease), *EffectVerbOperations));
-        TimeVerbOperations = std::make_unique<ActorTimeOperations>(entities, clock);
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeTimeScale>(verbs.Find(kTimeScaleLease), *TimeVerbOperations));
-        AbilityVerbOperations = std::make_unique<AbilityOperations>(entities);
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeAbilityActivate>(verbs.Find(kAbilityActivateVerb), *AbilityVerbOperations));
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeAbilityCancel>(verbs.Find(kAbilityCancelVerb), *AbilityVerbOperations));
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeAbilityGrant>(verbs.Find(kAbilityGrantVerb), *AbilityVerbOperations));
-        DomainVerbBindings.push_back(
-            dispatcher.Bind<&InvokeAbilityRevoke>(verbs.Find(kAbilityRevokeVerb), *AbilityVerbOperations));
-    }
+    VocabularyBindings = std::make_unique<EngineVocabularyBindings>(
+        RuntimeWorldState->Entities(), RuntimeLoop.GetSimulationClock(), *VerbDispatcherState);
 
     // Every host runs abilities: an actor granted one runs it in a process whose
     // game registered nothing for it. Before the game's hook, so movement and a
@@ -1417,14 +1385,7 @@ int Engine::Run(Game& game)
     game.OnRegisterSystems(registerSystems);
     // A game that registered physics answers the engine's physics queries.
     if (PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>())
-    {
-        AuthoredPhysics = std::make_unique<PhysicsQueries>(physics->GetSimulation());
-        AuthoredQueryDispatcher& queries = *QueryDispatcherState;
-        DomainQueryBindings.push_back(queries.Bind<&EvaluatePhysicsTrace>(
-            queries.Registry().Find(kPhysicsTraceQuery), std::as_const(*AuthoredPhysics)));
-        DomainQueryBindings.push_back(queries.Bind<&EvaluatePhysicsOverlap>(
-            queries.Registry().Find(kPhysicsOverlapQuery), std::as_const(*AuthoredPhysics)));
-    }
+        VocabularyBindings->BindPhysics(physics->GetSimulation(), *QueryDispatcherState);
     // Every place a game binds has run.
     for (const AuthoredQueryId query : QueryDispatcherState->Unanswered())
     {
@@ -1517,15 +1478,9 @@ int Engine::Run(Game& game)
     // The game's own hook ran above, which is where it gave back its tokens.
     ResumeBinding.Reset();
     QuitBinding.Reset();
-    DomainVerbBindings.clear();
-    DomainQueryBindings.clear();
+    VocabularyBindings.reset();
     ResumeOperation.reset();
     QuitOperation.reset();
-    AnimationOperations.reset();
-    EffectVerbOperations.reset();
-    AbilityVerbOperations.reset();
-    TimeVerbOperations.reset();
-    AuthoredPhysics.reset();
 #ifdef SENCHA_ENABLE_UI
     if (PauseMenuState != nullptr)
         PauseMenuState->SetVerbBindings(nullptr, nullptr);

@@ -8,6 +8,10 @@ add_library(ability_authoring STATIC
     src/authoring/AbilityGuardFixes.cpp
     src/authoring/AbilityOverview.cpp
     src/authoring/AbilityPalette.cpp
+    src/authoring/AbilityPreviewControls.cpp
+    src/authoring/AbilityPreviewInspector.cpp
+    src/authoring/AbilityPreviewLanes.cpp
+    src/authoring/AbilityPreviewSession.cpp
     src/authoring/AbilityProblemProperties.cpp
     src/authoring/AbilityRecipes.cpp
     src/authoring/AbilityStrip.cpp

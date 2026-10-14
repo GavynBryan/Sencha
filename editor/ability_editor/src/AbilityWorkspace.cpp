@@ -7,6 +7,10 @@
 #include "authoring/AbilityOverview.h"
 #include "authoring/AbilityProblemProperties.h"
 #include "authoring/AbilityPalette.h"
+#include "authoring/AbilityPreviewControls.h"
+#include "authoring/AbilityPreviewInspector.h"
+#include "authoring/AbilityPreviewLanes.h"
+#include "authoring/AbilityPreviewSession.h"
 #include "authoring/AbilityRecipes.h"
 #include "authoring/AbilityStrip.h"
 #include "authoring/AbilityWorkbench.h"
@@ -36,6 +40,8 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keycode.h>
 
+#include <algorithm>
+#include <cmath>
 #include <format>
 #include <utility>
 
@@ -100,17 +106,27 @@ AbilityWorkspace::AbilityWorkspace(Engine& engine, const ProjectDescriptor& proj
         *Workbench, [this](std::string argument) { CreateEffect(std::move(argument)); });
     ElementProblems = std::make_unique<AbilityProblemProperties>(*Workbench);
     Overview = std::make_unique<AbilityOverviewProperties>(*Workbench);
+    std::function<void(World&)> previewVocabulary;
+    if (module != nullptr)
+        previewVocabulary = [module](World& world) { module->OnRegisterVocabulary(world); };
+    Preview = std::make_unique<AbilityPreviewSession>(engine.Content().Assets(), std::move(previewVocabulary));
+    PreviewControls = std::make_unique<AbilityPreviewControls>(*Preview);
+    PreviewInspector = std::make_unique<AbilityPreviewInspector>(*Preview, [this] { return Workbench->AbilityData(); });
     Palette = AbilityPaletteOf(Workbench->Names());
     if (UiService* ui = engine.TryUi(); ui != nullptr && ui->IsReady())
         Strip = std::make_unique<AbilityPhaseStrip>(*ui);
 
     DefineActions(catalog);
     DefineExplorers(catalog);
+    DefineTransport(catalog);
 }
 
 AbilityWorkspace::~AbilityWorkspace()
 {
     Sources.CancelEdits();
+    PreviewInspector.reset();
+    PreviewControls.reset();
+    Preview.reset();
     Strip.reset();
     Problems.Clear(kProblemSource);
 }
@@ -158,6 +174,69 @@ void AbilityWorkspace::DefineActions(ActionCatalog& catalog)
                     Workbench->RefreshAssets();
                     Palette = AbilityPaletteOf(Workbench->Names());
                 } });
+}
+
+void AbilityWorkspace::DefineTransport(ActionCatalog& catalog)
+{
+    const auto offer = [&](std::string id, std::string label, std::vector<KeyChord> chords, ActionBinding handler) {
+        OfferAction(catalog, ActionHandlers,
+                    { .Id = std::move(id), .Label = std::move(label), .Category = "Timeline",
+                      .DefaultChords = std::move(chords) },
+                    std::move(handler));
+    };
+    const auto open = [this] { return Preview->IsOpen(); };
+    offer("timeline.play", "Play", { { SDLK_SPACE, {} } },
+          { .Invoke = [this] { Preview->IsPlaying() ? Preview->Pause() : Preview->Play(); },
+            .Enabled = open,
+            .Checked = [this] { return Preview->IsPlaying(); } });
+    offer("timeline.restart", "Restart", { { SDLK_HOME, {} } }, { .Invoke = [this] { Preview->RunTo(0); }, .Enabled = open });
+    offer("timeline.step_back", "Step Back", { { SDLK_COMMA, {} } },
+          { .Invoke = [this] { Preview->RunTo(Preview->Tick() > 0 ? Preview->Tick() - 1 : 0); }, .Enabled = open });
+    offer("timeline.step_forward", "Step Forward", { { SDLK_PERIOD, {} } },
+          { .Invoke = [this] { Preview->Step(); }, .Enabled = open });
+    offer("timeline.slower", "Slower", { { SDLK_LEFTBRACKET, {} } },
+          { .Invoke = [this] { (void)Preview->SetSpeed(Preview->Speed() * 0.5); }, .Enabled = open });
+    offer("timeline.faster", "Faster", { { SDLK_RIGHTBRACKET, {} } },
+          { .Invoke = [this] { (void)Preview->SetSpeed(Preview->Speed() * 2.0); }, .Enabled = open });
+    offer("timeline.live", "Back to Live", { { SDLK_END, {} } },
+          { .Invoke = [this] {
+                if (!Preview->History().empty())
+                    Preview->RunTo(Preview->History().back().Tick);
+            },
+            .Enabled = open });
+}
+
+void AbilityWorkspace::SyncPreview()
+{
+    const DataDocument* ability = Workbench->Ability();
+    const JsonValue* data = Workbench->AbilityData();
+    if (ability == nullptr || data == nullptr)
+    {
+        if (Previewed != nullptr)
+            Preview->Close();
+        Previewed = nullptr;
+        return;
+    }
+    if (ability == Previewed && ability->Revision() == PreviewedRevision)
+        return;
+    if (ability != Previewed)
+        Preview->Close();
+    Previewed = ability;
+    PreviewedRevision = ability->Revision();
+    Preview->Show(ability->VirtualPath(), *data);
+}
+
+WorkspaceTimelineFacet AbilityWorkspace::Facet()
+{
+    return AbilityPreviewTimeline(*Preview, Workbench->AbilityData(), PreviewControls->Plotted());
+}
+
+void AbilityWorkspace::Scrub(double time, TimelineDrag drag)
+{
+    if (drag == TimelineDrag::Cancel)
+        return;
+    Preview->Pause();
+    Preview->RunTo(static_cast<std::uint64_t>(std::max(0.0, std::round(time * AbilityPreviewSession::kTickRate))));
 }
 
 void AbilityWorkspace::AddPhase()
@@ -290,13 +369,15 @@ void AbilityWorkspace::PublishProblems()
     Problems.Publish(kProblemSource, std::move(problems));
 }
 
-void AbilityWorkspace::Tick(FrameUpdateContext&)
+void AbilityWorkspace::Tick(FrameUpdateContext& ctx)
 {
     (void)Workbench->Documents.Store().PushWaiting();
     PublishProblems();
     if (!Visible)
         return;
     Sheet->Update();
+    SyncPreview();
+    Preview->Advance(ctx.WallDeltaSeconds);
     ShowStrip();
 }
 
@@ -343,6 +424,7 @@ void AbilityWorkspace::ShowStrip()
 void AbilityWorkspace::Interrupt()
 {
     Carried.clear();
+    Preview->Pause();
     Sources.CancelEdits();
 }
 
@@ -505,14 +587,15 @@ WorkspaceSelectionFacet AbilityWorkspace::Selection()
                  .Sections = { { .Heading = {}, .Source = ElementFields.get() },
                                { .Heading = {}, .Source = Arguments.get() },
                                { .Heading = "Problems", .Source = ElementProblems.get() } },
-                 .Focus = Workbench->Focus(),
-                 .Primary = true };
-    std::vector<PropertySection> sections{ { .Heading = "Overview", .Source = Overview.get() } };
+                 .Details = { { .Heading = "This tick", .Source = PreviewInspector.get() } },
+                 .Focus = Workbench->Focus() };
+    std::vector<PropertySection> sections{ { .Heading = "Overview", .Source = Overview.get() },
+                                           { .Heading = "Preview", .Source = PreviewControls.get() } };
     for (PropertySection& section : Sheet->Sections())
         sections.push_back(section);
     return { .Title = std::string(PathLeaf(document->VirtualPath())),
              .Actions = { "file.save", "ability.phase.add", "ability.close" },
              .Sections = std::move(sections),
-             .Focus = Workbench->Focus(),
-             .Primary = true };
+             .Details = { { .Heading = "This tick", .Source = PreviewInspector.get() } },
+             .Focus = Workbench->Focus() };
 }

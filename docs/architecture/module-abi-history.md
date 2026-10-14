@@ -319,4 +319,6 @@ the bulk movement queries and the character drive exclude dilated characters.
 `RetimeAnimPlayback` and `RestartAnimPlayback`; `ActorScaleOnTick` and
 `ActorScaleValue` (time) are new; a root-motion sample's velocity is per second of
 actor time. `AuthoredPredictionName`, `EffectiveAbilityBinding` and `abilities/AbilityValueNames.h`
-(the port, local-type and hit-field names) are new.
+(the port, local-type and hit-field names) are new. `EngineVocabularyBindings` (`app/EngineVocabularyBindings.h`) is new and holds
+the engine's domain operations and their bindings in place of `Engine`'s own members;
+`AbilityEndReasonName` and `AbilityRefusalName` are defined.
