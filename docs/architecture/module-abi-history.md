@@ -237,3 +237,22 @@ dependency that refused it), as does `AssetSystem::Commit`.
 `AssetSystem::RetryStandIns` takes the async task queue, and `StageReload` and
 `PathsById` are new. `RegisterAssetKind` takes a stand-in only for a loader that
 can reload.
+
+## v26
+
+AbilityKit 2 (`docs/plans/abilitykit-2.md`); this entry grows with each stage of
+that epic, which bumps the version once.
+
+**Effects.** `ApplyEffect` takes the `FixedSimTime` it is applied on and an
+optional `EffectOwner`; `TickEffects` drops its delta (one call is one tick's
+lifetime pass); `RemoveEffect` and `RemoveEffectsOwnedBy` are new.
+`ActiveEffect` counts whole ticks and records its owner, application sequence and
+granted tags. `CheckEffectCosts` (`effects/EffectCost.h`) is new.
+`EffectRegistry::Register` refuses a definition granting more than
+`kEffectGrantedTagCapacity` tags.
+
+**Abilities.** `TryActivateAbility` and `ProcessAbilityActivations` take a
+`FixedSimTime`.
+
+**Physics queries.** `Raycast`, `SweepShape` and `OverlapShape` take an optional
+`PhysicsQueryFilter`.

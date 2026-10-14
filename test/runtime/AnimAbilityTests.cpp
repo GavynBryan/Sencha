@@ -60,13 +60,15 @@ namespace
             return nullptr;
         }
 
+        [[nodiscard]] FixedSimTime At(AnimTick tick) const { return FixedSimTime{ .DeltaSeconds = kTick, .TickIndex = tick }; }
+
         // What the schedule runs on a tick, in its order: the kit releases ended
         // activations and activates, animation plays, effects age.
         void TickWithTheKit()
         {
             ReleaseEndedAbilityAnimations(Entities, Now);
             Tick();
-            TickEffects(Entities, static_cast<float>(kTick));
+            TickEffects(Entities);
         }
     };
 }
@@ -76,7 +78,7 @@ TEST(AnimAbility, AnActivationHoldsItsAnimationForAsLongAsItLasts)
     AbilityFixture fx;
     fx.Tick();
     const AnimTick activated = fx.Now;
-    ASSERT_TRUE(TryActivateAbility(fx.Entities, fx.Actor, fx.Reload, activated));
+    ASSERT_TRUE(TryActivateAbility(fx.Entities, fx.Actor, fx.Reload, fx.At(activated)));
     const AnimRequest* asked = fx.Asked();
     ASSERT_NE(asked, nullptr);
     EXPECT_EQ(asked->Id.Source, fx.Actor);
@@ -101,7 +103,7 @@ TEST(AnimAbility, AnInstantActivationHoldsItsAnimationForItsTick)
 {
     AbilityFixture fx;
     fx.Tick();
-    ASSERT_TRUE(TryActivateAbility(fx.Entities, fx.Actor, fx.Flick, fx.Now));
+    ASSERT_TRUE(TryActivateAbility(fx.Entities, fx.Actor, fx.Flick, fx.At(fx.Now)));
     const AnimRequest* asked = fx.Asked();
     ASSERT_NE(asked, nullptr);
     EXPECT_EQ(asked->Lifetime, AnimRequestLifetime::Impulse);

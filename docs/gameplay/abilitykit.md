@@ -160,15 +160,10 @@ without engine code. `Current` is derived; `Base` is authoritative.
 
 - **Instant** effects (damage, heal) apply once to `Base` and leave no entity.
 - **Duration / infinite** effects spawn an `ActiveEffect` entity referencing the
-  target by `EntityId` and carrying resolved modifiers, remaining time, stacks,
-  and granted tags.
-- `EffectLifetimeSystem` ticks time, applies periodic ticks, expires/despawns via
-  `CommandBuffer`, and grants/revokes tags on the target container.
-- `AttributeResolveSystem` recomputes each target's `Current` from `Base` plus all
-  active modifiers, then clamps to the attribute's range.
-
-Effects-as-entities batch and churn like projectiles, so they use the same
-deferred-spawn path. Effect *definitions* are data assets referenced by handle.
+  target by `EntityId`. What is current is in "Effects" below.
+- `EffectLifetimeSystem` counts effects down and ends them; `AttributeResolveSystem`
+  recomputes each target's `Current` from `Base` plus all active modifiers, then
+  clamps to the attribute's range.
 
 ### D-E — Abilities are data + one activation system; cost/cooldown are effects
 
@@ -275,6 +270,37 @@ All in `FixedLogic` (deterministic), ordered with `After<>`:
    clamp invariants inline (not via events).
 5. Reaction systems — `Changed<Health>` death detection → `Dead` tag +
    `DeathEvent`; cue emission; etc.
+
+## Effects
+
+What the effect runtime guarantees today (`effects/EffectSystem.h`,
+`effects/ActiveEffect.h`, `effects/EffectCost.h`):
+
+- **Time is whole fixed ticks.** `ApplyEffect` takes the tick it is applied on
+  (`FixedSimTime`) and turns the authored seconds into ticks of that length, at
+  least one. An effect counts down one tick per lifetime pass while its target is
+  in an active partition, so a dormant target's effects pause rather than expire
+  in its sleep. A duration of D ticks applied on tick N holds through tick N + D − 1
+  and is gone for tick N + D; a period of P ticks first lands for tick N + P.
+- **Storage.** Effect entities live in the persistent partition. A target that
+  moves between zones keeps its effects, and its old zone detaching does not take
+  them; an effect whose target is gone ends on the next lifetime pass, as does one
+  whose owner is gone.
+- **Owners and removal.** `ApplyEffect` takes an optional `EffectOwner`
+  (an entity plus an opaque key). `RemoveEffect` ends one effect and
+  `RemoveEffectsOwnedBy` ends everything an owner holds; neither may run inside a
+  query.
+- **Tags belong to the instance.** An effect records the tags it actually granted
+  (up to `kEffectGrantedTagCapacity`; the registry refuses a definition granting
+  more). Ending it revokes exactly those, whatever has become of the definition, and
+  a tag the container could not hold is neither granted nor revoked.
+- **The fold is canonical.** Floating-point folding depends on order, so modifiers
+  fold per target in effect-definition order, then application order, never
+  storage order.
+- **Costs fail closed.** `CheckEffectCosts` decides whether an actor can pay several
+  costs together: deltas are summed per attribute first, a Base may not go below
+  zero or the attribute's minimum (whichever is higher), and a missing definition,
+  attribute set or attribute, or a cost that is not an Instant Add, refuses.
 
 ## Animation
 

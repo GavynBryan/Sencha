@@ -1,5 +1,7 @@
 #include <effects/EffectRegistry.h>
 
+#include <effects/ActiveEffect.h>
+
 #include <utility>
 
 EffectRegistry::EffectRegistry()
@@ -9,7 +11,7 @@ EffectRegistry::EffectRegistry()
 
 EffectId EffectRegistry::Register(std::string_view name, EffectDefinition definition)
 {
-    if (name.empty())
+    if (name.empty() || definition.GrantedTags.size() > kEffectGrantedTagCapacity)
         return EffectId{};
 
     auto existing = IdsByName.find(std::string(name));

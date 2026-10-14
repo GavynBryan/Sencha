@@ -108,71 +108,106 @@ protected:
 
     GameplayTagContainer& Tags(EntityId e) { return *world.TryGet<GameplayTagContainer>(e); }
     AttributeSet& Attrs(EntityId e) { return *world.TryGet<AttributeSet>(e); }
+
+    // One-second ticks keep the authored seconds readable as tick counts.
+    static FixedSimTime At(std::uint64_t tick) { return FixedSimTime{ .DeltaSeconds = 1.0, .TickIndex = tick }; }
 };
 
 TEST_F(AbilityFixture, RequireTagGatesActivation)
 {
     EntityId hero = MakeActor(100.0f, { readyAbility });
-    EXPECT_FALSE(TryActivateAbility(world, hero, readyAbility, 0)); // missing State.Ready
+    EXPECT_FALSE(TryActivateAbility(world, hero, readyAbility, At(0))); // missing State.Ready
     Tags(hero).Grant(ready);
-    EXPECT_TRUE(TryActivateAbility(world, hero, readyAbility, 0));
+    EXPECT_TRUE(TryActivateAbility(world, hero, readyAbility, At(0)));
 }
 
 TEST_F(AbilityFixture, BlockTagPreventsActivation)
 {
     EntityId hero = MakeActor(100.0f, { strike });
     Tags(hero).Grant(stunned);
-    EXPECT_FALSE(TryActivateAbility(world, hero, strike, 0));
+    EXPECT_FALSE(TryActivateAbility(world, hero, strike, At(0)));
 }
 
 TEST_F(AbilityFixture, CostIsPaidAndUnaffordableActivationFails)
 {
     EntityId hero = MakeActor(50.0f, { strike });
-    EXPECT_TRUE(TryActivateAbility(world, hero, strike, 0));
+    EXPECT_TRUE(TryActivateAbility(world, hero, strike, At(0)));
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 30.0f);
-    EXPECT_TRUE(TryActivateAbility(world, hero, strike, 0));
+    EXPECT_TRUE(TryActivateAbility(world, hero, strike, At(0)));
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 10.0f);
-    EXPECT_FALSE(TryActivateAbility(world, hero, strike, 0)); // 10 < 20
+    EXPECT_FALSE(TryActivateAbility(world, hero, strike, At(0))); // 10 < 20
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 10.0f);  // unchanged
 }
 
 TEST_F(AbilityFixture, CooldownTagBlocksReactivationUntilExpiry)
 {
     EntityId hero = MakeActor(100.0f, { dash });
-    EXPECT_TRUE(TryActivateAbility(world, hero, dash, 0));
+    EXPECT_TRUE(TryActivateAbility(world, hero, dash, At(0)));
     EXPECT_TRUE(Tags(hero).HasExact(cooldownDash));
-    EXPECT_FALSE(TryActivateAbility(world, hero, dash, 0)); // on cooldown
+    EXPECT_FALSE(TryActivateAbility(world, hero, dash, At(0))); // on cooldown
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 80.0f); // no second charge
 
-    TickEffects(world, 3.0f); // cooldown expires
+    TickEffects(world); // tick 0's pass
+    TickEffects(world); // tick 1's: the 3-tick cooldown applied on tick 0 still holds for tick 2
+    EXPECT_TRUE(Tags(hero).HasExact(cooldownDash));
+    EXPECT_FALSE(TryActivateAbility(world, hero, dash, At(2)));
+    TickEffects(world); // tick 2's: gone for tick 3, the first tick it permits
     EXPECT_FALSE(Tags(hero).HasExact(cooldownDash));
-    EXPECT_TRUE(TryActivateAbility(world, hero, dash, 0));
+    EXPECT_TRUE(TryActivateAbility(world, hero, dash, At(3)));
     EXPECT_FLOAT_EQ(Attrs(hero).GetBase(stamina), 60.0f);
 }
 
 TEST_F(AbilityFixture, MutuallyBlockingAbilitiesCannotCoexist)
 {
     EntityId hero = MakeActor(100.0f, { abilityA, abilityB });
-    EXPECT_TRUE(TryActivateAbility(world, hero, abilityA, 0));
+    EXPECT_TRUE(TryActivateAbility(world, hero, abilityA, At(0)));
     EXPECT_TRUE(Tags(hero).HasExact(stateA));
-    EXPECT_FALSE(TryActivateAbility(world, hero, abilityB, 0)); // blocked by State.A
+    EXPECT_FALSE(TryActivateAbility(world, hero, abilityB, At(0))); // blocked by State.A
 
     EntityId other = MakeActor(100.0f, { abilityA, abilityB });
-    EXPECT_TRUE(TryActivateAbility(world, other, abilityB, 0));
-    EXPECT_FALSE(TryActivateAbility(world, other, abilityA, 0)); // blocked by State.B
+    EXPECT_TRUE(TryActivateAbility(world, other, abilityB, At(0)));
+    EXPECT_FALSE(TryActivateAbility(world, other, abilityA, At(0))); // blocked by State.B
 }
 
 TEST_F(AbilityFixture, UngrantedAbilityCannotActivate)
 {
     EntityId hero = MakeActor(100.0f, { strike }); // not granted Dash
-    EXPECT_FALSE(TryActivateAbility(world, hero, dash, 0));
+    EXPECT_FALSE(TryActivateAbility(world, hero, dash, At(0)));
 }
 
 TEST_F(AbilityFixture, IntentQueueDrains)
 {
     EntityId hero = MakeActor(100.0f, { abilityA });
     world.GetResource<AbilityActivationQueue>().Pending.push_back({ hero, abilityA });
-    ProcessAbilityActivations(world, 0);
+    ProcessAbilityActivations(world, At(0));
     EXPECT_TRUE(Tags(hero).HasExact(stateA));
     EXPECT_TRUE(world.GetResource<AbilityActivationQueue>().Pending.empty());
+}
+
+// The cost check used to admit an ability whose actor had no attribute set to pay
+// from; it fails closed now.
+TEST_F(AbilityFixture, CostIsRefusedWhenTheActorHasNoAttributeSet)
+{
+    EntityId hero = MakeActor(100.0f, { strike });
+    world.RemoveComponent<AttributeSet>(hero);
+    EXPECT_FALSE(TryActivateAbility(world, hero, strike, At(0)));
+}
+
+TEST_F(AbilityFixture, CostIsRefusedWhenTheActorLacksTheAttribute)
+{
+    EntityId hero = world.CreateEntity();
+    world.AddComponent<AttributeSet>(hero);
+    world.AddComponent<GameplayTagContainer>(hero);
+    world.AddComponent<AbilitySet>(hero);
+    world.TryGet<AbilitySet>(hero)->Grant(strike);
+    EXPECT_FALSE(TryActivateAbility(world, hero, strike, At(0)));
+}
+
+TEST_F(AbilityFixture, CostIsRefusedWhenItsDefinitionIsUnknown)
+{
+    AbilityDefinition unpaid{};
+    unpaid.Cost = EffectId{ 999 };
+    const AbilityId free = abilities->Register("UnknownCost", unpaid);
+    EntityId hero = MakeActor(100.0f, { free });
+    EXPECT_FALSE(TryActivateAbility(world, hero, free, At(0)));
 }

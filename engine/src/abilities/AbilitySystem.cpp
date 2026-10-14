@@ -6,6 +6,7 @@
 #include <abilities/AbilityRegistry.h>
 #include <abilities/AbilitySet.h>
 #include <attributes/AttributeSet.h>
+#include <effects/EffectCost.h>
 #include <effects/EffectDefinition.h>
 #include <effects/EffectRegistry.h>
 #include <effects/EffectSystem.h>
@@ -16,35 +17,12 @@
 #include <ecs/StoragePartitionSet.h>
 #include <ecs/World.h>
 
+#include <span>
 #include <utility>
 #include <vector>
 
 namespace
 {
-bool CanAfford(
-    const World& world,
-    EntityId actor,
-    EffectId cost,
-    const EffectRegistry& effects)
-{
-    if (!cost.IsValid())
-        return true;
-    const EffectDefinition* def = effects.Get(cost);
-    if (def == nullptr)
-        return true;
-    const AttributeSet* set = world.TryGet<AttributeSet>(actor);
-    if (set == nullptr)
-        return true;
-
-    for (const EffectModifier& modifier : def->Modifiers)
-    {
-        if (modifier.Op == ModifierOp::Add && modifier.Magnitude < 0.0f)
-            if (set->GetBase(modifier.Attr, 0.0f) < -modifier.Magnitude)
-                return false;
-    }
-    return true;
-}
-
 // An activation's Held request is its own: leased to the effect entity that is the
 // activation, and cancelled by the kit when that entity ends.
 void Lease(World& world, EntityId actor, EntityId activation, AnimRequestId request)
@@ -88,9 +66,9 @@ void RequestAbilityAnimation(World& world, EntityId actor, const AbilityAnimatio
 void ProcessAbilityActivationsImpl(
     World& world,
     const StoragePartitionSet* partitions,
-    std::uint64_t tick)
+    const FixedSimTime& now)
 {
-    ReleaseEndedAbilityAnimations(world, tick);
+    ReleaseEndedAbilityAnimations(world, now.TickIndex);
 
     AbilityActivationQueue* queue =
         world.TryGetResource<AbilityActivationQueue>();
@@ -112,12 +90,12 @@ void ProcessAbilityActivationsImpl(
             continue;
         }
 
-        TryActivateAbility(world, intent.Actor, intent.Ability, tick);
+        TryActivateAbility(world, intent.Actor, intent.Ability, now);
     }
 }
 } // namespace
 
-bool TryActivateAbility(World& world, EntityId actor, AbilityId ability, std::uint64_t tick)
+bool TryActivateAbility(World& world, EntityId actor, AbilityId ability, const FixedSimTime& now)
 {
     const AbilityRegistry* abilities =
         std::as_const(world).TryGetResource<AbilityRegistry>();
@@ -145,21 +123,18 @@ bool TryActivateAbility(World& world, EntityId actor, AbilityId ability, std::ui
         }
     }
 
-    if (const EffectRegistry* effects =
-            std::as_const(world).TryGetResource<EffectRegistry>())
-    {
-        if (!CanAfford(std::as_const(world), actor, def->Cost, *effects))
-            return false;
-    }
+    if (def->Cost.IsValid()
+        && !CheckEffectCosts(std::as_const(world), actor, std::span(&def->Cost, 1)).Affordable())
+        return false;
 
     if (def->Cost.IsValid())
-        ApplyEffect(world, actor, def->Cost);
+        ApplyEffect(world, actor, def->Cost, now);
     if (def->Cooldown.IsValid())
-        ApplyEffect(world, actor, def->Cooldown);
+        ApplyEffect(world, actor, def->Cooldown, now);
     EntityId activation;
     if (def->OnActivate.IsValid())
-        activation = ApplyEffect(world, actor, def->OnActivate);
-    RequestAbilityAnimation(world, actor, def->Animation, activation, tick);
+        activation = ApplyEffect(world, actor, def->OnActivate, now);
+    RequestAbilityAnimation(world, actor, def->Animation, activation, now.TickIndex);
     return true;
 }
 
@@ -178,15 +153,15 @@ void ReleaseEndedAbilityAnimations(World& world, std::uint64_t tick)
     });
 }
 
-void ProcessAbilityActivations(World& world, std::uint64_t tick)
+void ProcessAbilityActivations(World& world, const FixedSimTime& now)
 {
-    ProcessAbilityActivationsImpl(world, nullptr, tick);
+    ProcessAbilityActivationsImpl(world, nullptr, now);
 }
 
 void ProcessAbilityActivations(
     World& world,
     const StoragePartitionSet& partitions,
-    std::uint64_t tick)
+    const FixedSimTime& now)
 {
-    ProcessAbilityActivationsImpl(world, &partitions, tick);
+    ProcessAbilityActivationsImpl(world, &partitions, now);
 }

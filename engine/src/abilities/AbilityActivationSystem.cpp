@@ -5,5 +5,5 @@
 
 void AbilityActivationSystem::FixedLogic(FixedLogicContext& ctx)
 {
-    ProcessAbilityActivations(ctx.Entities, ctx.Partitions, ctx.Time.TickIndex);
+    ProcessAbilityActivations(ctx.Entities, ctx.Partitions, ctx.Time);
 }

@@ -37,6 +37,13 @@ struct ShapeSweepHit
     Vec3d Normal = Vec3d::Zero();
 };
 
+// What a query passes through. A body owned by `Ignore` is not hit, so a trace
+// from inside a caster does not report the caster.
+struct PhysicsQueryFilter
+{
+    EntityId Ignore;
+};
+
 class PhysicsQueries
 {
 public:
@@ -46,7 +53,8 @@ public:
     }
 
     // Closest body hit by the ray, or { Hit = false } if none within maxDistance.
-    [[nodiscard]] RaycastHit Raycast(const Vec3d& origin, const Vec3d& direction, float maxDistance) const;
+    [[nodiscard]] RaycastHit Raycast(const Vec3d& origin, const Vec3d& direction, float maxDistance,
+                                     const PhysicsQueryFilter& filter = {}) const;
 
     // Closest body hit while sweeping shape from origin along direction*maxDistance.
     [[nodiscard]] ShapeSweepHit SweepShape(
@@ -54,7 +62,8 @@ public:
         const Vec3d& origin,
         const Quatf& rotation,
         const Vec3d& direction,
-        float maxDistance) const;
+        float maxDistance,
+        const PhysicsQueryFilter& filter = {}) const;
 
     // Entities whose bodies overlap shape placed at (position, rotation). Each
     // entity appears once. Cleared before filling.
@@ -62,7 +71,8 @@ public:
         const CollisionShape& shape,
         const Vec3d& position,
         const Quatf& rotation,
-        std::vector<EntityId>& out) const;
+        std::vector<EntityId>& out,
+        const PhysicsQueryFilter& filter = {}) const;
 
 private:
     const PhysicsWorld* Simulation;

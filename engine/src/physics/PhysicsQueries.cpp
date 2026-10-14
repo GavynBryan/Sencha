@@ -4,6 +4,7 @@
 
 #include <algorithm>
 
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Body/BodyLockInterface.h>
 #include <Jolt/Physics/Collision/CastResult.h>
@@ -25,16 +26,35 @@ EntityId EntityOf(const JPH::PhysicsSystem& system, JPH::BodyID body)
         return UnpackEntity(lock.GetBody().GetUserData());
     return EntityId{};
 }
+
+class IgnoreEntityBodyFilter final : public JPH::BodyFilter
+{
+public:
+    explicit IgnoreEntityBodyFilter(EntityId ignore)
+        : Ignore(ignore)
+    {
+    }
+
+    bool ShouldCollideLocked(const JPH::Body& body) const override
+    {
+        return !Ignore.IsValid() || UnpackEntity(body.GetUserData()) != Ignore;
+    }
+
+private:
+    EntityId Ignore;
+};
 } // namespace
 
-RaycastHit PhysicsQueries::Raycast(const Vec3d& origin, const Vec3d& direction, float maxDistance) const
+RaycastHit PhysicsQueries::Raycast(const Vec3d& origin, const Vec3d& direction, float maxDistance,
+                                   const PhysicsQueryFilter& filter) const
 {
     const JPH::PhysicsSystem& system = Simulation->Internal().System;
     const JPH::NarrowPhaseQuery& query = system.GetNarrowPhaseQuery();
 
     const JPH::RRayCast ray{ ToJphR(origin), ToJph(direction) * maxDistance };
     JPH::RayCastResult result;
-    if (!query.CastRay(ray, result))
+    const IgnoreEntityBodyFilter bodies(filter.Ignore);
+    if (!query.CastRay(ray, result, {}, {}, bodies))
         return RaycastHit{};
 
     RaycastHit hit;
@@ -58,7 +78,8 @@ ShapeSweepHit PhysicsQueries::SweepShape(
     const Vec3d& origin,
     const Quatf& rotation,
     const Vec3d& direction,
-    float maxDistance) const
+    float maxDistance,
+    const PhysicsQueryFilter& filter) const
 {
     const JPH::ShapeRefC jShape = BuildShape(shape);
     if (jShape == nullptr)
@@ -72,7 +93,8 @@ ShapeSweepHit PhysicsQueries::SweepShape(
 
     JPH::ShapeCastSettings settings;
     JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> collector;
-    query.CastShape(cast, settings, JPH::RVec3::sZero(), collector);
+    const IgnoreEntityBodyFilter bodies(filter.Ignore);
+    query.CastShape(cast, settings, JPH::RVec3::sZero(), collector, {}, {}, bodies);
     if (!collector.HadHit())
         return ShapeSweepHit{};
 
@@ -91,7 +113,8 @@ void PhysicsQueries::OverlapShape(
     const CollisionShape& shape,
     const Vec3d& position,
     const Quatf& rotation,
-    std::vector<EntityId>& out) const
+    std::vector<EntityId>& out,
+    const PhysicsQueryFilter& filter) const
 {
     out.clear();
 
@@ -105,7 +128,9 @@ void PhysicsQueries::OverlapShape(
     const JPH::RMat44 transform = JPH::RMat44::sRotationTranslation(ToJph(rotation), ToJphR(position));
     JPH::CollideShapeSettings settings;
     JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
-    query.CollideShape(jShape, JPH::Vec3::sReplicate(1.0f), transform, settings, JPH::RVec3::sZero(), collector);
+    const IgnoreEntityBodyFilter bodies(filter.Ignore);
+    query.CollideShape(jShape, JPH::Vec3::sReplicate(1.0f), transform, settings, JPH::RVec3::sZero(), collector, {}, {},
+                       bodies);
 
     // Dedup in place using the caller's vector: gather every hit's entity, then
     // sort + unique. One body maps to one entity, so this matches a by-body dedup

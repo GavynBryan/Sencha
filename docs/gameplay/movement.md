@@ -345,7 +345,9 @@ and stage candidates — never inside a locomotion system's inner loop.
 `PhysicsQueries` (`engine/include/physics/PhysicsQueries.h`) is the read-only
 raycast/sweep/overlap surface; reach it from a game module via
 `ctx.Schedule.Get<PhysicsStepSystem>()->GetSimulation()` (the template already
-uses `Schedule.Get` for the shape cache). A detection system running in
+uses `Schedule.Get` for the shape cache). A `PhysicsQueryFilter` names an entity
+whose bodies a query passes through, so a trace from inside a caster does not
+report the caster. A detection system running in
 `FixedLogic` queries last tick's physics state; stage the candidate and let the
 next transition tick convert it. Keep detection work proportional to
 characters that could actually enter the mode (gate on airborne, on speed, on

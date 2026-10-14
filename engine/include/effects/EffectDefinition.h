@@ -16,7 +16,9 @@
 //   - Duration/Infinite,
 //     Period  > 0        : modifiers applied to Base every Period (DoT/HoT).
 // Granted tags are added to the target for the lifetime of a Duration/Infinite
-// effect and revoked on expiry (ref-counted, so stacks survive partial removal).
+// effect and revoked when it ends (ref-counted, so stacks survive partial removal).
+// Durations and periods are authored in seconds and counted in whole fixed ticks
+// from the tick the effect is applied on.
 //=============================================================================
 enum class EffectDuration : std::uint8_t
 {
