@@ -1,5 +1,8 @@
 #pragma once
 
+#include "operations/EditorOperations.h"
+
+#include <core/json/JsonValue.h>
 #include <ecs/EntityId.h>
 
 #include <string>
@@ -26,6 +29,14 @@ struct SubjectResolution
 // every entity reference uses; "@<name>" names it by its authored name.
 [[nodiscard]] SubjectResolution ResolveEntitySubject(const EditorDocument& document,
                                                      std::string_view subject);
+
+// The refusal for a subject that did not resolve, naming an ambiguous name's
+// candidates in its detail.
+[[nodiscard]] EditorOperationOutcome SubjectRefusal(const SubjectResolution& subject);
+
+// Every subject of a JSON array of them, in order and each entity once; the
+// first that does not resolve answers for them all.
+[[nodiscard]] SubjectResolution ResolveEntitySubjects(const EditorDocument& document, const JsonValue& subjects);
 
 // Empty when the entity carries no persistent id.
 [[nodiscard]] std::string PersistentIdText(const EditorDocument& document, EntityId entity);

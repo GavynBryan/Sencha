@@ -214,7 +214,7 @@ namespace
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
                 const SubjectResolution subject = ResolveEntitySubject(document, arguments.Find("subject")->AsString());
                 if (!subject.Resolved())
-                    return EditorOperationOutcome::Refused(subject.Code, subject.Message);
+                    return SubjectRefusal(subject);
                 EditorScene& scene = document.GetScene();
                 const EntityId space = subject.Entities.front();
                 if (!scene.GetRegistry().Components.HasComponent<Space>(space))
@@ -261,7 +261,7 @@ namespace
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
                 const SubjectResolution subject = ResolveEntitySubject(document, arguments.Find("subject")->AsString());
                 if (!subject.Resolved())
-                    return EditorOperationOutcome::Refused(subject.Code, subject.Message);
+                    return SubjectRefusal(subject);
                 EditorScene& scene = document.GetScene();
                 const EntityId space = subject.Entities.front();
                 if (!scene.GetRegistry().Components.HasComponent<Space>(space))
@@ -298,7 +298,7 @@ namespace
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
                 const SubjectResolution subject = ResolveEntitySubject(document, arguments.Find("subject")->AsString());
                 if (!subject.Resolved())
-                    return EditorOperationOutcome::Refused(subject.Code, subject.Message);
+                    return SubjectRefusal(subject);
                 const EntityId opening = subject.Entities.front();
                 if (!document.GetScene().GetRegistry().Components.HasComponent<Opening>(opening))
                     return EditorOperationOutcome::Refused("opening.not_opening", "it is not an opening");
@@ -379,7 +379,7 @@ namespace
             const EditorDocument& document = level.Document();
             const SubjectResolution subject = ResolveEntitySubject(document, arguments.Find("subject")->AsString());
             if (!subject.Resolved())
-                return EditorOperationOutcome::Refused(subject.Code, subject.Message);
+                return SubjectRefusal(subject);
             const EditorScene& scene = document.GetScene();
             const World& components = scene.GetRegistry().Components;
             const EntityId entity = subject.Entities.front();
@@ -463,7 +463,7 @@ namespace
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
                 const SubjectResolution subject = ResolveEntitySubject(document, arguments.Find("subject")->AsString());
                 if (!subject.Resolved())
-                    return EditorOperationOutcome::Refused(subject.Code, subject.Message);
+                    return SubjectRefusal(subject);
                 EditorScene& scene = document.GetScene();
                 const EntityId space = subject.Entities.front();
                 World& components = scene.GetRegistry().Components;

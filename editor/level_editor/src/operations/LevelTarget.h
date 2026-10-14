@@ -66,6 +66,7 @@ public:
     [[nodiscard]] const EditorDocument& Document() const;
     // The level itself, whatever draft is being written.
     [[nodiscard]] const EditorDocument& FocusLevel() const;
+    [[nodiscard]] WorldDocument& LevelWorld() { return World; }
 
     // Runs `edit` as step `operation` with `arguments`: a refusal puts back what
     // it had already changed (and fails a draft), and success adds what changed

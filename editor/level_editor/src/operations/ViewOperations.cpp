@@ -222,20 +222,14 @@ namespace
                                   DataField::Field({}, DataFieldKind::String, {}, "an entity id or '@<name>'"));
     }
 
-    // Every subject resolved, or the refusal of the first that is not.
     std::optional<EditorOperationOutcome> Resolve(const EditorDocument& document, const JsonValue& arguments,
                                                   std::vector<EntityId>& entities)
     {
         const JsonValue* subjects = arguments.Find("subjects");
-        if (subjects == nullptr || !subjects->IsArray())
-            return std::nullopt;
-        for (const JsonValue& subject : subjects->AsArray())
-        {
-            const SubjectResolution found = ResolveEntitySubject(document, subject.AsString());
-            if (!found.Resolved())
-                return EditorOperationOutcome::Refused(found.Code, found.Message);
-            entities.insert(entities.end(), found.Entities.begin(), found.Entities.end());
-        }
+        SubjectResolution found = ResolveEntitySubjects(document, subjects != nullptr ? *subjects : JsonValue{});
+        if (!found.Resolved())
+            return SubjectRefusal(found);
+        entities = std::move(found.Entities);
         return std::nullopt;
     }
 

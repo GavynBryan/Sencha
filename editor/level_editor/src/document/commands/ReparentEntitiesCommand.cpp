@@ -112,6 +112,36 @@ void ReparentEntitiesCommand::Undo()
     Document.MarkDirty();
 }
 
+ReparentTargets ResolveReparentTargets(std::span<const EntityId> entities, EntityId newParent,
+                                       const EditorScene& scene, const EditorDocument& document, bool reorder)
+{
+    ReparentTargets targets;
+    for (EntityId entity : entities)
+    {
+        if (!scene.HasEntity(entity))
+            continue;
+        // A placement member's position in its structure comes from the
+        // source; there is no override a reparent could land in. Break the
+        // instance to restructure. The root is the placement itself and moves freely.
+        if (document.IsSceneInstanceMember(entity))
+            return { {}, ReparentRefusal::PlacementMember };
+        if (newParent.IsValid() && (newParent == entity || scene.IsAncestorOf(entity, newParent)))
+            return { {}, ReparentRefusal::Cycle };
+        // Already in place is a no-op -- unless the reparent is also an order,
+        // where staying under the same parent is the point.
+        if (!reorder && scene.GetParent(entity) == newParent)
+            continue;
+        // Reparenting both an entity and its ancestor would flatten the pair
+        // instead of moving the branch.
+        const bool ridesAlong = std::ranges::any_of(entities, [&](EntityId other) {
+            return other != entity && scene.IsAncestorOf(other, entity);
+        });
+        if (!ridesAlong)
+            targets.Entities.push_back(entity);
+    }
+    return targets;
+}
+
 std::unique_ptr<ICommand> MakeReparentEntitiesCommand(std::span<const EntityId> entities,
                                                       EntityId newParent,
                                                       ReparentTransformRule rule,
@@ -119,43 +149,9 @@ std::unique_ptr<ICommand> MakeReparentEntitiesCommand(std::span<const EntityId> 
                                                       EditorDocument& document,
                                                       bool reorder, EntityId insertBefore)
 {
-    std::vector<EntityId> targets;
-    targets.reserve(entities.size());
-    for (EntityId entity : entities)
-    {
-        if (!scene.HasEntity(entity))
-            continue;
-        // A placement member's position in its structure comes from the
-        // source; there is no override a reparent could land in (D4 excludes
-        // it). Break the instance to restructure. The root is the placement
-        // itself and moves freely.
-        if (document.IsSceneInstanceMember(entity))
-            return nullptr;
-        // A cycle disqualifies the gesture: half a drop landing is worse than
-        // the drop refusing, and the drop target already showed the refusal.
-        if (newParent.IsValid()
-            && (newParent == entity || scene.IsAncestorOf(entity, newParent)))
-            return nullptr;
-        // Already in place is a no-op -- unless the gesture is also an order,
-        // where staying under the same parent is the point.
-        if (!reorder && scene.GetParent(entity) == newParent)
-            continue;
-
-        // An entity rides along with any ancestor also in the set; reparenting
-        // both would flatten the pair instead of moving the branch.
-        bool coveredByAncestor = false;
-        for (EntityId other : entities)
-            if (other != entity && scene.IsAncestorOf(other, entity))
-            {
-                coveredByAncestor = true;
-                break;
-            }
-        if (!coveredByAncestor)
-            targets.push_back(entity);
-    }
-
-    if (targets.empty())
+    ReparentTargets targets = ResolveReparentTargets(entities, newParent, scene, document, reorder);
+    if (targets.Refusal != ReparentRefusal::None || targets.Entities.empty())
         return nullptr;
-    return std::make_unique<ReparentEntitiesCommand>(targets, newParent, rule, scene,
+    return std::make_unique<ReparentEntitiesCommand>(targets.Entities, newParent, rule, scene,
                                                      document, reorder, insertBefore);
 }

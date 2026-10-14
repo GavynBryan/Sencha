@@ -1070,6 +1070,16 @@ conflict instead.
   an older one refuses with `changes.unknown_mark`, and a reloaded or replaced
   level refuses with `changes.level_replaced`. When the document's revision
   hasn't moved the answer is empty without digesting anything.
+- Found on the way: an edit applied as a change set (an operation, an
+  accepted draft, their undo and redo) could delete a selected entity and
+  leave its dead handle selected. Applying a change set now fires the same
+  handle observer a projection rebuild does.
+- `entity.delete`, `entity.duplicate` and `entity.reparent` take a list of
+  subjects. An entity means its branch, so a space's doors go and come with
+  it. The branch rules (`document/EntityBranches`) and the reparent rules
+  (`ResolveReparentTargets`) moved out of the commands, which the designer's
+  verbs still commit through; the operations and the commands share them. A
+  copy claims the next free name, so space names stay unique.
 
 ### M3: analysis depth
 

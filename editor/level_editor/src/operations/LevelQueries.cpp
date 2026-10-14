@@ -82,19 +82,6 @@ namespace
         return std::sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    EditorOperationOutcome Refusal(const SubjectResolution& subject)
-    {
-        JsonValue detail;
-        if (!subject.Candidates.empty())
-        {
-            JsonValue::Array candidates;
-            for (const std::string& id : subject.Candidates)
-                candidates.push_back(JsonValue(id));
-            detail = JsonValue(JsonValue::Object{ { "candidates", JsonValue(std::move(candidates)) } });
-        }
-        return EditorOperationOutcome::Refused(subject.Code, subject.Message, std::move(detail));
-    }
-
     // Operations ---------------------------------------------------------------
 
     EditorOperationEntry Summary(const LevelTarget& level)
@@ -173,7 +160,7 @@ namespace
             const SubjectResolution subject =
                 ResolveEntitySubject(document, arguments.Find("subject")->AsString());
             if (!subject.Resolved())
-                return Refusal(subject);
+                return SubjectRefusal(subject);
             const EntityId entity = subject.Entities.front();
             const ::World& components = document.GetRegistry().Components;
 

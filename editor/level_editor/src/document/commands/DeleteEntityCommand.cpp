@@ -1,10 +1,10 @@
 #include "DeleteEntityCommand.h"
 
 #include "commands/CompositeCommand.h"
+#include "document/EntityBranches.h"
 #include "selection/SelectableRef.h"
 #include "selection/commands/SelectCommand.h"
 
-#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -42,20 +42,7 @@ std::unique_ptr<ICommand> MakeDeleteEntitiesCommand(std::span<const EntityId> en
                                                     EditorDocument& document,
                                                     SelectionService& selection)
 {
-    // Deleting an entity means its branch: the tree the user sees promises
-    // that. Expand each root to its subtree, deduplicating so a selection that
-    // already contains both parent and child deletes each once.
-    std::vector<EntityId> doomed;
-    for (EntityId entity : entities)
-    {
-        if (std::find(doomed.begin(), doomed.end(), entity) != doomed.end())
-            continue;
-        std::vector<EntityId> subtree;
-        scene.CollectSubtree(entity, subtree);
-        for (EntityId member : subtree)
-            if (std::find(doomed.begin(), doomed.end(), member) == doomed.end())
-                doomed.push_back(member);
-    }
+    const std::vector<EntityId> doomed = CollectBranches(scene, entities);
 
     std::vector<std::unique_ptr<ICommand>> commands;
     commands.reserve(doomed.size() + 1);

@@ -8,6 +8,7 @@
 #include <world/identity/PersistentIdComponent.h>
 #include <world/registry/Registry.h>
 
+#include <algorithm>
 #include <format>
 #include <optional>
 
@@ -78,4 +79,34 @@ SubjectResolution ResolveEntitySubject(const EditorDocument& document, std::stri
 
     return Unresolved("subject.malformed",
                       std::format("'{}' is neither a 16-hex-digit id nor '@<name>'", subject));
+}
+
+SubjectResolution ResolveEntitySubjects(const EditorDocument& document, const JsonValue& subjects)
+{
+    SubjectResolution all;
+    if (!subjects.IsArray())
+        return all;
+    for (const JsonValue& subject : subjects.AsArray())
+    {
+        SubjectResolution one = ResolveEntitySubject(document, subject.IsString() ? subject.AsString() : std::string{});
+        if (!one.Resolved())
+            return one;
+        for (const EntityId entity : one.Entities)
+            if (std::ranges::find(all.Entities, entity) == all.Entities.end())
+                all.Entities.push_back(entity);
+    }
+    return all;
+}
+
+EditorOperationOutcome SubjectRefusal(const SubjectResolution& subject)
+{
+    JsonValue detail;
+    if (!subject.Candidates.empty())
+    {
+        JsonValue::Array candidates;
+        for (const std::string& id : subject.Candidates)
+            candidates.push_back(JsonValue(id));
+        detail = JsonValue(JsonValue::Object{ { "candidates", JsonValue(std::move(candidates)) } });
+    }
+    return EditorOperationOutcome::Refused(subject.Code, subject.Message, std::move(detail));
 }
