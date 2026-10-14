@@ -717,11 +717,38 @@ namespace
             const JsonValue* data = value.IsObject() ? value.Find("data") : nullptr;
             if (data == nullptr || !data->IsString() || !data->AsString().starts_with(kAssetPathPrefix))
             {
-                Error("schema", key, path, "an effect is { \"data\": \"asset://...\" }");
+                Error("schema", key, path, "a reference is { \"data\": \"asset://...\" }");
                 return {};
             }
             Dependencies.push_back(AssetRef{ .Type = AssetType::Data, .Path = data->AsString() });
             return data->AsString();
+        }
+
+        void GrantEntries(const JsonValue& list, const std::string& path, std::vector<AbilityGrantDeclaration>& out)
+        {
+            if (!list.IsArray())
+            {
+                Error("schema", {}, path, "a list of grant entries");
+                return;
+            }
+            std::unordered_set<std::string> keys;
+            for (std::size_t i = 0; i < list.AsArray().size(); ++i)
+            {
+                const JsonValue& entry = list.AsArray()[i];
+                const std::string entryPath = std::format("{}[{}]", path, i);
+                AbilityGrantDeclaration grant;
+                grant.Key = Key(entry, entryPath);
+                CheckFields(entry, { "key", "ability", "binding" }, grant.Key, entryPath);
+                if (!grant.Key.empty() && !keys.insert(grant.Key).second)
+                    Error("key_duplicate", grant.Key, entryPath, std::format("two grants share the key '{}'", grant.Key));
+                if (const JsonValue* ability = entry.Find("ability"))
+                    grant.Ability = DataReference(*ability, grant.Key, entryPath + ".ability");
+                else
+                    Error("schema", grant.Key, entryPath, "'ability' is required");
+                if (const JsonValue* binding = entry.Find("binding"))
+                    grant.Override = Binding(*binding, entryPath + ".binding");
+                out.push_back(std::move(grant));
+            }
         }
 
         void Root(const JsonValue& data, AbilityDeclaration& out)
@@ -1298,15 +1325,37 @@ namespace
     // The editor's view of the format. Operation arguments and comparison values
     // are typed by the operation they feed, so the schema leaves them open and the
     // compiler checks them.
+    DataFieldSchema TagList(std::string key, std::string label)
+    {
+        DataFieldSchema list = Field(DataFieldKind::Array, std::move(key), std::move(label));
+        list.Children.push_back(MakeDataField(DataFieldKind::GameplayTag, "tag", "Tag"));
+        return list;
+    }
+
+    DataFieldSchema TagQuerySchema(std::string key, std::string label)
+    {
+        DataFieldSchema query = Field(DataFieldKind::Record, std::move(key), std::move(label));
+        query.Children = { TagList("all", "All of"), TagList("any", "Any of"), TagList("none", "None of") };
+        return query;
+    }
+
+    DataFieldSchema BindingSchema(std::string key, std::string label)
+    {
+        DataFieldSchema binding = Field(DataFieldKind::Record, std::move(key), std::move(label));
+        binding.Children.push_back(Field(DataFieldKind::String, "action", "Action"));
+        binding.Children.push_back(Choices("policy", "Policy", kAbilityInputPolicyNames));
+        binding.Children.push_back(Field(DataFieldKind::Int, "priority", "Priority"));
+        binding.Children.push_back(Choices("consume", "Consume", kAbilityConsumeNames));
+        binding.Children.push_back(Choices("when_blocked", "When refused", kAbilityWhenBlockedNames));
+        binding.Children.push_back(TagQuerySchema("context", "Context"));
+        binding.Children.push_back(Choices("on_interrupt", "On interruption", kAbilityInterruptNames));
+        return binding;
+    }
+
     DataSchema MakeSchema()
     {
-        const auto tagList = [&](std::string key, std::string label) {
-            DataFieldSchema list = Field(DataFieldKind::Array, std::move(key), std::move(label));
-            list.Children.push_back(MakeDataField(DataFieldKind::GameplayTag, "tag", "Tag"));
-            return list;
-        };
-        DataFieldSchema tagQuery = Field(DataFieldKind::Record, "tags", "Tags");
-        tagQuery.Children = { tagList("all", "All of"), tagList("any", "Any of"), tagList("none", "None of") };
+        const auto tagList = [](std::string key, std::string label) { return TagList(std::move(key), std::move(label)); };
+        DataFieldSchema tagQuery = TagQuerySchema("tags", "Tags");
 
         DataFieldSchema condition = KeyedRecord("condition", "Condition");
         condition.Children.push_back(tagQuery);
@@ -1384,17 +1433,7 @@ namespace
         cooldown.Children.push_back(Choices("start", "Starts", kCooldownStarts));
         cooldown.Children.push_back(Field(DataFieldKind::String, "group", "Group", "The cost group whose commit starts it."));
 
-        DataFieldSchema binding = Field(DataFieldKind::Record, "input_default", "Input");
-        binding.Children.push_back(Field(DataFieldKind::String, "action", "Action"));
-        binding.Children.push_back(Choices("policy", "Policy", kAbilityInputPolicyNames));
-        binding.Children.push_back(Field(DataFieldKind::Int, "priority", "Priority"));
-        binding.Children.push_back(Choices("consume", "Consume", kAbilityConsumeNames));
-        binding.Children.push_back(Choices("when_blocked", "When refused", kAbilityWhenBlockedNames));
-        DataFieldSchema context = tagQuery;
-        context.Key = "context";
-        context.DisplayName = "Context";
-        binding.Children.push_back(std::move(context));
-        binding.Children.push_back(Choices("on_interrupt", "On interruption", kAbilityInterruptNames));
+        DataFieldSchema binding = BindingSchema("input_default", "Input");
 
         DataFieldSchema display = Field(DataFieldKind::Record, "display", "Display");
         display.Children = { Field(DataFieldKind::String, "name", "Name"), Field(DataFieldKind::String, "category", "Category") };
@@ -1451,11 +1490,27 @@ namespace
     }
 }
 
-bool HasAbilityErrors(const std::vector<AbilityDiagnostic>& diagnostics)
+bool ParseAbilityGrantEntries(const JsonValue& list,
+                              const std::string& path,
+                              std::vector<AbilityGrantDeclaration>& out,
+                              std::vector<AssetRef>& dependencies,
+                              std::vector<AbilityDiagnostic>& diagnostics)
 {
-    return std::ranges::any_of(diagnostics, [](const AbilityDiagnostic& diagnostic) {
-        return diagnostic.Severity == AbilityDiagnosticSeverity::Error;
-    });
+    const std::size_t before = diagnostics.size();
+    Reader(diagnostics, dependencies).GrantEntries(list, path, out);
+    return diagnostics.size() == before;
+}
+
+DataFieldSchema AbilityGrantEntriesSchema(std::string key, std::string label)
+{
+    DataFieldSchema entry = KeyedRecord("grant", "Grant");
+    DataFieldSchema ability = MakeDataField(DataFieldKind::Record, "ability", "Ability");
+    DataFieldSchema reference = MakeDataField(DataFieldKind::DataAssetRef, "data", "Ability");
+    reference.Reference.DataSubtype = std::string(kAbilityDefinitionType);
+    ability.Children.push_back(std::move(reference));
+    entry.Children.push_back(std::move(ability));
+    entry.Children.push_back(BindingSchema("binding", "Binding"));
+    return List(std::move(key), std::move(label), std::move(entry));
 }
 
 bool CompileAbilityDeclaration(const JsonValue& data,

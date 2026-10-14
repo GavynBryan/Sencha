@@ -4,6 +4,7 @@
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/metadata/DataSchema.h>
 
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -21,4 +22,12 @@ void RegisterAbilityDefinitionData(DataAssetTypeRegistry& types, DataSchemaRegis
                                              std::vector<AssetRef>& dependencies,
                                              std::vector<AbilityDiagnostic>& diagnostics);
 
-[[nodiscard]] bool HasAbilityErrors(const std::vector<AbilityDiagnostic>& diagnostics);
+// Grant entries -- { key, ability: { "data": ... }, binding? } -- wherever content
+// states them outside a scene: an effect's granted_abilities. True when none is
+// malformed; ability references are appended to `dependencies`.
+[[nodiscard]] bool ParseAbilityGrantEntries(const JsonValue& list,
+                                            const std::string& path,
+                                            std::vector<AbilityGrantDeclaration>& out,
+                                            std::vector<AssetRef>& dependencies,
+                                            std::vector<AbilityDiagnostic>& diagnostics);
+[[nodiscard]] DataFieldSchema AbilityGrantEntriesSchema(std::string key, std::string label);

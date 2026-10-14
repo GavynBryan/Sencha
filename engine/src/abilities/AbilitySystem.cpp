@@ -2,6 +2,7 @@
 
 #include "AbilityPass.h"
 
+#include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityGrantEntries.h>
 #include <abilities/AbilityRegistry.h>
 #include <abilities/AbilityRequestQueue.h>
@@ -9,6 +10,7 @@
 #include <core/console/ConsoleRegistry.h>
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
+#include <effects/ActiveEffect.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <input/InputActionSource.h>
 #include <input/InputActionVocabulary.h>
@@ -16,6 +18,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -29,7 +32,16 @@ namespace
         {
         }
 
+        struct EffectGrant
+        {
+            EntityId Target;
+            EntityId Effect;
+            std::uint16_t Entry = kAbilityNoGrantEntry;
+        };
+
         Query<Read<AbilityGrants>> Granted;
+        std::optional<Query<Read<ActiveEffect>>> Effects;
+        std::vector<EffectGrant> EffectGrants;
         std::vector<EntityId> Actors;
         std::vector<AbilityRequest> Requests;
         std::vector<std::string> Problems;
@@ -204,6 +216,54 @@ namespace
         scratch.Requests.clear();
     }
 
+    // An actor holds an effect's grants while the effect lasts: granted the pass after
+    // it applies, revoked the pass after it ends, so both machines agree on the tick.
+    void SyncEffectGrants(World& world, const StoragePartitionSet* partitions, AbilityPassScratch& scratch)
+    {
+        const AbilityEffectGrants* table = world.TryGetResource<AbilityEffectGrants>();
+        const AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
+        if (table == nullptr || table->Empty() || entries == nullptr || !world.IsRegistered<ActiveEffect>())
+            return;
+        if (!scratch.Effects)
+            scratch.Effects.emplace(world);
+        scratch.EffectGrants.clear();
+        scratch.Effects->ForEachChunk([&](auto& view) {
+            const auto effects = view.template Read<ActiveEffect>();
+            const EntityIndex* indices = view.Entities();
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
+                for (const std::uint16_t entry : table->Of(effects[i].Def))
+                    scratch.EffectGrants.push_back({ effects[i].Target, world.ResolveEntityIndex(indices[i]), entry });
+        });
+        for (const AbilityPassScratch::EffectGrant& pending : scratch.EffectGrants)
+        {
+            if (!world.IsAlive(pending.Target)
+                || (partitions != nullptr && !partitions->Contains(world.GetEntityPartition(pending.Target))))
+                continue;
+            if (!world.HasComponent<AbilityGrants>(pending.Target))
+                world.AddComponent<AbilityGrants>(pending.Target, AbilityGrants{});
+            AbilityGrants& grants = *world.TryGet<AbilityGrants>(pending.Target);
+            const bool held = std::any_of(grants.Entries, grants.Entries + grants.Count, [&](const AbilityGrant& grant) {
+                return grant.Kind == AbilityGrantKind::Effect && grant.Effect == pending.Effect
+                    && grant.Entry == pending.Entry;
+            });
+            if (!held)
+                (void)GrantAbility(grants, entries->Find(pending.Entry)->Ability, AbilityGrantKind::Effect,
+                                   pending.Entry, pending.Effect);
+        }
+    }
+
+    void RevokeEndedEffectGrants(World& world, EntityId actor)
+    {
+        AbilityGrants& grants = *world.TryGet<AbilityGrants>(actor);
+        for (std::uint8_t i = grants.Count; i-- > 0;)
+        {
+            const AbilityGrant& grant = grants.Entries[i];
+            if (grant.Kind == AbilityGrantKind::Effect
+                && (!world.IsAlive(grant.Effect) || !world.HasComponent<ActiveEffect>(grant.Effect)))
+                (void)RevokeAbilityGrant(grants, grant.Id);
+        }
+    }
+
     void RefreshBindings(World& world, AbilityGrantEntries& entries, std::vector<std::string>& problems)
     {
         const AbilityRegistry* abilities = world.TryGetResource<AbilityRegistry>();
@@ -228,6 +288,7 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
     AbilityPassScratch& scratch = world.HasResource<AbilityPassScratch>() ? world.GetResource<AbilityPassScratch>()
                                                                           : world.AddResource<AbilityPassScratch>(world);
     RefreshBindings(world, *entries, scratch.Problems);
+    SyncEffectGrants(world, partitions, scratch);
 
     // Operations create and destroy entities, so the actors are gathered first and
     // nothing runs inside the query.
@@ -255,8 +316,12 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
     };
 
     for (const EntityId entity : scratch.Actors)
-        if (ready(entity))
-            pass.Sweep(actorOf(entity));
+    {
+        if (!ready(entity))
+            continue;
+        RevokeEndedEffectGrants(world, entity);
+        pass.Sweep(actorOf(entity));
+    }
 
     for (const EntityId entity : scratch.Actors)
     {

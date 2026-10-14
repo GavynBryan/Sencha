@@ -1,5 +1,6 @@
 #pragma once
 
+#include <abilities/AbilityDeclaration.h>
 #include <assets/data/DataAssetTypeRegistry.h>
 #include <core/metadata/DataSchema.h>
 #include <effects/EffectDefinition.h>
@@ -30,6 +31,8 @@ struct EffectDeclaration
     float Period = 0.0f;
     std::vector<Modifier> Modifiers;
     std::vector<std::string> GrantedTags;
+    // Held by the target for as long as the effect lasts.
+    std::vector<AbilityGrantDeclaration> GrantedAbilities;
 };
 
 void RegisterEffectDefinitionData(DataAssetTypeRegistry& types, DataSchemaRegistry& schemas);

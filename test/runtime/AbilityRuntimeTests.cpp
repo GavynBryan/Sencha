@@ -4,6 +4,7 @@
 
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
+#include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityKit.h>
 #include <abilities/AbilityVerbs.h>
 #include <app/EngineVocabulary.h>
@@ -1056,4 +1057,31 @@ TEST_F(AbilityRuntime, TheAbilityVerbsGrantRevokeActivateAndCancel)
     EXPECT_EQ(invoke(kAbilityRevokeVerb, true), VerbAdmission::Accepted);
     EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
     EXPECT_EQ(invoke(kAbilityRevokeVerb, true), VerbAdmission::Refused);
+}
+
+TEST_F(AbilityRuntime, AnEffectGrantsItsAbilitiesForAsLongAsItLasts)
+{
+    const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);
+    EffectDefinition weapon{};
+    weapon.Duration = EffectDuration::Infinite;
+    const EffectId equipped = Entities.GetResource<EffectRegistry>().Define("asset://effects/weapon.sdata", weapon);
+    DeclareEffectGrants(Entities, equipped,
+                        { AbilityGrantDeclaration{ .Key = "w_charge", .Ability = "asset://abilities/charge.sdata",
+                                                   .Override = { .Action = "Input.AltFire" } } });
+    const EntityId actor = Actor();
+
+    const EntityId held = ApplyEffect(Entities, actor, equipped, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now });
+    Step({ Press(kAlt) });
+    EXPECT_NE(LiveRecord(actor, charge), nullptr) << "granted in the pass after it applied, bound as the effect says";
+    const AbilityGrants& grants = *Entities.TryGet<AbilityGrants>(actor);
+    ASSERT_EQ(grants.Count, 1u);
+    EXPECT_EQ(grants.Entries[0].Kind, AbilityGrantKind::Effect);
+    EXPECT_EQ(grants.Entries[0].Effect, held);
+
+    Step();
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 1u) << "granted once, not once per pass";
+    ASSERT_TRUE(RemoveEffect(Entities, held));
+    Step();
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 0u);
+    EXPECT_EQ(Traced(AbilityTraceEvent::Ended).front().EndReason, AbilityEndReason::GrantRevoked);
 }

@@ -1478,6 +1478,11 @@ Deviations from the plan's wording, each for a stated reason:
   op's `cue` is traced and reaches presentation in Stage 8; a phase's `present` is
   stored for Stage 8's sustained channel. The transition `reason` field is not
   offered: every transition to `end` ends `Completed`.
-- **Owed.** Effect-sourced grants (`granted_abilities` on `effect.definition`) land
-  next, before Stage 6. The animation pull rule (§17.5) is recorded in
-  `docs/deferred.md`.
+- **Effect-sourced grants.** `granted_abilities` on `effect.definition`, in the
+  grant-entry form scenes use, recorded per effect in `AbilityEffectGrants`. Deviation
+  from §2.2: rather than effects granting and revoking abilities inside
+  `ApplyEffect`, which would make effects depend on abilities, the ability pass
+  brings each actor's effect-held grants into step with its live effects at the start
+  of every pass. A grant therefore appears the tick after its effect applies and goes
+  the tick after it ends, identically on every machine.
+- **Owed.** The animation pull rule (§17.5) is recorded in `docs/deferred.md`.

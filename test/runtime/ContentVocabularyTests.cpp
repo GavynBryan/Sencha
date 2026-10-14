@@ -6,6 +6,7 @@
 #include <assets/runtime/RuntimeAssets.h>
 #include <core/assets/AssetRegistry.h>
 #include <core/logging/LoggingProvider.h>
+#include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityKit.h>
 #include <app/EngineVocabulary.h>
 #include <authored/WorldVocabulary.h>
@@ -235,6 +236,31 @@ TEST(ContentVocabulary, AnAbilityNamingAnUnknownVerbIsReportedAndKeepsItsName)
     EXPECT_EQ(abilities.Get(broken), nullptr);
 }
 
+TEST(ContentVocabulary, AnEffectDeclaresTheAbilitiesItGrants)
+{
+    Content content;
+    content.Write("a/fire.sdata", R"({ "type": "ability.definition", "version": 1, "data": {
+        "phases": [ { "key": "p_a", "then": [ { "key": "t_end", "to": "end" } ] } ] } })");
+    content.Write("b/rifle.sdata", R"({ "type": "effect.definition", "version": 1, "data": {
+        "duration": "infinite",
+        "granted_abilities": [ { "key": "w_fire", "ability": { "data": "asset://a/fire.sdata" },
+                                 "binding": { "action": "Input.PrimaryFire", "priority": 10 } } ] } })");
+    content.Scan();
+    VocabularyWorld world;
+    std::vector<std::string> errors;
+    DeclareContentVocabulary(content.Assets, world.Entities, ContentVocabularyReload::Once, errors);
+    ASSERT_TRUE(errors.empty()) << errors.front();
+
+    const EffectId rifle = world.Effects().Find("asset://b/rifle.sdata");
+    const std::span<const std::uint16_t> granted = world.Entities.GetResource<AbilityEffectGrants>().Of(rifle);
+    ASSERT_EQ(granted.size(), 1u);
+    const AbilityGrantEntry* entry = world.Entities.GetResource<AbilityGrantEntries>().Find(granted.front());
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->Key, "w_fire");
+    EXPECT_EQ(entry->Override.Priority, 10);
+    EXPECT_EQ(world.Entities.GetResource<AbilityRegistry>().GetName(entry->Ability), "asset://a/fire.sdata");
+}
+
 TEST(ContentVocabulary, MalformedDeclarationsDoNotCompile)
 {
     LoggingProvider logging;
@@ -244,6 +270,8 @@ TEST(ContentVocabulary, MalformedDeclarationsDoNotCompile)
         return assets.DataTypes.Find(type)->Compile(*JsonParse(data));
     };
     EXPECT_FALSE(compile(kEffectDefinitionType, R"({ "duration": "duration", "seconds": 0 })").IsValid());
+    EXPECT_FALSE(compile(kEffectDefinitionType, R"({ "granted_abilities": [ { "key": "g",
+        "ability": { "data": "asset://a.sdata" } } ] })").IsValid()) << "an instant effect cannot hold a grant";
     EXPECT_FALSE(compile(kEffectDefinitionType, R"({ "duration": "instant", "granted_tags": [ "A" ] })").IsValid());
     EXPECT_FALSE(compile(kEffectDefinitionType,
                          R"({ "duration": "infinite", "granted_tags": [ "A", "B", "C", "D", "E", "F", "G", "H", "I" ] })")

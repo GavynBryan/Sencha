@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
+#include <abilities/AbilityEffectGrants.h>
 #include <abilities/AbilityRegistry.h>
 #include <assets/data/DataAssetSubtype.h>
 #include <assets/runtime/RuntimeAssets.h>
@@ -77,8 +78,11 @@ void DeclareEffect(RuntimeAssets& assets, World& world, ContentDefinitionLeases:
             errors.push_back(std::format("{}: {}", entry.Path, message));
         return;
     }
-    if (!effects->Define(entry.Path, std::move(definition)).IsValid())
+    const EffectId effect = effects->Define(entry.Path, std::move(definition));
+    if (!effect.IsValid())
         errors.push_back(std::format("{}: the effect registry refused it", entry.Path));
+    else
+        DeclareEffectGrants(world, effect, declaration->GrantedAbilities);
 }
 
 // A reload that no longer resolves keeps the definition that last did, and says why.

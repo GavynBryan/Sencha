@@ -371,6 +371,14 @@ save authored grants by key, ability asset and override
 (`abilities/AbilityGrantsSerializer.h`); an ability a scene names before anything
 declared it keeps its name.
 
+A lasting effect may hold grants too: an `effect.definition`'s
+`granted_abilities` lists grant entries in the same form (`key`, `ability` as
+`{ "data": ... }`, optional `binding`), which is how an equipped weapon is an
+Infinite effect granting its abilities. The pass grants them to the effect's target
+the tick after the effect applies and revokes them the tick after it ends
+(`AbilityEffectGrants`), so the activations they started end `GrantRevoked` on
+every machine on the same tick.
+
 An actor with grants carries `ActiveAbilities`, `AbilityLocals`, `ActorTime` and a
 tag container, by derivation. It must also carry an `InputActionSourceRef` to read
 input at all.

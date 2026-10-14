@@ -315,6 +315,15 @@ struct AbilityBindingDecl
     friend bool operator==(const AbilityBindingDecl&, const AbilityBindingDecl&) = default;
 };
 
+// One grant as content states it: under a stable key, an ability asset, and what
+// of its binding this grant overrides.
+struct AbilityGrantDeclaration
+{
+    std::string Key;
+    std::string Ability;
+    AbilityBindingDecl Override;
+};
+
 enum class AbilityPredictionLevel : std::uint8_t
 {
     None,

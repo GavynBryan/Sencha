@@ -303,4 +303,6 @@ called by the engine for every host, not by games. `ability.activate`,
 `VerbTraceRing` is built on `core/containers/BoundedRing.h`.
 `CompileAuthoredConstant`, `CompileAuthoredDefault` and `ParseVerbBindingArgument`
 are public. Scenes name `AbilityGrants` (chunk `ABGR`) where they named
-`AbilitySet`.
+`AbilitySet`. `EffectDeclaration` gains `GrantedAbilities`; `AbilityEffectGrants`,
+`DeclareEffectGrants`, `ParseAbilityGrantEntries` and `AbilityGrantEntriesSchema`
+are new.

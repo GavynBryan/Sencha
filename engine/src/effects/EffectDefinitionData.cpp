@@ -1,5 +1,6 @@
 #include <effects/EffectDefinitionData.h>
 
+#include <abilities/AbilityDefinitionData.h>
 #include <attributes/AttributeRegistry.h>
 #include <effects/ActiveEffect.h>
 #include <gameplay_tags/GameplayTagRegistry.h>
@@ -70,6 +71,7 @@ namespace
             Seconds("period", "Period", "When above zero, modifiers apply to Base every period instead of folding."));
         schema.Root.Children.push_back(std::move(modifiers));
         schema.Root.Children.push_back(std::move(tags));
+        schema.Root.Children.push_back(AbilityGrantEntriesSchema("granted_abilities", "Granted abilities"));
         return schema;
     }
 
@@ -130,10 +132,20 @@ namespace
         if (value->GrantedTags.size() > kEffectGrantedTagCapacity)
             return { {}, {}, std::format("$.data.granted_tags An effect grants at most {} tags.",
                                          kEffectGrantedTagCapacity) };
-        if (value->Duration == EffectDuration::Instant && (!value->GrantedTags.empty() || value->Period > 0.0f))
-            return { {}, {}, "$.data.duration An Instant effect has no lifetime to grant tags or tick a period in." };
+        std::vector<AssetRef> dependencies;
+        if (const JsonValue* granted = data.Find("granted_abilities"))
+        {
+            std::vector<AbilityDiagnostic> problems;
+            if (!ParseAbilityGrantEntries(*granted, "$.data.granted_abilities", value->GrantedAbilities, dependencies,
+                                          problems))
+                return { {}, {}, std::format("{} {}", problems.front().Path, problems.front().Message) };
+        }
+        if (value->Duration == EffectDuration::Instant
+            && (!value->GrantedTags.empty() || !value->GrantedAbilities.empty() || value->Period > 0.0f))
+            return { {}, {}, "$.data.duration An Instant effect has no lifetime to grant tags or abilities or tick a "
+                             "period in." };
 
-        return { std::move(value), {}, {} };
+        return { std::move(value), std::move(dependencies), {} };
     }
 }
 
