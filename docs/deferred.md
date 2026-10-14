@@ -589,3 +589,16 @@ do the work and delete the entry.
   frame profile in which `VolumeEvaluationInputs` shows. The fix is a retained
   per-scene index of shelled volumes' world bounds, invalidated by their
   placement keys.
+
+## Tool commits through the level target
+
+- **What:** decision D5 of `docs/plans/level-spatial-model.md`: every mutation
+  is a change set through the level target, so a designer's tool and an
+  agent's operation edit alike. The move gizmo's transform commits and the
+  Space tool do; the rest of the tools still commit their own commands.
+- **Where:** `BrushManipulationSink` (`CommitMeshes`, `CommitMesh`,
+  `CommitSplits`, `CommitDuplicate`), `BrushTool`
+  (`DeferredCreateBrushCommand`), the carve, clip and edge-cut tools, and the
+  selection verbs in `editor/level_editor/src/workspace/SelectionActions.cpp`.
+- **Trigger:** `BrushTool` moves in milestone M2 with the brush operations;
+  each other tool moves the next time its commit path is changed.

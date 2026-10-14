@@ -79,8 +79,18 @@ EditorOperationOutcome LevelTarget::Mutate(std::string_view operation, const Jso
 {
     if (Writing != nullptr && Writing->State == LevelDraftState::Failed)
         return RefuseFailed(*Writing);
+    return Run(Writing, operation, arguments, edit);
+}
 
-    EditorDocument& document = Document();
+EditorOperationOutcome LevelTarget::MutateLevel(const Edit& edit)
+{
+    return Run(nullptr, {}, JsonValue{}, edit);
+}
+
+EditorOperationOutcome LevelTarget::Run(LevelDraft* draft, std::string_view operation, const JsonValue& arguments,
+                                        const Edit& edit)
+{
+    EditorDocument& document = draft != nullptr ? *draft->Document : World.FocusDocument();
     // An operation is where a mutation finishes, so world transforms are made
     // current on both sides of it: the edit reads them, and so does whatever
     // the client asks next.
@@ -93,10 +103,10 @@ EditorOperationOutcome LevelTarget::Mutate(std::string_view operation, const Jso
     {
         ApplyEntityChangeSet(document, changes, ChangeSetSide::Before);
         document.GetScene().RefreshDerivedTransforms();
-        if (Writing != nullptr)
+        if (draft != nullptr)
         {
-            Writing->State = LevelDraftState::Failed;
-            Writing->Failure = std::string(operation) + " at step " + std::to_string(Writing->Steps.size() + 1)
+            draft->State = LevelDraftState::Failed;
+            draft->Failure = std::string(operation) + " at step " + std::to_string(draft->Steps.size() + 1)
                 + ": " + outcome.Message;
         }
         return outcome;
@@ -104,10 +114,10 @@ EditorOperationOutcome LevelTarget::Mutate(std::string_view operation, const Jso
 
     document.GetScene().RefreshDerivedTransforms();
     AddSummary(outcome.Data, ChangeSummary(changes), before, document.Revision());
-    if (Writing != nullptr)
+    if (draft != nullptr)
     {
-        AppendChangeSet(Writing->Changes, std::move(changes));
-        Writing->Steps.push_back({ std::string(operation), arguments });
+        AppendChangeSet(draft->Changes, std::move(changes));
+        draft->Steps.push_back({ std::string(operation), arguments });
     }
     else if (!changes.Empty())
     {

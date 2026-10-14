@@ -10,6 +10,8 @@
 #include "operations/LevelOperations.h"
 #include "operations/LevelSubjects.h"
 #include "operations/LevelTarget.h"
+#include "meshedit/ManipulationSink.h"
+#include "workspace/BrushManipulationSink.h"
 #include "viewport/Picking.h"
 
 #include <core/json/JsonParser.h>
@@ -346,4 +348,48 @@ TEST_F(SpaceOperationsTest, AProposalReplaysToTheSameEntitiesWithTheSameIds)
         << "the same steps on the same level with the same seed make the same entities";
     std::error_code ignored;
     std::filesystem::remove(file, ignored);
+}
+
+namespace
+{
+    // What a translate-gizmo drag hands its sink when it lets go.
+    void Drag(EditorWorkspace& workspace, EditorScene& scene, std::initializer_list<EntityId> entities, Vec3d offset)
+    {
+        scene.RefreshDerivedTransforms();
+        std::vector<TransformEdit> edits;
+        for (const EntityId entity : entities)
+        {
+            const Transform3f before = *scene.TryGetWorldTransform(entity);
+            Transform3f after = before;
+            after.Position = after.Position + offset;
+            scene.SetWorldTransform(entity, after);
+            edits.push_back({ entity, before, after });
+        }
+        workspace.Interaction.Sink->CommitTransforms(edits);
+    }
+}
+
+TEST_F(CarryTest, TheMoveGizmoCarriesTheCorridorLikeTheOperation)
+{
+    Drag(Workspace, Scene(), { Find("Hall") }, Vec3d{ -2, 0, 0 });
+    EXPECT_NEAR(VolumeOf("Corridor").Min.X, 6.25f, 1e-3f);
+    EXPECT_NEAR(VolumeOf("Hall").Min.X, -2.0f, 1e-3f);
+    Commands.Undo();
+    EXPECT_NEAR(VolumeOf("Corridor").Min.X, 8.25f, 1e-3f) << "the drag and its carry are one undo step";
+    EXPECT_NEAR(VolumeOf("Hall").Min.X, 0.0f, 1e-3f) << "undo returns to where the drag began, not to its preview";
+}
+
+TEST_F(CarryTest, DraggingBothSpacesTogetherPullsNothing)
+{
+    Drag(Workspace, Scene(), { Find("Hall"), Find("Corridor") }, Vec3d{ -2, 0, 0 });
+    EXPECT_NEAR(VolumeOf("Corridor").Min.X, 6.25f, 1e-3f);
+    EXPECT_NEAR(VolumeOf("Corridor").Max.X, 12.0f, 1e-3f) << "moved, not stretched";
+}
+
+TEST_F(CarryTest, TheGizmoEditsTheLevelWhileAnAgentWritesADraft)
+{
+    Ok("draft.begin", R"({"label": "Elsewhere"})");
+    Drag(Workspace, Scene(), { Find("Hall") }, Vec3d{ -2, 0, 0 });
+    EXPECT_NEAR(VolumeOf("Hall").Min.X, -2.0f, 1e-3f);
+    EXPECT_TRUE(Ok("draft.diff", "{}").Find("steps")->AsArray().empty()) << "the designer's drag is no step of the draft";
 }

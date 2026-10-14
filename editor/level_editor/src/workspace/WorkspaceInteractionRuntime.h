@@ -24,6 +24,7 @@ class SelectionService;
 class ToolRegistry;
 class ViewportLayout;
 class ViewportToolDispatcher;
+class LevelTarget;
 class WorldDocument;
 struct EntitySnapshot;
 struct PivotState;
@@ -34,6 +35,8 @@ struct PivotState;
 struct WorkspaceInteractionInputs
 {
     WorldDocument& World;
+    // What tool commits go through, so a tool and an operation edit alike.
+    LevelTarget& Level;
     SelectionContext& LevelSelection;
     SelectionService& Selection;
     PickingService& Picking;

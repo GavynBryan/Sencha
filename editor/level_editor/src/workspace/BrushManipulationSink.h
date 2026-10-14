@@ -10,10 +10,12 @@
 class CommandStack;
 class EditorDocument;
 class EditorScene;
+class LevelTarget;
 class SelectionService;
 
 // The one brush-backed edit backend: previews by writing the live scene and
-// commits via the value-command factories (MakeWorldMoveCommand / MakeEditBrushMeshCommand).
+// commits transforms through the level target's MoveEntities, meshes through
+// the value-command factories (MakeEditBrushMeshCommand).
 // Implements both the
 // manipulator-facing ManipulationSink (preview/commit during drags) and the
 // verb-facing IMeshEditTarget (resolve + make-command for MeshEditService). The
@@ -25,7 +27,7 @@ class BrushManipulationSink : public ManipulationSink, public IMeshEditTarget
 {
 public:
     BrushManipulationSink(EditorScene& scene, EditorDocument& document, CommandStack& commands,
-                          SelectionService& selection,
+                          LevelTarget& level, SelectionService& selection,
                           std::function<void(std::vector<EntitySnapshot>&)> duplicateRemap = {});
 
     // ManipulationSink
@@ -63,6 +65,7 @@ private:
     EditorScene& Scene;
     EditorDocument& Document;
     CommandStack& Commands;
+    LevelTarget& Level;
     SelectionService& Selection;
     std::function<void(Vec3d)> DuplicateObserver;
     std::function<void(std::vector<EntitySnapshot>&)> DuplicateRemap;

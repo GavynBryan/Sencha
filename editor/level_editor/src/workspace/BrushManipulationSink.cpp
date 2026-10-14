@@ -6,6 +6,8 @@
 #include "document/commands/ValueCommand.h"
 #include "commands/CommandStack.h"
 #include "commands/CompositeCommand.h"
+#include "operations/LevelTarget.h"
+#include "operations/SpaceEdits.h"
 #include "selection/SelectionService.h"
 
 #include <algorithm>
@@ -16,11 +18,12 @@
 #include <vector>
 
 BrushManipulationSink::BrushManipulationSink(EditorScene& scene, EditorDocument& document,
-                                             CommandStack& commands, SelectionService& selection,
+                                             CommandStack& commands, LevelTarget& level, SelectionService& selection,
                                              std::function<void(std::vector<EntitySnapshot>&)> duplicateRemap)
     : Scene(scene)
     , Document(document)
     , Commands(commands)
+    , Level(level)
     , Selection(selection)
     , DuplicateRemap(std::move(duplicateRemap))
 {
@@ -63,12 +66,19 @@ void BrushManipulationSink::CommitTransforms(const std::vector<TransformEdit>& e
     if (edits.empty())
         return;
 
-    std::vector<std::unique_ptr<ICommand>> commands;
-    commands.reserve(edits.size());
+    // The drag previewed the move live; put each entity back where it began so
+    // the move is recorded from there, under the carry rule an operation applies.
+    std::vector<EntityMove> moves;
+    moves.reserve(edits.size());
     for (const TransformEdit& edit : edits)
-        commands.push_back(MakeWorldMoveCommand(edit.Entity, edit.Before, edit.After, Scene, Document));
-
-    Commands.Execute(std::make_unique<CompositeCommand>(std::move(commands)));
+    {
+        Scene.SetWorldTransform(edit.Entity, edit.Before);
+        moves.push_back({ edit.Entity, edit.After });
+    }
+    MoveReport report;
+    (void)Level.MutateLevel([&](EditorDocument& document, EntityChangeRecorder& recorder) {
+        return MoveEntities(document, recorder, moves, true, report);
+    });
 }
 
 void BrushManipulationSink::CommitMeshes(std::vector<MeshEdit> edits)

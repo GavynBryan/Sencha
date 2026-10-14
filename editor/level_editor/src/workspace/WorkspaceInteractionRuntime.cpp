@@ -56,7 +56,7 @@ void WorkspaceInteractionRuntime::Rebuild(const WorkspaceInteractionInputs& inpu
     // first so the tool context can hold it.
     WorldDocument& world = inputs.World;
     Sink = std::make_unique<BrushManipulationSink>(
-        document.GetScene(), document, commands, inputs.Selection, inputs.DuplicateRemap);
+        document.GetScene(), document, commands, inputs.Level, inputs.Selection, inputs.DuplicateRemap);
     if (inputs.OnDuplicateCommitted)
         Sink->SetDuplicateObserver(inputs.OnDuplicateCommitted);
 

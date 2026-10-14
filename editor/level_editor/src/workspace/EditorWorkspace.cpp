@@ -119,6 +119,7 @@ void EditorWorkspace::BuildInteractionState()
     Interaction.Rebuild(
         WorkspaceInteractionInputs{
             World,
+            Level,
             LevelSelection,
             Selection,
             Picking,

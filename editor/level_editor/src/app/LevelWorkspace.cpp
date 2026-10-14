@@ -229,9 +229,8 @@ void LevelWorkspace::BuildDocument()
 
 void LevelWorkspace::BuildOperations()
 {
-    Level = std::make_unique<LevelTarget>(Workspace->World, *Commands);
     std::vector<std::string> errors;
-    if (!Operations.Register(std::string(kLevelOperations), LevelOperations(*Level, Operations), errors)
+    if (!Operations.Register(std::string(kLevelOperations), LevelOperations(Workspace->Level, Operations), errors)
         || !Operations.Register(std::string(kWorldOperations), WorldQueryOperations(Workspace->World), errors))
         for (const std::string& error : errors)
             EnginePtr->Logging().GetLogger<LevelWorkspace>().Error("operations: {}", error);
@@ -724,7 +723,7 @@ void LevelWorkspace::ProcessFrame()
     if (Entities != nullptr)
         Entities->OfferZoneMoves(Catalog, ActionHandlers);
     PublishProblems();
-    for (const std::string& label : Level->DropOrphanedDrafts())
+    for (const std::string& label : Workspace->Level.DropOrphanedDrafts())
         Notices.Post("The proposal '" + label + "' was dropped: the level it was for closed", NoticeTone::Warning,
                      NoticeClockNow());
     if (Files)

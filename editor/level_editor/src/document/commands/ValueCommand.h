@@ -48,17 +48,6 @@ private:
     EditorDocument&                Document;
 };
 
-// Moves an entity by changing only its transform (brush moves go through this, not
-// a mesh edit, so translating a brush can't rebuild/clobber its mesh). The
-// before/after pair is world-space, because every mover is a viewport gesture
-// working in the space the user sees; the scene converts through the parent.
-[[nodiscard]] inline std::unique_ptr<ICommand> MakeWorldMoveCommand(
-    EntityId entity, Transform3f before, Transform3f after, EditorScene& scene, EditorDocument& document)
-{
-    return std::make_unique<ValueCommand<Transform3f>>(
-        before, after, [&scene, entity](const Transform3f& t) { scene.SetWorldTransform(entity, t); }, document);
-}
-
 // Replaces a brush's modifier stack wholesale (the wrapper for every stack edit:
 // add, remove, reorder, enable, parameter change). Separate from the mesh
 // command so a stack edit can never clobber a mesh edit made in between.

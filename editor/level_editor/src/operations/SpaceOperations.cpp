@@ -5,6 +5,7 @@
 #include "LevelSubjects.h"
 #include "LevelTarget.h"
 #include "SpaceDiagnostics.h"
+#include "SpaceEdits.h"
 #include "SpaceRelations.h"
 
 #include "document/EditorDocument.h"
@@ -15,7 +16,6 @@
 #include "document/NavigationCookInput.h"
 #include "document/SpaceComponents.h"
 #include "document/commands/RenameEntityCommand.h"
-#include "meshedit/MeshEditService.h"
 
 #include <core/metadata/DataSchemaFields.h>
 #include <world/registry/Registry.h>
@@ -28,12 +28,7 @@
 
 namespace
 {
-    constexpr float kSmallest = 0.1f;
-
-    LevelConventions ConventionsOf(const EditorDocument& document)
-    {
-        return LevelConventionsFrom(FindLevelConventions(document.ContentRoots()).Values);
-    }
+    constexpr float kSmallestOpening = 0.1f;
 
     JsonValue Named(const EditorDocument& document, EntityId entity)
     {
@@ -64,20 +59,6 @@ namespace
             rename->Execute();
     }
 
-    // Floors take the floor material, ceilings the ceiling's, the rest the walls'.
-    void PaintByConvention(BrushMesh& mesh, const LevelConventions& conventions)
-    {
-        for (BrushFace& face : mesh.Faces)
-        {
-            const float up = BrushComputeFaceNormal(mesh, face).Y;
-            const std::optional<AssetRef>& material = up < -0.7f ? conventions.FloorMaterial
-                : up > 0.7f                                       ? conventions.CeilingMaterial
-                                                                  : conventions.WallMaterial;
-            if (material)
-                face.Material.Material = *material;
-        }
-    }
-
     EditorOperationEntry Create(LevelTarget& level)
     {
         EditorOperationEntry entry;
@@ -99,35 +80,17 @@ namespace
         entry.Definition.Result = MutationResultSchema({ NamedSchema("space", "the space made") });
         entry.Execute = [&level, name = entry.Definition.Name](const JsonValue& arguments) {
             return level.Mutate(name, arguments, [&arguments](EditorDocument& document, EntityChangeRecorder& recorder) {
-                const std::string& spaceName = arguments.Find("name")->AsString();
-                if (spaceName.empty())
-                    return EditorOperationOutcome::Refused("space.name_invalid", "a space needs a name");
-                if (ResolveEntitySubject(document, "@" + spaceName).Resolved())
-                    return EditorOperationOutcome::Refused("space.name_taken",
-                                                           "something is already called '" + spaceName + "'");
-                const Vec3d min = PointFromJson(*arguments.Find("min"));
-                const Vec3d max = PointFromJson(*arguments.Find("max"));
-                const Vec3d size = max - min;
-                if (size.X < kSmallest || size.Y < kSmallest || size.Z < kSmallest)
-                    return EditorOperationOutcome::Refused("space.too_small",
-                                                           "max must exceed min by at least 0.1 m on every axis");
-
-                const LevelConventions conventions = ConventionsOf(document);
-                EditorScene& scene = document.GetScene();
-                const EntityId space = scene.CreateBrush((min + max) * 0.5f, size * 0.5f);
-                BrushMesh mesh = *scene.TryGetBrushMesh(space);
-                PaintByConvention(mesh, conventions);
-                scene.SetBrushMesh(space, std::move(mesh));
-                World& components = scene.GetRegistry().Components;
-                components.AddComponent(space, BrushVolume{});
-                components.AddComponent(space, Space{});
+                NewSpace wanted;
+                wanted.Name = arguments.Find("name")->AsString();
+                wanted.Min = PointFromJson(*arguments.Find("min"));
+                wanted.Max = PointFromJson(*arguments.Find("max"));
                 const JsonValue* shell = arguments.Find("shell");
-                if (shell == nullptr || !shell->IsBool() || shell->AsBool())
-                    components.AddComponent(
-                        space, Shell{ .Thickness = NumberOf(arguments, "thickness").value_or(conventions.ShellThickness) });
-                Rename(document, space, spaceName);
-                recorder.Created(space);
-                document.MarkDirty();
+                wanted.Shelled = shell == nullptr || !shell->IsBool() || shell->AsBool();
+                wanted.Thickness = NumberOf(arguments, "thickness");
+                EntityId space;
+                if (EditorOperationOutcome refused = CreateSpace(document, recorder, wanted, space);
+                    refused.Status != EditorOperationStatus::Ok)
+                    return refused;
                 return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{ { "space", Named(document, space) } }));
             });
         };
@@ -171,7 +134,7 @@ namespace
                 Opening opening;
                 opening.Width = NumberOf(arguments, "width").value_or(conventions.OpeningWidth);
                 opening.Height = NumberOf(arguments, "height").value_or(conventions.OpeningHeight);
-                if (opening.Width < kSmallest || opening.Height < kSmallest)
+                if (opening.Width < kSmallestOpening || opening.Height < kSmallestOpening)
                     return EditorOperationOutcome::Refused("opening.too_small", "width and height must be at least 0.1 m");
                 const JsonValue* shape = arguments.Find("shape");
                 opening.Shape = shape != nullptr && shape->IsString() && shape->AsString() == "arch" ? CarveShape::Arch
@@ -240,32 +203,6 @@ namespace
         return best;
     }
 
-    // Moves one face of `entity`'s volume along the world `delta`. False when
-    // the result would not be a usable brush, or would turn any face inside
-    // out.
-    bool MoveFace(EditorScene& scene, EntityId entity, std::uint32_t face, const Vec3d& delta)
-    {
-        const BrushMesh& mesh = *scene.TryGetBrushMesh(entity);
-        const Transform3f& world = *scene.TryGetWorldTransform(entity);
-        const SelectableRef ref = SelectableRef::FaceSelection(scene.GetRegistry().Id, entity, face);
-        std::optional<BrushMesh> moved =
-            MeshEditService{}.TranslateElements(mesh, world, std::span(&ref, 1), MeshElementKind::Face, delta, true);
-        if (!moved || moved->Faces.size() != mesh.Faces.size())
-            return false;
-        for (std::size_t f = 0; f < mesh.Faces.size(); ++f)
-            if (moved->Faces[f].Normal.Dot(mesh.Faces[f].Normal) <= 0.0f)
-                return false;
-        scene.SetBrushMesh(entity, std::move(*moved));
-        return true;
-    }
-
-    void Translate(EditorScene& scene, EntityId entity, const Vec3d& offset)
-    {
-        Transform3f world = *scene.TryGetWorldTransform(entity);
-        world.Position = world.Position + offset;
-        scene.SetWorldTransform(entity, world);
-    }
-
     EditorOperationEntry Move(LevelTarget& level)
     {
         EditorOperationEntry entry;
@@ -297,43 +234,20 @@ namespace
                 const EntityId space = subject.Entities.front();
                 if (!scene.GetRegistry().Components.HasComponent<Space>(space))
                     return EditorOperationOutcome::Refused("space.not_space", "it is not a space");
-                const Vec3d offset = PointFromJson(*arguments.Find("offset"));
                 const JsonValue* carryArgument = arguments.Find("carry");
                 const bool carry = carryArgument == nullptr || !carryArgument->IsBool() || carryArgument->AsBool();
-
-                // The far sides are found before anything moves, where the doors still are.
-                std::vector<FarSide> farSides;
-                if (carry)
-                    for (const EntityId child : scene.GetAllEntities())
-                        if (const Parent* parent = scene.GetRegistry().Components.TryGet<Parent>(child);
-                            parent != nullptr && parent->Entity == space)
-                            if (const std::optional<FarSide> far = FarSideOf(scene, space, child))
-                                if (std::none_of(farSides.begin(), farSides.end(), [&](const FarSide& seen) {
-                                        return seen.Space == far->Space && seen.Face == far->Face;
-                                    }))
-                                    farSides.push_back(*far);
-
-                recorder.Touch(space);
-                Translate(scene, space, offset);
+                Transform3f moved = *scene.TryGetWorldTransform(space);
+                moved.Position = moved.Position + PointFromJson(*arguments.Find("offset"));
+                const EntityMove move{ space, moved };
+                MoveReport report;
+                if (EditorOperationOutcome refused = MoveEntities(document, recorder, std::span(&move, 1), carry, report);
+                    refused.Status != EditorOperationStatus::Ok)
+                    return refused;
                 JsonValue::Array carried, skipped;
-                for (const FarSide& far : farSides)
-                {
-                    if (!scene.GetRegistry().Components.HasComponent<Shell>(far.Space))
-                    {
-                        skipped.push_back(Named(document, far.Space));
-                        continue;
-                    }
-                    const Vec3d pull = far.Outward * offset.Dot(far.Outward);
-                    if (pull.Magnitude() < 1e-4f)
-                        continue;
-                    recorder.Touch(far.Space);
-                    if (!MoveFace(scene, far.Space, far.Face, pull))
-                        return EditorOperationOutcome::Refused(
-                            "space.carry_invalid", "carrying would turn " + EntityNameText(document, far.Space)
-                                                       + " inside out; move it less, or without carry");
-                    carried.push_back(Named(document, far.Space));
-                }
-                document.MarkDirty();
+                for (const EntityId entity : report.Carried)
+                    carried.push_back(Named(document, entity));
+                for (const EntityId entity : report.Skipped)
+                    skipped.push_back(Named(document, entity));
                 return EditorOperationOutcome::Ok(JsonValue(JsonValue::Object{
                     { "carried", JsonValue(std::move(carried)) },
                     { "skipped", JsonValue(std::move(skipped)) },
@@ -403,10 +317,11 @@ namespace
                 const EntityId opening = subject.Entities.front();
                 if (!document.GetScene().GetRegistry().Components.HasComponent<Opening>(opening))
                     return EditorOperationOutcome::Refused("opening.not_opening", "it is not an opening");
-                recorder.Touch(opening);
-                Translate(document.GetScene(), opening, PointFromJson(*arguments.Find("offset")));
-                document.MarkDirty();
-                return EditorOperationOutcome::Ok({});
+                Transform3f moved = *document.GetScene().TryGetWorldTransform(opening);
+                moved.Position = moved.Position + PointFromJson(*arguments.Find("offset"));
+                const EntityMove move{ opening, moved };
+                MoveReport unused;
+                return MoveEntities(document, recorder, std::span(&move, 1), false, unused);
             });
         };
         return entry;

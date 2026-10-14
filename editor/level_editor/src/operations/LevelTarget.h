@@ -70,6 +70,9 @@ public:
     // and the revisions to its answer.
     [[nodiscard]] EditorOperationOutcome Mutate(std::string_view operation, const JsonValue& arguments,
                                                 const Edit& edit);
+    // The same for a tool's edit: always the level itself, whatever draft an
+    // operation client is writing, and never a step of one.
+    [[nodiscard]] EditorOperationOutcome MutateLevel(const Edit& edit);
 
     // Copies the focus level into a new draft and writes to it. Null, with
     // `error` set, when the copy did not load.
@@ -90,6 +93,8 @@ public:
     [[nodiscard]] EditorOperationOutcome RebaseDraft(LevelDraft& draft, const Replay& replay);
 
 private:
+    [[nodiscard]] EditorOperationOutcome Run(LevelDraft* draft, std::string_view operation,
+                                             const JsonValue& arguments, const Edit& edit);
     std::unique_ptr<LevelDraft> CopyLevel(EditorDocument& level, std::string label, std::string rationale,
                                           std::uint32_t idSeed, std::string& error);
     [[nodiscard]] EditorDocument* FindBase(const LevelDraft& draft);

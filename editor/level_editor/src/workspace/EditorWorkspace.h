@@ -1,5 +1,7 @@
 #pragma once
 
+#include "operations/LevelTarget.h"
+
 #include "PendingBridgeEdit.h"
 #include "SelectionActions.h"
 #include "PendingElementEdit.h"
@@ -187,6 +189,9 @@ public:
     // outlives it. Workspace-level edits (DeleteSelection) route through the
     // same undo history every other surface writes to.
     CommandStack& Commands;
+    // The level operations and tool commits edit: the focus level, or a draft
+    // an operation client is writing.
+    LevelTarget Level{ World, Commands };
 
     // Cross-brush bridge preview. Owns the staged entity, the paths it
     // regenerates from, and the pending-edit scope that goes with them.
