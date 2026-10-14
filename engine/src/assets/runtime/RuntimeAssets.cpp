@@ -12,6 +12,7 @@
 #include <anim/AnimFlowData.h>
 #include <anim/AnimSlotMapData.h>
 #include <authored/VerbBindingData.h>
+#include <spatial/candidates/CandidateEvaluationData.h>
 #include <core/logging/LoggingProvider.h>
 #include <gameplay_tags/GameplayTagDeclarations.h>
 #include <input/InputProfileData.h>
@@ -105,6 +106,7 @@ RuntimeAssets::RuntimeAssets(LoggingProvider& logging,
     RegisterAnimBlendOverrides(DataTypes, DataSchemas);
     RegisterAnimBlendspaceData(DataTypes, DataSchemas);
     RegisterGameplayTagDeclarations(DataTypes, DataSchemas);
+    RegisterCandidateEvaluationData(DataTypes, DataSchemas, CandidateOperations);
 
     // A reference store is its own stager and store, so it takes the mesh
     // kind whole; the real loader stages against a cache this composition
