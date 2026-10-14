@@ -71,16 +71,7 @@ namespace
             result.Error = FormatDataValidationErrors(errors);
             return result;
         }
-        auto conventions = std::make_shared<LevelConventions>();
-        conventions->ShellThickness = static_cast<float>(values.Find("shell_thickness")->AsNumber());
-        conventions->OpeningWidth = static_cast<float>(values.Find("opening_width")->AsNumber());
-        conventions->OpeningHeight = static_cast<float>(values.Find("opening_height")->AsNumber());
-        conventions->SpaceHeight = static_cast<float>(values.Find("space_height")->AsNumber());
-        conventions->OpenFaceMaterial = Reference(values, "open_face_material");
-        conventions->WallMaterial = Reference(values, "wall_material");
-        conventions->FloorMaterial = Reference(values, "floor_material");
-        conventions->CeilingMaterial = Reference(values, "ceiling_material");
-        result.Value = std::move(conventions);
+        result.Value = std::make_shared<LevelConventions>(LevelConventionsFrom(values));
         return result;
     }
 
@@ -154,4 +145,18 @@ LevelConventionsLookup FindLevelConventions(std::span<const std::filesystem::pat
     lookup.AssetPath = found.front().AssetPath;
     lookup.Values = std::move(values);
     return lookup;
+}
+
+LevelConventions LevelConventionsFrom(const JsonValue& values)
+{
+    LevelConventions conventions;
+    conventions.ShellThickness = static_cast<float>(values.Find("shell_thickness")->AsNumber());
+    conventions.OpeningWidth = static_cast<float>(values.Find("opening_width")->AsNumber());
+    conventions.OpeningHeight = static_cast<float>(values.Find("opening_height")->AsNumber());
+    conventions.SpaceHeight = static_cast<float>(values.Find("space_height")->AsNumber());
+    conventions.OpenFaceMaterial = Reference(values, "open_face_material");
+    conventions.WallMaterial = Reference(values, "wall_material");
+    conventions.FloorMaterial = Reference(values, "floor_material");
+    conventions.CeilingMaterial = Reference(values, "ceiling_material");
+    return conventions;
 }

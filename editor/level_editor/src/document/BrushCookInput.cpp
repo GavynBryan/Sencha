@@ -82,8 +82,7 @@ std::vector<CookBrushGeometry> CollectCookBrushes(const EditorScene& scene,
     // deterministic for a given document.
     for (EntityId entity : scene.GetAllEntities())
     {
-        if (!scene.IsEntityEffectivelyVisible(entity) || scene.TryGetBrush(entity) == nullptr
-            || !Admits(BrushRoleFilter::Solids, scene.RoleOf(entity)))
+        if (!scene.IsEntityEffectivelyVisible(entity) || scene.TryGetBrush(entity) == nullptr)
             continue;
         const BrushEvaluated* evaluated = scene.TryGetBrushPieces(entity, policy);
         const Transform3f* transform = scene.TryGetWorldTransform(entity);
@@ -93,6 +92,8 @@ std::vector<CookBrushGeometry> CollectCookBrushes(const EditorScene& scene,
             failures->push_back(CookBrushFailure{ entity, evaluated->FailedModifier });
         for (const BrushPiece& piece : evaluated->Pieces)
         {
+            if (!Admits(BrushRoleFilter::Solids, evaluated->Meshes[piece.MeshIndex].Role))
+                continue;
             CookBrushGeometry brush = CollectBrushGeometry(
                 *piece.Mesh, PieceWorldTransform(*transform, piece), levelDefault, charts,
                 chartConeDegrees, luxelSize);

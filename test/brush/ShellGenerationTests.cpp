@@ -80,7 +80,11 @@ TEST(ShellGeneration, ABoxRoomGetsSixClosedSlabsJoinedAtItsCorners)
     ASSERT_FALSE(shell.Refused);
     ASSERT_EQ(shell.Slabs.size(), 6u);
     for (const ShellSlab& slab : shell.Slabs)
+    {
         EXPECT_TRUE(Closed(slab.Mesh));
+        EXPECT_LT(slab.Mesh.Faces[slab.InnerFace].Normal.Dot(room.Faces[slab.SourceFace].Normal), -0.99f)
+            << "the inner face looks back into the room";
+    }
 
     // Floors and ceilings run under and over the walls; walls meet each other
     // at bisectors and stop on the floor and ceiling planes.

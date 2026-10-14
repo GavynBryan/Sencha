@@ -14,8 +14,9 @@
 
 struct ShellSlab
 {
-    BrushMesh     Mesh;       // in the volume's frame
-    std::uint32_t SourceFace; // the volume face it stands on
+    BrushMesh     Mesh;          // in the volume's frame
+    std::uint32_t SourceFace = 0; // the volume face it stands on
+    std::uint32_t InnerFace = 0;  // its face on that volume face, looking into the space
 };
 
 enum class ShellProblemKind : std::uint8_t

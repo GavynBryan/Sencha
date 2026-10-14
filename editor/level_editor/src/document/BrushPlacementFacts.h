@@ -44,6 +44,7 @@ struct BrushPlacementKey
     std::uint64_t PlacementRevision = 0; // BrushRecord::PlacementRevision
     std::uint32_t MaxPieces = 0;         // the interactive policy the evaluation ran under
     Transform3f   World;                 // WorldTransform after RefreshDerivedTransforms; exact compare
+    std::uint64_t VolumeInputs = 0;      // VolumeEvaluationInputs: what a volume's shell was built from
 
     bool operator==(const BrushPlacementKey&) const = default;
 };

@@ -55,3 +55,7 @@ struct LevelConventionsLookup
 // The project's single level.conventions asset under `roots`. Several, or one
 // that does not satisfy the schema, is a problem, and the defaults stand.
 [[nodiscard]] LevelConventionsLookup FindLevelConventions(std::span<const std::filesystem::path> roots);
+
+// The typed conventions from values with every field filled, as a lookup or
+// the schema's normalizer gives them.
+[[nodiscard]] LevelConventions LevelConventionsFrom(const JsonValue& values);

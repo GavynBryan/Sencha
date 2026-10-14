@@ -18,8 +18,9 @@
 // mesh edits) read TryGetBrushMesh directly rather than walking pieces.
 //=============================================================================
 
-// Which brushes a walk visits. Geometry consumers (the cook, solid drawing, ray
-// casts against surfaces) take Solids: a volume is air and stands in for nothing.
+// Which brush meshes a walk visits. Geometry consumers (the cook, solid drawing,
+// ray casts against surfaces) take Solids: a volume is air, though its shell's
+// walls are solid.
 enum class BrushRoleFilter : std::uint8_t
 {
     Solids,
@@ -44,14 +45,13 @@ void ForEachVisibleBrushPiece(const EditorScene& scene, bool skipLocked, BrushRo
             continue;
         if (scene.TryGetBrush(entity) == nullptr)
             continue; // a baked brush draws as its placed mesh, not its dormant source
-        if (!Admits(roles, scene.RoleOf(entity)))
-            continue;
         const BrushEvaluated* evaluated = scene.TryGetBrushPieces(entity);
         const Transform3f* transform = scene.TryGetWorldTransform(entity);
         if (evaluated == nullptr || transform == nullptr)
             continue;
         for (const BrushPiece& piece : evaluated->Pieces)
-            fn(entity, piece, PieceWorldTransform(*transform, piece));
+            if (Admits(roles, evaluated->Meshes[piece.MeshIndex].Role))
+                fn(entity, piece, PieceWorldTransform(*transform, piece));
     }
 }
 

@@ -4,7 +4,6 @@
 #include "brush/BrushEvaluation.h"
 #include "brush/BrushId.h"
 #include "document/BrushPlacementFacts.h"
-#include "document/EditorScene.h"
 
 #include <core/assets/AssetRef.h>
 #include <ecs/EntityId.h>
@@ -19,6 +18,8 @@
 #include <span>
 #include <unordered_map>
 #include <vector>
+
+class EditorScene;
 
 
 //=============================================================================
@@ -48,6 +49,7 @@ struct BrushDrawMesh // one distinct mesh of the entity, owned by value
     std::uint64_t                ContentHash = 0;
     std::vector<BrushEdgeVertex> Edges;         // two per edge
     std::vector<Vec3d>           VolumeFill;    // brush-local triangles; a volume's only
+    BrushRole                    Role = BrushRole::Solid;
 };
 
 struct BrushPlacement
@@ -66,7 +68,6 @@ struct BrushMeshRun // placements of one mesh, contiguous
 struct BrushDrawEntity
 {
     BrushPlacementKey           Key;
-    BrushRole                   Role = BrushRole::Solid;
     std::uint64_t               BakedFingerprint = 0; // handles + default material; placements redo, edges do not
     std::vector<BrushDrawMesh>  Meshes;               // aligned with BrushEvaluated::Meshes
     std::vector<BrushMeshRun>   Runs;

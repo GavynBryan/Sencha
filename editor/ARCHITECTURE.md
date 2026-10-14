@@ -279,10 +279,14 @@ that opens a project in a new process).
   `BrushVolume` (the `volume` tag, in `BrushComponents.h`: a brush enclosing
   air, never geometry), and in `SpaceComponents.h` `Space`, `Shell` (walls
   generated around the volume) and `Opening` (a cut through them). All are
-  declared editor-only. `EditorScene::RoleOf` says whether a brush is solid
-  or a volume, and every walk over brush geometry (`SceneBrushWalk`'s
-  `BrushRoleFilter`, `CollectCookBrushes`, the ray cast against surfaces)
-  admits by it, so a volume never cooks, collides, navigates or lights.
+  declared editor-only. `EditorScene::RoleOf` says whether a brush entity is
+  a volume; `VolumeEvaluations` evaluates volumes, every mesh a volume, plus
+  a shelled space's walls (`GenerateShell`) minted as solid meshes whose inner
+  face maps to the volume face, cached per entity by
+  `VolumeEvaluationInputs` (also in the placement key). Every walk over brush
+  geometry (`SceneBrushWalk`'s `BrushRoleFilter`, `CollectCookBrushes`, picking)
+  admits per mesh role, so air never cooks, collides, navigates or lights,
+  and walls do.
 - Change sets: `EntityChangeRecorder` records the entities an edit touches by
   persistent id, before and after, keeping only those that changed;
   `ApplyEntityChangeSet` puts either side back (overwriting in place, so

@@ -78,17 +78,17 @@ TEST_F(VolumeBrushTest, TheDrawSetFollowsTheVolumeTagBothWays)
     const EntityId room = AddBrush({ 0, 1.5, 0 }, { 4, 1.5, 4 });
     Scene().RefreshDerivedTransforms();
     ASSERT_TRUE(Draws.Refresh(Scene(), Bakes, Default));
-    ASSERT_EQ(Draws.Find(room)->Role, BrushRole::Solid);
+    ASSERT_EQ(Draws.Find(room)->Meshes.front().Role, BrushRole::Solid);
     EXPECT_TRUE(Draws.Find(room)->Meshes.front().VolumeFill.empty());
 
     Scene().GetRegistry().Components.AddComponent(room, BrushVolume{});
     EXPECT_TRUE(Draws.Refresh(Scene(), Bakes, Default)) << "becoming a volume is a change";
-    EXPECT_EQ(Draws.Find(room)->Role, BrushRole::Volume);
+    EXPECT_EQ(Draws.Find(room)->Meshes.front().Role, BrushRole::Volume);
     EXPECT_EQ(Draws.Find(room)->Meshes.front().VolumeFill.size(), 36u) << "a box is twelve triangles";
     EXPECT_FALSE(Draws.Refresh(Scene(), Bakes, Default));
 
     Scene().GetRegistry().Components.RemoveComponent<BrushVolume>(room);
     EXPECT_TRUE(Draws.Refresh(Scene(), Bakes, Default));
-    EXPECT_EQ(Draws.Find(room)->Role, BrushRole::Solid);
+    EXPECT_EQ(Draws.Find(room)->Meshes.front().Role, BrushRole::Solid);
     EXPECT_TRUE(Draws.Find(room)->Meshes.front().VolumeFill.empty());
 }

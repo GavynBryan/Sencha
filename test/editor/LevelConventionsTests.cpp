@@ -4,6 +4,8 @@
 
 #include "commands/CommandStack.h"
 #include "document/DocumentSerialization.h"
+#include "document/EditorDocument.h"
+#include "document/EditorScene.h"
 #include "document/LevelConventions.h"
 #include "document/NavigationCookInput.h"
 #include "document/WorldDocument.h"
@@ -83,6 +85,15 @@ namespace
         EXPECT_DOUBLE_EQ(found.Values.Find("shell_thickness")->AsNumber(), 0.5);
         EXPECT_DOUBLE_EQ(found.Values.Find("space_height")->AsNumber(), 3.0);
         ASSERT_NE(found.Values.Find("wall_material"), nullptr);
+    }
+
+    TEST_F(LevelConventionsTest, ADocumentTakesItsOpenFaceMaterialFromTheConventions)
+    {
+        Write("conventions.sdata", R"({"open_face_material": "asset://materials/dev/open.smat"})");
+        LoggingProvider logging;
+        EditorDocument document(logging);
+        document.SetContentRoots({ Root });
+        EXPECT_EQ(document.GetScene().OpenFaceMaterial().Path, "asset://materials/dev/open.smat");
     }
 
     TEST_F(LevelConventionsTest, SeveralAssetsOrAnInvalidOneAreProblemsAndTheDefaultsStand)

@@ -896,6 +896,13 @@ of the real model, with spaces included from the start.
   space; a face edit resolves to the volume face") and the cook reuse the piece
   machinery. The shell stage is cached per space by a content hash of its own
   inputs, never by the brush store's revision slot.
+- Built that way. The role lives on each evaluated mesh, so a space's air and
+  its walls share one evaluation; the walls are generated in world space (so
+  up and the thickness are world facts whatever the space's scale) and stored
+  in its frame. The open-face material comes from the project's conventions
+  when the document learns its content roots; an edit to the conventions
+  reaches documents opened after it. Neighbours (the gap rule) and openings
+  join the inputs next.
 
 ### M2: work live, and widen the vocabulary
 

@@ -1,4 +1,5 @@
 #include "EditorDocument.h"
+#include "LevelConventions.h"
 
 #include <assets/runtime/ContentVocabulary.h>
 
@@ -157,6 +158,13 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     InstallEditorModuleVocabulary(world);
     for (const std::string& error : AuthoredInstallationErrors(world))
         Logging.GetLogger<EditorDocument>().Error("vocabulary: {}", error);
+}
+
+void EditorDocument::SetContentRoots(std::vector<std::filesystem::path> roots)
+{
+    const LevelConventions conventions = LevelConventionsFrom(FindLevelConventions(roots).Values);
+    Scene.SetOpenFaceMaterial(conventions.OpenFaceMaterial.value_or(AssetRef{}));
+    Projection.SetContentRoots(std::move(roots));
 }
 
 void EditorDocument::SetAssetEnvironment(RuntimeAssets& assets)

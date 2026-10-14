@@ -54,6 +54,14 @@ struct BrushElementMap
 // Mesh lineage lives here (MintedBy / MintedFrom); placement lineage lives on
 // the piece (ProducedBy). They answer different questions: an Array copy of a
 // mirrored wall was produced by the Array and draws a mesh minted by the Mirror.
+// What a mesh is: solid geometry, or a volume enclosing air. A space's walls
+// are solid meshes minted into its volume's evaluation.
+enum class BrushRole : std::uint8_t
+{
+    Solid,
+    Volume,
+};
+
 struct BrushEvaluatedMesh
 {
     const BrushMesh* Mesh = nullptr;
@@ -61,6 +69,7 @@ struct BrushEvaluatedMesh
     std::uint64_t    Signature = 0;                 // BrushMeshSignature(*Mesh)
     std::uint32_t    MintedBy = kBrushNoModifier;   // stack index of the modifier that minted it
     std::uint32_t    MintedFrom = 0;                // MeshIndex it derived from (itself for the source)
+    BrushRole        Role = BrushRole::Solid;
     BrushElementMap  ToSource;                      // composed through the whole lineage
     // Edge topology in BrushEdgePairs order: the enumeration every edge index
     // refers to, computed once here so no consumer re-enumerates.

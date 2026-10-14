@@ -174,8 +174,6 @@ std::vector<RayPieceCandidate> GatherRayPieceCandidates(const EditorScene& scene
             continue;
         if (skipLocked && scene.IsEntityEffectivelyLocked(entity))
             continue;
-        if (!Admits(roles, scene.RoleOf(entity)))
-            continue;
         // A baked brush keeps its dormant source as a body target: it has no
         // placement facts, so it is bounded and placed by its source alone.
         if (scene.TryGetBrush(entity) == nullptr)
@@ -208,7 +206,8 @@ std::vector<RayPieceCandidate> GatherRayPieceCandidates(const EditorScene& scene
             continue;
         for (const BrushPiece& piece : evaluated->Pieces)
         {
-            if (piece.Ordinal >= bounds.size() || piece.Ordinal >= placements.size())
+            if (piece.Ordinal >= bounds.size() || piece.Ordinal >= placements.size()
+                || !Admits(roles, evaluated->Meshes[piece.MeshIndex].Role))
                 continue;
             float near = 0.0f;
             if (!IntersectRayAabb(ray, bounds[piece.Ordinal], near))
@@ -246,7 +245,7 @@ bool IsHidden(const EditorScene& scene, const ViewportProjection& projection, Ve
 
     // Candidates arrive nearest-box first: once a box starts beyond the
     // threshold no face in it or after it can occlude.
-    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, BrushRoleFilter::All, EntityId{}))
+    for (RayPieceCandidate& candidate : GatherRayPieceCandidates(scene, ray, /*skipLocked*/ true, BrushRoleFilter::Solids, EntityId{}))
     {
         if (static_cast<double>(candidate.Near) >= threshold)
             break;

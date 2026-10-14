@@ -50,14 +50,12 @@ void SceneWireframeRenderer::DrawWireframe(const FrameContext& frame, const Edit
 
     for (const BrushDrawEntity& entity : draws.Entities())
     {
-        if (entity.Role == BrushRole::Volume)
-            continue;
         if (std::find(skip.begin(), skip.end(), entity.Key.Entity) != skip.end())
             continue;
         for (const BrushMeshRun& run : entity.Runs)
         {
             const BrushDrawMesh& mesh = entity.Meshes[run.MeshIndex];
-            if (mesh.Edges.empty() || run.PlacementCount == 0)
+            if (mesh.Edges.empty() || run.PlacementCount == 0 || mesh.Role == BrushRole::Volume)
                 continue;
             EdgeScratch.clear();
             EdgeScratch.reserve(mesh.Edges.size());

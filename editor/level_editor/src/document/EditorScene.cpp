@@ -310,6 +310,7 @@ void EditorScene::DestroyEntity(EntityId entity)
     World& world = Registry_.Components;
     if (!world.IsAlive(entity))
         return;
+    Volumes_.Forget(entity);
 
     // Free the brush's sidecar mesh, unless another entity still shares it (an
     // instanced brush: several entities carry the same BrushId, live or dormant).
@@ -464,7 +465,11 @@ const BrushEvaluated* EditorScene::TryGetBrushPieces(EntityId entity,
                                                      const BrushEvaluationPolicy& policy) const
 {
     const BrushId id = BrushRecordIdOf(entity);
-    return id.IsValid() ? BrushMeshes.Evaluated(id, policy) : nullptr;
+    if (!id.IsValid())
+        return nullptr;
+    if (RoleOf(entity) == BrushRole::Volume)
+        return Volumes_.Evaluate(*this, entity, policy);
+    return BrushMeshes.Evaluated(id, policy);
 }
 
 void EditorScene::Clear()
@@ -475,6 +480,7 @@ void EditorScene::Clear()
     Entities.clear();
     TakenIds_.clear();
     BrushMeshes.Clear();
+    Volumes_.Clear();
     PlacementFacts_.Clear();
     HiddenEntities.clear();
     LockedEntities.clear();

@@ -2,7 +2,7 @@
 
 #include "viewport/EditorViewport.h"
 
-#include "EditorLinePipeline.h"
+#include <graphics/vulkan/ColoredVertexPipelines.h>
 
 #include <graphics/vulkan/Renderer.h>
 

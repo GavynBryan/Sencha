@@ -126,7 +126,7 @@ ShellResult GenerateShell(const BrushMesh& volume, const ShellRules& rules)
             halfEdge = edge.Next;
         }
 
-        ShellSlab slab{ {}, f };
+        ShellSlab slab{ {}, f, 0 };
         BrushMesh& mesh = slab.Mesh;
         mesh.Vertices.resize(count * 2);
         for (std::size_t i = 0; i < count; ++i)
@@ -179,6 +179,9 @@ ShellResult GenerateShell(const BrushMesh& volume, const ShellRules& rules)
         }
         BrushOrientFacesOutward(mesh);
         (void)BrushValidateAndRepair(mesh);
+        for (std::uint32_t g = 0; g < mesh.Faces.size(); ++g)
+            if (mesh.Faces[g].Normal.Dot(faces[f].Inner.Normal) < -1.0f + kParallel)
+                slab.InnerFace = g;
         result.Slabs.push_back(std::move(slab));
     }
 

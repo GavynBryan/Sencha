@@ -123,13 +123,11 @@ void SceneRenderQueueBuilder::EmitBrushQueue()
     Brushes.Reset();
     for (const BrushDrawEntity& entity : Draws.Entities())
     {
-        if (entity.Role == BrushRole::Volume)
-            continue;
         for (const BrushMeshRun& run : entity.Runs)
         {
             const BrushDrawMesh& drawMesh = entity.Meshes[run.MeshIndex];
             const GpuStaticMesh* mesh = Meshes.Get(drawMesh.Handle);
-            if (mesh == nullptr)
+            if (mesh == nullptr || drawMesh.Role == BrushRole::Volume)
                 continue;
             for (std::uint32_t i = 0; i < run.PlacementCount; ++i)
             {
@@ -157,15 +155,13 @@ void SceneRenderQueueBuilder::RebuildBrushCasters(const EditorDocument& document
     const Registry& registry = document.GetScene().GetRegistry();
     for (const BrushDrawEntity& entity : Draws.Entities())
     {
-        if (entity.Role == BrushRole::Volume)
-            continue;
         ShadowCasterGatherResult folded;
         StaticMeshHandle firstMesh;
         for (const BrushMeshRun& run : entity.Runs)
         {
             const BrushDrawMesh& drawMesh = entity.Meshes[run.MeshIndex];
             const GpuStaticMesh* mesh = Meshes.Get(drawMesh.Handle);
-            if (mesh == nullptr)
+            if (mesh == nullptr || drawMesh.Role == BrushRole::Volume)
                 continue;
             for (std::uint32_t i = 0; i < run.PlacementCount; ++i)
             {

@@ -6,6 +6,7 @@
 #include "brush/BrushId.h"
 #include "brush/BrushMesh.h"
 #include "BrushPlacementFacts.h"
+#include "VolumeEvaluations.h"
 #include "brush/BrushMeshStore.h"
 #include "brush/BrushRecord.h"
 #include "document/BrushComponents.h"
@@ -30,13 +31,6 @@
 #include <cstdint>
 #include <unordered_set>
 #include <vector>
-
-// What a brush is: solid geometry, or a volume enclosing air (BrushVolume).
-enum class BrushRole : std::uint8_t
-{
-    Solid,
-    Volume,
-};
 
 class EditorScene
 {
@@ -259,6 +253,13 @@ public:
     // picking may actually hit.
     [[nodiscard]] bool IsEntityEffectivelyVisible(EntityId entity) const;
     [[nodiscard]] BrushRole RoleOf(EntityId entity) const;
+    // The material that marks a volume face as open: it gets no wall.
+    [[nodiscard]] const AssetRef& OpenFaceMaterial() const { return OpenFaceMaterial_; }
+    void SetOpenFaceMaterial(AssetRef material) { OpenFaceMaterial_ = std::move(material); }
+    [[nodiscard]] std::span<const ShellProblem> ShellProblems(EntityId entity) const
+    {
+        return Volumes_.ShellProblems(entity);
+    }
     [[nodiscard]] bool IsEntityEffectivelyLocked(EntityId entity) const;
 
     // The brush mesh store (serialized as a sidecar by EditorDocument).
@@ -271,6 +272,8 @@ private:
     Registry& Registry_;
     std::vector<EntityId> Entities;
     BrushMeshStore BrushMeshes;
+    mutable VolumeEvaluations Volumes_;
+    AssetRef OpenFaceMaterial_;
     BrushEvaluationPolicy InteractivePolicy_ = BrushEvaluationPolicy::Interactive(4096);
     BrushPlacementFacts PlacementFacts_{ *this }; // after the store and policy it reads
     // Persistent-id minting entropy (per document, like WorldDocument's Rng_).

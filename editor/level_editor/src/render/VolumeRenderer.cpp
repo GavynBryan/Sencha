@@ -18,11 +18,11 @@ void VolumeRenderer::DrawViewport(const FrameContext& frame, const EditorViewpor
 {
     for (const BrushDrawEntity& entity : draws.Entities())
     {
-        if (entity.Role != BrushRole::Volume)
-            continue;
         for (const BrushMeshRun& run : entity.Runs)
         {
             const BrushDrawMesh& mesh = entity.Meshes[run.MeshIndex];
+            if (mesh.Role != BrushRole::Volume)
+                continue;
             const std::span<const ColoredVertexInstance> placements =
                 AsLineInstances(std::span(entity.InstanceRows).subspan(run.FirstPlacement, run.PlacementCount));
             Scratch.clear();

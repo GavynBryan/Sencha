@@ -70,10 +70,9 @@ public:
     // Where asset://... source references resolve on disk. Set before Load on
     // any document that may hold scene instances; a document with none never
     // consults them.
-    void SetContentRoots(std::vector<std::filesystem::path> roots)
-    {
-        Projection.SetContentRoots(std::move(roots));
-    }
+    // Also reads the project's level conventions, whose open-face material
+    // decides which volume faces get no wall.
+    void SetContentRoots(std::vector<std::filesystem::path> roots);
     [[nodiscard]] const std::vector<std::filesystem::path>& ContentRoots() const
     {
         return Projection.ContentRoots();

@@ -30,6 +30,7 @@ std::optional<BrushPlacementKey> MakeBrushPlacementKey(const EditorScene& scene,
         .PlacementRevision = record->PlacementRevision,
         .MaxPieces = scene.InteractiveEvaluationPolicy().MaxPieces,
         .World = *world,
+        .VolumeInputs = VolumeEvaluationInputs(scene, entity, scene.InteractiveEvaluationPolicy()),
     };
 }
 
