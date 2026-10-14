@@ -168,3 +168,15 @@ TEST_F(SpaceShellTest, TheDrawSetHoldsTheAirAndTheWallsApart)
     EXPECT_EQ(volumes, 1);
     EXPECT_EQ(solids, 6);
 }
+
+TEST_F(SpaceShellTest, RoomsAWallApartCookTheirSharedWallOnce)
+{
+    const EntityId west = ShelledSpace({ -2, 1.5f, 0 }, { 2, 1.5f, 3 });
+    const EntityId east = ShelledSpace({ 2.25f, 1.5f, 0 }, { 2, 1.5f, 3 });
+    EXPECT_EQ(CollectCookBrushes(Scene(), Default).size(), 11u) << "six walls each, less the one they share";
+
+    Scene().GetRegistry().Components.TryGet<LocalTransform>(east)->Value.Position.X = 6.0f;
+    Scene().RefreshDerivedTransforms();
+    EXPECT_EQ(CollectCookBrushes(Scene(), Default).size(), 12u) << "moving one away gives each its own wall back";
+    (void)west;
+}

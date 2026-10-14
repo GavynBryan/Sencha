@@ -5,6 +5,7 @@
 #include <core/assets/AssetRef.h>
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -14,9 +15,9 @@
 
 struct ShellSlab
 {
-    BrushMesh     Mesh;          // in the volume's frame
-    std::uint32_t SourceFace = 0; // the volume face it stands on
-    std::uint32_t InnerFace = 0;  // its face on that volume face, looking into the space
+    BrushMesh                  Mesh;           // in the volume's frame
+    std::uint32_t              SourceFace = 0; // the volume face it stands on
+    std::vector<std::uint32_t> InnerFaces;     // its faces on that volume face, looking into the space
 };
 
 enum class ShellProblemKind : std::uint8_t
@@ -25,9 +26,12 @@ enum class ShellProblemKind : std::uint8_t
     OpenVolume,
     NonPlanarFace,
     InvertedSlab,
-    // A note: more than three planes meet at a corner, so the bisector cuts may
-    // leave a small gap or overlap there.
+    // Notes. More than three planes meet at a corner, so the bisector cuts may
+    // leave a small gap or overlap there:
     VertexJoin,
+    // A face shared with a neighbour across the gap is not convex, so both walls
+    // stand there (version 1 shares convex faces only):
+    SharedWallNotConvex,
 };
 
 struct ShellProblem
@@ -55,6 +59,19 @@ struct ShellRules
     Vec3d    Up = Vec3d{ 0.0f, 1.0f, 0.0f };
 };
 
+// Another shelled volume, in the same frame. Where one of its faces lies
+// exactly a wall thickness outside one of ours, facing back, the two share one
+// wall over the overlap: the owner builds it, its outside in the neighbour's
+// material, and the other leaves it out. A face split this way yields several
+// slabs, meeting square along the seams.
+struct ShellNeighbour
+{
+    const BrushMesh* Volume = nullptr;
+    float            Thickness = 0.0f;
+    bool             OwnsShared = false; // whether this volume's slab is the one kept
+};
+
 // Pure. A volume that is not closed, has a face off its plane, or would invert
 // a slab at this thickness is refused, never approximated.
-[[nodiscard]] ShellResult GenerateShell(const BrushMesh& volume, const ShellRules& rules);
+[[nodiscard]] ShellResult GenerateShell(const BrushMesh& volume, const ShellRules& rules,
+                                        std::span<const ShellNeighbour> neighbours = {});

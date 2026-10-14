@@ -8,6 +8,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
+#include <span>
 #include <vector>
 
 namespace
@@ -82,7 +85,8 @@ TEST(ShellGeneration, ABoxRoomGetsSixClosedSlabsJoinedAtItsCorners)
     for (const ShellSlab& slab : shell.Slabs)
     {
         EXPECT_TRUE(Closed(slab.Mesh));
-        EXPECT_LT(slab.Mesh.Faces[slab.InnerFace].Normal.Dot(room.Faces[slab.SourceFace].Normal), -0.99f)
+        ASSERT_EQ(slab.InnerFaces.size(), 1u);
+        EXPECT_LT(slab.Mesh.Faces[slab.InnerFaces.front()].Normal.Dot(room.Faces[slab.SourceFace].Normal), -0.99f)
             << "the inner face looks back into the room";
     }
 
@@ -166,4 +170,85 @@ TEST(ShellGeneration, FourPlanesAtACornerAreNotedNotRefused)
     ASSERT_EQ(shell.Problems.size(), 1u);
     EXPECT_EQ(shell.Problems.front().Kind, ShellProblemKind::VertexJoin);
     EXPECT_EQ(shell.Problems.front().Element, 4u);
+}
+
+namespace
+{
+    float FacingArea(const BrushMesh& mesh, Vec3d normal)
+    {
+        float area = 0.0f;
+        for (const BrushFace& face : mesh.Faces)
+        {
+            if (face.Normal.Dot(normal) < 0.99f)
+                continue;
+            Vec3d sum{ 0, 0, 0 };
+            for (std::size_t i = 0; i < face.Loop.size(); ++i)
+                sum = sum + mesh.Vertices[face.Loop[i]].Position.Cross(
+                                mesh.Vertices[face.Loop[(i + 1) % face.Loop.size()]].Position);
+            area += 0.5f * std::abs(sum.Dot(normal));
+        }
+        return area;
+    }
+
+    const AssetRef kOther{ AssetType::Material, "asset://materials/dev/red.smat" };
+
+    BrushMesh Painted(BrushMesh mesh, const AssetRef& material)
+    {
+        for (BrushFace& face : mesh.Faces)
+            face.Material.Material = material;
+        return mesh;
+    }
+
+    BrushMesh Shifted(BrushMesh mesh, Vec3d by)
+    {
+        for (BrushVertex& vertex : mesh.Vertices)
+            vertex.Position = vertex.Position + by;
+        return mesh;
+    }
+}
+
+TEST(ShellGeneration, RoomsAWallApartShareOneWallKeptByItsOwner)
+{
+    // West room x in [-4, 0], east room x in [0.25, 4.25]: a wall's thickness apart.
+    const BrushMesh west = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { -2, 0, 0 });
+    const BrushMesh east = Painted(Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { 2.25f, 0, 0 }), kOther);
+
+    const ShellNeighbour eastNeighbour{ &east, 0.25f, true };
+    const ShellResult westShell = GenerateShell(west, Rules(0.25f), std::span(&eastNeighbour, 1));
+    ASSERT_EQ(westShell.Slabs.size(), 6u);
+    const BrushMesh& kept = SlabOn(westShell, west, { 1, 0, 0 }).Mesh;
+    const bool eastSidePainted = std::any_of(kept.Faces.begin(), kept.Faces.end(), [](const BrushFace& face) {
+        return face.Normal.X > 0.99f && SameAsset(face.Material.Material, kOther);
+    });
+    EXPECT_TRUE(eastSidePainted) << "the east room's side of the shared wall keeps the east room's material";
+
+    const ShellNeighbour westNeighbour{ &west, 0.25f, false };
+    const ShellResult eastShell = GenerateShell(east, Rules(0.25f), std::span(&westNeighbour, 1));
+    EXPECT_EQ(eastShell.Slabs.size(), 5u) << "the east room's west wall is the shared one";
+}
+
+TEST(ShellGeneration, APartlySharedWallIsCutWhereTheNeighbourKeepsIt)
+{
+    // A narrower east room: its west face covers z in [-1, 1] of the west room's east face.
+    const BrushMesh west = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { -2, 0, 0 });
+    const BrushMesh east = Shifted(BrushOps::MakeBox({ 2, 1.5f, 1 }), { 2.25f, 0, 0 });
+    const ShellNeighbour eastOwns{ &east, 0.25f, false };
+    const ShellResult westShell = GenerateShell(west, Rules(0.25f), std::span(&eastOwns, 1));
+    ASSERT_FALSE(westShell.Refused);
+    for (const ShellProblem& problem : westShell.Problems)
+        ADD_FAILURE() << problem.Message;
+
+    float inner = 0.0f;
+    for (const ShellSlab& slab : westShell.Slabs)
+        if (west.Faces[slab.SourceFace].Normal.X > 0.99f)
+            inner += FacingArea(slab.Mesh, { -1, 0, 0 });
+    EXPECT_NEAR(inner, 6.0f * 3.0f - 2.0f * 3.0f, 1e-3f) << "the shared part is cut out of the west room's wall";
+}
+
+TEST(ShellGeneration, WallsOfDifferentThicknessAreNotShared)
+{
+    const BrushMesh west = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { -2, 0, 0 });
+    const BrushMesh east = Shifted(BrushOps::MakeBox({ 2, 1.5f, 3 }), { 2.25f, 0, 0 });
+    const ShellNeighbour thicker{ &east, 0.5f, false };
+    EXPECT_EQ(GenerateShell(west, Rules(0.25f), std::span(&thicker, 1)).Slabs.size(), 6u);
 }

@@ -901,8 +901,18 @@ of the real model, with spaces included from the start.
   up and the thickness are world facts whatever the space's scale) and stored
   in its frame. The open-face material comes from the project's conventions
   when the document learns its content roots; an edit to the conventions
-  reaches documents opened after it. Neighbours (the gap rule) and openings
-  join the inputs next.
+  reaches documents opened after it.
+- The gap rule partitions the face rather than carving the slab: the shared
+  overlap and the convex pieces around it (clipped against the overlap's edge
+  half-planes) each become a slab, with the face's own join planes on its own
+  edges and square caps on the seams. Only the owner (lower persistent id)
+  builds the shared piece, its outside in the neighbour's material. A carve
+  could not do this: a shared region spanning the wall's height would split
+  the slab in two, which the carve kernel refuses. Neighbours are the shelled
+  volumes within a thickness of the space's bounds, and their identity,
+  record, transform and thickness are among its inputs, so moving either room
+  rebuilds both. `shell.overlap` and `space.overlap` arrive with the step 5
+  diagnostics.
 
 ### M2: work live, and widen the vocabulary
 

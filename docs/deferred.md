@@ -575,3 +575,17 @@ do the work and delete the entry.
   the perception system over its ~1 ms share of the fixed tick, measured with
   `frame.trace.output`. Distance-ordered ray grants belong with it if far
   targets in view crowd out near ones.
+
+## Shell neighbour lookup
+
+- **What:** a shelled space finds the spaces it may share a wall with by
+  visiting every shelled volume and measuring its bounds, and it does so each
+  time its placement key is made, which is per frame. That is
+  O(spaces x volume vertices) per space per frame.
+- **Where:** `NeighboursOf` in
+  `editor/level_editor/src/document/VolumeEvaluations.cpp`, reached through
+  `VolumeEvaluationInputs` from `MakeBrushPlacementKey`.
+- **Trigger:** a level with more than about a hundred shelled spaces, or a
+  frame profile in which `VolumeEvaluationInputs` shows. The fix is a retained
+  per-scene index of shelled volumes' world bounds, invalidated by their
+  placement keys.
