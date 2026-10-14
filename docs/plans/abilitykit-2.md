@@ -1486,3 +1486,20 @@ Deviations from the plan's wording, each for a stated reason:
   of every pass. A grant therefore appears the tick after its effect applies and goes
   the tick after it ends, identically on every machine.
 - **Owed.** The animation pull rule (§17.5) is recorded in `docs/deferred.md`.
+
+### 17.7 Stage 7 — actor time
+
+- **7a delivered.** `ActorTimeLeases` with active and historical room kept apart
+  (correction 3: 8 active, 16 history; history evicts its oldest, counted, and never
+  refuses a new lease; `HistoryNeverUsesTheRoomANewLeaseNeeds` runs 40 rapid
+  acquire/release cycles inside the 64-tick window), `ActorScaleAt`, the clock driven
+  from leases with the pull rule, `time.actor_scale_min/max`, the `time.scale` lease,
+  effects counting in their target's time (`time_domain`) and an effect's own
+  `time_scale`, ability phases on the actor's clock, `ActorTicksSince`.
+- **Deviation: product order.** §7.2 orders the factors by owner key. Owner keys
+  carry entity indices and per-actor start counts, which two machines need not
+  share; ordering by the scale values themselves gives every machine the same
+  product from the same set of leases, which is what the ordering is for.
+- **Deviation: effect leases end a tick late.** An effect's `time_scale` lease is
+  held by the effect entity and ended by the clock's pull rule the tick after the
+  effect ends, rather than by `EndEffect`, which has no tick to stamp it with.

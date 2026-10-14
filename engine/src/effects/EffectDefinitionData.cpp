@@ -69,6 +69,16 @@ namespace
         schema.Root.Children.push_back(Seconds("seconds", "Seconds", "How long a Duration effect lasts."));
         schema.Root.Children.push_back(
             Seconds("period", "Period", "When above zero, modifiers apply to Base every period instead of folding."));
+        schema.Root.Children.push_back(Choice("time_domain", "Clock", "Whose time durations and periods count in.",
+                                              { { "target", "Target's", "Runs fast or slow with the target." },
+                                                { "simulation", "Simulation's", "Unaffected by the target's time." } }));
+        DataFieldSchema timeScale = MakeDataField(DataFieldKind::Float, "time_scale", "Time scale",
+                                                  "Scales the target's time while the effect lasts; one leaves it alone.");
+        timeScale.Default = 1.0;
+        timeScale.Required = false;
+        timeScale.Numeric.Minimum = 0.01;
+        timeScale.Numeric.Maximum = 4.0;
+        schema.Root.Children.push_back(std::move(timeScale));
         schema.Root.Children.push_back(std::move(modifiers));
         schema.Root.Children.push_back(std::move(tags));
         schema.Root.Children.push_back(AbilityGrantEntriesSchema("granted_abilities", "Granted abilities"));
@@ -96,6 +106,11 @@ namespace
                                                  : EffectDuration::Instant;
         value->Seconds = NumberOr(data, "seconds", 0.0f);
         value->Period = NumberOr(data, "period", 0.0f);
+        value->TimeDomain = TextOr(data, "time_domain", "target") == "simulation" ? EffectTimeDomain::Simulation
+                                                                                   : EffectTimeDomain::Target;
+        value->TimeScale = NumberOr(data, "time_scale", 1.0f);
+        if (!(value->TimeScale > 0.0f))
+            return { {}, {}, "$.data.time_scale A time scale is above zero." };
         if (value->Duration == EffectDuration::Duration && value->Seconds <= 0.0f)
             return { {}, {}, "$.data.seconds A Duration effect lasts for more than zero seconds." };
 
@@ -141,7 +156,8 @@ namespace
                 return { {}, {}, std::format("{} {}", problems.front().Path, problems.front().Message) };
         }
         if (value->Duration == EffectDuration::Instant
-            && (!value->GrantedTags.empty() || !value->GrantedAbilities.empty() || value->Period > 0.0f))
+            && (!value->GrantedTags.empty() || !value->GrantedAbilities.empty() || value->Period > 0.0f
+                || value->TimeScale != 1.0f))
             return { {}, {}, "$.data.duration An Instant effect has no lifetime to grant tags or abilities or tick a "
                              "period in." };
 
@@ -168,6 +184,8 @@ bool ResolveEffectDeclaration(const EffectDeclaration& declaration,
     out.Duration = declaration.Duration;
     out.DurationSeconds = declaration.Seconds;
     out.Period = declaration.Period;
+    out.TimeDomain = declaration.TimeDomain;
+    out.TimeScale = declaration.TimeScale;
     for (const EffectDeclaration::Modifier& modifier : declaration.Modifiers)
     {
         const AttributeId attribute = attributes.FindAttribute(modifier.Attribute);

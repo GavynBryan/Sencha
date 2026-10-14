@@ -25,6 +25,13 @@ static_assert(std::is_trivially_copyable_v<ActorTime>,
     return static_cast<std::uint64_t>(time.LocalQ16 >> 16);
 }
 
+// Whole actor ticks this fixed tick advanced the clock across: none for a slowed
+// actor most ticks, more than one for a hastened one some ticks.
+[[nodiscard]] inline std::uint32_t ActorTicksAdvanced(const ActorTime& time)
+{
+    return static_cast<std::uint32_t>((time.LocalQ16 >> 16) - ((time.LocalQ16 - time.ScaleQ16) >> 16));
+}
+
 #if !defined(SENCHA_CODEGEN)
 #  include <time/ActorTime.sencha.h>
 #endif

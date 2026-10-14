@@ -56,7 +56,7 @@ void RegisterAbilityKit(World& world)
 
 void RegisterAbilityKitSystems(EngineSchedule& schedule, const AbilityHost& host)
 {
-    schedule.Register<ActorTimeSystem>();
+    schedule.Register<ActorTimeSystem>(host.Console);
     schedule.Register<AbilitySystem>(host);
     schedule.Register<AttributeResolveSystem>();
     schedule.Register<EffectLifetimeSystem>();

@@ -26,6 +26,7 @@
 #include <physics/PhysicsQueries.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/RigidBodyBinding.h>
+#include <time/ActorTimeLeases.h>
 #include <time/ActorTimeSystem.h>
 #include <time/SimClock.h>
 #include <world/transform/TransformComponents.h>
@@ -246,7 +247,7 @@ protected:
         }
         for (std::size_t a = 0; a < values.size(); ++a)
             values[a].Flags = HeldActions[a] ? InputActionFlags::Held : InputActionFlags::None;
-        AdvanceActorTime(Entities);
+        AdvanceActorTime(Entities, Now);
         RunAbilityPass(Entities, Host, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now }, nullptr, Settings);
         ResolveAttributesWithEffects(Entities);
         TickEffects(Entities);
@@ -995,7 +996,7 @@ TEST_F(AbilityRuntime, AWarmPassAllocatesNothing)
         InputActionState& state = Entities.GetResource<InputActionState>();
         std::span<InputActionValue> values = state.BeginTick(Now);
         values[kFire].Flags = InputActionFlags::Held;
-        AdvanceActorTime(Entities);
+        AdvanceActorTime(Entities, Now);
         const std::size_t before = AllocationCount();
         RunAbilityPass(Entities, Host, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = Now }, nullptr, Settings);
         allocations += AllocationCount() - before;
@@ -1169,4 +1170,27 @@ TEST_F(AbilityRuntime, ABotSourceReachesItsGrantsThroughTheSameResolution)
     (void)source.TickEdgeStorage().Append(Press(kFire));
     Step();
     EXPECT_EQ(Marks.Values.size(), 1u);
+}
+
+TEST_F(AbilityRuntime, APhasesTimeoutRunsInItsActorsTime)
+{
+    const AbilityId waiting = Define("asset://abilities/wait.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "phases": [ { "key": "p_wait", "then": [ { "key": "t_end", "on": "timeout", "ticks": 10, "to": "end" } ] } ] })");
+    const AbilityId steady = Define("asset://abilities/steady.sdata", R"({
+        "input_default": { "action": "Input.AltFire" },
+        "phases": [ { "key": "p_wait", "timing": { "domain": "simulation" },
+            "then": [ { "key": "t_end", "on": "timeout", "ticks": 10, "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, waiting);
+    Grant(actor, steady, {}, "g_steady");
+    Entities.AddComponent<ActorTimeLeases>(actor, ActorTimeLeases{});
+    ASSERT_TRUE(AcquireActorTimeLease(*Entities.TryGet<ActorTimeLeases>(actor), LeaseOwner{ .Entity = actor },
+                                      kActorTimeOne / 2, Now));
+    Step({ Press(kFire), Press(kAlt) });
+    Steps(10);
+    EXPECT_EQ(LiveRecord(actor, steady), nullptr) << "simulation time";
+    EXPECT_NE(LiveRecord(actor, waiting), nullptr) << "half way through its own ten ticks";
+    Steps(10);
+    EXPECT_EQ(LiveRecord(actor, waiting), nullptr);
 }

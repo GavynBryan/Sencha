@@ -17,6 +17,7 @@
 #include <physics/PhysicsAuthoredQueries.h>
 #include <physics/PhysicsQueries.h>
 #include <physics/PhysicsStepSystem.h>
+#include <time/ActorTimeVerbs.h>
 #include <anim/AnimationRegistration.h>
 #include <movement/MovementAnimFacts.h>
 #include <participant/ParticipantLifecycle.h>
@@ -1381,6 +1382,9 @@ int Engine::Run(Game& game)
             dispatcher.Bind<&InvokeEffectApply>(verbs.Find(kEffectApplyVerb), *EffectVerbOperations));
         DomainVerbBindings.push_back(
             dispatcher.Bind<&InvokeEffectHold>(verbs.Find(kEffectHoldLease), *EffectVerbOperations));
+        TimeVerbOperations = std::make_unique<ActorTimeOperations>(entities, clock);
+        DomainVerbBindings.push_back(
+            dispatcher.Bind<&InvokeTimeScale>(verbs.Find(kTimeScaleLease), *TimeVerbOperations));
         AbilityVerbOperations = std::make_unique<AbilityOperations>(entities);
         DomainVerbBindings.push_back(
             dispatcher.Bind<&InvokeAbilityActivate>(verbs.Find(kAbilityActivateVerb), *AbilityVerbOperations));
@@ -1520,6 +1524,7 @@ int Engine::Run(Game& game)
     AnimationOperations.reset();
     EffectVerbOperations.reset();
     AbilityVerbOperations.reset();
+    TimeVerbOperations.reset();
     AuthoredPhysics.reset();
 #ifdef SENCHA_ENABLE_UI
     if (PauseMenuState != nullptr)

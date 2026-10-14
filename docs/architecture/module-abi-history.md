@@ -306,3 +306,10 @@ are public. Scenes name `AbilityGrants` (chunk `ABGR`) where they named
 `AbilitySet`. `EffectDeclaration` gains `GrantedAbilities`; `AbilityEffectGrants`,
 `DeclareEffectGrants`, `ParseAbilityGrantEntries` and `AbilityGrantEntriesSchema`
 are new.
+
+**Actor time.** `ActorTimeLeases` (time) with `AcquireActorTimeLease`,
+`ReleaseActorTimeLeases`, `PruneActorTimeHistory`, `ActorScaleAt` and
+`ActorScaleLimits`; `ActorTicksAdvanced`, `ActorTicksSince`; `ActorTimeSystem` takes a
+console and `AdvanceActorTime` a tick. The `time.scale` lease joins the engine
+vocabulary. `EffectDefinition` and `ActiveEffect` gain a `TimeDomain`, and
+`EffectDefinition` a `TimeScale`.

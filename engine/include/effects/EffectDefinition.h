@@ -17,14 +17,22 @@
 //     Period  > 0        : modifiers applied to Base every Period (DoT/HoT).
 // Granted tags are added to the target for the lifetime of a Duration/Infinite
 // effect and revoked when it ends (ref-counted, so stacks survive partial removal).
-// Durations and periods are authored in seconds and counted in whole fixed ticks
-// from the tick the effect is applied on.
+// Durations and periods are authored in seconds and counted in whole ticks of the
+// target's own time by default, or of the simulation's, from the tick the effect
+// is applied on.
 //=============================================================================
 enum class EffectDuration : std::uint8_t
 {
     Instant,
     Duration,
     Infinite,
+};
+
+enum class EffectTimeDomain : std::uint8_t
+{
+    // The target's actor time: a slowed target's effects run slow.
+    Target,
+    Simulation,
 };
 
 enum class ModifierOp : std::uint8_t
@@ -46,6 +54,9 @@ struct EffectDefinition
     EffectDuration Duration = EffectDuration::Instant;
     float DurationSeconds = 0.0f; // used when Duration == Duration
     float Period = 0.0f;          // 0 = not periodic
+    EffectTimeDomain TimeDomain = EffectTimeDomain::Target;
+    // Scales the target's time while a lasting effect holds; one leaves it alone.
+    float TimeScale = 1.0f;
 
     std::vector<EffectModifier> Modifiers;
     std::vector<GameplayTagId> GrantedTags; // applied while a Duration/Infinite effect is active

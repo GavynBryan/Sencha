@@ -66,6 +66,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/ZoneLightmapComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/time/ActorTime.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/time/ActorTimeLeases.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"

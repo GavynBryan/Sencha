@@ -29,6 +29,8 @@ struct EffectDeclaration
     EffectDuration Duration = EffectDuration::Instant;
     float Seconds = 0.0f;
     float Period = 0.0f;
+    EffectTimeDomain TimeDomain = EffectTimeDomain::Target;
+    float TimeScale = 1.0f;
     std::vector<Modifier> Modifiers;
     std::vector<std::string> GrantedTags;
     // Held by the target for as long as the effect lasts.

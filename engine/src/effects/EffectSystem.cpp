@@ -7,6 +7,8 @@
 #include <effects/EffectDefinition.h>
 #include <effects/EffectRegistry.h>
 #include <gameplay_tags/GameplayTagContainer.h>
+#include <time/ActorTime.h>
+#include <time/ActorTimeLeases.h>
 
 #include <ecs/Query.h>
 #include <ecs/StoragePartitionSet.h>
@@ -110,6 +112,7 @@ void TickEffectsImpl(
     const EffectRegistry* effReg = std::as_const(world).TryGetResource<EffectRegistry>();
     const AttributeRegistry* attrReg = std::as_const(world).TryGetResource<AttributeRegistry>();
     EffectPassState& state = PassStateOf(world);
+    const bool hasClocks = world.IsRegistered<ActorTime>();
 
     Query<Write<ActiveEffect>> query(world);
     query.ForEachChunk([&](auto& view)
@@ -134,14 +137,26 @@ void TickEffectsImpl(
                 state.Ending.push_back(self);
                 continue;
             }
-            if (ae.PeriodTicks > 0 && --ae.TicksToPeriod == 0)
+            // A hastened target may cross more than one of its own ticks in one of
+            // the simulation's; a slowed one may cross none.
+            const ActorTime* clock = ae.TimeDomain == EffectTimeDomain::Target && hasClocks
+                ? std::as_const(world).TryGet<ActorTime>(ae.Target)
+                : nullptr;
+            const std::uint32_t steps = clock != nullptr ? ActorTicksAdvanced(*clock) : 1;
+            for (std::uint32_t step = 0; step < steps; ++step)
             {
-                if (AttributeSet* set = world.TryGet<AttributeSet>(ae.Target))
-                    ApplyModifiersToBase(*set, *def, ae.Scale, attrReg);
-                ae.TicksToPeriod = ae.PeriodTicks;
+                if (ae.PeriodTicks > 0 && --ae.TicksToPeriod == 0)
+                {
+                    if (AttributeSet* set = world.TryGet<AttributeSet>(ae.Target))
+                        ApplyModifiersToBase(*set, *def, ae.Scale, attrReg);
+                    ae.TicksToPeriod = ae.PeriodTicks;
+                }
+                if (ae.RemainingTicks != kEffectNeverEnds && --ae.RemainingTicks == 0)
+                {
+                    state.Ending.push_back(self);
+                    break;
+                }
             }
-            if (ae.RemainingTicks != kEffectNeverEnds && --ae.RemainingTicks == 0)
-                state.Ending.push_back(self);
         }
     });
 
@@ -223,6 +238,7 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
     ae.Def = effect;
     ae.Owner = owner;
     ae.Scale = scale;
+    ae.TimeDomain = def->TimeDomain;
     ae.Sequence = PassStateOf(world).NextSequence++;
     if (def->Duration == EffectDuration::Duration)
         ae.RemainingTicks = TicksFor(def->DurationSeconds, now.DeltaSeconds);
@@ -249,6 +265,17 @@ EntityId ApplyEffect(World& world, EntityId target, EffectId effect, const Fixed
     // Persistent, so zone moves and detaches never strand the tags it granted.
     const EntityId fx = world.CreateEntity(StoragePartitionId::Default());
     world.AddComponent<ActiveEffect>(fx, ae);
+
+    // Held by the effect's entity, so the clock ends it the tick after the effect does.
+    if (def->TimeScale != 1.0f && world.IsRegistered<ActorTimeLeases>() && world.IsRegistered<ActorTime>()
+        && world.HasComponent<ActorTime>(target))
+    {
+        if (!world.HasComponent<ActorTimeLeases>(target))
+            world.AddComponent<ActorTimeLeases>(target, ActorTimeLeases{});
+        (void)AcquireActorTimeLease(*world.TryGet<ActorTimeLeases>(target), LeaseOwner{ .Entity = fx },
+                                    std::llround(static_cast<double>(def->TimeScale) * static_cast<double>(kActorTimeOne)),
+                                    now.TickIndex);
+    }
     return fx;
 }
 

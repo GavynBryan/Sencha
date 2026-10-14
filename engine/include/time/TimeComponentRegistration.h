@@ -1,12 +1,13 @@
 #pragma once
 
 #include <time/ActorTime.h>
+#include <time/ActorTimeLeases.h>
 #include <world/ComponentRegistrar.h>
 #include <world/ComponentSet.h>
 
-// Each actor's own clock. Run-time state the ability kit and movement read; it is
-// neither saved nor, yet, sent.
-using TimeComponents = ComponentSet<ActorTime>;
+// Each actor's own clock and the leases that scale it. Run-time state the ability
+// kit, effects and movement read; neither saved nor, yet, sent.
+using TimeComponents = ComponentSet<ActorTime, ActorTimeLeases>;
 
 inline void RegisterTimeComponents(ComponentRegistrar& registrar)
 {

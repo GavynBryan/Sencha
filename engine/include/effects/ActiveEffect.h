@@ -3,6 +3,7 @@
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/EntityId.h>
 #include <ecs/LeaseOwner.h>
+#include <effects/EffectDefinition.h>
 #include <effects/EffectId.h>
 #include <gameplay_tags/GameplayTagId.h>
 
@@ -21,6 +22,7 @@ struct SENCHA_COMPONENT("sencha.active_effect") ActiveEffect
     EffectId Def;
     LeaseOwner Owner;
     float Scale = 1.0f;
+    EffectTimeDomain TimeDomain = EffectTimeDomain::Target;
     // Application order within this World: the fold's tie-break.
     std::uint64_t Sequence = 0;
     std::uint32_t RemainingTicks = kEffectNeverEnds;
