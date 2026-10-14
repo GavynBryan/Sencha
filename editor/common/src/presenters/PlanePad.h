@@ -26,11 +26,8 @@ struct PlanePadMark
 
 //=============================================================================
 // PlanePad
-//
-// A point over a plane of labelled marks, on a workspace's content surface:
-// a blendspace's samples and where it is, or anything placed over two ranges
-// (or one, as a line). It only shows; the workspace takes the pointer over it
-// and maps where it is with ValueAt.
+// A point over a plane (or a line) of labelled marks, on a content surface.
+// Display only: the workspace takes the pointer and maps it with ValueAt.
 //=============================================================================
 class PlanePad
 {

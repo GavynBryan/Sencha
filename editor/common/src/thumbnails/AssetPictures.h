@@ -26,12 +26,8 @@ public:
 
 //=============================================================================
 // AssetPictures
-//
-// Every source of pictures, by the extension of the files each pictures: the
-// one place a browser, an explorer or a cartridge asks for any file's picture.
-// Whoever can make a kind of picture provides it -- the textures' cache for
-// materials and textures, the level editor's studio for scenes -- for as long
-// as the registration it is handed lives.
+// Every picture source, by the extension of the files it pictures: the one place
+// any file's picture is asked for. A provider serves while its registration lives.
 //=============================================================================
 class AssetPictures
 {

@@ -89,17 +89,9 @@ bool IsBindableName(std::string_view name)
 }
 } // namespace
 
-// The types every data model on this context may bind, declared once. The
-// register is the context's, not the model's, and a second declaration is a
-// silent refusal that leaves a member unbound -- so this runs for the first
-// model on a surface and never again for that surface.
-//
-// Order is load-bearing. An enum binds as an integer unless a getter is
-// registered for it first; had a member of that type been registered before
-// the getter, the register would have auto-inserted the integer definition and
-// refused the getter. And an array's element type has to exist before the
-// array, which is why the string list precedes the row and the row precedes
-// the row list.
+// Declared once per context: a second declaration silently leaves members unbound.
+// Order matters: an enum's getter before any member of its type, an element type
+// before its array.
 void UiRuntime::DeclareModelTypes(Rml::DataModelConstructor& constructor, Surface& surface)
 {
     if (surface.ModelTypesDeclared)

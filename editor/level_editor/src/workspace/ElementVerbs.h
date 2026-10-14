@@ -13,13 +13,9 @@ class EditorWorkspace;
 
 //=============================================================================
 // ElementVerbs
-//
-// What can be done to the selected brushes, faces, edges or vertices, as
-// actions in the Selection category, and what the parametric ones are set to,
-// as properties: inset distance, bevel width and segments, bridge segments,
-// weld distance. While an inset, bevel or bridge is previewed, changing its
-// setting regenerates the preview; element.apply and element.cancel resolve
-// it.
+// The selected brushes', faces', edges' and vertices' verbs as Selection actions,
+// and the parametric ones' settings as properties. Changing a setting regenerates
+// a staged inset, bevel or bridge until element.apply or element.cancel.
 //=============================================================================
 class ElementVerbs final : public IPropertySource
 {

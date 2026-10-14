@@ -41,14 +41,9 @@ struct AssetAdoption
     std::vector<std::filesystem::path> Unpaired;
 };
 
-// What leaves every file stating an id of its own:
-//  - an orphaned sidecar goes back beside the one file of its name that states
-//    no id and has no sidecar; with none, or several, it stays unpaired;
-//  - of files stating one id, the one born with it -- the id is its path's --
-//    keeps it, else the earliest modified; each other is a copy and restates;
-//  - a file stating none states its path's own id.
-// Every id given is free of every other; `withSidecars` names the files that
-// already have one.
+// What leaves every file stating an id of its own, by the rules in
+// docs/assets/pipeline.md. Every id given is free of every other; `withSidecars`
+// names the files that already have one.
 [[nodiscard]] AssetAdoption PlanAdoption(std::span<const ProjectFile> files,
                                          std::span<const std::pair<std::filesystem::path, AssetId>> orphans,
                                          const std::unordered_set<std::string>& withSidecars);

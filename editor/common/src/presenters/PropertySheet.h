@@ -19,21 +19,9 @@ class ActionContextStack;
 
 //=============================================================================
 // PropertySheet
-//
-// Property nodes as the rows a document presents, and a presented row's edit
-// back into the source it came from, by the row's index. A group becomes a
-// section row over its children, as does each titled section of several
-// sources; what a property is decides the control -- a choice a drop-down, a
-// number a box to type or drag, a vector its numbers side by side, a switch a
-// toggle, anything else a field. Its verbs are offered beside it, and the
-// catalog actions it names that can run now on a row of their own inside it.
-// A folded group shows its heading alone, and stays as it was left for as long
-// as the sheet lives.
-//
-// A field is typed into over many frames and edited once, when it lets go of
-// focus: Hold stops the rows from changing under it, and Release commits what
-// it holds. The sheet remembers which key and section each row was, from the
-// last time it presented.
+// Property nodes as rows, and a row's edit back into its source by row index.
+// A typed field holds the rows still (Hold) and commits once focus leaves
+// (Release); the controls each kind gets are in editor/ARCHITECTURE.md.
 //=============================================================================
 class PropertySheet
 {

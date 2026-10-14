@@ -12,13 +12,9 @@
 
 //=============================================================================
 // PlaceTool
-//
-// Stamps what it places where the pointer points: on the nearest surface, or on
-// the working grid where the ray misses everything. Its variants are the prefab
-// in hand, an empty entity, and every component that declares itself placeable
-// (a light, a player start), placed as a new entity carrying just that component.
-// While it hovers, a cross marks the spot; each click places one, turned by the
-// tool's yaw, as one undoable step with it selected.
+// Stamps its variant (the prefab in hand, an empty entity, or a placeable
+// component) on the surface under the pointer, or the grid where the ray misses,
+// turned by its yaw; each click is one step that selects what it placed.
 //=============================================================================
 class PlaceTool final : public ITool
 {

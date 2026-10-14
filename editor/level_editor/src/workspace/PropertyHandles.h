@@ -51,16 +51,9 @@ struct PropertyHandleRule
 
 //=============================================================================
 // PropertyHandles
-//
-// The selected object's handles. A Radius is a ring facing each view with a
-// knob on its right; dragging the knob sets the radius to the pointer's
-// distance from the object. An angle's knob sits on one of its edges, and
-// dragging it sets the angle to the pointer's, about the axis. Either is
-// previewed live and committed as one step when let go. A Scroll changes its number while the wheel turns over the object or a
-// knob, committed as one step once the wheel rests. The value shows beside
-// the handle only while it changes, or while the pointer is on the knob. Every
-// interruption -- Escape, focus loss, the selection moving on -- cancels an
-// unfinished change.
+// The selected object's handles: a radius ring, an angle knob, a scroll over the
+// object. Each previews live and commits as one step when let go or the wheel
+// rests; every interruption cancels an unfinished change.
 //=============================================================================
 class PropertyHandles
 {

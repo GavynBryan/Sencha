@@ -15,17 +15,9 @@ class ActionContextStack;
 
 //=============================================================================
 // ContextMenuModel
-//
-// The wheel for what the pointer is on: as it opens, the workspace aims at
-// the thing under the pointer (selecting it, or keeping the selection when
-// nothing is there), and the wheel offers that selection's choices -- each a
-// fan of its options, the one in effect marked -- and the actions it can take
-// now, the first few as entries and the rest in a fan, with the full sheet
-// last. The hub reads out what it is and its values, so holding the key and
-// letting go in the middle only looks.
-//
-// Nothing from the selection is held across frames: a choice is found again
-// by where it is and its key when it is made.
+// The wheel for what the pointer is on: opening aims at the thing under it, then
+// offers the selection's choices as fans and its actions. Nothing is held across
+// frames; a choice is found again by its place and key when it is made.
 //=============================================================================
 class ContextMenuModel final : public IRadialMenuModel
 {

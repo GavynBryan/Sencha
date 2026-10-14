@@ -66,11 +66,8 @@ enum class ActionRank : std::uint8_t
 
 //=============================================================================
 // ActionContextStack
-//
-// One window's answer to "what does this action do here": the contexts in play,
-// asked closest first, and among contexts of one rank the most recently pushed.
-// A context is in play while its Layer is alive, so a workspace closing or a
-// surface losing focus takes its handlers with it and nothing can dangle.
+// One window's contexts, asked closest first and, within a rank, latest pushed.
+// A context is in play while its Layer lives, so its handlers leave with it.
 //=============================================================================
 class ActionContextStack
 {

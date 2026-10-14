@@ -30,11 +30,8 @@ struct RackRequest
 
 //=============================================================================
 // ProjectRack
-//
-// The recent-project catalog as the Project workspace's content: a rack of
-// cartridges behind the shell, most recent first, a missing file badged. It
-// shows what it is given and hands back what the person asked for; the
-// workspace decides what that means.
+// The recent-project catalog as the Project workspace's content, most recent
+// first. It shows what it is given and hands back what the person asked for.
 //=============================================================================
 class ProjectRack
 {

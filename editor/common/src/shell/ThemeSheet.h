@@ -13,11 +13,8 @@ class UiService;
 
 //=============================================================================
 // ThemeSheet
-//
-// The editor's theme: the palette the editor.ui.theme cvar names -- a theme in
-// the bundled themes directory, or a path to a theme JSON -- applied at the
-// frame boundary, and the authored UI's theme stylesheet generated from it.
-// Each bundled theme is a theme.use.* action; choosing one sets the cvar.
+// The palette the editor.ui.theme cvar names, applied at the frame boundary, and
+// the stylesheet generated from it; each bundled theme is a theme.use.* action.
 //=============================================================================
 class ThemeSheet
 {

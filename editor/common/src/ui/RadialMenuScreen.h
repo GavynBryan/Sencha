@@ -12,14 +12,8 @@ struct IRadialMenuModel;
 
 //=============================================================================
 // RadialMenuScreen
-//
-// A radial menu drawn on an authored surface: a plate with a petal for each
-// entry cut into it, a glyph in each petal at the slot the session lays it out
-// at, the hot entry's variants as a fan of petals beyond the rim, and a
-// caption naming what a release would choose. Display
-// only -- the session hit-tests the same layout -- and one screen for every
-// wheel a workspace has, since only one is ever open; its document is open
-// only while one is.
+// A radial menu on an authored surface, display only: the session hit-tests the
+// same layout. One screen serves every wheel, and is open only while one is.
 //=============================================================================
 class RadialMenuScreen
 {

@@ -39,12 +39,9 @@ enum class SurfaceAnchor : std::uint8_t
 
 //=============================================================================
 // SurfaceLayout
-//
-// Where the shell's floating surfaces are, by key -- one key per surface and
-// shape, so the tray and the outline are placed separately. A surface opens
-// in free space and stays where it opened; the person moves it by its header
-// and sizes it by its corner, and a surface they moved or sized keeps that for
-// the session. Nothing here ever resizes a surface on its own.
+// Where the shell's floating surfaces are, one key per surface and shape. A
+// surface keeps for the session where the person moved or sized it, and nothing
+// here resizes one on its own.
 //=============================================================================
 class SurfaceLayout
 {

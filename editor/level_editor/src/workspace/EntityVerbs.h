@@ -12,13 +12,9 @@ class EditorWorkspace;
 
 //=============================================================================
 // EntityVerbs
-//
-// What can be done to the selected entities as parts of the scene rather than
-// as geometry, as actions in the Entity category: a new entity, parenting
-// under the primary and clearing a parent, hiding and locking, a placement's
-// source opened or broken, the scene's origin moved to the primary, and one
-// "Move to <zone>" per zone the selection could move to, kept in step with the
-// world's zones.
+// The selected entities' scene verbs as Entity actions: create, parent, hide,
+// lock, open or break a placement's source, move the origin, and one
+// "Move to <zone>" per zone, kept in step with the world's zones.
 //=============================================================================
 class EntityVerbs
 {

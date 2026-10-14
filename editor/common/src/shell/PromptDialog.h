@@ -15,12 +15,8 @@ class UiService;
 
 //=============================================================================
 // PromptDialog
-//
-// The prompt queue's front question, over the whole window until it is
-// answered: its choices as keys, Escape as its "cancel", and a line to write
-// when it asks for one, which Return answers with its first choice. Every
-// window shows the same question, so it is answered wherever the person is
-// looking.
+// The prompt queue's front question over the whole window, in every window.
+// Escape answers its cancel; Return answers its first choice.
 //=============================================================================
 class PromptDialog
 {

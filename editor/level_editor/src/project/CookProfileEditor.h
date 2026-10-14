@@ -12,12 +12,9 @@ struct ProjectDescriptor;
 
 //=============================================================================
 // CookProfileEditor
-//
-// The project's cook profiles as they are edited: which one is selected, its
-// settings as properties, duplicating and deleting, and saving through the
-// project's own save. A built-in profile is inherited rather than owned, so its
-// properties cannot be written; duplicating it is how it is changed. An edit
-// changes the project at once and is not an undo step; Save writes the file.
+// The project's cook profiles as edited: the selected one's settings as
+// properties, duplicate, delete and save. A built-in profile is read-only until
+// duplicated; edits are not undo steps, and Save writes the file.
 //=============================================================================
 class CookProfileEditor final : public IPropertySource
 {

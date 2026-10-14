@@ -36,16 +36,9 @@ struct ActionChordConflict
 
 //=============================================================================
 // ActionCatalog
-//
-// Every operation the editor offers, as data. No callbacks: whether an action
-// can run, and what it does, is answered by whichever ActionContext currently
-// claims it, so nothing here outlives the objects that perform the work.
-//
-// `edit.delete` is one action whether it deletes a brush, an asset or an
-// event; the context that claims it decides which. A chord may still name
-// several actions that are never claimed together -- New Level and New
-// Material are both Ctrl+N -- and a window performs whichever of them its
-// innermost context claims. Conflicts lists every shared chord for review.
+// Every operation the editor offers, as data with no callbacks: the ActionContext
+// claiming an action decides whether it runs and what it does. A chord may name
+// several actions never claimed together; the innermost claim wins.
 //=============================================================================
 class ActionCatalog
 {

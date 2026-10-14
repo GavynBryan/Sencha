@@ -17,12 +17,8 @@ enum class PropertyEditResult : std::uint8_t
 
 //=============================================================================
 // IPropertySource
-//
-// Something with properties, as a tree, and the one way they change: begin,
-// preview, commit, cancel. A source maps that lifecycle onto its document's own
-// transaction -- the command stack's pending edit for component bytes, a data
-// document's staged edit -- so a presenter never writes authoring state itself
-// and every live edit is revertible until it commits.
+// Properties as a tree, changed only by begin/preview/commit/cancel mapped onto
+// the document's own transaction, so a presenter never writes authoring state.
 //=============================================================================
 class IPropertySource
 {

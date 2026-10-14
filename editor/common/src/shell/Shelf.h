@@ -101,18 +101,9 @@ struct ShelfSources
 
 //=============================================================================
 // Shelf
-//
-// The project's content along the bottom of a window: every content file,
-// found by typing, narrowed by kind, folder or list (recent, open, changed),
-// shown as tiles or a list beside what the chosen one is, and opened in the
-// workspace that opens its kind. It belongs to the window, not to a tab, so
-// what it was showing is still there when it comes back.
-//
-// Raised, it lies over the work and goes once something is opened or Escape
-// is pressed; pinned, it stays and the work ends above it. Its top edge sizes
-// it. The chosen file is renamed, duplicated and trashed through the edit
-// actions, which it claims while raised and answers from its search field
-// whenever it has the keys.
+// The project's content along a window's bottom, found, narrowed and opened.
+// It belongs to the window, so it survives a workspace switch. Raised, it lies
+// over the work and claims the edit actions; pinned, the work ends above it.
 //=============================================================================
 class Shelf
 {

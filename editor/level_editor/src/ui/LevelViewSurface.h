@@ -20,12 +20,9 @@ struct MarqueeState;
 
 //=============================================================================
 // LevelViewSurface
-//
-// The Level's views on the window's content surface: what the arrangement
-// shows, each view's rendered image drawn as a host image at its tile, and
-// what tools and drags put at points over them. Laying the views out is also
-// what gives each its on-screen rect and its target size, so a view nobody
-// shows neither renders nor takes input.
+// The Level's views on the content surface, each a host image at its tile.
+// Laying them out gives each view its rect and target size, so an unshown view
+// neither renders nor takes input.
 //=============================================================================
 class LevelViewSurface
 {

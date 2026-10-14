@@ -17,16 +17,9 @@ class EditorWorkspace;
 
 //=============================================================================
 // PartitionOutline
-//
-// A world's partition as an outline and as properties: the world scene, its
-// graphs and the zones in each. Choosing a zone selects it; choosing a graph
-// or the world picks it; putting a zone or the world to use focuses it. What
-// is picked is presented as properties -- a zone's name, graph and
-// visibility, a graph's name and streaming shape, the world's streaming
-// preview -- and its verbs: focusing, loading and unloading a zone, taking its
-// bounds from its contents, linking it to another zone, adding a zone to a
-// graph or a graph to the world. Every manifest edit is one undoable step.
-// Nothing here exists for a level that is not a world.
+// A world's partition (the world, its graphs, their zones) as an outline, with
+// the picked one's properties and verbs. Every manifest edit is one undoable
+// step; a level that is not a world has none of this.
 //=============================================================================
 class PartitionOutline final : public CommitOnlyPropertySource
 {

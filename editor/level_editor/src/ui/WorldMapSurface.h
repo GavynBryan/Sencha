@@ -12,13 +12,9 @@ class UiService;
 
 //=============================================================================
 // WorldMapSurface
-//
-// The world map on the window's content surface, over the views: a plate per
-// zone -- the one being edited, the ones open beside it, the one the camera is
-// in, the one under the pointer and the ones with problems each marked -- the
-// docks and links between them, one-way ones with an arrow, and the camera. It
-// only shows: the workspace hit-tests the map it laid out. No screen is open
-// while the map is not shown.
+// The world map over the views: a plate per zone with its state, the docks and
+// links between them, and the camera. Display only: the workspace hit-tests the
+// map it laid out, and no screen is open while it is hidden.
 //=============================================================================
 class WorldMapSurface
 {

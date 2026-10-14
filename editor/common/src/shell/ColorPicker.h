@@ -34,11 +34,8 @@ struct ColorPickerTarget
 
 //=============================================================================
 // ColorPicker
-//
-// A hue and saturation wheel with a value bar beside it, for one colour
-// property. Dragging either previews through the property's edit session and
-// letting go commits; numbers typed and entered are set; a press elsewhere or
-// closing it cancels what is in flight.
+// A hue/saturation wheel and value bar for one colour property: a drag previews
+// through its edit session, release commits, a press elsewhere or closing cancels.
 //=============================================================================
 class ColorPicker
 {

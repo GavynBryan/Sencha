@@ -22,12 +22,9 @@ struct WorkspaceTimelineFacet;
 
 //=============================================================================
 // TimelineDeck
-//
-// The active workspace's clock along the bottom edge of the window, when it
-// keeps one: which clock and a switch between them, the transport as keys,
-// the readout, and a ruler with the playhead and the marks. Dragging the ruler
-// scrubs, dragging a movable mark moves it, clicking one picks it; all of it
-// goes back to the workspace, which owns the time.
+// The active workspace's clock along the window's bottom edge: transport,
+// readout, ruler, playhead and marks. Every scrub, move and pick goes back to
+// the workspace, which owns the time.
 //=============================================================================
 class TimelineDeck
 {

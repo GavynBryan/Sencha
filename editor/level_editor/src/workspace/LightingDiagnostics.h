@@ -46,13 +46,9 @@ struct LightingReports
 
 //=============================================================================
 // LightingDiagnostics
-//
-// How the lighting is doing, said where it applies: a selected light's shadow
-// (its tier, update policy, slot and state, and how full its pool is), what a
-// baked light or a probe volume became at the last cook, lights the shadow
-// budget left unshadowed and a stale baked preview as problems, and the
-// preview and a shadow re-render as view actions. Read-only: nothing here edits
-// the document.
+// Lighting state where it applies: a selected light's shadow, last-cook bake
+// facts, unshadowed lights and a stale preview as problems, and the preview and
+// shadow re-render as view actions. Read-only.
 //=============================================================================
 class LightingDiagnostics final : public ReadOnlyPropertySource
 {

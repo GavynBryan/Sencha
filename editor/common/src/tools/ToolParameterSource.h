@@ -9,11 +9,8 @@ class ToolRegistry;
 
 //=============================================================================
 // ToolParameterSource
-//
-// The tool in hand's parameters as a property source, whichever tool that is.
-// A tool's settings are not a document's, so there is no transaction to open:
-// a preview sets the value, a commit keeps it, and a cancel puts back what the
-// edit began from.
+// The tool in hand's parameters as a property source. Tool settings have no
+// transaction: preview sets, commit keeps, cancel restores the starting value.
 //=============================================================================
 class ToolParameterSource final : public IPropertySource
 {

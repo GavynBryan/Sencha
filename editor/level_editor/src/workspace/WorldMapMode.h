@@ -26,11 +26,8 @@ enum class LevelContent : std::uint8_t
 
 //=============================================================================
 // WorldMapMode
-//
-// The world map in place of the views: laid out from the world each frame it
-// shows, its plates hit-tested by the pointer, and left by going to a zone or
-// by Escape. It takes the pointer and Escape from everything under it while
-// up. Only a world has one. Whatever draws it reads the map it laid out.
+// The world map in place of the views: laid out each frame it shows, hit-tested,
+// and left by going to a zone or by Escape. While up it takes the pointer and Escape.
 //=============================================================================
 class WorldMapMode
 {

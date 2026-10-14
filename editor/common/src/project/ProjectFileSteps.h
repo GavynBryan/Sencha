@@ -58,14 +58,9 @@ struct ProjectFileHooks
 
 //=============================================================================
 // ProjectFileSteps
-//
-// Moving, renaming, duplicating and trashing a project's content files, each
-// one step in the journal every document shares, so Ctrl+Z puts a file back as
-// it puts back an edit. A file moves with its sidecar and keeps the id it
-// states (it is given one first, if it states none); every document that still
-// names it by its old path is made to name it by its id and new path, and an
-// open document living in it follows it. Trashed files go to `.trash` under
-// their root, which no walk over content enters.
+// Moving, renaming, duplicating and trashing content files, each one journal
+// step; the file keeps its sidecar and id, and the documents naming it follow
+// (docs/assets/pipeline.md).
 //=============================================================================
 class ProjectFileSteps final : public DocumentSource
 {

@@ -34,12 +34,8 @@ struct Problem
 
 //=============================================================================
 // ProblemList
-//
-// Every located problem the editor knows about right now, gathered from the
-// things that find them -- the cook, the UI layer's diagnostics, a save that
-// could not complete, a data document's validation. Each source republishes its
-// whole set whenever it changes, so a problem that was fixed is gone rather
-// than left for someone to dismiss.
+// Every located problem the editor knows of now. Each source republishes its
+// whole set when it changes, so a fixed problem disappears rather than lingers.
 //=============================================================================
 class ProblemList
 {

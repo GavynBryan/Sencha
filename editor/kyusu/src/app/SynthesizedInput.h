@@ -13,11 +13,8 @@ class ConsoleRegistry;
 
 //=============================================================================
 // SynthesizedInput
-//
-// Platform events a script asks for, pushed into the platform's queue at the
-// frame it names: a held key, the pointer over a view, a click. A startup
-// script drives the editor the way a person would, through every layer a real
-// event passes, so an unattended capture can show what a hand would bring up.
+// Platform events a script asks for, pushed into the platform queue at the frame
+// it names, so an unattended run passes through every layer a real event does.
 //=============================================================================
 class SynthesizedInput
 {

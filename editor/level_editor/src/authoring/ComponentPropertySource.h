@@ -28,33 +28,9 @@ struct RuntimeField;
 
 //=============================================================================
 // ComponentPropertySource
-//
-// The selected entities' components, as properties. Registry-driven: it walks
-// the component serializer registry and presents each present component's
-// schema leaves, so any component -- engine or game module -- is shown and
-// edited without this naming its type.
-//
-// Several selected entities are presented as one: every component any of them
-// holds, a component only some hold saying how many, and a field whose
-// holders disagree standing for all of them (PropertyNode::Mixed). Setting a
-// field sets every holder alike; moving it by an amount moves each from its
-// own value; a verb acts on every holder; and whatever it touches is one step.
-// A component whose adapter authors its rows is edited one object at a time.
-//
-// A component is a Group keyed by its serializer's JSON key; a field is keyed
-// "<component>/<field name>", one number of it "<component>/<field name>[i]",
-// and one slot of a list of assets "<component>/<field name>#<slot>". A component whose adapter authors its
-// presentation shows the adapter's properties instead, keyed
-// "<component>:<adapter key>". Keys, not positions, so an edit still lands
-// where it was aimed after the list around it changed.
-//
-// For a member of a scene instance, a field that differs from the
-// placement's source carries a "reset" verb, and so does its component.
-//
-// Byte fields preview into the live component inside the command stack's
-// pending-edit scope and commit as one RawComponentEditCommand, so undo, save
-// and every interruption revert an unfinished edit. An asset field is never
-// text: its value is an asset path, committed through AssetFieldEditCommand.
+// The selected entities' components as properties, walked from the serializer
+// registry so any component is edited without naming its type. Its keys and
+// multi-selection rules are in editor/ARCHITECTURE.md (`authoring/`).
 //=============================================================================
 class ComponentPropertySource final : public IPropertySource
 {

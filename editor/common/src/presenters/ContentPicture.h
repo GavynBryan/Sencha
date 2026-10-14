@@ -40,12 +40,9 @@ struct PictureDot
 
 //=============================================================================
 // ContentPicture
-//
-// One host image in a workspace's content: a preview the workspace renders
-// offscreen, shown on the window's content surface where the window says the
-// content goes, and cut off at its edges. It names the image and places it,
-// filling the content or wherever the workspace puts it, with frames marked
-// and dots over it; the workspace's renderer fills it at the size it asks for.
+// One host image in a workspace's content, placed where the workspace puts it,
+// clipped to the content, with frames and dots marked over it. The workspace's
+// renderer fills the image at the size it asks for.
 //=============================================================================
 class ContentPicture
 {

@@ -12,13 +12,9 @@ class MaterialLibrary;
 
 //=============================================================================
 // FaceUvSource
-//
-// The selected faces' surface as properties: the material on them and how
-// its texture is projected -- the basis it aligns to, scale, shift and
-// rotation -- read from the first selected face and written to every one as
-// one step per brush. The justify verbs (fit,
-// center, reset axes) are actions in the Texture category; "treat as one"
-// decides whether they justify each face or the selection as a single unit.
+// The selected faces' material and projection as properties, read from the first
+// face and written to all as one step per brush; the justify verbs are Texture
+// actions, applied per face or to the selection as one unit.
 //=============================================================================
 class FaceUvSource final : public CommitOnlyPropertySource
 {

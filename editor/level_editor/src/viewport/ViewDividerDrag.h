@@ -9,11 +9,8 @@ class PointerCapture;
 
 //=============================================================================
 // ViewDividerDrag
-//
-// Moving the divider between arranged views: a press on it takes the pointer,
-// a drag moves it, and releasing lets go. The divider is the workspace's
-// setting; this reads how the views are arranged and reports where the
-// divider moved.
+// Dragging the divider between arranged views. The divider is the workspace's
+// setting; this only reports where it moved.
 //=============================================================================
 class ViewDividerDrag
 {

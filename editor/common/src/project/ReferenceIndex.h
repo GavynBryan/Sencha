@@ -26,12 +26,8 @@
 
 //=============================================================================
 // ReferenceIndex
-//
-// Which of the project's content files name which: what a file uses, what
-// uses it, and what it names that is nowhere -- in the project or in content
-// mounted beside it (the engine's). A reference finds its file by the id it
-// names, else by its path. A refresh reads again only the documents whose size
-// or time changed since they were read.
+// Which content files name which, and what each names that exists nowhere.
+// A reference resolves by id, else by path; a refresh rereads only changed files.
 //=============================================================================
 class ReferenceIndex
 {

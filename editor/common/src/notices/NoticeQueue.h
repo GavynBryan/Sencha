@@ -24,10 +24,8 @@ struct Notice
 
 //=============================================================================
 // NoticeQueue
-//
-// The notices worth showing at a given moment, newest last. Time is passed in
-// -- presentation seconds from whoever posts and reads -- so what is showing is
-// a function of the posts and the clock, and a test decides the clock.
+// The notices worth showing at a given moment, newest last. Time is passed in,
+// so what shows is a function of the posts and a clock the caller decides.
 //=============================================================================
 // Seconds on the clock the editor posts and shows notices by.
 [[nodiscard]] double NoticeClockNow();

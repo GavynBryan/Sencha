@@ -8,11 +8,8 @@
 
 //=============================================================================
 // PropertyEditSession
-//
-// The one edit in flight in a presentation, and the thing every interruption
-// ends: Escape, focus leaving, a tool switch, the workspace hiding, the
-// document closing, the selection moving on. Beginning another edit ends the
-// open one first, so two can never be staged at once.
+// The one edit in flight in a presentation, ended by every interruption;
+// beginning another edit ends the open one first.
 //=============================================================================
 class PropertyEditSession
 {
