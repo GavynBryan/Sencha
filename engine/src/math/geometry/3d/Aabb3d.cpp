@@ -100,3 +100,32 @@ std::ostream& operator<<(std::ostream& os, const Aabb3d& box)
 	os << "{Min: " << box.Min << ", Max: " << box.Max << "}";
 	return os;
 }
+
+std::vector<Vec3d> ClipConvexPolygon(std::span<const Vec3d> polygon, const Aabb3d& box)
+{
+	std::vector<Vec3d> kept(polygon.begin(), polygon.end());
+	std::vector<Vec3d> next;
+	for (int axis = 0; axis < Aabb3d::DimensionCount && !kept.empty(); ++axis)
+		for (const float sign : { -1.0f, 1.0f })
+		{
+			// Inside is sign * (p[axis] - bound) <= 0 for this face of the box.
+			const float bound = sign < 0.0f ? box.Min[axis] : box.Max[axis];
+			const auto outside = [&](const Vec3d& point) { return sign * (point[axis] - bound); };
+			next.clear();
+			for (std::size_t i = 0; i < kept.size(); ++i)
+			{
+				const Vec3d& from = kept[i];
+				const Vec3d& to = kept[(i + 1) % kept.size()];
+				const float a = outside(from);
+				const float b = outside(to);
+				if (a <= 0.0f)
+					next.push_back(from);
+				if ((a < 0.0f && b > 0.0f) || (a > 0.0f && b < 0.0f))
+					next.push_back(from + (to - from) * (a / (a - b)));
+			}
+			kept.swap(next);
+			if (kept.empty())
+				break;
+		}
+	return kept;
+}

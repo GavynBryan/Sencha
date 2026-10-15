@@ -1,6 +1,8 @@
 #pragma once
 
 #include <iosfwd>
+#include <span>
+#include <vector>
 
 #include <math/Vec.h>
 
@@ -35,5 +37,9 @@ struct Aabb3d
 };
 
 std::ostream& operator<<(std::ostream& os, const Aabb3d& box);
+
+// The part of a convex, planar polygon inside `box`, its boundary included, in
+// the polygon's winding; empty when they do not meet.
+[[nodiscard]] std::vector<Vec3d> ClipConvexPolygon(std::span<const Vec3d> polygon, const Aabb3d& box);
 
 using Aabb3f = Aabb3d;

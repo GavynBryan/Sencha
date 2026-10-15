@@ -12,6 +12,7 @@
 #include <core/metadata/DataSchemaFields.h>
 #include <navigation/NavQueryContext.h>
 #include <navigation/NavigationQuery.h>
+#include <math/geometry/3d/Aabb3d.h>
 #include <navigation/tooling/NavMeshSnapshot.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
@@ -196,33 +197,34 @@ namespace
         return possible && !gates.Closed.contains(connection.Id.Value);
     }
 
-    // The reached polygon of `zone` nearest the dock's middle that reaches its
-    // mouth, as a place to route to.
+    // Where the reached polygon of `zone` nearest the dock's middle meets its
+    // mouth: the middle of the part of that polygon inside the box the dock's
+    // rectangle reaches, so a long edge across a narrow dock counts, and the
+    // place to route to lies on the polygon.
     std::optional<NavLocation> Mouth(const ZoneWalk& zone, const std::set<std::uint64_t>& reached, const Connection& connection)
     {
+        const Aabb3d mouth(Vec3d{ -(connection.Half.X + kMouthReach), -(connection.Half.Y + kMouthReach), -kMouthDepth },
+                           Vec3d{ connection.Half.X + kMouthReach, connection.Half.Y + kMouthReach, kMouthDepth });
         std::optional<NavLocation> best;
         float bestDistance = 0.0f;
+        std::vector<Vec3d> local;
         for (const std::uint64_t ref : reached)
         {
             const NavSnapshotPolygon& polygon = zone.Snapshot.Polygons[zone.PolygonOf.at(ref)];
-            Vec3d centre = Vec3d::Zero();
-            bool touches = false;
+            local.clear();
             for (std::uint32_t v = 0; v < polygon.VertexCount; ++v)
-            {
-                const Vec3d& vertex = zone.Snapshot.Vertices[polygon.FirstVertex + v];
-                centre = centre + vertex;
-                const Vec3d local = connection.Frame.InverseTransformPoint(vertex);
-                touches = touches
-                    || (std::abs(local.X) <= connection.Half.X + kMouthReach && std::abs(local.Y) <= connection.Half.Y + kMouthReach
-                        && std::abs(local.Z) <= kMouthDepth);
-            }
-            if (!touches)
+                local.push_back(connection.Frame.InverseTransformPoint(zone.Snapshot.Vertices[polygon.FirstVertex + v]));
+            const std::vector<Vec3d> inside = ClipConvexPolygon(local, mouth);
+            if (inside.empty())
                 continue;
-            centre = centre * (1.0f / static_cast<float>(polygon.VertexCount));
-            const float distance = (centre - connection.Frame.Position).Magnitude();
+            Vec3d middle = Vec3d::Zero();
+            for (const Vec3d& point : inside)
+                middle = middle + point;
+            middle = connection.Frame.TransformPoint(middle * (1.0f / static_cast<float>(inside.size())));
+            const float distance = (middle - connection.Frame.Position).Magnitude();
             if (best && distance >= bestDistance)
                 continue;
-            best = NavLocation{ polygon.Region.Zone, polygon.Region.Generation, polygon.Region.Profile, 0, ref, centre };
+            best = NavLocation{ polygon.Region.Zone, polygon.Region.Generation, polygon.Region.Profile, 0, ref, middle };
             bestDistance = distance;
         }
         return best;

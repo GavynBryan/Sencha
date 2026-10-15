@@ -2,6 +2,7 @@
 #include <math/geometry/2d/Aabb2d.h>
 #include <math/geometry/3d/Aabb3d.h>
 #include <sstream>
+#include <vector>
 
 // --- Construction ---
 
@@ -195,4 +196,50 @@ TEST(Aabb, StreamOutput)
 	std::ostringstream oss;
 	oss << box;
 	EXPECT_EQ(oss.str(), "{Min: (-1, -2), Max: (3, 4)}");
+}
+
+namespace
+{
+	const Aabb3d kNarrow{ Vec3d{ -0.5f, -0.5f, -0.5f }, Vec3d{ 0.5f, 0.5f, 0.5f } };
+
+	// A floor quad at height `y` spanning [minX, maxX] x [minZ, maxZ].
+	std::vector<Vec3d> Quad(float minX, float maxX, float minZ, float maxZ, float y = 0.0f)
+	{
+		return { Vec3d{ minX, y, minZ }, Vec3d{ maxX, y, minZ }, Vec3d{ maxX, y, maxZ }, Vec3d{ minX, y, maxZ } };
+	}
+}
+
+TEST(ClipConvexPolygon, ALongPolygonCrossingANarrowBoxMeetsItWithNoVertexInside)
+{
+	const std::vector<Vec3d> inside = ClipConvexPolygon(Quad(-20.0f, 20.0f, -20.0f, 20.0f), kNarrow);
+	ASSERT_EQ(inside.size(), 4u);
+	for (const Vec3d& point : inside)
+	{
+		EXPECT_TRUE(kNarrow.Contains(point));
+		EXPECT_FLOAT_EQ(point.Y, 0.0f) << "what is kept lies on the polygon";
+	}
+}
+
+TEST(ClipConvexPolygon, AnEdgeAloneCrossingTheBoxIsKept)
+{
+	// Only the triangle's long edge passes through the box.
+	const std::vector<Vec3d> triangle{ Vec3d{ -20, 0, 0 }, Vec3d{ 20, 0, 0 }, Vec3d{ 0, 0, 20 } };
+	const std::vector<Vec3d> inside = ClipConvexPolygon(triangle, kNarrow);
+	ASSERT_FALSE(inside.empty());
+	for (const Vec3d& point : inside)
+		EXPECT_TRUE(kNarrow.Contains(point));
+}
+
+TEST(ClipConvexPolygon, TouchingTheBoundaryCounts)
+{
+	EXPECT_FALSE(ClipConvexPolygon(Quad(0.5f, 3.0f, -1.0f, 1.0f), kNarrow).empty()) << "an edge on the box's face";
+	EXPECT_FALSE(ClipConvexPolygon(Quad(-1.0f, 1.0f, -1.0f, 1.0f, 0.5f), kNarrow).empty()) << "a polygon in its top";
+}
+
+TEST(ClipConvexPolygon, APolygonApartFromTheBoxGivesNothing)
+{
+	EXPECT_TRUE(ClipConvexPolygon(Quad(0.6f, 3.0f, -1.0f, 1.0f), kNarrow).empty());
+	EXPECT_TRUE(ClipConvexPolygon(Quad(-20.0f, 20.0f, -20.0f, 20.0f, 0.75f), kNarrow).empty()) << "above it";
+	const std::vector<Vec3d> diagonal{ Vec3d{ 1.2f, 0, 0 }, Vec3d{ 0, 0, 1.2f }, Vec3d{ 3, 0, 3 } };
+	EXPECT_TRUE(ClipConvexPolygon(diagonal, kNarrow).empty()) << "past the corner, though its bounds overlap the box";
 }

@@ -10,6 +10,7 @@
 #include "document/EditorScene.h"
 #include "document/WorldDocument.h"
 #include "operations/EditorOperations.h"
+#include "operations/LevelNavigation.h"
 #include "operations/LevelOperations.h"
 #include "operations/LevelTarget.h"
 
@@ -18,13 +19,18 @@
 #include <core/logging/LoggingProvider.h>
 #include <math/Angle.h>
 #include <navigation/NavLinkComponent.h>
+#include <navigation/tooling/NavMeshSnapshot.h>
 #include <world/registry/Registry.h>
 #include <world/transform/TransformComponents.h>
 #include <zone/WorldConnectionComponents.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -74,19 +80,21 @@ namespace
         }
 
         // A one-way dock lying in the floor over the hole at `x`, crossed downward.
-        DockId Drop(float x)
+        DockId Drop(float x) { return Drop(Vec3d{ x, 0, 0 }, Vec2d{ 1, 1 }); }
+
+        DockId Drop(const Vec3d& at, const Vec2d& half)
         {
             EditorScene& scene = World.WorldSceneDocument().GetScene();
-            const EntityId entity = scene.CreateEntity(Vec3d{ x, 0, 0 });
+            const EntityId entity = scene.CreateEntity(at);
             Transform3f frame = Transform3f::Identity();
-            frame.Position = Vec3d{ x, 0, 0 };
+            frame.Position = at;
             frame.Rotation = Quatf::FromAxisAngle(Vec3d{ 1, 0, 0 }, ToRadians(90.0f));
             scene.SetWorldTransform(entity, frame);
             WorldDock dock;
             dock.Id = World.MintDockId();
             dock.ZoneA = Upper;
             dock.ZoneB = Basement;
-            dock.HalfExtents = Vec2d{ 1, 1 };
+            dock.HalfExtents = half;
             dock.Directions = DockDirectionAToB;
             scene.GetRegistry().Components.AddComponent(entity, dock);
             scene.RefreshDerivedTransforms();
@@ -137,6 +145,45 @@ namespace
         ASSERT_EQ(down.Find("docks")->AsArray().size(), 1u);
         EXPECT_EQ(down.Find("docks")->AsArray()[0].AsString(), DockIdToString(hole));
         EXPECT_EQ(Outcome(Ok("world.reachable", kUp)), "unreached") << "nothing leads back up";
+    }
+
+    // A narrow dock lying in the far slab where no navigation vertex comes near
+    // it: only a polygon's inside reaches it.
+    TEST_F(WorldReachabilityTest, ANarrowDockInsideALongPolygonIsReachedThroughIt)
+    {
+        EditorOperationOutcome refusal;
+        const std::unique_ptr<LevelNavigation> upper =
+            BuildLevelNavigation(*World.ZoneDocument(Upper), JsonValue(JsonValue::Object{}), refusal);
+        ASSERT_NE(upper, nullptr) << refusal.Message;
+        const NavMeshSnapshot snapshot = SnapshotNavMesh(upper->Navigation, upper->ProfileIndex);
+        constexpr float kClear = 0.25f + 0.75f + 0.25f; // the dock's half, the mouth's reach, and room to spare
+        std::optional<Vec3d> spot;
+        for (const NavSnapshotPolygon& polygon : snapshot.Polygons)
+        {
+            Vec3d middle = Vec3d::Zero();
+            for (std::uint32_t v = 0; v < polygon.VertexCount; ++v)
+                middle = middle + snapshot.Vertices[polygon.FirstVertex + v];
+            middle = middle * (1.0f / static_cast<float>(polygon.VertexCount));
+            const bool clear = std::ranges::all_of(snapshot.Vertices, [&](const Vec3d& vertex) {
+                return std::max(std::abs(vertex.X - middle.X), std::abs(vertex.Z - middle.Z)) > kClear;
+            });
+            if (middle.Z < -2.0f && clear)
+            {
+                spot = middle;
+                break;
+            }
+        }
+        ASSERT_TRUE(spot.has_value()) << "every polygon of the far slab has a vertex near its middle, so this "
+                                         "layout no longer tests a dock no vertex reaches";
+        (void)Drop(*spot, Vec2d{ 0.25f, 0.25f });
+        EXPECT_EQ(Outcome(Ok("world.reachable", R"({"from": [-5, 0, 5], "to": [-5, -8, -5]})")), "reached");
+    }
+
+    TEST_F(WorldReachabilityTest, ADockNoWalkableSurfaceReachesLeadsNowhere)
+    {
+        (void)Drop(Vec3d{ 11, 0, -4 }, Vec2d{ 0.5f, 0.5f });
+        EXPECT_EQ(Outcome(Ok("world.reachable", R"({"from": [-5, 0, 5], "to": [-5, -8, -5]})")), "unreached")
+            << "the floor ends three metres short of it";
     }
 
     TEST_F(WorldReachabilityTest, AGatedDropDependsOnItsGate)
