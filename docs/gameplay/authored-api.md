@@ -149,8 +149,10 @@ The scope commits to the verb, query and event catalogs as one transaction:
 every batch is validated against its catalog before any catalog changes, so a
 provider whose query conflicts with another provider's publishes no verbs and
 no events either. The engine reads the installation errors after the hook and
-refuses to start on any; an editor reports them. Nothing is registered unless
-a hook declares it.
+refuses to start on any; an editor reports them. Apart from the engine's own
+vocabulary, which `InstallEngineVocabulary` declares into every runtime and
+editor World (its verbs, and the `perception.*` queries in
+`docs/plans/perception.md`), nothing is registered unless a hook declares it.
 
 ```cpp
 void TorchGame::OnStart(GameStartupContext&)
@@ -197,6 +199,14 @@ being able to run anything.
   `AuthoredVocabularyScope` does this across all three. Refused batches land in
   each catalog's `InstallationErrors`, which the host reads after the vocabulary
   hook; the runtime refuses to start on any, and editors report them.
+
+The same template, outside the World, holds a host's candidate-evaluation
+operations (`docs/spatial/candidates.md`); those catalogs are not part of the
+authored vocabulary. A literal written in authored data compiles against its
+field through `CompileAuthoredLiteral` (`authored/AuthoredLiteral.h`), shared by
+verb bindings and the candidate `authored_query` measure. Consumers that rebuild
+when a catalog, the tag vocabulary or an asset moves compare
+`BindingDependencyStamp` values.
 
 Bindings and subscriptions are owned by tokens. A token outliving its
 dispatcher is inert, and a token cannot remove a replacement bound after it.

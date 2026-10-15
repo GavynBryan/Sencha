@@ -8,7 +8,7 @@
 #include <vector>
 
 WireframeRenderer::WireframeRenderer(SelectionService& selection,
-                                     const EditorOverlayState& overlay, EditorLinePipeline& lines)
+                                     const EditorOverlayState& overlay, ColoredVertexPipeline& lines)
     : Selection(selection)
     , Overlay(overlay)
     , Lines(lines)
@@ -42,7 +42,7 @@ void WireframeRenderer::DrawWireframe(const FrameContext& frame, const EditorVie
         && !hover.IsFace() && !hover.IsEdge() && !hover.IsVertex())
         skip.push_back(hover.Entity);
 
-    std::vector<EditorLineVertex> vertices;
+    std::vector<ColoredVertex> vertices;
     vertices.reserve(scene.GetEntityCount() * 24);
     ForEachVisibleBrush(scene, /*skipLocked*/ false,
         [&](EntityId id, const BrushMesh& mesh, const Transform3f& transform)
@@ -52,10 +52,10 @@ void WireframeRenderer::DrawWireframe(const FrameContext& frame, const EditorVie
             AppendBrushMesh(vertices, mesh, transform, color);
         });
 
-    Lines.Submit(frame, viewport, camera, vertices);
+    Lines.Submit(frame, viewport.Region(), camera, vertices);
 }
 
-void WireframeRenderer::AppendBrushMesh(std::vector<EditorLineVertex>& vertices,
+void WireframeRenderer::AppendBrushMesh(std::vector<ColoredVertex>& vertices,
                                         const BrushMesh& mesh,
                                         const Transform3f& transform,
                                         const Vec4& color) const
@@ -72,8 +72,8 @@ void WireframeRenderer::AppendBrushMesh(std::vector<EditorLineVertex>& vertices,
             const Vec4& stroke = !mesh.SoftEdges.empty() && BrushEdgeIsSoft(mesh, ia, ib)
                 ? EditorTheme::SoftEdgeWireframe
                 : color;
-            vertices.push_back(EditorLineVertex{ .Position = a, .Color = stroke });
-            vertices.push_back(EditorLineVertex{ .Position = b, .Color = stroke });
+            vertices.push_back(ColoredVertex{ .Position = a, .Color = stroke });
+            vertices.push_back(ColoredVertex{ .Position = b, .Color = stroke });
         }
     }
 }

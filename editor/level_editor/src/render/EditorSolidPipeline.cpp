@@ -7,7 +7,7 @@
 
 void EditorSolidPipeline::Setup(const RendererServices& services)
 {
-    EditorImmediatePipelineConfig config;
+    ImmediatePipelineConfig config;
     config.VertexSpirv = kEditorSolidVertSpv;
     config.VertexWordCount = kEditorSolidVertSpvWordCount;
     config.VertexName = "Editor solid vertex";

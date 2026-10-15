@@ -407,3 +407,50 @@ do the work and delete the entry.
   (`docs/editor/placement.md`, Turning).
 - **Trigger:** the Entity card gaining the setting, or the first prefab meant
   to hang on a wall or a ceiling.
+
+## Spatial queries
+
+- **Parallel candidate evaluation.**
+  - *Code:* `engine/src/spatial/candidates/`.
+  - *What's missing:* runs are serial and owner-thread only. Running them in parallel needs a concurrent-read path through ECS queries (`World::QueryDepth`, `Query`'s lazy archetype cache), per-worker scratch, and a non-allocating dispatch.
+  - *Trigger:* a measured per-tick evaluation cost over ~1 ms in a real encounter.
+- **Native candidate operations from game modules.**
+  - *Code:* `engine/include/spatial/candidates/CandidateCatalogs.h`.
+  - *What's missing:* the catalogs hold only the engine's operations. Game questions go through the `authored_query` measure.
+  - *Trigger:* a game needs a native batch measure that `authored_query` is too slow for. The catalogs' names and contract revisions make this an addition, not a redesign.
+- **Top-N bound pruning.**
+  - *Code:* `CandidateEvaluator::RunCriterion`.
+  - *What's missing:* skipping expensive measures on candidates that can no longer reach the top N, returning exactly what unpruned evaluation returns.
+  - *Trigger:* profiling shows expensive measures spent on hopeless candidates.
+- **Clearance measure.**
+  - *What's blocking it:* `PhysicsQueries::SweepShape` and `OverlapShape` build a backend shape on every call, and `OverlapShape` fills a `std::vector`, so per-candidate use would allocate. Navigation's build profile already guarantees standing room against static geometry.
+  - *Trigger:* `PhysicsQueries` accepts cached shapes and caller-owned output.
+- **Multi-tick evaluation scheduler.**
+  - *What's missing:* a budgeted scheduler that calls the same `Evaluate` on a subset of callers per tick.
+  - *Trigger:* measured per-tick cost of real encounters exceeds budget.
+- **`walkable_width` measure.**
+  - *What's blocking it:* navigation exposes no distance-to-edge query (Detour has one).
+  - *Trigger:* a consumer needs corridor width, for example to avoid or prefer choke points.
+
+## Hearing
+
+- **What:** Stage E of `docs/plans/perception.md`: a `HearingSensor`, spatial
+  stimuli that game adapters stage from authored events, and a hearing pass
+  that reports into the same `PerceptionFrame`.
+- **Where:** `engine/src/perception/` beside `SightScan`; `PerceptionSystem`
+  runs each sense pass between `PerceptionFrame::Begin` and `Publish`, and the
+  frame already orders scans by observer and sense.
+- **Trigger:** the first game that needs an NPC to react to a sound, or the
+  roadmap's data-authored enemy gate if its encounter includes one.
+
+## Sight candidate selection
+
+- **What:** a spatial candidate query for sight. Every sensor is tested
+  against every target for range and cone each tick, O(sensors x targets)
+  before any ray; the per-observer ray cap bounds rays, not this.
+- **Where:** `SightScan::Run` in `engine/src/perception/SightScan.cpp`, which
+  gathers targets once per tick in id order.
+- **Trigger:** `SightStats::Candidates` in a representative encounter putting
+  the perception system over its ~1 ms share of the fixed tick, measured with
+  `frame.trace.output`. Distance-ordered ray grants belong with it if far
+  targets in view crowd out near ones.

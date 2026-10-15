@@ -1,5 +1,6 @@
 #pragma once
 
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 
@@ -16,6 +17,9 @@ struct EntityId
 
     bool IsValid() const { return Index != InvalidEntityIndex; }
     bool operator==(const EntityId&) const = default;
+    // By index, then generation: a stable order for results that must not
+    // depend on chunk layout. It means nothing about age or importance.
+    auto operator<=>(const EntityId&) const = default;
 };
 
 // For the unordered containers that key on an entity. Index and generation are

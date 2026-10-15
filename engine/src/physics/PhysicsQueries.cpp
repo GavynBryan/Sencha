@@ -3,7 +3,10 @@
 #include "PhysicsWorldImpl.h"
 
 #include <algorithm>
+#include <cassert>
+#include <cmath>
 
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Body/BodyLockInterface.h>
 #include <Jolt/Physics/Collision/CastResult.h>
@@ -25,16 +28,40 @@ EntityId EntityOf(const JPH::PhysicsSystem& system, JPH::BodyID body)
         return UnpackEntity(lock.GetBody().GetUserData());
     return EntityId{};
 }
-} // namespace
 
-RaycastHit PhysicsQueries::Raycast(const Vec3d& origin, const Vec3d& direction, float maxDistance) const
+class QueryBodyFilter final : public JPH::BodyFilter
 {
-    const JPH::PhysicsSystem& system = Simulation->Internal().System;
+public:
+    explicit QueryBodyFilter(const PhysicsQueryFilter& filter)
+        : Filter(filter)
+    {
+    }
+
+    bool ShouldCollideLocked(const JPH::Body& body) const override
+    {
+        if (body.IsSensor() && !Filter.IncludeTriggers)
+            return false;
+        const EntityId entity = UnpackEntity(body.GetUserData());
+        return std::find(Filter.IgnoreEntities.begin(), Filter.IgnoreEntities.end(), entity)
+            == Filter.IgnoreEntities.end();
+    }
+
+private:
+    const PhysicsQueryFilter& Filter;
+};
+
+RaycastHit CastRay(const PhysicsWorld& world,
+                   const Vec3d& origin,
+                   const Vec3d& direction,
+                   float maxDistance,
+                   const JPH::BodyFilter& bodyFilter)
+{
+    const JPH::PhysicsSystem& system = world.Internal().System;
     const JPH::NarrowPhaseQuery& query = system.GetNarrowPhaseQuery();
 
     const JPH::RRayCast ray{ ToJphR(origin), ToJph(direction) * maxDistance };
     JPH::RayCastResult result;
-    if (!query.CastRay(ray, result))
+    if (!query.CastRay(ray, result, {}, {}, bodyFilter))
         return RaycastHit{};
 
     RaycastHit hit;
@@ -51,6 +78,21 @@ RaycastHit PhysicsQueries::Raycast(const Vec3d& origin, const Vec3d& direction, 
         hit.Entity = UnpackEntity(body.GetUserData());
     }
     return hit;
+}
+} // namespace
+
+RaycastHit PhysicsQueries::Raycast(const Vec3d& origin, const Vec3d& direction, float maxDistance) const
+{
+    return CastRay(*Simulation, origin, direction, maxDistance, JPH::BodyFilter{});
+}
+
+RaycastHit PhysicsQueries::Raycast(const Vec3d& origin,
+                                   const Vec3d& unitDirection,
+                                   float maxDistance,
+                                   const PhysicsQueryFilter& filter) const
+{
+    assert(std::abs(unitDirection.SqrMagnitude() - 1.0) < 1e-3 && "Raycast direction must be normalized");
+    return CastRay(*Simulation, origin, unitDirection, maxDistance, QueryBodyFilter{ filter });
 }
 
 ShapeSweepHit PhysicsQueries::SweepShape(

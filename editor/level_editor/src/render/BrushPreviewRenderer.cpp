@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-BrushPreviewRenderer::BrushPreviewRenderer(PreviewBuffer& preview, EditorLinePipeline& lines)
+BrushPreviewRenderer::BrushPreviewRenderer(PreviewBuffer& preview, ColoredVertexPipeline& lines)
     : Preview(preview)
     , Lines(lines)
 {
@@ -24,7 +24,7 @@ void BrushPreviewRenderer::DrawViewport(const FrameContext& frame, const EditorV
     // One line per unique undirected edge across all face loops; works for any
     // primitive (box, plane quad, cylinder), no per-shape geometry.
     std::unordered_set<std::uint64_t> seen;
-    std::vector<EditorLineVertex> vertices;
+    std::vector<ColoredVertex> vertices;
     const Vec4 color = preview->Color;
     for (const BrushFace& face : mesh.Faces)
     {
@@ -38,14 +38,14 @@ void BrushPreviewRenderer::DrawViewport(const FrameContext& frame, const EditorV
             const std::uint64_t key = (static_cast<std::uint64_t>(lo) << 32) | hi;
             if (!seen.insert(key).second)
                 continue;
-            vertices.push_back(EditorLineVertex{
+            vertices.push_back(ColoredVertex{
                 .Position = transform.TransformPoint(mesh.Vertices[a].Position), .Color = color });
-            vertices.push_back(EditorLineVertex{
+            vertices.push_back(ColoredVertex{
                 .Position = transform.TransformPoint(mesh.Vertices[b].Position), .Color = color });
         }
     }
 
     // onTop: the dragged preview is never occluded, including when it rests flush
     // on a surface in perspective.
-    Lines.Submit(frame, viewport, camera, vertices, /*onTop*/ true);
+    Lines.Submit(frame, viewport.Region(), camera, vertices, /*onTop*/ true);
 }

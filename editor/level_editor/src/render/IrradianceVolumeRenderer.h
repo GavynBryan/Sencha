@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EditorLinePipeline.h"
+#include <graphics/vulkan/ColoredVertexPipelines.h>
 #include "render/EditorWideLinePipeline.h"
 
 #include "viewport/EditorViewport.h"
@@ -18,7 +18,7 @@ class IrradianceVolumeRenderer
 {
 public:
     IrradianceVolumeRenderer(SelectionService& selection, EditorWideLinePipeline& wideLines,
-                             EditorLinePipeline& lines);
+                             ColoredVertexPipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
                       const CameraRenderData& camera,
@@ -27,5 +27,5 @@ public:
 private:
     SelectionService& Selection;
     EditorWideLinePipeline& WideLines;
-    EditorLinePipeline& Lines;
+    ColoredVertexPipeline& Lines;
 };

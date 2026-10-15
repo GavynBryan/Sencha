@@ -119,6 +119,10 @@ public:
                                              float radius,
                                              float maxCost,
                                              NavReachableBuffer& out) const;
+    [[nodiscard]] NavProjectResult ClosestPointInRegion(NavQueryContext& context,
+                                                        const NavRegion& region,
+                                                        const Vec3d& point) const;
+    [[nodiscard]] std::optional<Aabb3d> RegionBounds(const NavRegion& region) const;
     [[nodiscard]] NavRouteValidity ValidateRoute(const NavRouteBuffer& route) const;
 
 private:

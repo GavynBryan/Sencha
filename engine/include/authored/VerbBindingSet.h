@@ -1,6 +1,7 @@
 #pragma once
 
 #include <assets/data/DataAssetHandle.h>
+#include <authored/BindingDependencyStamp.h>
 #include <authored/VerbBinding.h>
 #include <authored/VerbBindingCompiler.h>
 
@@ -107,8 +108,7 @@ private:
     // a library handed over in memory, remembered by copy. Either replays.
     struct Source
     {
-        DataAssetHandle Asset;
-        std::uint64_t ReloadVersion = 0;
+        DataAssetStamp Asset;
         VerbBindingLibrary Library;
     };
 
@@ -126,8 +126,7 @@ private:
     std::vector<Source> Sources;
     std::uint64_t Revision_ = 0;
     // What the last build compiled against.
-    VerbCatalogId Catalog;
-    std::uint64_t CatalogGeneration = 0;
-    std::size_t TagCount = 0;
+    CatalogStamp Verbs;
+    TagVocabularyStamp Tags;
     bool Unresolved = false;
 };

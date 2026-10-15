@@ -9,6 +9,7 @@
 #include <app/Game.h>
 #include <authored/WorldVocabulary.h>
 #include <ecs/World.h>
+#include <perception/PerceptionVocabulary.h>
 
 #include <gtest/gtest.h>
 
@@ -70,6 +71,19 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[1].Name, kApplicationQuitVerb);
     EXPECT_EQ(verbs[2].Name, kAnimRequestVerb);
     EXPECT_EQ(verbs[3].Name, kAnimCancelVerb);
+}
+
+TEST(VocabularyCatalog, TheEnginesPerceptionQueriesAreThereBeforeAnyModuleIs)
+{
+    VocabularyCatalog catalog;
+    EXPECT_TRUE(catalog.Errors().empty());
+    const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
+    ASSERT_EQ(queries.size(), 3u);
+    EXPECT_EQ(queries[0].Name, kSeesQuery);
+    EXPECT_EQ(queries[0].Provider, "engine");
+    EXPECT_EQ(queries[0].ArgumentCount, 2u);
+    EXPECT_EQ(queries[1].Name, kSeesTaggedQuery);
+    EXPECT_EQ(queries[2].Name, kNearestSeenTaggedQuery);
 }
 
 TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRuntime)
@@ -174,11 +188,11 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
-    ASSERT_EQ(queries.size(), 1u);
-    EXPECT_EQ(queries[0].Name, "lamp.lit");
-    EXPECT_EQ(queries[0].DisplayName, "Lit");
-    EXPECT_EQ(queries[0].Provider, "lamp");
-    EXPECT_EQ(queries[0].ArgumentCount, 1u);
+    ASSERT_EQ(queries.size(), 4u);
+    EXPECT_EQ(queries[3].Name, "lamp.lit");
+    EXPECT_EQ(queries[3].DisplayName, "Lit");
+    EXPECT_EQ(queries[3].Provider, "lamp");
+    EXPECT_EQ(queries[3].ArgumentCount, 1u);
 
     const std::vector<VocabularyCatalog::EventRow> events = catalog.ListEvents();
     ASSERT_EQ(events.size(), 1u);

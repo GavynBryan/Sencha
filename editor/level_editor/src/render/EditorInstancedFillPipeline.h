@@ -1,9 +1,7 @@
 #pragma once
 
-#include "render/EditorImmediatePipeline.h"
 #include "viewport/EditorViewport.h"
-#include "EditorInstancedLinePipeline.h" // EditorLineInstance
-#include "EditorLinePipeline.h"          // EditorLineVertex
+#include <graphics/vulkan/ColoredVertexPipelines.h>
 
 #include <span>
 
@@ -17,11 +15,11 @@ public:
     void Submit(const FrameContext& frame,
                 const EditorViewport& viewport,
                 const CameraRenderData& camera,
-                std::span<const EditorLineVertex> vertices,
-                std::span<const EditorLineInstance> instances,
+                std::span<const ColoredVertex> vertices,
+                std::span<const ColoredVertexInstance> instances,
                 bool onTop = false);
     void Teardown();
 
 private:
-    EditorImmediatePipeline<EditorLineVertex> Pipeline;
+    ColoredVertexPipeline Pipeline;
 };

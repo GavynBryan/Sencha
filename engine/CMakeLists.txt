@@ -63,6 +63,7 @@ set(SENCHA_ENGINE_COMPONENT_HEADERS
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/StaticMeshComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/ZoneLightmapComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/render/skinned_mesh/SkinnedMeshComponent.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/spatial/sight/SightComponents.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/identity/PersistentIdComponent.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/scene/SceneInstance.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/world/transform/TransformComponents.h"
@@ -83,11 +84,13 @@ if(NOT SENCHA_ENABLE_VULKAN)
         "[/\\\\]src[/\\\\]debug[/\\\\]ConsolePanel\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]ConsoleView\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.cpp$"
+        "[/\\\\]src[/\\\\]debug[/\\\\]PerceptionPanel\\.cpp$"
         "[/\\\\]src[/\\\\]debug[/\\\\]TimingPanel\\.cpp$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ConsolePanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ConsoleView\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]IDebugPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]ImGuiDebugOverlay\\.h$"
+        "[/\\\\]include[/\\\\]debug[/\\\\]PerceptionPanel\\.h$"
         "[/\\\\]include[/\\\\]debug[/\\\\]TimingPanel\\.h$"
     )
         list(FILTER SENCHA_ENGINE_SOURCES EXCLUDE REGEX "${_pattern}")
@@ -267,7 +270,41 @@ if(SENCHA_ENABLE_VULKAN)
         )
     endif()
 
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/colored.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _colored_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_colored_vert_spv}"
+        VAR_NAME kColoredVertSpv
+        OUT_HEADER _colored_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/colored_instanced.vert.glsl"
+        STAGE vert
+        OUTPUT_SPV _colored_instanced_vert_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_colored_instanced_vert_spv}"
+        VAR_NAME kColoredInstancedVertSpv
+        OUT_HEADER _colored_instanced_vert_header
+    )
+    sencha_compile_shader(
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/shaders/colored.frag.glsl"
+        STAGE frag
+        OUTPUT_SPV _colored_frag_spv
+    )
+    sencha_embed_spirv(
+        SOURCE_SPV "${_colored_frag_spv}"
+        VAR_NAME kColoredFragSpv
+        OUT_HEADER _colored_frag_header
+    )
+
     list(APPEND SENCHA_ENGINE_GENERATED_HEADERS
+        "${_colored_vert_header}"
+        "${_colored_instanced_vert_header}"
+        "${_colored_frag_header}"
         "${_mesh_forward_vert_header}"
         "${_mesh_forward_frag_header}"
         "${_shadow_depth_vert_header}"
@@ -366,6 +403,14 @@ file(GLOB SENCHA_ABI_FINGERPRINT_HEADERS CONFIGURE_DEPENDS
     "${SENCHA_ENGINE_INCLUDE_DIR}/math/Mat.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/math/Quat.h"
     "${SENCHA_ENGINE_INCLUDE_DIR}/math/Vec.h"
+    # Spatial queries: a game holds candidate contexts, results, scratch and
+    # traces by value and reaches the evaluator through an Engine accessor.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/spatial/candidates/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/spatial/sight/*.h"
+    # Perception: a game registers it, reads the World's PerceptionFrame, and
+    # draws through the debug-line channels.
+    "${SENCHA_ENGINE_INCLUDE_DIR}/perception/*.h"
+    "${SENCHA_ENGINE_INCLUDE_DIR}/debug/DebugLines.h"
 )
 list(APPEND SENCHA_ABI_FINGERPRINT_HEADERS ${SENCHA_ENGINE_COMPONENT_HEADERS})
 list(REMOVE_DUPLICATES SENCHA_ABI_FINGERPRINT_HEADERS)

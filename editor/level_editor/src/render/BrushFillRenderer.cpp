@@ -10,14 +10,14 @@
 
 namespace
 {
-    void AppendBrushFill(std::vector<EditorLineVertex>& vertices, const BrushMesh& mesh,
+    void AppendBrushFill(std::vector<ColoredVertex>& vertices, const BrushMesh& mesh,
                          const Transform3f& transform, const Vec4& fill)
     {
         BrushTessellate(mesh, transform,
             [&](std::uint32_t, const FaceMaterial&, std::span<const BrushTriVertex> triangles)
             {
                 for (const BrushTriVertex& v : triangles)
-                    vertices.push_back(EditorLineVertex{ .Position = v.Position,
+                    vertices.push_back(ColoredVertex{ .Position = v.Position,
                                                          .Color = fill });
             });
     }
@@ -38,7 +38,7 @@ void BrushFillRenderer::DrawZoneOverlay(const FrameContext& frame,
     // one per-frame piece walk the editor keeps, counted by PieceWalks so it
     // cannot grow quietly; draw it from the context builder's queue with a
     // tint when it shows up in a profile.
-    std::vector<EditorLineVertex> vertices;
+    std::vector<ColoredVertex> vertices;
     ForEachVisibleBrush(scene, /*skipLocked*/ false,
         [&](EntityId, const BrushMesh& mesh, const Transform3f& transform)
         {

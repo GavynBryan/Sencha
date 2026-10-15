@@ -1,7 +1,7 @@
 #include "vocabulary/VocabularyCatalog.h"
 
 #include <anim/AnimationRegistration.h>
-#include <app/EngineVerbs.h>
+#include <app/EngineVocabulary.h>
 #include <app/Game.h>
 #include <authored/VerbBindingCompiler.h>
 #include <authored/WorldVocabulary.h>
@@ -17,7 +17,7 @@ VocabularyCatalog::VocabularyCatalog()
     RegisterMovement(Metadata);
     InstallAnimationVocabulary(Metadata);
     InstallAuthoredVocabulary(Metadata);
-    (void)DeclareEngineVerbs(*FindVerbRegistry(Metadata));
+    (void)InstallEngineVocabulary(Metadata);
     TakeInstallationErrors();
 }
 
