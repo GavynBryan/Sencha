@@ -19,6 +19,7 @@
 #include <navigation/NavRouteFollowing.h>
 #include <navigation/NavRoutePlanning.h>
 #include <navigation/NavTileMesh.h>
+#include <navigation/NavTraversal.h>
 #include <navigation/NavigationQuery.h>
 #include <navigation/ZoneNavigation.h>
 #include <physics/components/CharacterController.h>
@@ -261,6 +262,7 @@ struct NavAgentSystem::State
     void End(World& world, EntityId agent, NavAgentProgress& progress, NavAgentPhase phase,
              NavAgentFailure failure, bool clearIntent = true)
     {
+        AbortCrossing(world, agent, progress);
         progress.Phase = phase;
         progress.Failure = failure;
         if (phase == NavAgentPhase::Failed)
@@ -295,6 +297,74 @@ struct NavAgentSystem::State
         return transform != nullptr ? std::optional<Vec3d>(transform->Value.Position) : std::nullopt;
     }
 
+    float AgentSeconds(const World& world, EntityId agent) const
+    {
+        const ActorTime* clock = world.TryGet<ActorTime>(agent);
+        return DeltaSeconds * (clock != nullptr ? static_cast<float>(ActorScaleValue(clock->ScaleQ16)) : 1.0f);
+    }
+
+    const NavTraversalExecutor* ExecutorFor(const World& world, GameplayTagId kind) const
+    {
+        const NavTraversalExecutors* table = world.TryGetResource<NavTraversalExecutors>();
+        const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
+        return table != nullptr && tags != nullptr ? table->Resolve(*tags, kind) : nullptr;
+    }
+
+    const NavRouteStep* CrossedStep(EntityId agent, const NavAgentProgress& progress)
+    {
+        NavRouteSlot* slot = SlotOf(agent, progress);
+        if (progress.Phase != NavAgentPhase::Traversing || slot == nullptr || !slot->HasRoute
+            || slot->Step >= slot->Route.Steps().size())
+            return nullptr;
+        const NavRouteStep& step = slot->Route.Steps()[slot->Step];
+        return step.Kind == NavRouteStepKind::Traverse ? &step : nullptr;
+    }
+
+    void AbortCrossing(World& world, EntityId agent, const NavAgentProgress& progress)
+    {
+        if (const NavRouteStep* step = CrossedStep(agent, progress))
+            if (const NavTraversalExecutor* executor = ExecutorFor(world, step->Traversal);
+                executor != nullptr && executor->Abort != nullptr)
+                executor->Abort(world, agent, *step);
+    }
+
+    // The executor has already stopped (failed, timed out and aborted, or aborted
+    // because its link changed), so the crossing is over before anything ends.
+    void CrossingFailed(World& world, EntityId agent, NavAgentProgress& progress, NavRouteSlot& slot, NavLinkId link)
+    {
+        progress.Phase = NavAgentPhase::Planning;
+        std::size_t free = 0;
+        for (std::size_t i = 0; i < slot.Avoid.size(); ++i)
+            if (slot.Avoid[i] == link || slot.AvoidUntilTick[i] <= Tick)
+            {
+                free = i;
+                break;
+            }
+        slot.Avoid[free] = link;
+        slot.AvoidUntilTick[free] = Tick + TicksFor(Settings.AvoidSeconds);
+        if (++slot.CrossingFailures >= 2)
+        {
+            End(world, agent, progress, NavAgentPhase::Failed, NavAgentFailure::TraversalFailed);
+            return;
+        }
+        slot.ReplanningAroundFailedCrossing = true;
+        slot.ReplanAfterCrossing = NavRepathReason::None;
+        Replan(world, agent, progress, slot, NavRepathReason::TraversalFailed);
+    }
+
+    // Whether the link a route step crosses changed since the route was planned.
+    bool CrossedLinkChanged(const NavRouteSlot& slot, const NavRouteStep& step) const
+    {
+        const ZoneNavigation* navigation = FindZoneNavigation(Runtime, slot.Route.Zone);
+        const std::optional<std::uint32_t> index = navigation != nullptr ? navigation->FindLink(step.Link) : std::nullopt;
+        if (!index)
+            return true;
+        for (const NavRouteLinkDependency& dependency : slot.Route.LinkDependencies())
+            if (dependency.Link == step.Link)
+                return navigation->Link(*index).Revision != dependency.Revision;
+        return false;
+    }
+
     // -- Lifetime -------------------------------------------------------------
 
     void Reclaim(World& world)
@@ -315,6 +385,7 @@ struct NavAgentSystem::State
 
     void Adopt(World& world, EntityId agent, const NavAgentRequest& order, NavAgentProgress& progress)
     {
+        AbortCrossing(world, agent, progress);
         Queue.Remove(agent);
         Slots.Release(progress.RouteSlot);
         progress = NavAgentProgress{};
@@ -400,7 +471,14 @@ struct NavAgentSystem::State
         const NavRouteValidity validity = NavigationQuery(Runtime).ValidateRoute(slot->Route);
         if (validity != NavRouteValidity::Valid)
         {
-            if (progress->Phase == NavAgentPhase::Traversing)
+            const NavRouteStep* crossed = CrossedStep(agent, *progress);
+            if (crossed != nullptr && CrossedLinkChanged(*slot, *crossed))
+            {
+                const NavLinkId link = crossed->Link;
+                AbortCrossing(world, agent, *progress);
+                CrossingFailed(world, agent, *progress, *slot, link);
+            }
+            else if (crossed != nullptr)
                 slot->ReplanAfterCrossing = ReasonOf(validity);
             else
                 Replan(world, agent, *progress, *slot, ReasonOf(validity));
@@ -469,7 +547,38 @@ struct NavAgentSystem::State
         for (std::size_t i = 0; i < slot->Avoid.size(); ++i)
             if (slot->Avoid[i].IsValid() && slot->AvoidUntilTick[i] > Tick)
                 input.AvoidLinks[input.AvoidLinkCount++] = slot->Avoid[i];
+        GatherCapabilities(world, agent, *navigation, *tags, input);
         return true;
+    }
+
+    // The zone's link kinds this agent may cross: its tags grant the kind or an
+    // ancestor of it, and an executor is registered to carry it out. A crossing
+    // nobody can perform is never planned.
+    void GatherCapabilities(const World& world, EntityId agent, const ZoneNavigation& navigation,
+                            const GameplayTagRegistry& tags, NavPlanInput& input) const
+    {
+        const NavTraversalExecutors* table = world.TryGetResource<NavTraversalExecutors>();
+        const GameplayTagContainer* held =
+            world.IsRegistered<GameplayTagContainer>() ? world.TryGet<GameplayTagContainer>(agent) : nullptr;
+        if (table == nullptr || held == nullptr)
+            return;
+        const auto granted = [&](GameplayTagId kind) {
+            for (std::uint8_t i = 0; i < held->Count; ++i)
+                if (tags.IsDescendantOf(kind, held->Tags[i]))
+                    return true;
+            return false;
+        };
+        for (std::uint32_t i = 0; i < navigation.LinkCount(); ++i)
+        {
+            const GameplayTagId kind = navigation.Link(i).Traversal;
+            const auto chosen = std::span(input.Capabilities.data(), input.CapabilityCount);
+            // The zone binds at most kNavMaxTraversalKinds kinds; past that a kind is unusable anyway.
+            if (!kind.IsValid() || input.CapabilityCount == input.Capabilities.size()
+                || std::ranges::find(chosen, kind) != chosen.end())
+                continue;
+            if (granted(kind) && table->Resolve(tags, kind) != nullptr)
+                input.Capabilities[input.CapabilityCount++] = kind;
+        }
     }
 
     void Commit(World& world, EntityId agent, const NavPlanInput& input, std::size_t index)
@@ -623,7 +732,7 @@ struct NavAgentSystem::State
         const NavRouteStep& step = steps[slot->Step];
         if (step.Kind == NavRouteStepKind::Traverse)
         {
-            End(world, agent, *progress, NavAgentPhase::Failed, NavAgentFailure::TraversalUnsupported);
+            Cross(world, agent, *progress, *slot, step, position);
             return;
         }
 
@@ -640,6 +749,20 @@ struct NavAgentSystem::State
 
         const bool lastCorner = slot->Corner + 1 == leg.size();
         const bool finalLeg = slot->Step + 1 == steps.size();
+        if (lastCorner && !finalLeg && steps[slot->Step + 1].Kind == NavRouteStepKind::Traverse)
+        {
+            const NavRouteStep& link = steps[slot->Step + 1];
+            if (NavHasArrived(position, link.Entry, std::max(link.EntryRadius, Settings.CornerRadius), slot->Height))
+            {
+                ++slot->Step;
+                slot->Corner = 0;
+                slot->CrossingTicks = 0;
+                slot->CrossingSeconds = 0.0f;
+                slot->CrossingMemory = 0;
+                Cross(world, agent, *progress, *slot, link, position);
+                return;
+            }
+        }
         float magnitude = order->SpeedScale;
         if (lastCorner && finalLeg)
         {
@@ -664,14 +787,55 @@ struct NavAgentSystem::State
             return;
     }
 
+    void Cross(World& world, EntityId agent, NavAgentProgress& progress, NavRouteSlot& slot, const NavRouteStep& step,
+               const Vec3d& position)
+    {
+        const NavTraversalExecutor* executor = ExecutorFor(world, step.Traversal);
+        MovementIntent* intent = world.TryGet<MovementIntent>(agent);
+        if (executor == nullptr || intent == nullptr)
+        {
+            End(world, agent, progress, NavAgentPhase::Failed, NavAgentFailure::TraversalUnsupported);
+            return;
+        }
+        progress.Phase = NavAgentPhase::Traversing;
+        const float seconds = AgentSeconds(world, agent);
+        NavTraversalFrame frame{ world, agent, step, slot.CrossingTicks, seconds, slot.Height, *intent,
+                                 slot.CrossingMemory };
+        NavTraversalResult result = executor->Step(frame);
+        ++slot.CrossingTicks;
+        slot.CrossingSeconds += seconds;
+        progress.Remaining = RouteRemaining(slot.Route, slot.Step, 0, position);
+        if (result == NavTraversalResult::Running && slot.CrossingSeconds > Settings.TraversalTimeout)
+        {
+            AbortCrossing(world, agent, progress);
+            result = NavTraversalResult::Failed;
+        }
+        if (result == NavTraversalResult::Failed)
+        {
+            CrossingFailed(world, agent, progress, slot, step.Link);
+            return;
+        }
+        if (result != NavTraversalResult::Succeeded)
+            return;
+        ++slot.Step;
+        slot.Corner = 0;
+        slot.LegStart = step.Exit;
+        slot.Stuck = NavStuckWindow{};
+        progress.Phase = NavAgentPhase::Moving;
+        if (slot.ReplanAfterCrossing != NavRepathReason::None)
+        {
+            const NavRepathReason reason = slot.ReplanAfterCrossing;
+            slot.ReplanAfterCrossing = NavRepathReason::None;
+            Replan(world, agent, progress, slot, reason);
+        }
+    }
+
     // True when the agent was judged stuck and its route dropped or ended.
     bool ObserveStuck(World& world, EntityId agent, NavAgentProgress& progress, NavRouteSlot& slot, float magnitude)
     {
         const MotionRequest* request = std::as_const(world).TryGet<MotionRequest>(agent);
         const ResolvedMovementTuning* tuning = std::as_const(world).TryGet<ResolvedMovementTuning>(agent);
-        const ActorTime* clock = std::as_const(world).TryGet<ActorTime>(agent);
-        const float agentSeconds =
-            DeltaSeconds * (clock != nullptr ? static_cast<float>(ActorScaleValue(clock->ScaleQ16)) : 1.0f);
+        const float agentSeconds = AgentSeconds(world, agent);
         const float expected = magnitude * (tuning != nullptr ? tuning->MaxSpeed : 0.0f) * agentSeconds;
         const bool counts = request == nullptr || !request->PlanarOverridden;
         if (!NavObserveStuck(slot.Stuck, progress.Remaining, expected, agentSeconds, counts, Settings.Stuck))

@@ -24,6 +24,8 @@ struct NavRouteSlot
     float Height = 1.8f;
 
     std::uint32_t CrossingTicks = 0;
+    float CrossingSeconds = 0.0f;
+    std::uint32_t CrossingMemory = 0;
     // An invalidation seen mid-crossing, acted on when the crossing ends.
     NavRepathReason ReplanAfterCrossing = NavRepathReason::None;
 

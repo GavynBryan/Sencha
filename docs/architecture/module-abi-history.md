@@ -464,3 +464,9 @@ asset), with derived `NavAgentRequest` and `NavAgentProgress`, joins
 `NavigationComponents`. `RequestNavigation`, `CancelNavigation` and
 `ReadNavigation` (`navigation/NavAgentRequests.h`) are the request API;
 `navigation/NavRouteFollowing.h` holds the path-following geometry.
+`NavAgentSystem` (`navigation/NavAgentSystem.h`), registered by
+`RegisterNavigationAgents`, follows them; `NavPlanQueue` and `NavRoutePlanner`
+(`navigation/NavRoutePlanning.h`) are its queue and planning batch.
+`navigation/NavTraversal.h` adds the traversal executor table
+(`NavTraversalExecutors`, `RegisterNavTraversal`) and the engine's walking and
+jumping executors.

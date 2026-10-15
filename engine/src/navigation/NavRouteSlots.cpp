@@ -9,6 +9,8 @@ void NavRouteSlot::Reset(EntityId owner)
     Corner = 0;
     LegStart = Vec3d::Zero();
     CrossingTicks = 0;
+    CrossingSeconds = 0.0f;
+    CrossingMemory = 0;
     ReplanAfterCrossing = NavRepathReason::None;
     Stuck = NavStuckWindow{};
     StuckReplans = 0;
