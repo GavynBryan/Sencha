@@ -1232,26 +1232,42 @@ namespace
                     Report.Warn("unreachable", Declared.Phases[i].Key, Declared.Phases[i].Path,
                                 std::format("'{}' can never be entered", Declared.Phases[i].Name));
 
+            // A release, once it has happened, stays true for the rest of the activation,
+            // so a release transition can be taken again in the tick it led back to.
+            const auto sameTick = [](AbilityTransitionTrigger trigger) {
+                return trigger == AbilityTransitionTrigger::Immediate || trigger == AbilityTransitionTrigger::Release;
+            };
             enum class Mark : std::uint8_t { None, Open, Done };
             std::vector<Mark> marks(count, Mark::None);
+            // The open path: each phase on it, and whether a release led into it.
+            std::vector<std::pair<std::size_t, bool>> path;
             const std::function<bool(std::size_t)> cycles = [&](std::size_t at) {
                 marks[at] = Mark::Open;
                 for (const AbilityTransitionDecl& transition : Declared.Phases[at].Then)
                 {
-                    if (transition.Trigger != AbilityTransitionTrigger::Immediate)
+                    if (!sameTick(transition.Trigger))
                         continue;
                     const auto next = PhaseIndex.find(transition.To);
                     if (next == PhaseIndex.end())
                         continue;
+                    const bool released = transition.Trigger == AbilityTransitionTrigger::Release;
                     if (marks[next->second] == Mark::Open)
                     {
+                        bool viaRelease = released;
+                        for (auto on = path.rbegin(); on != path.rend() && on->first != next->second; ++on)
+                            viaRelease = viaRelease || on->second;
                         Report.Error("zero_time_cycle", transition.Key, transition.Path,
-                                     std::format("'{}' can return to '{}' within one tick",
-                                                 Declared.Phases[at].Name, Declared.Phases[next->second].Name));
+                                     std::format("'{}' can return to '{}' within one tick{}",
+                                                 Declared.Phases[at].Name, Declared.Phases[next->second].Name,
+                                                 viaRelease ? " once its input is released" : ""));
                         return true;
                     }
-                    if (marks[next->second] == Mark::None && cycles(next->second))
+                    if (marks[next->second] != Mark::None)
+                        continue;
+                    path.emplace_back(next->second, released);
+                    if (cycles(next->second))
                         return true;
+                    path.pop_back();
                 }
                 marks[at] = Mark::Done;
                 return false;

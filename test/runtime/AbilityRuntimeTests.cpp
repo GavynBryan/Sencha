@@ -950,19 +950,31 @@ TEST_F(AbilityRuntime, TwoGrantsOfOneAbilityStartTwoActivationsNamedApart)
 
 TEST_F(AbilityRuntime, AnOpsRepeatedCueIsNumberedByWhatItEmittedNotWhatTheRingKept)
 {
-    // After the release, A and B alternate within the tick until the step budget ends
-    // them: A's shot cue repeats, each time after B's cues have filled the ring.
+    // A loop the compiler refuses (zero_time_cycle), closed after compiling: A and B
+    // alternate within the tick until the step budget ends them, so A's shot cue
+    // repeats after B's cues have filled the ring.
     std::string cues;
     for (std::size_t i = 0; i < kAbilityCueLogCapacity; ++i)
         cues += std::format(R"({{ "key": "o_b{}", "op": "cue", "cue": "cue.impact" }}{})", i,
                             i + 1 < kAbilityCueLogCapacity ? ", " : "");
-    const AbilityId looping = Define("asset://abilities/looping.sdata", std::format(R"({{
+    const std::optional<JsonValue> data = JsonParse(std::format(R"({{
         "input_default": {{ "action": "Input.PrimaryFire", "policy": "press_release" }},
         "phases": [
           {{ "key": "p_a", "enter": [ {{ "key": "o_a", "op": "cue", "cue": "cue.shot" }} ],
             "then": [ {{ "key": "t_b", "on": "release", "to": "p_b" }} ] }},
-          {{ "key": "p_b", "enter": [ {} ], "then": [ {{ "key": "t_a", "to": "p_a" }} ] }} ] }})",
-                                                                                     cues));
+          {{ "key": "p_b", "enter": [ {} ], "then": [ {{ "key": "t_a", "on": "timeout", "ticks": 1, "to": "p_a" }} ] }} ] }})",
+                                                                cues));
+    AbilityDeclaration declaration;
+    std::vector<AssetRef> dependencies;
+    std::vector<AbilityDiagnostic> diagnostics;
+    ASSERT_TRUE(CompileAbilityDeclaration(*data, declaration, dependencies, diagnostics)) << Describe(diagnostics);
+    declaration.Phases[1].Then[0].Trigger = AbilityTransitionTrigger::Immediate;
+    AbilityDefinition definition;
+    ASSERT_TRUE(ResolveAbilityDeclaration(declaration, "asset://abilities/looping.sdata",
+                                          MakeAbilityResolveEnvironment(Entities), definition, diagnostics))
+        << Describe(diagnostics);
+    const AbilityId looping =
+        Entities.GetResource<AbilityRegistry>().Define("asset://abilities/looping.sdata", std::move(definition));
     const EntityId actor = Actor();
     Grant(actor, looping);
     Step({ Press(kFire), Release(kFire) });

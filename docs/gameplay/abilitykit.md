@@ -221,8 +221,9 @@ reporting `AbilityDiagnostic {Severity, Code, ElementKey, Path, Message}`:
 
 1. `CompileAbilityDeclaration` reads the document with no World: field names,
    key uniqueness per kind, references between elements, reachability
-   (`unreachable`, a warning), `no_exit`, `zero_time_cycle` over immediate
-   transitions, cost and commit placement (`commit_repeat`, `commit_twice`,
+   (`unreachable`, a warning), `no_exit`, `zero_time_cycle` over immediate and
+   release transitions (a release stays true once it has happened, so a loop
+   through one repeats within the tick), cost and commit placement (`commit_repeat`, `commit_twice`,
    `cost_shape`), guards on values that may be empty or stale
    (`unguarded_maybe_empty`, `unguarded_recipient`; a guard counts as the op's
    `when` or a child of a top-level `all`) and capacities

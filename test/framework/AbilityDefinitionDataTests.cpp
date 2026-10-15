@@ -69,6 +69,9 @@ constexpr Rejection kRejections[] = {
     { "immediate loop", "zero_time_cycle", "t_back", R"({ "phases": [
         { "key": "p_a", "then": [ { "key": "t_go", "to": "p_b" } ] },
         { "key": "p_b", "then": [ { "key": "t_back", "to": "p_a" } ] } ] })" },
+    { "loop closed by a release", "zero_time_cycle", "t_back", R"({ "phases": [
+        { "key": "p_a", "then": [ { "key": "t_go", "on": "release", "to": "p_b" } ] },
+        { "key": "p_b", "then": [ { "key": "t_back", "to": "p_a" }, { "key": "t_out", "on": "timeout", "ticks": 1, "to": "end" } ] } ] })" },
     { "impact at a hit nothing guards", "unguarded_maybe_empty", "o_cue", R"({
         "locals": [ { "key": "l_hit", "type": "hit" } ],
         "phases": [ { "key": "p_a",

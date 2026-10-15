@@ -1859,9 +1859,14 @@ Against `3ead98f`: the five findings above confirmed fixed, plus two more.
 2. **Cue ordinals could repeat after the ring dropped an entry.** Fixed rather than
    documented. The pass counts each op's cues per target in its per-tick buffers
    (`AbilityPassBuffers::Emitted`, cleared when a pass starts, so a warm pass
-   allocates nothing). It is reachable only through a phase loop the compiler's
-   `zero_time_cycle` check does not see: `on: release` stays true after a release,
-   so A →release→ B →immediate→ A repeats until the step budget ends it.
-   (`AnOpsRepeatedCueIsNumberedByWhatItEmittedNotWhatTheRingKept`.)
+   allocates nothing). Content reached it only through a phase loop the compiler's
+   `zero_time_cycle` check did not see: `on: release` stays true after a release,
+   so A →release→ B →immediate→ A repeated until the step budget ended it. The
+   check now follows release transitions as well as immediate ones and names the
+   release in its message; no existing content, recipe or fixture had such a loop.
+   The runtime test closes the loop after compiling, so the numbering stays covered
+   for a definition the compiler would refuse.
+   (`AnOpsRepeatedCueIsNumberedByWhatItEmittedNotWhatTheRingKept`; the rejection
+   table's "loop closed by a release".)
 
 The wire forms are unchanged and the replication table hash does not move.
