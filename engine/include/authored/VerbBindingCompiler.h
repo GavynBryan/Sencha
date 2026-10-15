@@ -82,13 +82,6 @@ struct VerbBindingEnvironment
                                            AuthoredValue& out,
                                            std::vector<std::string>& errors);
 
-// What an argument nobody supplied means: its default, absent when the field
-// allows absence, or a diagnostic.
-[[nodiscard]] bool CompileAuthoredDefault(const DataFieldSchema& field,
-                                          std::string_view bindingKey,
-                                          AuthoredValue& out,
-                                          std::vector<std::string>& errors);
-
 // Whether a compiled binding still describes the catalog it was compiled
 // against. False after a World teardown, a schema change, or a retirement, and
 // the reason a dispatcher rechecks rather than trusting the ids it is handed.

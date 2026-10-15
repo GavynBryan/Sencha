@@ -59,6 +59,12 @@ enum class SceneSpawnStatus : std::uint8_t
 
 [[nodiscard]] const char* SceneSpawnStatusName(SceneSpawnStatus status);
 
+enum class SceneSpawnLifetime : std::uint8_t
+{
+    Independent, // members live until destroyed or the group is despawned
+    OwnedByRoot, // the root's death despawns the rest at the next pump
+};
+
 class SceneSpawnService
 {
 public:
@@ -82,11 +88,13 @@ public:
     // Queues a spawn of `sceneAssetPath` (an asset://...smap ref) at `root`,
     // into `partition` -- the persistent partition zero by default, or a
     // zone's partition so the spawn follows that zone's teardown. Always
-    // returns a valid id; resolution failures surface through Status.
+    // returns a valid id; resolution failures surface through Status. An
+    // OwnedByRoot scene with other than one root record ends Failed.
     [[nodiscard]] SceneSpawnId RequestSpawn(
         std::string_view sceneAssetPath,
         const Transform3f& root,
-        StoragePartitionId partition = StoragePartitionId::Default());
+        StoragePartitionId partition = StoragePartitionId::Default(),
+        SceneSpawnLifetime lifetime = SceneSpawnLifetime::Independent);
 
     // Ends a spawn whatever state it is in: a live group is destroyed at the
     // next pump; a request still staging or waiting is withdrawn and its
@@ -104,9 +112,14 @@ public:
     // Live (and shrinking as gameplay destroys members).
     [[nodiscard]] std::span<const EntityId> Entities(SceneSpawnId id) const;
 
+    // The group's single root as published, while it lives; invalid for a
+    // group published with several roots.
+    [[nodiscard]] EntityId Root(SceneSpawnId id) const;
+
     // Owner thread, at the async drain after task completions commit:
-    // publishes every consecutive ready request in request order, then
-    // executes queued despawns.
+    // publishes every consecutive ready request in request order, queues the
+    // despawn of each root-owned group whose root died, then executes queued
+    // despawns.
     void Pump();
 
 private:
@@ -114,6 +127,7 @@ private:
 
     void Instantiate(Request& request);
     void Discard(Request& request);
+    void QueueDespawnsOfDeadRoots();
     [[nodiscard]] Request* FindRequest(SceneSpawnId id) const;
 
     RuntimeWorld& WorldState;
@@ -138,6 +152,8 @@ private:
     // Despawns queued since the last pump; drained instead of rescanning the
     // whole history for DespawnQueued states.
     std::vector<SceneSpawnId> PendingDespawns;
+    // Live OwnedByRoot groups in publication order, which is spawn-id order.
+    std::vector<SceneSpawnId> RootOwned;
     std::uint64_t NextSpawnValue = 1;
     std::uint64_t NextInstanceValue = 1;
 };

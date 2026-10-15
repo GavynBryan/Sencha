@@ -72,17 +72,6 @@ EntityId CreateTransformEntity(
     return entity;
 }
 
-// The spawned group's root: the member without a parent. A prefab meant to be
-// spawned as one thing has exactly one; content that ships more is taken by
-// its first.
-EntityId SpawnedGroupRoot(const World& world, std::span<const EntityId> members)
-{
-    for (EntityId member : members)
-        if (world.TryGet<Parent>(member) == nullptr)
-            return member;
-    return {};
-}
-
 // Names the prefab a replicated body came from, so a peer instantiates the
 // same one instead of being handed loose components to reassemble. Read off the
 // group identity the spawn already stamped: the prefab's own asset id.
@@ -142,7 +131,7 @@ void PublishPlayContent(World& world, std::optional<StoragePartitionId> partitio
         world.AddResource<PlayContentPartition>().Value = partition;
 }
 
-std::optional<BodySpawnRequest> ChoosePawnSpawn(
+std::optional<ParticipantBodySpawnRequest> ChoosePawnSpawn(
     const World& world, EntityId participant,
     const CompiledArenaSettings* settings, Logger& log)
 {
@@ -186,7 +175,7 @@ std::optional<BodySpawnRequest> ChoosePawnSpawn(
     Vec3d spawn = authored.value_or(kDefaultPlayerStart);
     spawn.X += 2.0f * static_cast<float>(peer);
 
-    BodySpawnRequest request;
+    ParticipantBodySpawnRequest request;
     request.ScenePath = settings->PlayerPawnScenePath;
     request.Root.Position = spawn;
     request.Partition = PersistentStoragePartition;

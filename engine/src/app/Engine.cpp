@@ -4,6 +4,7 @@
 #endif
 #include <app/OptionsPage.h>
 #include <app/EngineVocabulary.h>
+#include <perception/PerceptionSystem.h>
 #include <app/PauseMenu.h>
 #include <app/ShellVerbs.h>
 #include <authored/VerbBindingData.h>
@@ -39,6 +40,7 @@
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
 #include <navigation/NavigationSystem.h>
+#include <physics/PhysicsStepSystem.h>
 #include <audio/CaptionRuntime.h>
 #include <audio/CaptionSystem.h>
 #include <core/console/ConsoleService.h>
@@ -70,6 +72,7 @@
 #include <debug/ImGuiDebugOverlay.h>
 #include <debug/NavigationPanel.h>
 #include <debug/NetStatsPanel.h>
+#include <debug/PerceptionPanel.h>
 #include <debug/TimingPanel.h>
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
 #include <debug/RenderStatsPanel.h>
@@ -169,6 +172,7 @@ bool Engine::Initialize()
     CaptionState = std::make_unique<CaptionRuntime>(logging, Configuration.Captions);
     EngineSystems.Register<CaptionSystem>(CaptionState.get(), AudioState.get());
     auto failInitialize = [this]() {
+        CandidateEvaluatorState.reset();
         EngineSystems.Shutdown();
         NetState.reset();
         FrameDriverInstance.reset();
@@ -353,6 +357,7 @@ void Engine::Shutdown()
     // lanes before destroying the entity world they may have targeted.
     EngineSystems.Shutdown();
     // After the systems that hold them, before the World they read.
+    CandidateEvaluatorState.reset();
     EventDispatcherState.reset();
     QueryDispatcherState.reset();
     VerbDispatcherState.reset();
@@ -894,6 +899,15 @@ ParticipantBodyChange Engine::RequestParticipantBody(EntityId participant)
                                               participant, NetState != nullptr);
 }
 
+ParticipantBodyChange Engine::AssignParticipantBody(EntityId participant,
+                                                    EntityId body)
+{
+    if (RuntimeWorldState == nullptr)
+        return {};
+    return ParticipantProjection.AssignBody(RuntimeWorldState->Entities(),
+                                             participant, body, NetState != nullptr);
+}
+
 ParticipantControlChange Engine::SetParticipantControlSubject(
     EntityId participant, EntityId subject)
 {
@@ -1109,7 +1123,7 @@ int Engine::Run(Game& game)
         RegisterAnimationConsole(ConsoleState->Registry(), entities);
         InstallAuthoredVocabulary(entities);
         VerbRegistry& verbs = *FindVerbRegistry(entities);
-        (void)DeclareEngineVocabulary(entities);
+        (void)InstallEngineVocabulary(entities);
 
         // Registration only: no entities, no engine state, nothing that starts
         // a service. The hook returns void, so what it got wrong is read off
@@ -1374,6 +1388,10 @@ int Engine::Run(Game& game)
                                            .Presents = Configuration.Window.GraphicsApi != WindowGraphicsApi::None,
                                            .Logging = &LoggingState });
 
+    // Answered whether or not the game registers perception: a World nobody
+    // scans has an empty frame, which answers Unavailable.
+    VocabularyBindings->BindPerception(*QueryDispatcherState);
+
     // Every host animates: an entity that names a rig plays it, in a process whose
     // game registered nothing for it. Before the game's hook, so a game orders its
     // request producers against these; poses only where a window presents them.
@@ -1386,9 +1404,15 @@ int Engine::Run(Game& game)
                              });
 
     game.OnRegisterSystems(registerSystems);
-    // A game that registered physics answers the engine's physics queries.
-    if (PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>())
-        VocabularyBindings->BindPhysics(physics->GetSimulation(), *QueryDispatcherState);
+    // After the game's systems, which is where physics is registered if at all.
+    {
+        const PhysicsStepSystem* physics = EngineSystems.Get<PhysicsStepSystem>();
+        if (physics != nullptr)
+            VocabularyBindings->BindPhysics(physics->GetSimulation(), *QueryDispatcherState);
+        CandidateEvaluatorState = std::make_unique<CandidateEvaluator>(
+            *RuntimeWorldState, ContentState->Assets().CandidateOperations,
+            physics != nullptr ? &physics->GetSimulation() : nullptr, QueryDispatcherState.get());
+    }
     // Every place a game binds has run.
     for (const AuthoredQueryId query : QueryDispatcherState->Unanswered())
     {
@@ -1644,6 +1668,9 @@ void Engine::CreateDebugOverlay()
     if (const NavigationSystem* navigation = EngineSystems.Get<NavigationSystem>();
         navigation != nullptr && RuntimeWorldState != nullptr)
         overlay->AddPanel<NavigationPanel>(*RuntimeWorldState, *navigation);
+    if (PerceptionSystem* perception = EngineSystems.Get<PerceptionSystem>();
+        perception != nullptr && RuntimeWorldState != nullptr)
+        overlay->AddPanel<PerceptionPanel>(RuntimeWorldState->Entities(), *perception);
 #ifdef SENCHA_ENABLE_RENDER_PROFILING
     overlay->AddPanel<RenderStatsPanel>(
         ActiveProfileMode, RenderStatsRing, ConsoleState->Registry());

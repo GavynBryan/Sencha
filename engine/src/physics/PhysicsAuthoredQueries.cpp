@@ -26,6 +26,14 @@ namespace
         return Field<std::optional<EntityId>>("ignore", "Ignore", "An entity whose bodies the query passes through.");
     }
 
+    // Triggers count: an authored trace or overlap reports what is there. Views
+    // `ignore`, which must outlive the query.
+    PhysicsQueryFilter Filter(const std::optional<EntityId>& ignore)
+    {
+        return PhysicsQueryFilter{ .IncludeTriggers = true,
+                                   .IgnoreEntities = ignore ? std::span(&*ignore, 1) : std::span<const EntityId>{} };
+    }
+
     template<typename T>
     bool Read(std::span<const AuthoredValue> arguments, std::size_t slot, T& out)
     {
@@ -79,11 +87,10 @@ AuthoredQueryStatus EvaluatePhysicsTrace(const PhysicsQueries& physics,
     float range = 0.0f;
     std::optional<EntityId> ignore;
     if (!Read(arguments, 0, origin) || !Read(arguments, 1, direction) || !Read(arguments, 2, range)
-        || !Read(arguments, 3, ignore) || !(range >= 0.0f))
+        || !Read(arguments, 3, ignore) || !(range >= 0.0f) || direction.SqrMagnitude() == 0.0)
         return AuthoredQueryStatus::InvalidArguments;
 
-    const RaycastHit hit =
-        physics.Raycast(origin, direction, range, PhysicsQueryFilter{ .Ignore = ignore.value_or(EntityId{}) });
+    const RaycastHit hit = physics.Raycast(origin, direction.Normalized(), range, Filter(ignore));
     result = AuthoredValue::Record({
         AuthoredValue::Bool(hit.Hit),
         AuthoredValue::Entity(hit.Entity),
@@ -105,8 +112,7 @@ AuthoredQueryStatus EvaluatePhysicsOverlap(const PhysicsQueries& physics,
         return AuthoredQueryStatus::InvalidArguments;
 
     std::vector<EntityId> entities;
-    physics.OverlapShape(CollisionShape::MakeSphere(radius), position, Quatf::Identity(), entities,
-                         PhysicsQueryFilter{ .Ignore = ignore.value_or(EntityId{}) });
+    physics.OverlapShape(CollisionShape::MakeSphere(radius), position, Quatf::Identity(), entities, Filter(ignore));
     std::vector<AuthoredValue> elements;
     elements.reserve(entities.size());
     for (EntityId entity : entities)

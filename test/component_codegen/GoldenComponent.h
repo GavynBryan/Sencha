@@ -3,6 +3,7 @@
 #include <core/handle/Handle.h>
 #include <core/metadata/Field.h>
 #include <ecs/ComponentAnnotations.h>
+#include <math/Angle.h>
 #include <math/Vec.h>
 
 #include <string_view>
@@ -34,7 +35,7 @@ CodegenGolden
 
     SENCHA_FIELD("pitch")
     SENCHA_DEGREES
-    float Pitch = 0.0f;
+    float Pitch = ToRadians(30.0f);
 
     SENCHA_FIELD("derived")
     SENCHA_LOCAL_ONLY

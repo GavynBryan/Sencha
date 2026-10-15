@@ -85,7 +85,7 @@ void PublishPlayContent(World& world, std::optional<StoragePartitionId> partitio
         world.AddResource<PlayContentPartition>().Value = partition;
 }
 
-std::optional<BodySpawnRequest> ChoosePawnSpawn(
+std::optional<ParticipantBodySpawnRequest> ChoosePawnSpawn(
     const World& world, EntityId participant,
     const CompiledGameSettings* settings, Logger& log)
 {
@@ -129,7 +129,7 @@ std::optional<BodySpawnRequest> ChoosePawnSpawn(
     Vec3d spawn = authored.value_or(kDefaultPlayerStart);
     spawn.X += 2.0f * static_cast<float>(peer);
 
-    BodySpawnRequest request;
+    ParticipantBodySpawnRequest request;
     request.ScenePath = settings->PlayerPawnScenePath;
     request.Root.Position = spawn;
     request.Partition = PersistentStoragePartition;

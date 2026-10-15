@@ -60,12 +60,12 @@ void SceneWireframeRenderer::DrawWireframe(const FrameContext& frame, const Edit
             EdgeScratch.clear();
             EdgeScratch.reserve(mesh.Edges.size());
             for (const BrushEdgeVertex& edge : mesh.Edges)
-                EdgeScratch.push_back(EditorLineVertex{
+                EdgeScratch.push_back(ColoredVertex{
                     .Position = edge.Position,
                     .Color = edge.Soft ? EditorTheme::SoftEdgeWireframe : color });
-            // InstanceRows holds Mat4 by rows, the EditorLineInstance layout.
-            const std::span<const EditorLineInstance> instances(
-                reinterpret_cast<const EditorLineInstance*>(entity.InstanceRows.data() + run.FirstPlacement),
+            // InstanceRows holds Mat4 by rows, the ColoredVertexInstance layout.
+            const std::span<const ColoredVertexInstance> instances(
+                reinterpret_cast<const ColoredVertexInstance*>(entity.InstanceRows.data() + run.FirstPlacement),
                 run.PlacementCount);
             Lines.Submit(frame, viewport, camera, EdgeScratch, instances);
         }

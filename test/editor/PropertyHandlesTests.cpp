@@ -8,6 +8,7 @@
 #include "workspace/PropertyHandles.h"
 
 #include <components/CameraComponent.h>
+#include <math/Angle.h>
 #include <render/PointLightComponent.h>
 #include <render/SpotLightComponent.h>
 
@@ -122,7 +123,7 @@ namespace
 {
 Vec3d Toward(float degrees, Vec3d axis, Vec3d across, float length)
 {
-    const float radians = degrees * std::numbers::pi_v<float> / 180.0f;
+    const float radians = ToRadians(degrees);
     return (axis * std::cos(radians) + across * std::sin(radians)) * length;
 }
 } // namespace

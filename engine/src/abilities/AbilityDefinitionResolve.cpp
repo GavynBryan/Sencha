@@ -2,6 +2,7 @@
 
 #include <abilities/AbilityGrantEntries.h>
 #include <attributes/AttributeRegistry.h>
+#include <authored/AuthoredLiteral.h>
 #include <authored/AuthoredQueryRegistry.h>
 #include <authored/VerbRegistry.h>
 #include <authored/WorldVocabulary.h>
@@ -324,8 +325,8 @@ namespace
                 std::vector<std::string> errors;
                 if (given != arguments.end())
                     (void)Value(given->Value, field, key, path + ".arguments." + field.Key, value);
-                else if (!CompileAuthoredDefault(field, std::string(Name) + "#" + std::string(key), value.Constant,
-                                                 errors))
+                else if (!CompileAuthoredDefault(field, std::format("ability '{}#{}'", Name, key), field.Key,
+                                                 value.Constant, errors))
                     Error("schema", key, path, std::format("'{}' needs an argument '{}'", query.Name, field.Key));
                 values.push_back(std::move(value));
             }

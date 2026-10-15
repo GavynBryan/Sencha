@@ -97,7 +97,7 @@ protected:
             (void)verbs.Declare(std::move(glow));
             EXPECT_TRUE(verbs.Commit());
         }
-        EXPECT_TRUE(DeclareEngineVocabulary(Entities));
+        EXPECT_TRUE(InstallEngineVocabulary(Entities));
         Actions.Rebuild(std::vector<InputActionDefinition>{ { .Name = "Input.PrimaryFire" } });
         Entities.SetResource(InputActionVocabulary{ &Actions, 1 });
         Entities.AddResource<InputActionState>().Configure(1);

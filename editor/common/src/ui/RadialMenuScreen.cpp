@@ -5,17 +5,16 @@
 #include "icons/IconNames.h"
 #include "tools/RadialMenuFace.h"
 
+#include <math/Angle.h>
 #include <ui/UiService.h>
 
 #include <cmath>
 #include <format>
-#include <numbers>
 #include <string>
 #include <vector>
 
 namespace
 {
-constexpr float kDegrees = 180.0f / std::numbers::pi_v<float>;
 
 const UiModelPropertyId kOpen = UiPropertyIdAt(0);
 const UiModelPropertyId kCaption = UiPropertyIdAt(1);
@@ -81,7 +80,7 @@ UiRow Sector(Vec2d centre, const RadialMenuSector& sector)
 {
     UiRow row{ "", "", std::string(PartName(sector.Part)) };
     row.Parts = { PixelLength(centre.X - sector.Outer), PixelLength(centre.Y - sector.Outer), PixelLength(sector.Outer * 2.0f),
-                  std::format("{:.3f}", sector.Begin * kDegrees), std::format("{:.3f}", sector.Width * kDegrees),
+                  std::format("{:.3f}", ToDegrees(sector.Begin)), std::format("{:.3f}", ToDegrees(sector.Width)),
                   std::format("{:.4f}", sector.Outer > 0.0f ? sector.Inner / sector.Outer : 0.0f) };
     return row;
 }

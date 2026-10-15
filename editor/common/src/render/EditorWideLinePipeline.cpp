@@ -15,7 +15,7 @@ static_assert(sizeof(EditorLineSegment) == 44);
 
 void EditorWideLinePipeline::Setup(const RendererServices& services)
 {
-    EditorImmediatePipelineConfig config;
+    ImmediatePipelineConfig config;
     config.VertexSpirv = kEditorWideLineVertSpv;
     config.VertexWordCount = kEditorWideLineVertSpvWordCount;
     config.VertexName = "Editor wide-line vertex";

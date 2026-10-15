@@ -18,7 +18,7 @@ namespace
 // past a few thousand markers the cloud reads as noise anyway.
 constexpr std::uint32_t kMaxDrawnProbes = 4096;
 
-void AppendProbeMarker(std::vector<EditorLineVertex>& vertices, const Vec3d& position,
+void AppendProbeMarker(std::vector<ColoredVertex>& vertices, const Vec3d& position,
                        float halfSize, const Vec4& color)
 {
     const Vec3d axes[3] = { { halfSize, 0.0f, 0.0f },
@@ -26,15 +26,15 @@ void AppendProbeMarker(std::vector<EditorLineVertex>& vertices, const Vec3d& pos
                             { 0.0f, 0.0f, halfSize } };
     for (const Vec3d& axis : axes)
     {
-        vertices.push_back(EditorLineVertex{ .Position = position - axis, .Color = color });
-        vertices.push_back(EditorLineVertex{ .Position = position + axis, .Color = color });
+        vertices.push_back(ColoredVertex{ .Position = position - axis, .Color = color });
+        vertices.push_back(ColoredVertex{ .Position = position + axis, .Color = color });
     }
 }
 }
 
 IrradianceVolumeRenderer::IrradianceVolumeRenderer(SelectionService& selection,
                                                    EditorWideLinePipeline& wideLines,
-                                                   EditorLinePipeline& lines)
+                                                   ColoredVertexPipeline& lines)
     : Selection(selection)
     , WideLines(wideLines)
     , Lines(lines)
@@ -60,7 +60,7 @@ void IrradianceVolumeRenderer::DrawViewport(const FrameContext& frame,
     };
 
     std::vector<EditorLineSegment> segments;
-    std::vector<EditorLineVertex> points;
+    std::vector<ColoredVertex> points;
     for (EntityId entity : scene.GetAllEntities())
     {
         if (!scene.IsEntityEffectivelyVisible(entity))
@@ -99,5 +99,5 @@ void IrradianceVolumeRenderer::DrawViewport(const FrameContext& frame,
         WideLines.Submit(frame, viewport.Region(), camera, segments, /*onTop*/ false,
                          "IrradianceVolumeRenderer");
     if (!points.empty())
-        Lines.Submit(frame, viewport, camera, points);
+        Lines.Submit(frame, viewport.Region(), camera, points);
 }

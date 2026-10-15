@@ -153,7 +153,7 @@ EditorDocument::EditorDocument(LoggingProvider& logging)
     RegisterMovement(world);
     // Declarations only: no dispatcher, so nothing a module declares can run.
     InstallAuthoredVocabulary(world);
-    (void)DeclareEngineVocabulary(world);
+    (void)InstallEngineVocabulary(world);
     InstallEditorModuleVocabulary(world);
     for (const std::string& error : AuthoredInstallationErrors(world))
         Logging.GetLogger<EditorDocument>().Error("vocabulary: {}", error);

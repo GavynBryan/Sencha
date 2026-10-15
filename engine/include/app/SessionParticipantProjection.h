@@ -59,6 +59,8 @@ public:
 
     ParticipantBodyChange RequestBody(World& world, EntityId participant,
                                       bool sessionActive);
+    ParticipantBodyChange AssignBody(World& world, EntityId participant,
+                                     EntityId body, bool sessionActive);
 
     // The retroactive half of `sessionActive`: every participant admitted before
     // a session existed, and every body it holds, gets the replication state a
@@ -86,6 +88,8 @@ private:
         InputActionSourceId source, bool sessionActive);
     void ProjectControl(World& world, const ParticipantControlChange& change,
                         std::uint32_t peer);
+    void ProjectBody(World& world, const ParticipantBodyChange& change,
+                     bool sessionActive);
 
     ParticipantLifecycle Lifecycle;
 };

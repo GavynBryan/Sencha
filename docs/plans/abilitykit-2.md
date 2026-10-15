@@ -1410,7 +1410,7 @@ Deviations from the plan's wording, each for a stated reason:
   replacing `EffectOwner` and now also the owner of a Held animation request;
   `effect.apply`, `effect.hold`, `anim.hold`; `anim.request` and `anim.cancel`
   reclassified Simulation; `physics.trace` and `physics.overlap` bound in any
-  host whose game registered physics; `DeclareEngineVocabulary` declaring verbs and
+  host whose game registered physics; `InstallEngineVocabulary` declaring verbs and
   queries together. A miss is an answer (`hit = false`), not `Unavailable`, as §4.1
   specifies.
 - **Duplication removed in passing.** `AnimEventScope` was the same
@@ -1437,7 +1437,7 @@ Deviations from the plan's wording, each for a stated reason:
 - **Formats and protocol.** No persisted format changed (`AuthoredScope` keeps
   `AnimEventScope`'s values). The replication table hash moved because
   `AnimRequestSet`'s local size grew; the wire record did not change, and protocol
-  7 from Stage 2 covers it. ABI v26 history extended.
+  7 from Stage 2 covers it. ABI history extended (the entry is v28 since main's v26 and v27).
 - **Deferred.** Declaring leases and cosmetic or predicted verbs through
   `SENCHA_VERB` (`docs/deferred.md`).
 

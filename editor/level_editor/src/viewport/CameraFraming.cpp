@@ -2,9 +2,10 @@
 
 #include "viewport/EditorCamera.h"
 
+#include <math/Angle.h>
+
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 
 namespace
 {
@@ -24,6 +25,6 @@ void FrameBounds(EditorCamera& camera, const Aabb3d& bounds)
         camera.OrthoHeight = 2.0f * radius;
         return;
     }
-    const float halfFov = 0.5f * camera.FovY * std::numbers::pi_v<float> / 180.0f;
+    const float halfFov = ToRadians(0.5f * camera.FovY);
     camera.Position = center - camera.GetForwardVector() * (radius / std::sin(halfFov));
 }

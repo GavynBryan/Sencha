@@ -49,31 +49,25 @@ void PlatformerGame::OnStart(GameStartupContext&)
 
     // What a participant is in this game, and where its body comes from. The
     // engine runs the lifecycle -- admit, compose, ask for a body, bind it,
-    // reap on departure -- and keeps the book on a prefab request from the ask
-    // until its group is handed over or cleaned up. What only this game can
-    // answer is which prefab and where it stands.
+    // reap on departure -- and holds a prefab request until its body lands and
+    // is assigned. What only this game can answer is which prefab and where it
+    // stands.
     Logger& log = engine.Logging().GetLogger<PlatformerGame>();
     Bodies.emplace(
         engine.World().Entities(), engine.Spawns(), log,
         [this, &log](const World& world, EntityId participant) {
             return ChoosePawnSpawn(world, participant, Session().GameSettings(), log);
         },
-        [&engine](EntityId participant) {
-            return engine.RequestParticipantBody(participant);
+        [&engine](EntityId participant, EntityId body) {
+            return engine.AssignParticipantBody(participant, body);
         },
         [&log](World& world, EntityId participant, EntityId root) {
             PreparePawn(world, participant, root, log);
         });
     engine.Participants().ProvideBody =
-        [this](World&, EntityId participant) { return Bodies->ProvideBody(participant); };
-    // A prefab body is a group: the engine reaps the root like any body, and
-    // the queued despawn sweeps the group's remaining members at the next
-    // pump -- without it, prefab children would outlive the pawn outside any
-    // group index.
-    engine.Participants().ReapBody =
-        [this](World&, EntityId, EntityId body) {
-            (void)Bodies->RequestDespawnBody(body);
-            return true;
+        [this](World&, EntityId participant) {
+            Bodies->StartSpawn(participant);
+            return EntityId{};
         };
 
     // A dedicated host has nobody at a keyboard, so it is told how to serve
@@ -127,11 +121,10 @@ void PlatformerGame::OnRegisterSystems(SystemRegisterContext& ctx)
 void PlatformerGame::OnShutdown(GameShutdownContext&)
 {
     GetEngine().SetPointerCaptured(false);
-    // The lifecycle's answers go first, so nothing asks a closed book. The
-    // closed book itself stays put: the level's final detaches still reach the
-    // system that points at it, and a closed book touches nothing.
+    // The lifecycle's answer goes first, so nothing starts a spawn on a closed
+    // adapter. The closed adapter stays put: the level's final detaches still
+    // reach the system that points at it, and a closed one touches nothing.
     GetEngine().Participants().ProvideBody = {};
-    GetEngine().Participants().ReapBody = {};
     if (Bodies.has_value())
         Bodies->Close();
     if (SessionState.has_value())

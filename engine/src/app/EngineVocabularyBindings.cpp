@@ -5,6 +5,7 @@
 #include <audio/AudioVerbs.h>
 #include <effects/EffectVerbs.h>
 #include <movement/MovementVerbs.h>
+#include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <physics/PhysicsQueries.h>
 #include <time/ActorTimeVerbs.h>
@@ -13,7 +14,8 @@
 
 EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedSimulationLoop& clock,
                                                    VerbDispatcher& verbs)
-    : Animation(std::make_unique<AnimRequestOperations>(entities, clock))
+    : Entities(entities)
+    , Animation(std::make_unique<AnimRequestOperations>(entities, clock))
     , Effects(std::make_unique<EffectOperations>(entities, clock))
     , Time(std::make_unique<ActorTimeOperations>(entities, clock))
     , Abilities(std::make_unique<AbilityOperations>(entities))
@@ -43,6 +45,12 @@ EngineVocabularyBindings::~EngineVocabularyBindings()
 {
     Queries.clear();
     Verbs.clear();
+}
+
+void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)
+{
+    for (AuthoredQueryBindingToken& token : BindPerceptionQueries(queries, Entities))
+        Queries.push_back(std::move(token));
 }
 
 void EngineVocabularyBindings::BindPhysics(const PhysicsWorld& physics, AuthoredQueryDispatcher& queries)

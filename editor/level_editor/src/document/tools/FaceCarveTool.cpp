@@ -27,6 +27,8 @@
 #include "viewport/ViewportDialPlacement.h"
 #include "viewport/ViewportProjection.h"
 
+#include <math/Angle.h>
+
 #include <algorithm>
 #include <array>
 #include <limits>
@@ -1094,7 +1096,6 @@ namespace
 {
 constexpr std::array<std::string_view, 2> kModeNames = { "Polygon", "Quad" };
 constexpr std::array<std::string_view, 2> kShapeNames = { "Rectangle", "Arch" };
-constexpr float kRadiansPerDegree = std::numbers::pi_v<float> / 180.0f;
 }
 
 std::vector<PropertyNode> FaceCarveTool::Parameters(const ToolContext&) const
@@ -1104,7 +1105,7 @@ std::vector<PropertyNode> FaceCarveTool::Parameters(const ToolContext&) const
                                    "Quad keeps everything outside the carve quads; quad faces only"));
     nodes.push_back(ChoiceProperty("shape", "Shape", kShapeNames, Shape == CarveShape::Arch ? 1 : 0));
     // Degrees, because nobody authors a doorway in radians.
-    nodes.push_back(NumberProperty("turn", "Turn", std::round(ShapeParams.Orientation / kRadiansPerDegree), -180, 180,
+    nodes.push_back(NumberProperty("turn", "Turn", std::round(ToDegrees(ShapeParams.Orientation)), -180, 180,
                                    1, "Turns the shape inside the box; a quarter turn keeps the opening"));
     if (Shape == CarveShape::Arch)
     {
@@ -1148,7 +1149,7 @@ PropertyEditResult FaceCarveTool::SetParameter(ToolContext& ctx, std::string_vie
         const std::optional<double> degrees = ParseNumber(value, -180, 180);
         if (!degrees)
             return PropertyEditResult::Refused;
-        params.Orientation = static_cast<float>(*degrees) * kRadiansPerDegree;
+        params.Orientation = ToRadians(static_cast<float>(*degrees));
     }
     else if (key == "rise")
     {

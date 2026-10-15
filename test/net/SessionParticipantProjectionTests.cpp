@@ -14,6 +14,9 @@
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
 
+#include <cstdint>
+#include <optional>
+
 namespace
 {
     struct ProjectionWorld
@@ -215,6 +218,93 @@ TEST(SessionParticipantProjection, AdmissionInsideASessionStampsBoth)
     EXPECT_TRUE(fixture.Entities.HasComponent<NetReplicated>(
         admitted.Admission.Participant));
     EXPECT_TRUE(fixture.Entities.HasComponent<NetReplicated>(admitted.Body.Body));
+}
+
+namespace
+{
+    struct BodySessionFacts
+    {
+        bool Replicated = false;
+        std::optional<std::uint32_t> Owner;
+        std::optional<std::uint32_t> DrivenBy;
+        bool LocalSubject = false;
+        bool operator==(const BodySessionFacts&) const = default;
+    };
+
+    BodySessionFacts FactsOf(const World& world, EntityId body)
+    {
+        BodySessionFacts facts;
+        facts.Replicated = world.HasComponent<NetReplicated>(body);
+        if (const NetOwner* owner = world.TryGet<NetOwner>(body))
+            facts.Owner = owner->Peer;
+        if (const NetDrivenBy* driven = world.TryGet<NetDrivenBy>(body))
+            facts.DrivenBy = driven->Peer;
+        facts.LocalSubject = LocalControlSubjectOf(world) == body;
+        return facts;
+    }
+}
+
+// Both ways in reach one projection: a body handed over later carries exactly
+// what a body answered at admission would have.
+TEST(SessionParticipantProjection, AnAssignedBodyCarriesTheSameFactsAsARequestedOne)
+{
+    struct Case
+    {
+        const char* Name;
+        bool Peer;
+        bool Session;
+    };
+    const Case cases[] = {
+        { "local, no session", false, false },
+        { "local, in session", false, true },
+        { "peer", true, true },
+    };
+    for (const Case& c : cases)
+    {
+        const auto run = [&](bool assign) {
+            ProjectionWorld fixture;
+            fixture.Projection.Policies().ProvideBody = [&](World&, EntityId) {
+                return assign ? EntityId{} : fixture.Thing();
+            };
+            const SessionParticipantAdmission admitted = c.Peer
+                ? fixture.Projection.AdmitPeer(fixture.Entities, PeerId{ 7 })
+                : fixture.Projection.AdmitLocal(fixture.Entities, c.Session);
+            const EntityId participant = admitted.Admission.Participant;
+            EntityId body = admitted.Body.Body;
+            if (assign)
+            {
+                EXPECT_EQ(admitted.Body.Status, ParticipantBodyStatus::Unavailable);
+                body = fixture.Thing();
+                EXPECT_EQ(fixture.Projection.AssignBody(fixture.Entities, participant,
+                                                        body, c.Session).Status,
+                          ParticipantBodyStatus::Assigned) << c.Name;
+            }
+            EXPECT_TRUE(body.IsValid()) << c.Name;
+            return FactsOf(fixture.Entities, body);
+        };
+        const BodySessionFacts requested = run(false);
+        const BodySessionFacts assigned = run(true);
+        EXPECT_EQ(assigned, requested) << c.Name;
+        EXPECT_EQ(requested.Replicated, c.Session) << c.Name;
+        EXPECT_EQ(requested.Owner.has_value(), c.Peer) << c.Name;
+    }
+}
+
+TEST(SessionParticipantProjection, ARefusedAssignmentStampsNothing)
+{
+    ProjectionWorld fixture;
+    fixture.CountPolicyCalls();
+    const SessionParticipantAdmission admitted =
+        fixture.Projection.AdmitPeer(fixture.Entities, PeerId{ 8 });
+    ASSERT_EQ(admitted.Body.Status, ParticipantBodyStatus::Assigned);
+    const EntityId offered = fixture.Thing();
+
+    const ParticipantBodyChange change = fixture.Projection.AssignBody(
+        fixture.Entities, admitted.Admission.Participant, offered, true);
+
+    EXPECT_EQ(change.Status, ParticipantBodyStatus::AlreadyAssigned);
+    EXPECT_TRUE(fixture.Entities.IsAlive(offered));
+    EXPECT_EQ(FactsOf(fixture.Entities, offered), BodySessionFacts{});
 }
 
 // Hosting after singleplayer play: the person already here becomes the

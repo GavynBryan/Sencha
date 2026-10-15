@@ -3,9 +3,10 @@
 
 #include <gtest/gtest.h>
 
+#include <math/Angle.h>
+
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 
 namespace
 {
@@ -56,7 +57,7 @@ TEST(BrushFaceFrame, AcceptsAShearedFaceThatTheRectangleGateRefused)
     BrushMesh mesh = BrushOps::MakeBox(Vec3d{ 1, 1, 1 });
     const std::uint32_t face = FaceFacing(mesh, Vec3d{ 1, 0, 0 });
     ASSERT_NE(face, 0xFFFFFFFFu);
-    const float shear = std::tan(1.0f * std::numbers::pi_v<float> / 180.0f);
+    const float shear = std::tan(ToRadians(1.0f));
     for (std::uint32_t index : mesh.Faces[face].Loop)
         mesh.Vertices[index].Position.Z += mesh.Vertices[index].Position.Y * shear;
 

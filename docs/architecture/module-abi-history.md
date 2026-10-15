@@ -240,8 +240,48 @@ can reload.
 
 ## v26
 
-AbilityKit 2 (`docs/plans/abilitykit-2.md`); this entry grows with each stage of
-that epic, which bumps the version once.
+**A body can be assigned as well as asked for.** `Engine::AssignParticipantBody`
+binds an entity the game already has, through the same validation and session
+projection as `RequestParticipantBody`, and never destroys a refused entity.
+`ParticipantBodyStatus` gains `InvalidBody` and `BodyInUse`; a `ProvideBody`
+answer that is a participant or another participant's body is refused rather
+than rebound. `ParticipantWithBody` names the participant holding a body.
+
+**A spawned group can live as long as its root.** `SceneSpawnService::RequestSpawn`
+takes a `SceneSpawnLifetime`; `OwnedByRoot` needs exactly one root record and
+despawns the rest of the group at the pump after its root dies. `Root(id)` names
+the single root a group was published with.
+
+`app/BodySpawns` is replaced by `participant_spawn/ParticipantBodySpawns`. It
+holds pending requests only, hands a landed body over through
+`AssignParticipantBody`, and leaves group lifetime to `OwnedByRoot`, so games no
+longer bind `ReapBody` to it. `participant/`, `participant_spawn/`,
+`runtime/spawn/`, `world/scene/SceneInstanceGroup.h`, and the math headers
+`Transform3f` is built from join the fingerprint.
+
+## v27
+
+**Spatial queries and perception.** `Engine` holds a `CandidateEvaluator`
+(`TryCandidates`) and the perception query bindings, so its layout moved.
+`PhysicsQueries::Raycast` gains a filtered overload taking `PhysicsQueryFilter`.
+`spatial/candidates/`, `spatial/sight/`, `perception/` and `debug/DebugLines.h`
+join the module-facing headers.
+
+**Engine components.** `SightSensor` and `SightTarget` join the engine's
+component set, after the animation components, which moves no existing
+component's dense index or wire key.
+
+**Entity order.** `EntityId` gains a defaulted three-way comparison (index, then
+generation). Its layout is unchanged.
+
+**Engine vocabulary.** `InstallEngineVocabulary(World&)` declares the engine's
+verbs and the `perception.*` queries; a host that called `DeclareEngineVerbs`
+alone sees no perception queries.
+
+## v28
+
+AbilityKit 2 (`docs/plans/abilitykit-2.md`); this entry gathers every stage of
+that epic, which bumped the version once.
 
 **Effects.** `ApplyEffect` takes the `FixedSimTime` it is applied on and an
 optional `LeaseOwner`; `TickEffects` drops its delta (one call is one tick's
@@ -254,8 +294,8 @@ granted tags. `CheckEffectCosts` (`effects/EffectCost.h`) is new.
 **Abilities.** `TryActivateAbility` and `ProcessAbilityActivations` take a
 `FixedSimTime`.
 
-**Physics queries.** `Raycast`, `SweepShape` and `OverlapShape` take an optional
-`PhysicsQueryFilter`.
+**Physics queries.** `SweepShape` and `OverlapShape` gain filtered overloads
+taking `PhysicsQueryFilter`, as `Raycast` did in v27.
 
 **Input edges.** `InputFrame` logs button transitions in order
 (`TransitionLog`, `SetButton`, `ClearTransitions`) in place of its six edge vectors;
@@ -279,8 +319,8 @@ contract. `VerbInvocation` carries `Owner` (`ecs/LeaseOwner.h`, which replaces
 `VerbAdmission` appends `ScopeMismatch` and `KindMismatch`, and `VerbTraceEvent`
 appends `Released`. `VerbDispatcher::AcquireLease` and `ReleaseLease` are new.
 `AnimEventScope` is now `AuthoredScope`, with the same values.
-`app/EngineVerbs.h` is now `app/EngineVocabulary.h`, and `DeclareEngineVerbs` is
-`DeclareEngineVocabulary(World&)`, which also declares the engine's queries.
+`InstallEngineVocabulary` also declares every engine domain's verbs and leases
+and the physics queries.
 `ApplyEffect` takes a scale, recorded on `ActiveEffect`. `AnimRequest::Owner` and
 `AnimRequestDesc::Owner` are `LeaseOwner`s, which moves the replication table
 hash (the record's local size; the wire record is unchanged). `Engine`'s members
@@ -301,8 +341,7 @@ activation system, and `RegisterAbilityKitSystems` takes an `AbilityHost` and is
 called by the engine for every host, not by games. `ability.activate`,
 `ability.cancel`, `ability.grant` and `ability.revoke` join the engine vocabulary.
 `VerbTraceRing` is built on `core/containers/BoundedRing.h`.
-`CompileAuthoredConstant`, `CompileAuthoredDefault` and `ParseVerbBindingArgument`
-are public. Scenes name `AbilityGrants` (chunk `ABGR`) where they named
+`CompileAuthoredConstant` and `ParseVerbBindingArgument` are public. Scenes name `AbilityGrants` (chunk `ABGR`) where they named
 `AbilitySet`. `EffectDeclaration` gains `GrantedAbilities`; `AbilityEffectGrants`,
 `DeclareEffectGrants`, `ParseAbilityGrantEntries` and `AbilityGrantEntriesSchema`
 are new.
@@ -320,7 +359,8 @@ the bulk movement queries and the character drive exclude dilated characters.
 `ActorScaleValue` (time) are new; a root-motion sample's velocity is per second of
 actor time. `AuthoredPredictionName`, `EffectiveAbilityBinding` and `abilities/AbilityValueNames.h`
 (the port, local-type and hit-field names) are new. `EngineVocabularyBindings` (`app/EngineVocabularyBindings.h`) is new and holds
-the engine's domain operations and their bindings in place of `Engine`'s own members;
+the engine's domain operations and their bindings, the perception query bindings
+among them, in place of `Engine`'s own members;
 `AbilityEndReasonName` and `AbilityRefusalName` are defined.
 
 **Held motion.** `movement/components/HeldMotion.h` (`MotionBursts`, `TetherSession`,

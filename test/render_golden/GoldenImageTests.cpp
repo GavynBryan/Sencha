@@ -235,6 +235,14 @@ TEST(GoldenImage, ShadowProbeSceneIsUnchanged)
     CheckScene({ .Name = "shadow_probe", .Map = "levels/shadow_probe" });
 }
 
+// Debug lines from a simulation-side channel through extraction to the line
+// pass: a square the scene's geometry may hide and a cross drawn over it.
+TEST(GoldenImage, DebugLinesDrawOverTheScene)
+{
+    CheckScene({ .Name = "debug_lines", .Map = "levels/shadow_probe",
+                 .ExtraArgs = "+set render_host.debug_lines 1" });
+}
+
 // A rest-pose skinned mesh in a cooked level -- the P5 gate, permanent. The
 // red two-box column resolves through SkinnedMeshCache: component, codec,
 // cook, load, retain, extraction, and draw all have to hold for it to appear.

@@ -163,7 +163,7 @@ protected:
             (void)queries.Declare(std::move(ready));
             EXPECT_TRUE(CommitTogether(verbs, queries));
         }
-        EXPECT_TRUE(DeclareEngineVocabulary(Entities));
+        EXPECT_TRUE(InstallEngineVocabulary(Entities));
 
         Actions.Rebuild(std::vector<InputActionDefinition>{ { .Name = "Input.PrimaryFire" }, { .Name = "Input.AltFire" } });
         Entities.SetResource(InputActionVocabulary{ &Actions, 1 });

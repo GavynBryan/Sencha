@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <math/Angle.h>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -385,8 +387,7 @@ TEST(CarveShape, TheGeneratorHonoursTheTurnExactlyAndNeverClamps)
     const Vec2d mn{ 0, 0 };
     const Vec2d mx{ 3, 2 };
     const std::vector<Vec2d> rest = CarveShapeOutline(CarveShape::Arch, mn, mx, { 0.5f, 8, 0.0f });
-    const float degree = std::numbers::pi_v<float> / 180.0f;
-    const std::vector<Vec2d> nudged = CarveShapeOutline(CarveShape::Arch, mn, mx, { 0.5f, 8, degree });
+    const std::vector<Vec2d> nudged = CarveShapeOutline(CarveShape::Arch, mn, mx, { 0.5f, 8, ToRadians(1.0f) });
     ASSERT_EQ(rest.size(), nudged.size());
     float moved = 0.0f;
     for (std::size_t i = 0; i < rest.size(); ++i)

@@ -93,7 +93,7 @@ private:
     // A selected source face: wide outline on the source piece, instanced fill
     // and thin outline on every placement of every mesh carrying the face.
     void AppendFaceHighlight(std::vector<EditorLineSegment>& outline,
-                             std::vector<EditorLineVertex>& fill,
+                             std::vector<ColoredVertex>& fill,
                              const EditorScene& scene, EntityId entity,
                              std::uint32_t sourceFace, const Vec4& outlineColor, float widthPx,
                              std::vector<InstancedFace>& instanced);
@@ -126,7 +126,7 @@ private:
                     const FaceElement& face,
                     const Vec4& color,
                     float widthPx) const;
-    void AppendFaceFill(std::vector<EditorLineVertex>& triangles,
+    void AppendFaceFill(std::vector<ColoredVertex>& triangles,
                         const BrushMesh& mesh,
                         const Transform3f& transform,
                         std::uint32_t faceIndex,
@@ -177,7 +177,7 @@ private:
     std::unordered_map<std::uint64_t, RetainedBody> Bodies;       // key: entity index|generation
     std::unordered_map<std::uint64_t, RetainedFace> FaceHighlights; // key: entity index|generation ^ face
     std::uint64_t FrameCounter = 0;
-    std::vector<EditorLineVertex> InstanceScratch; // one mesh's coloured geometry, reused
+    std::vector<ColoredVertex> InstanceScratch; // one mesh's coloured geometry, reused
 
     const BrushDrawSet*          Draws = nullptr;
     EditorInstancedLinePipeline* InstancedLines = nullptr;

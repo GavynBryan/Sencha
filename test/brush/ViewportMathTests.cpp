@@ -1,6 +1,7 @@
 #include "editmodes/GizmoMath.h"
 #include "viewport/ViewportMath.h"
 
+#include <math/Angle.h>
 #include <math/Mat.h>
 #include <math/Vec.h>
 #include <math/geometry/3d/Ray3d.h>
@@ -113,7 +114,7 @@ TEST(GizmoMath, UnwrappingADeltaKeepsADragTurningTheSameWay)
     double previous = 0.0;
     for (int i = 1; i <= 360; ++i)
     {
-        const double angle = std::atan2(std::sin(i * kPi / 180.0), std::cos(i * kPi / 180.0));
+        const double angle = std::atan2(std::sin(ToRadians(double(i))), std::cos(ToRadians(double(i))));
         accumulated += GizmoMath::UnwrapAngleDelta(angle, previous);
         previous = angle;
     }
@@ -135,7 +136,6 @@ TEST(GizmoMath, SnappingAnAngleLandsOnIncrementsAndIsIdentityWithoutOne)
 
 TEST(GizmoMath, TheAngleOnAPlaneRoundTripsAgainstItsOwnBasis)
 {
-    constexpr double kPi = 3.14159265358979323846;
     const Vec3d centre{ 2.0f, -1.0f, 4.0f };
     const Vec3d u{ 0.0f, 0.0f, -1.0f };
     const Vec3d v{ 0.0f, 1.0f, 0.0f };
@@ -143,7 +143,7 @@ TEST(GizmoMath, TheAngleOnAPlaneRoundTripsAgainstItsOwnBasis)
 
     for (int degrees = -170; degrees <= 180; degrees += 10)
     {
-        const double radians = degrees * kPi / 180.0;
+        const double radians = ToRadians(double(degrees));
         const Vec3d on = centre + u * static_cast<float>(std::cos(radians) * 3.0)
                        + v * static_cast<float>(std::sin(radians) * 3.0);
         // A ray arriving from in front of the plane, aimed at that point.

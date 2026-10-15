@@ -4,6 +4,7 @@
 #include <graphics/vulkan/RenderScope.h>
 #include <graphics/vulkan/RenderTargetSession.h>
 #include <graphics/vulkan/SkyGradientPass.h>
+#include <math/Angle.h>
 #include <math/geometry/3d/Aabb3d.h>
 #include <render/CameraProjection.h>
 #include <render/pass/MeshForwardPass.h>
@@ -60,7 +61,7 @@ int ThumbnailStudio::PassesPerTarget()
 
 CameraRenderData ThumbnailStudio::FrameSubject(const Aabb3d& bounds)
 {
-    constexpr float kFovY = 35.0f * 3.14159265f / 180.0f;
+    constexpr float kFovY = ToRadians(35.0f);
     const float tanHalf = std::tan(kFovY * 0.5f);
     const Vec3d center = bounds.Center();
     const Vec3d half = (bounds.Max - bounds.Min) * 0.5f;

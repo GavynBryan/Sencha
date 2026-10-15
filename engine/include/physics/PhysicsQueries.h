@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <vector>
 
 #include <ecs/EntityId.h>
@@ -37,11 +38,12 @@ struct ShapeSweepHit
     Vec3d Normal = Vec3d::Zero();
 };
 
-// What a query passes through. A body owned by `Ignore` is not hit, so a trace
-// from inside a caster does not report the caster.
+// What a filtered query passes through. Ignoring the caster keeps a trace from
+// inside it from reporting it.
 struct PhysicsQueryFilter
 {
-    EntityId Ignore;
+    bool IncludeTriggers = false;
+    std::span<const EntityId> IgnoreEntities{};
 };
 
 class PhysicsQueries
@@ -53,8 +55,14 @@ public:
     }
 
     // Closest body hit by the ray, or { Hit = false } if none within maxDistance.
-    [[nodiscard]] RaycastHit Raycast(const Vec3d& origin, const Vec3d& direction, float maxDistance,
-                                     const PhysicsQueryFilter& filter = {}) const;
+    [[nodiscard]] RaycastHit Raycast(const Vec3d& origin, const Vec3d& direction, float maxDistance) const;
+
+    // As above, skipping bodies the filter rejects. `unitDirection` must be
+    // normalized so Distance is in world units.
+    [[nodiscard]] RaycastHit Raycast(const Vec3d& origin,
+                                     const Vec3d& unitDirection,
+                                     float maxDistance,
+                                     const PhysicsQueryFilter& filter) const;
 
     // Closest body hit while sweeping shape from origin along direction*maxDistance.
     [[nodiscard]] ShapeSweepHit SweepShape(
@@ -62,8 +70,16 @@ public:
         const Vec3d& origin,
         const Quatf& rotation,
         const Vec3d& direction,
+        float maxDistance) const;
+
+    // As above, skipping bodies the filter rejects.
+    [[nodiscard]] ShapeSweepHit SweepShape(
+        const CollisionShape& shape,
+        const Vec3d& origin,
+        const Quatf& rotation,
+        const Vec3d& direction,
         float maxDistance,
-        const PhysicsQueryFilter& filter = {}) const;
+        const PhysicsQueryFilter& filter) const;
 
     // Entities whose bodies overlap shape placed at (position, rotation). Each
     // entity appears once. Cleared before filling.
@@ -71,8 +87,15 @@ public:
         const CollisionShape& shape,
         const Vec3d& position,
         const Quatf& rotation,
+        std::vector<EntityId>& out) const;
+
+    // As above, skipping bodies the filter rejects.
+    void OverlapShape(
+        const CollisionShape& shape,
+        const Vec3d& position,
+        const Quatf& rotation,
         std::vector<EntityId>& out,
-        const PhysicsQueryFilter& filter = {}) const;
+        const PhysicsQueryFilter& filter) const;
 
 private:
     const PhysicsWorld* Simulation;

@@ -97,11 +97,11 @@ The engine does **not**:
 - admit a participant or ask for a body (`Engine::AdmitLocalParticipant` and
   `RequestParticipantBody` are called by the game when *it* decides content is
   ready),
-- choose a body. `BodySpawns` (`engine/include/app/BodySpawns.h`)
-  keeps the book on a prefab body request -- the spawn in flight, the landed
-  group handed over by its root, the cleanup of what was never handed over or
-  whose root died -- but which prefab, where it stands, and when there is
-  somewhere for it to stand are the callbacks a game installs into it,
+- choose a body. `ParticipantBodySpawns`
+  (`engine/include/participant_spawn/ParticipantBodySpawns.h`) holds a prefab
+  body request from the spawn in flight to its assignment or withdrawal, but
+  which prefab, where it stands, and when there is somewhere for it to stand
+  are the callbacks a game installs into it,
 - choose a streaming focus after the initial one (`WorldPartitionRuntime`'s
   focus API is the game's),
 - add `LocalLookControl` or any other controller facility to the body this
@@ -131,23 +131,37 @@ authored camera from the same hook.
 
 ## Bodies from prefabs
 
-A participant's body is asked for synchronously (`ParticipantPolicies::ProvideBody`)
-and a prefab spawns asynchronously, so somebody has to own the request in
-between. That owner is `BodySpawns`: a game constructs one in
-`OnStart` over the engine's world and spawn service, gives it three callbacks
-(which prefab and where, the engine's `RequestParticipantBody`, and an optional
-step that runs on the landed root before assignment), and installs its
-`ProvideBody` and `RequestDespawnBody` as the lifecycle's body policy. The
-game's spawn system calls `Update` each frame; the book re-asks the lifecycle
-when a spawn lands, withdraws a spawn whose participant left, and destroys a
-group whose root died or was never handed over. `CancelAllPending` is the
-game's call when the content a request was made for goes away, and `Close`
-runs at the start of `OnShutdown`, before anything the callbacks captured.
+A participant's body is asked for synchronously (`ParticipantPolicies::ProvideBody`,
+which the engine also calls when a peer joins) or handed over later
+(`Engine::AssignParticipantBody`). Both go through the same checks and the same
+session projection. An assignment never destroys the entity it was offered: a
+refused one is still the caller's.
 
-The book knows nothing about sessions, cameras, input, or zones, and the
+A prefab spawns asynchronously, so somebody holds the request in between. That
+is `ParticipantBodySpawns`: a game constructs one in `OnStart` over the engine's
+world and spawn service and gives it three callbacks -- which prefab and where,
+the engine's `AssignParticipantBody`, and an optional step that runs on the
+landed root before assignment. Its `StartSpawn` is the lifecycle's
+`ProvideBody`, answering no body now. The game's spawn system calls `Update`
+each frame; a landed spawn is prepared and assigned, and a spawn whose
+participant left or found a body some other way is withdrawn. `CancelAllPending`
+is the game's call when the content a request was made for goes away, and
+`Close` runs at the start of `OnShutdown`, before anything the callbacks
+captured.
+
+Once assigned, nothing about the body is kept. The spawn is root-owned
+(`SceneSpawnLifetime::OwnedByRoot`): when the root dies -- reaped on
+retirement, or destroyed by gameplay -- the scene service despawns the rest of
+the group at its next pump. A game that vetoes the reap keeps the whole group
+for as long as the root lives. Root-owned lifetime is opt-in on any spawn and
+acts only on spawns made in that process, so a client never destroys a group
+the authority replicates; those leave through the snapshot.
+
+The adapter knows nothing about sessions, cameras, input, or zones, and the
 participant layer never learns that a body was a scene spawn
 (`scripts/check_engine_layering.sh`, rule F). A game that builds bodies some
-other way installs its own `ProvideBody` and never constructs the book.
+other way installs its own `ProvideBody`, or calls `AssignParticipantBody`, and
+never constructs the adapter.
 
 ## The templates
 

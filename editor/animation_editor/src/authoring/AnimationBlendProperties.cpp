@@ -9,6 +9,7 @@
 #include <anim/AnimBehaviorSet.h>
 #include <anim/AnimPoseEvaluation.h>
 #include <anim/Skeleton.h>
+#include <math/Angle.h>
 
 #include <algorithm>
 #include <format>
@@ -164,7 +165,7 @@ std::vector<PropertyNode> AnimationBlendProperties::TakeSource::Nodes() const
             result = worst->Position <= 0.0f && worst->Rotation <= 0.0f
                          ? std::string("B matches A on every tick.")
                          : std::format("Largest at tick {}: {:.3f} at {}, {:.1f} deg at {}", worst->Tick,
-                                       worst->Position, joint(worst->PositionJoint), worst->Rotation * 57.29578f,
+                                       worst->Position, joint(worst->PositionJoint), ToDegrees(worst->Rotation),
                                        joint(worst->RotationJoint));
         }
         if (!result.empty())

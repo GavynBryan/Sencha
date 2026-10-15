@@ -5,7 +5,7 @@
 
 #include "PlatformerSessionPolicy.h"
 
-#include <app/BodySpawns.h>
+#include <participant_spawn/ParticipantBodySpawns.h>
 
 #include <optional>
 
@@ -35,8 +35,8 @@ private:
     std::optional<PlatformerSessionPolicy> SessionState;
     [[nodiscard]] PlatformerSessionPolicy& Session();
 
-    // The engine's book on this game's prefab body requests. Closed in
+    // This game's prefab body requests in flight. Closed in
     // OnShutdown, ahead of the session whose settings its callbacks read;
     // kept, closed, until the next OnStart replaces it.
-    std::optional<BodySpawns> Bodies;
+    std::optional<ParticipantBodySpawns> Bodies;
 };

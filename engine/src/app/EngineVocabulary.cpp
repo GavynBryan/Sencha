@@ -6,12 +6,13 @@
 #include <authored/WorldVocabulary.h>
 #include <effects/EffectVerbs.h>
 #include <movement/MovementVerbs.h>
+#include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <time/ActorTimeVerbs.h>
 
 #include <string>
 
-bool DeclareEngineVocabulary(World& world)
+bool InstallEngineVocabulary(World& world)
 {
     VerbRegistry* verbs = FindVerbRegistry(world);
     AuthoredQueryRegistry* queries = FindAuthoredQueryRegistry(world);
@@ -42,5 +43,7 @@ bool DeclareEngineVocabulary(World& world)
     DeclareAudioVerbs(scope);
     DeclarePhysicsQueries(queryScope);
 
-    return CommitTogether(scope, queryScope);
+    const bool engineDeclared = CommitTogether(scope, queryScope);
+    const bool perceptionDeclared = InstallPerceptionVocabulary(world);
+    return engineDeclared && perceptionDeclared;
 }

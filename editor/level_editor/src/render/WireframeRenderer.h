@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EditorLinePipeline.h"
+#include <graphics/vulkan/ColoredVertexPipelines.h>
 #include "IBrushBodyRenderer.h"
 
 #include "document/EditorScene.h"
@@ -19,7 +19,7 @@ class WireframeRenderer : public IBrushBodyRenderer
 {
 public:
     WireframeRenderer(SelectionService& selection,
-                      const EditorOverlayState& overlay, EditorLinePipeline& lines);
+                      const EditorOverlayState& overlay, ColoredVertexPipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
                       const CameraRenderData& camera,
@@ -30,12 +30,12 @@ public:
                        const EditorScene& scene, const Vec4& color);
 
 private:
-    void AppendBrushMesh(std::vector<EditorLineVertex>& vertices,
+    void AppendBrushMesh(std::vector<ColoredVertex>& vertices,
                          const BrushMesh& mesh,
                          const Transform3f& transform,
                          const Vec4& color) const;
 
     SelectionService& Selection;
     const EditorOverlayState& Overlay;
-    EditorLinePipeline& Lines;
+    ColoredVertexPipeline& Lines;
 };

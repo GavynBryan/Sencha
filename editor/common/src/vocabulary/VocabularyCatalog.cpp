@@ -20,7 +20,7 @@ VocabularyCatalog::VocabularyCatalog()
     InstallAbilityKitVocabulary(Metadata);
     InstallAnimationVocabulary(Metadata);
     InstallAuthoredVocabulary(Metadata);
-    (void)DeclareEngineVocabulary(Metadata);
+    (void)InstallEngineVocabulary(Metadata);
     TakeInstallationErrors();
 }
 

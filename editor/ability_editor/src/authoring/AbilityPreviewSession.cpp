@@ -129,7 +129,7 @@ bool AbilityPreviewSession::Rebuild()
     }
     RegisterMovement(world);
     InstallAuthoredVocabulary(world);
-    (void)DeclareEngineVocabulary(world);
+    (void)InstallEngineVocabulary(world);
     if (Vocabulary)
         Vocabulary(world);
     DeclareContentVocabulary(Assets, world, ContentVocabularyReload::Once, Issues);

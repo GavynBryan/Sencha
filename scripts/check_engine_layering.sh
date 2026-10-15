@@ -84,20 +84,41 @@ check "ContentMount reaches outside the asset layer" \
       "$ENGINE/include/assets/runtime/ContentMount.h" \
       "$ENGINE/src/assets/runtime/ContentMount.cpp"
 
-# F. Where a body comes from is nobody's business below app/. The participant
-# layer asks a policy for a body and never learns that it was a scene spawn;
-# the spawn service publishes groups and never learns that one was a body.
-# BodySpawns is the one place both are known, and it knows
-# nothing else: no session, no camera, no input, no zone policy.
+# F. Where a body comes from is decided above both participant/ and
+# runtime/spawn/. The participant layer binds whatever it is handed and never
+# learns that it was a scene spawn; the spawn service publishes groups and never
+# learns that one was a body. participant_spawn/ is the one place both are
+# known, and it knows nothing else: no session, no camera, no input, no zone.
 check "participant/ learns how a body is produced" \
-      '#include[[:space:]]*["<](runtime/spawn|world/scene|app)/' \
+      '#include[[:space:]]*["<](runtime/spawn|world/scene|participant_spawn|app)/' \
       "$ENGINE/include/participant" "$ENGINE/src/participant"
 check "runtime/spawn/ learns what a participant is" \
-      '#include[[:space:]]*["<]participant/' \
+      '#include[[:space:]]*["<](participant|participant_spawn)/' \
       "$ENGINE/include/runtime/spawn" "$ENGINE/src/runtime/spawn"
-check "BodySpawns decides a game policy" \
-      '#include[[:space:]]*["<](net|camera|controller|input|zone|core/config)/' \
-      "$ENGINE/include/app/BodySpawns.h" \
-      "$ENGINE/src/app/BodySpawns.cpp"
+check "participant_spawn/ decides a game policy" \
+      '#include[[:space:]]*["<](net|camera|controller|input|zone|core/config|app)/' \
+      "$ENGINE/include/participant_spawn" "$ENGINE/src/participant_spawn"
+
+# G. Spatial queries read world state and answer; they never act on it or
+# present it. Candidate evaluation composes navigation, physics and ECS reads,
+# so movement, abilities, rendering, networking and the app layer stay out.
+# The sight test is a physics ray with a view cone and needs nothing else.
+check "spatial/candidates/ acts on or presents what it evaluates" \
+      '#include[[:space:]]*["<](app|graphics|render|net|movement|abilities|anim|controller|camera|ui)/' \
+      "$ENGINE/include/spatial/candidates" "$ENGINE/src/spatial/candidates"
+check "spatial/sight/ reaches beyond physics and math" \
+      '#include[[:space:]]*["<](app|graphics|render|net|navigation|movement|abilities|spatial/candidates)/' \
+      "$ENGINE/include/spatial/sight" "$ENGINE/src/spatial/sight"
+
+
+# H. Perception reports what entities can sense and nothing else: it never
+# acts on what it reports, presents it, or reaches into the host. Its world
+# drawing goes through the neutral debug-line channels, which know no renderer.
+check "perception/ acts on, presents, or hosts what it senses" \
+      '#include[[:space:]]*["<](app/Engine\.h|graphics|render|net|movement|abilities|anim|controller|camera|ui|navigation|spatial/candidates)/?' \
+      "$ENGINE/include/perception" "$ENGINE/src/perception"
+check "debug lines reach the renderer" \
+      '#include[[:space:]]*["<](graphics|render)/' \
+      "$ENGINE/include/debug/DebugLines.h" "$ENGINE/src/debug/DebugLines.cpp"
 
 exit $status

@@ -4,7 +4,7 @@
 #include "BrushSolidRenderer.h"
 #include "ComponentVisualRenderer.h"
 #include "EditorFillPipeline.h"
-#include "EditorLinePipeline.h"
+#include <graphics/vulkan/ColoredVertexPipelines.h>
 #include "EditorSolidPipeline.h"
 #include "EditorBloomPass.h"
 #include "render/EditorWideLinePipeline.h"
@@ -257,7 +257,7 @@ private:
     bool                   MaterialPath = false;
     // Declared before the line renderers: they bind a reference to it at
     // construction. (The feature owns the one shared line pipeline.)
-    EditorLinePipeline     Lines;
+    ColoredVertexPipeline     Lines;
     EditorInstancedLinePipeline InstancedLines;
     EditorInstancedFillPipeline InstancedFill;
     WireframeRenderer      Wireframe;

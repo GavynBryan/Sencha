@@ -220,7 +220,7 @@ TEST(ContentVocabulary, TheNormativeChargeIsDeclaredFromItsContentRoot)
     VocabularyWorld world;
     world.Entities.RegisterComponent<AttributeSet>();
     InstallAuthoredVocabulary(world.Entities);
-    ASSERT_TRUE(DeclareEngineVocabulary(world.Entities));
+    ASSERT_TRUE(InstallEngineVocabulary(world.Entities));
     std::vector<std::string> errors;
     DeclareContentVocabulary(assets, world.Entities, ContentVocabularyReload::Once, errors);
     ASSERT_TRUE(errors.empty()) << errors.front();

@@ -32,7 +32,7 @@ std::vector<std::byte> ReadFileBytes(const std::string& path)
 }
 }
 
-ComponentVisualRenderer::ComponentVisualRenderer(EditorLinePipeline& lines)
+ComponentVisualRenderer::ComponentVisualRenderer(ColoredVertexPipeline& lines)
     : Lines(lines)
 {
 }
@@ -99,7 +99,7 @@ void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const Edit
     const Registry& registry = scene.GetRegistry();
     const auto& serializers = EditorSceneSerializers().Entries();
 
-    std::vector<EditorLineVertex> vertices;
+    std::vector<ColoredVertex> vertices;
     for (EntityId entity : scene.GetAllEntities())
     {
         if (!scene.IsEntityEffectivelyVisible(entity))
@@ -120,11 +120,11 @@ void ComponentVisualRenderer::DrawViewport(const FrameContext& frame, const Edit
             const MeshEdges& edges = EdgesFor(visual->AssetPath);
             for (const auto& [a, b] : edges.Edges)
             {
-                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[a]), .Color = color });
-                vertices.push_back(EditorLineVertex{ .Position = transform->TransformPoint(edges.Positions[b]), .Color = color });
+                vertices.push_back(ColoredVertex{ .Position = transform->TransformPoint(edges.Positions[a]), .Color = color });
+                vertices.push_back(ColoredVertex{ .Position = transform->TransformPoint(edges.Positions[b]), .Color = color });
             }
         }
     }
 
-    Lines.Submit(frame, viewport, camera, vertices);
+    Lines.Submit(frame, viewport.Region(), camera, vertices);
 }

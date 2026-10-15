@@ -13,6 +13,7 @@
 #include <ecs/World.h>
 #include <effects/EffectVerbs.h>
 #include <movement/MovementVerbs.h>
+#include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <time/ActorTimeVerbs.h>
 
@@ -88,9 +89,23 @@ TEST(VocabularyCatalog, TheEngineVerbsAreThereBeforeAnyModuleIs)
     EXPECT_EQ(verbs[16].Name, kAudioPlayVerb);
     EXPECT_EQ(verbs[17].Name, kAudioLoopLease);
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
-    ASSERT_EQ(queries.size(), 2u);
+    ASSERT_EQ(queries.size(), 5u);
     EXPECT_EQ(queries[0].Name, kPhysicsTraceQuery);
     EXPECT_EQ(queries[1].Name, kPhysicsOverlapQuery);
+}
+
+TEST(VocabularyCatalog, TheEnginesPerceptionQueriesAreThereBeforeAnyModuleIs)
+{
+    VocabularyCatalog catalog;
+    EXPECT_TRUE(catalog.Errors().empty());
+    const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
+    // After the physics queries, which the engine's own scope declares first.
+    ASSERT_EQ(queries.size(), 5u);
+    EXPECT_EQ(queries[2].Name, kSeesQuery);
+    EXPECT_EQ(queries[2].Provider, "engine");
+    EXPECT_EQ(queries[2].ArgumentCount, 2u);
+    EXPECT_EQ(queries[3].Name, kSeesTaggedQuery);
+    EXPECT_EQ(queries[4].Name, kNearestSeenTaggedQuery);
 }
 
 TEST(VocabularyCatalog, ALoadedModulesNamesAppearBesideTheEnginesWithoutItsRuntime)
@@ -195,11 +210,13 @@ TEST(VocabularyCatalog, AModulesQueriesAndEventsAreListedBesideItsVerbs)
     EXPECT_TRUE(catalog.Errors().empty());
 
     const std::vector<VocabularyCatalog::QueryRow> queries = catalog.ListQueries();
-    ASSERT_EQ(queries.size(), 3u);
-    EXPECT_EQ(queries[2].Name, "lamp.lit");
-    EXPECT_EQ(queries[2].DisplayName, "Lit");
-    EXPECT_EQ(queries[2].Provider, "lamp");
-    EXPECT_EQ(queries[2].ArgumentCount, 1u);
+    // The engine's own queries come first; the module's follow them.
+    ASSERT_FALSE(queries.empty());
+    const VocabularyCatalog::QueryRow& lit = queries.back();
+    EXPECT_EQ(lit.Name, "lamp.lit");
+    EXPECT_EQ(lit.DisplayName, "Lit");
+    EXPECT_EQ(lit.Provider, "lamp");
+    EXPECT_EQ(lit.ArgumentCount, 1u);
 
     const std::vector<VocabularyCatalog::EventRow> events = catalog.ListEvents();
     ASSERT_EQ(events.size(), 1u);

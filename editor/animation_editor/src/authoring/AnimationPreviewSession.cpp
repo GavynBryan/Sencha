@@ -348,7 +348,7 @@ void AnimationPreviewSession::BuildWorld()
     // Engine verbs before the project's, as a runtime World declares them.
     InstallAuthoredVocabulary(*Preview);
     VerbRegistry& verbs = *FindVerbRegistry(*Preview);
-    (void)DeclareEngineVocabulary(*Preview);
+    (void)InstallEngineVocabulary(*Preview);
     if (Vocabulary)
         Vocabulary(*Preview);
     for (const std::string& error : verbs.InstallationErrors())

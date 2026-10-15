@@ -260,7 +260,7 @@ bool EditorRenderFeature::Setup(const RenderFeatureServices& featureServices)
     // range no longer depends on the order: each pass declares the block it
     // needs and the descriptor cache keeps the largest.
     Forward.Setup(services, Lighting);
-    Lines.Setup(services);
+    Lines.Setup(services, ColoredVertexConfig(VK_PRIMITIVE_TOPOLOGY_LINE_LIST));
     InstancedLines.Setup(services);
     InstancedFill.Setup(services);
     WideLines.Setup(services);

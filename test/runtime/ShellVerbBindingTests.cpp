@@ -164,7 +164,7 @@ public:
 
         InstallAuthoredVocabulary(Entities);
         Verbs = FindVerbRegistry(Entities);
-        EXPECT_TRUE(DeclareEngineVocabulary(Entities));
+        EXPECT_TRUE(InstallEngineVocabulary(Entities));
 
         Menu = std::make_unique<PauseMenu>(*Ui, Surface, Pause, Router);
         Menu->Model().SetRootPage("asset://ui/shell.sui");

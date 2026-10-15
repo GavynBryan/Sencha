@@ -11,8 +11,9 @@
 #include "viewport/GridSettings.h"
 #include "viewport/ViewportProjection.h"
 
+#include <math/Angle.h>
+
 #include <format>
-#include <numbers>
 
 namespace
 {
@@ -48,7 +49,7 @@ void PlaceTurnInteraction::OnPointerMove(ToolContext& ctx, EditorViewport& viewp
     DragReadout& readout = ctx.Overlay.Readout;
     readout.From = pending->Site.Point;
     readout.To = aim->Toward;
-    readout.Text = std::format("{:.0f}°", pending->Yaw * 180.0f / std::numbers::pi_v<float>);
+    readout.Text = std::format("{:.0f}°", ToDegrees(pending->Yaw));
     readout.Viewport = viewport.Id;
 }
 

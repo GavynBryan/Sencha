@@ -5,8 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <math/Angle.h>
+
 #include <cmath>
-#include <numbers>
 
 // Framing brings a box into view without turning the camera, and framing the
 // selection frames everything selected, a light or an empty by its position.
@@ -33,7 +34,7 @@ TEST(CameraFraming, APerspectiveCameraBacksOffUntilTheBoxFitsItsView)
     EXPECT_NEAR(camera.GetForwardVector().Dot(forward), 1.0f, 1e-5f) << "the camera is not turned";
     EXPECT_NEAR(DistanceFromAxis(camera, box.Center()), 0.0f, 1e-3f) << "the box is centred";
     const float radius = 0.5f * (box.Max - box.Min).Magnitude();
-    const float halfFov = 0.5f * camera.FovY * std::numbers::pi_v<float> / 180.0f;
+    const float halfFov = ToRadians(0.5f * camera.FovY);
     EXPECT_GE((box.Center() - camera.Position).Magnitude() * std::sin(halfFov), radius) << "the whole box is seen";
 }
 

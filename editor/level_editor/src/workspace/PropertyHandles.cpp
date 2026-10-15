@@ -14,6 +14,7 @@
 #include <numbers>
 #include <span>
 
+#include <math/Angle.h>
 #include <world/serialization/ComponentSerializerRegistry.h>
 
 namespace
@@ -40,7 +41,6 @@ constexpr float kObjectReachDp = 24.0f;
 // sits along them.
 constexpr float kEdgeDp = 96.0f;
 constexpr float kArcAlongEdge = 0.35f;
-constexpr float kRadiansPerDegree = std::numbers::pi_v<float> / 180.0f;
 
 const RuntimeField* FieldNamed(const IComponentSerializer& serializer, std::string_view name)
 {
@@ -91,7 +91,7 @@ AngleFan FanOf(PropertyHandleKind kind, float degrees, float reach, Vec3d centre
                                                       : axis.Cross(viewport.Camera.GetForwardVector());
     if (across.SqrMagnitude() < 1e-6f)
         across = Facing(viewport).first;
-    const float half = (kind == PropertyHandleKind::Spread ? degrees * 0.5f : degrees) * kRadiansPerDegree;
+    const float half = ToRadians(kind == PropertyHandleKind::Spread ? degrees * 0.5f : degrees);
     const float length = reach > 0.0f ? reach
                                       : ViewportProjection(viewport).WorldSizeForPixels(centre, EditorUi::Px(kEdgeDp));
     return { .Apex = centre, .Axis = axis, .Across = across.Normalized(), .HalfRadians = half, .Length = length };
@@ -108,7 +108,7 @@ std::optional<float> DegreesAt(PropertyHandleKind kind, const AngleFan& fan, con
     if (along < 0.0f)
         return std::nullopt;
     const Vec3d offset = ray.Origin + ray.Direction * along - fan.Apex;
-    const float degrees = std::atan2(std::abs(offset.Dot(fan.Across)), offset.Dot(fan.Axis)) / kRadiansPerDegree;
+    const float degrees = ToDegrees(std::atan2(std::abs(offset.Dot(fan.Across)), offset.Dot(fan.Axis)));
     return kind == PropertyHandleKind::Spread ? std::clamp(degrees * 2.0f, 1.0f, 179.0f)
                                               : std::clamp(degrees, 1.0f, 89.0f);
 }

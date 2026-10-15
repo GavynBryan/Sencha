@@ -83,6 +83,7 @@ set(RENDER_DRIVER_BACKEND_PAIRS
     "/engine/include/render/feature/SkyRenderFeature.h=graphics/vulkan/SkyGradientPass.h"
     "/engine/include/render/feature/UiRenderFeature.h=graphics/vulkan/UiDrawPass.h"
     "/engine/include/render/feature/SkinnedPoseRenderFeature.h=graphics/vulkan/SkinnedPosePass.h"
+    "/engine/include/render/feature/DebugLineRenderFeature.h=graphics/vulkan/DebugLinePass.h"
 )
 
 set(VIOLATIONS "")

@@ -8,12 +8,12 @@
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 
+#include <math/Angle.h>
 #include <physics/PhysicsWorld.h>
 #include <physics/RigidBodyBinding.h> // UnpackEntity
 
 namespace
 {
-constexpr float kDegreesToRadians = 0.0174532925199432958f;
 constexpr float kMinimumAxisLengthSquared = 1.0e-8f;
 
 Vec3d SafeUpAxis(const Vec3d& candidate)
@@ -77,7 +77,7 @@ CharacterMover::CharacterMover(PhysicsWorld& world, const CharacterMoverConfig& 
 
     JPH::Ref<JPH::CharacterVirtualSettings> settings = new JPH::CharacterVirtualSettings();
     settings->mShape = new JPH::CapsuleShape(cylinderHalfHeight, radius); // centered: position is capsule center
-    settings->mMaxSlopeAngle = config.SlopeLimitDegrees * kDegreesToRadians;
+    settings->mMaxSlopeAngle = ToRadians(config.SlopeLimitDegrees);
     settings->mMass = config.Mass;
     settings->mUp = JPH::Vec3::sAxisY();
     settings->mCharacterPadding = std::max(0.0f, config.SkinWidth);

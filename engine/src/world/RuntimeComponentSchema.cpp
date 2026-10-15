@@ -15,6 +15,7 @@
 #include <participant/ParticipantComponentRegistration.h>
 #include <physics/PhysicsRegistration.h>
 #include <render/RenderComponentRegistration.h>
+#include <spatial/sight/SightComponentRegistration.h>
 #include <time/TimeComponentRegistration.h>
 #include <world/ComponentRegistrar.h>
 #include <world/ComponentSet.h>
@@ -44,7 +45,8 @@ namespace
         ParticipantComponents,
         NetComponents,
         LogicComponents,
-        AnimationComponents>;
+        AnimationComponents,
+        SightComponents>;
 
     static_assert(EngineComponentSets::Owned,
                   "a component is named by more than one feature's vocabulary");
@@ -95,6 +97,7 @@ void RegisterEngineComponents(ComponentRegistrar& registrar)
     RegisterNetComponents(registrar);
     RegisterLogicComponents(registrar);
     RegisterAnimationComponents(registrar);
+    RegisterSightComponents(registrar);
 }
 
 void RegisterEngineRuntimeComponents(WorldComponentSchema& schema)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "EditorLinePipeline.h"
+#include <graphics/vulkan/ColoredVertexPipelines.h>
 
 #include "render/PreviewBuffer.h"
 #include "viewport/EditorViewport.h"
@@ -13,12 +13,12 @@
 class BrushPreviewRenderer
 {
 public:
-    BrushPreviewRenderer(PreviewBuffer& preview, EditorLinePipeline& lines);
+    BrushPreviewRenderer(PreviewBuffer& preview, ColoredVertexPipeline& lines);
 
     void DrawViewport(const FrameContext& frame, const EditorViewport& viewport,
         const CameraRenderData& camera);
 
 private:
     PreviewBuffer& Preview;
-    EditorLinePipeline& Lines;
+    ColoredVertexPipeline& Lines;
 };

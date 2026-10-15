@@ -57,7 +57,7 @@ struct Crowd
         Entities.RegisterComponent<InputActionSourceRef>();
         InstallAuthoredVocabulary(Entities);
         (void)Entities.GetResource<GameplayTagRegistry>().RegisterTag("cue.muzzle");
-        EXPECT_TRUE(DeclareEngineVocabulary(Entities));
+        EXPECT_TRUE(InstallEngineVocabulary(Entities));
         Actions.Rebuild(std::vector<InputActionDefinition>{ { .Name = "Input.PrimaryFire" } });
         Entities.SetResource(InputActionVocabulary{ &Actions, 1 });
         Entities.AddResource<InputActionState>().Configure(1);
