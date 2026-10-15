@@ -59,17 +59,35 @@ namespace
         return keys;
     }
 
+    std::unordered_set<std::string_view>& MaintainedComponentKeys()
+    {
+        static std::unordered_set<std::string_view> keys;
+        return keys;
+    }
+
     template <typename Component>
     void RegisterEditorOnlyComponent(ComponentSerializerRegistry& serializers)
     {
         RegisterComponent<Component>(serializers);
         EditorOnlyComponentKeys().insert(TypeSchema<Component>::Name);
     }
+
+    template <typename Component>
+    void RegisterMaintainedComponent(ComponentSerializerRegistry& serializers)
+    {
+        RegisterEditorOnlyComponent<Component>(serializers);
+        MaintainedComponentKeys().insert(TypeSchema<Component>::Name);
+    }
 }
 
 bool IsEditorOnlyComponent(std::string_view jsonKey)
 {
     return EditorOnlyComponentKeys().contains(jsonKey);
+}
+
+bool IsMaintainedComponent(std::string_view jsonKey)
+{
+    return MaintainedComponentKeys().contains(jsonKey);
 }
 
 void RegisterDocumentSerializers()
@@ -90,7 +108,7 @@ void RegisterDocumentSerializers()
     RegisterEditorOnlyComponent<BrushVolume>(serializers);
     RegisterEditorOnlyComponent<Space>(serializers);
     RegisterEditorOnlyComponent<Shell>(serializers);
-    RegisterEditorOnlyComponent<GeneratedWall>(serializers);
+    RegisterMaintainedComponent<GeneratedWall>(serializers);
     RegisterEditorOnlyComponent<Opening>(serializers);
     RegisterEditorOnlyComponent<Note>(serializers);
 }

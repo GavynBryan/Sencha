@@ -3,6 +3,7 @@
 #include "LevelSubjects.h"
 #include "LevelTarget.h"
 
+#include "document/DocumentSerialization.h"
 #include "document/EditorDocument.h"
 #include "document/EntityChangeSet.h"
 #include "document/EntityNameComponent.h"
@@ -95,6 +96,10 @@ namespace
                 const std::string& key = arguments.Find("component")->AsString();
                 const std::string& field = arguments.Find("field")->AsString();
 
+                if (IsMaintainedComponent(key))
+                    return EditorOperationOutcome::Refused(
+                        "component.maintained", "the editor keeps '" + key + "' itself; shell.rebuild and shell.detach "
+                                                "are the ways to change a space's walls");
                 EntitySnapshot snapshot = document.CaptureEntity(entity);
                 JsonValue* component = snapshot.Components.Find(key);
                 if (component == nullptr)

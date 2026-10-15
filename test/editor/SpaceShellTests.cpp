@@ -320,6 +320,25 @@ TEST_F(SpaceShellTest, AnEditorCommandOnTheSpaceRebuildsItsWallsInTheSameUndoSte
     EXPECT_NEAR(northWallZ(), before - 2.0f, 1e-3f);
 }
 
+TEST_F(SpaceShellTest, TwoWallsInOneSlotAreRebuiltAsOne)
+{
+    const EntityId room = ShelledSpace({ 0, 1.5f, 0 }, { 4, 1.5f, 3 });
+    // As a file edited by hand might hold them.
+    World& components = Scene().GetRegistry().Components;
+    components.TryGet<GeneratedWall>(Named("Hall south wall"))->Slot =
+        components.TryGet<GeneratedWall>(Named("Hall north wall"))->Slot;
+    EXPECT_TRUE(SpaceWallsStale(Scene(), room));
+
+    Scene().GetRegistry().Components.TryGet<Shell>(room)->Thickness = 0.5f;
+    Rebuild();
+    std::set<std::uint32_t> slots;
+    for (const EntityId wall : SpaceWalls(Scene(), room))
+        EXPECT_TRUE(slots.insert(components.TryGet<GeneratedWall>(wall)->Slot).second) << "no slot holds two walls";
+    EXPECT_EQ(slots.size(), 12u) << "and none is left over";
+    EXPECT_EQ(CollectCookBrushes(Scene(), Default).size(), 12u);
+    EXPECT_FALSE(SpaceWallsStale(Scene(), room));
+}
+
 TEST_F(SpaceShellTest, SavedWallsLoadAsBuilt)
 {
     const EntityId room = ShelledSpace({ 0, 1.5f, 0 }, { 4, 1.5f, 3 });

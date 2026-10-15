@@ -283,7 +283,9 @@ that opens a project in a new process).
   built around the volume), `GeneratedWall` (a wall brush its parent space
   built: its slot, its shape's digest as built, and whether it was kept
   after a hand edit) and `Opening` (a cut through walls). All are
-  declared editor-only. `NoteComponent.h` holds `Note` (text, author, open
+  declared editor-only, and `GeneratedWall` maintained too
+  (`IsMaintainedComponent`): `component.set` and the inspector show it but
+  never change, add or remove it. `NoteComponent.h` holds `Note` (text, author, open
   or resolved), a remark parented to what it is about, editor-only too.
   `EditorScene::RoleOf` says whether a brush entity is a volume;
   `VolumeEvaluations` evaluates volumes with every mesh a volume. Every walk

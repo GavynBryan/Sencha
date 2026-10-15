@@ -95,7 +95,8 @@ surface and proposes unshelled spaces for them. It is a heuristic: look at
    geometry; `entity.duplicate`, `entity.delete`, `entity.reparent`,
    `entity.rename`; `assets.list query='t:material stone'` then
    `material.apply`; `assets.list query='t:scene'` then `instance.place`;
-   `component.set` for a field `entity.describe` shows.
+   `component.set` for a field `entity.describe` shows (not
+   `generated_wall`, which the space keeps itself).
 4. Check: `level.diagnostics` must come back empty or be explained;
    `nav.reachable from=[...] to=[...]` between rooms, with points just above a
    floor; `space.graph` for every room at once (pass `held=[...]` and

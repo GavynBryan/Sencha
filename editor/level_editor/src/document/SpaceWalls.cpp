@@ -12,6 +12,7 @@
 #include <world/registry/Registry.h>
 
 #include <algorithm>
+#include <set>
 #include <cmath>
 #include <map>
 #include <string>
@@ -338,12 +339,12 @@ SpaceWallDrift CompareSpaceWalls(const EditorScene& scene, EntityId space, const
     const std::vector<PlannedWall> planned = PlanWalls(scene, space, shell);
     const World& components = scene.GetRegistry().Components;
     SpaceWallDrift drift;
-    std::size_t matched = 0;
+    std::set<std::uint32_t> claimed;
     for (const EntityId wall : SpaceWalls(scene, space))
     {
         const GeneratedWall& built = *components.TryGet<GeneratedWall>(wall);
-        const PlannedWall* plan = PlannedAt(planned, built.Slot);
-        matched += plan != nullptr ? 1 : 0;
+        // A second wall in one slot is no wall of the plan's.
+        const PlannedWall* plan = claimed.insert(built.Slot).second ? PlannedAt(planned, built.Slot) : nullptr;
         // A wall reshaped by hand is kept from the next rebuild on.
         if (built.State == WallState::Kept || WallDigest(scene, wall) != built.Built)
         {
@@ -353,7 +354,9 @@ SpaceWallDrift CompareSpaceWalls(const EditorScene& scene, EntityId space, const
         else if (plan == nullptr || plan->Digest != built.Built)
             drift.Stale = true;
     }
-    drift.Stale = drift.Stale || matched != planned.size();
+    drift.Stale = drift.Stale || std::ranges::any_of(planned, [&](const PlannedWall& plan) {
+        return !claimed.contains(plan.Slot);
+    });
     return drift;
 }
 
@@ -370,9 +373,12 @@ void RebuildSpaceWalls(EditorDocument& document, EntityChangeRecorder& recorder,
     if (!shell)
         return;
     World& components = scene.GetRegistry().Components;
+    // A second wall in one slot (a file edited by hand) is left over like a slot that went.
     std::map<std::uint32_t, EntityId> unclaimed;
+    std::vector<EntityId> leftover;
     for (const EntityId wall : SpaceWalls(scene, space))
-        unclaimed[components.TryGet<GeneratedWall>(wall)->Slot] = wall;
+        if (!unclaimed.emplace(components.TryGet<GeneratedWall>(wall)->Slot, wall).second)
+            leftover.push_back(wall);
 
     bool wrote = false;
     for (PlannedWall& plan : PlanWalls(scene, space, *shell))
@@ -412,6 +418,8 @@ void RebuildSpaceWalls(EditorDocument& document, EntityChangeRecorder& recorder,
     }
 
     for (const auto& [slot, wall] : unclaimed)
+        leftover.push_back(wall);
+    for (const EntityId wall : leftover)
     {
         if (!reclaim && components.TryGet<GeneratedWall>(wall)->State == WallState::Kept)
             continue;

@@ -247,6 +247,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
         if (id == InvalidComponentId)
             continue;
         const std::string key(serializer->JsonKey());
+        const bool maintained = IsMaintainedComponent(key);
         std::vector<EntityId> holders;
         for (const EntityId entity : entities)
             if (world.HasComponent(entity, id))
@@ -259,7 +260,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
             // A component the document owns (one that may not be removed) is
             // not the editor's to add either: its managed state would never be
             // minted.
-            if (serializer->IsRemovable())
+            if (serializer->IsRemovable() && !maintained)
             {
                 addable.push_back(HumanizeSchemaName(key));
                 addableKeys.push_back(key);
@@ -277,7 +278,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
                                                                                 HumanizeSchemaName(key),
                                                                                 holders.size(), entities.size()),
                                             .Folded = true } };
-        if (serializer->IsRemovable())
+        if (serializer->IsRemovable() && !maintained)
         {
             group.Descriptor.Verbs.push_back({ .Id = "remove", .Label = "Remove Component", .Removes = true });
             if (lacking > 0)
@@ -330,7 +331,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
                                 .Tooltip = std::string(field.Tooltip),
                                 .Asset = field.Asset,
                                 .Step = field.DisplayDegrees ? 1.0 : 0.0,
-                                .ReadOnly = field.ReadOnly || !IsRuntimeFieldEditable(field) },
+                                .ReadOnly = maintained || field.ReadOnly || !IsRuntimeFieldEditable(field) },
             };
             for (const EnumOption& option : field.Enum)
                 node.Descriptor.Choices.emplace_back(option.Name);
@@ -369,7 +370,7 @@ std::vector<PropertyNode> ComponentPropertySource::Nodes() const
 
             // Asset handles are chosen, never typed, and a list of them is one
             // property per slot so each slot can be chosen on its own.
-            node.Descriptor.ReadOnly = field.ReadOnly;
+            node.Descriptor.ReadOnly = maintained || field.ReadOnly;
             if (assets == nullptr)
             {
                 group.Children.push_back(std::move(node));
@@ -512,6 +513,9 @@ std::optional<ComponentPropertySource::Field> ComponentPropertySource::Resolve(s
     if (slash == std::string_view::npos)
         return std::nullopt;
     const std::string_view component = key.substr(0, slash);
+    // What the editor keeps is shown, never edited.
+    if (IsMaintainedComponent(component))
+        return std::nullopt;
     std::string_view leaf = key.substr(slash + 1);
     std::size_t slot = 0;
     if (const std::size_t hash = leaf.find('#'); hash != std::string_view::npos)
@@ -799,7 +803,7 @@ PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<En
     {
         for (const auto& serializer : EditorSceneSerializers().Entries())
         {
-            if (!serializer->IsRemovable() || serializer->JsonKey() != choice)
+            if (!serializer->IsRemovable() || IsMaintainedComponent(serializer->JsonKey()) || serializer->JsonKey() != choice)
                 continue;
             const ComponentId id = world.GetComponentIdByType(serializer->TypeId());
             if (id == InvalidComponentId)
@@ -819,6 +823,8 @@ PropertyEditResult ComponentPropertySource::ActOnComponents(const std::vector<En
             holders.push_back(entity);
     if (holders.empty())
         return PropertyEditResult::Gone;
+    if (IsMaintainedComponent(serializer->JsonKey()))
+        return PropertyEditResult::Refused;
 
     if (slash == std::string_view::npos && (verb == "remove" || verb == "spread"))
     {

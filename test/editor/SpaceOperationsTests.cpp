@@ -127,6 +127,17 @@ TEST_F(SpaceOperationsTest, ASpaceKeepsItsNameToItselfWhicheverWayANameArrives)
     EXPECT_EQ(Find("Atrium"), atrium);
 }
 
+TEST_F(SpaceOperationsTest, AWallsBookkeepingIsTheEditorsNotAnOperations)
+{
+    Ok("space.create", R"({"name": "Hall", "min": [0, 0, 0], "max": [8, 3, 6]})");
+    for (const std::string_view field : { "slot", "built", "state" })
+        EXPECT_EQ(Code(Call("component.set", R"({"subject": "@Hall north wall", "component": "generated_wall", "field": ")"
+                                                 + std::string(field) + R"(", "value": "0"})")),
+                  "component.maintained")
+            << field;
+    EXPECT_EQ(Walls(), 12u);
+}
+
 TEST_F(SpaceOperationsTest, ASpaceSharingItsNameIsDiagnosed)
 {
     const std::string hall =

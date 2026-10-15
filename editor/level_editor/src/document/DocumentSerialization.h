@@ -32,6 +32,11 @@ void RegisterDocumentSerializers();
 // editor-only components RegisterDocumentSerializers declares as such.
 [[nodiscard]] bool IsEditorOnlyComponent(std::string_view jsonKey);
 
+// Whether a component key names state the editor itself keeps, such as a
+// generated wall's bookkeeping: authoring surfaces show it but never change,
+// add or remove it, and the operations that own it are the way to change it.
+[[nodiscard]] bool IsMaintainedComponent(std::string_view jsonKey);
+
 // The loaded game module's gameplay vocabulary -- its tags, attributes,
 // abilities, and locomotion modes -- as something every authoring document can
 // replay into its own World. Content names them as strings, so a document
