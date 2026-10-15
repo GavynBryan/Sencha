@@ -44,6 +44,9 @@ namespace SceneComponentSerialization
         if constexpr (IsHandleType<FieldType>)
         {
             AssertTagged(field);
+            // An unset optional reference is written as absent, which is how LoadFields reads it.
+            if (field.IsOptional && (component.*field.Ptr).IsNull())
+                return archive.Ok();
             return SaveAssetField(archive, field.Name, (component.*field.Ptr).ToToken(),
                                   field.Asset, field.Arity, context);
         }
