@@ -23,11 +23,12 @@ namespace candidate_operation
         {
             RingState state;
             state.Center = ReadSlot(arguments, "center", "querier", context, subject, errors).value_or(0);
-            state.Rings = static_cast<std::uint32_t>(arguments.NumberOr("rings", 1));
-            state.PointsPerRing = static_cast<std::uint32_t>(arguments.NumberOr("points_per_ring", 8));
-            state.OuterRadius = FloatOr(arguments, "outer_radius", 0.0f);
-            state.InnerRadius = FloatOr(arguments, "inner_radius", state.OuterRadius);
-            state.AngleOffset = FloatOr(arguments, "angle_offset_degrees", 0.0f) * std::numbers::pi_v<float> / 180.0f;
+            state.Rings = StepCountOr(arguments, "rings", 1, subject, errors);
+            state.PointsPerRing = StepCountOr(arguments, "points_per_ring", 8, subject, errors);
+            state.OuterRadius = FiniteFloatOr(arguments, "outer_radius", 0.0f, subject, errors);
+            state.InnerRadius = FiniteFloatOr(arguments, "inner_radius", state.OuterRadius, subject, errors);
+            state.AngleOffset = FiniteFloatOr(arguments, "angle_offset_degrees", 0.0f, subject, errors)
+                * std::numbers::pi_v<float> / 180.0f;
             state.Projected = ReadProjection(arguments);
             if (state.InnerRadius > state.OuterRadius)
                 errors.push_back(std::string(subject) + ": inner_radius exceeds outer_radius");
@@ -47,6 +48,8 @@ namespace candidate_operation
                 const float radius = ring.InnerRadius + (ring.OuterRadius - ring.InnerRadius) * t;
                 for (std::uint32_t point = 0; point < ring.PointsPerRing; ++point)
                 {
+                    if (!run.ChargeGenerationAttempt())
+                        return;
                     const float angle = ring.AngleOffset
                         + 2.0f * std::numbers::pi_v<float> * static_cast<float>(point)
                             / static_cast<float>(ring.PointsPerRing);

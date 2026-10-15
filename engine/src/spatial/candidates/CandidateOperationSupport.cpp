@@ -3,7 +3,10 @@
 #include <gameplay_tags/GameplayTagRegistry.h>
 #include <navigation/NavigationQuery.h>
 
+#include <algorithm>
+#include <cmath>
 #include <format>
+#include <limits>
 #include <utility>
 
 namespace candidate_operation
@@ -86,6 +89,46 @@ namespace candidate_operation
     float FloatOr(const JsonValue& arguments, std::string_view key, float fallback)
     {
         return static_cast<float>(arguments.NumberOr(key, fallback));
+    }
+
+    float FiniteFloatOr(const JsonValue& arguments, std::string_view key, float fallback,
+                        std::string_view subject, std::vector<std::string>& errors)
+    {
+        const double value = arguments.NumberOr(key, fallback);
+        if (std::isfinite(value) && std::abs(value) <= std::numeric_limits<float>::max())
+            return static_cast<float>(value);
+        errors.push_back(std::format("{}: {} is a finite number", subject, key));
+        return fallback;
+    }
+
+    std::uint32_t StepCountOr(const JsonValue& arguments, std::string_view key, std::uint32_t fallback,
+                              std::string_view subject, std::vector<std::string>& errors)
+    {
+        const double value = arguments.NumberOr(key, fallback);
+        if (value >= 1.0 && value <= kMaxGeneratorSteps && value == std::floor(value))
+            return static_cast<std::uint32_t>(value);
+        errors.push_back(std::format("{}: {} is a whole number from 1 to {}", subject, key, kMaxGeneratorSteps));
+        return fallback;
+    }
+
+    GridExtent ReadGridExtent(const JsonValue& arguments, std::string_view subject, std::vector<std::string>& errors)
+    {
+        GridExtent grid;
+        grid.Radius = FiniteFloatOr(arguments, "radius", 0.0f, subject, errors);
+        grid.Spacing = FiniteFloatOr(arguments, "spacing", 1.0f, subject, errors);
+        if (!(grid.Spacing > 0.0f))
+        {
+            errors.push_back(std::string(subject) + ": spacing is positive");
+            return GridExtent{};
+        }
+        const double steps = std::floor(static_cast<double>(grid.Radius) / grid.Spacing);
+        if (steps > kMaxGeneratorSteps)
+        {
+            errors.push_back(std::format("{}: radius / spacing is at most {} steps", subject, kMaxGeneratorSteps));
+            return GridExtent{};
+        }
+        grid.Steps = static_cast<int>(std::max(steps, 0.0));
+        return grid;
     }
 
     std::optional<std::uint8_t> ReadSlot(const JsonValue& arguments,

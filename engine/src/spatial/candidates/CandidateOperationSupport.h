@@ -6,6 +6,8 @@
 #include <core/metadata/DataSchema.h>
 #include <gameplay_tags/GameplayTagQuery.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <initializer_list>
 #include <memory>
@@ -91,6 +93,62 @@ namespace candidate_operation
     // Appends the point, projected onto the querier's navigation when asked and
     // available. False once the set is full.
     bool AppendSample(CandidateRun& run, const Vec3d& point, const Projection& projection);
+
+    // -- Sampled generators ---------------------------------------------------
+    // Steps from a grid's center along an axis, or rings and points per ring:
+    // generous for any authored layout, and small enough to index with an int.
+    inline constexpr double kMaxGeneratorSteps = 65536.0;
+
+    // The number at `key`, or an error when it is not a finite float.
+    [[nodiscard]] float FiniteFloatOr(const JsonValue& arguments, std::string_view key, float fallback,
+                                      std::string_view subject, std::vector<std::string>& errors);
+    // A whole number in [1, kMaxGeneratorSteps], or an error.
+    [[nodiscard]] std::uint32_t StepCountOr(const JsonValue& arguments, std::string_view key, std::uint32_t fallback,
+                                            std::string_view subject, std::vector<std::string>& errors);
+
+    struct GridExtent
+    {
+        float Radius = 0.0f;
+        float Spacing = 1.0f;
+        int Steps = 0;
+    };
+    // "radius" and "spacing": finite, spacing positive, and at most
+    // kMaxGeneratorSteps spacings from the center to the rim.
+    [[nodiscard]] GridExtent ReadGridExtent(const JsonValue& arguments, std::string_view subject,
+                                            std::vector<std::string>& errors);
+
+    // Every grid offset within the radius, row-major from -x -z, each charged
+    // as a generation attempt. Stops when attempts run out or `visit` says so.
+    template<typename Visit>
+    void ForEachGridOffset(CandidateRun& run, const GridExtent& grid, Visit&& visit)
+    {
+        const float radiusSquared = grid.Radius * grid.Radius;
+        const auto inside = [&](int x, float dz) {
+            const float dx = static_cast<float>(x) * grid.Spacing;
+            return dx * dx + dz * dz <= radiusSquared;
+        };
+        for (int z = -grid.Steps; z <= grid.Steps; ++z)
+        {
+            const float dz = static_cast<float>(z) * grid.Spacing;
+            if (!inside(0, dz))
+                continue;
+            // The row's half-chord in closed form, nudged to agree exactly with
+            // `inside`, so the walk costs what it visits.
+            const float chord = std::sqrt(std::max(radiusSquared - dz * dz, 0.0f)) / grid.Spacing;
+            int reach = std::min(static_cast<int>(chord), grid.Steps);
+            while (reach > 0 && !inside(reach, dz))
+                --reach;
+            while (reach < grid.Steps && inside(reach + 1, dz))
+                ++reach;
+            for (int x = -reach; x <= reach; ++x)
+            {
+                if (!run.ChargeGenerationAttempt())
+                    return;
+                if (!visit(Vec3d(static_cast<float>(x) * grid.Spacing, 0.0f, dz)))
+                    return;
+            }
+        }
+    }
 
     // -- Navigation measures --------------------------------------------------
     enum class OutsideZone : std::uint8_t

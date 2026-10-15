@@ -52,8 +52,8 @@ private:
     std::vector<DebugLineList> Lists;
 };
 
-// A cone's rim and four spokes from `apex` along `axis`, `length` long.
-// A half-angle beyond a right angle draws the rim behind the apex.
+// What an eye at `apex` looking along `axis` covers out to `length`: spokes to
+// the rim and arcs over the range's sphere. A half-angle of pi draws a sphere.
 void AppendCone(DebugLineList& lines, const Vec3d& apex, const Vec3d& axis, float halfAngle,
                 float length, const Vec4& color);
 

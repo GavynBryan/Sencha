@@ -95,6 +95,8 @@ public:
     // False, and BudgetExhausted set, once the run's allowance is spent.
     [[nodiscard]] bool ChargeExactNavSearch();
     [[nodiscard]] bool ChargeRaycast();
+    // False, truncating generation, once the evaluation's attempts are spent.
+    [[nodiscard]] bool ChargeGenerationAttempt();
 
     void MarkEstimated() { Flags.UsedEstimates = true; }
     void MarkDefinitionStale() { DefinitionStale = true; }
@@ -144,6 +146,7 @@ private:
     bool ReachableAvailable = false;
     std::uint32_t ExactNavSearches = 0;
     std::uint32_t Raycasts = 0;
+    std::uint32_t GenerationAttempts = 0;
     std::uint32_t DroppedAtGeneration = 0;
     std::uint32_t CurrentCriterion = 0;
     std::uint8_t CurrentGenerator = 0;

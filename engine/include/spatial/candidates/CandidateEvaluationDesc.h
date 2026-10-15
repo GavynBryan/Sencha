@@ -80,6 +80,8 @@ struct CandidateBudgets
     std::uint32_t ExactNavSearches = 16;
     std::uint32_t Raycasts = 128;
     std::uint32_t ReachableRegions = 512;
+    // Points generators consider, emitted or not: a failed projection counts.
+    std::uint32_t GenerationAttempts = 4096;
 };
 
 struct CandidateEvaluationDesc

@@ -7,6 +7,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
+#include <numbers>
+
 TEST(DebugLines, AChannelIsFoundByNameAndKeepsItsLinesUntilCleared)
 {
     DebugLineChannels channels;
@@ -49,11 +53,71 @@ TEST(DebugLines, AWorldWithNoChannelsExtractsNothing)
     EXPECT_TRUE(frame.OnTop.empty());
 }
 
-TEST(DebugLines, AConeDrawsItsRimAndFourSpokes)
+namespace
+{
+    struct Extent
+    {
+        Vec3d Min{ 1e9f, 1e9f, 1e9f };
+        Vec3d Max{ -1e9f, -1e9f, -1e9f };
+    };
+
+    Extent Bounds(const DebugLineList& lines)
+    {
+        Extent extent;
+        for (const DebugLine& line : lines.Tested())
+        {
+            for (const Vec3d& point : { line.From, line.To })
+            {
+                extent.Min = Vec3d(std::min(extent.Min.X, point.X), std::min(extent.Min.Y, point.Y),
+                                   std::min(extent.Min.Z, point.Z));
+                extent.Max = Vec3d(std::max(extent.Max.X, point.X), std::max(extent.Max.Y, point.Y),
+                                   std::max(extent.Max.Z, point.Z));
+            }
+        }
+        return extent;
+    }
+}
+
+TEST(DebugLines, ANarrowConeStaysInsideItsAngleAndRange)
 {
     DebugLineList lines;
-    AppendCone(lines, Vec3d::Zero(), Vec3d(0, 0, -1), 0.5f, 10.0f, Vec4(1, 1, 1, 1));
-    EXPECT_EQ(lines.Tested().size(), 24u + 4u);
+    const float halfAngle = 0.5f;
+    AppendCone(lines, Vec3d::Zero(), Vec3d(0, 0, -1), halfAngle, 10.0f, Vec4(1, 1, 1, 1));
+    ASSERT_FALSE(lines.Tested().empty());
+    float widest = 0.0f;
     for (const DebugLine& line : lines.Tested())
-        EXPECT_LE(line.To.Z, 0.0f);
+    {
+        for (const Vec3d& point : { line.From, line.To })
+        {
+            const float distance = point.Magnitude();
+            EXPECT_LE(distance, 10.0f + 1e-3f);
+            if (distance > 1e-3f)
+            {
+                const float angle = std::acos(std::clamp(-point.Z / distance, -1.0f, 1.0f));
+                EXPECT_LE(angle, halfAngle + 1e-3f);
+                widest = std::max(widest, angle);
+            }
+        }
+    }
+    EXPECT_NEAR(widest, halfAngle, 1e-3f);
+}
+
+TEST(DebugLines, AnAllRoundSensorDrawsASphereNotALine)
+{
+    DebugLineList lines;
+    AppendCone(lines, Vec3d::Zero(), Vec3d(0, 0, -1), std::numbers::pi_v<float>, 10.0f, Vec4(1, 1, 1, 1));
+    const Extent extent = Bounds(lines);
+    for (const float low : { extent.Min.X, extent.Min.Y, extent.Min.Z })
+        EXPECT_NEAR(low, -10.0f, 0.2f);
+    for (const float high : { extent.Max.X, extent.Max.Y, extent.Max.Z })
+        EXPECT_NEAR(high, 10.0f, 0.2f);
+}
+
+TEST(DebugLines, AWideConeReachesBehindTheApex)
+{
+    DebugLineList lines;
+    AppendCone(lines, Vec3d::Zero(), Vec3d(0, 0, -1), 2.5f, 10.0f, Vec4(1, 1, 1, 1));
+    const Extent extent = Bounds(lines);
+    EXPECT_GT(extent.Max.Z, 7.0f);
+    EXPECT_NEAR(extent.Max.X, 10.0f, 0.2f);
 }

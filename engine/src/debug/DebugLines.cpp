@@ -47,19 +47,42 @@ void AppendCone(DebugLineList& lines, const Vec3d& apex, const Vec3d& axis, floa
     const Vec3d helper = std::abs(forward.Y) < 0.99f ? Vec3d::Up() : Vec3d(1.0f, 0.0f, 0.0f);
     const Vec3d right = forward.Cross(helper).Normalized();
     const Vec3d up = right.Cross(forward);
+    const float spread = std::clamp(halfAngle, 0.0f, std::numbers::pi_v<float>);
 
-    const Vec3d centre = apex + forward * (length * std::cos(halfAngle));
-    const float radius = length * std::sin(halfAngle);
-    constexpr int kRimSegments = 24;
-    Vec3d previous = centre + right * radius;
-    for (int segment = 1; segment <= kRimSegments; ++segment)
+    // A point on the range's sphere, `polar` from straight ahead, `azimuth` around.
+    const auto onSphere = [&](float polar, float azimuth) {
+        const Vec3d around = right * std::cos(azimuth) + up * std::sin(azimuth);
+        return apex + (forward * std::cos(polar) + around * std::sin(polar)) * length;
+    };
+    const auto circle = [&](float polar) {
+        constexpr int kSegments = 24;
+        for (int segment = 0; segment < kSegments; ++segment)
+        {
+            const float step = 2.0f * std::numbers::pi_v<float> / kSegments;
+            lines.AddTested(onSphere(polar, step * static_cast<float>(segment)),
+                            onSphere(polar, step * static_cast<float>(segment + 1)), color);
+        }
+    };
+
+    // The rim, unless it has closed to a point behind the apex.
+    if (std::sin(spread) > 1e-3f)
+        circle(spread);
+    // Past a right angle the widest part of what is seen is no longer the rim.
+    if (spread > std::numbers::pi_v<float> / 2.0f)
+        circle(std::numbers::pi_v<float> / 2.0f);
+
+    constexpr float kArcStep = std::numbers::pi_v<float> / 12.0f;
+    const int arcSegments = std::max(1, static_cast<int>(std::ceil(spread / kArcStep)));
+    for (int meridian = 0; meridian < 4; ++meridian)
     {
-        const float angle = 2.0f * std::numbers::pi_v<float> * static_cast<float>(segment) / kRimSegments;
-        const Vec3d point = centre + (right * std::cos(angle) + up * std::sin(angle)) * radius;
-        lines.AddTested(previous, point, color);
-        if (segment % (kRimSegments / 4) == 0)
-            lines.AddTested(apex, point, color);
-        previous = point;
+        const float azimuth = std::numbers::pi_v<float> / 2.0f * static_cast<float>(meridian);
+        lines.AddTested(apex, onSphere(spread, azimuth), color);
+        for (int segment = 0; segment < arcSegments; ++segment)
+        {
+            const float from = spread * static_cast<float>(segment) / static_cast<float>(arcSegments);
+            const float to = spread * static_cast<float>(segment + 1) / static_cast<float>(arcSegments);
+            lines.AddTested(onSphere(from, azimuth), onSphere(to, azimuth), color);
+        }
     }
 }
 

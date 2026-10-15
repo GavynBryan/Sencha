@@ -1,7 +1,5 @@
 #include "../CandidateOperationSupport.h"
 
-#include <cmath>
-
 namespace candidate_operation
 {
     namespace
@@ -9,8 +7,7 @@ namespace candidate_operation
         struct GridState
         {
             std::uint8_t Center = 0;
-            float Spacing = 1.0f;
-            float Radius = 0.0f;
+            GridExtent Extent;
             Projection Projected;
         };
 
@@ -19,11 +16,8 @@ namespace candidate_operation
         {
             GridState state;
             state.Center = ReadSlot(arguments, "center", "querier", context, subject, errors).value_or(0);
-            state.Spacing = FloatOr(arguments, "spacing", 1.0f);
-            state.Radius = FloatOr(arguments, "radius", 0.0f);
+            state.Extent = ReadGridExtent(arguments, subject, errors);
             state.Projected = ReadProjection(arguments);
-            if (!(state.Spacing > 0.0f))
-                errors.push_back(std::string(subject) + ": spacing is positive");
             return Prepared(state);
         }
 
@@ -34,20 +28,9 @@ namespace candidate_operation
             if (run.SlotSize(grid.Center) == 0)
                 return;
             const Vec3d center = run.SlotPoint(grid.Center, 0).Position;
-            const int steps = static_cast<int>(std::floor(grid.Radius / grid.Spacing));
-            const float radiusSquared = grid.Radius * grid.Radius;
-            for (int z = -steps; z <= steps; ++z)
-            {
-                for (int x = -steps; x <= steps; ++x)
-                {
-                    const float dx = static_cast<float>(x) * grid.Spacing;
-                    const float dz = static_cast<float>(z) * grid.Spacing;
-                    if (dx * dx + dz * dz > radiusSquared)
-                        continue;
-                    if (!AppendSample(run, center + Vec3d(dx, 0.0f, dz), grid.Projected))
-                        return;
-                }
-            }
+            ForEachGridOffset(run, grid.Extent, [&](const Vec3d& offset) {
+                return AppendSample(run, center + offset, grid.Projected);
+            });
         }
     }
 

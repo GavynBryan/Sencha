@@ -17,10 +17,9 @@ namespace candidate_operation
         struct ReachableState
         {
             std::uint8_t Center = 0;
-            float Radius = 0.0f;
+            GridExtent Extent;
             float MaxCost = 0.0f;
             Sampling Mode = Sampling::Grid;
-            float Spacing = 1.0f;
             float ProjectHeight = 2.0f;
         };
 
@@ -29,13 +28,10 @@ namespace candidate_operation
         {
             ReachableState state;
             state.Center = ReadSlot(arguments, "center", "querier", context, subject, errors).value_or(0);
-            state.Radius = FloatOr(arguments, "radius", 0.0f);
+            state.Extent = ReadGridExtent(arguments, subject, errors);
             state.MaxCost = FloatOr(arguments, "max_cost", 0.0f);
             state.Mode = StringOr(arguments, "mode", "grid") == "per_region" ? Sampling::PerRegion : Sampling::Grid;
-            state.Spacing = FloatOr(arguments, "spacing", 1.0f);
-            state.ProjectHeight = FloatOr(arguments, "project_height", 2.0f);
-            if (!(state.Spacing > 0.0f))
-                errors.push_back(std::string(subject) + ": spacing is positive");
+            state.ProjectHeight = FiniteFloatOr(arguments, "project_height", 2.0f, subject, errors);
             return Prepared(state);
         }
 
@@ -43,27 +39,16 @@ namespace candidate_operation
         {
             const ZoneNavigation& navigation = *run.Navigation();
             const Vec3d extents(0.5f, reachable.ProjectHeight, 0.5f);
-            const int steps = static_cast<int>(std::floor(reachable.Radius / reachable.Spacing));
-            const float radiusSquared = reachable.Radius * reachable.Radius;
-            for (int z = -steps; z <= steps; ++z)
-            {
-                for (int x = -steps; x <= steps; ++x)
+            ForEachGridOffset(run, reachable.Extent, [&](const Vec3d& offset) {
+                const NavProjectResult projected =
+                    NavProjectPoint(navigation, run.NavContext(), run.NavRequest(), center + offset, extents);
+                if (projected.Status != NavStatus::Success || run.FindReachable(projected.Location.Ref) == nullptr)
                 {
-                    const float dx = static_cast<float>(x) * reachable.Spacing;
-                    const float dz = static_cast<float>(z) * reachable.Spacing;
-                    if (dx * dx + dz * dz > radiusSquared)
-                        continue;
-                    const NavProjectResult projected = NavProjectPoint(
-                        navigation, run.NavContext(), run.NavRequest(), center + Vec3d(dx, 0.0f, dz), extents);
-                    if (projected.Status != NavStatus::Success || run.FindReachable(projected.Location.Ref) == nullptr)
-                    {
-                        run.CountDroppedAtGeneration();
-                        continue;
-                    }
-                    if (!run.Append(projected.Location.Position, {}, projected.Location))
-                        return;
+                    run.CountDroppedAtGeneration();
+                    return !run.Full();
                 }
-            }
+                return run.Append(projected.Location.Position, {}, projected.Location);
+            });
         }
 
         // One point per region, cheapest region first: the region's closest point to the center.
@@ -73,9 +58,11 @@ namespace candidate_operation
             const ZoneNavigation& navigation = *run.Navigation();
             for (const NavReachableRegion& region : regions)
             {
+                if (!run.ChargeGenerationAttempt())
+                    return;
                 const NavProjectResult closest = NavClosestPointInRegion(navigation, run.NavContext(), region.Region, center);
                 if (closest.Status != NavStatus::Success
-                    || (closest.Location.Position - center).Magnitude() > reachable.Radius)
+                    || (closest.Location.Position - center).Magnitude() > reachable.Extent.Radius)
                     continue;
                 if (!run.Append(closest.Location.Position, {}, closest.Location))
                     return;
@@ -90,7 +77,7 @@ namespace candidate_operation
             const Vec3d center = run.SlotPoint(reachable.Center, 0).Position;
             // Navigation filters regions by distance from the search's start;
             // widen so every region within the radius of the center survives.
-            const float searchRadius = (center - run.QuerierPosition()).Magnitude() + reachable.Radius;
+            const float searchRadius = (center - run.QuerierPosition()).Magnitude() + reachable.Extent.Radius;
             const auto regions = run.ReachableRegions(searchRadius, reachable.MaxCost);
             if (!regions)
                 return;

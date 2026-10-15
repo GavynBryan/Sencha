@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <utility>
 
 namespace
@@ -96,6 +97,11 @@ namespace
         if (generators == nullptr || generators->AsArray().empty())
         {
             errors.push_back("an evaluation needs at least one generator");
+            return false;
+        }
+        if (generators->AsArray().size() > kMaxCandidateGenerators)
+        {
+            errors.push_back(std::format("an evaluation declares at most {} generators", kMaxCandidateGenerators));
             return false;
         }
         bool ok = true;
@@ -283,6 +289,7 @@ namespace
         budgets.ExactNavSearches = CountOr(*limits, "exact_nav_searches", budgets.ExactNavSearches);
         budgets.Raycasts = CountOr(*limits, "raycasts", budgets.Raycasts);
         budgets.ReachableRegions = CountOr(*limits, "reachable_regions", budgets.ReachableRegions);
+        budgets.GenerationAttempts = CountOr(*limits, "generation_attempts", budgets.GenerationAttempts);
     }
 
     [[nodiscard]] DataFieldSchema OpenRecord(std::string key, std::string displayName)
@@ -394,10 +401,12 @@ DataSchema MakeCandidateEvaluationSchema()
     selection.Children.push_back(std::move(bandWidth));
 
     DataFieldSchema limits = OpenRecord("limits", "Limits");
-    for (const char* key : { "candidates", "exact_nav_searches", "raycasts", "reachable_regions" })
+    for (const char* key : { "candidates", "exact_nav_searches", "raycasts", "reachable_regions",
+                             "generation_attempts" })
     {
         DataFieldSchema limit = Optional(DataFieldKind::Int, key, key);
         limit.Numeric.Minimum = 0.0;
+        limit.Numeric.Maximum = static_cast<double>(std::numeric_limits<std::uint32_t>::max());
         limits.Children.push_back(std::move(limit));
     }
 

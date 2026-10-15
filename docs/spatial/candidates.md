@@ -124,7 +124,8 @@ against each operation's own schema when the asset loads.
                  "weight": 2 } }
   ],
   "selection": { "mode": "top_n", "count": 3 },
-  "limits": { "candidates": 64, "exact_nav_searches": 16, "raycasts": 128, "reachable_regions": 512 }
+  "limits": { "candidates": 64, "exact_nav_searches": 16, "raycasts": 128, "reachable_regions": 512,
+              "generation_attempts": 4096 }
 }
 ```
 
@@ -156,8 +157,14 @@ Callers hold the binding, never a pointer into the cache.
 4. **Score.** A weighted mean of curve outputs, summed in authored order. Ties go to generation order. Comparison is exact, with no epsilon.
 5. **Select.** Best, TopN, AllQualified, or PickFromBand. PickFromBand draws the smallest `HashBytes64(order, seed)` among candidates scoring at least best − width.
 
-Budgets are counts (candidates, exact searches, rays, reachable regions),
-never time, so identical inputs stop at the same place. After warm-up a run
+Budgets are counts (candidates, exact searches, rays, reachable regions,
+generation attempts), never time, so identical inputs stop at the same place.
+A generation attempt is one point a generator considers, whether or not it
+becomes a candidate: a grid or ring point, a reachable-grid sample, a
+per-region sample. A failed projection spends one. Running out sets
+`GenerationTruncated` and `BudgetExhausted` and ends generation, keeping what
+was generated in order. The grid generators walk only the cells inside their
+radius, so the work is what the attempts count. After warm-up a run
 allocates nothing. For `authored_query` that guarantee covers the engine's side
 of the call with non-string constants; the game's implementation is its own.
 
@@ -214,7 +221,8 @@ other callers need the same geometry.
 - **Pure function.** A run's output is a pure function of its inputs on one build: the bound definition, the context and seed, the limits, and world state as of the snapshot.
 - **No hidden order.** Nothing keys on addresses or unordered iteration. Entity candidates sort by id. The reachable set is a sorted array.
 - **Reachable set per limits.** A run builds the reachable set for the radius and cost limit its consumer asks with, and rebuilds it when a later consumer asks with others, so a generator's limits never stand in for a criterion's.
-- **Sizes.** An evaluation holds at most 255 generators and 255 criteria; a rejection index is a byte and 0xFF means not rejected. Compilation refuses more.
+- **Sizes.** An evaluation holds at most 255 generators and 255 criteria; a generator or rejection index is a byte and 0xFF means not rejected. Compilation refuses more.
+- **Authored numbers.** Radii, spacings and angles must be finite floats. A grid's `radius / spacing`, a ring's `rings` and its `points_per_ring` are each at most 65536. Compilation refuses anything else with the argument named, rather than clamping it.
 - **No replication.** Results are never replicated. A run belongs wherever its caller has authority. A client may evaluate for presentation, but must not feed the result into authoritative state.
 
 ## Status and trace

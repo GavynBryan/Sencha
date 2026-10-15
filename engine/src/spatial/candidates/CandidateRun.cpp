@@ -296,6 +296,18 @@ bool CandidateRun::ChargeExactNavSearch()
     return true;
 }
 
+bool CandidateRun::ChargeGenerationAttempt()
+{
+    if (GenerationAttempts >= Evaluation.Budgets().GenerationAttempts)
+    {
+        Flags.BudgetExhausted = true;
+        Flags.GenerationTruncated = true;
+        return false;
+    }
+    ++GenerationAttempts;
+    return true;
+}
+
 bool CandidateRun::ChargeRaycast()
 {
     if (Raycasts >= Evaluation.Budgets().Raycasts)
