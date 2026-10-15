@@ -33,7 +33,9 @@ void ReplicationCodec<ActiveAbilities>::ToWire(const ReplicationWireContext& con
         ActiveAbilityWireRecord& out = *records[i];
         out = ActiveAbilityWireRecord{};
         const AbilityRecord& record = active.Records[i];
-        if (record.State == AbilityRecordState::Free)
+        // A guess is this machine's own: the image a delta lands on is the authority's
+        // alone, and the journal puts the guesses back after it.
+        if (record.State == AbilityRecordState::Free || record.Predicted)
             continue;
         out.Ticks.Values[0] = record.Key.CommandTick;
         out.Words.Values[0] = abilities != nullptr ? abilities->WireKey(record.Key.Ability) : 0u;

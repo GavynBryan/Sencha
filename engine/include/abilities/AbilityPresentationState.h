@@ -4,8 +4,11 @@
 #include <abilities/AbilityId.h>
 #include <ecs/ComponentAnnotations.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
+
+inline constexpr std::size_t kAbilityGuessedCueMemory = 16;
 
 // Phase a record's sustained presentation is for, when none is held.
 inline constexpr std::uint8_t kAbilityNotSustained = 0xFF;
@@ -31,7 +34,15 @@ struct SENCHA_COMPONENT("sencha.ability_presentation_state") AbilityPresentation
     };
 
     Shown Records[kAbilityRecordCapacity] = {};
+    // Records that went away, so one the wire brings back is not shown again.
+    Shown Departed[kAbilityRecordCapacity] = {};
+    std::uint8_t NextDeparted = 0;
     std::uint16_t CueSeen = 0;
+    // The owner's guessed cues: the last serial presented, and the occurrences
+    // (AbilityCueOccurrence) whose authority entries are not presented again.
+    std::uint16_t GuessedCueSeen = 0;
+    std::uint8_t NextGuessed = 0;
+    std::uint64_t Guessed[kAbilityGuessedCueMemory] = {};
     AbilityPresentationFollow Follow = AbilityPresentationFollow::Unseen;
 };
 

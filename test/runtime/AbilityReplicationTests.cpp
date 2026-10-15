@@ -6,6 +6,7 @@
 #include <abilities/AbilityDefinitionData.h>
 #include <abilities/AbilityDefinitionResolve.h>
 #include <abilities/AbilityKit.h>
+#include <abilities/AbilityPredictionJournal.h>
 #include <abilities/AbilityPresentationSystem.h>
 #include <abilities/AbilityWirePrecision.h>
 #include <abilities/CuePresentationData.h>
@@ -33,6 +34,8 @@
 #include <time/SimClock.h>
 #include <world/ComponentRegistrar.h>
 #include <world/RuntimeComponentSchema.h>
+#include <world/SimulationAuthority.h>
+#include <world/SimulationTimeline.h>
 #include <world/transform/TransformComponents.h>
 
 #include <gtest/gtest.h>
@@ -40,6 +43,7 @@
 #include <algorithm>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <numeric>
 #include <vector>
 
@@ -62,6 +66,19 @@ struct Shown
     }
 
     [[nodiscard]] std::int64_t Total() const { return std::accumulate(Counts.begin(), Counts.end(), std::int64_t{ 0 }); }
+};
+
+struct Calls
+{
+    int Count = 0;
+    int Held = 0;
+
+    VerbAdmission Invoke(const VerbInvocation& invocation)
+    {
+        ++Count;
+        Held += invocation.Step == LeaseStep::Acquire ? 1 : invocation.Step == LeaseStep::Release ? -1 : 0;
+        return VerbAdmission::Accepted;
+    }
 };
 
 struct Glow
@@ -130,6 +147,14 @@ struct Machine
             glow.Scope = AuthoredScope::Cosmetic;
             glow.Prediction = AuthoredPrediction::Presentation;
             (void)verbs.Declare(std::move(glow));
+            VerbDefinition simulated;
+            simulated.Name = "test.simulated";
+            simulated.Kind = VerbKind::Lease;
+            simulated.Prediction = AuthoredPrediction::Simulation;
+            (void)verbs.Declare(std::move(simulated));
+            VerbDefinition authorityOnly;
+            authorityOnly.Name = "test.authority";
+            (void)verbs.Declare(std::move(authorityOnly));
             EXPECT_TRUE(verbs.Commit());
         }
         EXPECT_TRUE(DeclareEngineVocabulary(Entities));
@@ -142,6 +167,8 @@ struct Machine
         Bindings = std::make_unique<EngineVocabularyBindings>(Entities, Clock, *Verbs);
         Tokens.push_back(Verbs->Bind(Verbs->Registry().Find("test.show"), Showings));
         Tokens.push_back(Verbs->Bind(Verbs->Registry().Find("test.glow"), Glows));
+        Tokens.push_back(Verbs->Bind(Verbs->Registry().Find("test.simulated"), Simulated));
+        Tokens.push_back(Verbs->Bind(Verbs->Registry().Find("test.authority"), AuthorityOnly));
         Host = AbilityHost{ .Verbs = Verbs.get(), .Queries = Queries.get() };
         Presenter = std::make_unique<AbilityPresentationSystem>(Verbs.get());
 
@@ -180,6 +207,8 @@ struct Machine
     std::vector<VerbBindingToken> Tokens;
     Shown Showings;
     Glow Glows;
+    Calls Simulated;
+    Calls AuthorityOnly;
     AbilityHost Host;
     AbilitySettings Settings;
     std::unique_ptr<AbilityPresentationSystem> Presenter;
@@ -257,6 +286,7 @@ protected:
         write.Tick = Now;
         write.Sequence = Peer.NextSnapshotSequence();
         write.OwnerPeer = ClientPeer;
+        write.CommandAck = Now > 0 ? Now - 1 : 0;
         const SnapshotWriteResult written = ReplicationWriteSnapshot(write, Scratch);
         EXPECT_TRUE(written.Ok);
         return { Scratch.begin(), Scratch.begin() + static_cast<std::ptrdiff_t>(written.BytesWritten) };
@@ -271,6 +301,9 @@ protected:
         apply.Identity = &ClientIds;
         const SnapshotApplyResult applied = ReplicationApplySnapshot(apply, bytes);
         ASSERT_TRUE(applied.Ok()) << SnapshotApplyErrorToString(applied.Error);
+        // As the engine does after every snapshot.
+        Client.Entities.GetResource<AbilityPredictionJournal>().Reconcile(Client.Entities, applied.CommandAck,
+                                                                         Client.Verbs.get());
         Ack.Observe(applied.Sequence);
         Peer.Acknowledge(Ack);
     }
@@ -327,6 +360,60 @@ protected:
     }
 
     int LingerPublishes = 0;
+
+    // The client as the actor's owner, predicting it on the authority's numbering.
+    void Predict()
+    {
+        ClientPeer = kOwner;
+        Step();
+        (void)Publish();
+        Client.Entities.SetResource(SimulationAuthority{ .Authoritative = false, .TickOffset = 0 });
+        Client.Entities.SetResource(PredictedSimulation{ .Entity = Remote(), .CommandTickOffset = 0 });
+        Client.Entities.AddComponent<InputActionSourceRef>(Remote(), InputActionSourceRef{});
+        ClientNow = Now;
+    }
+
+    // A client tick at the head of its timeline, its input queued for the authority,
+    // which runs it `Lag` ticks later; a publish every second authority tick.
+    // `heard`, when given, is what the authority hears for the tick instead.
+    void Lockstep(std::vector<InputActionEdge> edges = {},
+                  std::optional<std::vector<InputActionEdge>> heard = std::nullopt)
+    {
+        World& world = Client.Entities;
+        InputActionState& state = world.GetResource<InputActionState>();
+        std::span<InputActionValue> values = state.BeginTick(ClientNow);
+        for (const InputActionEdge& edge : edges)
+        {
+            ClientHeld[edge.Action] = edge.Kind == InputEdgeKind::Press;
+            (void)state.TickEdgeStorage().Append(edge);
+        }
+        for (std::size_t a = 0; a < values.size(); ++a)
+            values[a].Flags = ClientHeld[a] ? InputActionFlags::Held : InputActionFlags::None;
+        AdvanceActorTime(world, ClientNow);
+        RunAbilityPass(world, Client.Host, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = ClientNow }, nullptr,
+                       Client.Settings);
+        Client.Presenter->Present(world, ClientNow);
+        Commands.push_back(heard ? std::move(*heard) : std::move(edges));
+        ++ClientNow;
+        while (ClientNow - Now > kLag)
+        {
+            Step(std::move(Commands.front()));
+            Commands.erase(Commands.begin());
+            if (Now % kNetDefaultSnapshotInterval == 0)
+                (void)Publish();
+        }
+    }
+
+    void Locksteps(int count)
+    {
+        for (int i = 0; i < count; ++i)
+            Lockstep();
+    }
+
+    static constexpr std::uint64_t kLag = 4;
+    std::uint64_t ClientNow = 0;
+    bool ClientHeld[2] = {};
+    std::vector<std::vector<InputActionEdge>> Commands;
 
     [[nodiscard]] const ActiveAbilities& RemoteRecords() const
     {
@@ -610,4 +697,90 @@ TEST_F(AbilityReplication, SameTickStartsGetDistinctKeys)
                                         [&](const AbilityRecord& record) { return record.Identity == identity; }))
             << "and the client names each the same way, in its own ability ids";
     EXPECT_EQ(Client.Showings.Counts.size(), 2u) << "both shots shown";
+}
+
+constexpr std::string_view kLevelled = R"({
+    "input_default": { "action": "Input.PrimaryFire", "policy": "press_release" },
+    "prediction": "%s",
+    "phases": [ { "key": "p_hold", "hold": [ { "key": "o_sim", "lease": "test.simulated" } ],
+                  "enter": [ { "key": "o_auth", "op": "invoke", "verb": "test.authority" } ],
+                  "then": [ { "key": "t_off", "on": "release", "to": "end" } ] } ] })";
+
+std::string Levelled(std::string_view level)
+{
+    std::string json(kLevelled);
+    json.replace(json.find("%s"), 2, level);
+    return json;
+}
+
+TEST_F(AbilityReplication, OwnerDoesNotPresentPredictedCuesTwice)
+{
+    Grant(kShot, "asset://abilities/shot.sdata");
+    Predict();
+    Lockstep({ { kFire, InputEdgeKind::Press }, { kFire, InputEdgeKind::Release } });
+    ASSERT_EQ(Client.Showings.Counts.size(), 1u) << "shown on the press, before the authority has heard of it";
+    Locksteps(20);
+    EXPECT_EQ(Authority.Showings.Counts.size(), 0u) << "the authority presents nothing here: nothing presents there";
+    EXPECT_EQ(static_cast<const World&>(Authority.Entities).TryGet<AbilityCueLog>(Actor)->NextSeq, 2u)
+        << "the authority logged the same shot";
+    EXPECT_EQ(Client.Showings.Counts.size(), 1u) << "and its entry for it was not shown again";
+}
+
+TEST_F(AbilityReplication, ServerExtraPulsesPresentLateOnTheOwner)
+{
+    Grant(kAutomatic, "asset://abilities/automatic.sdata");
+    Predict();
+    Lockstep({ { kFire, InputEdgeKind::Press } });
+    Locksteps(5);
+    // The client lets go; the authority hears it four ticks late and fires twice more.
+    Lockstep({ { kFire, InputEdgeKind::Release } }, std::vector<InputActionEdge>{});
+    Locksteps(3);
+    Lockstep({}, std::vector<InputActionEdge>{ { kFire, InputEdgeKind::Release } });
+    Locksteps(24);
+    std::int64_t authorityPulses = 0;
+    Authority.Entities.GetResource<AbilityTrace>().Records().ForEach([&](const AbilityTraceRecord& record) {
+        authorityPulses += record.Event == AbilityTraceEvent::Cue ? 1 : 0;
+    });
+    EXPECT_GT(authorityPulses, 4) << "the authority ran longer than the guess";
+    EXPECT_EQ(Client.Showings.Total(), authorityPulses) << "the owner shows the pulses it did not guess, late";
+}
+
+TEST_F(AbilityReplication, RefusedPredictionEndsSustainedPresentation)
+{
+    Grant(kGlowing, "asset://abilities/glowing.sdata");
+    Predict();
+    Lockstep({ { kGlowAction, InputEdgeKind::Press } }, std::vector<InputActionEdge>{});
+    ASSERT_EQ(Client.Glows.Held, 1) << "the guess glows at once";
+    Locksteps(12);
+    EXPECT_EQ(Client.Glows.Held, 0) << "the authority started nothing for that press, so the glow goes";
+    EXPECT_EQ(Client.Entities.GetResource<AbilityPredictionJournal>().Size(), 0u);
+}
+
+TEST_F(AbilityReplication, AGuessRunsOnlyWhatItsPredictionLevelAllows)
+{
+    Grant(Levelled("presentation"), "asset://abilities/presented.sdata");
+    Predict();
+    Lockstep({ { kFire, InputEdgeKind::Press } });
+    EXPECT_EQ(Client.Simulated.Held, 0) << "a simulation operation waits for the authority at presentation level";
+    EXPECT_EQ(Client.AuthorityOnly.Count, 0) << "an authority-only one never runs on a client";
+    Locksteps(10);
+    EXPECT_EQ(Authority.Simulated.Held, 1);
+    EXPECT_EQ(Authority.AuthorityOnly.Count, 1);
+    Lockstep({ { kFire, InputEdgeKind::Release } });
+    Locksteps(10);
+}
+
+TEST_F(AbilityReplication, ASimulationLevelGuessHoldsWhatTheAuthorityWill)
+{
+    Grant(Levelled("simulation"), "asset://abilities/simulated.sdata");
+    Predict();
+    Lockstep({ { kFire, InputEdgeKind::Press } });
+    EXPECT_EQ(Client.Simulated.Held, 1) << "held on the press, ahead of the authority";
+    EXPECT_EQ(Client.AuthorityOnly.Count, 0);
+    Locksteps(10);
+    EXPECT_EQ(Client.Simulated.Held, 1) << "a confirmed guess keeps running";
+    Lockstep({ { kFire, InputEdgeKind::Release } });
+    EXPECT_EQ(Client.Simulated.Held, 0) << "and lets go when its input does";
+    Locksteps(10);
+    EXPECT_EQ(Client.Simulated.Held, 0);
 }

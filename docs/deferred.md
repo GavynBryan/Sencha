@@ -489,3 +489,13 @@ do the work and delete the entry.
 - **Trigger:** the first ability content that must end when an event is published
   (a stagger announced by a hit, an interrupt published by a script), which also
   decides the timing and prediction rule above.
+
+## Showing a predicted commit's costs as pending
+
+- **What:** plan §5.2 has a client show what a guess would pay as a display overlay
+  keyed by activation, cost group and pulse, cleared when the authority's word
+  arrives. A guess validates its commit and pays nothing; no overlay is kept.
+- **Where:** `AbilityPass::Commit` (`engine/src/abilities/AbilityCommit.cpp`), which
+  knows the groups a guess would pay.
+- **Trigger:** the first HUD that shows a predicted pawn's ammo or energy, which is
+  what reads the overlay.

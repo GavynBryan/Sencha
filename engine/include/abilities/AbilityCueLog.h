@@ -37,8 +37,19 @@ struct SENCHA_COMPONENT("sencha.ability_cue_log") AbilityCueLog
 
 static_assert(std::is_trivially_copyable_v<AbilityCueLog>);
 
+// The discrete cues this machine's guesses made, never sent: a guess written into
+// the authority's serial stream would hide the authority's entries.
+struct SENCHA_COMPONENT("sencha.ability_predicted_cues") AbilityPredictedCues
+{
+    AbilityCueLog Log;
+};
+
 // Appends `entry` under the next serial number, which it returns.
 std::uint16_t AppendAbilityCue(AbilityCueLog& log, AbilityCueEntry entry);
+
+// One occurrence as every machine names it: the activation, the op and the tick,
+// which a guess and the authority's entry for it share.
+[[nodiscard]] std::uint64_t AbilityCueOccurrence(const AbilityCueEntry& entry);
 
 // Whether serial `a` comes after `b`, across the u16 wrap.
 [[nodiscard]] constexpr bool AbilityCueAfter(std::uint16_t a, std::uint16_t b)

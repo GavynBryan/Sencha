@@ -536,6 +536,33 @@ One firing actor costs a peer 344 B/s at the default cadence with its aim
 sweeping, every pulse landing somewhere new (`CueBandwidthPerFiringActorIsMeasured`
 fails above 360).
 
+## Prediction
+
+A client runs the ability pass for the pawn it predicts, on that pawn's command
+timeline, as a guess (`AbilityPass` predicting): only the records it started
+(`AbilityRecord::Predicted`), only the operations its ability's `prediction` level
+allows — none at `none`; `Presentation` operations, cues and present entries at
+`presentation`; `Simulation` operations too at `simulation`; `AuthorityOnly`
+operations never — and a commit that validates against the replicated attributes
+but pays nothing, starts no cooldown and changes no owned tag. Requests and
+effect-held grants stay with the authority.
+
+The guesses sit beside the authority's records, never over them: the codec leaves
+them out of the image a snapshot lands on, and `AbilityPredictionJournal` (a
+`PredictionJournal`) puts them back after each snapshot. A guess the authority
+also started keeps running here, with the authority's extra pulses added; one it
+ended ends here with the authority's reason; one it never started, once it has run
+that command, ends `AuthorityDenied`, letting go of what it held. An authority
+record beside a guess for the same activation is shadowed: not counted for
+admission, not run and not presented (`IsAbilityRecordShadowed`), and an ended
+guess stays until the authority's copy stops running.
+
+The owner presents its guesses at once: discrete cues go to its machine-local
+`AbilityPredictedCues`, never the replicated log, and the presenter remembers each
+occurrence (`AbilityCueOccurrence`: activation, op, tick) so the authority's entry
+for it is not presented again. Records are followed by identity, not slot, and one
+that went away and comes back on the wire is not presented again.
+
 ## Rollout
 
 Each stage is independently testable and buildable with physics/animation

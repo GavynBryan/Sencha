@@ -55,6 +55,7 @@ using AbilityKitComponents = ComponentSet<
     ActiveAbilities,
     AbilityLocals,
     AbilityCueLog,
+    AbilityPredictedCues,
     AbilityPresentationState>;
 
 void RegisterAbilityKitComponents(ComponentRegistrar& registrar);

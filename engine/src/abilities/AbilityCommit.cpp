@@ -76,9 +76,11 @@ AbilityCommitResult AbilityPass::Commit(const AbilityActor& actor, std::size_t s
     if (!check.Paid)
         return check;
 
+    // A guess only chooses its path: what it would pay is the authority's to pay.
     const FixedSimTime now = Now;
-    for (const EffectId cost : Costs)
-        (void)ApplyEffect(Entities, actor.Entity, cost, now);
+    if (!Predicting)
+        for (const EffectId cost : Costs)
+            (void)ApplyEffect(Entities, actor.Entity, cost, now);
     AbilityRecord& paid = actor.Record(slot);
     for (std::size_t g = 0; g < definition.Costs.size(); ++g)
         if (Has(payable, g) && definition.Costs[g].Repeat == AbilityCostRepeat::Once)
@@ -90,6 +92,7 @@ AbilityCommitResult AbilityPass::Commit(const AbilityActor& actor, std::size_t s
 
 void AbilityPass::StartCooldown(const AbilityActor& actor, std::size_t slot, const AbilityDefinition& definition)
 {
-    (void)ApplyEffect(Entities, actor.Entity, definition.Cooldown->Effect, Now);
+    if (!Predicting)
+        (void)ApplyEffect(Entities, actor.Entity, definition.Cooldown->Effect, Now);
     actor.Record(slot).CooldownStarted = true;
 }

@@ -1,5 +1,8 @@
 #include <abilities/AbilitySystem.h>
 
+#include <abilities/AbilityPredictionJournal.h>
+#include <world/SimulationTimeline.h>
+
 #include "AbilityPass.h"
 
 #include <abilities/AbilityEffectGrants.h>
@@ -280,7 +283,12 @@ namespace
 void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& now,
                     const StoragePartitionSet* partitions, const AbilitySettings& settings)
 {
-    if (!world.IsRegistered<AbilityGrants>() || !IsSimulationAuthority(world))
+    if (!world.IsRegistered<AbilityGrants>())
+        return;
+    // A client runs only its guesses at its own pawn, on that pawn's command timeline.
+    const bool authority = IsSimulationAuthority(world);
+    const PredictedSimulation* predicted = authority ? nullptr : world.TryGetResource<PredictedSimulation>();
+    if (!authority && (predicted == nullptr || !world.IsAlive(predicted->Entity)))
         return;
     AbilityGrantEntries* entries = world.TryGetResource<AbilityGrantEntries>();
     if (entries == nullptr)
@@ -288,20 +296,27 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
     AbilityPassScratch& scratch = world.HasResource<AbilityPassScratch>() ? world.GetResource<AbilityPassScratch>()
                                                                           : world.AddResource<AbilityPassScratch>(world);
     RefreshBindings(world, *entries, scratch.Problems);
-    SyncEffectGrants(world, partitions, scratch);
+    if (authority)
+        SyncEffectGrants(world, partitions, scratch);
 
     // Operations create and destroy entities, so the actors are gathered first and
     // nothing runs inside the query.
     scratch.Actors.clear();
-    scratch.Granted.ForEachChunk([&](auto& view) {
-        if (partitions != nullptr && !partitions->Contains(view.Partition()))
-            return;
-        const EntityIndex* indices = view.Entities();
-        for (std::uint32_t i = 0; i < view.Count(); ++i)
-            scratch.Actors.push_back(world.ResolveEntityIndex(indices[i]));
-    });
+    if (authority)
+        scratch.Granted.ForEachChunk([&](auto& view) {
+            if (partitions != nullptr && !partitions->Contains(view.Partition()))
+                return;
+            const EntityIndex* indices = view.Entities();
+            for (std::uint32_t i = 0; i < view.Count(); ++i)
+                scratch.Actors.push_back(world.ResolveEntityIndex(indices[i]));
+        });
+    else if (world.HasComponent<AbilityGrants>(predicted->Entity))
+        scratch.Actors.push_back(predicted->Entity);
 
-    AbilityPass pass(world, scratch.Buffers, host, now, settings.StepBudget, settings.LingerTicks);
+    FixedSimTime tick = now;
+    if (!authority)
+        tick.TickIndex = SimulationTickOf(world, predicted->Entity, now.TickIndex);
+    AbilityPass pass(world, scratch.Buffers, host, tick, settings.StepBudget, settings.LingerTicks, !authority);
     const InputActionSources sources(world);
     const GameplayTagRegistry* tags = world.TryGetResource<GameplayTagRegistry>();
     const auto actorOf = [&](EntityId entity) {
@@ -319,7 +334,8 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
     {
         if (!ready(entity))
             continue;
-        RevokeEndedEffectGrants(world, entity);
+        if (authority)
+            RevokeEndedEffectGrants(world, entity);
         pass.Sweep(actorOf(entity));
     }
 
@@ -339,7 +355,8 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
         }
     }
 
-    Requests(pass, world, partitions, scratch);
+    if (authority)
+        Requests(pass, world, partitions, scratch);
 
     for (const EntityId entity : scratch.Actors)
         if (ready(entity))
@@ -347,6 +364,10 @@ void RunAbilityPass(World& world, const AbilityHost& host, const FixedSimTime& n
     for (const EntityId entity : scratch.Actors)
         if (ready(entity))
             pass.Linger(actorOf(entity));
+
+    if (AbilityPredictionJournal* journal = authority ? nullptr : world.TryGetResource<AbilityPredictionJournal>())
+        for (const EntityId entity : scratch.Actors)
+            journal->Note(world, entity);
 }
 
 AbilitySystem::AbilitySystem(AbilityHost host)

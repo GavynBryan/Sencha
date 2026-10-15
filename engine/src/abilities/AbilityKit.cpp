@@ -1,5 +1,7 @@
 #include <abilities/AbilityKit.h>
 
+#include <abilities/AbilityPredictionJournal.h>
+
 #include <abilities/AbilityGrantsSerializer.h>
 #include <abilities/AbilityPresentationSystem.h>
 #include <abilities/CuePresentationLibrary.h>
@@ -56,6 +58,8 @@ void RegisterAbilityKit(World& world)
         world.AddResource<AbilityRequestQueue>();
     if (!world.HasResource<AbilityTrace>())
         world.AddResource<AbilityTrace>();
+    if (!world.HasResource<AbilityPredictionJournal>())
+        world.AddResource<AbilityPredictionJournal>();
 }
 
 void RegisterAbilityKitSystems(EngineSchedule& schedule, const AbilityHost& host)

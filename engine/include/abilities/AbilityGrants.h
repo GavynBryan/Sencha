@@ -59,8 +59,8 @@ template<>
 struct ComponentTraits<AbilityGrants>
 {
     using DerivedComponents =
-        std::tuple<ActiveAbilities, AbilityLocals, AbilityCueLog, AbilityPresentationState, ActorTime,
-                   GameplayTagContainer>;
+        std::tuple<ActiveAbilities, AbilityLocals, AbilityCueLog, AbilityPredictedCues, AbilityPresentationState,
+                   ActorTime, GameplayTagContainer>;
 };
 
 // Invalid when the component is full or `ability` is invalid.

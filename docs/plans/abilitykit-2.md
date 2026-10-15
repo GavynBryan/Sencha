@@ -1736,3 +1736,28 @@ Deviations from the plan's wording, each for a stated reason:
   authority at start and by a receiver from the key it is sent, so a client's guess
   and the authority's record of one press are the same activation; lease owner
   keys, cue entries and the presenter use it. `SameTickStartsGetDistinctKeys`.
+- **9d delivered: prediction.** `PredictionJournal<T>` extracted from the animation
+  journal; the ability pass runs a client's guesses for its predicted pawn at the
+  ability's prediction level; `AbilityPredictionJournal` puts guesses back beside
+  the authority's records after each snapshot, confirming, ending with the
+  authority, or refusing (`AuthorityDenied`); the owner presents guesses at once
+  and the authority's word for them once. Tests: `OwnerDoesNotPresentPredictedCuesTwice`,
+  `ServerExtraPulsesPresentLateOnTheOwner`, `RefusedPredictionEndsSustainedPresentation`,
+  `AGuessRunsOnlyWhatItsPredictionLevelAllows`, `ASimulationLevelGuessHoldsWhatTheAuthorityWill`,
+  and the journal's own contract. `DuplicateAndOutOfOrderCommandsStartOnce` is held
+  where it is decided: the command buffer hands each tick's record out once and in
+  order (`NetPeerCommandBuffer.IgnoresTicksItHasAlreadyHandedOut`,
+  `OrdersRecordsThatArriveOutOfOrder`, `DoesNotRepeatEdges`), and the pass reads
+  only what it hands out.
+- **Deviation: a confirmed guess keeps its own course.** §6.8 adopts the
+  authority's phase, phase tick and pulse whenever they differ; a snapshot is a
+  round trip old, so adopting its phase would rewind the guess every time. The guess
+  adopts the authority's end and its extra pulses, and otherwise runs on.
+- **Deviation: guesses sit beside the authority's records, not over them.** A
+  snapshot only rewrites a record whose runs changed, so a guess written over the
+  authority's copy would become the image the next delta lands on. The codec
+  leaves guesses out of that image and a shadowed authority copy is neither
+  counted, run nor presented.
+- **Deviation: owned tags and pending costs are not predicted.** The owner reads
+  the authority's tags; the pending-cost overlay waits for its HUD
+  (`docs/deferred.md`).

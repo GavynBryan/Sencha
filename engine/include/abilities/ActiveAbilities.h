@@ -115,6 +115,9 @@ struct AbilityRecord
     std::uint64_t Sequence = 0;
     // AbilityActivationIdentity: what its leases, presentation and cues are keyed by.
     std::uint64_t Identity = 0;
+    // This machine's guess at its own pawn's activation, run here ahead of the
+    // authority; never sent. A record the wire delivered is only presented here.
+    bool Predicted = false;
 };
 
 // What an actor is running, and what it ran recently enough to still present.
@@ -126,6 +129,10 @@ struct SENCHA_COMPONENT("sencha.active_abilities") ActiveAbilities
     std::uint32_t Evicted = 0;
 };
 
+// A record the authority sent while this machine runs its own guess at the same
+// activation: kept as the authority's word, but neither counted, run nor presented.
+[[nodiscard]] bool IsAbilityRecordShadowed(const ActiveAbilities& active, std::size_t slot);
+
 static_assert(std::is_trivially_copyable_v<ActiveAbilities>,
               "ActiveAbilities must be trivially copyable to live in ECS chunks");
 
@@ -134,7 +141,7 @@ static_assert(std::is_trivially_copyable_v<ActiveAbilities>,
 template<>
 struct ComponentTraits<ActiveAbilities>
 {
-    using DerivedComponents = std::tuple<AbilityCueLog, AbilityPresentationState>;
+    using DerivedComponents = std::tuple<AbilityCueLog, AbilityPredictedCues, AbilityPresentationState>;
 };
 
 #if !defined(SENCHA_CODEGEN)

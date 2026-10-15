@@ -4,6 +4,7 @@
 #include <input/InputContextSet.h>
 #include <ui/UiService.h>
 #endif
+#include <abilities/AbilityPredictionJournal.h>
 #include <anim/AnimRequestJournal.h>
 #include <app/Engine.h>
 #include <app/Game.h>
@@ -515,11 +516,14 @@ void Engine::RegisterNetFramePhases()
                                            &engine.Interpolation());
 
             // Predicted animation requests the authority has decided are dropped;
-            // the rest are reissued on top of the sets that just arrived.
+            // the rest are reissued on top of the sets that just arrived. The
+            // pawn's ability guesses go back on top of the records the same way.
             if (applied.Ok())
             {
                 if (AnimRequestJournal* journal = world.TryGetResource<AnimRequestJournal>())
                     journal->Reconcile(world, applied.CommandAck);
+                if (AbilityPredictionJournal* abilities = world.TryGetResource<AbilityPredictionJournal>())
+                    abilities->Reconcile(world, applied.CommandAck, engine.TryVerbs());
             }
 
             // Start again from what the authority did, then re-run the ticks it

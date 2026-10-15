@@ -37,3 +37,14 @@ std::uint64_t AbilityActivationIdentity(const AbilityActivationKey& key, std::ui
     HashFnv1aValue(hash, key.Origin);
     return hash == 0 ? 1u : hash;
 }
+
+bool IsAbilityRecordShadowed(const ActiveAbilities& active, std::size_t slot)
+{
+    const AbilityRecord& record = active.Records[slot];
+    if (record.State == AbilityRecordState::Free || record.Predicted)
+        return false;
+    for (const AbilityRecord& other : active.Records)
+        if (other.Predicted && other.State != AbilityRecordState::Free && other.Identity == record.Identity)
+            return true;
+    return false;
+}

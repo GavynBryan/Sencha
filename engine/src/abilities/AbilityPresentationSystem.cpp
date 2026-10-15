@@ -59,12 +59,47 @@ public:
         const World& reader = Entities;
         const ActiveAbilities* active = reader.TryGet<ActiveAbilities>(actor);
         const AbilityCueLog* log = reader.TryGet<AbilityCueLog>(actor);
+        const AbilityPredictedCues* guessed = reader.TryGet<AbilityPredictedCues>(actor);
         if (state == nullptr || active == nullptr || log == nullptr)
             return;
         const bool first = state->Follow == AbilityPresentationFollow::Unseen;
-        Discrete(actor, *log, *state, first);
+        if (guessed != nullptr)
+            Discrete(actor, guessed->Log, *state, state->GuessedCueSeen, first, true);
+        Discrete(actor, *log, *state, state->CueSeen, first, false);
+
+        // A record is followed by its identity, not its slot: one the wire or a
+        // guess moved to another slot keeps what has been shown of it.
+        const auto previous = std::to_array(state->Records);
+        std::array<bool, kAbilityRecordCapacity> carried{};
         for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
-            Record(actor, active->Records[slot], state->Records[slot], first);
+        {
+            static const AbilityRecord kNone{};
+            const AbilityRecord& record = IsAbilityRecordShadowed(*active, slot) ? kNone : active->Records[slot];
+            state->Records[slot] = {};
+            for (std::size_t was = 0; was < kAbilityRecordCapacity && record.State != AbilityRecordState::Free; ++was)
+                if (!carried[was] && previous[was].Activation == record.Identity && record.Identity != 0)
+                {
+                    state->Records[slot] = previous[was];
+                    carried[was] = true;
+                    break;
+                }
+            if (state->Records[slot].Activation == 0 && record.State != AbilityRecordState::Free)
+                for (AbilityPresentationState::Shown& departed : state->Departed)
+                    if (departed.Activation == record.Identity && record.Identity != 0)
+                    {
+                        state->Records[slot] = departed;
+                        state->Records[slot].SustainedPhase = kAbilityNotSustained;
+                        departed = {};
+                        break;
+                    }
+            Record(actor, record, state->Records[slot], first);
+        }
+        for (std::size_t was = 0; was < kAbilityRecordCapacity; ++was)
+            if (!carried[was] && previous[was].Activation != 0)
+            {
+                Gone(actor, previous[was]);
+                state->Departed[state->NextDeparted++ % kAbilityRecordCapacity] = previous[was];
+            }
         state->Follow = AbilityPresentationFollow::Following;
     }
 
@@ -96,7 +131,7 @@ private:
     static LeaseOwner OwnerOf(EntityId actor, std::uint64_t activation, std::size_t present, std::size_t binding)
     {
         return { .Entity = actor,
-                 .Key = (activation << 16) | (static_cast<std::uint64_t>(present) << 8) | binding };
+                 .Key = (activation & ~std::uint64_t{ 0xFFFF }) | (static_cast<std::uint64_t>(present) << 8) | binding };
     }
 
     void Sustain(EntityId actor, std::uint64_t activation, const AbilityPhase& phase, const Occurrence& occurrence)
@@ -123,14 +158,16 @@ private:
                                              OwnerOf(actor, activation, present, binding), Source(actor));
     }
 
-    void Discrete(EntityId actor, const AbilityCueLog& log, AbilityPresentationState& state, bool first)
+    // A log's entries since `seen`; a guessed log's are remembered.
+    void Discrete(EntityId actor, const AbilityCueLog& log, AbilityPresentationState& state, std::uint16_t& seen,
+                  bool first, bool guessing)
     {
         std::array<const AbilityCueEntry*, kAbilityCueLogCapacity> pending{};
         std::size_t count = 0;
         for (const AbilityCueEntry& entry : log.Entries)
-            if (entry.Seq != 0 && (first || AbilityCueAfter(entry.Seq, state.CueSeen)))
+            if (entry.Seq != 0 && (first || AbilityCueAfter(entry.Seq, seen)))
                 pending[count++] = &entry;
-        const std::uint16_t from = state.CueSeen;
+        const std::uint16_t from = seen;
         std::sort(pending.begin(), pending.begin() + static_cast<std::ptrdiff_t>(count),
                   [from](const AbilityCueEntry* a, const AbilityCueEntry* b) {
                       return static_cast<std::uint16_t>(a->Seq - from) < static_cast<std::uint16_t>(b->Seq - from);
@@ -138,29 +175,39 @@ private:
         for (std::size_t i = 0; i < count; ++i)
         {
             const AbilityCueEntry& entry = *pending[i];
-            state.CueSeen = entry.Seq;
+            seen = entry.Seq;
             // An actor seen for the first time presents only what is still recent.
             if (first && entry.Tick + kAbilityCueWindowTicks < Tick)
+                continue;
+            const std::uint64_t occurrence = AbilityCueOccurrence(entry);
+            if (guessing)
+                state.Guessed[state.NextGuessed++ % kAbilityGuessedCueMemory] = occurrence;
+            else if (std::ranges::find(state.Guessed, occurrence) != std::end(state.Guessed))
                 continue;
             Once(entry.Cue, { .Actor = actor, .Target = entry.Target, .Point = entry.Point, .Normal = entry.Normal,
                               .Seed = entry.Seq, .Count = 1 });
         }
         // First sight takes the log as it stands, so serials far along compare from there.
         if (first)
-            state.CueSeen = static_cast<std::uint16_t>(log.NextSeq - 1);
+            seen = static_cast<std::uint16_t>(log.NextSeq - 1);
+    }
+
+    void Gone(EntityId actor, const AbilityPresentationState::Shown& shown)
+    {
+        if (shown.SustainedPhase == kAbilityNotSustained)
+            return;
+        if (const AbilityDefinition* gone = Abilities->Get(shown.Ability);
+            gone != nullptr && shown.SustainedPhase < gone->Phases.size())
+            Unsustain(actor, shown.Activation, gone->Phases[shown.SustainedPhase]);
     }
 
     void Record(EntityId actor, const AbilityRecord& record, AbilityPresentationState::Shown& shown, bool first)
     {
-        if (record.State == AbilityRecordState::Free || shown.Activation != record.Identity)
+        if (record.State == AbilityRecordState::Free)
+            return;
+        if (shown.Activation != record.Identity)
         {
-            if (shown.SustainedPhase != kAbilityNotSustained)
-                if (const AbilityDefinition* gone = Abilities->Get(shown.Ability);
-                    gone != nullptr && shown.SustainedPhase < gone->Phases.size())
-                    Unsustain(actor, shown.Activation, gone->Phases[shown.SustainedPhase]);
             shown = {};
-            if (record.State == AbilityRecordState::Free)
-                return;
             shown.Activation = record.Identity;
             shown.Ability = record.Key.Ability;
             shown.Pulses = first ? record.Pulse : 0;

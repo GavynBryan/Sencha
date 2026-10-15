@@ -374,3 +374,14 @@ tags with.
 `AbilityActivationIdentity` is new; lease owner keys, `AbilityCueEntry::Activation`
 and `AbilityPresentationState`'s shown records use it instead of `Sequence`, and the
 record's wire form no longer carries `Sequence`.
+
+**Prediction journal.** `PredictionJournal<T>` (`prediction/PredictionJournal.h`)
+holds a client's guesses until the authority decides them; `AnimRequestJournal`
+keeps its guesses in one.
+
+**Ability prediction.** `AbilityRecord` gains `Predicted`; `AbilityPredictedCues`
+joins the kit's components and `ActiveAbilities`' derived set;
+`AbilityPredictionJournal`, `AbilityLeaseOwner`, `ReleaseAbilityLeases`
+(`AbilityLeases.h`), `IsAbilityRecordShadowed` and `AbilityCueOccurrence` are new;
+`AbilityPresentationState` gains the guessed-cue memory and departed records; the
+ability pass runs on a client for its predicted pawn.
