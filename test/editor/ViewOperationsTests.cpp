@@ -5,6 +5,7 @@
 
 #include "operations/EditorOperations.h"
 #include "operations/LevelOperations.h"
+#include "operations/LevelProposal.h"
 #include "operations/LevelSubjects.h"
 #include "operations/SpaceRelations.h"
 #include "operations/ViewOperations.h"
@@ -13,6 +14,12 @@
 #include <core/json/JsonStringify.h>
 
 #include <gtest/gtest.h>
+
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <utility>
 
 namespace
 {
@@ -125,6 +132,33 @@ TEST_F(ViewOperationsTest, SelectingIsOneUndoStepAndFramesWhenAsked)
     Commands.Undo();
     EXPECT_TRUE(Workspace.Selection.GetSelection().empty());
     EXPECT_EQ(Code(Call("view.select", R"({"subjects": ["@Nowhere"]})")), "subject.not_found");
+}
+
+TEST_F(ViewOperationsTest, AProposalThatSelectsOrFramesLeavesTheEditorAsItWas)
+{
+    const EntityId hall = AddBrush({ 24, 1, 23 }, { 4, 1, 3 });
+    const std::string id = PersistentIdText(Workspace.ActiveDocument(), hall);
+    Eye().Position = { 0.0f, 2.0f, 0.0f };
+    const std::filesystem::path file = std::filesystem::temp_directory_path()
+        / ("sencha_view_proposal_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)) + ".sproposal");
+
+    for (const auto& [operation, arguments] : { std::pair{ "view.select", R"({"subjects": [")" + id + R"("], "frame": true})" },
+                                                std::pair{ "view.frame", R"({"subjects": [")" + id + R"("]})" } })
+    {
+        LevelProposal proposal;
+        proposal.Label = "Look at it";
+        proposal.BasePath = Workspace.ActiveDocument().SourceAssetPath();
+        proposal.Steps.push_back({ operation, *JsonParse(arguments) });
+        std::ofstream(file) << JsonStringify(LevelProposalToJson(proposal));
+        const JsonValue opened = Ok("draft.open", R"({"path": ")" + file.generic_string() + R"("})");
+        EXPECT_EQ(opened.Find("failure")->Find("code")->AsString(), "proposal.not_level_edit") << operation;
+        EXPECT_TRUE(Workspace.Selection.GetSelection().empty()) << operation << " never ran";
+        EXPECT_EQ(Eye().Position.X, 0.0f) << operation << " never ran";
+        EXPECT_FALSE(Commands.CanUndo());
+        Ok("draft.discard", "{}");
+    }
+    std::error_code ignored;
+    std::filesystem::remove(file, ignored);
 }
 
 TEST_F(ViewOperationsTest, FramingNamesWhatToFrameOrFallsBackToTheSelection)

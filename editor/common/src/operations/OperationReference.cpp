@@ -9,6 +9,20 @@
 
 namespace
 {
+    std::string_view KindName(EditorOperationKind kind)
+    {
+        switch (kind)
+        {
+        case EditorOperationKind::Query:
+            return "query";
+        case EditorOperationKind::Mutation:
+            return "mutation";
+        case EditorOperationKind::Session:
+            return "session";
+        }
+        return "query";
+    }
+
     std::string TypeOf(const DataFieldSchema& field)
     {
         switch (field.Kind)
@@ -98,8 +112,7 @@ std::string OperationReference(const EditorOperationCatalog& catalog)
 
 std::string OperationContract(const EditorOperationDefinition& definition)
 {
-    std::string out = "- `" + definition.Name + "` "
-        + (definition.Kind == EditorOperationKind::Mutation ? "mutation" : "query") + " — " + definition.Description
+    std::string out = "- `" + definition.Name + "` " + std::string(KindName(definition.Kind)) + " — " + definition.Description
         + "\n";
     AppendParameters(out, definition.Parameters);
     std::string answers;

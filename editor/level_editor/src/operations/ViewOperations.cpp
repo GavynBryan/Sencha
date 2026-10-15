@@ -257,7 +257,7 @@ namespace
         EditorOperationEntry entry;
         entry.Definition.Name = "view.select";
         entry.Definition.Category = "View";
-        entry.Definition.Kind = EditorOperationKind::Mutation;
+        entry.Definition.Kind = EditorOperationKind::Session;
         entry.Definition.Description =
             "Selects entities in the running editor, as one undo step, and frames them in the active view "
             "when asked. No subjects clears the selection.";

@@ -34,7 +34,7 @@ namespace
     {
         EditorOperationEntry entry;
         entry.Definition.Name = "world.focus";
-        entry.Definition.Kind = EditorOperationKind::Mutation;
+        entry.Definition.Kind = EditorOperationKind::Session;
         entry.Definition.Category = "World";
         entry.Definition.Description =
             "Chooses which document of the world the level operations read and write: a zone, by id or name, "

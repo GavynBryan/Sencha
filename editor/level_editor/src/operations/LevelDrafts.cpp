@@ -19,8 +19,6 @@
 
 namespace
 {
-    constexpr std::string_view kDraftCategory = "Draft";
-
     DataFieldSchema Text(std::string key, std::string summary)
     {
         return DataField::Field(std::move(key), DataFieldKind::String, {}, std::move(summary));
@@ -96,13 +94,15 @@ namespace
         return EditorOperationOutcome::Refused("draft.unknown", "there is no draft '" + named->AsString() + "'");
     }
 
-    // A proposal's steps are level edits; a draft operation among them would
-    // act on the draft being replayed.
+    // A proposal's steps are mutations, checked before any runs: a query or a
+    // session operation would act on the editor, not the draft.
     EditorOperationOutcome ReplayStep(EditorOperations& operations, const LevelDraftStep& step)
     {
         const EditorOperationCatalog& catalog = operations.Catalog();
         const EditorOperationDefinition* definition = catalog.Get(catalog.Find(step.Operation));
-        if (definition != nullptr && definition->Category == kDraftCategory)
+        if (definition == nullptr)
+            return EditorOperationOutcome::Refused("operation.unknown", "there is no operation '" + step.Operation + "'");
+        if (definition->Kind != EditorOperationKind::Mutation)
             return EditorOperationOutcome::Refused("proposal.not_level_edit",
                                                    step.Operation + " is not a step a proposal can take");
         const JsonValue answer = operations.Invoke(step.Operation, step.Arguments);
@@ -132,7 +132,7 @@ namespace
         EditorOperationEntry entry;
         entry.Definition.Name = std::move(name);
         entry.Definition.Kind = kind;
-        entry.Definition.Category = std::string(kDraftCategory);
+        entry.Definition.Category = "Draft";
         entry.Definition.Description = std::move(description);
         entry.Definition.Parameters = std::move(parameters);
         entry.Definition.Result = std::move(result);
@@ -143,7 +143,7 @@ namespace
     EditorOperationEntry Begin(LevelTarget& level)
     {
         return Entry(
-            "draft.begin", EditorOperationKind::Mutation,
+            "draft.begin", EditorOperationKind::Session,
             "Copies the focus level into a new draft. Mutations edit the draft until it is accepted, "
             "discarded, or another draft is written; queries read it too.",
             DataField::Record({}, {}, {}, {
@@ -182,7 +182,7 @@ namespace
     EditorOperationEntry Write(LevelTarget& level)
     {
         return Entry(
-            "draft.write", EditorOperationKind::Mutation,
+            "draft.write", EditorOperationKind::Session,
             "Makes mutations edit the named draft, or the level itself when no draft is named.",
             DataField::Record({}, {}, {}, { OptionalText("draft", "the draft's id; absent for the level") }),
             DataField::Record({}, {}, {}, {
@@ -208,7 +208,7 @@ namespace
     EditorOperationEntry PreviewDraft(LevelTarget& level)
     {
         return Entry(
-            "draft.preview", EditorOperationKind::Mutation,
+            "draft.preview", EditorOperationKind::Session,
             "Shows the named draft over its level in Kyusu, ghosted, or none when no draft is named.",
             DataField::Record({}, {}, {}, { OptionalText("draft", "the draft's id; absent shows none") }),
             DataField::Record({}, {}, {}, {
@@ -318,7 +318,7 @@ namespace
     EditorOperationEntry Accept(LevelTarget& level, EditorOperations& operations)
     {
         return Entry(
-            "draft.accept", EditorOperationKind::Mutation,
+            "draft.accept", EditorOperationKind::Session,
             "Applies a draft to the level it copies as one undoable step, and drops it. Refused when "
             "the level has changed under any entity the draft changes; rebase it then.",
             DraftOnly(), MutationResultSchema(),
@@ -334,7 +334,7 @@ namespace
     EditorOperationEntry Discard(LevelTarget& level, EditorOperations& operations)
     {
         return Entry(
-            "draft.discard", EditorOperationKind::Mutation, "Drops a draft; the level never saw it.",
+            "draft.discard", EditorOperationKind::Session, "Drops a draft; the level never saw it.",
             DraftOnly(), DataField::Record({}, {}, {}, { Text("draft", "the dropped draft") }),
             WithDraft(level, [&level, &operations](LevelDraft& draft) {
                 JsonValue data(JsonValue::Object{ { "draft", JsonValue(draft.Id) } });
@@ -348,7 +348,7 @@ namespace
     EditorOperationEntry Resume(LevelTarget& level)
     {
         return Entry(
-            "draft.resume", EditorOperationKind::Mutation,
+            "draft.resume", EditorOperationKind::Session,
             "Lets a failed draft take steps again, from what the steps before the refused one made. Refused "
             "for a proposal whose replay stopped short; rebase or discard that.",
             DraftOnly(), DataField::Record({}, {}, {}, { Text("draft", {}) }),
@@ -358,7 +358,7 @@ namespace
     EditorOperationEntry Rebase(LevelTarget& level, EditorOperations& operations)
     {
         return Entry(
-            "draft.rebase", EditorOperationKind::Mutation,
+            "draft.rebase", EditorOperationKind::Session,
             "Replays a draft's steps on a fresh copy of its level, taking in everything that changed "
             "there since, and the steps of a proposal whose replay stopped short. Refused, leaving the "
             "draft as it was, when a step does not apply.",
@@ -373,7 +373,7 @@ namespace
     EditorOperationEntry Save(LevelTarget& level, const EditorOperations& operations)
     {
         return Entry(
-            "draft.save", EditorOperationKind::Mutation,
+            "draft.save", EditorOperationKind::Session,
             "Writes a draft as a proposal file: its steps, the level they apply to, what the entities "
             "they change or rely on looked like, and the operations' contracts, for a designer to open "
             "and review.",
@@ -435,7 +435,7 @@ namespace
     EditorOperationEntry Open(LevelTarget& level, EditorOperations& operations)
     {
         return Entry(
-            "draft.open", EditorOperationKind::Mutation,
+            "draft.open", EditorOperationKind::Session,
             "Replays a proposal file into a new draft of the focus level, which must be the level it "
             "was written for, and names the entities that level has changed since.",
             DataField::Record({}, {}, {}, { Text("path", "the proposal file") }),

@@ -15,8 +15,14 @@
 
 enum class EditorOperationKind : std::uint8_t
 {
+    // Reads; changes nothing.
     Query,
+    // Edits the document an operation client writes, so it is one undo step,
+    // a draft records it, and a proposal may replay it.
     Mutation,
+    // Changes the editor around the documents (drafts, focus, selection):
+    // never a step of a draft or a proposal.
+    Session,
 };
 
 struct EditorOperationDefinition
