@@ -1125,6 +1125,17 @@ conflict instead.
   `view.context`'s aim proposes a doorway there in a draft, a designer edit to
   another room leaves accept succeeding, and a designer edit to that wall
   makes accept report `draft.conflict`.
+- M2 acceptance, live (2026-10-14): a running Kyusu with the socket on,
+  driven only through `kyusu_client`. `view.frame` turned the view onto a
+  new space, `view.context` aimed at its generated south wall, a drafted
+  `opening.create` at that point was accepted (`deps` lists the door cutting
+  the space; `draft.accepted` came as an event), and a second drafted door
+  refused accept with `draft.conflict` once the same wall was moved, its
+  rebase refusing because the point no longer met a wall. The run caught one
+  defect: a change mark spelled as a bare number could not be passed back on a
+  script line, which reads `1` as a number; marks are now `m1`, like draft
+  ids. The designer's half (aiming by hand, editing in the viewport while a
+  proposal waits) is owed by the owner.
 
 ### M3: analysis depth
 

@@ -8,6 +8,7 @@
 #include "operations/LevelOperations.h"
 #include "operations/LevelSubjects.h"
 #include "operations/LevelTarget.h"
+#include "operations/OperationScript.h"
 
 #include <core/json/JsonParser.h>
 #include <core/json/JsonStringify.h>
@@ -125,4 +126,12 @@ TEST_F(LevelChangesTest, AnOldMarkExpiresAndAReplacedLevelIsSaid)
     const std::string held = Mark();
     Workspace.World.NewWorld("Elsewhere");
     EXPECT_EQ(Code(Call("changes.since", R"({"mark": ")" + held + R"("})")), "changes.level_replaced");
+}
+
+TEST_F(LevelChangesTest, AMarkIsAskedAfterAsWrittenOnAScriptLine)
+{
+    const std::string mark = Mark();
+    const std::optional<JsonValue> answer = AnswerOperationLine("changes.since mark=" + mark, Operations);
+    ASSERT_TRUE(answer.has_value());
+    EXPECT_EQ(answer->Find("status")->AsString(), "ok") << JsonStringify(*answer);
 }

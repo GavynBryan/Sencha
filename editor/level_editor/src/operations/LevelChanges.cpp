@@ -43,7 +43,7 @@ namespace
     public:
         const ChangeMark& Take(const EditorDocument& level)
         {
-            ChangeMark mark{ std::to_string(Next++), level.Instance(), level.Revision(), {} };
+            ChangeMark mark{ "m" + std::to_string(Next++), level.Instance(), level.Revision(), {} };
             const EditorScene& scene = level.GetScene();
             for (const EntityId entity : scene.GetAllEntities())
                 if (const PersistentEntityId id = scene.PersistentIdOf(entity); id.IsValid())
