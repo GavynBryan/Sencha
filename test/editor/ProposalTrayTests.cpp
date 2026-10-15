@@ -131,4 +131,3 @@ TEST_F(ProposalTrayTest, AProposalFileIsListedUntilOpenedThenAsItsDraft)
     EXPECT_TRUE(items.front().Current);
     EXPECT_EQ(Workspace.Level.WritingDraft(), nullptr) << "opened to review, not to write into";
 }
-
