@@ -871,8 +871,9 @@ of the real model, with spaces included from the start.
   (exact in JSON), so the same seed on the same base mints the same ids.
 - R1: copying `bench_stress` (77 entities, 10 brushes) costs about 13 ms.
 - Proposal files carry `type: "level.proposal"` and `version: 1`, the id seed,
-  the base level's asset path and the digest of every entity the draft changes,
-  and the steps as `{op, params}`. `draft.save` writes where it is told, like
+  the base level's asset path, the digest of every entity the draft changes
+  or relies on, and the steps as `{op, params}`. `draft.save` writes where it
+  is told, like
   `plan.section`; `<project>/.proposals/` (D8) is the convention clients and
   the tray follow. `draft.open` refuses a proposal for another level, names the
   entities changed since it was written (`moved_since`), and leaves the draft
@@ -1106,6 +1107,18 @@ conflict instead.
   changes and removed after them, so undo, drafts, accept, conflicts and the
   ghost preview treat `instance.place` like any other edit. Change sets are
   never persisted (a proposal file stores steps), so no format changes.
+- The accept precondition covers what an edit relies on, not only what it
+  changes. A door changes nothing of its wall's space, so an edit to that
+  wall used to leave the proposal acceptable, with the door left where the
+  wall had been. An operation now declares the entities it reads
+  (`EntityChangeRecorder::Read`: a door's wall, a copy's sources, a reparent's
+  new parent), the change set keeps their digests, and accept refuses with
+  `draft.conflict` when one moved. A proposal file lists them among its base
+  digests, so `moved_since` names them too; the file's shape is unchanged.
+- M2 acceptance, headless (`AimedProposalTests`): the camera faces a wall,
+  `view.context`'s aim proposes a doorway there in a draft, a designer edit to
+  another room leaves accept succeeding, and a designer edit to that wall
+  makes accept report `draft.conflict`.
 
 ### M3: analysis depth
 

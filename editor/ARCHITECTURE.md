@@ -298,7 +298,9 @@ that opens a project in a new process).
   projection rebuild does, so the selection re-resolves. A change set also
   carries placed scenes as their instance records (`InstanceChange`): the
   entities a placement projects come and go with its record, put back before
-  the entity changes and taken away after them.
+  the entity changes and taken away after them. And it carries reads
+  (`EntityRead`): the entities an edit relied on without changing, by digest,
+  which `ChangeSetConflicts` checks like the changes' befores.
 - `EntityBranches`: an entity in the hierarchy means its branch.
   `CollectBranches` (parents before children, each once), and `BranchCopy`
   captured and restored for duplication (fresh names claimed at capture,

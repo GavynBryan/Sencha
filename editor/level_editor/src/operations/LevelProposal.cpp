@@ -37,6 +37,8 @@ LevelProposal ProposalOf(const LevelDraft& draft, std::string author)
     for (const EntityChange& change : draft.Changes.Changes)
         if (change.Before)
             proposal.BaseDigests.emplace_back(change.Id, DigestOf(*change.Before));
+    for (const EntityRead& read : draft.Changes.Reads)
+        proposal.BaseDigests.emplace_back(read.Id, read.Digest);
     proposal.Steps = draft.Steps;
     return proposal;
 }

@@ -120,6 +120,8 @@ namespace
                     moved.Position = moved.Position + offset;
                     placements.push_back(moved);
                 }
+                for (const EntityId source : subjects.Entities)
+                    recorder.Read(source);
                 const BranchCopy copy = CaptureBranchCopy(document, subjects.Entities, DuplicateBranchPolicy::Subtree,
                     [&world](std::vector<EntitySnapshot>& snapshots) { RemapWorldConnectionDuplicateSnapshots(world, snapshots); });
                 const std::vector<EntityId> created = RestoreBranchCopy(document, copy, placements, false);
@@ -179,6 +181,8 @@ namespace
                     return EditorOperationOutcome::Ok({});
                 for (const EntityId entity : targets.Entities)
                     recorder.Touch(entity);
+                if (parent.IsValid())
+                    recorder.Read(parent);
                 const ReparentTransformRule rule = arguments.Find("keep")->AsString() == "local"
                     ? ReparentTransformRule::KeepLocal : ReparentTransformRule::KeepWorld;
                 ReparentEntitiesCommand(targets.Entities, parent, rule, scene, document).Execute();

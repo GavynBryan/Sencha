@@ -52,9 +52,20 @@ void EntityChangeRecorder::Placed(SceneInstanceId instance)
         PlacedInstances.push_back(instance);
 }
 
+void EntityChangeRecorder::Read(EntityId entity)
+{
+    const PersistentEntityId id = IdOf(Document, entity);
+    if (!id.IsValid() || Recorded.contains(id.Value) || std::ranges::find(Reads, id, &EntityRead::Id) != Reads.end())
+        return;
+    Reads.push_back({ id, DigestOf(Document.CaptureEntity(entity)) });
+}
+
 EntityChangeSet EntityChangeRecorder::Finish() const
 {
     EntityChangeSet set;
+    for (const EntityRead& read : Reads)
+        if (!Recorded.contains(read.Id.Value))
+            set.Reads.push_back(read);
     for (const SceneInstanceId instance : PlacedInstances)
         if (const SceneInstanceRecord* record = Document.FindSceneInstance(instance))
             set.Instances.push_back({ instance, std::nullopt, *record });
@@ -142,6 +153,9 @@ std::vector<PersistentEntityId> ChangeSetConflicts(const EditorDocument& documen
     for (const InstanceChange& change : changes.Instances)
         if ((document.FindSceneInstance(change.Id) != nullptr) != change.Before.has_value())
             conflicts.push_back(PersistentEntityId{ change.Id.Value });
+    for (const EntityRead& read : changes.Reads)
+        if (CurrentDigest(document, read.Id) != read.Digest && std::ranges::find(conflicts, read.Id) == conflicts.end())
+            conflicts.push_back(read.Id);
     return conflicts;
 }
 
@@ -162,6 +176,12 @@ void AppendChangeSet(EntityChangeSet& into, EntityChangeSet next)
         if (never || unchanged)
             into.Changes.erase(earlier);
     }
+    // A read keeps what the entity was when first relied on, unless the
+    // change set changes it too, whose before already says so.
+    for (const EntityRead& read : next.Reads)
+        if (std::ranges::find(into.Reads, read.Id, &EntityRead::Id) == into.Reads.end()
+            && std::ranges::find(into.Changes, read.Id, &EntityChange::Id) == into.Changes.end())
+            into.Reads.push_back(read);
     for (InstanceChange& change : next.Instances)
     {
         const auto earlier = std::ranges::find(into.Instances, change.Id, &InstanceChange::Id);

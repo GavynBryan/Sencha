@@ -130,6 +130,7 @@ namespace
                 Transform3f frame;
                 frame.Position = Vec3d{ wall->OnWall.X, wall->FloorY + sill, wall->OnWall.Z };
                 frame.Rotation = Quatf::FromBasis(up.Cross(wall->Outward), up, wall->Outward);
+                recorder.Read(wall->Space);
                 const EntityId entity = scene.CreateEntity(frame.Position);
                 scene.GetRegistry().Components.AddComponent(entity, opening);
                 (void)scene.SetParent(entity, wall->Space);
@@ -266,6 +267,8 @@ namespace
                 const EntityId opening = subject.Entities.front();
                 if (!document.GetScene().GetRegistry().Components.HasComponent<Opening>(opening))
                     return EditorOperationOutcome::Refused("opening.not_opening", "it is not an opening");
+                if (const std::optional<EntityId> owner = OwnerOf(document.GetScene(), opening))
+                    recorder.Read(*owner);
                 Transform3f moved = *document.GetScene().TryGetWorldTransform(opening);
                 moved.Position = moved.Position + PointFromJson(*arguments.Find("offset"));
                 const EntityMove move{ opening, moved };
