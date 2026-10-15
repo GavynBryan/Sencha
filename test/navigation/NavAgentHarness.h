@@ -62,9 +62,11 @@ struct NavAgentHarness
                                   "navigation.traversal.drop", "navigation.traversal.teleport" })
             (void)tags.RegisterTag(name);
 
+        // Physics first, as a game registers it: movement hands the character
+        // movers to the dilated step when it is registered.
+        RegisterPhysics(Schedule);
         RegisterAbilityKitSystems(Schedule);
         RegisterMovementSystems(Schedule, DataAssets);
-        RegisterPhysics(Schedule);
         Schedule.Register<NavigationSystem>(Runtime, Jobs.get(), &Console);
         RegisterNavigationAgents(Schedule, Runtime, Jobs.get(), &DataAssets, &Console);
         Schedule.Init();
