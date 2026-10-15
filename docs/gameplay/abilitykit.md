@@ -261,7 +261,8 @@ The pass walks the tick's ordered input edges (`docs/gameplay/input.md`, "Edges"
 
 - **Press A.** First, a running toggle started by A ends its hold (the press is
   its release). Otherwise the grants bound to A whose context matches are taken in
-  priority order. Two exclusive bindings at the top priority start nothing
+  priority order. A context naming a tag this World has not registered binds
+  nothing until the tag exists: an unreadable context refuses, never admits. Two exclusive bindings at the top priority start nothing
   (`BindingAmbiguous`). The top exclusive binding runs admission: admitted, it
   starts and consumes the press; refused, the press is consumed (`Blocked`) unless
   the binding says `when_blocked: fall_through`, which lets the next priority try.
@@ -302,13 +303,17 @@ ability in one tick are three activations. An activation's key is the command
 tick, the ability, and the press's place in the tick's edges (or the request's
 place in the queue): two machines that admit differently still name the same
 press the same way. `AbilityActivationIdentity` folds the key, with the ability by
-its wire key, into the one number every machine names the activation by: what its
-leases' owner keys, its presentation and its cue entries are keyed by. The record's
+its wire key, and the grant it ran through into the one number every machine names
+the activation by: what its leases' owner keys, its presentation and its cue
+entries are keyed by. Two grants of one ability observing one press are two
+activations; grant ids reach the owner verbatim, so a guess names its activation
+as the authority does. The record's
 `Sequence` is only this machine's start order.
 
 **Admission** checks the definition, the activation conditions, `instances`, the
 four live records, and that the start costs and an `on_start` cooldown can be
-paid. **End** is the only exit and is idempotent: holds are released newest first,
+paid. A record takes a free slot or evicts the oldest lingering one; with neither,
+the start is refused `Capacity`. **End** is the only exit and is idempotent: holds are released newest first,
 owned tags revoked, an `on_end` cooldown started, exit ops never run; the record
 lingers for presentation with its reason and the element behind it.
 
@@ -357,7 +362,8 @@ Three channels carry what happened, all in replicated state:
 - **Discrete cues** — a `cue` op outside a pulse appends to the actor's
   `AbilityCueLog`, a ring of eight entries with a u16 serial, the activation, the
   op, the tick and the place (a hit's point, normal and entity, an entity, or a
-  vector).
+  vector). An op run over a target list makes one entry per target, and an entry
+  carries its ordinal among the op's entries at that target that tick.
 - **Pulse cues** — a `cue` op in a pulse list writes nothing new: the record's pulse
   count and its last hit (`LastPoint`, `LastNormal`, `LastTarget`) carry it, so an
   automatic weapon costs no log entries.
@@ -381,8 +387,8 @@ What presents an ability travels to every machine that sees the actor:
 `ActiveAbilities` and `AbilityCueLog` have codecs (`ActiveAbilitiesWire.h`,
 `AbilityCueLogWire.h`). A record sends its activation key, state, phase and its
 clock, end reason and element, pulse count and last hit, and the receiver computes
-its identity from the key; grants,
-leases, owned tags and the trigger stay with the authority. Ids cross by name: an
+its identity from the key and the grant's id; the grant itself, leases, owned tags
+and the trigger stay with the authority. Ids cross by name: an
 ability by `AbilityRegistry::WireKey` (its path's `NameWireKey`), a tag by
 `WireTag`, an entity as a wire entity. Each record is split into runs by how often
 they change, so a pulse resends only its count and hit, and the hit is sent at
@@ -412,7 +418,7 @@ The loss bounds, each pinned by `test/runtime/AbilityReplicationTests.cpp`:
 - an older state applied after a newer one presents nothing again, and a log's
   serial wraps without losing order.
 
-One firing actor costs a peer 344 B/s at the default cadence with its aim
+One firing actor costs a peer 340 B/s at the default cadence with its aim
 sweeping, every pulse landing somewhere new (`CueBandwidthPerFiringActorIsMeasured`
 fails above 360).
 
@@ -427,9 +433,13 @@ operations never — and a commit that validates against the replicated attribut
 but pays nothing, starts no cooldown and changes no owned tag. Requests and
 effect-held grants stay with the authority.
 
-The guesses sit beside the authority's records, never over them: the codec leaves
-them out of the image a snapshot lands on, and `AbilityPredictionJournal` (a
-`PredictionJournal`) puts them back after each snapshot. A guess the authority
+The guesses sit beside the authority's records, never over them. `ActiveAbilities`
+holds the authority's six records, which the codec sends and a snapshot rewrites,
+then `kAbilityGuessCapacity` slots for guesses, one per activation the authority can
+hold live, so a client can guess every start the authority admits.
+`AbilityPredictionJournal` (a `PredictionJournal`) puts the guesses back after each
+snapshot. A client's pass changes only its guesses (`AbilityPass::Runs`): input,
+`cancel_tags` and requests leave the authority's records as they arrived. A guess the authority
 also started keeps running here, with the authority's extra pulses added; one it
 ended ends here with the authority's reason; one it never started, once it has run
 that command, ends `AuthorityDenied`, letting go of what it held. An authority
@@ -439,8 +449,9 @@ guess stays until the authority's copy stops running.
 
 The owner presents its guesses at once: discrete cues go to its machine-local
 `AbilityPredictedCues`, never the replicated log, and the presenter remembers each
-occurrence (`AbilityCueOccurrence`: activation, op, tick) so the authority's entry
-for it is not presented again. Records are followed by identity, not slot, and one
+occurrence (`AbilityCueOccurrence`: activation, op, tick, target and ordinal) so
+the authority's entry for it is not presented again, and an entry the guess did not
+make, such as a target only the authority struck, still is. Records are followed by identity, not slot, and one
 that went away and comes back on the wire is not presented again.
 
 ## Authoring
@@ -476,21 +487,22 @@ The CTX modes are three more grants: keys 2 and 3 toggle abilities owning
 
 Measured by `scripts/bench_abilities.sh` (profile preset, performance cores):
 
-Per actor with grants, 5,976 bytes: `AbilityLocals` 2,736 (eight typed slots and an
-entity list for each of six records), `ActiveAbilities` 1,360, `AbilityCueLog` and
-`AbilityPredictedCues` 520 each, `AbilityPresentationState` 432, `AbilityGrants`
-392, `ActorTime` 16.
+Per actor with grants, 9,016 bytes: `AbilityLocals` 4,560 (eight typed slots and an
+entity list for each of ten slots), `ActiveAbilities` 2,256, `AbilityPresentationState`
+624, `AbilityCueLog` and `AbilityPredictedCues` 584 each, `AbilityGrants` 392,
+`ActorTime` 16. The four guess slots are 2,912 of those bytes, empty everywhere but
+on the pawn a client predicts (`docs/deferred.md`).
 
 | Actors | Pass, idle | Pass, every actor firing an automatic | Presenting them |
 |---|---|---|---|
-| 16 | 0.004 ms | 0.007 ms | 0.001 ms |
-| 64 | 0.014 ms | 0.028 ms | 0.004 ms |
-| 256 | 0.060 ms | 0.117 ms | 0.015 ms |
+| 16 | 0.005 ms | 0.009 ms | 0.001 ms |
+| 64 | 0.019 ms | 0.032 ms | 0.005 ms |
+| 256 | 0.073 ms | 0.126 ms | 0.018 ms |
 
 Medians per tick over 240 ticks after 60 of warm-up; "firing" is a pulse with a cue
 every second tick on every actor. The pass is linear in actors, well under the 1 ms
 mark at which a query is worth parallelising, so it stays serial. A firing actor
-costs a peer 344 B/s ("Replication").
+costs a peer 340 B/s ("Replication").
 
 ## Architectural smells
 

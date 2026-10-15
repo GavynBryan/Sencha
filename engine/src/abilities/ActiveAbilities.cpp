@@ -29,12 +29,14 @@ std::string_view AbilityEndReasonName(AbilityEndReason reason)
     return "unknown";
 }
 
-std::uint64_t AbilityActivationIdentity(const AbilityActivationKey& key, std::uint32_t abilityWireKey)
+std::uint64_t AbilityActivationIdentity(const AbilityActivationKey& key, std::uint32_t abilityWireKey,
+                                        AbilityGrantId grant)
 {
     std::uint64_t hash = kFnv1aOffsetBasis;
     HashFnv1aValue(hash, key.CommandTick);
     HashFnv1aValue(hash, abilityWireKey);
     HashFnv1aValue(hash, key.Origin);
+    HashFnv1aValue(hash, grant.Value);
     return hash == 0 ? 1u : hash;
 }
 

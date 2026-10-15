@@ -42,7 +42,7 @@ struct AbilityEffectiveBinding
 };
 
 // The World's grant entries and their effective bindings. Bindings rebuild when the
-// abilities or the action vocabulary they were resolved against change.
+// abilities, the action vocabulary or the gameplay tags they were resolved against change.
 class AbilityGrantEntries
 {
 public:
@@ -58,8 +58,8 @@ public:
     [[nodiscard]] std::size_t Size() const { return Entries.size(); }
 
     // Re-resolves every binding when anything it was resolved against moved. A name
-    // that does not resolve leaves that binding unbound and is reported once per
-    // rebuild.
+    // that does not resolve, an action or a context's tag, leaves that binding
+    // unbound and is reported once per rebuild.
     void Refresh(const AbilityRegistry& abilities, const InputActionRegistry* actions,
                  std::uint64_t actionsRevision, const GameplayTagRegistry& tags, std::vector<std::string>& problems);
 
@@ -75,6 +75,8 @@ private:
     std::uint64_t AbilitiesGeneration = 0;
     const InputActionRegistry* Actions = nullptr;
     std::uint64_t ActionsRevision = 0;
+    const GameplayTagRegistry* Tags = nullptr;
+    std::size_t TagCount = 0;
 };
 
 // A grant's binding by name: what the grant states, else what its ability's

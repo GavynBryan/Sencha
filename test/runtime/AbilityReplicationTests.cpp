@@ -241,12 +241,12 @@ protected:
         Authority.Entities.AddComponent<AttributeSet>(Actor, AttributeSet{});
     }
 
-    void Grant(std::string_view json, std::string_view path)
+    void Grant(std::string_view json, std::string_view path, std::string key = "g")
     {
         const AbilityId ability = Authority.Define(json, path);
         // The client's own copy of the grant entry, as its prefab interns one.
-        (void)Client.Entities.GetResource<AbilityGrantEntries>().Intern({ "g", Client.Define(json, path), {} });
-        const std::uint16_t entry = Authority.Entities.GetResource<AbilityGrantEntries>().Intern({ "g", ability, {} });
+        (void)Client.Entities.GetResource<AbilityGrantEntries>().Intern({ key, Client.Define(json, path), {} });
+        const std::uint16_t entry = Authority.Entities.GetResource<AbilityGrantEntries>().Intern({ key, ability, {} });
         (void)GrantAbility(*Authority.Entities.TryGet<AbilityGrants>(Actor), ability, AbilityGrantKind::Authored, entry);
     }
 
@@ -379,6 +379,20 @@ protected:
     void Lockstep(std::vector<InputActionEdge> edges = {},
                   std::optional<std::vector<InputActionEdge>> heard = std::nullopt)
     {
+        ClientTick(edges);
+        Commands.push_back(heard ? std::move(*heard) : std::move(edges));
+        while (ClientNow - Now > kLag)
+        {
+            Step(std::move(Commands.front()));
+            Commands.erase(Commands.begin());
+            if (Now % kNetDefaultSnapshotInterval == 0)
+                (void)Publish();
+        }
+    }
+
+    // The client's pass and presentation alone, at the head of its timeline.
+    void ClientTick(const std::vector<InputActionEdge>& edges)
+    {
         World& world = Client.Entities;
         InputActionState& state = world.GetResource<InputActionState>();
         std::span<InputActionValue> values = state.BeginTick(ClientNow);
@@ -393,15 +407,7 @@ protected:
         RunAbilityPass(world, Client.Host, FixedSimTime{ .DeltaSeconds = kTickSeconds, .TickIndex = ClientNow }, nullptr,
                        Client.Settings);
         Client.Presenter->Present(world, ClientNow);
-        Commands.push_back(heard ? std::move(*heard) : std::move(edges));
         ++ClientNow;
-        while (ClientNow - Now > kLag)
-        {
-            Step(std::move(Commands.front()));
-            Commands.erase(Commands.begin());
-            if (Now % kNetDefaultSnapshotInterval == 0)
-                (void)Publish();
-        }
     }
 
     void Locksteps(int count)
@@ -783,4 +789,151 @@ TEST_F(AbilityReplication, ASimulationLevelGuessHoldsWhatTheAuthorityWill)
     EXPECT_EQ(Client.Simulated.Held, 0) << "and lets go when its input does";
     Locksteps(10);
     EXPECT_EQ(Client.Simulated.Held, 0);
+}
+
+namespace
+{
+std::size_t CountRecords(const ActiveAbilities& active, bool predicted)
+{
+    return static_cast<std::size_t>(std::ranges::count_if(active.Records, [&](const AbilityRecord& record) {
+        return record.State == AbilityRecordState::Live && record.Predicted == predicted;
+    }));
+}
+
+AbilityCueEntry CueAt(GameplayTagId cue, std::uint64_t tick, EntityId target)
+{
+    return { .Cue = cue, .Activation = 77, .Op = 0, .Tick = tick, .Target = target };
+}
+}
+
+TEST_F(AbilityReplication, AClientsReleaseLeavesTheAuthoritysRecordAlone)
+{
+    Grant(kGlowing, "asset://abilities/glowing.sdata");
+    Predict();
+    ActiveAbilities& active = *Client.Entities.TryGet<ActiveAbilities>(Remote());
+    AbilityRecord& word = active.Records[0];
+    word = AbilityRecord{};
+    word.State = AbilityRecordState::Live;
+    word.Key = { .CommandTick = ClientNow, .Ability = Client.Entities.GetResource<AbilityRegistry>().Find(
+                                               "asset://abilities/glowing.sdata") };
+    word.Grant = Client.Entities.TryGet<AbilityGrants>(Remote())->Entries[0].Id;
+    word.TriggerAction = kGlowAction;
+    word.Identity = 99;
+    ClientHeld[kGlowAction] = true;
+    ClientTick({ { kGlowAction, InputEdgeKind::Release } });
+    EXPECT_EQ(word.State, AbilityRecordState::Live) << "the authority's record is only presented here";
+    EXPECT_FALSE(word.Released);
+}
+
+TEST_F(AbilityReplication, AGuessCancelsOnlyGuesses)
+{
+    Grant(R"({
+        "input_default": { "action": "Input.Glow", "policy": "press_release" },
+        "prediction": "none",
+        "owned_tags": ["State.Charged"],
+        "phases": [ { "key": "p_on", "then": [ { "key": "t_off", "on": "release", "to": "end" } ] } ] })",
+          "asset://abilities/charged.sdata", "g_charged");
+    Grant(R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "cancel_tags": ["State.Charged"],
+        "phases": [ { "key": "p_fire", "then": [ { "key": "t_end", "to": "end" } ] } ] })",
+          "asset://abilities/discharge.sdata", "g_discharge");
+    Predict();
+    Lockstep({ { kGlowAction, InputEdgeKind::Press } });
+    Locksteps(12);
+    ASSERT_EQ(CountRecords(RemoteRecords(), false), 1u) << "the authority's charge, which the client does not guess";
+    ClientTick({ { kFire, InputEdgeKind::Press } });
+    EXPECT_EQ(CountRecords(RemoteRecords(), false), 1u)
+        << "the guessed discharge leaves the authority's charge for the authority to cancel";
+}
+
+TEST_F(AbilityReplication, AFourthGuessFitsBesideThreeConfirmedOnes)
+{
+    Grant(R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "instances": 4,
+        "phases": [ { "key": "p_wait", "then": [ { "key": "t_end", "on": "timeout", "ticks": 400, "to": "end" } ] } ] })",
+          "asset://abilities/lasting.sdata");
+    Predict();
+    for (int start = 0; start < 3; ++start)
+    {
+        Lockstep({ { kFire, InputEdgeKind::Press } });
+        Lockstep({ { kFire, InputEdgeKind::Release } });
+        Locksteps(12);
+    }
+    ASSERT_EQ(CountRecords(RemoteRecords(), true), 3u);
+    ASSERT_EQ(CountRecords(RemoteRecords(), false), 3u) << "each guess confirmed: the authority's copy beside it";
+
+    Lockstep({ { kFire, InputEdgeKind::Press } });
+    EXPECT_EQ(CountRecords(RemoteRecords(), true), 4u) << "a fourth activation the authority will admit is guessed";
+    Lockstep({ { kFire, InputEdgeKind::Release } });
+    Locksteps(12);
+    EXPECT_EQ(CountRecords(RemoteRecords(), true), 4u);
+    EXPECT_EQ(CountRecords(RemoteRecords(), false), 4u) << "and kept beside the authority's four";
+
+    Lockstep({ { kFire, InputEdgeKind::Press } });
+    EXPECT_EQ(CountRecords(RemoteRecords(), true), 4u) << "a fifth is refused here as the authority refuses it";
+}
+
+TEST_F(AbilityReplication, TwoGrantsOfOneAbilityAreNamedApartOnEveryMachine)
+{
+    constexpr std::string_view kWatch = R"({
+        "input_default": { "action": "Input.PrimaryFire", "consume": "observe" },
+        "instances": 2,
+        "phases": [ { "key": "p_wait", "then": [ { "key": "t_end", "on": "timeout", "ticks": 30, "to": "end" } ] } ] })";
+    Grant(kWatch, "asset://abilities/watch.sdata", "g_left");
+    Grant(kWatch, "asset://abilities/watch.sdata", "g_right");
+    Step();
+    (void)Publish();
+    Step({ { kFire, InputEdgeKind::Press } });
+    (void)Publish();
+    std::vector<std::uint64_t> identities;
+    for (const AbilityRecord& record :
+         static_cast<const World&>(Authority.Entities).TryGet<ActiveAbilities>(Actor)->Records)
+        if (record.State == AbilityRecordState::Live)
+            identities.push_back(record.Identity);
+    ASSERT_EQ(identities.size(), 2u);
+    EXPECT_NE(identities[0], identities[1]);
+    for (const std::uint64_t identity : identities)
+        EXPECT_TRUE(std::ranges::any_of(RemoteRecords().Records,
+                                        [&](const AbilityRecord& record) { return record.Identity == identity; }))
+            << "the client names each activation as the authority does";
+}
+
+TEST(AbilityCueOccurrence, NamesEachTargetAndEachRepeat)
+{
+    AbilityCueLog log;
+    const GameplayTagId cue{ 3 };
+    (void)AppendAbilityCue(log, CueAt(cue, 10, EntityId{ 1, 1 }));
+    (void)AppendAbilityCue(log, CueAt(cue, 10, EntityId{ 2, 1 }));
+    (void)AppendAbilityCue(log, CueAt(cue, 10, EntityId{ 1, 1 }));
+    const std::uint64_t first = AbilityCueOccurrence(log.Entries[1]);
+    const std::uint64_t other = AbilityCueOccurrence(log.Entries[2]);
+    const std::uint64_t again = AbilityCueOccurrence(log.Entries[3]);
+    EXPECT_NE(first, other) << "one op striking two targets in a tick is two occurrences";
+    EXPECT_NE(first, again) << "and striking one target twice is two";
+
+    AbilityCueLog guessed;
+    (void)AppendAbilityCue(guessed, CueAt(cue, 10, EntityId{ 1, 1 }));
+    EXPECT_EQ(AbilityCueOccurrence(guessed.Entries[1]), first) << "a guess names its occurrence as the authority does";
+}
+
+TEST_F(AbilityReplication, AGuessedCueHidesOnlyTheAuthorityEntryItGuessed)
+{
+    Grant(kShot, "asset://abilities/shot.sdata");
+    Predict();
+    World& client = Client.Entities;
+    const GameplayTagId shot = client.GetResource<GameplayTagRegistry>().FindTag("cue.shot");
+    const EntityId struck = client.CreateEntity();
+    const EntityId missed = client.CreateEntity();
+    (void)AppendAbilityCue(client.TryGet<AbilityPredictedCues>(Remote())->Log, CueAt(shot, ClientNow, struck));
+    Client.Presenter->Present(client, ClientNow);
+    ASSERT_EQ(Client.Showings.Counts.size(), 1u) << "the guess is shown at once";
+
+    AbilityCueLog& word = *client.TryGet<AbilityCueLog>(Remote());
+    (void)AppendAbilityCue(word, CueAt(shot, ClientNow, struck));
+    (void)AppendAbilityCue(word, CueAt(shot, ClientNow, missed));
+    Client.Presenter->Present(client, ClientNow);
+    EXPECT_EQ(Client.Showings.Counts.size(), 2u) << "the authority's entry for the guessed target is not shown again; "
+                                                     "the one the guess did not make is";
 }

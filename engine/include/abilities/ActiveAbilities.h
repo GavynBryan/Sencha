@@ -60,9 +60,11 @@ struct AbilityActivationKey
 
 inline constexpr std::uint8_t kAbilityRequestOrigin = 0x80;
 
-// The activation as every machine names it: its key with the ability by name, so
-// a client's guess and the authority's record of one press are the same activation.
-[[nodiscard]] std::uint64_t AbilityActivationIdentity(const AbilityActivationKey& key, std::uint32_t abilityWireKey);
+// The activation as every machine names it: its key with the ability by name and
+// the grant it ran through, so a client's guess and the authority's record of one
+// press are one activation, and two grants observing that press are two.
+[[nodiscard]] std::uint64_t AbilityActivationIdentity(const AbilityActivationKey& key, std::uint32_t abilityWireKey,
+                                                      AbilityGrantId grant);
 inline constexpr std::uint8_t kAbilityNoTrigger = 0xFF;
 
 enum class AbilityRecordState : std::uint8_t
@@ -123,7 +125,8 @@ struct AbilityRecord
 // What an actor is running, and what it ran recently enough to still present.
 struct SENCHA_COMPONENT("sencha.active_abilities") ActiveAbilities
 {
-    AbilityRecord Records[kAbilityRecordCapacity] = {};
+    // The authority's records, then this machine's guesses (AbilityCapacity.h).
+    AbilityRecord Records[kAbilitySlotCapacity] = {};
     std::uint64_t NextSequence = 1;
     // Lingering records evicted to make room for a live one.
     std::uint32_t Evicted = 0;

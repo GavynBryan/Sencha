@@ -70,12 +70,12 @@ EntityId AbilityPass::EntityOf(const AbilityActor& actor, std::size_t slot, cons
         {
         case AbilityPort::Actor: return actor.Entity;
         case AbilityPort::Instigator:
-            return slot < kAbilityRecordCapacity ? actor.Record(slot).Instigator : actor.Entity;
+            return slot < kAbilitySlotCapacity ? actor.Record(slot).Instigator : actor.Entity;
         case AbilityPort::Target: return Target;
         default: return EntityId{};
         }
     }
-    if (value.Source == AbilityValueSource::Local && slot < kAbilityRecordCapacity && value.Local != kAbilityNoLocal)
+    if (value.Source == AbilityValueSource::Local && slot < kAbilitySlotCapacity && value.Local != kAbilityNoLocal)
     {
         const AbilityLocalValue& local = actor.Locals(slot).Values[value.Local];
         if (local.Set && (value.Field != AbilityHitField::Entity || local.Hit))
@@ -104,12 +104,12 @@ double AbilityPass::Number(const AbilityActor& actor, std::size_t slot, const Ab
         return value.Constant.TryGetBool(truth) && truth ? 1.0 : 0.0;
     }
     case AbilityValueSource::Local:
-        return slot < kAbilityRecordCapacity && value.Local != kAbilityNoLocal
+        return slot < kAbilitySlotCapacity && value.Local != kAbilityNoLocal
             ? actor.Locals(slot).Values[value.Local].Number
             : 0.0;
     case AbilityValueSource::Port:
     {
-        if (slot >= kAbilityRecordCapacity)
+        if (slot >= kAbilitySlotCapacity)
             return 0.0;
         const AbilityRecord& record = actor.Record(slot);
         switch (value.Port)
@@ -156,7 +156,7 @@ void AbilityPass::Evaluate(const AbilityActor& actor, std::size_t slot, const Ab
         }
     }
 
-    if (slot >= kAbilityRecordCapacity || value.Local == kAbilityNoLocal)
+    if (slot >= kAbilitySlotCapacity || value.Local == kAbilityNoLocal)
     {
         out = AuthoredValue{};
         return;
@@ -214,19 +214,19 @@ bool AbilityPass::Holds(const AbilityActor& actor, std::size_t slot, const Abili
                        Number(actor, slot, definition, condition.Value));
     }
     case AbilityConditionKind::Local:
-        return slot < kAbilityRecordCapacity && actor.Locals(slot).Values[condition.Subject.Local].Set
+        return slot < kAbilitySlotCapacity && actor.Locals(slot).Values[condition.Subject.Local].Set
             && Compare(actor.Locals(slot).Values[condition.Subject.Local].Number, condition.Compare,
                        Number(actor, slot, definition, condition.Value));
     case AbilityConditionKind::Hit:
     {
-        if (slot >= kAbilityRecordCapacity)
+        if (slot >= kAbilitySlotCapacity)
             return false;
         const AbilityLocalValue& hit = actor.Locals(slot).Values[condition.Subject.Local];
         return hit.Set && hit.Hit;
     }
     case AbilityConditionKind::TargetLost:
     {
-        if (slot >= kAbilityRecordCapacity)
+        if (slot >= kAbilitySlotCapacity)
             return false;
         const AbilityLocalValue& held = actor.Locals(slot).Values[condition.Subject.Local];
         return held.Set && held.Entity.IsValid() && !world.IsAlive(held.Entity);
@@ -247,16 +247,16 @@ bool AbilityPass::Holds(const AbilityActor& actor, std::size_t slot, const Abili
         return TagRegistry != nullptr && condition.Tags.Matches(tags != nullptr ? *tags : kNoTags, *TagRegistry);
     }
     case AbilityConditionKind::PhaseTicks:
-        return slot < kAbilityRecordCapacity
+        return slot < kAbilitySlotCapacity
             && Compare(static_cast<double>(PhaseTicks(actor, actor.Record(slot), definition)), condition.Compare,
                        Number(actor, slot, definition, condition.Value));
     case AbilityConditionKind::Pulse:
-        return slot < kAbilityRecordCapacity
+        return slot < kAbilitySlotCapacity
             && Compare(static_cast<double>(actor.Record(slot).Pulse), condition.Compare,
                        Number(actor, slot, definition, condition.Value));
     case AbilityConditionKind::Input:
     {
-        const std::uint8_t action = slot < kAbilityRecordCapacity ? actor.Record(slot).TriggerAction : kAbilityNoTrigger;
+        const std::uint8_t action = slot < kAbilitySlotCapacity ? actor.Record(slot).TriggerAction : kAbilityNoTrigger;
         const bool held = action != kAbilityNoTrigger && action < actor.Input.Values.size()
             && actor.Input.Values[action].IsHeld();
         return held == condition.Held;

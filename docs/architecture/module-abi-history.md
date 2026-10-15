@@ -426,6 +426,15 @@ joins the kit's components and `ActiveAbilities`' derived set;
 `AbilityPresentationState` gains the guessed-cue memory and departed records; the
 ability pass runs on a client for its predicted pawn.
 
+**Review of the merged kit.** `ActiveAbilities`, `AbilityLocals` and
+`AbilityPresentationState` hold `kAbilitySlotCapacity` records: the authority's
+`kAbilityRecordCapacity`, then `kAbilityGuessCapacity` guess slots
+(`AbilityCapacity.h`). `AbilityActivationIdentity` takes the grant's id, which the
+record's wire form now carries; `AbilityCueEntry` gains `Ordinal`, which the cue
+log's wire form carries and `AbilityCueOccurrence` hashes with the target. The
+replication table hash moves. `AbilityGrantEntries` rebuilds when the tag registry
+grows, and a binding whose context names an unregistered tag is unbound.
+
 **Engine teardown.** `Engine` declares its `BackRouter` before the pause menu and
 options page that lease consumers from it, so they hand their leases back to a
 live router at shutdown; a windowed host with a pause menu aborted on exit

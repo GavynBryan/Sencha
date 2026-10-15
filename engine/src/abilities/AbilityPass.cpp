@@ -82,26 +82,25 @@ LeaseOwner AbilityPass::OwnerOf(const AbilityActor& actor, std::size_t slot, std
 
 int AbilityPass::ClaimSlot(const AbilityActor& actor)
 {
+    // A snapshot rewrites only the authority's slots, so a guess claims among its own.
+    const std::size_t first = Predicting ? kAbilityRecordCapacity : 0;
+    const std::size_t end = Predicting ? kAbilitySlotCapacity : kAbilityRecordCapacity;
     ActiveAbilities& active = actor.Active();
-    std::size_t live = 0;
     int free = -1;
     int oldest = -1;
-    for (std::size_t i = 0; i < kAbilityRecordCapacity; ++i)
+    for (std::size_t i = first; i < end; ++i)
     {
         const AbilityRecord& record = active.Records[i];
-        if (record.State == AbilityRecordState::Live && !IsAbilityRecordShadowed(active, i))
-            ++live;
-        else if (record.State == AbilityRecordState::Free && free < 0)
+        if (record.State == AbilityRecordState::Free && free < 0)
             free = static_cast<int>(i);
-        else if (record.State == AbilityRecordState::Lingering
+        else if (record.State == AbilityRecordState::Lingering && !(Predicting && AuthorityRuns(actor, record))
                  && (oldest < 0 || record.Sequence < active.Records[oldest].Sequence))
             oldest = static_cast<int>(i);
     }
-    if (live >= kAbilityLiveRecordCapacity)
-        return -1;
     if (free >= 0)
         return free;
-    ++active.Evicted;
+    if (oldest >= 0)
+        ++active.Evicted;
     return oldest;
 }
 
@@ -111,13 +110,13 @@ AbilityRefusal AbilityPass::CanActivate(const AbilityActor& actor, const Ability
     const AbilityDefinition* definition = Abilities != nullptr ? Abilities->Get(grant.Ability) : nullptr;
     if (definition == nullptr || definition->Phases.empty())
         return AbilityRefusal::Undefined;
-    if (!AllHold(actor, kAbilityRecordCapacity, *definition, definition->Activation, failing))
+    if (!AllHold(actor, kAbilitySlotCapacity, *definition, definition->Activation, failing))
         return AbilityRefusal::ActivationFailed;
 
     std::size_t live = 0;
     std::size_t instances = 0;
     const ActiveAbilities& active = actor.Active();
-    for (std::size_t i = 0; i < kAbilityRecordCapacity; ++i)
+    for (std::size_t i = 0; i < kAbilitySlotCapacity; ++i)
     {
         const AbilityRecord& record = active.Records[i];
         if (record.State != AbilityRecordState::Live || IsAbilityRecordShadowed(active, i))
@@ -151,6 +150,12 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
         return -1;
     }
     const int claimed = ClaimSlot(actor);
+    if (claimed < 0)
+    {
+        Trace({ .Actor = actor.Entity, .Key = key, .Event = AbilityTraceEvent::Refused,
+                .Refusal = AbilityRefusal::Capacity });
+        return -1;
+    }
     const auto slot = static_cast<std::size_t>(claimed);
     const AbilityDefinition& definition = *Abilities->Get(grant.Ability);
 
@@ -165,7 +170,7 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
     record.TriggerSource = actor.Source;
     record.Instigator = instigator.IsValid() ? instigator : actor.Entity;
     record.Sequence = active.NextSequence++;
-    record.Identity = AbilityActivationIdentity(key, Abilities->WireKey(key.Ability));
+    record.Identity = AbilityActivationIdentity(key, Abilities->WireKey(key.Ability), grant.Id);
     record.Predicted = Predicting;
     actor.Locals(slot) = AbilityRecordLocals{};
 
@@ -186,9 +191,9 @@ int AbilityPass::TryStart(const AbilityActor& actor, const AbilityGrant& grant, 
     }
     Trace({ .Actor = actor.Entity, .Key = key, .Event = AbilityTraceEvent::Started });
 
-    for (std::size_t other = 0; other < kAbilityRecordCapacity && !definition.CancelTags.empty(); ++other)
+    for (std::size_t other = 0; other < kAbilitySlotCapacity && !definition.CancelTags.empty(); ++other)
     {
-        if (other == slot || !Live(actor, other))
+        if (other == slot || !Runs(actor, other))
             continue;
         const AbilityDefinition* running = DefinitionOf(actor.Record(other));
         if (running == nullptr || TagRegistry == nullptr)
@@ -588,7 +593,7 @@ void AbilityPass::Write(const AbilityActor& actor, std::size_t slot, const Abili
 
 void AbilityPass::Sweep(const AbilityActor& actor)
 {
-    for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
+    for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
     {
         if (!Runs(actor, slot))
             continue;
@@ -640,7 +645,7 @@ void AbilityPass::Sweep(const AbilityActor& actor)
 
 void AbilityPass::Advance(const AbilityActor& actor)
 {
-    for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
+    for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
     {
         if (!Runs(actor, slot))
             continue;
@@ -658,7 +663,7 @@ void AbilityPass::Advance(const AbilityActor& actor)
 
 void AbilityPass::Linger(const AbilityActor& actor)
 {
-    for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
+    for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
     {
         AbilityRecord& record = actor.Record(slot);
         if (record.State == AbilityRecordState::Lingering && (!Predicting || (record.Predicted && !AuthorityRuns(actor, record)))

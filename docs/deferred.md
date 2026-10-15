@@ -500,6 +500,19 @@ do the work and delete the entry.
 - **Trigger:** the first HUD that shows a predicted pawn's ammo or energy, which is
   what reads the overlay.
 
+## Guess slots on actors no machine predicts
+
+- **What:** `ActiveAbilities` and `AbilityLocals` carry `kAbilityGuessCapacity`
+  guess slots on every actor with grants, but only the pawn a client predicts ever
+  fills them. On the authority, and for every other actor, they stay empty: 2,912
+  bytes per actor ("Costs" in `docs/gameplay/abilitykit.md`).
+- **Where:** `engine/include/abilities/AbilityCapacity.h`, the record arrays in
+  `ActiveAbilities.h` and `AbilityLocals.h`, `AbilityPass::ClaimSlot` and the
+  journal's `FreeGuessSlot` (`engine/src/abilities/AbilityPredictionJournal.cpp`).
+- **Trigger:** a measured memory or chunk-occupancy cost from ability actors, such
+  as an encounter whose actor count puts the per-actor bytes over a memory budget.
+  The change moves guesses into storage only the predicted pawn carries.
+
 ## Locomotion facts for a pawn this machine only receives
 
 - **What:** a remote pawn's locomotion animation reads facts its machine is not

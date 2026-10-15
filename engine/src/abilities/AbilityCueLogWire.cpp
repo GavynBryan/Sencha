@@ -33,6 +33,7 @@ void ReplicationCodec<AbilityCueLog>::ToWire(const ReplicationWireContext& conte
         out.Ticks.Values[2] = context.WireEntity(entry.Target);
         out.Words.Values[0] = static_cast<std::uint32_t>(entry.Seq) | static_cast<std::uint32_t>(entry.Op) << 16;
         out.Words.Values[1] = WireTag(context, entry.Cue);
+        out.Words.Values[2] = entry.Ordinal;
         out.Point = entry.Point;
         out.Normal = entry.Normal;
     }
@@ -54,6 +55,7 @@ void ReplicationCodec<AbilityCueLog>::FromWire(const ReplicationWireContext& con
             continue;
         entry.Op = static_cast<std::uint16_t>(in.Words.Values[0] >> 16);
         entry.Cue = LocalTag(context, in.Words.Values[1]);
+        entry.Ordinal = static_cast<std::uint8_t>(in.Words.Values[2]);
         entry.Activation = in.Ticks.Values[0];
         entry.Tick = in.Ticks.Values[1];
         entry.Target = context.LocalEntity(in.Ticks.Values[2]);

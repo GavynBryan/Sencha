@@ -23,6 +23,8 @@ struct AbilityCueEntry
     Vec3d Point = Vec3d::Zero();
     Vec3d Normal = Vec3d::Zero();
     EntityId Target;
+    // Which of the op's cues at this target this tick it is, from zero.
+    std::uint8_t Ordinal = 0;
 };
 
 // The actor's recent discrete cues, newest overwriting oldest. Pulse cues are not
@@ -44,11 +46,12 @@ struct SENCHA_COMPONENT("sencha.ability_predicted_cues") AbilityPredictedCues
     AbilityCueLog Log;
 };
 
-// Appends `entry` under the next serial number, which it returns.
+// Appends `entry` under the next serial number, which it returns, numbering it
+// after the log's entries for the same activation, op, tick and target.
 std::uint16_t AppendAbilityCue(AbilityCueLog& log, AbilityCueEntry entry);
 
-// One occurrence as every machine names it: the activation, the op and the tick,
-// which a guess and the authority's entry for it share.
+// One occurrence as every machine names it: the activation, op, tick, target and
+// ordinal, which a guess and the authority's entry for it share.
 [[nodiscard]] std::uint64_t AbilityCueOccurrence(const AbilityCueEntry& entry);
 
 // Whether serial `a` comes after `b`, across the u16 wrap.

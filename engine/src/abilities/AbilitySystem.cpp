@@ -66,11 +66,11 @@ namespace
                const GameplayTagRegistry* tags, std::uint8_t action, std::uint8_t edge)
     {
         bool toggled = false;
-        for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
+        for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
         {
             AbilityRecord& record = actor.Record(slot);
             const AbilityEffectiveBinding* binding = RecordBinding(entries, actor, record);
-            if (record.State != AbilityRecordState::Live || record.TriggerAction != action || binding == nullptr
+            if (!pass.Runs(actor, slot) || record.TriggerAction != action || binding == nullptr
                 || binding->Policy != AbilityInputPolicy::Toggle)
                 continue;
             record.Released = true;
@@ -151,10 +151,10 @@ namespace
     void Release(AbilityPass& pass, const AbilityActor& actor, const AbilityGrantEntries& entries, std::uint8_t action,
                  bool interrupted)
     {
-        for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
+        for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
         {
             AbilityRecord& record = actor.Record(slot);
-            if (record.State != AbilityRecordState::Live || record.TriggerAction != action)
+            if (!pass.Runs(actor, slot) || record.TriggerAction != action)
                 continue;
             const AbilityEffectiveBinding* binding = RecordBinding(entries, actor, record);
             if (binding == nullptr || binding->Policy == AbilityInputPolicy::Press)
@@ -194,9 +194,8 @@ namespace
             const AbilityActor actor{ &world, request.Actor, {}, kLocalInputActionSource };
             if (request.Kind == AbilityRequestKind::Cancel)
             {
-                for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
-                    if (actor.Record(slot).State == AbilityRecordState::Live
-                        && actor.Record(slot).Key.Ability == request.Ability)
+                for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
+                    if (pass.Runs(actor, slot) && actor.Record(slot).Key.Ability == request.Ability)
                         pass.End(actor, slot, AbilityEndReason::ExplicitCancel);
                 continue;
             }

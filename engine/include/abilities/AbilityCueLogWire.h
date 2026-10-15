@@ -15,10 +15,10 @@ struct AbilityCueWireTicks
     std::uint64_t Values[3] = {};
 };
 
-// Seq | Op << 16; the cue's wire key.
+// Seq | Op << 16; the cue's wire key; the ordinal.
 struct AbilityCueWireWords
 {
-    std::uint32_t Values[2] = {};
+    std::uint32_t Values[3] = {};
 };
 
 struct AbilityCueWireEntry
@@ -53,7 +53,7 @@ struct PackedScalarGroup<AbilityCueWireTicks>
 template <>
 struct PackedScalarGroup<AbilityCueWireWords>
 {
-    static constexpr std::size_t Count = 2;
+    static constexpr std::size_t Count = 3;
     using Component = std::uint32_t;
 };
 

@@ -33,9 +33,7 @@ void ReplicationCodec<ActiveAbilities>::ToWire(const ReplicationWireContext& con
         ActiveAbilityWireRecord& out = *records[i];
         out = ActiveAbilityWireRecord{};
         const AbilityRecord& record = active.Records[i];
-        // A guess is this machine's own: the image a delta lands on is the authority's
-        // alone, and the journal puts the guesses back after it.
-        if (record.State == AbilityRecordState::Free || record.Predicted)
+        if (record.State == AbilityRecordState::Free)
             continue;
         out.Ticks.Values[0] = record.Key.CommandTick;
         out.Words.Values[0] = abilities != nullptr ? abilities->WireKey(record.Key.Ability) : 0u;
@@ -44,6 +42,7 @@ void ReplicationCodec<ActiveAbilities>::ToWire(const ReplicationWireContext& con
                             | static_cast<std::uint32_t>(record.Phase) << 16
                             | static_cast<std::uint32_t>(record.EndReason) << 24;
         out.Words.Values[2] = record.EndElement;
+        out.Words.Values[3] = record.Grant.Value;
         out.Ticks.Values[1] = record.PhaseStart;
         out.Ticks.Values[2] = record.EndTick;
         out.Pulse = record.Pulse;
@@ -73,9 +72,10 @@ void ReplicationCodec<ActiveAbilities>::FromWire(const ReplicationWireContext& c
         record.Phase = static_cast<std::uint8_t>(in.Words.Values[1] >> 16);
         record.EndReason = static_cast<AbilityEndReason>(static_cast<std::uint8_t>(in.Words.Values[1] >> 24));
         record.EndElement = static_cast<std::uint16_t>(in.Words.Values[2]);
+        record.Grant = AbilityGrantId{ in.Words.Values[3] };
         record.PhaseStart = in.Ticks.Values[1];
         record.EndTick = in.Ticks.Values[2];
-        record.Identity = AbilityActivationIdentity(record.Key, in.Words.Values[0]);
+        record.Identity = AbilityActivationIdentity(record.Key, in.Words.Values[0], record.Grant);
         record.Pulse = in.Pulse;
         record.LastPoint = in.LastPoint;
         record.LastNormal = in.LastNormal;

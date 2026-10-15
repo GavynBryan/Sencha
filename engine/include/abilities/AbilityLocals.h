@@ -33,7 +33,7 @@ struct AbilityRecordLocals
 // replicated: a predicting client computes its own.
 struct SENCHA_COMPONENT("sencha.ability_locals") AbilityLocals
 {
-    AbilityRecordLocals Records[kAbilityRecordCapacity] = {};
+    AbilityRecordLocals Records[kAbilitySlotCapacity] = {};
 };
 
 static_assert(std::is_trivially_copyable_v<AbilityLocals>,

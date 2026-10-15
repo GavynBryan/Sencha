@@ -81,6 +81,10 @@ public:
     int TryStart(const AbilityActor& actor, const AbilityGrant& grant, AbilityActivationKey key,
                  std::uint8_t triggerAction, EntityId instigator);
 
+    // Live and this machine's to run: every record on the authority, a client's own
+    // guesses. Nothing changes a record this does not hold for.
+    [[nodiscard]] bool Runs(const AbilityActor& actor, std::size_t slot) const;
+
     void Run(const AbilityActor& actor, std::size_t slot);
     // Every hold of the record's phase that can complete has, and it holds one.
     [[nodiscard]] bool HoldsCompleted(const AbilityActor& actor, std::size_t slot);
@@ -139,8 +143,6 @@ private:
     [[nodiscard]] bool Live(const AbilityActor& actor, std::size_t slot) const;
     // An ended guess stays while the authority's copy of it still runs.
     [[nodiscard]] bool AuthorityRuns(const AbilityActor& actor, const AbilityRecord& guess) const;
-    // Live and this machine's to run: every record on the authority, a client's own guesses.
-    [[nodiscard]] bool Runs(const AbilityActor& actor, std::size_t slot) const;
     // Whether a client's guess runs `op` at its ability's prediction level.
     [[nodiscard]] bool Predicts(const AbilityDefinition& definition, const AbilityOp& op) const;
     [[nodiscard]] LeaseOwner OwnerOf(const AbilityActor& actor, std::size_t slot, std::uint8_t op) const;

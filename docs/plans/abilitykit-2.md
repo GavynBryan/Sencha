@@ -1798,3 +1798,49 @@ Deviations from the plan's wording, each for a stated reason:
   Automatic and Charge from recipes in Kyusu and preview them (Stage 6); the
   Workbench stage with the Timed Movement recipe; a two-machine session (`+host`,
   `connect`) to see remote presentation and owner prediction live.
+
+### 17.12 Review of PR #166
+
+Five findings against `f8d6507`. Every one was reproduced by a test that failed
+before its fix.
+
+1. **Client input mutated authoritative records.** Fixed. `Press`, `Release`,
+   request cancels and the `cancel_tags` loop in `TryStart` now go through
+   `AbilityPass::Runs`, the same rule `Sweep` and `Advance` use: a client's pass
+   changes only its guesses. The `cancel_tags` path was reachable through real
+   content and ended the authority's copy inside the snapshot image.
+   (`AClientsReleaseLeavesTheAuthoritysRecordAlone`, `AGuessCancelsOnlyGuesses`.)
+2. **Exhausted record slots indexed out of bounds.** Fixed by budgeting storage for
+   prediction. `ActiveAbilities` and `AbilityLocals` hold the authority's six
+   records, then `kAbilityGuessCapacity` (four) guess slots, so a client can guess
+   every activation the authority can hold live. A guess claims only guess slots,
+   and a snapshot rewrites only the authority's. The journal puts guesses back only
+   into guess slots. A claim that finds no slot is refused `Capacity` instead of
+   indexing with -1. Before the fix, the fourth guess was lost, and once the
+   authority's copies arrived only two of four guesses survived.
+   (`AFourthGuessFitsBesideThreeConfirmedOnes`.) The wire still sends six records.
+   The guess slots cost 2,912 bytes on every actor with grants, which
+   `docs/deferred.md` records against a measured memory trigger.
+3. **Unresolved context tags widened a binding.** Fixed. A context naming an
+   unregistered tag leaves the binding unbound, as the header already promised for
+   an unknown action. Bindings rebuild when the tag registry grows; tags are only
+   ever added, so its size is the revision.
+   (`AContextNamingAnUnknownTagStartsNothingUntilTheTagIsHeld`.)
+4. **Two grants of one ability shared an identity.** Fixed.
+   `AbilityActivationIdentity` folds in the grant's id. Grant ids reach the owner
+   verbatim, and the record's wire form now carries the id so every machine names
+   the activation alike. (`TwoGrantsOfOneAbilityStartTwoActivationsNamedApart`,
+   `TwoGrantsOfOneAbilityAreNamedApartOnEveryMachine`.)
+5. **Cue occurrences merged distinct targets.** Fixed. `AppendAbilityCue` gives each
+   entry an ordinal among the log's entries for the same activation, op, tick and
+   target. `AbilityCueOccurrence` hashes the target and the ordinal, and the cue
+   log's wire form carries the ordinal. A guessed cue now hides only the authority
+   entry it guessed. (`AbilityCueOccurrence.NamesEachTargetAndEachRepeat`,
+   `AGuessedCueHidesOnlyTheAuthorityEntryItGuessed`.)
+
+The replication table hash moved with 2, 4 and 5, inside the branch's unreleased
+v28 and protocol 7. Remeasured (`scripts/bench_abilities.sh`, profile preset): 9,016
+bytes per actor with grants, up from 5,976 (2,912 for the guess slots, 128 for the
+ordinal). The pass at 256 actors takes 0.073 ms idle and 0.126 ms firing, up from
+0.060 and 0.117, because it walks ten slots instead of six. A firing actor costs a
+peer 340 B/s.

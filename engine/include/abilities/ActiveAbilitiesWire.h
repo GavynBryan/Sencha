@@ -10,9 +10,10 @@
 #include <cstdint>
 
 // What a record says to every machine that presents it: its activation, phase,
-// pulses, last hit and end. Grants, leases, owned tags and the trigger stay with
-// the authority. One run per rate of change, so a pulse resends only the count
-// and the hit (docs/gameplay/abilitykit.md, "Replication").
+// pulses, last hit and end. Leases, owned tags and the trigger stay with the
+// authority; the grant goes only as the number the activation is named by. One run
+// per rate of change, so a pulse resends only the count and the hit
+// (docs/gameplay/abilitykit.md, "Replication").
 
 // CommandTick, PhaseStart, EndTick: at its start, each phase and its end.
 struct ActiveAbilityWireTicks
@@ -21,10 +22,10 @@ struct ActiveAbilityWireTicks
 };
 
 // The ability's wire key; Origin | State << 8 | Phase << 16 | EndReason << 24;
-// EndElement.
+// EndElement; the grant's id.
 struct ActiveAbilityWireWords
 {
-    std::uint32_t Values[3] = {};
+    std::uint32_t Values[4] = {};
 };
 
 struct ActiveAbilityWireRecord
@@ -48,7 +49,7 @@ struct ActiveAbilitiesWire
 template <>
 struct PackedScalarGroup<ActiveAbilityWireWords>
 {
-    static constexpr std::size_t Count = 3;
+    static constexpr std::size_t Count = 4;
     using Component = std::uint32_t;
 };
 

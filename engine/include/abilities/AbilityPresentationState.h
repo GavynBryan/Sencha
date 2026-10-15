@@ -33,9 +33,9 @@ struct SENCHA_COMPONENT("sencha.ability_presentation_state") AbilityPresentation
         std::uint8_t SustainedPhase = kAbilityNotSustained;
     };
 
-    Shown Records[kAbilityRecordCapacity] = {};
+    Shown Records[kAbilitySlotCapacity] = {};
     // Records that went away, so one the wire brings back is not shown again.
-    Shown Departed[kAbilityRecordCapacity] = {};
+    Shown Departed[kAbilitySlotCapacity] = {};
     std::uint8_t NextDeparted = 0;
     std::uint16_t CueSeen = 0;
     // The owner's guessed cues: the last serial presented, and the occurrences

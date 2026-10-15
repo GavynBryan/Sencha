@@ -94,13 +94,16 @@ void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputA
                                   std::uint64_t actionsRevision, const GameplayTagRegistry& tags,
                                   std::vector<std::string>& problems)
 {
+    // Tags are only ever added, so the count is the vocabulary's revision.
     if (!Stale && AbilitiesGeneration == abilities.Generation() && Actions == actions
-        && ActionsRevision == actionsRevision)
+        && ActionsRevision == actionsRevision && Tags == &tags && TagCount == tags.Size())
         return;
     Stale = false;
     AbilitiesGeneration = abilities.Generation();
     Actions = actions;
     ActionsRevision = actionsRevision;
+    Tags = &tags;
+    TagCount = tags.Size();
 
     for (Slot& slot : Entries)
     {
@@ -120,20 +123,23 @@ void AbilityGrantEntries::Refresh(const AbilityRegistry& abilities, const InputA
                                                abilities.GetName(slot.Entry.Ability), *merged.Action));
             continue;
         }
+        const std::optional<AbilityTagQueryDecl>& context = merged.Context;
+        if (context && !context->Empty())
+        {
+            std::vector<std::string> missing;
+            GameplayTagQuery query = ResolveTagQuery(*context, tags, missing);
+            for (const std::string& name : missing)
+                problems.push_back(std::format("grant '{}': no gameplay tag '{}'", slot.Entry.Key, name));
+            if (!missing.empty())
+                continue;
+            slot.Binding.Context = std::move(query);
+            slot.Binding.HasContext = true;
+        }
         slot.Binding.Action = static_cast<std::uint8_t>(index);
         slot.Binding.Policy = *merged.Policy;
         slot.Binding.Priority = *merged.Priority;
         slot.Binding.Consume = *merged.Consume;
         slot.Binding.WhenBlocked = *merged.WhenBlocked;
         slot.Binding.OnInterrupt = *merged.OnInterrupt;
-        const std::optional<AbilityTagQueryDecl>& context = merged.Context;
-        if (context && !context->Empty())
-        {
-            std::vector<std::string> missing;
-            slot.Binding.Context = ResolveTagQuery(*context, tags, missing);
-            slot.Binding.HasContext = true;
-            for (const std::string& name : missing)
-                problems.push_back(std::format("grant '{}': no gameplay tag '{}'", slot.Entry.Key, name));
-        }
     }
 }

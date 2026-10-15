@@ -9,7 +9,12 @@
 inline constexpr std::size_t kAbilityGrantCapacity = 16;
 inline constexpr std::size_t kAbilityLiveRecordCapacity = 4;
 inline constexpr std::size_t kAbilityLingeringRecordCapacity = 2;
+// The authority's records: the slots every machine is sent.
 inline constexpr std::size_t kAbilityRecordCapacity = kAbilityLiveRecordCapacity + kAbilityLingeringRecordCapacity;
+// A predicting client's guesses, in slots after the authority's: one for every
+// activation the authority can hold live, so a client can guess whatever it admits.
+inline constexpr std::size_t kAbilityGuessCapacity = kAbilityLiveRecordCapacity;
+inline constexpr std::size_t kAbilitySlotCapacity = kAbilityRecordCapacity + kAbilityGuessCapacity;
 
 // Slots, not locals: a hit or an entity list takes two.
 inline constexpr std::size_t kAbilityLocalSlotCapacity = 8;

@@ -908,6 +908,44 @@ TEST_F(AbilityRuntime, AReleaseReachesTheActivationItsActionStartedAfterAModeSwi
     EXPECT_EQ(Marks.Values.size(), 1u) << "the context gates starts, not the release of one";
 }
 
+TEST_F(AbilityRuntime, AContextNamingAnUnknownTagStartsNothingUntilTheTagIsHeld)
+{
+    const AbilityId primary = Define("asset://abilities/primary.sdata", kInstant);
+    const EntityId actor = Actor();
+    AbilityBindingDecl grounded;
+    grounded.Context = AbilityTagQueryDecl{ .All = { "State.Grounded" }, .Any = {}, .None = {} };
+    Grant(actor, primary, grounded);
+
+    Step({ Press(kFire) });
+    EXPECT_TRUE(Marks.Values.empty()) << "a context that cannot be read refuses, never admits everything";
+
+    ASSERT_TRUE(Entities.GetResource<GameplayTagRegistry>().RegisterTag("State.Grounded").has_value());
+    Step({ Release(kFire), Press(kFire) });
+    EXPECT_TRUE(Marks.Values.empty()) << "once the tag exists the context reads it, and the actor lacks it";
+
+    Entities.TryGet<GameplayTagContainer>(actor)->Grant(Tag("State.Grounded"));
+    Step({ Release(kFire), Press(kFire) });
+    EXPECT_EQ(Marks.Values.size(), 1u);
+}
+
+TEST_F(AbilityRuntime, TwoGrantsOfOneAbilityStartTwoActivationsNamedApart)
+{
+    const AbilityId watch = Define("asset://abilities/watch.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire", "consume": "observe" },
+        "instances": 2,
+        "phases": [ { "key": "p_wait", "then": [ { "key": "t_end", "on": "timeout", "ticks": 30, "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, watch, {}, "g_left");
+    Grant(actor, watch, {}, "g_right");
+    Step({ Press(kFire) });
+    std::vector<std::uint64_t> identities;
+    for (const AbilityRecord& record : Entities.TryGet<ActiveAbilities>(actor)->Records)
+        if (record.State == AbilityRecordState::Live)
+            identities.push_back(record.Identity);
+    ASSERT_EQ(identities.size(), 2u) << "one press, observed by both grants";
+    EXPECT_NE(identities[0], identities[1]) << "leases, cues and guesses key on the identity";
+}
+
 TEST_F(AbilityRuntime, RevokingOneGrantEndsOnlyItsActivations)
 {
     const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);

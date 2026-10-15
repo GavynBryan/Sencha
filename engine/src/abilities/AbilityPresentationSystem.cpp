@@ -70,13 +70,13 @@ public:
         // A record is followed by its identity, not its slot: one the wire or a
         // guess moved to another slot keeps what has been shown of it.
         const auto previous = std::to_array(state->Records);
-        std::array<bool, kAbilityRecordCapacity> carried{};
-        for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
+        std::array<bool, kAbilitySlotCapacity> carried{};
+        for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
         {
             static const AbilityRecord kNone{};
             const AbilityRecord& record = IsAbilityRecordShadowed(*active, slot) ? kNone : active->Records[slot];
             state->Records[slot] = {};
-            for (std::size_t was = 0; was < kAbilityRecordCapacity && record.State != AbilityRecordState::Free; ++was)
+            for (std::size_t was = 0; was < kAbilitySlotCapacity && record.State != AbilityRecordState::Free; ++was)
                 if (!carried[was] && previous[was].Activation == record.Identity && record.Identity != 0)
                 {
                     state->Records[slot] = previous[was];
@@ -94,11 +94,11 @@ public:
                     }
             Record(actor, record, state->Records[slot], first);
         }
-        for (std::size_t was = 0; was < kAbilityRecordCapacity; ++was)
+        for (std::size_t was = 0; was < kAbilitySlotCapacity; ++was)
             if (!carried[was] && previous[was].Activation != 0)
             {
                 Gone(actor, previous[was]);
-                state->Departed[state->NextDeparted++ % kAbilityRecordCapacity] = previous[was];
+                state->Departed[state->NextDeparted++ % kAbilitySlotCapacity] = previous[was];
             }
         state->Follow = AbilityPresentationFollow::Following;
     }

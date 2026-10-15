@@ -10,7 +10,9 @@ namespace
 // The slot holding `identity`: the authority's record of it, or this machine's guess.
 int SlotOf(const ActiveAbilities& active, std::uint64_t identity, bool guessed)
 {
-    for (std::size_t i = 0; i < kAbilityRecordCapacity; ++i)
+    const std::size_t first = guessed ? kAbilityRecordCapacity : 0;
+    const std::size_t end = guessed ? kAbilitySlotCapacity : kAbilityRecordCapacity;
+    for (std::size_t i = first; i < end; ++i)
     {
         const AbilityRecord& record = active.Records[i];
         if (record.State != AbilityRecordState::Free && record.Identity == identity && record.Predicted == guessed)
@@ -19,9 +21,9 @@ int SlotOf(const ActiveAbilities& active, std::uint64_t identity, bool guessed)
     return -1;
 }
 
-int FreeSlot(const ActiveAbilities& active)
+int FreeGuessSlot(const ActiveAbilities& active)
 {
-    for (std::size_t i = 0; i < kAbilityRecordCapacity; ++i)
+    for (std::size_t i = kAbilityRecordCapacity; i < kAbilitySlotCapacity; ++i)
         if (active.Records[i].State == AbilityRecordState::Free)
             return static_cast<int>(i);
     return -1;
@@ -33,7 +35,7 @@ void Place(ActiveAbilities& active, AbilityLocals& locals, const AbilityRecord& 
            const AbilityRecordLocals& values)
 {
     const int own = SlotOf(active, guess.Identity, true);
-    const int slot = own >= 0 ? own : FreeSlot(active);
+    const int slot = own >= 0 ? own : FreeGuessSlot(active);
     if (slot < 0)
         return;
     active.Records[slot] = guess;
@@ -56,7 +58,7 @@ void AbilityPredictionJournal::Note(World& world, EntityId actor)
     const AbilityLocals* locals = static_cast<const World&>(world).TryGet<AbilityLocals>(actor);
     if (active == nullptr || locals == nullptr)
         return;
-    for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
+    for (std::size_t slot = kAbilityRecordCapacity; slot < kAbilitySlotCapacity; ++slot)
     {
         const AbilityRecord& record = active->Records[slot];
         if (!record.Predicted || record.State == AbilityRecordState::Free)

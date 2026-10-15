@@ -327,7 +327,7 @@ AbilityPreviewTickRecord AbilityPreviewSession::RunTick(std::uint64_t tick)
     record.AimDirection = aim.Direction;
     const ActiveAbilities& active = *static_cast<const World&>(world).TryGet<ActiveAbilities>(FixtureEntity);
     const AbilityLocals& locals = *static_cast<const World&>(world).TryGet<AbilityLocals>(FixtureEntity);
-    for (std::size_t slot = 0; slot < kAbilityRecordCapacity; ++slot)
+    for (std::size_t slot = 0; slot < kAbilitySlotCapacity; ++slot)
         if (active.Records[slot].State != AbilityRecordState::Free)
             for (const AbilityLocalValue& value : locals.Records[slot].Values)
                 if (value.Set && value.Hit)
