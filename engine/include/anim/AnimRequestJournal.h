@@ -1,10 +1,10 @@
 #pragma once
 
 #include <anim/AnimRequests.h>
+#include <prediction/PredictionJournal.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
 class World;
 
@@ -23,18 +23,18 @@ public:
     // Call after applying a snapshot, with the last command the authority processed.
     void Reconcile(World& world, std::uint64_t acknowledgedCommand);
 
-    [[nodiscard]] std::size_t Size() const { return Entries.size(); }
-    void Clear() { Entries.clear(); }
+    [[nodiscard]] std::size_t Size() const { return Guesses.Size(); }
+    void Clear() { Guesses.Clear(); }
 
 private:
-    struct Entry
+    struct Guess
     {
         EntityId Animated;
         AnimRequestDesc Desc;
         AnimTick IssuedTick = 0;
     };
 
-    std::vector<Entry> Entries;
+    PredictionJournal<Guess> Guesses{ kCapacity };
 };
 
 // How gameplay asks animation for something. The authority issues it on the tick
