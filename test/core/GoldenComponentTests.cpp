@@ -13,6 +13,7 @@
 #include <core/metadata/RuntimeSchema.h>
 #include <core/metadata/TypeSchema.h>
 #include <ecs/ComponentTypeId.h>
+#include <math/Angle.h>
 #include <net/ReplicationLayout.h>
 
 #include <gtest/gtest.h>
@@ -94,6 +95,18 @@ TEST(GeneratedComponentMetadata, CarriesEveryFieldAnnotation)
     ASSERT_NE(tint, nullptr);
     EXPECT_EQ(tint->Label, "Tint");
     EXPECT_EQ(tint->Scalar, FieldScalar::Color3) << "a colour collapses to one field";
+}
+
+// A member initializer that calls a constexpr function is a default like any
+// other: the schema carries the radians the initializer stores.
+TEST(GeneratedComponentMetadata, ADefaultWrittenAsAConversionIsTheSchemaDefault)
+{
+    const auto fields = TypeSchema<CodegenGolden>::Fields();
+    const auto& pitch = std::get<2>(fields);
+    ASSERT_EQ(pitch.Name, "pitch");
+    ASSERT_TRUE(pitch.DefaultValue.has_value());
+    EXPECT_EQ(*pitch.DefaultValue, ToRadians(30.0f));
+    EXPECT_EQ(*pitch.DefaultValue, CodegenGolden{}.Pitch);
 }
 
 // The property that makes adding a member safe: an untagged member is invisible

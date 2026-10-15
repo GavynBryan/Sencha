@@ -2,6 +2,7 @@
 
 #include "GridSettings.h"
 
+#include <math/Angle.h>
 #include <math/Quat.h>
 #include <math/spatial/GridPlane.h>
 #include <math/Vec.h>
@@ -105,8 +106,7 @@ inline void RotateInPlane(GridSettings& settings, float degrees)
     const Vec3d normal = settings.AxisU.Cross(settings.AxisV);
     if (normal.SqrMagnitude() < 1e-12f)
         return;
-    const float radians = degrees * 3.14159265358979323846f / 180.0f;
-    const Quatf rotation = Quatf::FromAxisAngle(normal.Normalized(), radians);
+    const Quatf rotation = Quatf::FromAxisAngle(normal.Normalized(), ToRadians(degrees));
     const Vec3d u = rotation.RotateVector(settings.AxisU).Normalized();
     settings.AxisU = u;
     settings.AxisV = normal.Normalized().Cross(u).Normalized();

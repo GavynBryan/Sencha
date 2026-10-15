@@ -1,5 +1,6 @@
 #include "RuntimeFieldText.h"
 
+#include <math/Angle.h>
 #include <math/Quat.h>
 
 #include <algorithm>
@@ -10,7 +11,6 @@
 #include <cstdio>
 #include <cstring>
 #include <format>
-#include <numbers>
 #include <vector>
 
 namespace
@@ -20,7 +20,6 @@ namespace
 // collector should have recursed through instead.
 constexpr std::size_t kMaxScalars = 16;
 
-constexpr double kRadiansToDegrees = 180.0 / std::numbers::pi;
 
 [[nodiscard]] bool IsScalarKind(const RuntimeField& field)
 {
@@ -244,8 +243,8 @@ struct ScalarRun
     const Quat<double> turn(ReadFloating(base, field), ReadFloating(base + run.Stride, field),
                             ReadFloating(base + 2 * run.Stride, field), ReadFloating(base + 3 * run.Stride, field));
     const Vec<3, double> angles = turn.ToPitchYawRoll();
-    return FormatScalar(angles.X * kRadiansToDegrees) + ", " + FormatScalar(angles.Y * kRadiansToDegrees) + ", "
-         + FormatScalar(angles.Z * kRadiansToDegrees);
+    return FormatScalar(ToDegrees(angles.X)) + ", " + FormatScalar(ToDegrees(angles.Y)) + ", "
+         + FormatScalar(ToDegrees(angles.Z));
 }
 
 [[nodiscard]] bool ParseAngles(const RuntimeField& field, std::string_view text, std::byte* base)
@@ -258,7 +257,7 @@ struct ScalarRun
         if (!ParseFloating(pieces[i], degrees[i]))
             return false;
     const Quat<double> turn = Quat<double>::FromPitchYawRoll(
-        degrees[0] / kRadiansToDegrees, degrees[1] / kRadiansToDegrees, degrees[2] / kRadiansToDegrees);
+        ToRadians(degrees[0]), ToRadians(degrees[1]), ToRadians(degrees[2]));
     const ScalarRun run = RunOf(field);
     WriteFloating(base, field, turn.X);
     WriteFloating(base + run.Stride, field, turn.Y);
@@ -356,7 +355,7 @@ std::string FormatRuntimeField(const RuntimeField& field, const void* componentB
         {
             double value = ReadFloating(scalar, field);
             if (field.DisplayDegrees)
-                value *= kRadiansToDegrees;
+                value = ToDegrees(value);
             out += FormatScalar(value);
         }
         else if (field.Scalar == FieldScalar::UInt64 || field.Scalar == FieldScalar::UInt32)
@@ -460,7 +459,7 @@ bool ParseRuntimeField(const RuntimeField& field, std::string_view text,
             if (!ParseFloating(pieces[i], floating[i]))
                 return false;
             if (field.DisplayDegrees)
-                floating[i] /= kRadiansToDegrees;
+                floating[i] = ToRadians(floating[i]);
         }
         else if (!ParseIntegral(pieces[i], integral[i]))
         {
@@ -510,7 +509,7 @@ std::optional<double> RuntimeFieldNumber(const RuntimeField& field, const void* 
     if (!IsFloatingKind(field.Scalar))
         return static_cast<double>(ReadInteger(base, field));
     const double value = ReadFloating(base, field);
-    return field.DisplayDegrees ? value * kRadiansToDegrees : value;
+    return field.DisplayDegrees ? ToDegrees(value) : value;
 }
 
 std::string FormatRuntimeFieldElement(const RuntimeField& field, const void* componentBytes, std::size_t index)

@@ -2,11 +2,11 @@
 
 #include "ui/DocumentLengths.h"
 
+#include <math/Angle.h>
 #include <ui/UiService.h>
 
 #include <cmath>
 #include <format>
-#include <numbers>
 #include <vector>
 
 namespace
@@ -24,7 +24,6 @@ const UiModelRowsId kZones = UiRowsIdAt(0);
 const UiModelRowsId kLinks = UiRowsIdAt(1);
 const UiModelRowsId kArrows = UiRowsIdAt(2);
 
-constexpr float kDegrees = 180.0f / std::numbers::pi_v<float>;
 
 UiScreenDesc Describe()
 {
@@ -116,7 +115,7 @@ void WorldMapSurface::Present(const WorldMap* map, const Rect2d& ground, const s
     for (const WorldMapLink& link : map->Links)
     {
         const Vec2d along = link.To - link.From;
-        const float angle = std::atan2(along.Y, along.X) * kDegrees;
+        const float angle = ToDegrees(std::atan2(along.Y, along.X));
         UiRow row{ "", link.AToB && link.BToA ? "both" : "oneway",
                    link.Failed ? "failed" : link.Warned ? "warned" : "" };
         row.Parts = { PixelLength(link.From.X), PixelLength(link.From.Y), PixelLength(along.Magnitude()),

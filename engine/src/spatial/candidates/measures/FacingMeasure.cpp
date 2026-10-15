@@ -1,8 +1,9 @@
 #include "../CandidateOperationSupport.h"
 
+#include <math/Angle.h>
+
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 
 namespace candidate_operation
 {
@@ -31,7 +32,7 @@ namespace candidate_operation
             if (!(lengths > 0.0f))
                 return std::nullopt;
             const float cosine = std::clamp(forward.Dot(toward) / lengths, -1.0f, 1.0f);
-            return std::acos(cosine) * 180.0f / std::numbers::pi_v<float>;
+            return ToDegrees(std::acos(cosine));
         }
 
         void MeasureFacing(CandidateRun& run, const void* state, std::span<const std::uint32_t> rows,

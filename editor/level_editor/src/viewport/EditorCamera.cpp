@@ -1,13 +1,12 @@
 #include "EditorCamera.h"
 
+#include <math/Angle.h>
 #include <render/CameraProjection.h>
 
 #include <cmath>
 
 namespace
 {
-constexpr float kPi = 3.14159265358979323846f;
-constexpr float kDegreesToRadians = kPi / 180.0f;
 constexpr float kMouseSensitivity = 0.0025f;
 constexpr float kMaxPitchRadians = 1.5f;
 constexpr float kPerspectiveDollyScale = 2.0f;
@@ -43,7 +42,7 @@ CameraRenderData EditorCamera::BuildRenderData(float aspectRatio) const
     {
         const Vec3d target = Position + GetForwardVector();
         data.View = Mat4::MakeLookAt(Position, target, GetUpVector());
-        data.Projection = MakeVulkanPerspective(FovY * kDegreesToRadians, aspectRatio, Near, Far);
+        data.Projection = MakeVulkanPerspective(ToRadians(FovY), aspectRatio, Near, Far);
     }
     else
     {

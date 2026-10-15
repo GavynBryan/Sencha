@@ -4,13 +4,13 @@
 
 #include <gtest/gtest.h>
 
+#include <math/Angle.h>
 #include <math/Quat.h>
 #include <math/geometry/3d/Transform3d.h>
 #include <render/SkinnedPoseFrameData.h>
 
 #include <array>
 #include <cmath>
-#include <numbers>
 #include <vector>
 
 namespace
@@ -20,9 +20,8 @@ namespace
     // non-uniform scale.
     Mat4 AsymmetricPaletteEntry()
     {
-        const float deg = std::numbers::pi_v<float> / 180.0f;
-        const Quatf rotation = Quatf::FromAxisAngle(Vec3d(1.0f, 0.0f, 0.0f), 30.0f * deg)
-            * Quatf::FromAxisAngle(Vec3d(0.0f, 0.0f, 1.0f), 50.0f * deg);
+        const Quatf rotation = Quatf::FromAxisAngle(Vec3d(1.0f, 0.0f, 0.0f), ToRadians(30.0f))
+            * Quatf::FromAxisAngle(Vec3d(0.0f, 0.0f, 1.0f), ToRadians(50.0f));
         return Transform3f(Vec3d(1.0f, 2.0f, 3.0f), rotation, Vec3d(1.0f, 2.0f, 3.0f)).ToMat4();
     }
 

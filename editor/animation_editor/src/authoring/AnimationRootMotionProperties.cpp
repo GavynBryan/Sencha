@@ -7,6 +7,7 @@
 
 #include <anim/AnimRootMotion.h>
 #include <anim/AnimationClipCache.h>
+#include <math/Angle.h>
 
 #include <algorithm>
 #include <array>
@@ -16,7 +17,6 @@ namespace
 {
 constexpr std::string_view kWalls = "walls.";
 constexpr std::size_t kBlockedShown = 12;
-constexpr float kDegrees = 57.29578f;
 
 PropertyNode Vector3(std::string key, std::string label, const Vec3d& value)
 {
@@ -79,7 +79,7 @@ std::vector<PropertyNode> AnimationRootMotionProperties::Nodes() const
             const AnimRootPose now = SampleAnimRootCurve(*data->Root, base->TimeSeconds);
             clip.Children.push_back(NoteProperty(
                 "clip.now", "Now",
-                std::format("right {:.2f} m, back {:.2f} m, turn {:.0f} deg", now.X, now.Z, now.Yaw * kDegrees)));
+                std::format("right {:.2f} m, back {:.2f} m, turn {:.0f} deg", now.X, now.Z, ToDegrees(now.Yaw))));
         }
     }
     nodes.push_back(std::move(clip));
