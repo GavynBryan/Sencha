@@ -39,6 +39,7 @@
 #include <app/LevelCommands.h>
 #include <audio/AudioService.h>
 #include <audio/AudioSystem.h>
+#include <navigation/NavAgentSystem.h>
 #include <navigation/NavigationSystem.h>
 #include <physics/PhysicsStepSystem.h>
 #include <audio/CaptionRuntime.h>
@@ -70,6 +71,7 @@
 #ifdef SENCHA_ENABLE_DEBUG_UI
 #include <debug/ConsolePanel.h>
 #include <debug/ImGuiDebugOverlay.h>
+#include <debug/NavAgentPanel.h>
 #include <debug/NavigationPanel.h>
 #include <debug/NetStatsPanel.h>
 #include <debug/PerceptionPanel.h>
@@ -1391,6 +1393,7 @@ int Engine::Run(Game& game)
     // Answered whether or not the game registers perception: a World nobody
     // scans has an empty frame, which answers Unavailable.
     VocabularyBindings->BindPerception(*QueryDispatcherState);
+    VocabularyBindings->BindNavigation(*QueryDispatcherState);
 
     // Every host animates: an entity that names a rig plays it, in a process whose
     // game registered nothing for it. Before the game's hook, so a game orders its
@@ -1668,6 +1671,9 @@ void Engine::CreateDebugOverlay()
     if (const NavigationSystem* navigation = EngineSystems.Get<NavigationSystem>();
         navigation != nullptr && RuntimeWorldState != nullptr)
         overlay->AddPanel<NavigationPanel>(*RuntimeWorldState, *navigation);
+    if (NavAgentSystem* agents = EngineSystems.Get<NavAgentSystem>();
+        agents != nullptr && RuntimeWorldState != nullptr)
+        overlay->AddPanel<NavAgentPanel>(RuntimeWorldState->Entities(), *agents);
     if (PerceptionSystem* perception = EngineSystems.Get<PerceptionSystem>();
         perception != nullptr && RuntimeWorldState != nullptr)
         overlay->AddPanel<PerceptionPanel>(RuntimeWorldState->Entities(), *perception);

@@ -8,7 +8,7 @@
 #include <assets/data/DataAssetCache.h>
 #include <attributes/AttributeSet.h>
 #include <core/config/EngineConfig.h>
-#include <core/console/ConsoleRegistry.h>
+#include <core/console/ConsoleService.h>
 #include <ecs/WorldComponentSchema.h>
 #include <gameplay_tags/GameplayTagContainer.h>
 #include <jobs/JobSystem.h>
@@ -18,6 +18,7 @@
 #include <movement/components/CharacterMovement.h>
 #include <navigation/NavAgentRegistration.h>
 #include <navigation/NavAgentRequests.h>
+#include <navigation/NavRouteFollowing.h>
 #include <navigation/NavigationSystem.h>
 #include <physics/PhysicsRegistration.h>
 #include <physics/PhysicsStepSystem.h>
@@ -41,7 +42,7 @@ struct NavAgentHarness
     EngineConfig Config;
     RuntimeFrameLoop Loop;
     DataAssetCache DataAssets;
-    ConsoleRegistry Console;
+    ConsoleService Console;
     WorldComponentSchema Schema = MakeSchema();
     RuntimeWorld Runtime{ Schema };
     std::unique_ptr<JobSystem> Jobs;
@@ -67,8 +68,8 @@ struct NavAgentHarness
         RegisterPhysics(Schedule);
         RegisterAbilityKitSystems(Schedule);
         RegisterMovementSystems(Schedule, DataAssets);
-        Schedule.Register<NavigationSystem>(Runtime, Jobs.get(), &Console);
-        RegisterNavigationAgents(Schedule, Runtime, Jobs.get(), &DataAssets, &Console);
+        Schedule.Register<NavigationSystem>(Runtime, Jobs.get(), &Console.Registry());
+        RegisterNavigationAgents(Schedule, Runtime, Jobs.get(), &DataAssets, &Console.Registry());
         Schedule.Init();
 
         RuntimeZoneRecord& record = Runtime.BeginZoneImport(Zone);
@@ -189,6 +190,25 @@ struct NavAgentHarness
     [[nodiscard]] Vec3d Position(EntityId agent)
     {
         return std::as_const(Entities()).TryGet<WorldTransform>(agent)->Value.Position;
+    }
+
+    void SetCVar(std::string_view name, CVarValue value)
+    {
+        CVarMetadata* cvar = Console.Registry().FindCVar(name);
+        ASSERT_NE(cvar, nullptr) << name;
+        cvar->CurrentValue = std::move(value);
+    }
+
+    [[nodiscard]] bool HasEnded(EntityId agent)
+    {
+        const NavAgentPhase phase = Progress(agent).Phase;
+        return phase == NavAgentPhase::Arrived || phase == NavAgentPhase::Failed || phase == NavAgentPhase::Cancelled;
+    }
+
+    [[nodiscard]] bool AsksForNothing(EntityId agent)
+    {
+        const Vec3d wish = Intent(agent);
+        return wish.X == 0.0f && wish.Y == 0.0f && wish.Z == 0.0f;
     }
 
     [[nodiscard]] Vec3d Intent(EntityId agent)

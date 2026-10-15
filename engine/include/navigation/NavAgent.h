@@ -2,6 +2,7 @@
 
 #include <assets/data/DataAssetHandle.h>
 #include <core/identity/StrongId.h>
+#include <core/metadata/EnumSchema.h>
 #include <core/text/InlineString.h>
 #include <ecs/ComponentAnnotations.h>
 #include <ecs/ComponentTraits.h>
@@ -11,7 +12,9 @@
 #include <navigation/NavigationTypes.h>
 #include <world/ComponentAssetOwnership.h>
 
+#include <array>
 #include <cstdint>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 
@@ -113,6 +116,65 @@ enum class NavRepathReason : std::uint8_t
     Stuck,
     TraversalFailed,
 };
+
+template <>
+struct EnumSchema<NavAgentPhase>
+{
+    static constexpr std::array Values = {
+        EnumValue{ NavAgentPhase::Idle, "idle" },           EnumValue{ NavAgentPhase::Planning, "planning" },
+        EnumValue{ NavAgentPhase::Moving, "moving" },       EnumValue{ NavAgentPhase::Traversing, "traversing" },
+        EnumValue{ NavAgentPhase::Holding, "holding" },     EnumValue{ NavAgentPhase::Arrived, "arrived" },
+        EnumValue{ NavAgentPhase::Failed, "failed" },       EnumValue{ NavAgentPhase::Cancelled, "cancelled" },
+    };
+};
+
+template <>
+struct EnumSchema<NavAgentFailure>
+{
+    static constexpr std::array Values = {
+        EnumValue{ NavAgentFailure::None, "none" },
+        EnumValue{ NavAgentFailure::NoZone, "no_zone" },
+        EnumValue{ NavAgentFailure::ZoneUnavailable, "zone_unavailable" },
+        EnumValue{ NavAgentFailure::ProfileUnavailable, "profile_unavailable" },
+        EnumValue{ NavAgentFailure::StartOffNavigation, "start_off_navigation" },
+        EnumValue{ NavAgentFailure::DestinationOffNavigation, "destination_off_navigation" },
+        EnumValue{ NavAgentFailure::DestinationInOtherZone, "destination_in_other_zone" },
+        EnumValue{ NavAgentFailure::NoPath, "no_path" },
+        EnumValue{ NavAgentFailure::SearchLimitReached, "search_limit_reached" },
+        EnumValue{ NavAgentFailure::RouteTooLong, "route_too_long" },
+        EnumValue{ NavAgentFailure::TargetLost, "target_lost" },
+        EnumValue{ NavAgentFailure::Stuck, "stuck" },
+        EnumValue{ NavAgentFailure::TraversalFailed, "traversal_failed" },
+        EnumValue{ NavAgentFailure::TraversalUnsupported, "traversal_unsupported" },
+        EnumValue{ NavAgentFailure::TakenOverByInput, "taken_over_by_input" },
+    };
+};
+
+template <>
+struct EnumSchema<NavRepathReason>
+{
+    static constexpr std::array Values = {
+        EnumValue{ NavRepathReason::None, "none" },
+        EnumValue{ NavRepathReason::ZoneReloaded, "zone_reloaded" },
+        EnumValue{ NavRepathReason::TileChanged, "tile_changed" },
+        EnumValue{ NavRepathReason::LinkChanged, "link_changed" },
+        EnumValue{ NavRepathReason::ZoneChanged, "zone_changed" },
+        EnumValue{ NavRepathReason::TargetMoved, "target_moved" },
+        EnumValue{ NavRepathReason::Deviated, "deviated" },
+        EnumValue{ NavRepathReason::Stuck, "stuck" },
+        EnumValue{ NavRepathReason::TraversalFailed, "traversal_failed" },
+    };
+};
+
+// The authored name of a navigation enum value.
+template <typename E>
+[[nodiscard]] constexpr std::string_view NavEnumName(E value)
+{
+    for (const auto& entry : EnumSchema<E>::Values)
+        if (entry.Value == value)
+            return entry.Name;
+    return {};
+}
 
 // An index into the follower's route slots, honoured only while the slot's
 // owner is this entity.

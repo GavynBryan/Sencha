@@ -17,13 +17,7 @@
 
 namespace
 {
-    bool Ended(const NavAgentProgress& progress)
-    {
-        return progress.Phase == NavAgentPhase::Arrived || progress.Phase == NavAgentPhase::Failed
-            || progress.Phase == NavAgentPhase::Cancelled;
-    }
 
-    bool IsZero(const Vec3d& v) { return v.X == 0.0f && v.Y == 0.0f && v.Z == 0.0f; }
 
     // A 20 x 12 m room split by a wall with a 2 m gap to the south and a 3 m gap
     // to the north.
@@ -69,12 +63,6 @@ namespace
                      : Gap{ Vec3d(9.5f, 0.0f, 0.0f), Vec3d(10.5f, 3.0f, 2.0f), 10.5f };
     }
 
-    void SetCVar(NavAgentHarness& harness, std::string_view name, double value)
-    {
-        CVarMetadata* cvar = harness.Console.FindCVar(name);
-        ASSERT_NE(cvar, nullptr) << name;
-        cvar->CurrentValue = value;
-    }
 }
 
 // B: a moving target is followed with bounded, spaced refreshes.
@@ -107,9 +95,9 @@ TEST(NavAgentRepath, FollowsAMovingTargetWithoutReplanningEveryTick)
         const Vec3d wish = harness.Intent(agent);
         if (wish.X * lastWish.X + wish.Z * lastWish.Z < -0.25f)
             ++reversals;
-        if (!IsZero(wish))
+        if (!harness.AsksForNothing(agent))
             lastWish = wish;
-        return Ended(progress);
+        return harness.HasEnded(agent);
     }, 60 * 30);
 
     ASSERT_TRUE(ended);
@@ -141,7 +129,7 @@ TEST(NavAgentRepath, AChangedRouteReplansAroundTheObstacle)
         const Vec3d p = harness.Position(agent);
         if (std::abs(p.X - 10.0f) < 0.6f && std::abs(p.Z - taken.OtherZ) < 1.5f)
             passedTheOther = true;
-        return Ended(harness.Progress(agent));
+        return harness.HasEnded(agent);
     }, 60 * 30));
     EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Arrived);
     EXPECT_TRUE(passedTheOther);
@@ -156,10 +144,10 @@ TEST(NavAgentRepath, WithEveryWayBlockedTheAgentStopsAndSaysNoPath)
         harness.Step();
     (void)AddObstacle(harness, Vec3d(9.5f, 0.0f, 9.0f), Vec3d(10.5f, 3.0f, 12.0f));
     (void)AddObstacle(harness, Vec3d(9.5f, 0.0f, 0.0f), Vec3d(10.5f, 3.0f, 2.0f));
-    ASSERT_TRUE(harness.StepUntil([&] { return Ended(harness.Progress(agent)); }, 10));
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 10));
     EXPECT_EQ(harness.Progress(agent).Failure, NavAgentFailure::NoPath);
     EXPECT_EQ(harness.Progress(agent).LastRepath, NavRepathReason::TileChanged);
-    EXPECT_TRUE(IsZero(harness.Intent(agent)));
+    EXPECT_TRUE(harness.AsksForNothing(agent));
 }
 
 // I: an invalidated route is never walked while its replan waits.
@@ -176,7 +164,7 @@ TEST(NavAgentRepath, AnInvalidatedRouteIsNotFollowedWhileItsReplanWaits)
         harness.Step();
     ASSERT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Moving);
 
-    SetCVar(harness, "nav.agent.plans_per_tick", 1.0);
+    harness.SetCVar("nav.agent.plans_per_tick", 1.0);
     const Gap taken = GapTaken(harness, agent);
     (void)AddObstacle(harness, taken.Min, taken.Max);
     harness.Step();  // navigation rebuilds the tile in this tick's PostFixed
@@ -188,7 +176,7 @@ TEST(NavAgentRepath, AnInvalidatedRouteIsNotFollowedWhileItsReplanWaits)
     int waited = 0;
     while (harness.Progress(agent).Phase == NavAgentPhase::Planning && waited < 40)
     {
-        EXPECT_TRUE(IsZero(harness.Intent(agent))) << "tick " << waited << " of the wait";
+        EXPECT_TRUE(harness.AsksForNothing(agent)) << "tick " << waited << " of the wait";
         harness.Step();
         ++waited;
     }
@@ -209,7 +197,7 @@ TEST(NavAgentRepath, ARefreshWalksOnAndIsNotStarved)
     for (int i = 0; i < 10; ++i)
         harness.Step();
     ASSERT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Moving);
-    SetCVar(harness, "nav.agent.plans_per_tick", 1.0);
+    harness.SetCVar("nav.agent.plans_per_tick", 1.0);
     for (int i = 0; i < 30; ++i)
         harness.Step();
 
@@ -227,7 +215,7 @@ TEST(NavAgentRepath, ARefreshWalksOnAndIsNotStarved)
         if (refreshQueuedAt == 0 && progress.LastRepath == NavRepathReason::TargetMoved)
             refreshQueuedAt = harness.Tick;
         const bool committed = !(progress.Destination == planned);
-        if (refreshQueuedAt != 0 && !committed && IsZero(harness.Intent(agent)))
+        if (refreshQueuedAt != 0 && !committed && harness.AsksForNothing(agent))
             walkedWhileWaiting = false;
         return committed;
     }, 120);
@@ -255,7 +243,7 @@ TEST(NavAgentRepath, ATeleportAwayFromTheRouteIsADeviationNotProgress)
     harness.Entities().TryGet<WorldTransform>(agent)->Value.Position = landing;
     harness.Step();
     EXPECT_EQ(harness.Progress(agent).LastRepath, NavRepathReason::Deviated);
-    ASSERT_TRUE(harness.StepUntil([&] { return Ended(harness.Progress(agent)); }, 60 * 30));
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 60 * 30));
     EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Arrived);
 }
 
@@ -266,7 +254,7 @@ TEST(NavAgentRepath, AnAgentThatCannotProgressFailsAsStuck)
     const EntityId agent = harness.SpawnAgent(Vec3d(2.0f, 0.0f, 5.0f));
     (void)AddObstacle(harness, Vec3d(6.0f, 0.0f, 0.0f), Vec3d(7.0f, 3.0f, 10.0f), false);
     (void)harness.GoTo(agent, Vec3d(38.0f, 0.0f, 5.0f));
-    ASSERT_TRUE(harness.StepUntil([&] { return Ended(harness.Progress(agent)); }, 60 * 20));
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 60 * 20));
     EXPECT_EQ(harness.Progress(agent).Failure, NavAgentFailure::Stuck);
     EXPECT_EQ(harness.Progress(agent).LastRepath, NavRepathReason::Stuck);
     EXPECT_LE(harness.Progress(agent).Repaths, 3u) << "bounded by nav.agent.stuck_repaths";
@@ -281,7 +269,7 @@ TEST(NavAgentRepath, ASlowedAgentIsNotStuck)
     ASSERT_TRUE(AcquireActorTimeLease(*world.TryGet<ActorTimeLeases>(agent), LeaseOwner{ .Entity = agent },
                                       kActorTimeOne / 2, 0));
     (void)harness.GoTo(agent, Vec3d(20.0f, 0.0f, 5.0f));
-    ASSERT_TRUE(harness.StepUntil([&] { return Ended(harness.Progress(agent)); }, 60 * 30));
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 60 * 30));
     EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Arrived);
     EXPECT_EQ(harness.Progress(agent).Repaths, 0u);
 }

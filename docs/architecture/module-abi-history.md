@@ -470,3 +470,8 @@ asset), with derived `NavAgentRequest` and `NavAgentProgress`, joins
 `navigation/NavTraversal.h` adds the traversal executor table
 (`NavTraversalExecutors`, `RegisterNavTraversal`) and the engine's walking and
 jumping executors.
+`navigation/NavigationVerbs.h` declares the `navigation.move_to`,
+`navigation.approach` and `navigation.stop` verbs and the `navigation.phase`,
+`navigation.failure` and `navigation.remaining` queries; `EngineVocabularyBindings`
+gains `BindNavigation`. `NavPlanarDirection` joins the path-following geometry,
+and the navigation enums gain `EnumSchema`s.

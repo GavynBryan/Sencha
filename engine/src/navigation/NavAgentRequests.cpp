@@ -7,7 +7,7 @@
 
 namespace
 {
-    NavRequestId Issue(World& world, EntityId agent, NavAgentRequest order)
+    NavRequestId IssueOrder(World& world, EntityId agent, NavAgentRequest order)
     {
         if (!world.IsRegistered<NavAgentRequest>())
             return {};
@@ -19,7 +19,7 @@ namespace
         return order.Id;
     }
 
-    float ValidOr(float value, float fallback)
+    float FiniteOr(float value, float fallback)
     {
         return std::isfinite(value) ? value : fallback;
     }
@@ -32,15 +32,15 @@ NavRequestId RequestNavigation(World& world, EntityId agent, const NavDestinatio
     order.Point = destination.Point;
     order.Target = destination.Kind == NavDestinationKind::Entity ? destination.Target : EntityId{};
     order.Follow = destination.Kind == NavDestinationKind::Entity && destination.Follow;
-    order.ArriveRadius = std::max(0.0f, ValidOr(destination.ArriveRadius, 0.0f));
-    const float speed = ValidOr(destination.SpeedScale, 1.0f);
+    order.ArriveRadius = std::max(0.0f, FiniteOr(destination.ArriveRadius, 0.0f));
+    const float speed = FiniteOr(destination.SpeedScale, 1.0f);
     order.SpeedScale = speed > 0.0f ? std::min(speed, 1.0f) : 1.0f;
-    return Issue(world, agent, order);
+    return IssueOrder(world, agent, order);
 }
 
 NavRequestId CancelNavigation(World& world, EntityId agent)
 {
-    return Issue(world, agent, NavAgentRequest{});
+    return IssueOrder(world, agent, NavAgentRequest{});
 }
 
 NavRequestState ReadNavigation(const World& world, EntityId agent, NavRequestId request)

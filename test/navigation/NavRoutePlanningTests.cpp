@@ -62,7 +62,7 @@ namespace
         }
     };
 
-    bool Same(NavRoutePlanner& a, NavRoutePlanner& b, std::size_t count)
+    bool SameRoutes(NavRoutePlanner& a, NavRoutePlanner& b, std::size_t count)
     {
         for (std::size_t i = 0; i < count; ++i)
         {
@@ -101,7 +101,7 @@ TEST(NavRoutePlanning, AParallelBatchMatchesTheSerialReference)
     parallel.Plan(batch, 2);
     EXPECT_EQ(serial.ContextCount(), 1u);
     EXPECT_EQ(parallel.ContextCount(), 5u);
-    ASSERT_TRUE(Same(serial, parallel, batch.size()));
+    ASSERT_TRUE(SameRoutes(serial, parallel, batch.size()));
     for (std::size_t i = 0; i < batch.size(); ++i)
         EXPECT_EQ(serial.Output(i).Status, NavStatus::Success) << "input " << i;
 }

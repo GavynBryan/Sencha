@@ -9,18 +9,8 @@
 
 namespace
 {
-    bool Ended(const NavAgentProgress& progress)
-    {
-        return progress.Phase == NavAgentPhase::Arrived || progress.Phase == NavAgentPhase::Failed
-            || progress.Phase == NavAgentPhase::Cancelled;
-    }
 
-    float Planar(const Vec3d& a, const Vec3d& b)
-    {
-        return std::hypot(a.X - b.X, a.Z - b.Z);
-    }
 
-    bool IsZero(const Vec3d& v) { return v.X == 0.0f && v.Y == 0.0f && v.Z == 0.0f; }
 }
 
 // A: around the wall, through its gap, to the far side.
@@ -38,7 +28,7 @@ TEST(NavAgentWalk, WalksAroundAWallAndArrives)
             enteredWall = true;
         if (std::abs(p.X - 10.0f) < 0.5f && p.Z > 7.0f)
             crossedThroughGap = true;
-        return Ended(harness.Progress(agent));
+        return harness.HasEnded(agent);
     }, 60 * 30);
 
     ASSERT_TRUE(arrived);
@@ -46,8 +36,8 @@ TEST(NavAgentWalk, WalksAroundAWallAndArrives)
     EXPECT_EQ(ReadNavigation(harness.Entities(), agent, request).Phase, NavAgentPhase::Arrived);
     EXPECT_TRUE(crossedThroughGap);
     EXPECT_FALSE(enteredWall);
-    EXPECT_LE(Planar(harness.Position(agent), Vec3d(17.0f, 0.0f, 3.0f)), 0.5f + 0.25f);
-    EXPECT_TRUE(IsZero(harness.Intent(agent))) << "arriving leaves the character asking for nothing";
+    EXPECT_LE(NavPlanarDistance(harness.Position(agent), Vec3d(17.0f, 0.0f, 3.0f)), 0.5f + 0.25f);
+    EXPECT_TRUE(harness.AsksForNothing(agent)) << "arriving leaves the character asking for nothing";
     EXPECT_EQ(harness.Agents().RouteSlotsInUse(), 0u);
 }
 
@@ -68,7 +58,7 @@ TEST(NavAgentWalk, AReplacedOrderNeverReportsAndACancelStopsAtOnce)
         if (progress.Request == first && progress.Phase == NavAgentPhase::Arrived)
             firstEverArrived = true;
         EXPECT_EQ(ReadNavigation(harness.Entities(), agent, first).Standing, NavRequestStanding::Superseded);
-        return Ended(progress);
+        return harness.HasEnded(agent);
     }, 60 * 20);
     ASSERT_TRUE(ended);
     EXPECT_FALSE(firstEverArrived);
@@ -78,12 +68,12 @@ TEST(NavAgentWalk, AReplacedOrderNeverReportsAndACancelStopsAtOnce)
     (void)harness.GoTo(agent, Vec3d(38.0f, 0.0f, 5.0f));
     for (int i = 0; i < 60; ++i)
         harness.Step();
-    ASSERT_FALSE(IsZero(harness.Intent(agent)));
+    ASSERT_FALSE(harness.AsksForNothing(agent));
     const NavRequestId stop = CancelNavigation(harness.Entities(), agent);
     harness.Step();
     EXPECT_EQ(harness.Progress(agent).Request, stop);
     EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Cancelled);
-    EXPECT_TRUE(IsZero(harness.Intent(agent))) << "the cancel's tick already asks for nothing";
+    EXPECT_TRUE(harness.AsksForNothing(agent)) << "the cancel's tick already asks for nothing";
     EXPECT_EQ(harness.Agents().RouteSlotsInUse(), 0u);
 }
 
@@ -98,14 +88,14 @@ TEST(NavAgentWalk, AnAgentsStateEndsWithItsEntityAndItsComponent)
     for (int i = 0; i < 30; ++i)
         harness.Step();
     ASSERT_EQ(harness.Agents().RouteSlotsInUse(), 2u);
-    ASSERT_FALSE(IsZero(harness.Intent(stripped)));
+    ASSERT_FALSE(harness.AsksForNothing(stripped));
 
     harness.Entities().DestroyEntity(doomed);
     harness.Entities().RemoveComponent<NavAgent>(stripped);
     harness.Step();
     EXPECT_EQ(harness.Agents().RouteSlotsInUse(), 0u);
     EXPECT_EQ(harness.Agents().Queue().Size(), 0u);
-    EXPECT_TRUE(IsZero(harness.Intent(stripped))) << "nothing else would ever clear it";
+    EXPECT_TRUE(harness.AsksForNothing(stripped)) << "nothing else would ever clear it";
 }
 
 TEST(NavAgentWalk, ADetachedZoneTakesItsAgentsRoutes)
@@ -140,7 +130,7 @@ TEST(NavAgentWalk, ADormantZoneFreezesItsAgentsAndTheyCarryOn)
     EXPECT_EQ(harness.Progress(agent).Repaths, frozen.Repaths);
 
     harness.SetParticipation(ZoneParticipation{ .Visible = true, .Physics = true, .Logic = true, .Audio = true });
-    ASSERT_TRUE(harness.StepUntil([&] { return Ended(harness.Progress(agent)); }, 60 * 20));
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 60 * 20));
     EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Arrived);
     EXPECT_EQ(harness.Progress(agent).Repaths, frozen.Repaths) << "the route was still good";
 }
@@ -179,7 +169,7 @@ TEST(NavAgentWalk, AnUnreachablePointFailsAsNoPath)
     EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Failed);
     EXPECT_EQ(harness.Progress(agent).Failure, NavAgentFailure::NoPath);
     EXPECT_EQ(harness.Progress(agent).LastQuery, NavStatus::NoPath);
-    EXPECT_TRUE(IsZero(harness.Intent(agent)));
+    EXPECT_TRUE(harness.AsksForNothing(agent));
 }
 
 // H: many agents at once, each on its own route, in parallel or not.
@@ -226,7 +216,7 @@ TEST_P(NavAgentCrowd, ManyAgentsPlanInBudgetAndAllArrive)
         if (firstTickAllPlanned == 0 && harness.Agents().Queue().Size() == 0)
             firstTickAllPlanned = static_cast<std::size_t>(ticks);
         for (const EntityId agent : agents)
-            if (!Ended(harness.Progress(agent)))
+            if (!harness.HasEnded(agent))
                 return false;
         return true;
     }, 60 * 60);

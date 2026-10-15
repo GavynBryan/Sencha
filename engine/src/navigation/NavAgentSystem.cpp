@@ -5,6 +5,7 @@
 
 #include <core/console/CVarRead.h>
 #include <core/console/ConsoleRegistry.h>
+#include <debug/DebugLines.h>
 #include <ecs/Query.h>
 #include <ecs/World.h>
 #include <gameplay_tags/GameplayTagContainer.h>
@@ -85,7 +86,7 @@ namespace
         float FollowHysteresis = 1.5f;
     };
 
-    double ReadSetting(const ConsoleRegistry* console, std::size_t index)
+    double ReadAgentCVar(const ConsoleRegistry* console, std::size_t index)
     {
         return ReadCVarDouble(console, kCVars[index].Name, kCVars[index].Default);
     }
@@ -93,27 +94,46 @@ namespace
     NavAgentSettings ReadSettings(const ConsoleRegistry* console)
     {
         NavAgentSettings s;
-        s.PlansPerTick = static_cast<std::size_t>(std::max(1.0, ReadSetting(console, 0)));
-        s.ParallelMinBatch = static_cast<std::size_t>(std::max(1.0, ReadSetting(console, 1)));
-        s.CornerRadius = static_cast<float>(ReadSetting(console, 3));
-        s.ArriveRadius = static_cast<float>(ReadSetting(console, 4));
-        s.Deviation = static_cast<float>(ReadSetting(console, 5));
-        s.RetargetDistance = static_cast<float>(ReadSetting(console, 6));
-        s.RetargetFraction = static_cast<float>(ReadSetting(console, 7));
-        s.RepathInterval = static_cast<float>(ReadSetting(console, 8));
-        s.RefreshDeferTicks = static_cast<std::uint32_t>(ReadSetting(console, 9));
-        s.Stuck.WindowSeconds = static_cast<float>(ReadSetting(console, 10));
-        s.Stuck.MinimumProgress = static_cast<float>(ReadSetting(console, 11));
-        s.StuckRepaths = static_cast<std::uint32_t>(ReadSetting(console, 12));
-        s.AvoidSeconds = static_cast<float>(ReadSetting(console, 13));
-        s.TraversalTimeout = static_cast<float>(ReadSetting(console, 14));
-        s.OffMeshGrace = static_cast<float>(ReadSetting(console, 15));
-        s.FollowHysteresis = static_cast<float>(ReadSetting(console, 16));
+        s.PlansPerTick = static_cast<std::size_t>(std::max(1.0, ReadAgentCVar(console, 0)));
+        s.ParallelMinBatch = static_cast<std::size_t>(std::max(1.0, ReadAgentCVar(console, 1)));
+        s.CornerRadius = static_cast<float>(ReadAgentCVar(console, 3));
+        s.ArriveRadius = static_cast<float>(ReadAgentCVar(console, 4));
+        s.Deviation = static_cast<float>(ReadAgentCVar(console, 5));
+        s.RetargetDistance = static_cast<float>(ReadAgentCVar(console, 6));
+        s.RetargetFraction = static_cast<float>(ReadAgentCVar(console, 7));
+        s.RepathInterval = static_cast<float>(ReadAgentCVar(console, 8));
+        s.RefreshDeferTicks = static_cast<std::uint32_t>(ReadAgentCVar(console, 9));
+        s.Stuck.WindowSeconds = static_cast<float>(ReadAgentCVar(console, 10));
+        s.Stuck.MinimumProgress = static_cast<float>(ReadAgentCVar(console, 11));
+        s.StuckRepaths = static_cast<std::uint32_t>(ReadAgentCVar(console, 12));
+        s.AvoidSeconds = static_cast<float>(ReadAgentCVar(console, 13));
+        s.TraversalTimeout = static_cast<float>(ReadAgentCVar(console, 14));
+        s.OffMeshGrace = static_cast<float>(ReadAgentCVar(console, 15));
+        s.FollowHysteresis = static_cast<float>(ReadAgentCVar(console, 16));
         return s;
     }
 
+    constexpr std::string_view kDebugDrawCVar = "nav.agent.debug.draw";
+    constexpr std::string_view kDebugChannel = "navigation.agents";
+    const Vec4 kRouteColor{ 0.25f, 0.85f, 0.45f, 1.0f };
+    const Vec4 kCrossingColor{ 0.95f, 0.6f, 0.15f, 1.0f };
+    const Vec4 kWaitingColor{ 0.6f, 0.6f, 0.6f, 1.0f };
+    const Vec4 kSelectedColor{ 1.0f, 1.0f, 0.3f, 1.0f };
+    constexpr float kMarkerSize = 0.3f;
+    constexpr float kLift = 0.05f;
+
     void RegisterCVars(ConsoleRegistry& console)
     {
+        console.RegisterCVar({
+            .Name = std::string(kDebugDrawCVar),
+            .Owner = "navigation",
+            .Type = CVarType::Bool,
+            .DefaultValue = false,
+            .CurrentValue = false,
+            .Help = "Draws every navigation agent's remaining route and destination, and the selected "
+                    "agent's over the scene with its wish direction.",
+            .Source = { "navigation" },
+        });
         for (const CVarSpec& spec : kCVars)
             console.RegisterCVar({
                 .Name = std::string(spec.Name),
@@ -128,13 +148,13 @@ namespace
             });
     }
 
-    bool IsActive(NavAgentPhase phase)
+    bool IsActivePhase(NavAgentPhase phase)
     {
         return phase == NavAgentPhase::Planning || phase == NavAgentPhase::Moving
             || phase == NavAgentPhase::Traversing || phase == NavAgentPhase::Holding;
     }
 
-    NavAgentFailure FailureOf(NavStatus status, bool aroundFailedCrossing)
+    NavAgentFailure FailureForSearchStatus(NavStatus status, bool aroundFailedCrossing)
     {
         switch (status)
         {
@@ -149,7 +169,7 @@ namespace
         }
     }
 
-    NavRepathReason ReasonOf(NavRouteValidity validity)
+    NavRepathReason RepathReasonForValidity(NavRouteValidity validity)
     {
         switch (validity)
         {
@@ -157,13 +177,6 @@ namespace
         case NavRouteValidity::LinkChanged: return NavRepathReason::LinkChanged;
         default: return NavRepathReason::ZoneReloaded;
         }
-    }
-
-    Vec3d PlanarDirection(const Vec3d& from, const Vec3d& to)
-    {
-        Vec3d direction(to.X - from.X, 0.0f, to.Z - from.Z);
-        const float length = std::sqrt(direction.X * direction.X + direction.Z * direction.Z);
-        return length > 1e-4f ? direction * (1.0f / length) : Vec3d::Zero();
     }
 
     // Route distance left from `position`, current leg first.
@@ -203,7 +216,7 @@ struct NavAgentSystem::State
         , Console(services.Console)
         , Policies(services.DataAssets)
         , Planner(services.Jobs,
-                  NavQueryContextConfig{ static_cast<std::uint32_t>(ReadSetting(services.Console, 2)), 512 },
+                  NavQueryContextConfig{ static_cast<std::uint32_t>(ReadAgentCVar(services.Console, 2)), 512 },
                   NavRouteCapacity{})
         , Slots(NavRouteCapacity{})
     {
@@ -228,6 +241,8 @@ struct NavAgentSystem::State
     std::vector<NavPlanEntry> Admitted;
     std::vector<NavPlanInput> Inputs;
     std::vector<EntityId> InputAgents;
+    EntityId Selected;
+    bool Drawing = false;
 
     // -- Shared helpers -------------------------------------------------------
 
@@ -409,7 +424,7 @@ struct NavAgentSystem::State
             return;
         if (order->Id != progress->Request)
             Adopt(world, agent, *order, *progress);
-        if (!IsActive(progress->Phase))
+        if (!IsActivePhase(progress->Phase))
             return;
         if (Controlled(world, agent))
         {
@@ -479,9 +494,9 @@ struct NavAgentSystem::State
                 CrossingFailed(world, agent, *progress, *slot, link);
             }
             else if (crossed != nullptr)
-                slot->ReplanAfterCrossing = ReasonOf(validity);
+                slot->ReplanAfterCrossing = RepathReasonForValidity(validity);
             else
-                Replan(world, agent, *progress, *slot, ReasonOf(validity));
+                Replan(world, agent, *progress, *slot, RepathReasonForValidity(validity));
             return;
         }
         if (order->Kind == NavDestinationKind::Entity && progress->Phase == NavAgentPhase::Moving
@@ -622,7 +637,7 @@ struct NavAgentSystem::State
             }
         }
         End(world, agent, *progress, NavAgentPhase::Failed,
-            FailureOf(output.Status, slot->ReplanningAroundFailedCrossing));
+            FailureForSearchStatus(output.Status, slot->ReplanningAroundFailedCrossing));
     }
 
     void Plan(World& world)
@@ -660,7 +675,7 @@ struct NavAgentSystem::State
     {
         if (MovementIntent* intent = world.TryGet<MovementIntent>(agent))
         {
-            intent->WishDir = PlanarDirection(position, toward) * magnitude;
+            intent->WishDir = NavPlanarDirection(position, toward) * magnitude;
             intent->Jump = false;
         }
     }
@@ -698,7 +713,7 @@ struct NavAgentSystem::State
     {
         const NavAgentRequest* order = std::as_const(world).TryGet<NavAgentRequest>(agent);
         NavAgentProgress* progress = world.TryGet<NavAgentProgress>(agent);
-        if (order == nullptr || progress == nullptr || !IsActive(progress->Phase))
+        if (order == nullptr || progress == nullptr || !IsActivePhase(progress->Phase))
             return;
         NavRouteSlot* slot = SlotOf(agent, *progress);
         const WorldTransform* self = std::as_const(world).TryGet<WorldTransform>(agent);
@@ -830,6 +845,70 @@ struct NavAgentSystem::State
         }
     }
 
+    // -- Debug drawing ---------------------------------------------------------
+
+    void DrawAgent(const World& world, DebugLineList& lines, EntityId agent)
+    {
+        const NavAgentProgress* progress = world.TryGet<NavAgentProgress>(agent);
+        const WorldTransform* self = world.TryGet<WorldTransform>(agent);
+        if (progress == nullptr || self == nullptr || !IsActivePhase(progress->Phase))
+            return;
+        const bool selected = agent == Selected;
+        const Vec3d lift(0.0f, kLift, 0.0f);
+        Vec3d from = self->Value.Position;
+        const auto add = [&](const Vec3d& a, const Vec3d& b, const Vec4& color) {
+            if (selected)
+                lines.AddOnTop(a + lift, b + lift, kSelectedColor);
+            else
+                lines.AddTested(a + lift, b + lift, color);
+        };
+        AppendMarker(lines, progress->Destination, kMarkerSize, selected ? kSelectedColor : kRouteColor);
+        const NavRouteSlot* slot = SlotOf(agent, *progress);
+        if (slot == nullptr || !slot->HasRoute)
+        {
+            add(from, progress->Destination, kWaitingColor);
+            return;
+        }
+        const auto steps = slot->Route.Steps();
+        const auto corners = slot->Route.Corners();
+        for (std::uint32_t s = slot->Step; s < steps.size(); ++s)
+        {
+            const NavRouteStep& step = steps[s];
+            if (step.Kind == NavRouteStepKind::Traverse)
+            {
+                add(from, step.Entry, kRouteColor);
+                add(step.Entry, step.Exit, kCrossingColor);
+                from = step.Exit;
+                continue;
+            }
+            const auto leg = corners.subspan(step.FirstCorner, step.CornerCount);
+            for (std::uint32_t c = s == slot->Step ? slot->Corner : 0; c < leg.size(); ++c)
+            {
+                add(from, leg[c], kRouteColor);
+                from = leg[c];
+            }
+        }
+        if (selected)
+            if (const MovementIntent* intent = world.TryGet<MovementIntent>(agent))
+                lines.AddOnTop(self->Value.Position, self->Value.Position + intent->WishDir, kCrossingColor);
+    }
+
+    void Draw(World& world)
+    {
+        const bool draw = ReadCVarBool(Console, kDebugDrawCVar, false);
+        if (!draw && !Drawing)
+            return;
+        if (!world.HasResource<DebugLineChannels>())
+            world.AddResource<DebugLineChannels>();
+        DebugLineChannels& channels = world.GetResource<DebugLineChannels>();
+        DebugLineList& lines = channels.Lines(channels.Channel(kDebugChannel));
+        lines.Clear();
+        if (draw)
+            for (const EntityId agent : Active)
+                DrawAgent(world, lines, agent);
+        Drawing = draw;
+    }
+
     // True when the agent was judged stuck and its route dropped or ended.
     bool ObserveStuck(World& world, EntityId agent, NavAgentProgress& progress, NavRouteSlot& slot, float magnitude)
     {
@@ -890,12 +969,47 @@ void NavAgentSystem::FixedLogic(FixedLogicContext& ctx)
 
     for (const EntityId agent : state.Active)
         if (const NavAgentProgress* progress = std::as_const(world).TryGet<NavAgentProgress>(agent);
-            progress != nullptr && IsActive(progress->Phase))
+            progress != nullptr && IsActivePhase(progress->Phase))
             ++state.LastStats.Active;
     state.LastStats.Queued = state.Queue.Size();
+    state.Draw(world);
 }
 
 const NavAgentSystem::Stats& NavAgentSystem::LastStats() const { return Impl->LastStats; }
+std::span<const EntityId> NavAgentSystem::LastAgents() const { return Impl->Active; }
+void NavAgentSystem::SelectAgent(EntityId agent) { Impl->Selected = agent; }
+EntityId NavAgentSystem::SelectedAgent() const { return Impl->Selected; }
+
+bool NavAgentSystem::Inspect(EntityId agent, NavAgentInspection& out) const
+{
+    State& state = *Impl;
+    const World& world = state.Runtime.Entities();
+    const NavAgentProgress* progress =
+        world.IsRegistered<NavAgentProgress>() ? world.TryGet<NavAgentProgress>(agent) : nullptr;
+    const NavRouteSlot* slot = progress != nullptr ? state.SlotOf(agent, *progress) : nullptr;
+    if (slot == nullptr)
+        return false;
+    out = NavAgentInspection{};
+    out.HasRoute = slot->HasRoute;
+    out.Queued = state.Queue.Find(agent) != nullptr;
+    out.StepCount = static_cast<std::uint32_t>(slot->Route.Steps().size());
+    out.Step = slot->Step;
+    out.Corner = slot->Corner;
+    if (slot->HasRoute && slot->Step < out.StepCount)
+    {
+        const NavRouteStep& step = slot->Route.Steps()[slot->Step];
+        out.Crossing = step.Kind == NavRouteStepKind::Traverse;
+        out.LegCorners = step.CornerCount;
+        out.Link = step.Link;
+    }
+    out.CrossingTicks = slot->CrossingTicks;
+    out.CrossingFailures = slot->CrossingFailures;
+    out.StuckReplans = slot->StuckReplans;
+    out.StuckElapsed = slot->Stuck.Elapsed;
+    out.StuckExpected = slot->Stuck.Expected;
+    out.LastSearch = slot->LastDiagnostics;
+    return true;
+}
 const NavPlanQueue& NavAgentSystem::Queue() const { return Impl->Queue; }
 std::size_t NavAgentSystem::RouteSlotsInUse() const { return Impl->Slots.InUseCount(); }
 std::size_t NavAgentSystem::PlanningContexts() const { return Impl->Planner.ContextCount(); }

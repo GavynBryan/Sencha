@@ -1,5 +1,9 @@
 #include <navigation/NavAgentRegistration.h>
 
+#include "NavAgentConsole.h"
+
+#include <world/RuntimeWorld.h>
+
 #include <cassert>
 
 void RegisterNavigationAgents(EngineSchedule& schedule, RuntimeWorld& runtime, JobSystem* jobs,
@@ -9,4 +13,6 @@ void RegisterNavigationAgents(EngineSchedule& schedule, RuntimeWorld& runtime, J
            && "RegisterNavigationAgents needs RegisterMovementSystems first");
     schedule.Register<NavAgentSystem>(NavAgentSystem::Services{ runtime, jobs, dataAssets, console });
     OrderMovementAfterInput<NavAgentSystem>(schedule);
+    if (console != nullptr)
+        RegisterNavigationAgentConsole(*console, runtime.Entities());
 }

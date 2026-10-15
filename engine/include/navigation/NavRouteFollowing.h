@@ -20,6 +20,9 @@ struct NavFollowTolerances
 
 [[nodiscard]] float NavPlanarDistance(const Vec3d& a, const Vec3d& b);
 
+// The unit planar direction from `from` toward `to`, or zero when they coincide.
+[[nodiscard]] Vec3d NavPlanarDirection(const Vec3d& from, const Vec3d& to);
+
 struct NavSegmentGap
 {
     float Planar = 0.0f;

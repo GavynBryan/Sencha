@@ -15,13 +15,7 @@ namespace
 {
     constexpr NavLinkId kJumpLink{ 0x1 };
 
-    bool Ended(const NavAgentProgress& progress)
-    {
-        return progress.Phase == NavAgentPhase::Arrived || progress.Phase == NavAgentPhase::Failed
-            || progress.Phase == NavAgentPhase::Cancelled;
-    }
 
-    float Planar(const Vec3d& a, const Vec3d& b) { return std::hypot(a.X - b.X, a.Z - b.Z); }
 
     // The fixture's islands, x 0-8 and 12-20, with a jump across the gap.
     std::vector<NavLinkRecord> JumpLink()
@@ -71,7 +65,7 @@ TEST(NavAgentTraversal, JumpsTheGapAndWalksOnOnlyAfterLanding)
         if (phase == NavAgentPhase::Moving && phases.size() >= 2 && phases[phases.size() - 2] == NavAgentPhase::Traversing
             && harness.Position(agent).X < 12.0f)
             walkedBeforeLanding = true;
-        return Ended(harness.Progress(agent));
+        return harness.HasEnded(agent);
     }, 60 * 30);
 
     ASSERT_TRUE(ended);
@@ -80,7 +74,7 @@ TEST(NavAgentTraversal, JumpsTheGapAndWalksOnOnlyAfterLanding)
     // An order is planned in the tick it is taken up, so Planning never shows between ticks.
     EXPECT_EQ(phases, (std::vector<NavAgentPhase>{ NavAgentPhase::Moving, NavAgentPhase::Traversing,
                                                    NavAgentPhase::Moving, NavAgentPhase::Arrived }));
-    EXPECT_LE(Planar(crossingStart, Vec3d(7.5f, 0.0f, 5.0f)), 0.5f + 0.15f);
+    EXPECT_LE(NavPlanarDistance(crossingStart, Vec3d(7.5f, 0.0f, 5.0f)), 0.5f + 0.15f);
     EXPECT_FALSE(walkedBeforeLanding);
 }
 
@@ -115,7 +109,7 @@ TEST(NavAgentTraversal, AFailedCrossingWithNoWayRoundEndsAsTraversalFailed)
                                      NavTraversalExecutor{ &AlwaysFails, nullptr }));
     const EntityId agent = harness.SpawnAgent(Vec3d(2.0f, 0.0f, 5.0f), { "navigation.traversal.jump" });
     (void)harness.GoTo(agent, Vec3d(18.0f, 0.0f, 5.0f));
-    ASSERT_TRUE(harness.StepUntil([&] { return Ended(harness.Progress(agent)); }, 60 * 20));
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 60 * 20));
     EXPECT_EQ(harness.Progress(agent).Failure, NavAgentFailure::TraversalFailed);
     EXPECT_EQ(harness.Progress(agent).LastQuery, NavStatus::NoPath);
     EXPECT_EQ(harness.Progress(agent).LastRepath, NavRepathReason::TraversalFailed);
@@ -136,7 +130,7 @@ TEST(NavAgentTraversal, AFailedCrossingIsAvoidedAndTheAgentWalksRound)
     const bool ended = harness.StepUntil([&] {
         replannedAroundTheJump =
             replannedAroundTheJump || harness.Progress(agent).LastRepath == NavRepathReason::TraversalFailed;
-        return Ended(harness.Progress(agent));
+        return harness.HasEnded(agent);
     }, 60 * 30);
     ASSERT_TRUE(ended);
     EXPECT_TRUE(replannedAroundTheJump) << "the jump was the first choice";
@@ -156,7 +150,7 @@ TEST(NavAgentTraversal, ReplacingTheOrderMidCrossingAbortsTheExecutor)
     (void)harness.GoTo(agent, Vec3d(2.0f, 0.0f, 2.0f));
     harness.Step();
     EXPECT_EQ(gAborts, 1);
-    ASSERT_TRUE(harness.StepUntil([&] { return Ended(harness.Progress(agent)); }, 60 * 10));
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 60 * 10));
     EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Arrived);
     EXPECT_EQ(gAborts, 1);
 }
@@ -173,7 +167,7 @@ TEST(NavAgentTraversal, ACrossingWhoseLinkIsDisabledIsAbortedAndCountsAsFailed)
 
     const EntityId gate = harness.Entities().CreateEntity(harness.Partition);
     harness.Entities().AddComponent<NavLinkState>(gate, NavLinkState{ .Link = kJumpLink, .Enabled = false });
-    ASSERT_TRUE(harness.StepUntil([&] { return Ended(harness.Progress(agent)); }, 10));
+    ASSERT_TRUE(harness.StepUntil([&] { return harness.HasEnded(agent); }, 10));
     EXPECT_EQ(gAborts, 1);
     EXPECT_EQ(harness.Progress(agent).Failure, NavAgentFailure::TraversalFailed);
 }
@@ -192,7 +186,7 @@ TEST(NavAgentTraversal, WalksOffALedgeThroughADropLink)
     bool crossed = false;
     ASSERT_TRUE(harness.StepUntil([&] {
         crossed = crossed || harness.Progress(agent).Phase == NavAgentPhase::Traversing;
-        return Ended(harness.Progress(agent));
+        return harness.HasEnded(agent);
     }, 60 * 20));
     EXPECT_TRUE(crossed);
     EXPECT_EQ(harness.Progress(agent).Phase, NavAgentPhase::Arrived)

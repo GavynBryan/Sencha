@@ -4,7 +4,7 @@
 
 namespace
 {
-    bool Before(const NavPlanEntry& a, const NavPlanEntry& b)
+    bool PlansBefore(const NavPlanEntry& a, const NavPlanEntry& b)
     {
         return a.OrderTick != b.OrderTick ? a.OrderTick < b.OrderTick : a.Agent < b.Agent;
     }
@@ -44,5 +44,5 @@ const NavPlanEntry* NavPlanQueue::Find(EntityId agent) const
 
 void NavPlanQueue::Insert(const NavPlanEntry& entry)
 {
-    Entries_.insert(std::upper_bound(Entries_.begin(), Entries_.end(), entry, Before), entry);
+    Entries_.insert(std::upper_bound(Entries_.begin(), Entries_.end(), entry, PlansBefore), entry);
 }

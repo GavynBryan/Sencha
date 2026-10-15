@@ -8,7 +8,6 @@
 #include <world/transform/TransformComponents.h>
 
 #include <algorithm>
-#include <cmath>
 
 namespace
 {
@@ -35,14 +34,7 @@ namespace
         return footing;
     }
 
-    void SteerToward(MovementIntent& intent, const Vec3d& from, const Vec3d& to)
-    {
-        Vec3d direction(to.X - from.X, 0.0f, to.Z - from.Z);
-        const float length = std::sqrt(direction.X * direction.X + direction.Z * direction.Z);
-        intent.WishDir = length > 1e-4f ? direction * (1.0f / length) : Vec3d::Zero();
-    }
-
-    bool AtExit(const NavTraversalFrame& frame, const Vec3d& position)
+    bool IsAtExit(const NavTraversalFrame& frame, const Vec3d& position)
     {
         return NavHasArrived(position, frame.Step.Exit, std::max(frame.Step.EntryRadius, kLandingRadius), frame.Height);
     }
@@ -75,12 +67,12 @@ NavTraversalResult NavTraverseByWalking(NavTraversalFrame& frame)
 {
     const Footing footing = FootingOf(frame.Entities, frame.Agent);
     frame.Intent.Jump = false;
-    if (footing.Standing && AtExit(frame, footing.Position))
+    if (footing.Standing && IsAtExit(frame, footing.Position))
     {
         frame.Intent.WishDir = Vec3d::Zero();
         return NavTraversalResult::Succeeded;
     }
-    SteerToward(frame.Intent, footing.Position, frame.Step.Exit);
+    frame.Intent.WishDir = NavPlanarDirection(footing.Position, frame.Step.Exit);
     return NavTraversalResult::Running;
 }
 
@@ -89,7 +81,7 @@ NavTraversalResult NavTraverseByJumping(NavTraversalFrame& frame)
     const Footing footing = FootingOf(frame.Entities, frame.Agent);
     if (!footing.Standing)
         frame.Memory |= kAirborne;
-    SteerToward(frame.Intent, footing.Position, frame.Step.Exit);
+    frame.Intent.WishDir = NavPlanarDirection(footing.Position, frame.Step.Exit);
     if ((frame.Memory & kAirborne) == 0)
     {
         frame.Intent.Jump = true;
@@ -98,5 +90,5 @@ NavTraversalResult NavTraverseByJumping(NavTraversalFrame& frame)
     frame.Intent.Jump = false;
     if (!footing.Standing)
         return NavTraversalResult::Running;
-    return AtExit(frame, footing.Position) ? NavTraversalResult::Succeeded : NavTraversalResult::Failed;
+    return IsAtExit(frame, footing.Position) ? NavTraversalResult::Succeeded : NavTraversalResult::Failed;
 }

@@ -5,6 +5,7 @@
 #include <audio/AudioVerbs.h>
 #include <effects/EffectVerbs.h>
 #include <movement/MovementVerbs.h>
+#include <navigation/NavigationVerbs.h>
 #include <perception/PerceptionVocabulary.h>
 #include <physics/PhysicsAuthoredQueries.h>
 #include <physics/PhysicsQueries.h>
@@ -20,6 +21,7 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     , Time(std::make_unique<ActorTimeOperations>(entities, clock))
     , Abilities(std::make_unique<AbilityOperations>(entities))
     , Movement(std::make_unique<MovementOperations>(entities))
+    , Navigation(std::make_unique<NavigationOperations>(entities))
     , Audio(std::make_unique<AudioOperations>(entities))
 {
     const VerbRegistry& catalog = verbs.Registry();
@@ -37,6 +39,9 @@ EngineVocabularyBindings::EngineVocabularyBindings(World& entities, const FixedS
     Verbs.push_back(verbs.Bind<&InvokeMovementBurst>(catalog.Find(kMovementBurstLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementTether>(catalog.Find(kMovementTetherLease), *Movement));
     Verbs.push_back(verbs.Bind<&InvokeMovementMode>(catalog.Find(kMovementModeLease), *Movement));
+    Verbs.push_back(verbs.Bind<&InvokeNavigationMoveTo>(catalog.Find(kNavigationMoveToVerb), *Navigation));
+    Verbs.push_back(verbs.Bind<&InvokeNavigationApproach>(catalog.Find(kNavigationApproachVerb), *Navigation));
+    Verbs.push_back(verbs.Bind<&InvokeNavigationStop>(catalog.Find(kNavigationStopVerb), *Navigation));
     Verbs.push_back(verbs.Bind<&InvokeAudioPlay>(catalog.Find(kAudioPlayVerb), *Audio));
     Verbs.push_back(verbs.Bind<&InvokeAudioLoop>(catalog.Find(kAudioLoopLease), *Audio));
 }
@@ -50,6 +55,12 @@ EngineVocabularyBindings::~EngineVocabularyBindings()
 void EngineVocabularyBindings::BindPerception(AuthoredQueryDispatcher& queries)
 {
     for (AuthoredQueryBindingToken& token : BindPerceptionQueries(queries, Entities))
+        Queries.push_back(std::move(token));
+}
+
+void EngineVocabularyBindings::BindNavigation(AuthoredQueryDispatcher& queries)
+{
+    for (AuthoredQueryBindingToken& token : BindNavigationQueries(queries, Entities))
         Queries.push_back(std::move(token));
 }
 
