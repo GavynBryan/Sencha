@@ -1110,6 +1110,34 @@ TEST_F(AbilityRuntime, AWarmPassAllocatesNothing)
 }
 
 
+TEST_F(AbilityRuntime, AStartThatGrantsAnotherAbilityLeavesThePressesOtherBindingsIntact)
+{
+    Tokens.push_back(Verbs->Bind<&InvokeAbilityGrant>(Verbs->Registry().Find(kAbilityGrantVerb), AbilityVerbs));
+    (void)Define("asset://abilities/primary.sdata", kInstant);
+    const AbilityId granter = Define("asset://abilities/granter.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire" },
+        "phases": [ { "key": "p_grant",
+            "enter": [ { "key": "o_grant", "op": "invoke", "verb": "ability.grant",
+                         "arguments": { "target": { "port": "actor" },
+                                        "ability": { "data": "asset://abilities/primary.sdata" },
+                                        "key": { "const": "g_granted" } } } ],
+            "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const AbilityId watcher = Define("asset://abilities/watch.sdata", R"({
+        "input_default": { "action": "Input.PrimaryFire", "consume": "observe" },
+        "phases": [ { "key": "p_fire", "enter": [ { "key": "o_mark", "op": "invoke", "verb": "test.mark",
+            "arguments": { "value": { "const": 3 } } } ], "then": [ { "key": "t_end", "to": "end" } ] } ] })");
+    const EntityId actor = Actor();
+    Grant(actor, granter, {}, "g_granter");
+    Grant(actor, watcher, {}, "g_watch");
+    const std::size_t interned = Entities.GetResource<AbilityGrantEntries>().Size();
+
+    // The grant interns an entry mid-press, which may move every binding the press resolved.
+    Step({ Press(kFire) });
+    EXPECT_EQ(Entities.GetResource<AbilityGrantEntries>().Size(), interned + 1);
+    EXPECT_EQ(Entities.TryGet<AbilityGrants>(actor)->Count, 3u);
+    EXPECT_EQ(Marks.Values, (std::vector<double>{ 3.0 })) << "the observer still starts from the same press";
+}
+
 TEST_F(AbilityRuntime, TheAbilityVerbsGrantRevokeActivateAndCancel)
 {
     const AbilityId charge = Define("asset://abilities/charge.sdata", kCharge);

@@ -86,9 +86,16 @@ namespace
         static const GameplayTagContainer kNoTags{};
         const GameplayTagContainer* held = actor.Tags();
 
-        // Copies: a start may revoke or add grants, moving the entries they came from.
-        std::array<AbilityGrant, kAbilityGrantCapacity> grant{};
-        std::array<const AbilityEffectiveBinding*, kAbilityGrantCapacity> binding{};
+        // Copies: a start may revoke or add grants, or intern a grant entry, moving the
+        // grants and the bindings they came from.
+        struct Candidate
+        {
+            AbilityGrant Grant;
+            std::int32_t Priority = 0;
+            AbilityConsume Consume = AbilityConsume::Exclusive;
+            AbilityWhenBlocked WhenBlocked = AbilityWhenBlocked::Consume;
+        };
+        std::array<Candidate, kAbilityGrantCapacity> candidates{};
         std::size_t count = 0;
         for (std::uint8_t i = 0; i < grants->Count; ++i)
         {
@@ -98,44 +105,43 @@ namespace
             if (bound->HasContext
                 && (tags == nullptr || !bound->Context.Matches(held != nullptr ? *held : kNoTags, *tags)))
                 continue;
-            grant[count] = grants->Entries[i];
-            binding[count] = bound;
-            ++count;
+            candidates[count++] = { .Grant = grants->Entries[i], .Priority = bound->Priority,
+                                    .Consume = bound->Consume, .WhenBlocked = bound->WhenBlocked };
         }
         // Priority alone orders them; equal priorities keep grant order.
         std::array<std::size_t, kAbilityGrantCapacity> order{};
         for (std::size_t i = 0; i < count; ++i)
             order[i] = i;
         std::stable_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(count),
-                         [&](std::size_t a, std::size_t b) { return binding[a]->Priority > binding[b]->Priority; });
+                         [&](std::size_t a, std::size_t b) { return candidates[a].Priority > candidates[b].Priority; });
 
         const auto keyOf = [&](std::size_t i) {
-            return AbilityActivationKey{ .CommandTick = pass.Tick(), .Ability = grant[i].Ability, .Origin = edge };
+            return AbilityActivationKey{ .CommandTick = pass.Tick(), .Ability = candidates[i].Grant.Ability, .Origin = edge };
         };
         for (std::size_t at = 0; at < count;)
         {
             const std::size_t i = order[at];
-            const std::int32_t priority = binding[i]->Priority;
+            const std::int32_t priority = candidates[i].Priority;
             std::size_t exclusives = 0;
             std::size_t next = at;
-            for (; next < count && binding[order[next]]->Priority == priority; ++next)
-                exclusives += binding[order[next]]->Consume == AbilityConsume::Exclusive ? 1 : 0;
+            for (; next < count && candidates[order[next]].Priority == priority; ++next)
+                exclusives += candidates[order[next]].Consume == AbilityConsume::Exclusive ? 1 : 0;
             if (exclusives > 1)
             {
                 pass.Trace({ .Actor = actor.Entity, .Key = keyOf(i), .Event = AbilityTraceEvent::BindingAmbiguous });
                 break;
             }
             const std::size_t* exclusive = std::find_if(order.data() + at, order.data() + next, [&](std::size_t c) {
-                return binding[c]->Consume == AbilityConsume::Exclusive;
+                return candidates[c].Consume == AbilityConsume::Exclusive;
             });
             if (exclusive == order.data() + next)
             {
                 at = next;
                 continue;
             }
-            if (pass.TryStart(actor, grant[*exclusive], keyOf(*exclusive), action, EntityId{}) >= 0)
+            if (pass.TryStart(actor, candidates[*exclusive].Grant, keyOf(*exclusive), action, EntityId{}) >= 0)
                 break;
-            if (binding[*exclusive]->WhenBlocked == AbilityWhenBlocked::Consume)
+            if (candidates[*exclusive].WhenBlocked == AbilityWhenBlocked::Consume)
             {
                 pass.Trace({ .Actor = actor.Entity, .Key = keyOf(*exclusive), .Event = AbilityTraceEvent::Blocked });
                 break;
@@ -143,8 +149,8 @@ namespace
             at = next;
         }
         for (std::size_t i = 0; i < count; ++i)
-            if (binding[i]->Consume == AbilityConsume::Observe)
-                (void)pass.TryStart(actor, grant[i], keyOf(i), action, EntityId{});
+            if (candidates[i].Consume == AbilityConsume::Observe)
+                (void)pass.TryStart(actor, candidates[i].Grant, keyOf(i), action, EntityId{});
     }
 
     // A release, genuine or not, reaches only the activations its action started.

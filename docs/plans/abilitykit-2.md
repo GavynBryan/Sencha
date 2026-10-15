@@ -1870,3 +1870,19 @@ Against `3ead98f`: the five findings above confirmed fixed, plus two more.
    table's "loop closed by a release".)
 
 The wire forms are unchanged and the replication table hash does not move.
+
+### 17.14 Third review of PR #166
+
+Against `29afb9f`: the seven earlier findings confirmed fixed, plus one.
+
+1. **A press held pointers into the grant-entry table across a start.** Fixed.
+   `Press` resolved each candidate's binding to a pointer into
+   `AbilityGrantEntries`. A start whose `enter` ops run `ability.grant` with a new
+   key interns an entry, which can reallocate the table, and the press then read
+   the observers' bindings through freed memory. The press now copies what dispatch
+   needs (the grant, its priority, consume and when-blocked) once the context has
+   matched, so nothing it holds outlives a start. The rest of the pass already
+   re-fetched records and locals after every op.
+   (`AStartThatGrantsAnotherAbilityLeavesThePressesOtherBindingsIntact`: under the
+   `asan` preset it reported a heap-use-after-free in `Press` before the fix and
+   runs clean after, with the ability suites; the dev build cannot see it.)
