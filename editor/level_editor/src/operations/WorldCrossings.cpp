@@ -5,7 +5,7 @@
 #include "LevelNavigation.h"
 #include "LevelSubjects.h"
 #include "LevelTarget.h"
-#include "WorldFocus.h"
+#include "WorldZones.h"
 
 #include "document/EditorDocument.h"
 #include "document/EditorEntityRecipe.h"
@@ -156,21 +156,6 @@ namespace
     {
         const std::vector<ZoneId> candidates = WorldDockZoneCandidates(manifest, point, zone);
         return candidates.size() == 1 ? std::optional<ZoneId>(candidates.front()) : std::nullopt;
-    }
-
-    JsonValue ZoneJson(const WorldPartitionManifest& manifest, ZoneId zone)
-    {
-        std::string name;
-        for (const ZoneHeader& header : manifest.Zones)
-            if (header.Id == zone)
-                name = header.Name;
-        return JsonValue(JsonValue::Object{ { "id", JsonValue(ZoneIdToString(zone)) }, { "name", JsonValue(name) } });
-    }
-
-    DataFieldSchema ZoneSchema(std::string key)
-    {
-        return DataField::Record(std::move(key), {}, {}, {
-            DataField::Field("id", DataFieldKind::String, {}, {}), DataField::Field("name", DataFieldKind::String, {}, {}) });
     }
 
     EditorOperationEntry Crossings(LevelTarget& level)

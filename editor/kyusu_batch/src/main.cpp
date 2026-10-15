@@ -7,7 +7,7 @@
 #include "operations/OperationReference.h"
 #include "operations/OperationScript.h"
 #include "operations/ViewOperations.h"
-#include "operations/WorldFocus.h"
+#include "operations/WorldZones.h"
 #include "operations/WorldQueries.h"
 #include "project/Project.h"
 #include "workspace/EditorWorkspace.h"

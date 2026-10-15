@@ -3,7 +3,7 @@
 #include "DiagnosticRecords.h"
 #include "LevelJson.h"
 #include "LevelSubjects.h"
-#include "WorldFocus.h"
+#include "WorldZones.h"
 
 #include "document/EditorDocument.h"
 #include "document/EditorScene.h"

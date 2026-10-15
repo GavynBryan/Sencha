@@ -615,3 +615,19 @@ do the work and delete the entry.
 - **Where:** `editor/common/src/commands/ICommand.h` and `CommandStack`;
   `ApplyChangeSetCommand` would carry the proposal's label.
 - **Trigger:** an undo history display, or an "Undo <what>" menu label.
+
+## Cross-zone reachability moves onto the cross-zone planner
+
+- **What:** `world.reachable` and `world.bypasses`
+  (`editor/level_editor/src/operations/WorldReachability.cpp`) walk a world
+  zone by zone themselves: within a zone with `NavCollectReachable`, between
+  zones through the authored docks (a dock's mouth reached on one side, its
+  landing projected on the other). That is zone-graph search, which the
+  roadmap's hierarchical cross-zone planner (`docs/plans/engine-roadmap.md`,
+  Track A item 6) will own. Its design is not settled, so the analysis does
+  not wait for it.
+- **Where:** `WorldReachability.cpp` (`Walk`, `Mouth`, `Landing`).
+- **Trigger:** the cross-zone planner lands. The analysis then asks it rather
+  than walking docks itself, keeping its sure and possible scenarios, gate
+  assumptions and one-way drops; world links get positions through the same
+  work (`navigation-core.md`, section 7) and stop being unconsidered.

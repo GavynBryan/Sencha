@@ -1,4 +1,4 @@
-#include "WorldFocus.h"
+#include "WorldZones.h"
 
 #include "document/WorldDocument.h"
 
@@ -13,10 +13,19 @@ std::optional<ZoneId> ZoneNamed(const WorldPartitionManifest& manifest, std::str
         for (const ZoneHeader& header : manifest.Zones)
             if (header.Id == *id)
                 return id;
-    for (const ZoneHeader& header : manifest.Zones)
-        if (header.Name == text)
-            return header.Id;
-    return std::nullopt;
+    return ZoneDisplayedAs(manifest, text);
+}
+
+JsonValue ZoneJson(const WorldPartitionManifest& manifest, ZoneId zone)
+{
+    return JsonValue(JsonValue::Object{ { "id", JsonValue(ZoneIdToString(zone)) },
+                                        { "name", JsonValue(ZoneDisplayName(manifest, zone)) } });
+}
+
+DataFieldSchema ZoneSchema(std::string key)
+{
+    return DataField::Record(std::move(key), {}, {}, {
+        DataField::Field("id", DataFieldKind::String, {}, {}), DataField::Field("name", DataFieldKind::String, {}, {}) });
 }
 
 namespace

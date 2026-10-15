@@ -1209,6 +1209,25 @@ and world states, and annotate levels that were built by hand.
   `note.resolve` and `notes.list` are ordinary operations, so a note can be
   part of a proposal. Kyusu shows a note as an entity with its component;
   nothing draws notes in the viewport yet.
+- Across zones (`world.reachable`, `world.bypasses`) the walk leaves a zone
+  only through an authored dock, never because floors happen to meet: walking
+  to a dock's mouth (walkable surface within reach of its rectangle), crossing
+  the ways its directions allow, and landing where its middle drops onto the
+  next zone's floor. A dock lying in a floor is therefore a drop, one-way when
+  authored so: the Ocarina of Time Deku Tree's fall into the lower dungeon is a
+  downward dock with a gate bound to it (the web). The sure walk keeps every
+  gate shut unless assumed open (`open_gates`); a gated dock whose two sides
+  the sure walk reaches is a bypass. World links have no positions yet and are
+  listed as unconsidered. Each zone's navigation is built in memory, so the
+  question opens every zone. The walk is zone-graph search the roadmap's
+  cross-zone planner will own; `docs/deferred.md` records the move.
+- M3 acceptance: `Traversal3JumpTest` puts a wall across Room 2 of the template
+  world, in memory, with an authored jump link over it. From Zone 1 to Room 3
+  the answer is `depends_on` the jump with nothing held, `reached` with the
+  jump held, `unreached` with it denied, and both walks name Room 2's jump.
+  `WorldReachabilityTests` covers the drop, the gate and the bypass;
+  `WorldCrossingsTests` the crossing and its dock; `SpaceProposeTests` and the
+  traversal3 run the proposals.
 
 ### Not on the critical path
 

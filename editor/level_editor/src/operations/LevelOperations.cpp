@@ -12,6 +12,7 @@
 #include "NoteOperations.h"
 #include "SpaceOperations.h"
 #include "WorldCrossings.h"
+#include "WorldReachability.h"
 
 #include <iterator>
 
@@ -34,6 +35,7 @@ std::vector<EditorOperationEntry> LevelOperations(LevelTarget& level, EditorOper
     Append(entries, ComponentOperations(level));
     Append(entries, InstanceOperations(level));
     Append(entries, WorldCrossingOperations(level));
+    Append(entries, WorldReachabilityOperations(level));
     Append(entries, NoteOperations(level));
     Append(entries, LevelDraftOperations(level, operations));
     Append(entries, LevelChangeOperations(level));

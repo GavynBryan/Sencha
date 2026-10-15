@@ -98,7 +98,9 @@ surface and proposes unshelled spaces for them. It is a heuristic: look at
    `denied=[...]` for a scenario); `measure.clearance` in corridors;
    `deps subject=@Name`; the plan again. In a world, `world.crossings` lists
    floor that runs into the next zone with no dock; `world.focus target=world`
-   and `dock.place_at` (in a draft) propose one.
+   and `dock.place_at` (in a draft) propose one. `world.reachable` and
+   `world.bypasses` ask across zones: a zone is left only through a dock (a
+   dock in a floor is a drop), and gates stay shut unless `open_gates` says.
 5. Hand it over. Live: tell the designer what the draft proposes; they accept
    in Kyusu (Ctrl+Enter in the Proposals tray) or ask you to `draft.accept`.
    Before accepting, `changes.since mark=<mark>` says what they changed
